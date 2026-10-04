@@ -394,8 +394,16 @@ with FortSparse for appropriate sparse blocks. Plasma physics stays in kin6d.
 compatible FEEC fields, factorized matrix-free batched actions and bounded
 workspace; assembled small references remain independent checks. Add generic
 span/sum-factorization/batch support upstream only when the consumer needs it.
+[Differentiability policy](docs/differentiability.md) makes each continuous
+production operator's primal/JVP/VJP share a FortSym mathematical definition.
+Indexed dependencies and execution schedules are separate layers. Generate
+lazy tiled reductions and recompute cheap reverse intermediates rather than
+storing global matrices or derivative tapes. Differentiate solved equations
+implicitly, with constrained-branch/conditioning and event-validity contracts.
+Transient adjoints retain explicit trajectory checkpoint/recompute budgets.
 Use fortnum plus BLAS/LAPACK and PETSc's Fortran interfaces for
-numerics, fortad for supported derivative transformations, fortio for data,
+numerics, fortad for independent derivative checks and supported fallback,
+fortio for data,
 and fortplot for diagnostics. Plain contiguous arrays own the kinetic state;
 fortarray labels profiles and analysis slices where useful.
 

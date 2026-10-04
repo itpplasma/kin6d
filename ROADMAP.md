@@ -307,6 +307,36 @@ library when its profile contribution dominates, push a verified generic main
 repair promptly and recheck the client. Candidate fast math and precision
 choices cannot relax strict certificate arithmetic or omitted-tail bounds.
 
+## Symbolic differentiation and memory gates
+
+[Differentiability policy](docs/differentiability.md) applies to each continuous
+production operator from the first generated leaf: shared FortSym primal,
+JVP and VJP, with HVP for a concrete consumer. Keep symbolic mathematical
+definitions, indexed reductions and hardware schedules distinct. FortAD and
+independent analytical/directional checks validate derivatives; Enzyme is
+optional. Missing generic generation support is repaired upstream rather
+than handwritten into kin6d. R0 does not wait for a universal compiler stack.
+
+When needed, introduce bounded-scratch indexed map/reduce and generated CPU/
+CUDA tiled schedules upstream; retain independently derived small reference
+actions and check memory as well as numerical behavior. Extend them to
+FortFEM tensor/quadrature and collision reductions without replacing superior
+physical algorithms by a quadratic integral. No hidden pairwise/global Jacobian
+or full derivative tape. Cheap reverse intermediates are recomputed locally.
+
+Implicit state, linear solve, simple-root and eigen sensitivities arrive with
+their first diagnostic/inverse/design consumer. Require constrained branch
+regularity, weighted adjoint consistency and primal/adjoint error evidence.
+Declare topology/events and unavailable gradients. Transient adjoints budget
+checkpoint/recompute and replay. Certified gradients are a distinct later
+theorem gate; generated derivatives alone do not certify sensitivities.
+
+Extend performance records to forward/JVP/VJP time and memory and time to a
+stated gradient accuracy/status. Block pools support a demonstrated adaptive
+allocation need; keep regular state contiguous. Prefer distributed state
+ownership before host/NVMe streaming and account for all transfers. Add
+persistent/asynchronous schedules only after measured evidence.
+
 ## Spatial numerical foundation and performance gates
 
 [FortFEM and production numerics](docs/numerics.md) defines ownership and the

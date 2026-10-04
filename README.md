@@ -39,6 +39,8 @@ Read the [design document](DESIGN.md) first. Its companion specifications are:
 - [References](docs/references.md): checked sources and their actual scope.
 - [Performance engineering](docs/performance.md): calibrated benchmarks,
   best-known time–memory–accuracy frontiers, profiling and upstream ownership.
+- [Differentiable operators](docs/differentiability.md): shared symbolic
+  primal/JVP/VJP, implicit adjoints, lazy reductions and bounded-memory schedules.
 - [Numerical foundation](docs/numerics.md): FortFEM ownership, FEEC/IGA/DG,
   tensor actions, batching, layouts, derivatives and solver memory.
 - [Tooling and kernel policy](docs/tooling.md): the Fortran-native stack,

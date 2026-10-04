@@ -58,13 +58,16 @@ never edited by hand. Pin the generator and regeneration settings so a
 clean rebuild can reproduce the committed artifacts. Source equality is
 a provenance check; behavioral evidence is a separate gate.
 
-Use one mathematical definition to emit fast Fortran and rigorous leaves.
-Where supported, derive the derivative expressions and CUDA leaves from the
-same definition. Source AD through fortad can supply transformed expressions
-or orchestration, but final numerical leaves must pass through fortsym
-emission. If an AD-to-DAG bridge is missing, implement that generic bridge
-upstream or use fortsym differentiation for the immediate kernel. Do not
-waive the emission rule for fortad output.
+Use one mathematical definition to emit fast/strict Fortran and rigorous
+leaves, with optional native CUDA. Each continuous production operator must
+provide primal/JVP/VJP from that definition; HVP follows a concrete use.
+FortAD supplies an independent derivative oracle or supported transformed
+expression fallback, with final numerical leaves emitted by fortsym. Missing
+AD-to-DAG/target support is repaired upstream or the production capability
+remains unavailable. Do not waive the emission or derivative contract.
+[Differentiability policy](differentiability.md) separates mathematical DAG,
+indexed reductions and hardware schedules, and specifies implicit derivatives
+and memory obligations.
 
 Independence of an oracle comes from an exact analytical identity, checked
 Lean result, or external algorithm/model with matching scope. A second

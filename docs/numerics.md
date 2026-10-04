@@ -159,11 +159,21 @@ cross-species grid transfers.
 
 Use PETSc nonlinear/Krylov infrastructure through its Fortran interface.
 Production residuals and JVPs are matrix-free; exact mathematical derivatives
-come from the operator algebra/fortsym and supported fortad paths. The computed
-JVP has ordinary floating error and requires independently checked actions.
+come from the shared FortSym definition, with FortAD as an independent oracle
+or supported fallback. The computed JVP has ordinary floating error and
+requires independently checked actions. Every continuous production operator
+also provides the corresponding VJP; HVP is introduced for a concrete use.
 A weighted VJP uses its stated coefficient/physical inner product, not an
 unqualified array transpose. Finite differences are diagnostics or explicitly
 bounded fallback experiments, not the default production derivative contract.
+
+[Differentiability policy](differentiability.md) requires implicit solve
+derivatives, lazy indexed reductions and tile-local intermediate recomputation.
+Mathematical expressions and indexed dependencies remain distinct from layout/
+fusion/scheduling choices. No global derivative tape or pairwise matrix is
+the default; transient adjoints still budget checkpoint/recompute trajectories.
+Distribute a physical state that exceeds one device before defaulting to
+out-of-core streaming, whose transfer costs require explicit measurement.
 
 Assembled tiny/coarse/field blocks are useful in preconditioners. Reduced DK/GK,
 fluid/MHD, local collision, degree-block and mode-block actions may accelerate
