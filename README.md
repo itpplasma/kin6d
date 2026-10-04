@@ -3,12 +3,19 @@
 Design for a deterministic, stationary, full-distribution plasma kinetic
 solver with rigorous solution enclosures.
 
-The production representation includes three spatial and three momentum
+The full-kinetic representation includes three spatial and three momentum
 dimensions from its first version. Axisymmetric runs activate only the zero
 toroidal Fourier mode. Relativistic kinematics, species-specific momentum
 grids, spherical harmonics, and a direct steady solve form the numerical
 spine. A separate certifier must establish bounds for the stated continuous
 problem before a result can be accepted as certified.
+
+All-species full kinetics is the reference. The planned family also supports
+per-species reduced and hybrid models, including kinetic electrons with fixed
+ions. Its physical mission spans TCV, AUG, LHD, W7-X, SPARC, ITER, ARC,
+DEMO-like designs, Helios, and Stellaris. Generic 3D fields and domain geometry
+are the physics boundary; symmetry is a case choice. Production promotion
+requires physical-parameter device benchmarks and certified observables.
 
 **Repository status:** design only. There is no solver, certifier, or Lean
 proof implementation yet. Full nonlinear kinetic certification is a research
@@ -29,6 +36,10 @@ Read the [design document](DESIGN.md) first. Its companion specifications are:
   differential/integral choices, conservation treatment, and model intervals.
 - [Runnable demonstrations](docs/demonstrations.md): plots from the first
   executable increment, certified bands, and retained limiting-case overlays.
+- [Species models](docs/species-models.md): FK/GK/DK and cheaper closures,
+  consistent mixed-species coupling, fixed reservoirs, and reduction bounds.
+- [Device envelope](docs/devices.md): machine/design missions, generic 3D
+  geometry, layered CI gates, physical parameters, and memory planning.
 
 Scientific and application code is Fortran. Every project-owned numerical
 kernel is emitted by fortsym; native CUDA is an optional accelerator behind a

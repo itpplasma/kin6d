@@ -196,6 +196,24 @@ can fail for particular data, resolution, reference, or stability margin.
 Keep physics fidelity, discrete structure, and run-specific proof strength as
 separate fields; do not print a check mark for an unimplemented or failed case.
 
+## Mixed species and reservoirs
+
+Species representation and pair physics are separate choices with a
+compatibility gate. FK–DK/GK pairs require the selected coordinate transforms,
+phase-space measures, spatial/velocity effects of the reduction, and field
+action. A lift/parent-pair/projection construction is a useful starting
+expression, not a proof that arbitrary projections preserve the coupled
+physics. Pair balances use the model's invariant functionals and any field
+contributions. Conservative correction cannot repair an inconsistent model.
+[Hybrid coupling](species-models.md#mixed-collision-pairs)
+
+Fixed finite-temperature ions provide a prescribed collision distribution;
+a charge-only neutralizing background does not. Electron self-collisions
+retain their closed invariants, while electron–reservoir momentum and energy
+transfer is reported explicitly. Do not project that transfer to zero or
+call it a failed all-species conservation test. Promoting the ions to evolved
+response retains the reservoir limit as a plotted comparison.
+
 ## Certified model differences
 
 For matching inputs and observable definitions, compute independent certified

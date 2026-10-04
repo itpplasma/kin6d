@@ -44,6 +44,12 @@ certifier, formal-proof, CUDA, or build evidence that has not been produced.
   compose fixed-coefficient Landau/BB actions from shared pair primitives.
   Never enforce closed-system invariants on an incompatible reservoir model
   or advertise a diagnostic field-only action as a physical closure.
+- Read docs/species-models.md and docs/devices.md before adding a reduction
+  or machine case. Species representation, collision pairs, and field models
+  require explicit compatibility. Generic 3D geometry has no fundamental
+  tokamak type. Fixed species are reservoirs; fields can remain self-consistent.
+  Keep numerical certificates, model differences, and proved reduction
+  remainders distinct. Production needs scoped physical-parameter device gates.
 - Preserve unrelated edits and stage explicit paths. One controller owns
   integration and promotion; workers return evidence. Freeze review inputs
   by exact base commit and patch digest when evidence is uncommitted.

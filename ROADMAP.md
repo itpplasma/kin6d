@@ -8,9 +8,25 @@ supports certified evolution through the same physics operators.
 
 Deliver stationary, deterministic, full-distribution, relativistic 3X3P
 kinetics for electrons and several ion species, self-consistent Maxwell
-fields, and nonlinear Beliaev–Budker collisions in tokamak geometry. Every
+fields, and nonlinear Beliaev–Budker collisions in generic toroidal 3D
+geometry. Every
 accepted solution has a continuous-problem enclosure and certified requested
 observables. Lean verification is developed from the first reference case.
+
+Deliver three connected scientific tiers: certified full-kinetic reference,
+certified reduced/hybrid production, and certified comparisons between them.
+Full kinetics serves local patches, surfaces, global axisymmetric steady
+states, and affordable 3D response. Reduced models target larger domains and
+longer evolution, including whole-device gyrokinetic turbulence. Per-species
+choices extend through FK/GK/DK, parallel kinetic, orbit averaged, fluid,
+adiabatic, and fixed; only mathematically supported combinations are enabled.
+
+The physical mission spans TCV/AUG/LHD/W7-X, then SPARC/ITER/ARC/DEMO-like
+designs and Helios/Stellaris. [Device envelope](docs/devices.md) specifies
+published design points, physical-parameter gates, and generic geometry.
+For each frozen equilibrium progress through geometry smoke tests, small
+kinetic cases, and production-resolution certificates. This ladder is part
+of the project, not an optional final validation campaign.
 
 Later deliver transient trajectory enclosures and controlled comparisons with
 more detailed collision/correlation models. The mathematical target is a
@@ -38,6 +54,13 @@ constraint actions, species and basis definitions, reconstruction, moments,
 and a separate certificate path. Concrete arrays, field unknowns, radial
 bases, preconditioners, and proof representations may evolve behind them.
 Avoid speculative backend registries and a universal phase-space framework.
+
+Keep external-field/domain evaluation independent of machine names and
+species evolution. Do not implement every species reduction now: introduce
+its smallest state/reconstruction/field/collision seam when the next case
+requires it. A shared operator interface does not make FK/GK/DK equations
+identical. Explicitly derived model actions use the same steady and transient
+consumers; fixed species have no evolution block.
 
 Fortran, mandatory fortsym numerical-kernel emission, and the Lean proof
 boundary are settled policy. Native CUDA remains an optional performance
@@ -99,12 +122,16 @@ R0 requires them; do not write a handwritten substitute in kin6d.
 | C5: relativistic linear action | BB field-particle response | Shared pair/AD identities | Reference-dependent relativistic linear stability |
 | C6: relativistic nonlinear action | BB quadratic correction and coupled invariants | Maxwell–Jüttner equilibrium and consistent limiting cases | Nonlinear pair/derivative/complement bounds and relativistic balances |
 | K0: kinetic assembly | Marry orbit transport and nonlinear collisions in a simple prescribed-field case | Reference transport and collision cases separately | Coupled continuous residual and local inverse/stability estimate |
+| E0: electron experiment | Electron kinetics in 3D fields with fixed ions | Preserved reservoir/collision/orbit cases and manufactured electron problem | Frozen ion distribution, charge/current, and certified electron observables |
 | K1: several species | Electrons, D/T, ash, and impurity distributions | Preserved one/two-species cases | All pair bounds and global balances with species-specific scales |
 | F0: electrostatic production | Self-consistent charge response in production representation | R2 and manufactured harmonic Poisson problems | Gauge, field reconstruction, input and boundary bounds |
+| E1: electron feedback | Self-consistent fields with ions still fixed | E0 prescribed-field limit and F0 field oracle | Coupled electron/field enclosure and explicit reservoir exchanges |
 | F1: electromagnetic production | Self-consistent magnetic response and compatible Maxwell geometry | Analytic field/charge-continuity cases | Curl/divergence, exterior treatment, constraints, and coupled certificate |
 | G0: idealized torus | Full-orbit axisymmetric geometry and sources/walls | Symmetry slices and exact prescribed-orbit cases | Geometry, boundary traces, and orbit-stability obligations |
-| G1: realistic tokamak | AUG/ITER-like external field and discharge inputs | NEO-2/CQL3D and other named codes only in agreed overlapping limits | Field/input enclosures and certified observables for a stated case |
+| G1: real tokamak | Frozen AUG/TCV external field and discharge inputs | Independent equilibrium evaluations; named kinetic codes in agreed limits | Physical-parameter device scope, field/input enclosures, and certified observables |
 | G2: nonlinear 3D response | Several toroidal modes with realistic mode coupling | `N=0` reproduces G1; KAMEL in a specified linear-response limit | Nonlinear toroidal complement and observable bounds |
+| G3: stellarator geometry | W7-X/LHD field periods and a genuinely 3D boundary | Independent field/period maps and retained G0/G2 cases | Geometry transforms, symmetry scope, and physical-parameter 3D observables |
+| G4: reactor envelope | High-field/large-size design inputs | Frozen SPARC/ITER/ARC/DEMO and Helios/Stellaris revisions | Same numerical claims at physical masses, fields, profiles, and requested tolerance |
 
 P0 can start at `n=0`, low `L`, one species, and a tiny meridional mesh.
 Low angular order is a manufactured/projection test, not a claim that an
@@ -127,6 +154,39 @@ specified steady forced problem. Non-equilibrium relaxation histories need
 the transient certificate below, even if time evolution is used as a
 numerical comparison. Invariant diagnostics and entropy checks are independent
 behavioral evidence, not a substitute for a continuous solution enclosure.
+
+E0 can branch from P1 and B0/B1 with the smallest physically stated electron
+model; it need not wait for C6 or evolving ions. Promote its collision model
+along the retained collision ladder as those certificates become available.
+E1 depends on the selected self-consistent field block. Geometry smoke tests
+for all available frozen device inputs can begin before the kinetic device
+gates. Implement G3 as soon as the first 3D boundary case requires it rather
+than imposing a tokamak-only development order.
+
+## Reduced and hybrid development sequence
+
+These branches begin when a frozen scientific case cannot meet its cost or
+scope target with the reference model. They do not delay R0 or require a
+universal species hierarchy at P0. Each row needs its own continuous-model
+certificate, runnable plots, and the nearest affordable FK comparison.
+
+| Branch | First useful configuration | New obligation |
+|---|---|---|
+| H0: prescribed species | Kinetic electrons with fixed ions | Reservoir balances and independent field selection, retained as E0/E1 |
+| H1: simplest closure | Adiabatic or fluid electrons with kinetic ions | Declared closure, consistent field response, and observable comparison |
+| H2: DK/FK hybrid | DK electrons with FK ions | Guiding-center action, Jacobians, polarization/magnetization, transformed pair exchanges |
+| H3: GK production | DK/GK electrons and GK thermal ions | Ordered gyroaveraging/FLR, compatible fields and collisions, full-surface case |
+| H4: energetic hybrid | DK electrons, GK D/T, FK alphas | Supported cross-representation pairs and physical energy/charge balances |
+| H5: cheaper kinetic closures | Parallel kinetic, bounce/orbit averaged, or moments when demanded | Perpendicular/orbit/moment closure, boundary and exchange assumptions |
+| H6: reduction bridge | Matching full and reduced observables | Independent interval differences first; rigorous reduction-defect/stability theorem later |
+| H7: adaptive fidelity | Cheapest model meeting the requested total bound | Proved numerical plus model bounds and certified state transfer when switching |
+
+GK, DK, and cheaper closures discard different physics; promotion order is
+case-dependent, not a universal accuracy ladder. The model catalogue is an
+intended feature set, not an assertion that every species/pair/field product
+is supported. [Species models](docs/species-models.md) defines compatibility.
+An interval difference between two certified solutions is useful before a
+general asymptotic remainder theorem exists, but does not replace that theorem.
 
 ## Time-dependent development sequence
 
@@ -192,6 +252,9 @@ No extension inherits a certificate merely by sharing a software interface.
 | Local magnetic frame or angular adaptivity | Full harmonic cost dominates | Frame derivation and certified complement control |
 | AMR, compression, mixed precision | Measured state or arithmetic bottleneck | Error contribution included in the acceptance theorem |
 | Temporal method beyond first driver | A transient fails accuracy/cost target | Resolved oracle and certified temporal defect |
+| First reduced species seam | A frozen case requires a cheaper model | Derived field/pair compatibility and retained reference comparison |
+| Device input adapter or mapped boundary | Next device geometry gate | Pinned input, independent geometry oracle, and rigorous transformation bounds |
+| AP formulation/preconditioner | Physical scale separation prevents a useful full-model solve | Original PDE certificate, limiting oracle, and measured accuracy/cost |
 
 ## Resource planning
 
@@ -217,6 +280,11 @@ the last two examples. Twenty Krylov vectors for a 2.53 GiB state already cost
 about 51 GiB. Measure memory before adding hardware or abstractions; keep
 Krylov storage bounded and stream certificate work where possible.
 
+[Device memory envelope](docs/devices.md#memory-envelope) adds 48-radial-node
+machine-scale examples and contrasts the initial 81-coefficient basis with a
+later 39-coefficient optimization. It also states the eight-device planning
+scenario without treating state-vector storage as a full capacity estimate.
+
 ## Milestone completion
 
 Freeze the model, source revision, and candidate bytes. Run the independent
@@ -230,5 +298,12 @@ executable milestone, including R0.
 Preserve earlier cases, including the early 3D smoke test. A failed continuous
 gate leaves the capability experimental and records the missing theorem or
 bound; it is never replaced by apparent mesh convergence.
+
+Production promotion additionally passes the scoped physical-parameter
+AUG-like and W7-X-like gates. Expand coverage across the full device envelope
+through geometry, small kinetic, and production levels. Name the model,
+equilibrium revision, observable, physical parameters, and certified width in
+each device report. Component reference completion remains possible before
+these machine gates; it must not be advertised as production readiness.
 
 Chris&AI

@@ -250,6 +250,27 @@ coefficient bound and require the
 checker to reject it. No finite-domain result is advertised as a solution on
 the whole momentum line.
 
+## Species reductions and device scope
+
+Certify each selected species/field/pair system in its own continuous spaces,
+with its measures, transforms, closures, and boundaries. A FK certificate
+does not become a DK/GK certificate by dropping coefficients. Model identity
+includes fixed reservoirs and their nonzero momentum/energy exchanges.
+
+Matching observables from independently certified full and reduced problems
+give a rigorous interval difference. A reduction-error guarantee for an
+uncomputed parent problem additionally requires a justified lift, continuous
+reduction defect, initial/boundary layers, and verified parent stability or
+another applicable comparison theorem. State transfer and fidelity switching
+carry explicit error into subsequent certificates. See
+[species reduction bounds](species-models.md#certified-reductions).
+
+Device certificates include frozen input/geometry enclosures and the actual
+physical parameters. A theorem in a symmetry-restricted subspace declares
+that scope. The [device gates](devices.md#production-gate) distinguish
+component correctness from production maturity. Neither a geometry smoke
+test nor softened scale separation discharges the device solution theorem.
+
 ## Certificate artifact
 
 Version the format with the first executable certificate. Each accepted

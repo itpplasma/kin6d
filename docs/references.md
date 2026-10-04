@@ -137,4 +137,27 @@ models, general tokamak closure remainders, and a complete Lean formalization
 of the final PDE remain unestablished. Prior-art and analytical work should
 answer those questions when their milestones require them.
 
+## Species reductions and device missions
+
+[Brizard and Tronci's guiding-center Vlasov–Maxwell formulation](https://arxiv.org/abs/1602.05030)
+derives polarization/magnetization and conservation from a variational
+formulation. It motivates consistent reduced field coupling; arbitrary
+mixed FK/GK/DK collision and field combinations remain project obligations.
+[ORB5's model description](https://arxiv.org/abs/1905.01906) provides an
+existing gyrokinetic/kinetic-electron model precedent, not the full kin6d
+per-species feature envelope or continuous certificates.
+
+[The AP semi-Lagrangian Vlasov–Maxwell paper](https://www.sciencedirect.com/science/article/pii/S0021999125001238)
+is a numerical precedent for the quasineutral limit. Its stability and
+conservation results do not establish kin6d's continuous-error bounds or
+resolve arbitrary fast solutions on coarse time/space representations.
+
+[Device envelope](devices.md#device-envelope) links official experimental
+descriptions and primary reactor studies next to their parameter claims.
+The SPARC overview source is DOI 10.1017/S0022377820001257. ARC uses
+arXiv:1409.3540v2; Helios uses arXiv:2512.08027v3. The cited 2025 Stellaris
+study specifies four periods and a 12.7 m major radius. These are named
+design points, not timeless specifications or measured reactor operation.
+No equilibrium input or production benchmark has yet been selected.
+
 Chris&AI
