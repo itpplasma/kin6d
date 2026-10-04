@@ -91,6 +91,24 @@ bands visually is useful evidence, but overlap alone does not prove equality
 or common branch identity. An asymptotic reduction comparison requires its
 own remainder theorem to turn it into a guaranteed reduction-error claim.
 
+## Species and device comparisons
+
+For each frozen device equilibrium retain its geometry plots and successive
+small/production kinetic demonstrations. Label geometry-only figures as
+geometry evidence; they have no plasma-solution certificate. Kinetic figures
+identify the device/design revision, species/pair/field models, physical
+parameters, symmetry scope, observable, and checked interval status.
+
+Overlay fixed-ion electron cases with the corresponding prescribed-field
+limit, then with evolved-ion response as it becomes available. Plot reduced
+and full models using the same physical observable, including Jacobians and
+polarization/magnetization where required. Display both certified bands and
+their difference interval. Never identify band overlap with a proved model
+reduction. Resolution and species-model refinement remain separate axes.
+[Device ladder](devices.md#production-gate) and
+[species comparisons](species-models.md#certified-reductions)
+define these acceptance claims.
+
 ## Generated output policy
 
 Never commit plot outputs: PNG, PDF, SVG, EPS, PS, image frames, video, or

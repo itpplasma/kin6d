@@ -30,6 +30,21 @@ geometric identities does not make this deterministic harmonic solver a
 GEMPIC implementation. Select the smallest compatible field representation
 when self-consistent Maxwell becomes the next capability.
 
+Each species model uses its same physical action in steady and transient
+consumers; FK/GK/DK actions themselves differ. Reduced species require their
+consistent dynamic polarization/magnetization and field constraints. Removing
+electron gyromotion does not automatically remove fast Maxwell waves or
+parallel streaming. State the selected field model before claiming a temporal
+scale saving. Fixed reservoirs can exchange momentum/energy with the evolved
+state and do not receive a transient distribution block.
+
+Compute timescales from each frozen device case rather than reusing one
+tokamak parameter set for TCV, SPARC, LHD, or reactor stellarators. Report the
+certified horizon and requested widths for the selected full or reduced
+model; long-time evolution remains a separate gate from steady existence.
+[Species models](species-models.md) and [device envelope](devices.md) define
+the corresponding physics scope.
+
 ## Physical timescales
 
 The following are estimates, not promised run lengths or certified physical

@@ -7,10 +7,24 @@ analysts, and implementers in the itpplasma group.
 
 kin6d will solve stationary, deterministic, full-distribution kinetic
 problems for electrons and several ion species in toroidal geometry. The
-long-term production model is relativistic Vlasov–Maxwell with nonlinear
+long-term full-kinetic reference is relativistic Vlasov–Maxwell with nonlinear
 Beliaev–Budker collisions. Nonrelativistic Landau problems provide a baseline
 and independent limiting cases. More detailed correlation models are later
 research capabilities.
+
+The code family also targets reduced and hybrid production models for useful
+whole-device questions. Species models are selected independently, subject
+to derived field and collision compatibility: FK, GK, DK, parallel kinetic,
+bounce/orbit averaged, fluid/moments, adiabatic, or fixed. Implement each only
+when a scientific case needs it. All-FK remains the reference; global
+turbulence need not pay its cost. [Species models](docs/species-models.md)
+defines reductions, closures, and the early fixed-ion electron configuration.
+
+The physical mission spans shaped and high-field tokamaks, heliotrons, and
+QA/QI stellarators, from present experiments to named reactor designs.
+Geometry exposes generic 3D fields and domains; symmetry is an optimization
+with checked assumptions. [Device envelope](docs/devices.md) defines the
+machine missions and physical-parameter production gates.
 
 The distinguishing output is a certified enclosure of an exact solution of
 the specified continuous boundary-value problem, together with intervals for
@@ -31,15 +45,17 @@ metadata, rather than additional digits in a numerical enclosure.
 |---|---|
 | Application and certifier | Fortran; no mandatory Python layer |
 | Numerical kernels | Mandatory fortsym emission with retained generators and provenance |
-| State | Deterministic full distributions; physical momentum coordinates |
+| State | Deterministic active species blocks; relativistic physical momentum for the FK reference |
+| Species models | Per-species choice, with explicit supported field/pair combinations |
 | Geometry | Local high-order discontinuous Galerkin elements in `(R,Z)`; toroidal Fourier modes |
-| Angular basis | Full spherical harmonics through degree `L_s`; no initial truncation in `m` |
+| FK angular basis | Full spherical harmonics through degree `L_s`; no initial truncation in `m` |
 | Radial momentum | Separate grid or mapping for each species |
+| Physical geometry | Generic 3D field/domain evaluations; machine formats are adapters |
 | Transport | One characteristic-based discretization, with certified reconstruction defects |
 | Fields | Stationary self-consistent equations; fixed external field stored separately |
 | Physics interface | Shared evolution operator and constraints; steady consumer first |
 | Nonlinear solve | Direct residual solve through PETSc SNES/KSP |
-| Production collisions | Nonlinear Beliaev–Budker, after a certified Landau baseline |
+| Reference collisions | Nonlinear Beliaev–Budker, after a certified Landau baseline |
 | Collision comparisons | Cheap-to-Coulomb ladder; shared test/field/linear/nonlinear pair primitive |
 | Discrete structure | Separate conservation/entropy treatment with its own verified properties |
 | Nonlinear Fourier products | Padded physical-angle evaluation and projection |
@@ -52,7 +68,8 @@ even while most development runs use `n=0`.
 
 ## Mathematical problem
 
-Let `f_s(x,p)` be number density with respect to the laboratory-frame measure
+For the all-FK reference, let `f_s(x,p)` be number density with respect to the
+laboratory-frame measure
 `d³x d³p`. Here bold momentum denotes the vector and `p=|p|` its magnitude.
 Define
 
@@ -104,9 +121,16 @@ Fourier coefficients. Certification still includes field interpolation,
 geometry, and coefficient-tail bounds. Experimental field uncertainty is a
 separate input enclosure or remains outside the theorem's scope.
 
+Reduced species have their own unknowns, measures, Hamiltonians, moments,
+and field-action terms, including polarization/magnetization where required.
+They do not use the FK moments blindly. Fixed charge/current reservoirs
+contribute without evolved state; fixed collision backgrounds additionally
+specify their distributions. Fields can remain self-consistent when ions are
+fixed. A compatibility table rejects unsupported model combinations.
+
 ## Spatial and momentum representation
 
-The distribution is reconstructed from
+The full-kinetic distribution is reconstructed from
 
 $$
 f_s(R,Z,\varphi,p,\Omega_p)=
@@ -266,7 +290,9 @@ specifies this seam, its exact identities, and the executable reporting plan.
 
 ## Shared evolution operator
 
-The physical state is `U=(f_1,...,f_S,E,B)`. Specify one evolution operator
+The all-FK state is `U=(f_1,...,f_S,E,B)`. A hybrid state contains only its
+evolved distributions/moments and field unknowns, with algebraic closures
+and fixed reservoirs stated separately. Specify one evolution operator
 `G(U,t)=G_orbit+G_collision+G_source+G_field`, together with Gauss constraints,
 boundary data, and any algebraic constraints. Its field actions are
 
@@ -349,6 +375,13 @@ A finite algebraic root certificate is useful intermediate evidence but does
 not discharge spatial, momentum, harmonic, domain, or temporal errors.
 [Certification](docs/certification.md) defines exactly which claims a result
 may carry. [ROADMAP.md](ROADMAP.md) gives the progression and its gates.
+
+Production readiness additionally requires applicable AUG-like and W7-X-like
+physical-parameter cases, followed by the broader versioned device envelope.
+Geometry, small kinetic, and production certification gates are separate.
+Numerical certification of a reduced model and a difference from FK are
+distinct from a proved asymptotic reduction-error bound. Never transfer a
+certificate between models merely because their software actions agree.
 
 The first executable commit and every later milestone must retain a runnable
 CPU demonstration and Fortran postprocessor. Plot the computed solution with
