@@ -1,0 +1,29 @@
+# Generated build, run, and plotting output
+/build/
+/build-*/
+/output/
+/outputs/
+/results/
+/runs/
+/plots/
+/figures/
+/.lake/
+
+# Plot images, documents, frames, and animations are generated on demand.
+*.png
+*.pdf
+*.svg
+*.eps
+*.ps
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.webp
+*.mp4
+*.webm
+*.avi
+*.mov
+*.apng
