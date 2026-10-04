@@ -8,9 +8,9 @@ supports certified evolution through the same physics operators.
 
 Deliver stationary, deterministic, full-distribution, relativistic 3X3P
 kinetics for electrons and several ion species, self-consistent Maxwell
-fields, and nonlinear Beliaev–Budker collisions in generic toroidal 3D
-geometry. Every
-accepted solution has a continuous-problem enclosure and certified requested
+fields, and nonlinear Beliaev–Budker collisions in general physical 3D
+geometry. Cartesian vectors and arbitrary maps are fundamental; the initial
+fusion chart is cylindrical/Fourier with a compatible momentum frame. Every accepted solution has a continuous-problem enclosure and certified requested
 observables. Lean verification is developed from the first reference case.
 
 Deliver three connected scientific tiers: certified full-kinetic reference,
@@ -40,7 +40,8 @@ Every new abstraction must remove existing duplication, enable the immediately
 next capability, or address a measured performance or accuracy problem.
 Decide at the latest point that still permits the next complete deliverable.
 Keep the old problem executable when a new capability arrives. A configuration
-change should activate additional toroidal modes rather than a new solver.
+change should activate additional toroidal modes in the cylindrical chart
+rather than a new solver. General charts do not require a toroidal angle.
 
 The first executable commit is runnable end to end and produces meaningful
 plots through Fortran postprocessing. Every later increment preserves that
@@ -74,6 +75,23 @@ Each row below introduces one principal difficulty. Small substeps within a
 row must still preserve an executable candidate and an independent oracle.
 The next deliverable is specific; later rows state outcomes and dependencies,
 rather than pretending that unresolved mathematics has an implementation date.
+
+## Analytical Benchmark Atlas
+
+The [atlas specification](docs/benchmarks.md) and
+[machine-readable inventory](benchmarks/atlas.json) are maintained before
+implementation. Activate the smallest references with each milestone: R0
+bounded FP; R1 exact characteristics; R2/P1 analytic fields and manufactured
+3D; B/C collision identities and rigorous closed-form/potential references;
+G0 circular tokamak and straight/toroidal helical constructions; later
+large-aspect-ratio, classical/neoclassical, GK and MHD limits.
+
+Each capability reports its applicable E0/E1/A0/M/I/X reference matrix and
+actual proof level. Unimplemented references stay planned; leading-order
+asymptotes without remainders remain diagnostics. Generate candidate/reference
+interval overlays on demand, preserve earlier cases, and repair required
+generic special-function/enclosure support upstream. Build no universal test
+framework or entire special-function library before the next case needs it.
 
 ## Next deliverable
 
@@ -188,6 +206,34 @@ is supported. [Species models](docs/species-models.md) defines compatibility.
 An interval difference between two certified solutions is useful before a
 general asymptotic remainder theorem exists, but does not replace that theorem.
 
+## Bulk MHD and response branches
+
+[Model-family specification](docs/model-family.md) defines bulk population
+ownership, equilibrium imports, MHD closures, and species/spatial hybrids.
+These branches are scientific options, not prerequisites for R0 or FK.
+Names below describe mathematical capabilities, not separate executables.
+
+| Branch | First useful case | Added obligation |
+|---|---|---|
+| EQ0: imported equilibrium | Next frozen device candidate | Format/sign/geometry oracle; input uncertainty distinct from equilibrium certificate |
+| EQ1: axisymmetric equilibrium | Fixed-boundary Grad–Shafranov | Exact Solov'ev/shaped reference, continuous field/domain enclosure |
+| EQ2: free boundary | Coils and external structures | Exterior, conductor and moving-boundary bounds; X-points as a later increment |
+| EQ3: external 3D candidate | VMEC/DESC/GVEC or separately SPEC | Correct topology/model, constraints, complement and stability theorem |
+| MHD0: ideal static | Simple circular ideal equilibrium | Force balance and bulk closure, atlas and retained field geometry |
+| MHD1: linear forced | Ideal response on enclosed equilibrium | Equilibrium uncertainty, constraints, forcing and local resolvent bounds; ARES/GPEC overlap only |
+| MHD2: dynamic linear | Analytic Alfvén/sound or selected eigenmode | Spectral isolation/normalization or certified forced trajectory |
+| MHD3: resistive linear | Simple layer/induction response | Ohm/thermal law and wall/exterior conditions before tearing/RWM claims |
+| MHD4: kinetic feedback | MHD thermal bulk plus DK/FK population | No double counting, derived exchange/field action, frozen versus self-consistent distinction |
+| MHD5: extended/multi-fluid | First Hall/two-fluid case requested | Complete derived Ohm/energy closure and reduced-limit certificate |
+| MHD6: spatial hybrid | Bulk MHD with a kinetic resonant layer | Interface/matching, location uncertainty, flux and model-defect bounds |
+| MHD7: nonlinear XMHD | A concrete nonlinear device question | Nonlinear trajectory certificate, existing analytic gates and scoped device promotion |
+
+Imported candidates remain available while internal equilibrium solvers
+mature. A 3D residual norm alone is not an equilibrium certificate. Introduce
+new state/closure/linearization seams as the first branch needs them. Internal
+3D iteration, inverse equilibrium, walls and nonlinear disruption machinery
+remain deferred until required; do not reproduce all mature codes in advance.
+
 ## Time-dependent development sequence
 
 The operator seam is present at P0. Implement a transient consumer only when
@@ -231,11 +277,76 @@ model at a time in homogeneous or small geometries:
    all its derivative and complement bounds can be established.
 6. Closure remainder theorems connecting kinetic predictions to many-particle
    marginals in verified regimes. This is a separate research program with
-   no assumed completion date.
+no assumed completion date.
 
 Hard collisions, radiation, ionization, recombination, and reaction physics
 enter when a target regime requires them, with explicit balances and matching.
 No extension inherits a certificate merely by sharing a software interface.
+
+## Spatial numerical foundation and performance gates
+
+[FortFEM and production numerics](docs/numerics.md) defines ownership and the
+checked upstream snapshot. Reuse its mathematical spatial layer rather than
+copying generic kernels into kin6d. FEEC is the compatible structure for
+Maxwell/magnetic blocks; fields and distributions can use distinct spaces.
+Mapped tensor patches are preferred where suitable, with mortar/cut/unstructured
+escape paths when needed. Keep R0's reference small and executable.
+
+Before the first spatial client, select a pinned supported FortFEM interface
+and test a minimal independent map/space/operator case. Before large kinetic
+spatial work, measure span-local basis evaluation, sum-factorized partial
+assembly and many-RHS batching. Implement missing generic slices upstream with
+focused independent oracles and prompt verified-main promotion. Retain assembled
+reference actions; add matrix-free CPU first and CUDA only after profiling.
+
+Production stores compact factors and a canonical kinetic layout, with tile
+scratch and explicit work-vector budgets. Matrix-free generated JVPs, reused
+radial factors and low-memory physics preconditioning precede GPU/MPI complexity.
+AoSoA tiling, resolution classes, convolution/FFT and Gaunt/angular-transform
+crossovers are measured choices. No global kinetic Jacobian, permanent duplicate
+full-state layouts or hidden large-GMRES workspace. Exact mathematical
+transformations still need rounding/conditioning bounds in the certifier.
+
+Measure time and peak memory to certified observable accuracy. Include solver,
+certifier, padding, collision potentials, communication and I/O. Structure
+identities and equivalent optimized actions do not alone prove continuous
+stability or tails. Missing certificate or throughput evidence stays explicit.
+
+## Long-range application branches
+
+These branches are demand-driven and do not change the specific next R0
+deliverable. Each row is split into runnable increments with retained limit
+plots and an applicable continuous certificate before production promotion.
+Shared libraries may gain thin application drivers as consumers arise.
+
+| Branch | Progression and admission evidence |
+|---|---|
+| Geometry | Cartesian identities → mapped elements → cylindrical fusion chart → Figure-8 G-frame geometry gate; independent map/field checks and rigorous Jacobian/inverse bounds |
+| Coupling | Prescribed test field → fixed bulk with induced response → coupled bulk evolution; separate population roles, complete source and reservoir ownership |
+| Edge/neutrals | Exact neutral streaming/reactions → slab recycling → charge exchange/sheath → optional EIRENE coupling → deterministic neutral certification → physical exhaust benchmark |
+| Atomic/molecular | Effective rates → CR states → non-Maxwellian cross-section integrals → differential products; data validity, provenance and exchange bounds at each increment |
+| Solar System | Parker/Harris/linear waves → open-boundary reduced case → selected hybrid/kinetic application; gravity/rotation/wave operators only when the case requires them |
+| Fields | First Poisson/Maxwell subset → a specifically derived quasineutral or Darwin model when cost requires it; constraint/energy identities and full-model comparison status |
+| Heating/sources | Prescribed source/QL benchmark → NBI birth/attenuation → ray/QL or full-wave coupling; power/momentum ledger and resonance/spectrum bounds |
+| Fusion | Validated rate quadrature → fuel depletion and product sources → alpha/neutron diagnostics; identical-pair factors, mass-defect and product kinematics |
+| Conductors/circuits | Vacuum/coil inputs → conducting-wall/circuit response → free-boundary evolution/control candidate; gauge, power balance and compatible induced fields |
+| Diagnostics | One requested bounded observable → instrument mapping → physical-device measurement comparison; observation noise separated from numerical intervals |
+| Inference/optimization | Correct forward diagnostic → independently checked adjoint → constrained inference/design; global optimality/identifiability never inferred from convergence |
+| Adaptation | Certified numerical error localization → one needed mesh/mode adaptation → validated species/region model transfer; reduction and interface bounds required |
+
+See [geometry](docs/geometry.md), [coupling](docs/coupling.md),
+[edge physics](docs/edge-physics.md), [space scope](docs/space-plasmas.md) and
+[extensions](docs/extensions.md) for mathematical limits. A Monte Carlo
+neutral/noise estimate has statistical status; it cannot discharge a
+deterministic continuous certificate without additional deterministic bounds.
+A norm enclosure does not automatically bound loss/hitting observables.
+
+Units/normalization and full result provenance are obligations from the first
+case. Report total time and peak memory to reach a certified observable target,
+including solve, certifier and postprocessing costs. General relativity, QED,
+pair creation, full neutron transport and comprehensive material/radiation
+hydrodynamics remain outside initial scope. Planned features are not
+implemented switches or committed performance promises.
 
 ## Deferred decisions and triggers
 
@@ -245,7 +356,8 @@ No extension inherits a certificate merely by sharing a software interface.
 | Missing generic dependency capabilities | First concrete blocker | Independent upstream reproducer, verified main fix, consumer recheck |
 | Final continuous norm and inverse construction | Before each new certification gate | Applicable theorem and computable constants |
 | Infinite-momentum basis or tail treatment | First whole-space claim | Verified tail, origin, and potential-boundary estimates |
-| Compatible Maxwell discretization | F1 preparation | Curl/divergence identities and boundary/gauge design |
+| Compatible Maxwell discretization | F1 preparation | FortFEM FEEC complex, independent curl/divergence identities, boundary/gauge and source transfer |
+| Spatial batch/tensor optimization | First measured many-channel bottleneck | Upstream span/sum-factorization/batch action with assembled and analytical oracles |
 | Preconditioner and matrix-free actions | Krylov/assembly cost becomes material | Profile and retained behavioral oracle |
 | GPU collision batching | Collision work dominates | End-to-end profile, including certification |
 | MPI decomposition | Workstation capacity or time is insufficient | Memory/runtime model and measured communication need |

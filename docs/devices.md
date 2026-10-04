@@ -8,6 +8,14 @@ the permissible reductions and their mathematical obligations.
 
 ## Scientific domains
 
+Simple analytic fields precede imported machine geometry: slab, cylinder,
+circular tokamak, exact shaped Grad–Shafranov families, and classical
+helical/heliotron constructions. Keep large-aspect-ratio and straight-field
+limits as permanent independently evaluated references. The
+[Analytical Benchmark Atlas](benchmarks.md#simple-geometry-before-machines)
+separates exact vacuum/geometry identities, manufactured current fields, and
+asymptotic kinetic/transport claims.
+
 | Domain | Intended full-kinetic use | Reduced/hybrid use |
 |---|---|---|
 | Homogeneous or 1X3P | Collision reference and certification | Limiting-case validator |
@@ -156,7 +164,10 @@ stability. Nonperiodic perturbations require the larger domain and modes.
 Never assume W7-X needs only a few toroidal harmonics because tokamak RMP
 examples do; its equilibrium spectrum must itself be resolved and bounded.
 
-The initial cylindrical Fourier representation handles three-dimensional
+Cartesian physical geometry and optional computational charts are defined in
+[geometry](geometry.md). Figure-8 is a mandatory planned non-cylindrical
+geometry stress test; its design does not imply a completed device benchmark.
+The initial optimized cylindrical Fourier representation handles three-dimensional
 fields on simple domains. A realistic toroidally varying plasma boundary
 may need mapped elements or another boundary representation. Choose that
 seam when the frozen W7-X case requires it, deriving transformed transport,

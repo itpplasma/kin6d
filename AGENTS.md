@@ -39,6 +39,16 @@ certifier, formal-proof, CUDA, or build evidence that has not been produced.
 - Tests require independent behavioral oracles. Regeneration equality,
   patch matching, and a small algebraic residual are not continuous tests
   or continuous-PDE certificates.
+- Read docs/benchmarks.md and the planned benchmarks/atlas.json before
+  implementing a new physics layer. Retain rigorous reference evaluation,
+  explicit asymptotic remainder status, limiting-case plots and cross-code
+  comparisons. Planned metadata is not a passing test. Literature corpus
+  manifests, PDF attachments and Zotero dumps stay outside this repository.
+- Read docs/model-family.md before adding a bulk/fluid/MHD or response model.
+  Bulk aggregation differs from per-species fluid models. Account for every
+  population once, derive spatial/species coupling, and keep one engine rather
+  than named-code solver modes. Steady, response, eigenvalue and trajectory
+  certificates discharge different mathematical claims.
 - Collision physics, discrete conservation/entropy treatment, and actual
   certificate strength are separate contracts. Read docs/collisions.md;
   compose fixed-coefficient Landau/BB actions from shared pair primitives.
@@ -50,6 +60,22 @@ certifier, formal-proof, CUDA, or build evidence that has not been produced.
   tokamak type. Fixed species are reservoirs; fields can remain self-consistent.
   Keep numerical certificates, model differences, and proved reduction
   remainders distinct. Production needs scoped physical-parameter device gates.
+- Read docs/numerics.md before spatial/performance implementation. FortFEM
+  owns generic spatial mathematics; kin6d owns plasma laws. Preserve FEEC
+  structure, assembled reference actions and generated numerical leaves.
+  Prefer matrix-free tensor/batch actions and explicit vector/scratch budgets;
+  add optimized layouts and GPU/MPI only on measured evidence.
+- Read docs/geometry.md and docs/coupling.md before spatial or coupling work.
+  Physics sees Cartesian vectors; charts/momentum frames are independent.
+  Never require global toroidal angle or nested surfaces. Frozen background
+  and induced response are distinct, as are active/test/reservoir roles.
+- Read docs/edge-physics.md, docs/space-plasmas.md and docs/extensions.md when
+  their capability is needed. Unsupported combinations fail explicitly.
+  Numerical, physical-data, model-reduction and statistical uncertainties are
+  separate; Monte Carlo confidence intervals are never deterministic bounds.
+  Track SI normalization, external-data hashes and proof/model provenance.
+  New production physics requires a scientific use case, derived coupling,
+  independent oracle and certification/performance target.
 - Preserve unrelated edits and stage explicit paths. One controller owns
   integration and promotion; workers return evidence. Freeze review inputs
   by exact base commit and patch digest when evidence is uncommitted.

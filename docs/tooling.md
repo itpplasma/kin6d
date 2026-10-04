@@ -10,6 +10,8 @@ remain implementation work.
 |---|---|---|
 | Scientific/application code | Modern Fortran | Physics orchestration, concrete arrays, model configuration |
 | Numerical leaves | fortsym | Mandatory symbolic definition and final kernel emission |
+| Spatial mathematics | FortFEM | Generic mapped spaces, FEEC/IGA/DG, traces, interfaces, FCI and weak actions; plasma laws remain external |
+| Sparse blocks | FortSparse/PETSc | Assembled references/coarse/field blocks, not a full kinetic Jacobian |
 | Numerics | fortnum, BLAS/LAPACK, PETSc | Existing generic algorithms; PETSc Fortran interfaces for SNES/KSP/PC/TS |
 | Automatic differentiation | fortad | Supported JVP/VJP/HVP transformations; final numerical leaves still emitted by fortsym |
 | Rigorous evaluation | fortnum verified modules | Interval/ball arithmetic, rigorous FFT bounds, verified linear algebra |
@@ -74,6 +76,19 @@ Keep plasma-specific symbolic derivations in kin6d's `gen/`. Generic CAS,
 AD, quadrature, sparse/FEM, and verified-arithmetic capabilities stay in
 their respective dependencies. Do not put a kin6d collision derivation in
 `fortsym/app/` merely to make generation convenient.
+
+## FortFEM ownership and performance
+
+[Spatial policy](numerics.md) records FortFEM main
+`2d7baa19fe1bef02ce279fa407830c8731bdc663` and source-inspection limits.
+FortSparse main was observed at `7ad20738b3f888a3bbec37324eff3117c630221d`;
+these observations are not a tested kin6d integration lock. Pin the selected
+compatible dependency graph when a spatial client exists. High-level weak
+forms compile to specialized generated leaves rather than hot-loop expression
+interpretation. Existing generic numerical algorithms remain upstream; all
+new application leaves and required generic numerical-leaf additions use
+fortsym. Keep assembled reference and optimized CPU/CUDA paths with independent
+behavioral oracles. No unmeasured whole-library performance rewrite is required.
 
 ## Checked capability boundaries
 

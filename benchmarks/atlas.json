@@ -1,0 +1,1267 @@
+{
+  "schema_version": 1,
+  "status": "planned; no reference evaluators or solver runs implemented",
+  "inheritance": "defaults then family then case; case fields override family fields",
+  "activation_rule": "resolve every null field; pin and review formulas/data/source sections; supply independent oracle and requested proof level before runnable promotion",
+  "reference_classes": {
+    "E0": "exact closed form",
+    "E1": "exact representation requiring rigorous numerical evaluation",
+    "A0": "asymptotic formula with separately recorded remainder status",
+    "M": "manufactured exact solution",
+    "I": "exact identity",
+    "X": "cross-code numerical comparison"
+  },
+  "defaults": {
+    "status": "planned",
+    "species_models": [
+      "FK with case-specific relativistic/nonrelativistic kinematics"
+    ],
+    "collision_model": "none",
+    "field_model": null,
+    "geometry": null,
+    "initial_boundary_data": null,
+    "parameter_validity_range": null,
+    "reference_implementation": null,
+    "certificate_method": null,
+    "expected_convergence_order": null,
+    "source_version_and_section": null,
+    "proof_level": "none",
+    "asymptotic_remainder": "not established",
+    "plot_recipe": "candidate and complete certified observable band; reference enclosure and retained limiting case",
+    "literature_workspace": "external; no PDFs or corpus manifests in this repository"
+  },
+  "families": {
+    "characteristics": {
+      "equations": "collisionless Liouville/Vlasov with prescribed fields",
+      "field_model": "prescribed",
+      "reference_definition": "f(z,t)=f0(Phi_inverse_t(z)); case-specific exact orbit map",
+      "observables": [
+        "flow map",
+        "distribution",
+        "moments"
+      ]
+    },
+    "fields": {
+      "equations": "case-specific Poisson, screened Poisson, or static Maxwell",
+      "species_models": [],
+      "reference_definition": "matching Green function or source/potential solution",
+      "observables": [
+        "potential",
+        "field",
+        "derivatives",
+        "flux"
+      ]
+    },
+    "geometry": {
+      "equations": "prescribed field geometry, curl/divergence, or Grad-Shafranov",
+      "species_models": [],
+      "field_model": "prescribed or named reduced equilibrium",
+      "reference_definition": "potential-derived field and analytic geometry identities",
+      "observables": [
+        "field",
+        "measure",
+        "period map",
+        "boundary normal",
+        "current"
+      ]
+    },
+    "linear_vlasov": {
+      "equations": "linearized Vlasov-Poisson or Vlasov-Maxwell",
+      "field_model": "case-specific self-consistent linear fields",
+      "reference_definition": "dielectric root and separately selected initial-value inversion",
+      "observables": [
+        "frequency interval",
+        "growth/damping interval",
+        "time response"
+      ]
+    },
+    "steady_vlasov": {
+      "equations": "stationary collisionless Vlasov; self-consistency only when explicitly proved",
+      "reference_definition": "invariant distribution with matching field/source data",
+      "observables": [
+        "distribution",
+        "density",
+        "current",
+        "field",
+        "steady residual"
+      ]
+    },
+    "simple_collisions": {
+      "equations": "homogeneous case-specific collision evolution or steady source problem",
+      "field_model": "none",
+      "geometry": "homogeneous momentum space",
+      "reference_definition": "exact evolution or reduced stationary collision solution",
+      "observables": [
+        "distribution",
+        "mode amplitude",
+        "moment intervals"
+      ]
+    },
+    "landau": {
+      "equations": "nonrelativistic Landau with stated pair coefficients",
+      "collision_model": "case-specific Landau action",
+      "field_model": "none",
+      "geometry": "homogeneous momentum space",
+      "reference_definition": "equilibrium, potential, invariant, derivative or ordered pair-rate identity",
+      "observables": [
+        "collision action",
+        "potentials",
+        "pair exchange",
+        "entropy"
+      ]
+    },
+    "relativistic_collisions": {
+      "equations": "Beliaev-Budker with relativistic energy and momentum",
+      "collision_model": "case-specific BB action",
+      "field_model": "none",
+      "geometry": "homogeneous momentum space",
+      "reference_definition": "Juttner equilibrium, invariants, radial potentials and consistent limits",
+      "reference_sources": [
+        "10.1103/PhysRevLett.59.1817",
+        "10.1063/1.858966"
+      ],
+      "observables": [
+        "collision action",
+        "potentials",
+        "pair exchange",
+        "transport"
+      ]
+    },
+    "classical_transport": {
+      "equations": "ordered near-equilibrium kinetic transport",
+      "collision_model": "case-specific linearized Landau, BB or Lorentz",
+      "geometry": "slab or cylinder",
+      "reference_definition": "transport coefficient formula with charge, magnetization and normalization specified",
+      "observables": [
+        "resistivity",
+        "heat flux",
+        "viscosity",
+        "transport tensor"
+      ]
+    },
+    "guiding_center": {
+      "equations": "guiding-center orbit with matched full-orbit comparison",
+      "species_models": [
+        "DK",
+        "FK reference"
+      ],
+      "field_model": "prescribed",
+      "reference_sources": [
+        "10.1017/S002237780000060X",
+        "10.1103/RevModPhys.81.693"
+      ],
+      "reference_definition": "orbit invariant or ordered drift/bounce formula",
+      "observables": [
+        "orbit",
+        "drift",
+        "trapped fraction",
+        "bounce/transit frequency"
+      ]
+    },
+    "tokamak_neoclassical": {
+      "equations": "ordered tokamak drift-kinetic transport",
+      "species_models": [
+        "DK",
+        "FK reference where affordable"
+      ],
+      "collision_model": "case-specific linearized Landau or Lorentz",
+      "geometry": "circular tokamak with specified aspect ratio",
+      "reference_sources": [
+        "10.1063/1.1693728",
+        "10.1103/RevModPhys.48.239"
+      ],
+      "reference_definition": "named collisional-regime coefficient with geometry/order remainder status",
+      "observables": [
+        "particle/heat diffusivity",
+        "bootstrap",
+        "flow",
+        "Ware pinch"
+      ]
+    },
+    "stellarator_neoclassical": {
+      "equations": "ordered stellarator drift-kinetic transport",
+      "species_models": [
+        "DK",
+        "FK reference where affordable"
+      ],
+      "collision_model": "case-specific Lorentz or linearized Landau",
+      "geometry": "specified helical, omnigenous, QA or QI field",
+      "reference_definition": "named asymptote with E_r/resonance and ordering specified",
+      "observables": [
+        "transport coefficient",
+        "bootstrap",
+        "flow"
+      ]
+    },
+    "gyrokinetic": {
+      "equations": "case-specific linear or initial-value gyrokinetics",
+      "species_models": [
+        "GK",
+        "case-specific DK or adiabatic electrons"
+      ],
+      "collision_model": "case-specific none or reduced collision action",
+      "reference_sources": [
+        "10.1103/RevModPhys.79.421"
+      ],
+      "reference_definition": "dispersion, initial response or ordered full-kinetic correspondence",
+      "observables": [
+        "frequency",
+        "growth rate",
+        "field response",
+        "zonal residual"
+      ]
+    },
+    "manufactured": {
+      "equations": "each supported continuous model with complete generated sources",
+      "species_models": [
+        "case-specific supported mixture"
+      ],
+      "collision_model": "case-specific",
+      "field_model": "case-specific with constraints",
+      "reference_definition": "positive prescribed f and compatible fields; sources, charge/current and boundary/initial data by substitution",
+      "observables": [
+        "distribution or averages",
+        "fields",
+        "moments",
+        "continuous residual"
+      ]
+    },
+    "cross_code": {
+      "equations": "written model intersection with pinned external implementation",
+      "species_models": [
+        "case-specific matched models"
+      ],
+      "collision_model": "case-specific matched operator",
+      "field_model": "case-specific",
+      "reference_definition": "external numerical result with stated uncertainty, never an analytic or PDE certificate",
+      "observables": [
+        "matched physical observable"
+      ]
+    },
+    "mhd": {
+      "equations": "selected ideal/resistive/extended bulk model with complete closure",
+      "species_models": [],
+      "bulk_model": "case-specific MHD population aggregate",
+      "collision_model": "bulk transport closure or explicit kinetic pair",
+      "field_model": "model-compatible low-frequency action",
+      "reference_definition": "analytic force balance, wave, induction or manufactured hybrid",
+      "observables": [
+        "equilibrium field",
+        "force balance",
+        "frequency",
+        "response",
+        "energy/exchange"
+      ]
+    },
+    "edge_reactions": {
+      "equations": "declared neutral/reaction/sheath/surface model",
+      "species_models": [
+        "case-specific charged/neutral transport"
+      ],
+      "field_model": "case-specific",
+      "reference_definition": "exact transport, balanced reaction, manufactured source or independent comparison",
+      "observables": [
+        "populations",
+        "exchange fluxes",
+        "power",
+        "wall load"
+      ],
+      "uncertainty_contract": "Monte Carlo confidence is statistical; deterministic certificate needs deterministic neutral/source bounds"
+    },
+    "space": {
+      "equations": "case-specific Solar System fluid/MHD/kinetic model",
+      "reference_definition": "named reduced exact solution, linear dispersion or fixed numerical benchmark",
+      "observables": [
+        "fields",
+        "flow",
+        "frequency",
+        "instability growth",
+        "loss",
+        "detector signal"
+      ]
+    },
+    "actuators_diagnostics": {
+      "equations": "specified source/wave/circuit/diagnostic action",
+      "reference_definition": "independently derived balance/closed solution or manufactured observable",
+      "observables": [
+        "deposition",
+        "power",
+        "current",
+        "reaction rate",
+        "instrument signal",
+        "loss flux"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "reference_bounded_fp",
+      "family": "manufactured",
+      "reference_class": "M",
+      "geometry": "bounded 0X1P",
+      "equations": "-d_p(D M d_p(f/M))=S; f at endpoints equals M",
+      "reference_definition": "f=M(1+a cos(pi p/(2P))); positive D,M and |a|<1",
+      "certificate_method": "coercivity residual bound and one-dimensional trace envelope; Lean theorem",
+      "reference_sources": [
+        "design:docs/certification.md#first-continuous-certificate"
+      ]
+    },
+    {
+      "id": "free_streaming",
+      "family": "characteristics",
+      "reference_class": "E0",
+      "geometry": "periodic slab",
+      "reference_definition": "f(x,v,t)=f0(x-vt,v) in nonrelativistic coordinates"
+    },
+    {
+      "id": "constant_electric_field",
+      "family": "characteristics",
+      "reference_class": "E0",
+      "geometry": "slab",
+      "reference_definition": "v0=v-at; x0=x-vt+a t^2/2; a=qE/m"
+    },
+    {
+      "id": "uniform_magnetic_helix",
+      "family": "characteristics",
+      "reference_class": "E0",
+      "geometry": "Cartesian and cylindrical frames",
+      "reference_definition": "exact rotation of perpendicular velocity plus parallel translation; validate frame connection"
+    },
+    {
+      "id": "crossed_constant_fields",
+      "family": "characteristics",
+      "reference_class": "E0",
+      "geometry": "Cartesian patch",
+      "reference_definition": "nonrelativistic helix about E cross B drift plus parallel acceleration; B nonzero"
+    },
+    {
+      "id": "harmonic_electrostatic_orbit",
+      "family": "characteristics",
+      "reference_class": "E0",
+      "geometry": "slab",
+      "reference_definition": "nonrelativistic phase-space oscillator with stated stable potential"
+    },
+    {
+      "id": "relativistic_constant_fields",
+      "family": "characteristics",
+      "reference_class": "E1",
+      "geometry": "Cartesian patch",
+      "reference_definition": "case-specific relativistic momentum flow and rigorous time/position quadrature; do not reuse nonrelativistic x map"
+    },
+    {
+      "id": "coulomb_green",
+      "family": "fields",
+      "reference_class": "E0",
+      "geometry": "free space away from source singularity",
+      "reference_definition": "phi=q/(4 pi epsilon0 r); singular source treated weakly"
+    },
+    {
+      "id": "periodic_poisson",
+      "family": "fields",
+      "reference_class": "E0",
+      "geometry": "periodic slab",
+      "reference_definition": "nonzero k: phi_k=rho_k/(epsilon0 k^2); zero mean charge and fixed gauge"
+    },
+    {
+      "id": "slab_green",
+      "family": "fields",
+      "reference_class": "E1",
+      "geometry": "Dirichlet and compatible Neumann slabs",
+      "reference_definition": "separate Green kernels; Neumann compatibility and gauge; rigorous source integration"
+    },
+    {
+      "id": "cylindrical_bessel_modes",
+      "family": "fields",
+      "reference_class": "E1",
+      "geometry": "cylinder including axis if supported",
+      "reference_definition": "regular Bessel/separated Poisson modes with matched boundaries"
+    },
+    {
+      "id": "fourier_torus_fields",
+      "family": "fields",
+      "reference_class": "E0",
+      "geometry": "specified periodic torus metric",
+      "reference_definition": "Cartesian flat periodic Fourier modes or derived cylindrical metric; not interchangeable Laplacians"
+    },
+    {
+      "id": "screened_poisson",
+      "family": "fields",
+      "reference_class": "E0",
+      "geometry": "free space outside source",
+      "equations": "(-Laplacian+lambda_D^-2)phi=q delta/epsilon0",
+      "reference_definition": "phi=q exp(-r/lambda_D)/(4 pi epsilon0 r); screened model distinct from Poisson"
+    },
+    {
+      "id": "circular_current_loop",
+      "family": "fields",
+      "reference_class": "E1",
+      "geometry": "outside filament",
+      "reference_definition": "complete elliptic integral field; exclude or weakly treat filament singularity"
+    },
+    {
+      "id": "wire_cylinder_solenoid",
+      "family": "fields",
+      "reference_class": "E0",
+      "geometry": "straight wire, finite-radius current column and ideal long solenoid",
+      "reference_definition": "separate Ampere-law fields with interface/source conventions"
+    },
+    {
+      "id": "vector_potential_green",
+      "family": "fields",
+      "reference_class": "E1",
+      "geometry": "specified free-space or boundary domain",
+      "reference_definition": "gauge-fixed Green integral with divergence/compatibility and boundary terms"
+    },
+    {
+      "id": "circular_toroidal_vacuum",
+      "family": "geometry",
+      "reference_class": "E0",
+      "geometry": "circular toroidal domain with R>0",
+      "reference_definition": "B_phi=B0 R0/R; B_R=B_Z=0; div B=curl B=0; no poloidal transform"
+    },
+    {
+      "id": "solovev_equilibrium",
+      "family": "geometry",
+      "reference_class": "E0",
+      "geometry": "analytic tokamak flux surfaces",
+      "reference_definition": "selected exact Grad-Shafranov polynomial with matching p prime and F F prime; field-layer test"
+    },
+    {
+      "id": "shaped_grad_shafranov",
+      "family": "geometry",
+      "reference_class": "E0",
+      "geometry": "limiter, single-null and double-null variants",
+      "reference_definition": "selected Guazzotto-Freidberg exact flux solution with derivatives",
+      "reference_sources": [
+        "10.1017/S002237782100009X"
+      ]
+    },
+    {
+      "id": "straight_helical_vacuum",
+      "family": "geometry",
+      "reference_class": "E1",
+      "geometry": "straight periodic cylinder",
+      "reference_definition": "B=grad(B0 z+b I_m(k r) cos(m theta-k z)); k>0 integer m>=0; exact Bessel Laplace identity",
+      "certificate_method": "rigorous modified Bessel evaluation and exact curl/divergence derivation"
+    },
+    {
+      "id": "classical_toroidal_helix",
+      "family": "geometry",
+      "reference_class": "M",
+      "geometry": "simple classical stellarator/heliotron torus",
+      "reference_definition": "selected vector-potential construction with div B=0 and complete induced-current data; helical and broken-symmetry variants"
+    },
+    {
+      "id": "large_aspect_ratio_geometry",
+      "family": "geometry",
+      "reference_class": "A0",
+      "geometry": "torus to circular cylinder",
+      "reference_definition": "epsilon=a/R0 tends to zero on a fixed declared q/profile/scale path; derive finite-epsilon remainder"
+    },
+    {
+      "id": "langmuir_landau_response",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "geometry": "periodic unmagnetized slab",
+      "reference_definition": "Langmuir/linear Landau damping or growth dielectric root and full specified initial response",
+      "reference_sources": [
+        "arXiv:2503.22501",
+        "manual:Fried-Conte"
+      ]
+    },
+    {
+      "id": "case_van_kampen_continuum",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "geometry": "unmagnetized slab",
+      "reference_definition": "continuous spectral expansion with initial-data weights and rigorously bounded inversion",
+      "reference_sources": [
+        "10.1016/S0031-8914(55)93068-8",
+        "10.1016/0003-4916(59)90029-6"
+      ]
+    },
+    {
+      "id": "two_stream_bump_on_tail",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "geometry": "unmagnetized slab",
+      "reference_definition": "separate pinned two-stream and bump equilibria; linear instability only unless nonlinear solution is independently bounded"
+    },
+    {
+      "id": "ion_acoustic_response",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "geometry": "unmagnetized slab",
+      "reference_definition": "multispecies dielectric root and specified electron/ion initial response"
+    },
+    {
+      "id": "plasma_echo",
+      "family": "linear_vlasov",
+      "reference_class": "A0",
+      "equations": "weakly nonlinear driven Vlasov-Poisson phase mixing",
+      "geometry": "periodic slab",
+      "reference_definition": "echo time/amplitude for specified impulses and perturbation order; nonlinear remainder required",
+      "reference_sources": [
+        "10.1103/PhysRevLett.19.219"
+      ]
+    },
+    {
+      "id": "bernstein_dispersion",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "geometry": "uniform B, perpendicular/oblique wave",
+      "reference_definition": "separate electron/ion Bernstein branches and cyclotron harmonics; bound Bessel sums and roots",
+      "reference_sources": [
+        "10.1103/PhysRev.109.10"
+      ]
+    },
+    {
+      "id": "bernstein_initial_value",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "geometry": "uniform B with stated k_parallel",
+      "reference_definition": "time-domain response with rigorous spectrum inversion, not only mode residues",
+      "reference_sources": [
+        "arXiv:2608.12994"
+      ]
+    },
+    {
+      "id": "cold_stix_branches",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "equations": "cold-plasma linear Maxwell-fluid dielectric system",
+      "species_models": [
+        "cold fluid"
+      ],
+      "geometry": "uniform B at selected propagation angle",
+      "reference_definition": "isolated Stix O/X/R/L and upper/lower-hybrid branch roots; cold model not exact finite-temperature FK",
+      "reference_sources": [
+        "manual:Stix"
+      ]
+    },
+    {
+      "id": "oblique_hot_harris_dispersion",
+      "family": "linear_vlasov",
+      "reference_class": "E1",
+      "geometry": "uniform magnetized plasma",
+      "reference_definition": "hot-plasma oblique dielectric relation with stated distributions, infinite sums and branch selection; distinct from Harris sheet"
+    },
+    {
+      "id": "kinetic_bgk_modes",
+      "family": "steady_vlasov",
+      "reference_class": "E1",
+      "geometry": "stationary/traveling electrostatic slab",
+      "reference_definition": "trapped/passing invariant distributions plus self-consistent nonlinear Poisson construction; distinct from collision BGK",
+      "reference_sources": [
+        "10.1103/PhysRev.108.546"
+      ]
+    },
+    {
+      "id": "harris_current_sheet",
+      "family": "steady_vlasov",
+      "reference_class": "E0",
+      "geometry": "slab current sheet",
+      "reference_definition": "matched drifting distributions and tanh magnetic field, background and neutrality conventions",
+      "reference_sources": [
+        "10.1007/BF02733547"
+      ]
+    },
+    {
+      "id": "force_free_harris_sheet",
+      "family": "steady_vlasov",
+      "reference_class": "E0",
+      "geometry": "slab magnetic shear",
+      "reference_definition": "Harrison-Neukirch distribution family with admissible positivity parameters",
+      "reference_sources": [
+        "10.1103/PhysRevLett.102.135003",
+        "arXiv:0812.1240"
+      ]
+    },
+    {
+      "id": "bennett_pinch",
+      "family": "steady_vlasov",
+      "reference_class": "E1",
+      "geometry": "cylindrical pinch",
+      "reference_definition": "selected kinetic distribution and self-consistent field; fluid force balance alone insufficient",
+      "reference_sources": [
+        "10.1103/PhysRev.45.890"
+      ]
+    },
+    {
+      "id": "cylindrical_vm_pinches",
+      "family": "steady_vlasov",
+      "reference_class": "E1",
+      "geometry": "z-pinch, theta-pinch and screw-pinch variants",
+      "reference_definition": "Holmer-Zhang semi-explicit radial ODE equilibria with enclosed parameters/solutions",
+      "reference_sources": [
+        "arXiv:2608.06780"
+      ]
+    },
+    {
+      "id": "invariant_distributions",
+      "family": "steady_vlasov",
+      "reference_class": "I",
+      "geometry": "static slab, mirror or axisymmetric torus",
+      "reference_definition": "f=F(H,P_phi,other proved invariants); exact transport only until field/collision self-consistency proved"
+    },
+    {
+      "id": "krook_relaxation",
+      "family": "simple_collisions",
+      "reference_class": "E0",
+      "collision_model": "fixed-target Krook",
+      "reference_definition": "f(t)=F+(f0-F) exp(-nu t); constant prescribed nu"
+    },
+    {
+      "id": "homogeneous_bgk",
+      "family": "simple_collisions",
+      "reference_class": "E0",
+      "collision_model": "conservative homogeneous BGK",
+      "reference_definition": "same exponential solution when conserved moments fix Maxwellian target and nu is constant",
+      "reference_sources": [
+        "10.1103/PhysRev.94.511"
+      ]
+    },
+    {
+      "id": "lorentz_harmonic_decay",
+      "family": "simple_collisions",
+      "reference_class": "E0",
+      "collision_model": "Lorentz",
+      "reference_definition": "C=(nu_D(p)/2) angular_Laplacian f; each Y_lm decays exp(-nu_D(p) l(l+1)t/2)"
+    },
+    {
+      "id": "ornstein_uhlenbeck",
+      "family": "simple_collisions",
+      "reference_class": "E0",
+      "collision_model": "linear drag and diffusion",
+      "equations": "f_t=d_v(gamma v f)+D f_vv",
+      "reference_definition": "Gaussian mean=v0 exp(-gamma t); variance=sigma0^2 exp(-2gamma t)+(D/gamma)(1-exp(-2gamma t)); gamma,D>0"
+    },
+    {
+      "id": "pure_diffusion",
+      "family": "simple_collisions",
+      "reference_class": "E0",
+      "collision_model": "constant diffusion",
+      "reference_definition": "whole-space heat kernel (4 pi D t)^(-d/2) exp(-|v-v0|^2/(4Dt)); t>0; initial delta needs weak initial-data treatment"
+    },
+    {
+      "id": "slowing_down",
+      "family": "simple_collisions",
+      "reference_class": "E0",
+      "collision_model": "specified isotropic drag/source approximation",
+      "reference_definition": "f proportional to step(v_alpha-v)/(v^3+v_c^3); injection and sink matching specified; not exact full Landau"
+    },
+    {
+      "id": "landau_equilibrium",
+      "family": "landau",
+      "reference_class": "I",
+      "reference_definition": "Q_ab of Maxwellians with common flow and temperature is zero, with stated coefficients",
+      "reference_sources": [
+        "10.1103/PhysRev.107.1"
+      ]
+    },
+    {
+      "id": "landau_invariants_entropy",
+      "family": "landau",
+      "reference_class": "I",
+      "reference_definition": "species number, pair-total momentum/energy and entropy inequality for closed admissible system; reservoir exchange separate"
+    },
+    {
+      "id": "maxwellian_rosenbluth_potentials",
+      "family": "landau",
+      "reference_class": "E1",
+      "reference_definition": "isotropic Maxwellian potentials and derivatives with erf and p=0 regular limits",
+      "reference_sources": [
+        "10.1103/PhysRev.107.1"
+      ]
+    },
+    {
+      "id": "landau_exchange_isotropization",
+      "family": "landau",
+      "reference_class": "A0",
+      "reference_definition": "separate near-equilibrium electron-ion momentum, temperature equilibration and isotropization formulas with perturbation order"
+    },
+    {
+      "id": "landau_linear_derivative",
+      "family": "landau",
+      "reference_class": "I",
+      "reference_definition": "fixed-coefficient derivative equals Q(h,F)+Q(F,h); independent fortad JVP; differentiate coefficients if state-dependent"
+    },
+    {
+      "id": "landau_lorentz_test_limits",
+      "family": "landau",
+      "reference_class": "A0",
+      "reference_definition": "infinite-mass/Lorentz and fixed-background test-particle limits with matched scaling and reservoir balances"
+    },
+    {
+      "id": "juttner_equilibrium",
+      "family": "relativistic_collisions",
+      "reference_class": "I",
+      "reference_definition": "common relativistic equilibrium temperature and flow; rigorously normalized particle-momentum measure"
+    },
+    {
+      "id": "bb_invariants_entropy",
+      "family": "relativistic_collisions",
+      "reference_class": "I",
+      "reference_definition": "number, physical momentum and relativistic pair energy; entropy with stated assumptions"
+    },
+    {
+      "id": "braams_karney_potentials",
+      "family": "relativistic_collisions",
+      "reference_class": "E1",
+      "reference_definition": "five radial potential problems and semi-analytic integrals; origin, infinity and angular-order bounds"
+    },
+    {
+      "id": "bb_nonrelativistic_limits",
+      "family": "relativistic_collisions",
+      "reference_class": "A0",
+      "reference_definition": "c to infinity and low T/(mc^2) expansions compared with consistent Landau and transport normalization"
+    },
+    {
+      "id": "spitzer_transport",
+      "family": "classical_transport",
+      "reference_class": "A0",
+      "reference_definition": "Spitzer resistivity and Spitzer-Harm parallel heat conductivity with species charge, Coulomb logarithm and thermal-speed conventions",
+      "reference_sources": [
+        "manual:Spitzer-Harm"
+      ]
+    },
+    {
+      "id": "braginskii_transport",
+      "family": "classical_transport",
+      "reference_class": "A0",
+      "reference_definition": "parallel/perpendicular/Hall heat and electric transport and viscosity; weak/strong magnetization and Lorentz-gas limits",
+      "reference_sources": [
+        "manual:Braginskii"
+      ]
+    },
+    {
+      "id": "relativistic_transport",
+      "family": "classical_transport",
+      "reference_class": "A0",
+      "collision_model": "linearized BB",
+      "reference_definition": "specified relativistic conductivity and heat-transport calculation; no universal percent correction",
+      "reference_sources": [
+        "10.1063/1.858966",
+        "10.1103/PhysRevE.93.053208"
+      ]
+    },
+    {
+      "id": "guiding_center_uniform_drift",
+      "family": "guiding_center",
+      "reference_class": "E0",
+      "geometry": "uniform B and constant perpendicular E",
+      "reference_definition": "nonrelativistic exact gyrocenter motion with E cross B/B^2 drift, matched full helix"
+    },
+    {
+      "id": "grad_b_curvature_drifts",
+      "family": "guiding_center",
+      "reference_class": "A0",
+      "geometry": "specified smooth gradient and curved field",
+      "reference_definition": "leading guiding-center grad-B and curvature drifts with controlled magnetization ordering"
+    },
+    {
+      "id": "mirror_trapping_bounce",
+      "family": "guiding_center",
+      "reference_class": "E1",
+      "geometry": "specified smooth magnetic mirror",
+      "reference_definition": "reduced energy/mu invariants, trapped-passing boundary and rigorous orbit quadrature; separate separatrix limits"
+    },
+    {
+      "id": "tokamak_bounce_transit",
+      "family": "guiding_center",
+      "reference_class": "A0",
+      "geometry": "circular large-aspect-ratio tokamak",
+      "reference_definition": "deep-trapped bounce, passing transit and trapped fraction with explicit speed/pitch/q conventions"
+    },
+    {
+      "id": "axisymmetric_action_angle",
+      "family": "guiding_center",
+      "reference_class": "E1",
+      "geometry": "selected axisymmetric guiding-center Hamiltonian",
+      "reference_definition": "rigorous orbit/action integrals and spectrum; selected Hamiltonian is not arbitrary exact FK"
+    },
+    {
+      "id": "tokamak_ps_plateau_banana",
+      "family": "tokamak_neoclassical",
+      "reference_class": "A0",
+      "reference_definition": "separate Pfirsch-Schluter, plateau and banana diffusivity/flow/heat coefficients; ordered finite-parameter validity"
+    },
+    {
+      "id": "tokamak_bootstrap_ware",
+      "family": "tokamak_neoclassical",
+      "reference_class": "A0",
+      "reference_definition": "bootstrap, parallel flow and Ware pinch with loop voltage, field topology and collision ordering specified"
+    },
+    {
+      "id": "tokamak_aspect_charge_limits",
+      "family": "tokamak_neoclassical",
+      "reference_class": "A0",
+      "reference_definition": "large-aspect-ratio, Lorentz-gas charge and low/high-collisionality paths; independent controlled observables"
+    },
+    {
+      "id": "stellarator_collisional_regimes",
+      "family": "stellarator_neoclassical",
+      "reference_class": "A0",
+      "reference_definition": "separate 1/nu, sqrt(nu), nu and superbanana-plateau scalings; no universal coefficient without E_r and geometry ordering"
+    },
+    {
+      "id": "shaing_callen_hgm",
+      "family": "stellarator_neoclassical",
+      "reference_class": "A0",
+      "reference_definition": "Shaing-Callen limit and Helander-Geiger-Maassberg finite-collisionality correction in their respective regimes",
+      "reference_sources": [
+        "10.1063/1.3633940"
+      ]
+    },
+    {
+      "id": "omnigenous_flow_bootstrap",
+      "family": "stellarator_neoclassical",
+      "reference_class": "A0",
+      "reference_definition": "Landreman-Catto omnigenous/quasisymmetric flow and bootstrap with the paper's ordering",
+      "reference_sources": [
+        "10.1063/1.3693187"
+      ]
+    },
+    {
+      "id": "near_omnigenous_bootstrap",
+      "family": "stellarator_neoclassical",
+      "reference_class": "A0",
+      "collision_model": "monoenergetic Lorentz",
+      "reference_definition": "near-omnigenous geometry coefficients and validity conditions; independent formula enclosure",
+      "reference_sources": [
+        "10.1063/5.0332431",
+        "10.1017/S0022377825000200"
+      ]
+    },
+    {
+      "id": "slab_toroidal_itg",
+      "family": "gyrokinetic",
+      "reference_class": "E1",
+      "geometry": "slab and selected strong-ballooning toroidal model",
+      "reference_definition": "separate ITG dispersion roots with background, field and approximation conventions; full-kinetic comparison where applicable",
+      "reference_sources": [
+        "https://bsl6d.pages.mpcdf.de/bsl6d/examples/slab_itg.html"
+      ]
+    },
+    {
+      "id": "drift_kinetic_alfven_waves",
+      "family": "gyrokinetic",
+      "reference_class": "E1",
+      "geometry": "selected slab or toroidal local model",
+      "reference_definition": "separate drift and kinetic-Alfven dispersion branches and specified initial data"
+    },
+    {
+      "id": "gam_zonal_response",
+      "family": "gyrokinetic",
+      "reference_class": "A0",
+      "geometry": "specified toroidal equilibrium",
+      "reference_definition": "GAM frequency and zonal-flow residual with collisionality, geometry, electron closure and order of long-time limit specified"
+    },
+    {
+      "id": "gk_adiabatic_dk_flr_limits",
+      "family": "gyrokinetic",
+      "reference_class": "A0",
+      "geometry": "uniform/slab and matched toroidal variants",
+      "reference_definition": "adiabatic electron and long-wavelength DK limits, Bessel FLR response and ordered FK-to-GK correspondence"
+    },
+    {
+      "id": "classical_cylindrical_transport",
+      "family": "classical_transport",
+      "reference_class": "A0",
+      "geometry": "cylindrical column",
+      "reference_definition": "radial classical transport under the selected magnetic/source/boundary assumptions"
+    },
+    {
+      "id": "manufactured_3d_modes",
+      "family": "manufactured",
+      "reference_class": "M",
+      "geometry": "simple 3D toroidal Fourier domain",
+      "reference_definition": "complete supported orbit/field/source residual with n=0,+/-1; independent restrictions and dealiased-product oracle"
+    },
+    {
+      "id": "manufactured_collision_field",
+      "family": "manufactured",
+      "reference_class": "M",
+      "geometry": "selected domain with complete boundaries",
+      "reference_definition": "positive full-f distributions with consistent Landau/BB and field forcing; independent moment and analytic restrictions"
+    },
+    {
+      "id": "manufactured_hybrid_species",
+      "family": "manufactured",
+      "reference_class": "M",
+      "geometry": "selected mapped 3D domain",
+      "reference_definition": "only derived supported FK/GK/DK/fluid mixtures; include reduced field action and cross-representation exchange"
+    },
+    {
+      "id": "cyclone_base_case",
+      "family": "cross_code",
+      "reference_class": "X",
+      "geometry": "standard selected flux-tube geometry",
+      "reference_sources": [
+        "10.1063/1.873896"
+      ],
+      "reference_definition": "pinned linear/nonlinear CBC instance; numerical standard, not exact analytic solution"
+    },
+    {
+      "id": "rabe_matched_asymptote",
+      "family": "cross_code",
+      "reference_class": "X",
+      "geometry": "same pinned near-omnigenous equilibrium",
+      "collision_model": "monoenergetic Lorentz",
+      "reference_sources": [
+        "https://github.com/itpplasma/rabe/tree/3282d659cb44108a61d537c11a5d1dd8a5526c92"
+      ],
+      "reference_definition": "matched geometry coefficients within documented validity; separate from independent analytic A0 evaluator"
+    },
+    {
+      "id": "retained_cross_code_matrix",
+      "family": "cross_code",
+      "reference_class": "X",
+      "geometry": "pinned overlapping model cases",
+      "reference_definition": "separate PETSc LANDAU, NEO-2/SFINCS, CQL3D, OSHUN, GENE-X and other named comparisons with explicit model intersections"
+    },
+    {
+      "id": "ideal_mhd_static",
+      "family": "mhd",
+      "reference_class": "I",
+      "geometry": "circular cylinder/tokamak",
+      "reference_definition": "no-flow isotropic J cross B=grad p, div B=0, compatible currents and boundaries"
+    },
+    {
+      "id": "ideal_mhd_waves",
+      "family": "mhd",
+      "reference_class": "E1",
+      "geometry": "uniform periodic plasma",
+      "reference_definition": "linear Alfven, slow/fast magnetosonic and sound branches with selected equation of state and constrained eigenvectors"
+    },
+    {
+      "id": "resistive_induction",
+      "family": "mhd",
+      "reference_class": "E0",
+      "geometry": "periodic/slab uniform conductor",
+      "reference_definition": "linear magnetic diffusion Fourier decay for constant resistivity and zero bulk velocity; matched induction model"
+    },
+    {
+      "id": "hall_twofluid_limits",
+      "family": "mhd",
+      "reference_class": "E1",
+      "bulk_model": "specified Hall/two-fluid model",
+      "geometry": "uniform periodic plasma",
+      "reference_definition": "selected dispersive wave branches and ideal/resistive reductions with complete Ohm and energy laws"
+    },
+    {
+      "id": "manufactured_mhd_hybrid",
+      "family": "mhd",
+      "reference_class": "M",
+      "geometry": "supported circular/helical 3D domain",
+      "reference_definition": "bulk plus kinetic species, consistent forcing and population ownership; independent moment and energy restrictions"
+    },
+    {
+      "id": "mhd_kinetic_layer_matching",
+      "family": "mhd",
+      "reference_class": "A0",
+      "geometry": "specified rational-surface/slab layer",
+      "reference_definition": "derived inner/outer kinetic-fluid matching and finite-width/reduction/interface remainder"
+    },
+    {
+      "id": "mhd_response_cross_code",
+      "family": "cross_code",
+      "reference_class": "X",
+      "geometry": "same pinned circular or device equilibrium",
+      "reference_definition": "separate ARES, GPEC, MARS, MEPHIT and JOREK overlapping cases; no presumed full parity"
+    },
+    {
+      "id": "cartesian_mapped_geometry",
+      "family": "geometry",
+      "reference_class": "I",
+      "reference_definition": "physical derivatives, measure and orientation agree across verified affine/nonlinear maps"
+    },
+    {
+      "id": "g_frame_figure8",
+      "family": "geometry",
+      "reference_class": "X",
+      "geometry": "pinned Figure-8 boundary and smooth frame",
+      "reference_sources": [
+        "arXiv:2411.16411",
+        "arXiv:2410.17595",
+        "arXiv:2411.04683"
+      ],
+      "reference_definition": "independent Cartesian/map boundary and field evaluation; required non-cylindrical architecture gate"
+    },
+    {
+      "id": "fci_cartesian_helix",
+      "family": "geometry",
+      "reference_class": "E0",
+      "reference_definition": "uniform/analytic helical field-line map with wall-intersection endpoint",
+      "qualification": "arclength map; certify interpolation and event error"
+    },
+    {
+      "id": "neutral_free_streaming",
+      "family": "edge_reactions",
+      "reference_class": "E0",
+      "reference_definition": "f_n(x,v,t)=f_n0(x-vt,v), with matching boundary traces"
+    },
+    {
+      "id": "balanced_reaction_network",
+      "family": "edge_reactions",
+      "reference_class": "E0",
+      "reference_definition": "specified reversible constant-rate two-state population evolution; charge/nuclei ledger"
+    },
+    {
+      "id": "kinetic_charge_exchange",
+      "family": "edge_reactions",
+      "reference_class": "M",
+      "reference_definition": "manufactured two-distribution velocity exchange with pair momentum/energy bookkeeping"
+    },
+    {
+      "id": "slab_recycling",
+      "family": "edge_reactions",
+      "reference_class": "M",
+      "reference_definition": "manufactured incoming/outgoing flux with explicit molecule nuclei and retained/pumped inventory"
+    },
+    {
+      "id": "kinetic_sheath",
+      "family": "edge_reactions",
+      "reference_class": "X",
+      "reference_definition": "selected kinetic slab sheath comparison with matching finite-domain and inflow assumptions"
+    },
+    {
+      "id": "tcv_x21_edge",
+      "family": "edge_reactions",
+      "reference_class": "X",
+      "reference_sources": [
+        "arXiv:2109.01618"
+      ],
+      "reference_definition": "frozen TCV-X21 measurement-space comparison; experimental uncertainty separate"
+    },
+    {
+      "id": "eirene_neutral_comparison",
+      "family": "edge_reactions",
+      "reference_class": "X",
+      "reference_sources": [
+        "https://github.com/iterorganization/EIRENE"
+      ],
+      "reference_definition": "same neutral transport and reaction data; statistical uncertainty labelled explicitly"
+    },
+    {
+      "id": "parker_wind",
+      "family": "space",
+      "reference_class": "E1",
+      "species_models": [
+        "specified isothermal fluid"
+      ],
+      "reference_definition": "selected transonic Parker wind branch with rigorously isolated implicit roots; reduced equation only"
+    },
+    {
+      "id": "parker_spiral",
+      "family": "space",
+      "reference_class": "E0",
+      "reference_definition": "specified kinematic radial wind/rotation field, domain and source assumptions"
+    },
+    {
+      "id": "gem_reconnection",
+      "family": "space",
+      "reference_class": "X",
+      "reference_definition": "fixed GEM challenge equations/inputs and independently computed observables; not a closed form"
+    },
+    {
+      "id": "orszag_tang",
+      "family": "space",
+      "reference_class": "X",
+      "species_models": [
+        "bulk MHD"
+      ],
+      "reference_definition": "fixed MHD benchmark; appropriate weak-solution and shock norm required for certification"
+    },
+    {
+      "id": "brio_wu",
+      "family": "space",
+      "reference_class": "X",
+      "species_models": [
+        "bulk MHD"
+      ],
+      "reference_definition": "specified MHD Riemann data, solution selection and independent reference; no assumed uniqueness theorem"
+    },
+    {
+      "id": "space_linear_instabilities",
+      "family": "space",
+      "reference_class": "E1",
+      "variants": [
+        "Weibel",
+        "mirror",
+        "firehose",
+        "ion-cyclotron",
+        "whistler",
+        "kinetic-Alfven"
+      ],
+      "reference_definition": "case-specific linear dielectric roots; ordering and initial-value amplitude fixed before activation"
+    },
+    {
+      "id": "pickup_ion_motion",
+      "family": "space",
+      "reference_class": "E0",
+      "reference_definition": "specified newborn-ion source in constant fields, exact orbit map and birth-time integration"
+    },
+    {
+      "id": "collisionless_shock",
+      "family": "space",
+      "reference_class": "X",
+      "reference_definition": "selected kinetic/hybrid shock problem with fixed boundary, frame, mass ratio and comparison diagnostics"
+    },
+    {
+      "id": "magnetosphere_open_boundary",
+      "family": "space",
+      "reference_class": "M",
+      "reference_definition": "manufactured inflow/outflow and externally forced state in a physical Cartesian domain"
+    },
+    {
+      "id": "prescribed_ql_diffusion",
+      "family": "actuators_diagnostics",
+      "reference_class": "E0",
+      "reference_definition": "constant positive diffusion tensor with Gaussian solution in a specified measure"
+    },
+    {
+      "id": "rf_ray_fullwave_limit",
+      "family": "actuators_diagnostics",
+      "reference_class": "A0",
+      "reference_definition": "fixed wave slab and ray ordering; rigorous WKB remainder required for certified model comparison"
+    },
+    {
+      "id": "nbi_attenuation_birth",
+      "family": "actuators_diagnostics",
+      "reference_class": "E0",
+      "reference_definition": "constant-rate exponential beam attenuation with normalized product birth distribution"
+    },
+    {
+      "id": "fusion_rate_products",
+      "family": "actuators_diagnostics",
+      "reference_class": "I",
+      "reference_definition": "pair counting, nuclei/charge/mass-defect energy ledger and product kinematics for selected branch"
+    },
+    {
+      "id": "rl_circuit",
+      "family": "actuators_diagnostics",
+      "reference_class": "E0",
+      "reference_definition": "specified constant R,L and voltage step with exact current and power balance"
+    },
+    {
+      "id": "synthetic_diagnostic_integral",
+      "family": "actuators_diagnostics",
+      "reference_class": "M",
+      "reference_definition": "analytic state with independently evaluated line/instrument integral and complete interval propagation"
+    },
+    {
+      "id": "wall_hitting_observable",
+      "family": "actuators_diagnostics",
+      "reference_class": "E1",
+      "reference_definition": "analytic trajectories with rigorously bounded crossing events and distribution mass; grazing case separate"
+    },
+    {
+      "id": "units_normalization",
+      "family": "actuators_diagnostics",
+      "reference_class": "I",
+      "reference_definition": "independent dimensional physical case and moment balances under explicit SI/normalized transformation"
+    }
+  ],
+  "limit_edges": [
+    {
+      "id": "electric_off",
+      "parameter": "E amplitude to zero",
+      "target": "magnetic-only FK",
+      "qualification": "same B and data",
+      "status": "planned"
+    },
+    {
+      "id": "magnetic_off",
+      "parameter": "B amplitude to zero",
+      "target": "unmagnetized FK",
+      "qualification": "DK/GK coordinates may be singular",
+      "status": "planned"
+    },
+    {
+      "id": "collisionless",
+      "parameter": "nu to zero",
+      "target": "Vlasov",
+      "qualification": "time and initial layer scope",
+      "status": "planned"
+    },
+    {
+      "id": "fluid_limit",
+      "parameter": "nu to infinity",
+      "target": "selected local-equilibrium/fluid model",
+      "qualification": "scaled time/source and boundary layers",
+      "status": "planned"
+    },
+    {
+      "id": "cold_limit",
+      "parameter": "T to zero",
+      "target": "selected cold response",
+      "qualification": "weak/distributional norm and well-prepared data",
+      "status": "planned"
+    },
+    {
+      "id": "heavy_ion",
+      "parameter": "ion mass to infinity",
+      "target": "fixed response or Lorentz",
+      "qualification": "separate dynamical and collisional scalings",
+      "status": "planned"
+    },
+    {
+      "id": "nonrelativistic",
+      "parameter": "c to infinity",
+      "target": "Landau",
+      "qualification": "consistent fixed state and energy convention",
+      "status": "planned"
+    },
+    {
+      "id": "long_wavelength",
+      "parameter": "k_perp rho to zero",
+      "target": "selected DK response",
+      "qualification": "full ordering and field/pair reduction",
+      "status": "planned"
+    },
+    {
+      "id": "low_frequency",
+      "parameter": "omega/Omega to zero",
+      "target": "selected GK/DK",
+      "qualification": "well-prepared state and remaining ordering",
+      "status": "planned"
+    },
+    {
+      "id": "quasineutral",
+      "parameter": "lambda_D/L to zero",
+      "target": "selected quasineutral model",
+      "qualification": "fast fields and layers",
+      "status": "planned"
+    },
+    {
+      "id": "linear_response",
+      "parameter": "perturbation amplitude to zero",
+      "target": "derivative at fixed reference",
+      "qualification": "forcing, branch and norm",
+      "status": "planned"
+    },
+    {
+      "id": "axisymmetric",
+      "parameter": "nonzero toroidal amplitudes to zero",
+      "target": "n=0 restriction",
+      "qualification": "integer labels are not a continuous parameter",
+      "status": "planned"
+    },
+    {
+      "id": "vacuum_dominated",
+      "parameter": "beta to zero",
+      "target": "specified vacuum-dominated response",
+      "qualification": "external drive and current scaling",
+      "status": "planned"
+    },
+    {
+      "id": "large_aspect_ratio",
+      "parameter": "a/R0 to zero",
+      "target": "circular cylinder/tokamak asymptote",
+      "qualification": "fixed q, pitch, profiles and collisionality path",
+      "status": "planned"
+    }
+  ],
+  "prepared_by": "Chris&AI"
+}

@@ -5,6 +5,15 @@ yet. This specification applies to the [kin6d design](../DESIGN.md).
 
 ## Result contract
 
+The [model family](model-family.md) extends this contract to enclosed
+equilibria, linear forced response, spectra and hybrid trajectories. Imported
+equilibrium uncertainty is propagated into response claims. Singular ideal
+operators and non-normal kinetic/resistive operators need their own constrained
+inverse, spectral isolation or resolvent/growth theorem. A finite eigenvalue
+interval is not a steady nonlinear root or a forced-response stability bound.
+The [atlas](benchmarks.md) independently certifies reference evaluation; exact
+identities and asymptotic checks support but do not replace this contract.
+
 A steady certificate names a continuous operator `F`, its boundary data,
 constraints, input parameters, and function spaces. It supplies a reconstructed
 candidate `ubar` and proves, under listed assumptions,
@@ -285,5 +294,32 @@ failure for missing bounds, unsupported models, malformed data, violated
 assumptions, or numerical uncertainty too large to establish the theorem.
 Archive the candidate and precise failed obligation so refinement or new
 analysis can resume from evidence.
+
+## Coupled models and uncertainty scope
+
+[Coupling](coupling.md) separates frozen background, prescribed drive and
+induced response. Certifying response around an imported background must
+include its residual/uncertainty or explicitly state a conditional problem
+with that background prescribed. Species and bulk ownership prevent duplicate
+source terms; reservoir transfers belong to the stated balance.
+
+Neutral Monte Carlo and externally sampled fluctuations have statistical
+status. Fixed seeds do not give deterministic enclosures. A full coupled
+certificate needs deterministic bounds on every neutral/source action used
+in its premises; otherwise certify only the explicitly conditional model.
+Atomic/table/surface inputs are part of the mathematical problem. A nominal
+input certificate is not a physical-data uncertainty bound. To cover uncertain
+inputs prove the premises uniformly over a stated input set.
+
+Combined model/numerical intervals require a proved comparison chain to the
+same target observable. Do not add unrelated paired-model differences as
+remainders to physical reality. Spatial model transfers, wave partitions,
+field reductions and AP numerical formulations each retain their distinct
+obligations. [Extensions](extensions.md) specifies this accounting.
+
+Boundary hits, rare losses and shock solutions require dedicated event/trace
+or weak-solution estimates. A generic norm radius need not imply a narrow
+interval for a discontinuous loss indicator. Unavailable bounds remain
+explicitly unavailable; plots may show the candidate without a fabricated band.
 
 Chris&AI

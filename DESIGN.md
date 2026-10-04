@@ -6,7 +6,9 @@ analysts, and implementers in the itpplasma group.
 ## Scientific objective
 
 kin6d will solve stationary, deterministic, full-distribution kinetic
-problems for electrons and several ion species in toroidal geometry. The
+problems for electrons and several ion species in general physical geometry.
+Cartesian space and vectors are fundamental; cylindrical/Fourier is the
+initial optimized fusion chart, not a requirement of the physics. The
 long-term full-kinetic reference is relativistic Vlasov–Maxwell with nonlinear
 Beliaev–Budker collisions. Nonrelativistic Landau problems provide a baseline
 and independent limiting cases. More detailed correlation models are later
@@ -41,18 +43,28 @@ metadata, rather than additional digits in a numerical enclosure.
 
 ## Decisions
 
+The [model-family philosophy](docs/model-family.md) adds bulk MHD and
+kinetic–MHD configurations without introducing separate named-code modes.
+Population ownership, closures and field equations must be consistent.
+Imported equilibria are untrusted inputs/candidates; equilibrium, forced
+response, spectral stability and evolution each have their own certificate.
+Use the cheapest supported model that meets the stated scientific/error goal.
+
 | Subject | Decision |
 |---|---|
 | Application and certifier | Fortran; no mandatory Python layer |
 | Numerical kernels | Mandatory fortsym emission with retained generators and provenance |
 | State | Deterministic active species blocks; relativistic physical momentum for the FK reference |
 | Species models | Per-species choice, with explicit supported field/pair combinations |
-| Geometry | Local high-order discontinuous Galerkin elements in `(R,Z)`; toroidal Fourier modes |
+| Bulk model | None or a derived multi-fluid/MHD aggregate, with explicit population ownership |
+| Geometry | Cartesian physical vectors with mapped elements; initial cylindrical DG/Fourier optimization |
 | FK angular basis | Full spherical harmonics through degree `L_s`; no initial truncation in `m` |
 | Radial momentum | Separate grid or mapping for each species |
+| Spatial foundation | FortFEM generic spaces/maps/operators; plasma laws remain application-owned |
+| Production performance | Tensorized actions, batched RHS, no full kinetic operator/Jacobian assembly |
 | Physical geometry | Generic 3D field/domain evaluations; machine formats are adapters |
 | Transport | One characteristic-based discretization, with certified reconstruction defects |
-| Fields | Stationary self-consistent equations; fixed external field stored separately |
+| Fields | Explicit prescribed/Poisson/quasineutral/Darwin/Maxwell choice; background, drive and response separated |
 | Physics interface | Shared evolution operator and constraints; steady consumer first |
 | Nonlinear solve | Direct residual solve through PETSc SNES/KSP |
 | Reference collisions | Nonlinear Beliaev–Budker, after a certified Landau baseline |
@@ -64,7 +76,22 @@ metadata, rather than additional digits in a numerical enclosure.
 
 The tiny 1X1P reference problem is retained separately. Production does not
 inherit its array layout. Production is 3D-capable from its first version,
-even while most development runs use `n=0`.
+even while most fusion development runs use `n=0`. Other physical charts
+need their own appropriate representation; a generalized periodic coordinate
+with `n=0` is not automatically an axisymmetric reduction.
+
+## Additional directions and admission
+
+[Edge physics](docs/edge-physics.md), [Solar System scope](docs/space-plasmas.md)
+and [further extensions](docs/extensions.md) reserve reactions, heating/waves,
+fusion products, neutrals, surfaces, field reductions, circuits and synthetic
+diagnostics as independent mathematical actions where compatible. They are
+long-range goals. Implement only the next needed seam, with an independent
+oracle, coupling derivation and certification/performance target. Different
+thin consumers may share libraries; there is no named-code solver registry.
+SI definitions, explicit normalization and complete model/data/proof provenance
+are part of each result. Statistical confidence and deterministic enclosures
+remain distinct; combined model-error budgets need a proved comparison chain.
 
 ## Mathematical problem
 
@@ -116,8 +143,12 @@ single-valued electrostatic potential alone does not represent that drive.
 A case with loop voltage must state its topological component and compatibility
 with the stationary magnetic assumption.
 
-Use `B = B_vac + B_plasma`. Precompute the fixed external field, including its
-Fourier coefficients. Certification still includes field interpolation,
+Use `B = B0 + delta_B_ext + delta_B_induced`, and the analogous electric
+split. A frozen bulk equilibrium can have a self-consistent induced response;
+active/test/reservoir roles are independent of species representation.
+[Coupling](docs/coupling.md) defines these choices and source ownership.
+The simpler `B_vac + B_plasma` split remains a compatible full-state case.
+Precompute fixed external fields and their chart coefficients. Certification still includes field interpolation,
 geometry, and coefficient-tail bounds. Experimental field uncertainty is a
 separate input enclosure or remains outside the theorem's scope.
 
@@ -130,7 +161,14 @@ fixed. A compatibility table rejects unsupported model combinations.
 
 ## Spatial and momentum representation
 
-The full-kinetic distribution is reconstructed from
+The physical distribution is `f_s(x,p)` with independent spatial chart and
+momentum frame. [Geometry](docs/geometry.md) defines mapped Cartesian,
+cylindrical, spherical, curve-following and future unstructured choices.
+Core physics cannot require a global toroidal angle or nested flux surfaces.
+FCI is an optional parallel-operator service. A Figure-8 geometry test must
+exercise this independence before generic-geometry promotion.
+
+For the initial cylindrical fusion chart, the distribution is reconstructed from
 
 $$
 f_s(R,Z,\varphi,p,\Omega_p)=
@@ -317,8 +355,10 @@ time-varying coils in a transient require the induced electric field too.
 Reserve the operator and constraint interfaces now; implement only their
 steady consumer initially. Compatible discrete curl, divergence, and current
 deposition become a requirement when self-consistent Maxwell is introduced.
-FEEC/GEMPIC ideas are references for that decision, rather than a requirement
-to build a general field framework before the first kinetic problem.
+FEEC is the chosen compatible spatial structure for Maxwell/magnetic field
+blocks. FortFEM is the preferred reusable spatial foundation; validate its
+selected spaces, traces and charge transfer when those blocks are introduced.
+This does not require building a general field framework before R0.
 [Temporal methods and trajectory bounds](docs/transients.md) extend this
 contract without duplicating collision or orbit physics.
 
@@ -348,7 +388,13 @@ each implementation seam only when the next certified capability needs it.
 
 Use Fortran for scientific/application code, generation drivers, and the
 rigorous certifier. Every project-owned numerical kernel is emitted by
-fortsym. Use fortnum plus BLAS/LAPACK and PETSc's Fortran interfaces for
+fortsym. Reuse FortFEM for generic spatial spaces, maps, traces and operators,
+with FortSparse for appropriate sparse blocks. Plasma physics stays in kin6d.
+[Spatial and performance policy](docs/numerics.md) favors mapped tensor patches,
+compatible FEEC fields, factorized matrix-free batched actions and bounded
+workspace; assembled small references remain independent checks. Add generic
+span/sum-factorization/batch support upstream only when the consumer needs it.
+Use fortnum plus BLAS/LAPACK and PETSc's Fortran interfaces for
 numerics, fortad for supported derivative transformations, fortio for data,
 and fortplot for diagnostics. Plain contiguous arrays own the kinetic state;
 fortarray labels profiles and analysis slices where useful.
@@ -368,6 +414,14 @@ cases executable as independent regression oracles. Optimize after profiling,
 including certificate cost and memory, while preserving their behavior.
 
 ## Completion criterion
+
+The [Analytical Benchmark Atlas](docs/benchmarks.md) defines independent
+reference problems before each capability is implemented. Its catalogue
+includes exact characteristics, fields, circular/helical geometry, nonlinear
+equilibria, collisions, classical/neoclassical transport, reduced limits and
+manufactured cases. References receive rigorous evaluation; asymptotic
+remainder status is stated separately. Preserve the atlas alongside the
+cross-code matrix and continuous certificates.
 
 A capability is scientifically complete when an independent oracle passes
 and a checked certificate encloses a solution of its named continuous model.
