@@ -37,6 +37,8 @@ Read the [design document](DESIGN.md) first. Its companion specifications are:
 - [Time-dependent extension](docs/transients.md): shared operators, physical
   timescales, temporal methods, and trajectory certificates.
 - [References](docs/references.md): checked sources and their actual scope.
+- [Performance engineering](docs/performance.md): calibrated benchmarks,
+  best-known time–memory–accuracy frontiers, profiling and upstream ownership.
 - [Numerical foundation](docs/numerics.md): FortFEM ownership, FEEC/IGA/DG,
   tensor actions, batching, layouts, derivatives and solver memory.
 - [Tooling and kernel policy](docs/tooling.md): the Fortran-native stack,

@@ -145,6 +145,15 @@ the untrusted candidate path. The Fortran certifier independently establishes
 valid bounds; extending verified arithmetic to CUDA needs its own proved
 rounding/error contract and is not an initial requirement.
 
+## Performance workflow
+
+[Performance policy](performance.md) reuses native upstream benchmarks and fo
+with distinct fast sentinels, dedicated audits and physical-science cases.
+Current optional Python benchmark collectors/gates do not become mandatory
+kin6d tooling; add a needed native generic gate upstream instead. Pin inputs,
+compiler/hardware and exact executable, validate outputs independently, retain
+raw repeated timing/RSS evidence and never silently rewrite a slower baseline.
+
 ## Build and feedback
 
 CMake/Ninja owns configuration and mixed-language builds; CTest owns

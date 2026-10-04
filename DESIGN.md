@@ -413,6 +413,17 @@ or universal operator registry. Keep the simple collision and old geometry
 cases executable as independent regression oracles. Optimize after profiling,
 including certificate cost and memory, while preserving their behavior.
 
+## Continuous performance evidence
+
+[Performance engineering](docs/performance.md) is a permanent scientific
+workstream. Review mathematical complexity and data movement before parallel
+optimization. Each stage has small correctness and representative performance
+cases, calibrated measured hardware evidence and a best-known time/memory/
+accuracy frontier. Major runs report candidate/certificate time, peak attributed
+memory, iterations and communication/I/O. Optimize at the owning upstream
+layer and retain independent references; no acceleration removes continuous
+error obligations. Expensive audits are separate from fast development gates.
+
 ## Completion criterion
 
 The [Analytical Benchmark Atlas](docs/benchmarks.md) defines independent
