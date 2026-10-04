@@ -32,6 +32,10 @@ build/test or throughput result; it does not prove that every other upstream
 path lacks such optimization. Verify the exact API and current upstream
 owner before implementing a missing generic slice.
 
+Continuous calibration, measurement levels, baselines and audit cadence are
+specified in [performance engineering](performance.md). No upstream source
+inspection substitutes for measured throughput or consumer verification.
+
 ## Governing rules
 
 Exploit separability before parallelism. Use regular mapped patches where

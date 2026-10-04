@@ -60,6 +60,12 @@ certifier, formal-proof, CUDA, or build evidence that has not been produced.
   tokamak type. Fixed species are reservoirs; fields can remain self-consistent.
   Keep numerical certificates, model differences, and proved reduction
   remainders distinct. Production needs scoped physical-parameter device gates.
+- Read docs/performance.md before hot-feature implementation. Review
+  complexity/separability/traffic first; pair small correctness and realistic
+  performance cases. Compare fixed-input best-known time/memory/accuracy
+  baselines, measure noise and profile solver/certifier separately. Keep
+  fast sentinels separate from dedicated audits; no automatic protected-host
+  run or schedule. Repair material bottlenecks at their actual upstream owner.
 - Read docs/numerics.md before spatial/performance implementation. FortFEM
   owns generic spatial mathematics; kin6d owns plasma laws. Preserve FEEC
   structure, assembled reference actions and generated numerical leaves.

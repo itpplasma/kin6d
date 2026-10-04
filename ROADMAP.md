@@ -283,6 +283,30 @@ Hard collisions, radiation, ionization, recombination, and reaction physics
 enter when a target regime requires them, with explicit balances and matching.
 No extension inherits a certificate merely by sharing a software interface.
 
+## Permanent performance workstream
+
+[Performance policy](docs/performance.md) applies from the first executable
+stage. Every milestone pairs a small correctness case with a representative
+performance case. Review state/separability/work/traffic before implementation;
+reuse native upstream harnesses and fo rather than another benchmark framework.
+Start with CPU timing/RSS and measured calibration relevant to R0; add GPU,
+network and heavy profiling only when those backends exist. No benchmark
+runner or nightly job is authorized merely by this roadmap.
+
+Record microkernel, operator, residual, solve and whole-science evidence.
+Maintain fixed-input hardware/compiler-specific best-known Pareto baselines,
+not a chain of tolerated parent-relative slowdowns. Fast allocation/vectorization
+and gross-regression sentinels remain separate from expensive dedicated and
+physical-device audits. Controller promotion requires independent behavior,
+resolved measurement noise, exact revisions and unchanged error obligations.
+
+Profile the solver and certifier separately. Report vector/scratch/factor
+memory, iterations, communication/reduction counts and I/O alongside total
+time to the requested certified observable width. Improve the actual owning
+library when its profile contribution dominates, push a verified generic main
+repair promptly and recheck the client. Candidate fast math and precision
+choices cannot relax strict certificate arithmetic or omitted-tail bounds.
+
 ## Spatial numerical foundation and performance gates
 
 [FortFEM and production numerics](docs/numerics.md) defines ownership and the

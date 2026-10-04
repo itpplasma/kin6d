@@ -217,4 +217,15 @@ Sum factorization, partial assembly and batching are client-driven production
 goals to add upstream when the next workload requires them. FortFEM retains
 generic spatial ownership; plasma closures remain outside it.
 
+## Performance infrastructure
+
+[FortNum benchmarks](https://github.com/lazy-fortran/fortnum/blob/main/benchmark/README.md)
+document native measurements, controlled reference evidence and optional
+Python gates. [FortAD vector-JVP](https://github.com/lazy-fortran/fortad/blob/main/docs/design/vector-jvp-benchmark.md)
+and [FortIO performance](https://github.com/lazy-fortran/fortio/blob/main/docs/performance.md)
+are upstream starting points; pin and verify the selected client workflow.
+No mandatory Python gate is imported into kin6d and no kin6d frontier
+measurement is claimed. [Performance policy](performance.md) defines that
+future evidence and promotion contract.
+
 Chris&AI
