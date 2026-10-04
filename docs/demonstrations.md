@@ -73,6 +73,14 @@ Python postprocessor.
 
 ## Limiting-case overlays
 
+Use the [Analytical Benchmark Atlas](benchmarks.md) as the permanent overlay
+inventory. Circular tokamak, simple helical field and large-aspect-ratio
+families remain plotted beside their later geometry/transport cases. Rigorous
+reference quadrature/root/special-function uncertainty is displayed as part
+of the reference band. Leading asymptotes without remainder bounds are labeled
+diagnostic curves, never certified exact-solution bands. MHD/hybrid comparisons
+use the same physical observable with bulk/kinetic accounting stated.
+
 Every new general capability produces a comparison figure overlaying its
 limiting configuration with the retained earlier simpler implementation.
 Use matching units, physical inputs, observable definitions, and reference
@@ -130,5 +138,24 @@ containment, scale, reference overlays, legends, and grayscale distinctions.
 Numerically check certified interval containment over the represented domain
 against the analytic oracle where available. The postprocessor displays the
 checked certificate status and cannot manufacture a successful one.
+
+## Broader-model plot rules
+
+Show background, external drive and induced response separately where needed
+for interpretation, and label active/test/reservoir populations. For reaction,
+wall, source and circuit examples include the relevant exchange/power ledger.
+Synthetic diagnostics use physical instrument signals with their complete
+numerical enclosure and separately labelled observation uncertainty.
+
+Statistical neutral/noise confidence intervals use a distinct visual style and
+legend from deterministic certified bands. Data/model intervals are labelled
+with their own assumptions. No band is drawn from an L2 radius for a pointwise
+quantity or from an assumed continuity of a boundary-hitting event.
+
+Atlas cases include non-cylindrical Figure-8/map tests, open space boundaries,
+reactions, pickup populations and diagnostic integrals. Geometry or field
+slices can provide meaningful early plots without claiming that the full
+machine solution has been certified. Retain the earlier exact/simple limit
+as soon as a general implementation exists, with matched units and observables.
 
 Chris&AI

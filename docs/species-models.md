@@ -6,6 +6,11 @@ defined. The initial reference remains all-species full-orbit kinetics.
 
 ## Model selection axes
 
+A separate [bulk-plasma model](model-family.md#bulk-plasma-and-mhd) can
+aggregate thermal species into multi-fluid/MHD state and couple to selected
+kinetic populations. It is not an additional per-species label. Population
+ownership and field/exchange accounting must prevent double counting.
+
 Select the species model independently for each population. Separately select
 pair collision physics, discrete structure treatment, field model, geometry,
 stationary/transient consumer, and certificate scope. Independence of these
@@ -188,5 +193,19 @@ can matter more than state count. Certification of the reduced model bounds
 its numerical error; certification against the parent requires the separate
 reduction theorem. A reduced electron model can leave ion waves, fast
 parallel streaming, or electromagnetic stiffness requiring temporal treatment.
+
+## Populations beyond the initial kinetic spine
+
+[Coupling roles](coupling.md) are independent of the phase-space model:
+a FK test population may be passive while DK is active. Neutral/charge-state
+populations and their closures are specified in [edge physics](edge-physics.md).
+MHD aggregates retain explicit population ownership; they are not a per-species
+transport flag. [Space scope](space-plasmas.md) reserves CGL/nonlocal fluid
+closures, arbitrary distribution shapes and minor populations when needed.
+
+Mass is positive and charge may be signed or zero. Pair-plasma or nuclear
+product cases need compatible collision/reaction definitions; general species
+parameters do not imply all interactions are implemented. Relativistic fluid
+reductions and alternative velocity bases are later derived capabilities.
 
 Chris&AI

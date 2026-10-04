@@ -160,4 +160,61 @@ study specifies four periods and a 12.7 m major radius. These are named
 design points, not timeless specifications or measured reactor operation.
 No equilibrium input or production benchmark has yet been selected.
 
+## Analytical and bulk-model references
+
+The [Analytical Benchmark Atlas](benchmarks.md) identifies closed forms,
+semi-analytic evaluation, asymptotes, identities, and numerical comparisons.
+Guazzotto–Freidberg exact Grad–Shafranov geometry uses
+[DOI 10.1017/S002237782100009X](https://doi.org/10.1017/S002237782100009X).
+The [Landau time-domain construction](https://arxiv.org/abs/2503.22501),
+[Bernstein time-domain construction](https://arxiv.org/abs/2608.12994), and
+[cylindrical pinch constructions](https://arxiv.org/abs/2608.06780) are specific
+semi-analytic candidates requiring rigorous evaluation before certification.
+Their existence does not establish all atlas cases or their error theorems.
+
+[Model-family references](model-family.md#independent-references-and-certification)
+define the checked local ARES scope and documented GPEC/JOREK intersections.
+The [VMEC++ documentation](https://proximafusion.github.io/vmecpp/) describes
+an external ideal-MHD equilibrium candidate source, not a rigorous continuous
+equilibrium enclosure. External solvers retain their own model/topology scope.
+
+The user's expanded first-ring literature list and curated second ring belong
+to the external corpus under the [literature policy](literature-policy.md).
+Metadata resolution, lawful OA provenance, attachment hashes, review queues
+and Zotero imports are outside the solver repository. DOI metadata and a PDF
+download do not substitute for reading and checking a benchmark's assumptions.
+
+## Cartesian maps, edge data and broader scope
+
+[Plunk et al., Figure-8](https://arxiv.org/abs/2411.16411),
+[Hindenlang–Plunk–Maj, flexible frame](https://arxiv.org/abs/2410.17595), and
+[Babin et al., invertible mappings](https://arxiv.org/abs/2411.04683) motivate
+the selectable Cartesian embedding. They supply candidate constructions;
+kin6d still needs rigorous map and transformed-operator bounds.
+
+[OPEN-ADAS ADF11](https://open.adas.ac.uk/adf11) documents derived coefficient
+classes, while [ADF04](https://open.adas.ac.uk/adf04) documents resolved
+level/rate data whose coverage must be inspected per file. These do not
+provide arbitrary differential product cross sections by default.
+[EIRENE source/manuals](https://github.com/iterorganization/EIRENE) provide
+a neutral backend/reference; sampling uncertainty is statistical.
+[GENE-X](https://genex.ipp.mpg.de/about) and
+[XGC](https://xgc.pppl.gov/html/general_info.html) supply kinetic edge
+precedents, not certificates for unrestricted FK plasma–neutral–wall equations.
+
+The broader application and actuator/diagnostic tables are planned scientific
+requirements, not assertions of code parity, prior-art completeness or
+existing proof coverage. Pin and review the exact primary formula/data/code
+source before activating each benchmark.
+
+## FortFEM source snapshot
+
+[Spatial numerics](numerics.md) pins FortFEM main
+`2d7baa19fe1bef02ce279fa407830c8731bdc663`, its scope and spline source files.
+The inspection confirms mathematical ingredients and an assembly-oriented
+spline path; it is not a build/performance audit or a continuous certificate.
+Sum factorization, partial assembly and batching are client-driven production
+goals to add upstream when the next workload requires them. FortFEM retains
+generic spatial ownership; plasma closures remain outside it.
+
 Chris&AI
