@@ -20,6 +20,12 @@ certifier, formal-proof, CUDA, or build evidence that has not been produced.
   enclosure, and CUDA leaves, must be emitted by fortsym. Retain generators,
   exact definitions, assumptions, provenance, and independent oracles.
   Never edit generated numerical code or hide formulas in handwritten glue.
+- Read docs/differentiability.md before adding a continuous production operator
+  or derivative. Generate primal/JVP/VJP from its shared FortSym definition;
+  HVP follows a concrete use. Keep symbolic mathematics separate from execution
+  schedules. Use implicit solve derivatives, tile-local recomputation and lazy
+  reductions; budget trajectory checkpoints and physical state explicitly.
+  Declare derivative domains/events and retain independent derivative oracles.
 - Generic dependency defects and missing features are repaired in their
   owning repositories. The user authorizes the controller to push locally
   verified fixes to owned upstream main promptly. Coordinate with active

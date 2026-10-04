@@ -162,6 +162,12 @@ are diagnostics, not universal constant limits. Batched directions are useful
 when the consumer actually has several. Independent derivative/duality oracles
 remain mandatory, and numerical leaves still pass through fortsym.
 
+[Differentiability policy](differentiability.md) extends the frontier to
+forward/JVP/VJP time and memory, including implicit adjoint solve, local
+recomputation and trajectory checkpoint costs. Time to gradient accuracy
+states validated versus rigorously certified status. Tune the returned product
+family for its consumer; a faster primal need not improve an inverse workflow.
+
 Count every state/work vector and factor. Attribute state, residual/update,
 Krylov, geometry, preconditioner, collision, scratch, padding, host/device
 staging and certification memory. Strong reduced-physics preconditioning,
