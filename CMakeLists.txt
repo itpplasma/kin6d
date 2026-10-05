@@ -24,6 +24,10 @@ add_library(kin6d_intervals
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_rounding.f90
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_interval.f90)
 target_compile_options(kin6d_intervals PRIVATE -fno-fast-math -ffp-contract=off)
+# Generated derivative families retain the primal ABI even for constant partials.
+# Unused primal arguments are intentional; keep other diagnostics enabled.
+set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90)
 target_link_libraries(kin6d PUBLIC kin6d_intervals)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
