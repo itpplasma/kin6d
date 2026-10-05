@@ -193,7 +193,7 @@ target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)
 
 # Campaign Q3/Q8: finite-N ideal fermion ensembles and relativistic Fermi EOS.
 if(KIN6D_FORTSYM_BUILD)
-    foreach(generator relativistic_fermi)
+    foreach(generator relativistic_fermi fermion_ensemble)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_include_directories(gen_${generator} PRIVATE
             ${KIN6D_FORTSYM_BUILD}/include)
@@ -207,3 +207,10 @@ set_source_files_properties(src/generated/kin6d_relativistic_fermi_leaves.f90
 add_executable(test_relativistic_fermi_gas test/test_relativistic_fermi_gas.f90)
 target_link_libraries(test_relativistic_fermi_gas PRIVATE kin6d)
 add_test(NAME relativistic_fermi_gas_oracles COMMAND test_relativistic_fermi_gas)
+target_sources(kin6d PRIVATE src/generated/kin6d_fermion_ensemble_leaves.f90
+    src/fermion_ensemble.f90)
+set_source_files_properties(src/generated/kin6d_fermion_ensemble_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_fermion_ensemble test/test_fermion_ensemble.f90)
+target_link_libraries(test_fermion_ensemble PRIVATE kin6d)
+add_test(NAME fermion_ensemble_oracles COMMAND test_fermion_ensemble)
