@@ -146,6 +146,13 @@ General coupled states require the implicit-state adjoint:
 
 Begin before the full R1 case list is complete:
 
+The first rung has an [animated particle/Eulerian comparison](docs/streaming-comparison.md)
+for supplied Fourier/P1 free-streaming data, with continuous state and density
+bounds and generated smooth leaf derivatives. Certified continuous sensitivity
+bounds remain unavailable. The next representation gate is the neutral Poisson
+deposit/solve/gather comparison below; this does not replace the forced-FP
+work on the primary steady spine.
+
 1. Exact free streaming: continuum versus deterministic characteristic
    particles, with analytical density modes and parameter sensitivities.
 2. Neutral single-mode Poisson: continuum projection, direct PIF and simple
@@ -279,13 +286,16 @@ system; Vlasov/FK remains the highest continuum mean-field reference.
 
 Development ladder:
 
-1. two-particle relativistic Coulomb scattering with the Rutherford limit;
-2. two interacting particles in a prescribed magnetic/electromagnetic field;
-3. small Maxwell-field versus direct retarded Lienard--Wiechert mutual-field
-   comparison under matching radiation conditions;
-4. periodic many-particle plasma oscillation;
-5. **emergent Debye shielding** around a weak test charge, with no screened
+1. nonrelativistic repulsive two-particle Coulomb scattering with a Rutherford
+   oracle and controlled close encounters; animate the actual 3D trajectories;
+2. a few interacting 3D3V particles, then a prescribed magnetic-field case;
+3. a small neutral periodic 3D3V electron OCP with an explicit background,
+   verified periodic Coulomb forces and collective plasma oscillation;
+4. **emergent Debye shielding** around a weak test charge, with no screened
    potential or collision operator imposed;
+5. \(\Lambda=n\lambda_D^3=100,300,1000,3000,10000\) scans, with
+   \(L/\lambda_D\) varied separately and mean-response, fluctuation and
+   collision-rate convergence reported separately;
 6. \(g_{ab}(r)\), \(S_{ab}(k)\), \(S_{ab}(k,\omega)\) and dielectric-response
    measurements;
 7. microscopic slowing-down, pitch-angle diffusion, momentum/temperature
@@ -293,6 +303,21 @@ Development ladder:
    operators;
 8. weak-to-strong-coupling scans testing Landau, Beliaev--Budker,
    Balescu--Lenard and mean-force closures.
+
+Relativistic Coulomb, Darwin, full Maxwell and the tiny direct retarded
+Lienard--Wiechert comparison follow when their regime/use case requires them;
+they are not prerequisites for the early Coulomb gallery. The classical parent
+remains full Maxwell--Lorentz with an explicitly chosen self-field prescription.
+The \(\Lambda=1000,L=4\lambda_D\) candidate contains 64000 physical
+particles per species; choose its force algorithm only after a measured
+small-box gate. It is a planned collective-limit benchmark, not a microscopic
+tokamak equivalent or an established cheap direct-pair run.
+
+Keep the periodic screening reference separate from the isolated Yukawa
+overlay. Radial averaging of 3D particles does not turn the dynamics into a
+one-dimensional line or a spherical-shell model. Spherical/slab reductions
+need their own derived force law and model-error status. Full trajectory
+certification and statistical estimator intervals are different gates.
 
 Numerically retain direct \(O(N^2)\) pair summation as the gold-standard tiny
 oracle, then add FMM/tree or Ewald/spectral-Ewald/P3M for electrostatic/periodic

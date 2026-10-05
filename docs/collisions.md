@@ -6,6 +6,14 @@ Every project-owned numerical leaf follows the [fortsym policy](tooling.md#kerne
 
 ## Independent choices
 
+The [microscopic teaching branch](microscopic-many-body.md) separates
+collective response, resolved binary encounters and connected higher-particle
+correlations. Screening and plasma oscillations can be tested with Coulomb
+particles or collisionless mean-field equations before implementing a collision
+closure. BBGKY is the marginal hierarchy; Landau, Balescu--Lenard and
+Beliaev--Budker are effective operators with distinct asymptotic hypotheses.
+Do not double count a resolved pair interaction with an imposed collision term.
+
 Select the physical collision model, its nonlinear/linearized action, the
 discrete conservation/entropy treatment, and the certificate scope separately.
 Each choice changes a stated mathematical or numerical contract. A conservative

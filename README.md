@@ -61,6 +61,12 @@ nonlinear or particle cases. The practical default targets about 1% accuracy
 for a named observable with a declared scale; tighter accuracy remains a
 request rather than a prerequisite for useful results.
 
+The [animated representation comparison](docs/streaming-comparison.md) shows
+weighted characteristic particles alongside an Eulerian Fourier/P1 solution
+of prescribed-field free streaming, with certified distribution and density
+bands. It is the first transport comparison; self-consistent particle-field
+coupling remains planned.
+
 ## Scientific spine
 
 The main research progression is deliberately steady-state first:

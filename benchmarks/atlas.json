@@ -329,7 +329,18 @@
         "continuous reconstructed distribution",
         "Fourier coefficient norm invariant"
       ],
-      "plot_recipe": "FortPlot phase-space heatmap; x=0 exact/fine/coarse profile with fine-grid snapshot enclosure"
+      "plot_recipe": "FortPlot phase-space heatmap; x=0 exact/fine/coarse profile with fine-grid snapshot enclosure",
+      "representation_comparison": {
+        "model": "prescribed E=0; x periodic 2*pi; v in [-1,1]; supplied finite Fourier/P1 initial data",
+        "demo_initial_data": "f0=1+0.5*cos(x); exact same model for both carriers",
+        "carriers": "Eulerian Fourier/P1 and weighted deterministic characteristic particles; no field feedback",
+        "certificate_method": "strict nodal rotation; physical-harmonic C2 velocity remainder; cell-aligned particle weak midpoint quadrature; spatial chord remainder",
+        "oracle": "independent real128 translated arbitrary P1 data and exact cellwise density integrals",
+        "derivative_scope": "generated smooth primal/JVP/VJP; continuous sensitivity bounds unavailable",
+        "reference_implementation": "gen/gen_streaming.f90; FortSym 549aed77be10297beb80d602d714d30166fbeb08",
+        "plot_recipe": "scripts/demo.sh; output/particles-vlasov.mp4 and synchronized certified density/slice bands",
+        "evidence": "docs/streaming-comparison.md"
+      }
     },
     {
       "id": "constant_electric_field",
