@@ -9,7 +9,7 @@ include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
     GIT_REPOSITORY https://github.com/lazy-fortran/fortplot.git
-    GIT_TAG 87ff7a43809e868e0153f400a21cdb31b9a92d84)
+    GIT_TAG 67834eb4568720226ca97a94e02267f48542613d)
 FetchContent_MakeAvailable(fortplot)
 include(CheckFortranCompilerFlag)
 check_fortran_compiler_flag("-ftrampoline-impl=heap" KIN6D_HAVE_HEAP_TRAMPOLINES)
