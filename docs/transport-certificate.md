@@ -187,6 +187,21 @@ The audit covers the continuous inverse, Bernstein and box residuals, tangent
 coupling, sampling and observable argument under the stated arithmetic and
 immutable-packet premises. This evidence paragraph updates reporting after
 the frozen mathematical text; no proof or numerical definition changed.
-Integrated Release/Debug gates pass 4/4 and optional formal gates pass 5/5.
+At that transport baseline, Release/Debug gates pass 4/4 and optional formal
+gates pass 5/5. The cached sampling increment retains these mathematical
+definitions and adds a separate reconstruction/geometry oracle gate.
+
+The cache increment was independently reviewed against base
+`b5a19156c57c783aad8b0eb4e5702fe4d9f867ff` with generated-basis patch digest
+`4eb9fc22cd58dec622e76ccc3bf0f7d93411ea1d6fb58914c6c1330c26d56a41`,
+sampler/oracle digest
+`846724b7bf7404456d5e27c9186af08b56a54d35b4462db52e929ae9c66fb149`
+and final application digest
+`046a64bdf7e46c8f491f3bccc00dbb82786f0619d3de1c6c6255745feb067e2d`.
+All reviews pass. The private cache captures only spatial factor geometry and
+checks exact requested endpoints; live P1 data still pass touched-cell checks.
+State/source/tangent/certificate packets retain the validated immutable
+association requirement. Integration now passes Release/Debug 5/5 and optional
+formal 6/6, including full-cell cached reconstruction and failure oracles.
 
 Chris&AI

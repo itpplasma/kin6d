@@ -12,6 +12,7 @@ module kin6d_transport_laboratory
     public :: solve_transport_tangent, solve_transport_vjp
     public :: sample_transport, sample_transport_arrays
     public :: sample_transport_coefficients_interval, sample_transport_input_interval
+    public :: locate_cell
 
     ! s(x,v) is supplied independently as a finite Fourier-x/P1-v function.
     ! v*f_x+nu*f=s on periodic x, v in [-1,1]; no velocity boundary condition

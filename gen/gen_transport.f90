@@ -11,7 +11,7 @@ program gen_transport
         emit_rigorous_kernel
     implicit none
 
-    character(*), parameter :: revision = '102c1cbe392e1ba70d169fd75aeda0f2ffe8ab88'
+    character(*), parameter :: revision = '93c8b2ada93a2f58e2c36349560e9c52f2c9f79a'
     type(arena_t), target :: arena
     type(native_engine_t) :: engine
     type(expr_t) :: v, nu, k, sc, ss, determinant, a, b, x, acc, index, count
@@ -20,6 +20,7 @@ program gen_transport
     type(expr_t) :: fc0, fc1, fs0, fs1, gc0, gc1, gs0, gs1, bc(3), bs(3)
     type(expr_t) :: dsource, f, physical_scale, relative_tolerance, absolute_floor
     type(expr_t) :: lo, hi, fc, fs, gc, gs
+    type(expr_t) :: sine, cosine
     integer :: unit
 
     call arena%init()
@@ -47,6 +48,7 @@ program gen_transport
     gs0 = sym(arena, 'gs0'); gs1 = sym(arena, 'gs1')
     fc = sym(arena, 'fc'); fs = sym(arena, 'fs')
     gc = sym(arena, 'gc'); gs = sym(arena, 'gs')
+    sine = sym(arena, 'sine'); cosine = sym(arena, 'cosine')
 
     ! v*f_x + nu*f = supplied source, x periodic with period2*pi, nu>0.
     ! Fourier convention: a*cos(k*x)+b*sin(k*x), integer k>=0.
@@ -88,6 +90,11 @@ program gen_transport
         [al + (ar - al)*(v - vl)/(vr - vl)], ad=.true., interval=.true.)
     call emit('transport_mode_accumulate', ['x  ', 'k  ', 'a  ', 'b  ', 'acc'], &
         ['next'], [acc + a*cos(k*x) + b*sin(k*x)], ad=.true., interval=.true.)
+    call emit('transport_basis', ['x', 'k'], ['sine  ', 'cosine'], &
+        [sin(k*x), cos(k*x)], ad=.true., interval=.true.)
+    call emit('transport_weighted_mode_accumulate', &
+        ['sine  ', 'cosine', 'a     ', 'b     ', 'acc   '], ['updated'], &
+        [acc + a*cosine + b*sine], ad=.true., interval=.true.)
     call emit('transport_scalar_add', ['acc  ', 'value'], ['next'], &
         [acc + sym(arena, 'value')], ad=.true., interval=.true.)
     call emit('transport_abs_value', ['value'], ['magnitude'], &
@@ -148,6 +155,7 @@ contains
                 rspec%runtime = interval_runtime('fortnum_interval', 'interval_t')
                 rspec%runtime%sin = str('sin')
                 rspec%runtime%cos = str('cos')
+                rspec%runtime%sincos = str('sincos')
                 rspec%elemental_procedure = .true.
                 allocate (rspec%args(size(args)), rspec%outputs(size(outputs)))
                 do j = 1, size(args)

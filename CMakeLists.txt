@@ -15,7 +15,7 @@ FetchContent_MakeAvailable(fortplot)
 # Compile them unchanged, from the pinned upstream tree; no copied numerics.
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG b91091e26b613af0b4c0ef2a7d2e1eaa412f6a69)
+    GIT_TAG aa15a16e50f5c2e619a9a65a5100b2a994342949)
 FetchContent_GetProperties(fortnum)
 if(NOT fortnum_POPULATED)
     FetchContent_Populate(fortnum)
@@ -32,7 +32,7 @@ add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
     src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
-    src/transport_certificate.f90)
+    src/transport_certificate.f90 src/transport_sampling.f90)
 set_source_files_properties(
     src/generated/kin6d_poisson_leaves.f90 src/generated/kin6d_fp_leaves.f90
     src/generated/kin6d_transport_leaves.f90
@@ -59,6 +59,9 @@ add_test(NAME bounded_fp_steady_oracles COMMAND test_fp)
 add_executable(test_transport test/test_transport.f90)
 target_link_libraries(test_transport PRIVATE kin6d)
 add_test(NAME general_transport_and_tangent_oracles COMMAND test_transport)
+add_executable(test_transport_sampling test/test_transport_sampling.f90)
+target_link_libraries(test_transport_sampling PRIVATE kin6d)
+add_test(NAME cached_transport_band_oracles COMMAND test_transport_sampling)
 find_program(KIN6D_LAKE lake)
 option(KIN6D_CHECK_LEAN "Check continuous Lean theorems and computed certificate" OFF)
 if(KIN6D_CHECK_LEAN)
@@ -72,7 +75,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "102c1cbe392e1ba70d169fd75aeda0f2ffe8ab88")
+set(KIN6D_FORTSYM_REVISION "93c8b2ada93a2f58e2c36349560e9c52f2c9f79a")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
