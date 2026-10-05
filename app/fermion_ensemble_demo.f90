@@ -14,38 +14,90 @@ program fermion_ensemble_demo
     use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, &
         legend, tight_layout, savefig, xscale, yscale
     use fortplot_system_runtime, only: create_directory_runtime
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: colors(3, 4) = reshape([0.0_dp, 0.447_dp, 0.698_dp, &
         0.835_dp, 0.369_dp, 0.0_dp, 0.0_dp, 0.62_dp, 0.451_dp, 0.8_dp, 0.475_dp, &
         0.655_dp], [3, 4])
+    ! Namelist &fermion_ensemble (theta = kT/E_F, N = particles per spin).
+    integer :: workspace_cells = 16384
+    ! Exchange hole: x = k_F r grid on [0, hole_x_max]; ground-state cutoff.
+    integer :: hole_points = 181, hole_n = 123, ground_cutoff = 40
+    real(dp) :: hole_thetas(3) = [0.25_dp, 1.0_dp, 2.0_dp], hole_x_max = 9.0_dp
+    real(dp) :: pair_tolerance = 1.0e-9_dp
+    integer :: occupation_sizes(2) = [33, 123]
+    real(dp) :: occupation_thetas(2) = [0.25_dp, 1.0_dp]
+    ! EOS: log theta grid eos_theta_min*eos_theta_ratio**[0,1]; the large
+    ! size is solved on every eos_large_stride-th point.
+    integer :: eos_points = 24, eos_fine = 60, eos_small = 33, eos_large = 123
+    integer :: eos_large_stride = 3
+    real(dp) :: eos_theta_min = 0.05_dp, eos_theta_ratio = 200.0_dp
+    integer :: size_sizes(6) = [7, 19, 33, 57, 123, 251]
+    real(dp) :: size_thetas(3) = [0.25_dp, 1.0_dp, 4.0_dp]
+    namelist /fermion_ensemble/ workspace_cells, hole_points, hole_n, ground_cutoff, &
+        hole_thetas, hole_x_max, pair_tolerance, occupation_sizes, occupation_thetas, &
+        eos_points, eos_fine, eos_small, eos_large, eos_large_stride, eos_theta_min, &
+        eos_theta_ratio, size_sizes, size_thetas
+    type(run_t) :: run
+    type(result_file_t) :: result
     type(fermi_workspace_t) :: work
     logical :: ok
+    integer :: config_unit, ios
+    character(256) :: msg
+    ! Evidence gathered by the sections for the NetCDF result.
+    real(dp), allocatable :: hole_x(:), hole_cold(:), hole_ground(:), hole_boltz(:)
+    real(dp), allocatable :: hole_canonical(:, :), hole_gc(:, :)
+    real(dp), allocatable :: occ_rows(:, :), size_rows(:, :)
+    real(dp), allocatable :: eos_theta(:), eos_small_rows(:, :, :), eos_large_rows(:, :, :)
+    real(dp), allocatable :: eos_small_cert(:), eos_large_cert(:), eos_done(:)
+    real(dp), allocatable :: limit_theta(:), limit_values(:, :)
+
+    call run%start('fermion_ensemble_demo')
+    if (run%argument_count() > 0) error stop 'usage: fermion_ensemble_demo [--config FILE]'
+    ios = 0; msg = ''
+    call run%open_config(config_unit)
+    if (run%has_config()) read (config_unit, nml=fermion_ensemble, iostat=ios, iomsg=msg)
+    call run%close_config(config_unit, 'fermion_ensemble', ios, msg)
+    if (workspace_cells < 1 .or. hole_points < 2 .or. hole_n < 1 .or. &
+        ground_cutoff < 1 .or. eos_points < 2 .or. eos_fine < 2 .or. eos_small < 1 .or. &
+        eos_large < 1 .or. eos_large_stride < 1 .or. any(occupation_sizes < 1) .or. &
+        any(size_sizes < 1)) error stop 'fermion_ensemble sizes must be positive'
+    if (.not. (all(hole_thetas > 0.0_dp) .and. all(occupation_thetas > 0.0_dp) .and. &
+        all(size_thetas > 0.0_dp) .and. hole_x_max > 0.0_dp .and. &
+        pair_tolerance >= 0.0_dp .and. eos_theta_min > 0.0_dp .and. &
+        eos_theta_ratio > 1.0_dp)) error stop 'fermion_ensemble invalid theta/grid'
+    call run%open_resolved(config_unit)
+    write (config_unit, nml=fermion_ensemble)
+    call run%close_resolved(config_unit)
 
     call create_directory_runtime('output', ok)
-    call initialize_fermi_workspace(work, 16384, ok)
+    call initialize_fermi_workspace(work, workspace_cells, ok)
     if (.not. ok) error stop 'workspace'
+    allocate (occ_rows(8, 0), size_rows(8, 0))
     call hole_section()
     call occupation_section()
     call eos_section()
     call size_section()
+    call write_result()
 
 contains
 
     subroutine hole_section()
-        integer, parameter :: points = 181, n = 123
-        real(dp), parameter :: thetas(3) = [0.25_dp, 1.0_dp, 2.0_dp]
         type(fermion_spectrum_t) :: spec
         type(canonical_state_t) :: st
         type(fermi_state_t) :: fermi
-        real(dp) :: x(points), r(points), cold(points), ground(points)
-        real(dp) :: canonical(points, 3), gc(points, 3), boltz(points), rho(points)
-        real(dp) :: ef, b, trunc, kfl
-        integer :: i, k, unit
-        character(32) :: label
+        real(dp), allocatable :: x(:), r(:), cold(:), ground(:)
+        real(dp), allocatable :: canonical(:, :), gc(:, :), boltz(:), rho(:)
+        real(dp) :: ef, b, trunc, kfl, thetas(3)
+        integer :: i, k, unit, points, n
+        character(48) :: label
+        points = hole_points; n = hole_n; thetas = hole_thetas
+        allocate (x(points), r(points), cold(points), ground(points), &
+            canonical(points, 3), gc(points, 3), boltz(points), rho(points))
         kfl = (6.0_dp*pi**2*real(n, dp))**(1.0_dp/3.0_dp)
         do i = 1, points
-            x(i) = 9.0_dp*real(i - 1, dp)/real(points - 1, dp)
+            x(i) = hole_x_max*real(i - 1, dp)/real(points - 1, dp)
             r(i) = x(i)/kfl
             if (x(i) < 0.05_dp) then
                 call fermion_cold_density_matrix_series(x(i), rho(i))
@@ -55,7 +107,7 @@ contains
             call fermion_exchange_hole(rho(i), cold(i))
             call fermion_boltzmann_hole(thetas(3), x(i), boltz(i))
         end do
-        call box_spectrum(40, spec, ok)
+        call box_spectrum(ground_cutoff, spec, ok)
         call solve_ground(spec, n, st, ok)
         call same_spin_pair(spec, st, r, ground, ok, 0.0_dp, trunc)
         if (.not. ok) error stop 'ground pair'
@@ -66,7 +118,7 @@ contains
             call box_spectrum(box_cutoff(b, n), spec, ok)
             call solve_canonical(spec, n, b, st, ok)
             if (.not. ok) error stop 'canonical state'
-            call same_spin_pair(spec, st, r, canonical(:, k), ok, 1.0e-9_dp, trunc)
+            call same_spin_pair(spec, st, r, canonical(:, k), ok, pair_tolerance, trunc)
             if (.not. ok) error stop 'canonical pair'
             call solve_fermi_gas(work, thetas(k), fermi, ok)
             call grand_canonical_density(fermi, x, rho, ok)
@@ -79,41 +131,50 @@ contains
                 ' truncation<=', trunc, ' certified state:', st%certified
         end do
         open (newunit=unit, file='output/fermion-exchange-hole.csv', status='replace')
-        write (unit, '(a)') '# same-spin g(r), N_sigma=123 per spin in a periodic box; '// &
+        write (label, '(i0)') n
+        write (unit, '(a)') '# same-spin g(r), N_sigma='//trim(label)//' per spin in a periodic box; '// &
             'x=kF*r; canonical=finite-N candidate; gc=grand-canonical thermodynamic '// &
             'limit; classical ideal gas g=1'
-        write (unit, '(a)') 'x,analytic_T0,ground_N,canonical_0.25,gc_0.25,'// &
-            'canonical_1,gc_1,canonical_2,gc_2,boltzmann_2,classical'
+        write (unit, '(a)') 'x,analytic_T0,ground_N,'//trim(column('canonical_', &
+            thetas(1)))//','//trim(column('gc_', thetas(1)))//','// &
+            trim(column('canonical_', thetas(2)))//','//trim(column('gc_', thetas(2)))// &
+            ','//trim(column('canonical_', thetas(3)))//','// &
+            trim(column('gc_', thetas(3)))//','//trim(column('boltzmann_', thetas(3)))// &
+            ',classical'
         do i = 1, points
             write (unit, '(*(es16.8,:,","))') x(i), cold(i), ground(i), &
                 (canonical(i, k), gc(i, k), k=1, 3), boltz(i), 1.0_dp
         end do
         close (unit)
+        hole_x = x; hole_cold = cold; hole_ground = ground; hole_boltz = boltz
+        hole_canonical = canonical; hole_gc = gc
         call figure(figsize=[8.0_dp, 5.5_dp])
         call plot(x, cold, label='T=0 limit 1-9(j1(x)/x)^2', color=[0.0_dp, 0.0_dp, &
                   0.0_dp], linewidth=2.0_dp)
-        call plot(x, ground, label='N=123 ground state', color=[0.5_dp, 0.5_dp, &
+        write (label, '(a,i0,a)') 'N=', n, ' ground state'
+        call plot(x, ground, label=trim(label), color=[0.5_dp, 0.5_dp, &
                   0.5_dp], linestyle='--')
         do k = 1, 3
-            write (label, '(a,f4.2,a)') 'N=123, Theta=', thetas(k), ' canonical'
+            write (label, '(a,i0,a,f4.2,a)') 'N=', n, ', Theta=', thetas(k), ' canonical'
             call plot(x, canonical(:, k), label=trim(label), color=colors(:, k))
             write (label, '(a,f4.2,a)') 'Theta=', thetas(k), ' grand canonical'
             call plot(x, gc(:, k), label=trim(label), color=colors(:, k), linestyle='--')
         end do
-        call plot(x, boltz, label='Boltzmann limit 1-exp(-Theta x^2/2), Theta=2', &
+        write (label, '(a,f4.2)') 'Boltzmann 1-exp(-Theta x^2/2), Theta=', thetas(3)
+        call plot(x, boltz, label=trim(label), &
                   color=colors(:, 4), linestyle=':')
-        call plot([0.0_dp, 9.0_dp], [1.0_dp, 1.0_dp], label='classical ideal gas g=1', &
+        call plot([0.0_dp, hole_x_max], [1.0_dp, 1.0_dp], label='classical ideal gas g=1', &
                   color=[0.3_dp, 0.3_dp, 0.3_dp], linestyle=':')
         call title('Same-spin exchange hole without interaction (opposite spin: g=1)')
         call xlabel('k_F r'); call ylabel('g_{sigma sigma}(r)')
-        call xlim(0.0_dp, 9.0_dp); call ylim(0.0_dp, 1.2_dp)
+        call xlim(0.0_dp, hole_x_max); call ylim(0.0_dp, 1.2_dp)
         call legend(loc='lower right')
         call savefig('output/fermion-exchange-hole.png')
     end subroutine hole_section
 
     subroutine occupation_section()
-        integer, parameter :: sizes(2) = [33, 123]
-        real(dp), parameter :: thetas(2) = [0.25_dp, 1.0_dp]
+        integer :: sizes(2)
+        real(dp) :: thetas(2)
         type(fermion_spectrum_t) :: spec
         type(canonical_state_t) :: st
         type(fermi_state_t) :: fermi
@@ -121,6 +182,7 @@ contains
         real(dp), allocatable :: eps(:)
         integer :: i, j, k, unit, shells
         character(40) :: label
+        sizes = occupation_sizes; thetas = occupation_thetas
         open (newunit=unit, file='output/fermion-occupations.csv', status='replace')
         write (unit, '(a)') '# per-orbital canonical occupation of box shells; '// &
             'fd=grand-canonical Fermi-Dirac at the certified thermodynamic-limit mu; '// &
@@ -151,6 +213,9 @@ contains
                     write (unit, '(i4,",",f6.3,6(",",es16.8))') sizes(j), thetas(k), &
                         eps(i), st%occupation(i), st%occupation_bound(i)%lo, &
                         st%occupation_bound(i)%hi, f, m
+                    occ_rows = reshape([occ_rows, real(sizes(j), dp), thetas(k), eps(i), &
+                        st%occupation(i), st%occupation_bound(i)%lo, &
+                        st%occupation_bound(i)%hi, f, m], [8, size(occ_rows, 2) + 1])
                 end do
                 write (label, '(a,i3,a)') 'canonical N=', sizes(j), ' per spin'
                 call plot(eps, st%occupation(:shells), label=trim(label), &
@@ -166,12 +231,18 @@ contains
     end subroutine occupation_section
 
     subroutine eos_section()
-        integer, parameter :: points = 24, fine = 60
         type(fermi_state_t) :: fermi
-        real(dp) :: theta(points), tl(fine, 4), tt(fine)
-        real(dp) :: small(points, 5), large(points, 5)
-        logical :: done(points)
-        integer :: i, unit
+        real(dp), allocatable :: theta(:), tl(:, :), tt(:)
+        real(dp), allocatable :: small(:, :), large(:, :)
+        logical, allocatable :: done(:)
+        integer :: i, unit, points, fine
+        character(24) :: label
+        points = eos_points; fine = eos_fine
+        allocate (theta(points), tl(fine, 4), tt(fine), small(points, 5), &
+            large(points, 5), done(points), eos_small_rows(points, 4, 3), &
+            eos_large_rows(points, 4, 3), eos_small_cert(points), &
+            eos_large_cert(points))
+        large = 0.0_dp; eos_large_rows = 0.0_dp; eos_large_cert = 0.0_dp
         open (newunit=unit, file='output/fermion-eos-scan.csv', status='replace')
         write (unit, '(a)') '# box EOS per spin-1/2 electron in units of the '// &
             'thermodynamic-limit EF; e=E/(N EF), p=P/(n EF)=2e/3, de/dtheta=C_V/(N kB), '// &
@@ -180,10 +251,12 @@ contains
             'dedtheta_lo,dedtheta_hi,bulk,bulk_lo,bulk_hi,certified'
         done = .false.
         do i = 1, points
-            theta(i) = 0.05_dp*(200.0_dp)**(real(i - 1, dp)/real(points - 1, dp))
-            call row(unit, 33, theta(i), small(i, :))
-            if (mod(i - 1, 3) == 0) then
-                call row(unit, 123, theta(i), large(i, :))
+            theta(i) = eos_theta_min*(eos_theta_ratio)**(real(i - 1, dp)/real(points - 1, dp))
+            call row(unit, eos_small, theta(i), small(i, :), eos_small_rows(i, :, :), &
+                eos_small_cert(i))
+            if (mod(i - 1, eos_large_stride) == 0) then
+                call row(unit, eos_large, theta(i), large(i, :), eos_large_rows(i, :, :), &
+                    eos_large_cert(i))
                 done(i) = .true.
             end if
         end do
@@ -192,21 +265,25 @@ contains
         write (unit, '(a)') '# certified homogeneous thermodynamic-limit Fermi gas'
         write (unit, '(a)') 'theta,e,p,dedtheta,bulk'
         do i = 1, fine
-            tt(i) = 0.05_dp*(200.0_dp)**(real(i - 1, dp)/real(fine - 1, dp))
+            tt(i) = eos_theta_min*(eos_theta_ratio)**(real(i - 1, dp)/real(fine - 1, dp))
             call solve_fermi_gas(work, tt(i), fermi, ok)
             tl(i, :) = [fermi%energy, fermi%pressure, fermi%theta_gradient(3), &
                         fermi%bulk_modulus]
             write (unit, '(*(es16.8,:,","))') tt(i), tl(i, :)
         end do
         close (unit)
+        eos_theta = theta; eos_done = merge(1.0_dp, 0.0_dp, done)
+        limit_theta = tt; limit_values = tl
         call figure(figsize=[11.0_dp, 4.8_dp])
         call subplot(1, 2, 1)
         call plot(tt, tl(:, 2)/tt, label='thermodynamic limit', color=[0.0_dp, &
                   0.0_dp, 0.0_dp])
-        call plot(theta, small(:, 2)/theta, label='N=33 per spin', color=colors(:, 1), &
+        write (label, '(a,i0,a)') 'N=', eos_small, ' per spin'
+        call plot(theta, small(:, 2)/theta, label=trim(label), color=colors(:, 1), &
                   linestyle='None', marker='o')
+        write (label, '(a,i0,a)') 'N=', eos_large, ' per spin'
         call plot(pack(theta, done), pack(large(:, 2), done)/pack(theta, done), &
-                  label='N=123 per spin', color=colors(:, 2), linestyle='None', marker='s')
+                  label=trim(label), color=colors(:, 2), linestyle='None', marker='s')
         call plot([0.05_dp, 10.0_dp], [1.0_dp, 1.0_dp], label='classical P=nkT', &
                   color=[0.4_dp, 0.4_dp, 0.4_dp], linestyle='--')
         call plot(tt, 0.4_dp/tt, label='T=0 Fermi pressure 0.4 n E_F', &
@@ -218,9 +295,11 @@ contains
         call subplot(1, 2, 2)
         call plot(tt, tl(:, 3), label='thermodynamic limit', color=[0.0_dp, 0.0_dp, &
                   0.0_dp])
-        call plot(theta, small(:, 3), label='N=33 per spin', color=colors(:, 1), &
+        write (label, '(a,i0,a)') 'N=', eos_small, ' per spin'
+        call plot(theta, small(:, 3), label=trim(label), color=colors(:, 1), &
                   linestyle='None', marker='o')
-        call plot(pack(theta, done), pack(large(:, 3), done), label='N=123 per spin', &
+        write (label, '(a,i0,a)') 'N=', eos_large, ' per spin'
+        call plot(pack(theta, done), pack(large(:, 3), done), label=trim(label), &
                   color=colors(:, 2), linestyle='None', marker='s')
         call plot([0.05_dp, 10.0_dp], [1.5_dp, 1.5_dp], label='classical 3/2', &
                   color=[0.4_dp, 0.4_dp, 0.4_dp], linestyle='--')
@@ -233,10 +312,10 @@ contains
 
     end subroutine eos_section
 
-    subroutine row(unit, n, th, out)
+    subroutine row(unit, n, th, out, evidence, certified)
         integer, intent(in) :: unit, n
         real(dp), intent(in) :: th
-        real(dp), intent(out) :: out(5)
+        real(dp), intent(out) :: out(5), evidence(4, 3), certified
         type(fermion_spectrum_t) :: spec
         type(canonical_state_t) :: st
         type(interval_t) :: bounds(5)
@@ -250,11 +329,15 @@ contains
         write (unit, '(i4,",",es14.6,12(",",es16.8),",",l1)') n, th, out(1), &
             bounds(1)%lo, bounds(1)%hi, out(2), bounds(2)%lo, bounds(2)%hi, &
             out(3), bounds(3)%lo, bounds(3)%hi, out(5), bounds(5)%lo, bounds(5)%hi, cert
+        evidence(:, 1) = out([1, 2, 3, 5])
+        evidence(:, 2) = bounds([1, 2, 3, 5])%lo
+        evidence(:, 3) = bounds([1, 2, 3, 5])%hi
+        certified = merge(1.0_dp, 0.0_dp, cert)
     end subroutine row
 
     subroutine size_section()
-        integer, parameter :: sizes(6) = [7, 19, 33, 57, 123, 251]
-        real(dp), parameter :: thetas(3) = [0.25_dp, 1.0_dp, 4.0_dp]
+        integer :: sizes(6)
+        real(dp) :: thetas(3)
         type(fermion_spectrum_t) :: spec
         type(canonical_state_t) :: st
         type(fermi_state_t) :: fermi
@@ -263,6 +346,7 @@ contains
         real(qp) :: log_z, cancellation
         logical :: cert
         integer :: i, k, unit
+        sizes = size_sizes; thetas = size_thetas
         open (newunit=unit, file='output/fermion-size-scan.csv', status='replace')
         write (unit, '(a)') '# finite-N minus thermodynamic limit (indicator, not a '// &
             'bound); cancellation=alternating power-sum recursion factor (binary128)'
@@ -281,6 +365,10 @@ contains
                     thetas(k), values(1), values(1) - fermi%energy, values(2) - &
                     fermi%pressure, values(3) - fermi%theta_gradient(3), cert, &
                     real(cancellation, dp)
+                size_rows = reshape([size_rows, real(sizes(i), dp), thetas(k), values(1), &
+                    values(1) - fermi%energy, values(2) - fermi%pressure, &
+                    values(3) - fermi%theta_gradient(3), merge(1.0_dp, 0.0_dp, cert), &
+                    real(cancellation, dp)], [8, size(size_rows, 2) + 1])
                 print '(a,i4,a,f5.2,a,es10.3,a,es9.2)', 'N_sigma=', sizes(i), ' theta=', &
                     thetas(k), ' e_N-e_TL=', values(1) - fermi%energy, &
                     ' power-sum cancellation=', real(cancellation, dp)
@@ -288,4 +376,67 @@ contains
         end do
         close (unit)
     end subroutine size_section
+
+    !> CSV column name prefix//theta with trailing zeros removed (0.25, 1, 2).
+    function column(prefix, theta) result(name)
+        character(len=*), intent(in) :: prefix
+        real(dp), intent(in) :: theta
+        character(len=48) :: name
+        character(len=32) :: text
+        integer :: last
+        write (text, '(f0.6)') theta
+        if (text(1:1) == '.') text = '0'//text
+        last = len_trim(text)
+        do while (text(last:last) == '0')
+            last = last - 1
+        end do
+        if (text(last:last) == '.') last = last - 1
+        name = prefix//text(:last)
+    end function column
+
+    subroutine write_result()
+        character(len=*), parameter :: bound = 'certified-discrete outward enclosure '// &
+            'of the finite-N box state where certified=1'
+        call result%create(run)
+        call result%attribute('scope', 'ideal spin-1/2 fermions, no interaction; '// &
+            'theta = kT/E_F; finite-N minus limit differences are indicators, not bounds')
+        call result%write('hole_x', hole_x, '1', 'k_F r', dims='hole_x')
+        call result%write('hole_thetas', hole_thetas, '1', 'theta of the canonical holes', &
+            dims='hole_theta')
+        call result%write('hole_analytic_cold', hole_cold, '1', &
+            'T=0 thermodynamic-limit same-spin g', dims='hole_x', status='reference limit')
+        call result%write('hole_ground', hole_ground, '1', 'finite-N ground-state g', &
+            dims='hole_x', status='candidate')
+        call result%write('hole_canonical', hole_canonical, '1', 'finite-N canonical g', &
+            dims='hole_x,hole_theta', status='candidate')
+        call result%write('hole_grand_canonical', hole_gc, '1', &
+            'grand-canonical thermodynamic-limit g', dims='hole_x,hole_theta', &
+            status='candidate')
+        call result%write('hole_boltzmann', hole_boltz, '1', &
+            'Boltzmann limit at hole_thetas(3)', dims='hole_x', status='reference limit')
+        call result%write('occupation_rows', occ_rows, '1', 'rows: N_sigma, theta, '// &
+            'eps/E_F, occupation, lower, upper, Fermi-Dirac, Maxwell-Boltzmann', &
+            dims='occupation_field,occupation_row', status='occupation lower/upper: '// &
+            'certified-discrete canonical enclosure; fd/mb candidate references')
+        call result%write('eos_theta', eos_theta, '1', 'theta grid', dims='eos_theta')
+        call result%write('eos_small', eos_small_rows, '1', 'N=eos_small box EOS [e,p,'// &
+            'de/dtheta,bulk] x [center,lower,upper] in E_F units', &
+            dims='eos_theta,eos_quantity,eos_bound', status=bound)
+        call result%write('eos_small_certified', eos_small_cert, '1', &
+            '1 if within the 1% budget', dims='eos_theta')
+        call result%write('eos_large', eos_large_rows, '1', 'N=eos_large box EOS (zero '// &
+            'where eos_large_done=0)', dims='eos_theta,eos_quantity,eos_bound', status=bound)
+        call result%write('eos_large_certified', eos_large_cert, '1', &
+            '1 if within the 1% budget', dims='eos_theta')
+        call result%write('eos_large_done', eos_done, '1', '1 where N=eos_large was solved', &
+            dims='eos_theta')
+        call result%write('limit_theta', limit_theta, '1', 'theta grid', dims='limit_theta')
+        call result%write('limit_eos', limit_values, '1', 'thermodynamic limit [e,p,'// &
+            'de/dtheta,bulk]', dims='limit_theta,limit_quantity', &
+            status='candidate centers of the certified limit solve; bounds not recorded')
+        call result%write('size_rows', size_rows, '1', 'rows: N_sigma, theta, e, '// &
+            'e-e_TL, p-p_TL, dedtheta-limit, certified, power-sum cancellation', &
+            dims='size_field,size_row', status='indicator, not a bound')
+        call result%close()
+    end subroutine write_result
 end program fermion_ensemble_demo

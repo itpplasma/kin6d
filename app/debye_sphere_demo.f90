@@ -11,15 +11,27 @@ program debye_sphere_demo
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
-    integer, parameter :: cells = 192, points = cells + 1
-    integer, parameter :: frames = 121, fps = 24, repeats = 3
+    integer, parameter :: fps = 24
     integer, parameter :: circle_points = 129, max_markers = 121
-    real(dp), parameter :: chi = 0.02_dp
-    real(dp) :: r(points), phi(points), bare(points), tangent(points)
-    real(dp) :: lower(3, points), upper(3, points), work(3, cells)
-    real(dp) :: ne(points), ne_lo(points), ne_hi(points)
+    character(len=*), parameter :: bound = 'certified-continuous strict analytical '// &
+        'reference band; model error unavailable'
+    integer :: cells = 192, points
+    integer :: frames = 121, repeats = 3
+    real(dp) :: chi = 0.02_dp
+    namelist /debye_sphere/ cells, frames, repeats, chi
+    type(run_t) :: run
+    type(result_file_t) :: result
+    integer :: unit, ios
+    character(len=256) :: msg
+    real(dp), allocatable :: r(:), phi(:), bare(:), tangent(:)
+    real(dp), allocatable :: lower(:, :), upper(:, :), work(:, :)
+    real(dp), allocatable :: ne(:), ne_lo(:), ne_hi(:)
+    ! Result record (point, frame, quantity); NaN where a frame was not computed.
+    real(dp), allocatable :: kappas(:), record(:, :, :)
     real(dp) :: circle_x(circle_points), circle_y(circle_points)
     real(dp) :: source_x(max_markers), source_y(max_markers)
     real(dp) :: electron_x(max_markers), electron_y(max_markers)
@@ -33,20 +45,37 @@ program debye_sphere_demo
     logical :: ok, snapshot_only, response_view
     character(len=64) :: argument
 
-    snapshot_only = .false.; snapshot_frame = 61; response_view = .false.
-    if (command_argument_count() > 2) error stop 'usage: demo [--snapshot [frame]]'
-    if (command_argument_count() >= 1) then
-        call get_command_argument(1, argument)
+    call run%start('debye_sphere_demo')
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=debye_sphere, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'debye_sphere', ios, msg)
+    if (cells < 1 .or. frames < 2 .or. repeats < 1) &
+        error stop 'debye_sphere needs cells >= 1, frames >= 2, repeats >= 1'
+    if (.not. (chi >= 0.0_dp)) error stop 'debye_sphere chi must be nonnegative'
+    call run%open_resolved(unit)
+    write (unit, nml=debye_sphere)
+    call run%close_resolved(unit)
+    points = cells + 1
+    allocate (r(points), phi(points), bare(points), tangent(points))
+    allocate (lower(3, points), upper(3, points), work(3, cells))
+    allocate (ne(points), ne_lo(points), ne_hi(points))
+    allocate (kappas(frames), record(points, frames, 12))
+    kappas = ieee_value(1.0_dp, ieee_quiet_nan); record = kappas(1)
+    snapshot_only = .false.; snapshot_frame = (frames + 1)/2; response_view = .false.
+    if (run%argument_count() > 2) error stop 'usage: demo [--config FILE] [--snapshot [frame]]'
+    if (run%argument_count() >= 1) then
+        call run%argument(1, argument)
         if (trim(argument) /= '--snapshot') error stop 'expected --snapshot'
         snapshot_only = .true.
     end if
-    if (command_argument_count() == 2) then
-        call get_command_argument(2, argument)
+    if (run%argument_count() == 2) then
+        call run%argument(2, argument)
         read (argument, *, iostat=status) snapshot_frame
         if (status /= 0) error stop 'snapshot frame must be integer'
     end if
     if (snapshot_frame < 1 .or. snapshot_frame > frames) &
-        error stop 'frame outside 1..121'
+        error stop 'frame outside 1..frames'
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'cannot create output directory'
     do i = 1, points
@@ -77,6 +106,7 @@ program debye_sphere_demo
         end do
     end if
     close (data); close (evidence)
+    call write_result()
     call compute_frame(snapshot_frame, timed=.false.)
     call figure(figsize=[11.0_dp, 5.0_dp])
     canvas => get_global_figure()
@@ -109,6 +139,32 @@ program debye_sphere_demo
     write (*, '(a)') 'CPU timings: cold frame bands and repeated references.'
     write (*, '(a)') 'Rendering and encoding excluded from scientific timers.'
 contains
+    subroutine write_result()
+        character(len=16), parameter :: names(12) = [character(len=16) :: &
+            'screened', 'screened_lower', 'screened_upper', 'bare', 'bare_lower', &
+            'bare_upper', 'dphi_dk', 'dphi_dk_lower', 'dphi_dk_upper', &
+            'electron_density', 'electron_lower', 'electron_upper']
+        character(len=24), parameter :: units(4) = [character(len=24) :: &
+            'Q/(4 pi eps0 R)', 'Q/(4 pi eps0 R)', 'Q/(4 pi eps0 R)', 'n0']
+        integer :: q
+        call result%create(run)
+        call result%attribute('frame_record', 'frames not computed in this run are NaN')
+        call result%write('kappa', kappas, '1', 'kappa = R/lambda_D', dims='frame')
+        call result%write('r', r, 'R', 'radius r/R', dims='r')
+        do q = 1, 12
+            if (mod(q, 3) == 1) then
+                call result%write(trim(names(q)), record(:, :, q), &
+                    trim(units((q + 2)/3)), trim(names(q))//' center', dims='r,frame', &
+                    status='candidate center')
+            else
+                call result%write(trim(names(q)), record(:, :, q), &
+                    trim(units((q + 2)/3)), trim(names(q))//' bound', dims='r,frame', &
+                    status=bound)
+            end if
+        end do
+        call result%close()
+    end subroutine write_result
+
     !> Illustration marker grid on [-2, 2]: -2 + 4 index/(count - 1).
     pure real(dp) function marker(index, count)
         integer, intent(in) :: index, count
@@ -188,6 +244,10 @@ contains
 
     subroutine write_evidence(number)
         integer, intent(in) :: number
+        kappas(number) = k
+        record(:, number, :) = reshape([phi, lower(1, :), upper(1, :), bare, &
+            lower(2, :), upper(2, :), tangent, lower(3, :), upper(3, :), ne, ne_lo, &
+            ne_hi], [points, 12])
         do i = 1, points
             write (data, '(i0,14(",",es24.16e3))') number, k, r(i), phi(i), &
                 lower(1, i), upper(1, i), bare(i), lower(2, i), upper(2, i), &

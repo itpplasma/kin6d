@@ -12,19 +12,29 @@ program slab_oscillation_demo
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: steps = 128, frames = 121, markers = 17, fps = 24
+    integer, parameter :: markers = 17, fps = 24
+    integer :: steps = 128, frames = 121
+    !> Duration in plasma periods and requested observable radius (1% of q0).
+    real(dp) :: periods = 2.0_dp, requested_radius = 0.01_dp
+    namelist /slab_oscillation/ steps, frames, periods, requested_radius
+    type(run_t) :: run
+    type(result_file_t) :: result
+    integer :: unit, ios
+    character(len=256) :: msg
     real(dp), parameter :: blue(3) = [0.0_dp, 0.4471_dp, 0.6980_dp]
     real(dp), parameter :: orange(3) = [0.8353_dp, 0.3686_dp, 0.0_dp]
     real(dp), parameter :: ratio = 0.1_dp
     type(slab_oscillation_state_t) :: state
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
-    type(interval_t) :: qpacket(frames), reference_packet(frames), unused, lo, hi
+    type(interval_t), allocatable :: qpacket(:), reference_packet(:)
+    type(interval_t) :: unused, lo, hi
     type(interval_t) :: padding, margin, error_packet, shift_i, left_i, right_i
-    real(dp) :: time(frames), q(frames), p(frames), reference(frames), zero(frames)
-    real(dp) :: qlo(frames), qhi(frames), elo(frames), ehi(frames), error(frames)
-    real(dp) :: chord(frames - 1), error_chord(frames - 1)
+    real(dp), allocatable :: time(:), q(:), p(:), reference(:), zero(:)
+    real(dp), allocatable :: qlo(:), qhi(:), elo(:), ehi(:), error(:)
+    real(dp), allocatable :: chord(:), error_chord(:)
     real(dp) :: initial_x(markers), ion_y(markers), electron_y(markers)
     real(dp) :: electron_x(markers), duration, radius, ql, qu, pl, pu
     real(dp) :: shift, left, right, exact_left, exact_right, exact_shift, ignored
@@ -33,27 +43,42 @@ program slab_oscillation_demo
     logical :: ok, snapshot_only
     character(len=64) :: argument
 
-    snapshot_only = .false.; snapshot_frame = 61
-    if (command_argument_count() > 2) error stop 'usage: demo [--snapshot [frame]]'
-    if (command_argument_count() >= 1) then
-        call get_command_argument(1, argument)
+    call run%start('slab_oscillation_demo')
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=slab_oscillation, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'slab_oscillation', ios, msg)
+    if (steps < 1 .or. frames < 2) error stop 'slab_oscillation needs steps >= 1, frames >= 2'
+    if (.not. (periods > 0.0_dp .and. requested_radius > 0.0_dp)) &
+        error stop 'slab_oscillation periods and requested_radius must be positive'
+    call run%open_resolved(unit)
+    write (unit, nml=slab_oscillation)
+    call run%close_resolved(unit)
+    allocate (qpacket(frames), reference_packet(frames), time(frames), q(frames), &
+        p(frames), reference(frames), zero(frames), qlo(frames), qhi(frames), &
+        elo(frames), ehi(frames), error(frames), chord(frames - 1), &
+        error_chord(frames - 1))
+    snapshot_only = .false.; snapshot_frame = (frames + 1)/2
+    if (run%argument_count() > 2) error stop 'usage: demo [--config FILE] [--snapshot [frame]]'
+    if (run%argument_count() >= 1) then
+        call run%argument(1, argument)
         if (trim(argument) /= '--snapshot') error stop 'expected --snapshot'
         snapshot_only = .true.
     end if
-    if (command_argument_count() == 2) then
-        call get_command_argument(2, argument)
+    if (run%argument_count() == 2) then
+        call run%argument(2, argument)
         read (argument, *, iostat=status) snapshot_frame
         if (status /= 0) error stop 'invalid snapshot frame'
     end if
     if (snapshot_frame < 1 .or. snapshot_frame > frames) &
-        error stop 'frame outside 1..121'
+        error stop 'frame outside 1..frames'
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'output directory unavailable'
-    call slab_oscillation_period(2.0_dp, duration)
+    call slab_oscillation_period(periods, duration)
     call initialize_slab_oscillation(state, steps, duration, 1.0_dp, 0.0_dp, ok)
     if (.not. ok) error stop 'numerical slab solve or certificate failed'
     call slab_oscillation_radius(state, radius, ok)
-    if (.not. ok .or. radius > 0.01_dp) error stop 'one-percent certificate failed'
+    if (.not. ok .or. radius > requested_radius) error stop 'one-percent certificate failed'
     zero = 0.0_dp
     ion_y = 0.3_dp; electron_y = -0.3_dp
     do i = 1, markers
@@ -89,7 +114,7 @@ program slab_oscillation_demo
         qlo(i) = lo%lo; qhi(i) = hi%hi
         call slab_oscillation_difference_interval(interval(qlo(i), qhi(i)), &
                                                     interval(q(i)), error_packet)
-        if (mag(error_packet) > 0.01_dp) error stop 'one-percent full band failed'
+        if (mag(error_packet) > requested_radius) error stop 'one-percent full band failed'
         padding = interval(0.0_dp)
         if (i > 1) padding = hull(padding, interval(error_chord(i - 1)))
         if (i < frames) padding = hull(padding, interval(error_chord(i)))
@@ -108,6 +133,26 @@ program slab_oscillation_demo
       ',', reference(i), ',', qlo(i), ',', qhi(i), ',', elo(i), ',', ehi(i), ',', radius
     end do
     close (evidence)
+    call result%create(run)
+    call result%write('tau', time, '1/omega_pe', 'tau = omega_pe t', dims='frame')
+    call result%write('q_candidate', q, 'xi0', 'candidate displacement q = xi/xi0', &
+        dims='frame', status='candidate')
+    call result%write('p_candidate', p, 'xi0 omega_pe', 'candidate velocity', &
+        dims='frame', status='candidate')
+    call result%write('q_analytical', reference, 'xi0', 'analytical cos oracle', &
+        dims='frame', status='oracle')
+    call result%write('q_lower', qlo, 'xi0', 'q trace band lower', dims='frame', &
+        status='certified-continuous residual radius plus candidate chord')
+    call result%write('q_upper', qhi, 'xi0', 'q trace band upper', dims='frame', &
+        status='certified-continuous residual radius plus candidate chord')
+    call result%write('error_lower', elo, 'xi0', 'q - analytical lower', dims='frame', &
+        status='certified-continuous residual radius plus candidate chord')
+    call result%write('error_upper', ehi, 'xi0', 'q - analytical upper', dims='frame', &
+        status='certified-continuous residual radius plus candidate chord')
+    call result%write('global_residual_radius', radius, 'xi0', &
+        'global Hermite/Bernstein residual radius for q and p', &
+        status='certified-continuous')
+    call result%close()
     print '(a)', 'model=cold_planar_electron_slab; ions=fixed; tau=omega_pe*t'
     print '(a)', 'q=xi/xi0; equation=qprimeprime=-q; solver=FortNum_Cash_Karp_RK5(4)'
     print '(a)', 'checker=Hermite_residual_Bernstein_Duhamel; '// &

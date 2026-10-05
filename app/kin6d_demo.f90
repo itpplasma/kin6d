@@ -1,5 +1,6 @@
 module kin6d_demo_application
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use kin6d_laboratory, only: laboratory_t, initialize, advance, sample, &
                                 solve_steady, certificate_radius, certificate_accepts
     use kin6d_leaves, only: coordinate, reconstruct, interpolate, &
@@ -11,27 +12,53 @@ module kin6d_demo_application
                         savefig, tight_layout
     use fortplot_animation, only: animation_t, FuncAnimation, save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: nx = 192, nv = 256, frames = 121
+    integer, parameter :: nx = 192
+    integer :: nv = 256, frames = 121
+    real(dp) :: time_step = 0.0625_dp, steady_nu = 0.75_dp
+    namelist /kin6d_demo/ nv, frames, time_step, steady_nu
+    type(run_t) :: run
+    type(result_file_t) :: result
     type(laboratory_t) :: state, coarse, steady
     type(figure_t), pointer :: fig
     type(animation_t) :: animation
     type(interval_t) :: pi, center, lower, upper
-    real(dp) :: xedges(nx + 1), image(nv, nx), profile(nv + 1), exact(nv + 1)
-    real(dp) :: lower_line(nv + 1), upper_line(nv + 1), coarse_line(nv + 1)
+    real(dp) :: xedges(nx + 1)
+    real(dp), allocatable :: image(:, :), profile(:), exact(:)
+    real(dp), allocatable :: lower_line(:), upper_line(:), coarse_line(:)
+    real(dp), allocatable :: frame_time(:), frame_bound(:)
     real(dp) :: x, normalized_x, velocity, m, a, b, radius, residual, &
                 solve_start, solve_end
     real(dp) :: bound_max, final_time
-    integer :: i, status, ledger, step
+    integer :: i, status, ledger, step, unit, ios
     logical :: directory_ok, movie
     character(96) :: header
     character(32) :: argument
+    character(256) :: msg
 contains
     subroutine run_demo()
         pi = interval_pi()
+        call run%start('kin6d_demo')
+        ios = 0; msg = ''
+        call run%open_config(unit)
+        if (run%has_config()) read (unit, nml=kin6d_demo, iostat=ios, iomsg=msg)
+        call run%close_config(unit, 'kin6d_demo', ios, msg)
+        if (nv < 4) error stop 'nv must be at least 4 (coarse grid uses nv/2)'
+        if (frames < 1) error stop 'frames must be positive'
+        if (.not. (time_step > 0.0_dp .and. steady_nu > 0.0_dp)) &
+            error stop 'time_step and steady_nu must be positive'
+        call run%open_resolved(unit)
+        write (unit, nml=kin6d_demo)
+        call run%close_resolved(unit)
+        allocate (image(nv, nx), profile(nv + 1), exact(nv + 1), lower_line(nv + 1), &
+            upper_line(nv + 1), coarse_line(nv + 1), frame_time(frames), &
+            frame_bound(frames))
+        ! Frames not evaluated (--snapshot renders only the last) stay NaN.
+        frame_time = ieee_value(0.0_dp, ieee_quiet_nan); frame_bound = frame_time
         movie = .true.
-        if (command_argument_count() > 0) then
-            call get_command_argument(1, argument)
+        if (run%argument_count() > 0) then
+            call run%argument(1, argument)
             if (trim(argument) == '--snapshot') movie = .false.
         end if
         call create_directory_runtime('output', directory_ok)
@@ -40,7 +67,7 @@ contains
         call initialize(coarse, nv/2)
         call initialize(steady, nv)
         call cpu_time(solve_start)
-        call solve_steady(steady, 0.75_dp, residual)
+        call solve_steady(steady, steady_nu, residual)
         call cpu_time(solve_end)
         print '(a,es12.4,a,f10.6)', 'Direct steady residual=', residual, &
             ' CPU seconds=', solve_end - solve_start
@@ -59,13 +86,14 @@ contains
             if (status /= 0) error stop 'fortplot animation encoding failed'
         else
             do step = 1, frames - 1
-                call advance(state, 0.0625_dp)
-                call advance(coarse, 0.0625_dp)
+                call advance(state, time_step)
+                call advance(coarse, time_step)
             end do
             call render_frame(frames)
         end if
         call savefig('output/final-snapshot.png')
         close (ledger)
+        call write_result()
         print '(a,f7.3,a,es12.4)', 'Final time=', final_time, &
             ' uniform snapshot bound=', radius
        print '(a)', 'Bounds use reviewed interpolation analysis and FortNum arithmetic.'
@@ -76,8 +104,8 @@ contains
         integer, intent(in) :: frame
         ! Fortplot requests frames sequentially, starting at one.
         if (frame > 1) then
-            call advance(state, 0.0625_dp)
-            call advance(coarse, 0.0625_dp)
+            call advance(state, time_step)
+            call advance(coarse, time_step)
         end if
         call render_frame(frame)
     end subroutine
@@ -91,6 +119,7 @@ contains
         bound_max = max(bound_max, radius)
         final_time = state%time
         write (ledger, '(i0,a,f12.6,a,es24.16)') frame, ',', state%time, ',', radius
+        frame_time(frame) = state%time; frame_bound(frame) = radius
         ! One rendered tile: no stored trajectory and no duplicate phase-space state.
         do ix = 1, nx
             call coordinate(xedges(ix), xedges(ix + 1), 1.0_dp, 2.0_dp, normalized_x)
@@ -137,13 +166,40 @@ contains
                           alpha=0.7_dp)
         call plot(state%v, lower_line, linestyle=':', color=[0.27_dp, 0.51_dp, 0.71_dp])
         call plot(state%v, upper_line, linestyle=':', color=[0.27_dp, 0.51_dp, 0.71_dp])
-        call plot(state%v, profile, label='256 cells', color=[0.0_dp, 0.0_dp, 0.5_dp])
-        call plot(state%v, coarse_line, label='128 cells', linestyle='--', &
+        write (header, '(i0,a)') nv, ' cells'
+        call plot(state%v, profile, label=trim(header), color=[0.0_dp, 0.0_dp, 0.5_dp])
+        write (header, '(i0,a)') nv/2, ' cells'
+        call plot(state%v, coarse_line, label=trim(header), linestyle='--', &
                   color=[0.8_dp, 0.4_dp, 0.0_dp])
         call plot(state%v, exact, label='exact flow', linestyle=':', &
                   color=[0.0_dp, 0.0_dp, 0.0_dp])
         call legend(loc='upper right')
         call tight_layout(h_pad=3.0_dp)
+    end subroutine
+
+    subroutine write_result()
+        character(len=*), parameter :: bound = 'certified-continuous pointwise '// &
+            'sup-error enclosure (reviewed interpolation analysis); no velocity-tail claim'
+        call result%create(run)
+        call result%write('steady_residual', residual, '1', 'direct steady residual', &
+            status='candidate')
+        call result%write('time', frame_time, 'L/v_th', 'frame time', dims='frame')
+        call result%write('sup_error_bound', frame_bound, 'f/F_M(0)', &
+            'continuous sup error bound of the streaming snapshot (NaN: frame '// &
+            'not evaluated)', dims='frame', &
+            status=bound)
+        call result%write('velocity', state%v, 'v_th', 'velocity nodes', dims='v')
+        call result%write('final_profile', profile, 'f/F_M(0)', &
+            'final slice x=0, fine grid', dims='v', status='candidate center')
+        call result%write('final_lower', lower_line, 'f/F_M(0)', &
+            'final slice lower band', dims='v', status=bound)
+        call result%write('final_upper', upper_line, 'f/F_M(0)', &
+            'final slice upper band', dims='v', status=bound)
+        call result%write('final_exact', exact, 'f/F_M(0)', &
+            'exact characteristic reference at x=0', dims='v', status='exact oracle')
+        call result%write('final_coarse', coarse_line, 'f/F_M(0)', &
+            'coarse-grid slice x=0', dims='v', status='candidate')
+        call result%close()
     end subroutine
 end module
 

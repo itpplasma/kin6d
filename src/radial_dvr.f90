@@ -21,9 +21,11 @@ module kin6d_radial_dvr
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_coulomb_encounter_leaves, only: ce_radial_potential, ce_kinetic_scale
+    use fortnum_quadrature, only: gauss_lobatto_legendre
+    use fortnum_polynomial, only: barycentric_weights, lagrange_differentiation_matrix
     implicit none
     private
-    public :: radial_mesh_t, build_radial_mesh, mesh_spacing, gll_rule
+    public :: radial_mesh_t, build_radial_mesh, mesh_spacing
     public :: radial_band_hamiltonian, radial_band_matvec, radial_eigen_window
     public :: radial_locate, radial_dimension
 
@@ -73,45 +75,6 @@ contains
         mesh_spacing = real(order - 1, dp)*2*acos(-1.0_dp)/(nodes_per_wavelength*kmax)
     end function mesh_spacing
 
-    ! Gauss-Lobatto-Legendre nodes/weights on [-1,1] (Newton on (1-x^2)P_p').
-    pure subroutine gll_rule(npts, x, w)
-        integer, intent(in) :: npts
-        real(dp), intent(out) :: x(npts), w(npts)
-        real(dp) :: p(npts), xold(npts)
-        integer :: j, k, it, deg
-        deg = npts - 1
-        do j = 1, npts
-            x(j) = -cos(acos(-1.0_dp)*real(j - 1, dp)/real(deg, dp))
-        end do
-        do it = 1, 100
-            xold = x
-            call legendre_columns(x, deg, p, xold)
-            x = x - (x*p - xold)/(real(npts, dp)*p)
-            call legendre_columns(x, deg, p, xold)
-            if (maxval(abs(x*p - xold)) < 1.0e-15_dp*real(npts, dp)) exit
-        end do
-        call legendre_columns(x, deg, p, xold)
-        w = 2/(real(deg*npts, dp)*p**2)
-        x(1) = -1; x(npts) = 1
-        do k = 1, npts/2
-            x(npts + 1 - k) = -x(k)
-        end do
-    contains
-        pure subroutine legendre_columns(xv, nd, pn, pm)
-            real(dp), intent(in) :: xv(:)
-            integer, intent(in) :: nd
-            real(dp), intent(out) :: pn(:), pm(:)
-            real(dp) :: p0(size(xv)), p1(size(xv)), p2(size(xv))
-            integer :: q
-            p0 = 1; p1 = xv
-            do q = 2, nd
-                p2 = (real(2*q - 1, dp)*xv*p1 - real(q - 1, dp)*p0)/real(q, dp)
-                p0 = p1; p1 = p2
-            end do
-            pn = p1; pm = p0
-        end subroutine legendre_columns
-    end subroutine gll_rule
-
     ! Graded mesh: first element h0, geometric growth up to hmax, ending at rmax.
     subroutine build_radial_mesh(mesh, rmax, order, hmax, h0, growth, ok)
         type(radial_mesh_t), intent(out) :: mesh
@@ -145,24 +108,9 @@ contains
         mesh%n = ne*deg - 1
         allocate (mesh%edges(0:ne), mesh%xi(order), mesh%wi(order), mesh%bary(order))
         mesh%edges = edges(0:ne)
-        call gll_rule(order, mesh%xi, mesh%wi)
-        do a = 1, order
-            mesh%bary(a) = 1
-            do b = 1, order
-                if (b /= a) mesh%bary(a) = mesh%bary(a)/(mesh%xi(a) - mesh%xi(b))
-            end do
-        end do
-        do a = 1, order          ! dref(q,a) = L_a'(xi_q)
-            do q = 1, order
-                if (q /= a) then
-                    dref(q, a) = mesh%bary(a)/(mesh%bary(q)*(mesh%xi(q) - mesh%xi(a)))
-                end if
-            end do
-            dref(a, a) = 0
-        end do
-        do q = 1, order
-            dref(q, q) = -sum(dref(q, :))
-        end do
+        call gauss_lobatto_legendre(order, mesh%xi, mesh%wi)
+        call barycentric_weights(order, mesh%xi, mesh%bary)
+        call lagrange_differentiation_matrix(order, mesh%xi, dref)  ! dref(q,a) = L_a'(xi_q)
         allocate (mesh%r(mesh%n), mesh%w(mesh%n), mesh%tband(kd + 1, mesh%n))
         mesh%w = 0; mesh%tband = 0
         do e = 1, ne
