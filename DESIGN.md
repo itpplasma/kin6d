@@ -2,6 +2,53 @@
 
 Status: canonical architecture, 2026-10-05.
 
+## Non-negotiable scientific principles
+
+These are **project invariants, not scope items**. YAGNI applies to features,
+models, algorithms and abstractions; it does not permit a vertical slice to
+drop these properties merely to ship sooner. A slice may implement the
+smallest useful instance of a principle, but must preserve the contract needed
+to strengthen it later.
+
+1. **One mathematical truth / DRY.** Each physical operator, convention,
+   configuration meaning and conservation law has one authoritative production
+   definition. Primal, derivative, enclosure and optimized specializations come
+   from that definition wherever practical.
+2. **Differentiability by construction.** Every smooth continuous production
+   operator used by a differentiable consumer exposes consistent primal/JVP/VJP
+   semantics from the same mathematical definition. Nonlinear/equilibrium/
+   linear/eigen solves are differentiated at equation level, not through
+   incidental iterations. Nonsmooth events and unavailable derivatives are
+   explicit, never silently approximated.
+3. **Error control and certification by construction.** A numerical answer is
+   incomplete without an error/status contract. The fast solver is untrusted;
+   strict residuals, independent checks and interval/ball or other rigorous
+   bounds are developed wherever the mathematics permits. Numerical error,
+   model-reduction error, input/reconstruction uncertainty and stochastic
+   sampling error remain distinct.
+4. **Structure preservation.** Conservation, symmetries, Hamiltonian/Poisson or
+   metriplectic structure, entropy production, positivity and
+   Onsager--Casimir relations are preserved or their defect is explicitly
+   measured. Numerical convenience does not silently change the physics.
+5. **Independent verification.** Important results retain analytic,
+   manufactured, structural or cross-code oracles independent of the production
+   path. Shared-code agreement alone is not evidence.
+6. **Reproducibility and provenance.** Effective inputs, model assumptions,
+   source/dependency/compiler revisions, transformations and result status are
+   recoverable from the scientific artifact.
+7. **Performance at controlled accuracy.** Performance is judged at equal
+   physical observable accuracy/certificate width, with time and memory both
+   first-class. Optimization may change implementation, never the target
+   mathematics.
+8. **Clean separation of policy and details.** Physics/model semantics are
+   independent of replaceable solver, file-format, hardware, scheduler and UI
+   details. New scope composes with the same contracts instead of spawning a
+   second numerical universe.
+
+A proposed feature that conflicts with these principles is rejected or remains
+an explicitly non-production experiment, even if it would broaden the nominal
+scope.
+
 ## Mission
 
 KIN6D is not one 6D solver and not a collection of compatibility modes. It is a
