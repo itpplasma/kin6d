@@ -98,7 +98,7 @@ foreach(example streaming_moments debye_sphere slab_oscillation shielding_dynami
 endforeach()
 add_executable(microscopic_cloud_demo app/microscopic_cloud_demo.f90)
 target_link_libraries(microscopic_cloud_demo PRIVATE kin6d fortplot)
-foreach(example quantum_reference classical_pair)
+foreach(example quantum_reference classical_pair coulomb_encounter)
     add_executable(${example}_demo app/${example}_demo.f90)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
 endforeach()

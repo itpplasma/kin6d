@@ -77,7 +77,7 @@ module kin6d_coulomb_encounter
         type(encounter_config_t) :: cfg
         type(radial_mesh_t) :: mesh
         real(dp) :: mu = 0, mtotal = 0, eta = 0, lambdabar = 0, r0 = 0
-        real(dp) :: energy = 0, speed = 0, sigma_cm = 0, emax = 0, hmax = 0
+        real(dp) :: energy = 0, speed = 0, sigma_cm = 0, emin = 0, emax = 0, hmax = 0
         integer :: lmax = 0, mmax = 0
         type(partial_wave_t), allocatable :: wave(:)
         type(encounter_ledger_t) :: ledger
@@ -228,8 +228,12 @@ contains
         end do
         deallocate (a0)
         call system_clock(c1)
+        ! Packet energy window from its momentum band and the Coulomb energy over
+        ! its extent; widened adaptively until the discarded weight fits the budget.
         enc%emax = cfg%hbar**2*khi**2/(2*enc%mu) + &
                    max(0.0_dp, cfg%g)/max(cfg%z0 - 6*cfg%sigma, cfg%z0/4)
+        enc%emin = cfg%hbar**2*max(0.0_dp, cfg%k - 8*sk)**2/(2*enc%mu) + &
+                   min(0.0_dp, cfg%g)/max(cfg%z0 - 6*cfg%sigma, cfg%z0/4)
         do l = 0, enc%lmax
             if (.not. solve_wave(enc, l)) return
         end do
@@ -335,22 +339,22 @@ contains
         integer, intent(in) :: l
         real(dp), allocatable :: e(:), v(:, :), resid(:)
         complex(dp), allocatable :: c(:, :)
-        real(dp) :: emax, orth, w2, disc, budget, rho2
+        real(dp) :: emin, emax, orth, w2, disc, budget, rho2, span
         integer :: attempt, m
         logical :: done
         ok = .false.
         associate (wv => enc%wave(l))
             w2 = sum(abs(wv%a0)**2)
             budget = enc%cfg%tolerance/(3*real(enc%lmax + 1, dp))
-            emax = enc%emax
+            emin = enc%emin; emax = enc%emax; span = enc%emax - enc%emin
             do attempt = 1, 8
                 call radial_eigen_window(enc%mesh, l, enc%cfg%g, enc%mu, enc%cfg%hbar, &
-                                         emax, e, v, resid, orth, done)
+                                         emax, e, v, resid, orth, done, emin)
                 if (.not. done) return
                 c = matmul(transpose(cmplx(v, 0.0_dp, dp)), wv%a0)
                 disc = max(0.0_dp, w2 - sum(abs(c)**2))
                 if (disc <= budget .or. size(e) == enc%mesh%n) exit
-                emax = emax + 2*abs(enc%emax) + 1
+                emin = emin - span; emax = emax + span; span = 2*span
             end do
             if (disc > budget .and. size(e) < enc%mesh%n) return
             call move_alloc(e, wv%e); call move_alloc(v, wv%v)
