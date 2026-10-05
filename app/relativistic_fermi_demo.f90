@@ -10,14 +10,17 @@ program relativistic_fermi_demo
         initialize_fermi_workspace, solve_fermi_gas_si, occupation_fermi_gas
     use kin6d_fermi_gas_leaves, only: fermi_si_parameters
     use kin6d_relativistic_fermi_leaves, only: fermi_rel_limits
+    use kin6d_species, only: electron_mass_si, hbar_si, elementary_charge_si, coulomb_si
     use fortplot, only: figure, plot, title, xlabel, ylabel, ylim, legend, savefig, &
         xscale, yscale
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
-    ! CODATA 2018 values, supplied explicitly (exact SI where defined).
-    real(dp), parameter :: mass = 9.1093837015e-31_dp, hbar = 1.054571817e-34_dp
+    ! Electron constants from the shared species record (CODATA 2018); the
+    ! remaining exact SI constants and the atomic mass unit are declared here.
+    real(dp), parameter :: mass = electron_mass_si, hbar = hbar_si
     real(dp), parameter :: speed = 299792458.0_dp, kb = 1.380649e-23_dp
-    real(dp), parameter :: charge = 1.602176634e-19_dp, eps0 = 8.8541878128e-12_dp
+    real(dp), parameter :: charge = elementary_charge_si
+    real(dp), parameter :: eps0 = 1.0_dp/(4.0_dp*acos(-1.0_dp)*coulomb_si)
     real(dp), parameter :: atomic_mass = 1.66053906660e-27_dp, mu_e = 2.0_dp
     real(dp), parameter :: temperature = 1.0e7_dp, pi = acos(-1.0_dp)
     integer, parameter :: points = 25, shown(3) = [7, 13, 25]
