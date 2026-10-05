@@ -96,7 +96,11 @@ keeping a global AD tape.
 
 ## Rigorous arithmetic and Lean
 
-The rigorous production path is Fortran/FortNum interval or ball arithmetic.
+The rigorous production path is Fortran/FortNum verified arithmetic.
+Workhorse evaluation uses ordinary centers with proved aggregate arithmetic
+and approximation remainders where supported. Strict interval/ball evaluation
+remains the reference and fallback. Both require conservative containment
+under their execution assumptions, not exact or last-bit-tight endpoints.
 A certificate may be mathematically rigorous without Lean.
 
 Lean is an optional final checker for reusable theorems and especially
@@ -106,6 +110,19 @@ early continuous-certification milestones.
 Strict certifier compilation follows the verified arithmetic requirements:
 no unsafe reassociation or unaccounted contraction. Fast candidate builds may
 use different flags because their results are untrusted until checked.
+
+Each fast certified primitive declares supported domains, schedule, rounding
+mode, contraction/reassociation, subnormal handling and overflow disposition.
+Ordinary libm accuracy or an empirical percentage inflation is not a proof.
+Unsupported domains fall back or return explicit certification failure.
+Arithmetic budget is checked after stability/adjoint amplification; precision
+can rise without changing the mathematical model or output claim.
+
+Upstream comes first: maintain native FortNum reduction and FortSym generated
+primal/derivative/enclosure fixtures with independent oracles and raw timing
+samples before optimizing their schedules. Use existing interfaces rather than
+building a universal ball compiler. Add flux/reconstruction support to FortFEM
+only when the forced-FP certificate provides its concrete consumer.
 
 ## FortFEM boundary
 
@@ -179,6 +196,17 @@ This keeps replacement possible if a bespoke solver later becomes worthwhile.
 CMake/Ninja is authoritative for mixed Fortran/CUDA builds and CTest for
 registered tests. Fo provides focused/resident development feedback but does
 not redefine the scientific test contract.
+
+The `cpu` and runtime-checked `debug` presets run the numerical gates without
+Lean. The explicit `formal` preset also checks the retained theorem package and
+Fortran-produced rational certificate. This changes dependency selection, not
+the claimed strength of a numerical result.
+
+The existing KIN6D resident lane has a documented CMake-only input-capture
+defect; native CMake/CTest evidence remains authoritative while that upstream
+gap is open. Do not reset another owner's lane or claim complete captured-input
+evidence from it. The exact selected Fo driver and current limitation are
+recorded in the steady laboratory evidence.
 
 Every generated/operator family keeps:
 

@@ -132,7 +132,7 @@ contains
         end if
         spec%name = str(name); spec%generator = str('gen_laboratory')
         spec%pure_procedure = .true.; spec%elemental_procedure = .true.
-        spec%generator_revision = str('90b68132dbecb83b982826dc8b193f3a627d94e1')
+        spec%generator_revision = str('102c1cbe392e1ba70d169fd75aeda0f2ffe8ab88')
         allocate (spec%args(size(args)), spec%outputs(size(outputs)))
         do k = 1, size(args)
             spec%args(k) = str(trim(args(k)))

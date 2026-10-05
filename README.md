@@ -13,15 +13,25 @@ or reductions of shared operators rather than separate named-code modes.
 
 ## Current status
 
-The first executable slice is implemented: a CPU 1X1V prescribed-field
-laboratory with a direct source-balanced steady solve, exact free-streaming
-dynamics, FortSym-generated primal/JVP/VJP leaves, Fortran plotting and a
-reviewed continuous snapshot bound evaluated with interval arithmetic.
-See [docs/first-example.md](docs/first-example.md).
+The CPU laboratory includes prescribed-field free streaming and Krook balance,
+a single-mode Poisson solve, a self-consistent source-balanced 1X1V
+Poisson--Fokker--Planck family, and a bounded homogeneous OU/FP steady solve.
+It retains FortSym-generated primal/JVP/VJP leaves, Fortran plots and reviewed
+continuous bounds for the declared cases. See
+[the first example](docs/first-example.md) and
+[the steady laboratory](docs/steady-laboratory.md) for their exact scope.
 
-Self-consistent Poisson, PIC/PIF, the collision hierarchy, gyrofluid turbulence,
-real-device DK and general nonlinear certification remain future milestones.
-The repository must not describe planned capabilities as implemented.
+The coupled solver resolves a specified Fourier/polynomial source family;
+general arbitrary-source kinetic certification and nonlinear branch uniqueness
+remain future work. PIC/PIF, the broader collision hierarchy, gyrofluid
+turbulence and real-device DK are also planned capabilities.
+
+The next delivery starts with reusable upstream benchmark infrastructure, then
+general damped-transport residual/inverse bounds and forced-FP flux/stability
+bounds. Simple continuum/particle/PIF/PIC comparisons enter early, before hard
+nonlinear or particle cases. The practical default targets about 1% accuracy
+for a named observable with a declared scale; tighter accuracy remains a
+request rather than a prerequisite for useful results.
 
 ## Scientific spine
 
@@ -222,6 +232,18 @@ certificates and probabilistic confidence statements are never conflated.
 Adjoints are used for sensitivities and for goal-oriented numerical/model-error
 estimation.
 
+Every reported state, field, observable and sensitivity carries an applicable
+bound and its claim status, or explicitly states that the bound is unavailable.
+Plots show the full applicable intervals. Pointwise bands require pointwise or
+whole-cell bounds; an L2 radius cannot be drawn as a pointwise band. Particle
+Dirac measures require weak-observable or specified reconstruction bounds.
+
+Certification and differentiation accompany operators from their first use.
+The workhorse certificate may use a validated coarse rounding budget when it
+meets the requested accuracy. Deterministic containment remains mandatory for
+a deterministic certified result; a tighter or higher-precision audit is
+optional. General nonlinear certificates follow the linear/stable cases.
+
 ## Performance
 
 Performance is a permanent scientific workstream. The design principles are:
@@ -236,6 +258,12 @@ Performance is a permanent scientific workstream. The design principles are:
 8. profile and optimize the actual owning dependency;
 9. preserve a simple reference action for every optimized path;
 10. measure time and memory to a requested certified observable accuracy.
+
+The goal is the fastest measured total time at matched model, observable,
+accuracy and claim strength. Include setup, candidate solve, certification and
+requested derivatives, and report memory and measurement variability. This is
+an optimization objective, not an established speed ranking. Generic benchmark
+support and reproducible baselines belong upstream before new hot paths.
 
 The controlled Fortran stack is FortSym, FortFEM, FortNum, FortSparse, FortAD,
 FortIO, FortPlot, FortArray and Fo, with PETSc and standard accelerator

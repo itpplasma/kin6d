@@ -2,13 +2,18 @@
   "version": 3,
   "configurePresets": [
     {"name":"cpu","generator":"Ninja","binaryDir":"${sourceDir}/build",
-     "cacheVariables":{"CMAKE_BUILD_TYPE":"Release","BUILD_TESTING":"ON"}},
+     "cacheVariables":{"CMAKE_BUILD_TYPE":"Release","BUILD_TESTING":"ON",
+      "KIN6D_CHECK_LEAN":"OFF"}},
     {"name":"debug","inherits":"cpu","binaryDir":"${sourceDir}/build-debug",
      "cacheVariables":{"CMAKE_BUILD_TYPE":"Debug",
-      "CMAKE_Fortran_FLAGS_DEBUG":"-g -O0 -fcheck=all -fbacktrace"}}
+      "CMAKE_Fortran_FLAGS_DEBUG":"-g -O0 -fcheck=all -fbacktrace"}},
+    {"name":"formal","inherits":"cpu","binaryDir":"${sourceDir}/build-formal",
+     "cacheVariables":{"KIN6D_CHECK_LEAN":"ON"}}
   ],
   "buildPresets": [{"name":"cpu","configurePreset":"cpu"},
-                    {"name":"debug","configurePreset":"debug"}],
+                    {"name":"debug","configurePreset":"debug"},
+                    {"name":"formal","configurePreset":"formal"}],
   "testPresets": [{"name":"cpu","configurePreset":"cpu","output":{"outputOnFailure":true}},
-                   {"name":"debug","configurePreset":"debug","output":{"outputOnFailure":true}}]
+                   {"name":"debug","configurePreset":"debug","output":{"outputOnFailure":true}},
+                   {"name":"formal","configurePreset":"formal","output":{"outputOnFailure":true}}]
 }

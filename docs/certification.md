@@ -1,8 +1,12 @@
 # Certification specification
 
-Status: general certification policy. The first 1X1V example already has a
-reviewed continuous snapshot enclosure evaluated with interval arithmetic.
-General nonlinear/kinetic certificates remain research work.
+Status: general certification policy and the next implementation gates. The
+prescribed-field snapshot, bounded OU/FP and manufactured self-consistent
+VPFP laboratory have reviewed continuous reference enclosures; the separate
+polynomial Krook case also has a checked Lean application. Their exact-profile
+comparisons are reference evidence, not an arbitrary-source production
+certifier. [Local evidence](steady-laboratory.md) records their boundaries,
+tests and proof scopes. General residual/stability certification is pending.
 
 ## Result states
 
@@ -25,7 +29,7 @@ A statistical interval from Monte Carlo is not a deterministic inclusion.
 When deterministic discretization bounds and statistical uncertainty coexist,
 report both.
 
-## What is certified
+## Certified model and outputs
 
 A certificate names:
 
@@ -42,6 +46,38 @@ Numerical certification concerns the named model. It does not automatically
 cover model reduction, uncertain atomic data, experimental calibration or
 physical adequacy.
 
+Every reported scientific result carries its own bound and status: states,
+fields, cell quantities, observables and requested gradients. Cover the entire
+reported/requested set rather than displaying only the quantities whose bounds
+closed. A pointwise band needs a pointwise or whole-cell theorem; an L2 or
+energy enclosure can instead bound an appropriate cell average or weak
+observable. Statistical bands state their probability assumptions. When a
+requested bound is unavailable, report that quantity as a candidate or failed
+certificate and name the missing premise. Do not manufacture a finite band.
+
+Plots preserve full interval widths and reconstruction semantics. A sampled
+endpoint band does not enclose a nonlinear curve between endpoints without a
+remainder; whole-cell ranges do. The declared reconstruction, not a smoothed
+display curve, is the object covered by the theorem.
+
+## Accuracy targets and arithmetic budgets
+
+For each observable or gradient component Q, declare its units, scientific
+scale s_Q, relative tolerance rtol_Q and absolute floor atol_Q. Accept a
+certified interval only when its radius is at most
+`tau_Q = atol_Q + rtol_Q*s_Q`. The default requested relative tolerance is
+1%. A near-zero or signed quantity needs a meaningful scale and absolute
+floor; relative error divided by a possibly zero candidate is undefined.
+
+Initially allocate at most 1% of tau_Q to arithmetic after stability and
+observable amplification. With a negligible absolute floor this is about
+`1e-4*s_Q`. This allowance is a stopping/refinement budget, not an assertion
+that floating-point operations have that error. Bound residual evaluation,
+inverse/stability constants, goal correction and final observable arithmetic,
+then propagate them through the theorem. Discretization, source approximation,
+boundary/complement and nonlinear remainder terms must also fit the total
+radius. Parameter/model/statistical uncertainties retain separate budgets.
+
 ## Solver and certifier separation
 
 The production solver is untrusted and may use:
@@ -57,12 +93,70 @@ It produces a candidate \(\bar U\).
 
 The rigorous Fortran certifier independently evaluates the quantities required
 by the theorem using FortNum interval/ball and verified numerical primitives.
-Project-owned rigorous numerical leaves come from the same retained FortSym
-mathematical definitions as the ordinary leaves where supported.
+Its workhorse path uses FP64 centers with proved aggregate rounding and
+analytical remainder bounds. A reduction bound, for example, needs its actual
+operation count, magnitude bounds and rounding assumptions; a fixed percentage
+inflation proves nothing. Enclose transcendental errors, conditioning,
+reductions, underflow/overflow and conversion to reported endpoints. Unsupported
+arithmetic conditions fail explicitly or select a supported evaluator.
+
+Strict mode uses outward interval operations and, where needed, higher
+precision for fallback and audit. Workhorse and strict modes satisfy the same
+containment contract; they may differ in cost and interval tightness. The
+workhorse error-bound accumulation and emitted endpoints themselves require
+rigorous arithmetic. Strict-mode agreement is useful verification, not a
+replacement for the workhorse bound's proof. Project-owned numerical leaves
+come from retained FortSym definitions, with rigorous targets where supported.
 
 Sharing a symbolic DAG prevents formula drift but is not itself a proof that
 the formula is the intended physics. Independent mathematical/physical oracles
 remain mandatory.
+
+Prepare a certificate once for immutable candidate/source/parameter bytes and
+reuse its bounds in batched postprocessing. Point/cell rendering must not
+repeat a global normalization, inverse or residual audit per sample. Record
+solve, certificate preparation and postprocessing time/memory separately, and
+recompute the certificate when any bound input changes.
+
+## First certificates for unknown solutions
+
+The first general gate is damped periodic transport on a finite velocity
+interval, with prescribed E=0, constant nu>0 and arbitrary declared smooth
+periodic source `g=nu*B+S`:
+
+```
+L f = (nu + v*d_x) f = g,
+L^-1 g(x,v) = integral[0,infinity] exp(-nu*t)*g(x-v*t,v) dt.
+```
+
+The characteristic resolvent establishes existence and `||L^-1||_infinity <=
+1/nu`, including v=0. The production checker evaluates only the continuous
+residual `r=g-L fbar` and concludes `||f-fbar||_infinity <= ||r||_infinity/nu`.
+It never evaluates the solution formula. Require a periodic reconstruction
+differentiable in x, rigorous whole-domain source/residual evaluation, all
+omitted source modes and velocity-cell remainders, and a nontrivial bounded
+observable. For `Q(f)=integral q*f`, the coarse goal bound is
+`||q||_L1*||r||_infinity/nu`, with observable arithmetic/quadrature added.
+An approximate adjoint can tighten it under the matching continuous theorem.
+The continuous inverse controls every spatial mode; a finite residual alone
+does not discharge that scope. No whole-velocity-line claim is made.
+
+Next admit arbitrary compatible sources in the bounded reflecting FP problem.
+Use its positive equilibrium weight to write a symmetric diffusion operator,
+fix the mass nullspace, prove the continuous weighted stability bound, and
+certify a weak equilibrated-flux defect. Piecewise-linear candidates have
+derivative jumps; cellwise strong residuals omitting them are invalid. Account
+for load integration, flux balance, boundary and mass defects, and establish
+any requested pointwise bridge separately. See
+[the flux contract](adjoints-structure.md#continuous-flux-and-variational-bounds).
+
+General nonlinear self-consistent VPFP follows only after a validated local
+inverse/existence argument controls kinetic/field coupling, charge
+compatibility, potential gauge, boundaries and continuous complements. It does
+not inherit the prescribed-field `1/nu` inverse bound. All three gates retain
+independent analytical benchmarks, corrupted-data rejection, two-resolution
+evidence and timing/memory at the requested observable/gradient accuracy.
+Exact solutions are benchmark oracles, not production error estimators.
 
 ## Nonlinear steady states
 
@@ -247,7 +341,7 @@ claimed.
 
 ## Onsager, positivity and structural checks
 
-For collisional transport, certify or rigorously test where possible:
+For collisional transport, retain scoped structural evidence for:
 
 - invariant nullspaces;
 - weighted self-adjointness or Onsager--Casimir transformation;

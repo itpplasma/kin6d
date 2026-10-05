@@ -1,7 +1,10 @@
 # Adjoint goals and structural certificates
 
-Status: required contracts and planned certification routes. No adjoint,
-coercivity, equilibrated-flux or Onsager certificate is implemented in kin6d.
+Status: required contracts and planned general certification routes. The
+[restored laboratory](steady-laboratory.md) retains scoped continuous reference
+bounds and independent local derivative checks. Arbitrary-source residual
+certification, equilibrated-flux estimators, certified goal adjoints/gradients
+and general Onsager certificates remain unimplemented.
 This extends [differentiability](differentiability.md) and the
 [continuous certificate contract](certification.md).
 
@@ -56,6 +59,13 @@ domain and boundary conditions. Open boundaries add flux terms. A coercive
 real-part bound gives an inverse estimate when existence/surjectivity holds;
 injectivity alone is insufficient for an arbitrary unbounded operator.
 
+The first general case is periodic `L=nu+v*d_x`, nu>0, on a declared finite
+velocity interval. In the `integral dx dv` pairing, `L^dagger=nu-v*d_x`.
+The damped-characteristic resolvent supplies existence and the continuous
+sup-norm inverse bound `1/nu` for both operators, including v=0. The same
+constant must not be transferred to self-consistent electric coupling or FP
+diffusion without a theorem for their actual domains and pairings.
+
 ## Residual and energy bounds
 
 For a self-adjoint positive `A`, `Au=b`, and `r=b-A ubar`, the error satisfies
@@ -109,6 +119,53 @@ for each kin6d operator; they are not general full-kinetic error theorems.
 Primal/complementary-dual feasible energies can give a certified gap.
 The variational dual flux is distinct from a goal sensitivity adjoint.
 
+The next bounded FP case uses prescribed constant theta>0 and positive smooth
+weight w on `[-P,P]`:
+
+```
+A f = -d_v(theta*w*d_v(f/w)) = S,
+theta*w*d_v(f/w) = 0 at both endpoints,
+integral f dv = prescribed mass,  integral S dv = 0.
+```
+
+For the OU operator, w is proportional to `exp(-v^2/(2*theta))`; it is a
+coefficient of the weighted formulation, not an evaluated forced solution.
+The physical state pairing is `integral f*h/w dv`. The nullspace is the span
+of w, so compatibility and the mass constraint must be checked explicitly.
+
+Write `gbar=fbar/w` with gbar in H1 and construct a flux y satisfying
+`-d_v y=S` and zero endpoint flux. On the mass-constrained space the energy
+error is bounded by the constitutive defect
+
+```
+eta^2 = integral |y-theta*w*gbar'|^2/(theta*w) dv.
+```
+
+Testing the weak error equation and applying weighted Cauchy--Schwarz proves
+this estimate. It covers derivative jumps of a continuous piecewise-linear
+candidate without interpreting its cellwise strong residual as a global
+L2 function. If y balances only a projected load or approximate endpoint
+flux, add independently bounded data/boundary defects. Reconstruction mass
+error requires a separate nullspace correction or bound.
+An arbitrary compatible signed source does not guarantee a nonnegative
+distribution; physical admissibility requires an additional checked premise.
+
+A conservative continuous weighted Poincare lower bound is
+`alpha = theta*(w_min/w_max)*(pi/(2*P))^2` on `integral w*g dv=0`.
+To justify it, compare the weighted variance with the variance about the
+ordinary mean, apply the interval Neumann Poincare inequality, and use
+`w_min<=w<=w_max`. Enclose these constants and discharge weak existence before
+applying `||f-fbar||_L2(1/w) <= eta/sqrt(alpha)`. This analytical route still
+requires implementation and coefficient/compatibility verification; a
+discrete eigenvalue or removal of the mass mode alone supplies no such bound.
+
+For an exactly mass-constrained error in one dimension, weighted mean zero
+gives a zero of its continuous H1 representative. Integration and
+Cauchy--Schwarz then give the pointwise bridge
+`|f-fbar|(v) <= w(v)*sqrt(integral 1/(theta*w) dv)*eta`.
+Include mass/reconstruction defects before using this as a plotting band.
+Higher-dimensional pointwise claims need their own regularity theorem.
+
 ## Certified goal correction
 
 For bounded linear goal `Q(u)=<q,u>` and adjoint `A^dagger z=q`,
@@ -119,6 +176,15 @@ If certified primal/adjoint dual-energy errors are bounded by `eta_u,eta_z`,
 then `Q(u)` lies in the rigorous enclosure of
 `Q(ubar)+<zbar,r>+[-eta_u eta_z,eta_u eta_z]`.
 Enclose the correction, observable evaluation and all continuous error terms.
+
+Apply these enclosures to every requested observable and gradient, with the
+per-quantity scales and budgets in [certification](certification.md).
+The workhorse FP64 center plus proved aggregate arithmetic radius and the
+strict outward/high-precision evaluator have the same containment obligation.
+Propagate rounding through inverse, adjoint and goal norms before comparing it
+with its allowance; presumed percentages or an unbounded adjoint correction
+cannot close a goal certificate. Cache primal/adjoint certificate preparation
+for immutable inputs and report its cost separately from rendering.
 
 Nonsymmetric/indefinite systems need corresponding primal/adjoint norms and
 stability; the SPD formula's norm bound cannot be transferred by analogy.

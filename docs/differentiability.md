@@ -1,6 +1,10 @@
 # Differentiability and adjoint policy
 
-Status: canonical derivative policy.
+Status: canonical derivative policy. The restored laboratory has generated
+local primal/JVP/VJP leaves and independent analytical checks, documented in
+[the laboratory evidence](steady-laboratory.md). A generated local leaf does
+not yet supply a continuous arbitrary-source tangent, adjoint or certified
+gradient pipeline. Those are implementation gates below.
 
 ## Principle
 
@@ -96,6 +100,14 @@ useful DESC strategy while remaining compiler-independent and matrix-free.
 When the number of parameter directions is small, forward tangents/JVPs are
 natural. When the number of scalar objectives is small relative to parameters,
 the adjoint/VJP formulation is preferred.
+
+Requested gradients are scientific outputs with their own units, scales,
+absolute floors, interval radii and status. Apply the observable accuracy and
+arithmetic budgets in [certification](certification.md#accuracy-targets-and-arithmetic-budgets)
+to each requested component. Report components whose stability or event
+premises fail; do not omit them or present an uncertified direction as a
+certified gradient. Statistical sensitivities retain separate probability and
+sampling-error statements.
 
 ## Linear solves, roots and eigenproblems
 
@@ -267,9 +279,23 @@ Every derivative family has at least one independent check:
 
 For implicit sensitivities also verify the linearized residual equation.
 
+Check the weighted JVP/VJP identity using the declared physical pairings and
+independently evaluated metric/normalization factors. Euclidean leaf duals,
+continuous adjoints and the discrete Riesz maps have different interfaces.
+Verify source, boundary, constraint and metric derivatives as well as the
+interior operator. Integer modes, branch switches and adaptive events are
+declared discrete choices; their algebraic partial derivatives do not establish
+a physical derivative across the event.
+
 Performance records include primal, JVP and VJP time/memory for material
 operators. A fast primal with an unusable VJP is not automatically the winning
 schedule for optimization workloads.
+
+For an implicit consumer, also measure tangent/adjoint solves, rigorous
+derivative evaluation, certificate preparation and postprocessing. Compare
+total time and peak memory to the requested gradient radius, including primal
+error amplification and necessary checkpoint/recompute work. Reuse immutable
+certificate data across requested components when their theorem inputs permit.
 
 ## Certified sensitivities
 
@@ -285,7 +311,30 @@ A rigorous sensitivity/gradient claim additionally needs:
 - event/topology margin;
 - discretization/tail bounds.
 
-The long-range goal is interval gradients for selected design problems, not a
-formal claim that every adaptive/stochastic computation is differentiable.
+The first general consumer uses the arbitrary-source transport equation
+`L f=g`, `L=nu+v*d_x`, nu>0, on a fixed periodic spatial and bounded velocity
+domain. For source/damping parameter directions its tangent obeys
+`L df=dg-dnu*f`. If the certified primal radius is r_f and a reconstructed
+tangent has continuous residual `r_t=dg-dnu*fbar-L dfbar`, then
+
+```
+||df-dfbar||_infinity <= (||r_t||_infinity + |dnu|*r_f)/nu.
+```
+
+Rigorous source/parameter derivative evaluation errors enter r_t. This bound
+uses the same proved continuous inverse as the primal; it does not
+differentiate the numerical solver. With the unweighted physical pairing
+`integral dx dv`, the adjoint is `nu-v*d_x` under periodic boundaries. Its
+continuous residual and goal-evaluation errors need their own enclosures.
+Changing the domain, chart, velocity measure or pairing adds the corresponding
+derivative terms.
+
+For nonlinear states, primal uncertainty also changes the tangent/adjoint
+operator and parameter/goal derivatives. Bound those variations on the
+certified branch, together with solve error and nonlinear remainders; a small
+linearized residual at the candidate alone is insufficient. Record event
+margins and explicitly unavailable derivatives. Interval gradients for the
+supported smooth cases are required outputs when requested; Lean assurance
+is optional and does not replace the Fortran containment argument.
 
 Chris&AI

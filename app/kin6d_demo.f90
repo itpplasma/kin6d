@@ -69,7 +69,7 @@ contains
         print '(a,f7.3,a,es12.4)', 'Final time=', final_time, &
             ' uniform snapshot bound=', radius
        print '(a)', 'Bounds use reviewed interpolation analysis and FortNum arithmetic.'
-        print '(a)', 'No Lean proof, self-consistent Poisson, or velocity-tail claim.'
+        print '(a)', 'This streaming bound has no Lean or velocity-tail claim.'
     end subroutine run_demo
 
     subroutine update_frame(frame)

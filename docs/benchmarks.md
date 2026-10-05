@@ -1,7 +1,9 @@
 # Analytical Benchmark Atlas
 
-Status: design and initial machine-readable catalogue, 2026-10-05. No atlas
-reference evaluator or solver test is implemented. The audience is physicists
+Status: catalogue and scoped executable references, 2026-10-05. Streaming,
+periodic Poisson, source-balanced VPFP, bounded OU and formal polynomial Krook
+cases have retained evaluators and independent tests. Other rows remain planned.
+The audience is physicists
 and implementers selecting the next independently verifiable capability.
 The atlas defines its mathematics before the solver defines its tests.
 

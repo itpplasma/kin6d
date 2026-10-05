@@ -293,6 +293,26 @@ interval/ball arithmetic checks the mathematical premises needed for the
 claimed result. Lean is an optional theorem/checker layer after useful
 numerical certificates exist.
 
+Certification is available from the first supported case and covers every
+reported scientific output. Each result states its pointwise, cellwise,
+observable, norm, weak or statistical claim and any unavailable/failed bound.
+Norm bounds are not pointwise plot bands; particle measures need declared
+observable or reconstructed-field claims.
+
+The practical default targets a 1% observable radius relative to a declared
+physical scale and absolute floor. Initially, bound evaluation receives 1%
+of that radius after stability or adjoint amplification. Workhorse arithmetic
+uses fast centers and proved aggregate roundoff/remainder bounds; strict
+outward arithmetic supplies audits and fallback. Both modes enclose the true
+quantity under stated hypotheses. Tight last-bit endpoints are unnecessary.
+
+General certificates check a continuous residual, reconstruction, boundaries
+and truncation against a proved stability/inverse bound. Known solutions are
+independent benchmark oracles. The next general case is arbitrary-source
+periodic damped transport, followed by forced FP with continuous flux/stability
+control. The present manufactured Poisson/FP laboratory is reference evidence,
+not a general nonlinear certificate.
+
 Result components remain separate:
 
 - numerical discretization/algebraic error;
@@ -334,7 +354,12 @@ Production design targets:
 - GPU-resident state when accelerators are used.
 
 Fast candidate arithmetic may use mixed precision or relaxed execution when the
-strict certifier remains independent.
+certifier remains independent and its arithmetic theorem accounts for its own
+execution. The performance goal is the fastest measured total result time at
+matched model and requested accuracy, including every reported band and
+requested derivative. Upstream verified-arithmetic and generated-kernel
+benchmarks precede optimization and broader physics; external comparisons are
+required before claiming that this goal is achieved.
 
 ## Physical scope
 

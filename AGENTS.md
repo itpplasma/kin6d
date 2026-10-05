@@ -63,6 +63,19 @@ docs/first-example.md before changing it or claiming broader evidence.
 - The fast candidate solver is untrusted. The primary rigorous path is a
   Fortran interval/ball certificate. Lean is optional downstream assurance and
   is not an early milestone requirement.
+- Certification and differentiability are first-class from the first case.
+  Every reported scientific output carries a supported enclosure or explicit
+  unavailable/failed status. Pointwise bands require pointwise or cellwise
+  bounds; a norm radius or particle confidence interval cannot replace them.
+- Workhorse certification uses fast centers with proved aggregate rounding,
+  approximation and reconstruction budgets where available. Strict outward
+  arithmetic remains the audit/fallback. Both modes require containment;
+  neither may inflate an unchecked estimate and call it certified.
+- Default requested observable radius is 1% of a declared physical scale with
+  an absolute floor. Initially reserve 1% of that radius for bound-evaluation
+  error after stability amplification. Precision and refinement follow the
+  budget rather than pursuing last-bit tightness. Exact solutions are test
+  oracles, never required by the general production checker.
 - Distinguish candidate, certified-discrete, certified-continuous,
   optionally formally-certified-continuous, probabilistically-certified
   and certification-failed. State the exact claim.
@@ -97,6 +110,11 @@ docs/first-example.md before changing it or claiming broader evidence.
   and scientific case. Track time, peak/attributed memory, iterations,
   communication/reductions and derivative overhead. Compare against best-known
   fixed-input baselines, not only the previous commit.
+- The performance goal is the fastest measured total time at matched model,
+  accuracy and hardware, including all reported bands and requested
+  derivatives. Include setup/reuse and memory; establish comparisons before
+  claiming leadership. Build upstream correctness/performance fixtures before
+  optimizing certificate arithmetic or expanding physics.
 - Fix generic bottlenecks in the dependency that owns them. Do not duplicate a
   generic optimized kernel downstream.
 

@@ -17,6 +17,23 @@ T_{\rm certificate}
 
 subject to the requested observable uncertainty and available memory.
 
+The project goal is to beat the best available matched codes in **total time
+to the requested result**, including all reported error bands and requested
+derivatives. This is a target, not an established speed claim. Record setup,
+candidate, reconstruction/residual, stability check, bound evaluation,
+derivative solves and postprocessing separately. Report cold single-use and
+amortized repeated-use costs; reuse only data with checked validity keys.
+
+The default requested observable radius is 1% of a declared physical scale
+with an absolute floor near zero. Bound-evaluation roundoff initially receives
+1% of that radius after inverse/adjoint amplification. Measure achieved width
+as well as time; a tighter reference run is not a matched 1% comparison.
+
+Every reported output keeps its appropriate bound/status. Selected tight
+goal bounds may guide refinement, while other outputs retain valid wider
+enclosures. Do not save time by dropping bands or relabeling norm errors as
+pointwise errors.
+
 For stochastic cases, include the sampling/confidence target explicitly.
 
 A faster kernel that increases nonlinear iterations, memory pressure or
@@ -124,6 +141,44 @@ performance erosion.
 Noisy benchmark machines do not gate percent-level regressions. Dedicated
 performance runners use warmup, repeated measurements, median/dispersion and
 alternating A/B order where thermal drift matters.
+
+External comparisons fix the model, boundaries, normalization, observables,
+requested error type/width, precision, compiler, hardware and thread count.
+Publish candidate-only and certified totals side by side. If a competitor
+cannot supply a comparable certificate, report that gap and its independently
+validated accuracy; do not infer a matched certified speed ranking. Include
+requested forward/adjoint results in optimization workload comparisons.
+
+## Certification benchmarks before optimization
+
+The current bounded-OU laboratory checks against an explicitly known Gaussian
+profile. It is an independent reference/performance case, not the general
+production checker. Its 4096-cell strict certificate previously took about
+425 times the direct solve on the local Ryzen 5950X. Those cells achieved a
+radius near 3.37e-7, far tighter than a 1% request; the ratio cannot predict
+general residual-based certification cost.
+
+Before expanding physics, retain two upstream native fixtures:
+
+1. FortNum: strict reductions versus FP centers with proved aggregate error
+   bounds, including cancellation, gradual underflow and explicit overflow
+   failure; preserve exact independent value oracles and raw timer samples.
+2. FortSym: one shared definition emitted as primal/JVP/VJP and enclosure
+   leaves, independent value/derivative oracles, and separately timed paths.
+
+KIN6D's `scripts/benchmark.sh` sweeps the current FP case at several resolutions
+and records requested/achieved radius, solver/certificate/acceptance costs,
+state bytes and provenance. Correctness validation is outside timed sections.
+Run these as explicit audits, not noisy timing gates. The next production
+certificate uses arbitrary-source damped transport residuals and the continuous
+inverse bound; reference-profile evaluation stays in the benchmark suite.
+
+Profile strict exponential/reduction costs before optimizing them. At the
+owner, consider batched range-reduced evaluation, proved approximation and
+rounding remainders, reusable validated tables and controlled reduction trees.
+Choose schedules by measured total cost and accepted width. A proposed GPU
+schedule needs its own reduction/rounding theorem and hardware measurements;
+CPU speedups do not establish GPU support.
 
 ## Continuous profiling
 
