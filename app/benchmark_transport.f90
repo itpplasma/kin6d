@@ -1,4 +1,4 @@
-program benchmark_transport
+program benchmark_transport_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
@@ -15,38 +15,67 @@ program benchmark_transport
         transport_cosine_moment_cell_interval, transport_scalar_add_interval, &
         transport_accuracy_interval
     use fortnum_interval, only: interval_t, interval, rad
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: modes = 2, points = 96, trials = 5
-    integer, parameter :: solves = 100, checks = 3, renders = 3
+    ! The source, mode count, plot grid and goal scales define the printed
+    ! benchmark case and stay fixed; the namelist holds run sizes only.
+    integer, parameter :: modes = 2, points = 96
     real(dp), parameter :: goal_scale = 0.25_dp, derivative_scale = 0.25_dp
-    integer, parameter :: sweep(4) = [32, 64, 256, 4096]
-    integer :: cells, parsed, case_index, first, last
+    integer :: trials = 5, solves = 100, checks = 3, renders = 3
+    integer :: sweep(4) = [32, 64, 256, 4096]
+    integer :: cells = 256
+    character(len=16) :: sampling = 'cached'
+    integer :: parsed, case_index, first, last, unit, slot
     character(len=64) :: argument
-    logical :: cached
+    character(len=256) :: msg
+    logical :: cached, sweep_all
+    type(run_t) :: run
+    type(result_file_t) :: result
+    real(dp), allocatable :: case_cells(:), state_radius(:, :), tangent_radius(:, :)
+    real(dp), allocatable :: goal_bounds(:, :, :), derivative_bounds(:, :, :)
+    real(dp), allocatable :: warm_seconds(:, :, :)
+    namelist /benchmark_transport/ cells, sampling, sweep, trials, solves, checks, &
+        renders
 
-    first = 0; last = 0; cells = 256; cached = .true.
-    if (command_argument_count() > 2) &
-        error stop 'usage: benchmark_transport [cells|sweep] [cached|direct]'
-    if (command_argument_count() >= 1) then
-        call get_command_argument(1, argument)
+    call run%start('benchmark_transport')
+    parsed = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=benchmark_transport, iostat=parsed, iomsg=msg)
+    call run%close_config(unit, 'benchmark_transport', parsed, msg)
+    sweep_all = .false.
+    if (run%argument_count() > 2) &
+        error stop 'usage: benchmark_transport [--config FILE] [cells|sweep] [cached|direct]'
+    if (run%argument_count() >= 1) then
+        call run%argument(1, argument)
         if (trim(argument) == 'sweep') then
-            first = 1; last = size(sweep)
+            sweep_all = .true.
         else
             read (argument, *, iostat=parsed) cells
             if (parsed /= 0) error stop 'cells must be an integer or sweep'
         end if
     end if
-    if (command_argument_count() == 2) then
-        call get_command_argument(2, argument)
-        select case (trim(argument))
-        case ('cached')
-            cached = .true.
-        case ('direct')
-            cached = .false.
-        case default
-            error stop 'sampling must be cached or direct'
-        end select
+    if (run%argument_count() == 2) call run%argument(2, sampling)
+    select case (trim(sampling))
+    case ('cached')
+        cached = .true.
+    case ('direct')
+        cached = .false.
+    case default
+        error stop 'sampling must be cached or direct'
+    end select
+    if (trials < 1 .or. solves < 1 .or. checks < 1 .or. renders < 1) &
+        error stop 'invalid repetition counts'
+    call run%open_resolved(unit)
+    write (unit, nml=benchmark_transport)
+    call run%close_resolved(unit)
+    first = 0; last = 0
+    if (sweep_all) then
+        first = 1; last = size(sweep)
     end if
+    allocate (case_cells(last - first + 1), state_radius(2, last - first + 1), &
+        tangent_radius(2, last - first + 1), goal_bounds(2, 2, last - first + 1), &
+        derivative_bounds(2, 2, last - first + 1), &
+        warm_seconds(trials, 2, last - first + 1))
     if (cached) then
         print '(a)', 'sampling=cached; immutable_geometry_reused_for_warm_trials'
     else
@@ -64,8 +93,29 @@ program benchmark_transport
     print '(a)', 'standalone primal prepare/reprepare are excluded from combined totals'
     do case_index = first, last
         if (case_index > 0) cells = sweep(case_index)
+        slot = case_index - first + 1
+        case_cells(slot) = real(cells, dp)
         call measure(cells)
     end do
+    call execute_command_line('mkdir -p output')
+    call result%create(run)
+    call result%attribute('evaluator_index', '1=bernstein, 2=strict_box')
+    call result%write('cells', case_cells, '1', 'velocity cells per case', dims='case')
+    call result%write('state_radius', state_radius, '1', 'continuous state sup radius', &
+        dims='evaluator,case', status='certified-continuous residual/stability bound')
+    call result%write('nu_tangent_radius', tangent_radius, '1', &
+        'continuous d/dnu tangent sup radius', dims='evaluator,case', &
+        status='certified-continuous residual/stability bound')
+    call result%write('Q_interval', goal_bounds, '1', &
+        'normalized cosine density goal lower/upper', dims='bound,evaluator,case', &
+        status='certified-continuous enclosure')
+    call result%write('dQ_dnu_interval', derivative_bounds, '1', &
+        'goal tangent dQ/dnu lower/upper', dims='bound,evaluator,case', &
+        status='certified-continuous enclosure')
+    call result%write('combined_warm_cpu_s', warm_seconds, 's', &
+        'combined warm solve+tangent+bands CPU time', dims='trial,evaluator,case', &
+        status='measurement')
+    call result%close()
 contains
     subroutine measure(cell_count)
         integer, intent(in) :: cell_count
@@ -150,6 +200,10 @@ contains
                 ' setup_plus_first_pipeline_cpu_s=', setup_time + first_pipeline, &
                 ' requested_targets_met=', targets_met
             print '(a,2es24.16)', 'Q_interval=', goal_lo, goal_hi
+            state_radius(evaluator, slot) = certificate%state_radius
+            tangent_radius(evaluator, slot) = certificate%tangent_radius
+            goal_bounds(:, evaluator, slot) = [goal_lo, goal_hi]
+            derivative_bounds(:, evaluator, slot) = [derivative_lo, derivative_hi]
             print '(a,2es24.16)', 'dQ_dnu_interval=', derivative_lo, derivative_hi
             call report_accuracy(goal_lo, goal_hi, goal_scale, 'Q')
             call report_accuracy(derivative_lo, derivative_hi, &
@@ -214,6 +268,7 @@ contains
                 if (.not. bands_valid) error stop 'timed postprocessing failed'
                 if (.not. all(ieee_is_finite(times))) error stop 'invalid timer trial'
                 combined_time = times(1) + sum(times(4:7))
+                warm_seconds(trial, evaluator, slot) = combined_time
                 print '(i0,",",i0,",",a,9(",",es24.16))', trial, cell_count, &
                     trim(evaluator_name), times, combined_time, &
                     setup_time + combined_time
@@ -362,4 +417,4 @@ contains
             ' normalized_radius_upper=', relative%hi, ' target_lower=', target%lo, &
             ' requested_radius_met=', radius%hi <= target%lo
     end subroutine
-end program benchmark_transport
+end program benchmark_transport_main

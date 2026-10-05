@@ -14,23 +14,48 @@ program steady_laboratory_demo
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, legend, savefig, tight_layout, xlim, ylim
     use fortplot_system_runtime, only: create_directory_runtime
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
     type(fp_state_t) :: fp, coarse
     type(coupled_steady_t) :: coupled, krook, homogeneous
     type(interval_t) :: z, value, lower, upper, pi, potential, electric, energy
-    integer, parameter :: cells = 64, nx = 96
+    integer :: cells = 64, nx = 96
+    ! Coupled VPFP source drive, Krook limiting drive and collision rate.
+    real(dp) :: coupled_drive = 1.875_dp, krook_drive = 0.375_dp, nu = 0.75_dp
+    namelist /steady_laboratory/ cells, nx, coupled_drive, krook_drive, nu
+    type(run_t) :: run
+    type(result_file_t) :: result
     real(dp) :: radius, coarse_radius, residual, start, finish
-    real(dp) :: lo(cells + 1), hi(cells + 1), clo(cells/2 + 1), chi(cells/2 + 1)
-    real(dp) :: ref_x(2*cells), ref_lo(2*cells), ref_hi(2*cells)
-    real(dp) :: x(nx + 1), xf(2*nx), flo(2*nx), fhi(2*nx)
-    real(dp) :: elo(2*nx), ehi(2*nx), fline(nx + 1), eline(nx + 1)
-    real(dp) :: limit_line(nx + 1), equilibrium_line(nx + 1)
+    real(dp), allocatable :: lo(:), hi(:), clo(:), chi(:)
+    real(dp), allocatable :: ref_x(:), ref_lo(:), ref_hi(:)
+    real(dp), allocatable :: x(:), xf(:), flo(:), fhi(:)
+    real(dp), allocatable :: elo(:), ehi(:), fline(:), eline(:)
+    real(dp), allocatable :: limit_line(:), equilibrium_line(:)
     real(dp) :: fr, pr, er, e, p, source, defect, mass_lo, mass_hi
     real(dp) :: zlo, zhi, lower_mass, upper_mass
     real(dp) :: resolution(2), mass_lower(2), mass_upper(2), exact_mass(2)
-    integer :: i, ledger
+    integer :: i, ledger, unit, ios
     logical :: ok
+    character(256) :: msg
+    character(64) :: label
 
+    call run%start('steady_laboratory_demo')
+    if (run%argument_count() > 0) error stop &
+        'usage: steady_laboratory_demo [--config FILE]'
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=steady_laboratory, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'steady_laboratory', ios, msg)
+    if (cells < 4 .or. mod(cells, 2) /= 0) error stop 'cells must be even and >= 4'
+    if (nx < 1) error stop 'nx must be positive'
+    if (.not. (nu > 0.0_dp)) error stop 'nu must be positive'
+    call run%open_resolved(unit)
+    write (unit, nml=steady_laboratory)
+    call run%close_resolved(unit)
+    allocate (lo(cells + 1), hi(cells + 1), clo(cells/2 + 1), chi(cells/2 + 1), &
+        ref_x(2*cells), ref_lo(2*cells), ref_hi(2*cells), x(nx + 1), xf(2*nx), &
+        flo(2*nx), fhi(2*nx), elo(2*nx), ehi(2*nx), fline(nx + 1), eline(nx + 1), &
+        limit_line(nx + 1), equilibrium_line(nx + 1))
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'cannot create output directory'
     pi = interval_pi()
@@ -51,8 +76,8 @@ program steady_laboratory_demo
         error stop 'coarse FP certificate failed'
     call cpu_time(finish)
     print '(a,f10.6)', 'FP certificate CPU seconds=', finish - start
-    print '(a,es12.4,a,es12.4)', 'FP whole-cell sup bounds: 64=', radius, &
-        ' 32=', coarse_radius
+    print '(a,i0,a,es12.4,a,i0,a,es12.4)', 'FP whole-cell sup bounds: ', cells, '=', &
+        radius, ' ', cells/2, '=', coarse_radius
     call fp_normalization_interval(fp, zlo, zhi)
     z = interval(zlo, zhi)
     open (newunit=ledger, file='output/fp-candidate.csv', status='replace')
@@ -86,7 +111,7 @@ program steady_laboratory_demo
     call fp_mass_error_band(interval(mass_lo), interval(mass_hi), interval(radius), &
         lower, upper)
     lower_mass = lower%lo; upper_mass = upper%hi
-    resolution = [32.0_dp, 64.0_dp]
+    resolution = [real(cells/2, dp), real(cells, dp)]
     mass_lower(2) = lower_mass; mass_upper(2) = upper_mass
     call fp_mass_interval(coarse, mass_lo, mass_hi)
     call fp_mass_error_band(interval(mass_lo), interval(mass_hi), &
@@ -104,9 +129,11 @@ program steady_laboratory_demo
     call plot(coarse%v, chi, linestyle=':', color=[0.8_dp, 0.4_dp, 0.0_dp])
     call plot(fp%v, lo, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
     call plot(fp%v, hi, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(coarse%v, coarse%f, label='32 cells + full band', linestyle='--', &
+    write (label, '(i0,a)') cells/2, ' cells + full band'
+    call plot(coarse%v, coarse%f, label=trim(label), linestyle='--', &
         color=[0.8_dp, 0.4_dp, 0.0_dp])
-    call plot(fp%v, fp%f, label='64 cells + full band', &
+    write (label, '(i0,a)') cells, ' cells + full band'
+    call plot(fp%v, fp%f, label=trim(label), &
         color=[0.0_dp, 0.45_dp, 0.7_dp])
     call plot(ref_x, ref_lo, label='rigorous Gaussian cell edges', linestyle=':', &
         color=[0.0_dp, 0.0_dp, 0.0_dp])
@@ -116,12 +143,12 @@ program steady_laboratory_demo
     call savefig('output/fp-steady.png')
 
     ! The prescribed drive is a source density moment, not a supplied solution.
-    call solve_coupled_steady(1.875_dp, 0.75_dp, 1, coupled, ok, &
+    call solve_coupled_steady(coupled_drive, nu, 1, coupled, ok, &
         fp_rate=1.0_dp, temperature=1.0_dp)
     if (.not. ok) error stop 'coupled FP steady solve failed'
-    call solve_coupled_steady(0.375_dp, 0.75_dp, 1, krook, ok)
+    call solve_coupled_steady(krook_drive, nu, 1, krook, ok)
     if (.not. ok) error stop 'Krook limiting solve failed'
-    call solve_coupled_steady(0.0_dp, 0.75_dp, 1, homogeneous, ok)
+    call solve_coupled_steady(0.0_dp, nu, 1, homogeneous, ok)
     if (.not. ok) error stop 'homogeneous limiting solve failed'
     call coupled_certificate_radius(coupled, fr, pr, er, energy, ok)
     if (.not. ok) error stop 'coupled enclosure failed'
@@ -195,9 +222,9 @@ program steady_laboratory_demo
     call xlabel('velocity cells')
     call ylabel('integral f dv  (prescribed mass = 1)')
     call plot([resolution(1), resolution(1)], [mass_lower(1), mass_upper(1)], &
-        label='32 cells: full interval', color=[0.8_dp, 0.4_dp, 0.0_dp], marker='s')
+        label=trim(cell_label(cells/2)), color=[0.8_dp, 0.4_dp, 0.0_dp], marker='s')
     call plot([resolution(2), resolution(2)], [mass_lower(2), mass_upper(2)], &
-        label='64 cells: full interval', color=[0.0_dp, 0.45_dp, 0.7_dp], marker='o')
+        label=trim(cell_label(cells)), color=[0.0_dp, 0.45_dp, 0.7_dp], marker='o')
     call plot(resolution, exact_mass, label='exact prescribed mass', &
         linestyle='--', color=[0.0_dp, 0.0_dp, 0.0_dp])
     call legend(loc='upper right')
@@ -234,7 +261,8 @@ program steady_laboratory_demo
     write (ledger, '(a,z16.16)') 'fp_32_radius_binary64=', transfer(coarse_radius, 0_int64)
     write (ledger, '(a)') 'coupled_domain=x periodic 2*pi,v[-1,1]; f=0 at v endpoints'
     write (ledger, '(a)') 'coupled_reconstruction=B(v)*(1+a*cos(x)); phi=p*cos(x)'
-    write (ledger, '(a)') 'coupled_drive=1.875; nu=.75; beta=theta=k=1; fixed_charge=-1'
+    write (ledger, '(a)') 'coupled_drive='//short(coupled_drive)//'; nu='//short(nu)// &
+        '; beta=theta=k=1; fixed_charge=-1'
     write (ledger, '(a,z16.16)') 'coupled_amplitude_binary64=', &
         transfer(coupled%amplitude, 0_int64)
     write (ledger, '(a,z16.16)') 'coupled_phi_cos_binary64=', &
@@ -253,6 +281,73 @@ program steady_laboratory_demo
     write (ledger, '(a)') 'exclusions=infinite_velocity_tails; general_nonlinear_uniqueness'
     write (ledger, '(a)') 'source_identity=source-base-commit.txt; source-manifest.sha256'
     close (ledger)
+    call write_result()
     print '(a)', 'FP and coupled bounds use reviewed analysis and FortNum intervals.'
     print '(a)', 'The separate Lean Krook theorem has its own certificate check.'
+contains
+    function cell_label(n) result(text)
+        integer, intent(in) :: n
+        character(64) :: text
+        write (text, '(i0,a)') n, ' cells: full interval'
+    end function
+
+    !> Shortest fixed decimal (up to 6 digits) that reads back exactly, else g0.
+    function short(value) result(text)
+        real(dp), intent(in) :: value
+        character(len=:), allocatable :: text
+        character(64) :: buffer
+        real(dp) :: back
+        integer :: k, ios
+        write (buffer, '(f0.6)') value
+        k = len_trim(buffer)
+        do while (k > 1 .and. buffer(k:k) == '0')
+            k = k - 1
+        end do
+        read (buffer(:k), *, iostat=ios) back
+        if (ios == 0 .and. back == value) then
+            text = buffer(:k)
+        else
+            write (buffer, '(g0)') value
+            text = trim(buffer)
+        end if
+    end function
+
+    subroutine write_result()
+        character(len=*), parameter :: bound = 'certified-continuous '// &
+            '(reviewed-continuous analysis, FortNum intervals); no tails/uniqueness claim'
+        call result%create(run)
+        call result%write('fp_v', fp%v, 'thermal scale', 'FP velocity nodes', dims='v')
+        call result%write('fp_f', fp%f, '1', 'bounded OU/FP candidate', dims='v', &
+            status='candidate center')
+        call result%write('fp_lower', lo, '1', 'FP whole-cell lower band', dims='v', &
+            status=bound)
+        call result%write('fp_upper', hi, '1', 'FP whole-cell upper band', dims='v', &
+            status=bound)
+        call result%write('fp_coarse_v', coarse%v, 'thermal scale', &
+            'coarse FP velocity nodes', dims='v_coarse')
+        call result%write('fp_coarse_f', coarse%f, '1', 'coarse FP candidate', &
+            dims='v_coarse', status='candidate center')
+        call result%write('fp_coarse_lower', clo, '1', 'coarse FP lower band', &
+            dims='v_coarse', status=bound)
+        call result%write('fp_coarse_upper', chi, '1', 'coarse FP upper band', &
+            dims='v_coarse', status=bound)
+        call result%write('fp_sup_radius', radius, '1', 'FP whole-cell sup radius', &
+            status=bound)
+        call result%write('fp_coarse_sup_radius', coarse_radius, '1', &
+            'coarse FP whole-cell sup radius', status=bound)
+        call result%write('fp_mass_bounds', [lower_mass, upper_mass], '1', &
+            'FP mass interval [lower, upper]', dims='bound', status=bound)
+        call result%write('x', x, 'slab scale', 'coupled sample points', dims='x')
+        call result%write('coupled_f_v0', fline, '1', 'coupled f(x, v=0) candidate', &
+            dims='x', status='candidate center')
+        call result%write('coupled_E', eline, 'field scale', 'coupled E(x) candidate', &
+            dims='x', status='candidate center')
+        call result%write('coupled_radii', [fr, pr, er], '1', &
+            'pointwise radii of f, phi, E', dims='field', status=bound)
+        call result%write('mean_E_energy_bounds', [energy%lo, energy%hi], '1', &
+            'spatial mean electric energy interval', dims='bound', status=bound)
+        call result%write('krook_f_v0', limit_line, '1', 'Krook limit f(x, v=0)', &
+            dims='x', status='candidate')
+        call result%close()
+    end subroutine
 end program
