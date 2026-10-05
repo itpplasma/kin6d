@@ -158,6 +158,31 @@ closure -> separated-timescale local/global microproblems -> sparse expensive
 microphysics sampling -> fully coupled global evolution. See
 [transport-multiscale.md](docs/transport-multiscale.md).
 
+## UX0 — configuration, reproducibility and operator UX (cross-cutting)
+
+Establish the user-facing contract before the model space becomes large:
+
+1. a typed Fortran configuration model with Fortran namelist as the canonical
+   editable syntax;
+2. validate and fully resolved configuration output so defaults/automatic
+   choices are explicit and recoverable;
+3. a machine-readable schema generated from the same Fortran-owned semantics;
+4. NetCDF-4-compatible HDF5 result files through FortIO, always embedding the
+   original and resolved input plus build/input provenance;
+5. explicit GNU, Intel LLVM, NVIDIA and LLVM Flang build/test lanes, with
+   certifier floating-point flags isolated from fast candidate builds;
+6. simple CLI workflows for run/inspect/extract-input before any GUI;
+7. optional Python notebook/server and TypeScript browser layers only after the
+   schema/result contract is stable.
+
+The normal interaction should expose physical model, observable and requested
+accuracy before low-level numerical knobs. Experts retain an advanced numerical
+view. Browser use over an SSH tunnel or an existing cluster portal is preferred
+to a separate desktop application; scheduler metadata remains outside the
+physics namelist.
+
+See [interface-reproducibility.md](docs/interface-reproducibility.md).
+
 ## R4 — 0X3V collision laboratory
 
 Introduce the future velocity representation in the smallest domain. Progress:
@@ -200,7 +225,12 @@ Develop goal-oriented adjoint bounds for selected fluxes.
 
 ## R6 — real-device DK neoclassical transport
 
-Move to imported real tokamak/stellarator equilibria and a drift-kinetic model.
+Move to frozen real tokamak/stellarator field/equilibrium candidates and a
+drift-kinetic model. Import is sufficient for this rung, but imported data are
+not trusted physics: normalize conventions, retain provenance/input
+uncertainty, and evaluate the field/geometry checks required by the DK claim.
+Native equilibrium re-solves are added in R12 and should later be used to
+separate imported interpolation/reconstruction error from DK transport error.
 
 Required comparisons:
 
@@ -296,23 +326,45 @@ Add when a concrete experiment/design case requires them:
 KAMEL/KiLCA/KIM and appropriate external RF/FP codes provide independent
 oracles.
 
-## R12 — MHD, kinetic-MHD, vacuum and circuits
+## R12 — equilibrium, MHD/kinetic-MHD, vacuum and circuits
 
-MHD grows as a parallel bulk-model branch using the same geometry/field
-foundation:
+MHD grows as a parallel bulk-model branch using the same physical-space
+geometry/field foundation. Equilibrium is a stationary solve, not a VMEC/EQDSK
+mode. The staged path is:
 
-1. imported equilibrium candidates;
-2. native axisymmetric Grad--Shafranov;
-3. ideal linear response/eigenmodes;
-4. resistive response;
-5. kinetic-MHD;
-6. Hall/XMHD/multi-fluid;
-7. nonlinear extended-MHD cases driven by an actual scientific target;
-8. conducting structures, vacuum/BEM, coils and circuits.
+1. vacuum magnetostatics from explicit coils/currents and conducting boundaries;
+2. native axisymmetric Grad--Shafranov, first fixed boundary and then free
+   boundary with explicit external-coil/vacuum data;
+3. EQDSK/gEQDSK import as a candidate plus residual checking, native re-solve
+   and certificate comparison;
+4. VMEC/DESC/GVEC import as nested-surface candidates and cheap
+   representations/preconditioners, followed by physical-space residual checks;
+5. a general physical-space three-dimensional ideal-MHD stationary solver that
+   does not require global nested surfaces and can represent islands/stochastic
+   regions when the equations permit them;
+6. explicit comparison with HINT/PIES-like nonnested full-pressure relaxation
+   and, for a different relaxation model, SPEC/SPECTRE/MRxMHD cases;
+7. resistive-MHD and Hall/XMHD stationary/evolution paths where reconnection and
+   history are part of the selected physics;
+8. kinetic-MHD and kinetic continuation where pressure/current closure is no
+   longer adequately fluid;
+9. ideal/resistive linear response, eigenmodes and nonlinear stability through
+   the common S0 consumer;
+10. conducting structures, vacuum/BEM, coils and external circuits.
 
-ARES/MEPHIT/MARS/GPEC and later JOREK/NIMROD-type cases are validation
-landmarks. Do not reimplement their entire feature sets before a KIN6D use case
-requires them.
+For static smooth ideal MHD, retain the actual constraint
+\(B\cdot\nabla p=0\): removing the nested-surface representation does not
+license arbitrary smooth pressure gradients in ergodic volumes. Different
+stationary solutions are stored as different equilibria with their own initial
+state/continuation provenance; no general probabilistic branch machinery belongs
+in KIN6D.
+
+ARES/MEPHIT/MARS/GPEC and later JOREK/NIMROD-type cases remain response and
+evolution landmarks. VMEC/DESC/GVEC, HINT/PIES and SPEC/SPECTRE are equilibrium
+comparators with different model assumptions. Do not reimplement their entire
+feature sets before a KIN6D use case requires a shared capability.
+
+See [equilibria-inference.md](docs/equilibria-inference.md).
 
 ## R13 — Solar-System plasma configurations
 
@@ -474,12 +526,29 @@ solid-state material microphysics, strong-field QED and GR remain external
 coupled systems unless a later scientific target justifies a narrow reusable
 interface.
 
-## R14 — diagnostics, inference, design and adaptive fidelity
+## R14 — diagnostics, TIAGO inference integration, design and adaptive fidelity
 
-Synthetic diagnostic operators enter once their forward physics exists.
-Implicit adjoints support parameter inference, equilibrium reconstruction,
-stellarator/coil/divertor design and control.
+Synthetic diagnostic forward operators enter KIN6D once their underlying
+physics exists, but reconstruction/inference is owned by TIAGO. KIN6D exposes
+states/observables together with matrix-free JVP/VJP and implicit-equilibrium
+adjoint actions; TIAGO owns measurements, likelihood/covariance models,
+diagnostic/calibration nuisance parameters, priors and posterior uncertainty.
 
+The first integration should keep TIAGO's current VMEC++ reconstruction as an
+independent reference and add a provider-neutral interface through which KIN6D
+can supply Grad--Shafranov and later general MHD/DK/GK/FK stationary states.
+The default UQ remains a local Laplace/Gauss--Newton approximation. When the
+same data support several distinct KIN6D equilibria, fit them separately and
+optionally report a finite mixture of local Laplace approximations; do not
+average distinct equilibria into one state. More elaborate sampling is
+deferred until a concrete within-solution posterior is demonstrably
+non-Gaussian.
+
+Report reconstruction/measurement/calibration uncertainty separately from
+KIN6D numerical certificates and model-reduction error bands. Combine them only
+under an explicitly justified probabilistic/mathematical model.
+
+Implicit adjoints also support stellarator/coil/divertor design and control.
 The long-range adaptive objective is
 
 \[
@@ -527,6 +596,17 @@ generic theorem/checker value once the numerical certificate shape is stable.
 SPD/coercive pieces should exploit residual-energy, equilibrated-flux and
 adjoint QoI bounds. Non-normal/hypocoercive pieces need their own stability
 theorems.
+
+### Interchange, configuration and result contract
+
+Use libneo as the shared adapter/convention layer for established machine and
+code formats where it already owns the capability. KIN6D consumes normalized
+physical data and records the source format/conventions; it does not turn VMEC,
+EQDSK, SPECTRE, JOREK or another source into a fundamental internal model.
+
+Keep Fortran namelist configuration and NetCDF-4-compatible HDF5 results stable
+across physics milestones. Every result retains original/resolved input and
+provenance. Optional Python/web UX is layered above this contract.
 
 ### Literature and validation
 
