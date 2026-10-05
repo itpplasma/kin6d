@@ -9,6 +9,8 @@ that owns the proposed change. In particular:
   application family;
 - docs/microscopic-many-body.md before direct N-body, FMM/Ewald/P3M,
   Lienard--Wiechert, BBGKY/cumulant or microscopic-correlation work;
+- docs/quantum-plasma.md before Fermi-degeneracy, Wigner, quantum BBGKY,
+  Hartree/HF/DFT/QMC, quantum-collision or stellar-degenerate-plasma work;
 - docs/numerical-methods.md before introducing a new discretization/solver
   family outside the primary tensor/FEEC path;
 - docs/reacting-partially-ionized.md before low-temperature, reacting-gas,
@@ -147,8 +149,15 @@ These rules are hard constraints:
   change microscopic fluctuations/correlations unless explicitly modeled.
 - Point-charge self-field/radiation reaction is a separate declared physical
   choice. Do not hide singular self-interaction behind numerical softening.
-  Fully quantum close-collision/QED physics and GR stay outside the classical
-  core unless a narrow reusable interface is justified.
+- Quantum plasma fundamentals may include degeneracy, exchange/diffraction,
+  Wigner/quantum kinetic models, quantum BBGKY/cumulants, orbital/QMC
+  references and quantum-fluid/EOS closures. Do not force them into particle
+  representations: reuse FEM/spectral/Eulerian/semi-Lagrangian infrastructure
+  where mathematically appropriate.
+- The fundamental native boundary is QED. Pair creation/annihilation,
+  quantized-radiation dynamics, strong-field QED cascades and radiative QED
+  corrections stay external; QED-derived rates may be provider data. GR and
+  neutron-star/nuclear-density matter likewise stay outside the core.
 
 ## Mathematics, derivatives and certification
 

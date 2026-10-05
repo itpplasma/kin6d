@@ -150,6 +150,13 @@ benchmark. Repeated interval trigonometry in sampling remains a measured
 optimization target; cached basis/geometry and aggregate rounding budgets
 must preserve the same enclosures when optimized.
 
+The animation's full certified sampling currently costs about 0.115 seconds
+per frame, beyond the evolution/packet times above. It dominates numerical
+postprocessing for this small diagonal problem. The per-frame ledger records
+it; a matching uncertified postprocessing baseline is still unavailable.
+Cache shared Fourier factors and geometry before claiming a fast production
+workhorse. This is adjacent performance work, not a reason to omit bands.
+
 The final gallery's maximum connected density-band half-widths over all 121
 frames and 97 nodes were 0.00220920 (Eulerian) and 0.00738337 (particle
 projection). Both meet the declared nominal radius 0.01000001 at physical

@@ -6,7 +6,9 @@ and not a promise that every Cartesian product is meaningful.
 
 ## Product goal
 
-KIN6D aims to be a one-stop shop for **classical plasma physics** across
+KIN6D aims to be a one-stop shop for **plasma physics below the QED
+boundary**, with a classical production hierarchy and quantum-fundamentals/
+dense-plasma extensions, across
 
 - magnetic and inertial/magnetized fusion regimes;
 - Solar, heliospheric, magnetospheric and planetary plasmas;
@@ -14,8 +16,10 @@ KIN6D aims to be a one-stop shop for **classical plasma physics** across
 - beam, accelerator and laser plasmas;
 - atmospheric and terrestrial discharges;
 - dusty, non-neutral, ultracold and other laboratory plasmas;
-- classical high-energy-density and strongly coupled regimes where an
-  appropriate classical/nonideal model remains valid.
+- high-energy-density, strongly coupled and quantum-degenerate plasma regimes
+  through appropriate classical, quantum-statistical or nonideal models;
+- ordinary stellar-interior and white-dwarf-like plasma physics through
+  macroscopic gravity/EOS/radiation/transport/nuclear closures.
 
 Breadth comes from a reusable set of species, field, collision, reaction,
 radiation, surface, transport, stability and numerical primitives. Application
@@ -56,6 +60,34 @@ without reducing physical particle count. PIC/PIF superparticles and blobs are
 different finite-\(N\) models unless each marker is a physical particle.
 
 See [microscopic relativistic many-body reference](microscopic-many-body.md).
+
+## Quantum-plasma and stellar-interior extension
+
+The classical catalogue has a controlled quantum continuation rather than an
+abrupt "quantum is external" boundary.
+
+The quantum branch includes:
+
+- finite-\(T\) ideal and interacting Fermi gases;
+- Thomas--Fermi and Lindhard/RPA screening;
+- exchange, diffraction and Pauli-blocked collision physics;
+- Wigner kinetic and quantum-fluid reductions;
+- Hartree/HF/DFT/TDDFT-like orbital references;
+- quantum BBGKY/reduced density matrices/cumulants;
+- QMC/PIMC/exact microscopic equilibrium references where practical;
+- relativistic degeneracy/EOS below the QED regime.
+
+The numerical method is orthogonal to the physics: quantum states may use tiny
+many-body wavefunctions, 3D orbital FEM/spectral meshes, stochastic path-space
+sampling, Wigner Eulerian/semi-Lagrangian phase space or macroscopic
+quantum-fluid meshes.
+
+For stellar interiors, combine self-gravity, compressible plasma,
+classical/quantum EOS, radiation/conduction/convection and a generalized
+nuclear reaction network. Main-sequence/solar and white-dwarf-like plasma
+physics fit this hierarchy. Neutron-star/nuclear-density matter and GR do not.
+
+See [quantum plasma fundamentals](quantum-plasma.md).
 
 ## Orthogonal physics axes
 
@@ -100,9 +132,11 @@ For any compatible kinetic state:
 - deterministic quadrature, QMC or Monte Carlo initialization;
 - hybrid continuum/particle representations.
 
-Classical direct N-body/molecular-dynamics representations are reserved for
-strong-correlation reference problems where mean-field kinetic closure is not
-adequate.
+Physical-particle relativistic Maxwell--Lorentz representations provide
+microscopic references in both weakly and strongly coupled regimes. They are
+distinct from PIC/PIF macro-particles. Quantum microscopic states may instead
+use many-body wavefunctions/density matrices, orbitals or stochastic
+configuration/path-space sampling.
 
 ### Electromagnetic-field fidelity
 
@@ -138,8 +172,9 @@ use the same field infrastructure.
 \]
 
 A higher interaction model is admitted only with a regime statement and
-verification target. Fully quantum many-body physics is outside the classical
-core.
+verification target. Quantum many-body/statistical reference models are
+available through the separate quantum branch; general QED is the native
+fundamental boundary.
 
 ### Ionization, chemistry and internal states
 
@@ -364,10 +399,9 @@ These examples test coverage; they do not receive dedicated core modes.
 
 KIN6D may couple to but does not initially own:
 
-- fully quantum dense-matter electronic structure/Wigner/TDDFT many-body
-  physics beyond controlled reduced closures;
-- strong-field QED pair cascades;
-- general-relativistic gravity/plasma;
+- general QED: quantized-radiation dynamics, pair creation/annihilation,
+  strong-field QED cascades and radiative QED corrections;
+- general-relativistic gravity/plasma and neutron-star/nuclear-density matter;
 - complete reactor neutronics and nuclear engineering;
 - detailed bulk solid mechanics/material microstructure;
 - comprehensive liquid/solid chemistry;

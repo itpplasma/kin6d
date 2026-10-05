@@ -1,9 +1,11 @@
 # kin6d
 
-KIN6D is a **general classical plasma multiphysics engine**. Its deepest
-classical reference is the multispecies **relativistic Maxwell--Lorentz
-many-particle system**; relativistic 3X3P Vlasov--Maxwell/FK is the highest
-continuum mean-field reference. Its practical purpose is broader: assemble the
+KIN6D is a **general plasma multiphysics engine**. Its deepest classical
+reference is the multispecies **relativistic Maxwell--Lorentz many-particle
+system**; relativistic 3X3P Vlasov--Maxwell/FK is the highest continuum
+mean-field reference. A quantum-fundamentals branch covers degeneracy,
+exchange/diffraction, quantum kinetic/statistical reductions and dense-plasma
+reference models up to, but not including, general QED. Its practical purpose is broader: assemble the
 cheapest mathematically controlled plasma model and numerical representation
 that answer the requested question at the requested accuracy.
 
@@ -247,6 +249,10 @@ Long-range scope includes:
 - a full relativistic microscopic Maxwell--Lorentz many-body reference,
   including direct pair, FMM/Ewald/P3M and small retarded Lienard--Wiechert
   validation paths for correlations/collision closures;
+- quantum plasma fundamentals: finite-temperature Fermi statistics,
+  Thomas--Fermi/Lindhard screening, Wigner kinetics, quantum
+  BBGKY/cumulants, quantum collision corrections, orbital/QMC reference
+  methods and quantum-fluid/EOS closures for dense/stellar plasmas;
 - coils, vacuum, conducting walls, dielectrics and external circuits;
 - Solar-System, atmospheric, industrial and other classical-plasma
   configurations;
@@ -255,11 +261,15 @@ Long-range scope includes:
 
 The complete intended physics/numerics envelope is catalogued separately from
 implementation priority. See [the capability catalogue](docs/capability-catalogue.md)
-and [the numerical-method catalogue](docs/numerical-methods.md). Fully quantum
-dense-matter electronic structure, strong-field QED, general relativity, full
-reactor neutronics/nuclear engineering, detailed bulk material mechanics and
-the highest-fidelity line-by-line non-LTE radiation-transfer discipline remain
-external coupled systems unless a concrete reusable interface is justified.
+and [the numerical-method catalogue](docs/numerical-methods.md). The fundamental
+quantum boundary is **QED**: KIN6D may own nonrelativistic/semirelativistic
+quantum plasma, degeneracy, exchange/correlation, Wigner/quantum kinetic and
+quantum-matter reference methods, but pair creation, quantized-radiation
+dynamics, strong-field QED and radiative QED corrections remain external.
+General relativity, full reactor neutronics/nuclear engineering, detailed bulk
+material mechanics and the highest-fidelity line-by-line non-LTE
+radiation-transfer discipline likewise remain external coupled systems unless a
+concrete reusable interface is justified.
 
 ## Differentiability
 
@@ -347,6 +357,7 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md)
 - [Complete plasma-physics capability catalogue](docs/capability-catalogue.md)
 - [Microscopic relativistic many-body reference](docs/microscopic-many-body.md)
+- [Quantum plasma fundamentals and dense-matter bridge](docs/quantum-plasma.md)
 - [Numerical-method catalogue](docs/numerical-methods.md)
 - [Reacting and partially ionized plasmas](docs/reacting-partially-ionized.md)
 - [Radiation hierarchy](docs/radiation.md)

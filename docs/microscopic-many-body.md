@@ -168,10 +168,11 @@ particular effective collision operator. Do not add a collision operator to
 resolved interacting particles without deriving a split and preventing double
 counting.
 
-## Quantum-many-body inspiration without changing the classical target
+## Quantum-many-body connection
 
-The correlation hierarchy may borrow numerical ideas from quantum many-body
-physics:
+The classical correlation hierarchy may borrow numerical ideas from quantum
+many-body physics, and the dedicated quantum branch uses the corresponding
+reduced-density-matrix hierarchy directly:
 
 - reduced density/marginal hierarchies;
 - cumulant/cluster expansions;
@@ -494,17 +495,21 @@ which makes the responsive-species convention explicit, and
 for periodic image sums and force-accuracy settings. Pin any external
 comparison implementation when its executable case is admitted.
 
-## Relationship to quantum physics
+## Relationship to the quantum branch
 
 Within **classical** plasma physics, Maxwell--Lorentz many-body dynamics is the
-bottom of the hierarchy. A more fundamental physical description of electron
-close encounters, degeneracy, pair creation or strong-field emission is quantum
-many-body/QED physics and is outside the classical KIN6D parent.
+bottom of the hierarchy. KIN6D now continues into quantum plasma fundamentals
+for degeneracy, exchange/diffraction, Wigner/quantum kinetic models,
+reduced-density-matrix/cumulant methods and microscopic quantum references.
 
 In hot fusion plasmas, quantum diffraction can set the short-distance cutoff
 for rare close electron encounters even while collective Debye-scale dynamics
-is classical. A microscopic classical result therefore validates the classical
-closure and its asymptotic structure; it is not a claim that quantum corrections
-are identically zero.
+is classical. The classical microscopic branch therefore validates the
+classical closure and its asymptotic structure; the quantum branch quantifies
+where that closure fails.
+
+The common native boundary is QED: pair creation/annihilation, quantized
+radiation dynamics, strong-field QED cascades and radiative QED corrections are
+external. See [quantum-plasma.md](quantum-plasma.md).
 
 Chris&AI

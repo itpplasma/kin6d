@@ -18,7 +18,8 @@ module kin6d_streaming_particle_density
     public :: particle_density_workspace_t, prepare_particle_density_workspace
     public :: particle_density_certificate_t, project_particle_density
     public :: certify_particle_density, sample_particle_density_band
-    public :: particle_density_chord, particle_density_budgets, particle_density_coefficients
+    public :: particle_density_chord, particle_density_budgets, &
+        particle_density_coefficients
 
     ! The observable is rho(x,t)=1/2 integral[-1,1] f(x,v,t)dv, reconstructed
     ! in the admitted finite Fourier space. This is not a density of Dirac masses.
@@ -258,7 +259,8 @@ call streaming_particle_coefficient_band_interval(work%bc(k), coeff_error, lower
         ok = .true.
     end subroutine
 
-    subroutine sample_particle_density_band(initial,particles,t,certificate,x,lower,upper,ok)
+    subroutine sample_particle_density_band(initial, particles, t, certificate, x, &
+        lower, upper, ok)
         type(streaming_state_t), intent(in) :: initial
         type(streaming_particles_t), intent(in) :: particles
         real(dp), intent(in) :: t

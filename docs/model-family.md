@@ -299,6 +299,31 @@ cross-spectra rather than only scalar diffusion.
 
 See [transport-multiscale.md](transport-multiscale.md).
 
+## Quantum model family
+
+Quantum physics is another model-fidelity axis, not another numerical
+representation. Depending on regime, a species/system may use:
+
+\[
+\text{classical Maxwell--Boltzmann}
+\rightarrow
+\text{finite-}T\text{ Fermi/EOS closure}
+\rightarrow
+\text{quantum fluid}
+\rightarrow
+\text{Wigner kinetic}
+\rightarrow
+\text{orbital/reduced-density-matrix reference}.
+\]
+
+Exact many-body wavefunctions/QMC/PIMC are microscopic reference consumers,
+not replacements for macroscopic fluid or kinetic models. Wigner is a
+continuum phase-space model and can be Eulerian or semi-Lagrangian; orbital
+methods use ordinary 3D meshes/bases.
+
+The classical limit and the QED boundary are explicit. See
+[quantum-plasma.md](quantum-plasma.md).
+
 ## Controlled model comparisons
 
 To attribute a difference to physics, freeze as much as possible:
