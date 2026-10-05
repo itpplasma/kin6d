@@ -1,4 +1,4 @@
-program benchmark_quantum_cutoff
+program benchmark_quantum_cutoff_main
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128, i64 => int64
     use fortnum_interval, only: interval_t, interval, isub
     use kin6d_quantum_fock, only: assemble_jellium_pair_sector
@@ -7,12 +7,34 @@ program benchmark_quantum_cutoff
     use kin6d_quantum_reference_gallery, only: quantum_initial_norm, &
           quantum_matrix_defect, quantum_physical_radius, quantum_observable_packet_t, &
                                  prepare_quantum_pair_sector, sample_quantum_observables
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: times(4) = [0, 1, 4, 16], sizes(3) = [27, 125, 343]
+    ! Sector sizes are (2 extent + 1)^3, fixed by the cube half-widths 1..3.
+    integer, parameter :: sizes(3) = [27, 125, 343]
     real(dp), parameter :: length = 6.2831853071795864769_dp
+    integer :: times(4) = [0, 1, 4, 16]
     real(dp) :: bins(16, 4, 3), radius(4, 3), refined(16, 4), unused(4)
     real(dp) :: difference(4, 2), step_difference(4), seconds(3)
-    integer :: extent, t, unit, bin_unit
+    integer :: extent, t, unit, bin_unit, ios
+    character(len=256) :: msg
+    type(run_t) :: run
+    type(result_file_t) :: result
+    namelist /benchmark_quantum_cutoff/ times
+    call run%start('benchmark_quantum_cutoff')
+    if (run%argument_count() > 0) &
+        error stop 'usage: benchmark_quantum_cutoff [--config FILE]'
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=benchmark_quantum_cutoff, iostat=ios, &
+        iomsg=msg)
+    call run%close_config(unit, 'benchmark_quantum_cutoff', ios, msg)
+    ! Time grid h = 16/steps: sample times are integers in [0, 16]; the first
+    ! must be 0 for the shared-initial-state check.
+    if (times(1) /= 0 .or. any(times < 0) .or. any(times > 16)) &
+        error stop 'times must be integers in [0,16] starting at 0'
+    call run%open_resolved(unit)
+    write (unit, nml=benchmark_quantum_cutoff)
+    call run%close_resolved(unit)
     open (newunit=bin_unit, file='quantum-large-cutoff-bins.csv', status='replace')
   write (bin_unit, '(a)') '# candidate arithmetic intervals do not certify trajectories'
     write (bin_unit, '(a)') 'modes,steps,time,bin,value,lower,upper,status'
@@ -42,6 +64,25 @@ program benchmark_quantum_cutoff
             difference(t, :), step_difference(t), radius(t, 2)
     end do
     close (unit)
+    call execute_command_line('mkdir -p output')
+    call result%create(run)
+    call result%write('time', real(times, dp), 'periodic-pair time unit', &
+        'sample time', dims='time')
+    call result%write('modes', real(sizes, dp), '1', 'sector modes', dims='sector')
+    call result%write('bin_value', bins, '1', 'slab pair correlation g', &
+        dims='bin,time,sector', status='candidate (1024 steps)')
+    call result%write('cutoff_difference', difference, '1', &
+        'max bin difference 27v125 and 125v343', dims='time,pair', &
+        status='indicator; not a bound')
+    call result%write('step_refinement_difference', step_difference, '1', &
+        '343-mode 1024 vs 2048 step max bin difference', dims='time', &
+        status='indicator; not a bound')
+    call result%write('error_bound_125', radius(:, 2), '1', &
+        '125-mode numerical/physical Hilbert bin error bound (-1 unavailable)', &
+        dims='time', status='certified-discrete finite-basis bound where >= 0')
+    call result%write('cpu_seconds', seconds, 's', 'sector solve CPU time', &
+        dims='sector', status='measurement')
+    call result%close()
     print *, 'PASS: physical sectors27/125/343; model/step differences are indicators'
 contains
     subroutine compare_sector(extent, steps, certify, values, bounds, elapsed)
@@ -182,4 +223,4 @@ contains
             error stop 1
         end if
     end subroutine
-end program
+end program benchmark_quantum_cutoff_main

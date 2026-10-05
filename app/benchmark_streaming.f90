@@ -1,13 +1,29 @@
-program benchmark_streaming
+program benchmark_streaming_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_leaves, only: coordinate, initial_coefficients, stream_step, &
                             stream_factors, stream_cached
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: n = 131073, steps = 200, repeats = 5
+    integer :: n = 131073, steps = 200, repeats = 5
     real(dp), allocatable :: v(:), m(:), a(:), b(:), an(:), bn(:), cv(:), sv(:)
-    real(dp) :: start, finish, timings(repeats, 2), checksum(2), scratch
-    integer :: mode, trial, j, k
-    allocate (v(n), m(n), a(n), b(n), an(n), bn(n), cv(n), sv(n))
+    real(dp), allocatable :: timings(:, :)
+    real(dp) :: start, finish, checksum(2), scratch
+    integer :: mode, trial, j, k, unit, ios, mid
+    character(len=256) :: msg
+    type(run_t) :: run
+    type(result_file_t) :: result
+    namelist /benchmark_streaming/ n, steps, repeats
+    call run%start('benchmark_streaming')
+    if (run%argument_count() > 0) error stop 'usage: benchmark_streaming [--config FILE]'
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=benchmark_streaming, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'benchmark_streaming', ios, msg)
+    if (n < 2 .or. steps < 1 .or. repeats < 1) error stop 'invalid benchmark_streaming sizes'
+    call run%open_resolved(unit)
+    write (unit, nml=benchmark_streaming)
+    call run%close_resolved(unit)
+    allocate (v(n), m(n), a(n), b(n), an(n), bn(n), cv(n), sv(n), timings(repeats, 2))
     do j = 1, n
         call coordinate(-4.0_dp, 4.0_dp, real(j - 1, dp), real(n - 1, dp), v(j))
     end do
@@ -47,10 +63,21 @@ program benchmark_streaming
             end do
         end do
     end do
+    mid = (repeats + 1)/2
     print '(a)', 'variant,median_cpu_seconds,min_cpu_seconds,max_cpu_seconds'
-    print '(a,3(a,f10.6))', 'uncached', ',', timings(3, 1), &
-        ',', timings(1, 1), ',', timings(5, 1)
-    print '(a,3(a,f10.6))', 'cached', ',', timings(3, 2), &
-        ',', timings(1, 2), ',', timings(5, 2)
-    print '(a,f8.3)', 'measured_speedup=', timings(3, 1)/timings(3, 2)
-end program
+    print '(a,3(a,f10.6))', 'uncached', ',', timings(mid, 1), &
+        ',', timings(1, 1), ',', timings(repeats, 1)
+    print '(a,3(a,f10.6))', 'cached', ',', timings(mid, 2), &
+        ',', timings(1, 2), ',', timings(repeats, 2)
+    print '(a,f8.3)', 'measured_speedup=', timings(mid, 1)/timings(mid, 2)
+    call execute_command_line('mkdir -p output')
+    call result%create(run)
+    call result%write('cpu_seconds', timings, 's', &
+        'sorted per-trial CPU time; variant 1=uncached, 2=cached', &
+        dims='trial,variant', status='measurement')
+    call result%write('checksum', checksum, '1', 'final coefficient sum per variant', &
+        dims='variant', status='candidate; variants agree within 1e-10')
+    call result%write('measured_speedup', timings(mid, 1)/timings(mid, 2), '1', &
+        'median uncached over cached CPU time', status='measurement')
+    call result%close()
+end program benchmark_streaming_main

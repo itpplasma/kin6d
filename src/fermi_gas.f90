@@ -14,11 +14,21 @@ module kin6d_fermi_gas
         fermi_difference_interval, fermi_eos, fermi_eos_interval, fermi_grid, &
         fermi_half, fermi_integrands, fermi_integrands_interval, fermi_negative, &
         fermi_negative_interval, fermi_positive, fermi_positive_interval, &
-        fermi_residual, fermi_residual_interval, fermi_root_band_interval, &
+        fermi_residual, fermi_residual_interval, fermi_root_band, &
+        fermi_root_band_interval, &
         fermi_root_bracket, fermi_scaled_tolerance, fermi_si_eos, &
         fermi_si_eos_interval, fermi_si_parameters, fermi_si_parameters_interval, &
         fermi_tail_interval, fermi_theta_derivative, &
-        fermi_theta_derivative_interval, fermi_weighted_add
+        fermi_theta_derivative_interval, fermi_weighted_add, &
+        fermi_relativity_indicator, fermi_relativity_indicator_interval
+    use kin6d_relativistic_fermi_leaves, only: fermi_rel_root, fermi_rel_root_interval, &
+        fermi_rel_argument, fermi_rel_argument_interval, fermi_rel_integrands, &
+        fermi_rel_integrands_interval, fermi_rel_density_integrand, &
+        fermi_rel_density_integrand_interval, fermi_rel_density_curvature_interval, &
+        fermi_rel_curvature_interval, fermi_rel_eos, fermi_rel_eos_interval, &
+        fermi_rel_theta_derivative, fermi_rel_theta_derivative_interval, &
+        fermi_rel_root_bracket, fermi_rel_tail_interval, fermi_rel_window, &
+        fermi_rel_grid
     implicit none
     private
     public :: fermi_workspace_t, fermi_state_t, initialize_fermi_workspace
@@ -30,12 +40,16 @@ module kin6d_fermi_gas
         real(dp), allocatable :: edges(:), nodes(:), weights(:)
         integer :: candidate_nodes = 128, maximum_nodes = 4096, cells = 64
         real(dp) :: cached_theta = -1.0_dp, cached_radius = -1.0_dp
+        real(dp) :: cached_relativity = 0.0_dp, nodes_relativity = 0.0_dp
         integer :: cached_nodes = 0
         logical :: initialized = .false.
     end type fermi_workspace_t
 
     type :: fermi_state_t
         real(dp) :: theta = 0.0_dp, mu = 0.0_dp, pressure = 0.0_dp
+        ! Relativity parameter x=pF/(m*c); zero selects the nonrelativistic model.
+        real(dp) :: relativity = 0.0_dp
+        type(interval_t) :: relativity_bound
         real(dp) :: energy = 0.0_dp, susceptibility = 0.0_dp
         real(dp) :: screening_ratio = 0.0_dp, bulk_modulus = 0.0_dp
         type(interval_t) :: theta_bound, mu_bound, pressure_bound, energy_bound
@@ -51,7 +65,7 @@ module kin6d_fermi_gas
         real(dp), private :: prepared_theta = 0.0_dp, prepared_center(6) = 0.0_dp
         real(dp), private :: prepared_gradient(6) = 0.0_dp
         type(interval_t), private :: prepared_value(6), prepared_derivative(6)
-        type(interval_t), private :: prepared_theta_bound
+        type(interval_t), private :: prepared_theta_bound, prepared_relativity
     end type fermi_state_t
 
     type :: fermi_si_state_t
@@ -70,13 +84,15 @@ module kin6d_fermi_gas
 contains
 
     subroutine solve_fermi_gas_si(work, density, temperature, mass, hbar, kb, &
-                                 charge, epsilon, state, ok)
+                                 charge, epsilon, state, ok, speed)
         type(fermi_workspace_t), intent(inout) :: work
         real(dp), intent(in) :: density, temperature, mass, hbar, kb, charge, epsilon
         type(fermi_si_state_t), intent(out) :: state
         logical, intent(out) :: ok
-        real(dp) :: theta
-        type(interval_t) :: theta_bound, result(6)
+        !> Speed of light; when present the relativistic kinetic energy is used.
+        real(dp), intent(in), optional :: speed
+        real(dp) :: theta, x
+        type(interval_t) :: theta_bound, result(6), x_bound
         integer :: j
         state = fermi_si_state_t()
         ok = .false.
@@ -93,8 +109,19 @@ contains
         if (.not. finite_interval(state%fermi_energy_bound)) return
         if (.not. finite_interval(theta_bound)) return
         theta_bound = hull(theta_bound, interval(theta))
-        call solve_fermi_gas(work, theta, state%normalized, ok, &
-                             theta_interval=theta_bound)
+        if (present(speed)) then
+            if (.not. ieee_is_finite(speed) .or. speed <= 0.0_dp) return
+            call fermi_relativity_indicator(state%fermi_momentum, mass, speed, x)
+            call fermi_relativity_indicator_interval(state%fermi_momentum_bound, &
+                interval(mass), interval(speed), x_bound)
+            if (.not. ieee_is_finite(x) .or. .not. finite_interval(x_bound)) return
+            call solve_fermi_gas(work, theta, state%normalized, ok, &
+                theta_interval=theta_bound, relativity=x, &
+                relativity_interval=hull(x_bound, interval(x)))
+        else
+            call solve_fermi_gas(work, theta, state%normalized, ok, &
+                                 theta_interval=theta_bound)
+        end if
         if (.not. ok) return
         associate (n => state%normalized)
             call fermi_si_eos(density, state%fermi_energy, n%mu, n%pressure, &
@@ -134,19 +161,25 @@ contains
         ok = .true.
     end subroutine initialize_fermi_workspace
 
-    subroutine solve_fermi_gas(work, theta, state, ok, certify, theta_interval)
+    subroutine solve_fermi_gas(work, theta, state, ok, certify, theta_interval, &
+                               relativity, relativity_interval)
         type(fermi_workspace_t), intent(inout) :: work
         real(dp), intent(in) :: theta
         type(fermi_state_t), intent(out) :: state
         logical, intent(out) :: ok
         logical, intent(in), optional :: certify
         type(interval_t), intent(in), optional :: theta_interval
-        real(dp) :: lower, upper, radius, xtol, step, mu, x0, f, stats(8), sums(8)
+        !> x=pF/(m*c) >= 0 and an optional enclosing interval. Absent or zero
+        !> keeps the nonrelativistic leaves bit for bit.
+        real(dp), intent(in), optional :: relativity
+        type(interval_t), intent(in), optional :: relativity_interval
+        real(dp) :: lower, upper, radius, xtol, step, mu, x0, f, stats(11), sums(11)
+        real(dp) :: unused_upper, x
         type(interval_t) :: lo, hi, mu_band, left_residual, right_residual
-        type(interval_t) :: enclosed(8), values(6), gradients(6), residual
+        type(interval_t) :: enclosed(11), values(6), gradients(6), residual
         type(fortnum_status_t) :: root_status
-        integer :: j, k, maximum_cells
-        logical :: check, need_candidate
+        integer :: j, k, maximum_cells, moments, expansion
+        logical :: check, need_candidate, rel
 
         state = fermi_state_t()
         ok = .false.
@@ -162,15 +195,45 @@ contains
             if (theta_interval%lo > theta .or. theta_interval%hi < theta) return
             state%theta_bound = theta_interval
         end if
+        x = 0.0_dp
+        if (present(relativity)) x = relativity
+        if (.not. ieee_is_finite(x) .or. x < 0.0_dp) return
+        state%relativity = x
+        state%relativity_bound = interval(x)
+        if (present(relativity_interval)) then
+            if (.not. finite_interval(relativity_interval)) return
+            if (relativity_interval%lo < 0.0_dp) return
+            if (relativity_interval%lo > x .or. relativity_interval%hi < x) return
+            state%relativity_bound = relativity_interval
+        end if
+        rel = state%relativity_bound%hi > 0.0_dp
+        moments = 8
+        if (rel) moments = 11
         call fermi_root_bracket(theta, lower, upper, radius)
+        if (rel) call fermi_rel_root_bracket(theta, x, upper, radius)
         if (.not. all(ieee_is_finite([lower, upper, radius]))) return
         call fermi_scaled_tolerance(theta, 1.0e-7_dp, xtol)
         call fermi_scaled_tolerance(theta, 0.005_dp, step)
         if (.not. ieee_is_finite(step) .or. step <= 0.0_dp) return
         maximum_cells = size(work%edges) - 1
         if (work%cached_theta < theta .or. work%cached_theta > theta) work%cells = 64
+        if (work%cached_relativity < x .or. work%cached_relativity > x) then
+            work%cells = 64
+            work%cached_relativity = x
+        end if
         do
-            call prepare_nodes(work, theta, radius)
+            call prepare_nodes(work, theta, radius, x, rel)
+            if (rel) then
+                ! Relativistic density exceeds the nonrelativistic one at equal
+                ! mu; extend the candidate lower bracket until the sign changes.
+                state%status = 'candidate-bracket-failed'
+                do expansion = 1, 64
+                    call density_equation(lower, f, unused_upper)
+                    if (f < 0.0_dp) exit
+                    if (expansion == 64 .or. .not. ieee_is_finite(f)) return
+                    lower = lower - (abs(lower) + 4.0_dp*theta)
+                end do
+            end if
             call fermi_half(lower, upper, x0)
             call root_newton(density_equation, lower, upper, x0, mu, root_status, &
                              xtol=xtol, ftol=1.0e-12_dp, max_iter=200, &
@@ -179,25 +242,44 @@ contains
             if (.not. status_ok(root_status)) return
             if (.not. ieee_is_finite(mu)) return
             sums = 0.0_dp
+            stats = 0.0_dp
             do j = 1, work%candidate_nodes
-                f = occupation_value(work%nodes(j), theta, mu)
-                call fermi_integrands(work%nodes(j), theta, mu, f, stats(1), &
-                    stats(2), stats(3), stats(4), stats(5), stats(6), stats(7), &
-                    stats(8))
-                do k = 1, 8
+                f = occupation_value(work%nodes(j), theta, mu, x, rel)
+                if (rel) then
+                    call fermi_rel_integrands(work%nodes(j), &
+                        rel_root(work%nodes(j), x), theta, mu, x, f, stats(1), &
+                        stats(2), stats(3), stats(4), stats(5), stats(6), stats(7), &
+                        stats(8), stats(9), stats(10), stats(11))
+                else
+                    call fermi_integrands(work%nodes(j), theta, mu, f, stats(1), &
+                        stats(2), stats(3), stats(4), stats(5), stats(6), stats(7), &
+                        stats(8))
+                end if
+                do k = 1, moments
                     call fermi_weighted_add(sums(k), stats(k), work%weights(j), f)
                     sums(k) = f
                 end do
             end do
             if (.not. all(ieee_is_finite(sums))) return
-            call fermi_eos(mu, sums(2), sums(3), state%mu, state%pressure, &
-                state%energy, state%susceptibility, state%screening_ratio, &
-                state%bulk_modulus)
-            call fermi_theta_derivative(sums(1), sums(2), sums(3), sums(4), &
-                sums(5), sums(6), sums(7), sums(8), state%theta_gradient(1), &
-                state%theta_gradient(2), state%theta_gradient(3), &
-                state%theta_gradient(4), state%theta_gradient(5), &
-                state%theta_gradient(6))
+            if (rel) then
+                call fermi_rel_eos(mu, sums(2), sums(3), sums(4), state%mu, &
+                    state%pressure, state%energy, state%susceptibility, &
+                    state%screening_ratio, state%bulk_modulus)
+                call fermi_rel_theta_derivative(sums(1), sums(2), sums(3), sums(4), &
+                    sums(5), sums(6), sums(7), sums(8), sums(9), sums(10), sums(11), &
+                    state%theta_gradient(1), state%theta_gradient(2), &
+                    state%theta_gradient(3), state%theta_gradient(4), &
+                    state%theta_gradient(5), state%theta_gradient(6))
+            else
+                call fermi_eos(mu, sums(2), sums(3), state%mu, state%pressure, &
+                    state%energy, state%susceptibility, state%screening_ratio, &
+                    state%bulk_modulus)
+                call fermi_theta_derivative(sums(1), sums(2), sums(3), sums(4), &
+                    sums(5), sums(6), sums(7), sums(8), state%theta_gradient(1), &
+                    state%theta_gradient(2), state%theta_gradient(3), &
+                    state%theta_gradient(4), state%theta_gradient(5), &
+                    state%theta_gradient(6))
+            end if
             if (.not. all(ieee_is_finite(center_values(state)))) return
             if (.not. all(ieee_is_finite(state%theta_gradient))) return
             state%valid = .true.
@@ -213,12 +295,14 @@ contains
             mu_band = interval(lo%lo, hi%hi)
             need_candidate = .false.
             do
-                call prepare_edges(work, radius)
-                call verified_moments(state%theta_bound, interval(mu_band%lo), radius, &
+                call prepare_edges(work, radius, theta, x, rel)
+                call verified_moments(state%theta_bound, interval(mu_band%lo), &
+                    state%relativity_bound, rel, radius, &
                     work%edges(:work%cells + 1), enclosed(:1), check)
                 if (.not. check) exit
                 call fermi_residual_interval(enclosed(1), left_residual)
-                call verified_moments(state%theta_bound, interval(mu_band%hi), radius, &
+                call verified_moments(state%theta_bound, interval(mu_band%hi), &
+                    state%relativity_bound, rel, radius, &
                     work%edges(:work%cells + 1), enclosed(:1), check)
                 if (.not. check) exit
                 call fermi_residual_interval(enclosed(1), right_residual)
@@ -227,10 +311,12 @@ contains
                     exit
                 end if
                 if (left_residual%hi < 0.0_dp .and. right_residual%lo > 0.0_dp) then
-                    call verified_moments(state%theta_bound, mu_band, radius, &
-                        work%edges(:work%cells + 1), enclosed, check)
+                    call verified_moments(state%theta_bound, mu_band, &
+                        state%relativity_bound, rel, radius, &
+                        work%edges(:work%cells + 1), enclosed(:moments), check)
                     if (check) then
-                        call enclosed_eos(mu_band, enclosed, values, gradients, check)
+                        call enclosed_eos(mu_band, enclosed, rel, values, gradients, &
+                                          check)
                         if (check) then
                             if (accuracy_satisfied(state, values)) then
                                 call set_bounds(state, values, gradients)
@@ -269,9 +355,15 @@ contains
             integer :: node
             sum2 = 0.0_dp; sum_mu = 0.0_dp
             do node = 1, work%candidate_nodes
-                occupation = occupation_value(work%nodes(node), theta, candidate)
-                call fermi_density_integrand(work%nodes(node), theta, candidate, &
-                                             occupation, i2, i2mu)
+                occupation = occupation_value(work%nodes(node), theta, candidate, x, rel)
+                if (rel) then
+                    call fermi_rel_density_integrand(work%nodes(node), &
+                        rel_root(work%nodes(node), x), theta, candidate, x, &
+                        occupation, i2, i2mu)
+                else
+                    call fermi_density_integrand(work%nodes(node), theta, candidate, &
+                                                 occupation, i2, i2mu)
+                end if
                 call fermi_weighted_add(sum2, i2, work%weights(node), next)
                 sum2 = next
                 call fermi_weighted_add(sum_mu, i2mu, work%weights(node), next)
@@ -283,38 +375,103 @@ contains
 
     end subroutine solve_fermi_gas
 
-    subroutine prepare_nodes(work, theta, radius)
+    subroutine prepare_nodes(work, theta, radius, x, rel)
         type(fermi_workspace_t), intent(inout) :: work
-        real(dp), intent(in) :: theta, radius
+        real(dp), intent(in) :: theta, radius, x
+        logical, intent(in) :: rel
+        real(dp) :: window(4)
+        integer :: counts(3), first, j
+        logical :: graded
         if (work%cached_nodes == work%candidate_nodes) then
             if (work%cached_theta <= theta .and. work%cached_theta >= theta) then
-                if (work%cached_radius <= radius .and. work%cached_radius >= radius) &
+                if (work%cached_radius <= radius .and. work%cached_radius >= radius &
+                    .and. work%nodes_relativity <= x .and. work%nodes_relativity >= x) &
                     return
             end if
         end if
-        call gauss_legendre_ab(work%candidate_nodes, 0.0_dp, radius, &
-            work%nodes(:work%candidate_nodes), work%weights(:work%candidate_nodes))
+        call graded_window(theta, radius, x, rel, window, graded)
+        if (graded) then
+            counts = [work%candidate_nodes/4, work%candidate_nodes/2, &
+                      work%candidate_nodes/4]
+            first = 1
+            do j = 1, 3
+                call gauss_legendre_ab(counts(j), window(j), window(j + 1), &
+                    work%nodes(first:first + counts(j) - 1), &
+                    work%weights(first:first + counts(j) - 1))
+                first = first + counts(j)
+            end do
+        else
+            call gauss_legendre_ab(work%candidate_nodes, 0.0_dp, radius, &
+                work%nodes(:work%candidate_nodes), work%weights(:work%candidate_nodes))
+        end if
         work%cached_theta = theta
         work%cached_radius = radius
         work%cached_nodes = work%candidate_nodes
+        work%nodes_relativity = x
     end subroutine prepare_nodes
 
-    subroutine prepare_edges(work, radius)
+    subroutine prepare_edges(work, radius, theta, x, rel)
         type(fermi_workspace_t), intent(inout) :: work
-        real(dp), intent(in) :: radius
-        integer :: j
-        do j = 1, work%cells + 1
-            call fermi_grid(real(j - 1, dp), real(work%cells, dp), radius, &
-                            work%edges(j))
-        end do
+        real(dp), intent(in) :: radius, theta, x
+        logical, intent(in) :: rel
+        real(dp) :: window(4)
+        integer :: j, segment, counts(3), first
+        logical :: graded
+        call graded_window(theta, radius, x, rel, window, graded)
+        if (graded) then
+            counts = [work%cells/4, work%cells/2, work%cells/4]
+            first = 1
+            do segment = 1, 3
+                do j = 0, counts(segment) - 1
+                    call fermi_rel_grid(real(j, dp), real(counts(segment), dp), &
+                        window(segment), window(segment + 1), work%edges(first + j))
+                end do
+                first = first + counts(segment)
+            end do
+        else
+            do j = 1, work%cells + 1
+                call fermi_grid(real(j - 1, dp), real(work%cells, dp), radius, &
+                                work%edges(j))
+            end do
+        end if
         work%edges(1) = 0.0_dp
         work%edges(work%cells + 1) = radius
     end subroutine prepare_edges
 
-    pure real(dp) function occupation_value(r, theta, mu) result(value)
-        real(dp), intent(in) :: r, theta, mu
+    !> Relativistic degenerate states use a three-segment mesh around the cold
+    !> Fermi surface; it changes only where cells are placed, not the bounds.
+    pure subroutine graded_window(theta, radius, x, rel, window, use)
+        real(dp), intent(in) :: theta, radius, x
+        logical, intent(in) :: rel
+        real(dp), intent(out) :: window(4)
+        logical, intent(out) :: use
+        real(dp) :: halfwidth
+        use = .false.
+        window = 0.0_dp
+        if (.not. rel) return
+        call fermi_rel_window(theta, x, halfwidth)
+        if (.not. ieee_is_finite(halfwidth) .or. halfwidth >= 0.5_dp) return
+        call fermi_root_band(1.0_dp, halfwidth, window(2), window(3))
+        window(4) = radius
+        if (.not. (window(2) > 0.0_dp .and. window(3) > window(2) .and. &
+                   radius > window(3))) return
+        use = .true.
+    end subroutine graded_window
+
+    pure real(dp) function rel_root(r, x) result(s)
+        real(dp), intent(in) :: r, x
+        call fermi_rel_root(r, x, s)
+    end function rel_root
+
+    pure real(dp) function occupation_value(r, theta, mu, x, rel) result(value)
+        real(dp), intent(in) :: r, theta, mu, x
+        logical, intent(in) :: rel
         real(dp) :: argument
-        call fermi_argument(r, theta, mu, argument)
+        if (rel) then
+            call fermi_rel_argument(r, rel_root(r, x), theta, mu, argument)
+        else
+            call fermi_argument(r, theta, mu, argument)
+        end if
         if (argument >= 0.0_dp) then
             call fermi_positive(argument, value)
         else
@@ -322,13 +479,20 @@ contains
         end if
     end function occupation_value
 
-    pure subroutine occupation_packet(r, theta, mu, value, ok)
-        type(interval_t), intent(in) :: r, theta, mu
+    pure subroutine occupation_packet(r, theta, mu, x, rel, value, ok)
+        type(interval_t), intent(in) :: r, theta, mu, x
+        logical, intent(in) :: rel
         type(interval_t), intent(out) :: value
         logical, intent(out) :: ok
-        type(interval_t) :: argument, lower, upper
+        type(interval_t) :: argument, lower, upper, s
         ok = .false.
-        call fermi_argument_interval(r, theta, mu, argument)
+        if (rel) then
+            call fermi_rel_root_interval(r, x, s)
+            if (.not. finite_interval(s)) return
+            call fermi_rel_argument_interval(r, s, theta, mu, argument)
+        else
+            call fermi_argument_interval(r, theta, mu, argument)
+        end if
         if (.not. finite_interval(argument)) return
         if (argument%hi >= 0.0_dp) then
             call fermi_positive_interval(interval(argument%hi), lower)
@@ -345,31 +509,44 @@ contains
         ok = finite_interval(value)
     end subroutine occupation_packet
 
-    subroutine verified_moments(theta, mu, radius, edges, integral, ok)
+    subroutine verified_moments(theta, mu, x, rel, radius, edges, integral, ok)
         real(dp), intent(in) :: radius, edges(:)
-        type(interval_t), intent(in) :: theta, mu
+        type(interval_t), intent(in) :: theta, mu, x
+        logical, intent(in) :: rel
         type(interval_t), intent(out) :: integral(:)
         logical, intent(out) :: ok
-        type(interval_t) :: tails(8), addition, next
+        type(interval_t) :: tails(11), addition, next, s
         integer :: j
+        logical :: positive
         call composite_midpoint_batch(evaluate_cell, edges, integral, ok)
         if (.not. ok) return
-        call fermi_tail_interval(theta, mu, interval(radius), &
-            tails(1), tails(2), tails(3), tails(4), tails(5), tails(6), &
-            tails(7), tails(8))
+        if (rel) then
+            call fermi_rel_root_interval(interval(radius), x, s)
+            call fermi_rel_tail_interval(theta, mu, interval(radius), s, x, &
+                tails(1), tails(2), tails(3), tails(4), tails(5), tails(6), &
+                tails(7), tails(8), tails(9), tails(10), tails(11))
+        else
+            call fermi_tail_interval(theta, mu, interval(radius), &
+                tails(1), tails(2), tails(3), tails(4), tails(5), tails(6), &
+                tails(7), tails(8))
+        end if
         do j = 1, size(integral)
             if (.not. finite_interval(tails(j))) then
                 ok = .false.
                 return
             end if
-            select case (j)
-            case (1, 2, 3, 5)
+            if (rel) then
+                positive = any(j == [1, 2, 3, 4, 6, 8])
+            else
+                positive = any(j == [1, 2, 3, 5])
+            end if
+            if (positive) then
                 addition = interval(0.0_dp, tails(j)%hi)
-            case default
+            else
                 call fermi_root_band_interval(interval(0.0_dp), &
                     interval(tails(j)%hi), addition, next)
                 addition = hull(addition, next)
-            end select
+            end if
             call fermi_add_interval(integral(j), addition, next)
             integral(j) = next
             if (.not. finite_interval(integral(j))) then
@@ -384,18 +561,36 @@ contains
             type(interval_t), intent(in) :: cell, midpoint
             type(interval_t), intent(out) :: value(:), curvature(:)
             logical, intent(out) :: callback_ok
-            type(interval_t) :: midpoint_f, cell_f, raw(8), unused
+            type(interval_t) :: midpoint_f, cell_f, raw(11), unused, s_mid, s_cell
             integer :: component
-            call occupation_packet(midpoint, theta, mu, midpoint_f, &
+            call occupation_packet(midpoint, theta, mu, x, rel, midpoint_f, &
                                    callback_ok)
             if (.not. callback_ok) return
-            call occupation_packet(cell, theta, mu, cell_f, callback_ok)
+            call occupation_packet(cell, theta, mu, x, rel, cell_f, callback_ok)
             if (.not. callback_ok) return
+            if (rel) then
+                call fermi_rel_root_interval(midpoint, x, s_mid)
+                call fermi_rel_root_interval(cell, x, s_cell)
+            end if
             if (size(value) == 1) then
-                call fermi_density_integrand_interval(midpoint, theta, &
-                    mu, midpoint_f, value(1), unused)
-                call fermi_density_curvature_interval(cell, theta, &
-                                                     mu, cell_f, raw(1))
+                if (rel) then
+                    call fermi_rel_density_integrand_interval(midpoint, s_mid, theta, &
+                        mu, x, midpoint_f, value(1), unused)
+                    call fermi_rel_density_curvature_interval(cell, s_cell, theta, &
+                        mu, x, cell_f, raw(1))
+                else
+                    call fermi_density_integrand_interval(midpoint, theta, &
+                        mu, midpoint_f, value(1), unused)
+                    call fermi_density_curvature_interval(cell, theta, &
+                                                         mu, cell_f, raw(1))
+                end if
+            else if (rel) then
+                call fermi_rel_integrands_interval(midpoint, s_mid, theta, mu, x, &
+                    midpoint_f, value(1), value(2), value(3), value(4), value(5), &
+                    value(6), value(7), value(8), value(9), value(10), value(11))
+                call fermi_rel_curvature_interval(cell, s_cell, theta, mu, x, cell_f, &
+                    raw(1), raw(2), raw(3), raw(4), raw(5), raw(6), raw(7), raw(8), &
+                    raw(9), raw(10), raw(11))
             else
                 call fermi_integrands_interval(midpoint, theta, mu, &
                     midpoint_f, value(1), value(2), value(3), value(4), value(5), &
@@ -418,19 +613,30 @@ contains
 
     end subroutine verified_moments
 
-    pure subroutine enclosed_eos(mu, integral, value, gradient, ok)
-        type(interval_t), intent(in) :: mu, integral(8)
+    pure subroutine enclosed_eos(mu, integral, rel, value, gradient, ok)
+        type(interval_t), intent(in) :: mu, integral(11)
+        logical, intent(in) :: rel
         type(interval_t), intent(out) :: value(6), gradient(6)
         logical, intent(out) :: ok
         integer :: j
         ok = .false.
-        if (integral(3)%lo <= 0.0_dp) return
-        call fermi_eos_interval(mu, integral(2), integral(3), value(1), value(2), &
-            value(3), value(4), value(5), value(6))
-        call fermi_theta_derivative_interval(integral(1), integral(2), integral(3), &
-            integral(4), integral(5), integral(6), integral(7), integral(8), &
-            gradient(1), gradient(2), gradient(3), gradient(4), gradient(5), &
-            gradient(6))
+        if (rel) then
+            if (integral(4)%lo <= 0.0_dp) return
+            call fermi_rel_eos_interval(mu, integral(2), integral(3), integral(4), &
+                value(1), value(2), value(3), value(4), value(5), value(6))
+            call fermi_rel_theta_derivative_interval(integral(1), integral(2), &
+                integral(3), integral(4), integral(5), integral(6), integral(7), &
+                integral(8), integral(9), integral(10), integral(11), gradient(1), &
+                gradient(2), gradient(3), gradient(4), gradient(5), gradient(6))
+        else
+            if (integral(3)%lo <= 0.0_dp) return
+            call fermi_eos_interval(mu, integral(2), integral(3), value(1), value(2), &
+                value(3), value(4), value(5), value(6))
+            call fermi_theta_derivative_interval(integral(1), integral(2), &
+                integral(3), integral(4), integral(5), integral(6), integral(7), &
+                integral(8), gradient(1), gradient(2), gradient(3), gradient(4), &
+                gradient(5), gradient(6))
+        end if
         do j = 1, 6
             if (.not. finite_interval(value(j))) return
             if (.not. finite_interval(gradient(j))) return
@@ -503,6 +709,7 @@ contains
         state%derivative_certified = .true.
         state%prepared_theta = state%theta
         state%prepared_theta_bound = state%theta_bound
+        state%prepared_relativity = state%relativity_bound
         state%prepared_center = center_values(state)
         state%prepared_gradient = state%theta_gradient
         state%prepared_value = displayed
@@ -521,10 +728,11 @@ contains
         if (.not. packet_valid(state)) return
         if (.not. ieee_is_finite(q)) return
         if (q < 0.0_dp) return
-        call occupation_packet(interval(q), state%theta_bound, &
-                               state%mu_bound, packet, ok)
+        call occupation_packet(interval(q), state%theta_bound, state%mu_bound, &
+            state%relativity_bound, state%relativity_bound%hi > 0.0_dp, packet, ok)
         if (.not. ok) return
-        value = occupation_value(q, state%theta, state%mu)
+        value = occupation_value(q, state%theta, state%mu, state%relativity, &
+                                 state%relativity_bound%hi > 0.0_dp)
         if (.not. ieee_is_finite(value)) then
             ok = .false.
             return
@@ -598,6 +806,10 @@ contains
         if (state%theta < state%prepared_theta .or. &
             state%theta > state%prepared_theta) return
         if (.not. same_interval(state%theta_bound, state%prepared_theta_bound)) return
+        if (.not. same_interval(state%relativity_bound, state%prepared_relativity)) &
+            return
+        if (state%relativity < state%relativity_bound%lo .or. &
+            state%relativity > state%relativity_bound%hi) return
         center = center_values(state)
         if (.not. all(ieee_is_finite(center))) return
         if (.not. all(ieee_is_finite(state%theta_gradient))) return
