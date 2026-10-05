@@ -7,7 +7,7 @@ program gen_quantum_evolution
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
     type(expr_t) :: hr, hi, xr, xi, hb, acc, value, scale, h, s
-    type(expr_t) :: y0, y1, f0, f1, c(0:3), a(0:3), r(0:3)
+    type(expr_t) :: y0, y1, f0, f1, c(0:3)
     type(expr_t) :: radius, residual, norm, delta, primal
     integer :: j
 
@@ -27,8 +27,6 @@ program gen_quantum_evolution
             character(1) :: digit
             write (digit, '(i1)') j
             c(j) = sym(arena, 'c'//digit)
-            a(j) = sym(arena, 'a'//digit)
-            r(j) = sym(arena, 'r'//digit)
         end block
     end do
     call w%open(arena, 'gen_quantum_evolution', 'src/generated/kin6d_quantum_evolution_leaves.f90')
@@ -37,6 +35,7 @@ program gen_quantum_evolution
     write (w%unit, '(a)') '! Constant supplied Hermitian H; i*hbar*psi_t=H*psi.'
     write (w%unit, '(a)') '! hbar,h>0. Packed real/imag Hilbert pairing; no positivity.'
     write (w%unit, '(a)') '! sqrt norm primal admits zero; its JVP/VJP require value>0.'
+    write (w%unit, '(a)') '! Residual/radius certificate: FortNum ode_residual_certificate.'
     write (w%unit, '(a)') 'module kin6d_quantum_evolution_leaves'
     write (w%unit, '(a)') 'implicit none'
     write (w%unit, '(a)') 'contains'
@@ -49,24 +48,16 @@ program gen_quantum_evolution
     call w%emit('qe_hermite', ['y0', 'y1', 'f0', 'f1', 'h '], &
               ['c0', 'c1', 'c2', 'c3'], &
               [y0, h*f0, 3*(y1 - y0) - h*(2*f0 + f1), &
-               2*(y0 - y1) + h*(f0 + f1)], ad=.true., interval=.true.)
+               2*(y0 - y1) + h*(f0 + f1)], ad=.true.)
     call w%emit('qe_evaluate', ['c0', 'c1', 'c2', 'c3', 's '], ['value'], &
               [c(0) + s*(c(1) + s*(c(2) + s*c(3)))], ad=.true., interval=.true.)
-    call w%emit('qe_residual', ['c1', 'c2', 'c3', 'h ', 'a0', 'a1', 'a2', 'a3'], &
-              ['r0', 'r1', 'r2', 'r3'], &
-              [c(1)/h - a(0), 2*c(2)/h - a(1), 3*c(3)/h - a(2), -a(3)], &
-              ad=.true., interval=.true.)
-    call w%emit('qe_bernstein', ['r0', 'r1', 'r2', 'r3'], &
-              ['b0', 'b1', 'b2', 'b3'], &
-              [r(0), r(0) + r(1)/3, r(0) + 2*r(1)/3 + r(2)/3, &
-               r(0) + r(1) + r(2) + r(3)], ad=.true., interval=.true.)
     call w%emit('qe_square_add', ['acc  ', 'value'], ['next'], [acc + value**2], &
               ad=.true., interval=.true.)
     call w%emit('qe_norm', ['value'], ['norm'], [func('sqrt', [value])], &
               ad=.true., interval=.true.)
     call w%emit('qe_radius', ['radius  ', 'h       ', 'residual', &
                             'delta   ', 'primal  '], ['next'], &
-              [radius + h*(residual + delta*primal)], ad=.true., interval=.true.)
+              [radius + h*(residual + delta*primal)])
     call w%emit('qe_band', ['value ', 'radius'], ['lower', 'upper'], &
               [value - radius, value + radius], ad=.true., interval=.true.)
     call w%emit('qe_goal_error', ['norm  ', 'radius', 'scale '], ['error'], &

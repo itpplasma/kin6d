@@ -29,26 +29,33 @@ source. Consumer builds use the committed emitted leaves without requiring CAS.
 
 ## Continuous residual certificate
 
-On each strictly ordered time cell `[tl,tr]` with `h=tr-tl`, let the candidate
-be cubic Hermite `q_h` with endpoint values `ql,qr` and endpoint derivatives
-`pl,pr`; set `p_h=q_h'`. Its cubic Bernstein controls are
-`Q=[ql, ql+h*pl/3, qr-h*pr/3, qr]`. The affine second-derivative controls are
-`D0=6*(Q2-2*Q1+Q0)/h^2` and `D1=6*(Q3-2*Q2+Q1)/h^2` (zero-based indices).
-The residual `r=q_h''+q_h` has cubic controls
-`[Q0+D0, Q1+(2D0+D1)/3, Q2+(D0+2D1)/3, Q3+D1]`.
+The certificate is the generic FortNum module
+`fortnum_ode_residual_certificate` (pinned FortNum `7f6a0ba`). On each
+strictly ordered time cell `[tl,tr]` with `h=tr-tl`, each component is its own
+cubic Hermite: `q_h` with endpoint values `ql,qr` and slopes `pl,pr`, and
+`p_h` with endpoint values `pl,pr` and slopes `-ql,-qr` (exact negation; the
+slopes are the generated RHS at the nodes). The residual
+`r=(q_h'/h-p_h, p_h'/h+q_h)` (in the cell variable `s`) is a cubic vector
+polynomial; FortNum encloses its four Bernstein control vectors in outward
+interval arithmetic and bounds `sup_s ||r(s)||_2` by the largest control
+norm. The interval action of `J` is the generated interval RHS leaf.
 
-Bernstein basis functions are nonnegative and sum to one, so the largest
-absolute endpoint of their strict interval coefficient hull bounds `abs(r)`
-throughout the cell. This is a continuous-cell claim, not a sampled residual.
-The candidate is globally C1; its derivative is continuous, and its second
-derivative is piecewise continuous. Consequently `(q_h,p_h)` is absolutely
-continuous and the following variation-of-constants argument applies across
-all cell boundaries.
+Bernstein basis functions are nonnegative and sum to one, so this is a
+continuous-cell claim, not a sampled residual. Both reconstructions are
+globally C1 and hence absolutely continuous, so the following
+variation-of-constants argument applies across all cell boundaries.
+
+Until 2026-10 the slab used a second-order reconstruction (`p_h=q_h'`,
+scalar residual `q_h''+q_h`). That residual is only `O(h^2)` because
+`q_h''` is affine per cell; the componentwise residual is `O(h^3)`. On the
+128-step two-period animation case the final radius fell from `6.61e-3` to
+`3.30e-4`; on 40/80 steps over `tau=8` from `1.77e-2/4.30e-3` to
+`1.78e-3/2.22e-4`.
 
 For the exact reduced-model state and its error `e`,
-`e'=J*e+(0,-r)`, `J=[[0,1],[-1,0]]`. Since `J` is skew-symmetric, its evolution
+`e'=J*e-r`, `J=[[0,1],[-1,0]]`. Since `J` is skew-symmetric, its evolution
 preserves the Euclidean norm. Duhamel gives
-`||e(t)||2 <= ||e(0)||2 + integral_0^t abs(r(s)) ds`.
+`||e(t)||2 <= ||e(0)||2 + integral_0^t ||r(s)||2 ds`.
 The generated initial discrepancy bound uses `abs(qh0-q0)+abs(ph0-p0)`, a safe
 upper bound on the Euclidean norm; it avoids a strict square-root domain test
 on an outward sum-of-squares interval with a slightly negative rounded lower
@@ -96,7 +103,8 @@ edge crossings are not smooth derivative events. HVP is deferred.
 
 `slab_oscillation_oracles` checks arbitrary initial data against independent
 binary128 harmonic-oscillator evaluation, whole-time interval inclusion,
-residual-radius refinement, zero state, exact polynomial Bernstein fixtures,
+residual-radius refinement, zero state, a hand-derived two-node polynomial
+Bernstein control bound and sampled residual,
 corrupted traces, invalid meshes and generated rational derivative fixtures.
 It also checks the continuous tangent, the adjoint against its independent
 analytical flow, a tolerance-based pairing, and connected bands across knots.

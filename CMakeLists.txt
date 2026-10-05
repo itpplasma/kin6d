@@ -20,26 +20,28 @@ endif()
 # The application owns physical laws; generic numerics remain upstream.
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 015bb8b1490d99d55493b3936e0dd6adf77bc293)
+    GIT_TAG 7f6a0ba5ddd7cbc0e58e0eb72446a2c953bdb30b)
 FetchContent_GetProperties(fortnum)
 if(NOT fortnum_POPULATED)
     FetchContent_Populate(fortnum)
 endif()
 add_library(kin6d_intervals
+    ${fortnum_SOURCE_DIR}/src/fortnum_status.f90
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_rounding.f90
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_interval.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_verified_midpoint_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_verified_quadrature.f90)
+    ${fortnum_SOURCE_DIR}/src/verified/fortnum_verified_quadrature.f90
+    ${fortnum_SOURCE_DIR}/src/verified/fortnum_ode_residual_certificate.f90)
 target_compile_options(kin6d_intervals PRIVATE -fno-fast-math -ffp-contract=off)
 add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/fortnum_kinds.f90
     ${fortnum_SOURCE_DIR}/src/roots/fortnum_roots.f90
     ${fortnum_SOURCE_DIR}/src/quadrature/fortnum_quadrature.f90
-    ${fortnum_SOURCE_DIR}/src/fortnum_status.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
+target_link_libraries(kin6d_ode PUBLIC kin6d_intervals)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
