@@ -188,3 +188,16 @@ run from the repository root and must reproduce committed leaves exactly.
   Z function and graded Gauss rules belong in FortNum; modal Poisson copy;
   no rigorous Lindhard/Wigner enclosure; screening figure uses log10 data
   workaround for the old fortplot pin.
+- 2026-10-06 (controller, pause): merged F5 (namelist + FortIO results),
+  Q1/Q1b (partial-wave encounter, Rydberg packet), Q3/Q8, Q7 (screening,
+  Wigner-Poisson); kin6d uses FortNum 0f643d0 GLL/Legendre and fortplot
+  67834eb; 28/28 CTest green. Unmerged worker branches (resume/integrate):
+  worktree-agent-a555f8713dd7a8d74 (Q4 jellium + F6 migration),
+  worktree-agent-a6bde7f3f0e416042 (C3/C4 OCP), worktree-agent-a13ae492e23305233
+  (Q2 packet models). Remaining: C5/H1 correlation map (g2/g3 cumulants vs
+  Gamma, Theta), Q5 Hartree/HF, QG6 hybrid encounters, modal Poisson
+  dedup, fermi_gas k_s candidate (1.8e-3 near Theta 0.025) and cold
+  certificate mesh, coulomb_encounter_demo result_io adoption, figure pass
+  (Q1 movie: CM relative density singlet/triplet/classical, log scale,
+  near-closest-approach frames; fine Mott bins), plan/doc consolidation,
+  gallery render and slopbox upload.
