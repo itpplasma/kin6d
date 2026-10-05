@@ -17,46 +17,72 @@ program interaction_demo
     use fortplot_animation, only: animation_t, &
                                   animation_func => FuncAnimation, save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: frames = 121, substeps = 100, fps = 24
-    real(dp), parameter :: h = .0005_dp, duration = 6._dp
+    integer, parameter :: fps = 24
+    integer :: frames = 121, substeps = 100
+    real(dp) :: h = .0005_dp, duration
+    !> Neutral elastic contact radius and requested particle-coordinate radius.
+    real(dp) :: contact_radius = 1._dp, radius_target = .01_dp
     real(dp), parameter :: two_pi = 6.2831853071795864769_dp
     type(units_t) :: units
     real(dp) :: coupling
     real(dp), parameter :: blue(3) = [.12_dp, .38_dp, .7_dp], &
                            orange(3) = [.85_dp, .28_dp, .12_dp]
     type(interaction_state_t) :: state, fast
-    type(interval_t) :: rb(3), ub(3), error_radius(3), time_bounds(frames), &
-                        particle_box(3)
+    type(interval_t) :: rb(3), ub(3), error_radius(3), particle_box(3)
+    type(interval_t), allocatable :: time_bounds(:)
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
     real(dp) :: r0(3) = [-6._dp, .6_dp, 0._dp], u0(3) = [2._dp, 0._dp, 0._dp]
-    real(dp) :: charged(3, frames), neutral(3, frames), times(frames), &
-                energy(frames)
-    real(dp) :: radii(frames), boxlo(3, 2, frames), boxhi(3, 2, frames), &
-                r(3), u(3), en0
-    real(dp) :: radius_plot(frames), energy_plot(frames)
-    real(dp) :: charged_position(3, 2, frames), neutral_position(3, 2, &
-                                                                 frames), particle_sign
+    namelist /interaction/ frames, substeps, h, r0, u0, contact_radius, radius_target
+    type(run_t) :: run
+    type(result_file_t) :: result
+    integer :: unit, ios
+    character(len=256) :: msg
+    real(dp), allocatable :: charged(:, :), neutral(:, :), times(:), energy(:)
+    real(dp), allocatable :: radii(:), boxlo(:, :, :), boxhi(:, :, :)
+    real(dp) :: r(3), u(3), en0
+    real(dp), allocatable :: radius_plot(:), energy_plot(:)
+    real(dp), allocatable :: charged_position(:, :, :), neutral_position(:, :, :)
+    real(dp) :: particle_sign
     real(dp) :: start, finish, solve_seconds, check_seconds, factor, f(3), potential
     integer :: frame, k, status, out, snapshot_frame, last_bounded, particle
-    logical :: ok, bounded, snapshot_only, certified(frames), budget_met(frames)
+    logical :: ok, bounded, snapshot_only
+    logical, allocatable :: certified(:), budget_met(:)
     character(64) :: argument
     character(150) :: heading
-    snapshot_only = .false.; snapshot_frame = 61
-    if (command_argument_count() > 2) error stop 'usage: interaction_demo ['// &
-        '--snapshot [frame]]'
-    if (command_argument_count() >= 1) then
-        call get_command_argument(1, argument)
+    call run%start('interaction_demo')
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=interaction, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'interaction', ios, msg)
+    if (frames < 2 .or. substeps < 1) error stop 'interaction needs frames >= 2, substeps >= 1'
+    if (.not. (h > 0.0_dp .and. contact_radius > 0.0_dp .and. radius_target > 0.0_dp)) &
+        error stop 'interaction h, contact_radius and radius_target must be positive'
+    call run%open_resolved(unit)
+    write (unit, nml=interaction)
+    call run%close_resolved(unit)
+    duration = real((frames - 1)*substeps, dp)*h
+    allocate (charged(3, frames), neutral(3, frames), times(frames), energy(frames), &
+        radii(frames), boxlo(3, 2, frames), boxhi(3, 2, frames), radius_plot(frames), &
+        energy_plot(frames), charged_position(3, 2, frames), &
+        neutral_position(3, 2, frames), time_bounds(frames), certified(frames), &
+        budget_met(frames))
+    snapshot_only = .false.; snapshot_frame = (frames + 1)/2
+    if (run%argument_count() > 2) error stop 'usage: interaction_demo ['// &
+        '--config FILE] [--snapshot [frame]]'
+    if (run%argument_count() >= 1) then
+        call run%argument(1, argument)
         if (trim(argument) /= '--snapshot') error stop 'expected --snapshot'
         snapshot_only = .true.
     end if
-    if (command_argument_count() == 2) then
-        call get_command_argument(2, argument)
+    if (run%argument_count() == 2) then
+        call run%argument(2, argument)
         read (argument, *, iostat=status) snapshot_frame
         if (status /= 0) error stop 'invalid snapshot frame'
     end if
-  if (snapshot_frame < 1 .or. snapshot_frame > frames) error stop 'frame outside 1..121'
+  if (snapshot_frame < 1 .or. snapshot_frame > frames) error stop 'frame outside 1..frames'
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'cannot create output'
     ! Two electrons in Hartree atomic units: g = 1, mu = 1/2, coupling g/mu = 2.
@@ -108,10 +134,10 @@ program interaction_demo
             radii(frame) = maxval(error_radius%hi)
         end if
         budget_met(frame) = bounded
-        if (bounded) budget_met(frame) = radii(frame) <= .01_dp
+        if (bounded) budget_met(frame) = radii(frame) <= radius_target
         call interaction_energy(r(1), r(2), r(3), u(1), u(2), u(3), coupling, &
                                 energy(frame))
-        call neutral_contact_trajectory(r0, u0, 1._dp, times(frame), r, u, ok)
+        call neutral_contact_trajectory(r0, u0, contact_radius, times(frame), r, u, ok)
         if (.not. ok) error stop 'neutral contact failed'
         neutral(:, frame) = r
         do particle = 1, 2
@@ -140,6 +166,33 @@ program interaction_demo
             ',', budget_met(frame), ',', radii(frame), ',', energy(frame)
     end do
     close (out)
+    call result%create(run)
+    call result%attribute('model', 'two electrons, Hartree atomic units, '// &
+        'unscreened Coulomb vs neutral elastic contact')
+    call result%write('t', times, 'hbar/E_h', 'frame time', dims='frame')
+    call result%write('t_lower', time_bounds%lo, 'hbar/E_h', 'frame time lower', &
+        dims='frame', status='certified rounding enclosure')
+    call result%write('t_upper', time_bounds%hi, 'hbar/E_h', 'frame time upper', &
+        dims='frame', status='certified rounding enclosure')
+    call result%write('relative_position', charged, 'a_0', &
+        'Coulomb relative position r1 - r2', dims='xyz,frame', status='candidate')
+    call result%write('particle_lower', boxlo, 'a_0', &
+        'Coulomb particle coordinate enclosure lower', dims='xyz,particle,frame', &
+        status='certified-continuous where endpoint_enclosure_available')
+    call result%write('particle_upper', boxhi, 'a_0', &
+        'Coulomb particle coordinate enclosure upper', dims='xyz,particle,frame', &
+        status='certified-continuous where endpoint_enclosure_available')
+    call result%write('endpoint_enclosure_available', merge(1.0_dp, 0.0_dp, certified), &
+        '1', '1 if the interval Picard tube reached this frame', dims='frame')
+    call result%write('particle_coordinate_radius', radii, 'a_0', &
+        'max particle coordinate radius (-1 = unavailable)', dims='frame', &
+        status='certified-continuous where endpoint_enclosure_available')
+    call result%write('relative_specific_energy', energy, 'atomic units (per mass)', &
+        'specific relative energy', dims='frame', status='diagnostic')
+    call result%write('neutral_relative_position', neutral, 'a_0', &
+        'neutral elastic contact relative position', dims='xyz,frame', &
+        status='analytical reference; event sensitivity unavailable')
+    call result%close()
     print '(a)', &
         'model=two_equal_mass_particles; Cartesian_3D; C=1; reduced_mass=0.5'
     print '(a)', &

@@ -1,12 +1,21 @@
-program benchmark_fermi_gas
+program benchmark_fermi_gas_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_fermi_gas, only: fermi_workspace_t, fermi_state_t, fermi_si_state_t, &
         initialize_fermi_workspace, solve_fermi_gas, solve_fermi_gas_si
     use kin6d_fermi_gas_leaves, only: fermi_electron_density, &
                                     fermi_relativity_indicator
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: repetitions = 9, solves_per_sample = 20
-    real(dp), parameter :: temperatures(3) = [0.05_dp, 1.0_dp, 10.0_dp]
+    integer :: repetitions = 9, solves_per_sample = 20
+    real(dp) :: temperatures(3) = [0.05_dp, 1.0_dp, 10.0_dp]
+    type(run_t) :: run
+    type(result_file_t) :: result
+    real(dp), allocatable :: solve_s(:, :), complete_s(:, :), mu_radius(:, :)
+    real(dp), allocatable :: pressure_radius(:, :)
+    real(dp) :: theta(3)
+    integer :: ios
+    character(len=256) :: msg
+    namelist /benchmark_fermi_gas/ repetitions, solves_per_sample, temperatures
     type(fermi_workspace_t) :: work
     type(fermi_state_t) :: state
     type(fermi_si_state_t) :: physical
@@ -15,8 +24,22 @@ program benchmark_fermi_gas
     logical :: ok
     character(256) :: path
 
+    call run%start('benchmark_fermi_gas')
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=benchmark_fermi_gas, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'benchmark_fermi_gas', ios, msg)
+    if (repetitions < 1 .or. solves_per_sample < 1) error stop 'invalid repetition counts'
+    if (.not. all(temperatures > 0.0_dp)) error stop 'temperatures must be positive'
+    if (run%argument_count() > 1) &
+        error stop 'usage: benchmark_fermi_gas [--config FILE] [timings.csv]'
+    call run%open_resolved(unit)
+    write (unit, nml=benchmark_fermi_gas)
+    call run%close_resolved(unit)
+    allocate (solve_s(repetitions, 3), complete_s(repetitions, 3), &
+        mu_radius(repetitions, 3), pressure_radius(repetitions, 3))
     path = 'fermi-gas-timings.csv'
-    if (command_argument_count() > 0) call get_command_argument(1, path)
+    if (run%argument_count() > 0) call run%argument(1, path)
     open (newunit=unit, file=trim(path), status='replace', action='write')
     write (unit, '(a)') 'theta,sample,solve_seconds,complete_seconds,factor,'// &
                        'candidate_nodes,strict_cells,mu_radius,pressure_radius'
@@ -44,7 +67,13 @@ program benchmark_fermi_gas
                 complete_time, complete_time/solve_time, state%candidate_nodes, &
                 state%cells, (state%mu_bound%hi - state%mu_bound%lo)/2.0_dp, &
                 (state%pressure_bound%hi - state%pressure_bound%lo)/2.0_dp
+            solve_s(sample, case_index) = solve_time
+            complete_s(sample, case_index) = complete_time
+            mu_radius(sample, case_index) = (state%mu_bound%hi - state%mu_bound%lo)/2.0_dp
+            pressure_radius(sample, case_index) = &
+                (state%pressure_bound%hi - state%pressure_bound%lo)/2.0_dp
         end do
+        theta(case_index) = state%theta
     end do
     close (unit)
     ! Illustrative envelope inputs, not a stellar structure or relativistic EOS.
@@ -64,5 +93,24 @@ program benchmark_fermi_gas
         density, 1.0e6_dp, physical%normalized%theta, relativity, &
         physical%pressure, physical%pressure_bound%lo, physical%pressure_bound%hi
     close (si_unit)
+    call execute_command_line('mkdir -p output')
+    call result%create(run)
+    call result%write('theta', theta, '1', 'reduced temperature per case', dims='case')
+    call result%write('solve_seconds', solve_s, 's', 'candidate solve CPU time', &
+        dims='sample,case', status='measurement')
+    call result%write('complete_seconds', complete_s, 's', &
+        'certified solve CPU time', dims='sample,case', status='measurement')
+    call result%write('mu_radius', mu_radius, '1', 'chemical potential half-width', &
+        dims='sample,case', status=trim(state%status)//' interval half-width')
+    call result%write('pressure_radius', pressure_radius, '1', 'pressure half-width', &
+        dims='sample,case', status=trim(state%status)//' interval half-width')
+    call result%write('si_pressure', physical%pressure, 'Pa', &
+        'illustrative ideal nonrelativistic electron pressure', &
+        status='candidate center; envelope only')
+    call result%write('si_pressure_lower', physical%pressure_bound%lo, 'Pa', &
+        'pressure lower bound', status=trim(physical%normalized%status)//' enclosure')
+    call result%write('si_pressure_upper', physical%pressure_bound%hi, 'Pa', &
+        'pressure upper bound', status=trim(physical%normalized%status)//' enclosure')
+    call result%close()
     print '(a)', 'PASS: raw matched-input timing rows and nonrelativistic SI pressure'
-end program benchmark_fermi_gas
+end program benchmark_fermi_gas_main

@@ -56,6 +56,49 @@ Large external files need not be embedded verbatim. Record their logical/source
 name, detected format/version, units/coordinate/sign conventions,
 transformations applied, content hash and access/redistribution limitations.
 
+## Implemented contract (campaign F5)
+
+Status 2026-10-05. Every application in `app/` uses `kin6d_io`
+(`src/result_io.f90`, linked against FortIO pinned in `CMakeLists.txt`):
+
+- `--config FILE` names an optional namelist file; all other arguments
+  (`--snapshot [frame]`, benchmark sizes, paths) are unchanged; a command-line
+  override is applied before the resolved text is captured. Each
+  application owns one group with its defaults in one place. gfortran rejects
+  a group named like the program, so a demo's group drops `_demo`
+  (`&debye_sphere`) and a benchmark keeps its name (`&benchmark_fp`) with
+  the program renamed `benchmark_fp_main`. The two periodic-pair demos also read the shared `&periodic_pair`
+  group (`src/periodic_pair_config.f90`: length, mass, coupling, time_max,
+  frames). `classical_pair_demo` rejects a mass or coupling other than the
+  declared electron pair rather than silently simulating another system.
+- Unknown entries and malformed values fail with the group name; a group in
+  the file that the application does not read is an error. A missing group
+  keeps its defaults.
+- The result is `output/<application>.nc` (NetCDF-4/HDF5). It holds named
+  double variables (scalar to rank 3) with `units`, `long_name` and, where the
+  application has one, `kin6d_status` (candidate, certified-discrete,
+  sampling interval, measurement, ...). Global attributes hold the literal
+  file text, the resolved namelist after automatic choices, the command line,
+  the build-time git commit and tree state and a runtime recheck of both, the
+  build type/flags, `compiler_version()`/`compiler_options()`, the
+  FortSym/FortNum/fortplot/FortIO revisions and the UTC creation time.
+- The resolved text is itself a valid input and resolves to itself.
+- `result_io_contract` (CTest) reads the file back through FortIO's HDF5
+  reader and, when they are installed, through `ncdump`/`h5dump`. It also
+  checks the rejection cases. The gallery renderer records each `.nc` with
+  its sha256.
+
+Integrating a new application takes a few lines: `call run%start(name)`, read
+its group between `run%open_config`/`run%close_config`, write the group to
+`run%open_resolved`/`run%close_resolved`, then `result%create(run)`,
+`result%write(...)` and `result%close()`. Finally add the target to the
+`kin6d_io` application list in `CMakeLists.txt`.
+
+Planned and not yet implemented: groups for input/provenance/state/
+certificates inside the file, a generated schema, the validate/resolve/
+inspect CLI, hashes of external inputs, hardware/runtime records, and
+derivative or ledger variables beyond the per-variable status string.
+
 ## Interchange
 
 Use libneo as the shared adapter/convention layer when it already supports a
