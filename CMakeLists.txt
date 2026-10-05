@@ -171,7 +171,7 @@ if(KIN6D_FORTSYM_BUILD)
         target_include_directories(gen_${generator} PRIVATE
             ${KIN6D_FORTSYM_BUILD}/include)
         target_link_libraries(gen_${generator} PRIVATE
-            ${KIN6D_FORTSYM_BUILD}/lib/libfortsym.so)
+            ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
     endforeach()
 endif()
 # Explicit performance audit; not part of the ordinary correctness gate.
