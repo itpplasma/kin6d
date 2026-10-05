@@ -116,7 +116,7 @@ foreach(example streaming_moments debye_sphere slab_oscillation shielding_dynami
 endforeach()
 add_executable(microscopic_cloud_demo app/microscopic_cloud_demo.f90)
 target_link_libraries(microscopic_cloud_demo PRIVATE kin6d fortplot)
-foreach(example quantum_reference classical_pair coulomb_encounter)
+foreach(example quantum_reference classical_pair coulomb_encounter jellium_cell)
     add_executable(${example}_demo app/${example}_demo.f90)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
 endforeach()
@@ -284,7 +284,7 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         fermion_ensemble_demo relativistic_fermi_demo formal_krook_certificate
         benchmark_streaming benchmark_streaming_comparison benchmark_fp
         benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
-        benchmark_quantum_cutoff)
+        benchmark_quantum_cutoff jellium_cell_demo)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
 add_executable(test_result_io test/test_result_io.f90)
