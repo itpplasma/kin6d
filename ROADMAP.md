@@ -22,6 +22,12 @@ scientific value and leverage.
 
 ## Rules for every milestone
 
+The non-negotiable scientific principles in
+[DESIGN.md](DESIGN.md#non-negotiable-scientific-principles) are **promotion
+gates, not feature scope**. YAGNI may reduce how much of a capability is built;
+it may not remove differentiability/error semantics/structure/provenance and
+leave them as unspecified future cleanup.
+
 A capability is promoted only when it has:
 
 1. a precisely named mathematical model and domain;
