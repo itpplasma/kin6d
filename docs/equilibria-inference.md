@@ -35,6 +35,15 @@ KIN6D's physical model. Normalize physical units, orientation, flux/toroidal
 angle conventions, field periods and vector-component conventions at the
 adapter boundary. Prefer libneo when it already owns a mature reader/converter.
 
+The libneo boundary is intentionally replaceable, but its generic implementation
+is improved on demand. When a KIN6D use case exposes a reusable defect or
+missing capability in parsing, convention normalization, interpolation, field
+evaluation, spatial derivatives or representation-level error diagnostics, fix
+and test it in libneo rather than creating a KIN6D fork. If an old evaluator is
+too entangled to make differentiable/certifiable economically, use libneo only
+to normalize the source data and construct a native KIN6D representation for
+the differentiable/certified computation.
+
 ## Axisymmetric MHD
 
 KIN6D should own a native Grad--Shafranov path for fixed and free boundary
