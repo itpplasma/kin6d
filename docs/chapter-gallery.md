@@ -32,11 +32,20 @@ the ignored `output/` directory.
 | 3 | `plasma-oscillation` | A numerically integrated cold electron slab against fixed ions, with visible particles, Eulerian slab profiles and a harmonic-oscillator oracle |
 | Comparison | `particles-vlasov` | Prescribed-zero-field free streaming represented by weighted particles and an Eulerian Fourier/P1 state |
 | Comparison | `free-streaming` | The earlier Maxwellian-envelope free-streaming laboratory |
+| 1, quantum comparison | `quantum-correlations` | Interacting opposite-spin two-electron wavefunction in a periodic 3D Coulomb box; numerical finite-basis evolution with continuous bounds and a computed noninteracting control |
+| 1, classical comparison | `classical-coulomb-pair` | Independent actual two-electron trajectories in the same 3D box and preparation; particle projections and matching relative-position slab bins |
 
 The bounded-velocity distribution in the moments example is specified by its
 finite Fourier/P1 coefficients. It differs from the script's illustrative
 unbounded Maxwellian-plus-beam profile. No omitted velocity tail is silently
 included in its certificate.
+
+The [matched pair experiment](quantum-teaching-slice.md) is a microscopic
+cold-quench example, not a hot bulk-degeneracy or Debye-screening simulation.
+Its quantum bands cover the declared finite basis; its classical intervals
+describe sampling uncertainty. Render these two additions alone with
+`./scripts/render-gallery.sh --only quantum_reference_demo,classical_pair_demo`.
+The 125/343-mode comparison reports a basis-convergence indicator separately.
 
 The shielding relaxation solves, in normalized units,
 
@@ -89,8 +98,9 @@ trajectories and empirical radial profiles are exploratory candidates;
 energy diagnostics do not replace a trajectory certificate. It is not a
 converged Debye-shielding or finite-\(N\) fluctuation benchmark.
 
-The planned periodic Coulomb/Ewald system and \(\Lambda\)-scan remain the
-route to quantitative microscopic shielding. See
+The matched two-electron pair now adds periodic Coulomb/Ewald mechanics;
+many-particle ensembles and the \(\Lambda\)-scan remain the route to
+quantitative microscopic shielding. See
 [the microscopic many-body contract](microscopic-many-body.md).
 
 ## Cost receipts
@@ -103,7 +113,21 @@ ranking.
 
 ## Integrated verification
 
-The 2026-10-05 gallery integration passes all 14 registered native CTest cases
+The quantum/classical extension passes all 21 registered native CPU cases in
+Release and checked Debug. All seventeen retained generators reproduce their
+leaves byte for byte at FortSym `a6142712af998b727c245fb6cfbb3745b296ec24`.
+FortNum `015bb8b1490d99d55493b3936e0dd6adf77bc293` supplies the verified
+midpoint integrator; FortPlot `87ff7a43809e868e0153f400a21cdb31b9a92d84`
+repairs subplot error-bar placement. Independent audits cover the Hamiltonian,
+evolution, Fermi EOS, correlation helper and small cutoff oracle. The final
+gallery composition also passes independent review, including raw-norm and
+physical-Hamiltonian perturbation bridges, complete plot-cell allowances,
+and malformed pair-basis rejection. Both 61-frame additions pass encoded
+first/middle/last and grayscale inspection, with all reported bands and
+displayed particle projections inside their axes. The render manifest retains
+their exact executable, source and artifact identities.
+
+The earlier 2026-10-05 gallery integration passed all 14 registered native CTest cases
 in Release and in checked Debug (`-O0 -fcheck=all -fbacktrace`). The six new
 registered cases also pass through the verified public Fo driver recorded in
 [tooling](tooling.md). The existing resident lane still has its documented
@@ -116,16 +140,16 @@ and Coulomb endpoint enclosure. Review inputs were frozen at base
 `564d7edf9d3ab265d0c9aed199983ef370fe50cc`; candidate-only cloud dynamics retain
 that status. Each source retains its independent behavioral oracle.
 
-FortSym is pinned at `44da68f44c1ef3bc7617a307409c812a6ea4d515`, including the
-rigorous large-rational and exact-exponent emission repairs. FortPlot is pinned
+That integration pinned FortSym at `44da68f44c1ef3bc7617a307409c812a6ea4d515`, including the
+rigorous large-rational and exact-exponent emission repairs. It pinned FortPlot
 at `9949d818b2ba5f43d582d6aff58c8032cdeec3de`, including requested-movie failure
 status, retained-raster clearing and procedural subplot-quiver repairs.
 Their native upstream regression
 suites pass. Final movie acceptance includes encoded first/middle/last frames,
 grayscale readability, clipping, legends and full connected band geometry.
-GNU Fortran's internal animation callbacks retain an executable-stack linker
-warning, also present in the existing comparison; it is separate from these
-numerical and movie checks.
+That build retained an executable-stack warning for GNU Fortran's internal
+animation callbacks. The current build selects heap trampolines when supported
+by the compiler, preserving the project profiles.
 
 The render manifest retains executable and source hashes, run resources,
 application wall time and GIF conversion time. An application's wall time is

@@ -11,7 +11,7 @@ program gen_interaction
     use fortsym_rigorous_emit, only: rigorous_kernel_spec_t, interval_runtime, &
                                      emit_rigorous_kernel
     implicit none
-    character(*), parameter :: revision = '44da68f44c1ef3bc7617a307409c812a6ea4d515'
+    character(*), parameter :: revision = 'a6142712af998b727c245fb6cfbb3745b296ec24'
     type(arena_t), target :: arena
     type(native_engine_t) :: engine
     type(expr_t) :: r(3), u(3), coupling, h, r2, norm, force(4), rn(3), un(3)

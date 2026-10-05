@@ -16,6 +16,15 @@ runs all gallery applications and produces looping GIFs, MP4s, frame
 snapshots and a provenance manifest. `--snapshot` retains the PNG/data path
 without movie encoding. The renderer does not replace the numerical gates.
 
+The [matched quantum/classical pair](quantum-teaching-slice.md) adds two
+movies of the same three-dimensional Coulomb quench. Select them with
+`./scripts/render-gallery.sh --only quantum_reference_demo,classical_pair_demo`.
+Quantum bands cover numerical evolution and observables in the admitted
+finite basis; classical bands are simultaneous sampling confidence intervals.
+Basis, Ewald and classical timestep differences retain their separate status.
+The optional ideal-electron pressure result uses `benchmark_fermi_gas` and
+does not add a stellar-structure or BBGKY simulation.
+
 ## Runnable from the first code
 
 The first executable increment is a complete CPU vertical slice: build the

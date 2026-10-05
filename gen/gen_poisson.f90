@@ -127,7 +127,7 @@ contains
             return
         end if
         spec%name = str(name); spec%generator = str('gen_poisson')
-        spec%generator_revision = str('44da68f44c1ef3bc7617a307409c812a6ea4d515')
+        spec%generator_revision = str('a6142712af998b727c245fb6cfbb3745b296ec24')
         spec%pure_procedure = .true.; spec%elemental_procedure = .true.
         allocate (spec%args(size(args)), spec%outputs(size(outputs)))
         do i = 1, size(args)

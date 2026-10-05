@@ -22,6 +22,14 @@ executable digest. Final performance measurements use that clean Release.
 The existing CMake-only resident input-capture blocker remains a separate
 upstream capability gap; this evidence concerns delegated profile behavior.
 
+Fo `17db6d81e0cf86b2325da159aa62964755eb92e6` additionally repairs public
+execution from the selected external CMake build root. The quantum slice uses
+`/var/tmp/fo-cmake-exec-root-20261005/build/gfortran_B54CC5252B24789C/app/fo`,
+SHA256 `23f14fb2e36f0e999d4e6db9a421f57743fe477921c786f882be945d4a6c7aa6`.
+Its independent stale-binary fixture, old/new profile fixture, and kin6d
+Release/Debug evolution gates pass. Existing resident lanes are preserved;
+the CMake-only input-capture limitation remains explicit.
+
 ## Stack and ownership
 
 | Responsibility | Owner |
