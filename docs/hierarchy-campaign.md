@@ -110,3 +110,20 @@ run from the repository root and must reproduce committed leaves exactly.
   each step (max energy defect 6.2e-5 vs 2.6e-5, one histogram count moved).
   Open: modal Poisson still duplicated (gen_poisson, gen_shielding_dynamics);
   fp/laboratory/poisson keep their own emit convention; no VJP of the KDK step.
+- 2026-10-05 (worker Q3/Q8): Q3 `src/fermion_ensemble.f90` +
+  `gen_fermion_ensemble` (docs/fermion-ensemble.md). It provides canonical
+  fixed-N box/trap sums through a subtraction-free recursion, interval
+  enclosures with a rigorous omitted-orbital remainder, exchange hole,
+  density matrix, Boltzmann and ground preparations, and the box EOS with
+  T/density derivatives. Oracles: brute-force determinants, cold
+  thermodynamic-limit hole (deviation 8.6e-5 at N=1021), grand-canonical
+  EOS (e_N-e_TL ~ 1/N), classical limits and finite differences. The
+  alternating power-sum recursion cancels up to 5e36 cold; it is used only
+  as a cross-check. Q8: relativistic option in `kin6d_fermi_gas`
+  (`gen_relativistic_fermi`, convexity tail, graded Fermi-window mesh;
+  nonrelativistic path bit-identical). Certified to x_F=10 at 1e7 K;
+  NR/UR/Chandrasekhar/classical limits checked by an independent binary128
+  oracle. Demos `fermion_ensemble_demo` and `relativistic_fermi_demo` write
+  to output/. Open: binary64 range limit for cold large-N states;
+  the nonrelativistic certificate fails below theta of about 1e-3 (graded
+  mesh not applied); fortplot subplot axis scales leak between panels.
