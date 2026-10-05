@@ -6,11 +6,19 @@ set(CMAKE_Fortran_STANDARD 2018)
 set(CMAKE_Fortran_STANDARD_REQUIRED ON)
 set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
+# Dependency pins: one source used by FetchContent and by result provenance.
+set(KIN6D_FORTPLOT_REVISION "67834eb4568720226ca97a94e02267f48542613d")
+set(KIN6D_FORTNUM_REVISION "0f643d015f4181a8e9cddd6c867f4b90ef4b7c68")
+set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
     GIT_REPOSITORY https://github.com/lazy-fortran/fortplot.git
-    GIT_TAG 87ff7a43809e868e0153f400a21cdb31b9a92d84)
+    GIT_TAG ${KIN6D_FORTPLOT_REVISION})
 FetchContent_MakeAvailable(fortplot)
+FetchContent_Declare(fortio
+    GIT_REPOSITORY https://github.com/lazy-fortran/fortio.git
+    GIT_TAG ${KIN6D_FORTIO_REVISION})
+FetchContent_MakeAvailable(fortio)
 include(CheckFortranCompilerFlag)
 check_fortran_compiler_flag("-ftrampoline-impl=heap" KIN6D_HAVE_HEAP_TRAMPOLINES)
 if(KIN6D_HAVE_HEAP_TRAMPOLINES)
@@ -20,7 +28,7 @@ endif()
 # The application owns physical laws; generic numerics remain upstream.
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 015bb8b1490d99d55493b3936e0dd6adf77bc293)
+    GIT_TAG ${KIN6D_FORTNUM_REVISION})
 FetchContent_GetProperties(fortnum)
 if(NOT fortnum_POPULATED)
     FetchContent_Populate(fortnum)
@@ -41,7 +49,10 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
     ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft8_kernel.f90
     ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft.f90
-    ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90)
+    ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90
+    ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
@@ -82,7 +93,14 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     set_source_files_properties(src/generated/kin6d_${quantum_family}_leaves.f90
         PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 endforeach()
-target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode)
+# Q1/Q1b partial-wave encounter: banded symmetric eigensolver from LAPACK,
+# the external numerical dependency FortNum already declares.
+find_package(LAPACK REQUIRED)
+target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
+    src/radial_dvr.f90 src/coulomb_encounter.f90 src/coulomb_kepler.f90)
+set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
 add_executable(kin6d_demo app/kin6d_demo.f90)
 target_link_libraries(kin6d_demo PRIVATE kin6d fortplot)
@@ -98,7 +116,7 @@ foreach(example streaming_moments debye_sphere slab_oscillation shielding_dynami
 endforeach()
 add_executable(microscopic_cloud_demo app/microscopic_cloud_demo.f90)
 target_link_libraries(microscopic_cloud_demo PRIVATE kin6d fortplot)
-foreach(example quantum_reference classical_pair)
+foreach(example quantum_reference classical_pair coulomb_encounter)
     add_executable(${example}_demo app/${example}_demo.f90)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
 endforeach()
@@ -148,6 +166,9 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     target_link_libraries(test_${quantum_family} PRIVATE kin6d)
     add_test(NAME ${quantum_family}_oracles COMMAND test_${quantum_family})
 endforeach()
+add_executable(test_coulomb_encounter test/test_coulomb_encounter.f90)
+target_link_libraries(test_coulomb_encounter PRIVATE kin6d)
+add_test(NAME coulomb_encounter_oracles COMMAND test_coulomb_encounter)
 add_executable(test_quantum_cutoff test/test_quantum_cutoff.f90)
 target_link_libraries(test_quantum_cutoff PRIVATE kin6d)
 add_test(NAME quantum_cutoff_oracles COMMAND test_quantum_cutoff)
@@ -188,7 +209,8 @@ if(KIN6D_FORTSYM_BUILD)
     foreach(generator laboratory poisson fp transport streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
-            quantum_reference_gallery classical_pair coulomb species ocp)
+            quantum_reference_gallery classical_pair coulomb species coulomb_encounter
+            ocp)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
@@ -209,3 +231,71 @@ add_executable(benchmark_fermi_gas app/benchmark_fermi_gas.f90)
 target_link_libraries(benchmark_fermi_gas PRIVATE kin6d)
 add_executable(benchmark_quantum_cutoff app/benchmark_quantum_cutoff.f90)
 target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)
+
+# Campaign Q3/Q8: finite-N ideal fermion ensembles and relativistic Fermi EOS.
+if(KIN6D_FORTSYM_BUILD)
+    foreach(generator relativistic_fermi fermion_ensemble)
+        add_executable(gen_${generator} gen/gen_${generator}.f90)
+        target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
+    endforeach()
+endif()
+target_sources(kin6d PRIVATE src/generated/kin6d_relativistic_fermi_leaves.f90)
+set_source_files_properties(src/generated/kin6d_relativistic_fermi_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_relativistic_fermi_gas test/test_relativistic_fermi_gas.f90)
+target_link_libraries(test_relativistic_fermi_gas PRIVATE kin6d)
+add_test(NAME relativistic_fermi_gas_oracles COMMAND test_relativistic_fermi_gas)
+target_sources(kin6d PRIVATE src/generated/kin6d_fermion_ensemble_leaves.f90
+    src/fermion_ensemble.f90)
+set_source_files_properties(src/generated/kin6d_fermion_ensemble_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_fermion_ensemble test/test_fermion_ensemble.f90)
+target_link_libraries(test_fermion_ensemble PRIVATE kin6d)
+add_test(NAME fermion_ensemble_oracles COMMAND test_fermion_ensemble)
+add_executable(fermion_ensemble_demo app/fermion_ensemble_demo.f90)
+target_link_libraries(fermion_ensemble_demo PRIVATE kin6d fortplot)
+add_executable(relativistic_fermi_demo app/relativistic_fermi_demo.f90)
+target_link_libraries(relativistic_fermi_demo PRIVATE kin6d fortplot)
+
+# Campaign F5: namelist configuration in, NetCDF-4/HDF5 result with embedded
+# literal/resolved configuration and provenance out (src/result_io.f90).
+# Physics stays in kin6d; only kin6d_io and applications see FortIO.
+set(kin6d_build_info_inc ${CMAKE_BINARY_DIR}/result_include/kin6d_build_info.inc)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" kin6d_build_type_upper)
+add_custom_target(kin6d_build_info
+    COMMAND ${CMAKE_COMMAND} -DKIN6D_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DKIN6D_INFO_OUTPUT=${kin6d_build_info_inc}
+        -DKIN6D_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        "-DKIN6D_BUILD_FLAGS=${CMAKE_Fortran_FLAGS} ${CMAKE_Fortran_FLAGS_${kin6d_build_type_upper}}"
+        "-DKIN6D_BUILD_COMPILER=${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fortran_COMPILER_VERSION}"
+        -DKIN6D_FORTSYM_REVISION=${KIN6D_FORTSYM_REVISION}
+        -DKIN6D_FORTNUM_REVISION=${KIN6D_FORTNUM_REVISION}
+        -DKIN6D_FORTPLOT_REVISION=${KIN6D_FORTPLOT_REVISION}
+        -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
+    BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
+add_library(kin6d_io src/result_io.f90 src/periodic_pair_config.f90)
+add_dependencies(kin6d_io kin6d_build_info)
+target_include_directories(kin6d_io PRIVATE ${CMAKE_BINARY_DIR}/result_include)
+target_link_libraries(kin6d_io PUBLIC kin6d fortio::fortio)
+target_compile_options(kin6d_io PRIVATE -Wall -Wextra)
+# Every application reads --config FILE and writes output/<name>.nc.
+foreach(application kin6d_demo steady_laboratory_demo transport_demo
+        streaming_comparison_demo streaming_moments_demo debye_sphere_demo
+        slab_oscillation_demo shielding_dynamics_demo interaction_demo
+        microscopic_cloud_demo quantum_reference_demo classical_pair_demo
+        fermion_ensemble_demo relativistic_fermi_demo formal_krook_certificate
+        benchmark_streaming benchmark_streaming_comparison benchmark_fp
+        benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
+        benchmark_quantum_cutoff)
+    target_link_libraries(${application} PRIVATE kin6d_io)
+endforeach()
+add_executable(test_result_io test/test_result_io.f90)
+target_link_libraries(test_result_io PRIVATE kin6d_io)
+add_test(NAME result_io_contract
+    COMMAND ${CMAKE_COMMAND} -DPROBE=$<TARGET_FILE:test_result_io>
+        -DCLASSICAL=$<TARGET_FILE:classical_pair_demo>
+        -DQUANTUM=$<TARGET_FILE:quantum_reference_demo>
+        -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
+        -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
+        -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)

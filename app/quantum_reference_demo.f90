@@ -5,8 +5,7 @@ program quantum_reference_demo
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval
     use kin6d_quantum_fock, only: assemble_jellium_pair_sector
-    use kin6d_species, only: units_t, species_t, periodic_pair_units, &
-        periodic_pair_length, electron, pair_coupling
+    use kin6d_species, only: units_t, periodic_pair_units
     use kin6d_quantum_evolution, only: quantum_evolution_t, &
         initialize_quantum_evolution, solve_quantum_evolution, &
         sample_quantum_evolution
@@ -22,21 +21,25 @@ program quantum_reference_demo
         tight_layout, savefig
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
+    use kin6d_result_io, only: run_t, result_file_t
+    use kin6d_periodic_pair_config, only: periodic_pair_t, read_periodic_pair, &
+        write_periodic_pair, periodic_pair_bins
     implicit none
-    integer, parameter :: points = 193, bin_count = 16
-    integer :: momentum_cutoff = 2, particles = 2, frames = 61, steps_per_frame = 1
-    ! Defaults are the declared Q0/C1 pair (kin6d_species); a namelist may
-    ! override them.
-    real(dp) :: length = periodic_pair_length, mass, hbar, coupling
-    real(dp) :: time_max = 16.0_dp
+    integer, parameter :: points = 193, bin_count = periodic_pair_bins
+    integer :: momentum_cutoff = 2, particles = 2, frames, steps_per_frame = 1
+    ! Box, mass, coupling and time grid come from the &periodic_pair group
+    ! shared with classical_pair_demo; hbar stays quantum-only.
+    real(dp) :: length, mass, hbar, coupling, time_max
+    type(run_t) :: run
+    type(result_file_t) :: result
+    type(periodic_pair_t) :: pair
     type(units_t) :: units
-    type(species_t) :: pair_species
     integer(i64) :: max_states = 10000_i64, max_bytes = 1073741824_i64
     integer :: initial_terms = 0
     integer, allocatable :: initial_momenta(:, :)
     real(dp), allocatable :: initial_real(:), initial_imag(:)
-    namelist /quantum_reference/ momentum_cutoff, particles, frames, steps_per_frame, &
-        length, mass, hbar, coupling, time_max, max_states, max_bytes
+    namelist /quantum_reference/ momentum_cutoff, particles, steps_per_frame, hbar, &
+        max_states, max_bytes
     namelist /quantum_initial/ initial_terms, initial_momenta, initial_real, &
         initial_imag
     type(quantum_evolution_t) :: state(2), candidate(2)
@@ -63,43 +66,39 @@ program quantum_reference_demo
     integer :: f, model_index, cell, unit, status, argn, snapshot
     integer :: refinement
     logical :: ok, bounded, snapshot_only, accepted, solved
-    character(512) :: argument, config_path
+    character(512) :: argument
     character(256) :: message
-    snapshot_only = .false.; snapshot = -1; config_path = ''
+    call run%start('quantum_reference_demo')
+    snapshot_only = .false.; snapshot = -1
     argn = 1
-    do while (argn <= command_argument_count())
-        call get_command_argument(argn, argument)
+    do while (argn <= run%argument_count())
+        call run%argument(argn, argument)
         select case (trim(argument))
         case ('--snapshot')
             snapshot_only = .true.
-            if (argn < command_argument_count()) then
-                call get_command_argument(argn + 1, argument)
+            if (argn < run%argument_count()) then
+                call run%argument(argn + 1, argument)
                 if (argument(1:2) /= '--') then
                     read (argument, *, iostat=status) snapshot
                     if (status /= 0) error stop 'invalid snapshot frame'
                     argn = argn + 1
                 end if
             end if
-        case ('--config')
-            if (argn >= command_argument_count()) error stop '--config needs a path'
-            argn = argn + 1
-            call get_command_argument(argn, config_path)
         case default
             error stop 'use --snapshot [frame] and/or --config filename'
         end select
         argn = argn + 1
     end do
     units = periodic_pair_units()
-    pair_species = electron()
-    hbar = units%hbar; mass = pair_species%mass
-    coupling = pair_coupling(units, pair_species, pair_species)
-    if (len_trim(config_path) > 0) then
-        open (newunit=unit, file=trim(config_path), status='old', iostat=status)
-        if (status /= 0) error stop 'configuration cannot be opened'
-        read (unit, nml=quantum_reference, iostat=status)
-        close (unit)
-        if (status /= 0) error stop 'invalid quantum_reference namelist'
-    end if
+    hbar = units%hbar
+    call read_periodic_pair(run, pair)
+    length = pair%length; mass = pair%mass; coupling = pair%coupling
+    time_max = pair%time_max; frames = pair%frames
+    status = 0; message = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=quantum_reference, iostat=status, &
+        iomsg=message)
+    call run%close_config(unit, 'quantum_reference', status, message)
     if (particles /= 2) error stop 'this matched gallery is the N=2 spin-pair sector'
     if (momentum_cutoff < 0 .or. momentum_cutoff > 16) &
         error stop 'invalid spatial momentum cutoff'
@@ -132,21 +131,23 @@ program quantum_reference_demo
     end do
     allocate (initial_momenta(3, modes), initial_real(modes), initial_imag(modes))
     initial_momenta = 0; initial_real = 0.0_dp; initial_imag = 0.0_dp
-    if (len_trim(config_path) > 0) then
-        open (newunit=unit, file=trim(config_path), status='old')
-        read (unit, nml=quantum_initial, iostat=status)
-        close (unit)
-        if (status > 0) error stop 'invalid quantum_initial namelist'
-    end if
+    status = 0; message = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=quantum_initial, iostat=status, &
+        iomsg=message)
+    call run%close_config(unit, 'quantum_initial', status, message)
     if (initial_terms < 0 .or. initial_terms > modes) error stop 'initial term count'
-    if (len_trim(config_path) > 0) then
-        call preserve_literal_config(trim(config_path))
+    ! Early capture rejects unknown groups before the expensive solve; the
+    ! final capture in write_outputs records the adapted steps_per_frame.
+    call capture_resolved()
+    open (newunit=unit, file='output/quantum-input.nml', status='replace', &
+        access='stream', form='unformatted')
+    if (run%has_config()) then
+        write (unit) run%literal
     else
-        open (newunit=unit, file='output/quantum-input.nml', status='replace')
-        write (unit, nml=quantum_reference)
-        write (unit, nml=quantum_initial)
-        close (unit)
+        write (unit) run%resolved
     end if
+    close (unit)
     allocate (initial_re(modes), initial_im(modes), re(modes), im(modes), &
         physical_re(modes), physical_im(modes))
     initial_re = 0.0_dp; initial_im = 0.0_dp
@@ -331,25 +332,53 @@ call save_animation(animation, 'output/quantum-correlations.mp4', fps=12, status
     print '(a,i0,a,i0,a,es12.4)', 'quantum3D modes=', modes, ', sector=', modes, &
         ', maximum observable radius=', max_radius
 contains
-    subroutine preserve_literal_config(path)
-        character(*), intent(in) :: path
-        integer :: source_unit, target_unit, count_bytes, ios
-        integer(i64) :: size_bytes, copied
-        character(4096) :: buffer
-        inquire (file=path, size=size_bytes, iostat=ios)
-        if (ios /= 0 .or. size_bytes < 0_i64) error stop 'input provenance size failed'
-open (newunit=source_unit, file=path, status='old', access='stream', form='unformatted')
-        open (newunit=target_unit, file='output/quantum-input.nml', status='replace', &
-            access='stream', form='unformatted')
-        copied = 0_i64
-        do while (copied < size_bytes)
-            count_bytes = int(min(4096_i64, size_bytes - copied))
-            read (source_unit, iostat=ios) buffer(:count_bytes)
-            if (ios /= 0) error stop 'literal input provenance read failed'
-            write (target_unit) buffer(:count_bytes)
-            copied = copied + int(count_bytes, i64)
+    subroutine write_result()
+        character(len=*), parameter :: bound = 'certified-discrete finite-basis '// &
+            'enclosure; continuum cutoff/model/input uncertainty unavailable'
+        character(len=*), parameter :: dims = 'x,frame,model'
+        character(24), parameter :: names(6) = [character(24) :: 'pair_up_down', &
+            'cumulant_up_down', 'pair_up_up', 'cumulant_up_up', 'density_up', &
+            'density_down']
+        integer :: qq
+        call result%create(run)
+        call result%attribute('model_index', '1=Coulomb, 2=noninteracting control')
+        call result%write('time', times, 'periodic-pair time unit', 'frame time', &
+            dims='frame')
+        call result%write('x', x, '1', 'relative coordinate x/L', dims='x')
+        call result%write('bin_center', bin_centers, '1', &
+            'relative-x slab center x/L (width 1/16)', dims='bin')
+        do qq = 1, 6
+            call result%write(trim(names(qq)), values(qq, :, :, :), '1', &
+                trim(names(qq))//' center', dims=dims, status='candidate center')
+            call result%write(trim(names(qq))//'_lower', lower(qq, :, :, :), '1', &
+                trim(names(qq))//' lower bound', dims=dims, status=bound)
+            call result%write(trim(names(qq))//'_upper', upper(qq, :, :, :), '1', &
+                trim(names(qq))//' upper bound', dims=dims, status=bound)
         end do
-        close (source_unit); close (target_unit)
+        call result%write('bin_g', bin_value(1, :, :, :), '1', 'slab pair correlation g', &
+            dims='bin,frame,model', status='candidate center')
+        call result%write('bin_g_lower', bin_lower(1, :, :, :), '1', 'g lower bound', &
+            dims='bin,frame,model', status=bound)
+        call result%write('bin_g_upper', bin_upper(1, :, :, :), '1', 'g upper bound', &
+            dims='bin,frame,model', status=bound)
+        call result%write('occupation', occupation, '1', 'paired-orbital occupation', &
+            dims='orbital,frame,model', status='candidate center')
+        call result%write('occupation_lower', occupation_lo, '1', 'occupation lower', &
+            dims='orbital,frame,model', status=bound)
+        call result%write('occupation_upper', occupation_hi, '1', 'occupation upper', &
+            dims='orbital,frame,model', status=bound)
+        call result%write('max_radius', max_radius, '1', &
+            'maximum certified observable radius', status=bound)
+        call result%close()
+    end subroutine
+
+    subroutine capture_resolved()
+        integer :: u
+        call run%open_resolved(u)
+        call write_periodic_pair(u, pair)
+        write (u, nml=quantum_reference)
+        write (u, nml=quantum_initial)
+        call run%close_resolved(u)
     end subroutine
 
     subroutine frame_packet(model_number, frame_number, display_gap)
@@ -383,10 +412,12 @@ open (newunit=source_unit, file=path, status='old', access='stream', form='unfor
             'pair_up_up', &
             'cumulant_up_up', 'density_up', &
             'density_down']
-        open (newunit=u, file='output/quantum-resolved.nml', status='replace')
-        write (u, nml=quantum_reference)
-        write (u, nml=quantum_initial)
+        call capture_resolved()
+        open (newunit=u, file='output/quantum-resolved.nml', status='replace', &
+            access='stream', form='unformatted')
+        write (u) run%resolved
         close (u)
+        call write_result()
         open (newunit=u, file='output/quantum-observables.csv', status='replace')
         write (u, &
             '(a)') '# normalized exact3D finite-basis jellium spin-pair K=0 sector'
