@@ -12,7 +12,8 @@ Status: canonical implementation/tooling policy.
 | Generic numerics and rigorous arithmetic | FortNum |
 | Sparse algebra/factors | FortSparse |
 | Independent/source AD tooling | FortAD |
-| Scientific I/O | FortIO |
+| Scientific I/O and NetCDF-4/HDF5 subset | FortIO |
+| Experimental reconstruction/inference | TIAGO (external consumer) |
 | Plotting | FortPlot |
 | Low-dimensional labeled analysis arrays | FortArray |
 | Nonlinear/linear solver orchestration | PETSc initially, replaceable |
@@ -21,8 +22,11 @@ Status: canonical implementation/tooling policy.
 | Accelerator leaves | native CUDA behind thin C ABI |
 | Optional formal theorem/checker layer | Lean |
 
-No Python runtime, generator, plotting or postprocessing layer is required.
-External Python tools may remain comparison/oracle software.
+No Python runtime, generator, plotting or postprocessing layer is required for
+the scientific executable or certifier. Optional Python may provide notebook or
+web-server convenience and TypeScript may provide a browser UI, but both sit
+above the Fortran-owned configuration/schema and result contract. External
+Python tools may remain comparison/oracle software.
 
 ## FortSym is the mathematical source of project-owned leaves
 
@@ -206,11 +210,61 @@ dependency:
 Do not accumulate permanent downstream workarounds or duplicate optimized
 kernels.
 
+## Configuration and user-facing contract
+
+Fortran owns the typed configuration model, compatibility checks, defaults and
+automatic numerical choices. Fortran namelist is the canonical editable text
+format. Preserve both the user's literal namelist and a fully resolved namelist
+with all defaults and automatic choices materialized. Generate machine-readable
+schema information from the same definitions rather than maintaining a second
+Python/JavaScript schema by hand.
+
+The CLI is the reference operator interface and should grow small orthogonal
+commands such as validate, resolve, run, inspect, extract-input and doctor as
+real consumers appear. A browser UI may synchronize generated forms with a raw
+namelist editor, submit jobs through local scheduler adapters and display
+results/certificates. It must not acquire independent scientific semantics.
+
+Scheduler/resource configuration is not plasma physics and stays outside the
+physics namelist.
+
+## Scientific result format
+
+Production scientific output uses NetCDF-4 semantics on the HDF5 subset
+supported by FortIO. Do not use arbitrary HDF5 features that make the file
+unreadable to NetCDF tooling. Named dimensions, coordinate variables, units and
+descriptive attributes are preferred.
+
+Every result embeds the literal input namelist, the fully resolved namelist,
+KIN6D/dependency revisions and build configuration, compiler
+identity/version/flags and strict-vs-fast mode, material hardware/runtime
+information, and normalized metadata/hashes for external inputs.
+
+Large external equilibria/databases need not be copied into every result when a
+content hash and sufficient convention/provenance metadata identify them. The
+invariant is that the effective KIN6D configuration can always be recovered
+from the result.
+
+## Compiler portability
+
+Supported production compiler families are GNU gfortran, Intel LLVM ifx,
+NVIDIA nvfortran and LLVM Flang. CMake must select or probe family-specific
+warning/optimization/strict-FP flags; GNU-only flags are never global project
+policy. Fast candidate and strict/reference/certifier targets may deliberately
+use different flags.
+
+CI/support claims mean the relevant tests actually compile and run with the
+named compiler. FetchContent remains useful for development, but release/offline
+cluster workflows should not require outbound network access merely to build a
+pinned release.
+
 ## Reproducibility/provenance
 
 Record exact source/generator/dependency revisions, compiler and flags,
 hardware/driver, mathematical model, normalization and external-data hashes.
-Fast and strict builds are separate named configurations.
+Fast and strict builds are separate named configurations. Result-file
+provenance is the primary run record; source history need not contain generated
+run products.
 
 Generated images, animations and large performance datasets are regenerated
 artifacts and do not belong in source history.
