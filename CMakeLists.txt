@@ -87,7 +87,7 @@ set_source_files_properties(
     src/generated/kin6d_cloud_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlations
-        quantum_reference_gallery classical_pair)
+        quantum_reference_gallery classical_pair jellium_cell)
     target_sources(kin6d PRIVATE
         src/generated/kin6d_${quantum_family}_leaves.f90 src/${quantum_family}.f90)
     set_source_files_properties(src/generated/kin6d_${quantum_family}_leaves.f90
@@ -158,7 +158,7 @@ add_executable(test_cloud test/test_cloud.f90)
 target_link_libraries(test_cloud PRIVATE kin6d)
 add_test(NAME microscopic_cloud_oracles COMMAND test_cloud)
 foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlations
-        quantum_reference_gallery classical_pair)
+        quantum_reference_gallery classical_pair jellium_cell)
     add_executable(test_${quantum_family} test/test_${quantum_family}.f90)
     target_link_libraries(test_${quantum_family} PRIVATE kin6d)
     add_test(NAME ${quantum_family}_oracles COMMAND test_${quantum_family})
