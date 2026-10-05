@@ -96,7 +96,7 @@ contains
         end if
         spec%name = str(name); spec%generator = str('gen_fp')
         spec%pure_procedure = .true.; spec%elemental_procedure = .true.
-        spec%generator_revision = str('93c8b2ada93a2f58e2c36349560e9c52f2c9f79a')
+        spec%generator_revision = str('549aed77be10297beb80d602d714d30166fbeb08')
         allocate (spec%args(size(args)), spec%outputs(size(outputs)))
         do k = 1, size(args)
             spec%args(k) = str(trim(args(k)))

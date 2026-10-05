@@ -11,7 +11,7 @@ program gen_transport
         emit_rigorous_kernel
     implicit none
 
-    character(*), parameter :: revision = '93c8b2ada93a2f58e2c36349560e9c52f2c9f79a'
+    character(*), parameter :: revision = '549aed77be10297beb80d602d714d30166fbeb08'
     type(arena_t), target :: arena
     type(native_engine_t) :: engine
     type(expr_t) :: v, nu, k, sc, ss, determinant, a, b, x, acc, index, count
@@ -97,6 +97,11 @@ program gen_transport
         [acc + a*cosine + b*sine], ad=.true., interval=.true.)
     call emit('transport_scalar_add', ['acc  ', 'value'], ['next'], &
         [acc + sym(arena, 'value')], ad=.true., interval=.true.)
+    ! Fourier candidate curvature: |d_xx f| <= sum k**2*(|a_k|+|b_k|).
+    ! This bounds the supplied reconstruction, not the unknown true solution.
+    call emit('transport_curvature_accumulate_interval', &
+        ['k  ', 'a  ', 'b  ', 'acc'], ['updated'], &
+        [acc + k**2*(abs(a) + abs(b))], rigorous=.true.)
     call emit('transport_abs_value', ['value'], ['magnitude'], &
         [abs(sym(arena, 'value'))])
     call emit('transport_bound_pair', ['lo', 'hi'], ['bound'], &
@@ -155,6 +160,7 @@ contains
                 rspec%runtime = interval_runtime('fortnum_interval', 'interval_t')
                 rspec%runtime%sin = str('sin')
                 rspec%runtime%cos = str('cos')
+                rspec%runtime%abs = str('abs')
                 rspec%runtime%sincos = str('sincos')
                 rspec%elemental_procedure = .true.
                 allocate (rspec%args(size(args)), rspec%outputs(size(outputs)))
