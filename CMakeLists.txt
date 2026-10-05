@@ -206,10 +206,7 @@ target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)
 if(KIN6D_FORTSYM_BUILD)
     foreach(generator relativistic_fermi fermion_ensemble)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
-        target_include_directories(gen_${generator} PRIVATE
-            ${KIN6D_FORTSYM_BUILD}/include)
-        target_link_libraries(gen_${generator} PRIVATE
-            ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
+        target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
 endif()
 target_sources(kin6d PRIVATE src/generated/kin6d_relativistic_fermi_leaves.f90)
