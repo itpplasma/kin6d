@@ -39,6 +39,15 @@ module kin6d_radial_dvr
     end type radial_mesh_t
 
     interface
+        subroutine dsbevd(jobz, uplo, n, kd, ab, ldab, w, z, ldz, work, lwork, iwork, &
+                          liwork, info)
+            import :: dp
+            character, intent(in) :: jobz, uplo
+            integer, intent(in) :: n, kd, ldab, ldz, lwork, liwork
+            real(dp), intent(inout) :: ab(ldab, *)
+            real(dp), intent(out) :: w(*), z(ldz, *), work(*)
+            integer, intent(out) :: iwork(*), info
+        end subroutine dsbevd
         subroutine dsbevx(jobz, range, uplo, n, kd, ab, ldab, q, ldq, vl, vu, il, iu, &
                           abstol, m, w, z, ldz, work, iwork, ifail, info)
             import :: dp
@@ -219,14 +228,15 @@ contains
         end do
     end subroutine radial_band_matvec
 
-    ! Eigenpairs of H_l with energy <= emax (all if emax exceeds the Gershgorin
-    ! bound), with column residual norms ||H v_j - e_j v_j||_2 and the
+    ! Eigenpairs of H_l with energy in (emin, emax] (all if the window covers the
+    ! Gershgorin interval), with column residual norms ||H v_j - e_j v_j||_2 and the
     ! orthogonality defect max|V^T V - I| of the returned columns.
     subroutine radial_eigen_window(mesh, l, g, mu, hbar, emax, e, v, resid, &
-                                   orthogonality, ok)
+                                   orthogonality, ok, emin)
         type(radial_mesh_t), intent(in) :: mesh
         integer, intent(in) :: l
         real(dp), intent(in) :: g, mu, hbar, emax
+        real(dp), intent(in), optional :: emin
         real(dp), allocatable, intent(out) :: e(:), v(:, :), resid(:)
         real(dp), intent(out) :: orthogonality
         logical, intent(out) :: ok
@@ -234,7 +244,7 @@ contains
         real(dp), allocatable :: hv(:, :)
         integer, allocatable :: iwork(:), ifail(:)
         real(dp) :: vl, vu, glo, ghi, off
-        integer :: n, kd, m, info, j, i
+        integer :: n, kd, m, info, j, i, i0
         ok = .false.; orthogonality = huge(1.0_dp)
         n = mesh%n; kd = mesh%order - 1
         allocate (hb(kd + 1, n), ab(kd + 1, n))
@@ -250,16 +260,43 @@ contains
             glo = min(glo, hb(1, i) - off); ghi = max(ghi, hb(1, i) + off)
         end do
         vl = glo - 1 - abs(glo)*1.0e-6_dp
+        if (present(emin)) vl = max(vl, emin)
         vu = min(emax, ghi + 1 + abs(ghi)*1.0e-6_dp)
         if (.not. (vu > vl)) return
+        ! Count the window from eigenvalues only. Small windows use bisection plus
+        ! inverse iteration (high accuracy for long-time phases); large windows
+        ! use divide-and-conquer on the full band (measured faster there).
         ab = hb
-        allocate (q(n, n), z(n, n), work(7*n), iwork(5*n), ifail(n), w(n))
-        call dsbevx('V', 'V', 'L', n, kd, ab, kd + 1, q, n, vl, vu, 0, 0, &
-                    2*tiny(1.0_dp), m, w, z, n, work, iwork, ifail, info)
-        deallocate (q)
-        if (info /= 0 .or. m < 1) return
+        allocate (w(n), work(max(7*n, 1 + 5*n + 2*n*n)), iwork(5*n + 3), ifail(n))
+        allocate (z(1, 1))
+        call dsbevd('N', 'L', n, kd, ab, kd + 1, w, z, 1, work, size(work), iwork, &
+                    size(iwork), info)
+        if (info /= 0) return
+        m = count(w > vl .and. w <= vu)
+        deallocate (z)
+        ab = hb
+        if (5*m <= n) then
+            allocate (q(n, n), z(n, max(1, m)))
+            call dsbevx('V', 'V', 'L', n, kd, ab, kd + 1, q, n, vl, vu, 0, 0, &
+                        2*tiny(1.0_dp), m, w, z, n, work, iwork, ifail, info)
+            deallocate (q)
+            if (info /= 0) return
+            i0 = 1
+        else
+            allocate (z(n, n))
+            call dsbevd('V', 'L', n, kd, ab, kd + 1, w, z, n, work, size(work), iwork, &
+                        size(iwork), info)
+            if (info /= 0) return
+            i0 = n + 1; m = 0
+            do j = 1, n
+                if (w(j) > vl .and. w(j) <= vu) then
+                    i0 = min(i0, j); m = m + 1
+                end if
+            end do
+        end if
+        deallocate (work)
         allocate (e(m), v(n, m), resid(m), hv(n, m))
-        e = w(1:m); v = z(:, 1:m)
+        e = w(i0:i0 + m - 1); v = z(:, i0:i0 + m - 1)
         deallocate (z)
         call radial_band_matvec(hb, v, hv)
         do j = 1, m
