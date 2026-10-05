@@ -113,7 +113,12 @@ Use pseudo-arclength or another robust continuation method rather than assuming
 - disappearance of a constrained inverse/coercivity gap.
 
 Continuation is an equation-level consumer. Its derivatives come from the same
-IFT/JVP/VJP infrastructure as optimization.
+IFT/JVP/VJP infrastructure as optimization. It is also provenance: two
+continuation histories may reach two distinct stationary solutions at the same
+external parameters. KIN6D keeps those as separate equilibria and analyzes the
+stability of each separately. It does not average them or assign posterior
+weights; TIAGO may later fit the separate states and form an optional finite
+mixture of local Laplace approximations.
 
 ## MHD stability ladder
 
