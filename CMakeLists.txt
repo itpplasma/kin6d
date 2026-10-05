@@ -6,11 +6,19 @@ set(CMAKE_Fortran_STANDARD 2018)
 set(CMAKE_Fortran_STANDARD_REQUIRED ON)
 set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
+# Dependency pins: one source used by FetchContent and by result provenance.
+set(KIN6D_FORTPLOT_REVISION 87ff7a43809e868e0153f400a21cdb31b9a92d84)
+set(KIN6D_FORTNUM_REVISION 015bb8b1490d99d55493b3936e0dd6adf77bc293)
+set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
     GIT_REPOSITORY https://github.com/lazy-fortran/fortplot.git
-    GIT_TAG 87ff7a43809e868e0153f400a21cdb31b9a92d84)
+    GIT_TAG ${KIN6D_FORTPLOT_REVISION})
 FetchContent_MakeAvailable(fortplot)
+FetchContent_Declare(fortio
+    GIT_REPOSITORY https://github.com/lazy-fortran/fortio.git
+    GIT_TAG ${KIN6D_FORTIO_REVISION})
+FetchContent_MakeAvailable(fortio)
 include(CheckFortranCompilerFlag)
 check_fortran_compiler_flag("-ftrampoline-impl=heap" KIN6D_HAVE_HEAP_TRAMPOLINES)
 if(KIN6D_HAVE_HEAP_TRAMPOLINES)
@@ -20,7 +28,7 @@ endif()
 # The application owns physical laws; generic numerics remain upstream.
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 015bb8b1490d99d55493b3936e0dd6adf77bc293)
+    GIT_TAG ${KIN6D_FORTNUM_REVISION})
 FetchContent_GetProperties(fortnum)
 if(NOT fortnum_POPULATED)
     FetchContent_Populate(fortnum)
@@ -226,3 +234,46 @@ add_executable(fermion_ensemble_demo app/fermion_ensemble_demo.f90)
 target_link_libraries(fermion_ensemble_demo PRIVATE kin6d fortplot)
 add_executable(relativistic_fermi_demo app/relativistic_fermi_demo.f90)
 target_link_libraries(relativistic_fermi_demo PRIVATE kin6d fortplot)
+
+# Campaign F5: namelist configuration in, NetCDF-4/HDF5 result with embedded
+# literal/resolved configuration and provenance out (src/result_io.f90).
+# Physics stays in kin6d; only kin6d_io and applications see FortIO.
+set(kin6d_build_info_inc ${CMAKE_BINARY_DIR}/result_include/kin6d_build_info.inc)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" kin6d_build_type_upper)
+add_custom_target(kin6d_build_info
+    COMMAND ${CMAKE_COMMAND} -DKIN6D_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DKIN6D_INFO_OUTPUT=${kin6d_build_info_inc}
+        -DKIN6D_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        "-DKIN6D_BUILD_FLAGS=${CMAKE_Fortran_FLAGS} ${CMAKE_Fortran_FLAGS_${kin6d_build_type_upper}}"
+        "-DKIN6D_BUILD_COMPILER=${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fortran_COMPILER_VERSION}"
+        -DKIN6D_FORTSYM_REVISION=${KIN6D_FORTSYM_REVISION}
+        -DKIN6D_FORTNUM_REVISION=${KIN6D_FORTNUM_REVISION}
+        -DKIN6D_FORTPLOT_REVISION=${KIN6D_FORTPLOT_REVISION}
+        -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
+    BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
+add_library(kin6d_io src/result_io.f90 src/periodic_pair_config.f90)
+add_dependencies(kin6d_io kin6d_build_info)
+target_include_directories(kin6d_io PRIVATE ${CMAKE_BINARY_DIR}/result_include)
+target_link_libraries(kin6d_io PUBLIC kin6d fortio::fortio)
+target_compile_options(kin6d_io PRIVATE -Wall -Wextra)
+# Every application reads --config FILE and writes output/<name>.nc.
+foreach(application kin6d_demo steady_laboratory_demo transport_demo
+        streaming_comparison_demo streaming_moments_demo debye_sphere_demo
+        slab_oscillation_demo shielding_dynamics_demo interaction_demo
+        microscopic_cloud_demo quantum_reference_demo classical_pair_demo
+        fermion_ensemble_demo relativistic_fermi_demo formal_krook_certificate
+        benchmark_streaming benchmark_streaming_comparison benchmark_fp
+        benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
+        benchmark_quantum_cutoff)
+    target_link_libraries(${application} PRIVATE kin6d_io)
+endforeach()
+add_executable(test_result_io test/test_result_io.f90)
+target_link_libraries(test_result_io PRIVATE kin6d_io)
+add_test(NAME result_io_contract
+    COMMAND ${CMAKE_COMMAND} -DPROBE=$<TARGET_FILE:test_result_io>
+        -DCLASSICAL=$<TARGET_FILE:classical_pair_demo>
+        -DQUANTUM=$<TARGET_FILE:quantum_reference_demo>
+        -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
+        -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
+        -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)
