@@ -7,6 +7,8 @@ that owns the proposed change. In particular:
 
 - docs/capability-catalogue.md before broadening project scope or adding a new
   application family;
+- docs/microscopic-many-body.md before direct N-body, FMM/Ewald/P3M,
+  Lienard--Wiechert, BBGKY/cumulant or microscopic-correlation work;
 - docs/numerical-methods.md before introducing a new discretization/solver
   family outside the primary tensor/FEEC path;
 - docs/reacting-partially-ionized.md before low-temperature, reacting-gas,
@@ -137,9 +139,16 @@ These rules are hard constraints:
   highest-fidelity line-by-line non-LTE transfer may remain an external
   provider. Do not exclude all radiation hydrodynamics merely because that
   highest rung is external.
-- Classical strong-correlation work may use mean-force or small direct N-body/
-  MD references; fully quantum dense-matter physics, QED and GR stay outside
-  the core unless a narrow reusable interface is justified.
+- The classical microscopic parent is multispecies relativistic
+  Maxwell--Lorentz finite-(N) dynamics. Vlasov/FK is the highest continuum
+  mean-field reference, not the deepest model. Keep direct physical particles
+  distinct from PIC/PIF macro-particles. FMM/Ewald/P3M may accelerate force
+  evaluation without changing particle count/model; blobs or superparticles do
+  change microscopic fluctuations/correlations unless explicitly modeled.
+- Point-charge self-field/radiation reaction is a separate declared physical
+  choice. Do not hide singular self-interaction behind numerical softening.
+  Fully quantum close-collision/QED physics and GR stay outside the classical
+  core unless a narrow reusable interface is justified.
 
 ## Mathematics, derivatives and certification
 

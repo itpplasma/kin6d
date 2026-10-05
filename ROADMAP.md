@@ -271,6 +271,47 @@ physics namelist.
 
 See [interface-reproducibility.md](docs/interface-reproducibility.md).
 
+## MB0 — microscopic relativistic many-body reference (cross-cutting)
+
+Add a small-box microscopic branch beneath the continuum kinetic hierarchy.
+Its endpoint is the multispecies relativistic Maxwell--Lorentz many-particle
+system; Vlasov/FK remains the highest continuum mean-field reference.
+
+Development ladder:
+
+1. two-particle relativistic Coulomb scattering with the Rutherford limit;
+2. two interacting particles in a prescribed magnetic/electromagnetic field;
+3. small Maxwell-field versus direct retarded Lienard--Wiechert mutual-field
+   comparison under matching radiation conditions;
+4. periodic many-particle plasma oscillation;
+5. **emergent Debye shielding** around a weak test charge, with no screened
+   potential or collision operator imposed;
+6. \(g_{ab}(r)\), \(S_{ab}(k)\), \(S_{ab}(k,\omega)\) and dielectric-response
+   measurements;
+7. microscopic slowing-down, pitch-angle diffusion, momentum/temperature
+   equilibration and Green--Kubo transport compared with continuum collision
+   operators;
+8. weak-to-strong-coupling scans testing Landau, Beliaev--Budker,
+   Balescu--Lenard and mean-force closures.
+
+Numerically retain direct \(O(N^2)\) pair summation as the gold-standard tiny
+oracle, then add FMM/tree or Ewald/spectral-Ewald/P3M for electrostatic/periodic
+large-\(N\) interaction. For full electrodynamics prefer local Maxwell-field
+evolution for large \(N\); direct retarded Lienard--Wiechert interaction is a
+small-\(N\) oracle, with space-time/hierarchical retarded kernels a research
+optimization only if measured useful.
+
+Do not reduce particle count and call the result the same microscopic plasma.
+PIC/PIF superparticles and finite blobs change finite-\(N\) fluctuations and
+close-collision correlations unless every marker is a physical particle or the
+modified model is explicitly declared.
+
+The microscopic branch is primarily a closure/correlation validator and
+teaching/reference laboratory. It need not delay the steady kinetic spine until
+its validation leverage justifies prioritization.
+
+See [microscopic-many-body.md](docs/microscopic-many-body.md).
+
 ## R4 — 0X3V collision laboratory
 
 Introduce the future velocity representation in the smallest domain. Progress:
@@ -541,13 +582,14 @@ This track covers classical portions of arcs, propulsion, atmospheric entry,
 Z-pinch/magnetized-target/ICF-like and laser-produced plasmas without creating a
 separate HEDP architecture. Fully quantum dense matter remains outside the core.
 
-### Strong-correlation reference
+### Microscopic many-body and strong-correlation reference
 
-Extend the collision/correlation ladder from screened/mean-force closures to a
-small direct classical N-body/MD reference representation where strong
-correlations invalidate mean-field assumptions. This serves dusty, ultracold
-and strongly coupled classical benchmarks; it is not a production replacement
-for kinetic continuum methods.
+Use the MB0 Maxwell--Lorentz hierarchy for both weakly coupled closure
+validation and strongly coupled reference problems. Explicit BBGKY/cumulant
+models, low-rank pair correlations and mean-force closures sit between the
+finite-(N) microscopic system and continuum FK. Quantum-many-body numerical
+ideas may inspire compression, but any reduced correlation representation
+carries an explicit truncation defect.
 
 ### Wave/statistical and energetic-particle transport
 

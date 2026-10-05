@@ -125,6 +125,18 @@ GPU-resident when accelerated, and migration-aware when distributed. A generic
 particle runtime is not split out of KIN6D until repeated independent consumers
 show which abstraction is actually stable.
 
+### Physical particles versus superparticles
+
+For the microscopic Maxwell--Lorentz reference, one represented particle is a
+physical particle with its actual species charge and mass. Replacing many real
+particles by one macro-particle changes finite-\(N\) noise, close encounters and
+correlations.
+
+FMM/tree, Ewald/spectral-Ewald and P3M are therefore preferred microscopic
+accelerations: they compress the **interaction evaluation**, not the physical
+particle state. A blob or PIF marker may still be used in the microscopic
+branch only when its shape/weight is part of the explicitly modified model.
+
 ## PIC
 
 Particle-in-cell couples particle distributions to local field bases. The
@@ -214,8 +226,9 @@ microscopic models** from ordinary Vlasov PIC.
 - DSMC approximates a rarefied Boltzmann collision process.
 - MCC/binary-collision particles approximate selected stochastic collision/
   reaction operators.
-- Direct N-body/MD resolves explicit pair interactions and is reserved for
-  small strongly coupled classical reference problems.
+- Relativistic Maxwell--Lorentz finite-(N) resolves explicit physical
+  particles and their electromagnetic interaction. It serves both weak-coupling
+  closure validation and strongly coupled classical reference problems.
 
 Do not claim equivalence to FK+Landau merely because all three use arrays of
 particles. Their convergence targets, invariants and statistical/correlation

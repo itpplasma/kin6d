@@ -77,6 +77,29 @@ precise equilibrium, species, and collisionality assumptions before adopting
 an adjointness or entropy claim. Keep reduced models as later named choices,
 rather than prerequisites for reaching nonlinear Landau.
 
+## Microscopic closure oracle
+
+The collision hierarchy is not the deepest physics layer. KIN6D retains a
+multispecies relativistic Maxwell--Lorentz finite-\(N\) reference in which
+collisions and correlations emerge from mutual electromagnetic interaction
+rather than an imposed collision operator.
+
+Use that branch to measure slowing-down, pitch-angle diffusion,
+momentum/temperature relaxation, pair correlations, structure factors,
+dielectric response and Green--Kubo transport. Compare those observables
+against Landau, Beliaev--Budker, Balescu--Lenard and mean-force closures at
+matched dimensionless parameters.
+
+Two-particle scattering is the smallest oracle. Debye shielding is a collective
+oracle: a weak test charge is screened by the microscopic plasma itself, not by
+a Yukawa pair potential inserted into the simulation.
+
+The connection is organized through Klimontovich/Liouville and BBGKY
+marginals/cumulants \(g_2,g_3,\ldots\). Explicit pair-correlation closures may
+use low-rank/tensor ideas but carry their own truncation error.
+
+See [microscopic-many-body.md](microscopic-many-body.md).
+
 ## Shared pair primitive
 
 For Landau or Beliaev–Budker with fixed masses, charges, pair coefficients,

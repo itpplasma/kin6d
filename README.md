@@ -1,10 +1,11 @@
 # kin6d
 
-KIN6D is a **general classical plasma multiphysics engine** whose
-highest-fidelity charged-particle reference is full relativistic 3X3P kinetic
-dynamics, but whose practical purpose is broader: assemble the cheapest
-mathematically controlled plasma model and numerical representation that answer
-the requested question at the requested accuracy.
+KIN6D is a **general classical plasma multiphysics engine**. Its deepest
+classical reference is the multispecies **relativistic Maxwell--Lorentz
+many-particle system**; relativistic 3X3P Vlasov--Maxwell/FK is the highest
+continuum mean-field reference. Its practical purpose is broader: assemble the
+cheapest mathematically controlled plasma model and numerical representation
+that answer the requested question at the requested accuracy.
 
 The intended application envelope spans fusion, Solar-System/natural plasmas,
 industrial and low-temperature discharges, beam/accelerator and laser plasmas,
@@ -235,8 +236,11 @@ Long-range scope includes:
   external provider;
 - RF/quasilinear/full-wave and wave-kinetic physics, NBI and energetic/fusion
   product sources;
-- compressible/shock-capable classical plasma, nonideal EOS/opacity closures
-  and small direct classical N-body/MD correlation references when needed;
+- compressible/shock-capable classical plasma and nonideal EOS/opacity
+  closures;
+- a full relativistic microscopic Maxwell--Lorentz many-body reference,
+  including direct pair, FMM/Ewald/P3M and small retarded Lienard--Wiechert
+  validation paths for correlations/collision closures;
 - coils, vacuum, conducting walls, dielectrics and external circuits;
 - Solar-System, atmospheric, industrial and other classical-plasma
   configurations;
@@ -336,6 +340,7 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Equilibria, imported candidates and TIAGO inference](docs/equilibria-inference.md)
 - [Configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md)
 - [Complete plasma-physics capability catalogue](docs/capability-catalogue.md)
+- [Microscopic relativistic many-body reference](docs/microscopic-many-body.md)
 - [Numerical-method catalogue](docs/numerical-methods.md)
 - [Reacting and partially ionized plasmas](docs/reacting-partially-ionized.md)
 - [Radiation hierarchy](docs/radiation.md)
