@@ -54,6 +54,52 @@ the notation is not decorative. Open-system sources, radiation, reactions,
 walls and reservoirs carry an explicit exchange ledger instead of being forced
 into an ordinary least-action principle.
 
+## Equilibria and stationary states
+
+An equilibrium is a stationary solution of the selected equations,
+
+\[
+R(U;\theta)=0,
+\]
+
+not a special file type and not necessarily a unique mapping
+\(\theta\mapsto U\). If two distinct stationary solutions exist, KIN6D stores
+and treats them as two equilibria. Their initial states, continuation histories,
+external inputs and solution identifiers are provenance; KIN6D does not need a
+general probabilistic branch framework.
+
+Axisymmetric MHD must acquire a native Grad--Shafranov path for fixed and free
+boundary problems. EQDSK/gEQDSK input is an interchange representation: import,
+normalize conventions, evaluate physical and equation residuals, optionally
+re-solve with the native Grad--Shafranov model, and certify the named result.
+A free-boundary re-solve also requires the external coil/current or equivalent
+boundary data; an EQDSK file alone does not reconstruct all of that physics.
+
+In three dimensions, global nested flux surfaces are an optional cheap
+representation, not the equilibrium ontology. VMEC/DESC/GVEC-like states are
+valuable candidates, initial guesses, reduced representations and independent
+comparators. The general physical-space MHD formulation must remain meaningful
+with islands, stochastic regions, separatrices and wall contact. This does not
+remove the equations' own restrictions: for smooth static ideal MHD,
+\(B\cdot\nabla p=0\), so an ergodic magnetic region cannot carry an
+arbitrary smooth pressure gradient. HINT/PIES-like full-pressure relaxation and
+SPEC/SPECTRE-like relaxed-region models are benchmark/model precedents, each
+with its own physical assumptions.
+
+Topology/history is specified by the physical model rather than by a universal
+switch. Ideal evolution preserves its frozen-in constraints; MRxMHD-like
+relaxation retains a different finite invariant set; resistive/XMHD evolution
+may reconnect. A stationary result records which model, constraints, initial
+state and continuation/evolution path selected it.
+
+The same architecture extends beyond MHD. DK/GK/FK equilibria are stationary
+solutions of their corresponding equations, and source/collision/wall-balanced
+open systems are stationary states even when the word equilibrium is
+inappropriate. Imported states may seed these solves but never bypass the
+native residual/certificate contract.
+
+See [equilibria and inference](docs/equilibria-inference.md).
+
 ## Orthogonal configuration axes
 
 KIN6D configuration is intentionally factored.
@@ -329,6 +375,26 @@ Stochastic algorithms expose derivative semantics separately. Fixed-randomness
 pathwise derivatives, likelihood-ratio estimators or common-random-number
 methods are optional tools and carry statistical uncertainty.
 
+## Inference boundary
+
+KIN6D owns forward physics, stationary/evolution solves, observables,
+JVP/VJP/implicit-adjoint actions, numerical certificates and model-reduction
+error estimates. TIAGO owns reconstruction/inference from experimental data:
+likelihoods, diagnostic/calibration nuisance parameters, priors and posterior
+uncertainty.
+
+For a KIN6D state defined by \(R(U,\theta)=0\), TIAGO should be able to
+consume matrix-free actions for the composed diagnostic map without knowing
+Newton/Krylov details or the internal state layout. The VMEC++ reconstruction
+already implemented in TIAGO is a retained provider/reference path; KIN6D is a
+planned provider, not a reverse dependency.
+
+If several KIN6D equilibria are compatible with the same measurements, TIAGO
+may fit each separately and, when useful, report a finite mixture of local
+Laplace approximations. The equilibria remain distinct physical solutions; do
+not average topologically or physically distinct states into a fictitious
+equilibrium merely to obtain one mean and covariance.
+
 ## Certification and uncertainty
 
 The candidate solver is untrusted. A Fortran certifier using verified
@@ -387,11 +453,37 @@ gyrofluid/gyromoments, DK/GK/FK, PIC/PIF/blobs, edge/SOL/divertor,
 deterministic and MC neutrals,
 atomic/molecular reactions, sheaths/walls, radiation, RF/full-wave heating,
 NBI, fusion reactions/products, vacuum/coils/circuits, Solar-System plasmas,
-synthetic diagnostics, inference, design and control.
+synthetic diagnostic forward operators, TIAGO inference integration, design
+and control.
 
 The architecture must remain one engine, but features are admitted only when a
 real use case, derivation, independent oracle, differentiability statement,
 certificate target and performance target exist.
+
+## Configuration, result and UX boundary
+
+Fortran owns the typed configuration semantics and validation. The canonical
+human-editable text syntax is Fortran namelist. A run preserves both the
+literal input and a fully resolved namelist with defaults/automatic choices
+materialized. Machine-readable schema output may drive documentation, AI
+configuration proposals, Python convenience layers and a browser UI, but those
+layers must not redefine model compatibility or numerical defaults.
+
+Scientific result files use a NetCDF-4-compatible HDF5 subset through FortIO.
+Every result embeds the original and resolved input plus source/dependency,
+compiler/flags, hardware and external-input provenance. A KIN6D result from
+which its effective input cannot be recovered is invalid. Large external inputs
+may be referenced by normalized metadata and content hashes instead of copied
+verbatim.
+
+The command-line/Fortran path remains sufficient on a cluster. Optional Python
+may provide notebook/server orchestration and TypeScript may provide a browser
+front end, including scheduler submission and post-processing. Neither is a
+scientific runtime dependency. Build/test support targets GNU, Intel LLVM,
+NVIDIA and LLVM Flang families; compiler-specific optimization and strict
+certifier flags are target-local, never hard-coded globally.
+
+See [configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md).
 
 ## Immediate implementation boundary
 
