@@ -235,6 +235,30 @@ gradient/Bohm-like terms only under their declared closure assumptions. These
 ordinary physical-space PDEs can use FEM/FEEC/FV/DG and can cover whole stars
 or devices without resolving microscopic quantum wavelengths.
 
+## Adaptive classical--quantum coupling
+
+Quantum fidelity may be spatially and temporally local.
+
+In a hot nondegenerate plasma, most dynamics may remain classical while rare
+close encounters require quantum diffraction/scattering. An event-local
+two-body quantum microproblem can be used when its validity indicator is met,
+without promoting the entire plasma.
+
+Degeneracy and exchange are nonlocal in occupation space. If
+\(\Theta=T/T_F\lesssim O(1)\), pair-only promotion is generally inadequate;
+promote an appropriate region/species/model to Fermi/Wigner/HF/quantum kinetic.
+
+Demotion back to a classical state is allowed only with a declared
+coarse-graining/decoherence/information-loss model and propagated uncertainty.
+Persistent phase/coherence information cannot be silently discarded.
+
+Quantum model error should preferentially be estimated through asymptotic
+\(\hbar\)-expansions, classical-limit defects, richer-model residuals and sparse
+quantum reference calculations. Probabilistic model discrepancy is a fallback,
+not the default.
+
+See [adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
+
 ## Expected computational scales
 
 The numbers below are planning scales, not performance claims.

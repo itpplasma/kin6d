@@ -327,6 +327,38 @@ Thus the hierarchy is two-dimensional:
 
 Do not hard-wire multiscale to mean local flux tubes.
 
+## Local and temporal adaptive microphysics
+
+Microphysics fidelity need not be fixed for the whole macro domain or macro
+step. The transport controller may request richer closure evaluations only on
+selected cells/patches, phase-space regions and time intervals.
+
+A microprovider can be activated because
+
+- an adjoint-weighted closure defect is large;
+- a surrogate/interpolant leaves its validity domain;
+- a local asymptotic ordering fails;
+- an instability/resonance is entered;
+- stochastic/UQ variance is dominated by a particular region.
+
+The microproblem may be neoclassical DK, GK/FK turbulence, global orbits,
+Maxwell--Lorentz particles, Wigner/HF/QMC, detailed radiation or
+state-resolved chemistry.
+
+Local timestepping/subcycling/multirate integration is allowed when exchange
+conservation and coupling error are controlled. When a transient event ends,
+the rich model may be demoted only through a defined projection/reconstruction
+with explicit information-loss error.
+
+Cache or surrogate reuse requires a validity key in state/parameter/model
+space and an uncertainty envelope. If the error indicator says locality or
+timescale separation has failed, enlarge the microdomain or move toward C5
+fully coupled evolution.
+
+This is the generalization of C3/C4 from "run a microcode sometimes" to a
+space-time adaptive heterogeneous multiscale method. See
+[adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
+
 ## Differentiable coupled transport
 
 A closure provider should expose, when available,
@@ -387,8 +419,11 @@ Transport certificates separate:
 A quasilinear coefficient with a tiny numerical error is not a rigorous
 turbulence-model error bound.
 
-Goal-oriented adjoints should eventually drive where to refine the macro grid,
-recompute microphysics, increase spectrum resolution or replace a cheap closure
-by a richer one.
+Goal-oriented adjoints should eventually drive where and **when** to refine the
+macro grid/time step, recompute microphysics, increase spectrum resolution,
+promote correlation/quantum/radiation fidelity or replace a cheap closure by a
+richer one. Multifidelity/MLMC/control-variate UQ should spend many samples on
+cheap closures and sparse samples on expensive corrections while retaining
+separate deterministic model-error status.
 
 Chris&AI

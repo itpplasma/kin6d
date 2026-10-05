@@ -350,8 +350,11 @@ defect using an adjoint:
 \delta Q_k\approx-\lambda^\dagger d_k.
 \]
 
-Candidate defects include spatial resolution, velocity/harmonic tails,
-collision fidelity, GK/FK reduction, neutral treatment and atomic fidelity.
+Candidate defects include spatial/time resolution, velocity/harmonic tails,
+representation transfer, collision fidelity, correlation order, GK/FK
+reduction, microscopic/continuum reduction, classical/quantum reduction,
+neutral/radiation/reaction treatment, interface coupling and surrogate
+interpolation.
 
 Refinement may then be ranked by
 
@@ -360,11 +363,13 @@ Refinement may then be ranked by
 \]
 
 This becomes a guarantee only after the corresponding stability and remainder
-bounds exist.
+bounds exist. Refinement may be local in space, phase space, species and time;
+if the local-ordering/locality assumptions fail, promote a larger region or the
+global model. See [adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
 
 ## Complete catalogue versus implemented family
 
-The exhaustive classical-plasma design envelope is maintained in
+The exhaustive plasma design envelope below the QED boundary is maintained in
 [capability-catalogue.md](capability-catalogue.md). It is intentionally broader
 than the active implementation path. Numerical options are catalogued in
 [numerical-methods.md](numerical-methods.md). Neither document is a backlog;

@@ -89,6 +89,42 @@ physics fit this hierarchy. Neutron-star/nuclear-density matter and GR do not.
 
 See [quantum plasma fundamentals](quantum-plasma.md).
 
+## Adaptive fidelity is a meta-axis
+
+Every compatible capability below may eventually be selected locally in
+space/time/phase-space rather than once globally.
+
+The adaptive meta-axis includes
+
+\[
+\text{resolution}
++
+\text{representation}
++
+\text{physical model}
++
+\text{correlation order}
++
+\text{classical/quantum fidelity}
++
+\text{multiphysics fidelity}
++
+\text{UQ sampling}.
+\]
+
+The project goal is to use the cheapest local fidelity whose contribution to
+the requested observable is within tolerance. Rich-model defects, analytical
+asymptotics, adjoint weighting and sparse enriched microproblems provide the
+error evidence.
+
+This means, for example, that an MHD calculation may contain temporary GK/FK
+patches; a classical microscopic calculation may contain rare quantum
+close-encounter microproblems; and a low-order correlation model may activate
+\(g_3\) only in regions/times where the omitted-correlation defect matters.
+
+Local promotion is optional and must never be fabricated when no consistent
+interface exists. See [adaptive multiscale and uncertainty](adaptive-multiscale-uq.md).
+
 ## Orthogonal physics axes
 
 ### Species/state fidelity
