@@ -26,6 +26,7 @@ module kin6d_pme
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     use kin6d_coulomb_leaves, only: ewald_real_pair, ewald_real_pair_jvp, &
         ewald_self, ewald_background, ewald_reciprocal_weight
+    use kin6d_near_encounter, only: near_split_t, near_pair, near_pair_jvp
     use kin6d_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8, &
         pme_assignment_factor
     implicit none
@@ -52,6 +53,8 @@ module kin6d_pme
         !> Mean mesh self-energy defect per unit c q^2:
         !> (1/2)[sum_{k/=0} R(k) - sum_mesh G(k) A(k)], added to the energy.
         real(dp) :: self_shift = 0.0_dp
+        !> Near/far encounter split; `far` evaluations omit the near part.
+        type(near_split_t) :: split
         !> Influence function per unit coupling on mesh bins 0..K-1.
         real(dp), allocatable :: influence(:, :, :)
         complex(dp), allocatable :: grid(:, :, :), dgrid(:, :, :), line(:)
@@ -352,26 +355,29 @@ contains
     end function
 
     !> Add the real-space and mesh forces/energy of positions x(3n).
-    subroutine pme_force(pme, coulomb, charge, x, force, potential, ok)
+    subroutine pme_force(pme, coulomb, charge, x, force, potential, ok, far)
         type(pme_t), intent(inout) :: pme
         real(dp), intent(in) :: coulomb, charge(:), x(:)
         real(dp), intent(inout) :: force(:), potential
         logical, intent(out) :: ok
-        call real_space(pme, coulomb, charge, x, force, potential, ok)
+        !> Far part only (requires an active split).
+        logical, intent(in), optional :: far
+        call real_space(pme, coulomb, charge, x, force, potential, ok, far=far)
         if (.not. ok) return
         call mesh_potential(pme, coulomb, charge, x, potential)
         call gather(pme, charge, force)
     end subroutine
 
     !> Add the force tangent dF = (dF/dx) dx (real space and mesh).
-    subroutine pme_force_jvp(pme, coulomb, charge, x, dx, dforce, ok)
+    subroutine pme_force_jvp(pme, coulomb, charge, x, dx, dforce, ok, far)
         type(pme_t), intent(inout) :: pme
         real(dp), intent(in) :: coulomb, charge(:), x(:), dx(:)
         real(dp), intent(inout) :: dforce(:)
         logical, intent(out) :: ok
+        logical, intent(in), optional :: far
         real(dp) :: unused
         unused = 0
-        call real_space(pme, coulomb, charge, x, dforce, unused, ok, dx)
+        call real_space(pme, coulomb, charge, x, dforce, unused, ok, dx, far)
         if (.not. ok) return
         call mesh_potential(pme, coulomb, charge, x, unused)
         call mesh_tangent(pme, coulomb, charge, dx)
@@ -382,17 +388,20 @@ contains
     !> edge >= cutoff, 27-cell stencil, each unordered cell pair once); with
     !> fewer than 3 cells per edge, a tiled all-pairs loop. With dx present
     !> accumulate the force tangent into out instead of the force.
-    subroutine real_space(pme, coulomb, charge, x, out, potential, ok, dx)
+    subroutine real_space(pme, coulomb, charge, x, out, potential, ok, dx, far)
         type(pme_t), intent(inout) :: pme
         real(dp), intent(in) :: coulomb, charge(:), x(:)
         real(dp), intent(inout) :: out(:), potential
         logical, intent(out) :: ok
         real(dp), intent(in), optional :: dx(:)
+        logical, intent(in), optional :: far
         integer, parameter :: tile = 64
         integer :: nc, i, j, c, c2, cx, cy, cz, ox, oy, oz, ib, jb
         real(dp) :: length, rc2
-        logical :: tangent
+        logical :: tangent, split
         ok = .true.; tangent = present(dx)
+        split = .false.
+        if (present(far)) split = far .and. pme%split%active
         length = pme%p%length; rc2 = pme%p%cutoff**2; nc = pme%cells
         if (nc == 0) then
             do ib = 1, pme%n, tile
@@ -451,7 +460,7 @@ contains
 
         subroutine visit(i, j)
             integer, intent(in) :: i, j
-            real(dp) :: d(3), dd(3), f(3), u, g, du
+            real(dp) :: d(3), dd(3), f(3), u, g, du, fn(3), un
             integer :: a
             do a = 1, 3
                 d(a) = x(3*i - 3 + a) - x(3*j - 3 + a)
@@ -466,9 +475,17 @@ contains
                 dd = dx(3*i - 2:3*i) - dx(3*j - 2:3*j)
                 call ewald_real_pair_jvp(d(1), d(2), d(3), pme%p%alpha, g, dd(1), &
                     dd(2), dd(3), 0.0_dp, 0.0_dp, f(1), f(2), f(3), du)
+                if (split) then
+                    call near_pair_jvp(pme%split, d, pme%p%alpha, g, dd, fn)
+                    f = f - fn
+                end if
             else
                 call ewald_real_pair(d(1), d(2), d(3), pme%p%alpha, g, &
                                      f(1), f(2), f(3), u)
+                if (split) then
+                    call near_pair(pme%split, d, pme%p%alpha, g, fn, un)
+                    f = f - fn; u = u - un
+                end if
                 potential = potential + u
             end if
             out(3*i - 2:3*i) = out(3*i - 2:3*i) + f

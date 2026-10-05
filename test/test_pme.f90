@@ -12,7 +12,8 @@ program test_pme
     use kin6d_pme, only: pme_parameters_t, pme_select, pme_estimate
     use kin6d_ocp_leaves, only: pme_bspline4, pme_bspline6, pme_bspline8
     use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_periodic_mesh, &
-        nbody_force, nbody_force_jvp, nbody_step, nbody_fix
+        nbody_force, nbody_force_jvp, nbody_step, nbody_fix, nbody_set_encounter, &
+        nbody_energy, nbody_step_jvp
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     type(fortnum_status_t) :: status
@@ -26,7 +27,8 @@ program test_pme
     call against_direct(400, 3.0_dp, 1.0e-5_dp)
     call gradient_and_tangent()
     call fixed_particle()
-    print '(a)', 'PASS: B-splines, PME vs direct Ewald, gradient, tangent, fixed'
+    call encounter_split()
+    print '(a)', 'PASS: B-splines, PME vs direct Ewald, gradient, tangent, fixed, encounters'
 contains
     subroutine check(condition, message)
         logical, intent(in) :: condition
@@ -198,5 +200,65 @@ contains
         end do
         call check(all(state(1:3) == start) .and. all(state(3*n + 1:3*n + 3) == 0), &
                    'fixed particle stays at rest')
+    end subroutine
+
+    !> Weakly coupled cell (64 electrons, coupling 1e-3, thermal speeds ~1)
+    !> with one large-angle encounter (b = 1e-4 < b90 = 5e-4): the
+    !> encounter-resolved split step (dt = 0.02) against plain KDK of the same
+    !> Hamiltonian at dt = 1e-5, its energy, and the split-step tangent by
+    !> central differences.
+    subroutine encounter_split()
+        integer, parameter :: n = 64
+        type(species_t) :: particles(n)
+        type(pme_parameters_t) :: pp
+        type(nbody_system_t) :: split, plain
+        type(units_t) :: weak
+        real(dp) :: base(6*n), a(6*n), b(6*n), t(6*n), p(6*n), m(6*n), e0, e1, h
+        integer :: k
+        weak = reduced_units(1.0_dp, 1.0e-3_dp, 1.0_dp, 1.0_dp)
+        particles = electron()
+        call random_state(n, 4.0_dp, 21_int64, base)
+        base(3*n + 1:) = 2*base(3*n + 1:)
+        base(1:3) = [1.0_dp, 2.0_dp, 2.0_dp]; base(4:6) = [1.1_dp, 2.0001_dp, 2.0_dp]
+        base(3*n + 1:3*n + 3) = [1.0_dp, 0.0_dp, 0.0_dp]
+        base(3*n + 4:3*n + 6) = [-1.0_dp, 0.0_dp, 0.0_dp]
+        call pme_select(4.0_dp, n, weak%coulomb, 1.0e-6_dp, pp, ok)
+        call nbody_periodic_mesh(split, weak, particles, pp, ok)
+        call nbody_periodic_mesh(plain, weak, particles, pp, ok)
+        call nbody_set_encounter(split, 0.02_dp, 2.0_dp, ok)
+        call check(ok, 'encounter split setup')
+        a = base; b = base
+        call nbody_energy(split, a, e0, status)
+        do k = 1, 5
+            call nbody_step(split, a, 0.02_dp, status)
+            call check(status%code == FORTNUM_OK, 'split step')
+            if (k == 3) call check(split%near%deepest > 100, 'the close pair is substepped')
+        end do
+        do k = 1, 10000
+            call nbody_step(plain, b, 1.0e-5_dp, status)
+        end do
+        call nbody_energy(split, a, e1, status)
+        print '(a,es9.2,a,es9.2,a,i5)', ' split vs fine KDK max|dx|=', &
+            maxval(abs(a(:3*n) - b(:3*n))), ' dE=', e1 - e0, ' deepest=', split%near%deepest
+        call check(maxval(abs(a(:3*n) - b(:3*n))) < 1e-4_dp, &
+                   'encounter-resolved step reproduces the fine-step trajectory')
+        call check(abs(e1 - e0) < 1e-5_dp*sum(base(3*n + 1:)**2)/2, 'split energy')
+        ! Tangent of three split steps in a random direction.
+        do k = 1, 6*n
+            t(k) = cos(0.7_dp*k)
+        end do
+        a = base
+        do k = 1, 3
+            call nbody_step_jvp(split, a, t, 0.02_dp, status)
+        end do
+        h = 1.0e-7_dp
+        p = base + h*[(cos(0.7_dp*k), k = 1, 6*n)]
+        m = base - h*[(cos(0.7_dp*k), k = 1, 6*n)]
+        do k = 1, 3
+            call nbody_step(split, p, 0.02_dp, status)
+            call nbody_step(split, m, 0.02_dp, status)
+        end do
+        call check(maxval(abs((p - m)/(2*h) - t)) < 1e-5_dp*maxval(abs(t)), &
+                   'split-step tangent vs central difference')
     end subroutine
 end program test_pme

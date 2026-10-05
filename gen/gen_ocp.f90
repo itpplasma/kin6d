@@ -10,12 +10,14 @@ program gen_ocp
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: ewald_reciprocal_weight, yukawa_potential, &
+    use kin6d_symbolic_physics, only: ewald_real_potential, ewald_real_force, &
+        ewald_reciprocal_weight, yukawa_potential, &
         yukawa_zero_mode, debye_structure_factor, bohm_gross_frequency
     implicit none
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
-    type(expr_t) :: t, x(3), g, kappa, volume, k2, alpha, order, u2, m, length, d
+    type(expr_t) :: t, x(3), g, kappa, volume, k2, alpha, order, m, length, d
+    type(expr_t) :: r, r1, r2, sw, dsw, fe(3), phi
     integer :: p
 
     call arena%init()
@@ -45,6 +47,23 @@ program gen_ocp
     ! reciprocal weight. One axis factor sinc(x)^(2p), x = k_a h/2 /= 0.
     call w%emit('pme_assignment_factor', ['x    ', 'order'], ['factor'], &
                 [((sin(sym(arena, 'x'))/sym(arena, 'x'))**2)**order])
+    ! Near/far encounter splitting of the real-space Ewald pair: near part
+    ! S(r) g erfc(alpha r)/r with the C2 switch S = 1 - 10 s^3 + 15 s^4 - 6 s^5,
+    ! s = (r - r1)/(r2 - r1), on r1 < r < r2 (S = 1 below r1, 0 above r2).
+    ! The far part is the remainder; their sum is the bare Ewald pair.
+    r1 = sym(arena, 'r1'); r2 = sym(arena, 'r2')
+    r = sqrt(x(1)**2 + x(2)**2 + x(3)**2)
+    t = (r - r1)/(r2 - r1)
+    sw = 1 - 10*t**3 + 15*t**4 - 6*t**5
+    dsw = (-30*t**2 + 60*t**3 - 30*t**4)/(r2 - r1)
+    phi = ewald_real_potential(g, alpha, r)
+    fe = ewald_real_force(g, alpha, x)
+    call w%emit('near_switch_pair', ['dx   ', 'dy   ', 'dz   ', 'alpha', 'g    ', &
+                                     'r1   ', 'r2   '], &
+                ['fx       ', 'fy       ', 'fz       ', 'potential'], &
+                [sw*fe(1) - dsw*phi*x(1)/r, sw*fe(2) - dsw*phi*x(2)/r, &
+                 sw*fe(3) - dsw*phi*x(3)/r, sw*phi], ad=.true.)
+    t = sym(arena, 't')
     ! Periodic screened-Poisson Green function of a unit-coupling source in
     ! a neutral cube: G(r) = sum_n yukawa(r + n L) - 4 pi g/(V kappa^2).
     call w%emit('debye_image', ['dx   ', 'dy   ', 'dz   ', 'g    ', 'kappa'], &

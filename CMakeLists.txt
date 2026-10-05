@@ -61,7 +61,8 @@ set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
 add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
     src/generated/kin6d_species_leaves.f90 src/species.f90
     src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90
-    src/generated/kin6d_ocp_leaves.f90 src/pme.f90 src/nbody.f90
+    src/generated/kin6d_ocp_leaves.f90 src/near_encounter.f90 src/pme.f90
+    src/nbody.f90 src/ocp.f90 src/vlasov_response.f90 src/pair_correlation.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
     src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
@@ -157,6 +158,9 @@ add_test(NAME nbody_coulomb_species_oracles COMMAND test_nbody)
 add_executable(test_pme test/test_pme.f90)
 target_link_libraries(test_pme PRIVATE kin6d)
 add_test(NAME pme_direct_ewald_oracles COMMAND test_pme)
+add_executable(test_ocp test/test_ocp.f90)
+target_link_libraries(test_ocp PRIVATE kin6d)
+add_test(NAME ocp_vlasov_debye_oracles COMMAND test_ocp)
 add_executable(test_cloud test/test_cloud.f90)
 target_link_libraries(test_cloud PRIVATE kin6d)
 add_test(NAME microscopic_cloud_oracles COMMAND test_cloud)
