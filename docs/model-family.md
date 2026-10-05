@@ -239,6 +239,43 @@ Useful mixed configurations include FK ions + fluid electrons, MHD solar wind
 + kinetic pickup ions + kinetic neutral H, and local FK reconnection embedded in
 a larger reduced model.
 
+## Stability as a common consumer
+
+Stability is orthogonal to the physical model. A selected MHD, gyrofluid,
+gyromoment, DK, GK or FK state may expose a linearized generalized eigenproblem,
+forced response, nonmodal growth, continuation/bifurcation and nonlinear
+stability analysis when its equations support them.
+
+The linearized action is the same \(R_Uv\) used by Newton and tangents; the
+adjoint action \(R_U^\dagger v\) enables resolvent/optimal-growth analysis.
+See [stability.md](stability.md).
+
+MHD targets include kink, interchange/ballooning, tearing, RWM and Alfvén
+continua/eigenmodes, with NTM and other finite-amplitude branches treated as
+nonlinear models rather than labels on a linear eigenvalue. Reduced/kinetic
+models similarly cover their supported drift/ITG/TEM/ETG/KBM/MTM and
+space-plasma instabilities.
+
+## Macro transport and multiscale modelling
+
+Transport dimensionality and closure fidelity are independent of the
+microphysics model. A 1D/1.5D ASTRA-like profile evolution, 2D/3D global
+transport and direct full-dimensional kinetic evolution all belong in one
+hierarchy.
+
+The closure-provider contract may return fluxes, Onsager matrices, local
+coefficients, nonlocal kernels, linear mode data, electromagnetic
+cross-spectra or direct nonlinear microphysics fluxes. KAMEL/QL-Balance is an
+important internal precedent for response -> quasilinear coefficient ->
+profile evolution.
+
+Global orbit transport supplies an intermediate level between local radial
+coefficients and global turbulence. It may use GORILLA-like characteristics to
+construct 2D/3D transition/nonlocal kernels and may consume turbulence
+cross-spectra rather than only scalar diffusion.
+
+See [transport-multiscale.md](transport-multiscale.md).
+
 ## Controlled model comparisons
 
 To attribute a difference to physics, freeze as much as possible:
