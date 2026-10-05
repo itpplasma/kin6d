@@ -103,6 +103,74 @@ The interaction matrix is logical and must not be stored densely by default.
 FMM truncation tolerance is numerical error; macro-particle reduction is a
 different physical model.
 
+## Quantum numerical methods
+
+Quantum plasma is not particle-only. The appropriate state determines the
+numerics.
+
+### Exact many-body state
+
+A direct wavefunction \(\Psi(x_1,\ldots,x_N)\) or density matrix is a tiny-\(N\)
+reference. In 3D its storage grows exponentially with particle number.
+Use symmetry, antisymmetry and basis truncation, but do not present it as a
+macroscopic solver.
+
+### Reduced density matrices and correlation tensors
+
+Quantum BBGKY/cumulant models may use low-rank separated forms, tensor trains,
+hierarchical Tucker, sparse grids or center-of-mass/relative coordinates.
+Every truncation/compression carries an explicit defect/status.
+
+### Orbital and density methods
+
+Hartree, Hartree--Fock, Kohn--Sham DFT and time-dependent variants evolve
+ordinary 3D orbitals/densities. Candidate discretizations include:
+
+- FEM/IGA;
+- plane waves/Fourier;
+- finite differences;
+- spectral/wavelet bases.
+
+These methods therefore reuse ordinary mesh, eigensolver, Poisson/Maxwell and
+linear-algebra infrastructure rather than creating a particle-only quantum
+runtime.
+
+### Quantum Monte Carlo/path integrals
+
+Variational/diffusion/path-integral Monte Carlo sample many-body
+configuration/path space. Report statistical uncertainty, finite-size error,
+imaginary-time discretization and sign-problem limitations separately.
+
+### Wigner continuum
+
+Wigner--Poisson/Maxwell is a phase-space continuum problem. Candidate methods
+include Eulerian spectral/DG, semi-Lagrangian, tensor-product, sparse-grid and
+dynamic low-rank representations. Its \(\hbar\to0\) Vlasov limit is a permanent
+cross-model oracle.
+
+### Quantum fluids and EOS closures
+
+Fermi pressure, exchange/correlation and derived quantum-gradient terms live in
+ordinary physical-space PDEs. FEM/FEEC/FV/DG can therefore propagate quantum
+closure effects across macroscopic devices or stellar interiors without
+resolving Fermi wavelengths.
+
+### Planning scale envelope
+
+These are design expectations, not current performance claims:
+
+- exact 3D many-body wavefunction: typically 2--few particles;
+- exact diagonalization: tiny basis-dependent systems;
+- QMC/PIMC: tens--thousands of microscopic particles, strongly problem
+  dependent;
+- HF/DFT/TDDFT: roughly \(10^2\)--\(10^4\)-scale particles/orbitals as a
+  plausible reference range depending on basis/hardware;
+- Wigner: local kinetic boxes, with full 3X3P requiring the same tensor/low-rank
+  discipline as classical FK;
+- quantum-fluid/EOS: macroscopic whole-device or whole-star domains.
+
+See [quantum-plasma.md](quantum-plasma.md).
+
 ## Time integration
 
 The method catalogue includes:

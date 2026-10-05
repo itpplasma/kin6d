@@ -10,8 +10,8 @@ FortFEM owns generic spatial mathematics. KIN6D owns plasma-specific equations,
 constitutive laws and composition.
 
 The preferred high-order kinetic path in this document is not the only
-admissible numerical family. Shock/front, rarefied, stochastic, radiation and
-strong-correlation regimes may require different methods. The complete option
+admissible numerical family. Shock/front, rarefied, stochastic, radiation, microscopic many-body and
+quantum-plasma regimes may require different methods. The complete option
 map is [the numerical-method catalogue](numerical-methods.md); implement only
 the method families demanded by prioritized vertical slices.
 
@@ -50,12 +50,29 @@ Neutral rarefaction may use deterministic Boltzmann or DSMC-like particle
 transport. Particle collision methods may use MCC/binary-collision schemes with
 explicit statistical status.
 
-For strongly coupled classical reference problems, small direct N-body/MD
-calculations are admissible as an independent representation/oracle. Their
+For microscopic classical reference problems, physical-particle
+Maxwell--Lorentz calculations are admissible from weak-coupling closure tests
+through strongly coupled cases. Their
 pairwise execution should use tiled/reduced interactions where possible, but
 the physical \(N\)-body model is distinct from mean-field FK plus a collision
 operator.
 
+
+## Quantum numerical reuse
+
+Quantum-plasma models reuse rather than replace the existing numerical stack:
+
+- Wigner kinetics uses Eulerian/semi-Lagrangian/DG/spectral/tensor phase-space
+  methods analogous to Vlasov;
+- Hartree/HF/DFT/TDDFT-like references use ordinary 3D FEM/spectral/finite-
+  difference orbital and Poisson/Maxwell solvers;
+- reduced density matrices/cumulants may use tensor/low-rank representations;
+- QMC/PIMC uses stochastic microscopic configuration/path-space sampling;
+- Fermi/quantum-fluid/EOS closures use ordinary macroscopic FEM/FV/DG.
+
+Exact many-body wavefunctions remain tiny-\(N\) references. See
+[quantum-plasma.md](quantum-plasma.md) and
+[numerical-methods.md](numerical-methods.md).
 
 ## Prefer structured tensor geometry
 

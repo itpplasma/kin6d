@@ -90,6 +90,32 @@ microscopic cases, preventing attractive classical point-particle collapse.
 The [canonical microscopic plan](microscopic-many-body.md) specifies periodic
 forces, responsive-species Debye lengths, finite-k wave and estimator caveats.
 
+## Quantum plasma fundamentals gallery
+
+Keep the quantum branch visually and mathematically connected to the classical
+examples:
+
+1. Maxwell--Boltzmann versus Fermi--Dirac occupation and the Fermi sphere;
+2. map \((\Theta,\Gamma,x_F)\) and place tokamak, solar-core,
+   warm-dense and white-dwarf-like regimes;
+3. compare classical thermal pressure with nonrelativistic and relativistic
+   degeneracy pressure;
+4. continue the microscopic shielding example through
+   Debye \(\rightarrow\) finite-\(T\) Fermi/Thomas--Fermi
+   \(\rightarrow\) Lindhard response and Friedel oscillations;
+5. evolve a simple Wigner problem and demonstrate convergence to Vlasov as
+   \(\hbar\to0\);
+6. show Pauli blocking/quantum diffraction changing a simple collision rate;
+7. compare two-electron distinguishable versus antisymmetrized/exchange
+   behavior in a tiny reference problem;
+8. solve a reduced stellar-structure/EOS example that crosses from thermal to
+   degeneracy support without resolving microscopic quantum wavelengths.
+
+The point is not a separate quantum course hidden in KIN6D. Each example
+explains exactly where a classical plasma assumption succeeds or fails and
+retains the same provenance/error/verification conventions as the classical
+gallery.
+
 ## Kinetic teaching sequence
 
 Retain the following named examples as the permanent bottom of the verification
