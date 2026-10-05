@@ -27,7 +27,10 @@ program jellium_cell_demo
     real(dp) :: kick_dt = 0.01_dp, kick_rs = 2.0_dp, response_threshold = 1.0e-6_dp
     namelist /jellium_cell/ cutoff, nev, nrs, ntheta, bins, scan_cutoff_max, &
         kick_steps, rs_values, thetas, kick_dt, kick_rs, response_threshold
-    integer, parameter :: q_list(3, 2) = reshape([1, 0, 0, 1, 1, 1], [3, 2])
+    ! Odd |q L/2pi|^2 keeps ideal denominators nonzero; (111) would need the
+    ! |n|^2 <= 3 cutoff, so the default records q L/2pi = (100) only.
+    integer, parameter :: nq = 1
+    integer, parameter :: q_list(3, nq) = reshape([1, 0, 0], [3, nq])
     type(run_t) :: run
     type(result_file_t) :: result
     integer :: unit, ios
@@ -59,8 +62,8 @@ program jellium_cell_demo
 
     allocate (g_same(bins, ntheta, nrs, 2:4), g_opp(bins, ntheta, nrs, 2:4))
     allocate (energy(ntheta, nrs, 2:4), cumulant(4, ntheta, nrs, 2:4))
-    allocate (chi(2, ntheta, nrs, 2:4), chi0(2, ntheta, nrs, 2:4), &
-              rpa(2, ntheta, nrs, 2:4), trunc(ntheta, nrs, 2:4), centers(bins))
+    allocate (chi(nq, ntheta, nrs, 2:4), chi0(nq, ntheta, nrs, 2:4), &
+              rpa(nq, ntheta, nrs, 2:4), trunc(ntheta, nrs, 2:4), centers(bins))
     allocate (times(0:kick_steps), response(0:kick_steps), band(0:kick_steps))
     g_same = 0; g_opp = 0; energy = 0; cumulant = 0; chi = 0; chi0 = 0; rpa = 0
     trunc = 0
@@ -214,7 +217,7 @@ contains
                 cumulant(:, t, r, n) = norms
                 call ledger(lu, 'cumulants', cell, spectrum, model, rs, t1 - t0, 0)
             end if
-            do qi = 1, 2
+            do qi = 1, nq
                 call cpu_time(t0)
                 call jellium_static_response(cell, model, spectrum, w, q_list(:, qi), &
                     chi(qi, t, r, n), chis, ok, response_threshold)
@@ -352,7 +355,7 @@ contains
         do n = 2, 4
             do r = 1, nrs
                 do t = 1, ntheta
-                    do qi = 1, 2
+                    do qi = 1, nq
                         write (out, '(i0,",",f6.2,",",f5.2,",",3i1,6(",",es15.7))') &
                             n, rs_values(r), thetas(t), q_list(:, qi), chi(qi, t, r, n), &
                             chi0(qi, t, r, n), rpa(qi, t, r, n), &
@@ -453,27 +456,43 @@ contains
         allocate (ratio(nrs))
         do qi = 1, 2
             call subplot(1, 2, qi)
-            write (label, '(a,3i1,a)') 'q L/2π = (', q_list(:, qi), ')'
-            call title('Static response, '//trim(label))
-            call xlabel('$r_s$'); call ylabel('$\chi / \chi_0$')
+            if (qi == 1) call title('Static response relative to Lindhard')
+            if (qi == 2) call title('Static response, N = 3 (open shell)')
+            call xlabel('$r_s$')
             call xscale('log')
-            do n = 2, 4, 2
-                k = merge(1, t, n == 2)
-                ratio = chi(qi, k, 1:nrs, n)/chi0(qi, k, 1:nrs, n)
-                write (label, '(a,i0)') 'interacting N = ', n
-                call plot(rs_values(1:nrs), ratio, color=blue, marker='o', &
-                    linestyle=merge('- ', ': ', n == 2), label=trim(label))
-                ratio = rpa(qi, k, 1:nrs, n)/chi0(qi, k, 1:nrs, n)
-                write (label, '(a,i0)') 'RPA N = ', n
-                call plot(rs_values(1:nrs), ratio, color=vermillion, marker='s', &
-                    linestyle=merge('- ', ': ', n == 2), label=trim(label))
-            end do
-            call plot([rs_values(1), rs_values(nrs)], [1.0_dp, 1.0_dp], color=black, &
-                      linestyle='--', label='Lindhard (same cell)')
-            call legend(loc='lower left')
+            if (qi == 1) then
+                call ylabel('$\chi / \chi_0$')
+                do n = 2, 4, 2
+                    k = merge(1, t, n == 2)
+                    ratio = chi(1, k, 1:nrs, n)/chi0(1, k, 1:nrs, n)
+                    write (label, '(a,i0)') 'interacting N = ', n
+                    call plot(rs_values(1:nrs), ratio, color=blue, marker='o', &
+                        linestyle=merge('- ', ': ', n == 2), label=trim(label))
+                    ratio = rpa(1, k, 1:nrs, n)/chi0(1, k, 1:nrs, n)
+                    write (label, '(a,i0)') 'RPA N = ', n
+                    call plot(rs_values(1:nrs), ratio, color=vermillion, marker='s', &
+                        linestyle=merge('- ', ': ', n == 2), label=trim(label))
+                end do
+                call plot([rs_values(1), rs_values(nrs)], [1.0_dp, 1.0_dp], &
+                          color=black, linestyle='--', label='Lindhard (same cell)')
+                call legend(loc='lower left')
+            else
+                call ylabel('$\chi / \chi_0$')
+                do r = 1, ntheta
+                    ratio = chi(1, r, 1:nrs, 3)/chi0(1, r, 1:nrs, 3)
+                    write (label, '(a,f4.2)') 'interacting, Θ = ', thetas(r)
+                    call plot(rs_values(1:nrs), ratio, color=blue, marker='o', &
+                        linestyle=merge('- ', ': ', r == 1), label=trim(label))
+                    ratio = rpa(1, r, 1:nrs, 3)/chi0(1, r, 1:nrs, 3)
+                    write (label, '(a,f4.2)') 'RPA, Θ = ', thetas(r)
+                    call plot(rs_values(1:nrs), ratio, color=vermillion, marker='s', &
+                        linestyle=merge('- ', ': ', r == 1), label=trim(label))
+                end do
+                call legend(loc='lower left')
+            end if
         end do
         write (label, '(a,f4.2)') 'N = 4 at Θ = ', thetas(t)
-        call suptitle('N = 2 ground state, '//trim(label))
+        call suptitle('q L/2π = (100); N = 2 ground state, '//trim(label))
         call tight_layout()
         call savefig('output/jellium-response.png')
         ! Cumulant size versus coupling.
