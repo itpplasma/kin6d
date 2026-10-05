@@ -5,7 +5,9 @@ lake build
 lake env lean tests/Accepted.lean
 if [[ $# -gt 0 ]]; then
     mkdir -p ../output
-    "$1" ../output/ComputedKrook.lean
+    # Run from the repository root so output/formal_krook_certificate.nc
+    # lands beside the Lean file in the ignored root output/ directory.
+    (cd .. && "$1" output/ComputedKrook.lean)
     lake env lean ../output/ComputedKrook.lean
 fi
 for rejected in BadResidual BadRadius; do

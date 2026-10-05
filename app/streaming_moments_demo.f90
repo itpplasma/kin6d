@@ -18,42 +18,81 @@ program streaming_moments_demo
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: nx = 96, nv = 64, particle_nx = 32, particle_nv = 48
-    integer, parameter :: np = particle_nx*particle_nv, frames = 81, repeats = 20
-    real(dp), parameter :: duration = 8.0_dp
+    integer :: nx = 96, nv = 64, particle_nx = 32, particle_nv = 48
+    integer :: np, frames = 81, repeats = 20
+    real(dp) :: duration = 8.0_dp
+    namelist /streaming_moments/ nx, nv, particle_nx, particle_nv, frames, &
+        repeats, duration
+    type(run_t) :: run
+    type(result_file_t) :: result
+    integer :: unit, ios
+    character(len=256) :: msg
+    character(len=*), parameter :: bound = 'certified-continuous whole-cell '// &
+        'moment enclosure (density strictly positive)'
     type(streaming_moments_t) :: moments
     type(streaming_state_t) :: baseline, particle_source
     type(streaming_particles_t) :: particles
     type(animation_t) :: animation
     type(figure_t), pointer :: canvas
-    real(dp) :: x(nx + 1), v(nv + 1), a0(0:1, nv + 1), b0(0:1, nv + 1)
+    real(dp), allocatable :: x(:), v(:), a0(:, :), b0(:, :)
     real(dp) :: vp(2) = [-1.0_dp, 1.0_dp], ap(0:1, 2), bp(0:1, 2)
-    real(dp) :: x0(np), pv(np), weight(np), px(np), glyph(np), period, measure
-    real(dp) :: image(nv + 1, nx + 1), density(nx + 1), current(nx + 1), bulk(nx + 1)
-    real(dp) :: image_lo(nv + 1, nx + 1), image_hi(nv + 1, nx + 1)
-    real(dp) :: nlo(nx + 1), nhi(nx + 1), jlo(nx + 1), jhi(nx + 1)
-    real(dp) :: ulo(nx + 1), uhi(nx + 1), t, solve_s, complete_s, post_s
+    real(dp), allocatable :: x0(:), pv(:), weight(:), px(:), glyph(:)
+    real(dp) :: period, measure
+    real(dp), allocatable :: image(:, :), density(:), current(:), bulk(:)
+    real(dp), allocatable :: image_lo(:, :), image_hi(:, :)
+    real(dp), allocatable :: nlo(:), nhi(:), jlo(:), jhi(:), ulo(:), uhi(:)
+    real(dp) :: t, solve_s, complete_s, post_s
     real(dp) :: ignored_x, ignored_v
-    type(interval_t) :: ncells(nx), jcells(nx), ucells(nx)
+    type(interval_t), allocatable :: ncells(:), jcells(:), ucells(:)
+    ! Result record of every computed frame (NaN where a frame was not drawn).
+    real(dp), allocatable :: times(:), moment_record(:, :, :), f_record(:, :, :, :)
     integer :: i, frame, snapshot_frame = 41, status, evidence, bands
     integer :: distribution_data
-    logical :: ok, snapshot = .false., recorded(frames) = .false.
+    logical :: ok, snapshot = .false.
+    logical, allocatable :: recorded(:)
     character(len=64) :: argument
 
-    if (command_argument_count() > 2) error stop 'usage: demo [--snapshot [frame]]'
-    if (command_argument_count() >= 1) then
-        call get_command_argument(1, argument)
+    call run%start('streaming_moments_demo')
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=streaming_moments, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'streaming_moments', ios, msg)
+    if (min(nx, nv, particle_nx, particle_nv, repeats) < 1 .or. frames < 2) &
+        error stop 'streaming_moments_demo sizes must be positive (frames >= 2)'
+    if (.not. (duration > 0.0_dp)) error stop 'duration must be positive'
+    call run%open_resolved(unit)
+    write (unit, nml=streaming_moments)
+    call run%close_resolved(unit)
+    np = particle_nx*particle_nv
+    allocate (x(nx + 1), v(nv + 1), a0(0:1, nv + 1), b0(0:1, nv + 1))
+    allocate (x0(np), pv(np), weight(np), px(np), glyph(np))
+    allocate (image(nv + 1, nx + 1), density(nx + 1), current(nx + 1), bulk(nx + 1))
+    allocate (image_lo(nv + 1, nx + 1), image_hi(nv + 1, nx + 1))
+    allocate (nlo(nx + 1), nhi(nx + 1), jlo(nx + 1), jhi(nx + 1), ulo(nx + 1), &
+        uhi(nx + 1))
+    allocate (ncells(nx), jcells(nx), ucells(nx), recorded(frames))
+    allocate (times(frames), moment_record(nx + 1, frames, 9), &
+        f_record(nv + 1, nx + 1, frames, 3))
+    recorded = .false.
+    times = ieee_value(1.0_dp, ieee_quiet_nan)
+    moment_record = times(1); f_record = times(1)
+
+    if (run%argument_count() > 2) error stop 'usage: demo [--config FILE] [--snapshot [frame]]'
+    if (run%argument_count() >= 1) then
+        call run%argument(1, argument)
         if (trim(argument) /= '--snapshot') error stop 'expected --snapshot'
         snapshot = .true.
     end if
-    if (command_argument_count() == 2) then
-        call get_command_argument(2, argument)
+    if (run%argument_count() == 2) then
+        call run%argument(2, argument)
         read (argument, *, iostat=status) snapshot_frame
         if (status /= 0) error stop 'snapshot frame must be integer'
     end if
     if (snapshot_frame < 1 .or. snapshot_frame > frames) &
-        error stop 'frame outside 1..81'
+        error stop 'frame outside 1..frames'
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'output directory unavailable'
     do i = 1, nx + 1
@@ -121,7 +160,35 @@ program streaming_moments_demo
     close (evidence)
     close (bands)
     close (distribution_data)
+    call result%create(run)
+    call result%attribute('frame_record', 'frames not computed in this run are NaN')
+    call result%write('time', times, '1', 'normalized time T', dims='frame')
+    call result%write('x', x, '1', '2*pi*x/L', dims='x')
+    call result%write('v', v, '1', 'v/v_ref', dims='v')
+    call write_moment(1, 'n', 'density n/n0', 'candidate')
+    call write_moment(2, 'n_lower', 'density lower bound', bound)
+    call write_moment(3, 'n_upper', 'density upper bound', bound)
+    call write_moment(4, 'j', 'current j', 'candidate')
+    call write_moment(5, 'j_lower', 'current lower bound', bound)
+    call write_moment(6, 'j_upper', 'current upper bound', bound)
+    call write_moment(7, 'u', 'bulk velocity u = j/n', 'candidate')
+    call write_moment(8, 'u_lower', 'bulk velocity lower bound', bound)
+    call write_moment(9, 'u_upper', 'bulk velocity upper bound', bound)
+    call result%write('f', f_record(:, :, :, 1), '1', '2*v_ref*f/n0', &
+        dims='v,x,frame', status='candidate')
+    call result%write('f_lower', f_record(:, :, :, 2), '1', 'pointwise f lower bound', &
+        dims='v,x,frame', status='certified-continuous pointwise bound')
+    call result%write('f_upper', f_record(:, :, :, 3), '1', 'pointwise f upper bound', &
+        dims='v,x,frame', status='certified-continuous pointwise bound')
+    call result%close()
 contains
+    subroutine write_moment(k, name, long_name, status)
+        integer, intent(in) :: k
+        character(len=*), intent(in) :: name, long_name, status
+        call result%write(name, moment_record(:, :, k), '1', long_name, &
+            dims='x,frame', status=status)
+    end subroutine
+
     subroutine compute_frame(number)
         integer, intent(in) :: number
         real(dp) :: start, finish, value, lo, hi, unwrapped, factor
@@ -203,6 +270,12 @@ contains
                 end do
             end do
             recorded(number) = .true.
+            times(number) = t
+            moment_record(:, number, :) = reshape([density, nlo, nhi, current, jlo, &
+                jhi, bulk, ulo, uhi], [nx + 1, 9])
+            f_record(:, :, number, 1) = image
+            f_record(:, :, number, 2) = image_lo
+            f_record(:, :, number, 3) = image_hi
         end if
     end subroutine
 
