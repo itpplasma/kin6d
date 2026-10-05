@@ -20,7 +20,7 @@ endif()
 # The application owns physical laws; generic numerics remain upstream.
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 015bb8b1490d99d55493b3936e0dd6adf77bc293)
+    GIT_TAG 0f643d015f4181a8e9cddd6c867f4b90ef4b7c68)
 FetchContent_GetProperties(fortnum)
 if(NOT fortnum_POPULATED)
     FetchContent_Populate(fortnum)
@@ -39,7 +39,10 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
-    ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90)
+    ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90
+    ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
