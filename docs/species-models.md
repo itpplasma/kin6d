@@ -2,7 +2,8 @@
 
 Status: required long-term feature envelope. Only implement a reduced model
 when a concrete scientific case and its coupling/certificate obligations are
-defined. The initial reference remains all-species full-orbit kinetics.
+defined. The first runnable configuration is a steady 1X1V laboratory;
+the ultimate parent reference remains full-orbit kinetics.
 
 ## Model selection axes
 
@@ -25,6 +26,8 @@ Reject unsupported or inconsistent combinations before solving.
 | Parallel kinetic (`PK`) | `f(x,p_parallel)` or field-line equivalent | Parallel streaming, current, and resonances supported by its equation | Perpendicular distribution/energy closure and geometry assumptions |
 | Bounce/orbit averaged (`BA`) | Distribution in chosen orbit invariants | Ordered slow orbit/collision evolution | Bounce/transit averaging, orbit topology, and separatrix treatment |
 | Fluid/moments | Declared moment fields | Selected density, flow, pressure, heat-flow responses | Moment set, constitutive closure, and entropy/energy assumptions |
+| Gyrofluid/Landau-fluid | Declared low moments and nonlocal/kinetic closures | Selected FLR, phase-mixing and thermodynamic responses | Derived closure, ordering, field coupling and free-energy ledger |
+| Gyromoments | Hermite–Laguerre coefficients of a named GK model | Progressively resolved parallel/perpendicular velocity dependence | Retained index set, basis/measure, closure and controlled moment tails |
 | Adiabatic | Algebraic density/response | Specified instantaneous response | Boltzmann or other response law, normalization, zonal/mean treatment |
 | Fixed background | Prescribed distribution or charge/current | No dynamical response | External reservoir definition and input uncertainty |
 
@@ -37,7 +40,8 @@ equations are derived consistently.
 Examples of intended supported configurations are all-FK reference;
 DK electrons with FK ions; DK electrons, GK D/T, and FK energetic alphas;
 parallel-kinetic electrons with FK ions; and kinetic electrons with prescribed
-ions. Adiabatic or fluid choices are later scientific branches. Relativistic
+ions. Gyrofluid/Landau-fluid and gyromoments are explicit priority branches,
+with [closure and representation contracts](moment-models.md). Relativistic
 FK kinematics do not automatically make a DK/GK/fluid closure relativistic;
 each model states its Hamiltonian and invariant definitions.
 

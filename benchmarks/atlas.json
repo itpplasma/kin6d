@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "planned; no reference evaluators or solver runs implemented",
+  "status": "113-case catalogue; free_streaming implemented in a limited 1X1V configuration, remaining cases planned",
   "inheritance": "defaults then family then case; case fields override family fields",
   "activation_rule": "resolve every null field; pin and review formulas/data/source sections; supply independent oracle and requested proof level before runnable promotion",
   "reference_classes": {
@@ -311,7 +311,25 @@
       "family": "characteristics",
       "reference_class": "E0",
       "geometry": "periodic slab",
-      "reference_definition": "f(x,v,t)=f0(x-vt,v) in nonrelativistic coordinates"
+      "reference_definition": "f(x,v,t)=f0(x-vt,v) in nonrelativistic coordinates",
+      "status": "implemented: prescribed E=0 1X1V snapshot bound",
+      "species_models": [
+        "nonrelativistic deterministic 1X1V continuum"
+      ],
+      "field_model": "prescribed E=0",
+      "initial_boundary_data": "x periodic with length 2*pi; v in [-4,4]; exp(-v^2/2)*(1+0.5*cos(x)); no velocity advection",
+      "parameter_validity_range": "demo amplitude 0.5; 0<=t<=7.5; bound restricted to [-4,4]",
+      "reference_implementation": "gen/gen_laboratory.f90: characteristic_reference_qp and exact_coefficients",
+      "certificate_method": "interval node discrepancies plus uniform h^2/8 second-derivative interpolation remainder",
+      "expected_convergence_order": "second order in velocity; exact Fourier streaming subflow before rounding",
+      "source_version_and_section": "docs/first-example.md mathematical problem and continuous snapshot bound; FortSym 90b68132dbecb83b982826dc8b193f3a627d94e1",
+      "proof_level": "reviewed analytical snapshot bound with interval evaluation; no Lean theorem",
+      "asymptotic_remainder": "not applicable: exact characteristic reference; no infinite-velocity tail claim",
+      "observables": [
+        "continuous reconstructed distribution",
+        "Fourier coefficient norm invariant"
+      ],
+      "plot_recipe": "FortPlot phase-space heatmap; x=0 exact/fine/coarse profile with fine-grid snapshot enclosure"
     },
     {
       "id": "constant_electric_field",

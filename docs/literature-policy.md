@@ -44,3 +44,11 @@ do not prove a benchmark theorem; record its mathematical applicability in
 the atlas before promoting the case.
 
 Chris&AI
+
+## Curated import evidence
+
+On 2026-10-05, the external workspace synchronized 75 curated DOI records and
+31 verified PDF attachments into the configured Zotero library. The manifest
+and synchronization/hash receipts remain outside kin6d. Imported records are
+scientifically unreviewed until their assumptions and equations are checked;
+citation discovery does not automatically admit new physics or benchmark claims.

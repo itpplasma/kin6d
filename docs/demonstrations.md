@@ -1,9 +1,8 @@
 # Runnable demonstrations and plotting
 
-Status: required acceptance contract for the first executable commit and
-every later milestone. This repository currently contains design only.
-Do not add a placeholder executable or fabricated scientific plot to imply
-that the numerical or certificate pipeline already exists.
+Status: the first CPU prescribed-field 1X1V slice is implemented.
+See [the runnable example and evidence](first-example.md). The following
+contracts govern completion of the first formal milestone and later increments.
 
 ## Runnable from the first code
 

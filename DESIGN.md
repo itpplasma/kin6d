@@ -5,6 +5,12 @@ analysts, and implementers in the itpplasma group.
 
 ## Scientific objective
 
+The first runnable configuration is the
+[steady 1X1V student laboratory](docs/student-laboratory.md). Tiny transient
+and HM turbulence examples accompany the direct steady spine rather than
+driving architecture. The first scientific application after collision and
+classical-transport laboratories is real-device DK neoclassical transport.
+
 kin6d will solve stationary, deterministic, full-distribution kinetic
 problems for electrons and several ion species in general physical geometry.
 Cartesian space and vectors are fundamental; cylindrical/Fourier is the
@@ -17,7 +23,8 @@ research capabilities.
 The code family also targets reduced and hybrid production models for useful
 whole-device questions. Species models are selected independently, subject
 to derived field and collision compatibility: FK, GK, DK, parallel kinetic,
-bounce/orbit averaged, fluid/moments, adiabatic, or fixed. Implement each only
+bounce/orbit averaged, gyrofluid/Landau-fluid/gyromoments, ordinary fluid,
+adiabatic, or fixed. Implement each only
 when a scientific case needs it. All-FK remains the reference; global
 turbulence need not pay its cost. [Species models](docs/species-models.md)
 defines reductions, closures, and the early fixed-ion electron configuration.
@@ -65,7 +72,7 @@ Use the cheapest supported model that meets the stated scientific/error goal.
 | Physical geometry | Generic 3D field/domain evaluations; machine formats are adapters |
 | Transport | One characteristic-based discretization, with certified reconstruction defects |
 | Fields | Explicit prescribed/Poisson/quasineutral/Darwin/Maxwell choice; background, drive and response separated |
-| Physics interface | Shared evolution operator and constraints; steady consumer first |
+| Physics interface | Shared residual/brackets and constraints; direct steady consumer first, early student dynamics |
 | Nonlinear solve | Direct residual solve through PETSc SNES/KSP |
 | Reference collisions | Nonlinear Beliaev–Budker, after a certified Landau baseline |
 | Collision comparisons | Cheap-to-Coulomb ladder; shared test/field/linear/nonlinear pair primitive |
@@ -74,11 +81,31 @@ Use the cheapest supported model that meets the stated scientific/error goal.
 | Certification | Independent continuous-problem bound; fail explicitly when unavailable |
 | Formal verification | Small theorem/checker layer in Lean, developed with the first model |
 
-The tiny 1X1P reference problem is retained separately. Production does not
-inherit its array layout. Production is 3D-capable from its first version,
-even while most fusion development runs use `n=0`. Other physical charts
-need their own appropriate representation; a generalized periodic coordinate
-with `n=0` is not automatically an axisymmetric reduction.
+The tiny laboratory is the first configuration of the engine; production
+does not inherit its array layout. Geometry contracts permit general 3D
+without requiring the first executable to allocate six-dimensional state.
+General periodic zero modes are not automatically axisymmetric reductions.
+
+## Hamiltonian, metric and open-system structure
+
+Every model changes state space, derived reduction/closure or physical brackets
+within the common numerical framework. Where established, reversible dynamics
+has a Poisson operator and energy; dissipation has a symmetric nonnegative
+metric operator and entropy/dissipative potential; sources, drive, radiation
+and boundaries supply declared open-system transfers. The
+[moment/structure policy](docs/moment-models.md) specifies bracket/Jacobi and
+metriplectic degeneracy obligations. Antisymmetry or positivity alone does
+not establish every conservation/entropy theorem, and not every reaction/wall
+process follows from a conventional action principle.
+
+The residual is the authoritative stationary equation, with dynamics using
+the same vector field and constraints. FortFEM owns compatible spatial spaces,
+FortSym owns local primal/JVP/VJP algebra, and execution plans own tiling and
+scheduling. Characteristic transport, Galerkin residual and preconditioner
+actions realize the same stated mathematical operator with explicit numerical
+defects. Poisson brackets and residual Jacobians have distinct names/contracts.
+[Adjoint structure](docs/adjoints-structure.md) records natural pairings,
+nullspaces, positivity/inf-sup evidence, reciprocity and goal-error bounds.
 
 ## Additional directions and admission
 

@@ -1,16 +1,17 @@
 # kin6d
 
-Design for a deterministic, stationary, full-distribution plasma kinetic
-solver with rigorous solution enclosures.
+Design for a deterministic plasma model engine centered on direct kinetic
+steady states and rigorous solution/observable enclosures.
 
-The full-kinetic representation includes three spatial and three momentum
-dimensions from its first version. Physical space and vectors are Cartesian;
-computational charts are selectable. The initial fusion chart uses cylindrical
-elements and toroidal Fourier modes, with the compatible momentum frame so
-axisymmetric runs activate only the zero mode. Relativistic kinematics, species-specific momentum
-grids, spherical harmonics, and a direct steady solve form the numerical
-spine. A separate certifier must establish bounds for the stated continuous
-problem before a result can be accepted as certified.
+The first executable target is a small steady 1X1V kinetic laboratory, with
+transient phase-space examples and Hasegawa–Mima turbulence in the early
+student gallery. The scientific spine progresses through a 0X3V collision
+box, 1X3V transport, real-device DK neoclassical states, GK and global FK.
+The maximal reference is relativistic 3X3P Vlasov–Maxwell with full collisions.
+Physical vectors are Cartesian and charts selectable; cylindrical/Fourier
+is an optimized fusion chart with a compatible momentum frame. A separate
+certifier must establish bounds for the named continuous problem before
+accepting a result as certified. No tiny example forces its layout on 6D.
 
 All-species full kinetics is the reference. The planned family also supports
 per-species reduced and hybrid models, including kinetic electrons with fixed
@@ -24,8 +25,10 @@ collision, field, geometry and time configurations. MHD and kinetic–MHD are
 explicit long-range branches. Established-code names describe comparison
 cases, never separate solver architectures.
 
-**Repository status:** design only. There is no solver, certifier, or Lean
-proof implementation yet. Full nonlinear kinetic certification is a research
+**Repository status:** the first CPU 1X1V prescribed-field laboratory runs,
+with a direct steady solve, transient animation and reviewed continuous
+snapshot bounds. [Build, run and evidence](docs/first-example.md).
+Self-consistent Poisson and the Lean proof remain unimplemented. Full nonlinear kinetic certification is a research
 objective; this repository does not claim that such bounds already exist.
 
 Read the [design document](DESIGN.md) first. Its companion specifications are:
@@ -41,6 +44,13 @@ Read the [design document](DESIGN.md) first. Its companion specifications are:
   best-known time–memory–accuracy frontiers, profiling and upstream ownership.
 - [Differentiable operators](docs/differentiability.md): shared symbolic
   primal/JVP/VJP, implicit adjoints, lazy reductions and bounded-memory schedules.
+- [Adjoint goals and structure](docs/adjoints-structure.md): weighted pairings,
+  coercivity/flux bounds, model defects and Onsager–Casimir verification.
+- [Programme estimates](docs/programme-estimates.md): scenario budgets and validation limits.
+- [Student laboratory](docs/student-laboratory.md): the next steady 1X1V
+  increment, numbered kinetic examples and early toy turbulence gallery.
+- [Moment models](docs/moment-models.md): gyrofluid/Landau-fluid/gyromoments,
+  deterministic continuum and Hamiltonian/metric/open-system structure.
 - [Numerical foundation](docs/numerics.md): FortFEM ownership, FEEC/IGA/DG,
   tensor actions, batching, layouts, derivatives and solver memory.
 - [Tooling and kernel policy](docs/tooling.md): the Fortran-native stack,

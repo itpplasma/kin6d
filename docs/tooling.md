@@ -221,3 +221,11 @@ fix and proof obligations are met. Protected `faepop*`/`faepcr*` hosts remain
 untouched without an explicit request naming the host.
 
 Chris&AI
+
+## First executable workflow evidence
+
+The [first 1X1V example](first-example.md) records the exact driver digest,
+upstream repairs, public delegated Fo test/exec results, CMake/CTest gates and
+performance measurement. Resident Gremlin CMake generation currently fails at
+FPM manifest parsing; native registered-test results remain the authority while
+that upstream input-capture defect is open. Do not label this resident lane green.

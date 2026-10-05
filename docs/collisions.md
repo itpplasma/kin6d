@@ -29,6 +29,13 @@ Sources, prescribed reservoirs, momentum boundaries, and fields can change
 the balances. Application cost is qualitative; certificate difficulty also
 depends on the domain, norm, and stability regime.
 
+[Structural contracts](adjoints-structure.md) declare weighted adjoints,
+collision sign, invariant complement, entropy and Onsager–Casimir scope for
+each construction. Removing a nullspace does not alone prove a uniform
+Coulomb whole-velocity spectral gap. Fixed-target Krook's derivative can be
+self-adjoint/dissipative without physical pair conservation; nonlinear models
+need their actual linearization or bracket, not blanket adjoint flags.
+
 | Model or action | Purpose and physics | Conditional structure | Omitted physics or restriction | Work and certification hurdle |
 |---|---|---|---|---|
 | `none` | Collisionless reference | Zero collisional moments | All collisions | No collision work; kinetic/field certification can still be hard |
