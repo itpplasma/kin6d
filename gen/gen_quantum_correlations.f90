@@ -48,6 +48,30 @@ program gen_quantum_correlations
         [abs(xr) + abs(xi)], interval=.true.)
     call w%emit('quantum_gershgorin', ['gamma', 'bound'], ['lower', 'upper'], &
         [gamma - bound, gamma + bound], interval=.true.)
+    ! Real three-body Wick term det[gamma(t_a,u_b)] and the antisymmetrized
+    ! gamma-times-two-body-cumulant contribution sign*gamma*lambda2.
+    block
+        type(expr_t) :: g(3, 3), sgn, lam
+        character(3) :: name
+        character(3) :: names(9)
+        integer :: a, b
+        do a = 1, 3
+            do b = 1, 3
+                write (name, '(a,i1,i1)') 'g', a, b
+                g(a, b) = sym(arena, name)
+                names(3*(a - 1) + b) = name
+            end do
+        end do
+        call w%emit('quantum_wick_triple', names, ['wick'], &
+            [g(1, 1)*(g(2, 2)*g(3, 3) - g(2, 3)*g(3, 2)) - &
+             g(1, 2)*(g(2, 1)*g(3, 3) - g(2, 3)*g(3, 1)) + &
+             g(1, 3)*(g(2, 1)*g(3, 2) - g(2, 2)*g(3, 1))], ad=.true., interval=.true.)
+        sgn = sym(arena, 'sgn'); lam = sym(arena, 'lam')
+        call w%emit('quantum_triple_product', ['sgn  ', 'gamma', 'lam  '], &
+            ['term'], [sgn*gamma*lam], ad=.true., interval=.true.)
+        call w%emit('quantum_square_add', ['value', 'other'], ['result'], &
+            [value + other*other], ad=.true., interval=.true.)
+    end block
     write (w%unit, '(a)') 'end module kin6d_quantum_correlations_leaves'
     call w%close()
 end program gen_quantum_correlations

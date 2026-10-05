@@ -23,6 +23,7 @@ module kin6d_quantum_fock
         qf_pair_action_accumulate_interval, &
         qf_pair_integral, &
         qf_pair_integral_interval
+    use kin6d_sort_keys, only: sort_key_order
     implicit none
     private
     public :: fock_basis_t, fock_hamiltonian_t, init_fock_basis, &
@@ -41,20 +42,24 @@ module kin6d_quantum_fock
               fock_pair_action, fock_pair_action_interval, &
               assemble_fock_hamiltonian_block, &
               assemble_fock_hamiltonian_block_interval, &
-              assemble_jellium_pair_sector
+              assemble_jellium_pair_sector, &
+              init_fock_sector_basis, fock_pair_index, add_fock_one_body, &
+              fock_matvec_between, fock_matvec_between_interval, &
+              fock_transition_rdms, fock_rdm3_entries
     type :: fock_basis_t
         private
         integer :: m = 0, n = 0, d = 0, p = 0
         integer(i64) :: bytes = 0
         integer(i64), allocatable :: states(:)
         integer, allocatable :: pi(:), pj(:)
-        logical :: valid = .false.
+        logical :: valid = .false., sector = .false.
     end type
     type :: fock_hamiltonian_t
         private
         integer :: m = 0, n = 0, d = 0, p = 0
         real(dp), allocatable :: h(:, :), v(:, :)
         type(interval_t), allocatable :: hb(:, :), vb(:, :)
+        integer, allocatable :: hptr(:), hcol(:), vptr(:), vcol(:)
         logical :: valid = .false., bounded = .false.
     end type
 contains
@@ -231,6 +236,8 @@ contains
         call allocate_model(model, basis, max_bytes, ok, status)
         if (.not. ok) return
         model%h = h; model%v = v; model%hb = ipoint(h); model%vb = ipoint(v)
+        call index_couplings(model, max_bytes, ok, status)
+        if (.not. ok) return
         model%valid = .true.; model%bounded = .true.
         status = 'certified-discrete matrix data: exact binary64'// &
                  ' h and pair v'
@@ -322,6 +329,8 @@ contains
             .not. all(ieee_is_finite(model%v))) then
             ok = .false.; status = 'nonfinite candidate Hamiltonian'; return
         end if
+        call index_couplings(model, max_bytes, ok, status)
+        if (.not. ok) return
         model%valid = .true.
         model%bounded = valid_matrix(model%hb) .and. valid_matrix(model%vb)
         status = 'certified-discrete jellium matrix elements; co'// &
@@ -407,6 +416,9 @@ contains
         type(fock_basis_t), intent(in) :: basis
         compatible = .false.
         if (.not. model%valid .or. .not. basis%valid) return
+        ! Full-scan schedules silently drop out-of-basis targets; they are
+        ! restricted to complete fixed-N bases.
+        if (basis%sector) return
         compatible = model%m == basis%m .and. model%n == basis%n .and. &
                      model%d == basis%d
     end function
@@ -654,26 +666,10 @@ contains
         real(dp), intent(in) :: re(:), im(:)
         real(dp), intent(out) :: yr(:), yi(:)
         logical, intent(out) :: ok
-        integer :: cursor(4), ket, bra, phase, sector, i, j
-        real(dp) :: coef, next
-        type(interval_t) :: bound
-        logical :: more
         ok = .false.; yr = 0; yi = 0
-        if (.not. compatible(model, basis)) return
-        if (any([size(re), size(im), size(yr), size(yi)] /= model%d)) return
-        if (.not. all(ieee_is_finite(re)) .or. .not. all(ieee_is_finite(im))) return
-        cursor = [1, 1, 1, 1]
-        do
-            call next_transition(model, basis, cursor, ket, bra, &
-                                 phase, sector, i, j, more)
-            if (.not. more) exit
-            call transition_coefficient(model, sector, i, j, coef, bound)
-            call qf_accumulate(yr(bra), coef, re(ket), real(phase, dp), &
-                               next); yr(bra) = next
-            call qf_accumulate(yi(bra), coef, im(ket), real(phase, dp), &
-                               next); yi(bra) = next
-        end do
-        ok = all(ieee_is_finite(yr)) .and. all(ieee_is_finite(yi))
+        if (.not. model%valid .or. .not. basis%valid) return
+        if (model%d /= basis%d .and. .not. basis%sector) return
+        call fock_matvec_between(model, basis, basis, re, im, yr, yi, ok)
     end subroutine
     subroutine fock_matvec_interval(model, basis, re, im, yr, yi, ok)
         type(fock_hamiltonian_t), intent(in) :: model
@@ -681,29 +677,10 @@ contains
         type(interval_t), intent(in) :: re(:), im(:)
         type(interval_t), intent(out) :: yr(:), yi(:)
         logical, intent(out) :: ok
-        integer :: cursor(4), ket, bra, phase, sector, i, j
-        real(dp) :: coef
-        type(interval_t) :: bound, next
-        logical :: more
         ok = .false.; yr = ipoint(0._dp); yi = ipoint(0._dp)
-        if (.not. compatible(model, basis)) return
-        if (.not. model%bounded) return
-        if (any([size(re), size(im), size(yr), size(yi)] /= model%d)) return
-        if (.not. valid_intervals(re) .or. .not. valid_intervals(im)) return
-        cursor = [1, 1, 1, 1]
-        do
-            call next_transition(model, basis, cursor, ket, bra, &
-                                 phase, sector, i, j, more)
-            if (.not. more) exit
-            call transition_coefficient(model, sector, i, j, coef, bound)
-            call qf_accumulate_interval(yr(bra), bound, re(ket), &
-                                        ipoint(real(phase, dp)), next)
-            yr(bra) = next
-            call qf_accumulate_interval(yi(bra), bound, im(ket), &
-                                        ipoint(real(phase, dp)), next)
-            yi(bra) = next
-        end do
-        ok = valid_intervals(yr) .and. valid_intervals(yi)
+        if (.not. model%valid .or. .not. basis%valid) return
+        if (model%d /= basis%d .and. .not. basis%sector) return
+        call fock_matvec_between_interval(model, basis, basis, re, im, yr, yi, ok)
     end subroutine
     subroutine fock_matvec_jvp(model, basis, re, im, dh, dv, &
                                dre, dim, dyr, dyi, ok)
@@ -907,35 +884,7 @@ contains
         real(dp), intent(in) :: re(:), im(:)
         real(dp), intent(out) :: gr(:, :), gi(:, :), g2r(:, :), g2i(:, :)
         logical, intent(out) :: ok
-        integer :: i, j, p, q
-        ok = .false.; gr = 0; gi = 0; g2r = 0; g2i = 0
-        if (.not. basis%valid) return
-        if (size(re) /= basis%d .or. size(im) /= basis%d) return
-        if (any(shape(gr) /= [basis%m, &
-                              basis%m]) .or. any(shape(gi) /= [basis%m, &
-                                                               basis%m])) return
-        if (any(shape(g2r) /= [basis%p, &
-                               basis%p]) .or. any(shape(g2i) /= [basis%p, &
-                                                                 basis%p])) return
-        if (.not. all(ieee_is_finite(re)) .or. .not. all(ieee_is_finite(im))) return
-        do i = 1, basis%m
-            do j = 1, basis%m
-                call psi_expectation(basis, re, im, [j, i], &
-                                     [.true., .false.], &
-                                     gr(i, j), gi(i, j))
-            end do
-        end do
-        do p = 1, basis%p
-            do q = 1, basis%p
-                call psi_expectation(basis, re, im, &
-                                     [basis%pi(q), basis%pj(q), &
-                                      basis%pj(p), basis%pi(p)], &
-                                     [.true., .true., .false., &
-                                      .false.], g2r(p, q), g2i(p, q))
-            end do
-        end do
-        ok = all(ieee_is_finite(gr)) .and. all(ieee_is_finite(gi)) .and. &
-             all(ieee_is_finite(g2r)) .and. all(ieee_is_finite(g2i))
+        call fock_transition_rdms(basis, re, im, re, im, gr, gi, g2r, g2i, ok)
     end subroutine
     subroutine psi_expectation_interval(basis, re, im, orbitals, &
                                         creation, budget, vr, vi)
@@ -1181,4 +1130,534 @@ contains
         end do
         valid_matrix = .true.
     end function
+    ! ------------------------------------------------------------------
+    ! Symmetry-sector bases, coupled-transition actions and factorized RDMs.
+    ! ------------------------------------------------------------------
+
+    !> Basis from a caller-supplied strictly increasing list of N-particle
+    !> masks (a symmetry sector or a union of sectors). The coupled actions
+    !> below fail closed if a nonzero Hamiltonian coefficient leaves the
+    !> basis; the legacy full-scan schedules reject sector bases.
+    subroutine init_fock_sector_basis(basis, m, n, states, max_bytes, ok, status)
+        type(fock_basis_t), intent(out) :: basis
+        integer, intent(in) :: m, n
+        integer(i64), intent(in) :: states(:), max_bytes
+        logical, intent(out) :: ok
+        character(*), intent(out) :: status
+        integer(i64) :: bytes
+        integer :: k, i, j, p, allocation
+
+        ok = .false.; status = 'invalid fixed-N sector basis or budget'
+        if (m < 1 .or. m > 62 .or. n < 0 .or. n > m) return
+        if (size(states) < 1 .or. max_bytes < 1) return
+        if (any(states < 0) .or. any(states >= ishft(1_i64, m))) return
+        if (any(popcnt(states) /= n)) return
+        do k = 2, size(states)
+            if (states(k) <= states(k - 1)) return
+        end do
+        p = m*(m - 1)/2
+        bytes = size(states, kind=i64)*8_i64 + int(p, i64)*2*int(storage_size(1)/8, i64)
+        if (bytes > max_bytes) then
+            status = 'basis payload exceeds explicit byte budget'; return
+        end if
+        allocate (basis%states(size(states)), basis%pi(p), basis%pj(p), stat=allocation)
+        if (allocation /= 0) then
+            status = 'basis allocation failed'; return
+        end if
+        basis%states = states
+        k = 0
+        do i = 1, m - 1
+            do j = i + 1, m
+                k = k + 1; basis%pi(k) = i; basis%pj(k) = j
+            end do
+        end do
+        basis%m = m; basis%n = n; basis%d = size(states); basis%p = p
+        basis%bytes = bytes; basis%valid = .true.; basis%sector = .true.
+        ok = .true.
+        status = 'exact CAR sector basis; payload budget met'
+    end subroutine
+
+    !> Lexicographic index of the ordered pair i<j among m orbitals.
+    pure integer function fock_pair_index(m, i, j) result(index)
+        integer, intent(in) :: m, i, j
+        index = (i - 1)*m - ((i - 1)*i)/2 + (j - i)
+    end function
+
+    !> Sparse lists of nonzero one-body (per annihilated orbital) and pair
+    !> (per annihilated pair) coefficients: candidate or interval packet not
+    !> an exact zero. Skipping exact-zero terms leaves every sum unchanged.
+    subroutine index_couplings(model, max_bytes, ok, status)
+        type(fock_hamiltonian_t), intent(inout) :: model
+        integer(i64), intent(in) :: max_bytes
+        logical, intent(out) :: ok
+        character(*), intent(out) :: status
+        integer(i64) :: bytes
+        integer :: i, j, nh, nv, allocation
+
+        ok = .false.
+        nh = 0; nv = 0
+        do j = 1, model%m
+            do i = 1, model%m
+                if (active_coefficient(model%h(i, j), model%hb(i, j))) nh = nh + 1
+            end do
+        end do
+        do j = 1, model%p
+            do i = 1, model%p
+                if (active_coefficient(model%v(i, j), model%vb(i, j))) nv = nv + 1
+            end do
+        end do
+        bytes = (int(model%m, i64)**2 + int(model%p, i64)**2)*24_i64 + &
+                4_i64*(int(model%m + model%p + 2, i64) + nh + nv)
+        if (bytes > max_bytes) then
+            status = 'coupling index exceeds byte budget'; return
+        end if
+        if (allocated(model%hptr)) deallocate (model%hptr, model%hcol, &
+                                               model%vptr, model%vcol)
+        allocate (model%hptr(0:model%m), model%hcol(nh), model%vptr(0:model%p), &
+                  model%vcol(nv), stat=allocation)
+        if (allocation /= 0) then
+            status = 'coupling index allocation failed'; return
+        end if
+        model%hptr(0) = 0; nh = 0
+        do j = 1, model%m
+            do i = 1, model%m
+                if (.not. active_coefficient(model%h(i, j), model%hb(i, j))) cycle
+                nh = nh + 1; model%hcol(nh) = i
+            end do
+            model%hptr(j) = nh
+        end do
+        model%vptr(0) = 0; nv = 0
+        do j = 1, model%p
+            do i = 1, model%p
+                if (.not. active_coefficient(model%v(i, j), model%vb(i, j))) cycle
+                nv = nv + 1; model%vcol(nv) = i
+            end do
+            model%vptr(j) = nv
+        end do
+        ok = .true.
+    end subroutine
+
+    pure logical function active_coefficient(coef, bound)
+        real(dp), intent(in) :: coef
+        type(interval_t), intent(in) :: bound
+        active_coefficient = abs(coef) > 0 .or. abs(bound%lo) > 0 .or. &
+                             abs(bound%hi) > 0
+    end function
+
+    !> Add a real symmetric one-body matrix dh (exact binary64 data, e.g. an
+    !> external potential) to h and, outward, to its interval packets.
+    subroutine add_fock_one_body(model, dh, max_bytes, ok, status)
+        type(fock_hamiltonian_t), intent(inout) :: model
+        real(dp), intent(in) :: dh(:, :)
+        integer(i64), intent(in) :: max_bytes
+        logical, intent(out) :: ok
+        character(*), intent(out) :: status
+        integer :: i, j
+        real(dp) :: next
+        type(interval_t) :: bound
+
+        ok = .false.; status = 'invalid one-body perturbation'
+        if (.not. model%valid) return
+        if (any(shape(dh) /= [model%m, model%m])) return
+        if (.not. all(ieee_is_finite(dh))) return
+        if (any(dh > transpose(dh)) .or. any(dh < transpose(dh))) return
+        do j = 1, model%m
+            do i = 1, model%m
+                call qf_add(model%h(i, j), dh(i, j), next); model%h(i, j) = next
+                call qf_add_interval(model%hb(i, j), ipoint(dh(i, j)), bound)
+                model%hb(i, j) = bound
+            end do
+        end do
+        model%bounded = model%bounded .and. valid_matrix(model%hb)
+        call index_couplings(model, max_bytes, ok, status)
+        if (ok) status = 'one-body perturbation added'
+    end subroutine
+
+    logical function coupled_compatible(model, from, to)
+        type(fock_hamiltonian_t), intent(in) :: model
+        type(fock_basis_t), intent(in) :: from, to
+        coupled_compatible = .false.
+        if (.not. model%valid .or. .not. from%valid .or. .not. to%valid) return
+        if (.not. allocated(model%hptr)) return
+        coupled_compatible = model%m == from%m .and. model%m == to%m .and. &
+                             model%n == from%n .and. model%n == to%n
+    end function
+
+    !> Next nonzero-coefficient transition out of determinant `ket` of `from`.
+    !> cursor = [stage, outer, inner]; returns bra = 0 for a Pauli-allowed
+    !> target outside `to` (leakage), which callers treat as failure.
+    subroutine next_coupled(model, from, to, ket, cursor, bra, phase, sector, &
+                            ci, cj, more)
+        type(fock_hamiltonian_t), intent(in) :: model
+        type(fock_basis_t), intent(in) :: from, to
+        integer, intent(in) :: ket
+        integer, intent(inout) :: cursor(3)
+        integer, intent(out) :: bra, phase, sector, ci, cj
+        logical, intent(out) :: more
+        integer(i64) :: mask, next, step1, step2, step3
+        integer :: j, k, q, p, local
+        logical :: active
+
+        more = .false.; bra = 0; phase = 0; sector = 0; ci = 0; cj = 0
+        mask = from%states(ket)
+        if (cursor(1) == 1) then
+            do while (cursor(2) <= model%m)
+                j = cursor(2)
+                if (btest(mask, j - 1)) then
+                    do while (cursor(3) <= model%hptr(j))
+                        k = model%hcol(cursor(3)); cursor(3) = cursor(3) + 1
+                        call fermion_apply(mask, j, .false., step1, phase, active)
+                        call fermion_apply(step1, k, .true., next, local, active)
+                        if (.not. active) cycle
+                        phase = phase*local; sector = 1; ci = k; cj = j
+                        bra = basis_index(to, next); more = .true.; return
+                    end do
+                end if
+                cursor(2) = cursor(2) + 1
+                if (cursor(2) <= model%m) cursor(3) = model%hptr(cursor(2) - 1) + 1
+            end do
+            cursor = [2, 1, 0]
+        end if
+        do while (cursor(2) <= model%p)
+            q = cursor(2)
+            if (btest(mask, from%pi(q) - 1) .and. btest(mask, from%pj(q) - 1)) then
+                if (cursor(3) == 0) cursor(3) = model%vptr(q - 1) + 1
+                do while (cursor(3) <= model%vptr(q))
+                    p = model%vcol(cursor(3)); cursor(3) = cursor(3) + 1
+                    call fermion_apply(mask, from%pi(q), .false., step1, phase, active)
+                    call fermion_apply(step1, from%pj(q), .false., step2, local, active)
+                    phase = phase*local
+                    call fermion_apply(step2, from%pj(p), .true., step3, local, active)
+                    if (.not. active) cycle
+                    phase = phase*local
+                    call fermion_apply(step3, from%pi(p), .true., next, local, active)
+                    if (.not. active) cycle
+                    phase = phase*local; sector = 2; ci = p; cj = q
+                    bra = basis_index(to, next); more = .true.; return
+                end do
+            end if
+            cursor(2) = cursor(2) + 1; cursor(3) = 0
+        end do
+    end subroutine
+
+    integer function basis_index(basis, mask) result(index)
+        type(fock_basis_t), intent(in) :: basis
+        integer(i64), intent(in) :: mask
+        integer :: lo, hi, mid
+        index = 0; lo = 1; hi = basis%d
+        do while (lo <= hi)
+            mid = lo + (hi - lo)/2
+            if (basis%states(mid) == mask) then
+                index = mid; return
+            else if (basis%states(mid) < mask) then
+                lo = mid + 1
+            else
+                hi = mid - 1
+            end if
+        end do
+    end function
+
+    !> y = H x from basis `from` to basis `to` using only nonzero couplings.
+    !> Fails closed (ok=.false.) if a nonzero term leaves `to`.
+    subroutine fock_matvec_between(model, from, to, re, im, yr, yi, ok)
+        type(fock_hamiltonian_t), intent(in) :: model
+        type(fock_basis_t), intent(in) :: from, to
+        real(dp), intent(in) :: re(:), im(:)
+        real(dp), intent(out) :: yr(:), yi(:)
+        logical, intent(out) :: ok
+        integer :: cursor(3), ket, bra, phase, sector, i, j
+        real(dp) :: coef, next
+        type(interval_t) :: bound
+        logical :: more
+
+        ok = .false.
+        if (size(yr) == to%d .and. size(yi) == to%d) then
+            yr = 0; yi = 0
+        end if
+        if (.not. coupled_compatible(model, from, to)) return
+        if (size(re) /= from%d .or. size(im) /= from%d) return
+        if (size(yr) /= to%d .or. size(yi) /= to%d) return
+        if (.not. all(ieee_is_finite(re)) .or. .not. all(ieee_is_finite(im))) return
+        do ket = 1, from%d
+            cursor = [1, 1, model%hptr(0) + 1]
+            do
+                call next_coupled(model, from, to, ket, cursor, bra, phase, &
+                                  sector, i, j, more)
+                if (.not. more) exit
+                if (bra == 0) return
+                call transition_coefficient(model, sector, i, j, coef, bound)
+                call qf_accumulate(yr(bra), coef, re(ket), real(phase, dp), next)
+                yr(bra) = next
+                call qf_accumulate(yi(bra), coef, im(ket), real(phase, dp), next)
+                yi(bra) = next
+            end do
+        end do
+        ok = all(ieee_is_finite(yr)) .and. all(ieee_is_finite(yi))
+    end subroutine
+
+    !> Strict interval twin of fock_matvec_between.
+    subroutine fock_matvec_between_interval(model, from, to, re, im, yr, yi, ok)
+        type(fock_hamiltonian_t), intent(in) :: model
+        type(fock_basis_t), intent(in) :: from, to
+        type(interval_t), intent(in) :: re(:), im(:)
+        type(interval_t), intent(out) :: yr(:), yi(:)
+        logical, intent(out) :: ok
+        integer :: cursor(3), ket, bra, phase, sector, i, j
+        real(dp) :: coef
+        type(interval_t) :: bound, next
+        logical :: more
+
+        ok = .false.
+        if (size(yr) == to%d .and. size(yi) == to%d) then
+            yr = ipoint(0._dp); yi = ipoint(0._dp)
+        end if
+        if (.not. coupled_compatible(model, from, to)) return
+        if (.not. model%bounded) return
+        if (size(re) /= from%d .or. size(im) /= from%d) return
+        if (size(yr) /= to%d .or. size(yi) /= to%d) return
+        if (.not. valid_intervals(re) .or. .not. valid_intervals(im)) return
+        do ket = 1, from%d
+            cursor = [1, 1, model%hptr(0) + 1]
+            do
+                call next_coupled(model, from, to, ket, cursor, bra, phase, &
+                                  sector, i, j, more)
+                if (.not. more) exit
+                if (bra == 0) return
+                call transition_coefficient(model, sector, i, j, coef, bound)
+                call qf_accumulate_interval(yr(bra), bound, re(ket), &
+                                            ipoint(real(phase, dp)), next)
+                yr(bra) = next
+                call qf_accumulate_interval(yi(bra), bound, im(ket), &
+                                            ipoint(real(phase, dp)), next)
+                yi(bra) = next
+            end do
+        end do
+        ok = valid_intervals(yr) .and. valid_intervals(yi)
+    end subroutine
+
+    !> Residual amplitudes <r| a_{s_k} ... a_{s_1} |psi> for every determinant
+    !> and every occupied ordered k-subset s (a_{s_1} applied first). Labels:
+    !> orbital (k=1), pair index (k=2), triple key (k=3). Exact-zero
+    !> amplitudes are skipped.
+    subroutine residual_amplitudes(basis, re, im, order, residual, label, ar, ai, &
+                                   count)
+        type(fock_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: re(:), im(:)
+        integer, intent(in) :: order
+        integer(i64), allocatable, intent(out) :: residual(:)
+        integer(i64), allocatable, intent(out) :: label(:)
+        real(dp), allocatable, intent(out) :: ar(:), ai(:)
+        integer, intent(out) :: count
+        integer :: occupied(62), ket, a, b, c, n, phase, local, local3, total, cap
+        integer(i64) :: mask, next, mask_b, mask_c, m64
+        logical :: active
+
+        n = basis%n; m64 = basis%m
+        select case (order)
+        case (1)
+            cap = n
+        case (2)
+            cap = n*(n - 1)/2
+        case default
+            cap = n*(n - 1)*(n - 2)/6
+        end select
+        total = 0
+        do ket = 1, basis%d
+            if (abs(re(ket)) > 0 .or. abs(im(ket)) > 0) total = total + cap
+        end do
+        allocate (residual(total), label(total), ar(total), ai(total))
+        count = 0
+        do ket = 1, basis%d
+            if (.not. (abs(re(ket)) > 0 .or. abs(im(ket)) > 0)) cycle
+            mask = basis%states(ket)
+            c = 0
+            do a = 1, basis%m
+                if (btest(mask, a - 1)) then
+                    c = c + 1; occupied(c) = a
+                end if
+            end do
+            do a = 1, n
+                call fermion_apply(mask, occupied(a), .false., next, phase, active)
+                if (order == 1) then
+                    call push(next, int(occupied(a), i64), phase)
+                    cycle
+                end if
+                do b = a + 1, n
+                    call fermion_apply(next, occupied(b), .false., mask_b, local, active)
+                    if (order == 2) then
+                        call push(mask_b, int(fock_pair_index(basis%m, occupied(a), &
+                                  occupied(b)), i64), phase*local)
+                        cycle
+                    end if
+                    do c = b + 1, n
+                        call fermion_apply(mask_b, occupied(c), .false., mask_c, &
+                                           local3, active)
+                        call push(mask_c, (int(occupied(a) - 1, i64)*m64 + &
+                                  (occupied(b) - 1))*m64 + (occupied(c) - 1), &
+                                  phase*local*local3)
+                    end do
+                end do
+            end do
+        end do
+    contains
+        subroutine push(r, l, sign)
+            integer(i64), intent(in) :: r, l
+            integer, intent(in) :: sign
+            count = count + 1
+            residual(count) = r; label(count) = l
+            ar(count) = real(sign, dp)*re(ket); ai(count) = real(sign, dp)*im(ket)
+        end subroutine
+    end subroutine
+
+    !> Factorized k-body transition density: for every residual r, collect
+    !> ket amplitudes A_s(r) and bra amplitudes B_u(r); each product
+    !> conj(B_u(r)) A_s(r) is passed to `emit(s, u, pr, pi)`.
+    subroutine factorized_products(basis, bra_re, bra_im, ket_re, ket_im, order, &
+                                   emit)
+        type(fock_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: bra_re(:), bra_im(:), ket_re(:), ket_im(:)
+        integer, intent(in) :: order
+        interface
+            subroutine emit(s, u, pr, pi)
+                import :: i64, dp
+                integer(i64), intent(in) :: s, u
+                real(dp), intent(in) :: pr, pi
+            end subroutine
+        end interface
+        integer(i64), allocatable :: rk(:), lk(:), rb(:), lb(:), keys(:)
+        real(dp), allocatable :: akr(:), aki(:), abr(:), abi(:)
+        integer, allocatable :: perm(:)
+        integer :: nk, nb, first, last, x, y, ix, iy
+        real(dp) :: pr, pi
+
+        call residual_amplitudes(basis, ket_re, ket_im, order, rk, lk, akr, aki, nk)
+        call residual_amplitudes(basis, bra_re, bra_im, order, rb, lb, abr, abi, nb)
+        allocate (keys(nk + nb), perm(nk + nb))
+        keys(1:nk) = rk(1:nk); keys(nk + 1:nk + nb) = rb(1:nb)
+        call sort_key_order(keys, perm)
+        first = 1
+        do while (first <= nk + nb)
+            last = first
+            do while (last < nk + nb)
+                if (keys(perm(last + 1)) /= keys(perm(first))) exit
+                last = last + 1
+            end do
+            do x = first, last
+                ix = perm(x)
+                if (ix > nk) cycle
+                do y = first, last
+                    iy = perm(y) - nk
+                    if (iy < 1) cycle
+                    pr = abr(iy)*akr(ix) + abi(iy)*aki(ix)
+                    pi = abr(iy)*aki(ix) - abi(iy)*akr(ix)
+                    call emit(lk(ix), lb(iy), pr, pi)
+                end do
+            end do
+            first = last + 1
+        end do
+    end subroutine
+
+    !> Transition RDMs gamma_ij=<bra|a_j^dagger a_i|ket> and
+    !> Gamma_ij,kl=<bra|a_k^dagger a_l^dagger a_j a_i|ket> (ordered-pair
+    !> storage) by residual factorization: cost sum_r s_r^2 over the
+    !> (N-1)/(N-2)-particle residuals instead of a scan of every pair word.
+    subroutine fock_transition_rdms(basis, bra_re, bra_im, ket_re, ket_im, &
+                                    gr, gi, g2r, g2i, ok)
+        type(fock_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: bra_re(:), bra_im(:), ket_re(:), ket_im(:)
+        real(dp), intent(out) :: gr(:, :), gi(:, :), g2r(:, :), g2i(:, :)
+        logical, intent(out) :: ok
+
+        ok = .false.
+        gr = 0; gi = 0; g2r = 0; g2i = 0
+        if (.not. basis%valid) return
+        if (any([size(bra_re), size(bra_im), size(ket_re), size(ket_im)] /= basis%d)) return
+        if (any(shape(gr) /= [basis%m, basis%m]) .or. &
+            any(shape(gi) /= [basis%m, basis%m])) return
+        if (any(shape(g2r) /= [basis%p, basis%p]) .or. &
+            any(shape(g2i) /= [basis%p, basis%p])) return
+        if (.not. all(ieee_is_finite(bra_re)) .or. .not. all(ieee_is_finite(bra_im))) return
+        if (.not. all(ieee_is_finite(ket_re)) .or. .not. all(ieee_is_finite(ket_im))) return
+        if (basis%n >= 1) call factorized_products(basis, bra_re, bra_im, ket_re, &
+                                                   ket_im, 1, add_one)
+        if (basis%n >= 2) call factorized_products(basis, bra_re, bra_im, ket_re, &
+                                                   ket_im, 2, add_two)
+        ok = all(ieee_is_finite(gr)) .and. all(ieee_is_finite(gi)) .and. &
+             all(ieee_is_finite(g2r)) .and. all(ieee_is_finite(g2i))
+    contains
+        subroutine add_one(s, u, pr, pi)
+            integer(i64), intent(in) :: s, u
+            real(dp), intent(in) :: pr, pi
+            real(dp) :: next
+            call qf_add(gr(s, u), pr, next); gr(s, u) = next
+            call qf_add(gi(s, u), pi, next); gi(s, u) = next
+        end subroutine
+        subroutine add_two(s, u, pr, pi)
+            integer(i64), intent(in) :: s, u
+            real(dp), intent(in) :: pr, pi
+            real(dp) :: next
+            call qf_add(g2r(s, u), pr, next); g2r(s, u) = next
+            call qf_add(g2i(s, u), pi, next); g2i(s, u) = next
+        end subroutine
+    end subroutine
+
+    !> Three-body RDM Gamma3_(t),(u) = <psi|a_u1^dagger a_u2^dagger a_u3^dagger
+    !> a_t3 a_t2 a_t1|psi> for t1<t2<t3, u1<u2<u3, as reduced sparse
+    !> coordinates with keys key(t)=((t1-1)m+t2-1)m+t3-1 (zero entries absent).
+    subroutine fock_rdm3_entries(basis, re, im, tkey, ukey, vr, vi, count, ok)
+        type(fock_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: re(:), im(:)
+        integer(i64), allocatable, intent(out) :: tkey(:), ukey(:)
+        real(dp), allocatable, intent(out) :: vr(:), vi(:)
+        integer, intent(out) :: count
+        logical, intent(out) :: ok
+        integer(i64), allocatable :: keys(:)
+        real(dp), allocatable :: pr_(:), pi_(:)
+        integer, allocatable :: perm(:)
+        integer(i64) :: m3
+        integer :: raw, x, y
+
+        ok = .false.; count = 0
+        allocate (tkey(0), ukey(0), vr(0), vi(0))
+        if (.not. basis%valid .or. basis%n < 3) return
+        if (size(re) /= basis%d .or. size(im) /= basis%d) return
+        if (.not. all(ieee_is_finite(re)) .or. .not. all(ieee_is_finite(im))) return
+        m3 = int(basis%m, i64)**3
+        allocate (keys(1024), pr_(1024), pi_(1024))
+        raw = 0
+        call factorized_products(basis, re, im, re, im, 3, store)
+        allocate (perm(raw))
+        call sort_key_order(keys(1:raw), perm)
+        deallocate (tkey, ukey, vr, vi)
+        allocate (tkey(raw), ukey(raw), vr(raw), vi(raw))
+        x = 1
+        do while (x <= raw)
+            y = x
+            count = count + 1
+            tkey(count) = keys(perm(x))/m3; ukey(count) = mod(keys(perm(x)), m3)
+            vr(count) = 0; vi(count) = 0
+            do while (y <= raw)
+                if (keys(perm(y)) /= keys(perm(x))) exit
+                vr(count) = vr(count) + pr_(perm(y))
+                vi(count) = vi(count) + pi_(perm(y))
+                y = y + 1
+            end do
+            x = y
+        end do
+        ok = all(ieee_is_finite(vr(1:count))) .and. all(ieee_is_finite(vi(1:count)))
+    contains
+        subroutine store(s, u, pr, pi)
+            integer(i64), intent(in) :: s, u
+            real(dp), intent(in) :: pr, pi
+            integer(i64), allocatable :: kt(:)
+            real(dp), allocatable :: rt(:)
+            if (raw == size(keys)) then
+                allocate (kt(2*raw)); kt(1:raw) = keys; call move_alloc(kt, keys)
+                allocate (rt(2*raw)); rt(1:raw) = pr_; call move_alloc(rt, pr_)
+                allocate (rt(2*raw)); rt(1:raw) = pi_; call move_alloc(rt, pi_)
+            end if
+            raw = raw + 1
+            keys(raw) = s*m3 + u; pr_(raw) = pr; pi_(raw) = pi
+        end subroutine
+    end subroutine
 end module kin6d_quantum_fock
