@@ -12,6 +12,7 @@ that owns the proposed change. In particular:
 - docs/reacting-partially-ionized.md before low-temperature, reacting-gas,
   EEDF, dielectric/electrode or large-chemistry work;
 - docs/radiation.md before adding opacity, diffusion/moment or photon transport;
+- docs/software-engineering.md before nontrivial architecture/refactoring work;
 - docs/equilibria-inference.md before equilibrium/import/reconstruction work;
 - docs/interface-reproducibility.md before configuration, I/O, UX or cluster-facing work;
 - docs/representations.md for Eulerian/semi-Lagrangian/particle/blob,
@@ -32,6 +33,38 @@ that owns the proposed change. In particular:
 
 The first prescribed-field 1X1V slice already runs. Read
 docs/first-example.md before changing it or claiming broader evidence.
+
+## Software-engineering rules
+
+The full policy is [docs/software-engineering.md](docs/software-engineering.md).
+These rules are hard constraints:
+
+- **KISS:** implement the simplest complete design for the current vertical
+  slice. Concrete code beats a framework when one consumer suffices.
+- **YAGNI:** catalogued future scope does not justify production code, config
+  knobs, extension hooks or abstractions. Add them only when the current
+  prioritized slice needs them.
+- **DRY:** one authoritative source of scientific/configuration knowledge.
+  Production physics, conventions and defaults are not copied. Deliberate
+  exceptions are independent oracles and reference/performance implementations;
+  prefer generated specializations from one mathematical source.
+- **SRP/separation:** physics, discretization, solver orchestration, hardware
+  schedule, configuration, adapters, I/O, inference and UI have distinct
+  reasons to change.
+- **Dependency inversion:** replaceable details depend on KIN6D policy/contracts,
+  never the reverse. Physics modules do not import PETSc/libneo/FortIO/CUDA/
+  web/scheduler internals.
+- **Interface segregation:** use small capability contracts; no god model/field/
+  backend interface with dummy optional methods.
+- Prefer composition over inheritance and explicit/reentrant state over global
+  mutable state.
+- Extract a reusable abstraction at the latest responsible moment after real
+  implementations/consumers reveal the seam. Do not create architecture
+  ceremony merely to resemble a diagram.
+- Internal APIs are free to change while the project is young; compatibility
+  is owed only to real consumers or explicitly stabilized contracts.
+- Measure before optimizing. Keep scientific definitions independent of
+  performance specializations and optimize the owning layer.
 
 ## Architectural rules
 
