@@ -12,9 +12,10 @@ module kin6d_coulomb_kepler
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
                                 radial_eigen_window
-    use kin6d_coulomb_encounter_leaves, only: ce_bohr_radius, ce_outer_turning, &
+    use kin6d_coulomb_encounter_leaves, only: ce_outer_turning, &
         ce_kepler_width, ce_radial_packet, ce_hydrogen_level, ce_kepler, ce_phase, &
         ce_state_bound
+    use kin6d_species_leaves, only: species_pair_scales
     implicit none
     private
     public :: kepler_t, kepler_init, kepler_autocorrelation, kepler_mean_radius
@@ -49,7 +50,9 @@ contains
         if (.not. (nbar > real(l + 1, dp) + 3*dn)) return
         call system_clock(c0, rate)
         kep%g = g; kep%mu = mu; kep%hbar = hbar; kep%l = l; kep%nbar = nbar
-        call ce_bohr_radius(mu, g, hbar, kep%a)
+        ! Relative-coordinate scales for reduced mass mu (unit masses split so
+        ! that m1 m2/(m1+m2) = mu).
+        call species_pair_scales(hbar, 2*mu, 2*mu, g, en, kep%a, w2)
         call ce_outer_turning(nbar, real(l, dp), kep%a, kep%rc)
         call ce_kepler_width(nbar, kep%a, dn, kep%s)
         call ce_kepler(nbar, mu, g, hbar, kep%period, kep%revival)
