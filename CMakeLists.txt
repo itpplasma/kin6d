@@ -190,3 +190,20 @@ add_executable(benchmark_fermi_gas app/benchmark_fermi_gas.f90)
 target_link_libraries(benchmark_fermi_gas PRIVATE kin6d)
 add_executable(benchmark_quantum_cutoff app/benchmark_quantum_cutoff.f90)
 target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)
+
+# Campaign Q3/Q8: finite-N ideal fermion ensembles and relativistic Fermi EOS.
+if(KIN6D_FORTSYM_BUILD)
+    foreach(generator relativistic_fermi)
+        add_executable(gen_${generator} gen/gen_${generator}.f90)
+        target_include_directories(gen_${generator} PRIVATE
+            ${KIN6D_FORTSYM_BUILD}/include)
+        target_link_libraries(gen_${generator} PRIVATE
+            ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
+    endforeach()
+endif()
+target_sources(kin6d PRIVATE src/generated/kin6d_relativistic_fermi_leaves.f90)
+set_source_files_properties(src/generated/kin6d_relativistic_fermi_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_relativistic_fermi_gas test/test_relativistic_fermi_gas.f90)
+target_link_libraries(test_relativistic_fermi_gas PRIVATE kin6d)
+add_test(NAME relativistic_fermi_gas_oracles COMMAND test_relativistic_fermi_gas)
