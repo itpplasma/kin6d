@@ -97,6 +97,25 @@ When the number of parameter directions is small, forward tangents/JVPs are
 natural. When the number of scalar objectives is small relative to parameters,
 the adjoint/VJP formulation is preferred.
 
+## External inference consumers
+
+TIAGO is the reconstruction/inference consumer for experimental data. KIN6D
+must expose enough of the implicit stationary map that TIAGO can compute
+diagnostic derivatives without differentiating through the solver algorithm.
+The preferred contract is matrix-free: evaluate the forward state/observable,
+apply JVPs, and apply VJPs/adjoints in the declared physical pairings.
+
+For a diagnostic map H(U,eta), TIAGO may compose its own reverse-mode
+diagnostic derivative with KIN6D's implicit adjoint. KIN6D does not own the
+likelihood, measurement covariance, calibration nuisance parameters, priors or
+posterior covariance. The existing TIAGO/VMEC++ exact-adjoint path remains an
+independent reference implementation while a future KIN6D provider is added.
+
+If several distinct equilibria are supplied to TIAGO, derivatives/covariances
+are local to each one. A finite mixture of local Laplace approximations is an
+inference-layer construction; no derivative of an artificial average
+equilibrium is required.
+
 ## Linear solves, roots and eigenproblems
 
 Do not differentiate through iterative solvers when the exact implicit rule is
