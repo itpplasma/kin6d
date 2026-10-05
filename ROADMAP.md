@@ -1,6 +1,7 @@
 # kin6d roadmap
 
-Status: proposed progression, 2026-10-05. No milestone is implemented yet.
+Status: staged progression, 2026-10-05. The first prescribed-field
+1X1V steady/transient slice is implemented; broader milestones remain planned.
 The first product is a certified steady solver; the eventual product also
 supports certified evolution through the same physics operators.
 
@@ -81,7 +82,7 @@ rather than pretending that unresolved mathematics has an implementation date.
 The [atlas specification](docs/benchmarks.md) and
 [machine-readable inventory](benchmarks/atlas.json) are maintained before
 implementation. Activate the smallest references with each milestone: R0
-bounded FP; R1 exact characteristics; R2/P1 analytic fields and manufactured
+steady 1X1V; bounded FP is auxiliary; R1 exact characteristics; R2/P1 analytic fields and manufactured
 3D; B/C collision identities and rigorous closed-form/potential references;
 G0 circular tokamak and straight/toroidal helical constructions; later
 large-aspect-ratio, classical/neoclassical, GK and MHD limits.
@@ -95,34 +96,31 @@ framework or entire special-function library before the next case needs it.
 
 ## Next deliverable
 
-Build the bounded homogeneous 1P Fokker–Planck reference case specified in
-[certification](docs/certification.md#first-continuous-certificate). It has
-positive known coefficients, prescribed Dirichlet data, an analytic
-manufactured solution, a coercivity-based continuous error bound, and one
-certified moment. Include the one-dimensional pointwise-band theorem and a
-Fortran postprocessor producing candidate/exact/enclosure plots, two-resolution
-overlays, and the moment interval. The default CPU demo needs no Python or GPU.
+The first CPU slice now solves a manufactured steady 1X1V Krook problem
+directly and advances collisionless free streaming. It has generated
+primal/JVP/VJP leaves, independent characteristic checks, whole-cell snapshot
+error bounds and FortPlot animation. See [the implementation report](docs/first-example.md).
 
-Its gate requires a numerical candidate, a separately evaluated rigorous
-residual, a proved stability constant, a Lean-checked instantiation of the
-continuous enclosure theorem, and rejection of an invalid certificate.
-At two resolutions, both enclosures must contain the independent exact
-solution. Report actual widths and error contributions. This first bounded
-problem does not need Landau, magnetic geometry, parallelism, or an unbounded
-momentum-tail theorem.
+Complete the steady 1X1V Vlasov–Poisson–FP laboratory next: self-consistent
+Poisson, additional steady states, and a Lean-checked continuous theorem.
+The present interval calculation does not complete the formal milestone.
+Then progress through the 0X3V collision box, 1X3V stationary transport and
+NEO-2/SFINCS-level DK in real geometry. Tiny dynamics and Hasegawa–Mima/HW
+remain early parallel student examples; turbulence does not determine the
+scientific spine. Gyrofluid/Landau-fluid and the gyromoment hierarchy bridge
+toward GK rather than becoming unrelated solvers.
 
-Use Fortran, fortsym-generated numerical leaves, fortnum verified arithmetic,
-CMake/CTest through fo, and Lean for this vertical slice. Pin the dependency
-revisions and record runtime, peak memory, certificate time, and theorem
-assumptions. Select the smallest required numerical interfaces and artifact
-format. Add unsupported generic enclosure/codegen operations upstream when
-R0 requires them; do not write a handwritten substitute in kin6d.
+Retain the bounded homogeneous FP problem as an auxiliary coercivity/proof
+benchmark, not the primary first executable. The [student laboratory](docs/student-laboratory.md)
+specifies the current priority and the [moment models](docs/moment-models.md)
+specify closure and structural obligations. [Programme estimates](docs/programme-estimates.md)
+are planning scenarios rather than verified schedules.
 
 ## Steady development sequence
 
 | Milestone | New difficulty | Retained or independent oracle | Continuous acceptance gate |
 |---|---|---|---|
-| R0: first reference | Rigorous residual-to-error bridge in bounded 0X1P | Analytic driven FP solution | Coercivity theorem, checked arithmetic, one moment interval, Lean application |
+| R0: first reference | Steady 1X1V residual and prescribed-field characteristic transport | Exact source-balanced equilibrium and characteristic flow | Continuous reconstruction bounds; formal theorem and Poisson extension remain open |
 | R1: 1X1P reference | Characteristic transport and inflow/periodic boundaries | Analytic transport/source cases | Transport and boundary defects with a verified stability bound |
 | R2: coupled reference | Electrostatic field feedback and direct nonlinear solve | Manufactured Poisson-coupled case; VlaPy where equations and BCs overlap | Continuous nonlinear field/kinetic enclosure on a constrained space |
 | P0: production skeleton | Real toroidal/harmonic representation and cylindrical momentum frame | Cartesian free-flight and rotationally symmetric analytic cases | Reconstruction, coordinate terms, and projected/complement estimates for simple physics |

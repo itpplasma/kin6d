@@ -15,7 +15,7 @@ have different state spaces and actions within that engine.
 
 | Axis | Intended choices |
 |---|---|
-| Species | Fixed, adiabatic, moments/fluid, PK, orbit averaged, DK, GK, FK |
+| Species | Fixed, adiabatic, ordinary/gyro/Landau fluid, gyromoments, PK, orbit averaged, DK, GK, FK |
 | Bulk plasma | None, multi-fluid, ideal/resistive/extended MHD, kinetic–MHD |
 | Collision pairs | None, Krook/BGK, Lorentz/LBD, model linearized, Landau, BB, later research closures |
 | Field coupling | Prescribed, electrostatic, full Maxwell, explicitly reduced field action |
@@ -37,6 +37,14 @@ describe model intersections for comparisons, never executable architectures
 such as `neo2_mode`, `genex_mode`, `mars_mode`, or `jorek_mode`. Thin application consumers may eventually select mathematical configurations
 from shared libraries. Existing codes
 remain independent validators, not presumed interchangeable implementations.
+
+The strongest invariant is shared mathematical/numerical infrastructure:
+change state space, derived reduction/closure or physical brackets instead of
+creating another numerical universe. The [structure policy](moment-models.md)
+combines a reversible Hamiltonian core, thermodynamically constrained metric
+dissipation and open-system transfers, with explicit proof hypotheses.
+The [student gallery](student-laboratory.md) and later real-device states
+use the same residual, derivative, structural and certificate contracts.
 
 ## Controlled physics comparisons
 

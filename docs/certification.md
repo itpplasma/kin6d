@@ -1,7 +1,8 @@
 # Certification specification
 
-Status: design and proof obligations. No certificate implementation exists
-yet. This specification applies to the [kin6d design](../DESIGN.md).
+Status: general design and proof obligations; the first 1X1V example has a
+reviewed continuous snapshot bound evaluated with interval arithmetic. Lean
+verification and general nonlinear certificates remain open. This specification applies to the [kin6d design](../DESIGN.md).
 
 ## Result contract
 
@@ -196,6 +197,16 @@ insufficient. Validated continuation can identify a common branch when its
 parameter-dependent existence and uniqueness obligations are proved.
 
 ## First continuous certificate
+
+The first implemented slice bounds the continuous reconstruction of a
+prescribed-field 1X1V characteristic problem at each reported time. Its
+whole-velocity-cell interpolation remainder and arithmetic scope are derived
+in [the implementation report](first-example.md). The manufactured stationary
+Krook case provides the direct steady solver. These reviewed bounds are not
+a Lean theorem, a self-consistent field certificate, or a velocity-tail bound.
+The formal first-reference milestone remains open.
+
+## Bounded FP auxiliary certificate
 
 Start with a driven, spatially homogeneous, bounded one-dimensional momentum
 Fokker–Planck problem. This is a reference problem, separate from production.

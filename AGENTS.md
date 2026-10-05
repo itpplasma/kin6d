@@ -5,8 +5,9 @@
 Read README.md, DESIGN.md, and ROADMAP.md for the project map, current
 milestone, and acceptance gates. Read docs/tooling.md before implementation
 and docs/certification.md before proposing a certified numerical result.
-The repository currently contains design documents only. Do not claim solver,
-certifier, formal-proof, CUDA, or build evidence that has not been produced.
+The first CPU prescribed-field 1X1V slice runs; read docs/first-example.md
+for exact evidence. Do not claim formal-proof, CUDA, self-consistent-field,
+or broader solver evidence that has not been produced.
 
 ## Required policy
 
@@ -55,6 +56,17 @@ certifier, formal-proof, CUDA, or build evidence that has not been produced.
   population once, derive spatial/species coupling, and keep one engine rather
   than named-code solver modes. Steady, response, eigenvalue and trajectory
   certificates discharge different mathematical claims.
+- Read docs/student-laboratory.md and docs/moment-models.md before changing
+  early priorities or adding moments/turbulence. Direct steady 1X1V -> 0X3V
+  -> 1X3V -> real-device DK is the scientific spine; tiny dynamics/HM is an
+  early secondary gallery. Models share operators and numerical contracts.
+  Derive closure, Poisson/Jacobi, metric degeneracy and open-system ledgers;
+  deterministic continuum is the production default.
+- Read docs/adjoints-structure.md before structural or goal-error claims.
+  Declare physical pairings, signs, nullspaces, coercivity/inf-sup hypotheses
+  and Onsager–Casimir transformation. Indicators are not rigorous remainders;
+  different model spaces need lifting before defect comparisons. A discrete
+  positive matrix or projected invariant complement is not a continuous gap.
 - Collision physics, discrete conservation/entropy treatment, and actual
   certificate strength are separate contracts. Read docs/collisions.md;
   compose fixed-coefficient Landau/BB actions from shared pair primitives.

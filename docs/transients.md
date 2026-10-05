@@ -1,7 +1,9 @@
 # Time-dependent extension
 
-Status: future capability with interfaces reserved now. Steady solutions
-remain the first product. This extends the [shared evolution operator](../DESIGN.md#shared-evolution-operator).
+Status: planned secondary branch using the same operators as the primary
+direct steady solver. Tiny kinetic and HM student dynamics enter the early
+[laboratory gallery](student-laboratory.md); global kinetic/turbulent trajectory
+certification remains later work. This extends the [shared evolution operator](../DESIGN.md#shared-evolution-operator).
 
 ## Equation and constraints
 

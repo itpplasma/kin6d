@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {"name":"cpu","generator":"Ninja","binaryDir":"${sourceDir}/build",
+     "cacheVariables":{"CMAKE_BUILD_TYPE":"Release","BUILD_TESTING":"ON"}},
+    {"name":"debug","inherits":"cpu","binaryDir":"${sourceDir}/build-debug",
+     "cacheVariables":{"CMAKE_BUILD_TYPE":"Debug",
+      "CMAKE_Fortran_FLAGS_DEBUG":"-g -O0 -fcheck=all -fbacktrace"}}
+  ],
+  "buildPresets": [{"name":"cpu","configurePreset":"cpu"},
+                    {"name":"debug","configurePreset":"debug"}],
+  "testPresets": [{"name":"cpu","configurePreset":"cpu","output":{"outputOnFailure":true}},
+                   {"name":"debug","configurePreset":"debug","output":{"outputOnFailure":true}}]
+}
