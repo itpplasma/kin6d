@@ -1,208 +1,294 @@
 # One mathematical engine, selectable plasma models
 
-Status: long-range model map and coupling obligations. The first executable
-product remains the small certified steady reference. No MHD, reduced kinetic,
-hybrid, equilibrium importer, or transient implementation exists in kin6d.
+Status: canonical long-range model map. The implemented code is still only the
+first 1X1V slice.
 
-## Chameleon philosophy
+## Principle
 
-Use the cheapest mathematically supported model that demonstrably answers the
-scientific question at the requested tolerance. Full kinetics is the parent
-reference, not a requirement to pay its cost for every calculation. Keep one
-engine for physical actions, constraints, steady/transient consumers,
-reconstruction, observables, and certification. Different mathematical models
-have different state spaces and actions within that engine.
+KIN6D changes state space, ordering, closure, representation or coupling while
+retaining common geometry, fields, residuals, diagnostics, derivative contracts,
+verification and certification machinery.
+
+The main rule is:
+
+\[
+\boxed{\text{do not create a new numerical universe when a model reduction is enough}.}
+\]
+
+Names such as NEO-2-like, GENE-X-like, MARS-like or SOLPS-like identify
+comparison points in model space. They never define executable architectures.
+
+## Model axes
 
 | Axis | Intended choices |
 |---|---|
-| Species | Fixed, adiabatic, ordinary/gyro/Landau fluid, gyromoments, PK, orbit averaged, DK, GK, FK |
-| Bulk plasma | None, multi-fluid, ideal/resistive/extended MHD, kinetic–MHD |
-| Collision pairs | None, Krook/BGK, Lorentz/LBD, model linearized, Landau, BB, later research closures |
-| Field coupling | Prescribed, electrostatic, full Maxwell, explicitly reduced field action |
-| Geometry/domain | Slab, cylinder, flux tube, annulus/surface, global torus, supported general 3D domain |
-| Formulation | Equilibrium, linear forced response, spectral stability, nonlinear evolution |
-| Time consumer | Steady or transient, using the same selected physical actions |
-| Execution | CPU reference, optional generated CUDA kernels, distributed execution when needed |
-| Evidence | Analytic references, cross-code comparisons, numerical certificates, formal proof coverage |
+| Per-species physics | fixed, adiabatic, fluid, gyrofluid, gyromoment, PK, bounce/orbit averaged, DK, GK, FK |
+| Bulk plasma | none, ideal/resistive/Hall/XMHD, multi-fluid, kinetic-MHD |
+| Distribution form | full-f, delta-f, control variate |
+| Carrier | Eulerian, semi-Lagrangian, particles, blobs, hybrid/remapped |
+| Particle-field coupling | PIC, PIF, particle-FE, general particle-in-basis |
+| Sampling | deterministic, QMC/randomized QMC, Monte Carlo |
+| Collisions | none through Landau/Beliaev--Budker, deterministic or justified stochastic realization |
+| Fields | prescribed, Poisson, quasineutral EM, Darwin, full Maxwell |
+| Coupling | test/passive, fixed background, linear response, fully active |
+| Geometry | slab through arbitrary mapped 3D/open/wall-bounded domain |
+| Problem type | equilibrium, steady transport, forced response, eigenproblem, transient |
+| Evidence | analytic, structural, cross-code, interval certificate, statistical confidence |
 
-These are configuration axes, not a claim that every Cartesian product is
-valid or implemented. Derive and register supported combinations with their
-ordering, conserved quantities, field action, boundary data, and certificate
-theorem. Reject missing bridges explicitly. Cross-code validation and
-certification are complementary evidence, not mutually exclusive modes.
+The Cartesian product is not automatically valid. Each supported combination
+declares the equations, measures, boundary/source assumptions and certificate
+scope.
 
-NEO-2-like means a specified steady neoclassical DK/linearized-FP case;
-GENE-X-like means a specified global full-f GK transient case. These names
-describe model intersections for comparisons, never executable architectures
-such as `neo2_mode`, `genex_mode`, `mars_mode`, or `jorek_mode`. Thin application consumers may eventually select mathematical configurations
-from shared libraries. Existing codes
-remain independent validators, not presumed interchangeable implementations.
+## Full kinetics as parent, not religion
 
-The strongest invariant is shared mathematical/numerical infrastructure:
-change state space, derived reduction/closure or physical brackets instead of
-creating another numerical universe. The [structure policy](moment-models.md)
-combines a reversible Hamiltonian core, thermodynamically constrained metric
-dissipation and open-system transfers, with explicit proof hypotheses.
-The [student gallery](student-laboratory.md) and later real-device states
-use the same residual, derivative, structural and certificate contracts.
+All-species FK is the high-fidelity charged-particle reference. It is not the
+default cost paid for every problem.
 
-## Controlled physics comparisons
+A practical production calculation may use, for example,
 
-Freeze physical inputs, equilibrium provenance, domains, source/boundary
-data, normalization, and physical observable definitions. Change one physical
-assumption at a time when possible: species reduction, field approximation,
-collision action, Ohm law, or kinetic feedback. Retain the same geometry and
-field infrastructure where the model allows it, with convergence-independent
-continuous bounds for both results.
+\[
+e:{\rm DK},\qquad D,T:{\rm GK},\qquad \alpha:{\rm FK},
+\]
 
-Different models may require different phase-space measures, meshes, or
-polarization/magnetization. Match the physical observable through proved
-pullbacks rather than forcing identical arrays. If one change requires
-several coupled terms, report that complete change; a six-percent difference
-cannot automatically be attributed to one named mechanism.
+or
 
-For certified observables Q_A in I_A and Q_B in I_B, the difference is in
-I_B-I_A. Branch correspondence and a model-reduction remainder are additional
-claims. Adaptive choice of model or spatial fidelity becomes guaranteed only
-when numerical plus reduction/coupling errors can be bounded. An uncertainty
-estimate or visually small difference alone does not justify promotion.
+\[
+\text{thermal bulk}:{\rm MHD},\qquad
+\text{energetic particles}:{\rm DK/FK}.
+\]
 
-## Bulk plasma and MHD
+The correct question is not "which model is best?" but "which model gives the
+requested observable within the requested total error at minimum cost?"
 
-One-fluid MHD aggregates populations into bulk density, velocity, pressure
-and fields. It is not another value of a single species' `fluid` flag.
-Record which populations belong to each bulk, their equation of state,
-transport/Ohm closures, and which populations are evolved independently.
-Every charged population is accounted for once in charge, current, pressure,
-inertia, energy, and collision exchange.
+Before rigorous reduction bounds exist, this remains a comparison programme,
+not an automatic guarantee.
 
-The intended branch covers static ideal equilibrium, linear ideal forced
-response, dynamic ideal modes, linear resistive response, kinetic–MHD,
-extended/two-fluid MHD, and eventually nonlinear extended MHD. These are
-distinct models, not a universal increasing-accuracy chain. Ideal and
-resistive field actions are quasineutral/low-frequency reductions; they do
-not silently retain all full-Maxwell waves or arbitrary relativistic physics.
+## Bulk MHD and multi-fluid models
 
-For static isotropic no-flow ideal equilibrium, the selected model is
-`J cross B=grad p`, `div B=0`, with matching Ampere law, boundary/exterior
-data, and flux/current constraints. Flows, anisotropic pressure, electric
-forces, and external/source momentum add their own terms. Static kinetic
-moment balance is not generically that simple no-flow ideal equation.
+One-fluid MHD combines populations into bulk variables. It is not the same as
+assigning each species a fluid closure. The model records exactly which
+populations contribute to bulk density, inertia, pressure, current and energy.
 
-Linear forced response differentiates the constrained model about an enclosed
-equilibrium. It must include equilibrium uncertainty and background residual.
-Dynamic eigenmodes add inertia, spectral parameter and eigenvector
-normalization. Resistive response additionally needs its selected Ohm law,
-induction, thermal/source closure, and wall/exterior conditions. A resistivity
-switch alone does not implement tearing layers or resistive-wall modes.
+The intended bulk branch includes:
 
-Extended Ohm laws can include Hall, electron pressure, inertia and transport.
-Derive the complete chosen law and energy balance from the specified bulk or
-multi-fluid equations. A schematic list of terms is not an executable closure.
-Nonlinear MHD/XMHD, disruption and ELM regimes are long-range cases, triggered
-by a concrete scientific need rather than a general plugin framework.
+- static ideal equilibrium;
+- ideal linear response and eigenmodes;
+- resistive response;
+- Hall/XMHD;
+- multi-fluid;
+- kinetic-MHD with active kinetic species;
+- spatially hybrid MHD/kinetic layers;
+- nonlinear extended-MHD applications when a real target demands them.
 
-## Hybrid coupling
+Ideal/resistive/MHD field equations are low-frequency/quasineutral reductions
+and must not be presented as full Maxwell merely because they use the same
+field infrastructure.
 
-A species hybrid can use thermal e+i in an MHD bulk and energetic alphas in
-DK/GK/FK. Choose a consistent current-coupling or pressure-coupling formulation
-and account for energy, momentum, charge, equilibrium subtraction, and
-kinetic feedback. Adding kinetic pressure to a bulk that already includes
-that population double-counts its response. A frozen-field kinetic diagnostic
-and a self-consistent kinetic–MHD solve carry different claims.
+Kinetic feedback uses one derived current- or pressure-coupling formulation.
+A kinetic population must not be counted both inside the MHD pressure and
+again as an explicit kinetic stress.
 
-A spatial hybrid can use fluid/MHD bulk physics and kinetic resonant layers.
-Its interface or matched overlap must preserve the required fluxes, charge,
-energy and asymptotic matching, with a bounded interface/model defect.
-Layer location, width, rational-surface uncertainty, and singular limits
-enter the certificate. Applying a spatial mask to unrelated residuals is
-not a consistent coupled model. Species and spatial hybridity are separate
-axes; implement neither without a derived first case.
+## Equilibrium hierarchy
 
-Imported MHD equilibrium can initialize kinetic reconstruction or numerical
-continuation toward DK/GK/FK. Such a lift needs a distribution/pressure closure,
-constraints, and source compatibility; many distributions share its moments.
-Continuation across changing state spaces needs defined transfer maps and
-branch assumptions. It is not an automatic proof that every MHD equilibrium
-is the limit of a stationary collisional kinetic solution.
+External equilibria are first-class inputs before every solver is reproduced
+internally. Adapters may support axisymmetric G-EQDSK/EFIT/CLISTE/CHEASE and
+3D VMEC/VMEC++/DESC/GVEC/SPEC candidates, with explicit units, signs,
+topology and provenance.
 
-## Equilibrium candidates
+Internal progression is:
 
-Imported equilibria are supported before internally solving every equilibrium
-family. Add the next needed adapter with units, COCOS/sign conventions,
-topology, input hashes, geometry accuracy and boundary assumptions:
+\[
+{\rm imported\ candidate}
+\rightarrow
+{\rm axisymmetric\ Grad\!-\!Shafranov}
+\rightarrow
+{\rm free\ boundary}
+\rightarrow
+{\rm 3D\ equilibrium}
+\rightarrow
+{\rm flowing/anisotropic/kinetic\ equilibrium}.
+\]
 
-- Axisymmetric G-EQDSK/EFIT/CLISTE/CHEASE-style inputs.
-- VMEC wout/VMEC++, DESC or GVEC nested-surface candidates.
-- SPEC/MRxMHD candidates with explicitly represented interfaces, pressure
-  jumps, islands or non-nested regions and their own weak equations.
+An imported equilibrium is not certified merely because the producer reports a
+small force residual. KIN6D may eventually certify an external candidate
+against its stated continuous equilibrium model.
 
-An imported equilibrium is a numerical input or untrusted candidate. It is
-not certified merely because an external code reports a small force residual.
-An internal axisymmetric Grad–Shafranov consumer is the first proposed
-equilibrium solver: fixed boundary before free boundary, coils/passive
-structures, X-points and eventually inverse/evolving problems, one difficulty
-at a time. Exact Solov'ev/shaped cases and named external solvers provide
-independent oracles. Python-based external reference tools do not create a
-required Python layer in kin6d.
+A kinetic equilibrium is broader than a Maxwellian or ideal-MHD state. The
+important target is
 
-For 3D equilibrium, first evaluate and certify the external candidate against
-its precisely stated continuous model. VMEC nested surfaces and SPEC relaxed
-interfaces require different equations and spaces. Gauge, flux, relabeling,
-nullspaces, resonance/regularity and stability/complement estimates must be
-handled before a useful local enclosure exists. This certification is an
-analytical research milestone, not a generic residual-to-radius conversion.
-Write an internal 3D iteration only when the external-candidate route leaves
-a demonstrated scientific or performance need.
-[VMEC++](https://proximafusion.github.io/vmecpp/) is an external fixed/free-boundary
-ideal-MHD candidate source. [SPEC](https://github.com/PrincetonUniversity/SPEC)
-provides a different relaxed model and topology scope.
+\[
+{\rm transport}+{\rm collisions}+{\rm sources}+{\rm losses}+{\rm fields}=0,
+\]
 
-## Independent references and certification
+including strongly non-Maxwellian steady states.
 
-The local ARES README at revision
-533866a74d2d30909a6a62be2913fb041c796462 describes linear ideal forced
-MARS-F response and particular Shaing/frozen-field drift-kinetic NTV paths.
-It excludes eigenvalue/RWM, resistive-wall, time-evolution, and energetic
-branches in that scope. Keep it an independent, versioned oracle; do not
-claim all MARS-K feedback is already implemented there or migrate its code
-before a shared-library need and equivalence evidence exist.
+## Gyrofluid, Landau-fluid and gyromoments
 
-[GPEC's documented suite](https://github.com/PrincetonUniversity/GPEC/blob/develop/CLAUDE.md)
-includes ideal, resistive and kinetic response components.
-[JOREK](https://github.com/iterorganization/JOREK) supplies nonlinear extended
-fluid/hybrid precedent. Each comparison freezes the actual equations,
-closure, wall, frequency/rotation, equilibrium, and diagnostic definitions.
-Their breadth does not establish the kin6d implementation or certificates.
+Gyrofluid is a first-class bridge, not a side model. Where possible, low-order
+gyrofluid closures are truncations of a Hermite--Laguerre or equivalent
+gyrokinetic moment hierarchy.
 
-Static equilibria, forced response, spectral stability and trajectories need
-different theorems. Ideal force operators may have neutral or unstable modes;
-kinetic/resistive operators can be non-Hermitian or non-normal. Near resonance,
-certification needs constraints, parameter isolation and rigorous resolvent
-or stability bounds, not a generic small residual. Eigenvalue enclosures do
-not by themselves prove bounded forced response or a long-time trajectory.
+The progression is
 
-The architecture keeps only mathematical seams needed by the next case:
-active state, selected closures, evolution/linearized actions and constraints,
-physical observables, and independent continuous certificate obligations.
-Every owned numerical leaf remains fortsym-generated; CPU/CUDA choice does
-not change the model. Preserve the first runnable demo and all earlier
-limiting cases as these configurations appear.
+\[
+{\rm gyrofluid}
+\rightarrow
+{\rm Landau\ fluid}
+\rightarrow
+{\rm gyromoments}(N)
+\rightarrow
+{\rm GK}.
+\]
 
-## Expanded scientific map
+The closure, ordering and free-energy structure matter as much as the number of
+moments. Increasing \(N\) without controlling recurrence, streaming and
+truncated tails is not a convergence theorem.
 
-[Geometry](geometry.md) makes Cartesian physical vectors fundamental and
-retains cylindrical/Fourier as a useful initial fusion chart. Figure-8 is a
-planned mandatory geometry gate; FCI is a separate map service. [Coupling](coupling.md)
-distinguishes the fixed equilibrium, external drive and induced response.
+Scott/GEM and Kendl TIFF/T3FF are important structural/reference landmarks;
+their exact assumptions must be matched before comparison.
 
-[Edge physics](edge-physics.md), [Solar System scope](space-plasmas.md) and
-[extensions](extensions.md) reserve neutral/reaction/wall, wave/heating,
-field-reduction, fusion-source, circuit and diagnostic actions. The combined
-state only contains selected active blocks. A shared library may acquire thin
-application consumers as needed; one engine does not require one executable.
-Unsupported combinations fail explicitly. Every feature earns production
-status with a scientific use case, derived coupling, an independent oracle
-and an actual certification/performance target.
+## DK, GK and FK
+
+DK/GK distributions use their own transformed phase-space measures, locations,
+Hamiltonians, polarization/magnetization and field push-forwards. They are not
+implemented by deleting dimensions from an FK array.
+
+A mixed FK/GK/DK system must derive the common field action and pairwise
+collision/exchange rules. Missing reduced physics is reported as model error,
+not hidden in a numerical tolerance.
+
+The same DK/GK/FK model may use continuum, delta-f particle or other
+representations as described in [representations.md](representations.md).
+
+## Coupling roles
+
+Representation and coupling are independent. A population may:
+
+- evolve;
+- source fields;
+- feel induced response.
+
+This separates:
+
+- passive diagnostics/test particles;
+- prescribed reservoirs;
+- active species;
+- fixed bulk + induced plasma response;
+- fully evolving coupled systems.
+
+Likewise fields are decomposed into background, external drive and induced
+response where useful.
+
+## Spatial hybrid physics
+
+A long-range KIN6D capability is model fidelity that varies by region, for
+example
+
+\[
+{\rm MHD\ bulk}
+\rightarrow
+{\rm GK\ turbulent\ region}
+\rightarrow
+{\rm FK\ resonant/sheath\ region}.
+\]
+
+This requires derived overlap/interface equations, conservative transfer and a
+bounded model/interface defect. A spatial mask between unrelated residuals is
+not a valid hybrid.
+
+Adaptive model fidelity is separate from numerical \(h/p/L/n\) refinement.
+
+## Field hierarchy
+
+Fields are selected independently:
+
+\[
+{\rm prescribed}
+\rightarrow
+{\rm electrostatic}
+\rightarrow
+{\rm quasineutral\ EM}
+\rightarrow
+{\rm Darwin}
+\rightarrow
+{\rm full\ Maxwell}.
+\]
+
+The field reduction is a physical model choice, not merely a preconditioner.
+Conversely, reduced field equations may be used as a preconditioner while the
+target residual remains full Maxwell.
+
+## Edge and open-system models
+
+The same model axes extend from core through SOL/divertor to wall. Cross-field
+transport may be prescribed, closure-based or resolved by gyrofluid/GK/FK
+turbulence. Neutrals may be fluid, deterministic kinetic or Monte Carlo.
+Atomic/reaction, radiation, sheath and wall models are independent but coupled
+through explicit particle/charge/momentum/energy exchanges.
+
+Open-system physics does not generally preserve isolated-plasma invariants.
+The correct ledger includes reservoir, radiation and wall terms.
+
+## Space-plasma models
+
+Solar-System applications reuse the same hierarchy with open boundaries,
+gravity/rotation/radiation pressure, CGL/ten-moment/Landau-fluid closures,
+pickup ions, charge exchange, photoionization and surfaces.
+
+Useful mixed configurations include FK ions + fluid electrons, MHD solar wind
++ kinetic pickup ions + kinetic neutral H, and local FK reconnection embedded in
+a larger reduced model.
+
+## Controlled model comparisons
+
+To attribute a difference to physics, freeze as much as possible:
+
+- geometry and physical inputs;
+- normalization and source/boundary data;
+- observable definition;
+- numerical error target.
+
+Then change one model assumption or one inseparable group of terms. If two
+certified models give observable intervals \(I_A\) and \(I_B\), their difference
+lies in \(I_B-I_A\). That is not automatically a theorem that either brackets
+the real plasma.
+
+For different state spaces, compare through explicit lift/projection maps and
+physical observables.
+
+## Adaptive fidelity objective
+
+Eventually KIN6D should estimate the observable effect of each unresolved
+defect using an adjoint:
+
+\[
+\delta Q_k\approx-\lambda^\dagger d_k.
+\]
+
+Candidate defects include spatial resolution, velocity/harmonic tails,
+collision fidelity, GK/FK reduction, neutral treatment and atomic fidelity.
+
+Refinement may then be ranked by
+
+\[
+|\lambda^\dagger d_k|/\text{additional cost}.
+\]
+
+This becomes a guarantee only after the corresponding stability and remainder
+bounds exist.
+
+## Admission discipline
+
+A new model is implemented only when a concrete case needs it. It must have:
+
+- a complete equation/closure/coupling statement;
+- a limiting or structural oracle;
+- an external reference where available;
+- differentiability semantics;
+- certification status;
+- performance target.
+
+No model becomes production merely because the generic architecture could
+represent it.
 
 Chris&AI

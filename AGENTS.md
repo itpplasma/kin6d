@@ -1,110 +1,149 @@
 # kin6d agent instructions
 
-## Load before work
+## Read before changing the project
 
-Read README.md, DESIGN.md, and ROADMAP.md for the project map, current
-milestone, and acceptance gates. Read docs/tooling.md before implementation
-and docs/certification.md before proposing a certified numerical result.
-The first CPU prescribed-field 1X1V slice runs; read docs/first-example.md
-for exact evidence. Do not claim formal-proof, CUDA, self-consistent-field,
-or broader solver evidence that has not been produced.
+Read README.md, DESIGN.md and ROADMAP.md first. Then read the specification
+that owns the proposed change. In particular:
 
-## Required policy
+- docs/representations.md for Eulerian/semi-Lagrangian/particle/blob,
+  full-f/delta-f, PIC/PIF and deterministic/QMC/MC choices;
+- docs/student-laboratory.md for early priorities;
+- docs/model-family.md and docs/species-models.md for MHD/reduced/hybrid models;
+- docs/moment-models.md for gyrofluid/Landau-fluid/gyromoments;
+- docs/collisions.md for collision operators and thermodynamic structure;
+- docs/numerics.md and docs/performance.md before hot-path work;
+- docs/differentiability.md and docs/adjoints-structure.md before derivative,
+  sensitivity, optimization or goal-error work;
+- docs/certification.md before a rigorous-result claim;
+- docs/tooling.md before implementation or dependency changes.
 
-- Scientific and technical communication is English. Sign messages drafted
-  or sent on Chris's behalf to other people with `Chris&AI` on its own final
-  line unless explicitly instructed otherwise.
-- Scientific/application code, generator drivers, and the certifier are
-  Fortran. No required Python layer. Lean is the trusted proof layer;
-  optional native CUDA lives behind ISO_C_BINDING and a thin C ABI.
-- Every project-owned numerical kernel, including reference, derivative,
-  enclosure, and CUDA leaves, must be emitted by fortsym. Retain generators,
-  exact definitions, assumptions, provenance, and independent oracles.
-  Never edit generated numerical code or hide formulas in handwritten glue.
-- Read docs/differentiability.md before adding a continuous production operator
-  or derivative. Generate primal/JVP/VJP from its shared FortSym definition;
-  HVP follows a concrete use. Keep symbolic mathematics separate from execution
-  schedules. Use implicit solve derivatives, tile-local recomputation and lazy
-  reductions; budget trajectory checkpoints and physical state explicitly.
-  Declare derivative domains/events and retain independent derivative oracles.
-- Generic dependency defects and missing features are repaired in their
-  owning repositories. The user authorizes the controller to push locally
-  verified fixes to owned upstream main promptly. Coordinate with active
-  owners, retain a focused reproducer, pin the fix, and recheck kin6d.
-  No permanent consumer workaround or copied generic numerical kernel.
-- Follow the Fortran skill for implementation. Preserve CMake/CTest
-  presets/profiles and use resident fo Gremlin feedback with a verified
-  driver. Missing support is an upstream issue, not a reason to omit a gate.
-- Make the smallest complete change. Defer abstractions until required by
-  the next capability, existing duplication, or measured cost/accuracy.
-- The first executable commit and every later increment must retain a
-  runnable end-to-end default demo with meaningful Fortran postprocessing.
-  Read docs/demonstrations.md. Plot candidates with full certified intervals
-  and overlay general models' limiting cases with earlier reference cases.
-  Pointwise bands require pointwise/cellwise bounds, not a generic L2 radius.
-  Never commit generated plot images, PDFs, SVGs, frames, or animations.
-- Tests require independent behavioral oracles. Regeneration equality,
-  patch matching, and a small algebraic residual are not continuous tests
-  or continuous-PDE certificates.
-- Read docs/benchmarks.md and the planned benchmarks/atlas.json before
-  implementing a new physics layer. Retain rigorous reference evaluation,
-  explicit asymptotic remainder status, limiting-case plots and cross-code
-  comparisons. Planned metadata is not a passing test. Literature corpus
-  manifests, PDF attachments and Zotero dumps stay outside this repository.
-- Read docs/model-family.md before adding a bulk/fluid/MHD or response model.
-  Bulk aggregation differs from per-species fluid models. Account for every
-  population once, derive spatial/species coupling, and keep one engine rather
-  than named-code solver modes. Steady, response, eigenvalue and trajectory
-  certificates discharge different mathematical claims.
-- Read docs/student-laboratory.md and docs/moment-models.md before changing
-  early priorities or adding moments/turbulence. Direct steady 1X1V -> 0X3V
-  -> 1X3V -> real-device DK is the scientific spine; tiny dynamics/HM is an
-  early secondary gallery. Models share operators and numerical contracts.
-  Derive closure, Poisson/Jacobi, metric degeneracy and open-system ledgers;
-  deterministic continuum is the production default.
-- Read docs/adjoints-structure.md before structural or goal-error claims.
-  Declare physical pairings, signs, nullspaces, coercivity/inf-sup hypotheses
-  and Onsager–Casimir transformation. Indicators are not rigorous remainders;
-  different model spaces need lifting before defect comparisons. A discrete
-  positive matrix or projected invariant complement is not a continuous gap.
-- Collision physics, discrete conservation/entropy treatment, and actual
-  certificate strength are separate contracts. Read docs/collisions.md;
-  compose fixed-coefficient Landau/BB actions from shared pair primitives.
-  Never enforce closed-system invariants on an incompatible reservoir model
-  or advertise a diagnostic field-only action as a physical closure.
-- Read docs/species-models.md and docs/devices.md before adding a reduction
-  or machine case. Species representation, collision pairs, and field models
-  require explicit compatibility. Generic 3D geometry has no fundamental
-  tokamak type. Fixed species are reservoirs; fields can remain self-consistent.
-  Keep numerical certificates, model differences, and proved reduction
-  remainders distinct. Production needs scoped physical-parameter device gates.
-- Read docs/performance.md before hot-feature implementation. Review
-  complexity/separability/traffic first; pair small correctness and realistic
-  performance cases. Compare fixed-input best-known time/memory/accuracy
-  baselines, measure noise and profile solver/certifier separately. Keep
-  fast sentinels separate from dedicated audits; no automatic protected-host
-  run or schedule. Repair material bottlenecks at their actual upstream owner.
-- Read docs/numerics.md before spatial/performance implementation. FortFEM
-  owns generic spatial mathematics; kin6d owns plasma laws. Preserve FEEC
-  structure, assembled reference actions and generated numerical leaves.
-  Prefer matrix-free tensor/batch actions and explicit vector/scratch budgets;
-  add optimized layouts and GPU/MPI only on measured evidence.
-- Read docs/geometry.md and docs/coupling.md before spatial or coupling work.
-  Physics sees Cartesian vectors; charts/momentum frames are independent.
-  Never require global toroidal angle or nested surfaces. Frozen background
-  and induced response are distinct, as are active/test/reservoir roles.
-- Read docs/edge-physics.md, docs/space-plasmas.md and docs/extensions.md when
-  their capability is needed. Unsupported combinations fail explicitly.
-  Numerical, physical-data, model-reduction and statistical uncertainties are
-  separate; Monte Carlo confidence intervals are never deterministic bounds.
-  Track SI normalization, external-data hashes and proof/model provenance.
-  New production physics requires a scientific use case, derived coupling,
-  independent oracle and certification/performance target.
-- Preserve unrelated edits and stage explicit paths. One controller owns
-  integration and promotion; workers return evidence. Freeze review inputs
-  by exact base commit and patch digest when evidence is uncommitted.
-- Never touch `faepop*` or `faepcr*` hosts without an explicit user request
-  naming the host. The faepmac1/faepmac2 exception remains as instructed.
-- Keep every response and tool call below about 300 lines / 8k tokens.
-  Write long files incrementally and report summaries. Repeat this limit
-  in any authorized subagent prompt; do not delegate without authorization.
+The first prescribed-field 1X1V slice already runs. Read
+docs/first-example.md before changing it or claiming broader evidence.
+
+## Architectural rules
+
+- Keep **one mathematical engine**. Do not add named-code modes such as
+  neo2_mode, gene_mode, jorek_mode, pic_code or separate application
+  implementations for physics already expressible through shared operators.
+- Physics model, distribution form, numerical carrier, particle-field coupling,
+  sampling strategy, collision realization, field model and active/test/
+  reservoir role are separate axes. Reject unsupported combinations explicitly.
+- Direct steady kinetic science is the primary research spine. Early transients
+  and turbulence are required demonstrations and verification branches, not the
+  architectural center.
+- Structure preservation is the first principle. Semi-Lagrangian,
+  characteristic, Eulerian, PIC/PIF and blob methods are realizations selected
+  by the problem, not project identities.
+- Deterministic continuum is the preferred high-accuracy reference where
+  competitive, but Monte Carlo, randomized QMC, real PIC and stochastic
+  collisions/neutrals are valid first-class methods when justified. Never call
+  a statistical interval a deterministic certificate.
+- Full-f, delta-f and control-variate formulations are first-class. A reduced
+  model may serve as a preconditioner or control variate without changing the
+  target model solved.
+- Physical vectors are Cartesian. Charts and momentum frames are independent.
+  Do not require global toroidal angle, nested surfaces or one geometry class.
+- Bulk MHD aggregates explicitly owned populations. It is not a per-species
+  fluid switch. Prevent double counting of charge/current/pressure/energy.
+
+## Mathematics, derivatives and certification
+
+- Project-owned continuous numerical leaves come from retained FortSym
+  definitions. Generate primal/JVP/VJP from the same symbolic source; add HVP
+  only for a concrete consumer. Keep symbolic mathematics, indexed operator
+  structure and hardware schedules separate.
+- FortAD, finite/complex-step checks and analytical identities are derivative
+  oracles. Production correctness must not require LLVM/Enzyme.
+- Differentiate implicit equations, not solver iterations: nonlinear states,
+  linear solves, roots and eigenproblems use their equation-level tangent and
+  adjoint systems.
+- Declare physical pairings, signs, nullspaces and time-reversal parity.
+  Self-adjointness, skew-adjointness, positivity, entropy production and
+  Onsager--Casimir relations are explicit contracts, not informal expectations.
+- The fast candidate solver is untrusted. The primary rigorous path is a
+  Fortran interval/ball certificate. Lean is optional downstream assurance and
+  is not an early milestone requirement.
+- Distinguish candidate, certified-discrete, certified-continuous,
+  optionally formally-certified-continuous, probabilistically-certified
+  and certification-failed. State the exact claim.
+- A numerical enclosure proves the named model, not physical reality. Model
+  reduction, physical-data uncertainty and stochastic sampling need separate
+  bounds/status.
+- Goal-oriented indicators are not rigorous remainders until the stability,
+  lifting and nonlinear remainder hypotheses are checked.
+
+## Numerical/performance rules
+
+- Review mathematical complexity, separability, unavoidable bytes and solver
+  vector count before implementation.
+- Prefer tensor-product mapped patches, sum factorization, partial assembly,
+  matrix-free actions and many-RHS batching where the model permits them.
+- Never materialize a global kinetic Jacobian or logical pairwise matrix merely
+  because the formula contains two indices. Use tiled map/reduce or sparse
+  interaction structure.
+- Hot production kernels allocate no memory per call. Avoid hot-loop dynamic
+  dispatch, hidden array temporaries and duplicate full-state layouts.
+- Keep one canonical state layout plus bounded tile scratch. Adaptivity should
+  use block/resolution classes rather than arbitrary per-cell raggedness unless
+  evidence demands otherwise.
+- Configuration-space ownership is the default distributed decomposition so
+  local collision/velocity work remains local. Change only on measured need.
+- Candidate mixed precision, fast math and nondeterministic GPU reductions are
+  allowed only when strict residual/certificate evaluation remains independent.
+- Maintain simple reference, optimized CPU and optimized accelerator actions
+  for hot operators when those paths exist. Verify them against one another and
+  independent physics/mathematical oracles.
+- Performance evidence is multi-level: microkernel, operator, residual, solve
+  and scientific case. Track time, peak/attributed memory, iterations,
+  communication/reductions and derivative overhead. Compare against best-known
+  fixed-input baselines, not only the previous commit.
+- Fix generic bottlenecks in the dependency that owns them. Do not duplicate a
+  generic optimized kernel downstream.
+
+## Physics admission rules
+
+A new production physics feature needs:
+
+1. a concrete scientific or teaching use case;
+2. a complete mathematical model and coupling/energy/source ledger;
+3. an analytic/manufactured or structural oracle;
+4. an independent cross-code/literature oracle where available;
+5. a differentiability statement;
+6. a certification target/status;
+7. a performance/memory target.
+
+Implement the smallest complete case. Do not build speculative framework
+hierarchies in advance.
+
+Important long-range branches include collisions, gyrofluid/gyromoments,
+MHD/kinetic-MHD, PIC/PIF/blobs, real-device DK/GK/FK, edge/neutrals/walls,
+RF/NBI/reactions, space plasmas, diagnostics and optimization. Planned scope is
+not implemented functionality.
+
+## Repository and dependency policy
+
+- Scientific/application code, generators and rigorous checker are Fortran.
+  No mandatory Python layer.
+- FortFEM owns generic spatial mathematics; FortNum generic numerics and
+  verified arithmetic; FortSparse sparse kernels; FortSym symbolic generation;
+  FortAD derivative tooling; FortIO/FortPlot/FortArray their respective generic
+  domains. KIN6D owns plasma-specific mathematics and composition.
+- Native CUDA is optional behind ISO_C_BINDING and a thin C ABI. The CPU path
+  remains a reference.
+- When an owned upstream dependency has a concrete defect or missing generic
+  feature, add a focused independent reproducer there, repair it there, verify
+  it, push the owning main as allowed, pin/recheck KIN6D. Do not keep permanent
+  consumer workarounds.
+- Preserve unrelated edits. One controller owns integration/promotion.
+- Never touch protected faepop* or faepcr* hosts without an explicit user
+  request naming the host.
+- Keep generated images, movies, PDFs and large benchmark data out of source
+  history. Retain recipes, numeric evidence and provenance.
+
+## Communication
+
+Scientific and technical communication is English. Messages drafted or sent on
+Chris's behalf to other people end with Chris&AI on its own final line unless
+explicitly instructed otherwise.
+
+Chris&AI

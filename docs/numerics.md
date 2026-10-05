@@ -1,241 +1,293 @@
-# Spatial foundation and performance design
+# Numerical foundation
 
-Status: proposed numerical policy. No kin6d numerical backend is implemented.
-The initial reference case remains small; production policies below take
-effect when their corresponding operators are introduced.
+Status: canonical numerical architecture. FortFEM already contains substantial
+tensor-product spline/FEEC machinery, but KIN6D does not yet have the final
+matrix-free/tiled production backend described here.
 
-## Ownership and checked FortFEM snapshot
+## Ownership
 
-FortFEM is the preferred spatial mathematical foundation. kin6d owns plasma
-models, species/bulk ownership, collisions, reactions, closures, physical
-boundary laws, machine-data adapters and certification claims. FortFEM owns
-generic spatial maps, spaces, weak operators, orientations, traces, interfaces
-and discretization actions. FortSparse/PETSc supply sparse/large solves;
-fortnum/fortsym supply generic numerical/spectral algebra and generated leaves.
-FortFEM must not become a plasma application.
+FortFEM owns generic spatial mathematics. KIN6D owns plasma-specific equations,
+constitutive laws and composition.
 
-The checked main revision on 2026-10-05 is
-`2d7baa19fe1bef02ce279fa407830c8731bdc663`. Its
-[scope roadmap](https://github.com/lazy-fortran/fortfem/blob/2d7baa19fe1bef02ce279fa407830c8731bdc663/ROADMAP.md)
-separates reusable numerical ingredients from application closures. Source
-inspection confirms B-spline de Rham complexes, NURBS surface/volume maps and
-geometry derivatives in
-[bspline_feec.f90](https://github.com/lazy-fortran/fortfem/blob/2d7baa19fe1bef02ce279fa407830c8731bdc663/src/elements/bspline_feec.f90).
-The [coverage ledger](https://github.com/lazy-fortran/fortfem/blob/2d7baa19fe1bef02ce279fa407830c8731bdc663/doc/roadmap_mephit_feec_bem.md)
-distinguishes implemented paths from remaining work.
+The intended spatial stack includes:
 
-The checked [3D spline assembly](https://github.com/lazy-fortran/fortfem/blob/2d7baa19fe1bef02ce279fa407830c8731bdc663/src/assembly/assembly_bspline_3d.f90)
-constructs CSC/local assembly data and repeatedly calls a basis evaluator
-whose checked source allocates whole-basis work/output arrays. This motivates
-a span-local, sum-factorized batched path. This inspection is not a FortFEM
-build/test or throughput result; it does not prove that every other upstream
-path lacks such optimization. Verify the exact API and current upstream
-owner before implementing a missing generic slice.
+- mapped tensor-product B-splines/NURBS;
+- FEEC-compatible \(H^1\), \(H({\rm curl})\), \(H({\rm div})\), \(L^2\) spaces;
+- DG/HDG and broken spaces;
+- Fourier directions where genuinely periodic;
+- multipatch/mortar coupling;
+- FCI parallel operators;
+- cut/unstructured fallback where geometry requires it;
+- FEM/BEM/DtN/PML boundary machinery.
 
-Continuous calibration, measurement levels, baselines and audit cadence are
-specified in [performance engineering](performance.md). No upstream source
-inspection substitutes for measured throughput or consumer verification.
+Do not reimplement generic spatial kernels in KIN6D.
 
-## Governing rules
+## Prefer structured tensor geometry
 
-Exploit separability before parallelism. Use regular mapped patches where
-suitable, while retaining a general-geometry escape path. Store states and
-compact factors rather than a full phase-space operator. Move data only when
-an operator/ownership change requires it. Every approximation must have an
-explicit defect in the eventual certificate; mathematically equivalent
-accelerations still have floating-point and implementation obligations.
+"General 3D geometry" does not mean tetrahedralize everything.
 
-These rules constrain the production path without prescribing day-one AoSoA,
-MPI, CUDA, AMR, or a universal execution-plan framework. Keep the smallest
-runnable layout until a measured need justifies the next change.
+The preferred path is
 
-## Compatible spaces and geometry
+\[
+\boxed{\text{mapped tensor patches}+\text{interfaces/escape hatches}.}
+\]
 
-Adopt the discrete de Rham structure for Maxwell/compatible magnetic fields:
-`H1 -> H(curl) -> H(div) -> L2`, with electric fields in H(curl) and magnetic
-flux in H(div) where the chosen formulation requires them. Validate incidence,
-orientation, Piola maps, commuting projections, boundary conditions and
-charge/current transfer. `div_h curl_h=0` is an algebraic/topological identity;
-it does not bound continuous field error or guarantee a correctly initialized
-Gauss law. Floating-point residuals and gauge/harmonic nullspaces remain.
-A different potential formulation needs an equivalent compatible complex.
+This preserves regular data access, tensor contractions and high-order
+accuracy. Use unstructured/cut elements only where the topology or wall
+geometry makes them worthwhile.
 
-Fields, fluid variables and distributions need not use identical spaces.
-Smooth equilibria/fields may benefit from spline/IGA continuity; kinetic
-transport near sharp gradients and walls may prefer broken spline/DG/SEM
-spaces. Knot multiplicity can vary continuity within a spline family, but
-broken spaces still need their own fluxes, traces and compatible transfers.
-Shared physical geometry does not make these transfers automatic.
+For conventional fusion devices, a poloidal tensor patch times a Fourier or
+periodic coordinate can be extremely efficient. Figure-8/G-frame and spherical
+space-plasma charts use the same map abstraction.
 
-Prefer mapped tensor-product patches where suitable, including cylindrical
-fusion charts, G-frame Figure-8 patches, Cartesian/spherical space blocks.
-Mortar, fitted/cut or unstructured pieces handle actual geometric/topological
-needs. Do not mandate tetrahedra everywhere or assume one tensor patch can
-cover every wall/X-point domain. NURBS maps and other embeddings must pass
-[geometry](geometry.md)'s regularity/invertibility certificate obligations.
+## Compatible fields
 
-FortFEM supplies FCI interpolation/support actions and generic trace/interface
-machinery. The application supplies the magnetic law, tracer choice, map
-validity and terminal physical boundary law, reusing generic upstream tracing
-where appropriate. FCI is not the physical coordinate system. BEM/DtN/PML,
-IGA multipatches, cut enrichment and HDG are later options for a concrete
-vacuum/open-domain/interface need, each with its own error treatment.
+For electromagnetics,
 
-## Tensor actions and batches
+\[
+E_h\in H({\rm curl}),\qquad
+B_h\in H({\rm div})
+\]
 
-For suitable charts, the full state has spatial, species-specific radial
-momentum, angular-harmonic and optional periodic factors. This factorization
-of representation is not a low-rank approximation to the distribution.
-Never form the full six-dimensional tensor-product matrix or global kinetic
-Jacobian. Apply low-dimensional factors and local variable-coefficient
-couplings; not every nonlinear/curved operator has an exact finite Kronecker
-sum. Retain compact factors, quadrature data and necessary sparse coarse/
-field blocks, rather than interpreting “store states” as banning all matrices.
+is preferred so the de Rham identities are represented structurally.
 
-For tensor degree `k` and quadrature proportional to `k`, dense 3D local
-application costs roughly O(k^6), while sum factorization can give O(k^4)
-work with O(k^3) state. Curvature, vector components, interfaces and nonlinear
-coefficient evaluation affect the constants and applicability. Benchmark
-end-to-end certified accuracy, not this asymptotic estimate alone.
+Scalar densities/temperatures and kinetic distribution coefficients may use
+different spaces. Do not force all state variables into the same finite element
+family for convenience.
 
-The first needed generic optimization belongs upstream in FortFEM: a
-span-local evaluator with caller-owned scratch, precomputed 1D basis/
-derivative tables, successive tensor contractions, and partial assembly of
-compact quadrature geometry/Hodge data. No global spline basis or element
-matrix is built in the hot application path. Cache only what improves the
-measured memory/time tradeoff and invalidate geometry-dependent data when
-geometry changes. Preserve the existing assembled path as a reference.
+## Tensor-product spline production path
 
-The plasma workload applies the same spatial action to many momentum/angular
-channels. Introduce a generic batched many-RHS action upstream when this
-workload exists. Reuse basis/geometry data across channels and resolve runtime
-configuration outside point/element hot loops. Mathematical forms compile
-to specialized generated kernels; they are not dynamically interpreted at
-every quadrature point. All new numerical leaves obey the fortsym policy,
-including upstream additions and CUDA/derivative/enclosure targets.
+The existing assembled FortFEM spline path is a reference. The production hot
+path should add:
 
-A DG spatial space does not independently select a second transport backend.
-Choose one coherent characteristic/weak transport scheme first, with its
-reconstruction, mass, flux and boundary contracts. Add alternate schemes only
-for a demonstrated need and retain an independent analytical oracle.
+1. span-local basis evaluation returning only nonzero basis functions;
+2. no allocation inside basis/quadrature application;
+3. precomputed 1D basis/derivative tables;
+4. sum factorization;
+5. partial assembly of compact geometry/Hodge factors;
+6. matrix-free operator application;
+7. native many-RHS batching.
 
-## Layout, modes and collision locality
+In 3D, never construct a full basis-by-quadrature tensor when three 1D
+contractions suffice.
 
-Use one canonical packed kinetic layout, with candidate/residual/update and
-necessary solver vectors accounted separately. When profiling requires it,
-use tiled AoSoA/batched storage and tile scratch to serve spatial actions,
-velocity-local collisions and transforms. Avoid permanent full-state copies
-for separate collision/transport/FFT orientations. Species blocks may differ
-in radial grid, scale and harmonic degree; they do not share an imposed
-common electron/ion/alpha momentum grid.
+The same operator should retain an assembled small-problem reference for
+validation/coarse/direct use.
 
-Store only independent real-state Fourier coefficients where valid, handling
-normalization, conjugacy and Nyquist modes explicitly. Complex perturbation/
-eigenvectors may require a different representation. In cylindrical fusion,
-`n=0` is axisymmetry only with the compatible rotating momentum/vector frame;
-a generalized periodic chart's zero mode is not necessarily a symmetry.
-Sparse convolution for tiny mode sets versus padded FFT for larger ones is
-a later measured crossover, not two initial implementations. Both need
-consistent projection/alias bounds, including nonpolynomial operations.
+## Many-RHS kinetic spatial actions
 
-Spherical harmonics give sparse rotation and low-order moment extraction:
-number in degree zero, Cartesian momentum/current in degree one, stress in
-degrees zero/two, with appropriate relativistic radial weights. There is no
-need to reconstruct all angular samples to compute these FK moments.
-Reduced-model polarization/magnetization and collision potential products
-still require their own actions. Low-degree Gaunt contractions versus angular
-transforms are similarly measured alternatives with rigorous quadrature/tails.
+KIN6D frequently applies the same spatial operator to many velocity/harmonic
+channels:
 
-For fixed grid, boundary condition and pair coefficients, harmonic radial
-potential operators can reuse one factorization per species/grid/degree for
-many spatial RHS. Moving grids, changed tails/boundaries or state-dependent
-coefficients invalidate relevant caches. Landau and Braams–Karney equations
-use their own consistent coordinate/scaling conventions; a velocity-space
-Rosenbluth radial formula cannot silently be reused in relativistic momentum.
-This batch opportunity does not remove singular/tail certification work or
-cross-species grid transfers.
+\[
+Y=A_xX,
+\qquad
+X\in\mathbb R^{N_x\times N_{\rm channel}}.
+\]
 
-## Solves, derivatives and memory
+This is a first-class API, not a loop around a vector operator.
 
-Use PETSc nonlinear/Krylov infrastructure through its Fortran interface.
-Production residuals and JVPs are matrix-free; exact mathematical derivatives
-come from the shared FortSym definition, with FortAD as an independent oracle
-or supported fallback. The computed JVP has ordinary floating error and
-requires independently checked actions. Every continuous production operator
-also provides the corresponding VJP; HVP is introduced for a concrete use.
-A weighted VJP uses its stated coefficient/physical inner product, not an
-unqualified array transpose. Finite differences are diagnostics or explicitly
-bounded fallback experiments, not the default production derivative contract.
+Geometry and basis data should be reused across large RHS batches, converting a
+nominally bandwidth-bound FEM action into a denser tensor workload.
 
-[Differentiability policy](differentiability.md) requires implicit solve
-derivatives, lazy indexed reductions and tile-local intermediate recomputation.
-Mathematical expressions and indexed dependencies remain distinct from layout/
-fusion/scheduling choices. No global derivative tape or pairwise matrix is
-the default; transient adjoints still budget checkpoint/recompute trajectories.
-Distribute a physical state that exceeds one device before defaulting to
-out-of-core streaming, whose transfer costs require explicit measurement.
+CPU and GPU schedules may choose different tile shapes while representing the
+same action.
 
-Assembled tiny/coarse/field blocks are useful in preconditioners. Reduced DK/GK,
-fluid/MHD, local collision, degree-block and mode-block actions may accelerate
-an FK solve without changing its converged residual's requested physics.
-Track transfers and avoid accidentally solving the preconditioner's equations
-as the final model. Strong preconditioning has to be measured, not assumed.
+## Phase-space representation
 
-Budget global vector count explicitly. A candidate, residual, update and
-roughly a handful of Krylov/work vectors is a goal, not a universal guarantee.
-Small restarted FGMRES, short-recurrence variants or nonlinear globalization
-are decisions based on actual stability/convergence. Fifty 100-GB vectors
-are not an acceptable unreported default. Tiny full-GMRES diagnostics remain
-useful. Include preconditioner factors, collisional auxiliaries, padded mode
-scratch, certifier and checkpoint memory in the budget.
+A strong continuum FK reference is
 
-Static condensation/HDG can remove local interiors when the chosen discrete
-system admits the elimination. Exact algebraic elimination preserves that
-system, but conditioning, local solve error, interface norms and reconstruction
-still enter the certificate. It is not automatically easier to certify.
+\[
+f_s(x,p,\Omega_p)
+=
+\sum_{\ell,m}
+f_{\ell m}^s(x,p)Y_{\ell m}(\Omega_p).
+\]
 
-## Execution and retained evidence
+Each species has independent radial momentum extent/order and angular cutoff.
+A local magnetic frame or restricted \(m\) is a later optimization requiring
+its own geometry/derivative/certificate treatment.
 
-When distribution is necessary, decompose primarily in configuration space,
-keeping complete local velocity and preferably periodic mode sets together.
-Collisions are spatially local; transport needs halos and fields need global
-coupling. Fourier physical-angle nonlinear evaluation also needs its mode
-set/transform communication. Move to velocity/mode decomposition only after
-capacity or timing demonstrates its need. Regular patch resolution classes
-can retain batching under adaptivity; transfer and class-selection error
-must be controlled.
+Fourier modes are used where a true periodic coordinate exists. Derivatives in
+that direction are diagonal; nonlinear products use measured direct-convolution
+versus FFT/pseudospectral crossovers.
 
-Overlap independent local collisions with transport halo exchange when valid.
-CUDA batches use the thin ISO_C boundary. Keep state/work vectors resident
-where a measured GPU path benefits, reduce diagnostics in situ and checkpoint
-deliberately. Certification may run on CPU but data-transfer/staging costs
-must be counted. No routine full-distribution output at every iteration.
+This representation is not mandatory for every regime. Beam/ring/loss-cone or
+particle methods may use other velocity carriers.
 
-Mixed precision, approximate preconditioners and nondeterministic candidate
-reductions are allowed because the candidate is untrusted. The independent
-certifier evaluates the exact reconstruction under its own rigorous arithmetic
-contract. A failed certificate triggers refinement/re-solve or an explicit
-candidate-only result; it never converts an uncontrolled approximation into
-an accepted interval.
+## Sparse angular and collision structure
 
-Retain assembled reference, matrix-free CPU and eventual generated CUDA
-realizations for small common operators. Cross-check their actions, then use
-independent polynomial/invariant/manufactured/analytical expectations; agreement
-between three implementations sharing a mistaken formula is insufficient.
-Keep derivative duality, orientations, boundary balances and multiple RHS
-in the verification cases. Reference implementations also use generated leaves.
+Angular coupling tensors are stored as sparse interaction graphs when sparse.
+Do not store dense \(L^4\)-like Gaunt tensors.
 
-Local residual, map, quadrature and tensor-factor bounds can make certification
-tractable without constructing an interval global matrix. Continuous stability,
-nullspaces and unresolved spatial/momentum/harmonic tails remain the hard
-proof obligations; matrix-free JVP access alone cannot establish an inverse
-norm bound. Every optimization retains or supplies its needed error analysis.
+At low harmonic count, direct sparse contractions may win. At larger count,
+angular transforms/pseudospectral products may win. Benchmark the crossover.
 
-Measure total time and peak memory to certified observable tolerance, with
-solver, certification, communication, transfer and postprocessing breakdowns.
-Add each generic performance slice at its owning upstream repository, retain
-a focused independent reproducer, push a locally verified main fix promptly,
-and recheck the consumer. This document authorizes no speculative library
-redesign before a concrete client needs it.
+For Rosenbluth/Landau radial solves, factors depending only on species/grid and
+\(\ell\) should be constructed once and reused for all spatial/mode RHS. Use
+batched banded/specialized solves when the discretization permits them.
+
+## Particle/PIF/PIC numerics
+
+The particle representation follows [representations.md](representations.md).
+
+The generic hot patterns are:
+
+- particle push;
+- particle-field projection/gather;
+- local PIC deposition;
+- particle-mode PIF reduction;
+- sorting/binning/migration;
+- wall intersection;
+- stochastic event processing.
+
+PIF and other particle-in-basis couplings should use tiled reductions rather
+than an explicit particle-by-mode matrix. Direct and NUFFT schedules are
+benchmarked.
+
+PIC deposition/current updates must respect the compatible field discretization
+and charge continuity of the selected model.
+
+Particles and continuum must be able to coexist without duplicating common
+field, geometry, diagnostic or source machinery.
+
+## KeOps/FlashAttention-style indexed execution
+
+A logical operator
+
+\[
+y_i=\sum_jF(x_i,y_j,p)
+\]
+
+is represented as an indexed reduction. The schedule tiles \(i,j\), stages
+reused data in cache/shared memory/registers, evaluates \(F\), and immediately
+reduces. The full \(i\times j\) object is never written to global memory.
+
+The same execution pattern applies to:
+
+- PIF;
+- boundary/pairwise kernels;
+- some collision/reaction integrals;
+- quadrature residuals;
+- sparse graph interactions.
+
+Do not replace a superior \(O(N)\) or separable physical algorithm by a
+quadratic map/reduce merely because the scheduler can run it efficiently.
+
+## Data layout
+
+One canonical copy of the large kinetic state is preferred.
+
+Use tiled AoSoA-like layouts so both spatial and velocity kernels can process
+contiguous small blocks. When another orientation is essential, transpose a
+bounded tile into scratch instead of maintaining a second full-state copy.
+
+Local metadata may use 32-bit indices where safe; global identity/counts use
+wider types when needed.
+
+Resolution adaptation should initially use a small set of patch/block classes
+rather than fully ragged per-cell dimensions. This preserves SIMD/GPU batching.
+
+## Matrix-free nonlinear solves
+
+The steady solver interface is
+
+\[
+R(U),\qquad J(U)v,\qquad J(U)^\dagger v,\qquad P^{-1}v.
+\]
+
+Do not assemble a global kinetic Jacobian.
+
+The preconditioner may use cheaper physics without changing the target
+equations: DK/GK/MHD blocks, mode-diagonal approximations, local collision
+solves or coarse field solves are legitimate accelerators.
+
+Krylov memory is a first-class budget. A state too large to hold 50 copies
+requires small-restart or low-storage algorithms and stronger preconditioning.
+
+## Static condensation/HDG
+
+Where local interior unknowns can be eliminated algebraically, use static
+condensation/Schur complements to reduce global communication and state.
+
+Local elimination is exact with respect to the discrete model and therefore
+certification-friendly, provided roundoff/solve error is bounded.
+
+## Distributed-memory decomposition
+
+The default kinetic decomposition is configuration space, with each owner
+holding the complete local velocity/harmonic state. This keeps Coulomb
+collisions local.
+
+Change this only when memory or scaling data demonstrate the need.
+
+Start halo exchange, compute local collision/reaction work while communication
+is in flight, then complete spatial transport. Count global reductions
+explicitly; they can dominate Krylov scaling.
+
+## GPU residency
+
+Once accelerated, the production state remains on device across residual/JVP
+applications. CPU orchestration must not cause host/device ping-pong.
+
+Use large batched kernels, not one launch per element/mode/species. Kernel
+fusion is tuned against register pressure and occupancy; maximum fusion and
+maximum occupancy are not objectives by themselves.
+
+CUDA graphs, persistent kernels and asynchronous staged loads are later
+schedule optimizations triggered by profiles.
+
+## Mixed precision
+
+Candidate solves may use FP32/TF32 or approximate local factors in
+preconditioners if the strict FP64/rigorous residual and final certificate
+remain independent.
+
+The default safety pattern is
+
+\[
+\text{FP64 target state/residual}
++
+\text{lower-precision preconditioner}
++
+\text{rigorous final check}.
+\]
+
+Mixed precision does not weaken the mathematical target; it only changes how
+the candidate is obtained.
+
+## Adaptivity
+
+Numerical and physical adaptivity are separate.
+
+Numerical controls include
+
+\[
+h,\quad p,\quad N_p,\quad L,\quad M,\quad N_n,\quad \text{quadrature}.
+\]
+
+Physics controls include FK/GK/DK/gyrofluid/MHD, collision fidelity, neutral
+model and field reduction.
+
+The certifier/adjoint should eventually identify the dominant contribution to
+the requested observable rather than blindly refining every axis.
+
+## Reference implementations
+
+For a hot mathematical operator, retain when appropriate:
+
+\[
+\boxed{
+\text{simple/assembled reference}
+\leftrightarrow
+\text{optimized CPU}
+\leftrightarrow
+\text{optimized CUDA}.
+}
+\]
+
+They must agree under independent tests. The slow path is valuable for
+certification, debugging and cross-checking and should not be deleted simply
+because a faster backend exists.
 
 Chris&AI

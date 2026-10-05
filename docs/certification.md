@@ -1,336 +1,344 @@
 # Certification specification
 
-Status: general design and proof obligations; the first 1X1V example has a
-reviewed continuous snapshot bound evaluated with interval arithmetic. Lean
-verification and general nonlinear certificates remain open. This specification applies to the [kin6d design](../DESIGN.md).
+Status: general certification policy. The first 1X1V example already has a
+reviewed continuous snapshot enclosure evaluated with interval arithmetic.
+General nonlinear/kinetic certificates remain research work.
 
-## Result contract
+## Result states
 
-The [model family](model-family.md) extends this contract to enclosed
-equilibria, linear forced response, spectra and hybrid trajectories. Imported
-equilibrium uncertainty is propagated into response claims. Singular ideal
-operators and non-normal kinetic/resistive operators need their own constrained
-inverse, spectral isolation or resolvent/growth theorem. A finite eigenvalue
-interval is not a steady nonlinear root or a forced-response stability bound.
-The [atlas](benchmarks.md) independently certifies reference evaluation; exact
-identities and asymptotic checks support but do not replace this contract.
+A KIN6D result must state exactly what has been established.
 
-A steady certificate names a continuous operator `F`, its boundary data,
-constraints, input parameters, and function spaces. It supplies a reconstructed
-candidate `ubar` and proves, under listed assumptions,
+| State | Meaning |
+|---|---|
+| candidate | floating-point result and diagnostics only |
+| certified-discrete | rigorous enclosure of a finite algebraic problem |
+| certified-continuous | rigorous enclosure for the named continuous model |
+| formally-certified-continuous | continuous certificate additionally checked by a proof assistant |
+| probabilistically-certified | statistical confidence statement with declared probability assumptions |
+| certification-failed | one or more required premises did not close |
 
-$$
-\exists U^*\in\overline B_X(\bar U,r): F(U^*)=0.
-$$
+The project priority is **useful certified-continuous results**. Lean or another
+proof assistant may later strengthen generic theorem/checker assurance, but it
+is not required for interval arithmetic or for early scientific promotion.
 
-Uniqueness is a separate claim, usually within this ball and on the constrained
-space. It is neither global uniqueness nor dynamical stability. Positivity,
-regularity, and physical admissibility need their own verified premises.
-An `L²` error ball alone does not establish pointwise positivity or pointwise
-error bounds.
+A statistical interval from Monte Carlo is not a deterministic inclusion.
+When deterministic discretization bounds and statistical uncertainty coexist,
+report both.
 
-The report must state the norm and its dimensional scales. For example, a
-distribution norm must define momentum weights, species weights, spatial
-measure, and any derivatives. Field components need explicit normalization.
-Choose the first norm for the first theorem; the final kinetic norm remains
-an analytical decision. A finite Euclidean coefficient norm is not silently
-identified with a continuous function norm.
+## What is certified
 
-| Result state | Supported statement | Accepted scientific solution |
-|---|---|---|
-| `candidate` | Floating-point approximation and diagnostics | No |
-| `certified-discrete` | Enclosure of a finite algebraic problem | No |
-| `certified-continuous` | Continuous theorem with reviewed analysis and checked rigorous arithmetic | Yes, with that proof level stated |
-| `formally-certified-continuous` | Continuous theorem and instantiated certificate checked in Lean | Yes |
-| `certification-failed` | A specific bound, assumption, or checker obligation was not met | No |
+A certificate names:
 
-A case declares the required proof level and observable widths before a run.
-No automatic fallback can satisfy a request for formal certification by
-returning a reviewed analytical argument. The first closed reference case
-targets the formal level. Larger models may have useful candidates for a
-long time before their continuous certification gate is passed.
+- the continuous equations/operator;
+- phase-space/domain and boundary conditions;
+- constraints/gauges/nullspaces;
+- all physical parameters and input data;
+- the function space/norm;
+- the reconstructed numerical candidate;
+- the observable;
+- the exact stability/existence theorem used.
 
-## Candidate, generator, and checker
+Numerical certification concerns the named model. It does not automatically
+cover model reduction, uncertain atomic data, experimental calibration or
+physical adequacy.
 
-The numerical solver is untrusted. It can use ordinary FP64, approximate
-preconditioners, GPUs, mixed precision, and nondeterministic reductions when
-those capabilities become worthwhile. The certificate generator is also
-untrusted: its output must be checked against the mathematical definitions.
-Both are Fortran applications; the later fast path may invoke generated CUDA
-leaves. The rigorous evaluator uses fortnum interval/ball arithmetic,
-rigorous transforms, and verified linear algebra within their checked scope.
-Project-owned numerical leaves, including enclosure and derivative leaves,
-must be emitted by fortsym under the [kernel policy](tooling.md#kernel-generation-policy).
+## Solver and certifier separation
 
-Sharing a symbolic DAG reduces formula drift but does not establish that the
-DAG expresses the intended continuous physics. Retain independent analytical
-oracles and a checked bridge from the mathematical definition to the kernel
-and certificate data. AD results and generic numerical libraries are not
-formal proofs merely because their output is generated or called verified.
+The production solver is untrusted and may use:
 
-The checker verifies directed interval or ball arithmetic, reconstruction,
-residual bounds, stability bounds, and the theorem's premises. Exact rational
-or dyadic endpoints make numerical data reproducible. The Lean layer proves
-soundness of the relevant calculations and applies the continuous theorem.
-[LeanCert](https://github.com/alerad/leancert) is a candidate arithmetic tool;
-its existing root and integration machinery is not a ready-made kinetic PDE
-certifier.
+- ordinary FP64;
+- GPUs;
+- approximate preconditioners;
+- mixed precision;
+- relaxed/nondeterministic reductions;
+- heuristic continuation.
 
-The formal trust base includes Lean's kernel, admitted foundational axioms,
-the modeled equations and input interpretation, and the checked bridge from
-serialized data to mathematical objects. Pin Lean and mathlib versions,
-record theorem axioms, and reject `sorry`, unsafe proof shortcuts, and
-unproved analytical assumptions masquerading as established conclusions.
-Hashes bind artifacts to a theorem application; hashes themselves prove no
-numerical inequality.
+It produces a candidate \(\bar U\).
 
-## Continuous contraction theorem
+The rigorous Fortran certifier independently evaluates the quantities required
+by the theorem using FortNum interval/ball and verified numerical primitives.
+Project-owned rigorous numerical leaves come from the same retained FortSym
+mathematical definitions as the ordinary leaves where supported.
 
-Let `F:D subset X -> Y` be continuously Fréchet differentiable on a neighborhood
-of a closed ball in a Banach space. Construct a bounded linear approximate
-inverse `A:Y -> X` and `T(U)=U-A F(U)`. Verify that the ball stays inside the
-domain where all operators, boundaries, and assumptions are defined.
+Sharing a symbolic DAG prevents formula drift but is not itself a proof that
+the formula is the intended physics. Independent mathematical/physical oracles
+remain mandatory.
 
-Compute rigorous bounds
+## Nonlinear steady states
 
-$$
-\|AF(\bar U)\|_X\le Y_0,\qquad
-\sup_{U\in\overline B_X(\bar U,r)}
-\|I-A DF(U)\|_{X\to X}\le Z(r)<1.
-$$
+For
 
-If `Y_0 + Z(r) r <= r`, the map takes the ball into itself and is a contraction.
-Completeness gives a unique fixed point there. To conclude `F(U*)=0`, prove
-that `A` is injective on the relevant residual space, or provide an equivalent
-argument eliminating the residual kernel. A finite projected inverse alone
-does not meet this requirement.
+\[
+F(U)=0
+\]
 
-For example, a bound `Z(r)=Z_0+Z_1 r` reduces the self-mapping test to
-`Y_0 + (Z_0-1)r + Z_1 r² <= 0`, together with `Z(r)<1`. All constants and the
-chosen radius require rigorous arithmetic. This describes an intended
-mechanism, rather than a proof that the final plasma operator satisfies its
-premises. [RadiiPolynomial.jl](https://olivierhnt.github.io/RadiiPolynomial.jl/stable/)
-provides examples of this style of computer-assisted argument.
+a preferred general mechanism is a Newton--Kantorovich/Krawczyk/radii-polynomial
+style theorem.
 
-Collision invariants, potential gauges, translations, and equilibrium families
-can make the derivative singular. Prescribe compatible densities, total
-momentum, energy, gauges, or phase conditions as appropriate, then establish
-the theorem on the resulting constrained space. Do not hide a nullspace in
-an empirical inverse estimate.
+With an approximate inverse \(A\) and
 
-## Resolved state and infinite complement
+\[
+T(U)=U-AF(U),
+\]
 
-Embed the numerical reconstruction in the continuous space using `P_h`.
-The operator, approximate inverse, and derivative bounds must control both
-the retained block and `(I-P_h)X`, including their coupling. Tail control is
-an analytical estimate, not extrapolation from the last few coefficients.
+obtain rigorous bounds such as
 
-The following defects may be needed:
-
-- Spatial reconstruction, DG interface jumps, metric factors, and boundary
-  traces, including grazing orbit effects.
-- Radial momentum approximation, regularity at zero, omitted momentum domain,
-  and collision-potential far-field conditions.
-- Angular harmonics above `L_s`, toroidal modes outside the retained set, and
-  nonlinear coupling to both complements.
-- Collision-potential solves, cross-species projection, singular-kernel
-  treatment, quadrature, and nonlinear evaluation.
-- Characteristic integration, interpolation, and any split-step consistency
-  defect relative to the stationary differential equation.
-- Field reconstruction, exterior boundary treatment, input interpolation,
-  divergence constraints, and source/boundary compatibility.
-- Nonlinear solve residual and arithmetic rounding.
-
-For a discontinuous numerical state, either construct a conforming candidate
-with a rigorously bounded reconstruction difference or use a theorem that
-directly accounts for jumps in an appropriate weak norm. A cellwise strong
-residual omitting interface distributions is insufficient.
-
-## Error budget and refinement
-
-Begin with rigorous residual contributions in a common norm. If
-`F(ubar)=sum_i d_i` and `||A d_i|| <= Y_i`, then `Y_0 <= sum_i Y_i` follows by
-the triangle inequality. Record derivative and stability contributions too.
-Do not label a list of raw residual norms as additive solution-error bounds.
-
-The contraction theorem converts this combined defect and stability margin
-into a radius. Assigning separate solution-error contributions requires an
-additional justified inequality. Include cross-couplings and model-parameter
-variation where the theorem uses them.
-
-Refinement acts on spatial resolution, radial extent/order, `L_s`, toroidal
-bandwidth, quadrature, nonlinear tolerance, or interval precision according
-to the dominant checked contribution. Recompute the certificate after each
-change. A larger approximation space does not guarantee a smaller radius:
-the stability estimate or interval dependency may worsen. Report the actual
-certified widths and keep the previous successful result available.
-
-Compare refinements in the same continuous norm and under the same problem
-definition. Intersect observable intervals only when a theorem identifies
-the enclosed solution as the same branch. Two locally unique roots can still
-be different physical steady states.
-
-## Certified observables
-
-For a bounded linear functional `Q`,
-
-$$
-Q(U^*)\in Q(\bar U)+[-\|Q\|_{X^*}r,\|Q\|_{X^*}r].
-$$
-
-Rigorous quadrature and arithmetic additionally enclose `Q(ubar)`. Nonlinear
-observables use derivative bounds over the ball or an independent validated
-evaluation. Ratios require a denominator bounded away from zero. Wall fluxes
-need trace regularity; entropy needs control near zero; reaction rates need
-a specified cross-section model and its input uncertainty. None follows from
-a generic norm-ball label alone.
-
-Report numerical intervals separately from physical-input intervals and
-operator differences. If two certified models give intervals `I_A,I_B`,
-their observable difference lies in `I_B-I_A`. This does not establish that
-either model encloses the real plasma.
-
-An expensive model can sometimes be certified around a cheap-model candidate
-by checking `A F_rich(ubar)` and full derivative/tail bounds for the rich
-operator. One correction evaluation without those surrounding bounds is
-insufficient. Validated continuation can identify a common branch when its
-parameter-dependent existence and uniqueness obligations are proved.
-
-## First continuous certificate
-
-The first implemented slice bounds the continuous reconstruction of a
-prescribed-field 1X1V characteristic problem at each reported time. Its
-whole-velocity-cell interpolation remainder and arithmetic scope are derived
-in [the implementation report](first-example.md). The manufactured stationary
-Krook case provides the direct steady solver. These reviewed bounds are not
-a Lean theorem, a self-consistent field certificate, or a velocity-tail bound.
-The formal first-reference milestone remains open.
-
-## Bounded FP auxiliary certificate
-
-Start with a driven, spatially homogeneous, bounded one-dimensional momentum
-Fokker–Planck problem. This is a reference problem, separate from production.
-For `p in [-P,P]`, choose positive smooth `M(p)` and `D(p)` and solve
-
-$$
--\partial_p\bigl(DM\partial_p(f/M)\bigr)=S(p),\qquad
-f(\pm P)=M(\pm P).
-$$
-
-For example, use a normalized Gaussian `M` and the manufactured solution
-`f_exact=M(1+a cos(pi p/(2P)))` with `0<a<1`; derive `S` analytically.
-The boundary condition fixes the homogeneous nullspace. This driven model
-does not claim closed-system particle or energy conservation.
-
-Let `ebar=f-fbar`, with `fbar` a reconstruction satisfying the boundaries.
-Define `||e||² = integral e²/M dp`, and the continuous residual
-`rbar=S+partial_p(DM partial_p(fbar/M))`. Dirichlet Poincaré and bounds on
-the positive coefficients give a coercivity constant
-
-$$
-\lambda_{\rm lb}=
-D_{\min}\frac{M_{\min}}{M_{\max}}\left(\frac{\pi}{2P}\right)^2,
+\[
+\|AF(\bar U)\|\le Y,
 \qquad
-\|f-fbar\|_{L^2(M^{-1})}
-\le \|rbar\|_{L^2(M^{-1})}/\lambda_{\rm lb}.
-$$
+\sup_{U\in B(\bar U,r)}\|I-ADF(U)\|\le Z(r).
+\]
 
-Indeed, writing `g=ebar/M` gives energy `integral DM (g')²`, bounded below
-by `lambda_lb integral M g²`; testing the error equation and applying
-Cauchy–Schwarz yields the enclosure. Existence comes from the coercive weak
-problem. This is a planned proof to formalize, not an existing Lean theorem.
-Require enough reconstruction regularity for the stated `L²` residual, or
-replace it with a proved weak-residual estimate.
+A suitable self-mapping/contraction inequality proves a nearby solution and,
+when the theorem provides it, local uniqueness.
 
-The first demo also needs a pointwise band. Let `Rbar` rigorously bound the
-weighted residual norm and use `g=(f-fbar)/M`, with zero endpoint traces.
-The energy inequality implies
-`||g'||_L2 <= Rbar/sqrt(lambda_lb D_min M_min)`. Integration from either
-endpoint and Cauchy–Schwarz then give, for every `p in [-P,P]`,
+Nullspaces from conservation, gauge, translations or equilibrium families must
+be constrained explicitly. Hiding them in a pseudoinverse is not a proof.
 
-$$
-|f(p)-fbar(p)|\le
-M(p)\sqrt{\min(p+P,P-p)}\,
-\frac{Rbar}{\sqrt{\lambda_{\rm lb}D_{\min}M_{\min}}}.
-$$
+The finite resolved space and infinite/unresolved complement must both be
+controlled for a continuous certificate.
 
-Formalize this one-dimensional trace argument with the coercivity theorem
-and evaluate its envelope with rigorous generated arithmetic. Enclose the
-reconstructed candidate and envelope over whole plotting cells; interpolation
-between sampled endpoints must not narrow the true band. This pointwise
-bridge is specific to the reference problem and does not transfer to six
-dimensions without appropriate regularity estimates.
+## Coercive/SPD problems
 
-Check coefficient bounds, residual integration, and the Poincaré constant
-rigorously. Certify one bounded moment of `f`. Repeat at two resolutions and
-verify both contain the independent analytic solution; report their actual
-widths. Generate distribution bands, resolution overlays, and a moment-interval
-plot through the Fortran postprocessor. Perturb a residual certificate or
-coefficient bound and require the
-checker to reject it. No finite-domain result is advertised as a solution on
-the whole momentum line.
+Positive/coercive operators are high-value early certificate targets.
 
-## Species reductions and device scope
+For
 
-Certify each selected species/field/pair system in its own continuous spaces,
-with its measures, transforms, closures, and boundaries. A FK certificate
-does not become a DK/GK certificate by dropping coefficients. Model identity
-includes fixed reservoirs and their nonzero momentum/energy exchanges.
+\[
+Au=b,\qquad A=A^\dagger\succeq\alpha I,\quad \alpha>0,
+\]
 
-Matching observables from independently certified full and reduced problems
-give a rigorous interval difference. A reduction-error guarantee for an
-uncomputed parent problem additionally requires a justified lift, continuous
-reduction defect, initial/boundary layers, and verified parent stability or
-another applicable comparison theorem. State transfer and fidelity switching
-carry explicit error into subsequent certificates. See
-[species reduction bounds](species-models.md#certified-reductions).
+and residual
 
-Device certificates include frozen input/geometry enclosures and the actual
-physical parameters. A theorem in a symmetry-restricted subspace declares
-that scope. The [device gates](devices.md#production-gate) distinguish
-component correctness from production maturity. Neither a geometry smoke
-test nor softened scale separation discharges the device solution theorem.
+\[
+r=b-A\bar u,
+\]
 
-## Certificate artifact
+\[
+\|u-\bar u\|\le \frac{\|r\|}{\alpha}.
+\]
 
-Version the format with the first executable certificate. Each accepted
-artifact records the model and input hashes; basis, mesh, frame, and
-normalizations; exact candidate bytes and reconstruction; norm and theorem;
-checked constants, tails, boundary obligations, and radius; observable
-definitions and intervals; proof level and assumptions; checker/dependency
-versions; source commit; and verification result.
+In the energy norm,
 
-Keep diagnostic estimates separate from proof premises. A checker exits with
-failure for missing bounds, unsupported models, malformed data, violated
-assumptions, or numerical uncertainty too large to establish the theorem.
-Archive the candidate and precise failed obligation so refinement or new
-analysis can resume from evidence.
+\[
+\|u-\bar u\|_A^2=r^\dagger A^{-1}r.
+\]
 
-## Coupled models and uncertainty scope
+If a preconditioner \(P\) has verified spectral equivalence
 
-[Coupling](coupling.md) separates frozen background, prescribed drive and
-induced response. Certifying response around an imported background must
-include its residual/uncertainty or explicitly state a conditional problem
-with that background prescribed. Species and bulk ownership prevent duplicate
-source terms; reservoir transfers belong to the stated balance.
+\[
+c_1P\preceq A\preceq c_2P,
+\]
 
-Neutral Monte Carlo and externally sampled fluctuations have statistical
-status. Fixed seeds do not give deterministic enclosures. A full coupled
-certificate needs deterministic bounds on every neutral/source action used
-in its premises; otherwise certify only the explicitly conditional model.
-Atomic/table/surface inputs are part of the mathematical problem. A nominal
-input certificate is not a physical-data uncertainty bound. To cover uncertain
-inputs prove the premises uniformly over a stated input set.
+then \(r^\dagger P^{-1}r\) gives inexpensive upper/lower energy estimates.
+Thus the same mathematical preconditioner can accelerate the solver and
+support its error estimator.
 
-Combined model/numerical intervals require a proved comparison chain to the
-same target observable. Do not add unrelated paired-model differences as
-remainders to physical reality. Spatial model transfers, wave partitions,
-field reductions and AP numerical formulations each retain their distinct
-obligations. [Extensions](extensions.md) specifies this accounting.
+CG/Lanczos recurrence data may provide additional energy-error bounds when
+their spectral assumptions are verified.
 
-Boundary hits, rare losses and shock solutions require dedicated event/trace
-or weak-solution estimates. A generic norm radius need not imply a narrow
-interval for a discontinuous loss indicator. Unavailable bounds remain
-explicitly unavailable; plots may show the candidate without a fabricated band.
+## Continuous PDE discretization error
+
+An algebraic residual bound does not alone certify the continuous PDE.
+
+For elliptic/coercive FEM problems, prefer equilibrated-flux and
+Prager--Synge/functional a posteriori estimates. FortFEM's compatible
+\(H^1\) and \(H({\rm div})\) spaces are especially suitable.
+
+A typical pattern constructs a conforming approximate state \(v\) and an
+equilibrated flux \(y\) satisfying the continuous balance, then bounds the
+energy error by a computable constitutive defect.
+
+DG/broken states need a conforming reconstruction or a theorem that explicitly
+accounts for jump distributions.
+
+## Kinetic/spectral complements
+
+Continuous kinetic certification may need bounds for:
+
+- omitted spatial modes/elements;
+- momentum-domain tails;
+- radial basis truncation;
+- spherical harmonics above \(L\);
+- Fourier modes outside the retained band;
+- collision-potential solves;
+- nonlinear mode coupling into omitted complements;
+- characteristic/interpolation defects;
+- field reconstruction and exterior boundaries;
+- arithmetic rounding.
+
+Tail estimates are analytical/numerical bounds, not extrapolation from the
+last few coefficients.
+
+## Adjoint quantity-of-interest bounds
+
+For a linear problem
+
+\[
+Au=b,\qquad Q(u)=q^\dagger u,
+\]
+
+the adjoint solves
+
+\[
+A^\dagger z=q.
+\]
+
+With approximate primal/adjoint states,
+
+\[
+r=b-A\bar u,\qquad r_z=q-A^\dagger\bar z,
+\]
+
+the observable correction is centered by
+
+\[
+\bar z^\dagger r
+\]
+
+and the remaining error is bounded using primal and adjoint dual norms. In the
+SPD case,
+
+\[
+\left|
+Q(u)-Q(\bar u)-\bar z^\dagger r
+\right|
+\le
+\|r_z\|_{A^{-1}}\|r\|_{A^{-1}}.
+\]
+
+This is the preferred route to tight certificates on actual scientific
+observables instead of unnecessarily tight full-state norms.
+
+Nonlinear problems use the corresponding linearized adjoint plus a rigorous
+nonlinear remainder/stability argument.
+
+## Goal-oriented refinement and model defects
+
+If a residual defect decomposes as
+
+\[
+d=\sum_k d_k,
+\]
+
+then
+
+\[
+-\lambda^\dagger d_k
+\]
+
+is a natural first-order estimate of each contribution to a scalar observable.
+This is useful for deciding whether to refine spatial resolution, velocity
+tails, collision fidelity or a reduced model.
+
+It is only an indicator until the appropriate remainder/stability theorem is
+established.
+
+For a cheap model \(F_0\) and richer model
+
+\[
+F_1=F_0+\Delta F,
+\]
+
+one may evaluate the rich-model defect at a cheap-model candidate and attempt a
+validated nearby-solution theorem. If it closes, a full expensive nonlinear
+rich solve may be unnecessary. If it does not, no model-error certificate is
+claimed.
+
+## Onsager, positivity and structural checks
+
+For collisional transport, certify or rigorously test where possible:
+
+- invariant nullspaces;
+- weighted self-adjointness or Onsager--Casimir transformation;
+- nonnegative entropy production;
+- constrained coercivity/spectral gap;
+- reciprocal transport coefficients.
+
+A discrete PSD matrix is not automatically a continuous collision spectral
+gap. The function space and complement must be part of the theorem.
+
+## Rare-event and wall observables
+
+Loss fractions, hitting times and wall loads are often discontinuous
+functionals of trajectories. A generic \(L^2\) ball does not directly bound
+them.
+
+Certification may require:
+
+- event-location enclosures;
+- transversality/grazing margins;
+- boundary trace bounds;
+- measure of an ambiguous set;
+- validated quadrature/QMC discrepancy;
+- probabilistic bounds for MC estimators.
+
+The target alpha-loss certificate is an example:
+
+\[
+L_-(T)\le L(T)\le L_+(T),
+\]
+
+with the unresolved/grazing initial-condition measure explicitly bounded.
+
+## Monte Carlo and QMC
+
+For random estimators the certificate names the sampling law, independence or
+dependence assumptions, estimator, variance/concentration method and
+confidence level.
+
+A statement such as
+
+\[
+\Pr(Q\in I)\ge1-\delta
+\]
+
+has different semantics from deterministic inclusion.
+
+Deterministic QMC may instead use a discrepancy/variation bound when those
+quantities can be rigorously established. Randomized QMC carries both
+low-discrepancy structure and statistical uncertainty.
+
+## Physical/model uncertainty
+
+Keep separate fields in result metadata for:
+
+1. numerical error within the model;
+2. model-reduction/comparison error;
+3. physical-data/input uncertainty;
+4. stochastic sampling uncertainty.
+
+Intervals can be combined only when a proved mapping shows they refer to the
+same physical quantity and their dependence has been handled correctly.
+
+## Formal verification
+
+Lean is optional and downstream.
+
+Good eventual formal targets are small generic theorems reused across many
+runs:
+
+- contraction/Krawczyk/radii-polynomial result;
+- SPD residual/energy bounds;
+- adjoint QoI identity/bound;
+- Prager--Synge/functional estimate;
+- selected model-defect theorem;
+- exact finite-dimensional conservation/Onsager identities.
+
+Do not formalize the whole HPC solver. The trusted numerical core should stay
+small even without Lean: exact model definition, rigorous arithmetic,
+certificate data and a small checker.
+
+## Refinement policy
+
+Refinement is driven by checked error contributions and observable sensitivity,
+not by visual mesh convergence alone.
+
+Possible controls include spatial \(h/p\), momentum extent/order, harmonic
+cutoff, Fourier bandwidth, collision potential tolerance, nonlinear tolerance,
+interval precision and model fidelity.
+
+A larger approximation space can worsen conditioning or interval dependency, so
+promotion uses measured certificate width, not resolution as a proxy.
 
 Chris&AI

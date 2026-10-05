@@ -1,231 +1,218 @@
 # Tooling and kernel policy
 
-Status: required design, checked against upstream source on 2026-10-05.
-The repository contains documentation only; the integration gates below
-remain implementation work.
+Status: canonical implementation/tooling policy.
 
-## Stack
+## Stack and ownership
 
-| Responsibility | Tool | Boundary |
-|---|---|---|
-| Scientific/application code | Modern Fortran | Physics orchestration, concrete arrays, model configuration |
-| Numerical leaves | fortsym | Mandatory symbolic definition and final kernel emission |
-| Spatial mathematics | FortFEM | Generic mapped spaces, FEEC/IGA/DG, traces, interfaces, FCI and weak actions; plasma laws remain external |
-| Sparse blocks | FortSparse/PETSc | Assembled references/coarse/field blocks, not a full kinetic Jacobian |
-| Numerics | fortnum, BLAS/LAPACK, PETSc | Existing generic algorithms; PETSc Fortran interfaces for SNES/KSP/PC/TS |
-| Automatic differentiation | fortad | Supported JVP/VJP/HVP transformations; final numerical leaves still emitted by fortsym |
-| Rigorous evaluation | fortnum verified modules | Interval/ball arithmetic, rigorous FFT bounds, verified linear algebra |
-| Data files | fortio | Its supported HDF5/NetCDF subset |
-| Plots and diagnostics | fortplot | Native PNG/PDF/text output and supported plot/animation facilities |
-| Labeled analysis arrays | fortarray | Profiles, field slices, and diagnostics; outside hot kinetic storage |
-| Build and registered tests | CMake/Ninja, CTest | CPU initially; optional native CUDA language when needed |
-| Development workflow | fo | Focused test/exec commands and resident Gremlin feedback |
-| Accelerator kernels | Generated native CUDA | Thin C ABI and ISO_C_BINDING; no compiler-specific CUDA Fortran |
-| Formal proof/checking | Lean | Certificate soundness theorem and checked numerical premises |
+| Responsibility | Owner |
+|---|---|
+| Plasma application/model composition | KIN6D, modern Fortran |
+| Symbolic local mathematics | FortSym |
+| Spatial FE/FEEC/IGA/DG/FCI/BEM mathematics | FortFEM |
+| Generic numerics and rigorous arithmetic | FortNum |
+| Sparse algebra/factors | FortSparse |
+| Independent/source AD tooling | FortAD |
+| Scientific I/O | FortIO |
+| Plotting | FortPlot |
+| Low-dimensional labeled analysis arrays | FortArray |
+| Nonlinear/linear solver orchestration | PETSc initially, replaceable |
+| Build/test | CMake/Ninja/CTest |
+| Development feedback | Fo |
+| Accelerator leaves | native CUDA behind thin C ABI |
+| Optional formal theorem/checker layer | Lean |
 
-No required Python orchestration, generation, plotting, postprocessing, or
-runtime layer belongs in kin6d. Use a Fortran generator driver against
-fortsym's native or approved compiled CAS engines. Disable implicit fallback
-to Python/SymPy adapters. A missing native operation is an upstream feature
-request to implement, not a reason to introduce a hidden Python dependency.
+No Python runtime, generator, plotting or postprocessing layer is required.
+External Python tools may remain comparison/oracle software.
 
-Libraries may expose optional Python bindings or external reference tests;
-those are not required kin6d interfaces. The first executable gate must
-exercise the selected build, generation, tests, certifier, and plot path with
-Python unavailable. Do not drop required scientific tests just to satisfy
-that gate; repair a mandatory dependency instead.
+## FortSym is the mathematical source of project-owned leaves
 
-## Kernel generation policy
+Project-owned scalar/tensor numerical formulas should be retained symbolically
+and emitted by FortSym. This applies to:
 
-**Every project-owned numerical kernel must be emitted by fortsym.** This
-covers orbit/geometry coefficients, basis and moment factors, collision
-leaves, source formulas, field coefficients, reconstruction leaves, rigorous
-enclosures, and derivative leaves. Generated CUDA kernels follow the same
-rule. Handwritten code may manage arrays, assemble or schedule calls, perform
-I/O, and implement backend ownership or launch glue. It must not conceal a
-new scalar numerical formula inside that glue.
+- primal local physics;
+- JVP/VJP leaves;
+- strict/reference arithmetic;
+- CUDA leaves;
+- interval/enclosure leaves where supported;
+- generated constants and small contractions.
 
-Existing generic algorithms are supplied by upstream numerical libraries;
-the rule does not require rewriting all of BLAS, PETSc, or fortnum. New
-generic algorithms or enclosure primitives belong in their owning library.
-Any application-specific numerical leaf they call is generated under this
-policy. A toy or reference implementation is not exempt.
+Handwritten Fortran owns state, schedules, solver composition, memory,
+communication, I/O and calls to generic libraries. Do not hide new numerical
+formulas in orchestration glue merely to bypass generation.
 
-Retain a Fortran generator in `gen/` with the symbolic DAG, exact constants,
-domain assumptions, requested targets, generator/dependency revisions, and
-independent analytical oracle. Generated outputs carry provenance and are
-never edited by hand. Pin the generator and regeneration settings so a
-clean rebuild can reproduce the committed artifacts. Source equality is
-a provenance check; behavioral evidence is a separate gate.
+Generated code is never edited by hand. Retain the generator, assumptions,
+target, dependency revision and an independent behavioral oracle.
 
-Use one mathematical definition to emit fast/strict Fortran and rigorous
-leaves, with optional native CUDA. Each continuous production operator must
-provide primal/JVP/VJP from that definition; HVP follows a concrete use.
-FortAD supplies an independent derivative oracle or supported transformed
-expression fallback, with final numerical leaves emitted by fortsym. Missing
-AD-to-DAG/target support is repaired upstream or the production capability
-remains unavailable. Do not waive the emission or derivative contract.
-[Differentiability policy](differentiability.md) separates mathematical DAG,
-indexed reductions and hardware schedules, and specifies implicit derivatives
-and memory obligations.
+The rule does not require rewriting BLAS, PETSc, FortNum, FortFEM or other
+generic algorithms in FortSym. Generic missing capabilities belong upstream.
 
-Independence of an oracle comes from an exact analytical identity, checked
-Lean result, or external algorithm/model with matching scope. A second
-emission of the same formula is not an independent numerical oracle.
-Application-owned oracle kernels also obey the emission rule; exact expected
-constants and theorem statements are allowed as fixtures.
+## Three layers of generated execution
 
-Keep plasma-specific symbolic derivations in kin6d's `gen/`. Generic CAS,
-AD, quadrature, sparse/FEM, and verified-arithmetic capabilities stay in
-their respective dependencies. Do not put a kin6d collision derivation in
-`fortsym/app/` merely to make generation convenient.
+Keep these distinct:
 
-## FortFEM ownership and performance
+1. **symbolic mathematical IR** — expressions, tensors, exact derivatives and
+   identities;
+2. **indexed operator IR** — map/reduce, gather/scatter, sparse interaction and
+   tensor contraction structure;
+3. **schedule** — tiling, SIMD/warp mapping, shared-memory staging, fusion,
+   batching and data layout.
 
-[Spatial policy](numerics.md) records FortFEM main
-`2d7baa19fe1bef02ce279fa407830c8731bdc663` and source-inspection limits.
-FortSparse main was observed at `7ad20738b3f888a3bbec37324eff3117c630221d`;
-these observations are not a tested kin6d integration lock. Pin the selected
-compatible dependency graph when a spatial client exists. High-level weak
-forms compile to specialized generated leaves rather than hot-loop expression
-interpretation. Existing generic numerical algorithms remain upstream; all
-new application leaves and required generic numerical-leaf additions use
-fortsym. Keep assembled reference and optimized CPU/CUDA paths with independent
-behavioral oracles. No unmeasured whole-library performance rewrite is required.
+Changing a GPU tile must not change the mathematical definition.
 
-## Checked capability boundaries
+For operations such as
 
-The upstream snapshot confirms fortnum interval/ball modules, radix-2
-rigorous FFT/convolution bounds, and norm-wise verified linear algebra.
-Its rigorous FFT uses binary128 interval twiddle construction; the first
-integration must confirm that the selected compiler/profile supports the
-required kinds and arithmetic. A cuFFT result is not automatically covered
-by the CPU radix-2 algorithm's error theorem.
+\[
+y_i=\sum_jF(x_i,y_j,p),
+\]
 
-fortsym has a CUDA numerical emission target and paired Fortran float/
-enclosure emission. The checked rigorous emitter supports algebraic
-operations, integer powers, and square roots; its documented runtime
-interface does not yet emit general `sin` or `exp` expressions. Its CUDA
-target emits numerical leaves, not scheduling or device-memory management.
-Do not advertise every expression/target combination as already supported.
+the indexed form is authoritative and the \(i,j\) matrix is virtual. CPU/CUDA
+schedules consume tiles and reduce them in fast memory.
 
-R0's Gaussian and cosine require rigorous transcendental handling. fortnum
-already exposes interval transcendental operations. When implementing R0,
-add the missing generic fortsym enclosure interface/emission support with
-a focused behavioral oracle, push that upstream fix, then recheck generation
-in kin6d. Another exact manufactured solution may simplify the first case,
-but cannot justify handwritten application kernels.
+Ahead-of-time specialization is preferred initially. Generate a bounded family
+of schedules/orders, benchmark on the target hardware and select the measured
+winner. Runtime JIT is not required.
 
-fortad supports a documented subset of Fortran and rejects unsupported
-activity, aliasing, lifetime, and opaque-call cases. Design small supported
-kernel interfaces; extend generic semantics upstream when a real case
-requires them. Code generation and AD tests do not by themselves prove
-the derivative or enclosure bridge in Lean.
+## Derivatives
 
-fortio implements a subset of HDF5/NetCDF, rather than every API/layout.
-Confirm the needed checkpoint and certificate layouts before fixing a file
-contract. fortarray currently owns dense real64 arrays through rank four;
-the kinetic state uses compact contiguous arrays with explicit mode/species
-maps. fortarray remains useful for low-dimensional real-valued diagnostics.
+Every continuous production operator provides primal/JVP/VJP from one
+mathematical definition. HVP is added when an actual consumer exists.
+
+FortAD is an independent source-transformation oracle/fallback. Finite
+differences, complex step and analytical identities remain independent checks.
+LLVM/Enzyme is optional and never a required production dependency.
+
+Implicit operations are differentiated mathematically:
+
+\[
+R_U\,dU=-R_\theta\,d\theta,
+\qquad
+R_U^\dagger\lambda=Q_U^\dagger.
+\]
+
+Do not tape Newton/Krylov iterations when the implicit derivative exists.
+
+For reverse kernels, recompute cheap tile-local intermediates instead of
+keeping a global AD tape.
+
+## Rigorous arithmetic and Lean
+
+The rigorous production path is Fortran/FortNum interval or ball arithmetic.
+A certificate may be mathematically rigorous without Lean.
+
+Lean is an optional final checker for reusable theorems and especially
+high-assurance results. It is not a dependency of ordinary solver builds or
+early continuous-certification milestones.
+
+Strict certifier compilation follows the verified arithmetic requirements:
+no unsafe reassociation or unaccounted contraction. Fast candidate builds may
+use different flags because their results are untrusted until checked.
+
+## FortFEM boundary
+
+FortFEM owns generic mapped spaces, tensor B-splines/NURBS, FEEC, DG/HDG,
+traces, mortars, FCI and boundary operators. KIN6D supplies plasma constitutive
+laws and model composition.
+
+For production hot paths, add generic matrix-free/sum-factorized/many-RHS
+actions upstream when needed. Retain assembled sparse paths as small reference,
+coarse-solver and debugging/certification tools.
+
+Do not fork or copy a generic FortFEM kernel into KIN6D.
+
+## Particle-runtime boundary
+
+PIC/PIF/blobs initially live as KIN6D representation implementations so the
+correct abstraction is discovered from real physics cases.
+
+Generic reusable primitives may later move upstream, for example:
+
+- AoSoA particle storage;
+- deterministic/QMC initialization;
+- sorting/binning;
+- migration;
+- deposition/gather;
+- particle-in-basis/NUFFT primitives;
+- blob/remapping infrastructure;
+- wall-intersection acceleration.
+
+Do not create a speculative separate particle package before multiple
+independent consumers require the same contracts.
 
 ## CUDA boundary
 
-The CPU Fortran path remains an executable reference. Add CUDA only for a
-profiled expensive kernel, beginning with a single batch operation. The
-boundary is `Fortran -> ISO_C_BINDING -> extern C wrapper -> generated CUDA
-leaf / CUDA libraries`. Plasma equations remain in their symbolic definitions.
+The CPU path remains an executable reference.
 
-Keep opaque contexts/device pointers and explicit dimensions, layout,
-precision, species scales, and mode conventions in the interface. Specify
-allocation ownership, host/device residency, stream ordering, synchronization,
-and returned error status. A kernel launch wrapper must report launch and
-asynchronous completion failures. CPU builds never configure a CUDA compiler
-or require CUDA runtime libraries.
+Native acceleration is
 
-cuFFT, cuBLAS, cuSPARSE, CUDA graphs, and later CUDA-aware MPI are optional
-implementation choices behind this boundary. Ordinary CUDA math is part of
-the untrusted candidate path. The Fortran certifier independently establishes
-valid bounds; extending verified arithmetic to CUDA needs its own proved
-rounding/error contract and is not an initial requirement.
+\[
+{\rm Fortran}
+\rightarrow
+{\rm ISO\_C\_BINDING}
+\rightarrow
+{\rm thin\ extern\ C\ wrapper}
+\rightarrow
+{\rm generated\ CUDA/library}.
+\]
 
-## Performance workflow
+CUDA-specific types do not enter plasma physics modules.
 
-[Performance policy](performance.md) reuses native upstream benchmarks and fo
-with distinct fast sentinels, dedicated audits and physical-science cases.
-Current optional Python benchmark collectors/gates do not become mandatory
-kin6d tooling; add a needed native generic gate upstream instead. Pin inputs,
-compiler/hardware and exact executable, validate outputs independently, retain
-raw repeated timing/RSS evidence and never silently rewrite a slower baseline.
+The interface declares layout, dimensions, precision, ownership, residency,
+stream ordering and error status. Candidate state stays on device across
+operator calls. Add CUDA only for a measured hot path.
 
-## Build and feedback
+cuFFT/cuBLAS/cuSPARSE, CUDA graphs, asynchronous copies and CUDA-aware MPI are
+implementation tools, not architectural requirements.
 
-CMake/Ninja owns configuration and mixed-language builds; CTest owns
-registered tests and their fixtures, working directories, resources, and
-scientific verdicts. Keep project presets/profiles authoritative. Enable
-Fortran first and CUDA only in an explicit later accelerator profile.
-Lean's Lake build is separate and its required certificate checks are part
-of the milestone's declared verification contract.
+## PETSc boundary
 
-fo delegates CMake projects to CMake/CTest in the checked version. Use its
-public focused test/exec commands and one resident Gremlin development lane
-when executable development starts. Public help currently exposes bare
-`fo` as resident start/attach and `fo verify` as a broader gate; verify the
-selected driver/profile before relying on either behavior. Standalone native
-CMake compatibility remains a delivery target, not a completed universal
-capability. Documentation-only work does not start an empty resident lane.
+PETSc may initially own SNES/KSP/PC/TS orchestration. KIN6D owns
 
-Pin the actual fo executable and SHA256 for an implementation session. Keep
-source revision, compiler, flags, dependencies, and current-generation test
-evidence with each promoted increment. A cache hit or an empty affected-test
-selection is not an independent correctness result.
+\[
+R(U),\qquad Jv,\qquad J^\dagger v,\qquad P^{-1}v,\qquad U.
+\]
 
-Verified arithmetic needs a strict compilation profile consistent with its
-error analysis: no unsafe reassociation, unaccounted contraction, or flushing
-subnormals. Check the library's exact requirements, including contraction
-settings, for the selected compiler. Fast solver flags may differ because
-its result remains an untrusted candidate. Plotting or exporting a bound
-must preserve its outward enclosure, rather than rounding interval endpoints
-inward for display.
+Do not let physics arrays or model definitions depend on PETSc internals.
+This keeps replacement possible if a bespoke solver later becomes worthwhile.
 
-## Upstream main policy
+## Build and verification
 
-The controller has user authorization to fix defects and add missing generic
-features in owned upstream dependencies and push locally verified changes
-to their main branches promptly. This includes the owned lazy-fortran stack
-and any other owned dependency needed by the next kin6d capability.
+CMake/Ninja is authoritative for mixed Fortran/CUDA builds and CTest for
+registered tests. Fo provides focused/resident development feedback but does
+not redefine the scientific test contract.
 
-For each encountered defect or concrete missing capability:
+Every generated/operator family keeps:
 
-1. Capture the consumer failure or required behavior with exact revisions,
-   command, input, and an independent small behavioral oracle.
-2. Locate the owning dependency and coordinate with its active controller.
-   Preserve unrelated edits; use an isolated worktree when needed.
-3. Make the smallest complete generic repair there. Retain the focused
-   reproducer as an upstream regression test and run required local gates.
-4. The controller integrates and pushes the verified repair to upstream main
-   promptly. Do not defer it behind an unrelated redesign or wait for a
-   broad CI drain when the applicable promotion rules allow local evidence.
-5. Pin the resulting upstream commit in kin6d, regenerate affected artifacts,
-   and recheck the original consumer behavior and certificate path.
+- independent behavior test;
+- derivative pairing/directional tests;
+- strict/reference comparison;
+- performance case when hot;
+- certificate test where a rigorous path exists.
 
-Workers return evidence and never promote authoritative state. Stage explicit
-paths and preserve other owners' work. For dependencies outside our control,
-contribute through their actual upstream access/promotion mechanism; keep
-the same reproducer and consumer recheck requirement.
+Regeneration equality is provenance evidence, not an independent correctness
+test.
 
-Do not add permanent consumer workarounds, private numerical forks, or copies
-of generic kernels. If an upstream repair is blocked, record the reproducer,
-missing feature or defect, verification limit, and concrete next action.
-Report the consumer capability as blocked or experimental until the needed
-fix and proof obligations are met. Protected `faepop*`/`faepcr*` hosts remain
-untouched without an explicit request naming the host.
+## Upstream repair policy
+
+When profiling or correctness exposes a generic defect in a controlled
+dependency:
+
+1. retain a minimal consumer reproducer;
+2. identify the owning library;
+3. add the generic upstream test;
+4. implement the smallest complete fix upstream;
+5. verify and promote it according to that repository's policy;
+6. pin/recheck KIN6D.
+
+Do not accumulate permanent downstream workarounds or duplicate optimized
+kernels.
+
+## Reproducibility/provenance
+
+Record exact source/generator/dependency revisions, compiler and flags,
+hardware/driver, mathematical model, normalization and external-data hashes.
+Fast and strict builds are separate named configurations.
+
+Generated images, animations and large performance datasets are regenerated
+artifacts and do not belong in source history.
 
 Chris&AI
-
-## First executable workflow evidence
-
-The [first 1X1V example](first-example.md) records the exact driver digest,
-upstream repairs, public delegated Fo test/exec results, CMake/CTest gates and
-performance measurement. Resident Gremlin CMake generation currently fails at
-FPM manifest parsing; native registered-test results remain the authority while
-that upstream input-capture defect is open. Do not label this resident lane green.

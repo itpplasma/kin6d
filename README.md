@@ -1,102 +1,272 @@
 # kin6d
 
-Design for a deterministic plasma model engine centered on direct kinetic
-steady states and rigorous solution/observable enclosures.
+KIN6D is a plasma-physics engine whose highest-fidelity reference is full
+relativistic 3X3P kinetic dynamics, but whose practical purpose is broader:
+solve the cheapest mathematically controlled plasma model that answers the
+requested question at the requested accuracy.
 
-The first executable target is a small steady 1X1V kinetic laboratory, with
-transient phase-space examples and Hasegawa–Mima turbulence in the early
-student gallery. The scientific spine progresses through a 0X3V collision
-box, 1X3V transport, real-device DK neoclassical states, GK and global FK.
-The maximal reference is relativistic 3X3P Vlasov–Maxwell with full collisions.
-Physical vectors are Cartesian and charts selectable; cylindrical/Fourier
-is an optimized fusion chart with a compatible momentum frame. A separate
-certifier must establish bounds for the named continuous problem before
-accepting a result as certified. No tiny example forces its layout on 6D.
+The project is built around one common physical and numerical architecture.
+Equilibrium, MHD, gyrofluid, gyromoments, drift/gyro/full kinetics, continuum
+and particle representations, collisions, turbulence, edge physics, neutrals,
+walls, heating, space plasmas, diagnostics and optimization are configurations
+or reductions of shared operators rather than separate named-code modes.
 
-All-species full kinetics is the reference. The planned family also supports
-per-species reduced and hybrid models, including kinetic electrons with fixed
-ions. Its physical mission spans TCV, AUG, LHD, W7-X, SPARC, ITER, ARC,
-DEMO-like designs, Helios, and Stellaris. Generic 3D fields and domain geometry
-are the physics boundary; symmetry is a case choice. Production promotion
-requires physical-parameter device benchmarks and certified observables.
+## Current status
 
-The project is one mathematical engine with selectable species, bulk-plasma,
-collision, field, geometry and time configurations. MHD and kinetic–MHD are
-explicit long-range branches. Established-code names describe comparison
-cases, never separate solver architectures.
+The first executable slice is implemented: a CPU 1X1V prescribed-field
+laboratory with a direct source-balanced steady solve, exact free-streaming
+dynamics, FortSym-generated primal/JVP/VJP leaves, Fortran plotting and a
+reviewed continuous snapshot bound evaluated with interval arithmetic.
+See [docs/first-example.md](docs/first-example.md).
 
-**Repository status:** the first CPU 1X1V prescribed-field laboratory runs,
-with a direct steady solve, transient animation and reviewed continuous
-snapshot bounds. [Build, run and evidence](docs/first-example.md).
-Self-consistent Poisson and the Lean proof remain unimplemented. Full nonlinear kinetic certification is a research
-objective; this repository does not claim that such bounds already exist.
+Self-consistent Poisson, PIC/PIF, the collision hierarchy, gyrofluid turbulence,
+real-device DK and general nonlinear certification remain future milestones.
+The repository must not describe planned capabilities as implemented.
 
-Read the [design document](DESIGN.md) first. Its companion specifications are:
+## Scientific spine
 
-- [Certification](docs/certification.md): theorem obligations, result states,
-  error budgets, observable intervals, and the first continuous certificate.
-- [Roadmap](ROADMAP.md): the next deliverable, milestone gates,
-  independent validators, and resource estimates.
-- [Time-dependent extension](docs/transients.md): shared operators, physical
-  timescales, temporal methods, and trajectory certificates.
-- [References](docs/references.md): checked sources and their actual scope.
-- [Performance engineering](docs/performance.md): calibrated benchmarks,
-  best-known time–memory–accuracy frontiers, profiling and upstream ownership.
-- [Differentiable operators](docs/differentiability.md): shared symbolic
-  primal/JVP/VJP, implicit adjoints, lazy reductions and bounded-memory schedules.
-- [Adjoint goals and structure](docs/adjoints-structure.md): weighted pairings,
-  coercivity/flux bounds, model defects and Onsager–Casimir verification.
-- [Programme estimates](docs/programme-estimates.md): scenario budgets and validation limits.
-- [Student laboratory](docs/student-laboratory.md): the next steady 1X1V
-  increment, numbered kinetic examples and early toy turbulence gallery.
-- [Moment models](docs/moment-models.md): gyrofluid/Landau-fluid/gyromoments,
-  deterministic continuum and Hamiltonian/metric/open-system structure.
-- [Numerical foundation](docs/numerics.md): FortFEM ownership, FEEC/IGA/DG,
-  tensor actions, batching, layouts, derivatives and solver memory.
-- [Tooling and kernel policy](docs/tooling.md): the Fortran-native stack,
-  mandatory fortsym generation, CUDA boundary, and upstream repair rules.
-- [Collision hierarchy](docs/collisions.md): shared pair primitives,
-  differential/integral choices, conservation treatment, and model intervals.
-- [Runnable demonstrations](docs/demonstrations.md): plots from the first
-  executable increment, certified bands, and retained limiting-case overlays.
-- [Species models](docs/species-models.md): FK/GK/DK and cheaper closures,
-  consistent mixed-species coupling, fixed reservoirs, and reduction bounds.
-- [Device envelope](docs/devices.md): machine/design missions, generic 3D
-  geometry, layered CI gates, physical parameters, and memory planning.
-- [Model family](docs/model-family.md): the chameleon philosophy, bulk MHD,
-  equilibrium candidates, species/spatial hybrids, and response certification.
-- [Analytical Benchmark Atlas](docs/benchmarks.md): exact/asymptotic references,
-  simple circular/helical geometry, and the [planned catalogue](benchmarks/atlas.json).
-- [Geometry](docs/geometry.md): Cartesian physical vectors, mapped charts,
-  optional FCI, and the Figure-8 geometry gate.
-- [Coupling](docs/coupling.md): background, external drive and induced response;
-  active, test and reservoir populations.
-- [Edge/reaction/surface physics](docs/edge-physics.md): transport, neutral,
-  atomic, radiation, sheath and wall axes, with uncertainty accounting.
-- [Solar System plasmas](docs/space-plasmas.md): open domains, forces,
-  anisotropic closures, wave scattering and space benchmarks.
-- [Further extensions](docs/extensions.md): field reductions, heating, fusion
-  reactions, circuits, diagnostics, adaptation, units and provenance.
-- [Literature policy](docs/literature-policy.md): external corpus, lawful OA
-  resolution, Zotero import, provenance, and reviewed citation expansion.
+The main research progression is deliberately steady-state first:
 
-Scientific and application code is Fortran. Every project-owned numerical
-kernel is emitted by fortsym; native CUDA is an optional accelerator behind a
-thin C ABI. The rigorous certifier is Fortran and the trusted proof layer is
-Lean. Python is not a required build, runtime, plotting, or analysis layer.
-Every executable milestone includes an end-to-end runnable demonstration and
-Fortran postprocessing. Plot source is tracked; generated figures are ignored
-and regenerated on demand.
+\[
+1X1V\ {\rm steady}
+\rightarrow
+0X3V\ {\rm collisions}
+\rightarrow
+1X3V\ {\rm transport}
+\rightarrow
+{\rm real\ device\ DK}
+\rightarrow
+{\rm gyromoments/GK}
+\rightarrow
+{\rm global\ FK}.
+\]
 
-The defining rule is **every accepted scientific solution carries a checked
-enclosure**. Exploratory candidates remain available when certification fails,
-with the missing bound recorded explicitly. Refinement is driven by proved
-error contributions; mesh agreement is a debugging aid.
+Tiny transient and turbulence examples are developed early in parallel because
+they are excellent teaching, verification, structure-preservation and
+performance tests. Hasegawa--Mima, Hasegawa--Wakatani, interchange/blob and
+gyrofluid examples must use the same operator machinery as the steady spine.
 
-The bounds describe solutions of named mathematical models. Bounds for
-operator differences and for reduction from many-particle physics are
-separate claims, each requiring its own theorem.
+## Model hierarchy
 
-Prepared on 2026-10-05 for the itpplasma group.
+The intended charged-plasma hierarchy is
+
+\[
+{\rm MHD}
+\rightarrow
+{\rm Hall/XMHD,\ multi-fluid}
+\rightarrow
+{\rm gyrofluid/Landau\ fluid}
+\rightarrow
+{\rm gyromoments}
+\rightarrow
+{\rm DK/GK}
+\rightarrow
+{\rm FK}.
+\]
+
+Species may use different models in one calculation. Bulk MHD is an aggregate
+model with explicit population ownership, not merely another per-species flag.
+Spatially hybrid models are allowed only when their coupling and interface
+balances are derived.
+
+The field hierarchy is independent:
+
+\[
+{\rm prescribed}
+\rightarrow
+{\rm electrostatic}
+\rightarrow
+{\rm quasineutral\ electromagnetic}
+\rightarrow
+{\rm Darwin}
+\rightarrow
+{\rm full\ Maxwell}.
+\]
+
+Background, externally imposed drive and induced plasma response are separate
+components.
+
+## Representation is a separate axis
+
+KIN6D does not identify kinetic physics with one numerical representation.
+For a distribution, select independently:
+
+- **form:** full-f, delta-f, or a declared control-variate split;
+- **carrier:** Eulerian basis/grid, semi-Lagrangian continuum, particles,
+  finite blobs or a hybrid;
+- **particle-field coupling:** PIC, PIF, particle-in-FE or general
+  particle-in-basis;
+- **sampling:** deterministic quadrature, QMC/randomized QMC or Monte Carlo;
+- **collision realization:** deterministic operator or justified stochastic
+  process.
+
+Particles are not synonymous with PIC, and PIC is not synonymous with Monte
+Carlo. Deterministic continuum remains the preferred high-accuracy reference
+where it is competitive, but the project principle is **no uncontrolled
+numerical noise**, not a ban on stochastic methods.
+
+See [docs/representations.md](docs/representations.md).
+
+## Foundational structure
+
+Where the physics permits it, reversible dynamics is written in Hamiltonian or
+Poisson form and irreversible dynamics in metric/metriplectic form,
+
+\[
+\dot U =
+J(U)\frac{\delta H}{\delta U}
++
+M(U)\frac{\delta S}{\delta U}
++
+P_{\rm open}(U),
+\]
+
+with the appropriate discrete antisymmetry, positivity, degeneracy,
+conservation and source/sink ledgers. Semi-Lagrangian/characteristic methods are
+important realizations of transport, but **structure preservation is the first
+principle**, not one particular transport algorithm.
+
+Stationary states are primary objects:
+
+\[
+R(U;\theta)=0.
+\]
+
+Time evolution uses the same residual/brackets rather than defining a separate
+physics implementation.
+
+## Geometry and spatial numerics
+
+Physical vectors are Cartesian. Computational coordinates are arbitrary smooth
+maps \(x=X(\xi)\); no core model may require a global toroidal angle or nested
+flux surfaces. Cylindrical/Fourier geometry is an optimized fusion chart.
+Curve/G-frame maps, spherical/open domains, multipatch geometries, X-points and
+the Figure-8 stellarator are part of the intended geometry envelope.
+
+FortFEM owns generic spatial mathematics: FEEC, tensor-product B-splines/NURBS,
+DG/HDG, traces, mortars, FCI and boundary operators. KIN6D owns plasma laws.
+Mapped tensor patches and matrix-free tensor actions are preferred where they
+preserve both performance and geometry; unstructured/cut methods are escape
+paths, not the default everywhere.
+
+## Collisions and thermodynamic structure
+
+The collision hierarchy includes none, Krook/BGK, Lorentz, conservative
+LBD/Dougherty, reduced linearized FP, Landau test/field-particle pieces, full
+linearized Landau, nonlinear Landau, relativistic Beliaev--Budker and later
+screened/matched research models.
+
+Collision physics, discrete invariant enforcement and certificate strength are
+separate contracts. Linearized Coulomb models should expose the correct
+weighted adjoint, invariant nullspace, entropy-production form and
+Onsager--Casimir structure. NEO-2-style independently computed reciprocal
+transport coefficients remain permanent end-to-end verification tests.
+
+## Physics envelope
+
+Long-range scope includes:
+
+- imported and internal axisymmetric/3D equilibria;
+- ideal/resistive/extended MHD, kinetic-MHD and response/eigenvalue problems;
+- gyrofluid, Landau-fluid and Hermite--Laguerre gyromoment hierarchies;
+- DK, GK and relativistic FK;
+- PIC, PIF, variational particle-FE, blobs, remapping and delta-f methods;
+- deterministic and stochastic Coulomb/reaction/neutral realizations;
+- core, pedestal, SOL, divertor, sheath and wall physics;
+- atomic/molecular charge-state networks and radiation;
+- RF/quasilinear/full-wave heating, NBI and fusion-product sources;
+- coils, vacuum, conducting walls and external circuits;
+- Solar-System plasma configurations;
+- synthetic diagnostics, inverse problems, adjoints, optimization and control.
+
+General relativity, strong-field QED, complete reactor neutronics, detailed
+solid-state material evolution and general radiation hydrodynamics are outside
+the initial scope.
+
+## Differentiability
+
+Continuous production operators are defined once symbolically where practical.
+FortSym is the mathematical source of project-owned numerical leaves and emits
+primal/JVP/VJP families, HVPs when needed, strict/reference arithmetic,
+optimized CPU/CUDA leaves and rigorous enclosure leaves where supported.
+
+Global nonlinear, linear, root and eigen solves are differentiated
+**implicitly**. Do not differentiate through Newton/Krylov iterations when an
+equation-level derivative exists. FortAD and finite/complex-step checks are
+independent derivative oracles; production differentiability does not require
+LLVM/Enzyme.
+
+Hardware scheduling is separate from symbolic mathematics. Indexed
+map/reduce/tensor operators may be tiled in KeOps/FlashAttention style so
+logical pairwise or Jacobian matrices are never materialized.
+
+## Certification
+
+The fast solver is untrusted. The primary rigorous path is
+
+\[
+{\rm fast\ solve}
+\rightarrow
+{\rm Fortran\ interval/ball\ certifier}
+\rightarrow
+{\rm checked\ enclosure}.
+\]
+
+Lean is optional downstream assurance for generic theorems or especially
+important claims; it is not required to obtain rigorous numerical intervals and
+is not on the early critical path.
+
+A result distinguishes numerical error, model-reduction error, physical-input
+uncertainty and, for Monte Carlo, statistical uncertainty. Deterministic
+certificates and probabilistic confidence statements are never conflated.
+Adjoints are used for sensitivities and for goal-oriented numerical/model-error
+estimation.
+
+## Performance
+
+Performance is a permanent scientific workstream. The design principles are:
+
+1. exploit mathematical separability before parallelism;
+2. exploit regular tensor structure before generality;
+3. store states and compact factors, not global operators;
+4. avoid duplicate full-state layouts;
+5. tile so reductions consume data while resident in cache/shared memory;
+6. reuse factorizations and many-RHS structure;
+7. make reduced models serve as preconditioners/control variates;
+8. profile and optimize the actual owning dependency;
+9. preserve a simple reference action for every optimized path;
+10. measure time and memory to a requested certified observable accuracy.
+
+The controlled Fortran stack is FortSym, FortFEM, FortNum, FortSparse, FortAD,
+FortIO, FortPlot, FortArray and Fo, with PETSc and standard accelerator
+libraries used behind replaceable interfaces where useful.
+
+## Documentation map
+
+Read [DESIGN.md](DESIGN.md) for the canonical architecture and
+[ROADMAP.md](ROADMAP.md) for staged delivery. Important companion documents are:
+
+- [Representations](docs/representations.md)
+- [Student laboratory](docs/student-laboratory.md)
+- [Model family](docs/model-family.md)
+- [Species models](docs/species-models.md)
+- [Moment models](docs/moment-models.md)
+- [Collisions](docs/collisions.md)
+- [Numerics](docs/numerics.md)
+- [Differentiability](docs/differentiability.md)
+- [Adjoints and structure](docs/adjoints-structure.md)
+- [Certification](docs/certification.md)
+- [Performance](docs/performance.md)
+- [Geometry](docs/geometry.md)
+- [Coupling](docs/coupling.md)
+- [Edge physics](docs/edge-physics.md)
+- [Space plasmas](docs/space-plasmas.md)
+- [Extensions](docs/extensions.md)
+- [Analytical benchmark atlas](docs/benchmarks.md)
+- [Tooling](docs/tooling.md)
+
+Scientific/application code and the certifier are Fortran. No Python runtime is
+required. Generated graphics and large benchmark products are not source
+artifacts.
 
 Chris&AI

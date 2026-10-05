@@ -1,226 +1,364 @@
-# Continuous performance engineering
+# Performance engineering
 
-Status: required workstream, with no kin6d measurements yet. Optimize total
-time and memory to the requested certified observable accuracy from the first
-executable milestone. Track the best known frontier rather than accepting
-successive small regressions relative to the previous commit.
+Status: permanent workstream. Performance is designed and measured from the
+first executable, not postponed until feature completion.
 
-## Objective and review before implementation
+## Objective
 
-Minimize candidate plus certification time subject to the requested interval
-width, available memory and the stated model/proof level. Report postprocessing,
-I/O and transfers too. A faster kernel that increases nonlinear iterations or
-widens the accepted enclosure can make the scientific calculation slower.
-Different reduced models are comparable only when their model-error claims
-and target observable are compatible.
+The useful final metric is not raw FLOP/s. It is approximately
 
-Review model choice, representation, algorithmic complexity, data movement,
-parallel decomposition and microarchitecture in that order. Before a hot
-feature, identify minimum required state, separable dimensions, diagonal/sparse
-algebra, unavoidable work/traffic/communication and reusable quantities.
-Then implement a correct generated reference, supply an independent oracle,
-measure a baseline, profile one bottleneck, change one thing, remeasure and
-retain only a validated time/memory/accuracy improvement.
+\[
+T_{\rm result}(\epsilon_Q)
+=
+T_{\rm candidate}
++
+T_{\rm certificate}
+\]
 
-Each milestone has a small correctness case and a representative performance
-case large enough to expose its actual polynomial/harmonic orders and cache/
-memory behavior. R0 can use a modest CPU case; it does not require a GPU,
-cluster or implementation of every future calibration kernel.
+subject to the requested observable uncertainty and available memory.
 
-## Reuse benchmark infrastructure
+For stochastic cases, include the sampling/confidence target explicitly.
 
-Use existing numerical-library harnesses and fo orchestration rather than
-building another general framework. FortNum's
-[benchmark guide](https://github.com/lazy-fortran/fortnum/blob/main/benchmark/README.md)
-documents machine-readable measurements, RSS evidence and controlled reference
-gates. FortAD's
-[vector-JVP design](https://github.com/lazy-fortran/fortad/blob/main/docs/design/vector-jvp-benchmark.md)
-and FortIO's [performance guide](https://github.com/lazy-fortran/fortio/blob/main/docs/performance.md)
-are starting points to review/pin when their clients are measured.
-These references are not kin6d integration or throughput evidence.
+A faster kernel that increases nonlinear iterations, memory pressure or
+certificate width may be an end-to-end regression.
 
-Some upstream benchmark collection/gate scripts currently use Python. Do not
-make them mandatory in kin6d's build, run, tests, plots or performance workflow.
-Reuse native measurements and metadata where supported; if a needed native
-gate is missing, implement the smallest reusable support at its owning library
-or fo. Do not clone the same benchmark/gate logic privately downstream.
-Generated calibration/reference numerical leaves follow the fortsym policy;
-instrumentation and orchestration are not new plasma numerical kernels.
+## Optimization order
 
-## Calibration and operator contract
+Always optimize in this order:
 
-Calibrate actual sustained behavior on each authorized target machine:
-CPU/cache copy and arithmetic, small dense and batched banded solves, relevant
-FFT sizes, and later GPU HBM/FP64/reductions/copies and transfer links.
-Distributed cases additionally measure message latency/bandwidth, reductions
-and representative halo exchanges. Record working-set size, affinity, NUMA
-placement, clocks/thermal conditions, software and timing method. Vendor peak
-is not a measured roofline. Do not automatically touch protected hosts or
-schedule/install calibration jobs; runner access remains explicitly scoped.
+1. mathematical model/representation;
+2. asymptotic algorithm;
+3. data movement and state count;
+4. parallel decomposition;
+5. kernel schedule;
+6. instruction-level microoptimization.
 
-An operator record contains input/output/scratch bytes, estimated operations,
-minimum traffic under stated reuse assumptions, allocation count, synchronization
-count, communication volume and arithmetic intensity. Production local hot
-actions should allocate no dynamic storage and introduce no internal global
-synchronization; record unavoidable setup/event exceptions separately.
-FortSym work/temporary estimates can later supplement measured counters.
+Do not attempt to rescue an intrinsically expensive architecture with CUDA.
 
-For calibrated bandwidth B and arithmetic throughput P, a roofline estimate
-is `t_est=max(bytes_min/B,flops/P)`. Record `t_est/t_measured` as a diagnostic
-with all assumptions. This is not a rigorous universal lower bound: latency,
-cache levels, dependencies, measured workload mismatch and overlap matter.
-A low ratio prompts investigation; a fixed ratio threshold does not prove
-that an implementation is optimal or incorrect.
+Before implementing a hot feature, answer:
 
-## Five measurement levels
+- What state is mathematically necessary?
+- What is the lowest plausible work complexity?
+- Which dimensions are separable?
+- Which transforms make operators diagonal/sparse?
+- What bytes must cross each memory level?
+- What can be reused across species, modes, timesteps or Newton iterations?
+- How many full-state work vectors are required?
 
-| Level | Workload | Required record |
-|---|---|---|
-| 0 | Microkernel | Observable output, shape/order, latency, scratch/allocations, independent oracle |
-| 1 | Complete operator | Representative arrays, bytes/work, throughput and peak memory |
-| 2 | Residual | Inclusive/exclusive phase times, reconstruction and coupling costs |
-| 3 | Nonlinear/linear solve | Residual/JVP/preconditioner calls, iterations, rebuilds, vector count and peak memory |
-| 4 | Scientific calculation | Model/inputs, proof level, interval width, solve/certifier/I/O times and total memory |
+## Machine calibration
 
-Use cheap nested timers/counters for transport, collisions, reactions, fields,
-boundaries, derivatives, preconditioning, linear solve, certificate and I/O.
-Avoid double-counting overlapping/inclusive phases. Emit machine-readable
-records from normal runs; heavier profiles are opt-in.
+For each representative machine record sustained, not advertised, quantities:
 
-Find where time goes before investigating why. CPU compiler reports and
-`perf`/available hardware counters follow timers; detailed sampling or code
-inspection targets only important kernels. On NVIDIA use a system timeline
-before detailed kernel counters; record registers, spills, memory throughput
-and occupancy without optimizing occupancy as an end in itself. MPI profiles
-include waits, reductions, message sizes, overlap and imbalance. Profiler and
-instrumentation overhead are reported rather than treated as application time.
+- DRAM/HBM bandwidth;
+- cache/shared-memory bandwidth where measurable;
+- FP64/FMA throughput;
+- small dense/banded solve performance;
+- FFT throughput at actual sizes;
+- device/host and inter-GPU transfer;
+- MPI latency/bandwidth/allreduce.
 
-## Statistical evidence and baselines
+For a kernel with operation count \(F\) and unavoidable traffic \(B_{\min}\),
 
-Warm up, repeat and retain raw measurements, median and dispersion. Alternate
-A/B order or randomize controlled ordering when thermal/drift effects matter.
-Make workloads observable so the compiler cannot eliminate them. Use separate
-processes where candidate-specific peak RSS must be measured. Noise larger
-than the claimed gain means inconclusive evidence, not a speedup.
+\[
+t_{\rm lower}
+=
+\max(F/P_{\rm sustained},B_{\min}/BW_{\rm sustained}).
+\]
 
-Maintain a best-known Pareto set of time, memory and achieved accuracy for
-fixed benchmark/input, model/proof level, hardware, compiler/flags and shape.
-Do not silently reset a baseline to a slower parent. Only the controller
-promotes a new validated baseline with its exact revision and evidence.
-A faster but much larger-memory candidate may be unsuitable. Changes in model,
-solver tolerance, returned derivative product or output obligations require
-a new labelled comparison, not an apparent optimization.
+Track efficiency relative to this bound where the model is meaningful.
 
-Pinned authorized runners provide hard timing gates; ordinary hosted runners
-can provide correctness/gross signals but not reliable fine regressions.
-No new nightly job is created by this document. Expensive audits run explicitly
-or under a separately authorized schedule. Stable material regressions can
-trigger a focused dependency/application bisect with frozen inputs.
+## Five benchmark levels
 
-## Implementation priorities and measured choices
+### Microkernel
 
-[Spatial numerics](numerics.md) defines tensorization, partial assembly,
-batched RHS, FEEC and one canonical tiled state. Additional production rules
-are measured contracts, not a reason to implement every specialization now.
+Basis evaluation, 3x3 transforms, angular coupling, radial solve, deposition,
+PIF factor, reduction.
 
-| Area | Priority and qualification |
-|---|---|
-| CPU hot loops | Caller scratch, contiguous ownership, simple strides, no per-point polymorphism; inspect array temporaries/vectorization |
-| Small algebra | FortSym-generated contractions/specializations at measured common orders; retain generic/reference path |
-| Generation | Compare contraction/CSE choices using FLOPs, live temporaries, code size and register pressure; fewer FLOPs may spill more |
-| Geometry | Reuse fixed-map/basis tables, uniform spans and useful metrics; compare recompute cost with added bytes |
-| Fourier | Reuse plans, batch transforms, independent real spectrum where valid; measured direct-triad/FFT crossover |
-| Angular algebra | Packed valid modes, sparse coupling graph; measured Gaunt/transform crossover, low-harmonic moments |
-| Collisions | Cache valid radial factors, batch RHS and species pairs by spatial block; conserving correction must preserve its stated algebra |
-| Reactions | Parse/normalize once, sparse reaction graph, batched generated interpolation; pruning needs omitted-population bounds |
-| Boundaries | Generic BVH/acceleration structure at its owner, batch intersections, rigorous event bounds near grazing |
-| CUDA | Resident state, large regular batches, launch/sync accounting; fuse only while measured benefit exceeds register/spill cost |
-| CUDA graphs/shared memory | Add only after stable measured DAG/reuse; neither is a universal improvement |
-| MPI | Spatial ownership preserving collision locality, overlap valid local work with halos, count/reduce global reductions |
-| CPU scale | Explicit NUMA first touch/affinity, regular scheduling, bandwidth saturation; huge pages only after evidence |
-| Metadata | Checked narrow local indices where safe, sufficiently wide global identities/counts; reject overflow |
-| I/O | In-situ moments, deliberate authoritative checkpoints, large writes; asynchronous/chunk/compression choices measured |
+### Operator
 
-Retain the simple reference and optimized CPU path; add the generated GPU
-realization only when a profiled workload justifies it. Backend fusion and
-vectorization do not change the model. Verify independent physical/analytical
-expectations as well as equivalent-path agreement; shared mistakes can make
-all implementations agree. Compiler vectorization evidence is relevant on
-a declared compiler/shape, not a portable universal correctness theorem.
+Transport, collision, Maxwell block, Poisson solve, PIC deposit/gather.
 
-Bounded compile-time autotuning may select tile/batch/block sizes, fusion,
-specializations and transform crossover by hardware/compiler/kernel/shape.
-Store the measured selection and exact executable; no runtime JIT is required.
-Compiler tournaments, PGO/LTO, assembly/PTX/SASS inspection and TLB tuning are
-secondary tools for an identified bottleneck. Keep physics free of hard-coded
-SIMD widths or one accelerator's occupancy assumptions.
+### Residual/JVP/VJP
 
-## Solver, certifier and arithmetic
+One complete application with realistic channel counts.
 
-Profile primal, JVP and VJP separately with matching returned products; ratios
-are diagnostics, not universal constant limits. Batched directions are useful
-when the consumer actually has several. Independent derivative/duality oracles
-remain mandatory, and numerical leaves still pass through fortsym.
+### Solve
 
-[Differentiability policy](differentiability.md) extends the frontier to
-forward/JVP/VJP time and memory, including implicit adjoint solve, local
-recomputation and trajectory checkpoint costs. Time to gradient accuracy
-states validated versus rigorously certified status. Tune the returned product
-family for its consumer; a faster primal need not improve an inverse workflow.
+Record nonlinear iterations, Krylov iterations, preconditioner applications,
+work-vector count and rebuild costs.
 
-Count every state/work vector and factor. Attribute state, residual/update,
-Krylov, geometry, preconditioner, collision, scratch, padding, host/device
-staging and certification memory. Strong reduced-physics preconditioning,
-inexact Newton/continuation and carefully selected low-memory solvers often
-matter more than kernel throughput. Record failures and iterations; never
-silently change the final model to obtain a faster solve.
+### Scientific case
 
-Reuse static factors and proof data only while their exact dependency hashes
-remain valid. Approximate/lagged factors may be candidate preconditioners;
-they are not automatically valid certificate inverse bounds. Reuse across
-parameter scans includes branch checks and changed-data invalidation.
-Checkpoint frequency trades measured write/rebuild cost against lost work;
-reconstructible caches need not become authoritative checkpoint data.
+Time and memory to a physical observable/certificate target.
 
-Optimize the certifier too: local interval residuals, strict arithmetic,
-verified linear algebra, norms, tails and reusable geometry/basis constants.
-Do not loosen proof obligations to improve time. The strict certified path's
-rounding, contraction/subnormal and transcendental contracts are independent
-of fast-candidate compiler flags.
+Never use a microkernel improvement as proof of an application improvement.
 
-Class I transformations are mathematically equivalent factorization/fusion/
-elimination/storage changes; their floating-point conditioning/roundoff still
-needs coverage. Class II candidate arithmetic includes mixed precision,
-reassociation and fast approximations, allowed only as untrusted search.
-Class III changes the represented mathematical action/state, such as quadrature,
-compression, dropped modes, FCI interpolation or physics reduction: include an
-explicit consistent defect/remainder. A strict residual alone does not bound
-a missing continuous complement. Compression remains optional, with a proved
-truncation norm and an affordable fallback when rank grows.
+## Performance contracts
 
-## Cadence and upstream ownership
+Hot operators should have a machine-readable conceptual contract containing:
 
-Fast sentinels accompany ordinary development: independent correctness,
-allocation/vectorization evidence where stable, and gross microkernel changes.
-A dedicated audit covers calibrated operators, derivatives, memory and scaling.
-Release/science runs cover actual physical-device/space inputs and certified
-observables. No commit needs to wait for unrelated hours-long audits, but its
-applicable scientific and promotion gates still have to pass.
+- input/output bytes;
+- scratch bytes;
+- dynamic allocations;
+- operation count where tractable;
+- unavoidable/estimated traffic;
+- synchronizations;
+- communication volume;
+- arithmetic intensity;
+- primal/JVP/VJP timings.
 
-Repair a bottleneck at the lowest actual owner: FortFEM spatial actions,
-FortNum generic numerics/verified arithmetic, FortSparse factors/sparse algebra,
-FortSym generation, FortAD derivative machinery, FortIO I/O, and libneo field
-interpolation where used. kin6d owns layout, physical composition/scheduling,
-preconditioning and distributed execution. PETSc/MPI/CUDA bindings remain
-adapters; their object layouts do not define the parent model/state contract.
-No duplicate downstream optimization, private numerical fork or unverified
-main promotion. Preserve owners' unrelated work, retain a focused oracle,
-push verified owned-upstream main repairs promptly, pin and recheck the client.
+For production hot paths, target zero per-call dynamic allocation and zero
+avoidable synchronization.
 
-Every major science result reports candidate time, certificate time and peak
-memory with the resulting interval. Future reports generate time/memory/accuracy
-frontier plots and earlier-case overlays through Fortran/fortplot; images are
-regenerated, never committed. Being near the best known frontier is a continuous
-engineering aim demonstrated by evidence, not an unmeasured optimality claim.
+## Baselines
+
+Maintain a best-known Pareto frontier for fixed input, compiler and hardware:
+
+\[
+(\text{time},\text{peak memory},\text{accuracy/certificate width}).
+\]
+
+Compare to the best known result, not merely the parent commit, to prevent slow
+performance erosion.
+
+Noisy benchmark machines do not gate percent-level regressions. Dedicated
+performance runners use warmup, repeated measurements, median/dispersion and
+alternating A/B order where thermal drift matters.
+
+## Continuous profiling
+
+The application always records a cheap hierarchical time ledger, for example:
+
+- residual;
+  - spatial transport;
+  - velocity transport;
+  - collisions;
+  - fields;
+  - reactions;
+  - boundaries;
+- JVP/VJP;
+- preconditioner;
+- Krylov;
+- communication/reductions;
+- certificate;
+- I/O.
+
+Also record attributed memory:
+
+\[
+M_{\rm state}+M_{\rm residual}+M_{\rm Krylov}+M_{\rm geometry}
++M_{\rm preconditioner}+M_{\rm scratch}.
+\]
+
+External profiling escalates only as needed:
+
+1. internal ledger;
+2. compiler vectorization reports/perf/Nsight Systems;
+3. counters/Nsight Compute;
+4. assembly/PTX/SASS inspection for the true top kernels.
+
+## CPU microoptimization
+
+Hot CPU kernels should favor:
+
+- caller-owned or fixed scratch;
+- contiguous arrays and simple strides;
+- compile-time/specialized common orders;
+- explicit small contractions;
+- SIMD-friendly tiles;
+- precomputed invariants when reuse beats traffic;
+- no polymorphic dispatch in inner loops.
+
+Fortran array syntax is not automatically preferred when it creates hidden
+temporaries.
+
+Specialize common spline/order/harmonic cases but retain a generic fallback.
+FortSym may emit several CSE/unrolling candidates because minimum FLOPs may
+increase register pressure.
+
+## Tensor/spline execution
+
+For tensor-product bases:
+
+- span-local nonzero basis evaluation;
+- precomputed 1D tables;
+- sum factorization;
+- partial assembly;
+- many-RHS batching.
+
+Do not store a 3D basis matrix or global sparse operator when compact 1D factors
+and geometry coefficients suffice.
+
+Geometry itself is subject to a recompute-vs-store roofline decision. A cheap
+metric expression may be faster to recompute than to load repeatedly.
+
+## Fourier and angular execution
+
+Use exact Fourier multipliers for derivatives. Nonlinear products choose
+between sparse/direct convolution and FFT/pseudospectral evaluation at a
+measured crossover.
+
+Spherical-harmonic couplings use sparse Gaunt/angular graphs when sparse and
+transforms when dense enough. Store only allowed coefficients.
+
+## Collision execution
+
+Rosenbluth/radial operators that depend only on species/grid/\(\ell\) are
+factored once and reused over spatial/mode RHS.
+
+Benchmark specialized/banded batched solves before generic sparse machinery.
+Fuse low-order moment/conservation reductions only when doing so reduces total
+traffic without causing register spill.
+
+## Particle/PIC/PIF execution
+
+Particle kernels use SoA/AoSoA storage and large batches.
+
+PIC considers:
+
+- sorting/binning amortization;
+- deposition contention;
+- charge-conserving current kernels;
+- gather locality;
+- migration buffers.
+
+PIF/particle-in-basis uses tiled particle-mode map/reduce. Compare direct
+\(N_pN_k\) execution with NUFFT only at real sizes; do not assume a crossover.
+
+Blobs/remapping add reconstruction cost and must justify it through lower
+particle count/noise or better accuracy.
+
+Monte Carlo/QMC comparisons report statistical efficiency, not just
+particles/s.
+
+## GPU rules
+
+Keep state resident on device.
+
+Measure:
+
+- HBM throughput;
+- registers/thread;
+- spills/local memory;
+- occupancy;
+- achieved compute;
+- launch count;
+- synchronization;
+- transfer volume.
+
+Do not optimize occupancy as an isolated metric. Shared memory and fusion are
+used only when measured reuse pays.
+
+Once the kernel graph stabilizes, CUDA Graphs or persistent execution may
+reduce launch overhead. Asynchronous staged loads may overlap movement and
+compute.
+
+## Distributed execution
+
+Default decomposition is configuration space with complete local velocity state.
+
+Overlap spatial halo exchange with local collision/reaction work.
+
+Count and reduce MPI collectives aggressively: fuse dot products/norms or use
+pipelined methods when they improve actual solve time.
+
+NUMA placement, first touch, thread/rank binding and huge-page/TLB effects are
+production-scale concerns once state sizes justify them.
+
+## Solver performance
+
+Total steady cost behaves roughly as
+
+\[
+T\sim N_{\rm Newton}N_{\rm Krylov}T_{\rm JVP}
+\]
+
+plus preconditioning and field work.
+
+Therefore solver/preconditioner quality normally matters more than a small
+kernel speedup.
+
+Reduced physics is encouraged inside preconditioners:
+
+\[
+P_{\rm FK}^{-1}
+\approx
+\text{DK/GK transport}
++
+\text{local collisions}
++
+\text{reduced field solve}.
+\]
+
+This does not change the target FK residual.
+
+Krylov memory is explicitly budgeted. Large default GMRES restart dimensions
+are forbidden when they multiply a huge kinetic state beyond practical memory.
+
+## Mixed precision
+
+The candidate path may use lower precision, tensor-core arithmetic or
+approximate factors when convergence and final strict residuals remain good.
+
+Certification arithmetic is separate and follows its rounding theorem.
+
+Measure end-to-end benefit; a faster low-precision preconditioner that causes
+many more iterations is not a win.
+
+## Derivative performance
+
+Record
+
+\[
+T_{\rm JVP}/T_{\rm primal},\qquad
+T_{\rm VJP}/T_{\rm primal}
+\]
+
+and derivative scratch/state overhead.
+
+Batched JVPs are useful when several tangent directions share primal data.
+VJPs should recompute cheap tile-local intermediates rather than maintain
+large tapes.
+
+For optimization workloads, schedule selection considers the primal and
+adjoint together.
+
+## I/O
+
+Routine diagnostics reduce in situ. Full 6D distributions are deliberate
+checkpoints, not frequent plots.
+
+Chunk layouts follow state/tile structure. Use large buffered/asynchronous
+writes when supported. Do not checkpoint reconstructible caches/factors unless
+restart time justifies them.
+
+FortIO owns generic throughput improvements.
+
+## Upstream ownership
+
+If a controlled dependency is material in the profile, optimize it at the
+owning layer:
+
+- FortFEM: tensor/matrix-free spatial actions;
+- FortNum: FFT/special functions/banded/verified numerics;
+- FortSparse: sparse/factor/preconditioner kernels;
+- FortSym: generated algebra/schedules;
+- FortAD: derivative transformations;
+- FortIO: I/O;
+- KIN6D: state layout, physics composition, global scheduling.
+
+Retain a focused reproducer and recheck the original KIN6D case after upstream
+promotion.
+
+## Performance CI
+
+Use three levels:
+
+1. **fast sentinels** — seconds; allocation/vectorization/gross regressions;
+2. **dedicated audits** — pinned hardware; realistic operators/solves;
+3. **science benchmarks** — physical device cases and certificate target.
+
+Normal development must remain fast; continuous performance awareness does not
+mean every commit waits for a large device run.
 
 Chris&AI

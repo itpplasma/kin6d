@@ -1,199 +1,291 @@
-# Symbolic operators, derivatives and bounded memory
+# Differentiability and adjoint policy
 
-Status: required design policy and staged upstream work. No kin6d kernel,
-adjoint, lazy-reduction backend or sensitivity certificate is implemented.
-Readers implementing the next operator should preserve its mathematical
-definition while choosing only the execution machinery that case needs.
+Status: canonical derivative policy.
 
-## Mathematical source and execution plans
+## Principle
 
-FortSym owns the mathematical definition of every project-owned numerical
-leaf. Each continuous production operator provides primal, JVP and VJP from
-that same definition; HVP/second variations are added for a concrete consumer.
-The definition includes assumptions, units, constraints, quadrature/weights,
-boundary actions and parameter dependencies. Handwritten Fortran orchestrates
-arrays, nonlinear iterations, tiling, MPI, device placement and I/O.
-Execution control is not part of the symbolic physics definition.
+KIN6D differentiates mathematical operators and implicit equations, not the
+incidental algorithms used to solve them.
 
-The target pipeline separates three responsibilities:
+Every continuous production operator should expose, where its domain is smooth,
 
-| Layer | Meaning | Owner |
-|---|---|---|
-| Mathematical expression DAG | Exact expressions, tensor algebra, domain assumptions and differentiation | FortSym; plasma-specific definitions remain in kin6d generators |
-| Indexed operator IR | Maps, reductions, segmented reductions, gathers/scatters and tensor contractions, with explicit dependencies | Generic FortSym generation; FortFEM supplies spatial operators |
-| Execution schedule | Layout, tiles, SIMD/warps, batching, fusion and memory movement | Generic backend schedules upstream; application composition in kin6d |
+\[
+F,\qquad DF\,v,\qquad DF^\dagger w.
+\]
 
-Generate ordinary Fortran CPU/reference and optional native CUDA leaves,
-with strict and rigorous evaluators from the shared definition. Compiler AD
-and runtime JIT are not requirements. A bounded ahead-of-time variant family
-can be compiled and tuned by hardware/compiler/operator/shape. Store the
-selected executable and generation/schedule provenance.
+Hessian-vector products are added only for a concrete consumer.
 
-Local FortSym source at `a66f3756585752fb3e3aa9cf4d27646919656734`
-contains a [typed kernel IR](https://github.com/lazy-fortran/fortsym/blob/a66f3756585752fb3e3aa9cf4d27646919656734/src/codegen/fortsym_kernel_ir.f90)
-lowered from an expression DAG. Its [roadmap](https://github.com/lazy-fortran/fortsym/blob/a66f3756585752fb3e3aa9cf4d27646919656734/ROADMAP.md)
-still lists broad indexed/implicit/tensor differentiation as incomplete.
-This inspection does not establish the full pipeline above. Verify each
-required target and implement a missing generic slice at its owning upstream
-repository, with an independent behavioral test and consumer recheck.
+FortSym is the primary source of project-owned primal/JVP/VJP expressions.
+FortAD, analytical formulas, finite differences and complex-step checks are
+independent verification tools. LLVM/Enzyme is optional and must never limit the
+supported Fortran compiler set.
 
-FortAD supplies independent derivative generation/checks and supported
-parser-level fallback. Any production numerical leaf still passes through
-FortSym emission. Enzyme may be an optional additional LLVM comparison.
-Neither defines the production mathematics or becomes a required compiler.
-The [FortFEM roadmap](https://github.com/lazy-fortran/fortfem/blob/2d7baa19fe1bef02ce279fa407830c8731bdc663/ROADMAP.md)
-provides a compatible residual/JVP/VJP direction; planned contracts are not
-evidence that all upstream physics/derivative paths already exist.
+## Symbolic source and generated families
 
-## Lazy indexed reductions
+A local symbolic definition should be able to emit a family such as
 
-For `a_i = sum_j w_j F(x_i,y_j,theta)`, generate a tiled evaluation that
-consumes each pair contribution immediately. Keep accumulators and reusable
-tiles in registers/cache/shared memory; never persist the complete logical
-pairwise matrix or its Jacobian. Inputs, outputs, bounded scratch and any
-partial reductions remain explicit memory costs. Tiling reduces intermediate
-storage, but does not reduce an intrinsically O(M N) arithmetic workload.
+\[
+\{K,\ K_{\rm JVP},\ K_{\rm VJP},\ K_{\rm HVP},
+  \ K_{\rm strict},\ K_{\rm enclosure},\ K_{\rm CUDA}\}.
+\]
 
-[KeOps map-reduce](https://www.kernel-operations.io/keops/engine/map_reduce_schemes.html)
-is the concrete reference for evaluating/reducing pairwise formulas without
-a device-memory kernel matrix. Its different schedules can require partial
-buffers; the contract bounds those buffers rather than promising zero scratch.
-[FlashAttention](https://arxiv.org/abs/2205.14135) motivates measuring movement
-between accelerator memory levels; [FlashAttention-2](https://arxiv.org/abs/2307.08691)
-illustrates the effect of work partitioning on the same mathematical task.
-These are architectural examples, not plasma speedup claims or dependencies.
+Not every member must exist from day one, but no handwritten derivative fork is
+introduced merely because an emitter is missing. Add the generic capability
+upstream or leave the derivative target explicitly unavailable.
 
-Use this pattern for appropriate nonlocal/BEM, kinetic-reaction, angular
-coupling and quadrature reductions. Prefer superior physical algorithms:
-harmonic Rosenbluth radial solves remain the proposed Landau route rather
-than replacing them with a quadratic direct integral. A direct tiled kernel
-may still be an independently derived small reference. Singular kernels need
-regularization/self-term and quadrature contracts before tuning.
+Symbolic common-subexpression elimination is cost-aware. Fewer FLOPs can lose
+to additional live temporaries/register spills. Hardware scheduling therefore
+remains separate from mathematical simplification.
 
-The symbolic family also generates reverse reductions. Cotangents for `x_i`
-reduce over `j`; those for `y_j` reduce over `i`. Weights, parameter reductions,
-normalizations and complex conjugation follow the declared pairing. Gather
-transposes become scatter/reductions with an explicit collision/ownership
-strategy. Differentiating a reduction does not license an unbounded tape,
-hidden dense Jacobian, racing writes or omitted MPI reverse communication.
+## Indexed reductions and bounded memory
 
-## Recompute within tiles
+Derivative generation must preserve lazy/tiled operator structure.
 
-Default to no global derivative tape for local generated operators. Recompute
-cheap forward intermediates inside VJP tiles; checkpoint an expensive reusable
-quantity only when measured arithmetic/traffic costs justify its storage.
-Recomputation is a schedule choice with numerical roundoff obligations, not
-a change in the physical expression. Record forward and reverse peak scratch,
-register pressure/spills, recomputation work and bytes transferred.
+For
 
-Fuse tensor interpolation, local physics and quadrature accumulation where
-measured reuse warrants it. Small 1D basis tables and radial factors may be
-stored; full tensor-basis or pairwise intermediates need an explicit reuse
-justification. Compare legal fusion/CSE strategies: fewer FLOPs can require
-more live registers and cause spills. Generic generation eventually records
-operation counts, temporary lifetimes and candidate FMA/live-scalar estimates.
+\[
+a_i=\sum_jF(x_i,y_j),
+\]
 
-The [CUTLASS overview](https://docs.nvidia.com/cutlass/latest/overview.html)
-provides a model for separating operation/layout from hardware decomposition.
-Asynchronous tile pipelines, persistent blocks and graphs are later schedule
-options for a profiled bottleneck. They do not justify a required C++ template
-framework or device-specific formulas in the plasma model.
+the JVP and VJP are themselves reductions. Do not materialize the pairwise
+matrix or Jacobian.
 
-## Implicit derivatives of solved equations
+The VJP should reverse the reduction direction as needed and recompute cheap
+tile-local intermediates. The default is **no global derivative tape**.
 
-For a stationary branch `R(U,theta)=0`, differentiate the equation:
-`R_U dU = -R_theta dtheta`. For a real scalar objective, solve
-`R_U^T lambda = Q_U^T` and obtain
-`dQ/dtheta = Q_theta - lambda^T R_theta` in coefficient dual coordinates.
-A physical weighted adjoint uses the corresponding Riesz/weight maps;
-complex formulations require the declared conjugate pairing.
+This policy applies to:
 
-This requires a differentiable branch and an invertible constrained/gauge-fixed
-Jacobian. Constraints and parameter-dependent domains/boundaries belong in
-the differentiated residual. Near bifurcations, nullspaces or nonunique roots,
-report failure of these assumptions rather than a fictitious sensitivity.
-Primal/adjoint residuals and conditioning determine derivative accuracy.
-Do not differentiate Newton/Krylov histories as the production definition.
+- pairwise kernels;
+- PIF/particle-in-basis;
+- FEM quadrature;
+- sparse angular couplings;
+- reaction graphs;
+- collision reductions.
 
-Linear solves use `A dx = db - dA x` and a transpose solve in reverse mode;
-factor derivatives need not be taped. Simple resonance roots use implicit
-root derivatives only when the root is isolated and its derivative nonzero.
-Eigenvalue derivatives require simplicity, normalization and phase/gauge
-conditions; degeneracy may require a subspace formulation. Differentiating
-the equations avoids dependence on accidental iteration counts and tolerances.
+## Implicit function theorem
 
-Transient adjoints still require trajectory access. Use a declared checkpoint/
-recompute schedule, deterministic replay requirements and memory/I/O budget.
-The local no-tape policy does not mean a long nonlinear trajectory's adjoint
-can run without saved states or recomputation. Distinguish a discrete time-step
-gradient from a validated continuous-time sensitivity.
+For a steady/equilibrium state
 
-## Validity and independent gates
+\[
+R(U,\theta)=0,
+\]
 
-Each differentiable operator declares its smooth domain, fixed-topology
-assumptions and event margins. Wall-hit/loss changes, mesh/cut topology,
-mode activation, resonance collisions and limiter branches can be nonsmooth.
-Freeze the relevant topology for an ordinary derivative or provide explicit
-event/saltation/one-sided semantics with their hypotheses. Otherwise return
-an unavailable derivative. Optimizer surrogates are separately labeled.
+the tangent solves
 
-Compare optimized/reference primal actions and derivative actions, then test
-against an independent analytical derivative or FortAD route. Directional
-finite differences need a step/roundoff study; complex step requires a
-holomorphic implementation and cannot validate arbitrary abs/min/events.
-Check adjoint duality with the actual weights, orientations and parallel
-ownership. Agreement or duality alone can preserve the same erroneous
-formula; it is necessary evidence, not the only derivative oracle.
+\[
+R_U\,\delta U=-R_\theta\,\delta\theta.
+\]
 
-A rigorous sensitivity enclosure requires a certified primal branch,
-derivative enclosures, verified constrained forward/adjoint inverse bounds,
-parameter and discretization/tail control, and objective regularity. The
-shared DAG makes consistency manageable but does not prove its derivation,
-generated compiler semantics or continuous-model validity automatically.
-Lean-checkable sensitivity claims remain a later explicit theorem milestone.
+For a scalar objective \(Q(U,\theta)\), solve the adjoint
 
-## Physical state capacity
+\[
+R_U^\dagger\lambda=Q_U^\dagger,
+\]
 
-Keep one canonical packed distribution, plus accounted solver vectors and
-bounded tile scratch. Avoid separate global transport/collision/FFT layouts.
-Lazy operators remove auxiliary matrices; they do not remove the O(N_state)
-physical distribution, residual or necessary work vectors.
+then
 
-Prefer contiguous owned blocks per resolution class. Block pools are useful
-for activated patches, adaptive harmonic/radial classes or rare populations;
-they need explicit ownership, stable IDs, transfer and fragmentation budgets.
-[PagedAttention](https://arxiv.org/abs/2309.06180) supplies an allocation example;
-[vAttention](https://arxiv.org/abs/2405.04437) motivates comparing the layout
-overhead with contiguous alternatives. Their serving results do not predict
-kinetic-solver performance.
+\[
+\frac{dQ}{d\theta}
+=
+Q_\theta-\lambda^\dagger R_\theta.
+\]
 
-When state capacity exceeds one accelerator, distribute configuration-space
-ownership with full local velocity state before defaulting to host/NVMe
-streaming. Other decomposition is permitted when a measured capacity/traffic
-constraint demands it. Any out-of-core path declares working-set, bandwidth,
-prefetch, fault and checkpoint/restart behavior. Count transfers end to end;
-no automatic unified-memory paging is assumed to make an infeasible run cheap.
+This is the default for equilibrium-constrained optimization and mirrors the
+useful DESC strategy while remaining compiler-independent and matrix-free.
 
-## Staged adoption and performance
+When the number of parameter directions is small, forward tangents/JVPs are
+natural. When the number of scalar objectives is small relative to parameters,
+the adjoint/VJP formulation is preferred.
 
-Start with mandatory generated primal/JVP/VJP for the next continuous leaf.
-Add a generic indexed reduction only when a client needs it, then its CPU
-and optional CUDA schedules, independent reference and bounded-memory tests.
-KeOps comparisons can be optional external audits of matching formulas and
-accuracy; they introduce no Python runtime into kin6d. Apply the same generic
-machinery to FortFEM tensor/quadrature and collision reductions where useful.
-Strict/rigorous emission and derivative domains accompany each supported
-operator; unsupported enclosure/AD targets fail explicitly.
+## Linear solves, roots and eigenproblems
 
-Add implicit solve sensitivities when an actual diagnostic/inverse/design
-question needs them. HVPs, certified gradients, persistent schedules and
-out-of-core pools follow their concrete consumer and theorem obligations.
-This sequence does not postpone R0 behind an entire new symbolic compiler.
+Do not differentiate through iterative solvers when the exact implicit rule is
+known.
 
-Extend the [performance objective](performance.md) with time to a requested
-gradient tolerance, stating validated versus rigorously certified status.
-Record forward/JVP/VJP time and memory, adjoint solve/checkpoint costs and
-the resulting gradient error. Tune a Pareto vector over these returned
-products; a faster primal with a much slower VJP need not win an inverse task.
+For
+
+\[
+Ax=b,
+\]
+
+\[
+A\,dx=db-dA\,x.
+\]
+
+The reverse solve uses \(A^\dagger\).
+
+For a simple root
+
+\[
+g(z,\theta)=0,
+\]
+
+\[
+dz=-g_z^{-1}g_\theta\,d\theta.
+\]
+
+A derivative certificate requires a transversality bound
+\(|g_z|\ge\gamma>0\). At root mergers/grazing events, the exact derivative may
+be undefined or unbounded; do not hide this with regularization.
+
+Eigenvalue/eigenvector derivatives require spectral isolation, normalization
+and treatment of degeneracies.
+
+## Physical adjoints
+
+The adjoint depends on the physical/discrete pairing. If
+
+\[
+\langle x,y\rangle_M=x^\dagger My,
+\]
+
+then
+
+\[
+A^\dagger=M^{-1}A^*M.
+\]
+
+Do not use raw Euclidean transpose as a universal definition.
+
+Operator metadata should declare:
+
+- natural pairing;
+- self-adjoint or skew-adjoint structure;
+- nullspace/complement;
+- time-reversal parity;
+- positivity/coercivity status.
+
+This connects derivative correctness to energy principles and
+Onsager--Casimir reciprocity.
+
+## DESC-style equilibrium projection
+
+When a design parameter changes an equilibrium constraint \(F(x,c)=0\), the
+design derivative contains
+
+\[
+G_c-G_xF_x^{-1}F_c.
+\]
+
+KIN6D should realize this with matrix-free JVP/VJP and linearized solves rather
+than forming full Jacobians or sensitivity matrices.
+
+A re-solve/projection after each design step is a solver policy. The derivative
+of the equilibrium manifold remains the IFT relation above.
+
+## Delta-f and control variates
+
+For
+
+\[
+f=F_0(\theta)+\delta f,
+\]
+
+differentiate both pieces consistently. A changing reference state contributes
+to the tangent/adjoint even if only \(\delta f\) is represented dynamically.
+
+Control variates used only for variance/preconditioning do not change the
+target derivative. Record whether \(F_0\) is a physical model component or an
+estimator aid.
+
+## Particles, PIC, PIF and blobs
+
+Deterministic particle and blob trajectories are ordinary differentiable
+finite-dimensional systems away from events.
+
+PIF is particularly convenient because
+
+\[
+\rho_k=\sum_pq_pw_p\widehat S(k)e^{-ikX_p}
+\]
+
+has analytic coordinate/weight derivatives that FortSym can emit directly.
+
+For PIC, deposition/gather and field solves must use mutually adjoint
+definitions in the declared pairing if that property is claimed.
+
+Particle sorting/binning changes execution order but need not change the
+mathematical map. Discrete cell-crossing/event logic may be nonsmooth and must
+declare its derivative domain.
+
+## Stochastic methods
+
+Random algorithms have separate derivative semantics. Possible choices are:
+
+- pathwise/reparameterized derivatives with fixed base randomness;
+- common-random-number directional comparisons;
+- score/likelihood-ratio estimators;
+- finite-difference statistical estimators.
+
+These carry variance and may be poor optimization directions. When a
+deterministic/control-variate model exists, use its implicit adjoint for design
+and treat stochastic gradients/validation separately unless the scientific
+target itself is statistical.
+
+## Transient adjoints
+
+For long trajectories, reverse sensitivities require a deliberate
+checkpoint/recompute strategy. Do not store the entire trajectory by default.
+
+The plan records:
+
+- state checkpoint memory;
+- recomputation factor;
+- event/topology handling;
+- adjoint stability;
+- observable time support.
+
+A chaotic/turbulent long-time average may need shadowing/statistical response
+methods rather than a naive terminal adjoint.
+
+## Topology and events
+
+Examples of derivative-event surfaces include:
+
+- particle-wall impact;
+- trapped/passing transition;
+- separatrix crossing;
+- magnetic topology change;
+- adaptive mesh/model switch;
+- collision/reaction event selection.
+
+A differentiability report states a margin to these events or declares the
+gradient unavailable/non-smooth.
+
+Optimization may use a deliberately smoothed surrogate, but the surrogate is a
+different model and must be labeled.
+
+## Verification
+
+Every derivative family has at least one independent check:
+
+- analytic derivative;
+- centered directional difference;
+- complex step where valid;
+- JVP/VJP pairing identity;
+- FortAD/Enzyme comparison where available.
+
+For implicit sensitivities also verify the linearized residual equation.
+
+Performance records include primal, JVP and VJP time/memory for material
+operators. A fast primal with an unusable VJP is not automatically the winning
+schedule for optimization workloads.
+
+## Certified sensitivities
+
+A generated derivative is not automatically a certified derivative of the
+continuous solution.
+
+A rigorous sensitivity/gradient claim additionally needs:
+
+- continuous differentiability on the verified branch;
+- inverse/stability bound for \(R_U\);
+- rigorous \(R_\theta,Q_U,Q_\theta\) evaluation;
+- adjoint/tangent solve error;
+- event/topology margin;
+- discretization/tail bounds.
+
+The long-range goal is interval gradients for selected design problems, not a
+formal claim that every adaptive/stochastic computation is differentiable.
 
 Chris&AI
