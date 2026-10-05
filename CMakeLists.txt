@@ -163,15 +163,19 @@ if(KIN6D_FORTSYM_BUILD)
             NOT fortsym_revision STREQUAL KIN6D_FORTSYM_REVISION)
         message(FATAL_ERROR "Regeneration requires FortSym ${KIN6D_FORTSYM_REVISION}")
     endif()
+    configure_file(gen/kin6d_fortsym_revision.inc.in
+        ${CMAKE_BINARY_DIR}/gen_include/kin6d_fortsym_revision.inc @ONLY)
+    add_library(kin6d_gen_support STATIC gen/kin6d_gen_support.f90)
+    target_include_directories(kin6d_gen_support PUBLIC
+        ${KIN6D_FORTSYM_BUILD}/include ${CMAKE_BINARY_DIR}/gen_include)
+    target_link_libraries(kin6d_gen_support PUBLIC
+        ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
     foreach(generator laboratory poisson fp transport streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
-        target_include_directories(gen_${generator} PRIVATE
-            ${KIN6D_FORTSYM_BUILD}/include)
-        target_link_libraries(gen_${generator} PRIVATE
-            ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
+        target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
 endif()
 # Explicit performance audit; not part of the ordinary correctness gate.
