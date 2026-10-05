@@ -7,6 +7,9 @@
 !>   uniform sphere centred at the origin;
 !> - periodic: Ewald sum (kin6d_ewald parameters) with neutralizing
 !>   background; the energy includes self-image, self and background terms.
+!> - periodic mesh: particle-mesh Ewald (kin6d_pme: cell-list real space and
+!>   B-spline mesh), the scalable action verified against the direct sum.
+!> Particles may be fixed (infinite mass: an impurity held at rest).
 !> Pair work is a tiled direct sum (or structure-factor reciprocal sum); the
 !> logical all-pairs matrix is never stored. There is no softening: a
 !> coincident pair or non-finite force fails closed with a domain error.
@@ -21,12 +24,15 @@ module kin6d_nbody
         coulomb_sphere_inside, coulomb_sphere_inside_jvp, ewald_real_pair, &
         ewald_real_pair_jvp, ewald_reciprocal_weight, ewald_self, ewald_background
     use kin6d_ewald, only: ewald_parameters_t
+    use kin6d_pme, only: pme_parameters_t, pme_t, pme_setup, pme_force, &
+                         pme_force_jvp, pme_constant
     use kin6d_species, only: units_t, species_t
     implicit none
     private
     public :: nbody_system_t, nbody_isolated, nbody_periodic, nbody_add_source
     public :: nbody_set_sphere, nbody_force, nbody_force_jvp, nbody_energy
     public :: nbody_step, nbody_step_jvp, nbody_encounter_step, nbody_wrap
+    public :: nbody_periodic_mesh, nbody_fix, nbody_source_encounter_step
 
     integer, parameter :: tile = 64
     real(dp), parameter :: two_pi = 6.2831853071795864769_dp
@@ -39,8 +45,11 @@ module kin6d_nbody
         real(dp), allocatable :: source_position(:, :), source_charge(:)
         !> Fixed uniform sphere centred at the origin (isolated systems only).
         real(dp) :: sphere_charge = 0.0_dp, sphere_radius = 0.0_dp
-        logical :: periodic = .false.
+        logical :: periodic = .false., mesh = .false.
         type(ewald_parameters_t) :: ewald
+        type(pme_t) :: pme
+        !> Fixed particles: kicks keep their velocity zero.
+        logical, allocatable :: fixed(:)
         integer :: modes = 0
         integer, allocatable :: wave(:, :)
         !> Half-space reciprocal weights, doubled for the +/-k pair, g=1.
@@ -107,6 +116,33 @@ contains
         ok = ieee_is_finite(system%constant_energy)
     end subroutine
 
+    !> Periodic system with the particle-mesh Ewald action of parameters p
+    !> (kin6d_pme); ewald%length carries the box edge for minimum images.
+    subroutine nbody_periodic_mesh(system, units, particles, p, ok)
+        type(nbody_system_t), intent(out) :: system
+        type(units_t), intent(in) :: units
+        type(species_t), intent(in) :: particles(:)
+        type(pme_parameters_t), intent(in) :: p
+        logical, intent(out) :: ok
+        call setup(system, units, particles, ok)
+        if (.not. ok) return
+        call pme_setup(system%pme, p, system%n, ok)
+        if (.not. ok) return
+        system%periodic = .true.; system%mesh = .true.
+        system%ewald%length = p%length; system%ewald%alpha = p%alpha
+        system%constant_energy = pme_constant(system%pme, system%coulomb, system%charge)
+        ok = ieee_is_finite(system%constant_energy)
+    end subroutine
+
+    !> Hold particle i at rest (infinite mass); its velocity must be zero.
+    subroutine nbody_fix(system, i, ok)
+        type(nbody_system_t), intent(inout) :: system
+        integer, intent(in) :: i
+        logical, intent(out) :: ok
+        ok = i >= 1 .and. i <= system%n
+        if (ok) system%fixed(i) = .true.
+    end subroutine
+
     subroutine setup(system, units, particles, ok)
         type(nbody_system_t), intent(out) :: system
         type(units_t), intent(in) :: units
@@ -122,6 +158,8 @@ contains
         system%charge = particles%charge; system%mass = particles%mass
         allocate (system%source_position(3, 0), system%source_charge(0))
         allocate (system%force_cache(3*system%n), system%position_cache(3*system%n))
+        allocate (system%fixed(system%n))
+        system%fixed = .false.
         ok = .true.
     end subroutine
 
@@ -272,6 +310,12 @@ contains
         real(dp) :: k(3), t, q
         complex(dp) :: s
         ok = .true.
+        if (system%mesh) then
+            call pme_force(system%pme, system%coulomb, system%charge, x, force, &
+                           potential, ok)
+            potential = potential + system%constant_energy
+            return
+        end if
         do ib = 1, system%n, tile
             ie = min(system%n, ib + tile - 1)
             do jb = ib, system%n, tile
@@ -488,6 +532,9 @@ contains
             call cached_force(s, state, status)
             if (status%code /= FORTNUM_OK) return
             do i = 1, s%n
+                if (s%fixed(i)) then
+                    state(n3 + 3*i - 2:n3 + 3*i) = 0; cycle
+                end if
                 state(n3 + 3*i - 2:n3 + 3*i) = state(n3 + 3*i - 2:n3 + 3*i) + &
                     dt*(s%force_cache(3*i - 2:3*i)/s%mass(i))
             end do
@@ -497,6 +544,9 @@ contains
                                      s%augmented_force, status)
                 if (status%code /= FORTNUM_OK) return
                 do i = 1, s%n
+                    if (s%fixed(i)) then
+                        state(n6 + n3 + 3*i - 2:n6 + n3 + 3*i) = 0; cycle
+                    end if
                     state(n6 + n3 + 3*i - 2:n6 + n3 + 3*i) = &
                         state(n6 + n3 + 3*i - 2:n6 + n3 + 3*i) + &
                         dt*(s%augmented_force(3*i - 2:3*i)/s%mass(i))
@@ -537,24 +587,35 @@ contains
         if (size(position) /= n3 .or. size(dposition) /= n3 .or. &
             size(dforce) /= n3) return
         ok = .true.
-        do i = 1, system%n
-            if (.not. system%periodic) call external_jvp(system, position, &
-                                                         dposition, i, dforce, ok)
-            if (.not. ok) exit
-            do j = i + 1, system%n
-                call pair_jvp(system, position, dposition, i, j, dforce, ok)
-                if (.not. ok) exit
-            end do
-            if (.not. ok) exit
-        end do
-        if (ok .and. system%periodic) call reciprocal_jvp(system, position, &
-                                                          dposition, dforce)
+        if (system%mesh) then
+            call pme_force_jvp(system%pme, system%coulomb, system%charge, position, &
+                               dposition, dforce, ok)
+        else
+            call direct_jvp(ok)
+        end if
         if (.not. ok .or. .not. all(ieee_is_finite(dforce))) then
             call status_set(status, FORTNUM_DOMAIN_ERROR, &
                 'coincident charges or non-finite force tangent')
             return
         end if
         call status_set(status, FORTNUM_OK, '')
+    contains
+        subroutine direct_jvp(ok)
+            logical, intent(out) :: ok
+            ok = .true.
+            do i = 1, system%n
+                if (.not. system%periodic) call external_jvp(system, position, &
+                                                             dposition, i, dforce, ok)
+                if (.not. ok) exit
+                do j = i + 1, system%n
+                    call pair_jvp(system, position, dposition, i, j, dforce, ok)
+                    if (.not. ok) exit
+                end do
+                if (.not. ok) exit
+            end do
+            if (ok .and. system%periodic) call reciprocal_jvp(system, position, &
+                                                              dposition, dforce)
+        end subroutine
     end subroutine
 
     subroutine pair_jvp(system, x, dx, i, j, dforce, ok)
@@ -714,5 +775,43 @@ contains
             speed = sqrt(v(1)*v(1) + v(2)*v(2) + v(3)*v(3))
             if (speed > 0) dt = min(dt, r/speed)
         end subroutine
+    end subroutine
+
+    !> O(N) encounter step against the fixed particles only (an impurity):
+    !> dt = eta * min over mobile i and fixed s of the Kepler time
+    !> sqrt(r^3 m_i/|g|) and the crossing time r/|v_i| (minimum image when
+    !> periodic). Mobile-mobile encounters are not examined here.
+    subroutine nbody_source_encounter_step(system, state, eta, dt, status)
+        type(nbody_system_t), intent(in) :: system
+        real(dp), intent(in) :: state(:), eta
+        real(dp), intent(out) :: dt
+        type(fortnum_status_t), intent(out) :: status
+        integer :: i, s, n3
+        real(dp) :: d(3), v(3), g, r, speed
+        call status_set(status, FORTNUM_DOMAIN_ERROR, 'invalid encounter-step input')
+        dt = huge(1.0_dp)
+        n3 = 3*system%n
+        if (size(state) /= 2*n3 .or. .not. (eta > 0)) return
+        do s = 1, system%n
+            if (.not. system%fixed(s)) cycle
+            do i = 1, system%n
+                if (system%fixed(i)) cycle
+                d = state(3*i - 2:3*i) - state(3*s - 2:3*s)
+                if (system%periodic) d = nbody_wrap(d, system%ewald%length)
+                v = state(n3 + 3*i - 2:n3 + 3*i)
+                r = sqrt(d(1)*d(1) + d(2)*d(2) + d(3)*d(3))
+                if (.not. (r > 0)) then
+                    call status_set(status, FORTNUM_DOMAIN_ERROR, &
+                        'charge on a fixed source: no softening applied')
+                    return
+                end if
+                g = system%coulomb*system%charge(i)*system%charge(s)
+                if (abs(g) > 0) dt = min(dt, sqrt(r**3*system%mass(i)/abs(g)))
+                speed = sqrt(v(1)*v(1) + v(2)*v(2) + v(3)*v(3))
+                if (speed > 0) dt = min(dt, r/speed)
+            end do
+        end do
+        dt = eta*dt
+        call status_set(status, FORTNUM_OK, '')
     end subroutine
 end module kin6d_nbody
