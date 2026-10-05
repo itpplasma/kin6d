@@ -201,3 +201,9 @@ run from the repository root and must reproduce committed leaves exactly.
   (Q1 movie: CM relative density singlet/triplet/classical, log scale,
   near-closest-approach frames; fine Mott bins), plan/doc consolidation,
   gallery render and slopbox upload.
+- 2026-10-06 (controller): Q4 worker finished (branch
+  worktree-agent-a555f8713dd7a8d74, 27/27 tests). Before merging, verify
+  and push FortNum branch `symmetric-lanczos-eigen` (80b7340, worktree
+  /Users/ert/code/lazy-fortran/fortnum-symmetric-eigen) to FortNum main;
+  the Q4 branch pins it. Q4 open: Theta=0.5 N=3/4 thermal rows unconverged
+  (indicators only); response only at q=(100).
