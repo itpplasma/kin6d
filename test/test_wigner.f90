@@ -93,11 +93,13 @@ program test_wigner
     call check('tangent vs FD', abs(tangent - (plus - minus)/2e-4_dp)/abs(tangent), &
         1e-6_dp)
 
-    ! 9. Negativity is retained, not clipped: nonlinear two-stream.
+    ! 9. Negativity is retained, not clipped: nonlinear two-stream at t = 20,
+    ! where the Vlasov run is still resolved (positivity preserved to roundoff).
     call two_stream_nonlinear(1.0_dp, neg_w, mass_change)
     call two_stream_nonlinear(0.0_dp, neg_v, mass_change)
     write (*, '(a,es11.3,a,es11.3)') 'negative mass Wigner ', neg_w, ' Vlasov ', neg_v
-    call check('Wigner negative mass present', -neg_w, -1e-3_dp)
+    call check('Wigner negative mass present', -neg_w, -0.1_dp)
+    call check('Vlasov positivity while resolved', neg_v, 1e-10_dp)
     call check('mass conserved with negativity', abs(mass_change), 1e-12_dp)
 
     if (failures > 0) error stop 'wigner oracles failed'
@@ -204,9 +206,9 @@ contains
         call wigner_grid_init(g, 32, 256, 2*pi/0.6_dp, 4.0_dp)
         call wigner_work_init(g, hbar, wk)
         call wigner_initial_beams(g, [0.5_dp, 0.5_dp], [1.0_dp, -1.0_dp], &
-            [0.2_dp, 0.2_dp], 0.01_dp, 1, hbar, s, .false.)
+            [0.2_dp, 0.2_dp], 1e-3_dp, 1, hbar, s, .false.)
         call wigner_diagnostics(g, wk, s, d0)
-        do n = 1, 600
+        do n = 1, 400
             call wigner_step(g, wk, s, 0.05_dp)
         end do
         call wigner_diagnostics(g, wk, s, d)
