@@ -20,7 +20,9 @@ program transport_demo
         ylabel, legend, tight_layout, savefig, ylim
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
-    integer, parameter :: modes = 2, nx = 96
+    ! Subpixel plotting cells retain full enclosures without visible stairs.
+    ! This display resolution is independent of the solver and benchmark grids.
+    integer, parameter :: modes = 2, nx = 1536
     real(dp), parameter :: velocity = 0.3125_dp, rtol = 0.01_dp, atol = 1.0e-8_dp
     real(dp), parameter :: goal_scale = 0.25_dp, derivative_scale = 0.25_dp
     type :: case_t
