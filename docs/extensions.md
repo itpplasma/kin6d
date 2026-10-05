@@ -93,9 +93,9 @@ The FK parent already uses physical momentum. Add when demanded:
 
 DREAM/CODE/CQL3D-like regimes are comparison targets, not named modes.
 
-## Atomic and molecular network
+## Atomic, molecular and internal-state network
 
-Represent reactions through a stoichiometric graph
+Represent reactions through a sparse stoichiometric graph
 
 \[
 \sum_a\nu^-_{ar}X_a\rightarrow\sum_a\nu^+_{ar}X_a,
@@ -108,10 +108,16 @@ dissociation, MAR/MAD, photoionization and chemistry.
 
 Fidelity spans:
 
-1. tabulated Maxwellian effective rates;
-2. collisional-radiative states;
-3. distribution-aware rate integrals;
-4. differential kinetic reaction kernels.
+1. tabulated local-field/Maxwellian effective rates;
+2. electron-energy or reduced Boltzmann/EEDF-derived rates;
+3. collisional-radiative/internal-state population equations;
+4. distribution-aware rate integrals;
+5. differential kinetic reaction kernels.
+
+Large weakly ionized/reacting cases may contain hundreds of species/states and
+thousands of reactions. Use generated sparse residual/JVP/VJP evaluation rather
+than a domain-specific chemistry solver. See
+[reacting and partially ionized plasmas](reacting-partially-ionized.md).
 
 ADAS/OPEN-ADAS, AMJUEL, HYDHEL and similar sources remain external data with
 version/hash provenance.
@@ -166,11 +172,47 @@ requires a bounded reduced material state.
 
 ## Radiation
 
-Begin with optically thin impurity loss and line emissivity, then add
-bremsstrahlung and cyclotron/synchrotron terms. Full photon transport is later
-and problem-driven.
+Radiation is a native fidelity axis rather than a binary local-loss/full-transfer
+choice:
 
-Radiated power appears explicitly in the total energy ledger.
+\[
+\text{optically thin}
+\rightarrow
+\text{opacity/escape closure}
+\rightarrow
+\text{grey diffusion}
+\rightarrow
+\text{multigroup/moment transport}
+\rightarrow
+\text{angular transport}
+\rightarrow
+\text{external high-fidelity non-LTE spectral provider}.
+\]
+
+This is sufficient to make reduced radiation hydrodynamics an ordinary KIN6D
+configuration for dense/thermal plasma where justified. Detailed line-by-line
+angle/frequency non-LTE transfer remains an external specialty provider until a
+prioritized case justifies internalizing a subset.
+
+Radiated energy/momentum and photo-reaction coupling appear explicitly in the
+total ledger. See [radiation](radiation.md).
+
+## Compressible, beam and high-energy-density classical extensions
+
+The common fluid/Maxwell/reaction/radiation framework should admit
+shock-capable compressible plasma, nonideal EOS/opacity closures and
+laser/beam energy deposition when a prioritized case needs them. This covers
+classical portions of arcs, propulsion, atmospheric-entry, Z-pinch,
+magnetized-target/ICF-like and laser-produced plasmas without a separate HEDP
+code architecture.
+
+Relativistic Maxwell + FK/PIC already covers many beam/wakefield problems.
+Moving-window, envelope or specialized source models are numerical/model
+optimizations to add only when demonstrated useful.
+
+Strongly coupled classical benchmarks may progress from screened/mean-force
+closures to small direct N-body/MD reference calculations. Fully quantum dense
+matter remains outside the classical core.
 
 ## Vacuum, conductors, coils and circuits
 
@@ -293,11 +335,17 @@ grazing/ambiguous set.
 Do not silently absorb:
 
 - general relativity/GRMHD;
-- strong-field QED and pair creation;
-- full reactor neutron transport;
-- comprehensive solid-state microphysics;
-- general radiation hydrodynamics.
+- strong-field QED and pair creation/cascades;
+- fully quantum dense-matter electronic structure;
+- full reactor neutron transport/nuclear engineering;
+- comprehensive bulk solid mechanics/material microstructure;
+- comprehensive liquid/solid chemistry;
+- the highest-fidelity line-by-line angle/frequency non-LTE radiation-transfer
+  discipline.
 
-Such systems may couple externally if a later scientific target requires them.
+Reduced radiation hydrodynamics through grey/multigroup/moment closures,
+classical nonideal EOS/opacity models and conservative adjacent-media interfaces
+remain inside the KIN6D envelope. External specialties may couple through narrow
+reusable provider interfaces.
 
 Chris&AI

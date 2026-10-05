@@ -9,6 +9,7 @@ Status: canonical implementation/tooling policy.
 | Plasma application/model composition | KIN6D, modern Fortran |
 | Symbolic local mathematics | FortSym |
 | Spatial FE/FEEC/IGA/DG/FCI/BEM mathematics | FortFEM |
+| Generic shock/front FV/AMR, rarefied/DSMC/MD or radiation-transport primitives | Existing generic owner where suitable; otherwise establish an upstream owner only when a concrete reusable implementation is required |
 | Generic numerics and rigorous arithmetic | FortNum |
 | Sparse algebra/factors | FortSparse |
 | Independent/source AD tooling | FortAD |
@@ -49,6 +50,10 @@ target, dependency revision and an independent behavioral oracle.
 
 The rule does not require rewriting BLAS, PETSc, FortNum, FortFEM or other
 generic algorithms in FortSym. Generic missing capabilities belong upstream.
+Do not force every new numerical family into FortFEM merely because it is the
+current spatial foundation: conservative finite-volume/AMR, DSMC/MD or
+radiation-transport infrastructure should live at the generic owner that
+emerges from real reusable consumers.
 
 ## Three layers of generated execution
 

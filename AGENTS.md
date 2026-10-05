@@ -5,6 +5,13 @@
 Read README.md, DESIGN.md and ROADMAP.md first. Then read the specification
 that owns the proposed change. In particular:
 
+- docs/capability-catalogue.md before broadening project scope or adding a new
+  application family;
+- docs/numerical-methods.md before introducing a new discretization/solver
+  family outside the primary tensor/FEEC path;
+- docs/reacting-partially-ionized.md before low-temperature, reacting-gas,
+  EEDF, dielectric/electrode or large-chemistry work;
+- docs/radiation.md before adding opacity, diffusion/moment or photon transport;
 - docs/equilibria-inference.md before equilibrium/import/reconstruction work;
 - docs/interface-reproducibility.md before configuration, I/O, UX or cluster-facing work;
 - docs/representations.md for Eulerian/semi-Lagrangian/particle/blob,
@@ -34,9 +41,12 @@ docs/first-example.md before changing it or claiming broader evidence.
 - Physics model, distribution form, numerical carrier, particle-field coupling,
   sampling strategy, collision realization, field model and active/test/
   reservoir role are separate axes. Reject unsupported combinations explicitly.
-- Direct steady kinetic science is the primary research spine. Early transients
-  and turbulence are required demonstrations and verification branches, not the
-  architectural center.
+- Direct steady kinetic science is the current primary research spine. Early
+  transients and turbulence are required demonstrations and verification
+  branches, not the architectural center. The complete capability catalogue is
+  not a chronological backlog: reprioritize vertical slices by scientific
+  value, cross-domain reuse, unlocks, validation, cost/risk and
+  performance/certification leverage.
 - Stability/response is an analysis-consumer axis available to every compatible
   MHD/fluid/gyrofluid/DK/GK/FK model. Do not create separate stability physics.
 - Macro transport dimensionality (0D/1D/1.5D/2D/3D) and closure fidelity are
@@ -63,6 +73,17 @@ docs/first-example.md before changing it or claiming broader evidence.
   framework to KIN6D. TIAGO owns any probabilistic mixture over fitted states.
 - Bulk MHD aggregates explicitly owned populations. It is not a per-species
   fluid switch. Prevent double counting of charge/current/pressure/energy.
+- Weakly/partially ionized and industrial plasmas reuse the common species,
+  reaction, neutral, field, radiation and surface contracts. Do not create an
+  industrial mode, streamer code or application-specific chemistry engine.
+- Radiation is native through useful reduced transport models
+  (optically-thin/opacity/diffusion/multigroup/moments/angular transport);
+  highest-fidelity line-by-line non-LTE transfer may remain an external
+  provider. Do not exclude all radiation hydrodynamics merely because that
+  highest rung is external.
+- Classical strong-correlation work may use mean-force or small direct N-body/
+  MD references; fully quantum dense-matter physics, QED and GR stay outside
+  the core unless a narrow reusable interface is justified.
 
 ## Mathematics, derivatives and certification
 
@@ -98,6 +119,11 @@ docs/first-example.md before changing it or claiming broader evidence.
   vector count before implementation.
 - Prefer tensor-product mapped patches, sum factorization, partial assembly,
   matrix-free actions and many-RHS batching where the model permits them.
+  This is a preferred path, not a universal prohibition: shock/front problems
+  may require finite-volume/entropy-stable DG/WENO-like methods and AMR;
+  rarefied gases may require DSMC; strongly coupled references may require MD.
+  Add such methods only for a concrete model and keep their generic machinery
+  in the owning numerical library.
 - Never materialize a global kinetic Jacobian or logical pairwise matrix merely
   because the formula contains two indices. Use tiled map/reduce or sparse
   interaction structure.
@@ -138,9 +164,11 @@ hierarchies in advance.
 Important long-range branches include collisions, gyrofluid/gyromoments,
 stability/bifurcation, 0D--3D integrated transport and true multiscale
 micro/macro coupling, MHD/kinetic-MHD, PIC/PIF/blobs, real-device DK/GK/FK,
-edge/neutrals/walls, RF/NBI/reactions, space plasmas, diagnostics and
-optimization. Planned scope is
-not implemented functionality.
+reacting/partially-ionized gas and EEDF models, edge/neutrals/walls,
+dielectrics/electrodes/reactive surfaces, reduced radiation transport,
+RF/wave-kinetic/NBI/reactions, compressible/shock-capable plasma,
+Solar-System/natural and industrial/low-temperature plasmas, diagnostics and
+optimization. Planned scope is not implemented functionality.
 
 ## Repository and dependency policy
 

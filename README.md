@@ -1,9 +1,16 @@
 # kin6d
 
-KIN6D is a plasma-physics engine whose highest-fidelity reference is full
-relativistic 3X3P kinetic dynamics, but whose practical purpose is broader:
-solve the cheapest mathematically controlled plasma model that answers the
-requested question at the requested accuracy.
+KIN6D is a **general classical plasma multiphysics engine** whose
+highest-fidelity charged-particle reference is full relativistic 3X3P kinetic
+dynamics, but whose practical purpose is broader: assemble the cheapest
+mathematically controlled plasma model and numerical representation that answer
+the requested question at the requested accuracy.
+
+The intended application envelope spans fusion, Solar-System/natural plasmas,
+industrial and low-temperature discharges, beam/accelerator and laser plasmas,
+atmospheric plasmas, dusty/non-neutral systems, and classical high-energy-density
+or strongly coupled regimes where an appropriate classical/nonideal model
+remains valid.
 
 The project is built around one common physical and numerical architecture.
 Equilibrium, stability/response, MHD, gyrofluid, gyromoments, drift/gyro/full
@@ -190,16 +197,30 @@ Long-range scope includes:
 - PIC, PIF, variational particle-FE, blobs, remapping and delta-f methods;
 - deterministic and stochastic Coulomb/reaction/neutral realizations;
 - core, pedestal, SOL, divertor, sheath and wall physics;
-- atomic/molecular charge-state networks and radiation;
-- RF/quasilinear/full-wave heating, NBI and fusion-product sources;
-- coils, vacuum, conducting walls and external circuits;
-- Solar-System plasma configurations;
+- atomic/molecular/internal-state chemistry, partial ionization and reacting
+  neutral gas from fluid to rarefied kinetic descriptions;
+- drift-diffusion/front models, dielectric/electrode charging and reactive
+  surface/interface physics;
+- native radiation from optically thin losses through grey/multigroup/moment
+  transport, with high-fidelity non-LTE spectral transfer available as an
+  external provider;
+- RF/quasilinear/full-wave and wave-kinetic physics, NBI and energetic/fusion
+  product sources;
+- compressible/shock-capable classical plasma, nonideal EOS/opacity closures
+  and small direct classical N-body/MD correlation references when needed;
+- coils, vacuum, conducting walls, dielectrics and external circuits;
+- Solar-System, atmospheric, industrial and other classical-plasma
+  configurations;
 - synthetic diagnostic forward operators, adjoints, optimization and control;
 - integration with TIAGO for equilibrium/state reconstruction and inference.
 
-General relativity, strong-field QED, complete reactor neutronics, detailed
-solid-state material evolution and general radiation hydrodynamics are outside
-the initial scope.
+The complete intended physics/numerics envelope is catalogued separately from
+implementation priority. See [the capability catalogue](docs/capability-catalogue.md)
+and [the numerical-method catalogue](docs/numerical-methods.md). Fully quantum
+dense-matter electronic structure, strong-field QED, general relativity, full
+reactor neutronics/nuclear engineering, detailed bulk material mechanics and
+the highest-fidelity line-by-line non-LTE radiation-transfer discipline remain
+external coupled systems unless a concrete reusable interface is justified.
 
 ## Differentiability
 
@@ -267,6 +288,10 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 
 - [Equilibria, imported candidates and TIAGO inference](docs/equilibria-inference.md)
 - [Configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md)
+- [Complete plasma-physics capability catalogue](docs/capability-catalogue.md)
+- [Numerical-method catalogue](docs/numerical-methods.md)
+- [Reacting and partially ionized plasmas](docs/reacting-partially-ionized.md)
+- [Radiation hierarchy](docs/radiation.md)
 - [Representations](docs/representations.md)
 - [Stability, response and bifurcation](docs/stability.md)
 - [Transport and multiscale coupling](docs/transport-multiscale.md)

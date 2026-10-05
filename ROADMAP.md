@@ -7,12 +7,18 @@ the final breadth of the code. The steady kinetic programme is the main spine.
 Student dynamics, turbulence and alternative representations are introduced
 early where they exercise the same operators cheaply.
 
-The long-range product goal is a **one-stop shop for classical fusion and
-Solar-System plasma physics**. Breadth must come from reusable model,
-representation, analysis, transport, boundary and coupling primitives rather
-than domain-specific solver silos. A new application area should normally add
-a thin configuration plus one or two genuinely reusable capabilities to the
-common engine.
+The long-range product goal is a **one-stop shop for classical plasma
+physics**: fusion, Solar-System/natural, industrial/low-temperature, beam/
+accelerator, atmospheric, dusty/non-neutral and classical high-energy-density
+regimes. Breadth must come from reusable model, representation, analysis,
+transport, reaction, radiation, boundary and coupling primitives rather than
+domain-specific solver silos.
+
+The complete design envelope lives in
+[the capability catalogue](docs/capability-catalogue.md) and
+[the numerical-method catalogue](docs/numerical-methods.md). Those catalogues
+are not backlogs. The roadmap maintains only a small active path chosen by
+scientific value and leverage.
 
 ## Rules for every milestone
 
@@ -28,6 +34,28 @@ A capability is promoted only when it has:
 
 An optimization or representation change is not allowed to obscure the
 underlying mathematical operator.
+
+## Prioritization instead of feature accumulation
+
+Do not implement the catalogue in document order. At each planning cycle rank
+candidate vertical slices by:
+
+1. scientific value for an actual research/teaching question;
+2. cross-domain reuse of the primitive introduced;
+3. how many later capabilities the work unlocks;
+4. strength and independence of available validation oracles;
+5. expected implementation/maintenance cost and architectural risk;
+6. achievable performance and memory envelope;
+7. certifiability/error-control leverage.
+
+Prefer a small end-to-end slice that creates a reusable primitive over a broad
+framework with no scientific consumer. A capability remains documented but
+dormant until it wins this prioritization.
+
+The active spine below is the current best path, not a permanent chronological
+contract. Cross-cutting tracks may move earlier when they unlock more valuable
+science.
+
 
 ## R0 — retain and harden the first 1X1V slice
 
@@ -388,151 +416,93 @@ Reuse the same hierarchy with open domains and additional forces:
 
 Vlasiator, Gkeyll, Smilei, WarpX and related codes provide cross-validation.
 
-## R13A — one-stop-shop coverage completion (cross-cutting, demand-driven)
+## Coverage tracks — selected by priority, not by domain
 
-After the core fusion and Solar-System branches are usable, close remaining
-classical-plasma coverage gaps by adding **generic capabilities**, not a new
-named solver for each community. Prefer an abstraction that serves both fusion
-and space whenever the underlying mathematics is shared.
+The remaining classical-plasma envelope is maintained as reusable capability
+tracks rather than a sequence of domain-specific solver milestones. Pull one
+forward when an application makes it the highest-value next vertical slice.
 
-### Strongly driven thermal/current evolution
+### Reacting and partially ionized matter
 
-Support rapid coupled changes of temperature, current, impurities, fields and
-conducting structures using the existing transport, MHD/XMHD, reaction,
-radiation, energetic-particle and wall/circuit machinery.
-
-This generic capability should cover strongly driven events without hard-coding
-one device scenario. The reusable pieces are:
-
-- stiff source/reaction/current evolution;
-- rapid equilibrium/field change;
-- impurity and radiation coupling;
-- relativistic energetic-particle production/transport where needed;
-- conductor/wall response and load diagnostics.
-
-### Edge/pedestal stability and finite-amplitude transition
-
-Combine the common equilibrium, stability, transport and nonlinear-evolution
-consumers so edge-gradient systems can be studied from linear margin through
-reduced finite-amplitude evolution to nonlinear saturation.
-
-Do not create a special pedestal solver. The added value is one consistent
-path:
+Add the shared low-temperature/reacting hierarchy:
 
 \[
-\text{equilibrium}
+\text{local-field/electron-energy}
 \rightarrow
-\text{linear/nonmodal stability}
+\text{Boltzmann/EEDF}
 \rightarrow
-\text{reduced nonlinear branch}
-\rightarrow
-\text{full nonlinear model}
-\rightarrow
-\text{transport feedback}.
+\text{FK electrons},
 \]
 
-### Partially ionized plasma
+together with heavy-species reaction-diffusion, compressible multispecies flow
+and rarefied kinetic/DSMC-like neutrals. Large sparse internal-state chemistry,
+ion-neutral drag, charge exchange and multi-temperature energy exchange use the
+same species/reaction graph as fusion edge and space applications.
 
-Make partial ionization a first-class multispecies/reaction regime using shared
-charged/neutral populations rather than a separate atmosphere/edge package.
-Needed reusable physics includes:
+Drift-diffusion/Poisson and front-capable models supply the cheap end for
+ionization-front/streamer-like regimes. See
+[reacting-partially-ionized.md](docs/reacting-partially-ionized.md).
 
-- ion-neutral drag and charge exchange;
-- ionization/recombination;
-- anisotropic/Hall/Pedersen-like conductivity closures;
-- neutral flow and momentum/energy exchange;
-- transition from one-/multi-fluid closures to kinetic charged and neutral
-  species.
+### General surfaces, dielectrics and adjacent media
 
-This serves fusion edge/divertor, chromospheric, ionospheric, cometary and
-planetary applications.
+Generalize the existing sheath/wall/circuit contract to conducting electrodes,
+dielectrics with evolving surface charge, secondary/thermionic/field/
+photo-emission, reactive coverages, deposition/etching and finite conducting
+bodies. Detailed solid/liquid physics remains an external provider behind a
+conservative particle/current/heat/reaction interface.
 
-### Conducting-boundary and ionosphere/object coupling
+### Radiation hierarchy
 
-Generalize the existing wall/sheath/circuit boundary machinery to a finite
-conducting environment coupled to field-aligned currents and plasma fluxes.
-
-The reusable abstraction is a surface/boundary state with:
-
-- conductance/capacitance/current closure;
-- sheath/floating-potential behavior;
-- photo/secondary emission where requested;
-- imposed or self-consistent tangential electric response;
-- coupling to an external neutral/fluid layer.
-
-This should cover fusion conductors, ionospheric electrodynamics, moons and
-spacecraft without separate numerical infrastructures.
-
-### Focused energetic-particle transport
-
-Add a reduced energetic-particle transport model between orbit-following and
-full kinetic phase-space evolution. It may evolve pitch-angle/energy/action
-coordinates with streaming, focusing, diffusion and source/loss terms.
-
-The same transport operator should serve fast ions, radiation-belt/SEP-like
-populations, pickup ions and shock-accelerated particles when their assumptions
-match. It is another reduced species model/transport closure, not a special
-space-physics code.
-
-### Wave-kinetic and statistical-spectrum evolution
-
-Promote the spectral closure interface from prescribed turbulence statistics
-to an evolving wave/turbulence state, schematically
+Make radiation native through the useful reduced hierarchy
 
 \[
-\partial_t N
-+
-\nabla_k\omega\cdot\nabla_x N
--
-\nabla_x\omega\cdot\nabla_k N
-=
-S_{\rm wave}+C_{\rm wave}-D_{\rm wave}.
+\text{optically thin}
+\rightarrow
+\text{opacity/escape closure}
+\rightarrow
+\text{grey diffusion}
+\rightarrow
+\text{multigroup/moment transport}
+\rightarrow
+\text{angular transport},
 \]
 
-Couple \(N(x,k,t)\), cross-spectra and particle distributions through the same
-quasilinear transport contract already used by RF, turbulence and energetic
-particles. This provides an intermediate level between fixed spectra and
-fully nonlinear field evolution.
+with high-fidelity line-by-line angle/frequency non-LTE transfer available
+through an external provider until a concrete case justifies internalizing more.
+See [radiation.md](docs/radiation.md).
 
-### Magnetic-topology diagnostics as a service
+### Compressible, shock/front and classical HEDP regimes
 
-Add a reusable field-topology analysis layer on top of the common field-line
-map/geometry service. Candidate diagnostics include resonances, island widths,
-connection lengths, stochasticity/overlap, field-line diffusion,
-finite-time-Lyapunov/squashing measures and topology/helicity observables.
+Reuse the fluid/MHD/reacting/radiation infrastructure for strongly compressible
+and shock-dominated plasma. Add nonideal EOS/opacity as versioned closure data,
+laser/beam deposition and stiff matter-radiation coupling only when needed.
 
-These are diagnostics and closure inputs for transport/stability; they must not
-become a second magnetic-geometry implementation.
+This track covers classical portions of arcs, propulsion, atmospheric entry,
+Z-pinch/magnetized-target/ICF-like and laser-produced plasmas without creating a
+separate HEDP architecture. Fully quantum dense matter remains outside the core.
 
-### Charged grains and embedded bodies
+### Strong-correlation reference
 
-Generalize the particle/surface machinery to finite charged macroparticles or
-bodies with mass, charge state and optional size/material state. Reuse the same
-external-force, charging, collision, sheath and wall interaction infrastructure.
+Extend the collision/correlation ladder from screened/mean-force closures to a
+small direct classical N-body/MD reference representation where strong
+correlations invalidate mean-field assumptions. This serves dusty, ultracold
+and strongly coupled classical benchmarks; it is not a production replacement
+for kinetic continuum methods.
 
-This covers dusty/plume/ring/spacecraft-like applications without perturbing
-the main fusion path. Implement only when a concrete case requires it.
+### Wave/statistical and energetic-particle transport
 
-### Rotating/stratified bulk plasmas
+Retain the planned focused energetic-particle hierarchy,
+wave-kinetic/statistical-spectrum evolution and global-orbit/turbulence
+cross-spectrum coupling. These are shared fusion/space/accelerator primitives,
+not domain-specific additions.
 
-Extend bulk-fluid/MHD models with reusable gravity, rotation, buoyancy,
-thermodynamic/EOS and anisotropic-conduction terms when needed. This enables
-stratified convection/dynamo and rotating space-plasma applications while
-remaining the same bulk-model infrastructure used elsewhere.
+### Topology, embedded bodies and rotating/stratified fluids
 
-### Admission criterion for coverage extensions
-
-A coverage extension belongs in KIN6D when it can be expressed mostly through
-existing common state, transport, stability, field, reaction, surface or
-particle interfaces and adds a reusable primitive with at least two plausible
-consumers. Domain-specific data preparation or diagnostics may remain thin
-application adapters.
-
-Do **not** internalize large adjacent disciplines merely to claim completeness.
-In particular, full non-LTE radiation transfer, reactor neutronics,
-solid-state material microphysics, strong-field QED and GR remain external
-coupled systems unless a later scientific target justifies a narrow reusable
-interface.
+Retain magnetic-topology diagnostics, charged grains/finite bodies, gravity,
+rotation, buoyancy and anisotropic conduction as common services. Reconnection,
+shocks, edge transitions, non-neutral traps and beam/wakefield applications
+should be expressed through existing model/analysis consumers rather than new
+top-level solver families.
 
 ## R14 — diagnostics, TIAGO inference integration, design and adaptive fidelity
 
@@ -585,6 +555,34 @@ KeOps/FlashAttention-style tiled reductions. Never materialize pairwise
 interaction matrices or global kinetic Jacobians when a streamed reduction is
 the actual mathematics.
 
+### Method diversity and adaptivity
+
+The common engine must admit the numerical family appropriate to the selected
+regime. In addition to the primary tensor/FEEC/spectral path, retain deliberate
+routes for conservative finite-volume/entropy-stable DG and WENO-like
+shock/front methods, block AMR/hp adaptivity, semi-Lagrangian kinetic methods,
+PIC/PIF/blobs, DSMC/MCC, photon Monte Carlo and small direct N-body/MD
+references.
+
+See [numerical-methods.md](docs/numerical-methods.md). Do not implement a method
+until a model requires it, but do not let today's preferred discretization
+become an architectural prohibition.
+
+### Time-scale and asymptotic numerics
+
+Add IMEX, exponential, splitting, multirate/subcycling and
+asymptotic-preserving/uniformly accurate formulations when scale separation
+makes them materially cheaper than resolving irrelevant fast physics. Verify
+both the parent equation and the intended limiting model.
+
+### Reduced-order and uncertainty acceleration
+
+Low-rank/tensor compression, sparse grids, ROMs and surrogate closures are
+optional accelerators with explicit reconstruction/error status. MC/QMC and
+stochastic-collocation/ensemble tools remain uncertainty or sampling methods,
+not substitutes for deterministic certificates.
+
+
 ### Performance
 
 For each rung retain:
@@ -630,10 +628,14 @@ cross-code/literature reference where possible. Existing itpplasma codes
 NEO-2, NEO-RT, SIMPLE, GORILLA, KAMEL/KiLCA/KIM, MEPHIT, ARES and rabe are
 valuable retained oracles as their production roles are subsumed.
 
-## Out of initial scope
+## Deliberate outer boundary
 
-General relativity, strong-field QED/pair creation, full reactor neutronics,
-detailed solid-state material microphysics and general radiation
-hydrodynamics remain external.
+KIN6D may couple to but does not initially own fully quantum dense-matter
+electronic structure, strong-field QED/pair cascades, general-relativistic
+plasma/gravity, full reactor neutronics/nuclear engineering, detailed bulk
+solid mechanics/material microstructure, comprehensive liquid/solid chemistry,
+or the highest-fidelity line-by-line angle/frequency non-LTE radiation-transfer
+discipline. Reduced radiation hydrodynamics through grey/multigroup/moment
+models is inside the KIN6D scope.
 
 Chris&AI
