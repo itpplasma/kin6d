@@ -76,11 +76,14 @@ The gallery distinguishes certified reduced-model results from exploratory
 microscopic trajectories. Its reproducible GIF and MP4 outputs remain outside
 Git.
 
-The [quantum teaching slice](docs/quantum-teaching-slice.md) prioritizes a
-matched interacting classical/quantum pair experiment and finite-temperature
-ideal electron pressure. Quantum BBGKY and stellar structure are deferred.
-Finite-basis evolution bounds, classical sampling uncertainty and continuum
-projection error have separate status.
+The [quantum teaching slice](docs/quantum-teaching-slice.md) supplies a periodic
+interacting pair-quench reference and finite-temperature ideal electron
+pressure. The [microscopic quantum plan](docs/quantum-microscopic-validation.md)
+next prioritizes localized scattering, coherent packet enrichment, finite-N
+degeneracy and an interacting quantum cell before scalable approximations.
+Quantum BBGKY and stellar structure are deferred. Finite-basis evolution
+bounds, classical sampling uncertainty and continuum projection error have
+separate status.
 
 ## Scientific spine
 
