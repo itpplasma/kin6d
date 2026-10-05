@@ -20,7 +20,7 @@ endif()
 # The application owns physical laws; generic numerics remain upstream.
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 7f6a0ba5ddd7cbc0e58e0eb72446a2c953bdb30b)
+    GIT_TAG ab3a83398309a637a1f6cf01da86774a36454997)
 FetchContent_GetProperties(fortnum)
 if(NOT fortnum_POPULATED)
     FetchContent_Populate(fortnum)
@@ -39,14 +39,16 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/quadrature/fortnum_quadrature.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
-    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
+    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 target_link_libraries(kin6d_ode PUBLIC kin6d_intervals)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
+add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90 src/sort_keys.f90
     src/generated/kin6d_species_leaves.f90 src/species.f90
     src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90 src/nbody.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
@@ -182,7 +184,7 @@ if(KIN6D_FORTSYM_BUILD)
     foreach(generator laboratory poisson fp transport streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
-            quantum_reference_gallery classical_pair coulomb species)
+            quantum_reference_gallery classical_pair coulomb species jellium_cell)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
