@@ -1,26 +1,44 @@
-program benchmark_fp
+program benchmark_fp_main
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
         fp_certificate_radius, fp_certificate_accepts, sample_fp
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
     type(fp_state_t) :: state
-    integer, parameter :: trials = 5, solves = 100, checks = 10
+    type(run_t) :: run
+    type(result_file_t) :: result
+    integer :: trials = 5, solves = 100, checks = 10
     integer :: cells = 4096
     real(dp), parameter :: exact_zero = 0.41795955023513457256435545185990697_dp
-    real(dp), parameter :: observable_scale = 1.0_dp, requested_radius = 0.01_dp
-    real(dp) :: solve_time(trials), check_time(trials), accept_time(trials)
+    real(dp) :: observable_scale = 1.0_dp, requested_radius = 0.01_dp
+    real(dp), allocatable :: solve_time(:), check_time(:), accept_time(:)
     real(dp) :: start, finish, residual, radius, value, temporary
-    integer :: trial, repeat, i, j, parse_status
+    integer :: trial, repeat, i, j, parse_status, unit, mid
     character(len=64) :: argument
+    character(len=256) :: msg
     logical :: accepted
-    if (command_argument_count() > 1) error stop 'usage: benchmark_fp [cells]'
-    if (command_argument_count() == 1) then
-        call get_command_argument(1, argument)
+    namelist /benchmark_fp/ cells, trials, solves, checks, observable_scale, &
+        requested_radius
+    call run%start('benchmark_fp')
+    parse_status = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=benchmark_fp, iostat=parse_status, iomsg=msg)
+    call run%close_config(unit, 'benchmark_fp', parse_status, msg)
+    if (run%argument_count() > 1) error stop 'usage: benchmark_fp [--config FILE] [cells]'
+    if (run%argument_count() == 1) then
+        call run%argument(1, argument)
         read (argument, *, iostat=parse_status) cells
         if (parse_status /= 0) error stop 'cells must be an integer'
-        if (cells < 8) error stop 'benchmark requires at least eight cells'
-        if (mod(cells, 2) /= 0) error stop 'even cells required for f(0) node oracle'
     end if
+    if (cells < 8) error stop 'benchmark requires at least eight cells'
+    if (mod(cells, 2) /= 0) error stop 'even cells required for f(0) node oracle'
+    if (trials < 1 .or. solves < 1 .or. checks < 1) error stop 'invalid repetition counts'
+    if (.not. (observable_scale > 0.0_dp .and. requested_radius > 0.0_dp)) &
+        error stop 'invalid requested radius'
+    call run%open_resolved(unit)
+    write (unit, nml=benchmark_fp)
+    call run%close_resolved(unit)
+    allocate (solve_time(trials), check_time(trials), accept_time(trials))
     call initialize_fp(state, cells)
     call solve_fp(state, residual)
     radius = fp_certificate_radius(state)
@@ -83,10 +101,28 @@ program benchmark_fp
             end if
         end do
     end do
-    print '(a,3es16.7)', 'solve median/min/max=', solve_time(3), &
+    mid = (trials + 1)/2
+    print '(a,3es16.7)', 'solve median/min/max=', solve_time(mid), &
         solve_time(1), solve_time(trials)
-    print '(a,3es16.7)', 'certificate median/min/max=', check_time(3), &
+    print '(a,3es16.7)', 'certificate median/min/max=', check_time(mid), &
         check_time(1), check_time(trials)
-    print '(a,3es16.7)', 'acceptance median/min/max=', accept_time(3), &
+    print '(a,3es16.7)', 'acceptance median/min/max=', accept_time(mid), &
         accept_time(1), accept_time(trials)
-end program
+    call execute_command_line('mkdir -p output')
+    call result%create(run)
+    call result%write('achieved_sup_radius', radius, '1', &
+        'continuous sup-norm radius of the FP profile', &
+        status='certified-continuous analytic reference sup bound (strict interval)')
+    call result%write('f0', value, '1', 'candidate observable f(0)', &
+        status='candidate; |f(0)-exact| <= achieved_sup_radius checked')
+    call result%write('f0_exact', exact_zero, '1', 'exact finite-domain erf oracle f(0)')
+    call result%write('flux_residual', residual, '1', 'final flux residual', &
+        status='diagnostic')
+    call result%write('solve_cpu_seconds', solve_time, 's', &
+        'sorted per-solve CPU time', dims='trial', status='measurement')
+    call result%write('certificate_cpu_seconds', check_time, 's', &
+        'sorted certificate CPU time', dims='trial', status='measurement')
+    call result%write('acceptance_cpu_seconds', accept_time, 's', &
+        'sorted acceptance CPU time', dims='trial', status='measurement')
+    call result%close()
+end program benchmark_fp_main

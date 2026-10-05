@@ -11,33 +11,62 @@ program shielding_dynamics_demo
           fill_between, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: points = 193, frames = 121, modes = 6
-    real(dp), parameter :: source(modes) = &
+    integer, parameter :: modes = 6
+    integer :: points = 193, frames = 121
+    real(dp) :: source(modes) = &
                            [0.04_dp, 0.025_dp, 0.0125_dp, 0.006_dp, 0.003_dp, 0.0015_dp]
-    real(dp), parameter :: tmax = 4.0_dp, step = 0.0025_dp
+    real(dp) :: tmax = 4.0_dp, step = 0.0025_dp
+    namelist /shielding_dynamics/ points, frames, source, tmax, step
+    type(run_t) :: run
+    type(result_file_t) :: result
+    integer :: ios, center
+    character(len=256) :: msg
+    character(len=*), parameter :: bound = 'certified-continuous finite-Fourier '// &
+        'residual/contractivity band; physical/model error unavailable'
     type(shielding_state_t) :: state, baseline
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
-    real(dp) :: x(points), times(frames), values(3, points, frames)
-    real(dp) :: lower(3, points, frames), upper(3, points, frames)
-    real(dp) :: equilibrium(3, points), bare(3, points), a, d, p, e, padding(3)
+    real(dp), allocatable :: x(:), times(:), values(:, :, :)
+    real(dp), allocatable :: lower(:, :, :), upper(:, :, :)
+    real(dp), allocatable :: equilibrium(:, :), bare(:, :)
+    real(dp) :: a, d, p, e, padding(3)
     real(dp) :: first, last, solve_time, certified_time, render_first, render_last
-    real(dp) :: candidate_frame_s(frames), certified_frame_s(frames)
+    real(dp), allocatable :: candidate_frame_s(:), certified_frame_s(:)
     real(dp) :: frame_first, frame_last, max_x_gap, max_t_gap
     type(interval_t) :: padded_lo, padded_hi, temporal_curvature, next_bound
-    real(dp) :: history_lower(frames), history_upper(frames), max_radius(3)
+    real(dp), allocatable :: history_lower(:), history_upper(:)
+    real(dp) :: max_radius(3)
     integer :: f, j, k, q, unit, status, snapshot
     logical :: ok, snapshot_only
     character(128) :: argument
+    call run%start('shielding_dynamics_demo')
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=shielding_dynamics, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'shielding_dynamics', ios, msg)
+    if (points < 3 .or. mod(points, 2) == 0 .or. frames < 2) &
+        error stop 'shielding_dynamics needs odd points >= 3 and frames >= 2'
+    if (.not. (tmax > 0.0_dp .and. step > 0.0_dp)) &
+        error stop 'shielding_dynamics tmax and step must be positive'
+    call run%open_resolved(unit)
+    write (unit, nml=shielding_dynamics)
+    call run%close_resolved(unit)
+    center = (points + 1)/2
+    allocate (x(points), times(frames), values(3, points, frames), &
+        lower(3, points, frames), upper(3, points, frames), equilibrium(3, points), &
+        bare(3, points), candidate_frame_s(frames), certified_frame_s(frames), &
+        history_lower(frames), history_upper(frames))
     snapshot_only = .false.
     snapshot = frames
-    if (command_argument_count() > 0) then
-        call get_command_argument(1, argument)
+    if (run%argument_count() > 2) error stop 'use [--config FILE] [--snapshot [frame]]'
+    if (run%argument_count() > 0) then
+        call run%argument(1, argument)
         if (trim(argument) /= '--snapshot') error stop 'use --snapshot [frame]'
         snapshot_only = .true.
-        if (command_argument_count() > 1) then
-            call get_command_argument(2, argument)
+        if (run%argument_count() > 1) then
+            call run%argument(2, argument)
             read (argument, *, iostat=status) snapshot
             if (status /= 0) error stop 'invalid snapshot frame'
             if (snapshot < 1 .or. snapshot > frames) error stop 'snapshot frame range'
@@ -164,10 +193,10 @@ write (unit, '(a)') '# matched local CPU single trial; step solves only; setup e
     next_bound = linear_interpolation_remainder(interval(0.0_dp), &
         interval(max_t_gap), temporal_curvature)
     do f = 1, frames
-        call shielding_band_interval(interval(lower(2, 97, f)), next_bound, &
+        call shielding_band_interval(interval(lower(2, center, f)), next_bound, &
                                      padded_lo, padded_hi)
         history_lower(f) = padded_lo%lo
-        call shielding_band_interval(interval(upper(2, 97, f)), next_bound, &
+        call shielding_band_interval(interval(upper(2, center, f)), next_bound, &
                                      padded_lo, padded_hi)
         history_upper(f) = padded_hi%hi
     end do
@@ -179,6 +208,21 @@ write(unit,'(a)') '# observable_scales=0.05,0.05,0.05; requested_rtol=0.01; floo
     write (unit, '(a,es24.16e3)') '# checked_solve_sampling_seconds=', &
         render_last - render_first
     close (unit)
+    call result%create(run)
+    call result%write('t', times, 'lambda_D**2/D', 'time', dims='frame')
+    call result%write('x', x, 'lambda_D', 'position', dims='x')
+    call write_field(1, 'eta', 'electron excess')
+    call write_field(2, 'phi', 'potential')
+    call write_field(3, 'E', 'electric field')
+    call result%write('phi_center_history_lower', history_lower, '1', &
+        'center potential history lower (time-interpolation padded)', dims='frame', &
+        status=bound)
+    call result%write('phi_center_history_upper', history_upper, '1', &
+        'center potential history upper (time-interpolation padded)', dims='frame', &
+        status=bound)
+    call result%write('max_band_radius', max_radius, '1', &
+        'max spatial band radius of eta, phi, E', dims='field', status=bound)
+    call result%close()
     call figure(figsize=[12.8_dp, 8.2_dp])
     canvas => get_global_figure()
     call draw_frame(snapshot)
@@ -190,6 +234,16 @@ write(unit,'(a)') '# observable_scales=0.05,0.05,0.05; requested_rtol=0.01; floo
         if (status /= 0) error stop 'movie encoding failed'
     end if
 contains
+    subroutine write_field(q, name, long_name)
+        integer, intent(in) :: q
+        character(len=*), intent(in) :: name, long_name
+        call result%write(name, values(q, :, :), '1', long_name//' center', &
+            dims='x,frame', status='candidate center')
+        call result%write(name//'_lower', lower(q, :, :), '1', long_name//' lower', &
+            dims='x,frame', status=bound)
+        call result%write(name//'_upper', upper(q, :, :), '1', long_name//' upper', &
+            dims='x,frame', status=bound)
+    end subroutine
     subroutine update_frame(number)
         integer, intent(in) :: number
         call canvas%clear()
@@ -244,7 +298,7 @@ contains
         call ylim(0.02_dp, 0.062_dp)
      call fill_between(times(:number), history_lower(:number), history_upper(:number), &
                           color='lightblue', alpha=0.6_dp)
-        call plot(times(:number), values(2, 97, :number), &
+        call plot(times(:number), values(2, center, :number), &
          color=[0.0_dp, 0.4471_dp, 0.6980_dp], label='numerical + continuous time band')
         call legend(loc='upper right')
         call tight_layout()

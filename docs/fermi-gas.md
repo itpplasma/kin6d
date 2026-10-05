@@ -209,3 +209,91 @@ hosted callbacks need trampoline storage. The controller build uses the
 compiler's heap-trampoline option where supported; the isolated measurements
 above used its default stack-trampoline ABI. This is a portability distinction,
 not additional enclosure slack.
+
+## Relativistic extension
+
+Campaign case Q8. `solve_fermi_gas(..., relativity=x, relativity_interval=X)`
+uses the relativistic kinetic energy with `x = pF/(m*c)`. It keeps the
+normalization above (`r = p/pF`, `theta = kB*T/EF`, `mu` in units of
+`EF = pF**2/(2m)`). In these units
+
+```text
+eps(r) = E/EF = 2r**2/(s+1),   s = sqrt(1 + x**2 r**2),
+P/(n EF) = integral r**3 eps'(r) f dr,
+U/(n EF) = 3 integral r**2 eps f dr,
+3 integral r**2 f dr = 1.
+```
+
+The six outputs keep their meaning. The relations `chi = 3*I2_mu` and
+`B = 1/chi` follow from Gibbs–Duhem at fixed T. `U = 1.5P` holds only
+nonrelativistically. In general `1.5P <= U < 3P`, because the ratio of
+kinetic energy to `p*v` is `s/(s+1)`.
+
+If `x` is absent or zero, the existing nonrelativistic leaves run bit for bit.
+`solve_fermi_gas_si(..., speed=c)` derives `x` and its interval from the SI
+inputs.
+
+FortSym generates the relativistic leaves in `gen/gen_relativistic_fermi.f90`
+(`kin6d_relativistic_fermi_leaves`). They carry `s` as a chart variable with
+`ds/dr = x**2 r/s`. The chart identities are proved on `s**2 = 1 + x**2 r**2`,
+both the occupation derivatives and `d eps/dr = 2r/s`.
+
+There are 11 moments, compared with 8 in the nonrelativistic case: density,
+pressure, energy, their `mu`/`theta` derivatives, `I2_mumu` and
+`I2_mutheta`. The whole-cell second r-derivatives are emitted as strict
+interval leaves.
+
+**Tail bound.** `eps'' = 2/s**3 > 0`, so `eps` is convex. For `r >= R` this
+gives `f <= a*exp(-kappa(r-R))` with `a = exp((mu - eps(R))/theta)` and
+`kappa = eps'(R)/theta`, and
+
+```text
+integral_R^oo r**m f <= a * sum_j m!/(m-j)! R**(m-j) / kappa**(j+1).
+```
+
+Each moment integrand is then bounded with `eps <= r**2`, `eps' <= 2r`,
+`f(1-f) <= f` and `|1-2f| <= 1`.
+
+**Radius.** `R` solves `eps(R) = 4 eps(1) + 36 theta` exactly through
+`r(eps) = sqrt(eps(1 + x**2 eps/4))`.
+
+**Candidate bracket.** The upper end is `eps(2) + 4 theta`. The lower end is
+extended until the candidate density residual changes sign.
+
+**Graded mesh.** Degenerate relativistic states use a three-segment mesh with
+the `1/4 : 1/2 : 1/4` cell split. It covers the window
+`1 +- 20 theta sqrt(1+x**2)` around the cold Fermi surface. Candidate
+Gauss–Legendre nodes use the same split. The mesh only places cells: the
+midpoint/curvature certificate holds for any edges.
+
+**Results.** At T=1e7 K, the relativistic path certifies every point from
+`x = 0.01` to `x = 10`, with `theta` down to 3.4e-5, in at most 2048 cells and
+0.1 s per point. Root band, accuracy budget, implicit theta-derivatives and
+sealed packets are unchanged.
+
+**Independent oracle.** `test_relativistic_fermi_gas` uses binary128
+composite Simpson. It integrates in rapidity `r = sinh(t)/x` when the state is
+nondegenerate, which removes the `r = +-i/x` branch-point limit. It checks:
+
+- containment of all six outputs and their theta-derivatives for
+  `(theta, x) = (.05, 1), (1, 1), (10, 3), (.002, 5)`;
+- `x = 1e-6` against the nonrelativistic certificate, to 1e-9;
+- the cold ultrarelativistic limit `P = (hbar c/4)(3 pi**2)**(1/3) n**(4/3)`,
+  which is `1/(2x)` normalized, at `x = 50`, to 1e-3;
+- the exact cold Chandrasekhar curve
+  `[x(2x**2-3)s + 3 asinh x]/(4x**5)`, to 1e-4 at `x = 50` and 1e-6 at
+  `x = 0.1`;
+- the classical limit `P = n*kB*T` at `theta = 300`, to 1e-3;
+- a centered finite difference of `dP/dtheta`;
+- rejection of an altered relativity parameter;
+- an SI state at `rho = 1e9 kg/m**3`.
+
+**Demo.** `relativistic_fermi_demo` writes
+`output/relativistic-fermi-{pressure,ratios,occupation}.png` and the CSV. The
+nonrelativistic uniform-mesh certificate fails closed below `theta` of about
+1e-3, at `x >= 2.4` on that curve. Those points are omitted from its curve.
+Applying the graded mesh to the nonrelativistic path would change its
+committed numbers; that decision is left open.
+
+**Scope.** These are electrons only. Ion pressure, Coulomb/exchange-correlation
+corrections, pair creation and hydrostatic structure are outside the model.
