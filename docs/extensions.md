@@ -214,6 +214,35 @@ Strongly coupled classical benchmarks may progress from screened/mean-force
 closures to small direct N-body/MD reference calculations. Fully quantum dense
 matter remains outside the classical core.
 
+## Quantum plasma and stellar-interior fundamentals
+
+Quantum plasma is inside the long-range fundamentals envelope up to the QED
+boundary. Relevant capabilities include finite-\(T\) Fermi statistics,
+Thomas--Fermi/Lindhard response, exchange/diffraction, Wigner kinetics,
+quantum collision closures, quantum BBGKY/cumulants, orbital/DFT-like and
+QMC/PIMC microscopic reference providers, and quantum-fluid/EOS closures.
+
+For ordinary stellar interiors, combine these closures with:
+
+- self-gravity;
+- compressible hydro/MHD;
+- radiation diffusion/multigroup transport;
+- thermal/electron conduction;
+- convection closures or resolved convection;
+- a generalized nuclear reaction network;
+- composition evolution and EOS/opacity data.
+
+Extend the existing reaction graph from fusion-device reactions to pp chains,
+CNO, triple-alpha and larger burning networks only when a prioritized stellar
+case requires them. Neutrino transport, nuclear-density matter and
+late-stage weak-interaction networks are separate specialties.
+
+Main-sequence/solar and white-dwarf-like plasma physics are therefore within
+the intended physics envelope without requiring microscopic quantum resolution
+over a whole star.
+
+See [quantum-plasma.md](quantum-plasma.md).
+
 ## Vacuum, conductors, coils and circuits
 
 For MHD response/free-boundary/control problems, couple
@@ -334,9 +363,9 @@ grazing/ambiguous set.
 
 Do not silently absorb:
 
-- general relativity/GRMHD;
-- strong-field QED and pair creation/cascades;
-- fully quantum dense-matter electronic structure;
+- general relativity/GRMHD and neutron-star/nuclear-density matter;
+- general QED: quantized-radiation dynamics, pair creation/annihilation,
+  strong-field QED cascades and radiative QED corrections;
 - full reactor neutron transport/nuclear engineering;
 - comprehensive bulk solid mechanics/material microstructure;
 - comprehensive liquid/solid chemistry;

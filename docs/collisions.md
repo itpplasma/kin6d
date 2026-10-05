@@ -100,6 +100,28 @@ use low-rank/tensor ideas but carry their own truncation error.
 
 See [microscopic-many-body.md](microscopic-many-body.md).
 
+## Quantum collision corrections
+
+The classical collision hierarchy is not assumed valid at arbitrary short
+distance or degeneracy. The quantum-fundamentals branch may add, as separate
+named models:
+
+- quantum-diffraction corrections/cutoffs;
+- exchange symmetry;
+- Pauli blocking;
+- Uehling--Uhlenbeck-like kinetic operators;
+- quantum Lenard--Balescu/dielectric closures;
+- quantum mean-force/correlated closures.
+
+A hot tokamak can be extremely nondegenerate while quantum diffraction still
+sets the short-distance collision scale. Conversely, a degenerate stellar or
+dense plasma requires Fermi occupations and blocking throughout the kinetic
+closure.
+
+Every quantum correction states its statistics, dispersion, screening and
+collision assumptions and retains the appropriate classical limit as an oracle.
+See [quantum-plasma.md](quantum-plasma.md).
+
 ## Shared pair primitive
 
 For Landau or Beliaev–Budker with fixed masses, charges, pair coefficients,

@@ -52,7 +52,7 @@ scope.
 ## Mission
 
 KIN6D is not one 6D solver and not a collection of compatibility modes. It is a
-**general classical plasma multiphysics engine** in which plasma, neutral,
+**general plasma multiphysics engine** in which plasma, neutral,
 radiation, surface and transport models plus their numerical representations
 can coexist, be compared one approximation at a time, differentiated,
 optimized and, where the mathematics permits, certified.
@@ -68,7 +68,8 @@ observable is acceptable.
 
 The full design space is recorded in the capability and numerical-method
 catalogues. They prevent architectural dead ends but do not determine
-implementation order.
+implementation order. Quantum plasma fundamentals are included where they
+clarify or supply plasma closures; the fundamental ownership boundary is QED.
 
 The primary scientific target is **direct kinetic steady state**:
 source/collision/transport/field-balanced non-Maxwellian states should be
@@ -157,6 +158,42 @@ F_N
 \]
 
 See [microscopic relativistic many-body reference](docs/microscopic-many-body.md).
+
+## Quantum fundamentals boundary
+
+The classical hierarchy is not asserted beyond its domain. KIN6D also admits a
+quantum-plasma branch that exposes the transition from classical ideal plasma
+to degenerate/correlated quantum plasma.
+
+The main regime coordinates are the degeneracy parameter
+
+\[
+\Theta=k_BT/E_F,
+\]
+
+the Coulomb-coupling parameter \(\Gamma\), and the relativistic Fermi parameter
+
+\[
+x_F=p_F/(m_ec).
+\]
+
+The reduction hierarchy may use finite-temperature Fermi gases,
+Thomas--Fermi/Lindhard/RPA response, quantum hydrodynamic closures, Wigner
+kinetics, Hartree/Hartree--Fock/DFT-like orbital references, quantum
+BBGKY/cumulants and quantum collision/dielectric closures.
+
+The numerical representation is independent of the word "quantum": exact
+many-body wavefunctions/density matrices are tiny-\(N\) references; orbital
+methods live on ordinary 3D meshes; Wigner models reuse phase-space
+Eulerian/semi-Lagrangian/DG/spectral machinery; quantum-fluid/EOS closures use
+ordinary FEM/FV/DG on macroscopic domains.
+
+The native fundamentals branch stops at **QED**. General quantized photon
+dynamics, pair creation/annihilation, strong-field QED cascades and radiative
+QED corrections remain external. QED-derived rates or closures may enter
+through provider interfaces.
+
+See [quantum plasma fundamentals](docs/quantum-plasma.md).
 
 ## Canonical equation interface
 
