@@ -105,7 +105,7 @@ runs="$gallery_dir/evidence/runs.jsonl"
 git rev-parse HEAD > "$gallery_dir/evidence/source-base-commit.txt"
 git diff --binary HEAD | sha256sum > "$gallery_dir/evidence/source-worktree-patch.sha256"
 git ls-files -co --exclude-standard -z -- '*.f90' 'CMakeLists.txt' \
-    'CMakePresets.json' 'docs/*' 'scripts/*' | sort -zu | xargs -0 sha256sum \
+    'CMakePresets.json' 'cmake/*' 'test/*.cmake' 'docs/*' 'scripts/*' | sort -zu | xargs -0 sha256sum \
     > "$gallery_dir/evidence/source-manifest.sha256"
 if [[ -n "$verification_receipt" ]]; then
     cp -- "$verification_receipt" "$gallery_dir/evidence/numerical-verification-receipt.txt"
@@ -124,7 +124,7 @@ finalize() {
         '{schema:"kin6d-render-gallery-v1",started_utc:$started,completed_utc:$completed,
           source_snapshot_at_render:$source,build_directory:$build,exitcode:$exitcode,
           numerical_verification:"No tests run by renderer; see supplied receipt if present",
-          display_scope:"Encoded pixels are a visualization; CSV/interval data retain the numerical bounds",
+          display_scope:"Encoded pixels are a visualization; NetCDF-4 results (kind netcdf_result, with embedded configuration/provenance) and CSV/interval data retain the numerical bounds",
           runs:$runs,artifacts:$artifacts}' > "$gallery_dir/manifest.json"
     echo "Gallery: $gallery_dir (exit $result)"
 }
@@ -224,11 +224,15 @@ for entry in "${entries[@]}"; do
         case "$name" in
             *.png) kind=snapshot; png_count=$((png_count+1)) ;;
             *.mp4) kind=source_movie ;;
+            *.nc) kind=netcdf_result ;;
             *) kind=numerical_evidence ;;
         esac
         record_artifact "$destination/$name" "$kind" "$elapsed"
     done < <(find output -maxdepth 1 -type f -newer "$marker" -print0 | sort -z)
     ((png_count > 0)) || { echo "No fresh snapshot from $target" >&2; exit 1; }
+    # F5 contract: every application writes output/<target>.nc with its
+    # literal/resolved configuration and provenance; sha256 is recorded above.
+    [[ -s "$destination/$target.nc" ]] || { echo "No fresh $target.nc result" >&2; exit 1; }
     if ! "$snapshot" && [[ -n "$movie" ]]; then
         [[ -s "$destination/$movie.mp4" ]] || { echo "No fresh primary movie from $target" >&2; exit 1; }
         for clip in "$destination"/*.mp4; do encode_movie "$clip"; done

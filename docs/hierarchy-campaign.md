@@ -152,3 +152,21 @@ run from the repository root and must reproduce committed leaves exactly.
   autocorrelation vs exact levels 1e-10 to 1.1 T_rev. 23/23 CTest green in
   Release and Debug. Open: GLL and normalized Legendre belong in FortNum; no
   continuum discretization bound.
+- 2026-10-05 (F5 worker): `kin6d_io` (`src/result_io.f90`) plus FortIO
+  pinned at 38add03 via FetchContent. All 22 applications read `--config FILE`
+  namelists (defaults unchanged, one group per app) and write
+  `output/<app>.nc` (NetCDF-4/HDF5) with units, per-variable `kin6d_status`,
+  literal/resolved configuration, build-time and runtime git commit/tree
+  state, compiler version/options, FortSym/FortNum/fortplot/FortIO pins, UTC
+  time and command line. quantum_reference_demo and classical_pair_demo share
+  `&periodic_pair` (`src/periodic_pair_config.f90`). The classical demo
+  rejects a mass/coupling it cannot realize; the old
+  `&quantum_reference length=` spelling is rejected. With defaults, every
+  migrated app's numerical CSV/text output matched the pre-migration
+  binaries byte for byte. Only timing columns and a few
+  comment headers that now print the configured values differ. CTest
+  `result_io_contract` checks FortIO-reader, ncdump and h5dump round trips,
+  resolve idempotence and rejection cases; the gallery records `.nc` sha256.
+  Open: in-file groups, generated schema, external-input hashes, hardware
+  records; new apps (coulomb_encounter, ocp_*, jellium_cell, screening,
+  wigner) must adopt the module and join the `kin6d_io` list in CMake.

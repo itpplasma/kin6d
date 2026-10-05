@@ -14,6 +14,7 @@
 module kin6d_coulomb_encounter
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use fortnum_special_legendre, only: legendre_p_normalized_table
     use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
                                 radial_band_hamiltonian, radial_band_matvec, &
                                 radial_eigen_window, radial_locate
@@ -30,7 +31,7 @@ module kin6d_coulomb_encounter
     public :: encounter_wall_probability, encounter_state_error
     public :: encounter_bin_jvp, encounter_bin_vjp, encounter_bin_full
     public :: encounter_evaluate_packet, encounter_classical_ensemble
-    public :: normalized_legendre, in_sector, encounter_points
+    public :: in_sector, encounter_points
     integer, parameter, public :: SECTOR_PRODUCT = 0, SECTOR_SINGLET = 1, &
                                   SECTOR_TRIPLET = 2
 
@@ -96,29 +97,6 @@ contains
             in_sector = .true.
         end select
     end function in_sector
-
-    ! Orthonormal associated Legendre functions: int_{-1}^{1} P_lm^2 dx = 1.
-    pure subroutine normalized_legendre(lmax, mmax, x, p)
-        integer, intent(in) :: lmax, mmax
-        real(dp), intent(in) :: x
-        real(dp), intent(out) :: p(0:lmax, 0:mmax)
-        real(dp) :: s, a, aprev
-        integer :: l, m
-        p = 0
-        s = sqrt(max(0.0_dp, 1 - x*x))
-        p(0, 0) = sqrt(0.5_dp)
-        do m = 0, min(mmax, lmax)
-            if (m > 0) p(m, m) = sqrt(real(2*m + 1, dp)/real(2*m, dp))*s*p(max(0, m - 1), &
-                                                                         max(0, m - 1))
-            if (m + 1 <= lmax) p(m + 1, m) = sqrt(real(2*m + 3, dp))*x*p(m, m)
-            aprev = sqrt(real(2*m + 3, dp))
-            do l = m + 2, lmax
-                a = sqrt(real(4*l*l - 1, dp)/real(l*l - m*m, dp))
-                p(l, m) = a*(x*p(l - 1, m) - p(l - 2, m)/aprev)
-                aprev = a
-            end do
-        end do
-    end subroutine normalized_legendre
 
     pure real(dp) function cm_norm(m)
         integer, intent(in) :: m
@@ -307,7 +285,7 @@ contains
         allocate (xt(nth), wt(nth), plm(0:lest, 0:mest, nth), phi(nph), cphi(nph, 0:mest))
         call gauss_legendre(nth, xt, wt)
         do j = 1, nth
-            call normalized_legendre(lest, mest, xt(j), plm(:, :, j))
+            call legendre_p_normalized_table(lest, mest, xt(j), plm(:, :, j))
         end do
         do q = 1, nph
             phi(q) = 2*acos(-1.0_dp)*real(q - 1, dp)/real(nph, dp)
@@ -399,7 +377,7 @@ contains
             if (rr <= 0 .or. rr >= enc%mesh%rmax) cycle
             ct = z(p)/rr; phi = atan2(y(p), x(p))
             call radial_locate(enc%mesh, rr, idx, val)
-            call normalized_legendre(enc%lmax, enc%mmax, ct, plm)
+            call legendre_p_normalized_table(enc%lmax, enc%mmax, ct, plm)
             do l = 0, enc%lmax
                 do m = 0, min(l, enc%mmax)
                     ul = sum(val*a(idx, m, l))
@@ -559,7 +537,7 @@ contains
         integer :: q, m
         call gauss_legendre_ab(enc%lmax + 2, cos(th2), cos(th1), xq, wq)
         do q = 1, size(xq)
-            call normalized_legendre(enc%lmax, enc%mmax, xq(q), p(:, :, q))
+            call legendre_p_normalized_table(enc%lmax, enc%mmax, xq(q), p(:, :, q))
         end do
         do m = 0, enc%mmax
             do q = 1, size(xq)
@@ -656,7 +634,7 @@ contains
         dth = acos(-1.0_dp)/real(nt - 1, dp)
         allocate (plm(0:enc%lmax, 0:enc%mmax, nt), u(nr, 0:enc%lmax), ptab(0:enc%lmax, nt))
         do ib = 1, nt
-            call normalized_legendre(enc%lmax, enc%mmax, cos(real(ib - 1, dp)*dth), &
+            call legendre_p_normalized_table(enc%lmax, enc%mmax, cos(real(ib - 1, dp)*dth), &
                                      plm(:, :, ib))
         end do
         ns = 1

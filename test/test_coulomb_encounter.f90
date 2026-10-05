@@ -10,7 +10,8 @@ program test_coulomb_encounter
     use kin6d_coulomb_encounter
     use kin6d_coulomb_kepler
     use kin6d_coulomb_encounter_leaves, only: ce_mott, ce_rutherford, ce_free_width
-    use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
+    use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab, gauss_lobatto_legendre
+    use fortnum_special_legendre, only: legendre_p_normalized_table
     implicit none
     integer :: failures = 0
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -45,7 +46,7 @@ contains
     subroutine test_gll_legendre()
         real(dp) :: x(10), w(10), xq(40), wq(40), p(0:20, 0:5, 40), gram, err
         integer :: k, l, l2, m, q
-        call gll_rule(10, x, w)
+        call gauss_lobatto_legendre(10, x, w)
         err = 0
         do k = 0, 2*10 - 3
             err = max(err, abs(sum(w*x**k) - merge(2.0_dp/(k + 1), 0.0_dp, mod(k, 2) == 0)))
@@ -53,7 +54,7 @@ contains
         call check('GLL exactness degree 2n-3', err < 1.0e-14_dp, err)
         call gauss_legendre(40, xq, wq)
         do q = 1, 40
-            call normalized_legendre(20, 5, xq(q), p(:, :, q))
+            call legendre_p_normalized_table(20, 5, xq(q), p(:, :, q))
         end do
         err = 0
         do m = 0, 5
