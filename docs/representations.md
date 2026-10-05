@@ -4,8 +4,9 @@ Status: canonical representation policy. The compact continuum laboratory
 includes free streaming, Krook balance, single-mode Poisson, a coupled
 source-balanced Poisson--FP family and bounded OU/FP equilibrium. Particle and
 other carrier implementations remain staged capabilities. The current
-continuous bounds cover declared analytical cases, not arbitrary-source or
-general nonlinear kinetic problems.
+continuous bounds cover declared analytical cases and arbitrary represented
+sources for [damped transport](general-transport.md). General nonlinear
+kinetic certification remains planned.
 
 ## Principle
 

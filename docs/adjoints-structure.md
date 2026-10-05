@@ -2,9 +2,11 @@
 
 Status: required contracts and planned general certification routes. The
 [restored laboratory](steady-laboratory.md) retains scoped continuous reference
-bounds and independent local derivative checks. Arbitrary-source residual
-certification, equilibrated-flux estimators, certified goal adjoints/gradients
-and general Onsager certificates remain unimplemented.
+bounds and independent local derivative checks. The [general damped-transport
+case](general-transport.md) additionally certifies arbitrary represented-source
+residuals, implicit tangents and a cosine-density directional derivative.
+Equilibrated-flux estimators, continuous physical goal adjoints and general
+Onsager certificates remain unimplemented.
 This extends [differentiability](differentiability.md) and the
 [continuous certificate contract](certification.md).
 

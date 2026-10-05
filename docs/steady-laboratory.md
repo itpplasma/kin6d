@@ -22,7 +22,9 @@ GNU Fortran with binary128 support and CMake/Ninja are required.
 Lean and mathlib are optional and pinned in [the proof package](../proof/README.md).
 Initialize that package once with `cd proof && lake update && lake exe cache get`.
 The cache download is optional when building the pinned mathlib sources.
-The default `cpu` and `debug` presets run three independent numerical gates.
+At the reference-infrastructure checkpoint, `cpu` and `debug` ran three
+independent numerical gates. The [general transport increment](general-transport.md)
+adds a fourth gate for source-driven continuous state and tangent bounds.
 The explicit `formal` preset additionally checks the Lean library, rational
 fixtures, corrupted-certificate rejection and a Fortran-produced certificate:
 `cmake --preset formal`, `cmake --build --preset formal`, `ctest --preset formal`.
@@ -160,9 +162,9 @@ records the base commit, worktree patch digest and source-content manifest.
 ## Verification and upstream repairs
 
 The original integrated release and runtime-checked debug builds passed all
-four registered tests, including the computed Lean certificate. The current
-`cpu` and `debug` presets each pass three numerical tests; `formal` retains the
-additional proof gate. At 32 and 64
+four registered tests, including the computed Lean certificate. With the
+general transport increment, `cpu` and `debug` each pass four numerical tests;
+`formal` additionally retains the proof gate. At 32 and 64
 velocity cells, the bounded FP sup radii are `5.585456e-3` and `1.387730e-3`.
 The demo's mixed coupled case has distribution/potential/field radii about
 `2.50e-16`, `6.66e-16`, and `5.55e-16`. These are measured run values rather
@@ -201,8 +203,8 @@ hardware and process resource usage. Acceptance currently recomputes the
 strict certificate and is therefore measured separately and included in the
 reported total. Oracle and corrupted-bound validation run outside timers.
 The 16-cell case may miss the target; that is reported rather than suppressed.
-This known-Gaussian certificate remains a reference benchmark while the next
-production milestone builds an arbitrary-source residual/stability checker.
+This known-Gaussian certificate remains a reference benchmark alongside the
+[arbitrary represented-source transport checker](general-transport.md).
 
 FortSym revision `102c1cbe392e1ba70d169fd75aeda0f2ffe8ab88` is the required
 regeneration pin. It adds the native emitted-kernel audit while retaining the
@@ -232,8 +234,9 @@ Native focused gates pass 4/4 and pinned Fo focused tests pass 2/2; generator
 execution completes. The interval runtime is a reference emitter fixture, not
 a newly validated general arithmetic backend. Broad resident checks still have
 known asset-inventory gaps; FortNum's resident cold build remains pending, so
-no full resident verification is claimed. General residual certificates and
-production workhorse arithmetic remain the next implementation gates.
+no full resident verification is claimed. The general damped-transport residual
+certificate is now implemented with compact Bernstein interval evaluation.
+Aggregate production arithmetic and forced-FP certificates remain open gates.
 
 FortPlot pin `e589583a790e1b2dec662c10cca57e03739a0f3d` repairs selected
 subplot limits, local legends, legend row spacing and bottom label clearance.

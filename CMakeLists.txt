@@ -30,9 +30,12 @@ set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
-    src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90)
+    src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
+    src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
+    src/transport_certificate.f90)
 set_source_files_properties(
     src/generated/kin6d_poisson_leaves.f90 src/generated/kin6d_fp_leaves.f90
+    src/generated/kin6d_transport_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
@@ -40,6 +43,8 @@ add_executable(kin6d_demo app/kin6d_demo.f90)
 target_link_libraries(kin6d_demo PRIVATE kin6d fortplot)
 add_executable(steady_laboratory_demo app/steady_laboratory_demo.f90)
 target_link_libraries(steady_laboratory_demo PRIVATE kin6d fortplot)
+add_executable(transport_demo app/transport_demo.f90)
+target_link_libraries(transport_demo PRIVATE kin6d fortplot)
 add_executable(formal_krook_certificate app/formal_krook_certificate.f90)
 target_link_libraries(formal_krook_certificate PRIVATE kin6d)
 add_executable(test_laboratory test/test_laboratory.f90)
@@ -51,6 +56,9 @@ add_test(NAME poisson_and_coupled_steady_oracles COMMAND test_poisson)
 add_executable(test_fp test/test_fp.f90)
 target_link_libraries(test_fp PRIVATE kin6d)
 add_test(NAME bounded_fp_steady_oracles COMMAND test_fp)
+add_executable(test_transport test/test_transport.f90)
+target_link_libraries(test_transport PRIVATE kin6d)
+add_test(NAME general_transport_and_tangent_oracles COMMAND test_transport)
 find_program(KIN6D_LAKE lake)
 option(KIN6D_CHECK_LEAN "Check continuous Lean theorems and computed certificate" OFF)
 if(KIN6D_CHECK_LEAN)
@@ -77,7 +85,7 @@ if(KIN6D_FORTSYM_BUILD)
             NOT fortsym_revision STREQUAL KIN6D_FORTSYM_REVISION)
         message(FATAL_ERROR "Regeneration requires FortSym ${KIN6D_FORTSYM_REVISION}")
     endif()
-    foreach(generator laboratory poisson fp)
+    foreach(generator laboratory poisson fp transport)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_include_directories(gen_${generator} PRIVATE
             ${KIN6D_FORTSYM_BUILD}/include)
@@ -90,3 +98,5 @@ add_executable(benchmark_streaming app/benchmark_streaming.f90)
 target_link_libraries(benchmark_streaming PRIVATE kin6d)
 add_executable(benchmark_fp app/benchmark_fp.f90)
 target_link_libraries(benchmark_fp PRIVATE kin6d)
+add_executable(benchmark_transport app/benchmark_transport.f90)
+target_link_libraries(benchmark_transport PRIVATE kin6d)

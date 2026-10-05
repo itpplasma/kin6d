@@ -308,9 +308,10 @@ quantity under stated hypotheses. Tight last-bit endpoints are unnecessary.
 
 General certificates check a continuous residual, reconstruction, boundaries
 and truncation against a proved stability/inverse bound. Known solutions are
-independent benchmark oracles. The next general case is arbitrary-source
-periodic damped transport, followed by forced FP with continuous flux/stability
-control. The present manufactured Poisson/FP laboratory is reference evidence,
+independent benchmark oracles. The first general case is implemented for
+independently supplied Fourier/P1 periodic damped transport, followed by planned
+forced FP with continuous flux/stability control. The manufactured Poisson/FP
+laboratory is reference evidence,
 not a general nonlinear certificate.
 
 Result components remain separate:

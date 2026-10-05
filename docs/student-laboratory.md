@@ -3,7 +3,9 @@
 Status: prescribed-field free streaming/Krook balance, single-mode Poisson,
 a source-balanced coupled Poisson--FP family and bounded OU/FP equilibrium are
 implemented. Their reviewed continuous bounds cover the declared analytical
-cases; arbitrary-source and general nonlinear certification remain planned.
+cases. [Damped transport](general-transport.md) now also accepts arbitrary
+represented sources and provides continuous state/tangent bands. Forced FP
+and general nonlinear certification remain planned.
 The laboratory uses the same engine that later supports real-device DK/GK/FK.
 
 ## Purpose

@@ -22,13 +22,16 @@ continuous bounds for the declared cases. See
 [the steady laboratory](docs/steady-laboratory.md) for their exact scope.
 
 The coupled solver resolves a specified Fourier/polynomial source family;
-general arbitrary-source kinetic certification and nonlinear branch uniqueness
-remain future work. PIC/PIF, the broader collision hierarchy, gyrofluid
+certification of arbitrary sources beyond the damped-transport model and
+nonlinear branch uniqueness remain future work. PIC/PIF, the collision hierarchy, gyrofluid
 turbulence and real-device DK are also planned capabilities.
 
-The next delivery starts with reusable upstream benchmark infrastructure, then
-general damped-transport residual/inverse bounds and forced-FP flux/stability
-bounds. Simple continuum/particle/PIF/PIC comparisons enter early, before hard
+Upstream CPU benchmark infrastructure and a general damped-transport
+residual/inverse certificate are implemented. The latter accepts independently
+supplied Fourier/P1 sources and certifies full-domain state and directional
+derivative errors without an exact solution; see
+[general transport](docs/general-transport.md). Forced-FP flux/stability bounds
+are next. Simple continuum/particle/PIF/PIC comparisons enter early, before hard
 nonlinear or particle cases. The practical default targets about 1% accuracy
 for a named observable with a declared scale; tighter accuracy remains a
 request rather than a prerequisite for useful results.
@@ -284,6 +287,8 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Differentiability](docs/differentiability.md)
 - [Adjoints and structure](docs/adjoints-structure.md)
 - [Certification](docs/certification.md)
+- [General transport demonstration](docs/general-transport.md)
+- [Transport certificate argument](docs/transport-certificate.md)
 - [Performance](docs/performance.md)
 - [Geometry](docs/geometry.md)
 - [Coupling](docs/coupling.md)

@@ -2,7 +2,10 @@
 
 Status: catalogue and scoped executable references, 2026-10-05. Streaming,
 periodic Poisson, source-balanced VPFP, bounded OU and formal polynomial Krook
-cases have retained evaluators and independent tests. Other rows remain planned.
+cases have retained evaluators and independent tests. The [general damped-transport
+case](general-transport.md) adds independent continuous state/tangent and
+observable oracles; its known solutions never enter the production checker.
+Other rows remain planned.
 The audience is physicists
 and implementers selecting the next independently verifiable capability.
 The atlas defines its mathematics before the solver defines its tests.
