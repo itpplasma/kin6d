@@ -2,6 +2,26 @@
 
 Status: canonical implementation/tooling policy.
 
+## Verified CMake profile repair
+
+Fo `60c8a6b2e92396605f06bfe67217e1b7fb946b4d` repairs checked Debug flags
+persisting in global `CMAKE_Fortran_FLAGS` after a public Fo call. Named profiles
+select their configuration, explicit configurations retain priority, and flags
+are scoped to that configuration. The independent public CLI fixture preserves
+project macros, checks runtime bounds failures, and verifies a later native
+Release preset in the same build directory. The previous driver fails; the
+candidate passes that fixture and 73 backend assertions.
+
+The verified task driver is `/var/tmp/fo-cmake-profile-driver-20261005/fo`, SHA256
+`6bb8bb26cf7374d8206f506ac36e36009ae8b26e195357648771938c435c9d02`.
+Native FPM was used for diagnostic bootstrap after an incomplete duplicate
+cold Fo build. The original kin6d transport gates pass 2/2 and its cached
+benchmark executes through this driver in Debug. Returning to native Release
+passes 5/5, retains empty global flags and reproduces the exact final benchmark
+executable digest. Final performance measurements use that clean Release.
+The existing CMake-only resident input-capture blocker remains a separate
+upstream capability gap; this evidence concerns delegated profile behavior.
+
 ## Stack and ownership
 
 | Responsibility | Owner |

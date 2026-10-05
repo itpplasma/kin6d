@@ -235,8 +235,9 @@ crossings/boundaries, stale geometry and invalid inputs.
 The final clean Release comparison uses the same CPU/compiler, CPU 4 and five
 trials. Global Fortran flags are empty; Release uses `-O3`, with strict arithmetic
 flags on the numerical libraries. An earlier Fo Debug invocation had left
-checking flags in the shared build cache; those runs remain separate from this
-clean comparison. Neither fresh initialization nor geometry reuse implies a
+checking flags in the shared build cache; the [owning repair](tooling.md#verified-cmake-profile-repair)
+is published and rechecked on kin6d. Those earlier runs remain separate from
+this clean comparison. Neither fresh initialization nor geometry reuse implies a
 cold hardware cache. Other host activity remains uncontrolled.
 
 | Cells, Bernstein | Direct setup + first median | Cached setup + first median | Cached warm median | Both targets met |
