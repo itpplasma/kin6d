@@ -7,8 +7,9 @@ program screening_demo
         xlim, ylim, legend, tight_layout, savefig
     use kin6d_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
     use kin6d_screening_hierarchy
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    real(dp), parameter :: pi = acos(-1.0_dp), rs = 1.0_dp
+    real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: blue(3) = [0.000_dp, 0.447_dp, 0.698_dp]
     real(dp), parameter :: verm(3) = [0.835_dp, 0.369_dp, 0.000_dp]
     real(dp), parameter :: green(3) = [0.000_dp, 0.620_dp, 0.451_dp]
@@ -25,9 +26,25 @@ program screening_demo
     type(screening_state_t) :: st, sts(nf)
     type(screening_value_t) :: a, b
     type(plasma_scales_t) :: scales
-    integer :: i, j, unit, status
+    integer :: i, j, unit, status, config_unit, ios
     logical :: ok
+    type(run_t) :: run
+    type(result_file_t) :: result
+    character(256) :: msg
+    real(dp) :: rs = 1.0_dp, qmax = 200.0_dp
+    namelist /screening/ rs, qmax, theta_eps, theta_fr
 
+    call run%start('screening_demo')
+    if (run%argument_count() > 0) error stop 'usage: screening_demo [--config FILE]'
+    ios = 0; msg = ''
+    call run%open_config(config_unit)
+    if (run%has_config()) read (config_unit, nml=screening, iostat=ios, iomsg=msg)
+    call run%close_config(config_unit, 'screening', ios, msg)
+    if (.not. (rs > 0 .and. qmax > 20 .and. all(theta_eps >= 0) .and. &
+        all(theta_fr >= 0))) error stop 'screening: invalid configuration'
+    call run%open_resolved(config_unit)
+    write (config_unit, nml=screening)
+    call run%close_resolved(config_unit)
     call execute_command_line('mkdir -p output', exitstat=status)
     density = 3.0_dp/(4*pi*rs**3)
     scales = plasma_scales(atomic_units(), electron(), density, 1.0_dp)
@@ -82,7 +99,7 @@ program screening_demo
         r(i) = 0.05_dp*i
     end do
     do j = 1, nf
-        call screened_ratio(sts(j), r, ratio(:, j), tail(j), ind(j))
+        call screened_ratio(sts(j), r, ratio(:, j), tail(j), ind(j), qmax)
     end do
     ktf = sqrt(sts(1)%kappa2)
     kd10 = ktf*sts(4)%kd_ratio
@@ -135,6 +152,37 @@ program screening_demo
 
     ! fortplot at the pin applies set_xscale/set_yscale to the whole figure and
     ! does not clip lines to the axes: plot log10 data and clip explicitly.
+    call result%create(run)
+    call result%write('theta', theta, '1', 'T/T_F of the k_s scan', dims='theta')
+    call result%write('ks_over_kd_fermi_gas', ks_kd, '1', &
+        'finite-T Fermi screening k_s/k_D (kin6d_fermi_gas candidate)', dims='theta', &
+        status='candidate inside fermi_gas certified enclosure')
+    call result%write('ks_over_kd_lindhard', lind_kd, '1', &
+        'sqrt(G(q->0)) of the Maldague route over k_D', dims='theta', &
+        status='candidate; rigorous tail, quadrature indicator')
+    call result%write('q', q, '1', 'q/k_F', dims='q')
+    call result%write('theta_eps', theta_eps, '1', 'T/T_F of the epsilon curves', &
+        dims='theta_eps')
+    call result%write('epsilon_minus_one', eps, '1', 'static RPA eps(q)-1, default route', &
+        dims='q,theta_eps', status='candidate; routes agree to roundoff')
+    call result%write('epsilon_minus_one_momentum', eps_a, '1', &
+        'static RPA eps(q)-1, momentum route', dims='q,theta_eps', status='candidate')
+    call result%write('r', r, '1', 'r k_F', dims='r')
+    call result%write('potential_ratio', ratio, '1', 'phi/phi_bare at theta_eps', &
+        dims='r,theta_eps', status='candidate; q-tail bound and indicator in attrs')
+    call result%write('theta_friedel', theta_fr, '1', 'T/T_F of Friedel curves', &
+        dims='theta_friedel')
+    call result%write('friedel', friedel, '1', '(r k_F)^3 phi/phi_bare', &
+        dims='r,theta_friedel', status='candidate')
+    call result%write('inversion_tail_bound', tail, '1', 'rigorous q-truncation bound', &
+        dims='theta_eps', status='bound')
+    call result%write('inversion_indicator', ind, '1', 'quadrature indicator', &
+        dims='theta_eps', status='indicator, not a bound')
+    call result%write('friedel_period', period, '1/k_F', 'Friedel period, 20<=r k_F<=60')
+    call result%write('cpu_seconds', cost, 's', 'ks scan, epsilon, potential, Friedel', &
+        dims='cost')
+    call result%close()
+
     call figure(figsize=[13.2_dp, 8.8_dp])
     call subplot(2, 2, 1)
     call title('Static screening wavenumber, $r_s = 1$')

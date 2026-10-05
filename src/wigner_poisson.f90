@@ -331,7 +331,8 @@ contains
 
     !> Dominant complex frequency of a real mode signal sampled at spacing tau
     !> from the least-squares two-term linear prediction s(n+1) = p s(n) - q s(n-1),
-    !> exact for A exp(-i omega t) + c.c. or for two real exponentials. Returns
+    !> exact for A exp(-i omega t) + c.c.; a sign-definite signal is fitted as
+    !> one real exponential s(n+1) = z s(n). Returns
     !> omega with Im(omega) the growth rate (negative: damping).
     subroutine wigner_fit_mode(signal, tau, omega, ok)
         real(dp), intent(in) :: signal(:), tau
@@ -340,6 +341,14 @@ contains
         real(dp) :: a11, a12, a22, r1, r2, det, p, q, disc
         complex(dp) :: z1, z2
         integer :: n
+        ! A sign-definite signal is one real exponential: the two-term normal
+        ! matrix is then singular, so fit s(n+1) = z s(n) instead.
+        if (all(signal > 0) .or. all(signal < 0)) then
+            z1 = sum(signal(2:)*signal(:size(signal) - 1))/sum(signal(:size(signal) - 1)**2)
+            ok = real(z1, dp) > 0
+            if (ok) omega = (0.0_dp, 1.0_dp)*log(z1)/tau
+            return
+        end if
         a11 = 0; a12 = 0; a22 = 0; r1 = 0; r2 = 0
         do n = 2, size(signal) - 1
             a11 = a11 + signal(n)**2
