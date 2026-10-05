@@ -4,12 +4,13 @@ program gen_debye_sphere
         operator(+), operator(-), operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use kin6d_symbolic_physics, only: sphere_potential_inside, coulomb_potential
     implicit none
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
     type(expr_t) :: r, k, z, series, term, prefactor, matching, phi, exterior
     type(expr_t) :: tail(0:3), eg, ecurv, egcurv, dg, curvature, gcurvature
-    type(expr_t) :: index, count, value, radius, chi, x, y, angle
+    type(expr_t) :: index, count, value, radius, chi, x, y, angle, one
     integer :: n, j
 
     call arena%init()
@@ -76,25 +77,21 @@ program gen_debye_sphere
         ['phi', 'g  ', 'm  ', 'mg '], &
         [exterior, diff(exterior, k), abs(diff(diff(exterior, r), r)), &
          abs(diff(diff(diff(exterior, r), r), k))], rigorous=.true.)
-    call w%emit('sphere_bare_inside', ['r'], ['phi'], [(3 - r**2)/2], &
+    ! Bare sphere in the unit Q/(4 pi eps0 R) with R=1: the shared uniform-
+    ! sphere and Coulomb definitions at g=1, radius=1.
+    one = 1 + 0*r
+    call w%emit('sphere_bare_inside', ['r'], ['phi'], &
+        [sphere_potential_inside(one, one, r**2)], ad=.true., interval=.true.)
+    call w%emit('sphere_bare_outside', ['r'], ['phi'], [coulomb_potential(one, r)], &
         ad=.true., interval=.true.)
-    call w%emit('sphere_bare_outside', ['r'], ['phi'], [1/r], &
-        ad=.true., interval=.true.)
-    call w%emit('sphere_bare_curvature', ['r'], ['m'], [2/r**3], rigorous=.true.)
-    call w%emit('sphere_widen', ['value ', 'radius'], ['lower', 'upper'], &
-        [value - radius, value + radius], rigorous=.true.)
+    call w%emit('sphere_bare_curvature', ['r'], ['m'], &
+        [diff(diff(coulomb_potential(one, r), r), r)], rigorous=.true.)
     call w%emit('sphere_response', ['value', 'chi  '], ['density'], &
         [1 + chi*value], ad=.true., interval=.true.)
     call w%emit('sphere_coordinate', ['index', 'count'], ['r'], &
         [6*index/count])
     call w%emit('sphere_parameter', ['index', 'count'], ['k'], &
         [(1 + 3*index/(count - 1))/2])
-    call w%emit('sphere_marker', ['index', 'count'], ['x'], &
-        [-2 + 4*index/(count - 1)])
-    call w%emit('sphere_radius', ['x', 'y'], ['r'], [sqrt(x**2 + y**2)])
-    call w%emit('sphere_circle', ['angle'], ['x', 'y'], [cos(angle), sin(angle)])
-    call w%emit('sphere_angle', ['index', 'count'], ['angle'], &
-        [2*pi_expr(arena)*index/(count - 1)])
     write (w%unit, '(a)') 'end module kin6d_debye_sphere_leaves'
     call w%close()
 end program gen_debye_sphere

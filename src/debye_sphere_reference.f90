@@ -1,13 +1,13 @@
 module kin6d_debye_sphere_reference
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use fortnum_interval, only: interval_t, interval, hull, is_empty, &
+    use fortnum_interval, only: interval_t, interval, hull, is_empty, iadd, &
         linear_interpolation_remainder
     use kin6d_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
         sphere_inside_tangent, sphere_outside_tangent, sphere_inside_packet, &
         sphere_outside_packet, sphere_bare_inside, sphere_bare_outside, &
         sphere_bare_inside_interval, sphere_bare_outside_interval, &
-        sphere_bare_curvature, sphere_widen
+        sphere_bare_curvature
     implicit none
     private
     public :: debye_sphere_values, debye_sphere_enclosure, debye_sphere_bands
@@ -42,7 +42,7 @@ contains
         type(interval_t), intent(in) :: r, k
         type(interval_t), intent(out) :: phi, bare, tangent, m, mb, mt
         logical, intent(out) :: ok
-        type(interval_t) :: f, g, ef, eg, lower, upper
+        type(interval_t) :: f, g, ef, eg
         type(interval_t) :: f2, b2, g2, m2, mb2, mt2
         logical :: right_ok
 
@@ -65,10 +65,8 @@ contains
             call sphere_inside_packet(r, k, f, g, m, mt, ef, eg)
             if (.not. valid_box(ef)) return
             if (.not. valid_box(eg)) return
-            call sphere_widen(f, interval(0.0_dp, max(0.0_dp, ef%hi)), lower, upper)
-            phi = interval(lower%lo, upper%hi)
-            call sphere_widen(g, interval(0.0_dp, max(0.0_dp, eg%hi)), lower, upper)
-            tangent = interval(lower%lo, upper%hi)
+            phi = widen(f, max(0.0_dp, ef%hi))
+            tangent = widen(g, max(0.0_dp, eg%hi))
             call sphere_bare_inside_interval(r, bare)
             mb = interval(1.0_dp)
         else
@@ -95,7 +93,7 @@ contains
         real(dp), intent(out) :: phi(:), bare(:), tangent(:)
         real(dp), intent(out) :: lower(:, :), upper(:, :), work(:, :)
         logical, intent(out) :: ok
-        type(interval_t) :: f, b, g, m, mb, mt, pad, lo, hi
+        type(interval_t) :: f, b, g, m, mb, mt, pad, lo
         real(dp) :: padding
         logical :: local_ok
         integer :: i, q, n
@@ -138,11 +136,9 @@ contains
             do q = 1, 3
                 padding = work(q, max(1, i - 1))
                 if (i < n) padding = max(padding, work(q, i))
-                call sphere_widen(interval(lower(q, i), upper(q, i)), &
-                    interval(padding), lo, hi)
+                lo = widen(interval(lower(q, i), upper(q, i)), padding)
                 if (.not. valid_box(lo)) return
-                if (.not. valid_box(hi)) return
-                lower(q, i) = lo%lo; upper(q, i) = hi%hi
+                lower(q, i) = lo%lo; upper(q, i) = lo%hi
             end do
         end do
         ok = .true.
@@ -157,4 +153,11 @@ contains
         if (.not. ieee_is_finite(box%hi)) return
         valid_box = .true.
     end function valid_box
+    !> Outward-rounded symmetric widening [lo - radius, hi + radius].
+    elemental function widen(value, radius) result(w)
+        type(interval_t), intent(in) :: value
+        real(dp), intent(in) :: radius
+        type(interval_t) :: w
+        w = iadd(value, interval(-radius, radius))
+    end function
 end module kin6d_debye_sphere_reference
