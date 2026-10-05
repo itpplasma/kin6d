@@ -210,6 +210,50 @@ dependency:
 Do not accumulate permanent downstream workarounds or duplicate optimized
 kernels.
 
+### libneo: replaceable boundary, actively improved implementation
+
+KIN6D uses libneo behind a narrow adapter/canonical-data boundary so historical
+module structure, global state and compiler-specific implementation details do
+not become KIN6D architecture. That boundary is for replaceability and
+containment, not to freeze libneo in its current form.
+
+The first production use of each libneo capability by KIN6D is an upstream
+hardening gate. Audit the exercised path and, when the issue is generic, leave
+libneo better than it was:
+
+- fix convention/sign/unit and interpolation defects upstream;
+- remove or contain global state when it blocks reentrancy, threading,
+  differentiability or independent checking;
+- expose clean generic spatial derivatives/JVPs when several consumers need
+  them;
+- add accuracy/residual/interpolation diagnostics and reusable error/enclosure
+  support when the mathematics belongs to the imported representation;
+- retain simple value-only compatibility for old consumers where practical;
+- add analytic/manufactured/cross-code oracles before replacing historical
+  behavior.
+
+Do not require all historical field implementations to implement one huge new
+interface. Add optional/capability-specific derivative or enclosure interfaces
+only when concrete consumers need them.
+
+If making an old evaluator differentiable or rigorous would be disproportionate,
+use libneo to parse/normalize the external data and reconstruct a canonical
+KIN6D basis/FEM/spline representation. KIN6D then differentiates/certifies that
+representation. This is preferred to copying the old evaluator into KIN6D.
+
+The ownership split is:
+
+- libneo: generic file/convention transforms, reusable field/geometry
+  evaluation, generic spatial derivatives and representation-level error
+  diagnostics/enclosures;
+- KIN6D: physical-model residuals, implicit equilibrium/steady-state tangents
+  and adjoints, validated solution existence/error, and physical model error;
+- TIAGO: diagnostic likelihood/posterior UQ.
+
+Upstream libneo improvements are intentionally ecosystem improvements: existing
+SIMPLE, MEPHIT, NEO-2, TIAGO and other consumers should be kept compatible and
+benefit from corrected generic behavior as they update their pin/version.
+
 ## Configuration and user-facing contract
 
 Fortran owns the typed configuration model, compatibility checks, defaults and
