@@ -34,6 +34,29 @@ that owns the proposed change. In particular:
 The first prescribed-field 1X1V slice already runs. Read
 docs/first-example.md before changing it or claiming broader evidence.
 
+## Non-negotiable scientific principles
+
+Read and enforce
+[DESIGN.md#non-negotiable-scientific-principles](DESIGN.md#non-negotiable-scientific-principles).
+These are not catalogue scope and are not waived by YAGNI:
+
+- one authoritative mathematical/physical definition;
+- differentiability by construction for smooth production operators, with
+  primal/JVP/VJP consistency and equation-level implicit derivatives;
+- explicit numerical error control and a certification path, with the fast
+  solver treated as untrusted;
+- separation of numerical, model, input/reconstruction and stochastic
+  uncertainty;
+- preservation or explicit accounting of physical structure/invariants;
+- independent verification;
+- reproducible provenance;
+- performance measured at controlled observable accuracy/certificate width.
+
+A vertical slice may implement the smallest useful form of each principle, but
+must not introduce architecture that makes the stronger form impossible.
+Do not defer derivatives, error semantics or provenance as cleanup work after
+the scientific implementation.
+
 ## Software-engineering rules
 
 The full policy is [docs/software-engineering.md](docs/software-engineering.md).
