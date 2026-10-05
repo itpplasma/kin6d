@@ -351,6 +351,21 @@ Add a quantum-fundamentals branch that makes the limits of the classical
 hierarchy explicit without turning every plasma calculation into a quantum
 many-body problem.
 
+Immediate teaching gate: a matched, fully interacting small classical/quantum
+Coulomb case with one animation for each, plus numerical ideal-electron
+pressure if inexpensive. Keep quantum BBGKY and stellar-structure work
+deferred. General Hamiltonian/evolution interfaces, explicit basis budgets,
+independent oracles, and error/cost reporting are required from this first
+slice. See [quantum-teaching-slice.md](docs/quantum-teaching-slice.md).
+
+The first slice now has generated fixed-N Hamiltonian/CAR actions, an exact
+physical pair-sector constructor, Hermitian residual evolution, correlation
+observables, matched classical Ewald pairs, and a numerical ideal Fermi EOS.
+All 21 native CPU oracles pass in Release and checked Debug. The 125/343-mode
+pair comparison is a resolution indicator; continuum cutoff bounds and a
+low-overhead production certifier remain open. BBGKY and stellar structure
+remain deferred.
+
 Physics ladder:
 
 1. finite-temperature ideal Fermi gas and regime coordinates
@@ -747,7 +762,8 @@ laser/beam deposition and stiff matter-radiation coupling only when needed.
 
 This track covers classical portions of arcs, propulsion, atmospheric entry,
 Z-pinch/magnetized-target/ICF-like and laser-produced plasmas without creating a
-separate HEDP architecture. Fully quantum dense matter remains outside the core.
+separate HEDP architecture. Quantum dense-matter capabilities follow QF0
+and require their own validation; QED remains an external-provider boundary.
 
 ### Microscopic many-body and strong-correlation reference
 

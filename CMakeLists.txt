@@ -9,22 +9,32 @@ include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
     GIT_REPOSITORY https://github.com/lazy-fortran/fortplot.git
-    GIT_TAG 9949d818b2ba5f43d582d6aff58c8032cdeec3de)
+    GIT_TAG 87ff7a43809e868e0153f400a21cdb31b9a92d84)
 FetchContent_MakeAvailable(fortplot)
+include(CheckFortranCompilerFlag)
+check_fortran_compiler_flag("-ftrampoline-impl=heap" KIN6D_HAVE_HEAP_TRAMPOLINES)
+if(KIN6D_HAVE_HEAP_TRAMPOLINES)
+    add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-ftrampoline-impl=heap>)
+endif()
 # Compile FortNum's interval and ODE modules unchanged from the pinned tree.
 # The application owns physical laws; generic numerics remain upstream.
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 1b1349948a6250ed5a38655d9b8042c894370d42)
+    GIT_TAG 015bb8b1490d99d55493b3936e0dd6adf77bc293)
 FetchContent_GetProperties(fortnum)
 if(NOT fortnum_POPULATED)
     FetchContent_Populate(fortnum)
 endif()
 add_library(kin6d_intervals
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_rounding.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_interval.f90)
+    ${fortnum_SOURCE_DIR}/src/verified/fortnum_interval.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_verified_midpoint_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/verified/fortnum_verified_quadrature.f90)
 target_compile_options(kin6d_intervals PRIVATE -fno-fast-math -ffp-contract=off)
 add_library(kin6d_ode
+    ${fortnum_SOURCE_DIR}/src/fortnum_kinds.f90
+    ${fortnum_SOURCE_DIR}/src/roots/fortnum_roots.f90
+    ${fortnum_SOURCE_DIR}/src/quadrature/fortnum_quadrature.f90
     ${fortnum_SOURCE_DIR}/src/fortnum_status.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
@@ -57,6 +67,13 @@ set_source_files_properties(
     src/generated/kin6d_interaction_leaves.f90
     src/generated/kin6d_cloud_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlations
+        quantum_reference_gallery classical_pair)
+    target_sources(kin6d PRIVATE
+        src/generated/kin6d_${quantum_family}_leaves.f90 src/${quantum_family}.f90)
+    set_source_files_properties(src/generated/kin6d_${quantum_family}_leaves.f90
+        PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+endforeach()
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
 add_executable(kin6d_demo app/kin6d_demo.f90)
@@ -73,6 +90,10 @@ foreach(example streaming_moments debye_sphere slab_oscillation shielding_dynami
 endforeach()
 add_executable(microscopic_cloud_demo app/microscopic_cloud_demo.f90)
 target_link_libraries(microscopic_cloud_demo PRIVATE kin6d fortplot)
+foreach(example quantum_reference classical_pair)
+    add_executable(${example}_demo app/${example}_demo.f90)
+    target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
+endforeach()
 add_executable(formal_krook_certificate app/formal_krook_certificate.f90)
 target_link_libraries(formal_krook_certificate PRIVATE kin6d)
 add_executable(test_laboratory test/test_laboratory.f90)
@@ -107,6 +128,15 @@ endforeach()
 add_executable(test_cloud test/test_cloud.f90)
 target_link_libraries(test_cloud PRIVATE kin6d)
 add_test(NAME microscopic_cloud_oracles COMMAND test_cloud)
+foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlations
+        quantum_reference_gallery classical_pair)
+    add_executable(test_${quantum_family} test/test_${quantum_family}.f90)
+    target_link_libraries(test_${quantum_family} PRIVATE kin6d)
+    add_test(NAME ${quantum_family}_oracles COMMAND test_${quantum_family})
+endforeach()
+add_executable(test_quantum_cutoff test/test_quantum_cutoff.f90)
+target_link_libraries(test_quantum_cutoff PRIVATE kin6d)
+add_test(NAME quantum_cutoff_oracles COMMAND test_quantum_cutoff)
 find_program(KIN6D_LAKE lake)
 option(KIN6D_CHECK_LEAN "Check continuous Lean theorems and computed certificate" OFF)
 if(KIN6D_CHECK_LEAN)
@@ -120,7 +150,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "44da68f44c1ef3bc7617a307409c812a6ea4d515")
+set(KIN6D_FORTSYM_REVISION "a6142712af998b727c245fb6cfbb3745b296ec24")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -134,7 +164,9 @@ if(KIN6D_FORTSYM_BUILD)
         message(FATAL_ERROR "Regeneration requires FortSym ${KIN6D_FORTSYM_REVISION}")
     endif()
     foreach(generator laboratory poisson fp transport streaming streaming_moments
-            debye_sphere slab_oscillation shielding_dynamics interaction cloud)
+            debye_sphere slab_oscillation shielding_dynamics interaction cloud
+            fermi_gas quantum_fock quantum_evolution quantum_correlations
+            quantum_reference_gallery classical_pair)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_include_directories(gen_${generator} PRIVATE
             ${KIN6D_FORTSYM_BUILD}/include)
@@ -153,3 +185,8 @@ add_executable(benchmark_transport app/benchmark_transport.f90)
 target_link_libraries(benchmark_transport PRIVATE kin6d)
 add_executable(benchmark_slab_oscillation app/benchmark_slab_oscillation.f90)
 target_link_libraries(benchmark_slab_oscillation PRIVATE kin6d)
+
+add_executable(benchmark_fermi_gas app/benchmark_fermi_gas.f90)
+target_link_libraries(benchmark_fermi_gas PRIVATE kin6d)
+add_executable(benchmark_quantum_cutoff app/benchmark_quantum_cutoff.f90)
+target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)

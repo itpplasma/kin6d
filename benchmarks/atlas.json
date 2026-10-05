@@ -1301,7 +1301,12 @@
       "expected_convergence_order": "second order for the smooth fixed dyadic source benchmark; no universal regularity assumption",
       "source_version_and_section": "docs/transport-certificate.md and gen/gen_transport.f90",
       "proof_level": "independently reviewed Fortran continuous certificate under outward arithmetic and immutable packet premises; not formal whole-program evidence",
-      "observables": ["whole-domain state", "implicit source/damping tangent", "cosine-density and its directional derivative", "whole-cell plotted bands"],
+      "observables": [
+        "whole-domain state",
+        "implicit source/damping tangent",
+        "cosine-density and its directional derivative",
+        "whole-cell plotted bands"
+      ],
       "plot_recipe": "output/general-transport.png full-cell state/tangent bands; separate matching v=0 Krook slice",
       "asymptotic_remainder": "no physical source approximation, velocity-tail or model-reduction claim"
     }
@@ -1369,6 +1374,39 @@
       "reference_implementation": "test/test_interaction.f90 and test/test_cloud.f90",
       "plot_recipe": "interaction_demo and microscopic_cloud_demo",
       "proof_level": "two-body continuous-flow endpoint intervals; cloud trajectory and statistical bounds unavailable; energy diagnostics are not certificates; no converged Debye or Lambda-scan claim"
+    },
+    {
+      "id": "quantum_pair_quench",
+      "status": "CPU reference implemented; Release/checked Debug native oracles passed; scope limitations retained",
+      "reference_class": "E1",
+      "equations": "full interacting antisymmetric finite-basis Schroedinger equation; opposite-spin pair, periodic bare Coulomb plus uniform background",
+      "geometry": "3D torus; total-momentum-zero invariant sector",
+      "independent_oracle": "explicit CAR Hamiltonian, independent binary128 unitary evolution, direct density contraction and spatial slab integration; cutoff differences are indicators",
+      "reference_implementation": "test/test_quantum_fock.f90, test/test_quantum_evolution.f90 and test/test_quantum_reference_gallery.f90, test/test_quantum_cutoff.f90 and app/benchmark_quantum_cutoff.f90",
+      "plot_recipe": "quantum_reference_demo; sixteen common relative-x bins integrated over transverse torus",
+      "proof_level": "continuous-time finite-basis residual plus physical-coefficient rounding and observable/chord allowances; continuum projection remainder unavailable"
+    },
+    {
+      "id": "classical_pair_quench",
+      "status": "CPU reference implemented; Release/checked Debug native oracles passed; scope limitations retained",
+      "reference_class": "I",
+      "equations": "two actual classical equal-charge particles per independent realization; periodic Ewald Coulomb and uniform neutralizing background",
+      "geometry": "3D torus; same mass, charge, box, uniform-position zero-momentum preparation as quantum pair",
+      "independent_oracle": "Ewald splitting/truncation refinement, odd force/even potential, potential gradient, generated derivative pairing and energy diagnostics",
+      "reference_implementation": "test/test_classical_pair.f90",
+      "plot_recipe": "classical_pair_demo; particle trajectories and matching sixteen relative-x slab bins",
+      "proof_level": "simultaneous Monte Carlo confidence intervals for numerical bin probabilities; deterministic force/trajectory certificate unavailable"
+    },
+    {
+      "id": "finite_temperature_fermi_pressure",
+      "status": "CPU reference implemented; Release/checked Debug native oracles passed; scope limitations retained",
+      "reference_class": "E1",
+      "equations": "ideal homogeneous nonrelativistic spin-two Fermi density constraint, pressure and static long-wavelength susceptibility",
+      "geometry": "3D momentum radial integration, arbitrary positive density and temperature",
+      "independent_oracle": "independent high-precision integration, classical and zero-temperature limits, fixed-density implicit derivatives",
+      "reference_implementation": "test/test_fermi_gas.f90",
+      "plot_recipe": "optional SI electron pressure row and pressure/occupation data; movie deferred",
+      "proof_level": "strict finite-interval quadrature plus analytic tails, monotone root bracket and generated implicit products; interaction/relativistic/stellar-structure model errors unavailable"
     }
   ],
   "limit_edges": [
