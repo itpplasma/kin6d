@@ -127,10 +127,14 @@ After the normal project configure/build:
 
 The main slice lies inside a coarse velocity cell, exposing reconstruction
 error. The plotting schedule evaluates the candidate over every full x cell
-and surrounds that range by its global certified radius. Step envelopes cover
-the entire displayed cells; connected endpoint bands are not used to certify
-the trigonometric curves between samples. The source ranges include interval
-evaluation. Candidate lines are visual guides to the declared reconstruction.
+and surrounds that range by its global certified radius. The demo uses 1536
+plotting cells, making each step narrower than a pixel in the exported figure.
+The full-cell envelopes retain their containment; the trigonometric curves are
+not certified by connecting endpoint intervals. The source ranges include
+interval evaluation. Candidate lines are visual guides to the declared
+reconstruction. Solver grids remain 16/64 velocity cells; the separate timed
+benchmark retains its 96 x cells. Denser demo band preparation and PNG rendering
+are outside that benchmark's workload.
 
 The blue solid and orange dashed resolution curves use the color-vision-safe
 Okabe--Ito blue/vermillion pair, with distinct line styles in grayscale. All
