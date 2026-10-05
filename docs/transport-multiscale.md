@@ -115,7 +115,11 @@ where \(X\) denotes thermodynamic forces or profile perturbations.
 ## Traditional integrated modelling as an early mode
 
 KIN6D should support the historically successful equilibrium/transport
-separation directly:
+separation directly. Here "equilibrium" means a selected stationary forward
+state; it may be a native Grad--Shafranov/general-MHD solve or, early on, a
+validated imported candidate. The transport architecture must not assume that
+the state owns nested flux surfaces unless the selected 1D/1.5D representation
+explicitly requires them:
 
 \[
 \text{equilibrium}
