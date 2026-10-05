@@ -143,7 +143,14 @@ R(U;\theta)=0.
 \]
 
 Time evolution uses the same residual/brackets rather than defining a separate
-physics implementation.
+physics implementation. An equilibrium is therefore one stationary solution of
+a named physical model, not a privileged file format and not necessarily a
+unique function of a small parameter set. Imported EQDSK, VMEC, SPECTRE or
+other states are candidates, initial guesses and comparison data. KIN6D must be
+able to evaluate their residuals, recompute them with a native model where that
+model exists, and certify the resulting numerical claim. Nested flux surfaces
+are an optional exploitable structure, never a core requirement. See
+[equilibria and inference](docs/equilibria-inference.md).
 
 ## Geometry and spatial numerics
 
@@ -187,7 +194,8 @@ Long-range scope includes:
 - RF/quasilinear/full-wave heating, NBI and fusion-product sources;
 - coils, vacuum, conducting walls and external circuits;
 - Solar-System plasma configurations;
-- synthetic diagnostics, inverse problems, adjoints, optimization and control.
+- synthetic diagnostic forward operators, adjoints, optimization and control;
+- integration with TIAGO for equilibrium/state reconstruction and inference.
 
 General relativity, strong-field QED, complete reactor neutronics, detailed
 solid-state material evolution and general radiation hydrodynamics are outside
@@ -227,10 +235,11 @@ important claims; it is not required to obtain rigorous numerical intervals and
 is not on the early critical path.
 
 A result distinguishes numerical error, model-reduction error, physical-input
-uncertainty and, for Monte Carlo, statistical uncertainty. Deterministic
-certificates and probabilistic confidence statements are never conflated.
-Adjoints are used for sensitivities and for goal-oriented numerical/model-error
-estimation.
+uncertainty and, for Monte Carlo, statistical uncertainty. Reconstruction and
+diagnostic uncertainty are owned by TIAGO and remain a separate probabilistic
+layer conditional on the selected KIN6D model. Deterministic certificates and
+probabilistic confidence statements are never conflated. Adjoints are used for
+sensitivities and for goal-oriented numerical/model-error estimation.
 
 ## Performance
 
@@ -256,6 +265,8 @@ libraries used behind replaceable interfaces where useful.
 Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 [ROADMAP.md](ROADMAP.md) for staged delivery. Important companion documents are:
 
+- [Equilibria, imported candidates and TIAGO inference](docs/equilibria-inference.md)
+- [Configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md)
 - [Representations](docs/representations.md)
 - [Stability, response and bifurcation](docs/stability.md)
 - [Transport and multiscale coupling](docs/transport-multiscale.md)
@@ -278,7 +289,9 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Tooling](docs/tooling.md)
 
 Scientific/application code and the certifier are Fortran. No Python runtime is
-required. Generated graphics and large benchmark products are not source
-artifacts.
+required to configure, run, certify or inspect KIN6D. Optional Python and web
+layers may provide notebook, cluster and browser convenience on top of the same
+Fortran-owned configuration/schema and result contract. Generated graphics and
+large benchmark products are not source artifacts.
 
 Chris&AI
