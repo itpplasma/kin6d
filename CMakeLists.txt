@@ -45,6 +45,8 @@ target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
+    src/generated/kin6d_species_leaves.f90 src/species.f90
+    src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90 src/nbody.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
     src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
@@ -58,6 +60,7 @@ add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
     src/generated/kin6d_interaction_leaves.f90 src/interaction_laboratory.f90
     src/generated/kin6d_cloud_leaves.f90 src/microscopic_cloud.f90)
 set_source_files_properties(
+    src/generated/kin6d_species_leaves.f90 src/generated/kin6d_coulomb_leaves.f90
     src/generated/kin6d_poisson_leaves.f90 src/generated/kin6d_fp_leaves.f90
     src/generated/kin6d_transport_leaves.f90 src/generated/kin6d_streaming_leaves.f90
     src/generated/kin6d_streaming_moments_leaves.f90
@@ -125,6 +128,9 @@ foreach(example streaming_moments debye_sphere slab_oscillation shielding_dynami
     target_link_libraries(test_${example} PRIVATE kin6d)
     add_test(NAME ${example}_oracles COMMAND test_${example})
 endforeach()
+add_executable(test_nbody test/test_nbody.f90)
+target_link_libraries(test_nbody PRIVATE kin6d)
+add_test(NAME nbody_coulomb_species_oracles COMMAND test_nbody)
 add_executable(test_cloud test/test_cloud.f90)
 target_link_libraries(test_cloud PRIVATE kin6d)
 add_test(NAME microscopic_cloud_oracles COMMAND test_cloud)
@@ -165,7 +171,8 @@ if(KIN6D_FORTSYM_BUILD)
     endif()
     configure_file(gen/kin6d_fortsym_revision.inc.in
         ${CMAKE_BINARY_DIR}/gen_include/kin6d_fortsym_revision.inc @ONLY)
-    add_library(kin6d_gen_support STATIC gen/kin6d_gen_support.f90)
+    add_library(kin6d_gen_support STATIC gen/kin6d_gen_support.f90
+        gen/kin6d_symbolic_physics.f90)
     target_include_directories(kin6d_gen_support PUBLIC
         ${KIN6D_FORTSYM_BUILD}/include ${CMAKE_BINARY_DIR}/gen_include)
     target_link_libraries(kin6d_gen_support PUBLIC
@@ -173,7 +180,7 @@ if(KIN6D_FORTSYM_BUILD)
     foreach(generator laboratory poisson fp transport streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
-            quantum_reference_gallery classical_pair)
+            quantum_reference_gallery classical_pair coulomb species)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
