@@ -232,6 +232,14 @@ uncertainty, and evaluate the field/geometry checks required by the DK claim.
 Native equilibrium re-solves are added in R12 and should later be used to
 separate imported interpolation/reconstruction error from DK transport error.
 
+This is also the first production libneo dependency gate. Reuse existing
+libneo readers/field utilities behind a KIN6D adapter rather than cloning them.
+Before promoting each exercised path, audit and repair generic defects upstream
+in libneo with independent tests. Add reusable spatial derivatives or
+representation-level error diagnostics there when the need is generic; keep
+KIN6D's DK residual/adjoint/certificate mathematics in KIN6D. Existing libneo
+consumers should remain compatible and inherit the fixes.
+
 Required comparisons:
 
 - NEO-2;
@@ -603,6 +611,13 @@ Use libneo as the shared adapter/convention layer for established machine and
 code formats where it already owns the capability. KIN6D consumes normalized
 physical data and records the source format/conventions; it does not turn VMEC,
 EQDSK, SPECTRE, JOREK or another source into a fundamental internal model.
+
+Treat every new KIN6D dependency on a libneo code path as a boy-scout
+modernization opportunity: fix generic bugs and convention errors upstream,
+add missing reusable tests/derivatives/error diagnostics there, and keep
+existing downstream consumers working. The KIN6D adapter remains narrow so a
+backend can still be replaced later; swappability is not a reason to duplicate
+or abandon reusable libneo mathematics.
 
 Keep Fortran namelist configuration and NetCDF-4-compatible HDF5 results stable
 across physics milestones. Every result retains original/resolved input and
