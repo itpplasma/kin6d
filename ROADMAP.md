@@ -45,6 +45,10 @@ model, accuracy and claim strength. No speed ranking is asserted in advance.
 2. Generalize prescribed-field damped transport to independently supplied
    sources. Bound the continuous reconstructed residual and source error using
    a proved inverse/stability estimate, rather than a known-solution formula.
+   Delivered for exact supplied Fourier/P1 sources, with whole-cell state and
+   tangent bounds, generated nodal JVP/VJP, a cosine observable, independent
+   tests and a native demo/audit. A continuous physical goal adjoint and
+   external analytic-source reconstruction bounds remain separate gates.
 3. Extend FP to independently supplied forcing with declared boundary flux,
    compatibility and normalization. Certify flux/reconstruction defects through
    the applicable stability estimate, including boundary and source errors.
@@ -61,14 +65,16 @@ continuous certificate.
 **Implemented baseline:** prescribed-field free streaming and Krook balance,
 single-mode Poisson, a coupled source-balanced Poisson--FP family, and bounded
 homogeneous OU/FP equilibrium. Generated derivative leaves and reviewed
-continuous bounds cover the declared analytical cases; general certification
-is not yet implemented. See [steady laboratory](docs/steady-laboratory.md).
+continuous bounds cover the declared analytical cases. The
+[general transport case](docs/general-transport.md) additionally certifies
+unknown solutions for independently supplied Fourier/P1 sources through the
+continuous residual and inverse bound.
 
 Near-term work:
 
 - keep the existing exact characteristic and manufactured steady oracles green;
-- implement the arbitrary-source transport and forced-FP certificates above,
-  with general primal/JVP/VJP and observable bounds;
+- retain the general transport certificate and extend FP to independently
+  supplied forcing with flux/stability, derivative and observable bounds;
 - make the approximately 1% observable target a useful default;
 - improve bound/status packaging without requiring Lean;
 - retain strict/reference and optimized actions;

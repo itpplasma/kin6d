@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "116-case catalogue; streaming, periodic Poisson and scoped steady reference cases implemented; other cases planned",
+  "status": "117-case catalogue; streaming, periodic Poisson, scoped steady references and general damped transport implemented; other cases planned",
   "inheritance": "defaults then family then case; case fields override family fields",
   "activation_rule": "resolve every null field; pin and review formulas/data/source sections; supply independent oracle and requested proof level before runnable promotion",
   "reference_classes": {
@@ -1273,6 +1273,26 @@
       ],
       "plot_recipe": "formal reference encoded by theorem and dyadic artifact; distinct from FP/coupled reviewed interval plots",
       "asymptotic_remainder": "no model reduction or velocity-tail claim"
+    },
+    {
+      "id": "general_damped_transport",
+      "family": "steady_vlasov",
+      "status": "implemented and independently reviewed continuous state/tangent certificate",
+      "reference_class": "E0",
+      "collision_model": "positive fixed damping with independent source",
+      "field_model": "prescribed E=0",
+      "geometry": "x periodic with period 2*pi, v in [-1,1]",
+      "initial_boundary_data": "finite Fourier-x/P1-v source; velocity is a parameter, no velocity boundary condition",
+      "parameter_validity_range": "nu>0, finite coefficients, strictly ordered velocity grid with exact endpoints -1 and 1; mean sine zero",
+      "reference_definition": "test-only continuous complex mode inverse; cosine-density identities Q=atan(1/nu)/4 and dQ/dnu=-1/(4*(nu^2+1)) for the declared test source",
+      "reference_implementation": "test/test_transport.f90 independent binary128 fixtures",
+      "certificate_method": "continuous damped characteristic inverse and full-cell Bernstein residual enclosure; independent interval-box audit; coupled implicit tangent bound",
+      "expected_convergence_order": "second order for the smooth fixed dyadic source benchmark; no universal regularity assumption",
+      "source_version_and_section": "docs/transport-certificate.md and gen/gen_transport.f90",
+      "proof_level": "independently reviewed Fortran continuous certificate under outward arithmetic and immutable packet premises; not formal whole-program evidence",
+      "observables": ["whole-domain state", "implicit source/damping tangent", "cosine-density and its directional derivative", "whole-cell plotted bands"],
+      "plot_recipe": "output/general-transport.png full-cell state/tangent bands; separate matching v=0 Krook slice",
+      "asymptotic_remainder": "no physical source approximation, velocity-tail or model-reduction claim"
     }
   ],
   "limit_edges": [

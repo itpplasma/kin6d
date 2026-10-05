@@ -1,10 +1,11 @@
 # Differentiability and adjoint policy
 
-Status: canonical derivative policy. The restored laboratory has generated
-local primal/JVP/VJP leaves and independent analytical checks, documented in
-[the laboratory evidence](steady-laboratory.md). A generated local leaf does
-not yet supply a continuous arbitrary-source tangent, adjoint or certified
-gradient pipeline. Those are implementation gates below.
+Status: canonical derivative policy. The [general damped-transport case](general-transport.md)
+has generated primal/JVP/VJP leaves, implicit source/damping tangents,
+continuous tangent bands and a certified cosine-density directional derivative.
+Its nodal VJP uses a Euclidean coefficient pairing. Continuous physical goal
+adjoints and general nonlinear certified gradients remain implementation gates.
+Earlier analytical checks are retained in [the laboratory evidence](steady-laboratory.md).
 
 ## Principle
 

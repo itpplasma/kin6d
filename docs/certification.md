@@ -6,7 +6,11 @@ VPFP laboratory have reviewed continuous reference enclosures; the separate
 polynomial Krook case also has a checked Lean application. Their exact-profile
 comparisons are reference evidence, not an arbitrary-source production
 certifier. [Local evidence](steady-laboratory.md) records their boundaries,
-tests and proof scopes. General residual/stability certification is pending.
+tests and proof scopes. General residual/stability certification is now
+implemented for independently supplied Fourier/P1 damped transport, including
+directional sensitivities and full-cell bands; see
+[the certificate argument](transport-certificate.md). Forced FP and general
+nonlinear self-consistent certification remain pending.
 
 ## Result states
 

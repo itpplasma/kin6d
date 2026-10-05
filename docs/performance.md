@@ -166,12 +166,15 @@ Before expanding physics, retain two upstream native fixtures:
 2. FortSym: one shared definition emitted as primal/JVP/VJP and enclosure
    leaves, independent value/derivative oracles, and separately timed paths.
 
-KIN6D's `scripts/benchmark.sh` sweeps the current FP case at several resolutions
+KIN6D's `scripts/benchmark.sh` sweeps the FP and general damped-transport cases
+at several resolutions
 and records requested/achieved radius, solver/certificate/acceptance costs,
 state bytes and provenance. Correctness validation is outside timed sections.
-Run these as explicit audits, not noisy timing gates. The next production
-certificate uses arbitrary-source damped transport residuals and the continuous
-inverse bound; reference-profile evaluation stays in the benchmark suite.
+Run these as explicit audits, not noisy timing gates. The implemented transport
+certificate uses arbitrary represented-source residuals and the continuous
+inverse bound, including implicit tangents, cell bands and goal intervals.
+Its [measured ledger](general-transport.md) identifies interval reconstruction
+as the dominant cost. Reference-profile evaluation stays in the benchmark suite.
 
 Profile strict exponential/reduction costs before optimizing them. At the
 owner, consider batched range-reduced evaluation, proved approximation and
