@@ -201,3 +201,29 @@ add_executable(benchmark_fermi_gas app/benchmark_fermi_gas.f90)
 target_link_libraries(benchmark_fermi_gas PRIVATE kin6d)
 add_executable(benchmark_quantum_cutoff app/benchmark_quantum_cutoff.f90)
 target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)
+
+# Q7: static screening hierarchy and 1X1V Wigner-Poisson (appended block).
+add_library(kin6d_fft
+    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft8_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft.f90)
+target_link_libraries(kin6d_fft PUBLIC kin6d_ode)
+target_compile_options(kin6d_fft PRIVATE -fno-fast-math -ffp-contract=off)
+target_sources(kin6d PRIVATE
+    src/generated/kin6d_screening_leaves.f90 src/screening_hierarchy.f90
+    src/generated/kin6d_wigner_leaves.f90 src/wigner_dispersion.f90
+    src/wigner_poisson.f90)
+set_source_files_properties(src/generated/kin6d_screening_leaves.f90
+    src/generated/kin6d_wigner_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_link_libraries(kin6d PUBLIC kin6d_fft)
+foreach(q7 screening wigner)
+    add_executable(${q7}_demo app/${q7}_demo.f90)
+    target_link_libraries(${q7}_demo PRIVATE kin6d fortplot)
+    add_executable(test_${q7} test/test_${q7}.f90)
+    target_link_libraries(test_${q7} PRIVATE kin6d)
+    add_test(NAME ${q7}_q7_oracles COMMAND test_${q7})
+    if(KIN6D_FORTSYM_BUILD)
+        add_executable(gen_${q7} gen/gen_${q7}.f90)
+        target_link_libraries(gen_${q7} PRIVATE kin6d_gen_support)
+    endif()
+endforeach()
