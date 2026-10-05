@@ -139,3 +139,16 @@ run from the repository root and must reproduce committed leaves exactly.
   nonrelativistic certificate; per-degree scaling for cold large-N
   canonical sums; FortNum interval layer compiled without
   `-ffp-contract=off` in FortNum's own build (audit directed rounding).
+- 2026-10-05 (worker, Q1/Q1b): `src/coulomb_encounter.f90`,
+  `src/radial_dvr.f90`, `src/coulomb_kepler.f90`, leaves from
+  `gen/gen_coulomb_encounter.f90`, docs/coulomb-encounter.md. Partial waves
+  on a GLL FEM-DVR (exact singular integrals in the origin element), banded
+  LAPACK eigen windows, exact discrete evolution; product/singlet/triplet
+  sectors; classical Wigner ensemble through the nbody interaction step;
+  JVP/VJP of bin probabilities in (b, sigma, g). Oracles: hydrogen levels
+  9e-13, Coulomb phases 1e-9, F_l shape 1e-8, free Gaussian 5e-7, Mott ratio
+  0.018 abs (60-120 deg), Rutherford fluence 1% (120-180 deg), eta=10
+  quantum vs classical within 4 sd, derivatives vs FD 1.6e-8, Kepler
+  autocorrelation vs exact levels 1e-10 to 1.1 T_rev. 23/23 CTest green in
+  Release and Debug. Open: GLL and normalized Legendre belong in FortNum; no
+  continuum discretization bound.
