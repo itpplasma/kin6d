@@ -54,6 +54,34 @@ error. Use weak-observable bounds or name the smooth reconstruction and bound
 its own error. A finite algebraic inclusion does not enclose the continuous
 solution until truncation, reconstruction and stability premises also close.
 
+## Quantum state representations
+
+Quantum plasma uses a different state ontology where appropriate; it is not
+forced into a classical distribution carrier.
+
+Possible microscopic/continuum quantum states include:
+
+- many-body wavefunction \(\Psi(x_1,\ldots,x_N)\) or density matrix \(\rho_N\)
+  for tiny-\(N\) exact references;
+- reduced density matrices/cumulants \(\rho_1,\rho_2,\ldots\);
+- Hartree/Hartree--Fock/Kohn--Sham orbitals on ordinary 3D meshes/bases;
+- QMC/PIMC walkers or imaginary-time paths for stochastic equilibrium
+  references;
+- Wigner quasidistributions \(f_W(x,p)\) on Eulerian/semi-Lagrangian
+  phase-space representations;
+- quantum-fluid/Fermi-EOS state variables on physical-space meshes.
+
+These representations are not interchangeable by storage conversion alone.
+Each corresponds to a named physical/statistical model with its own measures,
+symmetry/antisymmetry, positivity or quasiprobability semantics and observable
+map.
+
+The same separation principle still applies: physical model and numerical
+carrier are distinct. A Wigner model may be spectral, DG or semi-Lagrangian;
+an orbital model may use FEM, plane waves or finite differences.
+
+See [quantum-plasma.md](quantum-plasma.md).
+
 ## Full-f, delta-f and control variates
 
 The full distribution may be represented directly,

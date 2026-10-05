@@ -312,6 +312,54 @@ its validation leverage justifies prioritization.
 
 See [microscopic-many-body.md](docs/microscopic-many-body.md).
 
+## QF0 — quantum plasma fundamentals and dense-matter bridge (cross-cutting)
+
+Add a quantum-fundamentals branch that makes the limits of the classical
+hierarchy explicit without turning every plasma calculation into a quantum
+many-body problem.
+
+Physics ladder:
+
+1. finite-temperature ideal Fermi gas and regime coordinates
+   \(\Theta=k_BT/E_F\), \(\Gamma\) and \(x_F=p_F/(m_ec)\);
+2. classical Debye \(\rightarrow\) finite-\(T\) Fermi/Thomas--Fermi screening;
+3. Lindhard/RPA response and Friedel oscillations;
+4. quantum hydrodynamic/Fermi-EOS closures where derived;
+5. Wigner--Poisson and later Wigner--Maxwell with
+   \(\hbar\rightarrow0\) recovery of Vlasov;
+6. Hartree/Hartree--Fock and DFT/TDDFT-like microscopic reference providers;
+7. quantum BBGKY/reduced-density-matrix and cumulant/low-rank correlation
+   models;
+8. quantum collision/dielectric corrections: diffraction, exchange, Pauli
+   blocking, Uehling--Uhlenbeck/quantum Lenard--Balescu-like closures;
+9. equilibrium exact-diagonalization/QMC/PIMC reference cases where practical;
+10. stellar/dense-plasma closure examples from classical ideal gas through
+    degenerate and relativistically degenerate electron pressure.
+
+Numerical representation remains independent:
+
+- exact \(\Psi\) or \(\rho_N\): tiny-\(N\) gold-standard references;
+- Hartree/HF/DFT/TDDFT: ordinary 3D orbital/density discretizations using
+  FEM/spectral/plane-wave/finite-difference families;
+- QMC/PIMC: stochastic microscopic equilibrium reference;
+- Wigner: Eulerian/semi-Lagrangian/DG/spectral/tensor phase-space methods;
+- quantum-fluid/Fermi-EOS closures: ordinary macroscopic FEM/FV/DG.
+
+Planning scales are method dependent, not support claims: exact full
+wavefunctions are generally only a few 3D particles; QMC/PIMC microscopic
+boxes are typically tens--thousands; orbital methods may reach
+\(10^2\)--\(10^4\)-scale particle/orbital cells; Wigner inherits the
+high-dimensional FK problem; quantum-fluid/EOS closures can cover whole-device
+or whole-star domains.
+
+The fundamental native boundary is **QED**. Pair creation/annihilation,
+quantized-radiation dynamics, strong-field QED cascades and radiative QED
+corrections remain external provider territory. Relativistic Fermi EOS and
+controlled semirelativistic/Dirac-Coulomb references remain admissible below
+that boundary when QED effects are negligible.
+
+See [quantum-plasma.md](docs/quantum-plasma.md).
+
 ## R4 — 0X3V collision laboratory
 
 Introduce the future velocity representation in the smallest domain. Progress:
@@ -732,12 +780,19 @@ valuable retained oracles as their production roles are subsumed.
 
 ## Deliberate outer boundary
 
-KIN6D may couple to but does not initially own fully quantum dense-matter
-electronic structure, strong-field QED/pair cascades, general-relativistic
-plasma/gravity, full reactor neutronics/nuclear engineering, detailed bulk
-solid mechanics/material microstructure, comprehensive liquid/solid chemistry,
-or the highest-fidelity line-by-line angle/frequency non-LTE radiation-transfer
-discipline. Reduced radiation hydrodynamics through grey/multigroup/moment
-models is inside the KIN6D scope.
+The fundamental quantum boundary is **QED**, not "all quantum matter".
+KIN6D may natively include quantum degeneracy, exchange/diffraction,
+Wigner/quantum kinetic models, quantum BBGKY/cumulants, orbital/QMC
+microscopic references and quantum-fluid/EOS closures. It may consume
+QED-derived rates as data.
+
+KIN6D does not initially own general quantized-radiation dynamics, pair
+creation/annihilation, strong-field QED cascades or radiative QED corrections.
+It likewise does not own general-relativistic plasma/gravity, neutron-star/
+nuclear-density matter, full reactor neutronics/nuclear engineering, detailed
+bulk solid mechanics/material microstructure, comprehensive liquid/solid
+chemistry, or the highest-fidelity line-by-line angle/frequency non-LTE
+radiation-transfer discipline. Reduced radiation hydrodynamics through
+grey/multigroup/moment models remains inside scope.
 
 Chris&AI
