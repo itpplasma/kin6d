@@ -5,6 +5,8 @@
 Read README.md, DESIGN.md and ROADMAP.md first. Then read the specification
 that owns the proposed change. In particular:
 
+- docs/equilibria-inference.md before equilibrium/import/reconstruction work;
+- docs/interface-reproducibility.md before configuration, I/O, UX or cluster-facing work;
 - docs/representations.md for Eulerian/semi-Lagrangian/particle/blob,
   full-f/delta-f, PIC/PIF and deterministic/QMC/MC choices;
 - docs/student-laboratory.md for early priorities;
@@ -53,6 +55,12 @@ docs/first-example.md before changing it or claiming broader evidence.
   target model solved.
 - Physical vectors are Cartesian. Charts and momentum frames are independent.
   Do not require global toroidal angle, nested surfaces or one geometry class.
+  Imported EQDSK/VMEC/SPECTRE/etc. states are candidates/adapters, not core
+  equilibrium types. When native equilibrium physics exists, support residual
+  checking and re-solve/certification in that model.
+- Distinct stationary solutions are distinct equilibria. Record their
+  provenance/continuation histories; do not add a speculative branch-mixture
+  framework to KIN6D. TIAGO owns any probabilistic mixture over fitted states.
 - Bulk MHD aggregates explicitly owned populations. It is not a per-species
   fluid switch. Prevent double counting of charge/current/pressure/energy.
 
@@ -78,7 +86,9 @@ docs/first-example.md before changing it or claiming broader evidence.
   and certification-failed. State the exact claim.
 - A numerical enclosure proves the named model, not physical reality. Model
   reduction, physical-data uncertainty and stochastic sampling need separate
-  bounds/status.
+  bounds/status. TIAGO reconstruction/measurement/calibration posterior
+  uncertainty is another orthogonal layer and is not folded into a KIN6D
+  deterministic certificate by default.
 - Goal-oriented indicators are not rigorous remainders until the stability,
   lifting and nonlinear remainder hypotheses are checked.
 
@@ -134,8 +144,13 @@ not implemented functionality.
 
 ## Repository and dependency policy
 
-- Scientific/application code, generators and rigorous checker are Fortran.
-  No mandatory Python layer.
+- Scientific/application code, generators, configuration semantics and the
+  rigorous checker are Fortran. No mandatory Python layer. Optional
+  Python/TypeScript UX must consume the same schema/result contract rather than
+  redefining scientific semantics.
+- Fortran namelist is the canonical editable configuration syntax. Scientific
+  results use a NetCDF-4-compatible HDF5 subset through FortIO and must embed
+  literal/resolved configuration plus provenance.
 - FortFEM owns generic spatial mathematics; FortNum generic numerics and
   verified arithmetic; FortSparse sparse kernels; FortSym symbolic generation;
   FortAD derivative tooling; FortIO/FortPlot/FortArray their respective generic
