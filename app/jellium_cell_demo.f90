@@ -501,7 +501,7 @@ contains
         call figure(figsize=[12.8_dp, 6.4_dp])
         call subplot(1, 2, 1)
         call title('Density mode after a weak kick')
-        call xlabel('t [$\hbar$/Ha]'); call ylabel('$\delta\langle A\rangle / \kappa$')
+        call xlabel('t [ħ/Ha]'); call ylabel('δ<A>(t) / κ')
         call xlim(0.0_dp, times(kick_steps))
         call fill_between(times, response - band, response + band, color=blue, &
                           alpha=0.25_dp)
@@ -509,7 +509,7 @@ contains
         call legend(loc='upper right')
         call subplot(1, 2, 2)
         call title('Certified finite-basis response bound')
-        call xlabel('t [$\hbar$/Ha]'); call ylabel('bound per κ')
+        call xlabel('t [ħ/Ha]'); call ylabel('bound per κ')
         call xlim(0.0_dp, times(kick_steps))
         call yscale('log')
         call plot(times(1:kick_steps), band(1:kick_steps), color=blue, label='2|φ0| e(t)')
