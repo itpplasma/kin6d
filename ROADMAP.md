@@ -16,7 +16,9 @@ A capability is promoted only when it has:
 3. an independent external or cross-representation oracle when available;
 4. primal/JVP/VJP behavior for continuous production operators;
 5. bounds/status for reported states, fields, observables and sensitivities;
-6. a small correctness case and a representative performance/memory case;
+6. a small correctness case and a representative performance/memory case,
+   including extra time and multipliers relative to primal-only and requested
+   derivative solves under matched setup/reuse conditions;
 7. preserved earlier limiting cases.
 
 An optimization or representation change is not allowed to obscure the

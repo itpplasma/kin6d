@@ -24,6 +24,19 @@ candidate, reconstruction/residual, stability check, bound evaluation,
 derivative solves and postprocessing separately. Report cold single-use and
 amortized repeated-use costs; reuse only data with checked validity keys.
 
+Every benchmark report must also show the cost relative to solving alone.
+Record the primal-only solve and, when derivatives are requested, the primal
+plus requested derivative solves. Against each baseline, report the certified
+total, the extra time (total minus baseline), and the multiplier (total divided
+by baseline). Name the included outputs and separate certification from band
+and observable postprocessing. Use matched inputs, resolution, arithmetic,
+hardware and reuse conditions; retain raw trials and measurement variability.
+Measure solve-only initialization separately for first-result comparisons:
+certificate-specific setup belongs only in the certified total. Mark an
+unmeasured baseline unavailable rather than dividing a setup-inclusive total
+by a warm solve. An uncertified result with identical requested outputs is an
+additional useful baseline when available.
+
 The default requested observable radius is 1% of a declared physical scale
 with an absolute floor near zero. Bound-evaluation roundoff initially receives
 1% of that radius after inverse/adjoint amplification. Measure achieved width

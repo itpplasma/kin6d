@@ -247,6 +247,35 @@ cold hardware cache. Other host activity remains uncontrolled.
 | 256 | 4.730 ms | 3.154 ms | 2.621 ms | yes |
 | 4096 | 42.229 ms | 40.360 ms | 39.814 ms | yes |
 
+The same cached Bernstein trials also establish the cost relative to solving
+alone. The certified total includes the state, nu sensitivity, both sets of
+96-cell bands, both goal intervals and prepared acceptance. These are warm CPU
+measurements with geometry preparation excluded from all columns.
+
+| Cells | Primal solve | Primal + tangent solves | Certified total | Extra over both solves | Total / primal | Total / both solves |
+|---|---|---|---|---|---|---|
+| 32 | 1.05 us | 2.40 us | 0.461 ms | 0.459 ms | 439x | 192x |
+| 64 | 2.01 us | 4.65 us | 0.767 ms | 0.762 ms | 382x | 165x |
+| 256 | 7.93 us | 17.98 us | 2.621 ms | 2.603 ms | 331x | 146x |
+| 4096 | 123.54 us | 281.85 us | 39.814 ms | 39.532 ms | 322x | 141x |
+
+Each time is the median of five trials; the two-solve baseline is the median
+of each trial's summed primal and tangent times. Differences and multipliers
+use those medians before display rounding. The 32-cell targets remain unmet.
+At 64 cells the primal range is 2.00--2.06 us, the two-solve range is
+4.56--4.71 us, and the certified-total range is 0.766--0.769 ms. Combined
+state/tangent certificate preparation takes a median 0.551 ms and band/goal
+postprocessing 0.210 ms. The tiny direct nodal solves make the relative
+overhead large even after the shared-basis optimization. The overhead
+multiplier decreases over this resolution sweep, while its absolute cost
+increases; this does not predict more difficult operators' behavior.
+
+The setup-inclusive certified first result remains 1.259 ms at 64 cells.
+A separately timed solve-only first-result initialization and an uncertified
+pipeline with identical band/goal sampling are unavailable in this ledger;
+no matched first-result overhead multiplier is established. Future reports
+retain these distinctions under the [performance policy](performance.md).
+
 At 64 cells the direct/cached first-result medians represent about a 2.27-fold
 local gain including preparation. Their five-sample ranges were
 2.848--2.971 ms and 1.255--1.262 ms respectively. Warm direct median was
