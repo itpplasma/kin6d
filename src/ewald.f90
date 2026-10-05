@@ -5,7 +5,7 @@
 !> background, tin-foil boundary, k = 2 pi n/L with n /= 0. The real-space sum
 !> runs over images with max-norm index <= real_cutoff after wrapping the
 !> separation into [-L/2,L/2]^3; the reciprocal sum over 0 < |n|_inf <=
-!> reciprocal_cutoff.
+!> reciprocal_cutoff. Selection minimizes a simple direct-sum cost model.
 !>
 !> Truncation bound: per unit |g|, the omitted real images and reciprocal
 !> vectors are bounded shell by shell (ewald_*_shell_bound leaves, derived in
@@ -31,23 +31,47 @@ module kin6d_ewald
         real(dp) :: potential_bound = 0.0_dp, force_bound = 0.0_dp
     end type
 contains
-    !> Smallest alpha (real_cutoff = 1) and then smallest reciprocal cutoff
-    !> whose truncation bounds are each <= tolerance/2 in units of |g|/L
-    !> (potential) and |g|/L^2 (force).
-    subroutine ewald_select(length, tolerance, p, ok)
+    !> For each real cutoff 1..3: the smallest alpha, then the smallest
+    !> reciprocal cutoff, whose truncation bounds are each <= tolerance/2 in
+    !> units of |g|/L (potential) and |g|/L^2 (force). Keeps the cheapest by
+    !> the pair-count cost model n(n-1)/2 (2 nr+1)^3 + 2 n modes for
+    !> `particles` charges (default 2).
+    subroutine ewald_select(length, tolerance, p, ok, particles)
         real(dp), intent(in) :: length, tolerance
         type(ewald_parameters_t), intent(out) :: p
         logical, intent(out) :: ok
-        real(dp) :: lo, hi, mid, potential, force
-        integer :: it
+        integer, intent(in), optional :: particles
+        type(ewald_parameters_t) :: trial
+        real(dp) :: cost, best
+        integer :: n, nr
         ok = .false.
         if (.not. ieee_is_finite(length) .or. .not. ieee_is_finite(tolerance)) return
         if (length <= 0 .or. tolerance <= 1.0e-15_dp .or. tolerance >= 1) return
-        p%length = length; p%tolerance = tolerance; p%real_cutoff = 1
+        n = 2
+        if (present(particles)) n = max(1, particles)
+        best = huge(1.0_dp)
+        do nr = 1, 3
+            call select_for_cutoff(length, tolerance, nr, trial)
+            cost = 5*real(n, dp)*(n - 1)/2*real(2*nr + 1, dp)**3 + &
+                   real(n, dp)*(real(2*trial%reciprocal_cutoff + 1, dp)**3 - 1)/2
+            if (cost < best .and. trial%potential_bound*length <= tolerance .and. &
+                trial%force_bound*length**2 <= tolerance) then
+                best = cost; p = trial; ok = .true.
+            end if
+        end do
+    end subroutine
+
+    subroutine select_for_cutoff(length, tolerance, nr, p)
+        real(dp), intent(in) :: length, tolerance
+        integer, intent(in) :: nr
+        type(ewald_parameters_t), intent(out) :: p
+        real(dp) :: lo, hi, mid, potential, force
+        integer :: it
+        p%length = length; p%tolerance = tolerance; p%real_cutoff = nr
         lo = 0.1_dp/length; hi = 50.0_dp/length
         do it = 1, 200
             mid = (lo + hi)/2
-            call real_tail(mid, length, p%real_cutoff, potential, force)
+            call real_tail(mid, length, nr, potential, force)
             if (potential*length <= tolerance/2 .and. &
                 force*length**2 <= tolerance/2) then
                 hi = mid
@@ -63,8 +87,6 @@ contains
                 force*length**2 <= tolerance/2) exit
         end do
         call ewald_truncation_bound(p)
-        ok = p%potential_bound*length <= tolerance .and. &
-             p%force_bound*length**2 <= tolerance
     end subroutine
 
     !> Recompute the truncation bounds (per unit |g|) of given parameters.

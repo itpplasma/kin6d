@@ -160,7 +160,7 @@ contains
         call ewald_select(l, 1e-5_dp, loose, ok)
         call check(ok, 'loose Ewald selection')
         call ewald_select(l, 1e-14_dp, tight, ok)
-        tight%alpha = 0.8_dp*tight%alpha; tight%real_cutoff = 3
+        tight%alpha = 0.9_dp*tight%alpha; tight%real_cutoff = tight%real_cutoff + 1
         tight%reciprocal_cutoff = tight%reciprocal_cutoff + 4
         call ewald_truncation_bound(tight)
         call check(tight%potential_bound*l < 1e-15_dp, 'reference truncation')
