@@ -38,7 +38,8 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/fortnum_status.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
-    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
+    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
+    ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
@@ -74,7 +75,14 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     set_source_files_properties(src/generated/kin6d_${quantum_family}_leaves.f90
         PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 endforeach()
-target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode)
+# Q1/Q1b partial-wave encounter: banded symmetric eigensolver from LAPACK,
+# the external numerical dependency FortNum already declares.
+find_package(LAPACK REQUIRED)
+target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
+    src/radial_dvr.f90 src/coulomb_encounter.f90 src/coulomb_kepler.f90)
+set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
 add_executable(kin6d_demo app/kin6d_demo.f90)
 target_link_libraries(kin6d_demo PRIVATE kin6d fortplot)
@@ -134,6 +142,9 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     target_link_libraries(test_${quantum_family} PRIVATE kin6d)
     add_test(NAME ${quantum_family}_oracles COMMAND test_${quantum_family})
 endforeach()
+add_executable(test_coulomb_encounter test/test_coulomb_encounter.f90)
+target_link_libraries(test_coulomb_encounter PRIVATE kin6d)
+add_test(NAME coulomb_encounter_oracles COMMAND test_coulomb_encounter)
 add_executable(test_quantum_cutoff test/test_quantum_cutoff.f90)
 target_link_libraries(test_quantum_cutoff PRIVATE kin6d)
 add_test(NAME quantum_cutoff_oracles COMMAND test_quantum_cutoff)
@@ -173,6 +184,12 @@ if(KIN6D_FORTSYM_BUILD)
         target_link_libraries(gen_${generator} PRIVATE
             ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
     endforeach()
+    add_executable(gen_coulomb_encounter gen/kin6d_symbolic_physics.f90
+        gen/gen_coulomb_encounter.f90)
+    target_include_directories(gen_coulomb_encounter PRIVATE
+        ${KIN6D_FORTSYM_BUILD}/include)
+    target_link_libraries(gen_coulomb_encounter PRIVATE
+        ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
 endif()
 # Explicit performance audit; not part of the ordinary correctness gate.
 add_executable(benchmark_streaming app/benchmark_streaming.f90)
