@@ -19,6 +19,22 @@ turbulence, edge physics, neutrals, walls, heating, space plasmas, diagnostics
 and optimization are configurations, consumers or reductions of shared
 operators rather than separate named-code modes.
 
+## Non-negotiable principles
+
+KIN6D's broad capability catalogue is optional scope. The following are not:
+**one mathematical source of truth, differentiability, controlled/certified
+error, structure preservation, independent verification, reproducibility and
+performance at controlled accuracy**.
+
+Every production vertical slice must preserve these contracts at the level
+appropriate to that slice. In particular, differentiability and error control
+are not later features to bolt on after the physics works. Smooth production
+operators are designed with primal/JVP/VJP semantics from one definition, and
+numerical answers carry explicit error/status information with numerical,
+model, input/reconstruction and stochastic contributions kept distinct.
+
+See the canonical statement in [DESIGN.md](DESIGN.md#non-negotiable-scientific-principles).
+
 ## Current status
 
 The first executable slice is implemented: a CPU 1X1V prescribed-field
