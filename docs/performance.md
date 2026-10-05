@@ -285,6 +285,24 @@ Benchmark specialized/banded batched solves before generic sparse machinery.
 Fuse low-order moment/conservation reductions only when doing so reduces total
 traffic without causing register spill.
 
+## Sparse reaction, front and radiation execution
+
+Large chemistry/internal-state networks should exploit sparse reaction graphs,
+batched generated rates/JVP/VJP and reused local factorizations. Performance is
+measured per accepted macro step/steady solve, not reactions per second alone.
+
+Shock/front and AMR workloads measure cell-update throughput together with
+refinement/repartition overhead and conserved-flux error. Radiation diffusion/
+moment blocks reuse generic tensor/sparse solvers; angular or photon-MC paths
+measure transport efficiency plus variance/error target.
+
+## Rarefied/MD execution
+
+DSMC/MCC paths track collision-search/binning cost, accepted events, migration
+and statistical efficiency. Direct N-body/MD references use pairwise/tree/
+mesh/tiled algorithms appropriate to the declared pair model and size; the
+logical interaction matrix is never stored by default.
+
 ## Particle/PIC/PIF execution
 
 Particle kernels use SoA/AoSoA storage and large batches.
@@ -421,6 +439,10 @@ owning layer:
 - FortAD: derivative transformations;
 - FortIO: I/O;
 - KIN6D: state layout, physics composition, global scheduling.
+
+New generic AMR, shock-capturing, DSMC/MD, radiation-transport or sparse
+reaction kernels belong in the numerical library that actually owns them once
+their reusable interface is demonstrated.
 
 Retain a focused reproducer and recheck the original KIN6D case after upstream
 promotion.

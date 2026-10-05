@@ -92,8 +92,9 @@ again as an explicit kinetic stress.
 
 External equilibria are first-class inputs before every solver is reproduced
 internally. Adapters may support axisymmetric G-EQDSK/EFIT/CLISTE/CHEASE and
-3D VMEC/VMEC++/DESC/GVEC/SPEC candidates, with explicit units, signs,
-topology and provenance.
+3D VMEC/VMEC++/DESC/GVEC/SPEC/SPECTRE candidates, with explicit units, signs,
+topology and provenance. These are interchange representations or named-model
+candidates, not the ontology of equilibrium.
 
 Internal progression is:
 
@@ -104,14 +105,23 @@ Internal progression is:
 \rightarrow
 {\rm free\ boundary}
 \rightarrow
-{\rm 3D\ equilibrium}
+{\rm nested\ 3D\ specialization\ and\ general\ physical\!\!\!-space\ 3D}
+\rightarrow
+{\rm resistive/XMHD/relaxed\ stationary\ states}
 \rightarrow
 {\rm flowing/anisotropic/kinetic\ equilibrium}.
 \]
 
+Nested flux surfaces are exploited where they exist but are not required by the
+general physical-space model. HINT/PIES-like nonnested full-pressure methods and
+SPEC/SPECTRE relaxed-region models are comparators with different physical
+constraints, not alternate file readers for one identical problem.
+
 An imported equilibrium is not certified merely because the producer reports a
-small force residual. KIN6D may eventually certify an external candidate
-against its stated continuous equilibrium model.
+small force residual. KIN6D may certify an external candidate against its stated
+continuous equilibrium model and, once the native model exists, re-solve it.
+Distinct stationary solutions remain distinct equilibria. TIAGO, not this model
+layer, owns reconstruction/posterior weights over several candidates.
 
 A kinetic equilibrium is broader than a Maxwellian or ideal-MHD state. The
 important target is
@@ -218,6 +228,19 @@ The field reduction is a physical model choice, not merely a preconditioner.
 Conversely, reduced field equations may be used as a preconditioner while the
 target residual remains full Maxwell.
 
+## Reacting, weakly ionized and compressible models
+
+The same model family covers low-temperature/industrial and atmospheric plasma
+without a separate application architecture. Electron closure can progress
+from local-field/electron-energy through reduced Boltzmann/EEDF to FK, while
+heavy species progress from reaction-diffusion through multispecies
+compressible fluid to rarefied kinetic/DSMC-like transport.
+
+Large sparse chemistry/internal-state networks, dielectric/electrode boundaries
+and radiation are orthogonal axes. See
+[reacting-partially-ionized.md](reacting-partially-ionized.md) and
+[radiation.md](radiation.md).
+
 ## Edge and open-system models
 
 The same model axes extend from core through SOL/divertor to wall. Cross-field
@@ -238,6 +261,43 @@ pickup ions, charge exchange, photoionization and surfaces.
 Useful mixed configurations include FK ions + fluid electrons, MHD solar wind
 + kinetic pickup ions + kinetic neutral H, and local FK reconnection embedded in
 a larger reduced model.
+
+## Stability as a common consumer
+
+Stability is orthogonal to the physical model. A selected MHD, gyrofluid,
+gyromoment, DK, GK or FK state may expose a linearized generalized eigenproblem,
+forced response, nonmodal growth, continuation/bifurcation and nonlinear
+stability analysis when its equations support them.
+
+The linearized action is the same \(R_Uv\) used by Newton and tangents; the
+adjoint action \(R_U^\dagger v\) enables resolvent/optimal-growth analysis.
+See [stability.md](stability.md).
+
+MHD targets include kink, interchange/ballooning, tearing, RWM and Alfvén
+continua/eigenmodes, with NTM and other finite-amplitude branches treated as
+nonlinear models rather than labels on a linear eigenvalue. Reduced/kinetic
+models similarly cover their supported drift/ITG/TEM/ETG/KBM/MTM and
+space-plasma instabilities.
+
+## Macro transport and multiscale modelling
+
+Transport dimensionality and closure fidelity are independent of the
+microphysics model. A 1D/1.5D ASTRA-like profile evolution, 2D/3D global
+transport and direct full-dimensional kinetic evolution all belong in one
+hierarchy.
+
+The closure-provider contract may return fluxes, Onsager matrices, local
+coefficients, nonlocal kernels, linear mode data, electromagnetic
+cross-spectra or direct nonlinear microphysics fluxes. KAMEL/QL-Balance is an
+important internal precedent for response -> quasilinear coefficient ->
+profile evolution.
+
+Global orbit transport supplies an intermediate level between local radial
+coefficients and global turbulence. It may use GORILLA-like characteristics to
+construct 2D/3D transition/nonlocal kernels and may consume turbulence
+cross-spectra rather than only scalar diffusion.
+
+See [transport-multiscale.md](transport-multiscale.md).
 
 ## Controlled model comparisons
 
@@ -276,6 +336,14 @@ Refinement may then be ranked by
 
 This becomes a guarantee only after the corresponding stability and remainder
 bounds exist.
+
+## Complete catalogue versus implemented family
+
+The exhaustive classical-plasma design envelope is maintained in
+[capability-catalogue.md](capability-catalogue.md). It is intentionally broader
+than the active implementation path. Numerical options are catalogued in
+[numerical-methods.md](numerical-methods.md). Neither document is a backlog;
+the roadmap chooses vertical slices by value and leverage.
 
 ## Admission discipline
 

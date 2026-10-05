@@ -17,11 +17,11 @@ physical domains. Field-line maps must terminate correctly at material walls.
 |---|---|
 | Plasma | Fluid/Braginskii, PK, DK, GK, FK; compatible bulk models |
 | Cross-field transport | Prescribed flux; diffusive/convective closure; resolved fluctuations |
-| Neutrals | Fixed, diffusive/moment fluid, deterministic kinetic, Monte Carlo backend |
-| Reactions | Effective rates, collisional-radiative states, distribution-aware rates, differential kernels |
-| Radiation | Declared optically thin loss; resolved emissivity; later photon transport |
+| Neutrals/gas | Fixed, reaction-diffusion, multispecies/compressible fluid, deterministic kinetic, DSMC/Monte Carlo |
+| Reactions | Effective/EEDF rates, collisional-radiative/internal-state networks, distribution-aware rates, differential kernels |
+| Radiation | Optically thin; opacity/escape; grey/multigroup/moment transport; angular/provider path |
 | Sheath | Analytic/kinetic boundary closure; locally resolved FK/Poisson layer |
-| Surface | Absorption/reflection; recycling/pumping; sputtering/emission; evolving material |
+| Surface | Conductor/dielectric; surface charge; absorption/reflection; recycling/pumping; sputtering/emission; reactive coverages |
 
 A prescribed turbulent transport closure and resolved turbulence must have a
 defined scale partition; adding both indiscriminately double-counts transport.
@@ -33,7 +33,9 @@ a derived interface and a reduction bound, not merely a changed array layout.
 ## Neutral transport and practical references
 
 Neutral atoms and molecules are ordinary populations with zero charge and
-appropriate mass/internal states. A deterministic kinetic neutral equation
+appropriate mass/internal states. The same hierarchy also supports reacting
+heavy gas through reaction-diffusion and multispecies compressible flow before
+a kinetic/DSMC description is needed. A deterministic kinetic neutral equation
 uses streaming plus elastic, charge-exchange and reaction operators. It shares
 physical geometry, reconstruction, sources and output with charged species;
 it does not contain a Lorentz force.
@@ -130,8 +132,9 @@ measure as the plasma. The surface state can initially be a material label
 and fixed temperature; inventory, composition and temperature evolve later.
 
 Introduce absorption, specular/diffuse reflection, neutralization, recycling,
-pumping, sputtering, secondary/photoelectron emission and desorption only
-when a benchmark requires them. A sputtering yield depends on incident energy
+pumping, sputtering, secondary/thermionic/field/photoelectron emission,
+dielectric surface charge, reactive coverages, deposition/etching and
+desorption only when a benchmark requires them. A sputtering yield depends on incident energy
 and angle and must be paired with a normalized emitted-particle distribution.
 Emitted atoms become ordinary neutral species that can ionize and return to
 the wall. The reaction/transport code has no special tungsten-only branch.
@@ -168,6 +171,10 @@ a reduced transport/neutral coupling case, and finally a physical-device
 exhaust comparison. Each increment retains earlier limit curves and their
 whole enclosures in generated plots; statistical error bars use a different
 legend and cannot substitute for guaranteed bands.
+
+The broader weakly/partially ionized formulation is specified in
+[reacting-partially-ionized.md](reacting-partially-ionized.md), and radiation
+fidelity in [radiation.md](radiation.md).
 
 SOLPS-ITER, EMC3-EIRENE, SOLEDGE3X-EIRENE, GBS, GRILLIX and BOUT++/Hermes
 are planned references for their overlapping fluid/exhaust models. XGC,

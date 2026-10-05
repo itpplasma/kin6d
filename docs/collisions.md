@@ -55,6 +55,7 @@ need their actual linearization or bracket, not blanket adjoint flags.
 | Matched screened/hard | Defined overlap-subtracted closure | Must be derived and proved | Higher correlations still closed | Screening, scattering, overlap, and closure analysis |
 | Mean-force closure | Effective equilibrium correlations | Model-specific equilibrium and balances | Nonequilibrium higher correlations approximated | Pair data and applicability estimates |
 | Truncated BBGKY | Explicit low-order correlations in a small reference problem | Depends on truncation and boundary model | Higher hierarchy terms | High-dimensional reference and remainder theorem |
+| Direct classical N-body/MD | Resolve explicit pair interactions for small strongly coupled reference systems | Microscopic Hamiltonian invariants for the declared pair potential/integrator | Quantum effects; impractical for large production kinetic systems | Pairwise/long-range force accuracy, finite-size/statistical connection to continuum observables |
 
 Krook means `C=-nu(f-F_target)` with a prescribed target. Matching a target's
 normalization does not conserve number for arbitrary `f`; the relevant moment

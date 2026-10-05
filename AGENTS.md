@@ -5,9 +5,23 @@
 Read README.md, DESIGN.md and ROADMAP.md first. Then read the specification
 that owns the proposed change. In particular:
 
+- docs/capability-catalogue.md before broadening project scope or adding a new
+  application family;
+- docs/numerical-methods.md before introducing a new discretization/solver
+  family outside the primary tensor/FEEC path;
+- docs/reacting-partially-ionized.md before low-temperature, reacting-gas,
+  EEDF, dielectric/electrode or large-chemistry work;
+- docs/radiation.md before adding opacity, diffusion/moment or photon transport;
+- docs/software-engineering.md before nontrivial architecture/refactoring work;
+- docs/equilibria-inference.md before equilibrium/import/reconstruction work;
+- docs/interface-reproducibility.md before configuration, I/O, UX or cluster-facing work;
 - docs/representations.md for Eulerian/semi-Lagrangian/particle/blob,
   full-f/delta-f, PIC/PIF and deterministic/QMC/MC choices;
 - docs/student-laboratory.md for early priorities;
+- docs/stability.md before adding eigenmodes, forced response, nonmodal growth,
+  continuation, bifurcation or nonlinear stability;
+- docs/transport-multiscale.md before adding macro transport, closure providers,
+  integrated modelling or multiscale coupling;
 - docs/model-family.md and docs/species-models.md for MHD/reduced/hybrid models;
 - docs/moment-models.md for gyrofluid/Landau-fluid/gyromoments;
 - docs/collisions.md for collision operators and thermodynamic structure;
@@ -20,6 +34,61 @@ that owns the proposed change. In particular:
 The first prescribed-field 1X1V slice already runs. Read
 docs/first-example.md before changing it or claiming broader evidence.
 
+## Non-negotiable scientific principles
+
+Read and enforce
+[DESIGN.md#non-negotiable-scientific-principles](DESIGN.md#non-negotiable-scientific-principles).
+These are not catalogue scope and are not waived by YAGNI:
+
+- one authoritative mathematical/physical definition;
+- differentiability by construction for smooth production operators, with
+  primal/JVP/VJP consistency and equation-level implicit derivatives;
+- explicit numerical error control and a certification path, with the fast
+  solver treated as untrusted;
+- separation of numerical, model, input/reconstruction and stochastic
+  uncertainty;
+- preservation or explicit accounting of physical structure/invariants;
+- independent verification;
+- reproducible provenance;
+- performance measured at controlled observable accuracy/certificate width.
+
+A vertical slice may implement the smallest useful form of each principle, but
+must not introduce architecture that makes the stronger form impossible.
+Do not defer derivatives, error semantics or provenance as cleanup work after
+the scientific implementation.
+
+## Software-engineering rules
+
+The full policy is [docs/software-engineering.md](docs/software-engineering.md).
+These rules are hard constraints:
+
+- **KISS:** implement the simplest complete design for the current vertical
+  slice. Concrete code beats a framework when one consumer suffices.
+- **YAGNI:** catalogued future scope does not justify production code, config
+  knobs, extension hooks or abstractions. Add them only when the current
+  prioritized slice needs them.
+- **DRY:** one authoritative source of scientific/configuration knowledge.
+  Production physics, conventions and defaults are not copied. Deliberate
+  exceptions are independent oracles and reference/performance implementations;
+  prefer generated specializations from one mathematical source.
+- **SRP/separation:** physics, discretization, solver orchestration, hardware
+  schedule, configuration, adapters, I/O, inference and UI have distinct
+  reasons to change.
+- **Dependency inversion:** replaceable details depend on KIN6D policy/contracts,
+  never the reverse. Physics modules do not import PETSc/libneo/FortIO/CUDA/
+  web/scheduler internals.
+- **Interface segregation:** use small capability contracts; no god model/field/
+  backend interface with dummy optional methods.
+- Prefer composition over inheritance and explicit/reentrant state over global
+  mutable state.
+- Extract a reusable abstraction at the latest responsible moment after real
+  implementations/consumers reveal the seam. Do not create architecture
+  ceremony merely to resemble a diagram.
+- Internal APIs are free to change while the project is young; compatibility
+  is owed only to real consumers or explicitly stabilized contracts.
+- Measure before optimizing. Keep scientific definitions independent of
+  performance specializations and optimize the owning layer.
+
 ## Architectural rules
 
 - Keep **one mathematical engine**. Do not add named-code modes such as
@@ -28,9 +97,18 @@ docs/first-example.md before changing it or claiming broader evidence.
 - Physics model, distribution form, numerical carrier, particle-field coupling,
   sampling strategy, collision realization, field model and active/test/
   reservoir role are separate axes. Reject unsupported combinations explicitly.
-- Direct steady kinetic science is the primary research spine. Early transients
-  and turbulence are required demonstrations and verification branches, not the
-  architectural center.
+- Direct steady kinetic science is the current primary research spine. Early
+  transients and turbulence are required demonstrations and verification
+  branches, not the architectural center. The complete capability catalogue is
+  not a chronological backlog: reprioritize vertical slices by scientific
+  value, cross-domain reuse, unlocks, validation, cost/risk and
+  performance/certification leverage.
+- Stability/response is an analysis-consumer axis available to every compatible
+  MHD/fluid/gyrofluid/DK/GK/FK model. Do not create separate stability physics.
+- Macro transport dimensionality (0D/1D/1.5D/2D/3D) and closure fidelity are
+  independent axes. A transport closure may return coefficients, fluxes,
+  nonlocal kernels or spectral/cross-spectral data; do not force every closure
+  into scalar D/chi/V.
 - Structure preservation is the first principle. Semi-Lagrangian,
   characteristic, Eulerian, PIC/PIF and blob methods are realizations selected
   by the problem, not project identities.
@@ -43,8 +121,25 @@ docs/first-example.md before changing it or claiming broader evidence.
   target model solved.
 - Physical vectors are Cartesian. Charts and momentum frames are independent.
   Do not require global toroidal angle, nested surfaces or one geometry class.
+  Imported EQDSK/VMEC/SPECTRE/etc. states are candidates/adapters, not core
+  equilibrium types. When native equilibrium physics exists, support residual
+  checking and re-solve/certification in that model.
+- Distinct stationary solutions are distinct equilibria. Record their
+  provenance/continuation histories; do not add a speculative branch-mixture
+  framework to KIN6D. TIAGO owns any probabilistic mixture over fitted states.
 - Bulk MHD aggregates explicitly owned populations. It is not a per-species
   fluid switch. Prevent double counting of charge/current/pressure/energy.
+- Weakly/partially ionized and industrial plasmas reuse the common species,
+  reaction, neutral, field, radiation and surface contracts. Do not create an
+  industrial mode, streamer code or application-specific chemistry engine.
+- Radiation is native through useful reduced transport models
+  (optically-thin/opacity/diffusion/multigroup/moments/angular transport);
+  highest-fidelity line-by-line non-LTE transfer may remain an external
+  provider. Do not exclude all radiation hydrodynamics merely because that
+  highest rung is external.
+- Classical strong-correlation work may use mean-force or small direct N-body/
+  MD references; fully quantum dense-matter physics, QED and GR stay outside
+  the core unless a narrow reusable interface is justified.
 
 ## Mathematics, derivatives and certification
 
@@ -81,7 +176,9 @@ docs/first-example.md before changing it or claiming broader evidence.
   and certification-failed. State the exact claim.
 - A numerical enclosure proves the named model, not physical reality. Model
   reduction, physical-data uncertainty and stochastic sampling need separate
-  bounds/status.
+  bounds/status. TIAGO reconstruction/measurement/calibration posterior
+  uncertainty is another orthogonal layer and is not folded into a KIN6D
+  deterministic certificate by default.
 - Goal-oriented indicators are not rigorous remainders until the stability,
   lifting and nonlinear remainder hypotheses are checked.
 
@@ -91,6 +188,11 @@ docs/first-example.md before changing it or claiming broader evidence.
   vector count before implementation.
 - Prefer tensor-product mapped patches, sum factorization, partial assembly,
   matrix-free actions and many-RHS batching where the model permits them.
+  This is a preferred path, not a universal prohibition: shock/front problems
+  may require finite-volume/entropy-stable DG/WENO-like methods and AMR;
+  rarefied gases may require DSMC; strongly coupled references may require MD.
+  Add such methods only for a concrete model and keep their generic machinery
+  in the owning numerical library.
 - Never materialize a global kinetic Jacobian or logical pairwise matrix merely
   because the formula contains two indices. Use tiled map/reduce or sparse
   interaction structure.
@@ -134,14 +236,23 @@ Implement the smallest complete case. Do not build speculative framework
 hierarchies in advance.
 
 Important long-range branches include collisions, gyrofluid/gyromoments,
-MHD/kinetic-MHD, PIC/PIF/blobs, real-device DK/GK/FK, edge/neutrals/walls,
-RF/NBI/reactions, space plasmas, diagnostics and optimization. Planned scope is
-not implemented functionality.
+stability/bifurcation, 0D--3D integrated transport and true multiscale
+micro/macro coupling, MHD/kinetic-MHD, PIC/PIF/blobs, real-device DK/GK/FK,
+reacting/partially-ionized gas and EEDF models, edge/neutrals/walls,
+dielectrics/electrodes/reactive surfaces, reduced radiation transport,
+RF/wave-kinetic/NBI/reactions, compressible/shock-capable plasma,
+Solar-System/natural and industrial/low-temperature plasmas, diagnostics and
+optimization. Planned scope is not implemented functionality.
 
 ## Repository and dependency policy
 
-- Scientific/application code, generators and rigorous checker are Fortran.
-  No mandatory Python layer.
+- Scientific/application code, generators, configuration semantics and the
+  rigorous checker are Fortran. No mandatory Python layer. Optional
+  Python/TypeScript UX must consume the same schema/result contract rather than
+  redefining scientific semantics.
+- Fortran namelist is the canonical editable configuration syntax. Scientific
+  results use a NetCDF-4-compatible HDF5 subset through FortIO and must embed
+  literal/resolved configuration plus provenance.
 - FortFEM owns generic spatial mathematics; FortNum generic numerics and
   verified arithmetic; FortSparse sparse kernels; FortSym symbolic generation;
   FortAD derivative tooling; FortIO/FortPlot/FortArray their respective generic
@@ -152,6 +263,25 @@ not implemented functionality.
   feature, add a focused independent reproducer there, repair it there, verify
   it, push the owning main as allowed, pin/recheck KIN6D. Do not keep permanent
   consumer workarounds.
+- libneo is the preferred shared implementation for mature plasma-code
+  interchange/convention and reusable field utilities when it already owns the
+  capability, but KIN6D depends on it only through a narrow adapter/canonical
+  physical-data boundary. No KIN6D physics module may depend directly on
+  historical libneo internals.
+- **Boy-scout rule for libneo:** as soon as a KIN6D milestone starts depending
+  on a libneo path, inspect the touched path. Generic correctness, convention,
+  interpolation, reentrancy/global-state, derivative, performance or reusable
+  error-estimation defects found by that use case are fixed and tested in
+  libneo first so SIMPLE/MEPHIT/NEO-2/TIAGO and other consumers can benefit.
+  Do not build a cleaner private duplicate in KIN6D.
+- Improve only the part that the real consumer exercises. Preserve compatible
+  entry points or provide bounded migration shims for existing consumers;
+  KIN6D development is not a license for a wholesale libneo rewrite.
+- Generic spatial field derivatives/JVPs, interpolation diagnostics and
+  reusable enclosure/error capabilities belong in libneo when they are useful
+  to multiple consumers. Physical-model residuals, equilibrium parameter
+  adjoints, validated stationary solves and model-error bounds remain KIN6D
+  responsibilities.
 - Preserve unrelated edits. One controller owns integration/promotion.
 - Never touch protected faepop* or faepcr* hosts without an explicit user
   request naming the host.
