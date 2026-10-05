@@ -92,8 +92,9 @@ again as an explicit kinetic stress.
 
 External equilibria are first-class inputs before every solver is reproduced
 internally. Adapters may support axisymmetric G-EQDSK/EFIT/CLISTE/CHEASE and
-3D VMEC/VMEC++/DESC/GVEC/SPEC candidates, with explicit units, signs,
-topology and provenance.
+3D VMEC/VMEC++/DESC/GVEC/SPEC/SPECTRE candidates, with explicit units, signs,
+topology and provenance. These are interchange representations or named-model
+candidates, not the ontology of equilibrium.
 
 Internal progression is:
 
@@ -104,14 +105,23 @@ Internal progression is:
 \rightarrow
 {\rm free\ boundary}
 \rightarrow
-{\rm 3D\ equilibrium}
+{\rm nested\ 3D\ specialization\ and\ general\ physical\!\!\!-space\ 3D}
+\rightarrow
+{\rm resistive/XMHD/relaxed\ stationary\ states}
 \rightarrow
 {\rm flowing/anisotropic/kinetic\ equilibrium}.
 \]
 
+Nested flux surfaces are exploited where they exist but are not required by the
+general physical-space model. HINT/PIES-like nonnested full-pressure methods and
+SPEC/SPECTRE relaxed-region models are comparators with different physical
+constraints, not alternate file readers for one identical problem.
+
 An imported equilibrium is not certified merely because the producer reports a
-small force residual. KIN6D may eventually certify an external candidate
-against its stated continuous equilibrium model.
+small force residual. KIN6D may certify an external candidate against its stated
+continuous equilibrium model and, once the native model exists, re-solve it.
+Distinct stationary solutions remain distinct equilibria. TIAGO, not this model
+layer, owns reconstruction/posterior weights over several candidates.
 
 A kinetic equilibrium is broader than a Maxwellian or ideal-MHD state. The
 important target is
