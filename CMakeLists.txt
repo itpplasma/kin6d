@@ -38,7 +38,10 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/fortnum_status.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
-    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
+    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
+    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft8_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft.f90
+    ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
@@ -46,7 +49,8 @@ set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
     src/generated/kin6d_species_leaves.f90 src/species.f90
-    src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90 src/nbody.f90
+    src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90
+    src/generated/kin6d_ocp_leaves.f90 src/pme.f90 src/nbody.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
     src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
@@ -61,6 +65,7 @@ add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
     src/generated/kin6d_cloud_leaves.f90 src/microscopic_cloud.f90)
 set_source_files_properties(
     src/generated/kin6d_species_leaves.f90 src/generated/kin6d_coulomb_leaves.f90
+    src/generated/kin6d_ocp_leaves.f90
     src/generated/kin6d_poisson_leaves.f90 src/generated/kin6d_fp_leaves.f90
     src/generated/kin6d_transport_leaves.f90 src/generated/kin6d_streaming_leaves.f90
     src/generated/kin6d_streaming_moments_leaves.f90
@@ -131,6 +136,9 @@ endforeach()
 add_executable(test_nbody test/test_nbody.f90)
 target_link_libraries(test_nbody PRIVATE kin6d)
 add_test(NAME nbody_coulomb_species_oracles COMMAND test_nbody)
+add_executable(test_pme test/test_pme.f90)
+target_link_libraries(test_pme PRIVATE kin6d)
+add_test(NAME pme_direct_ewald_oracles COMMAND test_pme)
 add_executable(test_cloud test/test_cloud.f90)
 target_link_libraries(test_cloud PRIVATE kin6d)
 add_test(NAME microscopic_cloud_oracles COMMAND test_cloud)
@@ -180,7 +188,7 @@ if(KIN6D_FORTSYM_BUILD)
     foreach(generator laboratory poisson fp transport streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
-            quantum_reference_gallery classical_pair coulomb species)
+            quantum_reference_gallery classical_pair coulomb species ocp)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
