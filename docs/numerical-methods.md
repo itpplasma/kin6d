@@ -263,6 +263,22 @@ Radiation uses the same generic numerical families plus, where appropriate,
 
 See [radiation.md](radiation.md).
 
+## Unified local/temporal adaptive selection
+
+All numerical families in this catalogue are candidates in an
+observable-driven adaptive calculation. Refinement may change \(h,p,\Delta t\),
+velocity/harmonic order, particle/sample count, representation, physical model
+or microprovider fidelity locally in space and time.
+
+The controller compares estimated error reduction with incremental cost.
+Spatial AMR, event-local microscopic/quantum work, multirate subcycling,
+multifidelity UQ and sparse rich-model samples therefore share one planning
+contract even though their mathematical estimators differ.
+
+A generic scheduler is extracted only after several concrete vertical slices
+demonstrate stable promotion/demotion patterns. See
+[adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
+
 ## Performance selection
 
 Every implemented method keeps a small independent reference and a realistic

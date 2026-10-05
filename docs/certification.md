@@ -333,6 +333,34 @@ nonlinear remainder/stability argument.
 
 ## Goal-oriented refinement and model defects
 
+Model error is treated as deterministic structure first, not automatically as a
+random variable. For a cheap model (R_0(U_0)=0) and richer model (R_1),
+lift (U_0) into the richer state space and evaluate
+
+[
+d_{0	o1}=R_1(LU_0).
+]
+
+With richer-model adjoint (R_{1,U}^{dagger}lambda=Q_U^dagger),
+
+[
+-lambda^dagger d_{0	o1}
+]
+
+is the leading observable-specific model correction. A verified stability
+constant plus nonlinear/reduction remainder can convert this into a rigorous
+model-error bound.
+
+When an asymptotic derivation provides a small parameter (epsilon), retain
+the actual truncation formula and, where possible, a bound such as
+
+[
+|mathcal R_{p+1}|le Cepsilon^{p+1}.
+]
+
+Sparse richer-model solves may calibrate constants or detect breakdown without
+turning the whole domain into the richer model.
+
 If a residual defect decomposes as
 
 \[
@@ -417,17 +445,35 @@ Deterministic QMC may instead use a discrepancy/variation bound when those
 quantities can be rigorously established. Randomized QMC carries both
 low-discrepancy structure and statistical uncertainty.
 
-## Physical/model uncertainty
+## Physical/model uncertainty and UQ ledger
 
-Keep separate fields in result metadata for:
+Keep separate fields in result metadata for, where applicable:
 
-1. numerical error within the model;
-2. model-reduction/comparison error;
-3. physical-data/input uncertainty;
-4. stochastic sampling uncertainty.
+1. spatial/velocity/angular discretization error;
+2. time-integration error;
+3. nonlinear/linear solver and arithmetic error;
+4. model-reduction error;
+5. model-interface/promotion/reconstruction error;
+6. omitted-correlation error;
+7. classical/quantum reduction error;
+8. surrogate/interpolation/cache error;
+9. physical-data/input uncertainty;
+10. reconstruction/diagnostic posterior uncertainty;
+11. stochastic sampling uncertainty.
 
-Intervals can be combined only when a proved mapping shows they refer to the
-same physical quantity and their dependence has been handled correctly.
+The preferred order for unresolved systematic/model discrepancy is:
+
+1. rigorous analytical/asymptotic remainder;
+2. a posteriori rich-model defect with a stability/remainder estimate;
+3. enclosed sparse richer-model comparison;
+4. empirical cross-model envelope with explicit non-rigorous status;
+5. probabilistic discrepancy only when it is an explicitly chosen model of
+   epistemic uncertainty.
+
+Intervals, confidence statements and posterior distributions can be combined
+only when a justified mapping/dependence model shows they refer to the same
+physical quantity. Do not root-sum-square heterogeneous uncertainties by
+default.
 
 ## Formal verification
 

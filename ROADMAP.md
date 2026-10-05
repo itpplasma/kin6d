@@ -385,6 +385,92 @@ that boundary when QED effects are negligible.
 
 See [quantum-plasma.md](docs/quantum-plasma.md).
 
+## AM0 — adaptive multiscale, multifidelity and UQ controller (cross-cutting)
+
+The long-range controller chooses the cheapest **local-in-space-and-time**
+combination of numerical and physical fidelity that closes the requested
+observable error budget.
+
+The candidate refinement set eventually includes
+
+\[
+\{h,p,\Delta t,\text{velocity/harmonic order},N_p,
+\text{solver/precision},
+\text{MHD/GK/FK},
+\text{collision/correlation order},
+\text{classical/quantum fidelity},
+\text{neutral/radiation/chemistry fidelity},
+\text{microprovider sample},
+\text{surrogate refresh}\}.
+\]
+
+A rich model \(R_1\) evaluated on a lifted cheap-model state \(U_0\) supplies a
+model defect \(d=R_1(LU_0)\). Adjoint weighting estimates its effect on the
+requested observable,
+
+\[
+\eta\simeq-\lambda^\dagger d.
+\]
+
+Analytical asymptotic remainder bounds, validated model-defect estimates and
+sparse richer-model computations are preferred over inventing a random model
+error. Probabilistic discrepancy is used only with an explicit stochastic
+interpretation.
+
+Adaptation is not merely spatial AMR. It may be local in space, time,
+phase-space, species, energy, correlation order, frequency/angle, reaction
+state and uncertainty/sample space.
+
+Examples include:
+
+- MHD globally with a transient local GK/FK region;
+- \(f_1+g_2\) globally with \(g_3\) activated only where its observable defect
+  matters;
+- classical Maxwell--Lorentz dynamics with short quantum-diffraction
+  microproblems for rare close encounters;
+- fluid neutrals with a kinetic rarefied boundary layer;
+- grey radiation with transient multigroup/angular refinement;
+- sparse expensive turbulence/FK/N-body/Wigner/QMC microproblems requested by
+  macro adjoint indicators.
+
+Quantum pair promotion is appropriate for local diffraction/scattering only
+when its assumptions hold. Degeneracy/exchange generally requires promotion of
+a region/species/many-body model, not just one close pair. Demotion requires an
+explicit information-loss/decoherence/coarse-graining rule.
+
+Micro/macro coupling uses lift/projection maps, conservative exchange,
+interface-defect estimates and local temporal subcycling/multirate integration.
+If locality or scale separation fails, enlarge the rich region or promote the
+global target model.
+
+The controller's conceptual greedy score is
+
+\[
+k^\star=\arg\max_k \frac{\eta_k}{C_k},
+\]
+
+where \(\eta_k\) is expected observable-error reduction and \(C_k\) incremental
+cost. Recompute after each significant promotion because refinement effects are
+not independent.
+
+UQ is multifidelity as well: cheap levels receive many samples and expensive
+corrections few samples using control-variate/MLMC/multifidelity patterns, while
+deterministic error bounds remain distinct from statistical variance.
+
+Development sequence:
+
+1. \(h/p/\Delta t\) observable-driven refinement;
+2. one cheap/rich physical-model defect with a validated remainder;
+3. one sparse microprovider invoked by an adjoint indicator;
+4. one local-in-time promotion/demotion case;
+5. one spatial model patch with conservative transfer;
+6. one \(g_2\to g_3\) correlation-order indicator;
+7. one classical close encounter promoted to a quantum microproblem;
+8. one multifidelity UQ/control-variate example;
+9. only then extract a reusable generic scheduler.
+
+See [adaptive-multiscale-uq.md](docs/adaptive-multiscale-uq.md).
+
 ## R4 — 0X3V collision laboratory
 
 Introduce the future velocity representation in the smallest domain. Progress:
@@ -714,6 +800,10 @@ per cost.
 
 Automatic model switching requires actual reduction/interface remainder
 bounds; until then it is an experimental heuristic with explicit status.
+The long-range form is local and temporal rather than one global model choice:
+the final result records the space-time/phase-space model map and the dominant
+remaining error/UQ contributions. See
+[adaptive-multiscale-uq.md](docs/adaptive-multiscale-uq.md).
 
 ## Permanent numerical workstreams
 

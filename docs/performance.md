@@ -52,6 +52,36 @@ For stochastic cases, include the sampling/confidence target explicitly.
 A faster kernel that increases nonlinear iterations, memory pressure or
 certificate width may be an end-to-end regression.
 
+## Adaptive cost objective
+
+The long-range performance problem is not only to make one fixed model fast.
+It is to choose **where and when** expensive fidelity is worth paying for.
+
+For candidate local refinement \(k\), track an estimated observable benefit
+\(\eta_k\) and incremental cost \(C_k\). A useful controller score is
+
+\[
+\eta_k/C_k.
+\]
+
+Candidate actions may include mesh/time refinement, representation change,
+MHD/GK/FK promotion, microscopic/quantum microproblems, higher correlation
+order, richer radiation/chemistry, additional UQ samples or surrogate refresh.
+
+Measure promotion/demotion overhead, state-transfer cost, microprovider launch
+latency, cache/surrogate hit rate and the fraction of space-time spent at each
+fidelity. An adaptive method only wins if its total time/memory to the requested
+error target beats simply running the richer model everywhere.
+
+For temporal adaptation, include subcycling/multirate synchronization and event
+detection in the cost ledger. For spatial model patches, include repartitioning,
+halo/interface exchange and load imbalance.
+
+Multifidelity UQ reports cost per achieved uncertainty target, not merely
+samples/second.
+
+See [adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
+
 ## Optimization order
 
 Always optimize in this order:
@@ -202,7 +232,8 @@ CPU speedups do not establish GPU support.
 
 ## Continuous profiling
 
-The application always records a cheap hierarchical time ledger, for example:
+The application always records a cheap hierarchical time ledger, including
+adaptive-controller and promotion/demotion work where present, for example:
 
 - residual;
   - spatial transport;
@@ -216,6 +247,9 @@ The application always records a cheap hierarchical time ledger, for example:
 - Krylov;
 - communication/reductions;
 - certificate;
+- adaptive indicators/controller;
+- state transfer/promotion/demotion;
+- microprovider/surrogate/UQ sampling;
 - I/O.
 
 Also record attributed memory:

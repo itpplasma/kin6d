@@ -101,6 +101,14 @@ quasilinear response to nonlocal orbit kernels, nonlinear microturbulence and
 fully coupled global evolution. See [stability](docs/stability.md) and
 [transport/multiscale coupling](docs/transport-multiscale.md).
 
+A third cross-cutting axis is **adaptive fidelity and uncertainty**. Eventually
+KIN6D should refine or coarsen locally in space, time, phase space, species,
+correlation order and physical model, spending expensive FK, microscopic,
+quantum, radiation or detailed-chemistry work only where it materially changes
+the requested observable. Analytical asymptotic remainders, rich-model defects,
+adjoints, sparse enriched solves and UQ all contribute to one explicit error
+ledger. See [adaptive multiscale and uncertainty](docs/adaptive-multiscale-uq.md).
+
 ## Model hierarchy
 
 The intended charged-plasma hierarchy is
@@ -257,7 +265,10 @@ Long-range scope includes:
 - Solar-System, atmospheric, industrial and other classical-plasma
   configurations;
 - synthetic diagnostic forward operators, adjoints, optimization and control;
-- integration with TIAGO for equilibrium/state reconstruction and inference.
+- integration with TIAGO for equilibrium/state reconstruction and inference;
+- local-in-space-and-time adaptive fidelity across numerical resolution,
+  MHD/GK/FK/microscopic/quantum/correlation/radiation/reaction levels, with
+  propagated deterministic, epistemic and stochastic uncertainty.
 
 The complete intended physics/numerics envelope is catalogued separately from
 implementation priority. See [the capability catalogue](docs/capability-catalogue.md)
@@ -358,6 +369,7 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Complete plasma-physics capability catalogue](docs/capability-catalogue.md)
 - [Microscopic relativistic many-body reference](docs/microscopic-many-body.md)
 - [Quantum plasma fundamentals and dense-matter bridge](docs/quantum-plasma.md)
+- [Adaptive multiscale, multifidelity and uncertainty architecture](docs/adaptive-multiscale-uq.md)
 - [Numerical-method catalogue](docs/numerical-methods.md)
 - [Reacting and partially ionized plasmas](docs/reacting-partially-ionized.md)
 - [Radiation hierarchy](docs/radiation.md)

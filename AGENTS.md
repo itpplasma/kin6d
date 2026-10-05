@@ -11,6 +11,9 @@ that owns the proposed change. In particular:
   Lienard--Wiechert, BBGKY/cumulant or microscopic-correlation work;
 - docs/quantum-plasma.md before Fermi-degeneracy, Wigner, quantum BBGKY,
   Hartree/HF/DFT/QMC, quantum-collision or stellar-degenerate-plasma work;
+- docs/adaptive-multiscale-uq.md before local/temporal model switching,
+  multifidelity control, model-defect estimators, correlation-order adaptation,
+  micro/macro promotion or uncertainty propagation work;
 - docs/numerical-methods.md before introducing a new discretization/solver
   family outside the primary tensor/FEEC path;
 - docs/reacting-partially-ionized.md before low-temperature, reacting-gas,
@@ -158,6 +161,19 @@ These rules are hard constraints:
   quantized-radiation dynamics, strong-field QED cascades and radiative QED
   corrections stay external; QED-derived rates may be provider data. GR and
   neutron-star/nuclear-density matter likewise stay outside the core.
+- Adaptivity is allowed on every justified axis: (h/p/Delta t), velocity/
+  harmonic resolution, representation, model fidelity, collision/correlation
+  order, classical/quantum level, radiation/reaction fidelity and stochastic
+  sampling. It must eventually be local in space and time where the model
+  interfaces permit it.
+- A model switch is a physical/numerical interface, not a flag. Require
+  lift/projection/reconstruction, conservation/exchange balances, derivative
+  semantics and an interface/model-defect error status. If scale separation or
+  locality fails, enlarge the rich region or promote the global model.
+- Prefer deterministic/asymptotic/model-defect bounds for systematic model
+  error. Use probability only with a declared stochastic law or explicit
+  probabilistic discrepancy model; do not convert ignorance into fake random
+  noise.
 
 ## Mathematics, derivatives and certification
 
@@ -199,6 +215,10 @@ These rules are hard constraints:
   deterministic certificate by default.
 - Goal-oriented indicators are not rigorous remainders until the stability,
   lifting and nonlinear remainder hypotheses are checked.
+- Error/UQ ledgers preserve separate numerical, time, solver, arithmetic,
+  model, interface, correlation, quantum, surrogate, input/reconstruction and
+  stochastic contributions. Combine them only with justified dependence
+  semantics.
 
 ## Numerical/performance rules
 

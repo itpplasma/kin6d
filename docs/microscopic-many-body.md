@@ -361,6 +361,40 @@ Balescu--Lenard and mean-force closures.
 Increase coupling until weak-correlation kinetic closures fail and compare
 explicit pair-correlation/mean-force models against direct particles.
 
+## Adaptive near/far, correlation and quantum refinement
+
+The microscopic branch should not force its smallest scale on the whole
+calculation.
+
+A controlled interaction split
+
+\[
+G=G_{\rm near}+G_{\rm far}
+\]
+
+allows far interactions to use FMM/Ewald/P3M or a Maxwell field solve while
+rare near encounters use direct high-accuracy pair dynamics.
+
+For a hot nondegenerate electron plasma, a rare encounter may be promoted
+temporally to a quantum two-body scattering problem when a diffraction
+indicator such as \(\lambda_{\rm dB}/b\) becomes large. After the encounter,
+an asymptotic outgoing classical state/transition kernel may be returned if the
+coarse-graining assumptions hold.
+
+This local-pair promotion does **not** cover Fermi degeneracy or exchange.
+When \(\Theta=T/T_F\lesssim O(1)\), the promoted object generally has to be a
+region/species quantum state such as Wigner/HF/quantum kinetic.
+
+Likewise, BBGKY correlation order can be adaptive: estimate the omitted
+\(g_{k+1}\) defect of a hierarchy retained through \(g_k\), and activate a
+richer correlation model or direct microscopic box only where/when its
+observable-weighted effect matters.
+
+Near/far matching, quantum/classical promotion and correlation-order switching
+all carry explicit overlap/interface and information-loss errors.
+
+See [adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
+
 ## Computational scope
 
 The microscopic branch is intentionally local. It need not represent a whole

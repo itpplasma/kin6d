@@ -320,6 +320,30 @@ A spatial switch between representations requires a conservative transfer or
 overlap formulation, not a mask applied to unrelated states. Transfer error,
 sampling error and model-reduction error are distinct.
 
+## Local and temporal representation adaptation
+
+Representation may vary by species, region, phase-space subset and time when a
+derived transfer exists.
+
+Examples include
+
+- continuum bulk with particle energetic tail;
+- deterministic neutral continuum with MC/DSMC rarefied regions;
+- Eulerian kinetic state with a transient characteristic/particle patch;
+- physical-particle microscopic near region coupled to a field/FMM far
+  representation;
+- classical state with a temporary quantum close-encounter microproblem.
+
+A representation switch does not by itself change the named physical model;
+however, macro-particle weighting, smoothing/blobs or reduced quantum/classical
+state maps may change physical fluctuation/correlation content and must be
+classified correctly.
+
+Every transfer declares conserved moments, reconstruction assumptions,
+statistical semantics, derivative behavior and a transfer defect. Demotion
+cannot silently discard unresolved information. See
+[adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
+
 ## Differentiability
 
 Deterministic particle and blob equations are differentiated like any other

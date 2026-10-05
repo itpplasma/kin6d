@@ -479,6 +479,61 @@ configuration, not a legacy workaround. KIN6D should reproduce QL-Balance/
 ASTRA-like integrated modelling early and then relax its approximations toward
 2D/3D nonlocal and fully coupled evolution.
 
+## Adaptive fidelity, locality and uncertainty
+
+The model hierarchy is not only a menu chosen once at startup. The long-range
+architecture permits **local and temporal promotion/demotion** of model,
+representation and numerical fidelity when a derived interface exists.
+
+Adaptation may occur in configuration space, phase space, species, energy,
+correlation order, frequency/angle, reaction state, time/event windows and
+uncertainty/sample space. The smallest physical scale must not automatically
+set the global mesh, timestep or model.
+
+For observable \(Q\), candidate refinements are ranked by estimated reduction
+of its error per incremental cost. A rich-model residual defect evaluated on a
+lifted cheap solution,
+
+\[
+d_{0\to1}=R_1(LU_0),
+\]
+
+combined with a richer-model adjoint,
+
+\[
+R_{1,U}^{\dagger}\lambda=Q_U^\dagger,
+\]
+
+gives the leading model correction
+
+\[
+\eta_{0\to1}\simeq-\lambda^\dagger d_{0\to1}.
+\]
+
+Where stability and nonlinear remainders are controlled, this becomes a
+model-error certificate rather than only an indicator.
+
+The same pattern applies to spatial/time discretization, MHD/GK/FK fidelity,
+collision/correlation order, classical/quantum fidelity, neutral/radiation/
+reaction models and surrogate/microprovider error.
+
+Every model switch declares lift/projection maps, conserved exchanges,
+information lost on demotion, interface defect, derivative semantics and UQ
+semantics. Promotion from a reduced state to a non-unique richer state carries
+explicit reconstruction uncertainty.
+
+Temporal adaptation is first-class: expensive physics may exist only during a
+resonance, crash, close encounter or radiative burst. Local timestepping,
+subcycling, multirate and event-driven methods are valid when their coupling
+error is controlled. Use promotion/demotion hysteresis to avoid thrashing.
+
+The uncertainty ledger keeps deterministic numerical/model bounds,
+probabilistic sampling/posterior uncertainty and epistemic model discrepancy
+semantically distinct. Unknown deterministic model error is not automatically
+turned into a random variable.
+
+See [adaptive multiscale, multifidelity and uncertainty](docs/adaptive-multiscale-uq.md).
+
 ## Model hierarchy
 
 The intended reusable hierarchy is

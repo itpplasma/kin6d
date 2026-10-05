@@ -325,19 +325,34 @@ the candidate is obtained.
 
 ## Adaptivity
 
-Numerical and physical adaptivity are separate.
+Numerical and physical adaptivity are distinct controls but share one
+observable-driven refinement policy.
 
 Numerical controls include
 
 \[
-h,\quad p,\quad N_p,\quad L,\quad M,\quad N_n,\quad \text{quadrature}.
+h,\quad p,\quad \Delta t,\quad N_p,\quad L,\quad M,\quad N_n,\quad
+\text{quadrature},\quad \text{solver tolerance},\quad \text{precision}.
 \]
 
-Physics controls include FK/GK/DK/gyrofluid/MHD, collision fidelity, neutral
-model and field reduction.
+Physics controls include FK/GK/DK/gyrofluid/MHD, microscopic finite-\(N\),
+collision/correlation order, classical/quantum fidelity, neutral model,
+radiation/reaction fidelity and field reduction.
 
-The certifier/adjoint should eventually identify the dominant contribution to
-the requested observable rather than blindly refining every axis.
+Adaptivity is eventually local in configuration space, phase space, species,
+energy, correlation order and **time**. A transient rich patch may be subcycled
+or event-driven while a cheap background advances on a larger step.
+
+Every local model/representation transition needs conservative state transfer,
+constraint preservation, derivative semantics and an explicit interface defect.
+Use hysteresis or comparable logic to avoid repeated promotion/demotion
+thrashing.
+
+The certifier/adjoint should identify the dominant contribution to the requested
+observable and rank candidate refinements by error reduction per incremental
+cost rather than blindly refining every axis.
+
+See [adaptive-multiscale-uq.md](adaptive-multiscale-uq.md).
 
 ## Reference implementations
 
