@@ -1,8 +1,10 @@
 # Student laboratory and verification ladder
 
-Status: the first prescribed-field 1X1V steady/free-streaming slice is
-implemented. The laboratory is the public teaching face of the same engine that
-later supports real-device DK/GK/FK; it is not a disposable toy code.
+Status: prescribed-field free streaming/Krook balance, single-mode Poisson,
+a source-balanced coupled Poisson--FP family and bounded OU/FP equilibrium are
+implemented. Their reviewed continuous bounds cover the declared analytical
+cases; arbitrary-source and general nonlinear certification remain planned.
+The laboratory uses the same engine that later supports real-device DK/GK/FK.
 
 ## Purpose
 
@@ -49,7 +51,17 @@ R_\phi=-\partial_x^2\phi-\rho/\epsilon_0.
 
 The first implemented case keeps \(E=0\) prescribed and uses a manufactured
 source-balanced Krook state; see [first-example.md](first-example.md).
-Self-consistent Poisson is the next field milestone.
+The [steady laboratory](steady-laboratory.md) adds a genuinely computed Poisson
+field within a specified source family and a bounded FP equilibrium. These
+cases retain analytical oracles while the next solvers accept independently
+supplied sources.
+
+The next steady exercises are general damped transport with a continuous
+residual/inverse bound, then forced FP with flux/reconstruction and stability
+bounds. State source regularity, velocity boundaries, compatibility and any
+normalization constraints. Their derivatives and certificate inputs accompany
+the operators from the first implementation. General nonlinear certificates
+follow these stable linear cases.
 
 ## Kinetic teaching sequence
 
@@ -67,7 +79,7 @@ ladder.
 | 07 | Two-stream | linear growth before nonlinear trapping |
 | 08 | BGK equilibrium | direct nonlinear steady residual |
 | 09 | Krook balance/relaxation | exact steady and exponential limits |
-| 10 | OU/Fokker--Planck | exact Gaussian mean/variance/equilibrium |
+| 10 | OU/Fokker--Planck | bounded zero-flux equilibrium; Gaussian formulas in the matching unbounded model |
 | 11 | Lorentz scattering | spherical-harmonic decay rates |
 | 12 | Landau collision box | invariants, entropy and independent rates |
 
@@ -83,16 +95,27 @@ plasma equilibrium.
 
 ## Representation laboratory
 
-Once self-consistent Vlasov--Poisson exists, the same physical cases become the
-first representation comparison:
+Introduce the first comparisons before nonlinear BGK, Landau damping or the
+full particle infrastructure:
 
-- Eulerian continuum;
-- conservative/structure-preserving semi-Lagrangian continuum;
-- deterministic PIF;
-- charge-conserving PIC;
-- finite blobs/remapped particles;
-- full-f and delta-f/control-variate variants;
-- deterministic/QMC/MC initialization where meaningful.
+| Case | Carriers/coupling | Independent oracle |
+|---|---|---|
+| Exact free streaming | continuum and deterministic characteristic particles | translated distribution, density mode and parameter derivatives |
+| Neutral single-mode Poisson | continuum projection, direct PIF and simple local-basis PIC | field amplitude and electric energy |
+| Short self-consistent Vlasov--Poisson | continuum, PIF and PIC with common initial data | earlier limiting cases, independent refinement and balance tests |
+
+Free-streaming particles alone do not exercise PIC/PIF field coupling. The
+Poisson comparison exercises deposit/solve/gather without claiming a
+self-consistent trajectory. The third case supplies field feedback and reports
+the trajectory's actual bound status. Share the physical laws, parameters and
+boundaries; expose each representation's quadrature, shape/basis and time
+errors separately.
+
+Use deterministic sampling first. Conservative semi-Lagrangian methods,
+geometric/current-conserving PIC, blobs/remapping, delta-f/control variates and
+randomized variants enter when a concrete case needs them. Adaptive particles,
+NUFFT, stochastic collisions and GPU/MPI are later steps. Early electrostatic
+PIC establishes only the conservation and derivative properties actually tested.
 
 Students should be able to ask: "same Vlasov equation, why do these numerical
 representations behave differently?"
@@ -107,9 +130,9 @@ Compare:
 - runtime;
 - derivative behavior.
 
-The purpose is not to prove one representation universally superior. Continuum
-remains the low-noise reference where practical; PIC/PIF/MC are genuine
-first-class methods.
+Optimize measured total time at matched model, observable accuracy and bound
+status, including certification and requested derivatives. Continuum remains
+the low-noise reference where practical; PIC/PIF/MC are first-class methods.
 
 ## Turbulence sequence
 
@@ -197,6 +220,11 @@ Simple cases carry exact parameter derivatives from the start. Compare
 FortSym-generated JVP/VJP with analytical derivatives and independent
 directional differences.
 
+Particle derivatives include weights, positions, deposit/gather and field
+response. Declare shape regularity and cell/event surfaces; test the stated
+smooth domain. Randomized derivatives state whether random variables are held
+fixed, and retain statistical uncertainty separately from deterministic error.
+
 Self-consistent Poisson/BGK introduces the first implicit-state relation
 
 \[
@@ -214,12 +242,24 @@ optimization.
 
 ## Certification
 
-Certification is introduced immediately but the exact level follows the
-mathematics.
+Each reported state, field, observable and sensitivity carries its applicable
+bound/status, or an explicit statement that a bound is unavailable. The current
+analytical laboratories have reviewed continuous enclosures in their declared
+domains. General transport and forced-FP certificates must bound the candidate
+without substituting a known exact solution. Nonlinear BGK needs a validated
+local root/stability theorem and unresolved-complement control when available.
 
-The existing free-streaming example has a reviewed continuous snapshot
-enclosure. Poisson should provide coercive/energy-norm bounds. Nonlinear BGK
-should use a validated local root theorem when available.
+The practical default is approximately 1% accuracy for a named observable with
+a declared scale; use an absolute scale when its value can vanish. A validated
+coarse rounding budget is sufficient if the full bound meets that target.
+Deterministic containment is required for a certified result, while tighter or
+higher-precision audits are optional.
+
+Plot the full applicable intervals. Distribution/field bands require pointwise
+or whole-cell bounds, including the plotted reconstruction; an L2 radius is
+not a pointwise radius. Atomic particle measures use weak-observable bounds or
+bounds for an explicitly defined smooth reconstruction. Histories identify
+whether bounds cover observation times or also the interpolation between them.
 
 For turbulence, invariant ledgers and convergence are not by themselves
 continuous trajectory certificates. A case remains a candidate until its
@@ -245,6 +285,12 @@ performance shape. The laboratory is also the first benchmark arena for:
 - forward/JVP/VJP overhead.
 
 A colorful movie is not an excuse to bypass accuracy or performance evidence.
+
+Reusable upstream benchmark support comes before new hot-path implementation.
+Retain fixed inputs and repeated measurements with variability, memory and
+separate setup, solve, certificate and derivative costs. Compare total time at
+the same requested accuracy and claim strength; the fastest result is a
+measured goal, not a claim made from one kernel timing.
 
 ## Progression to research cases
 

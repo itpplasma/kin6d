@@ -8,6 +8,7 @@
 /plots/
 /figures/
 /.lake/
+/proof/.lake/
 
 # Plot images, documents, frames, and animations are generated on demand.
 *.png

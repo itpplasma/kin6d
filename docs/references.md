@@ -79,6 +79,8 @@ or a certification theorem for its final nonlinear kinetic model.
 
 ## Fortran ecosystem snapshot
 
+This snapshot records earlier source inspection. Current integration pins and
+executed gates are recorded in [the steady laboratory](steady-laboratory.md).
 GitHub main revisions were checked through the repository API. fortnum,
 fortsym, and fo source were also read locally at matching revisions. This
 is source inspection, not a claim that kin6d integration tests have run.
@@ -102,7 +104,8 @@ AD-to-DAG integration must be treated as generic upstream work when needed.
 The [fortnum verified sources](https://github.com/lazy-fortran/fortnum/tree/1a52e13c5e28b09d083947a6ec7e8a1dcf9d502e/src/verified)
 provide interval/ball arithmetic, rigorous radix-2 transforms, and verified
 linear algebra with documented arithmetic assumptions. Lean soundness bridges
-for their use in kin6d remain required work.
+are optional additional assurance; the production containment argument follows
+the Fortran verified-arithmetic contract in [certification](certification.md).
 
 The [fo CMake plan](https://github.com/lazy-fortran/fo/blob/1c45a5595fd1e9c0a05b2d4a71650826efd857e9/doc/CMAKE_GREMLIN_PLAN.md)
 distinguishes present delegation to CMake/CTest from future standalone native

@@ -4,7 +4,9 @@ The first executable is a deterministic prescribed-field kinetic laboratory.
 It solves a source-balanced stationary problem directly and animates free
 streaming with an exact characteristic oracle. This is the first implemented
 slice of the [student laboratory](student-laboratory.md); self-consistent
-Poisson, the full collision hierarchy and Lean verification remain open.
+Poisson and Lean were outside this first slice. The later
+[steady laboratory](steady-laboratory.md) adds Poisson–FP and a separate formal
+polynomial reference; the full collision hierarchy remains open.
 
 ## Build and run
 

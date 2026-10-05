@@ -15,23 +15,62 @@ A capability is promoted only when it has:
 2. an analytic/manufactured/structural oracle;
 3. an independent external or cross-representation oracle when available;
 4. primal/JVP/VJP behavior for continuous production operators;
-5. a stated rigorous-certificate status;
+5. bounds/status for reported states, fields, observables and sensitivities;
 6. a small correctness case and a representative performance/memory case;
 7. preserved earlier limiting cases.
 
 An optimization or representation change is not allowed to obscure the
 underlying mathematical operator.
 
+Certification and differentiation start with the operator, rather than after
+the solver is complete. Report unavailable bounds explicitly. Pointwise plots
+need pointwise/cellwise bounds; weak particle observables and statistical
+confidence statements retain their distinct meanings.
+
+The practical workhorse target is about 1% error on a named observable with a
+declared scale, including an absolute scale near zero. Use a validated coarse
+rounding budget when sufficient; tighter arithmetic audits are optional while
+deterministic containment for certified results remains required. Optimize
+measured total setup/solve/certificate/requested-derivative time at matched
+model, accuracy and claim strength. No speed ranking is asserted in advance.
+
+## Immediate delivery order
+
+1. Establish reusable benchmark support in the owning upstream tools: fixed
+   inputs, warm/repeated timings, measurement variability, memory, candidate,
+   certificate and derivative costs. KIN6D supplies the physical cases.
+   Initial CPU fixtures are delivered in FortNum/FortSym, with independent
+   arithmetic/derivative oracles and raw samples; KIN6D has a resolution sweep.
+   Production arithmetic selection and external speed comparisons remain open.
+2. Generalize prescribed-field damped transport to independently supplied
+   sources. Bound the continuous reconstructed residual and source error using
+   a proved inverse/stability estimate, rather than a known-solution formula.
+3. Extend FP to independently supplied forcing with declared boundary flux,
+   compatibility and normalization. Certify flux/reconstruction defects through
+   the applicable stability estimate, including boundary and source errors.
+4. Introduce the simple representation comparisons below alongside this steady
+   spine. General nonlinear validation follows once its stability, nullspace
+   and unresolved-complement hypotheses can be checked.
+
+Retain all analytical laboratories as independent regression oracles. A small
+algebraic residual or agreement between representations does not replace a
+continuous certificate.
+
 ## R0 — retain and harden the first 1X1V slice
 
-**Implemented baseline:** prescribed-field free streaming and a direct
-source-balanced Krook steady state with generated derivative leaves and a
-continuous snapshot interval bound.
+**Implemented baseline:** prescribed-field free streaming and Krook balance,
+single-mode Poisson, a coupled source-balanced Poisson--FP family, and bounded
+homogeneous OU/FP equilibrium. Generated derivative leaves and reviewed
+continuous bounds cover the declared analytical cases; general certification
+is not yet implemented. See [steady laboratory](docs/steady-laboratory.md).
 
 Near-term work:
 
 - keep the existing exact characteristic and manufactured steady oracles green;
-- improve certificate packaging without requiring Lean;
+- implement the arbitrary-source transport and forced-FP certificates above,
+  with general primal/JVP/VJP and observable bounds;
+- make the approximately 1% observable target a useful default;
+- improve bound/status packaging without requiring Lean;
 - retain strict/reference and optimized actions;
 - keep the demo understandable enough for a student to trace end to end.
 
@@ -39,10 +78,10 @@ Do not generalize the current Fourier state layout into a universal 6D type.
 
 ## R1 — self-consistent 1X1V Vlasov--Poisson laboratory
 
-Add periodic electrostatic Poisson with explicit neutrality compatibility and
-gauge. Required cases:
+The implemented single Fourier mode and manufactured coupled family retain
+exact neutrality compatibility and potential gauge. Extend these operators to
+general self-consistent 1X1V states. Required additional cases:
 
-- single Fourier Poisson mode;
 - linear plasma oscillation;
 - Landau damping;
 - two-stream instability;
@@ -52,25 +91,33 @@ The steady residual is primary. Transients use the same field/transport
 operators. Distinguish exact linear dispersion roots from finite-time nonlinear
 solutions.
 
-This milestone creates the first implicit-state adjoint:
+General coupled states require the implicit-state adjoint:
 \(R_U^\dagger\lambda=Q_U^\dagger\).
 
 ## R2 — representation laboratory: one physics problem, several carriers
 
-Use the same 1X1V Vlasov--Poisson cases to add representation alternatives one
-at a time:
+Begin before the full R1 case list is complete:
 
-1. Eulerian/reference continuum;
-2. conservative/structure-preserving semi-Lagrangian characteristic path;
-3. deterministic particle quadrature with PIF;
-4. geometric/charge-conserving PIC;
-5. finite blobs/remapping;
-6. delta-f/control-variate variants;
-7. QMC/MC sampling as explicitly statistical variants.
+1. Exact free streaming: continuum versus deterministic characteristic
+   particles, with analytical density modes and parameter sensitivities.
+2. Neutral single-mode Poisson: continuum projection, direct PIF and simple
+   local-basis PIC deposit/solve/gather, with analytical field and energy.
+   This is a coupling test, without a self-consistent trajectory claim.
+3. Short self-consistent Vlasov--Poisson: the same initial distribution,
+   boundaries and observation times across continuum, PIF and PIC. State the
+   actual trajectory-bound status; validated field solves alone are insufficient.
 
-The acceptance goal is not to crown one method universally. Compare accuracy,
-structure, memory, time and noise at equal physical observables. Preserve the
-continuum reference.
+Use deterministic sampling first. Share physical transport, field laws and
+pairings, while exposing quadrature, basis/shape and time errors separately.
+Carry generated JVP/VJP from the start and declare PIC shape/event domains.
+Compare total time, memory, bounds and requested sensitivities at matched
+observable accuracy. Preserve the continuum reference.
+
+Conservative semi-Lagrangian paths, geometric/current-conserving PIC,
+blobs/remapping, delta-f/control variates and randomized QMC/MC follow their
+concrete use cases. Early electrostatic PIC does not establish Maxwell current
+continuity or geometric long-time structure. Defer NUFFT, adaptive particles,
+stochastic collisions and GPU/MPI until these small cases require them.
 
 PIF/PIC are particle-in-basis specializations, not new physics modes. A generic
 particle runtime is extracted upstream only after at least two concrete KIN6D

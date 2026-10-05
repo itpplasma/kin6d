@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "113-case catalogue; free_streaming implemented in a limited 1X1V configuration, remaining cases planned",
+  "status": "116-case catalogue; streaming, periodic Poisson and scoped steady reference cases implemented; other cases planned",
   "inheritance": "defaults then family then case; case fields override family fields",
   "activation_rule": "resolve every null field; pin and review formulas/data/source sections; supply independent oracle and requested proof level before runnable promotion",
   "reference_classes": {
@@ -378,7 +378,18 @@
       "family": "fields",
       "reference_class": "E0",
       "geometry": "periodic slab",
-      "reference_definition": "nonzero k: phi_k=rho_k/(epsilon0 k^2); zero mean charge and fixed gauge"
+      "reference_definition": "nonzero k: phi_k=rho_k/(epsilon0 k^2); zero mean charge and fixed gauge",
+      "status": "implemented single positive Fourier mode, cosine and sine charge",
+      "species_models": [],
+      "field_model": "periodic Poisson",
+      "initial_boundary_data": "exact neutral charge, zero-mean potential gauge",
+      "parameter_validity_range": "integer k>0, epsilon0>0, finite charge coefficients",
+      "reference_implementation": "gen/gen_poisson.f90 and independent sign/scale fixtures in test/test_poisson.f90",
+      "certificate_method": "interval Fourier resolvent coefficients and full-cell trigonometric evaluation",
+      "expected_convergence_order": "exact single-mode representation; no discretization error",
+      "source_version_and_section": "docs/steady-laboratory.md and proof/Kin6d/PoissonMode.lean",
+      "proof_level": "reviewed interval component; Lean identities for k=epsilon0=1",
+      "asymptotic_remainder": "no asymptotic claim"
     },
     {
       "id": "slab_green",
@@ -1179,6 +1190,89 @@
       "family": "actuators_diagnostics",
       "reference_class": "I",
       "reference_definition": "independent dimensional physical case and moment balances under explicit SI/normalized transformation"
+    },
+    {
+      "id": "source_balanced_vpfp",
+      "family": "steady_vlasov",
+      "reference_class": "M",
+      "status": "implemented limited manufactured Fourier/polynomial family",
+      "equations": "v*f_x+E*f_v+nu*(f-B)-beta*(v*f+theta*f_v)_v=S; -phi_xx=rho; E=-phi_x",
+      "species_models": [
+        "normalized active 1X1V population",
+        "fixed neutralizing charge background"
+      ],
+      "collision_model": "OU heat bath and optional fixed-target Krook reservoir",
+      "field_model": "self-consistent periodic Poisson, q=m=epsilon0=1",
+      "geometry": "x periodic with period 2*pi, v in [-1,1]",
+      "initial_boundary_data": "stationary source; f=0 at velocity endpoints; exact neutral charge; mean phi=0",
+      "parameter_validity_range": "integer k>0; nu,beta>=0; theta>0; nu+3*beta*theta>0; abs(drive/(nu+3*beta*theta))<1",
+      "reference_definition": "B=3*(1-v^2)/4; f=B*(1+a*cos(k*x)); a=drive/(nu+3*beta*theta); phi=a*cos(k*x)/k^2",
+      "reference_implementation": "gen/gen_poisson.f90; src/generated/kin6d_poisson_leaves.f90; independent rational source/collision fixtures in test/test_poisson.f90",
+      "certificate_method": "exact manufactured existence, interval amplitude and field coefficients, uniform pointwise coefficient-error bound",
+      "expected_convergence_order": "exact finite ansatz; arithmetic enclosure only; no mesh-order claim",
+      "source_version_and_section": "docs/steady-laboratory.md: Source-balanced self-consistent 1X1V case; retained generator provenance",
+      "proof_level": "reviewed continuous solution enclosure; Lean unit Poisson identities only",
+      "observables": [
+        "distribution",
+        "potential",
+        "electric field",
+        "spatial mean field energy"
+      ],
+      "plot_recipe": "output/poisson-fp-steady.png: full cell ranges with pointwise bounds, zero-FP and zero-drive overlays",
+      "asymptotic_remainder": "no asymptotic reduction claimed"
+    },
+    {
+      "id": "bounded_ou_steady",
+      "family": "simple_collisions",
+      "reference_class": "E1",
+      "status": "implemented finite-domain stationary reference",
+      "equations": "J_v=0; J=theta*f_v+v*f",
+      "species_models": [
+        "homogeneous bounded 0X1V population"
+      ],
+      "collision_model": "linear OU drag/diffusion heat bath",
+      "field_model": "none",
+      "geometry": "v in [-2,2], spatially homogeneous",
+      "initial_boundary_data": "zero flux at both endpoints and prescribed positive mass",
+      "parameter_validity_range": "theta,mass>0; grid supports positive centered recurrence; certified normalization lower bound>0",
+      "reference_definition": "f=mass*exp(-v^2/(2*theta))/Z; Z=integral[-2,2] exp(-v^2/(2*theta)) dv",
+      "reference_implementation": "gen/gen_fp.f90; rigorous midpoint normalization; independent high-precision erf fixtures in test/test_fp.f90",
+      "certificate_method": "interval exact normalization, nodal discrepancy, whole-cell second-derivative interpolation remainder",
+      "expected_convergence_order": "second order in uniform velocity-cell width for this steady reference",
+      "source_version_and_section": "docs/steady-laboratory.md: Bounded homogeneous OU/FP case; retained generator provenance",
+      "proof_level": "reviewed continuous pointwise bound, independently audited; no Lean FP theorem",
+      "observables": [
+        "normalized distribution",
+        "continuous mass interval"
+      ],
+      "plot_recipe": "output/fp-steady.png: 32/64 candidates and full bands plus rigorous Gaussian cell ranges",
+      "asymptotic_remainder": "finite velocity domain only; no whole-line tail claim"
+    },
+    {
+      "id": "polynomial_krook_formal",
+      "family": "steady_vlasov",
+      "reference_class": "M",
+      "status": "implemented formal continuous reference and computed dyadic certificate",
+      "equations": "v*f_x+f=forcing_a",
+      "species_models": [
+        "normalized polynomial bounded-velocity 1X1V population"
+      ],
+      "collision_model": "fixed-target Krook with nu=1, reservoir included in total forcing",
+      "field_model": "prescribed E=0",
+      "geometry": "x periodic with period 2*pi, v in [-1,1]",
+      "initial_boundary_data": "smooth periodic x reconstruction, polynomial vanishing velocity endpoints, source fixed by exact amplitude a",
+      "parameter_validity_range": "abs(a),abs(b)<=1; residualBound>=3*abs(b-a)/2; radius>=residualBound; writer checks IEEE binary64",
+      "reference_definition": "f_a=3*(1-v^2)/4*(1+a*cos(x)); forcing_a=v*d_x f_a+f_a",
+      "reference_implementation": "proof/Kin6d/ManufacturedKrook.lean and Certificate.lean; app/formal_krook_certificate.f90 serializes computed coefficient bits",
+      "certificate_method": "Lean continuous maximum principle, exact source identity, exact rational validity and soundness theorem application",
+      "expected_convergence_order": "exact computed candidate at a=b=1/2; approximate rational fixtures are not a mesh convergence claim",
+      "source_version_and_section": "proof/README.md and pinned proof/lake-manifest.json",
+      "proof_level": "formally certified continuous polynomial prescribed-field reference",
+      "observables": [
+        "whole-domain pointwise distribution error"
+      ],
+      "plot_recipe": "formal reference encoded by theorem and dyadic artifact; distinct from FP/coupled reviewed interval plots",
+      "asymptotic_remainder": "no model reduction or velocity-tail claim"
     }
   ],
   "limit_edges": [
