@@ -20,11 +20,17 @@ program transport_demo
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, legend, tight_layout, savefig, ylim
     use fortplot_system_runtime, only: create_directory_runtime
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
     ! Linear plotted bands include a rigorous chord interpolation remainder.
-    integer, parameter :: modes = 2, nx = 96
-    real(dp), parameter :: velocity = 0.3125_dp, rtol = 0.01_dp, atol = 1.0e-8_dp
-    real(dp), parameter :: goal_scale = 0.25_dp, derivative_scale = 0.25_dp
+    integer, parameter :: modes = 2
+    integer :: nx = 96, coarse_cells = 16, fine_cells = 64, limit_cells = 16
+    real(dp) :: velocity = 0.3125_dp, rtol = 0.01_dp, atol = 1.0e-8_dp
+    real(dp) :: goal_scale = 0.25_dp, derivative_scale = 0.25_dp
+    namelist /transport/ nx, coarse_cells, fine_cells, limit_cells, velocity, rtol, &
+        atol, goal_scale, derivative_scale
+    type(run_t) :: run
+    type(result_file_t) :: result
     type :: case_t
         type(transport_state_t) :: state
         type(transport_certificate_t) :: certificate
@@ -36,30 +42,59 @@ program transport_demo
     type(transport_certificate_t) :: limit_certificate, audit
     type(transport_basis_t) :: basis, point_basis, limit_basis
     type(transport_sampling_workspace_t) :: work, point_work, limit_work
-    type(interval_t) :: reference, x_cells(nx), sources(nx)
-    type(interval_t) :: x_points(nx + 1)
-    real(dp) :: band_lo(nx), band_hi(nx)
-    real(dp) :: plot_source_lo(nx + 1), plot_source_hi(nx + 1)
-    real(dp) :: plot_coarse_lo(nx + 1), plot_coarse_hi(nx + 1)
-    real(dp) :: plot_fine_lo(nx + 1), plot_fine_hi(nx + 1)
-    real(dp) :: plot_coarse_dlo(nx + 1), plot_coarse_dhi(nx + 1)
-    real(dp) :: plot_fine_dlo(nx + 1), plot_fine_dhi(nx + 1)
-    real(dp) :: x(nx + 1), source_line(nx + 1)
-    real(dp) :: coarse_line(nx + 1), fine_line(nx + 1)
-    real(dp) :: coarse_tangent(nx + 1), fine_tangent(nx + 1)
-    real(dp) :: source_lo(2*nx), source_hi(2*nx)
-    real(dp) :: coarse_lo(2*nx), coarse_hi(2*nx), fine_lo(2*nx), fine_hi(2*nx)
-    real(dp) :: coarse_dlo(2*nx), coarse_dhi(2*nx)
-    real(dp) :: fine_dlo(2*nx), fine_dhi(2*nx)
-    real(dp) :: limit_line(nx + 1), limit_lo(nx + 1), limit_hi(nx + 1)
-    real(dp) :: reference_lo(nx + 1), reference_hi(nx + 1), reference_line(nx + 1)
-    integer :: i, output
+    type(interval_t) :: reference
+    type(interval_t), allocatable :: x_cells(:), sources(:), x_points(:)
+    real(dp), allocatable :: band_lo(:), band_hi(:)
+    real(dp), allocatable :: plot_source_lo(:), plot_source_hi(:)
+    real(dp), allocatable :: plot_coarse_lo(:), plot_coarse_hi(:)
+    real(dp), allocatable :: plot_fine_lo(:), plot_fine_hi(:)
+    real(dp), allocatable :: plot_coarse_dlo(:), plot_coarse_dhi(:)
+    real(dp), allocatable :: plot_fine_dlo(:), plot_fine_dhi(:)
+    real(dp), allocatable :: x(:), source_line(:)
+    real(dp), allocatable :: coarse_line(:), fine_line(:)
+    real(dp), allocatable :: coarse_tangent(:), fine_tangent(:)
+    real(dp), allocatable :: source_lo(:), source_hi(:)
+    real(dp), allocatable :: coarse_lo(:), coarse_hi(:), fine_lo(:), fine_hi(:)
+    real(dp), allocatable :: coarse_dlo(:), coarse_dhi(:)
+    real(dp), allocatable :: fine_dlo(:), fine_dhi(:)
+    real(dp), allocatable :: limit_line(:), limit_lo(:), limit_hi(:)
+    real(dp), allocatable :: reference_lo(:), reference_hi(:), reference_line(:)
+    integer :: i, output, unit, ios
     logical :: ok
+    character(256) :: msg
+    character(64) :: label, velocity_text
 
+    call run%start('transport_demo')
+    if (run%argument_count() > 0) error stop 'usage: transport_demo [--config FILE]'
+    ios = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=transport, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'transport', ios, msg)
+    if (nx < 1 .or. min(coarse_cells, fine_cells, limit_cells) < 2) &
+        error stop 'nx >= 1 and cell counts >= 2 required'
+    if (.not. (abs(velocity) <= 1.0_dp)) error stop 'velocity outside v_domain [-1,1]'
+    if (.not. (rtol >= 0.0_dp .and. atol >= 0.0_dp .and. goal_scale > 0.0_dp .and. &
+        derivative_scale > 0.0_dp)) error stop 'invalid accuracy request'
+    call run%open_resolved(unit)
+    write (unit, nml=transport)
+    call run%close_resolved(unit)
+    allocate (x_cells(nx), sources(nx), x_points(nx + 1), band_lo(nx), band_hi(nx), &
+        plot_source_lo(nx + 1), plot_source_hi(nx + 1), plot_coarse_lo(nx + 1), &
+        plot_coarse_hi(nx + 1), plot_fine_lo(nx + 1), plot_fine_hi(nx + 1), &
+        plot_coarse_dlo(nx + 1), plot_coarse_dhi(nx + 1), plot_fine_dlo(nx + 1), &
+        plot_fine_dhi(nx + 1), x(nx + 1), source_line(nx + 1), coarse_line(nx + 1), &
+        fine_line(nx + 1), coarse_tangent(nx + 1), fine_tangent(nx + 1), &
+        source_lo(2*nx), source_hi(2*nx), coarse_lo(2*nx), coarse_hi(2*nx), &
+        fine_lo(2*nx), fine_hi(2*nx), coarse_dlo(2*nx), coarse_dhi(2*nx), &
+        fine_dlo(2*nx), fine_dhi(2*nx), limit_line(nx + 1), limit_lo(nx + 1), &
+        limit_hi(nx + 1), reference_lo(nx + 1), reference_hi(nx + 1), &
+        reference_line(nx + 1))
+    velocity_text = '5/16'
+    if (velocity /= 0.3125_dp) write (velocity_text, '(g0)') velocity
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'cannot create output directory'
-    call prepare_case(coarse, 16)
-    call prepare_case(fine, 64)
+    call prepare_case(coarse, coarse_cells)
+    call prepare_case(fine, fine_cells)
     call certify_transport(fine%state, audit, ok, strict=.true.)
     if (.not. ok) error stop 'strict-box transport audit failed'
     print '(a,es24.16)', 'strict_box_audit_state_radius=', audit%state_radius
@@ -166,7 +201,7 @@ program transport_demo
     call subplot(2, 1, 1)
     call title('Unknown-solution damped transport | certified linear envelopes')
     call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
-    call ylabel('f and supplied source g at v = 5/16')
+    call ylabel('f and supplied source g at v = '//trim(velocity_text))
     call envelope(x, plot_source_lo, plot_source_hi, 'gainsboro', &
         [0.4_dp, 0.4_dp, 0.4_dp])
     call envelope(x, plot_coarse_lo, plot_coarse_hi, 'moccasin', &
@@ -175,22 +210,26 @@ program transport_demo
         [0.0_dp, 0.4471_dp, 0.6980_dp])
     call plot(x, source_line, label='source + linear enclosure', linestyle=':', &
         color=[0.4_dp, 0.4_dp, 0.4_dp])
-    call plot(x, coarse_line, label='16 cells + full band', linestyle='--', &
+    write (label, '(i0,a)') coarse_cells, ' cells + full band'
+    call plot(x, coarse_line, label=trim(label), linestyle='--', &
         color=[0.8353_dp, 0.3686_dp, 0.0_dp])
-    call plot(x, fine_line, label='64 cells + full band', &
+    write (label, '(i0,a)') fine_cells, ' cells + full band'
+    call plot(x, fine_line, label=trim(label), &
         color=[0.0_dp, 0.4471_dp, 0.6980_dp])
     call legend(loc='lower right')
     call subplot(2, 1, 2)
     call title('Implicit nu tangent | fixed independently supplied source')
     call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
-    call ylabel('d f / d nu at v = 5/16')
+    call ylabel('d f / d nu at v = '//trim(velocity_text))
     call envelope(x, plot_coarse_dlo, plot_coarse_dhi, 'moccasin', &
         [0.8353_dp, 0.3686_dp, 0.0_dp])
     call envelope(x, plot_fine_dlo, plot_fine_dhi, 'lightblue', &
         [0.0_dp, 0.4471_dp, 0.6980_dp])
-    call plot(x, coarse_tangent, label='16 cells + full tangent band', linestyle='--', &
+    write (label, '(i0,a)') coarse_cells, ' cells + full tangent band'
+    call plot(x, coarse_tangent, label=trim(label), linestyle='--', &
         color=[0.8353_dp, 0.3686_dp, 0.0_dp])
-    call plot(x, fine_tangent, label='64 cells + full tangent band', &
+    write (label, '(i0,a)') fine_cells, ' cells + full tangent band'
+    call plot(x, fine_tangent, label=trim(label), &
         color=[0.0_dp, 0.4471_dp, 0.6980_dp])
     call legend(loc='lower right')
     call tight_layout()
@@ -198,7 +237,7 @@ program transport_demo
 
     ! The earlier reference is used only in this separately declared slice.
     ! Its full velocity source differs; no reference enters either checker.
-    call initialize_transport(limiting, 16, 0, 1.0_dp, ok)
+    call initialize_transport(limiting, limit_cells, 0, 1.0_dp, ok)
     if (.not. ok) error stop 'limiting initialization failed'
     limiting%source_cos(0, :) = 0.75_dp
     call solve_transport(limiting, ok)
@@ -237,7 +276,50 @@ program transport_demo
     call legend(loc='upper right')
     call tight_layout()
     call savefig('output/general-transport-krook-limit.png')
+    call write_result()
 contains
+    subroutine write_result()
+        character(len=*), parameter :: bound = 'certified-continuous linear plot '// &
+            'band (sup residual inverse + chord remainder)'
+        character(len=*), parameter :: tangent = 'certified-continuous nu-tangent '// &
+            'band; adjoint goal gradient unavailable'
+        call result%create(run)
+        call result%write('x', x, '1', 'plot points', dims='x')
+        call result%write('source_lower', plot_source_lo, '1', 'supplied source g lower', &
+            dims='x', status=bound)
+        call result%write('source_upper', plot_source_hi, '1', 'supplied source g upper', &
+            dims='x', status=bound)
+        call result%write('coarse_f', coarse_line, '1', 'coarse f candidate', dims='x', &
+            status='candidate center')
+        call result%write('coarse_lower', plot_coarse_lo, '1', 'coarse f lower', &
+            dims='x', status=bound)
+        call result%write('coarse_upper', plot_coarse_hi, '1', 'coarse f upper', &
+            dims='x', status=bound)
+        call result%write('fine_f', fine_line, '1', 'fine f candidate', dims='x', &
+            status='candidate center')
+        call result%write('fine_lower', plot_fine_lo, '1', 'fine f lower', dims='x', &
+            status=bound)
+        call result%write('fine_upper', plot_fine_hi, '1', 'fine f upper', dims='x', &
+            status=bound)
+        call result%write('coarse_dnu_lower', plot_coarse_dlo, '1', &
+            'coarse df/dnu lower', dims='x', status=tangent)
+        call result%write('coarse_dnu_upper', plot_coarse_dhi, '1', &
+            'coarse df/dnu upper', dims='x', status=tangent)
+        call result%write('fine_dnu_lower', plot_fine_dlo, '1', 'fine df/dnu lower', &
+            dims='x', status=tangent)
+        call result%write('fine_dnu_upper', plot_fine_dhi, '1', 'fine df/dnu upper', &
+            dims='x', status=tangent)
+        call result%write('krook_limit_lower', limit_lo, '1', &
+            'Krook limiting slice f(x, v=0) lower', dims='x', status=bound)
+        call result%write('krook_limit_upper', limit_hi, '1', &
+            'Krook limiting slice f(x, v=0) upper', dims='x', status=bound)
+        call result%write('fine_state_sup_radius', fine%certificate%state_radius, '1', &
+            'fine state sup radius', status='certified-continuous')
+        call result%write('fine_tangent_sup_radius', fine%certificate%tangent_radius, &
+            '1', 'fine nu-tangent sup radius', status='certified-continuous')
+        call result%close()
+    end subroutine
+
     subroutine expand_band(lower, upper, step_lower, step_upper)
         real(dp), intent(in) :: lower(:), upper(:)
         real(dp), intent(out) :: step_lower(:), step_upper(:)

@@ -110,3 +110,63 @@ run from the repository root and must reproduce committed leaves exactly.
   each step (max energy defect 6.2e-5 vs 2.6e-5, one histogram count moved).
   Open: modal Poisson still duplicated (gen_poisson, gen_shielding_dynamics);
   fp/laboratory/poisson keep their own emit convention; no VJP of the KDK step.
+- 2026-10-05 (worker Q3/Q8): Q3 `src/fermion_ensemble.f90` +
+  `gen_fermion_ensemble` (docs/fermion-ensemble.md). It provides canonical
+  fixed-N box/trap sums through a subtraction-free recursion, interval
+  enclosures with a rigorous omitted-orbital remainder, exchange hole,
+  density matrix, Boltzmann and ground preparations, and the box EOS with
+  T/density derivatives. Oracles: brute-force determinants, cold
+  thermodynamic-limit hole (deviation 8.6e-5 at N=1021), grand-canonical
+  EOS (e_N-e_TL ~ 1/N), classical limits and finite differences. The
+  alternating power-sum recursion cancels up to 5e36 cold; it is used only
+  as a cross-check. Q8: relativistic option in `kin6d_fermi_gas`
+  (`gen_relativistic_fermi`, convexity tail, graded Fermi-window mesh;
+  nonrelativistic path bit-identical). Certified to x_F=10 at 1e7 K;
+  NR/UR/Chandrasekhar/classical limits checked by an independent binary128
+  oracle. Demos `fermion_ensemble_demo` and `relativistic_fermi_demo` write
+  to output/. Open: binary64 range limit for cold large-N states;
+  the nonrelativistic certificate fails below theta of about 1e-3 (graded
+  mesh not applied); fortplot subplot axis scales leak between panels.
+- 2026-10-05 (controller): FortNum main 7f6a0ba adds the generic
+  `fortnum_ode_residual_certificate` (F6; 7.8x faster than the kin6d copy
+  at equal radius on the 125-mode case) and BSD-sed-portable tests. fortplot
+  branch `mp4-quality` (local): BT.709-tagged yuv420p H.264, faststart,
+  1 s keyframes, CRF 18, even-size padding, exclusive frame directory,
+  edge tick labels, `fill_between` alpha; follow-up for subplot colorbars,
+  glyphs, fallback status, log-scale leakage and large-value ticks.
+  docs/figure-style.md added. Merged F1-F4 and Q3/Q8; 24/24 CTest green.
+  Controller follow-ups: apply the graded Fermi-window mesh to the
+  nonrelativistic certificate; per-degree scaling for cold large-N
+  canonical sums; FortNum interval layer compiled without
+  `-ffp-contract=off` in FortNum's own build (audit directed rounding).
+- 2026-10-05 (worker, Q1/Q1b): `src/coulomb_encounter.f90`,
+  `src/radial_dvr.f90`, `src/coulomb_kepler.f90`, leaves from
+  `gen/gen_coulomb_encounter.f90`, docs/coulomb-encounter.md. Partial waves
+  on a GLL FEM-DVR (exact singular integrals in the origin element), banded
+  LAPACK eigen windows, exact discrete evolution; product/singlet/triplet
+  sectors; classical Wigner ensemble through the nbody interaction step;
+  JVP/VJP of bin probabilities in (b, sigma, g). Oracles: hydrogen levels
+  9e-13, Coulomb phases 1e-9, F_l shape 1e-8, free Gaussian 5e-7, Mott ratio
+  0.018 abs (60-120 deg), Rutherford fluence 1% (120-180 deg), eta=10
+  quantum vs classical within 4 sd, derivatives vs FD 1.6e-8, Kepler
+  autocorrelation vs exact levels 1e-10 to 1.1 T_rev. 23/23 CTest green in
+  Release and Debug. Open: GLL and normalized Legendre belong in FortNum; no
+  continuum discretization bound.
+- 2026-10-05 (F5 worker): `kin6d_io` (`src/result_io.f90`) plus FortIO
+  pinned at 38add03 via FetchContent. All 22 applications read `--config FILE`
+  namelists (defaults unchanged, one group per app) and write
+  `output/<app>.nc` (NetCDF-4/HDF5) with units, per-variable `kin6d_status`,
+  literal/resolved configuration, build-time and runtime git commit/tree
+  state, compiler version/options, FortSym/FortNum/fortplot/FortIO pins, UTC
+  time and command line. quantum_reference_demo and classical_pair_demo share
+  `&periodic_pair` (`src/periodic_pair_config.f90`). The classical demo
+  rejects a mass/coupling it cannot realize; the old
+  `&quantum_reference length=` spelling is rejected. With defaults, every
+  migrated app's numerical CSV/text output matched the pre-migration
+  binaries byte for byte. Only timing columns and a few
+  comment headers that now print the configured values differ. CTest
+  `result_io_contract` checks FortIO-reader, ncdump and h5dump round trips,
+  resolve idempotence and rejection cases; the gallery records `.nc` sha256.
+  Open: in-file groups, generated schema, external-input hashes, hardware
+  records; new apps (coulomb_encounter, ocp_*, jellium_cell, screening,
+  wigner) must adopt the module and join the `kin6d_io` list in CMake.
