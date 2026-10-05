@@ -510,24 +510,32 @@ contains
         end do
     end subroutine node_weights
 
-    ! Probability of |r| in each radial bin (DVR nodal quadrature), sector-normalized.
+    ! Probability of |r| in each radial bin, sector-normalized: 8-point
+    ! Gauss-Legendre per bin on the exactly interpolated sum_lm |u_lm(r)|^2.
     subroutine encounter_separation_density(enc, a, sector, edges, p)
         type(encounter_t), intent(in) :: enc
         complex(dp), intent(in) :: a(:, 0:, 0:)
         integer, intent(in) :: sector
         real(dp), intent(in) :: edges(0:)
         real(dp), intent(out) :: p(:)
-        real(dp) :: node(enc%mesh%n)
-        integer :: i, ib
-        call node_weights(enc, a, sector, node)
+        real(dp) :: xq(8), wq(8), val(enc%mesh%order), dens
+        integer :: idx(enc%mesh%order), ib, q, l, m
         p = 0
-        do i = 1, enc%mesh%n
-            do ib = 1, size(p)
-                if (enc%mesh%r(i) >= edges(ib - 1) .and. enc%mesh%r(i) < edges(ib)) &
-                    p(ib) = p(ib) + node(i)
+        do ib = 1, size(p)
+            call gauss_legendre_ab(8, edges(ib - 1), min(edges(ib), enc%mesh%rmax), xq, wq)
+            do q = 1, 8
+                call radial_locate(enc%mesh, xq(q), idx, val)
+                dens = 0
+                do l = 0, enc%lmax
+                    if (.not. in_sector(l, sector)) cycle
+                    do m = 0, min(l, enc%mmax)
+                        dens = dens + abs(sum(val*a(idx, m, l)))**2
+                    end do
+                end do
+                p(ib) = p(ib) + wq(q)*dens
             end do
         end do
-        p = p/sum(node)
+        p = p/encounter_norm(enc, a, sector)
     end subroutine encounter_separation_density
 
     ! [indicator] probability within width of the hard wall at rmax.

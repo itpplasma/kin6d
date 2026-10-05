@@ -284,6 +284,7 @@ contains
         complex(dp), allocatable :: a(:, :, :), ae(:, :, :), ao(:, :, :)
         integer, parameter :: nb = 12
         real(dp) :: edges(0:nb), pp(nb), ps(nb), pt(nb), ns, nt, n, err, x(3), y(3), z(3)
+        real(dp) :: redges(0:nb), pr(nb)
         complex(dp) :: psp(3), psm(3), ptp(3), ptm(3)
         integer :: ib, l
         logical :: ok
@@ -308,6 +309,12 @@ contains
         end do
         call check('spin-unresolved product = weighted singlet+triplet', err < 1.0e-13_dp, err)
         call check('angular bins sum to 1', abs(sum(pp) - 1) < 1.0e-12_dp, abs(sum(pp) - 1))
+        do ib = 0, nb
+            redges(ib) = enc%mesh%rmax*ib/nb
+        end do
+        call encounter_separation_density(enc, a, SECTOR_TRIPLET, redges, pr)
+        call check('separation density (interpolated) vs DVR norm', abs(sum(pr) - 1) &
+                   < 1.0e-6_dp, abs(sum(pr) - 1))
         ae = a; ao = a
         do l = 0, enc%lmax
             if (mod(l, 2) == 1) ae(:, :, l) = 0
