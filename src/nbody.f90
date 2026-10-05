@@ -319,7 +319,7 @@ contains
         do a = -nr, nr
             do b = -nr, nr
                 do c = -nr, nr
-                    e = d + length*real([a, b, c], dp)
+                    e(1) = d(1) + length*a; e(2) = d(2) + length*b; e(3) = d(3) + length*c
                     ok = maxval(abs(e)) > 0
                     if (.not. ok) return
                     call ewald_real_pair(e(1), e(2), e(3), system%ewald%alpha, g, &
@@ -582,7 +582,9 @@ contains
         do a = -nr, nr
             do b = -nr, nr
                 do c = -nr, nr
-                    e = d + system%ewald%length*real([a, b, c], dp)
+                    e(1) = d(1) + system%ewald%length*a
+                    e(2) = d(2) + system%ewald%length*b
+                    e(3) = d(3) + system%ewald%length*c
                     ok = maxval(abs(e)) > 0
                     if (.not. ok) return
                     call ewald_real_pair_jvp(e(1), e(2), e(3), system%ewald%alpha, g, &
