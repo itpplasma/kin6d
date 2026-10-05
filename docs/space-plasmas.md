@@ -5,9 +5,10 @@ Status: long-range application map. No space-plasma solver is implemented.
 ## Physical scope and reuse
 
 The intended envelope includes solar atmosphere/corona, solar wind and
-heliosphere, planetary magnetospheres, ionospheres/exospheres, and comet/moon
-plumes. It uses classical or special-relativistic electromagnetic kinetics,
-fluid/MHD reductions and specified neutral/atomic physics. General relativity,
+heliosphere, planetary magnetospheres, ionospheres/exospheres, comet/moon
+plumes and dusty/embedded-body environments. It uses classical or
+special-relativistic electromagnetic kinetics, fluid/MHD reductions,
+partially ionized/reacting matter and specified neutral/atomic physics. General relativity,
 pair creation, nuclear networks and comprehensive astrophysical radiation
 transport are outside the planned scope.
 
@@ -28,7 +29,8 @@ not make global full kinetics practical.
 | Global magnetosphere | MHD bulk, kinetic ring-current/energetic populations |
 | Heliosphere | MHD/multi-fluid wind, kinetic pickup ions and neutral hydrogen |
 | Radiation belts | DK/orbit-averaged electrons with declared wave diffusion |
-| Ionosphere/exosphere/plume | Fluid/kinetic populations, reactions and photon drivers |
+| Ionosphere/exosphere/plume | Partially ionized fluid/kinetic populations, neutral winds, reactions and photon drivers |
+| Dusty/body interaction | Charged grains/finite bodies with sheath, charging, emission and external forces |
 
 Species model, active/test/reservoir role and field self-consistency remain
 independent choices subject to compatibility. Collisionless `C=0` is an
@@ -73,7 +75,10 @@ Landau-fluid/nonlocal heat flux and kinetic species. CGL double-adiabatic
 invariants require their collisionless magnetized ordering and neglected
 heat-flux assumptions; they are not exact invariants of arbitrary FK states.
 Coronal Spitzer conduction, optically thin radiation and prescribed heating
-are distinct constitutive/source choices. No Maxwellian reference is
+are distinct constitutive/source choices. Photospheric/chromospheric or other
+optically thick work may move up the common radiation hierarchy through
+opacity, diffusion and multigroup/moment transport; highest-fidelity non-LTE
+spectral transfer remains a provider boundary. No Maxwellian reference is
 structurally mandatory for the FK state.
 
 Initializers and imported states can contain beams, loss cones, rings,
@@ -103,8 +108,8 @@ unattenuated rate is a closure, not a photon-transport solution.
 Planetary bodies and spacecraft use the same surface operator for absorption,
 reflection, charging, photo/secondary emission, sputtering and desorption.
 Capacitance/current conventions and the external electrical reservoir must
-be defined. Dust charging and radiation pressure are deferred until a real
-case needs them; if charge is `q=Z e`, its evolution uses `e dot Z=I`, with
+be defined. Dust/grain charging, finite embedded bodies and radiation pressure are common
+particle/surface/force capabilities admitted when a real case needs them; if charge is `q=Z e`, its evolution uses `e dot Z=I`, with
 consistent current units. They do not justify a speculative particle framework.
 
 ## Spatial hybrids and evidence
@@ -132,3 +137,7 @@ separate labels. The cheapest supported model is selected only with evidence
 that it answers the requested observable to the stated tolerance.
 
 Chris&AI
+
+See [reacting and partially ionized plasmas](reacting-partially-ionized.md),
+[radiation](radiation.md), and the [capability catalogue](capability-catalogue.md)
+for shared cross-domain primitives.

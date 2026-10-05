@@ -5,14 +5,21 @@ Status: canonical architecture, 2026-10-05.
 ## Mission
 
 KIN6D is not one 6D solver and not a collection of compatibility modes. It is a
-common plasma-physics engine in which the usual hierarchy of plasma models and
-numerical representations can coexist, be compared one approximation at a
-time, differentiated, optimized and, where the mathematics permits, certified.
+**general classical plasma multiphysics engine** in which plasma, neutral,
+radiation, surface and transport models plus their numerical representations
+can coexist, be compared one approximation at a time, differentiated,
+optimized and, where the mathematics permits, certified.
 
-The highest-fidelity charged-particle reference is relativistic 3X3P
-Vlasov--Maxwell with multispecies nonlinear Coulomb collisions. Practical
-calculations deliberately use cheaper models and representations when their
-error relative to the scientific observable is acceptable.
+The intended application envelope covers fusion, Solar-System/natural,
+industrial/low-temperature, beam/accelerator, atmospheric, dusty/non-neutral
+and classical high-energy-density plasmas. The highest-fidelity
+charged-particle reference is relativistic 3X3P Vlasov--Maxwell; practical
+calculations deliberately use cheaper models, closures and representations
+when their error relative to the scientific observable is acceptable.
+
+The full design space is recorded in the capability and numerical-method
+catalogues. They prevent architectural dead ends but do not determine
+implementation order.
 
 The primary scientific target is **direct kinetic steady state**:
 source/collision/transport/field-balanced non-Maxwellian states should be
@@ -110,9 +117,12 @@ KIN6D configuration is intentionally factored.
 {\rm fixed/adiabatic/fluid/gyrofluid/gyromoment/PK/BA/DK/GK/FK}.
 \]
 
-A separate bulk model may aggregate explicitly owned thermal populations into
-ideal/resistive/Hall/XMHD or multi-fluid state. Species and bulk ownership must
-prevent double counting.
+A separate bulk model may aggregate explicitly owned populations into reacting
+neutral/multispecies compressible flow, ideal/resistive/Hall/XMHD or
+multi-fluid state. Species and bulk ownership must prevent double counting.
+Reduced Boltzmann/EEDF models are kinetic reductions with their own angular/
+energy representation and reaction-rate contract, not special industrial
+solver modes.
 
 ### Distribution form
 
@@ -180,6 +190,59 @@ component.
 The selected species reductions must be compatible with the selected field
 action. Background equilibrium, imposed drive and induced response remain
 separate.
+
+
+### Interaction and correlation fidelity
+
+The microscopic interaction model is another independent axis:
+
+\[
+\text{collisionless mean field}
+\rightarrow
+\text{model collisions}
+\rightarrow
+\text{Landau/Beliaev--Budker}
+\rightarrow
+\text{screened/mean-force nonideal closures}
+\rightarrow
+\text{direct classical correlated-particle reference}.
+\]
+
+Direct N-body/MD is reserved for small strongly coupled classical reference
+problems; fully quantum many-body physics remains outside the classical core.
+
+### Ionization, chemistry and neutral matter
+
+The same species/reaction graph supports charge states, atoms, molecules,
+negative ions, metastables and internal states. Heavy-particle fidelity ranges
+from prescribed gas through reaction-diffusion and multispecies compressible
+flow to rarefied kinetic/DSMC-like transport.
+
+Electron fidelity for weakly ionized plasmas can progress from local-field/
+electron-energy closures through multi-term Boltzmann/EEDF to FK electrons.
+See [reacting and partially ionized plasmas](docs/reacting-partially-ionized.md).
+
+### Radiation
+
+Radiation is a state/closure axis:
+
+\[
+\text{optically thin}
+\rightarrow
+\text{opacity/escape}
+\rightarrow
+\text{grey diffusion}
+\rightarrow
+\text{multigroup/moment transport}
+\rightarrow
+\text{angular transport}
+\rightarrow
+\text{external high-fidelity non-LTE spectral provider}.
+\]
+
+Reduced radiation transport is native KIN6D physics; implementing the entire
+line-by-line non-LTE transfer discipline is not a prerequisite for the common
+plasma engine. See [radiation](docs/radiation.md).
 
 ### Coupling roles
 
@@ -449,16 +512,23 @@ strict certifier remains independent.
 
 Long-range capabilities include equilibria, linear/nonlinear stability and
 bifurcation, 0D--3D integrated/global transport, MHD/XMHD,
-gyrofluid/gyromoments, DK/GK/FK, PIC/PIF/blobs, edge/SOL/divertor,
-deterministic and MC neutrals,
-atomic/molecular reactions, sheaths/walls, radiation, RF/full-wave heating,
-NBI, fusion reactions/products, vacuum/coils/circuits, Solar-System plasmas,
-synthetic diagnostic forward operators, TIAGO inference integration, design
-and control.
+gyrofluid/gyromoments, DK/GK/FK, PIC/PIF/blobs, compressible/shock-capable
+plasma, edge/SOL/divertor, deterministic/MC/rarefied neutrals, partial
+ionization and large sparse chemistry/internal-state networks, drift-diffusion
+and ionization fronts, conducting/dielectric/reactive surfaces, reduced native
+radiation transport, RF/full-wave/wave-kinetic physics, energetic and fusion
+products, vacuum/coils/circuits, Solar-System/natural, industrial,
+beam/accelerator, atmospheric, dusty/non-neutral and classical HEDP
+configurations, synthetic diagnostics, TIAGO inference integration, design and
+control.
 
-The architecture must remain one engine, but features are admitted only when a
-real use case, derivation, independent oracle, differentiability statement,
+The architecture must remain one engine. Named application domains are thin
+configurations over common primitives. Features are admitted only when a real
+use case, derivation, independent oracle, differentiability statement,
 certificate target and performance target exist.
+
+See [the complete capability catalogue](docs/capability-catalogue.md) and
+[numerical-method catalogue](docs/numerical-methods.md).
 
 ## Configuration, result and UX boundary
 
@@ -485,15 +555,22 @@ certifier flags are target-local, never hard-coded globally.
 
 See [configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md).
 
-## Immediate implementation boundary
+## Immediate implementation boundary and prioritization
 
 The implemented 1X1V slice remains the authoritative first rung. Its compact
-Fourier representation must not dictate the future 6D layout. The next work is
-self-consistent 1X1V/representation comparisons and the 0X3V collision
-laboratory, while an early HM/gyrofluid branch exercises nonlinear structure.
+Fourier representation must not dictate the future 6D layout. The current
+high-value path remains self-consistent 1X1V/representation comparisons, the
+0X3V collision laboratory, early stability/gyrofluid work and cheap integrated
+transport.
 
-Do not split KIN6D into continuum/PIC/PIF/gyrofluid repositories. If a generic
-particle engine or indexed-kernel scheduler acquires multiple independent
+The broader catalogue is **not an implementation queue**. At each planning
+cycle choose the vertical slice with the strongest combination of scientific
+value, cross-domain reuse, dependency unlock, validation strength,
+performance/certification leverage and acceptable cost/risk.
+
+Do not split KIN6D into continuum/PIC/PIF/gyrofluid/industrial/space
+repositories. If a generic particle engine, reaction runtime, radiation
+transport primitive or indexed-kernel scheduler acquires multiple independent
 consumers, extract the stable generic layer upstream only after the abstraction
 is demonstrated.
 

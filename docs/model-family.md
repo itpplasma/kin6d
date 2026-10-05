@@ -228,6 +228,19 @@ The field reduction is a physical model choice, not merely a preconditioner.
 Conversely, reduced field equations may be used as a preconditioner while the
 target residual remains full Maxwell.
 
+## Reacting, weakly ionized and compressible models
+
+The same model family covers low-temperature/industrial and atmospheric plasma
+without a separate application architecture. Electron closure can progress
+from local-field/electron-energy through reduced Boltzmann/EEDF to FK, while
+heavy species progress from reaction-diffusion through multispecies
+compressible fluid to rarefied kinetic/DSMC-like transport.
+
+Large sparse chemistry/internal-state networks, dielectric/electrode boundaries
+and radiation are orthogonal axes. See
+[reacting-partially-ionized.md](reacting-partially-ionized.md) and
+[radiation.md](radiation.md).
+
 ## Edge and open-system models
 
 The same model axes extend from core through SOL/divertor to wall. Cross-field
@@ -323,6 +336,14 @@ Refinement may then be ranked by
 
 This becomes a guarantee only after the corresponding stability and remainder
 bounds exist.
+
+## Complete catalogue versus implemented family
+
+The exhaustive classical-plasma design envelope is maintained in
+[capability-catalogue.md](capability-catalogue.md). It is intentionally broader
+than the active implementation path. Numerical options are catalogued in
+[numerical-methods.md](numerical-methods.md). Neither document is a backlog;
+the roadmap chooses vertical slices by value and leverage.
 
 ## Admission discipline
 

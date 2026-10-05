@@ -173,6 +173,22 @@ Potential capabilities include:
 Any compression/remapping step carries an explicit defect or statistical
 status.
 
+## Rarefied-particle and direct-correlation models
+
+DSMC-like neutral/gas particles and direct classical N-body/MD particles reuse
+parts of the same particle runtime but represent **different continuous/
+microscopic models** from ordinary Vlasov PIC.
+
+- DSMC approximates a rarefied Boltzmann collision process.
+- MCC/binary-collision particles approximate selected stochastic collision/
+  reaction operators.
+- Direct N-body/MD resolves explicit pair interactions and is reserved for
+  small strongly coupled classical reference problems.
+
+Do not claim equivalence to FK+Landau merely because all three use arrays of
+particles. Their convergence targets, invariants and statistical/correlation
+errors differ.
+
 ## Deterministic sampling, QMC and Monte Carlo
 
 Deterministic quadrature remains the preferred reference where practical.
@@ -182,7 +198,7 @@ error estimation while retaining low discrepancy.
 
 Ordinary Monte Carlo is first-class when appropriate, notably for:
 
-- kinetic neutral histories;
+- kinetic neutral histories and DSMC-like rarefied gas;
 - stochastic reaction/wall events;
 - binary particle collisions;
 - rare-event and importance-sampling estimators;
@@ -283,3 +299,6 @@ and statistical noise. Agreement between methods with very different dominant
 errors is a major validation asset.
 
 Chris&AI
+
+See [the numerical-method catalogue](numerical-methods.md) for shock/front,
+AMR, DSMC, MD, radiation and low-rank methods that complement this distribution-focused document.
