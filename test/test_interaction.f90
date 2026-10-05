@@ -3,26 +3,33 @@ program test_interaction
     use fortnum_interval, only: interval_t, ipoint
     use kin6d_interaction_laboratory
     use kin6d_interaction_leaves
+    use kin6d_coulomb_leaves, only: coulomb_pair, coulomb_pair_interval
+    use kin6d_species, only: units_t, species_t, atomic_units, electron
+    use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
+                           nbody_step, nbody_step_jvp
+    use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     implicit none
+    type(units_t) :: au
+    type(nbody_system_t) :: relative
+    type(fortnum_status_t) :: status
     type(interaction_state_t) :: state
     type(interval_t) :: rb(3), ub(3), fi(3), pi
     real(dp) :: r0(3) = [-6._dp, .6_dp, .2_dp], u0(3) = [2._dp, .1_dp, -.15_dp]
     real(dp) :: r(3), u(3), f(3), fn(3), p, pn, err(3), initial_energy, energy
-    real(dp) :: x(8), direction(8), j(6), g(8), b(6), yp(6), ym(6), fd(6), eps
+    real(dp) :: x(6), direction(6), j(6), yp(6), ym(6), fd(6), eps
     real(qp) :: exact_r(3), exact_u(3), force(3), norm, physical_time
     logical :: ok, bounded
     integer :: k, n, level
-    call interaction_pair_force(3._dp, -4._dp, 2._dp, 1.7_dp, f(1), f(2), f(3), p)
-    call interaction_pair_force(-3._dp, 4._dp, -2._dp, 1.7_dp, fn(1), fn(2), &
-                                fn(3), pn)
+    au = atomic_units()
+    call coulomb_pair(3._dp, -4._dp, 2._dp, 1.7_dp, f(1), f(2), f(3), p)
+    call coulomb_pair(-3._dp, 4._dp, -2._dp, 1.7_dp, fn(1), fn(2), fn(3), pn)
     call check(maxval(abs(f + fn)) < 1.e-15_dp, 'pair force antisymmetry')
     call check(abs(p - pn) < 1.e-15_dp, 'pair potential exchange symmetry')
     norm = sqrt(29._qp); force = real(1.7_dp, qp)*[3._qp, -4._qp, 2._qp]/norm**3
     call check(maxval(abs(real(f, qp) - force)) < 2.e-16_qp, &
                'Cartesian Coulomb oracle')
-    call interaction_pair_force_interval(ipoint(3._dp), ipoint(-4._dp), &
-                                         ipoint(2._dp), &
-                                         ipoint(1.7_dp), fi(1), fi(2), fi(3), pi)
+    call coulomb_pair_interval(ipoint(3._dp), ipoint(-4._dp), ipoint(2._dp), &
+                               ipoint(1.7_dp), fi(1), fi(2), fi(3), pi)
     call check(all(real(fi%lo, qp) <= force) .and. all(force <= real(fi%hi, qp)), &
                'independent force interval containment')
     call interaction_particle_coordinate_interval(ipoint(nearest(0._dp, &
@@ -30,28 +37,26 @@ program test_interaction
     call check(real(pi%lo, qp) <= -real(nearest(0._dp, 1._dp), qp)/2 .and. &
                -real(nearest(0._dp, 1._dp), qp)/2 <= real(pi%hi, qp), &
                'subnormal physical coordinate containment')
-    x = [r0, u0, 2._dp, .013_dp]
-    direction = [.2_dp, -.1_dp, .3_dp, -.4_dp, .2_dp, .1_dp, .15_dp, -.02_dp]
-    b = [.1_dp, .2_dp, -.3_dp, .4_dp, -.5_dp, .6_dp]
-    call interaction_verlet_jvp(x(1), x(2), x(3), x(4), x(5), x(6), x(7), x(8), &
-                               direction(1), direction(2), direction(3), direction(4), &
-                                direction(5), &
-                     direction(6), direction(7), direction(8), j(1), j(2), j(3), j(4), &
-                                j(5), j(6))
+    ! Relative problem: reduced mass 1/2, charge -1, fixed partner charge -1.
+    call nbody_isolated(relative, au, [species_t('relative', -1._dp, .5_dp)], ok)
+    call nbody_add_source(relative, [0._dp, 0._dp, 0._dp], -1._dp, ok)
+    call check(ok, 'relative system')
+    x = [r0, u0]
+    direction = [.2_dp, -.1_dp, .3_dp, -.4_dp, .2_dp, .1_dp]
+    yp = x; j = direction
+    call nbody_step_jvp(relative, yp, j, .013_dp, status)
+    call check(status%code == FORTNUM_OK, 'KDK tangent step')
     eps = 2.e-5_dp
-    call verlet(x + eps*direction, yp); call verlet(x - eps*direction, ym)
+    yp = x + eps*direction; ym = x - eps*direction
+    call nbody_step(relative, yp, .013_dp, status)
+    call nbody_step(relative, ym, .013_dp, status)
     fd = (yp - ym)/(2*eps)
     call check(maxval(abs(fd - j)) < 3.e-10_dp, &
-               'Verlet independent directional finite difference')
-    call interaction_verlet_vjp(x(1), x(2), x(3), x(4), x(5), x(6), x(7), x(8), &
-               b(1), b(2), b(3), b(4), b(5), b(6), g(1), g(2), g(3), g(4), g(5), g(6), &
-                                g(7), g(8))
-    call check(abs(dot_product(j, b) - dot_product(direction, &
-                                               g)) < 2.e-14_dp, 'Euclidean VJP pairing')
+               'KDK step independent directional finite difference')
     call orbit(real(r0, qp), real(u0, qp), 2._qp, 6._qp, exact_r, exact_u)
     do level = 1, 3
         n = 1500*2**level
-        call init_interaction(state, r0, u0, 2._dp, ok)
+        call init_interaction(state, r0, u0, au, electron(), electron(), ok)
         call check(ok, 'initialize arbitrary true 3D scattering')
         do k = 1, n
             call step_interaction(state, 6._dp/real(n, dp), ok, certify=.false.)
@@ -65,9 +70,9 @@ program test_interaction
     call check(err(1)/err(2) > 3.8_dp .and. err(2)/err(3) > 3.8_dp, &
                'Rutherford orbit second order convergence')
     call check(err(3) < 2.e-6_dp, 'finite time Rutherford orbit accuracy')
-    call init_interaction(state, r0, u0, 2._dp, ok)
-    call interaction_energy(r0(1), r0(2), r0(3), u0(1), u0(2), u0(3), 2._dp, &
-                            initial_energy)
+    call init_interaction(state, r0, u0, au, electron(), electron(), ok)
+    call interaction_energy(r0(1), r0(2), r0(3), u0(1), u0(2), u0(3), &
+                            interaction_coupling(state), initial_energy)
     do k = 1, 12000
         call step_interaction(state, .0005_dp, ok)
         call check(ok, 'validated candidate step')
@@ -84,7 +89,8 @@ program test_interaction
                             qp) <= exact_u) .and. all(exact_u <= real(ub%hi, qp)), &
                    'Rutherford true velocity inside rigorous propagated box')
     end do
-    call interaction_energy(r(1), r(2), r(3), u(1), u(2), u(3), 2._dp, energy)
+    call interaction_energy(r(1), r(2), r(3), u(1), u(2), u(3), &
+                            interaction_coupling(state), energy)
     call check(abs(energy - initial_energy) < 1.e-7_dp, 'energy diagnostic')
     call neutral_contact_trajectory([-6._dp, .6_dp, 0._dp], [2._dp, 0._dp, &
                                                          0._dp], 1._dp, 2._dp, r, u, ok)
@@ -95,11 +101,13 @@ program test_interaction
     call check(ok .and. maxval(abs(u - [-.56_dp, 1.92_dp, &
                                 0._dp])) < 2.e-14_dp, 'neutral specular contact oracle')
     call check(abs(sum(u*u) - 4._dp) < 2.e-14_dp, 'elastic neutral contact')
-    call init_interaction(state, [0._dp, 0._dp, 0._dp], u0, 2._dp, ok)
+    call init_interaction(state, [0._dp, 0._dp, 0._dp], u0, au, electron(), &
+                          electron(), ok)
     call check(.not. ok, 'singular initial state rejected')
-    call init_interaction(state, r0, u0, -1._dp, ok)
+    call init_interaction(state, r0, u0, au, electron(), &
+                          species_t('proton', 1._dp, 1836.15267343_dp), ok)
     call check(.not. ok, 'nonrepulsive coupling rejected by this named model')
-    call init_interaction(state, r0, u0, 2._dp, ok)
+    call init_interaction(state, r0, u0, au, electron(), electron(), ok)
     call step_interaction(state, 0._dp, ok)
     call check(.not. ok, 'invalid step rejected')
     call step_interaction(state, 1.e5_dp, ok)
@@ -117,12 +125,6 @@ contains
             print '(a)', 'FAIL: '//message
             error stop 1
         end if
-    end subroutine
-    subroutine verlet(z, y)
-        real(dp), intent(in)::z(8)
-        real(dp), intent(out)::y(6)
-        call interaction_verlet(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
-                                y(1), y(2), y(3), y(4), y(5), y(6))
     end subroutine
     pure function cross(a, b) result(c)
         real(qp), intent(in)::a(3), b(3)

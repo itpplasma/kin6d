@@ -1,10 +1,9 @@
 program microscopic_cloud_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
-    use kin6d_microscopic_cloud, only: cloud_model_t, cloud_initialize, &
-                                       cloud_step, cloud_hamiltonian
-    use kin6d_cloud_leaves, only: cloud_projection, cloud_norm, cloud_fraction, &
-  cloud_circle, cloud_energy_defect, cloud_frame_time, cloud_phase, cloud_display_defect
+    use kin6d_microscopic_cloud, only: cloud_model_t, cloud_system, cloud_initialize
+    use kin6d_nbody, only: nbody_system_t, nbody_step, nbody_energy, &
+                           nbody_encounter_step
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, &
                   plot, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
@@ -12,10 +11,12 @@ program microscopic_cloud_demo
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
     integer, parameter :: particles = 32, frames = 121, fps = 24, substeps = 100
-    real(dp), parameter :: dt = 0.001_dp
+    real(dp), parameter :: dt = 0.001_dp, encounter_eta = 0.05_dp
+    real(dp), parameter :: two_pi = 6.2831853071795864769_dp
     real(dp), parameter :: blue(3) = [0.0_dp, 0.4471_dp, 0.6980_dp]
     real(dp), parameter :: orange(3) = [0.8353_dp, 0.3686_dp, 0.0_dp]
     type(cloud_model_t) :: model(2)
+    type(nbody_system_t) :: system
     type(fortnum_status_t) :: status
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
@@ -25,7 +26,9 @@ program microscopic_cloud_demo
     real(dp) :: candidate_cpu(frames, 2), diagnostic_cpu(frames, 2), start, finish
     real(dp) :: xp(particles), yp(particles), radii(particles), fraction(particles)
     real(dp) :: circle_x(101), circle_y(101), phase, scratch, max_view, energy_view
+    real(dp) :: limit
     integer :: run, frame, step, p, j, k, unit, snapshot_frame, encode_status
+    integer :: substep, pieces, refined(2)
     logical :: ok, snapshot_only
     character(len=64) :: argument
     character(len=150) :: heading
@@ -45,30 +48,41 @@ program microscopic_cloud_demo
         error stop 'snapshot frame outside 1..121'
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'cannot create output directory'
-    model(2)%impurity_coupling = 2.0_dp
-    candidate_cpu = 0.0_dp; diagnostic_cpu = 0.0_dp
+    ! Fixed impurity of charge -2e at the origin (repulsive for electrons).
+    model(2)%impurity_charge = -2.0_dp
+    candidate_cpu = 0.0_dp; diagnostic_cpu = 0.0_dp; refined = 0
     do run = 1, 2
+        call cloud_system(model(run), particles, system, ok)
+        if (.not. ok) error stop 'cloud system setup failed'
         call cloud_initialize(state)
-        call cloud_hamiltonian(state, model(run), initial_energy, status)
+        call nbody_energy(system, state, initial_energy, status)
         if (status%code /= FORTNUM_OK) error stop 'cloud energy initialization failed'
         trajectory(:, 1, run) = state; defect(1, run) = 0.0_dp
         time(1) = 0.0_dp
         do frame = 2, frames
             call cpu_time(start)
             do step = 1, substeps
-                call cloud_step(state, dt, model(run), status)
+                ! Encounter-resolved control: split a substep only when the
+                ! Kepler/crossing time of the closest encounter requires it.
+                call nbody_encounter_step(system, state, encounter_eta, limit, status)
                 if (status%code /= FORTNUM_OK) error stop status%msg
+                pieces = max(1, ceiling(dt/limit))
+                if (pieces > 1) refined(run) = refined(run) + 1
+                do substep = 1, pieces
+                    call nbody_step(system, state, dt/pieces, status)
+                    if (status%code /= FORTNUM_OK) error stop status%msg
+                end do
             end do
             call cpu_time(finish)
             candidate_cpu(frame, run) = finish - start
             trajectory(:, frame, run) = state
             call cpu_time(start)
-            call cloud_hamiltonian(state, model(run), energy, status)
+            call nbody_energy(system, state, energy, status)
             if (status%code /= FORTNUM_OK) error stop 'cloud energy diagnostic failed'
-            call cloud_energy_defect(energy, initial_energy, defect(frame, run))
+            defect(frame, run) = (energy - initial_energy)/abs(initial_energy)
             call cpu_time(finish)
             diagnostic_cpu(frame, run) = finish - start
-         call cloud_frame_time(real(frame - 1, dp), real(substeps, dp), dt, time(frame))
+            time(frame) = real(frame - 1, dp)*real(substeps, dp)*dt
         end do
     end do
     open (newunit=unit, file='output/microscopic-cloud.csv', status='replace')
@@ -97,30 +111,29 @@ program microscopic_cloud_demo
                 write (unit, '(i0,2(a,i0),7(a,es24.16e3),a)') run, ',', frame, &
                     ',', p, ',', time(frame), ',', trajectory(j, frame, run), ',', &
                     trajectory(j + 1, frame, run), ',', trajectory(j + 2, frame, run), &
-                    ',', trajectory(96 + j, frame, run), ',', &
-                    trajectory(97 + j, frame, run), ',', &
-                    trajectory(98 + j, frame, run), ',candidate'
+                    ',', trajectory(3*particles + j, frame, run), ',', &
+                    trajectory(3*particles + j + 1, frame, run), ',', &
+                    trajectory(3*particles + j + 2, frame, run), ',candidate'
             end do
         end do
     end do
     close (unit)
     do p = 1, 101
-        call cloud_phase(real(p - 1, dp), phase)
-        call cloud_circle(phase, model(1)%sphere_radius, circle_x(p), circle_y(p))
+        phase = two_pi*real(p - 1, dp)/100
+        circle_x(p) = model(1)%sphere_radius*cos(phase)
+        circle_y(p) = model(1)%sphere_radius*sin(phase)
     end do
     max_view = 4.0_dp
     do run = 1, 2
         do frame = 1, frames
             do p = 1, particles
                 j = 3*p - 2
-                call cloud_projection(trajectory(j, frame, run), &
-                         trajectory(j + 1, frame, run), trajectory(j + 2, frame, run), &
-                                      scratch, phase)
+                call projection(trajectory(j:j + 2, frame, run), scratch, phase)
                 max_view = max(max_view, abs(scratch)*1.05_dp, abs(phase)*1.05_dp)
             end do
         end do
     end do
-    call cloud_display_defect(defect, display_defect)
+    display_defect = 1.0e6_dp*defect
     energy_view = max(0.1_dp, 1.4_dp*maxval(abs(display_defect)))
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
@@ -135,8 +148,16 @@ program microscopic_cloud_demo
     end if
     print '(a,es12.4)', 'Cloud max relative energy defect (diagnostic): ', &
         maxval(abs(defect))
+    print '(a,2(1x,i0))', 'Encounter-refined substeps (control, impurity):', refined
     print '(a)', 'Candidate only: trajectory enclosure unavailable; no Debye fit.'
 contains
+    !> Display chart X = x + z/4, Y = y + z/6 of a 3D position.
+    pure subroutine projection(r, x, y)
+        real(dp), intent(in) :: r(3)
+        real(dp), intent(out) :: x, y
+        x = r(1) + r(3)/4; y = r(2) + r(3)/6
+    end subroutine
+
     subroutine update_frame(index)
         integer, intent(in) :: index
         if (index < 1 .or. index > frames) error stop 'invalid animation frame'
@@ -150,9 +171,7 @@ contains
             call subplot(2, 2, run)
             do p = 1, particles
                 j = 3*p - 2
-                call cloud_projection(trajectory(j, frame, run), &
-                         trajectory(j + 1, frame, run), trajectory(j + 2, frame, run), &
-                                      xp(p), yp(p))
+                call projection(trajectory(j:j + 2, frame, run), xp(p), yp(p))
             end do
             if (run == 1) then
                 write (heading, '(a,f5.2)') '32 Coulomb electrons | control | t = ', &
@@ -178,10 +197,8 @@ contains
         do run = 1, 2
             do p = 1, particles
                 j = 3*p - 2
-                call cloud_norm(trajectory(j, frame, run), &
-                         trajectory(j + 1, frame, run), trajectory(j + 2, frame, run), &
-                                radii(p))
-                call cloud_fraction(real(p, dp), real(particles, dp), fraction(p))
+                radii(p) = norm2(trajectory(j:j + 2, frame, run))
+                fraction(p) = real(p, dp)/real(particles, dp)
             end do
             ! Sort radii: the empirical CDF is an observable, not a smooth density.
             do p = 2, particles

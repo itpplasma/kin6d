@@ -5,6 +5,8 @@ program quantum_reference_demo
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, interval
     use kin6d_quantum_fock, only: assemble_jellium_pair_sector
+    use kin6d_species, only: units_t, species_t, periodic_pair_units, &
+        periodic_pair_length, electron, pair_coupling
     use kin6d_quantum_evolution, only: quantum_evolution_t, &
         initialize_quantum_evolution, solve_quantum_evolution, &
         sample_quantum_evolution
@@ -23,8 +25,12 @@ program quantum_reference_demo
     implicit none
     integer, parameter :: points = 193, bin_count = 16
     integer :: momentum_cutoff = 2, particles = 2, frames = 61, steps_per_frame = 1
-    real(dp) :: length = 6.2831853071795864769_dp, mass = 1.0_dp, hbar = 1.0_dp
-    real(dp) :: coupling = 2.0_dp, time_max = 16.0_dp
+    ! Defaults are the declared Q0/C1 pair (kin6d_species); a namelist may
+    ! override them.
+    real(dp) :: length = periodic_pair_length, mass, hbar, coupling
+    real(dp) :: time_max = 16.0_dp
+    type(units_t) :: units
+    type(species_t) :: pair_species
     integer(i64) :: max_states = 10000_i64, max_bytes = 1073741824_i64
     integer :: initial_terms = 0
     integer, allocatable :: initial_momenta(:, :)
@@ -83,6 +89,10 @@ program quantum_reference_demo
         end select
         argn = argn + 1
     end do
+    units = periodic_pair_units()
+    pair_species = electron()
+    hbar = units%hbar; mass = pair_species%mass
+    coupling = pair_coupling(units, pair_species, pair_species)
     if (len_trim(config_path) > 0) then
         open (newunit=unit, file=trim(config_path), status='old', iostat=status)
         if (status /= 0) error stop 'configuration cannot be opened'
