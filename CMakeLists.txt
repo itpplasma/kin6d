@@ -291,3 +291,17 @@ add_test(NAME result_io_contract
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
         -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)
+
+# Campaign Q2: Gaussian/coherent-sum packet models measured against the Q1
+# partial-wave reference (src/packet_models.f90, docs/packet-models.md).
+if(KIN6D_FORTSYM_BUILD)
+    add_executable(gen_packet_models gen/gen_packet_models.f90)
+    target_link_libraries(gen_packet_models PRIVATE kin6d_gen_support)
+endif()
+target_sources(kin6d PRIVATE src/generated/kin6d_packet_models_leaves.f90
+    src/gaussian_pair.f90 src/packet_models.f90)
+set_source_files_properties(src/generated/kin6d_packet_models_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_packet_models test/test_packet_models.f90)
+target_link_libraries(test_packet_models PRIVATE kin6d)
+add_test(NAME packet_models_oracles COMMAND test_packet_models)
