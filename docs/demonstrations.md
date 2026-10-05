@@ -57,6 +57,11 @@ Include input, quadrature, reconstruction, compression, and display rounding
 where they affect the reported endpoints. Do not narrow a band by smoothing,
 clipping negative values, omitting a tail, or rounding inward.
 
+For continuous curves, prefer connected bands with a certified interpolation
+remainder at the ordinary plotting resolution. Cellwise rectangles remain a
+valid fallback when that remainder is unavailable. Increasing sampling until
+stairs fall below pixel size does not repair the band representation.
+
 Use documented color-vision-safe colors, with redundant line styles/markers
 and direct labels so comparison remains readable in grayscale. Distinguish
 candidate, exact/reference curve, and interval edges. Keep legends off the

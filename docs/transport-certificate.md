@@ -102,6 +102,52 @@ not a switch from unvalidated floating arithmetic. Nonfinite inputs,
 nonpositive nu, invalid dimensions/grid, nonzero mode-zero sine data and
 nonfinite certificate arithmetic fail explicitly.
 
+## Continuous linear display bands
+
+For a fixed velocity or declared velocity interval, let c(x,v) be the supplied
+Fourier/P1 candidate. Its coefficients are outward interpolated over every
+touched velocity cell. Twice differentiating in x gives the bound
+
+```
+|c_xx(x,v)| <= sum[k>=1] k^2 * (|a_k(v)| + |b_k(v)|) <= M.
+```
+
+The generated curvature accumulator and the maximum over touched velocity
+cells produce a finite outward M. Mode zero contributes exactly zero. This is
+a property of the candidate, independent of any derivative of the unknown
+continuous solution.
+
+On each displayed cell [x_i,x_(i+1)], with exact stored binary64 endpoints and
+h=x_(i+1)-x_i>0, the C2 interpolation theorem gives
+
+```
+|c(x,v)-linear_interpolant(c(x_i,v),c(x_(i+1),v))| <= M*h^2/8 = E_i.
+```
+
+FortNum's `linear_interpolation_remainder` evaluates this budget outward.
+At each vertex, rigorous point-x candidate evaluation is widened by its
+uniform solution-error radius r and the maximum E from the adjacent displayed
+cells. Both endpoints of each segment therefore include at least r+E_i.
+Their exact straight-line lower/upper interpolation encloses the candidate's
+chord plus/minus r+E_i, and hence the continuous solution at every interior x.
+The same argument holds uniformly for all velocities in the requested box.
+Source sets r=0; state and tangent use their separately certified radii and
+separately evaluated curvature bounds.
+
+The API requires finite ordered point-x geometry, a nonnegative finite radius,
+valid immutable coefficient packets and exact captured basis geometry. Failure
+is explicit. The low-level enclosure trusts the caller's uniform radius;
+the state/tangent wrappers additionally validate the prepared certificate
+layout, under the existing immutable-packet contract. No new source identity
+or stale-candidate verification is inferred.
+
+The scientific claim concerns the continuous polygon defined by the stored
+nodal endpoints on linear axes. FortPlot connects those vertices with straight
+segments; no spline smoothing or shrinkage is used. CSV retains the exact
+binary64 nodal values. Rasterization and antialiased pixels are display effects,
+not independently certified numerical endpoints. Nonfinite remainder or
+endpoint arithmetic fails rather than producing a finite certified band.
+
 ## Tangents and observables
 
 For a declared source direction ds and damping direction dnu on the fixed

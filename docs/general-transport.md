@@ -123,18 +123,25 @@ After the normal project configure/build:
   slice at v=0, with source 3/4 and nu=1, compared to the earlier polynomial
   Krook reference at the same point and source;
 - `output/transport-cell-bands.csv`: complete source/state/tangent intervals for
-  each plotted x cell. Decimal endpoints encode binary64 values for round trips.
+  each x cell, retained as full-cell diagnostics;
+- `output/transport-linear-bands.csv`: nodal source/state/tangent endpoints of
+  the plotted continuous bands. Decimal endpoints encode binary64 values for
+  round trips.
 
 The main slice lies inside a coarse velocity cell, exposing reconstruction
-error. The plotting schedule evaluates the candidate over every full x cell
-and surrounds that range by its global certified radius. The demo uses 1536
-plotting cells, making each step narrower than a pixel in the exported figure.
-The full-cell envelopes retain their containment; the trigonometric curves are
-not certified by connecting endpoint intervals. The source ranges include
-interval evaluation. Candidate lines are visual guides to the declared
-reconstruction. Solver grids remain 16/64 velocity cells; the separate timed
-benchmark retains its 96 x cells. Denser demo band preparation and PNG rendering
-are outside that benchmark's workload.
+error. The demo uses 96 x cells and draws continuous bands with straight
+connections between certified nodal endpoints. An outward curvature bound for
+each Fourier/P1 candidate supplies a chord-interpolation remainder on every
+cell. Each nodal interval includes the solution radius and the maximum adjacent
+cell remainder, so the connecting band encloses the solution throughout the
+segments. Source and tangent use their own curvature bounds; source has no PDE
+error radius. This covers curves between samples without staircase geometry or
+a subpixel-resolution requirement; see the
+[band argument](transport-certificate.md#continuous-linear-display-bands).
+Candidate lines are visual guides to the declared reconstruction. Solver grids
+remain 16/64 velocity cells; the timed benchmark retains its existing 96-cell
+constant-range postprocessing. Demo linear-band preparation and PNG rendering
+are separate from that benchmark's workload.
 
 The blue solid and orange dashed resolution curves use the color-vision-safe
 Okabe--Ito blue/vermillion pair, with distinct line styles in grayscale. All
@@ -303,5 +310,33 @@ process resources. Release/Debug gates pass 5/5; optional formal gates pass 6/6.
 Runtime-checked plotting still emits temporary-vector notices at the existing
 FortPlot wrapper calls; standalone clean Release plotting has empty stderr.
 Plot-wrapper copies are separate from the timed band/goal postprocessing.
+
+## Continuous band verification
+
+The 96-cell connected-band repair uses FortNum
+`1b1349948a6250ed5a38655d9b8042c894370d42` and FortSym
+`549aed77be10297beb80d602d714d30166fbeb08`. Their chord-remainder and optional
+absolute-value emission fixtures pass independently. The consumer review
+freezes base `4ad80b7e470288c8388a3b33c18510d7ae032b1b` and patch SHA256
+`1d89075ea781e7a800f87c2b915f77afed745e27bd9da81369445176f3d12d9e`;
+the data-space interpolation argument and implementation pass independent
+review. The additional evidence paragraphs here do not change that snapshot's
+numerical or plotting code.
+
+Release and checked Debug tests pass 6/6, including independent binary128
+interior values on coarse/nonuniform cells, peaks missed by endpoint-only
+bands, both certificate evaluators and arithmetic-failure fixtures. The public
+verified Fo driver runs the new linear-band and existing cached-band gates
+2/2. The complete default snapshot demo passes, and both figures were inspected
+in color and grayscale. The optional formal suite passes 7/7, retaining the
+earlier Lean checks; the new interpolation argument is independently reviewed
+and numerically tested, without a new Lean theorem claim.
+
+The demo's coordinate call now supplies its actual 97-point count to the
+generated plotting-coordinate leaf, giving one period. The separate transport
+benchmark retains its older cell-count argument and thus a span slightly beyond
+one period. Its recorded timing ledger uses that original fixed geometry;
+correcting and remeasuring the benchmark is adjacent work. The demo repair
+does not establish new performance measurements for the connected-band path.
 
 Chris&AI

@@ -1,13 +1,13 @@
 module kin6d_transport_sampling
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use fortnum_interval, only: interval_t, interval, hull
+    use fortnum_interval, only: interval_t, interval, hull, linear_interpolation_remainder
     use kin6d_transport_laboratory, only: transport_state_t, locate_cell
     use kin6d_transport_certificate, only: transport_certificate_t, &
         transport_observable_band
     use kin6d_transport_leaves, only: transport_basis_interval, &
         transport_weighted_mode_accumulate_interval, transport_interpolate_interval, &
-        transport_scalar_add_interval
+        transport_scalar_add_interval, transport_curvature_accumulate_interval
     implicit none
     private
     public :: transport_basis_t, transport_sampling_workspace_t
@@ -15,6 +15,8 @@ module kin6d_transport_sampling
     public :: sample_transport_cached, sample_transport_input_cached
     public :: sample_transport_coefficients_cached, certify_transport_cached
     public :: certify_transport_tangent_cached, transport_sampling_bytes
+    public :: transport_linear_enclosure, certify_transport_linear
+    public :: certify_transport_tangent_linear
 
     ! Only prepare_transport_basis can create the captured rigorous factors.
     ! State/certificate/tangent packets remain immutable while being sampled.
@@ -104,18 +106,21 @@ contains
         ok = .true.
     end function
 
-    subroutine reconstruct(state, cosine, sine, basis, x_cells, velocity, work, ok)
+    subroutine reconstruct(state, cosine, sine, basis, x_cells, velocity, work, ok, &
+        curvature)
         type(transport_state_t), intent(in) :: state
         real(dp), intent(in) :: cosine(0:, :), sine(0:, :)
         type(transport_basis_t), intent(in) :: basis
         type(interval_t), intent(in) :: x_cells(:), velocity
         type(transport_sampling_workspace_t), intent(inout) :: work
         logical, intent(out) :: ok
-        type(interval_t) :: local_v, a, b, updated
+        type(interval_t), intent(out), optional :: curvature
+        type(interval_t) :: local_v, a, b, updated, cell_curvature
         integer :: first, last, j, k, i
         logical :: located
 
         ok = .false.
+        if (present(curvature)) curvature = interval(0.0_dp)
         if (.not. matching_geometry(basis, work, x_cells)) return
         if (.not. allocated(state%v)) return
         if (size(cosine, 1) /= basis%modes + 1) return
@@ -128,6 +133,7 @@ contains
         if (.not. located) return
         if (last < first) return
         do j = first, last
+            cell_curvature = interval(0.0_dp)
             if (.not. ieee_is_finite(state%v(j))) return
             if (.not. ieee_is_finite(state%v(j + 1))) return
             if (state%v(j + 1) <= state%v(j)) return
@@ -149,6 +155,12 @@ contains
                 call transport_interpolate_interval(local_v, interval(state%v(j)), &
                     interval(state%v(j + 1)), interval(sine(k, j)), &
                     interval(sine(k, j + 1)), b)
+                if (present(curvature)) then
+                    call transport_curvature_accumulate_interval(interval(real(k, dp)), &
+                        a, b, cell_curvature, updated)
+                    if (.not. finite_interval(updated)) return
+                    cell_curvature = updated
+                end if
                 do i = 1, size(x_cells)
                     call transport_weighted_mode_accumulate_interval( &
                         basis%sine(i, k), basis%cosine(i, k), a, b, &
@@ -157,6 +169,9 @@ contains
                     work%cell_range(i) = updated
                 end do
             end do
+            if (present(curvature)) then
+                curvature = interval(0.0_dp, max(curvature%hi, cell_curvature%hi))
+            end if
             do i = 1, size(x_cells)
                 if (.not. finite_interval(work%cell_range(i))) return
                 if (j == first) then
@@ -293,6 +308,98 @@ contains
         call reconstruct(state, dcos, dsin, basis, x_cells, velocity, work, ok)
         if (.not. ok) return
         call widen(work, certificate%tangent_radius, lower, upper, ok)
+    end subroutine
+
+    subroutine transport_linear_enclosure(state, cosine, sine, basis, x_points, &
+        velocity, work, radius, lower, upper, ok)
+        type(transport_state_t), intent(in) :: state
+        real(dp), intent(in) :: cosine(0:, :), sine(0:, :), radius
+        type(transport_basis_t), intent(in) :: basis
+        type(interval_t), intent(in) :: x_points(:), velocity
+        type(transport_sampling_workspace_t), intent(inout) :: work
+        real(dp), intent(out) :: lower(:), upper(:)
+        logical, intent(out) :: ok
+        type(interval_t) :: curvature, extra
+        real(dp) :: remainder
+        integer :: i, n
+
+        ! Radius is a caller-supplied uniform error bound for this reconstruction.
+        ! Linear axes/straight connections give a continuous data-space envelope.
+        ok = .false.
+        lower = -huge(0.0_dp); upper = huge(0.0_dp)
+        n = size(x_points)
+        if (n < 2) return
+        if (size(lower) /= n .or. size(upper) /= n) return
+        if (.not. ieee_is_finite(radius)) return
+        if (radius < 0.0_dp) return
+        do i = 1, n
+            if (.not. finite_interval(x_points(i))) return
+            if (x_points(i)%lo /= x_points(i)%hi) return
+        end do
+        do i = 1, n - 1
+            if (x_points(i + 1)%lo <= x_points(i)%lo) return
+        end do
+        call reconstruct(state, cosine, sine, basis, x_points, velocity, work, &
+            ok, curvature)
+        if (.not. ok) return
+        ok = .false.
+        ! The candidate curvature controls its chord error, independent of r.
+        do i = 1, n - 1
+            work%cell_range(i) = linear_interpolation_remainder(x_points(i), &
+                x_points(i + 1), curvature)
+            if (.not. finite_interval(work%cell_range(i))) return
+            if (work%cell_range(i)%lo < 0.0_dp) return
+        end do
+        do i = 1, n
+            ok = .false.
+            remainder = 0.0_dp
+            if (i > 1) remainder = work%cell_range(i - 1)%hi
+            if (i < n) remainder = max(remainder, work%cell_range(i)%hi)
+            call transport_scalar_add_interval(interval(radius), &
+                interval(remainder), extra)
+            if (.not. finite_interval(extra)) return
+            call transport_observable_band(work%candidate(i), interval(1.0_dp), &
+                extra%hi, lower(i), upper(i), ok)
+            if (.not. ok) return
+        end do
+        ok = .true.
+    end subroutine
+
+    subroutine certify_transport_linear(state, certificate, basis, x_points, &
+        velocity, work, lower, upper, ok)
+        type(transport_state_t), intent(in) :: state
+        type(transport_certificate_t), intent(in) :: certificate
+        type(transport_basis_t), intent(in) :: basis
+        type(interval_t), intent(in) :: x_points(:), velocity
+        type(transport_sampling_workspace_t), intent(inout) :: work
+        real(dp), intent(out) :: lower(:), upper(:)
+        logical, intent(out) :: ok
+
+        ok = .false.
+        lower = -huge(0.0_dp); upper = huge(0.0_dp)
+        if (.not. prepared_layout(state, certificate)) return
+        call transport_linear_enclosure(state, state%cosine, state%sine, &
+            basis, x_points, velocity, work, certificate%state_radius, &
+            lower, upper, ok)
+    end subroutine
+
+    subroutine certify_transport_tangent_linear(state, certificate, dcos, dsin, &
+        basis, x_points, velocity, work, lower, upper, ok)
+        type(transport_state_t), intent(in) :: state
+        type(transport_certificate_t), intent(in) :: certificate
+        real(dp), intent(in) :: dcos(0:, :), dsin(0:, :)
+        type(transport_basis_t), intent(in) :: basis
+        type(interval_t), intent(in) :: x_points(:), velocity
+        type(transport_sampling_workspace_t), intent(inout) :: work
+        real(dp), intent(out) :: lower(:), upper(:)
+        logical, intent(out) :: ok
+
+        ok = .false.
+        lower = -huge(0.0_dp); upper = huge(0.0_dp)
+        if (.not. certificate%tangent_valid) return
+        if (.not. prepared_layout(state, certificate)) return
+        call transport_linear_enclosure(state, dcos, dsin, basis, x_points, &
+            velocity, work, certificate%tangent_radius, lower, upper, ok)
     end subroutine
 
     integer(int64) function transport_sampling_bytes(basis, work) result(bytes)

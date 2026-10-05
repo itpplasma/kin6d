@@ -5,12 +5,13 @@ program transport_demo
         sample_transport_arrays
     use kin6d_transport_certificate, only: transport_certificate_t, &
         certify_transport, certify_transport_tangent, transport_certificate_accepts, &
-        certify_transport_sample, certify_transport_tangent_sample, &
         transport_observable_band
     use kin6d_transport_sampling, only: transport_basis_t, &
         transport_sampling_workspace_t, initialize_transport_sampling, &
         prepare_transport_basis, sample_transport_input_cached, &
-        certify_transport_cached, certify_transport_tangent_cached
+        certify_transport_cached, certify_transport_tangent_cached, &
+        transport_linear_enclosure, certify_transport_linear, &
+        certify_transport_tangent_linear
     use kin6d_transport_leaves, only: transport_source_affine, transport_plot_x, &
         transport_cosine_moment_cell_interval, transport_scalar_add_interval, &
         transport_accuracy_interval
@@ -20,9 +21,8 @@ program transport_demo
         ylabel, legend, tight_layout, savefig, ylim
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
-    ! Subpixel plotting cells retain full enclosures without visible stairs.
-    ! This display resolution is independent of the solver and benchmark grids.
-    integer, parameter :: modes = 2, nx = 1536
+    ! Linear plotted bands include a rigorous chord interpolation remainder.
+    integer, parameter :: modes = 2, nx = 96
     real(dp), parameter :: velocity = 0.3125_dp, rtol = 0.01_dp, atol = 1.0e-8_dp
     real(dp), parameter :: goal_scale = 0.25_dp, derivative_scale = 0.25_dp
     type :: case_t
@@ -34,20 +34,25 @@ program transport_demo
     type(case_t) :: coarse, fine
     type(transport_state_t) :: limiting
     type(transport_certificate_t) :: limit_certificate, audit
-    type(transport_basis_t) :: basis
-    type(transport_sampling_workspace_t) :: work
-    type(interval_t) :: cell, reference, x_cells(nx), sources(nx)
+    type(transport_basis_t) :: basis, point_basis, limit_basis
+    type(transport_sampling_workspace_t) :: work, point_work, limit_work
+    type(interval_t) :: reference, x_cells(nx), sources(nx)
+    type(interval_t) :: x_points(nx + 1)
     real(dp) :: band_lo(nx), band_hi(nx)
-    real(dp) :: x(nx + 1), edges(2*nx), source_line(nx + 1)
+    real(dp) :: plot_source_lo(nx + 1), plot_source_hi(nx + 1)
+    real(dp) :: plot_coarse_lo(nx + 1), plot_coarse_hi(nx + 1)
+    real(dp) :: plot_fine_lo(nx + 1), plot_fine_hi(nx + 1)
+    real(dp) :: plot_coarse_dlo(nx + 1), plot_coarse_dhi(nx + 1)
+    real(dp) :: plot_fine_dlo(nx + 1), plot_fine_dhi(nx + 1)
+    real(dp) :: x(nx + 1), source_line(nx + 1)
     real(dp) :: coarse_line(nx + 1), fine_line(nx + 1)
     real(dp) :: coarse_tangent(nx + 1), fine_tangent(nx + 1)
     real(dp) :: source_lo(2*nx), source_hi(2*nx)
     real(dp) :: coarse_lo(2*nx), coarse_hi(2*nx), fine_lo(2*nx), fine_hi(2*nx)
     real(dp) :: coarse_dlo(2*nx), coarse_dhi(2*nx)
     real(dp) :: fine_dlo(2*nx), fine_dhi(2*nx)
-    real(dp) :: limit_line(nx + 1), limit_lo(2*nx), limit_hi(2*nx)
-    real(dp) :: reference_lo(2*nx), reference_hi(2*nx), reference_line(nx + 1)
-    real(dp) :: lower, upper
+    real(dp) :: limit_line(nx + 1), limit_lo(nx + 1), limit_hi(nx + 1)
+    real(dp) :: reference_lo(nx + 1), reference_hi(nx + 1), reference_line(nx + 1)
     integer :: i, output
     logical :: ok
 
@@ -63,7 +68,8 @@ program transport_demo
     print '(a)', 'nu_tangent=certified_continuous; adjoint_goal_gradient=unavailable'
 
     do i = 1, nx + 1
-        call transport_plot_x(real(i - 1, dp), real(nx, dp), x(i))
+        call transport_plot_x(real(i - 1, dp), real(nx + 1, dp), x(i))
+        x_points(i) = interval(x(i))
         call sample_transport(coarse%state, x(i), velocity, coarse_line(i), ok)
         if (.not. ok) error stop 'coarse sample failed'
         call sample_transport(fine%state, x(i), velocity, fine_line(i), ok)
@@ -80,7 +86,6 @@ program transport_demo
     end do
     do i = 1, nx
         x_cells(i) = interval(x(i), x(i + 1))
-        edges(2*i - 1) = x(i); edges(2*i) = x(i + 1)
     end do
     call initialize_transport_sampling(basis, work, modes, nx, ok)
     if (.not. ok) error stop 'plot basis initialization failed'
@@ -123,17 +128,52 @@ program transport_demo
     end do
     close (output)
 
+    call initialize_transport_sampling(point_basis, point_work, modes, nx + 1, ok)
+    if (.not. ok) error stop 'point basis initialization failed'
+    call prepare_transport_basis(point_basis, x_points, ok)
+    if (.not. ok) error stop 'point basis preparation failed'
+    call transport_linear_enclosure(fine%state, fine%state%source_cos, &
+        fine%state%source_sin, point_basis, x_points, interval(velocity), point_work, &
+        0.0_dp, plot_source_lo, plot_source_hi, ok)
+    if (.not. ok) error stop 'linear source enclosure failed'
+    call certify_transport_linear(coarse%state, coarse%certificate, point_basis, &
+        x_points, interval(velocity), point_work, plot_coarse_lo, plot_coarse_hi, ok)
+    if (.not. ok) error stop 'linear coarse certificate failed'
+    call certify_transport_linear(fine%state, fine%certificate, point_basis, &
+        x_points, interval(velocity), point_work, plot_fine_lo, plot_fine_hi, ok)
+    if (.not. ok) error stop 'linear fine certificate failed'
+    call certify_transport_tangent_linear(coarse%state, coarse%certificate, &
+        coarse%dcos, coarse%dsin, point_basis, x_points, interval(velocity), &
+        point_work, plot_coarse_dlo, plot_coarse_dhi, ok)
+    if (.not. ok) error stop 'linear coarse tangent certificate failed'
+    call certify_transport_tangent_linear(fine%state, fine%certificate, &
+        fine%dcos, fine%dsin, point_basis, x_points, interval(velocity), &
+        point_work, plot_fine_dlo, plot_fine_dhi, ok)
+    if (.not. ok) error stop 'linear fine tangent certificate failed'
+    open (newunit=output, file='output/transport-linear-bands.csv', status='replace')
+    write (output, '(a)') 'x,source_lower,source_upper,'// &
+        'coarse_lower,coarse_upper,fine_lower,fine_upper,'// &
+        'coarse_dnu_lower,coarse_dnu_upper,fine_dnu_lower,fine_dnu_upper'
+    do i = 1, nx + 1
+        write (output, '(es24.16,10(",",es24.16))') x(i), &
+            plot_source_lo(i), plot_source_hi(i), plot_coarse_lo(i), &
+            plot_coarse_hi(i), plot_fine_lo(i), plot_fine_hi(i), &
+            plot_coarse_dlo(i), plot_coarse_dhi(i), plot_fine_dlo(i), plot_fine_dhi(i)
+    end do
+    close (output)
+
     call figure(figsize=[9.6_dp, 7.2_dp])
     call subplot(2, 1, 1)
-    call title('Unknown-solution damped transport | full x-cell enclosures')
+    call title('Unknown-solution damped transport | certified linear envelopes')
     call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
     call ylabel('f and supplied source g at v = 5/16')
-    call envelope(edges, source_lo, source_hi, 'gainsboro', [0.4_dp, 0.4_dp, 0.4_dp])
-    call envelope(edges, coarse_lo, coarse_hi, 'moccasin', &
+    call envelope(x, plot_source_lo, plot_source_hi, 'gainsboro', &
+        [0.4_dp, 0.4_dp, 0.4_dp])
+    call envelope(x, plot_coarse_lo, plot_coarse_hi, 'moccasin', &
         [0.8353_dp, 0.3686_dp, 0.0_dp])
-    call envelope(edges, fine_lo, fine_hi, 'lightblue', &
+    call envelope(x, plot_fine_lo, plot_fine_hi, 'lightblue', &
         [0.0_dp, 0.4471_dp, 0.6980_dp])
-    call plot(x, source_line, label='supplied source + cell range', linestyle=':', &
+    call plot(x, source_line, label='source + linear enclosure', linestyle=':', &
         color=[0.4_dp, 0.4_dp, 0.4_dp])
     call plot(x, coarse_line, label='16 cells + full band', linestyle='--', &
         color=[0.8353_dp, 0.3686_dp, 0.0_dp])
@@ -144,9 +184,9 @@ program transport_demo
     call title('Implicit nu tangent | fixed independently supplied source')
     call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
     call ylabel('d f / d nu at v = 5/16')
-    call envelope(edges, coarse_dlo, coarse_dhi, 'moccasin', &
+    call envelope(x, plot_coarse_dlo, plot_coarse_dhi, 'moccasin', &
         [0.8353_dp, 0.3686_dp, 0.0_dp])
-    call envelope(edges, fine_dlo, fine_dhi, 'lightblue', &
+    call envelope(x, plot_fine_dlo, plot_fine_dhi, 'lightblue', &
         [0.0_dp, 0.4471_dp, 0.6980_dp])
     call plot(x, coarse_tangent, label='16 cells + full tangent band', linestyle='--', &
         color=[0.8353_dp, 0.3686_dp, 0.0_dp])
@@ -172,24 +212,23 @@ program transport_demo
             interval(x(i)), interval(0.0_dp), reference)
         reference_line(i) = reference%lo
     end do
-    do i = 1, nx
-        cell = interval(x(i), x(i + 1))
-        call certify_transport_sample(limiting, limit_certificate, cell, &
-            interval(0.0_dp), lower, upper, ok)
-        if (.not. ok) error stop 'limiting cell certificate failed'
-        limit_lo(2*i - 1:2*i) = lower; limit_hi(2*i - 1:2*i) = upper
-        call coupled_distribution_interval(interval(0.0_dp), interval(1.0_dp), &
-            cell, interval(0.0_dp), reference)
-        reference_lo(2*i - 1:2*i) = reference%lo
-        reference_hi(2*i - 1:2*i) = reference%hi
-    end do
+    call initialize_transport_sampling(limit_basis, limit_work, 0, nx + 1, ok)
+    if (.not. ok) error stop 'limiting point basis initialization failed'
+    call prepare_transport_basis(limit_basis, x_points, ok)
+    if (.not. ok) error stop 'limiting point basis preparation failed'
+    call certify_transport_linear(limiting, limit_certificate, limit_basis, &
+        x_points, interval(0.0_dp), limit_work, limit_lo, limit_hi, ok)
+    if (.not. ok) error stop 'limiting linear certificate failed'
+    call coupled_distribution_interval(interval(0.0_dp), interval(1.0_dp), &
+        interval(x(1), x(nx + 1)), interval(0.0_dp), reference)
+    reference_lo = reference%lo; reference_hi = reference%hi
     call figure(figsize=[9.6_dp, 4.8_dp])
     call title('Field-free zero-mode slice | same g = 3/4, nu = 1 at v = 0')
     call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
     call ylabel('f(x, v=0) / dimensionless distribution')
     call ylim(0.70_dp, 0.80_dp)
-    call envelope(edges, limit_lo, limit_hi, 'lightblue', [0.0_dp, 0.45_dp, 0.7_dp])
-    call envelope(edges, reference_lo, reference_hi, 'gainsboro', &
+    call envelope(x, limit_lo, limit_hi, 'lightblue', [0.0_dp, 0.45_dp, 0.7_dp])
+    call envelope(x, reference_lo, reference_hi, 'gainsboro', &
         [0.0_dp, 0.0_dp, 0.0_dp])
     call plot(x, limit_line, label='general solver + full slice band', &
         color=[0.0_dp, 0.45_dp, 0.7_dp])
