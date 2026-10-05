@@ -7,6 +7,13 @@ the final breadth of the code. The steady kinetic programme is the main spine.
 Student dynamics, turbulence and alternative representations are introduced
 early where they exercise the same operators cheaply.
 
+The long-range product goal is a **one-stop shop for classical fusion and
+Solar-System plasma physics**. Breadth must come from reusable model,
+representation, analysis, transport, boundary and coupling primitives rather
+than domain-specific solver silos. A new application area should normally add
+a thin configuration plus one or two genuinely reusable capabilities to the
+common engine.
+
 ## Rules for every milestone
 
 A capability is promoted only when it has:
@@ -320,6 +327,152 @@ Reuse the same hierarchy with open domains and additional forces:
 - photoionization, mass loading and surface charging.
 
 Vlasiator, Gkeyll, Smilei, WarpX and related codes provide cross-validation.
+
+## R13A — one-stop-shop coverage completion (cross-cutting, demand-driven)
+
+After the core fusion and Solar-System branches are usable, close remaining
+classical-plasma coverage gaps by adding **generic capabilities**, not a new
+named solver for each community. Prefer an abstraction that serves both fusion
+and space whenever the underlying mathematics is shared.
+
+### Strongly driven thermal/current evolution
+
+Support rapid coupled changes of temperature, current, impurities, fields and
+conducting structures using the existing transport, MHD/XMHD, reaction,
+radiation, energetic-particle and wall/circuit machinery.
+
+This generic capability should cover strongly driven events without hard-coding
+one device scenario. The reusable pieces are:
+
+- stiff source/reaction/current evolution;
+- rapid equilibrium/field change;
+- impurity and radiation coupling;
+- relativistic energetic-particle production/transport where needed;
+- conductor/wall response and load diagnostics.
+
+### Edge/pedestal stability and finite-amplitude transition
+
+Combine the common equilibrium, stability, transport and nonlinear-evolution
+consumers so edge-gradient systems can be studied from linear margin through
+reduced finite-amplitude evolution to nonlinear saturation.
+
+Do not create a special pedestal solver. The added value is one consistent
+path:
+
+\[
+\text{equilibrium}
+\rightarrow
+\text{linear/nonmodal stability}
+\rightarrow
+\text{reduced nonlinear branch}
+\rightarrow
+\text{full nonlinear model}
+\rightarrow
+\text{transport feedback}.
+\]
+
+### Partially ionized plasma
+
+Make partial ionization a first-class multispecies/reaction regime using shared
+charged/neutral populations rather than a separate atmosphere/edge package.
+Needed reusable physics includes:
+
+- ion-neutral drag and charge exchange;
+- ionization/recombination;
+- anisotropic/Hall/Pedersen-like conductivity closures;
+- neutral flow and momentum/energy exchange;
+- transition from one-/multi-fluid closures to kinetic charged and neutral
+  species.
+
+This serves fusion edge/divertor, chromospheric, ionospheric, cometary and
+planetary applications.
+
+### Conducting-boundary and ionosphere/object coupling
+
+Generalize the existing wall/sheath/circuit boundary machinery to a finite
+conducting environment coupled to field-aligned currents and plasma fluxes.
+
+The reusable abstraction is a surface/boundary state with:
+
+- conductance/capacitance/current closure;
+- sheath/floating-potential behavior;
+- photo/secondary emission where requested;
+- imposed or self-consistent tangential electric response;
+- coupling to an external neutral/fluid layer.
+
+This should cover fusion conductors, ionospheric electrodynamics, moons and
+spacecraft without separate numerical infrastructures.
+
+### Focused energetic-particle transport
+
+Add a reduced energetic-particle transport model between orbit-following and
+full kinetic phase-space evolution. It may evolve pitch-angle/energy/action
+coordinates with streaming, focusing, diffusion and source/loss terms.
+
+The same transport operator should serve fast ions, radiation-belt/SEP-like
+populations, pickup ions and shock-accelerated particles when their assumptions
+match. It is another reduced species model/transport closure, not a special
+space-physics code.
+
+### Wave-kinetic and statistical-spectrum evolution
+
+Promote the spectral closure interface from prescribed turbulence statistics
+to an evolving wave/turbulence state, schematically
+
+\[
+\partial_t N
++
+\nabla_k\omega\cdot\nabla_x N
+-
+\nabla_x\omega\cdot\nabla_k N
+=
+S_{\rm wave}+C_{\rm wave}-D_{\rm wave}.
+\]
+
+Couple \(N(x,k,t)\), cross-spectra and particle distributions through the same
+quasilinear transport contract already used by RF, turbulence and energetic
+particles. This provides an intermediate level between fixed spectra and
+fully nonlinear field evolution.
+
+### Magnetic-topology diagnostics as a service
+
+Add a reusable field-topology analysis layer on top of the common field-line
+map/geometry service. Candidate diagnostics include resonances, island widths,
+connection lengths, stochasticity/overlap, field-line diffusion,
+finite-time-Lyapunov/squashing measures and topology/helicity observables.
+
+These are diagnostics and closure inputs for transport/stability; they must not
+become a second magnetic-geometry implementation.
+
+### Charged grains and embedded bodies
+
+Generalize the particle/surface machinery to finite charged macroparticles or
+bodies with mass, charge state and optional size/material state. Reuse the same
+external-force, charging, collision, sheath and wall interaction infrastructure.
+
+This covers dusty/plume/ring/spacecraft-like applications without perturbing
+the main fusion path. Implement only when a concrete case requires it.
+
+### Rotating/stratified bulk plasmas
+
+Extend bulk-fluid/MHD models with reusable gravity, rotation, buoyancy,
+thermodynamic/EOS and anisotropic-conduction terms when needed. This enables
+stratified convection/dynamo and rotating space-plasma applications while
+remaining the same bulk-model infrastructure used elsewhere.
+
+### Admission criterion for coverage extensions
+
+A coverage extension belongs in KIN6D when it can be expressed mostly through
+existing common state, transport, stability, field, reaction, surface or
+particle interfaces and adds a reusable primitive with at least two plausible
+consumers. Domain-specific data preparation or diagnostics may remain thin
+application adapters.
+
+Do **not** internalize large adjacent disciplines merely to claim completeness.
+In particular, full non-LTE radiation transfer, reactor neutronics,
+solid-state material microphysics, strong-field QED and GR remain external
+coupled systems unless a later scientific target justifies a narrow reusable
+interface.
 
 ## R14 — diagnostics, inference, design and adaptive fidelity
 
