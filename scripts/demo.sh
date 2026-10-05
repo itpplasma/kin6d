@@ -4,8 +4,9 @@ cd "$(dirname "$0")/.."
 mkdir -p output
 git rev-parse HEAD > output/source-base-commit.txt
 git diff --binary HEAD | sha256sum > output/source-worktree-patch.sha256
-git ls-files -z -- '*.f90' 'proof/*' 'CMakeLists.txt' 'CMakePresets.json' \
-    'scripts/*' 'benchmarks/atlas.json' | xargs -0 sha256sum > output/source-manifest.sha256
+git ls-files -co --exclude-standard -z -- '*.f90' 'proof/*' 'CMakeLists.txt' \
+    'CMakePresets.json' 'docs/*' 'scripts/*' 'benchmarks/atlas.json' \
+    | sort -zu | xargs -0 sha256sum > output/source-manifest.sha256
 cmake --preset cpu
 cmake --build --preset cpu
 ctest --preset cpu

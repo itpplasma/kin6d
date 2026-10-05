@@ -174,7 +174,11 @@ Run these as explicit audits, not noisy timing gates. The implemented transport
 certificate uses arbitrary represented-source residuals and the continuous
 inverse bound, including implicit tangents, cell bands and goal intervals.
 Its [measured ledger](general-transport.md) identifies interval reconstruction
-as the dominant cost. Reference-profile evaluation stays in the benchmark suite.
+as the first dominant cost. Paired interval sine/cosine at FortNum, optional
+paired emission at FortSym and a private cached Fourier basis now share work
+across state/tangent bands. Cache setup and owned bytes are reported alongside
+direct and cached complete-pipeline samples; warm reuse is a separate result.
+Reference-profile evaluation stays in the benchmark suite.
 
 Profile strict exponential/reduction costs before optimizing them. At the
 owner, consider batched range-reduced evaluation, proved approximation and

@@ -163,7 +163,8 @@ records the base commit, worktree patch digest and source-content manifest.
 
 The original integrated release and runtime-checked debug builds passed all
 four registered tests, including the computed Lean certificate. With the
-general transport increment, `cpu` and `debug` each pass four numerical tests;
+general transport and cached-band increments, `cpu` and `debug` each pass five
+numerical tests;
 `formal` additionally retains the proof gate. At 32 and 64
 velocity cells, the bounded FP sup radii are `5.585456e-3` and `1.387730e-3`.
 The demo's mixed coupled case has distribution/potential/field radii about
@@ -206,8 +207,9 @@ The 16-cell case may miss the target; that is reported rather than suppressed.
 This known-Gaussian certificate remains a reference benchmark alongside the
 [arbitrary represented-source transport checker](general-transport.md).
 
-FortSym revision `102c1cbe392e1ba70d169fd75aeda0f2ffe8ab88` is the required
-regeneration pin. It adds the native emitted-kernel audit while retaining the
+FortSym revision `93c8b2ada93a2f58e2c36349560e9c52f2c9f79a` is the required
+regeneration pin. It retains the native emitted-kernel audit and adds optional
+paired sine/cosine emission while retaining the
 published integer-division repair `ef981ff`
 and the literal polynomial derivative repair `e171c32`. Independent compiled
 oracles reproduce both original failures and check their repairs. Repeated
@@ -259,10 +261,11 @@ Regenerate all numerical leaves with:
 
 ```sh
 cmake --preset cpu -DKIN6D_FORTSYM_BUILD=/path/to/pinned/fortsym/build
-cmake --build --preset cpu --target gen_laboratory gen_poisson gen_fp
+cmake --build --preset cpu --target gen_laboratory gen_poisson gen_fp gen_transport
 ./build/gen_laboratory
 ./build/gen_poisson
 ./build/gen_fp
+./build/gen_transport
 cmake --build --preset cpu
 ctest --preset cpu
 ```

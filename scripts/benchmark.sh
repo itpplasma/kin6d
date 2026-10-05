@@ -6,6 +6,9 @@ cmake --preset cpu
 cmake --build --preset cpu --target benchmark_fp benchmark_transport
 git rev-parse HEAD > output/benchmarks/source-base-commit.txt
 git diff --binary HEAD | sha256sum > output/benchmarks/source-worktree-patch.sha256
+git ls-files -co --exclude-standard -z -- CMakeLists.txt CMakePresets.json 'src/*' \
+    'gen/*' 'app/*' 'test/*' 'docs/*' 'scripts/*' 'benchmarks/atlas.json' \
+    | sort -zu | xargs -0 sha256sum > output/benchmarks/source-manifest.sha256
 sha256sum build/benchmark_fp build/benchmark_transport > output/benchmarks/executable.sha256
 uname -a > output/benchmarks/machine.txt
 if command -v lscpu >/dev/null; then

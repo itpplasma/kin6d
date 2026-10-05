@@ -2,11 +2,15 @@ program transport_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
         solve_transport, solve_transport_tangent, sample_transport, &
-        sample_transport_arrays, sample_transport_input_interval
+        sample_transport_arrays
     use kin6d_transport_certificate, only: transport_certificate_t, &
         certify_transport, certify_transport_tangent, transport_certificate_accepts, &
         certify_transport_sample, certify_transport_tangent_sample, &
         transport_observable_band
+    use kin6d_transport_sampling, only: transport_basis_t, &
+        transport_sampling_workspace_t, initialize_transport_sampling, &
+        prepare_transport_basis, sample_transport_input_cached, &
+        certify_transport_cached, certify_transport_tangent_cached
     use kin6d_transport_leaves, only: transport_source_affine, transport_plot_x, &
         transport_cosine_moment_cell_interval, transport_scalar_add_interval, &
         transport_accuracy_interval
@@ -18,6 +22,7 @@ program transport_demo
     implicit none
     integer, parameter :: modes = 2, nx = 96
     real(dp), parameter :: velocity = 0.3125_dp, rtol = 0.01_dp, atol = 1.0e-8_dp
+    real(dp), parameter :: goal_scale = 0.25_dp, derivative_scale = 0.25_dp
     type :: case_t
         type(transport_state_t) :: state
         type(transport_certificate_t) :: certificate
@@ -27,7 +32,10 @@ program transport_demo
     type(case_t) :: coarse, fine
     type(transport_state_t) :: limiting
     type(transport_certificate_t) :: limit_certificate, audit
-    type(interval_t) :: cell, source, reference
+    type(transport_basis_t) :: basis
+    type(transport_sampling_workspace_t) :: work
+    type(interval_t) :: cell, reference, x_cells(nx), sources(nx)
+    real(dp) :: band_lo(nx), band_hi(nx)
     real(dp) :: x(nx + 1), edges(2*nx), source_line(nx + 1)
     real(dp) :: coarse_line(nx + 1), fine_line(nx + 1)
     real(dp) :: coarse_tangent(nx + 1), fine_tangent(nx + 1)
@@ -68,36 +76,46 @@ program transport_demo
             x(i), velocity, fine_tangent(i), ok)
         if (.not. ok) error stop 'fine tangent sample failed'
     end do
+    do i = 1, nx
+        x_cells(i) = interval(x(i), x(i + 1))
+        edges(2*i - 1) = x(i); edges(2*i) = x(i + 1)
+    end do
+    call initialize_transport_sampling(basis, work, modes, nx, ok)
+    if (.not. ok) error stop 'plot basis initialization failed'
+    call prepare_transport_basis(basis, x_cells, ok)
+    if (.not. ok) error stop 'plot basis preparation failed'
+    call sample_transport_input_cached(fine%state, basis, x_cells, &
+        interval(velocity), work, sources, ok)
+    if (.not. ok) error stop 'source batch interval failed'
+    do i = 1, nx
+        source_lo(2*i - 1:2*i) = sources(i)%lo
+        source_hi(2*i - 1:2*i) = sources(i)%hi
+    end do
+    call certify_transport_cached(coarse%state, coarse%certificate, basis, x_cells, &
+        interval(velocity), work, band_lo, band_hi, ok)
+    if (.not. ok) error stop 'coarse batch certificate failed'
+    call expand_band(band_lo, band_hi, coarse_lo, coarse_hi)
+    call certify_transport_cached(fine%state, fine%certificate, basis, x_cells, &
+        interval(velocity), work, band_lo, band_hi, ok)
+    if (.not. ok) error stop 'fine batch certificate failed'
+    call expand_band(band_lo, band_hi, fine_lo, fine_hi)
+    call certify_transport_tangent_cached(coarse%state, coarse%certificate, &
+        coarse%dcos, coarse%dsin, basis, x_cells, interval(velocity), &
+        work, band_lo, band_hi, ok)
+    if (.not. ok) error stop 'coarse tangent batch certificate failed'
+    call expand_band(band_lo, band_hi, coarse_dlo, coarse_dhi)
+    call certify_transport_tangent_cached(fine%state, fine%certificate, &
+        fine%dcos, fine%dsin, basis, x_cells, interval(velocity), &
+        work, band_lo, band_hi, ok)
+    if (.not. ok) error stop 'fine tangent batch certificate failed'
+    call expand_band(band_lo, band_hi, fine_dlo, fine_dhi)
     open (newunit=output, file='output/transport-cell-bands.csv', status='replace')
     write (output, '(a)') 'x_left,x_right,source_lower,source_upper,'// &
         'coarse_lower,coarse_upper,fine_lower,fine_upper,'// &
         'coarse_dnu_lower,coarse_dnu_upper,fine_dnu_lower,fine_dnu_upper'
     do i = 1, nx
-        edges(2*i - 1) = x(i); edges(2*i) = x(i + 1)
-        cell = interval(x(i), x(i + 1))
-        call sample_transport_input_interval(fine%state, cell, interval(velocity), &
-            source, ok)
-        if (.not. ok) error stop 'source cell interval failed'
-        source_lo(2*i - 1:2*i) = source%lo
-        source_hi(2*i - 1:2*i) = source%hi
-        call certify_transport_sample(coarse%state, coarse%certificate, cell, &
-            interval(velocity), lower, upper, ok)
-        if (.not. ok) error stop 'coarse cell certificate failed'
-        coarse_lo(2*i - 1:2*i) = lower; coarse_hi(2*i - 1:2*i) = upper
-        call certify_transport_sample(fine%state, fine%certificate, cell, &
-            interval(velocity), lower, upper, ok)
-        if (.not. ok) error stop 'fine cell certificate failed'
-        fine_lo(2*i - 1:2*i) = lower; fine_hi(2*i - 1:2*i) = upper
-        call certify_transport_tangent_sample(coarse%state, coarse%certificate, &
-            coarse%dcos, coarse%dsin, cell, interval(velocity), lower, upper, ok)
-        if (.not. ok) error stop 'coarse tangent cell certificate failed'
-        coarse_dlo(2*i - 1:2*i) = lower; coarse_dhi(2*i - 1:2*i) = upper
-        call certify_transport_tangent_sample(fine%state, fine%certificate, &
-            fine%dcos, fine%dsin, cell, interval(velocity), lower, upper, ok)
-        if (.not. ok) error stop 'fine tangent cell certificate failed'
-        fine_dlo(2*i - 1:2*i) = lower; fine_dhi(2*i - 1:2*i) = upper
         write (output, '(es24.16,11(",",es24.16))') x(i), x(i + 1), &
-            source%lo, source%hi, coarse_lo(2*i), coarse_hi(2*i), &
+            sources(i)%lo, sources(i)%hi, coarse_lo(2*i), coarse_hi(2*i), &
             fine_lo(2*i), fine_hi(2*i), coarse_dlo(2*i), coarse_dhi(2*i), &
             fine_dlo(2*i), fine_dhi(2*i)
     end do
@@ -179,6 +197,15 @@ program transport_demo
     call tight_layout()
     call savefig('output/general-transport-krook-limit.png')
 contains
+    subroutine expand_band(lower, upper, step_lower, step_upper)
+        real(dp), intent(in) :: lower(:), upper(:)
+        real(dp), intent(out) :: step_lower(:), step_upper(:)
+        integer :: j
+        do j = 1, size(lower)
+            step_lower(2*j - 1:2*j) = lower(j)
+            step_upper(2*j - 1:2*j) = upper(j)
+        end do
+    end subroutine
     subroutine prepare_case(problem, cells)
         type(case_t), intent(out) :: problem
         integer, intent(in) :: cells
@@ -215,14 +242,14 @@ contains
             ' state_sup_radius=', problem%certificate%state_radius, &
             ' nu_tangent_sup_radius=', problem%certificate%tangent_radius
         call report_goal(problem%state, problem%state%cosine, &
-            problem%certificate%state_radius, 'Q normalized cosine-density')
+            problem%certificate%state_radius, goal_scale, 'Q normalized cosine-density')
         call report_goal(problem%state, problem%dcos, &
-            problem%certificate%tangent_radius, 'dQ/dnu fixed source')
+            problem%certificate%tangent_radius, derivative_scale, 'dQ/dnu fixed source')
     end subroutine
 
-    subroutine report_goal(state, coefficients, radius, label)
+    subroutine report_goal(state, coefficients, radius, scale, label)
         type(transport_state_t), intent(in) :: state
-        real(dp), intent(in) :: coefficients(0:, :), radius
+        real(dp), intent(in) :: coefficients(0:, :), radius, scale
         character(len=*), intent(in) :: label
         type(interval_t) :: total, local, updated, relative, target, goal_radius
         real(dp) :: goal_lower, goal_upper
@@ -241,10 +268,11 @@ contains
             goal_lower, goal_upper, enclosed)
         if (.not. enclosed) error stop 'cosine moment enclosure failed'
         goal_radius = interval(rad(interval(goal_lower, goal_upper)))
-        call transport_accuracy_interval(goal_radius, interval(0.25_dp), &
+        call transport_accuracy_interval(goal_radius, interval(scale), &
             interval(rtol), interval(atol), relative, target)
         print '(a,a,2es24.16)', trim(label), ' interval=', goal_lower, goal_upper
-        print '(a,es24.16,a,l1)', 'declared_goal_scale=0.25 target_lower=', target%lo, &
+        print '(a,es24.16,a,es24.16,a,l1)', 'declared_quantity_scale=', scale, &
+            ' target_lower=', target%lo, &
             ' requested_radius_met=', goal_radius%hi <= target%lo
     end subroutine
 

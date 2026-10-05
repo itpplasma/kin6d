@@ -96,8 +96,10 @@ norm bound 2 converts the state radius to a goal error, and the same argument
 encloses the fixed-source nu derivative of Q. Both complete intervals include
 integration and endpoint arithmetic.
 
-The declared physical scale is 0.25 for Q and its nu derivative. Default
-acceptance requires interval radius at most `1e-8 + 0.01*0.25`; an interval
+Q and its nu derivative each declare their own physical scale, both 0.25 in
+this benchmark. These are fixed source-based nominal scales, not measured
+true-solution magnitudes. Each quantity has its own generated target evaluation
+and report. Default acceptance requires radius at most `1e-8 + 0.01*0.25`; an interval
 evaluation of that target supplies a conservative comparison endpoint. Radius
 is the conservative FortNum distance from the rounded interval midpoint to
 either endpoint. A wider valid enclosure
@@ -138,6 +140,13 @@ constant-source limiting run: the overlay asserts only the matching v=0
 subproblem. Reference evaluation occurs solely in that comparison and never
 in the production checker.
 
+The default sampler prepares a private rigorous Fourier basis for the exact
+spatial interval endpoints and reuses it across source, coarse/fine state and
+tangent outputs. Sampling checks the captured endpoint bits and mode extent;
+changed geometry needs preparation again. Interpolation remains outward and
+the hull includes every touched velocity cell. Mode zero uses its exact
+constant basis. All formulas remain generated; caching changes only scheduling.
+
 Prepared state/tangent packets are immutable during sampling. Certificate
 preparation is global; batched point/cell postprocessing reuses it without a
 global residual audit per sample. Changes to sources, candidates, parameters
@@ -146,7 +155,9 @@ FortPlot; no Python runtime or postprocessor is required.
 
 ## Benchmark scope
 
-`benchmark_transport [cells|sweep]` uses two modes, nu=1 and the same source.
+`benchmark_transport [cells|sweep] [cached|direct]` uses two modes, nu=1 and the
+same source. The default cached path retains a direct scalar fallback for
+matched comparisons.
 The sweep uses 32, 64, 256 and 4096 velocity cells. A single cell count must be
 a power of two to retain the exactly matched source preset; this restriction
 belongs to the benchmark, not the general library.
@@ -159,14 +170,16 @@ recomputing acceptance, tangent solve, combined state/tangent preparation,
 The combined total counts one primal solve, one tangent solve, one combined
 certificate, postprocessing and prepared acceptance. The standalone diagnostic
 preparation/recheck columns are excluded from that total. A separate first-call
-measurement times the complete combined pipeline. Setup-plus-first and
+series of five independently initialized measurements times the complete
+combined pipeline. Setup-plus-first and
 setup-plus-warm totals add measured initialization; these are CPU costs and
 do not claim cold-cache or whole-process startup measurements. Repeated warm
 totals retain the initialized buffers.
 
 Validation and output occur outside raw timed phases. The numerical APIs'
 required domain checks remain part of their measured cost. Allocation occurs
-at initialization; numerical solve, certificate and postprocessing loops reuse
+at initialization, including cached basis preparation when selected; numerical
+solve, certificate and postprocessing loops reuse
 caller-owned buffers. Attributed bytes describe those real buffers, not process
 RSS or the plotting library. Benchmark postprocessing produces band data and
 goal intervals; PNG rendering is a separate demo activity.
@@ -178,7 +191,7 @@ they do not rank external codes, GPUs or distributed execution. The objective
 remains the fastest measured total time at matched model, requested outputs,
 accuracy and claim strength, including the requested derivatives and bands.
 
-## Local execution evidence
+## Local execution evidence before shared-basis optimization
 
 Native Release and Debug app builds and the registered
 `general_transport_and_tangent_oracles` test passed. The Fortran demo ran in
@@ -208,5 +221,53 @@ For the 64-cell Bernstein run, the whole-domain state radius was
 prints round-trip binary64 endpoints and conservatively evaluates target
 acceptance. The 16-cell demo comparison retains valid wider bands and reports
 both requested goal targets as unmet.
+
+## Paired arithmetic and shared-basis measurements
+
+FortNum `aa15a16e50f5c2e619a9a65a5100b2a994342949` adds paired interval
+sine/cosine with unchanged separate ranges. FortSym
+`93c8b2ada93a2f58e2c36349560e9c52f2c9f79a` emits this optional paired runtime
+call from the same scalar DAG. Frozen independent reviews pass for both owners,
+the generated split basis and the private cached sampler. Independent native
+oracles include unsolved coefficients, binary128 values/derivatives, velocity
+crossings/boundaries, stale geometry and invalid inputs.
+
+The final clean Release comparison uses the same CPU/compiler, CPU 4 and five
+trials. Global Fortran flags are empty; Release uses `-O3`, with strict arithmetic
+flags on the numerical libraries. An earlier Fo Debug invocation had left
+checking flags in the shared build cache; those runs remain separate from this
+clean comparison. Neither fresh initialization nor geometry reuse implies a
+cold hardware cache. Other host activity remains uncontrolled.
+
+| Cells, Bernstein | Direct setup + first median | Cached setup + first median | Cached warm median | Both targets met |
+|---|---|---|---|---|
+| 32 | 2.555 ms | 1.201 ms | 0.461 ms | no |
+| 64 | 2.855 ms | 1.259 ms | 0.767 ms | yes |
+| 256 | 4.730 ms | 3.154 ms | 2.621 ms | yes |
+| 4096 | 42.229 ms | 40.360 ms | 39.814 ms | yes |
+
+At 64 cells the direct/cached first-result medians represent about a 2.27-fold
+local gain including preparation. Their five-sample ranges were
+2.848--2.971 ms and 1.255--1.262 ms respectively. Warm direct median was
+2.941 ms; cached band/goal postprocessing fell from 2.375 to 0.210 ms.
+Cache preparation costs about 0.5 ms and owns 13,824 bytes; the captured input
+geometry adds 1,536 bytes. State/tangent radii, Q/derivative intervals and all
+target statuses match exactly across the two complete sweeps. The coarse
+reference remains valid even when its requested accuracy is unmet.
+
+Strict-box cached first/warm medians at 64 cells were 1.188/0.696 ms, but its
+targets remain unmet. At 4096 cells they were 35.374/34.343 ms and both targets
+passed. This is a width/cost comparison, not a universal evaluator ranking.
+Residual preparation now dominates the accepted 64-cell cached workload;
+production aggregate arithmetic and further certificate optimization remain
+open. No external-code, GPU or distributed speed ranking is established.
+
+Raw final sweeps are retained as `kin6d-clean-{cached,direct}-sweep-cpu4.log` in
+the local evidence directory. `scripts/benchmark.sh` records compiler commands,
+executable digests, source manifests including untracked files, hardware and
+process resources. Release/Debug gates pass 5/5; optional formal gates pass 6/6.
+Runtime-checked plotting still emits temporary-vector notices at the existing
+FortPlot wrapper calls; standalone clean Release plotting has empty stderr.
+Plot-wrapper copies are separate from the timed band/goal postprocessing.
 
 Chris&AI
