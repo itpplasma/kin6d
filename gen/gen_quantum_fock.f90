@@ -5,6 +5,7 @@ program gen_quantum_fock
                             operator(/), operator(**)
     use fortsym_engine_native, only: native_engine_t, make_native_engine
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use kin6d_symbolic_physics, only: jellium_coefficient
     implicit none
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
@@ -57,7 +58,7 @@ program gen_quantum_fock
               interval=.true.)
     call w%emit('qf_coulomb', ['length  ', 'coupling', &
                              'norm2   '], ['value'], &
-           [4*pi_expr(arena)*coupling/(length**3*(2*pi_expr(arena)/length)**2*norm2)], &
+           [jellium_coefficient(coupling, length**3, (2*pi_expr(arena)/length)**2*norm2)], &
               ad=.true., interval=.true.)
     call w%emit('qf_pair_integral', ['direct  ', 'exchange'], ['value'], &
               [sym(arena, 'direct') - sym(arena, 'exchange')], &

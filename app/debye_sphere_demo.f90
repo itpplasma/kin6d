@@ -4,8 +4,7 @@ program debye_sphere_demo
     use kin6d_debye_sphere_reference, only: debye_sphere_values, debye_sphere_bands
     use kin6d_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
         sphere_bare_inside, sphere_bare_outside, sphere_coordinate, sphere_parameter, &
-        sphere_response, sphere_response_interval, sphere_marker, sphere_radius, &
-        sphere_circle, sphere_angle
+        sphere_response, sphere_response_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, scatter, &
         plot, fill_between, title, xlabel, ylabel, xlim, ylim, legend, &
         tight_layout, savefig
@@ -13,6 +12,7 @@ program debye_sphere_demo
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
+    real(dp), parameter :: pi = 3.14159265358979323846_dp
     integer, parameter :: cells = 192, points = cells + 1
     integer, parameter :: frames = 121, fps = 24, repeats = 3
     integer, parameter :: circle_points = 129, max_markers = 121
@@ -53,8 +53,8 @@ program debye_sphere_demo
         call sphere_coordinate(real(i - 1, dp), real(cells, dp), r(i))
     end do
     do i = 1, circle_points
-        call sphere_angle(real(i - 1, dp), real(circle_points, dp), angle)
-        call sphere_circle(angle, circle_x(i), circle_y(i))
+        angle = 2*pi*real(i - 1, dp)/real(circle_points - 1, dp)
+        circle_x(i) = cos(angle); circle_y(i) = sin(angle)
     end do
     call prepare_illustration()
     open (newunit=data, file='output/debye-potential-reduction.csv', status='replace')
@@ -109,13 +109,19 @@ program debye_sphere_demo
     write (*, '(a)') 'CPU timings: cold frame bands and repeated references.'
     write (*, '(a)') 'Rendering and encoding excluded from scientific timers.'
 contains
+    !> Illustration marker grid on [-2, 2]: -2 + 4 index/(count - 1).
+    pure real(dp) function marker(index, count)
+        integer, intent(in) :: index, count
+        marker = -2 + 4*real(index, dp)/real(count - 1, dp)
+    end function
+
     subroutine prepare_illustration()
         source_count = 0; electron_count = 0
         do j = 0, 10
-            call sphere_marker(real(j, dp), 11.0_dp, marker_y)
+            marker_y = marker(j, 11)
             do i = 0, 10
-                call sphere_marker(real(i, dp), 11.0_dp, marker_x)
-                call sphere_radius(marker_x, marker_y, marker_r)
+                marker_x = marker(i, 11)
+                marker_r = sqrt(marker_x**2 + marker_y**2)
                 if (marker_r < 0.95_dp) then
                     source_count = source_count + 1
                     source_x(source_count) = marker_x
@@ -124,9 +130,9 @@ contains
             end do
         end do
         do j = 0, 8
-            call sphere_marker(real(j, dp), 9.0_dp, marker_y)
+            marker_y = marker(j, 9)
             do i = 0, 8
-                call sphere_marker(real(i, dp), 9.0_dp, marker_x)
+                marker_x = marker(i, 9)
                 electron_count = electron_count + 1
                 electron_x(electron_count) = marker_x
                 electron_y(electron_count) = marker_y
