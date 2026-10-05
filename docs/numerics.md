@@ -9,6 +9,12 @@ matrix-free/tiled production backend described here.
 FortFEM owns generic spatial mathematics. KIN6D owns plasma-specific equations,
 constitutive laws and composition.
 
+The preferred high-order kinetic path in this document is not the only
+admissible numerical family. Shock/front, rarefied, stochastic, radiation and
+strong-correlation regimes may require different methods. The complete option
+map is [the numerical-method catalogue](numerical-methods.md); implement only
+the method families demanded by prioritized vertical slices.
+
 The intended spatial stack includes:
 
 - mapped tensor-product B-splines/NURBS;
@@ -21,6 +27,35 @@ The intended spatial stack includes:
 - FEM/BEM/DtN/PML boundary machinery.
 
 Do not reimplement generic spatial kernels in KIN6D.
+
+## Hyperbolic, shock and front-capable spatial path
+
+Strongly compressible MHD/fluid, collisionless-shock fluid closures,
+ionization fronts and some HEDP/arc regimes need conservative discontinuity
+handling. Admit finite-volume or entropy-stable/high-resolution DG paths with
+appropriate Riemann/limiter/WENO-like reconstruction when the selected PDE
+requires them.
+
+These methods should share geometry, fields, reaction sources, diagnostics and
+certification contracts with the FE/FEEC path. Do not create a second plasma
+state architecture merely because the spatial discretization differs.
+
+Block/patch AMR and hp refinement are first-class when thin sheaths, streamers,
+current sheets, shocks or reaction/radiation fronts dominate. Adaptivity must
+carry conservative transfer and a measurable/bounded defect.
+
+## Rarefied and strongly correlated paths
+
+Neutral rarefaction may use deterministic Boltzmann or DSMC-like particle
+transport. Particle collision methods may use MCC/binary-collision schemes with
+explicit statistical status.
+
+For strongly coupled classical reference problems, small direct N-body/MD
+calculations are admissible as an independent representation/oracle. Their
+pairwise execution should use tiled/reduced interactions where possible, but
+the physical \(N\)-body model is distinct from mean-field FK plus a collision
+operator.
+
 
 ## Prefer structured tensor geometry
 
@@ -187,6 +222,21 @@ wider types when needed.
 
 Resolution adaptation should initially use a small set of patch/block classes
 rather than fully ragged per-cell dimensions. This preserves SIMD/GPU batching.
+
+## Time integration and asymptotic preservation
+
+The time consumer may choose explicit SSP/RK, implicit BDF/DIRK,
+IMEX, exponential/integrating-factor, splitting, multirate/subcycling or
+geometric/variational methods according to stiffness and structure.
+
+When a parameter limit removes expensive fast scales, prefer an
+asymptotic-preserving or uniformly accurate formulation over brute-force
+resolution if it can be verified against both parent and limit models.
+Relevant limits include quasineutral/Debye, collisional fluid, drift/gyro,
+stiff-reaction and radiation-diffusion limits.
+
+The time integrator does not define the physical model; a reduced target
+equation and a reduced preconditioner for a fuller target remain distinct.
 
 ## Matrix-free nonlinear solves
 

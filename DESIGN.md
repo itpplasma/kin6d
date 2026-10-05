@@ -2,17 +2,71 @@
 
 Status: canonical architecture, 2026-10-05.
 
+## Non-negotiable scientific principles
+
+These are **project invariants, not scope items**. YAGNI applies to features,
+models, algorithms and abstractions; it does not permit a vertical slice to
+drop these properties merely to ship sooner. A slice may implement the
+smallest useful instance of a principle, but must preserve the contract needed
+to strengthen it later.
+
+1. **One mathematical truth / DRY.** Each physical operator, convention,
+   configuration meaning and conservation law has one authoritative production
+   definition. Primal, derivative, enclosure and optimized specializations come
+   from that definition wherever practical.
+2. **Differentiability by construction.** Every smooth continuous production
+   operator used by a differentiable consumer exposes consistent primal/JVP/VJP
+   semantics from the same mathematical definition. Nonlinear/equilibrium/
+   linear/eigen solves are differentiated at equation level, not through
+   incidental iterations. Nonsmooth events and unavailable derivatives are
+   explicit, never silently approximated.
+3. **Error control and certification by construction.** A numerical answer is
+   incomplete without an error/status contract. The fast solver is untrusted;
+   strict residuals, independent checks and interval/ball or other rigorous
+   bounds are developed wherever the mathematics permits. Numerical error,
+   model-reduction error, input/reconstruction uncertainty and stochastic
+   sampling error remain distinct.
+4. **Structure preservation.** Conservation, symmetries, Hamiltonian/Poisson or
+   metriplectic structure, entropy production, positivity and
+   Onsager--Casimir relations are preserved or their defect is explicitly
+   measured. Numerical convenience does not silently change the physics.
+5. **Independent verification.** Important results retain analytic,
+   manufactured, structural or cross-code oracles independent of the production
+   path. Shared-code agreement alone is not evidence.
+6. **Reproducibility and provenance.** Effective inputs, model assumptions,
+   source/dependency/compiler revisions, transformations and result status are
+   recoverable from the scientific artifact.
+7. **Performance at controlled accuracy.** Performance is judged at equal
+   physical observable accuracy/certificate width, with time and memory both
+   first-class. Optimization may change implementation, never the target
+   mathematics.
+8. **Clean separation of policy and details.** Physics/model semantics are
+   independent of replaceable solver, file-format, hardware, scheduler and UI
+   details. New scope composes with the same contracts instead of spawning a
+   second numerical universe.
+
+A proposed feature that conflicts with these principles is rejected or remains
+an explicitly non-production experiment, even if it would broaden the nominal
+scope.
+
 ## Mission
 
 KIN6D is not one 6D solver and not a collection of compatibility modes. It is a
-common plasma-physics engine in which the usual hierarchy of plasma models and
-numerical representations can coexist, be compared one approximation at a
-time, differentiated, optimized and, where the mathematics permits, certified.
+**general classical plasma multiphysics engine** in which plasma, neutral,
+radiation, surface and transport models plus their numerical representations
+can coexist, be compared one approximation at a time, differentiated,
+optimized and, where the mathematics permits, certified.
 
-The highest-fidelity charged-particle reference is relativistic 3X3P
-Vlasov--Maxwell with multispecies nonlinear Coulomb collisions. Practical
-calculations deliberately use cheaper models and representations when their
-error relative to the scientific observable is acceptable.
+The intended application envelope covers fusion, Solar-System/natural,
+industrial/low-temperature, beam/accelerator, atmospheric, dusty/non-neutral
+and classical high-energy-density plasmas. The highest-fidelity
+charged-particle reference is relativistic 3X3P Vlasov--Maxwell; practical
+calculations deliberately use cheaper models, closures and representations
+when their error relative to the scientific observable is acceptable.
+
+The full design space is recorded in the capability and numerical-method
+catalogues. They prevent architectural dead ends but do not determine
+implementation order.
 
 The primary scientific target is **direct kinetic steady state**:
 source/collision/transport/field-balanced non-Maxwellian states should be
@@ -20,6 +74,27 @@ computed from a stationary residual rather than by resolving irrelevant fast
 waves for long physical times. Transient and turbulence consumers use the same
 operators and are developed early because they expose structure and performance
 defects quickly.
+
+## Clean dependency rule
+
+KIN6D freezes scientific policies and contracts earlier than implementation
+details. Clean Architecture here is a dependency rule, not a prescribed folder
+tree.
+
+Physics/model definitions are the inner policy. Application consumers such as
+steady solves, stability and transport compose that policy. External solvers,
+file formats, accelerator runtimes, schedulers, CLI/web frontends and other
+framework details live outside those layers and depend inward through narrow
+contracts/adapters.
+
+Do not introduce an abstraction merely to make a detail theoretically
+replaceable. Use the simplest direct implementation for the current vertical
+slice and extract a seam when a real second implementation/consumer, testing
+boundary or costly external dependency demonstrates it. This keeps details
+swappable without freezing hypothetical interfaces prematurely.
+
+The repository-wide KISS/YAGNI/DRY/SRP/DIP/ISP and related rules are specified
+in [software-engineering.md](docs/software-engineering.md).
 
 ## Canonical equation interface
 
@@ -54,6 +129,52 @@ the notation is not decorative. Open-system sources, radiation, reactions,
 walls and reservoirs carry an explicit exchange ledger instead of being forced
 into an ordinary least-action principle.
 
+## Equilibria and stationary states
+
+An equilibrium is a stationary solution of the selected equations,
+
+\[
+R(U;\theta)=0,
+\]
+
+not a special file type and not necessarily a unique mapping
+\(\theta\mapsto U\). If two distinct stationary solutions exist, KIN6D stores
+and treats them as two equilibria. Their initial states, continuation histories,
+external inputs and solution identifiers are provenance; KIN6D does not need a
+general probabilistic branch framework.
+
+Axisymmetric MHD must acquire a native Grad--Shafranov path for fixed and free
+boundary problems. EQDSK/gEQDSK input is an interchange representation: import,
+normalize conventions, evaluate physical and equation residuals, optionally
+re-solve with the native Grad--Shafranov model, and certify the named result.
+A free-boundary re-solve also requires the external coil/current or equivalent
+boundary data; an EQDSK file alone does not reconstruct all of that physics.
+
+In three dimensions, global nested flux surfaces are an optional cheap
+representation, not the equilibrium ontology. VMEC/DESC/GVEC-like states are
+valuable candidates, initial guesses, reduced representations and independent
+comparators. The general physical-space MHD formulation must remain meaningful
+with islands, stochastic regions, separatrices and wall contact. This does not
+remove the equations' own restrictions: for smooth static ideal MHD,
+\(B\cdot\nabla p=0\), so an ergodic magnetic region cannot carry an
+arbitrary smooth pressure gradient. HINT/PIES-like full-pressure relaxation and
+SPEC/SPECTRE-like relaxed-region models are benchmark/model precedents, each
+with its own physical assumptions.
+
+Topology/history is specified by the physical model rather than by a universal
+switch. Ideal evolution preserves its frozen-in constraints; MRxMHD-like
+relaxation retains a different finite invariant set; resistive/XMHD evolution
+may reconnect. A stationary result records which model, constraints, initial
+state and continuation/evolution path selected it.
+
+The same architecture extends beyond MHD. DK/GK/FK equilibria are stationary
+solutions of their corresponding equations, and source/collision/wall-balanced
+open systems are stationary states even when the word equilibrium is
+inappropriate. Imported states may seed these solves but never bypass the
+native residual/certificate contract.
+
+See [equilibria and inference](docs/equilibria-inference.md).
+
 ## Orthogonal configuration axes
 
 KIN6D configuration is intentionally factored.
@@ -64,9 +185,12 @@ KIN6D configuration is intentionally factored.
 {\rm fixed/adiabatic/fluid/gyrofluid/gyromoment/PK/BA/DK/GK/FK}.
 \]
 
-A separate bulk model may aggregate explicitly owned thermal populations into
-ideal/resistive/Hall/XMHD or multi-fluid state. Species and bulk ownership must
-prevent double counting.
+A separate bulk model may aggregate explicitly owned populations into reacting
+neutral/multispecies compressible flow, ideal/resistive/Hall/XMHD or
+multi-fluid state. Species and bulk ownership must prevent double counting.
+Reduced Boltzmann/EEDF models are kinetic reductions with their own angular/
+energy representation and reaction-rate contract, not special industrial
+solver modes.
 
 ### Distribution form
 
@@ -135,11 +259,107 @@ The selected species reductions must be compatible with the selected field
 action. Background equilibrium, imposed drive and induced response remain
 separate.
 
+
+### Interaction and correlation fidelity
+
+The microscopic interaction model is another independent axis:
+
+\[
+\text{collisionless mean field}
+\rightarrow
+\text{model collisions}
+\rightarrow
+\text{Landau/Beliaev--Budker}
+\rightarrow
+\text{screened/mean-force nonideal closures}
+\rightarrow
+\text{direct classical correlated-particle reference}.
+\]
+
+Direct N-body/MD is reserved for small strongly coupled classical reference
+problems; fully quantum many-body physics remains outside the classical core.
+
+### Ionization, chemistry and neutral matter
+
+The same species/reaction graph supports charge states, atoms, molecules,
+negative ions, metastables and internal states. Heavy-particle fidelity ranges
+from prescribed gas through reaction-diffusion and multispecies compressible
+flow to rarefied kinetic/DSMC-like transport.
+
+Electron fidelity for weakly ionized plasmas can progress from local-field/
+electron-energy closures through multi-term Boltzmann/EEDF to FK electrons.
+See [reacting and partially ionized plasmas](docs/reacting-partially-ionized.md).
+
+### Radiation
+
+Radiation is a state/closure axis:
+
+\[
+\text{optically thin}
+\rightarrow
+\text{opacity/escape}
+\rightarrow
+\text{grey diffusion}
+\rightarrow
+\text{multigroup/moment transport}
+\rightarrow
+\text{angular transport}
+\rightarrow
+\text{external high-fidelity non-LTE spectral provider}.
+\]
+
+Reduced radiation transport is native KIN6D physics; implementing the entire
+line-by-line non-LTE transfer discipline is not a prerequisite for the common
+plasma engine. See [radiation](docs/radiation.md).
+
 ### Coupling roles
 
 A population independently declares whether it evolves, contributes to fields
 and feels induced response. Test populations, fixed reservoirs and active
 species therefore do not require separate physics implementations.
+
+### Analysis consumer
+
+The same physical model may be consumed as:
+
+\[
+\text{steady/equilibrium},\quad
+\text{linear initial value},\quad
+\text{eigenvalue/spectrum},\quad
+\text{forced response/resolvent},\quad
+\text{nonmodal growth},\quad
+\text{continuation/bifurcation},\quad
+\text{nonlinear stability},\quad
+\text{transient/statistical evolution}.
+\]
+
+This is an orthogonal axis. Linear stability uses the same \(R_Uv\) and
+\(R_U^\dagger v\) actions needed by Newton, adjoints and optimization.
+Kink/ballooning/tearing/RWM/Alfvén and gyrokinetic microinstabilities therefore
+do not require independent solver architectures.
+
+### Macro transport and multiscale closure
+
+A macro transport state may be 0D, 1D, 1.5D, 2D or 3D. Its conservative core is
+
+\[
+\partial_tu_a+\nabla\cdot\Gamma_a=S_a,
+\]
+
+while the closure provider may range from prescribed \(D,\chi,V\) through
+neoclassical/Onsager and linear/quasilinear models to nonlinear flux-tube
+fluxes, nonlocal orbit kernels, electromagnetic cross-spectra and direct
+global gyrofluid/GK/FK fluxes.
+
+Coupling strength ranges from offline tables and in-memory loose coupling to
+iterated transport, separated-timescale micro/macro coupling, sparse global
+microphysics sampling and fully coupled global evolution. Spatial locality and
+timescale separation are independent assumptions.
+
+Traditional equilibrium--transport splitting is an important cheap
+configuration, not a legacy workaround. KIN6D should reproduce QL-Balance/
+ASTRA-like integrated modelling early and then relax its approximations toward
+2D/3D nonlocal and fully coupled evolution.
 
 ## Model hierarchy
 
@@ -286,6 +506,26 @@ Stochastic algorithms expose derivative semantics separately. Fixed-randomness
 pathwise derivatives, likelihood-ratio estimators or common-random-number
 methods are optional tools and carry statistical uncertainty.
 
+## Inference boundary
+
+KIN6D owns forward physics, stationary/evolution solves, observables,
+JVP/VJP/implicit-adjoint actions, numerical certificates and model-reduction
+error estimates. TIAGO owns reconstruction/inference from experimental data:
+likelihoods, diagnostic/calibration nuisance parameters, priors and posterior
+uncertainty.
+
+For a KIN6D state defined by \(R(U,\theta)=0\), TIAGO should be able to
+consume matrix-free actions for the composed diagnostic map without knowing
+Newton/Krylov details or the internal state layout. The VMEC++ reconstruction
+already implemented in TIAGO is a retained provider/reference path; KIN6D is a
+planned provider, not a reverse dependency.
+
+If several KIN6D equilibria are compatible with the same measurements, TIAGO
+may fit each separately and, when useful, report a finite mixture of local
+Laplace approximations. The equilibria remain distinct physical solutions; do
+not average topologically or physically distinct states into a fictitious
+equilibrium merely to obtain one mean and covariance.
+
 ## Certification and uncertainty
 
 The candidate solver is untrusted. A Fortran certifier using verified
@@ -364,25 +604,67 @@ required before claiming that this goal is achieved.
 
 ## Physical scope
 
-Long-range capabilities include equilibria, MHD/XMHD, gyrofluid/gyromoments,
-DK/GK/FK, PIC/PIF/blobs, edge/SOL/divertor, deterministic and MC neutrals,
-atomic/molecular reactions, sheaths/walls, radiation, RF/full-wave heating,
-NBI, fusion reactions/products, vacuum/coils/circuits, Solar-System plasmas,
-synthetic diagnostics, inference, design and control.
+Long-range capabilities include equilibria, linear/nonlinear stability and
+bifurcation, 0D--3D integrated/global transport, MHD/XMHD,
+gyrofluid/gyromoments, DK/GK/FK, PIC/PIF/blobs, compressible/shock-capable
+plasma, edge/SOL/divertor, deterministic/MC/rarefied neutrals, partial
+ionization and large sparse chemistry/internal-state networks, drift-diffusion
+and ionization fronts, conducting/dielectric/reactive surfaces, reduced native
+radiation transport, RF/full-wave/wave-kinetic physics, energetic and fusion
+products, vacuum/coils/circuits, Solar-System/natural, industrial,
+beam/accelerator, atmospheric, dusty/non-neutral and classical HEDP
+configurations, synthetic diagnostics, TIAGO inference integration, design and
+control.
 
-The architecture must remain one engine, but features are admitted only when a
-real use case, derivation, independent oracle, differentiability statement,
+The architecture must remain one engine. Named application domains are thin
+configurations over common primitives. Features are admitted only when a real
+use case, derivation, independent oracle, differentiability statement,
 certificate target and performance target exist.
 
-## Immediate implementation boundary
+See [the complete capability catalogue](docs/capability-catalogue.md) and
+[numerical-method catalogue](docs/numerical-methods.md).
+
+## Configuration, result and UX boundary
+
+Fortran owns the typed configuration semantics and validation. The canonical
+human-editable text syntax is Fortran namelist. A run preserves both the
+literal input and a fully resolved namelist with defaults/automatic choices
+materialized. Machine-readable schema output may drive documentation, AI
+configuration proposals, Python convenience layers and a browser UI, but those
+layers must not redefine model compatibility or numerical defaults.
+
+Scientific result files use a NetCDF-4-compatible HDF5 subset through FortIO.
+Every result embeds the original and resolved input plus source/dependency,
+compiler/flags, hardware and external-input provenance. A KIN6D result from
+which its effective input cannot be recovered is invalid. Large external inputs
+may be referenced by normalized metadata and content hashes instead of copied
+verbatim.
+
+The command-line/Fortran path remains sufficient on a cluster. Optional Python
+may provide notebook/server orchestration and TypeScript may provide a browser
+front end, including scheduler submission and post-processing. Neither is a
+scientific runtime dependency. Build/test support targets GNU, Intel LLVM,
+NVIDIA and LLVM Flang families; compiler-specific optimization and strict
+certifier flags are target-local, never hard-coded globally.
+
+See [configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md).
+
+## Immediate implementation boundary and prioritization
 
 The implemented 1X1V slice remains the authoritative first rung. Its compact
-Fourier representation must not dictate the future 6D layout. The next work is
-self-consistent 1X1V/representation comparisons and the 0X3V collision
-laboratory, while an early HM/gyrofluid branch exercises nonlinear structure.
+Fourier representation must not dictate the future 6D layout. The current
+high-value path remains self-consistent 1X1V/representation comparisons, the
+0X3V collision laboratory, early stability/gyrofluid work and cheap integrated
+transport.
 
-Do not split KIN6D into continuum/PIC/PIF/gyrofluid repositories. If a generic
-particle engine or indexed-kernel scheduler acquires multiple independent
+The broader catalogue is **not an implementation queue**. At each planning
+cycle choose the vertical slice with the strongest combination of scientific
+value, cross-domain reuse, dependency unlock, validation strength,
+performance/certification leverage and acceptable cost/risk.
+
+Do not split KIN6D into continuum/PIC/PIF/gyrofluid/industrial/space
+repositories. If a generic particle engine, reaction runtime, radiation
+transport primitive or indexed-kernel scheduler acquires multiple independent
 consumers, extract the stable generic layer upstream only after the abstraction
 is demonstrated.
 

@@ -16,6 +16,16 @@ limits as permanent independently evaluated references. The
 separates exact vacuum/geometry identities, manufactured current fields, and
 asymptotic kinetic/transport claims.
 
+An imported equilibrium is a candidate physical state, not the definition of
+the equilibrium model. EQDSK/gEQDSK and VMEC/SPECTRE/etc. files must retain
+their source conventions and provenance, be checked in physical space, and
+later be re-solved with the matching native KIN6D model when that capability
+exists. For axisymmetric MHD this means a native Grad--Shafranov re-solve; a
+free-boundary reconstruction additionally needs the external coil/current or
+equivalent boundary data. For three-dimensional MHD, nested-surface imports are
+valuable initial guesses/comparators but do not constrain KIN6D to nested
+surfaces. See [equilibria and inference](equilibria-inference.md).
+
 | Domain | Intended full-kinetic use | Reduced/hybrid use |
 |---|---|---|
 | Homogeneous or 1X3P | Collision reference and certification | Limiting-case validator |
@@ -141,9 +151,12 @@ The physical geometry contract is generic three-dimensional field and domain
 evaluation: `B_vac(x,t)`, `E_ext(x,t)`, derivatives required by the selected
 model, and wall/domain geometry with normals and boundary labels. Certified
 evaluations additionally provide enclosures and interpolation/tail bounds.
-Tokamak equilibrium formats are import adapters, not fundamental physics
-types. Initially implement the smallest analytic evaluator and domain needed
-by P0/P1; add a data adapter only for the next frozen machine case.
+Equilibrium formats are import adapters, not fundamental physics types.
+Initially implement the smallest analytic evaluator and domain needed by P0/P1;
+add a data adapter only for the next frozen machine case. Prefer an existing
+libneo adapter when it already owns the format/conventions. Import validation
+must distinguish file/interpolation/convention uncertainty from the later
+native equilibrium-solver certificate and from downstream DK/GK/FK error.
 
 Symmetry is declared and checked case metadata. Axisymmetric tokamaks may
 use n=0; LHD uses its selected helical/toroidal periodicity, and QA/QI designs

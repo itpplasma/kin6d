@@ -1,15 +1,39 @@
 # kin6d
 
-KIN6D is a plasma-physics engine whose highest-fidelity reference is full
-relativistic 3X3P kinetic dynamics, but whose practical purpose is broader:
-solve the cheapest mathematically controlled plasma model that answers the
-requested question at the requested accuracy.
+KIN6D is a **general classical plasma multiphysics engine** whose
+highest-fidelity charged-particle reference is full relativistic 3X3P kinetic
+dynamics, but whose practical purpose is broader: assemble the cheapest
+mathematically controlled plasma model and numerical representation that answer
+the requested question at the requested accuracy.
+
+The intended application envelope spans fusion, Solar-System/natural plasmas,
+industrial and low-temperature discharges, beam/accelerator and laser plasmas,
+atmospheric plasmas, dusty/non-neutral systems, and classical high-energy-density
+or strongly coupled regimes where an appropriate classical/nonideal model
+remains valid.
 
 The project is built around one common physical and numerical architecture.
-Equilibrium, MHD, gyrofluid, gyromoments, drift/gyro/full kinetics, continuum
-and particle representations, collisions, turbulence, edge physics, neutrals,
-walls, heating, space plasmas, diagnostics and optimization are configurations
-or reductions of shared operators rather than separate named-code modes.
+Equilibrium, stability/response, MHD, gyrofluid, gyromoments, drift/gyro/full
+kinetics, macro transport, continuum and particle representations, collisions,
+turbulence, edge physics, neutrals, walls, heating, space plasmas, diagnostics
+and optimization are configurations, consumers or reductions of shared
+operators rather than separate named-code modes.
+
+## Non-negotiable principles
+
+KIN6D's broad capability catalogue is optional scope. The following are not:
+**one mathematical source of truth, differentiability, controlled/certified
+error, structure preservation, independent verification, reproducibility and
+performance at controlled accuracy**.
+
+Every production vertical slice must preserve these contracts at the level
+appropriate to that slice. In particular, differentiability and error control
+are not later features to bolt on after the physics works. Smooth production
+operators are designed with primal/JVP/VJP semantics from one definition, and
+numerical answers carry explicit error/status information with numerical,
+model, input/reconstruction and stochastic contributions kept distinct.
+
+See the canonical statement in [DESIGN.md](DESIGN.md#non-negotiable-scientific-principles).
 
 ## Current status
 
@@ -58,6 +82,15 @@ Tiny transient and turbulence examples are developed early in parallel because
 they are excellent teaching, verification, structure-preservation and
 performance tests. Hasegawa--Mima, Hasegawa--Wakatani, interchange/blob and
 gyrofluid examples must use the same operator machinery as the steady spine.
+
+Two additional axes are first-class from the beginning. **Analysis type**
+covers linear spectra, forced response, nonmodal growth, continuation,
+bifurcation and nonlinear stability for every physical model that supports
+them. **Transport** spans 0D/1D/1.5D/2D/3D macro evolution with closure
+providers ranging from prescribed coefficients through neoclassical and
+quasilinear response to nonlocal orbit kernels, nonlinear microturbulence and
+fully coupled global evolution. See [stability](docs/stability.md) and
+[transport/multiscale coupling](docs/transport-multiscale.md).
 
 ## Model hierarchy
 
@@ -146,7 +179,14 @@ R(U;\theta)=0.
 \]
 
 Time evolution uses the same residual/brackets rather than defining a separate
-physics implementation.
+physics implementation. An equilibrium is therefore one stationary solution of
+a named physical model, not a privileged file format and not necessarily a
+unique function of a small parameter set. Imported EQDSK, VMEC, SPECTRE or
+other states are candidates, initial guesses and comparison data. KIN6D must be
+able to evaluate their residuals, recompute them with a native model where that
+model exists, and certify the resulting numerical claim. Nested flux surfaces
+are an optional exploitable structure, never a core requirement. See
+[equilibria and inference](docs/equilibria-inference.md).
 
 ## Geometry and spatial numerics
 
@@ -186,15 +226,30 @@ Long-range scope includes:
 - PIC, PIF, variational particle-FE, blobs, remapping and delta-f methods;
 - deterministic and stochastic Coulomb/reaction/neutral realizations;
 - core, pedestal, SOL, divertor, sheath and wall physics;
-- atomic/molecular charge-state networks and radiation;
-- RF/quasilinear/full-wave heating, NBI and fusion-product sources;
-- coils, vacuum, conducting walls and external circuits;
-- Solar-System plasma configurations;
-- synthetic diagnostics, inverse problems, adjoints, optimization and control.
+- atomic/molecular/internal-state chemistry, partial ionization and reacting
+  neutral gas from fluid to rarefied kinetic descriptions;
+- drift-diffusion/front models, dielectric/electrode charging and reactive
+  surface/interface physics;
+- native radiation from optically thin losses through grey/multigroup/moment
+  transport, with high-fidelity non-LTE spectral transfer available as an
+  external provider;
+- RF/quasilinear/full-wave and wave-kinetic physics, NBI and energetic/fusion
+  product sources;
+- compressible/shock-capable classical plasma, nonideal EOS/opacity closures
+  and small direct classical N-body/MD correlation references when needed;
+- coils, vacuum, conducting walls, dielectrics and external circuits;
+- Solar-System, atmospheric, industrial and other classical-plasma
+  configurations;
+- synthetic diagnostic forward operators, adjoints, optimization and control;
+- integration with TIAGO for equilibrium/state reconstruction and inference.
 
-General relativity, strong-field QED, complete reactor neutronics, detailed
-solid-state material evolution and general radiation hydrodynamics are outside
-the initial scope.
+The complete intended physics/numerics envelope is catalogued separately from
+implementation priority. See [the capability catalogue](docs/capability-catalogue.md)
+and [the numerical-method catalogue](docs/numerical-methods.md). Fully quantum
+dense-matter electronic structure, strong-field QED, general relativity, full
+reactor neutronics/nuclear engineering, detailed bulk material mechanics and
+the highest-fidelity line-by-line non-LTE radiation-transfer discipline remain
+external coupled systems unless a concrete reusable interface is justified.
 
 ## Differentiability
 
@@ -230,10 +285,11 @@ important claims; it is not required to obtain rigorous numerical intervals and
 is not on the early critical path.
 
 A result distinguishes numerical error, model-reduction error, physical-input
-uncertainty and, for Monte Carlo, statistical uncertainty. Deterministic
-certificates and probabilistic confidence statements are never conflated.
-Adjoints are used for sensitivities and for goal-oriented numerical/model-error
-estimation.
+uncertainty and, for Monte Carlo, statistical uncertainty. Reconstruction and
+diagnostic uncertainty are owned by TIAGO and remain a separate probabilistic
+layer conditional on the selected KIN6D model. Deterministic certificates and
+probabilistic confidence statements are never conflated. Adjoints are used for
+sensitivities and for goal-oriented numerical/model-error estimation.
 
 Every reported state, field, observable and sensitivity carries an applicable
 bound and its claim status, or explicitly states that the bound is unavailable.
@@ -277,7 +333,15 @@ libraries used behind replaceable interfaces where useful.
 Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 [ROADMAP.md](ROADMAP.md) for staged delivery. Important companion documents are:
 
+- [Equilibria, imported candidates and TIAGO inference](docs/equilibria-inference.md)
+- [Configuration, UX, I/O and reproducibility](docs/interface-reproducibility.md)
+- [Complete plasma-physics capability catalogue](docs/capability-catalogue.md)
+- [Numerical-method catalogue](docs/numerical-methods.md)
+- [Reacting and partially ionized plasmas](docs/reacting-partially-ionized.md)
+- [Radiation hierarchy](docs/radiation.md)
 - [Representations](docs/representations.md)
+- [Stability, response and bifurcation](docs/stability.md)
+- [Transport and multiscale coupling](docs/transport-multiscale.md)
 - [Student laboratory](docs/student-laboratory.md)
 - [Model family](docs/model-family.md)
 - [Species models](docs/species-models.md)
@@ -299,7 +363,9 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Tooling](docs/tooling.md)
 
 Scientific/application code and the certifier are Fortran. No Python runtime is
-required. Generated graphics and large benchmark products are not source
-artifacts.
+required to configure, run, certify or inspect KIN6D. Optional Python and web
+layers may provide notebook, cluster and browser convenience on top of the same
+Fortran-owned configuration/schema and result contract. Generated graphics and
+large benchmark products are not source artifacts.
 
 Chris&AI

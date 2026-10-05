@@ -56,6 +56,28 @@ pieces when required rather than imposing tetrahedra everywhere. FortFEM owns
 generic maps/spaces/traces; kin6d supplies the physical field and boundary law.
 [Spatial numerics](numerics.md) defines FEEC/IGA/DG and batching choices.
 
+## Magnetic topology and equilibrium representations
+
+Flux coordinates are permitted only as an optional representation when the
+state actually supports them. A VMEC/DESC/GVEC-like nested-surface state may be
+used for import, initialization, compression, preconditioning or a cheaper
+equilibrium model, then converted to the common physical-space field contract.
+No downstream MHD/kinetic component may infer that nested surfaces exist merely
+because the source file used flux coordinates.
+
+A general three-dimensional equilibrium mesh must remain meaningful through
+islands, stochastic/ergodic regions, separatrices and wall intersections. This
+is a representational requirement, not permission to violate force balance.
+For static smooth ideal MHD, B·grad p = 0; pressure must therefore be compatible
+with the field-line topology, including flattening on ergodic components where
+appropriate. Relaxed-region or resistive equilibria are different physical
+models, not numerical workarounds for this constraint.
+
+Different stationary solutions on the same external data are represented as
+different states with their own provenance. Geometry stores maps/topology
+diagnostics needed by a state; it does not own an inference mixture over those
+states.
+
 ## Momentum frames and vector components
 
 Physical momentum and the physical-space chart are independent choices.
