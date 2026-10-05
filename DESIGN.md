@@ -141,6 +141,49 @@ A population independently declares whether it evolves, contributes to fields
 and feels induced response. Test populations, fixed reservoirs and active
 species therefore do not require separate physics implementations.
 
+### Analysis consumer
+
+The same physical model may be consumed as:
+
+\[
+\text{steady/equilibrium},\quad
+\text{linear initial value},\quad
+\text{eigenvalue/spectrum},\quad
+\text{forced response/resolvent},\quad
+\text{nonmodal growth},\quad
+\text{continuation/bifurcation},\quad
+\text{nonlinear stability},\quad
+\text{transient/statistical evolution}.
+\]
+
+This is an orthogonal axis. Linear stability uses the same \(R_Uv\) and
+\(R_U^\dagger v\) actions needed by Newton, adjoints and optimization.
+Kink/ballooning/tearing/RWM/Alfvén and gyrokinetic microinstabilities therefore
+do not require independent solver architectures.
+
+### Macro transport and multiscale closure
+
+A macro transport state may be 0D, 1D, 1.5D, 2D or 3D. Its conservative core is
+
+\[
+\partial_tu_a+\nabla\cdot\Gamma_a=S_a,
+\]
+
+while the closure provider may range from prescribed \(D,\chi,V\) through
+neoclassical/Onsager and linear/quasilinear models to nonlinear flux-tube
+fluxes, nonlocal orbit kernels, electromagnetic cross-spectra and direct
+global gyrofluid/GK/FK fluxes.
+
+Coupling strength ranges from offline tables and in-memory loose coupling to
+iterated transport, separated-timescale micro/macro coupling, sparse global
+microphysics sampling and fully coupled global evolution. Spatial locality and
+timescale separation are independent assumptions.
+
+Traditional equilibrium--transport splitting is an important cheap
+configuration, not a legacy workaround. KIN6D should reproduce QL-Balance/
+ASTRA-like integrated modelling early and then relax its approximations toward
+2D/3D nonlocal and fully coupled evolution.
+
 ## Model hierarchy
 
 The intended reusable hierarchy is
@@ -338,8 +381,10 @@ strict certifier remains independent.
 
 ## Physical scope
 
-Long-range capabilities include equilibria, MHD/XMHD, gyrofluid/gyromoments,
-DK/GK/FK, PIC/PIF/blobs, edge/SOL/divertor, deterministic and MC neutrals,
+Long-range capabilities include equilibria, linear/nonlinear stability and
+bifurcation, 0D--3D integrated/global transport, MHD/XMHD,
+gyrofluid/gyromoments, DK/GK/FK, PIC/PIF/blobs, edge/SOL/divertor,
+deterministic and MC neutrals,
 atomic/molecular reactions, sheaths/walls, radiation, RF/full-wave heating,
 NBI, fusion reactions/products, vacuum/coils/circuits, Solar-System plasmas,
 synthetic diagnostics, inference, design and control.

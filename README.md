@@ -6,10 +6,11 @@ solve the cheapest mathematically controlled plasma model that answers the
 requested question at the requested accuracy.
 
 The project is built around one common physical and numerical architecture.
-Equilibrium, MHD, gyrofluid, gyromoments, drift/gyro/full kinetics, continuum
-and particle representations, collisions, turbulence, edge physics, neutrals,
-walls, heating, space plasmas, diagnostics and optimization are configurations
-or reductions of shared operators rather than separate named-code modes.
+Equilibrium, stability/response, MHD, gyrofluid, gyromoments, drift/gyro/full
+kinetics, macro transport, continuum and particle representations, collisions,
+turbulence, edge physics, neutrals, walls, heating, space plasmas, diagnostics
+and optimization are configurations, consumers or reductions of shared
+operators rather than separate named-code modes.
 
 ## Current status
 
@@ -45,6 +46,15 @@ Tiny transient and turbulence examples are developed early in parallel because
 they are excellent teaching, verification, structure-preservation and
 performance tests. Hasegawa--Mima, Hasegawa--Wakatani, interchange/blob and
 gyrofluid examples must use the same operator machinery as the steady spine.
+
+Two additional axes are first-class from the beginning. **Analysis type**
+covers linear spectra, forced response, nonmodal growth, continuation,
+bifurcation and nonlinear stability for every physical model that supports
+them. **Transport** spans 0D/1D/1.5D/2D/3D macro evolution with closure
+providers ranging from prescribed coefficients through neoclassical and
+quasilinear response to nonlocal orbit kernels, nonlinear microturbulence and
+fully coupled global evolution. See [stability](docs/stability.md) and
+[transport/multiscale coupling](docs/transport-multiscale.md).
 
 ## Model hierarchy
 
@@ -247,6 +257,8 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 [ROADMAP.md](ROADMAP.md) for staged delivery. Important companion documents are:
 
 - [Representations](docs/representations.md)
+- [Stability, response and bifurcation](docs/stability.md)
+- [Transport and multiscale coupling](docs/transport-multiscale.md)
 - [Student laboratory](docs/student-laboratory.md)
 - [Model family](docs/model-family.md)
 - [Species models](docs/species-models.md)

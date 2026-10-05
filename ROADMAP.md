@@ -94,6 +94,63 @@ ledgers are mandatory.
 This branch is a technology and teaching demonstrator, not the main research
 spine.
 
+## S0 — stability/response consumer (cross-cutting, starts with R1/R3)
+
+Do not postpone stability to the late MHD branch. Establish the generic
+matrix-free analysis consumer as soon as a nontrivial JVP exists.
+
+Early sequence:
+
+1. 1X1V plasma-wave eigenvalue/dispersion case;
+2. HM/drift-wave linear spectrum before nonlinear turbulence;
+3. simple ideal-MHD/Alfvén eigenproblem on an analytic equilibrium;
+4. forced response/resolvent;
+5. nonmodal/optimal-growth case using JVP+VJP;
+6. continuation to a marginal-stability point.
+
+Later the same consumer covers ideal kink/ballooning, tearing/RWM, Alfvén
+eigenmodes, NTM reduced/nonlinear evolution, and DK/GK/FK microinstabilities.
+See [stability.md](docs/stability.md).
+
+## TR0 — macro transport core and cheap integrated modelling (cross-cutting, starts before R6)
+
+Add a conservative transport state early rather than waiting for global
+kinetics. Begin with exact 1D diffusion/advection/source cases but keep the
+FortFEM state capable of 2D/3D extension.
+
+The first useful integrated chain is
+
+\[
+\text{profiles/equilibrium}
+\rightarrow
+\text{prescribed or neoclassical/QL closure}
+\rightarrow
+\text{1D transport}
+\rightarrow
+\text{updated profiles/equilibrium}.
+\]
+
+Reproduce the KAMEL/KiLCA/KIM -> QL-Balance pattern in memory as an internal
+oracle. Then generalize the closure interface beyond scalar coefficients.
+
+Before or alongside the real-device DK milestone, add:
+
+- neoclassical Onsager coefficients as a transport provider;
+- linear-stability/QL closure provider;
+- closure Jacobian/JVP for implicit profile solves;
+- first 1.5D equilibrium--transport loop.
+
+Next grow to 2D/3D macro transport and nonlocal global-orbit kernels.
+A GORILLA-like characteristic engine may provide transition/response kernels
+without assuming local radial diffusion. Then add a prescribed electromagnetic
+turbulence cross-spectrum along global orbits before coupling a live
+microturbulence provider.
+
+The multiscale ladder is offline table -> in-memory loose coupling -> iterated
+closure -> separated-timescale local/global microproblems -> sparse expensive
+microphysics sampling -> fully coupled global evolution. See
+[transport-multiscale.md](docs/transport-multiscale.md).
+
 ## R4 — 0X3V collision laboratory
 
 Introduce the future velocity representation in the smallest domain. Progress:

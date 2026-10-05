@@ -8,6 +8,10 @@ that owns the proposed change. In particular:
 - docs/representations.md for Eulerian/semi-Lagrangian/particle/blob,
   full-f/delta-f, PIC/PIF and deterministic/QMC/MC choices;
 - docs/student-laboratory.md for early priorities;
+- docs/stability.md before adding eigenmodes, forced response, nonmodal growth,
+  continuation, bifurcation or nonlinear stability;
+- docs/transport-multiscale.md before adding macro transport, closure providers,
+  integrated modelling or multiscale coupling;
 - docs/model-family.md and docs/species-models.md for MHD/reduced/hybrid models;
 - docs/moment-models.md for gyrofluid/Landau-fluid/gyromoments;
 - docs/collisions.md for collision operators and thermodynamic structure;
@@ -31,6 +35,12 @@ docs/first-example.md before changing it or claiming broader evidence.
 - Direct steady kinetic science is the primary research spine. Early transients
   and turbulence are required demonstrations and verification branches, not the
   architectural center.
+- Stability/response is an analysis-consumer axis available to every compatible
+  MHD/fluid/gyrofluid/DK/GK/FK model. Do not create separate stability physics.
+- Macro transport dimensionality (0D/1D/1.5D/2D/3D) and closure fidelity are
+  independent axes. A transport closure may return coefficients, fluxes,
+  nonlocal kernels or spectral/cross-spectral data; do not force every closure
+  into scalar D/chi/V.
 - Structure preservation is the first principle. Semi-Lagrangian,
   characteristic, Eulerian, PIC/PIF and blob methods are realizations selected
   by the problem, not project identities.
@@ -116,8 +126,10 @@ Implement the smallest complete case. Do not build speculative framework
 hierarchies in advance.
 
 Important long-range branches include collisions, gyrofluid/gyromoments,
-MHD/kinetic-MHD, PIC/PIF/blobs, real-device DK/GK/FK, edge/neutrals/walls,
-RF/NBI/reactions, space plasmas, diagnostics and optimization. Planned scope is
+stability/bifurcation, 0D--3D integrated transport and true multiscale
+micro/macro coupling, MHD/kinetic-MHD, PIC/PIF/blobs, real-device DK/GK/FK,
+edge/neutrals/walls, RF/NBI/reactions, space plasmas, diagnostics and
+optimization. Planned scope is
 not implemented functionality.
 
 ## Repository and dependency policy
