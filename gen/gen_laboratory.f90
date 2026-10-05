@@ -6,6 +6,7 @@ program gen_laboratory
     use fortsym_kernel, only: kernel_spec_t, emit_kernel
     use fortsym_rigorous_emit, only: rigorous_kernel_spec_t, interval_runtime, &
                                      emit_rigorous_kernel
+    use kin6d_gen_support, only: fortsym_revision
     implicit none
     type(arena_t), target :: arena
     type(expr_t) :: v, t, x, amplitude, a, b, m, nu, sc, ss, dt, weight
@@ -132,7 +133,7 @@ contains
         end if
         spec%name = str(name); spec%generator = str('gen_laboratory')
         spec%pure_procedure = .true.; spec%elemental_procedure = .true.
-        spec%generator_revision = str('a6142712af998b727c245fb6cfbb3745b296ec24')
+        spec%generator_revision = str(fortsym_revision)
         allocate (spec%args(size(args)), spec%outputs(size(outputs)))
         do k = 1, size(args)
             spec%args(k) = str(trim(args(k)))

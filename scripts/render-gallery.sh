@@ -75,7 +75,11 @@ if ! "$snapshot"; then
     command -v ffprobe >/dev/null || { echo 'Missing command: ffprobe' >&2; exit 2; }
 fi
 build_dir="$(realpath "$build_dir")"
-gallery_dir="$(realpath -m "$gallery_dir")"
+# GNU time reports resources with -v; BSD/macOS time uses -l.
+time_flag=-v
+[[ "$(uname -s)" != Darwin ]] || time_flag=-l
+mkdir -p "$gallery_dir"
+gallery_dir="$(realpath "$gallery_dir")"
 [[ "$gallery_dir" != "$repo_root/output" ]] || { echo 'Choose an output subdirectory' >&2; exit 2; }
 if [[ -e "$gallery_dir" ]]; then
     [[ -d "$gallery_dir" ]] || { echo 'Gallery path is not a directory' >&2; exit 2; }
@@ -198,7 +202,7 @@ for entry in "${entries[@]}"; do
     if "$snapshot" && [[ "$supports_snapshot" == yes ]]; then args=(--snapshot); fi
     echo "Rendering $target"
     run_start="$(date +%s.%N)"
-    if /usr/bin/time -v -o "$destination/resources.txt" "$binary" "${args[@]}" \
+    if /usr/bin/time "$time_flag" -o "$destination/resources.txt" "$binary" ${args[@]+"${args[@]}"} \
         > "$destination/run.log" 2>&1; then
         run_exit=0
     else
@@ -208,7 +212,7 @@ for entry in "${entries[@]}"; do
     elapsed="$(wall_seconds "$run_start" "$run_end")"
     jq -nc --arg target "$target" --arg binary "$binary" --arg sha "$binary_sha" \
         --arg start "$run_start" --arg end "$run_end" --arg wall "$elapsed" \
-        --argjson exitcode "$run_exit" --argjson args "$(printf '%s\n' "${args[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')" \
+        --argjson exitcode "$run_exit" --argjson args "$(printf '%s\n' ${args[@]+"${args[@]}"} | jq -Rsc 'split("\n")|map(select(length>0))')" \
         '{target:$target,executable:$binary,sha256:$sha,args:$args,
           start_epoch_seconds:$start,end_epoch_seconds:$end,
           application_wall_seconds:$wall,exitcode:$exitcode}' >> "$runs"
