@@ -161,6 +161,25 @@ not implemented functionality.
   feature, add a focused independent reproducer there, repair it there, verify
   it, push the owning main as allowed, pin/recheck KIN6D. Do not keep permanent
   consumer workarounds.
+- libneo is the preferred shared implementation for mature plasma-code
+  interchange/convention and reusable field utilities when it already owns the
+  capability, but KIN6D depends on it only through a narrow adapter/canonical
+  physical-data boundary. No KIN6D physics module may depend directly on
+  historical libneo internals.
+- **Boy-scout rule for libneo:** as soon as a KIN6D milestone starts depending
+  on a libneo path, inspect the touched path. Generic correctness, convention,
+  interpolation, reentrancy/global-state, derivative, performance or reusable
+  error-estimation defects found by that use case are fixed and tested in
+  libneo first so SIMPLE/MEPHIT/NEO-2/TIAGO and other consumers can benefit.
+  Do not build a cleaner private duplicate in KIN6D.
+- Improve only the part that the real consumer exercises. Preserve compatible
+  entry points or provide bounded migration shims for existing consumers;
+  KIN6D development is not a license for a wholesale libneo rewrite.
+- Generic spatial field derivatives/JVPs, interpolation diagnostics and
+  reusable enclosure/error capabilities belong in libneo when they are useful
+  to multiple consumers. Physical-model residuals, equilibrium parameter
+  adjoints, validated stationary solves and model-error bounds remain KIN6D
+  responsibilities.
 - Preserve unrelated edits. One controller owns integration/promotion.
 - Never touch protected faepop* or faepcr* hosts without an explicit user
   request naming the host.
