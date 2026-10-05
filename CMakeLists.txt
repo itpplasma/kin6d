@@ -214,3 +214,5 @@ set_source_files_properties(src/generated/kin6d_fermion_ensemble_leaves.f90
 add_executable(test_fermion_ensemble test/test_fermion_ensemble.f90)
 target_link_libraries(test_fermion_ensemble PRIVATE kin6d)
 add_test(NAME fermion_ensemble_oracles COMMAND test_fermion_ensemble)
+add_executable(fermion_ensemble_demo app/fermion_ensemble_demo.f90)
+target_link_libraries(fermion_ensemble_demo PRIVATE kin6d fortplot)
