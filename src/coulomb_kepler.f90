@@ -11,7 +11,7 @@ module kin6d_coulomb_kepler
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing, &
-                                radial_eigen_window
+                                radial_eigen_window, radial_locate
     use kin6d_coulomb_encounter_leaves, only: ce_outer_turning, &
         ce_kepler_width, ce_radial_packet, ce_hydrogen_level, ce_kepler, ce_phase, &
         ce_state_bound
@@ -165,20 +165,19 @@ contains
         amp = hi - lo
     end function kepler_breathing
 
-    ! Radial probability per unit length on bins (nodal DVR quadrature).
+    ! Radial probability density |u(r)|^2 at the bin centres, from exact
+    ! interpolation of the represented polynomial (no nodal-binning aliasing).
     subroutine kepler_radial_density(kep, t, edges, p)
         type(kepler_t), intent(in) :: kep
         real(dp), intent(in) :: t, edges(0:)
         real(dp), intent(out) :: p(:)
         complex(dp) :: a(kep%mesh%n)
-        integer :: i, ib
+        real(dp) :: val(kep%mesh%order)
+        integer :: idx(kep%mesh%order), ib
         call kepler_state(kep, t, a)
-        p = 0
-        do i = 1, kep%mesh%n
-            do ib = 1, size(p)
-                if (kep%mesh%r(i) >= edges(ib - 1) .and. kep%mesh%r(i) < edges(ib)) &
-                    p(ib) = p(ib) + abs(a(i))**2/(edges(ib) - edges(ib - 1))
-            end do
+        do ib = 1, size(p)
+            call radial_locate(kep%mesh, (edges(ib - 1) + edges(ib))/2, idx, val)
+            p(ib) = abs(sum(val*a(idx)))**2
         end do
     end subroutine kepler_radial_density
 end module kin6d_coulomb_kepler

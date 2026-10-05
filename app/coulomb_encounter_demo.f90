@@ -18,11 +18,11 @@ program coulomb_encounter_demo
     real(dp), parameter :: etas(4) = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
     integer, parameter :: nb = 36, nclass = 20000
     logical :: movie
-    character(64) :: arg
+    character(160) :: arg
     integer :: status, i
     real(dp) :: ratio(nb, 5, 4), theta(nb)
     ! Movie state shared with the animation callback (host association).
-    integer, parameter :: nf = 48, npx = 128, nsep = 60
+    integer, parameter :: nf = 192, npx = 128, nsep = 60
     real(dp), allocatable :: qr(:, :, :), ql(:, :, :), tl(:, :, :), cr(:, :, :), &
         cl(:, :, :), sep(:, :, :)
     real(dp) :: times(nf), xr(0:npx), xl(0:npx), scent(nsep), lr, mv_lambdabar, &
@@ -156,12 +156,12 @@ contains
         call figure(figsize=[12.0_dp, 8.5_dp])
         do ie = 1, size(etas)
             call subplot(2, 2, ie)
-            write (arg, '(a,f4.1,a,f5.2)') 'eta = ', etas(ie), ',  r0/sigma = ', &
+            write (arg, '(a,f4.1,a,f5.2)') '$\eta$ = ', etas(ie), ',  $r_0/\sigma$ = ', &
                 2*etas(ie)/max(10.0_dp, 4*etas(ie))
             call title(trim(arg))
-            call xlabel('theta (deg), CM frame, finite-time bins at t = 2 z0/v')
+            call xlabel('$\theta$ (deg), CM frame, bins at $t = 2 z_0/v$')
             call ylabel('bin probability / plane-wave Rutherford (sym.)')
-            call xlim(15.0_dp, 165.0_dp); call ylim(0.0_dp, 2.6_dp)
+            call xlim(30.0_dp, 150.0_dp); call ylim(0.0_dp, 2.6_dp)
             call plot(theta, ratio(:, 5, ie), label='Mott singlet (plane wave)', &
                       linestyle='-', color=[0.6_dp, 0.6_dp, 0.6_dp])
             call plot(theta, 2 - ratio(:, 5, ie), label='Mott triplet (plane wave)', &
@@ -219,7 +219,7 @@ contains
         close (u)
         call figure(figsize=[9.0_dp, 6.0_dp])
         call title('eta = 1, sigma = 10 lambdabar: impact-parameter scan (product state)')
-        call xlabel('theta (deg), CM frame, finite-time bins at t = 2 z0/v')
+        call xlabel('$\theta$ (deg), CM frame, bins at $t = 2 z_0/v$')
         call ylabel('bin probability (5 deg bins, |r| > z0/4)')
         call set_yscale('log')
         call xlim(0.0_dp, 180.0_dp); call ylim(1.0e-6_dp, 1.0_dp)
@@ -451,14 +451,14 @@ contains
         canvas => get_global_figure()
         do f = 1, nf, nf/3
             call draw(f)
-            write (arg, '(a,i2.2,a)') 'output/coulomb-encounter-frame', f, '.png'
+            write (arg, '(a,i3.3,a)') 'output/coulomb-encounter-frame', f, '.png'
             call savefig(trim(arg))
             call canvas%clear()
         end do
         call draw(nf)
         call savefig('output/coulomb-encounter-final.png')
-        anim = animation_func(update, frames=nf, interval=125, fig=canvas)
-        call save_animation(anim, 'output/coulomb-encounter.mp4', fps=8, status=status)
+        anim = animation_func(update, frames=nf, interval=42, fig=canvas)
+        call save_animation(anim, 'output/coulomb-encounter.mp4', fps=24, status=status)
         if (status /= 0) print '(a,i0)', 'movie encoding status ', status
     end subroutine encounter_movie
     subroutine deposit(img, edges, x, z)
@@ -482,35 +482,36 @@ contains
         integer, intent(in) :: f
         real(dp) :: vr, vl, lb
         lb = mv_lambdabar
-        vr = maxval(qr(:, :, f)); vl = max(maxval(ql(:, :, f)), maxval(tl(:, :, f)))
-        write (arg, '(a,f5.2,a,f5.2,a)') 'Q1 two-electron encounter, eta = 3, t v/z0 = ', &
-            times(f)*mv_speed/mv_z0, ',  r0/sigma = ', mv_r0_sigma, &
-            ' (lengths in lambdabar)'
+        ! Fixed colour range for the whole movie (quantum peak).
+        vr = maxval(qr); vl = max(maxval(ql), maxval(tl))
+        write (arg, '(a,f5.2,a,f5.2,a)') 'Q1 two-electron encounter, $\eta = 3$, '// &
+            '$r_0/\sigma = $', mv_r0_sigma, ',  $t v/z_0 = $', times(f)*mv_speed/mv_z0, &
+            '; fixed colour range'
         call suptitle(trim(arg))
         call subplot(2, 3, 1)
         call title('quantum relative density (x,z), y-integrated')
-        call xlabel('x / lambdabar'); call ylabel('z / lambdabar')
+        call xlabel('$k x$'); call ylabel('$k z$')
         call pcolormesh(xr/lb, xr/lb, qr(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vr)
         call subplot(2, 3, 2)
         call title('quantum one-body density, both electrons (up,down)')
-        call xlabel('x / lambdabar'); call ylabel('z / lambdabar')
+        call xlabel('$k x$'); call ylabel('$k z$')
         call pcolormesh(xl/lb, xl/lb, ql(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vl)
         call subplot(2, 3, 3)
         call title('quantum one-body density, same spin (triplet)')
-        call xlabel('x / lambdabar'); call ylabel('z / lambdabar')
+        call xlabel('$k x$'); call ylabel('$k z$')
         call pcolormesh(xl/lb, xl/lb, tl(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vl)
         call subplot(2, 3, 4)
         write (arg, '(a,i0,a)') 'classical relative ensemble (', nclass, ' pairs)'
         call title(trim(arg))
-        call xlabel('x / lambdabar'); call ylabel('z / lambdabar')
+        call xlabel('$k x$'); call ylabel('$k z$')
         call pcolormesh(xr/lb, xr/lb, cr(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vr)
         call subplot(2, 3, 5)
         call title('classical one-body density, both electrons')
-        call xlabel('x / lambdabar'); call ylabel('z / lambdabar')
+        call xlabel('$k x$'); call ylabel('$k z$')
         call pcolormesh(xl/lb, xl/lb, cl(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vl)
         call subplot(2, 3, 6)
         call title('relative separation |r|: probability per bin')
-        call xlabel('|r| / lambdabar'); call ylabel('probability')
+        call xlabel('$k |r|$'); call ylabel('probability per bin')
         call xlim(0.0_dp, lr/lb); call ylim(0.0_dp, 1.2_dp*maxval(sep(:, :, :)))
         call plot(scent/lb, sep(:, 1, f), label='quantum product', linestyle='-', &
                   color=[0.0_dp, 0.0_dp, 0.0_dp])
