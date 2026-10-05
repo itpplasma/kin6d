@@ -127,3 +127,15 @@ run from the repository root and must reproduce committed leaves exactly.
   to output/. Open: binary64 range limit for cold large-N states;
   the nonrelativistic certificate fails below theta of about 1e-3 (graded
   mesh not applied); fortplot subplot axis scales leak between panels.
+- 2026-10-05 (controller): FortNum main 7f6a0ba adds the generic
+  `fortnum_ode_residual_certificate` (F6; 7.8x faster than the kin6d copy
+  at equal radius on the 125-mode case) and BSD-sed-portable tests. fortplot
+  branch `mp4-quality` (local): BT.709-tagged yuv420p H.264, faststart,
+  1 s keyframes, CRF 18, even-size padding, exclusive frame directory,
+  edge tick labels, `fill_between` alpha; follow-up for subplot colorbars,
+  glyphs, fallback status, log-scale leakage and large-value ticks.
+  docs/figure-style.md added. Merged F1-F4 and Q3/Q8; 24/24 CTest green.
+  Controller follow-ups: apply the graded Fermi-window mesh to the
+  nonrelativistic certificate; per-degree scaling for cold large-N
+  canonical sums; FortNum interval layer compiled without
+  `-ffp-contract=off` in FortNum's own build (audit directed rounding).
