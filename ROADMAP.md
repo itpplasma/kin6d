@@ -366,6 +366,18 @@ pair comparison is a resolution indicator; continuum cutoff bounds and a
 low-overhead production certifier remain open. BBGKY and stellar structure
 remain deferred.
 
+The next microscopic teaching sequence is upstream error/performance
+infrastructure, localized two-electron wave-packet scattering against classical
+point ensembles, coherent packet enrichment, finite-N exchange/degeneracy and
+an interacting neutralized quantum cell. Validate scalable packet/orbital and
+local classical--quantum approximations against those references before
+capacity claims. Screening/kinetic reductions are separately identified;
+optional white-dwarf work remains pressure-only. Every step retains numerical,
+model, truncation and sampling status, plots, derivatives and overhead versus
+solve alone. See [microscopic quantum validation](docs/quantum-microscopic-validation.md)
+for QG0--QG8 and acceptance gates. The completed periodic pair quench is a
+correlation reference; it does not satisfy the localized scattering gate.
+
 Physics ladder:
 
 1. finite-temperature ideal Fermi gas and regime coordinates

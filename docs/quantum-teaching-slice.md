@@ -1,9 +1,11 @@
 # Quantum teaching slice
 
-The immediate quantum deliverable is a matched classical/quantum microscopic
-experiment, followed by an ideal Fermi-gas pressure calculation. Quantum BBGKY,
-kinetic closures, stellar structure, and a macroscopic correlated-plasma solver
-are later milestones. They are not prerequisites for the first lectures.
+This document records the completed periodic classical/quantum pair quench
+and ideal Fermi-gas pressure reference. The quench is a correlation experiment,
+not incoming wave-packet scattering or a degenerate plasma demonstration.
+The next teaching deliverables and their acceptance gates are defined in
+[microscopic quantum validation](quantum-microscopic-validation.md).
+Quantum BBGKY evolution and stellar structure remain deferred.
 
 ## Matched interacting experiment
 
@@ -67,7 +69,7 @@ and fractional grand-canonical occupations have different contraction
 identities. Do not apply a fixed-N identity to a finite-temperature ideal-gas
 Wick state.
 
-## What the error bands mean
+## Error band scope
 
 A unitary residual argument bounds continuous time evolution for the declared
 finite-basis Hermitian Hamiltonian. Strict reconstruction and observable
