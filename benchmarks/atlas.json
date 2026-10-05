@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "117-case catalogue; streaming, periodic Poisson, scoped steady references and general damped transport implemented; other cases planned",
+  "status": "catalogue with scoped streaming, steady, transport and Chapter 1-3 laboratory cases; other cases planned",
   "inheritance": "defaults then family then case; case fields override family fields",
   "activation_rule": "resolve every null field; pin and review formulas/data/source sections; supply independent oracle and requested proof level before runnable promotion",
   "reference_classes": {
@@ -1304,6 +1304,71 @@
       "observables": ["whole-domain state", "implicit source/damping tangent", "cosine-density and its directional derivative", "whole-cell plotted bands"],
       "plot_recipe": "output/general-transport.png full-cell state/tangent bands; separate matching v=0 Krook slice",
       "asymptotic_remainder": "no physical source approximation, velocity-tail or model-reduction claim"
+    }
+  ],
+  "teaching_gallery": [
+    {
+      "id": "bounded_streaming_moments",
+      "status": "implemented scoped continuum moments",
+      "reference_class": "E0",
+      "equations": "f_t+v*f_x=0; n=integral(f)/2, j=integral(v*f)/2, u=j/n",
+      "geometry": "x periodic 2*pi; v in [-1,1]",
+      "initial_boundary_data": "finite Fourier/P1 coefficients; demo (1+cos(x)/2)*(1+v/2)",
+      "certificate_method": "strict nodal moments, distribution remainder weighted by integral abs(v)/2, positive-density quotient and complete plot-cell hulls",
+      "independent_oracle": "binary128 translated-profile integrals and exact quadratic Simpson current integral",
+      "reference_implementation": "test/test_streaming_moments.f90",
+      "plot_recipe": "streaming_moments_demo; particles-to-moments.mp4",
+      "proof_level": "continuous numerical enclosure; independent audit receipt; no continuous sensitivity certificate"
+    },
+    {
+      "id": "matched_debye_sphere",
+      "status": "implemented analytical equilibrium reference",
+      "reference_class": "E0",
+      "equations": "(laplacian-kappa^2)*phi=-rho_Q/epsilon0 inside a uniform permeable 3D sphere, zero forcing outside",
+      "geometry": "isolated 3D sphere; R=1; r/R in [0,6]; infinity gauge",
+      "parameter_validity_range": "kappa*R in [0.5,2]; weak linear-response model",
+      "certificate_method": "matched radial solution; regular-center series with explicit derivative-tail remainders; strict intervals and chord bounds",
+      "independent_oracle": "binary128 radial Green-function convolution, interface matching and Gauss law",
+      "reference_implementation": "test/test_debye_sphere.f90",
+      "plot_recipe": "debye_sphere_demo; debye-potential-reduction.mp4 and debye-sphere-response.mp4",
+      "proof_level": "rigorous reference evaluation; no general BVP solver, transient or microscopic screening claim"
+    },
+    {
+      "id": "overdamped_planar_shielding",
+      "status": "implemented finite-Fourier transient",
+      "reference_class": "E0",
+      "equations": "eta_t=eta_xx-eta+rho_external; -phi_xx=rho_external-eta",
+      "geometry": "periodic planar x in [-pi,pi]; zero-mean source and potential",
+      "initial_boundary_data": "eta=0; independently supplied finite cosine source coefficients",
+      "certificate_method": "affine reconstructed modal residual, positive-damping variation-of-constants bound, strict field reconstruction and plot chord margins",
+      "independent_oracle": "binary128 scalar forced ODE solution, refinement and steady Helmholtz response",
+      "reference_implementation": "test/test_shielding_dynamics.f90",
+      "plot_recipe": "shielding_dynamics_demo; debye-shielding.mp4",
+      "proof_level": "continuous numerical enclosure for overdamped linear model; no Vlasov, microscopic or model-reduction bound"
+    },
+    {
+      "id": "cold_planar_slab_oscillation",
+      "status": "implemented numerical oscillator trajectory",
+      "reference_class": "E0",
+      "equations": "q'=p; p'=-q; tau=omega_pe*t",
+      "geometry": "planar electron slab displaced against fixed positive ions",
+      "initial_boundary_data": "finite displacement and velocity; fixed time mesh",
+      "certificate_method": "untrusted upstream RK candidate, cubic Hermite reconstruction, Bernstein residual and norm-preserving oscillator stability",
+      "independent_oracle": "binary128 harmonic oscillator; signed initial states and variational equation",
+      "reference_implementation": "test/test_slab_oscillation.f90",
+      "plot_recipe": "slab_oscillation_demo; plasma-oscillation.mp4",
+      "proof_level": "continuous reduced-model numerical enclosure; not periodic homogeneous OCP or warm Vlasov dynamics"
+    },
+    {
+      "id": "microscopic_coulomb_gallery",
+      "status": "exploratory candidate; promotion gates remain open",
+      "reference_class": "I",
+      "equations": "instantaneous unscreened pair Coulomb forces; declared fixed background for cloud",
+      "geometry": "3D Cartesian particles; projected display; no imposed screened pair potential",
+      "independent_oracle": "Rutherford encounter, force antisymmetry, finite-sphere Gauss field and generated derivative checks",
+      "reference_implementation": "test/test_interaction.f90 and test/test_cloud.f90",
+      "plot_recipe": "interaction_demo and microscopic_cloud_demo",
+      "proof_level": "two-body continuous-flow endpoint intervals; cloud trajectory and statistical bounds unavailable; energy diagnostics are not certificates; no converged Debye or Lambda-scan claim"
     }
   ],
   "limit_edges": [

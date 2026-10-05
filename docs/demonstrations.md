@@ -10,6 +10,12 @@ heatmap, certified density curves and a certified velocity slice. Run
 `./scripts/demo.sh` for movies, or `./scripts/demo.sh --snapshot` for the
 default gallery without an encoder. Generated artifacts remain under `output/`.
 
+The [Chapter 1–3 gallery](chapter-gallery.md) extends the teaching examples.
+After the native build and registered tests, `./scripts/render-gallery.sh`
+runs all gallery applications and produces looping GIFs, MP4s, frame
+snapshots and a provenance manifest. `--snapshot` retains the PNG/data path
+without movie encoding. The renderer does not replace the numerical gates.
+
 ## Runnable from the first code
 
 The first executable increment is a complete CPU vertical slice: build the

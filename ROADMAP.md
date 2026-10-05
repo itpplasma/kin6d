@@ -280,6 +280,14 @@ See [interface-reproducibility.md](docs/interface-reproducibility.md).
 
 ## MB0 — microscopic relativistic many-body reference (cross-cutting)
 
+The [Chapter 1–3 gallery](docs/chapter-gallery.md) supplies the initial
+teaching comparisons alongside the steady research spine. The slab and
+overdamped planar shielding equations have distinct boundary conditions and
+physical assumptions from a periodic microscopic plasma. The isolated
+few-particle Coulomb gallery remains exploratory wherever trajectory bounds
+are unavailable; it does not discharge the periodic shielding or
+\(\Lambda\)-scan gates below.
+
 Add a small-box microscopic branch beneath the continuum kinetic hierarchy.
 Its endpoint is the multispecies relativistic Maxwell--Lorentz many-particle
 system; Vlasov/FK remains the highest continuum mean-field reference.

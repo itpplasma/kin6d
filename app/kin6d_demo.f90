@@ -131,7 +131,8 @@ contains
         call xlabel('v / v_th')
         call ylabel('f / F_M(0)')
         call xlim(-4.0_dp, 4.0_dp)
-        call ylim(0.0_dp, 1.65_dp)
+        ! Retain the raw enclosure below zero in the near-zero velocity tails.
+        call ylim(-0.05_dp, 1.65_dp)
         call fill_between(state%v, lower_line, upper_line, color='lightblue', &
                           alpha=0.7_dp)
         call plot(state%v, lower_line, linestyle=':', color=[0.27_dp, 0.51_dp, 0.71_dp])
