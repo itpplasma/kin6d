@@ -358,7 +358,7 @@ contains
         logical, intent(out) :: ok
         integer, intent(out) :: iterations
         real(dp), allocatable :: start(:, :), zero(:), scratch(:)
-        integer :: m, n, d, p, b, i, j, info
+        integer :: m, n, d, p, b, i, j, info, kmax, used
         integer(i64) :: bytes
         logical :: apply_ok
 
@@ -374,8 +374,16 @@ contains
             end do
         end do
         apply_ok = .true.
-        call block_lanczos_lowest(apply, start, nev, min(d, max(160, 24*nev)), &
-                                  1.0e-10_dp, values, vectors, residuals, info, iterations)
+        ! Without restarts, a nonconverged basis is retried from the same start
+        ! with a larger (eventually complete) Krylov space.
+        kmax = min(d, max(160, 24*nev))
+        do
+            call block_lanczos_lowest(apply, start, nev, kmax, 1.0e-10_dp, values, &
+                                      vectors, residuals, info, used)
+            iterations = iterations + used
+            if (info == KRYLOV_OK .or. kmax == d) exit
+            kmax = min(d, 3*kmax)
+        end do
         ok = info == KRYLOV_OK .and. apply_ok
     contains
         subroutine apply(x, y)
