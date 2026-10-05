@@ -69,6 +69,13 @@ of prescribed-field free streaming, with certified distribution and density
 bands. It is the first transport comparison; self-consistent particle-field
 coupling remains planned.
 
+The [Chapter 1–3 animation gallery](docs/chapter-gallery.md) adds particle
+encounters, bounded-velocity moments, a finite-sphere Debye equilibrium
+reference, computed planar shielding relaxation and a cold electron slab.
+The gallery distinguishes certified reduced-model results from exploratory
+microscopic trajectories. Its reproducible GIF and MP4 outputs remain outside
+Git.
+
 ## Scientific spine
 
 The main research progression is deliberately steady-state first:

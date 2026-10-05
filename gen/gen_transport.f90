@@ -11,7 +11,7 @@ program gen_transport
         emit_rigorous_kernel
     implicit none
 
-    character(*), parameter :: revision = '549aed77be10297beb80d602d714d30166fbeb08'
+    character(*), parameter :: revision = '44da68f44c1ef3bc7617a307409c812a6ea4d515'
     type(arena_t), target :: arena
     type(native_engine_t) :: engine
     type(expr_t) :: v, nu, k, sc, ss, determinant, a, b, x, acc, index, count
