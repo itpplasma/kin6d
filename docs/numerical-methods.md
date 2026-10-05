@@ -78,10 +78,30 @@ The common particle infrastructure should support:
 - Monte-Carlo collision (MCC)/binary-collision operators;
 - DSMC-like rarefied neutral gas;
 - photon Monte Carlo;
-- direct classical N-body/MD reference calculations.
+- full relativistic Maxwell--Lorentz finite-(N) reference calculations.
 
 Particle sorting, binning, migration and event handling are reusable runtime
 services only after real consumers establish the abstraction.
+
+## Long-range microscopic interaction methods
+
+For physical-particle microscopic references, retain:
+
+- direct \(O(N^2)\) force evaluation as the tiny gold standard;
+- FMM/tree methods for controlled long-range pair interactions;
+- Ewald/spectral-Ewald and P3M for periodic Coulomb systems;
+- near/far decompositions that keep close encounters explicit while
+  accelerating smooth distant fields;
+- local full-Maxwell field evolution for large-\(N\) relativistic
+  electrodynamics;
+- direct retarded Lienard--Wiechert mutual-field evaluation for small-\(N\)
+  reference cases;
+- space-time/hierarchical retarded kernels only if they provide measured
+  benefit at matched error.
+
+The interaction matrix is logical and must not be stored densely by default.
+FMM truncation tolerance is numerical error; macro-particle reduction is a
+different physical model.
 
 ## Time integration
 

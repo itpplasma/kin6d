@@ -59,10 +59,12 @@ optimized and, where the mathematics permits, certified.
 
 The intended application envelope covers fusion, Solar-System/natural,
 industrial/low-temperature, beam/accelerator, atmospheric, dusty/non-neutral
-and classical high-energy-density plasmas. The highest-fidelity
-charged-particle reference is relativistic 3X3P Vlasov--Maxwell; practical
-calculations deliberately use cheaper models, closures and representations
-when their error relative to the scientific observable is acceptable.
+and classical high-energy-density plasmas. The deepest classical
+charged-particle reference is the multispecies relativistic Maxwell--Lorentz
+many-body system. Relativistic 3X3P Vlasov--Maxwell/FK is the highest continuum
+mean-field reference. Practical calculations deliberately use cheaper models,
+closures and representations when their error relative to the scientific
+observable is acceptable.
 
 The full design space is recorded in the capability and numerical-method
 catalogues. They prevent architectural dead ends but do not determine
@@ -95,6 +97,66 @@ swappable without freezing hypothetical interfaces prematurely.
 
 The repository-wide KISS/YAGNI/DRY/SRP/DIP/ISP and related rules are specified
 in [software-engineering.md](docs/software-engineering.md).
+
+## Microscopic classical parent
+
+The continuum kinetic hierarchy is itself a reduction. Beneath it, KIN6D
+recognizes the exact finite-\(N\) classical microscopic state: individual
+relativistic charged particles coupled to the full Maxwell field.
+
+For species \(s\), particle \(i\),
+
+\[
+\dot{\mathbf x}_{si}
+=
+\mathbf p_{si}/(\gamma_{si}m_s),
+\qquad
+\dot{\mathbf p}_{si}
+=
+q_s(\mathbf E+\mathbf v_{si}\times\mathbf B),
+\]
+
+with microscopic charge/current sources in Maxwell's equations.
+
+The electrodynamic fidelity ladder is
+
+\[
+\text{relativistic Coulomb}
+\rightarrow
+\text{Darwin}
+\rightarrow
+\text{full Maxwell--Lorentz}
+\rightarrow
+\text{direct retarded Lienard--Wiechert reference}
+\rightarrow
+\text{declared radiation-reaction extension}.
+\]
+
+Full Maxwell--Lorentz is the target endpoint. Coulomb and Darwin are reduced
+benchmarks. Direct Lienard--Wiechert evaluation is a derived retarded,
+field-eliminated reference under matching radiation conditions, not a more
+fundamental model than the Maxwell initial-value problem.
+
+Point-charge self-fields are singular, so mutual interaction, independent field
+data and self-force/radiation-reaction modeling are kept distinct. Ordinary
+fusion collision/correlation validation normally does not require a
+self-radiation model.
+
+The corresponding statistical reduction is
+
+\[
+F_N
+\rightarrow
+(f_1,g_2,g_3,\ldots)
+\rightarrow
+\text{BBGKY/cumulant closures}
+\rightarrow
+\text{Balescu--Lenard/mean-force/Landau}
+\rightarrow
+\text{Vlasov/FK}.
+\]
+
+See [microscopic relativistic many-body reference](docs/microscopic-many-body.md).
 
 ## Canonical equation interface
 
@@ -276,8 +338,12 @@ The microscopic interaction model is another independent axis:
 \text{direct classical correlated-particle reference}.
 \]
 
-Direct N-body/MD is reserved for small strongly coupled classical reference
-problems; fully quantum many-body physics remains outside the classical core.
+The microscopic reference is not restricted to strongly coupled plasmas: small
+weakly coupled boxes also validate Debye shielding, dielectric response and
+collision closures. Direct (N^2), FMM/Ewald/P3M and field-mediated Maxwell
+paths accelerate the same physical particles; macro-particles/blobs change the
+finite-(N) microscopic model unless explicitly declared. Fully quantum
+many-body physics remains outside the classical core.
 
 ### Ionization, chemistry and neutral matter
 

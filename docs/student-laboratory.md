@@ -65,6 +65,24 @@ normalization constraints. Their derivatives and certificate inputs accompany
 the operators from the first implementation. General nonlinear certificates
 follow these stable linear cases.
 
+## Microscopic many-particle gallery
+
+A parallel microscopic gallery makes the continuum reductions tangible:
+
+1. two relativistic charged particles scatter and recover the Rutherford limit;
+2. the same pair collides while gyromotion is resolved in a prescribed field;
+3. a small full-Maxwell calculation is compared with direct retarded
+   Lienard--Wiechert mutual fields;
+4. many physical particles produce a plasma oscillation without a Vlasov
+   equation;
+5. a weak test charge produces **emergent Debye shielding**. Plot the noisy
+   microscopic density/field, its ensemble/time average and the linear
+   Debye--Huckel prediction with finite-box and finite-\(N_D\) uncertainty;
+6. measure \(g(r)\), \(S(k)\), \(S(k,\omega)\) and simple relaxation rates.
+
+These are reference/teaching cases, not a requirement to simulate a whole
+tokamak with individual physical particles.
+
 ## Kinetic teaching sequence
 
 Retain the following named examples as the permanent bottom of the verification

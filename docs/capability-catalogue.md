@@ -25,6 +25,38 @@ architectures.
 The catalogue is deliberately broader than the active roadmap. The roadmap
 selects a small number of vertical slices by scientific value and leverage.
 
+## Microscopic relativistic parent
+
+Before continuum kinetics, KIN6D admits the full finite-\(N\), multispecies,
+relativistic Maxwell--Lorentz particle-field system. The reduction ladder is
+
+\[
+\boxed{
+\text{Maxwell--Lorentz finite }N
+\rightarrow
+\text{Klimontovich/Liouville}
+\rightarrow
+\text{BBGKY/cumulants}
+\rightarrow
+\text{kinetic collision/correlation closures}
+\rightarrow
+\text{Vlasov/FK}
+\rightarrow
+\text{GK/DK/moments/fluids/MHD}.
+}
+\]
+
+The electrodynamic fidelity ladder keeps relativistic Coulomb and Darwin as
+reduced references but targets full Maxwell--Lorentz. Direct retarded
+Lienard--Wiechert mutual fields are a derived small-\(N\) validation
+formulation under a stated radiation condition.
+
+Fast multipole, Ewald/spectral-Ewald and P3M accelerate interaction evaluation
+without reducing physical particle count. PIC/PIF superparticles and blobs are
+different finite-\(N\) models unless each marker is a physical particle.
+
+See [microscopic relativistic many-body reference](microscopic-many-body.md).
+
 ## Orthogonal physics axes
 
 ### Species/state fidelity
