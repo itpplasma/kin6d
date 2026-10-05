@@ -91,3 +91,22 @@ run from the repository root and must reproduce committed leaves exactly.
   17 leaf families with FortSym a614271 reproduces the committed leaves
   bit-identically. Fixed generator link to use the platform shared-library
   suffix.
+- 2026-10-05 (worker, F1-F4): `gen/kin6d_gen_support.f90` is the one emit
+  helper for all generators; the FortSym revision comes only from
+  `KIN6D_FORTSYM_REVISION` (configured include). `gen/kin6d_symbolic_physics.f90`
+  holds the single symbolic Coulomb/sphere/Ewald/jellium/partial-wave and
+  scale definitions; `gen_coulomb` and `gen_species` emit them.
+  `src/species.f90` (units with SI map, species, pair/plasma scales),
+  `src/ewald.f90` (alpha/cutoffs from a tolerance with a shell-sum truncation
+  bound) and `src/nbody.f90` (one FortNum Strang KDK path, any N, tiled
+  direct and structure-factor Ewald sums, force/step tangents,
+  encounter-resolved step, fail-closed coincidence) are shared by C0, C1, C2;
+  Q0 and the Debye bare sphere use the shared definitions. New
+  `test_nbody` (Wigner and rock-salt Madelung constants incl. Evjen direct
+  sum, Ewald bound, Newton/momentum/energy, FD derivatives, CODATA/hand
+  scales). 22/22 CTest green in Release and Debug; regeneration of all 19
+  leaf families is deterministic. C1 output changes: Ewald 0.3825/2/4 chosen
+  from tolerance 1e-13 (bound 1.7e-15 |g|/L), encounter step re-evaluated
+  each step (max energy defect 6.2e-5 vs 2.6e-5, one histogram count moved).
+  Open: modal Poisson still duplicated (gen_poisson, gen_shielding_dynamics);
+  fp/laboratory/poisson keep their own emit convention; no VJP of the KDK step.
