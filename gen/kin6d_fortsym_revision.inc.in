@@ -1,0 +1,2 @@
+! Configured from CMakeLists.txt KIN6D_FORTSYM_REVISION; do not edit.
+character(*), parameter :: fortsym_revision = '@KIN6D_FORTSYM_REVISION@'

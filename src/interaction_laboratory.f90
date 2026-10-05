@@ -1,63 +1,96 @@
+!> C0: two-body Coulomb encounter in the relative coordinate r = x1 - x2.
+!> The reduced problem is one particle of the reduced mass mu and charge q1
+!> moving in the field of a fixed charge q2 (kin6d_nbody, isolated, one
+!> source); relative acceleration (g/mu) r/|r|^3 with g from kin6d_species.
+!> The candidate is the shared KDK step; the Picard flow tube below encloses
+!> the exact flow independently of it.
 module kin6d_interaction_laboratory
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use fortnum_interval, only: interval_t, ipoint, interval, iadd, ipowi
+    use fortnum_interval, only: interval_t, ipoint, interval, iadd, ipowi, idiv
+    use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    use kin6d_species, only: units_t, species_t, pair_scales_t, pair_scales
+    use kin6d_nbody, only: nbody_system_t, nbody_isolated, nbody_add_source, &
+                           nbody_step
+    use kin6d_coulomb_leaves, only: coulomb_pair_interval
     use kin6d_interaction_leaves
     implicit none
     private
     public :: interaction_state_t, init_interaction, step_interaction, &
-              sample_interaction, neutral_contact_trajectory
+              sample_interaction, neutral_contact_trajectory, interaction_coupling
     type :: interaction_state_t
         private
-        real(dp) :: r(3) = 0, u(3) = 0, coupling = 0
+        real(dp) :: y(6) = 0
+        !> Relative acceleration coupling g/mu as a rigorous enclosure.
+        type(interval_t) :: coupling
+        type(nbody_system_t) :: relative
         type(interval_t) :: rb(3), ub(3)
         logical :: initialized = .false., certified = .false.
     end type
 contains
-    subroutine init_interaction(state, r, u, coupling, ok)
+    !> Pair (first, second) at relative position r and velocity u. This named
+    !> model admits only repulsive pairs (g > 0).
+    subroutine init_interaction(state, r, u, units, first, second, ok)
         type(interaction_state_t), intent(out) :: state
-        real(dp), intent(in) :: r(3), u(3), coupling
+        real(dp), intent(in) :: r(3), u(3)
+        type(units_t), intent(in) :: units
+        type(species_t), intent(in) :: first, second
         logical, intent(out) :: ok
+        type(pair_scales_t) :: scales
         ok = .false.
         if (.not. all(ieee_is_finite(r))) return
         if (.not. all(ieee_is_finite(u))) return
-        if (.not. ieee_is_finite(coupling)) return
-        if (coupling <= 0 .or. maxval(abs(r)) <= 0) return
+        if (maxval(abs(r)) <= 0) return
         if (.not. ieee_is_finite(sum(r*r))) return
-        state%r = r; state%u = u; state%coupling = coupling
+        scales = pair_scales(units, first, second)
+        if (.not. (scales%coupling > 0) .or. .not. (scales%reduced_mass > 0)) return
+        call nbody_isolated(state%relative, units, &
+                            [species_t('relative', first%charge, &
+                                       scales%reduced_mass)], ok)
+        if (.not. ok) return
+        call nbody_add_source(state%relative, [0.0_dp, 0.0_dp, 0.0_dp], &
+                              second%charge, ok)
+        if (.not. ok) return
+        state%coupling = idiv(ipoint(scales%coupling), ipoint(scales%reduced_mass))
+        state%y = [r, u]
         state%rb = ipoint(r); state%ub = ipoint(u)
         state%initialized = .true.; state%certified = .true.; ok = .true.
     end subroutine
+
+    !> Relative acceleration coupling g/mu (midpoint of its enclosure).
+    pure real(dp) function interaction_coupling(state) result(c)
+        type(interaction_state_t), intent(in) :: state
+        c = (state%coupling%lo + state%coupling%hi)/2
+    end function
 
     subroutine step_interaction(state, h, ok, certify)
         type(interaction_state_t), intent(inout) :: state
         real(dp), intent(in) :: h
         logical, intent(out) :: ok
         logical, intent(in), optional :: certify
-        real(dp) :: r(3), u(3)
+        real(dp) :: y(6)
+        type(fortnum_status_t) :: status
         logical :: checked
         ok = .false.
         if (.not. state%initialized) return
         if (.not. ieee_is_finite(h)) return
         if (h <= 0) return
-        call interaction_verlet(state%r(1), state%r(2), state%r(3), &
-                                state%u(1), state%u(2), state%u(3), &
-                                state%coupling, h, &
-                                r(1), r(2), r(3), u(1), u(2), u(3))
-        if (.not. all(ieee_is_finite(r))) return
-        if (.not. all(ieee_is_finite(u))) return
+        y = state%y
+        call nbody_step(state%relative, y, h, status)
+        if (status%code /= FORTNUM_OK) return
+        if (.not. all(ieee_is_finite(y))) return
         checked = .true.
         if (present(certify)) checked = certify
         if (.not. checked) state%certified = .false.
         if (state%certified) call validated_step(state, h)
-        state%r = r; state%u = u; ok = .true.
+        state%y = y; ok = .true.
     end subroutine
 
     subroutine validated_step(state, h)
         type(interaction_state_t), intent(inout) :: state
         real(dp), intent(in) :: h
         type(interval_t) :: yr(3), yu(3), nr(3), nu(3), a(3), a0(3), j(3), pot
-        type(interval_t) :: ih, span, lower, upper, norm2
+        type(interval_t) :: ih, span, norm2
         real(dp) :: margin
         integer :: k, it
         logical :: included
@@ -73,13 +106,9 @@ contains
         do it = 1, 24
             do k = 1, 3
                 margin = max(1.e-13_dp, 0.05_dp*(yr(k)%hi - yr(k)%lo))
-                call interaction_inflate_interval(yr(k), ipoint(margin), &
-                                                  lower, upper)
-                yr(k) = interval(lower%lo, upper%hi)
+                yr(k) = iadd(yr(k), interval(-margin, margin))
                 margin = max(1.e-13_dp, 0.05_dp*(yu(k)%hi - yu(k)%lo))
-                call interaction_inflate_interval(yu(k), ipoint(margin), &
-                                                  lower, upper)
-                yu(k) = interval(lower%lo, upper%hi)
+                yu(k) = iadd(yu(k), interval(-margin, margin))
             end do
             norm2 = iadd(iadd(ipowi(yr(1), 2), ipowi(yr(2), 2)), ipowi(yr(3), 2))
             if (norm2%lo <= 0) exit
@@ -104,8 +133,8 @@ contains
         ! Taylor's integral remainder uses acceleration and force-rate over it.
         call acceleration(state%rb, state%coupling, a0, pot)
         call interaction_force_rate_interval(yr(1), yr(2), yr(3), &
-                                    ipoint(state%coupling), yu(1), yu(2), yu(3), j(1), &
-                                             j(2), j(3))
+                                             state%coupling, yu(1), yu(2), yu(3), &
+                                             j(1), j(2), j(3))
         do k = 1, 3
             call interaction_taylor_position_interval(state%rb(k), state%ub(k), &
                                                       a(k), ih, nr(k))
@@ -118,12 +147,12 @@ contains
         state%rb = nr; state%ub = nu
     end subroutine
 
+    !> Relative acceleration (g/mu) r/|r|^3 enclosed over the box r.
     subroutine acceleration(r, coupling, a, potential)
-        type(interval_t), intent(in) :: r(3)
-        real(dp), intent(in) :: coupling
+        type(interval_t), intent(in) :: r(3), coupling
         type(interval_t), intent(out) :: a(3), potential
-        call interaction_pair_force_interval(r(1), r(2), r(3), ipoint(coupling), &
-                                             a(1), a(2), a(3), potential)
+        call coulomb_pair_interval(r(1), r(2), r(3), coupling, &
+                                   a(1), a(2), a(3), potential)
     end subroutine
 
     subroutine sample_interaction(state, r, u, rb, ub, ok, bounded)
@@ -132,7 +161,7 @@ contains
         type(interval_t), intent(out) :: rb(3), ub(3)
         logical, intent(out) :: ok, bounded
         ok = state%initialized; bounded = state%certified
-        r = state%r; u = state%u; rb = state%rb; ub = state%ub
+        r = state%y(:3); u = state%y(4:); rb = state%rb; ub = state%ub
         ! Bounds are meaningful only when bounded is true. Failed continuation
         ! remains a candidate trajectory, never a certified output.
     end subroutine

@@ -2,17 +2,14 @@ program interaction_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, ipoint
     use kin6d_interaction_laboratory
-    use kin6d_interaction_leaves, only: interaction_pair_force, &
-                                        interaction_energy, &
+    use kin6d_interaction_leaves, only: interaction_energy, &
                                         interaction_particle_error_interval, &
                                         interaction_frame_time, &
                                         interaction_frame_time_interval, &
                                         interaction_particle_coordinate, &
-                                        interaction_particle_coordinate_interval, &
-                                        interaction_contact_outline, &
-                                        interaction_outline_angle, &
-                                        interaction_plot_scale, &
-                                        interaction_plot_energy_drift
+                                        interaction_particle_coordinate_interval
+    use kin6d_coulomb_leaves, only: coulomb_pair
+    use kin6d_species, only: units_t, atomic_units, electron, pair_coupling
     use fortplot, only: figure, figure_t, get_global_figure, subplot, plot, &
                         scatter, quiver, &
                         title, xlabel, ylabel, xlim, ylim, legend, &
@@ -22,7 +19,10 @@ program interaction_demo
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
     integer, parameter :: frames = 121, substeps = 100, fps = 24
-    real(dp), parameter :: h = .0005_dp, coupling = 2._dp, duration = 6._dp
+    real(dp), parameter :: h = .0005_dp, duration = 6._dp
+    real(dp), parameter :: two_pi = 6.2831853071795864769_dp
+    type(units_t) :: units
+    real(dp) :: coupling
     real(dp), parameter :: blue(3) = [.12_dp, .38_dp, .7_dp], &
                            orange(3) = [.85_dp, .28_dp, .12_dp]
     type(interaction_state_t) :: state, fast
@@ -59,21 +59,25 @@ program interaction_demo
   if (snapshot_frame < 1 .or. snapshot_frame > frames) error stop 'frame outside 1..121'
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'cannot create output'
-    call init_interaction(fast, r0, u0, coupling, ok)
+    ! Two electrons in Hartree atomic units: g = 1, mu = 1/2, coupling g/mu = 2.
+    units = atomic_units()
+    call init_interaction(fast, r0, u0, units, electron(), electron(), ok)
+    if (.not. ok) error stop 'interaction setup failed'
+    coupling = interaction_coupling(fast)
     call cpu_time(start)
     do k = 1, (frames - 1)*substeps
         call step_interaction(fast, h, ok, certify=.false.)
         if (.not. ok) error stop 'candidate integration failed'
     end do
     call cpu_time(finish); solve_seconds = finish - start
-    call init_interaction(state, r0, u0, coupling, ok)
+    call init_interaction(state, r0, u0, units, electron(), electron(), ok)
     call cpu_time(start)
     do k = 1, (frames - 1)*substeps
         call step_interaction(state, h, ok)
         if (.not. ok) error stop 'checked candidate integration failed'
     end do
     call cpu_time(finish); check_seconds = finish - start
-    call init_interaction(state, r0, u0, coupling, ok)
+    call init_interaction(state, r0, u0, units, electron(), electron(), ok)
     call interaction_energy(r0(1), r0(2), r0(3), u0(1), u0(2), u0(3), coupling, en0)
     do frame = 1, frames
         if (frame > 1) then
@@ -121,8 +125,8 @@ program interaction_demo
     do frame = 1, frames
         if (certified(frame)) last_bounded = frame
     end do
-    call interaction_plot_scale(radii, 1.e5_dp, radius_plot)
-    call interaction_plot_energy_drift(energy, en0, 1.e8_dp, energy_plot)
+    radius_plot = 1.e5_dp*radii
+    energy_plot = (energy - en0)*1.e8_dp/en0
     open (newunit=out, file='output/interaction-evidence.csv', status='replace')
     write (out, &
            '(a)') 'frame,t,t_lower,t_upper,endpoint_enclosure_available,one_pe'// &
@@ -184,8 +188,7 @@ contains
         integer :: outline_index
         real(dp) :: sign, bx(5), by(5), angles(65), outline_x(65), outline_y(65)
         do outline_index = 1, 65
-            call interaction_outline_angle(real(outline_index - 1, dp), &
-                                           angles(outline_index))
+            angles(outline_index) = two_pi*real(outline_index - 1, dp)/64
         end do
         call canvas%clear()
         call subplot(2, 2, 1)
@@ -200,9 +203,9 @@ contains
             call scatter([neutral_position(1, particle, frame)], &
                          [neutral_position(2, particle, frame)], &
                          color=blue, s=95._dp, marker='o')
-            call interaction_contact_outline(neutral_position(1, particle, frame), &
-                                         neutral_position(2, particle, frame), angles, &
-                                             outline_x, outline_y)
+            ! Contact sphere of radius 1/2 around each neutral particle.
+            outline_x = neutral_position(1, particle, frame) + cos(angles)/2
+            outline_y = neutral_position(2, particle, frame) + sin(angles)/2
             call plot(outline_x, outline_y, color=blue, linewidth=1.5_dp)
         end do
         call xlabel('x [1] | Cartesian 3D orbit, z=0 by symmetry')
@@ -220,9 +223,9 @@ contains
                 times(frame), ' | candidate: bound failed'
         end if
         call title(trim(heading))
-        call interaction_pair_force(charged(1, frame), charged(2, frame), &
-                                    charged(3, frame), &
-                                    1._dp, f(1), f(2), f(3), potential)
+        call coulomb_pair(charged(1, frame), charged(2, frame), charged(3, frame), &
+                          pair_coupling(units, electron(), electron()), &
+                          f(1), f(2), f(3), potential)
         do particle = 1, 2
             sign = real(3 - 2*particle, dp)
             call plot(charged_position(1, particle, 1:frame), &

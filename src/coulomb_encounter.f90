@@ -18,6 +18,7 @@ module kin6d_coulomb_encounter
                                 radial_band_hamiltonian, radial_band_matvec, &
                                 radial_eigen_window, radial_locate
     use kin6d_coulomb_encounter_leaves
+    use kin6d_species_leaves, only: species_pair_scales, species_sommerfeld
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use fortnum_interval, only: interval_t, ipoint
     implicit none
@@ -150,7 +151,8 @@ contains
         character(:), allocatable, intent(out) :: message
         complex(dp), allocatable :: a0(:, :, :)
         real(dp), allocatable :: wl(:), wm(:)
-        real(dp) :: sk, khi, vinf, rmax, hmax, h0, growth, abohr, st, se, tail, sig_e
+        real(dp) :: sk, khi, vinf, rmax, hmax, h0, growth, st, se, tail, sig_e
+        real(dp) :: bohr, rydberg
         integer(i64) :: c0, c1, c2, rate
         integer :: lest, mest, l, mcount
         logical :: built
@@ -158,9 +160,11 @@ contains
         call system_clock(c0, rate)
         if (.not. valid_config(cfg)) return
         enc%cfg = cfg
-        call ce_reduced_mass(cfg%m1, cfg%m2, enc%mtotal, enc%mu)
-        call ce_scales(cfg%g, enc%mu, cfg%hbar, cfg%k, enc%eta, enc%lambdabar, enc%r0, &
+        call species_pair_scales(cfg%hbar, cfg%m1, cfg%m2, cfg%g, enc%mu, bohr, rydberg)
+        call ce_total_mass(cfg%m1, cfg%m2, enc%mtotal)
+        call ce_scales(cfg%g, enc%mu, cfg%hbar, cfg%k, enc%lambdabar, enc%r0, &
                        enc%energy, enc%speed)
+        call species_sommerfeld(cfg%g, cfg%hbar, enc%speed, enc%eta)
         sig_e = cfg%sigma/sqrt(2.0_dp)
         call ce_pair_widths(sig_e, se, enc%sigma_cm)
         if (cfg%sigma_cm > 0) enc%sigma_cm = cfg%sigma_cm
@@ -176,8 +180,7 @@ contains
         if (cfg%hmax > 0) hmax = cfg%hmax
         h0 = hmax; growth = 1
         if (cfg%g < 0) then
-            abohr = cfg%hbar**2/(enc%mu*abs(cfg%g))
-            h0 = min(hmax, abohr); growth = 1.12_dp
+            h0 = min(hmax, bohr); growth = 1.12_dp
         end if
         enc%hmax = hmax
         call build_radial_mesh(enc%mesh, rmax, cfg%order, hmax, h0, growth, built)
@@ -744,6 +747,7 @@ contains
         use kin6d_interaction_laboratory, only: interaction_state_t, init_interaction, &
             step_interaction, sample_interaction
         use kin6d_interaction_leaves, only: interaction_energy
+        use kin6d_species, only: units_t, species_t
         type(encounter_t), intent(in) :: enc
         integer, intent(in) :: nsample
         integer(i64), intent(in) :: seed
@@ -753,6 +757,8 @@ contains
         type(rng_t) :: gen
         type(fortnum_status_t) :: status
         type(interaction_state_t) :: st
+        type(units_t) :: units
+        type(species_t) :: first, second
         type(interval_t) :: rbi(3), ubi(3)
         real(dp) :: r(3), u(3), x(3), p(3), alpha, sk, skc, t, h, e0, e1
         integer :: ns, it, k, d
@@ -760,6 +766,11 @@ contains
         ok = .false.; drift = 0
         if (enc%cfg%g <= 0 .or. nsample < 1) return
         alpha = enc%cfg%g/enc%mu
+        ! Declared units with Coulomb constant 1: unit charge on particle 1 and
+        ! charge g on particle 2 reproduce the pair coupling g exactly.
+        units%hbar = enc%cfg%hbar; units%coulomb = 1
+        first = species_t('particle1', 1.0_dp, enc%cfg%m1)
+        second = species_t('particle2', enc%cfg%g, enc%cfg%m2)
         call rng_seed(gen, seed, status)
         call ce_momentum_width(enc%cfg%sigma, enc%cfg%hbar, sk)
         call ce_momentum_width(enc%sigma_cm, enc%cfg%hbar, skc)
@@ -771,7 +782,7 @@ contains
             r = r*enc%cfg%sigma + [enc%cfg%b, 0.0_dp, -enc%cfg%z0]
             u = (u*sk + [0.0_dp, 0.0_dp, enc%cfg%hbar*enc%cfg%k])/enc%mu
             x = x*enc%sigma_cm; p = p*skc
-            call init_interaction(st, r, u, alpha, stepped)
+            call init_interaction(st, r, u, units, first, second, stepped)
             if (.not. stepped) return
             call interaction_energy(r(1), r(2), r(3), u(1), u(2), u(3), alpha, e0)
             t = 0

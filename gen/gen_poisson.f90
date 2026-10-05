@@ -18,6 +18,7 @@ program gen_poisson
     use fortsym_kernel, only: kernel_spec_t, emit_kernel
     use fortsym_rigorous_emit, only: rigorous_kernel_spec_t, interval_runtime, &
                                      emit_rigorous_kernel
+    use kin6d_gen_support, only: fortsym_revision
     implicit none
     type(arena_t), target :: arena
     type(expr_t) :: k, eps, rc, rs, pc, ps, ec, es, x, v, a, nu, drive, source
@@ -127,7 +128,7 @@ contains
             return
         end if
         spec%name = str(name); spec%generator = str('gen_poisson')
-        spec%generator_revision = str('a6142712af998b727c245fb6cfbb3745b296ec24')
+        spec%generator_revision = str(fortsym_revision)
         spec%pure_procedure = .true.; spec%elemental_procedure = .true.
         allocate (spec%args(size(args)), spec%outputs(size(outputs)))
         do i = 1, size(args)
