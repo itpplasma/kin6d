@@ -20,53 +20,87 @@ program streaming_comparison_demo
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+    use kin6d_result_io, only: run_t, result_file_t
     implicit none
-    integer, parameter :: modes = 1, nx = 96, nv = 128
-    integer, parameter :: particle_nx = 32, particle_nv = 48
-    integer, parameter :: np = particle_nx*particle_nv, frames = 121, fps = 24
-    integer, parameter :: repeats = 20, cohort_size = 3
-    real(dp), parameter :: duration = 12.0_dp
+    integer, parameter :: modes = 1, fps = 24, cohort_size = 3
+    integer :: nx = 96, nv = 128, particle_nx = 32, particle_nv = 48
+    integer :: frames = 121, repeats = 20, np
+    real(dp) :: duration = 12.0_dp
+    namelist /streaming_comparison/ nx, nv, particle_nx, particle_nv, frames, &
+        repeats, duration
+    type(run_t) :: run
+    type(result_file_t) :: result
     type(streaming_state_t) :: eulerian, initial, particle_initial
     type(streaming_particles_t) :: particles
     type(particle_density_certificate_t) :: particle_certificate
     type(particle_density_workspace_t) :: particle_work
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
-    real(dp) :: v(nv + 1), x(nx + 1), cosine0(0:modes, nv + 1)
-    real(dp) :: sine0(0:modes, nv + 1), initial_cosine(0:modes) = [1.0_dp, 0.5_dp]
+    real(dp), allocatable :: v(:), x(:), cosine0(:, :), sine0(:, :)
+    real(dp) :: initial_cosine(0:modes) = [1.0_dp, 0.5_dp]
     real(dp) :: particle_cosine0(0:modes, 2), particle_sine0(0:modes, 2)
     real(dp) :: particle_v0(2) = [-1.0_dp, 1.0_dp]
-    real(dp) :: x0(np), particle_v(np), weight(np), unwrapped(np), particle_x(np)
-    real(dp) :: glyph(np), cohort_x(cohort_size), cohort_v(cohort_size)
+    real(dp), allocatable :: x0(:), particle_v(:), weight(:), unwrapped(:)
+    real(dp), allocatable :: particle_x(:), glyph(:)
+    real(dp) :: cohort_x(cohort_size), cohort_v(cohort_size)
     integer :: cohorts(cohort_size, 3)
-    type(interval_t) :: x0_bounds(np), velocity_bounds(np), weight_bounds(np)
-    real(dp) :: image(nv + 1, nx + 1), slice(nv + 1), slice_lo(nv + 1)
-    real(dp) :: slice_hi(nv + 1), initial_slice(nv + 1)
-    real(dp) :: initial_lo(nv + 1), initial_hi(nv + 1)
-    real(dp) :: density(nx + 1), density_lo(nx + 1), density_hi(nx + 1)
-    real(dp) :: particle_density(nx + 1), particle_lo(nx + 1), particle_hi(nx + 1)
-    real(dp) :: density_padding(nx), particle_padding(nx)
+    type(interval_t), allocatable :: x0_bounds(:), velocity_bounds(:), weight_bounds(:)
+    real(dp), allocatable :: image(:, :), slice(:), slice_lo(:), slice_hi(:)
+    real(dp), allocatable :: initial_slice(:), initial_lo(:), initial_hi(:)
+    real(dp), allocatable :: density(:), density_lo(:), density_hi(:)
+    real(dp), allocatable :: particle_density(:), particle_lo(:), particle_hi(:)
+    real(dp), allocatable :: density_padding(:), particle_padding(:)
+    ! Per-frame evidence retained for the NetCDF result.
+    real(dp), allocatable :: frame_time(:), frame_radius(:), store_density(:, :, :)
+    real(dp), allocatable :: store_particle(:, :, :), store_slice(:, :, :)
     real(dp) :: pcos(0:modes), psin(0:modes), time, radius, period, measure
     real(dp) :: candidate_cpu, complete_cpu, particle_push_cpu, particle_project_cpu
     real(dp) :: particle_complete_cpu, postprocess_cpu, ignored_x, ignored_v
     integer :: i, frame, status, evidence, bands, slices, particle_data, snapshot_frame
+    integer :: unit
     logical :: ok, snapshot_only
     character(len=64) :: argument
+    character(len=256) :: msg
 
-    snapshot_only = .false.; snapshot_frame = 61
-    if (command_argument_count() > 2) error stop 'usage: demo [--snapshot [frame]]'
-    if (command_argument_count() >= 1) then
-        call get_command_argument(1, argument)
+    call run%start('streaming_comparison_demo')
+    status = 0; msg = ''
+    call run%open_config(unit)
+    if (run%has_config()) read (unit, nml=streaming_comparison, iostat=status, &
+        iomsg=msg)
+    call run%close_config(unit, 'streaming_comparison', status, msg)
+    if (nx < 1 .or. nv < 1 .or. particle_nx < 1 .or. particle_nv < 1) &
+        error stop 'grid sizes must be positive'
+    if (frames < 2 .or. repeats < 1 .or. .not. (duration > 0.0_dp)) &
+        error stop 'frames >= 2, repeats >= 1 and duration > 0 required'
+    call run%open_resolved(unit)
+    write (unit, nml=streaming_comparison)
+    call run%close_resolved(unit)
+    np = particle_nx*particle_nv
+    allocate (v(nv + 1), x(nx + 1), cosine0(0:modes, nv + 1), sine0(0:modes, nv + 1), &
+        x0(np), particle_v(np), weight(np), unwrapped(np), particle_x(np), glyph(np), &
+        x0_bounds(np), velocity_bounds(np), weight_bounds(np), &
+        image(nv + 1, nx + 1), slice(nv + 1), slice_lo(nv + 1), slice_hi(nv + 1), &
+        initial_slice(nv + 1), initial_lo(nv + 1), initial_hi(nv + 1), &
+        density(nx + 1), density_lo(nx + 1), density_hi(nx + 1), &
+        particle_density(nx + 1), particle_lo(nx + 1), particle_hi(nx + 1), &
+        density_padding(nx), particle_padding(nx), frame_time(frames), &
+        frame_radius(frames), store_density(nx + 1, 2, frames), &
+        store_particle(nx + 1, 2, frames), store_slice(nv + 1, 2, frames))
+    snapshot_only = .false.; snapshot_frame = (frames + 1)/2
+    if (run%argument_count() > 2) error stop &
+        'usage: demo [--config FILE] [--snapshot [frame]]'
+    if (run%argument_count() >= 1) then
+        call run%argument(1, argument)
         if (trim(argument) /= '--snapshot') error stop 'expected --snapshot'
         snapshot_only = .true.
     end if
-    if (command_argument_count() == 2) then
-        call get_command_argument(2, argument)
+    if (run%argument_count() == 2) then
+        call run%argument(2, argument)
         read (argument, *, iostat=status) snapshot_frame
         if (status /= 0) error stop 'snapshot frame must be an integer'
     end if
     if (snapshot_frame < 1 .or. snapshot_frame > frames) &
-        error stop 'snapshot frame outside 1..121'
+        error stop 'snapshot frame outside 1..frames'
     call create_directory_runtime('output', ok)
     if (.not. ok) error stop 'cannot create output directory'
     do i = 1, nv + 1
@@ -136,6 +170,7 @@ program streaming_comparison_demo
         call write_evidence(frame)
     end do
     close (evidence); close (bands); close (slices)
+    call write_result()
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
     call compute_frame(snapshot_frame, timed=.false.)
@@ -311,6 +346,11 @@ contains
             particle_complete_cpu - particle_push_cpu - particle_project_cpu, &
             complete_cpu - candidate_cpu, postprocess_cpu, &
             density_lo(1), density_hi(1), particle_lo(1), particle_hi(1)
+        frame_time(number) = time; frame_radius(number) = radius
+        store_density(:, 1, number) = density_lo; store_density(:, 2, number) = density_hi
+        store_particle(:, 1, number) = particle_lo
+        store_particle(:, 2, number) = particle_hi
+        store_slice(:, 1, number) = slice_lo; store_slice(:, 2, number) = slice_hi
         do j = 1, nx + 1
             write (bands, '(i0,6(",",es24.16e3))') number, time, x(j), &
                 density_lo(j), density_hi(j), particle_lo(j), particle_hi(j)
@@ -319,6 +359,31 @@ contains
             write (slices, '(i0,6(",",es24.16e3))') number, time, v(j), &
                 slice_lo(j), slice_hi(j), initial_lo(j), initial_hi(j)
         end do
+    end subroutine
+
+    subroutine write_result()
+        character(len=*), parameter :: bound = 'certified-continuous finite '// &
+            'Fourier/P1 enclosure (lower, upper)'
+        call result%create(run)
+        call result%attribute('bound_index', '1=lower, 2=upper')
+        call result%write('time', frame_time, '1', 'frame time', dims='frame')
+        call result%write('x', x, '1', 'x (normalized; period 2 pi)', dims='x')
+        call result%write('v', v, '1', 'velocity nodes', dims='v')
+        call result%write('velocity_interpolation_radius', frame_radius, '1', &
+            'Eulerian velocity interpolation radius', dims='frame', &
+            status='certified-continuous')
+        call result%write('eulerian_density_bounds', store_density, '1', &
+            'normalized Eulerian density enclosure', dims='x,bound,frame', status=bound)
+        call result%write('particle_density_bounds', store_particle, '1', &
+            'normalized particle Fourier-PIF density enclosure', dims='x,bound,frame', &
+            status='certified deterministic particle Fourier quadrature bound; '// &
+            'pointwise Dirac bound unavailable')
+        call result%write('slice_bounds', store_slice, '1', &
+            'distribution slice enclosure at x=0', dims='v,bound,frame', status=bound)
+        call result%write('initial_slice_bounds', reshape([initial_lo, initial_hi], &
+            [nv + 1, 2]), '1', 'initial distribution slice enclosure', dims='v,bound', &
+            status=bound)
+        call result%close()
     end subroutine
 
     subroutine select_cohorts()
