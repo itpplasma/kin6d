@@ -28,6 +28,27 @@ waves for long physical times. Transient and turbulence consumers use the same
 operators and are developed early because they expose structure and performance
 defects quickly.
 
+## Clean dependency rule
+
+KIN6D freezes scientific policies and contracts earlier than implementation
+details. Clean Architecture here is a dependency rule, not a prescribed folder
+tree.
+
+Physics/model definitions are the inner policy. Application consumers such as
+steady solves, stability and transport compose that policy. External solvers,
+file formats, accelerator runtimes, schedulers, CLI/web frontends and other
+framework details live outside those layers and depend inward through narrow
+contracts/adapters.
+
+Do not introduce an abstraction merely to make a detail theoretically
+replaceable. Use the simplest direct implementation for the current vertical
+slice and extract a seam when a real second implementation/consumer, testing
+boundary or costly external dependency demonstrates it. This keeps details
+swappable without freezing hypothetical interfaces prematurely.
+
+The repository-wide KISS/YAGNI/DRY/SRP/DIP/ISP and related rules are specified
+in [software-engineering.md](docs/software-engineering.md).
+
 ## Canonical equation interface
 
 A selected model defines a residual and, when evolutionary,
