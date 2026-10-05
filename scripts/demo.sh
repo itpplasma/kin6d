@@ -13,3 +13,4 @@ ctest --preset cpu
 ./build/kin6d_demo "$@"
 ./build/steady_laboratory_demo
 ./build/transport_demo
+./build/streaming_comparison_demo "$@"

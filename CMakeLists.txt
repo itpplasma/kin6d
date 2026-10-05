@@ -32,10 +32,12 @@ add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
     src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
-    src/transport_certificate.f90 src/transport_sampling.f90)
+    src/transport_certificate.f90 src/transport_sampling.f90
+    src/generated/kin6d_streaming_leaves.f90 src/streaming_comparison.f90
+    src/streaming_particle_density.f90)
 set_source_files_properties(
     src/generated/kin6d_poisson_leaves.f90 src/generated/kin6d_fp_leaves.f90
-    src/generated/kin6d_transport_leaves.f90
+    src/generated/kin6d_transport_leaves.f90 src/generated/kin6d_streaming_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
@@ -45,6 +47,8 @@ add_executable(steady_laboratory_demo app/steady_laboratory_demo.f90)
 target_link_libraries(steady_laboratory_demo PRIVATE kin6d fortplot)
 add_executable(transport_demo app/transport_demo.f90)
 target_link_libraries(transport_demo PRIVATE kin6d fortplot)
+add_executable(streaming_comparison_demo app/streaming_comparison_demo.f90)
+target_link_libraries(streaming_comparison_demo PRIVATE kin6d fortplot)
 add_executable(formal_krook_certificate app/formal_krook_certificate.f90)
 target_link_libraries(formal_krook_certificate PRIVATE kin6d)
 add_executable(test_laboratory test/test_laboratory.f90)
@@ -65,6 +69,12 @@ add_test(NAME cached_transport_band_oracles COMMAND test_transport_sampling)
 add_executable(test_transport_linear_bands test/test_transport_linear_bands.f90)
 target_link_libraries(test_transport_linear_bands PRIVATE kin6d)
 add_test(NAME continuous_linear_band_oracles COMMAND test_transport_linear_bands)
+add_executable(test_streaming_comparison test/test_streaming_comparison.f90)
+target_link_libraries(test_streaming_comparison PRIVATE kin6d)
+add_test(NAME streaming_representation_oracles COMMAND test_streaming_comparison)
+add_executable(test_streaming_particle_density test/test_streaming_particle_density.f90)
+target_link_libraries(test_streaming_particle_density PRIVATE kin6d)
+add_test(NAME streaming_particle_density_oracles COMMAND test_streaming_particle_density)
 find_program(KIN6D_LAKE lake)
 option(KIN6D_CHECK_LEAN "Check continuous Lean theorems and computed certificate" OFF)
 if(KIN6D_CHECK_LEAN)
@@ -91,7 +101,7 @@ if(KIN6D_FORTSYM_BUILD)
             NOT fortsym_revision STREQUAL KIN6D_FORTSYM_REVISION)
         message(FATAL_ERROR "Regeneration requires FortSym ${KIN6D_FORTSYM_REVISION}")
     endif()
-    foreach(generator laboratory poisson fp transport)
+    foreach(generator laboratory poisson fp transport streaming)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_include_directories(gen_${generator} PRIVATE
             ${KIN6D_FORTSYM_BUILD}/include)
@@ -102,6 +112,8 @@ endif()
 # Explicit performance audit; not part of the ordinary correctness gate.
 add_executable(benchmark_streaming app/benchmark_streaming.f90)
 target_link_libraries(benchmark_streaming PRIVATE kin6d)
+add_executable(benchmark_streaming_comparison app/benchmark_streaming_comparison.f90)
+target_link_libraries(benchmark_streaming_comparison PRIVATE kin6d)
 add_executable(benchmark_fp app/benchmark_fp.f90)
 target_link_libraries(benchmark_fp PRIVATE kin6d)
 add_executable(benchmark_transport app/benchmark_transport.f90)

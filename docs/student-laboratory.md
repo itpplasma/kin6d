@@ -69,19 +69,26 @@ follow these stable linear cases.
 
 A parallel microscopic gallery makes the continuum reductions tangible:
 
-1. two relativistic charged particles scatter and recover the Rutherford limit;
-2. the same pair collides while gyromotion is resolved in a prescribed field;
-3. a small full-Maxwell calculation is compared with direct retarded
-   Lienard--Wiechert mutual fields;
-4. many physical particles produce a plasma oscillation without a Vlasov
+1. two nonrelativistic repulsive Coulomb particles scatter against a Rutherford
+   oracle; animate their real 3D trajectories;
+2. a few interacting 3D3V particles, then the prescribed magnetic-field case;
+3. many physical particles produce a plasma oscillation without a Vlasov
    equation;
-5. a weak test charge produces **emergent Debye shielding**. Plot the noisy
+4. a weak test charge produces **emergent Debye shielding**. Plot the noisy
    microscopic density/field, its ensemble/time average and the linear
    Debye--Huckel prediction with finite-box and finite-\(N_D\) uncertainty;
-6. measure \(g(r)\), \(S(k)\), \(S(k,\omega)\) and simple relaxation rates.
+5. scan \(\Lambda=n\lambda_D^3=100,300,1000,3000,10000\), with separate
+   domain, estimator, fluctuation and collisionality gates;
+6. measure \(g(r)\), \(S(k)\), \(S(k,\omega)\) and simple relaxation rates;
+7. add relativistic/Darwin/Maxwell and tiny retarded-field comparisons when
+   the example's regime needs them.
 
 These are reference/teaching cases, not a requirement to simulate a whole
 tokamak with individual physical particles.
+Use an electron OCP with an explicit background for the first collective
+microscopic cases, preventing attractive classical point-particle collapse.
+The [canonical microscopic plan](microscopic-many-body.md) specifies periodic
+forces, responsive-species Debye lengths, finite-k wave and estimator caveats.
 
 ## Kinetic teaching sequence
 
@@ -125,6 +132,8 @@ full particle infrastructure:
 | Short self-consistent Vlasov--Poisson | continuum, PIF and PIC with common initial data | earlier limiting cases, independent refinement and balance tests |
 
 Free-streaming particles alone do not exercise PIC/PIF field coupling. The
+first rung now has an [animated comparison](streaming-comparison.md) with
+deterministic weighted particles and a Fourier/P1 Eulerian solution. The
 Poisson comparison exercises deposit/solve/gather without claiming a
 self-consistent trajectory. The third case supplies field feedback and reports
 the trajectory's actual bound status. Share the physical laws, parameters and

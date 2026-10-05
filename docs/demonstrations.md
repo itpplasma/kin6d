@@ -4,6 +4,12 @@ Status: the first CPU prescribed-field 1X1V slice is implemented.
 See [the runnable example and evidence](first-example.md). The following
 contracts govern completion of the first formal milestone and later increments.
 
+The [particle/Eulerian comparison](streaming-comparison.md) adds a synchronized
+animation of weighted characteristic particles, an Eulerian phase-space
+heatmap, certified density curves and a certified velocity slice. Run
+`./scripts/demo.sh` for movies, or `./scripts/demo.sh --snapshot` for the
+default gallery without an encoder. Generated artifacts remain under `output/`.
+
 ## Runnable from the first code
 
 The first executable increment is a complete CPU vertical slice: build the

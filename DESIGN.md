@@ -118,9 +118,11 @@ q_s(\mathbf E+\mathbf v_{si}\times\mathbf B),
 
 with microscopic charge/current sources in Maxwell's equations.
 
-The electrodynamic fidelity ladder is
+The electrodynamic fidelity ladder is independent of development priority:
 
 \[
+\text{nonrelativistic Coulomb}
+\rightarrow
 \text{relativistic Coulomb}
 \rightarrow
 \text{Darwin}
@@ -142,6 +144,11 @@ data and self-force/radiation-reaction modeling are kept distinct. Ordinary
 fusion collision/correlation validation normally does not require a
 self-radiation model.
 
+This parent is a declared classical reference with an explicit self-field
+prescription, not an already implemented singular point-charge solver. Early
+teaching cases use nonrelativistic instantaneous Coulomb in a stated regime;
+retardation and self-force are not prerequisites for collective examples.
+
 The corresponding statistical reduction is
 
 \[
@@ -149,14 +156,22 @@ F_N
 \rightarrow
 (f_1,g_2,g_3,\ldots)
 \rightarrow
-\text{BBGKY/cumulant closures}
-\rightarrow
-\text{Balescu--Lenard/mean-force/Landau}
-\rightarrow
-\text{Vlasov/FK}.
+\left\{
+\begin{array}{l}
+\text{Vlasov/FK mean-field limit},\\
+\text{Balescu--Lenard/Landau/BB effective weak correlations},\\
+\text{explicit cumulant/mean-force closures}.
+\end{array}
+\right.
 \]
 
 See [microscopic relativistic many-body reference](docs/microscopic-many-body.md).
+BBGKY supplies the unclosed marginal hierarchy; the displayed reductions are
+different limits/closures rather than a sequence of collision operators.
+Collective polarization and waves already occur in mean field. Pairwise
+microscopic forces can generate higher connected correlations without a
+fundamental three-body force term. Track mean response, finite-particle noise
+and collisionality separately in the declared Debye-volume scan.
 
 ## Canonical equation interface
 
