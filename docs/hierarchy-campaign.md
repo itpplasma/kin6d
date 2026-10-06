@@ -359,3 +359,12 @@ run from the repository root and must reproduce committed leaves exactly.
   - a FortSym `sqrt(1*3)` folding defect (worked around in the generator);
   - the default kin6d_ocp MD step fails closed at Gamma 1 (the demo uses
     dt/4).
+- 2026-10-06 (controller, pause 2): merged Q2, QG6, Q5, cleanup, both
+  figure passes, C3/C4 code (final Landau evidence pending on its branch),
+  H1a classical correlation map; FortNum e97a493 and fortplot cad62c6
+  pinned. 38/38 CTest. Pending worker branches: H1b quantum-classical map
+  (worktree-agent-a12015f16c29a0b2f), C3/C4 final evidence
+  (worktree-agent-a6bde7f3f0e416042). Remaining: merge those; regime map
+  synthesis; plan/doc consolidation (ROADMAP, README,
+  quantum-microscopic-validation, microscopic-many-body, teaching docs);
+  full gallery render into one directory; slopbox upload of all figures.
