@@ -1,0 +1,12 @@
+! H1a classical OCP correlation map (docs/correlation-hierarchy.md).
+! Wigner-Seitz units; MC sweeps = N single-particle moves.
+&correlation_map
+ gammas = 0.1, 0.3, 1.0, 3.0, 10.0, 30.0,
+ particles = 1000, particles_small = 500,
+ equilibration = 2000, production = 10000, batches = 20,
+ sample_every = 5, force_every = 10,
+ tolerance = 1.0e-5, pair_width = 0.05,
+ triplet_rmax = 3.0, triplet_bins = 15, triplet_sub = 8,
+ seed = 20261006,
+ md_gamma = 1.0, md_particles = 500, md_equilibration = 50.0, md_time = 1500.0
+/
