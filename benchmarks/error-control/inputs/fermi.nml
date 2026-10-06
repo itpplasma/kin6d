@@ -1,0 +1,1 @@
+&benchmark_fermi_gas repetitions=3, solves_per_sample=2, temperatures=.05,1,10 /

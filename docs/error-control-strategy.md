@@ -130,7 +130,7 @@ run. See the CSV for inputs, scales, widths, timing method and all repetitions.
 | Q8 NR / relativistic Fermi EOS | D quadrature/root enclosures about 120× / 338×; widths 0.94% / 0.62% of scale | reuse prepared EOS packets; D at queried thermodynamic states, S regression audit; quadrature/node and observable budgets govern reuse |
 | Q4 jellium kick | strict finite-state band about 5.6× | E Krylov/RK residuals, final S for current small cells; matrix-free D requires its own action proof, not dense Q0 conversion |
 | Q5 HF/Temple | parent residual plus candidate-gap input about 1.25× | E by default; D requires a verified excited-state/gap premise; interval arithmetic around candidate gap is insufficient |
-| Q7 screening | enclosed tails plus quadrature indicators | E quadrature differences and separate D/S tails; full response remains candidate until integration/input remainders close |
+| Q7 screening | enclosed tails plus quadrature indicators; instrumented total about 2.6× with estimator work larger than candidate | checkpoint/cache E quadrature differences and separate D/S tails; full response remains candidate until integration/input remainders close |
 | C3/C4 PME | RMS force estimate about 2.1× / 3.6× for one force action | cache parameter estimate outside hot steps; E only, since positional law and omitted mesh/self terms do not establish an all-configuration bound |
 | H1a/H1b | batch interval summarization negligible beside sampling | statistical intervals with autocorrelation/mixing checks; algorithmic P needs an explicit finite-sample law; increase independent batches/realizations when width misses budget |
 

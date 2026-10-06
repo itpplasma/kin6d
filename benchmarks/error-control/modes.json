@@ -1,0 +1,375 @@
+{
+  "machine": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "processor": "Apple M3 Ultra",
+  "compiler": "GNU Fortran (Homebrew GCC 16.1.0) 16.1.0",
+  "flags": "Release -O3; certifier -fno-fast-math -ffp-contract=off",
+  "source_commit": "5436e9f35e9f0e541886724572b50bc9630f96cd",
+  "fortnum_commit": "a431cf220efebc583c5fa39d032437e36089cfe3",
+  "clock": "process CPU seconds; five fixed-input trials; sequential benchmark apps; no timing gates",
+  "raw_csv": "benchmarks/error-control/modes.csv",
+  "setup": "Immutable setup excluded except Q1 init and Q7 embedded integration; each timing_method states paired difference or direct measurement",
+  "stage_notes": "Q1 separates embedded eigen-residual and reconstruction diagnostics. Q7 enclosed tails plus quadrature execute within the solver and cannot be separated by its API; solve stage includes them, estimator stage times error query. Q2 paired difference suffers tiny-solve resolution. PME immutable parameter setup excluded. Median total may differ from sum of stage medians.",
+  "seed_notes": "H1 seed 27; PME seed 17631; P seed 27182, ideal iid coordinate law with Threefry realization, m=24, delta=.05; exact inputs retained in benchmark apps",
+  "generated_sha256": "50fac0c1ea65049e90024eaca99337851bdd38c98bc299de6762f98be6ce3a03",
+  "cases": [
+    {
+      "case": "Q0-pair",
+      "tier": "A",
+      "status": "approximate-bound; epsilon_b= 5.000E-02; omission-controlled",
+      "inputs": "n=125;steps=128;t=1;g=2",
+      "timing_method": "direct;approximate-evaluation",
+      "trials": 5,
+      "solve_seconds": 0.0697100000000006,
+      "solve_seconds_range": [
+        0.06949300000000001,
+        0.07037000000000049
+      ],
+      "estimator_seconds": 0.03959000000000046,
+      "estimator_seconds_range": [
+        0.03936200000000056,
+        0.04016599999999926
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.10973200000000105,
+      "total_seconds_range": [
+        0.10898600000000024,
+        0.10987599999999986
+      ],
+      "radius": 1.7593816966368073e-06,
+      "scale": 1.0,
+      "radius_over_scale": 1.7593816966368073e-06,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.568301843351132,
+      "within_radius_budget": true
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "A",
+      "status": "approximate-bound; epsilon_b= 5.000E-02; omission-controlled",
+      "inputs": "n=343;steps=64;t=1;g=2",
+      "timing_method": "direct;approximate-evaluation",
+      "trials": 5,
+      "solve_seconds": 0.2730640000000015,
+      "solve_seconds_range": [
+        0.2716669999999999,
+        0.2787899999999972
+      ],
+      "estimator_seconds": 0.14192300000000202,
+      "estimator_seconds_range": [
+        0.13809199999999677,
+        0.14428800000000308
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.41428699999999896,
+      "total_seconds_range": [
+        0.4111559999999983,
+        0.4230780000000003
+      ],
+      "radius": 8.16583374663136e-05,
+      "scale": 1.0,
+      "radius_over_scale": 8.16583374663136e-05,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.5140837586981533,
+      "within_radius_budget": true
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "D",
+      "status": "certified-discrete",
+      "inputs": "n=125;steps=128;t=1;g=2",
+      "timing_method": "direct;deferred-all-cell-audit",
+      "trials": 5,
+      "solve_seconds": 0.0697100000000006,
+      "solve_seconds_range": [
+        0.06949300000000001,
+        0.07037000000000049
+      ],
+      "estimator_seconds": 0.00014000000000000123,
+      "estimator_seconds_range": [
+        0.00013599999999769352,
+        0.00015199999999992997
+      ],
+      "certificate_seconds": 0.03308799999999934,
+      "certificate_seconds_range": [
+        0.032184999999998354,
+        0.03322699999999998
+      ],
+      "total_seconds": 0.10294999999999987,
+      "total_seconds_range": [
+        0.10248699999999644,
+        0.10353500000000082
+      ],
+      "radius": 1.7593832960119184e-06,
+      "scale": 1.0,
+      "radius_over_scale": 1.7593832960119184e-06,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.4768325921675367,
+      "within_radius_budget": true
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "D",
+      "status": "certified-discrete",
+      "inputs": "n=343;steps=64;t=1;g=2",
+      "timing_method": "direct;deferred-all-cell-audit",
+      "trials": 5,
+      "solve_seconds": 0.2730640000000015,
+      "solve_seconds_range": [
+        0.2716669999999999,
+        0.2787899999999972
+      ],
+      "estimator_seconds": 0.0003820000000001045,
+      "estimator_seconds_range": [
+        0.00037300000000328737,
+        0.0003829999999993561
+      ],
+      "certificate_seconds": 0.09997400000000001,
+      "certificate_seconds_range": [
+        0.09776400000000152,
+        0.10135800000000117
+      ],
+      "total_seconds": 0.37303899999999857,
+      "total_seconds_range": [
+        0.3712040000000023,
+        0.38046299999999533
+      ],
+      "radius": 8.165835117302939e-05,
+      "scale": 1.0,
+      "radius_over_scale": 8.165835117302939e-05,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.365210243303589,
+      "within_radius_budget": true
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "E",
+      "status": "indicator",
+      "inputs": "n=125;steps=128;t=1;g=2",
+      "timing_method": "direct;query-only;embedded-in-solve",
+      "trials": 5,
+      "solve_seconds": 0.0697100000000006,
+      "solve_seconds_range": [
+        0.06949300000000001,
+        0.07037000000000049
+      ],
+      "estimator_seconds": 8.000000001118223e-09,
+      "estimator_seconds_range": [
+        7.99999999756551e-09,
+        8.999999999981246e-09
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.0697100080000006,
+      "total_seconds_range": [
+        0.06949300900000001,
+        0.07037000800000048
+      ],
+      "radius": 8.846381426841162e-12,
+      "scale": 1.0,
+      "radius_over_scale": 8.846381426841162e-12,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.0000001148765076,
+      "within_radius_budget": true,
+      "budget_note": "Width comparison only: indicator cannot accept a certificate"
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "E",
+      "status": "indicator",
+      "inputs": "n=343;steps=64;t=1;g=2",
+      "timing_method": "direct;query-only;embedded-in-solve",
+      "trials": 5,
+      "solve_seconds": 0.2730640000000015,
+      "solve_seconds_range": [
+        0.2716669999999999,
+        0.2787899999999972
+      ],
+      "estimator_seconds": 8.999999998593467e-09,
+      "estimator_seconds_range": [
+        8.000000001118223e-09,
+        9.999999999621423e-09
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.27306400900000155,
+      "total_seconds_range": [
+        0.2716670089999999,
+        0.2787900079999972
+      ],
+      "radius": 3.4468647387711933e-09,
+      "scale": 1.0,
+      "radius_over_scale": 3.4468647387711933e-09,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.0000000329593064,
+      "within_radius_budget": true,
+      "budget_note": "Width comparison only: indicator cannot accept a certificate"
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "S",
+      "status": "certified-discrete",
+      "inputs": "n=125;steps=128;t=1;g=2",
+      "timing_method": "direct;deferred-all-cell-audit",
+      "trials": 5,
+      "solve_seconds": 0.0697100000000006,
+      "solve_seconds_range": [
+        0.06949300000000001,
+        0.07037000000000049
+      ],
+      "estimator_seconds": 0.00013999999999825263,
+      "estimator_seconds_range": [
+        0.00013200000000068712,
+        0.00015300000000095793
+      ],
+      "certificate_seconds": 1.804058,
+      "certificate_seconds_range": [
+        1.778689,
+        1.8157479999999993
+      ],
+      "total_seconds": 1.8736869999999999,
+      "total_seconds_range": [
+        1.8485520000000015,
+        1.8855199999999996
+      ],
+      "radius": 1.7593816986900055e-06,
+      "scale": 1.0,
+      "radius_over_scale": 1.7593816986900055e-06,
+      "budget": 0.010000000001,
+      "total_over_solve": 26.698323149069008,
+      "within_radius_budget": true
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "S",
+      "status": "certified-discrete",
+      "inputs": "n=343;steps=64;t=1;g=2",
+      "timing_method": "direct;deferred-all-cell-audit",
+      "trials": 5,
+      "solve_seconds": 0.2730640000000015,
+      "solve_seconds_range": [
+        0.2716669999999999,
+        0.2787899999999972
+      ],
+      "estimator_seconds": 0.0003790000000023497,
+      "estimator_seconds_range": [
+        0.00036700000000067234,
+        0.0003969999999995366
+      ],
+      "certificate_seconds": 6.790528000000002,
+      "certificate_seconds_range": [
+        6.718705,
+        6.833655
+      ],
+      "total_seconds": 7.0638000000000005,
+      "total_seconds_range": [
+        6.992136000000002,
+        7.112826000000002
+      ],
+      "radius": 8.16583374702788e-05,
+      "scale": 1.0,
+      "radius_over_scale": 8.16583374702788e-05,
+      "budget": 0.010000000001,
+      "total_over_solve": 25.606216857586364,
+      "within_radius_budget": true
+    },
+    {
+      "case": "Q0-residual-norm",
+      "tier": "P",
+      "status": "probabilistically-certified residual norm; confidence=.95; ideal-iid",
+      "inputs": "n=125;steps=128;t=1;g=2;samples=24;seed=27182",
+      "timing_method": "direct;one-time-norm;state-error-unavailable",
+      "trials": 5,
+      "solve_seconds": 0.0697100000000006,
+      "solve_seconds_range": [
+        0.06949300000000001,
+        0.07037000000000049
+      ],
+      "estimator_seconds": 0.000610999999999251,
+      "estimator_seconds_range": [
+        0.0006029999999981328,
+        0.0006200000000013972
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.070330000000002,
+      "total_seconds_range": [
+        0.07011100000000024,
+        0.07098099999999974
+      ],
+      "radius": 103.236565314067,
+      "scale": 1.0,
+      "radius_over_scale": 103.236565314067,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.0086826772772381,
+      "within_radius_budget": false,
+      "budget_note": "Residual norm only; not a trajectory or observable certificate"
+    },
+    {
+      "case": "Q0-residual-norm",
+      "tier": "P",
+      "status": "probabilistically-certified residual norm; confidence=.95; ideal-iid",
+      "inputs": "n=343;steps=64;t=1;g=2;samples=24;seed=27182",
+      "timing_method": "direct;one-time-norm;state-error-unavailable",
+      "trials": 5,
+      "solve_seconds": 0.2730640000000015,
+      "solve_seconds_range": [
+        0.2716669999999999,
+        0.2787899999999972
+      ],
+      "estimator_seconds": 0.001724000000001169,
+      "estimator_seconds_range": [
+        0.0016310000000032687,
+        0.0017940000000002954
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.2748580000000018,
+      "total_seconds_range": [
+        0.27339100000000105,
+        0.28052299999999875
+      ],
+      "radius": 368.2961400982663,
+      "scale": 1.0,
+      "radius_over_scale": 368.2961400982663,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.0062161483553986,
+      "within_radius_budget": false,
+      "budget_note": "Residual norm only; not a trajectory or observable certificate"
+    }
+  ],
+  "validation": {
+    "reference": "binary128 diagonal matrix exponential; three step sizes and seven interior fractions",
+    "A_epsilon_b": 0.05,
+    "worst_true_error_over_eta": 0.21971,
+    "worst_strict_over_eta_minus_one": 2.057e-11,
+    "D_max_midpoint_efficiency_index": 5.3402,
+    "Q0_residual_coverage": "0/200 failures at delta=.05",
+    "FortNum_coverage": "2000 streams/family: constant 0, heterogeneous .0005, sparse 0 failure fractions; delta=.05",
+    "D_max_all_sampled_fraction_efficiency_index": 49.28,
+    "worst_strict_over_eta_minus_one_all_fractions": 2.056976811104505e-11,
+    "efficiency_target_note": "Midpoints <=5.34; all sampled fractions <=49.28, exceeding ~10 target near the right endpoint, while observable budget closes"
+  },
+  "blas": "Apple Accelerate framework / system BLAS; single benchmark process, library thread default",
+  "measurement_parallelism": "one executable at a time; immutable setup reuse as declared per row",
+  "true_error_note": "Unavailable for larger case fixtures; independent actual-error/efficiency evidence is scoped to reference.csv, never inferred from the strict audit radius"
+}
