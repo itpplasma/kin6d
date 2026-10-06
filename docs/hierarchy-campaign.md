@@ -318,11 +318,16 @@ run from the repository root and must reproduce committed leaves exactly.
   random numbers): omega=1.1622+-0.0040, gamma=0.0152+-0.0033 (95% stat.)
   vs Landau 1.1599/0.0126, Bohm-Gross 1.127 excluded; Vlasov IVP inside the
   band at 95% of samples. C3 Landau (k lambda_D=0.5, Lambda=20, N=39688,
-  8 members): mean follows the Vlasov IVP to 0.025 for t<=6 (damping from
-  1 to the noise floor ~0.05); late-window fits noise-dominated (damping
-  rate not resolved at eps=0.01). Trajectory tangent dR/deps agrees with the
-  paired estimator to t~2, then grows ~exp(2 t): chaos limits trajectory
-  JVPs to a few 1/omega_p. C4 (L=4, kappa=r_nl/lambda_D=0.05): mean-profile
+  8 members, PME K=96, dt=0.0167): fit window [1,7]: omega=1.401+-0.031,
+  gamma=0.181+-0.032 (95% stat.) vs Landau root 1.4157/0.1534 and the
+  Volterra IVP fitted on the same window 1.422/0.168; mean follows the
+  Vlasov IVP to 0.025 for t<=6, then the noise floor (~0.05). Landau
+  figures/movie missing: the run plotted an unbounded tangent curve (values
+  ~1e21) and the renderer did not finish (suspected fortplot defect with huge
+  coordinates, not isolated); the demo now integrates/plots the tangent only
+  to tangent_time (smoke-verified); data CSV/NetCDF exist. Trajectory
+  tangent dR/deps agrees with the paired estimator to t~2, then grows
+  ~exp(2 t): chaos limits trajectory JVPs to a few 1/omega_p. C4 (L=4, kappa=r_nl/lambda_D=0.05): mean-profile
   fit lambda=1.02/1.14/1.02 for Lambda=100/300/1000; member mean
   1.19+-0.37/1.25+-0.44/1.08+-0.51 (95% stat.); mean z^2 vs periodic
   reference 0.8/1.6/1.0; kappa=0.1 gives 0.80+-0.14 (nonlinear response
