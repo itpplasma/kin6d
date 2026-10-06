@@ -5,9 +5,10 @@ program debye_sphere_demo
     use kin6d_debye_sphere_leaves, only: sphere_inside, sphere_outside, &
         sphere_bare_inside, sphere_bare_outside, sphere_coordinate, sphere_parameter, &
         sphere_response, sphere_response_interval
-    use fortplot, only: figure, get_global_figure, figure_t, subplot, scatter, &
+    use fortplot, only: figure, get_global_figure, figure_t, subplot, &
         plot, fill_between, title, xlabel, ylabel, xlim, ylim, legend, &
-        tight_layout, savefig
+        tight_layout, savefig, pcolormesh, colorbar, suptitle, set_yscale
+    use kin6d_demo_style, only: blue, vermillion, green, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
@@ -16,11 +17,14 @@ program debye_sphere_demo
     implicit none
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     integer, parameter :: fps = 24
-    integer, parameter :: circle_points = 129, max_markers = 121
+    ! Cross-section map: map_cells^2 display cells on [-map_x, map_x] x [-2.5, 2.5].
+    integer, parameter :: circle_points = 129, map_cells = 120
+    real(dp), parameter :: map_x = 3.23_dp  ! equal aspect in the measured axes box
     character(len=*), parameter :: bound = 'certified-continuous strict analytical '// &
         'reference band; model error unavailable'
     integer :: cells = 192, points
-    integer :: frames = 121, repeats = 3
+    ! 193 equilibria (kappa = 0.5..2) play in 8 s at 24 fps, then a 1 s hold.
+    integer :: frames = 193, repeats = 3
     real(dp) :: chi = 0.02_dp
     namelist /debye_sphere/ cells, frames, repeats, chi
     type(run_t) :: run
@@ -33,16 +37,14 @@ program debye_sphere_demo
     ! Result record (point, frame, quantity); NaN where a frame was not computed.
     real(dp), allocatable :: kappas(:), record(:, :, :)
     real(dp) :: circle_x(circle_points), circle_y(circle_points)
-    real(dp) :: source_x(max_markers), source_y(max_markers)
-    real(dp) :: electron_x(max_markers), electron_y(max_markers)
-    real(dp) :: k, angle, marker_x, marker_y, marker_r, start, finish
+    real(dp) :: map_xe(map_cells + 1), map_ye(map_cells + 1), map(map_cells, map_cells)
+    real(dp) :: k, angle, start, finish
     real(dp) :: primal_cpu, derivative_cpu, complete_cpu, max_phi_radius, max_g_radius
     type(interval_t) :: ne_box
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
     integer :: i, j, frame, repeat, snapshot_frame, status, data, evidence
-    integer :: source_count, electron_count
-    logical :: ok, snapshot_only, response_view
+    logical :: ok, snapshot_only
     character(len=64) :: argument
 
     call run%start('debye_sphere_demo')
@@ -62,7 +64,7 @@ program debye_sphere_demo
     allocate (ne(points), ne_lo(points), ne_hi(points))
     allocate (kappas(frames), record(points, frames, 12))
     kappas = ieee_value(1.0_dp, ieee_quiet_nan); record = kappas(1)
-    snapshot_only = .false.; snapshot_frame = (frames + 1)/2; response_view = .false.
+    snapshot_only = .false.; snapshot_frame = (frames + 1)/2
     if (run%argument_count() > 2) error stop 'usage: demo [--config FILE] [--snapshot [frame]]'
     if (run%argument_count() >= 1) then
         call run%argument(1, argument)
@@ -85,7 +87,10 @@ program debye_sphere_demo
         angle = 2*pi*real(i - 1, dp)/real(circle_points - 1, dp)
         circle_x(i) = cos(angle); circle_y(i) = sin(angle)
     end do
-    call prepare_illustration()
+    do i = 1, map_cells + 1
+        map_xe(i) = -map_x + 2*map_x*real(i - 1, dp)/real(map_cells, dp)
+        map_ye(i) = -2.5_dp + 5.0_dp*real(i - 1, dp)/real(map_cells, dp)
+    end do
     open (newunit=data, file='output/debye-potential-reduction.csv', status='replace')
     write (data, '(a)') 'frame,kappa,r_over_R,screened,'// &
         'screened_lower,screened_upper,'// &
@@ -108,26 +113,14 @@ program debye_sphere_demo
     close (data); close (evidence)
     call write_result()
     call compute_frame(snapshot_frame, timed=.false.)
-    call figure(figsize=[11.0_dp, 5.0_dp])
+    call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
     call draw_frame()
     call savefig('output/debye-potential-reduction.png')
-    response_view = .true.
-    call figure(figsize=[11.0_dp, 5.0_dp])
-    canvas => get_global_figure()
-    call draw_frame()
-    call savefig('output/debye-sphere-response.png')
     if (.not. snapshot_only) then
-        response_view = .false.
-        call figure(figsize=[11.0_dp, 5.0_dp])
-        canvas => get_global_figure()
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
+        animation = animation_func(update_frame, frames=frames + hold_frames, &
+            interval=42, fig=canvas)
         call save_animation(animation, 'output/debye-potential-reduction.mp4', fps=fps)
-        response_view = .true.
-        call figure(figsize=[11.0_dp, 5.0_dp])
-        canvas => get_global_figure()
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
-        call save_animation(animation, 'output/debye-sphere-response.mp4', fps=fps)
     end if
     write (*, '(a)') 'ANALYTICAL REFERENCE: matched permeable uniform 3D sphere.'
     write (*, '(a)') 'Equilibrium kappa sweep; no transient or N-body screening.'
@@ -164,37 +157,6 @@ contains
         end do
         call result%close()
     end subroutine write_result
-
-    !> Illustration marker grid on [-2, 2]: -2 + 4 index/(count - 1).
-    pure real(dp) function marker(index, count)
-        integer, intent(in) :: index, count
-        marker = -2 + 4*real(index, dp)/real(count - 1, dp)
-    end function
-
-    subroutine prepare_illustration()
-        source_count = 0; electron_count = 0
-        do j = 0, 10
-            marker_y = marker(j, 11)
-            do i = 0, 10
-                marker_x = marker(i, 11)
-                marker_r = sqrt(marker_x**2 + marker_y**2)
-                if (marker_r < 0.95_dp) then
-                    source_count = source_count + 1
-                    source_x(source_count) = marker_x
-                    source_y(source_count) = marker_y
-                end if
-            end do
-        end do
-        do j = 0, 8
-            marker_y = marker(j, 9)
-            do i = 0, 8
-                marker_x = marker(i, 9)
-                electron_count = electron_count + 1
-                electron_x(electron_count) = marker_x
-                electron_y(electron_count) = marker_y
-            end do
-        end do
-    end subroutine prepare_illustration
 
     subroutine compute_frame(number, timed)
         integer, intent(in) :: number
@@ -267,57 +229,70 @@ contains
 
     subroutine update_frame(number)
         integer, intent(in) :: number
-        call compute_frame(number, timed=.false.)
+        call compute_frame(min(number, frames), timed=.false.)
         call canvas%clear()
         call draw_frame()
         call canvas%set_rendered(.false.)
     end subroutine update_frame
 
     subroutine draw_frame()
-        character(len=120) :: heading
-        call subplot(1, 2, 1)
-        call title('Permeable 3D sphere | cross-section illustration')
-        call xlabel('x/R [1]'); call ylabel('y/R [1]')
-        call xlim(-2.25_dp, 2.25_dp); call ylim(-2.25_dp, 2.25_dp)
-        call scatter(electron_x(:electron_count), electron_y(:electron_count), &
-            s=8.0_dp, color=[0.4_dp, 0.4_dp, 0.4_dp], marker='o', &
-            label='mobile electrons (illustration)')
-        call plot(circle_x, circle_y, color=[0.8353_dp, 0.3686_dp, 0.0_dp])
-        call scatter(source_x(:source_count), source_y(:source_count), &
-            s=45.0_dp, color=[0.8353_dp, 0.3686_dp, 0.0_dp], marker='+', &
-            label='fixed uniform source; R=1')
-        call legend(loc='upper left')
-        call subplot(1, 2, 2)
-        write (heading, '(a,f5.2)') 'Equilibrium reference | R/lambdaD = ', k
-        call title(trim(heading))
-        call xlabel('r/R [1]'); call xlim(0.0_dp, 6.0_dp)
-        if (response_view) then
-            call ylabel('electron n/n0 [1]'); call ylim(0.999_dp, 1.035_dp)
-            call envelope(ne_lo, ne_hi, 'lightblue', [0.0_dp, 0.4471_dp, 0.6980_dp])
-            call plot(r, ne, color=[0.0_dp, 0.4471_dp, 0.6980_dp], &
-                label='linear response + full bound')
-            call plot(r, [(1.0_dp, i=1, points)], linestyle='--', &
-                color=[0.4_dp, 0.4_dp, 0.4_dp], label='background n/n0=1')
-        else
-            call ylabel('Phi / [Q/(4 pi epsilon0 R)] [1]'); call ylim(-0.02_dp, 1.80_dp)
-            call envelope(lower(2, :), upper(2, :), 'moccasin', &
-                [0.8353_dp, 0.3686_dp, 0.0_dp])
-            call envelope(lower(1, :), upper(1, :), 'lightblue', &
-                [0.0_dp, 0.4471_dp, 0.6980_dp])
-            call plot(r, bare, linestyle='--', color=[0.8353_dp, 0.3686_dp, 0.0_dp], &
-                label='bare finite source + full bound')
-            call plot(r, phi, color=[0.0_dp, 0.4471_dp, 0.6980_dp], &
-                label='screened equilibrium + full bound')
-        end if
+        integer :: ix, iy, cell
+        real(dp) :: rho, w, dr
+        ! Display only: linear interpolation of the radial reference on the z = 0 plane.
+        dr = r(2) - r(1)
+        do iy = 1, map_cells
+            do ix = 1, map_cells
+                rho = hypot(0.5_dp*(map_xe(ix) + map_xe(ix + 1)), &
+                    0.5_dp*(map_ye(iy) + map_ye(iy + 1)))
+                cell = min(points - 1, int(rho/dr) + 1)
+                w = rho/dr - real(cell - 1, dp)
+                map(iy, ix) = (1 - w)*phi(cell) + w*phi(cell + 1)
+            end do
+        end do
+        call suptitle('Linear electron screening shrinks the sphere potential within '// &
+            'a Debye length; the bare Coulomb tail disappears')
+        call subplot(2, 2, 1)
+        call title('Potential at z = 0 (solid: r = R, dashed: r = $\lambda_D$)  |  $R/\lambda_D$ = '//num(k, 2))
+        call xlabel('x / R'); call ylabel('y / R')
+        call xlim(-map_x, map_x); call ylim(-2.5_dp, 2.5_dp)
+        call pcolormesh(map_xe, map_ye, map, cmap='viridis', vmin=0.0_dp, vmax=1.5_dp)
+        call colorbar(label='4πε0 R Φ / Q')
+        ! Solid circle: source sphere r = R; dashed circle: r = lambda_D.
+        call plot(circle_x, circle_y, color=[1.0_dp, 1.0_dp, 1.0_dp], linewidth=2.0_dp)
+        call plot(circle_x/k, circle_y/k, color=[1.0_dp, 1.0_dp, 1.0_dp], &
+            linestyle='--', linewidth=1.5_dp)
+        call subplot(2, 2, 2)
+        call title('Radial potential: bare source and screened equilibrium')
+        call xlabel('r / R'); call xlim(0.0_dp, 6.0_dp)
+        call ylabel('$4\pi\epsilon_0 R \Phi/Q$'); call ylim(-0.02_dp, 1.60_dp)
+        call fill_between(r, lower(1, :), upper(1, :), color=blue, alpha=0.25_dp)
+        call plot(r, phi, color=blue, linewidth=2.0_dp, label='screened ± certified bound')
+        call plot(r, bare, linestyle='--', color=black, linewidth=1.2_dp, &
+            label='bare uniform sphere')
+        call plot([1.0_dp, 1.0_dp]/k, [-0.02_dp, 1.6_dp], color=grey, linestyle=':', &
+            linewidth=1.5_dp, label='$r = \lambda_D$')
+        call legend(loc='upper right')
+        call subplot(2, 2, 3)
+        call title('Electron density response $n_e/n_0 = 1 + \chi\Phi$')
+        call xlabel('r / R'); call xlim(0.0_dp, 6.0_dp)
+        call ylabel('$n_e/n_0$'); call ylim(0.999_dp, 1.035_dp)
+        call fill_between(r, ne_lo, ne_hi, color=blue, alpha=0.25_dp)
+        call plot(r, ne, color=blue, linewidth=2.0_dp, label='linear response ± bound')
+        call plot(r, [(1.0_dp, i=1, points)], linestyle='--', color=black, &
+            linewidth=1.2_dp, label='uniform background')
+        call legend(loc='upper right')
+        call subplot(2, 2, 4)
+        call title('Certified band half-widths (too thin to see in the curves)')
+        call xlabel('r / R'); call xlim(0.0_dp, 6.0_dp)
+        call ylabel('half-width'); call ylim(1.0e-12_dp, 1.0e-2_dp)
+        call set_yscale('log')
+        call plot(r, max(0.5_dp*(upper(1, :) - lower(1, :)), 1.0e-12_dp), color=blue, &
+            linewidth=2.0_dp, label='screened potential')
+        call plot(r, max(0.5_dp*(upper(2, :) - lower(2, :)), 1.0e-12_dp), color=black, &
+            linestyle='--', linewidth=1.2_dp, label='bare potential')
+        call plot(r, max(0.5_dp*(ne_hi - ne_lo), 1.0e-12_dp), color=vermillion, &
+            linestyle='-.', linewidth=1.5_dp, label='electron density')
         call legend(loc='upper right')
         call tight_layout()
     end subroutine draw_frame
-
-    subroutine envelope(lo, hi, fill, color)
-        real(dp), intent(in) :: lo(:), hi(:), color(3)
-        character(*), intent(in) :: fill
-        call fill_between(r, lo, hi, color=fill, alpha=0.5_dp)
-        call plot(r, lo, linestyle=':', color=color)
-        call plot(r, hi, linestyle=':', color=color)
-    end subroutine envelope
 end program debye_sphere_demo
