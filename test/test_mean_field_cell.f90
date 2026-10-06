@@ -20,6 +20,7 @@ program test_mean_field_cell
     call functional_oracles()
     call two_mode_minimization_oracle()
     call identity_oracles()
+    call stability_oracle()
     call ideal_limit_oracles()
     call variational_and_temple_oracles()
     call derivative_oracle()
@@ -183,6 +184,34 @@ contains
         s = t; s(which) = x
         along = angle_energy(cell, probe, s)
     end function
+
+    !> 19 modes, N = 3, r_s = 1: the plane-wave UHF determinant is a saddle
+    !> (negative orbital-Hessian mode); mf_ground must follow the instability
+    !> to a lower, stable broken-symmetry minimum that still equals
+    !> <Phi|H|Phi> and lies above the exact ground energy.
+    subroutine stability_oracle()
+        type(jellium_cell_t) :: cell
+        type(mf_interaction_t) :: inter
+        type(mf_state_t) :: plane, best
+        integer, allocatable :: modes2(:, :)
+        real(dp), allocatable :: c(:, :)
+        real(dp) :: chi, hmin
+        integer :: ns, nc, nexc
+        logical :: ok
+        call jellium_modes('spherical', 2, modes2)
+        call init_jellium_cell(cell, 3, modes2, 1.0_dp, ok)
+        call mf_interaction(cell, inter)
+        allocate (c(inter%nmodes, inter%nmodes))
+        call mf_start_orbitals(inter, 0, 0.0_dp, c)
+        call mf_scf(cell, inter, 2, .false., .true., c, c, plane, ok)
+        call mf_static_response(cell, inter, plane, [1, 0, 0], chi, hmin, ok, nexc)
+        call check(hmin < -1.0e-4_dp, 'plane-wave UHF is a saddle')
+        call mf_ground(cell, inter, .false., .true., 3, best, ok, ns, nc)
+        call check(ok .and. best%stable .and. best%energy < plane%energy - 1.0e-4_dp, &
+                   'instability following reaches a lower stable minimum')
+        call check(rel(best%energy, parent_energy(cell, best)) < 1.0e-12_dp, &
+                   'broken-symmetry minimum = <Phi|H|Phi>')
+    end subroutine
 
     !> Koopmans (frozen-orbital N-1 energies) and E = (1/2) sum_occ (eps + t).
     subroutine identity_oracles()
