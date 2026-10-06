@@ -14,7 +14,9 @@ program streaming_moments_demo
         streaming_particle_midpoint, streaming_particle_glyph_size
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, &
         pcolormesh, plot, fill_between, &
-        title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig
+        title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig, colorbar, &
+        suptitle
+    use kin6d_demo_style, only: blue, movie_fps, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
@@ -22,7 +24,8 @@ program streaming_moments_demo
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
     integer :: nx = 96, nv = 64, particle_nx = 32, particle_nv = 48
-    integer :: np, frames = 81, repeats = 20
+    ! 193 frames span T = 0..8 in 8 s at 24 fps; a one-second hold follows.
+    integer :: np, frames = 193, repeats = 20
     real(dp) :: duration = 8.0_dp
     namelist /streaming_moments/ nx, nv, particle_nx, particle_nv, frames, &
         repeats, duration
@@ -144,7 +147,7 @@ program streaming_moments_demo
     open (newunit=distribution_data, &
         file='output/particles-to-moments-distribution.csv', status='replace')
     write (distribution_data, '(a)') 'frame,T,x,v,f,lower,upper'
-    call figure(figsize=[12.0_dp, 8.0_dp])
+    call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
     frame = 1
     if (snapshot) frame = snapshot_frame
@@ -152,8 +155,9 @@ program streaming_moments_demo
     call draw_frame()
     call savefig('output/particles-to-moments.png')
     if (.not. snapshot) then
-        animation = animation_func(update, frames=frames, interval=62, fig=canvas)
-        call save_animation(animation, 'output/particles-to-moments.mp4', fps=16, &
+        animation = animation_func(update, frames=frames + hold_frames, interval=42, &
+            fig=canvas)
+        call save_animation(animation, 'output/particles-to-moments.mp4', fps=movie_fps, &
             status=status)
         if (status /= 0) error stop 'moments animation encoding failed'
     end if
@@ -280,43 +284,42 @@ contains
     end subroutine
 
     subroutine draw_frame()
-        character(len=96) :: heading
+        call suptitle('Velocity moments compress f(x,v) into density and bulk '// &
+            'velocity: they follow the flow but discard the velocity shape')
         call subplot(2, 2, 1)
-        write (heading, '(a,f4.1,a)') 'Weighted particles | T [1] = ', t, &
-            ' | area ~ weight'
-        call title(trim(heading))
-        call scatter(px, pv, s=glyph, color=[0.0_dp, 0.4471_dp, 0.6980_dp], &
-            alpha=0.65_dp)
-        call xlabel('2*pi*x/L [1]'); call ylabel('v/v_ref [1]')
+        call title('Weighted particles (marker area ~ weight)  |  T = '//num(t, 2))
+        call scatter(px, pv, s=0.6_dp*glyph, color=blue, alpha=0.5_dp)
+        call xlabel('$2\pi x/L$'); call ylabel('$v/v_{ref}$')
         call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
         call subplot(2, 2, 2)
-        call title('2*v_ref*f/n0 [1] | candidate; color [0.25,2.25]')
+        call title('Eulerian Fourier/P1 distribution (candidate)')
         call pcolormesh(x, v, image, cmap='viridis', vmin=0.25_dp, vmax=2.25_dp)
-        call xlabel('2*pi*x/L [1]'); call ylabel('v/v_ref [1]')
+        call colorbar(label='$2 v_{ref} f/n_0$')
+        call xlabel('$2\pi x/L$'); call ylabel('$v/v_{ref}$')
         call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
         call subplot(2, 2, 3)
-        call title('Density n = (1/2) integral f dv')
-        call fill_between(x, nlo, nhi, color='lightblue', alpha=0.5_dp)
-        call plot(x, density, color=[0.0_dp, 0.4471_dp, 0.6980_dp], &
-            label='n + whole-cell bound')
-        call xlabel('2*pi*x/L [1]'); call ylabel('n/n0 [1]')
+        call title('Density: zeroth velocity moment')
+        call fill_between(x, nlo, nhi, color=blue, alpha=0.25_dp)
+        call plot(x, density, color=blue, linewidth=2.0_dp, &
+            label='n ± whole-cell bound')
+        call xlabel('$2\pi x/L$'); call ylabel('$n/n_0$')
         call xlim(0.0_dp, period); call ylim(0.35_dp, 1.65_dp)
-        call legend(loc='lower right')
+        call legend(loc='upper center')
         call subplot(2, 2, 4)
-        call title('Bulk velocity u = j/n | moments omit shape')
-        call fill_between(x, ulo, uhi, color='moccasin', alpha=0.5_dp)
-        call plot(x, bulk, color=[0.8353_dp, 0.3686_dp, 0.0_dp], linestyle='--', &
-            label='u + whole-cell bound')
-        call xlabel('2*pi*x/L [1]')
-        call ylabel('u/v_ref [1]')
+        call title('Bulk velocity u = j/n')
+        call fill_between(x, ulo, uhi, color=blue, alpha=0.25_dp)
+        call plot(x, bulk, color=blue, linewidth=2.0_dp, &
+            label='u ± whole-cell bound')
+        call xlabel('$2\pi x/L$')
+        call ylabel('$u/v_{ref}$')
         call xlim(0.0_dp, period); call ylim(-0.15_dp, 0.40_dp)
-        call legend(loc='lower right')
+        call legend(loc='upper right')
         call tight_layout()
     end subroutine
 
     subroutine update(index)
         integer, intent(in) :: index
-        call compute_frame(index)
+        call compute_frame(min(index, frames))
         call canvas%clear()
         call draw_frame()
         call canvas%set_rendered(.false.)

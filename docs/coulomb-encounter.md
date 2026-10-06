@@ -147,11 +147,15 @@ period, collapse, half and full revival.
 
 ## Evidence
 
-`build/coulomb_encounter_demo [--no-movie]` writes to output/ (not
-committed): coulomb-eta-summary.csv, coulomb-eta-bins.csv,
+`build/coulomb_encounter_demo [--config FILE] [--no-movie]` (namelist
+`&coulomb_encounter`: `etas`, `nclass`, `seed`, `movie_seed`, `movie`) writes
+to output/ (not committed): coulomb-eta-summary.csv, coulomb-eta-bins.csv,
 coulomb-mott-eta-scan.png, coulomb-b-scan.{csv,png}, coulomb-kepler.{csv,png},
 coulomb-kepler-summary.csv, coulomb-cost-ledger.csv,
-coulomb-movie-separation.csv, coulomb-encounter.mp4 and frame PNGs.
+coulomb-movie-separation.csv, coulomb-encounter.mp4 and frame PNGs, plus
+`coulomb_encounter_demo.nc` (kin6d_result_io: eta/impact-parameter bin
+ratios, per-eta state bounds, Kepler series and errors, bin VJP, cost
+timings, literal/resolved configuration and provenance).
 
 Teaching messages: (1) distinguishable particles follow Rutherford even
 quantum mechanically, identical particles interfere (singlet doubles,

@@ -5,11 +5,10 @@ program test_slab_oscillation
     use kin6d_slab_oscillation
     use kin6d_slab_oscillation_leaves, only: slab_oscillation_rhs_jvp, &
                                       slab_oscillation_rhs_vjp, &
-                                      slab_oscillation_residual_interval, &
                                       slab_oscillation_hermite_interval
     implicit none
     type(slab_oscillation_state_t) :: state, coarse, fine, tangent, zero
-    type(interval_t) :: qi, pi, qpp, residual_coefficients(4), midpoint_residual
+    type(interval_t) :: qi, pi, qpp, midpoint_residual
     real(dp) :: q, p, qlo, qhi, plo, phi, tau, radius, rc, rf, padding
     real(dp) :: time(65), qtrace(65), ptrace(65), radii(65), residual(64)
     real(dp) :: dq, dm, gt, gq, gp, tangent_q, tangent_p, qlower, qupper
@@ -52,26 +51,24 @@ program test_slab_oscillation
     call enclosed(qlo, qhi, 0.0_qp)
     call enclosed(plo, phi, 0.0_qp)
 
-    ! The unsolved candidate q=t^3,p=3t^2 has r=6t+t^3. Its exact cubic
-    ! Bernstein residual coefficients on [0,1] are [0,2,4,7], midpoint25/8.
-    call slab_oscillation_residual_interval(interval(0.0_dp), interval(1.0_dp), &
-               interval(0.0_dp), interval(1.0_dp), interval(0.0_dp), interval(3.0_dp), &
-                                   residual_coefficients(1), residual_coefficients(2), &
-                                     residual_coefficients(3), residual_coefficients(4))
-    do i = 1, 4
-        select case (i)
-        case (1)
-            radius = 0.0_dp
-        case (2)
-            radius = 2.0_dp
-        case (3)
-            radius = 4.0_dp
-        case (4)
-            radius = 7.0_dp
-        end select
-        if (.not. contains(residual_coefficients(i), radius)) &
-            error stop 'independent Bernstein polynomial excluded'
+    ! The unsolved two-node candidate q=(0,1), p=(0,3) on [0,1] reconstructs
+    ! componentwise to q_h=t^3 and p_h=10t^2-7t^3, with residual
+    ! (q_h'-p_h, p_h'+q_h)=(-7t^2+7t^3, 20t-21t^2+t^3). Hand Bernstein
+    ! controls: (0,0), (0,20/3), (-7/3,19/3), (0,0); the largest control norm
+    ! is sqrt(410)/3. The certified bound must cover it and every sample.
+    call certify_slab_oscillation_trace([0.0_dp, 1.0_dp], [0.0_dp, 1.0_dp], &
+                                        [0.0_dp, 3.0_dp], 0.0_dp, 0.0_dp, &
+                                        radii(1:2), residual(1:1), ok)
+    if (.not. ok) error stop 'polynomial candidate certificate'
+    if (real(residual(1), qp) < sqrt(410.0_qp)/3.0_qp .or. &
+        residual(1) > 1.000001_dp*sqrt(410.0_dp)/3.0_dp) &
+        error stop 'independent Bernstein control bound'
+    do i = 0, 64
+        x = real(i, qp)/64.0_qp
+        if (sqrt((7*x**3 - 7*x**2)**2 + (20*x - 21*x**2 + x**3)**2) > &
+            real(residual(1), qp)) error stop 'sampled residual exceeds bound'
     end do
+    if (radii(2) < residual(1)) error stop 'radius misses integrated residual'
 
     call slab_oscillation_hermite_interval(interval(0.5_dp), interval(0.0_dp), &
                                           interval(1.0_dp), interval(0.0_dp), &

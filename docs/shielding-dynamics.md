@@ -106,5 +106,10 @@ oracles, not inputs required by the general transient checker.
 The timing receipt is a single local CPU trial and excludes plotting/encoding
 from both solve baselines. It is not a speed ranking. `--snapshot [frame]`
 retains the same numerical evidence and renders a selected frame without a
-movie encoder. The 121 frames span normalized times 0 through 4 at 24 fps.
+movie encoder. The 193 frames span normalized times 0 through 4 at 24 fps
+(8 s), followed by a 1 s hold (121 frames before 2026-10-06; the finer frame
+spacing also narrows the between-frame time padding). The spatial bands are
+below one pixel in the profile panels, so the fourth panel plots the distance
+of the centre potential and of its certified time band from the equilibrium
+value on a logarithmic axis.
 Generated images, movies and CSV evidence remain outside source history.

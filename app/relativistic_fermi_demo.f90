@@ -95,8 +95,8 @@ program relativistic_fermi_demo
         p(i) = rel%pressure; plo(i) = rel%pressure_bound%lo; phi(i) = rel%pressure_bound%hi
         call solve_fermi_gas_si(work, n(i), temperature, mass, hbar, kb, charge, eps0, &
                                 nonrel, ok)
-        ! The nonrelativistic certificate uses a uniform mesh and fails closed
-        ! for very cold states; those points are omitted from its curve.
+        ! Points whose nonrelativistic certificate fails are omitted from its
+        ! curve (none on the default curve since the graded Fermi mesh).
         nonrel_ok(i) = ok .and. nonrel%certified
         pnr(i) = nonrel%pressure
         call fermi_si_parameters(n(i), temperature, mass, hbar, kb, pf, ef, theta(i))

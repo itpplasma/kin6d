@@ -305,7 +305,7 @@ pure elemental subroutine debye_image(dx, dy, dz, g, kappa, potential)
     real(dp) :: t1
 
     t1 = sqrt(dx**2 + dy**2 + dz**2)
-    potential = g*exp(-kappa*t1)/t1
+    potential = g*exp(-t1/(1/kappa))/t1
 
 end subroutine debye_image
 

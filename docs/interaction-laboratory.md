@@ -65,7 +65,11 @@ The finite Verlet candidate can continue. A caller must inspect the returned
 claim. A candidate-only advance also permanently clears the flag. Reinitializing
 starts a new independent initial-value problem.
 
-The app shows boxes only at observation endpoints. Colored trajectory segments
+The app shows boxes only at observation endpoints. Since 2026-10-06 the
+default observes every 50 steps over 241 frames instead of every 100 steps
+over 121 frames; the 12000 steps and the final state are unchanged, and the
+movie plays for 10 s at 24 fps with a 1 s hold. Both trajectory panels use
+equal aspect so the contact spheres are circles. Colored trajectory segments
 and the energy curve are candidate polylines, with no continuous-between-frame
 band claim. Force arrows are candidate forces at candidate positions; their
 true-flow force bands and energy observable bands are unavailable. Each
