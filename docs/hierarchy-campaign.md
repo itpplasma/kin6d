@@ -368,3 +368,28 @@ run from the repository root and must reproduce committed leaves exactly.
   synthesis; plan/doc consolidation (ROADMAP, README,
   quantum-microscopic-validation, microscopic-many-body, teaching docs);
   full gallery render into one directory; slopbox upload of all figures.
+- 2026-10-06 (worker, H1b): quantum vs classical finite-N correlations
+  (docs/quantum-classical-correlations.md). New `src/classical_cell.f90`
+  (shared nbody/Ewald zero-mean pair energy; N = 2 quadrature, N = 3, 4
+  Metropolis; Kelbg/Kelbg+Pauli pair laws; WK + exchange reweighting;
+  covariance dg/dbeta), `src/quantum_pair_cell.f90` (exact N = 2
+  centre-of-mass/relative separation on the torus, twist classes, parity =
+  spin, all states, spectral dg/dTheta), `src/quantum_classical_map.f90`
+  (Q4 dense full-sector spectra, ensemble diagonal pair/triplet Fourier
+  moments, Q3 all-S_z ideal pair, basis-saturation gate), generic
+  `fock_rdm2_entries` in quantum_fock (sparse 2-RDM; rdm3 shares the
+  routine), leaves `gen/gen_quantum_classical.f90` (pair length, Kelbg,
+  exchange, Pauli, WK weight; deterministic), test
+  `quantum_classical_h1b_oracles` (incl. relative reduction = Q4 N = 2
+  sector spectrum 1e-14, ideal = Q3 3e-15, WK vs harmonic O(beta^4),
+  determinant Wick moments, H1b vs H1a sampler). N = 2: ||g_q - g_cl||
+  0.47 (r_s 8, Theta 0.5) to 0.006 (Theta 10), <= 0.013 outside lambda_T
+  (classical limit); d||Delta||/dTheta covariance vs FD 2.5e-6. WK
+  residual 0.14 at lambda_T/a = 0.58, fails at Theta = 0.5; Kelbg 0.016
+  (Theta 0.5) but > 1 at high T; Kelbg+Pauli 0.03 at Theta 10, r_s <= 1.
+  N = 3 (c = 3) Theta 0.5: c3 quantum/classical 0.3 to 0.6. N = 4 c = 2
+  rows are indicators only; Q4 Theta >= 2 skipped (basis saturated).
+  Q4 cutoff indicator underestimates the N = 2-calibrated error by <= 3.3.
+  Demo 40 min. Open: one consolidated classical sampler (H1b classical_cell
+  vs H1a ocp_monte_carlo), ensemble BLAS RDM for N = 4 at higher Theta,
+  cusp remainder, fortplot ylim-clipping leak across subplots.
