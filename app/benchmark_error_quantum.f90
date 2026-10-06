@@ -74,7 +74,7 @@ contains
         type(packet_trace_t) :: trace
         complex(dp), allocatable :: state(:,:,:)
         character(:), allocatable :: message
-        real(dp) :: a,b,c,d,solve,p,e,radius
+        real(dp) :: a,b,c,d,solve,p,e,radius,setup
         integer(i64) :: nfev
         logical :: ok
         cfg%g=.3_dp; cfg%k=1; cfg%sigma=2; cfg%z0=6; cfg%t_final=1
@@ -83,18 +83,20 @@ contains
         call encounter_init(enc,cfg,ok,message)
         call cpu_time(b)
         call require(ok)
+        setup=b-a
         allocate(state(enc%mesh%n,0:enc%mmax,0:enc%lmax))
         call cpu_time(c)
         call encounter_state(enc,1._dp,state)
         call cpu_time(d)
-        solve=enc%ledger%setup_seconds+d-c
+        solve=setup+d-c-enc%ledger%estimator_seconds-enc%ledger%indicator_seconds
         call cpu_time(c)
         call encounter_state_error(enc,1._dp,1._dp,1._dp,e,radius)
         call cpu_time(a)
         call row('Q1-state','E',trial,solve, &
-            max(0._dp,a-c),0._dp,radius,1._dp,'indicator;finite-space-formula', &
+            max(0._dp,a-c)+enc%ledger%estimator_seconds+enc%ledger%indicator_seconds, &
+            0._dp,radius,1._dp,'indicator;finite-space-formula', &
             'g=.3;sigma=2;z0=6;lmax=8;rmax=18;t=1', &
-            'embedded-residual-in-setup;query-only')
+            'instrumented-embedded-residual-and-reconstruction')
         spec%model=MODEL_M3
         call cpu_time(a)
         call packet_samples(enc,spec,[0._dp,.25_dp,.5_dp,.75_dp,1._dp], &
