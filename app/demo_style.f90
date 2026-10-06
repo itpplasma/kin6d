@@ -55,6 +55,7 @@ contains
         end if
         write (form, '(a,i2.2)') 'e', abs(e)
         if (e < 0) form = 'e-'//form(2:)
+        if (buffer(mantissa_end:mantissa_end) == '.') mantissa_end = mantissa_end - 1
         text = buffer(1:mantissa_end)//trim(form)
     end function num
 end module kin6d_demo_style
