@@ -13,13 +13,14 @@
 ! Every function returns FortSym expressions in the arena of its arguments.
 module kin6d_symbolic_physics
     use, intrinsic :: iso_fortran_env, only: int64
-    use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erfc, cos, sin, &
+    use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erf, erfc, cos, sin, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
     implicit none
     private
     public :: coulomb_potential, coulomb_force
     public :: sphere_potential_inside, sphere_force_inside
+    public :: gaussian_coulomb_potential, gaussian_coulomb_series
     public :: ewald_real_potential, ewald_real_force, ewald_reciprocal_weight
     public :: ewald_self_potential, ewald_background_potential
     public :: jellium_coefficient, partial_wave_potential
@@ -66,6 +67,33 @@ contains
         do j = 1, 3
             f(j) = g*x(j)/radius**3
         end do
+    end function
+
+    !> Bare Coulomb g/r averaged over two isotropic Gaussian densities whose
+    !> separation has variance s per axis and mean distance q:
+    !> g erf(q/sqrt(2 s))/q (exact; finite at q = 0).
+    function gaussian_coulomb_potential(g, s, q) result(u)
+        type(expr_t), intent(in) :: g, s, q
+        type(expr_t) :: u
+        u = g*erf(q/sqrt(2*s))/q
+    end function
+
+    !> The same in T = q^2/(2 s): g sqrt(2/(pi s)) sum_j (-T)^j/(j! (2j+1)),
+    !> j = 0..order (removable q = 0 form; truncation < T^(order+1)/(order+1)!).
+    function gaussian_coulomb_series(g, s, t, order) result(u)
+        type(expr_t), intent(in) :: g, s, t
+        integer, intent(in) :: order
+        type(expr_t) :: u, term
+        integer :: j
+        integer(int64) :: fact
+        fact = 1
+        u = rat(g%a, 1_int64, 1_int64)
+        do j = 1, order
+            fact = fact*j
+            term = rat(g%a, (-1_int64)**j, fact*(2*j + 1))*t**j
+            u = u + term
+        end do
+        u = g*sqrt(2/(pi_expr(g%a)*s))*u
     end function
 
     !> Ewald real-space (short-range) pair potential g erfc(alpha r)/r.

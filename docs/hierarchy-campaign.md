@@ -62,7 +62,7 @@ error status as in AGENTS.md.
 | Q0 | Periodic opposite-spin pair quench | finite-basis certificate | exists, migrate to F |
 | Q1 | Two-electron Coulomb encounter, partial waves in relative coordinate, singlet/triplet/classical, eta scan | Coulomb wave functions, Mott formula, free Gaussian | planned |
 | Q1b | Attractive electron-proton Rydberg packet (oscillation, revivals) | hydrogen spectrum, Kepler period | planned |
-| Q2 | Gaussian/coherent-sum packet models vs Q1 | Q1 reference | planned |
+| Q2 | Gaussian/coherent-sum packet models vs Q1 | Q1 reference | candidate (docs/packet-models.md) |
 | Q3 | Finite-N ideal fermions: exchange hole, canonical sums | ideal-gas identities | planned (EOS exists) |
 | Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | exists (docs/jellium-cell.md) |
 | Q5 | Hartree/HF vs Q4 | Q4 | exists (worker, unpromoted; docs/mean-field-cell.md) |
@@ -278,3 +278,21 @@ run from the repository root and must reproduce committed leaves exactly.
   not in the hybrid Monte Carlo;
   digamma/Riccati-Bessel belong in FortNum; FortNum legendre_q upward
   recurrence loses accuracy for large l near x = 1 (5e-4 at l = 400).
+- 2026-10-06 (worker, Q2): `src/packet_models.f90`, `src/gaussian_pair.f90`,
+  leaves from `gen/gen_packet_models.f90` (Gaussian-averaged Coulomb added to
+  `kin6d_symbolic_physics`), `encounter_project` (generic Q1 projection),
+  docs/packet-models.md, `packet_models_demo` (result_io). Models M2 (WPMD
+  product), M2S/M2T (two-determinant), M3 (relative TDVP Gaussian), M3S/M3T,
+  M4 K = 2/4/8 (vMCG, guided zero-population enrichment, Tikhonov status and
+  RHS refusal); M1 reuses the Q1 Wigner ensemble. Full-H Duhamel estimator
+  through projection onto the Q1 basis: bound held at every sample;
+  efficiency 2-4 (eta <= 1), 4-5 (eta = 3), 14-18 (eta = 10, vacuous > 2).
+  State errors at eta = 0.3/1/3/10 (b = 0): M3 0.28/0.76/1.51/1.49,
+  M4 K = 8 0.24/0.59/1.29/1.40; bin TV M4 K = 8 0.12/0.22/0.78/1.13 vs
+  classical M1 0.27/0.19/0.076/0.020. Exchange in WPMD dynamics has no
+  measurable effect (no parity-image overlap); no Gaussian model is usable
+  at eta >= 3 for r0/sigma = 0.5. Oracles: binary128 Boys, 3D quadrature of
+  pair elements, free spreading, harmonic exactness (incl. parity-tied
+  pair), canonical vs metric engine, conservation, bound validity, M3 bin
+  JVP vs FD 5.6e-8. Open: non-monotone K enrichment with fixed guides
+  (regularization), goal-oriented estimator, FortSym complex codegen.
