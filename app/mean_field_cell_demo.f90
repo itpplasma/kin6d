@@ -358,9 +358,10 @@ contains
     end subroutine
 
     subroutine make_figures()
-        real(dp) :: palette(3, 3), x(nrs), y(nrs), z(nrs), tl(200), ptl(200)
+        real(dp) :: palette(3, 3), x(nrs), y(nrs), z(nrs), tl(200), ptl(200), lo, hi
         character(48) :: label
         integer :: n, r, k
+        logical :: same, mask(nrs)
         palette(:, 1) = blue; palette(:, 2) = vermillion; palette(:, 3) = green
         x = rs_values(1:nrs)
         do k = 1, 200
@@ -383,19 +384,23 @@ contains
                   label='cell, N = 4 (RHF reference)')
         call plot(tl, ptl, color=black, linestyle='--', &
                   label='Perdew-Zunger fit to Ceperley-Alder, N = ∞')
-        call ylim(2.0e-3_dp, 0.5_dp)
+        call ylim(3.0e-3_dp, 0.3_dp)
         call legend(loc='upper right')
         call subplot(1, 2, 2)
         call title('Exact pair cumulant (zero for every Slater state)')
         call xlabel('$r_s$'); call ylabel('$|\lambda_2| / |\Gamma_2|$')
-        call xscale('log')
+        call xscale('log'); call yscale('log')
         do n = 2, 4
             y = cumulant(2, 1:nrs, n)/cumulant(1, 1:nrs, n)
             write (label, '(a,i0)') 'exact, N = ', n
             call plot(x, y, color=palette(:, n - 1), marker='o', label=trim(label))
         end do
-        call plot([x(1), x(nrs)], [0.0_dp, 0.0_dp], color=black, linestyle='--', &
-                  label='HF / Hartree')
+        lo = huge(1.0_dp); hi = 0
+        do n = 2, 4
+            lo = min(lo, minval(cumulant(2, 1:nrs, n)/cumulant(1, 1:nrs, n)))
+            hi = max(hi, maxval(cumulant(2, 1:nrs, n)/cumulant(1, 1:nrs, n)))
+        end do
+        call ylim(0.5_dp*lo, 3.0_dp*hi)
         call legend(loc='upper left')
         call suptitle('Mean field versus the exact jellium cell (same basis); '// &
                       'N = 3, 4 exact: ground-multiplet average')
@@ -407,22 +412,35 @@ contains
             call subplot(1, 2, k)
             n = merge(2, 4, k == 1)
             if (k == 1) call title('Opposite-spin pair correlation, N = 2')
-            if (k == 2) call title('Same-spin pair correlation, N = 4')
-            call xlabel('r / L'); call ylabel('g(r)')
-            call xlim(0.0_dp, 0.5_dp); call ylim(0.0_dp, 1.5_dp)
+            if (k == 2) call title('Same-spin pair correlation, N = 4 (open shell)')
+            call xlabel('$r / L$')
+            if (k == 1) call ylabel('$g_{opp}(r)$')
+            if (k == 2) call ylabel('$g_{same}(r)$')
+            call xlim(0.0_dp, 0.5_dp); call ylim(0.0_dp, 1.2_dp)
+            ! The HF pair function of this cell does not depend on r_s when the
+            ! symmetric determinant is the minimum; draw it once in that case.
+            same = .true.
             do r = 1, nrs, max(1, (nrs - 1)/2)
-                write (label, '(a,f4.1)') 'exact, $r_s$ = ', rs_values(r)
+                same = same .and. maxval(abs(pair(:, 5 - k, r, n) - pair(:, 5 - k, 1, n))) &
+                       < 1.0e-8_dp
+            end do
+            if (same) call plot(centers, pair(:, 5 - k, 1, n), color=black, &
+                                linestyle='--', label='UHF (same for every $r_s$)')
+            do r = 1, nrs, max(1, (nrs - 1)/2)
+                write (label, '(a,f3.1)') 'exact, $r_s$ = ', rs_values(r)
                 call plot(centers, pair(:, 3 - k, r, n), color=palette(:, 1 + mod(r - 1, 3)), &
                           marker='o', label=trim(label))
-                write (label, '(a,f4.1)') 'UHF, $r_s$ = ', rs_values(r)
+                if (same) cycle
+                write (label, '(a,f3.1)') 'UHF, $r_s$ = ', rs_values(r)
                 call plot(centers, pair(:, 5 - k, r, n), &
                           color=palette(:, 1 + mod(r - 1, 3)), linestyle='--', &
-                          label=trim(label))
+                          marker='x', label=trim(label))
             end do
             if (k == 1) call legend(loc='lower right')
             if (k == 2) call legend(loc='upper left')
         end do
-        call suptitle('HF keeps the exchange hole but has no Coulomb hole')
+        call suptitle('Symmetric HF has the exchange hole but no Coulomb hole; '// &
+                      'broken-symmetry UHF at large $r_s$ (N = 4) mimics one')
         call tight_layout()
         call savefig('output/mean-field-pair-correlation.png')
         ! Static response hierarchy relative to the same-cell Lindhard function.
@@ -430,23 +448,35 @@ contains
         do k = 1, 2
             call subplot(1, 2, k)
             n = merge(2, 4, k == 1)
-            write (label, '(a,i0)') 'Static response, q L/2π = (100), N = ', n
-            call title(trim(label))
-            call xlabel('$r_s$'); call ylabel('$\chi / \chi_0$')
+            if (n == 2) call title('N = 2 (closed shell, symmetric HF)')
+            if (n == 4) call title('N = 4 (open shell: UHF breaks translation symmetry)')
+            call xlabel('$r_s$'); call ylabel('$\chi(q) / \chi_0(q)$')
             call xscale('log')
+            lo = 1; hi = 1
+            do r = 1, 4
+                y = response(r, 1:nrs, n)/response(5, 1:nrs, n)
+                lo = min(lo, minval(y)); hi = max(hi, maxval(y))
+            end do
+            lo = 0.05_dp*floor(20*(lo - 0.05_dp*(hi - lo)))
+            hi = 0.05_dp*ceiling(20*(hi + 0.45_dp*(hi - lo)))
+            call xlim(0.9_dp*x(1), 1.1_dp*x(nrs)); call ylim(lo, hi)
+            call plot([0.9_dp*x(1), 1.1_dp*x(nrs)], [1.0_dp, 1.0_dp], color=black, &
+                      linestyle='--', label='Lindhard (same cell)')
             y = response(1, 1:nrs, n)/response(5, 1:nrs, n)
             call plot(x, y, color=blue, marker='o', label='exact')
             y = response(2, 1:nrs, n)/response(5, 1:nrs, n)
-            call plot(x, y, color=vermillion, marker='s', label='TDHF (RPA + exchange)')
+            if (n == 2) label = 'TDHF (RPA + exchange)'
+            if (n == 4) label = 'TDHF on broken-symmetry UHF (jagged)'
+            call plot(x, y, color=vermillion, marker='s', label=trim(label))
             y = response(3, 1:nrs, n)/response(5, 1:nrs, n)
             call plot(x, y, color=green, marker='^', label='TDH = RPA (mean-field state)')
             y = response(4, 1:nrs, n)/response(5, 1:nrs, n)
-            call plot(x, y, color=orange, linestyle=': ', label='RPA (canonical Lindhard)')
-            call plot([x(1), x(nrs)], [1.0_dp, 1.0_dp], color=black, linestyle='--', &
-                      label='Lindhard (same cell)')
-            call legend(loc='lower left')
+            call plot(x, y, color=orange, linestyle=': ', marker='d', &
+                      label='RPA (canonical Lindhard)')
+            call legend(loc='upper left')
         end do
-        call suptitle('Exchange in the kernel and orbital energies versus correlation')
+        call suptitle('Static response at $qL/2\pi$ = (100): exchange in the kernel '// &
+                      'versus correlation')
         call tight_layout()
         call savefig('output/mean-field-response.png')
         ! Full-parent residual estimator versus the true HF energy error.
@@ -455,32 +485,45 @@ contains
         call title('HF energy error in its symmetry sector')
         call xlabel('$r_s$'); call ylabel('error [Ha]')
         call xscale('log'); call yscale('log')
+        ! Temple applies only to an aufbau HF state in a gapped sector (N = 2
+        ! here); symmetry-broken non-aufbau minima (N = 3, 4) get no bound.
         do n = 2, 4
             y = estimate(1, 1:nrs, n) - estimate(3, 1:nrs, n)
             write (label, '(a,i0)') 'true $E_{HF} - E_0$, N = ', n
             call plot(x, y, color=palette(:, n - 1), marker='o', label=trim(label))
-            z = merge(estimate(1, 1:nrs, n) - estimate(7, 1:nrs, n), y, &
-                      estimate(8, 1:nrs, n) > 0.5_dp)
+            mask = estimate(8, 1:nrs, n) > 0.5_dp
+            if (count(mask) == 0) cycle
+            z = estimate(1, 1:nrs, n) - estimate(7, 1:nrs, n)
             write (label, '(a,i0)') 'Temple bound, N = ', n
-            call plot(x, z, color=palette(:, n - 1), linestyle='--', marker='s', &
-                      label=trim(label))
+            call plot(pack(x, mask), pack(z, mask), color=palette(:, n - 1), &
+                      linestyle='--', marker='s', label=trim(label))
         end do
+        call xlim(0.9_dp*x(1), 1.1_dp*x(nrs)); call ylim(10.0_dp**floor(log10( &
+            minval(estimate(1, 1:nrs, :) - estimate(3, 1:nrs, :)))), &
+            1.25_dp*maxval(merge(estimate(1, 1:nrs, :) - estimate(7, 1:nrs, :), &
+            estimate(1, 1:nrs, :) - estimate(3, 1:nrs, :), estimate(8, 1:nrs, :) > 0.5_dp)))
         call legend(loc='lower left')
         call subplot(1, 2, 2)
-        call title('Estimator efficiency')
+        call title('Temple efficiency (aufbau states only)')
         call xlabel('$r_s$'); call ylabel('bound / true error')
         call xscale('log')
+        hi = 1
         do n = 2, 4
+            mask = estimate(8, 1:nrs, n) > 0.5_dp
+            if (count(mask) == 0) cycle
             y = (estimate(1, 1:nrs, n) - estimate(7, 1:nrs, n))/ &
                 (estimate(1, 1:nrs, n) - estimate(3, 1:nrs, n))
+            hi = max(hi, maxval(pack(y, mask)))
             write (label, '(a,i0)') 'Temple, N = ', n
-            call plot(x, y, color=palette(:, n - 1), marker='o', label=trim(label))
+            call plot(pack(x, mask), pack(y, mask), color=palette(:, n - 1), marker='o', &
+                      label=trim(label))
         end do
-        call plot([x(1), x(nrs)], [1.0_dp, 1.0_dp], color=black, linestyle='--', &
-                  label='exact error')
+        call plot([0.9_dp*x(1), 1.1_dp*x(nrs)], [1.0_dp, 1.0_dp], color=black, &
+                  linestyle='--', label='exact error')
+        call xlim(0.9_dp*x(1), 1.1_dp*x(nrs)); call ylim(0.0_dp, 1.5_dp*hi)
         call legend(loc='upper left')
-        call suptitle('Residual $||(H - E_{HF})\Phi_{HF}||$ with Temple; gap input '// &
-                      'from Lanczos (candidate)')
+        call suptitle('Residual $|(H - E_{HF})\Phi_{HF}|$ with Temple: no bound for '// &
+                      'symmetry-broken N = 3, 4 (gap input: Lanczos candidate)')
         call tight_layout()
         call savefig('output/mean-field-estimator.png')
         if (.false.) print *, purple, sky
