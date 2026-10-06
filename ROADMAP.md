@@ -369,6 +369,11 @@ where validated, and adaptive correlation-order and classical/quantum
 switching. Claims, findings and gates are in
 [microscopic quantum validation](docs/quantum-microscopic-validation.md);
 task state is in [the hierarchy campaign](docs/hierarchy-campaign.md).
+Model-level derivations from the microscopic classical and quantum parents
+to every model used in research and teaching (for example a NEO-2-type
+linearized collision operator traced to quantum mechanics) are planned in
+[the theory map](docs/theory-map.md); literature proofs are reproduced, not
+relied on.
 Stellar structure remains outside this sequence.
 
 Physics ladder:

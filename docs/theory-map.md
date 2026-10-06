@@ -17,6 +17,59 @@ defects of the microscopic campaign
 ([hierarchy-campaign.md](hierarchy-campaign.md)) are the empirical side of
 the same question.
 
+## Scope
+
+The map covers all plasma physics needed for the research and teaching it
+serves, from first principles without gaps: every model used by KIN6D, by
+its consumers (e.g. NEO-2, SIMPLE, MEPHIT, TIAGO) and by the lectures is a
+node connected to the microscopic parents by checked edges. A typical
+end-to-end claim is a chain such as
+
+  many-electron Schrödinger (nonrelativistic electrostatic limit of QED)
+  -> two-body Coulomb scattering -> quantum Coulomb logarithm
+  + classical N-body -> BBGKY -> Lenard--Balescu -> Landau
+  -> Rosenbluth Fokker--Planck -> linearized operator with
+  momentum-conserving terms -> drift-kinetic (guiding-center) ordering
+  -> NEO-2-type linearized collision operator in its Legendre/Laguerre
+  representation,
+
+where every edge is derived and checked here and every numerical stage has
+its certificate, so that the operator in a production neoclassical code is
+traceable both theoretically and numerically to quantum mechanics. A gap in
+such a chain is an explicit open item, never an implicit assumption.
+
+## Reproduce, do not rely
+
+Literature results are intake material, not trust anchors. Every proof or
+derivation used by the map is reproduced here:
+
+1. preserve the source and its provenance (reference, edition, equation and
+   page numbers, checksum where available);
+2. state a scoped claim with explicit hypotheses, solution concept and
+   non-claims;
+3. reproduce it: machine-checked algebra (FortSym), executable oracles and
+   KIN6D defect experiments, and a Lean replay where feasible; otherwise a
+   complete written proof in our notation;
+4. obtain an independent review (`proof-audit` protocol);
+5. promote only when these gates pass; disagreements with the source become
+   errata records.
+
+A cited theorem is therefore a status on the way to reproduction, never a
+terminal status. The operating structure follows the established
+frontier-mathematics projects (e.g. the Stafford project): claim records with
+status axes (leaf, claim, parent, review verdict, evidence-gate verdict),
+proof and checker paths and non-claims; a generated claim DAG; an append-only
+frontier ledger and decision log of rejected routes; raw literature intake
+kept separate from promoted claims. The `math-frontier`, `proof-audit` and
+`proof-map` skills supply the generic protocols. Proposed layout:
+
+- `theory/claims/` one file per claim (node, edge or step);
+- `theory/intake/` preserved literature sources and scoped intake notes;
+- `theory/reviews/` independent audits;
+- `theory/history/` claim DAG, frontier ledger, decision log, errata;
+- `theory/derivations/` FortSym derivation programs run in CI;
+- `proof/` the existing Lean package, extended per claim.
+
 ## Objects
 
 - **Node:** a model with its state variables, equations, invariants and
@@ -93,11 +146,13 @@ Each step and each edge carries one status, mirroring the numerical states:
 3. **limit-checked:** known special cases and limits reproduced;
 4. **defect-measured:** the reduction's error measured by a KIN6D companion
    experiment across its regime;
-5. **proved in the literature:** a cited theorem with its hypotheses and
-   solution concept (e.g. mean-field limits of Dobrushin, Braun--Hepp and
+5. **literature intake:** a cited theorem with its hypotheses and
+   solution concept, preserved for reproduction (not yet a trust anchor) (e.g. mean-field limits of Dobrushin, Braun--Hepp and
    Lazarovici--Pickl; Hartree limits of Erdős--Yau, Rodnianski--Schlein and
    Pickl; the Lions--Paul semiclassical Wigner limit; Lanford's short-time
    Boltzmann theorem; partial gyrokinetic limits);
+   **reproduced:** the intake proof replayed here (checked algebra and a
+   complete written proof, or Lean) and independently reviewed;
 6. **formally proved:** a Lean theorem covering the step's mathematical
    content, with its hypotheses;
 7. **open problem:** no rigorous justification is known (for example the
