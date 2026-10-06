@@ -5,7 +5,9 @@ program microscopic_cloud_demo
     use kin6d_nbody, only: nbody_system_t, nbody_step, nbody_energy, &
                            nbody_encounter_step
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, &
-                  plot, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig
+                  plot, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig, &
+                  suptitle
+    use kin6d_demo_style, only: vermillion, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
@@ -15,7 +17,8 @@ program microscopic_cloud_demo
     ! Namelist &microscopic_cloud: electrons, output frames, substeps of dt per
     ! frame, encounter control eta, fixed central impurity charge of run 2 and
     ! the neutralizing sphere (defaults from kin6d_microscopic_cloud).
-    integer :: particles = 32, frames = 121, substeps = 100
+    ! 241 frames of 50 substeps: the same 12000 steps as before, shown in 10 s.
+    integer :: particles = 32, frames = 241, substeps = 50
     real(dp) :: dt = 0.001_dp, encounter_eta = 0.05_dp, impurity_charge = -2.0_dp
     real(dp) :: sphere_charge, sphere_radius
     namelist /microscopic_cloud/ particles, frames, substeps, dt, encounter_eta, &
@@ -26,7 +29,8 @@ program microscopic_cloud_demo
     character(len=256) :: msg
     real(dp), parameter :: two_pi = 6.2831853071795864769_dp
     real(dp), parameter :: blue(3) = [0.0_dp, 0.4471_dp, 0.6980_dp]
-    real(dp), parameter :: orange(3) = [0.8353_dp, 0.3686_dp, 0.0_dp]
+    ! Width/height of the cloud axes boxes in pixels (measured), for equal aspect.
+    real(dp), parameter :: box_aspect = 1.594_dp
     type(cloud_model_t) :: model(2)
     type(nbody_system_t) :: system
     type(fortnum_status_t) :: status
@@ -37,14 +41,13 @@ program microscopic_cloud_demo
     real(dp) :: initial_energy, energy
     real(dp), allocatable :: candidate_cpu(:, :), diagnostic_cpu(:, :)
     real(dp) :: start, finish
-    real(dp), allocatable :: xp(:), yp(:), radii(:), fraction(:)
+    real(dp), allocatable :: xp(:), yp(:), radii(:), fraction(:), cdf_x(:), cdf_y(:)
     real(dp) :: circle_x(101), circle_y(101), phase, scratch, max_view, energy_view
     real(dp) :: limit
     integer :: run, frame, step, p, j, k, unit, snapshot_frame, encode_status
     integer :: substep, pieces, refined(2)
     logical :: ok, snapshot_only
     character(len=64) :: argument
-    character(len=150) :: heading
     call app%start('microscopic_cloud_demo')
     sphere_charge = model(1)%sphere_charge; sphere_radius = model(1)%sphere_radius
     ios = 0; msg = ''
@@ -62,7 +65,7 @@ program microscopic_cloud_demo
     allocate (state(6*particles), trajectory(6*particles, frames, 2), time(frames), &
         defect(frames, 2), display_defect(frames, 2), candidate_cpu(frames, 2), &
         diagnostic_cpu(frames, 2), xp(particles), yp(particles), radii(particles), &
-        fraction(particles))
+        fraction(particles), cdf_x(2*particles + 2), cdf_y(2*particles + 2))
     snapshot_only = .false.; snapshot_frame = (frames + 1)/2
     if (app%argument_count() > 2) error stop &
         'usage: microscopic_cloud_demo [--config FILE] [--snapshot [frame]]'
@@ -168,14 +171,15 @@ program microscopic_cloud_demo
         end do
     end do
     display_defect = 1.0e6_dp*defect
-    energy_view = max(0.1_dp, 1.4_dp*maxval(abs(display_defect)))
+    energy_view = max(1.0e-6_dp, 1.15_dp*maxval(abs(display_defect)))
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
     frame = snapshot_frame
     call draw_frame()
     call savefig('output/microscopic-cloud.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
+        animation = animation_func(update_frame, frames=frames + hold_frames, &
+            interval=42, fig=canvas)
         call save_animation(animation, 'output/microscopic-cloud.mp4', fps=fps, &
                             status=encode_status)
         if (encode_status /= 0) error stop 'cloud animation encoding failed'
@@ -226,39 +230,37 @@ contains
 
     subroutine update_frame(index)
         integer, intent(in) :: index
-        if (index < 1 .or. index > frames) error stop 'invalid animation frame'
-        frame = index
+        if (index < 1 .or. index > frames + hold_frames) error stop 'invalid animation frame'
+        frame = min(index, frames)
         call canvas%clear()
         call draw_frame()
         call canvas%set_rendered(.false.)
     end subroutine
     subroutine draw_frame()
+        call suptitle('A fixed negative impurity pushes the nearest electrons outward; '// &
+            'the radial distribution shifts (exploratory, N = '// &
+            trim(number(real(particles, dp)))//')')
         do run = 1, 2
             call subplot(2, 2, run)
             do p = 1, particles
                 j = 3*p - 2
                 call projection(trajectory(j:j + 2, frame, run), xp(p), yp(p))
             end do
+            ! Dotted circle: sphere equator, a neutralizing background but no wall.
+            call plot(circle_x, circle_y, linestyle=':', color=grey, linewidth=1.5_dp)
             if (run == 1) then
-                write (heading, '(i0,a,f5.2)') particles, &
-                    ' Coulomb electrons | control | t = ', time(frame)
+                call title('Coulomb electrons, control  |  t = '//num(time(frame), 2))
                 call scatter(xp, yp, s=36.0_dp, color=blue, marker='o')
             else
-                write (heading, '(a,f5.2)') 'Same start + negative impurity | t = ', &
-                    time(frame)
-                call scatter(xp, yp, s=36.0_dp, color=orange, marker='o')
-                call scatter([0.0_dp], [0.0_dp], s=90.0_dp, &
-                         color=[0.0_dp, 0.0_dp, 0.0_dp], marker='x', &
-                         label='fixed q='//trim(number(impurity_charge)))
-                call legend(loc='upper right')
+                call title('Same start, fixed impurity q = '// &
+                    trim(number(impurity_charge))//' (x) at the centre')
+                call scatter(xp, yp, s=36.0_dp, color=vermillion, marker='o')
+                call scatter([0.0_dp], [0.0_dp], s=90.0_dp, color=black, marker='x')
             end if
-            call plot(circle_x, circle_y, linestyle=':', &
-                    color=[0.55_dp, 0.55_dp, 0.55_dp], label='sphere equator (no wall)')
-            call legend(loc='upper right')
-            call title(trim(heading))
-            call xlabel('projection X = x + z/4 [1]')
-            call ylabel('projection Y = y + z/6 [1]')
-            call xlim(-max_view, max_view); call ylim(-max_view, max_view)
+            call xlabel('projection X = x + z/4')
+            call ylabel('projection Y = y + z/6')
+            call xlim(-box_aspect*max_view, box_aspect*max_view)
+            call ylim(-max_view, max_view)
         end do
         call subplot(2, 2, 3)
         do run = 1, 2
@@ -276,28 +278,35 @@ contains
                 end do
                 radii(k + 1) = scratch
             end do
+            ! Post-step staircase drawn as a polyline (fortplot step() does not
+            ! route to subplots at the pinned revision).
+            cdf_x(1) = 0.0_dp; cdf_y(1) = 0.0_dp
+            do p = 1, particles
+                cdf_x(2*p) = radii(p); cdf_y(2*p) = cdf_y(2*p - 1)
+                cdf_x(2*p + 1) = radii(p); cdf_y(2*p + 1) = fraction(p)
+            end do
+            cdf_x(2*particles + 2) = 5.0_dp; cdf_y(2*particles + 2) = 1.0_dp
             if (run == 1) then
-                call scatter(radii, fraction, s=18.0_dp, color=blue, &
-                             marker='o', label='control')
+                call plot(cdf_x, cdf_y, color=blue, linewidth=2.0_dp, label='control')
             else
-                call scatter(radii, fraction, s=18.0_dp, color=orange, &
-                             marker='s', label='negative impurity')
+                call plot(cdf_x, cdf_y, color=vermillion, linestyle='--', &
+                    linewidth=2.0_dp, label='negative impurity')
             end if
         end do
-        call title('Empirical radial CDF | candidate; no statistical band')
-        call xlabel('3D radius r [1]')
-        call ylabel('fraction of electrons inside r [1]')
-        call xlim(0.0_dp, 5.0_dp); call ylim(0.0_dp, 1.15_dp)
-        call legend(loc='upper left')
+        call title('Empirical radial CDF (no statistical band)')
+        call xlabel('3D radius r')
+        call ylabel('fraction of electrons inside r')
+        call xlim(0.0_dp, 5.0_dp); call ylim(0.0_dp, 1.05_dp)
+        call legend(loc='lower right')
         call subplot(2, 2, 4)
-        call plot(time(:frame), display_defect(:frame, 1), color=blue, label='control')
-        call plot(time(:frame), display_defect(:frame, 2), color=orange, &
-                  linestyle='--', &
-                  label='negative impurity')
-        call title('Energy diagnostic | trajectory bounds unavailable')
-        call xlabel('t [1]'); call ylabel('10^6 (H(t)-H(0))/|H(0)| [1]')
+        call plot(time(:frame), display_defect(:frame, 1), color=blue, &
+                  linewidth=2.0_dp, label='control')
+        call plot(time(:frame), display_defect(:frame, 2), color=vermillion, &
+                  linestyle='--', linewidth=2.0_dp, label='negative impurity')
+        call title('Energy drift diagnostic (no trajectory bound)')
+        call xlabel('t'); call ylabel('$10^6 (H(t) - H(0))/|H(0)|$')
         call xlim(0.0_dp, time(frames)); call ylim(-energy_view, energy_view)
-        call legend(loc='upper right')
+        call legend(loc='upper left')
         call tight_layout()
     end subroutine
 end program
