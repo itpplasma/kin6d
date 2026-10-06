@@ -416,13 +416,13 @@ contains
         mr = real(m); rr = aimag(h)/eng%hbar
         mred = matmul(transpose(eng%jmap), matmul(mr, eng%jmap))
         rred = matmul(transpose(eng%jmap), rr)
-        ! Jacobi equilibration: sc_i = 1/sqrt(M_ii); empty (zero-population)
+        ! Jacobi equilibration: sc_i = 1/sqrt(M_ii); nearly empty (M_ii < eps max M)
         ! directions keep the static parameter scale.
         allocate (scl(nr))
         dmax = maxval([(mred(j, j), j=1, nr)])
         do j = 1, nr
             scl(j) = eng%scale(j)
-            if (mred(j, j) > 1.0e-14_dp*dmax) scl(j) = 1/sqrt(mred(j, j))
+            if (mred(j, j) > eng%eps*dmax) scl(j) = 1/sqrt(mred(j, j))
         end do
         do j = 1, nr
             mred(:, j) = mred(:, j)*scl*scl(j)
