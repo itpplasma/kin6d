@@ -204,17 +204,19 @@ contains
         integer, intent(in) :: trial
         type(screening_state_t) :: state
         type(screening_q_table_t) :: table
-        real(dp) :: a,b,c,ratio(1),tail,indicator
+        real(dp) :: a,b,c,ratio(1),tail,indicator,estimate_seconds,certificate_seconds
         logical :: ok
         call screening_setup_normalized(1._dp,1._dp,state,ok)
         call require(ok)
         call cpu_time(a)
-        call screening_q_table(state,32._dp,.5_dp,8._dp,table)
+        call screening_q_table(state,32._dp,.5_dp,8._dp,table, &
+            estimator_seconds=estimate_seconds, certificate_seconds=certificate_seconds)
         call cpu_time(b)
         call screened_ratio_from_table(state,table,[1._dp],ratio,tail,indicator)
         call cpu_time(c)
-        call row('Q7-screening','E',trial,b-a,c-b,0._dp,tail+indicator,1._dp, &
+        call row('Q7-screening','E',trial,b-a-estimate_seconds-certificate_seconds, &
+            estimate_seconds+c-b,certificate_seconds,tail+indicator,1._dp, &
             'rigorous-tail;quadrature-indicator','theta=1;kappa2=1;qmax=32;r=1', &
-            'embedded-tail-and-indicator;query-only')
+            'instrumented-embedded-low-rule-and-tail;inversion-query')
     end subroutine
 end program
