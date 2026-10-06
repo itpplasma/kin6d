@@ -16,7 +16,7 @@ program test_error_modes
     type(fortnum_status_t) :: rng_status
     real(dp) :: hr(2,2),hi(2,2),initial(2),zero(2),re(2),im(2),h,radius
     real(dp) :: epsilon_b, audit(3), eta(3), allowance, indicator, residual
-    real(dp) :: sampled, upper, actual, worst_under, loosen, worst_audit
+    real(dp) :: sampled, upper, actual, worst_under, loosen, worst_audit, loosen_all
     real(dp) :: generated, jvp, gradient(9)
     complex(qp) :: exact(2)
     integer :: mode,level,point,failures,seed
@@ -35,7 +35,8 @@ program test_error_modes
         gradient(4),gradient(5),gradient(6),gradient(7),gradient(8),gradient(9))
     call require(abs(jvp-3._dp)<1.e-14_dp,'allowance analytical JVP')
     call require(abs(gradient(5)-3._dp)<1.e-14_dp,'allowance analytical VJP')
-    worst_under=0; loosen=0; worst_audit=0
+    worst_under=0; loosen=0; worst_audit=0; loosen_all=0
+    print '(a)', 'reference,level,mode,eighth,actual_error,radius,efficiency_index'
     do level=1,3
         h=.05_dp*2**(level-1)
         do mode=QE_WORKHORSE,QE_APPROXIMATE
@@ -61,6 +62,8 @@ program test_error_modes
                     .75_qp*real(point,qp)*real(h,qp)/8,qp))
                 actual=real(sqrt(sum(abs( &
                     cmplx(real(re,qp),real(im,qp),qp)-exact)**2)),dp)
+                print '(*(g0,:,","))', 'reference',level,mode,point,actual,radius, &
+                    radius/actual
                 if (mode==QE_APPROXIMATE) then
                     call require(index(status,'approximate-bound')==1,'A label')
                     call require(actual<=(1+epsilon_b)*radius,'A true-error oracle')
@@ -69,6 +72,7 @@ program test_error_modes
                 else
                     call require(actual<=radius,'D/S containment oracle')
                 end if
+                if (mode==QE_WORKHORSE) loosen_all=max(loosen_all,radius/actual)
                 if (point==4) then
                     eta(mode)=radius
                     if (mode==QE_WORKHORSE) loosen=max(loosen,radius/actual)
@@ -83,6 +87,7 @@ program test_error_modes
     print '(a,es12.4)', 'A worst true-error/eta=',worst_under
     print '(a,es12.4)', 'A worst strict-radius/eta minus 1=',worst_audit
     print '(a,es12.4)', 'D max radius/true-error at midpoint=',loosen
+    print '(a,es12.4)', 'D max radius/true-error across all sampled fractions=',loosen_all
     ! A relative allowance below arithmetic resolution must fail explicitly.
     call initialize_quantum_evolution(state,hr,hi,initial,zero,1,1.e-12_dp,1._dp,ok)
     call solve_quantum_evolution(state,ok,certify=.false.)
