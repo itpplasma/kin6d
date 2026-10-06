@@ -7,6 +7,7 @@ program gen_fp
     use fortsym_rigorous_emit, only: rigorous_kernel_spec_t, interval_runtime, &
                                      emit_rigorous_kernel
     use kin6d_gen_support, only: fortsym_revision
+    use kin6d_symbolic_physics, only: p1_weight, p1_blend
     implicit none
     type(arena_t), target :: arena
     type(expr_t) :: v, theta, h, a, b, mass, z, vm, lo, hi, index, count, radius
@@ -48,8 +49,8 @@ program gen_fp
               [h*(a + b)/2], rigorous=.true.)
     call emit('fp_add', ['a', 'b'], ['value'], [a + b])
     call emit('fp_scale', ['a   ', 'mass', 'z   '], ['value'], [a*mass/z], ad=.true.)
-    call emit('fp_weight', ['lo', 'hi', 'v '], ['value'], [(v - lo)/(hi - lo)])
-    call emit('fp_interpolate', ['a', 'b', 'v'], ['value'], [a*(1 - v) + b*v], ad=.true.)
+    call emit('fp_weight', ['lo', 'hi', 'v '], ['value'], [p1_weight(v, lo, hi)])
+    call emit('fp_interpolate', ['a', 'b', 'v'], ['value'], [p1_blend(a, b, v)], ad=.true.)
     call emit('fp_normalizer_cell', ['v    ', 'theta', 'h    ', 'vm   '], &
               ['lower', 'upper'], &
               [h*gaussian - h**3*curvature/24, h*gaussian + h**3*curvature/24], &
@@ -61,9 +62,9 @@ program gen_fp
     call emit('fp_interpolation_error', ['theta', 'mass ', 'z    ', 'h    ', 'vm   '], &
               ['value'], [mass*h**2*curvature/(8*z)], rigorous=.true.)
     call emit('fp_interval_interpolate', ['a', 'b', 'v'], ['value'], &
-              [a*(1 - v) + b*v], rigorous=.true.)
+              [p1_blend(a, b, v)], rigorous=.true.)
     call emit('fp_interval_weight', ['lo', 'hi', 'v '], ['value'], &
-              [(v - lo)/(hi - lo)], rigorous=.true.)
+              [p1_weight(v, lo, hi)], rigorous=.true.)
     call emit('fp_band', ['a', 'b'], ['lower', 'upper'], &
               [a - b, a + b], rigorous=.true.)
     call emit('fp_mass_error_band', ['lo    ', 'hi    ', 'radius'], &

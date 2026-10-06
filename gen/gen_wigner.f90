@@ -5,7 +5,7 @@ program gen_wigner
                             operator(**)
     use fortsym_string, only: str
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
-    use kin6d_symbolic_physics, only: modal_poisson
+    use kin6d_symbolic_physics, only: modal_poisson, phase_rotation
     implicit none
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
@@ -54,11 +54,10 @@ program gen_wigner
         ['pr', 'pi'], [-dt*s*vi/n, dt*s*vr/n], ad=.true.)
     ! Exact kick e^{i phase} fhat and its tangent e^{i phase}(t + i dphase f).
     call w%emit('wigner_kick', ['fr   ', 'fi   ', 'phase'], ['gr', 'gi'], &
-        [fr*cos(phase) - fi*sin(phase), fr*sin(phase) + fi*cos(phase)])
+        phase_rotation(fr, fi, cos(phase), sin(phase)))
     call w%emit('wigner_kick_tangent', ['fr    ', 'fi    ', 'tr    ', 'ti    ', &
         'phase ', 'dphase'], ['gr', 'gi'], &
-        [(tr - dphase*fi)*cos(phase) - (ti + dphase*fr)*sin(phase), &
-         (tr - dphase*fi)*sin(phase) + (ti + dphase*fr)*cos(phase)])
+        phase_rotation(tr - dphase*fi, ti + dphase*fr, cos(phase), sin(phase)))
     call w%emit('wigner_field_energy_mode', ['er    ', 'ei    ', 'length', &
         'n     ', 'acc   '], ['next'], [acc + length*(er**2 + ei**2)/(2*n**2)])
     call w%emit('wigner_maxwellian', ['v     ', 'u     ', 'sigma ', 'weight'], &

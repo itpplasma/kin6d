@@ -356,7 +356,7 @@ pure elemental subroutine interpolate(lo, hi, weight, value)
     real(dp), intent(in) :: lo, hi, weight
     real(dp), intent(out) :: value
 
-    value = hi*weight + lo*(-weight + 1)
+    value = lo + weight*(hi - lo)
 
 end subroutine interpolate
 
@@ -372,8 +372,8 @@ pure elemental subroutine interpolate_jvp(lo, hi, weight, d_lo, d_hi, d_weight, 
     real(dp), intent(out) :: d_value
     real(dp) :: t1
 
-    t1 = -weight + 1
-    d_value = d_hi*weight*1 + d_lo*t1*1 + d_weight*(hi*1 - lo*1) + (hi*weight + lo*t1)*0
+    t1 = hi - lo
+    d_value = d_hi*weight*1 + d_lo*(-weight*1 + 1) + d_weight*t1*1 + (lo + weight*t1)*0
 
 end subroutine interpolate_jvp
 
@@ -389,11 +389,11 @@ pure elemental subroutine interpolate_vjp(lo, hi, weight, w_value, g_lo, g_hi, g
     real(dp), intent(out) :: g_lo, g_hi, g_weight
     real(dp) :: t1, t2
 
-    t1 = -weight + 1
-    t2 = (hi*weight + lo*t1)*0
-    g_lo = w_value*t1*1 + t2
+    t1 = hi - lo
+    t2 = (lo + weight*t1)*0
+    g_lo = w_value*(-weight*1 + 1) + t2
     g_hi = w_value*weight*1 + t2
-    g_weight = w_value*(hi*1 - lo*1) + t2
+    g_weight = w_value*t1*1 + t2
 
 end subroutine interpolate_vjp
 
