@@ -419,7 +419,8 @@ contains
                           color=palette(:, 1 + mod(r - 1, 3)), linestyle='--', &
                           label=trim(label))
             end do
-            call legend(loc='lower right')
+            if (k == 1) call legend(loc='lower right')
+            if (k == 2) call legend(loc='upper left')
         end do
         call suptitle('HF keeps the exchange hole but has no Coulomb hole')
         call tight_layout()

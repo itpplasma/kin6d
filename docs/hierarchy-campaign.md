@@ -65,7 +65,7 @@ error status as in AGENTS.md.
 | Q2 | Gaussian/coherent-sum packet models vs Q1 | Q1 reference | planned |
 | Q3 | Finite-N ideal fermions: exchange hole, canonical sums | ideal-gas identities | planned (EOS exists) |
 | Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | exists (docs/jellium-cell.md) |
-| Q5 | Hartree/HF vs Q4 | Q4 | planned |
+| Q5 | Hartree/HF vs Q4 | Q4 | exists (worker, unpromoted; docs/mean-field-cell.md) |
 | Q7 | Debye/finite-T Fermi/Thomas-Fermi/Lindhard screening; Wigner -> Vlasov as hbar->0 | analytic limits | exists (worker, unpromoted) |
 | Q8 | Relativistic ideal Fermi EOS | classical/NR/UR limits | planned |
 | H1 | Correlation map: pair and three-body cumulant size, quantum-classical difference vs (Gamma, Theta) | C5, Q4 references | planned |
@@ -229,4 +229,20 @@ run from the repository root and must reproduce committed leaves exactly.
   steps, certificate 0.16 s). Theta=0.5 ensembles for N=3,4 are NOT
   converged with nev=8 per sector (truncation estimate 0.05-0.2 / 2-4);
   treat those rows as indicators. 27/27 CTest Release and Debug.
-
+- 2026-10-06 (worker, Q5): `src/mean_field_cell.f90` + `gen_mean_field_cell`
+  (docs/mean-field-cell.md): Hartree, RHF, UHF (DIIS + trust-region
+  second-order SCF, instability following, multi-start, aufbau-repair
+  attempt), restricted Mermin HF and static TDHF/TDH response in the Q4
+  basis; Slater states expanded in the engine basis for the full-parent
+  residual ||(H - E_HF) Phi|| and a Temple bound (interval-evaluated,
+  Lanczos gap input = candidate). New test `mean_field_cell_oracles`
+  (functional = <Phi|H|Phi>, brute-force two-mode UHF incl. SDW minimum,
+  Koopmans, g->0 Lindhard, TDH = RPA to 1e-12, variational/Temple, HF dE/dg
+  vs FD, saddle following, Slater cumulants, Mermin limits/dF/dT = -S).
+  `jellium_cumulants` now supports N = 2. cutoff 2: E_c/N(UHF) N=2 -9.3 ->
+  -5.9 mHa (r_s 0.5 -> 8; E_HF(N=2) = 0), N=4 -29.8 -> -7.9 mHa; N=2 Temple
+  bound/true error 1.25 -> 2.2; N=3, 4 UHF minima break translation symmetry
+  (plane-wave determinant is a saddle) and are non-aufbau, so Temple does
+  not apply there. chi/chi0 at r_s 8, N=2: exact 0.69, TDHF 0.66, RPA 0.49.
+  Mermin vs exact canonical thermal energy is dominated by the
+  grand-canonical orbital ensemble (factor 2.7, N=2, r_s 0.5).
