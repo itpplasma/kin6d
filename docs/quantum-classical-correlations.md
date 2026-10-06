@@ -105,3 +105,20 @@ Generated leaves are in `gen/gen_quantum_classical.f90`.
   Gaussian-decaying excess. The Kelbg+Pauli model adds
   `-kT ln(1 - X/2)` per pair. The model error is
   `||g_model - g_q|| / ||g_cl - g_q||` (1 means no better than classical).
+
+## Verification (`quantum_classical_h1b_oracles`)
+
+| Oracle | Result |
+|---|---|
+| Ewald energy pairwise additive (N = 3, different alpha/cutoffs) | 1.7e-15 |
+| N = 2 Monte Carlo vs quadrature of `exp(-beta u)` (g, f2, dg/dbeta, reweighted g) | within 4.5 s.e. |
+| Classical g depends on Gamma only (r_s = 4, Theta = 2 vs r_s = 1, Theta = 0.5) | < 1e-6 |
+| Relative reduction in the Q4 pair set = Q4 S_z = 0 two-electron sector spectrum (K = 000, 110) | 1.4e-14 |
+| Ideal relative reduction = Q3 canonical ideal fermions over all S_z | 3e-15 |
+| WK weight vs exact harmonic density, error ratio for beta omega = 0.2/0.1 | 15.99 (O(beta^4)) |
+| Ewald force and Laplacian (`4 pi g/V` off contact) vs central differences | 4e-7 rel, 1e-3 |
+| Kelbg: Coulomb at 8 lambda, contact `sqrt(pi) g/lambda`, series switch, JVP vs FD | 1e-14 to 1e-8 |
+| N = 2 spectral dg/dTheta vs central differences | 2.5e-8 rel |
+| Q4 diagonal f2/f3 of a Slater determinant vs brute-force Wick sum | exact |
+| Sparse 2-RDM shell bins (`fock_rdm2_entries`) vs dense `jellium_pair_bins` | 4e-15 |
+| Dense full-sector spectrum (364 states) vs block-Lanczos ground state | 1e-10 rel |
