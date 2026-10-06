@@ -109,23 +109,26 @@ contains
         if (.not. ok) error stop 'encounter setup failed: '//m
     end subroutine setup_case
 
-    subroutine run_model(enc, spec, t, tr, seconds, nfev)
+    subroutine run_model(enc, spec, t, tr, seconds, nfev, ok)
         type(encounter_t), intent(in) :: enc
         type(packet_spec_t), intent(in) :: spec
         real(dp), intent(in) :: t
         type(packet_trace_t), intent(out) :: tr
         real(dp), intent(out) :: seconds
         integer(i64), intent(out) :: nfev
+        logical, intent(out) :: ok
         type(packet_sample_t), allocatable :: smp(:)
         character(:), allocatable :: m
-        logical :: ok
         integer(i64) :: c0, c1, rate
         integer :: j
         call system_clock(c0, rate)
         call packet_samples(enc, spec, [(t*(j - 1)/real(samples - 1, dp), j=1, samples)], &
                             smp, ok, m, nfev)
         call system_clock(c1)
-        if (.not. ok) error stop model_name(spec)//': '//m
+        if (.not. ok) then
+            print '(a)', model_name(spec)//': '//m
+            return
+        end if
         seconds = real(c1 - c0, dp)/real(rate, dp)
         call packet_trace(enc, spec, smp, tr)
     end subroutine run_model
@@ -165,6 +168,7 @@ contains
         real(dp) :: t, edges(0:nb), pm(nb), rad, sd
         integer(i64) :: nfev
         integer :: ie, im, ue, ub, uc, ib, sec, sectors(3)
+        logical :: ok
         sectors = [SECTOR_PRODUCT, SECTOR_SINGLET, SECTOR_TRIPLET]
         edges = bin_edges()
         open (newunit=ue, file='output/packet-eta-errors.csv', status='replace')
@@ -190,7 +194,8 @@ contains
             do im = 1, nmod
                 spec = packet_spec_t()
                 spec%model = models(im); spec%k = kvals(im)
-                call run_model(enc, spec, t, tr, secs(im, ie), nfev)
+                call run_model(enc, spec, t, tr, secs(im, ie), nfev, ok)
+                if (.not. ok) error stop 'eta scan model refused'
                 sec = model_sector(spec)
                 call encounter_angular_bins(enc, tr%a, sec, enc%cfg%z0/4, edges, pm)
                 bins_mod(:, im, ie) = pm
@@ -349,6 +354,7 @@ contains
         real(dp) :: t, edges(0:nb), pr(nb), pm(nb), sx
         integer(i64) :: nfev
         integer :: ib, j, u
+        logical :: ok
         edges = bin_edges()
         open (newunit=u, file='output/packet-b-scan.csv', status='replace')
         write (u, '(a)') 'b_over_lambdabar,model,state_error,state_bound,efficiency,'// &
@@ -361,7 +367,13 @@ contains
             deallocate (a)
             do j = 1, 3
                 spec = packet_spec_t(); spec%model = bm(j); spec%k = bk(j)
-                call run_model(enc, spec, t, tr, sx, nfev)
+                call run_model(enc, spec, t, tr, sx, nfev, ok)
+                if (.not. ok) then
+                    write (u, '(f6.2,",",a,a)') b_values(ib), model_name(spec), &
+                        ',refused,refused,refused,refused,refused,refused'
+                    berr(j, ib) = -1; bbnd(j, ib) = -1; btv(j, ib) = -1
+                    cycle
+                end if
                 call encounter_angular_bins(enc, tr%a, SECTOR_PRODUCT, enc%cfg%z0/4, edges, pm)
                 berr(j, ib) = tr%error(samples); bbnd(j, ib) = tr%bound(samples)
                 btv(j, ib) = sum(abs(pm - pr))

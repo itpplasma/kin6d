@@ -59,6 +59,7 @@ module kin6d_packet_models
         real(dp) :: rtol = 1.0e-10_dp, atol = 1.0e-12_dp
         real(dp) :: refuse_condition = 1.0e14_dp  ! overlap condition refusal limit
         integer :: boys_nodes = 96
+        integer(i64) :: max_rhs = 400000_i64     ! refusal limit on RHS evaluations
         logical :: metric_engine = .false.   ! M2/M3 through the metric engine (cross-check)
     end type packet_spec_t
 
@@ -142,7 +143,7 @@ contains
     end function model_sector
 
     ! Adaptive Cash-Karp integration of y' = rhs(t, y) from t0 to t1.
-    subroutine integrate(rhs, ctx, y, t0, t1, rtol, atol, nfev, ok)
+    subroutine integrate(rhs, ctx, y, t0, t1, rtol, atol, nfev, ok, max_rhs)
         interface
             subroutine rhs(t, y, dydt, ctx)
                 import :: dp
@@ -156,6 +157,7 @@ contains
         real(dp), intent(in) :: t0, t1, rtol, atol
         integer(i64), intent(inout) :: nfev
         logical, intent(out) :: ok
+        integer(i64), intent(in), optional :: max_rhs
         real(dp), dimension(size(y)) :: k1, k2, k3, k4, k5, k6, ytmp, y5, yerr
         real(dp) :: t, h, err
         integer :: nf, it
@@ -179,6 +181,11 @@ contains
             end if
             if (h < 1.0e-14_dp*max(abs(t1), 1.0_dp)) then
                 ok = .false.; exit
+            end if
+            if (present(max_rhs)) then
+                if (nfev + nf > max_rhs) then
+                    ok = .false.; exit
+                end if
             end if
         end do
         nfev = nfev + nf
@@ -542,18 +549,18 @@ contains
         case default
             return
         end select
-        message = 'model integration failed'
+        message = 'refused: step size underflow or RHS budget (max_rhs) exceeded'
         t0 = 0
         do it = 1, size(times)
             samples(it)%t = times(it)
             if (canonical) then
                 call integrate(canonical_rhs, can, y, t0, times(it), spec%rtol, spec%atol, &
-                               nfev, ok)
+                               nfev, ok, spec%max_rhs)
                 if (.not. ok) return
                 call canonical_sample(can, enc, y, samples(it))
             else
                 call integrate(engine_rhs, eng, y, t0, times(it), spec%rtol, spec%atol, &
-                               nfev, ok)
+                               nfev, ok, spec%max_rhs)
                 if (.not. ok) return
                 call engine_sample(eng, enc, y, samples(it))
             end if
