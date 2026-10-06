@@ -11,8 +11,8 @@ program relativistic_fermi_demo
     use kin6d_fermi_gas_leaves, only: fermi_si_parameters
     use kin6d_relativistic_fermi_leaves, only: fermi_rel_limits
     use kin6d_species, only: electron_mass_si, hbar_si, elementary_charge_si, coulomb_si
-    use fortplot, only: figure, plot, title, xlabel, ylabel, ylim, legend, savefig, &
-        xscale, yscale
+    use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, legend, &
+        savefig, xscale, yscale, suptitle, tight_layout
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
@@ -39,18 +39,19 @@ program relativistic_fermi_demo
     real(dp), parameter :: blue(3) = [0.0_dp, 0.447_dp, 0.698_dp]
     real(dp), parameter :: orange(3) = [0.835_dp, 0.369_dp, 0.0_dp]
     real(dp), parameter :: green(3) = [0.0_dp, 0.62_dp, 0.451_dp]
-    real(dp), parameter :: gray(3) = [0.45_dp, 0.45_dp, 0.45_dp]
+    real(dp), parameter :: gpa = 1.0e9_dp
+    real(dp), parameter :: gray(3)= [0.45_dp, 0.45_dp, 0.45_dp]
     real(dp), parameter :: palette(3, 3) = reshape([blue, orange, green], [3, 3])
     type(fermi_workspace_t) :: work
     type(fermi_si_state_t) :: rel, nonrel
     real(dp), allocatable :: x(:), n(:), rho(:), p(:), plo(:), phi(:)
     real(dp), allocatable :: pnr(:), pcl(:), pnr0(:), pur0(:), pch(:)
     real(dp), allocatable :: scale(:), theta(:), u(:), f(:, :), cells(:), seconds(:)
-    real(dp) :: pf, ef, limits(3), t0, t1, lo, hi
+    real(dp) :: pf, ef, limits(3), t0, t1, lo, hi, black(3)
     logical, allocatable :: certified(:), nonrel_ok(:)
     logical :: ok
     integer :: i, j, unit
-    character(24) :: label
+    character(80) :: label
     character(64) :: tlabel
 
     call run%start('relativistic_fermi_demo')
@@ -72,7 +73,6 @@ program relativistic_fermi_demo
         scale(points), theta(points), cells(points), seconds(points), &
         certified(points), nonrel_ok(points), u(occupation_points), &
         f(occupation_points, 3))
-    write (tlabel, '(a,es9.2,a)') 'T=', temperature, ' K'
 
     call create_directory_runtime('output', ok)
     call initialize_fermi_workspace(work, workspace_cells, ok)
@@ -124,43 +124,72 @@ program relativistic_fermi_demo
         end do
     end do
     call write_result()
-    ! Single-axes figures: fortplot subplot axis scales currently leak
-    ! between panels of one figure.
-    call figure(figsize=[7.5_dp, 5.5_dp])
-    ! Pressure per rest-energy density P/(n m c^2) keeps the 12 decades of
-    ! P(rho) readable: classical kT/mc^2, cold NR x^2/5, cold UR x/4.
-    scale = n*mass*speed**2
-    call plot(x, pch/scale, label='T=0 exact (Chandrasekhar)', &
-              color=[0.0_dp, 0.0_dp, 0.0_dp])
-    call plot(x, pnr0/scale, label='T=0 nonrelativistic', color=gray, linestyle='--')
-    call plot(x, pur0/scale, label='T=0 ultrarelativistic', color=gray, linestyle=':')
-    call plot(x, pcl/scale, label='classical nkT', color=green, linestyle='-.')
-    call plot(pack(x, nonrel_ok), pack(pnr/scale, nonrel_ok), &
-              label='nonrelativistic, '//trim(tlabel), color=orange)
-    call plot(x, p/scale, label='relativistic, '//trim(tlabel)//' (certified)', color=blue, &
+    ! One 2x2 figure: P(rho) in SI, P/(n m c^2) against the cold limits, the
+    ! pressure ratios (log: they span decades) and the occupations.
+    write (tlabel, '(a)') '$T = '//trim(tex_number(temperature))//'$ K'
+    black = [0.0_dp, 0.0_dp, 0.0_dp]
+    call figure(figsize=[13.2_dp, 8.8_dp])
+    call subplot(2, 2, 1)
+    call plot(pack(rho, nonrel_ok), pack(pnr/gpa, nonrel_ok), &
+              label='nonrelativistic, same $T$', color=orange)
+    call plot(rho, pcl/gpa, label='classical $n k_B T$', color=green, linestyle='-.')
+    call plot(rho, p/gpa, label='relativistic (certified)', color=blue, &
               linestyle='None', marker='o')
+    call plot(rho, pch/gpa, label='$T = 0$ exact (Chandrasekhar)', color=black, &
+              linestyle='--', linewidth=1.2_dp)
     call xscale('log'); call yscale('log')
-    call title('Ideal electrons, '//trim(tlabel))
-    call xlabel('x_F = p_F/(m c)'); call ylabel('P/(n m c^2)')
-    call ylim(1.0e-3_dp, 10.0_dp); call legend(loc='upper left')
-    call savefig('output/relativistic-fermi-pressure.png')
-    call figure(figsize=[7.5_dp, 5.5_dp])
-    call plot(x, p/pch, label='relativistic / T=0 exact', color=blue, marker='o')
+    call title('Electron pressure versus mass density')
+    call xlabel('$\rho$ [kg m$^{-3}$]  ($\mu_e = 2$)'); call ylabel('$P$ [GPa]')
+    call xlim(0.7_dp*rho(1), 1.4_dp*rho(points))
+    call ylim(0.5_dp*minval(pch)/gpa, 2.0_dp*maxval(pnr)/gpa)
+    call legend(loc='upper left')
+    call subplot(2, 2, 2)
+    ! Pressure per rest-energy density P/(n m c^2) separates the regimes:
+    ! classical kT/mc^2, cold NR x^2/5, cold UR x/4 (other styles as in panel 1).
+    scale = n*mass*speed**2
+    call plot(x, pnr0/scale, label='$T = 0$ nonrelativistic, $x_F^2/5$', color=gray, &
+              linestyle='--')
+    call plot(x, pur0/scale, label='$T = 0$ ultrarelativistic, $x_F/4$', color=gray, &
+              linestyle=':')
+    call plot(x, pcl/scale, color=green, linestyle='-.')
+    call plot(pack(x, nonrel_ok), pack(pnr/scale, nonrel_ok), &
+              color=orange)
+    call plot(x, p/scale, color=blue, &
+              linestyle='None', marker='o')
+    call plot(x, pch/scale, color=black, &
+              linestyle='--', linewidth=1.2_dp)
+    call xscale('log'); call yscale('log')
+    call title('Pressure per rest-energy density')
+    call xlabel('$x_F = p_F/(m_e c)$'); call ylabel('$P/(n m_e c^2)$')
+    call xlim(0.8_dp*x(1), 1.25_dp*x(points)); call ylim(0.5_dp*minval(pnr0/scale), 30.0_dp)
+    call legend(loc='upper left')
+    call subplot(2, 2, 3)
+    call plot(x, p/pcl, label='relativistic / classical $n k_B T$', color=green, &
+              marker='^')
     call plot(pack(x, nonrel_ok), pack(p/merge(pnr, 1.0_dp, nonrel_ok), nonrel_ok), &
-              label='relativistic / nonrelativistic (same T)', color=orange, marker='s')
-    call plot(x, p/pcl, label='relativistic / classical nkT', color=green, marker='^')
-    call xscale('log')
-    call title('Pressure ratios at '//trim(tlabel)); call xlabel('x_F = p_F/(m c)')
-    call ylabel('ratio'); call ylim(0.0_dp, 3.0_dp); call legend(loc='upper right')
-    call savefig('output/relativistic-fermi-ratios.png')
-    call figure(figsize=[7.5_dp, 5.5_dp])
+              label='relativistic / nonrelativistic (same $T$)', color=orange, marker='s')
+    call plot(x, p/pch, label='relativistic / $T = 0$ exact', color=blue, marker='o')
+    call xscale('log'); call yscale('log')
+    call title('Pressure ratios')
+    call xlabel('$x_F = p_F/(m_e c)$'); call ylabel('pressure ratio')
+    lo = min(minval(p/pch), minval(p/pcl), minval(pack(p/pnr, nonrel_ok)))
+    hi = max(maxval(p/pch), maxval(p/pcl), maxval(pack(p/pnr, nonrel_ok)))
+    call xlim(0.8_dp*x(1), 1.25_dp*x(points)); call ylim(0.5_dp*lo, 2.0_dp*hi)
+    call legend(loc='upper center')
+    call subplot(2, 2, 4)
     do j = 1, 3
-        write (label, '(a,es8.1)') 'x_F=', x(shown(j))
+        label = '$x_F = '//trim(tex_number(x(shown(j))))//'$,  $\Theta = '// &
+            trim(tex_number(theta(shown(j))))//'$'
         call plot(u, f(:, j), label=trim(label), color=palette(:, j))
     end do
-    call title('Occupation at '//trim(tlabel)); call xlabel('p/p_F'); call ylabel('f')
-    call ylim(0.0_dp, 1.05_dp); call legend(loc='upper right')
-    call savefig('output/relativistic-fermi-occupation.png')
+    call title('Occupation of momentum states')
+    call xlabel('$p/p_F$'); call ylabel('occupation $f(p)$')
+    call xlim(0.0_dp, occupation_pmax); call ylim(0.0_dp, 1.1_dp)
+    call legend(loc='upper right')
+    call suptitle('Ideal electron gas at '//trim(tlabel)//': classical, degenerate '// &
+                  'and relativistic regimes')
+    call tight_layout()
+    call savefig('output/relativistic-fermi-eos.png')
 
 contains
 
@@ -203,6 +232,22 @@ contains
             dims='shown')
         call result%close()
     end subroutine
+
+    !> Mathtext form of a positive number: 1.0\times10^{7}, or 0.25 near 1.
+    function tex_number(v) result(s)
+        real(dp), intent(in) :: v
+        character(40) :: s
+        integer :: e
+        e = floor(log10(v))
+        if (e >= 1 .and. e <= 2) then
+            write (s, '(i0)') nint(v)
+        else if (e >= -1 .and. e <= 0) then
+            write (s, '(f0.2)') v
+            if (s(1:1) == '.') s = '0'//s
+        else
+            write (s, '(f3.1,a,i0,a)') v/10.0_dp**e, '\times10^{', e, '}'
+        end if
+    end function tex_number
 
     !> Exact cold pressure (m^4 c^5/(24 pi^2 hbar^3))[x(2x^2-3)s+3 asinh x],
     !> evaluated in binary128 to absorb the small-x cancellation.
