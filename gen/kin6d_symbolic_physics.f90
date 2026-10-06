@@ -13,22 +13,25 @@
 ! Every function returns FortSym expressions in the arena of its arguments.
 module kin6d_symbolic_physics
     use, intrinsic :: iso_fortran_env, only: int64
-    use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erfc, &
+    use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erf, erfc, cos, sin, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
     implicit none
     private
     public :: coulomb_potential, coulomb_force
     public :: sphere_potential_inside, sphere_force_inside
+    public :: gaussian_coulomb_potential, gaussian_coulomb_series
     public :: ewald_real_potential, ewald_real_force, ewald_reciprocal_weight
     public :: ewald_self_potential, ewald_background_potential
     public :: jellium_coefficient, partial_wave_potential
+    public :: yukawa_potential, centrifugal_potential, screened_partial_wave_potential
     public :: reduced_mass, bohr_radius, rydberg_energy, sommerfeld_parameter
     public :: wigner_seitz_radius, coupling_parameter, fermi_energy
     public :: degeneracy_parameter, density_parameter, debye_length
-    public :: plasma_frequency
-    public :: yukawa_potential, yukawa_zero_mode, debye_structure_factor
-    public :: bohm_gross_frequency
+    public :: plasma_frequency, modal_poisson
+    public :: phase_rotation, free_streaming_rotation, krook_node
+    public :: krook_node_residual, p1_weight, p1_blend, p1_interpolate
+    public :: yukawa_zero_mode, debye_structure_factor, bohm_gross_frequency
 contains
     !> Bare Coulomb pair potential g/r.
     function coulomb_potential(g, r) result(u)
@@ -65,6 +68,33 @@ contains
         do j = 1, 3
             f(j) = g*x(j)/radius**3
         end do
+    end function
+
+    !> Bare Coulomb g/r averaged over two isotropic Gaussian densities whose
+    !> separation has variance s per axis and mean distance q:
+    !> g erf(q/sqrt(2 s))/q (exact; finite at q = 0).
+    function gaussian_coulomb_potential(g, s, q) result(u)
+        type(expr_t), intent(in) :: g, s, q
+        type(expr_t) :: u
+        u = g*erf(q/sqrt(2*s))/q
+    end function
+
+    !> The same in T = q^2/(2 s): g sqrt(2/(pi s)) sum_j (-T)^j/(j! (2j+1)),
+    !> j = 0..order (removable q = 0 form; truncation < T^(order+1)/(order+1)!).
+    function gaussian_coulomb_series(g, s, t, order) result(u)
+        type(expr_t), intent(in) :: g, s, t
+        integer, intent(in) :: order
+        type(expr_t) :: u, term
+        integer :: j
+        integer(int64) :: fact
+        fact = 1
+        u = rat(g%a, 1_int64, 1_int64)
+        do j = 1, order
+            fact = fact*j
+            term = rat(g%a, (-1_int64)**j, fact*(2*j + 1))*t**j
+            u = u + term
+        end do
+        u = g*sqrt(2/(pi_expr(g%a)*s))*u
     end function
 
     !> Ewald real-space (short-range) pair potential g erfc(alpha r)/r.
@@ -122,7 +152,31 @@ contains
     function partial_wave_potential(g, hbar, mu, l, r) result(v)
         type(expr_t), intent(in) :: g, hbar, mu, l, r
         type(expr_t) :: v
-        v = coulomb_potential(g, r) + hbar**2*l*(l + 1)/(2*mu*r**2)
+        v = coulomb_potential(g, r) + centrifugal_potential(hbar, mu, l, r)
+    end function
+
+    !> Centrifugal term hbar^2 l(l+1)/(2 mu r^2) of partial wave l.
+    function centrifugal_potential(hbar, mu, l, r) result(v)
+        type(expr_t), intent(in) :: hbar, mu, l, r
+        type(expr_t) :: v
+        v = hbar**2*l*(l + 1)/(2*mu*r**2)
+    end function
+
+    !> Statically screened (Debye/Yukawa) pair potential g exp(-r/lambda)/r:
+    !> the bare Coulomb potential times the screening factor; lambda -> oo
+    !> recovers coulomb_potential.
+    function yukawa_potential(g, lambda, r) result(u)
+        type(expr_t), intent(in) :: g, lambda, r
+        type(expr_t) :: u
+        u = coulomb_potential(g, r)*exp(-r/lambda)
+    end function
+
+    !> Radial effective potential of partial wave l for the screened pair:
+    !> g exp(-r/lambda)/r + hbar^2 l(l+1)/(2 mu r^2).
+    function screened_partial_wave_potential(g, hbar, mu, l, r, lambda) result(v)
+        type(expr_t), intent(in) :: g, hbar, mu, l, r, lambda
+        type(expr_t) :: v
+        v = yukawa_potential(g, lambda, r) + centrifugal_potential(hbar, mu, l, r)
     end function
 
     function reduced_mass(m1, m2) result(mu)
@@ -209,17 +263,71 @@ contains
         omega = sqrt(4*pi_expr(n%a)*n*g_self/m)
     end function
 
-    !> Screened (Debye/Yukawa) pair potential g exp(-kappa r)/r, kappa=1/lambda.
-    !> Linear response of the responsive species to a fixed source; also the
-    !> Debye-Hueckel pair correlation h(r) = -yukawa_potential(g/T, kappa, r).
-    function yukawa_potential(g, kappa, r) result(u)
-        type(expr_t), intent(in) :: g, kappa, r
-        type(expr_t) :: u
-        u = g*exp(-kappa*r)/r
+    !> Periodic 1D modal Poisson law -eps phi'' = rho, E = -phi', for one
+    !> mode k /= 0 in the real basis rho = rc cos(kx) + rs sin(kx).
+    !> Returns [phi_c, phi_s, E_c, E_s] in the same basis. A complex
+    !> coefficient rho_k of exp(ikx) maps to rc = Re rho_k, rs = -Im rho_k
+    !> (then phi_k = phi_c - i phi_s, E_k = E_c - i E_s).
+    function modal_poisson(eps, k, rc, rs) result(mode)
+        type(expr_t), intent(in) :: eps, k, rc, rs
+        type(expr_t) :: mode(4)
+        mode = [rc/(eps*k**2), rs/(eps*k**2), -rs/(eps*k), rc/(eps*k)]
+    end function
+
+    !> Rotation of the Fourier pair (a, b) of a cos + b sin by the angle with
+    !> cosine c and sine s: [a c - b s, a s + b c].
+    function phase_rotation(a, b, c, s) result(rotated)
+        type(expr_t), intent(in) :: a, b, c, s
+        type(expr_t) :: rotated(2)
+        rotated = [a*c - b*s, a*s + b*c]
+    end function
+
+    !> Exact free streaming f_t + v f_x = 0 of one mode a cos(kx) + b sin(kx)
+    !> over time t: f(x - v t) is the rotation by phase = k v t.
+    function free_streaming_rotation(a, b, phase) result(rotated)
+        type(expr_t), intent(in) :: a, b, phase
+        type(expr_t) :: rotated(2)
+        rotated = phase_rotation(a, b, cos(phase), sin(phase))
+    end function
+
+    !> Stationary Krook node v f_x + nu f = s for one mode with kv = k v:
+    !> [nu, kv; -kv, nu][a; b] = [sc; ss], determinant nu^2 + kv^2 > 0.
+    function krook_node(nu, kv, sc, ss) result(node)
+        type(expr_t), intent(in) :: nu, kv, sc, ss
+        type(expr_t) :: node(2)
+        node = [(nu*sc - kv*ss)/(nu**2 + kv**2), (kv*sc + nu*ss)/(nu**2 + kv**2)]
+    end function
+
+    !> Residual of the krook_node equations at the candidate (a, b).
+    function krook_node_residual(nu, kv, a, b, sc, ss) result(residual)
+        type(expr_t), intent(in) :: nu, kv, a, b, sc, ss
+        type(expr_t) :: residual(2)
+        residual = [nu*a + kv*b - sc, nu*b - kv*a - ss]
+    end function
+
+    !> Affine (P1) cell weight of v on [vl, vr].
+    function p1_weight(v, vl, vr) result(w)
+        type(expr_t), intent(in) :: v, vl, vr
+        type(expr_t) :: w
+        w = (v - vl)/(vr - vl)
+    end function
+
+    !> P1 blend of the endpoint values al, ar at cell weight w.
+    function p1_blend(al, ar, w) result(value)
+        type(expr_t), intent(in) :: al, ar, w
+        type(expr_t) :: value
+        value = al + (ar - al)*w
+    end function
+
+    !> P1 interpolant of nodal values al, ar on [vl, vr] at v.
+    function p1_interpolate(v, vl, vr, al, ar) result(value)
+        type(expr_t), intent(in) :: v, vl, vr, al, ar
+        type(expr_t) :: value
+        value = p1_blend(al, ar, p1_weight(v, vl, vr))
     end function
 
     !> k=0 Fourier coefficient 4 pi g/(V kappa^2) of the periodic image sum
-    !> of yukawa_potential. The neutral periodic screened-Poisson Green
+    !> of yukawa_potential (lambda = 1/kappa). The neutral periodic screened-Poisson Green
     !> function is the image sum minus this constant (k /= 0 modes only).
     function yukawa_zero_mode(g, kappa, volume) result(c)
         type(expr_t), intent(in) :: g, kappa, volume

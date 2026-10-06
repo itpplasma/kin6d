@@ -62,10 +62,10 @@ error status as in AGENTS.md.
 | Q0 | Periodic opposite-spin pair quench | finite-basis certificate | exists, migrate to F |
 | Q1 | Two-electron Coulomb encounter, partial waves in relative coordinate, singlet/triplet/classical, eta scan | Coulomb wave functions, Mott formula, free Gaussian | planned |
 | Q1b | Attractive electron-proton Rydberg packet (oscillation, revivals) | hydrogen spectrum, Kepler period | planned |
-| Q2 | Gaussian/coherent-sum packet models vs Q1 | Q1 reference | planned |
+| Q2 | Gaussian/coherent-sum packet models vs Q1 | Q1 reference | candidate (docs/packet-models.md) |
 | Q3 | Finite-N ideal fermions: exchange hole, canonical sums | ideal-gas identities | planned (EOS exists) |
-| Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | planned |
-| Q5 | Hartree/HF vs Q4 | Q4 | planned |
+| Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | exists (docs/jellium-cell.md) |
+| Q5 | Hartree/HF vs Q4 | Q4 | exists (worker, unpromoted; docs/mean-field-cell.md) |
 | Q7 | Debye/finite-T Fermi/Thomas-Fermi/Lindhard screening; Wigner -> Vlasov as hbar->0 | analytic limits | exists (worker, unpromoted) |
 | Q8 | Relativistic ideal Fermi EOS | classical/NR/UR limits | planned |
 | H1 | Correlation map: pair and three-body cumulant size, quantum-classical difference vs (Gamma, Theta) | C5, Q4 references | planned |
@@ -207,6 +207,95 @@ run from the repository root and must reproduce committed leaves exactly.
   /Users/ert/code/lazy-fortran/fortnum-symmetric-eigen) to FortNum main;
   the Q4 branch pins it. Q4 open: Theta=0.5 N=3/4 thermal rows unconverged
   (indicators only); response only at q=(100).
+- 2026-10-06 (worker, F6 + Q4): F6: `quantum_evolution` and
+  `slab_oscillation` use FortNum `fortnum_ode_residual_certificate`; the
+  generated qe residual/Bernstein/radius-interval and slab residual/radius
+  leaves are gone. Quantum radii unchanged (two-level 1.0976e-7, tangent
+  1.9888e-7, n=125 8.719e-6; ~15 ms/cell, dominated by the kin6d dense
+  interval action). The slab moved to the componentwise first-order
+  reconstruction: O(h^3) instead of O(h^2) residual, demo radius 6.61e-3 ->
+  3.30e-4. Q4: `src/jellium_cell.f90` on new engine pieces (sector bases,
+  sparse coupled action with fail-closed leakage, factorized 1/2/3-RDMs,
+  `add_fock_one_body`) and new FortNum `fortnum_symmetric_eigen` (dense
+  eigen + block Lanczos; branch `symmetric-lanczos-eigen` 80b7340, NOT
+  pushed: the pin KIN6D_FORTNUM_REVISION=80b7340 needs the controller to push
+  it, local builds use -DFETCHCONTENT_SOURCE_DIR_FORTNUM). `cutoff=2`
+  (M=38) default: N=2 E0(rs=2)=-1.668e-2 Ha (cutoff 1/2/3: -1.426/-1.668/
+  -1.709e-2); N=4 sector dims up to 73815 states. chi/chi0_Lindhard at
+  q=(100): N=2 0.97 (rs 0.5) -> 0.69 (rs 8); RPA overscreens (0.49 at rs 8).
+  H1: |lambda3|/|Gamma3| N=3 ground multiplet 0.060 (rs 0.5) -> 0.236
+  (rs 8); N=4 0.29 -> 0.41 (multiplet mixture dominated). dE/dg HF vs FD
+  7e-10 rel, dg_opp/dg 3e-10 rel, VJP=JVP. Kick band 2e-6 at t=8 (800 RK
+  steps, certificate 0.16 s). Theta=0.5 ensembles for N=3,4 are NOT
+  converged with nev=8 per sector (truncation estimate 0.05-0.2 / 2-4);
+  treat those rows as indicators. 27/27 CTest Release and Debug.
+- 2026-10-06 (worker, Q5): `src/mean_field_cell.f90` + `gen_mean_field_cell`
+  (docs/mean-field-cell.md): Hartree, RHF, UHF (DIIS + trust-region
+  second-order SCF, instability following, multi-start, aufbau-repair
+  attempt), restricted Mermin HF and static TDHF/TDH response in the Q4
+  basis; Slater states expanded in the engine basis for the full-parent
+  residual ||(H - E_HF) Phi|| and a Temple bound (interval-evaluated,
+  Lanczos gap input = candidate). New test `mean_field_cell_oracles`
+  (functional = <Phi|H|Phi>, brute-force two-mode UHF incl. SDW minimum,
+  Koopmans, g->0 Lindhard, TDH = RPA to 1e-12, variational/Temple, HF dE/dg
+  vs FD, saddle following, Slater cumulants, Mermin limits/dF/dT = -S).
+  `jellium_cumulants` now supports N = 2. cutoff 2: E_c/N(UHF) N=2 -9.3 ->
+  -5.9 mHa (r_s 0.5 -> 8; E_HF(N=2) = 0), N=4 -29.8 -> -7.9 mHa; N=2 Temple
+  bound/true error 1.25 -> 2.2; N=3, 4 UHF minima break translation symmetry
+  (plane-wave determinant is a saddle) and are non-aufbau, so Temple does
+  not apply there. chi/chi0 at r_s 8, N=2: exact 0.69, TDHF 0.66, RPA 0.49.
+  Mermin vs exact canonical thermal energy is dominated by the
+  grand-canonical orbital ensemble (factor 2.7, N=2, r_s 0.5).
+- 2026-10-06 (controller): merged Q4 (FortNum 80b7340 eigen/Lanczos pushed),
+  cleanup (one modal Poisson / streaming / Krook / P1 definition; fermi_gas
+  graded Fermi-surface mesh, candidate k_s now 3e-10 vs Sommerfeld, cold
+  certificate to theta 1e-4; encounter demo uses result_io) and Q5 (Hartree,
+  RHF/UHF, Mermin, static TDHF vs exact cell; HF symmetry breaking for open
+  shells at r_s 0.5). 31/31 CTest, deterministic regeneration. Figure-pass
+  items: fortplot log-axis tick labels on sub-decade ranges ("2x10^0");
+  Q5 N=4 response panel clipping/legend and symmetry-broken TDHF note;
+  Q1 movie redesign; Mott fine bins; Wigner run into saturation.
+
+- 2026-10-06 (worker, QG6): `src/quantum_collision_kernel.f90` (pure
+  Coulomb Rutherford/Mott, ring sums with complex digamma, Yukawa phase
+  shifts on the shared radial DVR at fixed energy with implicit d/d eta,
+  classical Yukawa orbit integral, first Born) and `src/hybrid_encounter.f90`
+  (test electrons in a Maxwellian background, nbody KDK encounters with exact
+  Kepler lift/project, promotion for eta < 1 and b < b_s to the l-local ring
+  kernel chi_l = 2 atan(eta/(l+1)); docs/hybrid-encounter.md). New symbolic
+  `yukawa_potential`/`screened_partial_wave_potential`, generator
+  `gen/gen_quantum_collision.f90` (existing leaves regenerate unchanged).
+  Findings: quantum minus classical lnL equals ln eta - Re psi(1+i eta) for
+  both cut and Yukawa screening (Yukawa offset ln2 - 1/2 - gamma for both);
+  ring kernel exact for momentum transfer, second-moment defect 10.6% at
+  eta << 1; unpolarized exchange -ln2/2 at eta << 1 (kernel only). Rates
+  T = 1e-3..100 E_h: classical/hybrid Monte Carlo within 2.1 s.e. of their
+  kernels (velocity importance sampling: plain Maxwellian draws have infinite
+  variance), classical model error up to 15%, hybrid interface defect
+  <= 3.5e-3, hybrid 1.5x cheaper at matched 1% statistics for eta_u < 0.3.
+  Naive velocity rotation at the detection sphere double counts (+11%).
+  33/33 CTest Release and Debug after merging hierarchy-campaign. Open: exchange
+  not in the hybrid Monte Carlo;
+  digamma/Riccati-Bessel belong in FortNum; FortNum legendre_q upward
+  recurrence loses accuracy for large l near x = 1 (5e-4 at l = 400).
+- 2026-10-06 (worker, Q2): `src/packet_models.f90`, `src/gaussian_pair.f90`,
+  leaves from `gen/gen_packet_models.f90` (Gaussian-averaged Coulomb added to
+  `kin6d_symbolic_physics`), `encounter_project` (generic Q1 projection),
+  docs/packet-models.md, `packet_models_demo` (result_io). Models M2 (WPMD
+  product), M2S/M2T (two-determinant), M3 (relative TDVP Gaussian), M3S/M3T,
+  M4 K = 2/4/8 (vMCG, guided zero-population enrichment, Tikhonov status and
+  RHS refusal); M1 reuses the Q1 Wigner ensemble. Full-H Duhamel estimator
+  through projection onto the Q1 basis: bound held at every sample;
+  efficiency 2-4 (eta <= 1), 4-5 (eta = 3), 14-18 (eta = 10, vacuous > 2).
+  State errors at eta = 0.3/1/3/10 (b = 0): M3 0.28/0.76/1.51/1.49,
+  M4 K = 8 0.24/0.59/1.29/1.40; bin TV M4 K = 8 0.12/0.22/0.78/1.13 vs
+  classical M1 0.27/0.19/0.076/0.020. Exchange in WPMD dynamics has no
+  measurable effect (no parity-image overlap); no Gaussian model is usable
+  at eta >= 3 for r0/sigma = 0.5. Oracles: binary128 Boys, 3D quadrature of
+  pair elements, free spreading, harmonic exactness (incl. parity-tied
+  pair), canonical vs metric engine, conservation, bound validity, M3 bin
+  JVP vs FD 5.6e-8. Open: non-monotone K enrichment with fixed guides
+  (regularization), goal-oriented estimator, FortSym complex codegen.
 - 2026-10-06 (worker, C3/C4, branch worktree-agent-a6bde7f3f0e416042):
   periodic electron OCP, bare Coulomb, no softening. New `src/pme.f90`
   (cell-list real space + B-spline PME, energy-optimal influence function,

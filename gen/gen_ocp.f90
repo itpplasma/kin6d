@@ -68,7 +68,7 @@ program gen_ocp
     ! a neutral cube: G(r) = sum_n yukawa(r + n L) - 4 pi g/(V kappa^2).
     call w%emit('debye_image', ['dx   ', 'dy   ', 'dz   ', 'g    ', 'kappa'], &
                 ['potential'], &
-                [yukawa_potential(g, kappa, sqrt(x(1)**2 + x(2)**2 + x(3)**2))], &
+                [yukawa_potential(g, 1/kappa, sqrt(x(1)**2 + x(2)**2 + x(3)**2))], &
                 ad=.true.)
     call w%emit('debye_zero_mode', ['g     ', 'kappa ', 'volume'], ['constant'], &
                 [yukawa_zero_mode(g, kappa, volume)], ad=.true.)

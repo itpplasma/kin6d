@@ -3,11 +3,13 @@ module kin6d_quantum_evolution
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint, interval, mag, intersect, entire
     use fortnum_ode_cash_karp, only: cash_karp_step
+    use fortnum_rounding, only: add_up, mul_up
+    use fortnum_ode_residual_certificate, only: hermite_cubic_enclosure, &
+        linear_residual_bound, residual_radius_step
     use kin6d_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_interval, &
         qe_rhs_term_vjp, qe_add, qe_add_interval, qe_scale, qe_hermite, &
-        qe_hermite_interval, qe_evaluate, qe_evaluate_interval, &
-        qe_residual_interval, qe_bernstein_interval, qe_square_add_interval, &
-        qe_norm_interval, qe_radius, qe_radius_interval, qe_band_interval, &
+        qe_evaluate, qe_evaluate_interval, qe_square_add_interval, &
+        qe_norm_interval, qe_radius, qe_band_interval, &
         qe_fraction, qe_fraction_interval, qe_complement
     implicit none
     private
@@ -21,14 +23,14 @@ module kin6d_quantum_evolution
 
     type :: quantum_evolution_t
         private
-        integer :: n = 0, steps = 0, active_cell = 0, mode = 0
+        integer :: n = 0, steps = 0, active_cell = 0, mode = 0, action_mode = 0
         real(dp) :: h = 0.0_dp, hbar = 0.0_dp, budget = 0.0_dp
         real(dp), allocatable :: hr(:, :), hi(:, :), y(:, :), f(:, :)
         real(dp), allocatable :: c(:, :, :), rk(:, :), dhr(:, :), dhi(:, :)
         real(dp), allocatable :: dy(:, :), df(:, :), dc(:, :, :)
         type(interval_t), allocatable :: ci(:, :, :), dci(:, :, :)
-        type(interval_t), allocatable :: residual(:, :), action(:, :)
-        type(interval_t), allocatable :: radius(:), dradius(:)
+        type(interval_t), allocatable :: action(:, :), forcing(:, :)
+        real(dp), allocatable :: radius(:), dradius(:)
         type(interval_t) :: initial_norm, delta_norm
         logical :: initialized = .false., ready = .false., bounded = .false.
         logical :: tangent_ready = .false., tangent_bounded = .false.
@@ -67,7 +69,7 @@ contains
         allocate (state%hr(n, n), state%hi(n, n), state%y(2*n, 0:steps), &
                   state%f(2*n, 0:steps), state%c(2*n, 0:3, steps), &
                   state%ci(2*n, 0:3, steps), state%rk(2*n, 9), &
-                  state%residual(2*n, 0:3), state%action(2*n, 0:3), &
+                  state%action(2*n, 0:3), &
                   state%radius(0:steps), stat=status)
         if (status /= 0) return
         state%n = n; state%steps = steps
@@ -170,56 +172,71 @@ contains
                                 state%df(j, cell - 1), state%df(j, cell), state%h, &
                                 state%dc(j, 0, cell), state%dc(j, 1, cell), &
                                 state%dc(j, 2, cell), state%dc(j, 3, cell))
-                if (strict) call qe_hermite_interval( &
-                    ipoint(state%dy(j, cell - 1)), ipoint(state%dy(j, cell)), &
-                    ipoint(state%df(j, cell - 1)), ipoint(state%df(j, cell)), &
-                    ipoint(state%h), state%dci(j, 0, cell), state%dci(j, 1, cell), &
-                    state%dci(j, 2, cell), state%dci(j, 3, cell))
             else
                 call qe_hermite(state%y(j, cell - 1), state%y(j, cell), &
                                 state%f(j, cell - 1), state%f(j, cell), state%h, &
                                 state%c(j, 0, cell), state%c(j, 1, cell), &
                                 state%c(j, 2, cell), state%c(j, 3, cell))
-                if (strict) call qe_hermite_interval( &
-                    ipoint(state%y(j, cell - 1)), ipoint(state%y(j, cell)), &
-                    ipoint(state%f(j, cell - 1)), ipoint(state%f(j, cell)), &
-                    ipoint(state%h), state%ci(j, 0, cell), state%ci(j, 1, cell), &
-                    state%ci(j, 2, cell), state%ci(j, 3, cell))
             end if
         end do
+        if (.not. strict) return
+        if (tangent) then
+            call hermite_cubic_enclosure(state%dy(:, cell - 1), state%dy(:, cell), &
+                                         state%df(:, cell - 1), state%df(:, cell), &
+                                         ipoint(state%h), state%dci(:, :, cell))
+        else
+            call hermite_cubic_enclosure(state%y(:, cell - 1), state%y(:, cell), &
+                                         state%f(:, cell - 1), state%f(:, cell), &
+                                         ipoint(state%h), state%ci(:, :, cell))
+        end if
     end subroutine
 
+    ! FortNum's Hermite/Bernstein residual and radius accumulation on the
+    ! kin6d interval action -i H x/hbar. The generator is skew-adjoint in the
+    ! packed real/imag Hilbert pairing, so the logarithmic norm is zero. The
+    ! tangent residual adds the forcing -i dH y_h/hbar and the discrepancy
+    ! ||dH||_F/hbar * radius(cell) of the primal reconstruction.
     subroutine certify_trajectory(state, tangent)
         type(quantum_evolution_t), intent(inout) :: state
         logical, intent(in) :: tangent
-        type(interval_t) :: residual_bound, next, delta, primal
-        integer :: cell
+        real(dp) :: bound, next
+        integer :: cell, k
         logical :: ok
 
-        delta = ipoint(0.0_dp)
-        if (tangent) delta = state%delta_norm
         if (tangent) then
-            state%dradius(0) = ipoint(0.0_dp)
+            state%dradius(0) = 0.0_dp
             state%tangent_bounded = .false.
         else
-            state%radius(0) = ipoint(0.0_dp)
+            state%radius(0) = 0.0_dp
             state%bounded = .false.
         end if
         do cell = 1, state%steps
-            call cell_residual(state, cell, tangent, residual_bound, ok)
-            if (.not. ok) return
-            primal = ipoint(0.0_dp)
             if (tangent) then
-                primal = state%radius(cell)
-                call qe_radius_interval(state%dradius(cell - 1), ipoint(state%h), &
-                                        residual_bound, delta, primal, next)
+                state%action_mode = 1
+                do k = 0, 3
+                    call qe_action(state%ci(:, k, cell), state%forcing(:, k), ok, state)
+                    if (.not. ok) return
+                end do
+                state%action_mode = 0
+                call linear_residual_bound(qe_action, state%dci(:, :, cell), &
+                                           ipoint(state%h), state%action, bound, ok, &
+                                           state, state%forcing)
+                if (.not. ok) return
+                bound = add_up(bound, mul_up(state%delta_norm%hi, state%radius(cell)))
+                call residual_radius_step(ipoint(0.0_dp), state%dradius(cell - 1), &
+                                          ipoint(state%h), bound, next, ok)
+                if (.not. ok) return
                 state%dradius(cell) = next
             else
-                call qe_radius_interval(state%radius(cell - 1), ipoint(state%h), &
-                                        residual_bound, delta, primal, next)
+                state%action_mode = 0
+                call linear_residual_bound(qe_action, state%ci(:, :, cell), &
+                                           ipoint(state%h), state%action, bound, ok, state)
+                if (.not. ok) return
+                call residual_radius_step(ipoint(0.0_dp), state%radius(cell - 1), &
+                                          ipoint(state%h), bound, next, ok)
+                if (.not. ok) return
                 state%radius(cell) = next
             end if
-            if (.not. finite_interval(next)) return
         end do
         if (tangent) then
             state%tangent_bounded = .true.
@@ -228,68 +245,40 @@ contains
         end if
     end subroutine
 
-    subroutine cell_residual(state, cell, tangent, bound, ok)
-        type(quantum_evolution_t), intent(inout) :: state
-        integer, intent(in) :: cell
-        logical, intent(in) :: tangent
-        type(interval_t), intent(out) :: bound
+    ! Interval action x -> -i H x/hbar (action_mode 0) or -i dH x/hbar
+    ! (action_mode 1) over the packed real/imag split.
+    subroutine qe_action(x, ax, ok, ctx)
+        type(interval_t), intent(in) :: x(:)
+        type(interval_t), intent(out) :: ax(:)
         logical, intent(out) :: ok
-        type(interval_t) :: a, b, da, db, next, coeff(0:3), r(0:3), controls(0:3)
-        type(interval_t) :: sumsq, norm
-        integer :: i, j, k, n
+        class(*), intent(in), optional :: ctx
+        type(interval_t) :: a, b, next
+        integer :: i, j, n
 
-        ok = .false.; bound = ipoint(0.0_dp)
-        n = state%n; state%action = ipoint(0.0_dp)
-        do k = 0, 3
-            do i = 1, n
-                do j = 1, n
-                    if (tangent) then
-                        call qe_rhs_term_interval(ipoint(state%hr(i, j)), &
-                                        ipoint(state%hi(i, j)), state%dci(j, k, cell), &
-                                    state%dci(n + j, k, cell), ipoint(state%hbar), a, b)
-                        call qe_rhs_term_interval(ipoint(state%dhr(i, j)), &
-                                        ipoint(state%dhi(i, j)), state%ci(j, k, cell), &
-                                   state%ci(n + j, k, cell), ipoint(state%hbar), da, db)
-                        call qe_add_interval(a, da, next); a = next
-                        call qe_add_interval(b, db, next); b = next
+        ok = .false.
+        ax = ipoint(0.0_dp)
+        if (.not. present(ctx)) return
+        select type (ctx)
+        type is (quantum_evolution_t)
+            n = ctx%n
+            if (size(x) /= 2*n .or. size(ax) /= 2*n) return
+            do j = 1, n
+                do i = 1, n
+                    if (ctx%action_mode == 1) then
+                        call qe_rhs_term_interval(ipoint(ctx%dhr(i, j)), &
+                                                  ipoint(ctx%dhi(i, j)), x(j), x(n + j), &
+                                                  ipoint(ctx%hbar), a, b)
                     else
-                        call qe_rhs_term_interval(ipoint(state%hr(i, j)), &
-                                         ipoint(state%hi(i, j)), state%ci(j, k, cell), &
-                                     state%ci(n + j, k, cell), ipoint(state%hbar), a, b)
+                        call qe_rhs_term_interval(ipoint(ctx%hr(i, j)), &
+                                                  ipoint(ctx%hi(i, j)), x(j), x(n + j), &
+                                                  ipoint(ctx%hbar), a, b)
                     end if
-                    call qe_add_interval(state%action(i, k), a, next)
-                    state%action(i, k) = next
-                    call qe_add_interval(state%action(n + i, k), b, next)
-                    state%action(n + i, k) = next
+                    call qe_add_interval(ax(i), a, next); ax(i) = next
+                    call qe_add_interval(ax(n + i), b, next); ax(n + i) = next
                 end do
             end do
-        end do
-        do i = 1, 2*n
-            if (tangent) then
-                coeff = state%dci(i, :, cell)
-            else
-                coeff = state%ci(i, :, cell)
-            end if
-            call qe_residual_interval(coeff(1), coeff(2), coeff(3), &
-                              ipoint(state%h), state%action(i, 0), state%action(i, 1), &
-                         state%action(i, 2), state%action(i, 3), r(0), r(1), r(2), r(3))
-            call qe_bernstein_interval(r(0), r(1), r(2), r(3), &
-                                     controls(0), controls(1), controls(2), controls(3))
-            if (.not. all_finite_intervals(controls)) return
-            state%residual(i, :) = controls
-        end do
-        do k = 0, 3
-            sumsq = ipoint(0.0_dp)
-            do i = 1, 2*n
-                call qe_square_add_interval(sumsq, &
-                                            ipoint(mag(state%residual(i, k))), next)
-                sumsq = next
-            end do
-            call squared_norm(sumsq, norm)
-            if (.not. finite_interval(norm)) return
-            bound = ipoint(max(bound%hi, norm%hi))
-        end do
-        ok = .true.
+            ok = all_finite_intervals(ax)
+        end select
     end subroutine
 
     subroutine sample_quantum_evolution(state, cell, fraction, re, im, radius, &
@@ -343,9 +332,9 @@ contains
         end do
         call squared_norm(sumsq, norm)
         if (tangent) then
-            call qe_add_interval(state%dradius(cell), norm, total)
+            call qe_add_interval(ipoint(state%dradius(cell)), norm, total)
         else
-            call qe_add_interval(state%radius(cell), norm, total)
+            call qe_add_interval(ipoint(state%radius(cell)), norm, total)
         end if
         if (.not. finite_interval(total)) return
         radius = total%hi; ok = .true.
@@ -383,7 +372,7 @@ contains
         ok = .false.; bounded = .false.; radius = huge(0.0_dp)
         if (.not. sample_guard(state, cell, fraction, size(re), size(im))) return
         if (.not. state%bounded) return
-        n = state%n; radius = state%radius(cell)%hi
+        n = state%n; radius = state%radius(cell)
         do j = 1, n
             call reconstructed_point(state, j, cell, fraction, .false., value)
             call qe_band_interval(value, ipoint(radius), lower, upper)
@@ -410,14 +399,14 @@ contains
         real(dp), intent(out) :: radius
         logical, intent(out) :: ok
         radius = huge(0.0_dp); ok = state%bounded
-        if (ok) radius = state%radius(state%steps)%hi
+        if (ok) radius = state%radius(state%steps)
     end subroutine
 
     logical function quantum_evolution_accepted(state)
         type(quantum_evolution_t), intent(in) :: state
         quantum_evolution_accepted = .false.
         if (.not. state%bounded) return
-        quantum_evolution_accepted = state%radius(state%steps)%hi <= state%budget
+        quantum_evolution_accepted = state%radius(state%steps) <= state%budget
     end function
 
     subroutine solve_quantum_evolution_tangent(state, dhre, dhim, dpsi_re, &
@@ -452,7 +441,7 @@ contains
             allocate (state%dhr(n, n), state%dhi(n, n), &
                       state%dy(2*n, 0:state%steps), state%df(2*n, 0:state%steps), &
                 state%dc(2*n, 0:3, state%steps), state%dci(2*n, 0:3, state%steps), &
-                state%dradius(0:state%steps), stat=status)
+                state%dradius(0:state%steps), state%forcing(2*n, 0:3), stat=status)
             if (status /= 0) then
                 if (allocated(state%dhr)) deallocate (state%dhr)
                 if (allocated(state%dhi)) deallocate (state%dhi)
@@ -461,6 +450,7 @@ contains
                 if (allocated(state%dc)) deallocate (state%dc)
                 if (allocated(state%dci)) deallocate (state%dci)
                 if (allocated(state%dradius)) deallocate (state%dradius)
+                if (allocated(state%forcing)) deallocate (state%forcing)
                 return
             end if
         end if

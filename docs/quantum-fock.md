@@ -139,6 +139,29 @@ and `fock_density_rhs` computes -i[H,rho]/hbar without discarding any entries.
 These candidate actions do not assert positivity or N-representability of
 arbitrary supplied density data. Density normalization belongs to the caller.
 
+## Sector bases, coupled actions and factorized RDMs
+
+`init_fock_sector_basis` accepts a caller-supplied strictly increasing list
+of N-particle masks (a symmetry sector or a union of sectors). Model
+preparation also indexes the nonzero one-body and pair coefficients (its
+payload is counted in the byte budget). `fock_matvec_between(_interval)`
+applies H from one basis to another using only those coefficients and
+fails closed if a nonzero term leaves the target basis; `fock_matvec` and
+`fock_matvec_interval` are its square special case, with sums identical to
+the previous full scan except skipped exact-zero terms. The legacy full-scan
+schedules (assembly, blocks, JVP/VJP, density commutator) reject sector
+bases because they would silently drop out-of-basis targets.
+`add_fock_one_body` adds exact binary64 one-body data (e.g. an external
+potential) to the candidate and, outward, to the interval packets.
+
+`fock_rdms` now uses residual factorization: amplitudes
+`<r|a_j a_i|psi>` are grouped by the (N-2)-particle residual r and
+`Gamma(p,q) = sum_r conj(A_q(r)) A_p(r)`, at cost `sum_r s_r^2` instead of a
+scan of every pair word. `fock_transition_rdms` returns the same quantities
+for a bra/ket pair, and `fock_rdm3_entries` returns the 3-RDM as reduced
+sparse coordinates. The first consumer is the interacting jellium cell
+(docs/jellium-cell.md).
+
 ## Observable and derivative status
 
 `fock_rdms_interval` encloses strict arithmetic at the exact binary64 candidate
