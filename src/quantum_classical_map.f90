@@ -8,7 +8,8 @@
 !> - jellium_diagonal_moments: the diagonal pair/triplet Fourier moments
 !>   f2(Q) = <sum_{i/=j} exp(iQ.(x_i-x_j))>/(N(N-1)) and
 !>   f3(Q1,Q2) = <sum_{i,j,k distinct} exp(i(Q1.x_i+Q2.x_j+Q3.x_k))>/(N(N-1)(N-2)),
-!>   Q3 = -Q1-Q2, from the ensemble 2-RDM and the per-state 3-RDM entries. At
+!>   Q3 = -Q1-Q2, and the shell-averaged spin-channel pair functions, from the
+!>   per-state sparse 2-/3-RDM entries. At
 !>   nonzero Q these are the Fourier coefficients of the Ursell (connected)
 !>   diagonal cumulants of a homogeneous state: the common classical/quantum
 !>   measure (kin6d_classical_cell computes the same moments).
@@ -21,15 +22,17 @@ module kin6d_quantum_classical_map
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_quadrature, only: gauss_legendre_ab
     use kin6d_jellium_cell, only: jellium_cell_t, jellium_sector_t, &
-        jellium_spectrum_t, jellium_sector, jellium_sector_momenta, &
-        jellium_thermal_rdms
-    use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_matvec, fock_rdm3_entries
+        jellium_spectrum_t, jellium_sector, jellium_sector_momenta
+    use kin6d_quantum_fock, only: fock_hamiltonian_t, fock_matvec, fock_rdm3_entries, &
+        fock_rdm2_entries
+    use kin6d_jellium_cell_leaves, only: jc_shell_moment, jc_shell_moment_series, &
+        jc_shell_average
     use kin6d_fermion_ensemble, only: fermion_spectrum_t, canonical_state_t, &
         box_spectrum, box_cutoff, box_parameters, solve_canonical, same_spin_pair
     implicit none
     private
     public :: jellium_full_spectrum, jellium_diagonal_moments, ideal_cell_pair
-    public :: shell_rms, pair_channels_classical
+    public :: shell_rms, pair_channels_classical, ideal_missing_fraction
     real(dp), parameter :: pi = acos(-1.0_dp)
 
     interface
@@ -144,34 +147,41 @@ contains
         end if
     end subroutine
 
-    !> Diagonal Fourier moments f2 on q(:, k) and f3 on triple(:, k) (indices
-    !> into q, triple(3, k) the index of -(Q1+Q2)) from the ensemble 2-RDM
-    !> gamma2 (pair storage of kin6d_quantum_fock) and the 3-RDM entries of
-    !> every state with weight above threshold*max(weight).
-    subroutine jellium_diagonal_moments(cell, spectrum, weights, gamma2, q, triple, &
-                                        f2, f3, ok, threshold)
+    !> Diagonal pair and triplet observables of the weighted ensemble from the
+    !> per-state sparse 2-/3-RDM entries (no dense p x p matrix):
+    !> T2_c(Q) = <sum_{i/=j, channel c} exp(iQ.(x_i-x_j))> for c = same/opposite
+    !> spin and T3(Q1,Q2) = <sum_{i,j,k distinct} ...>. Outputs: shell-averaged
+    !> g_same/g_opp (Q4 normalization 2 (N/2)^2, identical to
+    !> jellium_pair_bins), f2 on q(:, k), f3 on triple(:, k) (indices into q;
+    !> triple(3, k) is -(Q1+Q2)). States with weight <= threshold*max are
+    !> skipped; `omitted` returns their total weight.
+    subroutine jellium_diagonal_moments(cell, spectrum, weights, edges, q, triple, &
+                                        g_same, g_opp, f2, f3, ok, threshold, omitted)
         type(jellium_cell_t), intent(in) :: cell
         type(jellium_spectrum_t), intent(in) :: spectrum
-        real(dp), intent(in) :: weights(:), gamma2(:, :)
+        real(dp), intent(in) :: weights(:), edges(:)
         integer, intent(in) :: q(:, :), triple(:, :)
-        real(dp), intent(out) :: f2(:), f3(:)
+        real(dp), intent(out) :: g_same(:), g_opp(:), f2(:), f3(:)
         logical, intent(out) :: ok
         real(dp), intent(in), optional :: threshold
+        real(dp), intent(out), optional :: omitted
         integer, parameter :: perm(3, 6) = reshape([1, 2, 3, 2, 3, 1, 3, 1, 2, &
                                                     2, 1, 3, 1, 3, 2, 3, 2, 1], [3, 6])
         real(dp), parameter :: psign(6) = [1, 1, 1, -1, -1, -1]
-        real(dp), allocatable :: t2(:, :, :), t3(:, :, :, :, :, :), zero(:), vr(:), vi(:)
+        real(dp), allocatable :: t2(:, :, :, :), t3(:, :, :, :, :, :), zero(:), vr(:), &
+            vi(:)
         integer(i64), allocatable :: tk(:), uk(:)
         integer, allocatable :: pi_(:), pj_(:)
-        integer :: rr, np, a, b, i, j, s, d, count, e, ps, ss, t(3), u(3), w(3, 3), m
+        integer :: rr, i, j, s, d, count, e, ps, ss, t(3), u(3), w(3, 3), m, b, a, &
+            c1, c2, c3
         integer(i64) :: o, m64
-        real(dp) :: cut, val
-        logical :: spin_ok
+        real(dp) :: cut, val, skipped, qn, fa, fb, kern, wq, half
+        logical :: spin_ok, three
 
         ok = .false.
         rr = 2*maxval(abs(cell%modes))
-        m = cell%m; np = m*(m - 1)/2
-        allocate (t2(-rr:rr, -rr:rr, -rr:rr), pi_(np), pj_(np))
+        m = cell%m; m64 = int(m, i64)
+        allocate (t2(-rr:rr, -rr:rr, -rr:rr, 2), pi_(m*(m - 1)/2), pj_(m*(m - 1)/2))
         t2 = 0
         a = 0
         do i = 1, m - 1
@@ -179,35 +189,34 @@ contains
                 a = a + 1; pi_(a) = i; pj_(a) = j
             end do
         end do
-        ! F2(Q) = sum <a+_a a+_b a_d a_c>, Q = k_a - k_c, spins s_a=s_c, s_b=s_d.
-        do b = 1, np
-            do a = 1, np
-                val = gamma2(b, a)
-                if (.not. abs(val) > 0) cycle
-                call add2(pi_(a), pj_(a), pi_(b), pj_(b), val)
-                call add2(pj_(a), pi_(a), pi_(b), pj_(b), -val)
-                call add2(pi_(a), pj_(a), pj_(b), pi_(b), -val)
-                call add2(pj_(a), pi_(a), pj_(b), pi_(b), val)
-            end do
-        end do
-        do a = 1, size(q, 2)
-            f2(a) = t2(q(1, a), q(2, a), q(3, a))/(cell%n*(cell%n - 1.0_dp))
-        end do
-        f3 = 0
-        if (cell%n < 3) then
-            ok = .true.; return
-        end if
+        three = cell%n >= 3
         allocate (t3(-rr:rr, -rr:rr, -rr:rr, -rr:rr, -rr:rr, -rr:rr))
         t3 = 0
         cut = 1.0e-12_dp
         if (present(threshold)) cut = threshold
         cut = cut*maxval(weights(1:spectrum%count))
-        m64 = int(m, i64)
+        skipped = 0
         do e = 1, spectrum%count
-            if (weights(e) <= cut) cycle
+            if (weights(e) <= cut) then
+                skipped = skipped + weights(e); cycle
+            end if
             s = spectrum%sector_of(e); d = spectrum%sectors(s)%d; o = spectrum%offset(e)
             if (allocated(zero)) deallocate (zero)
             allocate (zero(d)); zero = 0
+            ! Gamma_(s),(u) = <a+_u1 a+_u2 a_s2 a_s1>: F2 pairs (creator,
+            ! annihilator) = (u1,s1),(u2,s2) with signs of both orderings.
+            call fock_rdm2_entries(spectrum%sectors(s)%basis, &
+                spectrum%flat(o + 1:o + d), zero, tk, uk, vr, vi, count, ok)
+            if (.not. ok) return
+            do i = 1, count
+                c1 = int(tk(i)); c2 = int(uk(i))
+                val = weights(e)*vr(i)
+                call add2(pi_(c2), pj_(c2), pi_(c1), pj_(c1), val)
+                call add2(pj_(c2), pi_(c2), pi_(c1), pj_(c1), -val)
+                call add2(pi_(c2), pj_(c2), pj_(c1), pi_(c1), -val)
+                call add2(pj_(c2), pi_(c2), pj_(c1), pi_(c1), val)
+            end do
+            if (.not. three) cycle
             call fock_rdm3_entries(spectrum%sectors(s)%basis, &
                 spectrum%flat(o + 1:o + d), zero, tk, uk, vr, vi, count, ok)
             if (.not. ok) return
@@ -217,10 +226,9 @@ contains
                     do ss = 1, 6
                         spin_ok = .true.
                         do j = 1, 3
-                            if (cell%spin(u(perm(j, ps))) /= cell%spin(t(perm(j, ss)))) &
-                                spin_ok = .false.
-                            w(:, j) = cell%momentum(:, u(perm(j, ps))) - &
-                                      cell%momentum(:, t(perm(j, ss)))
+                            c3 = u(perm(j, ps)); c1 = t(perm(j, ss))
+                            if (cell%spin(c3) /= cell%spin(c1)) spin_ok = .false.
+                            w(:, j) = cell%momentum(:, c3) - cell%momentum(:, c1)
                         end do
                         if (.not. spin_ok) cycle
                         t3(w(1, 1), w(2, 1), w(3, 1), w(1, 2), w(2, 2), w(3, 2)) = &
@@ -230,20 +238,50 @@ contains
                 end do
             end do
         end do
-        do a = 1, size(triple, 2)
-            i = triple(1, a); j = triple(2, a)
-            f3(a) = t3(q(1, i), q(2, i), q(3, i), q(1, j), q(2, j), q(3, j))/ &
-                    (cell%n*(cell%n - 1.0_dp)*(cell%n - 2.0_dp))
+        if (present(omitted)) omitted = skipped
+        do a = 1, size(q, 2)
+            f2(a) = sum(t2(q(1, a), q(2, a), q(3, a), :))/(cell%n*(cell%n - 1.0_dp))
         end do
-        ok = all(ieee_is_finite(f2)) .and. all(ieee_is_finite(f3))
+        ! Shell averages: g_c(b) = sum_Q T2_c(Q) w_b(|Q|) / (2 (N/2)^2).
+        half = cell%n**2/2.0_dp
+        g_same = 0; g_opp = 0
+        do c3 = -rr, rr
+            do c2 = -rr, rr
+                do c1 = -rr, rr
+                    qn = 2*pi*sqrt(real(c1*c1 + c2*c2 + c3*c3, dp))/cell%length
+                    do b = 1, size(edges) - 1
+                        if (qn > 0) then
+                            call moment(qn*edges(b), fa); call moment(qn*edges(b + 1), fb)
+                            call jc_shell_average(fa, fb, qn, edges(b), edges(b + 1), kern)
+                            wq = kern
+                        else
+                            wq = 1
+                        end if
+                        g_same(b) = g_same(b) + t2(c1, c2, c3, 1)*wq/half
+                        g_opp(b) = g_opp(b) + t2(c1, c2, c3, 2)*wq/half
+                    end do
+                end do
+            end do
+        end do
+        f3 = 0
+        if (three) then
+            do a = 1, size(triple, 2)
+                i = triple(1, a); j = triple(2, a)
+                f3(a) = t3(q(1, i), q(2, i), q(3, i), q(1, j), q(2, j), q(3, j))/ &
+                        (cell%n*(cell%n - 1.0_dp)*(cell%n - 2.0_dp))
+            end do
+        end if
+        ok = all(ieee_is_finite(f2)) .and. all(ieee_is_finite(f3)) .and. &
+             all(ieee_is_finite(g_same))
     contains
         subroutine add2(ca, cb, an, bn, v)
             integer, intent(in) :: ca, cb, an, bn
             real(dp), intent(in) :: v
-            integer :: qq(3)
+            integer :: qq(3), ch
             if (cell%spin(ca) /= cell%spin(an) .or. cell%spin(cb) /= cell%spin(bn)) return
+            ch = merge(1, 2, cell%spin(ca) == cell%spin(cb))
             qq = cell%momentum(:, ca) - cell%momentum(:, an)
-            t2(qq(1), qq(2), qq(3)) = t2(qq(1), qq(2), qq(3)) + v
+            t2(qq(1), qq(2), qq(3), ch) = t2(qq(1), qq(2), qq(3), ch) + v
         end subroutine
         function decode(key) result(idx)
             integer(i64), intent(in) :: key
@@ -252,6 +290,15 @@ contains
             idx(2) = int(mod(key/m64, m64)) + 1
             idx(1) = int(key/(m64*m64)) + 1
         end function
+        subroutine moment(x, f)
+            real(dp), intent(in) :: x
+            real(dp), intent(out) :: f
+            if (x < 0.1_dp) then
+                call jc_shell_moment_series(x, f)
+            else
+                call jc_shell_moment(x, f)
+            end if
+        end subroutine
     end subroutine
 
     !> Ideal fermions (no interaction) in the periodic box of N electrons at
@@ -306,6 +353,43 @@ contains
         g_sum = g_sum/wsum; g_same = g_same/wsum; g_opp = g_opp/wsum
         ok = all(ieee_is_finite(g_sum))
     end subroutine
+
+    !> Basis-saturation indicator of a plane-wave cutoff |n|^2 <= cutoff:
+    !> fraction of ideal canonical fermions (Q3, all S_z) outside the cutoff
+    !> shells at Theta. A Q4 thermal ensemble cannot be closer to the
+    !> parent than this fraction allows; rows above a threshold are skipped.
+    real(dp) function ideal_missing_fraction(n, theta, cutoff) result(f)
+        integer, intent(in) :: n, cutoff
+        real(dp), intent(in) :: theta
+        type(fermion_spectrum_t) :: spec
+        type(canonical_state_t) :: st
+        real(dp) :: ef, b, lz(0:n), out(0:n), w, wsum
+        integer :: nup, a, k
+        logical :: ok
+        f = 1
+        if (.not. (theta > 0)) then
+            f = 0; return
+        end if
+        call box_parameters(n, theta, ef, b)
+        call box_spectrum(box_cutoff(b, n), spec, ok)
+        if (.not. ok) return
+        lz = 0; out = 0
+        do nup = 1, n
+            call solve_canonical(spec, nup, b, st, ok, .false.)
+            if (.not. ok) return
+            lz(nup) = st%log_z
+            do a = 1, spec%shells
+                if (spec%level(a) > cutoff) out(nup) = out(nup) + &
+                    spec%degeneracy(a)*st%occupation(a)
+            end do
+        end do
+        f = 0; wsum = 0
+        do nup = 0, n
+            w = exp(lz(nup) + lz(n - nup) - maxval([(lz(k) + lz(n - k), k=0, n)]))
+            f = f + w*(out(nup) + out(n - nup))/n; wsum = wsum + w
+        end do
+        f = f/wsum
+    end function
 
     !> Volume-weighted RMS over the shells (|r| < L/2): sqrt(sum V_b a_b^2/sum V_b).
     real(dp) function shell_rms(edges, a) result(r)

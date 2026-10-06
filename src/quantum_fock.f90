@@ -45,7 +45,7 @@ module kin6d_quantum_fock
               assemble_jellium_pair_sector, &
               init_fock_sector_basis, fock_pair_index, add_fock_one_body, &
               fock_matvec_between, fock_matvec_between_interval, &
-              fock_transition_rdms, fock_rdm3_entries
+              fock_transition_rdms, fock_rdm3_entries, fock_rdm2_entries
     type :: fock_basis_t
         private
         integer :: m = 0, n = 0, d = 0, p = 0
@@ -1611,21 +1611,49 @@ contains
         real(dp), allocatable, intent(out) :: vr(:), vi(:)
         integer, intent(out) :: count
         logical, intent(out) :: ok
+        call sparse_rdm_entries(basis, re, im, 3, int(basis%m, i64)**3, tkey, ukey, &
+                                vr, vi, count, ok)
+    end subroutine
+
+    !> Two-body RDM Gamma_(s),(u) = <psi|a_u1^dagger a_u2^dagger a_s2 a_s1|psi>
+    !> (pair indices s, u of fock_pair_indices; the fock_rdms convention) as
+    !> reduced sparse coordinates (zero entries absent). Avoids the dense
+    !> p x p matrix per state when only contractions are needed.
+    subroutine fock_rdm2_entries(basis, re, im, skey, ukey, vr, vi, count, ok)
+        type(fock_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: re(:), im(:)
+        integer(i64), allocatable, intent(out) :: skey(:), ukey(:)
+        real(dp), allocatable, intent(out) :: vr(:), vi(:)
+        integer, intent(out) :: count
+        logical, intent(out) :: ok
+        call sparse_rdm_entries(basis, re, im, 2, int(basis%p, i64) + 1, skey, ukey, &
+                                vr, vi, count, ok)
+    end subroutine
+
+    !> Reduced sparse k-body RDM entries (k = 2, 3) with label base m3.
+    subroutine sparse_rdm_entries(basis, re, im, order, m3, tkey, ukey, vr, vi, &
+                                  count, ok)
+        type(fock_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: re(:), im(:)
+        integer, intent(in) :: order
+        integer(i64), intent(in) :: m3
+        integer(i64), allocatable, intent(out) :: tkey(:), ukey(:)
+        real(dp), allocatable, intent(out) :: vr(:), vi(:)
+        integer, intent(out) :: count
+        logical, intent(out) :: ok
         integer(i64), allocatable :: keys(:)
         real(dp), allocatable :: pr_(:), pi_(:)
         integer, allocatable :: perm(:)
-        integer(i64) :: m3
         integer :: raw, x, y
 
         ok = .false.; count = 0
         allocate (tkey(0), ukey(0), vr(0), vi(0))
-        if (.not. basis%valid .or. basis%n < 3) return
+        if (.not. basis%valid .or. basis%n < order) return
         if (size(re) /= basis%d .or. size(im) /= basis%d) return
         if (.not. all(ieee_is_finite(re)) .or. .not. all(ieee_is_finite(im))) return
-        m3 = int(basis%m, i64)**3
         allocate (keys(1024), pr_(1024), pi_(1024))
         raw = 0
-        call factorized_products(basis, re, im, re, im, 3, store)
+        call factorized_products(basis, re, im, re, im, order, store)
         allocate (perm(raw))
         call sort_key_order(keys(1:raw), perm)
         deallocate (tkey, ukey, vr, vi)
