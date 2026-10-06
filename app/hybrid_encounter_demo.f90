@@ -305,7 +305,7 @@ contains
                   label='$\sigma_{tr}$: exact by construction')
         call xlim(le(1), le(neta))
         call xlabel('$\log_{10}\eta$'); call ylabel('relative defect')
-        call legend(loc='lower right')
+        call legend(loc='upper right')
         call suptitle('QG6 binary Coulomb kernel; candidates with quadrature/tail indicators')
         call tight_layout()
         call savefig('output/hybrid-coulomb-log.png')
@@ -457,8 +457,8 @@ contains
                 end if
                 call scatter(xs, ys, color=merge(verm, blue, side == 1), marker='o', &
                              s=9.0_dp, label='test electrons')
-                write (heading, '(a,f5.2)') merge('all-classical, ', 'hybrid,        ', &
-                    side == 1)//' $t\nu_0$ = ', tf(ff)*nu0
+                write (heading, '(a,f5.2)') trim(merge('all-classical,', 'hybrid,       ', &
+                    side == 1))//' $t\nu_0$ = ', tf(ff)*nu0
                 call title(trim(heading))
                 call xlim(lims(1), lims(2)); call ylim(lims(3), lims(4))
                 call xlabel('$v_z/v_{th}$'); call ylabel('transverse speed / $v_{th}$')
