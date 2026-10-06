@@ -18,7 +18,7 @@ module kin6d_wigner_plots
     ! Movie data (module-held for the frame callback of FuncAnimation).
     real(dp), allocatable :: mfw(:, :, :), mfv(:, :, :), mt(:), mneg(:, :), mamp(:, :)
     real(dp), allocatable :: mx(:), mv(:)
-    real(dp) :: mrange
+    real(dp) :: mrange, mnegmax, mresolved
     integer :: mframes
     class(figure_t), pointer :: canvas => null()
 contains
@@ -65,7 +65,7 @@ contains
         call plot(hb, errhb(1, 1)*(hb/hb(1))**2, color=black, linestyle='--', &
             linewidth=1.2_dp, label='slope 2')
         call set_xscale('log'); call set_yscale('log')
-        call xlabel('ħ $\omega_p/(m v_{ref}^2)$'); call ylabel('$\|f_W - f_V\|_2$')
+        call xlabel('ħ $\omega_p/(m v_{ref}^2)$'); call ylabel('$||f_W - f_V||_2$')
         call legend(loc='upper left')
         call subplot(2, 2, 4)
         call title('Negative mass, two-stream (not clipped)')
@@ -74,7 +74,8 @@ contains
         call plot(times, max(neg(:, 3), 1e-16_dp), color=grey, linestyle=':', &
             label='Vlasov (numerical indicator)')
         call set_yscale('log'); call ylim(1e-16_dp, 10.0_dp)
-        call xlabel('$\omega_p t$'); call ylabel('$\int\int \max(-f, 0)$')
+        call xlim(times(1), times(size(times)))
+        call xlabel('$\omega_p t$'); call ylabel('$\int\int \max(-f, 0) dx dv$')
         call legend(loc='lower right')
         call suptitle('1X1V Wigner-Poisson vs Vlasov-Poisson; markers: split-step '// &
             'runs, lines: Z-function roots, dashed: Bohm-Gross / cold quartic')
@@ -93,6 +94,15 @@ contains
         mfw = fw; mfv = fv; mt = times; mneg = max(neg, 1e-16_dp)
         mamp = max(amp, 1e-16_dp); mframes = frames
         mrange = max(maxval(abs(fw)), maxval(abs(fv)))
+        mnegmax = max(maxval(-fw), 1e-12_dp)
+        ! First frame at which the Vlasov negative mass (pure numerics) exceeds
+        ! 1e-6: beyond it the filamentation is no longer resolved by the grid.
+        mresolved = huge(1.0_dp)
+        do j = 1, size(neg, 1)
+            if (neg(j, 3) > 1e-6_dp) then
+                mresolved = times(j); exit
+            end if
+        end do
         allocate (mx(size(fw, 2)), mv(size(fw, 1)))
         do j = 1, size(mx)
             mx(j) = length*(j - 1)/(size(mx) - 1)
@@ -121,36 +131,45 @@ contains
         integer, intent(in) :: n
         character(64) :: heading
         call subplot(2, 2, 1)
-        write (heading, '(a,f5.2)') 'Wigner $f_W$, ħ = 1, $\omega_p t$ = ', mt(n)
+        write (heading, '(a,f5.1)') 'Wigner $f_W$, ħ = 1, $\omega_p t$ = ', mt(n)
         call title(trim(heading))
         call pcolormesh(mx, mv, mfw(:, :, n), cmap='coolwarm', vmin=-mrange, vmax=mrange)
         call colorbar(label='$f_W v_{ref}/n_0$')
         call xlim(mx(1), mx(size(mx))); call ylim(mv(1), mv(size(mv)))
         call xlabel('$x \omega_p/v_{ref}$'); call ylabel('$v/v_{ref}$')
         call subplot(2, 2, 2)
-        write (heading, '(a,f5.2)') 'Vlasov $f$, ħ = 0, $\omega_p t$ = ', mt(n)
+        write (heading, '(a,f5.1)') 'Vlasov $f$, ħ = 0, $\omega_p t$ = ', mt(n)
         call title(trim(heading))
         call pcolormesh(mx, mv, mfv(:, :, n), cmap='coolwarm', vmin=-mrange, vmax=mrange)
         call colorbar(label='$f v_{ref}/n_0$')
         call xlim(mx(1), mx(size(mx))); call ylim(mv(1), mv(size(mv)))
         call xlabel('$x \omega_p/v_{ref}$'); call ylabel('$v/v_{ref}$')
         call subplot(2, 2, 3)
-        call title('First density harmonic $|n_1|/n_0$')
-        call plot(mt(:n), mamp(:n, 1), color=blue, label='Wigner ħ = 1')
-        call plot(mt(:n), mamp(:n, 3), color=verm, linestyle='--', label='Vlasov')
-        call set_yscale('log')
-        call xlim(0.0_dp, mt(mframes)); call ylim(1e-5_dp, 1.0_dp)
-        call xlabel('$\omega_p t$'); call ylabel('$|n_1|/n_0$')
-        call legend(loc='lower right')
+        call title('Negative part of $f_W$, ħ = 1')
+        call pcolormesh(mx, mv, max(-mfw(:, :, n), 0.0_dp), cmap='viridis', &
+                        vmin=0.0_dp, vmax=mnegmax)
+        call colorbar(label='$-f_W v_{ref}/n_0$ where $f_W < 0$')
+        call xlim(mx(1), mx(size(mx))); call ylim(mv(1), mv(size(mv)))
+        call xlabel('$x \omega_p/v_{ref}$'); call ylabel('$v/v_{ref}$')
         call subplot(2, 2, 4)
-        call title('Negative mass (no clipping)')
-        call plot(mt(:n), mneg(:n, 1), color=blue, label='Wigner ħ = 1')
-        call plot(mt(:n), mneg(:n, 3), color=verm, linestyle='--', &
-            label='Vlasov (numerical indicator)')
+        call title('Mode growth, saturation and negative mass')
+        call plot(mt(:n), mamp(:n, 1), color=blue, label='$|n_1|/n_0$, ħ = 1')
+        call plot(mt(:n), mamp(:n, 3), color=verm, linestyle='--', &
+                  label='$|n_1|/n_0$, Vlasov')
+        call plot(mt(:n), mneg(:n, 1), color=green, linestyle='-.', &
+                  label='negative mass, ħ = 1')
+        call plot(mt(:n), mneg(:n, 3), color=grey, linestyle=':', &
+                  label='negative mass, Vlasov')
+        if (mresolved < mt(mframes)) call plot([mresolved, mresolved], [1e-16_dp, 10.0_dp], &
+            color=black, linestyle='--', linewidth=1.0_dp, &
+            label='Vlasov under-resolved')
         call set_yscale('log')
         call xlim(0.0_dp, mt(mframes)); call ylim(1e-16_dp, 10.0_dp)
-        call xlabel('$\omega_p t$'); call ylabel('$\int\int \max(-f, 0) dx dv$')
+        call xlabel('$\omega_p t$')
+        call ylabel('$|n_1|/n_0$ and negative mass')
         call legend(loc='lower right')
+        call suptitle('Two-stream instability: linear growth, saturation and a '// &
+            'phase-space vortex; quantum $f_W$ turns negative where the beams overlap')
         call tight_layout()
     end subroutine
 end module kin6d_wigner_plots
@@ -168,8 +187,8 @@ program wigner_demo
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
-    integer, parameter :: nlk = 6, nts = 15, nh = 3, nhb = 5, frames = 192
-    integer, parameter :: mx = 64, mv = 256, hold = 24
+    integer, parameter :: nlk = 6, nts = 15, nh = 3, nhb = 5, frames = 288
+    integer, parameter :: mx = 128, mv = 512, hold = 24
     real(dp) :: hl(nh) = [0.0_dp, 1.0_dp, 2.0_dp], ht(nh) = [0.0_dp, 1.0_dp, 2.0_dp]
     real(dp) :: kl(nlk), wl_fit(nlk, nh), wl_root(nlk, nh), wl_bg(nlk, nh)
     real(dp) :: kt(nts), g_fit(nts, nh), g_root(nts, nh), g_cold(nts, nh)
@@ -185,7 +204,7 @@ program wigner_demo
     type(result_file_t) :: result
     character(256) :: msg
     !> Scan time step, movie end time and movie quantum parameter.
-    real(dp) :: dt = 0.05_dp, t_movie = 30.0_dp, hbar_movie = 1.0_dp
+    real(dp) :: dt = 0.05_dp, t_movie = 45.0_dp, hbar_movie = 1.0_dp
     namelist /wigner/ dt, t_movie, hbar_movie
 
     call run%start('wigner_demo')
@@ -290,7 +309,7 @@ program wigner_demo
                       hb, err_hb, times, neg)
     call write_result()
     call plot_movie(fw, fv, times, neg, amp, 2*pi/0.6_dp, 4.0_dp, frames, hold, &
-                    nint(22.0_dp/t_movie*(frames - 1)) + 1)
+                    nint(min(32.0_dp, t_movie)/t_movie*(frames - 1)) + 1)
 contains
     !> Run a linear seeded mode and fit its dominant complex frequency on the
     !> window [max(ta, tend - (tb - ta)), tend]; tend = tb or the first time the
@@ -438,9 +457,11 @@ contains
         type(wigner_state_t) :: s
         type(wigner_diagnostics_t) :: d, d0
         real(dp) :: hbars(3), step
-        integer :: c, n, frame
+        integer :: c, n, frame, sub
         hbars = [hbar_movie, hbar_movie/2, 0.0_dp]
-        step = t_movie/(3*(frames - 1))
+        ! Substeps per frame so that the split step stays at or below 0.05.
+        sub = ceiling(t_movie/(frames - 1)/0.05_dp - 1e-12_dp)
+        step = t_movie/(sub*(frames - 1))
         do c = 1, 3
             call wigner_grid_init(g, mx, mv, 2*pi/0.6_dp, 4.0_dp)
             call wigner_work_init(g, hbars(c), wk)
@@ -448,9 +469,9 @@ contains
                 [0.2_dp, 0.2_dp], 1e-3_dp, 1, hbars(c), s, .false.)
             call wigner_diagnostics(g, wk, s, d0)
             frame = 0
-            do n = 0, 3*(frames - 1)
+            do n = 0, sub*(frames - 1)
                 if (n > 0) call wigner_step(g, wk, s, step)
-                if (mod(n, 3) /= 0) cycle
+                if (mod(n, sub) /= 0) cycle
                 frame = frame + 1
                 call wigner_diagnostics(g, wk, s, d)
                 times(frame) = s%time; neg(frame, c) = d%negative_mass

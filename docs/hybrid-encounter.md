@@ -217,9 +217,11 @@ encounters skip the near-zone integration).
 
 `hybrid-beam.{mp4,csv}`, `hybrid-beam-frame{001,100,200}.png`: 300 test
 electrons at v_b = 2 sqrt(2T), T = 1 E_h, n = 2.5e-4 a.u. (kappa ~ 30),
-3.3e5 encounters per run, 1.5 slowing times; left all-classical, right
-hybrid, same electrons and random stream; squares mark electrons with a
-near-zone encounter in the frame (promoted on the right). Final
+3.3e5 encounters per run, 1.5 slowing times; top left all-classical, top
+right hybrid, same electrons and random stream; squares mark electrons with
+a near-zone encounter in the frame (promoted on the right). The bottom
+panels follow the mean v_z and mean transverse v_t^2 of both runs (224
+frames at 24 fps, last frame held 1 s). Final
 <v_z>/v_b = 0.094 (classical) vs 0.131 (hybrid): the smaller quantum
 logarithm slows the beam less.
 

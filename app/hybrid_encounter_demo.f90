@@ -11,7 +11,7 @@ program hybrid_encounter_demo
     use fortnum_status, only: fortnum_status_t
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, scatter, &
         errorbar, title, suptitle, xlabel, ylabel, xlim, ylim, legend, tight_layout, &
-        savefig, fill_between
+        savefig, fill_between, set_xscale, set_yscale
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use kin6d_species, only: atomic_units, electron
@@ -256,7 +256,7 @@ contains
         complex(dp) :: p, dpsi
         integer :: i
         character(64) :: heading
-        le = log10(etas)
+        le = etas
         call figure(figsize=[13.2_dp, 8.8_dp])
         call subplot(2, 2, 1)
         write (heading, '(a,i0)') 'Coulomb logarithm, $k\lambda_D$ = ', nint(kappa_log)
@@ -272,8 +272,9 @@ contains
         x = [le(1), le(neta)]
         call plot(x, [1.0_dp, 1.0_dp]*log(kappa_log), color=black, linestyle='-.', &
                   label='$\ln(k\lambda_D)$')
-        call xlim(le(1), le(neta)); call ylim(0.0_dp, 1.15_dp*maxval(log(kappa_log/etas)))
-        call xlabel('$\log_{10}\eta$'); call ylabel('$\sigma_{tr}/(4\pi b_{90}^2)$')
+        call xlim(le(1), le(neta)); call ylim(0.0_dp, 1.5_dp*maxval(log(kappa_log/etas)))
+        call set_xscale('log')
+        call xlabel('Sommerfeld parameter $\eta$'); call ylabel('$\sigma_{tr}/(4\pi b_{90}^2)$')
         call legend(loc='upper right')
         call subplot(2, 2, 2)
         call title('Quantum minus classical logarithm')
@@ -286,7 +287,8 @@ contains
         call plot(le, ref, color=black, linestyle='--', &
                   label='$\ln\eta$ - Re $\psi(1+i\eta)$')
         call xlim(le(1), le(neta))
-        call xlabel('$\log_{10}\eta$'); call ylabel('$\Delta \ln\Lambda$')
+        call set_xscale('log')
+        call xlabel('Sommerfeld parameter $\eta$'); call ylabel('$\Delta \ln\Lambda$')
         call legend(loc='lower right')
         call subplot(2, 2, 3)
         call title('Exchange (Mott) correction, identical electrons')
@@ -296,7 +298,8 @@ contains
         call plot(x, [1.0_dp, 1.0_dp]*(-log(2.0_dp)/2), color=black, linestyle=':', &
                   label='$-\ln 2/2$')
         call xlim(le(1), le(neta))
-        call xlabel('$\log_{10}\eta$'); call ylabel('$\Delta \ln\Lambda$ vs classical identical')
+        call set_xscale('log')
+        call xlabel('Sommerfeld parameter $\eta$'); call ylabel('$\Delta \ln\Lambda$ vs classical identical')
         call legend(loc='upper right')
         call subplot(2, 2, 4)
         call title('Ring kernel: second-moment defect')
@@ -304,7 +307,8 @@ contains
         call plot(x, [0.0_dp, 0.0_dp], color=black, linestyle='--', &
                   label='$\sigma_{tr}$: exact by construction')
         call xlim(le(1), le(neta))
-        call xlabel('$\log_{10}\eta$'); call ylabel('relative defect')
+        call set_xscale('log')
+        call xlabel('Sommerfeld parameter $\eta$'); call ylabel('relative defect')
         call legend(loc='upper right')
         call suptitle('QG6 binary Coulomb kernel; candidates with quadrature/tail indicators')
         call tight_layout()
@@ -313,7 +317,7 @@ contains
 
     subroutine rate_figure()
         real(dp) :: lt(ntemp), x(2), rc(ntemp), rh(ntemp)
-        lt = log10(temps); x = [lt(1), lt(ntemp)]
+        lt = temps; x = [lt(1), lt(ntemp)]
         call figure(figsize=[13.2_dp, 8.8_dp])
         call subplot(2, 2, 1)
         call title('Slowing-down rate as effective logarithm')
@@ -328,8 +332,9 @@ contains
                   label='Landau, $\ln(\lambda_D/b_{90,u})$')
         call plot(lt, lspitzer(:, 2), color=black, linestyle='-.', &
                   label='Landau, $\ln(k_u\lambda_D)$')
-        call xlim(x(1), x(2))
-        call xlabel('$\log_{10}(T/E_h)$'); call ylabel('$\nu_s/\nu_{Landau}(\ln\Lambda=1)$')
+        call xlim(x(1), x(2)); call ylim(0.0_dp, 1.5_dp*maxval(lspitzer))
+        call set_xscale('log')
+        call xlabel('$T/E_h$'); call ylabel('$\nu_s/\nu_{Landau}(\ln\Lambda=1)$')
         call legend(loc='upper left')
         call subplot(2, 2, 2)
         call title('Monte Carlo minus kernel (statistical)')
@@ -345,26 +350,32 @@ contains
         call plot(x, [0.0_dp, 0.0_dp], color=black, linestyle='--', &
                   label='kernel; bands 2 s.e. (paired, overlapping)')
         call xlim(x(1), x(2))
-        call xlabel('$\log_{10}(T/E_h)$'); call ylabel('relative difference')
+        call set_xscale('log')
+        call xlabel('$T/E_h$'); call ylabel('relative difference')
         call legend(loc='upper left')
         call subplot(2, 2, 3)
         call title('Model and interface error vs all-quantum kernel')
-        call plot(lt, log10(abs(lkern(:, 1)/lkern(:, 3) - 1) + 1.0e-16_dp), color=verm, &
+        call plot(lt, abs(lkern(:, 1)/lkern(:, 3) - 1) + 1.0e-16_dp, color=verm, &
                   marker='s', markersize=5.0_dp, label='classical (model error)')
-        call plot(lt, log10(abs(defect) + 1.0e-16_dp), color=blue, marker='o', &
+        call plot(lt, abs(defect) + 1.0e-16_dp, color=blue, marker='o', &
                   markersize=5.0_dp, label='hybrid (interface defect)')
         call xlim(x(1), x(2))
-        call xlabel('$\log_{10}(T/E_h)$'); call ylabel('$\log_{10}$ |rate/quantum - 1|')
-        call legend(loc='lower right')
+        call set_xscale('log')
+        call xlabel('$T/E_h$')
+        call set_yscale('log'); call ylabel('relative error $|\nu_s/\nu_{quantum} - 1|$')
+        call legend(loc='upper left')
         call subplot(2, 2, 4)
         call title('CPU time to 1% statistical error')
-        call plot(lt, log10(cost(:, 1)), color=verm, marker='s', markersize=5.0_dp, &
+        call plot(lt, cost(:, 1), color=verm, marker='s', markersize=5.0_dp, &
                   label='all-classical')
-        call plot(lt, log10(cost(:, 2)), color=blue, marker='o', markersize=5.0_dp, &
+        call plot(lt, cost(:, 2), color=blue, marker='o', markersize=5.0_dp, &
                   label='hybrid')
         call xlim(x(1), x(2))
-        call xlabel('$\log_{10}(T/E_h)$'); call ylabel('$\log_{10}$(CPU s)')
-        call legend(loc='upper left')
+        call set_xscale('log')
+        call xlabel('$T/E_h$')
+        call set_yscale('log'); call ylabel('CPU time [s]')
+        call ylim(0.5_dp*minval(cost(:, 1:2)), 3.0_dp*maxval(cost(:, 1:2)))
+        call legend(loc='upper right')
         call suptitle('QG6 test electron in a Maxwellian electron background, cut screening')
         call tight_layout()
         call savefig('output/hybrid-relaxation-rate.png')
@@ -422,9 +433,9 @@ contains
         lims(1) = minval(vel(3, :, :, :))/vth; lims(2) = maxval(vel(3, :, :, :))/vth
         lims(3) = 0; lims(4) = maxval(sqrt(vel(1, :, :, :)**2 + vel(2, :, :, :)**2))/vth
         lims(1:2) = lims(1:2) + [-0.05_dp, 0.05_dp]*(lims(2) - lims(1))
-        lims(4) = 1.05_dp*lims(4)
+        lims(4) = 1.4_dp*lims(4)
         nall = movie_frames + 24
-        call figure(figsize=[12.8_dp, 6.4_dp])
+        call figure(figsize=[13.2_dp, 8.8_dp])
         canvas => get_global_figure()
         do k = 1, 3
             f = max(1, (k - 1)*movie_frames/2)
@@ -439,13 +450,21 @@ contains
 
         subroutine draw(frame)
             integer, intent(in) :: frame
-            integer :: ff, side, nf
+            integer :: ff, side, nf, k
             real(dp), allocatable :: xs(:), ys(:)
+            real(dp) :: hist(movie_frames, 2, 2)
             character(64) :: heading
             ff = min(frame, movie_frames)
+            do side = 1, 2
+                do k = 1, movie_frames
+                    hist(k, side, 1) = sum(vel(3, :, k, side))/movie_particles/vth
+                    hist(k, side, 2) = sum(vel(1, :, k, side)**2 + vel(2, :, k, side)**2) &
+                        /movie_particles/vth**2
+                end do
+            end do
             call canvas%clear()
             do side = 1, 2
-                call subplot(1, 2, side)
+                call subplot(2, 2, side)
                 xs = vel(3, :, ff, side)/vth
                 ys = sqrt(vel(1, :, ff, side)**2 + vel(2, :, ff, side)**2)/vth
                 nf = count(flag(:, ff, side))
@@ -457,14 +476,31 @@ contains
                 end if
                 call scatter(xs, ys, color=merge(verm, blue, side == 1), marker='o', &
                              s=9.0_dp, label='test electrons')
-                write (heading, '(a,f5.2)') trim(merge('all-classical,', 'hybrid,       ', &
+                write (heading, '(a,f4.2)') trim(merge('all-classical, ', 'hybrid,        ', &
                     side == 1))//' $t\nu_0$ = ', tf(ff)*nu0
                 call title(trim(heading))
                 call xlim(lims(1), lims(2)); call ylim(lims(3), lims(4))
-                call xlabel('$v_z/v_{th}$'); call ylabel('transverse speed / $v_{th}$')
+                call xlabel('$v_z/v_{th}$'); call ylabel('transverse speed $v_t/v_{th}$')
                 call legend(loc='upper left')
             end do
-            call suptitle('QG6 beam relaxation, same electrons and random stream')
+            call subplot(2, 2, 3)
+            call title('Beam slowing down')
+            call plot(tf(:ff)*nu0, hist(:ff, 1, 1), color=verm, label='all-classical')
+            call plot(tf(:ff)*nu0, hist(:ff, 2, 1), color=blue, linestyle='--', label='hybrid')
+            call xlim(0.0_dp, tf(movie_frames)*nu0)
+            call ylim(min(0.0_dp, minval(hist(:, :, 1))), 1.1_dp*maxval(hist(:, :, 1)))
+            call xlabel('$t\nu_0$'); call ylabel('mean $v_z/v_{th}$')
+            call legend(loc='upper right')
+            call subplot(2, 2, 4)
+            call title('Transverse heating')
+            call plot(tf(:ff)*nu0, hist(:ff, 1, 2), color=verm, label='all-classical')
+            call plot(tf(:ff)*nu0, hist(:ff, 2, 2), color=blue, linestyle='--', label='hybrid')
+            call xlim(0.0_dp, tf(movie_frames)*nu0)
+            call ylim(0.0_dp, 1.15_dp*maxval(hist(:, :, 2)))
+            call xlabel('$t\nu_0$'); call ylabel('mean $v_t^2/v_{th}^2$')
+            call legend(loc='lower right')
+            call suptitle('Beam relaxation in a Maxwellian electron background: '// &
+                'quantum promotion of close encounters slows the relaxation')
             call tight_layout()
         end subroutine draw
 end program hybrid_encounter_demo
