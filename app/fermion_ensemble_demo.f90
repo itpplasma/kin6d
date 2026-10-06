@@ -12,7 +12,7 @@ program fermion_ensemble_demo
         fermion_cold_density_matrix_series, fermion_exchange_hole, &
         fermion_boltzmann_hole, fermion_classical_limits
     use fortplot, only: figure, subplot, plot, title, xlabel, ylabel, xlim, ylim, &
-        legend, tight_layout, savefig, xscale, yscale
+        legend, tight_layout, savefig, xscale, yscale, suptitle
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
@@ -20,6 +20,8 @@ program fermion_ensemble_demo
     real(dp), parameter :: colors(3, 4) = reshape([0.0_dp, 0.447_dp, 0.698_dp, &
         0.835_dp, 0.369_dp, 0.0_dp, 0.0_dp, 0.62_dp, 0.451_dp, 0.8_dp, 0.475_dp, &
         0.655_dp], [3, 4])
+    real(dp), parameter :: black(3) = [0.0_dp, 0.0_dp, 0.0_dp]
+    real(dp), parameter :: gray(3) = [0.45_dp, 0.45_dp, 0.45_dp]
     ! Namelist &fermion_ensemble (theta = kT/E_F, N = particles per spin).
     integer :: workspace_cells = 16384
     ! Exchange hole: x = k_F r grid on [0, hole_x_max]; ground-state cutoff.
@@ -77,8 +79,8 @@ program fermion_ensemble_demo
     allocate (occ_rows(8, 0), size_rows(8, 0))
     call hole_section()
     call occupation_section()
-    call eos_section()
     call size_section()
+    call eos_section()
     call write_result()
 
 contains
@@ -89,9 +91,9 @@ contains
         type(fermi_state_t) :: fermi
         real(dp), allocatable :: x(:), r(:), cold(:), ground(:)
         real(dp), allocatable :: canonical(:, :), gc(:, :), boltz(:), rho(:)
-        real(dp) :: ef, b, trunc, kfl, thetas(3)
+        real(dp) :: ef, b, trunc, kfl, thetas(3), dev, span
         integer :: i, k, unit, points, n
-        character(48) :: label
+        character(80) :: label
         points = hole_points; n = hole_n; thetas = hole_thetas
         allocate (x(points), r(points), cold(points), ground(points), &
             canonical(points, 3), gc(points, 3), boltz(points), rho(points))
@@ -148,27 +150,49 @@ contains
         close (unit)
         hole_x = x; hole_cold = cold; hole_ground = ground; hole_boltz = boltz
         hole_canonical = canonical; hole_gc = gc
-        call figure(figsize=[8.0_dp, 5.5_dp])
-        call plot(x, cold, label='T=0 limit 1-9(j1(x)/x)^2', color=[0.0_dp, 0.0_dp, &
-                  0.0_dp], linewidth=2.0_dp)
-        write (label, '(a,i0,a)') 'N=', n, ' ground state'
-        call plot(x, ground, label=trim(label), color=[0.5_dp, 0.5_dp, &
-                  0.5_dp], linestyle='--')
+        call figure(figsize=[12.8_dp, 6.4_dp])
+        call subplot(1, 2, 1)
+        call plot([0.0_dp, hole_x_max], [1.0_dp, 1.0_dp], label='classical ideal gas', &
+                  color=gray, linestyle=':')
+        write (label, '(a,f4.2,a)') 'Boltzmann limit, $\Theta = ', thetas(3), '$'
+        call plot(x, boltz, label=trim(label), color=colors(:, 4), linestyle=':', &
+                  linewidth=2.0_dp)
+        write (label, '(a,i0,a)') '$N = ', n, '$ ground state'
+        call plot(x, ground, label=trim(label), color=gray, linewidth=2.0_dp)
         do k = 1, 3
-            write (label, '(a,i0,a,f4.2,a)') 'N=', n, ', Theta=', thetas(k), ' canonical'
-            call plot(x, canonical(:, k), label=trim(label), color=colors(:, k))
-            write (label, '(a,f4.2,a)') 'Theta=', thetas(k), ' grand canonical'
-            call plot(x, gc(:, k), label=trim(label), color=colors(:, k), linestyle='--')
+            write (label, '(a,i0,a,f4.2,a)') '$N = ', n, '$, $\Theta = ', thetas(k), '$'
+            call plot(x, canonical(:, k), label=trim(label), color=colors(:, k), &
+                      linewidth=2.0_dp)
         end do
-        write (label, '(a,f4.2)') 'Boltzmann 1-exp(-Theta x^2/2), Theta=', thetas(3)
-        call plot(x, boltz, label=trim(label), &
-                  color=colors(:, 4), linestyle=':')
-        call plot([0.0_dp, hole_x_max], [1.0_dp, 1.0_dp], label='classical ideal gas g=1', &
-                  color=[0.3_dp, 0.3_dp, 0.3_dp], linestyle=':')
-        call title('Same-spin exchange hole without interaction (opposite spin: g=1)')
-        call xlabel('k_F r'); call ylabel('g_{sigma sigma}(r)')
-        call xlim(0.0_dp, hole_x_max); call ylim(0.0_dp, 1.2_dp)
+        ! Thermodynamic-limit references last, thin dashed black.
+        call plot(x, cold, label='thermodynamic limit (grand canonical)', color=black, &
+                  linestyle='--', linewidth=1.2_dp)
+        do k = 1, 3
+            call plot(x, gc(:, k), color=black, linestyle='--', linewidth=1.2_dp)
+        end do
+        call title('Same-spin pair correlation of free fermions')
+        call xlabel('$k_F r$'); call ylabel('$g_{\sigma\sigma}(r)$')
+        call xlim(0.0_dp, hole_x_max); call ylim(0.0_dp, 1.15_dp)
         call legend(loc='lower right')
+        call subplot(1, 2, 2)
+        write (label, '(a,i0,a)') '$N = ', n, '$ ground state $-$ $T = 0$ limit'
+        call plot(x, ground - cold, label=trim(label), color=gray, linewidth=2.0_dp)
+        do k = 1, 3
+            write (label, '(a,f4.2,a)') '$\Theta = ', thetas(k), '$'
+            call plot(x, canonical(:, k) - gc(:, k), label=trim(label), &
+                      color=colors(:, k), linewidth=2.0_dp)
+        end do
+        call plot([0.0_dp, hole_x_max], [0.0_dp, 0.0_dp], color=black, linestyle='--', &
+                  linewidth=1.2_dp)
+        write (label, '(a,i0,a)') 'Finite-size deviation at $N = ', n, '$ per spin'
+        call title(trim(label))
+        call xlabel('$k_F r$'); call ylabel('$g_N - g_{\infty}$')
+        dev = min(minval(ground - cold), minval(canonical - gc))
+        span = max(maxval(ground - cold), maxval(canonical - gc)) - dev
+        call xlim(0.0_dp, hole_x_max); call ylim(dev - 0.08_dp*span, dev + 1.5_dp*span)
+        call legend(loc='upper right')
+        call suptitle('Exchange hole without interaction (opposite spins: $g = 1$)')
+        call tight_layout()
         call savefig('output/fermion-exchange-hole.png')
     end subroutine hole_section
 
@@ -178,7 +202,7 @@ contains
         type(fermion_spectrum_t) :: spec
         type(canonical_state_t) :: st
         type(fermi_state_t) :: fermi
-        real(dp) :: ef, b, u(200), fd(200), mb(200), lower, upper, e, p, f, m
+        real(dp) :: ef, b, u(200), fd(200), mb(200), lower, upper, e, p, f, m, floor_occ
         real(dp), allocatable :: eps(:)
         integer :: i, j, k, unit, shells
         character(40) :: label
@@ -188,7 +212,7 @@ contains
             'fd=grand-canonical Fermi-Dirac at the certified thermodynamic-limit mu; '// &
             'mb=Maxwell-Boltzmann at the same density (can exceed one)'
         write (unit, '(a)') 'N_sigma,theta,eps_over_EF,occupation,lower,upper,fd,mb'
-        call figure(figsize=[11.0_dp, 4.8_dp])
+        call figure(figsize=[12.8_dp, 6.4_dp])
         do k = 1, 2
             call subplot(1, 2, k)
             call solve_fermi_gas(work, thetas(k), fermi, ok)
@@ -197,10 +221,13 @@ contains
                 call occupation_fermi_gas(fermi, u(i), fd(i), lower, upper, ok)
                 call fermion_classical_limits(thetas(k), u(i), e, p, mb(i))
             end do
-            call plot(u**2, fd, label='Fermi-Dirac (thermodynamic limit)', &
-                      color=[0.0_dp, 0.0_dp, 0.0_dp])
-            call plot(u**2, mb, label='Maxwell-Boltzmann, same n and T', &
-                      color=[0.4_dp, 0.4_dp, 0.4_dp], linestyle='--')
+            ! Maxwell-Boltzmann exceeds one at low energy for Theta < 1; show it
+            ! only inside the axes (fortplot does not clip lines).
+            floor_occ = 0.5_dp*minval(fd)
+            call plot(pack(u**2, mb <= 1.5_dp .and. mb >= floor_occ), &
+                      pack(mb, mb <= 1.5_dp .and. mb >= floor_occ), &
+                      label='Maxwell-Boltzmann, same $n$ and $T$', color=gray, &
+                      linestyle=':', linewidth=2.0_dp)
             do j = 1, 2
                 call box_parameters(2*sizes(j), thetas(k), ef, b)
                 call box_spectrum(box_cutoff(b, sizes(j)), spec, ok)
@@ -217,14 +244,21 @@ contains
                         st%occupation(i), st%occupation_bound(i)%lo, &
                         st%occupation_bound(i)%hi, f, m], [8, size(occ_rows, 2) + 1])
                 end do
-                write (label, '(a,i3,a)') 'canonical N=', sizes(j), ' per spin'
+                write (label, '(a,i0,a)') 'canonical, $N = ', sizes(j), '$ per spin'
                 call plot(eps, st%occupation(:shells), label=trim(label), &
                           color=colors(:, j), linestyle='None', marker='o')
             end do
-            write (label, '(a,f4.2)') 'Theta=', thetas(k)
-            call title(trim(label)); call xlabel('epsilon/E_F'); call ylabel('occupation')
-            call xlim(0.0_dp, 4.0_dp); call ylim(0.0_dp, 1.6_dp); call legend()
+            call plot(u**2, fd, label='Fermi-Dirac (thermodynamic limit)', color=black, &
+                      linestyle='--', linewidth=1.2_dp)
+            write (label, '(a,f4.2,a)') 'Orbital occupation at $\Theta = ', thetas(k), '$'
+            call title(trim(label)); call xlabel('$\epsilon/E_F$')
+            call ylabel('occupation per orbital')
+            call yscale('log')
+            call xlim(0.0_dp, 4.0_dp); call ylim(floor_occ, 1.5_dp)
+            call legend(loc='lower left')
         end do
+        call suptitle('Finite-N canonical occupations against the Fermi-Dirac '// &
+                      'and Maxwell-Boltzmann laws')
         close (unit)
         call tight_layout()
         call savefig('output/fermion-occupations.png')
@@ -274,39 +308,47 @@ contains
         close (unit)
         eos_theta = theta; eos_done = merge(1.0_dp, 0.0_dp, done)
         limit_theta = tt; limit_values = tl
-        call figure(figsize=[11.0_dp, 4.8_dp])
-        call subplot(1, 2, 1)
-        call plot(tt, tl(:, 2)/tt, label='thermodynamic limit', color=[0.0_dp, &
-                  0.0_dp, 0.0_dp])
-        write (label, '(a,i0,a)') 'N=', eos_small, ' per spin'
+        call figure(figsize=[13.2_dp, 8.8_dp])
+        call subplot(2, 2, 1)
+        call plot([tt(1), tt(fine)], [1.0_dp, 1.0_dp], label='classical $P = n k_B T$', &
+                  color=gray, linestyle='--')
+        call plot(pack(tt, 0.4_dp/tt >= 0.5_dp), pack(0.4_dp/tt, 0.4_dp/tt >= 0.5_dp), &
+                  label='$T = 0$ Fermi pressure $\frac{2}{5} n E_F$', &
+                  color=gray, linestyle=':', linewidth=2.0_dp)
+        write (label, '(a,i0,a)') '$N = ', eos_small, '$ per spin'
         call plot(theta, small(:, 2)/theta, label=trim(label), color=colors(:, 1), &
                   linestyle='None', marker='o')
-        write (label, '(a,i0,a)') 'N=', eos_large, ' per spin'
+        write (label, '(a,i0,a)') '$N = ', eos_large, '$ per spin'
         call plot(pack(theta, done), pack(large(:, 2), done)/pack(theta, done), &
                   label=trim(label), color=colors(:, 2), linestyle='None', marker='s')
-        call plot([0.05_dp, 10.0_dp], [1.0_dp, 1.0_dp], label='classical P=nkT', &
-                  color=[0.4_dp, 0.4_dp, 0.4_dp], linestyle='--')
-        call plot(tt, 0.4_dp/tt, label='T=0 Fermi pressure 0.4 n E_F', &
-                  color=[0.4_dp, 0.4_dp, 0.4_dp], linestyle=':')
-        call xscale('log')
-        call title('Pressure without interaction'); call xlabel('Theta = kT/E_F')
-        call ylabel('P/(n k_B T)'); call ylim(0.0_dp, 9.0_dp)
+        call plot(tt, tl(:, 2)/tt, label='thermodynamic limit', color=black, &
+                  linestyle='--', linewidth=1.2_dp)
+        call xscale('log'); call yscale('log')
+        call title('Pressure of the ideal Fermi gas'); call xlabel('$\Theta = k_B T/E_F$')
+        call ylabel('$P/(n k_B T)$')
+        call xlim(0.8_dp*tt(1), 1.25_dp*tt(fine))
+        call ylim(0.5_dp, 2.0_dp*maxval(tl(:, 2)/tt))
         call legend(loc='upper right')
-        call subplot(1, 2, 2)
-        call plot(tt, tl(:, 3), label='thermodynamic limit', color=[0.0_dp, 0.0_dp, &
-                  0.0_dp])
-        write (label, '(a,i0,a)') 'N=', eos_small, ' per spin'
+        call subplot(2, 2, 2)
+        call plot([tt(1), tt(fine)], [1.5_dp, 1.5_dp], label='classical $3/2$', &
+                  color=gray, linestyle='--')
+        write (label, '(a,i0,a)') '$N = ', eos_small, '$ per spin'
         call plot(theta, small(:, 3), label=trim(label), color=colors(:, 1), &
                   linestyle='None', marker='o')
-        write (label, '(a,i0,a)') 'N=', eos_large, ' per spin'
+        write (label, '(a,i0,a)') '$N = ', eos_large, '$ per spin'
         call plot(pack(theta, done), pack(large(:, 3), done), label=trim(label), &
                   color=colors(:, 2), linestyle='None', marker='s')
-        call plot([0.05_dp, 10.0_dp], [1.5_dp, 1.5_dp], label='classical 3/2', &
-                  color=[0.4_dp, 0.4_dp, 0.4_dp], linestyle='--')
+        call plot(tt, tl(:, 3), label='thermodynamic limit', color=black, &
+                  linestyle='--', linewidth=1.2_dp)
         call xscale('log')
-        call title('Heat capacity (derivative de/dTheta)'); call xlabel('Theta = kT/E_F')
-        call ylabel('C_V/(N k_B)'); call ylim(0.0_dp, 1.8_dp)
+        call title('Heat capacity $C_V/(N k_B) = de/d\Theta$')
+        call xlabel('$\Theta = k_B T/E_F$'); call ylabel('$C_V/(N k_B)$')
+        call xlim(0.8_dp*tt(1), 1.25_dp*tt(fine)); call ylim(0.0_dp, 1.8_dp)
         call legend(loc='lower right')
+        call size_panel(3, 4, 'energy', '$|e_N - e_\infty|$ (per particle, units of $E_F$)')
+        call size_panel(4, 6, 'heat capacity', '$|C_N - C_\infty|/(N k_B)$')
+        call suptitle('Ideal Fermi gas: finite-$N$ canonical box against the '// &
+                      'thermodynamic limit')
         call tight_layout()
         call savefig('output/fermion-eos-scan.png')
 
@@ -376,6 +418,36 @@ contains
         end do
         close (unit)
     end subroutine size_section
+
+    !> Finite-size indicator |X_N - X_inf| against N per spin (log-log), one
+    !> curve per size_thetas entry, from the size-scan rows (column col).
+    subroutine size_panel(position, col, name, axis_label)
+        integer, intent(in) :: position, col
+        character(len=*), intent(in) :: name, axis_label
+        character(len=80) :: label
+        logical, allocatable :: sel(:)
+        real(dp) :: lo, hi
+        integer :: k
+        character(len=1), parameter :: markers(3) = ['o', 's', '^']
+        call subplot(2, 2, position)
+        lo = huge(1.0_dp); hi = 0.0_dp
+        do k = 1, 3
+            sel = abs(size_rows(2, :) - size_thetas(k)) < 1.0e-12_dp .and. &
+                  abs(size_rows(col, :)) > 0.0_dp
+            if (.not. any(sel)) cycle
+            write (label, '(a,f4.2,a)') '$\Theta = ', size_thetas(k), '$'
+            call plot(pack(size_rows(1, :), sel), abs(pack(size_rows(col, :), sel)), &
+                      label=trim(label), color=colors(:, k), marker=markers(k))
+            lo = min(lo, minval(abs(pack(size_rows(col, :), sel))))
+            hi = max(hi, maxval(abs(pack(size_rows(col, :), sel))))
+        end do
+        call xscale('log'); call yscale('log')
+        call title('Finite-size '//name//' deviation (indicator)')
+        call xlabel('particles per spin $N$'); call ylabel(axis_label)
+        call xlim(0.8_dp*minval(size_rows(1, :)), 1.25_dp*maxval(size_rows(1, :)))
+        call ylim(0.5_dp*lo, 3.0_dp*hi)
+        call legend(loc='lower left')
+    end subroutine size_panel
 
     !> CSV column name prefix//theta with trailing zeros removed (0.25, 1, 2).
     function column(prefix, theta) result(name)

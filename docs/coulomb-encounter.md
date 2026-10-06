@@ -147,15 +147,42 @@ period, collapse, half and full revival.
 
 ## Evidence
 
-`build/coulomb_encounter_demo [--config FILE] [--no-movie]` (namelist
-`&coulomb_encounter`: `etas`, `nclass`, `seed`, `movie_seed`, `movie`) writes
-to output/ (not committed): coulomb-eta-summary.csv, coulomb-eta-bins.csv,
+`build/coulomb_encounter_demo [--config FILE] [--no-movie | --movie-only]`
+(namelist `&coulomb_encounter`: `etas`, `nclass` (b-scan pairs), `nclass_scan`
+(eta-scan pairs, default 1e5), `seed`, `movie_seed`, `movie`) writes to output/
+(not committed): coulomb-eta-summary.csv, coulomb-eta-bins.csv (1 degree bins),
+coulomb-eta-classical-bins.csv (5 degree bins with binomial standard error),
 coulomb-mott-eta-scan.png, coulomb-b-scan.{csv,png}, coulomb-kepler.{csv,png},
-coulomb-kepler-summary.csv, coulomb-cost-ledger.csv,
-coulomb-movie-separation.csv, coulomb-encounter.mp4 and frame PNGs, plus
+coulomb-kepler-summary.csv, coulomb-cost-ledger.csv, the movies
+coulomb-encounter-{headon,offaxis}.mp4 with frame PNGs and per-frame CSVs
+(coulomb-movie-{headon,offaxis}.csv: time, slow-motion factor, sector norms,
+energy, wall probability), coulomb-turning-cut.{csv,png}, plus
 `coulomb_encounter_demo.nc` (kin6d_result_io: eta/impact-parameter bin
 ratios, per-eta state bounds, Kepler series and errors, bin VJP, cost
 timings, literal/resolved configuration and provenance).
+
+Movies (visualization path, no pointwise bound): eta = 3, sigma = 3 lambdabar
+= r0/2, z0 = 20 lambdabar, kb = 0 (head-on) and kb = 2. Each frame shows the
+slice y = 0 of the relative density |psi(x,0,z)|^2 k^-3 (each sector divided
+by its own norm) for singlet, triplet and the spin-unresolved product, beside
+the classical Wigner ensemble (8e5 pairs, spin-unresolved, slab |y| < 1/(2k)),
+on one fixed four-decade log colour scale. The frame clock runs up to 4x
+slower in a Gaussian window around and after closest approach (labelled in
+the title). What they show: the classically forbidden hole r < r0; exchange
+standing-wave fringes along z (spacing near lambda/2 = pi/k) in singlet and
+triplet but not in the spin-unresolved product or the classical ensemble;
+the triplet nodal plane z = 0 (psi_T(-r) = -psi_T(r), axially symmetric for
+b = 0); weak self-interference arcs of the distinguishable pair after
+reflection (t v/z0 ~ 1.2-1.5); the classical X-shaped outgoing caustic and
+the Mott node pattern of the outgoing singlet/triplet waves.
+coulomb-turning-cut.png quantifies this at closest approach: on the axis the
+distinguishable quantum density agrees with the classical ensemble except for
+the tunnelling tail inside r0 (no fringes: incoming and reflected parts of
+one packet barely overlap for sigma = r0/2); at x = 2 r0 the singlet and
+triplet fringes are complementary, their maxima are 3.3-3.5/k apart (the
+local wavelength is longer than the asymptotic one near the turning region),
+and their average is the fringe-free product, which matches the classical
+ensemble within its standard error.
 
 Teaching messages: (1) distinguishable particles follow Rutherford even
 quantum mechanically, identical particles interfere (singlet doubles,
@@ -163,7 +190,10 @@ triplet vanishes at 90 degrees, oscillating with eta ln tan^2(theta/2));
 (2) for eta >> 1 and sigma < r0 quantum bins approach the classical ensemble
 except for the exchange term; (3) a Rydberg packet breathes at the Kepler
 period, collapses and revives near T_rev/2 and T_rev = (2 nbar/3) T_K, with
-the full revival degraded by cubic dispersion (~ (8 pi/3) dn^3/nbar).
+the full revival degraded by cubic dispersion (~ (8 pi/3) dn^3/nbar);
+(4) when lambdabar is comparable to r0 (eta = 3), exchange produces
+lambda/2 fringes in the encounter region that the classical ensemble cannot
+show, while the spin-unresolved density stays classical-like.
 
 ## Open issues
 

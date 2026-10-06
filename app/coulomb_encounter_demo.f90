@@ -1,11 +1,13 @@
 ! Q1/Q1b evidence: Sommerfeld-eta and impact-parameter scans of the localized
 ! two-body quantum Coulomb encounter (product, singlet, triplet, classical),
-! an encounter movie with relative and lab-frame densities beside the classical
-! ensemble, and the hydrogen Kepler packet. Writes CSV and figures to output/
+! head-on and off-axis encounter movies of the relative density (singlet,
+! triplet, spin-unresolved, classical ensemble) with a turning-point cut, and
+! the hydrogen Kepler packet. Writes CSV and figures to output/
 ! and the evidence file output/coulomb_encounter_demo.nc (kin6d_result_io).
-! Usage: coulomb_encounter_demo [--config FILE] [--no-movie]
+! Usage: coulomb_encounter_demo [--config FILE] [--no-movie | --movie-only]
 ! Namelist group &coulomb_encounter: etas (four Sommerfeld parameters), nclass
-! (classical pairs per ensemble), seed/movie_seed (classical ensembles), movie.
+! (classical pairs per b-scan ensemble), nclass_scan (pairs per eta-scan
+! ensemble), seed/movie_seed (classical ensembles), movie.
 program coulomb_encounter_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use kin6d_coulomb_encounter
@@ -14,7 +16,7 @@ program coulomb_encounter_demo
     use kin6d_result_io, only: run_t, result_file_t
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, title, &
         xlabel, ylabel, xlim, ylim, legend, savefig, pcolormesh, tight_layout, &
-        set_yscale, suptitle
+        set_yscale, suptitle, colorbar, text, fill_between
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     implicit none
@@ -22,26 +24,28 @@ program coulomb_encounter_demo
     integer, parameter :: nb = 36
     real(dp), parameter :: bs(4) = [0.0_dp, 5.0_dp, 10.0_dp, 20.0_dp]
     real(dp) :: etas(4) = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
-    integer :: nclass = 20000
+    integer :: nclass = 20000, nclass_scan = 100000
     integer(i64) :: seed = 1234_i64, movie_seed = 77_i64
     logical :: movie = .true.
-    namelist /coulomb_encounter/ etas, nclass, seed, movie_seed, movie
+    namelist /coulomb_encounter/ etas, nclass, nclass_scan, seed, movie_seed, movie
     type(run_t) :: run
     type(result_file_t) :: result
     character(160) :: arg
     character(256) :: msg
     integer :: status, i, unit, ios
-    real(dp) :: ratio(nb, 5, 4), theta(nb)
+    integer, parameter :: nbf = 180
+    real(dp) :: ratio(nbf, 4, 4), cratio(nb, 2, 4), theta(nb), theta_fine(nbf)
     ! Evidence for the result file, filled by the scans.
     real(dp) :: eta_summary(6, 4), bscan_quantum(nb, 4), bscan_classical(nb, 4)
     real(dp) :: kepler_errors(2), bin_vjp(4), cost_seconds(6)
     real(dp), allocatable :: kepler_series(:, :)
     ! Movie state shared with the animation callback (host association).
-    integer, parameter :: nf = 192, npx = 128, nsep = 60
-    real(dp), allocatable :: qr(:, :, :), ql(:, :, :), tl(:, :, :), cr(:, :, :), &
-        cl(:, :, :), sep(:, :, :)
-    real(dp) :: times(nf), xr(0:npx), xl(0:npx), scent(nsep), lr, mv_lambdabar, &
-        mv_speed, mv_z0, mv_r0_sigma
+    integer, parameter :: nmove = 264, nhold = 24, npx = 240, ncx = 120
+    real(dp), parameter :: mv_slab = 1.0_dp   ! classical slab thickness k h
+    real(dp), allocatable :: mq(:, :, :, :), mc(:, :, :)
+    real(dp) :: mtimes(nmove), mslow(nmove), xq(0:npx), xc(0:ncx), mv_lambdabar, &
+        mv_speed, mv_z0, mv_b, mv_r0, mv_tc, mv_lmin, mv_lmax
+    logical :: movie_only = .false.
     type(figure_t), pointer :: canvas => null()
     call run%start('coulomb_encounter_demo')
     call run%open_config(unit)
@@ -51,18 +55,24 @@ program coulomb_encounter_demo
     do i = 1, run%argument_count()
         call run%argument(i, arg)
         if (trim(arg) == '--no-movie') movie = .false.
+        if (trim(arg) == '--movie-only') movie_only = .true.
     end do
-    if (any(etas <= 0) .or. nclass < 1) error stop 'etas > 0 and nclass >= 1 required'
+    if (any(etas <= 0) .or. min(nclass, nclass_scan) < 1) &
+        error stop 'etas > 0, nclass >= 1 and nclass_scan >= 1 required'
     call run%open_resolved(unit)
     write (unit, nml=coulomb_encounter)
     call run%close_resolved(unit)
     call execute_command_line('mkdir -p output', exitstat=status)
     if (status /= 0) error stop 'cannot create output/'
+    if (movie_only) then
+        call encounter_movies()
+        stop
+    end if
     call eta_scan()
     call b_scan()
     call kepler_case()
     call cost_ledger()
-    if (movie) call encounter_movie()
+    if (movie) call encounter_movies()
     call write_result()
 contains
     subroutine write_result()
@@ -75,10 +85,15 @@ contains
             'error bound, no pointwise bin enclosure')
         call result%write('theta', theta, 'deg', 'CM scattering angle bin centre', &
             dims='bin')
+        call result%write('theta_fine', theta_fine, 'deg', 'CM scattering angle fine '// &
+            'bin centre', dims='fine_bin')
         call result%write('eta', etas, '1', 'Sommerfeld parameter', dims='eta')
-        call result%write('eta_bin_ratio', ratio, '1', 'symmetrized bin probability '// &
-            '/ plane-wave Rutherford: product, singlet, triplet, classical, '// &
-            'Mott singlet', dims='bin,channel,eta', status='candidate')
+        call result%write('eta_bin_ratio', ratio, '1', 'bin probability / plane-wave '// &
+            'Rutherford: symmetrized product, singlet, triplet, Mott singlet', &
+            dims='fine_bin,channel,eta', status='candidate')
+        call result%write('eta_classical_ratio', cratio, '1', 'symmetrized classical '// &
+            'bin probability / plane-wave Rutherford and its standard error', &
+            dims='bin,estimate,eta', status='statistical (Monte Carlo, fixed seed)')
         call result%write('eta_summary', eta_summary, 'mixed', 'k, r0/sigma, '// &
             'state_bound, projection_defect, reconstruction_rms, wall_probability', &
             dims='summary,eta')
@@ -118,23 +133,24 @@ contains
         if (.not. ok) error stop 'encounter setup failed: '//msg
     end subroutine setup_case
 
-    subroutine classical_bins(enc, t, rcut, edges, pc)
+    subroutine classical_bins(enc, t, rcut, edges, nsamp, pc)
         type(encounter_t), intent(in) :: enc
+        integer, intent(in) :: nsamp
         real(dp), intent(in) :: t, rcut, edges(0:)
         real(dp), intent(out) :: pc(:)
         real(dp), allocatable :: rel(:, :, :), cm(:, :, :)
         real(dp) :: drift, th
         integer :: n, ib
         logical :: ok
-        allocate (rel(3, nclass, 1), cm(3, nclass, 1))
-        call encounter_classical_ensemble(enc, nclass, seed, [t], rel, cm, drift, ok)
+        allocate (rel(3, nsamp, 1), cm(3, nsamp, 1))
+        call encounter_classical_ensemble(enc, nsamp, seed, [t], rel, cm, drift, ok)
         if (.not. ok) error stop 'classical ensemble failed'
         pc = 0
-        do n = 1, nclass
+        do n = 1, nsamp
             if (norm2(rel(:, n, 1)) < rcut) cycle
             th = acos(rel(3, n, 1)/norm2(rel(:, n, 1)))
             ib = min(size(pc), int(th/(edges(1) - edges(0))) + 1)
-            pc(ib) = pc(ib) + 1.0_dp/nclass
+            pc(ib) = pc(ib) + 1.0_dp/nsamp
         end do
     end subroutine classical_bins
 
@@ -144,14 +160,16 @@ contains
         type(encounter_config_t) :: cfg
         type(encounter_t) :: enc
         complex(dp), allocatable :: a(:, :, :)
-        real(dp) :: edges(0:nb), pp(nb), ps(nb), pt(nb), pc(nb), psym(nb), pcs(nb), t
-        real(dp) :: sig_l, width, nperp, ref, ms, xq(16), wq(16), d, ex, cr, eb, rad
-        real(dp) :: khi, uniform, dof, wall
-        integer :: ie, ib, q, u, us, l
+        real(dp) :: edges(0:nb), fedges(0:nbf), pp(nbf), ps(nbf), pt(nbf), pc(nb), psym(nbf), &
+            t, refc(nb), sig_l, width, nperp, ref, ms, eb, khi, uniform, dof, wall, &
+            ymax, lo(nb), hi(nb)
+        integer :: ie, ib, u, us, uc, l, i1, i2, c1, c2
         open (newunit=u, file='output/coulomb-eta-bins.csv', status='replace')
         write (u, '(a)') 'eta,theta_lo_deg,theta_hi_deg,P_product,P_product_sym,'// &
-            'P_singlet,P_triplet,P_classical_sym,R_sym_fluence,mott_singlet_ratio,'// &
-            'mott_triplet_ratio'
+            'P_singlet,P_triplet,R_sym_fluence,mott_singlet_ratio,mott_triplet_ratio'
+        open (newunit=uc, file='output/coulomb-eta-classical-bins.csv', status='replace')
+        write (uc, '(a)') 'eta,theta_lo_deg,theta_hi_deg,P_classical_sym,'// &
+            'standard_error,R_sym_fluence'
         open (newunit=us, file='output/coulomb-eta-summary.csv', status='replace')
         write (us, '(a)') 'eta,k,lambdabar,r0,sigma_over_lambdabar,r0_over_sigma,z0,'// &
             't_final,rmax,n_radial,lmax,mmax,kept_states,partial_wave_dof,'// &
@@ -161,35 +179,39 @@ contains
         do ib = 0, nb
             edges(ib) = pi*ib/nb
         end do
+        do ib = 0, nbf
+            fedges(ib) = pi*ib/nbf
+        end do
         theta = (edges(1:) + edges(:nb - 1))/2*180/pi
+        theta_fine = (fedges(1:) + fedges(:nbf - 1))/2*180/pi
         do ie = 1, size(etas)
             sig_l = max(10.0_dp, 4*etas(ie))
             call setup_case(etas(ie), sig_l, 6*sig_l, 0.0_dp, cfg, enc, t)
             if (allocated(a)) deallocate (a)
             allocate (a(enc%mesh%n, 0:enc%mmax, 0:enc%lmax))
             call encounter_state(enc, t, a)
-            call encounter_angular_bins(enc, a, SECTOR_PRODUCT, cfg%z0/4, edges, pp)
-            call encounter_angular_bins(enc, a, SECTOR_SINGLET, cfg%z0/4, edges, ps)
-            call encounter_angular_bins(enc, a, SECTOR_TRIPLET, cfg%z0/4, edges, pt)
-            call classical_bins(enc, t, cfg%z0/4, edges, pc)
+            call encounter_angular_bins(enc, a, SECTOR_PRODUCT, cfg%z0/4, fedges, pp)
+            call encounter_angular_bins(enc, a, SECTOR_SINGLET, cfg%z0/4, fedges, ps)
+            call encounter_angular_bins(enc, a, SECTOR_TRIPLET, cfg%z0/4, fedges, pt)
+            call classical_bins(enc, t, cfg%z0/4, edges, nclass_scan, pc)
             call ce_free_width(cfg%sigma, enc%mu, cfg%hbar, cfg%z0/enc%speed, width)
             nperp = 1/(2*pi*width**2)
-            do ib = 1, nb
-                psym(ib) = (pp(ib) + pp(nb + 1 - ib))/2
-                pcs(ib) = (pc(ib) + pc(nb + 1 - ib))/2
+            psym = (pp + pp(nbf:1:-1))/2
+            do ib = 1, nbf
+                call reference_bin(fedges(ib - 1), fedges(ib), enc%eta, cfg%k, nperp, ref, ms)
+                write (u, '(f6.2,2(",",f8.3),7(",",es14.6))') etas(ie), &
+                    fedges(ib - 1)*180/pi, fedges(ib)*180/pi, pp(ib), psym(ib), ps(ib), &
+                    pt(ib), ref, ms/ref, 2 - ms/ref
+                ratio(ib, :, ie) = [psym(ib)/ref, ps(ib)/ref, pt(ib)/ref, ms/ref]
             end do
+            ! Classical: symmetrized counts in coarse bins, binomial standard error.
             do ib = 1, nb
-                call gauss_nodes(edges(ib - 1), edges(ib), xq, wq)
-                ref = 0; ms = 0
-                do q = 1, 16
-                    call ce_mott(acos(xq(q)), enc%eta, cfg%k, d, ex, cr)
-                    ref = ref + 2*pi*wq(q)*(d + ex)/2*nperp
-                    ms = ms + 2*pi*wq(q)*(d + ex + cr)/2*nperp
-                end do
-                write (u, '(f6.2,2(",",f8.3),9(",",es14.6))') etas(ie), edges(ib - 1)*180/pi, &
-                    edges(ib)*180/pi, pp(ib), psym(ib), ps(ib), pt(ib), pcs(ib), ref, &
-                    ms/ref, 2 - ms/ref
-                ratio(ib, :, ie) = [psym(ib)/ref, ps(ib)/ref, pt(ib)/ref, pcs(ib)/ref, ms/ref]
+                call reference_bin(edges(ib - 1), edges(ib), enc%eta, cfg%k, nperp, refc(ib), ms)
+                cratio(ib, 1, ie) = (pc(ib) + pc(nb + 1 - ib))/2/refc(ib)
+                cratio(ib, 2, ie) = sqrt((pc(ib) + pc(nb + 1 - ib))/nclass_scan)/2/refc(ib)
+                write (uc, '(f6.2,2(",",f8.3),3(",",es14.6))') etas(ie), edges(ib - 1)*180/pi, &
+                    edges(ib)*180/pi, cratio(ib, 1, ie)*refc(ib), cratio(ib, 2, ie)*refc(ib), &
+                    refc(ib)
             end do
             khi = cfg%k + 8/(2*cfg%sigma)
             uniform = (2*enc%mesh%rmax*khi*cfg%nodes_per_wavelength/(2*pi))**3
@@ -197,7 +219,7 @@ contains
             do l = 0, enc%lmax
                 dof = dof + real(enc%mesh%n*(min(l, enc%mmax) + 1), dp)
             end do
-            call encounter_state_error(enc, t, 1.0_dp, 0.5_dp, eb, rad)
+            call encounter_state_error(enc, t, 1.0_dp, 0.5_dp, eb, wall)
             wall = encounter_wall_probability(enc, a, SECTOR_PRODUCT, 2*cfg%sigma)
             eta_summary(:, ie) = [cfg%k, enc%r0/cfg%sigma, eb, &
                 enc%ledger%projection_defect, enc%ledger%reconstruction_rms, wall]
@@ -213,33 +235,62 @@ contains
                 ' r0/sigma=', enc%r0/cfg%sigma, ' n=', enc%mesh%n, ' lmax=', enc%lmax, &
                 ' setup s=', enc%ledger%setup_seconds, ' e(t)=', eb
         end do
-        close (u); close (us)
-        call figure(figsize=[12.0_dp, 8.5_dp])
+        close (u); close (uc); close (us)
+        ! Plot window 50-130 deg (finite-time bins diverge from Rutherford at small
+        ! angles): fine bins i1..i2, coarse classical bins c1..c2.
+        i1 = 5*nbf/18 + 1; i2 = nbf - 5*nbf/18; c1 = 5*nb/18 + 1; c2 = nb - 5*nb/18
+        call figure(figsize=[13.2_dp, 8.8_dp])
         do ie = 1, size(etas)
             call subplot(2, 2, ie)
-            write (arg, '(a,f4.1,a,f5.2)') '$\eta$ = ', etas(ie), ',  $r_0/\sigma$ = ', &
-                2*etas(ie)/max(10.0_dp, 4*etas(ie))
+            ymax = 1.08_dp*max(maxval(ratio(i1:i2, :, ie)), maxval(2 - ratio(i1:i2, 4, ie)), &
+                               maxval(cratio(c1:c2, 1, ie)))
+            if (ie == 1) ymax = 1.75_dp*ymax
+            write (arg, '(a,f4.1,a,f5.2,a)') '$\eta$ = ', etas(ie), ',  $r_0/\sigma$ = ', &
+                2*etas(ie)/max(10.0_dp, 4*etas(ie)), ',  1° bins'
             call title(trim(arg))
-            call xlabel('$\theta$ (deg), CM frame, bins at $t = 2 z_0/v$')
-            call ylabel('bin probability / plane-wave Rutherford (sym.)')
-            call xlim(30.0_dp, 150.0_dp); call ylim(0.0_dp, 2.6_dp)
-            call plot(theta, ratio(:, 5, ie), label='Mott singlet (plane wave)', &
+            call xlabel('CM scattering angle $\theta$ (deg), at $t = 2 z_0/v$')
+            call ylabel('bin probability / plane-wave Rutherford')
+            call xlim(50.0_dp, 130.0_dp); call ylim(0.0_dp, ymax)
+            lo = max(0.0_dp, min(ymax, cratio(:, 1, ie) - cratio(:, 2, ie)))
+            hi = max(0.0_dp, min(ymax, cratio(:, 1, ie) + cratio(:, 2, ie)))
+            call fill_between(theta(c1:c2), lo(c1:c2), hi(c1:c2), &
+                              color=[0.0_dp, 0.62_dp, 0.45_dp], alpha=0.25_dp)
+            call plot(theta_fine(i1:i2), ratio(i1:i2, 4, ie), label='Mott singlet (plane wave)', &
                       linestyle='-', color=[0.6_dp, 0.6_dp, 0.6_dp])
-            call plot(theta, 2 - ratio(:, 5, ie), label='Mott triplet (plane wave)', &
-                      linestyle='--', color=[0.6_dp, 0.6_dp, 0.6_dp])
-            call plot(theta, ratio(:, 1, ie), label='quantum product, spin-unresolved', &
-                      linestyle='-', color=[0.0_dp, 0.0_dp, 0.0_dp])
-            call plot(theta, ratio(:, 2, ie), label='quantum singlet', linestyle='-', &
-                      color=[0.0_dp, 0.447_dp, 0.698_dp])
-            call plot(theta, ratio(:, 3, ie), label='quantum triplet', linestyle='-', &
-                      color=[0.835_dp, 0.369_dp, 0.0_dp])
-            call plot(theta, ratio(:, 4, ie), label='classical ensemble', linestyle=':', &
-                      color=[0.0_dp, 0.62_dp, 0.45_dp])
-            if (ie == 1) call legend(loc='upper left')
+            call plot(theta_fine(i1:i2), 2 - ratio(i1:i2, 4, ie), &
+                      label='Mott triplet (plane wave)', linestyle='--', &
+                      color=[0.6_dp, 0.6_dp, 0.6_dp])
+            call plot(theta_fine(i1:i2), ratio(i1:i2, 2, ie), label='quantum singlet', &
+                      linestyle='-', color=[0.0_dp, 0.447_dp, 0.698_dp])
+            call plot(theta_fine(i1:i2), ratio(i1:i2, 3, ie), label='quantum triplet', &
+                      linestyle='-', color=[0.835_dp, 0.369_dp, 0.0_dp])
+            call plot(theta_fine(i1:i2), ratio(i1:i2, 1, ie), &
+                      label='quantum product, spin-unresolved', linestyle='-', &
+                      color=[0.0_dp, 0.0_dp, 0.0_dp])
+            call plot(theta(c1:c2), min(ymax, cratio(c1:c2, 1, ie)), &
+                      label='classical ensemble, 5° bins $\pm 1$ s.e.', &
+                      linestyle=':', color=[0.0_dp, 0.62_dp, 0.45_dp])
+            if (ie == 1) call legend(loc='upper center')
         end do
         call tight_layout()
         call savefig('output/coulomb-mott-eta-scan.png')
     end subroutine eta_scan
+
+    ! Plane-wave Rutherford (spin-averaged, no cross term) and Mott singlet bin
+    ! fluences for a CM angle bin, 16-point Gauss-Legendre in cos theta.
+    subroutine reference_bin(th1, th2, eta, k, nperp, ref, ms)
+        real(dp), intent(in) :: th1, th2, eta, k, nperp
+        real(dp), intent(out) :: ref, ms
+        real(dp) :: xq(16), wq(16), d, ex, cr
+        integer :: q
+        call gauss_nodes(th1, th2, xq, wq)
+        ref = 0; ms = 0
+        do q = 1, 16
+            call ce_mott(acos(xq(q)), eta, k, d, ex, cr)
+            ref = ref + 2*pi*wq(q)*(d + ex)/2*nperp
+            ms = ms + 2*pi*wq(q)*(d + ex + cr)/2*nperp
+        end do
+    end subroutine reference_bin
 
     subroutine gauss_nodes(th1, th2, xq, wq)
         use fortnum_quadrature, only: gauss_legendre_ab
@@ -267,7 +318,7 @@ contains
             allocate (a(enc%mesh%n, 0:enc%mmax, 0:enc%lmax))
             call encounter_state(enc, t, a)
             call encounter_angular_bins(enc, a, SECTOR_PRODUCT, cfg%z0/4, edges, pq(:, ibs))
-            call classical_bins(enc, t, cfg%z0/4, edges, pc(:, ibs))
+            call classical_bins(enc, t, cfg%z0/4, edges, nclass, pc(:, ibs))
             do ib = 1, nb
                 write (u, '(f6.2,",",f6.3,2(",",f8.3),2(",",es14.6),2(",",i0))') bs(ibs), &
                     bs(ibs)/10, edges(ib - 1)*180/pi, edges(ib)*180/pi, pq(ib, ibs), &
@@ -278,19 +329,21 @@ contains
         end do
         close (u)
         bscan_quantum = pq; bscan_classical = pc
-        call figure(figsize=[9.0_dp, 6.0_dp])
-        call title('eta = 1, sigma = 10 lambdabar: impact-parameter scan (product state)')
-        call xlabel('$\theta$ (deg), CM frame, bins at $t = 2 z_0/v$')
-        call ylabel('bin probability (5 deg bins, |r| > z0/4)')
+        call figure(figsize=[12.8_dp, 6.4_dp])
+        call title('Impact-parameter scan, $\eta = 1$, $\sigma = 10/k$ (distinguishable pair)')
+        call xlabel('CM scattering angle $\theta$ (deg), at $t = 2 z_0/v$')
+        call ylabel('bin probability (5° bins, $|r| > z_0/4$)')
         call set_yscale('log')
         call xlim(0.0_dp, 180.0_dp); call ylim(1.0e-6_dp, 1.0_dp)
         do ibs = 1, size(bs)
-            write (arg, '(a,f4.1,a)') 'quantum b = ', bs(ibs), ' lambdabar'
-            call plot(theta, max(pq(:, ibs), 1.0e-7_dp), label=trim(arg), linestyle='-', &
+            write (arg, '(a,i0)') 'quantum, $kb$ = ', nint(bs(ibs))
+            call plot(theta, max(pq(:, ibs), 1.0e-6_dp), label=trim(arg), linestyle='-', &
                       color=palette(ibs))
-            write (arg, '(a,f4.1)') 'classical b = ', bs(ibs)
-            call plot(theta, max(pc(:, ibs), 1.0e-7_dp), label=trim(arg), linestyle=':', &
-                      color=palette(ibs))
+            write (arg, '(a,i0,a,i0,a)') 'classical, $kb$ = ', nint(bs(ibs)), ' (', nclass, &
+                ' pairs)'
+            call plot(pack(theta, pc(:, ibs) > 0), max(pack(pc(:, ibs), pc(:, ibs) > 0), &
+                      1.0e-6_dp), label=trim(arg), linestyle='none', marker='o', &
+                      markersize=4.0_dp, color=palette(ibs))
         end do
         call legend(loc='upper right')
         call savefig('output/coulomb-b-scan.png')
@@ -346,34 +399,63 @@ contains
         print '(a,f8.3,a,es9.2)', 'Kepler: <n>=', kep%mean_n, ' max|A-A_exact|=', dmax
         kepler_series = reshape([t/kep%revival, rmean/kep%rc, a2, o2], [ns, 4])
         kepler_errors = [kep%max_level_error, dmax]
-        call figure(figsize=[11.0_dp, 10.0_dp])
+        call figure(figsize=[12.8_dp, 11.2_dp])
+        call suptitle('Hydrogen radial Rydberg packet ($n_0 = 40$, $l = 1$, rms $\delta n = 1.5$):'// &
+                      ' breathing, collapse and revivals')
         call subplot(3, 1, 1)
-        call title('Q1b: hydrogen radial packet, nbar = 40, l = 1, rms dn = 1.5')
-        call xlabel('t / T_rev   (T_rev = (2 nbar/3) T_K)')
-        call ylabel('<r> / r_out')
-        call xlim(0.0_dp, 1.1_dp)
+        call title('mean radius')
+        call xlabel('$t / T_{rev}$,   $T_{rev} = (2 n_0/3) T_K$')
+        call ylabel('mean radius / $r_{out}$')
+        call xlim(0.0_dp, 1.1_dp); call ylim(0.3_dp, 1.3_dp)
         call plot(t/kep%revival, rmean/kep%rc, linestyle='-', color=[0.0_dp, 0.447_dp, 0.698_dp])
+        call time_marks(kep%period/kep%revival, 0.3_dp, 1.3_dp, [0.3_dp, 0.3_dp, 0.3_dp], .true.)
+        call legend(loc='upper center')
         call subplot(3, 1, 2)
-        call title('autocorrelation |A(t)|^2: represented spectrum vs exact hydrogen levels')
-        call xlabel('t / T_rev'); call ylabel('|<psi(0)|psi(t)>|^2')
-        call xlim(0.0_dp, 1.1_dp); call ylim(0.0_dp, 1.05_dp)
+        call title('autocorrelation $A(t)$ = overlap of $\psi(t)$ with $\psi(0)$: '// &
+                   'represented spectrum versus exact levels')
+        call xlabel('$t / T_{rev}$'); call ylabel('$|A(t)|^2$')
+        call xlim(0.0_dp, 1.1_dp); call ylim(0.0_dp, 1.4_dp)
         call plot(t/kep%revival, a2, label='FEM-DVR spectrum', linestyle='-', &
+                  color=[0.0_dp, 0.447_dp, 0.698_dp])
+        call plot(t/kep%revival, o2, label='exact levels $E_n = -1/(2n^2)$', linestyle='--', &
                   color=[0.0_dp, 0.0_dp, 0.0_dp])
-        call plot(t/kep%revival, o2, label='exact E_n oracle', linestyle=':', &
-                  color=[0.835_dp, 0.369_dp, 0.0_dp])
-        call legend(loc='upper right')
+        call time_marks(kep%period/kep%revival, 0.0_dp, 1.4_dp, [0.3_dp, 0.3_dp, 0.3_dp], .false.)
+        call legend(loc='upper center')
         call subplot(3, 1, 3)
-        call title('radial probability density P(r, t)')
-        call xlabel('t / T_rev'); call ylabel('r / r_out')
+        call title('radial probability density')
+        call xlabel('$t / T_{rev}$'); call ylabel('$r / r_{out}$')
         tedge = t/kep%revival
         do i = 1, ns - 1
             img(:, i) = dens(:, i)*kep%rc
         end do
         call pcolormesh(tedge, edges/kep%rc, img, cmap='viridis', vmin=0.0_dp, &
                         vmax=maxval(img)*0.6_dp)
+        call xlim(0.0_dp, 1.1_dp); call ylim(0.0_dp, 1.6_dp)
+        call colorbar(label='$P(r,t) r_{out}$ (saturated above)')
+        call time_marks(kep%period/kep%revival, 0.0_dp, 1.6_dp, [1.0_dp, 1.0_dp, 1.0_dp], .false.)
         call tight_layout()
         call savefig('output/coulomb-kepler.png')
     end subroutine kepler_case
+
+    ! Vertical markers at T_K, T_rev/2 and T_rev (x in units of T_rev), told
+    ! apart by line style; labelled through the legend when `labelled`.
+    subroutine time_marks(tk, y0, y1, c, labelled)
+        real(dp), intent(in) :: tk, y0, y1, c(3)
+        logical, intent(in) :: labelled
+        character(4), parameter :: ls(3) = [character(4) :: ':', '-.', '--']
+        character(40), parameter :: lab(3) = [character(40) :: &
+            'Kepler period $T_K$', 'half revival $T_{rev}/2$', 'full revival $T_{rev}$']
+        real(dp) :: x
+        integer :: i
+        do i = 1, 3
+            x = merge(tk, 0.5_dp*(i - 1), i == 1)
+            if (labelled) then
+                call plot([x, x], [y0, y1], linestyle=trim(ls(i)), color=c, label=trim(lab(i)))
+            else
+                call plot([x, x], [y0, y1], linestyle=trim(ls(i)), color=c)
+            end if
+        end do
+    end subroutine time_marks
 
     ! Solve-only, check and derivative times with retained memory (warm, one run).
     subroutine cost_ledger()
@@ -438,155 +520,355 @@ contains
             ' s, jvp ', tj, ' s, vjp ', tv
     end subroutine cost_ledger
 
-    ! Encounter movie (eta = 3, sigma = 3 lambdabar, b = 1 lambdabar): quantum
-    ! relative and lab-frame one-body densities beside the classical ensemble on
-    ! the same axes and clock, plus relative-separation densities.
-    subroutine encounter_movie()
+    subroutine encounter_movies()
+        allocate (mq(npx, npx, 3, nmove), mc(ncx, ncx, nmove))
+        call encounter_movie(0.0_dp, 'headon')
+        call encounter_movie(2.0_dp, 'offaxis')
+    end subroutine encounter_movies
+
+    ! Encounter movie in the relative coordinate r = x1 - x2 (eta = 3,
+    ! sigma = 3 lambdabar = r0/2, z0 = 20 lambdabar, impact parameter b_l in
+    ! lambdabar): slice y = 0 of the sector-normalized relative density for the
+    ! singlet, triplet and spin-unresolved product beside the classical Wigner
+    ! ensemble (slab |y| < h/2), log colour scale, slow motion around closest
+    ! approach. Visualization path: interpolated synthesis, no pointwise bound.
+    subroutine encounter_movie(b_l, tag)
+        real(dp), intent(in) :: b_l
+        character(*), intent(in) :: tag
+        integer, parameter :: nscan = 81, nsb = 240, nbatch = 40, nbs = 20000
+        real(dp), parameter :: slow = 4
         type(encounter_config_t) :: cfg
         type(encounter_t) :: enc
         type(animation_t) :: anim
-        complex(dp), allocatable :: a(:, :, :)
-        real(dp), allocatable :: rel(:, :, :), cm(:, :, :), tri(:, :), tmp(:, :)
-        real(dp) :: t, tf, sedges(0:nsep), ll, wcm, drift, x1(3), x2(3)
-        integer :: f, n, ix, u, ib
+        complex(dp), allocatable :: a(:, :, :), psi(:)
+        real(dp), allocatable :: px(:), py(:), pz(:), rel(:, :, :), cm(:, :, :), tfine(:), &
+            wcum(:)
+        real(dp) :: tf, sedges(0:nsb), sp(nsb), rmean(nscan), ts(nscan), tau, tw, l, h, &
+            ns, nt, np, w, x, z, drift, rho2, cell, dmax
+        complex(dp) :: pp, pm
+        integer :: f, i, j, ib, n, u, s
         logical :: ok
-        call setup_case(3.0_dp, 3.0_dp, 20.0_dp, 1.0_dp, cfg, enc, tf)
+        call setup_case(3.0_dp, 3.0_dp, 20.0_dp, b_l, cfg, enc, tf)
         mv_lambdabar = enc%lambdabar; mv_speed = enc%speed; mv_z0 = cfg%z0
-        mv_r0_sigma = enc%r0/cfg%sigma
-        call ce_free_width(cfg%sigma, enc%mu, cfg%hbar, tf, wcm)
-        lr = min(enc%mesh%rmax, cfg%z0 + 3*wcm)
-        call ce_free_width(enc%sigma_cm, enc%mtotal, cfg%hbar, tf, wcm)
-        ll = lr/2 + 2*wcm
-        do ix = 0, npx
-            xr(ix) = -lr + 2*lr*ix/npx; xl(ix) = -ll + 2*ll*ix/npx
+        mv_b = b_l; mv_r0 = enc%r0
+        l = min(enc%mesh%rmax, 34*enc%lambdabar)
+        h = mv_slab*enc%lambdabar
+        do i = 0, npx
+            xq(i) = -l + 2*l*i/npx
         end do
-        do ib = 0, nsep
-            sedges(ib) = lr*ib/nsep
+        do i = 0, ncx
+            xc(i) = -l + 2*l*i/ncx
         end do
-        scent = (sedges(1:) + sedges(:nsep - 1))/2
-        do f = 1, nf
-            times(f) = tf*real(f - 1, dp)/real(nf - 1, dp)
+        ! Closest approach from the quantum mean separation.
+        allocate (a(enc%mesh%n, 0:enc%mmax, 0:enc%lmax))
+        do i = 0, nsb
+            sedges(i) = enc%mesh%rmax*i/nsb
         end do
-        allocate (a(enc%mesh%n, 0:enc%mmax, 0:enc%lmax), rel(3, nclass, nf), cm(3, nclass, nf))
-        allocate (qr(npx, npx, nf), ql(npx, npx, nf), tl(npx, npx, nf), cr(npx, npx, nf), &
-                  cl(npx, npx, nf), sep(nsep, 4, nf), tri(npx, npx), tmp(npx, npx))
-        call encounter_classical_ensemble(enc, nclass, movie_seed, times, rel, cm, &
-                                          drift, ok)
-        if (.not. ok) error stop 'classical movie ensemble failed'
-        open (newunit=u, file='output/coulomb-movie-separation.csv', status='replace')
-        write (u, '(a)') 't,t_v_over_z0,r_over_lambdabar,P_product,P_singlet,P_triplet,'// &
-            'P_classical,norm,energy,wall_prob'
-        do f = 1, nf
-            t = times(f)
-            call encounter_state(enc, t, a)
-            call encounter_relative_projection(enc, a, SECTOR_PRODUCT, .false., xr, xr, npx, &
-                                               enc%lambdabar/4, qr(:, :, f))
-            call encounter_relative_projection(enc, a, SECTOR_TRIPLET, .false., xr, xr, npx, &
-                                               enc%lambdabar/4, tri)
-            call encounter_lab_projection(enc, qr(:, :, f), xr, xr, t, 1, xl, xl, ql(:, :, f))
-            call encounter_lab_projection(enc, qr(:, :, f), xr, xr, t, 2, xl, xl, tmp)
-            ql(:, :, f) = ql(:, :, f) + tmp
-            call encounter_lab_projection(enc, tri, xr, xr, t, 1, xl, xl, tl(:, :, f))
-            call encounter_lab_projection(enc, tri, xr, xr, t, 2, xl, xl, tmp)
-            tl(:, :, f) = tl(:, :, f) + tmp
-            call encounter_separation_density(enc, a, SECTOR_PRODUCT, sedges, sep(:, 1, f))
-            call encounter_separation_density(enc, a, SECTOR_SINGLET, sedges, sep(:, 2, f))
-            call encounter_separation_density(enc, a, SECTOR_TRIPLET, sedges, sep(:, 3, f))
-            cr(:, :, f) = 0; cl(:, :, f) = 0; sep(:, 4, f) = 0
-            do n = 1, nclass
-                call deposit(cr(:, :, f), xr, rel(1, n, f), rel(3, n, f))
-                x1 = cm(:, n, f) + rel(:, n, f)/2; x2 = cm(:, n, f) - rel(:, n, f)/2
-                call deposit(cl(:, :, f), xl, x1(1), x1(3))
-                call deposit(cl(:, :, f), xl, x2(1), x2(3))
-                ib = int(norm2(rel(:, n, f))/(sedges(1) - sedges(0))) + 1
-                if (ib <= nsep) sep(ib, 4, f) = sep(ib, 4, f) + 1.0_dp/nclass
+        do i = 1, nscan
+            ts(i) = tf*(i - 1)/real(nscan - 1, dp)
+            call encounter_state(enc, ts(i), a)
+            call encounter_separation_density(enc, a, SECTOR_PRODUCT, sedges, sp)
+            rmean(i) = sum((sedges(1:) + sedges(:nsb - 1))/2*sp)/sum(sp)
+        end do
+        mv_tc = ts(minloc(rmean, 1))
+        ! Frame clock: playback rate 1/slow inside a Gaussian window of width tau
+        ! centred after closest approach (reflection and outgoing interference).
+        tau = 0.15_dp*tf; tw = mv_tc + 0.15_dp*tf
+        allocate (tfine(0:4000), wcum(0:4000))
+        wcum(0) = 0
+        do i = 0, 4000
+            tfine(i) = tf*i/4000.0_dp
+            if (i > 0) wcum(i) = wcum(i - 1) + (tfine(i) - tfine(i - 1))* &
+                (1 + (slow - 1)*exp(-((tfine(i) - tw)/tau)**2))
+        end do
+        j = 0
+        do f = 1, nmove
+            w = wcum(4000)*(f - 1)/real(nmove - 1, dp)
+            do while (j < 3999 .and. wcum(j + 1) < w)
+                j = j + 1
             end do
-            cr(:, :, f) = cr(:, :, f)/(nclass*(xr(1) - xr(0))**2)
-            cl(:, :, f) = cl(:, :, f)/(nclass*(xl(1) - xl(0))**2)
-            do ib = 1, nsep
-                write (u, '(es13.5,9(",",es13.5))') t, t*enc%speed/cfg%z0, &
-                    scent(ib)/enc%lambdabar, sep(ib, :, f), &
-                    encounter_norm(enc, a, SECTOR_PRODUCT), &
-                    encounter_energy(enc, a, SECTOR_PRODUCT), &
-                    encounter_wall_probability(enc, a, SECTOR_PRODUCT, 2*cfg%sigma)
+            x = (w - wcum(j))/max(wcum(j + 1) - wcum(j), tiny(1.0_dp))
+            mtimes(f) = tfine(j) + min(1.0_dp, x)*(tfine(j + 1) - tfine(j))
+            mslow(f) = 1 + (slow - 1)*exp(-((mtimes(f) - tw)/tau)**2)
+        end do
+        ! Quantum slice y = 0 on pixel centres; psi(-r) is the flipped image.
+        allocate (px(npx*npx), py(npx*npx), pz(npx*npx), psi(npx*npx))
+        n = 0
+        do i = 1, npx
+            do j = 1, npx
+                n = n + 1
+                px(n) = (xq(i - 1) + xq(i))/2; pz(n) = (xq(j - 1) + xq(j))/2
             end do
+        end do
+        py = 0
+        open (newunit=u, file='output/coulomb-movie-'//tag//'.csv', status='replace')
+        write (u, '(a)') 't,t_v_over_z0,slow_motion,norm_product,norm_singlet,'// &
+            'norm_triplet,energy,wall_prob'
+        do f = 1, nmove
+            call encounter_state(enc, mtimes(f), a)
+            call encounter_points(enc, a, px, py, pz, psi)
+            np = encounter_norm(enc, a, SECTOR_PRODUCT)
+            ns = encounter_norm(enc, a, SECTOR_SINGLET)
+            nt = encounter_norm(enc, a, SECTOR_TRIPLET)
+            do i = 1, npx
+                do j = 1, npx
+                    pp = psi((i - 1)*npx + j); pm = psi((npx - i)*npx + npx + 1 - j)
+                    mq(j, i, 1, f) = abs(pp + pm)**2/(4*ns)
+                    mq(j, i, 2, f) = abs(pp - pm)**2/(4*nt)
+                    mq(j, i, 3, f) = (abs(pp)**2 + abs(pm)**2)/(2*np)
+                end do
+            end do
+            mq(:, :, :, f) = mq(:, :, :, f)*enc%lambdabar**3
+            write (u, '(es13.5,7(",",es13.5))') mtimes(f), mtimes(f)*enc%speed/cfg%z0, &
+                mslow(f), np, ns, nt, encounter_energy(enc, a, SECTOR_PRODUCT), &
+                encounter_wall_probability(enc, a, SECTOR_PRODUCT, 2*cfg%sigma)
         end do
         close (u)
-        print '(a,i0,a,es9.2)', 'movie frames=', nf, ' classical drift=', drift
-        call figure(figsize=[15.0_dp, 9.0_dp])
+        ! Classical ensemble, spin-unresolved (r and -r with weight 1/2), slab |y| < h/2.
+        allocate (rel(3, nbs, nmove), cm(3, nbs, nmove))
+        mc = 0
+        cell = (xc(1) - xc(0))**2*h*nbatch*nbs/enc%lambdabar**3
+        do ib = 1, nbatch
+            call encounter_classical_ensemble(enc, nbs, movie_seed + ib, mtimes, rel, cm, &
+                                              drift, ok)
+            if (.not. ok) error stop 'classical movie ensemble failed'
+            do f = 1, nmove
+                do n = 1, nbs
+                    if (abs(rel(2, n, f)) >= h/2) cycle
+                    do s = -1, 1, 2
+                        x = s*rel(1, n, f); z = s*rel(3, n, f)
+                        i = floor((x - xc(0))/(xc(1) - xc(0))) + 1
+                        j = floor((z - xc(0))/(xc(1) - xc(0))) + 1
+                        if (i >= 1 .and. i <= ncx .and. j >= 1 .and. j <= ncx) &
+                            mc(j, i, f) = mc(j, i, f) + 0.5_dp/cell
+                    end do
+                end do
+            end do
+        end do
+        ! Fixed log colour range: four decades below the global quantum maximum.
+        dmax = maxval(mq)
+        mv_lmax = ceiling(2*log10(dmax))/2.0_dp; mv_lmin = mv_lmax - 4
+        mq = log10(max(mq, 10.0_dp**(mv_lmin - 1)))
+        mc = log10(max(mc, 10.0_dp**(mv_lmin - 1)))
+        print '(3a,f7.3,a,es9.2,a,es9.2)', 'movie ', tag, ': t_c v/z0=', &
+            mv_tc*enc%speed/cfg%z0, ' max density=', dmax, ' classical drift=', drift
+        if (b_l == 0) call turning_cut(enc, cfg, a)
+        call figure(figsize=[20.0_dp, 4.4_dp])
         canvas => get_global_figure()
-        do f = 1, nf, nf/3
+        do i = 1, 4
+            select case (i)
+            case (1); f = 1
+            case (2); f = minloc(abs(mtimes - mv_tc), 1)
+            case (3); f = minloc(abs(mtimes - 0.72_dp*tf), 1)
+            case default; f = nmove
+            end select
             call draw(f)
-            write (arg, '(a,i3.3,a)') 'output/coulomb-encounter-frame', f, '.png'
+            write (arg, '(4a,i0,a)') 'output/coulomb-encounter-', tag, '-frame', '-', f, '.png'
             call savefig(trim(arg))
             call canvas%clear()
         end do
-        call draw(nf)
-        call savefig('output/coulomb-encounter-final.png')
-        anim = animation_func(update, frames=nf, interval=42, fig=canvas)
-        call save_animation(anim, 'output/coulomb-encounter.mp4', fps=24, status=status)
+        anim = animation_func(update, frames=nmove + nhold, interval=42, fig=canvas)
+        call save_animation(anim, 'output/coulomb-encounter-'//tag//'.mp4', fps=24, &
+                            status=status)
         if (status /= 0) print '(a,i0)', 'movie encoding status ', status
+        call canvas%clear()
     end subroutine encounter_movie
-    subroutine deposit(img, edges, x, z)
-        real(dp), intent(inout) :: img(:, :)
-        real(dp), intent(in) :: edges(0:), x, z
-        integer :: i, j
-        i = floor((x - edges(0))/(edges(1) - edges(0))) + 1
-        j = floor((z - edges(0))/(edges(1) - edges(0))) + 1
-        if (i >= 1 .and. i <= size(img, 2) .and. j >= 1 .and. j <= size(img, 1)) &
-            img(j, i) = img(j, i) + 1
-    end subroutine deposit
+
+    ! Head-on cuts at closest approach t_c along the collision axis z.
+    ! (a) x = 0, density averaged over the cylinder rho < 1/k: distinguishable
+    ! quantum pair versus the classical ensemble (tunnelling tail inside r0).
+    ! (b) x = 2 r0, y = 0: singlet/triplet exchange fringes (spacing -> lambda/2)
+    ! versus the spin-unresolved product and the classical ensemble (rod of
+    ! cross-section (1/k)^2). Classical bands are +-1 binomial standard error.
+    subroutine turning_cut(enc, cfg, a)
+        use fortnum_quadrature, only: gauss_legendre_ab
+        type(encounter_t), intent(in) :: enc
+        type(encounter_config_t), intent(in) :: cfg
+        complex(dp), intent(inout) :: a(:, 0:, 0:)
+        integer, parameter :: nz = 600, nzc = 96, nq = 6, nbt = 10, nbc = 40000
+        real(dp) :: zq(nz), dq(nz), zc(0:nzc), zm(nzc), cnt(nzc, 2), dc(nzc, 2), ec(nzc, 2), &
+            sq(nq), wq(nq), xx(nz), yy(nz), lo, hi, drift, lb, vol(2), ytop, ylo, xo, &
+            ds(nz), dt(nz), du(nz), peak(nz), ymark, nrm(3), r(3)
+        real(dp), allocatable :: rel(:, :, :), cm(:, :, :)
+        complex(dp) :: psi(nz), psim(nz)
+        integer :: i, q, ib, n, np, u, s
+        logical :: ok
+        lb = enc%lambdabar; xo = 2*enc%r0
+        lo = -24*lb; hi = 6*lb
+        call encounter_state(enc, mv_tc, a)
+        nrm = [encounter_norm(enc, a, SECTOR_PRODUCT), encounter_norm(enc, a, SECTOR_SINGLET), &
+               encounter_norm(enc, a, SECTOR_TRIPLET)]
+        call gauss_legendre_ab(nq, 0.0_dp, 1.0_dp, sq, wq)
+        do i = 1, nz
+            zq(i) = lo + (hi - lo)*(i - 0.5_dp)/nz
+        end do
+        dq = 0; yy = 0
+        do q = 1, nq
+            xx = lb*sqrt(sq(q))
+            call encounter_points(enc, a, xx, yy, zq, psi)
+            dq = dq + wq(q)*abs(psi)**2
+        end do
+        dq = dq/nrm(1)*lb**3
+        xx = xo
+        call encounter_points(enc, a, xx, yy, zq, psi)
+        call encounter_points(enc, a, -xx, yy, -zq, psim)
+        ds = abs(psi + psim)**2/(4*nrm(2))*lb**3
+        dt = abs(psi - psim)**2/(4*nrm(3))*lb**3
+        du = (abs(psi)**2 + abs(psim)**2)/(2*nrm(1))*lb**3
+        do i = 0, nzc
+            zc(i) = lo + (hi - lo)*i/nzc
+        end do
+        zm = (zc(1:) + zc(:nzc - 1))/2
+        allocate (rel(3, nbc, 1), cm(3, nbc, 1))
+        cnt = 0
+        do ib = 1, nbt
+            call encounter_classical_ensemble(enc, nbc, movie_seed + 100 + ib, [mv_tc], rel, &
+                                              cm, drift, ok)
+            if (.not. ok) error stop 'classical cut ensemble failed'
+            do n = 1, nbc
+                r = rel(:, n, 1)
+                i = floor((r(3) - lo)/(zc(1) - zc(0))) + 1
+                if (r(1)**2 + r(2)**2 < lb**2 .and. i >= 1 .and. i <= nzc) &
+                    cnt(i, 1) = cnt(i, 1) + 1
+                do s = -1, 1, 2     ! spin-unresolved: r and -r with weight 1/2
+                    i = floor((s*r(3) - lo)/(zc(1) - zc(0))) + 1
+                    if (abs(s*r(1) - xo) < lb/2 .and. abs(r(2)) < lb/2 .and. i >= 1 .and. &
+                        i <= nzc) cnt(i, 2) = cnt(i, 2) + 0.5_dp
+                end do
+            end do
+        end do
+        vol = [acos(-1.0_dp), 1.0_dp]*lb**2*(zc(1) - zc(0))*nbt*nbc/lb**3
+        do s = 1, 2
+            dc(:, s) = cnt(:, s)/vol(s); ec(:, s) = sqrt(cnt(:, s)*s)/s/vol(s)
+        end do
+        open (newunit=u, file='output/coulomb-turning-cut.csv', status='replace')
+        write (u, '(a)') 'kz,axis_quantum_product,offaxis_singlet,offaxis_triplet,'// &
+            'offaxis_spin_unresolved   (densities times lambdabar^3)'
+        do i = 1, nz
+            write (u, '(es13.5,4(",",es13.5))') zq(i)/lb, dq(i), ds(i), dt(i), du(i)
+        end do
+        write (u, '(a)') 'kz_centre,axis_classical,axis_se,offaxis_classical,offaxis_se'
+        do i = 1, nzc
+            write (u, '(es13.5,4(",",es13.5))') zm(i)/lb, dc(i, 1), ec(i, 1), dc(i, 2), ec(i, 2)
+        end do
+        close (u)
+        call figure(figsize=[12.8_dp, 6.4_dp])
+        write (arg, '(a,f5.2,a)') 'Head-on encounter at closest approach, $t v/z_0$ = ', &
+            mv_tc*enc%speed/cfg%z0, ',  $\eta = 3$, $\sigma = r_0/2$'
+        call suptitle(trim(arg))
+        call subplot(1, 2, 1)
+        call title('on the axis: no fringes, tunnelling into $|z| < r_0$')
+        call xlabel('$k z$ (relative coordinate, $x = y = 0$)')
+        call ylabel('density $\times k^{-3}$ (cylinder $\rho < 1/k$)')
+        call set_yscale('log')
+        ytop = 10*max(maxval(dq), maxval(dc(:, 1) + ec(:, 1))); ylo = ytop*1.0e-5_dp
+        call xlim(lo/lb, hi/lb); call ylim(ylo, ytop)
+        call classical_curve(zm/lb, dc(:, 1), ec(:, 1), cnt(:, 1), ylo)
+        call plot(pack(zq/lb, dq > ylo), pack(dq, dq > ylo), label='quantum, distinguishable pair', &
+                  linestyle='-', color=[0.0_dp, 0.447_dp, 0.698_dp])
+        call plot([-enc%r0/lb, -enc%r0/lb], [ylo, ytop], linestyle=':', &
+                  color=[0.0_dp, 0.0_dp, 0.0_dp], label='classical turning point $-r_0$')
+        call legend(loc='upper left')
+        call subplot(1, 2, 2)
+        call title('beside it ($k x = 2 k r_0 = 12$): exchange fringes')
+        call xlabel('$k z$ (relative coordinate, $y = 0$)')
+        call ylabel('density $\times k^{-3}$')
+        call set_yscale('log')
+        ytop = 6*max(maxval(ds), maxval(dt)); ylo = ytop*1.0e-3_dp
+        call xlim(lo/lb, hi/lb); call ylim(ylo, ytop)
+        call classical_curve(zm/lb, dc(:, 2), ec(:, 2), cnt(:, 2), ylo)
+        call plot(pack(zq/lb, du > ylo), pack(du, du > ylo), label='spin-unresolved product', &
+                  linestyle='-', &
+                  color=[0.0_dp, 0.0_dp, 0.0_dp])
+        call plot(pack(zq/lb, du > ylo), max(pack(ds, du > ylo), ylo), label='singlet', &
+                  linestyle='-', &
+                  color=[0.0_dp, 0.447_dp, 0.698_dp])
+        call plot(pack(zq/lb, du > ylo), max(pack(dt, du > ylo), ylo), label='triplet', &
+                  linestyle='--', &
+                  color=[0.835_dp, 0.369_dp, 0.0_dp])
+        ! lambda/2 bracket between the second and third singlet maxima (z < 0).
+        np = 0
+        do i = nz - 1, 2, -1
+            if (zq(i) < 0 .and. ds(i) > ds(i - 1) .and. ds(i) >= ds(i + 1) .and. &
+                ds(i) > 1.0e-3_dp*maxval(ds)) then
+                np = np + 1; peak(np) = zq(i)/lb
+            end if
+        end do
+        if (np >= 3) then
+            ymark = 1.4_dp*maxval(ds)
+            call plot([peak(2) - acos(-1.0_dp), peak(2)], [ymark, ymark], linestyle='-', &
+                      color=[0.0_dp, 0.0_dp, 0.0_dp], label='$\lambda/2 = \pi/k$ (asymptotic)')
+            do i = 0, 1
+                call plot([peak(2) - i*acos(-1.0_dp), peak(2) - i*acos(-1.0_dp)], &
+                          [ymark/1.25_dp, ymark*1.25_dp], linestyle='-', &
+                          color=[0.0_dp, 0.0_dp, 0.0_dp])
+            end do
+            print '(a,5f8.3)', 'turning cut: singlet maxima kz =', peak(1:min(5, np))
+        end if
+        call legend(loc='upper left')
+        call tight_layout()
+        call savefig('output/coulomb-turning-cut.png')
+    end subroutine turning_cut
+
+    subroutine classical_curve(z, d, e, cnt, ylo)
+        real(dp), intent(in) :: z(:), d(:), e(:), cnt(:), ylo
+        call fill_between(z, max(d - e, ylo), max(d + e, ylo), &
+                          color=[0.0_dp, 0.62_dp, 0.45_dp], alpha=0.25_dp)
+        call plot(pack(z, d > ylo), pack(d, d > ylo), &
+                  label='classical ensemble ($\pm 1$ s.e.)', linestyle=':', &
+                  color=[0.0_dp, 0.62_dp, 0.45_dp])
+    end subroutine classical_curve
+
 
     subroutine update(number)
         integer, intent(in) :: number
         call canvas%clear()
-        call draw(number)
+        call draw(min(number, nmove))
         call canvas%set_rendered(.false.)
     end subroutine update
 
     subroutine draw(f)
         integer, intent(in) :: f
-        real(dp) :: vr, vl, lb
+        integer :: p, nt
+        real(dp) :: lb, tk(8)
+        character(16) :: tl(8)
+        character(48), parameter :: names(4) = [character(48) :: 'singlet (even $l$)', &
+            'triplet (odd $l$)', 'spin-unresolved product', 'classical ensemble']
         lb = mv_lambdabar
-        ! Fixed colour range for the whole movie (quantum peak).
-        vr = maxval(qr); vl = max(maxval(ql), maxval(tl))
-        write (arg, '(a,f5.2,a,f5.2,a)') 'Q1 two-electron encounter, $\eta = 3$, '// &
-            '$r_0/\sigma = $', mv_r0_sigma, ',  $t v/z_0 = $', times(f)*mv_speed/mv_z0, &
-            '; fixed colour range'
+        nt = 0
+        do p = ceiling(mv_lmin), floor(mv_lmax)
+            nt = nt + 1; tk(nt) = p
+            write (tl(nt), '(a,i0,a)') '$10^{', p, '}$'
+        end do
+        if (mslow(f) > 1.05_dp) then
+            write (arg, '(a,f3.1,a,f5.2,a,f4.1,a)') 'Relative density in the plane $y = 0$, '// &
+                '$\eta = 3$, $\sigma = r_0/2 = 3/k$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
+                mtimes(f)*mv_speed/mv_z0, '   (slow motion ', mslow(f), '$\times$)'
+        else
+            write (arg, '(a,f3.1,a,f5.2)') 'Relative density in the plane $y = 0$, '// &
+                '$\eta = 3$, $\sigma = r_0/2 = 3/k$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
+                mtimes(f)*mv_speed/mv_z0
+        end if
         call suptitle(trim(arg))
-        call subplot(2, 3, 1)
-        call title('quantum relative density (x,z), y-integrated')
-        call xlabel('$k x$'); call ylabel('$k z$')
-        call pcolormesh(xr/lb, xr/lb, qr(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vr)
-        call subplot(2, 3, 2)
-        call title('quantum one-body density, both electrons (up,down)')
-        call xlabel('$k x$'); call ylabel('$k z$')
-        call pcolormesh(xl/lb, xl/lb, ql(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vl)
-        call subplot(2, 3, 3)
-        call title('quantum one-body density, same spin (triplet)')
-        call xlabel('$k x$'); call ylabel('$k z$')
-        call pcolormesh(xl/lb, xl/lb, tl(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vl)
-        call subplot(2, 3, 4)
-        write (arg, '(a,i0,a)') 'classical relative ensemble (', nclass, ' pairs)'
-        call title(trim(arg))
-        call xlabel('$k x$'); call ylabel('$k z$')
-        call pcolormesh(xr/lb, xr/lb, cr(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vr)
-        call subplot(2, 3, 5)
-        call title('classical one-body density, both electrons')
-        call xlabel('$k x$'); call ylabel('$k z$')
-        call pcolormesh(xl/lb, xl/lb, cl(:, :, f), cmap='viridis', vmin=0.0_dp, vmax=vl)
-        call subplot(2, 3, 6)
-        call title('relative separation |r|: probability per bin')
-        call xlabel('$k |r|$'); call ylabel('probability per bin')
-        call xlim(0.0_dp, lr/lb); call ylim(0.0_dp, 1.2_dp*maxval(sep(:, :, :)))
-        call plot(scent/lb, sep(:, 1, f), label='quantum product', linestyle='-', &
-                  color=[0.0_dp, 0.0_dp, 0.0_dp])
-        call plot(scent/lb, sep(:, 2, f), label='quantum singlet', linestyle='-', &
-                  color=[0.0_dp, 0.447_dp, 0.698_dp])
-        call plot(scent/lb, sep(:, 3, f), label='quantum triplet', linestyle='--', &
-                  color=[0.835_dp, 0.369_dp, 0.0_dp])
-        call plot(scent/lb, sep(:, 4, f), label='classical ensemble', linestyle=':', &
-                  color=[0.0_dp, 0.62_dp, 0.45_dp])
-        call legend(loc='upper right')
+        do p = 1, 4
+            call subplot(1, 4, p)
+            call title(trim(names(p)))
+            call xlabel('$k x$')
+            if (p == 1) call ylabel('$k z$')
+            if (p < 4) then
+                call pcolormesh(xq/lb, xq/lb, mq(:, :, p, f), cmap='viridis', &
+                                vmin=mv_lmin, vmax=mv_lmax)
+            else
+                call pcolormesh(xc/lb, xc/lb, mc(:, :, f), cmap='viridis', &
+                                vmin=mv_lmin, vmax=mv_lmax)
+            end if
+            call xlim(xq(0)/lb, xq(npx)/lb); call ylim(xq(0)/lb, xq(npx)/lb)
+            if (p == 4) then
+                call colorbar(label='$|ψ(x,0,z)|^2 k^{-3}$', ticks=tk(:nt), ticklabels=tl(:nt))
+            else
+                call colorbar(ticks=tk(:nt), ticklabels=tl(:nt))
+            end if
+        end do
+        call tight_layout()
     end subroutine draw
 end program coulomb_encounter_demo
