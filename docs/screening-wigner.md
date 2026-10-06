@@ -105,13 +105,14 @@ extracts frequencies from the runs after ballistic phase mixing.
 | d gamma/d hbar (k=0.6, hbar=1): tangent / implicit / FD | -0.03708 / -0.03737 / -0.03737 |
 | discrete tangent vs central FD of the run | < 1e-6 relative |
 | Strang order (dt 0.1 -> 0.05) | 2.07 |
-| mass drift | 1e-14; momentum 3e-6 (W) / 1e-5 (V); dE/E 2.7e-5 at dt 0.052, t = 30 |
-| negative mass at t = 20, hbar 1 / 0.5 / 0 | 0.247 / 0.077 / 1.3e-13 |
+| mass drift (movie run, 128 x 512, dt 0.039, t = 45) | 1e-14; momentum 5e-7 (W) / 6e-4 (V, unresolved after t ~ 24.5); dE/E 3.2e-6 (W) / 1.6e-5 (V) |
+| negative mass at t = 20, hbar 1 / 0.5 / 0 (128 x 512) | 0.262 / 0.085 / 1.3e-13 |
 
 The tangent growth slope uses the finite window [24, 40], so it keeps a
 residual transient (0.8 %). The root derivative is the oracle. The Vlasov
 negative mass is pure numerics: it stays at roundoff until the nonlinear
-filamentation outruns the v-grid (`t ~ 22` at nv = 256), so it serves as
+filamentation outruns the grid (`t ~ 22` at 64 x 256, `t ~ 24.5` at the
+movie grid 128 x 512; refining v alone does not move it), so it serves as
 the resolution indicator. Momentum is conserved only up to the
 Nyquist/periodic-v truncation once the dynamics is nonlinear. All errors
 in this part are indicators; no finite-basis residual bound exists yet.
@@ -123,13 +124,17 @@ in this part are indicators; no finite-basis residual bound exists yet.
 `&wigner dt, t_movie, hbar_movie /`). They write `output/<app>.nc` and CSV
 files, plus `output/screening-hierarchy.png`,
 `output/wigner-dispersion.png`, `output/wigner-two-stream.png` and
-`output/wigner-two-stream.mp4`. The movie runs 9 s, 216 frames at 24 fps,
-with f_W | f_V on a coolwarm map centred at zero.
+`output/wigner-two-stream.mp4`. The movie runs 13 s, 312 frames at 24 fps,
+to t = 45 (linear growth, saturation near t ~ 28, trapped-particle vortex),
+on a 128 x 512 grid with split steps <= 0.05. It shows f_W | f_V on a
+coolwarm map centred at zero, the negative part of f_W on its own colour
+scale, and |n_1| plus negative-mass histories with the time at which the
+Vlasov indicator exceeds 1e-6 (grid under-resolved after that).
 
 Cost (Apple M-series, gfortran 15, Release, one core). `screening_demo`
 takes 13 s: k_s scan 0.6 s, epsilon 0.1 s, potentials 9.1 s, Friedel 3.3 s.
-`wigner_demo` takes 76 s: Langmuir scan 23 s, two-stream scan 14 s,
-hbar-limit 6 s, error ledger 11 s, movie runs 1.6 s, rendering the rest.
+`wigner_demo` takes 113 s: Langmuir scan 23 s, two-stream scan 14 s,
+hbar-limit 6 s, error ledger 11 s, movie runs 13 s, rendering the rest.
 One Wigner step with diagnostics on 64 x 256 costs about 1 ms. Memory is the
 `nx x nv` state plus four same-size work arrays (phase table, shift symbol
 and their tangents). CTest: `test_screening` takes 3.5 s and `test_wigner`
