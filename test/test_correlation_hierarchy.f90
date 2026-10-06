@@ -162,7 +162,8 @@ contains
     !> = int_0^R 4 pi d^2 V(d) dd, V(d) = pi (4R + d)(2R - d)^2/12 (two-ball
     !> overlap at distance d); ideal gas g3 = 1.
     subroutine triplet_ideal()
-        type(triplet_histogram_t) :: t
+        type(triplet_histogram_t) :: t, fine, ref
+        real(dp) :: worst
         type(rng_t) :: g
         type(fortnum_status_t) :: status
         real(dp) :: exact, d, rmax, x(3, 300), length, g3(8, 8, 8), ratio, sigma
@@ -180,6 +181,13 @@ contains
             abs(sum(t%volume)/exact - 1), ' indicator ', &
             abs(sum(t%volume_coarse)/exact - 1)
         call check(abs(sum(t%volume)/exact - 1) < 2.0e-3_dp, 'triplet bin measure')
+        ! Per-bin measure (normalizes g3 directly): sub = 32 against sub = 96.
+        call triplet_init(fine, 8, rmax, 32)
+        call triplet_init(ref, 8, rmax, 96)
+        worst = maxval(abs(fine%volume - ref%volume)/max(ref%volume, 1.0e-300_dp), &
+                       mask=ref%volume > 1.0e-12_dp)
+        print '(a,es10.3)', 'per-bin triplet measure rel. error (sub 32) ', worst
+        call check(worst < 2.0e-3_dp, 'per-bin triplet measure')
         call rng_seed(g, 3_int64, status)
         length = mc_wigner_seitz_length(300)
         do s = 1, 200

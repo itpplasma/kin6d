@@ -10,6 +10,7 @@ module correlation_map_types
     public :: O_H2, O_C3, O_U3, O_RED, O_DK, O_UG, O_UEX, O_UK, O_UL
     public :: O_EEX, O_EK, O_EL, O_XEX, O_XK, O_XL, O_M2MC, O_M2K, O_M2L
     public :: O_M0MC, O_EHNC, O_EDH, O_XHNC, O_XDH, O_RPEAK, O_GPEAK
+    public :: O_C3OUT, O_C3COARSE, O_U3OUT, O_REDOUT
 
     integer, parameter :: O_H2 = 1, O_C3 = 2, O_U3 = 3, O_RED = 4, O_DK = 5
     integer, parameter :: O_UG = 6, O_UEX = 7, O_UK = 8, O_UL = 9
@@ -17,14 +18,16 @@ module correlation_map_types
     integer, parameter :: O_XEX = 13, O_XK = 14, O_XL = 15
     integer, parameter :: O_M2MC = 16, O_M2K = 17, O_M2L = 18, O_M0MC = 19
     integer, parameter :: O_EHNC = 20, O_EDH = 21, O_XHNC = 22, O_XDH = 23
-    integer, parameter :: O_RPEAK = 24, O_GPEAK = 25, nouts = 25
+    integer, parameter :: O_RPEAK = 24, O_GPEAK = 25, O_C3OUT = 26, O_C3COARSE = 27
+    integer, parameter :: O_U3OUT = 28, O_REDOUT = 29, nouts = 29
     character(16), parameter :: output_names(nouts) = [character(16) :: &
         'h2_sq', 'c3_sq', 'u3_sq', 'reducible_sq', 'kirkwood_rms', &
         'u_g2_route', 'u_ybg_exact', 'u_ybg_kirkwood', 'u_ybg_linear', &
         'l2_ybg_exact', 'l2_ybg_kirkwood', 'l2_ybg_linear', &
         'max_ybg_exact', 'max_ybg_kirkwood', 'max_ybg_linear', &
         'sl_mc', 'sl_kirkwood', 'sl_linear', 'neutral_mc', &
-        'l2_hnc', 'l2_dh', 'max_hnc', 'max_dh', 'peak_r', 'peak_g']
+        'l2_hnc', 'l2_dh', 'max_hnc', 'max_dh', 'peak_r', 'peak_g', &
+        'c3_sq_outer', 'c3_sq_coarse', 'u3_sq_outer', 'red_sq_outer']
 
     type :: chain_t
         real(dp) :: gamma = 0
@@ -37,7 +40,7 @@ module correlation_map_types
         real(dp), allocatable :: pair(:, :), pair_force(:, :), force_sum(:, :)
         real(dp), allocatable :: triplet(:, :, :, :), sk(:, :)
         integer, allocatable :: snaps(:), fsnaps(:), sk_vectors(:)
-        type(triplet_histogram_t) :: tri
+        type(triplet_histogram_t) :: tri, coarse
         ! Analysis results.
         real(dp) :: u = 0, u_err = 0, u_batch_err = 0, tau = 0, ess = 0
         real(dp) :: var = 0, var_err = 0, dudg = 0, dudg_err = 0, u_tail = 0

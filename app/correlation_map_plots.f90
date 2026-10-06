@@ -123,11 +123,29 @@ contains
         end do
     end subroutine
 
+    !> Dashed power-law fit (same rule as output/correlation-map-scaling.csv).
+    subroutine fit_line(c, idx, gmax, colour)
+        type(chain_t), intent(in) :: c(:)
+        integer, intent(in) :: idx
+        real(dp), intent(in) :: gmax, colour(3)
+        real(dp) :: y(size(c)), e(size(c)), p, a, pe, xf(2)
+        integer :: i, m, used
+        m = count(c%gamma <= gmax)
+        do i = 1, size(c)
+            y(i) = sqrt(max(c(i)%out(idx), 0.0_dp))
+            e(i) = c(i)%out_err(idx)/(2*max(y(i), 1.0e-300_dp))
+        end do
+        call power_fit(c(1:m)%gamma, y(1:m), e(1:m), p, a, pe, used)
+        xf = log10([c(1)%gamma, c(m)%gamma])
+        if (used >= 2) call plot(xf, log10(a) + p*xf, color=colour, linestyle='--', &
+                                 label='$\Gamma^{'//num(p, 2)//'}$')
+    end subroutine
+
     subroutine plot_sizes(chains, ng)
         type(chain_t), intent(in) :: chains(:)
         integer, intent(in) :: ng
-        real(dp) :: x(ng), y(ng), e(ng), p, a, pe, xf(2)
-        integer :: used, i, weak
+        real(dp) :: x(ng), y(ng), xr(ng), yr(ng)
+        integer :: i, m
         call figure(figsize=[12.8_dp, 6.4_dp])
         call subplot(1, 2, 1)
         call norm_series(chains(1:ng), O_H2, blue, 'o', '$|h_2|$')
@@ -135,34 +153,28 @@ contains
         call norm_series(chains(1:ng), O_U3, orange, '^', '$|U_3|$ (Ursell)')
         call norm_series(chains(1:ng), O_C3, vermillion, 'D', '$|c_3|$ (connected)')
         call norm_series(chains(ng + 1:), O_C3, purple, 'd', '$|c_3|$, small N')
+        call norm_series(chains(1:ng), O_C3COARSE, grey, 'x', &
+                         '$|c_3|$, 0.6a bins (resolution indicator)')
         x = log10(chains(1:ng)%gamma)
-        do i = 1, ng
-            y(i) = log10(sqrt(max(chains(i)%bin_indicator, 1.0e-300_dp)))
-        end do
-        call plot(x, y, color=grey, linestyle=':', label='bin indicator')
-        weak = count(chains(1:ng)%gamma <= 1.0_dp)
-        do i = 1, ng
-            y(i) = sqrt(max(chains(i)%out(O_H2), 0.0_dp))
-            e(i) = chains(i)%out_err(O_H2)/(2*max(y(i), 1.0e-300_dp))
-        end do
-        call power_fit(chains(1:weak)%gamma, y(1:weak), e(1:weak), p, a, pe, used)
-        xf = [x(1), x(weak)]
-        if (used >= 2) call plot(xf, log10(a) + p*xf, color=blue, linestyle='--', &
-                                 label='fit $\Gamma^{'//num(p, 2)//'}$')
+        call fit_line(chains(1:ng), O_H2, 1.0_dp, blue)
+        call fit_line(chains(1:ng), O_RED, 1.0_dp, green)
+        call fit_line(chains(1:ng), O_C3, 3.0_dp, vermillion)
         call xlabel('$\log_{10} \Gamma$'); call ylabel('$\log_{10}$ size')
         call title('Correlation sizes (n-weighted $L^2$, sides < 3a)')
         call legend()
         call subplot(1, 2, 2)
+        ! Only couplings where c3 is statistically resolved (> 2 sigma).
+        m = 0
         do i = 1, ng
-            y(i) = log10(max(chains(i)%out(O_DK), 1.0e-12_dp))
+            if (chains(i)%out(O_C3) <= 2*chains(i)%out_err(O_C3)) cycle
+            m = m + 1
+            xr(m) = x(i)
+            y(m) = log10(chains(i)%out(O_DK))
+            yr(m) = 0.5_dp*log10(chains(i)%out(O_C3)/chains(i)%out(O_RED))
         end do
-        call plot(x, y, color=blue, marker='o', markersize=6.0_dp, &
+        call plot(xr(:m), y(:m), color=blue, marker='o', markersize=6.0_dp, &
                   label='rms Kirkwood defect $\delta_K$')
-        do i = 1, ng
-            y(i) = 0.5_dp*log10(max(chains(i)%out(O_C3), 1.0e-24_dp)/ &
-                                max(chains(i)%out(O_RED), 1.0e-24_dp))
-        end do
-        call plot(x, y, color=vermillion, marker='D', markersize=6.0_dp, &
+        call plot(xr(:m), yr(:m), color=vermillion, marker='D', markersize=6.0_dp, &
                   label='$|c_3| / |K - P|$')
         call plot([x(1), x(ng)], [0.0_dp, 0.0_dp], color=black, linestyle='--', &
                   label='equal size')
@@ -194,6 +206,10 @@ contains
             call plot(x, y, color=colours(:, j), marker=trim(markers(j)), &
                       markersize=6.0_dp, label=trim(names(j)))
         end do
+        do i = 1, size(c)
+            y(i) = log10(sqrt(3*sum(c(i)%r**2*c(i)%g_err**2)*(c(i)%r(2) - c(i)%r(1))))
+        end do
+        call plot(x, y, color=grey, linestyle=':', label='MC noise 1$\sigma$')
         call xlabel('$\log_{10} \Gamma$'); call ylabel('$\log_{10} |g - g_{MC}|$')
         call title('Pair-structure error per closure')
         call legend()
