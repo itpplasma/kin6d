@@ -119,8 +119,8 @@ pure elemental subroutine wigner_potential_mode(k, nr, ni, vr, vi)
     real(dp), intent(in) :: k, nr, ni
     real(dp), intent(out) :: vr, vi
 
-    vr = nr/k**2
-    vi = ni/k**2
+    vr = nr/(k**2*1)
+    vi = ni/(k**2*1)
 
 end subroutine wigner_potential_mode
 
@@ -168,8 +168,8 @@ pure elemental subroutine wigner_field_mode(k, nr, ni, er, ei)
     real(dp), intent(in) :: k, nr, ni
     real(dp), intent(out) :: er, ei
 
-    er = -ni/k
-    ei = nr/k
+    er = -ni/(k*1)
+    ei = nr/(k*1)
 
 end subroutine wigner_field_mode
 
