@@ -303,7 +303,8 @@ contains
                                                     2, 1, 3, 1, 3, 2, 3, 2, 1], [3, 6])
         real(dp), parameter :: psign(6) = [1, 1, 1, -1, -1, -1]
         integer :: o(3), ks(3, 1)
-        real(dp) :: tr, ground_full, ground_lanczos
+        real(dp) :: tr, ground_full, ground_lanczos, trunc, ground, edges(7)
+        real(dp), allocatable :: gs1(:), go1(:), gs2(:), go2(:)
         logical :: ok
         call jellium_modes('spherical', 1, modes)
         call init_jellium_cell(jc, 3, modes, 1.0_dp, ok)
@@ -323,7 +324,9 @@ contains
         call jellium_thermal_rdms(jc, one, [1.0_dp], gamma, gamma2, ok)
         call cell_q_set(q); call cell_triple_set(q, triple)
         allocate (f2(size(q, 2)), f3(size(triple, 2)), b2(size(q, 2)), b3(size(triple, 2)))
-        call jellium_diagonal_moments(jc, one, [1.0_dp], gamma2, q, triple, f2, f3, ok)
+        allocate (gs1(4), go1(4))
+        call jellium_diagonal_moments(jc, one, [1.0_dp], [(a*jc%length/8, a=0, 4)], q, &
+                                      triple, gs1, go1, f2, f3, ok)
         call check(ok, 'diagonal moments of a determinant')
         ! Occupied spin orbitals from the 1-RDM diagonal.
         k = 0
@@ -370,9 +373,20 @@ contains
         call jellium_build_spectrum(jc, model, 4, lanczos, ok)
         ground_full = minval(full%energy(1:full%count))
         ground_lanczos = minval(lanczos%energy(1:lanczos%count))
-        allocate (w(full%count))
         call check(ok .and. abs(ground_full - ground_lanczos) < 1.0e-10_dp*abs(ground_full) &
                    .and. full%count == 364, 'dense full spectrum (364 states) = Lanczos ground')
+        ! Sparse-entry shell bins of a thermal ensemble = dense 2-RDM bins.
+        allocate (w(full%count), gs2(6), go2(6))
+        deallocate (gs1, go1); allocate (gs1(6), go1(6))
+        edges = [(a*jc%length/12, a=0, 6)]
+        call jellium_thermal_weights(jc, full, 1.0_dp, w, trunc, ground)
+        call jellium_thermal_rdms(jc, full, w, gamma, gamma2, ok)
+        call jellium_pair_bins(jc, gamma2, edges, gs2, go2)
+        call jellium_diagonal_moments(jc, full, w, edges, q, triple, gs1, go1, f2, f3, ok)
+        tr = maxval(abs(gs1 - gs2)) + maxval(abs(go1 - go2))
+        print '(a,es11.3,a,es10.2)', '     sparse vs dense bins ', tr, ' trunc ', trunc
+        call check(ok .and. tr < 1.0e-12_dp .and. trunc == 0, &
+                   'sparse 2-RDM shell bins = dense jellium_pair_bins (Theta = 1, N = 3)')
     end subroutine
 
     real(dp) function me(jc, x, y, qq) result(v)

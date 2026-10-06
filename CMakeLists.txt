@@ -426,3 +426,6 @@ set_source_files_properties(src/generated/kin6d_quantum_classical_leaves.f90
 add_executable(test_quantum_classical test/test_quantum_classical.f90)
 target_link_libraries(test_quantum_classical PRIVATE kin6d)
 add_test(NAME quantum_classical_h1b_oracles COMMAND test_quantum_classical)
+add_executable(correlation_map_quantum_demo app/correlation_map_quantum_demo.f90)
+target_link_libraries(correlation_map_quantum_demo PRIVATE kin6d kin6d_io
+    kin6d_demo_style fortplot)
