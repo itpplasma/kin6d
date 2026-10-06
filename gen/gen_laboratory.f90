@@ -7,6 +7,8 @@ program gen_laboratory
     use fortsym_rigorous_emit, only: rigorous_kernel_spec_t, interval_runtime, &
                                      emit_rigorous_kernel
     use kin6d_gen_support, only: fortsym_revision
+    use kin6d_symbolic_physics, only: phase_rotation, free_streaming_rotation, &
+        krook_node, krook_node_residual, p1_weight, p1_blend
     implicit none
     type(arena_t), target :: arena
     type(expr_t) :: v, t, x, amplitude, a, b, m, nu, sc, ss, dt, weight
@@ -38,8 +40,8 @@ program gen_laboratory
     cv = sym(arena, 'cv'); sv = sym(arena, 'sv')
     call emit('stream_factors', ['v ', 'dt'], ['cv', 'sv'], [cos(v*dt), sin(v*dt)])
     call emit('stream_cached', ['a ', 'b ', 'cv', 'sv'], ['an', 'bn'], &
-              [a*cv - b*sv, a*sv + b*cv])
-    rot = [a*cos(v*dt) - b*sin(v*dt), a*sin(v*dt) + b*cos(v*dt)]
+              phase_rotation(a, b, cv, sv))
+    rot = free_streaming_rotation(a, b, v*dt)
     call emit('stream_step', ['a ', 'b ', 'v ', 'dt'], ['an', 'bn'], rot)
     inputs = [a, b, v, dt]; directions = [da, db, dv, ddt]
     do i = 1, 2
@@ -60,15 +62,15 @@ program gen_laboratory
     call emit('interval_reconstruct', ['m', 'a', 'b', 'x'], ['value'], &
               [m + a*cos(x) + b*sin(x)], rigorous=.true.)
     call emit('interpolate', ['lo    ', 'hi    ', 'weight'], ['value'], &
-              [lo*(1 - weight) + hi*weight])
+              [p1_blend(lo, hi, weight)])
     call emit('interpolation_weight', ['lo', 'hi', 'v '], ['value'], &
-              [(v - lo)/(hi - lo)])
+              [p1_weight(v, lo, hi)])
     call emit('steady_source', ['v        ', 'nu       ', 'amplitude'], &
               ['sc', 'ss'], [nu*amplitude*exp(-v**2/2), -v*amplitude*exp(-v**2/2)])
     call emit('steady_solve', ['v ', 'nu', 'sc', 'ss'], ['a', 'b'], &
-              [(nu*sc - v*ss)/(nu**2 + v**2), (v*sc + nu*ss)/(nu**2 + v**2)])
+              krook_node(nu, v, sc, ss))
     call emit('steady_residual', ['a ', 'b ', 'v ', 'nu', 'sc', 'ss'], &
-              ['rc', 'rs'], [nu*a + v*b - sc, nu*b - v*a - ss])
+              ['rc', 'rs'], krook_node_residual(nu, v, a, b, sc, ss))
     f = exp(-v**2/2)*(1 + amplitude*cos(x - v*t))
     call emit('characteristic_reference', ['x        ', 'v        ', 't        ', &
                                            'amplitude'], ['value'], [f])

@@ -3,6 +3,7 @@ program gen_streaming
     use fortsym_expr, only: expr_t, sym, pi_expr, func, abs, sin, cos, &
         operator(+), operator(-), operator(*), operator(/), operator(**)
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use kin6d_symbolic_physics, only: free_streaming_rotation, p1_interpolate
     implicit none
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
@@ -38,12 +39,12 @@ program gen_streaming
     write (w%unit, '(a)') 'implicit none'
     write (w%unit, '(a)') 'contains'
     call w%emit('streaming_rotation', ['t ', 'v ', 'k ', 'a0', 'b0'], ['a', 'b'], &
-        [a0*cos(phase) - b0*sin(phase), a0*sin(phase) + b0*cos(phase)], &
+        free_streaming_rotation(a0, b0, phase), &
         ad=.true., interval=.true.)
     call w%emit('streaming_characteristic', ['x0', 'v ', 't '], ['x'], &
         [x0 + v*t], ad=.true., interval=.true.)
     call w%emit('streaming_interpolate', ['v ', 'vl', 'vr', 'al', 'ar'], ['value'], &
-        [al + (ar - al)*(v - vl)/(vr - vl)], ad=.true., interval=.true.)
+        [p1_interpolate(v, vl, vr, al, ar)], ad=.true., interval=.true.)
     call w%emit('streaming_mode_accumulate', ['x  ', 'k  ', 'a  ', 'b  ', 'acc'], &
         ['next'], [acc + a*cos(k*x) + b*sin(k*x)], ad=.true., interval=.true.)
     call w%emit('streaming_add', ['acc  ', 'value'], ['next'], [acc + value], &

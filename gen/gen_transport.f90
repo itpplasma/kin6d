@@ -3,10 +3,11 @@ program gen_transport
     use fortsym_expr, only: expr_t, sym, pi_expr, func, abs, sin, cos, &
         operator(+), operator(-), operator(*), operator(/), operator(**)
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use kin6d_symbolic_physics, only: krook_node, p1_interpolate
     implicit none
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
-    type(expr_t) :: v, nu, k, sc, ss, determinant, a, b, x, acc, index, count
+    type(expr_t) :: v, nu, k, sc, ss, a, b, x, acc, index, count
     type(expr_t) :: vl, vr, v0, v1, al, ar, intercept, slope, residual, source_error
     type(expr_t) :: dnu, primal_radius, source_tangent_error, center, qnorm, radius
     type(expr_t) :: fc0, fc1, fs0, fs1, gc0, gc1, gs0, gs1, bc(3), bs(3)
@@ -41,9 +42,8 @@ program gen_transport
 
     ! v*f_x + nu*f = supplied source, x periodic with period2*pi, nu>0.
     ! Fourier convention: a*cos(k*x)+b*sin(k*x), integer k>=0.
-    ! [nu, k*v; -k*v, nu] is invertible: det=nu**2+(k*v)**2>0.
+    ! [nu, k*v; -k*v, nu] is invertible: det=nu**2+(k*v)**2>0 (krook_node).
     ! At k=0, source_sin=candidate_sin=0 and the mean equation is nu*a=sc.
-    determinant = nu**2 + (k*v)**2
     ! Quadratic Bernstein coefficients of the continuous P1-v residual.
     ! Shared cell endpoints and strictly ordered vl<vr are declared by the caller.
     bc(1) = gc0 - nu*fc0 - k*v0*fs0
@@ -66,7 +66,7 @@ program gen_transport
     write (w%unit, '(a)') 'contains'
 
     call w%emit('transport_node', ['v ', 'nu', 'k ', 'sc', 'ss'], ['a', 'b'], &
-        [(nu*sc - k*v*ss)/determinant, (k*v*sc + nu*ss)/determinant], ad=.true.)
+        krook_node(nu, k*v, sc, ss), ad=.true.)
     call w%emit('transport_grid_coordinate', ['j    ', 'cells'], ['value'], &
         [-1 + 2*index/count])
     count = sym(arena, 'points')
@@ -75,7 +75,7 @@ program gen_transport
     call w%emit('transport_source_affine', ['v        ', 'intercept', 'slope    '], &
         ['value'], [intercept + slope*v], ad=.true.)
     call w%emit('transport_interpolate', ['v ', 'vl', 'vr', 'al', 'ar'], ['value'], &
-        [al + (ar - al)*(v - vl)/(vr - vl)], ad=.true., interval=.true.)
+        [p1_interpolate(v, vl, vr, al, ar)], ad=.true., interval=.true.)
     call w%emit('transport_mode_accumulate', ['x  ', 'k  ', 'a  ', 'b  ', 'acc'], &
         ['next'], [acc + a*cos(k*x) + b*sin(k*x)], ad=.true., interval=.true.)
     call w%emit('transport_basis', ['x', 'k'], ['sine  ', 'cosine'], &
