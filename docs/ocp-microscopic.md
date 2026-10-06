@@ -81,8 +81,8 @@ seed, rejected draws and cost.
   - the cold slab, `kin6d_slab_oscillation`.
 
   Two boxes:
-  - "clean": `k lambda_D = 0.3`, `Lambda = 10`, N = 91 855;
-  - "Landau": `k lambda_D = 0.5`, `Lambda = 20`, N = 39 478.
+  - "clean": `k lambda_D = 0.3`, `Lambda = 10`, N = 91 870;
+  - "Landau": `k lambda_D = 0.5`, `Lambda = 20`, N = 39 688.
 
   The structure factor `S(k)` and `g(r)` come from unperturbed snapshots.
   Binary snapshots (`N, t, Lambda, L, x(3N), v(3N)`) are written to
