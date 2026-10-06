@@ -28,6 +28,8 @@
 !> tangent (H - E) da = -(dV/dg) a), not by differentiating iterations.
 module kin6d_quantum_collision_kernel
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_special_gamma, only: digamma_complex, trigamma_complex
+    use fortnum_special_riccati_bessel, only: riccati_bessel
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use kin6d_radial_dvr, only: radial_mesh_t, build_radial_mesh, mesh_spacing
@@ -99,28 +101,11 @@ module kin6d_quantum_collision_kernel
         end subroutine dgbtrs
     end interface
 contains
-    !> Complex digamma psi(z) and trigamma psi'(z) for Re z > 0: upward
-    !> recurrence to Re z >= 16, then the Bernoulli asymptotic series.
-    pure subroutine complex_digamma(z, psi, dpsi)
+    !> Complex digamma psi(z) and trigamma psi'(z) (FortNum).
+    elemental subroutine complex_digamma(z, psi, dpsi)
         complex(dp), intent(in) :: z
         complex(dp), intent(out) :: psi, dpsi
-        real(dp), parameter :: b2k(7) = [1/6.0_dp, -1/30.0_dp, 1/42.0_dp, -1/30.0_dp, &
-                                         5/66.0_dp, -691/2730.0_dp, 7/6.0_dp]
-        complex(dp) :: w, w2, wp
-        integer :: k
-        psi = 0; dpsi = 0; w = z
-        do while (real(w) < 16)
-            psi = psi - 1/w; dpsi = dpsi + 1/w**2; w = w + 1
-        end do
-        w2 = 1/w**2
-        psi = psi + log(w) - 1/(2*w)
-        dpsi = dpsi + 1/w + 1/(2*w**2)
-        wp = w2
-        do k = 1, 7
-            psi = psi - b2k(k)*wp/(2*k)
-            dpsi = dpsi + b2k(k)*wp/w
-            wp = wp*w2
-        end do
+        psi = digamma_complex(z); dpsi = trigamma_complex(z)
     end subroutine complex_digamma
 
     !> Classical Rutherford transfer with a sharp impact-parameter cut at
@@ -295,23 +280,6 @@ contains
             end do
         end do
     end function classical_yukawa_log
-
-    !> Riccati-Bessel jhat_l(x) = x j_l(x) -> sin(x - l pi/2) and
-    !> nhat_l(x) = x y_l(x) -> -cos(x - l pi/2), upward recurrence (stable for
-    !> x >= l, which the matching radius guarantees).
-    pure subroutine riccati_bessel(lmax, x, jh, nh)
-        integer, intent(in) :: lmax
-        real(dp), intent(in) :: x
-        real(dp), intent(out) :: jh(0:lmax), nh(0:lmax)
-        integer :: l
-        jh(0) = sin(x); nh(0) = -cos(x)
-        if (lmax == 0) return
-        jh(1) = sin(x)/x - cos(x); nh(1) = -cos(x)/x - sin(x)
-        do l = 1, lmax - 1
-            jh(l + 1) = (2*l + 1)/x*jh(l) - jh(l - 1)
-            nh(l + 1) = (2*l + 1)/x*nh(l) - nh(l - 1)
-        end do
-    end subroutine riccati_bessel
 
     !> k^2 sigma_tr/(4 pi) = sum_l (l+1) sin^2(delta_l - delta_{l+1}).
     pure real(dp) function transfer_from_phases(delta) result(s)
