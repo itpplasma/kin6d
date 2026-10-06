@@ -246,3 +246,12 @@ run from the repository root and must reproduce committed leaves exactly.
   not apply there. chi/chi0 at r_s 8, N=2: exact 0.69, TDHF 0.66, RPA 0.49.
   Mermin vs exact canonical thermal energy is dominated by the
   grand-canonical orbital ensemble (factor 2.7, N=2, r_s 0.5).
+- 2026-10-06 (controller): merged Q4 (FortNum 80b7340 eigen/Lanczos pushed),
+  cleanup (one modal Poisson / streaming / Krook / P1 definition; fermi_gas
+  graded Fermi-surface mesh, candidate k_s now 3e-10 vs Sommerfeld, cold
+  certificate to theta 1e-4; encounter demo uses result_io) and Q5 (Hartree,
+  RHF/UHF, Mermin, static TDHF vs exact cell; HF symmetry breaking for open
+  shells at r_s 0.5). 31/31 CTest, deterministic regeneration. Figure-pass
+  items: fortplot log-axis tick labels on sub-decade ranges ("2x10^0");
+  Q5 N=4 response panel clipping/legend and symmetry-broken TDHF note;
+  Q1 movie redesign; Mott fine bins; Wigner run into saturation.
