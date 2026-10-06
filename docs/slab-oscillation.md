@@ -122,5 +122,9 @@ The solver API permits finer meshes for stricter targets.
 `output/plasma-oscillation.csv`, `.png` and, by default, `.mp4`. The main trace
 retains the analytical comparison as an independent overlay; the checker does
 not call it. The gallery renderer converts the movie to GIF. Plot artifacts
-are not committed. The palette uses Okabe–Ito blue/orange, with species marker
-shape, analytical dashed lines and dotted bound edges as redundant encodings.
+are not committed. The palette follows `docs/figure-style.md`: numerical
+curves blue with translucent bands, analytical references dashed black,
+electrons vermillion, and species marker shape as a redundant encoding. Since
+2026-10-06 the default movie has 193 frames over two periods (8 s at 24 fps)
+plus a 1 s hold; the finer frame spacing narrows the chord margin, so the
+connected half-band is now below 0.002.

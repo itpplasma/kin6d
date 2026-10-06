@@ -8,14 +8,16 @@ program slab_oscillation_demo
     use kin6d_slab_oscillation_leaves
     use fortplot, only: figure, get_global_figure, figure_t, subplot, scatter, &
                         plot, fill_between, title, xlabel, ylabel, xlim, ylim, legend, &
-                        tight_layout, savefig
+                        tight_layout, savefig, suptitle
+    use kin6d_demo_style, only: vermillion, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: markers = 17, fps = 24
-    integer :: steps = 128, frames = 121
+    ! 193 frames span two periods in 8 s at 24 fps; a one-second hold follows.
+    integer :: steps = 128, frames = 193
     !> Duration in plasma periods and requested observable radius (1% of q0).
     real(dp) :: periods = 2.0_dp, requested_radius = 0.01_dp
     namelist /slab_oscillation/ steps, frames, periods, requested_radius
@@ -24,7 +26,6 @@ program slab_oscillation_demo
     integer :: unit, ios
     character(len=256) :: msg
     real(dp), parameter :: blue(3) = [0.0_dp, 0.4471_dp, 0.6980_dp]
-    real(dp), parameter :: orange(3) = [0.8353_dp, 0.3686_dp, 0.0_dp]
     real(dp), parameter :: ratio = 0.1_dp
     type(slab_oscillation_state_t) :: state
     type(figure_t), pointer :: canvas
@@ -170,7 +171,8 @@ program slab_oscillation_demo
     call draw_frame()
     call savefig('output/plasma-oscillation.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
+        animation = animation_func(update_frame, frames=frames + hold_frames, &
+            interval=42, fig=canvas)
         call save_animation(animation, 'output/plasma-oscillation.mp4', &
                               fps=fps, status=status)
         if (status /= 0) error stop 'animation encoding failed'
@@ -181,14 +183,13 @@ contains
     subroutine update_frame(number)
         integer, intent(in) :: number
 
-        frame = number
+        frame = min(number, frames)
         call canvas%clear()
         call draw_frame()
         call canvas%set_rendered(.false.)
     end subroutine update_frame
 
     subroutine draw_frame()
-        character(len=110) :: heading
 
         call slab_oscillation_display_displacement(q(frame), ratio, shift)
         call slab_oscillation_display_displacement(reference(frame), ratio, exact_shift)
@@ -201,59 +202,58 @@ contains
         do i = 1, markers
             call slab_oscillation_marker(initial_x(i), shift, electron_x(i))
         end do
+        call suptitle('A displaced electron slab feels a linear restoring field and '// &
+            'oscillates at the plasma frequency')
         call subplot(2, 2, 1)
-        write (heading, '(a,f5.2)') 'Cold planar slab | tau = ', time(frame)
-        call title(trim(heading))
-        call xlabel('x / a [1]; xi0 / a = 0.1')
+        call title('Electrons (o) over fixed ions (+)  |  $\tau$ = '//num(time(frame), 2))
+        call xlabel('x / a   (display amplification: $\xi_0/a$ = 0.1)')
         call ylabel('species lanes (display only)')
         call xlim(-1.3_dp, 1.3_dp); call ylim(-0.7_dp, 1.1_dp)
-        call scatter(initial_x, ion_y, marker='+', s=45.0_dp, color=blue, &
-                     label='fixed ions +')
-        call scatter(electron_x, electron_y, marker='o', s=35.0_dp, color=orange, &
-                     label='numerical electrons o')
+        call scatter(initial_x, ion_y, marker='+', s=45.0_dp, color=blue)
+        call scatter(electron_x, electron_y, marker='o', s=35.0_dp, color=vermillion)
         call slab_oscillation_field_force(q(frame), field, force)
         call slab_oscillation_display_displacement(field, 0.3_dp, arrow_field)
         call slab_oscillation_display_displacement(force, 0.3_dp, arrow_force)
-        call plot([0.0_dp, arrow_field], [0.65_dp, 0.65_dp], color=blue, label='E / E0')
-        call plot([0.0_dp, arrow_force], [0.9_dp, 0.9_dp], color=orange, &
-                  linestyle='--', label='F / F0')
-        call legend(loc='upper right')
+        call plot([0.0_dp, arrow_field], [0.65_dp, 0.65_dp], color=blue, linewidth=2.0_dp, &
+                  label='field E / E0 (from x = 0)')
+        call plot([0.0_dp, arrow_force], [0.9_dp, 0.9_dp], color=vermillion, &
+                  linestyle='--', linewidth=2.0_dp, label='force on electrons F / F0')
+        call legend(loc='lower center')
         call subplot(2, 2, 2)
-        call title('Eulerian slab densities | full uncertain edge strips')
-        call xlabel('x / a [1]'); call ylabel('n / n0 [1]')
+        call title('Eulerian slab densities (bands: uncertain edges)')
+        call xlabel('x / a'); call ylabel('$n/n_0$')
         call xlim(-1.3_dp, 1.3_dp); call ylim(-0.05_dp, 1.15_dp)
+        call edge_band(left_i); call edge_band(right_i)
         call plot([-1.3_dp, -1.0_dp, -1.0_dp, 1.0_dp, 1.0_dp, 1.3_dp], &
                   [0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, 0.0_dp], &
-                  color=blue, linestyle=':', label='fixed ions')
-        call plot([-1.3_dp, exact_left, exact_left, exact_right, exact_right, 1.3_dp], &
-                  [0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, 0.0_dp], &
-           color=[0.3_dp, 0.3_dp, 0.3_dp], linestyle='--', label='analytical electrons')
+                  color=grey, linestyle=':', linewidth=1.5_dp, label='fixed ions')
         call plot([-1.3_dp, left, left, right, right, 1.3_dp], &
                   [0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, 0.0_dp], &
-                  color=orange, label='numerical electron density')
-        call edge_band(left_i); call edge_band(right_i)
-        call legend(loc='lower right')
+                  color=vermillion, linewidth=2.0_dp, label='numerical electrons')
+        call plot([-1.3_dp, exact_left, exact_left, exact_right, exact_right, 1.3_dp], &
+                  [0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, 0.0_dp], &
+                  color=black, linestyle='--', linewidth=1.2_dp, label='analytical electrons')
+        call legend(loc='lower center')
         call subplot(2, 2, 3)
-        call title('Displacement | numerical trajectory + continuous bound')
-        call xlabel('tau = omega_pe t [1]'); call ylabel('xi / xi0 [1]')
+        call title('Displacement: numerical trajectory and analytical cos τ')
+        call xlabel('$\tau = \omega_{pe} t$'); call ylabel('$\xi/\xi_0$')
         call xlim(0.0_dp, duration); call ylim(-1.25_dp, 1.5_dp)
-        call fill_between(time, qlo, qhi, color='lightblue', alpha=0.55_dp)
-        call plot(time, reference, color=[0.25_dp, 0.25_dp, 0.25_dp], linestyle='--', &
-                  label='analytical cos(tau)')
-        call plot(time, q, color=blue, label='numerical RK5 + bound')
-        call scatter([time(frame)], [q(frame)], color=orange, marker='o', s=40.0_dp)
-        call legend(loc='upper right')
+        call fill_between(time, qlo, qhi, color=blue, alpha=0.25_dp)
+        call plot(time, q, color=blue, linewidth=2.0_dp, label='numerical RK5 ± bound')
+        call plot(time, reference, color=black, linestyle='--', linewidth=1.2_dp, &
+                  label='analytical cos τ')
+        call scatter([time(frame)], [q(frame)], color=blue, marker='o', s=40.0_dp)
+        call legend(loc='upper center')
         call subplot(2, 2, 4)
-        call title('Numerical minus analytical | full certified bound')
-        call xlabel('tau = omega_pe t [1]'); call ylabel('displacement difference [1]')
-        call xlim(0.0_dp, duration); call ylim(-0.018_dp, 0.018_dp)
-        call fill_between(time, elo, ehi, color='lightblue', alpha=0.65_dp)
-        call plot(time, elo, color=blue, linestyle=':')
-      call plot(time, ehi, color=blue, linestyle=':', label='full bound + chord margin')
-        call plot(time, zero, color=[0.4_dp, 0.4_dp, 0.4_dp], linestyle='--')
-        call plot(time, error, color=orange, label='numerical - analytical')
-        call scatter([time(frame)], [error(frame)], color=orange, marker='o', s=35.0_dp)
-        call legend(loc='upper right')
+        call title('Numerical minus analytical, with the certified bound')
+        call xlabel('$\tau = \omega_{pe} t$'); call ylabel('$\Delta\xi/\xi_0$')
+        call xlim(0.0_dp, duration); call ylim(-0.003_dp, 0.003_dp)
+        call fill_between(time, elo, ehi, color=blue, alpha=0.25_dp)
+        call plot(time, zero, color=black, linestyle='--', linewidth=1.2_dp)
+        call plot(time, error, color=blue, linewidth=2.0_dp, &
+                  label='numerical − analytical ± bound (incl. chord margin)')
+        call scatter([time(frame)], [error(frame)], color=blue, marker='o', s=35.0_dp)
+        call legend(loc='upper center')
         call tight_layout()
     end subroutine draw_frame
 
@@ -261,7 +261,7 @@ contains
         type(interval_t), intent(in) :: edge
 
         call fill_between([edge%lo, edge%hi], [0.0_dp, 0.0_dp], [1.0_dp, 1.0_dp], &
-                          color='moccasin', alpha=0.65_dp)
+                          color=vermillion, alpha=0.25_dp)
     end subroutine edge_band
 
 end program slab_oscillation_demo
