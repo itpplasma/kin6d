@@ -225,7 +225,7 @@ contains
     !> covariance derivative dg/dbeta. The reported energy is the sum of
     !> zero-mean pair potentials (sampler energy minus cell_sampler_offset).
     subroutine classical_cell_mc(cell, edges, sweeps, equilibration, batches, &
-                                 seed, mc, ok, reweight)
+                                 seed, mc, ok, reweight, sample_seconds, summary_seconds)
         type(classical_cell_t), intent(inout) :: cell
         real(dp), intent(in) :: edges(:)
         integer, intent(in) :: sweeps, equilibration, batches
@@ -233,6 +233,7 @@ contains
         type(classical_mc_t), intent(out) :: mc
         logical, intent(out) :: ok
         logical, intent(in), optional :: reweight
+        real(dp), intent(out), optional :: sample_seconds, summary_seconds
         type(ocp_mc_t) :: chain
         integer, allocatable :: q(:, :), triple(:, :)
         real(dp), allocatable :: x(:), bg(:, :), bwk(:, :), bx(:, :), &
@@ -242,10 +243,14 @@ contains
         complex(dp), allocatable :: rho(:)
         real(dp) :: trial(3), e_total, s_wk, s_x, s_p, s_e, offset
         real(dp) :: w_wk, w_x, lap, grad2, norm, r
+        real(dp) :: clock_start, clock_summary, clock_end
         integer :: nb, nq, nt, i, j, k, s, b, per, sweep, n, bin
         logical :: rw
 
         ok = .false.
+        if (present(sample_seconds)) sample_seconds = 0
+        if (present(summary_seconds)) summary_seconds = 0
+        call cpu_time(clock_start)
         rw = .false.
         if (present(reweight)) rw = reweight .and. cell%model == model_coulomb
         n = cell%n; nb = size(edges) - 1
@@ -335,6 +340,7 @@ contains
                 be(1, b) = s_e/per
             end if
         end do
+        call cpu_time(clock_summary)
         mc%acceptance = real(chain%accepted, dp)/max(1_i64, chain%attempted)
         mc%step = chain%step
         mc%samples = per*batches
@@ -350,6 +356,9 @@ contains
         call jackknife_norm(bf2, mc%c2, mc%c2_err)
         mc%c3 = 0; mc%c3_err = 0
         if (n >= 3) call jackknife_norm(bf3, mc%c3, mc%c3_err)
+        call cpu_time(clock_end)
+        if (present(sample_seconds)) sample_seconds = clock_summary - clock_start
+        if (present(summary_seconds)) summary_seconds = clock_end - clock_summary
         ok = all(ieee_is_finite(mc%g)) .and. ieee_is_finite(mc%c2)
     end subroutine
 

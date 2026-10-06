@@ -9,6 +9,7 @@ program gen_quantum_evolution
     type(expr_t) :: hr, hi, xr, xi, hb, acc, value, scale, h, s
     type(expr_t) :: y0, y1, f0, f1, c(0:3)
     type(expr_t) :: radius, residual, norm, delta, primal
+    type(expr_t) :: row_r, row_i, gamma, xmax, width, operations, tiny_value, dimension
     integer :: j
 
     call arena%init()
@@ -22,6 +23,11 @@ program gen_quantum_evolution
     radius = sym(arena, 'radius'); residual = sym(arena, 'residual')
     norm = sym(arena, 'norm'); delta = sym(arena, 'delta')
     primal = sym(arena, 'primal')
+    row_r = sym(arena, 'row_r'); row_i = sym(arena, 'row_i')
+    gamma = sym(arena, 'gamma'); xmax = sym(arena, 'xmax')
+    width = sym(arena, 'width'); operations = sym(arena, 'operations')
+    tiny_value = sym(arena, 'tiny_value')
+    dimension = sym(arena, 'dimension')
     do j = 0, 3
         block
             character(1) :: digit
@@ -41,6 +47,15 @@ program gen_quantum_evolution
     write (w%unit, '(a)') 'contains'
     call w%emit('qe_rhs_term', ['hr', 'hi', 'xr', 'xi', 'hb'], ['yr', 'yi'], &
               [(hr*xi + hi*xr)/hb, (-hr*xr + hi*xi)/hb], ad=.true., interval=.true.)
+    ! Coarse aggregate allowance for the point action used by Tier A. With
+    ! 8*n+4 as a conservative FP path length, include coefficient box widths
+    ! and normal-tiny absolute underflow allowances before Hilbert amplification.
+    call w%emit('qe_action_allowance', &
+        ['row_r     ', 'row_i     ', 'gamma     ', 'xmax      ', 'width     ', &
+         'operations', 'tiny_value', 'dimension ', 'hb        '], ['allowance'], &
+        [((row_r + row_i)*(gamma*xmax + width) + &
+          operations*tiny_value*(1 + hb)*(1 + gamma))*func('sqrt',[dimension])/hb], &
+        ad=.true., interval=.true.)
     call w%emit('qe_add', ['acc  ', 'value'], ['next'], [acc + value], &
               ad=.true., interval=.true.)
     call w%emit('qe_scale', ['value', 'scale'], ['next'], [value*scale], &
@@ -51,6 +66,8 @@ program gen_quantum_evolution
                2*(y0 - y1) + h*(f0 + f1)], ad=.true.)
     call w%emit('qe_evaluate', ['c0', 'c1', 'c2', 'c3', 's '], ['value'], &
               [c(0) + s*(c(1) + s*(c(2) + s*c(3)))], ad=.true., interval=.true.)
+    call w%emit('qe_evaluate_rate', ['c1', 'c2', 'c3', 's ', 'h '], ['value'], &
+        [(c(1) + s*(2*c(2) + 3*s*c(3)))/h], ad=.true., interval=.true.)
     call w%emit('qe_square_add', ['acc  ', 'value'], ['next'], [acc + value**2], &
               ad=.true., interval=.true.)
     call w%emit('qe_norm', ['value'], ['norm'], [func('sqrt', [value])], &

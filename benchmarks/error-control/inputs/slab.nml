@@ -1,0 +1,1 @@
+&benchmark_slab_oscillation steps=128, samples=3, repetitions=5 /

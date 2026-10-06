@@ -22,7 +22,11 @@ integrated Eulerian kinetic PDE or a proof of finite-amplitude slab dynamics.
 The untrusted candidate uses the pinned upstream FortNum `cash_karp_step`, a
 Cash–Karp RK5(4) step, with a generated oscillator RHS. The accepted time mesh is
 fixed and every reported solve reuses preallocated trajectory and stage buffers.
-The embedded RK error is not used as a rigorous bound. No analytical solution
+The embedded RK error is not used as a rigorous bound.
+`slab_oscillation_indicator(state,value,status)` exposes its already computed
+maximum step norm with status `indicator`; the strict final residual check
+remains separate. See [the error-control strategy](error-control-strategy.md)
+for cost and scheduling evidence. No analytical solution
 is supplied to the production checker. FortSym generates the RHS, Hermite
 reconstruction, residual, derivative and enclosure leaves from retained Fortran
 source. Consumer builds use the committed emitted leaves without requiring CAS.

@@ -7,11 +7,13 @@ module kin6d_fp_laboratory
     private
     public :: fp_state_t, initialize_fp, solve_fp, sample_fp, fp_certificate_radius, &
               fp_certificate_accepts, fp_sample_band, fp_reference_band, fp_mass_interval, &
-              fp_normalization_interval
+              fp_normalization_interval, fp_indicator
     type :: fp_state_t
         real(dp), allocatable :: v(:), f(:)
         real(dp) :: theta = 1.0_dp
         real(dp) :: mass = 1.0_dp
+        real(dp) :: flux_indicator = 0.0_dp
+        logical :: solved = .false.
     end type
 contains
     subroutine initialize_fp(state, cells, theta, mass)
@@ -60,6 +62,15 @@ contains
             call fp_flux(midpoint, state%theta, width, state%f(j), state%f(j + 1), flux)
             residual = max(residual, abs(flux))
         end do
+        state%flux_indicator = residual; state%solved = .true.
+    end subroutine
+
+    subroutine fp_indicator(state, value, status)
+        type(fp_state_t), intent(in) :: state
+        real(dp), intent(out) :: value
+        character(*), intent(out) :: status
+        value = state%flux_indicator; status = 'indicator'
+        if (.not. state%solved) status = 'unavailable'
     end subroutine
 
     logical function valid_fp(state)

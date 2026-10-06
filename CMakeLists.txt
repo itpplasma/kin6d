@@ -8,7 +8,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "d58f8994f85f0600dea3ad8724118cb4ed5cb10d")
-set(KIN6D_FORTNUM_REVISION "e97a493bfe67a404daa2d7c2090ff3eef9c32b75")
+set(KIN6D_FORTNUM_REVISION "10e66f6d9f50452d3313769e874f282193b33a9f")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -39,7 +39,8 @@ add_library(kin6d_intervals
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_interval.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_verified_midpoint_kernel.f90
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_verified_quadrature.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_ode_residual_certificate.f90)
+    ${fortnum_SOURCE_DIR}/src/verified/fortnum_ode_residual_certificate.f90
+    ${fortnum_SOURCE_DIR}/src/verified/fortnum_verified_matvec.f90)
 target_compile_options(kin6d_intervals PRIVATE -fno-fast-math -ffp-contract=off)
 add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/fortnum_kinds.f90
@@ -49,6 +50,7 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
     ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90
+    ${fortnum_SOURCE_DIR}/src/verified/fortnum_sampled_norm.f90
     ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
@@ -452,3 +454,18 @@ target_link_libraries(correlation_map_classical_demo PRIVATE kin6d kin6d_io fort
 if(OpenMP_Fortran_FOUND)
     target_link_libraries(correlation_map_classical_demo PRIVATE OpenMP::OpenMP_Fortran)
 endif()
+
+# Error-control surveys are explicit performance runs, never timing tests.
+add_library(error_benchmark_support app/error_benchmark_support.f90)
+foreach(survey continuum quantum microscopic modes)
+    add_executable(benchmark_error_${survey} app/benchmark_error_${survey}.f90)
+    target_link_libraries(benchmark_error_${survey} PRIVATE kin6d error_benchmark_support)
+endforeach()
+add_executable(test_error_modes test/test_error_modes.f90)
+target_link_libraries(test_error_modes PRIVATE kin6d)
+add_test(NAME error_modes_oracles COMMAND test_error_modes)
+foreach(fixture verified_matvec sampled_norm)
+    add_executable(test_error_${fixture} ${fortnum_SOURCE_DIR}/test/test_${fixture}.f90)
+    target_link_libraries(test_error_${fixture} PRIVATE kin6d_ode)
+    add_test(NAME error_${fixture}_oracles COMMAND test_error_${fixture})
+endforeach()

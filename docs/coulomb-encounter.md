@@ -67,7 +67,7 @@ periodic trapezoid in phi (sized by the Bessel content b r/(2 sigma^2)).
 l_est = k_hi (|b| + z0 + 8 sigma) + 8, then l_max/m_max are trimmed to the
 smallest values whose discarded weight fits tolerance/3.
 
-Why not a uniform 3D grid: at matched nodes per wavelength the uniform
+At matched nodes per wavelength the uniform
 Cartesian alternative needs (2 R k_hi ppw/2 pi)^3 points; for the eta scan
 below that is 7e7-1.8e9 complex unknowns with a singular point potential to
 regularize, versus 1.5e4-1.8e5 partial-wave unknowns with exact singular
@@ -132,6 +132,15 @@ differentiated); finite differences must freeze them too (`cfg%hmax`,
 | FEM-DVR vs continuum | reference comparison (hydrogen, Coulomb phases, F_l, free Gaussian) |
 | finite time vs asymptotic cross section | model/observable difference, reported, not an error |
 
+The first three formulas require enclosed eigenvectors, residual norms and
+orthogonality defects before they establish a deterministic certificate.
+Their binary64 inputs are currently unenclosed: report these evaluated
+quantities as indicators/finite-space formulas, not `certified-discrete` or
+validated Tier A. The benchmark now times embedded eigen-residual and
+reconstruction diagnostics separately through the ledger's
+`estimator_seconds` and `indicator_seconds`. See
+[the measured tier choices](error-control-strategy.md).
+
 ## Verification (test/test_coulomb_encounter.f90)
 
 Independent oracles: GLL exactness and Legendre orthonormality; hydrogen
@@ -168,7 +177,7 @@ by its own norm) for singlet, triplet and the spin-unresolved product, beside
 the classical Wigner ensemble (8e5 pairs, spin-unresolved, slab |y| < 1/(2k)),
 on one fixed four-decade log colour scale. The frame clock runs up to 4x
 slower in a Gaussian window around and after closest approach (labelled in
-the title). What they show: the classically forbidden hole r < r0; exchange
+the title). The panels show the classically forbidden hole r < r0; exchange
 standing-wave fringes along z (spacing near lambda/2 = pi/k) in singlet and
 triplet but not in the spin-unresolved product or the classical ensemble;
 the triplet nodal plane z = 0 (psi_T(-r) = -psi_T(r), axially symmetric for

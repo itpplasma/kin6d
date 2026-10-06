@@ -1,0 +1,33 @@
+{
+  "verification_date": "2026-10-06",
+  "checks": [
+    {
+      "preset": "cpu",
+      "passed": 42,
+      "failed": 0,
+      "elapsed_seconds": 40.79,
+      "source_commit": "bc2a382948b6ae038f614e12c3a91690494dd41e"
+    },
+    {
+      "preset": "debug",
+      "passed": 42,
+      "failed": 0,
+      "elapsed_seconds": 232.89,
+      "source_commit": "bc2a382948b6ae038f614e12c3a91690494dd41e"
+    },
+    {
+      "preset": "fortnum-focused",
+      "passed": 2,
+      "failed": 0,
+      "elapsed_seconds": 0.07,
+      "source_commit": "a431cf220efebc583c5fa39d032437e36089cfe3"
+    }
+  ],
+  "generation": {
+    "driver": "build/gen_quantum_evolution, run from worktree root",
+    "sha256": "50fac0c1ea65049e90024eaca99337851bdd38c98bc299de6762f98be6ce3a03",
+    "repeat_generation": "Identical bytes on repeated runs; git diff --exit-code passed"
+  },
+  "provenance": "All source changes tested. Subsequent changes are documentation and numeric receipts only. Both presets use GNU Fortran and the explicit local FortNum source override.",
+  "tool_limits": "Installed Fo lacks gremlin; native CMake/CTest used. FortNum FPM mixed C/Fortran smoke discovery fails duplicate main; its native focused gates pass. See README and upstream argument."
+}

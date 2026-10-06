@@ -180,7 +180,7 @@ contains
     ! Gershgorin interval), with column residual norms ||H v_j - e_j v_j||_2 and the
     ! orthogonality defect max|V^T V - I| of the returned columns.
     subroutine radial_eigen_window(mesh, l, g, mu, hbar, emax, e, v, resid, &
-                                   orthogonality, ok, emin)
+                                   orthogonality, ok, emin, estimator_seconds)
         type(radial_mesh_t), intent(in) :: mesh
         integer, intent(in) :: l
         real(dp), intent(in) :: g, mu, hbar, emax
@@ -188,12 +188,14 @@ contains
         real(dp), allocatable, intent(out) :: e(:), v(:, :), resid(:)
         real(dp), intent(out) :: orthogonality
         logical, intent(out) :: ok
+        real(dp), intent(out), optional :: estimator_seconds
         real(dp), allocatable :: hb(:, :), ab(:, :), q(:, :), z(:, :), work(:), w(:)
         real(dp), allocatable :: hv(:, :)
         integer, allocatable :: iwork(:), ifail(:)
-        real(dp) :: vl, vu, glo, ghi, off
+        real(dp) :: vl, vu, glo, ghi, off, estimator_start, estimator_end
         integer :: n, kd, m, info, j, i, i0
         ok = .false.; orthogonality = huge(1.0_dp)
+        if (present(estimator_seconds)) estimator_seconds = 0
         n = mesh%n; kd = mesh%order - 1
         allocate (hb(kd + 1, n), ab(kd + 1, n))
         call radial_band_hamiltonian(mesh, l, g, mu, hbar, hb)
@@ -246,6 +248,7 @@ contains
         allocate (e(m), v(n, m), resid(m), hv(n, m))
         e = w(i0:i0 + m - 1); v = z(:, i0:i0 + m - 1)
         deallocate (z)
+        call cpu_time(estimator_start)
         call radial_band_matvec(hb, v, hv)
         do j = 1, m
             resid(j) = norm2(hv(:, j) - e(j)*v(:, j))
@@ -258,6 +261,9 @@ contains
                 orthogonality = max(orthogonality, abs(off))
             end do
         end do
+        call cpu_time(estimator_end)
+        if (present(estimator_seconds)) &
+            estimator_seconds = estimator_end-estimator_start
         ok = all(ieee_is_finite(e)) .and. all(ieee_is_finite(resid))
     end subroutine radial_eigen_window
 

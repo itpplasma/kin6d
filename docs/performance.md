@@ -49,6 +49,19 @@ pointwise errors.
 
 For stochastic cases, include the sampling/confidence target explicitly.
 
+Follow the [error-control strategy](error-control-strategy.md) and its
+[fixed-input measurements](../benchmarks/error-control/baseline.csv). Target
+10–20% incremental overhead for always-on indicators and roughly 2–5 times
+solve-only total for large-run deterministic checks. A factor 100 may be
+acceptable on tiny strict reference cases, not as the production norm.
+Record estimator, certificate and total stages separately, including embedded
+diagnostics; very short solves require absolute timings as well as ratios.
+Defer complete residual certification to final/checkpoint outputs where its
+theorem permits. Compare loosened valid bounds by budget and efficiency index;
+report approximate-bound epsilon_b separately from loosening and probability.
+Cheaper probability or approximate evaluation is useful only if its named
+quantity, width and assumptions meet the requested scientific claim.
+
 A faster kernel that increases nonlinear iterations, memory pressure or
 certificate width may be an end-to-end regression.
 
@@ -233,7 +246,7 @@ CPU speedups do not establish GPU support.
 ## Continuous profiling
 
 The application always records a cheap hierarchical time ledger, including
-adaptive-controller and promotion/demotion work where present, for example:
+adaptive-controller and promotion/demotion work. Its entries include:
 
 - residual;
   - spatial transport;
