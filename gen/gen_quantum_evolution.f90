@@ -55,7 +55,7 @@ program gen_quantum_evolution
          'operations', 'tiny_value', 'dimension ', 'hb        '], ['allowance'], &
         [((row_r + row_i)*(gamma*xmax + width) + &
           operations*tiny_value*(1 + hb)*(1 + gamma))*func('sqrt',[dimension])/hb], &
-        interval=.true.)
+        ad=.true., interval=.true.)
     call w%emit('qe_add', ['acc  ', 'value'], ['next'], [acc + value], &
               ad=.true., interval=.true.)
     call w%emit('qe_scale', ['value', 'scale'], ['next'], [value*scale], &

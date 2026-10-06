@@ -81,8 +81,13 @@ contains
                 evaluation_error=allowance)
             call cpu_time(d)
             call require(ok)
-            call row('Q0-pair',tier,trial,solve,d-c,b-a,radius,1._dp,trim(status), &
-                trim(inputs),'direct;deferred-all-cell-audit')
+            if (mode==QE_APPROXIMATE) then
+                call row('Q0-pair',tier,trial,solve,d-c+b-a,0._dp,radius,1._dp, &
+                    trim(status),trim(inputs),'direct;approximate-evaluation')
+            else
+                call row('Q0-pair',tier,trial,solve,d-c,b-a,radius,1._dp,trim(status), &
+                    trim(inputs),'direct;deferred-all-cell-audit')
+            end if
         end do
         call rng_seed(draw,27182_i64,rng_status)
         call cpu_time(a)

@@ -6,6 +6,8 @@ program test_error_modes
     use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, fp_indicator
     use fortnum_rng, only: rng_t, rng_seed
     use fortnum_status, only: fortnum_status_t
+    use kin6d_quantum_evolution_leaves, only: qe_action_allowance, &
+        qe_action_allowance_jvp, qe_action_allowance_vjp
     implicit none
     type(quantum_evolution_t) :: state
     type(slab_oscillation_state_t) :: slab
@@ -15,12 +17,24 @@ program test_error_modes
     real(dp) :: hr(2,2),hi(2,2),initial(2),zero(2),re(2),im(2),h,radius
     real(dp) :: epsilon_b, audit(3), eta(3), allowance, indicator, residual
     real(dp) :: sampled, upper, actual, worst_under, loosen, worst_audit
+    real(dp) :: generated, jvp, gradient(9)
     complex(qp) :: exact(2)
     integer :: mode,level,point,failures,seed
     logical :: ok,bounded
     character(128) :: status
     hr=0; hr(1,1)=1; hr(2,2)=-.75_dp; hi=0
     initial=[.6_dp,.8_dp]; zero=0
+    call qe_action_allowance(2._dp,1._dp,.1_dp,2._dp,.01_dp,1._dp, &
+        1.e-5_dp,4._dp,2._dp,generated)
+    call require(abs(generated-.630033_dp)<1.e-14_dp,'allowance independent value')
+    call qe_action_allowance_jvp(2._dp,1._dp,.1_dp,2._dp,.01_dp,1._dp, &
+        1.e-5_dp,4._dp,2._dp,0._dp,0._dp,0._dp,0._dp,1._dp, &
+        0._dp,0._dp,0._dp,0._dp,jvp)
+    call qe_action_allowance_vjp(2._dp,1._dp,.1_dp,2._dp,.01_dp,1._dp, &
+        1.e-5_dp,4._dp,2._dp,1._dp,gradient(1),gradient(2),gradient(3), &
+        gradient(4),gradient(5),gradient(6),gradient(7),gradient(8),gradient(9))
+    call require(abs(jvp-3._dp)<1.e-14_dp,'allowance analytical JVP')
+    call require(abs(gradient(5)-3._dp)<1.e-14_dp,'allowance analytical VJP')
     worst_under=0; loosen=0; worst_audit=0
     do level=1,3
         h=.05_dp*2**(level-1)

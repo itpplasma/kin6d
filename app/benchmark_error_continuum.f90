@@ -5,7 +5,10 @@ program benchmark_error_continuum
     use kin6d_fp_laboratory, only: fp_state_t, initialize_fp, solve_fp, &
         fp_certificate_radius
     use poisson_laboratory, only: coupled_steady_t, solve_coupled_steady, &
-        coupled_certificate_radius
+        coupled_certificate_radius, poisson_mode_t, solve_poisson_mode
+    use kin6d_poisson_leaves, only: poisson_coefficients_interval
+    use kin6d_streaming_comparison, only: streaming_state_t, init_streaming, &
+        advance_streaming, streaming_radius
     use kin6d_transport_laboratory, only: transport_state_t, initialize_transport, &
         solve_transport
     use kin6d_transport_certificate, only: transport_certificate_t, certify_transport
@@ -22,14 +25,18 @@ program benchmark_error_continuum
     type(laboratory_t) :: stream
     type(fp_state_t) :: fp
     type(coupled_steady_t) :: coupled
+    type(poisson_mode_t) :: poisson
+    type(streaming_state_t) :: comparison
     type(transport_state_t) :: transport
     type(transport_certificate_t) :: cert
     type(slab_oscillation_state_t) :: slab
     type(shielding_state_t) :: shield
     type(interaction_state_t) :: encounter
     type(interval_t) :: energy, pbox, bbox, tbox, mbox, mbbox, mtbox, rb(3), ub(3)
+    type(interval_t) :: pc,ps,ec,es
     real(dp) :: a, b, c, d, solve, check, radius, residual, p, bare, tangent
     real(dp) :: lo(3), hi(3), values(3), r(3), u(3)
+    real(dp) :: velocity(129),cosine(0:1,129),sine(0:1,129)
     integer :: trial, j, mode
     logical :: ok, bounded
     call header()
@@ -44,6 +51,23 @@ program benchmark_error_continuum
         call cpu_time(c)
         call row('streaming', 'S', trial, b-a, 0._dp, c-b, radius, 1._dp, &
             'certified-continuous', 'cells=256;steps=64;t=1', 'direct')
+        velocity=[(-1._dp+real(j,dp)/64,j=0,128)]
+        cosine(0,:)=1; cosine(1,:)=.5_dp; sine=0
+        call init_streaming(comparison,velocity,cosine,sine,ok)
+        call require(ok)
+        call cpu_time(a)
+        call advance_streaming(comparison,1._dp,ok,certify=.false.)
+        call cpu_time(b)
+        call require(ok); solve=b-a
+        call cpu_time(a)
+        call advance_streaming(comparison,1._dp,ok)
+        call cpu_time(b)
+        call require(ok)
+        call streaming_radius(comparison,radius,ok)
+        call require(ok)
+        call row('streaming-comparison','S',trial,solve,0._dp,max(0._dp,b-a-solve), &
+            radius,1._dp,'certified-continuous','cells=128;modes=1;t=1', &
+            'paired-difference;prepared-initial-data')
         call initialize_fp(fp, 256)
         call cpu_time(a)
         do j = 1, 100
@@ -73,6 +97,25 @@ program benchmark_error_continuum
         call row('Poisson-VPFP', 'S', trial, solve, 0._dp, (b-a)/100, &
             max(radius,p,bare), 1._dp, 'certified-continuous', &
             'k=1;nu=1;fp=1;drive=.1', 'direct')
+        call cpu_time(a)
+        do j=1,1000
+            call solve_poisson_mode(2,.75_dp,0._dp,.1_dp,-.2_dp,poisson,ok)
+        end do
+        call cpu_time(b)
+        call require(ok); solve=(b-a)/1000
+        call cpu_time(a)
+        do j=1,100
+            call poisson_coefficients_interval(interval(2._dp),interval(.75_dp), &
+                interval(.1_dp),interval(-.2_dp),pc,ps,ec,es)
+        end do
+        call cpu_time(b)
+        radius=max(poisson%phi_cos-pc%lo,pc%hi-poisson%phi_cos, &
+            poisson%phi_sin-ps%lo,ps%hi-poisson%phi_sin, &
+            poisson%e_cos-ec%lo,ec%hi-poisson%e_cos, &
+            poisson%e_sin-es%lo,es%hi-poisson%e_sin)
+        call row('Poisson-mode','S',trial,solve,0._dp,(b-a)/100,radius,1._dp, &
+            'certified-discrete coefficients','k=2;eps=.75;rho_cos=.1;rho_sin=-.2', &
+            'direct')
         call initialize_transport(transport, 64, 2, 1._dp, ok)
         call require(ok)
         transport%source_cos = .1_dp; transport%source_sin = .05_dp
