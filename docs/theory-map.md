@@ -75,7 +75,9 @@ kept separate from promoted claims. The `math-frontier`, `proof-audit` and
 One map serves research and teaching. Its node and edge registry (ids, names,
 key equations, orderings, course coverage and public evidence) lives in the
 public plasma Skript (`map/plasma-models.yaml`) and is rendered there as an
-interactive page and a static overview figure. The Plasma Physics, Fusion
+interactive page (https://krystophny.github.io/plasma-skript/map/index.html,
+`?course=plasma|fusion|kinetic`, deep links `#node-<id>` and
+`#edge-<from>--<to>`) and a static overview figure. The Plasma Physics, Fusion
 Physics and Kinetic Theory courses tag the nodes and edges they cover; their
 derivations are checked with SymPy, which is the course-level tool.
 
