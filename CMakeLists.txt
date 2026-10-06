@@ -321,3 +321,13 @@ foreach(q7 screening wigner)
         target_link_libraries(gen_${q7} PRIVATE kin6d_gen_support)
     endif()
 endforeach()
+# QG6: quantum binary-collision kernel and hybrid classical/quantum encounters
+# (appended block).
+if(KIN6D_FORTSYM_BUILD)
+    add_executable(gen_quantum_collision gen/gen_quantum_collision.f90)
+    target_link_libraries(gen_quantum_collision PRIVATE kin6d_gen_support)
+endif()
+target_sources(kin6d PRIVATE src/generated/kin6d_quantum_collision_leaves.f90
+    src/quantum_collision_kernel.f90)
+set_source_files_properties(src/generated/kin6d_quantum_collision_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
