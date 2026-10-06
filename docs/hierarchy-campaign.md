@@ -434,3 +434,13 @@ run from the repository root and must reproduce committed leaves exactly.
   Demo 40 min. Open: one consolidated classical sampler (H1b classical_cell
   vs H1a ocp_monte_carlo), ensemble BLAS RDM for N = 4 at higher Theta,
   cusp remainder, fortplot ylim-clipping leak across subplots.
+
+- 2026-10-06: error-control strategy and 23-path fixed-input stage timings
+  ([receipts](../benchmarks/error-control/README.md), [policy](error-control-strategy.md)).
+  Q0 D total/solve 1.37–1.48 versus S 25.9–26.9 on matched 125/343-mode inputs;
+  A epsilon_b=5% has an analytical omitted-evaluation gate; P residual norm
+  has a declared iid law but unusable current widths. E queries expose
+  existing RK/flux defects. Q1/Q2 remain indicators where inputs/integration
+  are unenclosed; H1 stays statistical. D efficiency 5.34 at midpoints, up
+  to 49.3 at all sampled fractions (budget met, ~10 target missed). FortNum
+  primitives remain on local unpushed branch error-strategy at a431cf2.
