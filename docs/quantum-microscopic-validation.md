@@ -172,6 +172,80 @@ is the production path. Wigner--Poisson converges to Vlasov as O(hbar^2)
 (observed rate 1.99), with Wigner negativity 0.26 at t = 20 in the two-stream
 run. The finite-size energy of ideal fermions behaves as e_N - e_TL ~ 1/N.
 
+## Position relative to quantum many-body practice
+
+The finite cells here are small. Exact diagonalization of N = 2--4 electrons
+in 19--27 plane-wave orbitals is far below established electron-gas methods
+in particle number and basis size:
+
+- diffusion Monte Carlo ground states for 54--250+ electrons (fixed node);
+- full configuration interaction quantum Monte Carlo and coupled cluster for
+  up to 54 electrons in thousands of plane waves, with basis extrapolation
+  (Shepherd et al. 2012);
+- neural-network wavefunctions for the homogeneous electron gas up to
+  N = 128 (Cassella et al. 2023; Pescia et al. 2024);
+- restricted, permutation-blocking and configuration path-integral Monte
+  Carlo for the warm dense electron gas, with an ab initio
+  exchange-correlation free-energy fit accurate to about 0.3%
+  (Brown et al. 2013; Groth et al. 2017; Dornheim, Groth and Bonitz 2018);
+- nonequilibrium Green functions in the time-linear G1--G2 form, which is a
+  quantum BBGKY-type scheme with second-Born, GW and T-matrix closures
+  (Schlünzen, Joost and Bonitz 2020).
+
+The cell energies and response values in this repository are therefore not
+thermodynamic-limit electron-gas references and must not be quoted as such.
+Their purpose is different:
+
+1. matched classical and quantum calculations at identical N, cell,
+   background, density, temperature and estimators, so the difference is
+   attributable to hbar and can be split into exchange, diffraction and
+   interaction parts;
+2. full one-, two- and three-body reduced density matrices and connected
+   three-body cumulants with the same definitions in the classical and
+   quantum cells, which is the quantity a pair-level truncation omits;
+3. the error and status ledger of every number, with independent oracles,
+   derivatives and certified finite-basis dynamics where available;
+4. one foundation from classical particles through Vlasov, Wigner, mean field
+   and exact finite-basis quantum mechanics, so reductions are tested against
+   their parents.
+
+Thermodynamic-limit references come from the literature above. The G1--G2
+scheme is the named external comparison for the quantum BBGKY step; the
+measured three-body cumulants test the closures it uses rather than
+motivating a parallel scheme. Larger native quantum cells would require an
+orbital or Green-function method or a pinned external provider; exact
+diagonalization will not scale beyond about N = 4--6.
+
+### What is specific to plasmas
+
+- **Degeneracy and encounter diffraction are independent.** Electron-gas work
+  is organized by Theta = T/T_F and r_s. A hot fusion plasma has Theta of
+  order 1e5--1e6 and Gamma of order 1e-5, yet its close encounters have
+  eta = e^2/(4 pi eps0 hbar v) << 1: diffraction, not the classical 90-degree
+  distance, sets the minimum impact parameter. Quantum mechanics then enters
+  locally in rare binary encounters inside a classical collective bulk. The
+  quantum Coulomb-logarithm correction ln(eta) - Re psi(1 + i eta) and the
+  hybrid encounters (QG6) address this regime; for the corresponding
+  dimensionally continued collision coefficients see Brown, Preston and
+  Singleton (2005).
+- **The correlation hierarchy has a small parameter when coupling is weak.**
+  With Lambda = n lambda_D^3 of order 1e7--1e9 in fusion conditions, pair
+  correlations scale as 1/Lambda and pair-level truncation (Landau,
+  Lenard--Balescu) is a controlled expansion. In warm dense and strongly
+  coupled plasmas no such parameter exists; H1a shows Kirkwood superposition
+  failing from Gamma of order 10. The relevant question is the closure error
+  as a function of (Gamma, Theta, eta), which the matched maps measure and
+  the adaptive correlation-order switch consumes.
+- **Several species, attraction and nonequilibrium.** Real plasmas contain
+  mobile ions, usually classical, and electron-ion attraction with bound
+  states and classical collapse; jellium removes these. The main targets are
+  collision operators, relaxation, response and transport rather than
+  ground-state or equation-of-state accuracy.
+- **Scale separation.** A fusion Debye sphere holds about 1e8 particles. The
+  microscopic plasma itself is never simulated; asymptotic reductions are
+  validated on reduced-Lambda scans and local encounter references, and their
+  measured model errors are carried upward.
+
 ## Remaining plan
 
 The direction is the quantum BBGKY/cumulant hierarchy and adaptive
@@ -181,23 +255,29 @@ correlation-order and classical/quantum switching
 1. **Closures beyond the first YBG equation.** Self-consistent BGY--Kirkwood
    and the second YBG equation for g3, measured against the H1a Monte Carlo
    g2/g3; c3 resolution near contact.
-2. **Quantum BBGKY with measured cumulants.** The first RDM equation with the
+2. **Basis-converged N = 3 reference.** Extend the three-electron cell to
+   plane-wave cutoffs |n|^2 <= 4..6 (about 5e4 to 7e5 states) with total-spin
+   symmetry, extrapolate in the cutoff with the known cusp tail, and publish
+   the connected three-body cumulant with an error ledger; N = 4 follows only
+   with spin and point-group reduction and a faster ensemble RDM routine.
+3. **Quantum BBGKY with measured cumulants.** The first RDM equation with the
    Q4 two-RDM, then pair-level cumulant truncations, compared against the Q4
    kick dynamics and the H1b map. Report the omitted lambda3 effect as a
-   model-defect indicator.
-3. **Thermodynamic-limit references.** Finite-size and ensemble corrections
+   model-defect indicator. Compare closures with the G1--G2 scheme
+   (second-Born, GW, T-matrix) as the external reference.
+4. **Thermodynamic-limit references.** Finite-size and ensemble corrections
    of Q4/Q5 against PIMC/literature data for the uniform electron gas and the
    OCP; canonical versus grand-canonical comparisons stated explicitly.
-4. **Lindhard with local-field corrections.** Static LFC and an interacting
+5. **Lindhard with local-field corrections.** Static LFC and an interacting
    RPA/HF comparison against the Q4 response, with a rigorous Lindhard
    quadrature enclosure where affordable.
-5. **Collision kernels and larger Lambda scans.** Exchange in the hybrid
+6. **Collision kernels and larger Lambda scans.** Exchange in the hybrid
    Monte Carlo; microscopic collision coefficients (classical side, C3/C4 at
    Lambda = 100..10000) compared with the QG6 kernels.
-6. **Scalable packets only where validated.** Packet or orbital methods for
+7. **Scalable packets only where validated.** Packet or orbital methods for
    100--10000 electrons only in regimes where Q2-type comparisons pass for the
    named observable; otherwise classical trajectories with quantum kernels.
-7. **Adaptive switching.** Correlation-order and quantum promotion
+8. **Adaptive switching.** Correlation-order and quantum promotion
    indicators (eta, Theta, c3 size, Kirkwood defect, lambda3 ratio) with
    lift/projection and interface-defect ledgers, first in the QG6 setting.
 
@@ -309,5 +389,22 @@ performance claim.
   of an orbital-free density approximation.
 - [Babbush et al., Phys. Rev. X 8, 011044](https://doi.org/10.1103/PhysRevX.8.011044):
   plane-wave electronic Hamiltonians.
+
+- [Shepherd, Booth, Grüneis and Alavi, Phys. Rev. B 85, 081103(R) (2012)](https://doi.org/10.1103/PhysRevB.85.081103):
+  full configuration interaction quantum Monte Carlo for the 54-electron gas.
+- [Cassella et al., Phys. Rev. Lett. 130, 036401 (2023)](https://doi.org/10.1103/PhysRevLett.130.036401):
+  fermionic neural-network wavefunctions for the electron gas.
+- [Pescia et al., Phys. Rev. B (2024), arXiv:2305.07240](https://arxiv.org/abs/2305.07240):
+  message-passing neural quantum states up to N = 128.
+- [Brown, Clark, DuBois and Ceperley, Phys. Rev. Lett. 110, 146405 (2013)](https://doi.org/10.1103/PhysRevLett.110.146405):
+  restricted path-integral Monte Carlo of the warm dense electron gas.
+- [Groth et al., Phys. Rev. Lett. 119, 135001 (2017)](https://doi.org/10.1103/PhysRevLett.119.135001):
+  ab initio exchange-correlation free energy of the warm dense electron gas.
+- [Dornheim, Groth and Bonitz, Phys. Rep. 744, 1 (2018), arXiv:1801.05783](https://arxiv.org/abs/1801.05783):
+  review of the uniform electron gas at warm dense matter conditions.
+- [Schlünzen, Joost and Bonitz, Phys. Rev. Lett. 124, 076601 (2020)](https://doi.org/10.1103/PhysRevLett.124.076601):
+  time-linear G1--G2 nonequilibrium Green-function scheme.
+- [Brown, Preston and Singleton, Phys. Rep. 410, 237 (2005), arXiv:physics/0501084](https://arxiv.org/abs/physics/0501084):
+  charged-particle stopping and Fokker--Planck coefficients without cutoffs.
 
 Chris&AI
