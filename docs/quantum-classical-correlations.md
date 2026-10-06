@@ -25,9 +25,16 @@ a function of `Theta` alone.
   - N = 2: the centre of mass integrates out. `p(d) = exp(-beta u(d))/Z` on
     the torus is integrated by the periodic midpoint rule (Z, Fourier
     moments) and by spherical Gauss rules (shell bins). This is deterministic.
-  - N = 3, 4: canonical Metropolis Monte Carlo with single-particle moves.
-    Intervals are batch-means statistical errors (40 batches). They are
-    labelled statistical, never certified.
+  - N = 3, 4: canonical Metropolis Monte Carlo with single-particle moves
+    by the one periodic-cell sampler shared with H1a
+    (`src/ocp_monte_carlo.f90`, `mc_setup_cell`: incremental Ewald with a
+    real image cube chosen by the `kin6d_ewald` cost model). The Kelbg and
+    Kelbg+Pauli laws are a declared short-range addition
+    (`src/pair_law.f90`) on top of the one Ewald Coulomb energy.
+    Intervals are batch-means statistical errors (40 batches,
+    `kin6d_series_statistics`). They are labelled statistical, never
+    certified. The N = 2 quadrature uses the independent two-body
+    `kin6d_nbody` pair potential and is the sampler's oracle.
 - Exact quantum N = 2 (`src/quantum_pair_cell.f90`): the centre of mass and
   relative coordinate separate exactly on the torus. The relative wave
   function is periodic or antiperiodic per axis according to the parity of
@@ -122,7 +129,8 @@ Generated leaves are in `gen/gen_quantum_classical.f90`.
 | Q4 diagonal f2/f3 of a Slater determinant vs brute-force Wick sum | exact |
 | Sparse 2-RDM shell bins (`fock_rdm2_entries`) vs dense `jellium_pair_bins` | 4e-15 |
 | Dense full-sector spectrum (364 states) vs block-Lanczos ground state | 1e-10 rel |
-| H1b classical cell vs independent H1a OCP sampler (`ocp_monte_carlo`), N = 3, Gamma = 2.17 | 1.5 s.e. |
+| Shared sampler energy minus offset = independent two-body pair sum, N = 3 (Coulomb, Kelbg+Pauli; minimum image and image cube) | 1.3e-13 |
+| OCP form of the shared sampler (a = 1, minimum image), N = 2, vs pair quadrature, Gamma = 2.17 | 2.0 s.e. |
 
 ## Results (`correlation_map_quantum_demo`, defaults)
 
@@ -214,10 +222,11 @@ row carries a certificate.
   calibration shows that the Cauchy indicator underestimates the error.
 - N = 4 thermal moments cost about 3 ms per state (sparse 3-RDM); Theta > 1
   needs cutoff >= 3 (316k states) and an ensemble (per-sector BLAS) RDM.
-- Two classical periodic samplers now exist: `classical_cell` (pair models,
-  WK reweighting, atomic units) and H1a `ocp_monte_carlo` (incremental
-  Ewald). They agree (test), but they should be consolidated into one
-  sampler with pluggable pair laws.
+- One classical periodic sampler (`ocp_monte_carlo`) serves H1a and H1b.
+  The pair-law addition is the same function in the sampler and in the
+  N = 2 quadrature, so the quadrature checks sampling and the Ewald part
+  independently but not the Kelbg/Pauli definition itself (that is the
+  Kelbg leaf oracle).
 - WK reweighting of the contact bin is heavy-tailed in Monte Carlo. For
   N = 3, 4 the predictor rows are qualitative.
 - fortplot: a line clipped by `ylim` in one subplot leaks segments into the

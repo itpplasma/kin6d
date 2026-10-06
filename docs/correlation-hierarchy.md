@@ -26,7 +26,11 @@ Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
   sum uses the cube `0 < |n|_inf <= nk`. A move costs O(N) for the real-space
   difference plus an O(modes) update of `rho_k`; the energy change is exact
   for the truncated Hamiltonian. At tolerance 1e-5 the reported truncation
-  bound is about 6e-9 per pair (units 1/L).
+  bound is about 6e-9 per pair (units 1/L). The same sampler serves the
+  H1b finite-N cell (`mc_setup_cell`: general units, a real image cube for
+  small N, and the `kin6d_pair_law` Kelbg/Pauli addition;
+  docs/quantum-classical-correlations.md). The OCP path is unchanged
+  bit for bit.
 - Preparation: a uniform random start, then 2000 equilibration sweeps. The
   step is tuned towards 40% acceptance in the first half only. Production is
   10000 sweeps in 20 batches. Samples (g2, g3, S(k)) are taken every 5
@@ -242,7 +246,7 @@ JVP/VJP. No derivative of the YBG/HNC outputs is propagated yet.
 - The quoted c3 is a 0.2a bin average (resolution indicator above). A
   finer, statistics-limited g3 near contact needs more sampling.
 - Time-series statistics (`kin6d_series_statistics`) are generic and could
-  move to FortNum; `ocp_shielding_demo` has its own copy.
+  move to FortNum. `ocp_shielding_demo` and the H1b batch means use them.
 - FortSym emits `sqrt(1*3)` (an integer argument) for `sqrt(3*one)` with a
   rational one. The generator works around it with `sqrt(rat(3))`; this is a
   candidate FortSym folding fix.
