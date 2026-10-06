@@ -122,3 +122,103 @@ Generated leaves are in `gen/gen_quantum_classical.f90`.
 | Q4 diagonal f2/f3 of a Slater determinant vs brute-force Wick sum | exact |
 | Sparse 2-RDM shell bins (`fock_rdm2_entries`) vs dense `jellium_pair_bins` | 4e-15 |
 | Dense full-sector spectrum (364 states) vs block-Lanczos ground state | 1e-10 rel |
+| H1b classical cell vs independent H1a OCP sampler (`ocp_monte_carlo`), N = 3, Gamma = 2.17 | 1.5 s.e. |
+
+## Results (`correlation_map_quantum_demo`, defaults)
+
+Grid r_s = 0.5, 1, 2, 4, 8 and Theta = 0.5, 1, 2, 4, 10 (Gamma 0.03 to 8.7),
+12 shells. The demo writes `output/qcmap-{n2,n2-g,many,derivative,cost}.csv`,
+`output/correlation_map_quantum_demo.nc` and the figures
+`output/qcmap-{pair-g,regime-pair,regime-three-body,wigner-kirkwood,kelbg}.png`.
+A full run takes 40 min on one core; N = 4 accounts for 2/3 of that.
+
+N = 2 (deterministic). The relative-basis cutoff indicator is at most
+3.4e-4, below 2.5 % of the smallest difference on the grid.
+
+- Total `||g_q - g_cl||` ranges from 0.47 (r_s = 8, Theta = 0.5) to 0.006
+  (r_s = 4, Theta = 10). It falls monotonically with Theta at fixed r_s.
+  Outside `r > lambda_T` the difference is at most 0.013 (zero bins exist
+  for Theta <= 2, where `lambda_T > L/2`). The classical limit is recovered
+  except inside the thermal wavelength. The quantum contact value
+  `g_q(0)` stays at 0.02 to 0.74, while the classical value is
+  `exp(-beta u)`, effectively 0.
+- Ideal part: 0.02 (Theta = 0.5, singlet-dominated N = 2 ground state) and
+  0.11 at Theta = 1, then 0.037 at Theta = 10. It depends on Theta only.
+- The interaction part exceeds the total wherever the exchange hole and the
+  Coulomb hole overlap. The interaction-exchange cross term is as large as
+  either part. The opposite-spin (pure diffraction) channel dominates for
+  Theta <= 1 (0.15 to 0.52). At Theta >= 4 the same-spin channel carries
+  most of the difference at small r_s.
+- Theta derivative at r_s = 2, Theta = 2: `d||Delta||/dTheta = -1.9053e-2`
+  from the exact thermal covariances (quantum spectral, classical
+  quadrature). Central differences (h = 2e-3) agree to 2.5e-6 relative.
+- Wigner--Kirkwood + exchange: the residual is 0.14 at r_s = 0.5,
+  Theta = 10 (Gamma = 0.03, `lambda_T/a = 0.58`) and 0.16 to 0.27 for
+  r_s = 8 at Theta = 2 to 4. It is 0.4 to 1.2 for `lambda_T/a >= 1.3` at
+  small r_s and fails (residual 0.7 to 8) for Theta = 0.5. The first-order
+  reweighting overshoots near contact, where `hbar^2 beta^3 |grad u|^2` is
+  not small. Useful regime: `lambda_T/a <~ 0.6`, or strong repulsion with
+  `lambda_T` below the Coulomb-hole size (r_s = 8, Theta >= 2).
+- Kelbg model error (ratio to the classical error). Kelbg alone gives
+  0.016 to 0.09 at Theta = 0.5 for r_s <= 2 and 0.07 to 0.5 for r_s >= 4 up
+  to Theta = 2. It is 1.2 to 2.3 for r_s <= 2 at Theta >= 2 because it
+  omits exchange, which at high T is comparable to diffraction.
+  Kelbg+Pauli reaches 0.03 to 0.08 at Theta = 10 for r_s <= 1. It is no
+  better than classical (0.8 to 1.2) for r_s >= 4 at Theta >= 2, and gives
+  0.39 to 0.61 at Theta = 0.5. There the spin-averaged Pauli term is wrong
+  because the singlet dominates.
+
+N = 3, 4 (Q4 cutoff 3 / 2; Monte Carlo 40000 sweeps). Q4 thermal rows are
+computed only where the ideal canonical occupation outside the cutoff is
+at most 5 %: Theta <= 1, plus the ground multiplet. Theta = 2 misses 7 %
+(N = 3) and 22 % (N = 4) and is skipped. The cutoff indicator (c vs c-1)
+is calibrated on N = 2 against the exact cell. There the Q4 c = 3 error is
+0.005 to 0.024 and the c = 2 to 3 change 0.002 to 0.008, so the indicator
+underestimates the error by up to a factor of 3.3.
+
+- Pair: total 0.05 to 0.33 (N = 3), 0.04 to 0.30 (N = 4). Ideal part
+  0.12 to 0.13, interaction part 0.10 to 0.44. N = 3 rows pass the reference
+  test (indicator, ideal truncation, statistics below 0.2 of the
+  difference) except r_s <= 1 at Theta = 1. No N = 4 row passes: the c = 2
+  indicator is 0.015 to 0.13.
+- Three-body connected moment `c3` at Theta = 0.5, N = 3: quantum
+  0.0020/0.0036/0.0066/0.012/0.020 against classical
+  0.0034/0.0082/0.018/0.036/0.064 (r_s = 0.5..8; statistical s.e.
+  <= 4e-4). Quantum delocalization suppresses connected triplet
+  correlations by a factor 1.7 to 3.2. The ideal exchange part is 4.5e-4
+  (N = 3) and 1.3e-3 (N = 4). Ground-multiplet values: 0.0015 to 0.020
+  (N = 3).
+- Finite size: classical `c3(N=4)/c3(N=3)` = 0.78 to 0.70 at Theta = 0.5,
+  and the quantum ratio is 0.75 to 1.26 with the unconverged N = 4 basis.
+
+What tiny N can and cannot say. The cell holds every particle within about
+one Wigner-Seitz radius of all the others, and S probes only the three
+longest wavelengths (`|Q| a` of about 3 to 6). Classical and quantum values
+share these finite-size constraints, so the ratio and difference at fixed N
+are meaningful. They measure how strongly diffraction, exchange and
+degeneracy reshape the correlations under identical constraints. The
+absolute `c3`, its N dependence, and any Kirkwood or closure statement are
+not thermodynamic-limit quantities. Two values of N cannot be extrapolated:
+the 20 to 30 % N = 3/4 change is the finite-size indicator, not a
+correction.
+
+## Status and open items
+
+Every quantum number above is a finite-basis candidate. N = 2 is close to
+the basis limit (cutoff indicator <= 3.4e-4); N = 3, 4 rows are indicators
+unless flagged `reference = 1`. Classical Monte Carlo intervals are
+statistical, and the N = 2 classical rows are deterministic quadrature. No
+row carries a certificate.
+
+- No rigorous plane-wave remainder for the Coulomb cusp. The N = 2
+  calibration shows that the Cauchy indicator underestimates the error.
+- N = 4 thermal moments cost about 3 ms per state (sparse 3-RDM); Theta > 1
+  needs cutoff >= 3 (316k states) and an ensemble (per-sector BLAS) RDM.
+- Two classical periodic samplers now exist: `classical_cell` (pair models,
+  WK reweighting, atomic units) and H1a `ocp_monte_carlo` (incremental
+  Ewald). They agree (test), but they should be consolidated into one
+  sampler with pluggable pair laws.
+- WK reweighting of the contact bin is heavy-tailed in Monte Carlo. For
+  N = 3, 4 the predictor rows are qualitative.
+- fortplot: a line clipped by `ylim` in one subplot leaks segments into the
+  next subplot. The demo clips the data at the axis top as a workaround.
