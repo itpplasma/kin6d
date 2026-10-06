@@ -4,12 +4,13 @@ Status: canonical long-range scope. Quantum-plasma capabilities are reference,
 teaching and closure-validation branches unless a prioritized scientific case
 promotes them. They do not make every KIN6D calculation quantum.
 
-The prioritized implementation sequence is
+The implemented microscopic cases, their claims, the measured findings and
+the remaining order are in
 [microscopic quantum experiments and validation](quantum-microscopic-validation.md):
-localized encounters, coherent packet enrichment, finite-N degeneracy and an
-interacting quantum cell before scalable approximations and collective
-reductions. It defines error/status, independent-oracle, plot and performance
-gates. BBGKY evolution and stellar structure remain deferred.
+localized encounters, packet models, finite-N degeneracy, an interacting
+quantum cell, mean-field models, static screening, Wigner--Poisson and hybrid
+quantum encounters exist; the quantum BBGKY/cumulant hierarchy is the active
+path. Stellar structure remains outside the sequence.
 
 ## Scope boundary
 

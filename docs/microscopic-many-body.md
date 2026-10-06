@@ -51,7 +51,7 @@ and the full Maxwell equations.
 This is the classical parent reference. Relativistic Vlasov--Maxwell/FK is the
 highest **continuum mean-field** reference, not the deepest microscopic model.
 
-## Covariant action and the self-field caveat
+## Covariant action and self-field prescription
 
 The formal covariant particle-field action is
 
@@ -261,105 +261,89 @@ include:
 These observables connect microscopic dynamics to kinetic collision and
 transport closures.
 
-## Microscopic teaching/verification ladder
+## Microscopic teaching and verification cases
 
-Retain especially transparent examples:
+The classical cases share one foundation: the species/unit record
+(`src/species.f90`), the single symbolic Coulomb, uniform-sphere and Ewald
+source (`gen/kin6d_symbolic_physics.f90`), Ewald parameters chosen from a
+tolerance with a shell-sum truncation bound (`src/ewald.f90`) or PME, and one
+general-N FortNum Strang kick-drift-kick path (`src/nbody.f90`) with tiled
+direct and Ewald sums, an encounter-resolved step and fail-closed coincidence
+checks; no softening is used. Results carry embedded configuration and
+provenance ([interface-reproducibility.md](interface-reproducibility.md)).
+The task state is in [hierarchy-campaign.md](hierarchy-campaign.md).
 
-The IDs below identify cases, not prerequisite order. First implement M0,
-the Coulomb form of M1, and the Coulomb collective M3/M4 cases. M2 and the
-relativistic/radiative extensions follow concrete validation needs. Every
-microscopic case remains planned until its own numerical and physical gates
-pass; the current free-streaming markers have no mutual interaction.
+| ID | Case | Document | Claim and status |
+|---|---|---|---|
+| C0 (M0) | Two-body repulsive Coulomb encounter against a neutral contact | [interaction-laboratory.md](interaction-laboratory.md) | Rutherford deflection and energy/angular-momentum ledger as oracles; certified endpoint radius in the documented scope |
+| C1 | Periodic classical two-electron quench ensemble, matched to the quantum Q0 pair | [classical-pair.md](classical-pair.md) | Statistical simultaneous bin intervals; Ewald and step differences are indicators (maximum energy defect 6.2e-5) |
+| C2 | Isolated 32-electron cloud in a neutralizing sphere, with and without an impurity | [microscopic-cloud.md](microscopic-cloud.md) | Candidate trajectories and empirical profiles; Gauss-law and harmonic-orbit oracles |
+| C3 (M3) | Periodic 3D3V OCP plasma oscillation from paired perturbed/unperturbed runs | [ocp-microscopic.md](ocp-microscopic.md) | Candidate; statistical response intervals against linear Vlasov, the Landau root and Bohm--Gross; final Landau-box evidence pending on a worker branch |
+| C4 (M4) | Emergent Debye shielding around a weak impurity, L = 4 lambda_D | [ocp-microscopic.md](ocp-microscopic.md) | Candidate; statistical shell densities against the periodic screened-Poisson Green function; final evidence pending |
+| H1a (M5/M7) | Classical OCP correlation hierarchy: g2, S(k), g3, Ursell U3, c3, Kirkwood defect, YBG closures, HNC, Gamma = 0.1..30 | [correlation-hierarchy.md](correlation-hierarchy.md) | Statistical (1 s.e.); energies as reference comparison with Potekhin--Chabrier and tabulated MC; MD and MC agree within 1 sigma at Gamma = 1 |
 
-### M0 — two particles, no field
+C3 and C4 keep the physics caveats of the original M3/M4 plan. A uniform
+translation in a periodic OCP is not a charge-separation oscillation. At
+L = 4 lambda_D the smallest wave number has k lambda_D = pi/2, so a warm box
+is compared with its full finite-k response, never with the cold Langmuir
+limit. Exponential screening must emerge from the particles. The reference
+is the periodic screened-Poisson Green function; the isolated Yukawa curve is
+an overlay with a finite-box model-difference status, and linear response
+applies only outside the nonlinear radius |qQ|/(4 pi eps0 k_B T). The
+responsive species defining lambda_D are stated. A weak repulsive impurity in
+an electron OCP avoids classical attractive collapse; mobile ions are a
+separate population model. Single-trajectory tangents are meaningful only for
+a few plasma periods because the position-tangent norm grows at a rate of
+order omega_p; ensemble-mean sensitivities need a linear-response or
+shadowing estimator and are not claimed.
 
-Begin with nonrelativistic repulsive two-body Coulomb scattering at a declared
-impact parameter, using the Rutherford deflection and momentum/energy ledger
-as independent oracles. Animate both trajectories in their actual 3D space.
-Extend to relativistic kinematics later. Close-approach events require a
-resolved/adaptive time and force error budget, not hidden numerical softening.
+### Measured findings
 
-### M1 — two particles in prescribed electromagnetic field
+H1a measured the size of correlations beyond the pair level in the classical
+OCP (N = 1000 and 500, canonical Metropolis Monte Carlo with exact
+incremental Ewald sums):
 
-Resolve gyro-motion plus mutual interaction. This exposes the transition from
-an isolated binary encounter to a magnetized collision without invoking a
-collision operator.
+- the Ursell three-body function U3 is as large as the pair products at every
+  Gamma on triangles with sides < 3a, but most of it is Kirkwood
+  superposition: the superposition-connected c3 is unresolved at
+  Gamma = 0.1 (< 0.017), 0.019(2) at 0.3 and 1.060(2) at 30, and
+  ||c3||/||K - P|| lies between 0.10 and 0.26 for Gamma = 1..30;
+- the rms Kirkwood defect is 0.005 at Gamma = 1 and 0.064 at 30;
+- in the first YBG equation with Monte Carlo g2, the exact conditional mean
+  force reproduces g2 at the noise level and the first-order closure fails
+  from Gamma ~ 1 (spurious contact peak); Kirkwood superposition is off in
+  the energy by 4% at Gamma = 1 and 32% at Gamma = 10 and diverges at 30,
+  while HNC stays within 1%;
+- finite-N canonical marginals need the 1/N normalization (without it the
+  g2-route energy is 10% off at N = 200), the closure input needs the
+  perfect-screening projection, and the triplet measure needs exact triangle
+  clipping (coarse quadrature produced a spurious ||c3||^2 ~ 1e-3 floor).
 
-Start with a few interacting 3D3V particles, then add the prescribed-field
-limit and compare it with the independent single-particle orbit reference.
+For the hierarchy this means that a pair-level closure with superposition is
+adequate for Gamma <~ 1, a self-consistent closure (HNC or beyond) is required
+above, and the measured c3 and Kirkwood defect are the indicators for
+correlation-order promotion. The quantum analogue is in
+[quantum-microscopic-validation.md](quantum-microscopic-validation.md#findings-that-change-the-plan).
 
-### M2 — retarded two-particle electrodynamics
+### Remaining classical cases
 
-For a small prescribed case, compare Maxwell-field evolution and direct
-retarded Lienard--Wiechert mutual fields under matching radiation/boundary
-conditions.
+In order of current leverage:
 
-### M3 — microscopic plasma oscillation
-
-Start with physical electrons and an explicit uniform positive neutralizing
-background (an electron one-component plasma, OCP) in a periodic 3D3V box.
-Use a small nonzero spatial-mode displacement, recover the collective response
-and compare with the matching Vlasov/continuum and analytical cold/thermal
-limits. A uniform translation in a periodic OCP is not a charge-separation
-oscillation. Mobile ions are a later distinct population model. No effective
-collision operator is imposed.
-
-For \(L=4\lambda_D\), the smallest nonzero wave number has
-\(k\lambda_D=2\pi/4\), so a warm box is not the long-wavelength
-\(\omega\simeq\omega_p\) limit. Compare its full finite-\(k\)
-dielectric/initial-value response, or increase \(L/\lambda_D\), or declare
-a separate cold/nonthermal model. Do not use the small shielding box's size
-as evidence that the cold Langmuir oracle applies to a warm microscopic run.
-
-### M4 — real Debye shielding
-
-Begin with that OCP and a weak, fixed, repulsive impurity charge, compensating
-its charge in the declared background to maintain periodic neutrality. This
-avoids classical attractive electron--ion bound collapse. A positive finite
-charged sphere is a separate finite-source benchmark; its radius and source
-law belong to the physical model. Mobile positive point ions and attractive
-close encounters require their own classical validity and equilibrium rules.
-
-Insert or hold a weak test charge in a thermal microscopic plasma.
-Measure the ensemble/time-averaged response and compare, in the weak-coupling
-linear regime, with
-
-\[
-\phi(r)
-=
-\frac{q}{4\pi\epsilon_0r}
-\exp(-r/\lambda_D).
-\]
-
-The exponential screening must **emerge from the particles**. Do not impose a
-Debye dielectric, collision operator or screened pair potential in this test.
-Finite-box, periodic-image, finite-\(N_D\), averaging and test-charge
-nonlinearity errors are reported separately.
-
-For a point impurity, the linear response is a far-field claim, outside the
-nonlinear radius \(|qQ|/(4\pi\epsilon_0 k_BT)\). At finite periodic box size,
-use the corresponding periodic screened-Poisson Green function as the
-reference; the isolated Yukawa curve above is an overlay with a finite-box
-model-difference status. A \(4\lambda_D\) box is not an infinite-domain
-shielding experiment. Specify which species respond when defining
-\(\lambda_D^{-2}=\sum_{\text{responsive }s}n_sq_s^2/(\epsilon_0 k_BT_s)\).
-Electron-only and equilibrated electron/ion responses have different lengths.
-
-### M5 — correlation and dielectric spectrum
-
-Measure \(g(r)\), \(S(k)\), \(S(k,\omega)\) and dielectric response, then compare
-against Vlasov/RPA/Balescu-type predictions in their valid limits.
-
-### M6 — microscopic collision coefficients
-
-Measure slowing down, pitch-angle diffusion, temperature/momentum relaxation
-and Green--Kubo transport; compare against Landau, Beliaev--Budker,
-Balescu--Lenard and mean-force closures.
-
-### M7 — strong-coupling departure
-
-Increase coupling until weak-correlation kinetic closures fail and compare
-explicit pair-correlation/mean-force models against direct particles.
+1. finish the C3/C4 evidence and the Lambda = 100, 300, 1000, 3000, 10000
+   scan below, with mean-response, fluctuation and estimator gates reported
+   separately;
+2. self-consistent BGY--Kirkwood and the second YBG equation for g3 against
+   the H1a data (M5/M7), then S(k, omega) and dielectric response against
+   Vlasov/RPA/Balescu-type predictions;
+3. microscopic collision coefficients (M6): slowing down, pitch-angle
+   diffusion, temperature/momentum relaxation and Green--Kubo transport
+   against Landau, Beliaev--Budker, Balescu--Lenard and mean-force closures
+   and the quantum-corrected kernels of
+   [hybrid-encounter.md](hybrid-encounter.md);
+4. a few interacting particles in a prescribed magnetic field (M1), compared
+   with the independent single-particle orbit reference;
+5. relativistic, Darwin, Maxwell and the tiny retarded Lienard--Wiechert
+   comparison (M2) when a validation need requires them.
 
 ## Adaptive near/far, correlation and quantum refinement
 
@@ -379,7 +363,12 @@ For a hot nondegenerate electron plasma, a rare encounter may be promoted
 temporally to a quantum two-body scattering problem when a diffraction
 indicator such as \(\lambda_{\rm dB}/b\) becomes large. After the encounter,
 an asymptotic outgoing classical state/transition kernel may be returned if the
-coarse-graining assumptions hold.
+coarse-graining assumptions hold. [hybrid-encounter.md](hybrid-encounter.md)
+implements this for test electrons in a Maxwellian background: encounters
+with eta < 1 and impact parameter below a partial-wave switch radius b_s
+are promoted to an l-local quantum ring kernel with exact Kepler
+lift/projection. The interface defect is at most 3.5e-3 in relaxation rates,
+and the classical model error reaches 15% at eta_u = 0.03.
 
 This local-pair promotion does **not** cover Fermi degeneracy or exchange.
 When \(\Theta=T/T_F\lesssim O(1)\), the promoted object generally has to be a
@@ -388,7 +377,8 @@ region/species quantum state such as Wigner/HF/quantum kinetic.
 Likewise, BBGKY correlation order can be adaptive: estimate the omitted
 \(g_{k+1}\) defect of a hierarchy retained through \(g_k\), and activate a
 richer correlation model or direct microscopic box only where/when its
-observable-weighted effect matters.
+observable-weighted effect matters. The H1a c3 and Kirkwood-defect maps above
+are the first classical measurements of that defect.
 
 Near/far matching, quantum/classical promotion and correlation-order switching
 all carry explicit overlap/interface and information-loss errors.
