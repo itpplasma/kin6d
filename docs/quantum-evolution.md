@@ -33,12 +33,16 @@ error estimate is not the certificate. All project-owned scalar action,
 sampling, enclosure, and derivative leaves come from
 `gen/gen_quantum_evolution.f90` and its shared FortSym definitions. The
 generic Hermite enclosure, Bernstein residual bound and radius accumulation
-are FortNum's `fortnum_ode_residual_certificate` (pinned `7f6a0ba`); KIN6D
-supplies only the interval action `-i H x/hbar` (and `-i dH x/hbar` as the
-tangent forcing). The migration reproduced the previous radii to all printed
-digits (two-level fixture `1.0976e-7`, tangent `1.9888e-7`; 125-state random
-Hermitian fixture `8.719e-6`); the warm strict cost (about 15 ms per cell
-for `n=125`) is dominated by the kin6d dense interval action leaf.
+are FortNum's `fortnum_ode_residual_certificate` (pinned `a431cf2`); KIN6D
+supplies the action `-i H x/hbar` (and `-i dH x/hbar` as tangent forcing).
+The default `QE_WORKHORSE` uses point matrix actions with proved aggregate
+rounding, coefficient-width and underflow allowances from FortNum.
+`QE_STRICT` retains the dense outward action for audits. Both enclose the
+same mathematical finite model. The historical strict cost of about 15 ms
+per 125-mode cell motivated this change; the measured default now takes
+about 1.4–1.5 times solve-only total, versus 25–27 times for strict audit.
+See [the error-control strategy](error-control-strategy.md) for assumptions,
+matched fixtures and efficiency indices.
 
 Each time cell stores its binary64 candidate endpoint amplitudes and RHS
 slopes. These bits define an exact cubic Hermite reconstruction `p(s)`,
@@ -76,6 +80,26 @@ covers strict reconstruction versus floating evaluation. Component boxes may
 be widened by the same radius, because a coordinate projection has norm one.
 This is a finite-vector statement; it is not a pointwise continuum
 wavefunction, spatial density, or pair-density band.
+
+`solve_quantum_evolution(...,certify=.false.)` followed by
+`certify_quantum_evolution(...,error_mode=QE_WORKHORSE)` supports final or
+checkpoint checks of a frozen trace. Every intervening cell is audited.
+Queries at fraction s use the prefix radius plus s times the current-cell
+residual budget, and enclose sampling error separately.
+
+`QE_APPROXIMATE` is opt-in. It reports `approximate-bound` with epsilon_b
+(default 5%) through `quantum_evolution_error`; its `bounded` flag is false.
+A separate generated allowance must prove omitted evaluation error at most
+epsilon_b times the displayed radius at each prefix, or the mode fails.
+The inflated radius must fit the observable budget. It currently costs
+slightly more than the workhorse, so offers no speed advantage on these cases.
+
+`quantum_evolution_indicator` returns the already computed maximum embedded
+RK norm with status `indicator`. `quantum_evolution_sampled_residual` returns
+a law-declared probabilistic upper bound for the residual norm at one chosen
+time. It does not bound residual integration or the state trajectory; its
+current global envelope is too loose on the benchmark inputs. Neither query
+upgrades the primal, continuum or derivative status.
 
 ## Derivatives and observables
 
@@ -117,7 +141,7 @@ and physical RDM representability are not inferred from arbitrary amplitudes.
 The module is `kin6d_quantum_evolution`, with private `quantum_evolution_t`.
 
 - Initialize with `(state,Hre,Him,psi_re,psi_im,steps,h,hbar,ok[,budget])`.
-- Solve with `(state,ok[,certify])`; candidate-only calls clear bounded status.
+- Solve with `(state,ok[,certify,error_mode])`; candidate-only calls clear bounded status.
 - Sample with `(state,cell,fraction,re,im,radius,ok,bounded)`; the interval-box
   variant returns already widened true component boxes.
 - The exact model time is `(cell-1+fraction)*h`, with represented fraction in
@@ -155,14 +179,14 @@ Work is `O(steps*D^2)` for the dense action and strict residual audit. Retaining
 nodes, slopes and cubic coefficients costs `O(steps*D)`; tangent storage is
 allocated once on first request. The VJP additionally retains an adjoint
 trajectory and `O(D^2)` quadrature scratch. There is no global Jacobian or
-iteration tape and no per-stage allocation. Matrix-free large-basis evolution,
-checkpoint recomputation and a cheaper proved rounding-budget evaluator are
-later measured optimizations, not current support claims.
+iteration tape and no per-stage allocation. The aggregate-rounding evaluator
+is implemented; matrix-free large-basis evolution and checkpoint recomputation
+remain later measured optimizations, not current support claims.
 
 `test_quantum_evolution --benchmark` retains 20 raw warm CPU trials. Each trial
 averages 100 complete pipelines for the same two-level inputs and four time
 cells, with a 1% state norm-scale target and 1% tangent scale1 target. It records
-candidate-only, strict complete, candidate-plus-tangent and strict combined
+candidate-only, default complete, candidate-plus-tangent and default combined
 costs, achieved radii, absolute extra times and multipliers. Validation and
 sampling occur outside timers; primal certification is not counted twice in
 the combined path. This is warm compute evidence, excluding initialization,

@@ -116,6 +116,12 @@ these matrices, unitary perturbation gives the additional radius
 `t*delta*sqrt(Z)/hbar`. Exact represented step times, including multiplication
 rounding in the displayed time label, determine this budget.
 
+The checker now defaults to deterministic aggregate-rounding actions (Tier D)
+and retains dense outward actions (Tier S) as an audit. This preserves the
+finite-state and assembly budgets above. The matched timing fixtures at t=1
+are distinct from the longer gallery defaults; see
+[the strategy and measurement ledger](error-control-strategy.md).
+
 For a candidate squared norm z and a bounded observable A,
 
 \[
