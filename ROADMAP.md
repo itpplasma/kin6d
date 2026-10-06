@@ -362,8 +362,7 @@ r_s = 8; the quantum
 Coulomb-logarithm correction is ln eta - Re psi(1 + i eta); visible
 encounter fringes come from exchange interference.
 
-Active path, in order: the matched quantum-classical correlation map (H1b,
-in progress), quantum BBGKY with measured cumulants, thermodynamic-limit
+Active path, in order: closures beyond the first YBG equation, quantum BBGKY with measured cumulants, thermodynamic-limit
 references (PIMC/literature), Lindhard with local-field corrections, exchange
 in the hybrid collision Monte Carlo, scalable packet/orbital methods only
 where validated, and adaptive correlation-order and classical/quantum

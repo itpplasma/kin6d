@@ -79,7 +79,7 @@ names. Each row names its own document, which carries the full ledger.
 | QG6 | Hybrid classical test-electron plasma with promotion of close quantum encounters to an l-local ring kernel | [hybrid-encounter.md](hybrid-encounter.md) | Candidate kernels with quadrature/truncation indicators; Monte Carlo rates statistical; explicit interface-defect entry |
 | QG7 | Q7 Debye -> finite-T Fermi/Thomas--Fermi -> Lindhard static screening; 1X1V Wigner--Poisson -> Vlasov | [screening-wigner.md](screening-wigner.md) | Candidate with rigorous truncation tails and quadrature indicators; dispersion roots reference comparison |
 | QG8 | Q8 relativistic ideal Fermi EOS; nonrelativistic finite-T Fermi gas | [fermi-gas.md](fermi-gas.md) | Certified enclosures (relativistic to x_F = 10 at 1e7 K; nonrelativistic to theta = 1e-4) |
-| H1b | Quantum-classical matched finite-N correlation map vs (Gamma, Theta) | [hierarchy-campaign.md](hierarchy-campaign.md) | In progress on a worker branch; no result claimed |
+| H1b | Quantum-classical matched finite-N correlation map vs (Gamma, Theta) | [quantum-classical-correlations.md](quantum-classical-correlations.md) | Reference comparison: exact N = 2 (basis error <= 3.4e-4); N = 3 rows at Theta <= 1 meet the 5% occupation gate; N = 4 rows are indicators; classical MC intervals statistical |
 
 All cases share the species record, Coulomb leaves, result I/O with embedded
 configuration and provenance ([interface-reproducibility.md](interface-reproducibility.md))
@@ -146,6 +146,20 @@ the same-cell Lindhard function falls from 0.97 (r_s = 0.5) to 0.69
 (r_s = 8). A quantum BBGKY closure at the pair level is therefore an
 approximation to be measured, not assumed.
 
+**Quantum corrections to pair correlations are diffraction-dominated when
+cold.** In the exact N = 2 cell the volume-weighted quantum-classical pair
+difference is 0.47 at r_s = 8, Theta = 0.5 and 0.006 at Theta = 10; outside
+the thermal wavelength it is at most 0.013. The ideal exchange part is
+0.02--0.11 and depends on Theta only; for Theta <= 1 the opposite-spin
+(pure diffraction) channel dominates. Quantum delocalization suppresses the
+connected three-body moment to 0.3--0.6 of its classical value (N = 3,
+Theta = 0.5, r_s = 0.5--8). The Wigner--Kirkwood hbar^2 plus exchange
+predictor leaves a residual of 0.14--0.27 for Theta >= 2 and fails at
+Theta = 0.5; the Kelbg potential is a good reduced model at Theta = 0.5 for
+r_s <= 2 (0.02--0.09 of the classical error), and adding a spin-averaged
+Pauli term helps only at high Theta. Finite-N three-body values are not
+thermodynamic-limit quantities (classical c3(N=4)/c3(N=3) = 0.70--0.78).
+
 **Smaller findings.** The alternating power-sum recursion for canonical
 fermion sums cancels by up to 5e36 when cold; the subtraction-free recursion
 is the production path. Wigner--Poisson converges to Vlasov as O(hbar^2)
@@ -158,29 +172,26 @@ The direction is the quantum BBGKY/cumulant hierarchy and adaptive
 correlation-order and classical/quantum switching
 ([adaptive-multiscale-uq.md](adaptive-multiscale-uq.md)). In order:
 
-1. **H1b matched correlation map.** Finish the quantum-classical finite-N map
-   (pair and three-body cumulants vs Gamma and Theta from Q4 and the
-   classical H1a sampler); it is the reference for steps 2--3.
-2. **Closures beyond the first YBG equation.** Self-consistent BGY--Kirkwood
+1. **Closures beyond the first YBG equation.** Self-consistent BGY--Kirkwood
    and the second YBG equation for g3, measured against the H1a Monte Carlo
    g2/g3; c3 resolution near contact.
-3. **Quantum BBGKY with measured cumulants.** The first RDM equation with the
+2. **Quantum BBGKY with measured cumulants.** The first RDM equation with the
    Q4 two-RDM, then pair-level cumulant truncations, compared against the Q4
    kick dynamics and the H1b map. Report the omitted lambda3 effect as a
    model-defect indicator.
-4. **Thermodynamic-limit references.** Finite-size and ensemble corrections
+3. **Thermodynamic-limit references.** Finite-size and ensemble corrections
    of Q4/Q5 against PIMC/literature data for the uniform electron gas and the
    OCP; canonical versus grand-canonical comparisons stated explicitly.
-5. **Lindhard with local-field corrections.** Static LFC and an interacting
+4. **Lindhard with local-field corrections.** Static LFC and an interacting
    RPA/HF comparison against the Q4 response, with a rigorous Lindhard
    quadrature enclosure where affordable.
-6. **Collision kernels and larger Lambda scans.** Exchange in the hybrid
+5. **Collision kernels and larger Lambda scans.** Exchange in the hybrid
    Monte Carlo; microscopic collision coefficients (classical side, C3/C4 at
    Lambda = 100..10000) compared with the QG6 kernels.
-7. **Scalable packets only where validated.** Packet or orbital methods for
+6. **Scalable packets only where validated.** Packet or orbital methods for
    100--10000 electrons only in regimes where Q2-type comparisons pass for the
    named observable; otherwise classical trajectories with quantum kernels.
-8. **Adaptive switching.** Correlation-order and quantum promotion
+7. **Adaptive switching.** Correlation-order and quantum promotion
    indicators (eta, Theta, c3 size, Kirkwood defect, lambda3 ratio) with
    lift/projection and interface-defect ledgers, first in the QG6 setting.
 
