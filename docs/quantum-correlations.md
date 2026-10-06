@@ -79,6 +79,15 @@ N-representability certificate. It does not establish positivity of an uncertain
 physical RDM merely because its floating candidate passes. Fermionic operator
 positivity is also distinct from positivity of a Wigner quasidistribution.
 
+`quantum_cumulant_norms` assembles, for real RDMs, the pair cumulant
+`lambda2 = Gamma - W` and the three-body cumulant
+`lambda3 = Gamma3 - det3[gamma(t_a,u_b)] - sum_ab (-1)^(a+b) gamma(t_a,u_b)
+lambda2(t\a,u\b)` on the union of the supports of its terms (sparse keys,
+generated `quantum_wick_triple`/`quantum_triple_product` leaves) and returns
+the Frobenius norms over ordered pairs/triples. Slater determinants give zero
+cumulants; cumulants are additive over independent subsystems, so a fixed-N
+two-particle state has `Gamma3 = 0` but nonzero `lambda3`.
+
 Independent tests build CAR operator matrices from occupation-bit parity in the
 N=2, M=4 sector. Real and complex Slater states agree with Wick. The coherent
 (|12>+|34>)/sqrt(2) state has gamma=.5I and a nonzero pair-coherence cumulant;
