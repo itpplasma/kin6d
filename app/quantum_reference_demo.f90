@@ -17,15 +17,15 @@ program quantum_reference_demo
     use kin6d_quantum_reference_gallery_leaves, only: qgallery_gap_interval, &
         qgallery_radius_interval, qgallery_time_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, &
-        errorbar, fill_between, title, xlabel, ylabel, xlim, ylim, legend, &
-        tight_layout, savefig
+        fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &
+        tight_layout, savefig, set_yscale
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use kin6d_result_io, only: run_t, result_file_t
     use kin6d_periodic_pair_config, only: periodic_pair_t, read_periodic_pair, &
         write_periodic_pair, periodic_pair_bins
     implicit none
-    integer, parameter :: points = 193, bin_count = periodic_pair_bins
+    integer, parameter :: points = 193, bin_count = periodic_pair_bins, repeat = 3
     integer :: momentum_cutoff = 2, particles = 2, frames, steps_per_frame = 1
     ! Box, mass, coupling and time grid come from the &periodic_pair group
     ! shared with classical_pair_demo; hbar stays quantum-only.
@@ -62,6 +62,8 @@ program quantum_reference_demo
     real(dp) :: common_setup_s
     real(dp) :: post_s, radius, physical_radius, max_gap, max_radius, h, total_s
     real(dp) :: ylim_pair(2), ylim_connected(2)
+    integer :: nshow
+    integer, allocatable :: shell_first(:)
     integer :: modes, bound, shell, kx, ky, kz, i, j, k, q
     integer :: f, model_index, cell, unit, status, argn, snapshot
     integer :: refinement
@@ -317,16 +319,21 @@ program quantum_reference_demo
     candidate_s = after - before
     call write_outputs()
     ylim_pair = [minval(lower(1, :, :, :)), maxval(upper(1, :, :, :))]
-    ylim_pair = [min(0.0_dp, ylim_pair(1) - 0.05_dp), ylim_pair(2) + 0.4_dp]
+    ylim_pair = [ylim_pair(1) - 0.05_dp, ylim_pair(2) + 0.12_dp]
     ylim_connected = [minval(lower([2, 4], :, :, :)), maxval(upper([2, 4], :, :, :))]
-    ylim_connected = [ylim_connected(1) - 0.08_dp, ylim_connected(2) + 0.3_dp]
-    call figure(figsize=[12.8_dp, 8.2_dp])
+    ylim_connected = [ylim_connected(1) - 0.04_dp, ylim_connected(2) + 0.1_dp]
+    call display_selection()
+    call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
     call draw_frame(snapshot)
     call savefig('output/quantum-correlations.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update, frames=frames, interval=83, fig=canvas)
-call save_animation(animation, 'output/quantum-correlations.mp4', fps=12, status=status)
+        ! 24 fps; each certified frame is shown for 3 video frames (no
+        ! interpolation between frames), then a 1 s hold of the last frame.
+        animation = animation_func(update, frames=repeat*frames + 24, interval=42, &
+            fig=canvas)
+        call save_animation(animation, 'output/quantum-correlations.mp4', fps=24, &
+            status=status)
         if (status /= 0) error stop 'quantum movie encoding failed'
     end if
     print '(a,i0,a,i0,a,es12.4)', 'quantum3D modes=', modes, ', sector=', modes, &
@@ -507,10 +514,28 @@ write (u, '(a)') 'model,frame,t,bin,x_center_over_L,g,g_lower,g_upper,C,C_lower,
         close (u)
     end subroutine
 
+    !> Orbitals shown in the occupation panel: all orbitals up to the last one
+    !> whose occupation reaches 1e-4 at some frame; first orbital of each shell.
+    subroutine display_selection()
+        integer :: m, s, last
+        nshow = 1
+        do m = 1, modes
+            if (maxval(occupation(m, :, 1)) >= 1e-4_dp) nshow = m
+        end do
+        allocate (shell_first(0))
+        last = -1
+        do m = 1, nshow
+            s = sum(mode_momentum(:, m)**2)
+            if (s /= last) shell_first = [shell_first, m]
+            last = s
+        end do
+        if (size(shell_first) > 4) shell_first = shell_first(:4)
+    end subroutine
+
     subroutine update(number)
         integer, intent(in) :: number
         call canvas%clear()
-        call draw_frame(number)
+        call draw_frame(min((number - 1)/repeat + 1, frames))
         call canvas%set_rendered(.false.)
     end subroutine
 
@@ -519,50 +544,83 @@ write (u, '(a)') 'model,frame,t,bin,x_center_over_L,g,g_lower,g_upper,C,C_lower,
         character(120) :: heading
         real(dp), parameter :: blue(3) = [0.0_dp, 0.4471_dp, 0.6980_dp]
         real(dp), parameter :: orange(3) = [0.8353_dp, 0.3686_dp, 0.0_dp]
+        real(dp), parameter :: green(3) = [0.0_dp, 0.620_dp, 0.451_dp]
+        real(dp), parameter :: purple(3) = [0.800_dp, 0.475_dp, 0.655_dp]
         real(dp), parameter :: gray(3) = [0.45_dp, 0.45_dp, 0.45_dp]
+        real(dp), parameter :: floor = 1e-6_dp
+        real(dp) :: shell_color(3, 4)
+        character(8), parameter :: shell_style(4) = [character(8) :: '-', '--', '-.', ':']
+        integer :: m, s
+        shell_color(:, 1) = blue; shell_color(:, 2) = orange
+        shell_color(:, 3) = green; shell_color(:, 4) = purple
         call subplot(2, 2, 1)
-        write (heading, '(a,f6.2,a,i0)') 'Coulomb quench | t/t0 = ', times(number), &
-            ' | 3D modes = ', modes
+        write (heading, '(a,f5.2)') 'Pair occupations, $t/t_0$ = ', times(number)
         call title(trim(heading))
-        call xlabel('Orbital pair: k up, -k down (discrete index)')
-        call ylabel('Occupation per spin orbital')
-        call xlim(0.0_dp, real(modes + 1, dp)); call ylim(-0.05_dp, 1.3_dp)
-        err = max(occupation(:, number, 1) - occupation_lo(:, number, 1), &
-            occupation_hi(:, number, 1) - occupation(:, number, 1))
-        call errorbar(orbital, occupation(:, number, 1), yerr=err, fmt='o', &
-            color=blue, ecolor=blue, label='Coulomb + deterministic bounds', &
-                capsize=2.0_dp)
-        err = max(occupation(:, number, 2) - occupation_lo(:, number, 2), &
-            occupation_hi(:, number, 2) - occupation(:, number, 2))
-        call errorbar(orbital, occupation(:, number, 2), yerr=err, fmt='x', &
-            linestyle=':', color=gray, ecolor=gray, &
-            label='noninteracting, same engine', capsize=2.0_dp)
+        call xlabel('orbital pair $(k, -k)$, ordered by shell $|k|^2$')
+        call ylabel('occupation per spin orbital')
+        do m = 1, nshow
+            call plot([orbital(m), orbital(m)], &
+                [max(occupation_lo(m, number, 1), floor), &
+                 max(occupation_hi(m, number, 1), floor)], color=blue, linewidth=1.5_dp)
+        end do
+        call plot(orbital(:nshow), max(occupation(:nshow, number, 1), floor), &
+            linestyle='none', marker='o', markersize=5.0_dp, color=blue, &
+            label='Coulomb, deterministic bound')
+        call plot(orbital(:1), occupation(:1, number, 2), linestyle='none', &
+            marker='x', markersize=6.0_dp, color=gray, &
+            label='noninteracting (all other orbitals empty)')
+        do s = 1, size(shell_first) - 1
+            call plot([shell_first(s + 1) - 0.5_dp, shell_first(s + 1) - 0.5_dp], &
+                [floor, 3.0_dp], color=gray, linestyle=':', linewidth=0.8_dp)
+        end do
+        call set_yscale('log')
+        call xlim(0.0_dp, real(nshow, dp) + 1.0_dp); call ylim(floor, 3.0_dp)
         call legend(loc='upper right')
         call subplot(2, 2, 2)
         call title('Unlike-spin relative pair density')
-        call xlabel('Relative bin center x / L; full transverse average')
-        call ylabel('g(up,down) = V times relative-bin density')
+        call xlabel('relative coordinate $x/L$ (transverse average)')
+        call ylabel('unlike-spin pair correlation $g(x)$')
         call xlim(-0.5_dp, 0.5_dp); call ylim(ylim_pair(1), ylim_pair(2))
-        call band(1, number, blue, 'Coulomb + finite-basis time band', '-')
+        call band(1, number, blue, 'Coulomb, finite-basis time band', '-')
         call band(1, number, gray, 'noninteracting, same preparation', ':', 2)
         call legend(loc='upper right')
         call subplot(2, 2, 3)
         call title('Beyond-Wick pair cumulants')
-        call xlabel('Relative bin center x / L; full transverse average')
-        call ylabel('V^2 times connected pair cumulant')
+        call xlabel('relative coordinate $x/L$ (transverse average)')
+        call ylabel('$V^2 \times$ connected pair cumulant')
         call xlim(-0.5_dp, 0.5_dp); call ylim(ylim_connected(1), ylim_connected(2))
-        call band(2, number, blue, 'up,down: g - 1', '-')
-        call band(4, number, orange, 'up,up: fixed-number correlation', '--')
+        call band(2, number, blue, 'unlike spin: $g - 1$', '-')
+        call band(4, number, orange, 'like spin: fixed-number correlation', '--')
         call band(2, number, gray, 'noninteracting Slater', ':', 2)
         call legend(loc='upper right')
         call subplot(2, 2, 4)
-        call title('Homogeneous one-body density remains unchanged')
-        call xlabel('x / L; periodic3D box')
-        call ylabel('V times density per spin')
-        call xlim(-0.5_dp, 0.5_dp); call ylim(0.85_dp, 1.25_dp)
-        call band(5, number, blue, 'up: exact symmetry invariant', '-')
-        call band(6, number, orange, 'down: exact symmetry invariant', '--')
+        call title('Scattering out of the initial $k = 0$ pair')
+        call xlabel('$t/t_0$'); call ylabel('occupation per spin orbital')
+        do s = 1, size(shell_first)
+            m = shell_first(s)
+            if (s == 1) then
+                call fill_between(times(:number), max(1 - occupation_hi(m, :number, 1), &
+                    floor), max(1 - occupation_lo(m, :number, 1), floor), &
+                    color=shell_color(:, s), alpha=0.25_dp)
+                call plot(times(:number), max(1 - occupation(m, :number, 1), floor), &
+                    color=shell_color(:, s), linestyle=trim(shell_style(s)), &
+                    label='depletion $1 - n_{k=0}$')
+            else
+                call fill_between(times(:number), max(occupation_lo(m, :number, 1), &
+                    floor), max(occupation_hi(m, :number, 1), floor), &
+                    color=shell_color(:, s), alpha=0.25_dp)
+                write (heading, '(a,i0)') '$n_k$, $|k|^2$ = ', &
+                    sum(mode_momentum(:, m)**2)
+                call plot(times(:number), max(occupation(m, :number, 1), floor), &
+                    color=shell_color(:, s), linestyle=trim(shell_style(s)), &
+                    label=trim(heading))
+            end if
+        end do
+        call set_yscale('log')
+        call xlim(times(1), times(size(times))); call ylim(floor, 30.0_dp)
         call legend(loc='upper right')
+        call suptitle('Coulomb quench of an opposite-spin pair, periodic 3D box; '// &
+            'one-body density stays uniform by symmetry')
         call tight_layout()
     end subroutine
 
