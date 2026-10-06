@@ -32,7 +32,7 @@ module kin6d_mean_field_cell
     public :: mf_interaction, mf_fock, mf_energy, mf_scf, mf_ground, mf_mermin
     public :: mf_slater_sector, mf_slater_vector, mf_as_spectrum, mf_residual
     public :: mf_static_response, mf_coupling_derivative, mf_start_orbitals
-    public :: mf_frozen_energy
+    public :: mf_frozen_energy, mf_newton
 
     !> Sparse momentum-conserving quartets (a, b, c, d) with k_a + k_b = k_c + k_d,
     !> k_a /= k_c and coefficient w = 4 pi g/(V |k_a - k_c|^2):
@@ -50,7 +50,8 @@ module kin6d_mean_field_cell
     type :: mf_state_t
         integer :: nup = 0, ndn = 0, iterations = 0
         logical :: restricted = .false., exchange = .true., converged = .false.
-        logical :: aufbau = .false.
+        logical :: aufbau = .false., stable = .false.
+        real(dp) :: hessian_min = 0
         real(dp), allocatable :: cup(:, :), cdn(:, :), eup(:), edn(:), fup(:), fdn(:)
         real(dp) :: energy = 0, kinetic = 0, hartree = 0, exchange_energy = 0
         real(dp) :: theta = 0, mu = 0, entropy = 0, free = 0, commutator = 0
@@ -225,7 +226,8 @@ contains
 
     !> Self-consistent field at T = 0 with fixed (nup, N - nup) aufbau filling:
     !> Pulay DIIS (8 vectors) on the commutator F P - P F plus a constant
-    !> virtual level shift (does not move stationary points). restricted
+    !> virtual level shift (does not move stationary points); if DIIS does not
+    !> converge, mf_newton (descent only) finishes from the last orbitals. restricted
     !> forces C_up = C_dn (N even, nup = N/2); exchange = .false. gives
     !> Hartree. On exit the orbitals are canonical inside the occupied and
     !> virtual spaces, `aufbau` records max eps_occ < min eps_virt.
@@ -245,7 +247,7 @@ contains
             ed(:, :), hist_f(:, :, :, :), hist_e(:, :, :, :), bmat(:, :), coef(:), &
             gu(:, :), gd(:, :), values(:)
         real(dp) :: tol, lshift, ek, eh, ex, eold, err
-        integer :: n, it, itmax, stored, slot, info, ndn, attempt
+        integer :: n, it, itmax, stored, slot, info, ndn
         ok = .false.
         n = inter%nmodes; ndn = cell%n - nup
         if (nup < 0 .or. ndn < 0 .or. nup > n .or. ndn > n) return
@@ -264,13 +266,10 @@ contains
         allocate (pup(n, n), pdn(n, n), fu(n, n), fd(n, n), eu(n, n), ed(n, n), &
                   gu(n, n), gd(n, n), values(n), hist_f(n, n, 2, depth), &
                   hist_e(n, n, 2, depth), bmat(depth + 1, depth + 1), coef(depth + 1))
-        ! Retries without DIIS and with 4x/16x level shift (slower, but each
-        ! step then lowers the energy) when DIIS oscillates or diverges.
-        do attempt = 1, 3
         state%cup = cup0; state%cdn = cdn0
         if (restricted) state%cdn = cup0
         stored = 0; eold = huge(1.0_dp)
-        do it = 1, itmax*(1 + 4*(attempt - 1))
+        do it = 1, itmax
             call densities(state, pup, pdn)
             call mf_fock(inter, pup, pdn, exchange, fu, fd, ek, eh, ex)
             if (restricted) then
@@ -289,7 +288,7 @@ contains
             slot = 1 + mod(it - 1, depth); stored = min(stored + 1, depth)
             hist_f(:, :, 1, slot) = fu; hist_f(:, :, 2, slot) = fd
             hist_e(:, :, 1, slot) = eu; hist_e(:, :, 2, slot) = ed
-            if (stored >= 2 .and. attempt == 1) then
+            if (stored >= 2) then
                 call diis(hist_f(:, :, :, 1:stored), hist_e(:, :, :, 1:stored), fu, fd)
             end if
             gu = fu + lshift*(identity(n) - pup); gd = fd + lshift*(identity(n) - pdn)
@@ -302,13 +301,14 @@ contains
                 if (info /= 0) return
             end if
         end do
-        if (state%converged) exit
-        lshift = 4*lshift
-        end do
         call canonicalize(state%cup, fu, nup, state%eup)
         call canonicalize(state%cdn, fd, ndn, state%edn)
         state%aufbau = gap_ok(state%eup, nup) .and. gap_ok(state%edn, ndn)
         state%free = state%energy
+        ! DIIS can stall on the flat landscapes of degenerate open shells:
+        ! finish with descent-only trust-region second-order steps.
+        if (.not. state%converged .and. all(ieee_is_finite(state%cup)) .and. &
+            all(ieee_is_finite(state%cdn))) call mf_newton(cell, inter, state, ok, .true.)
         ok = state%converged .and. all(ieee_is_finite(state%eup)) .and. &
              all(ieee_is_finite(state%edn))
     contains
@@ -392,7 +392,9 @@ contains
     !> UHF scans nup = ceil(N/2)..min(N, nmodes) (nup <-> ndn is symmetric);
     !> RHF uses nup = N/2 (N even). Start 0 is the plane-wave determinant,
     !> starts 1..nstarts-1 are symmetry-broken (mf_start_orbitals, amplitude
-    !> E_F). nsolutions counts distinct converged energies (relative 1e-8);
+    !> E_F). Each run ends with instability following (mf_newton) and an
+    !> aufbau-repair attempt, so kept solutions are local minima within the
+    !> real collinear determinant manifold. nsolutions counts distinct converged energies (relative 1e-8);
     !> nconverged counts converged runs. Multiple solutions are expected for
     !> degenerate open shells and broken-symmetry minima at large r_s.
     subroutine mf_ground(cell, inter, restricted, exchange, nstarts, state, ok, &
@@ -422,7 +424,11 @@ contains
                 call mf_start_orbitals(inter, s, cell%fermi, cu)
                 call mf_start_orbitals(inter, merge(0, s + 101, s == 0), cell%fermi, cd)
                 call mf_scf(cell, inter, nup, restricted, exchange, cu, cd, trial, run_ok)
+                if (.not. (all(ieee_is_finite(trial%cup)) .and. &
+                           all(ieee_is_finite(trial%cdn)))) cycle
+                call mf_newton(cell, inter, trial, run_ok, .true.)
                 if (.not. run_ok) cycle
+                call aufbau_repair(cell, inter, trial)
                 nconverged = nconverged + 1
                 if (all(abs(found - trial%energy) > 1.0e-8_dp* &
                         max(1.0_dp, abs(trial%energy)))) found = [found, trial%energy]
@@ -707,14 +713,293 @@ contains
         end if
     end subroutine
 
+    !> Occupied -> virtual excitations (spin, a, i) of a T = 0 state.
+    subroutine excitation_list(state, es, ea, ei)
+        type(mf_state_t), intent(in) :: state
+        integer, allocatable, intent(out) :: es(:), ea(:), ei(:)
+        integer :: i, a, s, n
+        n = size(state%fup)
+        allocate (es(0), ea(0), ei(0))
+        do s = 1, -1, -2
+            do i = 1, n
+                if (occupation(i) < 0.5_dp) cycle
+                do a = 1, n
+                    if (occupation(a) > 0.5_dp) cycle
+                    es = [es, s]; ea = [ea, a]; ei = [ei, i]
+                end do
+            end do
+        end do
+    contains
+        real(dp) function occupation(j)
+            integer, intent(in) :: j
+            occupation = merge(state%fup(j), state%fdn(j), s > 0)
+        end function
+    end subroutine
+
+    function orbital(state, spin, j) result(c)
+        type(mf_state_t), intent(in) :: state
+        integer, intent(in) :: spin, j
+        real(dp) :: c(size(state%fup))
+        if (spin > 0) then
+            c = state%cup(:, j)
+        else
+            c = state%cdn(:, j)
+        end if
+    end function
+
+    !> Real orbital Hessian (A+B) of a state with canonical occupied/virtual
+    !> blocks: (A+B) x = (eps_a - eps_i) x_ai + [G(dP)]_ai, dP = sum x (|a><i| +
+    !> |i><a|), G the linear two-body mean field (exchange as in the state).
+    !> E(x) = E0 + 2 sum_ai F_ai x_ai + x^T (A+B) x + O(x^3).
+    subroutine orbital_hessian(inter, state, es, ea, ei, hess)
+        type(mf_interaction_t), intent(in) :: inter
+        type(mf_state_t), intent(in) :: state
+        integer, intent(in) :: es(:), ea(:), ei(:)
+        real(dp), intent(out) :: hess(:, :)
+        real(dp), allocatable :: du(:, :), dd(:, :), gh(:, :), xu(:, :), xd(:, :)
+        real(dp) :: ca(inter%nmodes), ci(inter%nmodes)
+        integer :: n, e, f
+        n = inter%nmodes
+        allocate (du(n, n), dd(n, n), gh(n, n), xu(n, n), xd(n, n))
+        do e = 1, size(es)
+            ca = orbital(state, es(e), ea(e)); ci = orbital(state, es(e), ei(e))
+            du = 0; dd = 0
+            if (es(e) > 0) du = spread(ca, 2, n)*spread(ci, 1, n) + &
+                                spread(ci, 2, n)*spread(ca, 1, n)
+            if (es(e) < 0) dd = spread(ca, 2, n)*spread(ci, 1, n) + &
+                                spread(ci, 2, n)*spread(ca, 1, n)
+            call two_body(inter, du, dd, state%exchange, gh, xu, xd)
+            xu = gh + xu; xd = gh + xd
+            do f = 1, size(es)
+                if (es(f) > 0) then
+                    hess(f, e) = dot_product(orbital(state, 1, ea(f)), &
+                                             matmul(xu, orbital(state, 1, ei(f))))
+                else
+                    hess(f, e) = dot_product(orbital(state, -1, ea(f)), &
+                                             matmul(xd, orbital(state, -1, ei(f))))
+                end if
+            end do
+            if (es(e) > 0) hess(e, e) = hess(e, e) + state%eup(ea(e)) - state%eup(ei(e))
+            if (es(e) < 0) hess(e, e) = hess(e, e) + state%edn(ea(e)) - state%edn(ei(e))
+        end do
+        hess = 0.5_dp*(hess + transpose(hess))
+    end subroutine
+
+    !> Recompute densities, Fock matrices and energy; canonicalize the occupied
+    !> and virtual blocks; return the orbital gradient F_ai per excitation.
+    subroutine refresh(inter, state, es, ea, ei, gradient)
+        type(mf_interaction_t), intent(in) :: inter
+        type(mf_state_t), intent(inout) :: state
+        integer, intent(in) :: es(:), ea(:), ei(:)
+        real(dp), intent(out) :: gradient(:)
+        real(dp), allocatable :: pup(:, :), pdn(:, :), fu(:, :), fd(:, :)
+        real(dp) :: ek, eh, ex
+        integer :: n, e
+        n = inter%nmodes
+        allocate (pup(n, n), pdn(n, n), fu(n, n), fd(n, n))
+        call densities(state, pup, pdn)
+        call mf_fock(inter, pup, pdn, state%exchange, fu, fd, ek, eh, ex)
+        if (state%restricted) then
+            fu = 0.5_dp*(fu + fd); fd = fu
+        end if
+        state%energy = ek + eh + ex; state%kinetic = ek; state%hartree = eh
+        state%exchange_energy = ex; state%free = state%energy
+        call canonicalize(state%cup, fu, state%nup, state%eup)
+        call canonicalize(state%cdn, fd, state%ndn, state%edn)
+        if (state%restricted) then
+            state%cdn = state%cup; state%edn = state%eup
+        end if
+        do e = 1, size(es)
+            if (es(e) > 0) gradient(e) = dot_product(state%cup(:, ea(e)), &
+                matmul(fu, state%cup(:, ei(e))))
+            if (es(e) < 0) gradient(e) = dot_product(state%cdn(:, ea(e)), &
+                matmul(fd, state%cdn(:, ei(e))))
+        end do
+        state%aufbau = gap_ok(state%eup, state%nup) .and. gap_ok(state%edn, state%ndn)
+    end subroutine
+
+    !> Orbital rotation C <- C exp(K), K(a,i) = x_ai = -K(i,a) per spin
+    !> (fourth-order Taylor, then Loewdin orthonormalization).
+    subroutine rotate(state, es, ea, ei, x)
+        type(mf_state_t), intent(inout) :: state
+        integer, intent(in) :: es(:), ea(:), ei(:)
+        real(dp), intent(in) :: x(:)
+        real(dp), allocatable :: k(:, :), u(:, :), s(:, :), vec(:, :), val(:)
+        integer :: n, e, spin, j, info
+        n = size(state%fup)
+        allocate (k(n, n), u(n, n), s(n, n), vec(n, n), val(n))
+        do spin = 1, -1, -2
+            k = 0
+            do e = 1, size(es)
+                if (es(e) /= spin) cycle
+                k(ea(e), ei(e)) = k(ea(e), ei(e)) + x(e)
+                k(ei(e), ea(e)) = k(ei(e), ea(e)) - x(e)
+            end do
+            u = identity(n) + k + matmul(k, k)/2 + matmul(k, matmul(k, k))/6 + &
+                matmul(matmul(k, k), matmul(k, k))/24
+            s = matmul(transpose(u), u)
+            call symmetric_eigen(s, val, vec, info)
+            if (info /= 0) error stop 'rotate: eigen'
+            do j = 1, n
+                vec(:, j) = vec(:, j)/sqrt(sqrt(val(j)))
+            end do
+            u = matmul(u, matmul(vec, transpose(vec)))
+            if (spin > 0) state%cup = matmul(state%cup, u)
+            if (spin < 0) state%cdn = matmul(state%cdn, u)
+        end do
+        if (state%restricted) state%cdn = state%cup
+    end subroutine
+
+    !> Trust-region second-order orbital optimization of a T = 0 state with
+    !> fixed filling: Newton steps x = -(A+B)^(-1) F_ov in the eigenbasis of the
+    !> real orbital Hessian, step length <= trust radius. follow = .false.
+    !> converges to the nearest stationary point (also a saddle, e.g. for
+    !> warm-started branch tracking); follow = .true. uses |eigenvalues| and
+    !> steps along negative-curvature modes until the Hessian is positive
+    !> semidefinite (instability following; every accepted step lowers E).
+    !> Sets converged, stable and hessian_min (lowest Hessian eigenvalue).
+    subroutine mf_newton(cell, inter, state, ok, follow)
+        type(jellium_cell_t), intent(in) :: cell
+        type(mf_interaction_t), intent(in) :: inter
+        type(mf_state_t), intent(inout) :: state
+        logical, intent(out) :: ok
+        logical, intent(in) :: follow
+        type(mf_state_t) :: trial
+        integer, allocatable :: es(:), ea(:), ei(:)
+        real(dp), allocatable :: g(:), gt(:), hess(:, :), hr(:, :), gr(:), vec(:, :), &
+            val(:), x(:), xr(:)
+        real(dp) :: trust, tol, delta, scale, gnorm, lam, step
+        integer :: nexc, nr, it, k, info
+        logical :: escape
+        ok = .false.
+        call excitation_list(state, es, ea, ei)
+        nexc = size(es)
+        nr = merge(nexc/2, nexc, state%restricted)
+        allocate (g(nexc), gt(nexc), hess(nexc, nexc), hr(nr, nr), gr(nr), &
+                  vec(nr, nr), val(nr), x(nexc), xr(nr))
+        tol = 1.0e-10_dp*max(1.0_dp, cell%fermi); delta = 1.0e-4_dp*cell%fermi
+        trust = 0.3_dp
+        call refresh(inter, state, es, ea, ei, g)
+        state%converged = .false.
+        do it = 1, 300
+            if (nexc == 0) then
+                state%converged = .true.; state%hessian_min = 0; exit
+            end if
+            call orbital_hessian(inter, state, es, ea, ei, hess)
+            call reduce(hess, g, hr, gr)
+            call symmetric_eigen(hr, val, vec, info)
+            if (info /= 0) return
+            state%hessian_min = val(1)
+            scale = max(delta, maxval(abs(val)))
+            gnorm = sqrt(sum(gr**2))
+            escape = gnorm < tol .and. follow .and. val(1) < -1.0e-9_dp*scale
+            if (gnorm < tol .and. .not. escape) then
+                state%converged = .true.; exit
+            end if
+            if (escape) then
+                xr = trust*vec(:, 1)
+            else
+                xr = 0
+                do k = 1, nr
+                    lam = val(k)
+                    if (follow) lam = max(abs(lam), delta)
+                    if (.not. follow .and. abs(lam) < delta) lam = sign(delta, lam)
+                    xr = xr - vec(:, k)*dot_product(vec(:, k), gr)/lam
+                end do
+                step = sqrt(sum(xr**2))
+                if (step > trust) xr = xr*trust/step
+            end if
+            x(1:nr) = xr
+            if (state%restricted) x(nr + 1:nexc) = xr
+            trial = state
+            call rotate(trial, es, ea, ei, x)
+            call refresh(inter, trial, es, ea, ei, gt)
+            ! Near a minimum the energy change drops below roundoff; accept a
+            ! Newton step there when it reduces the gradient (Hessian > 0).
+            if (trial%energy < state%energy - 1.0e-14_dp*abs(state%energy) .or. &
+                ((.not. follow .or. val(1) > -1.0e-9_dp*scale) .and. norm_reduced(gt) < gnorm)) then
+                state = trial; g = gt; trust = min(1.0_dp, 2*trust)
+            else
+                trust = trust/4
+                if (trust < 1.0e-10_dp) then
+                    state%converged = gnorm < tol; exit
+                end if
+            end if
+        end do
+        state%iterations = state%iterations + it
+        state%stable = state%hessian_min > -1.0e-9_dp*max(delta, abs(state%hessian_min))
+        state%commutator = norm_reduced(g)
+        ok = state%converged
+    contains
+        subroutine reduce(h, grad, h_r, g_r)
+            real(dp), intent(in) :: h(:, :), grad(:)
+            real(dp), intent(out) :: h_r(:, :), g_r(:)
+            if (state%restricted) then
+                h_r = h(1:nr, 1:nr) + h(1:nr, nr + 1:nexc) + h(nr + 1:nexc, 1:nr) + &
+                      h(nr + 1:nexc, nr + 1:nexc)
+                g_r = grad(1:nr) + grad(nr + 1:nexc)
+            else
+                h_r = h; g_r = grad
+            end if
+        end subroutine
+        real(dp) function norm_reduced(grad)
+            real(dp), intent(in) :: grad(:)
+            if (state%restricted) then
+                norm_reduced = sqrt(sum((grad(1:nr) + grad(nr + 1:nexc))**2))
+            else
+                norm_reduced = sqrt(sum(grad**2))
+            end if
+        end function
+    end subroutine
+
+    !> Aufbau repair for a local minimum with eps_virt < eps_occ: refill the
+    !> lowest canonical orbitals per spin and re-minimize; keep the result only
+    !> if the energy decreases (at most 10 rounds). Replacing i by a changes E
+    !> by eps_a - eps_i - (J_ia - K_ia); J_ia - K_ia >= 0 needs a pointwise
+    !> nonnegative interaction (Bach-Lieb-Loss-Solovej no-unfilled-shell
+    !> argument), which the neutralized periodic Coulomb kernel is not, so
+    !> stable non-aufbau minima can remain (state%aufbau records it).
+    subroutine aufbau_repair(cell, inter, state)
+        type(jellium_cell_t), intent(in) :: cell
+        type(mf_interaction_t), intent(in) :: inter
+        type(mf_state_t), intent(inout) :: state
+        type(mf_state_t) :: trial
+        integer :: round
+        logical :: ok
+        do round = 1, 10
+            if (state%aufbau) return
+            trial = state
+            call refill(trial%cup, trial%eup)
+            call refill(trial%cdn, trial%edn)
+            if (trial%restricted) trial%cdn = trial%cup
+            call mf_newton(cell, inter, trial, ok, .true.)
+            if (.not. ok .or. trial%energy >= state%energy) return
+            state = trial
+        end do
+    contains
+        subroutine refill(c, eps)
+            real(dp), intent(inout) :: c(:, :), eps(:)
+            integer :: order(size(eps)), i, j, t
+            order = [(i, i=1, size(eps))]
+            do i = 2, size(eps)
+                t = order(i); j = i - 1
+                do while (j >= 1)
+                    if (eps(order(j)) <= eps(t)) exit
+                    order(j + 1) = order(j); j = j - 1
+                end do
+                order(j + 1) = t
+            end do
+            c = c(:, order); eps = eps(order)
+        end subroutine
+    end subroutine
+
     !> Static TDHF (coupled-perturbed HF, RPA with exchange) response per volume
     !> of a converged T = 0 state to lambda*A, A = integral cos(q.x) n(x):
-    !> chi = -(4/V) a^T (A+B)^(-1) a with a_ai = <a|A|i> and the real orbital
-    !> Hessian (A+B) x = (eps_a - eps_i) x_ai + [G(dP)]_ai, dP = sum x (|a><i| +
-    !> |i><a|), G the linear two-body mean field of mf_fock. exchange = .false.
-    !> in the state (Hartree reference) drops exchange in eps and kernel: RPA.
-    !> hessian_min < 0 flags an unstable (saddle) mean-field solution; chi is
-    !> then refused if a has weight on a nonpositive mode.
+    !> chi = -(4/V) a^T (A+B)^(-1) a with a_ai = <a|A|i> and the orbital Hessian
+    !> of orbital_hessian. A state with exchange = .false. (Hartree reference)
+    !> drops exchange in eps and kernel: TDH = RPA. hessian_min < 0 flags an
+    !> unstable (saddle) mean-field solution; chi is then refused if a has
+    !> weight on a nonpositive mode.
     subroutine mf_static_response(cell, inter, state, q, chi, hessian_min, ok, nexc)
         type(jellium_cell_t), intent(in) :: cell
         type(mf_interaction_t), intent(in) :: inter
@@ -723,37 +1008,23 @@ contains
         real(dp), intent(out) :: chi, hessian_min
         logical, intent(out) :: ok
         integer, intent(out) :: nexc
-        real(dp), allocatable :: amode(:, :), hess(:, :), avec(:), values(:), &
-            vec(:, :), du(:, :), dd(:, :), gh(:, :), xu(:, :), xd(:, :)
+        real(dp), allocatable :: amode(:, :), hess(:, :), avec(:), values(:), vec(:, :)
         integer, allocatable :: es(:), ea(:), ei(:)
         real(dp) :: overlap, proj, scale
-        integer :: n, e, f, k, info
+        integer :: e, k, info
         ok = .false.; chi = 0; hessian_min = 0; nexc = 0
-        n = inter%nmodes
         call density_operator(cell, state%nup, q, amode, ok)
         if (.not. ok) return
         ok = .false.
-        call excitations(state%fup, 1); call excitations(state%fdn, -1)
+        call excitation_list(state, es, ea, ei)
         nexc = size(es)
         if (nexc == 0) return
-        allocate (hess(nexc, nexc), avec(nexc), values(nexc), vec(nexc, nexc), &
-                  du(n, n), dd(n, n), gh(n, n), xu(n, n), xd(n, n))
+        allocate (hess(nexc, nexc), avec(nexc), values(nexc), vec(nexc, nexc))
         do e = 1, nexc
-            avec(e) = dot_product(orb(es(e), ea(e)), matmul(amode, orb(es(e), ei(e))))
-            du = 0; dd = 0
-            if (es(e) > 0) du = outer(ea(e), ei(e), 1)
-            if (es(e) < 0) dd = outer(ea(e), ei(e), -1)
-            call two_body(inter, du, dd, state%exchange, gh, xu, xd)
-            xu = gh + xu; xd = gh + xd
-            do f = 1, nexc
-                if (es(f) > 0) hess(f, e) = dot_product(orb(1, ea(f)), &
-                    matmul(xu, orb(1, ei(f))))
-                if (es(f) < 0) hess(f, e) = dot_product(orb(-1, ea(f)), &
-                    matmul(xd, orb(-1, ei(f))))
-            end do
-            hess(e, e) = hess(e, e) + eps(es(e), ea(e)) - eps(es(e), ei(e))
+            avec(e) = dot_product(orbital(state, es(e), ea(e)), &
+                                  matmul(amode, orbital(state, es(e), ei(e))))
         end do
-        hess = 0.5_dp*(hess + transpose(hess))
+        call orbital_hessian(inter, state, es, ea, ei, hess)
         call symmetric_eigen(hess, values, vec, info)
         if (info /= 0) return
         hessian_min = values(1)
@@ -769,39 +1040,6 @@ contains
         end do
         call jc_susceptibility(overlap, cell%volume, chi)
         ok = ieee_is_finite(chi)
-    contains
-        subroutine excitations(occupation, spin)
-            real(dp), intent(in) :: occupation(:)
-            integer, intent(in) :: spin
-            integer :: i, a
-            if (.not. allocated(es)) allocate (es(0), ea(0), ei(0))
-            do i = 1, n
-                if (occupation(i) < 0.5_dp) cycle
-                do a = 1, n
-                    if (occupation(a) > 0.5_dp) cycle
-                    es = [es, spin]; ea = [ea, a]; ei = [ei, i]
-                end do
-            end do
-        end subroutine
-        function orb(spin, j) result(c)
-            integer, intent(in) :: spin, j
-            real(dp) :: c(n)
-            if (spin > 0) then
-                c = state%cup(:, j)
-            else
-                c = state%cdn(:, j)
-            end if
-        end function
-        real(dp) function eps(spin, j)
-            integer, intent(in) :: spin, j
-            eps = merge(state%eup(j), state%edn(j), spin > 0)
-        end function
-        function outer(a, i, spin) result(m)
-            integer, intent(in) :: a, i, spin
-            real(dp) :: m(n, n), ca(n), ci(n)
-            ca = orb(spin, a); ci = orb(spin, i)
-            m = spread(ca, 2, n)*spread(ci, 1, n) + spread(ci, 2, n)*spread(ca, 1, n)
-        end function
     end subroutine
 
     !> Mode-space matrix of A = integral cos(q.x) n(x) (same for both spins)
