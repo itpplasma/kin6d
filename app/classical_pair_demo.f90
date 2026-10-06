@@ -7,21 +7,25 @@ program classical_pair_demo
     use kin6d_classical_pair_leaves, only: cp_statistic
     use kin6d_nbody, only: nbody_step, nbody_energy, nbody_encounter_step
     use fortplot, only: figure,figure_t,get_global_figure,subplot,scatter,plot, &
-        errorbar,title,xlabel,ylabel,xlim,ylim,legend,tight_layout,savefig
+        errorbar,title,xlabel,ylabel,xlim,ylim,legend,tight_layout,savefig,suptitle
+    use kin6d_demo_style, only: vermillion,black,movie_fps,hold_frames,num
     use fortplot_animation, only: animation_t,animation_func=>FuncAnimation,save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t,result_file_t
     use kin6d_periodic_pair_config, only: periodic_pair_t,read_periodic_pair, &
         write_periodic_pair,declared_periodic_pair,periodic_pair_bins
     implicit none
-    integer,parameter :: bins=periodic_pair_bins,visible=12,fps=12
+    ! The 61 shared periodic-pair frames are each shown three times at 24 fps
+    ! (8 physical frames per second, 7.6 s) plus a 1 s hold; no interpolation.
+    integer,parameter :: bins=periodic_pair_bins,visible=12,repeat_frames=3
+    ! Width/height of the projection axes box in pixels (measured): equal aspect.
+    real(dp),parameter :: box_aspect=1.08_dp
     integer :: samples=4096
     ! Encounter-resolved step: eta times the Kepler/crossing time, capped.
     real(dp) :: encounter_eta=0.02_dp,max_step=0.02_dp
     ! Hoeffding exponent h: 2*bins*frames*exp(-h) < 0.05 simultaneous coverage.
     real(dp) :: confidence=11.0_dp
     real(dp),parameter :: blue(3)=[0.0_dp,0.4471_dp,0.6980_dp]
-    real(dp),parameter :: orange(3)=[0.8353_dp,0.3686_dp,0.0_dp]
     type(classical_pair_model_t) :: model
     type(fortnum_status_t) :: status
     type(figure_t),pointer :: canvas
@@ -198,12 +202,14 @@ program classical_pair_demo
     call result%write('solve_cpu',solve_cpu,'s','trajectory solve CPU time',dims='frame')
     call result%close()
     view=maxval(mean)+maxval(sampling_radius)+1
-    call figure(figsize=[12.0_dp,5.5_dp]);canvas=>get_global_figure()
+    call figure(figsize=[12.8_dp,6.4_dp]);canvas=>get_global_figure()
     call draw_frame(snapshot_frame)
     call savefig('output/classical-coulomb-pair.png')
     if(.not.snapshot_only) then
-        animation=animation_func(draw_frame,frames=frames,interval=83,fig=canvas)
-        call save_animation(animation,'output/classical-coulomb-pair.mp4',fps=fps,status=encode_status)
+        animation=animation_func(update_frame,frames=repeat_frames*frames+hold_frames, &
+            interval=42,fig=canvas)
+        call save_animation(animation,'output/classical-coulomb-pair.mp4',fps=movie_fps, &
+            status=encode_status)
         if(encode_status/=0) error stop 'movie encoding failed'
     end if
 contains
@@ -215,11 +221,17 @@ contains
         close(failure_unit)
         error stop 'unresolved classical trajectory; no movie promoted'
     end subroutine
+    subroutine update_frame(number)
+        integer,intent(in) :: number
+        call draw_frame(min((number-1)/repeat_frames+1,frames))
+    end subroutine
     subroutine draw_frame(index)
         integer,intent(in) :: index
         integer :: p,q
         if(index<1.or.index>frames) error stop 'animation index outside frames'
         call canvas%clear()
+        call suptitle('Classical Coulomb repulsion empties small separations: g dips '// &
+            'at x = 0 (bars: sampling CIs, not numerical bounds)')
         call subplot(1,2,1)
         do q=1,2
             do p=1,visible
@@ -227,24 +239,26 @@ contains
                 yp(p)=(particle(2,q,p,index)+particle(3,q,p,index)/6)/model%length
             end do
             if(q==1) then
-                call scatter(xp,yp,color=blue,marker='o',s=36.0_dp,label='particle 1')
+                call scatter(xp,yp,color=blue,marker='o',s=36.0_dp)
             else
-                call scatter(xp,yp,color=orange,marker='s',s=36.0_dp,label='particle 2')
+                call scatter(xp,yp,color=vermillion,marker='s',s=36.0_dp)
             end if
         end do
-        write(heading,'(a,f5.2)') '12 independent classical 3D pairs; t=',time(index)
-        call title(trim(heading));call xlabel('(x+z/4)/L');call ylabel('(y+z/6)/L')
-        call xlim(-0.7_dp,0.7_dp);call ylim(-0.65_dp,0.9_dp);call legend()
+        call title('12 independent 3D pairs (o: electron 1, s: electron 2)  |  t = '// &
+            num(time(index),2))
+        call xlabel('(x + z/4) / L');call ylabel('(y + z/6) / L')
+        call xlim(-0.775_dp*box_aspect,0.775_dp*box_aspect);call ylim(-0.65_dp,0.9_dp)
         call subplot(1,2,2)
         write(heading,'(i0)') samples
         call errorbar(xbin,mean(:,index),yerr=sampling_radius(:,index),fmt='o', &
-                      color=blue,capsize=3.0_dp,label=trim(heading)//' pairs: simultaneous 95% sampling CI')
-        call plot([-0.5_dp,0.5_dp],[1.0_dp,1.0_dp],linestyle='--',color=orange,label='uniform initial law')
-        call title('3D slab pair correlation; numerical bounds unavailable')
-        call xlabel('relative displacement x/L; slab widths/L=(1/16,1,1)')
+                      color=blue,capsize=3.0_dp,label=trim(heading)//' pairs ± simultaneous 95% CI')
+        call plot([-0.5_dp,0.5_dp],[1.0_dp,1.0_dp],linestyle='--',color=black, &
+                  linewidth=1.2_dp,label='uniform initial law')
+        call title('Relative-position slab histogram g(x)')
+        call xlabel('relative displacement x / L   (slab 1/16 x 1 x 1)')
         write(heading,'(a,i0,a,i0)') 'g = ',bins,' count / ',samples
         call ylabel(trim(heading));call xlim(-0.5_dp,0.5_dp)
-        call ylim(-0.7_dp,view);call legend();call tight_layout()
+        call ylim(-0.7_dp,view);call legend(loc='upper center');call tight_layout()
         call canvas%set_rendered(.false.)
     end subroutine
 end program

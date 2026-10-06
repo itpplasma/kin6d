@@ -124,11 +124,13 @@ zero/NaN bounds, invalid amplitudes, NaN time and corrupted candidates, and
 checks changed-timestep/reverse-flow cache behavior. The steady tangent also
 satisfies the implicit residual equation and a closed rational oracle.
 
-The animation contains 121 frames at 24 fps, 960 by 720 pixels; physical time
-runs from zero to 7.5 in exactly representable increments of 1/16. On the
-2026-10-05 local GNU Fortran run, the direct steady residual was
-$1.11\times10^{-16}$ and the final 256-cell continuous radius was
-$3.76868\times10^{-3}$. These numbers are run evidence, not portable thresholds.
+The animation contains 193 physical frames plus a one-second hold of the final
+state, at 24 fps and 1320 by 880 pixels; physical time runs from zero to 7.5 in
+exactly representable increments of 5/128. (Before 2026-10-06 the default was
+121 frames in increments of 1/16 over the same interval.) On the
+2026-10-05 local GNU Fortran run with the earlier increment, the direct steady
+residual was $1.11\times10^{-16}$ and the final 256-cell continuous radius was
+$3.76868\times10^{-3}$; the 5/128 increment reproduces that radius to the shown digits. These numbers are run evidence, not portable thresholds.
 
 Run the separate performance audit with `fo exec benchmark_streaming` or
 `./build/benchmark_streaming`. It alternates reference/cached order over five

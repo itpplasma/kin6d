@@ -16,7 +16,8 @@ program streaming_comparison_demo
         streaming_mode_accumulate, streaming_enlarge_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, scatter, &
         pcolormesh, plot, fill_between, title, xlabel, ylabel, xlim, ylim, &
-        legend, tight_layout, savefig
+        legend, tight_layout, savefig, colorbar, suptitle
+    use kin6d_demo_style, only: blue, vermillion, purple, black, grey, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
@@ -24,7 +25,8 @@ program streaming_comparison_demo
     implicit none
     integer, parameter :: modes = 1, fps = 24, cohort_size = 3
     integer :: nx = 96, nv = 128, particle_nx = 32, particle_nv = 48
-    integer :: frames = 121, repeats = 20, np
+    ! 193 frames span t = 0..12 in 8 s at 24 fps; a one-second hold follows.
+    integer :: frames = 193, repeats = 20, np
     real(dp) :: duration = 12.0_dp
     namelist /streaming_comparison/ nx, nv, particle_nx, particle_nv, frames, &
         repeats, duration
@@ -177,7 +179,8 @@ program streaming_comparison_demo
     call draw_frame()
     call savefig('output/particles-vlasov.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
+        animation = animation_func(update_frame, frames=frames + hold_frames, &
+            interval=42, fig=canvas)
         call save_animation(animation, 'output/particles-vlasov.mp4', fps=fps, &
             status=status)
         if (status /= 0) error stop 'animation rendering or encoding failed'
@@ -425,85 +428,73 @@ contains
 
     subroutine update_frame(number)
         integer, intent(in) :: number
-        call compute_frame(number, timed=.false.)
+        call compute_frame(min(number, frames), timed=.false.)
         call canvas%clear()
         call draw_frame()
         call canvas%set_rendered(.false.)
     end subroutine
 
     subroutine draw_frame()
-        character(len=96) :: heading
+        call suptitle('Particles and an Eulerian grid carry the same free-streaming '// &
+            'f(x,v); their densities agree within both certified bounds')
         call subplot(2, 2, 1)
-        write (heading, '(a,f5.2,a)') 'Characteristic particles | t = ', time, &
-            ' | area ~ weight'
-        call title(trim(heading))
-        call xlabel('x (normalized; period 2 pi)')
+        call title('Weighted characteristic particles  |  t = '//num(time, 2))
+        call xlabel('x  (period 2π)')
         call ylabel('v (normalized)')
         call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
-        call scatter(particle_x, particle_v, s=glyph, &
-            color=[0.5_dp, 0.5_dp, 0.5_dp], alpha=0.65_dp)
-        call cohort(1, 'o', [0.0_dp, 0.4471_dp, 0.6980_dp], 'cohort A')
-        call cohort(2, '^', [0.8353_dp, 0.3686_dp, 0.0_dp], 'cohort B')
-        call cohort(3, 's', [0.8_dp, 0.475_dp, 0.655_dp], 'cohort C')
-        call legend(loc='upper right')
+        ! Marker area follows the particle weight; three coloured cohorts.
+        call scatter(particle_x, particle_v, s=0.6_dp*glyph, color=grey, alpha=0.5_dp)
+        call cohort(1, 'o', blue)
+        call cohort(2, '^', vermillion)
+        call cohort(3, 's', purple)
         call subplot(2, 2, 2)
-        write (heading, '(a,es10.1e3)') &
-            'Eulerian | f color [0.5,1.5] | v-radius = ', radius
-        call title(trim(heading))
-        call xlabel('x (normalized; period 2 pi)')
+        call title('Eulerian Fourier/P1 distribution f(x,v)')
+        call xlabel('x  (period 2π)')
         call ylabel('v (normalized)')
         call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
         call pcolormesh(x, v, image, cmap='viridis', vmin=0.5_dp, vmax=1.5_dp)
+        call colorbar(label='f (normalized)')
         call subplot(2, 2, 3)
-        call title('Density | certified Eulerian and particle Fourier projection')
-        call xlabel('x (normalized; period 2 pi)')
-        call ylabel('n = (1/2) integral f dv')
-        call xlim(0.0_dp, period); call ylim(0.25_dp, 1.55_dp)
-        call envelope(x, particle_lo, particle_hi, 'moccasin', &
-            [0.8353_dp, 0.3686_dp, 0.0_dp])
-        call envelope(x, density_lo, density_hi, 'lightblue', &
-            [0.0_dp, 0.4471_dp, 0.6980_dp])
+        call title('Density: Eulerian (solid) and particle projection (dashed)')
+        call xlabel('x  (period 2π)')
+        call ylabel('n (normalized)')
+        call xlim(0.0_dp, period); call ylim(0.25_dp, 1.75_dp)
+        call fill_between(x, particle_lo, particle_hi, color=vermillion, alpha=0.25_dp)
+        call fill_between(x, density_lo, density_hi, color=blue, alpha=0.25_dp)
+        call plot(x, density, label='Eulerian ± continuous bound', color=blue, &
+            linewidth=2.0_dp)
         call plot(x, particle_density, linestyle='--', &
-            label='particle PIF + weak bound', &
-            color=[0.8353_dp, 0.3686_dp, 0.0_dp])
-        call plot(x, density, label='Eulerian + continuous bound', &
-            color=[0.0_dp, 0.4471_dp, 0.6980_dp])
-        call legend(loc='lower right')
+            label='particle projection ± weak bound', color=vermillion, &
+            linewidth=1.5_dp)
+        call legend(loc='upper center')
         call subplot(2, 2, 4)
-        call title('Slice x = 0 | Eulerian P1 and full continuous bound')
-        call xlabel('v (normalized)')
-        call ylabel('f(x=0,v) (normalized)')
-        call xlim(-1.0_dp, 1.0_dp); call ylim(0.45_dp, 1.80_dp)
-        call envelope(v, slice_lo, slice_hi, 'lightblue', &
-            [0.0_dp, 0.4471_dp, 0.6980_dp])
-        call envelope(v, initial_lo, initial_hi, 'gainsboro', &
-            [0.4_dp, 0.4_dp, 0.4_dp])
-        call plot(v, initial_slice, linestyle='--', label='initial profile + bound', &
-            color=[0.4_dp, 0.4_dp, 0.4_dp])
-        call plot(v, slice, label='Eulerian + continuous bound', &
-            color=[0.0_dp, 0.4471_dp, 0.6980_dp])
-        call legend(loc='best')
+        call title('Bands resolved: offset from the Eulerian density')
+        call xlabel('x  (period 2π)')
+        call ylabel('$n - n_{Euler}$')
+        call xlim(0.0_dp, period); call ylim(-0.016_dp, 0.016_dp)
+        call fill_between(x, particle_lo - density, particle_hi - density, &
+            color=vermillion, alpha=0.25_dp)
+        call fill_between(x, density_lo - density, density_hi - density, &
+            color=blue, alpha=0.25_dp)
+        call plot(x, particle_density - density, linestyle='--', &
+            label='particle − Eulerian ± weak bound', color=vermillion, &
+            linewidth=1.5_dp)
+        call plot(x, 0.0_dp*density, label='Eulerian ± continuous bound', &
+            color=blue, linewidth=2.0_dp)
+        call legend(loc='upper center')
         call tight_layout()
     end subroutine
 
-    subroutine cohort(number, marker, color, label)
+    subroutine cohort(number, marker, color)
         integer, intent(in) :: number
-        character(len=*), intent(in) :: marker, label
+        character(len=*), intent(in) :: marker
         real(dp), intent(in) :: color(3)
         integer :: j, p
         do j = 1, cohort_size
             p = cohorts(j, number)
             cohort_x(j) = particle_x(p); cohort_v(j) = particle_v(p)
         end do
-        call scatter(cohort_x, cohort_v, s=30.0_dp, marker=marker, color=color, &
-            label=label)
+        call scatter(cohort_x, cohort_v, s=36.0_dp, marker=marker, color=color)
     end subroutine
 
-    subroutine envelope(coordinate, lower, upper, fill, color)
-        real(dp), intent(in) :: coordinate(:), lower(:), upper(:), color(3)
-        character(len=*), intent(in) :: fill
-        call fill_between(coordinate, lower, upper, color=fill, alpha=0.5_dp)
-        call plot(coordinate, lower, linestyle=':', color=color)
-        call plot(coordinate, upper, linestyle=':', color=color)
-    end subroutine
 end program streaming_comparison_demo

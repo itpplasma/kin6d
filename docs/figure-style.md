@@ -39,8 +39,7 @@ the interval data written next to the image; the pixels never carry the bound.
 
 - Sequential fields (`pcolormesh`, densities, f(x,v)): `cmap='viridis'` with
   fixed `vmin`/`vmax` for the whole movie, plus a `colorbar(label=...)`
-  (fortplot at the pin rejects `colorbar` inside subplot grids, so until
-  that is fixed state the range in the axis label or caption). Do
+  on every colour-map panel, including panels in subplot grids. Do
   not put the colour range in the title. For signed fields (perturbations,
   potentials) use a diverging map centred at zero, with symmetric limits.
 - Categorical lines: use the Okabe-Ito palette via explicit RGB triples
@@ -92,5 +91,7 @@ the interval data written next to the image; the pixels never carry the bound.
 
 - Data lines 1.5–2 px, reference lines 1.2 px dashed, markers 4–6 px. For
   particle clouds with more than about 500 points, use small markers
-  with alpha 0.5, which avoids moiré and GIF bloat (the `particles-*` GIFs are
-  10 MB).
+  with alpha 0.5, which avoids moiré and GIF bloat. `render-gallery.sh` writes
+  GIFs as light previews (8 fps, width 800, 128 colours, no dithering); the
+  `particles-*` previews are about 4.5 MB for 9 s clips (10 MB for the earlier
+  5 s clips).

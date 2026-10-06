@@ -13,22 +13,24 @@ program interaction_demo
     use fortplot, only: figure, figure_t, get_global_figure, subplot, plot, &
                         scatter, quiver, &
                         title, xlabel, ylabel, xlim, ylim, legend, &
-                        tight_layout, savefig
+                        tight_layout, savefig, suptitle
+    use kin6d_demo_style, only: blue, vermillion, hold_frames, num
     use fortplot_animation, only: animation_t, &
                                   animation_func => FuncAnimation, save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: fps = 24
-    integer :: frames = 121, substeps = 100
+    ! 241 frames of 50 steps: the same 12000 steps as before, shown in 10 s.
+    integer :: frames = 241, substeps = 50
     real(dp) :: h = .0005_dp, duration
     !> Neutral elastic contact radius and requested particle-coordinate radius.
     real(dp) :: contact_radius = 1._dp, radius_target = .01_dp
     real(dp), parameter :: two_pi = 6.2831853071795864769_dp
     type(units_t) :: units
     real(dp) :: coupling
-    real(dp), parameter :: blue(3) = [.12_dp, .38_dp, .7_dp], &
-                           orange(3) = [.85_dp, .28_dp, .12_dp]
+    ! Width/height of the trajectory axes boxes in pixels (measured): equal aspect.
+    real(dp), parameter :: box_aspect = 1.72_dp
     type(interaction_state_t) :: state, fast
     type(interval_t) :: rb(3), ub(3), error_radius(3), particle_box(3)
     type(interval_t), allocatable :: time_bounds(:)
@@ -221,11 +223,11 @@ program interaction_demo
                                                 check_seconds - solve_seconds)
     print '(a,es12.4)', 'complete_factor=', factor
     print '(a,i0,a,i0)', 'bounded_frames=', last_bounded, '/', frames
-    call figure(figsize=[13._dp, 9._dp]); canvas => get_global_figure()
+    call figure(figsize=[13.2_dp, 8.8_dp]); canvas => get_global_figure()
     frame = snapshot_frame; call draw_frame()
     call savefig('output/collective-response.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames, interval=42, &
+        animation = animation_func(update_frame, frames=frames + hold_frames, interval=42, &
                                    fig=canvas)
         call save_animation(animation, 'output/collective-response.mp4', fps=fps, &
                             status=status)
@@ -234,7 +236,7 @@ program interaction_demo
 contains
     subroutine update_frame(index)
         integer, intent(in)::index
-        frame = index; call draw_frame()
+        frame = min(index, frames); call draw_frame()
     end subroutine
     subroutine draw_frame()
         integer :: particle
@@ -244,12 +246,12 @@ contains
             angles(outline_index) = two_pi*real(outline_index - 1, dp)/64
         end do
         call canvas%clear()
+        call suptitle('A contact force acts only on touch; Coulomb repulsion deflects '// &
+            'the pair smoothly from a distance')
         call subplot(2, 2, 1)
-        write (heading, '(a,f5.2,a)') 'Neutral contact | t=', times(frame), &
-            ' | event derivative unavailable'
-        call title(trim(heading))
+        call title('Neutral elastic contact (circles: contact spheres)  |  t = '// &
+            num(times(frame), 2))
         do particle = 1, 2
-            sign = real(3 - 2*particle, dp)
             call plot(neutral_position(1, particle, 1:frame), &
                       neutral_position(2, particle, 1:frame), &
                       color=blue, linewidth=1.7_dp)
@@ -261,21 +263,18 @@ contains
             outline_y = neutral_position(2, particle, frame) + sin(angles)/2
             call plot(outline_x, outline_y, color=blue, linewidth=1.5_dp)
         end do
-        call xlabel('x [1] | Cartesian 3D orbit, z=0 by symmetry')
-        call ylabel('y [1] | contact distance=1; event bound unavailable')
-        call xlim(-3.6_dp, 3.6_dp); call ylim(-4.3_dp, 4.3_dp)
+        call xlabel('x  (3D orbit, z = 0 by symmetry)')
+        call ylabel('y')
+        call xlim(-4.3_dp*box_aspect, 4.3_dp*box_aspect); call ylim(-4.3_dp, 4.3_dp)
         call subplot(2, 2, 2)
         if (budget_met(frame)) then
-            write (heading, '(a,f5.2,a)') 'Coulomb | t=', times(frame), &
-                ' | endpoint boxes; 1% budget met'
+            heading = 'Repulsive Coulomb pair, certified endpoint boxes'
         else if (certified(frame)) then
-            write (heading, '(a,f5.2,a)') 'Coulomb | t=', times(frame), &
-                ' | endpoint boxes; 1% budget missed'
+            heading = 'Repulsive Coulomb pair, boxes above the 1% budget'
         else
-            write (heading, '(a,f5.2,a)') 'Unscreened repulsive Coulomb | t=', &
-                times(frame), ' | candidate: bound failed'
+            heading = 'Repulsive Coulomb pair, candidate only (bound failed)'
         end if
-        call title(trim(heading))
+        call title(trim(heading)//'  |  t = '//num(times(frame), 2))
         call coulomb_pair(charged(1, frame), charged(2, frame), charged(3, frame), &
                           pair_coupling(units, electron(), electron()), &
                           f(1), f(2), f(3), potential)
@@ -283,13 +282,13 @@ contains
             sign = real(3 - 2*particle, dp)
             call plot(charged_position(1, particle, 1:frame), &
                       charged_position(2, particle, 1:frame), &
-                      color=orange, linewidth=1.7_dp)
+                      color=vermillion, linewidth=1.7_dp)
             call scatter([charged_position(1, particle, frame)], &
                          [charged_position(2, particle, frame)], &
-                         color=orange, s=95._dp, marker='o')
+                         color=vermillion, s=95._dp, marker='o')
             call quiver([charged_position(1, particle, frame)], &
                         [charged_position(2, particle, frame)], &
-                        [sign*.35_dp*f(1)], [sign*.35_dp*f(2)], color=orange, &
+                        [sign*.35_dp*f(1)], [sign*.35_dp*f(2)], color=vermillion, &
                         scale=1._dp, angles='xy', scale_units='xy', units='xy', &
                         width=.025_dp)
             if (certified(frame)) then
@@ -299,28 +298,28 @@ contains
                 by = [boxlo(2, particle, frame), boxlo(2, particle, frame), boxhi(2, &
                                                                      particle, frame), &
                       boxhi(2, particle, frame), boxlo(2, particle, frame)]
-                call plot(bx, by, color=orange, linewidth=1._dp)
+                call plot(bx, by, color=vermillion, linewidth=1._dp)
             end if
         end do
-        call xlabel('x [1] | candidate arrows: 0.35 F; equal opposite forces')
-        call ylabel('y [1] | no screening or confining force')
-        call xlim(-3.5_dp, 3.5_dp); call ylim(-3._dp, 3._dp)
+        call xlabel('x  (arrows: 0.35 F, equal and opposite; no screening)')
+        call ylabel('y')
+        call xlim(-4.3_dp*box_aspect, 4.3_dp*box_aspect); call ylim(-4.3_dp, 4.3_dp)
         call subplot(2, 2, 3)
-        call title('Particle coordinate radius | observation endpoints only')
+        call title('Certified Coulomb endpoint radius (observation times only)')
         if (last_bounded > 0) call scatter(times(1:last_bounded), &
-                                     radius_plot(1:last_bounded), color=orange, s=9._dp)
+                                     radius_plot(1:last_bounded), color=vermillion, s=6._dp)
         if (certified(frame)) call scatter([times(frame)], [radius_plot(frame)], &
-                                           color=orange, s=35._dp)
-        call xlabel('t [1] | endpoint boxes only')
-        call ylabel('max coordinate radius / 1e-5 [1]')
+                                           color=vermillion, s=35._dp)
+        call xlabel('t')
+        call ylabel('$10^5 \times$ max coordinate radius')
         call xlim(0._dp, duration)
         call subplot(2, 2, 4)
-        call title('Energy drift / 1e-8 | diagnostic, trajectory bound separate')
-        call plot(times, energy_plot, color=orange, linewidth=1.7_dp)
+        call title('Coulomb energy drift (diagnostic; trajectory bound separate)')
+        call plot(times, energy_plot, color=vermillion, linewidth=1.7_dp)
         call scatter([times(frame)], [energy_plot(frame)], &
-                     color=orange, s=35._dp)
-        call xlabel('t [1] | physical-model uncertainty unavailable')
-        call ylabel('relative specific-energy drift / 1e-8 [1]')
+                     color=vermillion, s=35._dp)
+        call xlabel('t')
+        call ylabel('$10^8 \times$ relative specific-energy drift')
         call xlim(0._dp, duration)
         call tight_layout()
     end subroutine

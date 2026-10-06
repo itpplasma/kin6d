@@ -94,6 +94,10 @@ Hamiltonian diagnostic. These are behavioral tests, not certificate proofs.
 ## Reproduction and performance
 
 `classical_pair_demo [--snapshot [frame]]` accepts frame indices 1 through 61.
+The movie shows each of the 61 shared frames three times at 24 fps (8
+physical frames per second, no interpolation) and holds the last for 1 s; the
+frame count stays tied to the shared `&periodic_pair` configuration and the
+Hoeffding coverage.
 It outputs `classical-coulomb-pair.mp4`, or the snapshot PNG, alongside bin,
 particle and timing CSV files under `output/`. The left panel shows the 3D
 particle projection `(x+z/4,y+z/6)/L` for twelve independent pairs. The right
