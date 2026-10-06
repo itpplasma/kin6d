@@ -242,6 +242,9 @@ set_source_files_properties(src/generated/kin6d_relativistic_fermi_leaves.f90
 add_executable(test_relativistic_fermi_gas test/test_relativistic_fermi_gas.f90)
 target_link_libraries(test_relativistic_fermi_gas PRIVATE kin6d)
 add_test(NAME relativistic_fermi_gas_oracles COMMAND test_relativistic_fermi_gas)
+add_executable(test_fermi_gas_cold test/test_fermi_gas_cold.f90)
+target_link_libraries(test_fermi_gas_cold PRIVATE kin6d)
+add_test(NAME fermi_gas_cold_sommerfeld COMMAND test_fermi_gas_cold)
 target_sources(kin6d PRIVATE src/generated/kin6d_fermion_ensemble_leaves.f90
     src/fermion_ensemble.f90)
 set_source_files_properties(src/generated/kin6d_fermion_ensemble_leaves.f90
@@ -284,7 +287,7 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         fermion_ensemble_demo relativistic_fermi_demo formal_krook_certificate
         benchmark_streaming benchmark_streaming_comparison benchmark_fp
         benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
-        benchmark_quantum_cutoff jellium_cell_demo)
+        benchmark_quantum_cutoff jellium_cell_demo coulomb_encounter_demo)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
 add_executable(test_result_io test/test_result_io.f90)
