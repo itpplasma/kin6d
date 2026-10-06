@@ -12,7 +12,9 @@ program steady_laboratory_demo
     use kin6d_leaves, only: coordinate, interval_band
     use fortnum_interval, only: interval_t, interval, interval_pi
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
-        ylabel, legend, savefig, tight_layout, xlim, ylim
+        ylabel, legend, savefig, tight_layout, xlim, ylim, suptitle, set_yscale, &
+        set_xscale
+    use kin6d_demo_style, only: blue, vermillion, black, grey
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
@@ -119,25 +121,38 @@ program steady_laboratory_demo
     mass_lower(1) = lower%lo; mass_upper(1) = upper%hi
     exact_mass = fp%mass
     print '(a,2es24.16)', 'FP continuous mass interval=', lower_mass, upper_mass
-    call figure(figsize=[9.6_dp, 6.0_dp])
-    call title('Bounded OU steady state | reviewed continuous bounds')
-    call xlabel('v / thermal scale  (reflecting boundaries at +/-2)')
-    call ylabel('normalized distribution f  (mass = 1)')
-    call fill_between(coarse%v, clo, chi, color='moccasin', alpha=0.65_dp)
-    call fill_between(fp%v, lo, hi, color='lightblue', alpha=0.75_dp)
-    call plot(coarse%v, clo, linestyle=':', color=[0.8_dp, 0.4_dp, 0.0_dp])
-    call plot(coarse%v, chi, linestyle=':', color=[0.8_dp, 0.4_dp, 0.0_dp])
-    call plot(fp%v, lo, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(fp%v, hi, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
-    write (label, '(i0,a)') cells/2, ' cells + full band'
+    call figure(figsize=[12.8_dp, 6.4_dp])
+    call suptitle('Bounded Ornstein-Uhlenbeck steady state: halving the cell width '// &
+        'shrinks the certified band about fourfold')
+    call subplot(1, 2, 1)
+    call title('Steady distribution with certified bands')
+    call xlabel('v / thermal scale  (reflecting walls at ±2)')
+    call ylabel('f  (mass = 1)')
+    call xlim(-2.0_dp, 2.0_dp)
+    call fill_between(coarse%v, clo, chi, color=vermillion, alpha=0.25_dp)
+    call fill_between(fp%v, lo, hi, color=blue, alpha=0.25_dp)
+    write (label, '(i0,a)') cells/2, ' cells ± bound'
     call plot(coarse%v, coarse%f, label=trim(label), linestyle='--', &
-        color=[0.8_dp, 0.4_dp, 0.0_dp])
-    write (label, '(i0,a)') cells, ' cells + full band'
-    call plot(fp%v, fp%f, label=trim(label), &
-        color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(ref_x, ref_lo, label='rigorous Gaussian cell edges', linestyle=':', &
-        color=[0.0_dp, 0.0_dp, 0.0_dp])
-    call plot(ref_x, ref_hi, linestyle=':', color=[0.0_dp, 0.0_dp, 0.0_dp])
+        color=vermillion, linewidth=1.5_dp)
+    write (label, '(i0,a)') cells, ' cells ± bound'
+    call plot(fp%v, fp%f, label=trim(label), color=blue, linewidth=2.0_dp)
+    call plot(ref_x, ref_lo, label='exact Gaussian, rigorous cell range', &
+        linestyle='--', color=black, linewidth=0.8_dp)
+    call plot(ref_x, ref_hi, linestyle='--', color=black, linewidth=0.8_dp)
+    call legend(loc='lower center')
+    call subplot(1, 2, 2)
+    call title('Certified sup half-width against resolution')
+    call xlabel('velocity cells')
+    call ylabel('max half-width of the band')
+    call xlim(20.0_dp, 100.0_dp); call ylim(5.0e-4_dp, 2.0e-2_dp)
+    call set_xscale('log'); call set_yscale('log')
+    ! Second-order guide through the finer resolution: h^2 scaling.
+    call plot([20.0_dp, 100.0_dp], 0.5_dp*maxval(hi - lo)*([20.0_dp, 100.0_dp]/ &
+        real(cells, dp))**(-2), linestyle='--', color=black, linewidth=1.2_dp, &
+        label='slope -2 guide')
+    call plot([real(cells/2, dp), real(cells, dp)], [0.5_dp*maxval(chi - clo), &
+        0.5_dp*maxval(hi - lo)], color=blue, marker='o', markersize=6.0_dp, &
+        linewidth=2.0_dp, label='certified bound')
     call legend(loc='upper right')
     call tight_layout()
     call savefig('output/fp-steady.png')
@@ -187,58 +202,48 @@ program steady_laboratory_demo
         call interval_band(electric, interval(er), lower, upper)
         elo(2*i - 1:2*i) = lower%lo; ehi(2*i - 1:2*i) = upper%hi
     end do
-    call figure(figsize=[9.6_dp, 7.2_dp])
-    call subplot(2, 1, 1)
-    call title('Source-balanced 1X1V Poisson-FP | whole-cell enclosures')
-    call xlabel('x / slab scale  (period 2 pi)')
-    call ylabel('f(x,v=0)  (velocity domain [-1,1])')
+    call figure(figsize=[12.8_dp, 6.4_dp])
+    call suptitle('A driven, collisional 1X1V plasma settles to a self-consistent '// &
+        'steady state (bands: whole-cell enclosures)')
+    call subplot(1, 2, 1)
+    call title('Distribution at v = 0  (velocity domain [-1, 1])')
+    call xlabel('x / slab scale  (period 2π)')
+    call ylabel('f(x, v = 0)')
     call xlim(0.0_dp, 2.0_dp*pi%hi)
-    call fill_between(xf, flo, fhi, color='lightblue', alpha=0.75_dp)
-    call plot(xf, flo, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(xf, fhi, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(x, fline, label='FP candidate + full cell band', &
-        color=[0.0_dp, 0.45_dp, 0.7_dp])
+    call fill_between(xf, flo, fhi, color=blue, alpha=0.25_dp)
+    call plot(x, fline, label='Fokker-Planck ± bound', color=blue, linewidth=2.0_dp)
     call plot(x, limit_line, label='Krook limit (FP rate = 0)', linestyle='--', &
-        color=[0.8_dp, 0.4_dp, 0.0_dp])
-    call plot(x, equilibrium_line, label='zero drive / zero field', linestyle=':', &
-        color=[0.0_dp, 0.0_dp, 0.0_dp])
-    call legend(loc='upper right')
-    call subplot(2, 1, 2)
-    call title('Self-consistent electric field | reviewed continuous bounds')
-    call xlabel('x / slab scale  (period 2 pi)')
+        color=black, linewidth=1.2_dp)
+    call plot(x, equilibrium_line, label='no drive, no field', linestyle=':', &
+        color=grey, linewidth=1.5_dp)
+    call legend(loc='upper center')
+    call subplot(1, 2, 2)
+    call title('Self-consistent electric field')
+    call xlabel('x / slab scale  (period 2π)')
     call ylabel('E / field scale')
     call xlim(0.0_dp, 2.0_dp*pi%hi)
-    call fill_between(xf, elo, ehi, color='lightblue', alpha=0.75_dp)
-    call plot(xf, elo, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(xf, ehi, linestyle=':', color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(x, eline, label='E from charge density + full cell band', &
-        color=[0.0_dp, 0.45_dp, 0.7_dp])
+    call fill_between(xf, elo, ehi, color=blue, alpha=0.25_dp)
+    call plot(x, eline, label='E from the charge density ± bound', color=blue, &
+        linewidth=2.0_dp)
     call legend(loc='upper right')
-    call tight_layout(h_pad=3.0_dp)
+    call tight_layout()
     call savefig('output/poisson-fp-steady.png')
-    call figure(figsize=[9.6_dp, 6.4_dp])
-    call subplot(2, 1, 1)
-    call title('Bounded OU mass | full continuous observable interval')
+    call figure(figsize=[9.6_dp, 6.0_dp])
+    call subplot(1, 1, 1)
+    call suptitle('Certified mass intervals contain the prescribed mass and '// &
+        'shrink with resolution')
+    call title('Bounded OU mass: full continuous observable interval')
     call xlabel('velocity cells')
-    call ylabel('integral f dv  (prescribed mass = 1)')
+    call ylabel('$\int f dv$  (prescribed mass = 1)')
+    call xlim(24.0_dp, 72.0_dp)
     call plot([resolution(1), resolution(1)], [mass_lower(1), mass_upper(1)], &
-        label=trim(cell_label(cells/2)), color=[0.8_dp, 0.4_dp, 0.0_dp], marker='s')
+        label=trim(cell_label(cells/2)), color=vermillion, marker='s', linewidth=2.0_dp)
     call plot([resolution(2), resolution(2)], [mass_lower(2), mass_upper(2)], &
-        label=trim(cell_label(cells)), color=[0.0_dp, 0.45_dp, 0.7_dp], marker='o')
-    call plot(resolution, exact_mass, label='exact prescribed mass', &
-        linestyle='--', color=[0.0_dp, 0.0_dp, 0.0_dp])
+        label=trim(cell_label(cells)), color=blue, marker='o', linewidth=2.0_dp)
+    call plot([24.0_dp, 72.0_dp], exact_mass, label='exact prescribed mass', &
+        linestyle='--', color=black, linewidth=1.2_dp)
     call legend(loc='upper right')
-    call subplot(2, 1, 2)
-    call title('Poisson electric energy | full continuous interval')
-    call xlabel('observable 1: energy at normalized amplitude a = 1/2')
-    call ylabel('spatial mean E squared / 2')
-    call xlim(0.0_dp, 2.0_dp)
-    call ylim(0.0_dp, 0.07_dp)
-    call plot([1.0_dp, 1.0_dp], [energy%lo, energy%hi], &
-        label='full interval (arithmetic width)', marker='o', &
-        color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call legend(loc='upper right')
-    call tight_layout(h_pad=3.0_dp)
+    call tight_layout()
     call savefig('output/steady-observables.png')
     open (newunit=ledger, file='output/steady-bounds.csv', status='replace')
     write (ledger, '(a)') 'case,quantity,lower,upper,proof_level'
