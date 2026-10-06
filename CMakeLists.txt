@@ -412,3 +412,17 @@ target_link_libraries(test_packet_models PRIVATE kin6d)
 add_test(NAME packet_models_oracles COMMAND test_packet_models)
 add_executable(packet_models_demo app/packet_models_demo.f90)
 target_link_libraries(packet_models_demo PRIVATE kin6d fortplot kin6d_io)
+
+# Campaign H1b: quantum vs classical finite-N pair/three-body correlations
+# (docs/quantum-classical-correlations.md).
+if(KIN6D_FORTSYM_BUILD)
+    add_executable(gen_quantum_classical gen/gen_quantum_classical.f90)
+    target_link_libraries(gen_quantum_classical PRIVATE kin6d_gen_support)
+endif()
+target_sources(kin6d PRIVATE src/generated/kin6d_quantum_classical_leaves.f90
+    src/classical_cell.f90 src/quantum_pair_cell.f90)
+set_source_files_properties(src/generated/kin6d_quantum_classical_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_quantum_classical test/test_quantum_classical.f90)
+target_link_libraries(test_quantum_classical PRIVATE kin6d)
+add_test(NAME quantum_classical_h1b_oracles COMMAND test_quantum_classical)
