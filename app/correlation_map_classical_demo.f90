@@ -40,12 +40,14 @@ program correlation_map_classical_demo
     real(dp) :: tolerance = 1.0e-5_dp, triplet_rmax = 3.0_dp, pair_width = 0.05_dp
     integer :: triplet_bins = 15, triplet_sub = 8
     integer(int64) :: seed = 20261006_int64
-    real(dp) :: md_gamma = 1.0_dp, md_equilibration = 50.0_dp, md_time = 1500.0_dp
+    real(dp) :: md_gamma = 1.0_dp, md_equilibration = 50.0_dp, md_time = 1000.0_dp
     integer :: md_particles = 500
+    !> Re-analyse the raw accumulators of a previous run instead of sampling.
+    logical :: reuse_samples = .false.
     namelist /correlation_map/ gammas, particles, particles_small, equilibration, &
         production, batches, sample_every, force_every, tolerance, triplet_rmax, &
         pair_width, triplet_bins, triplet_sub, seed, md_gamma, md_equilibration, &
-        md_time, md_particles
+        md_time, md_particles, reuse_samples
 
     call run%start('correlation_map_classical_demo')
     if (run%argument_count() > 0) error stop 'usage: correlation_map_classical_demo [--config FILE]'
@@ -70,18 +72,23 @@ program correlation_map_classical_demo
         chains(ng + i)%gamma = gammas(i); chains(ng + i)%n = particles_small
     end do
     call cpu_time(t0)
-    ! Independent chains (and the MD member) on OpenMP threads; the library
-    ! is reentrant (no module state).
-    !$omp parallel do schedule(dynamic, 1)
-    do task = 1, 2*ng + 1
-        if (task == 2*ng + 1) then
-            call md_run(md_gamma, md_particles, md_equilibration, md_time, &
-                        pair_width, seed + 999, md)
-        else
-            call run_chain(chains(task), seed + task)
-        end if
-    end do
-    !$omp end parallel do
+    if (reuse_samples) then
+        call raw_io(chains, md, .false.)
+    else
+        ! Independent chains (and the MD member) on OpenMP threads; the
+        ! library is reentrant (no module state).
+        !$omp parallel do schedule(dynamic, 1)
+        do task = 1, 2*ng + 1
+            if (task == 2*ng + 1) then
+                call md_run(md_gamma, md_particles, md_equilibration, md_time, &
+                            pair_width, seed + 999, md)
+            else
+                call run_chain(chains(task), seed + task)
+            end if
+        end do
+        !$omp end parallel do
+        call raw_io(chains, md, .true.)
+    end if
     call cpu_time(t1)
     print '(a,f10.1,a)', 'sampling cpu ', t1 - t0, ' s'
     ! HNC reduced model by continuation in Gamma (ascending order assumed).
@@ -101,6 +108,57 @@ program correlation_map_classical_demo
     call plot_all(chains, ng, hnc, md)
     print '(a)', 'wrote output/correlation-map-*.csv/.png and correlation_map_classical_demo.nc'
 contains
+    !> Raw accumulators to/from output/correlation-map-raw.bin (stream).
+    subroutine raw_io(chains, md, save)
+        type(chain_t), intent(inout) :: chains(:)
+        type(md_result_t), intent(inout) :: md
+        logical, intent(in) :: save
+        integer :: unit, i, nb, m, nt, ne, np, nr
+        if (save) then
+            open (newunit=unit, file='output/correlation-map-raw.bin', access='stream', &
+                  form='unformatted', status='replace')
+            do i = 1, size(chains)
+                associate (c => chains(i))
+                    write (unit) c%gamma, c%n, c%bins, size(c%equil), size(c%energy), &
+                        size(c%snaps), c%tri%bins, c%length, c%alpha, c%nk, c%bound, &
+                        c%rmax_g, c%acceptance, c%step, c%cpu, c%energy_drift
+                    write (unit) c%equil, c%energy, c%pair, c%pair_force, c%force_sum, &
+                        c%triplet, c%sk, c%sk_vectors, c%snaps, c%fsnaps
+                end associate
+            end do
+            write (unit) md%gamma, md%dt, md%temperature, md%temperature_err, md%u, &
+                md%u_err, md%tau, md%drift, md%wall, md%a, md%n, md%steps, size(md%r), &
+                md%failed_step, md%failure
+            write (unit) md%r, md%g
+            close (unit)
+            return
+        end if
+        open (newunit=unit, file='output/correlation-map-raw.bin', access='stream', &
+              form='unformatted', status='old', action='read')
+        do i = 1, size(chains)
+            associate (c => chains(i))
+                read (unit) c%gamma, c%n, m, ne, np, nb, nt, c%length, c%alpha, c%nk, &
+                    c%bound, c%rmax_g, c%acceptance, c%step, c%cpu, c%energy_drift
+                if (nb /= batches .or. nt /= triplet_bins .or. np /= production) &
+                    error stop 'reuse_samples: raw file does not match configuration'
+                c%bins = m
+                allocate (c%equil(ne), c%energy(np), c%pair(m, nb), c%pair_force(m, nb), &
+                          c%force_sum(m, nb), c%triplet(nt, nt, nt, nb), &
+                          c%sk(c%shells, nb), c%sk_vectors(c%shells), c%snaps(nb), &
+                          c%fsnaps(nb))
+                read (unit) c%equil, c%energy, c%pair, c%pair_force, c%force_sum, &
+                    c%triplet, c%sk, c%sk_vectors, c%snaps, c%fsnaps
+                call triplet_init(c%tri, nt, triplet_rmax, triplet_sub)
+            end associate
+        end do
+        read (unit) md%gamma, md%dt, md%temperature, md%temperature_err, md%u, &
+            md%u_err, md%tau, md%drift, md%wall, md%a, md%n, md%steps, nr, &
+            md%failed_step, md%failure
+        allocate (md%r(nr), md%g(nr))
+        read (unit) md%r, md%g
+        close (unit)
+    end subroutine
+
     !> Equilibration (step tuning in its first half only), then production
     !> with per-batch accumulation of all estimators.
     subroutine run_chain(c, chain_seed)
@@ -421,8 +479,9 @@ contains
         open (newunit=unit, file='output/correlation-map-md.csv', status='replace')
         write (unit, '(a)') '# MD (PME, encounter splitting, NVE after thermostat) vs MC'
         write (unit, '(a,f0.3,a,i0,a,f0.5,a,i0,a,es12.4,a,f8.1)') '# gamma ', md%gamma, &
-            ' N ', md%n, ' dt ', md%dt, ' steps ', md%steps, ' rel_energy_drift ', &
+            ' N ', md%n, ' dt ', md%dt, ' steps ', md%steps, ' energy_drift_kT_per_particle ', &
             md%drift, ' wall_s ', md%wall
+        write (unit, '(a,i0,a)') '# failed_step ', md%failed_step, ' '//trim(md%failure)
         write (unit, '(a,f10.6,a,es10.3,a,f10.6,a,es10.3,a,f8.2)') '# T/T_ref ', &
             md%temperature, ' +- ', md%temperature_err, ' u ', md%u, ' +- ', md%u_err, &
             ' tau_samples ', md%tau
@@ -431,7 +490,22 @@ contains
             write (unit, '(es14.6,",",es14.6)') md%r(k), md%g(k)
         end do
         close (unit)
-        if (ng < 0) print *, ng
+        ! Finite-size check: two N and the linear 1/N extrapolation of u.
+        open (newunit=unit, file='output/correlation-map-finite-size.csv', status='replace')
+        write (unit, '(a)') 'gamma,u_N1,err_N1,u_N2,err_N2,u_extrap_1_over_N,err_extrap,'// &
+            'u_lit_pc2000,c3_sq_N1,c3_sq_err_N1,c3_sq_N2,c3_sq_err_N2'
+        do i = 1, ng
+            associate (a => chains(i), b => chains(ng + i))
+                call ocp_energy_literature(a%gamma, ul, dl)
+                write (unit, '(f0.3,11(",",es14.6))') a%gamma, a%u, &
+                    max(a%u_err, a%u_batch_err), b%u, max(b%u_err, b%u_batch_err), &
+                    (a%n*a%u - b%n*b%u)/(a%n - b%n), &
+                    sqrt((a%n*max(a%u_err, a%u_batch_err))**2 + &
+                         (b%n*max(b%u_err, b%u_batch_err))**2)/abs(a%n - b%n), ul, &
+                    a%out(O_C3), a%out_err(O_C3), b%out(O_C3), b%out_err(O_C3)
+            end associate
+        end do
+        close (unit)
     end subroutine
 
     subroutine write_result(chains, ng, md)

@@ -26,6 +26,14 @@ contains
         call plot_energy(chains, ng, md, hnc)
     end subroutine
 
+    function itoa(i) result(text)
+        integer, intent(in) :: i
+        character(:), allocatable :: text
+        character(16) :: buffer
+        write (buffer, '(i0)') i
+        text = trim(buffer)
+    end function
+
     character(16) function gamma_label(gamma)
         real(dp), intent(in) :: gamma
         gamma_label = '$\Gamma$ = '//num(gamma, 1)
@@ -53,7 +61,7 @@ contains
             call xlabel('r / a'); call ylabel('$g_2(r)$')
             if (i == 1) call legend()
         end do
-        call suptitle('OCP pair distribution: Metropolis MC (N = '//num(real(c(1)%n, dp), 3) &
+        call suptitle('OCP pair distribution: Metropolis MC (N = '//itoa(c(1)%n) &
                       //') vs reduced models')
         call tight_layout()
         call savefig('output/correlation-map-g2.png')
@@ -69,11 +77,12 @@ contains
                               c(i)%eq_g3 + 2*c(i)%eq_g3_err, color=blue, alpha=0.25_dp)
             call plot(c(i)%eq_r, c(i)%eq_g3, color=blue, marker='o', markersize=4.0_dp, &
                       label='MC $g_3(r,r,r)$')
-            call plot(c(i)%eq_r, c(i)%eq_lin, color=vermillion, linestyle=':', &
-                      label='$1+\sum h$ (cumulant cut)')
+            call plot(c(i)%eq_r, max(-1.0_dp, c(i)%eq_lin), color=vermillion, linestyle=':', &
+                      label='1 + Σh (cumulant cut)')
             call plot(c(i)%eq_r, c(i)%eq_kirk, color=black, linestyle='--', &
                       label='Kirkwood $g g g$')
             call xlim(0.0_dp, c(i)%eq_r(size(c(i)%eq_r)) + 0.1_dp)
+            call ylim(-1.0_dp, max(1.2_dp, maxval(c(i)%eq_g3) + 0.2_dp))
             call title(trim(gamma_label(c(i)%gamma)))
             call xlabel('r / a (equilateral)'); call ylabel('$g_3$')
             if (i == 1) call legend()
@@ -121,11 +130,11 @@ contains
         integer :: used, i, weak
         call figure(figsize=[12.8_dp, 6.4_dp])
         call subplot(1, 2, 1)
-        call norm_series(chains(1:ng), O_H2, blue, 'o', '$\|h_2\|$')
-        call norm_series(chains(1:ng), O_RED, green, 's', '$\|K - P\|$ (pair products)')
-        call norm_series(chains(1:ng), O_U3, orange, '^', '$\|U_3\|$ (Ursell)')
-        call norm_series(chains(1:ng), O_C3, vermillion, 'D', '$\|c_3\|$ (connected)')
-        call norm_series(chains(ng + 1:), O_C3, purple, 'd', '$\|c_3\|$, small N')
+        call norm_series(chains(1:ng), O_H2, blue, 'o', '$|h_2|$')
+        call norm_series(chains(1:ng), O_RED, green, 's', '$|K - P|$ (pair products)')
+        call norm_series(chains(1:ng), O_U3, orange, '^', '$|U_3|$ (Ursell)')
+        call norm_series(chains(1:ng), O_C3, vermillion, 'D', '$|c_3|$ (connected)')
+        call norm_series(chains(ng + 1:), O_C3, purple, 'd', '$|c_3|$, small N')
         x = log10(chains(1:ng)%gamma)
         do i = 1, ng
             y(i) = log10(sqrt(max(chains(i)%bin_indicator, 1.0e-300_dp)))
@@ -154,7 +163,7 @@ contains
                                 max(chains(i)%out(O_RED), 1.0e-24_dp))
         end do
         call plot(x, y, color=vermillion, marker='D', markersize=6.0_dp, &
-                  label='$\|c_3\| / \|K - P\|$')
+                  label='$|c_3| / |K - P|$')
         call plot([x(1), x(ng)], [0.0_dp, 0.0_dp], color=black, linestyle='--', &
                   label='equal size')
         call xlabel('$\log_{10} \Gamma$'); call ylabel('$\log_{10}$ ratio')
@@ -167,7 +176,7 @@ contains
     subroutine plot_ybg(c)
         type(chain_t), intent(in) :: c(:)
         real(dp) :: x(size(c)), y(size(c))
-        integer :: i, j, m, pick(2)
+        integer :: i, j, m, pick(2), k0
         integer, parameter :: idx(5) = [O_EEX, O_EK, O_EL, O_EHNC, O_EDH]
         integer, parameter :: uidx(4) = [O_UEX, O_UK, O_UL, 0]
         character(24), parameter :: names(5) = [character(24) :: 'YBG, exact force', &
@@ -185,7 +194,7 @@ contains
             call plot(x, y, color=colours(:, j), marker=trim(markers(j)), &
                       markersize=6.0_dp, label=trim(names(j)))
         end do
-        call xlabel('$\log_{10} \Gamma$'); call ylabel('$\log_{10} \|g - g_{MC}\|$')
+        call xlabel('$\log_{10} \Gamma$'); call ylabel('$\log_{10} |g - g_{MC}|$')
         call title('Pair-structure error per closure')
         call legend()
         call subplot(2, 2, 2)
@@ -220,7 +229,8 @@ contains
                       label='YBG, Kirkwood')
             call plot(c(i)%r(:m), c(i)%g_lin(:m), color=green, linestyle=':', &
                       label='YBG, first order')
-            call plot(c(i)%r(:m), c(i)%g_exact(:m), color=black, linestyle='--', &
+            k0 = findloc(c(i)%g_exact > 0, .true., dim=1)
+            call plot(c(i)%r(k0:m), c(i)%g_exact(k0:m), color=black, linestyle='--', &
                       label='YBG, exact force')
             call xlim(0.0_dp, 5.0_dp)
             call title('$g_2$ from the first YBG equation, '//trim(gamma_label(c(i)%gamma)))
@@ -253,12 +263,12 @@ contains
             end do
             call plot(x, y, color=merge(blue, vermillion, s == 0), linestyle='none', &
                       marker=merge('o', 's', s == 0), markersize=6.0_dp, &
-                      label='MC, N = '//num(real(chains(s*ng + 1)%n, dp), 3))
+                      label='MC, N = '//itoa(chains(s*ng + 1)%n))
         end do
         call ocp_energy_literature(md%gamma, ul, dl)
         call plot([log10(md%gamma) - 0.02_dp], [(md%u - ul)/abs(ul)], color=green, &
                   linestyle='none', marker='^', markersize=8.0_dp, label='MD, N = '// &
-                  num(real(md%n, dp), 3))
+                  itoa(md%n))
         call plot([x(1), x(ng)], [0.0_dp, 0.0_dp], color=black, linestyle='--', &
                   label='Potekhin-Chabrier fit')
         call xlabel('$\log_{10} \Gamma$'); call ylabel('$(u - u_{fit}) / |u_{fit}|$')
