@@ -248,6 +248,6 @@ run from the repository root and must reproduce committed leaves exactly.
   variance), classical model error up to 15%, hybrid interface defect
   <= 3.5e-3, hybrid 1.5x cheaper at matched 1% statistics for eta_u < 0.3.
   Naive velocity rotation at the detection sphere double counts (+11%).
-  33/33 CTest Release and Debug. Open: exchange not in the hybrid Monte Carlo;
+  31/31 CTest Release and Debug. Open: exchange not in the hybrid Monte Carlo;
   digamma/Riccati-Bessel belong in FortNum; FortNum legendre_q upward
   recurrence loses accuracy for large l near x = 1 (5e-4 at l = 400).
