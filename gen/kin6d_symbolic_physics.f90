@@ -26,7 +26,7 @@ module kin6d_symbolic_physics
     public :: reduced_mass, bohr_radius, rydberg_energy, sommerfeld_parameter
     public :: wigner_seitz_radius, coupling_parameter, fermi_energy
     public :: degeneracy_parameter, density_parameter, debye_length
-    public :: plasma_frequency
+    public :: plasma_frequency, modal_poisson
 contains
     !> Bare Coulomb pair potential g/r.
     function coulomb_potential(g, r) result(u)
@@ -205,5 +205,16 @@ contains
         type(expr_t), intent(in) :: n, g_self, m
         type(expr_t) :: omega
         omega = sqrt(4*pi_expr(n%a)*n*g_self/m)
+    end function
+
+    !> Periodic 1D modal Poisson law -eps phi'' = rho, E = -phi', for one
+    !> mode k /= 0 in the real basis rho = rc cos(kx) + rs sin(kx).
+    !> Returns [phi_c, phi_s, E_c, E_s] in the same basis. A complex
+    !> coefficient rho_k of exp(ikx) maps to rc = Re rho_k, rs = -Im rho_k
+    !> (then phi_k = phi_c - i phi_s, E_k = E_c - i E_s).
+    function modal_poisson(eps, k, rc, rs) result(mode)
+        type(expr_t), intent(in) :: eps, k, rc, rs
+        type(expr_t) :: mode(4)
+        mode = [rc/(eps*k**2), rs/(eps*k**2), -rs/(eps*k), rc/(eps*k)]
     end function
 end module kin6d_symbolic_physics

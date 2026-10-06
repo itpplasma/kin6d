@@ -19,6 +19,7 @@ program gen_poisson
     use fortsym_rigorous_emit, only: rigorous_kernel_spec_t, interval_runtime, &
                                      emit_rigorous_kernel
     use kin6d_gen_support, only: fortsym_revision
+    use kin6d_symbolic_physics, only: modal_poisson
     implicit none
     type(arena_t), target :: arena
     type(expr_t) :: k, eps, rc, rs, pc, ps, ec, es, x, v, a, nu, drive, source
@@ -54,11 +55,9 @@ program gen_poisson
     write (unit, '(a)') 'implicit none'
     write (unit, '(a)') 'contains'
     call emit('poisson_coefficients', ['k  ', 'eps', 'rc ', 'rs '], &
-              ['pc', 'ps', 'ec', 'es'], &
-              [rc/(eps*k**2), rs/(eps*k**2), -rs/(eps*k), rc/(eps*k)])
+              ['pc', 'ps', 'ec', 'es'], modal_poisson(eps, k, rc, rs))
     call emit('poisson_coefficients_interval', ['k  ', 'eps', 'rc ', 'rs '], &
-              ['pc', 'ps', 'ec', 'es'], &
-              [rc/(eps*k**2), rs/(eps*k**2), -rs/(eps*k), rc/(eps*k)], &
+              ['pc', 'ps', 'ec', 'es'], modal_poisson(eps, k, rc, rs), &
               rigorous=.true.)
     call emit('poisson_reconstruct', ['k ', 'pc', 'ps', 'ec', 'es', 'x '], &
               ['potential', 'electric '], &
