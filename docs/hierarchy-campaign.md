@@ -296,3 +296,24 @@ run from the repository root and must reproduce committed leaves exactly.
   pair), canonical vs metric engine, conservation, bound validity, M3 bin
   JVP vs FD 5.6e-8. Open: non-monotone K enrichment with fixed guides
   (regularization), goal-oriented estimator, FortSym complex codegen.
+- 2026-10-06 (worker, quantum figure pass): presentation and demo sampling
+  only; physics and oracles unchanged. Q1: head-on and kb = 2 movies of the
+  y = 0 relative density (singlet, triplet, spin-unresolved, classical
+  ensemble 8e5 pairs) on a fixed four-decade log scale with colorbars, slow
+  motion up to 4x around/after closest approach; exchange fringes (maxima
+  3.3-3.5/k apart vs lambda/2 = pi/k) and the triplet nodal plane z = 0 are
+  visible, the distinguishable pair shows no incoming/reflected fringes at
+  sigma = r0/2 (on-axis cut: quantum = classical plus a tunnelling tail);
+  Mott scan in 1 degree bins (classical 5 degree, 1e5 pairs, s.e. bands).
+  Q2/Q3/Q8 multi-panel log figures (pressure in GPa: fortplot clamps log
+  axes to 1e+-25); Q4 defaults to Theta = 0, unconverged rows dotted and
+  labelled, new jellium-kick.mp4; Q5 Temple bound only where valid (the old
+  estimator plot relabelled the true error for N = 3, 4); Q7 real log axes,
+  Wigner run 128x512 to t = 45 (negative mass at t = 20 now 0.262 / 0.085 /
+  1.3e-13; Vlasov under-resolved from t ~ 24.5, marked); QG6 log eta/T axes
+  and 2x2 beam movie; Q0 occupation log axis over 33 weighted orbitals.
+  37/37 CTest Release. Open: fortplot does not clip lines at the axes, did
+  not render text() annotations, clamps log range to 1e+-25, misses
+  \langle, \hbar, \uparrow, \, and Greek in colorbar labels; Q0 movie
+  repeats each of 61 computed frames 3x (frame count shared with
+  classical_pair_demo).
