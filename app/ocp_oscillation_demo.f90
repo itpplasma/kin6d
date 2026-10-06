@@ -54,9 +54,13 @@ module ocp_oscillation_app
     integer :: realizations = 8, structure_shells = 0
     integer(int64) :: seed = 20261005_int64
     logical :: tangent = .true.
+    !> The trajectory tangent is integrated only to tangent_time (chaotic
+    !> growth makes it meaningless beyond a few plasma periods).
+    real(dp) :: tangent_time = 6.0_dp
     namelist /ocp_oscillation/ label, debye_volume, box, tolerance, amplitude, &
         equilibration_time, measure_time, sample_interval, snapshot_interval, &
-        fit_start, fit_end, slice, realizations, structure_shells, seed, tangent
+        fit_start, fit_end, slice, realizations, structure_shells, seed, tangent, &
+        tangent_time
     type(run_t) :: run
     type(result_file_t) :: result
     type(ocp_model_t) :: model
@@ -258,7 +262,7 @@ contains
         if (tangent) then
             s = base
             call ocp_displace_tangent(m, s, [.true., .true., .true.], d)
-            do j = 1, samples
+            do j = 1, window(tangent_time)
                 if (j > 1) then
                     do step = 1, per
                         call ocp_advance_jvp(sys, s, d, m%dt, st)
@@ -398,7 +402,7 @@ contains
 
     subroutine statistics()
         real(dp) :: mean, half, slope, xs(samples), lyap(realizations)
-        integer :: j, r, w1, w2, h
+        integer :: j, r, w1, w2, h, nt
         do j = 1, samples
             call interval(pair(j, :), mean, half); stat(j, 1:3) = [mean, mean - half, mean + half]
             call interval(linear(j, :), mean, half)
@@ -408,15 +412,23 @@ contains
         do r = 1, realizations
             call fit_damped_cosine(time(w1:w2), pair(w1:w2, r), 0.5_dp*real(root), &
                 1.5_dp*real(root), fits(r, 1), fits(r, 2), slope)
+            ! Tangent validity horizon: first time |tangent - paired| > 0.1.
             fits(r, 3:4) = 0
-            if (tangent) call fit_damped_cosine(time(w1:w2), linear(w1:w2, r), &
-                0.5_dp*real(root), 1.5_dp*real(root), fits(r, 3), fits(r, 4), slope)
+            if (tangent) then
+                nt = window(tangent_time); fits(r, 3) = time(nt)
+                do j = 1, nt
+                    if (abs(linear(j, r) - pair(j, r)) > 0.1_dp) then
+                        fits(r, 3) = time(j); exit
+                    end if
+                end do
+            end if
             fits(r, 5) = energy(samples, r); fits(r, 6) = sum(temperature(:, r))/samples
-            ! Lyapunov-type growth of the position tangent over the second half.
-            h = samples/2; xs = time
+            ! Lyapunov-type growth of the position tangent over the second half
+            ! of the tangent interval.
+            nt = window(tangent_time); h = max(1, nt/2); xs = time
             slope = 0
-            if (tangent) slope = (sum((xs(h:) - sum(xs(h:))/(samples - h + 1))* &
-                log(tnorm(h:, r))))/sum((xs(h:) - sum(xs(h:))/(samples - h + 1))**2)
+            if (tangent .and. nt > h) slope = (sum((xs(h:nt) - sum(xs(h:nt))/(nt - h + 1))* &
+                log(tnorm(h:nt, r))))/sum((xs(h:nt) - sum(xs(h:nt))/(nt - h + 1))**2)
             lyap(r) = slope
         end do
         call interval(lyap, lyapunov(1), lyapunov(2))
@@ -460,8 +472,8 @@ contains
         end do
         close (u)
         open (newunit=u, file='output/'//trim(label)//'-fits.csv', status='replace')
-        write (u, '(a)') 'realization,omega_paired,gamma_paired,omega_tangent,'// &
-            'gamma_tangent,energy_defect_per_particle,mean_temperature,'// &
+        write (u, '(a)') 'realization,omega_paired,gamma_paired,tangent_valid_until,'// &
+            'unused,energy_defect_per_particle,mean_temperature,'// &
             'equilibration_s,unperturbed_s,perturbed_s,tangent_s,sampling_s,rejected'
         do r = 1, realizations
             write (u, '(i0,",",*(g0.8,:,","))') r, fits(r, :), cost(r, :)
@@ -499,7 +511,7 @@ contains
         call result%write('vlasov_volterra', volterra, '1', &
             'linear Vlasov initial-value response', dims='time')
         call result%write('fits', fits, '1', &
-            'omega/gamma paired, omega/gamma tangent, energy defect, temperature', &
+            'omega/gamma paired, tangent valid until, unused, energy defect, temperature', &
             dims='realization,fit_column')
         call result%write('cost', cost, 's', &
             'wall s: equilibration, unperturbed, perturbed, tangent, sampling; rejected', &
@@ -522,7 +534,8 @@ contains
         call fill_between(time, stat(:, 2), stat(:, 3), color=blue, alpha=0.25_dp)
         call plot(time, stat(:, 1), color=blue, linewidth=1.8_dp, &
                   label='microscopic, paired difference (95% stat.)')
-        if (tangent) call plot(time, stat(:, 4), color=vermillion, linestyle='-.', &
+        if (tangent) call plot(time(:window(tangent_time)), stat(:window(tangent_time), 4), &
+                               color=vermillion, linestyle='-.', &
                                linewidth=1.5_dp, label='microscopic step tangent $dR/d\epsilon$')
         call plot(time, cold, color=grey, linestyle=':', linewidth=1.2_dp, &
                   label='cold slab $\omega_p$')
@@ -542,7 +555,8 @@ contains
                           alpha=0.25_dp)
         call plot(time, stat(:, 1) - volterra, color=blue, linewidth=1.8_dp, &
                   label='paired - Vlasov (95% stat.)')
-        if (tangent) call plot(time, stat(:, 4) - volterra, color=vermillion, &
+        if (tangent) call plot(time(:window(tangent_time)), stat(:window(tangent_time), 4) &
+                               - volterra(:window(tangent_time)), color=vermillion, &
                                linestyle='-.', linewidth=1.5_dp, label='tangent - Vlasov')
         call plot(time, landau - volterra, color=green, linestyle='--', linewidth=1.2_dp, &
                   label='Landau mode - Vlasov')

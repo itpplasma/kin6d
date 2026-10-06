@@ -47,8 +47,6 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
-    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft8_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft.f90
     ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90
     ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
