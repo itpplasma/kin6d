@@ -526,17 +526,22 @@ contains
     subroutine draw_figures()
         real(dp) :: ylo, yhi, span, xc(profile_bins), pred(profile_bins), sc(nshell)
         real(dp) :: dlo, dhi
-        integer :: j, m, frames
+        integer :: j, m, frames, nvalid
         logical :: has(nshell)
+        ! The chaotic trajectory tangent is drawn only up to its validity
+        ! horizon (first departure > 0.1 from the paired response, min over
+        ! realizations); beyond it the tangent diverges and carries no response.
+        nvalid = window(tangent_time)
+        if (tangent) nvalid = min(nvalid, window(minval(fits(:, 3))))
         ! Response against the continuum and analytic limits.
         call figure(figsize=[12.8_dp, 6.4_dp])
         call subplot(1, 2, 1)
         call fill_between(time, stat(:, 2), stat(:, 3), color=blue, alpha=0.25_dp)
         call plot(time, stat(:, 1), color=blue, linewidth=1.8_dp, &
                   label='microscopic, paired difference (95% stat.)')
-        if (tangent) call plot(time(:window(tangent_time)), stat(:window(tangent_time), 4), &
+        if (tangent) call plot(time(:nvalid), stat(:nvalid, 4), &
                                color=vermillion, linestyle='-.', &
-                               linewidth=1.5_dp, label='microscopic step tangent $dR/d\epsilon$')
+                               linewidth=1.5_dp, label='step tangent $dR/d\epsilon$ (until divergence)')
         call plot(time, cold, color=grey, linestyle=':', linewidth=1.2_dp, &
                   label='cold slab $\omega_p$')
         call plot(time, bgross, color=orange, linestyle=':', linewidth=1.2_dp, &
@@ -555,8 +560,8 @@ contains
                           alpha=0.25_dp)
         call plot(time, stat(:, 1) - volterra, color=blue, linewidth=1.8_dp, &
                   label='paired - Vlasov (95% stat.)')
-        if (tangent) call plot(time(:window(tangent_time)), stat(:window(tangent_time), 4) &
-                               - volterra(:window(tangent_time)), color=vermillion, &
+        if (tangent) call plot(time(:nvalid), stat(:nvalid, 4) &
+                               - volterra(:nvalid), color=vermillion, &
                                linestyle='-.', linewidth=1.5_dp, label='tangent - Vlasov')
         call plot(time, landau - volterra, color=green, linestyle='--', linewidth=1.2_dp, &
                   label='Landau mode - Vlasov')
