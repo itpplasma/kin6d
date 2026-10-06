@@ -23,6 +23,7 @@ module kin6d_symbolic_physics
     public :: ewald_real_potential, ewald_real_force, ewald_reciprocal_weight
     public :: ewald_self_potential, ewald_background_potential
     public :: jellium_coefficient, partial_wave_potential
+    public :: yukawa_potential, centrifugal_potential, screened_partial_wave_potential
     public :: reduced_mass, bohr_radius, rydberg_energy, sommerfeld_parameter
     public :: wigner_seitz_radius, coupling_parameter, fermi_energy
     public :: degeneracy_parameter, density_parameter, debye_length
@@ -120,7 +121,31 @@ contains
     function partial_wave_potential(g, hbar, mu, l, r) result(v)
         type(expr_t), intent(in) :: g, hbar, mu, l, r
         type(expr_t) :: v
-        v = coulomb_potential(g, r) + hbar**2*l*(l + 1)/(2*mu*r**2)
+        v = coulomb_potential(g, r) + centrifugal_potential(hbar, mu, l, r)
+    end function
+
+    !> Centrifugal term hbar^2 l(l+1)/(2 mu r^2) of partial wave l.
+    function centrifugal_potential(hbar, mu, l, r) result(v)
+        type(expr_t), intent(in) :: hbar, mu, l, r
+        type(expr_t) :: v
+        v = hbar**2*l*(l + 1)/(2*mu*r**2)
+    end function
+
+    !> Statically screened (Debye/Yukawa) pair potential g exp(-r/lambda)/r:
+    !> the bare Coulomb potential times the screening factor; lambda -> oo
+    !> recovers coulomb_potential.
+    function yukawa_potential(g, lambda, r) result(u)
+        type(expr_t), intent(in) :: g, lambda, r
+        type(expr_t) :: u
+        u = coulomb_potential(g, r)*exp(-r/lambda)
+    end function
+
+    !> Radial effective potential of partial wave l for the screened pair:
+    !> g exp(-r/lambda)/r + hbar^2 l(l+1)/(2 mu r^2).
+    function screened_partial_wave_potential(g, hbar, mu, l, r, lambda) result(v)
+        type(expr_t), intent(in) :: g, hbar, mu, l, r, lambda
+        type(expr_t) :: v
+        v = yukawa_potential(g, lambda, r) + centrifugal_potential(hbar, mu, l, r)
     end function
 
     function reduced_mass(m1, m2) result(mu)
