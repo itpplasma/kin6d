@@ -9,7 +9,9 @@ program test_quantum_classical
     !> and finite differences of the Ewald potential; Kelbg limits and
     !> leaf JVPs against finite differences; the spectral dg/dTheta against
     !> central differences; the Q4 diagonal three-body moments against a
-    !> Slater-determinant Wick evaluation.
+    !> Slater-determinant Wick evaluation; the one periodic-cell sampler's
+    !> energy against the independent two-body pair sum and its OCP form
+    !> against the N = 2 quadrature.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use kin6d_nbody, only: nbody_force
@@ -19,7 +21,8 @@ program test_quantum_classical
     use kin6d_quantum_classical_leaves
     use kin6d_jellium_cell
     use kin6d_quantum_classical_map
-    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_sweep
+    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_setup_cell, mc_sweep, &
+        mc_energy
     use kin6d_quantum_fock, only: fock_matvec, fock_hamiltonian_t
     use kin6d_quantum_fock_leaves, only: qf_kinetic
     use fortnum_symmetric_eigen, only: symmetric_eigen
@@ -35,6 +38,7 @@ program test_quantum_classical
     call kelbg_oracle()
     call pair_derivative_oracle()
     call moments_oracle()
+    call sampler_energy_oracle()
     call h1a_sampler_oracle()
     if (failures > 0) error stop 'test_quantum_classical failed'
     print '(a)', 'PASS: H1b quantum-classical oracles'
@@ -391,22 +395,64 @@ contains
                    'sparse 2-RDM shell bins = dense jellium_pair_bins (Theta = 1, N = 3)')
     end subroutine
 
-    !> The H1b classical cell (atomic units, pairwise zero-mean Ewald) and
-    !> the independent H1a OCP sampler (a = 1, incremental structure-factor
-    !> Ewald) give the same N = 3 pair function at equal Gamma.
+    !> The shared sampler energy (incremental Ewald, minimum-image or image
+    !> cube, plus the kin6d_pair_law addition) minus cell_sampler_offset =
+    !> the zero-mean pair sum of the independent two-body kin6d_nbody path,
+    !> for the bare Coulomb and the Kelbg+Pauli law; after sweeps the
+    !> incremental energy (cached pair additions) = a full recompute.
+    subroutine sampler_energy_oracle()
+        type(classical_cell_t) :: cell
+        type(ocp_mc_t) :: chain
+        real(dp) :: x(9), pairs, defect, drift
+        integer :: model, cut, s
+        logical :: ok
+        x = [0.1_dp, 0.2_dp, -0.3_dp, 1.1_dp, -0.7_dp, 0.4_dp, -1.2_dp, 0.9_dp, 1.3_dp]
+        do model = model_coulomb, model_kelbg_pauli, model_kelbg_pauli - model_coulomb
+            call init_classical_cell(cell, 3, 1.0_dp, 0.5_dp, model, ok)
+            call check(ok, 'classical cell N=3 (pair law)')
+            call cell_total_energy(cell, x, pairs, ok)
+            do cut = 0, 1
+                if (cut == 0) then
+                    call mc_setup_cell(chain, 3, cell%length, cell%beta, cell%coupling, &
+                                       cell%tolerance, 3_i64, ok, cell%law, real_cutoff=0)
+                else
+                    call mc_setup_cell(chain, 3, cell%length, cell%beta, cell%coupling, &
+                                       cell%tolerance, 3_i64, ok, cell%law)
+                end if
+                call check(ok, 'shared sampler setup (atomic units)')
+                chain%x = reshape(x, [3, 3]) - cell%length*floor(reshape(x, [3, 3])/cell%length)
+                chain%energy = mc_energy(chain)
+                defect = chain%energy - cell_sampler_offset(cell, chain) - pairs
+                do s = 1, 20
+                    call mc_sweep(chain, .true.)
+                end do
+                drift = chain%energy - mc_energy(chain)
+                print '(a,i2,a,i2,a,es11.3,a,es11.3)', '     law ', model, ' real cutoff ', &
+                    chain%ewald%real_cutoff, ' energy - pairs ', defect, ' drift ', drift
+                call check(abs(defect) < 1.0e-8_dp*abs(pairs) .and. &
+                           abs(drift) < 1.0e-10_dp*max(1.0_dp, abs(chain%energy)), &
+                           'sampler energy = independent pair sum (N=3)')
+            end do
+        end do
+    end subroutine
+
+    !> The OCP form of the shared sampler (a = 1, minimum-image Ewald) at
+    !> N = 2 reproduces the deterministic atomic-unit pair quadrature
+    !> (independent kin6d_nbody pair potential) at equal Gamma.
     subroutine h1a_sampler_oracle()
         type(classical_cell_t) :: cell
-        type(classical_mc_t) :: mc
         type(ocp_mc_t) :: ocp
         integer, parameter :: nb = 6, nbatch = 20, per = 4000
         real(dp) :: edges(nb + 1), bg(nb, nbatch), g(nb), err(nb), d(3), r, shell
-        integer :: i, j, k, b, s, bin
+        real(dp) :: gq(nb), f2(26), gw(nb), gx(nb), gp(nb), dg(nb)
+        integer :: i, k, b, s, bin
         logical :: ok
-        call init_classical_cell(cell, 3, 2.0_dp, 0.5_dp, model_coulomb, ok)
+        call init_classical_cell(cell, 2, 2.0_dp, 0.5_dp, model_coulomb, ok)
         edges = [(i*cell%length/(2*nb), i=0, nb)]
-        call classical_cell_mc(cell, edges, 80000, 2000, 40, 5_i64, mc, ok)
-        call mc_setup(ocp, 3, cell%gamma, 1.0e-10_dp, 9_i64, ok)
-        call check(ok, 'H1a OCP sampler setup at the same Gamma')
+        call classical_pair_quadrature(cell, edges, 40, 12, gq, f2, gw, gx, gp, dg, ok)
+        call check(ok, 'N=2 quadrature (Gamma of the OCP check)')
+        call mc_setup(ocp, 2, cell%gamma, 1.0e-6_dp, 9_i64, ok)
+        call check(ok, 'OCP sampler setup at the same Gamma')
         do s = 1, 2000
             call mc_sweep(ocp, .true.)
         end do
@@ -414,27 +460,23 @@ contains
         do b = 1, nbatch
             do s = 1, per
                 call mc_sweep(ocp, .false.)
-                do i = 1, 2
-                    do j = i + 1, 3
-                        d = ocp%x(:, i) - ocp%x(:, j)
-                        d = d - ocp%length*anint(d/ocp%length)
-                        r = norm2(d)/ocp%length*cell%length
-                        if (r >= edges(nb + 1)) cycle
-                        bin = min(nb, 1 + int(r/edges(2)))
-                        bg(bin, b) = bg(bin, b) + 1
-                    end do
-                end do
+                d = ocp%x(:, 1) - ocp%x(:, 2)
+                d = d - ocp%length*anint(d/ocp%length)
+                r = norm2(d)/ocp%length*cell%length
+                if (r >= edges(nb + 1)) cycle
+                bin = min(nb, 1 + int(r/edges(2)))
+                bg(bin, b) = bg(bin, b) + 1
             end do
             do k = 1, nb
                 shell = 4*acos(-1.0_dp)/3*(edges(k + 1)**3 - edges(k)**3)
-                bg(k, b) = bg(k, b)/(per*3*shell/cell%volume)
+                bg(k, b) = bg(k, b)/(per*shell/cell%volume)
             end do
         end do
         g = sum(bg, 2)/nbatch
         err = sqrt(sum((bg - spread(g, 2, nbatch))**2, 2)/(nbatch*(nbatch - 1.0_dp)))
-        r = maxval(abs(g - mc%g)/sqrt(err**2 + mc%g_err**2 + 1.0e-6_dp))
-        print '(a,f6.3,a,f7.3)', '     Gamma ', cell%gamma, ' max |H1b - H1a|/se ', r
-        call check(r < 4.5_dp, 'classical cell g = H1a OCP sampler g (N = 3, 4.5 s.e.)')
+        r = maxval(abs(g - gq)/sqrt(err**2 + 1.0e-6_dp))
+        print '(a,f6.3,a,f7.3)', '     Gamma ', cell%gamma, ' max |OCP MC - quad|/se ', r
+        call check(r < 4.5_dp, 'OCP sampler g = N=2 pair quadrature (4.5 s.e.)')
     end subroutine
 
     real(dp) function me(jc, x, y, qq) result(v)

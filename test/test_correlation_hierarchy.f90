@@ -97,7 +97,8 @@ contains
                    'incremental energy drift')
         call check(abs(u_full - direct_energy(system, mc%x, 64)) <= &
                    mc%ewald%potential_bound*64*65/2/mc%length, 'MC energy after sweeps')
-        call mc_forces(mc, f)
+        call mc_forces(mc, f, ok)
+        call check(ok, 'MC forces defined (bare Coulomb)')
         h = 1.0e-5_dp; worst = 0; scale = maxval(abs(f))
         do i = 1, 64, 9
             do a = 1, 3
