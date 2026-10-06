@@ -222,7 +222,7 @@ contains
             work%cached_relativity = x
         end if
         do
-            call prepare_nodes(work, theta, radius, x, rel)
+            call prepare_nodes(work, theta, radius, x)
             if (rel) then
                 ! Relativistic density exceeds the nonrelativistic one at equal
                 ! mu; extend the candidate lower bracket until the sign changes.
@@ -295,7 +295,7 @@ contains
             mu_band = interval(lo%lo, hi%hi)
             need_candidate = .false.
             do
-                call prepare_edges(work, radius, theta, x, rel)
+                call prepare_edges(work, radius, theta, x)
                 call verified_moments(state%theta_bound, interval(mu_band%lo), &
                     state%relativity_bound, rel, radius, &
                     work%edges(:work%cells + 1), enclosed(:1), check)
@@ -375,12 +375,11 @@ contains
 
     end subroutine solve_fermi_gas
 
-    subroutine prepare_nodes(work, theta, radius, x, rel)
+    subroutine prepare_nodes(work, theta, radius, x)
         type(fermi_workspace_t), intent(inout) :: work
         real(dp), intent(in) :: theta, radius, x
-        logical, intent(in) :: rel
-        real(dp) :: window(4)
-        integer :: counts(3), first, j
+        real(dp) :: window(5)
+        integer :: count, first, j
         logical :: graded
         if (work%cached_nodes == work%candidate_nodes) then
             if (work%cached_theta <= theta .and. work%cached_theta >= theta) then
@@ -389,16 +388,15 @@ contains
                     return
             end if
         end if
-        call graded_window(theta, radius, x, rel, window, graded)
+        call graded_window(theta, radius, x, window, graded)
         if (graded) then
-            counts = [work%candidate_nodes/4, work%candidate_nodes/2, &
-                      work%candidate_nodes/4]
+            count = work%candidate_nodes/4
             first = 1
-            do j = 1, 3
-                call gauss_legendre_ab(counts(j), window(j), window(j + 1), &
-                    work%nodes(first:first + counts(j) - 1), &
-                    work%weights(first:first + counts(j) - 1))
-                first = first + counts(j)
+            do j = 1, 4
+                call gauss_legendre_ab(count, window(j), window(j + 1), &
+                    work%nodes(first:first + count - 1), &
+                    work%weights(first:first + count - 1))
+                first = first + count
             end do
         else
             call gauss_legendre_ab(work%candidate_nodes, 0.0_dp, radius, &
@@ -410,23 +408,22 @@ contains
         work%nodes_relativity = x
     end subroutine prepare_nodes
 
-    subroutine prepare_edges(work, radius, theta, x, rel)
+    subroutine prepare_edges(work, radius, theta, x)
         type(fermi_workspace_t), intent(inout) :: work
         real(dp), intent(in) :: radius, theta, x
-        logical, intent(in) :: rel
-        real(dp) :: window(4)
-        integer :: j, segment, counts(3), first
+        real(dp) :: window(5)
+        integer :: j, segment, count, first
         logical :: graded
-        call graded_window(theta, radius, x, rel, window, graded)
+        call graded_window(theta, radius, x, window, graded)
         if (graded) then
-            counts = [work%cells/4, work%cells/2, work%cells/4]
+            count = work%cells/4
             first = 1
-            do segment = 1, 3
-                do j = 0, counts(segment) - 1
-                    call fermi_rel_grid(real(j, dp), real(counts(segment), dp), &
+            do segment = 1, 4
+                do j = 0, count - 1
+                    call fermi_rel_grid(real(j, dp), real(count, dp), &
                         window(segment), window(segment + 1), work%edges(first + j))
                 end do
-                first = first + counts(segment)
+                first = first + count
             end do
         else
             do j = 1, work%cells + 1
@@ -438,23 +435,26 @@ contains
         work%edges(work%cells + 1) = radius
     end subroutine prepare_edges
 
-    !> Relativistic degenerate states use a three-segment mesh around the cold
-    !> Fermi surface; it changes only where cells are placed, not the bounds.
-    pure subroutine graded_window(theta, radius, x, rel, window, use)
+    !> Degenerate states (relativistic or not) use a four-segment mesh with
+    !> equal counts, split at the cold Fermi surface r=1 inside a window of
+    !> fermi_rel_window halfwidth. One Gauss rule across the whole window
+    !> leaves the occupation-derivative peak at its sparse centre (relative
+    !> susceptibility error 1.6e-3 for 64 nodes); splitting at the peak puts
+    !> it where the nodes cluster. Only cell placement changes, not bounds.
+    pure subroutine graded_window(theta, radius, x, window, use)
         real(dp), intent(in) :: theta, radius, x
-        logical, intent(in) :: rel
-        real(dp), intent(out) :: window(4)
+        real(dp), intent(out) :: window(5)
         logical, intent(out) :: use
         real(dp) :: halfwidth
         use = .false.
         window = 0.0_dp
-        if (.not. rel) return
         call fermi_rel_window(theta, x, halfwidth)
-        if (.not. ieee_is_finite(halfwidth) .or. halfwidth >= 0.5_dp) return
-        call fermi_root_band(1.0_dp, halfwidth, window(2), window(3))
-        window(4) = radius
-        if (.not. (window(2) > 0.0_dp .and. window(3) > window(2) .and. &
-                   radius > window(3))) return
+        if (.not. ieee_is_finite(halfwidth) .or. halfwidth >= 1.0_dp) return
+        call fermi_root_band(1.0_dp, halfwidth, window(2), window(4))
+        window(3) = 1.0_dp
+        window(5) = radius
+        if (.not. (window(2) > 0.0_dp .and. window(4) > window(2) .and. &
+                   radius > window(4))) return
         use = .true.
     end subroutine graded_window
 
