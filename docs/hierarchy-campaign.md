@@ -207,3 +207,39 @@ run from the repository root and must reproduce committed leaves exactly.
   /Users/ert/code/lazy-fortran/fortnum-symmetric-eigen) to FortNum main;
   the Q4 branch pins it. Q4 open: Theta=0.5 N=3/4 thermal rows unconverged
   (indicators only); response only at q=(100).
+- 2026-10-06 (worker, C3/C4, branch worktree-agent-a6bde7f3f0e416042):
+  periodic electron OCP, bare Coulomb, no softening. New `src/pme.f90`
+  (cell-list real space + B-spline PME, energy-optimal influence function,
+  parameters from an rms force tolerance via Kolafa-Perram + exact reciprocal
+  pair-error functional, factor-2 margin for the unestimated mesh self force),
+  `src/near_encounter.f90` (exact C2 near/far split of the pair interaction;
+  Strang far-kick / cluster-substepped near flow; verified cluster
+  completeness, fail closed; tangent with frozen structure), `src/ocp.f90`,
+  `src/vlasov_response.f90` (Z function, Landau root, Volterra linear Vlasov
+  IVP), `src/pair_correlation.f90`, `gen/gen_ocp.f90` (B-spline weights,
+  assignment factor, switch pair, periodic Debye Green function terms,
+  DH/Bohm-Gross oracles); nbody gains the mesh action, fixed particles and
+  the encounter split. Tests `test_pme`, `test_ocp` (30/30 incl. merge,
+  Release and Debug). Fixed-step KDK heats Lambda=100 by ~20% in 10/omega_p
+  (dt 0.05 and 0.01) - the reason for the split; with it |dE|/(N T) ~1e-4.
+  PME vs direct Ewald (tol 1e-4): measured rms/F0 4.9e-5..5.9e-5 for N up
+  to 6400, estimate 3.9e-5..4.8e-5. Cost ~4.5 us/particle per force,
+  ~7 us per step, tangent step ~4x, N^1.05 from 800 to 100000 (one core).
+  C3 clean (k lambda_D=0.3, Lambda=10, N=91870, 6 members, paired common
+  random numbers): omega=1.1622+-0.0040, gamma=0.0152+-0.0033 (95% stat.)
+  vs Landau 1.1599/0.0126, Bohm-Gross 1.127 excluded; Vlasov IVP inside the
+  band at 95% of samples. C3 Landau (k lambda_D=0.5, Lambda=20, N=39688,
+  8 members): mean follows the Vlasov IVP to 0.025 for t<=6 (damping from
+  1 to the noise floor ~0.05); late-window fits noise-dominated (damping
+  rate not resolved at eps=0.01). Trajectory tangent dR/deps agrees with the
+  paired estimator to t~2, then grows ~exp(2 t): chaos limits trajectory
+  JVPs to a few 1/omega_p. C4 (L=4, kappa=r_nl/lambda_D=0.05): mean-profile
+  fit lambda=1.02/1.14/1.02 for Lambda=100/300/1000; member mean
+  1.19+-0.37/1.25+-0.44/1.08+-0.51 (95% stat.); mean z^2 vs periodic
+  reference 0.8/1.6/1.0; kappa=0.1 gives 0.80+-0.14 (nonlinear response
+  inside the window: linearity gate fails as expected). Fluctuation gate
+  S(2 pi/L) = 0.78/0.85/1.28 vs DH 0.71 and C3 S(k_min) elevated: weakly
+  damped long-wavelength modes are not relaxed by 5/omega_p thermostat
+  equilibration. Open: longer/low-k-aware equilibration, jackknife interval
+  of the mean-profile fit, Landau-rate fit at larger eps or ensemble, VJP of
+  the split step, quiet start. Docs: docs/ocp-microscopic.md.
