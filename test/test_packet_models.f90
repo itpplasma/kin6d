@@ -314,6 +314,9 @@ contains
                    a(9)%width_asymmetry)
         spec%metric_engine = .false.; spec%k = 4
         spec%rtol = 1.0e-10_dp; spec%atol = 1.0e-12_dp
+        ! Tikhonov regularization is not variational: conservation is checked at
+        ! eps = 1e-10 (M4 production default 1e-6 trades it for step size).
+        spec%regularization = 1.0e-10_dp
         erre = 0; errn = 0
         do im = 1, 4
             spec%model = models(im)
