@@ -70,6 +70,22 @@ kept separate from promoted claims. The `math-frontier`, `proof-audit` and
 - `theory/derivations/` FortSym derivation programs run in CI;
 - `proof/` the existing Lean package, extended per claim.
 
+## Shared map with the courses
+
+One map serves research and teaching. Its node and edge registry (ids, names,
+key equations, orderings, course coverage and public evidence) lives in the
+public plasma Skript (`map/plasma-models.yaml`) and is rendered there as an
+interactive page and a static overview figure. The Plasma Physics, Fusion
+Physics and Kinetic Theory courses tag the nodes and edges they cover; their
+derivations are checked with SymPy, which is the course-level tool.
+
+KIN6D does not copy the registry. Its theory claims, FortSym derivations,
+Lean proofs and defect experiments attach to the same node and edge ids.
+Because KIN6D is private, the public map shows research status as text only
+and never links into this repository. Where a course SymPy derivation and a
+KIN6D FortSym derivation cover the same edge, each is an independent oracle
+for the other.
+
 ## Objects
 
 - **Node:** a model with its state variables, equations, invariants and
