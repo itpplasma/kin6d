@@ -278,8 +278,10 @@ contains
             call plot(etas, bnd(shown(j), :), label=model_label(shown(j))//' estimator', &
                       linestyle='--', marker='x', color=okabe(col(j)))
         end do
+        call plot(etas, 2 + 0*etas, label='2: trivial bound', linestyle=':', &
+                  color=okabe(7))
         call set_xscale('log'); call set_yscale('log')
-        call legend(loc='lower left')
+        call legend(loc='upper left')
         call subplot(1, 2, 2)
         call title('angular-bin error $\sum_b |P_b - P_b^{Q1}|$')
         call xlabel('Sommerfeld $\eta$'); call ylabel('total-variation distance (36 bins)')
@@ -314,7 +316,7 @@ contains
             call plot(theta, max(bins_ref(:, 1, ie), ymin), label='Q1 reference', &
                       linestyle='--', color=okabe(7))
             call set_yscale('log'); call ylim(ymin, 1.5_dp)
-            call legend(loc='upper right')
+            call legend(loc='lower left')
             call subplot(2, 2, 2*ip)
             write (arg, '(a,f4.1,a)') 'singlet / triplet, $\eta$ = ', etas(ie)
             call title(trim(arg))
@@ -329,7 +331,7 @@ contains
             call plot(theta, max(bins_ref(:, 3, ie), ymin), label='Q1 triplet', &
                       linestyle=':', color=okabe(7))
             call set_yscale('log'); call ylim(ymin, 1.5_dp)
-            call legend(loc='upper right')
+            call legend(loc='lower center')
         end do
         call suptitle('Q2 packet models vs the Q1 partial-wave reference (b = 0)')
         call tight_layout()
@@ -403,7 +405,7 @@ contains
         type(animation_t) :: anim
         call setup_case(1.0_dp, 0.0_dp, enc, t)
         mv_lambdabar = enc%lambdabar; mv_speed = enc%speed; mv_z0 = enc%cfg%z0
-        lr = min(enc%mesh%rmax, 1.6_dp*enc%cfg%z0)
+        lr = min(enc%mesh%rmax, 1.8_dp*enc%cfg%z0)
         do ix = 0, npx
             xe(ix) = -lr + 2*lr*ix/npx
         end do
@@ -470,7 +472,7 @@ contains
         do p = 1, 3
             call subplot(1, 3, p)
             call title(trim(names(p)))
-            call xlabel('$x/\bar\lambda$'); call ylabel('$z/\bar\lambda$')
+            call xlabel('$k x$'); call ylabel('$k z$')
             call pcolormesh(xe/mv_lambdabar, xe/mv_lambdabar, img(:, :, p, f), cmap='viridis', &
                             vmin=vlo, vmax=vhi)
             call xlim(xe(0)/mv_lambdabar, xe(npx)/mv_lambdabar)
