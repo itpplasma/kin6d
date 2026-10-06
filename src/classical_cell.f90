@@ -239,7 +239,7 @@ contains
     !> reweight (Coulomb model) adds the Wigner--Kirkwood and leading-order
     !> exchange reweighted g and the covariance derivative dg/dbeta.
     subroutine classical_cell_mc(cell, edges, sweeps, equilibration, batches, &
-                                 seed, mc, ok, reweight)
+                                 seed, mc, ok, reweight, sample_seconds, summary_seconds)
         type(classical_cell_t), intent(inout) :: cell
         real(dp), intent(in) :: edges(:)
         integer, intent(in) :: sweeps, equilibration, batches
@@ -247,12 +247,14 @@ contains
         type(classical_mc_t), intent(out) :: mc
         logical, intent(out) :: ok
         logical, intent(in), optional :: reweight
+        real(dp), intent(out), optional :: sample_seconds, summary_seconds
         integer, allocatable :: q(:, :), triple(:, :)
         real(dp), allocatable :: x(:), pe(:, :), bg(:, :), bwk(:, :), bx(:, :), &
             bp(:, :), bd(:, :), bf2(:, :), bf3(:, :), be(:, :), cnt(:), f(:)
         real(dp), allocatable :: s_c(:), s_cwk(:), s_cx(:), s_cp(:), s_ce(:)
         real(dp), allocatable :: s_f2(:), s_f3(:), tmp(:), tmp_err(:)
         complex(dp), allocatable :: rho(:)
+        real(dp) :: clock_start, clock_summary, clock_end
         real(dp) :: step, trial(3), du, u, unew(64), e_total, s_wk, s_x, s_p, s_e
         real(dp) :: w_wk, w_x, lap, grad2, pot, norm, r, accepted, attempts
         integer(i64) :: state(2)
@@ -261,6 +263,9 @@ contains
         logical :: rw, move_ok
 
         ok = .false.
+        if (present(sample_seconds)) sample_seconds = 0
+        if (present(summary_seconds)) summary_seconds = 0
+        call cpu_time(clock_start)
         rw = .false.
         if (present(reweight)) rw = reweight .and. cell%model == model_coulomb
         n = cell%n; nb = size(edges) - 1
@@ -390,6 +395,7 @@ contains
                 be(1, b) = s_e/per
             end if
         end do
+        call cpu_time(clock_summary)
         mc%acceptance = accepted/max(1.0_dp, attempts); mc%step = step
         mc%samples = per*batches
         call batch_stats(bg, mc%g, mc%g_err)
@@ -404,6 +410,9 @@ contains
         call jackknife_norm(bf2, mc%c2, mc%c2_err)
         mc%c3 = 0; mc%c3_err = 0
         if (n >= 3) call jackknife_norm(bf3, mc%c3, mc%c3_err)
+        call cpu_time(clock_end)
+        if (present(sample_seconds)) sample_seconds = clock_summary - clock_start
+        if (present(summary_seconds)) summary_seconds = clock_end - clock_summary
         ok = all(ieee_is_finite(mc%g)) .and. ieee_is_finite(mc%c2)
     end subroutine
 

@@ -451,3 +451,10 @@ target_link_libraries(correlation_map_classical_demo PRIVATE kin6d kin6d_io fort
 if(OpenMP_Fortran_FOUND)
     target_link_libraries(correlation_map_classical_demo PRIVATE OpenMP::OpenMP_Fortran)
 endif()
+
+# Error-control surveys are explicit performance runs, never timing tests.
+add_library(error_benchmark_support app/error_benchmark_support.f90)
+foreach(survey continuum quantum microscopic)
+    add_executable(benchmark_error_${survey} app/benchmark_error_${survey}.f90)
+    target_link_libraries(benchmark_error_${survey} PRIVATE kin6d error_benchmark_support)
+endforeach()
