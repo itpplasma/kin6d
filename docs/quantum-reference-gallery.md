@@ -137,7 +137,12 @@ Fourier coefficients a_d, the curvature bound is
 `sum_d (2*pi*d_x)**2*(abs(Re(a_d))+abs(Im(a_d)))`.
 Add M*gap^2/8 using the maximum actual represented plotting gap. This concerns
 the smoothly translated slab functional; it does not reinterpret a coarse
-histogram as a point density. Discrete orbital occupations use error bars.
+histogram as a point density. Discrete orbital occupations use error bars on
+a log axis, restricted to the orbitals that reach occupation 1e-4; a fourth
+panel follows the depletion 1 - n_0 and one orbital per shell |k|^2 = 1-3
+with their bands (display floor 1e-6). The uniform one-body density is not
+plotted. The movie runs at 24 fps and shows each certified frame for three
+video frames (no interpolation), then holds the last frame for 1 s.
 
 The default requested radius is 1% of scale 1 plus an absolute floor 1e-12.
 A Hamiltonian row-norm scale chooses a starting work estimate; the app
