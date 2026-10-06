@@ -284,24 +284,33 @@ contains
     contains
         subroutine uniform_sum(p, r)
             real(dp), intent(in) :: p, r
-            integer :: cells, c, j
+            integer :: cells, c, j, rule
             real(dp) :: left, half, mid, start, finish
             cells = max(1, ceiling((r - p)/step))
-            do c = 1, cells
-                left = p + (r - p)*(c - 1)/cells
-                half = 0.5_dp*(r - p)/cells
-                mid = left + half
-                if (present(estimator_seconds)) call cpu_time(start)
-                do j = 1, low_order
-                    total(1) = total(1) + half*state%wl(j)*f(mid + half*state%xl(j))
+            ! Keep each rule's summation order, grouping its cells so optional
+            ! profiling uses one clock pair per panel rather than per cell.
+            do rule = 1, 2
+                if (rule==1.and.present(estimator_seconds)) call cpu_time(start)
+                do c = 1, cells
+                    left = p + (r - p)*(c - 1)/cells
+                    half = 0.5_dp*(r - p)/cells
+                    mid = left + half
+                    if (rule==1) then
+                        do j = 1, low_order
+                            total(1) = total(1) + half*state%wl(j)* &
+                                f(mid + half*state%xl(j))
+                        end do
+                    else
+                        do j = 1, high_order
+                            total(2) = total(2) + half*state%wh(j)* &
+                                f(mid + half*state%xh(j))
+                        end do
+                    end if
                 end do
-                if (present(estimator_seconds)) then
+                if (rule==1.and.present(estimator_seconds)) then
                     call cpu_time(finish)
                     estimator_seconds = estimator_seconds+finish-start
                 end if
-                do j = 1, high_order
-                    total(2) = total(2) + half*state%wh(j)*f(mid + half*state%xh(j))
-                end do
             end do
         end subroutine
     end subroutine
