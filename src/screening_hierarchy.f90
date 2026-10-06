@@ -264,52 +264,53 @@ contains
                 real(dp), intent(in) :: r
             end function
         end interface
-        real(dp) :: lo, hi, width
-        integer :: level, levels
+        real(dp) :: lo, hi, width, start, finish
+        integer :: level, levels, rule
         if (b <= a) return
         width = b - a
         levels = grading_levels(a, b, toward)
-        do level = 1, levels
-            if (toward == 0) then
-                lo = a; hi = b
-            else if (toward == 1) then
-                lo = a + width*grading**level; hi = a + width*grading**(level - 1)
-                if (level == levels) lo = a
-            else
-                lo = b - width*grading**(level - 1); hi = b - width*grading**level
-                if (level == levels) hi = b
+        ! Preserve each rule's addition order. One clock pair covers its whole
+        ! graded integral; small panels must not be dominated by timer calls.
+        do rule = 1, 2
+            if (rule==1.and.present(estimator_seconds)) call cpu_time(start)
+            do level = 1, levels
+                if (toward == 0) then
+                    lo = a; hi = b
+                else if (toward == 1) then
+                    lo = a + width*grading**level
+                    hi = a + width*grading**(level - 1)
+                    if (level == levels) lo = a
+                else
+                    lo = b - width*grading**(level - 1)
+                    hi = b - width*grading**level
+                    if (level == levels) hi = b
+                end if
+                call uniform_sum(lo, hi, rule)
+            end do
+            if (rule==1.and.present(estimator_seconds)) then
+                call cpu_time(finish)
+                estimator_seconds = estimator_seconds+finish-start
             end if
-            call uniform_sum(lo, hi)
         end do
     contains
-        subroutine uniform_sum(p, r)
+        subroutine uniform_sum(p, r, rule)
             real(dp), intent(in) :: p, r
-            integer :: cells, c, j, rule
-            real(dp) :: left, half, mid, start, finish
+            integer, intent(in) :: rule
+            integer :: cells, c, j
+            real(dp) :: left, half, mid
             cells = max(1, ceiling((r - p)/step))
-            ! Keep each rule's summation order, grouping its cells so optional
-            ! profiling uses one clock pair per panel rather than per cell.
-            do rule = 1, 2
-                if (rule==1.and.present(estimator_seconds)) call cpu_time(start)
-                do c = 1, cells
-                    left = p + (r - p)*(c - 1)/cells
-                    half = 0.5_dp*(r - p)/cells
-                    mid = left + half
-                    if (rule==1) then
-                        do j = 1, low_order
-                            total(1) = total(1) + half*state%wl(j)* &
-                                f(mid + half*state%xl(j))
-                        end do
-                    else
-                        do j = 1, high_order
-                            total(2) = total(2) + half*state%wh(j)* &
-                                f(mid + half*state%xh(j))
-                        end do
-                    end if
-                end do
-                if (rule==1.and.present(estimator_seconds)) then
-                    call cpu_time(finish)
-                    estimator_seconds = estimator_seconds+finish-start
+            do c = 1, cells
+                left = p + (r - p)*(c - 1)/cells
+                half = 0.5_dp*(r - p)/cells
+                mid = left + half
+                if (rule==1) then
+                    do j = 1, low_order
+                        total(1) = total(1) + half*state%wl(j)*f(mid + half*state%xl(j))
+                    end do
+                else
+                    do j = 1, high_order
+                        total(2) = total(2) + half*state%wh(j)*f(mid + half*state%xh(j))
+                    end do
                 end if
             end do
         end subroutine
