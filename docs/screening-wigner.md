@@ -143,9 +143,9 @@ and their tangents). CTest: `test_screening` takes 3.5 s and `test_wigner`
   finding above.
 - 1D modal Poisson is a fourth local copy (gen_poisson, shielding, Q7); it
   needs one symbolic definition.
-- fortplot at 87ff7a4 applied log scales figure-wide and drew lines outside
-  the axes. The screening figure therefore plots log10 data with explicit
-  clipping; recheck with the new pin.
+- The screening figure uses per-panel log axes (fortplot 5380eb6). Panel 3
+  floors |phi/phi_bare| at 1e-8 and panel 4 clips to its y range for display
+  only; the CSV/NetCDF data are unclipped.
 - No rigorous enclosure for the Lindhard quadrature (singular integrands) or
   for the Wigner run; a static local-field correction and an interacting
   RPA/HF comparison (QG7 next step) are not implemented.
