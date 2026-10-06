@@ -38,7 +38,7 @@ program correlation_map_classical_demo
     integer :: equilibration = 2000, production = 10000, batches = 20
     integer :: sample_every = 5, force_every = 10
     real(dp) :: tolerance = 1.0e-5_dp, triplet_rmax = 3.0_dp, pair_width = 0.05_dp
-    integer :: triplet_bins = 15, triplet_sub = 8
+    integer :: triplet_bins = 15, triplet_sub = 32
     integer(int64) :: seed = 20261006_int64
     real(dp) :: md_gamma = 1.0_dp, md_equilibration = 50.0_dp, md_time = 1000.0_dp
     integer :: md_particles = 500
@@ -345,6 +345,18 @@ contains
         out(O_C3) = triplet_norm(c%tri, g3 - kp)
         out(O_U3) = triplet_norm(c%tri, g3 - lp)
         out(O_RED) = triplet_norm(c%tri, kp - lp)
+        ! Core-excluded sizes (all sides >= 0.4a): separates the near-contact
+        ! region, where the g2 table (width pair_width) resolves exp(-Gamma/r)
+        ! poorly at weak coupling.
+        where (c%tri%volume > 0) cen = 1
+        cen(1:2, :, :) = 0; cen(:, 1:2, :) = 0; cen(:, :, 1:2) = 0
+        out(O_C3OUT) = triplet_norm(c%tri, (g3 - kp)*cen)
+        out(O_U3OUT) = triplet_norm(c%tri, (g3 - lp)*cen)
+        out(O_REDOUT) = triplet_norm(c%tri, (kp - lp)*cen)
+        ! Resolution indicator: ||c3|| from the same counts merged into
+        ! 3x3x3 blocks (bin width 3 rmax/bins).
+        out(O_C3COARSE) = coarse_c3(c, tc, snaps, r, g)
+        call triplet_references(c%tri, r, g, kp, lp, cen)
         wt = sum(kp*c%tri%volume, mask=kp > 1.0e-3_dp)
         out(O_DK) = sqrt(sum((g3 - kp)**2/kp*c%tri%volume, mask=kp > 1.0e-3_dp)/wt)
         ! Exact YBG: conditional mean force where >= 20 pair samples.
@@ -393,6 +405,30 @@ contains
         c%bin_indicator = triplet_norm(c%tri, kp - cen)
     end subroutine
 
+    real(dp) function coarse_c3(c, tc, snaps, r, g) result(norm)
+        type(chain_t), intent(inout) :: c
+        real(dp), intent(in) :: tc(:, :, :), r(:), g(:)
+        integer, intent(in) :: snaps
+        real(dp), allocatable :: cc(:, :, :), g3(:, :, :), kp(:, :, :), lp(:, :, :), &
+            cen(:, :, :)
+        integer :: m, a, b, d
+        m = c%tri%bins/3
+        if (.not. allocated(c%coarse%volume)) call triplet_init(c%coarse, m, &
+            3*m*c%tri%rmax/c%tri%bins, triplet_sub)
+        allocate (cc(m, m, m), g3(m, m, m), kp(m, m, m), lp(m, m, m), cen(m, m, m))
+        do d = 1, m
+            do b = 1, m
+                do a = 1, m
+                    cc(a, b, d) = sum(tc(3*a - 2:3*a, 3*b - 2:3*b, 3*d - 2:3*d))
+                end do
+            end do
+        end do
+        call triplet_distribution(c%coarse, cc, snaps, c%n, c%length, g3)
+        g3 = g3*(c%n - 1)*real(c%n - 2, dp)/real(c%n, dp)**2
+        call triplet_references(c%coarse, r, g, kp, lp, cen)
+        norm = triplet_norm(c%coarse, g3 - kp)
+    end function
+
     !> sqrt(n int (x - g)^2 d3r) on the pair table.
     real(dp) function l2(r, x, g, dr)
         real(dp), intent(in) :: r(:), x(:), g(:), dr
@@ -411,7 +447,7 @@ contains
         write (unit, '(a)', advance='no') 'gamma,N,L,alpha,ewald_pair_bound,nk,acceptance,'// &
             'step,wall_s,u,u_err_tau,u_err_batch,tau,ess,var_betaU_per_N,var_err,'// &
             'dudg_fluct,dudg_err,u_lit_pc2000,dudg_lit,u_hnc,u_dh,u_tail_hnc,'// &
-            'energy_drift,bin_indicator_sq'
+            'energy_drift,kirkwood_centre_minus_bin_sq'
         do j = 1, nouts
             write (unit, '(a)', advance='no') ','//trim(output_names(j))//','// &
                 trim(output_names(j))//'_err'
@@ -490,6 +526,16 @@ contains
             write (unit, '(es14.6,",",es14.6)') md%r(k), md%g(k)
         end do
         close (unit)
+        ! Weak-coupling power laws of the sizes (N1 chains): ||X|| = A Gamma^p
+        ! over Gamma <= 1 (Gamma <= 3 for c3, which is unresolved at 0.1).
+        open (newunit=unit, file='output/correlation-map-scaling.csv', status='replace')
+        write (unit, '(a)') 'quantity,gamma_max,exponent,exponent_err,amplitude,points'
+        call fit_row(unit, 'h2', O_H2, 1.0_dp)
+        call fit_row(unit, 'reducible', O_RED, 1.0_dp)
+        call fit_row(unit, 'ursell_u3', O_U3, 1.0_dp)
+        call fit_row(unit, 'connected_c3', O_C3, 3.0_dp)
+        call fit_row(unit, 'connected_c3_strong', O_C3, 30.0_dp)
+        close (unit)
         ! Finite-size check: two N and the linear 1/N extrapolation of u.
         open (newunit=unit, file='output/correlation-map-finite-size.csv', status='replace')
         write (unit, '(a)') 'gamma,u_N1,err_N1,u_N2,err_N2,u_extrap_1_over_N,err_extrap,'// &
@@ -506,6 +552,22 @@ contains
             end associate
         end do
         close (unit)
+    end subroutine
+
+    subroutine fit_row(unit, name, idx, gmax)
+        integer, intent(in) :: unit
+        character(*), intent(in) :: name
+        integer, intent(in) :: idx
+        real(dp), intent(in) :: gmax
+        real(dp) :: y(ng), e(ng), p, a, pe
+        integer :: i, used, m
+        m = count(chains(1:ng)%gamma <= gmax)
+        do i = 1, ng
+            y(i) = sqrt(max(chains(i)%out(idx), 0.0_dp))
+            e(i) = chains(i)%out_err(idx)/(2*max(y(i), 1.0e-300_dp))
+        end do
+        call power_fit(chains(1:m)%gamma, y(1:m), e(1:m), p, a, pe, used)
+        write (unit, '(a,",",f0.2,3(",",es14.6),",",i0)') name, gmax, p, pe, a, used
     end subroutine
 
     subroutine write_result(chains, ng, md)

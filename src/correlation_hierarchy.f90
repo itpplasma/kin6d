@@ -7,8 +7,10 @@
 !>   rmax/bins in each side (fully permutation-symmetric histogram), and its
 !>   exact ideal-gas normalization: for one centre, the measure of ordered
 !>   partner pairs is d3r2 d3r3 = 8 pi^2 r12 r13 r23 dr12 dr13 dr23 on the
-!>   triangle domain, integrated per bin by a midpoint sub-grid (sub^3
-!>   points; the sub/2 grid gives the bin-discretization indicator);
+!>   triangle domain, integrated per bin by a midpoint sub-grid in r12, r13
+!>   (sub^2 points) and, in r23, 4-point Gauss-Legendre on the bin range
+!>   clipped to the triangle inequality (the indicator is integrated
+!>   exactly); the sub/2 grid gives the quadrature indicator;
 !> - bin averages over the same measure of the Kirkwood product
 !>   K = g12 g13 g23 and of the cumulant-truncation reference
 !>   P = 1 + h12 + h13 + h23, from a fine g2 table; from these the connected
@@ -82,7 +84,7 @@ contains
         end function
     end subroutine
 
-    !> int_bin w f with w = r1 r2 r3 [triangle] (midpoint rule, sub^3 points).
+    !> int_bin w f with w = r1 r2 r3 [triangle] (see module header).
     real(dp) function bin_average(t, sub, a, b, c, f) result(s)
         type(triplet_histogram_t), intent(in) :: t
         integer, intent(in) :: sub, a, b, c
@@ -92,17 +94,25 @@ contains
                 real(dp), intent(in) :: r1, r2, r3
             end function
         end interface
-        real(dp) :: h, d, r1, r2, r3
+        real(dp), parameter :: x4(4) = [-0.8611363115940526_dp, -0.3399810435848563_dp, &
+            0.3399810435848563_dp, 0.8611363115940526_dp]
+        real(dp), parameter :: w4(4) = [0.3478548451374538_dp, 0.6521451548625461_dp, &
+            0.6521451548625461_dp, 0.3478548451374538_dp]
+        real(dp) :: h, d, r1, r2, r3, lo, hi
         integer :: i, j, k
         h = t%rmax/t%bins; d = h/sub; s = 0
-        do k = 1, sub
-            r3 = (c - 1)*h + (k - 0.5_dp)*d
-            do j = 1, sub
-                r2 = (b - 1)*h + (j - 0.5_dp)*d
-                do i = 1, sub
-                    r1 = (a - 1)*h + (i - 0.5_dp)*d
-                    if (r1 > r2 + r3 .or. r2 > r1 + r3 .or. r3 > r1 + r2) cycle
-                    s = s + r1*r2*r3*f(r1, r2, r3)
+        do j = 1, sub
+            r2 = (b - 1)*h + (j - 0.5_dp)*d
+            do i = 1, sub
+                r1 = (a - 1)*h + (i - 0.5_dp)*d
+                ! r3 over the bin clipped to the triangle range [|r1-r2|, r1+r2]:
+                ! the indicator is integrated exactly, 4-point Gauss-Legendre
+                ! for r3 f (exact for the measure).
+                lo = max((c - 1)*h, abs(r1 - r2)); hi = min(c*h, r1 + r2)
+                if (hi <= lo) cycle
+                do k = 1, 4
+                    r3 = (lo + hi)/2 + (hi - lo)/2*x4(k)
+                    s = s + w4(k)*(hi - lo)/2/d*r1*r2*r3*f(r1, r2, r3)
                 end do
             end do
         end do
