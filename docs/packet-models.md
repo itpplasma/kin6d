@@ -53,15 +53,20 @@ r_h = i hbar da_m/dt - H_h a_m. P is linear and time independent, so
 
   ||a_m(t) - a_ref(t)|| <= ||a_m(0) - a_ref(0)|| + (1/hbar) int_0^t ||r_h|| ds
 
-is a bound in the represented space (binary64; time integral by trapezoid
-over the samples, a quadrature of a smooth integrand, not enclosed). The
+is a mathematical bound in the represented space. The implemented binary64
+residual and trapezoidal time integral are not enclosed: the computed Q2
+quantity is an **indicator**, not a certificate or validated approximate
+bound. No epsilon_b is established for omitted quadrature/arithmetic terms.
+The
 initial term equals Q1's spectral-window defect (about 1.4e-6). For M2
 the CM factor's free-Hamiltonian residual sqrt(6) s |c2| (closed form) is
 added in quadrature (Dirac-Frenkel phases split so the cross term vanishes).
 Bounded observables follow: |dP_bin| <= 2e + e^2 (sector radius formula).
 Not bounded: the Q1 discretization error versus the continuum and the
 projection defect of the model state (both reported as indicators). The
-estimator includes regularization and integration error automatically.
+residual responds to regularization and candidate integration error, but its
+own numerical evaluation error remains unbounded. The measured checkpoint
+cost and default schedule are in [error-control-strategy.md](error-control-strategy.md).
 
 ## Results (b = 0, Q1 eta scan parameters, t = 2 z0/v)
 

@@ -62,6 +62,12 @@ Every reported output carries one of these labels, following AGENTS.md:
   jackknife); never a deterministic certificate;
 - *candidate*: a fast result without any of the above.
 
+`approximate-bound` additionally reports epsilon_b and its justification;
+`probabilistically-certified` additionally reports confidence, quantity and
+algorithmic law. Neither is a deterministic certificate. The
+[error-control strategy](error-control-strategy.md) keeps valid loosening,
+error in the bound, and probability separate and records measured overheads.
+
 ## Implemented cases
 
 Gate IDs QG0--QG8 are the original plan names; Q/C/H IDs are the campaign case
@@ -207,6 +213,14 @@ has a scale, an absolute floor and its own status. Default target: about 1%
 of that scale; bound-evaluation roundoff receives a small fraction of the
 radius. Do not demand a 1% full-state error to deliver a 1% observable, or
 infer the latter from a small diagnostic residual alone.
+
+Default scheduling uses inexpensive indicators continuously and complete
+deterministic checks at final/checkpoint observables. Q0 now uses proved
+aggregate-rounding actions by default, retaining dense strict audits. Its
+approximate mode has a separate epsilon_b gate; its sampled residual norm
+has a law and tail bound but currently poor width. Q1/Q2 unenclosed residual
+inputs/integrals remain indicators. H1 batch intervals remain statistical.
+See the strategy and benchmark ledger for costs, budgets and failed targets.
 
 Maintain separate budgets for numerical evolution; spatial/orbital and
 domain truncation; Hamiltonian/force evaluation; representation transfer;
