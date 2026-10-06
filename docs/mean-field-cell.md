@@ -31,18 +31,29 @@ through the static response (TDH = RPA) and for broken-symmetry states.
 
 ## SCF and multiple solutions
 
-T = 0: Roothaan iterations with fixed aufbau filling per spin, Pulay DIIS
+T = 0: Roothaan iterations with fixed filling per spin, Pulay DIIS
 (8 vectors) on the commutator `F P - P F` and a constant virtual level
-shift; if DIIS oscillates, retries without DIIS and with 4x/16x shifts.
-Converged orbitals are canonicalized inside the occupied and virtual spaces.
+shift. DIIS stalls on the flat landscapes of degenerate open shells, so
+`mf_newton` finishes with trust-region second-order steps
+x = -(A+B)^(-1) F_ov in the eigenbasis of the real orbital Hessian.
 `mf_ground` scans the spin fillings nup = ceil(N/2)..N (RHF: N/2) and
 `nstarts` starts: the plane-wave determinant and symmetry-broken starts
-(eigenvectors of T + E_F R, R a fixed pseudo-random symmetric matrix). The
-lowest converged energy is kept; the number of distinct converged energies
-and of converged runs is reported. The lowest solution is a candidate global
-minimum. The real orbital Hessian (A+B) of the TDHF step gives the lowest
-stability eigenvalue; zero modes (degenerate open-shell families) are
-reported. Mermin: damped density mixing with mu by bisection on 2 sum f = N.
+(eigenvectors of T + E_F R, R a fixed pseudo-random symmetric matrix). Every
+run ends with instability following (steps along negative Hessian modes
+until (A+B) >= 0) and an aufbau-repair attempt. The lowest converged energy
+is kept; the number of distinct converged energies and of converged runs is
+reported. The result is a stable local minimum in the real collinear
+determinant manifold and a candidate global minimum.
+
+Two findings matter for later packet/orbital models. (1) With 19 modes the
+plane-wave UHF determinant of the open shells N = 3, 4 is a saddle (lowest
+Hessian eigenvalue about -2.6e-3 Ha); the stable minimum breaks translation
+symmetry (Phi spans 37-147 total-momentum sectors) already at r_s = 0.5.
+(2) The stable minima are not aufbau (an empty orbital lies below an
+occupied one, e.g. 3.448 vs 3.512 Ha at N = 3, r_s = 1) and refilling
+relaxes back: the no-unfilled-shell theorem needs a pointwise nonnegative
+interaction, and the neutralized periodic Coulomb kernel is not.
+Mermin: damped density mixing with mu by bisection on 2 sum f = N.
 
 ## Error estimator for HF as a model of the full parent
 
@@ -58,7 +69,10 @@ finite-basis statement only under the candidate claim that no eigenvalue of
 the space lies between E0 and the Lanczos E1 (ordering not proved); it is
 labelled "Temple bound, candidate gap input". Kato/Weinstein
 [rho - sigma, rho + sigma] contains some eigenvalue and is only an
-indicator for the ground state. Neither bounds the cutoff error.
+indicator for the ground state. Neither bounds the cutoff error. When Phi
+breaks translation symmetry its space is a union of K sectors whose ground
+states are nearly degenerate, rho >= beta and Temple does not apply; then
+only sigma (indicator) and the variational upper bound remain.
 
 ## Derivatives
 
@@ -78,7 +92,8 @@ minimum is a spin-density wave with zero Hartree energy); Koopmans
 g -> 0: HF = ideal ground energy, TDHF = canonical same-cell Lindhard;
 exchange off: TDH = same-cell RPA (1e-12); homogeneous Hartree energy = 0;
 E_HF >= exact E0 and Temple lower <= sector E0 <= rho; UHF <= RHF;
-Hellmann-Feynman = FD (1e-7); all Slater cumulants vanish (N = 2, 3);
+Hellmann-Feynman = FD (1e-7); 19-mode N = 3 plane-wave saddle followed to
+a lower stable minimum (= <Phi|H|Phi>); all Slater cumulants vanish (N = 2, 3);
 Mermin at g = 0 = ideal grand-canonical energy, Theta -> 0 = RHF,
 dF/dT = -S. `jellium_cumulants` now treats N = 2 (Gamma3 = 0) instead of
 failing.
@@ -89,7 +104,24 @@ failing.
 writes `output/mean-field-{energy,estimator,response,thermal,cumulants,
 derivative,pair-correlation,cost}.csv`, `output/mean_field_cell_demo.nc` and
 `output/mean-field-{correlation,pair-correlation,response,estimator}.png`.
-Key numbers are in the hierarchy-campaign log entry for Q5.
+Default `cutoff = 2` (19 modes, M = 38), r_s = 0.5, 1, 2, 4, 8, about 3 min:
+
+| quantity | N = 2 | N = 3 | N = 4 |
+|---|---|---|---|
+| E_c/N = (E_exact - E_UHF)/N, r_s 0.5 -> 8 [mHa] | -9.3 -> -5.9 | -9.8 -> -6.0 | -29.8 -> -7.9 |
+| Temple bound / true HF error | 1.25 (r_s 0.5) -> 2.2 (r_s 8) | n/a (broken K) | n/a |
+| chi/chi0: exact, TDHF, TDH (= RPA) at r_s 8 | 0.69, 0.66, 0.49 | 0.54, 0.55, 0.32 | 0.34, 0.42, 0.20 |
+| exact |lambda2|/|Gamma2|, r_s 0.5 -> 8 (HF: 0) | 0.03 -> 0.31 | 0.06 -> 0.28 | 0.48 -> 0.53 |
+
+N = 2: E_HF = 0 exactly (both electrons at k = 0, no exchange between
+opposite spins), so E_c = E_exact; HF g_opp = 1 versus an exact Coulomb hole
+g_opp(0.02 L) = 0.86 (r_s 0.5) -> 0.11 (r_s 8); dE_c/dg = -0.036 -> -0.019 Ha.
+TDHF is within 0.1% (r_s 0.5) to 5% (r_s 8) of the exact N = 2 response,
+RPA is 3-30% low. UHF Hellmann-Feynman versus FD: 1e-10 relative. Mermin
+HF versus the exact canonical thermal energy at Theta = 0.5 differs by a
+factor 2.7 for N = 2 at r_s 0.5: the grand-canonical orbital ensemble, not
+exchange, dominates in so small a cell (U_ideal,GC = 6.39 vs U_exact 2.40
+Ha). The exact Theta = 0.5 rows of N = 3, 4 are unconverged (Q4).
 
 ## Open
 
