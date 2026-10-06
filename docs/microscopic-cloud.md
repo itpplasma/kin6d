@@ -48,7 +48,11 @@ derived background directional derivative and the JVP/VJP pairing identity.
 Those tests verify the named cases; they do not certify a 32-electron trajectory.
 
 Run `./build/microscopic_cloud_demo` after the CPU build, or add
-`--snapshot [frame]` for one of frames 1 through 121 without an encoder.
+`--snapshot [frame]` for one of frames 1 through 241 without an encoder.
+Since 2026-10-06 the default records 241 frames of 50 substeps instead of
+121 frames of 100 substeps: the same 12000 steps (identical trajectories and
+energy defect), sampled twice as often for a 10 s movie at 24 fps plus a 1 s
+hold. The cloud panels use equal aspect, so the sphere equator is a circle.
 The Fortran postprocessor writes `output/microscopic-cloud.mp4`, a PNG,
 particle states and CSV diagnostics. These exploratory CSVs are retained
 diagnostic evidence; they do not establish the planned canonical FortIO
