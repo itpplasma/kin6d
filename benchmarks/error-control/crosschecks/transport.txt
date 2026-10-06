@@ -1,0 +1,42 @@
+sampling=cached; immutable_geometry_reused_for_warm_trials
+benchmark=general_damped_transport; nu=1; modes=2; E=0
+source=exact_dyadic_Fourier_x_P1_v; certification=continuous_sup
+goal=normalized_cosine_density; tangent=nu_at_fixed_source
+goal_scale=0.25; derivative_scale=0.25; rtol=0.01; atol=1e-8
+postprocessing=96 whole_x_cell state/tangent bands plus goals
+adjoint_goal_gradient=unavailable; external_speed_rank=unestablished
+standalone primal prepare/reprepare are excluded from combined totals
+cells=64 attributed_real_buffer_bytes=16848 setup_cpu_s=  5.3499999999999989E-04
+owned_basis_workspace_bytes=13824 cache_prepare_cpu_s=  4.9799999999999931E-04
+owned_geometry_interval_bytes=1536
+first_trial,cells,evaluator,setup_cpu_s,cache_prepare_cpu_s,first_pipeline_cpu_s,setup_plus_first_pipeline_cpu_s
+1,64,bernstein,  4.9299999999999951E-04,  4.8500000000000019E-04,  2.8200000000000013E-04,  7.7499999999999965E-04
+2,64,bernstein,  4.8899999999999985E-04,  4.8500000000000019E-04,  2.8300000000000027E-04,  7.7200000000000012E-04
+3,64,bernstein,  5.0299999999999997E-04,  4.9999999999999958E-04,  2.7399999999999994E-04,  7.7699999999999991E-04
+evaluator=bernstein state_radius=  3.8984020059891483E-04 nu_tangent_radius=  9.2504017592987236E-04
+last_first_trial_pipeline_cpu_s=  2.7399999999999994E-04 setup_plus_first_pipeline_cpu_s=  7.7699999999999991E-04 requested_targets_met=T
+Q_interval=  1.9555968792223666E-01  1.9711904872463512E-01
+dQ_dnu_interval= -1.2683990881957574E-01 -1.2313974811585487E-01
+Q normalized_radius_upper=  3.1187216047969821E-03 target_lower=  2.5000099999999991E-03 requested_radius_met=T
+dQ_dnu normalized_radius_upper=  7.4003214074417362E-03 target_lower=  2.5000099999999991E-03 requested_radius_met=T
+trial,cells,evaluator,solve_cpu_s,prepare_cpu_s,accept_reprepare_cpu_s,tangent_solve_cpu_s,tangent_prepare_cpu_s,band_postprocess_cpu_s,prepared_target_accept_cpu_s,combined_warm_cpu_s,setup_plus_warm_cpu_s
+1,64,bernstein,  1.8000000000000654E-06,  7.0000000000000617E-05,  6.8999999999999617E-05,  2.4000000000001452E-06,  1.9799999999999852E-04,  7.0999999999999883E-05,  2.9999999999995308E-07,  2.7349999999999857E-04,  7.7649999999999855E-04
+2,64,bernstein,  1.8000000000000654E-06,  7.0000000000000617E-05,  7.0999999999999883E-05,  2.3000000000000449E-06,  1.9599999999999999E-04,  6.9999999999998883E-05,  2.0000000000002654E-07,  2.7029999999999898E-04,  7.7329999999999890E-04
+3,64,bernstein,  1.6999999999999655E-06,  6.9999999999998883E-05,  7.0999999999999883E-05,  2.4000000000001452E-06,  1.9699999999999926E-04,  7.1000000000001617E-05,  2.9999999999995308E-07,  2.7240000000000098E-04,  7.7540000000000096E-04
+first_trial,cells,evaluator,setup_cpu_s,cache_prepare_cpu_s,first_pipeline_cpu_s,setup_plus_first_pipeline_cpu_s
+1,64,strict_box,  5.0799999999999977E-04,  5.0299999999999997E-04,  2.2199999999999998E-04,  7.2999999999999975E-04
+2,64,strict_box,  5.0700000000000051E-04,  4.9899999999999944E-04,  2.2100000000000071E-04,  7.2800000000000122E-04
+3,64,strict_box,  5.0299999999999997E-04,  4.9899999999999944E-04,  2.2100000000000071E-04,  7.2400000000000068E-04
+evaluator=strict_box state_radius=  3.0115962917526138E-02 nu_tangent_radius=  6.8089414006417243E-02
+last_first_trial_pipeline_cpu_s=  2.2100000000000071E-04 setup_plus_first_pipeline_cpu_s=  7.2400000000000068E-04 requested_targets_met=F
+Q_interval=  1.3610744248838222E-01  2.5657129415848962E-01
+dQ_dnu_interval= -2.6116865648055054E-01  1.1188999545119887E-02
+Q normalized_radius_upper=  2.4092770334021490E-01 target_lower=  2.5000099999999991E-03 requested_radius_met=F
+dQ_dnu normalized_radius_upper=  5.4471531205134105E-01 target_lower=  2.5000099999999991E-03 requested_radius_met=F
+trial,cells,evaluator,solve_cpu_s,prepare_cpu_s,accept_reprepare_cpu_s,tangent_solve_cpu_s,tangent_prepare_cpu_s,band_postprocess_cpu_s,prepared_target_accept_cpu_s,combined_warm_cpu_s,setup_plus_warm_cpu_s
+1,64,strict_box,  1.7999999999998919E-06,  4.4999999999999901E-05,  4.4999999999999901E-05,  2.4999999999998981E-06,  1.5599999999999989E-04,  7.0999999999999883E-05,  1.0000000000010001E-07,  2.3139999999999966E-04,  7.3439999999999964E-04
+requested_goal_target=not_met
+2,64,strict_box,  2.0000000000000918E-06,  4.7999999999999432E-05,  4.4999999999999901E-05,  2.3999999999999715E-06,  1.4600000000000030E-04,  7.3000000000000148E-05,  2.9999999999995308E-07,  2.2370000000000048E-04,  7.2670000000000048E-04
+requested_goal_target=not_met
+3,64,strict_box,  1.7999999999998919E-06,  4.3999999999998901E-05,  4.6000000000000901E-05,  2.3000000000000449E-06,  1.4600000000000030E-04,  7.0000000000000617E-05,  2.9999999999995308E-07,  2.2040000000000080E-04,  7.2340000000000078E-04
+requested_goal_target=not_met

@@ -1,0 +1,683 @@
+{
+  "source_commit": "6e714e223fb48794375544b1d7d37dcfa293d839",
+  "machine": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "processor": "Apple M3 Ultra",
+  "compiler": "GNU Fortran (Homebrew GCC 16.1.0) 16.1.0",
+  "flags": "Release -O3; certifier -fno-fast-math -ffp-contract=off",
+  "clock": "process CPU seconds; five trials; no timing gates",
+  "stage_notes": "paired-difference rows infer checker = combined minus independently timed candidate; embedded diagnostics remain inside setup and query-only time is not their full cost",
+  "cases": [
+    {
+      "case": "streaming",
+      "tier": "S",
+      "status": "certified-continuous",
+      "inputs": "cells=256;steps=64;t=1",
+      "timing_method": "direct",
+      "solve_seconds": 2.0000000000002655e-05,
+      "solve_seconds_range": [
+        1.8999999999998185e-05,
+        2.599999999999998e-05
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.00219,
+      "certificate_seconds_range": [
+        0.002153000000000002,
+        0.002225999999999999
+      ],
+      "total_seconds": 0.002212000000000002,
+      "total_seconds_range": [
+        0.0021720000000000003,
+        0.002246999999999999
+      ],
+      "radius": 0.00034455350462413197,
+      "scale": 1.0,
+      "radius_over_scale": 0.00034455350462413197,
+      "budget": 0.010000000001,
+      "total_over_solve": 110.59999999998543
+    },
+    {
+      "case": "FP",
+      "tier": "S",
+      "status": "certified-continuous",
+      "inputs": "cells=256;theta=1;vmax=2",
+      "timing_method": "direct",
+      "solve_seconds": 2.6600000000000237e-06,
+      "solve_seconds_range": [
+        2.6200000000000007e-06,
+        3.039999999999987e-06
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.0009819999999999968,
+      "certificate_seconds_range": [
+        0.0009799999999999982,
+        0.0009899999999999978
+      ],
+      "total_seconds": 0.0009846399999999967,
+      "total_seconds_range": [
+        0.00098262,
+        0.0009930399999999978
+      ],
+      "radius": 8.637082017532531e-05,
+      "scale": 1.0,
+      "radius_over_scale": 8.637082017532531e-05,
+      "budget": 0.010000000001,
+      "total_over_solve": 370.1654135338301
+    },
+    {
+      "case": "Poisson-VPFP",
+      "tier": "S",
+      "status": "certified-continuous",
+      "inputs": "k=1;nu=1;fp=1;drive=.1",
+      "timing_method": "direct",
+      "solve_seconds": 1.5000000000001124e-08,
+      "solve_seconds_range": [
+        1.2999999999999124e-08,
+        2.300000000000045e-08
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 8.200000000000568e-07,
+      "certificate_seconds_range": [
+        8.199999999999874e-07,
+        8.900000000000053e-07
+      ],
+      "total_seconds": 8.349999999999885e-07,
+      "total_seconds_range": [
+        8.329999999999866e-07,
+        9.130000000000058e-07
+      ],
+      "radius": 4.163336342344338e-17,
+      "scale": 1.0,
+      "radius_over_scale": 4.163336342344338e-17,
+      "budget": 0.010000000001,
+      "total_over_solve": 55.66666666666173
+    },
+    {
+      "case": "transport",
+      "tier": "D",
+      "status": "certified-continuous",
+      "inputs": "cells=64;modes=2;nu=1",
+      "timing_method": "direct",
+      "solve_seconds": 1.749999999999998e-06,
+      "solve_seconds_range": [
+        1.7299999999999955e-06,
+        1.759999999999956e-06
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 7.599999999999968e-05,
+      "certificate_seconds_range": [
+        6.899999999999962e-05,
+        8.700000000000374e-05
+      ],
+      "total_seconds": 7.77499999999997e-05,
+      "total_seconds_range": [
+        7.075999999999957e-05,
+        8.873000000000374e-05
+      ],
+      "radius": 0.00037807433147686625,
+      "scale": 1.0,
+      "radius_over_scale": 0.00037807433147686625,
+      "budget": 0.010000000001,
+      "total_over_solve": 44.4285714285713
+    },
+    {
+      "case": "slab",
+      "tier": "S",
+      "status": "certified-continuous",
+      "inputs": "steps=128;t=4",
+      "timing_method": "paired-difference",
+      "solve_seconds": 9.999999999999593e-06,
+      "solve_seconds_range": [
+        8.999999999995123e-06,
+        1.1000000000004062e-05
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 8.300000000000668e-05,
+      "certificate_seconds_range": [
+        8.099999999999774e-05,
+        8.699999999999854e-05
+      ],
+      "total_seconds": 9.20000000000018e-05,
+      "total_seconds_range": [
+        9.10000000000008e-05,
+        9.699999999999986e-05
+      ],
+      "radius": 3.3908089461366165e-06,
+      "scale": 1.0,
+      "radius_over_scale": 3.3908089461366165e-06,
+      "budget": 0.010000000001,
+      "total_over_solve": 9.200000000000555
+    },
+    {
+      "case": "shielding",
+      "tier": "S",
+      "status": "certified-continuous",
+      "inputs": "modes=3;dt=.001;t=1;x=.25",
+      "timing_method": "paired-difference",
+      "solve_seconds": 5.9000000000003494e-05,
+      "solve_seconds_range": [
+        5.7999999999995555e-05,
+        6.300000000000056e-05
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.005972000000000005,
+      "certificate_seconds_range": [
+        0.005944999999999999,
+        0.006043
+      ],
+      "total_seconds": 0.006031000000000002,
+      "total_seconds_range": [
+        0.0060079999999999995,
+        0.006104
+      ],
+      "radius": 0.0002777155249599761,
+      "scale": 1.0,
+      "radius_over_scale": 0.0002777155249599761,
+      "budget": 0.010000000001,
+      "total_over_solve": 102.22033898304483
+    },
+    {
+      "case": "Debye-sphere",
+      "tier": "S",
+      "status": "certified-continuous",
+      "inputs": "r=.75;kappa=1.75",
+      "timing_method": "direct",
+      "solve_seconds": 2.3999999999999715e-08,
+      "solve_seconds_range": [
+        2.3999999999996248e-08,
+        2.4000000000003186e-08
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 8.889999999999991e-06,
+      "certificate_seconds_range": [
+        8.709999999999967e-06,
+        9.00000000000005e-06
+      ],
+      "total_seconds": 8.913999999999991e-06,
+      "total_seconds_range": [
+        8.733999999999971e-06,
+        9.024000000000046e-06
+      ],
+      "radius": 1.609823385706477e-15,
+      "scale": 1.0,
+      "radius_over_scale": 1.609823385706477e-15,
+      "budget": 0.010000000001,
+      "total_over_solve": 371.4166666666707
+    },
+    {
+      "case": "C0-flow-tube",
+      "tier": "S",
+      "status": "certified-continuous",
+      "inputs": "steps=200;dt=.0005",
+      "timing_method": "paired-difference",
+      "solve_seconds": 2.4999999999997247e-05,
+      "solve_seconds_range": [
+        2.3999999999996247e-05,
+        2.6999999999999247e-05
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.0005360000000000087,
+      "certificate_seconds_range": [
+        0.0005220000000000016,
+        0.000557999999999996
+      ],
+      "total_seconds": 0.000560999999999999,
+      "total_seconds_range": [
+        0.0005469999999999989,
+        0.0005839999999999977
+      ],
+      "radius": 8.350840019488714e-10,
+      "scale": 6.0,
+      "radius_over_scale": 1.3918066699147857e-10,
+      "budget": 0.060000000001,
+      "total_over_solve": 22.44000000000243
+    },
+    {
+      "case": "Q0-pair",
+      "tier": "S",
+      "status": "certified-discrete",
+      "inputs": "n=125;steps=128;t=1;g=2",
+      "timing_method": "paired-difference;matrix-setup-excluded",
+      "solve_seconds": 0.07044099999999975,
+      "solve_seconds_range": [
+        0.0697309999999991,
+        0.070961
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 1.7937930000000009,
+      "certificate_seconds_range": [
+        1.781675,
+        1.805158
+      ],
+      "total_seconds": 1.8642340000000006,
+      "total_seconds_range": [
+        1.851405999999999,
+        1.875461
+      ],
+      "radius": 1.7593816986900055e-06,
+      "scale": 1.0,
+      "radius_over_scale": 1.7593816986900055e-06,
+      "budget": 0.010000000001,
+      "total_over_solve": 26.465183628852618
+    },
+    {
+      "case": "Q1-state",
+      "tier": "E",
+      "status": "indicator;finite-space-formula",
+      "inputs": "g=.3;sigma=2;z0=6;lmax=8;rmax=18;t=1",
+      "timing_method": "embedded-residual-in-setup;query-only",
+      "solve_seconds": 0.02785599999999988,
+      "solve_seconds_range": [
+        0.02742300000000064,
+        0.027967999999999993
+      ],
+      "estimator_seconds": 2.000000000279556e-06,
+      "estimator_seconds_range": [
+        1.0000000010279564e-06,
+        2.799999999991698e-05
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.02785800000000016,
+      "total_seconds_range": [
+        0.02742500000000092,
+        0.02799599999999991
+      ],
+      "radius": 3.2864659966548413e-06,
+      "scale": 1.0,
+      "radius_over_scale": 3.2864659966548413e-06,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.0000717978173563
+    },
+    {
+      "case": "Q2-residual",
+      "tier": "E",
+      "status": "indicator;sampled-Duhamel",
+      "inputs": "M3;Q1-mesh;samples=5;t=1",
+      "timing_method": "direct",
+      "solve_seconds": 1.4000000000180535e-05,
+      "solve_seconds_range": [
+        1.3000000000040757e-05,
+        4.500000000007276e-05
+      ],
+      "estimator_seconds": 0.005301000000000222,
+      "estimator_seconds_range": [
+        0.005274000000000001,
+        0.005368999999999957
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.005325000000000024,
+      "total_seconds_range": [
+        0.0052880000000001814,
+        0.005382000000000886
+      ],
+      "radius": 0.025086548616003155,
+      "scale": 1.0,
+      "radius_over_scale": 0.025086548616003155,
+      "budget": 0.010000000001,
+      "total_over_solve": 380.35714285223975
+    },
+    {
+      "case": "Q3-fermions",
+      "tier": "S",
+      "status": "certified-discrete;orbital-tail-included",
+      "inputs": "cutoff=60;Nspin=7;b=.4",
+      "timing_method": "paired-difference",
+      "solve_seconds": 0.0001020000000000465,
+      "solve_seconds_range": [
+        9.900000000051534e-05,
+        0.00010999999999983245
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.0012449999999999406,
+      "certificate_seconds_range": [
+        0.001146999999999565,
+        0.0014120000000001909
+      ],
+      "total_seconds": 0.001346999999999987,
+      "total_seconds_range": [
+        0.0012460000000000804,
+        0.0015119999999999578
+      ],
+      "radius": 0.002798239394447677,
+      "scale": 7.0,
+      "radius_over_scale": 0.0003997484849210967,
+      "budget": 0.070000000001,
+      "total_over_solve": 13.20588235293503
+    },
+    {
+      "case": "Q8-Fermi-gas",
+      "tier": "D",
+      "status": "certified-continuous",
+      "inputs": "theta=1;xF=0",
+      "timing_method": "paired-difference;warm",
+      "solve_seconds": 1.4000000000180535e-05,
+      "solve_seconds_range": [
+        1.3999999999292356e-05,
+        1.4999999999432134e-05
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.0016660000000010555,
+      "certificate_seconds_range": [
+        0.0016580000000008255,
+        0.0017099999999996562
+      ],
+      "total_seconds": 0.0016800000000003479,
+      "total_seconds_range": [
+        0.001672000000001006,
+        0.0017239999999998368
+      ],
+      "radius": 0.010596280635210231,
+      "scale": 1.1311595691789889,
+      "radius_over_scale": 0.009367626746862211,
+      "budget": 0.011311595692789889,
+      "total_over_solve": 119.9999999984774
+    },
+    {
+      "case": "Q8-relativistic",
+      "tier": "D",
+      "status": "certified-continuous",
+      "inputs": "theta=1;xF=1",
+      "timing_method": "paired-difference;warm",
+      "solve_seconds": 2.5000000000829914e-05,
+      "solve_seconds_range": [
+        2.3000000000550358e-05,
+        2.6999999999777202e-05
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.008431999999999995,
+      "certificate_seconds_range": [
+        0.008286000000000016,
+        0.008860999999999564
+      ],
+      "total_seconds": 0.008458999999999772,
+      "total_seconds_range": [
+        0.008311000000000845,
+        0.008884000000000114
+      ],
+      "radius": 0.006496318603798068,
+      "scale": 1.0430771324729977,
+      "radius_over_scale": 0.006228032809420486,
+      "budget": 0.010430771325729978,
+      "total_over_solve": 338.3599999887585
+    },
+    {
+      "case": "Q4-kick",
+      "tier": "S",
+      "status": "certified-discrete",
+      "inputs": "N=2;modes=7;steps=128;dt=.01",
+      "timing_method": "direct",
+      "solve_seconds": 0.0003370000000000317,
+      "solve_seconds_range": [
+        0.0003340000000000565,
+        0.0003539999999997434
+      ],
+      "estimator_seconds": 0.0,
+      "estimator_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "certificate_seconds": 0.0015470000000004092,
+      "certificate_seconds_range": [
+        0.0015299999999998093,
+        0.0015519999999984435
+      ],
+      "total_seconds": 0.0018840000000004409,
+      "total_seconds_range": [
+        0.001879000000000186,
+        0.0018930000000008107
+      ],
+      "radius": 1.7556421697334712e-07,
+      "scale": 2.0,
+      "radius_over_scale": 8.778210848667356e-08,
+      "budget": 0.020000000001,
+      "total_over_solve": 5.590504451039358
+    },
+    {
+      "case": "Q5-Temple",
+      "tier": "E",
+      "status": "indicator;candidate-gap",
+      "inputs": "N=2;modes=7;rs=2;RHF",
+      "timing_method": "direct",
+      "solve_seconds": 6.100000000053285e-05,
+      "solve_seconds_range": [
+        5.2999999999414626e-05,
+        0.0001389999999998892
+      ],
+      "estimator_seconds": 1.4999999999876223e-05,
+      "estimator_seconds_range": [
+        1.4999999999432134e-05,
+        1.700000000059987e-05
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 7.600000000174134e-05,
+      "total_seconds_range": [
+        6.799999999884676e-05,
+        0.00015399999999976544
+      ],
+      "radius": 0.015786749051876166,
+      "scale": 1.0,
+      "radius_over_scale": 0.015786749051876166,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.2459016393619256
+    },
+    {
+      "case": "Q7-screening",
+      "tier": "E",
+      "status": "rigorous-tail;quadrature-indicator",
+      "inputs": "theta=1;kappa2=1;qmax=32;r=1",
+      "timing_method": "embedded-tail-and-indicator;query-only",
+      "solve_seconds": 0.11008400000000051,
+      "solve_seconds_range": [
+        0.10926399999999958,
+        0.11088599999999982
+      ],
+      "estimator_seconds": 3.2999999998395424e-05,
+      "estimator_seconds_range": [
+        2.9999999999752447e-05,
+        3.300000000017178e-05
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.11011699999999891,
+      "total_seconds_range": [
+        0.10929699999999976,
+        0.11091600000000001
+      ],
+      "radius": 4.047519522628606e-07,
+      "scale": 1.0,
+      "radius_over_scale": 4.047519522628606e-07,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.000299771083885
+    },
+    {
+      "case": "C3-PME",
+      "tier": "E",
+      "status": "indicator;uncorrelated-position-law",
+      "inputs": "N=160;L=5;tol=1e-4",
+      "timing_method": "direct;selection-and-setup-excluded",
+      "solve_seconds": 0.00048570000000003333,
+      "solve_seconds_range": [
+        0.00047969999999999404,
+        0.0004894000000000176
+      ],
+      "estimator_seconds": 0.0005450000000006838,
+      "estimator_seconds_range": [
+        0.0005299999999999749,
+        0.0005759999999996879
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.0010247000000006778,
+      "total_seconds_range": [
+        0.0010154999999999748,
+        0.0010616999999997212
+      ],
+      "radius": 0.0002295960997541017,
+      "scale": 3.0633671622848238,
+      "radius_over_scale": 7.494893285428332e-05,
+      "budget": 0.030633671623848238,
+      "total_over_solve": 2.1097385217224778
+    },
+    {
+      "case": "C4-PME",
+      "tier": "E",
+      "status": "indicator;uncorrelated-position-law",
+      "inputs": "N=160;L=5;tol=1e-5",
+      "timing_method": "direct;selection-and-setup-excluded",
+      "solve_seconds": 0.0006669999999999732,
+      "solve_seconds_range": [
+        0.000648299999999935,
+        0.0006720000000000059
+      ],
+      "estimator_seconds": 0.001700000000000479,
+      "estimator_seconds_range": [
+        0.001626999999999157,
+        0.0017279999999999518
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.0023626999999983413,
+      "total_seconds_range": [
+        0.002275299999999092,
+        0.0023999999999999577
+      ],
+      "radius": 2.8083157501254174e-05,
+      "scale": 3.0633671622848238,
+      "radius_over_scale": 9.16741481302171e-06,
+      "budget": 0.030633671623848238,
+      "total_over_solve": 3.5422788605673707
+    },
+    {
+      "case": "H1a-statistical",
+      "tier": "statistical",
+      "status": "statistical;asymptotic-95-percent",
+      "inputs": "N=16;Gamma=1;sweeps=1024;equil=256;batches=16;seed=27",
+      "timing_method": "direct",
+      "solve_seconds": 1.8273030000000006,
+      "solve_seconds_range": [
+        1.8173110000000001,
+        1.8365570000000009
+      ],
+      "estimator_seconds": 7.000000000090267e-06,
+      "estimator_seconds_range": [
+        5.999999999062311e-06,
+        1.0999999998873022e-05
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 1.8273089999999996,
+      "total_seconds_range": [
+        1.8173199999999987,
+        1.8365679999999998
+      ],
+      "radius": 0.00699848090296167,
+      "scale": 1.0,
+      "radius_over_scale": 0.00699848090296167,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.0000032835276902
+    },
+    {
+      "case": "H1b-statistical",
+      "tier": "statistical",
+      "status": "statistical;asymptotic-95-percent",
+      "inputs": "N=3;rs=2;Theta=1;sweeps=1024;equil=256;batches=16;seed=27",
+      "timing_method": "direct",
+      "solve_seconds": 0.035671999999999926,
+      "solve_seconds_range": [
+        0.035346999999999795,
+        0.03601300000000052
+      ],
+      "estimator_seconds": 3.0999999999892225e-05,
+      "estimator_seconds_range": [
+        2.2999999998774e-05,
+        3.6999999999842714e-05
+      ],
+      "certificate_seconds": 0.0,
+      "certificate_seconds_range": [
+        0.0,
+        0.0
+      ],
+      "total_seconds": 0.03570299999999982,
+      "total_seconds_range": [
+        0.03538399999999964,
+        0.03604899999999844
+      ],
+      "radius": 0.013924040801494276,
+      "scale": 1.0,
+      "radius_over_scale": 0.013924040801494276,
+      "budget": 0.010000000001,
+      "total_over_solve": 1.0008690289302504
+    }
+  ]
+}

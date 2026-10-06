@@ -1,0 +1,10 @@
+model=cold_planar_slab; tau=omega_pe*t; q=xi/xi0; p=dq/dtau
+solver=FortNum_fixed_Cash_Karp_RK5(4); certificate=Hermite_residual
+validation_outside_timing=true; setup_and_rendering_excluded=true
+steps=128
+repetitions_per_sample=5
+trace_payload_bytes=5152
+sample,candidate_s,complete_s,certificate_extra_s,factor,radius
+1,  1.0800000000000046E-05,  9.4800000000000095E-05,  8.4000000000000050E-05,  8.7777777777777501E+00,  3.3026728151848108E-04
+2,  1.0399999999999992E-05,  9.5200000000000146E-05,  8.4800000000000150E-05,  9.1538461538461746E+00,  3.3026728151848108E-04
+3,  1.0199999999999792E-05,  9.4600000000000239E-05,  8.4400000000000452E-05,  9.2745098039217808E+00,  3.3026728151848108E-04

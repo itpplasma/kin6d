@@ -23,6 +23,8 @@ A KIN6D result must state exactly what has been established.
 | certified-continuous | rigorous enclosure for the named continuous model |
 | formally-certified-continuous | continuous certificate additionally checked by a proof assistant |
 | probabilistically-certified | statistical confidence statement with declared probability assumptions |
+| approximate-bound | error may exceed the reported radius by declared epsilon_b; analytical or scoped validation support required; not a certificate |
+| indicator | diagnostic without a supported remainder or coverage guarantee |
 | certification-failed | one or more required premises did not close |
 
 The project priority is **useful certified-continuous results**. Lean or another
@@ -32,6 +34,22 @@ is not required for interval arithmetic or for early scientific promotion.
 A statistical interval from Monte Carlo is not a deterministic inclusion.
 When deterministic discretization bounds and statistical uncertainty coexist,
 report both.
+
+The [error-control strategy](error-control-strategy.md) distinguishes two
+independent relaxations. Loosening retains `e_true <= eta`; report its measured
+efficiency index where an independent reference exists, with about ten as a
+useful target. Approximate evaluation permits `e_true <= (1+epsilon_b)*eta`,
+default epsilon_b=5%, and has its own status and justification. Accept the
+inflated radius against the observable budget. Neither a guessed percentage
+nor small-reference calibration proves a general remainder.
+
+Tier E indicators drive adaptation; Tier P states a confidence law for the
+algorithm's randomness; Tier D uses proved aggregate arithmetic budgets;
+Tier A reports controlled approximate evaluation; Tier S retains strict audit
+arithmetic. D and S have the same deterministic containment requirement.
+Final/checkpoint certification is permitted when it covers the entire
+intervening residual and all requested outputs. A primal certificate never
+upgrades a derivative with unavailable error status.
 
 ## Certified model and outputs
 
@@ -447,7 +465,7 @@ low-discrepancy structure and statistical uncertainty.
 
 ## Physical/model uncertainty and UQ ledger
 
-Keep separate fields in result metadata for, where applicable:
+Result metadata keeps the applicable contributions separate:
 
 1. spatial/velocity/angular discretization error;
 2. time-integration error;

@@ -155,14 +155,15 @@ contains
     end function
 
     !> G(x) by the default route: closed form at theta = 0, Maldague otherwise.
-    function lindhard_response(state, x) result(res)
+    function lindhard_response(state, x, estimator_seconds, certificate_seconds) result(res)
         type(screening_state_t), intent(in) :: state
         real(dp), intent(in) :: x
         type(screening_value_t) :: res
+        real(dp), intent(inout), optional :: estimator_seconds, certificate_seconds
         if (state%zero_temperature) then
             res%value = lindhard_zero(x)
         else
-            res = lindhard_maldague(state, x)
+            res = lindhard_maldague(state, x, estimator_seconds, certificate_seconds)
         end if
     end function
 
@@ -212,24 +213,30 @@ contains
 
     !> Route B (Maldague): G = integral w(e) sqrt(e) F(x/sqrt(e)) de over the
     !> exact T=0 response, e = s^2; the kink of F at s = x is graded.
-    function lindhard_maldague(state, x) result(res)
+    function lindhard_maldague(state, x, estimator_seconds, certificate_seconds) result(res)
         type(screening_state_t), intent(in) :: state
         real(dp), intent(in) :: x
         type(screening_value_t) :: res
-        real(dp) :: smax, h, q(2)
+        real(dp) :: smax, h, q(2), start, finish
+        real(dp), intent(inout), optional :: estimator_seconds, certificate_seconds
         type(interval_t) :: bound
         if (state%theta <= 0.0_dp) error stop 'lindhard_maldague: theta must be > 0'
         smax = sqrt(max(state%mu, 0.0_dp) + 40*state%theta)
         h = min(0.05_dp, state%theta)
+        if (present(certificate_seconds)) call cpu_time(start)
         call screening_maldague_tail_interval(interval(state%theta), &
             interval(state%mu), interval(smax), bound)
         res%tail = bound%hi
+        if (present(certificate_seconds)) then
+            call cpu_time(finish)
+            certificate_seconds = certificate_seconds+finish-start
+        end if
         q = 0.0_dp
         if (x < smax) then
-            call graded_sum(state, 0.0_dp, x, 2, h, integrand, q)
-            call graded_sum(state, x, smax, 1, h, integrand, q)
+            call graded_sum(state, 0.0_dp, x, 2, h, integrand, q, estimator_seconds)
+            call graded_sum(state, x, smax, 1, h, integrand, q, estimator_seconds)
         else
-            call graded_sum(state, 0.0_dp, smax, 0, h, integrand, q)
+            call graded_sum(state, 0.0_dp, smax, 0, h, integrand, q, estimator_seconds)
         end if
         res%value = q(2)
         res%indicator = abs(q(2) - q(1))
@@ -245,37 +252,50 @@ contains
     !> Composite Gauss sums (12 and 20 nodes per panel) on [a,b]; toward = 1/2
     !> grades panels geometrically toward a/b, 0 none; panels are split to
     !> width <= step.
-    subroutine graded_sum(state, a, b, toward, step, f, total)
+    subroutine graded_sum(state, a, b, toward, step, f, total, estimator_seconds)
         type(screening_state_t), intent(in) :: state
         real(dp), intent(in) :: a, b, step
         integer, intent(in) :: toward
         real(dp), intent(inout) :: total(2)
+        real(dp), intent(inout), optional :: estimator_seconds
         interface
             real(dp) function f(r)
                 import :: dp
                 real(dp), intent(in) :: r
             end function
         end interface
-        real(dp) :: lo, hi, width
-        integer :: level, levels
+        real(dp) :: lo, hi, width, start, finish
+        integer :: level, levels, rule
         if (b <= a) return
         width = b - a
         levels = grading_levels(a, b, toward)
-        do level = 1, levels
-            if (toward == 0) then
-                lo = a; hi = b
-            else if (toward == 1) then
-                lo = a + width*grading**level; hi = a + width*grading**(level - 1)
-                if (level == levels) lo = a
-            else
-                lo = b - width*grading**(level - 1); hi = b - width*grading**level
-                if (level == levels) hi = b
+        ! Preserve each rule's addition order. One clock pair covers its whole
+        ! graded integral; small panels must not be dominated by timer calls.
+        do rule = 1, 2
+            if (rule==1.and.present(estimator_seconds)) call cpu_time(start)
+            do level = 1, levels
+                if (toward == 0) then
+                    lo = a; hi = b
+                else if (toward == 1) then
+                    lo = a + width*grading**level
+                    hi = a + width*grading**(level - 1)
+                    if (level == levels) lo = a
+                else
+                    lo = b - width*grading**(level - 1)
+                    hi = b - width*grading**level
+                    if (level == levels) hi = b
+                end if
+                call uniform_sum(lo, hi, rule)
+            end do
+            if (rule==1.and.present(estimator_seconds)) then
+                call cpu_time(finish)
+                estimator_seconds = estimator_seconds+finish-start
             end if
-            call uniform_sum(lo, hi)
         end do
     contains
-        subroutine uniform_sum(p, r)
+        subroutine uniform_sum(p, r, rule)
             real(dp), intent(in) :: p, r
+            integer, intent(in) :: rule
             integer :: cells, c, j
             real(dp) :: left, half, mid
             cells = max(1, ceiling((r - p)/step))
@@ -283,12 +303,15 @@ contains
                 left = p + (r - p)*(c - 1)/cells
                 half = 0.5_dp*(r - p)/cells
                 mid = left + half
-                do j = 1, low_order
-                    total(1) = total(1) + half*state%wl(j)*f(mid + half*state%xl(j))
-                end do
-                do j = 1, high_order
-                    total(2) = total(2) + half*state%wh(j)*f(mid + half*state%xh(j))
-                end do
+                if (rule==1) then
+                    do j = 1, low_order
+                        total(1) = total(1) + half*state%wl(j)*f(mid + half*state%xl(j))
+                    end do
+                else
+                    do j = 1, high_order
+                        total(2) = total(2) + half*state%wh(j)*f(mid + half*state%xh(j))
+                    end do
+                end if
             end do
         end subroutine
     end subroutine
@@ -313,15 +336,20 @@ contains
     !> Nodes of the composite q rule on [0, qmax] (kF = 1): panels graded toward
     !> the 2kF kink, width <= near/far, and G tabulated on them by the default
     !> route. The inversion tail bound uses G(q/2) <= 8/(3 q^2).
-    subroutine screening_q_table(state, qmax, near, far, table, constant_g)
+    subroutine screening_q_table(state, qmax, near, far, table, constant_g, &
+        estimator_seconds, certificate_seconds)
         type(screening_state_t), intent(in) :: state
         real(dp), intent(in) :: qmax, near, far
         type(screening_q_table_t), intent(out) :: table
         !> Optional synthetic G (oracle hook: constant G gives exact Yukawa).
         real(dp), intent(in), optional :: constant_g
+        real(dp), intent(out), optional :: estimator_seconds, certificate_seconds
+        real(dp) :: start, finish, before
         integer :: nl, nh, j
         type(screening_value_t) :: res
         type(interval_t) :: bound
+        if (present(estimator_seconds)) estimator_seconds = 0
+        if (present(certificate_seconds)) certificate_seconds = 0
         call count_nodes(nl, nh)
         allocate (table%ql(nl), table%wl(nl), table%gl(nl))
         allocate (table%qh(nh), table%wh(nh), table%gh(nh))
@@ -329,23 +357,44 @@ contains
         call build(0.0_dp, 2.0_dp, 2, near, .true.)
         call build(2.0_dp, 8.0_dp, 1, near, .true.)
         call build(8.0_dp, qmax, 0, far, .true.)
+        before = 0
+        if (present(certificate_seconds)) before = certificate_seconds
+        if (present(estimator_seconds)) call cpu_time(start)
         do j = 1, size(table%ql)
-            table%gl(j) = g_of(table%ql(j))
+            table%gl(j) = g_of(table%ql(j),.false.)
         end do
+        if (present(estimator_seconds)) then
+            call cpu_time(finish)
+            estimator_seconds = finish-start
+            if (present(certificate_seconds)) &
+                estimator_seconds = estimator_seconds-(certificate_seconds-before)
+        end if
         do j = 1, size(table%qh)
-            table%gh(j) = g_of(table%qh(j))
+            table%gh(j) = g_of(table%qh(j),.true.)
         end do
         table%qmax = qmax
+        if (present(certificate_seconds)) call cpu_time(start)
         call screening_inversion_tail_interval(interval(state%kappa2), &
             interval(qmax), bound)
         table%tail = bound%hi
+        if (present(certificate_seconds)) then
+            call cpu_time(finish)
+            certificate_seconds = certificate_seconds+finish-start
+        end if
     contains
-        real(dp) function g_of(q) result(g)
+        real(dp) function g_of(q, measure_inner) result(g)
             real(dp), intent(in) :: q
+            logical, intent(in) :: measure_inner
             if (present(constant_g)) then
                 g = constant_g
             else
-                res = lindhard_response(state, 0.5_dp*q)
+                if (measure_inner) then
+                    res = lindhard_response(state, 0.5_dp*q, &
+                        estimator_seconds, certificate_seconds)
+                else
+                    res = lindhard_response(state, 0.5_dp*q, &
+                        certificate_seconds=certificate_seconds)
+                end if
                 g = res%value
                 table%g_indicator = max(table%g_indicator, res%indicator + res%tail)
             end if

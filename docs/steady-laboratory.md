@@ -82,6 +82,12 @@ diagnostic alongside these oracles, rather than the certificate.
 
 ## Bounded homogeneous OU/FP case
 
+`fp_indicator(state,value,status)` exposes the last solve’s maximum flux
+residual with status `indicator`. The reference enclosure is a separate
+operation; mutable public fields do not make this cached diagnostic a current
+certificate. Measured costs and scheduling are in
+[error-control-strategy.md](error-control-strategy.md).
+
 On `v∈[-2,2]`, solve the stationary heat-bath equation
 `d_v J=0`, `J=theta*d_v f+v*f`, with `J(-2)=J(2)=0` and prescribed positive
 mass. The candidate comes from a centered zero-flux recurrence followed by

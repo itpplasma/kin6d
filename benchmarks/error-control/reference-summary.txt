@@ -1,0 +1,5 @@
+A worst true-error/eta=  2.1971E-01
+A worst strict-radius/eta minus 1=  2.0570E-11
+D max radius/true-error at midpoint=  5.3402E+00
+D max radius/true-error across all sampled fractions=  4.9280E+01
+P Q0 residual coverage failures=0/200

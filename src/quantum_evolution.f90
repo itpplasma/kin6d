@@ -3,14 +3,20 @@ module kin6d_quantum_evolution
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_interval, only: interval_t, ipoint, interval, mag, intersect, entire
     use fortnum_ode_cash_karp, only: cash_karp_step
-    use fortnum_rounding, only: add_up, mul_up
+    use fortnum_rounding, only: add_up, mul_up, mul_down, sub_up, gamma_up
+    use fortnum_verified_matvec, only: matvec_bound_t, prepare_matvec_bound, &
+        enclose_matvec, matvec_row_bound
+    use fortnum_rng, only: rng_t
+    use fortnum_sampled_norm, only: sampled_norm_upper
     use fortnum_ode_residual_certificate, only: hermite_cubic_enclosure, &
         linear_residual_bound, residual_radius_step
     use kin6d_quantum_evolution_leaves, only: qe_rhs_term, qe_rhs_term_interval, &
         qe_rhs_term_vjp, qe_add, qe_add_interval, qe_scale, qe_hermite, &
         qe_evaluate, qe_evaluate_interval, qe_square_add_interval, &
         qe_norm_interval, qe_radius, qe_band_interval, &
-        qe_fraction, qe_fraction_interval, qe_complement
+        qe_fraction, qe_fraction_interval, qe_complement, &
+        qe_action_allowance_interval, &
+        qe_evaluate_rate_interval
     implicit none
     private
     public :: quantum_evolution_t, initialize_quantum_evolution
@@ -20,6 +26,9 @@ module kin6d_quantum_evolution
     public :: solve_quantum_evolution_tangent, sample_quantum_evolution_tangent
     public :: quantum_evolution_vjp
     public :: quantum_hamiltonian_action, quantum_rhs_action
+    public :: certify_quantum_evolution, quantum_evolution_error, &
+        quantum_evolution_indicator, quantum_evolution_sampled_residual
+    integer, parameter, public :: QE_WORKHORSE = 1, QE_STRICT = 2, QE_APPROXIMATE = 3
 
     type :: quantum_evolution_t
         private
@@ -34,6 +43,14 @@ module kin6d_quantum_evolution
         type(interval_t) :: initial_norm, delta_norm
         logical :: initialized = .false., ready = .false., bounded = .false.
         logical :: tangent_ready = .false., tangent_bounded = .false.
+        integer :: error_mode = QE_WORKHORSE
+        logical :: approximate_ready = .false.
+        logical :: error_attempted = .false.
+        real(dp) :: embedded_indicator = 0.0_dp
+        real(dp), allocatable :: evaluation_allowance(:), cell_residual(:)
+        real(dp), allocatable :: cell_allowance(:)
+        real(dp) :: bound_relative_error = .05_dp
+        type(matvec_bound_t) :: hr_bound, hi_bound, dhr_bound, dhi_bound
     end type
     type :: vjp_context_t
         type(quantum_evolution_t), pointer :: primal => null(), adjoint => null()
@@ -55,6 +72,7 @@ contains
         n = size(psi_re)
         if (n < 1 .or. steps < 1) return
         if (n > shiftr(huge(n), 1)) return
+        if (n > shiftr(huge(n),3)-1) return
         if (steps >= huge(steps)) return
         if (size(psi_im) /= n) return
         if (.not. valid_hamiltonian(hre, him, n)) return
@@ -72,9 +90,18 @@ contains
                   state%action(2*n, 0:3), &
                   state%radius(0:steps), stat=status)
         if (status /= 0) return
+        allocate(state%evaluation_allowance(0:steps),state%cell_residual(steps), &
+            state%cell_allowance(steps))
+        state%evaluation_allowance = 0
+        state%cell_allowance = 0
         state%n = n; state%steps = steps
         state%h = h; state%hbar = hbar
         state%hr = hre; state%hi = him
+        call prepare_matvec_bound(hre, state%hr_bound, ok)
+        if (.not. ok) return
+        call prepare_matvec_bound(him, state%hi_bound, ok)
+        if (.not. ok) return
+        ok = .false.
         state%y(1:n, 0) = psi_re; state%y(n + 1:2*n, 0) = psi_im
         acc = ipoint(0.0_dp)
         do j = 1, 2*n
@@ -91,18 +118,25 @@ contains
         ok = .true.
     end subroutine
 
-    subroutine solve_quantum_evolution(state, ok, certify)
+    subroutine solve_quantum_evolution(state, ok, certify, error_mode)
         type(quantum_evolution_t), intent(inout) :: state
         logical, intent(out) :: ok
         logical, intent(in), optional :: certify
+        integer, intent(in), optional :: error_mode
         integer :: cell, nfev
         logical :: check
 
         ok = .false.; state%ready = .false.; state%bounded = .false.
         state%tangent_ready = .false.; state%tangent_bounded = .false.
+        state%approximate_ready = .false.; state%embedded_indicator = 0
+        state%error_mode = QE_WORKHORSE
+        if (present(error_mode)) state%error_mode = error_mode
+        if (state%error_mode < QE_WORKHORSE .or. &
+            state%error_mode > QE_APPROXIMATE) return
         if (.not. state%initialized) return
         check = .true.
         if (present(certify)) check = certify
+        state%error_attempted = check
         state%mode = 0
         call evolution_rhs(0.0_dp, state%y(:, 0), state%f(:, 0), state)
         nfev = 0
@@ -112,6 +146,8 @@ contains
                        state%rk(:, 3), state%rk(:, 4), state%rk(:, 5), state%rk(:, 6), &
                             state%rk(:, 7), state%rk(:, 8), state%rk(:, 9), nfev, state)
             if (.not. all(ieee_is_finite(state%rk(:, 8)))) return
+            state%embedded_indicator = max(state%embedded_indicator, &
+                norm2(state%rk(:, 9)))
             state%y(:, cell) = state%rk(:, 8)
             call evolution_rhs(0.0_dp, state%y(:, cell), state%f(:, cell), state)
             if (.not. all(ieee_is_finite(state%f(:, cell)))) return
@@ -119,6 +155,145 @@ contains
         end do
         state%ready = .true.
         if (check) call certify_trajectory(state, .false.)
+        ok = .true.
+    end subroutine
+
+    ! Deferred certification audits every residual cell of the immutable trace;
+    ! reporting only at checkpoints does not omit the intervening integral.
+    subroutine certify_quantum_evolution(state, ok, error_mode, epsilon_b)
+        type(quantum_evolution_t), intent(inout) :: state
+        logical, intent(out) :: ok
+        integer, intent(in), optional :: error_mode
+        real(dp), intent(in), optional :: epsilon_b
+        integer :: cell
+        ok = .false.
+        state%bounded = .false.; state%approximate_ready = .false.
+        state%error_attempted = .true.
+        state%tangent_bounded = .false.
+        if (.not. state%ready) return
+        if (present(epsilon_b)) state%bound_relative_error = epsilon_b
+        if (.not. ieee_is_finite(state%bound_relative_error)) return
+        if (state%bound_relative_error <= 0 .or. &
+            state%bound_relative_error > .1_dp) return
+        if (present(error_mode)) state%error_mode = error_mode
+        if (state%error_mode < QE_WORKHORSE .or. &
+            state%error_mode > QE_APPROXIMATE) return
+        do cell = 1, state%steps
+            call make_cell(state, cell, .false., .true.)
+        end do
+        call certify_trajectory(state, .false.)
+        ok = state%bounded .or. state%approximate_ready
+    end subroutine
+
+    subroutine quantum_evolution_indicator(state, value, status)
+        type(quantum_evolution_t), intent(in) :: state
+        real(dp), intent(out) :: value
+        character(*), intent(out) :: status
+        value = state%embedded_indicator; status = 'indicator'
+        if (.not. state%ready) status = 'unavailable'
+    end subroutine
+
+    ! A one-time residual-norm statement, not the integral needed for a state
+    ! certificate. The probability space is iid uniform coordinate draws.
+    subroutine quantum_evolution_sampled_residual(state, cell, fraction, samples, &
+        delta, draw, estimate, upper, ok)
+        type(quantum_evolution_t), intent(inout) :: state
+        integer, intent(in) :: cell, samples
+        real(dp), intent(in) :: fraction, delta
+        type(rng_t), intent(inout) :: draw
+        real(dp), intent(out) :: estimate, upper
+        logical, intent(out) :: ok
+        type(interval_t), allocatable :: x(:), derivative(:)
+        type(interval_t) :: envelope_box
+        real(dp) :: envelope
+        integer :: j,n
+        ok = .false.; estimate = 0; upper = huge(0._dp)
+        n = state%n
+        if (.not. sample_guard(state,cell,fraction,n,n)) return
+        call make_cell(state,cell,.false.,.true.)
+        allocate(x(2*n),derivative(2*n))
+        do j = 1,2*n
+            call qe_evaluate_interval(state%ci(j,0,cell),state%ci(j,1,cell), &
+                state%ci(j,2,cell),state%ci(j,3,cell),ipoint(fraction),x(j))
+            call qe_evaluate_rate_interval(state%ci(j,1,cell),state%ci(j,2,cell), &
+                state%ci(j,3,cell),ipoint(fraction),ipoint(state%h),derivative(j))
+        end do
+        ! A global envelope proved from prepared matrix row sums, not sampled maxima.
+        call qe_action_allowance_interval(ipoint(matvec_row_bound(state%hr_bound)), &
+            ipoint(matvec_row_bound(state%hi_bound)),ipoint(0._dp),ipoint(0._dp), &
+            ipoint(maxval(mag(x))),ipoint(0._dp),ipoint(0._dp),ipoint(1._dp), &
+            ipoint(state%hbar),envelope_box)
+        envelope = add_up(envelope_box%hi,maxval(mag(derivative)))
+        call sampled_norm_upper(2*n,samples,delta,envelope,draw,component, &
+            estimate,upper,ok)
+    contains
+        subroutine component(index,value,valid)
+            use fortnum_interval, only: operator(-)
+            integer, intent(in) :: index
+            type(interval_t), intent(out) :: value
+            logical, intent(out) :: valid
+            type(interval_t) :: ar,ai,total,next
+            integer :: i,k
+            i = index
+            if (index > n) i = index-n
+            total = ipoint(0._dp)
+            do k = 1,n
+                call qe_rhs_term_interval(ipoint(state%hr(i,k)),ipoint(state%hi(i,k)), &
+                    x(k),x(n+k),ipoint(state%hbar),ar,ai)
+                if (index <= n) then
+                    call qe_add_interval(total,ar,next)
+                else
+                    call qe_add_interval(total,ai,next)
+                end if
+                total = next
+            end do
+            value = derivative(index)-total
+            valid = finite_interval(value)
+        end subroutine
+    end subroutine
+
+    ! The approximate action omits proved evaluation allowances. Each prefix
+    ! must pass allowance <= epsilon_b*eta. The uninflated eta is not certified.
+    subroutine quantum_evolution_error(state, cell, radius, status, epsilon_b, ok, &
+                                      fraction, evaluation_error)
+        type(quantum_evolution_t), intent(in) :: state
+        integer, intent(in) :: cell
+        real(dp), intent(out) :: radius, epsilon_b
+        character(*), intent(out) :: status
+        logical, intent(out) :: ok
+        real(dp), intent(in), optional :: fraction
+        real(dp), intent(out), optional :: evaluation_error
+        real(dp) :: re(state%n), im(state%n), at, unused
+        logical :: sampled, bounded
+        radius = huge(0._dp); epsilon_b = 0; status = 'candidate'; ok = .false.
+        if (present(evaluation_error)) evaluation_error = huge(0._dp)
+        if (.not. state%ready) return
+        if (cell < 0 .or. cell > state%steps) return
+        if (.not. state%bounded .and. .not. state%approximate_ready) then
+            if (state%error_attempted) status = 'certification-failed'
+            return
+        end if
+        radius = state%radius(cell)
+        if (cell > 0) then
+            at = 1
+            if (present(fraction)) at = fraction
+            call sample_quantum_evolution(state,cell,at,re,im,unused,sampled,bounded)
+            if (.not. sampled) return
+            call sampled_radius(state,cell,at,re,im,.false.,radius,ok)
+            if (.not. ok) return
+        end if
+        status = 'certified-discrete'
+        if (state%approximate_ready) then
+            epsilon_b = state%bound_relative_error
+            write(status,'(a,es10.3,a)') 'approximate-bound; epsilon_b=', &
+                epsilon_b,'; omission-controlled'
+        end if
+        if (present(evaluation_error)) then
+            evaluation_error = state%evaluation_allowance(cell)
+            if (cell > 0) evaluation_error = &
+                add_up(state%evaluation_allowance(cell-1), &
+                    mul_up(mul_up(state%h,at),state%cell_allowance(cell)))
+        end if
         ok = .true.
     end subroutine
 
@@ -199,7 +374,8 @@ contains
     subroutine certify_trajectory(state, tangent)
         type(quantum_evolution_t), intent(inout) :: state
         logical, intent(in) :: tangent
-        real(dp) :: bound, next
+        real(dp) :: bound, next, omitted, xmax, width, row_r, row_i
+        type(interval_t) :: allowance
         integer :: cell, k
         logical :: ok
 
@@ -209,6 +385,9 @@ contains
         else
             state%radius(0) = 0.0_dp
             state%bounded = .false.
+            state%approximate_ready = .false.
+            state%evaluation_allowance = 0
+            state%cell_allowance = 0
         end if
         do cell = 1, state%steps
             if (tangent) then
@@ -236,12 +415,38 @@ contains
                                           ipoint(state%h), bound, next, ok)
                 if (.not. ok) return
                 state%radius(cell) = next
+                state%cell_residual(cell) = bound
+                if (state%error_mode == QE_APPROXIMATE) then
+                    omitted = 0
+                    row_r = matvec_row_bound(state%hr_bound)
+                    row_i = matvec_row_bound(state%hi_bound)
+                    do k = 0,3
+                        xmax = maxval(abs(state%ci(:,k,cell)%lo))
+                        width = maxval(sub_up(state%ci(:,k,cell)%hi, &
+                            state%ci(:,k,cell)%lo))
+                        call qe_action_allowance_interval( &
+                            ipoint(row_r),ipoint(row_i), &
+                            ipoint(gamma_up(8*state%n+4)),ipoint(xmax),ipoint(width), &
+                            ipoint(real(8*state%n+4,dp)),ipoint(tiny(0._dp)), &
+                            ipoint(real(2*state%n,dp)), &
+                            ipoint(state%hbar),allowance)
+                        if (.not. finite_interval(allowance)) return
+                        omitted = add_up(omitted,allowance%hi)
+                    end do
+                    state%evaluation_allowance(cell) = &
+                        add_up(state%evaluation_allowance(cell-1), &
+                               mul_up(state%h,omitted))
+                    state%cell_allowance(cell) = omitted
+                    if (state%evaluation_allowance(cell) > &
+                        mul_down(state%bound_relative_error,next)) return
+                end if
             end if
         end do
         if (tangent) then
             state%tangent_bounded = .true.
         else
-            state%bounded = .true.
+            state%bounded = state%error_mode /= QE_APPROXIMATE
+            state%approximate_ready = state%error_mode == QE_APPROXIMATE
         end if
     end subroutine
 
@@ -253,6 +458,7 @@ contains
         logical, intent(out) :: ok
         class(*), intent(in), optional :: ctx
         type(interval_t) :: a, b, next
+        real(dp) :: ar, ai, sr, si, nc
         integer :: i, j, n
 
         ok = .false.
@@ -262,6 +468,27 @@ contains
         type is (quantum_evolution_t)
             n = ctx%n
             if (size(x) /= 2*n .or. size(ax) /= 2*n) return
+            if (ctx%error_mode == QE_WORKHORSE) then
+                call bounded_action(ctx, x, ax, ok)
+                return
+            end if
+            if (ctx%error_mode == QE_APPROXIMATE) then
+                ! Unenclosed action at the lower coefficient endpoints. The
+                ! omitted box widths and FP error distinguish A from D/S.
+                do i = 1,n
+                    sr = 0; si = 0
+                    do j = 1,n
+                        call qe_rhs_term(ctx%hr(i,j), ctx%hi(i,j), &
+                            x(j)%lo, &
+                            x(n+j)%lo, ctx%hbar, ar, ai)
+                        call qe_add(sr,ar,nc); sr = nc
+                        call qe_add(si,ai,nc); si = nc
+                    end do
+                    ax(i) = ipoint(sr); ax(n+i) = ipoint(si)
+                end do
+                ok = all_finite_intervals(ax)
+                return
+            end if
             do j = 1, n
                 do i = 1, n
                     if (ctx%action_mode == 1) then
@@ -279,6 +506,43 @@ contains
             end do
             ok = all_finite_intervals(ax)
         end select
+    end subroutine
+
+    subroutine bounded_action(state, x, ax, ok)
+        type(quantum_evolution_t), intent(in) :: state
+        type(interval_t), intent(in) :: x(:)
+        type(interval_t), intent(inout) :: ax(:)
+        logical, intent(out) :: ok
+        integer :: n,j
+        type(interval_t) :: next
+        n = state%n; ok = .false.
+        if (state%action_mode == 1) then
+            call enclose_matvec(state%dhr,state%dhr_bound,x(n+1:),ax(:n),ok)
+            if (.not. ok) return
+            call enclose_matvec(state%dhr,state%dhr_bound,x(:n),ax(n+1:),ok,sign=-1)
+            if (.not. ok) return
+            call enclose_matvec(state%dhi,state%dhi_bound,x(:n),ax(:n),ok, &
+                accumulate=.true.)
+            if (.not. ok) return
+            call enclose_matvec(state%dhi,state%dhi_bound,x(n+1:),ax(n+1:),ok, &
+                accumulate=.true.)
+        else
+            call enclose_matvec(state%hr,state%hr_bound,x(n+1:),ax(:n),ok)
+            if (.not. ok) return
+            call enclose_matvec(state%hr,state%hr_bound,x(:n),ax(n+1:),ok,sign=-1)
+            if (.not. ok) return
+            call enclose_matvec(state%hi,state%hi_bound,x(:n),ax(:n),ok, &
+                accumulate=.true.)
+            if (.not. ok) return
+            call enclose_matvec(state%hi,state%hi_bound,x(n+1:),ax(n+1:),ok, &
+                accumulate=.true.)
+        end if
+        if (.not. ok) return
+        do j = 1,2*n
+            call qe_fraction_interval(ax(j),ipoint(state%hbar),next)
+            ax(j) = next
+        end do
+        ok = all_finite_intervals(ax)
     end subroutine
 
     subroutine sample_quantum_evolution(state, cell, fraction, re, im, radius, &
@@ -316,6 +580,7 @@ contains
         real(dp), intent(out) :: radius
         logical, intent(out) :: ok
         type(interval_t) :: yr, yi, error, sumsq, next, norm, total
+        real(dp) :: partial
         integer :: j, n
 
         n = state%n; sumsq = ipoint(0.0_dp); ok = .false.
@@ -334,7 +599,9 @@ contains
         if (tangent) then
             call qe_add_interval(ipoint(state%dradius(cell)), norm, total)
         else
-            call qe_add_interval(ipoint(state%radius(cell)), norm, total)
+            partial = add_up(state%radius(cell-1), &
+                mul_up(mul_up(state%h,fraction),state%cell_residual(cell)))
+            call qe_add_interval(ipoint(partial), norm, total)
         end if
         if (.not. finite_interval(total)) return
         radius = total%hi; ok = .true.
@@ -429,6 +696,7 @@ contains
         check = .true.
         if (present(certify)) check = certify
         if (check) then
+            if (state%error_mode == QE_APPROXIMATE) return
             if (.not. state%bounded) then
                 do cell = 1, state%steps
                     call make_cell(state, cell, .false., .true.)
@@ -455,6 +723,10 @@ contains
             end if
         end if
         state%dhr = dhre; state%dhi = dhim
+        call prepare_matvec_bound(dhre, state%dhr_bound, ok)
+        if (.not. ok) return
+        call prepare_matvec_bound(dhim, state%dhi_bound, ok)
+        if (.not. ok) return
         state%dy(1:n, 0) = dpsi_re; state%dy(n + 1:2*n, 0) = dpsi_im
         if (check) then
             acc = ipoint(0.0_dp)

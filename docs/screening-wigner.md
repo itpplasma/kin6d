@@ -150,3 +150,13 @@ and their tangents). CTest: `test_screening` takes 3.5 s and `test_wigner`
 - No rigorous enclosure for the Lindhard quadrature (singular integrands) or
   for the Wigner run; a static local-field correction and an interacting
   RPA/HF comparison (QG7 next step) are not implemented.
+
+## Error-control cost
+
+Optional `screening_q_table` profiling separates low-rule estimation and
+strict tail evaluation from the high-rule candidate. On the measured theta=1
+fixture the diagnostic work exceeds candidate cost; it misses the always-on
+10–20% target. Cache immutable response tables or schedule reference
+checks at checkpoints. The quadrature and linear propagation terms remain
+indicators; strict tail arithmetic alone does not certify the full response.
+See [the measured strategy](error-control-strategy.md).

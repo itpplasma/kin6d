@@ -1,0 +1,10 @@
+trial=1,variant=1,cpu_seconds=  0.001128
+trial=1,variant=2,cpu_seconds=  0.000166
+trial=2,variant=2,cpu_seconds=  0.000165
+trial=2,variant=1,cpu_seconds=  0.001157
+trial=3,variant=1,cpu_seconds=  0.001156
+trial=3,variant=2,cpu_seconds=  0.000163
+variant,median_cpu_seconds,min_cpu_seconds,max_cpu_seconds
+uncached,  0.001156,  0.001128,  0.001157
+cached,  0.000165,  0.000163,  0.000166
+measured_speedup=   7.006

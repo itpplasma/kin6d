@@ -71,6 +71,7 @@ module kin6d_coulomb_encounter
         real(dp) :: reconstruction_rms = 0   ! [indicator] pointwise off-node error
         real(dp) :: radial_tail2 = 0         ! [bound] analytic packet weight beyond rmax
         real(dp) :: setup_seconds = 0, projection_seconds = 0, eigen_seconds = 0
+        real(dp) :: estimator_seconds = 0, indicator_seconds = 0
         integer :: l_estimate = 0, m_estimate = 0, kept_states = 0
         integer(i64) :: stored_bytes = 0
     end type encounter_ledger_t
@@ -229,7 +230,10 @@ contains
         call system_clock(c2)
         enc%ledger%eigen_seconds = real(c2 - c1, dp)/real(rate, dp)
         call finalize_ledger(enc)
+        call cpu_time(st)
         enc%ledger%reconstruction_rms = reconstruction_error(enc)
+        call cpu_time(se)
+        enc%ledger%indicator_seconds = se-st
         call system_clock(c2)
         enc%ledger%setup_seconds = real(c2 - c0, dp)/real(rate, dp)
         enc%ready = .true.; ok = .true.; message = ''
@@ -361,6 +365,7 @@ contains
         real(dp), allocatable :: e(:), v(:, :), resid(:)
         complex(dp), allocatable :: c(:, :)
         real(dp) :: emin, emax, orth, w2, disc, budget, rho2, span
+        real(dp) :: estimate_seconds, estimator_start, estimator_end
         integer :: attempt, m
         logical :: done
         ok = .false.
@@ -370,8 +375,11 @@ contains
             emin = enc%emin; emax = enc%emax; span = enc%emax - enc%emin
             do attempt = 1, 8
                 call radial_eigen_window(enc%mesh, l, enc%cfg%g, enc%mu, enc%cfg%hbar, &
-                                         emax, e, v, resid, orth, done, emin)
+                                         emax, e, v, resid, orth, done, emin, &
+                                         estimator_seconds=estimate_seconds)
                 if (.not. done) return
+                enc%ledger%estimator_seconds = &
+                    enc%ledger%estimator_seconds+estimate_seconds
                 c = matmul(transpose(cmplx(v, 0.0_dp, dp)), wv%a0)
                 disc = max(0.0_dp, w2 - sum(abs(c)**2))
                 if (disc <= budget .or. size(e) == enc%mesh%n) exit
@@ -380,6 +388,7 @@ contains
             if (disc > budget .and. size(e) < enc%mesh%n) return
             call move_alloc(e, wv%e); call move_alloc(v, wv%v)
             call move_alloc(resid, wv%resid); call move_alloc(c, wv%c)
+            call cpu_time(estimator_start)
             rho2 = 0
             do m = 1, wv%nm
                 rho2 = rho2 + sum(abs(wv%c(:, m))*wv%resid)**2
@@ -392,6 +401,9 @@ contains
             enc%ledger%kept_states = enc%ledger%kept_states + size(wv%e)
             enc%ledger%stored_bytes = enc%ledger%stored_bytes + &
                 int(8*size(wv%v) + 16*size(wv%c) + 16*size(wv%a0) + 16*size(wv%e), i64)
+            call cpu_time(estimator_end)
+            enc%ledger%estimator_seconds = &
+                enc%ledger%estimator_seconds+estimator_end-estimator_start
         end associate
         ok = .true.
     end function solve_wave
