@@ -164,11 +164,13 @@ The other observables are:
 `fermion_ensemble_demo` writes the following to `output/`:
 
 - `fermion-exchange-hole.{csv,png}`: N=123 at Theta = 0, 0.25, 1, 2, compared
-  with the grand-canonical, T=0 analytic, Boltzmann and classical g=1 curves.
+  with the grand-canonical, T=0 analytic, Boltzmann and classical g=1 curves;
+  the second panel shows the finite-size deviation g_N - g_inf.
 - `fermion-occupations.{csv,png}`: canonical occupations compared with
-  Fermi–Dirac and Maxwell–Boltzmann.
+  Fermi–Dirac and Maxwell–Boltzmann on a log axis (tails visible).
 - `fermion-eos-scan.{csv,png}` and `fermion-eos-limit.csv`: the pressure and
-  heat-capacity scan for Theta from 0.05 to 10.
+  heat-capacity scan for Theta from 0.05 to 10; the lower panels plot the
+  size-scan indicators |e_N - e_inf| and |C_N - C_inf| against N.
 - `fermion-size-scan.csv`: finite-N differences and the recursion
   cancellation.
 

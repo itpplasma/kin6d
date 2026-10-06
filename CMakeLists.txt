@@ -7,7 +7,7 @@ set(CMAKE_Fortran_STANDARD_REQUIRED ON)
 set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
-set(KIN6D_FORTPLOT_REVISION "5380eb698f29f999e312d1009b5c6dfdf1dac582")
+set(KIN6D_FORTPLOT_REVISION "cad62c675002029ab7a0d875d80baeb155fca8d1")
 set(KIN6D_FORTNUM_REVISION "e97a493bfe67a404daa2d7c2090ff3eef9c32b75")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
@@ -412,3 +412,26 @@ target_link_libraries(test_packet_models PRIVATE kin6d)
 add_test(NAME packet_models_oracles COMMAND test_packet_models)
 add_executable(packet_models_demo app/packet_models_demo.f90)
 target_link_libraries(packet_models_demo PRIVATE kin6d fortplot kin6d_io)
+
+# Campaign H1a: classical OCP correlation-hierarchy map (Metropolis MC with
+# incremental Ewald, g3/cumulant estimators, YBG closures, HNC; appended).
+if(KIN6D_FORTSYM_BUILD)
+    add_executable(gen_correlation_hierarchy gen/gen_correlation_hierarchy.f90)
+    target_link_libraries(gen_correlation_hierarchy PRIVATE kin6d_gen_support)
+endif()
+target_sources(kin6d PRIVATE src/generated/kin6d_correlation_hierarchy_leaves.f90
+    src/ocp_monte_carlo.f90 src/series_statistics.f90 src/correlation_hierarchy.f90
+    src/ocp_hnc.f90)
+set_source_files_properties(src/generated/kin6d_correlation_hierarchy_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_correlation_hierarchy test/test_correlation_hierarchy.f90)
+target_link_libraries(test_correlation_hierarchy PRIVATE kin6d)
+add_test(NAME correlation_hierarchy_h1a_oracles COMMAND test_correlation_hierarchy)
+add_executable(correlation_map_classical_demo app/correlation_map_types.f90
+    app/correlation_map_md.f90 app/correlation_map_plots.f90
+    app/correlation_map_classical_demo.f90)
+target_link_libraries(correlation_map_classical_demo PRIVATE kin6d kin6d_io fortplot
+    kin6d_demo_style)
+if(OpenMP_Fortran_FOUND)
+    target_link_libraries(correlation_map_classical_demo PRIVATE OpenMP::OpenMP_Fortran)
+endif()

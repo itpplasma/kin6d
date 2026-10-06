@@ -4,7 +4,7 @@
 program screening_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortplot, only: figure, subplot, plot, title, suptitle, xlabel, ylabel, &
-        xlim, ylim, legend, tight_layout, savefig
+        xlim, ylim, legend, tight_layout, savefig, set_xscale, set_yscale
     use kin6d_species, only: atomic_units, electron, plasma_scales, plasma_scales_t
     use kin6d_screening_hierarchy
     use kin6d_result_io, only: run_t, result_file_t
@@ -150,8 +150,6 @@ program screening_demo
     write (*, '(a,f9.6,a,es10.3,a,es10.3)') 'Friedel period ', period, &
         ' | G(0)-fermi_gas gap ', route_gap, ' | Debye-limit dev ', worst_debye(1)
 
-    ! fortplot at the pin applies set_xscale/set_yscale to the whole figure and
-    ! does not clip lines to the axes: plot log10 data and clip explicitly.
     call result%create(run)
     call result%write('theta', theta, '1', 'T/T_F of the k_s scan', dims='theta')
     call result%write('ks_over_kd_fermi_gas', ks_kd, '1', &
@@ -186,67 +184,70 @@ program screening_demo
     call figure(figsize=[13.2_dp, 8.8_dp])
     call subplot(2, 2, 1)
     call title('Static screening wavenumber, $r_s = 1$')
-    call plot(log10(theta), log10(ks_kd), color=blue, label='finite-T Fermi (fermi_gas)')
-    call plot(log10(theta(1:nt:4)), log10(lind_kd(1:nt:4)), color=verm, &
-        linestyle='none', marker='o', markersize=5.0_dp, label='Lindhard, $q = 0$ limit')
-    call plot(log10(theta), log10(debye), color=black, linestyle='--', label='Debye')
-    call plot(log10(theta), log10(tf), color=black, linestyle=':', &
+    call plot(theta, ks_kd, color=blue, label='finite-T Fermi (fermi_gas)')
+    call plot(theta(1:nt:4), lind_kd(1:nt:4), color=verm, &
+        linestyle='none', marker='o', markersize=5.0_dp, label='Lindhard, small-$q$ limit')
+    call plot(theta, debye, color=black, linestyle='--', label='Debye')
+    call plot(theta, tf, color=black, linestyle=':', &
         label='T=0 Thomas-Fermi')
-    call xlim(-2.0_dp, 2.0_dp); call ylim(-1.0_dp, 1.2_dp)
-    call xlabel('$\log_{10} \Theta$, $\Theta = T/T_F$')
-    call ylabel('$\log_{10} (k_s / k_D)$')
+    call set_xscale('log'); call set_yscale('log')
+    call xlim(1e-2_dp, 1e2_dp); call ylim(0.1_dp, 15.0_dp)
+    call xlabel('$\Theta = T/T_F$')
+    call ylabel('$k_s / k_D$')
     call legend(loc='upper left')
     call subplot(2, 2, 2)
     call title('Static RPA dielectric function')
-    call plot(log10(q), log10(eps(:, 2)), color=blue, label='$\Theta$ = 0.1')
-    call plot(log10(q), log10(eps(:, 3)), color=verm, label='$\Theta$ = 1')
-    call plot(log10(q), log10(eps(:, 4)), color=green, label='$\Theta$ = 10')
-    call plot(log10(q(1:nq:10)), log10(eps_a(1:nq:10, 3)), color=verm, &
+    call plot(q, eps(:, 2), color=blue, label='$\Theta$ = 0.1')
+    call plot(q, eps(:, 3), color=verm, label='$\Theta$ = 1')
+    call plot(q, eps(:, 4), color=green, label='$\Theta$ = 10')
+    call plot(q(1:nq:10), eps_a(1:nq:10, 3), color=verm, &
         linestyle='none', marker='o', markersize=4.0_dp, &
         label='momentum route, $\Theta$ = 1')
-    call plot(log10(q), log10(eps(:, 1)), color=black, linestyle='--', &
+    call plot(q, eps(:, 1), color=black, linestyle='--', &
         label='T=0 closed form')
-    call xlim(-1.5_dp, 1.0_dp); call ylim(-4.5_dp, 3.0_dp)
-    call xlabel('$\log_{10} (q / k_F)$'); call ylabel('$\log_{10} (\epsilon(q) - 1)$')
+    call set_xscale('log'); call set_yscale('log')
+    call xlim(10.0_dp**(-1.5_dp), 10.0_dp); call ylim(10.0_dp**(-4.5_dp), 1e3_dp)
+    call xlabel('$q / k_F$'); call ylabel('$\epsilon(q) - 1$')
     call legend(loc='lower left')
     call subplot(2, 2, 3)
     call title('Screened point charge')
-    call plot(r, clog(ratio(:, 1)), color=blue, label='Lindhard T=0')
-    call plot(r, clog(ratio(:, 3)), color=verm, label='Lindhard $\Theta$ = 1')
-    call plot(r, clog(ratio(:, 4)), color=green, label='Lindhard $\Theta$ = 10')
-    call plot(r, clog(exp(-ktf*r)), color=black, linestyle='--', label='Thomas-Fermi')
-    call plot(r, clog(exp(-ks1*r)), color=black, linestyle='-.', &
+    call plot(r, floor_abs(ratio(:, 1)), color=blue, label='Lindhard T=0')
+    call plot(r, floor_abs(ratio(:, 3)), color=verm, label='Lindhard $\Theta$ = 1')
+    call plot(r, floor_abs(ratio(:, 4)), color=green, label='Lindhard $\Theta$ = 10')
+    call plot(r, floor_abs(exp(-ktf*r)), color=black, linestyle='--', label='Thomas-Fermi')
+    call plot(r, floor_abs(exp(-ks1*r)), color=black, linestyle='-.', &
         label='Yukawa $k_s(\Theta=1)$')
-    call plot(r, clog(exp(-kd10*r)), color=black, linestyle=':', &
+    call plot(r, floor_abs(exp(-kd10*r)), color=black, linestyle=':', &
         label='Debye $\Theta$ = 10')
-    call xlim(0.0_dp, 20.0_dp); call ylim(-8.0_dp, 0.2_dp)
-    call xlabel('$r k_F$'); call ylabel('$\log_{10} |\phi / \phi_{bare}|$')
-    call legend(loc='upper right')
+    call set_yscale('log')
+    call xlim(0.0_dp, 20.0_dp); call ylim(1e-8_dp, 1.5_dp)
+    call xlabel('$r k_F$'); call ylabel('$|\phi / \phi_{bare}|$')
+    call legend(loc='lower left')
     call subplot(2, 2, 4)
     call title('Friedel oscillations and thermal damping')
     call plot(r(160:), clip(friedel(160:, 1)), color=blue, label='T=0')
     call plot(r(160:), clip(friedel(160:, 2)), color=verm, label='$\Theta$ = 0.02')
     call plot(r(160:), clip(friedel(160:, 3)), color=green, label='$\Theta$ = 0.05')
     call plot(r(160:), clip(friedel(160:, 4)), color=orange, label='$\Theta$ = 0.1')
-    call xlim(8.0_dp, 20.0_dp); call ylim(-0.9_dp, 0.9_dp)
+    call xlim(8.0_dp, 20.0_dp); call ylim(-0.8_dp, 1.5_dp)
     call xlabel('$r k_F$'); call ylabel('$(r k_F)^3 \phi / \phi_{bare}$')
-    call legend(loc='lower right')
+    call legend(loc='upper left')
     call suptitle('Ideal electron gas, static RPA without local-field correction; '// &
         'period ' // fixed(period) // ' $/k_F$ ($\pi$ = 3.1416)')
     call tight_layout()
     call savefig('output/screening-hierarchy.png')
 contains
-    !> log10|y| floored at -8 (display only).
-    pure function clog(y) result(z)
+    !> |y| floored at the lower y limit of panel 3 (display only).
+    pure function floor_abs(y) result(z)
         real(dp), intent(in) :: y(:)
         real(dp) :: z(size(y))
-        z = log10(max(abs(y), 1e-8_dp))
+        z = max(abs(y), 1e-8_dp)
     end function
-    !> Clip into the plotted band of panel 4 (fortplot does not clip lines).
+    !> Clip into the plotted band of panel 4 (display only).
     pure function clip(y) result(z)
         real(dp), intent(in) :: y(:)
         real(dp) :: z(size(y))
-        z = max(-0.9_dp, min(0.9_dp, y))
+        z = max(-0.8_dp, min(1.5_dp, y))
     end function
     !> kF a_B = (9 pi/4)^(1/3)/r_s (textbook map, cross-checked in the test).
     real(dp) function kf_ab()
