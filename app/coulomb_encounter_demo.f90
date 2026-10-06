@@ -1,13 +1,17 @@
 ! Q1/Q1b evidence: Sommerfeld-eta and impact-parameter scans of the localized
 ! two-body quantum Coulomb encounter (product, singlet, triplet, classical),
 ! an encounter movie with relative and lab-frame densities beside the classical
-! ensemble, and the hydrogen Kepler packet. Writes CSV and figures to output/.
-! Usage: coulomb_encounter_demo [--no-movie]
+! ensemble, and the hydrogen Kepler packet. Writes CSV and figures to output/
+! and the evidence file output/coulomb_encounter_demo.nc (kin6d_result_io).
+! Usage: coulomb_encounter_demo [--config FILE] [--no-movie]
+! Namelist group &coulomb_encounter: etas (four Sommerfeld parameters), nclass
+! (classical pairs per ensemble), seed/movie_seed (classical ensembles), movie.
 program coulomb_encounter_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use kin6d_coulomb_encounter
     use kin6d_coulomb_kepler
     use kin6d_coulomb_encounter_leaves, only: ce_mott, ce_free_width
+    use kin6d_result_io, only: run_t, result_file_t
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, title, &
         xlabel, ylabel, xlim, ylim, legend, savefig, pcolormesh, tight_layout, &
         set_yscale, suptitle
@@ -15,12 +19,23 @@ program coulomb_encounter_demo
         save_animation
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
-    real(dp), parameter :: etas(4) = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
-    integer, parameter :: nb = 36, nclass = 20000
-    logical :: movie
+    integer, parameter :: nb = 36
+    real(dp), parameter :: bs(4) = [0.0_dp, 5.0_dp, 10.0_dp, 20.0_dp]
+    real(dp) :: etas(4) = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
+    integer :: nclass = 20000
+    integer(i64) :: seed = 1234_i64, movie_seed = 77_i64
+    logical :: movie = .true.
+    namelist /coulomb_encounter/ etas, nclass, seed, movie_seed, movie
+    type(run_t) :: run
+    type(result_file_t) :: result
     character(160) :: arg
-    integer :: status, i
+    character(256) :: msg
+    integer :: status, i, unit, ios
     real(dp) :: ratio(nb, 5, 4), theta(nb)
+    ! Evidence for the result file, filled by the scans.
+    real(dp) :: eta_summary(6, 4), bscan_quantum(nb, 4), bscan_classical(nb, 4)
+    real(dp) :: kepler_errors(2), bin_vjp(4), cost_seconds(6)
+    real(dp), allocatable :: kepler_series(:, :)
     ! Movie state shared with the animation callback (host association).
     integer, parameter :: nf = 192, npx = 128, nsep = 60
     real(dp), allocatable :: qr(:, :, :), ql(:, :, :), tl(:, :, :), cr(:, :, :), &
@@ -28,11 +43,19 @@ program coulomb_encounter_demo
     real(dp) :: times(nf), xr(0:npx), xl(0:npx), scent(nsep), lr, mv_lambdabar, &
         mv_speed, mv_z0, mv_r0_sigma
     type(figure_t), pointer :: canvas => null()
-    movie = .true.
-    do i = 1, command_argument_count()
-        call get_command_argument(i, arg)
+    call run%start('coulomb_encounter_demo')
+    call run%open_config(unit)
+    ios = 0; msg = ''
+    if (run%has_config()) read (unit, nml=coulomb_encounter, iostat=ios, iomsg=msg)
+    call run%close_config(unit, 'coulomb_encounter', ios, msg)
+    do i = 1, run%argument_count()
+        call run%argument(i, arg)
         if (trim(arg) == '--no-movie') movie = .false.
     end do
+    if (any(etas <= 0) .or. nclass < 1) error stop 'etas > 0 and nclass >= 1 required'
+    call run%open_resolved(unit)
+    write (unit, nml=coulomb_encounter)
+    call run%close_resolved(unit)
     call execute_command_line('mkdir -p output', exitstat=status)
     if (status /= 0) error stop 'cannot create output/'
     call eta_scan()
@@ -40,7 +63,43 @@ program coulomb_encounter_demo
     call kepler_case()
     call cost_ledger()
     if (movie) call encounter_movie()
+    call write_result()
 contains
+    subroutine write_result()
+        call result%create(run)
+        call result%attribute('model', 'localized two-body quantum Coulomb '// &
+            'encounter (partial waves, exact retained-spectrum evolution) and '// &
+            'hydrogen radial Kepler packet; atomic units')
+        call result%attribute('status', 'candidate finite-time wavepacket bins '// &
+            'versus plane-wave references; state_bound is the retained-state '// &
+            'error bound, no pointwise bin enclosure')
+        call result%write('theta', theta, 'deg', 'CM scattering angle bin centre', &
+            dims='bin')
+        call result%write('eta', etas, '1', 'Sommerfeld parameter', dims='eta')
+        call result%write('eta_bin_ratio', ratio, '1', 'symmetrized bin probability '// &
+            '/ plane-wave Rutherford: product, singlet, triplet, classical, '// &
+            'Mott singlet', dims='bin,channel,eta', status='candidate')
+        call result%write('eta_summary', eta_summary, 'mixed', 'k, r0/sigma, '// &
+            'state_bound, projection_defect, reconstruction_rms, wall_probability', &
+            dims='summary,eta')
+        call result%write('b_over_lambdabar', bs, '1', 'impact parameter (eta = 1)', &
+            dims='impact')
+        call result%write('b_scan_quantum', bscan_quantum, '1', &
+            'product-state bin probability', dims='bin,impact', status='candidate')
+        call result%write('b_scan_classical', bscan_classical, '1', &
+            'classical-ensemble bin probability', dims='bin,impact', &
+            status='statistical (Monte Carlo, fixed seed)')
+        call result%write('kepler_series', kepler_series, 'mixed', 't/T_rev, '// &
+            '<r>/r_c, |A|^2 numeric, |A|^2 exact levels', dims='kepler_time,series')
+        call result%write('kepler_errors', kepler_errors, '1', &
+            'max level relative error, max |A - A_exact|', dims='kepler_error')
+        call result%write('bin_vjp', bin_vjp, 'mixed', 'bin probability (pi/3..2pi/3) '// &
+            'and its VJP gradient d/db, d/dsigma, d/dg', dims='vjp')
+        call result%write('cost_seconds', cost_seconds, 's', 'state, bins, state '// &
+            'bound, xz projection, JVP, VJP wall time', dims='cost')
+        call result%close()
+    end subroutine write_result
+
     ! Encounter for one eta in reduced units hbar = m_e = e^2/(4 pi eps0) = 1
     ! (atomic units); lengths scale with lambdabar = 1/k.
     subroutine setup_case(eta, sig_l, z0_l, b_l, cfg, enc, t)
@@ -68,7 +127,7 @@ contains
         integer :: n, ib
         logical :: ok
         allocate (rel(3, nclass, 1), cm(3, nclass, 1))
-        call encounter_classical_ensemble(enc, nclass, 1234_i64, [t], rel, cm, drift, ok)
+        call encounter_classical_ensemble(enc, nclass, seed, [t], rel, cm, drift, ok)
         if (.not. ok) error stop 'classical ensemble failed'
         pc = 0
         do n = 1, nclass
@@ -140,6 +199,8 @@ contains
             end do
             call encounter_state_error(enc, t, 1.0_dp, 0.5_dp, eb, rad)
             wall = encounter_wall_probability(enc, a, SECTOR_PRODUCT, 2*cfg%sigma)
+            eta_summary(:, ie) = [cfg%k, enc%r0/cfg%sigma, eb, &
+                enc%ledger%projection_defect, enc%ledger%reconstruction_rms, wall]
             write (us, '(f6.2,26(",",es13.5))') etas(ie), cfg%k, enc%lambdabar, enc%r0, &
                 sig_l, enc%r0/cfg%sigma, cfg%z0, t, enc%mesh%rmax, real(enc%mesh%n, dp), &
                 real(enc%lmax, dp), real(enc%mmax, dp), real(enc%ledger%kept_states, dp), &
@@ -189,7 +250,6 @@ contains
 
     ! Impact-parameter scan at eta = 1 (distinguishable product state).
     subroutine b_scan()
-        real(dp), parameter :: bs(4) = [0.0_dp, 5.0_dp, 10.0_dp, 20.0_dp]
         type(encounter_config_t) :: cfg
         type(encounter_t) :: enc
         complex(dp), allocatable :: a(:, :, :)
@@ -217,6 +277,7 @@ contains
                 ' mmax=', enc%mmax
         end do
         close (u)
+        bscan_quantum = pq; bscan_classical = pc
         call figure(figsize=[9.0_dp, 6.0_dp])
         call title('eta = 1, sigma = 10 lambdabar: impact-parameter scan (product state)')
         call xlabel('$\theta$ (deg), CM frame, bins at $t = 2 z_0/v$')
@@ -283,6 +344,8 @@ contains
             kep%setup_seconds
         close (u)
         print '(a,f8.3,a,es9.2)', 'Kepler: <n>=', kep%mean_n, ' max|A-A_exact|=', dmax
+        kepler_series = reshape([t/kep%revival, rmean/kep%rc, a2, o2], [ns, 4])
+        kepler_errors = [kep%max_level_error, dmax]
         call figure(figsize=[11.0_dp, 10.0_dp])
         call subplot(3, 1, 1)
         call title('Q1b: hydrogen radial packet, nbar = 40, l = 1, rms dn = 1.5')
@@ -369,6 +432,8 @@ contains
         write (u, '(a,es12.4,a,i0,a)') 'derivative_vjp_3_params,', tv, ',', &
             int(32*enc%mesh%n**2, i64), ',one backward pass gives d/db d/dsigma d/dg'
         close (u)
+        bin_vjp = [pb, grad]
+        cost_seconds = [ts, tb, tc, tp, tj, tv]
         print '(a,es9.2,a,es9.2,a,es9.2,a,es9.2)', 'cost: state ', ts, ' s, bins ', tb, &
             ' s, jvp ', tj, ' s, vjp ', tv
     end subroutine cost_ledger
@@ -405,7 +470,8 @@ contains
         allocate (a(enc%mesh%n, 0:enc%mmax, 0:enc%lmax), rel(3, nclass, nf), cm(3, nclass, nf))
         allocate (qr(npx, npx, nf), ql(npx, npx, nf), tl(npx, npx, nf), cr(npx, npx, nf), &
                   cl(npx, npx, nf), sep(nsep, 4, nf), tri(npx, npx), tmp(npx, npx))
-        call encounter_classical_ensemble(enc, nclass, 77_i64, times, rel, cm, drift, ok)
+        call encounter_classical_ensemble(enc, nclass, movie_seed, times, rel, cm, &
+                                          drift, ok)
         if (.not. ok) error stop 'classical movie ensemble failed'
         open (newunit=u, file='output/coulomb-movie-separation.csv', status='replace')
         write (u, '(a)') 't,t_v_over_z0,r_over_lambdabar,P_product,P_singlet,P_triplet,'// &

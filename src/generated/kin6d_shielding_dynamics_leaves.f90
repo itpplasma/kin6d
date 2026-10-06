@@ -157,8 +157,8 @@ pure elemental subroutine shielding_mode(a, k, rho, x, density, potential, field
     t2 = cos(t1)
     t3 = rho - a
     density = a*t2
-    potential = t2*t3/k**2
-    field = sin(t1)*t3/k
+    potential = t2*t3/(k**2*1)
+    field = sin(t1)*t3/(k*1)
 
 end subroutine shielding_mode
 
