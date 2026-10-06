@@ -73,6 +73,7 @@ module kin6d_hybrid_encounter
         real(dp) :: chi = 0                ! quantum ring deflection (promoted)
         integer :: steps = 0, ring = -1
         logical :: promoted = .false.
+        logical :: near = .false.          ! indicator true (eta < eta_switch, b < b_s)
     end type
 contains
     !> Pair of a test species and a field species with impact cut bmax.
@@ -211,7 +212,8 @@ contains
                 call lift_asymptote(model, y(1:3), y(4:6), vl, hl, al, uin, uout)
                 bl = norm2(hl)/vl
                 call hybrid_zone(model, vl, etal, kl, b90l, nr, bsl)
-                if (model%cfg%promote .and. etal < model%cfg%eta_switch .and. bl < bsl) then
+                rec%near = etal < model%cfg%eta_switch .and. bl < bsl
+                if (model%cfg%promote .and. rec%near) then
                     rec%promoted = .true.
                     l = ring_index(kl*bl)
                     rec%ring = l
@@ -340,12 +342,16 @@ contains
     end function kernel_slowing_rate
 
     !> Monte Carlo samples of the slowing-down rate nu = -<dv_z/dt>/v_b for a
-    !> test particle at v_b z: field velocity from the Maxwellian, impact
-    !> parameter by importance sampling (uniform disk below b_lo, log-uniform up
-    !> to b_max, b_lo = 1e-3 min(b90, lambdabar)) with the exact uniform-disk
-    !> weight, Rao-Blackwellized azimuth (E_phi[dg] = -(1 - cos theta) g).
-    !> xs(i) are independent identically distributed estimates of nu; the same
-    !> seed gives paired samples for promote on/off. Statistical law: CLT.
+    !> test particle at v_b z, field Maxwellian at temperature T.
+    !> Relative velocity g = v_b z - v_f by importance sampling with proposal
+    !> density f_M(g)/g^2 in d^3g (magnitude from a piecewise-constant table of
+    !> rho(g) = int f_M dOmega, direction cosine exactly from exp(a c)); the
+    !> exact weight g^2 rho(g)/rho_table(g) makes the estimator bounded (the
+    !> plain Maxwellian draw has infinite variance: sigma_tr ~ g^-4). Impact
+    !> parameter: uniform disk below b_lo, log-uniform up to b_max,
+    !> b_lo = 1e-3 min(b90, lambdabar), exact uniform-disk weight; azimuth
+    !> Rao-Blackwellized (E_phi[dg] = -(1 - cos theta) g). xs(i) are iid
+    !> estimates of nu; the same seed gives paired samples for promote on/off.
     subroutine hybrid_rate_samples(model, vb, temperature, density, seed, xs, nprom, &
                                    max_energy_defect, max_angular_change, ok)
         type(hybrid_model_t), intent(inout) :: model
@@ -355,23 +361,50 @@ contains
         integer, intent(out) :: nprom
         real(dp), intent(out) :: max_energy_defect, max_angular_change
         logical, intent(out) :: ok
+        integer, parameter :: ntab = 4096
         type(rng_t) :: rng
         type(fortnum_status_t) :: status
         type(encounter_record_t) :: rec
-        real(dp) :: vf(3), gvec(3), gout(3), bvec(3), vinf, eta, k, b90, bs, blo, u1, u2
-        real(dp) :: b, p, w, vth
+        real(dp) :: gvec(3), gout(3), bvec(3), vinf, eta, k, b90, bs, blo, u1, u2
+        real(dp) :: b, p, w, vth, gmax, dg, rho(ntab), cdf(0:ntab), wv, a, c, phi, st
         real(dp), parameter :: eps = 0.05_dp
-        integer :: i, nring, c
+        integer :: i, nring, j, lo, hi, mid
         ok = .false.; nprom = 0; max_energy_defect = 0; max_angular_change = 0
         call rng_seed(rng, seed, status)
         if (status%code /= FORTNUM_OK) return
         vth = sqrt(temperature/model%mf)
+        gmax = vb + 14*vth; dg = gmax/ntab
+        cdf(0) = 0
+        do j = 1, ntab
+            rho(j) = sphere_density((j - 0.5_dp)*dg)
+            cdf(j) = cdf(j - 1) + rho(j)*dg
+        end do
         do i = 1, size(xs)
-            do c = 1, 3
-                call rng_normal(rng, vf(c))
+            call rng_uniform(rng, u1)
+            u1 = u1*cdf(ntab)
+            lo = 0; hi = ntab
+            do while (hi - lo > 1)
+                mid = (lo + hi)/2
+                if (cdf(mid) <= u1) then
+                    lo = mid
+                else
+                    hi = mid
+                end if
             end do
-            gvec = [0.0_dp, 0.0_dp, vb] - vth*vf
-            vinf = norm2(gvec)
+            call rng_uniform(rng, u2)
+            vinf = (lo + u2)*dg
+            wv = vinf**2*sphere_density(vinf)/(rho(hi)/cdf(ntab))
+            a = model%mf*vinf*vb/temperature
+            call rng_uniform(rng, u1)
+            if (a < 1.0e-8_dp) then
+                c = 2*u1 - 1
+            else
+                c = 1 + log(u1 + (1 - u1)*exp(-2*a))/a
+            end if
+            c = max(-1.0_dp, min(1.0_dp, c))
+            call rng_uniform(rng, phi)
+            phi = 2*pi*phi; st = sqrt(max(0.0_dp, 1 - c*c))
+            gvec = vinf*[st*cos(phi), st*sin(phi), c]
             call hybrid_zone(model, vinf, eta, k, b90, nring, bs)
             blo = 1.0e-3_dp*min(b90, 1/k)
             call rng_uniform(rng, u1); call rng_uniform(rng, u2)
@@ -389,10 +422,33 @@ contains
             if (rec%promoted) nprom = nprom + 1
             max_energy_defect = max(max_energy_defect, abs(rec%energy_defect))
             max_angular_change = max(max_angular_change, rec%angular_change)
-            xs(i) = density*pi*model%bmax**2*vinf*w*(model%mu/model%mt)* &
+            xs(i) = density*pi*model%bmax**2*vinf*wv*w*(model%mu/model%mt)* &
                     2*sin(rec%theta/2)**2*gvec(3)/vb
         end do
         ok = .true.
+    contains
+        ! rho(g) = int f_M(g, Omega) dOmega for the Maxwellian centred at v_b z.
+        real(dp) function sphere_density(gg) result(r)
+            real(dp), intent(in) :: gg
+            real(dp) :: aa
+            aa = model%mf*gg*vb/temperature
+            r = 2*pi*(model%mf/(2*pi*temperature))**1.5_dp* &
+                exp(-model%mf*(gg - vb)**2/(2*temperature))
+            if (aa < 1.0e-8_dp) then
+                r = r*2
+            else
+                r = r*(-expm1_neg(2*aa))/aa
+            end if
+        end function sphere_density
+        ! expm1(-x) without cancellation for small x.
+        real(dp) function expm1_neg(x) result(e)
+            real(dp), intent(in) :: x
+            if (x < 1.0e-5_dp) then
+                e = -x + x*x/2 - x**3/6
+            else
+                e = exp(-x) - 1
+            end if
+        end function expm1_neg
     end subroutine hybrid_rate_samples
 
     !> Uniformly random unit vector perpendicular to unit u.
@@ -414,7 +470,8 @@ contains
 
     !> Advance test velocities v(3,:) by one plasma time step dt with physical
     !> (uniform-disk) encounter sampling: majorant rate n pi b_max^2 (|v| + 8 v_th)
-    !> with thinning by |g|. promoted(i) flags a promoted encounter in this step.
+    !> with thinning by |g|. promoted(i) flags an encounter in this step for which
+    !> the indicator holds (promoted when cfg%promote, classical otherwise).
     subroutine hybrid_beam_step(model, v, temperature, density, dt, rng, promoted, &
                                 nenc, ok)
         type(hybrid_model_t), intent(inout) :: model
@@ -449,7 +506,7 @@ contains
                 call hybrid_encounter(model, gvec, b*bvec, gout, rec, ok)
                 if (.not. ok) return
                 nenc = nenc + 1
-                if (rec%promoted) promoted(i) = .true.
+                if (rec%near) promoted(i) = .true.
                 v(:, i) = v(:, i) + (model%mu/model%mt)*(gout - gvec)
                 gm = max(gm, norm2(v(:, i)) + 8*vth); rate = density*pi*model%bmax**2*gm
             end do
