@@ -224,7 +224,7 @@ contains
             do i = 1, np
                 theta = 2*atan(exp(x(i)))
                 jac = sin(theta)     ! d theta/d t = sin(theta)
-                lnl = lnl + w(i)*jac*(1 - cos(theta))*coulomb_dsdo(theta, eta, spin)* &
+                lnl = lnl + w(i)*jac*2*sin(theta/2)**2*coulomb_dsdo(theta, eta, spin)* &
                       2*pi*sin(theta)
             end do
         end do
@@ -502,6 +502,7 @@ contains
             if (info /= 0) return
             call match(l, i0, i1, a, cj, cn, dcj, dcn, res)
             delta(l) = atan2(-cn, cj)
+            delta(l) = delta(l) - pi*nint(delta(l)/pi)   ! modulo pi, |delta| <= pi/2
             ddelta(l) = (-cj*dcn + cn*dcj)/(cj**2 + cn**2)
             plan%ledger%fit_residual = max(plan%ledger%fit_residual, res)
             deallocate (ab, a, ipiv)

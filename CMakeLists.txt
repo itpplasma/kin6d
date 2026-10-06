@@ -331,3 +331,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_quantum_collision_leaves.f90
     src/quantum_collision_kernel.f90)
 set_source_files_properties(src/generated/kin6d_quantum_collision_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_sources(kin6d PRIVATE src/hybrid_encounter.f90)
+add_executable(test_quantum_collision test/test_quantum_collision.f90)
+target_link_libraries(test_quantum_collision PRIVATE kin6d)
+add_test(NAME quantum_collision_qg6_oracles COMMAND test_quantum_collision)
