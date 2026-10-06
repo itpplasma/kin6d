@@ -39,8 +39,7 @@ the interval data written next to the image; the pixels never carry the bound.
 
 - Sequential fields (`pcolormesh`, densities, f(x,v)): `cmap='viridis'` with
   fixed `vmin`/`vmax` for the whole movie, plus a `colorbar(label=...)`
-  (fortplot at the pin rejects `colorbar` inside subplot grids, so until
-  that is fixed state the range in the axis label or caption). Do
+  on every colour-map panel, including panels in subplot grids. Do
   not put the colour range in the title. For signed fields (perturbations,
   potentials) use a diverging map centred at zero, with symmetric limits.
 - Categorical lines: use the Okabe-Ito palette via explicit RGB triples
