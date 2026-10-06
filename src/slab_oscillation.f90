@@ -4,11 +4,14 @@ module kin6d_slab_oscillation
     use fortnum_interval, only: interval_t, interval, hull, intersect, is_empty, mag, &
                                 linear_interpolation_remainder
     use fortnum_ode_cash_karp, only: cash_karp_step
+    use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    use fortnum_ode_residual_certificate, only: certify_linear_trajectory
     use kin6d_slab_oscillation_leaves, only: slab_oscillation_rhs, &
+               slab_oscillation_rhs_interval, &
                slab_oscillation_rhs_vjp, slab_oscillation_time, slab_oscillation_span, &
                                              slab_oscillation_hermite, &
-                slab_oscillation_hermite_interval, slab_oscillation_residual_interval, &
-           slab_oscillation_initial_radius_interval, slab_oscillation_radius_interval, &
+                slab_oscillation_hermite_interval, &
+           slab_oscillation_initial_radius_interval, &
             slab_oscillation_enlarge_interval, slab_oscillation_error_curvature_interval
     implicit none
     private
@@ -21,9 +24,12 @@ module kin6d_slab_oscillation
 
     ! Cold rigid electron slab against fixed planar ions, not periodic 3D OCP.
     ! tau=omega_pe*t, q=xi/xi0, p=dq/dtau; q'=p, p'=-q.
-    ! The untrusted generic RK candidate is reconstructed as C1 cubic Hermite q_h,
-    ! with p_h=q_h'. The residual bound is independent of the analytical oracle.
-    ! For e'=[0,1;-1,0]e+(0,-r), ||e(t)||2 <= ||e(0)||2+integral(abs(r)).
+    ! The untrusted generic RK candidate is reconstructed componentwise as C1
+    ! cubic Hermite q_h (slopes p_k) and p_h (slopes -q_k); FortNum's
+    ! fortnum_ode_residual_certificate bounds sup||(q_h'-p_h, p_h'+q_h)||2 by
+    ! Bernstein controls and, for the skew generator, accumulates
+    ! ||e(t)||2 <= ||e(0)||2 + integral of the residual bound. The bound is
+    ! independent of the analytical oracle.
     ! Displacement/density-edge events and fixed integration-mesh leaf derivatives
     ! are separate from an adaptive-schedule derivative or sensitivity certificate.
     type :: slab_oscillation_state_t
@@ -163,43 +169,42 @@ contains
         real(dp), intent(in) :: time(:), q(:), p(:), qinitial, pinitial
         real(dp), intent(out) :: radius(:), residual(:)
         logical, intent(out) :: ok
-        type(interval_t) :: r(4), coefficients, acc, next
-        integer :: j, k, n
+        real(dp), allocatable :: y(:, :), f(:, :)
+        type(interval_t) :: c(2, 0:3), w(2, 0:3), acc
+        type(fortnum_status_t) :: status
+        integer :: j, n
 
         ok = .false.
         n = size(time)
         if (n < 2) return
         if (size(q) /= n .or. size(p) /= n .or. size(radius) /= n) return
         if (size(residual) /= n - 1) return
-        if (.not. all(ieee_is_finite(time))) return
         if (.not. all(ieee_is_finite(q)) .or. .not. all(ieee_is_finite(p))) return
         if (.not. ieee_is_finite(qinitial) .or. .not. ieee_is_finite(pinitial)) return
         if (time(1) < 0.0_dp .or. time(1) > 0.0_dp) return
-        do j = 1, n - 1
-            if (time(j + 1) <= time(j)) return
-        end do
         call slab_oscillation_initial_radius_interval(interval(q(1)), interval(p(1)), &
                                             interval(qinitial), interval(pinitial), acc)
         if (.not. finite_interval(acc)) return
-        radius(1) = acc%hi
-        do j = 1, n - 1
-            call slab_oscillation_residual_interval(interval(time(j)), &
-                            interval(time(j + 1)), interval(q(j)), interval(q(j + 1)), &
-                             interval(p(j)), interval(p(j + 1)), r(1), r(2), r(3), r(4))
-            coefficients = r(1)
-            do k = 1, 4
-                if (.not. finite_interval(r(k))) return
-                coefficients = hull(coefficients, r(k))
-            end do
-            residual(j) = mag(coefficients)
-            call slab_oscillation_radius_interval(interval(time(j)), &
-                                interval(time(j + 1)), interval(residual(j)), acc, next)
-            if (.not. finite_interval(next)) return
-            acc = next
-            radius(j + 1) = acc%hi
+        allocate (y(2, n), f(2, n))
+        do j = 1, n
+            y(1, j) = q(j); y(2, j) = p(j)
+            call slab_oscillation_rhs(time(j), q(j), p(j), f(1, j), f(2, j))
         end do
-        ok = .true.
+        call certify_linear_trajectory(slab_action, time, y, f, interval(0.0_dp), &
+                                       acc%hi, c, w, residual, radius, status)
+        ok = status%code == FORTNUM_OK
     end subroutine certify_slab_oscillation_trace
+
+    ! Strict interval action of the constant generator [0, 1; -1, 0].
+    subroutine slab_action(x, ax, ok, ctx)
+        type(interval_t), intent(in) :: x(:)
+        type(interval_t), intent(out) :: ax(:)
+        logical, intent(out) :: ok
+        class(*), intent(in), optional :: ctx
+
+        call slab_oscillation_rhs_interval(interval(0.0_dp), x(1), x(2), ax(1), ax(2))
+        ok = finite_interval(ax(1)) .and. finite_interval(ax(2))
+    end subroutine slab_action
 
     subroutine sample_slab_oscillation(state, tau, q, p, qlower, qupper, &
                                        plower, pupper, ok)
@@ -208,7 +213,7 @@ contains
         real(dp), intent(out) :: q, p, qlower, qupper, plower, pupper
         logical, intent(out) :: ok
         type(interval_t) :: qi, pi
-        real(dp) :: qpp
+        real(dp) :: qpp, pdot
         integer :: j
 
         ok = .false.
@@ -221,7 +226,10 @@ contains
         if (.not. ok) return
         j = locate(state%time, tau)
         call slab_oscillation_hermite(tau, state%time(j), state%time(j + 1), &
-                      state%q(j), state%q(j + 1), state%p(j), state%p(j + 1), q, p, qpp)
+                      state%q(j), state%q(j + 1), state%p(j), state%p(j + 1), q, pdot, qpp)
+        ! p_h is its own Hermite with slopes -q_k (exact negation).
+        call slab_oscillation_hermite(tau, state%time(j), state%time(j + 1), &
+                    state%p(j), state%p(j + 1), -state%q(j), -state%q(j + 1), p, pdot, qpp)
         if (.not. ieee_is_finite(q) .or. .not. ieee_is_finite(p)) then
             ok = .false.
             return
@@ -255,7 +263,7 @@ contains
         type(interval_t), intent(out) :: q, p
         logical, intent(in) :: widen
         logical, intent(out) :: ok
-        type(interval_t) :: part, qi, pi, qpp, lo, hi
+        type(interval_t) :: part, qi, pi, pdot, qpp, lo, hi
         integer :: first, last, j
 
         ok = .false.
@@ -271,7 +279,11 @@ contains
             call slab_oscillation_hermite_interval(part, interval(state%time(j)), &
                                     interval(state%time(j + 1)), interval(state%q(j)), &
                                        interval(state%q(j + 1)), interval(state%p(j)), &
-                                                  interval(state%p(j + 1)), qi, pi, qpp)
+                                                  interval(state%p(j + 1)), qi, pdot, qpp)
+            call slab_oscillation_hermite_interval(part, interval(state%time(j)), &
+                                    interval(state%time(j + 1)), interval(state%p(j)), &
+                                      interval(state%p(j + 1)), interval(-state%q(j)), &
+                                                interval(-state%q(j + 1)), pi, pdot, qpp)
             if (widen) then
              call slab_oscillation_enlarge_interval(qi, interval(state%radius(j + 1)), &
                                                        lo, hi)

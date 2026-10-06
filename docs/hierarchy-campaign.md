@@ -64,7 +64,7 @@ error status as in AGENTS.md.
 | Q1b | Attractive electron-proton Rydberg packet (oscillation, revivals) | hydrogen spectrum, Kepler period | planned |
 | Q2 | Gaussian/coherent-sum packet models vs Q1 | Q1 reference | planned |
 | Q3 | Finite-N ideal fermions: exchange hole, canonical sums | ideal-gas identities | planned (EOS exists) |
-| Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | planned |
+| Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | exists (docs/jellium-cell.md) |
 | Q5 | Hartree/HF vs Q4 | Q4 | planned |
 | Q7 | Debye/finite-T Fermi/Thomas-Fermi/Lindhard screening; Wigner -> Vlasov as hbar->0 | analytic limits | exists (worker, unpromoted) |
 | Q8 | Relativistic ideal Fermi EOS | classical/NR/UR limits | planned |
@@ -207,3 +207,26 @@ run from the repository root and must reproduce committed leaves exactly.
   /Users/ert/code/lazy-fortran/fortnum-symmetric-eigen) to FortNum main;
   the Q4 branch pins it. Q4 open: Theta=0.5 N=3/4 thermal rows unconverged
   (indicators only); response only at q=(100).
+- 2026-10-06 (worker, F6 + Q4): F6: `quantum_evolution` and
+  `slab_oscillation` use FortNum `fortnum_ode_residual_certificate`; the
+  generated qe residual/Bernstein/radius-interval and slab residual/radius
+  leaves are gone. Quantum radii unchanged (two-level 1.0976e-7, tangent
+  1.9888e-7, n=125 8.719e-6; ~15 ms/cell, dominated by the kin6d dense
+  interval action). The slab moved to the componentwise first-order
+  reconstruction: O(h^3) instead of O(h^2) residual, demo radius 6.61e-3 ->
+  3.30e-4. Q4: `src/jellium_cell.f90` on new engine pieces (sector bases,
+  sparse coupled action with fail-closed leakage, factorized 1/2/3-RDMs,
+  `add_fock_one_body`) and new FortNum `fortnum_symmetric_eigen` (dense
+  eigen + block Lanczos; branch `symmetric-lanczos-eigen` 80b7340, NOT
+  pushed: the pin KIN6D_FORTNUM_REVISION=80b7340 needs the controller to push
+  it, local builds use -DFETCHCONTENT_SOURCE_DIR_FORTNUM). `cutoff=2`
+  (M=38) default: N=2 E0(rs=2)=-1.668e-2 Ha (cutoff 1/2/3: -1.426/-1.668/
+  -1.709e-2); N=4 sector dims up to 73815 states. chi/chi0_Lindhard at
+  q=(100): N=2 0.97 (rs 0.5) -> 0.69 (rs 8); RPA overscreens (0.49 at rs 8).
+  H1: |lambda3|/|Gamma3| N=3 ground multiplet 0.060 (rs 0.5) -> 0.236
+  (rs 8); N=4 0.29 -> 0.41 (multiplet mixture dominated). dE/dg HF vs FD
+  7e-10 rel, dg_opp/dg 3e-10 rel, VJP=JVP. Kick band 2e-6 at t=8 (800 RK
+  steps, certificate 0.16 s). Theta=0.5 ensembles for N=3,4 are NOT
+  converged with nev=8 per sector (truncation estimate 0.05-0.2 / 2-4);
+  treat those rows as indicators. 27/27 CTest Release and Debug.
+

@@ -30,8 +30,15 @@ buffers once. The untrusted candidate uses FortNum's existing six-stage
 Cash-Karp RK5(4) method. KIN6D supplies generated local `-i H psi / hbar`
 contractions; it does not implement another Runge-Kutta method. The embedded
 error estimate is not the certificate. All project-owned scalar action,
-Hermite, residual, enclosure, and derivative leaves come from
-`gen/gen_quantum_evolution.f90` and its shared FortSym definitions.
+sampling, enclosure, and derivative leaves come from
+`gen/gen_quantum_evolution.f90` and its shared FortSym definitions. The
+generic Hermite enclosure, Bernstein residual bound and radius accumulation
+are FortNum's `fortnum_ode_residual_certificate` (pinned `7f6a0ba`); KIN6D
+supplies only the interval action `-i H x/hbar` (and `-i dH x/hbar` as the
+tangent forcing). The migration reproduced the previous radii to all printed
+digits (two-level fixture `1.0976e-7`, tangent `1.9888e-7`; 125-state random
+Hermitian fixture `8.719e-6`); the warm strict cost (about 15 ms per cell
+for `n=125`) is dominated by the kin6d dense interval action leaf.
 
 Each time cell stores its binary64 candidate endpoint amplitudes and RHS
 slopes. These bits define an exact cubic Hermite reconstruction `p(s)`,
