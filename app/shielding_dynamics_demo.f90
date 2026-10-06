@@ -8,13 +8,16 @@ program shielding_dynamics_demo
         shielding_time_curvature_interval, shielding_radius_width_interval, &
         shielding_interval_length_interval
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, &
-          fill_between, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig
+          fill_between, title, xlabel, ylabel, xlim, ylim, legend, tight_layout, savefig, &
+          suptitle, set_yscale
+    use kin6d_demo_style, only: blue, black, grey, movie_fps, hold_frames, num
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: modes = 6
-    integer :: points = 193, frames = 121
+    ! 193 frames span t = 0..4 in 8 s at 24 fps; a one-second hold follows.
+    integer :: points = 193, frames = 193
     real(dp) :: source(modes) = &
                            [0.04_dp, 0.025_dp, 0.0125_dp, 0.006_dp, 0.003_dp, 0.0015_dp]
     real(dp) :: tmax = 4.0_dp, step = 0.0025_dp
@@ -223,13 +226,14 @@ write(unit,'(a)') '# observable_scales=0.05,0.05,0.05; requested_rtol=0.01; floo
     call result%write('max_band_radius', max_radius, '1', &
         'max spatial band radius of eta, phi, E', dims='field', status=bound)
     call result%close()
-    call figure(figsize=[12.8_dp, 8.2_dp])
+    call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
     call draw_frame(snapshot)
     call savefig('output/debye-shielding.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
-        call save_animation(animation, 'output/debye-shielding.mp4', fps=24, &
+        animation = animation_func(update_frame, frames=frames + hold_frames, &
+            interval=42, fig=canvas)
+        call save_animation(animation, 'output/debye-shielding.mp4', fps=movie_fps, &
                             status=status)
         if (status /= 0) error stop 'movie encoding failed'
     end if
@@ -247,60 +251,71 @@ contains
     subroutine update_frame(number)
         integer, intent(in) :: number
         call canvas%clear()
-        call draw_frame(number)
+        call draw_frame(min(number, frames))
         call canvas%set_rendered(.false.)
     end subroutine
     subroutine draw_frame(number)
         integer, intent(in) :: number
-        character(100) :: heading
+        real(dp), parameter :: floor = 1.0e-6_dp  ! bottom of the log axis
         integer :: panel
+        call suptitle('Electrons pile up on a fixed source and screen its potential, '// &
+            'relaxing to the linear Debye equilibrium')
         do panel = 1, 3
             call subplot(2, 2, panel)
-            call xlabel('x / lambda_D (periodic planar model)')
+            call xlabel('$x/\lambda_D$  (periodic planar model)')
             call xlim(x(1), x(points))
             select case (panel)
             case (1)
-              write (heading, '(a,f5.2)') 'Electron excess forms | diffusion time = ', &
-                    times(number)
-                call title(trim(heading))
-                call ylabel('eta = delta n_e / n_0')
+                call title('Electron excess builds up  |  t = '//num(times(number), 2))
+                call ylabel('$\eta = \delta n_e/n_0$')
                 call ylim(-0.034_dp, 0.05_dp)
             case (2)
-                call title('Potential decreases through unscreened Poisson coupling')
-                call ylabel('e phi / (k_B T)')
+                call title('Potential drops as the excess screens the source')
+                call ylabel('$e\phi/k_BT$')
                 call ylim(-0.04_dp, 0.08_dp)
-            call plot(x, bare(2, :), linestyle=':', color=[0.45_dp, 0.45_dp, 0.45_dp], &
-                          label='initial bare Poisson')
+                call plot(x, bare(2, :), linestyle=':', color=grey, linewidth=1.5_dp, &
+                          label='bare source (t = 0)')
             case (3)
                 call title('Electric field is reduced, not replaced by a Yukawa force')
-                call ylabel('e lambda_D E / (k_B T)')
+                call ylabel('$e\lambda_D E/k_BT$')
                 call ylim(-0.058_dp, 0.082_dp)
-            call plot(x, bare(3, :), linestyle=':', color=[0.45_dp, 0.45_dp, 0.45_dp], &
-                          label='initial bare Poisson')
+                call plot(x, bare(3, :), linestyle=':', color=grey, linewidth=1.5_dp, &
+                          label='bare source (t = 0)')
             end select
             call fill_between(x, lower(panel, :, number), upper(panel, :, number), &
-                              color='lightblue', alpha=0.6_dp)
-          call plot(x, values(panel, :, number), color=[0.0_dp, 0.4471_dp, 0.6980_dp], &
-                      label='numerical + continuous band')
-            call plot(x, equilibrium(panel, :), linestyle='--', &
-                 color=[0.8353_dp, 0.3686_dp, 0.0_dp], label='linear Debye equilibrium')
-            if (panel == 2) then
-                call legend(loc='upper left')
-            else
-                call legend(loc='upper right')
-            end if
+                              color=blue, alpha=0.25_dp)
+            call plot(x, values(panel, :, number), color=blue, linewidth=2.0_dp, &
+                      label='numerical ± certified band')
+            call plot(x, equilibrium(panel, :), linestyle='--', color=black, &
+                      linewidth=1.2_dp, label='Debye equilibrium')
+            call legend(loc='upper right')
         end do
         call subplot(2, 2, 4)
-        call title('Overdamped continuum relaxation | finite Fourier source')
-        call xlabel('t D / lambda_D^2')
-        call ylabel('e phi(0,t) / (k_B T)')
+        call title('Exponential approach to equilibrium at x = 0 (band resolved)')
+        call xlabel('$tD/\lambda_D^2$')
+        call ylabel('$e|\phi(0,t) - \phi_{eq}(0)|/k_BT$')
         call xlim(0.0_dp, tmax)
-        call ylim(0.02_dp, 0.062_dp)
-     call fill_between(times(:number), history_lower(:number), history_upper(:number), &
-                          color='lightblue', alpha=0.6_dp)
-        call plot(times(:number), values(2, center, :number), &
-         color=[0.0_dp, 0.4471_dp, 0.6980_dp], label='numerical + continuous time band')
-        call legend(loc='upper right')
+        call ylim(1.0e-6_dp, 0.1_dp)
+        call set_yscale('log')
+        ! Distance of the certified band from the equilibrium value; a band that
+        ! contains the equilibrium reaches the axis floor.
+        if (number >= 2) then
+            call fill_between(times(:number), &
+                merge(floor, max(floor, min(abs(history_lower(:number) - &
+                equilibrium(2, center)), abs(history_upper(:number) - &
+                equilibrium(2, center)))), history_lower(:number) <= equilibrium(2, center) &
+                .and. history_upper(:number) >= equilibrium(2, center)), &
+                max(floor, max(abs(history_lower(:number) - equilibrium(2, center)), &
+                abs(history_upper(:number) - equilibrium(2, center)))), &
+                color=blue, alpha=0.25_dp)
+            call plot(times(:number), max(floor, abs(values(2, center, :number) - &
+                equilibrium(2, center))), color=blue, linewidth=2.0_dp, &
+                label='numerical ± certified time band')
+        end if
+        call plot([times(number)], [max(floor, abs(values(2, center, number) - &
+            equilibrium(2, center)))], color=blue, linestyle='none', marker='o', &
+            markersize=6.0_dp)
+        if (number >= 2) call legend(loc='upper right')
         call tight_layout()
     end subroutine
 end program shielding_dynamics_demo
