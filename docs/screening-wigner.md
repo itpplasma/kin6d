@@ -57,10 +57,11 @@ Evidence (`test_screening`, `app/screening_demo.f90`, r_s = 1):
 | theta = 10, phi/phi_bare vs exp(-k_s r), 1 <= k_s r <= 4 | 7.2e-4 relative |
 | G(0) inside the certified fermi_gas `k_s` enclosure | all theta |
 
-Finding: the `kin6d_fermi_gas` *candidate* `k_s/kTF0` is off by up to
-1.8e-3 (relative) at `theta ~ 0.025`. Its certified enclosure (1% budget)
-still contains the Lindhard/Sommerfeld value. The candidate resolution at
-small theta belongs to the fermi_gas owner.
+Finding (resolved): the `kin6d_fermi_gas` *candidate* `k_s/kTF0` was off by
+up to 1.8e-3 (relative) at `theta ~ 0.025`, inside its certified 1% enclosure.
+The cause was one Gauss rule across the Fermi window; the graded mesh split
+at the Fermi surface (docs/fermi-gas.md) brings `G(0)/k_s - 1` at
+`theta = 0.01` from 8.3e-6 to 3e-10.
 
 ## Part 2: 1X1V Wigner-Poisson (`src/wigner_poisson.f90`)
 

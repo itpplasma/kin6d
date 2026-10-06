@@ -665,6 +665,8 @@ contains
         cut = cut*maxval(weights(1:spectrum%count))
         do j = 1, spectrum%count
             if (weights(j) <= cut) cycle
+            ! Gamma3 vanishes identically for N < 3; lambda3 is still nonzero.
+            if (cell%n < 3) exit
             s = spectrum%sector_of(j); d = spectrum%sectors(s)%d; o = spectrum%offset(j)
             if (allocated(zero)) deallocate (zero)
             allocate (zero(d)); zero = 0
