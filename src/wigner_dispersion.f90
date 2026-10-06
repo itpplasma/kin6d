@@ -2,11 +2,12 @@
 !> drifting Maxwellian electron beams under the Wigner (hbar > 0) or Vlasov
 !> (hbar = 0) equation with a neutralizing background, in the units of
 !> kin6d_wigner_leaves (omega_p = 1, m = 1, v/v_ref). The plasma dispersion
-!> function is integrated from its ODE Z' = -2(1 + zeta Z), Z(0) = i sqrt(pi),
-!> which yields the Landau continuation for Im(zeta) < 0 automatically.
+!> function Z and Z' come from FortNum's Faddeeva routine, valid in both
+!> half-planes (Landau continuation for Im(zeta) < 0).
 !> This module shares no formula with the split-step solver.
 module kin6d_wigner_dispersion
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_special_faddeeva, only: plasma_dispersion_z, plasma_dispersion_z_derivative
     implicit none
     private
     public :: beam_t, plasma_z, dielectric, dispersion_root
@@ -20,31 +21,11 @@ module kin6d_wigner_dispersion
 
 contains
 
-    !> Z(zeta) and Z'(zeta) by RK4 along the straight path from 0.
-    pure subroutine plasma_z(zeta, z, dz)
+    !> Plasma dispersion function Z(zeta) and Z'(zeta) (FortNum Faddeeva).
+    elemental subroutine plasma_z(zeta, z, dz)
         complex(dp), intent(in) :: zeta
         complex(dp), intent(out) :: z, dz
-        complex(dp) :: k1, k2, k3, k4
-        real(dp) :: h, t
-        integer :: steps, j
-        steps = 400 + ceiling(4000*abs(zeta))
-        h = 1.0_dp/steps
-        z = iu*sqrt(pi)
-        do j = 0, steps - 1
-            t = j*h
-            k1 = rhs(t, z)
-            k2 = rhs(t + h/2, z + h*k1/2)
-            k3 = rhs(t + h/2, z + h*k2/2)
-            k4 = rhs(t + h, z + h*k3)
-            z = z + h*(k1 + 2*k2 + 2*k3 + k4)/6
-        end do
-        dz = -2*(1 + zeta*z)
-    contains
-        pure complex(dp) function rhs(s, y)
-            real(dp), intent(in) :: s
-            complex(dp), intent(in) :: y
-            rhs = -2*zeta*(1 + s*zeta*y)
-        end function
+        z = plasma_dispersion_z(zeta); dz = plasma_dispersion_z_derivative(zeta)
     end subroutine
 
     !> eps(k, omega) and its omega- and hbar-derivatives.

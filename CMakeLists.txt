@@ -8,7 +8,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "5380eb698f29f999e312d1009b5c6dfdf1dac582")
-set(KIN6D_FORTNUM_REVISION "80b73401c973d1451ee5e802775a7feda41981e1")
+set(KIN6D_FORTNUM_REVISION "e97a493bfe67a404daa2d7c2090ff3eef9c32b75")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -52,6 +52,9 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
