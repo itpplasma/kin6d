@@ -21,6 +21,7 @@ module ocp_shielding_app
     use kin6d_nbody, only: nbody_system_t, nbody_energy
     use kin6d_ocp_leaves, only: debye_structure
     use kin6d_result_io, only: run_t, result_file_t
+    use kin6d_animation_export, only: animation_export_t
     use kin6d_series_statistics, only: series_autocorrelation
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, plot, &
         fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &
@@ -67,6 +68,10 @@ module ocp_shielding_app
     real(dp), allocatable :: gates(:, :), cost(:, :, :), autocorr(:, :)
     real(dp), allocatable :: sel_x(:, :), sel_y(:, :), running(:, :), dts(:)
     integer, allocatable :: picked(:), electrons(:)
+    ! Animation export (--export DIR): case 1 only; all electron positions of
+    ! member 1 and the cumulative shell counts of every member per sample.
+    character(256) :: export_dir = ''
+    real(dp), allocatable :: trajectory(:, :, :), member_counts(:, :, :)
     character(160) :: heading
 contains
     subroutine main()
@@ -80,6 +85,13 @@ contains
         call run%open_resolved(unit)
         write (unit, nml=ocp_shielding)
         call run%close_resolved(unit)
+        c = 1
+        do while (c <= run%argument_count())
+            call run%argument(c, msg)
+            if (trim(msg) /= '--export' .or. c == run%argument_count()) &
+                error stop 'usage: ocp_shielding_demo [--config FILE] [--export DIR]'
+            call run%argument(c + 1, export_dir); c = c + 2
+        end do
         cases = count(debye_volumes > 0)
         if (cases < 1 .or. any(members(:cases) < 2)) error stop 'need cases with >= 2 members'
         if (fit_max > box/2 .or. fit_min <= 0) error stop 'fit window outside (0, L/2]'
@@ -98,6 +110,7 @@ contains
                 ' kappa = ', impurities(c), ': lambda_fit = ', gates(1, c), ' +- ', &
                 gates(2, c), ' (mean-profile fit ', gates(3, c), ')'
         end do
+        if (len_trim(export_dir) > 0) call export_animation()
         call write_outputs()
         call draw_figures()
     end subroutine
@@ -233,6 +246,8 @@ contains
         electrons(c) = model%electrons
         samples = nint(average_times(c)/sample_interval)
         if (c == 1) allocate (sel_x(1, 1), sel_y(1, 1), running(bins, samples), picked(1))
+        if (c == 1 .and. len_trim(export_dir) > 0) allocate ( &
+            trajectory(3, model%electrons, samples), member_counts(bins, samples, nm))
         print '(a,i0,a,f6.4,a,i0,a,es9.2)', 'case: N = ', model%electrons, ', dt = ', dt, &
             ', PME K = ', model%pme%mesh, ', estimated rms force error/F0 = ', &
             sqrt(model%pme%real_estimate**2 + model%pme%reciprocal_estimate**2)/ &
@@ -330,6 +345,12 @@ contains
                 call store_slice(s, j)
                 running(:, j) = counts
             end if
+            if (c == 1 .and. allocated(member_counts)) then
+                member_counts(:, j, r) = counts
+                if (r == 1) trajectory(:, :, j) = reshape(s(:3*m%electrons), &
+                    [3, m%electrons]) - box*anint(reshape(s(:3*m%electrons), &
+                    [3, m%electrons])/box)
+            end if
             if (mod(j, max(1, nint(snapshot_interval/sample_interval))) == 0) call dump(s, j)
             call system_clock(c2); sampling = sampling + real(c2 - c1, dp)/rate
         end do
@@ -395,6 +416,81 @@ contains
                 x(3*m%particles + 1:3*m%particles + 3*m%electrons)
             close (u)
         end subroutine
+    end subroutine
+
+    !> Animation data for the lecture scene (slug debye-shielding-particles),
+    !> case 1: positions of all electrons of member 1 (minimum image around the
+    !> fixed impurity at the origin, 16-bit over [-L/2, L/2]), the running
+    !> ensemble mean of the time-averaged shell deficit delta n/n up to each
+    !> sample, the final per-bin 95% Student-t interval over members, and the
+    !> bin-averaged references per unit kappa (periodic Debye, isolated
+    !> Yukawa, unscreened 1/r). Statistical status only; no deterministic
+    !> certificate is claimed.
+    subroutine export_animation()
+        type(animation_export_t) :: export
+        real(dp), allocatable :: mean_profile(:, :), bare(:)
+        real(dp) :: density, shell
+        integer :: b, j
+        allocate (mean_profile(bins, samples), bare(bins))
+        density = electrons(1)/box**3
+        do b = 1, bins
+            shell = 4*pi/3*((b*rmax/bins)**3 - ((b - 1)*rmax/bins)**3)
+            do j = 1, samples
+                mean_profile(b, j) = sum(member_counts(b, j, :members(1)))/ &
+                    (members(1)*density*shell*j) - 1
+            end do
+            bare(b) = -bin_mean_inverse_r(b)
+        end do
+        call export%create(run, export_dir, 'debye-shielding-particles')
+        call export%note('model', 'classical electron OCP, periodic cube, uniform '// &
+            'neutralizing background, bare Coulomb (PME), fixed repulsive point '// &
+            'impurity Q = -kappa 4 pi Lambda e compensated in the background (C4)')
+        call export%note('units', 'k_B T = m = 1, lambda_D = 1, omega_p = 1')
+        call export%note('status', 'candidate dynamics; profile intervals are '// &
+            'statistical (95% Student-t over members), not certificates')
+        call export%note('references', 'delta n/n reference = kappa * periodic '// &
+            '(linear response with the periodic screened-Poisson Green function); '// &
+            'yukawa: isolated kappa exp(-r)/r overlay; bare: unscreened linear '// &
+            'Boltzmann response kappa/r; all bin-averaged, sign included')
+        call export%parameter('Lambda', debye_volumes(1), '1', 'n lambda_D^3')
+        call export%parameter('kappa', impurities(1), '1', &
+            'impurity coupling, nonlinear radius r_nl = kappa lambda_D')
+        call export%parameter('box', box, 'lambda_D', 'periodic cube edge L')
+        call export%parameter('electrons', real(electrons(1), dp), '1', 'N')
+        call export%parameter('members', real(members(1), dp), '1', &
+            'independent realizations in the profile')
+        call export%parameter('dt', dts(1), '1/omega_p', 'time step')
+        call export%parameter('sample_interval', sample_interval, '1/omega_p', &
+            'time between frames')
+        call export%parameter('equilibration_time', equilibration_time, '1/omega_p', &
+            'thermostat equilibration before t = 0 (switched off afterwards)')
+        call export%real32('t', [(j*sample_interval, j = 1, samples)], [samples], &
+            '1/omega_p', 'time since the end of equilibration')
+        call export%quantized('positions', reshape(trajectory, [size(trajectory)]), &
+            [3, electrons(1), samples], -box/2, box/2, 16, 'lambda_D', &
+            'electron positions (x, y, z) of member 1, impurity at the origin')
+        call export%real32('r', rb, [bins], 'lambda_D', 'shell-bin centres')
+        call export%real32('dn_running', reshape(mean_profile, [size(mean_profile)]), &
+            [bins, samples], '1', 'delta n/n, ensemble mean of the time average '// &
+            'up to each frame')
+        call export%real32('dn_interval', reshape(pstat(:, :, 1), [3*bins]), [bins, 3], &
+            '1', 'final delta n/n: mean, lower, upper 95% Student-t over members')
+        call export%real32('periodic', periodic, [bins], '1', &
+            'periodic Debye reference per unit kappa (delta n/(n kappa))')
+        call export%real32('yukawa', yukawa, [bins], '1', &
+            'isolated -exp(-r)/r per unit kappa')
+        call export%real32('bare', bare, [bins], '1', 'unscreened -1/r per unit kappa')
+        call export%close()
+        print '(2a)', 'animation data written to ', &
+            trim(export_dir)//'/debye-shielding-particles'
+    contains
+        !> Bin-volume average of 1/r (exact: (3/2)(b^2 - a^2)/(b^3 - a^3)).
+        real(dp) function bin_mean_inverse_r(b) result(v)
+            integer, intent(in) :: b
+            real(dp) :: lo, hi
+            lo = (b - 1)*rmax/bins; hi = b*rmax/bins
+            v = 1.5_dp*(hi**2 - lo**2)/(hi**3 - lo**3)
+        end function
     end subroutine
 
     subroutine write_outputs()

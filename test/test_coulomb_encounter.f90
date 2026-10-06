@@ -146,8 +146,14 @@ contains
         real(qp) :: k, eta, diff
         integer :: l, j, is, count
         logical :: ok
-        do is = 1, 2
-            g = merge(1.0_dp, -1.0_dp, is == 1)
+        real(dp), parameter :: couplings(3) = [1.0_dp, -1.0_dp, 0.03_dp]
+        character(48), parameter :: names(3) = [character(48) :: &
+            'Coulomb phase sigma_l, repulsive', 'Coulomb phase sigma_l, attractive', &
+            'Coulomb phase sigma_l, repulsive eta ~ 0.03']
+        ! Repulsive and attractive at eta ~ 1, and weak repulsive coupling at
+        ! eta ~ 0.03 (the hot-electron encounter movie).
+        do is = 1, 3
+            g = couplings(is)
             h0 = mesh_spacing(1.6_dp, 12, 8.0_dp); growth = 1
             if (g < 0) then
                 h0 = 0.5_dp; growth = 1.15_dp
@@ -168,8 +174,7 @@ contains
                     err = max(err, real(abs(diff), dp)); count = count + 1
                 end do
             end do
-            call check(merge('Coulomb phase sigma_l, repulsive ', 'Coulomb phase sigma_l, attractive', &
-                             is == 1), err < 1.0e-8_dp .and. count > 20, err)
+            call check(trim(names(is)), err < 1.0e-8_dp .and. count > 20, err)
         end do
     end subroutine test_coulomb_phases
 

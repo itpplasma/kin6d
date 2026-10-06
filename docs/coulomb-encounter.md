@@ -156,7 +156,7 @@ period, collapse, half and full revival.
 
 ## Evidence
 
-`build/coulomb_encounter_demo [--config FILE] [--no-movie | --movie-only]`
+`build/coulomb_encounter_demo [--config FILE] [--no-movie | --movie-only] [--export DIR]`
 (namelist `&coulomb_encounter`: `etas`, `nclass` (b-scan pairs), `nclass_scan`
 (eta-scan pairs, default 1e5), `seed`, `movie_seed`, `movie`) writes to output/
 (not committed): coulomb-eta-summary.csv, coulomb-eta-bins.csv (1 degree bins),
@@ -192,6 +192,28 @@ triplet fringes are complementary, their maxima are 3.3-3.5/k apart (the
 local wavelength is longer than the asymptotic one near the turning region),
 and their average is the fringe-free product, which matches the classical
 ensemble within its standard error.
+
+A third movie, `coulomb-encounter-hot`, uses eta = 0.03 (two electrons at
+relative energy Ry/(2 eta^2) = 7.6 keV, the thermal relative speed of a
+10 keV plasma) with the packet, clock and four-decade colour range of the
+eta = 3 movies (sigma = 3 lambdabar, b = 0): r0 = 0.06 lambdabar is far
+below the wavelength, so the packet passes almost undeflected (no hole, no
+reflection), while the classical ensemble keeps an unresolved hole and rare
+large deflections. The large-angle diffracted wave (estimated ~1e-9
+lambdabar^-3) lies below the spreading packet's Gaussian tails (sigma(t) >=
+sqrt(2 z0) lambdabar) and below the classical histogram's one-count floor
+(~2e-6 lambdabar^-3), so a deeper colour range does not reveal it. The Coulomb-phase oracle
+also runs at eta ~ 0.03 (`test_coulomb_encounter`).
+
+`--export DIR` writes compact animation data for the lecture scenes
+(`kin6d_animation_export`, src/animation_export.f90) to
+DIR/coulomb-encounter-{headon,offaxis,hot}/: every second movie frame (132),
+the quantum slices averaged over 2x2 pixels onto the 120 x 120 classical grid,
+panels classical / spin-unresolved product / singlet / triplet, log10 density
+times lambdabar^3 as 8-bit codes over the movie's colour range, the physical
+time t v/z0 and slow-motion factor per frame, and provenance.json (command,
+namelists, commit, parameters including the finite-space state bound,
+radial unknowns and l_max, decode rule). No timestamp is written.
 
 Teaching messages: (1) distinguishable particles follow Rutherford even
 quantum mechanically, identical particles interfere (singlet doubles,

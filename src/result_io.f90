@@ -16,6 +16,7 @@ module kin6d_result_io
         NF90_NOERR, NF90_NETCDF4, NF90_CLOBBER, NF90_DOUBLE, NF90_GLOBAL
     implicit none
     private
+    public :: runtime_git
     include 'kin6d_build_info.inc'
 
     !> Directory that receives every application result.
