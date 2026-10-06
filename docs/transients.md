@@ -3,7 +3,7 @@
 Status: planned secondary branch using the same operators as the primary
 direct steady solver. Tiny kinetic and HM student dynamics enter the early
 [laboratory gallery](student-laboratory.md); global kinetic/turbulent trajectory
-certification remains later work. This extends the [shared evolution operator](../DESIGN.md#shared-evolution-operator).
+certification remains later work. This extends the [shared evolution operator](../DESIGN.md#canonical-equation-interface).
 
 ## Equation and constraints
 
