@@ -21,6 +21,7 @@ module ocp_shielding_app
     use kin6d_nbody, only: nbody_system_t, nbody_energy
     use kin6d_ocp_leaves, only: debye_structure
     use kin6d_result_io, only: run_t, result_file_t
+    use kin6d_series_statistics, only: series_autocorrelation
     use fortplot, only: figure, figure_t, get_global_figure, subplot, scatter, plot, &
         fill_between, title, suptitle, xlabel, ylabel, xlim, ylim, legend, &
         tight_layout, savefig, colorbar
@@ -290,9 +291,10 @@ contains
         type(nbody_system_t) :: sys
         type(fortnum_status_t) :: st
         real(dp), allocatable :: s(:), counts(:), series(:), acc(:)
-        real(dp) :: e0, e1, shell, density, kv(3), mean, var, rho, sampling, wall0
+        real(dp) :: e0, e1, shell, density, kv(3), mean, err, tau, ess, rho, sampling, &
+            wall0
         integer(int64) :: c0, c1, c2, rate
-        integer :: rejected, step, j, b, q, lag
+        integer :: rejected, step, j, b, q
         logical :: okm
         m = template
         call ocp_system(m, sys, okm)
@@ -340,17 +342,10 @@ contains
             if (c == 1 .and. r == 1) running(b, :) = running(b, :)/(density*shell* &
                 [(real(j, dp), j = 1, samples)]) - 1
         end do
-        ! Integrated autocorrelation time of the inner-shell count series.
-        mean = sum(series)/samples; var = sum((series - mean)**2)/samples
-        autocorr(r, c) = sample_interval/2
-        if (var > 0) then
-            do lag = 1, samples/4
-                rho = sum((series(:samples - lag) - mean)*(series(lag + 1:) - mean))/ &
-                      ((samples - lag)*var)
-                if (rho <= 0) exit
-                autocorr(r, c) = autocorr(r, c) + rho*sample_interval
-            end do
-        end if
+        ! Integrated autocorrelation time of the inner-shell count series
+        ! (kin6d_series_statistics, Sokal window), in time units.
+        call series_autocorrelation(series, mean, err, tau, ess)
+        autocorr(r, c) = tau*sample_interval
         call system_clock(c2)
         cost(r, :, c) = [wall0, real(c2 - c0, dp)/rate - wall0, sampling, &
                          real(rejected, dp), (e1 - e0)/m%electrons]
