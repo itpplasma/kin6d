@@ -81,7 +81,12 @@ tests in `quantum_fock_oracles` (unchanged expectations) and FortNum.
 `jellium_cell_demo [--config FILE]` (namelist `&jellium_cell`) writes
 `output/jellium-{cutoff-scan,pair-correlation,response,cumulants,
 mode-history,derivative,cost-ledger}.csv`, `output/jellium_cell_demo.nc`
-and `output/jellium-{pair-correlation,response,cumulants,mode-history}.png`.
+`output/jellium-{pair-correlation,response,cumulants,mode-history}.png` and
+`output/jellium-kick.mp4` (the first-order density wave
+`delta n(x,t) = (2/V) delta<A>(t) cos(q.x)` of the parity-even N = 2 ground
+state). Figures show the converged Theta = 0 ground multiplet by default;
+thermal rows with more than 1% omitted Boltzmann weight are labelled
+"unconverged".
 Key numbers are in the hierarchy-campaign log entry for Q4.
 
 ## Open
