@@ -19,6 +19,7 @@ program test_quantum_classical
     use kin6d_quantum_classical_leaves
     use kin6d_jellium_cell
     use kin6d_quantum_classical_map
+    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup, mc_sweep
     use kin6d_quantum_fock, only: fock_matvec, fock_hamiltonian_t
     use kin6d_quantum_fock_leaves, only: qf_kinetic
     use fortnum_symmetric_eigen, only: symmetric_eigen
@@ -34,6 +35,7 @@ program test_quantum_classical
     call kelbg_oracle()
     call pair_derivative_oracle()
     call moments_oracle()
+    call h1a_sampler_oracle()
     if (failures > 0) error stop 'test_quantum_classical failed'
     print '(a)', 'PASS: H1b quantum-classical oracles'
 contains
@@ -387,6 +389,52 @@ contains
         print '(a,es11.3,a,es10.2)', '     sparse vs dense bins ', tr, ' trunc ', trunc
         call check(ok .and. tr < 1.0e-12_dp .and. trunc == 0, &
                    'sparse 2-RDM shell bins = dense jellium_pair_bins (Theta = 1, N = 3)')
+    end subroutine
+
+    !> The H1b classical cell (atomic units, pairwise zero-mean Ewald) and
+    !> the independent H1a OCP sampler (a = 1, incremental structure-factor
+    !> Ewald) give the same N = 3 pair function at equal Gamma.
+    subroutine h1a_sampler_oracle()
+        type(classical_cell_t) :: cell
+        type(classical_mc_t) :: mc
+        type(ocp_mc_t) :: ocp
+        integer, parameter :: nb = 6, nbatch = 20, per = 4000
+        real(dp) :: edges(nb + 1), bg(nb, nbatch), g(nb), err(nb), d(3), r, shell
+        integer :: i, j, k, b, s, bin
+        logical :: ok
+        call init_classical_cell(cell, 3, 2.0_dp, 0.5_dp, model_coulomb, ok)
+        edges = [(i*cell%length/(2*nb), i=0, nb)]
+        call classical_cell_mc(cell, edges, 80000, 2000, 40, 5_i64, mc, ok)
+        call mc_setup(ocp, 3, cell%gamma, 1.0e-10_dp, 9_i64, ok)
+        call check(ok, 'H1a OCP sampler setup at the same Gamma')
+        do s = 1, 2000
+            call mc_sweep(ocp, .true.)
+        end do
+        bg = 0
+        do b = 1, nbatch
+            do s = 1, per
+                call mc_sweep(ocp, .false.)
+                do i = 1, 2
+                    do j = i + 1, 3
+                        d = ocp%x(:, i) - ocp%x(:, j)
+                        d = d - ocp%length*anint(d/ocp%length)
+                        r = norm2(d)/ocp%length*cell%length
+                        if (r >= edges(nb + 1)) cycle
+                        bin = min(nb, 1 + int(r/edges(2)))
+                        bg(bin, b) = bg(bin, b) + 1
+                    end do
+                end do
+            end do
+            do k = 1, nb
+                shell = 4*acos(-1.0_dp)/3*(edges(k + 1)**3 - edges(k)**3)
+                bg(k, b) = bg(k, b)/(per*3*shell/cell%volume)
+            end do
+        end do
+        g = sum(bg, 2)/nbatch
+        err = sqrt(sum((bg - spread(g, 2, nbatch))**2, 2)/(nbatch*(nbatch - 1.0_dp)))
+        r = maxval(abs(g - mc%g)/sqrt(err**2 + mc%g_err**2 + 1.0e-6_dp))
+        print '(a,f6.3,a,f7.3)', '     Gamma ', cell%gamma, ' max |H1b - H1a|/se ', r
+        call check(r < 4.5_dp, 'classical cell g = H1a OCP sampler g (N = 3, 4.5 s.e.)')
     end subroutine
 
     real(dp) function me(jc, x, y, qq) result(v)
