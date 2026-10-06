@@ -383,7 +383,8 @@ contains
                   label='cell, N = 4 (RHF reference)')
         call plot(tl, ptl, color=black, linestyle='--', &
                   label='Perdew-Zunger fit to Ceperley-Alder, N = ∞')
-        call legend(loc='lower left')
+        call ylim(2.0e-3_dp, 0.5_dp)
+        call legend(loc='upper right')
         call subplot(1, 2, 2)
         call title('Exact pair cumulant (zero for every Slater state)')
         call xlabel('$r_s$'); call ylabel('$|\lambda_2| / |\Gamma_2|$')
@@ -411,10 +412,10 @@ contains
             call xlim(0.0_dp, 0.5_dp); call ylim(0.0_dp, 1.5_dp)
             do r = 1, nrs, max(1, (nrs - 1)/2)
                 write (label, '(a,f4.1)') 'exact, $r_s$ = ', rs_values(r)
-                call plot(centers, pair(:, k, r, n), color=palette(:, 1 + mod(r - 1, 3)), &
+                call plot(centers, pair(:, 3 - k, r, n), color=palette(:, 1 + mod(r - 1, 3)), &
                           marker='o', label=trim(label))
                 write (label, '(a,f4.1)') 'UHF, $r_s$ = ', rs_values(r)
-                call plot(centers, pair(:, k + 2, r, n), &
+                call plot(centers, pair(:, 5 - k, r, n), &
                           color=palette(:, 1 + mod(r - 1, 3)), linestyle='--', &
                           label=trim(label))
             end do

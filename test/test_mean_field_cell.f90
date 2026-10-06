@@ -324,9 +324,10 @@ contains
         type(jellium_spectrum_t) :: spectrum
         real(dp), allocatable :: psi(:)
         real(dp) :: norms(4), norm
-        integer :: ns, nc, nk
+        integer :: ns, nc, nk, n
         logical :: ok
-        call init_jellium_cell(cell, 3, modes, 2.0_dp, ok)
+        do n = 2, 3
+        call init_jellium_cell(cell, n, modes, 2.0_dp, ok)
         call mf_interaction(cell, inter)
         call mf_ground(cell, inter, .false., .true., 1, state, ok, ns, nc)
         call mf_start_orbitals(inter, 5, cell%fermi, state%cup)
@@ -337,6 +338,7 @@ contains
         call jellium_cumulants(cell, spectrum, [1.0_dp], norms, ok, 1.0e-12_dp)
         call check(ok .and. norms(2) < 1.0e-12_dp*norms(1) .and. &
                    norms(4) < 1.0e-12_dp*max(norms(3), 1.0_dp), 'Slater cumulants vanish')
+        end do
     end subroutine
 
     !> Mermin: ideal grand-canonical gas at g = 0; Theta -> 0 HF limit.
