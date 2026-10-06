@@ -180,6 +180,9 @@ same floating-point candidate solve as the complete path. It also writes one
 illustrative SI electron-pressure row for `rho=1e6 kg/m**3`, `Ye=.5`,
 `T=1e6 K`, using explicitly supplied constants. `pF/(m*c)≈.0801` supports the
 nonrelativistic use; this is not a hydrostatic star or a relativistic core.
+The numerical ideal-electron pressure is 3.19695e16 Pa with
+outward-rounded enclosure [3.1931e16, 3.2008e16] Pa at Theta = 0.05260, using
+central CODATA constants and the declared binary64 inputs.
 The example excludes ion/Coulomb pressure and constants uncertainty. Run it
 in a scratch output directory; generated CSV/media are not committed.
 

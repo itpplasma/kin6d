@@ -1,11 +1,16 @@
-# Quantum finite-N correlation animation
+# Q0: periodic quantum two-electron quench
 
 The runnable reference is an interacting quantum two-electron Coulomb quench
 in a periodic **three-dimensional** box with a uniform neutralizing background.
 It evolves a many-body wavefunction, not particle trajectories or an imposed
 exchange/correlation hole. The default box, coupling, initial preparation and
 sixteen relative-position bins match [the classical pair experiment](classical-pair.md).
-See [the shared teaching contract](quantum-teaching-slice.md).
+Both runs start from an uncorrelated opposite-spin pair, and the same bare
+Coulomb coupling is switched on at time zero. Two opposite spins isolate
+interacting diffraction and correlation from same-spin exchange; localized
+exchange scattering is the separate case [Q1](coulomb-encounter.md). The quench
+is a microscopic correlation reference, not incoming wave-packet scattering,
+thermodynamic Debye shielding or a finite-temperature equilibrium plasma.
 
 Build and test through the repository's native CMake/CTest path, then run
 `quantum_reference_demo --snapshot 31` for a middle-frame PNG or
@@ -94,6 +99,10 @@ The unlike-spin cumulant is C_updown=g_updown-1. The same-spin Wick cumulant
 is -1+|sum_n p_n exp(2*pi*i*n.r/L)|^2, with p_n=|c_n|^2/Z, averaged over the
 same window. It records fixed-number correlation beyond the Wick product;
 it is not a same-spin pair-density hole produced by two up-spin particles.
+Wick products are observables here, not an enforced dynamics closure.
+Fixed-N pure states and fractional grand-canonical occupations have different
+contraction identities, so a fixed-N identity is never applied to a
+finite-temperature ideal-gas Wick state.
 The noninteracting comparison is computed by the same Fock and evolution
 engine at coupling zero with identical amplitudes and bins.
 
@@ -180,6 +189,16 @@ These are single local CPU trials, not a speed ranking. The gallery manifest
 retains executable/source/compiler/dependency provenance. The certified
 finite-basis reference currently favors clarity and correctness; interval
 residual and postprocessing costs remain measured optimization targets.
+
+The reviewed local Release run records 1.155 s for the matched quantum
+candidate initialization and evolution and 104.967 s including certification
+and all plotted bands, 90.89 times the solve alone; the adaptive first result
+costs 157.35 s before rendering, with maximum display radius 0.002757 on
+scale 1 at 125 modes and 16 steps per frame. The classical companion costs
+33.508 s plus 2.318 s for sampling and diagnostics (factor 1.069), which is
+not a deterministic trajectory certificate. These single CPU trials are the
+optimization baseline for the dense interval residual action, not a
+workhorse performance claim.
 
 Retained cutoff fixtures compare the same physical quench and sixteen bins
 at t=0,1,4,16. At t=16 the earlier spherical differences are about 0.3883
