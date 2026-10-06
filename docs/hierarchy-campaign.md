@@ -66,7 +66,7 @@ error status as in AGENTS.md.
 | Q3 | Finite-N ideal fermions: exchange hole, canonical sums | ideal-gas identities | planned (EOS exists) |
 | Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | planned |
 | Q5 | Hartree/HF vs Q4 | Q4 | planned |
-| Q7 | Debye/finite-T Fermi/Thomas-Fermi/Lindhard screening; Wigner -> Vlasov as hbar->0 | analytic limits | planned |
+| Q7 | Debye/finite-T Fermi/Thomas-Fermi/Lindhard screening; Wigner -> Vlasov as hbar->0 | analytic limits | exists (worker, unpromoted) |
 | Q8 | Relativistic ideal Fermi EOS | classical/NR/UR limits | planned |
 | H1 | Correlation map: pair and three-body cumulant size, quantum-classical difference vs (Gamma, Theta) | C5, Q4 references | planned |
 
@@ -170,3 +170,40 @@ run from the repository root and must reproduce committed leaves exactly.
   Open: in-file groups, generated schema, external-input hashes, hardware
   records; new apps (coulomb_encounter, ocp_*, jellium_cell, screening,
   wigner) must adopt the module and join the `kin6d_io` list in CMake.
+- 2026-10-05 (worker, Q7): `src/screening_hierarchy.f90`,
+  `src/wigner_poisson.f90`, `src/wigner_dispersion.f90` (independent Z-ODE
+  dispersion oracle), leaves from `gen/gen_screening.f90` and
+  `gen/gen_wigner.f90` (deterministic regeneration); FortNum fft compiled as
+  `kin6d_fft`; docs/screening-wigner.md. Static ideal-gas RPA (no LFC):
+  T=0 momentum route vs closed form 4.7e-15, momentum vs Maldague routes
+  8.7e-15, Sommerfeld 2e-8, Dawson limit 3e-5, Friedel period 3.1382/kF,
+  rigorous truncation tails, quadrature indicators. Wigner-Poisson split
+  step (shared streaming_rotation leaf, exact eta-space kick, forward
+  tangent in hbar): Landau/quantum-Langmuir roots within 1e-4, two-stream
+  growth within 1.7e-4 for 26 (k, hbar), O(hbar^2) Wigner->Vlasov (rate
+  1.99/2.00), tangent = FD to 1e-6, implicit root derivative, unclipped
+  negativity 0.25 at t=20 (Vlasov 1e-13 while resolved). Both demos use
+  result_io. 28/28 CTest Release and Debug. Finding: fermi_gas candidate k_s
+  off by 1.8e-3 at theta~0.025 (inside its certified 1% enclosure). Open:
+  Z function and graded Gauss rules belong in FortNum; modal Poisson copy;
+  no rigorous Lindhard/Wigner enclosure; screening figure uses log10 data
+  workaround for the old fortplot pin.
+- 2026-10-06 (controller, pause): merged F5 (namelist + FortIO results),
+  Q1/Q1b (partial-wave encounter, Rydberg packet), Q3/Q8, Q7 (screening,
+  Wigner-Poisson); kin6d uses FortNum 0f643d0 GLL/Legendre and fortplot
+  67834eb; 28/28 CTest green. Unmerged worker branches (resume/integrate):
+  worktree-agent-a555f8713dd7a8d74 (Q4 jellium + F6 migration),
+  worktree-agent-a6bde7f3f0e416042 (C3/C4 OCP), worktree-agent-a13ae492e23305233
+  (Q2 packet models). Remaining: C5/H1 correlation map (g2/g3 cumulants vs
+  Gamma, Theta), Q5 Hartree/HF, QG6 hybrid encounters, modal Poisson
+  dedup, fermi_gas k_s candidate (1.8e-3 near Theta 0.025) and cold
+  certificate mesh, coulomb_encounter_demo result_io adoption, figure pass
+  (Q1 movie: CM relative density singlet/triplet/classical, log scale,
+  near-closest-approach frames; fine Mott bins), plan/doc consolidation,
+  gallery render and slopbox upload.
+- 2026-10-06 (controller): Q4 worker finished (branch
+  worktree-agent-a555f8713dd7a8d74, 27/27 tests). Before merging, verify
+  and push FortNum branch `symmetric-lanczos-eigen` (80b7340, worktree
+  /Users/ert/code/lazy-fortran/fortnum-symmetric-eigen) to FortNum main;
+  the Q4 branch pins it. Q4 open: Theta=0.5 N=3/4 thermal rows unconverged
+  (indicators only); response only at q=(100).
