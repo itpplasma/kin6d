@@ -31,7 +31,7 @@ module kin6d_coulomb_encounter
     public :: encounter_wall_probability, encounter_state_error
     public :: encounter_bin_jvp, encounter_bin_vjp, encounter_bin_full
     public :: encounter_evaluate_packet, encounter_classical_ensemble
-    public :: in_sector, encounter_points
+    public :: in_sector, encounter_points, encounter_project, encounter_field
     integer, parameter, public :: SECTOR_PRODUCT = 0, SECTOR_SINGLET = 1, &
                                   SECTOR_TRIPLET = 2
 
@@ -85,6 +85,14 @@ module kin6d_coulomb_encounter
         type(encounter_ledger_t) :: ledger
         logical :: ready = .false.
     end type encounter_t
+    abstract interface
+        subroutine encounter_field(rr, x, y, z, psi, active)
+            import :: dp
+            real(dp), intent(in) :: rr, x(:), y(:), z(:)
+            complex(dp), intent(out) :: psi(:, :)
+            logical, intent(out) :: active
+        end subroutine encounter_field
+    end interface
 contains
     pure logical function in_sector(l, sector)
         integer, intent(in) :: l, sector
@@ -271,17 +279,44 @@ contains
         integer, intent(in) :: lest, mest
         real(dp), intent(in) :: db, dsigma
         complex(dp), allocatable, intent(out) :: a(:, :, :)
+        complex(dp), allocatable :: a4(:, :, :, :)
+        real(dp) :: d, amax
+        integer :: nph
+        d = sqrt(enc%cfg%b**2 + enc%cfg%z0**2)
+        amax = abs(enc%cfg%b)*(d + 12*enc%cfg%sigma)/(2*enc%cfg%sigma**2)
+        nph = 2*(mest + ceiling(amax + 6*sqrt(amax)) + 8)
+        call encounter_project(enc, lest, mest, nph, 1, packet_field, a4)
+        allocate (a(enc%mesh%n, 0:mest, 0:lest))
+        a = a4(:, :, :, 1)
+    contains
+        subroutine packet_field(rr, x, y, z, psi, active)
+            real(dp), intent(in) :: rr, x(:), y(:), z(:)
+            complex(dp), intent(out) :: psi(:, :)
+            logical, intent(out) :: active
+            active = abs(rr - d) <= 13*enc%cfg%sigma
+            if (active) call encounter_evaluate_packet(enc%cfg, x, y, z, db, dsigma, &
+                                                       psi(:, 1))
+        end subroutine packet_field
+    end subroutine project_packet
+
+    ! Generic projection of nf fields psi(r) (even in y) onto the partial-wave
+    ! DVR basis: a(i,m,l,f) = r_i sqrt(w_i) int Y_lm psi_f dOmega with lest + 16
+    ! Gauss-Legendre nodes in cos theta and nph periodic trapezoid nodes in phi.
+    ! field(rr, x, y, z, psi, active) evaluates psi(nph*nth, nf) on the sphere
+    ! |r| = rr (points ordered phi fastest) or reports active = .false. (zero).
+    subroutine encounter_project(enc, lest, mest, nph, nf, field, a)
+        type(encounter_t), intent(in) :: enc
+        integer, intent(in) :: lest, mest, nph, nf
+        procedure(encounter_field) :: field
+        complex(dp), allocatable, intent(out) :: a(:, :, :, :)
         real(dp), allocatable :: xt(:), wt(:), plm(:, :, :), cphi(:, :), phi(:)
+        real(dp), allocatable :: x(:), y(:), z(:)
         complex(dp), allocatable :: psi(:, :), fm(:)
-        real(dp) :: d, amax, st, x, y, z, rr, scale
-        integer :: nth, nph, i, j, q, m, n
-        type(encounter_config_t) :: cfg
-        cfg = enc%cfg
+        real(dp) :: st, rr, scale
+        integer :: nth, i, j, q, m, n, f, p
+        logical :: active
         n = enc%mesh%n
         nth = lest + 16
-        d = sqrt(cfg%b**2 + cfg%z0**2)
-        amax = abs(cfg%b)*(d + 12*cfg%sigma)/(2*cfg%sigma**2)
-        nph = 2*(mest + ceiling(amax + 6*sqrt(amax)) + 8)
         allocate (xt(nth), wt(nth), plm(0:lest, 0:mest, nth), phi(nph), cphi(nph, 0:mest))
         call gauss_legendre(nth, xt, wt)
         do j = 1, nth
@@ -293,25 +328,30 @@ contains
                 cphi(q, m) = cos(m*phi(q))*cm_norm(m)*2*acos(-1.0_dp)/real(nph, dp)
             end do
         end do
-        allocate (a(n, 0:mest, 0:lest), psi(nph, nth), fm(nth))
+        allocate (a(n, 0:mest, 0:lest, nf), psi(nph*nth, nf), fm(nth))
+        allocate (x(nph*nth), y(nph*nth), z(nph*nth))
         a = 0
         do i = 1, n
             rr = enc%mesh%r(i)
-            if (abs(rr - d) > 13*cfg%sigma) cycle
             do j = 1, nth
                 st = sqrt(max(0.0_dp, 1 - xt(j)**2))
                 do q = 1, nph
-                    call ce_cartesian(rr, xt(j), st, cos(phi(q)), sin(phi(q)), x, y, z)
-                    call encounter_evaluate_packet(cfg, x, y, z, db, dsigma, psi(q, j))
+                    p = q + (j - 1)*nph
+                    call ce_cartesian(rr, xt(j), st, cos(phi(q)), sin(phi(q)), x(p), y(p), &
+                                      z(p))
                 end do
             end do
+            call field(rr, x, y, z, psi, active)
+            if (.not. active) cycle
             scale = rr*sqrt(enc%mesh%w(i))
-            do m = 0, mest
-                fm = matmul(cphi(:, m), psi)*wt*scale
-                a(i, m, m:lest) = matmul(plm(m:lest, m, :), fm)
+            do f = 1, nf
+                do m = 0, mest
+                    fm = matmul(cphi(:, m), reshape(psi(:, f), [nph, nth]))*wt*scale
+                    a(i, m, m:lest, f) = matmul(plm(m:lest, m, :), fm)
+                end do
             end do
         end do
-    end subroutine project_packet
+    end subroutine encounter_project
 
     ! Per-l eigen window, adaptively widened until the discarded spectral weight
     ! of the initial state fits the budget; accumulates the ledger.
