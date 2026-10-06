@@ -296,3 +296,75 @@ run from the repository root and must reproduce committed leaves exactly.
   pair), canonical vs metric engine, conservation, bound validity, M3 bin
   JVP vs FD 5.6e-8. Open: non-monotone K enrichment with fixed guides
   (regularization), goal-oriented estimator, FortSym complex codegen.
+- 2026-10-06 (worker, quantum figure pass): presentation and demo sampling
+  only; physics and oracles unchanged. Q1: head-on and kb = 2 movies of the
+  y = 0 relative density (singlet, triplet, spin-unresolved, classical
+  ensemble 8e5 pairs) on a fixed four-decade log scale with colorbars, slow
+  motion up to 4x around/after closest approach; exchange fringes (maxima
+  3.3-3.5/k apart vs lambda/2 = pi/k) and the triplet nodal plane z = 0 are
+  visible, the distinguishable pair shows no incoming/reflected fringes at
+  sigma = r0/2 (on-axis cut: quantum = classical plus a tunnelling tail);
+  Mott scan in 1 degree bins (classical 5 degree, 1e5 pairs, s.e. bands).
+  Q2/Q3/Q8 multi-panel log figures (pressure in GPa: fortplot clamps log
+  axes to 1e+-25); Q4 defaults to Theta = 0, unconverged rows dotted and
+  labelled, new jellium-kick.mp4; Q5 Temple bound only where valid (the old
+  estimator plot relabelled the true error for N = 3, 4); Q7 real log axes,
+  Wigner run 128x512 to t = 45 (negative mass at t = 20 now 0.262 / 0.085 /
+  1.3e-13; Vlasov under-resolved from t ~ 24.5, marked); QG6 log eta/T axes
+  and 2x2 beam movie; Q0 occupation log axis over 33 weighted orbitals.
+  37/37 CTest Release. Open: fortplot does not clip lines at the axes, did
+  not render text() annotations, clamps log range to 1e+-25, misses
+  \langle, \hbar, \uparrow, \, and Greek in colorbar labels; Q0 movie
+  repeats each of 61 computed frames 3x (frame count shared with
+  classical_pair_demo).
+- 2026-10-06 (worker, H1a classical correlation map; docs/correlation-hierarchy.md):
+  `src/ocp_monte_carlo.f90` (canonical Metropolis MC, exact incremental
+  Ewald with the new `real_cutoff = 0` option of `ewald_select`),
+  `src/correlation_hierarchy.f90` (g3 with an exact triangle-clipped ideal
+  measure, Kirkwood/cumulant references, c3/U3/delta_K sizes, conditional
+  mean force, YBG closure integrals, pair observables), `src/ocp_hnc.f90`
+  (HNC, Ng split, DST through the FortNum FFT), `src/series_statistics.f90`,
+  leaves from `gen/gen_correlation_hierarchy.f90`, CTest
+  `correlation_hierarchy_h1a_oracles` (direct-Ewald energy, FD forces, N = 2
+  chain against quadrature, two-ball measure, ideal gas, Gaussian-cloud YBG,
+  Caillol-Gilles/Ortner HNC energies, AR(1)), and the demo
+  `correlation_map_classical_demo` (12 chains at Gamma 0.1..30 and N 1000/500,
+  plus MD at Gamma 1; 12.4 min wall). Results (statistical 1 s.e.):
+  - u matches the Potekhin-Chabrier fit and the tabulated MC values. The 1/N
+    extrapolation is -0.025689(92) against -0.0256975(35) at Gamma 0.1, and
+    -7.9999(14) against -7.998170(16) at Gamma 10.
+  - The fluctuation du/dGamma matches the fit JVP within 1.8 s.e.
+  - MD agrees with MC within 1 sigma (u and g2).
+  - Sizes on sides < 3a: the Ursell U3 is as large as the pair products at
+    every Gamma.
+  - The superposition-connected c3 is unresolved at Gamma 0.1 (< 0.017),
+    0.019(2) at 0.3 and 1.060(2) at 30. `||c3||/||K-P||` is 0.10 to 0.26
+    for Gamma 1 to 30.
+  - The rms Kirkwood defect is 0.005 at Gamma 1 and 0.064 at 30.
+  - One-shot YBG with MC g2:
+    - exact conditional force reproduces g2 at the noise level;
+    - the first-order closure fails from Gamma ~ 1 (spurious contact peak);
+    - Kirkwood is 4% in u at Gamma 1, 32% at 10 and diverges at 30;
+    - HNC stays within 1% in u.
+  Found and fixed in analysis:
+  - the canonical 1/N normalization of g2/g3 (10% g2-route energy error
+    without it at N = 200);
+  - the perfect-screening projection of the closure input;
+  - the triplet-measure quadrature (sub = 8 gave a spurious
+    `||c3||^2 ~ 1e-3` floor).
+  38/38 CTest Release and Debug after merging hierarchy-campaign. Open:
+  - self-consistent BGY-Kirkwood and the second YBG equation;
+  - c3 resolution (0.6a bins lower `||c3||^2` by 33%);
+  - generic series statistics could move to FortNum;
+  - a FortSym `sqrt(1*3)` folding defect (worked around in the generator);
+  - the default kin6d_ocp MD step fails closed at Gamma 1 (the demo uses
+    dt/4).
+- 2026-10-06 (controller, pause 2): merged Q2, QG6, Q5, cleanup, both
+  figure passes, C3/C4 code (final Landau evidence pending on its branch),
+  H1a classical correlation map; FortNum e97a493 and fortplot cad62c6
+  pinned. 38/38 CTest. Pending worker branches: H1b quantum-classical map
+  (worktree-agent-a12015f16c29a0b2f), C3/C4 final evidence
+  (worktree-agent-a6bde7f3f0e416042). Remaining: merge those; regime map
+  synthesis; plan/doc consolidation (ROADMAP, README,
+  quantum-microscopic-validation, microscopic-many-body, teaching docs);
+  full gallery render into one directory; slopbox upload of all figures.
