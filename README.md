@@ -69,21 +69,39 @@ of prescribed-field free streaming, with certified distribution and density
 bands. It is the first transport comparison; self-consistent particle-field
 coupling remains planned.
 
-The [Chapter 1–3 animation gallery](docs/chapter-gallery.md) adds particle
+The [animation and figure gallery](docs/chapter-gallery.md) adds particle
 encounters, bounded-velocity moments, a finite-sphere Debye equilibrium
-reference, computed planar shielding relaxation and a cold electron slab.
-The gallery distinguishes certified reduced-model results from exploratory
-microscopic trajectories. Its reproducible GIF and MP4 outputs remain outside
-Git.
+reference, computed planar shielding relaxation, a cold electron slab and all
+microscopic classical and quantum demonstrations. It distinguishes certified
+reduced-model results from candidate and statistical microscopic results.
+Generated GIF, MP4 and NetCDF outputs remain outside Git.
 
-The [quantum teaching slice](docs/quantum-teaching-slice.md) supplies a periodic
-interacting pair-quench reference and finite-temperature ideal electron
-pressure. The [microscopic quantum plan](docs/quantum-microscopic-validation.md)
-next prioritizes localized scattering, coherent packet enrichment, finite-N
-degeneracy and an interacting quantum cell before scalable approximations.
-Quantum BBGKY and stellar structure are deferred. Finite-basis evolution
-bounds, classical sampling uncertainty and continuum projection error have
-separate status.
+A microscopic hierarchy branch shares one species/unit record, one symbolic
+Coulomb/Ewald source, one general-N Hamiltonian splitting path and one
+namelist/NetCDF provenance contract. It currently provides:
+
+- classical cases: two-body Rutherford encounter, periodic pair quench,
+  isolated electron cloud, periodic OCP plasma oscillation and emergent Debye
+  shielding, and a correlation map of the OCP (g2, g3, three-body cumulants,
+  Kirkwood defect, YBG and HNC closures for Gamma = 0.1..30);
+- quantum cases: a certified finite-basis pair quench, a partial-wave
+  two-electron encounter with singlet/triplet/classical comparison and a
+  Rydberg packet, Gaussian packet models against that reference, finite-N
+  ideal fermions, an interacting jellium cell with reduced-density-matrix
+  cumulants, Hartree/HF/Mermin/TDHF against the exact cell, Debye to
+  Lindhard screening, Wigner to Vlasov, and the nonrelativistic and
+  relativistic ideal Fermi EOS;
+- a hybrid classical plasma whose close encounters are promoted to quantum
+  scattering kernels.
+
+Each case carries its own claim (certified, certified-discrete, reference
+comparison, indicator or statistical); see
+[microscopic quantum validation](docs/quantum-microscopic-validation.md) and
+[the microscopic many-body reference](docs/microscopic-many-body.md). The
+active path is the matched quantum-classical correlation map, closures beyond
+the first YBG equation and a quantum BBGKY hierarchy with measured cumulants,
+toward adaptive correlation-order and classical/quantum switching. The task
+state is in [the hierarchy campaign](docs/hierarchy-campaign.md).
 
 ## Scientific spine
 
@@ -385,6 +403,9 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Complete plasma-physics capability catalogue](docs/capability-catalogue.md)
 - [Microscopic relativistic many-body reference](docs/microscopic-many-body.md)
 - [Quantum plasma fundamentals and dense-matter bridge](docs/quantum-plasma.md)
+- [Microscopic quantum experiments and validation](docs/quantum-microscopic-validation.md)
+- [Microscopic hierarchy campaign state](docs/hierarchy-campaign.md)
+- [Animation and figure gallery](docs/chapter-gallery.md)
 - [Adaptive multiscale, multifidelity and uncertainty architecture](docs/adaptive-multiscale-uq.md)
 - [Numerical-method catalogue](docs/numerical-methods.md)
 - [Reacting and partially ionized plasmas](docs/reacting-partially-ionized.md)

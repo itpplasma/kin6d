@@ -2,7 +2,7 @@
 
 Status: required scientific feature set; all implementations are planned.
 This extends the [design](../DESIGN.md) and the [certification contract](certification.md).
-Every project-owned numerical leaf follows the [fortsym policy](tooling.md#kernel-generation-policy).
+Every project-owned numerical leaf follows the [fortsym policy](tooling.md).
 
 ## Independent choices
 

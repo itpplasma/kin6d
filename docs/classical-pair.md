@@ -2,7 +2,7 @@
 
 This teaching candidate evolves genuine three-dimensional classical particle
 pairs, not PIC macro-particles. It is the classical companion to the
-opposite-spin quantum preparation in [quantum-teaching-slice.md](quantum-teaching-slice.md).
+opposite-spin quantum preparation in [quantum-reference-gallery.md](quantum-reference-gallery.md).
 It is not a thermodynamic Debye-screening experiment.
 
 Each independent preparation contains two equal-mass like charges, with
