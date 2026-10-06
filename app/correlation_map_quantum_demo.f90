@@ -451,16 +451,17 @@ contains
             call title('$r_s$ = '//num(rs_values(r), 1)//', Θ = '// &
                        num(theta_values(t), 1)//', Γ = '//num(met2(1, r, t), 1))
             call xlabel('r / a'); call ylabel('g(r), N = 2')
-            call plot(pair2(:, 16, r, t), pair2(:, 1, r, t), color=blue, marker='o', &
+            call plot(pair2(:, 16, r, t), min(1.6_dp, pair2(:, 1, r, t)), color=blue, marker='o', &
                       label='quantum (exact cell)')
-            call plot(pair2(:, 16, r, t), pair2(:, 5, r, t), color=green, linestyle=':', &
+            call plot(pair2(:, 16, r, t), min(1.6_dp, pair2(:, 5, r, t)), color=green, linestyle=':', &
                       label='ideal fermions (Q3)')
-            call plot(pair2(:, 16, r, t), pair2(:, 13, r, t), color=vermillion, &
+            call plot(pair2(:, 16, r, t), min(1.6_dp, pair2(:, 13, r, t)), color=vermillion, &
                       linestyle='-.', label='classical, Kelbg + Pauli')
-            call plot(pair2(:, 16, r, t), pair2(:, 11, r, t), color=orange, &
+            call plot(pair2(:, 16, r, t), min(1.6_dp, pair2(:, 11, r, t)), color=orange, &
                       linestyle='--', label='Wigner-Kirkwood + exchange')
-            call plot(pair2(:, 16, r, t), pair2(:, 8, r, t), color=black, linestyle='--', &
+            call plot(pair2(:, 16, r, t), min(1.6_dp, pair2(:, 8, r, t)), color=black, linestyle='--', &
                       label='classical, Coulomb')
+            ! Curves are clipped at the axis top in the data (display only).
             call ylim(0.0_dp, 1.6_dp)
             if (k == 1) call legend(loc='lower right')
         end do
@@ -480,10 +481,10 @@ contains
                 end do
             end do
             select case (k)
-            case (1); call title('total $\|g_q - g_{cl}\|$')
-            case (2); call title('ideal part $\|g_{q,id} - 1\|$ (exchange, degeneracy)')
+            case (1); call title('total: RMS of $g_q - g_{cl}$')
+            case (2); call title('ideal part: RMS of $g_{q,id} - 1$ (exchange, degeneracy)')
             case (3); call title('interaction part (diffraction)')
-            case (4); call title('opposite-spin channel $\|g_{q,\uparrow\downarrow} - g_{cl}/2\|$')
+            case (4); call title('opposite-spin channel: RMS of $g_{q,opp} - g_{cl}/2$')
             end select
             call heat(z, '$\log_{10}$ RMS difference', -3.0_dp, 0.0_dp)
         end do
@@ -536,7 +537,7 @@ contains
         call legend(loc='upper right')
         call subplot(1, 2, 2)
         call title('relative residual of the WK + exchange prediction')
-        call xlabel('$\lambda_T / a$'); call ylabel('$\|\Delta_{pred} - \Delta\| / \|\Delta\|$')
+        call xlabel('$\lambda_T / a$'); call ylabel('RMS($\Delta_{pred} - \Delta$) / RMS($\Delta$)')
         call xscale('log'); call yscale('log')
         call rs_lines(11, 'WK + exchange')
         call plot([0.5_dp, 3.0_dp], [1.0_dp, 1.0_dp], color=black, linestyle='--', &
@@ -551,7 +552,7 @@ contains
             if (k == 1) call title('Kelbg diffraction potential')
             if (k == 2) call title('Kelbg + spin-averaged Pauli potential')
             call xlabel('$\lambda_T / a$')
-            call ylabel('$\|g_{model} - g_q\| / \|g_{cl} - g_q\|$')
+            call ylabel('RMS($g_{model} - g_q$) / RMS($g_{cl} - g_q$)')
             call xscale('log'); call yscale('log')
             call rs_lines(13 + k, 'model')
             call plot([0.5_dp, 3.0_dp], [1.0_dp, 1.0_dp], color=black, linestyle='--', &
@@ -583,11 +584,13 @@ contains
         integer :: j
         call pcolormesh(xe, ye, field, cmap='viridis', vmin=lo, vmax=hi)
         call colorbar(label=clabel)
-        gx = [xe(1), xe(nrs + 1)]
+        ! Gamma = r_s/(1.8416 Theta) lines, clipped to the axes box.
         do j = -1, 1
-            g = 10.0_dp**j
-            call plot(gx, gx - log10(1.8416_dp*g), color=black, linestyle='--')
+            g = log10(1.8416_dp*10.0_dp**j)
+            gx = [max(xe(1), ye(1) + g), min(xe(nrs + 1), ye(ntheta + 1) + g)]
+            if (gx(2) > gx(1)) call plot(gx, gx - g, color=black, linestyle='--')
         end do
+        gx = [xe(1), xe(nrs + 1)]
         call plot(gx, [1.0_dp, 1.0_dp]*log10(2*acos(-1.0_dp)/1.8416_dp), color=grey, &
                   linestyle=':')
         call xlim(xe(1), xe(nrs + 1)); call ylim(ye(1), ye(ntheta + 1))
