@@ -19,6 +19,7 @@ module kin6d_wigner_plots
     real(dp), allocatable :: mfw(:, :, :), mfv(:, :, :), mt(:), mneg(:, :), mamp(:, :)
     real(dp), allocatable :: mx(:), mv(:)
     real(dp) :: mrange, mnegmax, mresolved
+    logical :: still_frame = .false.
     integer :: mframes
     class(figure_t), pointer :: canvas => null()
 contains
@@ -112,7 +113,9 @@ contains
         end do
         call figure(figsize=[13.2_dp, 8.8_dp])
         canvas => get_global_figure()
+        still_frame = .true.
         call draw(snapshot)
+        still_frame = .false.
         call savefig('output/wigner-two-stream.png')
         animation = animation_func(update, frames=frames + hold, interval=42, fig=canvas)
         call save_animation(animation, 'output/wigner-two-stream.mp4', fps=24, &
@@ -160,11 +163,11 @@ contains
                   label='negative mass, ħ = 1')
         call plot(mt(:n), mneg(:n, 3), color=grey, linestyle=':', &
                   label='negative mass, Vlasov')
-        if (mresolved < mt(mframes)) call plot([mresolved, mresolved], [1e-16_dp, 10.0_dp], &
+        if (mresolved < merge(mt(n), mt(mframes), still_frame)) call plot([mresolved, mresolved], [1e-16_dp, 10.0_dp], &
             color=black, linestyle='--', linewidth=1.0_dp, &
             label='Vlasov under-resolved')
         call set_yscale('log')
-        call xlim(0.0_dp, mt(mframes)); call ylim(1e-16_dp, 10.0_dp)
+        call xlim(0.0_dp, merge(mt(n), mt(mframes), still_frame)); call ylim(1e-16_dp, 10.0_dp)
         call xlabel('$\omega_p t$')
         call ylabel('$|n_1|/n_0$ and negative mass')
         call legend(loc='lower right')
