@@ -245,12 +245,14 @@ contains
             ed(:, :), hist_f(:, :, :, :), hist_e(:, :, :, :), bmat(:, :), coef(:), &
             gu(:, :), gd(:, :), values(:)
         real(dp) :: tol, lshift, ek, eh, ex, eold, err
-        integer :: n, it, itmax, stored, slot, info, ndn
+        integer :: n, it, itmax, stored, slot, info, ndn, attempt
         ok = .false.
         n = inter%nmodes; ndn = cell%n - nup
         if (nup < 0 .or. ndn < 0 .or. nup > n .or. ndn > n) return
         if (restricted .and. nup /= ndn) return
-        tol = 1.0e-10_dp; itmax = 400; lshift = 0.5_dp*cell%fermi
+        tol = 1.0e-10_dp; itmax = 400
+        lshift = 0.5_dp*cell%fermi
+        if (inter%count > 0) lshift = 0.5_dp*max(cell%fermi, maxval(abs(inter%w)))
         if (present(tolerance)) tol = tolerance
         if (present(max_iterations)) itmax = max_iterations
         if (present(shift)) lshift = shift
@@ -258,14 +260,17 @@ contains
         state%exchange = exchange
         allocate (state%cup(n, n), state%cdn(n, n), state%eup(n), state%edn(n), &
                   state%fup(n), state%fdn(n))
-        state%cup = cup0; state%cdn = cdn0
-        if (restricted) state%cdn = cup0
         state%fup = 0; state%fup(1:nup) = 1; state%fdn = 0; state%fdn(1:ndn) = 1
         allocate (pup(n, n), pdn(n, n), fu(n, n), fd(n, n), eu(n, n), ed(n, n), &
                   gu(n, n), gd(n, n), values(n), hist_f(n, n, 2, depth), &
                   hist_e(n, n, 2, depth), bmat(depth + 1, depth + 1), coef(depth + 1))
+        ! Retries without DIIS and with 4x/16x level shift (slower, but each
+        ! step then lowers the energy) when DIIS oscillates or diverges.
+        do attempt = 1, 3
+        state%cup = cup0; state%cdn = cdn0
+        if (restricted) state%cdn = cup0
         stored = 0; eold = huge(1.0_dp)
-        do it = 1, itmax
+        do it = 1, itmax*(1 + 4*(attempt - 1))
             call densities(state, pup, pdn)
             call mf_fock(inter, pup, pdn, exchange, fu, fd, ek, eh, ex)
             if (restricted) then
@@ -284,7 +289,7 @@ contains
             slot = 1 + mod(it - 1, depth); stored = min(stored + 1, depth)
             hist_f(:, :, 1, slot) = fu; hist_f(:, :, 2, slot) = fd
             hist_e(:, :, 1, slot) = eu; hist_e(:, :, 2, slot) = ed
-            if (stored >= 2) then
+            if (stored >= 2 .and. attempt == 1) then
                 call diis(hist_f(:, :, :, 1:stored), hist_e(:, :, :, 1:stored), fu, fd)
             end if
             gu = fu + lshift*(identity(n) - pup); gd = fd + lshift*(identity(n) - pdn)
@@ -296,6 +301,9 @@ contains
                 call symmetric_eigen(gd, values, state%cdn, info)
                 if (info /= 0) return
             end if
+        end do
+        if (state%converged) exit
+        lshift = 4*lshift
         end do
         call canonicalize(state%cup, fu, nup, state%eup)
         call canonicalize(state%cdn, fd, ndn, state%edn)
