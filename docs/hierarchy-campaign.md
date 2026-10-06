@@ -64,9 +64,9 @@ error status as in AGENTS.md.
 | Q1b | Attractive electron-proton Rydberg packet (oscillation, revivals) | hydrogen spectrum, Kepler period | planned |
 | Q2 | Gaussian/coherent-sum packet models vs Q1 | Q1 reference | candidate (docs/packet-models.md) |
 | Q3 | Finite-N ideal fermions: exchange hole, canonical sums | ideal-gas identities | planned (EOS exists) |
-| Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | planned |
+| Q4 | Interacting N=2..4 jellium cell, matrix-free Fock evolution, weak perturbation | tiny-basis diagonalization | exists (docs/jellium-cell.md) |
 | Q5 | Hartree/HF vs Q4 | Q4 | planned |
-| Q7 | Debye/finite-T Fermi/Thomas-Fermi/Lindhard screening; Wigner -> Vlasov as hbar->0 | analytic limits | planned |
+| Q7 | Debye/finite-T Fermi/Thomas-Fermi/Lindhard screening; Wigner -> Vlasov as hbar->0 | analytic limits | exists (worker, unpromoted) |
 | Q8 | Relativistic ideal Fermi EOS | classical/NR/UR limits | planned |
 | H1 | Correlation map: pair and three-body cumulant size, quantum-classical difference vs (Gamma, Theta) | C5, Q4 references | planned |
 
@@ -170,6 +170,66 @@ run from the repository root and must reproduce committed leaves exactly.
   Open: in-file groups, generated schema, external-input hashes, hardware
   records; new apps (coulomb_encounter, ocp_*, jellium_cell, screening,
   wigner) must adopt the module and join the `kin6d_io` list in CMake.
+- 2026-10-05 (worker, Q7): `src/screening_hierarchy.f90`,
+  `src/wigner_poisson.f90`, `src/wigner_dispersion.f90` (independent Z-ODE
+  dispersion oracle), leaves from `gen/gen_screening.f90` and
+  `gen/gen_wigner.f90` (deterministic regeneration); FortNum fft compiled as
+  `kin6d_fft`; docs/screening-wigner.md. Static ideal-gas RPA (no LFC):
+  T=0 momentum route vs closed form 4.7e-15, momentum vs Maldague routes
+  8.7e-15, Sommerfeld 2e-8, Dawson limit 3e-5, Friedel period 3.1382/kF,
+  rigorous truncation tails, quadrature indicators. Wigner-Poisson split
+  step (shared streaming_rotation leaf, exact eta-space kick, forward
+  tangent in hbar): Landau/quantum-Langmuir roots within 1e-4, two-stream
+  growth within 1.7e-4 for 26 (k, hbar), O(hbar^2) Wigner->Vlasov (rate
+  1.99/2.00), tangent = FD to 1e-6, implicit root derivative, unclipped
+  negativity 0.25 at t=20 (Vlasov 1e-13 while resolved). Both demos use
+  result_io. 28/28 CTest Release and Debug. Finding: fermi_gas candidate k_s
+  off by 1.8e-3 at theta~0.025 (inside its certified 1% enclosure). Open:
+  Z function and graded Gauss rules belong in FortNum; modal Poisson copy;
+  no rigorous Lindhard/Wigner enclosure; screening figure uses log10 data
+  workaround for the old fortplot pin.
+- 2026-10-06 (controller, pause): merged F5 (namelist + FortIO results),
+  Q1/Q1b (partial-wave encounter, Rydberg packet), Q3/Q8, Q7 (screening,
+  Wigner-Poisson); kin6d uses FortNum 0f643d0 GLL/Legendre and fortplot
+  67834eb; 28/28 CTest green. Unmerged worker branches (resume/integrate):
+  worktree-agent-a555f8713dd7a8d74 (Q4 jellium + F6 migration),
+  worktree-agent-a6bde7f3f0e416042 (C3/C4 OCP), worktree-agent-a13ae492e23305233
+  (Q2 packet models). Remaining: C5/H1 correlation map (g2/g3 cumulants vs
+  Gamma, Theta), Q5 Hartree/HF, QG6 hybrid encounters, modal Poisson
+  dedup, fermi_gas k_s candidate (1.8e-3 near Theta 0.025) and cold
+  certificate mesh, coulomb_encounter_demo result_io adoption, figure pass
+  (Q1 movie: CM relative density singlet/triplet/classical, log scale,
+  near-closest-approach frames; fine Mott bins), plan/doc consolidation,
+  gallery render and slopbox upload.
+- 2026-10-06 (controller): Q4 worker finished (branch
+  worktree-agent-a555f8713dd7a8d74, 27/27 tests). Before merging, verify
+  and push FortNum branch `symmetric-lanczos-eigen` (80b7340, worktree
+  /Users/ert/code/lazy-fortran/fortnum-symmetric-eigen) to FortNum main;
+  the Q4 branch pins it. Q4 open: Theta=0.5 N=3/4 thermal rows unconverged
+  (indicators only); response only at q=(100).
+- 2026-10-06 (worker, F6 + Q4): F6: `quantum_evolution` and
+  `slab_oscillation` use FortNum `fortnum_ode_residual_certificate`; the
+  generated qe residual/Bernstein/radius-interval and slab residual/radius
+  leaves are gone. Quantum radii unchanged (two-level 1.0976e-7, tangent
+  1.9888e-7, n=125 8.719e-6; ~15 ms/cell, dominated by the kin6d dense
+  interval action). The slab moved to the componentwise first-order
+  reconstruction: O(h^3) instead of O(h^2) residual, demo radius 6.61e-3 ->
+  3.30e-4. Q4: `src/jellium_cell.f90` on new engine pieces (sector bases,
+  sparse coupled action with fail-closed leakage, factorized 1/2/3-RDMs,
+  `add_fock_one_body`) and new FortNum `fortnum_symmetric_eigen` (dense
+  eigen + block Lanczos; branch `symmetric-lanczos-eigen` 80b7340, NOT
+  pushed: the pin KIN6D_FORTNUM_REVISION=80b7340 needs the controller to push
+  it, local builds use -DFETCHCONTENT_SOURCE_DIR_FORTNUM). `cutoff=2`
+  (M=38) default: N=2 E0(rs=2)=-1.668e-2 Ha (cutoff 1/2/3: -1.426/-1.668/
+  -1.709e-2); N=4 sector dims up to 73815 states. chi/chi0_Lindhard at
+  q=(100): N=2 0.97 (rs 0.5) -> 0.69 (rs 8); RPA overscreens (0.49 at rs 8).
+  H1: |lambda3|/|Gamma3| N=3 ground multiplet 0.060 (rs 0.5) -> 0.236
+  (rs 8); N=4 0.29 -> 0.41 (multiplet mixture dominated). dE/dg HF vs FD
+  7e-10 rel, dg_opp/dg 3e-10 rel, VJP=JVP. Kick band 2e-6 at t=8 (800 RK
+  steps, certificate 0.16 s). Theta=0.5 ensembles for N=3,4 are NOT
+  converged with nev=8 per sector (truncation estimate 0.05-0.2 / 2-4);
+  treat those rows as indicators. 27/27 CTest Release and Debug.
+
 - 2026-10-06 (worker, Q2): `src/packet_models.f90`, `src/gaussian_pair.f90`,
   leaves from `gen/gen_packet_models.f90` (Gaussian-averaged Coulomb added to
   `kin6d_symbolic_physics`), `encounter_project` (generic Q1 projection),

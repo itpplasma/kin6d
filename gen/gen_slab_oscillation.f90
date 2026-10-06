@@ -52,14 +52,14 @@ program gen_slab_oscillation
     write (w%unit, '(a)') '! tau=omega_pe*t, q=xi/xi0, p=dq/dtau, qprime=p, pprime=-q.'
     write (w%unit, '(a)') '! No 3D periodic k0 restoring OCP or microscopic N-body claim.'
     write (w%unit, '(a)') '! Candidate integration: upstream FortNum Cash-Karp RK5(4).'
-    write (w%unit, '(a)') '! Certificate: strict cubic residual Bernstein hull + Duhamel.'
+    write (w%unit, '(a)') '! Certificate: FortNum componentwise Hermite residual + radius.'
     write (w%unit, '(a)') &
         '! Derivatives: smooth leaf Euclidean pairings; density edges events.'
     write (w%unit, '(a)') 'module kin6d_slab_oscillation_leaves'
     write (w%unit, '(a)') 'implicit none'
     write (w%unit, '(a)') 'contains'
     call w%emit('slab_oscillation_rhs', ['tau     ', 'q       ', 'momentum'], &
-              ['qdot', 'pdot'], [p, -q], ad=.true.)
+              ['qdot', 'pdot'], [p, -q], ad=.true., interval=.true.)
     call w%emit('slab_oscillation_time', ['i       ', 'n       ', 'duration'], &
               ['tau'], [duration*i/n], interval=.true.)
     call w%emit('slab_oscillation_span', ['tl', 'tr'], ['h'], [h])
@@ -67,17 +67,9 @@ program gen_slab_oscillation
                       'pl ', 'pr '], ['position    ', 'momentum    ', 'acceleration'], &
               [polynomial, velocity, acceleration], &
               ad=.true., interval=.true.)
-    call w%emit('slab_oscillation_residual_interval', &
-              ['tl', 'tr', 'ql', 'qr', 'pl', 'pr'], &
-              ['r0', 'r1', 'r2', 'r3'], &
-              [qc(1) + d0, qc(2) + (2*d0 + d1)/3, &
-               qc(3) + (d0 + 2*d1)/3, qc(4) + d1], rigorous=.true.)
     call w%emit('slab_oscillation_initial_radius_interval', &
               ['q       ', 'momentum', 'qinitial', 'pinitial'], ['radius'], &
               [abs(q - qinitial) + abs(p - pinitial)], rigorous=.true.)
-    call w%emit('slab_oscillation_radius_interval', &
-              ['tl   ', 'tr   ', 'bound', 'acc  '], &
-              ['next'], [acc + h*bound], rigorous=.true.)
     call w%emit('slab_oscillation_enlarge_interval', ['value ', 'radius'], &
               ['lower', 'upper'], [value - radius, value + radius], rigorous=.true.)
     call w%emit('slab_oscillation_difference_interval', ['value    ', 'reference'], &
