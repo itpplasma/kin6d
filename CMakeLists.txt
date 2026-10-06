@@ -321,3 +321,17 @@ foreach(q7 screening wigner)
         target_link_libraries(gen_${q7} PRIVATE kin6d_gen_support)
     endif()
 endforeach()
+# Q5: Hartree/HF/Mermin/TDHF mean-field models of the Q4 jellium cell (appended).
+if(KIN6D_FORTSYM_BUILD)
+    add_executable(gen_mean_field_cell gen/gen_mean_field_cell.f90)
+    target_link_libraries(gen_mean_field_cell PRIVATE kin6d_gen_support)
+endif()
+target_sources(kin6d PRIVATE src/generated/kin6d_mean_field_cell_leaves.f90
+    src/mean_field_cell.f90)
+set_source_files_properties(src/generated/kin6d_mean_field_cell_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_mean_field_cell test/test_mean_field_cell.f90)
+target_link_libraries(test_mean_field_cell PRIVATE kin6d)
+add_test(NAME mean_field_cell_oracles COMMAND test_mean_field_cell)
+add_executable(mean_field_cell_demo app/mean_field_cell_demo.f90)
+target_link_libraries(mean_field_cell_demo PRIVATE kin6d kin6d_io fortplot)

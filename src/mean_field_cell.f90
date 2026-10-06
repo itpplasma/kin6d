@@ -1,0 +1,2 @@
+module kin6d_mean_field_cell
+end module
