@@ -507,6 +507,9 @@ runs:
 - selected model-defect theorem;
 - exact finite-dimensional conservation/Onsager identities.
 
+Model-level derivations and their formal targets are planned in
+[theory-map.md](theory-map.md).
+
 Do not formalize the whole HPC solver. The trusted numerical core should stay
 small even without Lean: exact model definition, rigorous arithmetic,
 certificate data and a small checker.

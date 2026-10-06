@@ -248,6 +248,9 @@ diagonalization will not scale beyond about N = 4--6.
 
 ## Remaining plan
 
+The model-level derivations that connect these cases are planned in
+[the theory map](theory-map.md).
+
 The direction is the quantum BBGKY/cumulant hierarchy and adaptive
 correlation-order and classical/quantum switching
 ([adaptive-multiscale-uq.md](adaptive-multiscale-uq.md)). In order:
@@ -271,9 +274,18 @@ correlation-order and classical/quantum switching
 5. **Lindhard with local-field corrections.** Static LFC and an interacting
    RPA/HF comparison against the Q4 response, with a rigorous Lindhard
    quadrature enclosure where affordable.
-6. **Collision kernels and larger Lambda scans.** Exchange in the hybrid
-   Monte Carlo; microscopic collision coefficients (classical side, C3/C4 at
-   Lambda = 100..10000) compared with the QG6 kernels.
+6. **Collision kernels against the literature and in a production
+   operator.** (a) Literature oracles in the tests: the NRL two-branch
+   electron Coulomb logarithm, the Bloch identity
+   psi(1) - Re psi(1 + i eta) = -eta^2 sum 1/(n(n^2+eta^2)), and the
+   Gericke--Murillo--Schlanges and Brown--Preston--Singleton logarithms and
+   stopping numbers. (b) Wire the quantum-corrected logarithm into a
+   production Landau/Rosenbluth operator, then Lenard--Balescu with dynamic
+   screening, cross-checked against the C4 microscopic plasma. (c) Attractive
+   electron-ion scattering with Z > 1 (validated against the Q1b continuum;
+   Barkas-type asymmetry beyond leading order). (d) Exchange in the hybrid
+   collision Monte Carlo. (e) Magnetized collisions when the gyroradius is
+   below lambda_D. (f) Larger Lambda scans.
 7. **Scalable packets only where validated.** Packet or orbital methods for
    100--10000 electrons only in regimes where Q2-type comparisons pass for the
    named observable; otherwise classical trajectories with quantum kernels.

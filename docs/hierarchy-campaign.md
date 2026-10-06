@@ -446,3 +446,11 @@ run from the repository root and must reproduce committed leaves exactly.
   primitives remain on local unpushed branch error-strategy at a431cf2.
   Native Release/Debug 42/42 each, upstream focused gates 2/2; regeneration
   repeats identical bytes.
+- 2026-10-06 (controller): plan additions. Collision step 6 of the plan
+  now covers literature oracles (NRL, Bloch identity, GMS, BPS), a production
+  Landau/Lenard-Balescu operator with the quantum logarithm, attractive
+  e-i with Z > 1, exchange in the hybrid MC and magnetized collisions.
+  New docs/theory-map.md: verified model-reduction graph (classical and
+  quantum branches), derivation status ladder, FortSym as primary derivation
+  engine with listed upstream extensions, Lean for selected structural and
+  analytic theorems, first milestones T1-T6 paired with KIN6D experiments.
