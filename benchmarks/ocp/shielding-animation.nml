@@ -1,0 +1,11 @@
+! C4 lecture animation (debye-shielding-particles): the gated weak-impurity
+! case only, Lambda = 100, kappa = 0.05, L = 4 lambda_D, 8 members, 40/omega_p
+! of Hamiltonian sampling at 0.2/omega_p (200 frames).
+! Run: ocp_shielding_demo --config benchmarks/ocp/shielding-animation.nml --export DIR
+&ocp_shielding
+ label='ocp-shielding-animation',
+ debye_volumes=100.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+ impurities=0.05, 0.0, 0.0, 0.0, 0.0, 0.0,
+ average_times=40.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+ members=8, 0, 0, 0, 0, 0
+/

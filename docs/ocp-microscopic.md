@@ -101,6 +101,14 @@ seed, rejected draws and cost.
   Numerical settings (PME estimate, step, energy defect) are reported
   separately.
 
+`ocp_shielding_demo --config benchmarks/ocp/shielding-animation.nml
+--export DIR` (case 1 only: Lambda = 100, kappa = 0.05, 8 members, 200
+samples) writes DIR/debye-shielding-particles/ for the lecture scene: all
+electron positions of member 1 per sample (16-bit, minimum image around the
+impurity), the running ensemble mean of the time-averaged shell deficit, the
+final per-bin Student-t interval and the bin-averaged periodic, Yukawa and
+unscreened 1/r references, with provenance.json.
+
 ## Results
 
 See the log entry in `docs/hierarchy-campaign.md` and `output/*.csv`.

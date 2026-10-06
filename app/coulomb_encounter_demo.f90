@@ -5,6 +5,7 @@
 ! the hydrogen Kepler packet. Writes CSV and figures to output/
 ! and the evidence file output/coulomb_encounter_demo.nc (kin6d_result_io).
 ! Usage: coulomb_encounter_demo [--config FILE] [--no-movie | --movie-only]
+!        [--export DIR]   (movie data for the lecture scenes, DIR/<slug>/)
 ! Namelist group &coulomb_encounter: etas (four Sommerfeld parameters), nclass
 ! (classical pairs per b-scan ensemble), nclass_scan (pairs per eta-scan
 ! ensemble), seed/movie_seed (classical ensembles), movie.
@@ -14,6 +15,7 @@ program coulomb_encounter_demo
     use kin6d_coulomb_kepler
     use kin6d_coulomb_encounter_leaves, only: ce_mott, ce_free_width
     use kin6d_result_io, only: run_t, result_file_t
+    use kin6d_animation_export, only: animation_export_t
     use fortplot, only: figure, get_global_figure, figure_t, subplot, plot, title, &
         xlabel, ylabel, xlim, ylim, legend, savefig, pcolormesh, tight_layout, &
         set_yscale, suptitle, colorbar, text, fill_between
@@ -44,19 +46,28 @@ program coulomb_encounter_demo
     real(dp), parameter :: mv_slab = 1.0_dp   ! classical slab thickness k h
     real(dp), allocatable :: mq(:, :, :, :), mc(:, :, :)
     real(dp) :: mtimes(nmove), mslow(nmove), xq(0:npx), xc(0:ncx), mv_lambdabar, &
-        mv_speed, mv_z0, mv_b, mv_r0, mv_tc, mv_lmin, mv_lmax
+        mv_speed, mv_z0, mv_b, mv_r0, mv_tc, mv_lmin, mv_lmax, mv_eta, mv_sigma
     logical :: movie_only = .false.
+    character(256) :: export_dir = ''
     type(figure_t), pointer :: canvas => null()
     call run%start('coulomb_encounter_demo')
     call run%open_config(unit)
     ios = 0; msg = ''
     if (run%has_config()) read (unit, nml=coulomb_encounter, iostat=ios, iomsg=msg)
     call run%close_config(unit, 'coulomb_encounter', ios, msg)
-    do i = 1, run%argument_count()
+    i = 1
+    do while (i <= run%argument_count())
         call run%argument(i, arg)
         if (trim(arg) == '--no-movie') movie = .false.
         if (trim(arg) == '--movie-only') movie_only = .true.
+        if (trim(arg) == '--export') then
+            if (i == run%argument_count()) error stop '--export needs a directory'
+            call run%argument(i + 1, export_dir); i = i + 1
+        end if
+        i = i + 1
     end do
+    if (len_trim(export_dir) > 0 .and. .not. (movie .or. movie_only)) &
+        error stop '--export needs the movies (drop --no-movie)'
     if (any(etas <= 0) .or. min(nclass, nclass_scan) < 1) &
         error stop 'etas > 0, nclass >= 1 and nclass_scan >= 1 required'
     call run%open_resolved(unit)
@@ -522,18 +533,28 @@ contains
 
     subroutine encounter_movies()
         allocate (mq(npx, npx, 3, nmove), mc(ncx, ncx, nmove))
-        call encounter_movie(0.0_dp, 'headon')
-        call encounter_movie(2.0_dp, 'offaxis')
+        call encounter_movie(3.0_dp, 3.0_dp, 0.0_dp, 4.0_dp, 'headon')
+        call encounter_movie(3.0_dp, 3.0_dp, 2.0_dp, 4.0_dp, 'offaxis')
+        ! Hot electrons: eta = 0.03 (relative energy mu v^2/2 = Ry/(2 eta^2)
+        ! with mu = m_e/2, about 7.6 keV; thermal pairs of a 10 keV plasma):
+        ! r0 = 0.06 lambdabar << lambdabar, so the packet passes nearly
+        ! undeflected. Same packet, clock and four-decade colour range as the
+        ! eta = 3 movies: only the coupling differs. The large-angle diffracted
+        ! wave (~1e-9 lambdabar^-3) lies below the spreading packet's Gaussian
+        ! tails and the classical one-count floor (~2e-6), so more decades
+        ! would not reveal it.
+        call encounter_movie(0.03_dp, 3.0_dp, 0.0_dp, 4.0_dp, 'hot')
     end subroutine encounter_movies
 
-    ! Encounter movie in the relative coordinate r = x1 - x2 (eta = 3,
-    ! sigma = 3 lambdabar = r0/2, z0 = 20 lambdabar, impact parameter b_l in
-    ! lambdabar): slice y = 0 of the sector-normalized relative density for the
+    ! Encounter movie in the relative coordinate r = x1 - x2 (Sommerfeld
+    ! parameter eta_l, rms width sig_l, z0 = 20 lambdabar, impact parameter b_l
+    ! in lambdabar; eta = 3, sigma = 3 lambdabar = r0/2 for headon/offaxis,
+    ! log colour range of `decades` below the maximum): slice y = 0 of the sector-normalized relative density for the
     ! singlet, triplet and spin-unresolved product beside the classical Wigner
     ! ensemble (slab |y| < h/2), log colour scale, slow motion around closest
     ! approach. Visualization path: interpolated synthesis, no pointwise bound.
-    subroutine encounter_movie(b_l, tag)
-        real(dp), intent(in) :: b_l
+    subroutine encounter_movie(eta_l, sig_l, b_l, decades, tag)
+        real(dp), intent(in) :: eta_l, sig_l, b_l, decades
         character(*), intent(in) :: tag
         integer, parameter :: nscan = 81, nsb = 240, nbatch = 40, nbs = 20000
         real(dp), parameter :: slow = 4
@@ -548,8 +569,9 @@ contains
         complex(dp) :: pp, pm
         integer :: f, i, j, ib, n, u, s
         logical :: ok
-        call setup_case(3.0_dp, 3.0_dp, 20.0_dp, b_l, cfg, enc, tf)
+        call setup_case(eta_l, sig_l, 20.0_dp, b_l, cfg, enc, tf)
         mv_lambdabar = enc%lambdabar; mv_speed = enc%speed; mv_z0 = cfg%z0
+        mv_eta = eta_l; mv_sigma = sig_l
         mv_b = b_l; mv_r0 = enc%r0
         l = min(enc%mesh%rmax, 34*enc%lambdabar)
         h = mv_slab*enc%lambdabar
@@ -647,12 +669,13 @@ contains
         end do
         ! Fixed log colour range: four decades below the global quantum maximum.
         dmax = maxval(mq)
-        mv_lmax = ceiling(2*log10(dmax))/2.0_dp; mv_lmin = mv_lmax - 4
+        mv_lmax = ceiling(2*log10(dmax))/2.0_dp; mv_lmin = mv_lmax - decades
+        if (len_trim(export_dir) > 0) call export_movie(tag, cfg, enc)
         mq = log10(max(mq, 10.0_dp**(mv_lmin - 1)))
         mc = log10(max(mc, 10.0_dp**(mv_lmin - 1)))
         print '(3a,f7.3,a,es9.2,a,es9.2)', 'movie ', tag, ': t_c v/z0=', &
             mv_tc*enc%speed/cfg%z0, ' max density=', dmax, ' classical drift=', drift
-        if (b_l == 0) call turning_cut(enc, cfg, a)
+        if (tag == 'headon') call turning_cut(enc, cfg, a)
         call figure(figsize=[20.0_dp, 4.4_dp])
         canvas => get_global_figure()
         do i = 1, 4
@@ -673,6 +696,90 @@ contains
         if (status /= 0) print '(a,i0)', 'movie encoding status ', status
         call canvas%clear()
     end subroutine encounter_movie
+
+    ! Movie data for the lecture scenes (slugs coulomb-encounter-<tag>): every
+    ! second movie frame (both ends kept) and the quantum slice averaged over
+    ! 2x2 pixels onto the classical histogram grid, so all four panels share
+    ! one grid, one normalization (density times lambdabar^3) and the movie's
+    ! log colour range. Panel order: classical, spin-unresolved product,
+    ! singlet, triplet. Visualization path: no pointwise bound.
+    subroutine export_movie(tag, cfg, enc)
+        character(*), intent(in) :: tag
+        type(encounter_config_t), intent(in) :: cfg
+        type(encounter_t), intent(in) :: enc
+        integer, parameter :: nout = (nmove + 1)/2
+        type(animation_export_t) :: export
+        real(dp), allocatable :: maps(:, :, :, :)
+        real(dp) :: times(nout), slows(nout)
+        integer :: f, g, i, j, s
+        real(dp) :: bound, unused
+        if (npx /= 2*ncx) error stop 'export needs npx = 2 ncx'
+        allocate (maps(ncx, ncx, 4, nout))
+        do g = 1, nout
+            f = 1 + nint((g - 1)*real(nmove - 1, dp)/(nout - 1))
+            times(g) = mtimes(f)*enc%speed/cfg%z0; slows(g) = mslow(f)
+            maps(:, :, 1, g) = mc(:, :, f)
+            do s = 1, 3
+                do i = 1, ncx
+                    do j = 1, ncx
+                        maps(j, i, 1 + merge(1, s + 1, s == 3), g) = &
+                            sum(mq(2*j - 1:2*j, 2*i - 1:2*i, s, f))/4
+                    end do
+                end do
+            end do
+        end do
+        maps = log10(max(maps, 10.0_dp**(mv_lmin - 1)))
+        call export%create(run, export_dir, 'coulomb-encounter-'//tag)
+        call export%note('model', 'two equal-mass electrons, bare Coulomb, relative '// &
+            'coordinate r = x1 - x2, partial-wave FEM-DVR propagation (Q1)')
+        call export%note('density', 'slice y = 0 of the sector-normalized relative '// &
+            'density |psi(x,0,z)|^2 lambdabar^3 (pixel-centre synthesis averaged '// &
+            'over 2x2 pixels); classical: positive Wigner ensemble, spin-unresolved '// &
+            '(r and -r), slab |y| < h/2, histogram per lambdabar^3')
+        call export%note('status', 'visualization path: interpolated synthesis, '// &
+            'no pointwise bound; classical histogram has counting noise')
+        call export%note('panels', '1 classical, 2 spin-unresolved product '// &
+            '(distinguishable), 3 singlet, 4 triplet')
+        call export%parameter('eta', mv_eta, '1', 'Sommerfeld parameter g/(hbar v)')
+        ! Two electrons: eta = alpha c/v_rel, relative energy mu v^2/2 with
+        ! mu = m_e/2 is Ry/(2 eta^2) (Ry = 13.605693 eV).
+        call export%parameter('relative_energy_electrons', 13.605693122990_dp/(2*mv_eta**2), &
+            'eV', 'equivalent relative kinetic energy mu v^2/2 of an electron pair')
+        call export%parameter('sigma', cfg%sigma/enc%lambdabar, 'lambdabar', &
+            'rms packet width per axis of |psi0|^2')
+        call export%parameter('z0', cfg%z0/enc%lambdabar, 'lambdabar', &
+            'initial separation along z')
+        call export%parameter('b', cfg%b/enc%lambdabar, 'lambdabar', 'impact parameter')
+        call export%parameter('r0', enc%r0/enc%lambdabar, 'lambdabar', &
+            'head-on classical turning radius 2 eta lambdabar')
+        call export%parameter('t_closest', mv_tc*enc%speed/cfg%z0, 'z0/v', &
+            'closest approach of the quantum mean separation')
+        call encounter_state_error(enc, mtimes(nmove), 1.0_dp, 0.5_dp, bound, unused)
+        call export%parameter('state_bound', bound, '1', 'finite-space state '// &
+            'error bound e(t_final) <= e0 + t rho/hbar (binary64-evaluated inputs)')
+        call export%parameter('n_radial', real(enc%mesh%n, dp), '1', 'radial FEM-DVR unknowns')
+        call export%parameter('l_max', real(enc%lmax, dp), '1', 'partial waves kept')
+        call export%parameter('m_max', real(enc%mmax, dp), '1', 'azimuthal orders kept')
+        call export%parameter('l_edge_weight', enc%ledger%l_edge2, '1', &
+            'l-truncation edge weight (indicator)')
+        call export%parameter('slab', mv_slab, 'lambdabar', 'classical slab thickness h')
+        call export%parameter('classical_pairs', real(40*20000, dp), '1', &
+            'sampled classical pairs')
+        call export%real32('x_edges', xc/enc%lambdabar, [ncx + 1], 'lambdabar', &
+            'cell edges of the common grid in x and z')
+        call export%real32('t', times, [nout], 'z0/v', 'physical time per frame')
+        call export%real32('slow_motion', slows, [nout], '1', &
+            'playback slow-motion factor of the demo movie clock')
+        call export%quantized('log10_density', reshape(maps, [size(maps)]), &
+            [ncx, ncx, 4, nout], mv_lmin, mv_lmax, 8, 'log10(lambdabar^-3)', &
+            'log10 density, index (z, x, panel, frame)')
+        call export%close()
+        print '(a,es9.2,a,i0,a,i0,a,es9.2)', '  state bound e(t_final)=', bound, &
+            ' n_radial=', enc%mesh%n, ' l_max=', enc%lmax, ' l edge weight=', &
+            enc%ledger%l_edge2
+        print '(3a)', 'animation data written to ', trim(export_dir), &
+            '/coulomb-encounter-'//tag
+    end subroutine export_movie
 
     ! Head-on cuts at closest approach t_c along the collision axis z.
     ! (a) x = 0, density averaged over the cylinder rho < 1/k: distinguishable
@@ -841,12 +948,14 @@ contains
             write (tl(nt), '(a,i0,a)') '$10^{', p, '}$'
         end do
         if (mslow(f) > 1.05_dp) then
-            write (arg, '(a,f3.1,a,f5.2,a,f4.1,a)') 'Relative density in the plane $y = 0$, '// &
-                '$\eta = 3$, $\sigma = r_0/2 = 3/k$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
+            write (arg, '(a,g0.3,a,f3.1,a,f3.1,a,f5.2,a,f4.1,a)') &
+                'Relative density in the plane $y = 0$, $\eta = ', mv_eta, &
+                '$, $k\sigma = ', mv_sigma, '$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
                 mtimes(f)*mv_speed/mv_z0, '   (slow motion ', mslow(f), '$\times$)'
         else
-            write (arg, '(a,f3.1,a,f5.2)') 'Relative density in the plane $y = 0$, '// &
-                '$\eta = 3$, $\sigma = r_0/2 = 3/k$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
+            write (arg, '(a,g0.3,a,f3.1,a,f3.1,a,f5.2)') &
+                'Relative density in the plane $y = 0$, $\eta = ', mv_eta, &
+                '$, $k\sigma = ', mv_sigma, '$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
                 mtimes(f)*mv_speed/mv_z0
         end if
         call suptitle(trim(arg))

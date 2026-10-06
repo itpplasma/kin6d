@@ -122,8 +122,11 @@ The default animation also checks that every connected displacement half-band,
 including the chord margin, is at most 0.01 in the declared displacement scale.
 The solver API permits finer meshes for stricter targets.
 
-`slab_oscillation_demo [--snapshot [frame]]` writes
-`output/plasma-oscillation.csv`, `.png` and, by default, `.mp4`. The main trace
+`slab_oscillation_demo [--snapshot [frame]] [--export DIR]` writes
+`output/plasma-oscillation.csv`, `.png` and, by default, `.mp4`; `--export`
+also writes the per-frame trajectory, connected certified band, analytical
+oracle, slab edges with their enclosures and E/E0, F/F0 to
+DIR/plasma-oscillation/ with provenance.json (lecture scene data). The main trace
 retains the analytical comparison as an independent overlay; the checker does
 not call it. The gallery renderer converts the movie to GIF. Plot artifacts
 are not committed. The palette follows `docs/figure-style.md`: numerical

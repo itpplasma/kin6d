@@ -314,7 +314,8 @@ add_custom_target(kin6d_build_info
         -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
-add_library(kin6d_io src/result_io.f90 src/periodic_pair_config.f90)
+add_library(kin6d_io src/result_io.f90 src/periodic_pair_config.f90
+    src/animation_export.f90)
 add_dependencies(kin6d_io kin6d_build_info)
 target_include_directories(kin6d_io PRIVATE ${CMAKE_BINARY_DIR}/result_include)
 target_link_libraries(kin6d_io PUBLIC kin6d fortio::fortio)
@@ -340,6 +341,10 @@ add_test(NAME result_io_contract
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
         -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)
+add_executable(test_animation_export test/test_animation_export.f90)
+target_link_libraries(test_animation_export PRIVATE kin6d_io)
+add_test(NAME animation_export_contract COMMAND test_animation_export
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # Q7: static screening hierarchy and 1X1V Wigner-Poisson (appended block).
 add_library(kin6d_fft
     ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft8_kernel.f90

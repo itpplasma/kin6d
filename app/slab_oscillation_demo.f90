@@ -14,6 +14,7 @@ program slab_oscillation_demo
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
+    use kin6d_animation_export, only: animation_export_t
     implicit none
     integer, parameter :: markers = 17, fps = 24
     ! 193 frames span two periods in 8 s at 24 fps; a one-second hold follows.
@@ -42,7 +43,7 @@ program slab_oscillation_demo
     real(dp) :: field, force, arrow_field, arrow_force
     integer :: i, frame, status, snapshot_frame, evidence
     logical :: ok, snapshot_only
-    character(len=64) :: argument
+    character(len=256) :: argument, export_dir
 
     call run%start('slab_oscillation_demo')
     ios = 0; msg = ''
@@ -59,18 +60,26 @@ program slab_oscillation_demo
         p(frames), reference(frames), zero(frames), qlo(frames), qhi(frames), &
         elo(frames), ehi(frames), error(frames), chord(frames - 1), &
         error_chord(frames - 1))
-    snapshot_only = .false.; snapshot_frame = (frames + 1)/2
-    if (run%argument_count() > 2) error stop 'usage: demo [--config FILE] [--snapshot [frame]]'
-    if (run%argument_count() >= 1) then
-        call run%argument(1, argument)
-        if (trim(argument) /= '--snapshot') error stop 'expected --snapshot'
-        snapshot_only = .true.
-    end if
-    if (run%argument_count() == 2) then
-        call run%argument(2, argument)
-        read (argument, *, iostat=status) snapshot_frame
-        if (status /= 0) error stop 'invalid snapshot frame'
-    end if
+    snapshot_only = .false.; snapshot_frame = (frames + 1)/2; export_dir = ''
+    i = 1
+    do while (i <= run%argument_count())
+        call run%argument(i, argument)
+        select case (trim(argument))
+        case ('--snapshot')
+            snapshot_only = .true.
+            if (i < run%argument_count()) then
+                call run%argument(i + 1, argument)
+                read (argument, *, iostat=status) snapshot_frame
+                if (status == 0) i = i + 1
+            end if
+        case ('--export')
+            if (i == run%argument_count()) error stop '--export needs a directory'
+            call run%argument(i + 1, export_dir); i = i + 1
+        case default
+            error stop 'usage: demo [--config FILE] [--snapshot [frame]] [--export DIR]'
+        end select
+        i = i + 1
+    end do
     if (snapshot_frame < 1 .or. snapshot_frame > frames) &
         error stop 'frame outside 1..frames'
     call create_directory_runtime('output', ok)
@@ -165,6 +174,7 @@ program slab_oscillation_demo
     print '(a)', 'continuous_VJP_bound=unavailable; '// &
         'fixed_mesh_tangent_IVP_bound=available'
     print '(a,es24.16)', 'global_q_and_p_residual_radius=', radius
+    if (len_trim(export_dir) > 0) call export_animation()
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
     frame = snapshot_frame
@@ -256,6 +266,51 @@ contains
         call legend(loc='upper center')
         call tight_layout()
     end subroutine draw_frame
+
+    !> Animation data for the lecture scene (slug plasma-oscillation): the
+    !> per-frame candidate trajectory, its connected certified band, the
+    !> analytical oracle, slab edges at the declared display ratio xi0/a and
+    !> the normalized field/force, all from the quantities drawn above.
+    subroutine export_animation()
+        type(animation_export_t) :: export
+        real(dp) :: edges(6, frames), loads(2, frames)
+        do i = 1, frames
+            call slab_oscillation_display_displacement(q(i), ratio, shift)
+            call slab_oscillation_edges(shift, 1.0_dp, left, right)
+            call slab_oscillation_enlarge_interval(qpacket(i), interval(radius), lo, hi)
+            call slab_oscillation_display_displacement_interval(hull(lo, hi), &
+                                                                interval(ratio), shift_i)
+            call slab_oscillation_edges_interval(shift_i, interval(1.0_dp), left_i, &
+                                                 right_i)
+            edges(:, i) = [left, right, left_i%lo, left_i%hi, right_i%lo, right_i%hi]
+            call slab_oscillation_field_force(q(i), field, force)
+            loads(:, i) = [field, force]
+        end do
+        call export%create(run, export_dir, 'plasma-oscillation')
+        call export%note('model', 'cold planar electron slab, fixed ions, '// &
+            'tau = omega_pe t, q = xi/xi0, q'''' = -q, q(0) = 1, p(0) = 0')
+        call export%note('solver', 'FortNum Cash-Karp RK5(4), fixed mesh (candidate)')
+        call export%note('band', 'q_lower/q_upper: global Hermite/Bernstein '// &
+            'residual radius (certified-continuous) plus candidate chord margin')
+        call export%note('oracle', 'q_analytical = cos tau, independent overlay')
+        call export%parameter('steps', real(steps, dp), '1', 'RK steps')
+        call export%parameter('periods', periods, '1', 'duration in plasma periods')
+        call export%parameter('display_ratio', ratio, '1', 'xi0/a, display only')
+        call export%parameter('residual_radius', radius, 'xi0', &
+            'global certified residual radius of q and p')
+        call export%real32('tau', time, [frames], '1/omega_pe', 'omega_pe t per frame')
+        call export%real32('q', q, [frames], 'xi0', 'candidate displacement xi/xi0')
+        call export%real32('p', p, [frames], 'xi0 omega_pe', 'candidate velocity')
+        call export%real32('q_analytical', reference, [frames], 'xi0', 'cos tau')
+        call export%real32('q_lower', qlo, [frames], 'xi0', 'connected band lower')
+        call export%real32('q_upper', qhi, [frames], 'xi0', 'connected band upper')
+        call export%real32('edges', reshape(edges, [6*frames]), [6, frames], 'a', &
+            'x/a of left, right edge and enclosures left lo/hi, right lo/hi')
+        call export%real32('field_force', reshape(loads, [2*frames]), [2, frames], &
+            'E0, F0', 'E/E0 and F/F0 inside the slab (candidate)')
+        call export%close()
+        print '(2a)', 'animation data written to ', trim(export_dir)//'/plasma-oscillation'
+    end subroutine export_animation
 
     subroutine edge_band(edge)
         type(interval_t), intent(in) :: edge
