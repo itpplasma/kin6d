@@ -317,3 +317,45 @@ run from the repository root and must reproduce committed leaves exactly.
   \langle, \hbar, \uparrow, \, and Greek in colorbar labels; Q0 movie
   repeats each of 61 computed frames 3x (frame count shared with
   classical_pair_demo).
+- 2026-10-06 (worker, H1a classical correlation map; docs/correlation-hierarchy.md):
+  `src/ocp_monte_carlo.f90` (canonical Metropolis MC, exact incremental
+  Ewald with the new `real_cutoff = 0` option of `ewald_select`),
+  `src/correlation_hierarchy.f90` (g3 with an exact triangle-clipped ideal
+  measure, Kirkwood/cumulant references, c3/U3/delta_K sizes, conditional
+  mean force, YBG closure integrals, pair observables), `src/ocp_hnc.f90`
+  (HNC, Ng split, DST through the FortNum FFT), `src/series_statistics.f90`,
+  leaves from `gen/gen_correlation_hierarchy.f90`, CTest
+  `correlation_hierarchy_h1a_oracles` (direct-Ewald energy, FD forces, N = 2
+  chain against quadrature, two-ball measure, ideal gas, Gaussian-cloud YBG,
+  Caillol-Gilles/Ortner HNC energies, AR(1)), and the demo
+  `correlation_map_classical_demo` (12 chains at Gamma 0.1..30 and N 1000/500,
+  plus MD at Gamma 1; 12.4 min wall). Results (statistical 1 s.e.):
+  - u matches the Potekhin-Chabrier fit and the tabulated MC values. The 1/N
+    extrapolation is -0.025689(92) against -0.0256975(35) at Gamma 0.1, and
+    -7.9999(14) against -7.998170(16) at Gamma 10.
+  - The fluctuation du/dGamma matches the fit JVP within 1.8 s.e.
+  - MD agrees with MC within 1 sigma (u and g2).
+  - Sizes on sides < 3a: the Ursell U3 is as large as the pair products at
+    every Gamma.
+  - The superposition-connected c3 is unresolved at Gamma 0.1 (< 0.017),
+    0.019(2) at 0.3 and 1.060(2) at 30. `||c3||/||K-P||` is 0.10 to 0.26
+    for Gamma 1 to 30.
+  - The rms Kirkwood defect is 0.005 at Gamma 1 and 0.064 at 30.
+  - One-shot YBG with MC g2:
+    - exact conditional force reproduces g2 at the noise level;
+    - the first-order closure fails from Gamma ~ 1 (spurious contact peak);
+    - Kirkwood is 4% in u at Gamma 1, 32% at 10 and diverges at 30;
+    - HNC stays within 1% in u.
+  Found and fixed in analysis:
+  - the canonical 1/N normalization of g2/g3 (10% g2-route energy error
+    without it at N = 200);
+  - the perfect-screening projection of the closure input;
+  - the triplet-measure quadrature (sub = 8 gave a spurious
+    `||c3||^2 ~ 1e-3` floor).
+  38/38 CTest Release and Debug after merging hierarchy-campaign. Open:
+  - self-consistent BGY-Kirkwood and the second YBG equation;
+  - c3 resolution (0.6a bins lower `||c3||^2` by 33%);
+  - generic series statistics could move to FortNum;
+  - a FortSym `sqrt(1*3)` folding defect (worked around in the generator);
+  - the default kin6d_ocp MD step fails closed at Gamma 1 (the demo uses
+    dt/4).
