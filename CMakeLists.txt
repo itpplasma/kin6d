@@ -420,7 +420,7 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(gen_quantum_classical PRIVATE kin6d_gen_support)
 endif()
 target_sources(kin6d PRIVATE src/generated/kin6d_quantum_classical_leaves.f90
-    src/classical_cell.f90 src/quantum_pair_cell.f90)
+    src/classical_cell.f90 src/quantum_pair_cell.f90 src/quantum_classical_map.f90)
 set_source_files_properties(src/generated/kin6d_quantum_classical_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_quantum_classical test/test_quantum_classical.f90)
