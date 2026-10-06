@@ -296,7 +296,7 @@ nondegenerate, which removes the `r = +-i/x` branch-point limit. It checks:
 - an SI state at `rho = 1e9 kg/m**3`.
 
 **Demo.** `relativistic_fermi_demo` writes
-`output/relativistic-fermi-{pressure,ratios,occupation}.png` and the CSV.
+`output/relativistic-fermi-eos.png` (pressure, P/(n m c^2), ratios, occupations) and the CSV.
 With the graded mesh the nonrelativistic certificate covers every point of
 that curve (down to `theta = 3.4e-5`); a point whose certificate fails would
 still be omitted from its curve.
