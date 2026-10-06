@@ -260,11 +260,18 @@ Each moment integrand is then bounded with `eps <= r**2`, `eps' <= 2r`,
 **Candidate bracket.** The upper end is `eps(2) + 4 theta`. The lower end is
 extended until the candidate density residual changes sign.
 
-**Graded mesh.** Degenerate relativistic states use a three-segment mesh with
-the `1/4 : 1/2 : 1/4` cell split. It covers the window
-`1 +- 20 theta sqrt(1+x**2)` around the cold Fermi surface. Candidate
-Gauss–Legendre nodes use the same split. The mesh only places cells: the
-midpoint/curvature certificate holds for any edges.
+**Graded mesh.** Degenerate states, relativistic or not (`x = 0`), use a
+four-segment mesh with equal cell counts on `[0, 1-w]`, `[1-w, 1]`,
+`[1, 1+w]` and `[1+w, R]`, with `w = 20 theta sqrt(1+x**2) < 1`, around the
+cold Fermi surface `r = 1`. Candidate Gauss–Legendre nodes use the same split.
+Splitting at `r = 1` matters: one Gauss rule across the whole window puts the
+`f(1-f)/theta` peak at its sparse centre, which gave a theta-independent
+candidate susceptibility error of 1.6e-3 (screening ratio 8e-4, up to 1.8e-3
+at `theta = 0.025` on the uniform mesh). With the split the candidate matches
+a binary128 Sommerfeld oracle to 3e-10 for `1e-4 <= theta <= 0.025`
+(`test_fermi_gas_cold`), and the nonrelativistic certificate no longer fails
+closed at small theta. The mesh only places cells: the midpoint/curvature
+certificate holds for any edges.
 
 **Results.** At T=1e7 K, the relativistic path certifies every point from
 `x = 0.01` to `x = 10`, with `theta` down to 3.4e-5, in at most 2048 cells and
@@ -289,11 +296,10 @@ nondegenerate, which removes the `r = +-i/x` branch-point limit. It checks:
 - an SI state at `rho = 1e9 kg/m**3`.
 
 **Demo.** `relativistic_fermi_demo` writes
-`output/relativistic-fermi-{pressure,ratios,occupation}.png` and the CSV. The
-nonrelativistic uniform-mesh certificate fails closed below `theta` of about
-1e-3, at `x >= 2.4` on that curve. Those points are omitted from its curve.
-Applying the graded mesh to the nonrelativistic path would change its
-committed numbers; that decision is left open.
+`output/relativistic-fermi-{pressure,ratios,occupation}.png` and the CSV.
+With the graded mesh the nonrelativistic certificate covers every point of
+that curve (down to `theta = 3.4e-5`); a point whose certificate fails would
+still be omitted from its curve.
 
 **Scope.** These are electrons only. Ion pressure, Coulomb/exchange-correlation
 corrections, pair creation and hydrostatic structure are outside the model.
