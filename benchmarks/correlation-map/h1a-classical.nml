@@ -8,5 +8,5 @@
  tolerance = 1.0e-5, pair_width = 0.05,
  triplet_rmax = 3.0, triplet_bins = 15, triplet_sub = 8,
  seed = 20261006,
- md_gamma = 1.0, md_particles = 500, md_equilibration = 50.0, md_time = 1500.0
+ md_gamma = 1.0, md_particles = 500, md_equilibration = 50.0, md_time = 1000.0
 /

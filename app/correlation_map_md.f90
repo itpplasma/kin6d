@@ -19,7 +19,8 @@ module correlation_map_md
     type :: md_result_t
         real(dp) :: gamma = 0, dt = 0, temperature = 0, temperature_err = 0
         real(dp) :: u = 0, u_err = 0, tau = 0, drift = 0, wall = 0, a = 0
-        integer :: n = 0, steps = 0
+        integer :: n = 0, steps = 0, failed_step = 0
+        character(128) :: failure = ''
         real(dp), allocatable :: r(:), g(:)
     end type
 contains
@@ -40,6 +41,11 @@ contains
         pi = acos(-1.0_dp)
         lambda = 1/(sqrt(48.0_dp)*pi*gamma**1.5_dp)
         model%debye_volume = lambda; model%box = (n/lambda)**(1.0_dp/3)
+        ! A quarter of the default outer step 0.01 (100/Lambda)^(1/3): at
+        ! Gamma = 1 the default step fails closed in the cluster check within
+        ! ~1e4 steps and dt/2 drifts by ~1e-2 k_B T per particle per 100/omega_p;
+        ! dt/4 drifts by < 1e-3 (measured).
+        model%dt = 0.0025_dp*(100/lambda)**(1.0_dp/3)
         call ocp_system(model, system, ok)
         if (.not. ok .or. abs(model%scales%gamma/gamma - 1) > 1.0e-6_dp) &
             error stop 'MD: OCP system'
@@ -62,7 +68,11 @@ contains
         s = 0
         do i = 1, md%steps
             call ocp_advance(system, state, model%dt, status)
-            if (status%code /= FORTNUM_OK) error stop 'MD production step'
+            if (status%code /= FORTNUM_OK) then
+                ! Fail closed: keep the samples before the failed step.
+                md%failed_step = i; md%failure = status%msg
+                exit
+            end if
             if (mod(i, 5) /= 0) cycle
             s = s + 1
             call nbody_energy(system, state, e, status)
@@ -72,10 +82,13 @@ contains
             temp(s) = ocp_kinetic_temperature(model, state)
             call pair_counts(state(1:3*md%n), md%n, model%box, rmax, counts)
         end do
-        md%drift = abs(e - e0)/abs(sum(u)/ns*md%n)
-        call series_autocorrelation(u, md%u, md%u_err, md%tau, ess)
-        call series_autocorrelation(temp, md%temperature, md%temperature_err, err, ess)
+        ns = s
+        md%drift = (e - e0)/md%n
+        call series_autocorrelation(u(:ns), md%u, md%u_err, md%tau, ess)
+        call series_autocorrelation(temp(:ns), md%temperature, md%temperature_err, err, ess)
         call pair_distribution(counts, md%n, model%box, rmax, ns, md%r, md%g)
+        ! Same canonical 1/N normalization as the MC tables (S(0) = 0).
+        md%g = md%g*(md%n - 1)/real(md%n, dp)
         md%r = md%r/md%a
         call system_clock(c1)
         md%wall = real(c1 - c0, dp)/rate
