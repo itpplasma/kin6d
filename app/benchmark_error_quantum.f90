@@ -55,7 +55,7 @@ contains
         call cpu_time(b)
         call require(ok); solve=b-a
         call cpu_time(a)
-        call solve_quantum_evolution(state,ok)
+        call solve_quantum_evolution(state,ok,error_mode=QE_STRICT)
         call cpu_time(b)
         call require(ok)
         call sample_quantum_evolution(state,steps,1._dp,re,im,radius,ok,bounded)

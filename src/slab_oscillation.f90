@@ -21,6 +21,7 @@ module kin6d_slab_oscillation
     public :: sample_slab_oscillation_interval, slab_oscillation_radius
     public :: slab_oscillation_chord, get_slab_oscillation_trace
     public :: initialize_slab_oscillation_tangent, slab_oscillation_terminal_vjp
+    public :: slab_oscillation_indicator
 
     ! Cold rigid electron slab against fixed planar ions, not periodic 3D OCP.
     ! tau=omega_pe*t, q=xi/xi0, p=dq/dtau; q'=p, p'=-q.
@@ -37,6 +38,7 @@ module kin6d_slab_oscillation
         real(dp), allocatable :: time(:), q(:), p(:), radius(:), residual(:)
         real(dp) :: qinitial = 1.0_dp, pinitial = 0.0_dp
         logical :: initialized = .false., prepared = .false.
+        real(dp) :: embedded_indicator = 0
     end type slab_oscillation_state_t
 
 contains
@@ -82,6 +84,7 @@ contains
 
         ok = .false.
         state%prepared = .false.
+        state%embedded_indicator = 0
         if (.not. state%initialized) return
         state%q(1) = state%qinitial
         state%p(1) = state%pinitial
@@ -92,6 +95,8 @@ contains
             call cash_karp_step(rhs, state%time(j), y, h, .false., &
                            k1, k2, k3, k4, k5, k6, scratch, ynext, embedded_error, nfev)
             if (.not. all(ieee_is_finite(ynext))) return
+            state%embedded_indicator = &
+                max(state%embedded_indicator,norm2(embedded_error))
             state%q(j + 1) = ynext(1)
             state%p(j + 1) = ynext(2)
             y = ynext
@@ -104,6 +109,14 @@ contains
                        state%qinitial, state%pinitial, state%radius, state%residual, ok)
         state%prepared = ok
     end subroutine solve_slab_oscillation
+
+    subroutine slab_oscillation_indicator(state, value, status)
+        type(slab_oscillation_state_t), intent(in) :: state
+        real(dp), intent(out) :: value
+        character(*), intent(out) :: status
+        value = state%embedded_indicator; status = 'indicator'
+        if (.not. state%initialized) status = 'unavailable'
+    end subroutine
 
     subroutine rhs(tau, y, derivative, ctx)
         real(dp), intent(in) :: tau, y(:)
