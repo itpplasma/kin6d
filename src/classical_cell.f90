@@ -5,8 +5,11 @@
 !> The periodic energy is pairwise additive, U = const + sum_{i<j} u(x_i-x_j),
 !> with u the zero-mean Ewald pair potential of the shared kin6d_nbody/kin6d_ewald path
 !> (a two-particle periodic system). Optional semiclassical pair models add
-!> the periodic-image sum of the Kelbg diffraction excess and the
-!> spin-averaged Pauli potential (kin6d_quantum_classical_leaves).
+!> the declared short-range term of kin6d_pair_law (periodic-image Kelbg
+!> excess, spin-averaged Pauli potential) on top of that Coulomb part.
+!> N >= 3 is sampled by the one periodic-cell Metropolis sampler
+!> (kin6d_ocp_monte_carlo, mc_setup_cell); the N = 2 quadrature uses the
+!> independent two-body kin6d_nbody path and is the oracle for the sampler.
 !>
 !> Estimators (common with the quantum cell, docs/quantum-classical-
 !> correlations.md): shell-averaged spin-summed g on equal shells in |r|<L/2,
@@ -24,28 +27,35 @@ module kin6d_classical_cell
     use kin6d_ewald, only: ewald_parameters_t, ewald_select
     use kin6d_coulomb_leaves, only: ewald_background
     use kin6d_nbody, only: nbody_system_t, nbody_periodic, nbody_force, nbody_wrap
-    use kin6d_quantum_classical_leaves, only: qcm_pair_length, qcm_kelbg, &
-        qcm_kelbg_series, qcm_kelbg_excess, qcm_exchange, qcm_pauli, &
-        qcm_wigner_kirkwood
+    use kin6d_quantum_classical_leaves, only: qcm_pair_length, qcm_wigner_kirkwood
+    use kin6d_pair_law, only: pair_law_t, pair_law_init, pair_law_excess, &
+        pair_law_exchange_sum, pair_coulomb, pair_kelbg, pair_kelbg_pauli
+    use kin6d_ocp_monte_carlo, only: ocp_mc_t, mc_setup_cell, mc_sweep, mc_forces
+    use kin6d_series_statistics, only: series_batch_means
     implicit none
     private
     public :: classical_cell_t, classical_mc_t, init_classical_cell
     public :: cell_pair_energy, cell_exchange_sum, cell_total_energy
     public :: cell_q_set, cell_triple_set, classical_cell_mc
-    public :: classical_pair_quadrature, cell_shell_volume
-    integer, parameter, public :: model_coulomb = 1, model_kelbg = 2, &
-        model_kelbg_pauli = 3
+    public :: classical_pair_quadrature, cell_shell_volume, cell_sampler_offset
+    !> Pair-law selectors (kin6d_pair_law).
+    integer, parameter, public :: model_coulomb = pair_coulomb, &
+        model_kelbg = pair_kelbg, model_kelbg_pauli = pair_kelbg_pauli
     real(dp), parameter :: pi = acos(-1.0_dp)
 
     type :: classical_cell_t
-        integer :: n = 0, model = model_coulomb, images = 0
+        integer :: n = 0, model = model_coulomb
         real(dp) :: length = 0, volume = 0, coupling = 1, mass = 1, hbar = 1
+        !> Relative Ewald truncation tolerance (kin6d_ewald units).
+        real(dp) :: tolerance = 1.0e-10_dp
         real(dp) :: rs = 0, theta = 0, gamma = 0, fermi = 0, kt = 0, beta = 0
         !> Pair thermal length hbar/sqrt(2 mu kT), mu = m/2 (Kelbg/exchange).
         real(dp) :: lambda = 0
         !> Same-spin probability of a pair for spin-blind labels (1/2).
         real(dp) :: same_spin = 0.5_dp
         real(dp) :: pair_constant = 0
+        type(pair_law_t) :: law
+        !> Two-body (pair potential) and N-body periodic Ewald systems.
         type(nbody_system_t) :: pair, full
     end type
 
@@ -75,9 +85,9 @@ contains
         real(dp) :: tol, bg
         ok = .false.
         if (n < 2 .or. .not. (rs > 0) .or. .not. (theta > 0)) return
-        if (model < model_coulomb .or. model > model_kelbg_pauli) return
         tol = 1.0e-10_dp
         if (present(tolerance)) tol = tolerance
+        cell%tolerance = tol
         units = atomic_units(); e = electron()
         unit_cell = plasma_scales(units, e, real(n, dp), 1.0_dp)
         cell%length = rs/unit_cell%rs; cell%volume = cell%length**3
@@ -89,9 +99,9 @@ contains
         cell%mass = e%mass; cell%hbar = units%hbar
         cell%coupling = pair_coupling(units, e, e)
         call qcm_pair_length(cell%hbar, cell%mass/2, cell%kt, cell%lambda)
-        ! Images |d + nL| >= (images - 1/2) L carry Kelbg/exchange terms below
-        ! exp(-36) relative to their contact values.
-        cell%images = ceiling((6*cell%lambda + cell%length/2)/cell%length)
+        call pair_law_init(cell%law, model, cell%length, cell%coupling, cell%lambda, &
+                           cell%kt, cell%same_spin, ok)
+        if (.not. ok) return
         call ewald_select(cell%length, tol, p, ok, 2)
         if (.not. ok) return
         call nbody_periodic(cell%pair, units, [e, e], p, ok)
@@ -117,43 +127,14 @@ contains
         logical, intent(out) :: ok
         real(dp), intent(out), optional :: force(3)
         type(fortnum_status_t) :: status
-        real(dp) :: x(6), f(6), r, e(3), v, xs
-        integer :: a, b, c
+        real(dp) :: x(6), f(6)
         x = 0; x(1:3) = nbody_wrap(d, cell%length)
         call nbody_force(cell%pair, x, f, u, status)
         ok = status%code == FORTNUM_OK
         if (.not. ok) return
         u = u - cell%pair_constant
         if (present(force)) force = f(1:3)
-        if (cell%model == model_coulomb) return
-        r = norm2(x(1:3))
-        ! Replace the bare minimum-image g/r by the full Kelbg value (finite
-        ! at contact) and add the Kelbg excess of every other image.
-        if (r < 0.1_dp*cell%lambda) then
-            call qcm_kelbg_series(r, cell%lambda, cell%coupling, v)
-        else
-            call qcm_kelbg(r, cell%lambda, cell%coupling, v)
-        end if
-        u = u - cell%coupling/r + v
-        xs = 0
-        do a = -cell%images, cell%images
-            do b = -cell%images, cell%images
-                do c = -cell%images, cell%images
-                    e = x(1:3) + cell%length*[a, b, c]
-                    r = norm2(e)
-                    if (a /= 0 .or. b /= 0 .or. c /= 0) then
-                        call qcm_kelbg_excess(r, cell%lambda, cell%coupling, v)
-                        u = u + v
-                    end if
-                    call qcm_exchange(r, cell%lambda, v)
-                    xs = xs + v
-                end do
-            end do
-        end do
-        if (cell%model == model_kelbg_pauli) then
-            call qcm_pauli(xs, cell%kt, cell%same_spin, v)
-            u = u + v
-        end if
+        u = u + pair_law_excess(cell%law, x(1:3))
         ok = ieee_is_finite(u)
     end subroutine
 
@@ -161,18 +142,7 @@ contains
     real(dp) function cell_exchange_sum(cell, d) result(xs)
         type(classical_cell_t), intent(in) :: cell
         real(dp), intent(in) :: d(3)
-        real(dp) :: e(3), v
-        integer :: a, b, c
-        xs = 0
-        do a = -cell%images, cell%images
-            do b = -cell%images, cell%images
-                do c = -cell%images, cell%images
-                    e = nbody_wrap(d, cell%length) + cell%length*[a, b, c]
-                    call qcm_exchange(norm2(e), cell%lambda, v)
-                    xs = xs + v
-                end do
-            end do
-        end do
+        xs = pair_law_exchange_sum(cell%law, nbody_wrap(d, cell%length))
     end function
 
     !> Configuration energy sum_{i<j} u(x_i - x_j) (constant omitted).
@@ -233,11 +203,27 @@ contains
         v = 4*pi*(rb**3 - ra**3)/3
     end function
 
-    !> Canonical Metropolis Monte Carlo of the cell (single-particle uniform
-    !> cube moves, step adapted to acceptance 1/2 during equilibration only).
-    !> One measurement per sweep of n moves; batch means over `batches`.
-    !> reweight (Coulomb model) adds the Wigner--Kirkwood and leading-order
-    !> exchange reweighted g and the covariance derivative dg/dbeta.
+    !> Configuration-independent offset U - sum_{i<j} u(x_i - x_j) between
+    !> the sampler energy U and the zero-mean pair energies: the sampler
+    !> constant (self, self-image and background terms), the reciprocal
+    !> self-mode n sum_k w_k/2, and n(n-1)/2 times the cell mean
+    !> pi g/(alpha^2 V) = -background(g) of the real-space pair term.
+    real(dp) function cell_sampler_offset(cell, chain) result(offset)
+        type(classical_cell_t), intent(in) :: cell
+        type(ocp_mc_t), intent(in) :: chain
+        real(dp) :: back
+        call ewald_background(chain%ewald%alpha, cell%volume, cell%coupling, back)
+        offset = chain%constant + cell%n*sum(chain%weight)/2 - &
+            cell%n*(cell%n - 1)/2.0_dp*back
+    end function
+
+    !> Canonical Metropolis Monte Carlo of the cell with the shared periodic
+    !> sampler (kin6d_ocp_monte_carlo: single-particle uniform cube moves,
+    !> step tuned during equilibration only). One measurement per sweep of n
+    !> moves; batch means over `batches`. reweight (Coulomb model) adds the
+    !> Wigner--Kirkwood and leading-order exchange reweighted g and the
+    !> covariance derivative dg/dbeta. The reported energy is the sum of
+    !> zero-mean pair potentials (sampler energy minus cell_sampler_offset).
     subroutine classical_cell_mc(cell, edges, sweeps, equilibration, batches, &
                                  seed, mc, ok, reweight)
         type(classical_cell_t), intent(inout) :: cell
@@ -247,86 +233,47 @@ contains
         type(classical_mc_t), intent(out) :: mc
         logical, intent(out) :: ok
         logical, intent(in), optional :: reweight
+        type(ocp_mc_t) :: chain
         integer, allocatable :: q(:, :), triple(:, :)
-        real(dp), allocatable :: x(:), pe(:, :), bg(:, :), bwk(:, :), bx(:, :), &
-            bp(:, :), bd(:, :), bf2(:, :), bf3(:, :), be(:, :), cnt(:), f(:)
+        real(dp), allocatable :: x(:), bg(:, :), bwk(:, :), bx(:, :), &
+            bp(:, :), bd(:, :), bf2(:, :), bf3(:, :), be(:, :), cnt(:), f(:, :)
         real(dp), allocatable :: s_c(:), s_cwk(:), s_cx(:), s_cp(:), s_ce(:)
         real(dp), allocatable :: s_f2(:), s_f3(:), tmp(:), tmp_err(:)
         complex(dp), allocatable :: rho(:)
-        real(dp) :: step, trial(3), du, u, unew(64), e_total, s_wk, s_x, s_p, s_e
-        real(dp) :: w_wk, w_x, lap, grad2, pot, norm, r, accepted, attempts
-        integer(i64) :: state(2)
+        real(dp) :: trial(3), e_total, s_wk, s_x, s_p, s_e, offset
+        real(dp) :: w_wk, w_x, lap, grad2, norm, r
         integer :: nb, nq, nt, i, j, k, s, b, per, sweep, n, bin
-        type(fortnum_status_t) :: status
-        logical :: rw, move_ok
+        logical :: rw
 
         ok = .false.
         rw = .false.
         if (present(reweight)) rw = reweight .and. cell%model == model_coulomb
         n = cell%n; nb = size(edges) - 1
-        if (nb < 1 .or. batches < 2 .or. sweeps < batches .or. n > 64) return
+        if (nb < 1 .or. batches < 2 .or. sweeps < batches) return
         if (edges(nb + 1) > cell%length/2*(1 + 1.0e-12_dp)) return
+        call mc_setup_cell(chain, n, cell%length, cell%beta, cell%coupling, &
+                           cell%tolerance, seed, ok, cell%law)
+        if (.not. ok) return
+        ok = .false.
+        offset = cell_sampler_offset(cell, chain)
         call cell_q_set(q); call cell_triple_set(q, triple)
         nq = size(q, 2); nt = size(triple, 2)
-        allocate (x(3*n), pe(n, n), f(3*n), rho(nq), cnt(nb))
+        allocate (x(3*n), f(3, n), rho(nq), cnt(nb))
         allocate (bg(nb, batches), bwk(nb, batches), bx(nb, batches), &
                   bp(nb, batches), bd(nb, batches), bf2(nq, batches), &
                   bf3(nt, batches), be(1, batches))
         allocate (s_c(nb), s_cwk(nb), s_cx(nb), s_cp(nb), s_ce(nb), s_f2(nq), &
                   s_f3(nt))
-        state = [1 + modulo(seed, 2147483562_i64), 1 + modulo(7*seed + 12345, 2147483398_i64)]
-        do i = 1, 3*n
-            x(i) = (uniform(state) - 0.5_dp)*cell%length
-        end do
-        pe = 0
-        do i = 1, n - 1
-            do j = i + 1, n
-                call cell_pair_energy(cell, x(3*i - 2:3*i) - x(3*j - 2:3*j), u, ok)
-                if (.not. ok) return
-                pe(i, j) = u; pe(j, i) = u
-            end do
-        end do
-        ok = .false.
-        step = 0.3_dp*cell%length
-        accepted = 0; attempts = 0
         per = sweeps/batches
         bg = 0; bwk = 0; bx = 0; bp = 0; bd = 0; bf2 = 0; bf3 = 0; be = 0
-        do sweep = 1, equilibration + per*batches
-            do k = 1, n
-                i = min(n, 1 + int(uniform(state)*n))
-                do j = 1, 3
-                    trial(j) = x(3*i - 3 + j) + step*(2*uniform(state) - 1)
-                end do
-                trial = nbody_wrap(trial, cell%length)
-                du = 0; move_ok = .true.
-                do j = 1, n
-                    if (j == i) cycle
-                    call cell_pair_energy(cell, trial - x(3*j - 2:3*j), unew(j), move_ok)
-                    if (.not. move_ok) exit
-                    du = du + unew(j) - pe(i, j)
-                end do
-                attempts = attempts + 1
-                if (.not. move_ok) cycle
-                if (cell%beta*du <= 0 .or. uniform(state) < exp(-cell%beta*du)) then
-                    accepted = accepted + 1
-                    x(3*i - 2:3*i) = trial
-                    do j = 1, n
-                        if (j == i) cycle
-                        pe(i, j) = unew(j); pe(j, i) = unew(j)
-                    end do
-                end if
-            end do
-            if (sweep <= equilibration) then
-                if (mod(sweep, 50) == 0) then
-                    step = min(cell%length/2, step*max(0.5_dp, min(2.0_dp, &
-                                                                   2*accepted/attempts)))
-                    accepted = 0; attempts = 0
-                end if
-                cycle
-            end if
-            if (sweep == equilibration + 1) then
-                accepted = 0; attempts = 0
-            end if
+        s_wk = 0; s_x = 0; s_p = 0; s_e = 0
+        do sweep = 1, equilibration
+            call mc_sweep(chain, .true.)
+        end do
+        chain%attempted = 0; chain%accepted = 0
+        do sweep = equilibration + 1, equilibration + per*batches
+            call mc_sweep(chain, .false.)
+            x = reshape(chain%x, [3*n])
             s = sweep - equilibration; b = (s - 1)/per + 1
             if (mod(s - 1, per) == 0) then
                 s_c = 0; s_cwk = 0; s_cx = 0; s_cp = 0; s_ce = 0; s_f2 = 0; s_f3 = 0
@@ -345,14 +292,12 @@ contains
                     cnt(bin) = cnt(bin) + 1
                 end do
             end do
-            e_total = 0
-            do i = 1, n - 1
-                e_total = e_total + sum(pe(i, i + 1:n))
-            end do
+            e_total = chain%energy - offset
             w_wk = 1
             if (rw) then
-                call nbody_force(cell%full, x, f, pot, status)
-                if (status%code /= FORTNUM_OK) return
+                call mc_forces(chain, f, ok)
+                if (.not. ok) return
+                ok = .false.
                 grad2 = sum(f**2)
                 lap = n*(n - 1)*4*pi*cell%coupling/cell%volume
                 call qcm_wigner_kirkwood(cell%beta, cell%hbar, cell%mass, lap, &
@@ -390,7 +335,8 @@ contains
                 be(1, b) = s_e/per
             end if
         end do
-        mc%acceptance = accepted/max(1.0_dp, attempts); mc%step = step
+        mc%acceptance = real(chain%accepted, dp)/max(1_i64, chain%attempted)
+        mc%step = chain%step
         mc%samples = per*batches
         call batch_stats(bg, mc%g, mc%g_err)
         call batch_stats(bwk, mc%g_wk, tmp_err)
@@ -407,15 +353,15 @@ contains
         ok = all(ieee_is_finite(mc%g)) .and. ieee_is_finite(mc%c2)
     end subroutine
 
-    !> Mean and standard error over batch columns.
+    !> Mean and standard error over batch columns (kin6d_series_statistics).
     subroutine batch_stats(a, mean, err)
         real(dp), intent(in) :: a(:, :)
         real(dp), allocatable, intent(out) :: mean(:), err(:)
-        integer :: nb
-        nb = size(a, 2)
-        mean = sum(a, 2)/nb
-        err = sqrt(max(0.0_dp, sum((a - spread(mean, 2, nb))**2, 2))/ &
-                   (nb*(nb - 1.0_dp)))
+        integer :: k
+        allocate (mean(size(a, 1)), err(size(a, 1)))
+        do k = 1, size(a, 1)
+            call series_batch_means(a(k, :), size(a, 2), mean(k), err(k))
+        end do
     end subroutine
 
     !> Root-mean-square norm sqrt(mean_k abar_k^2) with the jackknife bias
@@ -436,18 +382,6 @@ contains
         c = nb*c - (nb - 1)*sum(leave)/nb
         err = sqrt((nb - 1.0_dp)/nb*sum((leave - sum(leave)/nb)**2))
     end subroutine
-
-    !> L'Ecuyer (1988) combined multiplicative generator, period ~2.3e18,
-    !> exact in 64-bit integers; deviate in (0, 1).
-    real(dp) function uniform(state) result(u)
-        integer(i64), intent(inout) :: state(2)
-        integer(i64) :: z
-        state(1) = mod(40014_i64*state(1), 2147483563_i64)
-        state(2) = mod(40692_i64*state(2), 2147483399_i64)
-        z = state(1) - state(2)
-        if (z < 1) z = z + 2147483562_i64
-        u = real(z, dp)*4.656613057391769e-10_dp
-    end function
 
     !> Deterministic N = 2 reference: the relative coordinate of two particles
     !> in the cell has density exp(-beta u(d))/Z on the torus (the centre of

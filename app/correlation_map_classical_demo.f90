@@ -208,7 +208,8 @@ contains
             end if
             if (mod(s, force_every) == 0) then
                 flat = reshape(mc%x, [3*c%n])
-                call mc_forces(mc, f)
+                call mc_forces(mc, f, ok)
+                if (.not. ok) error stop 'MC forces'
                 call mean_force_accumulate(mc%x, f, c%n, c%length, c%rmax_g, &
                                            c%force_sum(:, b))
                 call pair_counts(flat, c%n, c%length, c%rmax_g, c%pair_force(:, b))
