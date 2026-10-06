@@ -230,3 +230,24 @@ run from the repository root and must reproduce committed leaves exactly.
   converged with nev=8 per sector (truncation estimate 0.05-0.2 / 2-4);
   treat those rows as indicators. 27/27 CTest Release and Debug.
 
+- 2026-10-06 (worker, QG6): `src/quantum_collision_kernel.f90` (pure
+  Coulomb Rutherford/Mott, ring sums with complex digamma, Yukawa phase
+  shifts on the shared radial DVR at fixed energy with implicit d/d eta,
+  classical Yukawa orbit integral, first Born) and `src/hybrid_encounter.f90`
+  (test electrons in a Maxwellian background, nbody KDK encounters with exact
+  Kepler lift/project, promotion for eta < 1 and b < b_s to the l-local ring
+  kernel chi_l = 2 atan(eta/(l+1)); docs/hybrid-encounter.md). New symbolic
+  `yukawa_potential`/`screened_partial_wave_potential`, generator
+  `gen/gen_quantum_collision.f90` (existing leaves regenerate unchanged).
+  Findings: quantum minus classical lnL equals ln eta - Re psi(1+i eta) for
+  both cut and Yukawa screening (Yukawa offset ln2 - 1/2 - gamma for both);
+  ring kernel exact for momentum transfer, second-moment defect 10.6% at
+  eta << 1; unpolarized exchange -ln2/2 at eta << 1 (kernel only). Rates
+  T = 1e-3..100 E_h: classical/hybrid Monte Carlo within 2.1 s.e. of their
+  kernels (velocity importance sampling: plain Maxwellian draws have infinite
+  variance), classical model error up to 15%, hybrid interface defect
+  <= 3.5e-3, hybrid 1.5x cheaper at matched 1% statistics for eta_u < 0.3.
+  Naive velocity rotation at the detection sphere double counts (+11%).
+  33/33 CTest Release and Debug. Open: exchange not in the hybrid Monte Carlo;
+  digamma/Riccati-Bessel belong in FortNum; FortNum legendre_q upward
+  recurrence loses accuracy for large l near x = 1 (5e-4 at l = 400).
