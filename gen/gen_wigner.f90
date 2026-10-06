@@ -1,16 +1,17 @@
 program gen_wigner
     use fortsym_arena, only: arena_t
-    use fortsym_expr, only: expr_t, sym, pi_expr, exp, sin, cos, sqrt, &
+    use fortsym_expr, only: expr_t, sym, num, pi_expr, exp, sin, cos, sqrt, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
     use fortsym_string, only: str
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use kin6d_symbolic_physics, only: modal_poisson, phase_rotation
     implicit none
     type(leaf_writer_t) :: w
     type(arena_t), target :: arena
     type(expr_t) :: hbar, k, eta, nr, ni, dt, s, vr, vi, n, fr, fi, phase
     type(expr_t) :: tr, ti, dphase, v, u, sigma, weight, er, ei, length, acc
-    type(expr_t) :: vth, v0, a, omega, c, b, disc
+    type(expr_t) :: vth, v0, a, omega, c, b, disc, mode(4)
 
     call arena%init()
     hbar = sym(arena, 'hbar'); k = sym(arena, 'k'); eta = sym(arena, 'eta')
@@ -39,22 +40,24 @@ program gen_wigner
     call w%emit('wigner_shift_symbol', ['hbar', 'k   ', 'eta '], ['s'], &
         [2*sin(hbar*k*eta/2)/hbar], ad=.true.)
     call w%emit('vlasov_shift_symbol', ['k  ', 'eta'], ['s'], [k*eta], ad=.true.)
-    ! Electron potential energy V = -phi with phi_k = -n_k/k^2.
+    ! Electron charge rho_k = -n_k (k /= 0): shared modal Poisson law with
+    ! rc = Re rho_k, rs = -Im rho_k; phi_k = phi_c - i phi_s, E_k = E_c - i E_s.
+    mode = modal_poisson(num(arena, 1), k, -nr, ni)
+    ! Electron potential energy V = -phi, i.e. V_k = n_k/k^2.
     call w%emit('wigner_potential_mode', ['k ', 'nr', 'ni'], ['vr', 'vi'], &
-        [nr/k**2, ni/k**2], ad=.true.)
+        [-mode(1), mode(2)], ad=.true.)
     ! E = -phi_x: E_k = i n_k/k.
     call w%emit('wigner_field_mode', ['k ', 'nr', 'ni'], ['er', 'ei'], &
-        [-ni/k, nr/k], ad=.true.)
+        [mode(3), -mode(4)], ad=.true.)
     ! Mode coefficient of the kick phase dt*(1/n) i s Vhat (inverse DFT later).
     call w%emit('wigner_phase_coefficient', ['dt', 's ', 'vr', 'vi', 'n '], &
         ['pr', 'pi'], [-dt*s*vi/n, dt*s*vr/n], ad=.true.)
     ! Exact kick e^{i phase} fhat and its tangent e^{i phase}(t + i dphase f).
     call w%emit('wigner_kick', ['fr   ', 'fi   ', 'phase'], ['gr', 'gi'], &
-        [fr*cos(phase) - fi*sin(phase), fr*sin(phase) + fi*cos(phase)])
+        phase_rotation(fr, fi, cos(phase), sin(phase)))
     call w%emit('wigner_kick_tangent', ['fr    ', 'fi    ', 'tr    ', 'ti    ', &
         'phase ', 'dphase'], ['gr', 'gi'], &
-        [(tr - dphase*fi)*cos(phase) - (ti + dphase*fr)*sin(phase), &
-         (tr - dphase*fi)*sin(phase) + (ti + dphase*fr)*cos(phase)])
+        phase_rotation(tr - dphase*fi, ti + dphase*fr, cos(phase), sin(phase)))
     call w%emit('wigner_field_energy_mode', ['er    ', 'ei    ', 'length', &
         'n     ', 'acc   '], ['next'], [acc + length*(er**2 + ei**2)/(2*n**2)])
     call w%emit('wigner_maxwellian', ['v     ', 'u     ', 'sigma ', 'weight'], &

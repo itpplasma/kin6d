@@ -65,13 +65,14 @@ contains
 
     !> Emit a floating leaf; optionally its JVP/VJP (ad), a strict interval
     !> twin (interval), only the interval leaf (rigorous), or an interval
-    !> twin of the VJP (vjp_interval).
+    !> twin of the VJP (vjp_interval). quad emits a real(real128) floating
+    !> leaf; the leaf module must use iso_fortran_env real128.
     recursive subroutine writer_emit(w, name, args, outputs, roots, ad, interval, &
-                                     rigorous, vjp_interval)
+                                     rigorous, vjp_interval, quad)
         class(leaf_writer_t), intent(inout) :: w
         character(*), intent(in) :: name, args(:), outputs(:)
         type(expr_t), intent(in) :: roots(:)
-        logical, intent(in), optional :: ad, interval, rigorous, vjp_interval
+        logical, intent(in), optional :: ad, interval, rigorous, vjp_interval, quad
         type(expr_t), allocatable :: clean(:)
         type(engine_result_t) :: simplified
         type(kernel_spec_t) :: spec
@@ -114,6 +115,7 @@ contains
         spec%elemental_procedure = .true.
         spec%openmp_declare_target = .false.
         spec%openacc_routine_seq = .false.
+        if (flag(quad)) spec%scalar_type = str('real(real128)')
         allocate (spec%args(size(args)), spec%outputs(size(outputs)))
         do j = 1, size(args)
             spec%args(j) = str(trim(args(j)))

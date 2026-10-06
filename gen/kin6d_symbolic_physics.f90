@@ -13,7 +13,7 @@
 ! Every function returns FortSym expressions in the arena of its arguments.
 module kin6d_symbolic_physics
     use, intrinsic :: iso_fortran_env, only: int64
-    use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erfc, &
+    use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erfc, cos, sin, &
                             operator(+), operator(-), operator(*), operator(/), &
                             operator(**)
     implicit none
@@ -26,7 +26,9 @@ module kin6d_symbolic_physics
     public :: reduced_mass, bohr_radius, rydberg_energy, sommerfeld_parameter
     public :: wigner_seitz_radius, coupling_parameter, fermi_energy
     public :: degeneracy_parameter, density_parameter, debye_length
-    public :: plasma_frequency
+    public :: plasma_frequency, modal_poisson
+    public :: phase_rotation, free_streaming_rotation, krook_node
+    public :: krook_node_residual, p1_weight, p1_blend, p1_interpolate
 contains
     !> Bare Coulomb pair potential g/r.
     function coulomb_potential(g, r) result(u)
@@ -205,5 +207,68 @@ contains
         type(expr_t), intent(in) :: n, g_self, m
         type(expr_t) :: omega
         omega = sqrt(4*pi_expr(n%a)*n*g_self/m)
+    end function
+
+    !> Periodic 1D modal Poisson law -eps phi'' = rho, E = -phi', for one
+    !> mode k /= 0 in the real basis rho = rc cos(kx) + rs sin(kx).
+    !> Returns [phi_c, phi_s, E_c, E_s] in the same basis. A complex
+    !> coefficient rho_k of exp(ikx) maps to rc = Re rho_k, rs = -Im rho_k
+    !> (then phi_k = phi_c - i phi_s, E_k = E_c - i E_s).
+    function modal_poisson(eps, k, rc, rs) result(mode)
+        type(expr_t), intent(in) :: eps, k, rc, rs
+        type(expr_t) :: mode(4)
+        mode = [rc/(eps*k**2), rs/(eps*k**2), -rs/(eps*k), rc/(eps*k)]
+    end function
+
+    !> Rotation of the Fourier pair (a, b) of a cos + b sin by the angle with
+    !> cosine c and sine s: [a c - b s, a s + b c].
+    function phase_rotation(a, b, c, s) result(rotated)
+        type(expr_t), intent(in) :: a, b, c, s
+        type(expr_t) :: rotated(2)
+        rotated = [a*c - b*s, a*s + b*c]
+    end function
+
+    !> Exact free streaming f_t + v f_x = 0 of one mode a cos(kx) + b sin(kx)
+    !> over time t: f(x - v t) is the rotation by phase = k v t.
+    function free_streaming_rotation(a, b, phase) result(rotated)
+        type(expr_t), intent(in) :: a, b, phase
+        type(expr_t) :: rotated(2)
+        rotated = phase_rotation(a, b, cos(phase), sin(phase))
+    end function
+
+    !> Stationary Krook node v f_x + nu f = s for one mode with kv = k v:
+    !> [nu, kv; -kv, nu][a; b] = [sc; ss], determinant nu^2 + kv^2 > 0.
+    function krook_node(nu, kv, sc, ss) result(node)
+        type(expr_t), intent(in) :: nu, kv, sc, ss
+        type(expr_t) :: node(2)
+        node = [(nu*sc - kv*ss)/(nu**2 + kv**2), (kv*sc + nu*ss)/(nu**2 + kv**2)]
+    end function
+
+    !> Residual of the krook_node equations at the candidate (a, b).
+    function krook_node_residual(nu, kv, a, b, sc, ss) result(residual)
+        type(expr_t), intent(in) :: nu, kv, a, b, sc, ss
+        type(expr_t) :: residual(2)
+        residual = [nu*a + kv*b - sc, nu*b - kv*a - ss]
+    end function
+
+    !> Affine (P1) cell weight of v on [vl, vr].
+    function p1_weight(v, vl, vr) result(w)
+        type(expr_t), intent(in) :: v, vl, vr
+        type(expr_t) :: w
+        w = (v - vl)/(vr - vl)
+    end function
+
+    !> P1 blend of the endpoint values al, ar at cell weight w.
+    function p1_blend(al, ar, w) result(value)
+        type(expr_t), intent(in) :: al, ar, w
+        type(expr_t) :: value
+        value = al + (ar - al)*w
+    end function
+
+    !> P1 interpolant of nodal values al, ar on [vl, vr] at v.
+    function p1_interpolate(v, vl, vr, al, ar) result(value)
+        type(expr_t), intent(in) :: v, vl, vr, al, ar
+        type(expr_t) :: value
+        value = p1_blend(al, ar, p1_weight(v, vl, vr))
     end function
 end module kin6d_symbolic_physics
