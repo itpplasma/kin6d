@@ -281,11 +281,6 @@ contains
         end do
     end subroutine
 
-    elemental real(dp) function sinc(x) result(y)
-        real(dp), intent(in) :: x
-        y = 1
-        if (abs(x) > 0) y = sin(x)/x
-    end function
 
     !> Allocate all scratch for n charges once and build the influence
     !> function; the force/tangent evaluations then never allocate.

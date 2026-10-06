@@ -1,0 +1,4 @@
+&ocp_oscillation
+ label='ocp-oscillation-clean', debye_volume=10.0, box=20.943951023931955,
+ realizations=6, measure_time=25.0, fit_start=2.0, fit_end=25.0, tangent=.false.
+/

@@ -1,0 +1,4 @@
+&ocp_oscillation
+ label='ocp-oscillation-landau', debye_volume=20.0, box=12.566370614359172,
+ realizations=8, measure_time=25.0, fit_start=5.0, fit_end=20.0, tangent=.true.
+/
