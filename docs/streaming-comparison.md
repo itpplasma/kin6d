@@ -109,8 +109,8 @@ performance leadership for self-consistent Vlasov--Poisson.
 ./scripts/demo.sh --snapshot
 # The complete existing gallery, without movie encoding.
 ./build/streaming_comparison_demo
-# output/particles-vlasov.mp4: 121 frames at 24 fps, physical t=0..12.
-./build/streaming_comparison_demo --snapshot 121
+# output/particles-vlasov.mp4: 193 frames (t=0..12) plus a 1 s hold, 24 fps.
+./build/streaming_comparison_demo --snapshot 193
 # Select one frame after recording the full numerical evidence.
 ./build/benchmark_streaming_comparison
 ```
@@ -157,7 +157,11 @@ it; a matching uncertified postprocessing baseline is still unavailable.
 Cache shared Fourier factors and geometry before claiming a fast production
 workhorse. This is adjacent performance work, not a reason to omit bands.
 
-The final gallery's maximum connected density-band half-widths over all 121
+Since 2026-10-06 the movie samples 193 frames over the same interval and its
+fourth panel plots both density bands relative to the Eulerian density, where
+they are wider than a pixel; the velocity-slice bands remain in
+`streaming-slice-bands.csv`. The earlier gallery's maximum connected
+density-band half-widths over all 121
 frames and 97 nodes were 0.00220920 (Eulerian) and 0.00738337 (particle
 projection). Both meet the declared nominal radius 0.01000001 at physical
 scale 1. This is an absolute scale-based target, not a relative-error claim
