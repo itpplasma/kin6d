@@ -427,3 +427,11 @@ set_source_files_properties(src/generated/kin6d_correlation_hierarchy_leaves.f90
 add_executable(test_correlation_hierarchy test/test_correlation_hierarchy.f90)
 target_link_libraries(test_correlation_hierarchy PRIVATE kin6d)
 add_test(NAME correlation_hierarchy_h1a_oracles COMMAND test_correlation_hierarchy)
+add_executable(correlation_map_classical_demo app/correlation_map_types.f90
+    app/correlation_map_md.f90 app/correlation_map_plots.f90
+    app/correlation_map_classical_demo.f90)
+target_link_libraries(correlation_map_classical_demo PRIVATE kin6d kin6d_io fortplot
+    kin6d_demo_style)
+if(OpenMP_Fortran_FOUND)
+    target_link_libraries(correlation_map_classical_demo PRIVATE OpenMP::OpenMP_Fortran)
+endif()
