@@ -102,7 +102,8 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
+target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
+    -frecursive)
 add_executable(kin6d_demo app/kin6d_demo.f90)
 target_link_libraries(kin6d_demo PRIVATE kin6d fortplot)
 add_executable(steady_laboratory_demo app/steady_laboratory_demo.f90)
@@ -235,6 +236,19 @@ add_executable(benchmark_fermi_gas app/benchmark_fermi_gas.f90)
 target_link_libraries(benchmark_fermi_gas PRIVATE kin6d)
 add_executable(benchmark_quantum_cutoff app/benchmark_quantum_cutoff.f90)
 target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)
+add_executable(benchmark_ocp app/benchmark_ocp.f90)
+target_link_libraries(benchmark_ocp PRIVATE kin6d)
+# The periodic OCP demos run independent ensemble members on OpenMP threads;
+# the library is reentrant (no module state) and compiled with automatic
+# locals (-frecursive) so that concurrent calls do not share scratch.
+find_package(OpenMP COMPONENTS Fortran)
+foreach(example ocp_oscillation ocp_shielding)
+    add_executable(${example}_demo app/${example}_demo.f90)
+    target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
+    if(OpenMP_Fortran_FOUND)
+        target_link_libraries(${example}_demo PRIVATE OpenMP::OpenMP_Fortran)
+    endif()
+endforeach()
 
 # Campaign Q3/Q8: finite-N ideal fermion ensembles and relativistic Fermi EOS.
 if(KIN6D_FORTSYM_BUILD)
@@ -291,7 +305,7 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         fermion_ensemble_demo relativistic_fermi_demo formal_krook_certificate
         benchmark_streaming benchmark_streaming_comparison benchmark_fp
         benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
-        benchmark_quantum_cutoff)
+        benchmark_quantum_cutoff benchmark_ocp ocp_oscillation_demo ocp_shielding_demo)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
 add_executable(test_result_io test/test_result_io.f90)
