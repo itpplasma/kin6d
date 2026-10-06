@@ -8,7 +8,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "5380eb698f29f999e312d1009b5c6dfdf1dac582")
-set(KIN6D_FORTNUM_REVISION "80b73401c973d1451ee5e802775a7feda41981e1")
+set(KIN6D_FORTNUM_REVISION "e97a493bfe67a404daa2d7c2090ff3eef9c32b75")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -52,6 +52,9 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
@@ -62,7 +65,9 @@ set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90 src/sort_keys.f90
     src/generated/kin6d_species_leaves.f90 src/species.f90
-    src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90 src/nbody.f90
+    src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90
+    src/generated/kin6d_ocp_leaves.f90 src/near_encounter.f90 src/pme.f90
+    src/nbody.f90 src/ocp.f90 src/vlasov_response.f90 src/pair_correlation.f90
     src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
     src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
@@ -77,6 +82,7 @@ add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90 src/sort_key
     src/generated/kin6d_cloud_leaves.f90 src/microscopic_cloud.f90)
 set_source_files_properties(
     src/generated/kin6d_species_leaves.f90 src/generated/kin6d_coulomb_leaves.f90
+    src/generated/kin6d_ocp_leaves.f90
     src/generated/kin6d_poisson_leaves.f90 src/generated/kin6d_fp_leaves.f90
     src/generated/kin6d_transport_leaves.f90 src/generated/kin6d_streaming_leaves.f90
     src/generated/kin6d_streaming_moments_leaves.f90
@@ -101,7 +107,8 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off)
+target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
+    -frecursive)
 add_executable(kin6d_demo app/kin6d_demo.f90)
 target_link_libraries(kin6d_demo PRIVATE kin6d fortplot)
 add_executable(steady_laboratory_demo app/steady_laboratory_demo.f90)
@@ -120,6 +127,18 @@ foreach(example quantum_reference classical_pair coulomb_encounter jellium_cell)
     add_executable(${example}_demo app/${example}_demo.f90)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
 endforeach()
+# Presentation-only palette and number formatting for the gallery demos.
+add_library(kin6d_demo_style app/demo_style.f90)
+target_compile_options(kin6d_demo_style PRIVATE -Wall -Wextra)
+foreach(application kin6d_demo steady_laboratory_demo transport_demo
+        streaming_comparison_demo streaming_moments_demo debye_sphere_demo
+        slab_oscillation_demo shielding_dynamics_demo interaction_demo
+        microscopic_cloud_demo classical_pair_demo)
+    target_link_libraries(${application} PRIVATE kin6d_demo_style)
+endforeach()
+add_executable(test_demo_style test/test_demo_style.f90)
+target_link_libraries(test_demo_style PRIVATE kin6d_demo_style)
+add_test(NAME demo_style_numbers COMMAND test_demo_style)
 add_executable(formal_krook_certificate app/formal_krook_certificate.f90)
 target_link_libraries(formal_krook_certificate PRIVATE kin6d)
 add_executable(test_laboratory test/test_laboratory.f90)
@@ -154,6 +173,12 @@ endforeach()
 add_executable(test_nbody test/test_nbody.f90)
 target_link_libraries(test_nbody PRIVATE kin6d)
 add_test(NAME nbody_coulomb_species_oracles COMMAND test_nbody)
+add_executable(test_pme test/test_pme.f90)
+target_link_libraries(test_pme PRIVATE kin6d)
+add_test(NAME pme_direct_ewald_oracles COMMAND test_pme)
+add_executable(test_ocp test/test_ocp.f90)
+target_link_libraries(test_ocp PRIVATE kin6d)
+add_test(NAME ocp_vlasov_debye_oracles COMMAND test_ocp)
 add_executable(test_cloud test/test_cloud.f90)
 target_link_libraries(test_cloud PRIVATE kin6d)
 add_test(NAME microscopic_cloud_oracles COMMAND test_cloud)
@@ -207,7 +232,7 @@ if(KIN6D_FORTSYM_BUILD)
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
-            jellium_cell)
+            jellium_cell ocp)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
@@ -228,6 +253,19 @@ add_executable(benchmark_fermi_gas app/benchmark_fermi_gas.f90)
 target_link_libraries(benchmark_fermi_gas PRIVATE kin6d)
 add_executable(benchmark_quantum_cutoff app/benchmark_quantum_cutoff.f90)
 target_link_libraries(benchmark_quantum_cutoff PRIVATE kin6d)
+add_executable(benchmark_ocp app/benchmark_ocp.f90)
+target_link_libraries(benchmark_ocp PRIVATE kin6d)
+# The periodic OCP demos run independent ensemble members on OpenMP threads;
+# the library is reentrant (no module state) and compiled with automatic
+# locals (-frecursive) so that concurrent calls do not share scratch.
+find_package(OpenMP COMPONENTS Fortran)
+foreach(example ocp_oscillation ocp_shielding)
+    add_executable(${example}_demo app/${example}_demo.f90)
+    target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
+    if(OpenMP_Fortran_FOUND)
+        target_link_libraries(${example}_demo PRIVATE OpenMP::OpenMP_Fortran)
+    endif()
+endforeach()
 
 # Campaign Q3/Q8: finite-N ideal fermion ensembles and relativistic Fermi EOS.
 if(KIN6D_FORTSYM_BUILD)
@@ -287,7 +325,8 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         fermion_ensemble_demo relativistic_fermi_demo formal_krook_certificate
         benchmark_streaming benchmark_streaming_comparison benchmark_fp
         benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
-        benchmark_quantum_cutoff jellium_cell_demo coulomb_encounter_demo)
+        benchmark_quantum_cutoff jellium_cell_demo coulomb_encounter_demo
+        benchmark_ocp ocp_oscillation_demo ocp_shielding_demo)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
 add_executable(test_result_io test/test_result_io.f90)

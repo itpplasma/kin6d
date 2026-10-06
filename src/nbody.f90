@@ -7,6 +7,9 @@
 !>   uniform sphere centred at the origin;
 !> - periodic: Ewald sum (kin6d_ewald parameters) with neutralizing
 !>   background; the energy includes self-image, self and background terms.
+!> - periodic mesh: particle-mesh Ewald (kin6d_pme: cell-list real space and
+!>   B-spline mesh), the scalable action verified against the direct sum.
+!> Particles may be fixed (infinite mass: an impurity held at rest).
 !> Pair work is a tiled direct sum (or structure-factor reciprocal sum); the
 !> logical all-pairs matrix is never stored. There is no softening: a
 !> coincident pair or non-finite force fails closed with a domain error.
@@ -21,12 +24,16 @@ module kin6d_nbody
         coulomb_sphere_inside, coulomb_sphere_inside_jvp, ewald_real_pair, &
         ewald_real_pair_jvp, ewald_reciprocal_weight, ewald_self, ewald_background
     use kin6d_ewald, only: ewald_parameters_t
+    use kin6d_near_encounter, only: near_t, near_setup, near_flow
+    use kin6d_pme, only: pme_parameters_t, pme_t, pme_setup, pme_force, &
+                         pme_force_jvp, pme_constant
     use kin6d_species, only: units_t, species_t
     implicit none
     private
     public :: nbody_system_t, nbody_isolated, nbody_periodic, nbody_add_source
     public :: nbody_set_sphere, nbody_force, nbody_force_jvp, nbody_energy
     public :: nbody_step, nbody_step_jvp, nbody_encounter_step, nbody_wrap
+    public :: nbody_periodic_mesh, nbody_fix, nbody_set_encounter
 
     integer, parameter :: tile = 64
     real(dp), parameter :: two_pi = 6.2831853071795864769_dp
@@ -39,8 +46,15 @@ module kin6d_nbody
         real(dp), allocatable :: source_position(:, :), source_charge(:)
         !> Fixed uniform sphere centred at the origin (isolated systems only).
         real(dp) :: sphere_charge = 0.0_dp, sphere_radius = 0.0_dp
-        logical :: periodic = .false.
+        logical :: periodic = .false., mesh = .false.
         type(ewald_parameters_t) :: ewald
+        type(pme_t) :: pme
+        !> Encounter-resolved near/far splitting (mesh systems only).
+        logical :: encounter = .false.
+        type(near_t) :: near
+        real(dp), allocatable :: start_x(:), start_v(:)
+        !> Fixed particles: kicks keep their velocity zero.
+        logical, allocatable :: fixed(:)
         integer :: modes = 0
         integer, allocatable :: wave(:, :)
         !> Half-space reciprocal weights, doubled for the +/-k pair, g=1.
@@ -107,6 +121,55 @@ contains
         ok = ieee_is_finite(system%constant_energy)
     end subroutine
 
+    !> Periodic system with the particle-mesh Ewald action of parameters p
+    !> (kin6d_pme); ewald%length carries the box edge for minimum images.
+    subroutine nbody_periodic_mesh(system, units, particles, p, ok)
+        type(nbody_system_t), intent(out) :: system
+        type(units_t), intent(in) :: units
+        type(species_t), intent(in) :: particles(:)
+        type(pme_parameters_t), intent(in) :: p
+        logical, intent(out) :: ok
+        call setup(system, units, particles, ok)
+        if (.not. ok) return
+        call pme_setup(system%pme, p, system%n, ok)
+        if (.not. ok) return
+        system%periodic = .true.; system%mesh = .true.
+        system%ewald%length = p%length; system%ewald%alpha = p%alpha
+        system%constant_energy = pme_constant(system%pme, system%coulomb, system%charge)
+        ok = ieee_is_finite(system%constant_energy)
+    end subroutine
+
+    !> Encounter-resolved stepping (kin6d_near_encounter) for outer step dt
+    !> and reference relative speed: the KDK kick uses the far force and the
+    !> drift becomes the near-pair flow. Only for particle-mesh systems.
+    subroutine nbody_set_encounter(system, dt, speed, ok, eta_outer, eta_inner)
+        type(nbody_system_t), intent(inout) :: system
+        real(dp), intent(in) :: dt, speed
+        logical, intent(out) :: ok
+        real(dp), intent(in), optional :: eta_outer, eta_inner
+        real(dp) :: outer, inner
+        ok = .false.
+        if (.not. system%mesh) return
+        outer = 0.5_dp; inner = 0.05_dp
+        if (present(eta_outer)) outer = eta_outer
+        if (present(eta_inner)) inner = eta_inner
+        call near_setup(system%near, system%n, dt, speed, outer, inner, ok)
+        if (.not. ok) return
+        system%pme%split = system%near%split
+        system%encounter = .true.; system%cached = .false.
+        if (.not. allocated(system%start_x)) allocate (system%start_x(3*system%n), &
+                                                       system%start_v(3*system%n))
+    end subroutine
+
+    !> Hold particle i at rest (infinite mass); its velocity must be zero.
+    subroutine nbody_fix(system, i, ok)
+        type(nbody_system_t), intent(inout) :: system
+        integer, intent(in) :: i
+        logical, intent(out) :: ok
+        ok = i >= 1 .and. i <= system%n
+        if (ok) system%fixed(i) = .true.
+    end subroutine
+
     subroutine setup(system, units, particles, ok)
         type(nbody_system_t), intent(out) :: system
         type(units_t), intent(in) :: units
@@ -122,6 +185,8 @@ contains
         system%charge = particles%charge; system%mass = particles%mass
         allocate (system%source_position(3, 0), system%source_charge(0))
         allocate (system%force_cache(3*system%n), system%position_cache(3*system%n))
+        allocate (system%fixed(system%n))
+        system%fixed = .false.
         ok = .true.
     end subroutine
 
@@ -163,6 +228,16 @@ contains
         real(dp), intent(in) :: state(:)
         real(dp), intent(out) :: force(:), potential
         type(fortnum_status_t), intent(out) :: status
+        call force_part(system, state, force, potential, status, .false.)
+    end subroutine
+
+    !> Full forces, or with far the far part of an encounter split.
+    subroutine force_part(system, state, force, potential, status, far)
+        type(nbody_system_t), intent(inout) :: system
+        real(dp), intent(in) :: state(:)
+        real(dp), intent(out) :: force(:), potential
+        type(fortnum_status_t), intent(out) :: status
+        logical, intent(in) :: far
         logical :: ok
         integer :: n3
         call status_set(status, FORTNUM_DOMAIN_ERROR, 'invalid N-body state')
@@ -171,7 +246,7 @@ contains
         if (system%n < 1 .or. size(state) < n3 .or. size(force) /= n3) return
         if (.not. all(ieee_is_finite(state(:n3)))) return
         if (system%periodic) then
-            call periodic_force(system, state(:n3), force, potential, ok)
+            call periodic_force(system, state(:n3), force, potential, ok, far)
         else
             call isolated_force(system, state(:n3), force, potential, ok)
         end if
@@ -263,15 +338,22 @@ contains
         end do
     end subroutine
 
-    subroutine periodic_force(system, x, force, potential, ok)
+    subroutine periodic_force(system, x, force, potential, ok, far)
         type(nbody_system_t), intent(inout) :: system
         real(dp), intent(in) :: x(:)
         real(dp), intent(inout) :: force(:), potential
         logical, intent(out) :: ok
+        logical, intent(in) :: far
         integer :: ib, ie, jb, je, i, j, m
         real(dp) :: k(3), t, q
         complex(dp) :: s
         ok = .true.
+        if (system%mesh) then
+            call pme_force(system%pme, system%coulomb, system%charge, x, force, &
+                           potential, ok, far)
+            potential = potential + system%constant_energy
+            return
+        end if
         do ib = 1, system%n, tile
             ie = min(system%n, ib + tile - 1)
             do jb = ib, system%n, tile
@@ -400,9 +482,19 @@ contains
         real(dp), intent(in) :: state(:)
         real(dp), intent(out) :: energy
         type(fortnum_status_t), intent(out) :: status
+        real(dp), allocatable :: full(:)
         integer :: i, j
-        call cached_force(system, state, status)
-        energy = system%potential_cache
+        call status_set(status, FORTNUM_DOMAIN_ERROR, 'state too short')
+        energy = 0
+        if (system%encounter) then
+            ! Total H = U_far + U_near: a full (uncached) evaluation.
+            if (size(state) < 3*system%n) return
+            allocate (full(3*system%n))
+            call nbody_force(system, state(:3*system%n), full, energy, status)
+        else
+            call cached_force(system, state, status)
+            energy = system%potential_cache
+        end if
         if (status%code /= FORTNUM_OK) return
         if (size(state) < 6*system%n) then
             call status_set(status, FORTNUM_DOMAIN_ERROR, 'state lacks velocities')
@@ -430,8 +522,8 @@ contains
             end if
         end if
         system%cached = .false.
-        call nbody_force(system, state, system%force_cache, system%potential_cache, &
-                         status)
+        call force_part(system, state, system%force_cache, system%potential_cache, &
+                        status, system%encounter)
         if (status%code /= FORTNUM_OK) return
         system%position_cache = state(:n3)
         system%cached = .true.
@@ -488,15 +580,21 @@ contains
             call cached_force(s, state, status)
             if (status%code /= FORTNUM_OK) return
             do i = 1, s%n
+                if (s%fixed(i)) then
+                    state(n3 + 3*i - 2:n3 + 3*i) = 0; cycle
+                end if
                 state(n3 + 3*i - 2:n3 + 3*i) = state(n3 + 3*i - 2:n3 + 3*i) + &
                     dt*(s%force_cache(3*i - 2:3*i)/s%mass(i))
             end do
             if (size(state) == 2*n6) then
                 ! Tangent: dv += dt dF(x; dx)/m, using the augmented scratch.
-                call nbody_force_jvp(s, state(:n3), state(n6 + 1:n6 + n3), &
-                                     s%augmented_force, status)
+                call force_jvp_part(s, state(:n3), state(n6 + 1:n6 + n3), &
+                                    s%augmented_force, status, s%encounter)
                 if (status%code /= FORTNUM_OK) return
                 do i = 1, s%n
+                    if (s%fixed(i)) then
+                        state(n6 + n3 + 3*i - 2:n6 + n3 + 3*i) = 0; cycle
+                    end if
                     state(n6 + n3 + 3*i - 2:n6 + n3 + 3*i) = &
                         state(n6 + n3 + 3*i - 2:n6 + n3 + 3*i) + &
                         dt*(s%augmented_force(3*i - 2:3*i)/s%mass(i))
@@ -516,11 +614,34 @@ contains
         select type (context)
         type is (flow_context_t)
             n3 = 3*context%system%n; n6 = 6*context%system%n
+            if (context%system%encounter) then
+                call encounter_drift(context%system, state, dt, status)
+                return
+            end if
             state(:n3) = state(:n3) + dt*state(n3 + 1:n6)
             if (size(state) == 2*n6) state(n6 + 1:n6 + n3) = state(n6 + 1:n6 + n3) + &
                 dt*state(n6 + n3 + 1:)
             call status_set(status, FORTNUM_OK, '')
         end select
+    end subroutine
+
+    !> Near-pair flow of T + U_near replacing the free drift (with tangent).
+    subroutine encounter_drift(s, state, dt, status)
+        type(nbody_system_t), intent(inout) :: s
+        real(dp), intent(inout) :: state(:)
+        real(dp), intent(in) :: dt
+        type(fortnum_status_t), intent(out) :: status
+        integer :: n3, n6
+        n3 = 3*s%n; n6 = 6*s%n
+        if (size(state) == 2*n6) then
+            call near_flow(s%near, state(:n3), state(n3 + 1:n6), s%start_x, s%start_v, &
+                s%mass, s%charge, s%fixed, s%coulomb, s%ewald%alpha, s%ewald%length, &
+                dt, status, state(n6 + 1:n6 + n3), state(n6 + n3 + 1:))
+        else
+            call near_flow(s%near, state(:n3), state(n3 + 1:n6), s%start_x, s%start_v, &
+                s%mass, s%charge, s%fixed, s%coulomb, s%ewald%alpha, s%ewald%length, &
+                dt, status)
+        end if
     end subroutine
 
     !> Directional derivative dF = (dF/dx) dx of the forces (Hessian action).
@@ -529,6 +650,15 @@ contains
         real(dp), intent(in) :: position(:), dposition(:)
         real(dp), intent(out) :: dforce(:)
         type(fortnum_status_t), intent(out) :: status
+        call force_jvp_part(system, position, dposition, dforce, status, .false.)
+    end subroutine
+
+    subroutine force_jvp_part(system, position, dposition, dforce, status, far)
+        type(nbody_system_t), intent(inout) :: system
+        real(dp), intent(in) :: position(:), dposition(:)
+        real(dp), intent(out) :: dforce(:)
+        type(fortnum_status_t), intent(out) :: status
+        logical, intent(in) :: far
         integer :: i, j, n3
         logical :: ok
         call status_set(status, FORTNUM_DOMAIN_ERROR, 'invalid N-body tangent')
@@ -537,24 +667,35 @@ contains
         if (size(position) /= n3 .or. size(dposition) /= n3 .or. &
             size(dforce) /= n3) return
         ok = .true.
-        do i = 1, system%n
-            if (.not. system%periodic) call external_jvp(system, position, &
-                                                         dposition, i, dforce, ok)
-            if (.not. ok) exit
-            do j = i + 1, system%n
-                call pair_jvp(system, position, dposition, i, j, dforce, ok)
-                if (.not. ok) exit
-            end do
-            if (.not. ok) exit
-        end do
-        if (ok .and. system%periodic) call reciprocal_jvp(system, position, &
-                                                          dposition, dforce)
+        if (system%mesh) then
+            call pme_force_jvp(system%pme, system%coulomb, system%charge, position, &
+                               dposition, dforce, ok, far)
+        else
+            call direct_jvp(ok)
+        end if
         if (.not. ok .or. .not. all(ieee_is_finite(dforce))) then
             call status_set(status, FORTNUM_DOMAIN_ERROR, &
                 'coincident charges or non-finite force tangent')
             return
         end if
         call status_set(status, FORTNUM_OK, '')
+    contains
+        subroutine direct_jvp(ok)
+            logical, intent(out) :: ok
+            ok = .true.
+            do i = 1, system%n
+                if (.not. system%periodic) call external_jvp(system, position, &
+                                                             dposition, i, dforce, ok)
+                if (.not. ok) exit
+                do j = i + 1, system%n
+                    call pair_jvp(system, position, dposition, i, j, dforce, ok)
+                    if (.not. ok) exit
+                end do
+                if (.not. ok) exit
+            end do
+            if (ok .and. system%periodic) call reciprocal_jvp(system, position, &
+                                                              dposition, dforce)
+        end subroutine
     end subroutine
 
     subroutine pair_jvp(system, x, dx, i, j, dforce, ok)
@@ -715,4 +856,5 @@ contains
             if (speed > 0) dt = min(dt, r/speed)
         end subroutine
     end subroutine
+
 end module kin6d_nbody

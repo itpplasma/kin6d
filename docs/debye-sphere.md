@@ -110,17 +110,21 @@ Build with the project's CPU preset, then run:
 
 ```sh
 build/debye_sphere_demo
-build/debye_sphere_demo --snapshot 61
+build/debye_sphere_demo --snapshot 97
 ```
 
-The default sweeps 121 equilibria from κ=0.5 to 2 at 24 frames per second.
-`--snapshot [frame]` evaluates and renders only the requested frame, with
-61 as the default. Both views use fixed axes and full continuous bands.
+The default sweeps 193 equilibria from κ=0.5 to 2 at 24 frames per second
+(8 s) and holds the last one for 1 s. `--snapshot [frame]` evaluates and
+renders only the requested frame, with 97 as the default. One 2x2 view uses
+fixed axes: the screened potential on the z=0 plane (equal aspect, with r=R
+and r=λ_D marked), radial bare and screened potentials, the electron density
+response and the certified band half-widths, which are below a pixel in the
+curve panels. Before 2026-10-06 the sweep had 121 equilibria and the density
+was a separate `debye-sphere-response` movie.
 
 | Output | Content |
 |---|---|
-| `output/debye-potential-reduction.mp4/.png` | Bare and screened potential |
-| `output/debye-sphere-response.mp4/.png` | Linear equilibrium electron density |
+| `output/debye-potential-reduction.mp4/.png` | Potential map, radial potentials, electron density, band half-widths |
 | `output/debye-potential-reduction.csv` | Plotted nodes and full potential/density/κ-tangent bands |
 | `output/debye-sphere-evidence.csv` | Per-frame candidate, derivative and complete-band costs and widths |
 

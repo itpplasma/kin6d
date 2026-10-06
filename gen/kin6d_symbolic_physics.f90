@@ -31,6 +31,7 @@ module kin6d_symbolic_physics
     public :: plasma_frequency, modal_poisson
     public :: phase_rotation, free_streaming_rotation, krook_node
     public :: krook_node_residual, p1_weight, p1_blend, p1_interpolate
+    public :: yukawa_zero_mode, debye_structure_factor, bohm_gross_frequency
 contains
     !> Bare Coulomb pair potential g/r.
     function coulomb_potential(g, r) result(u)
@@ -323,5 +324,29 @@ contains
         type(expr_t), intent(in) :: v, vl, vr, al, ar
         type(expr_t) :: value
         value = p1_blend(al, ar, p1_weight(v, vl, vr))
+    end function
+
+    !> k=0 Fourier coefficient 4 pi g/(V kappa^2) of the periodic image sum
+    !> of yukawa_potential (lambda = 1/kappa). The neutral periodic screened-Poisson Green
+    !> function is the image sum minus this constant (k /= 0 modes only).
+    function yukawa_zero_mode(g, kappa, volume) result(c)
+        type(expr_t), intent(in) :: g, kappa, volume
+        type(expr_t) :: c
+        c = 4*pi_expr(g%a)*g/(volume*kappa**2)
+    end function
+
+    !> Debye-Hueckel (weak-coupling OCP) static structure factor
+    !> S(k) = k^2/(k^2 + kappa^2), kappa = 1/lambda_D of the responsive species.
+    function debye_structure_factor(k2, kappa2) result(s)
+        type(expr_t), intent(in) :: k2, kappa2
+        type(expr_t) :: s
+        s = k2/(k2 + kappa2)
+    end function
+
+    !> Warm-fluid (Bohm-Gross) Langmuir frequency omega_p sqrt(1 + 3 k^2 lambda^2).
+    function bohm_gross_frequency(omega_p, k, lambda) result(omega)
+        type(expr_t), intent(in) :: omega_p, k, lambda
+        type(expr_t) :: omega
+        omega = omega_p*sqrt(1 + 3*k**2*lambda**2)
     end function
 end module kin6d_symbolic_physics

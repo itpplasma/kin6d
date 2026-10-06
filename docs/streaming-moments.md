@@ -76,9 +76,10 @@ moment derivative through the complete evolution.
 
 ## Rendering and evidence
 
-Run `streaming_moments_demo --snapshot 1`, `--snapshot 41` or `--snapshot 81`
-for the first, middle and last frames. The full run produces 81 frames over
-`t=0..8`, at 16 frames per second. It writes `particles-to-moments.png`,
+Run `streaming_moments_demo --snapshot 1`, `--snapshot 97` or `--snapshot 193`
+for the first, middle and last frames. The full run produces 193 frames over
+`t=0..8` at 24 frames per second, followed by a one-second hold of the final
+frame (81 frames at 16 fps before 2026-10-06). It writes `particles-to-moments.png`,
 `particles-to-moments.mp4`, full displayed moment bands and CPU timings in
 `output/`. Generated media remain untracked.
 

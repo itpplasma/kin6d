@@ -18,7 +18,8 @@ program transport_demo
     use kin6d_poisson_leaves, only: coupled_distribution_interval
     use fortnum_interval, only: interval_t, interval, rad
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
-        ylabel, legend, tight_layout, savefig, ylim
+        ylabel, legend, tight_layout, savefig, ylim, xlim, suptitle
+    use kin6d_demo_style, only: blue, vermillion, black, grey, num
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
@@ -59,6 +60,7 @@ program transport_demo
     real(dp), allocatable :: fine_dlo(:), fine_dhi(:)
     real(dp), allocatable :: limit_line(:), limit_lo(:), limit_hi(:)
     real(dp), allocatable :: reference_lo(:), reference_hi(:), reference_line(:)
+    real(dp) :: scale, band_max
     integer :: i, output, unit, ios
     logical :: ok
     character(256) :: msg
@@ -197,41 +199,38 @@ program transport_demo
     end do
     close (output)
 
-    call figure(figsize=[9.6_dp, 7.2_dp])
-    call subplot(2, 1, 1)
-    call title('Unknown-solution damped transport | certified linear envelopes')
-    call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
-    call ylabel('f and supplied source g at v = '//trim(velocity_text))
-    call envelope(x, plot_source_lo, plot_source_hi, 'gainsboro', &
-        [0.4_dp, 0.4_dp, 0.4_dp])
-    call envelope(x, plot_coarse_lo, plot_coarse_hi, 'moccasin', &
-        [0.8353_dp, 0.3686_dp, 0.0_dp])
-    call envelope(x, plot_fine_lo, plot_fine_hi, 'lightblue', &
-        [0.0_dp, 0.4471_dp, 0.6980_dp])
-    call plot(x, source_line, label='source + linear enclosure', linestyle=':', &
-        color=[0.4_dp, 0.4_dp, 0.4_dp])
-    write (label, '(i0,a)') coarse_cells, ' cells + full band'
-    call plot(x, coarse_line, label=trim(label), linestyle='--', &
-        color=[0.8353_dp, 0.3686_dp, 0.0_dp])
-    write (label, '(i0,a)') fine_cells, ' cells + full band'
-    call plot(x, fine_line, label=trim(label), &
-        color=[0.0_dp, 0.4471_dp, 0.6980_dp])
+    call figure(figsize=[12.8_dp, 6.4_dp])
+    call suptitle('Damped transport with a supplied source: refining 16 to 64 cells '// &
+        'tightens the certified bands of f and of its rate derivative')
+    call subplot(1, 2, 1)
+    call title('Distribution and source at v = '//trim(velocity_text))
+    call xlabel('x  (period 2π)')
+    call ylabel('f, g')
+    call xlim(x(1), x(nx + 1))
+    call envelope(x, plot_source_lo, plot_source_hi, grey)
+    call envelope(x, plot_coarse_lo, plot_coarse_hi, vermillion)
+    call envelope(x, plot_fine_lo, plot_fine_hi, blue)
+    call plot(x, source_line, label='source g ± enclosure', linestyle=':', &
+        color=grey, linewidth=1.5_dp)
+    write (label, '(i0,a)') coarse_cells, ' cells ± bound'
+    call plot(x, coarse_line, label=trim(label), linestyle='--', color=vermillion, &
+        linewidth=1.5_dp)
+    write (label, '(i0,a)') fine_cells, ' cells ± bound'
+    call plot(x, fine_line, label=trim(label), color=blue, linewidth=2.0_dp)
     call legend(loc='lower right')
-    call subplot(2, 1, 2)
-    call title('Implicit nu tangent | fixed independently supplied source')
-    call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
-    call ylabel('d f / d nu at v = '//trim(velocity_text))
-    call envelope(x, plot_coarse_dlo, plot_coarse_dhi, 'moccasin', &
-        [0.8353_dp, 0.3686_dp, 0.0_dp])
-    call envelope(x, plot_fine_dlo, plot_fine_dhi, 'lightblue', &
-        [0.0_dp, 0.4471_dp, 0.6980_dp])
-    write (label, '(i0,a)') coarse_cells, ' cells + full tangent band'
-    call plot(x, coarse_tangent, label=trim(label), linestyle='--', &
-        color=[0.8353_dp, 0.3686_dp, 0.0_dp])
-    write (label, '(i0,a)') fine_cells, ' cells + full tangent band'
-    call plot(x, fine_tangent, label=trim(label), &
-        color=[0.0_dp, 0.4471_dp, 0.6980_dp])
-    call legend(loc='lower right')
+    call subplot(1, 2, 2)
+    call title('Implicit derivative of f in the collision rate (source fixed)')
+    call xlabel('x  (period 2π)')
+    call ylabel('$\partial f/\partial$(rate) at v = '//trim(velocity_text))
+    call xlim(x(1), x(nx + 1))
+    call envelope(x, plot_coarse_dlo, plot_coarse_dhi, vermillion)
+    call envelope(x, plot_fine_dlo, plot_fine_dhi, blue)
+    write (label, '(i0,a)') coarse_cells, ' cells ± tangent bound'
+    call plot(x, coarse_tangent, label=trim(label), linestyle='--', color=vermillion, &
+        linewidth=1.5_dp)
+    write (label, '(i0,a)') fine_cells, ' cells ± tangent bound'
+    call plot(x, fine_tangent, label=trim(label), color=blue, linewidth=2.0_dp)
+    call legend(loc='upper left')
     call tight_layout()
     call savefig('output/general-transport.png')
 
@@ -261,19 +260,30 @@ program transport_demo
     call coupled_distribution_interval(interval(0.0_dp), interval(1.0_dp), &
         interval(x(1), x(nx + 1)), interval(0.0_dp), reference)
     reference_lo = reference%lo; reference_hi = reference%hi
-    call figure(figsize=[9.6_dp, 4.8_dp])
-    call title('Field-free zero-mode slice | same g = 3/4, nu = 1 at v = 0')
-    call xlabel('x / dimensionless periodic coordinate (period 2 pi)')
-    call ylabel('f(x, v=0) / dimensionless distribution')
-    call ylim(0.70_dp, 0.80_dp)
-    call envelope(x, limit_lo, limit_hi, 'lightblue', [0.0_dp, 0.45_dp, 0.7_dp])
-    call envelope(x, reference_lo, reference_hi, 'gainsboro', &
-        [0.0_dp, 0.0_dp, 0.0_dp])
-    call plot(x, limit_line, label='general solver + full slice band', &
-        color=[0.0_dp, 0.45_dp, 0.7_dp])
-    call plot(x, reference_line, label='earlier Krook reference + full slice band', &
-        linestyle='--', color=[0.0_dp, 0.0_dp, 0.0_dp])
-    call legend(loc='upper right')
+    ! Both solutions equal 3/4 to rounding: plot offsets from the reference
+    ! centre on a scale that resolves the slice bands.
+    scale = max(maxval(abs(limit_lo - reference_line)), &
+        maxval(abs(limit_hi - reference_line)), maxval(abs(reference_lo - &
+        reference_line)), maxval(abs(reference_hi - reference_line)), tiny(1.0_dp))
+    band_max = scale
+    scale = 10.0_dp**floor(log10(scale))
+    call figure(figsize=[9.6_dp, 6.0_dp])
+    call subplot(1, 1, 1)
+    call suptitle('Field-free zero-mode limit: the general solver reproduces '// &
+        'the Krook value 3/4 within both bands')
+    call title('Offset from the Krook reference at v = 0  (g = 3/4, collision rate 1)')
+    call xlabel('x  (period 2π)')
+    call ylabel('(f - 3/4) / '//num(scale, 0))
+    call xlim(x(1), x(nx + 1)); call ylim(-1.8_dp*band_max/scale, 1.8_dp*band_max/scale)
+    call fill_between(x, (reference_lo - reference_line)/scale, &
+        (reference_hi - reference_line)/scale, color=grey, alpha=0.25_dp)
+    call fill_between(x, (limit_lo - reference_line)/scale, &
+        (limit_hi - reference_line)/scale, color=blue, alpha=0.25_dp)
+    call plot(x, (limit_line - reference_line)/scale, label='general solver ± slice band', &
+        color=blue, linewidth=2.0_dp)
+    call plot(x, 0.0_dp*x, label='Krook reference ± band', linestyle='--', &
+        color=black, linewidth=1.2_dp)
+    call legend(loc='lower right')
     call tight_layout()
     call savefig('output/general-transport-krook-limit.png')
     call write_result()
@@ -399,12 +409,9 @@ contains
             ' requested_radius_met=', goal_radius%hi <= target%lo
     end subroutine
 
-    subroutine envelope(horizontal, lower, upper, fill, color)
+    subroutine envelope(horizontal, lower, upper, color)
         real(dp), intent(in) :: horizontal(:), lower(:), upper(:), color(3)
-        character(len=*), intent(in) :: fill
 
-        call fill_between(horizontal, lower, upper, color=fill, alpha=0.55_dp)
-        call plot(horizontal, lower, linestyle=':', color=color)
-        call plot(horizontal, upper, linestyle=':', color=color)
+        call fill_between(horizontal, lower, upper, color=color, alpha=0.25_dp)
     end subroutine
 end program transport_demo

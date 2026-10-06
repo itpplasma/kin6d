@@ -21,8 +21,9 @@ Usage: scripts/render-gallery.sh [options]
   --available                Record and skip executables that are not built yet
   --verification-receipt FILE Copy a controller's numerical verification receipt
   --list                     List executable targets and primary movie names
-The script runs demos sequentially from the repository directory. GIFs use
-12 fps, width 960 and a shared palette. MP4s and data remain unchanged.
+The script runs demos sequentially from the repository directory. GIFs are
+light previews (8 fps, width 800, 128-colour palette without dithering, only
+changed rectangles stored); the 24 fps MP4s and the data remain the reference.
 HELP
 }
 
@@ -162,13 +163,13 @@ encode_movie() {
     gif_start="$(date +%s.%N)"
     ffmpeg -hide_banner -loglevel error -threads 1 -filter_complex_threads 1 \
         -y -i "$movie_path" -filter_complex \
-        'fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a' \
+        'fps=8,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle' \
         -loop 0 "$prefix.gif"
     gif_end="$(date +%s.%N)"
     elapsed="$(wall_seconds "$gif_start" "$gif_end")"
     ffprobe -v error -show_entries stream=width,height,nb_frames -of json \
         "$prefix.gif" > "$prefix.gif.ffprobe.json"
-    jq -e '.streams[0].width == 960 and (.streams[0].nb_frames|tonumber) > 0' \
+    jq -e '.streams[0].width == 800 and (.streams[0].nb_frames|tonumber) > 0' \
         "$prefix.gif.ffprobe.json" >/dev/null
     record_artifact "$prefix.gif" animated_gif "$elapsed"
     # Decode exact first/middle/last frame indices, retaining native MP4 dimensions.
