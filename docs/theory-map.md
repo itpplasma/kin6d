@@ -31,6 +31,18 @@ the same question.
   - which invariants and structure survive exactly, approximately, or not;
   - the source (textbook/paper, page and equation) it is checked against;
   - the numerical companion experiment in KIN6D that measures its defect.
+- **Solution concept per node:** function spaces and the notion of solution
+  (strong/classical, weak, renormalized in the DiPerna--Lions sense,
+  H-solutions for Landau with Coulomb interaction, measure-valued for N-body
+  empirical measures). A step proved for smooth solutions is recorded as such;
+  its use where only weak or renormalized solutions are known is a separate
+  claim. Weak formulations are also the link to the FEEC discretizations.
+- **Formulation level per edge:** whether the reduction is performed on the
+  action or bracket (Low Lagrangian, gyrokinetic field theory,
+  metriplectic/GENERIC structure for collisions) or on the equations. Action-
+  and bracket-level reductions carry exact energy-momentum conservation and
+  the H-theorem into the reduced model; equation-level truncations must state
+  which they lose.
 
 ## Skeleton
 
@@ -81,10 +93,26 @@ Each step and each edge carries one status, mirroring the numerical states:
 3. **limit-checked:** known special cases and limits reproduced;
 4. **defect-measured:** the reduction's error measured by a KIN6D companion
    experiment across its regime;
-5. **formally proved:** a Lean theorem covering the step's mathematical
+5. **proved in the literature:** a cited theorem with its hypotheses and
+   solution concept (e.g. mean-field limits of Dobrushin, Braun--Hepp and
+   Lazarovici--Pickl; Hartree limits of Erdős--Yau, Rodnianski--Schlein and
+   Pickl; the Lions--Paul semiclassical Wigner limit; Lanford's short-time
+   Boltzmann theorem; partial gyrokinetic limits);
+6. **formally proved:** a Lean theorem covering the step's mathematical
    content, with its hypotheses;
-6. **erratum:** a discrepancy with the cited source, recorded with the
+7. **open problem:** no rigorous justification is known (for example the
+   derivation of the Landau equation from many-body Coulomb dynamics, or
+   uniform-in-time validity of many asymptotic models); the step stays
+   formal and says so;
+8. **erratum:** a discrepancy with the cited source, recorded with the
    corrected statement and its evidence.
+
+Asymptotic steps record their method (multiple scales, matched asymptotics
+for boundary layers such as sheaths, Lie-transform perturbation theory), the
+solvability conditions at each order, checks for secular terms, and the time
+scale on which the expansion is claimed. The algebra of each order is
+machine-checked; uniform validity is an analytic statement with its own
+status.
 
 An algebra check does not prove an analytic step. Interchanging limits,
 uniform validity of an asymptotic series, existence of solutions, secular
