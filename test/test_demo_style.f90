@@ -14,6 +14,7 @@ program test_demo_style
     call check(num(3.14159_dp, 3), '3.142')
     call check(num(1234.0_dp), '1234')
     call check(num(12345.0_dp), '1.23e04')
+    call check(num(1.0e-14_dp, 0), '1e-14')
     if (failures > 0) error stop 'demo number formatting failed'
     print '(a)', 'demo number formatting passed'
 contains
