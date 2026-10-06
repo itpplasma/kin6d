@@ -53,7 +53,9 @@ module kin6d_packet_models
         integer :: model = MODEL_M3
         integer :: k = 1                     ! M4 basis size (1..8)
         real(dp) :: kappa = 0                ! harmonic test potential kappa r^2/2
-        real(dp) :: regularization = 1.0e-10_dp  ! Tikhonov eps relative to max metric eigenvalue
+        ! Tikhonov eps relative to the largest equilibrated metric eigenvalue;
+        ! <= 0 selects 1e-6 for guided Gaussian sums (M4) and 1e-10 otherwise.
+        real(dp) :: regularization = 0
         real(dp) :: rtol = 1.0e-10_dp, atol = 1.0e-12_dp
         real(dp) :: refuse_condition = 1.0e14_dp  ! overlap condition refusal limit
         integer :: boys_nodes = 96
@@ -294,6 +296,7 @@ contains
         eng%k = ngauss; eng%parity = parity; eng%cm_tie = cm_tie; eng%guided = guided
         eng%hbar = enc%cfg%hbar; eng%mu = enc%mu; eng%g = enc%cfg%g; eng%kap = spec%kappa
         eng%mass_cm = enc%mtotal; eng%eps = spec%regularization
+        if (.not. (eng%eps > 0)) eng%eps = merge(1.0e-6_dp, 1.0e-10_dp, guided)
         call pair_rule_init(eng%rule, spec%boys_nodes)
         if (parity /= 0) then
             eng%nred = 8

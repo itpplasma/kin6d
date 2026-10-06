@@ -305,3 +305,5 @@ set_source_files_properties(src/generated/kin6d_packet_models_leaves.f90
 add_executable(test_packet_models test/test_packet_models.f90)
 target_link_libraries(test_packet_models PRIVATE kin6d)
 add_test(NAME packet_models_oracles COMMAND test_packet_models)
+add_executable(packet_models_demo app/packet_models_demo.f90)
+target_link_libraries(packet_models_demo PRIVATE kin6d fortplot kin6d_io)
