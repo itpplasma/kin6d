@@ -79,7 +79,9 @@ reuse, derivative and band boundaries.
 
 ## Verification and development tools
 
-Release and runtime-checked Debug use native CMake/CTest. The independent
+Release and runtime-checked Debug each pass all 42 native CMake/CTest
+tests; the two focused upstream tests also pass. Exact receipts and generator
+hash are in `verification.json`. The independent
 oracles cover generated allowance value/JVP/VJP, binary128 D/S containment,
 A's true-error ratio and failed epsilon gate, plus sampled norm coverage.
 FortNum's CMake gates cover cancellation, interval vertices, underflow and
