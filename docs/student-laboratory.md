@@ -67,54 +67,54 @@ follow these stable linear cases.
 
 ## Microscopic many-particle gallery
 
-A parallel microscopic gallery makes the continuum reductions tangible:
+A parallel microscopic gallery makes the continuum reductions tangible. Every
+case uses real point charges with the bare Coulomb interaction; the
+[canonical microscopic plan](microscopic-many-body.md#microscopic-teaching-and-verification-cases)
+records each claim, and [chapter-gallery.md](chapter-gallery.md) lists the
+movies and figures.
 
-1. two nonrelativistic repulsive Coulomb particles scatter against a Rutherford
-   oracle; animate their real 3D trajectories;
-2. a few interacting 3D3V particles, then the prescribed magnetic-field case;
-3. many physical particles produce a plasma oscillation without a Vlasov
-   equation;
-4. a weak test charge produces **emergent Debye shielding**. Plot the noisy
-   microscopic density/field, its ensemble/time average and the linear
-   Debye--Huckel prediction with finite-box and finite-\(N_D\) uncertainty;
-5. scan \(\Lambda=n\lambda_D^3=100,300,1000,3000,10000\), with separate
-   domain, estimator, fluctuation and collisionality gates;
-6. measure \(g(r)\), \(S(k)\), \(S(k,\omega)\) and simple relaxation rates;
-7. add relativistic/Darwin/Maxwell and tiny retarded-field comparisons when
-   the example's regime needs them.
+| Step | Experiment | Status | Document |
+|---|---|---|---|
+| 1 | Two repulsive Coulomb particles against a Rutherford oracle, beside a neutral contact | implemented | [interaction-laboratory.md](interaction-laboratory.md) |
+| 2 | Classical two-electron quench in a periodic neutralized box | implemented, statistical | [classical-pair.md](classical-pair.md) |
+| 3 | 32-electron cloud in a neutralizing sphere with an impurity | exploratory candidate | [microscopic-cloud.md](microscopic-cloud.md) |
+| 4 | Many electrons produce a plasma oscillation without a Vlasov equation (periodic OCP) | candidate, final evidence pending | [ocp-microscopic.md](ocp-microscopic.md) |
+| 5 | A weak test charge produces emergent Debye shielding | candidate, final evidence pending | [ocp-microscopic.md](ocp-microscopic.md) |
+| 6 | g(r), S(k), three-body correlations and closure failure as Gamma grows | implemented, statistical | [correlation-hierarchy.md](correlation-hierarchy.md) |
+| 7 | Lambda = 100..10000 scans, S(k, omega), relaxation rates | planned | [microscopic-many-body.md](microscopic-many-body.md#remaining-classical-cases) |
+| 8 | Magnetized few-particle and relativistic/retarded comparisons | planned when needed | [microscopic-many-body.md](microscopic-many-body.md#remaining-classical-cases) |
 
-These are reference/teaching cases, not a requirement to simulate a whole
-tokamak with individual physical particles.
-Use an electron OCP with an explicit background for the first collective
-microscopic cases, preventing attractive classical point-particle collapse.
-The [canonical microscopic plan](microscopic-many-body.md) specifies periodic
-forces, responsive-species Debye lengths, finite-k wave and estimator caveats.
+The teaching message of step 6 is concrete: Kirkwood superposition, the
+textbook three-body closure, is good to 4% in the energy at Gamma = 1 and
+fails above Gamma ~ 10, while HNC stays within 1%. These are reference and
+teaching cases, not a requirement to simulate a whole tokamak with
+individual physical particles. The electron OCP with an explicit background
+prevents attractive classical point-particle collapse in the collective cases.
 
 ## Quantum plasma fundamentals gallery
 
-Keep the quantum branch visually and mathematically connected to the classical
-examples:
+The quantum gallery stays visually and mathematically connected to the
+classical one, and each example shows where a classical plasma assumption
+succeeds or fails. The full plan with claims and findings is
+[quantum-microscopic-validation.md](quantum-microscopic-validation.md).
 
-1. Maxwell--Boltzmann versus Fermi--Dirac occupation and the Fermi sphere;
-2. map \((\Theta,\Gamma,x_F)\) and place tokamak, solar-core,
-   warm-dense and white-dwarf-like regimes;
-3. compare classical thermal pressure with nonrelativistic and relativistic
-   degeneracy pressure;
-4. continue the microscopic shielding example through
-   Debye \(\rightarrow\) finite-\(T\) Fermi/Thomas--Fermi
-   \(\rightarrow\) Lindhard response and Friedel oscillations;
-5. evolve a simple Wigner problem and demonstrate convergence to Vlasov as
-   \(\hbar\to0\);
-6. show Pauli blocking/quantum diffraction changing a simple collision rate;
-7. compare two-electron distinguishable versus antisymmetrized/exchange
-   behavior in a tiny reference problem;
-8. solve a reduced stellar-structure/EOS example that crosses from thermal to
-   degeneracy support without resolving microscopic quantum wavelengths.
+| Experiment | Teaching message | Document |
+|---|---|---|
+| Fermi--Dirac versus Maxwell--Boltzmann occupation; exchange hole without interaction | Same-spin fermions avoid each other within k_F r < 3 even when free | [fermion-ensemble.md](fermion-ensemble.md) |
+| Classical, degenerate and relativistic electron pressure | Pressure crosses from n k_B T to the Fermi law and softens to the ultrarelativistic law above x_F ~ 1 | [fermi-gas.md](fermi-gas.md) |
+| Opposite-spin pair quench in a periodic box, quantum and classical | A Coulomb quench opens a correlation hole in both; the quantum pair also depletes k = 0 | [quantum-reference-gallery.md](quantum-reference-gallery.md) |
+| Two-electron encounter: singlet, triplet, distinguishable, classical | Identical particles interfere; distinguishable ones follow Rutherford even quantum mechanically | [coulomb-encounter.md](coulomb-encounter.md) |
+| Rydberg packet | A packet breathes at the Kepler period, collapses and revives | [coulomb-encounter.md](coulomb-encounter.md) |
+| Gaussian packet models against the exact encounter | One Gaussian cannot split; for eta >= 3 classical trajectories are more accurate than any Gaussian model | [packet-models.md](packet-models.md) |
+| Interacting jellium cell and mean-field models | The Coulomb hole deepens with r_s; RPA overscreens; open-shell HF breaks symmetry | [jellium-cell.md](jellium-cell.md), [mean-field-cell.md](mean-field-cell.md) |
+| Debye -> Thomas--Fermi -> Lindhard screening | Degeneracy replaces the Debye length and adds Friedel oscillations | [screening-wigner.md](screening-wigner.md) |
+| Wigner -> Vlasov | hbar stabilizes short wavelengths; f_W converges to Vlasov as hbar^2 and becomes negative where beams overlap | [screening-wigner.md](screening-wigner.md) |
+| Quantum close encounters in a classical plasma | The quantum Coulomb logarithm is smaller by ln eta - Re psi(1 + i eta) | [hybrid-encounter.md](hybrid-encounter.md) |
 
-The point is not a separate quantum course hidden in KIN6D. Each example
-explains exactly where a classical plasma assumption succeeds or fails and
-retains the same provenance/error/verification conventions as the classical
-gallery.
+A reduced stellar-structure example that crosses from thermal to degeneracy
+support remains planned; the current EOS is pressure-only. The point is not a
+separate quantum course hidden in KIN6D: each example retains the
+provenance, error and verification conventions of the classical gallery.
 
 ## Kinetic teaching sequence
 

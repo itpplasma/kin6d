@@ -1,6 +1,6 @@
 # kin6d roadmap
 
-Status: staged delivery plan, 2026-10-05.
+Status: staged delivery plan, 2026-10-06.
 
 The roadmap is ordered by scientific leverage and verification value, not by
 the final breadth of the code. The steady kinetic programme is the main spine.
@@ -280,37 +280,34 @@ See [interface-reproducibility.md](docs/interface-reproducibility.md).
 
 ## MB0 — microscopic relativistic many-body reference (cross-cutting)
 
-The [Chapter 1–3 gallery](docs/chapter-gallery.md) supplies the initial
-teaching comparisons alongside the steady research spine. The slab and
-overdamped planar shielding equations have distinct boundary conditions and
-physical assumptions from a periodic microscopic plasma. The isolated
-few-particle Coulomb gallery remains exploratory wherever trajectory bounds
-are unavailable; it does not discharge the periodic shielding or
-\(\Lambda\)-scan gates below.
-
 Add a small-box microscopic branch beneath the continuum kinetic hierarchy.
 Its endpoint is the multispecies relativistic Maxwell--Lorentz many-particle
-system; Vlasov/FK remains the highest continuum mean-field reference.
+system; Vlasov/FK remains the highest continuum mean-field reference. The
+[gallery](docs/chapter-gallery.md) supplies the teaching comparisons; the
+slab and overdamped planar shielding equations there have different
+boundary conditions and assumptions from a periodic microscopic plasma.
 
-Development ladder:
+Delivered on the shared foundation (species record, one symbolic Coulomb and
+Ewald source, general-N KDK with encounter-resolved steps, namelist/NetCDF
+provenance): the two-body Rutherford encounter, the periodic pair quench, the
+isolated cloud, the periodic OCP plasma oscillation and emergent Debye
+shielding (candidates, final evidence pending), and the classical H1a
+correlation map. H1a found that Kirkwood superposition fails at
+Gamma >~ 10 (32% energy error at Gamma = 10) while HNC stays within 1%.
 
-1. nonrelativistic repulsive two-particle Coulomb scattering with a Rutherford
-   oracle and controlled close encounters; animate the actual 3D trajectories;
-2. a few interacting 3D3V particles, then a prescribed magnetic-field case;
-3. a small neutral periodic 3D3V electron OCP with an explicit background,
-   verified periodic Coulomb forces and collective plasma oscillation;
-4. **emergent Debye shielding** around a weak test charge, with no screened
-   potential or collision operator imposed;
-5. \(\Lambda=n\lambda_D^3=100,300,1000,3000,10000\) scans, with
-   \(L/\lambda_D\) varied separately and mean-response, fluctuation and
-   collision-rate convergence reported separately;
-6. \(g_{ab}(r)\), \(S_{ab}(k)\), \(S_{ab}(k,\omega)\) and dielectric-response
-   measurements;
-7. microscopic slowing-down, pitch-angle diffusion, momentum/temperature
+Remaining ladder, in order:
+
+1. C3/C4 final evidence and \(\Lambda=n\lambda_D^3=100,300,1000,3000,10000\)
+   scans, with \(L/\lambda_D\) varied separately and mean-response,
+   fluctuation and collision-rate convergence reported separately;
+2. self-consistent BGY--Kirkwood and the second YBG equation; \(S(k,\omega)\)
+   and dielectric response;
+3. microscopic slowing-down, pitch-angle diffusion, momentum/temperature
    equilibration and Green--Kubo transport compared with continuum collision
-   operators;
-8. weak-to-strong-coupling scans testing Landau, Beliaev--Budker,
-   Balescu--Lenard and mean-force closures.
+   operators and the quantum-corrected encounter kernels;
+4. weak-to-strong-coupling scans testing Landau, Beliaev--Budker,
+   Balescu--Lenard and mean-force closures;
+5. a prescribed magnetic-field few-particle case.
 
 Relativistic Coulomb, Darwin, full Maxwell and the tiny direct retarded
 Lienard--Wiechert comparison follow when their regime/use case requires them;
@@ -351,32 +348,28 @@ Add a quantum-fundamentals branch that makes the limits of the classical
 hierarchy explicit without turning every plasma calculation into a quantum
 many-body problem.
 
-Immediate teaching gate: a matched, fully interacting small classical/quantum
-Coulomb case with one animation for each, plus numerical ideal-electron
-pressure if inexpensive. Keep quantum BBGKY and stellar-structure work
-deferred. General Hamiltonian/evolution interfaces, explicit basis budgets,
-independent oracles, and error/cost reporting are required from this first
-slice. See [quantum-teaching-slice.md](docs/quantum-teaching-slice.md).
+Delivered: the certified-discrete periodic pair quench (Q0), the
+partial-wave two-electron encounter with singlet/triplet/classical comparison
+and a Rydberg packet (Q1/Q1b), Gaussian packet models measured against it
+(Q2), finite-N ideal fermions (Q3), the interacting jellium cell with RDM
+cumulants (Q4), Hartree/HF/Mermin/TDHF against that cell (Q5), Debye to
+Lindhard screening and Wigner to Vlasov (Q7), the relativistic Fermi EOS
+(Q8) and hybrid quantum encounters in a classical plasma (QG6). Findings that
+set the next steps: Gaussian packets fail for eta >= 1 and classical
+ensembles beat them for eta >= 3; open-shell HF breaks translation symmetry;
+the N = 3 three-body cumulant reaches 0.24 of the three-body RDM norm at
+r_s = 8; the quantum
+Coulomb-logarithm correction is ln eta - Re psi(1 + i eta); visible
+encounter fringes come from exchange interference.
 
-The first slice now has generated fixed-N Hamiltonian/CAR actions, an exact
-physical pair-sector constructor, Hermitian residual evolution, correlation
-observables, matched classical Ewald pairs, and a numerical ideal Fermi EOS.
-All 21 native CPU oracles pass in Release and checked Debug. The 125/343-mode
-pair comparison is a resolution indicator; continuum cutoff bounds and a
-low-overhead production certifier remain open. BBGKY and stellar structure
-remain deferred.
-
-The next microscopic teaching sequence is upstream error/performance
-infrastructure, localized two-electron wave-packet scattering against classical
-point ensembles, coherent packet enrichment, finite-N exchange/degeneracy and
-an interacting neutralized quantum cell. Validate scalable packet/orbital and
-local classical--quantum approximations against those references before
-capacity claims. Screening/kinetic reductions are separately identified;
-optional white-dwarf work remains pressure-only. Every step retains numerical,
-model, truncation and sampling status, plots, derivatives and overhead versus
-solve alone. See [microscopic quantum validation](docs/quantum-microscopic-validation.md)
-for QG0--QG8 and acceptance gates. The completed periodic pair quench is a
-correlation reference; it does not satisfy the localized scattering gate.
+Active path, in order: closures beyond the first YBG equation, quantum BBGKY with measured cumulants, thermodynamic-limit
+references (PIMC/literature), Lindhard with local-field corrections, exchange
+in the hybrid collision Monte Carlo, scalable packet/orbital methods only
+where validated, and adaptive correlation-order and classical/quantum
+switching. Claims, findings and gates are in
+[microscopic quantum validation](docs/quantum-microscopic-validation.md);
+task state is in [the hierarchy campaign](docs/hierarchy-campaign.md).
+Stellar structure remains outside this sequence.
 
 Physics ladder:
 
@@ -395,6 +388,9 @@ Physics ladder:
 9. equilibrium exact-diagonalization/QMC/PIMC reference cases where practical;
 10. stellar/dense-plasma closure examples from classical ideal gas through
     degenerate and relativistically degenerate electron pressure.
+
+Items 1--3, 5, the Hartree/HF part of 6 and the ideal-EOS part of 10 exist
+as teaching references; items 7--9 are on the active path above.
 
 Numerical representation remains independent:
 

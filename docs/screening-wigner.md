@@ -144,10 +144,6 @@ and their tangents). CTest: `test_screening` takes 3.5 s and `test_wigner`
 
 - Generic pieces belong upstream: the plasma dispersion function Z (FortNum
   special functions); graded composite Gauss rules (FortNum quadrature).
-- Candidate accuracy of the `kin6d_fermi_gas` k_s at theta < 0.05; see the
-  finding above.
-- 1D modal Poisson is a fourth local copy (gen_poisson, shielding, Q7); it
-  needs one symbolic definition.
 - The screening figure uses per-panel log axes (fortplot 5380eb6). Panel 3
   floors |phi/phi_bare| at 1e-8 and panel 4 clips to its y range for display
   only; the CSV/NetCDF data are unclipped.

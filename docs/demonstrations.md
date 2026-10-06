@@ -10,20 +10,19 @@ heatmap, certified density curves and a certified velocity slice. Run
 `./scripts/demo.sh` for movies, or `./scripts/demo.sh --snapshot` for the
 default gallery without an encoder. Generated artifacts remain under `output/`.
 
-The [Chapter 1–3 gallery](chapter-gallery.md) extends the teaching examples.
-After the native build and registered tests, `./scripts/render-gallery.sh`
-runs all gallery applications and produces looping GIFs, MP4s, frame
-snapshots and a provenance manifest. `--snapshot` retains the PNG/data path
-without movie encoding. The renderer does not replace the numerical gates.
-
-The [matched quantum/classical pair](quantum-teaching-slice.md) adds two
-movies of the same three-dimensional Coulomb quench. Select them with
-`./scripts/render-gallery.sh --only quantum_reference_demo,classical_pair_demo`.
-Quantum bands cover numerical evolution and observables in the admitted
-finite basis; classical bands are simultaneous sampling confidence intervals.
-Basis, Ewald and classical timestep differences retain their separate status.
-The optional ideal-electron pressure result uses `benchmark_fermi_gas` and
-does not add a stellar-structure or BBGKY simulation.
+The [animation and figure gallery](chapter-gallery.md) lists every demo with
+its movie and figure names and one-line teaching message: the continuum and
+reduced-model laboratory, the classical microscopic cases (two-body
+encounter, periodic pair, cloud, OCP oscillation and shielding, correlation
+map) and the quantum cases (pair quench, encounter, packet models, ideal
+fermions, relativistic EOS, jellium cell, mean-field models, screening,
+Wigner, hybrid encounters). After the native build and registered tests,
+`./scripts/render-gallery.sh` runs them and produces looping GIFs, MP4s, frame
+snapshots, NetCDF results and a provenance manifest; `--list` shows the
+targets and `--snapshot` retains the PNG/data path without movie encoding.
+The renderer does not replace the numerical gates. Quantum finite-basis
+bands, classical sampling intervals and basis, Ewald or time-step
+differences keep their separate status.
 
 ## Runnable from the first code
 
@@ -63,7 +62,7 @@ is a deterministic enclosure, not a statistical confidence band.
 | Moment interval | The requested observable lies in the reported interval | Named moment and units; estimate with full interval and exact reference value |
 
 The norm-bound-to-pointwise bridge for the first reference is specified in
-[certification](certification.md#first-continuous-certificate). For later
+[certification](certification.md#first-certificates-for-unknown-solutions). For later
 problems, a generic norm radius cannot be drawn directly around `f(x,p)`.
 Derive the appropriate pointwise/trace bound or plot a certified bounded
 observable, such as a cell-average profile, with that definition in the axis
@@ -139,7 +138,7 @@ polarization/magnetization where required. Display both certified bands and
 their difference interval. Never identify band overlap with a proved model
 reduction. Resolution and species-model refinement remain separate axes.
 [Device ladder](devices.md#production-gate) and
-[species comparisons](species-models.md#certified-reductions)
+[species comparisons](species-models.md#reduction-evidence)
 define these acceptance claims.
 
 ## Generated output policy

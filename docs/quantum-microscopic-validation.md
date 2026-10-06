@@ -1,250 +1,204 @@
 # Microscopic quantum experiments and validation
 
-Status: implementation plan, 2026-10-05. Audience: lecture students and
-implementers who need to see microscopic quantum physics and measure the
-approximations used to reach larger systems. Planned gates are not support
-claims. The existing pair quench and ideal Fermi EOS are retained references;
-the localized collision and degenerate interacting plasma below remain open.
+Status: current plan, 2026-10-06. Audience: lecture students and implementers
+who need to see microscopic quantum physics and measure the approximations
+used to reach larger systems. The campaign log in
+[hierarchy-campaign.md](hierarchy-campaign.md) is the authoritative task
+state; this document records the scientific contract, what each implemented
+case claims, the measurements that changed the plan and the remaining order.
+The classical counterpart is
+[microscopic-many-body.md](microscopic-many-body.md#microscopic-teaching-and-verification-cases).
 
 ## Physical parent and comparisons
 
-Start with the antisymmetric finite-N Schroedinger equation or density
-operator for spin-1/2 electrons with unscreened Coulomb interactions. Use
-isolated encounters for scattering and neutralized periodic 3D cells for
-electron gases. Declare mass, charge, hbar, initial preparation, spin sector,
-geometry, background and boundary conditions in every case. Nuclear motion
-may initially be classical or prescribed, with that approximation explicit.
-Nonrelativistic electrostatics is the first controlled domain; record v/c,
-x_F and the omitted electromagnetic/relativistic physics. QED is outside the
-native scope. No screened potential is inserted to demonstrate emergent
-screening.
+The parent is the antisymmetric finite-N Schroedinger equation or density
+operator for spin-1/2 electrons with unscreened Coulomb interactions. Isolated
+encounters serve scattering; neutralized periodic 3D cells serve electron
+gases. Every case declares mass, charge, hbar, preparation, spin sector,
+geometry, background and boundary conditions, all taken from the shared
+species/unit record and the single symbolic Coulomb source
+(`gen/kin6d_symbolic_physics.f90`). Nuclear motion is classical or prescribed
+when present, with that approximation stated. Nonrelativistic electrostatics
+is the controlled domain; v/c, x_F and the omitted electromagnetic physics are
+recorded, and QED is outside the native scope. No screened potential is
+inserted to demonstrate screening.
 
-A microscopic quantum reference evolves the interacting state. Hartree,
-HF, wave-packet, Wigner and fluid closures remain separately identified
-approximations. A classical finite-N ensemble is a different physical model;
-its difference from quantum mechanics is the phenomenon being illustrated,
-not the quantum solver's numerical error. BBGKY evolution and stellar
-structure remain deferred. Observable reduced density matrices and connected
-correlations do not require implementing a BBGKY solver.
+A microscopic quantum reference evolves the interacting state. Hartree, HF,
+wave-packet, Wigner and fluid closures are separately identified
+approximations. A classical finite-N ensemble is a different physical model:
+its difference from quantum mechanics is the phenomenon being shown, not the
+quantum solver's numerical error. Classical and quantum runs use the same
+physical parameters and disturbance. For unexchanged Gaussian preparations
+the positive initial Wigner law supplies the classical ensemble; for
+antisymmetrized or degenerate thermal states the preparation difference is
+recorded rather than hidden.
 
-Compare quantum and classical preparations at the same physical parameters
-and imposed disturbance. For unexchanged Gaussian preparations, a positive
-initial Wigner law supplies a useful classical phase-space ensemble. For
-antisymmetrized or thermal degenerate states, record the preparation
-difference: do not force classical Maxwell occupations to equal Fermi
-occupations or invent a positive law for a negative Wigner function.
+Bulk degeneracy and encounter diffraction answer different questions.
+Degeneracy compares k_B T with E_F, or the density with the thermal
+wavelength. Diffraction in one encounter compares the packet scale with the
+spatial variation of the Coulomb field, measured by the Sommerfeld parameter
+eta = g/(hbar v). High temperature makes encounters more quantum, not less:
+at 10 keV the reduced thermal wavelength hbar/sqrt(m_e k_B T) is about
+2.76 pm and the Landau length e^2/(4 pi eps0 k_B T) about 0.144 pm, while a
+tokamak plasma is far from bulk degenerate. Other wavelength conventions
+change these factors. A discussion of this short-range regime is
+[Alharbi et al., PTEP 2026, 023J01](https://doi.org/10.1093/ptep/ptaf188);
+its mean-field model is not a certificate for the finite-N cases here.
 
-## QG0: upstream infrastructure and baseline
+## Status vocabulary
 
-Before the new encounter solver, freeze small correctness and realistic
-performance cases for complex Hermitian actions, evolution, residual
-evaluation, probability-bin observables, requested derivatives and all bands.
-Retain the current 125/343-mode pair reference and its numerical scope.
-The reviewed 90.89-times solve-only quantum cost is an optimization baseline,
-not an acceptable workhorse performance claim.
+Every reported output carries one of these labels, following AGENTS.md:
 
-Measure assembled and structured/matrix-free schedules, batching, immutable
-Hamiltonian reuse and memory traffic. Choose the next implementation from
-these measurements; do not add all backends speculatively. Compare cold and
-amortized results at equal observable accuracy, including certificate setup.
+- *certified-discrete*: a rigorous enclosure for the declared finite basis or
+  finite model, including arithmetic; continuum projection error is
+  unavailable unless stated;
+- *certified*: an enclosure of the named continuous model (for example the
+  ideal Fermi EOS integrals and root);
+- *reference comparison*: agreement with an independent exact result,
+  literature value or richer model, with the measured difference;
+- *indicator*: resolution, cutoff or estimator differences that are not a
+  remainder bound;
+- *statistical*: a sampling interval with a declared law (CLT, batch means,
+  jackknife); never a deterministic certificate;
+- *candidate*: a fast result without any of the above.
 
-Generic gaps belong to their owners: FortNum for verified quadrature,
-evolution/residual and spectral evaluation primitives; FortSym for shared
-complex primal/JVP/VJP and enclosure definitions; FortFEM for generic spatial
-bases/actions and singular integration; FortSparse for needed sparse actions;
-FortPlot for interval rendering. Extend an owner only when this case needs
-the feature. Preserve project presets and repair the documented Fo resident
-CMake input-capture gap rather than dropping the feedback gate.
+## Implemented cases
 
-Gate: independent behavioral reproducer, owner-side focused tests, verified
-revision pinned and consumer rechecked for each required upstream increment.
-Retain solve-only, error-estimation and memory baselines before adding physics.
+Gate IDs QG0--QG8 are the original plan names; Q/C/H IDs are the campaign case
+names. Each row names its own document, which carries the full ledger.
 
-## QG1: localized two-electron encounter
+| Gate | Case | Document | Claim and status |
+|---|---|---|---|
+| QG0 | Q0 periodic opposite-spin pair quench, 125-mode exact sector | [quantum-reference-gallery.md](quantum-reference-gallery.md), [classical-pair.md](classical-pair.md) | Certified-discrete continuous-time Hilbert residual and slab-bin bounds (bin radius 2.25e-3 at 1024 steps); 125 vs 343 modes differ by 5.2e-3, an indicator; classical pairs statistical |
+| QG0 | Finite-basis evolution certificate (FortNum `fortnum_ode_residual_certificate`) | [quantum-evolution.md](quantum-evolution.md) | Certified-discrete for a supplied Hermitian matrix |
+| QG1 | Q1 two-body encounter in the relative coordinate, partial waves on a GLL FEM-DVR, product/singlet/triplet and classical ensemble; Q1b Rydberg packet | [coulomb-encounter.md](coulomb-encounter.md) | Candidate with finite-space bounds; continuum error by reference comparison (hydrogen levels 9e-13, Coulomb phases 1e-9, Mott ratio 0.018, Rutherford fluence 1%, Kepler autocorrelation 1e-10) and indicators; bin JVP/VJP vs FD 1.6e-8 |
+| QG2/QG5 | Q2 Gaussian packet models M2--M4 (WPMD, two-determinant, relative TDVP, vMCG K = 2/4/8) vs Q1 | [packet-models.md](packet-models.md) | Candidate models with a full-Hamiltonian Duhamel estimator measured against the Q1 discrete reference (held at every sample, vacuous above 2 at eta = 10) |
+| QG3 | Q3 finite-N ideal fermions: canonical sums, exchange hole, density matrix, box EOS | [fermion-ensemble.md](fermion-ensemble.md) | Interval enclosures with a rigorous omitted-orbital remainder; thermodynamic-limit and classical limits as reference comparison |
+| QG4 | Q4 interacting N = 2--4 jellium cell, sector Lanczos, 1/2/3-RDMs, weak-kick evolution | [jellium-cell.md](jellium-cell.md) | Finite-basis reference; kick band 2e-6 at t = 8 certified-discrete; cutoff differences indicators; Theta = 0.5 rows for N = 3, 4 unconverged indicators |
+| QG5 | Q5 Hartree, RHF/UHF, Mermin, static TDHF/TDH in the Q4 basis | [mean-field-cell.md](mean-field-cell.md) | Reference comparison against Q4; full-parent residual with a Temple bound for N = 2 (gap input is a Lanczos candidate) |
+| QG6 | Hybrid classical test-electron plasma with promotion of close quantum encounters to an l-local ring kernel | [hybrid-encounter.md](hybrid-encounter.md) | Candidate kernels with quadrature/truncation indicators; Monte Carlo rates statistical; explicit interface-defect entry |
+| QG7 | Q7 Debye -> finite-T Fermi/Thomas--Fermi -> Lindhard static screening; 1X1V Wigner--Poisson -> Vlasov | [screening-wigner.md](screening-wigner.md) | Candidate with rigorous truncation tails and quadrature indicators; dispersion roots reference comparison |
+| QG8 | Q8 relativistic ideal Fermi EOS; nonrelativistic finite-T Fermi gas | [fermi-gas.md](fermi-gas.md) | Certified enclosures (relativistic to x_F = 10 at 1e7 K; nonrelativistic to theta = 1e-4) |
+| H1b | Quantum-classical matched finite-N correlation map vs (Gamma, Theta) | [quantum-classical-correlations.md](quantum-classical-correlations.md) | Reference comparison: exact N = 2 (basis error <= 3.4e-4); N = 3 rows at Theta <= 1 meet the 5% occupation gate; N = 4 rows are indicators; classical MC intervals statistical |
 
-Prepare two separated incoming Gaussian electron packets with declared
-centroids, momentum covariances, widths and impact parameter. Run opposite-spin
-and same-spin preparations; state the actual spin density/state and its
-spatial symmetry. Singlet/triplet references separate exchange effects from
-interaction correlations. Start with repulsive electron-electron scattering;
-binding to an ion is a separate future encounter.
+All cases share the species record, Coulomb leaves, result I/O with embedded
+configuration and provenance ([interface-reproducibility.md](interface-reproducibility.md))
+and the figure style ([figure-style.md](figure-style.md)). Movies and figures
+are listed in [chapter-gallery.md](chapter-gallery.md).
 
-Exploit exact center-of-mass/relative-coordinate separation for equal-mass
-Coulomb dynamics when the initial preparation factorizes in those coordinates.
-Matched equal-width incoming Gaussians provide such a family. Relative
-motion is still a 3D quantum problem. Retain every angular sector needed for
-nonzero impact parameter and exchange; do not confine particles to a line.
-The existing fixed-total-momentum quench sector is not a localized packet.
-General nonfactorizing preparations need a later 6D or controlled low-rank
-representation, with its separate budget.
+## Findings that change the plan
 
-Use the bare Coulomb operator with a declared singularity treatment and
-isolated-domain approximation. Bound or report domain, initial-tail and
-boundary errors. Coulomb has long-range scattering phases: finite-time
-outgoing bins and true asymptotic cross sections are different observables.
-An absorber requires an explicit lost-flux/boundary ledger.
+**Visible encounter quantum structure comes from exchange.** In the Q1
+eta = 3, sigma = r0/2 movies the singlet and triplet relative densities show
+standing-wave fringes in the encounter region (maxima 3.3--3.5/k apart, the
+local wavelength being longer than lambda/2 = pi/k near the turning point)
+and the triplet nodal plane z = 0. The distinguishable (spin-unresolved)
+density shows no such fringes: on the axis it agrees with the classical
+ensemble except for a tunnelling tail inside r0, and the singlet/triplet
+average matches the classical ensemble within its standard error. Outgoing
+singlet/triplet bins follow the plane-wave Mott oscillation
+cos(eta ln tan^2(theta/2)) up to eta = 10, and at eta = 10 quantum and
+classical distinguishable bins agree within 4 standard deviations. A quantum
+correction to a classical encounter picture is therefore first an exchange
+correction, then diffraction at eta <~ 1.
 
-Classical comparisons are (a) point trajectories from the packet's admitted
-initial phase-space ensemble and (b) an optional declared classical extended
-charge model. A classical packet is initially an ensemble of independent
-two-particle realizations, not a swarm interacting as extra electrons.
-Centroid-only point trajectories are an additional labeled illustration.
-Charge-smearing changes the interaction law; its difference is model error.
+**Gaussian packet models fail for eta >= 1, and classical ensembles beat
+them for eta >= 3.** At b = 0 and r0/sigma = 0.5 the state error of the best
+model, M4 with K = 8 Gaussians, is 0.24/0.59/1.29/1.40 at
+eta = 0.3/1/3/10 (distance of normalized states, at most 2); its angular-bin
+total variation is 0.12/0.22/0.78/1.13, against 0.27/0.19/0.076/0.020 for the
+classical Wigner ensemble M1. Exchange inside WPMD dynamics has no
+measurable effect because the parity images never overlap, so these models
+cannot produce the Mott interference. Scalable packet methods are admitted
+only in the regime where they were validated (eta < 1 here); for eta >= 3 a
+classical trajectory with a quantum encounter kernel is cheaper and more
+accurate.
 
-Independent oracles: free Gaussian propagation; classical Rutherford
-scattering; quantum Coulomb scattering with declared spin, angular and
-long-range conventions; independently assembled small Hamiltonians. The
-distinguishable plane-wave Coulomb angular intensity can agree with
-Rutherford, so do not design a test that demands a difference. Packet
-diffraction, exchange and conditional correlations supply other comparisons.
+**The quantum Coulomb logarithm correction is universal.** Quantum minus
+classical ln Lambda equals ln eta - Re psi(1 + i eta) for both a sharp cut
+and Yukawa screening; the Yukawa-minus-cut offset ln 2 - 1/2 - gamma is the
+same classically and quantum mechanically. The l-local ring kernel
+chi_l = 2 atan(eta/(l+1)) is exact for momentum transfer and has a 10.6%
+second-moment defect at eta << 1; unpolarized exchange adds -ln 2/2 at
+eta << 1 (kernel only). In relaxation rates for T = 1e-3..100 E_h the
+classical model errs by up to 15%, the hybrid interface defect stays below
+3.5e-3, and the hybrid is 1.5 times cheaper at matched 1% statistics for
+eta_u < 0.3. Plain Maxwellian velocity draws have infinite variance and
+naive velocity rotation at the detection sphere double counts (+11%); both
+are now excluded by construction.
 
-Gate: reproducible incoming/encounter/outgoing movies and bounded integrated
-probabilities, independent derivative oracles, conservation checks, initial
-and discretization budgets, resolution audit and full cost ledger. Missing
-continuum/boundary bounds remain explicit; finite-basis success alone does not
-close the continuum gate.
+**Open-shell Hartree--Fock breaks translation symmetry.** For N = 3, 4 in the
+jellium cell the UHF minima break translation symmetry and are non-aufbau;
+the plane-wave determinant is a saddle, so the Temple bound does not apply.
+For closed-shell N = 2 the Temple bound overestimates the true HF energy
+error by 1.25--2.2. Static TDHF tracks the exact N = 2 response (chi/chi0 at
+r_s = 8: exact 0.69, TDHF 0.66, RPA 0.49), while RPA overscreens. Mermin
+thermal energies differ from the exact canonical cell by a factor 2.7 at
+N = 2, r_s = 0.5, dominated by the grand-canonical orbital ensemble. A
+mean-field reference must therefore report its symmetry and ensemble, and
+finite-cell comparisons need a canonical or thermodynamic-limit reference.
 
-## QG2: coherent packet deformation and splitting
+**Three-body cumulants are not small in the quantum cell.** The ratio
+|lambda3|/|Gamma3| of the connected three-body RDM grows from 0.060
+(r_s = 0.5) to 0.236 (r_s = 8) in the N = 3 ground multiplet; for N = 4 it is
+0.29--0.41, dominated by multiplet mixing. Exact static response relative to
+the same-cell Lindhard function falls from 0.97 (r_s = 0.5) to 0.69
+(r_s = 8). A quantum BBGKY closure at the pair level is therefore an
+approximation to be measured, not assumed.
 
-The microscopic reference retains the complex wavefunction through
-deformation, diffraction and separated outgoing regions. Repulsive electrons
-do not acquire a bound capture channel. A single Gaussian is an approximation
-whose failure is measured against that reference.
+**Quantum corrections to pair correlations are diffraction-dominated when
+cold.** In the exact N = 2 cell the volume-weighted quantum-classical pair
+difference is 0.47 at r_s = 8, Theta = 0.5 and 0.006 at Theta = 10; outside
+the thermal wavelength it is at most 0.013. The ideal exchange part is
+0.02--0.11 and depends on Theta only; for Theta <= 1 the opposite-spin
+(pure diffraction) channel dominates. Quantum delocalization suppresses the
+connected three-body moment to 0.3--0.6 of its classical value (N = 3,
+Theta = 0.5, r_s = 0.5--8). The Wigner--Kirkwood hbar^2 plus exchange
+predictor leaves a residual of 0.14--0.27 for Theta >= 2 and fails at
+Theta = 0.5; the Kelbg potential is a good reduced model at Theta = 0.5 for
+r_s <= 2 (0.02--0.09 of the classical error), and adding a spin-averaged
+Pauli term helps only at high Theta. Finite-N three-body values are not
+thermodynamic-limit quantities (classical c3(N=4)/c3(N=3) = 0.70--0.78).
 
-First compare one Gaussian, then a coherent sum of Gaussians or a richer
-adaptive spatial basis on the same two-electron case. A sum retains complex
-coefficients and all interference cross terms. Splitting a packet is a basis
-enrichment, not the creation of additional electrons. Fit/evolve the new
-representation with a measured state-transfer defect and preserve normalization.
-Basis removal and merging require an error budget too.
+**Smaller findings.** The alternating power-sum recursion for canonical
+fermion sums cancels by up to 5e36 when cold; the subtraction-free recursion
+is the production path. Wigner--Poisson converges to Vlasov as O(hbar^2)
+(observed rate 1.99), with Wigner negativity 0.26 at t = 20 in the two-stream
+run. The finite-size energy of ideal fermions behaves as e_N - e_TL ~ 1/N.
 
-Multiple Gaussians per one-electron orbital do not supply arbitrary
-interelectron entanglement. Add a joint relative-coordinate expansion or a
-controlled sum of antisymmetrized configurations when the correlated reference
-requires it. Monitor overlap conditioning and rank growth with explicit memory
-and refusal limits. Orthogonalization alone does not remove physical branches.
+## Remaining plan
 
-Gate: enriched representation reproduces integrated outgoing probabilities
-and interference where present; report shape, exchange and correlation errors
-separately. An incoherent mixture is permitted only with an explicit
-decoherence/coarse-graining model and information-loss status.
+The direction is the quantum BBGKY/cumulant hierarchy and adaptive
+correlation-order and classical/quantum switching
+([adaptive-multiscale-uq.md](adaptive-multiscale-uq.md)). In order:
 
-## QG3: finite-N degeneracy and exchange
+1. **Closures beyond the first YBG equation.** Self-consistent BGY--Kirkwood
+   and the second YBG equation for g3, measured against the H1a Monte Carlo
+   g2/g3; c3 resolution near contact.
+2. **Quantum BBGKY with measured cumulants.** The first RDM equation with the
+   Q4 two-RDM, then pair-level cumulant truncations, compared against the Q4
+   kick dynamics and the H1b map. Report the omitted lambda3 effect as a
+   model-defect indicator.
+3. **Thermodynamic-limit references.** Finite-size and ensemble corrections
+   of Q4/Q5 against PIMC/literature data for the uniform electron gas and the
+   OCP; canonical versus grand-canonical comparisons stated explicitly.
+4. **Lindhard with local-field corrections.** Static LFC and an interacting
+   RPA/HF comparison against the Q4 response, with a rigorous Lindhard
+   quadrature enclosure where affordable.
+5. **Collision kernels and larger Lambda scans.** Exchange in the hybrid
+   Monte Carlo; microscopic collision coefficients (classical side, C3/C4 at
+   Lambda = 100..10000) compared with the QG6 kernels.
+6. **Scalable packets only where validated.** Packet or orbital methods for
+   100--10000 electrons only in regimes where Q2-type comparisons pass for the
+   named observable; otherwise classical trajectories with quantum kernels.
+7. **Adaptive switching.** Correlation-order and quantum promotion
+   indicators (eta, Theta, c3 size, Kirkwood defect, lambda3 ratio) with
+   lift/projection and interface-defect ledgers, first in the QG6 setting.
 
-Build noninteracting finite-N fermion references first: occupied orbitals,
-antisymmetric states and finite-temperature density operators. Validate
-canonical partition sums independently. Grand-canonical Fermi--Dirac formulas
-and thermodynamic-limit EOS are separate references, not exact fixed-N
-occupations for every small cell. Declare spin populations and shell effects.
-
-Show how the same-spin exchange hole and Fermi pressure occur without Coulomb
-interaction. Validate one-body and pair observables from the full Slater or
-thermal state against independent ideal-gas identities. Compare a classical
-gas at the same density and temperature, retaining its different preparation.
-
-Gate: correct exchange symmetry, particle count and thermal normalization;
-independently checked pressure/energy and pair probabilities; temperature,
-orbital and finite-size scans. These are microscopic statistical references,
-not a claim that noninteracting electrons constitute a self-consistent plasma.
-
-## QG4: interacting microscopic degenerate plasma
-
-Use a neutralized 3D electron cell with bare Coulomb interactions. Start at
-N=2; attempt N=4 and then richer cells only within measured Hilbert-space
-budgets. Record orbital count, sector dimension, basis error, temperature and
-coupling; N alone is not a capacity specification. Compute ground/thermal
-states without an imposed Hartree factorization, then apply a weak test charge
-or density disturbance and evolve the interacting state.
-
-Measure pair probabilities, connected correlations, energy, pressure, static
-response and density-mode evolution. Screening emerges from the interacting
-system. A tiny box demonstrates microscopic response; thermodynamic screening,
-Friedel tails and collective dispersion require independent finite-size and
-wavelength limits. A discrete finite-N spectrum has recurrences and must not
-be advertised as irreversible collision damping.
-
-Independent checks combine noninteracting limits, separate tiny-basis
-diagonalization/evolution and suitable equilibrium QMC/PIMC references.
-Declare statistical, fixed-node and sign-problem limitations. Ground-energy
-upper bounds do not imply pressure or lower-energy bounds; thermal spectral
-and orbital tails need their own argument. Equilibrium comparisons do not
-validate real-time dynamics.
-
-Gate: at least one genuinely interacting degenerate microscopic comparison
-with the classical finite-N cell, full error/status ledger, conditional-density
-and mode-response movies. Finite-size/model differences stay separate from
-numerical error. BBGKY RHS work remains deferred.
-
-## QG5: validated scalable electron packets and orbitals
-
-Compare Hartree, antisymmetric HF and restricted Gaussian variants against
-QG1--QG4, changing one approximation at a time. Hartree/HF define reduced
-state manifolds; single-determinant exchange is not general correlation.
-Scalable product packets with effective Pauli forces have an additional
-declared exchange approximation. Width confinement or fitted correlation
-terms are physical model changes requiring independent validation.
-
-Accept a scalable model only for named observables and a documented regime
-scan. Prefer full-parent residual or controlled asymptotic estimates; use
-sparse references when rigorous model bounds remain unavailable. Multiple
-packets per orbital and multiple configurations enrich different missing
-physics and have different costs.
-
-After correctness, benchmark approximately 100, 1000 and 10000 electron
-packets with accelerated electrostatics. These are targets, not promised
-capacities; deep degeneracy may require orbital/Fermi methods instead.
-Explore 100000--1000000 only after measured accuracy, force-tolerance,
-memory and total-cost gates. CPU batching/vectorization precedes GPU/MPI
-unless evidence selects another schedule. No million-electron full-state claim.
-
-## QG6: local quantum encounters in a classical plasma
-
-Use QG1--QG2 to validate local diffraction/exchange scattering and, where
-appropriate, reusable transition kernels. The classical bulk retains real
-physical particles. Indicators involving relative wavelength, impact scale,
-occupation and encounter overlap choose quantum refinement; they do not
-themselves bound error. A universal distance-only switch is insufficient.
-
-Specify initial-state lifting, external-field treatment, replacement of the
-classical near interaction, and outgoing reconstruction. Budget matching,
-truncation, sampling and lost coherence; avoid double counting near forces
-and keep momentum/energy balances. Overlapping encounters or persistent
-coherence trigger richer treatment or explicit refusal. Occupation-dependent
-Pauli blocking requires a population description even when encounters are local.
-
-Gate: hybrid versus full small-system scattering, conservation and transfer
-oracles, plus a cost comparison with classical and all-quantum runs at matched
-observable accuracy. Bulk degeneracy never reduces to pair-only promotion.
-
-## QG7: collective quantum reductions
-
-Only after the corresponding microscopic references, compare finite-T Fermi
-screening, Thomas--Fermi, Lindhard/RPA, HF response, Wigner and derived fluid
-closures. Ideal-gas Lindhard response, interacting RPA and a full interacting
-cell discharge different claims. Retain Debye/classical limits, Friedel
-structure, finite-k oscillation/dispersion and Pauli-blocked collision
-comparisons where their regimes apply. Small perturbations and long-wavelength
-closures have explicit applicability and remainder status.
-
-Check Wigner's classical limit without imposing positivity; a reduced Wigner
-equation needs a declared correlation closure. Fermi pressure alone does not
-validate dynamical damping or dispersion. DFT/TDDFT and QMC are optional pinned
-providers when they supply a required independent reference, not prerequisites
-for QG1. Transfer/lifting differences are reported before comparing models.
-
-## QG8: optional white-dwarf pressure
-
-Retain the existing numerical nonrelativistic ideal Fermi EOS. Extend the
-momentum integrals to relativistic energies only as a small independent
-increment; benchmark classical, low-T nonrelativistic and ultrarelativistic
-limits with tail and root/quadrature bounds. Show pressure versus density and
-temperature and the associated occupations.
-
-Interaction/ion corrections require separate microscopic or literature
-validation. A pressure calculation is not a correlated stellar simulation.
-QG8 can follow QG3 alongside other work if inexpensive; it must not delay the
-localized encounter. Hydrostatic stellar structure and neutron-star nuclear
-matter are outside this implementation sequence.
+Generic pieces found on the way go upstream: Gauss--Lobatto and Legendre
+rules are in FortNum; the Z function, digamma/Riccati--Bessel, graded Gauss
+rules and series statistics are FortNum candidates; FortSym complex code
+generation is needed for packet models.
 
 ## Error estimates and promotion
 
@@ -276,92 +230,70 @@ for bounded A and normalized states. Enclose residual integration and
 reconstruction, including singular Coulomb and omitted basis components.
 Finite-basis residuals only establish finite-basis error. Unbounded energy or
 pointwise density needs additional regularity/moment estimates; integrated
-probability bins provide bounded observables. Seek tighter goal-specific
-estimates when the norm bound is too pessimistic.
+probability bins provide bounded observables. Q2 shows the limit of this
+route: the Duhamel integral grows with the number of phase cycles while the
+true distance saturates, so its efficiency index rises from 2--4 at
+eta <= 1 to 14--18 at eta = 10, where it exceeds the trivial bound.
+Goal-specific estimators are needed there.
 
-Apply this route to packet/HF model defects in the full parent when affordable;
-do not assume its cost stays linear or that it stays sharp for long times.
-An auxiliary DFT residual certifies its own equation, not the interacting
-many-electron parent. Thermal-state errors use spectral/partition bounds or
-appropriate density-operator estimates, not a pure-state formula by analogy.
+An auxiliary DFT or HF residual certifies its own equation, not the
+interacting many-electron parent; Q5 evaluates the HF determinant in the
+parent basis for that reason. Thermal-state errors use spectral/partition
+bounds or density-operator estimates, not a pure-state formula by analogy.
 
-Label each estimate as a rigorous bound, a reference comparison, a convergence
-indicator, or a statistical interval. Small-system calibration cannot prove a
-large-system error bound; two resolutions and agreement between closures do
-not prove a remainder. Publish missing terms and failed certificates rather
-than displaying a fabricated complete band. Production promotion requires
-the declared numerical certificate and model applicability gate to close.
+Small-system calibration cannot prove a large-system error bound; two
+resolutions and agreement between closures do not prove a remainder. Publish
+missing terms and failed certificates rather than displaying a fabricated
+complete band. Production promotion requires the declared numerical
+certificate and model applicability gate to close.
 
 ## Figures and animations
 
-Each artifact has a one-sentence teaching message, reproducible data, physical
-units and normalization. Prefer the following small, synchronized views:
+Each artifact has a one-sentence teaching message, reproducible data,
+physical units and normalization; the current list is in
+[chapter-gallery.md](chapter-gallery.md) and the style in
+[figure-style.md](figure-style.md). Spatial projections integrate the omitted
+coordinate; a slice states its own normalization (Q1 normalizes each spin
+sector by its norm on the y = 0 slice). Quantum density is probability, not
+trajectories. Classical plots state ensemble size and each displayed
+realization's role. Conditional densities specify their conditioning bin and
+normalization.
 
-| Case | Main animation | Quantitative companion |
-|---|---|---|
-| QG1 encounter | Quantum one-body probability projections beside classical ensemble projections; common time and axes | Relative separation/angle-bin probabilities and their bands |
-| QG2 enrichment | Full reference, one Gaussian and coherent enriched density | Outgoing-bin errors and declared model-error estimates versus basis size |
-| QG3 ideal degeneracy | Occupation distribution/Fermi sphere and exchange-hole profile | Pressure and pair-bin probabilities versus classical reference |
-| QG4 interacting cell | Density disturbance and conditional pair density with stated conditioning | Density-mode history, connected pair probabilities and finite-size scan |
-| QG5 scaling | Small validated reference versus scalable model | Error and time/memory versus electron count |
-| QG6 hybrid encounter | Classical approach, admitted quantum region and outgoing distribution | Transfer/conservation defects, scattering probabilities and extra cost |
-| QG7 screening/oscillation | Induced density or potential and coherent mode response | Debye/Fermi/Lindhard curves or dispersion with applicability stated |
-| QG8 pressure | Occupations as density/temperature vary, if useful | Numerical pressure with classical and degenerate limiting curves |
+Comparisons use equal scales and a shared clock; slow-motion windows are
+labelled in the frame. Numerical intervals are shown in full, and model and
+statistical bands are styled separately. Probability heatmaps need companion
+bin or projection bounds; colors alone are not a bound. First, encounter and
+outgoing frames, grayscale and labels are inspected before sharing. GIF,
+MP4, snapshots, CSV and NetCDF results stay outside Git.
 
-Use spatial projections integrating the omitted coordinate; a slice needs its
-own explicit normalization. Quantum density is probability, not individual
-electron trajectories. Classical plots state ensemble size and each displayed
-realization's role. No unexplained matched-pair markers or inference of
-correlation from one-body density alone. Conditional densities specify their
-conditioning bin and normalization; a small denominator needs its own bound.
+## Execution rules
 
-Use equal scales and a shared clock for comparisons. Keep the main collision
-movie visually simple; technical diagnostics belong in companion figures.
-Show full numerical intervals and separately styled model/statistical bands.
-Probability heatmaps have companion bin/projection bounds or uncertainty maps;
-colors alone do not constitute a bound. Smooth connected envelopes require a
-valid interpolation allowance, not subpixel stairs. Inspect actual first,
-encounter and outgoing frames, grayscale and labels before sharing.
+This gallery does not reorder the direct-steady scientific spine. One
+complete runnable increment at a time, in Fortran, with retained FortSym
+generators for owned leaves, primal/JVP/VJP and enclosures. Parameter
+sensitivities cover impact parameter, packet width, coupling, density or
+temperature where smooth. Spin choices, basis changes and promotion events
+are discrete; their derivatives are declared or marked unavailable.
 
-Retain GIF, MP4, snapshots, CSV values/endpoints and manifests outside Git.
-Lecture captions name the experiment and observable rather than internal
-solver machinery. Keep numerical/refinement plots available for validation.
-
-## Execution and completion
-
-Immediate sequence: QG0, QG1, QG2, QG3, QG4. QG5 uses both encounter and
-degenerate references; QG6 can branch from validated QG1/QG2; QG7 uses the
-matching microscopic and ideal-gas references. QG8 is the inexpensive side
-branch described above. This gallery does not reorder the direct-steady
-scientific spine. Implement one complete runnable increment at a time.
-
-Use Fortran and retained FortSym generators for owned numerical leaves,
-primal/JVP/VJP and enclosures. Parameter sensitivities cover impact parameter,
-packet width, coupling, density or temperature where smooth. Spin choices,
-basis changes and promotion events are discrete; declare event derivatives or
-their unavailable status and budget recomputation/checkpoints explicitly.
-
-At each gate update the benchmark atlas with implemented cases, independent
-oracles, source/dependency revisions and actual numerical status. Freeze
-review inputs by base commit and patch digest. Retain native Release and
-checked Debug CTest evidence, meaningful end-to-end postprocessing, and
-independent review for substantive mathematical certificates.
-
-Report solve-only time, error-estimation time, total time, added seconds,
-total/solve multiplier, peak memory and repeated-trial variability. Separate
-requested derivatives, preparation/reuse, sampling and rendering. Compare
-models and external codes at matched observable accuracy. No overhead target
-or published particle count becomes a measured KIN6D performance claim.
+At each gate record independent oracles, source and dependency revisions and
+the actual numerical status. Review inputs are frozen by base commit and
+patch digest. Release and checked Debug CTest evidence is retained. Cost
+reports separate solve-only time, error-estimation time, derivatives,
+preparation/reuse, sampling and rendering, and compare models at matched
+observable accuracy. No published particle count becomes a KIN6D
+performance claim.
 
 ## Primary references
 
 - [Svensson et al.](https://arxiv.org/abs/2211.08560): restricted Gaussian
   trajectories, approximate Pauli interactions and near-linear scaling.
-- [Angermeier and White](https://arxiv.org/abs/2104.03441): distinct packet-shape,
-  exchange and correlation approximation errors.
-- [Chabrier and Potekhin](https://arxiv.org/abs/physics/9807042): electron-ion
-  thermodynamics from classical to degenerate regimes.
-- [White](https://arxiv.org/abs/2410.23599): dynamical response limitations of
-  an orbital-free density approximation.
+- [Angermeier and White](https://arxiv.org/abs/2104.03441): distinct
+  packet-shape, exchange and correlation approximation errors.
+- [Chabrier and Potekhin](https://arxiv.org/abs/physics/9807042):
+  electron-ion thermodynamics from classical to degenerate regimes.
+- [White](https://arxiv.org/abs/2410.23599): dynamical response limitations
+  of an orbital-free density approximation.
+- [Babbush et al., Phys. Rev. X 8, 011044](https://doi.org/10.1103/PhysRevX.8.011044):
+  plane-wave electronic Hamiltonians.
 
 Chris&AI
