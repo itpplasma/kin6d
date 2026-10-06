@@ -120,6 +120,18 @@ foreach(example quantum_reference classical_pair coulomb_encounter jellium_cell)
     add_executable(${example}_demo app/${example}_demo.f90)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
 endforeach()
+# Presentation-only palette and number formatting for the gallery demos.
+add_library(kin6d_demo_style app/demo_style.f90)
+target_compile_options(kin6d_demo_style PRIVATE -Wall -Wextra)
+foreach(application kin6d_demo steady_laboratory_demo transport_demo
+        streaming_comparison_demo streaming_moments_demo debye_sphere_demo
+        slab_oscillation_demo shielding_dynamics_demo interaction_demo
+        microscopic_cloud_demo classical_pair_demo)
+    target_link_libraries(${application} PRIVATE kin6d_demo_style)
+endforeach()
+add_executable(test_demo_style test/test_demo_style.f90)
+target_link_libraries(test_demo_style PRIVATE kin6d_demo_style)
+add_test(NAME demo_style_numbers COMMAND test_demo_style)
 add_executable(formal_krook_certificate app/formal_krook_certificate.f90)
 target_link_libraries(formal_krook_certificate PRIVATE kin6d)
 add_executable(test_laboratory test/test_laboratory.f90)

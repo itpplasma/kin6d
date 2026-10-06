@@ -1,6 +1,6 @@
 module kin6d_demo_application
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_is_nan
     use kin6d_laboratory, only: laboratory_t, initialize, advance, sample, &
                                 solve_steady, certificate_radius, certificate_accepts
     use kin6d_leaves, only: coordinate, reconstruct, interpolate, &
@@ -9,14 +9,16 @@ module kin6d_demo_application
     use fortnum_interval, only: interval_t, interval, interval_pi
     use fortplot, only: figure_t, figure, get_global_figure, subplot, title, &
                    xlabel, ylabel, xlim, ylim, pcolormesh, plot, fill_between, legend, &
-                        savefig, tight_layout
+                        savefig, tight_layout, colorbar, suptitle, set_yscale
+    use kin6d_demo_style, only: blue, vermillion, black, grey, movie_fps, hold_frames, num
     use fortplot_animation, only: animation_t, FuncAnimation, save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
     implicit none
     integer, parameter :: nx = 192
-    integer :: nv = 256, frames = 121
-    real(dp) :: time_step = 0.0625_dp, steady_nu = 0.75_dp
+    ! 193 frames of dt = 5/128 span t = 0..7.5 in 8 s at 24 fps.
+    integer :: nv = 256, frames = 193
+    real(dp) :: time_step = 0.0390625_dp, steady_nu = 0.75_dp
     namelist /kin6d_demo/ nv, frames, time_step, steady_nu
     type(run_t) :: run
     type(result_file_t) :: result
@@ -27,6 +29,8 @@ module kin6d_demo_application
     real(dp) :: xedges(nx + 1)
     real(dp), allocatable :: image(:, :), profile(:), exact(:)
     real(dp), allocatable :: lower_line(:), upper_line(:), coarse_line(:)
+    real(dp), allocatable :: error_line(:), error_lower(:), &
+        error_upper(:)
     real(dp), allocatable :: frame_time(:), frame_bound(:)
     real(dp) :: x, normalized_x, velocity, m, a, b, radius, residual, &
                 solve_start, solve_end
@@ -53,7 +57,8 @@ contains
         call run%close_resolved(unit)
         allocate (image(nv, nx), profile(nv + 1), exact(nv + 1), lower_line(nv + 1), &
             upper_line(nv + 1), coarse_line(nv + 1), frame_time(frames), &
-            frame_bound(frames))
+            frame_bound(frames), error_line(nv + 1), &
+            error_lower(nv + 1), error_upper(nv + 1))
         ! Frames not evaluated (--snapshot renders only the last) stay NaN.
         frame_time = ieee_value(0.0_dp, ieee_quiet_nan); frame_bound = frame_time
         movie = .true.
@@ -76,13 +81,14 @@ contains
         end do
         open (newunit=ledger, file='output/streaming.csv', status='replace')
         write (ledger, '(a)') 'frame,time,continuous_sup_error_bound'
-        call figure(figsize=[9.6_dp, 7.2_dp])
+        call figure(figsize=[13.2_dp, 8.8_dp])
         fig => get_global_figure()
         bound_max = 0.0_dp
         final_time = 0.0_dp
         if (movie) then
-            animation = FuncAnimation(update_frame, frames=frames, interval=50, fig=fig)
-            call save_animation(animation, 'output/free-streaming.mp4', 24, status)
+            animation = FuncAnimation(update_frame, frames=frames + hold_frames, &
+                                      interval=50, fig=fig)
+            call save_animation(animation, 'output/free-streaming.mp4', movie_fps, status)
             if (status /= 0) error stop 'fortplot animation encoding failed'
         else
             do step = 1, frames - 1
@@ -102,7 +108,12 @@ contains
 
     subroutine update_frame(frame)
         integer, intent(in) :: frame
-        ! Fortplot requests frames sequentially, starting at one.
+        ! Fortplot requests frames sequentially, starting at one. Frames past
+        ! the last physical frame hold the final state for about one second.
+        if (frame > frames) then
+            call draw_frame(frames)
+            return
+        end if
         if (frame > 1) then
             call advance(state, time_step)
             call advance(coarse, time_step)
@@ -143,39 +154,74 @@ contains
             lower_line(iv) = lower%lo
             upper_line(iv) = upper%hi
         end do
-        call figure(figsize=[9.6_dp, 7.2_dp])
-        call subplot(2, 1, 1)
-        write (header, '(a,f5.2,a)') '1X1V free streaming | t = ', state%time, &
-            ' | E = 0'
-        call title(trim(header))
+        error_line = profile - exact
+        error_lower = lower_line - exact
+        error_upper = upper_line - exact
+        call draw_frame(frame)
+    end subroutine
+
+    subroutine draw_frame(frame)
+        integer, intent(in) :: frame
+        call figure(figsize=[13.2_dp, 8.8_dp])
+        call suptitle('Free streaming shears f(x,v) into ever finer velocity '// &
+            'stripes; the certified error bound grows with them (E = 0)')
+        call subplot(2, 2, 1)
+        call title('Phase-space density  |  t = '//num(state%time, 2))
         call xlabel('x / L  (periodic)')
-        call ylabel('v / v_th')
+        call ylabel('$v/v_{th}$')
         call xlim(0.0_dp, 1.0_dp)
         call ylim(-4.0_dp, 4.0_dp)
         call pcolormesh(xedges, state%v, image, cmap='viridis', vmin=0.0_dp, &
                         vmax=1.5_dp)
-        call subplot(2, 1, 2)
-        write (header, '(a,es9.2)') 'Slice x = 0 | continuous sup error bound: ', radius
-        call title(trim(header))
-        call xlabel('v / v_th')
-        call ylabel('f / F_M(0)')
+        call colorbar(label='$f/F_M(0)$')
+        call subplot(2, 2, 2)
+        call title('Velocity slice at x = 0')
+        call xlabel('$v/v_{th}$')
+        call ylabel('$f/F_M(0)$')
         call xlim(-4.0_dp, 4.0_dp)
         ! Retain the raw enclosure below zero in the near-zero velocity tails.
         call ylim(-0.05_dp, 1.65_dp)
-        call fill_between(state%v, lower_line, upper_line, color='lightblue', &
-                          alpha=0.7_dp)
-        call plot(state%v, lower_line, linestyle=':', color=[0.27_dp, 0.51_dp, 0.71_dp])
-        call plot(state%v, upper_line, linestyle=':', color=[0.27_dp, 0.51_dp, 0.71_dp])
-        write (header, '(i0,a)') nv, ' cells'
-        call plot(state%v, profile, label=trim(header), color=[0.0_dp, 0.0_dp, 0.5_dp])
-        write (header, '(i0,a)') nv/2, ' cells'
-        call plot(state%v, coarse_line, label=trim(header), linestyle='--', &
-                  color=[0.8_dp, 0.4_dp, 0.0_dp])
-        call plot(state%v, exact, label='exact flow', linestyle=':', &
-                  color=[0.0_dp, 0.0_dp, 0.0_dp])
+        call fill_between(state%v, lower_line, upper_line, color=blue, alpha=0.25_dp)
+        call plot(state%v, profile, label=itoa(nv)//' cells', color=blue, &
+                  linewidth=2.0_dp)
+        call plot(state%v, coarse_line, label=itoa(nv/2)//' cells', &
+                  linestyle=':', color=vermillion, linewidth=2.0_dp)
+        call plot(state%v, exact, label='exact characteristics', linestyle='--', &
+                  color=black, linewidth=1.2_dp)
         call legend(loc='upper right')
-        call tight_layout(h_pad=3.0_dp)
+        call subplot(2, 2, 3)
+        call title('Error of the 256-cell slice at x = 0 (band invisible above)')
+        call xlabel('$v/v_{th}$')
+        call ylabel('$(f - f_{exact})/F_M(0)$')
+        call xlim(-4.0_dp, 4.0_dp)
+        call ylim(-5.0e-3_dp, 5.0e-3_dp)
+        call fill_between(state%v, error_lower, error_upper, color=blue, alpha=0.25_dp)
+        call plot(state%v, error_line, label='256 cells ± certified bound', color=blue, &
+                  linewidth=2.0_dp)
+        call legend(loc='lower right')
+        call subplot(2, 2, 4)
+        call title('Certified sup-error bound over the whole (x,v) domain')
+        call xlabel('t $v_{th}$ / L')
+        call ylabel('bound / $F_M(0)$')
+        call xlim(0.0_dp, real(frames - 1, dp)*time_step)
+        call ylim(1.0e-4_dp, 1.0e-2_dp)
+        call set_yscale('log')
+        ! --snapshot evaluates only the last frame; unevaluated frames are NaN.
+        call plot(pack(frame_time(1:frame), .not. ieee_is_nan(frame_bound(1:frame))), &
+                  pack(frame_bound(1:frame), .not. ieee_is_nan(frame_bound(1:frame))), &
+                  color=blue, linewidth=2.0_dp)
+        call plot([frame_time(frame)], [frame_bound(frame)], color=blue, &
+                  linestyle='none', marker='o', markersize=6.0_dp)
+        call tight_layout()
     end subroutine
+
+    pure function itoa(i) result(text)
+        integer, intent(in) :: i
+        character(:), allocatable :: text
+        character(16) :: buffer
+        write (buffer, '(i0)') i
+        text = trim(buffer)
+    end function
 
     subroutine write_result()
         character(len=*), parameter :: bound = 'certified-continuous pointwise '// &
