@@ -35,22 +35,30 @@ contains
     !> reciprocal cutoff, whose truncation bounds are each <= tolerance/2 in
     !> units of |g|/L (potential) and |g|/L^2 (force). Keeps the cheapest by
     !> the pair-count cost model n(n-1)/2 (2 nr+1)^3 + 2 n modes for
-    !> `particles` charges (default 2).
-    subroutine ewald_select(length, tolerance, p, ok, particles)
+    !> `particles` charges (default 2). `real_cutoff` (0..3) restricts the
+    !> search to that one cutoff; 0 is the minimum-image real sum (all
+    !> omitted images have distance >= L/2), used by single-particle Monte
+    !> Carlo updates.
+    subroutine ewald_select(length, tolerance, p, ok, particles, real_cutoff)
         real(dp), intent(in) :: length, tolerance
         type(ewald_parameters_t), intent(out) :: p
         logical, intent(out) :: ok
-        integer, intent(in), optional :: particles
+        integer, intent(in), optional :: particles, real_cutoff
         type(ewald_parameters_t) :: trial
         real(dp) :: cost, best
-        integer :: n, nr
+        integer :: n, nr, first, last
         ok = .false.
         if (.not. ieee_is_finite(length) .or. .not. ieee_is_finite(tolerance)) return
         if (length <= 0 .or. tolerance <= 1.0e-15_dp .or. tolerance >= 1) return
         n = 2
         if (present(particles)) n = max(1, particles)
         best = huge(1.0_dp)
-        do nr = 1, 3
+        first = 1; last = 3
+        if (present(real_cutoff)) then
+            if (real_cutoff < 0 .or. real_cutoff > 3) return
+            first = real_cutoff; last = real_cutoff
+        end if
+        do nr = first, last
             call select_for_cutoff(length, tolerance, nr, trial)
             cost = 5*real(n, dp)*(n - 1)/2*real(2*nr + 1, dp)**3 + &
                    real(n, dp)*(real(2*trial%reciprocal_cutoff + 1, dp)**3 - 1)/2

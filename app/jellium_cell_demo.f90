@@ -1,3 +1,88 @@
+!> Movie of the Q4 kicked density mode (presentation only). The first-order
+!> density of the parity-even N = 2 ground state after the cos(q.x) kick is
+!> delta n(x, t) = (2/V) delta<A>(t) cos(q.x); the history and band are the
+!> data written to output/jellium-mode-history.csv.
+module kin6d_jellium_movie
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
+        ylabel, xlim, ylim, legend, tight_layout, savefig, suptitle, &
+        get_global_figure, figure_t
+    use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
+        save_animation
+    implicit none
+    private
+    public :: plot_kick_movie
+    real(dp), parameter :: blue(3) = [0.000_dp, 0.447_dp, 0.698_dp], &
+        grey(3) = [0.45_dp, 0.45_dp, 0.45_dp], black(3) = 0.0_dp
+    integer, parameter :: nx = 161
+    real(dp), allocatable :: mt(:), mr(:), mb(:)
+    integer, allocatable :: pick(:)
+    real(dp) :: mx(nx), mamp, mrs
+    integer :: mframes
+    class(figure_t), pointer :: canvas => null()
+contains
+
+    subroutine plot_kick_movie(times, response, band, rs)
+        real(dp), intent(in) :: times(0:), response(0:), band(0:), rs
+        type(animation_t) :: animation
+        integer :: j, status, steps
+        integer, parameter :: frames = 192, hold = 24
+        steps = ubound(times, 1)
+        mt = times; mr = response; mb = band; mrs = rs; mframes = frames
+        allocate (pick(frames))
+        do j = 1, frames
+            pick(j) = nint(real(steps, dp)*(j - 1)/(frames - 1))
+        end do
+        do j = 1, nx
+            mx(j) = real(j - 1, dp)/(nx - 1)
+        end do
+        mamp = 1.08_dp*2*maxval(abs(response) + band)
+        call figure(figsize=[12.8_dp, 6.4_dp])
+        canvas => get_global_figure()
+        animation = animation_func(update, frames=frames + hold, interval=42, fig=canvas)
+        call save_animation(animation, 'output/jellium-kick.mp4', fps=24, status=status)
+        if (status /= 0) write (*, '(a)') 'warning: movie encoding failed'
+    end subroutine
+
+    subroutine update(number)
+        integer, intent(in) :: number
+        call canvas%clear()
+        call draw(pick(min(number, mframes)))
+        call canvas%set_rendered(.false.)
+    end subroutine
+
+    subroutine draw(k)
+        integer, intent(in) :: k
+        character(128) :: heading
+        character(8) :: num
+        real(dp) :: profile(nx), pi
+        pi = acos(-1.0_dp)
+        call subplot(1, 2, 1)
+        write (num, '(f8.2)') mt(k)
+        heading = 'Density wave after the kick, t = '//trim(adjustl(num))//' ħ/Ha'
+        call title(trim(heading))
+        profile = 2*mr(k)*cos(2*pi*mx)
+        call fill_between(mx, profile - 2*mb(k), profile + 2*mb(k), color=blue, &
+                          alpha=0.25_dp)
+        call plot(mx, profile, color=blue)
+        call plot([0.0_dp, 1.0_dp], [0.0_dp, 0.0_dp], color=grey, linestyle=':')
+        call xlim(0.0_dp, 1.0_dp); call ylim(-mamp, mamp)
+        call xlabel('$x / L$'); call ylabel('$\delta n(x, t) V / \kappa$')
+        call subplot(1, 2, 2)
+        call title('Mode amplitude history')
+        if (k > 0) call fill_between(mt(0:k), mr(0:k) - mb(0:k), mr(0:k) + mb(0:k), &
+                                     color=blue, alpha=0.25_dp)
+        call plot(mt(0:max(k, 1)), mr(0:max(k, 1)), color=blue)
+        call plot([mt(k)], [mr(k)], color=blue, marker='o', linestyle='none')
+        call xlim(0.0_dp, mt(ubound(mt, 1))); call ylim(-0.54_dp*mamp, 0.54_dp*mamp)
+        call xlabel('t [ħ/Ha]'); call ylabel('$\delta A(t) / \kappa$')
+        write (heading, '(a,f3.1,a)') 'N = 2, $r_s$ = ', mrs, &
+            ', $qL/2\pi$ = (100): a finite cell rings without Landau damping'
+        call suptitle(trim(heading))
+        call tight_layout()
+    end subroutine
+end module kin6d_jellium_movie
+
 !> Q4 interacting jellium cell: finite-N electrons in a periodic cube with a
 !> neutralizing background and bare Coulomb interaction, solved in exact
 !> (S_z, K) sectors with the matrix-free Fock engine. Writes CSV evidence,
@@ -9,6 +94,7 @@ program jellium_cell_demo
         fock_rdms
     use kin6d_jellium_cell
     use kin6d_result_io, only: run_t, result_file_t
+    use kin6d_jellium_movie, only: plot_kick_movie
     use fortplot, only: figure, subplot, plot, fill_between, title, xlabel, &
         ylabel, xlim, ylim, legend, tight_layout, savefig, xscale, yscale, suptitle
     implicit none
@@ -420,79 +506,113 @@ contains
         call result%close()
     end subroutine
 
+    !> Thermal rows whose omitted Boltzmann weight exceeds 1% are labelled as
+    !> unconverged indicators (Theta = 0.5, N = 3, 4 with nev = 8).
+    function tag(t, n) result(s)
+        integer, intent(in) :: t, n
+        character(:), allocatable :: s
+        if (maxval(trunc(t, 1:nrs, n)) > 1.0e-2_dp) then
+            s = ' (unconverged)'
+        else
+            s = ''
+        end if
+    end function
+
+    function theta_label(t) result(s)
+        integer, intent(in) :: t
+        character(:), allocatable :: s
+        character(16) :: buf
+        if (thetas(t) > 0) then
+            write (buf, '(a,f4.2)') 'Θ = ', thetas(t)
+            s = trim(buf)
+        else
+            s = 'Θ = 0'
+        end if
+    end function
+
     subroutine make_figures()
         real(dp), parameter :: palette(3, 5) = reshape([0.000_dp, 0.447_dp, 0.698_dp, &
             0.835_dp, 0.369_dp, 0.000_dp, 0.000_dp, 0.620_dp, 0.451_dp, &
             0.902_dp, 0.624_dp, 0.000_dp, 0.800_dp, 0.475_dp, 0.655_dp], [3, 5])
-        character(32) :: label
-        integer :: r, t, qi, n, k
+        character(64) :: label
+        integer :: r, t, n, k, s
         real(dp), allocatable :: ratio(:)
-        t = min(2, ntheta)
-        ! Pair correlation, N=4 at the second temperature.
+        real(dp) :: lo, hi
+        ! Default display state: the converged ground multiplet (Theta = 0).
+        t = 1
+        do k = 1, ntheta
+            if (.not. (thetas(k) > 0)) then
+                t = k
+                exit
+            end if
+        end do
+        ! Pair correlation, N = 4.
         call figure(figsize=[12.8_dp, 6.4_dp])
         do k = 1, 2
             call subplot(1, 2, k)
             if (k == 1) call title('Same-spin pair correlation, N = 4')
             if (k == 2) call title('Opposite-spin pair correlation, N = 4')
-            call xlabel('r / L'); call ylabel('g(r)')
-            call xlim(0.0_dp, 0.5_dp); call ylim(0.0_dp, 1.4_dp)
+            call xlabel('$r / L$')
+            if (k == 1) call ylabel('$g_{same}(r)$')
+            if (k == 2) call ylabel('$g_{opp}(r)$')
+            call xlim(0.0_dp, 0.5_dp); call ylim(0.0_dp, 1.3_dp)
+            call plot([0.0_dp, 0.5_dp], [1.0_dp, 1.0_dp], color=black, linestyle='--', &
+                      label='uncorrelated')
             do r = 1, nrs
-                write (label, '(a,f4.1)') '$r_s$ = ', rs_values(r)
+                write (label, '(a,f3.1)') '$r_s$ = ', rs_values(r)
                 if (k == 1) call plot(centers, g_same(:, t, r, 4), &
                     color=palette(:, 1 + mod(r - 1, 5)), marker='o', label=trim(label))
                 if (k == 2) call plot(centers, g_opp(:, t, r, 4), &
                     color=palette(:, 1 + mod(r - 1, 5)), marker='o', label=trim(label))
             end do
-            call plot([0.0_dp, 0.5_dp], [1.0_dp, 1.0_dp], color=black, linestyle='--', &
-                      label='uncorrelated')
-            call legend(loc='lower right')
+            call legend(loc=trim(merge('center left ', 'lower right ', k == 1)))
         end do
-        write (label, '(a,f4.2)') 'Θ = ', thetas(t)
-        call suptitle('Exchange and Coulomb holes in the jellium cell, '//trim(label))
+        call suptitle('Exchange hole (same spin) and Coulomb hole (opposite spin), '// &
+                      'N = 4 ground multiplet')
         call tight_layout()
         call savefig('output/jellium-pair-correlation.png')
         ! Static response relative to the same-cell canonical Lindhard function.
-        call figure(figsize=[12.8_dp, 6.4_dp])
         allocate (ratio(nrs))
-        do qi = 1, 2
-            call subplot(1, 2, qi)
-            if (qi == 1) call title('Static response relative to Lindhard')
-            if (qi == 2) call title('Static response, N = 3 (open shell)')
-            call xlabel('$r_s$')
-            call xscale('log')
-            if (qi == 1) then
-                call ylabel('$\chi / \chi_0$')
-                do n = 2, 4, 2
-                    k = merge(1, t, n == 2)
-                    ratio = chi(1, k, 1:nrs, n)/chi0(1, k, 1:nrs, n)
-                    write (label, '(a,i0)') 'interacting N = ', n
-                    call plot(rs_values(1:nrs), ratio, color=blue, marker='o', &
-                        linestyle=merge('- ', ': ', n == 2), label=trim(label))
-                    ratio = rpa(1, k, 1:nrs, n)/chi0(1, k, 1:nrs, n)
-                    write (label, '(a,i0)') 'RPA N = ', n
-                    call plot(rs_values(1:nrs), ratio, color=vermillion, marker='s', &
-                        linestyle=merge('- ', ': ', n == 2), label=trim(label))
-                end do
-                call plot([rs_values(1), rs_values(nrs)], [1.0_dp, 1.0_dp], &
-                          color=black, linestyle='--', label='Lindhard (same cell)')
-                call legend(loc='lower left')
-            else
-                call ylabel('$\chi / \chi_0$')
-                do r = 1, ntheta
-                    ratio = chi(1, r, 1:nrs, 3)/chi0(1, r, 1:nrs, 3)
-                    write (label, '(a,f4.2)') 'interacting, Θ = ', thetas(r)
-                    call plot(rs_values(1:nrs), ratio, color=blue, marker='o', &
-                        linestyle=merge('- ', ': ', r == 1), label=trim(label))
-                    ratio = rpa(1, r, 1:nrs, 3)/chi0(1, r, 1:nrs, 3)
-                    write (label, '(a,f4.2)') 'RPA, Θ = ', thetas(r)
-                    call plot(rs_values(1:nrs), ratio, color=vermillion, marker='s', &
-                        linestyle=merge('- ', ': ', r == 1), label=trim(label))
-                end do
-                call legend(loc='lower left')
-            end if
+        lo = 1; hi = 1
+        do n = 2, 4
+            do k = 1, ntheta
+                lo = min(lo, minval(chi(1, k, 1:nrs, n)/chi0(1, k, 1:nrs, n)), &
+                         minval(rpa(1, k, 1:nrs, n)/chi0(1, k, 1:nrs, n)))
+                hi = max(hi, maxval(chi(1, k, 1:nrs, n)/chi0(1, k, 1:nrs, n)))
+            end do
         end do
-        write (label, '(a,f4.2)') 'N = 4 at Θ = ', thetas(t)
-        call suptitle('q L/2π = (100); N = 2 ground state, '//trim(label))
+        lo = 0.05_dp*floor(20*(lo - 0.03_dp)); hi = 0.05_dp*ceiling(20*(hi + 0.03_dp))
+        call figure(figsize=[12.8_dp, 6.4_dp])
+        do k = 1, 2
+            call subplot(1, 2, k)
+            if (k == 1) call title('N = 2 (closed shell) and N = 4 (ground multiplet)')
+            if (k == 2) call title('N = 3 (open shell)')
+            call xlabel('$r_s$'); call ylabel('$\chi(q) / \chi_0(q)$')
+            call xscale('log')
+            call xlim(0.9_dp*rs_values(1), 1.1_dp*rs_values(nrs)); call ylim(lo, hi)
+            call plot([0.9_dp*rs_values(1), 1.1_dp*rs_values(nrs)], [1.0_dp, 1.0_dp], &
+                      color=black, linestyle='--', label='Lindhard (same cell)')
+            do r = 1, merge(2, ntheta, k == 1)
+                if (k == 1) then
+                    n = 2*r; s = t
+                    write (label, '(a,i0)') 'interacting, N = ', n
+                else
+                    n = 3; s = r
+                    label = 'interacting, '//theta_label(r)//tag(r, n)
+                end if
+                ratio = chi(1, s, 1:nrs, n)/chi0(1, s, 1:nrs, n)
+                call plot(rs_values(1:nrs), ratio, color=blue, marker='o', &
+                    linestyle=merge('- ', ': ', r == 1), label=trim(label))
+                ratio = rpa(1, s, 1:nrs, n)/chi0(1, s, 1:nrs, n)
+                if (k == 1) write (label, '(a,i0)') 'RPA, N = ', n
+                if (k == 2) label = 'RPA, '//theta_label(r)
+                call plot(rs_values(1:nrs), ratio, color=vermillion, marker='s', &
+                    linestyle=merge('- ', ': ', r == 1), label=trim(label))
+            end do
+            call legend(loc='lower left')
+        end do
+        call suptitle('Static density response at $qL/2\pi$ = (100): '// &
+                      'RPA overscreens as $r_s$ grows')
         call tight_layout()
         call savefig('output/jellium-response.png')
         ! Cumulant size versus coupling.
@@ -502,41 +622,58 @@ contains
             if (k == 1) call title('Pair cumulant $|\lambda_2| / |\Gamma_2|$')
             if (k == 2) call title('Three-body cumulant $|\lambda_3| / |\Gamma_3|$')
             call xlabel('$r_s$'); call ylabel('relative Frobenius norm')
-            call xscale('log')
+            call xscale('log'); call yscale('log')
+            call xlim(0.9_dp*rs_values(1), 1.1_dp*rs_values(nrs))
+            lo = huge(1.0_dp); hi = 0
             do n = 3, 4
                 do r = 1, ntheta
                     ratio = cumulant(2*k, r, 1:nrs, n)/cumulant(2*k - 1, r, 1:nrs, n)
-                    write (label, '(a,i0,a,f4.2)') 'N = ', n, ', Θ = ', thetas(r)
-                    call plot(rs_values(1:nrs), ratio, color=palette(:, 2*(n - 3) + r), &
-                        marker='o', linestyle=merge('- ', ': ', r == 1), label=trim(label))
+                    lo = min(lo, minval(ratio)); hi = max(hi, maxval(ratio))
+                end do
+            end do
+            call ylim(0.5_dp*lo, 3.0_dp*hi)
+            do n = 3, 4
+                do r = 1, ntheta
+                    ratio = cumulant(2*k, r, 1:nrs, n)/cumulant(2*k - 1, r, 1:nrs, n)
+                    write (label, '(a,i0,a)') 'N = ', n, ','
+                    label = trim(label)//' '//theta_label(r)//tag(r, n)
+                    call plot(rs_values(1:nrs), ratio, color=palette(:, 2*(n - 3) + 1), &
+                        marker=merge('o', 's', r == 1), linestyle=merge('- ', ': ', r == 1), &
+                        label=trim(label))
                 end do
             end do
             call legend(loc='upper left')
         end do
-        call suptitle('Connected correlations of the finite jellium cell')
+        call suptitle('Connected correlations grow with coupling; '// &
+                      'dotted Θ > 0 rows with >1% omitted weight are indicators')
         call tight_layout()
         call savefig('output/jellium-cumulants.png')
         ! Kicked density-mode history with its certified finite-basis band.
         call figure(figsize=[12.8_dp, 6.4_dp])
         call subplot(1, 2, 1)
         call title('Density mode after a weak kick')
-        call xlabel('t [ħ/Ha]'); call ylabel('δ<A>(t) / κ')
+        call xlabel('t [ħ/Ha]'); call ylabel('$\delta A(t) / \kappa$')
         call xlim(0.0_dp, times(kick_steps))
+        lo = maxval(abs(response) + band)
+        call ylim(-1.25_dp*lo, 1.25_dp*lo)
         call fill_between(times, response - band, response + band, color=blue, &
                           alpha=0.25_dp)
         call plot(times, response, color=blue, label='numerical ± certified bound')
         call legend(loc='upper right')
         call subplot(1, 2, 2)
         call title('Certified finite-basis response bound')
-        call xlabel('t [ħ/Ha]'); call ylabel('bound per κ')
+        call xlabel('t [ħ/Ha]'); call ylabel('bound $2 |A\psi_0| e(t)$ per κ')
         call xlim(0.0_dp, times(kick_steps))
         call yscale('log')
-        call plot(times(1:kick_steps), band(1:kick_steps), color=blue, label='2|φ0| e(t)')
+        call plot(times(1:kick_steps), band(1:kick_steps), color=blue, &
+                  label='certified-discrete bound')
         call legend(loc='lower right')
-        write (label, '(a,f4.1)') '$r_s$ = ', kick_rs
-        call suptitle('N = 2, q L/2π = (100), '//trim(label)//'; recurrences, not damping')
+        write (label, '(a,f3.1)') '$r_s$ = ', kick_rs
+        call suptitle('N = 2, $qL/2\pi$ = (100), '//trim(label)// &
+                      ': a finite cell rings without Landau damping')
         call tight_layout()
         call savefig('output/jellium-mode-history.png')
+        call plot_kick_movie(times, response, band, kick_rs)
         if (.false.) print *, green, orange, purple
     end subroutine
 end program jellium_cell_demo

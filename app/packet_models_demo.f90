@@ -270,21 +270,31 @@ contains
         real(dp) :: ymin
         call figure(figsize=[12.8_dp, 6.4_dp])
         call subplot(1, 2, 1)
-        call title('state error at $t = 2 z_0/v$ (b = 0)')
-        call xlabel('Sommerfeld $\eta$'); call ylabel('$\|\psi_{model} - \psi_{Q1}\|$')
+        call title('State error at $t = 2 z_0/v$, $b = 0$')
+        call xlabel('Sommerfeld parameter $\eta$')
+        call ylabel('$||\psi_{model} - \psi_{Q1}||$')
+        ! Style legend only; model colours are keyed in the right panel.
+        call plot([etas(1)], [err(shown(1), 1)], label='actual error', linestyle='-', &
+                  marker='o', color=[0.3_dp, 0.3_dp, 0.3_dp])
+        call plot([etas(1)], [bnd(shown(1), 1)], label='Duhamel estimator', &
+                  linestyle='--', marker='x', color=[0.3_dp, 0.3_dp, 0.3_dp])
         do j = 1, size(shown)
-            call plot(etas, err(shown(j), :), label=model_label(shown(j))//' actual', &
-                      linestyle='-', marker='o', color=okabe(col(j)))
-            call plot(etas, bnd(shown(j), :), label=model_label(shown(j))//' estimator', &
-                      linestyle='--', marker='x', color=okabe(col(j)))
+            call plot(etas, err(shown(j), :), linestyle='-', marker='o', &
+                      color=okabe(col(j)))
+            call plot(etas, bnd(shown(j), :), linestyle='--', marker='x', &
+                      color=okabe(col(j)))
         end do
-        call plot(etas, 2 + 0*etas, label='2: trivial bound', linestyle=':', &
-                  color=okabe(7))
+        call plot(etas, 2 + 0*etas, label='trivial bound $||\cdot|| \leq 2$', &
+                  linestyle=':', color=okabe(7))
         call set_xscale('log'); call set_yscale('log')
-        call legend(loc='upper left')
+        call xlim(0.8_dp*minval(etas), 1.25_dp*maxval(etas))
+        call ylim(0.7_dp*min(minval(err(shown, :)), minval(bnd(shown, :))), &
+                  1.5_dp*maxval(bnd(shown, :)))
+        call legend(loc='lower right')
         call subplot(1, 2, 2)
-        call title('angular-bin error $\sum_b |P_b - P_b^{Q1}|$')
-        call xlabel('Sommerfeld $\eta$'); call ylabel('total-variation distance (36 bins)')
+        call title('Angular distribution error')
+        call xlabel('Sommerfeld parameter $\eta$')
+        call ylabel('total variation $\Sigma |P - P_{Q1}|$ over 36 angle bins')
         do j = 1, size(shown)
             call plot(etas, max(tv(shown(j), :), 1.0e-6_dp), label=model_label(shown(j)), &
                       linestyle='-', marker='o', color=okabe(col(j)))
@@ -292,7 +302,10 @@ contains
         call plot(etas, max(tv(nmod + 1, :), 1.0e-6_dp), label='M1 classical', &
                   linestyle=':', marker='s', color=okabe(7))
         call set_xscale('log'); call set_yscale('log')
+        call xlim(0.8_dp*minval(etas), 1.25_dp*maxval(etas))
         call legend(loc='lower left')
+        call suptitle('Gaussian packet models degrade as the encounter becomes '// &
+                      'classical; the classical ensemble improves')
         call tight_layout()
         call savefig('output/packet-error-vs-eta.png')
         idx = [minloc(abs(etas - 1), 1), minloc(abs(etas - 10), 1)]
@@ -303,8 +316,8 @@ contains
             call subplot(2, 2, 2*ip - 1)
             write (arg, '(a,f4.1,a)') 'distinguishable (product), $\eta$ = ', etas(ie)
             call title(trim(arg))
-            call xlabel('$\theta$ (deg), CM frame, $t = 2 z_0/v$')
-            call ylabel('bin probability (5 deg, $|r| > z_0/4$)')
+            call xlabel('CM scattering angle $\theta$ [deg]')
+            call ylabel('bin probability (5 deg bins, $|r| > z_0/4$)')
             call plot(theta, max(bins_mod(:, nmod + 1, ie), ymin), label='M1 classical', &
                       linestyle=':', color=okabe(5))
             call plot(theta, max(bins_mod(:, 1, ie), ymin), label='M2 WPMD product', &
@@ -315,25 +328,28 @@ contains
                       linestyle='-', color=okabe(3))
             call plot(theta, max(bins_ref(:, 1, ie), ymin), label='Q1 reference', &
                       linestyle='--', color=okabe(7))
-            call set_yscale('log'); call ylim(ymin, 1.5_dp)
-            call legend(loc='lower left')
+            call set_yscale('log'); call xlim(0.0_dp, 180.0_dp); call ylim(ymin, 10.0_dp)
+            call legend(loc='upper right')
             call subplot(2, 2, 2*ip)
             write (arg, '(a,f4.1,a)') 'singlet / triplet, $\eta$ = ', etas(ie)
             call title(trim(arg))
-            call xlabel('$\theta$ (deg), CM frame, $t = 2 z_0/v$')
+            call xlabel('CM scattering angle $\theta$ [deg]')
             call ylabel('sector-normalized bin probability')
             call plot(theta, max(bins_mod(:, 2, ie), ymin), label='M2S symmetrized WPMD', &
-                      linestyle='-', color=okabe(2))
-            call plot(theta, max(bins_mod(:, 3, ie), ymin), label='M2T antisymmetrized WPMD', &
-                      linestyle='-', color=okabe(6))
+                      linestyle='-', color=okabe(2), linewidth=3.0_dp)
+            call plot(theta, max(bins_mod(:, 3, ie), ymin), &
+                      label='M2T antisymmetrized WPMD (coincides)', linestyle='--', &
+                      color=okabe(6), linewidth=1.5_dp)
             call plot(theta, max(bins_ref(:, 2, ie), ymin), label='Q1 singlet', &
                       linestyle='--', color=okabe(7))
             call plot(theta, max(bins_ref(:, 3, ie), ymin), label='Q1 triplet', &
                       linestyle=':', color=okabe(7))
-            call set_yscale('log'); call ylim(ymin, 1.5_dp)
-            call legend(loc='lower center')
+            call set_yscale('log'); call xlim(0.0_dp, 180.0_dp); call ylim(ymin, 10.0_dp)
+            call legend(loc=trim(merge('upper center', 'lower center', ip == 1)))
         end do
-        call suptitle('Q2 packet models vs the Q1 partial-wave reference (b = 0)')
+        call suptitle('Angular distributions at $t = 2 z_0/v$: packet models against '// &
+                      'the Q1 partial-wave reference ($b = 0$; values below $10^{-7}$ '// &
+                      'drawn at the floor)')
         call tight_layout()
         call savefig('output/packet-angular-eta1-eta10.png')
     end subroutine eta_figures
@@ -442,7 +458,7 @@ contains
         close (u)
         vhi = log10(maxval(img)); vlo = vhi - 4
         img = log10(max(img, 10**vlo))
-        call figure(figsize=[19.2_dp, 6.4_dp])
+        call figure(figsize=[19.2_dp, 5.6_dp])
         canvas => get_global_figure()
         call draw(movie_frames)
         call savefig('output/packet-density-final.png')
@@ -466,8 +482,8 @@ contains
         character(40), parameter :: names(3) = [character(40) :: 'exact (Q1 partial waves)', &
             'one Gaussian (M3)', 'coherent sum K = 8 (M4)']
         integer :: p
-        write (arg, '(a,f5.2)') 'relative density, $\eta = 1$, b = 0:  $t v/z_0 = $', &
-            mtime(f)*mv_speed/mv_z0
+        write (arg, '(a,f5.2)') 'Relative-coordinate density, $\eta = 1$, $b = 0$: '// &
+            ' $t v/z_0 = $', mtime(f)*mv_speed/mv_z0
         call suptitle(trim(arg))
         do p = 1, 3
             call subplot(1, 3, p)
@@ -477,7 +493,7 @@ contains
                             vmin=vlo, vmax=vhi)
             call xlim(xe(0)/mv_lambdabar, xe(npx)/mv_lambdabar)
             call ylim(xe(0)/mv_lambdabar, xe(npx)/mv_lambdabar)
-            call colorbar(label='log10 y-integrated density')
+            call colorbar(label='$\log_{10}$ y-integrated density [$k^2$]')
         end do
         call tight_layout()
     end subroutine draw
