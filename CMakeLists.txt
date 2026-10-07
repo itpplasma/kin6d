@@ -134,6 +134,14 @@ add_test(NAME grad_shafranov_analytic_and_derivative_oracles
     COMMAND test_grad_shafranov)
 add_executable(grad_shafranov_demo app/grad_shafranov_demo.f90)
 target_link_libraries(grad_shafranov_demo PRIVATE kin6d kin6d_io fortplot)
+add_executable(test_gs_p1_weak_current test/test_gs_p1_weak_current.f90)
+target_link_libraries(test_gs_p1_weak_current PRIVATE kin6d)
+add_test(NAME grad_shafranov_p1_weak_current COMMAND test_gs_p1_weak_current)
+foreach(mutation omit-jump omit-cylindrical wrong-current-sign)
+    add_test(NAME grad_shafranov_p1_rejects_${mutation}
+        COMMAND test_gs_p1_weak_current ${mutation})
+    set_tests_properties(grad_shafranov_p1_rejects_${mutation} PROPERTIES WILL_FAIL TRUE)
+endforeach()
 add_executable(gold_hoyle_demo app/gold_hoyle_demo.f90)
 target_link_libraries(gold_hoyle_demo PRIVATE kin6d kin6d_io)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
@@ -257,6 +265,10 @@ if(KIN6D_FORTSYM_BUILD)
         ${KIN6D_FORTSYM_BUILD}/include ${CMAKE_BINARY_DIR}/gen_include)
     target_link_libraries(kin6d_gen_support PUBLIC
         ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
+    add_executable(test_gs_p1_current_identities test/test_gs_p1_current_identities.f90)
+    target_link_libraries(test_gs_p1_current_identities PRIVATE kin6d_gen_support)
+    add_test(NAME grad_shafranov_p1_exact_current_antiderivatives
+        COMMAND test_gs_p1_current_identities)
     add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
     target_link_libraries(test_gs_symbolic PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_symbolic_identities COMMAND test_gs_symbolic)
