@@ -239,6 +239,11 @@ model exists, and certify the resulting numerical claim. Nested flux surfaces
 are an optional exploitable structure, never a core requirement. See
 [equilibria and inference](docs/equilibria-inference.md).
 
+The [fixed-boundary Grad–Shafranov mode](docs/grad-shafranov.md) supplies
+axisymmetric physical fields from circular, shaped or supplied boundaries.
+Its independent cylindrical reference and exact algebra gates are separate
+from numerical candidate admission.
+
 ## Geometry and spatial numerics
 
 Physical vectors are Cartesian. Computational coordinates are arbitrary smooth
