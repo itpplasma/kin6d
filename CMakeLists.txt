@@ -260,6 +260,32 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
     target_link_libraries(test_gs_symbolic PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_symbolic_identities COMMAND test_gs_symbolic)
+    add_executable(test_gs_variational_identities test/test_gs_variational_identities.f90)
+    target_link_libraries(test_gs_variational_identities PRIVATE kin6d_gen_support)
+    set(gs_leaf_source ${CMAKE_CURRENT_SOURCE_DIR}/src/generated/kin6d_grad_shafranov_leaves.f90)
+    set(gs_check_dir ${CMAKE_BINARY_DIR}/gs_variational_evidence)
+    file(MAKE_DIRECTORY ${gs_check_dir}/native ${gs_check_dir}/wrong_field
+        ${gs_check_dir}/wrong_weight)
+    add_test(NAME grad_shafranov_variational_exact_identities
+        COMMAND test_gs_variational_identities ${gs_leaf_source})
+    set_tests_properties(grad_shafranov_variational_exact_identities PROPERTIES
+        WORKING_DIRECTORY ${gs_check_dir}/native)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${gs_leaf_source})
+    file(READ ${gs_leaf_source} gs_leaf_text)
+    string(REPLACE "b_r = -psi_z/r" "b_r = psi_z/r"
+        gs_wrong_field "${gs_leaf_text}")
+    file(WRITE ${gs_check_dir}/wrong_field.f90 "${gs_wrong_field}")
+    add_test(NAME grad_shafranov_rejects_wrong_field_orientation
+        COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_field.f90)
+    set_tests_properties(grad_shafranov_rejects_wrong_field_orientation PROPERTIES
+        WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_field)
+    string(REPLACE "source = ffprime/r + mu0*pprime*r"
+        "source = ffprime/r + mu0*pprime/r" gs_wrong_weight "${gs_leaf_text}")
+    file(WRITE ${gs_check_dir}/wrong_weight.f90 "${gs_wrong_weight}")
+    add_test(NAME grad_shafranov_rejects_wrong_weak_source_weight
+        COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
+    set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
+        WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator grad_shafranov laboratory poisson fp transport streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations

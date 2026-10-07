@@ -117,6 +117,8 @@ Then
 
 ## Checked scope and evidence
 
+- [Variational bridge and profile constraints](grad-shafranov-variational-bridge.md) derives the strong/weak/source-functional and nested ideal-MHD relationships. Its separate native gate checks fourteen local/source identities and two rejection controls; it does not prove boundary theorems or complete third-party discretizations.
+
 - Native FortSym `check_identity` verifies eight exact identities: polynomial and logarithmic Delta_star, axisymmetric divergence/toroidal curl, Gold–Hoyle theta/z curl, force balance and constant q.
 - These use symbolic differentiation and exact native zero decisions; no randomized probes. They are algebra checks under R>0, R0>0 and nonzero denominators, not Lean proofs or compiler verification.
 - Persistent source: `test/test_gs_symbolic.f90`; registered CTest `grad_shafranov_symbolic_identities` passes 8/8 native FortSym identities. Configure the optional pinned FortSym generator build to register this gate.
