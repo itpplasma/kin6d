@@ -127,6 +127,8 @@ Then
 - Surface Jacobian, Green-theorem flux map and axis limits above are explicit hand derivations, not among the eight CAS identities. A separate midpoint-quadrature/finite-difference smoke check at s_pol=.001,.1,.5,1 verifies the surface trace and Jacobian and dPhi/dPsi=2*pi*q (maximum relative q discrepancy 2.37e-11). Retained source: `test/check_gs_surface_map.py`; run with Python/NumPy. This smoke check is not a registered native gate or proof; quadrature/limit convergence remains an admission gate.
 - Numerical validation additionally needs mesh, boundary and interpolation convergence; common off-grid B/p/j/force-balance observables; and independent total-current/full-flux/q reconstruction.
 
+- [Distributional P1 current](grad-shafranov-p1-current.md): independent cell/jump/boundary integrals and fifteen exact antiderivatives; native Release5/5 and checked Debug4/4 focused gates pass. Pointwise smooth current, force and axis-q remain unadmitted.
+
 ## Primary references
 
 - [Cerfon and Freidberg, analytical Grad–Shafranov equilibria (2010)](https://doi.org/10.1063/1.3328818): Solov'ev-type analytical families; the explicit oracle above is checked directly.
