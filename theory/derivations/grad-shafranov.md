@@ -86,7 +86,7 @@ For D>0 and R>0,
 
 ## Strict cylindrical zero-beta limit
 
-For straight cylindrical coordinates (r,theta,z), define
+For **right-handed** straight cylindrical coordinates (r,theta_RH,z), define
 
 \[
 B_r=0,\quad B_z=\frac{B_0}{1+k^2r^2},\quad B_\theta=krB_z.
@@ -101,10 +101,19 @@ Then
 \]
 
 - This Gold–Hoyle field is force-free: j cross B=0 and p=0. A uniform axial field plus B_theta proportional to r is not force-free.
-- Declare axial period 2*pi*R0. q=r*B_z/(R0*B_theta)=1/(k*R0), with its regular axis limit understood.
-- Cylindrical poloidal-flux analogue per radian: psi=R0*B0/(2k)*log(1+k^2*r^2); dpsi/dr=R0*B_theta.
+- Declare axial period 2*pi*R0. Native q_RH=r*B_z/(R0*B_theta_RH)=1/(k*R0), with its regular axis limit understood. The native C0 value +1.5 is not canonical toroidal q.
+- Native cylindrical flux analogue per radian: psi_RH=R0*B0/(2k)*log(1+k^2*r^2); dpsi_RH/dr=R0*B_theta_RH.
 - This is an exact straight-cylinder oracle. Embedding it in a finite-radius torus does not preserve exact force balance.
 - Fixed circular toroidal LCFS cases must solve GS; their interior surfaces need not be concentric circles.
+
+### Orientation when comparing C0 with the canonical toroidal limit
+
+- Align the straight axial direction with physical +phi; do not reverse the physical field. At fixed phi, e_r=cos(theta_c)e_R+sin(theta_c)e_Z and e_theta_c=-sin(theta_c)e_R+cos(theta_c)e_Z. Their cross product is -e_phi, so (e_r,e_theta_c,e_phi) is left-handed.
+- A right-handed cylinder with e_z=e_phi therefore has theta_c=-theta_RH and e_theta_RH=-e_theta_c. Consequently B_theta_c=-B_theta_RH, B_phi=B_z and F=R0*B_z in the strict cylindrical limit.
+- The canonical field formula gives B_theta_c=(1/R0)*dpsi_c/dr. Hence psi_c=-psi_RH, up to its declared gauge, and q_c=r*B_z/(R0*B_theta_c)=-q_RH. Native +1.5 maps to canonical -1.5 for this axial alignment.
+- This is a coordinate/flux-analogue map in the straight limit, not a finite-R toroidal force-balanced construction. Toroidal curvature and R dependence must be solved separately.
+- The physical helicity coefficient alpha=2*k/(1+k^2*r^2) in curl(B)=alpha*B is unchanged. Using right-handed cylindrical curl formulas with the left-handed canonical components would introduce an artificial sign error.
+- Evidence: the basis/cross-product and flux-orientation argument above is a hand derivation. `test/check_cylinder_orientation.py` independently checks Cartesian bases, field pullback, both q/k and B0 polarities, and a Cartesian finite-difference curl; it is a numerical diagnostic, not an additional native CAS identity. The eight registered identities retain their original RH cylinder scope.
 
 ## Checked scope and evidence
 
