@@ -124,7 +124,8 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/utils/kinds.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90)
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
-    src/grad_shafranov.f90)
+    src/grad_shafranov.f90 src/generated/kin6d_gs_reference_error_leaves.f90
+    src/gs_reference_error.f90)
 set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_spatial)
@@ -143,6 +144,11 @@ foreach(mutation omit-jump omit-cylindrical wrong-current-sign)
     set_tests_properties(grad_shafranov_p1_rejects_${mutation} PROPERTIES WILL_FAIL TRUE)
 endforeach()
 add_executable(gold_hoyle_demo app/gold_hoyle_demo.f90)
+add_executable(gs_reference_error app/gs_reference_error.f90)
+target_link_libraries(gs_reference_error PRIVATE kin6d)
+add_executable(test_gs_reference_error test/test_gs_reference_error.f90)
+target_link_libraries(test_gs_reference_error PRIVATE kin6d)
+add_test(NAME grad_shafranov_reference_cell_enclosures COMMAND test_gs_reference_error)
 target_link_libraries(gold_hoyle_demo PRIVATE kin6d kin6d_io)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
     -frecursive)
@@ -298,7 +304,8 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov laboratory poisson fp transport streaming streaming_moments
+    foreach(generator grad_shafranov gs_reference_error laboratory poisson fp transport
+            streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
