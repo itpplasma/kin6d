@@ -109,6 +109,33 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
+set(KIN6D_FORTFEM_REVISION "2d7baa19fe1bef02ce279fa407830c8731bdc663")
+FetchContent_Declare(fortfem
+    GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
+    GIT_TAG ${KIN6D_FORTFEM_REVISION})
+FetchContent_GetProperties(fortfem)
+if(NOT fortfem_POPULATED)
+    FetchContent_Populate(fortfem)
+endif()
+# Narrow, unchanged upstream geometry/meshing slice; no private FEM geometry.
+file(GLOB KIN6D_TRIANGLE_SOURCES CONFIGURE_DEPENDS
+    ${fortfem_SOURCE_DIR}/src/triangle_compat/*.f90)
+add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
+    ${fortfem_SOURCE_DIR}/src/utils/kinds.f90
+    ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90)
+target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
+    src/grad_shafranov.f90)
+set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_link_libraries(kin6d PUBLIC kin6d_spatial)
+add_executable(test_grad_shafranov test/test_grad_shafranov.f90)
+target_link_libraries(test_grad_shafranov PRIVATE kin6d)
+add_test(NAME grad_shafranov_analytic_and_derivative_oracles
+    COMMAND test_grad_shafranov)
+add_executable(grad_shafranov_demo app/grad_shafranov_demo.f90)
+target_link_libraries(grad_shafranov_demo PRIVATE kin6d kin6d_io fortplot)
+add_executable(gold_hoyle_demo app/gold_hoyle_demo.f90)
+target_link_libraries(gold_hoyle_demo PRIVATE kin6d kin6d_io)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
     -frecursive)
 add_executable(kin6d_demo app/kin6d_demo.f90)
@@ -230,7 +257,10 @@ if(KIN6D_FORTSYM_BUILD)
         ${KIN6D_FORTSYM_BUILD}/include ${CMAKE_BINARY_DIR}/gen_include)
     target_link_libraries(kin6d_gen_support PUBLIC
         ${KIN6D_FORTSYM_BUILD}/lib/libfortsym${CMAKE_SHARED_LIBRARY_SUFFIX})
-    foreach(generator laboratory poisson fp transport streaming streaming_moments
+    add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
+    target_link_libraries(test_gs_symbolic PRIVATE kin6d_gen_support)
+    add_test(NAME grad_shafranov_symbolic_identities COMMAND test_gs_symbolic)
+    foreach(generator grad_shafranov laboratory poisson fp transport streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter

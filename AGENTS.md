@@ -325,6 +325,8 @@ optimization. Planned scope is not implemented functionality.
   request naming the host.
 - Keep generated images, movies, PDFs and large benchmark data out of source
   history. Retain recipes, numeric evidence and provenance.
+- Publish new plots and PDFs through slopbox only; never commit the generated
+  plots or PDFs. Retain scripts, input data and provenance to reproduce them.
 
 ## Communication
 

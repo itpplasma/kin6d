@@ -1,0 +1,5 @@
+&grad_shafranov
+ r0=6.2, a=0.62, b0=5.3, q_seed=1.5,
+ pressure_mode='zero_beta', boundary_nodes=192, max_area=0.0003844,
+ mesh_file='output/grad_shafranov_mesh.dat'
+/
