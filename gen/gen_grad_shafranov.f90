@@ -1,6 +1,6 @@
 program gen_grad_shafranov
    use fortsym_arena, only: arena_t
-   use fortsym_expr, only: expr_t, sym, log, operator(+), operator(-), &
+   use fortsym_expr, only: expr_t, sym, log, sqrt, operator(+), operator(-), &
                            operator(*), operator(/), operator(**)
    use fortsym_diff, only: diff
    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
@@ -14,6 +14,7 @@ program gen_grad_shafranov
    type(expr_t) :: r, z, r0, amplitude, mu0, pp, ff, pr, pz, f, b0, k
    type(expr_t) :: psi, rr, br, bz, bt, delta
    type(expr_t) :: width, derivative, slope
+   type(expr_t) :: hrr, hrz, hzz, nr, nz, jump_r, jump_z
    call arena%init()
    engine = make_native_engine(arena)
    r = sym(arena, 'r'); z = sym(arena, 'z'); r0 = sym(arena, 'r0')
@@ -23,6 +24,9 @@ program gen_grad_shafranov
    b0 = sym(arena, 'b0'); k = sym(arena, 'k')
    width = sym(arena, 'width'); derivative = sym(arena, 'derivative')
    slope = sym(arena, 'slope')
+   hrr = sym(arena, 'h_rr'); hrz = sym(arena, 'h_rz'); hzz = sym(arena, 'h_zz')
+   nr = sym(arena, 'n_r'); nz = sym(arena, 'n_z')
+   jump_r = sym(arena, 'jump_r'); jump_z = sym(arena, 'jump_z')
    identity = engine%zero_test(diff(width*derivative + width**2*slope/2, width) &
       - derivative - width*slope)
    if (identity%verdict /= VERDICT_TRUE) error stop 'GS profile primitive unproved'
@@ -46,6 +50,17 @@ program gen_grad_shafranov
    br = -pz/r; bz = pr/r; bt = f/r
    call w%emit('gs_field', ['r    ', 'psi_r', 'psi_z', 'f    '], &
                ['b_r  ', 'b_z  ', 'b_phi'], [br, bz, bt], ad=.true.)
+   ! Classical current inside a smooth element and distributional face current.
+   call w%emit('gs_current_density', &
+      ['r     ', 'mu0   ', 'psi_r ', 'h_rr  ', 'h_zz  '], &
+      ['j_phi'], [-(hrr+hzz-pr/r)/(mu0*r)], ad=.true.)
+   call w%emit('gs_current_sheet', &
+      ['r     ', 'mu0   ', 'jump_r', 'jump_z', 'n_r   ', 'n_z   '], &
+      ['k_phi'], [-(jump_r*nr+jump_z*nz)/(mu0*r)], ad=.true.)
+   ! Positive-outward psi, elliptic stationary minimum and physical CCW phi.
+   call w%emit('gs_smooth_axis_q', &
+      ['r   ', 'f   ', 'h_rr', 'h_rz', 'h_zz'], &
+      ['q'], [f/(r*sqrt(hrr*hzz-hrz**2))], ad=.true.)
    ! A straight cylindrical model; r is distance from its axis, not tokamak R.
    bz = b0/(1 + k**2*r**2); bt = k*r*bz
    psi = r0*b0*log(1 + k**2*r**2)/(2*k)

@@ -123,6 +123,8 @@ file(GLOB KIN6D_TRIANGLE_SOURCES CONFIGURE_DEPENDS
 add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/utils/kinds.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
+    ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
+    ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90)
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
     src/grad_shafranov.f90 src/generated/kin6d_gs_reference_error_leaves.f90
@@ -139,7 +141,20 @@ target_link_libraries(test_gs_profile_domain PRIVATE kin6d)
 foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain})
+    add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
+        COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
+add_executable(test_gs_p2 test/test_gs_p2.f90)
+target_link_libraries(test_gs_p2 PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)
+add_executable(test_gs_p2_gauge test/test_gs_p2_gauge.f90)
+target_link_libraries(test_gs_p2_gauge PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_gauge_oracles COMMAND test_gs_p2_gauge)
+add_executable(test_gs_p2_refinement test/test_gs_p2_refinement.f90)
+target_link_libraries(test_gs_p2_refinement PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_polynomial_refinement COMMAND test_gs_p2_refinement)
+set_tests_properties(grad_shafranov_p2_physical_oracles PROPERTIES
+    FIXTURES_SETUP gs_native_mesh_export)
 add_executable(grad_shafranov_demo app/grad_shafranov_demo.f90)
 target_link_libraries(grad_shafranov_demo PRIVATE kin6d kin6d_io fortplot)
 add_executable(test_gs_p1_weak_current test/test_gs_p1_weak_current.f90)
@@ -153,6 +168,18 @@ endforeach()
 add_executable(gold_hoyle_demo app/gold_hoyle_demo.f90)
 add_executable(gs_reference_error app/gs_reference_error.f90)
 target_link_libraries(gs_reference_error PRIVATE kin6d)
+configure_file(test/fixtures/gs_reference_rejection.in
+    ${CMAKE_BINARY_DIR}/gs_reference_rejection.in COPYONLY)
+add_test(NAME grad_shafranov_p1_reference_accepts_mesh_v1
+    COMMAND gs_reference_error p1_native_oracle_mesh.dat gs_reference_rejection.in)
+add_test(NAME grad_shafranov_p1_reference_rejects_mesh_v2
+    COMMAND ${CMAKE_COMMAND} -DGS_REFERENCE_ERROR=$<TARGET_FILE:gs_reference_error>
+        -DMESH=${CMAKE_BINARY_DIR}/p2_native_oracle_mesh.dat
+        -DPARAMETERS=${CMAKE_BINARY_DIR}/gs_reference_rejection.in
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test/check_gs_p2_rejection.cmake)
+set_tests_properties(grad_shafranov_p1_reference_accepts_mesh_v1
+    grad_shafranov_p1_reference_rejects_mesh_v2 PROPERTIES
+    FIXTURES_REQUIRED gs_native_mesh_export)
 add_executable(test_gs_reference_error test/test_gs_reference_error.f90)
 target_link_libraries(test_gs_reference_error PRIVATE kin6d)
 add_test(NAME grad_shafranov_reference_cell_enclosures COMMAND test_gs_reference_error)
@@ -394,6 +421,7 @@ add_custom_target(kin6d_build_info
         -DKIN6D_FORTNUM_REVISION=${KIN6D_FORTNUM_REVISION}
         -DKIN6D_FORTPLOT_REVISION=${KIN6D_FORTPLOT_REVISION}
         -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
+        -DKIN6D_FORTFEM_REVISION=${KIN6D_FORTFEM_REVISION}
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
 add_library(kin6d_io src/result_io.f90 src/periodic_pair_config.f90

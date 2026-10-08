@@ -27,6 +27,8 @@ program gs_reference_error
     parameters=gs_reference_parameters_t(r0,c,edge,f,mu0,pp)
     open(newunit=unit,file=trim(path),status='old',action='read')
     read(unit,'(a)') header
+    if (index(header, '# kin6d-gs-mesh-v1:') /= 1) &
+        error stop 'reference enclosure supports P1 mesh-v1 only'
     read(unit,*) n,m
     if (n<3 .or. m<1) error stop 'empty mesh'
     allocate(points(2,n),psi(n),triangles(3,m))

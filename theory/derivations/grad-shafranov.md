@@ -39,6 +39,20 @@ With grad(p)=p' grad(psi), equilibrium requires
 - Integrate F^2(psi)=F_edge^2+2*integral_edge^psi FF'(u)du; reject F^2<=0. Integrate pressure with an explicit pressure offset.
 - Prescribing q as well generally changes the unknown F/current profile. A source amplitude named q_scale is not an exact constant-q constraint.
 
+For continuous P2 flux, the classical element current is
+`j_phi=-(psi_RR+psi_ZZ-psi_R/R)/(mu0*R)`. Across an interior face with unit
+normal pointing left to right, the additional distributional sheet is
+`K_phi=-normal·(grad(psi)_right-grad(psi)_left)/(mu0*R)`. Polynomial degree
+does not remove these face terms or turn a vertex cusp into a smooth axis.
+
+At a regular stationary minimum with positive Hessian H, local elliptic coarea
+gives `q_axis=F_axis/(R_axis*sqrt(det(H)))` on the positive-outward-flux branch.
+This formula requires a smooth quadratic neighbourhood. The native P2 axis
+routine qualifies only strict element-interior minima; it does not assign this
+limit to vertex/edge minima or claim a continuum error bound. A direct contour
+integration on an independently parameterized ellipse checks the axis formula
+and both the physical field and F signs in `test_gs_p2`.
+
 ## Polynomial GS oracle
 
 Define C>0 and
