@@ -9,6 +9,7 @@ program test_gs_inverse_rhs_batch
     real(dp), allocatable :: refined(:, :), refined_error(:, :)
     real(dp) :: flux(3), pp(3), ff(3), load(6), tangent(6), expected(3)
     real(dp) :: direction(3), zero_state(6), zero_profile(3), shifted(3), exact(6)
+    real(dp) :: cancel_flux(5), cancel_pressure(5), cancel_zero(5), cancelled(3)
     integer :: status, column, passed
     passed = 0
     allocate (state%points(2, 6), state%triangles(6, 1), state%psi(6), &
@@ -96,6 +97,28 @@ program test_gs_inverse_rhs_batch
         call close (maxval(abs(basis(:, column) - load(:3))), 0.0_dp, &
             1e-11_dp, 'each P1 column against original native load')
     end do
+    ! Independent exact null load for psi=Z on this affine triangle. Integrating
+    ! R*phi_i first in xi leaves these polynomials in eta:
+    ! (7-15*eta+9*eta**2-eta**3)/6,
+    ! (4-9*eta+6*eta**2-eta**3)/3,
+    ! (5*eta-6*eta**2+eta**3)/2.
+    ! Their moments against the piecewise-linear pressure below are all zero.
+    ! At zero base profiles its coefficient JVP is the same primal load.
+    affine%psi = affine%points(2, :)
+    cancel_flux = [0.0_dp, .25_dp, .5_dp, .75_dp, 1.0_dp]
+    cancel_pressure = [-300.0_dp, 391.0_dp, -454.0_dp, 285.0_dp, 0.0_dp]
+    cancel_zero = 0
+    call gs_profile_load(affine, 1.0_dp, cancel_flux, cancel_pressure, &
+        cancel_zero, cancelled, status)
+    call require(status == 3, 'cancelled primal rejects its relative estimator budget')
+    call gs_profile_load_jvp(affine, 1.0_dp, cancel_flux, cancel_zero, cancel_zero, &
+        zero_state(:3), 0.0_dp, cancel_zero, cancel_pressure, cancel_zero, &
+        cancelled, status)
+    call require(status == 3, &
+        'identical cancelled JVP rejects its own estimator budget')
+    call require(all(cancelled == 0), &
+        'failed directional budget clears partial tangent')
+    affine%psi = affine%points(1, :)
     affine%boundary(1) = .true.
     call gs_profile_ff_load_basis(affine, flux, basis, errors, status)
     call require(status == 0, 'Dirichlet response-source basis')

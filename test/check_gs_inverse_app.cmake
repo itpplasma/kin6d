@@ -1,7 +1,7 @@
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 file(WRITE "${WORK}/input.nml"
-    "&grad_shafranov solve_mode='prescribed_constant_q',element_order=2,r0=4,a=.4,b0=.001,q_seed=0,max_area=.005,boundary_nodes=63,inverse_flux_points=5,inverse_angular_points=128,q_target=1.5,toroidal_flux_target=1,q_tolerance=.005,nonlinear_tolerance=1e-6 /\n")
+    "&grad_shafranov solve_mode='prescribed_constant_q',element_order=2,r0=4,a=.4,b0=.001,q_seed=0,max_area=.0025,boundary_nodes=63,inverse_flux_points=5,inverse_angular_points=128,q_target=1.5,toroidal_flux_target=1,q_tolerance=.005,nonlinear_tolerance=1e-6 /\n")
 execute_process(COMMAND "${APP}" --config input.nml WORKING_DIRECTORY "${WORK}"
     RESULT_VARIABLE status OUTPUT_VARIABLE out ERROR_VARIABLE err TIMEOUT 30)
 if(NOT status EQUAL 0)

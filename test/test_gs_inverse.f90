@@ -15,7 +15,7 @@ program test_gs_inverse
     real(dp)::area
     call get_command_argument(1,mode)
     if(len_trim(mode)==0)mode="coarse"
-    knots=5; area=.005_dp
+    knots=5; area=.0025_dp
     if(trim(mode)=="fine")then
         knots=9; area=.00125_dp
     end if

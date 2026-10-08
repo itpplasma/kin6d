@@ -415,10 +415,12 @@ contains
         real(dp), intent(in), optional :: cotangent(:)
         real(dp), intent(out), optional :: gpsi(:), gmu0, gflux(:), gpp(:), gff(:)
         type(triangle_level_workspace_t) :: workspace
-        real(dp), allocatable :: assembled_error(:), values(:), errors(:), epsabs(:)
+        real(dp), allocatable :: assembled_error(:), tangent_error(:)
+        real(dp), allocatable :: values(:), errors(:), epsabs(:)
         real(dp), allocatable :: nodes_pp(:), nodes_ff(:), values_pp(:), values_ff(:)
-        real(dp), allocatable :: shifted_flux(:)
-        real(dp) :: coefficients(6), tolerance, local_psi(6), vertices(2, 3)
+        real(dp), allocatable :: shifted_flux(:), shifted_dflux(:)
+        real(dp) :: coefficients(6), tolerance, local_psi(6), local_dpsi(6)
+        real(dp) :: vertices(2, 3)
         real(dp) :: source_scale, error_norm, rhs_norm, pp_slope, ff_slope, rmin, rmax
         real(dp) :: activity_scale, dual_scale
         integer :: e, k, l, node, boundary_node, ndof, work_limit, nc, nf
@@ -460,11 +462,21 @@ contains
                   nodes_pp(nf), nodes_ff(nf), values_pp(nf), values_ff(nf), &
                   shifted_flux(nf))
         assembled_error = 0.0_dp
+        if (mode == 2) then
+            allocate(tangent_error(size(rhs)), shifted_dflux(nf))
+            tangent_error = 0.0_dp
+        end if
         pp_slope = maxval(abs((pp(2:) - pp(:nf - 1))/(flux(2:) - flux(:nf - 1))))
         ff_slope = maxval(abs((ff(2:) - ff(:nf - 1))/(flux(2:) - flux(:nf - 1))))
         do e = 1, size(state%triangles, 2)
             local_psi(:ndof) = state%psi(state%triangles(:, e))
             shifted_flux = flux - local_psi(1)
+            if (mode == 2) then
+                ! Differentiate the primal's common local gauge before composition.
+                local_dpsi(:ndof) = dpsi(state%triangles(:, e)) - &
+                    dpsi(state%triangles(1, e))
+                shifted_dflux = dflux - dpsi(state%triangles(1, e))
+            end if
             vertices = state%points(:, state%triangles(1:3, e))
             call triangle_level_coefficients(state%element_order, &
                                              local_psi(:ndof), coefficients, status)
@@ -486,8 +498,8 @@ contains
             source_scale = mu0*rmax*maxval(abs(pp)) + maxval(abs(ff))/rmin
             epsabs = max(tiny(1.0_dp), 0.01_dp*tolerance*source_scale)
             if (mode == 2) then
-                activity_scale = maxval(abs(dpsi(state%triangles(:, e)))) + &
-                                 maxval(abs(dflux))
+                activity_scale = maxval(abs(local_dpsi(:ndof))) + &
+                                 maxval(abs(shifted_dflux))
                 source_scale = abs(dmu0)*rmax*maxval(abs(pp)) + &
                                mu0*rmax*(maxval(abs(dpp)) + pp_slope*activity_scale) + &
                                (maxval(abs(dff)) + ff_slope*activity_scale)/rmin
@@ -515,7 +527,10 @@ contains
                 node = state%triangles(k, e)
                 rhs(node) = rhs(node) + values(k)
                 assembled_error(node) = assembled_error(node) + errors(k)
-                if (mode == 2) tangent(node) = tangent(node) + values(ndof + k)
+                if (mode == 2) then
+                    tangent(node) = tangent(node) + values(ndof + k)
+                    tangent_error(node) = tangent_error(node) + errors(ndof + k)
+                end if
                 if (mode == 3) gpsi(node) = gpsi(node) + values(ndof + k)
             end do
             if (mode == 3) then
@@ -550,7 +565,10 @@ contains
             assembled_error = 0.0_dp
         end where
         if (mode == 2) then
-            where (state%boundary) tangent = dpsi
+            where (state%boundary)
+                tangent = dpsi
+                tangent_error = 0.0_dp
+            end where
         end if
         if (mode == 3) then
             where (state%boundary) gpsi = gpsi + cotangent
@@ -562,6 +580,13 @@ contains
             status = 3 ! Global accumulated quadrature estimator exceeds the budget.
             call clear_outputs()
             return
+        end if
+        if (mode == 2) then
+            if (norm2(tangent_error) > tolerance*max(norm2(tangent), tiny(1.0_dp))) then
+                status = 3 ! The directional load retains its own relative budget.
+                call clear_outputs()
+                return
+            end if
         end if
         status = 0
     contains
@@ -581,9 +606,11 @@ contains
             call gs_source(r, mu0, pp_q, ff_q, source)
             output(:ndof) = source*shape(:ndof)
             if (mode == 2) then
-                dpsi_q = dot_product(shape(:ndof), dpsi(state%triangles(:, e)))
-                call profile_tangent(shifted_flux, pp, psi_q, dflux, dpp, dpsi_q, dpp_q)
-                call profile_tangent(shifted_flux, ff, psi_q, dflux, dff, dpsi_q, dff_q)
+                dpsi_q = dot_product(shape(:ndof), local_dpsi(:ndof))
+                call profile_tangent(shifted_flux, pp, psi_q, shifted_dflux, &
+                    dpp, dpsi_q, dpp_q)
+                call profile_tangent(shifted_flux, ff, psi_q, shifted_dflux, &
+                    dff, dpsi_q, dff_q)
              call gs_source_jvp(r, mu0, pp_q, ff_q, 0.0_dp, dmu0, dpp_q, dff_q, dsource)
                 output(ndof + 1:) = dsource*shape(:ndof)
             else if (mode == 3) then

@@ -63,5 +63,14 @@ retains the original load tolerance and global estimator check. A coefficient
 direction contracts those columns; if its conservative combined estimator
 exceeds the original relative budget through cancellation, the original
 directional source JVP reintegrates it. Fixed Dirichlet data has zero tangent.
+That reintegration accumulates directional quadrature estimates separately
+from primal estimates and checks them against the directional load norm.
+Cancellation can therefore return failure even with zero base profiles;
+the exact zero-load pressure fixture exercises this case. These estimates
+remain numerical error indicators, not rigorous enclosures.
+The source JVP differentiates the same locally shifted flux and profile knots
+as the primal. A common gauge direction therefore produces zero source
+activity before quadrature; fixed boundary derivatives retain their original
+direction. The existing gauge and all-active pairing controls cover this map.
 The hat basis and source composition use the existing interpolation adjoint
 and generated GS source definition.

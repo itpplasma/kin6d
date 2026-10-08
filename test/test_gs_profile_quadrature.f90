@@ -70,6 +70,11 @@ call require(estimate >= 0 .and. estimate < 1.0e-10_dp, 'explicit quadrature est
     call gs_profile_load_jvp(state, 1.0_dp, flux, pp, ff, dpsi, dmu0, dflux, dpp, dff, &
                              tangent, status)
     call require(status == 0, 'combined source state/profile/parameter tangent')
+    call gs_profile_load_jvp(state, 1.0_dp, flux, pp, ff, dpsi + 16.0_dp, dmu0, &
+        dflux + 16.0_dp, dpp, dff, positive, status)
+    call require(status == 0, 'nontrivial source tangent plus common gauge')
+    call close (maxval(abs(positive - tangent)), 0.0_dp, 1.0e-10_dp, &
+        'all-active source tangent is invariant under a common gauge direction')
     call gs_profile_load_vjp(state,1.0_dp,flux,pp,ff,dual,gpsi,gmu0,gflux,gpp,gff, &
                              status)
     call require(status == 0, 'source-load VJP status')
