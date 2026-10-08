@@ -4,14 +4,22 @@ module kin6d_grad_shafranov
    use triangle_compat, only: tc_result_t, triangulate_compat
    use basis_p1_2d_module, only: basis_p1_2d_t
    use basis_p2_2d_module, only: basis_p2_2d_t
+   use fortfem_triangle_level_quadrature, only: triangle_level_workspace_t, &
+       initialize_triangle_level_workspace, integrate_triangle_levels, &
+       triangle_level_coefficients
    use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
    use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
-   use kin6d_grad_shafranov_leaves, only: gs_source, gs_field, gs_segment_primitive, &
+   use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights, &
+       lagrange_combined_jvp, &
+       lagrange_combined_vjp, lagrange_nodes_jvp, lagrange_nodes_vjp
+   use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, gs_source_vjp, &
+       gs_field, gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
    public :: write_gs_mesh
+   public :: gs_profile_load, gs_profile_load_jvp, gs_profile_load_vjp
    public :: solve_gs_profiles, gs_profile_value, gs_profile_integral
    public :: gs_element_jet, gs_axis_candidate, gs_current_jump
    public :: gs_axis_safety_factor, gs_classical_current
@@ -277,15 +285,12 @@ contains
       state%residual = norm2(action - rhs)/max(norm2(rhs), tiny(1.0_dp))
    end subroutine solve_gs
 
-   subroutine assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, &
-                              flux, pp, ff)
+   subroutine assemble_gs_rhs(state, mu0, pprime, ffprime, rhs)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: mu0, pprime, ffprime
       real(dp), intent(out) :: rhs(:)
-      real(dp), intent(in), optional :: flux(:), pp(:), ff(:)
       type(gauss_quadrature_triangle_t) :: quadrature
       real(dp) :: point(2), shape(6), gradients(2, 6), source, weight
-      real(dp) :: psi_q, pp_q, ff_q
       integer :: e, q, k, l, i, j, ndof
       rhs = 0.0_dp
       ndof = size(state%triangles, 1)
@@ -297,13 +302,7 @@ contains
             point = matmul(state%points(:, state%triangles(1:3, e)), &
                  [1-quadrature%xi(q)-quadrature%eta(q), &
                   quadrature%xi(q), quadrature%eta(q)])
-            pp_q = pprime; ff_q = ffprime
-            if (present(flux)) then
-               psi_q = dot_product(shape(:ndof), state%psi(state%triangles(:, e)))
-               pp_q = gs_profile_value(flux, pp, psi_q)
-               ff_q = gs_profile_value(flux, ff, psi_q)
-            end if
-            call gs_source(point(1), mu0, pp_q, ff_q, source)
+            call gs_source(point(1), mu0, pprime, ffprime, source)
             weight = 2*state%area(e)*quadrature%weights(q)
             do k = 1, ndof
                i = state%triangles(k, e)
@@ -322,9 +321,370 @@ contains
       where (state%boundary) rhs = state%psi
    end subroutine assemble_gs_rhs
 
+    subroutine gs_profile_load(state, mu0, flux, pp, ff, rhs, status, &
+                               relative_tolerance, max_evaluations, error_estimate)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: mu0, flux(:), pp(:), ff(:)
+        real(dp), intent(out) :: rhs(:)
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: relative_tolerance
+        integer, intent(in), optional :: max_evaluations
+        real(dp), intent(out), optional :: error_estimate
+        call profile_load_products(state, mu0, flux, pp, ff, 1, rhs, status, &
+                                   relative_tolerance, max_evaluations, error_estimate)
+    end subroutine gs_profile_load
+
+    subroutine gs_profile_load_jvp(state, mu0, flux, pp, ff, dpsi, dmu0, &
+                                   dflux, dpp, dff, tangent, status, &
+                                   relative_tolerance, max_evaluations)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: mu0, flux(:), pp(:), ff(:), dpsi(:), dmu0
+        real(dp), intent(in) :: dflux(:), dpp(:), dff(:)
+        real(dp), intent(out) :: tangent(:)
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: relative_tolerance
+        integer, intent(in), optional :: max_evaluations
+        real(dp) :: rhs(size(state%psi))
+        tangent = 0.0_dp
+        status = 1
+        if (size(tangent) /= size(state%psi)) return
+        if (size(dpsi) /= size(state%psi)) return
+        if (size(dflux) /= size(flux)) return
+        if (size(dpp) /= size(pp) .or. size(dff) /= size(ff)) return
+        if (any(.not. ieee_is_finite(dpsi))) return
+        if (.not. ieee_is_finite(dmu0)) return
+        if (any(.not. ieee_is_finite(dflux))) return
+        if (any(.not. ieee_is_finite(dpp))) return
+        if (any(.not. ieee_is_finite(dff))) return
+        call profile_load_products(state, mu0, flux, pp, ff, 2, rhs, status, &
+                            relative_tolerance, max_evaluations, dpsi=dpsi, dmu0=dmu0, &
+                                   dflux=dflux, dpp=dpp, dff=dff, tangent=tangent)
+    end subroutine gs_profile_load_jvp
+
+    subroutine gs_profile_load_vjp(state, mu0, flux, pp, ff, cotangent, &
+                                   gpsi, gmu0, gflux, gpp, gff, status, &
+                                   relative_tolerance, max_evaluations)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: mu0, flux(:), pp(:), ff(:), cotangent(:)
+        real(dp), intent(out) :: gpsi(:), gmu0, gflux(:), gpp(:), gff(:)
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: relative_tolerance
+        integer, intent(in), optional :: max_evaluations
+        real(dp) :: rhs(size(state%psi))
+        gpsi = 0; gmu0 = 0; gflux = 0; gpp = 0; gff = 0
+        status = 1
+        if (size(cotangent) /= size(state%psi)) return
+        if (size(gpsi) /= size(state%psi)) return
+        if (size(gflux) /= size(flux)) return
+        if (size(gpp) /= size(pp) .or. size(gff) /= size(ff)) return
+        if (any(.not. ieee_is_finite(cotangent))) return
+        call profile_load_products(state, mu0, flux, pp, ff, 3, rhs, status, &
+                             relative_tolerance, max_evaluations, cotangent=cotangent, &
+                                   gpsi=gpsi, gmu0=gmu0, gflux=gflux, gpp=gpp, gff=gff)
+    end subroutine gs_profile_load_vjp
+
+    subroutine profile_load_products(state, mu0, flux, pp, ff, mode, rhs, status, &
+                                     relative_tolerance, max_evaluations, &
+                                     error_estimate, &
+                                     dpsi, dmu0, dflux, dpp, dff, tangent, &
+                                     cotangent, gpsi, gmu0, gflux, gpp, gff)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: mu0, flux(:), pp(:), ff(:)
+        integer, intent(in) :: mode
+        real(dp), intent(out) :: rhs(:)
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: relative_tolerance
+        integer, intent(in), optional :: max_evaluations
+        real(dp), intent(out), optional :: error_estimate
+        real(dp), intent(in), optional :: dpsi(:), dmu0, dflux(:), dpp(:), dff(:)
+        real(dp), intent(out), optional :: tangent(:)
+        real(dp), intent(in), optional :: cotangent(:)
+        real(dp), intent(out), optional :: gpsi(:), gmu0, gflux(:), gpp(:), gff(:)
+        type(triangle_level_workspace_t) :: workspace
+        real(dp), allocatable :: assembled_error(:), values(:), errors(:), epsabs(:)
+        real(dp), allocatable :: nodes_pp(:), nodes_ff(:), values_pp(:), values_ff(:)
+        real(dp), allocatable :: shifted_flux(:)
+        real(dp) :: coefficients(6), tolerance, local_psi(6), vertices(2, 3)
+        real(dp) :: source_scale, error_norm, rhs_norm, pp_slope, ff_slope, rmin, rmax
+        real(dp) :: activity_scale, dual_scale
+        integer :: e, k, l, node, boundary_node, ndof, work_limit, nc, nf
+        integer :: ip, iff, ix, im
+        character(160) :: message
+        status = 1
+        rhs = 0.0_dp
+        if (present(error_estimate)) error_estimate = huge(1.0_dp)
+        if (mu0 <= 0.0_dp) return
+        if (.not. ieee_is_finite(mu0)) return
+        if (size(rhs) /= size(state%psi)) return
+        if (size(flux) < 2) return
+        if (size(pp) /= size(flux) .or. size(ff) /= size(flux)) return
+        if (any(.not. ieee_is_finite(flux))) return
+        if (any(.not. ieee_is_finite(pp))) return
+        if (any(.not. ieee_is_finite(ff))) return
+        if (any(.not. ieee_is_finite(state%psi))) return
+        if (any(flux(2:) <= flux(:size(flux) - 1))) return
+        tolerance = 1.0e-11_dp
+        if (present(relative_tolerance)) tolerance = relative_tolerance
+        if (.not. ieee_is_finite(tolerance)) return
+        if (tolerance <= 0.0_dp .or. tolerance >= 1.0_dp) return
+        work_limit = 200000
+        if (present(max_evaluations)) work_limit = max_evaluations
+        if (work_limit < 1) return
+        ndof = size(state%triangles, 1)
+        nf = size(flux)
+        nc = ndof
+        if (mode == 2) nc = 2*ndof
+        if (mode == 3) nc = 2*ndof + 3*nf + 1
+        ip = 2*ndof
+        iff = ip + nf
+        ix = iff + nf
+        im = ix + nf + 1
+        call initialize_triangle_level_workspace(workspace, nc, nf, &
+                                                 status, max_evaluations=work_limit)
+        if (status /= 0) return
+        allocate (assembled_error(size(rhs)), values(nc), errors(nc), epsabs(nc), &
+                  nodes_pp(nf), nodes_ff(nf), values_pp(nf), values_ff(nf), &
+                  shifted_flux(nf))
+        assembled_error = 0.0_dp
+        pp_slope = maxval(abs((pp(2:) - pp(:nf - 1))/(flux(2:) - flux(:nf - 1))))
+        ff_slope = maxval(abs((ff(2:) - ff(:nf - 1))/(flux(2:) - flux(:nf - 1))))
+        do e = 1, size(state%triangles, 2)
+            local_psi(:ndof) = state%psi(state%triangles(:, e))
+            shifted_flux = flux - local_psi(1)
+            vertices = state%points(:, state%triangles(1:3, e))
+            call triangle_level_coefficients(state%element_order, &
+                                             local_psi(:ndof), coefficients, status)
+            if (status /= 0) exit
+            ! A full cell on a genuine profile kink has no linear derivative.
+            if (mode /= 1) then
+                if (all(coefficients(2:) == 0.0_dp)) then
+                    if (profile_has_kink(flux, pp, ff, coefficients(1))) then
+                        status = 4
+                        exit
+                    end if
+                end if
+            end if
+            rmin = minval(vertices(1, :)); rmax = maxval(vertices(1, :))
+            if (rmin <= 0.0_dp) then
+                status = 1
+                exit
+            end if
+            source_scale = mu0*rmax*maxval(abs(pp)) + maxval(abs(ff))/rmin
+            epsabs = max(tiny(1.0_dp), 0.01_dp*tolerance*source_scale)
+            if (mode == 2) then
+                activity_scale = maxval(abs(dpsi(state%triangles(:, e)))) + &
+                                 maxval(abs(dflux))
+                source_scale = abs(dmu0)*rmax*maxval(abs(pp)) + &
+                               mu0*rmax*(maxval(abs(dpp)) + pp_slope*activity_scale) + &
+                               (maxval(abs(dff)) + ff_slope*activity_scale)/rmin
+                epsabs(ndof + 1:) = max(tiny(1.0_dp), 0.01_dp*tolerance*source_scale)
+            else if (mode == 3) then
+                dual_scale = maxval(abs(cotangent(state%triangles(:, e))))
+                epsabs(ndof + 1:2*ndof) = max(tiny(1.0_dp), &
+                       0.01_dp*tolerance*dual_scale*(mu0*rmax*pp_slope + ff_slope/rmin))
+           epsabs(ip + 1:iff) = max(tiny(1.0_dp), 0.01_dp*tolerance*dual_scale*mu0*rmax)
+               epsabs(iff + 1:ix) = max(tiny(1.0_dp), 0.01_dp*tolerance*dual_scale/rmin)
+                epsabs(ix + 1:im - 1) = epsabs(ndof + 1)
+                epsabs(im) = max(tiny(1.0_dp), &
+                                 0.01_dp*tolerance*dual_scale*rmax*maxval(abs(pp)))
+            end if
+            if (any(.not. ieee_is_finite(epsabs))) then
+                status = 1
+                exit
+            end if
+            call integrate_triangle_levels(coefficients, flux, source_integrand, &
+                  epsabs, 0.01_dp*tolerance, workspace, values, errors, status, message)
+            if (status /= 0) exit
+            values = 2*state%area(e)*values
+            errors = 2*state%area(e)*errors
+            do k = 1, ndof
+                node = state%triangles(k, e)
+                rhs(node) = rhs(node) + values(k)
+                assembled_error(node) = assembled_error(node) + errors(k)
+                if (mode == 2) tangent(node) = tangent(node) + values(ndof + k)
+                if (mode == 3) gpsi(node) = gpsi(node) + values(ndof + k)
+            end do
+            if (mode == 3) then
+                gpp = gpp + values(ip + 1:iff)
+                gff = gff + values(iff + 1:ix)
+                gflux = gflux + values(ix + 1:im - 1)
+                gmu0 = gmu0 + values(im)
+            end if
+            do l = 1, ndof
+                boundary_node = state%triangles(l, e)
+                if (.not. state%boundary(boundary_node)) cycle
+                do k = 1, ndof
+                    node = state%triangles(k, e)
+                    rhs(node) = rhs(node) - &
+                                state%stiffness(k, l, e)*state%psi(boundary_node)
+                    if (mode == 2) tangent(node) = tangent(node) - &
+                                            state%stiffness(k, l, e)*dpsi(boundary_node)
+                    if (mode == 3) then
+                        if (state%boundary(node)) cycle
+                        gpsi(boundary_node) = gpsi(boundary_node) - &
+                                              state%stiffness(k, l, e)*cotangent(node)
+                    end if
+                end do
+            end do
+        end do
+        if (status /= 0) then
+            call clear_outputs()
+            return
+        end if
+        where (state%boundary)
+            rhs = state%psi
+            assembled_error = 0.0_dp
+        end where
+        if (mode == 2) then
+            where (state%boundary) tangent = dpsi
+        end if
+        if (mode == 3) then
+            where (state%boundary) gpsi = gpsi + cotangent
+        end if
+        error_norm = norm2(assembled_error)
+        rhs_norm = norm2(rhs)
+        if (present(error_estimate)) error_estimate = error_norm
+        if (error_norm > tolerance*max(rhs_norm, tiny(1.0_dp))) then
+            status = 3 ! Global accumulated quadrature estimator exceeds the budget.
+            call clear_outputs()
+            return
+        end if
+        status = 0
+    contains
+        subroutine source_integrand(point, output, callback_status)
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: output(:)
+            integer, intent(out) :: callback_status
+            real(dp) :: shape(6), r, psi_q, pp_q, ff_q, source, dpsi_q, dpp_q, dff_q
+            real(dp) :: dsource, dual, gr, gmu, gp, gf, xp, xf
+            real(dp) :: local_dual(6)
+            call element_values(state%element_order, point(1), point(2), shape(:ndof))
+          r = dot_product(vertices(1, :), [1 - point(1) - point(2), point(1), point(2)])
+            ! Shift flux and knots together before interpolating the profile law.
+            psi_q = dot_product(shape(:ndof), local_psi(:ndof) - local_psi(1))
+            pp_q = gs_profile_value(shifted_flux, pp, psi_q)
+            ff_q = gs_profile_value(shifted_flux, ff, psi_q)
+            call gs_source(r, mu0, pp_q, ff_q, source)
+            output(:ndof) = source*shape(:ndof)
+            if (mode == 2) then
+                dpsi_q = dot_product(shape(:ndof), dpsi(state%triangles(:, e)))
+                call profile_tangent(shifted_flux, pp, psi_q, dflux, dpp, dpsi_q, dpp_q)
+                call profile_tangent(shifted_flux, ff, psi_q, dflux, dff, dpsi_q, dff_q)
+             call gs_source_jvp(r, mu0, pp_q, ff_q, 0.0_dp, dmu0, dpp_q, dff_q, dsource)
+                output(ndof + 1:) = dsource*shape(:ndof)
+            else if (mode == 3) then
+                local_dual(:ndof) = cotangent(state%triangles(:, e))
+                where (state%boundary(state%triangles(:, e))) local_dual(:ndof) = 0
+                dual = dot_product(shape(:ndof), local_dual(:ndof))
+                call gs_source_vjp(r, mu0, pp_q, ff_q, dual, gr, gmu, gp, gf)
+              call profile_adjoint(shifted_flux, pp, psi_q, gp, xp, nodes_pp, values_pp)
+              call profile_adjoint(shifted_flux, ff, psi_q, gf, xf, nodes_ff, values_ff)
+                output(ndof + 1:2*ndof) = (xp + xf)*shape(:ndof)
+                output(ip + 1:iff) = values_pp
+                output(iff + 1:ix) = values_ff
+                output(ix + 1:im - 1) = nodes_pp + nodes_ff
+                output(im) = gmu
+            end if
+            callback_status = 0
+            if (any(.not. ieee_is_finite(output))) callback_status = 1
+        end subroutine source_integrand
+
+        subroutine clear_outputs()
+            rhs = 0
+            if (present(tangent)) tangent = 0
+            if (present(gpsi)) gpsi = 0
+            if (present(gmu0)) gmu0 = 0
+            if (present(gflux)) gflux = 0
+            if (present(gpp)) gpp = 0
+            if (present(gff)) gff = 0
+        end subroutine clear_outputs
+    end subroutine profile_load_products
+
+    logical function profile_has_kink(flux, pp, ff, psi) result(kink)
+        real(dp), intent(in) :: flux(:), pp(:), ff(:), psi
+        real(dp) :: weights(2), left_pp, right_pp, left_ff, right_ff
+        integer :: j
+        kink = .false.
+        do j = 1, size(flux)
+            if (psi /= flux(j)) cycle
+            left_pp = 0; right_pp = 0; left_ff = 0; right_ff = 0
+            if (j > 1) then
+                call lagrange_deriv_weights(2,psi,flux(j-1:j),weights)
+                left_pp = dot_product(weights,pp(j-1:j))
+                left_ff = dot_product(weights,ff(j-1:j))
+            end if
+            if (j < size(flux)) then
+                call lagrange_deriv_weights(2,psi,flux(j:j+1),weights)
+                right_pp = dot_product(weights,pp(j:j+1))
+                right_ff = dot_product(weights,ff(j:j+1))
+            end if
+            kink = left_pp /= right_pp .or. left_ff /= right_ff
+            return
+        end do
+    end function profile_has_kink
+
+    subroutine profile_tangent(flux, values, psi, dflux, dvalues, dpsi, tangent)
+        real(dp), intent(in) :: flux(:), values(:), psi, dflux(:), dvalues(:), dpsi
+        real(dp), intent(out) :: tangent
+        real(dp) :: motion
+        integer :: j
+        if (psi <= flux(1)) then
+            tangent = dvalues(1)
+            return
+        end if
+        if (psi >= flux(size(flux))) then
+            tangent = dvalues(size(flux))
+            return
+        end if
+        do j = 1, size(flux) - 1
+            if (psi <= flux(j + 1)) exit
+        end do
+        call lagrange_combined_jvp(2, psi, flux(j:j + 1), values(j:j + 1), &
+                                   dpsi, dvalues(j:j + 1), tangent)
+ call lagrange_nodes_jvp(2, psi, flux(j:j + 1), values(j:j + 1), dflux(j:j + 1), motion)
+        tangent = tangent + motion
+    end subroutine profile_tangent
+
+    subroutine profile_adjoint(flux, values, psi, dual, psi_bar, flux_bar, values_bar)
+        real(dp), intent(in) :: flux(:), values(:), psi, dual
+        real(dp), intent(out) :: psi_bar, flux_bar(:), values_bar(:)
+        integer :: j
+        psi_bar = 0; flux_bar = 0; values_bar = 0
+        if (psi <= flux(1)) then
+            values_bar(1) = dual
+            return
+        end if
+        if (psi >= flux(size(flux))) then
+            values_bar(size(flux)) = dual
+            return
+        end if
+        do j = 1, size(flux) - 1
+            if (psi <= flux(j + 1)) exit
+        end do
+        call lagrange_combined_vjp(2, psi, flux(j:j + 1), values(j:j + 1), &
+                                   dual, psi_bar, values_bar(j:j + 1))
+call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j:j + 1))
+    end subroutine profile_adjoint
+
+    subroutine element_values(order, xi, eta, shape)
+        integer, intent(in) :: order
+        real(dp), intent(in) :: xi, eta
+        real(dp), intent(out) :: shape(:)
+        type(basis_p1_2d_t) :: affine
+        type(basis_p2_2d_t) :: quadratic
+        integer :: j
+        do j = 1, size(shape)
+            if (order == 1) then
+                shape(j) = affine%eval(j, xi, eta)
+            else
+                shape(j) = quadratic%eval(j, xi, eta)
+            end if
+        end do
+    end subroutine element_values
+
    real(dp) function gs_profile_value(flux, values, psi) result(value)
       real(dp), intent(in) :: flux(:), values(:), psi
-      real(dp) :: weight
+      real(dp) :: weights(2)
       integer :: j
       ! The declared input law is piecewise linear and constant beyond the
       ! first/last supplied flux. Extension is explicit in the result claim.
@@ -334,8 +694,8 @@ contains
       end if
       do j = 1, size(flux) - 1
          if (psi <= flux(j + 1)) then
-            weight = (psi - flux(j))/(flux(j + 1) - flux(j))
-            value = (1 - weight)*values(j) + weight*values(j + 1)
+            call lagrange_weights(2,psi,flux(j:j+1),weights)
+            value = dot_product(weights,values(j:j+1))
             return
          end if
       end do
@@ -386,13 +746,17 @@ contains
       if (any(.not. ieee_is_finite(ff))) return
       allocate (rhs(size(state%psi)), action(size(state%psi)))
       do iteration = 1, 1000
-         call assemble_gs_rhs(state, mu0, 0.0_dp, 0.0_dp, rhs, flux, pp, ff)
+         call gs_profile_load(state, mu0, flux, pp, ff, rhs, status, &
+              relative_tolerance=min(1.0e-11_dp,0.01_dp*tolerance))
+         if (status /= 0) return
          call gs_linear_response(state, rhs, solution, status)
          if (status /= KRYLOV_OK) return
          where (.not. state%boundary)
             state%psi = 0.3_dp*solution + 0.7_dp*state%psi
          end where
-         call assemble_gs_rhs(state, mu0, 0.0_dp, 0.0_dp, rhs, flux, pp, ff)
+         call gs_profile_load(state, mu0, flux, pp, ff, rhs, status, &
+              relative_tolerance=min(1.0e-11_dp,0.01_dp*tolerance))
+         if (status /= 0) return
          call apply_gs(state, state%psi, action)
          state%residual = norm2(action - rhs)/max(norm2(rhs), tiny(1.0_dp))
          state%iterations = iteration
