@@ -134,6 +134,12 @@ add_executable(test_grad_shafranov test/test_grad_shafranov.f90)
 target_link_libraries(test_grad_shafranov PRIVATE kin6d)
 add_test(NAME grad_shafranov_analytic_and_derivative_oracles
     COMMAND test_grad_shafranov)
+add_executable(test_gs_profile_domain test/test_gs_profile_domain.f90)
+target_link_libraries(test_gs_profile_domain PRIVATE kin6d)
+foreach(domain valid zero negative nan)
+    add_test(NAME grad_shafranov_profile_mu0_${domain}
+        COMMAND test_gs_profile_domain ${domain})
+endforeach()
 add_executable(grad_shafranov_demo app/grad_shafranov_demo.f90)
 target_link_libraries(grad_shafranov_demo PRIVATE kin6d kin6d_io fortplot)
 add_executable(test_gs_p1_weak_current test/test_gs_p1_weak_current.f90)
