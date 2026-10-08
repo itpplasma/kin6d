@@ -100,6 +100,45 @@ ctest --preset cpu -R '^grad_shafranov_'
 
 ## Evidence and limits
 
+### Exact cylinder with an independent axial period
+
+The Gold–Hoyle field is an exact zero-pressure equilibrium on a straight
+periodic cylinder, with `B_z=B_axis/(1+tau^2*r^2)` and `B_theta=tau*r*B_z`.
+Specify the axial period `L` independently: the right-handed winding is
+`q_c=2*pi*r*B_z/(L*B_theta)=2*pi/(L*tau)`. The existing cylinder evaluator's
+`r0` parameter sets `L=2*pi*r0`; it is a period scale, not a claim of finite-R
+toroidal geometry. Full axial and meridional fluxes satisfy
+`Phi'=2*pi*r*B_z`, `Psi_mer'=L*B_theta`, and `dPhi/dPsi_mer=q_c`.
+
+For comparison with a thin torus of major radius `Rmajor`, hold `L` and
+physical pitch fixed. Right-handed `q_t=L*q_c/(2*pi*Rmajor)` therefore varies
+with major radius. In the local embedding `x=R-Rmajor`, `y=-Z`,
+`z=Rmajor*phi`, the native GS flux has the leading-order map
+`psi=Rmajor*A_z`, `A_z'=-B_theta`; native signed q is `-q_t`.
+These coordinate identities do not make the cylinder an exact finite-R GS
+solution. Perturbations with axial integer n require a separate integer
+toroidal-mode map; no perturbation solve is covered here.
+
+For later KIM equilibrium-only use, its CGS scalar `u=B^2` obeys
+`u'=-2*r*u/(q_c^2*R0^2+r^2)-8*pi*p'`, with `R0=L/(2*pi)` in cm.
+At a positive first radius, pass the actual field's
+`u0_seed=B_z(r_min)^2+B_theta(r_min)^2` in G^2. Substituting axis amplitude
+for `B_z(r_min)` in the default seed is only an axis approximation.
+The reader/seed path remains separately qualified; this proof test does not
+execute KIM.
+
+The optional existing pinned FortSym build registers
+`grad_shafranov_periodic_cylinder_exact_identities`: seventeen exact
+curl, radial-force, explicit-period, flux and leading-order map identities,
+without numerical probes. Its punctured-domain algebra assumes nonzero
+L/tau/major radius and a positive logarithm argument; axis regularity needs
+the independent analytic series/field oracle. No production kernel changes
+or new runtime CAS dependency are introduced. The one-dimensional force
+balance and winding definitions follow J. P. Freidberg,
+[*Ideal MHD* (2014), Chapter 5, pp. 85–122](https://doi.org/10.1017/CBO9780511795046.006),
+and [MIT 22.615 Lecture 5, pp. 1, 4, 7](https://ocw.mit.edu/courses/22-615-mhd-theory-of-fusion-systems-spring-2007/a5c962e43b645b825b13715a131166e2_lecture5.pdf).
+Exact book equation numbers are not asserted.
+
 - [Derivation](../theory/derivations/grad-shafranov.md): signs, weak form,
   Solovev/logarithmic families, Gold–Hoyle cylinder and flux/safety-factor map.
 - `gold_hoyle_demo --config cylinder.in` exports the independent straight

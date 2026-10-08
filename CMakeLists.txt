@@ -342,6 +342,11 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
     target_link_libraries(test_gs_symbolic PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_symbolic_identities COMMAND test_gs_symbolic)
+    add_executable(test_gs_periodic_cylinder_symbolic
+        test/test_gs_periodic_cylinder_symbolic.f90)
+    target_link_libraries(test_gs_periodic_cylinder_symbolic PRIVATE kin6d_gen_support)
+    add_test(NAME grad_shafranov_periodic_cylinder_exact_identities
+        COMMAND test_gs_periodic_cylinder_symbolic)
     add_executable(test_gs_variational_identities test/test_gs_variational_identities.f90)
     target_link_libraries(test_gs_variational_identities PRIVATE kin6d_gen_support)
     set(gs_leaf_source ${CMAKE_CURRENT_SOURCE_DIR}/src/generated/kin6d_grad_shafranov_leaves.f90)
