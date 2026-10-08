@@ -5,6 +5,7 @@ module kin6d_gs_reference_error
     use fortnum_interval, only: interval_t, interval, hull, operator(+), &
         operator(-), operator(*), operator(/), abs
     use kin6d_gs_reference_error_leaves, only: gs_reference_error_density_interval
+    use fortfem_reference_scalar_intervals, only: generated_affine_p2_scalar_interval
     implicit none
     private
     public :: gs_reference_parameters_t, enclose_gs_reference_cell
@@ -13,8 +14,8 @@ module kin6d_gs_reference_error
     end type
 contains
     subroutine enclose_gs_reference_cell(vertices, nodal_psi, parameters, depth, &
-                                         integral, area, volume, max_field2, ok)
-        real(dp), intent(in) :: vertices(2, 3), nodal_psi(3)
+            integral, area, volume, max_field2, ok)
+        real(dp), intent(in) :: vertices(2, 3), nodal_psi(:)
         type(gs_reference_parameters_t), intent(in) :: parameters
         integer, intent(in) :: depth
         type(interval_t), intent(out) :: integral(3), area, volume, max_field2
@@ -24,6 +25,7 @@ contains
         ok = .false.
         integral = interval(0); area = interval(0); volume = interval(0)
         max_field2 = interval(0)
+        if (size(nodal_psi) /= 3 .and. size(nodal_psi) /= 6) return
         if (.not. all(ieee_is_finite(vertices))) return
         if (.not. all(ieee_is_finite(nodal_psi))) return
         if (minval(vertices(1, :)) <= 0) return
@@ -39,10 +41,12 @@ contains
         det = (points(1,2)-points(1,1))*(points(2,3)-points(2,1)) &
             - (points(1,3)-points(1,1))*(points(2,2)-points(2,1))
         if (det%lo <= 0 .and. det%hi >= 0) return
-        gr = ((interval(nodal_psi(2))-nodal_psi(1))*(points(2,3)-points(2,1)) &
-            -(interval(nodal_psi(3))-nodal_psi(1))*(points(2,2)-points(2,1)))/det
-        gz = ((points(1,2)-points(1,1))*(interval(nodal_psi(3))-nodal_psi(1)) &
-            -(points(1,3)-points(1,1))*(interval(nodal_psi(2))-nodal_psi(1)))/det
+        if (size(nodal_psi) == 3) then
+            gr = ((interval(nodal_psi(2))-nodal_psi(1))*(points(2,3)-points(2,1)) &
+                -(interval(nodal_psi(3))-nodal_psi(1))*(points(2,2)-points(2,1)))/det
+            gz = ((points(1,2)-points(1,1))*(interval(nodal_psi(3))-nodal_psi(1)) &
+                -(points(1,3)-points(1,1))*(interval(nodal_psi(2))-nodal_psi(1)))/det
+        end if
         area = abs(det)/2
         volume = area*(points(1,1)+points(1,2)+points(1,3))/3
         origin = points(:, 1); ph0 = interval(nodal_psi(1))
@@ -70,7 +74,16 @@ contains
             end if
             r = hull(hull(p(1,1), p(1,2)), p(1,3))
             z = hull(hull(p(2,1), p(2,2)), p(2,3))
-            ph = ph0 + gr*(r-origin(1)) + gz*(z-origin(2))
+            if (size(nodal_psi) == 3) then
+                ph = ph0 + gr*(r-origin(1)) + gz*(z-origin(2))
+            else
+                call generated_affine_p2_scalar_interval(r, z, &
+                    points(1,1), points(2,1), points(1,2), points(2,2), &
+                    points(1,3), points(2,3), interval(nodal_psi(1)), &
+                    interval(nodal_psi(2)), interval(nodal_psi(3)), &
+                    interval(nodal_psi(4)), interval(nodal_psi(5)), &
+                    interval(nodal_psi(6)), ph, gr, gz, det)
+            end if
             call gs_reference_error_density_interval(r, z, interval(parameters%r0), &
                 interval(parameters%c), interval(parameters%edge), &
                 interval(parameters%f), interval(parameters%mu0), &
