@@ -8,8 +8,10 @@
   The weak form uses `grad(psi)·grad(v)/R`, FortFEM meshing/generated basis
   and FortNum preconditioned CG. `element_order=1` uses three-point quadrature;
   `element_order=2` uses continuous six-node triangles with shared edge DOFs
-  and positive seven-point degree-five quadrature. The rational `1/R` weight
-  still requires numerical quadrature refinement.
+  and positive seven-point degree-five stiffness quadrature. Profile sources
+  use FortFEM integration split at the native P1/P2 flux level cuts, with
+  positive retained quadrature nodes, paired error estimates and work limits.
+  The rational `1/R` stiffness weight still requires quadrature refinement.
 - `q_seed` sets the source strength in built-in circular models. Actual `q`
   is an output; constant-q inversion is unavailable.
 
@@ -40,7 +42,10 @@ ctest --preset cpu -R '^grad_shafranov_'
   failure returns status 2.
   Successful discrete weak residual is at most `nonlinear_tolerance`, default
   `1e-8`. The native `solve_gs_profiles` API accepts the same optional relative
-  tolerance. This algebraic residual is not an observable error bound.
+  tolerance. Source quadrature uses the smaller of `1e-11` and one percent of
+  the requested weak tolerance; unresolved integration returns failure.
+  This algebraic residual and quadrature estimates are not observable error
+  bounds or rigorous enclosures.
 - Mesh export: comment, node/triangle counts, `R Z psi boundary` node rows,
   then one-based triangle connectivity. P1 retains `kin6d-gs-mesh-v1` with
   three indices. P2 emits `kin6d-gs-mesh-v2`, with vertex indices 1–3 followed
@@ -69,6 +74,29 @@ ctest --preset cpu -R '^grad_shafranov_'
   nonunique interior minima. A P2 element order alone does not ensure axis
   regularity. `gs_axis_safety_factor` uses the signed F at that axis and its
   positive Hessian; it is a smooth-axis candidate, without a certified bound.
+
+## Profile-source residual and derivatives
+
+- `gs_profile_load` assembles the declared piecewise-linear pressure and FFprime
+  laws on a fixed represented flux, including Dirichlet elimination. Internal
+  profile cuts must be integrated even when they cross a single element.
+- `relative_tolerance` defaults to `1e-11`; `max_evaluations` limits each cell.
+  `error_estimate` reports the norm of accumulated absolute load-error estimates
+  on free rows. Failure clears the returned load. These are numerical estimates,
+  with no rigorous continuous error enclosure.
+- `gs_profile_load_jvp` and `gs_profile_load_vjp` act on nodal flux, mu0, profile
+  values and profile-knot positions at fixed mesh geometry. Generated GS source
+  products and FortNum interpolation products define their local derivatives.
+  KIN6D integrates those products on the same native cut geometry, with separate
+  component estimates; it differentiates the continuous weak source rather
+  than the adaptive quadrature's branch decisions.
+- Moving-cut boundary terms cancel because the source law is continuous at
+  each knot. A whole cell lying on a genuine profile kink returns status 4
+  for unavailable derivatives; there is no unique linear derivative there.
+  Geometry/shape derivatives and rigorous derivative bounds remain unavailable.
+- Flux and knot coordinates share a local gauge shift before profile evaluation.
+  This preserves representable constant-gauge invariance without subtracting
+  large reconstructed flux values after interpolation.
 
 ## Evidence and limits
 

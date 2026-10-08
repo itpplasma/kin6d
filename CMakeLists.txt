@@ -142,7 +142,10 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
-    ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90)
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_level_geometry.f90
+    ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90)
+target_link_libraries(kin6d_spatial PUBLIC kin6d_ode)
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
     src/grad_shafranov.f90 src/generated/kin6d_gs_reference_error_leaves.f90
     src/gs_reference_error.f90)
@@ -156,6 +159,10 @@ add_executable(test_grad_shafranov test/test_grad_shafranov.f90)
 target_link_libraries(test_grad_shafranov PRIVATE kin6d)
 add_test(NAME grad_shafranov_analytic_and_derivative_oracles
     COMMAND test_grad_shafranov)
+add_executable(test_gs_profile_quadrature test/test_gs_profile_quadrature.f90)
+target_link_libraries(test_gs_profile_quadrature PRIVATE kin6d)
+add_test(NAME grad_shafranov_profile_cut_quadrature_oracles
+    COMMAND test_gs_profile_quadrature)
 add_executable(test_gs_profile_domain test/test_gs_profile_domain.f90)
 target_link_libraries(test_gs_profile_domain PRIVATE kin6d)
 foreach(domain valid zero negative nan)
