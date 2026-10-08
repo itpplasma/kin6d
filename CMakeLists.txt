@@ -349,6 +349,23 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_periodic_cylinder_symbolic)
     add_executable(test_gs_variational_identities test/test_gs_variational_identities.f90)
     target_link_libraries(test_gs_variational_identities PRIVATE kin6d_gen_support)
+    add_executable(test_gs_forward_majorant_identities
+        test/test_gs_forward_majorant_identities.f90)
+    target_link_libraries(test_gs_forward_majorant_identities PRIVATE kin6d_gen_support)
+    set(gs_majorant_check_dir ${CMAKE_BINARY_DIR}/gs_forward_majorant_evidence)
+    file(MAKE_DIRECTORY ${gs_majorant_check_dir}/native)
+    add_test(NAME grad_shafranov_forward_majorant_exact_identities
+        COMMAND test_gs_forward_majorant_identities)
+    set_tests_properties(grad_shafranov_forward_majorant_exact_identities PROPERTIES
+        WORKING_DIRECTORY ${gs_majorant_check_dir}/native)
+    foreach(premise jump boundary quadrature)
+        file(MAKE_DIRECTORY ${gs_majorant_check_dir}/${premise})
+        add_test(NAME grad_shafranov_forward_majorant_rejects_${premise}_omission
+            COMMAND test_gs_forward_majorant_identities ${premise})
+        set_tests_properties(
+            grad_shafranov_forward_majorant_rejects_${premise}_omission PROPERTIES
+            WILL_FAIL TRUE WORKING_DIRECTORY ${gs_majorant_check_dir}/${premise})
+    endforeach()
     set(gs_leaf_source ${CMAKE_CURRENT_SOURCE_DIR}/src/generated/kin6d_grad_shafranov_leaves.f90)
     set(gs_check_dir ${CMAKE_BINARY_DIR}/gs_variational_evidence)
     file(MAKE_DIRECTORY ${gs_check_dir}/native ${gs_check_dir}/wrong_field

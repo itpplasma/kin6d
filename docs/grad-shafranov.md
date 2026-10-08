@@ -15,6 +15,12 @@
 - `q_seed` sets the source strength in built-in circular models. Actual `q`
   is an output; constant-q inversion is unavailable.
 
+The [forward energy-majorant derivation](../theory/derivations/grad-shafranov-forward-majorant.md)
+proves a continuous weighted residual bound under explicit domain, trace,
+flux-conformity and stability assumptions. Native FortSym tests check its
+algebraic identities and reject omitted jump, boundary and integration premises.
+An unknown-equilibrium estimator API is not implemented by these proofs.
+
 ## Run and compare
 
 ```sh
