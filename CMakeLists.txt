@@ -109,7 +109,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "2d7baa19fe1bef02ce279fa407830c8731bdc663")
+set(KIN6D_FORTFEM_REVISION "91a7eb72563e67141411421b6c38820967fb9ed5")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -122,7 +122,8 @@ file(GLOB KIN6D_TRIANGLE_SOURCES CONFIGURE_DEPENDS
     ${fortfem_SOURCE_DIR}/src/triangle_compat/*.f90)
 add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/utils/kinds.f90
-    ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90)
+    ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90)
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
     src/grad_shafranov.f90 src/generated/kin6d_gs_reference_error_leaves.f90
     src/gs_reference_error.f90)
