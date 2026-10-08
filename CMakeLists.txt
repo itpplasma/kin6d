@@ -8,7 +8,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "10e66f6d9f50452d3313769e874f282193b33a9f")
+set(KIN6D_FORTNUM_REVISION "471c2888d1d4e24a5491fe8156b84d7cd9c758f2")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -45,6 +45,7 @@ target_compile_options(kin6d_intervals PRIVATE -fno-fast-math -ffp-contract=off)
 add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/fortnum_kinds.f90
     ${fortnum_SOURCE_DIR}/src/roots/fortnum_roots.f90
+    ${fortnum_SOURCE_DIR}/src/roots/fortnum_multiroot.f90
     ${fortnum_SOURCE_DIR}/src/quadrature/fortnum_quadrature.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
@@ -57,6 +58,21 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
+    ${fortnum_SOURCE_DIR}/src/fortnum_ad_backend.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det2_jvp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det2_vjp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det3_jvp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det3_vjp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv2_jvp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv2_vjp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv3_jvp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv3_vjp_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det2_jvp_fortad.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det2_vjp_fortad.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det3_jvp_fortad.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det3_vjp_fortad.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_inv2_jvp_fortad.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_linalg.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
@@ -109,7 +125,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "91a7eb72563e67141411421b6c38820967fb9ed5")
+set(KIN6D_FORTFEM_REVISION "9d0994b2fb959fb8088327fb8edb5615ec728f68")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -125,10 +141,14 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
+    ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90)
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
     src/grad_shafranov.f90 src/generated/kin6d_gs_reference_error_leaves.f90
     src/gs_reference_error.f90)
+target_sources(kin6d PRIVATE src/generated/kin6d_gs_coarea_leaves.f90 src/gs_coarea.f90)
+set_source_files_properties(src/generated/kin6d_gs_coarea_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_spatial)
@@ -153,6 +173,9 @@ add_test(NAME grad_shafranov_p2_gauge_oracles COMMAND test_gs_p2_gauge)
 add_executable(test_gs_p2_refinement test/test_gs_p2_refinement.f90)
 target_link_libraries(test_gs_p2_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_polynomial_refinement COMMAND test_gs_p2_refinement)
+add_executable(test_gs_coarea test/test_gs_coarea.f90)
+target_link_libraries(test_gs_coarea PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_native_coarea_oracles COMMAND test_gs_coarea)
 set_tests_properties(grad_shafranov_p2_physical_oracles PROPERTIES
     FIXTURES_SETUP gs_native_mesh_export)
 add_executable(grad_shafranov_demo app/grad_shafranov_demo.f90)
@@ -338,7 +361,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov gs_reference_error laboratory poisson fp transport
+    foreach(generator grad_shafranov gs_coarea gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
