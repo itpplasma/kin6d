@@ -5,8 +5,11 @@
 - SI; physical counter-clockwise `phi`; flux per radian `psi`;
   `B_R=-psi_Z/R`, `B_Z=psi_R/R`, `B_phi=F/R`.
 - Equation: `Delta*psi = -mu0 R² pprime - FFprime`.
-  P1 weak form uses `grad(psi)·grad(v)/R`, three-point triangle quadrature,
-  FortFEM meshing/basis and FortNum preconditioned CG.
+  The weak form uses `grad(psi)·grad(v)/R`, FortFEM meshing/generated basis
+  and FortNum preconditioned CG. `element_order=1` uses three-point quadrature;
+  `element_order=2` uses continuous six-node triangles with shared edge DOFs
+  and positive seven-point degree-five quadrature. The rational `1/R` weight
+  still requires numerical quadrature refinement.
 - `q_seed` sets the source strength in built-in circular models. Actual `q`
   is an output; constant-q inversion is unavailable.
 
@@ -20,7 +23,8 @@ ctest --preset cpu -R '^grad_shafranov_'
 ```
 
 - Namelist `/grad_shafranov/`: `r0,a,kappa,delta,b0,q_seed,max_area`,
-  `boundary_nodes,pressure_mode,mesh_file,boundary_file,profile_file`.
+  `boundary_nodes,element_order,nonlinear_tolerance,pressure_mode,mesh_file,`
+  `boundary_file,profile_file`. Order defaults to 1; only 1 and 2 are supported.
 - `pressure_mode='zero_beta'`: `pprime=0`, `FFprime=-2*b0/q_seed`.
   `finite_beta`: `pprime=-2*b0/(q_seed*mu0*r0²)`, `FFprime=0`.
   Boundary `psi=0`; edge pressure zero; edge `F=r0*b0`.
@@ -34,13 +38,37 @@ ctest --preset cpu -R '^grad_shafranov_'
   Received `p,F` columns remain reference data, never silently overwritten.
 - Nonlinear profiles use Picard relaxation 0.3, maximum 1000 iterations;
   failure returns status 2.
-  Successful discrete weak residual is at most `1e-8`.
+  Successful discrete weak residual is at most `nonlinear_tolerance`, default
+  `1e-8`. The native `solve_gs_profiles` API accepts the same optional relative
+  tolerance. This algebraic residual is not an observable error bound.
 - Mesh export: comment, node/triangle counts, `R Z psi boundary` node rows,
-  then one-based triangle connectivity. Supplied-profile runs also export
+  then one-based triangle connectivity. P1 retains `kin6d-gs-mesh-v1` with
+  three indices. P2 emits `kin6d-gs-mesh-v2`, with vertex indices 1–3 followed
+  by edge midpoint indices for edges (1,2), (2,3), (3,1). The geometry remains
+  affine and the boundary remains polygonal. Supplied-profile runs also export
   `mesh_file.profiles.dat` with the executed five-column law.
 - `output/grad_shafranov.nc` retains literal/resolved configuration, source
   profiles, physical fields, units and provenance. Copy it per run before
   repeating; the default filename is reused.
+- Physical fields, element-current samples and interior face-sheet samples
+  use the same represented flux. `gs_element_jet` returns its physical value,
+  gradient and Hessian inside a named element; `state%gradient` contains only
+  affine geometry gradients and must not be used as a P2 flux gradient.
+  Physical gradient/Hessian contraction subtracts the first local nodal flux
+  before applying derivatives, using partition of unity to remove a constant
+  gauge before cancellation. A constant nodal tangent likewise gives zero
+  current/axis-q JVP. Binary64 rounding of nodal values after a large gauge
+  shift remains an input error; the polynomial oracle bounds that amplification.
+- `gs_classical_current` evaluates `j_phi` inside each element.
+  `gs_current_jump` returns the distributional sheet coefficient in A/m on
+  a shared face. Its unit normal points from the left element to the right.
+  Sheet samples are not integrated total currents or current-error bounds.
+- `gs_axis_candidate` searches quadratic stationary minima and all edge
+  extrema. Status 0 requires a strict interior global candidate minimum;
+  status 3 rejects P1, 4 leaves vertex/edge minima unqualified, and 5 rejects
+  nonunique interior minima. A P2 element order alone does not ensure axis
+  regularity. `gs_axis_safety_factor` uses the signed F at that axis and its
+  positive Hessian; it is a smooth-axis candidate, without a certified bound.
 
 ## Evidence and limits
 
@@ -54,12 +82,19 @@ ctest --preset cpu -R '^grad_shafranov_'
 - `test_grad_shafranov`: independent polynomial refinement; nonlinear
   `psi=R²` cancellation oracle; linear implicit tangent/adjoint pairing;
   local generated field JVP/VJP and analytical profile primitive.
+- `test_gs_p2`: independent quadratic value/gradient/Hessian and signed field,
+  classical/sheet-current, direct elliptic coarea axis-q, boundary-only weak
+  solves, nonlinear cancellation, equation derivative and cusp-rejection oracles.
+  `test_gs_p2_refinement` checks off-grid physical field and classical-current
+  refinement against the exact quartic GS solution, including P1 at the same mesh.
+- The P1 reference enclosure executable accepts only mesh-v1 and rejects P2.
+  Its cellwise certificate is not valid for a quadratic representation.
 - Optional pinned FortSym build registers `grad_shafranov_symbolic_identities`:
   eight exact identities, no numerical probes used as proof.
 - `gen/gen_grad_shafranov.f90` generates source/field/Solovev primal, JVP and
   VJP leaves. Fixed-geometry constant-source linear equation responses are
   supported; nonlinear branch and boundary-shape derivatives are unavailable.
-- Every export is a **candidate**. Polygonal boundary, P1 field jumps,
+- Every export is a **candidate**. Polygonal boundary, P1/P2 field jumps,
   discretization and profile-model errors need independent refinement.
   A small residual does not certify the continuous equilibrium.
 - No free-boundary solver, 3D MHD, kinetic transport or perturbation model.
