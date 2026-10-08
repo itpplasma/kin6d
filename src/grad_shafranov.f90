@@ -256,6 +256,8 @@ contains
       real(dp), allocatable :: rhs(:), solution(:), action(:)
       integer :: iteration
       status = 1
+      if (mu0 <= 0.0_dp) return
+      if (.not. ieee_is_finite(mu0)) return
       if (size(flux) < 2) return
       if (size(pp) /= size(flux) .or. size(ff) /= size(flux)) return
       if (any(flux(2:) <= flux(:size(flux) - 1))) return
