@@ -215,6 +215,7 @@ contains
         call this%attribute('fortnum_revision', kin6d_fortnum_revision)
         call this%attribute('fortplot_revision', kin6d_fortplot_revision)
         call this%attribute('fortio_revision', kin6d_fortio_revision)
+        call this%attribute('fortfem_revision', kin6d_fortfem_revision)
         call this%attribute('created_utc', utc_timestamp())
     end subroutine
 

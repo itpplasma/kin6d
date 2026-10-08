@@ -5,12 +5,15 @@ program test_gs_profile_domain
     implicit none
     type(gs_state_t) :: state
     real(dp) :: contour(2, 4), mu0
-    integer :: status
-    character(32) :: mode
+    integer :: status, order
+    character(32) :: mode, order_arg
     call get_command_argument(1, mode)
+    call get_command_argument(2, order_arg)
+    order = 1
+    if (len_trim(order_arg) > 0) read (order_arg, *) order
     contour = reshape([5.8_dp, -0.4_dp, 6.6_dp, -0.4_dp, &
                          6.6_dp, 0.4_dp, 5.8_dp, 0.4_dp], [2, 4])
-    call initialize_gs(state, contour, 0.02_dp, status)
+    call initialize_gs(state, contour, 0.02_dp, status, order)
     if (status /= 0) error stop 'domain oracle mesh failed'
     select case (trim(mode))
     case ('valid')

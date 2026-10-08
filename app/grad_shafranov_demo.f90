@@ -2,7 +2,8 @@ program grad_shafranov_demo
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
-                                   solve_gs_profiles, gs_profile_integral, write_gs_mesh
+      solve_gs_profiles, gs_profile_integral, write_gs_mesh, gs_element_jet, &
+      gs_classical_current, gs_current_jump, gs_axis_candidate, gs_axis_safety_factor
    use kin6d_result_io, only: run_t, result_file_t
    use kin6d_grad_shafranov_leaves, only: gs_field
    use fortplot_system_runtime, only: create_directory_runtime
@@ -10,15 +11,19 @@ program grad_shafranov_demo
    type(gs_state_t) :: state
    type(run_t) :: run
    type(result_file_t) :: result
-   integer :: boundary_nodes = 128, unit, status, i
+   integer :: boundary_nodes = 128, element_order = 1, unit, status, i
    real(dp) :: r0 = 6.2_dp, a = 0.62_dp, kappa = 1.0_dp, delta = 0.0_dp
    real(dp) :: b0 = 5.3_dp, q_seed = 1.5_dp, max_area = 0.002_dp
+   real(dp) :: nonlinear_tolerance = 1.0e-8_dp
    real(dp) :: mu0 = 1.2566370614359173e-6_dp, pprime, ffprime, theta
    real(dp), allocatable :: contour(:, :)
    real(dp), allocatable :: flux(:), pp(:), ff(:), pressure(:), fpol(:)
    real(dp), allocatable :: nodal_p(:), nodal_f(:), element_r(:), element_z(:)
    real(dp), allocatable :: element_br(:), element_bz(:), element_bt(:)
-   real(dp) :: element_psi, element_f, gradient(2)
+   real(dp), allocatable :: element_current(:), sheet_r(:), sheet_z(:), sheet_current(:)
+   real(dp) :: element_psi, element_f, gradient(2), hessian(2, 2)
+   real(dp) :: axis(2), axis_flux, axis_q, normal(2), edge_point(2), toward(2)
+   integer :: edge, neighbor, face, face_count, axis_element, axis_status
    character(16) :: pressure_mode = 'zero_beta'
    character(512) :: mesh_file = 'output/grad_shafranov_mesh.dat'
    character(512) :: boundary_file = ''
@@ -27,7 +32,8 @@ program grad_shafranov_demo
    logical :: directory_ok
    character(256) :: message
    namelist /grad_shafranov/ r0, a, kappa, delta, b0, q_seed, max_area, &
-      boundary_nodes, pressure_mode, mesh_file, boundary_file, profile_file
+      boundary_nodes, element_order, pressure_mode, mesh_file, boundary_file, profile_file, &
+      nonlinear_tolerance
    call run%start('grad_shafranov')
    status = 0; message = ''
    call run%open_config(unit)
@@ -65,7 +71,7 @@ program grad_shafranov_demo
    call run%open_resolved(unit)
    write (unit, nml=grad_shafranov)
    call run%close_resolved(unit)
-   call initialize_gs(state, contour, max_area, status)
+   call initialize_gs(state, contour, max_area, status, element_order)
    if (status /= 0) error stop 'GS meshing failed'
    if (len_trim(profile_file) > 0) then
       open (newunit=unit, file=trim(profile_file), status='old')
@@ -83,7 +89,8 @@ program grad_shafranov_demo
       ! A zero initial state can otherwise select a trivial edge-source root.
       pprime = pp(1); ffprime = ff(1)
       call solve_gs(state, mu0, pp(1), ff(1), status)
-      if (status == 0) call solve_gs_profiles(state, mu0, flux, pp, ff, status)
+      if (status == 0) call solve_gs_profiles(state, mu0, flux, pp, ff, status, &
+                                             nonlinear_tolerance)
    else
       call solve_gs(state, mu0, pprime, ffprime, status)
    end if
@@ -95,7 +102,8 @@ program grad_shafranov_demo
    allocate (nodal_p(size(state%psi)), nodal_f(size(state%psi)), &
              element_r(size(state%triangles, 2)), element_z(size(state%triangles, 2)), &
            element_br(size(state%triangles, 2)), element_bz(size(state%triangles, 2)), &
-             element_bt(size(state%triangles, 2)))
+             element_bt(size(state%triangles, 2)), &
+             element_current(size(state%triangles, 2)))
    do i = 1, size(state%psi)
       if (len_trim(profile_file) > 0) then
          nodal_p(i) = pressure(profile_count) + &
@@ -103,25 +111,56 @@ program grad_shafranov_demo
          nodal_f(i) = reconstructed_f(state%psi(i))
       else
          nodal_p(i) = pprime*state%psi(i)
-         if ((r0*b0)**2 + 2*ffprime*state%psi(i) <= 0) &
-            error stop 'GS toroidal flux function square is nonpositive'
-         nodal_f(i) = sign(sqrt((r0*b0)**2 + 2*ffprime*state%psi(i)), b0)
+         nodal_f(i) = constant_source_f(state%psi(i))
       end if
    end do
    do i = 1, size(element_r)
-      element_r(i) = sum(state%points(1, state%triangles(:, i)))/3
-      element_z(i) = sum(state%points(2, state%triangles(:, i)))/3
-      element_psi = sum(state%psi(state%triangles(:, i)))/3
+      element_r(i) = sum(state%points(1, state%triangles(1:3, i)))/3
+      element_z(i) = sum(state%points(2, state%triangles(1:3, i)))/3
+      call gs_element_jet(state, i, element_r(i), element_z(i), &
+                          element_psi, gradient, hessian, status)
+      if (status /= 0) error stop 'GS element field evaluation failed'
       if (len_trim(profile_file) > 0) then
          element_f = reconstructed_f(element_psi)
       else
-         element_f = sign(sqrt((r0*b0)**2 + 2*ffprime*element_psi), b0)
+         element_f = constant_source_f(element_psi)
       end if
-      gradient = matmul(state%gradient(:, :, i), &
-                        state%psi(state%triangles(:, i)))
       call gs_field(element_r(i), gradient(1), gradient(2), element_f, &
                     element_br(i), element_bz(i), element_bt(i))
+      call gs_classical_current(state, i, element_r(i), element_z(i), &
+                                mu0, element_current(i), status)
+      if (status /= 0) error stop 'GS classical current evaluation failed'
    end do
+   face_count = count(state%neighbors > 0)/2
+   allocate (sheet_r(face_count), sheet_z(face_count), sheet_current(face_count))
+   face = 0
+   do i = 1, size(state%triangles, 2)
+      do edge = 1, 3
+         neighbor = state%neighbors(edge, i)
+         if (neighbor <= i) cycle
+         face = face+1
+         edge_point = state%points(:, state%triangles(edge, i))
+         normal = state%points(:, state%triangles(mod(edge, 3)+1, i))-edge_point
+         edge_point = edge_point+0.5_dp*normal
+         normal = [normal(2), -normal(1)]/norm2(normal)
+         toward = sum(state%points(:, state%triangles(1:3, neighbor)), dim=2) &
+                - sum(state%points(:, state%triangles(1:3, i)), dim=2)
+         if (dot_product(normal, toward) < 0) normal = -normal
+         sheet_r(face) = edge_point(1); sheet_z(face) = edge_point(2)
+         call gs_current_jump(state, i, neighbor, edge_point(1), edge_point(2), &
+                              normal, mu0, sheet_current(face), status)
+         if (status /= 0) error stop 'GS current sheet evaluation failed'
+      end do
+   end do
+   call gs_axis_candidate(state, axis, axis_flux, hessian, axis_element, axis_status)
+   if (axis_status == 0) then
+      if (len_trim(profile_file) > 0) then
+         element_f = reconstructed_f(axis_flux)
+      else
+         element_f = constant_source_f(axis_flux)
+      end if
+      call gs_axis_safety_factor(axis(1), element_f, hessian, axis_q, axis_status)
+   end if
    call create_directory_runtime('output', directory_ok)
    if (.not. directory_ok) error stop 'GS output directory unavailable'
    call write_gs_mesh(state, trim(mesh_file), status)
@@ -136,8 +175,8 @@ program grad_shafranov_demo
           'constant source or piecewise-linear flux table; constant endpoint extension')
     call result%attribute('fieldlaw', &
         'derivative-controlled reconstruction; edge p/F; signed F branch')
-    call result%attribute('fortfem_revision', &
-        '2d7baa19fe1bef02ce279fa407830c8731bdc663')
+   call result%attribute('finite_element', &
+       merge('P2 continuous quadratic', 'P1 continuous affine   ', element_order == 2))
    call result%write('R', state%points(1, :), 'm', 'cylindrical radius')
    call result%write('Z', state%points(2, :), 'm', 'vertical position')
    call result%write('psi', state%psi, 'Wb/rad', 'poloidal flux per radian')
@@ -148,6 +187,21 @@ program grad_shafranov_demo
    call result%write('element_B_R', element_br, 'T', 'radial B at centroids')
    call result%write('element_B_Z', element_bz, 'T', 'vertical B at centroids')
    call result%write('element_B_phi', element_bt, 'T', 'CCW toroidal B at centroids')
+   call result%write('element_J_phi', element_current, 'A m-2', &
+                     'classical CCW toroidal current inside each element')
+   if (face_count > 0) then
+      call result%write('sheet_R', sheet_r, 'm', 'interior face midpoint R')
+      call result%write('sheet_Z', sheet_z, 'm', 'interior face midpoint Z')
+      call result%write('sheet_K_phi', sheet_current, 'A m-1', &
+                        'distributional CCW current sheet at face midpoints')
+   end if
+   call result%write('smooth_axis_status', real(axis_status, dp), '1', &
+                     '0 regular candidate; 3 P1; 4 unqualified minimum; 5 nonunique')
+   if (axis_status == 0) then
+      call result%write('axis_RZ', axis, 'm', 'stationary interior P2 axis candidate')
+      call result%write('axis_psi', axis_flux, 'Wb/rad', 'P2 flux at axis candidate')
+      call result%write('axis_q', axis_q, '1', 'signed smooth-axis candidate')
+   end if
    call result%write('triangles', real(state%triangles, dp), '1', &
                      'one-based triangle node indices')
    call result%write('pprime', pprime, 'Pa/(Wb/rad)', 'constant pressure derivative')
@@ -180,6 +234,14 @@ program grad_shafranov_demo
       size(state%triangles, 2), state%residual
    print *, 'q_seed is a source parameter, not a prescribed q profile.'
 contains
+   real(dp) function constant_source_f(psi) result(value)
+      real(dp), intent(in) :: psi
+      real(dp) :: square
+      square = (r0*b0)**2+2*ffprime*psi
+      if (.not. ieee_is_finite(square)) error stop 'GS nonfinite F square'
+      if (square <= 0) error stop 'GS toroidal flux function square is nonpositive'
+      value = sign(sqrt(square), b0)
+   end function constant_source_f
    real(dp) function reconstructed_f(psi) result(value)
       real(dp), intent(in) :: psi
       real(dp) :: square
