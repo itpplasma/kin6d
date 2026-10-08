@@ -23,6 +23,8 @@ outer contour is integrated directly along its straight boundary faces.
 
 The nodal/level JVP differentiates the converged contour equation. It includes
 axis displacement and the Leibniz terms at moving mesh-face intersections.
+The event retains its native face intersection point; endpoint weights use
+that point directly rather than re-solving a rounded radial endpoint.
 These terms contain the difference of the two one-sided coarea weights;
 subtracting them silently would differentiate a different map. The generator
 `gen/gen_gs_coarea.f90` retains the mathematical leaves and emits primal, JVP

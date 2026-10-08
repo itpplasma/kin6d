@@ -24,7 +24,7 @@ module kin6d_gs_coarea
     private
     public :: gs_level_coarea
     type :: event_t
-        real(dp) :: angle = 0, tangent = 0
+        real(dp) :: angle = 0, tangent = 0, point(2) = 0
         integer :: left = 0, right = 0
     end type
 contains
@@ -210,6 +210,7 @@ contains
                                             axis(2), angle)
                         count = count + 1
                         events(count)%angle = modulo(angle, two_pi)
+                        events(count)%point = point
                         events(count)%left = e
                         events(count)%right = next_cell
                         events(count)%tangent = 0
@@ -288,7 +289,8 @@ contains
                 dhi = events(k)%tangent
                 if (k == 1) hi = hi + two_pi
                 call integrate_arc(cell, lo, hi, dlo, dhi, j, &
-                                   level_delta, stat)
+                                   level_delta, stat, events(index)%point, &
+                                   events(k)%point)
                 if (stat /= 0) then
                     status = stat
                     return
@@ -429,9 +431,10 @@ contains
         end subroutine arc_weight
 
         subroutine integrate_arc(e, lo, hi, dlo, dhi, j, &
-                                 level_delta, status)
+                                 level_delta, status, first_point, last_point)
             integer, intent(in)::e, j
             real(dp), intent(in)::lo, hi, dlo, dhi, level_delta
+            real(dp), optional, intent(in)::first_point(2), last_point(2)
             integer, intent(out)::status
             real(dp)::weight, delta_weight, angle
             integer::q
@@ -447,17 +450,52 @@ contains
             if (with_tangent) then
                 ! Leibniz endpoint terms supply moving gradient-jump products;
                 ! adjacent arcs cancel them only for a C1 native polynomial.
-                call arc_weight(e, lo, levels(j), level_delta, &
-                                weight, delta_weight, status)
+                if (present(first_point)) then
+                    call face_weight(e, first_point, weight, status)
+                else
+                    call arc_weight(e, lo, levels(j), level_delta, &
+                                    weight, delta_weight, status)
+                end if
                 if (status /= 0) return
                 coarea_tangent(j) = coarea_tangent(j) - weight*dlo
-                call arc_weight(e, hi, levels(j), level_delta, &
-                                weight, delta_weight, status)
+                if (present(last_point)) then
+                    call face_weight(e, last_point, weight, status)
+                else
+                    call arc_weight(e, hi, levels(j), level_delta, &
+                                    weight, delta_weight, status)
+                end if
                 if (status /= 0) return
                 coarea_tangent(j) = coarea_tangent(j) + weight*dhi
             end if
             status = 0
         end subroutine integrate_arc
+
+        subroutine face_weight(e, face_point, weight, status)
+            ! The event already owns the native face intersection. Re-solving
+            ! its radial root can place a rounded endpoint outside this cell.
+            integer, intent(in)::e
+            real(dp), intent(in)::face_point(2)
+            real(dp), intent(out)::weight
+            integer, intent(out)::status
+            real(dp)::value, gradient(2), hessian(2, 2), direction(2), radius, radial_gradient
+            weight = 0
+            call gs_element_jet(state, e, face_point(1), face_point(2), &
+                                value, gradient, hessian, status)
+            if (status /= 0) return
+            direction = face_point - axis
+            radius = norm2(direction)
+            if (radius <= 0) then
+                status = 7
+                return
+            end if
+            direction = direction/radius
+            radial_gradient = dot_product(gradient, direction)
+            if (radial_gradient <= 0) then
+                status = 6
+                return
+            end if
+            call gs_contour_weight(radius, face_point(1), radial_gradient, weight)
+        end subroutine face_weight
 
         subroutine integrate_boundary(j, level_delta, status)
             integer, intent(in)::j
