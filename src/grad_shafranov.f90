@@ -8,17 +8,21 @@ module kin6d_grad_shafranov
        initialize_triangle_level_workspace, integrate_triangle_levels, &
        triangle_level_coefficients
    use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
-   use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
+   use fortnum_krylov, only: real_conjugate_gradient_operator, real_gmres_operator, KRYLOV_OK
    use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights, &
        lagrange_combined_jvp, &
        lagrange_combined_vjp, lagrange_nodes_jvp, lagrange_nodes_vjp
    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, gs_source_vjp, &
        gs_field, gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
+   use kin6d_gs_inverse_leaves, only: gs_normalized_profile_response
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
    public :: write_gs_mesh
+   public :: gs_profile_response, gs_profile_implicit_response, gs_profile_tangent_cache
+   public :: gs_profile_response_cache_t, prepare_gs_profile_response_cache
+   public :: gs_profile_ff_load_basis
    public :: gs_profile_load, gs_profile_load_jvp, gs_profile_load_vjp
    public :: solve_gs_profiles, gs_profile_value, gs_profile_integral
    public :: gs_element_jet, gs_axis_candidate, gs_current_jump
@@ -39,6 +43,16 @@ module kin6d_grad_shafranov
       integer :: iterations = 0
       character(32) :: claim = 'candidate'
    end type gs_state_t
+   ! One owned immutable response context for one state/profile, with no globals.
+   type :: gs_profile_response_cache_t
+      private
+      type(gs_state_t) :: state
+      real(dp), allocatable :: flux(:), ff(:), matrix(:, :, :), axis_response(:)
+      real(dp), allocatable :: axis_shape(:)
+      real(dp), allocatable :: load_basis(:, :), load_error(:, :)
+      integer :: axis_element = 0
+      logical :: ready = .false.
+   end type gs_profile_response_cache_t
    interface
       subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
          import :: dp
@@ -681,6 +695,454 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             end if
         end do
     end subroutine element_values
+
+    subroutine gs_profile_tangent_cache(state, flux, ff, axis_flux, mass, &
+            axis_response, status, max_evaluations)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: flux(:), ff(:), axis_flux
+        real(dp), allocatable, intent(out) :: mass(:, :, :), axis_response(:)
+        integer, intent(out) :: status
+        integer, intent(in), optional :: max_evaluations
+        type(triangle_level_workspace_t) :: workspace
+        real(dp), allocatable :: values(:), errors(:), epsabs(:), shifted_flux(:)
+        real(dp) :: coefficients(6), local_psi(6), vertices(2, 3), scale, axis_scale
+        real(dp) :: zero_profile(size(flux)), local_axis(6)
+        integer :: ndof, nc, e, k, l, index, work_limit
+        character(160) :: message
+        status = 1
+        ndof = size(state%triangles, 1)
+        allocate(mass(ndof, ndof, size(state%triangles, 2)), &
+            axis_response(size(state%psi)))
+        mass = 0; axis_response = 0
+        if (size(flux) < 2 .or. size(ff) /= size(flux)) return
+        if (any(.not. ieee_is_finite(flux))) return
+        if (any(.not. ieee_is_finite(ff))) return
+        if (any(.not. ieee_is_finite(state%psi))) return
+        if (.not. ieee_is_finite(axis_flux)) return
+        if (axis_flux == 0.0_dp) return
+        if (any(flux(2:) <= flux(:size(flux)-1))) return
+        work_limit = 200000
+        if (present(max_evaluations)) work_limit = max_evaluations
+        if (work_limit < 1) return
+        nc = ndof*ndof + ndof
+        call initialize_triangle_level_workspace(workspace, nc, size(flux), &
+            status, max_evaluations=work_limit)
+        if (status /= 0) return
+        allocate(values(nc), errors(nc), epsabs(nc), shifted_flux(size(flux)))
+        zero_profile = 0
+        do e = 1, size(state%triangles, 2)
+            local_psi(:ndof) = state%psi(state%triangles(:, e))
+            shifted_flux = flux - local_psi(1)
+            vertices = state%points(:, state%triangles(1:3, e))
+            if (minval(vertices(1, :)) <= 0) then
+                status = 1
+                exit
+            end if
+            call triangle_level_coefficients(state%element_order, &
+                local_psi(:ndof), coefficients, status)
+            if (status /= 0) exit
+            if (all(coefficients(2:) == 0)) then
+                if (profile_has_kink(flux, zero_profile, ff, coefficients(1))) then
+                    status = 4
+                    exit
+                end if
+            end if
+            scale = maxval(abs((ff(2:)-ff(:size(ff)-1))/ &
+                (flux(2:)-flux(:size(flux)-1))))/minval(vertices(1, :))
+            axis_scale = scale*maxval(abs(local_psi(:ndof)))/abs(axis_flux)
+            epsabs(:ndof*ndof) = max(tiny(1.0_dp), 1.0e-13_dp*scale)
+            epsabs(ndof*ndof+1:) = max(tiny(1.0_dp), 1.0e-13_dp*axis_scale)
+            if (any(.not. ieee_is_finite(epsabs))) then
+                status = 1
+                exit
+            end if
+            call integrate_triangle_levels(coefficients, flux, cache_integrand, &
+                epsabs, 1.0e-13_dp, workspace, values, errors, status, message)
+            if (status /= 0) exit
+            index = 0
+            do l = 1, ndof
+                do k = 1, ndof
+                    index = index + 1
+                    mass(k,l,e) = 2*state%area(e)*values(index)
+                end do
+            end do
+            local_axis(:ndof) = 2*state%area(e)*values(ndof*ndof+1:)
+            do k = 1, ndof
+                if (state%boundary(state%triangles(k,e))) cycle
+                axis_response(state%triangles(k,e)) = &
+                    axis_response(state%triangles(k,e)) + local_axis(k)
+            end do
+        end do
+        if (status /= 0) then
+            mass = 0; axis_response = 0
+        end if
+    contains
+        subroutine cache_integrand(point, output, callback_status)
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: output(:)
+            integer, intent(out) :: callback_status
+            real(dp) :: shape(6), psi_q, r, slope, coefficient, source
+            integer :: i, j, offset
+            call element_values(state%element_order,point(1),point(2),shape(:ndof))
+            psi_q = dot_product(shape(:ndof),local_psi(:ndof)-local_psi(1))
+            r = dot_product(vertices(1,:),[1-point(1)-point(2),point(1),point(2)])
+            call profile_tangent(shifted_flux,ff,psi_q,zero_profile, &
+                zero_profile,1.0_dp,slope)
+            call gs_source(r,1.0_dp,0.0_dp,slope,source)
+            offset = 0
+            do j = 1, ndof
+                do i = 1, ndof
+                    offset = offset + 1
+                    output(offset) = source*shape(i)*shape(j)
+                end do
+            end do
+            call gs_normalized_profile_response(slope,0.0_dp, &
+                (psi_q+local_psi(1))/axis_flux,1.0_dp,coefficient)
+            call gs_source(r,1.0_dp,0.0_dp,coefficient,source)
+            output(ndof*ndof+1:) = -source*shape(:ndof)
+            callback_status = 0
+            if (any(.not. ieee_is_finite(output))) callback_status = 1
+        end subroutine cache_integrand
+    end subroutine gs_profile_tangent_cache
+
+    subroutine gs_profile_response(state, flux, ff, solution, residual, status)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: flux(:), ff(:)
+        real(dp), allocatable, intent(out) :: solution(:)
+        real(dp), intent(out) :: residual
+        integer, intent(out) :: status
+        real(dp), allocatable :: rhs(:), action(:), pp(:)
+        status = 1; residual = huge(1.0_dp)
+        if (size(flux) < 2 .or. size(ff) /= size(flux)) return
+        if (.not. all(ieee_is_finite(flux))) return
+        if (.not. all(ieee_is_finite(ff))) return
+        if (any(flux(2:) <= flux(:size(flux)-1))) return
+        allocate(rhs(size(state%psi)),action(size(state%psi)),pp(size(flux)))
+        pp=0
+        call gs_profile_load(state,1.0_dp,flux,pp,ff,rhs,status)
+        if(status/=0)return
+        call apply_gs(state,state%psi,action)
+        residual=norm2(action-rhs)/max(norm2(rhs),tiny(1.0_dp))
+        call gs_linear_response(state,rhs,solution,status)
+    end subroutine gs_profile_response
+
+    subroutine gs_profile_ff_load_basis(state, flux, loads, estimates, status, &
+            relative_tolerance, max_evaluations)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: flux(:)
+        real(dp), allocatable, intent(out) :: loads(:, :), estimates(:, :)
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: relative_tolerance
+        integer, intent(in), optional :: max_evaluations
+        type(triangle_level_workspace_t) :: workspace
+        real(dp), allocatable :: values(:), errors(:), epsabs(:), shifted_flux(:)
+        real(dp) :: coefficients(6), local_psi(6), vertices(2, 3), tolerance, rmin
+        integer :: ndof, nf, e, k, j, node, index, work_limit
+        character(160) :: message
+        status = 1
+        if (.not. allocated(state%psi)) return
+        nf = size(flux)
+        allocate (loads(size(state%psi), nf), estimates(size(state%psi), nf))
+        loads = 0; estimates = huge(1.0_dp)
+        if (nf < 2) return
+        if (any(.not. ieee_is_finite(flux))) return
+        if (any(flux(2:) <= flux(:nf - 1))) return
+        if (.not. allocated(state%triangles)) return
+        if (.not. allocated(state%points)) return
+        if (.not. allocated(state%boundary)) return
+        if (.not. allocated(state%area)) return
+        ndof = size(state%triangles, 1)
+        if (state%element_order == 1) then
+            if (ndof /= 3) return
+        else if (state%element_order == 2) then
+            if (ndof /= 6) return
+        else
+            return
+        end if
+        if (size(state%triangles, 2) < 1) return
+        if (any(shape(state%points) /= [2, size(state%psi)])) return
+        if (size(state%boundary) /= size(state%psi)) return
+        if (size(state%area) /= size(state%triangles, 2)) return
+        if (any(state%triangles < 1)) return
+        if (any(state%triangles > size(state%psi))) return
+        if (any(.not. ieee_is_finite(state%psi))) return
+        if (any(.not. ieee_is_finite(state%points))) return
+        if (any(.not. ieee_is_finite(state%area))) return
+        if (any(state%area <= 0)) return
+        tolerance = 1.0e-11_dp
+        if (present(relative_tolerance)) tolerance = relative_tolerance
+        if (.not. ieee_is_finite(tolerance)) return
+        if (tolerance <= 0 .or. tolerance >= 1) return
+        work_limit = 200000
+        if (present(max_evaluations)) work_limit = max_evaluations
+        if (work_limit < 1) return
+        if (nf > huge(1)/ndof) return
+        call initialize_triangle_level_workspace(workspace, ndof*nf, nf, &
+            status, max_evaluations=work_limit)
+        if (status /= 0) return
+        allocate (values(ndof*nf), errors(ndof*nf), epsabs(ndof*nf), shifted_flux(nf))
+        estimates = 0
+        do e = 1, size(state%triangles, 2)
+            local_psi(:ndof) = state%psi(state%triangles(:, e))
+            shifted_flux = flux - local_psi(1)
+            vertices = state%points(:, state%triangles(1:3, e))
+            rmin = minval(vertices(1, :))
+            if (rmin <= 0) then
+                status = 1
+                exit
+            end if
+            call triangle_level_coefficients(state%element_order, &
+                local_psi(:ndof), coefficients, status)
+            if (status /= 0) exit
+            ! Identical per-component scale to a native unit FFprime coefficient.
+            epsabs = max(tiny(1.0_dp), 0.01_dp*tolerance/rmin)
+            call integrate_triangle_levels(coefficients, flux, integrand, epsabs, &
+                0.01_dp*tolerance, workspace, &
+                values, errors, status, message)
+            if (status /= 0) exit
+            do j = 1, nf
+                do k = 1, ndof
+                    node = state%triangles(k, e)
+                    index = (j - 1)*ndof + k
+                    loads(node, j) = loads(node, j) + 2*state%area(e)*values(index)
+                    estimates(node, j) = estimates(node, j) + &
+                        2*state%area(e)*errors(index)
+                end do
+            end do
+        end do
+        if (status == 0) then
+            do j = 1, nf
+                where (state%boundary)
+                    loads(:, j) = 0
+                    estimates(:, j) = 0
+                end where
+                if (norm2(estimates(:, j)) > &
+                    tolerance*max(norm2(loads(:, j)), tiny(1.0_dp))) then
+                    status = 3
+                    exit
+                end if
+            end do
+        end if
+        if (status /= 0) then
+            loads = 0
+            estimates = huge(1.0_dp)
+        end if
+    contains
+        subroutine integrand(point, output, callback_status)
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: output(:)
+            integer, intent(out) :: callback_status
+            real(dp) :: shape(6), r, psi_q, source, profile_weights(nf)
+            real(dp) :: zero_profile(nf), nodes_bar(nf), psi_bar
+            integer :: column
+            call element_values(state%element_order, point(1), point(2), shape(:ndof))
+            r = dot_product(vertices(1, :), &
+                [1 - point(1) - point(2), point(1), point(2)])
+            psi_q = dot_product(shape(:ndof), local_psi(:ndof) - local_psi(1))
+            zero_profile = 0
+            ! The existing interpolation adjoint supplies the authoritative hat basis.
+            call profile_adjoint(shifted_flux, zero_profile, psi_q, 1.0_dp, &
+                psi_bar, nodes_bar, profile_weights)
+            call gs_source(r, 1.0_dp, 0.0_dp, 1.0_dp, source)
+            output = 0
+            do column = 1, nf
+                if (profile_weights(column) == 0) cycle
+                output((column - 1)*ndof + 1:column*ndof) = &
+                    source*profile_weights(column)*shape(:ndof)
+            end do
+            callback_status = 0
+            if (any(.not. ieee_is_finite(output))) callback_status = 1
+        end subroutine integrand
+    end subroutine gs_profile_ff_load_basis
+
+
+
+    subroutine prepare_gs_profile_response_cache(state, flux, ff, cache, status)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: flux(:), ff(:)
+        type(gs_profile_response_cache_t), intent(out) :: cache
+        integer, intent(out) :: status
+        real(dp), allocatable :: mass(:, :, :)
+        real(dp) :: axis(2), axis_flux, hessian(2, 2), local(2), gradients(2, 6)
+        integer :: ndof
+        status = 1
+        if (size(flux) < 2 .or. size(ff) /= size(flux)) return
+        if (.not. all(ieee_is_finite(flux))) return
+        if (.not. all(ieee_is_finite(ff))) return
+        if (any(flux(2:) <= flux(:size(flux) - 1))) return
+        if (.not. allocated(state%psi)) return
+        if (.not. allocated(state%points)) return
+        if (.not. allocated(state%triangles)) return
+        if (.not. allocated(state%gradient)) return
+        if (.not. allocated(state%stiffness)) return
+        if (.not. allocated(state%area)) return
+        if (.not. allocated(state%diagonal)) return
+        if (.not. allocated(state%boundary)) return
+        ndof = size(state%triangles, 1)
+        if (state%element_order == 1) then
+            if (ndof /= 3) return
+        else if (state%element_order == 2) then
+            if (ndof /= 6) return
+        else
+            return
+        end if
+        if (size(state%points, 1) /= 2) return
+        if (size(state%points, 2) /= size(state%psi)) return
+        if (size(state%diagonal) /= size(state%psi)) return
+        if (size(state%boundary) /= size(state%psi)) return
+        if (size(state%area) /= size(state%triangles, 2)) return
+        if (any(shape(state%gradient) /= [2, 3, size(state%area)])) return
+        if (any(shape(state%stiffness) /= [ndof, ndof, size(state%area)])) return
+        if (any(state%triangles < 1)) return
+        if (any(state%triangles > size(state%psi))) return
+        if (any(.not. ieee_is_finite(state%psi))) return
+        if (any(.not. ieee_is_finite(state%points))) return
+        if (any(.not. ieee_is_finite(state%gradient))) return
+        if (any(.not. ieee_is_finite(state%stiffness))) return
+        if (any(.not. ieee_is_finite(state%area))) return
+        if (any(.not. ieee_is_finite(state%diagonal))) return
+        if (any(state%area <= 0) .or. any(state%diagonal <= 0)) return
+        call gs_axis_candidate(state, axis, axis_flux, hessian, &
+            cache%axis_element, status)
+        if (status /= 0) return
+        status = 1
+        if (axis_flux >= 0) return
+        if (abs(flux(1) - axis_flux) > 1024*epsilon(1.0_dp)* &
+            max(1.0_dp, maxval(abs(state%psi)))) return
+        ndof = size(state%triangles, 1)
+        allocate (cache%axis_shape(ndof))
+        local = matmul(transpose(state%gradient(:, 2:3, cache%axis_element)), &
+            axis - state%points(:, state%triangles(1, cache%axis_element)))
+        call element_shapes(state, cache%axis_element, local(1), local(2), &
+            cache%axis_shape, gradients(:, :ndof))
+        call gs_profile_tangent_cache(state, flux, ff, axis_flux, mass, &
+            cache%axis_response, status)
+        if (status /= 0) return
+        cache%state = state
+        cache%flux = flux
+        cache%ff = ff
+        cache%matrix = state%stiffness - mass
+        call gs_profile_ff_load_basis(state, flux, cache%load_basis, &
+            cache%load_error, status)
+        if (status /= 0) return
+        cache%ready = .true.
+    end subroutine prepare_gs_profile_response_cache
+
+    logical function profile_cache_matches(state, flux, ff, cache) result(matches)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: flux(:), ff(:)
+        type(gs_profile_response_cache_t), intent(in) :: cache
+        matches = .false.
+        if (.not. cache%ready) return
+        if (state%element_order /= cache%state%element_order) return
+        if (size(flux) /= size(cache%flux) .or. size(ff) /= size(cache%ff)) return
+        if (any(flux /= cache%flux) .or. any(ff /= cache%ff)) return
+        if (.not. allocated(state%psi)) return
+        if (size(state%psi) /= size(cache%state%psi)) return
+        if (any(state%psi /= cache%state%psi)) return
+        if (.not. allocated(state%points)) return
+        if (any(shape(state%points) /= shape(cache%state%points))) return
+        if (any(state%points /= cache%state%points)) return
+        if (.not. allocated(state%triangles)) return
+        if (any(shape(state%triangles) /= shape(cache%state%triangles))) return
+        if (any(state%triangles /= cache%state%triangles)) return
+        if (.not. allocated(state%gradient)) return
+        if (any(shape(state%gradient) /= shape(cache%state%gradient))) return
+        if (any(state%gradient /= cache%state%gradient)) return
+        if (.not. allocated(state%stiffness)) return
+        if (any(shape(state%stiffness) /= shape(cache%state%stiffness))) return
+        if (any(state%stiffness /= cache%state%stiffness)) return
+        if (.not. allocated(state%area)) return
+        if (size(state%area) /= size(cache%state%area)) return
+        if (any(state%area /= cache%state%area)) return
+        if (.not. allocated(state%diagonal)) return
+        if (size(state%diagonal) /= size(cache%state%diagonal)) return
+        if (any(state%diagonal /= cache%state%diagonal)) return
+        if (.not. allocated(state%boundary)) return
+        if (size(state%boundary) /= size(cache%state%boundary)) return
+        if (any(state%boundary .neqv. cache%state%boundary)) return
+        matches = .true.
+    end function profile_cache_matches
+
+    subroutine gs_profile_implicit_response(state, flux, ff, dff, &
+            response, status, cache)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: flux(:), ff(:), dff(:)
+        real(dp), allocatable, intent(out) :: response(:)
+        integer, intent(out) :: status
+        type(gs_profile_response_cache_t), intent(in), optional :: cache
+        type(gs_profile_response_cache_t) :: prepared
+        status = 1
+        if (size(dff) /= size(flux)) return
+        if (.not. all(ieee_is_finite(dff))) return
+        if (present(cache)) then
+            if (.not. profile_cache_matches(state, flux, ff, cache)) return
+            call cached_profile_response(cache, dff, response, status)
+        else
+            call prepare_gs_profile_response_cache(state, flux, ff, prepared, status)
+            if (status /= 0) return
+            call cached_profile_response(prepared, dff, response, status)
+        end if
+    end subroutine gs_profile_implicit_response
+
+    subroutine cached_profile_response(cache, dff, response, status)
+        type(gs_profile_response_cache_t), intent(in) :: cache
+        real(dp), intent(in) :: dff(:)
+        real(dp), allocatable, intent(out) :: response(:)
+        integer, intent(out) :: status
+        real(dp), allocatable :: rhs(:), pp(:), zero_state(:)
+        real(dp) :: residual
+        integer :: iterations
+        allocate (rhs(size(cache%state%psi)), pp(size(cache%flux)), &
+            response(size(cache%state%psi)), &
+            zero_state(size(cache%state%psi)))
+        pp = 0; response = 0; zero_state = 0
+        rhs = matmul(cache%load_basis, dff)
+        if (any(.not. ieee_is_finite(rhs))) then
+            status = 1
+            return
+        end if
+        ! Conservative column estimates can lose a relative budget on cancellation.
+        ! Reintegrate that direction with the original API and unchanged tolerance.
+        if (norm2(matmul(cache%load_error, abs(dff))) > &
+            1.0e-11_dp*max(norm2(rhs), tiny(1.0_dp))) then
+            call gs_profile_load_jvp(cache%state, 1.0_dp, cache%flux, pp, cache%ff, &
+                zero_state, 0.0_dp, pp, pp, dff, rhs, status)
+            if (status /= 0) return
+        end if
+        where (cache%state%boundary) rhs = 0
+        rhs = rhs/cache%state%diagonal
+        call real_gmres_operator(matvec, rhs, response, 1.0e-10_dp, &
+            max(500, 5*size(rhs)), min(80, size(rhs)), &
+            status, iterations, residual)
+    contains
+        subroutine matvec(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            real(dp) :: axis_tangent
+            integer :: cell, first, second, ni, nj
+            output = 0
+            axis_tangent = dot_product(cache%axis_shape, &
+                input(cache%state%triangles(:, cache%axis_element)))
+            do cell = 1, size(cache%state%triangles, 2)
+                do second = 1, size(cache%state%triangles, 1)
+                    nj = cache%state%triangles(second, cell)
+                    if (cache%state%boundary(nj)) cycle
+                    do first = 1, size(cache%state%triangles, 1)
+                        ni = cache%state%triangles(first, cell)
+                        if (cache%state%boundary(ni)) cycle
+                        output(ni) = output(ni) + &
+                            cache%matrix(first, second, cell)*input(nj)
+                    end do
+                end do
+            end do
+            output = output + cache%axis_response*axis_tangent
+            where (cache%state%boundary) output = input
+            output = output/cache%state%diagonal
+        end subroutine matvec
+    end subroutine cached_profile_response
+
+
 
    real(dp) function gs_profile_value(flux, values, psi) result(value)
       real(dp), intent(in) :: flux(:), values(:), psi
