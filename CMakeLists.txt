@@ -125,7 +125,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "5af7291d1dae8abf991ff228450700668f64853a")
+set(KIN6D_FORTFEM_REVISION "44897b4a5584140c6f4347d873c5f18dbc719011")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -143,9 +143,13 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_level_geometry.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90)
-target_link_libraries(kin6d_spatial PUBLIC kin6d_ode)
+target_link_libraries(kin6d_spatial PUBLIC kin6d_ode kin6d_intervals)
+set_source_files_properties(
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
+    PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
     src/grad_shafranov.f90 src/generated/kin6d_gs_reference_error_leaves.f90
     src/gs_reference_error.f90)
@@ -180,6 +184,8 @@ add_test(NAME grad_shafranov_p2_gauge_oracles COMMAND test_gs_p2_gauge)
 add_executable(test_gs_p2_refinement test/test_gs_p2_refinement.f90)
 target_link_libraries(test_gs_p2_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_polynomial_refinement COMMAND test_gs_p2_refinement)
+set_tests_properties(grad_shafranov_p2_polynomial_refinement PROPERTIES
+    FIXTURES_SETUP gs_p2_solovev_export)
 add_executable(test_gs_coarea test/test_gs_coarea.f90)
 target_link_libraries(test_gs_coarea PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_native_coarea_oracles COMMAND test_gs_coarea)
@@ -213,6 +219,29 @@ set_tests_properties(grad_shafranov_p1_reference_accepts_mesh_v1
 add_executable(test_gs_reference_error test/test_gs_reference_error.f90)
 target_link_libraries(test_gs_reference_error PRIVATE kin6d)
 add_test(NAME grad_shafranov_reference_cell_enclosures COMMAND test_gs_reference_error)
+add_executable(test_gs_p2_reference_error test/test_gs_p2_reference_error.f90)
+target_link_libraries(test_gs_p2_reference_error PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_reference_cell_enclosures COMMAND test_gs_p2_reference_error)
+configure_file(test/fixtures/gs_p2_reference.in
+    ${CMAKE_BINARY_DIR}/gs_p2_reference.in COPYONLY)
+foreach(resolution coarse fine)
+    add_test(NAME grad_shafranov_p2_solovev_${resolution}_enclosure
+        COMMAND ${CMAKE_COMMAND} -DGS_REFERENCE_ERROR=$<TARGET_FILE:gs_reference_error>
+            -DMESH=${CMAKE_BINARY_DIR}/p2_solovev_${resolution}_mesh.dat
+            -DPARAMETERS=${CMAKE_BINARY_DIR}/gs_p2_reference.in
+            -DOUTPUT=${CMAKE_BINARY_DIR}/p2_solovev_${resolution}_bounds.json
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test/check_gs_p2_enclosure.cmake)
+    set_tests_properties(grad_shafranov_p2_solovev_${resolution}_enclosure PROPERTIES
+        FIXTURES_REQUIRED gs_p2_solovev_export)
+endforeach()
+add_test(NAME grad_shafranov_p2_reference_rejects_curved_metadata
+    COMMAND ${CMAKE_COMMAND} -DGS_REFERENCE_ERROR=$<TARGET_FILE:gs_reference_error>
+        -DMESH=${CMAKE_BINARY_DIR}/p2_curved_metadata_mesh.dat
+        -DPARAMETERS=${CMAKE_BINARY_DIR}/gs_p2_reference.in
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test/check_gs_p2_geometry_rejection.cmake)
+set_tests_properties(grad_shafranov_p2_reference_rejects_curved_metadata PROPERTIES
+    FIXTURES_REQUIRED gs_p2_solovev_export)
+
 target_link_libraries(gold_hoyle_demo PRIVATE kin6d kin6d_io)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
     -frecursive)

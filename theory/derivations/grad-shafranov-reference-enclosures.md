@@ -110,3 +110,55 @@ vector tests `w`,
   intervals enclose the corresponding actual reference-error norm.
 - TC24 repository retains the three exact-case inputs, receipts and optional
   independent 8/12-order triangle-quadrature replay. No production PDE rerun.
+
+## Affine P2 reconstruction
+
+`enclose_gs_reference_cell` accepts three or six nodal flux values. For six,
+FortFEM's generated interval leaf reconstructs the quadratic flux and its
+physical gradient from the canonical P2 reference basis. Geometry uses the
+first three vertices, exactly as the native GS operator; no curved
+isoparametric geometry is implied by the additional flux DOFs.
+
+The command-line checker requires explicit `affine-p2` as its third argument
+for native mesh-v2. Midpoint metadata must equal the native binary64
+sum-then-half construction for edges (1,2), (2,3), (3,1). This metadata check
+accepts rounded native midpoints; the mathematical affine map uses exact
+stored vertex coordinates. Other midpoint geometry fails explicitly. The
+caller must still establish a valid nonoverlapping mesh with shared edge
+midpoint DOFs. The checker does not establish global mesh conformity.
+
+All norm definitions and outward subdivision rules above apply to P2. The
+reference comparison covers the continuous piecewise-quadratic field on its
+declared polygon. Each cell enclosure includes its one-sided gradient trace;
+the integral norms add no separate interface-jump term. It supplies no
+pointwise current, physical LCFS or unknown-equilibrium bound.
+Matching analytic/native boundary traces are not required for representation
+norms. There is also a fixed-source polygon interpretation when the entire
+mesh and represented boundary trace have been validated. Let `u` solve the
+weighted linear problem with the candidate's represented Dirichlet trace,
+and let `u0` have that trace and the analytic load `-16*C*R`. Then
+`u0-psi_*` is weighted harmonic, while `psi_h-u0` has zero trace. Their
+energy inner product vanishes, so
+
+\[
+ \|\psi_h-u\|_a\le E_{\rm ref}^{\rm upper}
+ + C_w|\mu_0p'+16C|\sqrt{R_{\max}^3|\Omega|}.
+\]
+
+Here `a(v,v)=integral(|grad v|^2/R)`. On a rectangle of side lengths
+`L_R,L_Z`, one may use
+`C_w^2=(Rmax/Rmin)/(pi^2*(1/L_R^2+1/L_Z^2))`. The source term follows
+from the weighted Poincare inequality and the dual norm of the load
+perturbation. For the native Solovev fixtures below it vanishes exactly.
+This upper bound concerns the represented rectangular Dirichlet problem;
+its lower endpoint, a curved physical boundary and nonlinear problems are
+not certified by this argument.
+
+Independent quadratic fixtures reproduce R^2 and RZ, with analytic integrals
+including logarithms, reverse winding, shift the flux gauge and reject bad
+DOF counts/nonpositive R. The existing registered P2 Solovev refinement test
+exports its actual solved coarse/fine states on [5.8,6.6]x[-0.4,0.4]. Separate
+registered interval checks enclose those states against C=0.002, R0=6.2,
+edge=0, mu0=1, pp=-0.032, F=30. These are solved fields, not interpolation
+fixtures. Their prescribed boundary is nodal interpolation of the analytic
+flux and generally differs from it along entire edges.

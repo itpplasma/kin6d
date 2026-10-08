@@ -12,12 +12,19 @@ program gs_reference_error
     real(dp), allocatable :: points(:,:), psi(:)
     integer, allocatable :: triangles(:,:)
     real(dp) :: r0, c, edge, f, mu0, pp
-    integer :: depth, unit, n, m, i, marker, stat
+    integer :: depth, unit, n, m, i, marker, stat, ndof, k, first, second
+    character(32) :: geometry
     character(2048) :: path, param_path, header
     logical :: ok
     namelist /gs_reference/ r0,c,edge,f,mu0,pp,depth
-    if (command_argument_count() /= 2) &
-        error stop 'usage: gs_reference_error mesh params'
+    if (command_argument_count() < 2 .or. command_argument_count() > 3) &
+        error stop 'usage: gs_reference_error mesh params [affine-p2]'
+    ndof=3
+    if (command_argument_count() == 3) then
+        call get_command_argument(3,geometry)
+        if (trim(geometry) /= 'affine-p2') error stop 'unsupported geometry'
+        ndof=6
+    end if
     r0=ieee_value(0.0_dp,ieee_quiet_nan)
     c=r0;edge=r0;f=r0;mu0=r0;pp=r0;depth=-1
     call get_command_argument(1,path); call get_command_argument(2,param_path)
@@ -27,23 +34,44 @@ program gs_reference_error
     parameters=gs_reference_parameters_t(r0,c,edge,f,mu0,pp)
     open(newunit=unit,file=trim(path),status='old',action='read')
     read(unit,'(a)') header
-    if (index(header, '# kin6d-gs-mesh-v1:') /= 1) &
-        error stop 'reference enclosure supports P1 mesh-v1 only'
+    if (ndof == 3) then
+        if (index(header, '# kin6d-gs-mesh-v1:') /= 1) &
+            error stop 'reference enclosure supports P1 mesh-v1 only'
+    else
+        if (index(header, '# kin6d-gs-mesh-v2: P2 ') /= 1) &
+            error stop 'affine-p2 requires native P2 mesh-v2'
+    end if
     read(unit,*) n,m
     if (n<3 .or. m<1) error stop 'empty mesh'
-    allocate(points(2,n),psi(n),triangles(3,m))
+    allocate(points(2,n),psi(n),triangles(ndof,m))
     do i=1,n
         read(unit,*) points(:,i),psi(i),marker
     end do
     read(unit,'(a)') header
     do i=1,m
-        read(unit,*) triangles(:,i)
+        read(unit,'(a)',iostat=stat) header
+        if (stat /= 0) error stop 'missing connectivity row'
+        read(header,*,iostat=stat) triangles(:,i)
+        if (stat /= 0) error stop 'invalid connectivity row'
+        read(header,*,iostat=stat) triangles(:,i),geometry
+        if (stat == 0) error stop 'extra connectivity entries'
+        if (stat > 0) error stop 'malformed connectivity row'
     end do
     close(unit)
     if (minval(triangles)<1 .or. maxval(triangles)>n) error stop 'bad connectivity'
+    if (ndof == 6) then
+        do i=1,m
+            do k=1,3
+                first=triangles(k,i); second=triangles(mod(k,3)+1,i)
+                if (any(points(:,triangles(k+3,i)) /= &
+                    0.5_dp*(points(:,first)+points(:,second)))) &
+                    error stop 'P2 midpoint metadata is not native affine geometry'
+            end do
+        end do
+    end if
     total=interval(0); area=interval(0); volume=interval(0); peak=interval(0)
     do i=1,m
-        call enclose_gs_reference_cell(points(:,triangles(:,i)), &
+        call enclose_gs_reference_cell(points(:,triangles(1:3,i)), &
             psi(triangles(:,i)),parameters,depth,cell,a,v,maximum,ok)
         if (.not. ok) error stop 'reference enclosure failed'
         total=total+cell; area=area+a; volume=volume+v
@@ -57,6 +85,7 @@ program gs_reference_error
     print '(a)', '{'
     print '(a,i0,a)', '  "nodes":',n,','
     print '(a,i0,a)', '  "triangles":',m,','
+    if (ndof == 6) print '(a,i0,a)', '  "element_order":',2,','
     print '(a,i0,a)', '  "cover_depth":',depth,','
     call emit('area_m2',area,.true.)
     call emit('toroidal_volume_m3',2*interval_pi()*volume,.true.)
