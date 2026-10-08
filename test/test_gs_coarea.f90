@@ -155,9 +155,56 @@ program test_gs_coarea
     call gs_level_coarea(state, levels, 256, fine, axis, &
                          status)
     if (status == 0) error stop 'non-native axis flux accepted'
+    call refined_face_endpoint_oracle()
     print *, &
         'PASS: native P2 exact finite-R coarea and signed source correspondence'
 contains
+    subroutine refined_face_endpoint_oracle()
+        type(gs_state_t)::refined
+        real(dp)::boundary(2, 63), center(2), wanted(2), computed_axis(2), best, d, theta
+        real(dp)::ell(65), integral(65), derivative(65), exact, radius_squared
+        integer::i, cell, stat, amplitude_index, count_index, n
+        real(dp)::amplitude
+        do i = 1, 63
+            theta = 2*acos(-1.0_dp)*(i - 1)/63
+            boundary(:, i) = [4.0_dp + 0.4_dp*cos(theta), 0.4_dp*sin(theta)]
+        end do
+        call initialize_gs(refined, boundary, 0.0003125_dp, stat, 2)
+        if (stat /= 0) error stop 'refined polynomial mesh failed'
+        best = huge(1.0_dp)
+        do cell = 1, size(refined%triangles, 2)
+            center = sum(refined%points(:, refined%triangles(1:3, cell)), dim=2)/3
+            d = norm2(center - [4.0_dp, 0.0_dp])
+            if (d >= best) cycle
+            best = d
+            wanted = center
+        end do
+        ! Exactly representable degree two, with all tested circles strictly
+        ! inside the polygon. No Grad-Shafranov PDE solve is involved.
+        do amplitude_index = 0, 3
+            amplitude = 10.0_dp**amplitude_index
+            refined%psi = amplitude*(0.25_dp*((refined%points(1, :) - wanted(1))**2 + &
+                                             (refined%points(2, :) - wanted(2))**2) - 0.02_dp)
+            do count_index = 1, 4
+                n = 2**(count_index + 2) + 1
+                ell(:n) = [((-0.02_dp + 0.02_dp*real(i - 1, dp)/(n - 1))*amplitude, i=1, n)]
+                call gs_level_coarea(refined, ell(:n), 128, integral(:n), computed_axis, stat)
+                if (stat /= 0) error stop 'refined exact polynomial primal rejected'
+                call gs_level_coarea(refined, ell(:n), 128, integral(:n), computed_axis, stat, &
+                                     refined%psi, ell(:n), derivative(:n))
+                if (stat /= 0) error stop 'known face endpoint was re-solved outside its cell'
+                do i = 1, n
+                    radius_squared = 4*(ell(i)/amplitude + 0.02_dp)
+                    exact = 4*acos(-1.0_dp)/(amplitude*sqrt(wanted(1)**2 - radius_squared))
+                    if (abs(integral(i)/exact - 1) > 2.0e-9_dp) &
+                        error stop 'refined exact circular coarea oracle'
+                end do
+                if (maxval(abs(derivative(:n)/integral(:n) + 1)) > 2.0e-9_dp) &
+                    error stop 'refined exact amplitude derivative oracle'
+            end do
+        end do
+    end subroutine refined_face_endpoint_oracle
+
     subroutine gs_element_jet_with_tangent_value()
         type(gs_state_t)::tangent_state
         tangent_state = state; tangent_state%psi = tangent_psi
