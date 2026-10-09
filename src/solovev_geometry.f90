@@ -6,7 +6,8 @@ module kin6d_solovev_geometry
     use fortnum_status, only: fortnum_status_t, status_ok
     use kin6d_solovev_geometry_leaves, only: solovev_geometry_level, &
         solovev_geometry_rectangle, solovev_boundary_jet, solovev_inverse_scale, &
-        solovev_inverse_discriminant, solovev_h_first, solovev_h_second, &
+        solovev_inverse_discriminant, solovev_forward_scale, &
+        solovev_h_first, solovev_h_second, &
         solovev_facet_first, solovev_facet_second, solovev_c_first, &
         solovev_c_second, solovev_map_first, solovev_map_second
     implicit none
@@ -27,7 +28,14 @@ module kin6d_solovev_geometry
         logical :: identity = .false., inner_interface = .false.
         logical :: sector_interface = .false., certified = .false.
     end type
+    type, public :: geometry_position_t
+        real(dp) :: value(2) = 0, root_residual = 0
+        integer :: facet = 0, status = geometry_invalid
+        logical :: identity = .false., inner_interface = .false.
+        logical :: sector_interface = .false., certified = .false.
+    end type
     public :: initialize_solovev_geometry, sample_solovev_geometry
+    public :: position_solovev_geometry, locate_solovev_geometry
     public :: solovev_geometry_jvp, solovev_geometry_vjp
 contains
     subroutine initialize_solovev_geometry(map, r0, level, tau, polygon, status)
@@ -77,13 +85,37 @@ contains
         type(solovev_geometry_t), intent(in) :: map
         real(dp), intent(in) :: point(2)
         type(geometry_sample_t), intent(out) :: sample
-        type(fortnum_status_t) :: root_status
+        call evaluate_solovev_geometry(map, point, sample, .false.)
+    end subroutine
+
+    subroutine position_solovev_geometry(map, point, position)
+        type(solovev_geometry_t), intent(in) :: map
+        real(dp), intent(in) :: point(2)
+        type(geometry_position_t), intent(out) :: position
+        type(geometry_sample_t) :: sample
+        call evaluate_solovev_geometry(map, point, sample, .true.)
+        position = geometry_position_t()
+        position%status = sample%status
+        position%facet = sample%facet
+        position%identity = sample%identity
+        position%inner_interface = sample%inner_interface
+        position%sector_interface = sample%sector_interface
+        if (sample%status /= geometry_ok) return
+        position%value = sample%value
+        position%root_residual = sample%root_residual
+    end subroutine
+
+    subroutine evaluate_solovev_geometry(map, point, sample, position_only)
+        type(solovev_geometry_t), intent(in) :: map
+        real(dp), intent(in) :: point(2)
+        type(geometry_sample_t), intent(out) :: sample
+        logical, intent(in) :: position_only
         real(dp) :: d(2), inner(2), q, value, score, best, runner, tolerance
-        real(dp) :: upper, h, p, c, discriminant, v, boundary(2), g(2)
+        real(dp) :: h, p, c, discriminant, v, boundary(2), g(2)
         real(dp) :: k(2, 2), hi(2), hij(2, 2), pi(2), pij(2, 2), ci(2), cij
         real(dp) :: bj(2, 2), normal(2), beta, ei(2), ej(2), determinant
         real(dp) :: mapped(2), jacobian(2, 2), hessian(2, 2, 2), residual
-        integer :: i, j, a, facet
+        integer :: i, j, a, facet, ray_status
         sample = geometry_sample_t()
         if (.not. map%ready) return
         if (.not. all(ieee_is_finite(point))) return
@@ -108,9 +140,11 @@ contains
             if (.not. ieee_is_finite(value)) return
             tolerance = 128*epsilon(1.0_dp)*max(tiny(1.0_dp), map%level, abs(value))
             if (abs(value-map%level) <= tolerance) then
-                sample%status = geometry_interface
                 sample%inner_interface = .true.
-                return
+                if (.not. position_only) then
+                    sample%status = geometry_interface
+                    return
+                end if
             end if
             if (value < map%level) then
                 sample%value = point
@@ -123,35 +157,22 @@ contains
         sample%facet = facet
         tolerance = 128*epsilon(1.0_dp)*max(1.0_dp, abs(best))
         if (best-runner <= tolerance) then
-            sample%status = geometry_interface
             sample%sector_interface = .true.
-            return
+            if (.not. position_only) then
+                sample%status = geometry_interface
+                return
+            end if
         end if
         if (best <= 0) return
         normal = map%normals(:, facet); beta = map%beta(facet)
         p = 1/best
-        upper = huge(1.0_dp)
-        if (d(1) > 0) upper = (map%rectangle(2)-map%r0)/d(1)
-        if (d(1) < 0) upper = (map%rectangle(1)-map%r0)/d(1)
-        if (abs(d(2)) > 0) upper = min(upper, map%rectangle(3)/abs(d(2)))
         sample%status = geometry_arithmetic
-        if (.not. ieee_is_finite(upper)) return
-        if (upper <= 0) return
-        ! A rounded square-root rectangle endpoint can lie just below the
-        ! boundary. Pad the candidate bracket, then require positive finite R.
-        ! This is not directed rounding or a certified root bracket.
-        upper = upper*(1+64*epsilon(1.0_dp))
-        boundary = [map%r0, 0.0_dp]+upper*d
-        if (.not. all(ieee_is_finite(boundary))) return
-        if (boundary(1) <= 0) return
-        ! FortNum owns generic root iteration. The derivatives below use the
-        ! implicit boundary equation, never the bisection control flow.
-        call root_bisect(ray_residual, 0.0_dp, upper, h, root_status, &
-            xtol=8*epsilon(1.0_dp)*max(1.0_dp, upper), ftol=0.0_dp)
-        if (.not. status_ok(root_status)) return
-        if (.not. ieee_is_finite(h)) return
-        if (h <= 0 .or. h < p) return
-        if (q*h >= 1) return
+        call solovev_ray_scale(map, d, h, residual, ray_status)
+        if (ray_status /= geometry_ok) return
+        if (h < p) return
+        if (.not. position_only) then
+            if (q*h >= 1) return
+        end if
         call solovev_inverse_discriminant(map%tau, h, p, discriminant)
         if (.not. ieee_is_finite(discriminant)) return
         if (discriminant <= 0) return
@@ -161,6 +182,15 @@ contains
         ! the root or claiming an error enclosure. Exact predicates stay external.
         tolerance = 64*epsilon(1.0_dp)*max(1.0_dp, h, abs(c))
         if (c < 1-tolerance .or. c > h+tolerance) return
+        if (position_only) then
+            mapped(1) = map%r0+c*d(1)
+            mapped(2) = 0.0_dp+c*d(2)
+            if (.not. all(ieee_is_finite(mapped))) return
+            sample%value = mapped
+            sample%root_residual = residual
+            sample%status = geometry_ok
+            return
+        end if
         boundary = [map%r0, 0.0_dp]+h*d
         call solovev_boundary_jet(boundary(1), boundary(2), map%r0, &
             g(1), g(2), k(1, 1), k(1, 2), k(2, 2))
@@ -197,7 +227,6 @@ contains
             end do
         end do
         mapped = [map%r0, 0.0_dp]+c*d
-        residual = ray_residual(h)
         if (.not. ieee_is_finite(residual)) return
         if (.not. all(ieee_is_finite(mapped))) return
         if (.not. all(ieee_is_finite(jacobian))) return
@@ -210,15 +239,110 @@ contains
         sample%hessian = hessian
         sample%root_residual = residual
         sample%status = geometry_ok
+    end subroutine
+
+    subroutine solovev_ray_scale(map, d, h, residual, status)
+        type(solovev_geometry_t), intent(in) :: map
+        real(dp), intent(in) :: d(2)
+        real(dp), intent(out) :: h, residual
+        integer, intent(out) :: status
+        type(fortnum_status_t) :: root_status
+        real(dp) :: upper, boundary(2), candidate
+        h = 0; residual = 0; status = geometry_arithmetic
+        upper = huge(1.0_dp)
+        if (d(1) > 0) upper = (map%rectangle(2)-map%r0)/d(1)
+        if (d(1) < 0) upper = (map%rectangle(1)-map%r0)/d(1)
+        if (abs(d(2)) > 0) upper = min(upper, map%rectangle(3)/abs(d(2)))
+        if (.not. ieee_is_finite(upper)) return
+        if (upper <= 0) return
+        ! Floating bracket recovery, not a certified root enclosure.
+        upper = upper*(1+64*epsilon(1.0_dp))
+        boundary = [map%r0, 0.0_dp]+upper*d
+        if (.not. all(ieee_is_finite(boundary))) return
+        if (boundary(1) <= 0) return
+        call root_bisect(ray_residual, 0.0_dp, upper, candidate, root_status, &
+            xtol=8*epsilon(1.0_dp)*max(1.0_dp, upper), ftol=0.0_dp)
+        if (.not. status_ok(root_status)) return
+        if (.not. ieee_is_finite(candidate)) return
+        if (candidate <= 0) return
+        residual = ray_residual(candidate)
+        if (.not. ieee_is_finite(residual)) then
+            residual = 0
+            return
+        end if
+        h = candidate; status = geometry_ok
     contains
-        pure real(dp) function ray_residual(scale) result(residual)
+        pure real(dp) function ray_residual(scale) result(value)
             real(dp), intent(in) :: scale
-            real(dp) :: position(2)
-            position = [map%r0, 0.0_dp]+scale*d
-            call solovev_geometry_level(position(1), position(2), map%r0, residual)
-            residual = residual-map%level
+            real(dp) :: point(2)
+            point = [map%r0, 0.0_dp]+scale*d
+            call solovev_geometry_level(point(1), point(2), map%r0, value)
+            value = value-map%level
         end function
     end subroutine
+
+    subroutine locate_solovev_geometry(map, physical, position)
+        type(solovev_geometry_t), intent(in) :: map
+        real(dp), intent(in) :: physical(2)
+        type(geometry_position_t), intent(out) :: position
+        real(dp) :: d(2), inner(2), value, tolerance, q, best, runner, score
+        real(dp) :: h, p, scale, residual, point(2)
+        integer :: i, facet, ray_status
+        position = geometry_position_t()
+        if (.not. map%ready) return
+        if (.not. all(ieee_is_finite(physical))) return
+        if (physical(1) <= 0) return
+        call solovev_geometry_level(physical(1), physical(2), map%r0, value)
+        if (.not. ieee_is_finite(value)) return
+        tolerance = 128*epsilon(1.0_dp)*max(tiny(1.0_dp), map%level, abs(value))
+        if (value > map%level+tolerance) return
+        d(1) = physical(1)-map%r0
+        d(2) = physical(2)-0.0_dp
+        q = 1-map%tau
+        inner(1) = map%r0+d(1)/q
+        inner(2) = 0.0_dp+d(2)/q
+        if (.not. all(ieee_is_finite(inner))) return
+        if (inner(1) > 0) then
+            call solovev_geometry_level(inner(1), inner(2), map%r0, value)
+            if (.not. ieee_is_finite(value)) return
+            tolerance = 128*epsilon(1.0_dp)*max(tiny(1.0_dp), map%level, abs(value))
+            position%inner_interface = abs(value-map%level) <= tolerance
+            if (value < map%level) then
+                position%value = physical
+                position%identity = .true.
+                position%status = geometry_ok
+                return
+            end if
+        end if
+        best = -huge(1.0_dp); runner = best; facet = 0
+        do i = 1, size(map%beta)
+            score = dot_product(map%normals(:, i), d)/map%beta(i)
+            if (.not. ieee_is_finite(score)) return
+            if (score > best) then
+                runner = best; best = score; facet = i
+            else
+                runner = max(runner, score)
+            end if
+        end do
+        if (best <= 0) return
+        position%facet = facet
+        tolerance = 128*epsilon(1.0_dp)*max(1.0_dp, abs(best))
+        position%sector_interface = best-runner <= tolerance
+        position%status = geometry_arithmetic
+        call solovev_ray_scale(map, d, h, residual, ray_status)
+        if (ray_status /= geometry_ok) return
+        p = 1/best
+        call solovev_forward_scale(map%tau, h, p, scale)
+        if (.not. ieee_is_finite(scale)) return
+        if (scale <= 0) return
+        point(1) = map%r0+scale*d(1)
+        point(2) = 0.0_dp+scale*d(2)
+        if (.not. all(ieee_is_finite(point))) return
+        position%value = point
+        position%root_residual = residual
+        position%status = geometry_ok
+    end subroutine
+
     subroutine solovev_geometry_jvp(map, point, direction, product, status)
         type(solovev_geometry_t), intent(in) :: map
         real(dp), intent(in) :: point(2), direction(2)

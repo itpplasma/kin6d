@@ -60,6 +60,8 @@ program gen_solovev_geometry
         ['discriminant'], [discriminant], ad=.true.)
     call writer%emit('solovev_inverse_scale', ['tau', 'h  ', 'p  '], &
         ['c'], [2*tau*h/(h-q*p+sqrt(discriminant))], ad=.true.)
+    call writer%emit('solovev_forward_scale', ['tau', 'h  ', 'p  '], &
+        ['scale'], [1-(1-p/h)*(1/h-q)/tau], ad=.true.)
     call writer%emit('solovev_h_first', ['h ', 'gi', 'v '], &
         ['hi'], [-h*gi/v], ad=.true.)
     call writer%emit('solovev_h_second', &
