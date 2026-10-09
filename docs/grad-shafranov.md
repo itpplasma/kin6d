@@ -254,6 +254,15 @@ pp_c0 pp_c1 pp_c2 pp_c3 ff_c0 ff_c1 ff_c2 ff_c3
 ... one coefficient row per interval ...
 ```
 
+For a normalized derivative table only, `gs_phase1 total_current` imposes a
+signed SI toroidal-current constraint. The exact scaling symmetry multiplies
+psi, pprime and FFprime by the same positive factor; normalized flux is
+unchanged, p-p_edge and F²-F_edge² scale by its square, and F_edge is fixed.
+The input therefore prescribes derivative **shapes**, not fixed pressure values.
+The current is the volume-source integral before boundary elimination, divided
+by mu0. Zero means no constraint; opposite-polarity or absolute-law requests
+fail. This does not implement a prescribed Istar profile or prescribed p(s).
+
 Mode 0 means absolute psi; mode 1 means normalized s, whose endpoints must be
 0 and 1. Coefficients use ascending powers of coordinate minus the interval's
 left knot. Units of the **values** remain Pa/(Wb/rad) and T² m²/(Wb/rad);

@@ -11,7 +11,7 @@ program gs_phase1_main
     use kin6d_gs_majorant, only: gs_functional_majorant
     use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
         write_gs_profile_law, gs_law_sources, gs_law_primitives
-    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
+    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
     use kin6d_result_io, only: run_t, result_file_t, runtime_git
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
@@ -26,6 +26,7 @@ program gs_phase1_main
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
     real(dp) :: nonlinear_tolerance = 1.0e-9_dp, pressure, f, pp, ff
     real(dp) :: quadrature_tolerance = 1.0e-8_dp
+    real(dp) :: total_current = 0, measured_current = 0
     real(dp) :: majorant, flux_defect, balance_defect, estimator_s
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
@@ -38,7 +39,7 @@ program gs_phase1_main
     character(:), allocatable :: commit, dirty
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
         pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree, &
-        profile_file, nonlinear_tolerance, quadrature_tolerance
+        profile_file, nonlinear_tolerance, quadrature_tolerance, total_current
     call run%start('gs_phase1')
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
@@ -103,6 +104,12 @@ program gs_phase1_main
         print *, 'solve status, iteration, residual:', status, state%iterations, &
             state%residual
         error stop 'equilibrium solve failed'
+    end if
+    if (total_current /= 0) then
+        if (.not. allocated(law)) error stop 'current constraint requires normalized law'
+        call gs_normalize_current(state, mu0, law, total_current, measured_current, &
+            status, quadrature_tolerance)
+        if (status /= 0) error stop 'invalid normalized current constraint'
     end if
     call system_clock(finish)
     wall_s = real(finish - start, dp)/rate
@@ -195,6 +202,7 @@ program gs_phase1_main
     close (unit)
     call runtime_git(commit, dirty, 'gs_phase1')
     open (newunit=unit, file='summary.dat', status='replace')
+    write (unit, '(a,1x,es25.16e3)') 'total_current', measured_current
     write (unit, '(a,1x,i0)') 'degree', state%element_order
     write (unit, '(a,1x,i0)') 'iterations', state%iterations
     write (unit, '(a,1x,i0)') 'dof', count(.not. state%boundary)
