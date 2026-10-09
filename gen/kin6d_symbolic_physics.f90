@@ -18,6 +18,7 @@ module kin6d_symbolic_physics
                             operator(**)
     implicit none
     private
+    public :: solovev_level
     public :: coulomb_potential, coulomb_force
     public :: sphere_potential_inside, sphere_force_inside
     public :: gaussian_coulomb_potential, gaussian_coulomb_series
@@ -33,6 +34,13 @@ module kin6d_symbolic_physics
     public :: krook_node_residual, p1_weight, p1_blend, p1_interpolate
     public :: yukawa_zero_mode, debye_structure_factor, bohm_gross_frequency
 contains
+    !> Geometry level shared by the Solovev field and smooth-domain map.
+    function solovev_level(r, z, r0) result(level)
+        type(expr_t), intent(in) :: r, z, r0
+        type(expr_t) :: level
+        level = (r**2-r0**2)**2+4*r**2*z**2
+    end function
+
     !> Bare Coulomb pair potential g/r.
     function coulomb_potential(g, r) result(u)
         type(expr_t), intent(in) :: g, r

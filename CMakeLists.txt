@@ -175,6 +175,13 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
+target_sources(kin6d PRIVATE src/solovev_geometry.f90
+    src/generated/kin6d_solovev_geometry_leaves.f90)
+set_source_files_properties(src/generated/kin6d_solovev_geometry_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_solovev_geometry test/test_solovev_geometry.f90)
+target_link_libraries(test_solovev_geometry PRIVATE kin6d)
+add_test(NAME grad_shafranov_solovev_geometry_primitive COMMAND test_solovev_geometry)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
 target_link_libraries(test_gs_p2 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)
@@ -343,7 +350,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "a6142712af998b727c245fb6cfbb3745b296ec24")
+set(KIN6D_FORTSYM_REVISION "f749e65a4c00f014d88d0a4786a0689662b6a28f")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -419,7 +426,8 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov gs_coarea gs_reference_error laboratory poisson fp transport
+    foreach(generator solovev_geometry grad_shafranov gs_coarea gs_reference_error
+            laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
