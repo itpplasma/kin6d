@@ -6,6 +6,7 @@ program gen_grad_shafranov
    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
    use fortsym_engine_native, only: native_engine_t, make_native_engine
    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+   use kin6d_symbolic_physics, only: solovev_level
    implicit none
    type(arena_t), target :: arena
    type(leaf_writer_t) :: w
@@ -30,7 +31,7 @@ program gen_grad_shafranov
    identity = engine%zero_test(diff(width*derivative + width**2*slope/2, width) &
       - derivative - width*slope)
    if (identity%verdict /= VERDICT_TRUE) error stop 'GS profile primitive unproved'
-   psi = amplitude*((r**2 - r0**2)**2 + 4*r**2*z**2)
+   psi = amplitude*solovev_level(r, z, r0)
    rr = diff(psi, r)
    delta = diff(rr, r) - rr/r + diff(diff(psi, z), z)
    identity = engine%zero_test(delta - 16*amplitude*r**2)

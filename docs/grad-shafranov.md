@@ -175,3 +175,49 @@ Exact book equation numbers are not asserted.
 - Current ITER comparison inputs/results and disagreement classification live
   in the TC24 repository's `equilibrium/`; received profiles are not exact
   oracles. Do not use cross-code agreement alone as validation.
+
+## Smooth-domain geometry primitive
+
+`kin6d_solovev_geometry` supplies a **candidate geometry callback only** for
+`H(R,Z)=(R^2-r0^2)^2+4 R^2 Z^2=level`, centered at `(r0,0)`. Its explicit
+inputs are `r0`, positive `level<r0^4`, `0<tau<1`, and a CCW convex polygon.
+They contain no source, pressure, F, flux amplitude or reference-field values.
+The caller must independently establish the reviewed positive-R convex-domain,
+polygon inclusion, inner homothetic inclusion and positive radial-derivative
+premises. Constructor finite/vertex/facet checks do not prove those premises.
+
+`initialize_solovev_geometry` constructs a reusable geometry record.
+`sample_solovev_geometry` returns `geometry_sample_t`: physical `value(2)`,
+`jacobian(a,i)` and `hessian(a,i,j)`, the active polygon `facet`, an `identity`
+flag, interface flags and `status`. Its inputs are polygon physical coordinates;
+the output is the radial inverse G mapping that polygon to the smooth domain.
+Inside the inner homothetic domain G is identity, including at the axis.
+On an annular smooth piece, a FortNum bracketed root solves the quartic boundary
+equation and the stable smaller quadratic root gives G's radial scale.
+FortSym-generated leaves evaluate that geometry and its equation-level spatial
+jets; bisection iterations are not differentiated. `solovev_geometry_jvp` and
+`solovev_geometry_vjp` act on point directions and Euclidean Cartesian weights
+at fixed geometry. Parameter/facet/topology derivatives are not exposed.
+
+Status0 means successful **floating candidate evaluation**. Status1 rejects
+invalid/uninitialized input, status2 reports an inner or sector derivative cut,
+and status3 reports failed root/arithmetic/positivity checks. A native guard band
+around a cut also reports status2. No one-sided derivative is selected silently;
+nonzero status leaves value, J, H and derivative products zero, with only status,
+facet and interface metadata available. Boundary and near-interface samples may
+be rejected by arithmetic guards; success on all valid polygon points is not
+claimed. `certified` remains false; `root_residual` on success is a diagnostic,
+not a root-error enclosure or a positive-Jacobian certificate.
+The 64-epsilon bracket padding and scale-range allowance are candidate
+evaluation recovery guards, not rigorous roundoff estimates or admission bounds.
+
+The map is piecewise smooth and is not globally C2. Its Hessian tensor order is
+physical-component first; FortFEM's generic sampled tensor uses `(i,j,a)` and
+requires an explicit tested adapter when connected. Actual certified mapped
+panels, root/Jacobian arithmetic budgets and common native geometry/assembly/
+readback wiring remain open. This primitive changes no mesh format, assembled
+GS equation, existing affine solve, coarea or classical-current capability and
+admits no new scientific PDE run. The CTest
+`grad_shafranov_solovev_geometry_primitive` checks noncircular independent formal
+series jets, known radial forward/inverse and curvature identities, nonsymmetric
+Cartesian directions, pairing, axis behavior and explicit cut rejection.
