@@ -2,6 +2,7 @@ program test_solovev_geometry
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use kin6d_solovev_geometry, only: solovev_geometry_t, geometry_sample_t, &
+        geometry_position_t, position_solovev_geometry, locate_solovev_geometry, &
         initialize_solovev_geometry, sample_solovev_geometry, &
         solovev_geometry_jvp, solovev_geometry_vjp, &
         geometry_ok, geometry_invalid, geometry_interface, geometry_arithmetic
@@ -170,6 +171,7 @@ program test_solovev_geometry
     call sample_solovev_geometry(map, [ieee_value(0.0_dp, ieee_quiet_nan), &
         0.0_dp], sample)
     call require(sample%status == geometry_invalid, 'nonfinite point rejected')
+    call position_oracles()
     wrong = polygon(:, 8:1:-1)
     call initialize_solovev_geometry(bad, r0, level, tau, wrong, status)
     call require(status == geometry_invalid, 'clockwise polygon rejected')
@@ -180,6 +182,108 @@ program test_solovev_geometry
         'failed initialization stays closed')
     print *, 'Solovev geometry primitive checks:', passed
 contains
+    subroutine position_oracles()
+        type(solovev_geometry_t) :: cut_map, unset
+        type(geometry_position_t) :: image, located
+        type(geometry_sample_t) :: unavailable
+        real(dp) :: origin(2), u(2), v(2), corners(2, 8), x(2), y(2), s, f
+        integer :: i, stat
+        origin(1) = r0; origin(2) = 0.0_dp
+        u(1) = 0.3_dp; u(2) = 0.2_dp
+        v(1) = -0.2_dp; v(2) = 0.3_dp
+        ! Rational octagon: inradius > .27, outradius < .313. Existing
+        ! independent radius-.446 bound gives delta < .395 and radial slope >0.
+        corners(:, 1) = origin+0.8_dp*u
+        corners(:, 2) = origin+0.6_dp*(u+v)
+        corners(:, 3) = origin+0.8_dp*v
+        corners(:, 4) = origin+0.6_dp*(-u+v)
+        corners(:, 5) = origin-0.8_dp*u
+        corners(:, 6) = origin-0.6_dp*(u+v)
+        corners(:, 7) = origin-0.8_dp*v
+        corners(:, 8) = origin+0.6_dp*(u-v)
+        call initialize_solovev_geometry(cut_map, r0, level, tau, corners, stat)
+        call require(stat == geometry_ok, 'position cut fixture initializes')
+        call position_solovev_geometry(map, origin, image)
+        call locate_solovev_geometry(map, origin, located)
+        call require(image%status == geometry_ok .and. &
+                located%status == geometry_ok, &
+            'both position directions include axis')
+        call close(norm2(image%value-origin)+norm2(located%value-origin), &
+            0.0_dp, 0.0_dp, 'axis positions exact')
+        call require(image%identity .and. located%identity, &
+            'position identity metadata')
+        call require(.not. image%certified .and. .not. located%certified, &
+            'position success remains uncertified')
+        do i = 0, 3
+            s = 0.4_dp+0.2_dp*i
+            f = s*(1-0.2_dp*(s-q)/tau)
+            x = origin+f*u; y = origin+s*u
+            call position_solovev_geometry(cut_map, x, image)
+            call locate_solovev_geometry(cut_map, y, located)
+            call require(image%status == geometry_ok .and. &
+                located%status == geometry_ok, &
+                'both directions succeed on sector-cut ray')
+            call require(image%sector_interface .and. located%sector_interface, &
+                'positions retain sector-cut metadata')
+            call close(norm2(image%value-y), 0.0_dp, 4.0e-13_dp, &
+                'G cut value independent prescribed quartic-ray pair')
+            call close(norm2(located%value-x), 0.0_dp, 4.0e-13_dp, &
+                'F cut value independent prescribed quartic-ray pair')
+            call sample_solovev_geometry(cut_map, x, unavailable)
+            call require(unavailable%status == geometry_interface, &
+                'same sector positions still have unavailable signed jets')
+            call close(norm2(unavailable%value)+sum(abs(unavailable%jacobian)) &
+                +sum(abs(unavailable%hessian)), 0.0_dp, 0.0_dp, &
+                'jet rejection still clears all outputs')
+        end do
+        call close(oracle_h(image%value), level, 3.0e-12_dp, &
+            'boundary corner value satisfies independent quartic level')
+        x = origin+q*u
+        call position_solovev_geometry(map, x, image)
+        call locate_solovev_geometry(map, x, located)
+        call require(image%status == geometry_ok .and. &
+                located%status == geometry_ok, &
+            'inner-cut positions available')
+        call require(image%inner_interface .and. located%inner_interface, &
+            'inner-cut position metadata')
+        call close(norm2(image%value-x)+norm2(located%value-x), &
+            0.0_dp, 4.0e-13_dp, 'inner-cut continuity position oracle')
+        ! A different open facet ray checks F independently, not only roundtrip.
+        y = origin+0.8_dp*u
+        x = origin+[128.0_dp/625, 256.0_dp/1875]
+        call locate_solovev_geometry(map, y, located)
+        call require(located%status == geometry_ok, 'open-facet F location status')
+        call close(norm2(located%value-x), 0.0_dp, 4.0e-13_dp, &
+            'open-facet F prescribed rational image')
+        call position_solovev_geometry(map, located%value, image)
+        call close(norm2(image%value-y), 0.0_dp, 4.0e-13_dp, &
+            'roundtrip secondary consistency control')
+        x = origin+1.2_dp*0.8_dp*u
+        call position_solovev_geometry(cut_map, x, image)
+        call require(image%status == geometry_invalid, &
+            'outside polygon position rejects')
+        call close(norm2(image%value), 0.0_dp, 0.0_dp, 'invalid G position cleared')
+        x = origin+1.2_dp*u
+        call locate_solovev_geometry(cut_map, x, located)
+        call require(located%status == geometry_invalid, &
+            'outside physical domain rejects')
+        call close(norm2(located%value), 0.0_dp, 0.0_dp, 'invalid F position cleared')
+        x(1) = ieee_value(0.0_dp, ieee_quiet_nan)
+        x(2) = 0.0_dp
+        call position_solovev_geometry(map, x, image)
+        call locate_solovev_geometry(map, x, located)
+        call require(image%status == geometry_invalid .and. &
+            located%status == geometry_invalid, &
+            'nonfinite position arguments reject')
+        call close(norm2(image%value)+norm2(located%value), &
+            0.0_dp, 0.0_dp, 'nonfinite positions cleared')
+        call position_solovev_geometry(unset, origin, image)
+        call locate_solovev_geometry(unset, origin, located)
+        call require(image%status == geometry_invalid .and. &
+            located%status == geometry_invalid, &
+            'uninitialized geometry positions unavailable')
+    end subroutine
+
     real(dp) function oracle_h(x) result(value)
         real(dp), intent(in) :: x(2)
         value = (x(1)**2-r0**2)**2+4*x(1)**2*x(2)**2

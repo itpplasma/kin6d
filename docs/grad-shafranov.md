@@ -248,6 +248,31 @@ not a root-error enclosure or a positive-Jacobian certificate.
 The 64-epsilon bracket padding and scale-range allowance are candidate
 evaluation recovery guards, not rigorous roundoff estimates or admission bounds.
 
+`position_solovev_geometry` returns the polygon-to-physical position G and
+`locate_solovev_geometry` returns the physical-to-polygon position F. They use
+`geometry_position_t`, which has no Jacobian/Hessian fields. Status0 means a
+successful floating POSITION only, including at inner/sector derivative cuts;
+cut flags remain available. The existing signed jet/JVP/VJP API still returns
+status2 and clears every jet at those cuts. Position failure clears its value;
+`certified` remains false. Root residuals and tolerance guards are diagnostics,
+not directed enclosures or proof of domain membership. Success on every valid
+boundary/near-cut point is not promised.
+
+F uses the same stored geometry and root authority: along y=O+d let h be the
+smooth boundary-ray scale, p the polygon scale, q=1-tau, and on the outer branch
+F(y)=O+[1-(1-p/h)*(1/h-q)/tau]*d. The inner branch is identity. This is the
+reviewed continuous radial forward map; its scalar leaf comes from the same
+FortSym generator. No derivative of F, parameter/shape product or derivative of
+root iterations is exposed. Tiny stored-parameter position changes do not imply
+tiny derivative changes near moved cuts. These helpers provide no mapped state,
+assembly, readback, current, coarea, export or PDE admission.
+
+For later real boundary consumers, curved meridional measure is
+`ds=norm(JG*tangent)*dt`, with outward conormal measure
+`n*ds=cofactor(JG)*n_polygon*ds_polygon`. Revolved surface measure is `2*pi*R*ds`;
+volume measure is `2*pi*R*detJ*dxi*deta`. No edge helper or diagnostic consumes
+these measures in this position-only slice.
+
 The map is piecewise smooth and is not globally C2. Its Hessian tensor order is
 physical-component first; FortFEM's generic sampled tensor uses `(i,j,a)`.
 Actual certified mapped panels, root/Jacobian arithmetic budgets and common
