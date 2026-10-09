@@ -152,8 +152,12 @@ set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
-    src/grad_shafranov.f90 src/generated/kin6d_gs_reference_error_leaves.f90
-    src/gs_reference_error.f90)
+    src/grad_shafranov.f90)
+add_library(kin6d_gs_reference_test STATIC
+    test/generated/kin6d_gs_reference_error_leaves.f90
+    test/support/gs_reference_error.f90)
+target_link_libraries(kin6d_gs_reference_test PUBLIC kin6d)
+target_compile_options(kin6d_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
 target_sources(kin6d PRIVATE src/generated/kin6d_gs_coarea_leaves.f90 src/gs_coarea.f90)
 set_source_files_properties(src/generated/kin6d_gs_coarea_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -205,7 +209,7 @@ foreach(mutation omit-jump omit-cylindrical wrong-current-sign)
 endforeach()
 add_executable(gold_hoyle_demo app/gold_hoyle_demo.f90)
 add_executable(gs_reference_error app/gs_reference_error.f90)
-target_link_libraries(gs_reference_error PRIVATE kin6d)
+target_link_libraries(gs_reference_error PRIVATE kin6d_gs_reference_test)
 configure_file(test/fixtures/gs_reference_rejection.in
     ${CMAKE_BINARY_DIR}/gs_reference_rejection.in COPYONLY)
 add_test(NAME grad_shafranov_p1_reference_accepts_mesh_v1
@@ -219,10 +223,10 @@ set_tests_properties(grad_shafranov_p1_reference_accepts_mesh_v1
     grad_shafranov_p1_reference_rejects_mesh_v2 PROPERTIES
     FIXTURES_REQUIRED gs_native_mesh_export)
 add_executable(test_gs_reference_error test/test_gs_reference_error.f90)
-target_link_libraries(test_gs_reference_error PRIVATE kin6d)
+target_link_libraries(test_gs_reference_error PRIVATE kin6d_gs_reference_test)
 add_test(NAME grad_shafranov_reference_cell_enclosures COMMAND test_gs_reference_error)
 add_executable(test_gs_p2_reference_error test/test_gs_p2_reference_error.f90)
-target_link_libraries(test_gs_p2_reference_error PRIVATE kin6d)
+target_link_libraries(test_gs_p2_reference_error PRIVATE kin6d_gs_reference_test)
 add_test(NAME grad_shafranov_p2_reference_cell_enclosures COMMAND test_gs_p2_reference_error)
 configure_file(test/fixtures/gs_p2_reference.in
     ${CMAKE_BINARY_DIR}/gs_p2_reference.in COPYONLY)

@@ -2,11 +2,11 @@ program test_grad_shafranov
    use, intrinsic :: iso_fortran_env, only: dp => real64
    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
                    gs_linear_response, sample_gs, solve_gs_profiles, gs_profile_integral
-   use kin6d_grad_shafranov_leaves, only: gs_solovev, gs_field_jvp, gs_field_vjp, &
+   use kin6d_grad_shafranov_leaves, only: gs_field_jvp, gs_field_vjp, &
       gs_gold_hoyle, gs_gold_hoyle_jvp
    implicit none
    type(gs_state_t) :: coarse, fine
-   real(dp) :: boundary(2, 4), ec, ef, exact, pr, pz, br, bz, bt
+   real(dp) :: boundary(2, 4), ec, ef, exact, br, bz, bt
    real(dp) :: lhs, rhs, dr, dpr, dpz, df, ar, apr, apz, af
    real(dp) :: radius, k, cylinder_bz, cylinder_bt, cylinder_psi
    real(dp), allocatable :: tangent(:), adjoint(:), source(:), goal(:)
@@ -84,21 +84,21 @@ contains
       real(dp), intent(in) :: area
       real(dp), intent(out) :: error
       real(dp), parameter :: mu0 = 1.2566370614359173e-6_dp
-      real(dp) :: value, qr, qz
+      real(dp) :: value, r, z
       integer :: j, stat
       call initialize_gs(state, boundary, area, stat)
       if (stat /= 0) error stop 'GS oracle mesh rejected'
       do j = 1, size(state%psi)
-         call gs_solovev(state%points(1, j), state%points(2, j), &
-                         r0, c, value, qr, qz)
+         r = state%points(1, j); z = state%points(2, j)
+         value = c*((r*r - r0*r0)**2 + 4*r*r*z*z)
          if (state%boundary(j)) state%psi(j) = value
       end do
       call solve_gs(state, mu0, -16*c/mu0, 0.0_dp, stat)
       if (stat /= 0) error stop 'GS oracle solve failed'
       error = 0.0_dp
       do j = 1, size(state%psi)
-         call gs_solovev(state%points(1, j), state%points(2, j), &
-                         r0, c, value, qr, qz)
+         r = state%points(1, j); z = state%points(2, j)
+         value = c*((r*r - r0*r0)**2 + 4*r*r*z*z)
          error = max(error, abs(state%psi(j) - value))
       end do
    end subroutine oracle_case
