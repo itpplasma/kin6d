@@ -164,6 +164,16 @@ The producer forces one thread and a disk scratch directory. Its sign map is
 the identity under the TC24 case contract's COCOS 3 ledger. The optional Python/
 NumPy CTest checks the entire producer against the exact physical E0 LCFS.
 
+The exported axis location uses `gs_magnetic_axis`: a quartic least-squares
+recovery of nodal flux near the nodal minimum, followed by Newton on the
+recovered gradient. The patch radius is six local element lengths and shrinks
+with refinement; compact radial weights vanish at the patch edge. QR uses
+translated/scaled coordinates and gauge differences.
+This location diagnostic is distinct from the represented element minimum
+used internally for contour levels and axis-q. Recovery sensitivities are
+unavailable. `grad_shafranov_axis_refinement` checks at least field-order
+convergence against the exact Solovev axis on three independently meshed LCFSs.
+
 ## Fixed-source error estimator
 
 `kin6d_gs_majorant::gs_functional_majorant` computes a Repin functional

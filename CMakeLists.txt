@@ -672,9 +672,12 @@ add_test(NAME grad_shafranov_curved_convergence COMMAND test_gs_curved_convergen
 add_executable(test_gs_solver_work test/test_gs_solver_work.f90)
 target_link_libraries(test_gs_solver_work PRIVATE kin6d)
 add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)
+add_executable(test_gs_axis_refinement test/test_gs_axis_refinement.f90)
+target_link_libraries(test_gs_axis_refinement PRIVATE kin6d)
+add_test(NAME grad_shafranov_axis_refinement COMMAND test_gs_axis_refinement)
 set_tests_properties(grad_shafranov_curved_convergence PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
-target_sources(kin6d PRIVATE src/gs_readback.f90)
+target_sources(kin6d PRIVATE src/gs_readback.f90 src/gs_axis_recovery.f90)
 add_executable(test_gs_curved_readback test/test_gs_curved_readback.f90)
 target_link_libraries(test_gs_curved_readback PRIVATE kin6d)
 add_test(NAME grad_shafranov_curved_readback COMMAND test_gs_curved_readback)

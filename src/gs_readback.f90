@@ -4,6 +4,7 @@ module kin6d_gs_readback
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, gs_axis_candidate, &
         gs_profile_integral
     use kin6d_gs_coarea, only: gs_level_coarea
+    use kin6d_gs_axis_recovery, only: gs_magnetic_axis
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none
     private
@@ -91,5 +92,6 @@ contains
             end do
         end do
         result%flux_consistency = abs(integral/result%phi_edge - 1)
+        call gs_magnetic_axis(state, result%axis, status)
     end subroutine
 end module
