@@ -3,7 +3,7 @@ module kin6d_gs_coarea
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, &
                                     gs_element_jet, gs_axis_candidate, &
-                                    gs_axis_safety_factor
+                                    gs_axis_safety_factor, GS_UNSUPPORTED_GEOMETRY
     use kin6d_gs_coarea_leaves, only: gs_contour_weight, &
                                       gs_contour_weight_jvp, &
                                       gs_ray_trace, &
@@ -60,6 +60,11 @@ contains
         coarea = 0
         axis = 0
         status = 1
+        if (state%mapped) then
+            if (present(coarea_tangent)) coarea_tangent = 0
+            status = GS_UNSUPPORTED_GEOMETRY
+            return
+        end if
         with_tangent = present(psi_tangent) .and. &
                        present(levels_tangent) .and. &
                        present(coarea_tangent)
