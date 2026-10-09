@@ -176,7 +176,7 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-target_sources(kin6d PRIVATE src/curved_triangle.f90)
+target_sources(kin6d PRIVATE src/curved_triangle.f90 src/gs_majorant.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
 target_link_libraries(test_gs_p2 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)

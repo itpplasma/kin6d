@@ -2,6 +2,7 @@ program test_gs_curved_convergence
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_cell_data, gs_element_jet
+    use kin6d_gs_majorant, only: gs_functional_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = 0.62_dp, f = 32.86_dp
@@ -11,6 +12,7 @@ program test_gs_curved_convergence
     real(dp) :: errors(3, 3, 2), rates(2), point(2), det, shape(6)
     real(dp) :: gradients(2, 6), hessians(2, 2, 6), grad(2), exact_grad(2)
     real(dp) :: psi, exact, h, elapsed, physical_h(2, 2), value, read_grad(2)
+    real(dp) :: majorant, flux_defect, balance_defect, effectivity
     integer :: mode, mesh, n, j, e, q, status
     integer(int64) :: start, finish, clock_rate
     call triangle_duffy_quadrature(10, x, y, w, status)
@@ -67,6 +69,22 @@ program test_gs_curved_convergence
             errors(:, mesh, mode) = sqrt(errors(:, mesh, mode))
             print '(i1,1x,i4,1x,i7,4(1x,es13.5))', mode, n, &
                 count(.not. state%boundary), elapsed, errors(:, mesh, mode)
+            if (mode == 1) then
+                call gs_functional_majorant(state, 1.0_dp, -16*c, 0.0_dp, &
+                    majorant, flux_defect, balance_defect, status)
+                if (status /= 0) error stop 'functional majorant recovery'
+                effectivity = majorant/errors(3, mesh, mode)
+                print '(a,4es14.5)', 'majorant, flux, balance, effectivity: ', &
+                    majorant, flux_defect, balance_defect, effectivity
+                if (effectivity < 1 .or. effectivity > 3) error stop 'effectivity'
+                if (mesh == 1) then
+                    state%psi = 0
+                    call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, &
+                        majorant, flux_defect, balance_defect, status)
+                    if (status /= 0 .or. majorant > tiny(1.0_dp)) &
+                        error stop 'zero-source exact majorant'
+                end if
+            end if
             deallocate (boundary)
         end do
         do mesh = 2, 3
