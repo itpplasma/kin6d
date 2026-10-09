@@ -16,25 +16,40 @@ program test_gs_nonlinear
     real(dp) :: errors(3, 3), rates(2), point(2), det, shape(10)
     real(dp) :: gradients(2, 10), hessians(2, 2, 10), grad(2), exact_grad(2)
     real(dp) :: psi, exact, h, elapsed, physical_h(2, 2), value, read_grad(2)
-    real(dp) :: s, base, majorant, flux_defect, balance_defect, effectivity
+    real(dp) :: s, base, majorant, flux_defect, balance_defect, effectivity, alpha
+    real(dp), parameter :: knot_width = 1.0_dp/512, frequency = 7.4_dp
+    real(dp), parameter :: positive_slope = 0.02_dp
+    logical :: knot_case
+    integer :: segments
     integer :: counts(3)
     integer :: mesh, n, j, e, q, status, degree, ndof
     character(8) :: argument
     integer(int64) :: start, finish, clock_rate
     degree = 3
+    knot_case = .false.
     if (command_argument_count() > 0) then
         call get_command_argument(1, argument)
         read (argument, *) degree
     end if
+    if (command_argument_count() > 1) then
+        call get_command_argument(2, argument)
+        knot_case = trim(argument) == 'knots'
+    end if
     a = r0/3
     level = 4*r0*r0*a*a
     law%knots = [0.0_dp, 0.31_dp, 0.77_dp, 1.0_dp]
-    allocate (law%pp(4, 3), law%ff(4, 3))
+    if (knot_case) law%knots = [(real(j, dp)/512, j=0, 512)]
+    segments = size(law%knots) - 1
+    allocate (law%pp(4, segments), law%ff(4, segments))
     law%normalized = .true.; law%axis = -c*level; law%p_edge = 0; law%f_edge = f
     base = -16*c
-    do j = 1, 3
+    do j = 1, segments
         s = law%knots(j)
         law%pp(:, j) = base*[1 + 0.2_dp*s*s, 0.4_dp*s, 0.2_dp, 0.0_dp]
+        if (knot_case) law%pp(:, j) = base*[source_shape(s), &
+            0.4_dp*s + 0.07_dp*cos(frequency*s), &
+            0.2_dp + 0.035_dp*(cos(frequency*(s + knot_width)) &
+                - cos(frequency*s))/knot_width, 0.0_dp]
     end do
     law%ff = 0
     ndof = (degree + 1)*(degree + 2)/2
@@ -108,6 +123,30 @@ program test_gs_nonlinear
             effectivity = majorant/errors(3, mesh)
             print *, 'nonlinear monotone majorant, effectivity:', majorant, effectivity
             if (effectivity < 1 .or. effectivity > 3) error stop 'nonlinear effectivity'
+            call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, &
+                majorant, flux_defect, balance_defect, status, law=absolute_law, &
+                forcing=manufactured_source, estimate_stability=.true., &
+                stability_estimate=alpha)
+            if (status /= 5 .or. abs(alpha - 1) > 1.0e-12_dp) &
+                error stop 'monotone linearized estimator limit'
+            if (abs(majorant/errors(3, mesh) - effectivity) > 1.0e-10_dp) &
+                error stop 'practical estimator exact-error effectivity'
+            ! The same exact psi solves a positive-source problem with an
+            ! independent polynomial forcing. The existing candidate is not
+            ! its discrete solution, so its algebraic residual is included.
+            absolute_law%pp = 0
+            absolute_law%pp(1, :) = base + positive_slope*absolute_law%knots(:segments)
+            absolute_law%pp(2, :) = positive_slope
+            call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, &
+                majorant, flux_defect, balance_defect, status, law=absolute_law, &
+                forcing=positive_source_forcing, estimate_stability=.true., &
+                stability_estimate=alpha)
+            effectivity = majorant/errors(3, mesh)
+            print *, 'positive-source alpha/effectivity:', alpha, effectivity
+            if (status /= 5 .or. alpha <= 0 .or. alpha >= 1) &
+                error stop 'positive-source stability estimate'
+            if (effectivity < 1 .or. effectivity > 10) &
+                error stop 'positive-source estimator exact error'
         end if
         deallocate (boundary)
     end do
@@ -120,11 +159,35 @@ program test_gs_nonlinear
     end do
     if (maxval(counts) - minval(counts) > 2) error stop 'Newton mesh dependence'
 contains
+    function positive_source_forcing(r, z) result(source)
+        real(dp), intent(in) :: r, z
+        real(dp) :: source
+        source = -positive_slope*r*c*((r*r - r0*r0)**2 &
+            + 4*r*r*z*z - level)
+    end function
+
     function manufactured_source(r, z) result(source)
         real(dp), intent(in) :: r, z
         real(dp) :: source, exact_s
         exact_s = ((r*r - r0*r0)**2 + 4*r*r*z*z)/level
-        source = 16*c*r*0.2_dp*exact_s**2
+        source = 16*c*r*(source_shape(exact_s) - 1)
+    end function
+    real(dp) function source_shape(s) result(value)
+        real(dp), intent(in) :: s
+        real(dp) :: t, d, integral
+        integer :: k
+        value = 1 + 0.2_dp*s*s
+        if (.not. knot_case) return
+        k = min(511, max(0, int(s/knot_width)))
+        t = k*knot_width; d = s - t
+        ! Independent closed sum of trapezoids for the integral of the
+        ! piecewise linear interpolant to cos(frequency*s). Its primitive is
+        ! C1, piecewise quadratic with a real second-derivative jump at every
+        ! internal knot of a 513-knot table, as in the TC24 source law.
+        integral = knot_width*sin(frequency*t)/(2*tan(frequency*knot_width/2)) &
+            + cos(frequency*t)*d + (cos(frequency*(t + knot_width)) &
+                - cos(frequency*t))*d*d/(2*knot_width)
+        value = value + 0.07_dp*integral
     end function
     subroutine exact_boundary(t, point)
         real(dp), intent(in) :: t

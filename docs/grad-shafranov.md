@@ -273,18 +273,28 @@ Nonpositive F² and negative pressure fail readback. `profile-law.dat` retains
 the executed table and solved normalization; NetCDF embeds its full content.
 The pinned TC24 law uses mode 0, and must never be rescaled to the solved axis.
 
-Source integration uses the physical Jacobian of each mapped element. Smooth
-cells use paired Duffy rules with orders tied to the element degree. Cut P2
-cells use FortFEM level integration. For P3, the inner coordinate is partitioned
+Source integration uses the physical Jacobian of each mapped element. Cells
+without cuts use paired Duffy rules with orders tied to the element degree.
+C1 laws first try positive Duffy rules with 8, 12, 24 and 48 points per
+coordinate, caching basis values and gradients for each rule across cells.
+Acceptance uses separate load and Jacobian component error estimates. The
+Jacobian used by Newton may have tolerance `1e-3`; the load must meet the
+requested quadrature tolerance before convergence. Near convergence Newton
+reuses its Jacobian for trial loads. Neither approximation changes the equation
+or the derivative products returned by the default `gs_cubic_load` API.
+
+If paired integration fails, cut P2 cells use FortFEM level integration.
+For P3, the inner coordinate is partitioned
 at **all cubic roots** of every relevant profile knot. Outer panels include
 edge intersections and vertical tangencies (including closed interior cuts);
 LAPACK roots of the source-cut discriminant locate the latter. Paired positive
 rules on these strips fall back to FortFEM adaptive integration when needed.
-Bands are integrated separately, making work proportional to the number of
-crossed knots rather than repeating every band at every outer event. Primal
-and Jacobian contributions use the same cut integration. These are floating quadrature estimates with explicit work limits, not bounds.
-The cut-island test prevents silently missing a profile region with no edge
-intersection. Bernstein hulls discard only irrelevant knots.
+C1 laws without possible closed cuts integrate the inner slices together;
+general laws retain separate bands and topology events. Exact edge extrema
+detect relevant levels outside the edge range, retaining the topology-aware
+path for interior islands. C0 and C1 cut-island tests exercise regions with no
+edge intersection. Bernstein hulls discard only irrelevant knots. These are
+floating quadrature estimates with explicit work limits, not bounds.
 
 `gs_cubic_load` returns a local source mass matrix and a rank-one axis term.
 For normalized laws, `ds=-dpsi/axis+psi*daxis/axis²`, with `daxis` equal to the
@@ -292,7 +302,10 @@ FE value perturbation at the stationary point. No Newton iterations are
 differentiated. `apply_gs_profile_jacobian` and its transpose use coefficient
 and coefficient-dual pairings, with fixed geometry, fixed knots/coefficient
 law and fixed Dirichlet data. `gs_profile_response` solves the tangent or
-adjoint equation using the stiffness solve as preconditioner. Shape/axis-branch
+adjoint equation. A symmetric absolute-flux Jacobian first uses diagonal
+preconditioned CG, with an explicit residual check. Breakdown or failure falls
+back to GMRES using the stiffness solve as preconditioner; the nonsymmetric
+normalized-axis problem uses that general path. Shape/axis-branch
 switch derivatives and continuous derivative error bounds remain unavailable.
 C0 source laws have a derivative only away from a whole cell on a genuine kink;
 smooth spline laws are the intended Newton input.
@@ -325,14 +338,64 @@ axis functional and its rank-one source contribution in the chosen norm;
 point evaluation is not bounded on general 2D H1. Do not reuse the frozen-axis
 constant as a bound for that coupled problem. The caller must justify branch
 existence and the stability assumption; this API does not validate them.
-For TC24 the app reports M0 and status 4, together with self-convergence, rather
-than claiming an unavailable nonlinear error bound.
+
+The opt-in `estimate_stability=.true.` path for absolute-flux laws returns
+**status 5: practical linearized estimate** when its numerical stability test
+succeeds. At the converged candidate form `M_+` from the positive part of the
+source derivative, so the linearized operator satisfies `J >= A-M_+` in the
+energy pairing. Power iteration on `A^-1 M_+` estimates its largest eigenvalue
+theta. The reported `stability_estimate` is `alpha_hat=1-theta-rho`, where rho
+is the computed energy norm of the eigenpair residual. Iteration stops at
+`rho <= 1e-5*max(1,abs(theta))`, with at most 60 iterations. A positive result
+gives `M0/alpha_hat`; otherwise the return stays at status 4. The app requests
+this path, and writes the estimate and status to both text and NetCDF.
+
+This iteration does not prove it found the largest eigenvalue, its residual
+does not enclose that eigenvalue, and the represented-space test does not
+establish continuous coercivity. Source-mass and recovery quadrature errors,
+nonlinear remainder and branch existence are also unbounded. Consequently
+status 5 is a practical estimate, not a nonlinear bound. The recovered residual
+already includes the algebraic Newton residual; adding it again would double
+count it. A caller-supplied `stability_lower_bound` retains the conditional
+bound path and takes precedence. Normalized-axis laws remain status 4 without
+such a supplied bound. Recovery convergence and iteration count are reported
+separately: an unfinished minimization can give a very conservative estimate.
 
 The manufactured nonlinear CTests check P2 orders 3/2 and P3 orders 4/3,
 bounded mesh-independent Newton steps, and monotone-law majorant effectivity
 against an independent exact error. The profile oracle checks the Solovev
 limit, pressure/F primitives, both polarity reversals, physical source-cut
 integrals, normalized finite differences, transpose and implicit pairing.
+Additional exact-error checks cover positive-source amplification with a
+nonzero algebraic residual. Other checks cover rejection of an unstable
+comparison, normalized-axis unavailability, and the source evaluation count for
+one quadratic expressed using 513 knots (208 evaluations versus 41,808 before
+the C1 path on a P3 cell).
+
+### Dense spline knots and convergence
+
+A C2 cubic pressure or F-squared primitive has a C1 piecewise quadratic source.
+Across a regular flux surface at a knot, that source has bounded piecewise
+second derivatives and no delta term in its weak second derivative. Under the
+usual smooth-domain elliptic regularity and adjoint regularity assumptions,
+this permits the H4 solution regularity needed for P3 energy order 3 and L2
+order 4. It does not inherently limit psi convergence to order 2. Large jumps
+in source curvature, small knot spacing and boundary geometry can delay that
+asymptotic regime. These regularity assumptions must be checked separately
+for singular boundaries or source laws with lower continuity.
+
+`grad_shafranov_p3_spline_knot_convergence` uses a 513-knot C1 quadratic source,
+an independently summed manufactured forcing and curved P3 geometry. Its
+three meshes give psi orders 4.11/4.08 and Bpol orders 3.36/3.29. On the pinned
+TC24 data, n=48/96/192/384 boundary-node comparisons give successive psi orders
+1.94 then 3.62 and Bpol orders 1.20 then 2.49. These results support a
+preasymptotic explanation; the available Bpol sequence has not yet established
+order 3, so its reduced rate remains an open defect candidate.
+Its 128-mode Fourier boundary and sharply varying source need substantially
+more resolution than the constant-source manufactured problem. Timing,
+common-domain field comparisons, quadrature sensitivity and estimator versus
+Richardson evidence are retained by the iter_tc24 experiment, not a rigorous
+continuous error claim.
 
 ## Profile-source residual and derivatives
 

@@ -27,7 +27,7 @@ program gs_phase1_main
     real(dp) :: nonlinear_tolerance = 1.0e-9_dp, pressure, f, pp, ff
     real(dp) :: quadrature_tolerance = 1.0e-8_dp
     real(dp) :: total_current = 0, measured_current = 0
-    real(dp) :: majorant, flux_defect, balance_defect, estimator_s
+    real(dp) :: majorant, flux_defect, balance_defect, estimator_s, stability_estimate
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
     integer :: unit, status, n, i, next, majorant_status, recovery_iterations
@@ -114,11 +114,18 @@ program gs_phase1_main
     call system_clock(finish)
     wall_s = real(finish - start, dp)/rate
     if (wall_s > 300) error stop 'solve exceeded 300 seconds'
+    print '(a,i0,a,es13.5)', 'DOF=', count(.not. state%boundary), ' wall_s=', wall_s
+    flush (output_unit)
+    call write_gs_mesh(state, trim(mesh_file), status)
+    if (status /= 0) error stop 'mesh export failed'
+    if (allocated(law)) call write_gs_profile_law('profile-law.dat', law)
     call system_clock(start)
     call gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
         flux_defect, balance_defect, majorant_status, law=law, &
-        recovery_converged=recovery_converged, recovery_iterations=recovery_iterations)
-    if (majorant_status /= 0 .and. majorant_status /= 4) &
+        recovery_converged=recovery_converged, &
+        recovery_iterations=recovery_iterations, &
+        estimate_stability=.true., stability_estimate=stability_estimate)
+    if (majorant_status /= 0 .and. majorant_status /= 4 .and. majorant_status /= 5) &
         error stop 'recovered-flux recovery failed'
     call system_clock(finish)
     estimator_s = real(finish - start, dp)/rate
@@ -129,9 +136,6 @@ program gs_phase1_main
         print *, 'readback status:', status
         error stop 'equilibrium contour readback failed'
     end if
-    call write_gs_mesh(state, trim(mesh_file), status)
-    if (status /= 0) error stop 'mesh export failed'
-    if (allocated(law)) call write_gs_profile_law('profile-law.dat', law)
     call run%open_resolved(unit)
     write (unit, nml=gs_phase1)
     call run%close_resolved(unit)
@@ -176,8 +180,10 @@ program gs_phase1_main
     call result%write('flux_consistency', readback%flux_consistency, '1', &
         'relative contour versus area flux quadrature difference')
     call result%write('majorant_status', real(majorant_status, dp), '1', &
-        '0 energy estimate; 4 frozen-source defect: nonlinear stability unavailable')
+        '0 conditional estimate; 4 residual only; 5 practical linearized estimate')
     call result%write('majorant', majorant, 'Wb/m^0.5', 'recovered-flux energy error estimate')
+    call result%write('stability_estimate', stability_estimate, '1', &
+        'numerical linearized coercivity estimate; not a continuous bound')
     call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', 'weighted flux defect')
     call result%write('majorant_balance', balance_defect, 'Wb/m^0.5', 'weighted balance defect')
     call result%write('majorant_recovery_converged', merge(1.0_dp, 0.0_dp, recovery_converged), &
@@ -213,6 +219,7 @@ program gs_phase1_main
     write (unit, '(a,1x,i0)') 'angular_points', angular_points
     write (unit, '(a,1x,es25.16e3)') 'psi_axis', readback%psi_axis
     write (unit, '(a,1x,i0)') 'majorant_status', majorant_status
+    write (unit, '(a,1x,es25.16e3)') 'stability_estimate', stability_estimate
     write (unit, '(a,1x,es25.16e3)') 'axis_R', readback%axis(1)
     write (unit, '(a,1x,es25.16e3)') 'axis_Z', readback%axis(2)
     write (unit, '(a,1x,es25.16e3)') 'volume', readback%volume
@@ -228,7 +235,6 @@ program gs_phase1_main
     write (unit, '(a,1x,a)') 'code_commit', commit
     write (unit, '(a,1x,a)') 'code_tree', dirty
     close (unit)
-    print '(a,i0,a,es13.5)', 'DOF=', count(.not. state%boundary), ' wall_s=', wall_s
 contains
     subroutine evaluate_source_file()
         character(512) :: path

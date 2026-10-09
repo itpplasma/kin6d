@@ -7,7 +7,7 @@ module kin6d_gs_profile_law
     private
     public :: gs_profile_law_t, read_gs_profile_law, write_gs_profile_law
     public :: gs_law_sources, gs_law_primitives, gs_law_coordinate
-    public :: gs_law_kink
+    public :: gs_law_kink, gs_law_c1
     type :: gs_profile_law_t
         ! Coefficients in ascending powers of (coordinate - knots(i)).
         ! Sources are physical dp/dpsi and d(F^2/2)/dpsi, also for normalized s.
@@ -18,6 +18,23 @@ module kin6d_gs_profile_law
         procedure :: valid => law_valid
     end type
 contains
+    logical function gs_law_c1(law) result(smooth)
+        type(gs_profile_law_t), intent(in) :: law
+        real(dp) :: value, slope, width, scale
+        integer :: i
+        smooth = .false.
+        do i = 2, size(law%knots) - 1
+            width = law%knots(i) - law%knots(i - 1)
+            call polynomial(law%pp(:, i - 1), width, value, slope)
+            scale = max(1.0_dp, abs(slope), abs(law%pp(2, i)), abs(value)/width)
+            if (abs(slope - law%pp(2, i)) > 512*epsilon(1.0_dp)*scale) return
+            call polynomial(law%ff(:, i - 1), width, value, slope)
+            scale = max(1.0_dp, abs(slope), abs(law%ff(2, i)), abs(value)/width)
+            if (abs(slope - law%ff(2, i)) > 512*epsilon(1.0_dp)*scale) return
+        end do
+        smooth = .true.
+    end function
+
     logical function gs_law_kink(law, psi) result(kink)
         type(gs_profile_law_t), intent(in) :: law
         real(dp), intent(in) :: psi

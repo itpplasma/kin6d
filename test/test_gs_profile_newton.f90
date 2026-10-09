@@ -14,9 +14,18 @@ program test_gs_profile_newton
     type(gs_profile_jacobian_t) :: jac, scratch
     type(gs_readback_t) :: positive, negative
   real(dp), allocatable :: saved(:), rhs(:), plus(:), minus(:), v(:), w(:), jv(:), jw(:)
-    real(dp) :: contour(2, 32), majorant, flux, balance, step, pressure, f
+    real(dp) :: contour(2, 32), majorant, flux, balance, step, pressure, f, alpha
     real(dp) :: current, original_current, integral
     integer :: degree, status, i, n
+    character(16) :: argument
+    if (command_argument_count() > 0) then
+        call get_command_argument(1, argument)
+        if (trim(argument) == 'work') then
+            call source_cut_oracle(3)
+            call source_cut_oracle(2)
+            stop
+        end if
+    end if
     do degree = 2, 3
         do i = 1, 32
             call boundary(real(i - 1, dp)/32, contour(:, i))
@@ -129,8 +138,22 @@ program test_gs_profile_newton
         if (abs(dot_product(w, plus) - dot_product(minus, v)) > &
             1.0e-8_dp*norm2(w)*norm2(plus)) error stop 'implicit pairing'
         call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, majorant, &
-                                    flux, balance, status, law=law)
+                                    flux, balance, status, law=law, &
+                                    estimate_stability=.true.)
         if (status /= 4) error stop 'missing nonlinear stability must be explicit'
+        law%normalized = .false.; law%knots = [-10.0_dp, 0.0_dp]
+        law%pp = 0; law%ff(:, 1) = [0.3_dp, 0.05_dp, 0.0_dp, 0.0_dp]
+        call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, majorant, &
+            flux, balance, status, law=law, estimate_stability=.true., &
+            stability_estimate=alpha)
+        if (status /= 5) error stop 'practical nonlinear estimate unavailable'
+        if (alpha <= 0 .or. alpha >= 1) error stop 'positive source amplification'
+        if (abs(majorant*alpha - flux - balance) > 1.0e-11_dp*majorant) &
+            error stop 'linearized majorant scaling'
+        law%ff(:, 1) = [1.0e4_dp, 1.0e3_dp, 0.0_dp, 0.0_dp]
+        call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, majorant, &
+            flux, balance, status, law=law, estimate_stability=.true.)
+        if (status /= 4) error stop 'unstable comparison must not report an estimate'
         deallocate (saved, rhs, plus, minus, v, w, jv, jw, law%pp, law%ff)
         call source_cut_oracle(degree)
     end do
@@ -152,7 +175,7 @@ contains
                              2.0_dp/3, 1.0_dp/3, 1.0_dp/3, 2.0_dp/3, 0.0_dp, 2.0_dp/3, &
                                          0.0_dp, 1.0_dp/3, 1.0_dp/3, 1.0_dp/3], [2, 10])
         real(dp) :: reference(2, 10), load(10), x(16), w(16), expected, a, cut
-        integer :: i, ndof, status
+        integer :: i, ndof, status, evaluations
         ndof = (degree + 1)*(degree + 2)/2
         reference = ref
         if (degree == 2) reference(:, 4:6) = reshape([0.5_dp, 0.0_dp, &
@@ -209,8 +232,40 @@ contains
                    *((1 + 0.21_dp)*(1 + 0.2_dp*0.21_dp) + 0.2_dp*cut/6)
         if (abs(sum(load(:ndof)) - expected) > 1.0e-11_dp*expected) &
             error stop 'missed interior source island'
+        table%pp(:, 1) = [(1 + cut)**2, -2*(1 + cut), 1.0_dp, 0.0_dp]
+        call gs_cubic_load(cell, 1.0_dp, table, load(:ndof), jacobian, status)
+        if (status /= 0) error stop 'C1 interior source cut'
+        expected = acos(-1.0_dp)*cut**3/3 &
+            *((1 + 0.21_dp)*(1 + 0.2_dp*0.21_dp) + 0.2_dp*cut/8)
+        if (abs(sum(load(:ndof)) - expected) > 5.0e-7_dp*expected) &
+            error stop 'missed C1 source island'
+        table%pp(:, 1) = [1 + cut, -1.0_dp, 0.0_dp, 0.0_dp]
         cell%psi = cut
         call gs_cubic_load(cell, 1.0_dp, table, load(:ndof), jacobian, status)
         if (status /= 4) error stop 'whole-cell kink derivative must be unavailable'
+        ! A dense table of one smooth quadratic must not trigger work for
+        ! hundreds of artificial cuts. Analytic integrals check both the load
+        ! and the Jacobian; the evaluation budget guards the algorithmic cost.
+        deallocate (table%pp, table%ff)
+        table%knots = [(real(i, dp)/512, i=0, 512)]
+        allocate (table%pp(4, 512), table%ff(4, 512))
+        do i = 1, 512
+            a = table%knots(i)
+            table%pp(:, i) = [a*a, 2*a, 1.0_dp, 0.0_dp]
+        end do
+        table%ff = 0
+        cell%psi = reference(1, :ndof)**degree
+        call gs_cubic_load(cell, 1.0_dp, table, load(:ndof), jacobian, status, &
+            tolerance=1.0e-10_dp, quadrature_evaluations=evaluations)
+        if (status /= 0) error stop 'dense smooth source table'
+        call gauss_legendre_ab(16, 0.0_dp, 1.0_dp, x, w)
+        expected = sum(w*(1 + x)*x**(2*degree)*(1 + 0.2_dp*x)*(1 - x))
+        if (abs(sum(load(:ndof)) - expected) > 1.0e-11_dp*expected) &
+            error stop 'dense smooth load integral'
+        expected = sum(w*(1 + x)*2*x**degree*(1 + 0.2_dp*x)*(1 - x))
+        if (abs(sum(jacobian%mass) - expected) > 1.0e-11_dp*expected) &
+            error stop 'dense smooth Jacobian integral'
+        print *, 'dense smooth source evaluations:', degree, evaluations
+        if (evaluations > 5000) error stop 'smooth source quadrature work explosion'
     end subroutine
 end program

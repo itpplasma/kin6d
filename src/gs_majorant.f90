@@ -1,8 +1,9 @@
 module kin6d_gs_majorant
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
-    use kin6d_grad_shafranov_leaves, only: gs_source
+    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
+                                  gs_linear_response
+    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp
     use kin6d_triangle_basis, only: triangle_bernstein_controls
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
     use kin6d_gs_nonlinear, only: gs_forcing_t
@@ -16,7 +17,8 @@ contains
     subroutine gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
                                      flux_defect, balance_defect, status, &
                                      recovery_converged, recovery_iterations, law, &
-                                     stability_lower_bound, forcing)
+                                     stability_lower_bound, forcing, &
+                                     estimate_stability, stability_estimate)
         ! Repin functional majorant for -div(grad(psi)/R)=source, homogeneous
         ! Dirichlet trace, on the represented domain. Recover y in continuous
         ! vector Pk, k=2 or 3 (a subspace of H(div)) by minimizing D^2+C_F^2*B^2.
@@ -30,22 +32,39 @@ contains
         type(gs_profile_law_t), intent(in), optional :: law
         real(dp), intent(in), optional :: stability_lower_bound
         procedure(gs_forcing_t), optional :: forcing
+        logical, intent(in), optional :: estimate_stability
+        real(dp), intent(out), optional :: stability_estimate
         real(dp), allocatable :: x(:), y(:), w(:), matrix(:, :, :)
         real(dp), allocatable :: rhs(:), recovered(:), diagonal(:)
         integer, allocatable :: indices(:, :)
         real(dp), allocatable :: shape(:), gradients(:, :), hessians(:, :, :)
         real(dp), allocatable :: local(:, :), d(:), bezier(:, :)
+        real(dp), allocatable :: source_mass(:, :, :)
         real(dp) :: point(2), det
         real(dp) :: grad(2), source, weight, cf2, lo(2), hi(2)
         real(dp) :: flux(2), divergence, residual, pp, ff, psi
+        real(dp) :: dpp, dff, derivative, alpha
+        logical :: practical
         integer :: e, q, j, k, a, b, row, col, n, iterations, ndof
         majorant = huge(1.0_dp); flux_defect = 0; balance_defect = 0
         status = 1
+        practical = .false.
+        if (present(estimate_stability)) practical = estimate_stability
+        if (.not. present(law)) practical = .false.
+        if (present(law)) then
+            if (law%normalized) practical = .false.
+        end if
+        if (present(stability_lower_bound)) practical = .false.
+        if (present(stability_estimate)) stability_estimate = 0
         if (present(recovery_converged)) recovery_converged = .false.
         if (present(recovery_iterations)) recovery_iterations = 0
         if (.not. state%ready) return
         if (state%element_order /= 2 .and. state%element_order /= 3) return
         ndof = size(state%triangles, 1)
+        if (practical) then
+            allocate (source_mass(ndof, ndof, size(state%triangles, 2)))
+            source_mass = 0
+        end if
         allocate (shape(ndof), gradients(2, ndof), hessians(2, 2, ndof), &
             local(2, ndof), d(ndof), bezier(2, ndof))
         if (any(abs(pack(state%psi, state%boundary)) > tiny(1.0_dp))) return
@@ -86,7 +105,19 @@ contains
                 pp = pprime; ff = ffprime
                 if (present(law)) then
                     psi = state%psi(state%triangles(1, e)) + dot_product(shape, d)
-                    call gs_law_sources(law, psi, pp, ff)
+                    if (practical) then
+                        call gs_law_sources(law, psi, pp, ff, dpp, dff)
+                        call gs_source_jvp(point(1), mu0, pp, ff, &
+                            0.0_dp, 0.0_dp, dpp, dff, derivative)
+                        do k = 1, ndof
+                            do j = 1, ndof
+                                source_mass(j, k, e) = source_mass(j, k, e) &
+                                    + weight*max(0.0_dp, derivative)*shape(j)*shape(k)
+                            end do
+                        end do
+                    else
+                        call gs_law_sources(law, psi, pp, ff)
+                    end if
                 end if
                 call gs_source(point(1), mu0, pp, ff, source)
                 if (present(forcing)) source = source + forcing(point(1), point(2))
@@ -163,6 +194,14 @@ contains
             ! a nonlinear error bound. A caller-supplied alpha is conditional
             ! on the documented strong-monotonicity / normalized-axis assumptions.
             status = 4
+            if (practical) then
+                call estimate_coercivity(alpha)
+                if (present(stability_estimate)) stability_estimate = alpha
+                if (alpha > 0) then
+                    majorant = majorant/alpha
+                    status = 5
+                end if
+            end if
             if (present(stability_lower_bound)) then
                 if (.not. ieee_is_finite(stability_lower_bound)) return
                 if (stability_lower_bound <= 0) return
@@ -171,6 +210,55 @@ contains
             end if
         end if
     contains
+        subroutine estimate_coercivity(alpha)
+            ! Numerical positive-part comparison: J >= A - M_+.
+            ! Power iteration is self-adjoint in the A pairing. Its result is
+            ! a practical discrete stability estimate, not a continuous bound.
+            real(dp), intent(out) :: alpha
+            real(dp), allocatable :: v(:), av(:), mv(:), z(:), defect(:), ad(:)
+            real(dp) :: theta, radius, energy
+            real(dp) :: element(ndof)
+            integer :: iteration, cell, node, j, stat, count
+            count = size(state%psi)
+            allocate (v(count), av(count), mv(count), defect(count), ad(count))
+            v = state%psi
+            if (norm2(v) <= tiny(1.0_dp)) v = 1
+            where (state%boundary) v = 0
+            alpha = 0
+            do iteration = 1, 60
+                call apply_gs(state, v, av)
+                energy = dot_product(v, av)
+                if (energy <= 0) return
+                v = v/sqrt(energy); av = av/sqrt(energy)
+                mv = 0
+                do cell = 1, size(state%triangles, 2)
+                    element = matmul(source_mass(:, :, cell), &
+                        v(state%triangles(:, cell)))
+                    do j = 1, ndof
+                        node = state%triangles(j, cell)
+                        if (state%boundary(node)) cycle
+                        mv(node) = mv(node) + element(j)
+                    end do
+                end do
+                theta = dot_product(v, mv)
+                if (norm2(mv) <= tiny(1.0_dp)) then
+                    alpha = 1
+                    return
+                end if
+                call gs_linear_response(state, mv, z, stat, &
+                    relative_tolerance=1.0e-9_dp)
+                if (stat /= 0) return
+                defect = z - theta*v
+                call apply_gs(state, defect, ad)
+                radius = sqrt(max(0.0_dp, dot_product(defect, ad)))
+                if (radius <= 1.0e-5_dp*max(1.0_dp, abs(theta))) then
+                    alpha = 1 - theta - radius
+                    return
+                end if
+                v = z
+            end do
+        end subroutine
+
         subroutine action(input, output)
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
