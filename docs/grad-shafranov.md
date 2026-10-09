@@ -163,6 +163,13 @@ settings resolve to `max(17,ceil(sqrt(Ncells))+1)` radial points and angular
 budget `16*(degree+2)`. Explicit positive budgets remain available. The boundary
 gauge is psi=0.
 
+For cost comparisons, use the automatic readback budgets first and refine them
+against the requested q accuracy. A fixed dense profile can dominate a coarse
+P3 solve. Contour roots use FortNum's safeguarded Brent interpolation; the pinned
+version tests convergence within bounded iteration counts, including one secant
+step for a linear residual. The recovered-flux majorant and its quadrature are
+independent of this root-solver optimization.
+
 The app reports free DOF, CG iterations and total mesh/assembly/solve wall time,
 and writes `mesh.dat`, `profiles.dat`, `summary.dat` and `output/gs_phase1.nc`.
 The NetCDF file embeds the original boundary samples, literal/resolved input,
