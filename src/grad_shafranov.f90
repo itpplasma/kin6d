@@ -22,7 +22,7 @@ module kin6d_grad_shafranov
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
    integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
    integer, parameter :: geometry_arithmetic = 3
-   public :: gs_cell_data
+   public :: gs_cell_data, apply_gs
    public :: write_gs_mesh, read_gs_mesh
    public :: gs_profile_load, gs_profile_load_jvp, gs_profile_load_vjp
    public :: solve_gs_profiles, gs_profile_value, gs_profile_integral
@@ -297,32 +297,41 @@ contains
       end if
    end subroutine element_shapes
 
-   subroutine apply_gs(state, input, output)
-      type(gs_state_t), intent(in) :: state
-      real(dp), intent(in) :: input(:)
-      real(dp), intent(out) :: output(:)
-      integer :: e, k, l, i, j
-      output = 0.0_dp
-      do e = 1, size(state%triangles, 2)
-         do l = 1, size(state%triangles, 1)
-            j = state%triangles(l, e)
-            if (state%boundary(j)) cycle
-            do k = 1, size(state%triangles, 1)
-               i = state%triangles(k, e)
-               if (state%boundary(i)) cycle
-               output(i) = output(i) + state%stiffness(k, l, e)*input(j)
+    subroutine apply_gs(state, input, output)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        real(dp) :: local(10), exchange
+        integer :: e, k, l, i, j, ndof
+        ndof = size(state%triangles, 1)
+        output = 0
+        do e = 1, size(state%triangles, 2)
+            local(:ndof) = input(state%triangles(:, e))
+            where (state%boundary(state%triangles(:, e))) local(:ndof) = 0
+            ! Partition of unity makes every element row sum zero. Apply
+            ! symmetric pair exchanges to preserve that identity and avoid
+            ! cancelling large absolute fluxes in a small residual.
+            do l = 2, ndof
+                j = state%triangles(l, e)
+                do k = 1, l - 1
+                    i = state%triangles(k, e)
+                    exchange = state%stiffness(k, l, e)*(local(l) - local(k))
+                    output(i) = output(i) + exchange
+                    output(j) = output(j) - exchange
+                end do
             end do
-         end do
-      end do
-      where (state%boundary) output = input
-   end subroutine apply_gs
+        end do
+        where (state%boundary) output = input
+    end subroutine apply_gs
 
-   subroutine gs_linear_response(state, source, response, status, iteration_count)
+   subroutine gs_linear_response(state, source, response, status, iteration_count, &
+                                 relative_tolerance)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: source(:)
       real(dp), allocatable, intent(out) :: response(:)
       integer, intent(out) :: status
       integer, intent(out), optional :: iteration_count
+      real(dp), intent(in), optional :: relative_tolerance
       real(dp) :: residual, tolerance
       integer :: iterations
       status = 1
@@ -336,9 +345,13 @@ contains
       allocate (response(size(source)))
       response = 0.0_dp
       tolerance = 1.0e-11_dp
+      if (present(relative_tolerance)) tolerance = relative_tolerance
+      if (.not. ieee_is_finite(tolerance)) return
+      if (tolerance <= 0) return
       if (norm2(source) > 0.0_dp) tolerance = tolerance*min(1.0_dp, norm2(source))
       call real_conjugate_gradient_operator(matvec, source, response, &
-                   tolerance, max(500, 10*size(source)), status, iterations, residual, &
+                   tolerance, max(500, 10*ceiling(sqrt(real(size(source), dp)))), &
+                   status, iterations, residual, &
                                             preconditioner)
       if (present(iteration_count)) iteration_count = iterations
       if (state%mapped) then
@@ -380,7 +393,9 @@ contains
       allocate (rhs(size(state%psi)), action(size(state%psi)))
       call assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
       if (status /= 0) return
-      call gs_linear_response(state, rhs, solution, status, state%iterations)
+      ! Resolve the fixed-source weak residual below the 1e-8 consumer gate.
+      call gs_linear_response(state, rhs, solution, status, state%iterations, &
+                              relative_tolerance=1.0e-10_dp)
       if (status /= KRYLOV_OK) return
       call apply_gs(state, solution, action)
       if (state%mapped) then
@@ -566,6 +581,9 @@ contains
         if (any(.not. ieee_is_finite(state%psi))) return
         if (any(flux(2:) <= flux(:size(flux) - 1))) return
         tolerance = 1.0e-11_dp
+      if (present(relative_tolerance)) tolerance = relative_tolerance
+      if (.not. ieee_is_finite(tolerance)) return
+      if (tolerance <= 0) return
         if (present(relative_tolerance)) tolerance = relative_tolerance
         if (.not. ieee_is_finite(tolerance)) return
         if (tolerance <= 0.0_dp .or. tolerance >= 1.0_dp) return
@@ -896,7 +914,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
          call gs_profile_load(state, mu0, flux, pp, ff, rhs, status, &
               relative_tolerance=min(1.0e-11_dp,0.01_dp*tolerance))
          if (status /= 0) return
-         call gs_linear_response(state, rhs, solution, status)
+         call gs_linear_response(state, rhs, solution, status, &
+                                 relative_tolerance=min(1.0e-11_dp, 0.01_dp*tolerance))
          if (status /= KRYLOV_OK) return
          where (.not. state%boundary)
             state%psi = 0.3_dp*solution + 0.7_dp*state%psi

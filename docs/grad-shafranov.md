@@ -82,6 +82,15 @@ ctest --preset cpu -R '^grad_shafranov_'
   regularity. `gs_axis_safety_factor` uses the signed F at that axis and its
   positive Hessian; it is a smooth-axis candidate, without a certified bound.
 
+The fixed-source solver targets a relative weak residual of `1e-10`. The
+operator applies symmetric nodal differences, preserving the constant-flux
+nullspace before Dirichlet elimination. This avoids cancellation of absolute
+fluxes in the action. CG is limited to `max(500,10*ceil(sqrt(N)))` iterations;
+failure remains explicit. Equation responses accept a requested tolerance, and
+nonlinear solves use one percent of their outer tolerance (at most `1e-11`).
+`grad_shafranov_shaped_solver_work` checks the nullspace, true residual and
+iteration growth on two shaped meshes; it has no wall-time assertion.
+
 ## Curved P2 geometry
 
 `initialize_gs(state, contour, max_area, status, element_order=2, curved=.true.)`
