@@ -23,7 +23,7 @@ module kin6d_grad_shafranov
    integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
    integer, parameter :: geometry_arithmetic = 3
    public :: gs_cell_data
-   public :: write_gs_mesh
+   public :: write_gs_mesh, read_gs_mesh
    public :: gs_profile_load, gs_profile_load_jvp, gs_profile_load_vjp
    public :: solve_gs_profiles, gs_profile_value, gs_profile_integral
    public :: gs_element_jet, gs_axis_candidate, gs_current_jump
@@ -187,7 +187,8 @@ contains
         status = 0
     end subroutine initialize_gs
 
-    subroutine gs_cell_data(state, e, xi, point, det, shape, gradients, hessians, status)
+    subroutine gs_cell_data(state, e, xi, point, det, shape, gradients, &
+                            hessians, status)
         type(gs_state_t), intent(in) :: state
         integer, intent(in) :: e
         real(dp), intent(in) :: xi(2)
@@ -324,8 +325,8 @@ contains
       real(dp) :: residual, tolerance
       integer :: iterations
       status = 1
+      if (.not. state%ready) return
       if (state%mapped) then
-         if (.not. state%ready) return
          if (.not. all(ieee_is_finite(source))) return
          if (.not. ieee_is_finite(norm2(source))) return
       end if
@@ -366,8 +367,8 @@ contains
       integer, intent(out) :: status
       real(dp), allocatable :: rhs(:), solution(:), action(:)
       status = 1
+      if (.not. state%ready) return
       if (state%mapped) then
-         if (.not. state%ready) return
          state%residual = huge(1.0_dp)
          if (.not. all(ieee_is_finite(state%psi))) return
       end if
@@ -911,15 +912,18 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       status = 2 ! Candidate did not solve the declared nonlinear model.
    end subroutine solve_gs_profiles
 
-    subroutine gs_element_jet(state, element, r, z, psi, grad, hessian, status)
+    subroutine gs_element_jet(state, element, r, z, psi, grad, hessian, status, &
+                              affine_chart)
         type(gs_state_t), intent(in) :: state
         integer, intent(in) :: element
         real(dp), intent(in) :: r, z
         real(dp), intent(out) :: psi, grad(2), hessian(2, 2)
         integer, intent(out) :: status
+        logical, intent(in), optional :: affine_chart
         real(dp) :: shape(6), gradients(2, 6), hessians(2, 2, 6), local(2)
         real(dp) :: differences(6), point(2), det
         integer :: ndof, j
+        logical :: physical
         psi = 0; grad = 0; hessian = 0
         status = 1
         if (.not. ieee_is_finite(r) .or. .not. ieee_is_finite(z)) return
@@ -927,7 +931,9 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         if (element < 1 .or. element > size(state%triangles, 2)) return
         local = matmul(transpose(state%gradient(:, 2:3, element)), &
             [r, z] - state%points(:, state%triangles(1, element)))
-        if (state%mapped) then
+        physical = .true.
+        if (present(affine_chart)) physical = .not. affine_chart
+        if (state%mapped .and. physical) then
             if (state%curved_cell(element)) then
                 ! A nearby affine guess cheaply excludes distant curved cells.
                 if (minval([1 - sum(local), local]) < -0.5_dp) return
@@ -938,9 +944,15 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         end if
         if (minval([1 - sum(local), local]) < -1.0e-10_dp) return
         ndof = size(state%triangles, 1)
-        call gs_cell_data(state, element, local, point, det, shape(:ndof), &
-            gradients(:, :ndof), hessians(:, :, :ndof), status)
-        if (status /= 0) return
+        if (physical) then
+            call gs_cell_data(state, element, local, point, det, shape(:ndof), &
+                gradients(:, :ndof), hessians(:, :, :ndof), status)
+            if (status /= 0) return
+        else
+            call element_shapes(state, element, local(1), local(2), shape(:ndof), &
+                gradients(:, :ndof), hessians(:, :, :ndof))
+            status = 0
+        end if
         differences(:ndof) = state%psi(state%triangles(:, element)) &
             - state%psi(state%triangles(1, element))
         psi = state%psi(state%triangles(1, element)) &
@@ -1112,6 +1124,91 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       call gs_current_sheet(r, mu0, gr(1)-gl(1), gr(2)-gl(2), &
                             normal(1), normal(2), current)
    end subroutine gs_current_jump
+
+    subroutine read_gs_mesh(state, path, status)
+        ! Evaluation-only restart: preserves native coefficients and geometry.
+        ! No operator is assembled; ready remains false to reject a new solve.
+        type(gs_state_t), intent(out) :: state
+        character(*), intent(in) :: path
+        integer, intent(out) :: status
+        type(basis_p1_2d_t) :: basis
+        character(256) :: header
+        real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3), midpoint(2)
+        integer :: unit, ios, n, cells, ndof, j, e, k, marker, pivot(2), stat
+        status = 1
+        open (newunit=unit, file=path, status='old', action='read', iostat=ios)
+        if (ios /= 0) return
+        read (unit, '(a)', iostat=ios) header
+        if (ios /= 0) then
+            close (unit)
+            return
+        end if
+        state%element_order = 2
+        if (index(header, 'kin6d-gs-mesh-v1:') > 0) then
+            state%element_order = 1
+        else if (index(header, 'kin6d-gs-mesh-v3:') > 0) then
+            state%mapped = .true.
+        else if (index(header, 'kin6d-gs-mesh-v2:') == 0) then
+            close (unit)
+            return
+        end if
+        ndof = merge(3, 6, state%element_order == 1)
+        read (unit, *, iostat=ios) n, cells
+        if (ios /= 0) then
+            close (unit)
+            return
+        end if
+        if (n < 3 .or. cells < 1) then
+            close (unit)
+            return
+        end if
+        allocate (state%points(2, n), state%psi(n), state%boundary(n), &
+            state%triangles(ndof, cells), state%gradient(2, 3, cells), &
+            state%area(cells), state%curved_cell(cells))
+        do j = 1, n
+            read (unit, *, iostat=ios) state%points(:, j), state%psi(j), marker
+            if (ios /= 0) exit
+            state%boundary(j) = marker /= 0
+        end do
+        if (ios == 0) read (unit, '(a)', iostat=ios) header
+        if (ios == 0) then
+            do e = 1, cells
+                read (unit, *, iostat=ios) state%triangles(:, e)
+                if (ios /= 0) exit
+            end do
+        end if
+        close (unit)
+        if (ios /= 0) return
+        if (minval(state%triangles) < 1 .or. maxval(state%triangles) > n) return
+        if (.not. all(ieee_is_finite(state%points))) return
+        if (.not. all(ieee_is_finite(state%psi))) return
+        if (minval(state%points(1, :)) <= 0) return
+        state%curved_cell = .false.
+        do e = 1, cells
+            call basis%compute_jacobian(state%points(:, state%triangles(1:3, e)), &
+                jac, det)
+            if (det <= tiny(1.0_dp)) return
+            matrix = transpose(jac)
+            do j = 1, 3
+                grads(:, j) = basis%grad(j, 0.0_dp, 0.0_dp)
+            end do
+            call dgesv(2, 3, matrix, 2, pivot, grads, 2, stat)
+            if (stat /= 0) return
+            state%gradient(:, :, e) = grads
+            state%area(e) = det/2
+            if (ndof /= 6) cycle
+            do j = 1, 3
+                k = mod(j, 3) + 1
+                midpoint = (state%points(:, state%triangles(j, e)) &
+                    + state%points(:, state%triangles(k, e)))/2
+                if (norm2(midpoint - state%points(:, state%triangles(j + 3, e))) &
+                    <= 64*epsilon(1.0_dp)*max(1.0_dp, norm2(midpoint))) cycle
+                if (.not. state%mapped) return
+                state%curved_cell(e) = .true.
+            end do
+        end do
+        status = 0
+    end subroutine read_gs_mesh
 
    subroutine write_gs_mesh(state, path, status)
       type(gs_state_t), intent(in) :: state

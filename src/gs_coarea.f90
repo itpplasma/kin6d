@@ -4,6 +4,7 @@ module kin6d_gs_coarea
     use kin6d_grad_shafranov, only: gs_state_t, &
                                     gs_element_jet, gs_axis_candidate, &
                                     gs_axis_safety_factor, GS_UNSUPPORTED_GEOMETRY
+    use kin6d_curved_triangle, only: p2_geometry, p2_locate
     use kin6d_gs_coarea_leaves, only: gs_contour_weight, &
                                       gs_contour_weight_jvp, &
                                       gs_ray_trace, &
@@ -44,6 +45,7 @@ contains
         integer, allocatable :: permutation(:)
         real(dp), allocatable :: x(:), w(:), jet(:, :), &
                                  hess(:, :, :)
+        real(dp) :: physical_axis(2), local_axis(2), factor
         real(dp) :: axis_flux, axis_h(2, 2), axis_delta(2), &
                     axis_flux_delta, gh(2, 2), gg(2)
         real(dp) :: q_geometry, dq, value, grad(2), h(2, 2), &
@@ -61,9 +63,12 @@ contains
         axis = 0
         status = 1
         if (state%mapped) then
-            if (present(coarea_tangent)) coarea_tangent = 0
-            status = GS_UNSUPPORTED_GEOMETRY
-            return
+            if (present(psi_tangent) .or. present(levels_tangent) .or. &
+                present(coarea_tangent)) then
+                if (present(coarea_tangent)) coarea_tangent = 0
+                status = GS_UNSUPPORTED_GEOMETRY
+                return
+            end if
         end if
         with_tangent = present(psi_tangent) .and. &
                        present(levels_tangent) .and. &
@@ -92,6 +97,16 @@ contains
         call gs_axis_candidate(state, axis, axis_flux, &
                                axis_h, axis_element, status)
         if (status /= 0) return
+        physical_axis = axis
+        if (state%mapped) then
+            if (state%curved_cell(axis_element)) then
+                call p2_locate(state%points(:, state%triangles(:, axis_element)), &
+                    axis, local_axis, status)
+                if (status /= 0) return
+                axis = matmul(state%points(:, state%triangles(1:3, axis_element)), &
+                    [1 - sum(local_axis), local_axis])
+            end if
+        end if
         status = 1
         two_pi = 2*acos(-1.0_dp)
         tolerance = 1024*epsilon(1.0_dp)*max(1.0_dp, &
@@ -100,7 +115,7 @@ contains
             status = 13
             return
         end if
-        call gs_axis_safety_factor(axis(1), 1.0_dp, axis_h, &
+        call gs_axis_safety_factor(physical_axis(1), 1.0_dp, axis_h, &
                                    q_geometry, stat)
         if (stat /= 0) then
             status = 14
@@ -111,7 +126,7 @@ contains
         if (with_tangent) then
             call gs_element_jet(tangent_state, axis_element, &
                                 axis(1), axis(2), &
-                                axis_flux_delta, gg, gh, stat)
+                                axis_flux_delta, gg, gh, stat, affine_chart=.true.)
             if (stat /= 0) return
             if (abs(levels_tangent(1) - &
                     axis_flux_delta) > tolerance) then
@@ -136,7 +151,7 @@ contains
             center = sum(state%points(:, state%triangles(1:3, &
                                                          e)), dim=2)/3
             call gs_element_jet(state, e, center(1), center(2), &
-                                value, grad, h, stat)
+                                value, grad, h, stat, affine_chart=.true.)
             if (stat /= 0) return
             call gs_quadratic_translate(value, grad(1), grad(2), &
                                         h(1, 1), h(1, 2), h(2, 2), &
@@ -221,10 +236,12 @@ contains
                         events(count)%tangent = 0
                         if (with_tangent) then
                             call gs_element_jet(state, e, point(1), point(2), &
-                                                value, grad, h, stat)
+                                                value, grad, h, stat, &
+                                                affine_chart=.true.)
                             if (stat /= 0) return
                             call gs_element_jet(tangent_state, e, point(1), &
-                                                point(2), tv, tg, th, stat)
+                                                point(2), tv, tg, th, stat, &
+                                                affine_chart=.true.)
                             if (stat /= 0) return
                             if (abs(dot_product(grad, vec)) < tolerance) then
                                 status = 18
@@ -325,8 +342,27 @@ contains
                 return
             end if
         end if
+        axis = physical_axis
         status = 0
     contains
+        subroutine measure_factor(e, chart_point, factor, status)
+            integer, intent(in) :: e
+            real(dp), intent(in) :: chart_point(2)
+            real(dp), intent(out) :: factor
+            integer, intent(out) :: status
+            real(dp) :: xi(2), point(2), jac(2, 2), curvature(2, 2, 2)
+            real(dp) :: det, inverse(2, 2)
+            factor = 1; status = 0
+            if (.not. state%mapped) return
+            if (.not. state%curved_cell(e)) return
+            xi = matmul(transpose(state%gradient(:, 2:3, e)), &
+                chart_point - state%points(:, state%triangles(1, e)))
+            call p2_geometry(state%points(:, state%triangles(:, e)), xi, &
+                point, jac, curvature, det, inverse, status)
+            if (status /= 0) return
+            factor = det/(2*state%area(e))*chart_point(1)/point(1)
+        end subroutine
+
         subroutine point_on_cell(e, theta, level, point, &
                                  grad, h, status)
             integer, intent(in)::e
@@ -388,7 +424,7 @@ contains
             end do
             if (found == 0) return
             call gs_element_jet(state, e, point(1), point(2), &
-                                value, grad, h, stat)
+                                value, grad, h, stat, affine_chart=.true.)
             if (stat /= 0) return
             if (abs(value - level) > tolerance) then
                 status = 12
@@ -415,9 +451,12 @@ contains
             r = norm2(point - axis)
             rg = dot_product(grad, dir)
             call gs_contour_weight(r, point(1), rg, weight)
+            call measure_factor(e, point, factor, status)
+            if (status /= 0) return
+            weight = weight*factor
             if (.not. with_tangent) return
             call gs_element_jet(tangent_state, e, point(1), &
-                                point(2), tv, tg, th, status)
+                                point(2), tv, tg, th, status, affine_chart=.true.)
             if (status /= 0) return
             call gs_moving_jet_response(grad(1), grad(2), h(1, &
                                                             1), h(1, 2), h(2, 2), &
@@ -485,7 +524,7 @@ contains
             real(dp)::value, gradient(2), hessian(2, 2), direction(2), radius, radial_gradient
             weight = 0
             call gs_element_jet(state, e, face_point(1), face_point(2), &
-                                value, gradient, hessian, status)
+                                value, gradient, hessian, status, affine_chart=.true.)
             if (status /= 0) return
             direction = face_point - axis
             radius = norm2(direction)
@@ -534,7 +573,7 @@ contains
                             point = state%points(:, a) + x(q)*vec
                         end if
                         call gs_element_jet(state, e, point(1), point(2), &
-                                            value, grad, h, stat)
+                                            value, grad, h, stat, affine_chart=.true.)
                         if (stat /= 0) return
                         if (norm2(grad) <= tolerance) then
                             status = 19
@@ -543,10 +582,13 @@ contains
                         if (q == 0 .or. q == order + 1) cycle
                         call gs_boundary_weight(norm2(vec), point(1), &
                                                 grad(1), grad(2), weight)
-                        coarea(j) = coarea(j) + w(q)*weight
+                        call measure_factor(e, point, factor, stat)
+                        if (stat /= 0) return
+                        coarea(j) = coarea(j) + w(q)*weight*factor
                         if (with_tangent) then
                             call gs_element_jet(tangent_state, e, point(1), &
-                                                point(2), tv, tg, th, stat)
+                                                point(2), tv, tg, th, stat, &
+                                                affine_chart=.true.)
                             if (stat /= 0) return
                             call gs_boundary_weight_jvp(norm2(vec), point(1), &
                                                         grad(1), grad(2), &

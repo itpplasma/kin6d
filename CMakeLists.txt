@@ -667,3 +667,9 @@ target_link_libraries(test_gs_curved_convergence PRIVATE kin6d)
 add_test(NAME grad_shafranov_curved_convergence COMMAND test_gs_curved_convergence)
 set_tests_properties(grad_shafranov_curved_convergence PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+target_sources(kin6d PRIVATE src/gs_readback.f90)
+add_executable(test_gs_curved_readback test/test_gs_curved_readback.f90)
+target_link_libraries(test_gs_curved_readback PRIVATE kin6d)
+add_test(NAME grad_shafranov_curved_readback COMMAND test_gs_curved_readback)
+set_tests_properties(grad_shafranov_curved_readback PROPERTIES
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")

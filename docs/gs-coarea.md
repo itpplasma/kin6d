@@ -8,8 +8,9 @@ K(\psi_s)=\oint_{\psi=\psi_s}\frac{dl}{R|\nabla\psi|},
 \]
 
 The flux convention has a strict interior minimum at the magnetic axis and
-increases outwards. `R` is positive. The fixed geometry is an affine triangular
-mesh with six globally shared P2 nodal coefficients per cell. Gradients and
+increases outwards. `R` is positive. The fixed geometry is an affine or
+isoparametric triangular mesh with six globally shared P2 nodal coefficients
+per cell. Gradients and
 Hessians come from the same native polynomial as the contour; there is no
 smooth interpolant layered over a P1 or P2 state.
 
@@ -19,7 +20,11 @@ with FortNum Gauss–Legendre quadrature. `angular_points` is a budget: the
 per-arc Gauss order is its integer quotient by 16. Doubling a budget that is a
 multiple of 16 doubles this order, including at high orders. A contour wholly
 inside the axis cell uses sixteen regular angular sectors. A constant-Dirichlet
-outer contour is integrated directly along its straight boundary faces.
+outer contour is integrated directly along its boundary faces. On curved
+cells, roots are found in the affine chart of the reference P2 polynomial;
+every quadrature weight is multiplied by `det(DX)/det(DA)*R_chart/R_physical`.
+This is the change of variables for the coarea measure, including the boundary
+contour. Physical volume and toroidal flux use the same isoparametric map.
 
 The nodal/level JVP differentiates the converged contour equation. It includes
 axis displacement and the Leibniz terms at moving mesh-face intersections.
@@ -29,7 +34,7 @@ These terms contain the difference of the two one-sided coarea weights;
 subtracting them silently would differentiate a different map. The generator
 `gen/gen_gs_coarea.f90` retains the mathematical leaves and emits primal, JVP
 and VJP leaves through the pinned FortSym engine. The assembled coarea API
-currently supports a JVP under Euclidean nodal/level coefficient pairings;
+currently supports an affine-geometry JVP under Euclidean nodal/level pairings;
 its assembled VJP and shape derivative are unavailable. Geometry is inactive.
 
 Supported contours must be closed, nested, regular and star-shaped about the
@@ -53,3 +58,13 @@ separate C0 P2 fixture has genuine gradient jumps and checks the assembled JVP
 against central differences of separately located contours. Deliberately
 omitting the moving-face terms fails that fixture. Existing P1/P2 physical,
 current, gauge, symbolic, variational and output contracts remain gates.
+
+`kin6d_gs_readback::read_gs_equilibrium` combines these contours with the
+constant FFprime law and returns signed q, the physical axis, volume and full
+edge toroidal flux. Its radial grid is uniform in sqrt(s_pol); cumulative
+trapezoidal integration of `F*K` supplies normalized s_tor. The independent
+area integral supplies Phi_edge. `flux_consistency` reports their relative
+difference and can be reduced by radial refinement. Neither radial nor angular
+quadrature is a rigorous enclosure. The curved readback CTest measures q,
+volume, Phi and flux-label convergence against the exact physical-LCFS case,
+checks reversal of F, and tests native mesh export/readback round trips.
