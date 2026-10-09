@@ -177,6 +177,7 @@ foreach(domain valid zero negative nan)
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
 target_sources(kin6d PRIVATE src/solovev_geometry.f90 src/solovev_cell_jet.f90
+    src/solovev_cell_weak.f90
     src/generated/kin6d_solovev_geometry_leaves.f90)
 set_source_files_properties(src/generated/kin6d_solovev_geometry_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -186,6 +187,9 @@ add_test(NAME grad_shafranov_solovev_geometry_primitive COMMAND test_solovev_geo
 add_executable(test_solovev_cell_jet test/test_solovev_cell_jet.f90)
 target_link_libraries(test_solovev_cell_jet PRIVATE kin6d)
 add_test(NAME grad_shafranov_solovev_cell_scalar_jet COMMAND test_solovev_cell_jet)
+add_executable(test_solovev_cell_weak test/test_solovev_cell_weak.f90)
+target_link_libraries(test_solovev_cell_weak PRIVATE kin6d)
+add_test(NAME grad_shafranov_solovev_cell_p2_weak_forms COMMAND test_solovev_cell_weak)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
 target_link_libraries(test_gs_p2 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)

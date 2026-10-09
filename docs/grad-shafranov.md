@@ -81,6 +81,43 @@ ctest --preset cpu -R '^grad_shafranov_'
   regularity. `gs_axis_safety_factor` uses the signed F at that axis and its
   positive Hessian; it is a smooth-axis candidate, without a certified bound.
 
+## Mapped P2 cell forms (candidate)
+
+`kin6d_solovev_cell_weak::solovev_cell_p2_forms` evaluates a single cell's
+6-by-6 stiffness and six-entry load on `T=G o A`. Supply positively oriented
+polygon vertices, reference nodes in `Delta={xi,eta>=0:xi+eta<=1}`, strictly
+positive finite weights, positive finite `mu0`, and finite constant `pprime`
+and `FFprime`. Weights multiply `dxi deta`, whose reference area is **1/2**;
+the API preserves the supplied measure and performs no normalization.
+
+Each node uses one shared scalar-jet geometry evaluation, FortFEM's actual P2
+basis, and the same physical `R`, `detJ` and inverse Jacobian for both forms:
+`K_ij=sum(w*detJ/R*grad_x(N_i).grad_x(N_j))` and
+`b_i=sum(w*detJ*gs_source(R,mu0,pprime,FFprime)*N_i)`.
+The authoritative generated `gs_source` already equals
+`mu0*pprime*R+FFprime/R`. It receives the mapped physical radius.
+
+Success is `geometry_ok`; `certified` always returns false. Invalid input,
+undefined geometry jets at an interface, or nonfinite arithmetic returns the
+existing geometry status and clears **both complete forms**, including sums
+from preceding nodes. Underflow to a nonpositive computed integration weight
+is an arithmetic failure. Positive weights give a positive semidefinite ideal
+finite sum that annihilates constants; underintegration may introduce more
+zero modes, so no coercivity is implied. Floating evaluation carries no
+rigorous structure or integration-error enclosure. A node rule is not an exactness
+claim, including when its weights sum to 1/2.
+
+At frozen geometry/source/quadrature, the coefficient residual is `K*u-b`,
+its nodal JVP is `K*du` and its coefficient-dual VJP is `K^T*z`.
+Map/shape and source-parameter products for this consumer remain unavailable.
+No global assembly, mapped PDE solve, automatic quadrature certificate or
+mapped current/axis/export support is wired into the affine solver.
+`grad_shafranov_solovev_cell_p2_weak_forms` checks native affine parity, two
+independent rational nonlinear-node sums, physical coordinate gradients at
+those nodes, energy/partition structure and complete failure clearing. The
+scalar-jet test retains the signed physical-gradient/readback oracle; a common
+gradient sign reversal is invisible to a stiffness Gram matrix alone.
+
 ## Profile-source residual and derivatives
 
 - `gs_profile_load` assembles the declared piecewise-linear pressure and FFprime
