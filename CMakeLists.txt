@@ -681,13 +681,17 @@ add_executable(test_gs_nonlinear test/test_gs_nonlinear.f90)
 add_executable(test_gs_profile_newton test/test_gs_profile_newton.f90)
 target_link_libraries(test_gs_profile_newton PRIVATE kin6d)
 add_test(NAME grad_shafranov_cubic_profile_oracles COMMAND test_gs_profile_newton)
-set_tests_properties(grad_shafranov_cubic_profile_oracles PROPERTIES
+add_test(NAME grad_shafranov_profile_quadrature_work COMMAND test_gs_profile_newton work)
+set_tests_properties(grad_shafranov_cubic_profile_oracles
+    grad_shafranov_profile_quadrature_work PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 target_link_libraries(test_gs_nonlinear PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_nonlinear_convergence COMMAND test_gs_nonlinear 2)
 add_test(NAME grad_shafranov_p3_nonlinear_convergence COMMAND test_gs_nonlinear 3)
+add_test(NAME grad_shafranov_p3_spline_knot_convergence COMMAND test_gs_nonlinear 3 knots)
 set_tests_properties(grad_shafranov_p2_nonlinear_convergence
-    grad_shafranov_p3_nonlinear_convergence PROPERTIES
+    grad_shafranov_p3_nonlinear_convergence
+    grad_shafranov_p3_spline_knot_convergence PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 target_link_libraries(test_gs_p3 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p3_physical_oracles COMMAND test_gs_p3)

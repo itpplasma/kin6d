@@ -3,17 +3,19 @@ module kin6d_gs_nonlinear
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, solve_gs, apply_gs, &
                                     gs_cell_data, gs_axis_candidate, gs_linear_response
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink
+    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
+                                  gs_law_c1
     use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
                                       gs_cut_discriminant, gs_cut_quadratic_discriminant
     use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
-                                    triangle_bernstein_controls
+                                    triangle_bernstein_controls, &
+                                    cubic_segment_stationary
     use kin6d_curved_triangle, only: triangle_locate
     use fortfem_triangle_level_quadrature, only: triangle_level_workspace_t, &
                        initialize_triangle_level_workspace, integrate_triangle_levels, &
                                                  triangle_level_coefficients
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
-    use fortnum_krylov, only: real_gmres_operator
+    use fortnum_krylov, only: real_gmres_operator, real_conjugate_gradient_operator
     use fortnum_linalg, only: det2
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
@@ -23,6 +25,9 @@ module kin6d_gs_nonlinear
     public :: gs_profile_jacobian_t, apply_gs_profile_jacobian, gs_profile_response
     type :: gs_profile_jacobian_t
         real(dp), allocatable :: mass(:, :, :), axis_load(:), axis_gradient(:)
+    end type
+    type :: source_rule_t
+        real(dp), allocatable :: weights(:), shapes(:, :), gradients(:, :, :)
     end type
     abstract interface
         function gs_forcing_t(r, z) result(source)
@@ -78,7 +83,8 @@ contains
     end subroutine
 
     subroutine gs_cubic_load(state, mu0, law, rhs, jacobian, status, tolerance, &
-                             forcing, source_integral)
+                             forcing, source_integral, jacobian_tolerance, load_only, &
+                             quadrature_evaluations)
         type(gs_state_t), intent(inout) :: state
         real(dp), intent(in) :: mu0
         type(gs_profile_law_t), intent(inout) :: law
@@ -88,33 +94,56 @@ contains
         real(dp), intent(in), optional :: tolerance
         procedure(gs_forcing_t), optional :: forcing
         real(dp), intent(out), optional :: source_integral
+        real(dp), intent(in), optional :: jacobian_tolerance
+        logical, intent(in), optional :: load_only
+        integer, intent(out), optional :: quadrature_evaluations
         type(triangle_level_workspace_t) :: workspace
-        real(dp), allocatable :: levels(:), events(:), inner(:), epsabs(:)
+        type(source_rule_t) :: rules(4)
+        real(dp), allocatable :: levels(:), events(:), inner(:), epsabs(:), rtol(:)
         real(dp), allocatable :: values(:), errors(:), x(:), y(:), w(:)
         real(dp), allocatable :: xh(:), yh(:), wh(:), shapes(:, :), grads(:, :, :)
         real(dp), allocatable :: shapes_h(:, :), grads_h(:, :, :)
         real(dp), allocatable :: high_values(:), cell_values(:)
         logical, allocatable :: inner_active(:)
+        logical :: smooth_law, need_jacobian
         real(dp) :: coefficients(6), local_psi(10), controls(10), low, high, scale, tol
+        real(dp) :: jtol
         real(dp) :: edge_values(4), roots(3), shape(10), g(2, 10), h(2, 2, 10)
         real(dp) :: last_x, actual(2), width, samples(4), band_lower, band_upper
+        real(dp) :: cell_points(2, 10)
         integer :: e, ndof, nc, i, j, k, nr, ne, ni, nlevels, q
-        integer :: ix, left, right, band, cell_left, cell_right, capacity
+        integer :: ix, left, right, band, cell_left, cell_right, capacity, rule
+        logical :: integrated, closed_cut
+        integer :: evaluations
         character(160) :: message
         status = 1; rhs = 0
         if (present(source_integral)) source_integral = 0
+        need_jacobian = .true.
+        if (present(load_only)) need_jacobian = .not. load_only
+        if (present(quadrature_evaluations)) quadrature_evaluations = 0
+        evaluations = 0
         if (.not. state%ready .or. mu0 <= 0) return
         if (.not. ieee_is_finite(mu0)) return
         if (.not. law%valid()) return
+        smooth_law = gs_law_c1(law)
         if (.not. all(ieee_is_finite(state%psi))) return
         tol = 1.0e-9_dp
         if (present(tolerance)) tol = tolerance
         if (.not. ieee_is_finite(tol)) return
         if (tol <= 0 .or. tol >= 1) return
+        jtol = tol
+        if (present(jacobian_tolerance)) jtol = jacobian_tolerance
+        if (.not. ieee_is_finite(jtol)) return
+        if (jtol <= 0 .or. jtol >= 1) return
         ndof = size(state%triangles, 1); nc = ndof*(ndof + 2)
-        allocate (jacobian%mass(ndof, ndof, size(state%triangles, 2)), &
-                  jacobian%axis_load(size(rhs)), jacobian%axis_gradient(size(rhs)))
-        jacobian%mass = 0; jacobian%axis_load = 0; jacobian%axis_gradient = 0
+        if (.not. need_jacobian) nc = ndof
+        allocate (jacobian%axis_gradient(size(rhs)))
+        jacobian%axis_gradient = 0
+        if (need_jacobian) then
+            allocate (jacobian%mass(ndof, ndof, size(state%triangles, 2)), &
+                      jacobian%axis_load(size(rhs)))
+            jacobian%mass = 0; jacobian%axis_load = 0
+        end if
         if (law%normalized) then
             call gs_profile_axis(state, law%axis, jacobian%axis_gradient, status)
             if (status /= 0) return
@@ -123,9 +152,10 @@ contains
         if (law%normalized) levels = law%axis*(1 - levels)
         if (levels(1) > levels(size(levels))) levels = levels(size(levels):1:-1)
         capacity = 12*size(levels) + 3
-        if (state%element_order == 3) capacity = 27
+        if (state%element_order == 3 .and. .not. smooth_law) capacity = 27
         allocate (events(capacity), inner(capacity), inner_active(capacity), &
-                  epsabs(nc), values(nc), errors(nc), cell_values(nc))
+                  epsabs(nc), rtol(nc), values(nc), errors(nc), cell_values(nc))
+        rtol(:ndof) = tol; rtol(ndof + 1:) = jtol
         call initialize_triangle_level_workspace(workspace, nc, size(events), &
                    status, max_panels=max(256, size(events)), max_evaluations=2000000, &
                                                  max_points=1000000)
@@ -145,6 +175,7 @@ contains
                                     h(:, :, :ndof))
         end do
         do e = 1, size(state%triangles, 2)
+            cell_points(:, :ndof) = state%points(:, state%triangles(:, e))
             local_psi(:ndof) = state%psi(state%triangles(:, e))
             if (maxval(abs(local_psi(:ndof) - local_psi(1))) <= 0) then
                 if (gs_law_kink(law, local_psi(1))) then
@@ -157,11 +188,32 @@ contains
             low = minval(controls(:ndof)); high = maxval(controls(:ndof))
             left = count(levels <= low) + 1; right = count(levels < high)
             nlevels = max(0, right - left + 1)
+            closed_cut = .false.
+            if (nlevels > 0 .and. smooth_law) closed_cut = possible_closed_cut()
             values = 0
             scale = max(1.0_dp, mu0*maxval(abs(law%pp(1, :))) &
                         + maxval(abs(law%ff(1, :))))*2*state%area(e)
-            epsabs = tol*scale*0.01_dp
-            if (nlevels == 0) then
+            epsabs = rtol*scale
+            integrated = .false.
+            if (nlevels > 0 .and. smooth_law .and. .not. closed_cut) then
+                values = 0
+                do rule = 1, size(rules)
+                    call smooth_rule(rule, high_values)
+                    if (status /= 0) return
+                    if (rule > 1) then
+                        if (all(abs(high_values - values) <= epsabs + &
+                            rtol*abs(high_values))) then
+                            integrated = .true.
+                            exit
+                        end if
+                    end if
+                    values = high_values
+                end do
+                values = high_values
+            end if
+            if (integrated) then
+                continue
+            else if (nlevels == 0) then
                 do q = 1, size(w)
                     call source_values(shapes(:, q), grads(:, :, q), errors, status)
                     if (status /= 0) return
@@ -187,7 +239,16 @@ contains
                     values = high_values
                 end if
             else
-                if (state%element_order <= 2) then
+                if (state%element_order == 3 .and. smooth_law .and. &
+                    .not. closed_cut) then
+                    band_lower = -huge(1.0_dp); band_upper = huge(1.0_dp)
+                    ne = 2; events(:2) = [0.0_dp, 1.0_dp]
+                    coefficients = [0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
+                    last_x = -1
+                    call integrate_triangle_levels(coefficients, events(:ne), &
+                        cut_products, epsabs, tol, workspace, values, &
+                        errors, status, message)
+                else if (state%element_order <= 2) then
                     call triangle_level_coefficients(state%element_order, &
                                                  local_psi(:ndof), coefficients, status)
                     if (status /= 0) return
@@ -227,9 +288,11 @@ contains
                         errors = abs(high_values - values)
                         epsabs(:ndof) = max(tol*scale*0.01_dp/(nlevels + 1), &
                                             tol*0.1_dp*maxval(abs(high_values(:ndof))))
-                        epsabs(ndof + 1:) = &
-                            max(tol*scale*0.01_dp/(nlevels + 1), &
-                                tol*0.1_dp*maxval(abs(high_values(ndof + 1:))))
+                        if (need_jacobian) then
+                            epsabs(ndof + 1:) = &
+                                max(jtol*scale*0.01_dp/(nlevels + 1), &
+                                    jtol*0.1_dp*maxval(abs(high_values(ndof + 1:))))
+                        end if
                         coefficients = [0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
                         last_x = -1
                         if (all(errors <= epsabs + tol*0.1_dp*abs(high_values))) then
@@ -256,11 +319,11 @@ contains
             do i = 1, ndof
                 k = state%triangles(i, e)
                 rhs(k) = rhs(k) + values(i)
-                jacobian%axis_load(k) = jacobian%axis_load(k) &
-                                        + values(nc - ndof + i)
+                if (need_jacobian) jacobian%axis_load(k) = jacobian%axis_load(k) &
+                    + values(nc - ndof + i)
             end do
-            jacobian%mass(:, :, e) = reshape(values(ndof + 1:nc - ndof), &
-                                             [ndof, ndof])
+            if (need_jacobian) jacobian%mass(:, :, e) = &
+                reshape(values(ndof + 1:nc - ndof), [ndof, ndof])
             do j = 1, ndof
                 k = state%triangles(j, e)
                 if (.not. state%boundary(k)) cycle
@@ -272,12 +335,78 @@ contains
         end do
         where (state%boundary)
             rhs = state%psi
-            jacobian%axis_load = 0
             jacobian%axis_gradient = 0
         end where
+        if (need_jacobian) then
+            where (state%boundary) jacobian%axis_load = 0
+        end if
         status = 1
         if (all(ieee_is_finite(rhs))) status = 0
+        if (present(quadrature_evaluations)) quadrature_evaluations = evaluations
     contains
+        logical function possible_closed_cut() result(closed)
+            real(dp) :: edge_min, edge_max, t, value, stationary(2), v(4)
+            integer :: edge, node, count
+            edge_min = huge(1.0_dp); edge_max = -huge(1.0_dp)
+            do edge = 1, 3
+                do node = 1, 4
+                    t = real(node - 1, dp)/3
+                    v(node) = edge_flux(edge, t)
+                end do
+                edge_min = min(edge_min, v(1), v(4))
+                edge_max = max(edge_max, v(1), v(4))
+                call cubic_segment_stationary(v, stationary, count)
+                do node = 1, count
+                    value = edge_flux(edge, stationary(node))
+                    edge_min = min(edge_min, value)
+                    edge_max = max(edge_max, value)
+                end do
+            end do
+            closed = any(levels(left:right) < edge_min) .or. &
+                     any(levels(left:right) > edge_max)
+        end function
+
+        real(dp) function edge_flux(edge, t) result(value)
+            integer, intent(in) :: edge
+            real(dp), intent(in) :: t
+            select case (edge)
+            case (1)
+                value = flux_value([t, 0.0_dp])
+            case (2)
+                value = flux_value([1 - t, t])
+            case default
+                value = flux_value([0.0_dp, 1 - t])
+            end select
+        end function
+
+        subroutine smooth_rule(index, integral)
+            integer, intent(in) :: index
+            real(dp), intent(out) :: integral(:)
+            integer, parameter :: orders(4) = [8, 12, 24, 48]
+            real(dp), allocatable :: rx(:), ry(:)
+            real(dp) :: piece(nc)
+            integer :: node
+            if (.not. allocated(rules(index)%weights)) then
+                call triangle_duffy_quadrature(2*orders(index) - 2, rx, ry, &
+                    rules(index)%weights, status)
+                if (status /= 0) return
+                allocate (rules(index)%shapes(ndof, size(rx)), &
+                    rules(index)%gradients(2, ndof, size(rx)))
+                do node = 1, size(rx)
+                    call triangle_basis_jet([rx(node), ry(node)], &
+                        rules(index)%shapes(:, node), &
+                        rules(index)%gradients(:, :, node))
+                end do
+            end if
+            integral = 0
+            do node = 1, size(rules(index)%weights)
+                call source_values(rules(index)%shapes(:, node), &
+                    rules(index)%gradients(:, :, node), piece, status)
+                if (status /= 0) return
+                integral = integral + rules(index)%weights(node)*piece
+            end do
+        end subroutine
+
         subroutine cut_rule(order, integral)
             integer, intent(in) :: order
             real(dp), intent(out) :: integral(:)
@@ -387,21 +516,30 @@ contains
             real(dp) :: physical(2), det, psi, pp, ff, dpd, dfd, app, aff, f, df, af
             real(dp) :: map_jac(2, 2)
             integer :: a, b
+            evaluations = evaluations + 1
             stat = 1
-            physical = matmul(state%points(:, state%triangles(:, e)), s)
+            physical = matmul(cell_points(:, :ndof), s)
             det = 2*state%area(e)
             if (state%curved_cell(e)) then
-                map_jac = matmul(state%points(:, state%triangles(:, e)), &
+                map_jac = matmul(cell_points(:, :ndof), &
                                  transpose(grad))
                 det = det2(map_jac)
             end if
             if (det <= 0 .or. physical(1) <= 0) return
             psi = local_psi(1) + dot_product(s(:ndof), &
                                              local_psi(:ndof) - local_psi(1))
-            call gs_law_sources(law, psi, pp, ff, dpd, dfd, app, aff)
+            if (need_jacobian) then
+                call gs_law_sources(law, psi, pp, ff, dpd, dfd, app, aff)
+            else
+                call gs_law_sources(law, psi, pp, ff)
+            end if
             call gs_source(physical(1), mu0, pp, ff, f)
             if (present(forcing)) f = f + forcing(physical(1), physical(2))
             output(:ndof) = det*f*s(:ndof)
+            if (.not. need_jacobian) then
+                if (all(ieee_is_finite(output))) stat = 0
+                return
+            end if
             call gs_source_jvp(physical(1), mu0, pp, ff, 0.0_dp, 0.0_dp, dpd, dfd, df)
             call gs_source_jvp(physical(1), mu0, pp, ff, 0.0_dp, 0.0_dp, app, aff, af)
             do b = 1, ndof
@@ -492,7 +630,8 @@ contains
         logical, intent(in), optional :: transpose
         real(dp) :: residual
         real(dp) :: preconditioned_rhs(size(rhs)), action_work(size(rhs))
-        integer :: iterations, precondition_status
+        real(dp) :: diagonal(size(rhs))
+        integer :: iterations, precondition_status, e, j, node
         logical :: adjoint
         adjoint = .false.
         if (present(transpose)) adjoint = transpose
@@ -502,12 +641,47 @@ contains
             status = 0
             return
         end if
+        ! Absolute-flux laws have a symmetric Jacobian. Try its direct CG
+        ! solve before the general nested stiffness-preconditioned GMRES.
+        ! CG breakdown retains the indefinite/nonsymmetric fallback.
+        if (maxval(abs(jacobian%axis_load)) <= tiny(1.0_dp) .or. &
+            maxval(abs(jacobian%axis_gradient)) <= tiny(1.0_dp)) then
+            diagonal = state%diagonal
+            do e = 1, size(state%triangles, 2)
+                do j = 1, size(state%triangles, 1)
+                    node = state%triangles(j, e)
+                    diagonal(node) = diagonal(node) - jacobian%mass(j, j, e)
+                end do
+            end do
+            where (state%boundary) diagonal = 1
+            if (all(diagonal > 0)) then
+                call real_conjugate_gradient_operator(jacobian_action, rhs, solution, &
+                    1.0e-11_dp*min(1.0_dp, norm2(rhs)), &
+                    max(500, 10*ceiling(sqrt(real(size(rhs), dp)))), &
+                    status, iterations, residual, diagonal_precondition)
+                if (status == 0) then
+                    call jacobian_action(solution, action_work)
+                    if (norm2(action_work - rhs) <= 1.0e-9_dp*norm2(rhs)) return
+                end if
+                solution = 0
+            end if
+        end if
         call precondition(rhs, preconditioned_rhs)
         call real_gmres_operator(action, preconditioned_rhs, solution, &
                            1.0e-11_dp*min(1.0_dp, norm2(preconditioned_rhs)), 300, 30, &
                                  status, iterations, residual)
         if (precondition_status /= 0) status = precondition_status
     contains
+        subroutine jacobian_action(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            call apply_gs_profile_jacobian(state, jacobian, input, output, adjoint)
+        end subroutine
+        subroutine diagonal_precondition(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            output = input/diagonal
+        end subroutine
         subroutine action(input, output)
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
@@ -540,6 +714,7 @@ contains
         real(dp) :: pp, ff, tol, damping, old_norm, new_norm, load_tolerance
         real(dp) :: work_tolerance, next_tolerance, previous_axis
         integer :: iteration, backtrack
+        logical :: reuse_jacobian
         status = 1
         if (.not. state%ready .or. mu0 <= 0) return
         if (.not. ieee_is_finite(mu0)) return
@@ -566,7 +741,7 @@ contains
         if (load_tolerance <= 0 .or. load_tolerance >= 1) return
         work_tolerance = max(1.0e-4_dp, load_tolerance)
         call gs_cubic_load(state, mu0, law, rhs, jacobian, status, work_tolerance, &
-                           forcing)
+                           forcing, max(work_tolerance, 1.0e-3_dp))
         if (status /= 0) return
         do iteration = 0, 25
             call apply_gs(state, state%psi, action)
@@ -575,12 +750,14 @@ contains
             state%residual = old_norm/max(norm2(rhs), tiny(1.0_dp))
             next_tolerance = max(load_tolerance, &
                                  min(work_tolerance, 0.1_dp*state%residual**2))
+            if (next_tolerance < 10*load_tolerance) next_tolerance = load_tolerance
             if (next_tolerance < 0.2_dp*work_tolerance .or. &
                 (next_tolerance <= load_tolerance .and. work_tolerance > &
                  load_tolerance)) then
                 work_tolerance = next_tolerance
                 call gs_cubic_load(state, mu0, law, rhs, jacobian, status, &
-                                   work_tolerance, forcing)
+                                   work_tolerance, forcing, &
+                                   max(work_tolerance, 1.0e-3_dp))
                 if (status /= 0) return
                 call apply_gs(state, state%psi, action)
                 action = rhs - action
@@ -596,10 +773,13 @@ contains
             call gs_profile_response(state, jacobian, action, step, status)
             if (status /= 0) return
             previous = state%psi; previous_axis = law%axis; damping = 1
+            reuse_jacobian = state%residual < 1.0e-3_dp
             do backtrack = 0, 14
                 state%psi = previous + damping*step
                 call gs_cubic_load(state, mu0, law, trial_rhs, trial_jacobian, &
-                                   status, work_tolerance, forcing)
+                                   status, work_tolerance, forcing, &
+                                   max(work_tolerance, 1.0e-3_dp), &
+                                   load_only=reuse_jacobian)
                 if (status == 0) then
                     call apply_gs(state, state%psi, action)
                     new_norm = norm2(trial_rhs - action)
@@ -613,9 +793,11 @@ contains
                 return
             end if
             rhs = trial_rhs
-            call move_alloc(trial_jacobian%mass, jacobian%mass)
-            call move_alloc(trial_jacobian%axis_load, jacobian%axis_load)
-            call move_alloc(trial_jacobian%axis_gradient, jacobian%axis_gradient)
+            if (.not. reuse_jacobian) then
+                call move_alloc(trial_jacobian%mass, jacobian%mass)
+                call move_alloc(trial_jacobian%axis_load, jacobian%axis_load)
+                call move_alloc(trial_jacobian%axis_gradient, jacobian%axis_gradient)
+            end if
         end do
         status = 2
     end subroutine
