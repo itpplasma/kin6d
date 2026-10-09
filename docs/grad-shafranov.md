@@ -55,8 +55,8 @@ ctest --preset cpu -R '^grad_shafranov_'
 - Mesh export: comment, node/triangle counts, `R Z psi boundary` node rows,
   then one-based triangle connectivity. P1 retains `kin6d-gs-mesh-v1` with
   three indices. P2 emits `kin6d-gs-mesh-v2`, with vertex indices 1–3 followed
-  by edge midpoint indices for edges (1,2), (2,3), (3,1). The geometry remains
-  affine and the boundary remains polygonal. Supplied-profile runs also export
+  by edge midpoint indices for edges (1,2), (2,3), (3,1). The default geometry remains
+  affine; the explicit curved API below exports mesh-v3. Supplied-profile runs also export
   `mesh_file.profiles.dat` with the executed five-column law.
 - `output/grad_shafranov.nc` retains literal/resolved configuration, source
   profiles, physical fields, units and provenance. Copy it per run before
@@ -81,126 +81,44 @@ ctest --preset cpu -R '^grad_shafranov_'
   regularity. `gs_axis_safety_factor` uses the signed F at that axis and its
   positive Hessian; it is a smooth-axis candidate, without a certified bound.
 
-## Mapped P2 cell forms (candidate)
+## Curved P2 geometry
 
-`kin6d_solovev_cell_weak::solovev_cell_p2_forms` evaluates a single cell's
-6-by-6 stiffness and six-entry load on `T=G o A`. Supply positively oriented
-polygon vertices, reference nodes in `Delta={xi,eta>=0:xi+eta<=1}`, strictly
-positive finite weights, positive finite `mu0`, and finite constant `pprime`
-and `FFprime`. Weights multiply `dxi deta`, whose reference area is **1/2**;
-the API preserves the supplied measure and performs no normalization.
+`initialize_gs(state, contour, max_area, status, element_order=2, curved=.true.)`
+constructs six-node isoparametric triangles. A periodic C2 cubic spline passes
+through the supplied contour samples at uniform parameters `(j-1)/n`.
+Alternatively supply `curve=callback`, where `callback(t, point)` evaluates the
+closed curve for `0 <= t < 1`; its values at those parameters must match the
+contour. Only boundary edge midpoints move. Interior elements remain affine,
+and neighboring elements share every edge DOF. Boundary vertices are retained
+without subdivision, so callers refine both the contour and the interior mesh.
 
-Each node uses one shared scalar-jet geometry evaluation, FortFEM's actual P2
-basis, and the same physical `R`, `detJ` and inverse Jacobian for both forms:
-`K_ij=sum(w*detJ/R*grad_x(N_i).grad_x(N_j))` and
-`b_i=sum(w*detJ*gs_source(R,mu0,pprime,FFprime)*N_i)`.
-The authoritative generated `gs_source` already equals
-`mu0*pprime*R+FFprime/R`. It receives the mapped physical radius.
+The map is `X(xi)=sum_j N_j(xi)*X_j`, using FortFEM's generated P2 basis.
+Assembly, `gs_cell_data`, physical point location and `gs_element_jet` use the
+same geometry. Physical Hessians include the map-curvature connection term.
+The original `solve_gs`, `gs_linear_response`, `sample_gs` and axis APIs remain
+available. `sample_gs` selects the first containing cell on shared edges;
+its gradient is a one-sided FE value there. Mesh-v3 exports the six physical
+geometry nodes explicitly. Mesh-v1/v2 retain their affine interpretation.
 
-Success is `geometry_ok`; `certified` always returns false. Invalid input,
-undefined geometry jets at an interface, or nonfinite arithmetic returns the
-existing geometry status and clears **both complete forms**, including sums
-from preceding nodes. Underflow to a nonpositive computed integration weight
-is an arithmetic failure. Positive weights give a positive semidefinite ideal
-finite sum that annihilates constants; underintegration may introduce more
-zero modes, so no coercivity is implied. Floating evaluation carries no
-rigorous structure or integration-error enclosure. A node rule is not an exactness
-claim, including when its weights sum to 1/2.
+Fixed-geometry coefficient derivatives use the same symmetric assembled
+operator and equation-level linear response. Shape derivatives and curved
+nonlinear profile-load derivatives are unavailable; their APIs return status
+20. Integration uses the positive seven-point triangle rule. These are ordinary
+floating numerical results, without interval or rigorous certification.
 
-At frozen geometry/source/quadrature, the coefficient residual is `K*u-b`,
-its nodal JVP is `K*du` and its coefficient-dual VJP is `K^T*z`.
-Map/shape and source-parameter products for this consumer remain unavailable.
-The opt-in mapped state below consumes these forms. Automatic quadrature
-certification and mapped current/axis/export support remain unavailable.
-`grad_shafranov_solovev_cell_p2_weak_forms` checks native affine parity, two
-independent rational nonlinear-node sums, physical coordinate gradients at
-those nodes, energy/partition structure and complete failure clearing. The
-scalar-jet test retains the signed physical-gradient/readback oracle; a common
-gradient sign reversal is invisible to a stiffness Gram matrix alone.
+The small generic map and periodic curve implementation currently live in
+KIN6D because the pinned FortFEM supplies the P2 basis and scalar-jet transform
+but not the six-node map. Moving this layer upstream is a controller decision.
+P3 geometry is not implemented.
 
-## Mapped P2 state (finite-sum candidate)
-
-An explicit opt-in call is
-`initialize_gs(state, contour, max_area, status, element_order=2, &
- mapped_r0=r0, mapped_level=level, mapped_tau=tau)`.
-Supply all three map arguments together; the default still uses the existing
-physical affine mesh. In mapped mode `contour` is the computational polygon
-used by the same Solovev geometry record. Geometry inputs contain no source,
-pressure, F or reference-solution amplitude. The geometry premises described
-below remain the caller's separate admission obligations.
-
-Mapped initialization requests Triangle `nobisect=1`. Before publishing any
-state arrays/caches it checks that every returned boundary vertex is bitwise
-one of the supplied vertices, each supplied vertex occurs once, and the actual
-oriented boundary edges form exactly the supplied CCW cycle. A native strict
-convex-turn guard is additional rejection, not an exact inclusion proof.
-Unmodified returned boundary vertices and a geometry constructed from that
-identical contour are mandatory. No alternate polygon is silently substituted.
-Failure leaves `ready=false`; callers must check status before using a state.
-
-`reference_points` and `reference_gradient` store the computational affine
-mesh. `points` stores G at the shared P2 DOFs, including curved boundary
-midpoints; these are positions, **not** quadratic interpolants defining G.
-The old physical-affine `gradient` and `area` caches are unallocated in mapped
-mode. Shared DOFs, the existing matrix action, Jacobi preconditioner and CG
-remain common to both modes. Assembly and each constant-source load use PR7's
-same physical radius/determinant/inverse at the same nodes. The generated
-`gs_source=mu0*pprime*R+FFprime/R` owns the load sign and normalization.
-
-Only the existing positive seven-point degree-five triangle rule is supported
-by this state consumer. Weights integrate the reference area **1/2**. The
-mapped coefficients are rational/nonpolynomial, may cross geometry cuts, and
-have **no quadrature or roundoff enclosure**. A failed node aborts initialization
-or clears the complete RHS; `solve_gs` propagates that status without changing
-`psi`. Nonfinite candidate actions/residuals are rejected. No scientific mapped
-solve is admitted by these unit-level implementation checks.
-
-For the ideal finite sum, positive weights and nonsingular geometry make each
-cell energy positive semidefinite. The rule contains three noncollinear nodes:
-a P2 reference gradient vanishing at all nodes is an affine polynomial
-vanishing identically, so the cell kernel consists of constants. Connected
-conforming topology with nonempty Dirichlet trace then gives the usual SPD
-free-DOF matrix. Native determinant/diagonal checks and CG success do not certify
-these exact premises or finite-arithmetic SPD. Boundary elimination uses the
-complete coefficient lifting; a homogeneous trace is zero on each mapped edge
-when all its shared endpoint/midpoint DOFs are zero. A nonzero trace is the
-computational P2 trace composed with F, not a quadratic in physical arclength.
-
-At fixed geometry and quadrature the supported linear response is the existing
-`A*du=db` solve, with Euclidean coefficient pairing and symmetric ideal A.
-Mapped linear responses enforce their identity-block boundary coefficients
-exactly after CG. The solve recomputes its residual from those actual coefficients
-before committing them; readback uses the same committed field.
-The fixed-source residual is `A*u-b`, so its coefficient products are A and
-its transpose; no geometry/shape derivative or derivative of CG iterations is
-claimed. Source leaves retain their generated products. This API does not
-expose mapped profile-source/inverse or parameter-load products.
-
-`gs_element_jet` takes a physical point, locates F once, and reads the complete
-six-coefficient scalar via the shared PR6 transform. Derivatives subtract a
-constant gauge and include the physical Hessian connection term. No affine
-locator or gradient is substituted. `sample_gs` locates F once for the cell
-search, then uses the same full jet and generated signed cylindrical field.
-It rejects a computational cell-edge guard band (barycentric coordinate
-<=1e-12); an explicitly addressed element jet may give a one-sided cell trace.
-Geometry derivative cuts still return status2 with numeric outputs zero.
-Location/jet arithmetic failures retain statuses1/3. Native F/G inverse
-composition and root errors have no new uniform enclosure here; historical
-geometry/cell certificates do not automatically qualify this implementation.
-
-Mapped profile load/JVP/VJP and nonlinear profile solve, axis search,
-classical/sheet current, coarea and mesh export return
-`GS_UNSUPPORTED_GEOMETRY=20` before affine caches or I/O. Numeric outputs are
-zero, axis flux/failed solve residual are unavailable (`huge`), and an existing
-export file is untouched. No straight-edge boundary measure is used; real
-boundary consumers must implement the curved measures described below.
-
-CTest `grad_shafranov_mapped_p2_finite_forms` uses independent implicit
-forward-chart derivatives and a separate radial position bisection to check
-actual cell finite sums, global shared-DOF algebra, signed source/lifting and
-complete physical polynomial readback. It also checks fail-closed unsupported
-capabilities and failed-load publication. These are finite-node behavioral
-oracles, not an equilibrium accuracy or continuous-error certificate.
+`grad_shafranov_curved_geometry` checks an independent polynomial map, inverse,
+signed physical derivatives, Hessian connection and periodic spline order.
+`grad_shafranov_curved_convergence` solves the exact polynomial Solovev problem
+on its physical LCFS with 48, 96 and 192 boundary segments and proportional
+interior refinement. It checks psi L2 order 3 and Bpol L2 order 2 within 0.3,
+and the degraded affine-boundary rates. It prints DOF and total mesh/assembly/
+solve wall time. Error integrals use higher-order independent quadrature over
+each represented domain; they are unnormalized meridional L2 norms.
 
 ## Profile-source residual and derivatives
 
@@ -296,101 +214,3 @@ Exact book equation numbers are not asserted.
 - Current ITER comparison inputs/results and disagreement classification live
   in the TC24 repository's `equilibrium/`; received profiles are not exact
   oracles. Do not use cross-code agreement alone as validation.
-
-## Smooth-domain geometry primitive
-
-`kin6d_solovev_geometry` supplies a **candidate geometry callback only** for
-`H(R,Z)=(R^2-r0^2)^2+4 R^2 Z^2=level`, centered at `(r0,0)`. Its explicit
-inputs are `r0`, positive `level<r0^4`, `0<tau<1`, and a CCW convex polygon.
-They contain no source, pressure, F, flux amplitude or reference-field values.
-The caller must independently establish the reviewed positive-R convex-domain,
-polygon inclusion, inner homothetic inclusion and positive radial-derivative
-premises. Constructor finite/vertex/facet checks do not prove those premises.
-
-`initialize_solovev_geometry` constructs a reusable geometry record.
-`sample_solovev_geometry` returns `geometry_sample_t`: physical `value(2)`,
-`jacobian(a,i)` and `hessian(a,i,j)`, the active polygon `facet`, an `identity`
-flag, interface flags and `status`. Its inputs are polygon physical coordinates;
-the output is the radial inverse G mapping that polygon to the smooth domain.
-Inside the inner homothetic domain G is identity, including at the axis.
-On an annular smooth piece, a FortNum bracketed root solves the quartic boundary
-equation and the stable smaller quadratic root gives G's radial scale.
-FortSym-generated leaves evaluate that geometry and its equation-level spatial
-jets; bisection iterations are not differentiated. `solovev_geometry_jvp` and
-`solovev_geometry_vjp` act on point directions and Euclidean Cartesian weights
-at fixed geometry. Parameter/facet/topology derivatives are not exposed.
-
-Status0 means successful **floating candidate evaluation**. Status1 rejects
-invalid/uninitialized input, status2 reports an inner or sector derivative cut,
-and status3 reports failed root/arithmetic/positivity checks. A native guard band
-around a cut also reports status2. No one-sided derivative is selected silently;
-nonzero status leaves value, J, H and derivative products zero, with only status,
-facet and interface metadata available. Boundary and near-interface samples may
-be rejected by arithmetic guards; success on all valid polygon points is not
-claimed. `certified` remains false; `root_residual` on success is a diagnostic,
-not a root-error enclosure or a positive-Jacobian certificate.
-The 64-epsilon bracket padding and scale-range allowance are candidate
-evaluation recovery guards, not rigorous roundoff estimates or admission bounds.
-
-`position_solovev_geometry` returns the polygon-to-physical position G and
-`locate_solovev_geometry` returns the physical-to-polygon position F. They use
-`geometry_position_t`, which has no Jacobian/Hessian fields. Status0 means a
-successful floating POSITION only, including at inner/sector derivative cuts;
-cut flags remain available. The existing signed jet/JVP/VJP API still returns
-status2 and clears every jet at those cuts. Position failure clears its value;
-`certified` remains false. Root residuals and tolerance guards are diagnostics,
-not directed enclosures or proof of domain membership. Success on every valid
-boundary/near-cut point is not promised.
-
-F uses the same stored geometry and root authority: along y=O+d let h be the
-smooth boundary-ray scale, p the polygon scale, q=1-tau, and on the outer branch
-F(y)=O+[1-(1-p/h)*(1/h-q)/tau]*d. The inner branch is identity. This is the
-reviewed continuous radial forward map; its scalar leaf comes from the same
-FortSym generator. No derivative of F, parameter/shape product or derivative of
-root iterations is exposed. Tiny stored-parameter position changes do not imply
-tiny derivative changes near moved cuts. These position helpers alone provide no assembly, readback, current, coarea,
-export or PDE admission. The opt-in state consumer below remains a candidate.
-
-For later real boundary consumers, curved meridional measure is
-`ds=norm(JG*tangent)*dt`, with outward conormal measure
-`n*ds=cofactor(JG)*n_polygon*ds_polygon`. Revolved surface measure is `2*pi*R*ds`;
-volume measure is `2*pi*R*detJ*dxi*deta`. No edge helper or diagnostic consumes
-these measures in this position-only slice.
-
-The map is piecewise smooth and is not globally C2. Its Hessian tensor order is
-physical-component first; FortFEM's generic sampled tensor uses `(i,j,a)`.
-Actual certified mapped panels and root/Jacobian arithmetic budgets remain
-open; the native state consumer below supplies candidate wiring only. This primitive changes no mesh format, assembled
-GS equation, existing affine solve, coarea or classical-current capability and
-admits no new scientific PDE run. The CTest
-`grad_shafranov_solovev_geometry_primitive` checks noncircular independent formal
-series jets, known radial forward/inverse and curvature identities, nonsymmetric
-Cartesian directions, pairing, axis behavior and explicit cut rejection.
-
-`kin6d_solovev_cell_jet:solovev_cell_scalar_jet` connects this sampled geometry
-to FortFEM's generic scalar-jet transform. Inputs are a CCW affine triangle,
-point `xi` inside the reference triangle, and the gradient and Hessian of the
-scalar pullback `u o T` in reference coordinates. FortFEM's P1 geometry supplies
-`A(xi)` and its constant Jacobian `M`.
-For `T=G o A`, the adapter forms `JT=JG M` and
-`HT(a,:,:)=transpose(M) HG(a,:,:) M`, then explicitly reorders `(a,i,j)` to
-FortFEM's `(i,j,a)`. FortFEM computes the physical gradient and Hessian,
-including `Href-sum_a gradient(a)*HT(:,:,a)` before inverse transformation.
-
-The returned geometry contains the composed point, `JT(a,i)` and `HT(a,i,j)`;
-the inverse Jacobian has order `(i,a)`. Facet and interface tags retain their
-callback meaning. `identity` describes G, so an identity sample still returns
-the affine cell Jacobian M. The root residual remains G's diagnostic.
-Finite reference jets and vertices, a point inside the reference triangle,
-positive computed affine/composed determinants and finite resulting jets are
-required. KIN interface status2 is propagated only from G; FortFEM determinant
-or arithmetic failures become KIN arithmetic status3. All numerical outputs
-remain zero on failure; diagnostic metadata may remain. `certified` is false.
-
-CTest `grad_shafranov_solovev_cell_scalar_jet` uses an independent noncircular
-formal-series map jet and a Cartesian quadratic to recover physical derivatives
-on a nonsymmetric cell. Omitting curvature or permuting tensor components fails
-that oracle. Signed cylindrical field/current diagnostics, the identity branch,
-cuts and invalid/arithmetic failure clearing are also checked. This candidate
-adapter supplies no global geometry or roundoff certificate and changes no
-assembly, mesh, PDE solve or scientific admission.
