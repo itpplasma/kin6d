@@ -96,7 +96,9 @@ The map is `X(xi)=sum_j N_j(xi)*X_j`, using FortFEM's generated P2 basis.
 Assembly, `gs_cell_data`, physical point location and `gs_element_jet` use the
 same geometry. Physical Hessians include the map-curvature connection term.
 The original `solve_gs`, `gs_linear_response`, `sample_gs` and axis APIs remain
-available. `sample_gs` selects the first containing cell on shared edges;
+available. `read_gs_mesh` restores an evaluation-only field for `sample_gs`;
+it does not assemble a new solve operator. The contour and global readback is
+specified in [gs-coarea.md](gs-coarea.md). `sample_gs` selects the first containing cell on shared edges;
 its gradient is a one-sided FE value there. Mesh-v3 exports the six physical
 geometry nodes explicitly. Mesh-v1/v2 retain their affine interpretation.
 
