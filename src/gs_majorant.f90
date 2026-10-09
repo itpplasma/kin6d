@@ -3,6 +3,9 @@ module kin6d_gs_majorant
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_grad_shafranov_leaves, only: gs_source
+    use kin6d_triangle_basis, only: triangle_bernstein_controls
+    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use kin6d_gs_nonlinear, only: gs_forcing_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK, &
         KRYLOV_MAX_ITERATIONS
@@ -12,7 +15,8 @@ module kin6d_gs_majorant
 contains
     subroutine gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
                                      flux_defect, balance_defect, status, &
-                                     recovery_converged, recovery_iterations)
+                                     recovery_converged, recovery_iterations, law, &
+                                     stability_lower_bound, forcing)
         ! Repin functional majorant for -div(grad(psi)/R)=source, homogeneous
         ! Dirichlet trace, on the represented domain. Recover y in continuous
         ! vector Pk, k=2 or 3 (a subspace of H(div)) by minimizing D^2+C_F^2*B^2.
@@ -23,6 +27,9 @@ contains
         integer, intent(out) :: status
         logical, intent(out), optional :: recovery_converged
         integer, intent(out), optional :: recovery_iterations
+        type(gs_profile_law_t), intent(in), optional :: law
+        real(dp), intent(in), optional :: stability_lower_bound
+        procedure(gs_forcing_t), optional :: forcing
         real(dp), allocatable :: x(:), y(:), w(:), matrix(:, :, :)
         real(dp), allocatable :: rhs(:), recovered(:), diagonal(:)
         integer, allocatable :: indices(:, :)
@@ -30,8 +37,8 @@ contains
         real(dp), allocatable :: local(:, :), d(:), bezier(:, :)
         real(dp) :: point(2), det
         real(dp) :: grad(2), source, weight, cf2, lo(2), hi(2)
-        real(dp) :: flux(2), divergence, residual, nodes(2, 10)
-        integer :: e, q, j, k, a, b, row, col, n, iterations, next, ndof, edge
+        real(dp) :: flux(2), divergence, residual, pp, ff, psi
+        integer :: e, q, j, k, a, b, row, col, n, iterations, ndof
         majorant = huge(1.0_dp); flux_defect = 0; balance_defect = 0
         status = 1
         if (present(recovery_converged)) recovery_converged = .false.
@@ -47,27 +54,10 @@ contains
         lo = huge(1.0_dp); hi = -huge(1.0_dp)
         do e = 1, size(state%triangles, 2)
             bezier = state%points(:, state%triangles(:, e))
-            if (state%element_order == 2) then
-                do j = 1, 3
-                    next = mod(j, 3) + 1
-                    bezier(:, j + 3) = 2*bezier(:, j + 3) &
-                        - (bezier(:, j) + bezier(:, next))/2
-                end do
-            else
-                ! Lagrange-to-Bernstein coordinates of the cubic geometry.
-                ! The enclosing rectangle uses the convex hull of these controls.
-                nodes = bezier
-                do j = 1, 3
-                    next = mod(j, 3) + 1
-                    edge = 2*j + 2
-                    bezier(:, edge) = (-5*nodes(:, j) + 18*nodes(:, edge) &
-                        - 9*nodes(:, edge + 1) + 2*nodes(:, next))/6
-                    bezier(:, edge + 1) = (2*nodes(:, j) - 9*nodes(:, edge) &
-                        + 18*nodes(:, edge + 1) - 5*nodes(:, next))/6
-                end do
-                bezier(:, 10) = (27*nodes(:, 10) - sum(nodes(:, :3), dim=2) &
-                    - 3*sum(bezier(:, 4:9), dim=2))/6
-            end if
+            do j = 1, 2
+                call triangle_bernstein_controls( &
+                    state%points(j, state%triangles(:, e)), bezier(j, :))
+            end do
             lo = min(lo, minval(bezier, dim=2))
             hi = max(hi, maxval(bezier, dim=2))
         end do
@@ -93,7 +83,13 @@ contains
                 if (status /= 0) return
                 weight = w(q)*det
                 grad = matmul(gradients, d)
-                call gs_source(point(1), mu0, pprime, ffprime, source)
+                pp = pprime; ff = ffprime
+                if (present(law)) then
+                    psi = state%psi(state%triangles(1, e)) + dot_product(shape, d)
+                    call gs_law_sources(law, psi, pp, ff)
+                end if
+                call gs_source(point(1), mu0, pp, ff, source)
+                if (present(forcing)) source = source + forcing(point(1), point(2))
                 do j = 1, ndof
                     do a = 1, 2
                         row = 2*(j - 1) + a
@@ -143,7 +139,13 @@ contains
                 grad = matmul(gradients, d)
                 flux = matmul(local, shape)
                 divergence = sum(local*gradients)
-                call gs_source(point(1), mu0, pprime, ffprime, source)
+                pp = pprime; ff = ffprime
+                if (present(law)) then
+                    psi = state%psi(state%triangles(1, e)) + dot_product(shape, d)
+                    call gs_law_sources(law, psi, pp, ff)
+                end if
+                call gs_source(point(1), mu0, pp, ff, source)
+                if (present(forcing)) source = source + forcing(point(1), point(2))
                 flux_defect = flux_defect + weight*point(1) &
                     *sum((flux - grad/point(1))**2)
                 balance_defect = balance_defect + weight*(source + divergence)**2
@@ -152,7 +154,22 @@ contains
         flux_defect = sqrt(flux_defect)
         balance_defect = sqrt(cf2*balance_defect)
         majorant = flux_defect + balance_defect
-        if (.not. ieee_is_finite(majorant)) status = 1
+        if (.not. ieee_is_finite(majorant)) then
+            status = 1
+            return
+        end if
+        if (present(law)) then
+            ! Without branch stability this is the frozen-source defect, not
+            ! a nonlinear error bound. A caller-supplied alpha is conditional
+            ! on the documented strong-monotonicity / normalized-axis assumptions.
+            status = 4
+            if (present(stability_lower_bound)) then
+                if (.not. ieee_is_finite(stability_lower_bound)) return
+                if (stability_lower_bound <= 0) return
+                majorant = majorant/stability_lower_bound
+                status = 0
+            end if
+        end if
     contains
         subroutine action(input, output)
             real(dp), intent(in) :: input(:)

@@ -14,27 +14,54 @@ module kin6d_triangle_basis
     implicit none
     private
     public :: triangle_basis_jet, cubic_segment_roots, cubic_segment_stationary
+    public :: triangle_bernstein_controls
     real(dp), parameter :: segment_nodes(4) = [0.0_dp, 1.0_dp/3, 2.0_dp/3, 1.0_dp]
 contains
+    pure subroutine triangle_bernstein_controls(values, controls)
+        real(dp), intent(in) :: values(:)
+        real(dp), intent(out) :: controls(:)
+        integer :: j, next, edge
+        controls = values
+        if (size(values) == 6) then
+            do j = 1, 3
+                next = mod(j, 3) + 1
+                controls(j + 3) = 2*values(j + 3) - (values(j) + values(next))/2
+            end do
+        else if (size(values) == 10) then
+            do j = 1, 3
+                next = mod(j, 3) + 1; edge = 2*j + 2
+                controls(edge) = (-5*values(j) + 18*values(edge) &
+                    - 9*values(edge + 1) + 2*values(next))/6
+                controls(edge + 1) = (2*values(j) - 9*values(edge) &
+                    + 18*values(edge + 1) - 5*values(next))/6
+            end do
+            controls(10) = (27*values(10) - sum(values(:3)) &
+                - 3*sum(controls(4:9)))/6
+        end if
+    end subroutine
     pure subroutine triangle_basis_jet(xi, value, gradient, hessian)
         real(dp), intent(in) :: xi(2)
-        real(dp), intent(out) :: value(:), gradient(:, :), hessian(:, :, :)
+        real(dp), intent(out) :: value(:), gradient(:, :)
+        real(dp), intent(out), optional :: hessian(:, :, :)
         integer, parameter :: powers(3, 10) = reshape([ &
             3, 0, 0, 0, 3, 0, 0, 0, 3, &
             2, 1, 0, 1, 2, 0, 0, 2, 1, 0, 1, 2, 1, 0, 2, 2, 0, 1, &
             1, 1, 1], [3, 10])
         real(dp) :: v(0:3, 3), g(0:3, 3), h(0:3, 3), lambda(3)
         real(dp) :: next_v, next_g, next_h, unused, unused_z
+        real(dp) :: local_hessian(2, 2)
         integer :: i, j, k, a, b, c
         if (size(value) == 3) then
             do i = 1, 3
                 call generated_p1_jet(i, xi(1), xi(2), value(i), &
-                    gradient(:, i), hessian(:, :, i))
+                    gradient(:, i), local_hessian)
+                if (present(hessian)) hessian(:, :, i) = local_hessian
             end do
         else if (size(value) == 6) then
             do i = 1, 6
                 call generated_p2_jet(i, xi(1), xi(2), value(i), &
-                    gradient(:, i), hessian(:, :, i))
+                    gradient(:, i), local_hessian)
+                if (present(hessian)) hessian(:, :, i) = local_hessian
             end do
         else
             ! Use FortFEM's generated cardinal products. Its arbitrary-order
@@ -56,6 +83,7 @@ contains
                 call generated_factor_product_jet2_order1(v(a, 1), g(a, 1), &
                     v(b, 2), g(b, 2), v(c, 3), g(c, 3), value(i), &
                     gradient(1, i), gradient(2, i))
+                if (.not. present(hessian)) cycle
                 do j = 1, 2
                     call generated_factor_product_jet3_order2( &
                         v(a, 1), g(a, 1), h(a, 1), v(b, 2), g(b, 2), h(b, 2), &
