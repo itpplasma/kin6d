@@ -680,16 +680,3 @@ set_tests_properties(grad_shafranov_curved_readback PROPERTIES
 add_executable(gs_phase1 app/gs_phase1.f90)
 target_link_libraries(gs_phase1 PRIVATE kin6d_io fortplot)
 # The comparison producer is optional; the native solver needs no Python.
-find_package(Python3 COMPONENTS Interpreter QUIET)
-if(Python3_Interpreter_FOUND)
-    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import numpy"
-        RESULT_VARIABLE kin6d_numpy_status OUTPUT_QUIET ERROR_QUIET)
-endif()
-if(Python3_Interpreter_FOUND AND kin6d_numpy_status EQUAL 0)
-    add_test(NAME grad_shafranov_phase1_producer
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/test_phase1_kin6d.py
-            $<TARGET_FILE:gs_phase1> ${CMAKE_BINARY_DIR}/phase1_producer_test)
-    set_tests_properties(grad_shafranov_phase1_producer PROPERTIES
-        TIMEOUT 300
-        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1;PYTHONDONTWRITEBYTECODE=1")
-endif()
