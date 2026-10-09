@@ -4,13 +4,15 @@ module kin6d_gs_majorant
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_grad_shafranov_leaves, only: gs_source
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
-    use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
+    use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK, &
+        KRYLOV_MAX_ITERATIONS
     implicit none
     private
     public :: gs_functional_majorant
 contains
     subroutine gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
-                                     flux_defect, balance_defect, status)
+                                     flux_defect, balance_defect, status, &
+                                     recovery_converged, recovery_iterations)
         ! Repin functional majorant for -div(grad(psi)/R)=source, homogeneous
         ! Dirichlet trace, on the represented domain. Recover y in continuous
         ! vector Pk, k=2 or 3 (a subspace of H(div)) by minimizing D^2+C_F^2*B^2.
@@ -19,6 +21,8 @@ contains
         real(dp), intent(in) :: mu0, pprime, ffprime
         real(dp), intent(out) :: majorant, flux_defect, balance_defect
         integer, intent(out) :: status
+        logical, intent(out), optional :: recovery_converged
+        integer, intent(out), optional :: recovery_iterations
         real(dp), allocatable :: x(:), y(:), w(:), matrix(:, :, :)
         real(dp), allocatable :: rhs(:), recovered(:), diagonal(:)
         integer, allocatable :: indices(:, :)
@@ -30,6 +34,8 @@ contains
         integer :: e, q, j, k, a, b, row, col, n, iterations, next, ndof, edge
         majorant = huge(1.0_dp); flux_defect = 0; balance_defect = 0
         status = 1
+        if (present(recovery_converged)) recovery_converged = .false.
+        if (present(recovery_iterations)) recovery_iterations = 0
         if (.not. state%ready) return
         if (state%element_order /= 2 .and. state%element_order /= 3) return
         ndof = size(state%triangles, 1)
@@ -109,11 +115,22 @@ contains
                 diagonal(indices(j, e)) = diagonal(indices(j, e)) + matrix(j, j, e)
             end do
         end do
+        if (present(recovery_converged)) recovery_converged = .true.
         if (norm2(rhs) > tiny(1.0_dp)) then
             call real_conjugate_gradient_operator(action, rhs, recovered, &
                 1.0e-11_dp*min(1.0_dp, norm2(rhs)), 6000, status, iterations, &
                 residual, precondition)
-            if (status /= KRYLOV_OK) return
+            if (present(recovery_converged)) recovery_converged = status == KRYLOV_OK
+            if (present(recovery_iterations)) recovery_iterations = iterations
+            ! The functional estimate is valid for every continuous recovered
+            ! vector field, not only the minimizer. An iteration cap can make
+            ! it less sharp, but must not discard an otherwise valid estimate.
+            ! Algebraic breakdown and invalid arguments remain failures.
+            if (status /= KRYLOV_OK .and. status /= KRYLOV_MAX_ITERATIONS) return
+            if (.not. all(ieee_is_finite(recovered))) then
+                status = 1
+                return
+            end if
         end if
         do e = 1, size(state%triangles, 2)
             local = reshape(recovered(indices(:, e)), [2, ndof])

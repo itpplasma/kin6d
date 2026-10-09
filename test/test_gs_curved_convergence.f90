@@ -80,7 +80,7 @@ program test_gs_curved_convergence
             errors(:, mesh, mode) = sqrt(errors(:, mesh, mode))
             print '(i1,1x,i4,1x,i7,4(1x,es13.5))', mode, n, &
                 count(.not. state%boundary), elapsed, errors(:, mesh, mode)
-            if (mode == 1 .and. (degree == 2 .or. mesh == 1)) then
+            if (mode == 1 .and. (degree == 2 .or. mesh <= 2)) then
                 call gs_functional_majorant(state, 1.0_dp, -16*c, 0.0_dp, &
                     majorant, flux_defect, balance_defect, status)
                 if (status /= 0) error stop 'functional majorant recovery'

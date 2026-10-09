@@ -23,9 +23,9 @@ program gs_phase1_main
     real(dp) :: majorant, flux_defect, balance_defect, estimator_s
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
-    integer :: unit, status, n, i, next
+    integer :: unit, status, n, i, next, recovery_iterations
     integer(int64) :: start, finish, rate
-    logical :: curved = .true., directory_ok
+    logical :: curved = .true., directory_ok, recovery_converged
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat'
     character(256) :: message
     character(512) :: argument
@@ -87,7 +87,7 @@ program gs_phase1_main
     if (wall_s > 300) error stop 'solve exceeded 300 seconds'
     call system_clock(start)
     call gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
-        flux_defect, balance_defect, status)
+        flux_defect, balance_defect, status, recovery_converged, recovery_iterations)
     if (status /= 0) error stop 'recovered-flux majorant failed'
     call system_clock(finish)
     estimator_s = real(finish - start, dp)/rate
@@ -131,6 +131,10 @@ program gs_phase1_main
     call result%write('majorant', majorant, 'Wb/m^0.5', 'recovered-flux energy error estimate')
     call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', 'weighted flux defect')
     call result%write('majorant_balance', balance_defect, 'Wb/m^0.5', 'weighted balance defect')
+    call result%write('majorant_recovery_converged', merge(1.0_dp, 0.0_dp, recovery_converged), &
+        '1', 'recovery minimization met its algebraic tolerance')
+    call result%write('majorant_iterations', real(recovery_iterations, dp), &
+        '1', 'recovery CG iterations')
     call result%write('estimator_s', estimator_s, 's', 'recovered-flux estimator wall time')
     call result%close()
     open (newunit=unit, file='profiles.dat', status='replace')
@@ -158,6 +162,8 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'majorant', majorant
     write (unit, '(a,1x,es25.16e3)') 'majorant_flux', flux_defect
     write (unit, '(a,1x,es25.16e3)') 'majorant_balance', balance_defect
+    write (unit, '(a,1x,i0)') 'majorant_recovery_converged', merge(1, 0, recovery_converged)
+    write (unit, '(a,1x,i0)') 'majorant_iterations', recovery_iterations
     write (unit, '(a,1x,es25.16e3)') 'estimator_s', estimator_s
     write (unit, '(a,1x,a)') 'code_commit', commit
     write (unit, '(a,1x,a)') 'code_tree', dirty
