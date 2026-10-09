@@ -8,6 +8,7 @@ program gs_phase1_main
         curve_value
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
         gs_readback_resolution, gs_readback_q
+    use kin6d_gs_majorant, only: gs_functional_majorant
     use kin6d_result_io, only: run_t, result_file_t, runtime_git
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
@@ -19,6 +20,7 @@ program gs_phase1_main
     real(dp), allocatable :: samples(:, :), contour(:, :)
     real(dp) :: max_area = 0, pprime = 0, ffprime = 0, f_edge = 0
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
+    real(dp) :: majorant, flux_defect, balance_defect, estimator_s
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
     integer :: unit, status, n, i, next
@@ -83,6 +85,12 @@ program gs_phase1_main
     call system_clock(finish)
     wall_s = real(finish - start, dp)/rate
     if (wall_s > 300) error stop 'solve exceeded 300 seconds'
+    call system_clock(start)
+    call gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
+        flux_defect, balance_defect, status)
+    if (status /= 0) error stop 'recovered-flux majorant failed'
+    call system_clock(finish)
+    estimator_s = real(finish - start, dp)/rate
     call gs_readback_resolution(state, radial_points, angular_points)
     call read_gs_equilibrium(state, f_edge, ffprime, radial_points, angular_points, &
         readback, status)
@@ -120,6 +128,10 @@ program gs_phase1_main
     call result%write('residual', state%residual, '1', 'relative weak residual')
     call result%write('flux_consistency', readback%flux_consistency, '1', &
         'relative contour versus area flux quadrature difference')
+    call result%write('majorant', majorant, 'Wb/m^0.5', 'recovered-flux energy error estimate')
+    call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', 'weighted flux defect')
+    call result%write('majorant_balance', balance_defect, 'Wb/m^0.5', 'weighted balance defect')
+    call result%write('estimator_s', estimator_s, 's', 'recovered-flux estimator wall time')
     call result%close()
     open (newunit=unit, file='profiles.dat', status='replace')
     write (unit, '(a)') '# psi[Wb/rad] s_tor q; COCOS 3'
@@ -143,6 +155,10 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'phi_edge', readback%phi_edge
     write (unit, '(a,1x,es25.16e3)') 'residual', state%residual
     write (unit, '(a,1x,es25.16e3)') 'flux_consistency', readback%flux_consistency
+    write (unit, '(a,1x,es25.16e3)') 'majorant', majorant
+    write (unit, '(a,1x,es25.16e3)') 'majorant_flux', flux_defect
+    write (unit, '(a,1x,es25.16e3)') 'majorant_balance', balance_defect
+    write (unit, '(a,1x,es25.16e3)') 'estimator_s', estimator_s
     write (unit, '(a,1x,a)') 'code_commit', commit
     write (unit, '(a,1x,a)') 'code_tree', dirty
     close (unit)
