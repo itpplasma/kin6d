@@ -144,6 +144,7 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_lagrange_product_jets.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_level_geometry.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90)
@@ -180,7 +181,8 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-target_sources(kin6d PRIVATE src/curved_triangle.f90 src/gs_majorant.f90)
+target_sources(kin6d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90
+    src/gs_majorant.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
 target_link_libraries(test_gs_p2 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)
@@ -669,18 +671,29 @@ add_test(NAME grad_shafranov_curved_geometry COMMAND test_curved_triangle)
 add_executable(test_gs_curved_convergence test/test_gs_curved_convergence.f90)
 target_link_libraries(test_gs_curved_convergence PRIVATE kin6d)
 add_test(NAME grad_shafranov_curved_convergence COMMAND test_gs_curved_convergence)
+add_test(NAME grad_shafranov_p3_curved_convergence COMMAND test_gs_curved_convergence 3)
+add_executable(test_gs_p3 test/test_gs_p3.f90)
+target_link_libraries(test_gs_p3 PRIVATE kin6d)
+add_test(NAME grad_shafranov_p3_physical_oracles COMMAND test_gs_p3)
 add_executable(test_gs_solver_work test/test_gs_solver_work.f90)
 target_link_libraries(test_gs_solver_work PRIVATE kin6d)
 add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)
 add_executable(test_gs_axis_refinement test/test_gs_axis_refinement.f90)
 target_link_libraries(test_gs_axis_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_axis_refinement COMMAND test_gs_axis_refinement)
-set_tests_properties(grad_shafranov_curved_convergence PROPERTIES
+set_tests_properties(grad_shafranov_curved_convergence
+    grad_shafranov_p3_curved_convergence grad_shafranov_axis_refinement
+    grad_shafranov_shaped_solver_work PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 target_sources(kin6d PRIVATE src/gs_readback.f90 src/gs_axis_recovery.f90)
 add_executable(test_gs_curved_readback test/test_gs_curved_readback.f90)
 target_link_libraries(test_gs_curved_readback PRIVATE kin6d)
 add_test(NAME grad_shafranov_curved_readback COMMAND test_gs_curved_readback)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/p3_readback_test)
+add_test(NAME grad_shafranov_p3_curved_readback COMMAND test_gs_curved_readback 3)
+set_tests_properties(grad_shafranov_p3_curved_readback PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/p3_readback_test
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(grad_shafranov_curved_readback PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(gs_phase1 app/gs_phase1.f90)

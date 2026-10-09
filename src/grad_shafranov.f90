@@ -4,6 +4,7 @@ module kin6d_grad_shafranov
    use triangle_compat, only: tc_result_t, triangulate_compat
    use basis_p1_2d_module, only: basis_p1_2d_t
    use basis_p2_2d_module, only: basis_p2_2d_t
+   use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_stationary
    use fortfem_triangle_level_quadrature, only: triangle_level_workspace_t, &
        initialize_triangle_level_workspace, integrate_triangle_levels, &
        triangle_level_coefficients
@@ -16,7 +17,7 @@ module kin6d_grad_shafranov
        gs_field, gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
-       curve_value, boundary_curve, p2_shapes, p2_locate
+       curve_value, boundary_curve, triangle_shapes, triangle_locate
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
@@ -68,15 +69,16 @@ contains
         type(gauss_quadrature_triangle_t) :: quadrature
         type(periodic_curve_t) :: spline
         real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3)
-        real(dp) :: point(2), shape(6), grad_q(2, 6), hess(2, 2, 6), weight
+        real(dp) :: point(2), shape(10), grad_q(2, 10), hess(2, 2, 10), weight, t
         integer, allocatable :: segments(:, :), original(:)
         integer :: j, e, k, l, q, pivot(2), stat, n, ndof, first, second, edge
+        integer :: edge_node, local_node
         status = 1
         if (present(curved)) state%mapped = curved
         if (present(curve)) state%mapped = .true.
         if (present(element_order)) state%element_order = element_order
-        if (state%element_order < 1 .or. state%element_order > 2) return
-        if (state%mapped .and. state%element_order /= 2) return
+        if (state%element_order < 1 .or. state%element_order > 3) return
+        if (state%mapped .and. state%element_order < 2) return
         if (size(contour, 1) /= 2) return
         n = size(contour, 2)
         if (n < 3 .or. max_area <= 0) return
@@ -97,7 +99,7 @@ contains
             state%triangles = mesh%triangles
             state%boundary = mesh%pointmarkers /= 0
         else
-            call quadratic_mesh(mesh, state, stat)
+            call higher_order_mesh(mesh, state, stat)
             if (stat /= 0) return
         end if
         allocate (state%curved_cell(mesh%ntriangles))
@@ -128,19 +130,44 @@ contains
                     first = original(mesh%triangles(edge, e))
                     second = original(mesh%triangles(mod(edge, 3) + 1, e))
                     if (first == 0 .or. second == 0) return
-                    if (mod(first, n) + 1 /= second) then
-                        if (mod(second, n) + 1 /= first) return
-                        first = second
-                    end if
-                    if (present(curve)) then
-                        call curve((first - 0.5_dp)/n, point)
-                    else
-                        call curve_value(spline, (first - 0.5_dp)/n, point)
-                    end if
-                    if (.not. all(ieee_is_finite(point))) return
-                    state%points(:, state%triangles(edge + 3, e)) = point
+                    do edge_node = 1, state%element_order - 1
+                        t = real(edge_node, dp)/state%element_order
+                        if (mod(first, n) + 1 == second) then
+                            t = (first - 1 + t)/n
+                        else
+                            if (mod(second, n) + 1 /= first) return
+                            t = (second - t)/n
+                        end if
+                        if (present(curve)) then
+                            call curve(t, point)
+                        else
+                            call curve_value(spline, t, point)
+                        end if
+                        if (.not. all(ieee_is_finite(point))) return
+                        local_node = 3 + (edge - 1)*(state%element_order - 1) &
+                            + edge_node
+                        state%points(:, state%triangles(local_node, e)) = point
+                    end do
                     state%curved_cell(e) = .true.
                 end do
+                if (state%element_order /= 3) cycle
+                ! Extend the leading quadratic edge curvature to the bubble
+                ! node. Leaving it affine creates O(h^2) cubic map terms and
+                ! loses half an order in the global field error.
+                point = sum(state%points(:, state%triangles(1:3, e)), dim=2)/3
+                do edge = 1, 3
+                    first = state%triangles(edge, e)
+                    second = state%triangles(mod(edge, 3) + 1, e)
+                    do edge_node = 1, 2
+                        t = real(edge_node, dp)/3
+                        local_node = 3 + 2*(edge - 1) + edge_node
+                        point = point + (state%points(:, &
+                            state%triangles(local_node, e)) &
+                            - (1 - t)*state%points(:, first) &
+                            - t*state%points(:, second))/4
+                    end do
+                end do
+                state%points(:, state%triangles(10, e)) = point
             end do
         end if
         ndof = size(state%triangles, 1)
@@ -197,7 +224,7 @@ contains
         integer, intent(out) :: status
         if (state%mapped) then
             if (state%curved_cell(e)) then
-                call p2_shapes(state%points(:, state%triangles(:, e)), xi, &
+                call triangle_shapes(state%points(:, state%triangles(:, e)), xi, &
                     point, det, shape, gradients, hessians, status)
                 return
             end if
@@ -213,6 +240,9 @@ contains
       type(gauss_quadrature_triangle_t), intent(out) :: quadrature
       if (order == 1) then
          call quadrature%init(2)
+      else if (order == 3) then
+         ! Positive degree-six rule, including the cubic geometry factors.
+         call quadrature%init(6)
       else
          ! Positive seven-point rule; degree-five exact for polynomials.
          ! The physical 1/R weight is rational: this is not exact integration.
@@ -220,82 +250,90 @@ contains
       end if
    end subroutine gs_quadrature
 
-   subroutine quadratic_mesh(mesh, state, status)
-      type(tc_result_t), intent(in) :: mesh
-      type(gs_state_t), intent(inout) :: state
-      integer, intent(out) :: status
-      real(dp), allocatable :: points(:, :)
-      logical, allocatable :: boundary(:)
-      integer :: e, k, other, other_edge, first, second, count, j, next
-      status = 1
-      allocate (state%triangles(6, mesh%ntriangles))
-      state%triangles = 0
-      state%triangles(1:3, :) = mesh%triangles
-      allocate (points(2, mesh%npoints+3*mesh%ntriangles), &
-                boundary(mesh%npoints+3*mesh%ntriangles))
-      points(:, :mesh%npoints) = mesh%points
-      boundary(:mesh%npoints) = mesh%pointmarkers /= 0
-      count = mesh%npoints
-      ! Triangle's neighbour k is across local edge (k,mod(k,3)+1).
-      ! Each edge creates one shared midpoint, in O(number of triangles).
-      do e = 1, mesh%ntriangles
-         do k = 1, 3
-            if (state%triangles(k+3, e) /= 0) cycle
-            first = mesh%triangles(k, e)
-            second = mesh%triangles(mod(k, 3)+1, e)
-            other = mesh%neighbors(k, e)
-            other_edge = 0
-            if (other > 0) then
-               if (other > mesh%ntriangles .or. other == e) return
-               do j = 1, 3
-                  next = mod(j, 3)+1
-                  if (mesh%triangles(j, other) /= second) cycle
-                  if (mesh%triangles(next, other) /= first) cycle
-                  if (mesh%neighbors(j, other) /= e) return
-                  other_edge = j
-                  exit
-               end do
-               if (other_edge == 0) return
+    subroutine higher_order_mesh(mesh, state, status)
+        type(tc_result_t), intent(in) :: mesh
+        type(gs_state_t), intent(inout) :: state
+        integer, intent(out) :: status
+        real(dp), allocatable :: points(:, :)
+        logical, allocatable :: boundary(:)
+        real(dp) :: t
+        integer :: e, k, other, other_edge, first, second, count, j, next
+        integer :: order, edge_node, local_node, remote_node, capacity
+        status = 1
+        order = state%element_order
+        allocate (state%triangles((order + 1)*(order + 2)/2, mesh%ntriangles))
+        state%triangles = 0
+        state%triangles(1:3, :) = mesh%triangles
+        capacity = mesh%npoints + (3*(order - 1) + order - 2)*mesh%ntriangles
+        allocate (points(2, capacity), boundary(capacity))
+        points(:, :mesh%npoints) = mesh%points
+        boundary(:mesh%npoints) = mesh%pointmarkers /= 0
+        count = mesh%npoints
+        do e = 1, mesh%ntriangles
+            do k = 1, 3
+                if (state%triangles(4 + (k - 1)*(order - 1), e) /= 0) cycle
+                first = mesh%triangles(k, e)
+                second = mesh%triangles(mod(k, 3) + 1, e)
+                other = mesh%neighbors(k, e)
+                other_edge = 0
+                if (other > 0) then
+                    if (other > mesh%ntriangles .or. other == e) return
+                    do j = 1, 3
+                        next = mod(j, 3) + 1
+                        if (mesh%triangles(j, other) /= second) cycle
+                        if (mesh%triangles(next, other) /= first) cycle
+                        if (mesh%neighbors(j, other) /= e) return
+                        other_edge = j
+                        exit
+                    end do
+                    if (other_edge == 0) return
+                end if
+                do edge_node = 1, order - 1
+                    count = count + 1
+                    t = real(edge_node, dp)/order
+                    points(:, count) = (1 - t)*mesh%points(:, first) &
+                        + t*mesh%points(:, second)
+                    boundary(count) = other < 1
+                    local_node = 3 + (k - 1)*(order - 1) + edge_node
+                    state%triangles(local_node, e) = count
+                    if (other_edge > 0) then
+                        remote_node = 3 + (other_edge - 1)*(order - 1) &
+                            + order - edge_node
+                        state%triangles(remote_node, other) = count
+                    end if
+                end do
+            end do
+            if (order == 3) then
+                count = count + 1
+                points(:, count) = sum(mesh%points(:, mesh%triangles(:, e)), dim=2)/3
+                boundary(count) = .false.
+                state%triangles(10, e) = count
             end if
-            count = count+1
-            points(:, count) = 0.5_dp*(mesh%points(:, first)+mesh%points(:, second))
-            boundary(count) = other < 1
-            state%triangles(k+3, e) = count
-            if (other_edge > 0) state%triangles(other_edge+3, other) = count
-         end do
-      end do
-      state%points = points(:, :count)
-      state%boundary = boundary(:count)
-      status = 0
-   end subroutine quadratic_mesh
+        end do
+        state%points = points(:, :count)
+        state%boundary = boundary(:count)
+        status = 0
+    end subroutine higher_order_mesh
 
-   subroutine element_shapes(state, e, xi, eta, shape, gradients, hessians)
-      type(gs_state_t), intent(in) :: state
-      integer, intent(in) :: e
-      real(dp), intent(in) :: xi, eta
-      real(dp), intent(out) :: shape(:), gradients(:, :)
-      real(dp), intent(out), optional :: hessians(:, :, :)
-      type(basis_p2_2d_t) :: basis
-      type(basis_p1_2d_t) :: affine_basis
-      integer :: j
-      if (state%element_order == 1) then
-         do j = 1, 3
-            shape(j) = affine_basis%eval(j, xi, eta)
-         end do
-         gradients = state%gradient(:, :, e)
-         if (present(hessians)) hessians = 0.0_dp
-      else
-         do j = 1, 6
-            shape(j) = basis%eval(j, xi, eta)
-            gradients(:, j) = matmul(state%gradient(:, 2:3, e), &
-                                    basis%grad(j, xi, eta))
+    subroutine element_shapes(state, e, xi, eta, shape, gradients, hessians)
+        type(gs_state_t), intent(in) :: state
+        integer, intent(in) :: e
+        real(dp), intent(in) :: xi, eta
+        real(dp), intent(out) :: shape(:), gradients(:, :)
+        real(dp), intent(out), optional :: hessians(:, :, :)
+        real(dp) :: reference_g(2, 10), reference_h(2, 2, 10)
+        integer :: j, n
+        n = size(shape)
+        call triangle_basis_jet([xi, eta], shape, reference_g(:, :n), &
+            reference_h(:, :, :n))
+        do j = 1, n
+            gradients(:, j) = matmul(state%gradient(:, 2:3, e), reference_g(:, j))
             if (present(hessians)) then
-               hessians(:, :, j) = matmul(matmul(state%gradient(:, 2:3, e), &
-                    basis%hessian(j, xi, eta)), transpose(state%gradient(:, 2:3, e)))
+                hessians(:, :, j) = matmul(matmul(state%gradient(:, 2:3, e), &
+                    reference_h(:, :, j)), transpose(state%gradient(:, 2:3, e)))
             end if
-         end do
-      end if
-   end subroutine element_shapes
+        end do
+    end subroutine element_shapes
 
     subroutine apply_gs(state, input, output)
         type(gs_state_t), intent(in) :: state
@@ -418,7 +456,7 @@ contains
         real(dp), intent(out) :: rhs(:)
         integer, intent(out) :: status
         type(gauss_quadrature_triangle_t) :: quadrature
-        real(dp) :: point(2), shape(6), gradients(2, 6), hessians(2, 2, 6)
+        real(dp) :: point(2), shape(10), gradients(2, 10), hessians(2, 2, 10)
         real(dp) :: source, weight, det
         integer :: e, q, k, l, i, j, ndof
         rhs = 0
@@ -560,7 +598,7 @@ contains
         status = 1
         rhs = 0.0_dp
         if (present(error_estimate)) error_estimate = huge(1.0_dp)
-        if (state%mapped) then
+        if (state%mapped .or. state%element_order == 3) then
             if (present(tangent)) tangent = 0.0_dp
             if (present(gpsi)) gpsi = 0.0_dp
             if (present(gmu0)) gmu0 = 0.0_dp
@@ -942,8 +980,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         real(dp), intent(out) :: psi, grad(2), hessian(2, 2)
         integer, intent(out) :: status
         logical, intent(in), optional :: affine_chart
-        real(dp) :: shape(6), gradients(2, 6), hessians(2, 2, 6), local(2)
-        real(dp) :: differences(6), point(2), det
+        real(dp) :: shape(10), gradients(2, 10), hessians(2, 2, 10), local(2)
+        real(dp) :: differences(10), point(2), det
         integer :: ndof, j
         logical :: physical
         psi = 0; grad = 0; hessian = 0
@@ -959,7 +997,7 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             if (state%curved_cell(element)) then
                 ! A nearby affine guess cheaply excludes distant curved cells.
                 if (minval([1 - sum(local), local]) < -0.5_dp) return
-                call p2_locate(state%points(:, state%triangles(:, element)), &
+                call triangle_locate(state%points(:, state%triangles(:, element)), &
                     [r, z], local, status)
                 if (status /= 0) return
             end if
@@ -1050,6 +1088,11 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         integer :: e, j, k, pivot(2), stat
         axis = 0; psi_axis = huge(1.0_dp); hessian_axis = 0
         element = 0; status = 3
+        if (state%element_order == 3) then
+            call cubic_axis_candidate(state, axis, psi_axis, hessian_axis, &
+                element, status)
+            return
+        end if
         if (state%element_order /= 2) return
         status = 4
         edge_min = minval(state%psi); second_min = huge(1.0_dp)
@@ -1107,6 +1150,77 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         status = 0
     end subroutine gs_axis_candidate
 
+    subroutine cubic_axis_candidate(state, axis, psi_axis, hessian_axis, &
+                                     element, status)
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(out) :: axis(2), psi_axis, hessian_axis(2, 2)
+        integer, intent(out) :: element, status
+        real(dp) :: local(2), d(10), shape(10), gradients(2, 10), hs(2, 2, 10)
+        real(dp) :: g(2), h(2, 2), step(2), determinant, value, det, point(2)
+        real(dp) :: roots(2), edge_values(4), weights(4), edge_min, second_min
+        real(dp) :: tolerance
+        integer :: e, j, k, iteration, nr, m, stat
+        axis = 0; psi_axis = huge(1.0_dp); hessian_axis = 0
+        element = 0; status = 4
+        edge_min = minval(state%psi); second_min = huge(1.0_dp)
+        do e = 1, size(state%triangles, 2)
+            d = state%psi(state%triangles(:, e)) - state%psi(state%triangles(1, e))
+            do j = 1, 3
+                k = mod(j, 3) + 1
+                edge_values = d([j, 2*j + 2, 2*j + 3, k])
+                call cubic_segment_stationary(edge_values, roots, nr)
+                do m = 1, nr
+                    call lagrange_weights(4, roots(m), &
+                        [0.0_dp, 1.0_dp/3, 2.0_dp/3, 1.0_dp], weights)
+                    value = state%psi(state%triangles(1, e)) &
+                        + dot_product(weights, edge_values)
+                    edge_min = min(edge_min, value)
+                end do
+            end do
+            local = [1.0_dp/3, 1.0_dp/3]
+            do iteration = 1, 12
+                call triangle_basis_jet(local, shape, gradients, hs)
+                g = matmul(gradients, d); h = 0
+                do j = 1, 10
+                    h = h + d(j)*hs(:, :, j)
+                end do
+                determinant = h(1, 1)*h(2, 2) - h(1, 2)**2
+                if (h(1, 1) <= 0 .or. determinant <= 0) exit
+                step = [h(2, 2)*g(1) - h(1, 2)*g(2), &
+                    h(1, 1)*g(2) - h(1, 2)*g(1)]/determinant
+                local = local - step
+                if (minval([local, 1 - sum(local)]) <= 1.0e-10_dp) exit
+                if (norm2(step) > 1.0e-12_dp) cycle
+                call gs_cell_data(state, e, local, point, det, shape, gradients, &
+                    hs, stat)
+                if (stat /= 0) return
+                value = state%psi(state%triangles(1, e)) + dot_product(shape, d)
+                if (value >= psi_axis) then
+                    second_min = min(second_min, value)
+                    exit
+                end if
+                second_min = psi_axis
+                axis = point; psi_axis = value; element = e
+                hessian_axis = 0
+                do j = 1, 10
+                    hessian_axis = hessian_axis + d(j)*hs(:, :, j)
+                end do
+                exit
+            end do
+        end do
+        if (element == 0) return
+        tolerance = 256*epsilon(1.0_dp)*max(1.0_dp, maxval(abs(state%psi)))
+        if (edge_min <= psi_axis + tolerance) then
+            element = 0
+            return
+        end if
+        if (second_min <= psi_axis + tolerance) then
+            element = 0; status = 5
+            return
+        end if
+        status = 0
+    end subroutine cubic_axis_candidate
+
    subroutine gs_current_jump(state, left, right, r, z, normal, mu0, current, status)
       type(gs_state_t), intent(in) :: state
       integer, intent(in) :: left, right
@@ -1157,6 +1271,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         character(256) :: header
         real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3), midpoint(2)
         integer :: unit, ios, n, cells, ndof, j, e, k, marker, pivot(2), stat
+        integer :: edge_node, local_node
+        real(dp) :: t
         status = 1
         open (newunit=unit, file=path, status='old', action='read', iostat=ios)
         if (ios /= 0) return
@@ -1168,13 +1284,16 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         state%element_order = 2
         if (index(header, 'kin6d-gs-mesh-v1:') > 0) then
             state%element_order = 1
+        else if (index(header, 'kin6d-gs-mesh-v4:') > 0) then
+            state%element_order = 3
+            state%mapped = .true.
         else if (index(header, 'kin6d-gs-mesh-v3:') > 0) then
             state%mapped = .true.
         else if (index(header, 'kin6d-gs-mesh-v2:') == 0) then
             close (unit)
             return
         end if
-        ndof = merge(3, 6, state%element_order == 1)
+        ndof = (state%element_order + 1)*(state%element_order + 2)/2
         read (unit, *, iostat=ios) n, cells
         if (ios /= 0) then
             close (unit)
@@ -1218,16 +1337,27 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             if (stat /= 0) return
             state%gradient(:, :, e) = grads
             state%area(e) = det/2
-            if (ndof /= 6) cycle
+            if (ndof == 3) cycle
             do j = 1, 3
                 k = mod(j, 3) + 1
-                midpoint = (state%points(:, state%triangles(j, e)) &
-                    + state%points(:, state%triangles(k, e)))/2
-                if (norm2(midpoint - state%points(:, state%triangles(j + 3, e))) &
-                    <= 64*epsilon(1.0_dp)*max(1.0_dp, norm2(midpoint))) cycle
-                if (.not. state%mapped) return
-                state%curved_cell(e) = .true.
+                do edge_node = 1, state%element_order - 1
+                    t = real(edge_node, dp)/state%element_order
+                    midpoint = (1 - t)*state%points(:, state%triangles(j, e)) &
+                        + t*state%points(:, state%triangles(k, e))
+                    local_node = 3 + (j - 1)*(state%element_order - 1) + edge_node
+                    if (norm2(midpoint - state%points(:, &
+                        state%triangles(local_node, e))) &
+                        <= 64*epsilon(1.0_dp)*max(1.0_dp, norm2(midpoint))) cycle
+                    if (.not. state%mapped) return
+                    state%curved_cell(e) = .true.
+                end do
             end do
+            if (ndof == 10) then
+                midpoint = sum(state%points(:, state%triangles(1:3, e)), dim=2)/3
+                if (norm2(midpoint - state%points(:, state%triangles(10, e))) &
+                    > 64*epsilon(1.0_dp)*max(1.0_dp, norm2(midpoint))) &
+                    state%curved_cell(e) = .true.
+            end if
         end do
         status = 0
     end subroutine read_gs_mesh
@@ -1240,7 +1370,9 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       open (newunit=unit, file=path, status='replace', action='write', &
             iostat=status)
       if (status /= 0) return
-      if (state%mapped) then
+      if (state%element_order == 3) then
+         write (unit, '(a)') '# kin6d-gs-mesh-v4: isoparametric P3 SI R Z psi boundary'
+      else if (state%mapped) then
          write (unit, '(a)') '# kin6d-gs-mesh-v3: isoparametric P2 SI R Z psi boundary'
       else if (state%element_order == 1) then
          write (unit, '(a)') '# kin6d-gs-mesh-v1: SI R[m] Z[m] psi[Wb/rad] boundary'

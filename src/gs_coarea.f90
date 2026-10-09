@@ -4,7 +4,8 @@ module kin6d_gs_coarea
     use kin6d_grad_shafranov, only: gs_state_t, &
                                     gs_element_jet, gs_axis_candidate, &
                                     gs_axis_safety_factor, GS_UNSUPPORTED_GEOMETRY
-    use kin6d_curved_triangle, only: p2_geometry, p2_locate
+    use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
+    use kin6d_triangle_basis, only: cubic_segment_roots
     use kin6d_gs_coarea_leaves, only: gs_contour_weight, &
                                       gs_contour_weight_jvp, &
                                       gs_ray_trace, &
@@ -51,18 +52,18 @@ contains
         real(dp) :: q_geometry, dq, value, grad(2), h(2, 2), &
                     center(2), shifted_grad(2)
         real(dp) :: point(2), vec(2), coeff_b, coeff_c, &
-                    roots(2)
+                    roots(3)
         real(dp) :: lo, hi, dlo, dhi, angle
         real(dp) :: t, dt, tv, tg(2), th(2, 2), two_pi, &
                     tolerance, level_delta
         integer :: e, k, j, m, stat, axis_element, n, count, &
                    cell, first_cell, next_cell
-        integer :: order, nr, a, b, mid, index, nb
+        integer :: order, nr, a, b, mid, index, nb, edge_indices(4)
         logical :: with_tangent, is_boundary
         coarea = 0
         axis = 0
         status = 1
-        if (state%mapped) then
+        if (state%mapped .or. state%element_order == 3) then
             if (present(psi_tangent) .or. present(levels_tangent) .or. &
                 present(coarea_tangent)) then
                 if (present(coarea_tangent)) coarea_tangent = 0
@@ -78,7 +79,7 @@ contains
             .not. with_tangent) return
         if (size(levels) < 2 .or. &
             size(coarea) /= size(levels)) return
-        if (state%element_order /= 2) return
+        if (state%element_order < 2 .or. state%element_order > 3) return
         if (.not. all(ieee_is_finite(levels))) return
         if (any(levels(2:) <= levels(:size(levels) - &
                                      1))) return
@@ -100,7 +101,8 @@ contains
         physical_axis = axis
         if (state%mapped) then
             if (state%curved_cell(axis_element)) then
-                call p2_locate(state%points(:, state%triangles(:, axis_element)), &
+                call triangle_locate( &
+                    state%points(:, state%triangles(:, axis_element)), &
                     axis, local_axis, status)
                 if (status /= 0) return
                 axis = matmul(state%points(:, state%triangles(1:3, axis_element)), &
@@ -148,6 +150,7 @@ contains
         ! Exact quadratic extension of each cell to the axis; roots remain
         ! qualified against the original cell, never against the extension.
         do e = 1, n
+            if (state%element_order == 3) exit
             center = sum(state%points(:, state%triangles(1:3, &
                                                          e)), dim=2)/3
             call gs_element_jet(state, e, center(1), center(2), &
@@ -180,9 +183,9 @@ contains
                     a = state%triangles(k, &
                                         e)
                     b = state%triangles(mod(k, 3) + 1, e)
-                    mid = state%triangles(k + 3, e)
-                    if (maxval(abs(state%psi([a, mid, b]) - &
-                                   levels(j))) > tolerance) is_boundary = .false.
+                    call edge_dofs(e, k, edge_indices)
+                    if (maxval(abs(state%psi(edge_indices(:state%element_order + 1)) &
+                        - levels(j))) > tolerance) is_boundary = .false.
                 end do
             end do
             if (nb == 0) is_boundary = .false.
@@ -204,13 +207,17 @@ contains
                     a = state%triangles(k, e)
                     b = state%triangles(mod(k, 3) + 1, &
                                         e)
-                    mid = state%triangles(k + 3, e)
-                    call gs_edge_trace_coefficients(state%psi(a), &
-                                                    state%psi(mid), &
-                                                    state%psi(b), coeff_b, coeff_c)
-                    call bracket_roots(coeff_c, coeff_b, &
-                                       state%psi(a) - levels(j), 0.0_dp, 1.0_dp, &
-            roots, nr)
+                    if (state%element_order == 2) then
+                        mid = state%triangles(k + 3, e)
+                        call gs_edge_trace_coefficients(state%psi(a), &
+                            state%psi(mid), state%psi(b), coeff_b, coeff_c)
+                        call bracket_roots(coeff_c, coeff_b, &
+                            state%psi(a) - levels(j), 0.0_dp, 1.0_dp, roots(:2), nr)
+                    else
+                        call edge_dofs(e, k, edge_indices)
+                        call cubic_segment_roots(state%psi(edge_indices), &
+                            levels(j), roots, nr)
+                    end if
                     do m = 1, nr
                         t = roots(m)
                         if (t < 0 .or. t > 1) cycle
@@ -345,6 +352,54 @@ contains
         axis = physical_axis
         status = 0
     contains
+        subroutine edge_dofs(e, edge, indices)
+            integer, intent(in) :: e, edge
+            integer, intent(out) :: indices(4)
+            integer :: k, degree
+            degree = state%element_order
+            indices = 0
+            indices(1) = state%triangles(edge, e)
+            indices(degree + 1) = state%triangles(mod(edge, 3) + 1, e)
+            do k = 1, degree - 1
+                indices(k + 1) = state%triangles(3 + (edge - 1)*(degree - 1) + k, e)
+            end do
+        end subroutine
+
+        subroutine cubic_ray_root(e, lo, hi, direction, level, point, grad, h, status)
+            integer, intent(in) :: e
+            real(dp), intent(in) :: lo, hi, direction(2), level
+            real(dp), intent(out) :: point(2), grad(2), h(2, 2)
+            integer, intent(out) :: status
+            real(dp) :: values(4), roots(3), value, radius, selected(2)
+            integer :: i, count, found, stat
+            do i = 1, 4
+                radius = lo + (hi - lo)*real(i - 1, dp)/3
+                point = axis + radius*direction
+                call gs_element_jet(state, e, point(1), point(2), values(i), &
+                    grad, h, status, affine_chart=.true.)
+                if (status /= 0) return
+            end do
+            call cubic_segment_roots(values, level, roots, count)
+            found = 0
+            do i = 1, count
+                radius = lo + (hi - lo)*roots(i)
+                if (radius <= 0) cycle
+                point = axis + radius*direction
+                call gs_element_jet(state, e, point(1), point(2), value, &
+                    grad, h, stat, affine_chart=.true.)
+                if (stat /= 0) cycle
+                if (dot_product(grad, direction) <= 0) cycle
+                if (abs(value - level) > tolerance) cycle
+                found = found + 1
+                selected = point
+            end do
+            status = 7
+            if (found /= 1) return
+            point = selected
+            call gs_element_jet(state, e, point(1), point(2), value, &
+                grad, h, status, affine_chart=.true.)
+        end subroutine
+
         subroutine measure_factor(e, chart_point, factor, status)
             integer, intent(in) :: e
             real(dp), intent(in) :: chart_point(2)
@@ -357,7 +412,7 @@ contains
             if (.not. state%curved_cell(e)) return
             xi = matmul(transpose(state%gradient(:, 2:3, e)), &
                 chart_point - state%points(:, state%triangles(1, e)))
-            call p2_geometry(state%points(:, state%triangles(:, e)), xi, &
+            call triangle_geometry(state%points(:, state%triangles(:, e)), xi, &
                 point, jac, curvature, det, inverse, status)
             if (status /= 0) return
             factor = det/(2*state%area(e))*chart_point(1)/point(1)
@@ -394,6 +449,10 @@ contains
                 end if
             end do
             if (hi <= lo .or. hi >= huge(1.0_dp)) return
+            if (state%element_order == 3) then
+                call cubic_ray_root(e, lo, hi, dir, level, point, grad, h, status)
+                return
+            end if
             aa = 0.5_dp*dot_product(dir, matmul(hess(:, :, e), &
                                                 dir))
             bb = dot_product(jet(2:3, e), dir)

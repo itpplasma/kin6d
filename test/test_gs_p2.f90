@@ -180,7 +180,7 @@ program test_gs_p2
     call require(status == 3, 'P1 Hessian is not fabricated')
     call write_gs_mesh(p1, 'p1_native_oracle_mesh.dat', status)
     call require(status == 0, 'native P1 mesh-v1 export remains supported')
-    call initialize_gs(vertex_case, triangle, 10.0_dp, status, 3)
+    call initialize_gs(vertex_case, triangle, 10.0_dp, status, 4)
     call require(status /= 0, 'unsupported polynomial order rejected')
     call write_gs_mesh(state, 'p2_native_oracle_mesh.dat', status)
     call require(status == 0, 'native six-DOF mesh-v2 export')

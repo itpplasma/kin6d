@@ -8,7 +8,8 @@
   The weak form uses `grad(psi)·grad(v)/R`, FortFEM meshing/generated basis
   and FortNum preconditioned CG. `element_order=1` uses three-point quadrature;
   `element_order=2` uses continuous six-node triangles with shared edge DOFs
-  and positive seven-point degree-five stiffness quadrature. Profile sources
+  and positive seven-point degree-five stiffness quadrature. Fixed-source P3
+  uses ten-node triangles and positive degree-six quadrature. Profile sources
   use FortFEM integration split at the native P1/P2 flux level cuts, with
   positive retained quadrature nodes, paired error estimates and work limits.
   The rational `1/R` stiffness weight still requires quadrature refinement.
@@ -91,37 +92,42 @@ nonlinear solves use one percent of their outer tolerance (at most `1e-11`).
 `grad_shafranov_shaped_solver_work` checks the nullspace, true residual and
 iteration growth on two shaped meshes; it has no wall-time assertion.
 
-## Curved P2 geometry
+## Curved P2 and P3 geometry
 
 `initialize_gs(state, contour, max_area, status, element_order=2, curved=.true.)`
-constructs six-node isoparametric triangles. A periodic C2 cubic spline passes
+constructs six-node isoparametric triangles; `element_order=3` constructs
+ten-node triangles for fixed-source solves. A periodic C2 cubic spline passes
 through the supplied contour samples at uniform parameters `(j-1)/n`.
 Alternatively supply `curve=callback`, where `callback(t, point)` evaluates the
 closed curve for `0 <= t < 1`; its values at those parameters must match the
-contour. Only boundary edge midpoints move. Interior elements remain affine,
-and neighboring elements share every edge DOF. Boundary vertices are retained
+contour. P2 moves boundary midpoints. P3 places two nodes on each boundary
+edge and extends its leading quadratic curvature to the interior node. Cells
+away from the boundary remain affine. Neighbors share every edge DOF. Boundary vertices are retained
 without subdivision, so callers refine both the contour and the interior mesh.
 
-The map is `X(xi)=sum_j N_j(xi)*X_j`, using FortFEM's generated P2 basis.
+The map is `X(xi)=sum_j N_j(xi)*X_j`, using FortFEM's generated basis products.
 Assembly, `gs_cell_data`, physical point location and `gs_element_jet` use the
 same geometry. Physical Hessians include the map-curvature connection term.
 The original `solve_gs`, `gs_linear_response`, `sample_gs` and axis APIs remain
 available. `read_gs_mesh` restores an evaluation-only field for `sample_gs`;
 it does not assemble a new solve operator. The contour and global readback is
 specified in [gs-coarea.md](gs-coarea.md). `sample_gs` selects the first containing cell on shared edges;
-its gradient is a one-sided FE value there. Mesh-v3 exports the six physical
-geometry nodes explicitly. Mesh-v1/v2 retain their affine interpretation.
+its gradient is a one-sided FE value there. Mesh-v3 exports six P2 geometry
+nodes. Mesh-v4 exports ten P3 nodes: vertices, two nodes per directed edge
+(1,2), (2,3), (3,1), then the interior node. Mesh-v1/v2 remain affine.
 
 Fixed-geometry coefficient derivatives use the same symmetric assembled
 operator and equation-level linear response. Shape derivatives and curved
 nonlinear profile-load derivatives are unavailable; their APIs return status
-20. Integration uses the positive seven-point triangle rule. These are ordinary
-floating numerical results, without interval or rigorous certification.
+20. Integration uses positive degree-five (P2) or degree-six (P3) triangle
+rules. These are ordinary floating numerical results.
 
-The small generic map and periodic curve implementation currently live in
-KIN6D because the pinned FortFEM supplies the P2 basis and scalar-jet transform
-but not the six-node map. Moving this layer upstream is a controller decision.
-P3 geometry is not implemented.
+The generic maps, connectivity and periodic curve remain in KIN6D. FortFEM
+supplies the generated P1/P2 basis, cardinal/factor products and scalar-jet
+transform. Its arbitrary-order triangle API lacks Hessians and allocates per
+evaluation, so the P3 wrapper here reuses its generated cardinal products and
+restricts its generated tetrahedral Hessian action to the triangle. Moving
+these missing generic pieces upstream is a controller decision.
 
 `grad_shafranov_curved_geometry` checks an independent polynomial map, inverse,
 signed physical derivatives, Hessian connection and periodic spline order.
@@ -132,17 +138,27 @@ and the degraded affine-boundary rates. It prints DOF and total mesh/assembly/
 solve wall time. Error integrals use higher-order independent quadrature over
 each represented domain; they are unnormalized meridional L2 norms.
 
+`grad_shafranov_p3_curved_convergence` checks the exact A3 Solovev LCFS on
+96, 192 and 384 boundary segments: psi L2 order 4 and Bpol L2 order 3, each
+within 0.3 on both refinement pairs. A3 reaches this range earlier than the
+thin-torus quartic case, whose boundary-dominated B error initially drops at
+order 3.5. Independent P3 tests cover polynomial values/gradients/Hessians,
+curved-map inversion and connection terms, cubic contour intersections,
+implicit tangent/adjoint pairing, signed q and native export/readback.
+P3 nonlinear profiles, contour sensitivities and the P2 flux majorant are
+unsupported; fixed-source equation responses share the primal operator.
+
 ## Phase 1 executable and producer
 
 Build `gs_phase1` with the CPU preset. Run `gs_phase1 --config input.nml` with
 `&gs_phase1` entries `boundary_file`, `boundary_nodes`, `max_area`, `pprime`,
-`ffprime`, `f_edge`, `mu0`, `curved`, `radial_points` and `angular_points`.
+`ffprime`, `f_edge`, `mu0`, `curved`, `degree` (2 or 3), `radial_points` and `angular_points`.
 The boundary file contains a count followed by uniformly parameterized R,Z
 samples, without a closing duplicate. The app interpolates that input with a
 periodic cubic spline and samples the requested boundary mesh. Nonpositive
 `max_area` selects half the squared mean boundary-segment length. Source
 coefficients and F_edge are supplied in SI; no exact-solution values enter
-the solve. Defaults are 96 boundary nodes, 257 radial points and angular budget
+the solve. Defaults are degree 2, 96 boundary nodes, 257 radial points and angular budget
 128. The boundary gauge is psi=0.
 
 The app reports free DOF, CG iterations and total mesh/assembly/solve wall time,
@@ -159,10 +175,10 @@ It uses this native executable for both solving and physical field evaluation;
 q(s_tor) interpolates the native contour profile. Set `KIN6D_BINARY` for an
 installed executable. `source.kind` is `solovev`, with SI `pprime` and `ffprime`
 provided directly or under `source.coefficients`. Supported resolution keys
-are `boundary_nodes`, `max_area`, `radial_points`, `angular_points`, `curved`.
+are `boundary_nodes`, `max_area`, `radial_points`, `angular_points`, `curved`, `degree`.
 The producer forces one thread and a disk scratch directory. Its sign map is
-the identity under the TC24 case contract's COCOS 3 ledger. The optional Python/
-NumPy CTest checks the entire producer against the exact physical E0 LCFS.
+the identity under the TC24 case contract's COCOS 3 ledger. The common driver checks the producer against the exact physical E0 and
+Cerfon LCFSs, including fields loaded back from its native mesh export.
 
 The exported axis location uses `gs_magnetic_axis`: a quartic least-squares
 recovery of nodal flux near the nodal minimum, followed by Newton on the

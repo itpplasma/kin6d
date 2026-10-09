@@ -1,4 +1,4 @@
-# Native P2 coarea candidate
+# Native P2/P3 coarea candidate
 
 `kin6d_gs_coarea::gs_level_coarea` evaluates
 
@@ -14,14 +14,14 @@ per cell. Gradients and
 Hessians come from the same native polynomial as the contour; there is no
 smooth interpolant layered over a P1 or P2 state.
 
-The candidate finds quadratic contour intersections with native mesh faces,
+The candidate finds polynomial contour intersections with native mesh faces,
 sorts their polar angles using FortNum, and integrates each smooth cell arc
 with FortNum Gauss–Legendre quadrature. `angular_points` is a budget: the
 per-arc Gauss order is its integer quotient by 16. Doubling a budget that is a
 multiple of 16 doubles this order, including at high orders. A contour wholly
 inside the axis cell uses sixteen regular angular sectors. A constant-Dirichlet
 outer contour is integrated directly along its boundary faces. On curved
-cells, roots are found in the affine chart of the reference P2 polynomial;
+cells, roots are found in the affine chart of the reference polynomial;
 every quadrature weight is multiplied by `det(DX)/det(DA)*R_chart/R_physical`.
 This is the change of variables for the coarea measure, including the boundary
 contour. Physical volume and toroidal flux use the same isoparametric map.
@@ -34,11 +34,11 @@ These terms contain the difference of the two one-sided coarea weights;
 subtracting them silently would differentiate a different map. The generator
 `gen/gen_gs_coarea.f90` retains the mathematical leaves and emits primal, JVP
 and VJP leaves through the pinned FortSym engine. The assembled coarea API
-currently supports an affine-geometry JVP under Euclidean nodal/level pairings;
+currently supports a P2 affine-geometry JVP under Euclidean nodal/level pairings;
 its assembled VJP and shape derivative are unavailable. Geometry is inactive.
 
 Supported contours must be closed, nested, regular and star-shaped about the
-qualified native axis, with an outward-monotone quadratic trace in each cell
+qualified native axis, with an outward-monotone polynomial trace in each cell
 used by an arc. A contour through a mesh vertex, a tangent face intersection,
 a missing/open contour, an axis cusp, or a boundary endpoint with zero
 one-sided gradient returns failure. In particular, no finite boundary coarea
@@ -68,3 +68,10 @@ difference and can be reduced by radial refinement. Neither radial nor angular
 quadrature is a rigorous enclosure. The curved readback CTest measures q,
 volume, Phi and flux-label convergence against the exact physical-LCFS case,
 checks reversal of F, and tests native mesh export/readback round trips.
+
+P3 edge and ray roots use FortNum Lagrange interpolation and Brent solves,
+split at the polynomial's stationary points so every crossing is considered.
+The same arc quadrature, physical measure factor and signed field convention
+apply to both degrees. P3 contour derivatives return unavailable status 20.
+The exported axis-location diagnostic uses local quartic recovery; the contour
+levels and axis-q use the represented element minimum.

@@ -1,12 +1,22 @@
 module kin6d_curved_triangle
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use basis_p2_2d_module, only: basis_p2_2d_t
+    use kin6d_triangle_basis, only: triangle_basis_jet
     use fortfem_geometry_jet_2d, only: transform_scalar_jet_2d
     implicit none
     private
     public :: periodic_curve_t, initialize_periodic_curve, curve_value
     public :: p2_geometry, p2_shapes, p2_locate, boundary_curve
+    public :: triangle_geometry, triangle_shapes, triangle_locate
+    interface p2_geometry
+        module procedure triangle_geometry
+    end interface
+    interface p2_shapes
+        module procedure triangle_shapes
+    end interface
+    interface p2_locate
+        module procedure triangle_locate
+    end interface
 
     ! Uniform periodic parameter t in [0,1); samples omit the closing duplicate.
     type :: periodic_curve_t
@@ -70,20 +80,23 @@ contains
                 + (u**3 - u**2)*curve%slopes(:, j)
     end subroutine
 
-    pure subroutine p2_geometry(nodes, xi, point, jac, curvature, det, inverse, status)
-        real(dp), intent(in) :: nodes(2, 6), xi(2)
+    pure subroutine triangle_geometry(nodes, xi, point, jac, curvature, det, &
+                                          inverse, status)
+        real(dp), intent(in) :: nodes(:, :), xi(2)
         real(dp), intent(out) :: point(2), jac(2, 2), curvature(2, 2, 2)
         real(dp), intent(out) :: det, inverse(2, 2)
         integer, intent(out) :: status
-        type(basis_p2_2d_t) :: basis
+        real(dp) :: values(10), gradients(2, 10), hessians(2, 2, 10)
         real(dp) :: offset(2), g(2), h(2, 2), unused_g(2), unused_h(2, 2)
-        integer :: j, a
+        integer :: j, a, n
+        n = size(nodes, 2)
+        call triangle_basis_jet(xi, values(:n), gradients(:, :n), hessians(:, :, :n))
         point = nodes(:, 1); jac = 0; curvature = 0
-        do j = 2, 6
+        do j = 2, n
             offset = nodes(:, j) - nodes(:, 1)
-            point = point + offset*basis%eval(j, xi(1), xi(2))
-            g = basis%grad(j, xi(1), xi(2))
-            h = basis%hessian(j, xi(1), xi(2))
+            point = point + offset*values(j)
+            g = gradients(:, j)
+            h = hessians(:, :, j)
             do a = 1, 2
                 jac(a, :) = jac(a, :) + offset(a)*g
                 curvature(:, :, a) = curvature(:, :, a) + offset(a)*h
@@ -95,29 +108,32 @@ contains
         if (point(1) <= 0) status = 1
     end subroutine
 
-    pure subroutine p2_shapes(nodes, xi, point, det, shape, gradient, hessian, status)
-        real(dp), intent(in) :: nodes(2, 6), xi(2)
-        real(dp), intent(out) :: point(2), det, shape(6), gradient(2, 6)
-        real(dp), intent(out) :: hessian(2, 2, 6)
+    pure subroutine triangle_shapes(nodes, xi, point, det, shape, gradient, &
+                                        hessian, status)
+        real(dp), intent(in) :: nodes(:, :), xi(2)
+        real(dp), intent(out) :: point(2), det, shape(:), gradient(:, :)
+        real(dp), intent(out) :: hessian(:, :, :)
         integer, intent(out) :: status
-        type(basis_p2_2d_t) :: basis
+        real(dp) :: values(10), gradients(2, 10), hessians(2, 2, 10)
         real(dp) :: jac(2, 2), curvature(2, 2, 2), inverse(2, 2), corrected(2, 2)
-        integer :: j
+        integer :: j, n
+        n = size(nodes, 2)
+        call triangle_basis_jet(xi, values(:n), gradients(:, :n), hessians(:, :, :n))
         shape = 0; gradient = 0; hessian = 0
-        call p2_geometry(nodes, xi, point, jac, curvature, det, inverse, status)
+        call triangle_geometry(nodes, xi, point, jac, curvature, det, inverse, status)
         if (status /= 0) return
-        do j = 1, 6
-            shape(j) = basis%eval(j, xi(1), xi(2))
-            gradient(:, j) = matmul(transpose(inverse), basis%grad(j, xi(1), xi(2)))
-            corrected = basis%hessian(j, xi(1), xi(2)) &
+        do j = 1, n
+            shape(j) = values(j)
+            gradient(:, j) = matmul(transpose(inverse), gradients(:, j))
+            corrected = hessians(:, :, j) &
                         - gradient(1, j)*curvature(:, :, 1) &
                         - gradient(2, j)*curvature(:, :, 2)
             hessian(:, :, j) = matmul(transpose(inverse), matmul(corrected, inverse))
         end do
     end subroutine
 
-    pure subroutine p2_locate(nodes, point, xi, status)
-        real(dp), intent(in) :: nodes(2, 6), point(2)
+    pure subroutine triangle_locate(nodes, point, xi, status)
+        real(dp), intent(in) :: nodes(:, :), point(2)
         real(dp), intent(out) :: xi(2)
         integer, intent(out) :: status
         real(dp) :: mapped(2), jac(2, 2), curvature(2, 2, 2), inverse(2, 2)
@@ -126,7 +142,8 @@ contains
         xi = [1.0_dp/3, 1.0_dp/3]
         scale = max(1.0_dp, maxval(abs(nodes)))
         do iteration = 1, 12
-            call p2_geometry(nodes, xi, mapped, jac, curvature, det, inverse, status)
+            call triangle_geometry(nodes, xi, mapped, jac, curvature, det, &
+                inverse, status)
             if (status /= 0) return
             step = matmul(inverse, mapped - point)
             xi = xi - step
