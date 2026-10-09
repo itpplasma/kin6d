@@ -141,6 +141,22 @@ program test_solovev_cell_jet
     call evaluate(map)
     call require(status == geometry_invalid, 'outside reference triangle rejected')
     call cleared('outside reference')
+    ! Exact dyadic sum exceeds one although its rounded sum equals one.
+    do i = 1, 2
+        if (i == 1) then
+            xi = [nearest(0.5_dp, 1.0_dp), 0.5_dp]
+        else
+            xi = [0.25_dp, nearest(0.75_dp, 1.0_dp)]
+        end if
+        call evaluate(map)
+        call require(status == geometry_invalid, &
+            'rounded-sum outside reference rejected')
+        call cleared('rounded-sum outside reference')
+        xi = [0.5_dp, 0.5_dp]
+        if (i == 2) xi = [0.25_dp, 0.75_dp]
+        call evaluate(map)
+        call require(status == geometry_ok, 'exact reference edge accepted')
+    end do
     xi = [0.25_dp, 0.125_dp]
     gradient_reference(1) = ieee_value(0.0_dp, ieee_quiet_nan)
     call evaluate(map)

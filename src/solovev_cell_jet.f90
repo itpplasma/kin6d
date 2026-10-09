@@ -35,7 +35,14 @@ contains
         if (.not. all(ieee_is_finite(xi))) return
         if (.not. all(ieee_is_finite(reference_gradient))) return
         if (.not. all(ieee_is_finite(reference_hessian))) return
-        if (any(xi < 0) .or. sum(xi) > 1) return
+        if (any(xi < 0) .or. any(xi > 1)) return
+        ! For the larger coordinate >= 1/2, Sterbenz makes 1-xi exact.
+        ! A rounded xi+eta comparison can accept dyadic points outside Delta.
+        if (xi(1) >= 0.5_dp) then
+            if (xi(2) > 1-xi(1)) return
+        else if (xi(2) >= 0.5_dp) then
+            if (xi(1) > 1-xi(2)) return
+        end if
         call affine_basis%compute_jacobian(vertices, affine, affine_det)
         if (.not. all(ieee_is_finite(affine))) return
         if (.not. ieee_is_finite(affine_det)) return
