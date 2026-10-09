@@ -78,12 +78,20 @@ ctest --preset cpu -R '^grad_shafranov_'
   `gs_current_jump` returns the distributional sheet coefficient in A/m on
   a shared face. Its unit normal points from the left element to the right.
   Sheet samples are not integrated total currents or current-error bounds.
-- `gs_axis_candidate` searches quadratic stationary minima and all edge
-  extrema. Status 0 requires a strict interior global candidate minimum;
-  status 3 rejects P1, 4 leaves vertex/edge minima unqualified, and 5 rejects
-  nonunique interior minima. A P2 element order alone does not ensure axis
-  regularity. `gs_axis_safety_factor` uses the signed F at that axis and its
-  positive Hessian; it is a smooth-axis candidate, without a certified bound.
+- `gs_axis_candidate` minimises the represented flux over every mesh entity:
+  cell interior stationary points, the stationary dip along each edge, and
+  every node, since a coarse mesh puts the minimum exactly on a shared entity.
+  An entity shared by neighbouring cells is one axis and is reported once, keyed
+  by a node of that entity, so the adjacent cell cannot register the same
+  physical point as a second minimum. Status 0 requires that minimum to lie
+  strictly inside the domain boundary, and its flux is never above the nodal
+  minimum; status 3 rejects P1, 4 says the flux stays lowest on the boundary or
+  no enclosed minimum was found, and 5 rejects two distinct entities at the same
+  flux. At a shared-entity minimum the reported element is the lowest-index
+  incident cell and its Hessian is that cell's. A P2 element order alone does
+  not ensure axis regularity. `gs_axis_safety_factor` uses the signed F at that
+  axis and its positive Hessian; it is a smooth-axis candidate, without a
+  certified bound.
 
 The fixed-source solver targets a relative weak residual of `1e-10`. The
 operator applies symmetric nodal differences, preserving the constant-flux
