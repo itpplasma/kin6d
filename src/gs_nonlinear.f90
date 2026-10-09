@@ -18,7 +18,7 @@ module kin6d_gs_nonlinear
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
     private
-    public :: gs_forcing_t
+    public :: gs_forcing_t, gs_normalize_current
     public :: solve_gs_cubic_profiles, gs_cubic_load, gs_profile_axis
     public :: gs_profile_jacobian_t, apply_gs_profile_jacobian, gs_profile_response
     type :: gs_profile_jacobian_t
@@ -78,7 +78,7 @@ contains
     end subroutine
 
     subroutine gs_cubic_load(state, mu0, law, rhs, jacobian, status, tolerance, &
-                             forcing)
+                             forcing, source_integral)
         type(gs_state_t), intent(inout) :: state
         real(dp), intent(in) :: mu0
         type(gs_profile_law_t), intent(inout) :: law
@@ -87,6 +87,7 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: tolerance
         procedure(gs_forcing_t), optional :: forcing
+        real(dp), intent(out), optional :: source_integral
         type(triangle_level_workspace_t) :: workspace
         real(dp), allocatable :: levels(:), events(:), inner(:), epsabs(:)
         real(dp), allocatable :: values(:), errors(:), x(:), y(:), w(:)
@@ -101,6 +102,7 @@ contains
         integer :: ix, left, right, band, cell_left, cell_right, capacity
         character(160) :: message
         status = 1; rhs = 0
+        if (present(source_integral)) source_integral = 0
         if (.not. state%ready .or. mu0 <= 0) return
         if (.not. ieee_is_finite(mu0)) return
         if (.not. law%valid()) return
@@ -249,6 +251,8 @@ contains
                     return
                 end if
             end if
+            if (present(source_integral)) &
+                source_integral = source_integral + sum(values(:ndof))
             do i = 1, ndof
                 k = state%triangles(i, e)
                 rhs(k) = rhs(k) + values(i)
@@ -614,6 +618,41 @@ contains
             call move_alloc(trial_jacobian%axis_gradient, jacobian%axis_gradient)
         end do
         status = 2
+    end subroutine
+
+    subroutine gs_normalize_current(state, mu0, law, target, current, status, tolerance)
+        ! For normalized derivative shapes, psi -> a psi and (pprime,FFprime)
+        ! -> a (pprime,FFprime) preserve s and the GS equation exactly. The
+        ! primitives relative to the edge scale as a**2. F_edge stays fixed.
+        ! This is an input current constraint, never a fit to another solution.
+        type(gs_state_t), intent(inout) :: state
+        real(dp), intent(in) :: mu0, target
+        type(gs_profile_law_t), intent(inout) :: law
+        real(dp), intent(out) :: current
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: tolerance
+        type(gs_profile_jacobian_t) :: jac
+        real(dp), allocatable :: rhs(:)
+        real(dp) :: integral, scale
+        current = 0; status = 1
+        if (.not. law%normalized .or. .not. state%ready) return
+        if (.not. ieee_is_finite(target) .or. abs(target) <= tiny(1.0_dp)) return
+        if (any(abs(pack(state%psi, state%boundary)) > tiny(1.0_dp))) return
+        allocate (rhs(size(state%psi)))
+        call gs_cubic_load(state, mu0, law, rhs, jac, status, tolerance, &
+                           source_integral=integral)
+        if (status /= 0) return
+        current = integral/mu0
+        status = 1
+        if (abs(current) <= tiny(1.0_dp)) return
+        scale = target/current
+        if (.not. ieee_is_finite(scale) .or. scale <= 0) return
+        state%psi = scale*state%psi
+        law%axis = scale*law%axis
+        law%pp = scale*law%pp
+        law%ff = scale*law%ff
+        current = target
+        status = 0
     end subroutine
 
     subroutine sort_cuts(cuts, n)

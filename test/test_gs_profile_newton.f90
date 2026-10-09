@@ -3,7 +3,8 @@ program test_gs_profile_newton
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, apply_gs
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
     use kin6d_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load, &
-                 solve_gs_cubic_profiles, apply_gs_profile_jacobian, gs_profile_response
+                 solve_gs_cubic_profiles, apply_gs_profile_jacobian, gs_profile_response, &
+                 gs_normalize_current
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
     use kin6d_gs_majorant, only: gs_functional_majorant
     use fortnum_quadrature, only: gauss_legendre_ab
@@ -14,6 +15,7 @@ program test_gs_profile_newton
     type(gs_readback_t) :: positive, negative
   real(dp), allocatable :: saved(:), rhs(:), plus(:), minus(:), v(:), w(:), jv(:), jw(:)
     real(dp) :: contour(2, 32), majorant, flux, balance, step, pressure, f
+    real(dp) :: current, original_current, integral
     integer :: degree, status, i, n
     do degree = 2, 3
         do i = 1, 32
@@ -61,6 +63,37 @@ program test_gs_profile_newton
         state%psi = saved
         law%normalized = .true.; law%knots = [0.0_dp, 1.0_dp]
         law%axis = minval(saved); law%f_edge = 5
+        ! Independent constant-source integral: J_phi = pprime*R + FFprime/R
+        ! is integrated by a boundary-area oracle below, not by the production load.
+        law%pp = 0; law%ff = 0; law%pp(1, :) = -0.3_dp
+        state%psi = 0
+        call solve_gs_cubic_profiles(state, 1.0_dp, law, status)
+        if (status /= 0) error stop 'normalized constant law'
+        saved = state%psi
+        original_current = -0.3_dp * 3.0_dp * acos(-1.0_dp) * 1.4_dp
+        ! This fixture boundary is inspected below; the exact current uses its
+        ! area and first R moment, rather than a frozen repository output.
+        call gs_normalize_current(state, 1.0_dp, law, &
+             2*original_current, current, status, 1.0e-10_dp)
+        if (status /= 0) error stop 'current normalization'
+        if (norm2(state%psi-2*saved)/norm2(saved) > 3.0e-5_dp) &
+            error stop 'ellipse current scale disagrees with analytic area moment'
+        if (abs(current/(2*original_current)-1) > 1.0e-12_dp) &
+            error stop 'prescribed current'
+        block
+            real(dp), allocatable :: load(:)
+            allocate(load(n))
+            call gs_cubic_load(state, 1.0_dp, law, load, jac, status, &
+                              1.0e-10_dp, source_integral=integral)
+        end block
+        if (status /= 0 .or. abs(integral/current-1) > 1.0e-9_dp) &
+            error stop 'normalized current reintegration'
+        ! A negative target must be rejected rather than changing polarity.
+        call gs_normalize_current(state, 1.0_dp, law, -current, &
+                                  integral, status)
+        if (status == 0) error stop 'polarity-changing current accepted'
+        state%psi = saved
+        law%axis = minval(saved)
         law%pp(:, 1) = [-0.3_dp, -0.08_dp, -0.02_dp, -0.01_dp]
         law%ff = 0
         allocate (rhs(n), plus(n), minus(n), v(n), w(n), jv(n), jw(n))
