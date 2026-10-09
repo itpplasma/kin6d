@@ -120,6 +120,25 @@ and the degraded affine-boundary rates. It prints DOF and total mesh/assembly/
 solve wall time. Error integrals use higher-order independent quadrature over
 each represented domain; they are unnormalized meridional L2 norms.
 
+## Fixed-source error estimator
+
+`kin6d_gs_majorant::gs_functional_majorant` computes a Repin functional
+majorant for `-div(grad(psi)/R)=mu0*pprime*R+FFprime/R`, with homogeneous
+Dirichlet data. It recovers a continuous vector P2 flux `y` by minimizing
+`D^2+C_F^2*B^2`, where `D=||sqrt(R)*(y-grad(psi)/R)||` and
+`B=||source+div(y)||`. The returned estimate is `D+C_F*B` for the weighted
+energy error. The positive-R Bezier hull bounds the represented domain by a
+rectangle; zero extension supplies its Poincare constant, multiplied by
+`sqrt(Rmax)`. All integrals and the recovery solve use ordinary floating
+arithmetic. This is an a posteriori numerical estimator, not a rigorous
+certificate, and does not include the physical-boundary approximation error.
+
+The curved convergence CTest checks effectivity in `[1,3]` on every mesh
+against the independent exact weighted energy error and checks the zero-source
+limit. It prints the flux and balance contributions separately. Recovery uses
+O(DOF) storage and a separate symmetric positive-definite solve; its cost is
+not included in the reported primal mesh/assembly/solve timing.
+
 ## Profile-source residual and derivatives
 
 - `gs_profile_load` assembles the declared piecewise-linear pressure and FFprime
