@@ -5,8 +5,9 @@ module kin6d_gs_coarea
                                     gs_element_jet, gs_axis_candidate, &
                                     gs_axis_safety_factor, GS_UNSUPPORTED_GEOMETRY
     use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
-    use kin6d_triangle_basis, only: cubic_segment_roots
-    use kin6d_gs_coarea_leaves, only: gs_contour_weight, &
+    use kin6d_triangle_basis, only: cubic_segment_roots, cubic_segment_stationary, &
+        triangle_basis_jet
+    use kin6d_gs_coarea_leaves, only: gs_contour_weight, gs_cubic_flux, &
                                       gs_contour_weight_jvp, &
                                       gs_ray_trace, &
                                       gs_contour_root_response, &
@@ -17,6 +18,7 @@ module kin6d_gs_coarea
                                       gs_boundary_weight, gs_boundary_weight_jvp
     use kin6d_grad_shafranov_leaves, &
         only: gs_smooth_axis_q_jvp
+    use fortnum_polynomial, only: lagrange_weights
     use fortnum_linalg, only: dense_solve
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortnum_multiroot, only: argsort
@@ -32,7 +34,8 @@ module kin6d_gs_coarea
 contains
     subroutine gs_level_coarea(state, levels, &
                                angular_points, coarea, axis, status, &
-                               psi_tangent, levels_tangent, coarea_tangent)
+                               psi_tangent, levels_tangent, coarea_tangent, work, &
+                               reference_cubic)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: levels(:)
         integer, intent(in) :: angular_points
@@ -41,12 +44,18 @@ contains
         real(dp), optional, intent(in) :: psi_tangent(:), &
                                           levels_tangent(:)
         real(dp), optional, intent(out) :: coarea_tangent(:)
+        integer, optional, intent(out) :: work(:)
+        logical, optional, intent(in) :: reference_cubic
         type(gs_state_t) :: tangent_state
         type(event_t), allocatable :: events(:), events_copy(:)
-        integer, allocatable :: permutation(:)
+        integer, allocatable :: permutation(:), edge_cells(:, :), edge_nodes(:, :)
         real(dp), allocatable :: x(:), w(:), jet(:, :), &
-                                 hess(:, :, :)
+                                 hess(:, :, :), edge_range(:, :), cubic(:, :)
         real(dp) :: physical_axis(2), local_axis(2), factor
+        real(dp) :: edge_values(4), critical(2), weights(4), extrema(4), boundary_level
+        integer :: ne, edge, nc, contour_work
+        logical :: constant_boundary, use_reference
+        real(dp) :: transform(10, 10), shape(10), basis_g(2, 10), basis_h(2, 2, 10)
         real(dp) :: axis_flux, axis_h(2, 2), axis_delta(2), &
                     axis_flux_delta, gh(2, 2), gg(2)
         real(dp) :: q_geometry, dq, value, grad(2), h(2, 2), &
@@ -60,6 +69,13 @@ contains
                    cell, first_cell, next_cell
         integer :: order, nr, a, b, mid, index, nb, edge_indices(4)
         logical :: with_tangent, is_boundary
+        if (present(work)) then
+            if (size(work) /= size(levels)) then
+                status = 1
+                return
+            end if
+            work = 0
+        end if
         coarea = 0
         axis = 0
         status = 1
@@ -71,6 +87,8 @@ contains
                 return
             end if
         end if
+        use_reference = .false.
+        if (present(reference_cubic)) use_reference = reference_cubic
         with_tangent = present(psi_tangent) .and. &
                        present(levels_tangent) .and. &
                        present(coarea_tangent)
@@ -146,7 +164,31 @@ contains
             coarea_tangent(1) = two_pi*dq
         end if
         n = size(state%triangles, 2)
-        allocate (jet(3, n), hess(2, 2, n), events(6*n), events_copy(6*n), permutation(6*n))
+        allocate (events(6*n), events_copy(6*n), permutation(6*n))
+        if (state%element_order == 3) then
+            ! Contract the authoritative FortFEM basis once, then reuse its
+            ! cubic coefficients for every ray. The reference schedule below
+            ! contracts that same basis at each evaluation instead.
+            allocate (cubic(10, n))
+            call triangle_basis_jet([0.0_dp, 0.0_dp], shape, basis_g, basis_h)
+            transform(1, :) = shape
+            transform(2:3, :) = basis_g
+            transform(4, :) = basis_h(1, 1, :)/2
+            transform(5, :) = basis_h(1, 2, :)
+            transform(6, :) = basis_h(2, 2, :)/2
+            call triangle_basis_jet([1.0_dp, 0.0_dp], shape, basis_g, basis_h)
+            transform(7, :) = (basis_h(1, 1, :) - 2*transform(4, :))/6
+            transform(8, :) = (basis_h(1, 2, :) - transform(5, :))/2
+            call triangle_basis_jet([0.0_dp, 1.0_dp], shape, basis_g, basis_h)
+            transform(9, :) = (basis_h(1, 2, :) - transform(5, :))/2
+            transform(10, :) = (basis_h(2, 2, :) - 2*transform(6, :))/6
+            do e = 1, n
+                cubic(:, e) = matmul(transform, state%psi(state%triangles(:, e)) &
+                    - state%psi(state%triangles(1, e)))
+            end do
+        else
+            allocate (jet(3, n), hess(2, 2, n))
+        end if
         ! Exact quadratic extension of each cell to the axis; roots remain
         ! qualified against the original cell, never against the extension.
         do e = 1, n
@@ -164,6 +206,53 @@ contains
             jet(2:3, e) = shifted_grad
             hess(:, :, e) = h
         end do
+        ! Precompute edge ranges once. Reject nonintersecting edges before
+        ! solving their polynomial; nodal min/max alone is not a valid range.
+        allocate (edge_cells(2, 3*n), edge_nodes(4, 3*n), edge_range(2, 3*n))
+        ne = 0; nb = 0; constant_boundary = .true.; boundary_level = 0
+        do e = 1, n
+            do k = 1, 3
+                next_cell = state%neighbors(k, e)
+                if (next_cell > 0) then
+                    if (next_cell < e) cycle
+                end if
+                call edge_dofs(e, k, edge_indices)
+                ne = ne + 1
+                edge_nodes(:, ne) = edge_indices
+                edge_cells(:, ne) = [e, next_cell]
+                edge_values = 0
+                edge_values(:state%element_order + 1) = &
+                    state%psi(edge_indices(:state%element_order + 1))
+                if (next_cell < 1) then
+                    if (nb == 0) boundary_level = edge_values(1)
+                    nb = nb + 1
+                    if (maxval(abs(edge_values(:state%element_order + 1) &
+                        - boundary_level)) > tolerance) constant_boundary = .false.
+                end if
+                if (state%element_order == 2) then
+                    call gs_edge_trace_coefficients(edge_values(1), &
+                        edge_values(2), edge_values(3), coeff_b, coeff_c)
+                    extrema(1:2) = edge_values([1, 3]); nc = 2
+                    if (abs(coeff_c) > tiny(1.0_dp)) then
+                        t = -coeff_b/(2*coeff_c)
+                        if (t > 0 .and. t < 1) then
+                            nc = 3
+                            extrema(3) = edge_values(1) + t*(coeff_b + t*coeff_c)
+                        end if
+                    end if
+                else
+                    call cubic_segment_stationary(edge_values, critical, nr)
+                    extrema(1:2) = edge_values([1, 4]); nc = nr + 2
+                    do m = 1, nr
+                        call lagrange_weights(4, critical(m), &
+                            [0.0_dp, 1.0_dp/3, 2.0_dp/3, 1.0_dp], weights)
+                        extrema(m + 2) = dot_product(weights, edge_values)
+                    end do
+                end if
+                edge_range(:, ne) = [minval(extrema(:nc)), maxval(extrema(:nc))]
+            end do
+        end do
+        if (nb == 0) constant_boundary = .false.
         ! angular_points is a quadrature budget: integrate every smooth arc
         ! at order budget/16, rather than sample across jumps. Doubling
         ! the budget doubles the order; there is no hidden saturation.
@@ -174,95 +263,80 @@ contains
         do j = 2, size(levels)
             level_delta = 0
             if (with_tangent) level_delta = levels_tangent(j)
-            is_boundary = .true.
-            nb = 0
-            do e = 1, n
-                do k = 1, 3
-                    if (state%neighbors(k, e) > 0) cycle
-                    nb = nb + 1
-                    a = state%triangles(k, &
-                                        e)
-                    b = state%triangles(mod(k, 3) + 1, e)
-                    call edge_dofs(e, k, edge_indices)
-                    if (maxval(abs(state%psi(edge_indices(:state%element_order + 1)) &
-                        - levels(j))) > tolerance) is_boundary = .false.
-                end do
-            end do
-            if (nb == 0) is_boundary = .false.
+            contour_work = 0
+            is_boundary = constant_boundary .and. &
+                abs(levels(j) - boundary_level) <= tolerance
             if (is_boundary) then
                 call integrate_boundary(j, level_delta, stat)
                 if (stat /= 0) then
                     status = stat
                     return
                 end if
+                if (present(work)) work(j) = contour_work
                 cycle
             end if
             count = 0
-            do e = 1, n
-                do k = 1, 3
-                    next_cell = state%neighbors(k, e)
-                    if (next_cell > 0) then
-                        if (next_cell < e) cycle
+            do edge = 1, ne
+                if (levels(j) < edge_range(1, edge) - tolerance .or. &
+                    levels(j) > edge_range(2, edge) + tolerance) cycle
+                contour_work = contour_work + 1
+                e = edge_cells(1, edge); next_cell = edge_cells(2, edge)
+                edge_indices = edge_nodes(:, edge)
+                a = edge_indices(1); b = edge_indices(state%element_order + 1)
+                if (state%element_order == 2) then
+                    mid = edge_indices(2)
+                    call gs_edge_trace_coefficients(state%psi(a), &
+                        state%psi(mid), state%psi(b), coeff_b, coeff_c)
+                    call bracket_roots(coeff_c, coeff_b, &
+                        state%psi(a) - levels(j), 0.0_dp, 1.0_dp, roots(:2), nr)
+                else
+                    call cubic_segment_roots(state%psi(edge_indices), &
+                        levels(j), roots, nr)
+                end if
+                do m = 1, nr
+                    t = roots(m)
+                    if (t < 0 .or. t > 1) cycle
+                    ! A contour through a mesh vertex has no unique face
+                    ! event derivative. Refuse that branch explicitly.
+                    if (min(t, 1 - t) < 1.0e-10_dp) then
+                        status = 18
+                        return
                     end if
-                    a = state%triangles(k, e)
-                    b = state%triangles(mod(k, 3) + 1, &
-                                        e)
-                    if (state%element_order == 2) then
-                        mid = state%triangles(k + 3, e)
-                        call gs_edge_trace_coefficients(state%psi(a), &
-                            state%psi(mid), state%psi(b), coeff_b, coeff_c)
-                        call bracket_roots(coeff_c, coeff_b, &
-                            state%psi(a) - levels(j), 0.0_dp, 1.0_dp, roots(:2), nr)
-                    else
-                        call edge_dofs(e, k, edge_indices)
-                        call cubic_segment_roots(state%psi(edge_indices), &
-                            levels(j), roots, nr)
+                    if (next_cell < 1) then
+                        status = 7
+                        return
                     end if
-                    do m = 1, nr
-                        t = roots(m)
-                        if (t < 0 .or. t > 1) cycle
-                        ! A contour through a mesh vertex has no unique face
-                        ! event derivative. Refuse that branch explicitly.
-                        if (min(t, 1 - t) < 1.0e-10_dp) then
+                    vec = state%points(:, b) - state%points(:, a)
+                    point = state%points(:, a) + t*vec
+                    call gs_polar_angle(point(1) - axis(1), point(2) - &
+                                        axis(2), angle)
+                    count = count + 1
+                    events(count)%angle = modulo(angle, two_pi)
+                    events(count)%point = point
+                    events(count)%left = e
+                    events(count)%right = next_cell
+                    events(count)%tangent = 0
+                    if (with_tangent) then
+                        call gs_element_jet(state, e, point(1), point(2), &
+                                            value, grad, h, stat, &
+                                            affine_chart=.true.)
+                        if (stat /= 0) return
+                        call gs_element_jet(tangent_state, e, point(1), &
+                                            point(2), tv, tg, th, stat, &
+                                            affine_chart=.true.)
+                        if (stat /= 0) return
+                        if (abs(dot_product(grad, vec)) < tolerance) then
                             status = 18
                             return
                         end if
-                        if (next_cell < 1) then
-                            status = 7
-                            return
-                        end if
-                        vec = state%points(:, b) - state%points(:, a)
-                        point = state%points(:, a) + t*vec
-                        call gs_polar_angle(point(1) - axis(1), point(2) - &
-                                            axis(2), angle)
-                        count = count + 1
-                        events(count)%angle = modulo(angle, two_pi)
-                        events(count)%point = point
-                        events(count)%left = e
-                        events(count)%right = next_cell
-                        events(count)%tangent = 0
-                        if (with_tangent) then
-                            call gs_element_jet(state, e, point(1), point(2), &
-                                                value, grad, h, stat, &
-                                                affine_chart=.true.)
-                            if (stat /= 0) return
-                            call gs_element_jet(tangent_state, e, point(1), &
-                                                point(2), tv, tg, th, stat, &
-                                                affine_chart=.true.)
-                            if (stat /= 0) return
-                            if (abs(dot_product(grad, vec)) < tolerance) then
-                                status = 18
-                                return
-                            end if
-                            call gs_contour_root_response(dot_product(grad, vec), &
-                                                          level_delta, tv, dt)
-                            call gs_polar_angle_jvp(point(1) - axis(1), point(2) - &
-                                                    axis(2), &
-                                                    vec(1)*dt - axis_delta(1), &
-            vec(2)*dt - axis_delta(2), &
-                                                    events(count)%tangent)
-                        end if
-                    end do
+                        call gs_contour_root_response(dot_product(grad, vec), &
+                                                      level_delta, tv, dt)
+                        call gs_polar_angle_jvp(point(1) - axis(1), point(2) - &
+                                                axis(2), &
+                                                vec(1)*dt - axis_delta(1), &
+                                                vec(2)*dt - axis_delta(2), &
+                                                events(count)%tangent)
+                    end if
                 end do
             end do
             if (count == 0) then
@@ -280,6 +354,7 @@ contains
                         return
                     end if
                 end do
+                if (present(work)) work(j) = contour_work
                 cycle
             end if
             call argsort(events(:count)%angle, permutation(:count))
@@ -298,7 +373,10 @@ contains
             hi = lo + two_pi
             if (count > 1) hi = events(2)%angle
             cell = 0
-            do e = 1, n
+            ! The first arc belongs to one of the first event's two cells.
+            do k = 1, 2
+                e = events(1)%left
+                if (k == 2) e = events(1)%right
                 call point_on_cell(e, 0.5_dp*(lo + hi), levels(j), &
                                    point, grad, h, stat)
                 if (stat /= 0) cycle
@@ -333,6 +411,7 @@ contains
                     return
                 end if
             end do
+            if (present(work)) work(j) = contour_work
             if (cell /= first_cell) then
                 status = 8
                 return
@@ -365,6 +444,31 @@ contains
             end do
         end subroutine
 
+        subroutine cubic_jet(e, point, value, grad, h, status)
+            integer, intent(in) :: e
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: value, grad(2), h(2, 2)
+            integer, intent(out) :: status
+            real(dp) :: local(2), g(2)
+            if (use_reference) then
+                call gs_element_jet(state, e, point(1), point(2), value, grad, h, &
+                    status, affine_chart=.true.)
+                return
+            end if
+            value = 0; grad = 0; h = 0; status = 7
+            local = matmul(transpose(state%gradient(:, 2:3, e)), &
+                point - state%points(:, state%triangles(1, e)))
+            if (minval([1 - sum(local), local]) < -1.0e-10_dp) return
+            call gs_cubic_flux(local(1), local(2), cubic(1, e), cubic(2, e), &
+                cubic(3, e), cubic(4, e), cubic(5, e), cubic(6, e), cubic(7, e), &
+                cubic(8, e), cubic(9, e), cubic(10, e), value, g(1), g(2))
+            value = value + state%psi(state%triangles(1, e))
+            grad = matmul(state%gradient(:, 2:3, e), g)
+            ! P3 contour sensitivities are unavailable; the primal arc uses
+            ! only value and gradient, so no Hessian is reconstructed here.
+            status = 0
+        end subroutine
+
         subroutine cubic_ray_root(e, lo, hi, direction, level, point, grad, h, status)
             integer, intent(in) :: e
             real(dp), intent(in) :: lo, hi, direction(2), level
@@ -375,8 +479,8 @@ contains
             do i = 1, 4
                 radius = lo + (hi - lo)*real(i - 1, dp)/3
                 point = axis + radius*direction
-                call gs_element_jet(state, e, point(1), point(2), values(i), &
-                    grad, h, status, affine_chart=.true.)
+                call cubic_jet(e, point, values(i), &
+                    grad, h, status)
                 if (status /= 0) return
             end do
             call cubic_segment_roots(values, level, roots, count)
@@ -385,8 +489,8 @@ contains
                 radius = lo + (hi - lo)*roots(i)
                 if (radius <= 0) cycle
                 point = axis + radius*direction
-                call gs_element_jet(state, e, point(1), point(2), value, &
-                    grad, h, stat, affine_chart=.true.)
+                call cubic_jet(e, point, value, &
+                    grad, h, stat)
                 if (stat /= 0) cycle
                 if (dot_product(grad, direction) <= 0) cycle
                 if (abs(value - level) > tolerance) cycle
@@ -396,8 +500,8 @@ contains
             status = 7
             if (found /= 1) return
             point = selected
-            call gs_element_jet(state, e, point(1), point(2), value, &
-                grad, h, status, affine_chart=.true.)
+            call cubic_jet(e, point, value, &
+                grad, h, status)
         end subroutine
 
         subroutine measure_factor(e, chart_point, factor, status)
@@ -427,6 +531,7 @@ contains
             real(dp)::dir(2), bary(3), slope(3), lo, hi, aa, bb, &
                        cc, root(2), r, value
             integer::k, nr, found, stat
+            contour_work = contour_work + 1
             status = 7
             point = 0
             grad = 0

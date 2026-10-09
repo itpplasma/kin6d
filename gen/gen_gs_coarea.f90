@@ -2,7 +2,7 @@ program gen_gs_coarea
     use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, sqrt, atan2, &
                             operator(+), operator(-), &
-                            operator(*), operator(/)
+                            operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
     use kin6d_gen_support, only: leaf_writer_t, &
                                  fortsym_revision
@@ -14,6 +14,10 @@ program gen_gs_coarea
                    offset, trace
     type(expr_t)::delta_psi, gr, gz, hrr, hrz, hzz, dgr, dgz, dr, &
                    dz, va, vm, vb, length, bgr, bgz
+    type(expr_t) :: x, y, c(10), polynomial
+    integer :: i
+    character(3), parameter :: names(10) = [character(3) :: &
+        "c00", "c10", "c01", "c20", "c11", "c02", "c30", "c21", "c12", "c03"]
     call arena%init()
     radius = sym(arena, 'radius'); r = sym(arena, &
  'r'); radial_gradient = sym(arena, &
@@ -85,6 +89,17 @@ program gen_gs_coarea
                                             'r      ', 'bgrad_r', 'bgrad_z'], &
                      ['weight'], [length/(r*sqrt(bgr*bgr + bgz*bgz))], &
                      ad=.true.)
+    ! Cache the same P3 FE scalar in a local Taylor schedule. Coefficients
+    ! are contractions of FortFEM's basis jets; this is not a new field fit.
+    x = sym(arena, 'xi'); y = sym(arena, 'eta')
+    do i = 1, 10
+        c(i) = sym(arena, names(i))
+    end do
+    polynomial = c(1) + x*c(2) + y*c(3) + x*x*c(4) + x*y*c(5) &
+        + y*y*c(6) + x*x*x*c(7) + x*x*y*c(8) + x*y*y*c(9) + y*y*y*c(10)
+    call writer%emit('gs_cubic_flux', [character(3) :: 'xi', 'eta', names], &
+        [character(3) :: 'psi', 'gx', 'gy'], &
+        [polynomial, diff(polynomial, x), diff(polynomial, y)], ad=.true.)
     call writer%line('end module kin6d_gs_coarea_leaves')
     call writer%close()
 end program gen_gs_coarea
