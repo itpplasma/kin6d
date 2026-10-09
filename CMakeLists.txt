@@ -176,26 +176,10 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-target_sources(kin6d PRIVATE src/solovev_geometry.f90 src/solovev_cell_jet.f90
-    src/solovev_cell_weak.f90
-    src/generated/kin6d_solovev_geometry_leaves.f90)
-set_source_files_properties(src/generated/kin6d_solovev_geometry_leaves.f90
-    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-add_executable(test_solovev_geometry test/test_solovev_geometry.f90)
-target_link_libraries(test_solovev_geometry PRIVATE kin6d)
-add_test(NAME grad_shafranov_solovev_geometry_primitive COMMAND test_solovev_geometry)
-add_executable(test_solovev_cell_jet test/test_solovev_cell_jet.f90)
-target_link_libraries(test_solovev_cell_jet PRIVATE kin6d)
-add_test(NAME grad_shafranov_solovev_cell_scalar_jet COMMAND test_solovev_cell_jet)
-add_executable(test_solovev_cell_weak test/test_solovev_cell_weak.f90)
-target_link_libraries(test_solovev_cell_weak PRIVATE kin6d)
-add_test(NAME grad_shafranov_solovev_cell_p2_weak_forms COMMAND test_solovev_cell_weak)
+target_sources(kin6d PRIVATE src/curved_triangle.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
 target_link_libraries(test_gs_p2 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)
-add_executable(test_gs_mapped_p2 test/test_gs_mapped_p2.f90)
-target_link_libraries(test_gs_mapped_p2 PRIVATE kin6d)
-add_test(NAME grad_shafranov_mapped_p2_finite_forms COMMAND test_gs_mapped_p2)
 add_executable(test_gs_p2_gauge test/test_gs_p2_gauge.f90)
 target_link_libraries(test_gs_p2_gauge PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_gauge_oracles COMMAND test_gs_p2_gauge)
@@ -242,16 +226,6 @@ target_link_libraries(test_gs_p2_reference_error PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_reference_cell_enclosures COMMAND test_gs_p2_reference_error)
 configure_file(test/fixtures/gs_p2_reference.in
     ${CMAKE_BINARY_DIR}/gs_p2_reference.in COPYONLY)
-foreach(resolution coarse fine)
-    add_test(NAME grad_shafranov_p2_solovev_${resolution}_enclosure
-        COMMAND ${CMAKE_COMMAND} -DGS_REFERENCE_ERROR=$<TARGET_FILE:gs_reference_error>
-            -DMESH=${CMAKE_BINARY_DIR}/p2_solovev_${resolution}_mesh.dat
-            -DPARAMETERS=${CMAKE_BINARY_DIR}/gs_p2_reference.in
-            -DOUTPUT=${CMAKE_BINARY_DIR}/p2_solovev_${resolution}_bounds.json
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/test/check_gs_p2_enclosure.cmake)
-    set_tests_properties(grad_shafranov_p2_solovev_${resolution}_enclosure PROPERTIES
-        FIXTURES_REQUIRED gs_p2_solovev_export)
-endforeach()
 add_test(NAME grad_shafranov_p2_reference_rejects_curved_metadata
     COMMAND ${CMAKE_COMMAND} -DGS_REFERENCE_ERROR=$<TARGET_FILE:gs_reference_error>
         -DMESH=${CMAKE_BINARY_DIR}/p2_curved_metadata_mesh.dat
@@ -437,7 +411,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator solovev_geometry grad_shafranov gs_coarea gs_reference_error
+    foreach(generator grad_shafranov gs_coarea gs_reference_error
             laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
@@ -684,3 +658,12 @@ foreach(fixture verified_matvec sampled_norm)
     target_link_libraries(test_error_${fixture} PRIVATE kin6d_ode)
     add_test(NAME error_${fixture}_oracles COMMAND test_error_${fixture})
 endforeach()
+
+add_executable(test_curved_triangle test/test_curved_triangle.f90)
+target_link_libraries(test_curved_triangle PRIVATE kin6d)
+add_test(NAME grad_shafranov_curved_geometry COMMAND test_curved_triangle)
+add_executable(test_gs_curved_convergence test/test_gs_curved_convergence.f90)
+target_link_libraries(test_gs_curved_convergence PRIVATE kin6d)
+add_test(NAME grad_shafranov_curved_convergence COMMAND test_gs_curved_convergence)
+set_tests_properties(grad_shafranov_curved_convergence PROPERTIES
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
