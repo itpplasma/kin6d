@@ -32,6 +32,14 @@ program test_gs_symbolic
                        -diff(bz, r)*bz - diff(r*bt, r)/r*bt)
    call check_identity(suite, eng, 'Gold-Hoyle constant q', &
                        r*bz - parsed('R0*(1/(k*R0))')*bt)
+   p = parsed('(c1*w1+c2*w2+c3*w3)/R')
+   call check_identity(suite, eng, 'FF source basis contraction', &
+                       p - parsed('c1*w1/R+c2*w2/R+c3*w3/R'))
+   call check_identity(suite, eng, 'FF coefficient JVP equals basis contraction', &
+                       diff(p, parsed('c1'))*parsed('d1') &
+                       + diff(p, parsed('c2'))*parsed('d2') &
+                       + diff(p, parsed('c3'))*parsed('d3') &
+                       - parsed('(d1*w1+d2*w2+d3*w3)/R'))
    call suite_end(suite, 'exact-identities.json')
 contains
    function parsed(text) result(e)

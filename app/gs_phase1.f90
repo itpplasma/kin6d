@@ -12,6 +12,7 @@ program gs_phase1_main
     use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
         write_gs_profile_law, gs_law_sources, gs_law_primitives
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
+    use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q
     use kin6d_result_io, only: run_t, result_file_t, runtime_git
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
@@ -22,24 +23,29 @@ program gs_phase1_main
     type(run_t) :: run
     type(result_file_t) :: result
     real(dp), allocatable :: samples(:, :), contour(:, :)
+    real(dp), allocatable :: q_s(:), q_values(:)
     real(dp) :: max_area = 0, pprime = 0, ffprime = 0, f_edge = 0
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
     real(dp) :: nonlinear_tolerance = 1.0e-9_dp, pressure, f, pp, ff
     real(dp) :: quadrature_tolerance = 1.0e-8_dp
     real(dp) :: total_current = 0, measured_current = 0
     real(dp) :: majorant, flux_defect, balance_defect, estimator_s, stability_estimate
+    real(dp) :: phi_target = 0, inverse_q_error = 0, q_tolerance = 1.0e-3_dp
+    integer :: inverse_intervals = 2, inverse_evaluations = 0
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
     integer :: unit, status, n, i, next, majorant_status, recovery_iterations
     integer(int64) :: start, finish, rate
     logical :: curved = .true., directory_ok, recovery_converged
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
+    character(512) :: q_file = ''
     character(256) :: message
     character(512) :: argument
     character(:), allocatable :: commit, dirty
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
         pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree, &
-        profile_file, nonlinear_tolerance, quadrature_tolerance, total_current
+        profile_file, nonlinear_tolerance, quadrature_tolerance, total_current, q_file, &
+        phi_target, inverse_intervals, q_tolerance
     call run%start('gs_phase1')
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
@@ -90,7 +96,24 @@ program gs_phase1_main
         call initialize_gs(state, contour, max_area, status, degree)
     end if
     if (status /= 0) error stop 'mesh/assembly failed'
-    if (len_trim(profile_file) > 0) then
+    if (len_trim(q_file) > 0) then
+        if (len_trim(profile_file) > 0) error stop 'q_file and profile_file conflict'
+        open (newunit=unit, file=trim(q_file), status='old', action='read')
+        read (unit, *) n
+        if (n < 4) error stop 'q table requires at least four rows'
+        allocate (q_s(n), q_values(n), law)
+        do i = 1, n
+            read (unit, *) q_s(i), q_values(i)
+        end do
+        close (unit)
+        call gs_readback_resolution(state, radial_points, angular_points)
+        call solve_gs_prescribed_q(state, mu0, pprime, q_s, q_values, phi_target, &
+            law, status, intervals=inverse_intervals, radial_points=radial_points, &
+            angular_points=angular_points, tolerance=nonlinear_tolerance, &
+            q_error=inverse_q_error, evaluations=inverse_evaluations, &
+            q_tolerance=q_tolerance)
+        f_edge = law%f_edge
+    else if (len_trim(profile_file) > 0) then
         allocate (law)
         call read_gs_profile_law(trim(profile_file), law, status)
         if (status /= 0) error stop 'invalid cubic source profile file'
@@ -149,6 +172,13 @@ program gs_phase1_main
     call result%write('psi', state%psi, 'Wb/rad', 'native FE coefficients')
     call result%write('triangles', real(state%triangles, dp), '1', &
         'isoparametric connectivity')
+    if (allocated(q_s)) then
+        call result%write('prescribed_q_s', q_s, '1', 'input normalized poloidal flux')
+        call result%write('prescribed_q', q_values, '1', 'input signed COCOS 3 q')
+        call result%write('phi_target', phi_target, 'Wb', 'prescribed toroidal flux')
+        call result%write('inverse_q_error', inverse_q_error, '1', &
+            'maximum sampled relative q constraint defect')
+    end if
     if (allocated(law)) then
         call result%write('source_knots', law%knots, 'profile coordinate', &
             'executed cubic-source knots; coordinate defined by source_normalized')
@@ -210,6 +240,8 @@ program gs_phase1_main
     open (newunit=unit, file='summary.dat', status='replace')
     write (unit, '(a,1x,es25.16e3)') 'total_current', measured_current
     write (unit, '(a,1x,i0)') 'degree', state%element_order
+    write (unit, '(a,1x,i0)') 'inverse_evaluations', inverse_evaluations
+    write (unit, '(a,1x,es25.16e3)') 'inverse_q_error', inverse_q_error
     write (unit, '(a,1x,i0)') 'iterations', state%iterations
     write (unit, '(a,1x,i0)') 'dof', count(.not. state%boundary)
     write (unit, '(a,1x,es25.16e3)') 'wall_s', wall_s
