@@ -1,6 +1,6 @@
 # Fixed-boundary Grad–Shafranov
 
-- Scope: 2D axisymmetric forward equilibrium in physical `(R,Z)`, `R>0`.
+- Scope: 2D axisymmetric fixed-boundary equilibrium in physical `(R,Z)`, `R>0`.
   Circular, shaped and supplied polygonal boundaries use the same engine.
 - SI; physical counter-clockwise `phi`; flux per radian `psi`;
   `B_R=-psi_Z/R`, `B_Z=psi_R/R`, `B_phi=F/R`.
@@ -14,7 +14,9 @@
   positive retained quadrature nodes, paired error estimates and work limits.
   The rational `1/R` stiffness weight still requires quadrature refinement.
 - `q_seed` sets the source strength in built-in circular models. Actual `q`
-  is an output; constant-q inversion is unavailable.
+  is an output in forward mode. The [prescribed-q mode](gs-inverse.md) instead
+  accepts q(s_pol), constant pprime and signed total toroidal flux, including
+  curved P2/P3 meshes.
 
 The [forward energy-majorant derivation](../theory/derivations/grad-shafranov-forward-majorant.md)
 proves a continuous weighted residual bound under explicit domain, trace,

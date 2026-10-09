@@ -53,6 +53,7 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_sampled_norm.f90
     ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
+    ${fortnum_SOURCE_DIR}/src/interp/fortnum_bspline.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
@@ -164,7 +165,10 @@ add_library(kin6d_gs_reference_test STATIC
 target_link_libraries(kin6d_gs_reference_test PUBLIC kin6d)
 target_compile_options(kin6d_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
 target_sources(kin6d PRIVATE src/generated/kin6d_gs_coarea_leaves.f90 src/gs_coarea.f90)
-set_source_files_properties(src/generated/kin6d_gs_coarea_leaves.f90
+target_sources(kin6d PRIVATE src/generated/kin6d_gs_inverse_leaves.f90
+    src/gs_inverse.f90 src/gs_prescribed_q.f90)
+set_source_files_properties(src/generated/kin6d_gs_inverse_leaves.f90
+    src/generated/kin6d_gs_coarea_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -201,10 +205,51 @@ set_tests_properties(grad_shafranov_p2_polynomial_refinement PROPERTIES
 add_executable(test_gs_coarea test/test_gs_coarea.f90)
 target_link_libraries(test_gs_coarea PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_native_coarea_oracles COMMAND test_gs_coarea)
+add_executable(test_gs_inverse_cache_reuse test/test_gs_inverse_cache_reuse.f90)
+target_link_libraries(test_gs_inverse_cache_reuse PRIVATE kin6d)
+add_test(NAME grad_shafranov_inverse_cache_reuse_oracles COMMAND test_gs_inverse_cache_reuse)
+add_executable(test_gs_inverse_rhs_batch test/test_gs_inverse_rhs_batch.f90)
+target_link_libraries(test_gs_inverse_rhs_batch PRIVATE kin6d)
+add_test(NAME grad_shafranov_inverse_rhs_batch_oracles COMMAND test_gs_inverse_rhs_batch)
+add_executable(test_gs_inverse_boundary_response test/test_gs_inverse_boundary_response.f90)
+target_link_libraries(test_gs_inverse_boundary_response PRIVATE kin6d)
+add_test(NAME grad_shafranov_inverse_boundary_response_oracles
+    COMMAND test_gs_inverse_boundary_response)
+add_executable(test_gs_inverse_cache_equation test/test_gs_inverse_cache_equation.f90)
+target_link_libraries(test_gs_inverse_cache_equation PRIVATE kin6d)
+add_test(NAME grad_shafranov_inverse_cache_equation_oracle COMMAND test_gs_inverse_cache_equation)
+add_executable(test_gs_inverse_source_cut test/test_gs_inverse_source_cut.f90)
+target_link_libraries(test_gs_inverse_source_cut PRIVATE kin6d)
+add_test(NAME grad_shafranov_inverse_source_cut_oracles COMMAND test_gs_inverse_source_cut)
+add_executable(test_gs_inverse_mean test/test_gs_inverse_mean.f90)
+target_link_libraries(test_gs_inverse_mean PRIVATE kin6d)
+add_test(NAME grad_shafranov_profile_mean_gauge_oracles COMMAND test_gs_inverse_mean)
+add_executable(test_gs_inverse test/test_gs_inverse.f90)
+target_link_libraries(test_gs_inverse PRIVATE kin6d)
+add_executable(test_gs_prescribed_q test/test_gs_prescribed_q.f90)
+target_link_libraries(test_gs_prescribed_q PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_p3_convergence COMMAND test_gs_prescribed_q)
+set_tests_properties(grad_shafranov_prescribed_q_p3_convergence PROPERTIES TIMEOUT 300)
+add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
+target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
+add_test(NAME grad_shafranov_prescribed_q_e2 COMMAND test_gs_prescribed_q_circle 2)
+set_tests_properties(grad_shafranov_prescribed_q_e1 grad_shafranov_prescribed_q_e2
+    PROPERTIES TIMEOUT 900)
+add_test(NAME grad_shafranov_phase1_inverse_app COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_phase1> -DDECK=$<TARGET_FILE:test_gs_prescribed_q_circle>
+    -DWORK=${CMAKE_BINARY_DIR}/phase1_inverse_app
+    -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_inverse.cmake)
+add_test(NAME grad_shafranov_constant_q_inverse_unit COMMAND test_gs_inverse)
+add_test(NAME grad_shafranov_constant_q_inverse_refinement COMMAND test_gs_inverse fine)
+set_tests_properties(grad_shafranov_constant_q_inverse_unit grad_shafranov_constant_q_inverse_refinement PROPERTIES TIMEOUT 120)
 set_tests_properties(grad_shafranov_p2_physical_oracles PROPERTIES
     FIXTURES_SETUP gs_native_mesh_export)
 add_executable(grad_shafranov_demo app/grad_shafranov_demo.f90)
 target_link_libraries(grad_shafranov_demo PRIVATE kin6d kin6d_io fortplot)
+add_test(NAME grad_shafranov_inverse_app_contract COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:grad_shafranov_demo> -DWORK=${CMAKE_BINARY_DIR}/gs_inverse_app_check
+    -P ${CMAKE_SOURCE_DIR}/test/check_gs_inverse_app.cmake)
 add_executable(test_gs_p1_weak_current test/test_gs_p1_weak_current.f90)
 target_link_libraries(test_gs_p1_weak_current PRIVATE kin6d)
 add_test(NAME grad_shafranov_p1_weak_current COMMAND test_gs_p1_weak_current)
@@ -421,7 +466,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov gs_coarea gs_reference_error
+    foreach(generator grad_shafranov gs_coarea gs_inverse gs_reference_error
             laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud

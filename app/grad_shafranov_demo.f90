@@ -4,17 +4,23 @@ program grad_shafranov_demo
    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
       solve_gs_profiles, gs_profile_integral, write_gs_mesh, gs_element_jet, &
       gs_classical_current, gs_current_jump, gs_axis_candidate, gs_axis_safety_factor
+   use kin6d_gs_inverse, only: gs_inverse_result_t, solve_gs_constant_q
    use kin6d_result_io, only: run_t, result_file_t
    use kin6d_grad_shafranov_leaves, only: gs_field
    use fortplot_system_runtime, only: create_directory_runtime
    implicit none
    type(gs_state_t) :: state
+   type(gs_inverse_result_t)::inverse
    type(run_t) :: run
    type(result_file_t) :: result
    integer :: boundary_nodes = 128, element_order = 1, unit, status, i
    real(dp) :: r0 = 6.2_dp, a = 0.62_dp, kappa = 1.0_dp, delta = 0.0_dp
    real(dp) :: b0 = 5.3_dp, q_seed = 1.5_dp, max_area = 0.002_dp
    real(dp) :: nonlinear_tolerance = 1.0e-8_dp
+   character(32)::solve_mode='forward'
+   real(dp)::q_target=1.5_dp,toroidal_flux_target=0,q_tolerance=1.0e-3_dp,flux_tolerance=1.0e-6_dp
+   integer::inverse_flux_points=9,inverse_angular_points=256
+   logical::has_profiles, prescribed_q
    real(dp) :: mu0 = 1.2566370614359173e-6_dp, pprime, ffprime, theta
    real(dp), allocatable :: contour(:, :)
    real(dp), allocatable :: flux(:), pp(:), ff(:), pressure(:), fpol(:)
@@ -33,7 +39,8 @@ program grad_shafranov_demo
    character(256) :: message
    namelist /grad_shafranov/ r0, a, kappa, delta, b0, q_seed, max_area, &
       boundary_nodes, element_order, pressure_mode, mesh_file, boundary_file, profile_file, &
-      nonlinear_tolerance
+      nonlinear_tolerance,solve_mode,q_target,toroidal_flux_target,q_tolerance,flux_tolerance, &
+      inverse_flux_points,inverse_angular_points
    call run%start('grad_shafranov')
    status = 0; message = ''
    call run%open_config(unit)
@@ -42,7 +49,8 @@ program grad_shafranov_demo
    call run%close_config(unit, 'grad_shafranov', status, message)
    if (boundary_nodes < 8 .or. r0 <= a .or. a <= 0.0_dp) &
       error stop 'invalid GS fixed boundary'
-    if (q_seed == 0.0_dp) error stop 'GS source q_seed cannot vanish'
+    if (q_seed == 0.0_dp.and.trim(solve_mode)=='forward') &
+        error stop 'GS source q_seed cannot vanish'
     if (abs(delta) > 1 .or. kappa <= 0) error stop 'invalid GS shaping'
    if (len_trim(boundary_file) > 0) then
       open (newunit=unit, file=trim(boundary_file), status='old')
@@ -60,6 +68,14 @@ program grad_shafranov_demo
                           kappa*a*sin(theta)]
       end do
    end if
+   prescribed_q=trim(solve_mode)=='prescribed_constant_q'
+   if(trim(solve_mode)/='forward'.and..not.prescribed_q)error stop 'invalid GS solve mode'
+   if(prescribed_q.and.(trim(pressure_mode)/='zero_beta'.or.len_trim(profile_file)>0)) &
+       error stop 'prescribed-q mode requires zero pressure and no forward profile input'
+   has_profiles=len_trim(profile_file)>0.or.prescribed_q
+   if(prescribed_q)then
+      pprime=0; ffprime=0
+   else
    select case (trim(pressure_mode))
    case ('zero_beta')
       pprime = 0.0_dp; ffprime = -2*b0/q_seed
@@ -68,12 +84,24 @@ program grad_shafranov_demo
    case default
       error stop 'unsupported GS source model'
    end select
+   end if
    call run%open_resolved(unit)
    write (unit, nml=grad_shafranov)
    call run%close_resolved(unit)
    call initialize_gs(state, contour, max_area, status, element_order)
    if (status /= 0) error stop 'GS meshing failed'
-   if (len_trim(profile_file) > 0) then
+   if(prescribed_q)then
+      call solve_gs_constant_q(state,q_target,toroidal_flux_target,inverse,status, &
+          inverse_flux_points,inverse_angular_points,nonlinear_tolerance,q_tolerance,flux_tolerance)
+      if(status==0)then
+         profile_count=size(inverse%flux)
+         flux=inverse%flux; ff=inverse%ffprime
+         allocate(pp(profile_count),pressure(profile_count),fpol(profile_count))
+         pp=0; pressure=0
+         fpol=sign(sqrt(inverse%f_squared),q_target)
+         pprime=0; ffprime=0
+      end if
+   else if (len_trim(profile_file) > 0) then
       open (newunit=unit, file=trim(profile_file), status='old')
       read (unit, *) profile_count
       if (profile_count < 2) error stop 'GS profile requires >=2 flux points'
@@ -95,6 +123,9 @@ program grad_shafranov_demo
       call solve_gs(state, mu0, pprime, ffprime, status)
    end if
    if (status /= 0) then
+      if(prescribed_q)print *, 'inverse failure discrete indicators:',inverse%iterations, &
+          inverse%coupled_residual,inverse%knot_indicator,inverse%profile_indicator, &
+          inverse%angular_indicator,inverse%flux_indicator
       print *, 'GS failure status/iterations/residual:', status, &
          state%iterations, state%residual
       error stop 'GS candidate solve failed'
@@ -105,7 +136,7 @@ program grad_shafranov_demo
              element_bt(size(state%triangles, 2)), &
              element_current(size(state%triangles, 2)))
    do i = 1, size(state%psi)
-      if (len_trim(profile_file) > 0) then
+      if (has_profiles) then
          nodal_p(i) = pressure(profile_count) + &
                       gs_profile_integral(flux, pp, state%psi(i))
          nodal_f(i) = reconstructed_f(state%psi(i))
@@ -120,7 +151,7 @@ program grad_shafranov_demo
       call gs_element_jet(state, i, element_r(i), element_z(i), &
                           element_psi, gradient, hessian, status)
       if (status /= 0) error stop 'GS element field evaluation failed'
-      if (len_trim(profile_file) > 0) then
+      if (has_profiles) then
          element_f = reconstructed_f(element_psi)
       else
          element_f = constant_source_f(element_psi)
@@ -154,7 +185,7 @@ program grad_shafranov_demo
    end do
    call gs_axis_candidate(state, axis, axis_flux, hessian, axis_element, axis_status)
    if (axis_status == 0) then
-      if (len_trim(profile_file) > 0) then
+      if (has_profiles) then
          element_f = reconstructed_f(axis_flux)
       else
          element_f = constant_source_f(axis_flux)
@@ -205,14 +236,14 @@ program grad_shafranov_demo
    call result%write('triangles', real(state%triangles, dp), '1', &
                      'one-based triangle node indices')
    call result%write('pprime', pprime, 'Pa/(Wb/rad)', 'constant pressure derivative')
-   call result%write('ffprime', ffprime, 'T', 'constant F*dF/dpsi')
-   if (len_trim(profile_file) > 0) then
+   if(.not.has_profiles)call result%write('ffprime', ffprime, 'T', 'constant F*dF/dpsi')
+   if (has_profiles) then
       call result%write('F_edge', fpol(size(fpol)), 'T m', &
                         'toroidal flux function at edge')
    else
       call result%write('F_edge', r0*b0, 'T m', 'toroidal flux function at edge')
    end if
-   if (len_trim(profile_file) > 0) then
+   if (has_profiles) then
       call result%write('profile_flux', flux, 'Wb/rad', 'prescribed profile flux')
       call result%write('profile_pprime', pp, 'Pa/(Wb/rad)', 'pressure derivative')
       call result%write('profile_ffprime', ff, 'T', 'F*dF/dpsi')
@@ -228,11 +259,27 @@ program grad_shafranov_demo
       end do
       close (unit)
    end if
+   if(prescribed_q)then
+      call result%write('q_target',q_target,'1','canonical signed prescribed safety factor')
+      call result%write('Phi_target',toroidal_flux_target,'Wb','signed full physical toroidal flux')
+      call result%write('Phi_native',inverse%phi_native,'Wb','toroidal flux before positive homogeneity')
+      call result%write('positive_normalization',inverse%positive_normalization,'1','zero-pressure homogeneity')
+      call result%write('q_knot_error',inverse%knot_indicator,'1','native q sampled-knot relative error')
+      call result%write('q_half_knot_error',inverse%half_indicator,'1','native q sampled half-knot relative error')
+      call result%write('q_validation_error',inverse%validation_indicator,'1','native q sampled uniform rho_pol error')
+      call result%write('coarea_angular_indicator',inverse%angular_indicator,'1','arc Gauss order N/16 versus2N/16 indicator')
+      call result%write('Phi_quadrature_indicator',inverse%flux_indicator,'1','degree8 versus12 area indicator')
+   end if
     call result%write('residual', state%residual, '1', 'relative weak equation residual')
    call result%close()
    print *, 'GS candidate nodes/triangles/residual:', size(state%psi), &
       size(state%triangles, 2), state%residual
-   print *, 'q_seed is a source parameter, not a prescribed q profile.'
+   if(prescribed_q)then
+      print *, 'prescribed q/Phi discrete indicators:',inverse%knot_indicator, &
+          inverse%profile_indicator,inverse%angular_indicator,inverse%flux_indicator
+   else
+      print *, 'q_seed is a source parameter, not a prescribed q profile.'
+   end if
 contains
    real(dp) function constant_source_f(psi) result(value)
       real(dp), intent(in) :: psi
