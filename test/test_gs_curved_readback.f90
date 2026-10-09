@@ -2,6 +2,7 @@ program test_gs_curved_readback
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         write_gs_mesh, read_gs_mesh, sample_gs
+    use kin6d_gs_field_readback, only: sample_gs_many
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = 0.62_dp, f = 32.86_dp
@@ -13,6 +14,8 @@ program test_gs_curved_readback
     real(dp) :: q_error(3), volume_error(3), phi_error(3), axis_error(3)
     real(dp) :: label_error(3), rates(4)
     real(dp) :: values(4), restored_values(4), point(2)
+    real(dp) :: query_points(2, 19), batch(4, 19)
+    integer :: batch_status(19)
     integer :: n, mesh, j, i, status, degree
     character(8) :: argument
     degree = 2
@@ -76,6 +79,23 @@ program test_gs_curved_readback
             if (status /= 0) error stop 'native export'
             call read_gs_mesh(restored, 'curved_readback_mesh.dat', status)
             if (status /= 0) error stop 'native readback'
+            do i = 1, 17
+                query_points(:, i) = [r0 + 0.53_dp*cos(real(i, dp)), &
+                    0.51_dp*sin(real(i, dp))]
+            end do
+            query_points(:, 18) = state%points(:, state%triangles(1, 1))
+            query_points(:, 19) = [r0 + 2*a, 0.0_dp]
+            call sample_gs_many(restored, query_points, f, batch, batch_status)
+            do i = 1, 19
+                point = query_points(:, i)
+                call sample_gs(restored, point(1), point(2), f, values(1), values(2), &
+                    values(3), values(4), status)
+                if (batch_status(i) /= status) error stop 'batch location status'
+                if (status == 0) then
+                    if (maxval(abs(values - batch(:, i))) > 1.0e-12_dp) &
+                        error stop 'batch physical field'
+                end if
+            end do
             do i = 1, 17
                 point = [r0 + 0.53_dp*cos(real(i, dp)), 0.51_dp*sin(real(i, dp))]
                 call sample_gs(state, point(1), point(2), f, values(1), values(2), &

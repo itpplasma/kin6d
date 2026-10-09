@@ -158,22 +158,30 @@ samples, without a closing duplicate. The app interpolates that input with a
 periodic cubic spline and samples the requested boundary mesh. Nonpositive
 `max_area` selects half the squared mean boundary-segment length. Source
 coefficients and F_edge are supplied in SI; no exact-solution values enter
-the solve. Defaults are degree 2, 96 boundary nodes, 257 radial points and angular budget
-128. The boundary gauge is psi=0.
+the solve. Defaults are degree 2 and 96 boundary nodes. Zero radial/angular
+settings resolve to `max(17,ceil(sqrt(Ncells))+1)` radial points and angular
+budget `16*(degree+2)`. Explicit positive budgets remain available. The boundary
+gauge is psi=0.
 
 The app reports free DOF, CG iterations and total mesh/assembly/solve wall time,
 and writes `mesh.dat`, `profiles.dat`, `summary.dat` and `output/gs_phase1.nc`.
 The NetCDF file embeds the original boundary samples, literal/resolved input,
 state, observables and standard build/runtime provenance. Readback cost is
-separate from primal solve time. A batch query is
+separate from primal solve time; `summary.dat` and NetCDF record contour and
+area-integration times, and the resolved namelist retains the sampling budgets.
+A batch query is
 `gs_phase1 --evaluate mesh.dat F_edge FFprime`; stdin supplies a point count
 and R,Z pairs, stdout returns psi, BR, BZ and Bphi (NaN outside the mesh).
+`--evaluate-stream` accepts repeated batches until EOF, retaining the loaded
+mesh; the producer owns and closes that reader. `--q profiles.dat` accepts
+a count and s_tor values and returns the native cubic q interpolation.
 
 `equilibrium/phase1/producers/kin6d.py` implements
 `run(case, resolution, workdir) -> Result` and the shared Phase 1 attributes.
 It uses this native executable for both solving and physical field evaluation;
-q(s_tor) interpolates the native contour profile. Set `KIN6D_BINARY` for an
-installed executable. `source.kind` is `solovev`, with SI `pprime` and `ffprime`
+q(s_tor) calls the native cubic profile reader (`--q profiles.dat`). Set
+`KIN6D_BINARY` for an installed executable. `source.kind` is `solovev`, with
+SI `pprime` and `ffprime`
 provided directly or under `source.coefficients`. Supported resolution keys
 are `boundary_nodes`, `max_area`, `radial_points`, `angular_points`, `curved`, `degree`.
 The producer forces one thread and a disk scratch directory. Its sign map is

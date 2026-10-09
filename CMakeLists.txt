@@ -138,6 +138,10 @@ file(GLOB KIN6D_TRIANGLE_SOURCES CONFIGURE_DEPENDS
     ${fortfem_SOURCE_DIR}/src/triangle_compat/*.f90)
 add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/utils/kinds.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/delaunay_types.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/robust_predicates.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/geometric_predicates.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/point_location.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
     ${fortfem_SOURCE_DIR}/src/geometry/geometry_jet_2d.f90
@@ -685,7 +689,8 @@ set_tests_properties(grad_shafranov_curved_convergence
     grad_shafranov_p3_curved_convergence grad_shafranov_axis_refinement
     grad_shafranov_shaped_solver_work PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
-target_sources(kin6d PRIVATE src/gs_readback.f90 src/gs_axis_recovery.f90)
+target_sources(kin6d PRIVATE src/gs_readback.f90 src/gs_axis_recovery.f90
+    src/gs_field_readback.f90)
 add_executable(test_gs_curved_readback test/test_gs_curved_readback.f90)
 target_link_libraries(test_gs_curved_readback PRIVATE kin6d)
 add_test(NAME grad_shafranov_curved_readback COMMAND test_gs_curved_readback)
@@ -699,3 +704,21 @@ set_tests_properties(grad_shafranov_curved_readback PROPERTIES
 add_executable(gs_phase1 app/gs_phase1.f90)
 target_link_libraries(gs_phase1 PRIVATE kin6d_io fortplot)
 # The comparison producer is optional; the native solver needs no Python.
+
+add_executable(test_gs_readback_order test/test_gs_readback_order.f90)
+target_link_libraries(test_gs_readback_order PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_readback_order COMMAND test_gs_readback_order 2)
+add_test(NAME grad_shafranov_p3_readback_order COMMAND test_gs_readback_order 3)
+
+add_executable(test_gs_readback_work test/test_gs_readback_work.f90)
+target_link_libraries(test_gs_readback_work PRIVATE kin6d)
+add_test(NAME grad_shafranov_readback_work COMMAND test_gs_readback_work)
+set_tests_properties(grad_shafranov_p2_readback_order
+    grad_shafranov_p3_readback_order grad_shafranov_readback_work PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1"
+    TIMEOUT 300)
+add_test(NAME grad_shafranov_stream_readback
+    COMMAND ${CMAKE_COMMAND} -DBINARY=$<TARGET_FILE:gs_phase1>
+    -DWORK=${CMAKE_BINARY_DIR}/gs_stream_test
+    -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_stream.cmake)
+set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
