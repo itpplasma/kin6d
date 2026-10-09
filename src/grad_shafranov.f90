@@ -317,14 +317,16 @@ contains
       where (state%boundary) output = input
    end subroutine apply_gs
 
-   subroutine gs_linear_response(state, source, response, status)
+   subroutine gs_linear_response(state, source, response, status, iteration_count)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: source(:)
       real(dp), allocatable, intent(out) :: response(:)
       integer, intent(out) :: status
+      integer, intent(out), optional :: iteration_count
       real(dp) :: residual, tolerance
       integer :: iterations
       status = 1
+      if (present(iteration_count)) iteration_count = 0
       if (.not. state%ready) return
       if (state%mapped) then
          if (.not. all(ieee_is_finite(source))) return
@@ -338,6 +340,7 @@ contains
       call real_conjugate_gradient_operator(matvec, source, response, &
                    tolerance, max(500, 10*size(source)), status, iterations, residual, &
                                             preconditioner)
+      if (present(iteration_count)) iteration_count = iterations
       if (state%mapped) then
          if (.not. all(ieee_is_finite(response))) status = geometry_arithmetic
          if (.not. ieee_is_finite(residual)) status = geometry_arithmetic
@@ -377,7 +380,7 @@ contains
       allocate (rhs(size(state%psi)), action(size(state%psi)))
       call assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
       if (status /= 0) return
-      call gs_linear_response(state, rhs, solution, status)
+      call gs_linear_response(state, rhs, solution, status, state%iterations)
       if (status /= KRYLOV_OK) return
       call apply_gs(state, solution, action)
       if (state%mapped) then
