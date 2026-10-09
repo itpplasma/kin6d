@@ -1663,8 +1663,9 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         real(dp) :: local(2), d(10), shape(10), gradients(2, 10), hs(2, 2, 10)
         real(dp) :: g(2), h(2, 2), step(2), determinant, value, det, point(2)
         real(dp) :: roots(2), edge_values(4), weights(4), edge_min, second_min
-        real(dp) :: tolerance
-        integer :: e, j, k, iteration, nr, m, stat
+        real(dp) :: tolerance, trial(2), damping
+        integer :: e, j, k, iteration, nr, m, stat, backtrack
+        logical :: moved
         axis = 0; psi_axis = huge(1.0_dp); hessian_axis = 0
         element = 0; status = 4
         edge_min = minval(state%psi); second_min = huge(1.0_dp)
@@ -1693,8 +1694,26 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
                 if (h(1, 1) <= 0 .or. determinant <= 0) exit
                 step = [h(2, 2)*g(1) - h(1, 2)*g(2), &
                     h(1, 1)*g(2) - h(1, 2)*g(1)]/determinant
-                local = local - step
-                if (minval([local, 1 - sum(local)]) <= 1.0e-10_dp) exit
+                ! Damped Newton. A coarse cell whose flux minimum sits near one
+                ! of its corners overshoots the cell on the first undamped step,
+                ! which would leave the cell without any candidate at all. The
+                ! backtracking keeps the iterate in this cell so that its own
+                ! minimum is still reported; the positive Hessian makes the step
+                ! a descent direction.
+                damping = 1
+                moved = .false.
+                do backtrack = 1, 40
+                    trial = local - damping*step
+                    if (minval([trial, 1 - sum(trial)]) > 1.0e-10_dp) then
+                        moved = .true.
+                        exit
+                    end if
+                    damping = damping/2
+                end do
+                if (.not. moved) exit
+                local = trial
+                ! Accept only a stationary point: a damped step pinned at the
+                ! cell boundary is not a minimum of this cell.
                 if (norm2(step) > 1.0e-12_dp) cycle
                 call gs_cell_data(state, e, local, point, det, shape, gradients, &
                     hs, stat)
