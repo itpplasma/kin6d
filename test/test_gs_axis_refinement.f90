@@ -65,6 +65,16 @@ program test_gs_axis_refinement
     if (q_coarse*q_medium <= 0 .or. q_fine*q_medium <= 0) then
         error stop 'axis q sign changed across refinement'
     end if
+
+    ! Coarse curved P2 cylinder, aspect 100. Here the represented flux minimum
+    ! sits exactly on the axis node shared by the surrounding cells. Degree 2
+    ! used to answer status 4: it folded every nodal value into one "edge is
+    ! lower" rejection, so a minimum on a shared entity never became an axis.
+    call coarse_axis_degree2
+    ! One manufactured quadratic whose unique minimum sits strictly inside an
+    ! edge that two cells own jointly: one axis, reported once, and a minimum
+    ! that stays on the wall is still no axis at all.
+    call shared_entity_axis
 contains
     subroutine boundary(t, point)
         real(dp), intent(in) :: t
@@ -97,16 +107,7 @@ contains
         call initialize_gs(state, polygon, edge*edge/2, status, 3, &
             curve=cylinder_boundary)
         if (status /= 0) error stop 'cylinder mesh'
-        ! Registered Lundquist A=100 source: p'=0, FF' linear in psi, edge F.
-        law%normalized = .false.
-        law%p_edge = 0
-        law%f_edge = 1.68186572932422706e+02_dp
-        law%axis = -6.63042165212652890e+01_dp
-        allocate (law%knots(2), law%pp(4, 1), law%ff(4, 1))
-        law%knots = [-9.94563247818979335e+01_dp, 0.0_dp]
-        law%pp = 0
-        law%ff(:, 1) = [-9.89048500484972578e+02_dp, 5.85327783558792980_dp, &
-            0.0_dp, 0.0_dp]
+        call lundquist_law(law)
         if (.not. law%valid()) error stop 'cylinder source law'
         call solve_gs_cubic_profiles(state, mu0, law, status, 1.0e-11_dp, &
             quadrature_tolerance=1.0e-11_dp)
@@ -139,4 +140,124 @@ contains
         end if
         deallocate (polygon)
     end subroutine
+
+    ! Registered Lundquist A=100 source: p'=0, FF' linear in psi, edge F.
+    subroutine lundquist_law(law)
+        type(gs_profile_law_t), intent(out) :: law
+        law%normalized = .false.
+        law%p_edge = 0
+        law%f_edge = 1.68186572932422706e+02_dp
+        law%axis = -6.63042165212652890e+01_dp
+        allocate (law%knots(2), law%pp(4, 1), law%ff(4, 1))
+        law%knots = [-9.94563247818979335e+01_dp, 0.0_dp]
+        law%pp = 0
+        law%ff(:, 1) = [-9.89048500484972578e+02_dp, 5.85327783558792980_dp, &
+            0.0_dp, 0.0_dp]
+        if (.not. law%valid()) error stop 'cylinder source law'
+    end subroutine lundquist_law
+
+    ! Degree 2 on the coarse 16-node cylinder. The axis is a mesh node, so the
+    ! reported flux is that node's flux bit for bit, and the axis cannot sit
+    ! above the flux it is supposed to minimise.
+    subroutine coarse_axis_degree2
+        type(gs_profile_law_t) :: law
+        real(dp), allocatable :: polygon(:, :)
+        real(dp) :: hessian(2, 2), axis_p2(2), psi_p2, q_p2
+        integer :: nodes, sample, cell, node, status
+
+        nodes = 16
+        allocate (polygon(2, nodes))
+        do sample = 1, nodes
+            call cylinder_boundary(real(sample - 1, dp)/nodes, polygon(:, sample))
+        end do
+        call initialize_gs(state, polygon, (two_pi*ac/nodes)**2/2, status, 2, &
+            curve=cylinder_boundary)
+        if (status /= 0) error stop 'coarse P2 mesh'
+        call lundquist_law(law)
+        call solve_gs_cubic_profiles(state, mu0, law, status, 1.0e-11_dp, &
+            quadrature_tolerance=1.0e-11_dp)
+        if (status /= 0) error stop 'coarse P2 solve'
+        call gs_axis_candidate(state, axis_p2, psi_p2, hessian, cell, status)
+        print '(a,2(es15.8,1x),es18.10,1x,i4)', 'coarse P2 axis', axis_p2, &
+            psi_p2, cell
+        if (status /= 0) error stop 'coarse P2 rejected a shared-node axis'
+        node = minloc(state%psi, 1)
+        if (state%boundary(node)) error stop 'coarse P2 axis node is on the wall'
+        if (psi_p2 /= minval(state%psi)) then
+            error stop 'coarse P2 axis sits above the flux minimum'
+        end if
+        if (.not. all(axis_p2 == state%points(:, node))) then
+            error stop 'coarse P2 axis moved off its node'
+        end if
+        if (norm2(axis_p2 - [rc, 0.0_dp]) > 1.0e-9_dp*ac) then
+            error stop 'coarse P2 axis off centre'
+        end if
+        call gs_axis_safety_factor(axis_p2(1), law%f_edge, hessian, q_p2, status)
+        if (status /= 0 .or. q_p2 <= 0) error stop 'coarse P2 axis q not an O-point'
+        deallocate (polygon)
+    end subroutine coarse_axis_degree2
+
+    ! psi = ((R-r*)^2 + Z^2)/2 - 1 on the same mesh reproduces itself inside
+    ! every P2 cell, so its minimum -1 at r* is known exactly. With r* strictly
+    ! inside an interior edge the two adjacent cells see one entity, and the
+    ! search must report it once rather than as a tie (status 5). With r* on a
+    ! wall node the flux keeps falling to the boundary and there is no axis.
+    subroutine shared_entity_axis
+        real(dp), allocatable :: polygon(:, :)
+        real(dp) :: hessian(2, 2), axis_q(2), psi_q, centre(2), q_q, h
+        integer :: nodes, sample, cell, edge, j, k, node, status
+
+        nodes = 16
+        allocate (polygon(2, nodes))
+        do sample = 1, nodes
+            call cylinder_boundary(real(sample - 1, dp)/nodes, polygon(:, sample))
+        end do
+        h = (two_pi*ac/nodes)**2/2
+        call initialize_gs(state, polygon, h, status, 2, curve=cylinder_boundary)
+        if (status /= 0) error stop 'quadratic mesh'
+        deallocate (polygon)
+        centre = 0
+        edge = 0
+        do cell = 1, size(state%triangles, 2)
+            do j = 1, 3
+                k = mod(j, 3) + 1
+                if (state%boundary(state%triangles(j + 3, cell))) cycle
+                centre = state%points(:, state%triangles(j, cell)) + 0.25_dp* &
+                    (state%points(:, state%triangles(k, cell)) &
+                    - state%points(:, state%triangles(j, cell)))
+                edge = 1
+                exit
+            end do
+            if (edge == 1) exit
+        end do
+        if (edge == 0) error stop 'no interior edge in the coarse mesh'
+        do node = 1, size(state%psi)
+            state%psi(node) = ((state%points(1, node) - centre(1))**2 &
+                + (state%points(2, node) - centre(2))**2)/2 - 1
+        end do
+        call gs_axis_candidate(state, axis_q, psi_q, hessian, cell, status)
+        print '(a,2(es17.10,1x),es20.12)', 'shared edge axis', axis_q, psi_q
+        if (status == 5) error stop 'shared edge axis counted as a tie'
+        if (status /= 0) error stop 'interior edge minimum was not an axis'
+        if (psi_q /= -1.0_dp) error stop 'edge axis flux off the exact minimum'
+        if (psi_q > minval(state%psi)) then
+            error stop 'edge axis sits above the flux minimum'
+        end if
+        if (norm2(axis_q - centre) > 1.0e-8_dp*sqrt(2*h)) then
+            error stop 'edge axis off the exact minimum location'
+        end if
+        call gs_axis_safety_factor(axis_q(1), 1.0_dp, hessian, q_q, status)
+        if (status /= 0 .or. q_q <= 0) error stop 'edge axis q not an O-point'
+        node = 1
+        do while (.not. state%boundary(node))
+            node = node + 1
+        end do
+        centre = state%points(:, node)
+        do j = 1, size(state%psi)
+            state%psi(j) = ((state%points(1, j) - centre(1))**2 &
+                + (state%points(2, j) - centre(2))**2)/2 - 1
+        end do
+        call gs_axis_candidate(state, axis_q, psi_q, hessian, cell, status)
+        if (status /= 4) error stop 'wall-centred flux was called an enclosed axis'
+    end subroutine shared_entity_axis
 end program

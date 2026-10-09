@@ -61,6 +61,23 @@ module kin6d_grad_shafranov
       integer :: axis_element = 0
       logical :: ready = .false.
    end type gs_profile_response_cache_t
+   ! Minima of the represented flux, gathered from every mesh entity. The
+   ! minimum of a piecewise polynomial sits in a cell interior, in the interior
+   ! of an edge, or on a node, so each entity reports its own minimum. A shared
+   ! entity is reported once: its key is the canonical id of a node it owns, so
+   ! the neighbouring cell reproduces the same key and the same physical point
+   ! never counts as a second axis. Flux that is lowest on the domain boundary
+   ! is kept apart in `boundary`: such a state has no enclosed axis.
+   type :: axis_search_t
+      integer :: kind = 0          ! 1 node, 2 edge interior, 3 cell interior
+      integer :: id = 0
+      integer :: element = 0
+      real(dp) :: value = huge(1.0_dp)
+      real(dp) :: second = huge(1.0_dp)
+      real(dp) :: boundary = huge(1.0_dp)
+      real(dp) :: point(2) = 0.0_dp
+      real(dp) :: hessian(2, 2) = 0.0_dp
+   end type axis_search_t
    interface
       subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
          import :: dp
@@ -1580,6 +1597,109 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       status = 0
    end subroutine gs_axis_safety_factor
 
+    ! True when a stationary parameter sits on an edge node: that minimum is
+    ! already offered as a node entity, so the edge must not offer the same
+    ! physical point a second time and turn one axis into an ambiguous pair.
+    pure logical function axis_on_edge_node(order, t)
+        integer, intent(in) :: order
+        real(dp), intent(in) :: t
+        integer :: m
+        axis_on_edge_node = minval(abs(t*real(order, dp) - &
+            [(real(m, dp), m = 1, order - 1)])) <= 1.0e-12_dp
+    end function axis_on_edge_node
+
+    ! Reference coordinates of one local node slot, following the ordering that
+    ! higher_order_mesh builds: three vertices, then (order-1) nodes along each
+    ! edge, then the cubic bubble.
+    pure subroutine axis_slot_reference(order, slot, local)
+        integer, intent(in) :: order, slot
+        real(dp), intent(out) :: local(2)
+        real(dp), parameter :: vertices(2, 3) = &
+            reshape([0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp], [2, 3])
+        integer :: edge_index, node_on_edge, second
+        if (slot <= 3) then
+            local = vertices(:, slot)
+            return
+        end if
+        if (order == 3 .and. slot == 10) then
+            local = [1.0_dp/3, 1.0_dp/3]
+            return
+        end if
+        edge_index = ceiling(real(slot - 3, dp)/real(order - 1, dp))
+        node_on_edge = slot - 3 - (edge_index - 1)*(order - 1)
+        second = mod(edge_index, 3) + 1
+        local = vertices(:, edge_index) + (real(node_on_edge, dp)/real(order, dp))* &
+            (vertices(:, second) - vertices(:, edge_index))
+    end subroutine axis_slot_reference
+
+    ! Offer every mesh node. A coarse mesh puts the flux minimum exactly on a
+    ! node, and node minima are reachable with no interpolation at all, so they
+    ! are collected independently of the interior stationary searches: those
+    ! searches cycle on non-convex cells and must not hide a node minimum.
+    subroutine axis_node_entities(state, search, order)
+        type(gs_state_t), intent(in) :: state
+        type(axis_search_t), intent(inout) :: search
+        integer, intent(in) :: order
+        real(dp) :: local(2)
+        integer :: e, j, node, stat
+
+        do e = 1, size(state%triangles, 2)
+            do j = 1, size(state%triangles, 1)
+                node = state%triangles(j, e)
+                if (state%boundary(node)) then
+                    search%boundary = min(search%boundary, state%psi(node))
+                    cycle
+                end if
+                call axis_slot_reference(order, j, local)
+                call offer_axis_candidate(state, search, 1, node, e, local, &
+                    state%psi(node), stat)
+                if (stat /= 0) return
+            end do
+        end do
+    end subroutine axis_node_entities
+
+    ! Offer the minimum of one mesh entity to the axis search. A repeated key is
+    ! the same entity seen from the adjacent cell, so it is dropped instead of
+    ! recorded as a second minimum: a minimum shared by neighbouring cells is one
+    ! axis, not an ambiguous pair. The first offer fixes the reported position
+    ! and Hessian, so the result does not depend on traversal order beyond the
+    ! lowest-index owner. Boundary entities go to `boundary`, never here.
+    subroutine offer_axis_candidate(state, search, kind, id, element, local, &
+                                     value, stat)
+        type(gs_state_t), intent(in) :: state
+        type(axis_search_t), intent(inout) :: search
+        integer, intent(in) :: kind, id, element
+        real(dp), intent(in) :: local(2), value
+        integer, intent(out) :: stat
+        real(dp) :: d(10), shape(10), gradients(2, 10), hs(2, 2, 10)
+        real(dp) :: h(2, 2), point(2), det
+        integer :: j, ndof
+
+        stat = 0
+        if (search%kind == kind .and. search%id == id) return
+        if (value >= search%value) then
+            search%second = min(search%second, value)
+            return
+        end if
+        ndof = size(state%triangles, 1)
+        d(:ndof) = state%psi(state%triangles(:ndof, element)) &
+            - state%psi(state%triangles(1, element))
+        call gs_cell_data(state, element, local, point, det, shape(:ndof), &
+            gradients(:, :ndof), hs(:, :, :ndof), stat)
+        if (stat /= 0) return
+        search%second = min(search%second, search%value)
+        search%kind = kind
+        search%id = id
+        search%element = element
+        search%value = value
+        search%point = point
+        h = 0
+        do j = 1, ndof
+            h = h + d(j)*hs(:, :, j)
+        end do
+        search%hessian = h
+    end subroutine offer_axis_candidate
+
     subroutine gs_axis_candidate(state, axis, psi_axis, hessian_axis, element, status)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(out) :: axis(2), psi_axis, hessian_axis(2, 2)
@@ -1588,9 +1708,10 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         real(dp), parameter :: vertices(2, 3) = &
             reshape([0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp], [2, 3])
         real(dp) :: g(2), h(2, 2), matrix(2, 2), step(2, 1), local(2), d(6)
-        real(dp) :: shape(6), grads(2, 6), hs(2, 2, 6), point(2), tangent(2)
-        real(dp) :: value, det, edge_min, second_min, t, curvature, tolerance
+        real(dp) :: tangent(2)
+        real(dp) :: value, det, t, curvature, tolerance
         integer :: e, j, k, pivot(2), stat
+        type(axis_search_t) :: search
         axis = 0; psi_axis = huge(1.0_dp); hessian_axis = 0
         element = 0; status = 3
         if (state%element_order == 3) then
@@ -1600,7 +1721,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         end if
         if (state%element_order /= 2) return
         status = 4
-        edge_min = minval(state%psi); second_min = huge(1.0_dp)
         do e = 1, size(state%triangles, 2)
             d = state%psi(state%triangles(:, e)) - state%psi(state%triangles(1, e))
             g = 0; h = 0
@@ -1615,10 +1735,17 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
                 if (curvature <= 0) cycle
                 t = -dot_product(tangent, g + matmul(h, vertices(:, j)))/curvature
                 if (t <= 0 .or. t >= 1) cycle
+                if (axis_on_edge_node(2, t)) cycle
                 local = vertices(:, j) + t*tangent
                 value = state%psi(state%triangles(1, e)) &
                     + dot_product(local, g + matmul(h, local)/2)
-                edge_min = min(edge_min, value)
+                if (state%boundary(state%triangles(j + 3, e))) then
+                    search%boundary = min(search%boundary, value)
+                    cycle
+                end if
+                call offer_axis_candidate(state, search, 2, &
+                    state%triangles(j + 3, e), e, local, value, stat)
+                if (stat /= 0) return
             end do
             det = h(1, 1)*h(2, 2) - h(1, 2)**2
             if (h(1, 1) <= 0 .or. det <= 0) cycle
@@ -1629,29 +1756,22 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             if (minval([local, 1 - sum(local)]) <= 1.0e-10_dp) cycle
             value = state%psi(state%triangles(1, e)) &
                 + dot_product(local, g + matmul(h, local)/2)
-            if (value >= psi_axis) then
-                second_min = min(second_min, value)
-                cycle
-            end if
-            call gs_cell_data(state, e, local, point, det, shape, grads, hs, stat)
+            call offer_axis_candidate(state, search, 3, e, e, local, value, stat)
             if (stat /= 0) return
-            second_min = psi_axis
-            axis = point; psi_axis = value; element = e
-            hessian_axis = 0
-            do j = 1, 6
-                hessian_axis = hessian_axis + d(j)*hs(:, :, j)
-            end do
         end do
-        if (element == 0) return
+        call axis_node_entities(state, search, 2)
+        if (search%kind == 0) return
         tolerance = 256*epsilon(1.0_dp)*max(1.0_dp, maxval(abs(state%psi)))
-        if (edge_min <= psi_axis + tolerance) then
+        if (search%boundary <= search%value + tolerance) then
             element = 0
             return
         end if
-        if (second_min <= psi_axis + tolerance) then
+        if (search%second <= search%value + tolerance) then
             element = 0; status = 5
             return
         end if
+        axis = search%point; psi_axis = search%value
+        hessian_axis = search%hessian; element = search%element
         status = 0
     end subroutine gs_axis_candidate
 
@@ -1662,26 +1782,43 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         integer, intent(out) :: element, status
         real(dp) :: local(2), d(10), shape(10), gradients(2, 10), hs(2, 2, 10)
         real(dp) :: g(2), h(2, 2), step(2), determinant, value, det, point(2)
-        real(dp) :: roots(2), edge_values(4), weights(4), edge_min, second_min
-        real(dp) :: tolerance, trial(2), damping
+        real(dp) :: roots(2), edge_values(4), weights(4), tolerance, trial(2)
+        real(dp) :: damping, tangent(2), edge_best, edge_local(2)
         integer :: e, j, k, iteration, nr, m, stat, backtrack
         logical :: moved
+        real(dp), parameter :: vertices(2, 3) = &
+            reshape([0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp], [2, 3])
+        type(axis_search_t) :: search
         axis = 0; psi_axis = huge(1.0_dp); hessian_axis = 0
         element = 0; status = 4
-        edge_min = minval(state%psi); second_min = huge(1.0_dp)
         do e = 1, size(state%triangles, 2)
             d = state%psi(state%triangles(:, e)) - state%psi(state%triangles(1, e))
             do j = 1, 3
                 k = mod(j, 3) + 1
+                tangent = vertices(:, k) - vertices(:, j)
                 edge_values = d([j, 2*j + 2, 2*j + 3, k])
                 call cubic_segment_stationary(edge_values, roots, nr)
+                if (nr == 0) cycle
+                edge_best = huge(1.0_dp)
+                edge_local = 0
                 do m = 1, nr
+                    if (axis_on_edge_node(3, roots(m))) cycle
                     call lagrange_weights(4, roots(m), &
                         [0.0_dp, 1.0_dp/3, 2.0_dp/3, 1.0_dp], weights)
                     value = state%psi(state%triangles(1, e)) &
                         + dot_product(weights, edge_values)
-                    edge_min = min(edge_min, value)
+                    if (value >= edge_best) cycle
+                    edge_best = value
+                    edge_local = vertices(:, j) + roots(m)*tangent
                 end do
+                if (state%boundary(state%triangles(2*j + 2, e))) then
+                    search%boundary = min(search%boundary, edge_best)
+                    cycle
+                end if
+                call offer_axis_candidate(state, search, 2, &
+                    min(state%triangles(2*j + 2, e), state%triangles(2*j + 3, e)), &
+                    e, edge_local, edge_best, stat)
+                if (stat /= 0) return
             end do
             local = [1.0_dp/3, 1.0_dp/3]
             do iteration = 1, 12
@@ -1719,29 +1856,24 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
                     hs, stat)
                 if (stat /= 0) return
                 value = state%psi(state%triangles(1, e)) + dot_product(shape, d)
-                if (value >= psi_axis) then
-                    second_min = min(second_min, value)
-                    exit
-                end if
-                second_min = psi_axis
-                axis = point; psi_axis = value; element = e
-                hessian_axis = 0
-                do j = 1, 10
-                    hessian_axis = hessian_axis + d(j)*hs(:, :, j)
-                end do
+                call offer_axis_candidate(state, search, 3, e, e, local, value, stat)
+                if (stat /= 0) return
                 exit
             end do
         end do
-        if (element == 0) return
+        call axis_node_entities(state, search, 3)
+        if (search%kind == 0) return
         tolerance = 256*epsilon(1.0_dp)*max(1.0_dp, maxval(abs(state%psi)))
-        if (edge_min <= psi_axis + tolerance) then
+        if (search%boundary <= search%value + tolerance) then
             element = 0
             return
         end if
-        if (second_min <= psi_axis + tolerance) then
+        if (search%second <= search%value + tolerance) then
             element = 0; status = 5
             return
         end if
+        axis = search%point; psi_axis = search%value
+        hessian_axis = search%hessian; element = search%element
         status = 0
     end subroutine cubic_axis_candidate
 
