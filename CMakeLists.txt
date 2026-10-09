@@ -125,7 +125,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "44897b4a5584140c6f4347d873c5f18dbc719011")
+set(KIN6D_FORTFEM_REVISION "de4245c5b15a87424b53b754c3189f6a25f43fc7")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -140,6 +140,7 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/utils/kinds.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
+    ${fortfem_SOURCE_DIR}/src/geometry/geometry_jet_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
@@ -175,13 +176,16 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-target_sources(kin6d PRIVATE src/solovev_geometry.f90
+target_sources(kin6d PRIVATE src/solovev_geometry.f90 src/solovev_cell_jet.f90
     src/generated/kin6d_solovev_geometry_leaves.f90)
 set_source_files_properties(src/generated/kin6d_solovev_geometry_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_solovev_geometry test/test_solovev_geometry.f90)
 target_link_libraries(test_solovev_geometry PRIVATE kin6d)
 add_test(NAME grad_shafranov_solovev_geometry_primitive COMMAND test_solovev_geometry)
+add_executable(test_solovev_cell_jet test/test_solovev_cell_jet.f90)
+target_link_libraries(test_solovev_cell_jet PRIVATE kin6d)
+add_test(NAME grad_shafranov_solovev_cell_scalar_jet COMMAND test_solovev_cell_jet)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
 target_link_libraries(test_gs_p2 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)

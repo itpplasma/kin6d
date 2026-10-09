@@ -212,12 +212,40 @@ The 64-epsilon bracket padding and scale-range allowance are candidate
 evaluation recovery guards, not rigorous roundoff estimates or admission bounds.
 
 The map is piecewise smooth and is not globally C2. Its Hessian tensor order is
-physical-component first; FortFEM's generic sampled tensor uses `(i,j,a)` and
-requires an explicit tested adapter when connected. Actual certified mapped
-panels, root/Jacobian arithmetic budgets and common native geometry/assembly/
+physical-component first; FortFEM's generic sampled tensor uses `(i,j,a)`.
+Actual certified mapped panels, root/Jacobian arithmetic budgets and common
+native geometry/assembly/
 readback wiring remain open. This primitive changes no mesh format, assembled
 GS equation, existing affine solve, coarea or classical-current capability and
 admits no new scientific PDE run. The CTest
 `grad_shafranov_solovev_geometry_primitive` checks noncircular independent formal
 series jets, known radial forward/inverse and curvature identities, nonsymmetric
 Cartesian directions, pairing, axis behavior and explicit cut rejection.
+
+`kin6d_solovev_cell_jet:solovev_cell_scalar_jet` connects this sampled geometry
+to FortFEM's generic scalar-jet transform. Inputs are a CCW affine triangle,
+point `xi` inside the reference triangle, and the gradient and Hessian of the
+scalar pullback `u o T` in reference coordinates. FortFEM's P1 geometry supplies
+`A(xi)` and its constant Jacobian `M`.
+For `T=G o A`, the adapter forms `JT=JG M` and
+`HT(a,:,:)=transpose(M) HG(a,:,:) M`, then explicitly reorders `(a,i,j)` to
+FortFEM's `(i,j,a)`. FortFEM computes the physical gradient and Hessian,
+including `Href-sum_a gradient(a)*HT(:,:,a)` before inverse transformation.
+
+The returned geometry contains the composed point, `JT(a,i)` and `HT(a,i,j)`;
+the inverse Jacobian has order `(i,a)`. Facet and interface tags retain their
+callback meaning. `identity` describes G, so an identity sample still returns
+the affine cell Jacobian M. The root residual remains G's diagnostic.
+Finite reference jets and vertices, a point inside the reference triangle,
+positive computed affine/composed determinants and finite resulting jets are
+required. KIN interface status2 is propagated only from G; FortFEM determinant
+or arithmetic failures become KIN arithmetic status3. All numerical outputs
+remain zero on failure; diagnostic metadata may remain. `certified` is false.
+
+CTest `grad_shafranov_solovev_cell_scalar_jet` uses an independent noncircular
+formal-series map jet and a Cartesian quadratic to recover physical derivatives
+on a nonsymmetric cell. Omitting curvature or permuting tensor components fails
+that oracle. Signed cylindrical field/current diagnostics, the identity branch,
+cuts and invalid/arithmetic failure clearing are also checked. This candidate
+adapter supplies no global geometry or roundoff certificate and changes no
+assembly, mesh, PDE solve or scientific admission.
