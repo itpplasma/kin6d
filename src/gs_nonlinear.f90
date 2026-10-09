@@ -83,8 +83,8 @@ contains
     end subroutine
 
     subroutine gs_cubic_load(state, mu0, law, rhs, jacobian, status, tolerance, &
-                             forcing, source_integral, jacobian_tolerance, load_only, &
-                             quadrature_evaluations)
+                             forcing, jacobian_tolerance, load_only, &
+                             quadrature_evaluations, source_integral)
         type(gs_state_t), intent(inout) :: state
         real(dp), intent(in) :: mu0
         type(gs_profile_law_t), intent(inout) :: law
