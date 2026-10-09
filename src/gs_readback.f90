@@ -33,11 +33,11 @@ contains
         type(gs_readback_t), intent(out) :: result
         integer, intent(out) :: status
         real(dp), allocatable :: coarea(:), x(:), y(:), w(:), density(:)
-        real(dp) :: hessian(2, 2), shape(6), gradients(2, 6), hessians(2, 2, 6)
+        real(dp) :: hessian(2, 2), shape(10), gradients(2, 10), hessians(2, 2, 10)
         real(dp) :: point(2), det, flux, f, two_pi, integral
-        integer :: axis_element, i, e, node
+        integer :: axis_element, i, e, node, ndof
         status = 1
-        if (.not. state%ready .or. state%element_order /= 2) return
+        if (.not. state%ready .or. state%element_order < 2) return
         if (radial_points < 5 .or. radial_points > 4097) return
         if (.not. all(ieee_is_finite([f_edge, ffprime]))) return
         if (abs(f_edge) <= tiny(1.0_dp)) return
@@ -48,6 +48,7 @@ contains
         status = 1
         if (result%psi_axis >= 0) return
         if (f_edge**2 + 2*ffprime*result%psi_axis <= 0) return
+        ndof = size(state%triangles, 1)
         two_pi = 2*acos(-1.0_dp)
         allocate (result%psi(radial_points), result%s_tor(radial_points), &
             result%q(radial_points), coarea(radial_points), density(radial_points))
@@ -78,10 +79,10 @@ contains
         if (status /= 0) return
         do e = 1, size(state%triangles, 2)
             do node = 1, size(w)
-                call gs_cell_data(state, e, [x(node), y(node)], point, det, shape, &
-                    gradients, hessians, status)
+                call gs_cell_data(state, e, [x(node), y(node)], point, det, &
+                    shape(:ndof), gradients(:, :ndof), hessians(:, :, :ndof), status)
                 if (status /= 0) return
-                flux = dot_product(shape, state%psi(state%triangles(:, e)))
+                flux = dot_product(shape(:ndof), state%psi(state%triangles(:, e)))
                 f = gs_profile_f(flux, f_edge, ffprime)
                 if (abs(f) <= tiny(1.0_dp)) then
                     status = 1

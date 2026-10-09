@@ -17,6 +17,7 @@ program gs_phase1_main
     real(dp), allocatable :: samples(:, :), contour(:, :)
     real(dp) :: max_area = 0, pprime = 0, ffprime = 0, f_edge = 0
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
+    integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 257, angular_points = 128
     integer :: unit, status, n, i, next
     integer(int64) :: start, finish, rate
@@ -26,7 +27,7 @@ program gs_phase1_main
     character(512) :: argument
     character(:), allocatable :: commit, dirty
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
-        pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points
+        pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree
     call run%start('gs_phase1')
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
@@ -39,6 +40,7 @@ program gs_phase1_main
     if (run%has_config()) read (unit, nml=gs_phase1, iostat=status, iomsg=message)
     call run%close_config(unit, 'gs_phase1', status, message)
     if (len_trim(boundary_file) == 0) error stop 'boundary_file required'
+    if (degree /= 2 .and. degree /= 3) error stop 'degree must be 2 or 3'
     if (boundary_nodes < 8) error stop 'at least eight boundary nodes required'
     call system_clock(start, rate)
     open (newunit=unit, file=trim(boundary_file), status='old', action='read')
@@ -63,9 +65,9 @@ program gs_phase1_main
         max_area = (perimeter/boundary_nodes)**2/2
     end if
     if (curved) then
-        call initialize_gs(state, contour, max_area, status, 2, curve=boundary)
+        call initialize_gs(state, contour, max_area, status, degree, curve=boundary)
     else
-        call initialize_gs(state, contour, max_area, status, 2)
+        call initialize_gs(state, contour, max_area, status, degree)
     end if
     if (status /= 0) error stop 'mesh/assembly failed'
     call solve_gs(state, mu0, pprime, ffprime, status)
@@ -89,9 +91,11 @@ program gs_phase1_main
     call result%create(run)
     call result%attribute('convention', 'COCOS 3; SI; psi in Wb/rad; psi_edge=0')
     call result%write('boundary_samples', samples, 'm', 'supplied closed R Z curve')
-    call result%write('points', state%points, 'm', 'physical P2 geometry nodes')
+    call result%write('points', state%points, 'm', &
+        'physical isoparametric geometry nodes')
     call result%write('psi', state%psi, 'Wb/rad', 'native FE coefficients')
-    call result%write('triangles', real(state%triangles, dp), '1', 'P2 connectivity')
+    call result%write('triangles', real(state%triangles, dp), '1', &
+        'isoparametric connectivity')
     call result%write('axis', readback%axis, 'm', 'physical magnetic axis')
     call result%write('volume', readback%volume, 'm3', 'revolved plasma volume')
     call result%write('phi_edge', readback%phi_edge, 'Wb', 'signed full toroidal flux')
@@ -114,6 +118,7 @@ program gs_phase1_main
     close (unit)
     call runtime_git(commit, dirty, 'gs_phase1')
     open (newunit=unit, file='summary.dat', status='replace')
+    write (unit, '(a,1x,i0)') 'degree', state%element_order
     write (unit, '(a,1x,i0)') 'iterations', state%iterations
     write (unit, '(a,1x,i0)') 'dof', count(.not. state%boundary)
     write (unit, '(a,1x,es25.16e3)') 'wall_s', wall_s

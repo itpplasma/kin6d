@@ -13,7 +13,13 @@ program test_gs_curved_readback
     real(dp) :: q_error(3), volume_error(3), phi_error(3), axis_error(3)
     real(dp) :: label_error(3), rates(4)
     real(dp) :: values(4), restored_values(4), point(2)
-    integer :: n, mesh, j, i, status
+    integer :: n, mesh, j, i, status, degree
+    character(8) :: argument
+    degree = 2
+    if (command_argument_count() > 0) then
+        call get_command_argument(1, argument)
+        read (argument, *) degree
+    end if
     print '(a)', 'n axis_error volume_rel Phi_rel q_rel_max s_tor_abs_max'
     do mesh = 1, 3
         n = 48*2**(mesh - 1)
@@ -22,7 +28,7 @@ program test_gs_curved_readback
             call boundary(real(j - 1, dp)/n, contour(:, j))
         end do
         h = 2*acos(-1.0_dp)*a/n
-        call initialize_gs(state, contour, h*h/2, status, 2, curve=boundary)
+        call initialize_gs(state, contour, h*h/2, status, degree, curve=boundary)
         if (status /= 0) error stop 'readback mesh'
         call solve_gs(state, 1.0_dp, -16*c, 0.0_dp, status)
         if (status /= 0) error stop 'readback solve'
