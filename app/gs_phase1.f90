@@ -9,10 +9,14 @@ program gs_phase1_main
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
         gs_readback_resolution, gs_readback_q
     use kin6d_gs_majorant, only: gs_functional_majorant
+    use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
+        write_gs_profile_law, gs_law_sources, gs_law_primitives
+    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
     use kin6d_result_io, only: run_t, result_file_t, runtime_git
     use fortplot_system_runtime, only: create_directory_runtime
     implicit none
     type(gs_state_t) :: state
+    type(gs_profile_law_t), allocatable :: law
     type(periodic_curve_t) :: curve
     type(gs_readback_t) :: readback
     type(run_t) :: run
@@ -20,18 +24,21 @@ program gs_phase1_main
     real(dp), allocatable :: samples(:, :), contour(:, :)
     real(dp) :: max_area = 0, pprime = 0, ffprime = 0, f_edge = 0
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
+    real(dp) :: nonlinear_tolerance = 1.0e-9_dp, pressure, f, pp, ff
+    real(dp) :: quadrature_tolerance = 1.0e-8_dp
     real(dp) :: majorant, flux_defect, balance_defect, estimator_s
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
-    integer :: unit, status, n, i, next, recovery_iterations
+    integer :: unit, status, n, i, next, majorant_status, recovery_iterations
     integer(int64) :: start, finish, rate
     logical :: curved = .true., directory_ok, recovery_converged
-    character(512) :: boundary_file = '', mesh_file = 'mesh.dat'
+    character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
     character(256) :: message
     character(512) :: argument
     character(:), allocatable :: commit, dirty
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
-        pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree
+        pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree, &
+        profile_file, nonlinear_tolerance, quadrature_tolerance
     call run%start('gs_phase1')
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
@@ -40,6 +47,8 @@ program gs_phase1_main
             call evaluate_file(trim(argument) == '--evaluate-stream')
         case ('--q')
             call evaluate_q_file()
+        case ('--source')
+            call evaluate_source_file()
         case default
             error stop 'expected --config, --evaluate or --q'
         end select
@@ -80,26 +89,42 @@ program gs_phase1_main
         call initialize_gs(state, contour, max_area, status, degree)
     end if
     if (status /= 0) error stop 'mesh/assembly failed'
-    call solve_gs(state, mu0, pprime, ffprime, status)
-    if (status /= 0) error stop 'linear equilibrium solve failed'
+    if (len_trim(profile_file) > 0) then
+        allocate (law)
+        call read_gs_profile_law(trim(profile_file), law, status)
+        if (status /= 0) error stop 'invalid cubic source profile file'
+        f_edge = law%f_edge
+        call solve_gs_cubic_profiles(state, mu0, law, status, nonlinear_tolerance, &
+            quadrature_tolerance=quadrature_tolerance)
+    else
+        call solve_gs(state, mu0, pprime, ffprime, status)
+    end if
+    if (status /= 0) then
+        print *, 'solve status, iteration, residual:', status, state%iterations, &
+            state%residual
+        error stop 'equilibrium solve failed'
+    end if
     call system_clock(finish)
     wall_s = real(finish - start, dp)/rate
     if (wall_s > 300) error stop 'solve exceeded 300 seconds'
     call system_clock(start)
     call gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
-        flux_defect, balance_defect, status, recovery_converged, recovery_iterations)
-    if (status /= 0) error stop 'recovered-flux majorant failed'
+        flux_defect, balance_defect, majorant_status, law=law, &
+        recovery_converged=recovery_converged, recovery_iterations=recovery_iterations)
+    if (majorant_status /= 0 .and. majorant_status /= 4) &
+        error stop 'recovered-flux recovery failed'
     call system_clock(finish)
     estimator_s = real(finish - start, dp)/rate
     call gs_readback_resolution(state, radial_points, angular_points)
     call read_gs_equilibrium(state, f_edge, ffprime, radial_points, angular_points, &
-        readback, status)
+        readback, status, law)
     if (status /= 0) then
         print *, 'readback status:', status
         error stop 'equilibrium contour readback failed'
     end if
     call write_gs_mesh(state, trim(mesh_file), status)
     if (status /= 0) error stop 'mesh export failed'
+    if (allocated(law)) call write_gs_profile_law('profile-law.dat', law)
     call run%open_resolved(unit)
     write (unit, nml=gs_phase1)
     call run%close_resolved(unit)
@@ -113,6 +138,20 @@ program gs_phase1_main
     call result%write('psi', state%psi, 'Wb/rad', 'native FE coefficients')
     call result%write('triangles', real(state%triangles, dp), '1', &
         'isoparametric connectivity')
+    if (allocated(law)) then
+        call result%write('source_knots', law%knots, 'profile coordinate', &
+            'executed cubic-source knots; coordinate defined by source_normalized')
+        call result%write('source_pprime', law%pp, 'Pa/(Wb/rad)', &
+            'cubic coefficients of dp/dpsi in ascending coordinate powers')
+        call result%write('source_ffprime', law%ff, 'T2 m2/(Wb/rad)', &
+            'cubic coefficients of FFprime in ascending coordinate powers')
+        call result%write('source_normalized', real(merge(1, 0, law%normalized), dp), &
+            '1', '0 absolute psi; 1 normalized flux s=1-psi/psi_axis')
+        call result%write('source_axis', law%axis, 'Wb/rad', &
+            'normalized axis or absolute-law initialization seed')
+        call result%write('source_p_edge', law%p_edge, 'Pa', 'edge pressure')
+        call result%write('source_f_edge', law%f_edge, 'T m', 'signed edge F')
+    end if
     call result%write('axis', readback%axis, 'm', 'physical magnetic axis')
     call result%write('volume', readback%volume, 'm3', 'revolved plasma volume')
     call result%write('phi_edge', readback%phi_edge, 'Wb', 'signed full toroidal flux')
@@ -124,10 +163,13 @@ program gs_phase1_main
     call result%write('wall_s', wall_s, 's', 'mesh assembly and solve wall time')
     call result%write('dof', real(count(.not. state%boundary), dp), '1', &
         'free unknowns')
-    call result%write('iterations', real(state%iterations, dp), '1', 'CG iterations')
+    call result%write('iterations', real(state%iterations, dp), '1', &
+        'linear CG iterations or nonlinear Newton steps')
     call result%write('residual', state%residual, '1', 'relative weak residual')
     call result%write('flux_consistency', readback%flux_consistency, '1', &
         'relative contour versus area flux quadrature difference')
+    call result%write('majorant_status', real(majorant_status, dp), '1', &
+        '0 energy estimate; 4 frozen-source defect: nonlinear stability unavailable')
     call result%write('majorant', majorant, 'Wb/m^0.5', 'recovered-flux energy error estimate')
     call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', 'weighted flux defect')
     call result%write('majorant_balance', balance_defect, 'Wb/m^0.5', 'weighted balance defect')
@@ -138,9 +180,17 @@ program gs_phase1_main
     call result%write('estimator_s', estimator_s, 's', 'recovered-flux estimator wall time')
     call result%close()
     open (newunit=unit, file='profiles.dat', status='replace')
-    write (unit, '(a)') '# psi[Wb/rad] s_tor q; COCOS 3'
+    write (unit, '(a)') '# psi[Wb/rad] s_tor q p[Pa] F[Tm] pprime FFprime; COCOS 3'
     do i = 1, radial_points
-        write (unit, '(3es25.16e3)') readback%psi(i), readback%s_tor(i), readback%q(i)
+        pressure = pprime*readback%psi(i); pp = pprime; ff = ffprime
+        f = gs_profile_f(readback%psi(i), f_edge, ffprime)
+        if (allocated(law)) then
+            call gs_law_primitives(law, readback%psi(i), pressure, f, status)
+            if (status /= 0) error stop 'nonphysical profile primitive'
+            call gs_law_sources(law, readback%psi(i), pp, ff)
+        end if
+        write (unit, '(7es25.16e3)') readback%psi(i), readback%s_tor(i), &
+            readback%q(i), pressure, f, pp, ff
     end do
     close (unit)
     call runtime_git(commit, dirty, 'gs_phase1')
@@ -153,6 +203,8 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'integral_s', readback%integral_s
     write (unit, '(a,1x,i0)') 'radial_points', radial_points
     write (unit, '(a,1x,i0)') 'angular_points', angular_points
+    write (unit, '(a,1x,es25.16e3)') 'psi_axis', readback%psi_axis
+    write (unit, '(a,1x,i0)') 'majorant_status', majorant_status
     write (unit, '(a,1x,es25.16e3)') 'axis_R', readback%axis(1)
     write (unit, '(a,1x,es25.16e3)') 'axis_Z', readback%axis(2)
     write (unit, '(a,1x,es25.16e3)') 'volume', readback%volume
@@ -170,6 +222,25 @@ program gs_phase1_main
     close (unit)
     print '(a,i0,a,es13.5)', 'DOF=', count(.not. state%boundary), ' wall_s=', wall_s
 contains
+    subroutine evaluate_source_file()
+        character(512) :: path
+        real(dp) :: psi
+        integer :: count, i, stat
+        if (run%argument_count() /= 2) error stop '--source profile-law.dat'
+        call run%argument(2, path)
+        allocate (law)
+        call read_gs_profile_law(trim(path), law, stat)
+        if (stat /= 0) error stop 'invalid executed profile law'
+        read (input_unit, *) count
+        do i = 1, count
+            read (input_unit, *) psi
+            call gs_law_primitives(law, psi, pressure, f, stat)
+            if (stat /= 0) error stop 'nonphysical profile primitive'
+            call gs_law_sources(law, psi, pp, ff)
+            write (*, '(4es25.16e3)') pressure, f, pp, ff
+        end do
+    end subroutine
+
     subroutine boundary(t, point)
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
@@ -213,8 +284,14 @@ contains
         real(dp), allocatable :: points(:, :), values(:, :)
         integer, allocatable :: statuses(:)
         integer :: count, i, stat
-        if (run%argument_count() /= 4) &
-            error stop '--evaluate mesh_file F_edge FFprime; stdin: count then R Z'
+        if (run%argument_count() /= 4 .and. run%argument_count() /= 5) &
+            error stop '--evaluate mesh F_edge FFprime [profile-law.dat]'
+        if (run%argument_count() == 5) then
+            allocate (law)
+            call run%argument(5, path)
+            call read_gs_profile_law(trim(path), law, stat)
+            if (stat /= 0) error stop 'invalid executed profile law'
+        end if
         call run%argument(2, path)
         call run%argument(3, text)
         read (text, *) f_edge
@@ -238,7 +315,7 @@ contains
             call sample_gs_many(state, points, f_edge, values, statuses)
             do i = 1, count
                 if (statuses(i) == 0) then
-                    f = gs_profile_f(values(1, i), f_edge, ffprime)
+                    f = gs_profile_f(values(1, i), f_edge, ffprime, law)
                     if (abs(f) <= tiny(1.0_dp)) statuses(i) = 1
                     values(4, i) = f/points(1, i)
                 end if

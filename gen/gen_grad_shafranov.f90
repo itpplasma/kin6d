@@ -15,6 +15,7 @@ program gen_grad_shafranov
    type(expr_t) :: psi, br, bz, bt
    type(expr_t) :: width, derivative, slope
    type(expr_t) :: hrr, hrz, hzz, nr, nz, jump_r, jump_z
+   type(expr_t) :: x, a0, a1, a2, a3, axis
    call arena%init()
    engine = make_native_engine(arena)
    r = sym(arena, 'r'); r0 = sym(arena, 'r0')
@@ -27,6 +28,9 @@ program gen_grad_shafranov
    hrr = sym(arena, 'h_rr'); hrz = sym(arena, 'h_rz'); hzz = sym(arena, 'h_zz')
    nr = sym(arena, 'n_r'); nz = sym(arena, 'n_z')
    jump_r = sym(arena, 'jump_r'); jump_z = sym(arena, 'jump_z')
+   x = sym(arena, 'x'); axis = sym(arena, 'axis')
+   a0 = sym(arena, 'a0'); a1 = sym(arena, 'a1')
+   a2 = sym(arena, 'a2'); a3 = sym(arena, 'a3')
    identity = engine%zero_test(diff(width*derivative + width**2*slope/2, width) &
       - derivative - width*slope)
    if (identity%verdict /= VERDICT_TRUE) error stop 'GS profile primitive unproved'
@@ -61,6 +65,19 @@ program gen_grad_shafranov
       ['b_z  ', 'b_t  ', 'psi  '], [bz, bt, psi], ad=.true.)
    call w%emit('gs_segment_primitive', ['width     ', 'derivative', 'slope     '], &
       ['integral'], [width*derivative + width**2*slope/2], ad=.true.)
+   call w%emit('gs_cubic', ['x ', 'a0', 'a1', 'a2', 'a3'], &
+      ['value'], [a0 + x*(a1 + x*(a2 + x*a3))], ad=.true.)
+   call w%emit('gs_cubic_primitive', ['x ', 'a0', 'a1', 'a2', 'a3'], &
+      ['value'], [x*(a0 + x*(a1/2 + x*(a2/3 + x*a3/4)))], ad=.true.)
+   call w%emit('gs_normalized_flux', ['x   ', 'axis'], &
+      ['s'], [1 - x/axis], ad=.true.)
+   ! Source-cut topology: discriminants of the flux polynomial in the inner
+   ! coordinate. Their outer roots include closed contours inside a cell.
+   call w%emit('gs_cut_discriminant', ['a0', 'a1', 'a2', 'a3'], &
+      ['value'], [18*a3*a2*a1*a0 - 4*a2**3*a0 + a2**2*a1**2 &
+      - 4*a3*a1**3 - 27*a3**2*a0**2])
+   call w%emit('gs_cut_quadratic_discriminant', ['a0', 'a1', 'a2'], &
+      ['value'], [a1**2 - 4*a2*a0])
    call w%line('end module kin6d_grad_shafranov_leaves')
    call w%close()
 end program gen_grad_shafranov

@@ -96,7 +96,7 @@ iteration growth on two shaped meshes; it has no wall-time assertion.
 
 `initialize_gs(state, contour, max_area, status, element_order=2, curved=.true.)`
 constructs six-node isoparametric triangles; `element_order=3` constructs
-ten-node triangles for fixed-source solves. A periodic C2 cubic spline passes
+ten-node triangles for fixed-source and cubic-profile solves. A periodic C2 cubic spline passes
 through the supplied contour samples at uniform parameters `(j-1)/n`.
 Alternatively supply `curve=callback`, where `callback(t, point)` evaluates the
 closed curve for `0 <= t < 1`; its values at those parameters must match the
@@ -117,10 +117,11 @@ nodes. Mesh-v4 exports ten P3 nodes: vertices, two nodes per directed edge
 (1,2), (2,3), (3,1), then the interior node. Mesh-v1/v2 remain affine.
 
 Fixed-geometry coefficient derivatives use the same symmetric assembled
-operator and equation-level linear response. Shape derivatives and curved
-nonlinear profile-load derivatives are unavailable; their APIs return status
-20. Integration uses positive degree-five (P2) or degree-six (P3) triangle
-rules. These are ordinary floating numerical results.
+operator and equation-level linear response. Shape derivatives remain unavailable.
+The legacy piecewise-linear profile API returns status 20 on curved/P3 meshes;
+the cubic-profile API below provides their fixed-geometry state derivatives.
+Fixed-source integration uses positive degree-five (P2) or degree-six (P3)
+triangle rules. These are ordinary floating numerical results.
 
 The generic maps, connectivity and periodic curve remain in KIN6D. FortFEM
 supplies the generated P1/P2 basis, cardinal/factor products and scalar-jet
@@ -145,8 +146,8 @@ thin-torus quartic case, whose boundary-dominated B error initially drops at
 order 3.5. Independent P3 tests cover polynomial values/gradients/Hessians,
 curved-map inversion and connection terms, cubic contour intersections,
 implicit tangent/adjoint pairing, signed q and native export/readback.
-P3 nonlinear profiles, contour sensitivities and the P2 flux majorant are
-unsupported; fixed-source equation responses share the primal operator.
+Contour sensitivities remain unsupported. Nonlinear cubic profiles use the
+Newton path below; the recovered-flux estimator also supports P2 and P3.
 
 ## Phase 1 executable and producer
 
@@ -223,6 +224,106 @@ against the independent exact weighted energy error and checks the zero-source
 limit. It prints the flux and balance contributions separately. Recovery uses
 O(DOF) storage and a separate symmetric positive-definite solve; its cost is
 not included in the reported primal mesh/assembly/solve timing.
+
+## Cubic-profile Newton solve on curved P2/P3
+
+`solve_gs_cubic_profiles` uses the same stiffness, geometry and field as
+`solve_gs`. `gs_profile_law_t` stores continuous piecewise cubic **physical**
+`pprime=dp/dpsi` and `FFprime=d(F²/2)/dpsi`, either in absolute psi or in
+`s=1-psi/psi_axis`, with boundary psi=0. A normalized table does not prescribe
+the flux span: the represented stationary extremum is recomputed during Newton.
+Both axis minima and maxima are supported. A zero or nonunique axis, invalid
+geometry, exhausted quadrature, or failed damped Newton solve returns failure.
+The initial state is the constant edge-source solve (mid-profile source if both
+edge sources vanish); a supplied nonzero FE state may select another branch.
+
+The table is the executed polynomial law, with endpoint-polynomial extension.
+Supplying explicit coefficients avoids changing a pinned spline through a
+second fit. Cubic splines, their quadratic derivatives, and continuous linear
+limits all fit the format. `gs_phase1` accepts `profile_file` and
+`nonlinear_tolerance` (default `1e-9`) and the independent source
+`quadrature_tolerance` (default `1e-8`). Early Newton steps use looser integration
+and tighten to this target before convergence is accepted. Algebraic residual
+and quadrature error are distinct numerical quantities. The text file is:
+
+```text
+nknots coordinate_mode
+p_edge F_edge psi_axis_seed
+knot_1 ... knot_n
+pp_c0 pp_c1 pp_c2 pp_c3 ff_c0 ff_c1 ff_c2 ff_c3
+... one coefficient row per interval ...
+```
+
+Mode 0 means absolute psi; mode 1 means normalized s, whose endpoints must be
+0 and 1. Coefficients use ascending powers of coordinate minus the interval's
+left knot. Units of the **values** remain Pa/(Wb/rad) and T² m²/(Wb/rad);
+normalization does not rescale these derivatives. The seed supplies the initial
+profile coordinate if the edge sources vanish; it is not an additional forward
+constraint. Normalized laws solve their own axis flux. Pressure and F come from exact polynomial primitives anchored at the declared edge values.
+Nonpositive F² and negative pressure fail readback. `profile-law.dat` retains
+the executed table and solved normalization; NetCDF embeds its full content.
+The pinned TC24 law uses mode 0, and must never be rescaled to the solved axis.
+
+Source integration uses the physical Jacobian of each mapped element. Smooth
+cells use paired Duffy rules with orders tied to the element degree. Cut P2
+cells use FortFEM level integration. For P3, the inner coordinate is partitioned
+at **all cubic roots** of every relevant profile knot. Outer panels include
+edge intersections and vertical tangencies (including closed interior cuts);
+LAPACK roots of the source-cut discriminant locate the latter. Paired positive
+rules on these strips fall back to FortFEM adaptive integration when needed.
+Bands are integrated separately, making work proportional to the number of
+crossed knots rather than repeating every band at every outer event. Primal
+and Jacobian contributions use the same cut integration. These are floating quadrature estimates with explicit work limits, not bounds.
+The cut-island test prevents silently missing a profile region with no edge
+intersection. Bernstein hulls discard only irrelevant knots.
+
+`gs_cubic_load` returns a local source mass matrix and a rank-one axis term.
+For normalized laws, `ds=-dpsi/axis+psi*daxis/axis²`, with `daxis` equal to the
+FE value perturbation at the stationary point. No Newton iterations are
+differentiated. `apply_gs_profile_jacobian` and its transpose use coefficient
+and coefficient-dual pairings, with fixed geometry, fixed knots/coefficient
+law and fixed Dirichlet data. `gs_profile_response` solves the tangent or
+adjoint equation using the stiffness solve as preconditioner. Shape/axis-branch
+switch derivatives and continuous derivative error bounds remain unavailable.
+C0 source laws have a derivative only away from a whole cell on a genuine kink;
+smooth spline laws are the intended Newton input.
+
+`read_gs_equilibrium(..., law=law)` returns signed q and full toroidal Phi for
+both axis polarities and both nonzero F branches. `profiles.dat` adds p, F,
+pprime and FFprime after the original psi/s_tor/q columns. Native batch field
+readback accepts a fifth `profile-law.dat` argument; `--source profile-law.dat`
+reads a count and psi values and returns p/F/pprime/FFprime. The iter_tc24
+producer/EQDSK extension consumes that executed law, including positive-axis
+q signs and edge pressure. Exterior EQDSK continuation is still not a vacuum
+solution.
+
+### Nonlinear recovered-flux estimator assumptions
+
+`gs_functional_majorant(..., law=law)` recovers y against the actual nonlinear
+source evaluated at the candidate. Its default return is `M0=D+C_F B`, with
+status **4: nonlinear stability unavailable**. M0 controls the residual in the
+weighted energy dual norm on the represented domain; it is not, by itself, an
+error bound for the nonlinear solution. Geometry, integration error, profile
+input uncertainty and model uncertainty remain separate.
+
+If the nonlinear residual is strongly monotone on a set containing the exact
+and candidate solutions, with energy constant alpha>0, then the conditional
+energy estimate is M0/alpha. Supply `stability_lower_bound=alpha` to request
+that value. For an absolute-flux law with nonpositive source derivative,
+alpha=1. More generally, a one-sided source Lipschitz bound L gives
+alpha=1-C_F² L when positive. A normalized law also requires control of the
+axis functional and its rank-one source contribution in the chosen norm;
+point evaluation is not bounded on general 2D H1. Do not reuse the frozen-axis
+constant as a bound for that coupled problem. The caller must justify branch
+existence and the stability assumption; this API does not validate them.
+For TC24 the app reports M0 and status 4, together with self-convergence, rather
+than claiming an unavailable nonlinear error bound.
+
+The manufactured nonlinear CTests check P2 orders 3/2 and P3 orders 4/3,
+bounded mesh-independent Newton steps, and monotone-law majorant effectivity
+against an independent exact error. The profile oracle checks the Solovev
+limit, pressure/F primitives, both polarity reversals, physical source-cut
+integrals, normalized finite differences, transpose and implicit pairing.
 
 ## Profile-source residual and derivatives
 
@@ -311,7 +412,8 @@ Exact book equation numbers are not asserted.
   eight exact identities, no numerical probes used as proof.
 - `gen/gen_grad_shafranov.f90` generates source/field primal, JVP and
   VJP leaves. Fixed-geometry constant-source linear equation responses are
-  supported; nonlinear branch and boundary-shape derivatives are unavailable.
+  supported. Cubic-profile state tangents/adjoints use the equation Jacobian;
+  branch switching and boundary-shape derivatives are unavailable.
 - Every export is a **candidate**. Polygonal boundary, P1/P2 field jumps,
   discretization and profile-model errors need independent refinement.
   A small residual does not certify the continuous equilibrium.
