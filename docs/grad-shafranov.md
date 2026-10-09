@@ -122,6 +122,38 @@ and the degraded affine-boundary rates. It prints DOF and total mesh/assembly/
 solve wall time. Error integrals use higher-order independent quadrature over
 each represented domain; they are unnormalized meridional L2 norms.
 
+## Phase 1 executable and producer
+
+Build `gs_phase1` with the CPU preset. Run `gs_phase1 --config input.nml` with
+`&gs_phase1` entries `boundary_file`, `boundary_nodes`, `max_area`, `pprime`,
+`ffprime`, `f_edge`, `mu0`, `curved`, `radial_points` and `angular_points`.
+The boundary file contains a count followed by uniformly parameterized R,Z
+samples, without a closing duplicate. The app interpolates that input with a
+periodic cubic spline and samples the requested boundary mesh. Nonpositive
+`max_area` selects half the squared mean boundary-segment length. Source
+coefficients and F_edge are supplied in SI; no exact-solution values enter
+the solve. Defaults are 96 boundary nodes, 257 radial points and angular budget
+128. The boundary gauge is psi=0.
+
+The app reports free DOF, CG iterations and total mesh/assembly/solve wall time,
+and writes `mesh.dat`, `profiles.dat`, `summary.dat` and `output/gs_phase1.nc`.
+The NetCDF file embeds the original boundary samples, literal/resolved input,
+state, observables and standard build/runtime provenance. Readback cost is
+separate from primal solve time. A batch query is
+`gs_phase1 --evaluate mesh.dat F_edge FFprime`; stdin supplies a point count
+and R,Z pairs, stdout returns psi, BR, BZ and Bphi (NaN outside the mesh).
+
+`equilibrium/phase1/producers/kin6d.py` implements
+`run(case, resolution, workdir) -> Result` and the shared Phase 1 attributes.
+It uses this native executable for both solving and physical field evaluation;
+q(s_tor) interpolates the native contour profile. Set `KIN6D_BINARY` for an
+installed executable. `source.kind` is `solovev`, with SI `pprime` and `ffprime`
+provided directly or under `source.coefficients`. Supported resolution keys
+are `boundary_nodes`, `max_area`, `radial_points`, `angular_points`, `curved`.
+The producer forces one thread and a disk scratch directory. Its sign map is
+the identity under the TC24 case contract's COCOS 3 ledger. The optional Python/
+NumPy CTest checks the entire producer against the exact physical E0 LCFS.
+
 ## Fixed-source error estimator
 
 `kin6d_gs_majorant::gs_functional_majorant` computes a Repin functional
