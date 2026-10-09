@@ -19,7 +19,8 @@ The [forward energy-majorant derivation](../theory/derivations/grad-shafranov-fo
 proves a continuous weighted residual bound under explicit domain, trace,
 flux-conformity and stability assumptions. Native FortSym tests check its
 algebraic identities and reject omitted jump, boundary and integration premises.
-An unknown-equilibrium estimator API is not implemented by these proofs.
+The numerical fixed-source estimator below is implemented independently of
+these retained identities.
 
 ## Run and compare
 
@@ -252,11 +253,13 @@ Exact book equation numbers are not asserted.
   solves, nonlinear cancellation, equation derivative and cusp-rejection oracles.
   `test_gs_p2_refinement` checks off-grid physical field and classical-current
   refinement against the exact quartic GS solution, including P1 at the same mesh.
-- The P1 reference enclosure executable accepts only mesh-v1 and rejects P2.
+- The P1 reference diagnostic accepts only mesh-v1 and rejects P2.
+  Known-solution helpers and their generated leaves live under `test/`,
+  outside the production library.
   Its cellwise certificate is not valid for a quadratic representation.
 - Optional pinned FortSym build registers `grad_shafranov_symbolic_identities`:
   eight exact identities, no numerical probes used as proof.
-- `gen/gen_grad_shafranov.f90` generates source/field/Solovev primal, JVP and
+- `gen/gen_grad_shafranov.f90` generates source/field primal, JVP and
   VJP leaves. Fixed-geometry constant-source linear equation responses are
   supported; nonlinear branch and boundary-shape derivatives are unavailable.
 - Every export is a **candidate**. Polygonal boundary, P1/P2 field jumps,
