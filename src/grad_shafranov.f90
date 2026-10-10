@@ -89,18 +89,21 @@ module kin6d_grad_shafranov
    end interface
 contains
     subroutine initialize_gs(state, contour, max_area, status, element_order, &
-                             curved, curve)
+                             curved, curve, interior_points)
         type(gs_state_t), intent(out) :: state
         real(dp), intent(in) :: contour(:, :), max_area
         integer, intent(out) :: status
         integer, intent(in), optional :: element_order
         logical, intent(in), optional :: curved
         procedure(boundary_curve), optional :: curve
+        real(dp), intent(in), optional :: interior_points(:, :)
         type(tc_result_t) :: mesh
         type(basis_p1_2d_t) :: basis
         type(gauss_quadrature_triangle_t) :: quadrature
         type(periodic_curve_t) :: spline
         real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3)
+        real(dp), allocatable :: mesh_points(:, :)
+        logical, allocatable :: used(:)
         real(dp) :: point(2), shape(10), grad_q(2, 10), hess(2, 2, 10), weight, t
         integer, allocatable :: segments(:, :), original(:)
         integer :: j, e, k, l, q, pivot(2), stat, n, ndof, first, second, edge
@@ -121,10 +124,34 @@ contains
         do j = 1, n
             segments(:, j) = [j, mod(j, n) + 1]
         end do
-        call triangulate_compat(contour, segments, reshape([real(dp) ::], [2, 0]), &
-            mesh, stat, min_angle=20.0_dp, max_area=max_area, &
-            nobisect=merge(1, 0, state%mapped))
+        if (present(interior_points)) then
+            if (size(interior_points, 1) /= 2) return
+            if (.not. all(ieee_is_finite(interior_points))) return
+            if (any(interior_points(1, :) <= 0)) return
+            if (size(interior_points, 2) > 0) then
+                allocate (mesh_points(2, n + size(interior_points, 2)))
+                mesh_points(:, :n) = contour
+                mesh_points(:, n + 1:) = interior_points
+            end if
+        end if
+        if (allocated(mesh_points)) then
+            call triangulate_compat(mesh_points, segments, &
+                reshape([real(dp) ::], [2, 0]), mesh, stat, min_angle=20.0_dp, &
+                max_area=max_area, nobisect=merge(1, 0, state%mapped))
+        else
+            call triangulate_compat(contour, segments, reshape([real(dp) ::], [2, 0]), &
+                mesh, stat, min_angle=20.0_dp, max_area=max_area, &
+                nobisect=merge(1, 0, state%mapped))
+        end if
         if (stat /= 0 .or. mesh%ntriangles < 1) return
+        if (allocated(mesh_points)) then
+            ! Reject surviving isolated vertices before constructing a singular operator.
+            allocate (used(mesh%npoints)); used = .false.
+            do e = 1, mesh%ntriangles
+                used(mesh%triangles(:, e)) = .true.
+            end do
+            if (.not. all(used)) return
+        end if
         state%neighbors = mesh%neighbors
         if (state%element_order == 1) then
             state%points = mesh%points

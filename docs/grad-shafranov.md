@@ -167,7 +167,12 @@ Build `gs_phase1` with the CPU preset. Run `gs_phase1 --config input.nml` with
 The boundary file contains a count followed by uniformly parameterized R,Z
 samples, without a closing duplicate. The app interpolates that input with a
 periodic cubic spline and samples the requested boundary mesh. Nonpositive
-`max_area` selects half the squared mean boundary-segment length. Source
+`max_area` selects half the squared mean boundary-segment length. The optional
+`interior_points_file` seeds the mesh with supplied interior SI `(R,Z)` points:
+its first line is the point count, followed by one pair per line. The library
+accepts the same coordinates as `initialize_gs(..., interior_points=points)`.
+Absent or empty input keeps the original mesh path; boundary segments and
+`max_area` retain their meaning. Source
 coefficients and F_edge are supplied in SI; no exact-solution values enter
 the solve. Defaults are degree 2 and 96 boundary nodes. Zero radial/angular
 settings resolve to `max(17,ceil(sqrt(Ncells))+1)` radial points and angular

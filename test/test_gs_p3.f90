@@ -10,6 +10,8 @@ program test_gs_p3
         1.0_dp/3, 0.0_dp, 2.0_dp/3, 0.0_dp, 2.0_dp/3, 1.0_dp/3, &
         1.0_dp/3, 2.0_dp/3, 0.0_dp, 2.0_dp/3, 0.0_dp, 1.0_dp/3, &
         1.0_dp/3, 1.0_dp/3], [2, 10])
+    real(dp), parameter :: seeds(2, 3) = reshape([ &
+        6.13_dp, 0.071_dp, 6.45_dp, -0.125_dp, 6.57_dp, 0.2_dp], [2, 3])
     type(gs_state_t) :: state, restored
     real(dp) :: nodes(2, 10), shape(10), gradients(2, 10), hessians(2, 2, 10)
     real(dp) :: nodal(10), xi(2), point(2), expected(2), jac(2, 2), inverse(2, 2)
@@ -73,8 +75,15 @@ program test_gs_p3
         t = 2*acos(-1.0_dp)*(i - 1)/32
         contour(:, i) = [6.2_dp + cos(t), sin(t)]
     end do
-    call initialize_gs(state, contour, 0.08_dp, status, 3)
+    call initialize_gs(state, contour, 0.08_dp, status, 3, interior_points=seeds)
     if (status /= 0) error stop 'affine P3 mesh'
+    do i = 1, size(seeds, 2)
+        j = minloc(sum((state%points - spread(seeds(:, i), 2, &
+            size(state%points, 2)))**2, dim=1), dim=1)
+        if (norm2(state%points(:, j) - seeds(:, i)) > 1.0e-14_dp) &
+            error stop 'interior seed missing'
+        if (state%boundary(j)) error stop 'interior seed constrained as boundary'
+    end do
     where (state%boundary) state%psi = state%points(2, :)**2
     call solve_gs(state, 1.0_dp, 0.0_dp, -2.0_dp, status)
     if (status /= 0) error stop 'P3 weak source'
