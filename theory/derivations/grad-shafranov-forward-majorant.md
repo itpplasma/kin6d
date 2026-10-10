@@ -317,6 +317,79 @@ FortSym establishes algebra, not the Sobolev inequalities or mesh/trace
 premises. The analytic proof supplies that bridge. A numerical unknown-state
 certificate remains unavailable until those premises and integrals are checked.
 
+## Inverse-produced Solovev error relative to the analytic target
+
+This exact-case theorem bounds the error to the declared analytic Solovev state,
+not to an unidentified solution of the interpolated prescribed-q input. It does
+not establish coupled inverse reliability for other cases. Let `U` be the
+polynomial target restricted to the valid represented domain `Omega_h`, `v` its
+conforming zero-trace candidate, and `y` any conforming `H(div)` recovery. For
+`U=psi_scale*((R/R0)^4-2*(R/R0)^2+4*(R*Z/R0^2)^2+c)`, its exact load is
+`g_*=-16*psi_scale*R/R0^4`. This definition also accounts for rounded physical
+source inputs. With the executed unweighted balance convention, set
+
+\[
+ D=\|\sqrt R(y-\nabla v/R)\|_2,\quad
+ B=C_F\|g_v+\operatorname{div}y\|_2,\quad
+ C=C_F\|g_*-g_v\|_2.                                      \tag{12}
+\]
+
+The target generally has nonzero trace on the approximate curved boundary.
+For any explicit continuous lifting `ell` of that trace,
+
+\[
+ \boxed{\|U-v\|_a\le\sqrt{(D+B+C)^2+\|\ell\|_a^2}}.       \tag{13}
+\]
+
+To prove this, let `h` be the harmonic extension of `U`'s boundary trace.
+Then `e0=U-v-h` has zero trace, and its residual is the fixed-source residual
+for `g_*`, because `a(h,phi)=0`. The functional identity gives
+`||e0||_a<=D+B+C`; orthogonality gives
+`||U-v||_a^2=||e0||_a^2+||h||_a^2`. The Dirichlet minimum principle implies
+`||h||_a<=||ell||_a`. No axis point estimate or unknown stability constant is
+used. Replacing `B+C` by `C_F||g_*+div y||_2` retains source cancellation.
+
+An explicit lifting uses only the actual P3 geometry and analytic polynomial.
+Start with continuous reference vertex hats carrying `U` at boundary vertices
+and zero at other vertices. Each boundary-edge trace `b(t)=U(F_edge(t))` has
+degree at most 12. Subtract its endpoint linear interpolant to obtain `c(t)`.
+On the adjacent reference triangle extend it as
+`(lambda_i+lambda_j)^12*c(lambda_j/(lambda_i+lambda_j))` and by zero elsewhere.
+It is polynomial, has the required edge trace, and vanishes on the other two
+edges. Summing these edge terms and the vertex hats gives the exact continuous
+lifting, including rounded nonzero vertex traces.
+
+Its mapped energy integrand is rational, not polynomial:
+`|adj(J)^T grad(ell_hat)|^2/(R*det J)`. For each cell let `r_T,d_T` be positive
+lower Bernstein controls for `R,det J`, `M_ab` upper absolute controls for the
+Jacobian components, and `g_x,g_y` upper absolute controls for reference lifting
+derivatives. Its energy contribution is bounded by
+
+\[
+ \frac{(M_{22}g_x+M_{21}g_y)^2+(M_{12}g_x+M_{11}g_y)^2}
+      {2r_Td_T}.                                           \tag{14}
+\]
+
+The determinant is degree 4, the lifting degree 12, and its derivatives degree 11.
+For constant candidate pprime, with `D_T,R_T` upper determinant/radial controls
+and `f_T` the maximum absolute recovered FFprime cubic over the entire flux
+range enclosed by candidate controls, a source correction upper bound is
+
+\[
+ C^2\le C_F^2\sum_T\frac{D_T}{2}
+ \left(\left|-16\,psi_{scale}/R_0^4-\mu_0p'_v\right|R_T
+                         +f_T/r_T\right)^2.                \tag{15}
+\]
+
+Cubic endpoint and stationary values determine `f_T`, including the executed
+polynomial extrapolation if the candidate range exceeds its knots. Equations
+(13)--(15) retain represented-domain geometry and source mismatch separately.
+They cover every represented cell, not additional exact-domain volume outside
+`Omega_h`. Sound numerical upper evaluation of the norms and controls remains
+necessary to call a computed value guaranteed; ordinary paired quadrature and
+floating control evaluations are estimates, not arithmetic enclosures. The
+unmodified status-4 estimator remains a general frozen-source diagnostic.
+
 ## Primary references
 
 - [Repin, A posteriori analysis for PDEs](https://math.aalto.fi/opetus/lme/ApostPDERepin.pdf): functional majorants and monotonicity.
