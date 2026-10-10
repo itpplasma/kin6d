@@ -31,6 +31,9 @@ contains
         ! stationary point is less sensitive to which P2 cell contains the axis.
         call gs_axis_candidate(state, axis, flux, hessian, element, status)
         if (status /= 0) return
+        ! P3 already resolves an interior stationary point with positive Hessian.
+        ! A patch fit can move it in response to flux outside its containing cell.
+        if (state%element_order == 3) return
         status = 1
         seed = minloc(state%psi, dim=1)
         center = state%points(:, seed)
