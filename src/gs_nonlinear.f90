@@ -15,7 +15,8 @@ module kin6d_gs_nonlinear
                        initialize_triangle_level_workspace, integrate_triangle_levels, &
                                                  triangle_level_coefficients
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
-    use fortnum_krylov, only: real_gmres_operator, real_conjugate_gradient_operator
+    use fortnum_krylov, only: real_gmres_operator, real_conjugate_gradient_operator, &
+                               KRYLOV_OK, KRYLOV_MAX_ITERATIONS
     use fortnum_linalg, only: det2
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
@@ -671,6 +672,14 @@ contains
                            1.0e-11_dp*min(1.0_dp, norm2(preconditioned_rhs)), 300, 30, &
                                  status, iterations, residual)
         if (precondition_status /= 0) status = precondition_status
+        ! GMRES certifies only the preconditioned system. Like the direct-CG
+        ! branch above, confirm the physical Jacobian residual independently
+        ! before accepting a finite stalled iterate; any other solver status
+        ! remains a failure.
+        if (status == KRYLOV_MAX_ITERATIONS .and. all(ieee_is_finite(solution))) then
+            call jacobian_action(solution, action_work)
+            if (norm2(action_work - rhs) <= 1.0e-9_dp*norm2(rhs)) status = KRYLOV_OK
+        end if
     contains
         subroutine jacobian_action(input, output)
             real(dp), intent(in) :: input(:)
@@ -692,10 +701,39 @@ contains
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
             real(dp), allocatable :: candidate(:)
+            integer, parameter :: precondition_nonfinite = 4
             integer :: stat
+            ! A preconditioner is not the solve: it may only fall back, never
+            ! silently accept an unusable candidate. The diagonal-CG inner
+            ! loop keeps the baseline 1e-11 accuracy so the inverse decks
+            ! that reach it converge GMRES honestly; only the n>=320 TC24
+            ! roundoff floor (~1.1e-10 relative at 95k DOF) that no
+            ! iteration budget reaches down to 1e-11 retains its finite
+            ! stalled iterate (stagnation_ok). The outer GMRES residual plus
+            ! the Newton line search stay the authority for the step.
             call gs_linear_response(state, input, candidate, stat, &
-                                    relative_tolerance=1.0e-11_dp)
-            if (stat /= 0) precondition_status = stat
+                                    relative_tolerance=1.0e-11_dp, stagnation_ok=.true.)
+            ! .and. does not short-circuit: allocation is checked on its own
+            ! before any elementwise test may touch the candidate.
+            if (.not. allocated(candidate)) then
+                precondition_status = merge(stat, 1, stat /= 0)
+                output = input
+                return
+            end if
+            if (.not. all(ieee_is_finite(candidate))) then
+                ! A nonfinite response is never usable, even when the inner
+                ! solver reported success: only finite stagnation is tolerated.
+                precondition_status = merge(stat, precondition_nonfinite, stat /= 0)
+                output = input
+                return
+            end if
+            if (stat /= KRYLOV_OK .and. stat /= KRYLOV_MAX_ITERATIONS) then
+                ! Geometry, breakdown or error responses are never usable,
+                ! finite or not: fall back to identity and flag the status.
+                precondition_status = stat
+                output = input
+                return
+            end if
             output = candidate
         end subroutine
     end subroutine

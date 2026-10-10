@@ -28,6 +28,7 @@ program gs_phase1_main
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
     real(dp) :: nonlinear_tolerance = 1.0e-9_dp, pressure, f, pp, ff
     real(dp) :: quadrature_tolerance = 1.0e-8_dp
+    real(dp) :: solve_wall_limit_s = 300.0_dp
     real(dp) :: total_current = 0, measured_current = 0
     real(dp) :: majorant, flux_defect, balance_defect, estimator_s, stability_estimate
     real(dp) :: phi_target = 0, inverse_q_error = 0, q_tolerance = 1.0e-3_dp
@@ -45,7 +46,7 @@ program gs_phase1_main
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
         pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree, &
         profile_file, nonlinear_tolerance, quadrature_tolerance, total_current, q_file, &
-        phi_target, inverse_intervals, q_tolerance
+        phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s
     call run%start('gs_phase1')
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
@@ -136,8 +137,11 @@ program gs_phase1_main
     end if
     call system_clock(finish)
     wall_s = real(finish - start, dp)/rate
-    if (wall_s > 300) error stop 'solve exceeded 300 seconds'
-    print '(a,i0,a,es13.5)', 'DOF=', count(.not. state%boundary), ' wall_s=', wall_s
+    ! Report the converged state before the wall limit is enforced: a solve
+    ! that converged slowly still has to leave its numbers behind.
+    print '(a,i0,a,es13.5,a,es13.5)', 'DOF=', count(.not. state%boundary), &
+        ' wall_s=', wall_s, ' residual=', state%residual
+    if (wall_s > solve_wall_limit_s) error stop 'solve exceeded solve_wall_limit_s'
     flush (output_unit)
     call write_gs_mesh(state, trim(mesh_file), status)
     if (status /= 0) error stop 'mesh export failed'
