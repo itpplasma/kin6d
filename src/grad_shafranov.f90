@@ -9,7 +9,8 @@ module kin6d_grad_shafranov
        initialize_triangle_level_workspace, integrate_triangle_levels, &
        triangle_level_coefficients
    use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
-   use fortnum_krylov, only: real_conjugate_gradient_operator, real_gmres_operator, KRYLOV_OK
+   use fortnum_krylov, only: real_conjugate_gradient_operator, real_gmres_operator, &
+       KRYLOV_OK, KRYLOV_MAX_ITERATIONS
    use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights, &
        lagrange_combined_jvp, &
        lagrange_combined_vjp, lagrange_nodes_jvp, lagrange_nodes_vjp
@@ -394,14 +395,16 @@ contains
     end subroutine apply_gs
 
    subroutine gs_linear_response(state, source, response, status, iteration_count, &
-                                 relative_tolerance)
+                                 relative_tolerance, stagnation_ok)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: source(:)
       real(dp), allocatable, intent(out) :: response(:)
       integer, intent(out) :: status
       integer, intent(out), optional :: iteration_count
       real(dp), intent(in), optional :: relative_tolerance
+      logical, intent(in), optional :: stagnation_ok
       real(dp) :: residual, tolerance
+      logical :: keep_stagnant
       integer :: iterations
       status = 1
       if (present(iteration_count)) iteration_count = 0
@@ -423,11 +426,21 @@ contains
                    status, iterations, residual, &
                                             preconditioner)
       if (present(iteration_count)) iteration_count = iterations
+      keep_stagnant = .false.
+      if (present(stagnation_ok)) keep_stagnant = stagnation_ok
       if (state%mapped) then
          if (.not. all(ieee_is_finite(response))) status = geometry_arithmetic
          if (.not. ieee_is_finite(residual)) status = geometry_arithmetic
          if (status == KRYLOV_OK) then
             ! Shared strong boundary policy for primal and equation responses.
+            where (state%boundary) response = source
+         else if (keep_stagnant .and. status == KRYLOV_MAX_ITERATIONS .and. &
+                  all(ieee_is_finite(response))) then
+            ! Diagonal-CG bottoms out on a mesh-dependent roundoff floor
+            ! (measured at ~1e-10 relative for a 95k-DOF TC24 tangent). The
+            ! retained iterate is the best finite response available; this
+            ! mode is only for callers that certify the result by an exact
+            ! residual check, such as Newton preconditioning.
             where (state%boundary) response = source
          else
             response = 0.0_dp
