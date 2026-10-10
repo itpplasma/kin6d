@@ -48,7 +48,7 @@ one-sided slope `m`:
 
 \[
  [S(x,s)-S(x,t)](s-t)\le m(s-t)^2,\qquad
- \theta=1-mC_w^2>0.                                     \tag{3}
+ m_+=\max(0,m),\qquad \theta=1-m_+C_w^2>0.              \tag{3}
 \]
 
 For the continuous piecewise-linear profiles in `gs_profile_value`, a global
@@ -65,6 +65,10 @@ For the operator `A(u)=a(u,.)-(w*S(u),.)`, (2)–(3) imply
 \[
  \langle A(u)-A(v),u-v\rangle\ge\theta\|u-v\|_a^2.         \tag{4}
 \]
+
+Indeed the lower estimate is `||e||_a^2-m*||e||_w^2`, which is at least
+`||e||_a^2-m_+*||e||_w^2 >= theta*||e||_a^2`. A negative source slope
+cannot improve this energy coercivity constant using an upper Poincare bound.
 
 Continuity, linear growth and this strong monotonicity give a unique weak
 solution with the declared trace. A fixed source has `m=0,theta=1`.
@@ -215,8 +219,14 @@ by evaluating interval endpoints and the stationary point of this quadratic
 when that point lies inside the interval. First maximize at `R=r0,r1`:
 `Q_R(t)` is affine in `R^2`, so these endpoints suffice even when the pressure
 slope changes sign. Split at all knots and include end-segment extrapolation.
-The resulting upper slope supplies (3) for pairs of states whose values stay
-in that interval; an absolute maximum similarly supplies the Lipschitz `L`.
+Taking the maximum of zero and the resulting upper slope supplies (3) for
+pairs of states whose values stay in that interval; an absolute maximum
+similarly supplies the Lipschitz `L`. The piecewise cubic must be exactly
+continuous at every knot: integrating its segment derivatives then bounds all
+secants, including those crossing knots. Reader acceptance within a floating
+continuity tolerance does not imply this premise. For a law with small jumps,
+use an exactly continuous target law and the approximate-source consistency
+term above rather than assigning a finite secant bound from segment slopes.
 This conditional estimate alone does not establish existence or that an unknown
 solution stays in the declared interval. The cubic reader extrapolates its
 first/last polynomial; it does **not** use constant endpoint extensions, and a
@@ -245,7 +255,7 @@ An energy bound `E` implies a distributional toroidal-current error bound
 `||j_phi(v)-j_phi(u)||_(a*) <= E/mu0` for zero-boundary scalar tests.
 It includes interface sheets. It is not a pointwise current or physical
 normal-trace bound. Poloidal field error in toroidal physical volume satisfies
-`||Bpol(v)-Bpol(u)||_(L2(V))^2=2*pi*E^2`.
+`||Bpol(v)-Bpol(u)||_(L2(V))^2=2*pi*||u-v||_a^2 <= 2*pi*E^2`.
 
 Toroidal-field/pressure, Maxwell stress and q/coarea need additional profile,
 product, admissibility and nonvanishing-gradient bounds. Inverse q/Phi and
@@ -259,8 +269,9 @@ chart `(rho,theta)`, the delta-function change of variables gives
 `K=int rho/(R*partial_rho psi) dtheta`. For a curved physical map `X` of an
 affine chart `A`, the area-density ratio is
 `det(DX)/det(DA)*R_chart/R_physical`, precisely the native cell-arc factor.
-This identity requires the same regular contour in both maps and a nonzero
-outward radial derivative; it gives no contour-error bound near a critical
+This identity requires the same regular contour in both maps and a strictly
+positive outward radial derivative (otherwise the denominator is its absolute
+value); it gives no contour-error bound near a critical
 point. The independent q probes and area-versus-contour Phi check are
 consistency/refinement evidence, not bounds on the coupled inverse problem.
 
