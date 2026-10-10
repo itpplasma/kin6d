@@ -26,6 +26,7 @@ program test_gs_profile_newton
             stop
         end if
     end if
+    call rank_one_response_oracle()
     do degree = 2, 3
         do i = 1, 32
             call boundary(real(i - 1, dp)/32, contour(:, i))
@@ -159,6 +160,54 @@ program test_gs_profile_newton
     end do
    print *, 'PASS: curved cubic profiles, normalization, implicit derivatives and signs'
 contains
+    subroutine rank_one_response_oracle()
+        type(gs_state_t) :: cell
+        type(gs_profile_jacobian_t) :: jacobian
+        real(dp) :: answer(3), rhs(3), expected(3)
+        integer :: stat
+        ! Two active graph-Laplacian DOFs have B=[[2,-1],[-1,2]].
+        ! The independent rational matrix J=B-[1/2,1/4]*[1/4,1/2]
+        ! sends [2,-1] to [5,-4]; its transpose sends it to [77/16,-35/8].
+        cell%ready = .true.
+        cell%triangles = reshape([1, 2, 3], [3, 1])
+        cell%boundary = [.true., .false., .false.]
+        cell%psi = [0.0_dp, 0.0_dp, 0.0_dp]
+        allocate (cell%stiffness(3, 3, 1))
+        cell%stiffness = -1
+        cell%stiffness(1, 1, 1) = 2
+        cell%stiffness(2, 2, 1) = 2
+        cell%stiffness(3, 3, 1) = 2
+        cell%diagonal = [1.0_dp, 2.0_dp, 2.0_dp]
+        allocate (jacobian%mass(3, 3, 1))
+        jacobian%mass = 0
+        jacobian%axis_load = [0.0_dp, 0.5_dp, 0.25_dp]
+        jacobian%axis_gradient = [0.0_dp, 0.25_dp, 0.5_dp]
+        expected = [0.0_dp, 2.0_dp, -1.0_dp]
+        rhs = [0.0_dp, 5.0_dp, -4.0_dp]
+        call gs_profile_response(cell, jacobian, rhs, answer, stat)
+        if (stat /= 0 .or. norm2(answer - expected) > 1.0e-8_dp) &
+            error stop 'rank-one rational tangent'
+        rhs = [0.0_dp, 77.0_dp/16, -35.0_dp/8]
+        call gs_profile_response(cell, jacobian, rhs, answer, stat, transpose=.true.)
+        if (stat /= 0 .or. norm2(answer - expected) > 1.0e-8_dp) &
+            error stop 'rank-one rational adjoint'
+        ! B=[[1,2],[2,1]] is indefinite despite its positive diagonal.
+        ! Negative CG curvature must retain the existing GMRES fallback.
+        jacobian%mass(2, 2, 1) = 1; jacobian%mass(3, 3, 1) = 1
+        jacobian%mass(2, 3, 1) = -3; jacobian%mass(3, 2, 1) = -3
+        rhs = [0.0_dp, 0.0_dp, 3.0_dp]
+        call gs_profile_response(cell, jacobian, rhs, answer, stat)
+        if (stat /= 0 .or. norm2(answer - expected) > 1.0e-8_dp) &
+            error stop 'indefinite rank-one fallback'
+        ! J=[[1/2,-1],[-1,2]] is singular and this rhs is inconsistent.
+        jacobian%mass = 0
+        jacobian%axis_load = [0.0_dp, 1.0_dp, 0.0_dp]
+        jacobian%axis_gradient = [0.0_dp, 1.5_dp, 0.0_dp]
+        rhs = [0.0_dp, 1.0_dp, 0.0_dp]
+        call gs_profile_response(cell, jacobian, rhs, answer, stat)
+        if (stat == 0) error stop 'singular rank-one response accepted'
+    end subroutine
+
     subroutine boundary(t, point)
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
