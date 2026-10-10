@@ -22,7 +22,7 @@ program gs_phase1_main
     type(gs_readback_t) :: readback
     type(run_t) :: run
     type(result_file_t) :: result
-    real(dp), allocatable :: samples(:, :), contour(:, :)
+    real(dp), allocatable :: samples(:, :), contour(:, :), interior_points(:, :)
     real(dp), allocatable :: q_s(:), q_values(:)
     real(dp) :: max_area = 0, pprime = 0, ffprime = 0, f_edge = 0
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
@@ -39,14 +39,14 @@ program gs_phase1_main
     integer(int64) :: start, finish, rate
     logical :: curved = .true., directory_ok, recovery_converged
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
-    character(512) :: q_file = ''
+    character(512) :: q_file = '', interior_points_file = ''
     character(256) :: message
     character(512) :: argument
     character(:), allocatable :: commit, dirty
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
         pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree, &
         profile_file, nonlinear_tolerance, quadrature_tolerance, total_current, q_file, &
-        phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s
+        phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s, interior_points_file
     call run%start('gs_phase1')
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
@@ -91,10 +91,23 @@ program gs_phase1_main
         end do
         max_area = (perimeter/boundary_nodes)**2/2
     end if
+    allocate (interior_points(2, 0))
+    if (len_trim(interior_points_file) > 0) then
+        open (newunit=unit, file=trim(interior_points_file), status='old', action='read')
+        read (unit, *) n
+        if (n < 0) error stop 'negative interior point count'
+        deallocate (interior_points); allocate (interior_points(2, n))
+        do i = 1, n
+            read (unit, *) interior_points(:, i)
+        end do
+        close (unit)
+    end if
     if (curved) then
-        call initialize_gs(state, contour, max_area, status, degree, curve=boundary)
+        call initialize_gs(state, contour, max_area, status, degree, curve=boundary, &
+            interior_points=interior_points)
     else
-        call initialize_gs(state, contour, max_area, status, degree)
+        call initialize_gs(state, contour, max_area, status, degree, &
+            interior_points=interior_points)
     end if
     if (status /= 0) error stop 'mesh/assembly failed'
     if (len_trim(q_file) > 0) then
