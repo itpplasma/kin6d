@@ -17,6 +17,7 @@ program test_gs_axis_refinement
     real(dp) :: axis(2), axis_coarse(2), axis_medium(2), axis_fine(2)
     real(dp) :: error(3), rate, h, q_coarse, q_medium, q_fine
     integer :: mesh, n, i, status
+    call represented_cubic_axis()
     do mesh = 1, 3
         n = 96*2**(mesh - 1)
         allocate (contour(2, n))
@@ -76,6 +77,39 @@ program test_gs_axis_refinement
     ! that stays on the wall is still no axis at all.
     call shared_entity_axis
 contains
+    subroutine represented_cubic_axis()
+        type(gs_state_t) :: field
+        real(dp) :: points(2, 48), exact(2), found(2), flux, hessian(2, 2)
+        real(dp) :: x, y, psi, br, bz, bt
+        integer :: j, stat, element
+        exact = [3.073_dp, 0.017_dp]
+        do j = 1, 48
+            points(:, j) = [3 + cos(two_pi*(j - 1)/48), sin(two_pi*(j - 1)/48)]
+        end do
+        call initialize_gs(field, points, 0.01_dp, stat, 3)
+        if (stat /= 0) error stop 'represented cubic mesh'
+        do j = 1, size(field%psi)
+            x = field%points(1, j) - exact(1)
+            y = field%points(2, j) - exact(2)
+            field%psi(j) = -1 + x*x + 2*y*y + 0.1_dp*x*x*x
+            ! Perturb only distant nodal coefficients. The cubic containing
+            ! the axis still has the exact displaced minimum and Hessian diag(2,4).
+            if (x > 0.25_dp .and. x < 0.6_dp .and. abs(y) < 0.25_dp) &
+                field%psi(j) = field%psi(j) + 0.01_dp
+        end do
+        call gs_axis_candidate(field, found, flux, hessian, element, stat)
+        if (stat /= 0) error stop 'represented cubic minimum'
+        if (abs(flux + 1) > 1.0e-12_dp) error stop 'cubic minimum value'
+        if (maxval(abs(hessian - reshape([2.0_dp, 0.0_dp, 0.0_dp, 4.0_dp], &
+            [2, 2]))) > 1.0e-10_dp) error stop 'cubic minimum Hessian'
+        call gs_magnetic_axis(field, found, stat)
+        if (stat /= 0) error stop 'represented cubic axis'
+        if (norm2(found - exact) > 1.0e-12_dp) error stop 'cubic axis moved'
+        call sample_gs(field, found(1), found(2), 1.0_dp, psi, br, bz, bt, stat)
+        if (stat /= 0) error stop 'cubic axis sample'
+        if (norm2([br, bz]) > 1.0e-12_dp) error stop 'axis not stationary'
+    end subroutine
+
     subroutine boundary(t, point)
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
