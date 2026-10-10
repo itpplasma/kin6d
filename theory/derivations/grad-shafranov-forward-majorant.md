@@ -55,7 +55,8 @@ For the continuous piecewise-linear profiles in `gs_profile_value`, a global
 choice is the maximum of zero and every segment slope
 `mu0*R^2*diff(pprime)/diff(flux)+diff(FFprime)/diff(flux)`, maximized at the
 appropriate endpoint of `[r0,r1]`. Zero covers the constant endpoint extensions.
-Current profiles use common flux knots. If separate knots are admitted later,
+These are the retained linear-profile rules, not the current cubic-law rules.
+Linear profiles use common flux knots. If separate knots are admitted later,
 take their sorted union and both slopes on every resulting segment. Large
 negative slopes do not harm this one-sided condition.
 
@@ -169,6 +170,75 @@ constants before becoming guaranteed upper bounds.
   the one-sided `m`. A P2 energy `h^2` rate also needs appropriate regularity
   and mesh constants; no pointwise Hessian/current rate follows automatically.
 
+## Executed curved-P2/P3 functional and cubic laws
+
+`gs_functional_majorant` minimizes and evaluates a slightly different valid
+functional: its balance defect uses the **unweighted** physical-area norm.
+For `g=mu0*R*pprime+FFprime/R`, set
+
+\[
+ C_F=\sqrt{r_1}C_P,\quad
+ D=\|\sqrt R(y-\nabla v/R)\|_{L^2},\quad
+ B=C_F\|g(v)+\operatorname{div}y\|_{L^2}.
+\]
+
+Since `||phi||_L2 <= C_P*sqrt(r1)*||phi||_a`, the same Green identity proves
+`||u-v||_a <= (D+B)/theta`. The executed `cf2=r1*C_P^2` is therefore correct;
+it is not `C_w^2`, and its unweighted balance norm must not be identified with
+the weighted `b` in (5). The recovery objective is `D^2+B^2`; the returned
+numerator is `D+B`. Any conforming recovered flux is admissible, so an
+incomplete recovery solve affects sharpness rather than the continuous
+inequality. Ordinary order-eight Duffy quadrature makes the executed value an
+estimate of this functional, not a guaranteed quadrature upper bound.
+
+The same proof applies on the represented curved domain when the P2/P3 maps
+are globally one-to-one, orientation preserving, nonoverlapping, and share
+their edge traces. The continuous vector Lagrange recovery then belongs to
+`H1(Omega)^2`, hence `H(div,Omega)`. Physical gradients and divergence must use
+the same inverse map as the field. Bernstein geometry controls enclose every
+mapped point and supply the containing rectangle used by the code. Positive
+Jacobians at quadrature nodes alone do not prove global map admissibility.
+Comparison with a different physical LCFS additionally needs the geometry and
+trace consistency terms above; it cannot inherit a represented-domain bound.
+
+For the executed cubic law, on a coordinate interval write
+`P(t)=a0+a1*t+a2*t^2+a3*t^3`, where `t=x-knot_i`. Its exact primitive has
+derivative `P`, and its slope is `a1+2*a2*t+3*a3*t^2`. For fixed physical knots,
+the one-sided source slope at each radius is the quadratic
+
+\[
+ Q_R(t)=\mu_0R^2 P_p'(t)+P_H'(t).
+\]
+
+On a **declared finite solution-value interval**, its maximum is computable
+by evaluating interval endpoints and the stationary point of this quadratic
+when that point lies inside the interval. First maximize at `R=r0,r1`:
+`Q_R(t)` is affine in `R^2`, so these endpoints suffice even when the pressure
+slope changes sign. Split at all knots and include end-segment extrapolation.
+The resulting upper slope supplies (3) for pairs of states whose values stay
+in that interval; an absolute maximum similarly supplies the Lipschitz `L`.
+This conditional estimate alone does not establish existence or that an unknown
+solution stays in the declared interval. The cubic reader extrapolates its
+first/last polynomial; it does **not** use constant endpoint extensions, and a
+cubic cannot generally be assigned a finite global slope from its knot values.
+
+For normalized laws with a **fixed** axis `a<0`, `x=1-psi/a`, and the slope
+above is multiplied by `-1/a`. Their physical primitives carry the factor
+`-a`, which cancels this coordinate derivative: `dp/dpsi=pprime(x)` and
+`d(F^2/2)/dpsi=FFprime(x)`. `gen_grad_shafranov` proves these cubic derivative
+and normalized-primitive identities with FortSym before emitting the kernels.
+If the axis is recomputed with the state, the additional term is
+`delta x=-delta psi/a+psi*delta a/a^2`. That nonlocal term is absent from the
+scalar fixed-axis monotonicity argument.
+
+The API reports status 4 for a frozen-source diagnostic without supplied
+stability. Status 5 uses a numerical discrete positive-part power iteration;
+neither an iterate's Rayleigh quotient nor its small eigen-residual bounds
+the largest continuous eigenvalue. A caller-supplied positive stability factor
+is a conditional premise, not something the API proves. Measured effectivity
+against an exact solution tests sharpness; a finite CHEASE comparison also
+contains reference error. Neither supplies the missing nonlinear premise.
+
 ## Current, field and inverse limits
 
 An energy bound `E` implies a distributional toroidal-current error bound
@@ -182,6 +252,26 @@ product, admissibility and nonvanishing-gradient bounds. Inverse q/Phi and
 moving normalized-axis profile knots require a separate coupled continuous
 inverse/inf-sup bound. Axis point evaluation is not bounded on general 2D `H1`;
 a discrete shape vector does not supply that bound.
+
+In the executed prescribed-q path the exact coarea identities remain
+`q=F*K/(2*pi)` and `Phi_edge=int_Omega F/R dR dZ`. In a regular star-shaped
+chart `(rho,theta)`, the delta-function change of variables gives
+`K=int rho/(R*partial_rho psi) dtheta`. For a curved physical map `X` of an
+affine chart `A`, the area-density ratio is
+`det(DX)/det(DA)*R_chart/R_physical`, precisely the native cell-arc factor.
+This identity requires the same regular contour in both maps and a nonzero
+outward radial derivative; it gives no contour-error bound near a critical
+point. The independent q probes and area-versus-contour Phi check are
+consistency/refinement evidence, not bounds on the coupled inverse problem.
+
+A coupled bound must control the weak GS residual **and** the q-moment/Phi
+residuals with a branch-specific inverse bound for their joint derivative.
+It must include source coefficients, solved F_edge, moving axis, and contour
+events in a norm where those operations are continuous. The fixed-source
+energy norm alone does not do this. In particular, zero moment residuals do
+not control the off-moment q profile; its independent defect remains necessary.
+No such continuous coupled inverse constant is supplied by the current code
+or the E1/E2/TC24 finite-reference effectivity measurements.
 
 ## Native exact controls
 
