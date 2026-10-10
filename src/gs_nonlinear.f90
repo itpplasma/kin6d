@@ -629,9 +629,10 @@ contains
         real(dp), intent(out) :: solution(:)
         integer, intent(out) :: status
         logical, intent(in), optional :: transpose
-        real(dp) :: residual
+        real(dp) :: residual, direct_tolerance, denominator, coupling
         real(dp) :: preconditioned_rhs(size(rhs)), action_work(size(rhs))
-        real(dp) :: diagonal(size(rhs))
+        real(dp) :: diagonal(size(rhs)), axis_response(size(rhs))
+        real(dp) :: rank_rhs(size(rhs)), rank_test(size(rhs))
         integer :: iterations, precondition_status, e, j, node
         logical :: adjoint
         adjoint = .false.
@@ -642,30 +643,63 @@ contains
             status = 0
             return
         end if
-        ! Absolute-flux laws have a symmetric Jacobian. Try its direct CG
-        ! solve before the general nested stiffness-preconditioned GMRES.
-        ! CG breakdown retains the indefinite/nonsymmetric fallback.
-        if (maxval(abs(jacobian%axis_load)) <= tiny(1.0_dp) .or. &
-            maxval(abs(jacobian%axis_gradient)) <= tiny(1.0_dp)) then
-            diagonal = state%diagonal
-            do e = 1, size(state%triangles, 2)
-                do j = 1, size(state%triangles, 1)
-                    node = state%triangles(j, e)
-                    diagonal(node) = diagonal(node) - jacobian%mass(j, j, e)
-                end do
+        ! The axis-normalization term is rank one; the remaining block is
+        ! symmetric. Try the existing CG solve on that block, rejecting
+        ! negative curvature/breakdown and checking the original J residual.
+        ! Positive diagonal alone is not a definiteness claim.
+        rank_rhs = jacobian%axis_load; rank_test = jacobian%axis_gradient
+        if (adjoint) then
+            rank_rhs = jacobian%axis_gradient; rank_test = jacobian%axis_load
+        end if
+        direct_tolerance = 1.0e-11_dp
+        if (maxval(abs(rank_rhs))*maxval(abs(rank_test)) > tiny(1.0_dp)) &
+            direct_tolerance = 1.0e-9_dp
+        diagonal = state%diagonal
+        do e = 1, size(state%triangles, 2)
+            do j = 1, size(state%triangles, 1)
+                node = state%triangles(j, e)
+                diagonal(node) = diagonal(node) - jacobian%mass(j, j, e)
             end do
-            where (state%boundary) diagonal = 1
-            if (all(diagonal > 0)) then
-                call real_conjugate_gradient_operator(jacobian_action, rhs, solution, &
-                    1.0e-11_dp*min(1.0_dp, norm2(rhs)), &
+        end do
+        where (state%boundary) diagonal = 1
+        if (all(diagonal > 0)) then
+            call real_conjugate_gradient_operator(symmetric_action, rhs, solution, &
+                direct_tolerance*min(1.0_dp, norm2(rhs)), &
+                max(500, 10*ceiling(sqrt(real(size(rhs), dp)))), &
+                status, iterations, residual, diagonal_precondition)
+            if (status == KRYLOV_OK) then
+                call symmetric_action(solution, action_work)
+                if (norm2(action_work - rhs) > 1.0e-9_dp*norm2(rhs)) status = 1
+            end if
+            if (status == KRYLOV_OK .and. &
+                maxval(abs(rank_rhs))*maxval(abs(rank_test)) > tiny(1.0_dp)) then
+                axis_response = 0
+                call real_conjugate_gradient_operator(symmetric_action, rank_rhs, &
+                    axis_response, direct_tolerance*min(1.0_dp, norm2(rank_rhs)), &
                     max(500, 10*ceiling(sqrt(real(size(rhs), dp)))), &
                     status, iterations, residual, diagonal_precondition)
-                if (status == 0) then
-                    call jacobian_action(solution, action_work)
-                    if (norm2(action_work - rhs) <= 1.0e-9_dp*norm2(rhs)) return
+                if (status == KRYLOV_OK) then
+                    call symmetric_action(axis_response, action_work)
+                    if (norm2(action_work - rank_rhs) > &
+                        1.0e-9_dp*norm2(rank_rhs)) status = 1
                 end if
-                solution = 0
+                if (status == KRYLOV_OK) then
+                    coupling = dot_product(rank_test, axis_response)
+                    denominator = 1 - coupling
+                    if (abs(denominator) <= sqrt(epsilon(1.0_dp))* &
+                        max(1.0_dp, abs(coupling))) then
+                        status = 1
+                    else
+                        solution = solution + axis_response* &
+                            (dot_product(rank_test, solution)/denominator)
+                    end if
+                end if
             end if
+            if (status == KRYLOV_OK) then
+                call jacobian_action(solution, action_work)
+                if (norm2(action_work - rhs) <= 1.0e-9_dp*norm2(rhs)) return
+            end if
+            solution = 0
         end if
         call precondition(rhs, preconditioned_rhs)
         call real_gmres_operator(action, preconditioned_rhs, solution, &
@@ -685,6 +719,12 @@ contains
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
             call apply_gs_profile_jacobian(state, jacobian, input, output, adjoint)
+        end subroutine
+        subroutine symmetric_action(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            call jacobian_action(input, output)
+            output = output + rank_rhs*dot_product(rank_test, input)
         end subroutine
         subroutine diagonal_precondition(input, output)
             real(dp), intent(in) :: input(:)
