@@ -232,8 +232,11 @@ solution stays in the declared interval. The cubic reader extrapolates its
 first/last polynomial; it does **not** use constant endpoint extensions, and a
 cubic cannot generally be assigned a finite global slope from its knot values.
 
-For normalized laws with a **fixed** axis `a<0`, `x=1-psi/a`, and the slope
-above is multiplied by `-1/a`. Their physical primitives carry the factor
+For normalized laws with a **fixed nonzero** axis `a`, `x=1-psi/a`. Multiply
+the source derivative by `-1/a` before taking its maximum; the law API also
+admits positive axes, for which multiplying an already computed upper slope
+by this negative factor would reverse the inequality. The physical primitives
+carry the factor
 `-a`, which cancels this coordinate derivative: `dp/dpsi=pprime(x)` and
 `d(F^2/2)/dpsi=FFprime(x)`. `gen_grad_shafranov` proves these cubic derivative
 and normalized-primitive identities with FortSym before emitting the kernels.
