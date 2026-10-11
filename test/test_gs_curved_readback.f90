@@ -7,17 +7,46 @@ program test_gs_curved_readback
     implicit none
     real(dp), parameter :: r0 = 6.2_dp, a = 0.62_dp, f = 32.86_dp
     real(dp), parameter :: c = f/(12*r0**3)
-    type(gs_state_t) :: state, restored
+    type(gs_state_t) :: state, restored, split, flat
     type(gs_readback_t) :: result, reversed
     real(dp), allocatable :: contour(:, :)
     real(dp) :: h, s, angle, radius, exact_q, exact_phi, exact_volume, flux
     real(dp) :: q_error(3), volume_error(3), phi_error(3), axis_error(3)
     real(dp) :: label_error(3), rates(4)
     real(dp) :: values(4), restored_values(4), point(2)
-    real(dp) :: query_points(2, 19), batch(4, 19)
-    integer :: batch_status(19)
-    integer :: n, mesh, j, i, status, degree
+    real(dp) :: query_points(2, 20), batch(4, 20)
+    real(dp) :: split_query(2, 1), split_batch(4, 1)
+    real(dp) :: near_query(2, 1), near_batch(4, 1)
+    integer :: batch_status(20)
+    integer :: split_status(1), near_status(1)
+    integer :: n, mesh, j, i, status, degree, nnode, ncell
     character(8) :: argument
+    ! The scalar evaluator accepts a small barycentric tolerance outside a
+    ! straight edge; bulk readback must preserve the same field there.
+    flat%element_order = 2
+    flat%mapped = .false.
+    allocate (flat%points(2, 6), flat%psi(6), flat%boundary(6), &
+        flat%triangles(6, 1), flat%gradient(2, 3, 1), flat%area(1), &
+        flat%curved_cell(1))
+    flat%points = reshape([2.0_dp, 0.0_dp, 3.0_dp, 0.0_dp, &
+        2.0_dp, 1.0_dp, 2.5_dp, 0.0_dp, 2.5_dp, 0.5_dp, &
+        2.0_dp, 0.5_dp], [2, 6])
+    flat%psi = sum(flat%points, dim=1)
+    flat%boundary = .true.
+    flat%triangles(:, 1) = [1, 2, 3, 4, 5, 6]
+    flat%gradient(:, 1, 1) = [-1.0_dp, -1.0_dp]
+    flat%gradient(:, 2, 1) = [1.0_dp, 0.0_dp]
+    flat%gradient(:, 3, 1) = [0.0_dp, 1.0_dp]
+    flat%area = 0.5_dp
+    flat%curved_cell = .false.
+    near_query(:, 1) = [2.5_dp, -5.0e-11_dp]
+    call sample_gs(flat, near_query(1, 1), near_query(2, 1), f, &
+        values(1), values(2), values(3), values(4), status)
+    if (status /= 0) error stop 'scalar edge tolerance'
+    call sample_gs_many(flat, near_query, f, near_batch, near_status)
+    if (near_status(1) /= status) error stop 'batch edge tolerance'
+    if (maxval(abs(values - near_batch(:, 1))) > 1.0e-12_dp) &
+        error stop 'batch edge field'
     degree = 2
     if (command_argument_count() > 0) then
         call get_command_argument(1, argument)
@@ -85,8 +114,12 @@ program test_gs_curved_readback
             end do
             query_points(:, 18) = state%points(:, state%triangles(1, 1))
             query_points(:, 19) = [r0 + 2*a, 0.0_dp]
+            ! Inside the curved edge, beyond its affine chord.
+            call boundary(0.5_dp/n, query_points(:, 20))
+            query_points(1, 20) = query_points(1, 20) - 2.0e-4_dp
             call sample_gs_many(restored, query_points, f, batch, batch_status)
-            do i = 1, 19
+            if (batch_status(20) /= 0) error stop 'curved boundary bulge'
+            do i = 1, 20
                 point = query_points(:, i)
                 call sample_gs(restored, point(1), point(2), f, values(1), values(2), &
                     values(3), values(4), status)
@@ -96,6 +129,34 @@ program test_gs_curved_readback
                         error stop 'batch physical field'
                 end if
             end do
+            ! The walking locator may exit the first component even when a
+            ! point belongs to a separate affine component.
+            nnode = size(restored%points, 2)
+            ncell = size(restored%triangles, 2)
+            split%element_order = restored%element_order
+            split%mapped = restored%mapped
+            allocate (split%points(2, 2*nnode), split%psi(2*nnode), &
+                split%boundary(2*nnode), split%triangles(size(restored%triangles, 1), &
+                2*ncell), split%gradient(2, 3, 2*ncell), split%area(2*ncell), &
+                split%curved_cell(2*ncell))
+            split%points(:, :nnode) = restored%points
+            split%points(:, nnode + 1:) = restored%points
+            split%points(1, nnode + 1:) = split%points(1, nnode + 1:) + 3*a
+            split%psi = [restored%psi, restored%psi]
+            split%boundary = [restored%boundary, restored%boundary]
+            split%triangles(:, :ncell) = restored%triangles
+            split%triangles(:, ncell + 1:) = restored%triangles + nnode
+            split%gradient(:, :, :ncell) = restored%gradient
+            split%gradient(:, :, ncell + 1:) = restored%gradient
+            split%area = [restored%area, restored%area]
+            split%curved_cell = [restored%curved_cell, restored%curved_cell]
+            split_query(:, 1) = query_points(:, 1) + [3*a, 0.0_dp]
+            call sample_gs_many(split, split_query, f, split_batch, split_status)
+            call sample_gs(split, split_query(1, 1), split_query(2, 1), f, &
+                values(1), values(2), values(3), values(4), status)
+            if (status /= 0 .or. split_status(1) /= 0) error stop 'split mesh location'
+            if (maxval(abs(values - split_batch(:, 1))) > 1.0e-12_dp) &
+                error stop 'split mesh field'
             do i = 1, 17
                 point = [r0 + 0.53_dp*cos(real(i, dp)), 0.51_dp*sin(real(i, dp))]
                 call sample_gs(state, point(1), point(2), f, values(1), values(2), &
