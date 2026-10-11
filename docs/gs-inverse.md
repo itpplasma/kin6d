@@ -53,6 +53,177 @@ psi/field/source convergence, constant-q zero/finite-pressure self-convergence,
 signed mesh/profile round trips, off-profile rejection, and the CLI/NetCDF
 contract. They contain no frozen solution snapshots.
 
+## E1 continuous coupled linear estimate
+
+A continuous linear estimate separates coupled q-profile stability from the
+frozen-source residual diagnostic. This estimate applies to smooth solutions
+of the linearized equations at one constructed E1 forward state. It does not
+establish existence of the prescribed-q/Phi target or change the solver's
+status-4 inverse-equilibrium diagnostic.
+
+### Physical-disk state and hypotheses
+
+Use the exact disk `(R-6.2)^2+Z^2<0.62^2`, zero boundary flux and zero pressure.
+Put `X=(R-6.2)/0.62`, `Y=Z/0.62` and define the comparison polynomial
+`p=(1-X^2-Y^2)Q`, where
+
+```text
+Q = -0.6790006140025554 - 0.0017770331708278058 Y^2
+    - 0.000007398162010552908 Y^4 - 0.01696288407071555 X
+    - 0.000028102526808112354 X Y^2 - 0.0009254066813575565 X^2
+    - 0.000014918763351629 X^2 Y^2 - 0.0000816198051169326 X^3
+    - 0.0000037684611922780744 X^4.
+a_v = -0.67910666625417071,
+g(t) = c0+c1 s+c2 s^2+c3 s^3,  s=1-t/a_v,
+(c0,c1,c2,c3) = (-7.0559048663098558,-0.06500580748754814,
+                 -0.00050826590225128143,-0.0000017952327766579401).
+```
+
+These decimals define exact rational comparison/profile data. They were
+selected from the retained E1 inverse run
+`kin6d-inverse-20261009-ccabcc5_kin6d_E1_constant_q_A10_03_t0`; agreement with
+its sampled finite-element state is not used in the estimate. Define the smooth
+forward state by `-Delta*psi=g(psi)`, with zero boundary flux, in the local
+neighborhood of p constructed below. Set
+`H(t)=F_edge^2/2+integral_0^t g(z) dz`,
+`F(t)=sqrt(2H(t))`, with `F_edge=32.704097175474018`.
+The normalization a_v is part of g; the actual axis value `a=min psi` is a
+separate quantity. This forward state need not have the requested constant
+q=1.5 or total Phi.
+
+Let T be the disk Dirichlet inverse of `-Delta`. The forward construction
+uses `psi=sqrt(R)u`, `P=-Delta+3/(4R^2)` and
+`rho=(R*(p_RR+p_ZZ+g(p))-p_R)/R^(3/2)`. The disk Green inverse gives
+`||P^-1 f||inf<=0.097||f||inf`, `||D P^-1 f||inf<=2.49||f||inf` and
+`||D2 P^-1 f||inf<=0.66||f||inf+2.48 Lip(f)`.
+Absolute polynomial coefficient sums, after clearing the R factor, give
+`||rho||inf<0.0002`, `Lip(rho)<0.0015`,
+`lambda_min(D2p)>3.09`, `||D2p||op<3.961` and `Lip(p)<4.6`.
+On the full flux ball `[-0.72,0.01]`, the profile obeys
+`|g|<7.13`, `|g'|<0.1`, `|g''|<0.003`, `|g'''|<0.00004`, with `g'<0`.
+The map
+`delta u=P^-1((g(p+sqrt(R)delta u)-g(p))/sqrt(R)+rho)`
+has C0 contraction factor below 0.0097 and a self-mapped ball within that
+flux range. Differentiation of the same equation yields
+`||psi-p||inf<0.000052`, `||D(psi-p)||inf<0.00132` and
+`||D2(psi-p)||op<0.011`.
+
+The smooth state is negative in the interior, strictly convex, with one
+nondegenerate axis and regular nested contours. Conservative bounds are
+`0.67<|a|<0.7`, `3I<D2psi<4.1I` and `32<F<34`.
+
+### Coarea endpoint control
+
+All derivatives here use outward-increasing physical flux `t in [a,0]`.
+Define
+`K(t)=integral_{psi=t} 1/(R|grad psi|) dl`; endpoint values are smooth limits.
+Let `d=0.62` be the physical disk radius. All spatial derivative tensor
+bounds in this section use the full multilinear operator norm. Higher
+disk-Green derivatives, after subtracting respectively linear and quadratic
+source Taylor polynomials, give
+
+```text
+||D3 Tf|| <= 0.75||Df||+4d||D2f||,
+||D4 Tf|| <= 1.25||D2f||+4d||D3f||.
+```
+
+The polynomial loads supply the 0.75 and 1.25 terms. Applying these to
+`-Delta u=R^(-1/2)g(psi)-3u/(4R^2)` gives
+`||D3psi||<5.3`, `||D4psi||<6.5`, in full multilinear operator norm.
+To retain the axis cancellation, use signed rays from the axis x0:
+
+```text
+J(r)=e^T D2psi(x0+r e)e,
+B_ray(r)=integral_0^1 J(ur) du,
+A_ray(r)=2 integral_0^1 (1-u)J(ur) du,
+psi=a+r^2 A_ray/2,  v=sign(r)*sqrt(t-a),
+C_ray(r)=1/(R(r)B_ray(r)),  K(v)=integral_0^(2pi) C_ray(r(v,theta)) dtheta.
+```
+
+Opposite rays make the integrated K(v) even, so `K_v(0)=0`. With
+`lambda=3`, `Lambda=4.1`, `D3=5.3`, `D4=6.5`, `Rmin=5.58`, set
+
+```text
+C1=1/(Rmin^2 lambda)+D3/(2 Rmin lambda^2),
+C2=2/(Rmin^3 lambda)+D3/(Rmin^2 lambda^2)
+   +D3^2/(2 Rmin lambda^3)+D4/(3 Rmin lambda^2).
+```
+
+The ray derivatives satisfy
+`r_v^2<=2Lambda/lambda^2` and
+`|r_vv|<=4Lambda D3/(3lambda^3)`.
+Consequently the endpoint-inclusive bound is
+`||K'||inf<=pi*((2Lambda/lambda^2)*C2+(4Lambda D3/(3lambda^3))*C1)<0.7`.
+The same state bounds give `0.2<K<0.4`.
+
+### Linear a-priori bound with axis residual
+
+Let `A=-div(grad/R)`, `B=A-H''(psi)/R`, `b=delta H`,
+`w=K/F^2`, `c=2pi delta q/F`, and
+`M_h(t)=integral_{psi=t} h/(R|grad psi|) dl`.
+The actual derivative equations are
+
+```text
+B h-b'(psi)/R=r,
+w b-M_h'=c,
+h|boundary=0,  h(x0)=alpha.
+```
+
+Here r is a spatial residual functional, delta q is the physical-flux q
+variation and alpha is the axis-value variation. Define
+`||h||_a^2=integral |grad h|^2/R`,
+`||h||_B^2=||h||_a^2-integral H''(psi)h^2/R`, and
+`||b||_w^2=integral_a^0 w b^2 dt`.
+The norm `||r||_{a,*}` is dual to `||h||_a` on zero-trace functions.
+Since `H''=g'<0`, `||h||_B>=||h||_a`.
+
+For alpha=0, smoothness gives `M_h(a)=M_h(0)=0`.
+Testing the spatial equation by h and integrating by parts in physical flux
+therefore gives
+
+```text
+||h||_B^2+||b||_w^2=r(h)+integral_a^0 b c dt.
+```
+
+Cauchy-Schwarz bounds its square root by
+`sqrt(||r||_{a,*}^2+||c||_{1/w}^2)`.
+For nonzero alpha, use `l=psi/a`, `h0=h-alpha l`,
+`r0=r-alpha B l` and `c0=c+alpha M_l'`, where `M_l=tK/a`.
+The constructed state supplies
+
+```text
+1/6000<w<1/2500,
+||c||_{1/w} <= 15||delta q||L2(dt),
+||l||_a<1.56,  ||B l||_{a,*}<1.6,
+||M_l'||_{1/w}<40+70||K'||inf<89.
+```
+
+Thus every smooth solution of the displayed linearized equations obeys
+
+```text
+N0^2=(||r||_{a,*}+1.6|alpha|)^2
+     +(15||delta q||L2(dt)+89|alpha|)^2,
+||h-alpha l||_B^2+||b||_w^2 <= N0^2,
+||M_(h-alpha l)'||_{1/w} <= 2N0,
+||h||_a <= N0+1.56|alpha|,
+||b||L2(dt) <= 78N0.
+```
+
+Phi variation retains its actual coupling:
+`delta Phi=integral_disk (b(psi)/F(psi)+g(psi)h/F(psi))/R dA`.
+It cannot be discarded by assuming the forward base state already satisfies
+the prescribed q/Phi constraints.
+
+The remaining implication is a smooth coupled inverse estimate controlling
+profile curvature and axis-position derivatives. The constraint differentiated
+again requires bounds on `M_h''`, and higher derivatives for `b''`, from
+differentiated GS/q data. The bound on K' alone supplies no such estimate.
+Graph-space coercivity and profile L2 control therefore establish neither
+smooth linearized solvability nor a nonlinear inverse remainder bound.
+Finite-element-to-disk comparison additionally needs full-domain geometry
+transport or a proved extension. The estimate above establishes none of these
+three prerequisites for inverse-equilibrium reliability.
+
 ## Retained affine-P2 constant-q entry point
 
 The public inverse solves fixed-boundary, axisymmetric Grad–Shafranov with
