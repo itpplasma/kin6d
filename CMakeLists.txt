@@ -922,12 +922,19 @@ set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
 
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
-    src/equilibrium_chart.f90 src/equilibrium_state.f90)
+    src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90
+    src/equilibrium_residual.f90)
 set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
 target_link_libraries(test_equilibrium_core PRIVATE kin6d)
 add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)
+foreach(k 2 3)
+    add_test(NAME equilibrium_core_d3_solovev_p${k}
+        COMMAND test_equilibrium_core residual ${k})
+    set_tests_properties(equilibrium_core_d3_solovev_p${k} PROPERTIES TIMEOUT 300
+        PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 # K6-mini: the accepted TC24 K6 law and path (cubic-profile Newton, P3,
 # direct factor, current constraint, readback, majorant) on a coarse mesh.
 # Every core migration step must reproduce the fixture to 1e-12 relative.
