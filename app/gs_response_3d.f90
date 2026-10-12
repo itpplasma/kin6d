@@ -47,11 +47,11 @@ program gs_response_3d
     integer :: np_sample = 512, gmres_maxit = 300
     real(dp) :: gmres_tol = 1.0e-9_dp
     logical :: boundary_sheet = .true.
-    real(dp) :: qlow = 0.0_dp
+    real(dp) :: qlow = 0.0_dp, rat_pad = 0.0_dp
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
-        boundary_sheet, qlow
+        boundary_sheet, qlow, rat_pad
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -119,7 +119,15 @@ program gs_response_3d
     ! rings: uniform in u = sqrt(psin) plus the rational surfaces
     allocate (u_rat(nrat))
     u_rat = sqrt(psin_rat(1:nrat))
-    call merge_rings(nrad, u_rat, min_gap, ul)
+    if (rat_pad > 0.0_dp) then
+        ! rings at u_s +- rat_pad/nrad: the half rings next to a rational
+        ! surface sit symmetrically about it
+        call merge_rings(nrad, [u_rat, u_rat - rat_pad/nrad, &
+            min(u_rat + rat_pad/nrad, 1.0_dp - 0.5_dp*rat_pad/nrad)], &
+            min_gap, ul)
+    else
+        call merge_rings(nrad, u_rat, min_gap, ul)
+    end if
     nr = size(ul)
     allocate (ring_of(nrat))
     do i = 1, nrat
