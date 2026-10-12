@@ -28,8 +28,10 @@ module kin6d_gs_coarea
     private
     public :: gs_level_coarea
     type :: event_t
-        real(dp) :: angle = 0, tangent = 0, point(2) = 0
-        integer :: left = 0, right = 0
+        ! No default initialisation: the per-thread buffers are large and only
+        ! a small prefix is ever written.
+        real(dp) :: angle, tangent, point(2)
+        integer :: left, right
     end type
 contains
     subroutine gs_level_coarea(state, levels, &
@@ -47,28 +49,24 @@ contains
         integer, optional, intent(out) :: work(:)
         logical, optional, intent(in) :: reference_cubic
         type(gs_state_t) :: tangent_state
-        type(event_t), allocatable :: events(:), events_copy(:)
-        integer, allocatable :: permutation(:), edge_cells(:, :), edge_nodes(:, :)
+        integer, allocatable :: edge_cells(:, :), edge_nodes(:, :)
         real(dp), allocatable :: x(:), w(:), jet(:, :), &
                                  hess(:, :, :), edge_range(:, :), cubic(:, :)
-        real(dp) :: physical_axis(2), local_axis(2), factor
+        real(dp) :: physical_axis(2), local_axis(2)
         real(dp) :: edge_values(4), critical(2), weights(4), extrema(4), boundary_level
-        integer :: ne, edge, nc, contour_work
+        integer :: ne, nc, first_failure
+        integer, allocatable :: level_status(:)
         logical :: constant_boundary, use_reference
         real(dp) :: transform(10, 10), shape(10), basis_g(2, 10), basis_h(2, 2, 10)
         real(dp) :: axis_flux, axis_h(2, 2), axis_delta(2), &
                     axis_flux_delta, gh(2, 2), gg(2)
         real(dp) :: q_geometry, dq, value, grad(2), h(2, 2), &
                     center(2), shifted_grad(2)
-        real(dp) :: point(2), vec(2), coeff_b, coeff_c, &
-                    roots(3)
-        real(dp) :: lo, hi, dlo, dhi, angle
-        real(dp) :: t, dt, tv, tg(2), th(2, 2), two_pi, &
-                    tolerance, level_delta
-        integer :: e, k, j, m, stat, axis_element, n, count, &
-                   cell, first_cell, next_cell
-        integer :: order, nr, a, b, mid, index, nb, edge_indices(4)
-        logical :: with_tangent, is_boundary
+        real(dp) :: coeff_b, coeff_c
+        real(dp) :: t, two_pi, tolerance
+        integer :: e, k, m, stat, axis_element, n, next_cell
+        integer :: order, nr, nb, edge_indices(4)
+        logical :: with_tangent
         if (present(work)) then
             if (size(work) /= size(levels)) then
                 status = 1
@@ -164,7 +162,6 @@ contains
             coarea_tangent(1) = two_pi*dq
         end if
         n = size(state%triangles, 2)
-        allocate (events(6*n), events_copy(6*n), permutation(6*n))
         if (state%element_order == 3) then
             ! Contract the authoritative FortFEM basis once, then reuse its
             ! cubic coefficients for every ray. The reference schedule below
@@ -260,7 +257,64 @@ contains
         allocate (x(order), w(order))
         call gauss_legendre_ab(order, 0.0_dp, 1.0_dp, &
                                x, w)
-        do j = 2, size(levels)
+        allocate (level_status(size(levels)))
+        level_status = 0
+        first_failure = huge(1)
+        !$omp parallel default(shared)
+        block
+            type(event_t), allocatable :: level_events(:), level_events_copy(:)
+            integer, allocatable :: level_permutation(:)
+            integer :: jl, snapshot
+            allocate (level_events(6*n), level_events_copy(6*n), &
+                      level_permutation(6*n))
+            !$omp do schedule(dynamic, 1)
+            do jl = 2, size(levels)
+                !$omp atomic read
+                snapshot = first_failure
+                if (jl > snapshot) cycle
+                call integrate_level(jl, level_events, level_events_copy, &
+                                     level_permutation, level_status(jl))
+                if (level_status(jl) /= 0) then
+                    !$omp critical(gs_coarea_failure)
+                    first_failure = min(first_failure, jl)
+                    !$omp end critical(gs_coarea_failure)
+                end if
+            end do
+            !$omp end do
+        end block
+        !$omp end parallel
+        if (first_failure /= huge(1)) then
+            status = level_status(first_failure)
+            return
+        end if
+        if (.not. all(ieee_is_finite(coarea)) .or. &
+            minval(coarea) <= 0) then
+            status = 15
+            return
+        end if
+        if (with_tangent) then
+            if (.not. all(ieee_is_finite(coarea_tangent))) then
+                status = 17
+                return
+            end if
+        end if
+        axis = physical_axis
+        status = 0
+    contains
+        subroutine integrate_level(j, events, events_copy, permutation, level_status)
+            ! One contour level. Concurrent calls for distinct j are independent:
+            ! the arrays are per-thread buffers and only coarea(j) is written.
+            integer, intent(in) :: j
+            type(event_t), intent(inout) :: events(:), events_copy(:)
+            integer, intent(inout) :: permutation(:)
+            integer, intent(out) :: level_status
+            real(dp) :: level_delta, t, dt, tv, tg(2), th(2, 2), value, grad(2)
+            real(dp) :: h(2, 2), point(2), vec(2), coeff_b, coeff_c, roots(3)
+            real(dp) :: lo, hi, dlo, dhi, angle
+            integer :: contour_work, count, edge, e, next_cell, edge_indices(4)
+            integer :: a, b, mid, nr, m, stat, cell, first_cell, index, k
+            logical :: is_boundary
+            level_status = 1
             level_delta = 0
             if (with_tangent) level_delta = levels_tangent(j)
             contour_work = 0
@@ -269,11 +323,12 @@ contains
             if (is_boundary) then
                 call integrate_boundary(j, level_delta, stat)
                 if (stat /= 0) then
-                    status = stat
+                    level_status = stat
                     return
                 end if
                 if (present(work)) work(j) = contour_work
-                cycle
+                level_status = 0
+                return
             end if
             count = 0
             do edge = 1, ne
@@ -299,11 +354,11 @@ contains
                     ! A contour through a mesh vertex has no unique face
                     ! event derivative. Refuse that branch explicitly.
                     if (min(t, 1 - t) < 1.0e-10_dp) then
-                        status = 18
+                        level_status = 18
                         return
                     end if
                     if (next_cell < 1) then
-                        status = 7
+                        level_status = 7
                         return
                     end if
                     vec = state%points(:, b) - state%points(:, a)
@@ -326,7 +381,7 @@ contains
                                             affine_chart=.true.)
                         if (stat /= 0) return
                         if (abs(dot_product(grad, vec)) < tolerance) then
-                            status = 18
+                            level_status = 18
                             return
                         end if
                         call gs_contour_root_response(dot_product(grad, vec), &
@@ -348,14 +403,15 @@ contains
                     lo = (index - 1)*two_pi/16
                     hi = index*two_pi/16
                     call integrate_arc(cell, lo, hi, 0.0_dp, 0.0_dp, j, &
-                                       level_delta, stat)
+                                       level_delta, stat, contour_work)
                     if (stat /= 0) then
-                        status = stat
+                        level_status = stat
                         return
                     end if
                 end do
                 if (present(work)) work(j) = contour_work
-                cycle
+                level_status = 0
+                return
             end if
             call argsort(events(:count)%angle, permutation(:count))
             events_copy(:count) = events(:count)
@@ -365,7 +421,7 @@ contains
             if (count > 1) then
                 if (minval(events(2:count)%angle - events(1:count - &
                                                           1)%angle) < 1.0e-10_dp) then
-                    status = 18
+                    level_status = 18
                     return
                 end if
             end if
@@ -378,13 +434,13 @@ contains
                 e = events(1)%left
                 if (k == 2) e = events(1)%right
                 call point_on_cell(e, 0.5_dp*(lo + hi), levels(j), &
-                                   point, grad, h, stat)
+                                   point, grad, h, stat, contour_work)
                 if (stat /= 0) cycle
                 cell = e
                 exit
             end do
             if (cell == 0) then
-                status = 7
+                level_status = 7
                 return
             end if
             first_cell = cell
@@ -396,10 +452,10 @@ contains
                 dhi = events(k)%tangent
                 if (k == 1) hi = hi + two_pi
                 call integrate_arc(cell, lo, hi, dlo, dhi, j, &
-                                   level_delta, stat, events(index)%point, &
-                                   events(k)%point)
+                                   level_delta, stat, contour_work, &
+                                   events(index)%point, events(k)%point)
                 if (stat /= 0) then
-                    status = stat
+                    level_status = stat
                     return
                 end if
                 if (events(k)%left == cell) then
@@ -407,30 +463,18 @@ contains
                 else if (events(k)%right == cell) then
                     cell = events(k)%left
                 else
-                    status = 8
+                    level_status = 8
                     return
                 end if
             end do
             if (present(work)) work(j) = contour_work
             if (cell /= first_cell) then
-                status = 8
+                level_status = 8
                 return
             end if
-        end do
-        if (.not. all(ieee_is_finite(coarea)) .or. &
-            minval(coarea) <= 0) then
-            status = 15
-            return
-        end if
-        if (with_tangent) then
-            if (.not. all(ieee_is_finite(coarea_tangent))) then
-                status = 17
-                return
-            end if
-        end if
-        axis = physical_axis
-        status = 0
-    contains
+            level_status = 0
+        end subroutine integrate_level
+
         subroutine edge_dofs(e, edge, indices)
             integer, intent(in) :: e, edge
             integer, intent(out) :: indices(4)
@@ -523,15 +567,16 @@ contains
         end subroutine
 
         subroutine point_on_cell(e, theta, level, point, &
-                                 grad, h, status)
+                                 grad, h, status, cw)
             integer, intent(in)::e
+            integer, intent(inout)::cw
             real(dp), intent(in)::theta, level
             real(dp), intent(out)::point(2), grad(2), h(2, 2)
             integer, intent(out)::status
             real(dp)::dir(2), bary(3), slope(3), lo, hi, aa, bb, &
                        cc, root(2), r, value
             integer::k, nr, found, stat
-            contour_work = contour_work + 1
+            cw = cw + 1
             status = 7
             point = 0
             grad = 0
@@ -598,17 +643,18 @@ contains
         end subroutine point_on_cell
 
         subroutine arc_weight(e, theta, level, level_delta, &
-                              weight, delta_weight, status)
+                              weight, delta_weight, status, cw)
             integer, intent(in)::e
+            integer, intent(inout)::cw
             real(dp), intent(in)::theta, level, level_delta
             real(dp), intent(out)::weight, delta_weight
             integer, intent(out)::status
             real(dp)::point(2), grad(2), h(2, 2), dir(2), r, rg, droot, &
-                       tv, tg(2), th(2, 2), dv, dg(2), ignored
+                       tv, tg(2), th(2, 2), dv, dg(2), ignored, factor
             weight = 0
             delta_weight = 0
             call point_on_cell(e, theta, level, point, grad, h, &
-                               status)
+                               status, cw)
             if (status /= 0) return
             dir = [cos(theta), &
                    sin(theta)]
@@ -639,8 +685,9 @@ contains
         end subroutine arc_weight
 
         subroutine integrate_arc(e, lo, hi, dlo, dhi, j, &
-                                 level_delta, status, first_point, last_point)
+                                 level_delta, status, cw, first_point, last_point)
             integer, intent(in)::e, j
+            integer, intent(inout)::cw
             real(dp), intent(in)::lo, hi, dlo, dhi, level_delta
             real(dp), optional, intent(in)::first_point(2), last_point(2)
             integer, intent(out)::status
@@ -649,7 +696,7 @@ contains
             do q = 1, order
                 angle = lo + (hi - lo)*x(q)
                 call arc_weight(e, angle, levels(j), level_delta, &
-                                weight, delta_weight, status)
+                                weight, delta_weight, status, cw)
                 if (status /= 0) return
                 coarea(j) = coarea(j) + (hi - lo)*w(q)*weight
                 if (with_tangent) coarea_tangent(j) = coarea_tangent(j) + (hi - &
@@ -662,7 +709,7 @@ contains
                     call face_weight(e, first_point, weight, status)
                 else
                     call arc_weight(e, lo, levels(j), level_delta, &
-                                    weight, delta_weight, status)
+                                    weight, delta_weight, status, cw)
                 end if
                 if (status /= 0) return
                 coarea_tangent(j) = coarea_tangent(j) - weight*dlo
@@ -670,7 +717,7 @@ contains
                     call face_weight(e, last_point, weight, status)
                 else
                     call arc_weight(e, hi, levels(j), level_delta, &
-                                    weight, delta_weight, status)
+                                    weight, delta_weight, status, cw)
                 end if
                 if (status /= 0) return
                 coarea_tangent(j) = coarea_tangent(j) + weight*dhi
@@ -710,7 +757,7 @@ contains
             real(dp), intent(in)::level_delta
             integer, intent(out)::status
             real(dp)::point(2), vec(2), value, grad(2), h(2, 2), tv, &
-                       tg(2), th(2, 2), weight, dweight
+                       tg(2), th(2, 2), weight, dweight, factor
             integer::e, k, a, b, mid, q, stat
             status = 1
             do e = 1, n

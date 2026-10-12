@@ -40,6 +40,21 @@ module kin6d_gs_nonlinear
     type :: source_rule_t
         real(dp), allocatable :: weights(:), shapes(:, :), gradients(:, :, :)
     end type
+    ! Shared read-only quadrature tables of gs_cubic_load.
+    type :: load_tables_t
+        real(dp), allocatable :: w(:), wh(:), shapes(:, :), grads(:, :, :)
+        real(dp), allocatable :: shapes_h(:, :), grads_h(:, :, :)
+    end type
+    ! Per-thread scratch of gs_cubic_load: the FortFEM workspace and the cut
+    ! event and value buffers.
+    type :: load_scratch_t
+        type(triangle_level_workspace_t) :: workspace
+        type(source_rule_t) :: rules(4)
+        real(dp), allocatable :: events(:), inner(:), epsabs(:), rtol(:), values(:)
+        real(dp), allocatable :: errors(:), cell_values(:), high_values(:)
+        logical, allocatable :: inner_active(:)
+        logical :: ready = .false.
+    end type
     abstract interface
         function gs_forcing_t(r, z) result(source)
             import :: dp
@@ -118,25 +133,15 @@ contains
         real(dp), intent(in), optional :: jacobian_tolerance
         logical, intent(in), optional :: load_only
         integer, intent(out), optional :: quadrature_evaluations
-        type(triangle_level_workspace_t) :: workspace
-        type(source_rule_t) :: rules(4)
-        real(dp), allocatable :: levels(:), events(:), inner(:), epsabs(:), rtol(:)
-        real(dp), allocatable :: values(:), errors(:), x(:), y(:), w(:)
-        real(dp), allocatable :: xh(:), yh(:), wh(:), shapes(:, :), grads(:, :, :)
-        real(dp), allocatable :: shapes_h(:, :), grads_h(:, :, :)
-        real(dp), allocatable :: high_values(:), cell_values(:)
-        logical, allocatable :: inner_active(:)
-        logical :: smooth_law, need_jacobian, free_mode
-        real(dp) :: coefficients(6), local_psi(10), controls(10), low, high, scale, tol
-        real(dp) :: jtol
-        real(dp) :: edge_values(4), roots(3), shape(10), g(2, 10), h(2, 2, 10)
-        real(dp) :: last_x, actual(2), width, samples(4), band_lower, band_upper
-        real(dp) :: cell_points(2, 10)
-        integer :: e, ndof, nc, i, j, k, nr, ne, ni, nlevels, q
-        integer :: ix, left, right, band, cell_left, cell_right, capacity, rule
-        logical :: integrated, closed_cut
+        real(dp), allocatable :: levels(:), x(:), y(:), w(:)
+        real(dp), allocatable :: xh(:), yh(:), wh(:)
+        real(dp), allocatable :: rhs_local(:, :), axis_local(:, :), source_local(:)
+        integer, allocatable :: element_status(:), element_evaluations(:)
+        type(load_tables_t) :: tables
+        logical :: smooth_law, need_jacobian, free_mode, scratch_failed
+        real(dp) :: jtol, tol, h(2, 2, 10)
+        integer :: e, ndof, nc, i, j, k, q, nel, capacity, first_failure
         integer :: evaluations
-        character(160) :: message
         status = 1; rhs = 0
         if (present(source_integral)) source_integral = 0
         need_jacobian = .true.
@@ -181,180 +186,98 @@ contains
         if (levels(1) > levels(size(levels))) levels = levels(size(levels):1:-1)
         capacity = 12*size(levels) + 3
         if (state%element_order == 3 .and. .not. smooth_law) capacity = 27
-        allocate (events(capacity), inner(capacity), inner_active(capacity), &
-                  epsabs(nc), rtol(nc), values(nc), errors(nc), cell_values(nc))
-        rtol(:ndof) = tol; rtol(ndof + 1:) = jtol
-        call initialize_triangle_level_workspace(workspace, nc, size(events), &
-                   status, max_panels=max(256, size(events)), max_evaluations=2000000, &
-                                                 max_points=1000000)
-        if (status /= 0) return
+        nel = size(state%triangles, 2)
         call triangle_duffy_quadrature(2*state%element_order + 2, x, y, w, status)
         if (status /= 0) return
         call triangle_duffy_quadrature(2*state%element_order + 4, xh, yh, wh, status)
         if (status /= 0) return
-        allocate (shapes(ndof, size(w)), grads(2, ndof, size(w)), &
-                  shapes_h(ndof, size(wh)), grads_h(2, ndof, size(wh)), high_values(nc))
+        allocate (tables%w(size(w)), tables%wh(size(wh)))
+        tables%w = w; tables%wh = wh
+        allocate (tables%shapes(ndof, size(w)), tables%grads(2, ndof, size(w)), &
+                  tables%shapes_h(ndof, size(wh)), tables%grads_h(2, ndof, size(wh)))
         do q = 1, size(w)
-            call triangle_basis_jet([x(q), y(q)], shapes(:, q), grads(:, :, q), &
-                                    h(:, :, :ndof))
+            call triangle_basis_jet([x(q), y(q)], tables%shapes(:, q), &
+                                    tables%grads(:, :, q), h(:, :, :ndof))
         end do
         do q = 1, size(wh)
-            call triangle_basis_jet([xh(q), yh(q)], shapes_h(:, q), grads_h(:, :, q), &
-                                    h(:, :, :ndof))
+            call triangle_basis_jet([xh(q), yh(q)], tables%shapes_h(:, q), &
+                                    tables%grads_h(:, :, q), h(:, :, :ndof))
         end do
-        do e = 1, size(state%triangles, 2)
+        ! Element-parallel assembly. Every element writes only its own slice;
+        ! the node gather below runs in element order, so the result does not
+        ! depend on the thread count. Each thread owns one quadrature workspace.
+        allocate (element_status(nel), element_evaluations(nel), rhs_local(ndof, nel), &
+                  source_local(nel))
+        allocate (axis_local(ndof, merge(nel, 0, need_jacobian)))
+        element_status = 0; element_evaluations = 0; rhs_local = 0; source_local = 0
+        if (need_jacobian) axis_local = 0
+        first_failure = huge(1)
+        scratch_failed = .false.
+        !$omp parallel default(shared)
+        block
+            type(load_scratch_t) :: scratch
+            integer :: status_local, local_evaluations, ie, snapshot
+            call init_load_scratch(scratch, nc, capacity, ndof, tol, jtol, status_local)
+            if (status_local /= 0) then
+                !$omp atomic write
+                scratch_failed = .true.
+            end if
+            !$omp do schedule(dynamic, 4)
+            do ie = 1, nel
+                if (free_mode) then
+                    if (.not. plasma_cell(ie)) cycle
+                end if
+                if (.not. scratch%ready) then
+                    element_status(ie) = 1
+                    cycle
+                end if
+                !$omp atomic read
+                snapshot = first_failure
+                if (ie > snapshot) cycle
+                call gs_load_element(state, mu0, law, ie, free_mode, smooth_law, &
+                                     need_jacobian, nc, tol, jtol, levels, tables, &
+                                     forcing, scratch, local_evaluations, status_local)
+                element_evaluations(ie) = local_evaluations
+                if (status_local /= 0) then
+                    element_status(ie) = status_local
+                    !$omp critical(gs_load_failure)
+                    first_failure = min(first_failure, ie)
+                    !$omp end critical(gs_load_failure)
+                    cycle
+                end if
+                rhs_local(:, ie) = scratch%values(:ndof)
+                source_local(ie) = sum(scratch%values(:ndof))
+                if (need_jacobian) then
+                    axis_local(:, ie) = scratch%values(nc - ndof + 1:nc)
+                    jacobian%mass(:, :, ie) = &
+                        reshape(scratch%values(ndof + 1:nc - ndof), [ndof, ndof])
+                end if
+            end do
+            !$omp end do
+        end block
+        !$omp end parallel
+        if (scratch_failed) then
+            status = 1
+            if (first_failure == huge(1)) return
+        end if
+        if (first_failure /= huge(1)) then
+            status = element_status(first_failure)
+            rhs = 0
+            return
+        end if
+        evaluations = sum(element_evaluations)
+        do e = 1, nel
             if (free_mode) then
                 if (.not. plasma_cell(e)) cycle
             end if
-            cell_points(:, :ndof) = state%points(:, state%triangles(:, e))
-            local_psi(:ndof) = state%psi(state%triangles(:, e))
-            if (maxval(abs(local_psi(:ndof) - local_psi(1))) <= 0) then
-                if (gs_law_kink(law, local_psi(1))) then
-                    status = 4
-                    rhs = 0
-                    return
-                end if
-            end if
-            call triangle_bernstein_controls(local_psi(:ndof), controls(:ndof))
-            low = minval(controls(:ndof)); high = maxval(controls(:ndof))
-            left = count(levels <= low) + 1; right = count(levels < high)
-            nlevels = max(0, right - left + 1)
-            closed_cut = .false.
-            if (nlevels > 0 .and. smooth_law) closed_cut = possible_closed_cut()
-            values = 0
-            scale = max(1.0_dp, mu0*maxval(abs(law%pp(1, :))) &
-                        + maxval(abs(law%ff(1, :))))*2*state%area(e)
-            epsabs = rtol*scale
-            integrated = .false.
-            if (nlevels > 0 .and. smooth_law .and. .not. closed_cut) then
-                values = 0
-                do rule = 1, size(rules)
-                    call smooth_rule(rule, high_values)
-                    if (status /= 0) return
-                    if (rule > 1) then
-                        if (all(abs(high_values - values) <= epsabs + &
-                            rtol*abs(high_values))) then
-                            integrated = .true.
-                            exit
-                        end if
-                    end if
-                    values = high_values
-                end do
-                values = high_values
-            end if
-            if (integrated) then
-                continue
-            else if (nlevels == 0) then
-                do q = 1, size(w)
-                    call source_values(shapes(:, q), grads(:, :, q), errors, status)
-                    if (status /= 0) return
-                    values = values + w(q)*errors
-                end do
-                high_values = 0
-                do q = 1, size(wh)
-                    call source_values(shapes_h(:, q), grads_h(:, :, q), errors, status)
-                    if (status /= 0) return
-                    high_values = high_values + wh(q)*errors
-                end do
-                if (any(abs(high_values - values) > epsabs + tol*0.1_dp &
-                        *abs(high_values))) then
-                    coefficients = 0
-                    call integrate_triangle_levels(coefficients, [real(dp) ::], &
-                               source_products, epsabs, tol*0.1_dp, workspace, values, &
-                                                   errors, status, message)
-                    if (status /= 0) then
-                        print *, 'smooth profile quadrature cell:', e, trim(message)
-                        return
-                    end if
-                else
-                    values = high_values
-                end if
-            else
-                if (state%element_order == 3 .and. smooth_law .and. &
-                    .not. closed_cut) then
-                    band_lower = -huge(1.0_dp); band_upper = huge(1.0_dp)
-                    ne = 2; events(:2) = [0.0_dp, 1.0_dp]
-                    coefficients = [0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
-                    last_x = -1
-                    call integrate_triangle_levels(coefficients, events(:ne), &
-                        cut_products, epsabs, tol, workspace, values, &
-                        errors, status, message)
-                else if (state%element_order <= 2) then
-                    call triangle_level_coefficients(state%element_order, &
-                                                 local_psi(:ndof), coefficients, status)
-                    if (status /= 0) return
-                    call integrate_triangle_levels(coefficients, levels(left:right), &
-                               source_products, epsabs, tol*0.1_dp, workspace, values, &
-                                                   errors, status, message)
-                else
-                    ! One flux band at a time: work grows with the number of
-                    ! knots rather than repeating all bands at every event.
-                    ! FortFEM owns the positive paired adaptive integration.
-                    cell_left = left; cell_right = right; cell_values = 0
-                    do band = 0, nlevels
-                        band_lower = -huge(1.0_dp); band_upper = huge(1.0_dp)
-                        if (band > 0) band_lower = levels(cell_left + band - 1)
-                        if (band < nlevels) band_upper = levels(cell_left + band)
-                        left = max(cell_left, cell_left + band - 1)
-                        right = min(cell_right, cell_left + band)
-                        events(:2) = [0.0_dp, 1.0_dp]; ne = 2
-                        do ix = 1, 2
-                            do i = 1, 4
-                                actual = [real(i - 1, dp)/3, 0.0_dp]
-                                if (ix == 2) actual(2) = 1 - actual(1)
-                                edge_values(i) = flux_value(actual)
-                            end do
-                            do j = left, right
-                             call cubic_segment_roots(edge_values, levels(j), roots, nr)
-                                events(ne + 1:ne + nr) = roots(:nr); ne = ne + nr
-                            end do
-                        end do
-                        call tangency_events()
-                        if (status /= 0) return
-                        call sort_cuts(events, ne)
-                        call cut_rule(4, values)
-                        if (status /= 0) return
-                        call cut_rule(8, high_values)
-                        if (status /= 0) return
-                        errors = abs(high_values - values)
-                        epsabs(:ndof) = max(tol*scale*0.01_dp/(nlevels + 1), &
-                                            tol*0.1_dp*maxval(abs(high_values(:ndof))))
-                        if (need_jacobian) then
-                            epsabs(ndof + 1:) = &
-                                max(jtol*scale*0.01_dp/(nlevels + 1), &
-                                    jtol*0.1_dp*maxval(abs(high_values(ndof + 1:))))
-                        end if
-                        coefficients = [0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
-                        last_x = -1
-                        if (all(errors <= epsabs + tol*0.1_dp*abs(high_values))) then
-                            values = high_values
-                        else
-                            call integrate_triangle_levels(coefficients, events(:ne), &
-                                  cut_products, epsabs, tol*0.1_dp, workspace, values, &
-                                                           errors, status, message)
-                        end if
-                        if (status /= 0) exit
-                        cell_values = cell_values + values
-                    end do
-                    values = cell_values
-                end if
-                if (status /= 0) then
-                   print *, 'profile quadrature cell/status: ', e, status, trim(message)
-                    print *, 'cuts, panels, evaluations, depth:', nlevels, &
-                        workspace%npanels, workspace%nevaluations, workspace%inner_depth
-                    return
-                end if
-            end if
             if (present(source_integral)) &
-                source_integral = source_integral + sum(values(:ndof))
+                source_integral = source_integral + source_local(e)
             do i = 1, ndof
                 k = state%triangles(i, e)
-                rhs(k) = rhs(k) + values(i)
+                rhs(k) = rhs(k) + rhs_local(i, e)
                 if (need_jacobian) jacobian%axis_load(k) = jacobian%axis_load(k) &
-                    + values(nc - ndof + i)
+                    + axis_local(i, e)
             end do
-            if (need_jacobian) jacobian%mass(:, :, e) = &
-                reshape(values(ndof + 1:nc - ndof), [ndof, ndof])
             do j = 1, ndof
                 k = state%triangles(j, e)
                 if (free_mode) exit
@@ -382,6 +305,195 @@ contains
         status = 1
         if (all(ieee_is_finite(rhs))) status = 0
         if (present(quadrature_evaluations)) quadrature_evaluations = evaluations
+    end subroutine
+
+    subroutine init_load_scratch(scr, nc, capacity, ndof, tol, jtol, status)
+        type(load_scratch_t), intent(out) :: scr
+        integer, intent(in) :: nc, capacity, ndof
+        real(dp), intent(in) :: tol, jtol
+        integer, intent(out) :: status
+        allocate (scr%events(capacity), scr%inner(capacity), &
+                  scr%inner_active(capacity), &
+                  scr%epsabs(nc), scr%rtol(nc), scr%values(nc), scr%errors(nc), &
+                  scr%cell_values(nc), scr%high_values(nc))
+        scr%rtol(:ndof) = tol; scr%rtol(ndof + 1:) = jtol
+        call initialize_triangle_level_workspace(scr%workspace, nc, capacity, &
+                   status, max_panels=max(256, capacity), max_evaluations=2000000, &
+                                                 max_points=1000000)
+        scr%ready = status == 0
+    end subroutine
+
+    subroutine gs_load_element(state, mu0, law, e, free_mode, smooth_law, &
+                               need_jacobian, nc, tol, jtol, levels, tables, forcing, &
+                               scr, evaluations, status)
+        !! One element of gs_cubic_load. All mutable state is local or in the
+        !! per-thread scratch `scr`, so concurrent calls on distinct elements are
+        !! independent. The integrals are returned in scr%values.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: mu0, tol, jtol, levels(:)
+        type(gs_profile_law_t), intent(in) :: law
+        integer, intent(in) :: e, nc
+        logical, intent(in) :: free_mode, smooth_law, need_jacobian
+        type(load_tables_t), intent(in) :: tables
+        procedure(gs_forcing_t), optional :: forcing
+        type(load_scratch_t), intent(inout) :: scr
+        integer, intent(out) :: evaluations, status
+        real(dp) :: coefficients(6), local_psi(10), controls(10), low, high, scale
+        real(dp) :: edge_values(4), roots(3), shape(10), g(2, 10)
+        real(dp) :: last_x, actual(2), width, samples(4), band_lower, band_upper
+        real(dp) :: cell_points(2, 10)
+        integer :: ndof, i, j, nr, ne, ni, nlevels, q
+        integer :: ix, left, right, band, cell_left, cell_right, rule
+        logical :: integrated, closed_cut
+        character(160) :: message
+        ndof = size(state%triangles, 1)
+        evaluations = 0
+        status = 0
+        message = ''
+        scr%values = 0
+            cell_points(:, :ndof) = state%points(:, state%triangles(:, e))
+            local_psi(:ndof) = state%psi(state%triangles(:, e))
+            if (maxval(abs(local_psi(:ndof) - local_psi(1))) <= 0) then
+                if (gs_law_kink(law, local_psi(1))) then
+                    status = 4
+                    return
+                end if
+            end if
+            call triangle_bernstein_controls(local_psi(:ndof), controls(:ndof))
+            low = minval(controls(:ndof)); high = maxval(controls(:ndof))
+            left = count(levels <= low) + 1; right = count(levels < high)
+            nlevels = max(0, right - left + 1)
+            closed_cut = .false.
+            if (nlevels > 0 .and. smooth_law) closed_cut = possible_closed_cut()
+            scr%values = 0
+            scale = max(1.0_dp, mu0*maxval(abs(law%pp(1, :))) &
+                        + maxval(abs(law%ff(1, :))))*2*state%area(e)
+            scr%epsabs = scr%rtol*scale
+            integrated = .false.
+            if (nlevels > 0 .and. smooth_law .and. .not. closed_cut) then
+                scr%values = 0
+                do rule = 1, size(scr%rules)
+                    call smooth_rule(rule, scr%high_values)
+                    if (status /= 0) return
+                    if (rule > 1) then
+                        if (all(abs(scr%high_values - scr%values) <= scr%epsabs + &
+                            scr%rtol*abs(scr%high_values))) then
+                            integrated = .true.
+                            exit
+                        end if
+                    end if
+                    scr%values = scr%high_values
+                end do
+                scr%values = scr%high_values
+            end if
+            if (integrated) then
+                continue
+            else if (nlevels == 0) then
+                do q = 1, size(tables%w)
+                    call source_values(tables%shapes(:, q), tables%grads(:, :, q), &
+                                       scr%errors, status)
+                    if (status /= 0) return
+                    scr%values = scr%values + tables%w(q)*scr%errors
+                end do
+                scr%high_values = 0
+                do q = 1, size(tables%wh)
+                    call source_values(tables%shapes_h(:, q), &
+                                       tables%grads_h(:, :, q), scr%errors, status)
+                    if (status /= 0) return
+                    scr%high_values = scr%high_values + tables%wh(q)*scr%errors
+                end do
+                if (any(abs(scr%high_values - scr%values) > scr%epsabs + tol*0.1_dp &
+                        *abs(scr%high_values))) then
+                    coefficients = 0
+                    call integrate_triangle_levels(coefficients, [real(dp) ::], &
+                        source_products, scr%epsabs, tol*0.1_dp, scr%workspace, &
+                        scr%values, scr%errors, status, message)
+                    if (status /= 0) then
+                        print *, 'smooth profile quadrature cell:', e, trim(message)
+                        return
+                    end if
+                else
+                    scr%values = scr%high_values
+                end if
+            else
+                if (state%element_order == 3 .and. smooth_law .and. &
+                    .not. closed_cut) then
+                    band_lower = -huge(1.0_dp); band_upper = huge(1.0_dp)
+                    ne = 2; scr%events(:2) = [0.0_dp, 1.0_dp]
+                    coefficients = [0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
+                    last_x = -1
+                    call integrate_triangle_levels(coefficients, scr%events(:ne), &
+                        cut_products, scr%epsabs, tol, scr%workspace, scr%values, &
+                        scr%errors, status, message)
+                else if (state%element_order <= 2) then
+                    call triangle_level_coefficients(state%element_order, &
+                                                 local_psi(:ndof), coefficients, status)
+                    if (status /= 0) return
+                    call integrate_triangle_levels(coefficients, levels(left:right), &
+                        source_products, scr%epsabs, tol*0.1_dp, scr%workspace, &
+                        scr%values, scr%errors, status, message)
+                else
+                    ! One flux band at a time: work grows with the number of
+                    ! knots rather than repeating all bands at every event.
+                    ! FortFEM owns the positive paired adaptive integration.
+                    cell_left = left; cell_right = right; scr%cell_values = 0
+                    do band = 0, nlevels
+                        band_lower = -huge(1.0_dp); band_upper = huge(1.0_dp)
+                        if (band > 0) band_lower = levels(cell_left + band - 1)
+                        if (band < nlevels) band_upper = levels(cell_left + band)
+                        left = max(cell_left, cell_left + band - 1)
+                        right = min(cell_right, cell_left + band)
+                        scr%events(:2) = [0.0_dp, 1.0_dp]; ne = 2
+                        do ix = 1, 2
+                            do i = 1, 4
+                                actual = [real(i - 1, dp)/3, 0.0_dp]
+                                if (ix == 2) actual(2) = 1 - actual(1)
+                                edge_values(i) = flux_value(actual)
+                            end do
+                            do j = left, right
+                             call cubic_segment_roots(edge_values, levels(j), roots, nr)
+                                scr%events(ne + 1:ne + nr) = roots(:nr); ne = ne + nr
+                            end do
+                        end do
+                        call tangency_events()
+                        if (status /= 0) return
+                        call sort_cuts(scr%events, ne)
+                        call cut_rule(4, scr%values)
+                        if (status /= 0) return
+                        call cut_rule(8, scr%high_values)
+                        if (status /= 0) return
+                        scr%errors = abs(scr%high_values - scr%values)
+                        scr%epsabs(:ndof) = max(tol*scale*0.01_dp/(nlevels + 1), &
+                            tol*0.1_dp*maxval(abs(scr%high_values(:ndof))))
+                        if (need_jacobian) then
+                            scr%epsabs(ndof + 1:) = &
+                                max(jtol*scale*0.01_dp/(nlevels + 1), &
+                                    jtol*0.1_dp*maxval(abs(scr%high_values(ndof + 1:))))
+                        end if
+                        coefficients = [0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
+                        last_x = -1
+                        if (all(scr%errors <= scr%epsabs &
+                                + tol*0.1_dp*abs(scr%high_values))) then
+                            scr%values = scr%high_values
+                        else
+                            call integrate_triangle_levels(coefficients, &
+                                  scr%events(:ne), cut_products, scr%epsabs, &
+                                  tol*0.1_dp, scr%workspace, scr%values, &
+                                  scr%errors, status, message)
+                        end if
+                        if (status /= 0) exit
+                        scr%cell_values = scr%cell_values + scr%values
+                    end do
+                    scr%values = scr%cell_values
+                end if
+                if (status /= 0) then
+                   print *, 'profile quadrature cell/status: ', e, status, trim(message)
+                    print *, 'cuts, panels, evaluations, depth:', nlevels, &
+                        scr%workspace%npanels, scr%workspace%nevaluations, &
+                        scr%workspace%inner_depth
+                    return
+                end if
+            end if
     contains
         logical function possible_closed_cut() result(closed)
             real(dp) :: edge_min, edge_max, t, value, stationary(2), v(4)
@@ -425,24 +537,24 @@ contains
             real(dp), allocatable :: rx(:), ry(:)
             real(dp) :: piece(nc)
             integer :: node
-            if (.not. allocated(rules(index)%weights)) then
+            if (.not. allocated(scr%rules(index)%weights)) then
                 call triangle_duffy_quadrature(2*orders(index) - 2, rx, ry, &
-                    rules(index)%weights, status)
+                    scr%rules(index)%weights, status)
                 if (status /= 0) return
-                allocate (rules(index)%shapes(ndof, size(rx)), &
-                    rules(index)%gradients(2, ndof, size(rx)))
+                allocate (scr%rules(index)%shapes(ndof, size(rx)), &
+                    scr%rules(index)%gradients(2, ndof, size(rx)))
                 do node = 1, size(rx)
                     call triangle_basis_jet([rx(node), ry(node)], &
-                        rules(index)%shapes(:, node), &
-                        rules(index)%gradients(:, :, node))
+                        scr%rules(index)%shapes(:, node), &
+                        scr%rules(index)%gradients(:, :, node))
                 end do
             end if
             integral = 0
-            do node = 1, size(rules(index)%weights)
-                call source_values(rules(index)%shapes(:, node), &
-                    rules(index)%gradients(:, :, node), piece, status)
+            do node = 1, size(scr%rules(index)%weights)
+                call source_values(scr%rules(index)%shapes(:, node), &
+                    scr%rules(index)%gradients(:, :, node), piece, status)
                 if (status /= 0) return
-                integral = integral + rules(index)%weights(node)*piece
+                integral = integral + scr%rules(index)%weights(node)*piece
             end do
         end subroutine
 
@@ -454,9 +566,9 @@ contains
             call gauss_legendre_ab(order, 0.0_dp, 1.0_dp, nodes, weights)
             integral = 0; last_x = -1
             do panel = 1, ne - 1
-                scale = events(panel + 1) - events(panel)
+                scale = scr%events(panel + 1) - scr%events(panel)
                 do a = 1, order
-                    xi = events(panel) + scale*nodes(a)
+                    xi = scr%events(panel) + scale*nodes(a)
                     do b = 1, order
                         eta = (1 - xi)*nodes(b)
                         call cut_products([xi, eta], piece, status)
@@ -530,7 +642,7 @@ contains
                 do a = 1, degree
                     if (abs(wi(a)) > 1.0e-7_dp) cycle
                     if (wr(a) <= -1 .or. wr(a) >= 1) cycle
-                    ne = ne + 1; events(ne) = (wr(a) + 1)/2
+                    ne = ne + 1; scr%events(ne) = (wr(a) + 1)/2
                 end do
             end do
         end subroutine
@@ -609,31 +721,32 @@ contains
                 do a = 1, 4
                     samples(a) = flux_value([last_x, upper*real(a - 1, dp)/3])
                 end do
-                inner(:2) = [0.0_dp, 1.0_dp]; ni = 2
+                scr%inner(:2) = [0.0_dp, 1.0_dp]; ni = 2
                 do b = left, right
                     call cubic_segment_roots(samples, levels(b), roots, root_count)
-                    inner(ni + 1:ni + root_count) = roots(:root_count)
+                    scr%inner(ni + 1:ni + root_count) = roots(:root_count)
                     ni = ni + root_count
                 end do
-                call sort_cuts(inner, ni)
+                call sort_cuts(scr%inner, ni)
                 do a = 1, ni - 1
                     midpoint_flux = flux_value([last_x, &
-                                                upper*(inner(a) + inner(a + 1))/2])
-                    inner_active(a) = midpoint_flux >= band_lower .and. &
+                                            upper*(scr%inner(a) + scr%inner(a + 1))/2])
+                    scr%inner_active(a) = midpoint_flux >= band_lower .and. &
                                       midpoint_flux <= band_upper
                 end do
             end if
             output = 0; stat = 0
             do a = 1, ni - 1
-                if (.not. inner_active(a)) cycle
-                width = inner(a + 1) - inner(a)
-                eta = (1 - point(1))*inner(a) + width*point(2)
+                if (.not. scr%inner_active(a)) cycle
+                width = scr%inner(a + 1) - scr%inner(a)
+                eta = (1 - point(1))*scr%inner(a) + width*point(2)
                 call source_products([point(1), eta], piece, stat)
                 if (stat /= 0) return
                 output = output + width*piece
             end do
         end subroutine
     end subroutine
+
 
     subroutine apply_gs_profile_jacobian(state, jacobian, input, output, transpose)
         type(gs_state_t), intent(in) :: state
