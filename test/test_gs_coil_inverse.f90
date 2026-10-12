@@ -237,8 +237,8 @@ contains
         call require(all(abs(res%gsvd%gsv - [(norm2(matmul(dmat_of(res), &
             res%gsvd%modes(:, j))), j=1, n_circ)]) .lt. 1.0e-8_dp*res%gsvd%gsv(n_circ) &
                          ), 'modes reproduce the generalised singular values')
-       call require(abs(norm2(res%gsvd%modes(:, 1)/set%i_max) - 1.0_dp) .lt. 1.0e-12_d &
-                     p, 'modes normalised in the L norm')
+        call require(abs(norm2(res%gsvd%modes(:, 1)/set%i_max) - 1.0_dp) .lt. &
+            1.0e-12_dp, 'modes normalised in the L norm')
 
         ! Noisy targets: |c_j| gsv_j <= |noise| mode by mode (exact for the
         ! linearised problem), with the error concentrated in the null mode.
@@ -267,8 +267,8 @@ contains
         call require(status .eq. GS_CI_OK, 'fixed-psi_b fit converged')
         call require(res%gsvd%gsv(1) .gt. 20.0_dp*free%gsvd%gsv(1 &
                                                      ), 'psi_b row lifts the null mode')
-        call require(maxval(abs(coef)) .lt. 0.2_dp*c_fre &
-                     e, 'psi_b row removes the null-mode error')
+        call require(maxval(abs(coef)) .lt. 0.2_dp*c_free, &
+            'psi_b row removes the null-mode error')
     end subroutine test_recovery
 
     function dmat_of(res) result(d)
@@ -351,22 +351,22 @@ contains
         print '(a,8f9.1)', '   fixed-at-limit', fix%currents
         print '(a,8i3,a,i2,a,8l2)', '   bounded active set ', bnd%active, &
             '   passes ', fix%passes, '  pinned ', fix%pinned
-     call require(unc%currents(1) .gt. lim%upper(1) .or. unc%currents(4) .lt. lim%lowe &
-                     r(4), 'the unconstrained fit violates a limit')
-    call require(all(bnd%currents .le. lim%upper) .and. all(bnd%currents .ge. lim%lowe &
-                                           r), 'bounded fit honours the bounds exactly')
+        call require(unc%currents(1) .gt. lim%upper(1) .or. unc%currents(4) .lt. &
+            lim%lower(4), 'the unconstrained fit violates a limit')
+        call require(all(bnd%currents .le. lim%upper) .and. all(bnd%currents .ge. &
+            lim%lower), 'bounded fit honours the bounds exactly')
   call require(bnd%currents(1) .eq. lim%upper(1) .and. bnd%currents(4) .eq. lim%lower( &
                      4), 'bounded fit sits on the active limits')
-       call require(abs(bnd%currents(7) - bnd%currents(8)) .lt. 1.0e-9_dp*current_limi &
-                     t, 'bounded fit honours the series tie')
+        call require(abs(bnd%currents(7) - bnd%currents(8)) .lt. &
+            1.0e-9_dp*current_limit, 'bounded fit honours the series tie')
         call require(fix%pinned(1) .and. fix%pinned(4) .and. count(fix%pinned) .eq. 2 &
                      , 'fixed-at-limit pins the over-limit circuits')
   call require(fix%currents(1) .eq. lim%upper(1) .and. fix%currents(4) .eq. lim%lower( &
                      4), 'pinned circuits sit exactly at the limit')
-    call require(all(fix%currents .le. lim%upper) .and. all(fix%currents .ge. lim%lowe &
-                                                 r), 'fixed-at-limit fit within limits')
-       call require(abs(fix%currents(7) - fix%currents(8)) .lt. 1.0e-9_dp*current_limi &
-                     t, 'fixed-at-limit fit honours the series tie')
+        call require(all(fix%currents .le. lim%upper) .and. all(fix%currents .ge. &
+            lim%lower), 'fixed-at-limit fit within limits')
+        call require(abs(fix%currents(7) - fix%currents(8)) .lt. &
+            1.0e-9_dp*current_limit, 'fixed-at-limit fit honours the series tie')
         call require(unc%phi .le. bnd%phi*(1.0_dp + 1.0e-9_dp) + 1.0e-12_dp &
                      , 'bounds cannot lower Phi')
         call require(bnd%phi .le. fix%phi*(1.0_dp + 1.0e-6_dp) &
@@ -418,8 +418,8 @@ contains
         fg_scaled = norm2(grad*set%i_max)
         print '(a,2es10.2)', '   |L^-1 grad Phi| Gauss-Newton, emulation ', gn_scaled, &
             fg_scaled
-        call require(fg_scaled .gt. 100.0_dp*gn_scale &
-                     d, 'Gauss-Newton is stationary, the emulation is not')
+        call require(fg_scaled .gt. 100.0_dp*gn_scaled, &
+            'Gauss-Newton is stationary, the emulation is not')
 
         ! Reference currents: a scenario and zero. A dominant regulariser pulls
         ! the fit to the reference.
