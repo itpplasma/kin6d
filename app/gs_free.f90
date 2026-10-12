@@ -55,7 +55,8 @@ program gs_free_main
     real(dp) :: xpoint_guess(2) = 0.0_dp, search_radius = 0.4_dp, cut_fraction = 1.0_dp
     real(dp) :: refit_tolerance = 1.0e-3_dp, newton_tolerance = 1.0e-10_dp
     real(dp) :: quadrature_tolerance = 1.0e-9_dp, seed_amplitude = 1.0_dp
-    real(dp) :: currents(max_circuits) = 0.0_dp, reference_currents(max_circuits) = 0.0_dp
+    real(dp) :: currents(max_circuits) = 0.0_dp
+    real(dp) :: reference_currents(max_circuits) = 0.0_dp
     real(dp) :: lambda = 0.0_dp, relaxation = 1.0_dp, fit_step_tolerance = 1.0e-8_dp
     real(dp) :: volume = 0.0_dp, perimeter, h, wall_start, wall_s, psi_a, psi_b
     integer :: boundary_nodes = 96, degree = 2, chain_nodes = 48, axis_sign = 1
@@ -75,16 +76,17 @@ program gs_free_main
         coil_file, profile_file, mu0, plasma_ellipse, chain_nodes, lcfs_mode, &
         axis_sign, axis_guess, xpoint_guess, search_radius, cut_fraction, points_file, &
         max_refits, refit_tolerance, newton_tolerance, quadrature_tolerance, &
-        max_newton_iterations, seed_amplitude, currents, fit, constraints_file, lambda, &
-        reference_currents, n_reference, tie_a, tie_b, emulate_freegs, relaxation, &
-        max_fit_iterations, fit_step_tolerance, mesh_file, profile_points
+        max_newton_iterations, seed_amplitude, currents, fit, constraints_file, &
+        lambda, reference_currents, n_reference, tie_a, tie_b, emulate_freegs, &
+        relaxation, max_fit_iterations, fit_step_tolerance, mesh_file, profile_points
 
     call run%start('gs_free')
     wall_start = wall_clock()
     !$ threads = omp_get_max_threads()
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
-        if (trim(argument) /= '--evaluate' .and. trim(argument) /= '--evaluate-stream') &
+        if (trim(argument) /= '--evaluate' .and. &
+            trim(argument) /= '--evaluate-stream') &
             error stop 'expected --config or --evaluate'
         call evaluate_file(trim(argument) == '--evaluate-stream')
         stop
@@ -102,7 +104,8 @@ program gs_free_main
     nc = size(set%incidence, 2)
     if (nc > max_circuits) error stop 'too many circuits'
     call read_gs_profile_law(trim(profile_file), law, stat)
-    if (stat /= 0 .or. .not. law%normalized) error stop 'invalid normalized profile_file'
+    if (stat /= 0 .or. .not. law%normalized) &
+        error stop 'invalid normalized profile_file'
     call read_curve(trim(boundary_file), samples)
     call initialize_periodic_curve(curve, samples, stat)
     if (stat /= 0) error stop 'invalid closed curve'
@@ -154,8 +157,10 @@ program gs_free_main
     allocate (seed(size(state%points, 2)), vac(size(state%points, 2), nc))
     call gs_circuit_flux_vectors(set, state%points(1, :), state%points(2, :), vac)
     do i = 1, size(seed)
-        seed(i) = dot_product(vac(i, :), cur) + real(axis_sign, dp)*seed_amplitude* &
-                  exp(-(((state%points(1, i) - plasma_ellipse(1))/plasma_ellipse(2))**2 &
+        seed(i) = dot_product(vac(i, :), cur) + &
+                  real(axis_sign, dp)*seed_amplitude* &
+                  exp(-(((state%points(1, i) - plasma_ellipse(1)) &
+                         /plasma_ellipse(2))**2 &
                         + (state%points(2, i)/plasma_ellipse(3))**2))
     end do
     state%psi = seed
@@ -168,7 +173,8 @@ program gs_free_main
                                rcfg, report, status, set=set, curve=boundary)
         if (status /= GS_FB_OK .and. max_refits > 0 .and. &
             .not. (report%converged .or. report%stagnated)) &
-            write (output_unit, '(a,i0)') 'refit loop ended unconverged, status ', status
+            write (output_unit, '(a,i0)') &
+                'refit loop ended unconverged, status ', status
         if (allocated(report%movement)) refit_converged = report%converged
         if (.not. allocated(report%movement) .or. &
             (status /= GS_FB_OK .and. status /= 10)) &
@@ -202,13 +208,14 @@ program gs_free_main
             if (stat /= GS_CI_OK) error stop 'constraint rows could not be located'
             call gs_fb_newton(state, sys, cur, status)
             if (status /= GS_FB_OK) error stop 'free-boundary Newton failed'
-            call gs_ci_fit(state, sys, model, ccfg, variant, cur, state%psi, fit_result, &
-                           fit_stat)
+            call gs_ci_fit(state, sys, model, ccfg, variant, cur, state%psi, &
+                           fit_result, fit_stat)
             if (fit_stat /= GS_CI_OK .and. fit_stat /= GS_CI_NOT_CONVERGED) &
                 error stop 'coil-current fit failed'
             cur = fit_result%currents
             state%psi = fit_result%psi
-            call gs_fb_evaluate(state, sys, state%psi, cur, ev, status, jacobian=.false.)
+            call gs_fb_evaluate(state, sys, state%psi, cur, ev, status, &
+                                jacobian=.false.)
             if (status /= GS_FB_OK) error stop 'evaluation failed'
             report%movement(pass) = gs_fb_chain_movement(state, state%psi, &
                                                          ev%psi_bound, chain)
@@ -335,7 +342,8 @@ contains
             work(count)%q = v(3:4)
             work(count)%target = v(5)
             work(count)%scale = v(6)
-            if (work(count)%scale <= 0.0_dp) error stop 'constraint scale must be positive'
+            if (work(count)%scale <= 0.0_dp) &
+                error stop 'constraint scale must be positive'
         end do
         close (u)
         if (count < 1) error stop 'no constraint rows'
@@ -448,14 +456,18 @@ contains
         call result%write('plasma_current', ev%plasma_current, 'A', 'toroidal current')
         call result%write('lcfs', lcfs, 'm', 'plasma boundary, 256 points R Z')
         call result%write('chain', chain, 'm', 'Gamma_p chain of the final mesh')
-        call result%write('circuit_currents', cur, 'A', 'circuit currents in table order')
+        call result%write('circuit_currents', cur, 'A', &
+                          'circuit currents in table order')
         coil_i = matmul(set%incidence, cur)
         call result%write('coil_currents', coil_i, 'A', 'per-coil conductor currents')
         call result%write('circuit_i_min', set%i_min, 'A', 'circuit lower limits')
         call result%write('circuit_i_max', set%i_max, 'A', 'circuit upper limits')
-        call result%write('refits', real(report%refits, dp), '1', 'mesh refits performed')
-        call result%write('refit_converged', merge(1.0_dp, 0.0_dp, refit_converged), '1', &
-                          '1 when the chain is within refit_tolerance*h of the boundary')
+        call result%write('refits', real(report%refits, dp), '1', &
+                          'mesh refits performed')
+        call result%write('refit_converged', &
+                          merge(1.0_dp, 0.0_dp, refit_converged), '1', &
+                          '1 when the chain is within refit_tolerance*h of the '// &
+                          'boundary')
         call result%write('refit_movement', report%movement(0:report%refits), '1', &
                           'chain distance from the boundary / h before each solve')
         call result%write('boundary_faces', real(ev%face_cells, dp), '1', &
@@ -463,7 +475,8 @@ contains
         call result%write('profile_psi', prof(1, :), 'Wb/rad', 'absolute flux levels')
         call result%write('profile_s', prof(2, :), '1', &
                           'normalised flux s = 1 - (psi - psi_b)/(psi_a - psi_b)')
-        call result%write('profile_pressure', prof(3, :), 'Pa', 'p(psi), edge pressure p_edge')
+        call result%write('profile_pressure', prof(3, :), 'Pa', &
+                          'p(psi), edge pressure p_edge')
         call result%write('profile_f', prof(4, :), 'T m', 'F(psi), signed')
         call result%write('profile_pprime', prof(5, :), 'Pa/(Wb/rad)', 'dp/dpsi')
         call result%write('profile_ffprime', prof(6, :), 'T2 m2/(Wb/rad)', 'F F-prime')
@@ -483,7 +496,8 @@ contains
                               'scaled constraint residuals')
             call result%write('fit_gradient', fit_result%gradient, '1', 'dPhi/dI')
             if (allocated(fit_result%pinned)) &
-                call result%write('fit_pinned', merge(1.0_dp, 0.0_dp, fit_result%pinned), &
+                call result%write('fit_pinned', &
+                                  merge(1.0_dp, 0.0_dp, fit_result%pinned), &
                                   '1', 'circuits pinned at a limit')
             call result%write('gsvd_values', fit_result%gsvd%gsv, '1', &
                               'generalised singular values of (D, L), ascending')
