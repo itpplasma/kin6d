@@ -17,7 +17,8 @@ program gs_phase1_main
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, gs_timer_event_count, gs_timer_event_get, &
         gs_timer_reset, gs_progress_set, gs_progress, GS_T_ASSEMBLY, GS_T_FIXED_CG, &
-        GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG
+        GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG, GS_T_FACTOR, GS_T_DIRECT
+    use kin6d_gs_options, only: gs_options_text
     use fortplot_system_runtime, only: create_directory_runtime
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
@@ -246,6 +247,7 @@ program gs_phase1_main
     call result%attribute('convention', 'COCOS 3; SI; psi in Wb/rad; psi_edge=0')
     call result%attribute('omp_threads', int_text(threads))
     call result%attribute('determinism', trim(determinism))
+    call result%attribute('gs_linear_algebra', gs_options_text())
     call result%write('boundary_samples', samples, 'm', 'supplied closed R Z curve')
     call result%write('points', state%points, 'm', &
         'physical isoparametric geometry nodes')
@@ -304,6 +306,16 @@ program gs_phase1_main
         'nested preconditioner CG solves (inside jacobian_gmres_s)')
     call result%write('precond_cg_iterations', &
         real(gs_timer_iterations(GS_T_PRECOND_CG), dp), '1', 'nested CG iterations')
+    call result%write('jacobian_cg_calls', real(gs_timer_calls(GS_T_JAC_CG), dp), '1', &
+        'Jacobian CG solves')
+    call result%write('jacobian_gmres_calls', &
+        real(gs_timer_calls(GS_T_JAC_GMRES), dp), '1', 'Jacobian GMRES solves')
+    call result%write('factor_s', gs_timer_total(GS_T_FACTOR), 's', &
+        'Cholesky factorisation of the stiffness matrix')
+    call result%write('direct_solves', real(gs_timer_calls(GS_T_DIRECT), dp), '1', &
+        'back-substitutions with the cached factor')
+    call result%write('direct_s', gs_timer_total(GS_T_DIRECT), 's', &
+        'time in back-substitutions with the cached factor')
     call result%write('newton_s', newton_s, 's', &
         'whole nonlinear or linear solve call, including assembly and linear solves')
     call result%write('readback_s', readback_s, 's', 'equilibrium readback')
@@ -375,6 +387,7 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'estimator_s', estimator_s
     write (unit, '(a,1x,i0)') 'omp_threads', threads
     write (unit, '(a,1x,a)') 'determinism', trim(determinism)
+    write (unit, '(a,1x,a)') 'gs_linear_algebra', gs_options_text()
     write (unit, '(a,1x,es25.16e3)') 'mesh_s', mesh_s
     write (unit, '(a,1x,es25.16e3)') 'assembly_s', gs_timer_total(GS_T_ASSEMBLY)
     write (unit, '(a,1x,i0)') 'assembly_calls', gs_timer_calls(GS_T_ASSEMBLY)
@@ -388,6 +401,11 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'precond_cg_s', gs_timer_total(GS_T_PRECOND_CG)
     write (unit, '(a,1x,i0)') 'precond_cg_iterations', &
         gs_timer_iterations(GS_T_PRECOND_CG)
+    write (unit, '(a,1x,i0)') 'jacobian_cg_calls', gs_timer_calls(GS_T_JAC_CG)
+    write (unit, '(a,1x,i0)') 'jacobian_gmres_calls', gs_timer_calls(GS_T_JAC_GMRES)
+    write (unit, '(a,1x,es25.16e3)') 'factor_s', gs_timer_total(GS_T_FACTOR)
+    write (unit, '(a,1x,i0)') 'direct_solves', gs_timer_calls(GS_T_DIRECT)
+    write (unit, '(a,1x,es25.16e3)') 'direct_s', gs_timer_total(GS_T_DIRECT)
     write (unit, '(a,1x,es25.16e3)') 'newton_s', newton_s
     write (unit, '(a,1x,es25.16e3)') 'readback_s', readback_s
     write (unit, '(a,1x,es25.16e3)') 'io_total_s', io_total_s
