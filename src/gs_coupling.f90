@@ -149,6 +149,7 @@ contains
         type(gs_bem_curve_t) :: curve
         type(gs_bem_operators_t) :: ops
         real(dp), allocatable :: s_bem(:, :), bem_nodes(:, :), restriction(:, :)
+        real(dp), allocatable :: work(:, :)
         integer, allocatable :: first_edge(:)
         integer :: e, k, i, j, p, q, n, order, ne, np, m, ids(0:3), row, col_j
         integer :: next_edge, stat
@@ -264,8 +265,20 @@ contains
         if (stat /= 0) return
         call gs_bem_steklov_symmetric(ops, s_bem, stat)
         if (stat /= 0) return
-        coupling % s_trace = matmul(transpose(restriction), matmul(s_bem, restriction))
-      coupling % s_trace = 0.5_dp * (coupling % s_trace + transpose(coupling % s_trace))
+        ! S_trace = R^T S_bem R, one column per thread task.
+        allocate (coupling % s_trace(coupling % n_trace, coupling % n_trace))
+        allocate (work(2 * np, coupling % n_trace))
+        !$omp parallel do default(shared) private(j) schedule(static)
+        do j = 1, coupling % n_trace
+            work(:, j) = matmul(s_bem, restriction(:, j))
+        end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) private(j) schedule(static)
+        do j = 1, coupling % n_trace
+            coupling % s_trace(:, j) = matmul(transpose(restriction), work(:, j))
+        end do
+        !$omp end parallel do
+        coupling % s_trace = 0.5_dp * (coupling % s_trace + transpose(coupling % s_trace))
 
         call build_stiffness(state, coupling)
         status = GS_COUPLING_OK
@@ -337,16 +350,30 @@ contains
         type(gs_coupling_t), intent(in) :: coupling
         real(dp), intent(in) :: input(:)
         real(dp), intent(out) :: output(:)
-        real(dp), allocatable :: trace(:)
+        real(dp), allocatable :: trace(:), gathered(:)
+        real(dp) :: acc
         integer :: i, p
 
+        allocate (trace(coupling % n_trace), gathered(coupling % n_trace))
+        gathered = input(coupling % trace_node)
+        !$omp parallel default(shared) private(i, p, acc)
+        !$omp do schedule(static)
         do i = 1, coupling % n_nodes
-            output(i) = 0.0_dp
+            acc = 0.0_dp
             do p = coupling % row_ptr(i), coupling % row_ptr(i + 1) - 1
-                output(i) = output(i) + coupling % val(p) * input(coupling % col(p))
+                acc = acc + coupling % val(p) * input(coupling % col(p))
             end do
+            output(i) = acc
         end do
-        trace = matmul(coupling % s_trace, input(coupling % trace_node))
+        !$omp end do
+        !$omp do schedule(static)
+        do i = 1, coupling % n_trace
+            ! S_trace is symmetric: the column is the contiguous row.
+            trace(i) = dot_product(coupling % s_trace(:, i), gathered)
+        end do
+        !$omp end do
+        !$omp end parallel
+        ! trace_node entries are distinct, so this scatter has no conflicts.
         output(coupling % trace_node) = output(coupling % trace_node) + trace
     end subroutine gs_coupled_apply
 
