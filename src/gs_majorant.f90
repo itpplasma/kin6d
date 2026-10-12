@@ -10,6 +10,10 @@ module kin6d_gs_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK, &
         KRYLOV_MAX_ITERATIONS
+    use kin6d_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_apply_full
+    use kin6d_gs_options, only: gs_use_direct
+    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+        gs_direct_solve, gs_direct_free
     implicit none
     private
     public :: gs_functional_majorant
@@ -44,7 +48,7 @@ contains
         real(dp) :: grad(2), source, weight, cf2, lo(2), hi(2)
         real(dp) :: flux(2), divergence, residual, pp, ff, psi
         real(dp) :: dpp, dff, derivative, alpha
-        logical :: practical
+        logical :: practical, solved
         integer :: e, q, j, k, a, b, row, col, n, iterations, ndof
         majorant = huge(1.0_dp); flux_defect = 0; balance_defect = 0
         status = 1
@@ -144,9 +148,17 @@ contains
         end do
         if (present(recovery_converged)) recovery_converged = .true.
         if (norm2(rhs) > tiny(1.0_dp)) then
-            call real_conjugate_gradient_operator(action, rhs, recovered, &
-                1.0e-11_dp*min(1.0_dp, norm2(rhs)), 6000, status, iterations, &
-                residual, precondition)
+            solved = .false.
+            if (gs_use_direct() .and. gs_direct_available()) &
+                call direct_recovery(solved)
+            if (solved) then
+                status = KRYLOV_OK
+            else
+                recovered = 0
+                call real_conjugate_gradient_operator(action, rhs, recovered, &
+                    1.0e-11_dp*min(1.0_dp, norm2(rhs)), 6000, status, iterations, &
+                    residual, precondition)
+            end if
             if (present(recovery_converged)) recovery_converged = status == KRYLOV_OK
             if (present(recovery_iterations)) recovery_iterations = iterations
             ! The functional estimate is valid for every continuous recovered
@@ -210,6 +222,47 @@ contains
             end if
         end if
     contains
+        subroutine direct_recovery(converged)
+            ! The recovery system is symmetric positive definite: one Cholesky
+            ! factor, one back-substitution and iterative refinement. When the
+            ! factor or the refinement fails, the caller runs the CG path.
+            logical, intent(out) :: converged
+            type(csr_matrix_t) :: system
+            type(gs_direct_t) :: factor
+            real(dp), allocatable :: residual_vector(:), correction(:)
+            real(dp) :: rnorm, previous, target
+            logical :: ok
+            integer :: sweep
+            converged = .false.
+            rnorm = huge(1.0_dp)
+            call gs_csr_build(system, indices, matrix, n)
+            call gs_direct_factor(factor, n, system%rowptr, system%colidx, &
+                                  system%val, ok)
+            if (.not. ok) then
+                call gs_direct_free(factor)
+                return
+            end if
+            allocate (residual_vector(n), correction(n))
+            call gs_direct_solve(factor, rhs, recovered, ok)
+            iterations = 1
+            previous = huge(1.0_dp)
+            target = 1.0e-11_dp*min(1.0_dp, norm2(rhs))
+            do sweep = 0, 4
+                if (.not. ok) exit
+                call gs_csr_apply_full(system, recovered, residual_vector)
+                residual_vector = rhs - residual_vector
+                rnorm = norm2(residual_vector)
+                if (rnorm <= 1.0e-2_dp*target .or. sweep == 4) exit
+                if (rnorm > 0.5_dp*previous) exit
+                previous = rnorm
+                call gs_direct_solve(factor, residual_vector, correction, ok)
+                recovered = recovered + correction
+                iterations = iterations + 1
+            end do
+            converged = ok .and. rnorm <= target
+            call gs_direct_free(factor)
+        end subroutine
+
         subroutine estimate_coercivity(alpha)
             ! Numerical positive-part comparison: J >= A - M_+.
             ! Power iteration is self-adjoint in the A pairing. Its result is

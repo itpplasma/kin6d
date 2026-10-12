@@ -2,7 +2,11 @@ module kin6d_gs_nonlinear
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, solve_gs, apply_gs, &
-                                    gs_cell_data, gs_axis_candidate, gs_linear_response
+                                    gs_cell_data, gs_axis_candidate, &
+                                    gs_linear_response, gs_factor_ready, &
+                                    gs_apply_inverse
+    use kin6d_gs_csr, only: gs_csr_dirichlet_apply, gs_csr_fill_masked
+    use kin6d_gs_options, only: gs_use_csr
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
                                   gs_law_c1
     use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
@@ -29,6 +33,9 @@ module kin6d_gs_nonlinear
     public :: gs_profile_jacobian_t, apply_gs_profile_jacobian, gs_profile_response
     type :: gs_profile_jacobian_t
         real(dp), allocatable :: mass(:, :, :), axis_load(:), axis_gradient(:)
+        ! `mass` summed onto the CSR pattern of the stiffness (interior rows and
+        ! columns), refilled with every Jacobian. Absent: element-wise products.
+        real(dp), allocatable :: mval(:)
     end type
     type :: source_rule_t
         real(dp), allocatable :: weights(:), shapes(:, :), gradients(:, :, :)
@@ -367,6 +374,11 @@ contains
                 where (state%boundary) jacobian%axis_load = 0
             end if
         end if
+        if (need_jacobian .and. allocated(state%op%rowptr) .and. gs_use_csr()) then
+            allocate (jacobian%mval(size(state%op%val)))
+            call gs_csr_fill_masked(state%op, state%triangles, state%boundary, &
+                                    jacobian%mass, jacobian%mval)
+        end if
         status = 1
         if (all(ieee_is_finite(rhs))) status = 0
         if (present(quadrature_evaluations)) quadrature_evaluations = evaluations
@@ -634,6 +646,18 @@ contains
         logical :: adjoint
         adjoint = .false.
         if (present(transpose)) adjoint = transpose
+        if (allocated(jacobian%mval) .and. allocated(state%op%rowptr)) then
+            call gs_csr_dirichlet_apply(state%op, state%boundary, input, output, &
+                                        jacobian%mval)
+            if (adjoint) then
+                output = output - jacobian%axis_gradient*dot_product( &
+                         jacobian%axis_load, input)
+            else
+                output = output - jacobian%axis_load*dot_product( &
+                         jacobian%axis_gradient, input)
+            end if
+            return
+        end if
         call apply_gs(state, input, output)
         do e = 1, size(state%triangles, 2)
             local = input(state%triangles(:, e))
@@ -675,7 +699,7 @@ contains
         real(dp) :: diagonal(size(rhs)), axis_response(size(rhs))
         real(dp) :: rank_rhs(size(rhs)), rank_test(size(rhs)), clock
         integer :: iterations, precondition_status, e, j, node
-        logical :: adjoint
+        logical :: adjoint, use_inverse
         adjoint = .false.
         if (present(transpose)) adjoint = transpose
         precondition_status = 0
@@ -692,6 +716,10 @@ contains
         if (adjoint) then
             rank_rhs = jacobian%axis_gradient; rank_test = jacobian%axis_load
         end if
+        ! With the cached Cholesky factor of A, A^-1 preconditions both Krylov
+        ! solves: A^-1 (A - M) = I - A^-1 M is a compact perturbation of the
+        ! identity, so the iteration counts do not grow with the mesh.
+        use_inverse = gs_factor_ready(state)
         direct_tolerance = 1.0e-11_dp
         if (maxval(abs(rank_rhs))*maxval(abs(rank_test)) > tiny(1.0_dp)) &
             direct_tolerance = 1.0e-9_dp
@@ -708,7 +736,7 @@ contains
             call real_conjugate_gradient_operator(symmetric_action, rhs, solution, &
                 direct_tolerance*min(1.0_dp, norm2(rhs)), &
                 max(500, 10*ceiling(sqrt(real(size(rhs), dp)))), &
-                status, iterations, residual, diagonal_precondition)
+                status, iterations, residual, symmetric_precondition)
             call gs_timer_add(GS_T_JAC_CG, gs_wall_s() - clock, iterations)
             if (status == KRYLOV_OK) then
                 call symmetric_action(solution, action_work)
@@ -721,7 +749,7 @@ contains
                 call real_conjugate_gradient_operator(symmetric_action, rank_rhs, &
                     axis_response, direct_tolerance*min(1.0_dp, norm2(rank_rhs)), &
                     max(500, 10*ceiling(sqrt(real(size(rhs), dp)))), &
-                    status, iterations, residual, diagonal_precondition)
+                    status, iterations, residual, symmetric_precondition)
                 call gs_timer_add(GS_T_JAC_CG, gs_wall_s() - clock, iterations)
                 if (status == KRYLOV_OK) then
                     call symmetric_action(axis_response, action_work)
@@ -773,9 +801,15 @@ contains
             call jacobian_action(input, output)
             output = output + rank_rhs*dot_product(rank_test, input)
         end subroutine
-        subroutine diagonal_precondition(input, output)
+        subroutine symmetric_precondition(input, output)
+            ! A^-1 when the factor is cached, the Jacobi diagonal otherwise.
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
+            logical :: ok
+            if (use_inverse) then
+                call gs_apply_inverse(state, input, output, ok)
+                if (ok) return
+            end if
             output = input/diagonal
         end subroutine
         subroutine action(input, output)
@@ -790,6 +824,11 @@ contains
             real(dp), allocatable :: candidate(:)
             integer, parameter :: precondition_nonfinite = 4
             integer :: stat
+            logical :: ok
+            if (use_inverse) then
+                call gs_apply_inverse(state, input, output, ok)
+                if (ok) return
+            end if
             ! A preconditioner is not the solve: it may only fall back, never
             ! silently accept an unusable candidate. The diagonal-CG inner
             ! loop keeps the baseline 1e-11 accuracy so the inverse decks
@@ -941,6 +980,7 @@ contains
                 call move_alloc(trial_jacobian%mass, jacobian%mass)
                 call move_alloc(trial_jacobian%axis_load, jacobian%axis_load)
                 call move_alloc(trial_jacobian%axis_gradient, jacobian%axis_gradient)
+                call move_alloc(trial_jacobian%mval, jacobian%mval)
             end if
         end do
         status = 2
