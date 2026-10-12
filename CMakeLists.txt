@@ -82,7 +82,9 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_inv2_jvp_fortad.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_linalg.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90)
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_bvls.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_gsvd.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 target_link_libraries(kin6d_ode PUBLIC kin6d_intervals)
 # Generated derivative families retain the primal ABI even for constant partials.
@@ -219,7 +221,7 @@ add_library(kin6d_sparse_direct
 target_link_libraries(kin6d_sparse_direct PUBLIC kin6d_spatial fortsparse)
 target_link_libraries(kin6d PUBLIC kin6d_sparse_direct)
 target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90
-    src/gs_free_boundary.f90)
+    src/gs_free_boundary.f90 src/gs_coil_inverse.f90)
 # gs_coupling and gs_free_boundary threads come from the project-wide KIN6D_ENABLE_OPENMP option.
 add_executable(test_gs_coils test/test_gs_coils.f90)
 target_link_libraries(test_gs_coils PRIVATE kin6d)
@@ -247,6 +249,12 @@ add_test(NAME gs_free_boundary_t7_jacobian_finite_differences COMMAND test_gs_fb
 set_tests_properties(gs_free_boundary_t7_jacobian_finite_differences PROPERTIES TIMEOUT 900)
 add_executable(test_gs_fb_manufactured test/test_gs_fb_manufactured.f90)
 target_link_libraries(test_gs_fb_manufactured PRIVATE kin6d_gs_fb_test)
+add_library(kin6d_gs_ci_test STATIC test/support/gs_ci_fixture.f90)
+target_link_libraries(kin6d_gs_ci_test PUBLIC kin6d_gs_fb_test)
+add_executable(test_gs_coil_inverse test/test_gs_coil_inverse.f90)
+target_link_libraries(test_gs_coil_inverse PRIVATE kin6d_gs_ci_test)
+add_test(NAME gs_coil_inverse_t6_twin COMMAND test_gs_coil_inverse)
+set_tests_properties(gs_coil_inverse_t6_twin PROPERTIES TIMEOUT 1800)
 add_executable(test_gs_fb_greens test/test_gs_fb_greens.f90)
 target_link_libraries(test_gs_fb_greens PRIVATE kin6d_gs_fb_test)
 if(OpenMP_Fortran_FOUND)
