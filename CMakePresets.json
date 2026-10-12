@@ -3,7 +3,7 @@
   "configurePresets": [
     {"name":"cpu","generator":"Ninja","binaryDir":"${sourceDir}/build",
      "cacheVariables":{"CMAKE_BUILD_TYPE":"Release","BUILD_TESTING":"ON",
-      "KIN6D_CHECK_LEAN":"OFF"}},
+      "KIN6D_CHECK_LEAN":"OFF","KIN6D_ENABLE_OPENMP":"ON"}},
     {"name":"debug","inherits":"cpu","binaryDir":"${sourceDir}/build-debug",
      "cacheVariables":{"CMAKE_BUILD_TYPE":"Debug",
       "CMAKE_Fortran_FLAGS_DEBUG":"-g -O0 -fcheck=all -fbacktrace"}},

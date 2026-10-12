@@ -11,6 +11,7 @@ module kin6d_grad_shafranov
    use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
    use fortnum_krylov, only: real_conjugate_gradient_operator, real_gmres_operator, &
        KRYLOV_OK, KRYLOV_MAX_ITERATIONS
+   use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, GS_T_FIXED_CG
    use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights, &
        lagrange_combined_jvp, &
        lagrange_combined_vjp, lagrange_nodes_jvp, lagrange_nodes_vjp
@@ -497,7 +498,8 @@ contains
     end subroutine apply_gs
 
    subroutine gs_linear_response(state, source, response, status, iteration_count, &
-                                 relative_tolerance, stagnation_ok, residual_norm)
+                                 relative_tolerance, stagnation_ok, residual_norm, &
+                                 timer_kind)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: source(:)
       real(dp), allocatable, intent(out) :: response(:)
@@ -508,7 +510,9 @@ contains
       ! Absolute norm of source - apply_gs(state, response) for the returned
       ! response; huge when no response is produced.
       real(dp), intent(out), optional :: residual_norm
-      real(dp) :: residual, tolerance
+      ! Phase-timer slot for this solve (kin6d_gs_timers); 0 or absent: untimed.
+      integer, intent(in), optional :: timer_kind
+      real(dp) :: residual, tolerance, clock
       real(dp), allocatable :: action(:)
       logical :: keep_stagnant
       integer :: iterations
@@ -528,10 +532,15 @@ contains
       if (.not. ieee_is_finite(tolerance)) return
       if (tolerance <= 0) return
       if (norm2(source) > 0.0_dp) tolerance = tolerance*min(1.0_dp, norm2(source))
+      clock = gs_wall_s()
       call real_conjugate_gradient_operator(matvec, source, response, &
                    tolerance, max(500, 10*ceiling(sqrt(real(size(source), dp)))), &
                    status, iterations, residual, &
                                             preconditioner)
+      if (present(timer_kind)) then
+         if (timer_kind > 0) call gs_timer_add(timer_kind, gs_wall_s() - clock, &
+                                               iterations)
+      end if
       if (present(iteration_count)) iteration_count = iterations
       keep_stagnant = .false.
       if (present(stagnation_ok)) keep_stagnant = stagnation_ok
@@ -597,7 +606,7 @@ contains
       call gs_linear_response(state, rhs, solution, status, state%iterations, &
                               relative_tolerance=1.0e-10_dp, &
                               stagnation_ok=.true., &
-                              residual_norm=linear_residual)
+                              residual_norm=linear_residual, timer_kind=GS_T_FIXED_CG)
       if (status /= KRYLOV_OK .and. status /= KRYLOV_MAX_ITERATIONS) then
          ! Failed linear response: report its residual, never the sentinel.
          state%residual = linear_residual/max(norm2(rhs), tiny(1.0_dp))

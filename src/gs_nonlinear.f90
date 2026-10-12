@@ -18,6 +18,9 @@ module kin6d_gs_nonlinear
     use fortnum_krylov, only: real_gmres_operator, real_conjugate_gradient_operator, &
                                KRYLOV_OK, KRYLOV_MAX_ITERATIONS
     use fortnum_linalg, only: det2
+    use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, gs_timer_iterations, &
+                               gs_progress, gs_progress_enabled, GS_T_ASSEMBLY, &
+                               GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
     private
@@ -596,7 +599,7 @@ contains
         real(dp), intent(out) :: output(:)
         logical, intent(in), optional :: transpose
         real(dp) :: local(size(state%triangles, 1)), product(size(local))
-        integer :: e, i, node
+        integer :: e, i, j, node
         logical :: adjoint
         adjoint = .false.
         if (present(transpose)) adjoint = transpose
@@ -606,7 +609,14 @@ contains
             where (state%boundary(state%triangles(:, e))) local = 0
             ! The local source mass matrix is symmetric. Only the solved-axis
             ! normalization contributes a nonsymmetric, rank-one term.
-            product = matmul(jacobian%mass(:, :, e), local)
+            ! Explicit column-ordered product: avoids a libgfortran matmul call
+            ! on a 10x10 or 20x20 block with runtime extents.
+            product = 0
+            do j = 1, size(local)
+                do i = 1, size(local)
+                    product(i) = product(i) + jacobian%mass(i, j, e)*local(j)
+                end do
+            end do
             do i = 1, size(local)
                 node = state%triangles(i, e)
                 if (state%boundary(node)) cycle
@@ -632,7 +642,7 @@ contains
         real(dp) :: residual, direct_tolerance, denominator, coupling
         real(dp) :: preconditioned_rhs(size(rhs)), action_work(size(rhs))
         real(dp) :: diagonal(size(rhs)), axis_response(size(rhs))
-        real(dp) :: rank_rhs(size(rhs)), rank_test(size(rhs))
+        real(dp) :: rank_rhs(size(rhs)), rank_test(size(rhs)), clock
         integer :: iterations, precondition_status, e, j, node
         logical :: adjoint
         adjoint = .false.
@@ -663,10 +673,12 @@ contains
         end do
         where (state%boundary) diagonal = 1
         if (all(diagonal > 0)) then
+            clock = gs_wall_s()
             call real_conjugate_gradient_operator(symmetric_action, rhs, solution, &
                 direct_tolerance*min(1.0_dp, norm2(rhs)), &
                 max(500, 10*ceiling(sqrt(real(size(rhs), dp)))), &
                 status, iterations, residual, diagonal_precondition)
+            call gs_timer_add(GS_T_JAC_CG, gs_wall_s() - clock, iterations)
             if (status == KRYLOV_OK) then
                 call symmetric_action(solution, action_work)
                 if (norm2(action_work - rhs) > 1.0e-9_dp*norm2(rhs)) status = 1
@@ -674,10 +686,12 @@ contains
             if (status == KRYLOV_OK .and. &
                 maxval(abs(rank_rhs))*maxval(abs(rank_test)) > tiny(1.0_dp)) then
                 axis_response = 0
+                clock = gs_wall_s()
                 call real_conjugate_gradient_operator(symmetric_action, rank_rhs, &
                     axis_response, direct_tolerance*min(1.0_dp, norm2(rank_rhs)), &
                     max(500, 10*ceiling(sqrt(real(size(rhs), dp)))), &
                     status, iterations, residual, diagonal_precondition)
+                call gs_timer_add(GS_T_JAC_CG, gs_wall_s() - clock, iterations)
                 if (status == KRYLOV_OK) then
                     call symmetric_action(axis_response, action_work)
                     if (norm2(action_work - rank_rhs) > &
@@ -701,10 +715,12 @@ contains
             end if
             solution = 0
         end if
+        clock = gs_wall_s()
         call precondition(rhs, preconditioned_rhs)
         call real_gmres_operator(action, preconditioned_rhs, solution, &
                            1.0e-11_dp*min(1.0_dp, norm2(preconditioned_rhs)), 300, 30, &
                                  status, iterations, residual)
+        call gs_timer_add(GS_T_JAC_GMRES, gs_wall_s() - clock, iterations)
         if (precondition_status /= 0) status = precondition_status
         ! GMRES certifies only the preconditioned system. Like the direct-CG
         ! branch above, confirm the physical Jacobian residual independently
@@ -752,7 +768,8 @@ contains
             ! stalled iterate (stagnation_ok). The outer GMRES residual plus
             ! the Newton line search stay the authority for the step.
             call gs_linear_response(state, input, candidate, stat, &
-                                    relative_tolerance=1.0e-11_dp, stagnation_ok=.true.)
+                                    relative_tolerance=1.0e-11_dp, stagnation_ok=.true., &
+                                    timer_kind=GS_T_PRECOND_CG)
             ! .and. does not short-circuit: allocation is checked on its own
             ! before any elementwise test may touch the candidate.
             if (.not. allocated(candidate)) then
@@ -790,7 +807,8 @@ contains
         type(gs_profile_jacobian_t) :: jacobian, trial_jacobian
         real(dp), allocatable :: rhs(:), action(:), step(:), previous(:), trial_rhs(:)
         real(dp) :: pp, ff, tol, damping, old_norm, new_norm, load_tolerance
-        real(dp) :: work_tolerance, next_tolerance, previous_axis
+        real(dp) :: work_tolerance, next_tolerance, previous_axis, clock, start_s
+        character(160) :: line
         integer :: iteration, backtrack
         logical :: reuse_jacobian
         status = 1
@@ -818,8 +836,11 @@ contains
         if (.not. ieee_is_finite(load_tolerance)) return
         if (load_tolerance <= 0 .or. load_tolerance >= 1) return
         work_tolerance = max(1.0e-4_dp, load_tolerance)
+        start_s = gs_wall_s()
+        clock = start_s
         call gs_cubic_load(state, mu0, law, rhs, jacobian, status, work_tolerance, &
                            forcing, max(work_tolerance, 1.0e-3_dp))
+        call gs_timer_add(GS_T_ASSEMBLY, gs_wall_s() - clock)
         if (status /= 0) return
         do iteration = 0, 25
             call apply_gs(state, state%psi, action)
@@ -833,9 +854,11 @@ contains
                 (next_tolerance <= load_tolerance .and. work_tolerance > &
                  load_tolerance)) then
                 work_tolerance = next_tolerance
+                clock = gs_wall_s()
                 call gs_cubic_load(state, mu0, law, rhs, jacobian, status, &
                                    work_tolerance, forcing, &
                                    max(work_tolerance, 1.0e-3_dp))
+                call gs_timer_add(GS_T_ASSEMBLY, gs_wall_s() - clock)
                 if (status /= 0) return
                 call apply_gs(state, state%psi, action)
                 action = rhs - action
@@ -843,6 +866,16 @@ contains
                 state%residual = old_norm/max(norm2(rhs), tiny(1.0_dp))
             end if
             state%iterations = iteration
+            if (gs_progress_enabled()) then
+                write (line, '(a,i0,a,es10.3,a,es9.2,a,i0,a,i0,a,i0,a,f9.1)') &
+                    'newton it=', iteration, ' residual=', state%residual, &
+                    ' work_tol=', work_tolerance, ' jac_cg_its=', &
+                    gs_timer_iterations(GS_T_JAC_CG), ' gmres_its=', &
+                    gs_timer_iterations(GS_T_JAC_GMRES), ' precond_cg_its=', &
+                    gs_timer_iterations(GS_T_PRECOND_CG), ' elapsed_s=', &
+                    gs_wall_s() - start_s
+                call gs_progress(line)
+            end if
             if (state%residual <= tol .and. work_tolerance <= load_tolerance) then
                 status = 0
                 return
@@ -854,10 +887,12 @@ contains
             reuse_jacobian = state%residual < 1.0e-3_dp
             do backtrack = 0, 14
                 state%psi = previous + damping*step
+                clock = gs_wall_s()
                 call gs_cubic_load(state, mu0, law, trial_rhs, trial_jacobian, &
                                    status, work_tolerance, forcing, &
                                    max(work_tolerance, 1.0e-3_dp), &
                                    load_only=reuse_jacobian)
+                call gs_timer_add(GS_T_ASSEMBLY, gs_wall_s() - clock)
                 if (status == 0) then
                     call apply_gs(state, state%psi, action)
                     new_norm = norm2(trial_rhs - action)
