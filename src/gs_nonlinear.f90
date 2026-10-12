@@ -27,7 +27,8 @@ module kin6d_gs_nonlinear
     use fortnum_linalg, only: det2
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, gs_timer_iterations, &
                                gs_progress, gs_progress_enabled, GS_T_ASSEMBLY, &
-                               GS_T_LOAD_CELLS, GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG
+                               GS_T_LOAD_CELLS, GS_T_JAC_CG, GS_T_JAC_GMRES, &
+                               GS_T_PRECOND_CG
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
     private
@@ -649,13 +650,13 @@ contains
             if (allocated(batch%r)) then
                 if (size(batch%r) >= np) return
                 deallocate (batch%r, batch%z, batch%psi, batch%det, batch%pp, &
-                            batch%ff, batch%dpp, batch%dff, batch%app, batch%aff, batch%f, &
-                            batch%df, batch%af, batch%c, batch%x)
+                            batch%ff, batch%dpp, batch%dff, batch%app, batch%aff, &
+                            batch%f, batch%df, batch%af, batch%c, batch%x)
             end if
             allocate (batch%r(np), batch%z(np), batch%psi(np), batch%det(np), &
-                      batch%pp(np), batch%ff(np), batch%dpp(np), batch%dff(np), batch%app(np), &
-                      batch%aff(np), batch%f(np), batch%df(np), batch%af(np), &
-                      batch%c(np), batch%x(np))
+                      batch%pp(np), batch%ff(np), batch%dpp(np), batch%dff(np), &
+                      batch%app(np), batch%aff(np), batch%f(np), batch%df(np), &
+                      batch%af(np), batch%c(np), batch%x(np))
             batch%dpp = 0; batch%dff = 0; batch%app = 0; batch%aff = 0
             batch%df = 0; batch%af = 0
         end subroutine
