@@ -65,11 +65,14 @@ contains
     end function
 
     subroutine read_gs_equilibrium(state, f_edge, ffprime, radial_points, &
-                                   angular_points, result, status, law)
+                                   angular_points, result, status, law, rho_grid)
+        ! rho_grid, when present, replaces the uniform sqrt(s_pol) levels: it
+        ! must increase strictly from 0 to 1 and radial_points is ignored.
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: f_edge, ffprime
         integer, intent(in) :: radial_points, angular_points
         type(gs_profile_law_t), intent(in), optional :: law
+        real(dp), intent(in), optional :: rho_grid(:)
         type(gs_state_t) :: view
         type(gs_readback_t), intent(out) :: result
         integer, intent(out) :: status
@@ -90,6 +93,14 @@ contains
         if (.not. view%ready .or. view%element_order < 2) return
         nr = radial_points; na = angular_points
         call gs_readback_resolution(view, nr, na)
+        if (present(rho_grid)) then
+            nr = size(rho_grid)
+            if (nr < 5 .or. nr > 4097) return
+            if (.not. all(ieee_is_finite(rho_grid))) return
+            if (rho_grid(1) > 0 .or. rho_grid(1) < 0) return
+            if (rho_grid(nr) > 1 .or. rho_grid(nr) < 1) return
+            if (any(rho_grid(2:) <= rho_grid(:nr - 1))) return
+        end if
         if (nr < 5 .or. nr > 4097) return
         if (.not. all(ieee_is_finite([f_edge, ffprime]))) return
         if (abs(f_edge) <= tiny(1.0_dp)) return
@@ -107,6 +118,7 @@ contains
             coarea(nr), density(nr), rho(nr), result%contour_work(nr))
         do i = 1, nr
             rho(i) = real(i - 1, dp)/(nr - 1)
+            if (present(rho_grid)) rho(i) = rho_grid(i)
             result%psi(i) = result%psi_axis*(1 - rho(i)**2)
         end do
         call system_clock(tick, clock_rate)

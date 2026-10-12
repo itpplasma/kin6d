@@ -370,6 +370,13 @@ contains
             low = minval(controls(:ndof)); high = maxval(controls(:ndof))
             left = count(levels <= low) + 1; right = count(levels < high)
             nlevels = max(0, right - left + 1)
+            ! A load-only evaluation with no extra forcing gets nothing from a cell
+            ! whose flux range touches only intervals where both laws vanish
+            ! identically: skip it exactly (boundary lifting is in the gather).
+            if (.not. need_jacobian .and. .not. present(forcing) &
+                .and. .not. free_mode) then
+                if (law_vanishes(left - 1, right)) return
+            end if
             closed_cut = .false.
             if (nlevels > 0 .and. smooth_law) closed_cut = possible_closed_cut()
             scr%values = 0
@@ -502,6 +509,18 @@ contains
                 end if
             end if
     contains
+        logical function law_vanishes(first_level, last_level) result(zero)
+            ! Intervals between levels first_level..last_level (clamped).
+            integer, intent(in) :: first_level, last_level
+            integer :: lo, hi
+            lo = max(1, min(size(levels) - 1, first_level))
+            hi = max(1, min(size(levels) - 1, last_level))
+            zero = .false.
+            if (.not. law%normalized) return
+            zero = maxval(abs(law%pp(:, lo:hi))) <= 0 .and. &
+                   maxval(abs(law%ff(:, lo:hi))) <= 0
+        end function
+
         logical function possible_closed_cut() result(closed)
             real(dp) :: edge_min, edge_max, t, value, stationary(2), v(4)
             integer :: edge, node, count
