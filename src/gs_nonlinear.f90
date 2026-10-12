@@ -85,7 +85,16 @@ contains
 
     subroutine gs_cubic_load(state, mu0, law, rhs, jacobian, status, tolerance, &
                              forcing, jacobian_tolerance, load_only, &
-                             quadrature_evaluations, source_integral)
+                             quadrature_evaluations, source_integral, plasma_cell)
+        !! Free-boundary mode (`plasma_cell` present): the flux handed in is
+        !! measured from the plasma boundary flux, law%axis is the axis flux
+        !! in the same measure, and the source is the law inside the cells
+        !! flagged in `plasma_cell` where the normalised flux is below one
+        !! and zero elsewhere. The cut at the boundary level (knot s = 1)
+        !! uses the same exact level-cut integration as every other knot.
+        !! No Dirichlet rows are applied and the axis rank-one gradient is
+        !! left to the caller (axis_gradient is returned zero); axis_load is
+        !! the derivative of the load with respect to law%axis.
         type(gs_state_t), intent(inout) :: state
         real(dp), intent(in) :: mu0
         type(gs_profile_law_t), intent(inout) :: law
@@ -95,6 +104,7 @@ contains
         real(dp), intent(in), optional :: tolerance
         procedure(gs_forcing_t), optional :: forcing
         real(dp), intent(out), optional :: source_integral
+        logical, intent(in), optional :: plasma_cell(:)
         real(dp), intent(in), optional :: jacobian_tolerance
         logical, intent(in), optional :: load_only
         integer, intent(out), optional :: quadrature_evaluations
@@ -106,7 +116,7 @@ contains
         real(dp), allocatable :: shapes_h(:, :), grads_h(:, :, :)
         real(dp), allocatable :: high_values(:), cell_values(:)
         logical, allocatable :: inner_active(:)
-        logical :: smooth_law, need_jacobian
+        logical :: smooth_law, need_jacobian, free_mode
         real(dp) :: coefficients(6), local_psi(10), controls(10), low, high, scale, tol
         real(dp) :: jtol
         real(dp) :: edge_values(4), roots(3), shape(10), g(2, 10), h(2, 2, 10)
@@ -127,6 +137,13 @@ contains
         if (.not. ieee_is_finite(mu0)) return
         if (.not. law%valid()) return
         smooth_law = gs_law_c1(law)
+        free_mode = present(plasma_cell)
+        if (free_mode) then
+            if (.not. law%normalized .or. size(plasma_cell) /= size(state%triangles, 2)) &
+                return
+            ! The source jumps at the boundary level: never the smooth rule.
+            smooth_law = .false.
+        end if
         if (.not. all(ieee_is_finite(state%psi))) return
         tol = 1.0e-9_dp
         if (present(tolerance)) tol = tolerance
@@ -145,7 +162,7 @@ contains
                       jacobian%axis_load(size(rhs)))
             jacobian%mass = 0; jacobian%axis_load = 0
         end if
-        if (law%normalized) then
+        if (law%normalized .and. .not. free_mode) then
             call gs_profile_axis(state, law%axis, jacobian%axis_gradient, status)
             if (status /= 0) return
         end if
@@ -176,6 +193,9 @@ contains
                                     h(:, :, :ndof))
         end do
         do e = 1, size(state%triangles, 2)
+            if (free_mode) then
+                if (.not. plasma_cell(e)) cycle
+            end if
             cell_points(:, :ndof) = state%points(:, state%triangles(:, e))
             local_psi(:ndof) = state%psi(state%triangles(:, e))
             if (maxval(abs(local_psi(:ndof) - local_psi(1))) <= 0) then
@@ -327,6 +347,7 @@ contains
                 reshape(values(ndof + 1:nc - ndof), [ndof, ndof])
             do j = 1, ndof
                 k = state%triangles(j, e)
+                if (free_mode) exit
                 if (.not. state%boundary(k)) cycle
                 do i = 1, ndof
                     rhs(state%triangles(i, e)) = rhs(state%triangles(i, e)) &
@@ -334,12 +355,14 @@ contains
                 end do
             end do
         end do
-        where (state%boundary)
-            rhs = state%psi
-            jacobian%axis_gradient = 0
-        end where
-        if (need_jacobian) then
-            where (state%boundary) jacobian%axis_load = 0
+        if (.not. free_mode) then
+            where (state%boundary)
+                rhs = state%psi
+                jacobian%axis_gradient = 0
+            end where
+            if (need_jacobian) then
+                where (state%boundary) jacobian%axis_load = 0
+            end if
         end if
         status = 1
         if (all(ieee_is_finite(rhs))) status = 0
@@ -529,6 +552,14 @@ contains
             if (det <= 0 .or. physical(1) <= 0) return
             psi = local_psi(1) + dot_product(s(:ndof), &
                                              local_psi(:ndof) - local_psi(1))
+            if (free_mode) then
+                ! Outside the plasma boundary (normalised flux above one).
+                if (psi*law%axis < 0) then
+                    output = 0
+                    stat = 0
+                    return
+                end if
+            end if
             if (need_jacobian) then
                 call gs_law_sources(law, psi, pp, ff, dpd, dfd, app, aff)
             else
