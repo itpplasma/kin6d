@@ -17,7 +17,7 @@ program gs_phase1_main
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, gs_timer_event_count, gs_timer_event_get, &
         gs_timer_reset, gs_progress_set, gs_progress, GS_T_ASSEMBLY, GS_T_FIXED_CG, &
-        GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG, GS_T_FACTOR, GS_T_DIRECT
+        GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG, GS_T_FACTOR, GS_T_DIRECT, GS_T_LOAD_CELLS
     use kin6d_gs_options, only: gs_options_text
     use fortplot_system_runtime, only: create_directory_runtime
     !$ use omp_lib, only: omp_get_max_threads
@@ -288,6 +288,8 @@ program gs_phase1_main
     call result%write('mesh_s', mesh_s, 's', 'mesh generation and element setup')
     call result%write('assembly_s', gs_timer_total(GS_T_ASSEMBLY), 's', &
         'source and Jacobian assembly (gs_cubic_load)')
+    call result%write('assembly_cells_s', gs_timer_total(GS_T_LOAD_CELLS), 's', &
+        'element loop inside gs_cubic_load (cell integration only)')
     call result%write('assembly_calls', real(gs_timer_calls(GS_T_ASSEMBLY), dp), '1', &
         'gs_cubic_load calls')
     call result%write('fixed_cg_s', gs_timer_total(GS_T_FIXED_CG), 's', &
@@ -406,6 +408,7 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'factor_s', gs_timer_total(GS_T_FACTOR)
     write (unit, '(a,1x,i0)') 'direct_solves', gs_timer_calls(GS_T_DIRECT)
     write (unit, '(a,1x,es25.16e3)') 'direct_s', gs_timer_total(GS_T_DIRECT)
+    write (unit, '(a,1x,es25.16e3)') 'assembly_cells_s', gs_timer_total(GS_T_LOAD_CELLS)
     write (unit, '(a,1x,es25.16e3)') 'newton_s', newton_s
     write (unit, '(a,1x,es25.16e3)') 'readback_s', readback_s
     write (unit, '(a,1x,es25.16e3)') 'io_total_s', io_total_s

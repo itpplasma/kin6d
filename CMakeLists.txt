@@ -170,6 +170,7 @@ set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
+    src/generated/kin6d_grad_shafranov_batch.f90 src/gs_load_batch.f90
     src/gs_timers.f90 src/gs_options.f90 src/gs_csr.f90 src/grad_shafranov.f90)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d PUBLIC OpenMP::OpenMP_Fortran)
@@ -533,7 +534,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "f749e65a4c00f014d88d0a4786a0689662b6a28f")
+set(KIN6D_FORTSYM_REVISION "22ee66773cf722b1d9cb496757d3c9a12b5b056f")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -921,6 +922,8 @@ set_tests_properties(grad_shafranov_curved_readback PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(gs_phase1 app/gs_phase1.f90)
 target_link_libraries(gs_phase1 PRIVATE kin6d_io fortplot)
+add_executable(gs_load_bench app/gs_load_bench.f90)
+target_link_libraries(gs_load_bench PRIVATE kin6d)
 add_executable(gs_free app/gs_free.f90)
 target_link_libraries(gs_free PRIVATE kin6d_io fortplot)
 add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
