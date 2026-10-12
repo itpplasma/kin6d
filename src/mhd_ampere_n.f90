@@ -27,7 +27,10 @@ module kin6d_mhd_ampere_n
     !! L_n (fortfem_toroidal_mode_boundary_operators_2d).  The exterior
     !! potential trace is u = -S^{-1} C A.  The Schur block is dense on the
     !! boundary Nedelec dofs; the operator is Hermitian positive definite and
-    !! factored once per (mesh, n).
+    !! factored once per (mesh, n).  With MUMPS (fortsparse, KIN6D_ENABLE_MUMPS)
+    !! the Hermitian H = A + i B is factored as its real symmetric positive
+    !! definite equivalent [[A, -B], [B, A]] by nested-dissection Cholesky
+    !! (the fortsparse MUMPS backend is real); otherwise by complex SuperLU.
     !!
     !! Units.  SI; A in T m, B in T, J in A/m^2.  Inner products carry the
     !! measure R dR dZ (the 2 pi of the phi integral is dropped throughout).
@@ -42,9 +45,11 @@ module kin6d_mhd_ampere_n
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_operators_t
     use fortfem_toroidal_mode_boundary_operators_2d, only: tm_bem_assemble, &
         tm_bem_steklov_symmetric, tm_bem_neumann_to_dirichlet
-    use fortsparse, only: csc_z_t, csc_from_triplet, csc_matvec, &
+    use fortsparse, only: csc_t, csc_z_t, csc_from_triplet, csc_matvec, &
         csc_conjugate_transpose, fortsparse_status_t, status_ok, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy
+    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, &
+        gs_direct_factor, gs_direct_solve, gs_direct_free
     implicit none
     private
 
@@ -61,6 +66,8 @@ module kin6d_mhd_ampere_n
         complex(dp), allocatable :: cb(:, :)     !! C on bdof, (ntr, nbe)
         real(dp), allocatable :: sinv(:, :)      !! S^{-1}, (ntr, ntr)
         type(sparse_solver_t) :: solver
+        type(gs_direct_t) :: direct      !! MUMPS Cholesky of the real form
+        logical :: use_direct = .false.
         logical :: factored = .false.
     end type ampere_n_t
 
@@ -171,11 +178,51 @@ contains
         call csc_from_triplet(nn, nn, rows(1:cnt), cols(1:cnt), zv(1:cnt), &
             kfull, fst)
         if (.not. status_ok(fst)) return
-        call sparse_factor(amp%solver, kfull, fst)
-        if (.not. status_ok(fst)) return
+        if (gs_direct_available()) then
+            call factor_real_form(kfull, amp, st)
+            if (st /= 0) return
+            amp%use_direct = .true.
+        else
+            call sparse_factor(amp%solver, kfull, fst)
+            if (.not. status_ok(fst)) return
+        end if
         amp%factored = .true.
         status = 0
     end subroutine ampere_n_build
+
+    subroutine factor_real_form(h, amp, status)
+        !! MUMPS Cholesky of [[A, -B], [B, A]] for H = A + i B (Hermitian
+        !! positive definite, so the real form is symmetric positive
+        !! definite; its CSC is its CSR).
+        type(csc_z_t), intent(in) :: h
+        type(ampere_n_t), intent(inout) :: amp
+        integer, intent(out) :: status
+        type(csc_t) :: m
+        type(fortsparse_status_t) :: fst
+        integer, allocatable :: rows(:), cols(:)
+        real(dp), allocatable :: vals(:)
+        integer :: n, j, p, c, i
+        logical :: ok
+
+        status = 1
+        n = h%ncol
+        allocate (rows(4*h%nnz), cols(4*h%nnz), vals(4*h%nnz))
+        c = 0
+        do j = 1, n
+            do p = h%col_ptr(j), h%col_ptr(j + 1) - 1
+                i = h%row_idx(p)
+                rows(c + 1:c + 4) = [i, i, n + i, n + i]
+                cols(c + 1:c + 4) = [j, n + j, j, n + j]
+                vals(c + 1:c + 4) = [real(h%val(p), dp), -aimag(h%val(p)), &
+                    aimag(h%val(p)), real(h%val(p), dp)]
+                c = c + 4
+            end do
+        end do
+        call csc_from_triplet(2*n, 2*n, rows, cols, vals, m, fst)
+        if (.not. status_ok(fst)) return
+        call gs_direct_factor(amp%direct, 2*n, m%col_ptr, m%row_idx, m%val, ok)
+        if (ok) status = 0
+    end subroutine factor_real_form
 
     subroutine leading_columns(a, nc, b, status)
         !! b = a(:, 1:nc).
@@ -206,8 +253,23 @@ contains
         integer, intent(out) :: status
         type(fortsparse_status_t) :: fst
 
+        real(dp), allocatable :: fr(:), xr(:)
+        integer :: n
+        logical :: ok
+
         status = 1
         if (.not. amp%factored) return
+        if (amp%use_direct) then
+            n = size(f)
+            allocate (fr(2*n), xr(2*n))
+            fr(1:n) = real(f, dp)
+            fr(n + 1:) = aimag(f)
+            call gs_direct_solve(amp%direct, fr, xr, ok)
+            if (.not. ok) return
+            a = cmplx(xr(1:n), xr(n + 1:), dp)
+            status = 0
+            return
+        end if
         call sparse_solve(amp%solver, f, a, fst)
         if (status_ok(fst)) status = 0
     end subroutine ampere_n_solve
@@ -261,7 +323,9 @@ contains
     subroutine ampere_n_free(amp)
         type(ampere_n_t), intent(inout) :: amp
 
-        if (amp%factored) call sparse_destroy(amp%solver)
+        if (amp%factored .and. .not. amp%use_direct) call sparse_destroy(amp%solver)
+        if (amp%use_direct) call gs_direct_free(amp%direct)
+        amp%use_direct = .false.
         amp%factored = .false.
         if (allocated(amp%bdof)) deallocate (amp%bdof)
         if (allocated(amp%cb)) deallocate (amp%cb)
