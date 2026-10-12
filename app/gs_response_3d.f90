@@ -1,0 +1,263 @@
+program gs_response_3d
+    !! L4 (first stage): per-n response of an axisymmetric G-EQDSK equilibrium
+    !! to 3D coils in the vacuum-shielding model: the coil field (L3,
+    !! closed-form Biot-Savart) plus resonant sheet currents on the rational
+    !! surfaces that cancel the total resonant flux (ideal shielding), with the
+    !! field of the sheets computed by the per-n FEEC Ampere operator on a
+    !! flux-aligned mesh of the plasma and the exact exterior (BEM).  No
+    !! volume plasma current responds in this model.
+    !!
+    !! Usage: gs_response_3d input.nml   (namelist /l4/, see below)
+    !!
+    !! Output prefix_res.dat, one line per (phasing, rational):
+    !!   q psin m area Phi_vac b_vac lambda b_shield
+    !! with Phi_vac the resonant flux harmonic of the coil field (T m^2 per
+    !! rad^2, peak amplitude, kin6d_vacuum_surfaces phi_mn), area =
+    !! (1/2 pi) int R ds (m^2 per rad), b_vac = Phi_vac/area (T), lambda the
+    !! sheet stream-function amplitude (A, peak), and b_shield = -M_ss lambda/
+    !! area the resonant flux of the shielding sheet alone per area (the
+    !! quantity GPEC reports as singflx).  m is the resonant m = n q of the
+    !! signed q of kin6d_vacuum_surfaces (GPEC labels it -m).
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
+        meridian_point_basis_t, meridian_point_basis_init
+    use kin6d_coils_3d
+    use kin6d_vacuum_surfaces
+    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+        ampere_n_curl
+    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+        ring_points, ring_flux_harmonic, ring_flux_from_values, &
+        ring_sheet_load, ring_area
+    implicit none
+    integer, parameter :: maxr = 32, maxp = 4
+    real(dp), parameter :: pi = 3.14159265358979323846_dp
+    character(len=512) :: eqdsk = '', coils = '', currents(maxp) = '', prefix = 'l4'
+    character(len=512) :: nml
+    integer :: n = 3, nrad = 64, n_core = 8, nth_max = 512, order = 2
+    integer :: nphi = 64, nfine = 1024, angle = 2
+    integer :: rat_num(maxr) = 0, rat_den(maxr) = 0
+    real(dp) :: psin_rat_min = 0.05_dp, psin_rat_max = 1.0_dp, min_gap = 0.3_dp
+    namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
+        order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
+        psin_rat_max, min_gap
+
+    type(psi_grid_t) :: g
+    type(coil_set_t) :: set
+    type(surface_t) :: sref, surf
+    type(flux_mesh_t) :: fm
+    type(meridian_feec_t) :: fs
+    type(meridian_point_basis_t) :: pb
+    type(ampere_n_t) :: amp
+    type(ring_angles_t), allocatable :: ra(:)
+    real(dp), allocatable :: w(:), ul(:), u_rat(:), psin_rat(:), q_rat(:)
+    real(dp), allocatable :: xg(:, :), nds(:, :), thg(:), tau(:), wq(:), area(:)
+    integer, allocatable :: tg(:), m_rat(:), ring_of(:), ipiv(:)
+    complex(dp), allocatable :: f(:), a(:), b2(:, :), mm(:, :), lu(:, :)
+    complex(dp), allocatable :: phivac(:), lam(:), bc(:, :, :), bn(:)
+    complex(dp), allocatable :: phil3(:), bs(:, :, :), bb(:, :)
+    complex(dp) :: bmn1(1), phimn1(1)
+    real(dp), allocatable :: xs(:, :)
+    real(dp) :: qref, target, root, t0, t1
+    integer :: unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk
+    logical :: found
+
+    if (command_argument_count() /= 1) error stop 'usage: gs_response_3d input.nml'
+    call get_command_argument(1, nml)
+    open (newunit=unit, file=trim(nml), status='old', action='read')
+    read (unit, nml=l4)
+    close (unit)
+    nphase = count(len_trim(currents) > 0)
+    if (n == 0 .or. nphase == 0) error stop 'need n /= 0 and current tables'
+
+    call eqdsk_read(trim(eqdsk), g, st)
+    if (st /= 0) error stop 'cannot read EQDSK'
+    call coil_set_read(set, trim(coils), st)
+    if (st /= 0) error stop 'cannot read coil table'
+
+    ! rational surfaces of this n
+    call surface_build(g, 0.5_dp, nfine, sref, st)
+    if (st /= 0) error stop 'reference surface'
+    qref = sref%q
+    nrat = count(rat_den > 0)
+    allocate (psin_rat(nrat), q_rat(nrat), m_rat(nrat))
+    k = 0
+    do i = 1, nrat
+        target = sign(real(rat_num(i), dp)/rat_den(i), qref)
+        found = find_surface_q(g, target, psin_rat_min, psin_rat_max, 256, &
+            1.0e-13_dp, root, st)
+        if (.not. found) then
+            write (*, '(a,i0,a,i0,a)') 'rational q = ', rat_num(i), '/', &
+                rat_den(i), ' not in range, skipped'
+            cycle
+        end if
+        if (mod(n*rat_num(i), rat_den(i)) /= 0) error stop 'q not resonant for n'
+        k = k + 1
+        psin_rat(k) = root
+        q_rat(k) = target
+        m_rat(k) = nint(n*target)
+        write (*, '(a,f10.6,a,f14.10,a,i0)') 'rational q = ', target, &
+            ' at psin = ', root, ', m = ', m_rat(k)
+    end do
+    nrat = k
+
+    ! rings: uniform in u = sqrt(psin) plus the rational surfaces
+    allocate (u_rat(nrat))
+    u_rat = sqrt(psin_rat(1:nrat))
+    call merge_rings(nrad, u_rat, min_gap, ul)
+    nr = size(ul)
+    allocate (ring_of(nrat))
+    do i = 1, nrat
+        ring_of(i) = minloc(abs(ul - u_rat(i)), 1)
+    end do
+    write (*, '(a,i0,a,i0)') 'rings: ', nr, ', rational rings: ', nrat
+
+    call cpu_time(t0)
+    call flux_mesh_build(ul, n_core, nth_max, min(order, 2), polar_map, fm, st)
+    if (st /= 0) error stop 'mesh'
+    call meridian_feec_build(fm%mm, order, fs, st)
+    if (st /= 0) error stop 'FEEC'
+    call ampere_n_build(fs, n, amp, st)
+    if (st /= 0) error stop 'Ampere operator'
+    call meridian_point_basis_init(fs, pb, st)
+    call cpu_time(t1)
+    write (*, '(a,i0,a,i0,a,i0,a,f10.2,a)') 'triangles ', &
+        fs%mm%topology%n_triangles, ', unknowns ', amp%nn, ', boundary panels ', &
+        amp%bd%n_panels, ', setup cpu ', t1 - t0, ' s'
+
+    ! ring angles and unit-sheet fields
+    allocate (ra(nrat), area(nrat), b2(fs%sp(2)%ndof, nrat), f(amp%nn), a(amp%nn))
+    do i = 1, nrat
+        call surface_build(g, ul(ring_of(i))**2, nfine, surf, st)
+        if (st /= 0) error stop 'rational surface'
+        call ring_angles_set(surf%q, surf%theta_s(:, angle), surf%nu, ra(i))
+        area(i) = ring_area(fm, ring_of(i))
+        f = (0.0_dp, 0.0_dp)
+        call ring_sheet_load(fs, pb, fm, ring_of(i), ra(i), n, m_rat(i), &
+            (1.0_dp, 0.0_dp), f)
+        call ampere_n_solve(amp, f, a, st)
+        if (st /= 0) error stop 'sheet solve'
+        block
+            complex(dp), allocatable :: bb(:)
+            call ampere_n_curl(amp, a, bb)
+            b2(:, i) = bb
+        end block
+    end do
+    allocate (mm(nrat, nrat), lu(nrat, nrat), ipiv(nrat), phivac(nrat), lam(nrat), &
+        phil3(nrat))
+    do j = 1, nrat
+        do i = 1, nrat
+            mm(i, j) = ring_flux_harmonic(fs, pb, fm, ring_of(i), ra(i), n, &
+                b2(:, j), m_rat(i))
+        end do
+    end do
+    write (*, '(a,es10.2)') 'reciprocity |M - M^H|/|M| ', &
+        maxval(abs(mm - conjg(transpose(mm))))/maxval(abs(mm))
+
+    open (newunit=ur, file=trim(prefix)//'_res.dat', status='replace')
+    write (ur, '(a)') '# phasing q psin m area[m^2/rad] Re,Im Phi_vac[T m^2/rad^2] '// &
+        'Re,Im b_vac[T] Re,Im lambda[A] Re,Im b_shield[T] '// &
+        'Re,Im Phi_vac(L3 surface path) (peak amplitudes)'
+    allocate (w(set%ncoil))
+    do ip = 1, nphase
+        call coil_read_currents(trim(currents(ip)), set%ncoil, w, st)
+        if (st /= 0) error stop 'cannot read currents'
+        call cpu_time(t0)
+        do i = 1, nrat
+            call ring_points(fm, ring_of(i), xg, nds, thg, tg, tau, wq)
+            if (allocated(bc)) deallocate (bc)
+            allocate (bc(3, 1, size(thg)))
+            call coil_set_modes(set, w, xg, nphi, [n], bc, st)
+            if (st /= 0) error stop 'coil projection'
+            allocate (bn(size(thg)))
+            do kk = 1, size(thg)
+                bn(kk) = (bc(1, 1, kk)*nds(1, kk) + bc(3, 1, kk)*nds(2, kk))*xg(1, kk)
+            end do
+            phivac(i) = ring_flux_from_values(ra(i), n, m_rat(i), thg, bn, wq)
+            deallocate (bn)
+            ! independent L3 path: coil field on the surface_build points and
+            ! the phi_mn of kin6d_vacuum_surfaces
+            call surface_build(g, ul(ring_of(i))**2, nfine, surf, st)
+            allocate (xs(2, nfine), bs(3, 1, nfine), bb(2, nfine))
+            xs(1, :) = surf%r
+            xs(2, :) = surf%z
+            call coil_set_modes(set, w, xs, nphi, [n], bs, st)
+            bb(1, :) = bs(1, 1, :)
+            bb(2, :) = bs(3, 1, :)
+            call surface_harmonics(surf, n, bb, angle, m_rat(i), m_rat(i), &
+                bmn1, phimn1)
+            phil3(i) = phimn1(1)
+            deallocate (xs, bs, bb)
+        end do
+        call cpu_time(t1)
+        lu = mm
+        lam = -phivac
+        call zgesv(nrat, 1, lu, nrat, ipiv, lam, nrat, info)
+        if (info /= 0) error stop 'shielding system singular'
+        do i = 1, nrat
+            write (ur, '(i3,f10.6,f14.10,i5,es16.8,10es16.8)') ip, q_rat(i), &
+                ul(ring_of(i))**2, m_rat(i), area(i), phivac(i), &
+                phivac(i)/area(i), lam(i), -mm(i, i)*lam(i)/area(i), phil3(i)
+            write (*, '(a,i0,a,f8.4,3(a,es11.3),a,es9.2)') 'phasing ', ip, &
+                ' q ', q_rat(i), ' |b_vac| ', abs(phivac(i))/area(i), &
+                ' |lambda| ', abs(lam(i)), ' |b_shield| ', &
+                abs(mm(i, i)*lam(i))/area(i), ' L3-path rel. diff ', &
+                abs(phivac(i) - phil3(i))/abs(phil3(i))
+        end do
+        write (*, '(a,f10.2,a)') 'coil drive cpu ', t1 - t0, ' s'
+    end do
+    close (ur)
+
+contains
+
+    subroutine polar_map(u, theta, x)
+        !! Flux-surface map: psin = u^2 on the ray of geometric angle theta.
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        real(dp) :: rho
+        logical :: ok
+        if (u <= 0.0_dp) then
+            x = [g%r_axis, g%z_axis]
+            return
+        end if
+        call flux_ray_point(g, u*u, theta, rho, ok)
+        if (.not. ok) error stop 'flux surface ray'
+        x = [g%r_axis + rho*cos(theta), g%z_axis + rho*sin(theta)]
+    end subroutine polar_map
+
+    subroutine merge_rings(nu, extra, gap, u)
+        !! u_j = j/nu merged with extra labels; uniform labels closer than
+        !! gap/nu to an extra label are dropped.
+        integer, intent(in) :: nu
+        real(dp), intent(in) :: extra(:), gap
+        real(dp), allocatable, intent(out) :: u(:)
+        real(dp) :: tmp(nu + size(extra)), v
+        integer :: j, c, i1, i2
+        c = 0
+        do j = 1, nu
+            v = real(j, dp)/nu
+            if (size(extra) > 0) then
+                if (minval(abs(extra - v)) < gap/nu) cycle
+            end if
+            c = c + 1
+            tmp(c) = v
+        end do
+        do j = 1, size(extra)
+            c = c + 1
+            tmp(c) = extra(j)
+        end do
+        do i1 = 2, c
+            v = tmp(i1)
+            i2 = i1 - 1
+            do while (i2 >= 1)
+                if (tmp(i2) <= v) exit
+                tmp(i2 + 1) = tmp(i2)
+                i2 = i2 - 1
+            end do
+            tmp(i2 + 1) = v
+        end do
+        u = tmp(1:c)
+    end subroutine merge_rings
+
+
+end program gs_response_3d
