@@ -218,7 +218,7 @@ contains
             real(dp), allocatable :: v(:), av(:), mv(:), z(:), defect(:), ad(:)
             real(dp) :: theta, radius, energy
             real(dp) :: element(ndof)
-            integer :: iteration, cell, node, j, stat, count
+            integer :: iteration, cell, node, i, j, stat, count
             count = size(state%psi)
             allocate (v(count), av(count), mv(count), defect(count), ad(count))
             v = state%psi
@@ -232,8 +232,13 @@ contains
                 v = v/sqrt(energy); av = av/sqrt(energy)
                 mv = 0
                 do cell = 1, size(state%triangles, 2)
-                    element = matmul(source_mass(:, :, cell), &
-                        v(state%triangles(:, cell)))
+                    element = 0
+                    do j = 1, ndof
+                        do i = 1, ndof
+                            element(i) = element(i) + source_mass(i, j, cell)* &
+                                v(state%triangles(j, cell))
+                        end do
+                    end do
                     do j = 1, ndof
                         node = state%triangles(j, cell)
                         if (state%boundary(node)) cycle
@@ -263,10 +268,15 @@ contains
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
             real(dp) :: value(2*ndof)
-            integer :: cell, i
+            integer :: cell, i, j
             output = 0
             do cell = 1, size(indices, 2)
-                value = matmul(matrix(:, :, cell), input(indices(:, cell)))
+                value = 0
+                do j = 1, 2*ndof
+                    do i = 1, 2*ndof
+                        value(i) = value(i) + matrix(i, j, cell)*input(indices(j, cell))
+                    end do
+                end do
                 do i = 1, 2*ndof
                     output(indices(i, cell)) = output(indices(i, cell)) + value(i)
                 end do
