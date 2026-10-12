@@ -321,17 +321,19 @@ target_link_libraries(test_gs_inverse PRIVATE kin6d)
 add_executable(test_gs_prescribed_q test/test_gs_prescribed_q.f90)
 target_link_libraries(test_gs_prescribed_q PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_p3_convergence COMMAND test_gs_prescribed_q)
-set_tests_properties(grad_shafranov_prescribed_q_p3_convergence PROPERTIES TIMEOUT 300)
+set_tests_properties(grad_shafranov_prescribed_q_p3_convergence PROPERTIES
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_variable_p test/test_gs_prescribed_q_variable_p.f90)
 target_link_libraries(test_gs_prescribed_q_variable_p PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_variable_p COMMAND test_gs_prescribed_q_variable_p)
-set_tests_properties(grad_shafranov_prescribed_q_variable_p PROPERTIES TIMEOUT 900)
+set_tests_properties(grad_shafranov_prescribed_q_variable_p PROPERTIES
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
 add_test(NAME grad_shafranov_prescribed_q_e2 COMMAND test_gs_prescribed_q_circle 2)
 set_tests_properties(grad_shafranov_prescribed_q_e1 grad_shafranov_prescribed_q_e2
-    PROPERTIES TIMEOUT 900)
+    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME grad_shafranov_phase1_inverse_app COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_phase1> -DDECK=$<TARGET_FILE:test_gs_prescribed_q_circle>
     -DWORK=${CMAKE_BINARY_DIR}/phase1_inverse_app
@@ -852,6 +854,7 @@ add_executable(test_gs_direct test/test_gs_direct.f90)
 target_link_libraries(test_gs_direct PRIVATE kin6d)
 add_test(NAME grad_shafranov_csr_direct_newton_oracles COMMAND test_gs_direct)
 set_tests_properties(grad_shafranov_csr_direct_newton_oracles PROPERTIES
+    SKIP_RETURN_CODE 77
     TIMEOUT 600 ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_solver_work test/test_gs_solver_work.f90)
 target_link_libraries(test_gs_solver_work PRIVATE kin6d)
