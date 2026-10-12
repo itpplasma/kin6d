@@ -1,10 +1,58 @@
+module test_equilibrium_core_fields
+    ! Solov'ev: psi = c ((R^2 - R0^2)^2 + 4 R^2 Z^2) - 4 c R0^2 a^2 vanishes on
+    ! the boundary R^2 = R0^2 + 2 R0 a cos t, R Z = R0 a sin t; mu0 = 1,
+    ! mu0 p' = -16 c, F = f.
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use kin6d_equilibrium_state, only: equilibrium_field_t, EQ_BR, EQ_BZ, &
+        EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z
+    implicit none
+    private
+    public :: solovev_field_t
+    real(dp), parameter, public :: r0 = 6.2_dp, minor = 0.62_dp, f_tor = 32.86_dp
+    real(dp), parameter, public :: c_sol = f_tor/(12*r0**3)
+    type, extends(equilibrium_field_t) :: solovev_field_t
+    contains
+        procedure :: sample => solovev_sample
+    end type
+contains
+    subroutine solovev_sample(field, points, values, statuses)
+        class(solovev_field_t), intent(in) :: field
+        real(dp), intent(in) :: points(:, :)
+        real(dp), intent(out) :: values(:, :)
+        integer, intent(out) :: statuses(:)
+        real(dp) :: r, z, psi_r, psi_z
+        integer :: i
+        values = 0; statuses = 0
+        do i = 1, size(points, 2)
+            r = points(1, i); z = points(2, i)
+            psi_r = c_sol*(4*r*(r*r - r0*r0) + 8*r*z*z)
+            psi_z = c_sol*8*r*r*z
+            values(EQ_PSI, i) = c_sol*((r*r - r0*r0)**2 + 4*r*r*z*z &
+                - 4*r0*r0*minor*minor)
+            values(EQ_PSI_R, i) = psi_r; values(EQ_PSI_Z, i) = psi_z
+            values(EQ_BR, i) = -psi_z/r; values(EQ_BZ, i) = psi_r/r
+            values(EQ_BPHI, i) = f_tor/r
+            values(EQ_P, i) = -16*c_sol*values(EQ_PSI, i)
+        end do
+    end subroutine
+end module test_equilibrium_core_fields
+
 program test_equilibrium_core
     ! Common equilibrium core (docs/equilibrium-core.md).
     !   chart              jet of the cylindrical chart against finite differences
     !   compare WORK FIX   K6-mini regression: gs_phase1 outputs in WORK against
     !                      the fixture FIX to 1e-12 relative
+    !   residual K         D3 of the exact Solov'ev state (quadrature level) and
+    !                      of psi-lane P_K solutions on three meshes (order >= K;
+    !                      observed K + 1)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use test_equilibrium_core_fields, only: solovev_field_t, r0, minor, f_tor, c_sol
+    use kin6d_equilibrium_residual, only: equilibrium_residual_t, &
+        equilibrium_residual
+    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
+    use kin6d_gs_equilibrium, only: gs_equilibrium
     implicit none
     character(512) :: mode, work, fixtures
     call get_command_argument(1, mode)
@@ -15,10 +63,77 @@ program test_equilibrium_core
         call get_command_argument(2, work)
         call get_command_argument(3, fixtures)
         call compare_k6_mini(trim(work), trim(fixtures))
+    case ('residual')
+        call get_command_argument(2, work)
+        call test_residual(merge(3, 2, trim(work) == '3'))
     case default
-        error stop 'mode: chart | compare WORK FIXTURES'
+        error stop 'mode: chart | compare WORK FIXTURES | residual K'
     end select
 contains
+    subroutine test_residual(order)
+        ! Gate of migration M1: D3 of the exact state is at quadrature level;
+        ! for psi-lane solutions it decreases at least at order K.
+        integer, intent(in) :: order
+        type(equilibrium_state_t) :: exact, lane
+        type(equilibrium_residual_t) :: report
+        type(gs_state_t) :: mesh
+        real(dp) :: normalized(3), rate
+        integer :: level, status, n
+        do level = 1, 3
+            n = 12*2**level
+            call solovev_mesh(n, order, mesh)
+            if (level == 3) then
+                allocate (solovev_field_t :: exact%field)
+                exact%mu0 = 1; exact%f_vac = f_tor
+                call equilibrium_residual(exact, mesh, report, status)
+                if (status /= 0) error stop 'exact residual evaluation'
+                print '(a,i0,a,es10.3,a,es10.3)', 'exact Solov''ev, n=', n, &
+                    ': normalized D3 ', report%normalized, ' sigma ', report%sigma
+                if (report%normalized > 1.0e-9_dp) &
+                    error stop 'D3 of the exact state is not at quadrature level'
+            end if
+            call solve_gs(mesh, 1.0_dp, -16*c_sol, 0.0_dp, status)
+            if (status /= 0) error stop 'Solov''ev solve'
+            call gs_equilibrium(mesh, lane, status, f_tor, 0.0_dp, &
+                pprime=-16*c_sol, mu0=1.0_dp)
+            if (status /= 0) error stop 'psi adapter'
+            call equilibrium_residual(lane, mesh, report, status)
+            if (status /= 0) error stop 'psi-lane residual evaluation'
+            normalized(level) = report%normalized
+            print '(a,i0,a,i0,a,es10.3)', 'psi lane P', order, ', n=', n, &
+                ': normalized D3 ', normalized(level)
+        end do
+        rate = log(normalized(2)/normalized(3))/log(2.0_dp)
+        print '(a,2f7.3)', 'observed orders ', &
+            log(normalized(1)/normalized(2))/log(2.0_dp), rate
+        if (rate < order) error stop 'psi-lane D3 order below K'
+        ! TODO(N1): the same gate for the map lane once ideal_map is on main.
+        print '(a)', 'PASS: D3 residual'
+    end subroutine
+
+    subroutine solovev_mesh(n, order, mesh)
+        integer, intent(in) :: n, order
+        type(gs_state_t), intent(out) :: mesh
+        real(dp) :: contour(2, n), h
+        integer :: j, status
+        do j = 1, n
+            call solovev_boundary(real(j - 1, dp)/n, contour(:, j))
+        end do
+        h = 2*acos(-1.0_dp)*minor/n
+        call initialize_gs(mesh, contour, h*h/2, status, order, &
+            curve=solovev_boundary)
+        if (status /= 0) error stop 'Solov''ev mesh'
+    end subroutine
+
+    subroutine solovev_boundary(t, point)
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        real(dp) :: theta
+        theta = 2*acos(-1.0_dp)*t
+        point(1) = sqrt(r0*r0 + 2*r0*minor*cos(theta))
+        point(2) = r0*minor*sin(theta)/point(1)
+    end subroutine
+
     subroutine test_chart()
         ! Second and third q-derivatives are the derivatives of the lower ones.
         type(cylindrical_chart_t) :: chart
