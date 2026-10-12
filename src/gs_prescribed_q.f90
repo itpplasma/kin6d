@@ -290,7 +290,7 @@ contains
         if (exact) then
             allocate (warm_psi(size(seed%psi)))
             warm_psi = seed%psi
-            call newton_exact(x0)
+            call newton_exact(x0, tol)
             if (failure /= 0 .and. newton == 0 .and. any(abs(law%pp(:, 2:)) > 0)) &
                 call pressure_homotopy()
         else
@@ -381,7 +381,7 @@ contains
             ! each stage warm-started from the previous one, halving the
             ! blend step on failure.
             real(dp), allocatable :: pp_full(:, :), pp_mean(:, :), x_good(:), psi_good(:)
-            real(dp) :: blend, blend_ok, step
+            real(dp) :: blend, blend_ok, step, stage_target
             integer :: tries
             logical :: stage_ok
             allocate (pp_full(size(law%pp, 1), size(law%pp, 2)))
@@ -395,9 +395,18 @@ contains
                 law%pp = (1 - blend)*pp_mean + blend*pp_full
                 failure = 0; newton = 0
                 warm_psi = psi_good
-                call newton_exact(x_good)
+                ! An intermediate stage is only the warm start of the next:
+                ! it is accepted at max|r| <= 1e-3. Only the full law must
+                ! meet tol. On TC24 (16 graded intervals) the q moments of the
+                ! blended laws carry a component along the weakest Jacobian
+                ! direction (sigma_min/sigma_max ~ 6e-6, an alternating edge
+                ! FF' mode) that no nearby law removes; the stages stalled at
+                ! max|r| 2e-5..1e-4 and the homotopy gave up at blend 0.25.
+                stage_target = tol
+                if (blend < 1) stage_target = max(tol, 1.0e-3_dp)
+                call newton_exact(x_good, stage_target)
                 stage_ok = failure == 0
-                if (stage_ok) stage_ok = maxval(abs(residual)) <= tol
+                if (stage_ok) stage_ok = maxval(abs(residual)) <= stage_target
                 if (stage_ok) then
                     x_good = solution; psi_good = accepted_state%psi
                     blend_ok = blend
@@ -417,7 +426,7 @@ contains
             end if
         end subroutine
 
-        subroutine newton_exact(xstart)
+        subroutine newton_exact(xstart, target)
             ! Levenberg-Marquardt-damped Newton with the equation-level Jacobian,
             ! evaluated only at accepted iterates. A trial is the Newton step
             ! (mu = 0) or the minimizer of |r + J dx| + mu |dx| (mu relative to
@@ -427,7 +436,7 @@ contains
             ! copy of it left the forward problem's solution set. The forward
             ! solve of each trial starts from the last accepted field. Near
             ! the solution mu returns to zero, so convergence is quadratic.
-            real(dp), intent(in) :: xstart(:)
+            real(dp), intent(in) :: xstart(:), target
             real(dp), allocatable :: x(:), xtrial(:), r(:), rtrial(:), dx(:), &
                                      jac(:, :), normal(:, :), gradient(:), system(:, :)
             real(dp) :: mu, merit, merit_trial, predicted, diagonal
@@ -444,7 +453,7 @@ contains
             if (failure /= 0) return
             call accept(x, r)
             do iteration = 1, 25
-                if (maxval(abs(r)) <= tol) exit
+                if (maxval(abs(r)) <= target) exit
                 call system_clock(tick, rate)
                 call exact_jacobian(jac, ok)
                 call system_clock(tock)
