@@ -168,7 +168,7 @@ No equilibrium input or production benchmark has yet been selected.
 - [Landreman 2026, arXiv:2609.26742](https://arxiv.org/abs/2609.26742) gives
   analytic, non-axisymmetric toroidal MHD equilibria (steady Euler flows)
   with exact nested surfaces. They are counterexamples to Grad's conjecture
-  and exact 3D benchmarks. Full text read 2026-10-12.
+  and exact 3D benchmarks. HTML v2 reviewed 2026-10-12; equations not yet re-derived.
 - [Gómez-Serrano, Liehr and Taylor 2026, arXiv:2609.24739](https://arxiv.org/abs/2609.24739)
   give a Lean-certified family of smooth counterexamples to Grad's conjecture
   with cyclic symmetry. Abstract only; not yet read in full.
