@@ -48,10 +48,11 @@ program gs_response_3d
     real(dp) :: gmres_tol = 1.0e-9_dp
     logical :: boundary_sheet = .true.
     real(dp) :: qlow = 0.0_dp, rat_pad = 0.0_dp
+    integer :: rat_grade = 1
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
-        boundary_sheet, qlow, rat_pad
+        boundary_sheet, qlow, rat_pad, rat_grade
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -120,11 +121,19 @@ program gs_response_3d
     allocate (u_rat(nrat))
     u_rat = sqrt(psin_rat(1:nrat))
     if (rat_pad > 0.0_dp) then
-        ! rings at u_s +- rat_pad/nrad: the half rings next to a rational
-        ! surface sit symmetrically about it
-        call merge_rings(nrad, [u_rat, u_rat - rat_pad/nrad, &
-            min(u_rat + rat_pad/nrad, 1.0_dp - 0.5_dp*rat_pad/nrad)], &
-            min_gap, ul)
+        ! rings at u_s +- rat_pad 2^-j/nrad (j < rat_grade): the mesh is graded
+        ! geometrically toward every rational surface, symmetrically about it
+        block
+            real(dp), allocatable :: extra(:)
+            integer :: jg
+            extra = u_rat
+            do jg = 0, rat_grade - 1
+                extra = [extra, u_rat - rat_pad*0.5_dp**jg/nrad, &
+                    min(u_rat + rat_pad*0.5_dp**jg/nrad, &
+                    1.0_dp - 0.5_dp*rat_pad*0.5_dp**jg/nrad)]
+            end do
+            call merge_rings(nrad, extra, min_gap, ul)
+        end block
     else
         call merge_rings(nrad, u_rat, min_gap, ul)
     end if

@@ -290,7 +290,7 @@ contains
         f = f*exp(cmplx(0.0_dp, -n*sr%nup, dp))
     end subroutine mde_solve
 
-    subroutine ideal_current(rings, n, sgn_dpsi, qlow, b, jcur, kap, bnd)
+    subroutine ideal_current(rings, n, sgn_dpsi, qlow, b, jcur, kap, bnd, seg)
         !! Plasma current jcur(3, np, ring) of the total field b(3, np, ring) on
         !! the sample rings (half rings 2 .. nring and, last, the boundary ring
         !! bnd), and the boundary-sheet coefficient kap(np) (K = kap B0).
@@ -298,6 +298,10 @@ contains
         integer, intent(in) :: n, bnd
         real(dp), intent(in) :: sgn_dpsi, qlow
         complex(dp), intent(in) :: b(:, :, :)
+        !> Segment label of each sample ring (rings separated by a rational
+        !> surface carry different labels); d/dpsi never differences across a
+        !> rational surface, where the ideal pressure and current jump.
+        integer, intent(in), optional :: seg(:)
         complex(dp), intent(out) :: jcur(:, :, :), kap(:)
         complex(dp), allocatable :: p(:, :), dpth(:), dpsi(:), g(:), dg(:)
         complex(dp), allocatable :: rhs(:), h(:), jn(:)
@@ -331,8 +335,16 @@ contains
             ! sequence (the boundary ring follows the last half ring)
             lo = max(1, ir - 1)
             hi = min(nr, ir + 1)
-            ds = rings(hi)%psi - rings(lo)%psi
-            dpsi = (p(:, hi) - p(:, lo))/ds
+            if (present(seg)) then
+                if (seg(lo) /= seg(ir)) lo = ir
+                if (seg(hi) /= seg(ir)) hi = ir
+            end if
+            if (hi > lo) then
+                ds = rings(hi)%psi - rings(lo)%psi
+                dpsi = (p(:, hi) - p(:, lo))/ds
+            else
+                dpsi = (0.0_dp, 0.0_dp)
+            end if
             do k = 1, np
                 bb = b(:, k, ir)
                 gradp(1) = dpsi(k)*rings(ir)%gpsi(1, k) + dpth(k)*rings(ir)%gth(1, k)
@@ -557,12 +569,17 @@ contains
         integer :: nr, ns, np, ir, s2, bnd, ipiv(max(1, size(sheet_m))), st
         logical :: debug
         character(len=8) :: env
+        integer, allocatable :: seg(:)
 
         call get_environment_variable('KIN6D_L4_DEBUG', env)
         debug = len_trim(env) > 0
         nr = size(rings)
         ns = size(sheet_m)
         np = rings(1)%np
+        allocate (seg(nr))
+        do ir = 1, nr
+            seg(ir) = count(fm%u(sheet_ring) < rings(ir)%u)
+        end do
         bnd = 0
         if (opt%boundary_sheet) bnd = nr
         allocate (bsheet(3, np, nr, max(ns, 1)), bext(3, np, nr), b(3, np, nr))
@@ -611,7 +628,7 @@ contains
             complex(dp), allocatable :: jc(:, :, :), kap(:), f(:)
             integer :: st2
             allocate (jc(3, np, nr), kap(np), f(amp%nn))
-            call ideal_current(rings, n, g%sgn_dpsi, opt%qlow, bf, jc, kap, bnd)
+            call ideal_current(rings, n, g%sgn_dpsi, opt%qlow, bf, jc, kap, bnd, seg)
             call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f)
             call ampere_n_solve(amp, f, y, st2)
         end subroutine apply_k_inv_load
