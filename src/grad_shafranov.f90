@@ -422,7 +422,7 @@ contains
     end subroutine apply_gs
 
    subroutine gs_linear_response(state, source, response, status, iteration_count, &
-                                 relative_tolerance, stagnation_ok)
+                                 relative_tolerance, stagnation_ok, residual_norm)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: source(:)
       real(dp), allocatable, intent(out) :: response(:)
@@ -430,11 +430,16 @@ contains
       integer, intent(out), optional :: iteration_count
       real(dp), intent(in), optional :: relative_tolerance
       logical, intent(in), optional :: stagnation_ok
+      ! Absolute norm of source - apply_gs(state, response) for the returned
+      ! response; huge when no response is produced.
+      real(dp), intent(out), optional :: residual_norm
       real(dp) :: residual, tolerance
+      real(dp), allocatable :: action(:)
       logical :: keep_stagnant
       integer :: iterations
       status = 1
       if (present(iteration_count)) iteration_count = 0
+      if (present(residual_norm)) residual_norm = huge(1.0_dp)
       if (.not. state%ready) return
       if (state%mapped) then
          if (.not. all(ieee_is_finite(source))) return
@@ -467,11 +472,16 @@ contains
             ! (measured at ~1e-10 relative for a 95k-DOF TC24 tangent). The
             ! retained iterate is the best finite response available; this
             ! mode is only for callers that certify the result by an exact
-            ! residual check, such as Newton preconditioning.
+            ! residual check, such as Newton preconditioning or solve_gs.
             where (state%boundary) response = source
          else
             response = 0.0_dp
          end if
+      end if
+      if (present(residual_norm)) then
+         allocate (action(size(source)))
+         call apply_gs(state, response, action)
+         residual_norm = norm2(source - action)
       end if
    contains
       subroutine matvec(input, output)
@@ -491,6 +501,7 @@ contains
       real(dp), intent(in) :: mu0, pprime, ffprime
       integer, intent(out) :: status
       real(dp), allocatable :: rhs(:), solution(:), action(:)
+      real(dp) :: linear_residual
       status = 1
       if (.not. state%ready) return
       if (state%mapped) then
@@ -502,20 +513,30 @@ contains
       allocate (rhs(size(state%psi)), action(size(state%psi)))
       call assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
       if (status /= 0) return
-      ! Resolve the fixed-source weak residual below the 1e-8 consumer gate.
-      call gs_linear_response(state, rhs, solution, status, state%iterations, &
-                              relative_tolerance=1.0e-10_dp)
-      if (status /= KRYLOV_OK) return
-      call apply_gs(state, solution, action)
-      if (state%mapped) then
+      if (.not. all(ieee_is_finite(rhs))) then
          status = geometry_arithmetic
-         if (.not. all(ieee_is_finite(action))) return
-         if (.not. ieee_is_finite(norm2(action-rhs))) return
-         if (.not. ieee_is_finite(norm2(rhs))) return
+         return
       end if
+      ! Resolve the fixed-source weak residual below the 1e-8 consumer gate.
+      ! A capped iterate is kept so that its residual is reported and gated.
+      call gs_linear_response(state, rhs, solution, status, state%iterations, &
+                              relative_tolerance=1.0e-10_dp, &
+                              stagnation_ok=.true., &
+                              residual_norm=linear_residual)
+      if (status /= KRYLOV_OK .and. status /= KRYLOV_MAX_ITERATIONS) then
+         ! Failed linear response: report its residual, never the sentinel.
+         state%residual = linear_residual/max(norm2(rhs), tiny(1.0_dp))
+         return
+      end if
+      call apply_gs(state, solution, action)
       state%residual = norm2(action - rhs)/max(norm2(rhs), tiny(1.0_dp))
-      if (state%mapped) then
-         if (.not. ieee_is_finite(state%residual)) return
+      if (.not. ieee_is_finite(state%residual)) then
+         status = geometry_arithmetic
+         return
+      end if
+      if (state%residual > 1.0e-8_dp) then
+         status = KRYLOV_MAX_ITERATIONS
+         return
       end if
       state%psi = solution
       status = KRYLOV_OK
