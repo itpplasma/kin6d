@@ -1612,6 +1612,26 @@ add_test(NAME nonnested_qa_oracle_check
 set_tests_properties(nonnested_qa_oracle_check
     PROPERTIES TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=4")
 
+# Electromagnetic wave at a plasma edge: 1D Yee/Mur fields coupled to
+# relativistic Boris macroparticles (docs/em-slab-reflection.md; appended).
+if(KIN6D_FORTSYM_BUILD)
+    add_executable(gen_em_slab gen/gen_em_slab.f90)
+    target_link_libraries(gen_em_slab PRIVATE kin6d_gen_support)
+endif()
+target_sources(kin6d_continuum PRIVATE src/generated/kin6d_em_slab_leaves.f90
+    src/continuum/em_slab.f90)
+set_source_files_properties(src/generated/kin6d_em_slab_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_em_slab test/test_em_slab.f90)
+target_link_libraries(test_em_slab PRIVATE kin6d)
+foreach(em_case oracles vacuum reflection transmission refinement)
+    add_test(NAME em_slab_${em_case} COMMAND test_em_slab ${em_case})
+    set_tests_properties(em_slab_${em_case} PROPERTIES
+        TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=4")
+endforeach()
+add_executable(em_slab_demo app/em_slab_demo.f90)
+target_link_libraries(em_slab_demo PRIVATE kin6d kin6d_io)
+
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
 kin6d_layers_finalize()
