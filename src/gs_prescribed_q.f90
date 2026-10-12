@@ -683,9 +683,13 @@ contains
             moved = accepted_state
             allocate (grad(size(moved%psi)))
             call system_clock(t3, rate)
+            ! The step moves the FF' coefficient (unit scale) and the field
+            ! together: it is bounded in both. A column whose field response is
+            ! small (edge FF' basis) took eps up to 1 and a 1e-2 difference
+            ! error on TC24.
             amplitude = maxval(abs(dpsi))
             eps = 1.0e-3_dp
-            if (amplitude > 0) eps = min(1.0_dp, 1.0e-3_dp*abs(base%axis)/amplitude)
+            if (amplitude > 0) eps = min(1.0e-3_dp, 1.0e-3_dp*abs(base%axis)/amplitude)
             good = .false.
             do attempt = 1, 8
                 call perturbed(eps, kk, base, dpsi, moved, grad, plus, rplus, st)
