@@ -110,7 +110,8 @@ contains
 
     subroutine gs_cubic_load(state, mu0, law, rhs, jacobian, status, tolerance, &
                              forcing, jacobian_tolerance, load_only, &
-                             quadrature_evaluations, source_integral, plasma_cell)
+                             quadrature_evaluations, source_integral, plasma_cell, &
+                             cell_psi)
         !! Free-boundary mode (`plasma_cell` present): the flux handed in is
         !! measured from the plasma boundary flux, law%axis is the axis flux
         !! in the same measure, and the source is the law inside the cells
@@ -130,6 +131,9 @@ contains
         procedure(gs_forcing_t), optional :: forcing
         real(dp), intent(out), optional :: source_integral
         logical, intent(in), optional :: plasma_cell(:)
+        !> Free-boundary mode only: per-cell nodal flux (ndof, cells) that replaces
+        !! state%psi in the level cuts (face-coincident cut handling).
+        real(dp), intent(in), optional :: cell_psi(:, :)
         real(dp), intent(in), optional :: jacobian_tolerance
         logical, intent(in), optional :: load_only
         integer, intent(out), optional :: quadrature_evaluations
@@ -236,7 +240,8 @@ contains
                 if (ie > snapshot) cycle
                 call gs_load_element(state, mu0, law, ie, free_mode, smooth_law, &
                                      need_jacobian, nc, tol, jtol, levels, tables, &
-                                     forcing, scratch, local_evaluations, status_local)
+                                     forcing, scratch, local_evaluations, status_local, &
+                                     cell_psi)
                 element_evaluations(ie) = local_evaluations
                 if (status_local /= 0) then
                     element_status(ie) = status_local
@@ -325,7 +330,7 @@ contains
 
     subroutine gs_load_element(state, mu0, law, e, free_mode, smooth_law, &
                                need_jacobian, nc, tol, jtol, levels, tables, forcing, &
-                               scr, evaluations, status)
+                               scr, evaluations, status, cell_psi)
         !! One element of gs_cubic_load. All mutable state is local or in the
         !! per-thread scratch `scr`, so concurrent calls on distinct elements are
         !! independent. The integrals are returned in scr%values.
@@ -338,6 +343,7 @@ contains
         procedure(gs_forcing_t), optional :: forcing
         type(load_scratch_t), intent(inout) :: scr
         integer, intent(out) :: evaluations, status
+        real(dp), intent(in), optional :: cell_psi(:, :)
         real(dp) :: coefficients(6), local_psi(10), controls(10), low, high, scale
         real(dp) :: edge_values(4), roots(3), shape(10), g(2, 10)
         real(dp) :: last_x, actual(2), width, samples(4), band_lower, band_upper
@@ -353,6 +359,7 @@ contains
         scr%values = 0
             cell_points(:, :ndof) = state%points(:, state%triangles(:, e))
             local_psi(:ndof) = state%psi(state%triangles(:, e))
+            if (present(cell_psi)) local_psi(:ndof) = cell_psi(:ndof, e)
             if (maxval(abs(local_psi(:ndof) - local_psi(1))) <= 0) then
                 if (gs_law_kink(law, local_psi(1))) then
                     status = 4
