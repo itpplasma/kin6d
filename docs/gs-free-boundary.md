@@ -98,6 +98,9 @@ law, axis = psi_a - psi_b), `summary.dat`. NetCDF variables:
 - profile readback of the executed law on the plasma flux range: `profile_psi`,
   `profile_s`, `profile_pressure`, `profile_f`, `profile_pprime`,
   `profile_ffprime`;
+- flux surfaces (`read_gs_equilibrium` with `psi_bound` on the plasma cells):
+  `q_status` (0 when written), `q_psi`, `q_s` (normalised poloidal flux, axis 0,
+  boundary 1), `q`, `s_tor` (normalised toroidal flux), `toroidal_flux` (Wb);
 - coils: `circuit_currents`, `coil_currents`, `circuit_i_min`, `circuit_i_max`;
 - inverse (when `fit /= none`): `fit_status`, `fit_iterations`, `fit_phi`,
   `fit_phi_data`, `fit_phi_reg`, `fit_residual`, `fit_gradient`, `fit_pinned`, and
@@ -110,10 +113,15 @@ as `gs_phase1 --evaluate`; psi is absolute when `psi_bound` is given. B_T = F / 
 with F from the law inside the plasma and `F_edge` outside it. Points outside
 Gamma_c give NaN. `--evaluate-stream` serves repeated requests until EOF.
 
-Limits. The flux-surface readback of `gs_phase1` (q, toroidal flux, volume by the
-whole-mesh sums) assumes psi = 0 on the mesh boundary and is not used; the volume
-is 2 pi times the plasma current of a unit-dp/dpsi law on the same cut cells, and no
-q profile is written yet. The coil table, profile law and constraints for ITER
+Flux surfaces. `read_gs_equilibrium` (`kin6d_gs_readback`) takes the optional
+`psi_bound` and `plasma_cell`: it reads back on the sub-mesh of the plasma cells
+with the flux measured from psi_b, so the same contour code gives q and the
+toroidal flux (contour integral of F |dpsi| / (R |grad psi|)) up to the cut level.
+The whole-mesh volume and flux sums of the fixed-boundary path are not used there;
+the volume is 2 pi times the plasma current of a unit-dp/dpsi law on the same cut
+cells. `test_gs_readback_free` checks the free path against the fixed path (gauge
+shift, and an interior surface taken as the boundary) and the exact Solov'ev
+surfaces. The coil table, profile law and constraints for ITER
 (P12) stay in the iter_tc24 producer.
 
 Tests: `gs_free_app_contract` (CTest; forward solve with refit, NetCDF values and
