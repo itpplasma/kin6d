@@ -201,8 +201,26 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90)
-# gs_coupling threads come from the project-wide KIN6D_ENABLE_OPENMP option.
+# Sparse direct factorisation (SuperLU through fortsparse) for the indefinite
+# free-boundary Newton Jacobian; FortFEM's wrapper is the only entry point.
+if(NOT TARGET fortsparse)
+    set(FORTSPARSE_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(FORTSPARSE_INSTALL_HELPER OFF CACHE BOOL "" FORCE)
+    set(FORTSPARSE_USE_SYSTEM_DEPS ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(fortsparse
+        GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
+        GIT_TAG a96c148651af0cab7205618ba17bab9c75159529
+        GIT_SHALLOW FALSE)
+    FetchContent_MakeAvailable(fortsparse)
+endif()
+add_library(kin6d_sparse_direct
+    ${fortfem_SOURCE_DIR}/src/topology/tree_cotree_gauge.f90
+    ${fortfem_SOURCE_DIR}/src/solvers/fortfem_sparse_direct.f90)
+target_link_libraries(kin6d_sparse_direct PUBLIC kin6d_spatial fortsparse)
+target_link_libraries(kin6d PUBLIC kin6d_sparse_direct)
+target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90
+    src/gs_free_boundary.f90)
+# gs_coupling and gs_free_boundary threads come from the project-wide KIN6D_ENABLE_OPENMP option.
 add_executable(test_gs_coils test/test_gs_coils.f90)
 target_link_libraries(test_gs_coils PRIVATE kin6d)
 add_test(NAME gs_coils_independent_oracles COMMAND test_gs_coils)
@@ -218,6 +236,26 @@ add_test(NAME gs_coupling_t2_fixed_current_cubature COMMAND test_gs_coupling_fix
 set_tests_properties(gs_coupling_t2_fixed_current_cubature PROPERTIES TIMEOUT 900)
 add_test(NAME gs_coupling_structure_symmetry_energy COMMAND test_gs_coupling_structure)
 set_tests_properties(gs_coupling_structure_symmetry_energy PROPERTIES TIMEOUT 900)
+add_executable(test_gs_fb_interface test/test_gs_fb_interface.f90)
+target_link_libraries(test_gs_fb_interface PRIVATE kin6d)
+add_test(NAME gs_free_boundary_interface_flow_quadrature COMMAND test_gs_fb_interface)
+add_library(kin6d_gs_fb_test STATIC test/support/gs_fb_fixture.f90)
+target_link_libraries(kin6d_gs_fb_test PUBLIC kin6d_gs_coupling_test)
+add_executable(test_gs_fb_jacobian test/test_gs_fb_jacobian.f90)
+target_link_libraries(test_gs_fb_jacobian PRIVATE kin6d_gs_fb_test)
+add_test(NAME gs_free_boundary_t7_jacobian_finite_differences COMMAND test_gs_fb_jacobian)
+set_tests_properties(gs_free_boundary_t7_jacobian_finite_differences PROPERTIES TIMEOUT 900)
+add_executable(test_gs_fb_manufactured test/test_gs_fb_manufactured.f90)
+target_link_libraries(test_gs_fb_manufactured PRIVATE kin6d_gs_fb_test)
+add_executable(test_gs_fb_greens test/test_gs_fb_greens.f90)
+target_link_libraries(test_gs_fb_greens PRIVATE kin6d_gs_fb_test)
+if(OpenMP_Fortran_FOUND)
+    target_compile_options(test_gs_fb_greens PRIVATE ${OpenMP_Fortran_FLAGS})
+endif()
+add_test(NAME gs_free_boundary_t4_green_function_cross_check COMMAND test_gs_fb_greens)
+set_tests_properties(gs_free_boundary_t4_green_function_cross_check PROPERTIES TIMEOUT 1800)
+add_test(NAME gs_free_boundary_t3_manufactured_newton COMMAND test_gs_fb_manufactured)
+set_tests_properties(gs_free_boundary_t3_manufactured_newton PROPERTIES TIMEOUT 1800)
 target_sources(kin6d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90
     src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
