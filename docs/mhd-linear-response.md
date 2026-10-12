@@ -33,8 +33,15 @@ axisymmetric G-EQDSK equilibrium.
   The fixed point `a = K⁻¹ L(B(a))` is solved by GMRES (fortnum) with the
   shielding sheets eliminated.
 
-Not modelled: the pressure jump of a cut equilibrium at the boundary (vacuum
-outside with `p0_edge > 0`), rotation, resistivity, kinetic terms.
+Cut boundary. With `p0_edge > 0`, vacuum outside and `B0` continuous (the
+cut G-EQDSK), the linearised force balance has a `p0_edge ξ_n δ'` term that
+no finite field perturbation balances: the cut is not an equilibrium
+plasma–vacuum interface, and DCON/GPEC drop this term as well. The traction
+`ξ_n [[∂_n(p0 + B0²/2μ0)]]` vanishes identically for continuous `B0`. The
+remaining boundary terms are the field-aligned closure sheet and, with
+`edge_moved_current`, the moved current `ξ_n J0` of the displaced boundary
+(DESIGN §2.5). TC24 results depend strongly on this choice.
+Not modelled: rotation, resistivity, kinetic terms.
 
 ## Discretisation
 
@@ -50,6 +57,7 @@ that of its mid surface, sampled at `np_sample` uniform angles.
 |---|---|---|
 | `mhd_ampere_n_exterior_manufactured` | current `curl_n W` of a compact bump; field from toroidal-angle quadrature of `1/(4π|x−y|)` | field order k (k = 1, 2), exterior trace order ≥ 2 |
 | `mhd_shielding_cylinder_limit_reciprocity` | screened response of a periodic cylinder (modified Bessel functions); sheet reciprocity | 1e-5 at R0/a = 40, second order in a/R0; M Hermitian to 1e-13 |
+| `mhd_newcomb_screw_pinch_limit` | Newcomb ODE (fortnum Cash–Karp), shape of the response inside the plasma | β=0: second order in a/R0, 6e-3 at R0/a=40; β_p≈2 converges to the same limit (pressure-sensitive test needs a periodic-cylinder chart) |
 | `mhd_ideal_n_mde_force_free_identity` | MDE inverse; force-free `μ0 J = σ B` against a direct FEEC solve; charge conservation with `p' ≠ 0`, `F' ≠ 0` | 5e-10; second order in the ring spacing (8.5e-5); 3e-5 |
 
 `gs_response_3d` also recomputes the coil resonant flux through the L3
@@ -60,7 +68,9 @@ surface path (`surface_harmonics`), agreeing to 1e-5.
 `gs_response_3d input.nml`, namelist `/l4/`: `eqdsk`, `coils`, `currents`
 (one table per phasing), `n`, `rat_num`/`rat_den`, `nrad`, `nth_max`,
 `order`, `model` (`'shield'` or `'ideal'`), `np_sample`, `qlow`,
-`boundary_sheet`. Output `prefix_res.dat`: per phasing and rational surface
+`boundary_sheet`, `rat_pad`/`rat_grade` (rings graded geometrically toward
+each rational), `edge_moved_current`. With MUMPS the Ampère operator is
+factored as the real SPD form (1M unknowns at nrad 128). Output `prefix_res.dat`: per phasing and rational surface
 the vacuum resonant flux `Φ_vac` and `b_vac = Φ_vac/area`, the sheet amplitude
 `λ` and `b_shield = −M_ss λ/area`, the resonant flux of the shielding current
 alone per area (GPEC's `singflx`); `m = n q` with the signed `q` of
