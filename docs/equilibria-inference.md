@@ -80,6 +80,23 @@ An ergodic magnetic component therefore cannot support an arbitrary smooth
 pressure gradient. Pressure flattening, ideal barriers/current sheets, relaxed
 regions or nonideal evolution are physical/model choices.
 
+Smooth non-symmetric equilibria with nested surfaces do exist. Grad doubted
+that smooth toroidal equilibria with non-constant pressure exist without a
+continuous symmetry. Two 2026 preprints give counterexamples:
+
+- [Landreman, arXiv:2609.26742](https://arxiv.org/abs/2609.26742) gives
+  closed-form analytic families. They have two field periods, are
+  stellarator-symmetric, and have exact nested surfaces, with ∇p vanishing
+  only on the axis. One family has uniform ι=2, the other sheared ι. This
+  refutes the formulation in Cardona et al. 2025, Conj. 2.5.
+- [Gómez-Serrano, Liehr and Taylor, arXiv:2609.24739](https://arxiv.org/abs/2609.24739)
+  give smooth solutions with cyclic symmetry, certified in Lean 4.
+
+Existence is therefore not an obstruction in principle. Whether a given
+boundary and set of profiles admits a smooth nested solution, and what happens
+on rational surfaces with sheared ι, stay case-specific questions. The
+analytic families serve as exact 3D benchmarks ([benchmarks](benchmarks.md)).
+
 ## Topology and history
 
 History dependence is represented by the selected equations and initial/
