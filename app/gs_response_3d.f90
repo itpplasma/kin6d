@@ -49,10 +49,11 @@ program gs_response_3d
     logical :: boundary_sheet = .true.
     real(dp) :: qlow = 0.0_dp, rat_pad = 0.0_dp
     integer :: rat_grade = 1
+    logical :: edge_moved_current = .false.
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
-        boundary_sheet, qlow, rat_pad, rat_grade
+        boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -160,6 +161,7 @@ program gs_response_3d
     if (trim(model) == 'ideal') then
         opt%boundary_sheet = boundary_sheet
         opt%qlow = qlow
+        opt%moved_current = edge_moved_current
         nsr = nr
         allocate (rings(nsr))
         do j = 2, nr
