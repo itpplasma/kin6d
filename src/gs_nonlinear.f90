@@ -8,9 +8,12 @@ module kin6d_gs_nonlinear
     use kin6d_gs_csr, only: gs_csr_dirichlet_apply, gs_csr_fill_masked
     use kin6d_gs_options, only: gs_use_csr
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
-                                  gs_law_c1
+                                  gs_law_c1, gs_law_sources_batch
     use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, &
                                       gs_cut_discriminant, gs_cut_quadratic_discriminant
+    use kin6d_gs_load_batch, only: batch_position_flux, batch_moments
+    use gs_source_batch_mod, only: gs_source_batch
+    use gs_source_tangents_batch_mod, only: gs_source_tangents_batch
     use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
                                     triangle_bernstein_controls, &
                                     cubic_segment_stationary
@@ -24,7 +27,7 @@ module kin6d_gs_nonlinear
     use fortnum_linalg, only: det2
     use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, gs_timer_iterations, &
                                gs_progress, gs_progress_enabled, GS_T_ASSEMBLY, &
-                               GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG
+                               GS_T_LOAD_CELLS, GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
     private
@@ -38,18 +41,30 @@ module kin6d_gs_nonlinear
         real(dp), allocatable :: mval(:)
     end type
     type :: source_rule_t
+        ! shapes_t is the transpose of shapes: the quadrature index runs
+        ! fastest, so the batched accumulation vectorises over points.
         real(dp), allocatable :: weights(:), shapes(:, :), gradients(:, :, :)
+        real(dp), allocatable :: shapes_t(:, :)
+    end type
+    ! Per-thread work arrays of the batched smooth-cell rule (one entry per
+    ! quadrature point).
+    type :: point_batch_t
+        real(dp), allocatable :: r(:), z(:), psi(:), det(:), pp(:), ff(:)
+        real(dp), allocatable :: dpp(:), dff(:), app(:), aff(:), f(:), df(:), af(:)
+        real(dp), allocatable :: c(:), x(:)
     end type
     ! Shared read-only quadrature tables of gs_cubic_load.
     type :: load_tables_t
         real(dp), allocatable :: w(:), wh(:), shapes(:, :), grads(:, :, :)
         real(dp), allocatable :: shapes_h(:, :), grads_h(:, :, :)
+        real(dp), allocatable :: shapes_t(:, :), shapes_ht(:, :)
     end type
     ! Per-thread scratch of gs_cubic_load: the FortFEM workspace and the cut
     ! event and value buffers.
     type :: load_scratch_t
         type(triangle_level_workspace_t) :: workspace
         type(source_rule_t) :: rules(4)
+        type(point_batch_t) :: batch
         real(dp), allocatable :: events(:), inner(:), epsabs(:), rtol(:), values(:)
         real(dp), allocatable :: errors(:), cell_values(:), high_values(:)
         logical, allocatable :: inner_active(:)
@@ -143,7 +158,7 @@ contains
         integer, allocatable :: element_status(:), element_evaluations(:)
         type(load_tables_t) :: tables
         logical :: smooth_law, need_jacobian, free_mode, scratch_failed
-        real(dp) :: jtol, tol, h(2, 2, 10)
+        real(dp) :: jtol, tol, h(2, 2, 10), clock
         integer :: e, ndof, nc, i, j, k, q, nel, capacity, first_failure
         integer :: evaluations
         status = 1; rhs = 0
@@ -207,6 +222,8 @@ contains
             call triangle_basis_jet([xh(q), yh(q)], tables%shapes_h(:, q), &
                                     tables%grads_h(:, :, q), h(:, :, :ndof))
         end do
+        tables%shapes_t = transpose(tables%shapes)
+        tables%shapes_ht = transpose(tables%shapes_h)
         ! Element-parallel assembly. Every element writes only its own slice;
         ! the node gather below runs in element order, so the result does not
         ! depend on the thread count. Each thread owns one quadrature workspace.
@@ -217,6 +234,7 @@ contains
         if (need_jacobian) axis_local = 0
         first_failure = huge(1)
         scratch_failed = .false.
+        clock = gs_wall_s()
         !$omp parallel default(shared)
         block
             type(load_scratch_t) :: scratch
@@ -261,6 +279,7 @@ contains
             !$omp end do
         end block
         !$omp end parallel
+        call gs_timer_add(GS_T_LOAD_CELLS, gs_wall_s() - clock, 1)
         if (scratch_failed) then
             status = 1
             if (first_failure == huge(1)) return
@@ -348,7 +367,7 @@ contains
         real(dp) :: edge_values(4), roots(3), shape(10), g(2, 10)
         real(dp) :: last_x, actual(2), width, samples(4), band_lower, band_upper
         real(dp) :: cell_points(2, 10)
-        integer :: ndof, i, j, nr, ne, ni, nlevels, q
+        integer :: ndof, i, j, nr, ne, ni, nlevels
         integer :: ix, left, right, band, cell_left, cell_right, rule
         logical :: integrated, closed_cut
         character(160) :: message
@@ -396,19 +415,12 @@ contains
             if (integrated) then
                 continue
             else if (nlevels == 0) then
-                do q = 1, size(tables%w)
-                    call source_values(tables%shapes(:, q), tables%grads(:, :, q), &
-                                       scr%errors, status)
-                    if (status /= 0) return
-                    scr%values = scr%values + tables%w(q)*scr%errors
-                end do
-                scr%high_values = 0
-                do q = 1, size(tables%wh)
-                    call source_values(tables%shapes_h(:, q), &
-                                       tables%grads_h(:, :, q), scr%errors, status)
-                    if (status /= 0) return
-                    scr%high_values = scr%high_values + tables%wh(q)*scr%errors
-                end do
+                call rule_integral(tables%w, tables%grads, tables%shapes_t, &
+                                   scr%values)
+                if (status /= 0) return
+                call rule_integral(tables%wh, tables%grads_h, tables%shapes_ht, &
+                                   scr%high_values)
+                if (status /= 0) return
                 if (any(abs(scr%high_values - scr%values) > scr%epsabs + tol*0.1_dp &
                         *abs(scr%high_values))) then
                     coefficients = 0
@@ -542,7 +554,6 @@ contains
             real(dp), intent(out) :: integral(:)
             integer, parameter :: orders(4) = [8, 12, 24, 48]
             real(dp), allocatable :: rx(:), ry(:)
-            real(dp) :: piece(nc)
             integer :: node
             if (.not. allocated(scr%rules(index)%weights)) then
                 call triangle_duffy_quadrature(2*orders(index) - 2, rx, ry, &
@@ -555,14 +566,98 @@ contains
                         scr%rules(index)%shapes(:, node), &
                         scr%rules(index)%gradients(:, :, node))
                 end do
+                scr%rules(index)%shapes_t = transpose(scr%rules(index)%shapes)
             end if
+            call rule_integral(scr%rules(index)%weights, &
+                               scr%rules(index)%gradients, &
+                               scr%rules(index)%shapes_t, integral)
+        end subroutine
+
+        subroutine rule_integral(weights, grads_in, shapes_t, integral)
+            !! Integral of the load products over one fixed rule, evaluated for
+            !! all points at once: geometry and profile law per point, the
+            !! generated SIMD source batches, then dot-product accumulation over
+            !! the points. Same quantities as source_values summed over the
+            !! rule (no forcing derivative, no cut logic).
+            real(dp), intent(in) :: weights(:), grads_in(:, :, :)
+            real(dp), intent(in) :: shapes_t(:, :)
+            real(dp), intent(out) :: integral(:)
+            real(dp) :: map_jac(2, 2)
+            integer :: np, node
+            np = size(weights)
+            call grow_batch(scr%batch, np)
+            evaluations = evaluations + np
+            status = 1
             integral = 0
-            do node = 1, size(scr%rules(index)%weights)
-                call source_values(scr%rules(index)%shapes(:, node), &
-                    scr%rules(index)%gradients(:, :, node), piece, status)
-                if (status /= 0) return
-                integral = integral + scr%rules(index)%weights(node)*piece
+            call batch_position_flux(np, ndof, cell_points(:, :ndof), &
+                                     local_psi(:ndof), shapes_t, scr%batch%r, &
+                                     scr%batch%z, scr%batch%psi)
+            scr%batch%det(:np) = 2*state%area(e)
+            if (state%curved_cell(e)) then
+                do node = 1, np
+                    map_jac = matmul(cell_points(:, :ndof), &
+                                     transpose(grads_in(:, :, node)))
+                    scr%batch%det(node) = det2(map_jac)
+                end do
+            end if
+            do node = 1, np
+                if (scr%batch%det(node) <= 0 .or. scr%batch%r(node) <= 0) return
             end do
+            call gs_law_sources_batch(law, np, scr%batch%psi, scr%batch%pp, &
+                                      scr%batch%ff, scr%batch%dpp, scr%batch%dff, &
+                                      scr%batch%app, scr%batch%aff, need_jacobian, &
+                                      scr%batch%x)
+            scr%batch%c(:np) = 1
+            if (free_mode) then
+                do node = 1, np
+                    if (scr%batch%psi(node)*law%axis >= 0) cycle
+                    ! Outside the plasma boundary: no source in this cell part.
+                    scr%batch%pp(node) = 0; scr%batch%ff(node) = 0
+                    scr%batch%dpp(node) = 0; scr%batch%dff(node) = 0
+                    scr%batch%app(node) = 0; scr%batch%aff(node) = 0
+                    scr%batch%c(node) = 0
+                end do
+            end if
+            if (need_jacobian) then
+                call gs_source_tangents_batch(np, scr%batch%r(:np), mu0, &
+                    scr%batch%pp(:np), scr%batch%ff(:np), scr%batch%dpp(:np), &
+                    scr%batch%dff(:np), scr%batch%app(:np), scr%batch%aff(:np), &
+                    scr%batch%f(:np), scr%batch%df(:np), scr%batch%af(:np))
+            else
+                call gs_source_batch(np, scr%batch%r(:np), mu0, scr%batch%pp(:np), &
+                                     scr%batch%ff(:np), scr%batch%f(:np))
+            end if
+            if (present(forcing)) then
+                do node = 1, np
+                    if (scr%batch%c(node) > 0) scr%batch%f(node) = &
+                        scr%batch%f(node) + forcing(scr%batch%r(node), &
+                                                    scr%batch%z(node))
+                end do
+            end if
+            ! Point weight w*det, zero where the source is switched off.
+            do node = 1, np
+                scr%batch%c(node) = scr%batch%c(node)*weights(node)*scr%batch%det(node)
+            end do
+            call batch_moments(np, ndof, need_jacobian, scr%batch%c, scr%batch%f, &
+                               scr%batch%df, scr%batch%af, shapes_t, integral)
+            if (all(ieee_is_finite(integral))) status = 0
+        end subroutine
+
+        subroutine grow_batch(batch, np)
+            type(point_batch_t), intent(inout) :: batch
+            integer, intent(in) :: np
+            if (allocated(batch%r)) then
+                if (size(batch%r) >= np) return
+                deallocate (batch%r, batch%z, batch%psi, batch%det, batch%pp, &
+                            batch%ff, batch%dpp, batch%dff, batch%app, batch%aff, batch%f, &
+                            batch%df, batch%af, batch%c, batch%x)
+            end if
+            allocate (batch%r(np), batch%z(np), batch%psi(np), batch%det(np), &
+                      batch%pp(np), batch%ff(np), batch%dpp(np), batch%dff(np), batch%app(np), &
+                      batch%aff(np), batch%f(np), batch%df(np), batch%af(np), &
+                      batch%c(np), batch%x(np))
+            batch%dpp = 0; batch%dff = 0; batch%app = 0; batch%aff = 0
+            batch%df = 0; batch%af = 0
         end subroutine
 
         subroutine cut_rule(order, integral)
