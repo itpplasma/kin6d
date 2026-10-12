@@ -57,7 +57,7 @@ module kin6d_vacuum_surfaces
     end type
 
     public :: psi_grid_init, eqdsk_read, psi_eval, psin_of, f_of_psin
-    public :: surface_build, surface_harmonics, find_surface_q
+    public :: surface_build, surface_harmonics, find_surface_q, flux_ray_point
 
 contains
 
@@ -275,6 +275,66 @@ contains
         end do
     end subroutine
 
+    subroutine flux_ray_point(g, psin, th, rho, ok)
+        !! Distance rho from the magnetic axis along the ray of geometric angle
+        !! th to the first crossing of the level psin (march, then safeguarded
+        !! Newton).  ok = .false. if the ray leaves the grid first.
+        type(psi_grid_t), intent(in) :: g
+        real(dp), intent(in) :: psin, th
+        real(dp), intent(out) :: rho
+        logical, intent(out) :: ok
+        real(dp) :: er(2), lo, hi, psi, pr, pz, target, f, rp, ds, hi_grid
+        integer :: it
+
+        ok = .false.
+        target = g%psi_axis + psin*(g%psi_edge - g%psi_axis)
+        er = [cos(th), sin(th)]
+        ! longest ray that stays inside the grid (one cell margin)
+        hi_grid = huge(1.0_dp)
+        if (er(1) > 1.0e-12_dp) hi_grid = &
+            min(hi_grid, (g%rleft + g%dr*(g%nr - 2) - g%r_axis)/er(1))
+        if (er(1) < -1.0e-12_dp) hi_grid = min(hi_grid, (g%rleft + g%dr - g%r_axis)/er(1))
+        if (er(2) > 1.0e-12_dp) hi_grid = &
+            min(hi_grid, (g%zbot + g%dz*(g%nz - 2) - g%z_axis)/er(2))
+        if (er(2) < -1.0e-12_dp) hi_grid = min(hi_grid, (g%zbot + g%dz - g%z_axis)/er(2))
+        ! march outward to the first crossing of the target level
+        lo = 0
+        ds = 0.02_dp
+        hi = -1
+        rho = 0
+        do while (rho < hi_grid)
+            rho = min(rho + ds, hi_grid)
+            call psi_eval(g, g%r_axis + rho*er(1), g%z_axis + rho*er(2), psi, pr, pz)
+            if ((psi - target)*g%sgn_dpsi > 0) then
+                hi = rho
+                exit
+            end if
+            lo = rho
+        end do
+        if (hi < 0) return
+        rho = 0.5_dp*(lo + hi)
+        do it = 1, 200
+            call psi_eval(g, g%r_axis + rho*er(1), g%z_axis + rho*er(2), psi, pr, pz)
+            f = psi - target
+            if (abs(f) < 1.0e-12_dp*abs(g%psi_edge - g%psi_axis)) then
+                ok = .true.
+                return
+            end if
+            if (f*g%sgn_dpsi > 0) then
+                hi = rho
+            else
+                lo = rho
+            end if
+            rp = pr*er(1) + pz*er(2)
+            if (rp /= 0) then
+                rho = rho - f/rp
+            else
+                rho = 0.5_dp*(lo + hi)
+            end if
+            if (rho <= lo .or. rho >= hi) rho = 0.5_dp*(lo + hi)
+        end do
+    end subroutine flux_ray_point
+
     subroutine surface_build(g, psin, n, s, status)
         !! Flux surface psin sampled at n equally spaced geometric angles.
         type(psi_grid_t), intent(in) :: g
@@ -283,66 +343,21 @@ contains
         type(surface_t), intent(out) :: s
         integer, intent(out) :: status
         real(dp), allocatable :: dnu(:), wj(:)
-        real(dp) :: th, er(2), et(2), rho, lo, hi, psi, pr, pz, target, f, fval
-        real(dp) :: rp, t(2), bt, numean, ds, hi_grid
-        integer :: j, it
+        real(dp) :: th, er(2), et(2), rho, psi, pr, pz, fval
+        real(dp) :: rp, t(2), bt, numean
+        integer :: j
         logical :: ok
 
         status = 1
         s%n = n; s%psin = psin
         allocate (s%theta_g(n), s%r(n), s%z(n), s%nr(n), s%nz(n), s%dl(n), s%nu(n), &
                   s%theta_s(n, 2), s%dtheta_s(n, 2), dnu(n), wj(n))
-        target = g%psi_axis + psin*(g%psi_edge - g%psi_axis)
         fval = f_of_psin(g, psin)
         do j = 1, n
             th = 2*pi*(j - 1)/n
             er = [cos(th), sin(th)]
             et = [-sin(th), cos(th)]
-            ! longest ray that stays inside the grid (one cell margin)
-            hi_grid = huge(1.0_dp)
-            if (er(1) > 1.0e-12_dp) hi_grid = &
-                min(hi_grid, (g%rleft + g%dr*(g%nr - 2) - g%r_axis)/er(1))
-      if (er(1) < -1.0e-12_dp) hi_grid = min(hi_grid, (g%rleft + g%dr - g%r_axis)/er(1))
-            if (er(2) > 1.0e-12_dp) hi_grid = &
-                min(hi_grid, (g%zbot + g%dz*(g%nz - 2) - g%z_axis)/er(2))
-       if (er(2) < -1.0e-12_dp) hi_grid = min(hi_grid, (g%zbot + g%dz - g%z_axis)/er(2))
-            ! march outward to the first crossing of the target level
-            lo = 0
-            ds = 0.02_dp
-            hi = -1
-            rho = 0
-            do while (rho < hi_grid)
-                rho = min(rho + ds, hi_grid)
-               call psi_eval(g, g%r_axis + rho*er(1), g%z_axis + rho*er(2), psi, pr, pz)
-                if ((psi - target)*g%sgn_dpsi > 0) then
-                    hi = rho
-                    exit
-                end if
-                lo = rho
-            end do
-            if (hi < 0) return
-            rho = 0.5_dp*(lo + hi)
-            ok = .false.
-            do it = 1, 200
-               call psi_eval(g, g%r_axis + rho*er(1), g%z_axis + rho*er(2), psi, pr, pz)
-                f = psi - target
-                if (abs(f) < 1.0e-12_dp*abs(g%psi_edge - g%psi_axis)) then
-                    ok = .true.
-                    exit
-                end if
-                if (f*g%sgn_dpsi > 0) then
-                    hi = rho
-                else
-                    lo = rho
-                end if
-                rp = pr*er(1) + pz*er(2)
-                if (rp /= 0) then
-                    rho = rho - f/rp
-                else
-                    rho = 0.5_dp*(lo + hi)
-                end if
-                if (rho <= lo .or. rho >= hi) rho = 0.5_dp*(lo + hi)
-            end do
+            call flux_ray_point(g, psin, th, rho, ok)
             if (.not. ok) return
             s%theta_g(j) = th
             s%r(j) = g%r_axis + rho*er(1)

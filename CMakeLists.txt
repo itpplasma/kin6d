@@ -978,3 +978,5 @@ target_link_libraries(test_mhd_shielding PRIVATE kin6d)
 add_test(NAME mhd_shielding_cylinder_limit_reciprocity COMMAND test_mhd_shielding)
 set_tests_properties(mhd_shielding_cylinder_limit_reciprocity PROPERTIES TIMEOUT 600
     ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(gs_response_3d app/gs_response_3d.f90)
+target_link_libraries(gs_response_3d PRIVATE kin6d)

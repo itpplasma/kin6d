@@ -116,15 +116,15 @@ contains
         nu = ra%q*theta + (1.0_dp - w)*ra%nup(i0) + w*ra%nup(i1)
     end subroutine ring_angles_at
 
-    subroutine ring_points(fm, j, x, normal_ds, theta, t, tau)
+    subroutine ring_points(fm, j, x, normal_ds, theta, t, tau, w)
         !! Gauss points of the edges of ring j: physical points x(2, :),
         !! (dZ/dtau, -dR/dtau) = n ds/dtau (outward), geometric angles, the
-        !! triangle and the edge parameter of each point.  Points of edge i
-        !! are (i - 1) ring_gauss + 1 .. i ring_gauss; weights ring_weights.
+        !! triangle, the edge parameter and the Gauss weight (in tau) of each
+        !! point.  Points of edge i are (i - 1) ring_gauss + 1 .. i ring_gauss.
         type(flux_mesh_t), intent(in) :: fm
         integer, intent(in) :: j
         real(dp), allocatable, intent(out) :: x(:, :), normal_ds(:, :)
-        real(dp), allocatable, intent(out) :: theta(:), tau(:)
+        real(dp), allocatable, intent(out) :: theta(:), tau(:), w(:)
         integer, allocatable, intent(out) :: t(:)
         real(dp) :: gx(ring_gauss), gw(ring_gauss), xi, eta, nh(2), jac(2, 2)
         real(dp) :: ta, tb
@@ -132,7 +132,8 @@ contains
 
         ne = fm%nth(j)
         allocate (x(2, ne*ring_gauss), normal_ds(2, ne*ring_gauss), &
-            theta(ne*ring_gauss), t(ne*ring_gauss), tau(ne*ring_gauss))
+            theta(ne*ring_gauss), t(ne*ring_gauss), tau(ne*ring_gauss), &
+            w(ne*ring_gauss))
         call ring_gauss_rule(gx, gw)
         do i = 1, ne
             call flux_mesh_ring_edge(fm, j, i, te, ta, tb)
@@ -144,6 +145,7 @@ contains
                 theta(k) = ta + gx(g)*(tb - ta)
                 t(k) = te
                 tau(k) = gx(g)
+                w(k) = gw(g)
             end do
         end do
     end subroutine ring_points
@@ -273,16 +275,14 @@ contains
         type(flux_mesh_t), intent(in) :: fm
         integer, intent(in) :: j
         real(dp) :: area
-        real(dp), allocatable :: x(:, :), nds(:, :), theta(:), tau(:)
+        real(dp), allocatable :: x(:, :), nds(:, :), theta(:), tau(:), w(:)
         integer, allocatable :: t(:)
-        real(dp) :: gx(ring_gauss), gw(ring_gauss)
         integer :: k
 
-        call ring_points(fm, j, x, nds, theta, t, tau)
-        call ring_gauss_rule(gx, gw)
+        call ring_points(fm, j, x, nds, theta, t, tau, w)
         area = 0.0_dp
         do k = 1, size(theta)
-            area = area + gw(modulo(k - 1, ring_gauss) + 1)*x(1, k)*norm2(nds(:, k))
+            area = area + w(k)*x(1, k)*norm2(nds(:, k))
         end do
         area = area/(2.0_dp*pi)
     end function ring_area
