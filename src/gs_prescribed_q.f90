@@ -291,7 +291,7 @@ contains
             allocate (warm_psi(size(seed%psi)))
             warm_psi = seed%psi
             call newton_exact(x0)
-            if (failure /= 0 .and. newton == 0 .and. any(law%pp(:, 2:) /= 0)) &
+            if (failure /= 0 .and. newton == 0 .and. any(abs(law%pp(:, 2:)) > 0)) &
                 call pressure_homotopy()
         else
             ! The secant fallback proposes coefficients from central differences
@@ -418,19 +418,27 @@ contains
         end subroutine
 
         subroutine newton_exact(xstart)
-            ! Damped Newton with the equation-level Jacobian, evaluated only at
-            ! accepted iterates. The forward solve of each trial starts from
-            ! the last accepted field.
+            ! Levenberg-Marquardt-damped Newton with the equation-level Jacobian,
+            ! evaluated only at accepted iterates. A trial is the Newton step
+            ! (mu = 0) or the minimizer of |r + J dx| + mu |dx| (mu relative to
+            ! the largest diagonal of J^T J). Halving the Newton step instead
+            ! kept its direction: on TC24 the edge FF' coefficients are weakly
+            ! determined by q, the Newton step there is huge, and every scaled
+            ! copy of it left the forward problem's solution set. The forward
+            ! solve of each trial starts from the last accepted field. Near
+            ! the solution mu returns to zero, so convergence is quadratic.
             real(dp), intent(in) :: xstart(:)
             real(dp), allocatable :: x(:), xtrial(:), r(:), rtrial(:), dx(:), &
-                                     jac(:, :)
-            real(dp) :: lambda, merit, merit_trial
+                                     jac(:, :), normal(:, :), gradient(:), system(:, :)
+            real(dp) :: mu, merit, merit_trial, predicted, diagonal
             integer(int64) :: tick, tock, rate
-            integer :: iteration, trial, info
+            integer :: iteration, trial, info, k
             logical :: ok, moved
             allocate (x(n + 1), xtrial(n + 1), r(n + 1), rtrial(n + 1), dx(n + 1), &
-                      jac(n + 1, n + 1))
+                      jac(n + 1, n + 1), normal(n + 1, n + 1), gradient(n + 1), &
+                      system(n + 1, n + 1))
             x = xstart
+            mu = 0
             call equations(x, r)
             solution = x; residual = r
             if (failure /= 0) return
@@ -445,38 +453,53 @@ contains
                     failure = 4
                     exit
                 end if
-                call dense_solve(jac, -r, dx, info)
-                if (info /= 0 .or. .not. all(ieee_is_finite(dx))) then
-                    failure = 4
-                    exit
-                end if
                 newton = iteration
                 merit = 0.5_dp*dot_product(r, r)
-                lambda = 1; moved = .false.
+                normal = matmul(transpose(jac), jac)
+                gradient = matmul(transpose(jac), r)
+                diagonal = maxval([(normal(k, k), k=1, n + 1)])
+                moved = .false.
                 call system_clock(tick)
-                do trial = 1, 14
-                    xtrial = x + lambda*dx
+                do trial = 1, 16
+                    if (mu > 0) then
+                        system = normal
+                        do k = 1, n + 1
+                            system(k, k) = system(k, k) + mu*diagonal
+                        end do
+                        call dense_solve(system, -gradient, dx, info)
+                    else
+                        call dense_solve(jac, -r, dx, info)
+                    end if
+                    if (info /= 0 .or. .not. all(ieee_is_finite(dx))) then
+                        mu = max(10*mu, 1.0e-6_dp)
+                        cycle
+                    end if
+                    xtrial = x + dx
                     call equations(xtrial, rtrial)
                     if (failure == 0) then
                         merit_trial = 0.5_dp*dot_product(rtrial, rtrial)
-                        if (merit_trial < (1 - 1.0e-4_dp*lambda)*merit) then
+                        predicted = merit - 0.5_dp*sum((r + matmul(jac, dx))**2)
+                        if (merit_trial < merit .and. &
+                            merit - merit_trial >= 1.0e-4_dp*predicted) then
                             moved = .true.
                             exit
                         end if
                     end if
-                    lambda = lambda/2
+                    mu = max(10*mu, 1.0e-6_dp)
                 end do
                 call system_clock(tock)
                 solve_seconds = real(tock - tick, dp)/rate
-                if (talk) print '(a,i3,a,es10.3,a,f9.2,a,f9.2,a,f6.3)', &
+                if (talk) print '(a,i3,a,es10.3,a,f9.2,a,f9.2,a,es9.2)', &
                     'inverse newton ', iteration, ' max|r|=', maxval(abs(r)), &
                     ' jacobian_s=', jacobian_seconds, ' forward_s=', solve_seconds, &
-                    ' step=', lambda
+                    ' mu=', mu
                 if (talk) flush (output_unit)
                 if (.not. moved) then
                     failure = 0
                     exit
                 end if
+                mu = mu/10
+                if (mu < 1.0e-6_dp) mu = 0
                 x = xtrial; r = rtrial
                 call accept(x, r)
             end do
