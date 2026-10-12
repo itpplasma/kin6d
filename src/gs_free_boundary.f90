@@ -185,7 +185,8 @@ module kin6d_gs_free_boundary
         end subroutine gs_fb_extra_cb
     end interface
 
-    public :: gs_fb_refit_solve, gs_fb_trace_lcfs
+    public :: gs_fb_refit_solve, gs_fb_trace_lcfs, gs_fb_refit_mesh
+    public :: gs_fb_chain_movement
     public :: gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply
     public :: gs_fb_factor, gs_fb_solve, gs_fb_release, gs_fb_newton
     public :: gs_fb_interface_mass, gs_fb_lcfs_levels
@@ -1866,6 +1867,56 @@ contains
         !$omp end parallel do
     end subroutine transfer_flux
 
+    function gs_fb_chain_movement(state, psi, psi_bound, chain) result(movement)
+        !! Largest first-order distance |psi - psi_b| / |grad psi| of the chain
+        !! points from the computed boundary, in units of the chain spacing.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:), psi_bound, chain(:, :)
+        real(dp) :: movement
+
+        movement = chain_distance(state, psi, psi_bound, chain) &
+                   /(sum(norm2(chain - cshift(chain, 1, dim=2), dim=1))/size(chain, 2))
+    end function gs_fb_chain_movement
+
+    subroutine gs_fb_refit_mesh(state, axis, psi_bound, sigma, contour, max_area, &
+                                chain, rcfg, status, curve)
+        !! One refit: trace the boundary of the flux in state%psi, rebuild the mesh
+        !! (same Gamma_c, element order and curvature) with the Gamma_p chain on
+        !! it, and interpolate the flux onto the new mesh. state and chain are
+        !! replaced; on failure they are unchanged.
+        type(gs_state_t), intent(inout) :: state
+        real(dp), intent(in) :: axis(2), psi_bound, sigma, contour(:, :), max_area
+        real(dp), intent(inout) :: chain(:, :)
+        type(gs_fb_refit_config_t), intent(in) :: rcfg
+        integer, intent(out) :: status
+        procedure(boundary_curve), optional :: curve
+        type(gs_state_t) :: old
+        real(dp), allocatable :: psi_new(:), new_chain(:, :)
+        integer :: stat
+
+        call gs_fb_trace_lcfs(state, state%psi, axis, psi_bound, sigma, size(chain, 2), &
+                              new_chain, status, rcfg%dense_factor, &
+                              rcfg%project_iterations)
+        if (status /= GS_FB_OK) return
+        old = state
+        if (present(curve)) then
+            call initialize_gs(state, contour, max_area, stat, old%element_order, &
+                               curved=old%mapped, curve=curve, interior_chain=new_chain)
+        else
+            call initialize_gs(state, contour, max_area, stat, old%element_order, &
+                               curved=old%mapped, interior_chain=new_chain)
+        end if
+        if (stat /= 0) then
+            state = old
+            status = GS_FB_REFIT_FAILED
+            return
+        end if
+        chain = new_chain
+        call transfer_flux(old, old%psi, state, psi_new)
+        state%psi = psi_new
+        status = GS_FB_OK
+    end subroutine gs_fb_refit_mesh
+
     subroutine gs_fb_refit_solve(state, sys, law, cfg, currents, contour, max_area, &
                                  chain, rcfg, report, status, set, curve, extra_cb, &
                                  history)
@@ -1891,16 +1942,12 @@ contains
         procedure(boundary_curve), optional :: curve
         procedure(gs_fb_extra_cb), optional :: extra_cb
         type(gs_fb_history_t), intent(out), optional :: history
-        type(gs_state_t) :: old
         type(gs_fb_config_t) :: current
         type(gs_fb_eval_t) :: ev
         type(gs_fb_history_t) :: last
-        real(dp), allocatable :: psi_new(:), new_chain(:, :)
-        real(dp) :: h, length
-        integer :: pass, stat, order, n_chain
+        integer :: pass, stat, n_chain
 
         n_chain = size(chain, 2)
-        order = state%element_order
         current = cfg
         allocate (report%movement(0:rcfg%max_refits), &
                   report%newton_iterations(0:rcfg%max_refits))
@@ -1916,11 +1963,9 @@ contains
                 status = stat
                 return
             end if
-            length = sum(norm2(chain - cshift(chain, 1, dim=2), dim=1))
-            h = length/n_chain
-            report%h = h
-            report%movement(pass) = chain_distance(state, state%psi, ev%psi_bound, &
-                                                   chain)/h
+            report%h = sum(norm2(chain - cshift(chain, 1, dim=2), dim=1))/n_chain
+            report%movement(pass) = gs_fb_chain_movement(state, state%psi, &
+                                                         ev%psi_bound, chain)
             report%psi_bound = ev%psi_bound
             if (report%movement(pass) <= rcfg%tolerance) then
                 report%converged = .true.
@@ -1936,30 +1981,13 @@ contains
                 end if
             end if
             if (pass == rcfg%max_refits) exit
-            call gs_fb_trace_lcfs(state, state%psi, ev%axis, ev%psi_bound, &
-                                  real(sys%cfg%axis_sign, dp), n_chain, new_chain, stat, &
-                                  rcfg%dense_factor, rcfg%project_iterations)
+            call gs_fb_refit_mesh(state, ev%axis, ev%psi_bound, &
+                                  real(sys%cfg%axis_sign, dp), contour, max_area, chain, &
+                                  rcfg, stat, curve)
             if (stat /= GS_FB_OK) then
                 status = stat
                 return
             end if
-            old = state
-            if (present(curve)) then
-                call initialize_gs(state, contour, max_area, stat, order, &
-                                   curved=old%mapped, curve=curve, &
-                                   interior_chain=new_chain)
-            else
-                call initialize_gs(state, contour, max_area, stat, order, &
-                                   curved=old%mapped, interior_chain=new_chain)
-            end if
-            if (stat /= 0) then
-                state = old
-                status = GS_FB_REFIT_FAILED
-                return
-            end if
-            chain = new_chain
-            call transfer_flux(old, old%psi, state, psi_new)
-            state%psi = psi_new
             current = sys%cfg
             current%axis_guess = sys%axis_hint
             current%xpoint_guess = sys%xpoint_hint
