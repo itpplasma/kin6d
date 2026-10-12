@@ -1045,6 +1045,36 @@
       "certificate_method": null
     },
     {
+      "id": "g_frame_figure8_equilibrium",
+      "family": "mhd",
+      "reference_class": "X",
+      "status": "planned",
+      "geometry": "non-planar closed-axis (Figure-8) stellarator on a curve-following frame; analytic curve-frame case first, then a frozen public Figure-8 equilibrium",
+      "model_lane": "ideal nested",
+      "producers": [
+        "KIN6D",
+        "GVEC"
+      ],
+      "observables": [
+        "boundary and surface shape",
+        "iota",
+        "V",
+        "<B^2>",
+        "beta",
+        "force residual",
+        "div B",
+        "convergence order"
+      ],
+      "reference_definition": "same boundary, frame and profiles for both producers; GVEC hmap_axisNB/hmap_frenet as comparator, no presumed parity; depends on the geometry gate g_frame_figure8",
+      "reference_sources": [
+        "arXiv:2411.16411",
+        "arXiv:2410.17595"
+      ],
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
       "id": "issan_3d_nonsymmetric",
       "family": "mhd",
       "reference_class": "E0",
