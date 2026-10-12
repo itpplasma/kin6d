@@ -16,7 +16,8 @@ module kin6d_gs_timers
     integer, parameter, public :: GS_T_PRECOND_CG = 5 ! nested CG inside GMRES
     integer, parameter, public :: GS_T_FACTOR = 6    ! Cholesky factorisation of A
     integer, parameter, public :: GS_T_DIRECT = 7    ! back-substitutions with A
-    integer, parameter, public :: GS_T_COUNT = 7
+    integer, parameter, public :: GS_T_LOAD_CELLS = 8 ! element loop of gs_cubic_load
+    integer, parameter, public :: GS_T_COUNT = 8
     integer, parameter :: max_events = 512
     real(dp) :: seconds(GS_T_COUNT) = 0
     integer(int64) :: calls(GS_T_COUNT) = 0, iterations(GS_T_COUNT) = 0
