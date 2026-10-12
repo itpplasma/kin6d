@@ -10,6 +10,8 @@ module kin6d_gen_support
     use fortsym_engine_native, only: native_engine_t, make_native_engine
     use fortsym_string, only: str_t, str, chars
     use fortsym_kernel, only: kernel_spec_t, emit_kernel
+    use fortsym_kernel_ir, only: kernel_ir_t, lower_kernel_ir
+    use fortsym_kernel_emit, only: kernel_emit_spec_t, emit_fortran_batch_ir
     use fortsym_rigorous_emit, only: rigorous_kernel_spec_t, rigorous_runtime_t, &
                                      interval_runtime, emit_rigorous_kernel
     implicit none
@@ -32,6 +34,7 @@ module kin6d_gen_support
         procedure :: line => writer_line
         procedure :: close => writer_close
         procedure :: emit => writer_emit
+        procedure :: emit_batch => writer_emit_batch
     end type
 contains
     subroutine writer_open(w, arena, generator, path)
@@ -130,6 +133,47 @@ contains
                                             flag(vjp_interval))
         if (flag(interval)) call w%emit(name//'_interval', args, outputs, roots, &
                                         rigorous=.true.)
+    end subroutine
+
+    !> Emit `<name>_batch_mod`: a `declare simd` leaf and a batched host driver
+    !> over rank-one arrays (FortSym FY1, SIMD mode). `uniform` names the
+    !> arguments that are scalars across the batch. The driver opens no thread
+    !> team: the consumer calls it from inside an element-parallel region, so
+    !> threading stays at the element level.
+    subroutine writer_emit_batch(w, name, args, outputs, roots, uniform)
+        class(leaf_writer_t), intent(inout) :: w
+        character(*), intent(in) :: name, args(:), outputs(:), uniform(:)
+        type(expr_t), intent(in) :: roots(:)
+        type(kernel_ir_t) :: ir
+        type(kernel_emit_spec_t) :: spec
+        type(str_t) :: source
+        logical :: ok
+        character(:), allocatable :: message
+        integer :: j
+
+        call lower_kernel_ir(roots, ir, ok, message)
+        if (.not. ok) error stop message
+        spec%name = str(name)
+        spec%generator = str(w%generator)
+        spec%generator_revision = str(fortsym_revision)
+        spec%regenerate_command = str(w%generator//' from pinned FortSym build')
+        spec%pure_procedure = .true.
+        spec%batch_threaded = .false.
+        spec%batch_deterministic = .false.
+        allocate (spec%args(size(args)), spec%outputs(size(outputs)), &
+                  spec%uniform(size(uniform)))
+        do j = 1, size(args)
+            spec%args(j) = str(trim(args(j)))
+        end do
+        do j = 1, size(outputs)
+            spec%outputs(j) = str(trim(outputs(j)))
+        end do
+        do j = 1, size(uniform)
+            spec%uniform(j) = str(trim(uniform(j)))
+        end do
+        source = emit_fortran_batch_ir(ir, spec, ok, message)
+        if (.not. ok) error stop message
+        write (w%unit, '(a)') chars(source)
     end subroutine
 
     recursive subroutine emit_derivatives(w, name, args, outputs, roots, &
