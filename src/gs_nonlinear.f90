@@ -389,6 +389,7 @@ contains
                 do rule = 1, size(scr%rules)
                     call smooth_rule(rule, scr%high_values)
                     if (status /= 0) return
+                    if (need_jacobian) call jacobian_epsabs()
                     if (rule > 1) then
                         if (all(abs(scr%high_values - scr%values) <= scr%epsabs + &
                             scr%rtol*abs(scr%high_values))) then
@@ -416,6 +417,7 @@ contains
                     if (status /= 0) return
                     scr%high_values = scr%high_values + tables%wh(q)*scr%errors
                 end do
+                if (need_jacobian) call jacobian_epsabs()
                 if (any(abs(scr%high_values - scr%values) > scr%epsabs + tol*0.1_dp &
                         *abs(scr%high_values))) then
                     coefficients = 0
@@ -509,6 +511,15 @@ contains
                 end if
             end if
     contains
+        subroutine jacobian_epsabs()
+            ! The Jacobian entries (source derivative times shape products) are
+            ! not in the units of the source: their absolute tolerance is
+            ! relative to the largest entry of this cell, not to the source
+            ! scale (which left them 1e-2 accurate on TC24 at jtol 1e-3).
+            scr%epsabs(ndof + 1:) = jtol*max(maxval(abs(scr%high_values(ndof + 1:))), &
+                                             epsilon(1.0_dp)*scale)
+        end subroutine
+
         logical function law_vanishes(first_level, last_level) result(zero)
             ! Intervals between levels first_level..last_level (clamped).
             integer, intent(in) :: first_level, last_level
