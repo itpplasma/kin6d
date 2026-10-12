@@ -206,14 +206,20 @@ contains
         real(dp), intent(out), optional :: dg_dr(:, :), dg_dz(:, :)
         real(dp) :: psi, pr, pz
         integer :: c, i, k
+        logical :: gradient
 
+        gradient = present(dg_dr) .and. present(dg_dz)
         g = 0.0_dp
         if (present(dg_dr)) dg_dr = 0.0_dp
         if (present(dg_dz)) dg_dz = 0.0_dp
-        do c = 1, size(set%coils)
-            if (all(set%incidence(c, :) == 0.0_dp)) cycle
-            do i = 1, size(r)
-                if (present(dg_dr) .and. present(dg_dz)) then
+        ! Points are independent; per point the coils are summed in their
+        ! order, so the result does not depend on the thread count.
+        !$omp parallel do default(shared) private(i, c, k, psi, pr, pz) &
+        !$omp schedule(dynamic, 16) if (size(r) > 8)
+        do i = 1, size(r)
+            do c = 1, size(set%coils)
+                if (all(set%incidence(c, :) == 0.0_dp)) cycle
+                if (gradient) then
                     call gs_coil_flux_gradient(set%coils(c), r(i), z(i), psi, pr, pz)
                 else
                     psi = gs_coil_flux(set%coils(c), r(i), z(i))
@@ -222,11 +228,14 @@ contains
                 end if
                 do k = 1, size(set%incidence, 2)
                     g(i, k) = g(i, k) + set%incidence(c, k)*psi
-                    if (present(dg_dr)) dg_dr(i, k) = dg_dr(i, k) + set%incidence(c, k)*pr
-                    if (present(dg_dz)) dg_dz(i, k) = dg_dz(i, k) + set%incidence(c, k)*pz
+                    if (gradient) then
+                        dg_dr(i, k) = dg_dr(i, k) + set%incidence(c, k)*pr
+                        dg_dz(i, k) = dg_dz(i, k) + set%incidence(c, k)*pz
+                    end if
                 end do
             end do
         end do
+        !$omp end parallel do
     end subroutine gs_circuit_flux_vectors
 
     pure function gs_coil_currents(set, i_circuit) result(i_coil)
