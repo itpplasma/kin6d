@@ -14,7 +14,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "474b2f350435e3fb325c7559e09213a840587006")
+set(KIN6D_FORTNUM_REVISION "d0bfdb1d507c6f5381b609bfc10becb8870b7e5f")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -64,6 +64,9 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_elliptic.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_hypergeom_2f1_term_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_toroidal_order_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_toroidal.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
     ${fortnum_SOURCE_DIR}/src/fortnum_ad_backend.f90
@@ -81,6 +84,7 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det3_vjp_fortad.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_inv2_jvp_fortad.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_linalg.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_parallel_vector.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_bvls.f90
@@ -135,7 +139,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "5e743639306e5dbe247a7015b06ee3ec5b2373c7")
+set(KIN6D_FORTFEM_REVISION "5bf9fa21f8b21be861d08cad1580fe2cc4a10dae")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -934,3 +938,43 @@ add_executable(coil_modes app/coil_modes.f90)
 target_link_libraries(coil_modes PRIVATE kin6d)
 add_executable(gs_vacuum_3d app/gs_vacuum_3d.f90)
 target_link_libraries(gs_vacuum_3d PRIVATE kin6d)
+
+# L4 (first stage): per-n FEEC complex, toroidal-mode BEM and their magnetic
+# coupling from FortFEM; flux-aligned meshes and the per-n Ampere operator
+# with the exact exterior.
+add_library(kin6d_feec_n
+    ${fortfem_SOURCE_DIR}/src/boundary/boundary_types.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/triangle_io.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/bowyer_watson.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/constrained_delaunay.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/mesh_refinement.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/triangulation_fortran.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/triangulator.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/mesh_2d.f90
+    ${fortfem_SOURCE_DIR}/src/geometry/meridian_curved_mesh.f90
+    ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
+    ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
+    ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
+    ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
+target_link_libraries(kin6d_feec_n PUBLIC kin6d_spatial fortsparse)
+if(KIN6D_ENABLE_OPENMP)
+    target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
+endif()
+target_sources(kin6d PRIVATE src/mhd_mesh.f90 src/mhd_ampere_n.f90
+    src/mhd_response_n.f90)
+target_link_libraries(kin6d PUBLIC kin6d_feec_n)
+add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
+target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
+add_test(NAME mhd_ampere_n_exterior_manufactured COMMAND test_mhd_ampere_n)
+set_tests_properties(mhd_ampere_n_exterior_manufactured PROPERTIES TIMEOUT 600
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(test_mhd_shielding test/test_mhd_shielding.f90)
+target_link_libraries(test_mhd_shielding PRIVATE kin6d)
+add_test(NAME mhd_shielding_cylinder_limit_reciprocity COMMAND test_mhd_shielding)
+set_tests_properties(mhd_shielding_cylinder_limit_reciprocity PROPERTIES TIMEOUT 600
+    ENVIRONMENT "OMP_NUM_THREADS=4")
