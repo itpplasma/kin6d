@@ -292,11 +292,17 @@ Source integration uses the physical Jacobian of each mapped element. Cells
 without cuts use paired Duffy rules with orders tied to the element degree.
 C1 laws first try positive Duffy rules with 8, 12, 24 and 48 points per
 coordinate, caching basis values and gradients for each rule across cells.
-Acceptance uses separate load and Jacobian component error estimates. The
-Jacobian used by Newton may have tolerance `1e-3`; the load must meet the
-requested quadrature tolerance before convergence. Near convergence Newton
-reuses its Jacobian for trial loads. Neither approximation changes the equation
-or the derivative products returned by the default `gs_cubic_load` API.
+Acceptance uses separate load and Jacobian component error estimates; the
+absolute part of the Jacobian estimate is relative to the cell's largest
+Jacobian entry, not to the source scale. The Jacobian used by Newton may have
+tolerance `1e-3`; the load must meet the requested quadrature tolerance before
+convergence. Newton assembles the Jacobian at every accepted iterate (no chord
+reuse): near a fold of a steep p'(s) pedestal law a frozen Jacobian contracted
+by only about 0.7 per step. Three consecutive damped steps that together reduce
+the residual norm by less than 1% end the solve with status 2 (a nonzero
+residual minimum, no solution of that law nearby). Neither approximation
+changes the equation or the derivative products returned by the default
+`gs_cubic_load` API.
 
 If paired integration fails, cut P2 cells use FortFEM level integration.
 For P3, the inner coordinate is partitioned

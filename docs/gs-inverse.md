@@ -103,8 +103,8 @@ preconditioned by the cached Cholesky factor of A (the direct path of
 one MUMPS instance, which is not reentrant, so the Jacobian runs in blocks of
 64 columns: loads on OpenMP threads, then the response solves one after the
 other, then the readbacks on OpenMP threads. The profile load of every forward
-solve integrates the cells in 64 fixed chunks on OpenMP threads and adds them
-in chunk order, so the result does not depend on the thread count.
+solve integrates the cells on OpenMP threads and gathers them in element order,
+so the result does not depend on the thread count.
 The secant path costs 2(n+1) full forward solves per iteration (89 against 8
 solves in the 4-interval comparison test).
 
