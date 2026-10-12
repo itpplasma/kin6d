@@ -127,7 +127,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "ee3c61e2b7cad0dfdb5a5d7537c719e452b4e7bf")
+set(KIN6D_FORTFEM_REVISION "8da622b2f3f5fc58dc4fedf96d5d5c28f4a2bf81")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -154,7 +154,8 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_level_geometry.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90
-    ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90)
+    ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90
+    ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_boundary_operators_2d.f90)
 target_link_libraries(kin6d_spatial PUBLIC kin6d_ode kin6d_intervals)
 set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
@@ -191,10 +192,22 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-target_sources(kin6d PRIVATE src/gs_coils.f90)
+target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90)
 add_executable(test_gs_coils test/test_gs_coils.f90)
 target_link_libraries(test_gs_coils PRIVATE kin6d)
 add_test(NAME gs_coils_independent_oracles COMMAND test_gs_coils)
+add_library(kin6d_gs_coupling_test STATIC test/support/gs_coupling_fixture.f90)
+target_link_libraries(kin6d_gs_coupling_test PUBLIC kin6d)
+foreach(coupling_test vacuum fixed_current structure)
+    add_executable(test_gs_coupling_${coupling_test} test/test_gs_coupling_${coupling_test}.f90)
+    target_link_libraries(test_gs_coupling_${coupling_test} PRIVATE kin6d_gs_coupling_test)
+endforeach()
+add_test(NAME gs_coupling_t1_vacuum_coil_flux COMMAND test_gs_coupling_vacuum)
+set_tests_properties(gs_coupling_t1_vacuum_coil_flux PROPERTIES TIMEOUT 900)
+add_test(NAME gs_coupling_t2_fixed_current_cubature COMMAND test_gs_coupling_fixed_current)
+set_tests_properties(gs_coupling_t2_fixed_current_cubature PROPERTIES TIMEOUT 900)
+add_test(NAME gs_coupling_structure_symmetry_energy COMMAND test_gs_coupling_structure)
+set_tests_properties(gs_coupling_structure_symmetry_energy PROPERTIES TIMEOUT 900)
 target_sources(kin6d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90
     src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)

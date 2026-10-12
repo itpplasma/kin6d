@@ -89,7 +89,13 @@ module kin6d_grad_shafranov
    end interface
 contains
     subroutine initialize_gs(state, contour, max_area, status, element_order, &
-                             curved, curve, interior_points)
+                             curved, curve, interior_points, interior_chain)
+        !! Meshes the closed outer curve `contour` (counter-clockwise). The optional
+        !! `interior_chain` is a second closed loop strictly inside it (free-boundary
+        !! plasma boundary Gamma_p): its segments are constrained edges, never
+        !! split, and with curved elements they carry curved P2/P3 edge nodes on
+        !! the periodic spline through the chain. Only the outer curve is flagged
+        !! `boundary`.
         type(gs_state_t), intent(out) :: state
         real(dp), intent(in) :: contour(:, :), max_area
         integer, intent(out) :: status
@@ -97,17 +103,20 @@ contains
         logical, intent(in), optional :: curved
         procedure(boundary_curve), optional :: curve
         real(dp), intent(in), optional :: interior_points(:, :)
+        real(dp), intent(in), optional :: interior_chain(:, :)
         type(tc_result_t) :: mesh
         type(basis_p1_2d_t) :: basis
         type(gauss_quadrature_triangle_t) :: quadrature
-        type(periodic_curve_t) :: spline
+        type(periodic_curve_t) :: spline, chain_spline
         real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3)
         real(dp), allocatable :: mesh_points(:, :)
         logical, allocatable :: used(:)
         real(dp) :: point(2), shape(10), grad_q(2, 10), hess(2, 2, 10), weight, t
-        integer, allocatable :: segments(:, :), original(:)
+        integer, allocatable :: segments(:, :), original(:), original_chain(:)
+        integer, allocatable :: segment_markers(:)
         integer :: j, e, k, l, q, pivot(2), stat, n, ndof, first, second, edge
-        integer :: edge_node, local_node
+        integer :: edge_node, local_node, nc, loop_size
+        logical :: chain_edge
         status = 1
         if (present(curved)) state%mapped = curved
         if (present(curve)) state%mapped = .true.
@@ -120,21 +129,52 @@ contains
         if (.not. ieee_is_finite(max_area)) return
         if (any(.not. ieee_is_finite(contour))) return
         if (minval(contour(1, :)) <= 0) return
-        allocate (segments(2, n))
+        nc = 0
+        if (present(interior_chain)) then
+            if (size(interior_chain, 1) /= 2) return
+            nc = size(interior_chain, 2)
+            if (nc < 3) return
+            if (.not. all(ieee_is_finite(interior_chain))) return
+            if (any(interior_chain(1, :) <= 0)) return
+        end if
+        allocate (segments(2, n + nc), segment_markers(n + nc))
         do j = 1, n
             segments(:, j) = [j, mod(j, n) + 1]
         end do
+        segment_markers(:n) = 1
+        do j = 1, nc
+            segments(:, n + j) = [n + j, n + mod(j, nc) + 1]
+        end do
+        segment_markers(n + 1:) = 0
         if (present(interior_points)) then
             if (size(interior_points, 1) /= 2) return
             if (.not. all(ieee_is_finite(interior_points))) return
             if (any(interior_points(1, :) <= 0)) return
+        end if
+        if (nc > 0) then
+            allocate (mesh_points(2, n + nc))
+            mesh_points(:, :n) = contour
+            mesh_points(:, n + 1:) = interior_chain
+        end if
+        if (present(interior_points)) then
             if (size(interior_points, 2) > 0) then
-                allocate (mesh_points(2, n + size(interior_points, 2)))
-                mesh_points(:, :n) = contour
-                mesh_points(:, n + 1:) = interior_points
+                if (allocated(mesh_points)) then
+                    mesh_points = reshape([mesh_points, interior_points], &
+                        [2, size(mesh_points, 2) + size(interior_points, 2)])
+                else
+                    allocate (mesh_points(2, n + size(interior_points, 2)))
+                    mesh_points(:, :n) = contour
+                    mesh_points(:, n + 1:) = interior_points
+                end if
             end if
         end if
-        if (allocated(mesh_points)) then
+        if (nc > 0) then
+            ! -YY: neither loop is ever split, so every chain edge is one mesh edge.
+            call triangulate_compat(mesh_points, segments, &
+                reshape([real(dp) ::], [2, 0]), mesh, stat, min_angle=20.0_dp, &
+                max_area=max_area, nobisect=merge(2, 0, state%mapped), &
+                segmentmarkers=segment_markers)
+        else if (allocated(mesh_points)) then
             call triangulate_compat(mesh_points, segments, &
                 reshape([real(dp) ::], [2, 0]), mesh, stat, min_angle=20.0_dp, &
                 max_area=max_area, nobisect=merge(1, 0, state%mapped))
@@ -151,6 +191,13 @@ contains
                 used(mesh%triangles(:, e)) = .true.
             end do
             if (.not. all(used)) return
+        end if
+        if (nc > 0) then
+            ! Flag only the outer loop, whatever markers the mesher assigned.
+            do j = n + 1, n + nc
+                mesh%pointmarkers(j) = 0
+            end do
+            if (any(mesh%pointmarkers(1:n) == 0)) return
         end if
         state%neighbors = mesh%neighbors
         if (state%element_order == 1) then
@@ -173,6 +220,19 @@ contains
                 end do
             end do
             if (count(original /= 0) /= n) return
+            if (nc > 0) then
+                allocate (original_chain(mesh%npoints))
+                original_chain = 0
+                do j = 1, nc
+                    do k = 1, mesh%npoints
+                        if (maxval(abs(mesh%points(:, k) - interior_chain(:, j))) < &
+                            tiny(1.0_dp)) original_chain(k) = j
+                    end do
+                end do
+                if (count(original_chain /= 0) /= nc) return
+                call initialize_periodic_curve(chain_spline, interior_chain, stat)
+                if (stat /= 0) return
+            end if
             if (present(curve)) then
                 do j = 1, n
                     call curve(real(j - 1, dp)/n, point)
@@ -185,19 +245,34 @@ contains
             end if
             do e = 1, mesh%ntriangles
                 do edge = 1, 3
-                    if (mesh%neighbors(edge, e) > 0) cycle
-                    first = original(mesh%triangles(edge, e))
-                    second = original(mesh%triangles(mod(edge, 3) + 1, e))
-                    if (first == 0 .or. second == 0) return
+                    chain_edge = .false.
+                    if (mesh%neighbors(edge, e) > 0) then
+                        if (nc == 0) cycle
+                        ! Interior edge: curved only when it is a chain segment.
+                        first = original_chain(mesh%triangles(edge, e))
+                        second = original_chain(mesh%triangles(mod(edge, 3) + 1, e))
+                        if (first == 0 .or. second == 0) cycle
+                        if (mod(first, nc) + 1 /= second .and. &
+                            mod(second, nc) + 1 /= first) cycle
+                        chain_edge = .true.
+                        loop_size = nc
+                    else
+                        first = original(mesh%triangles(edge, e))
+                        second = original(mesh%triangles(mod(edge, 3) + 1, e))
+                        if (first == 0 .or. second == 0) return
+                        loop_size = n
+                    end if
                     do edge_node = 1, state%element_order - 1
                         t = real(edge_node, dp)/state%element_order
-                        if (mod(first, n) + 1 == second) then
-                            t = (first - 1 + t)/n
+                        if (mod(first, loop_size) + 1 == second) then
+                            t = (first - 1 + t)/loop_size
                         else
-                            if (mod(second, n) + 1 /= first) return
-                            t = (second - t)/n
+                            if (mod(second, loop_size) + 1 /= first) return
+                            t = (second - t)/loop_size
                         end if
-                        if (present(curve)) then
+                        if (chain_edge) then
+                            call curve_value(chain_spline, t, point)
+                        else if (present(curve)) then
                             call curve(t, point)
                         else
                             call curve_value(spline, t, point)
