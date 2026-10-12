@@ -32,12 +32,28 @@ values receive zero measure. The residual is sampled uniformly in sqrt(s).
 This avoids feeding pointwise Hessian error into the recovered source law.
 The full off-moment profile is checked separately, including the endpoints.
 
-FortNum's numerical root solver proposes the profile coefficients; its central
-secant Jacobian is a solver approximation, not a sensitivity product. The
-forward state's fixed-law tangent/adjoint remains the equation-level cubic
-Jacobian. Full inverse-input and curved/P3 contour sensitivities are explicitly
-unavailable; the legacy affine-P2 response oracles below remain supported.
-No derivative of an iteration sequence is reported.
+The outer unknowns are the spline coefficients and log F_edge. A damped
+Newton iteration uses the discrete-residual Jacobian at each accepted iterate
+(`jacobian='exact'`, namelist `inverse_jacobian`, the default). Column k
+solves the converged weak-equation Jacobian (the cubic profile load's source
+mass and axis rank-one term, as in the forward Newton step) for the load of
+the k-th basis law at fixed flux; that load is assembled with the flux-band
+cuts of the forward load, skipping cells whose flux range meets only
+intervals where the law vanishes. The residual derivative is the central
+difference of the contour readback along that field tangent and the basis
+law, with the normalizing axis flux following the field. This costs one
+linear solve and two contour readbacks per coefficient and no nonlinear
+forward solve; the F_edge column leaves the field unchanged. Curved and
+P3 contours have no analytic coarea tangent, so the readback difference
+(relative flux step 1e-3, load tolerance 1e-6) is a numerical derivative of the
+discrete map, not a sensitivity product; its agreement with Richardson
+differences of fully converged solves is tested. `jacobian='secant'` keeps
+FortNum's central-difference Jacobian of full forward solves as a fallback;
+it costs 2(n+1) forward solves per iteration and reaches the same solution.
+The forward state's fixed-law tangent/adjoint remains the equation-level
+cubic Jacobian. Full inverse-input and curved/P3 contour sensitivities are
+explicitly unavailable; the legacy affine-P2 response oracles below remain
+supported. No derivative of an iteration sequence is reported.
 
 `gs_phase1` selects this mode with `q_file` and `phi_target`, along with the
 ordinary `pprime`, `mu0`, boundary and mesh options. `q_file` contains a row
@@ -50,6 +66,53 @@ number of cubic FFprime spline intervals; `nonlinear_tolerance` controls the
 outer residual (default 1e-9), and `q_tolerance` controls the independent
 relative q defect (default 1e-3). Radial/angular budgets have the same meaning
 as forward readback. Refine both mesh and profile budgets when needed.
+
+The number of FFprime intervals is not capped. `inverse_knots_file` supplies
+the spline break points directly (a row count, then strictly increasing knots
+from 0 to 1, in any grading); `inverse_pressure_knots` reuses the break points
+of `pprime_law_file`. They replace `inverse_intervals`. Radial q sampling is
+uniform in sqrt(s) with `radial_points` levels, plus the levels that give every
+spline interval at least two samples, so each coefficient has a fitted q moment
+(at most 2049 levels in total). Many knots are well posed only to the extent
+that the mesh resolves them: the q moments carry the discretization error of
+q, and a spline interval finer than a few elements leaves FFprime nearly
+undetermined, so the pointwise FFprime error is amplified strongly while the
+field psi keeps its P3 order. On the circle manufactured solution (cubic p',
+cubic FFprime, 8 q levels per interval, meshes n = 24, 36, 54,
+`test_gs_prescribed_q_intervals`) 64 uniform intervals give psi order 4.2 and
+64 intervals graded 2:1 give 4.35, against 4.0 for one interval. The FFprime
+L2 error falls from 0.12 to 0.05 (uniform) and from 1.0 to 0.12 (graded),
+where one interval reaches 1.6e-4 to 1.6e-6, and F_edge falls from 7e-6 to
+1.8e-6 (uniform). FFprime and F_edge therefore only decrease, not at their
+single-interval orders, until the mesh resolves the knots. Stronger grading
+(4:1) on these coarse meshes stalls the Newton iteration at the
+discretization-noise floor of the moments (status 2). A 256-interval solve on
+the n = 24 mesh does not converge for the same reason and costs 136 s per
+forward solve; it is not part of the test suite. `inverse_verbose` prints the
+residual, Jacobian and forward-solve time of every Newton iteration.
+
+The cubic pieces of FFprime are joined exactly after the B-spline to power
+basis conversion: the profile law demands continuity to 128 epsilon, which
+rounding across hundreds of knots otherwise violates.
+
+Cost. The exact Jacobian needs one weak-equation Jacobian, and per coefficient
+one load assembly, one response solve (conjugate gradients on the existing
+profile-load operator, not a factorization) and two contour readbacks; the
+columns run on OpenMP threads (`OMP_NUM_THREADS`). The profile load of every
+forward solve integrates the cells in 64 fixed chunks on OpenMP threads and
+adds them in chunk order, so the result does not depend on the thread count.
+The circle case with 16 intervals on n = 24 runs in 15.1 s, 5.8 s and 2.4 s on
+1, 4 and 16 threads with identical output. The secant path costs 2(n+1) full
+forward solves per iteration (89 against 8 solves in the 4-interval
+comparison test). TC24-size measurement (I0 boundary and q table, 400 graded
+FFprime intervals, 96 boundary nodes, scalar pprime, 32 threads): the first
+exact Jacobian of 401 columns took 127 s (3800 thread-s of contour readback,
+320 of load, 560 of response); the line search of that iteration needed four
+forward solves, 639 s together; the secant path would need 802 forward solves
+per iteration. The I0 pressure law (512 intervals) does not yet yield a
+converged seed forward solve on this mesh, with 2 or 16 FFprime intervals alike.
+The conjugate-gradient response and the contour readback of
+one state are not threaded.
 
 After convergence, an interleaved radial grid and doubled angular budget
 check q independently of the fitted moments. Status 9 retains the physical
