@@ -8,7 +8,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "d053752a4160c9188c0a12c1e55ed4408788d1d4")
+set(KIN6D_FORTNUM_REVISION "474b2f350435e3fb325c7559e09213a840587006")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -57,6 +57,7 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_elliptic.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
     ${fortnum_SOURCE_DIR}/src/fortnum_ad_backend.f90
@@ -126,7 +127,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "de4245c5b15a87424b53b754c3189f6a25f43fc7")
+set(KIN6D_FORTFEM_REVISION "ee3c61e2b7cad0dfdb5a5d7537c719e452b4e7bf")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -152,7 +153,8 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_lagrange_product_jets.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_level_geometry.f90
-    ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90)
+    ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90
+    ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90)
 target_link_libraries(kin6d_spatial PUBLIC kin6d_ode kin6d_intervals)
 set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
@@ -189,6 +191,10 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
+target_sources(kin6d PRIVATE src/gs_coils.f90)
+add_executable(test_gs_coils test/test_gs_coils.f90)
+target_link_libraries(test_gs_coils PRIVATE kin6d)
+add_test(NAME gs_coils_independent_oracles COMMAND test_gs_coils)
 target_sources(kin6d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90
     src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
