@@ -67,6 +67,8 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_hypergeom_2f1_term_kernel.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_toroidal_order_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_toroidal.f90
+    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft8_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/fft/fortnum_fft.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
     ${fortnum_SOURCE_DIR}/src/fortnum_ad_backend.f90
