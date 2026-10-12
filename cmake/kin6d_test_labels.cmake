@@ -456,3 +456,8 @@ foreach(degree 2 3)
     kin6d_test_labels(grad_shafranov_p${degree}_weak_ampere_loop fast CLASSES equilibrium
         TARGETS test_gs_weak_ampere_loop)
 endforeach()
+
+# Electromagnetic plane-wave teaching case.
+foreach(mode oracles vacuum reflection transmission refinement)
+    kin6d_test_labels(em_slab_${mode} fast CLASSES continuum TARGETS test_em_slab)
+endforeach()

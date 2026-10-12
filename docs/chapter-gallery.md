@@ -58,6 +58,12 @@ seconds to a minute.
 The `ocp_*` figure names carry the configured `label` as prefix; the
 defaults are `ocp-oscillation-landau` and `ocp-shielding`.
 
+## Electromagnetic demos
+
+| Target | Output | Teaching message |
+|---|---|---|
+| `em_slab_demo` | comparison table, `em_slab_demo.nc`, lecture data via `--export` ([em-slab-reflection.md](em-slab-reflection.md)) | Below omega_pe a wave is totally reflected while surface electrons oscillate and the field decays over the skin depth; above omega_pe it is transmitted with the Fresnel amplitude and the cold-plasma wavelength |
+
 ## Quantum demos
 
 | Target | Movie / figures | Teaching message |

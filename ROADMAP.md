@@ -309,7 +309,11 @@ Remaining ladder, in order:
    Balescu--Lenard and mean-force closures;
 5. a prescribed magnetic-field few-particle case.
 
-Relativistic Coulomb, Darwin, full Maxwell and the tiny direct retarded
+The first field-mediated electromagnetic slice is a teaching case: a 1D
+Yee/Mur Maxwell field coupled to relativistic Boris macroparticle sheets
+(Vlasov--Maxwell PIC, not physical particles) for wave reflection and
+transmission at a plasma edge ([em-slab-reflection.md](docs/em-slab-reflection.md),
+candidate). Relativistic Coulomb, Darwin, full Maxwell and the tiny direct retarded
 Lienard--Wiechert comparison follow when their regime/use case requires them;
 they are not prerequisites for the early Coulomb gallery. The classical parent
 remains full Maxwell--Lorentz with an explicitly chosen self-field prescription.
