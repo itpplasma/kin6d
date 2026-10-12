@@ -156,6 +156,8 @@ program test_gs_coarea
                          status)
     if (status == 0) error stop 'non-native axis flux accepted'
     call refined_face_endpoint_oracle()
+    call near_vertex_contour_oracle(2)
+    call near_vertex_contour_oracle(3)
     print *, &
         'PASS: native P2 exact finite-R coarea and signed source correspondence'
 contains
@@ -204,6 +206,77 @@ contains
             end do
         end do
     end subroutine refined_face_endpoint_oracle
+
+    subroutine near_vertex_contour_oracle(degree)
+        ! A level passing 1e-11 m from an interior mesh vertex crosses the
+        ! incident faces at distinct, qualified edge parameters, but within
+        ! 1e-10 rad of each other (TC24 readback status 18). The contour is
+        ! regular there; its coarea (and P2 tangent) must match the exact circle.
+        integer, intent(in)::degree
+        type(gs_state_t)::mesh
+        real(dp)::boundary(2, 63), center(2), wanted(2), computed_axis(2)
+        real(dp)::ell(2), integral(2), derivative(2), theta, best, d, radius
+        real(dp)::offsets(4), exact, point(2)
+        integer::i, k, cell, vertex, stat, target
+        offsets = [1.0e-11_dp, 2.0e-11_dp, -1.0e-11_dp, -2.0e-11_dp]
+        do i = 1, 63
+            theta = 2*acos(-1.0_dp)*(i - 1)/63
+            boundary(:, i) = [4.0_dp + 0.4_dp*cos(theta), 0.4_dp*sin(theta)]
+        end do
+        call initialize_gs(mesh, boundary, 0.0003125_dp, stat, degree)
+        if (stat /= 0) error stop 'near-vertex polynomial mesh failed'
+        best = huge(1.0_dp)
+        do cell = 1, size(mesh%triangles, 2)
+            center = sum(mesh%points(:, mesh%triangles(1:3, cell)), dim=2)/3
+            d = norm2(center - [4.0_dp, 0.0_dp])
+            if (d >= best) cycle
+            best = d
+            wanted = center
+        end do
+        ! Keep the P3 axis off the shared centroid nodes of the cubic cells.
+        if (degree == 3) wanted = wanted + [1.0e-3_dp, 7.0e-4_dp]
+        mesh%psi = 0.25_dp*((mesh%points(1, :) - wanted(1))**2 + &
+                            (mesh%points(2, :) - wanted(2))**2) - 0.02_dp
+        ! A generic vertex, and one just above polar angle zero so that the
+        ! nearly coincident events open the angle-sorted event list.
+        do target = 1, 2
+            best = huge(1.0_dp)
+            vertex = 0
+            do cell = 1, size(mesh%triangles, 2)
+                do k = 1, 3
+                    point = mesh%points(:, mesh%triangles(k, cell)) - wanted
+                    if (target == 1) then
+                        d = norm2(point - 0.2_dp*[sqrt(0.5_dp), sqrt(0.5_dp)])
+                    else
+                        if (point(2) <= 0) cycle
+                        d = norm2(point - [0.2_dp, 0.0_dp])
+                    end if
+                    if (d >= best) cycle
+                    best = d
+                    vertex = mesh%triangles(k, cell)
+                end do
+            end do
+            radius = norm2(mesh%points(:, vertex) - wanted)
+            do i = 1, size(offsets)
+                ell = [-0.02_dp, 0.25_dp*(radius + offsets(i))**2 - 0.02_dp]
+                call gs_level_coarea(mesh, ell, 128, integral, computed_axis, stat)
+                if (stat /= 0) then
+                    print *, 'near-vertex coarea status:', stat, ' degree:', &
+                        degree, ' vertex:', target, ' offset:', offsets(i)
+                    error stop 'regular contour near a mesh vertex rejected'
+                end if
+                exact = 4*acos(-1.0_dp)/sqrt(wanted(1)**2 - (radius + offsets(i))**2)
+                if (abs(integral(2)/exact - 1) > 2.0e-9_dp) &
+                    error stop 'near-vertex exact circular coarea oracle'
+                if (degree /= 2) cycle
+                call gs_level_coarea(mesh, ell, 128, integral, computed_axis, stat, &
+                                     mesh%psi, ell, derivative)
+                if (stat /= 0) error stop 'near-vertex coarea tangent rejected'
+                if (abs(derivative(2)/integral(2) + 1) > 2.0e-9_dp) &
+                    error stop 'near-vertex exact amplitude derivative oracle'
+            end do
+        end do
+    end subroutine near_vertex_contour_oracle
 
     subroutine gs_element_jet_with_tangent_value()
         type(gs_state_t)::tangent_state
