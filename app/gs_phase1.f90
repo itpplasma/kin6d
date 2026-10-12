@@ -18,6 +18,7 @@ program gs_phase1_main
     implicit none
     type(gs_state_t) :: state
     type(gs_profile_law_t), allocatable :: law
+    type(gs_profile_law_t) :: pressure_law
     type(periodic_curve_t) :: curve
     type(gs_readback_t) :: readback
     type(run_t) :: run
@@ -39,14 +40,15 @@ program gs_phase1_main
     integer(int64) :: start, finish, rate
     logical :: curved = .true., directory_ok, recovery_converged
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
-    character(512) :: q_file = '', interior_points_file = ''
+    character(512) :: q_file = '', interior_points_file = '', pprime_law_file = ''
     character(256) :: message
     character(512) :: argument
     character(:), allocatable :: commit, dirty
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
         pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree, &
         profile_file, nonlinear_tolerance, quadrature_tolerance, total_current, q_file, &
-        phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s, interior_points_file
+        phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s, &
+        interior_points_file, pprime_law_file
     call run%start('gs_phase1')
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
@@ -110,6 +112,8 @@ program gs_phase1_main
             interior_points=interior_points)
     end if
     if (status /= 0) error stop 'mesh/assembly failed'
+    if (len_trim(pprime_law_file) > 0 .and. len_trim(q_file) == 0) &
+        error stop 'pprime_law_file requires q_file'
     if (len_trim(q_file) > 0) then
         if (len_trim(profile_file) > 0) error stop 'q_file and profile_file conflict'
         open (newunit=unit, file=trim(q_file), status='old', action='read')
@@ -121,11 +125,24 @@ program gs_phase1_main
         end do
         close (unit)
         call gs_readback_resolution(state, radial_points, angular_points)
-        call solve_gs_prescribed_q(state, mu0, pprime, q_s, q_values, phi_target, &
-            law, status, intervals=inverse_intervals, radial_points=radial_points, &
-            angular_points=angular_points, tolerance=nonlinear_tolerance, &
-            q_error=inverse_q_error, evaluations=inverse_evaluations, &
-            q_tolerance=q_tolerance)
+        if (len_trim(pprime_law_file) > 0) then
+            ! Variable p'(s): the pp rows of a normalized law file replace pprime.
+            if (pprime /= 0) error stop 'pprime and pprime_law_file conflict'
+            call read_gs_profile_law(trim(pprime_law_file), pressure_law, status)
+            if (status /= 0 .or. .not. pressure_law%normalized) &
+                error stop 'invalid normalized pprime_law_file'
+            call solve_gs_prescribed_q(state, mu0, pprime, q_s, q_values, phi_target, &
+                law, status, intervals=inverse_intervals, radial_points=radial_points, &
+                angular_points=angular_points, tolerance=nonlinear_tolerance, &
+                q_error=inverse_q_error, evaluations=inverse_evaluations, &
+                q_tolerance=q_tolerance, pressure_law=pressure_law)
+        else
+            call solve_gs_prescribed_q(state, mu0, pprime, q_s, q_values, phi_target, &
+                law, status, intervals=inverse_intervals, radial_points=radial_points, &
+                angular_points=angular_points, tolerance=nonlinear_tolerance, &
+                q_error=inverse_q_error, evaluations=inverse_evaluations, &
+                q_tolerance=q_tolerance)
+        end if
         f_edge = law%f_edge
     else if (len_trim(profile_file) > 0) then
         allocate (law)
