@@ -10,7 +10,7 @@ program gs_free_main
     use kin6d_gs_field_readback, only: sample_gs_many
     use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
                                      curve_value
-    use kin6d_gs_readback, only: gs_profile_f
+    use kin6d_gs_readback, only: gs_profile_f, gs_readback_t, read_gs_equilibrium
     use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
                                     write_gs_profile_law, gs_law_primitives, &
                                     gs_law_sources
@@ -46,7 +46,8 @@ program gs_free_main
     type(gs_ci_model_t) :: model
     type(gs_ci_config_t) :: ccfg
     type(gs_ci_result_t) :: fit_result
-    integer :: fit_stat = 0
+    type(gs_readback_t) :: surfaces
+    integer :: fit_stat = 0, q_status = 1
     type(gs_ci_row_t), allocatable :: rows(:)
     real(dp), allocatable :: samples(:, :), contour(:, :), chain(:, :), points(:, :)
     real(dp), allocatable :: cur(:), lcfs(:, :), seed(:), vac(:, :)
@@ -412,6 +413,12 @@ contains
             call gs_law_sources(executed, phi, pp, ff)
             prof(:, k) = [psi_b + phi, s, pressure, f, pp, ff]
         end do
+        ! Flux surfaces of the plasma cells: q and toroidal flux.
+        call read_gs_equilibrium(state, executed%f_edge, 0.0_dp, 0, 0, surfaces, &
+                                 q_status, law=executed, psi_bound=psi_b, &
+                                 plasma_cell=ev%plasma_cell)
+        if (q_status /= 0) write (output_unit, '(a,i0)') &
+            'flux-surface readback failed, status ', q_status
     end subroutine do_readback
 
     subroutine write_outputs()
@@ -481,6 +488,20 @@ contains
         call result%write('profile_pprime', prof(5, :), 'Pa/(Wb/rad)', 'dp/dpsi')
         call result%write('profile_ffprime', prof(6, :), 'T2 m2/(Wb/rad)', 'F F-prime')
         call result%write('volume', volume, 'm3', 'plasma volume, 2 pi int R dA')
+        call result%write('q_status', real(q_status, dp), '1', &
+                          'flux-surface readback status, 0 = q profile written')
+        if (q_status == 0) then
+            call result%write('q_psi', surfaces%psi, 'Wb/rad', &
+                              'absolute flux of the q levels')
+            call result%write('q_s', (surfaces%psi - psi_a)/(psi_b - psi_a), '1', &
+                              'normalised poloidal flux (psi - psi_a)/(psi_b - psi_a)')
+            call result%write('q', surfaces%q, '1', &
+                              'safety factor F/(2 pi) oint dl/(R |grad psi|)')
+            call result%write('s_tor', surfaces%s_tor, '1', &
+                              'normalised toroidal flux Phi/Phi_edge')
+            call result%write('toroidal_flux', surfaces%phi_edge, 'Wb', &
+                              'toroidal flux inside the plasma boundary')
+        end if
         call result%write('wall_s', wall_s, 's', 'solve and readback wall time')
         if (inverse) then
             call result%write('fit_status', real(fit_stat, dp), '1', &
@@ -518,6 +539,12 @@ contains
         write (u, '(a,1x,es25.16e3)') 'axis_R', ev%axis(1)
         write (u, '(a,1x,es25.16e3)') 'axis_Z', ev%axis(2)
         write (u, '(a,1x,i0)') 'refits', report%refits
+        write (u, '(a,1x,i0)') 'q_status', q_status
+        if (q_status == 0) then
+            write (u, '(a,1x,es25.16e3)') 'q_axis', surfaces%q(1)
+            write (u, '(a,1x,es25.16e3)') 'q_edge', surfaces%q(size(surfaces%q))
+            write (u, '(a,1x,es25.16e3)') 'toroidal_flux', surfaces%phi_edge
+        end if
         write (u, '(a,1x,i0)') 'refit_converged', merge(1, 0, refit_converged)
         write (u, '(a,1x,es25.16e3)') 'wall_s', wall_s
         write (u, '(a,1x,i0)') 'omp_threads', threads

@@ -65,11 +65,29 @@ contains
     end function
 
     subroutine read_gs_equilibrium(state, f_edge, ffprime, radial_points, &
-                                   angular_points, result, status, law)
+                                   angular_points, result, status, law, &
+                                   psi_bound, plasma_cell)
+        !! Flux-surface readback: q, normalised toroidal flux, volume and edge
+        !! toroidal flux on rho = sqrt(1 - psi/psi_axis) levels.
+        !!
+        !! Fixed boundary (psi_bound absent): psi = 0 on the mesh boundary, the
+        !! whole mesh is plasma; volume and phi_edge are whole-mesh sums and
+        !! flux_consistency compares phi_edge with the contour integral.
+        !!
+        !! Free boundary (psi_bound present): the plasma boundary is the level
+        !! psi = psi_bound and the plasma lies in the cells flagged in
+        !! plasma_cell (default all), which must contain every flux surface
+        !! inside it. The readback runs on that sub-mesh with the flux measured
+        !! from psi_bound; the law is in the same measure (law%axis = psi_a -
+        !! psi_b). phi_edge is then the contour integral itself; volume and
+        !! flux_consistency are NaN (the cut cells need the level-cut
+        !! quadrature of the solver). result%psi and psi_axis are absolute.
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: f_edge, ffprime
         integer, intent(in) :: radial_points, angular_points
         type(gs_profile_law_t), intent(in), optional :: law
+        real(dp), intent(in), optional :: psi_bound
+        logical, intent(in), optional :: plasma_cell(:)
         type(gs_state_t) :: view
         type(gs_readback_t), intent(out) :: result
         integer, intent(out) :: status
@@ -82,8 +100,18 @@ contains
         real(dp) :: volume_sum, flux_sum
         integer :: axis_element, i, e, node, ndof, nr, na, first, k
         integer :: failed_element, failed_status, local_status, snapshot
+        logical :: free
         status = 1
-        view = state
+        free = present(psi_bound)
+        if (present(plasma_cell) .and. .not. free) return
+        if (free) then
+            if (.not. ieee_is_finite(psi_bound)) return
+            call plasma_view(state, psi_bound, view, status, plasma_cell)
+            if (status /= 0) return
+            status = 1
+        else
+            view = state
+        end if
         orientation = 1
         if (maxval(view%psi) > -minval(view%psi)) orientation = -1
         view%psi = orientation*view%psi
@@ -93,7 +121,9 @@ contains
         if (nr < 5 .or. nr > 4097) return
         if (.not. all(ieee_is_finite([f_edge, ffprime]))) return
         if (abs(f_edge) <= tiny(1.0_dp)) return
-        if (any(abs(pack(view%psi, view%boundary)) > 1.0e-12_dp)) return
+        if (.not. free) then
+            if (any(abs(pack(view%psi, view%boundary)) > 1.0e-12_dp)) return
+        end if
         call gs_axis_candidate(view, result%axis, result%psi_axis, hessian, &
             axis_element, status)
         if (status /= 0) return
@@ -147,6 +177,15 @@ contains
         end if
         if (any(result%s_tor(2:) <= result%s_tor(:nr - 1))) then
             status = 1
+            return
+        end if
+        if (free) then
+            result%phi_edge = integral
+            result%volume = ieee_value(0.0_dp, ieee_quiet_nan)
+            result%flux_consistency = ieee_value(0.0_dp, ieee_quiet_nan)
+            call gs_magnetic_axis(view, result%axis, status)
+            result%psi = orientation*result%psi + psi_bound
+            result%psi_axis = orientation*result%psi_axis + psi_bound
             return
         end if
         call system_clock(tick)
@@ -217,5 +256,71 @@ contains
             end if
             !$omp end critical(gs_readback_failure)
         end subroutine
+    end subroutine
+
+    subroutine plasma_view(state, psi_bound, view, status, plasma_cell)
+        !! The sub-mesh of the flagged cells, compactly renumbered, with the
+        !! flux measured from psi_bound. Nodes on faces without a flagged
+        !! neighbour are its boundary.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi_bound
+        type(gs_state_t), intent(out) :: view
+        integer, intent(out) :: status
+        logical, intent(in), optional :: plasma_cell(:)
+        logical, allocatable :: keep(:)
+        integer, allocatable :: cells(:), cell_map(:), node_map(:), nodes(:)
+        integer :: e, k, j, ne, nn, order, neighbor
+        status = 1
+        if (.not. state%ready) return
+        ne = size(state%triangles, 2)
+        nn = size(state%points, 2)
+        allocate (keep(ne))
+        keep = .true.
+        if (present(plasma_cell)) then
+            if (size(plasma_cell) /= ne) return
+            keep = plasma_cell
+        end if
+        if (.not. any(keep)) return
+        cells = pack([(e, e=1, ne)], keep)
+        allocate (cell_map(ne), node_map(nn))
+        cell_map = 0
+        cell_map(cells) = [(e, e=1, size(cells))]
+        node_map = 0
+        do e = 1, size(cells)
+            node_map(state%triangles(:, cells(e))) = 1
+        end do
+        nodes = pack([(j, j=1, nn)], node_map > 0)
+        node_map(nodes) = [(j, j=1, size(nodes))]
+        view%points = state%points(:, nodes)
+        view%psi = state%psi(nodes) - psi_bound
+        view%triangles = state%triangles(:, cells)
+        do e = 1, size(cells)
+            view%triangles(:, e) = node_map(view%triangles(:, e))
+        end do
+        view%neighbors = state%neighbors(:, cells)
+        view%area = state%area(cells)
+        view%curved_cell = state%curved_cell(cells)
+        if (allocated(state%gradient)) view%gradient = state%gradient(:, :, cells)
+        if (allocated(state%stiffness)) view%stiffness = state%stiffness(:, :, cells)
+        view%mapped = state%mapped
+        view%element_order = state%element_order
+        order = state%element_order
+        allocate (view%boundary(size(nodes)))
+        view%boundary = .false.
+        do e = 1, size(cells)
+            do k = 1, 3
+                neighbor = view%neighbors(k, e)
+                if (neighbor > 0) neighbor = cell_map(neighbor)
+                view%neighbors(k, e) = neighbor
+                if (neighbor > 0) cycle
+                view%boundary(view%triangles([k, mod(k, 3) + 1], e)) = .true.
+                do j = 1, order - 1
+                    view%boundary(view%triangles(3 + (k - 1)*(order - 1) + j, e)) &
+                        = .true.
+                end do
+            end do
+        end do
+        view%ready = .true.
+        status = 0
     end subroutine
 end module
