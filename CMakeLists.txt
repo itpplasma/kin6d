@@ -340,6 +340,22 @@ target_link_libraries(test_gs_prescribed_q_variable_p PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_variable_p COMMAND test_gs_prescribed_q_variable_p)
 set_tests_properties(grad_shafranov_prescribed_q_variable_p PROPERTIES
     TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_prescribed_q_intervals test/test_gs_prescribed_q_intervals.f90)
+target_link_libraries(test_gs_prescribed_q_intervals PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_jacobian_richardson
+         COMMAND test_gs_prescribed_q_intervals jacobian)
+add_test(NAME grad_shafranov_prescribed_q_exact_vs_secant
+         COMMAND test_gs_prescribed_q_intervals secant)
+add_test(NAME grad_shafranov_prescribed_q_knots64_uniform
+         COMMAND test_gs_prescribed_q_intervals mms 64 0 8)
+add_test(NAME grad_shafranov_prescribed_q_knots64_graded
+         COMMAND test_gs_prescribed_q_intervals mms 64 1 8)
+set_tests_properties(grad_shafranov_prescribed_q_jacobian_richardson
+    grad_shafranov_prescribed_q_exact_vs_secant PROPERTIES
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(grad_shafranov_prescribed_q_knots64_uniform
+    grad_shafranov_prescribed_q_knots64_graded PROPERTIES
+    TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
@@ -407,6 +423,11 @@ target_link_libraries(gold_hoyle_demo PRIVATE kin6d kin6d_io)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
     -frecursive)
 add_executable(kin6d_demo app/kin6d_demo.f90)
+find_package(OpenMP COMPONENTS Fortran)
+if(OpenMP_Fortran_FOUND)
+    # Inverse Jacobian columns and other independent loops use OpenMP.
+    target_link_libraries(kin6d PUBLIC OpenMP::OpenMP_Fortran)
+endif()
 target_link_libraries(kin6d_demo PRIVATE kin6d fortplot)
 add_executable(steady_laboratory_demo app/steady_laboratory_demo.f90)
 target_link_libraries(steady_laboratory_demo PRIVATE kin6d fortplot)
@@ -612,7 +633,6 @@ target_link_libraries(benchmark_ocp PRIVATE kin6d)
 # The periodic OCP demos run independent ensemble members on OpenMP threads;
 # the library is reentrant (no module state) and compiled with automatic
 # locals (-frecursive) so that concurrent calls do not share scratch.
-find_package(OpenMP COMPONENTS Fortran)
 foreach(example ocp_oscillation ocp_shielding)
     add_executable(${example}_demo app/${example}_demo.f90)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)

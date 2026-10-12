@@ -30,7 +30,7 @@ program gs_phase1_main
     type(run_t) :: run
     type(result_file_t) :: result
     real(dp), allocatable :: samples(:, :), contour(:, :), interior_points(:, :)
-    real(dp), allocatable :: q_s(:), q_values(:)
+    real(dp), allocatable :: q_s(:), q_values(:), inverse_knots(:)
     real(dp) :: max_area = 0, pprime = 0, ffprime = 0, f_edge = 0
     real(dp) :: mu0 = 1.2566370614359173e-6_dp, wall_s, perimeter
     real(dp) :: nonlinear_tolerance = 1.0e-9_dp, pressure, f, pp, ff
@@ -39,7 +39,7 @@ program gs_phase1_main
     real(dp) :: total_current = 0, measured_current = 0
     real(dp) :: majorant, flux_defect, balance_defect, estimator_s, stability_estimate
     real(dp) :: phi_target = 0, inverse_q_error = 0, q_tolerance = 1.0e-3_dp
-    integer :: inverse_intervals = 2, inverse_evaluations = 0
+    integer :: inverse_intervals = 2, inverse_evaluations = 0, inverse_newton = 0
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
     integer :: unit, status, n, i, next, majorant_status, recovery_iterations
@@ -49,8 +49,11 @@ program gs_phase1_main
     integer :: threads = 1
     character(16) :: determinism = 'fast'
     logical :: curved = .true., directory_ok, recovery_converged
+    logical :: inverse_pressure_knots = .false., inverse_verbose = .false.
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
     character(512) :: q_file = '', interior_points_file = '', pprime_law_file = ''
+    character(512) :: inverse_knots_file = ''
+    character(16) :: inverse_jacobian = 'exact'
     character(256) :: message
     character(16) :: phase
     character(512) :: argument
@@ -59,7 +62,8 @@ program gs_phase1_main
         pprime, ffprime, f_edge, mu0, curved, radial_points, angular_points, degree, &
         profile_file, nonlinear_tolerance, quadrature_tolerance, total_current, q_file, &
         phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s, &
-        interior_points_file, pprime_law_file
+        interior_points_file, pprime_law_file, inverse_knots_file, &
+        inverse_pressure_knots, inverse_jacobian, inverse_verbose
     call run%start('gs_phase1')
     program_start_s = gs_wall_s()
     call gs_timer_reset()
@@ -154,6 +158,18 @@ program gs_phase1_main
         end do
         close (unit)
         call gs_readback_resolution(state, radial_points, angular_points)
+        if (len_trim(inverse_knots_file) > 0 .and. inverse_pressure_knots) &
+            error stop 'inverse_knots_file and inverse_pressure_knots conflict'
+        if (len_trim(inverse_knots_file) > 0) then
+            ! Row count followed by ascending FFprime spline break points 0..1.
+            open (newunit=unit, file=trim(inverse_knots_file), status='old', &
+                  action='read')
+            read (unit, *) n
+            if (n < 2) error stop 'knot file requires at least two rows'
+            allocate (inverse_knots(n))
+            read (unit, *) inverse_knots
+            close (unit)
+        end if
         clock = gs_wall_s()
         if (len_trim(pprime_law_file) > 0) then
             ! Variable p'(s): the pp rows of a normalized law file replace pprime.
@@ -161,17 +177,26 @@ program gs_phase1_main
             call read_gs_profile_law(trim(pprime_law_file), pressure_law, status)
             if (status /= 0 .or. .not. pressure_law%normalized) &
                 error stop 'invalid normalized pprime_law_file'
+            if (inverse_pressure_knots) inverse_knots = pressure_law%knots
+        else if (inverse_pressure_knots) then
+            error stop 'inverse_pressure_knots requires pprime_law_file'
+        end if
+        if (len_trim(pprime_law_file) > 0) then
             call solve_gs_prescribed_q(state, mu0, pprime, q_s, q_values, phi_target, &
                 law, status, intervals=inverse_intervals, radial_points=radial_points, &
                 angular_points=angular_points, tolerance=nonlinear_tolerance, &
                 q_error=inverse_q_error, evaluations=inverse_evaluations, &
-                q_tolerance=q_tolerance, pressure_law=pressure_law)
+                q_tolerance=q_tolerance, pressure_law=pressure_law, &
+                knots=inverse_knots, jacobian=trim(inverse_jacobian), &
+                newton_iterations=inverse_newton, verbose=inverse_verbose)
         else
             call solve_gs_prescribed_q(state, mu0, pprime, q_s, q_values, phi_target, &
                 law, status, intervals=inverse_intervals, radial_points=radial_points, &
                 angular_points=angular_points, tolerance=nonlinear_tolerance, &
                 q_error=inverse_q_error, evaluations=inverse_evaluations, &
-                q_tolerance=q_tolerance)
+                q_tolerance=q_tolerance, knots=inverse_knots, &
+                jacobian=trim(inverse_jacobian), newton_iterations=inverse_newton, &
+                verbose=inverse_verbose)
         end if
         f_edge = law%f_edge
         newton_s = gs_wall_s() - clock
@@ -362,6 +387,7 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'total_current', measured_current
     write (unit, '(a,1x,i0)') 'degree', state%element_order
     write (unit, '(a,1x,i0)') 'inverse_evaluations', inverse_evaluations
+    write (unit, '(a,1x,i0)') 'inverse_newton_iterations', inverse_newton
     write (unit, '(a,1x,es25.16e3)') 'inverse_q_error', inverse_q_error
     write (unit, '(a,1x,i0)') 'iterations', state%iterations
     write (unit, '(a,1x,i0)') 'dof', count(.not. state%boundary)
