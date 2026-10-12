@@ -876,8 +876,8 @@ contains
                 violated = .false.
                 do k = 1, n
                     if (pinned(k)) cycle
-                    if (res%currents(k) .gt. model%upper(k) .o &
-                        r.res%currents(k) .lt. model%lower(k)) then
+                    if (res%currents(k) .gt. model%upper(k) .or. &
+                        res%currents(k) .lt. model%lower(k)) then
                         pinned(k) = .true.
                         violated = .true.
                     end if
