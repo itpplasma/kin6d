@@ -79,7 +79,9 @@ contains
         real(dp) :: point(2), det, flux, f, two_pi, integral, gx(2), gw(2), weights(4)
         real(dp) :: jac(2, 2), curvature(2, 2, 2), inverse(2, 2), r, orientation
         integer(int64) :: tick, tock, clock_rate
+        real(dp) :: volume_sum, flux_sum
         integer :: axis_element, i, e, node, ndof, nr, na, first, k
+        integer :: failed_element, failed_status, local_status, snapshot
         status = 1
         view = state
         orientation = 1
@@ -155,12 +157,27 @@ contains
             call triangle_basis_jet([x(node), y(node)], shapes(:, node), &
                 gradients(:, :ndof), hessians(:, :, :ndof))
         end do
+        ! Element-parallel volume and toroidal-flux sums: static partition per
+        ! thread, reduction over the thread partial sums.
+        volume_sum = 0; flux_sum = 0
+        failed_element = huge(1); failed_status = 1
+        !$omp parallel do default(shared) schedule(static) &
+        !$omp& private(node, point, jac, curvature, det, inverse, flux, f) &
+        !$omp& private(local_status, snapshot) &
+        !$omp& reduction(+: volume_sum, flux_sum)
         do e = 1, size(view%triangles, 2)
+            !$omp atomic read
+            snapshot = failed_element
+            if (e > snapshot) cycle
             do node = 1, size(w)
                 if (view%curved_cell(e)) then
                     call triangle_geometry(view%points(:, view%triangles(:, e)), &
-                        [x(node), y(node)], point, jac, curvature, det, inverse, status)
-                    if (status /= 0) return
+                        [x(node), y(node)], point, jac, curvature, det, inverse, &
+                        local_status)
+                    if (local_status /= 0) then
+                        call record_failure(e, local_status)
+                        exit
+                    end if
                 else
                     point = matmul(view%points(:, view%triangles(1:3, e)), &
                         [1 - x(node) - y(node), x(node), y(node)])
@@ -169,18 +186,36 @@ contains
                 flux = dot_product(shapes(:, node), view%psi(view%triangles(:, e)))
                 f = gs_profile_f(orientation*flux, f_edge, ffprime, law)
                 if (abs(f) <= tiny(1.0_dp)) then
-                    status = 1
-                    return
+                    call record_failure(e, 1)
+                    exit
                 end if
-                result%volume = result%volume + two_pi*w(node)*det*point(1)
-                result%phi_edge = result%phi_edge + w(node)*det*f/point(1)
+                volume_sum = volume_sum + two_pi*w(node)*det*point(1)
+                flux_sum = flux_sum + w(node)*det*f/point(1)
             end do
         end do
+        !$omp end parallel do
+        if (failed_element /= huge(1)) then
+            status = failed_status
+            return
+        end if
+        result%volume = volume_sum
+        result%phi_edge = flux_sum
         call system_clock(tock)
         result%integral_s = real(tock - tick, dp)/clock_rate
         result%flux_consistency = abs(integral/result%phi_edge - 1)
         call gs_magnetic_axis(view, result%axis, status)
         result%psi = orientation*result%psi
         result%psi_axis = orientation*result%psi_axis
+    contains
+        subroutine record_failure(element, code)
+            ! The lowest failing element decides the status, as in a serial pass.
+            integer, intent(in) :: element, code
+            !$omp critical(gs_readback_failure)
+            if (element < failed_element) then
+                failed_element = element
+                failed_status = code
+            end if
+            !$omp end critical(gs_readback_failure)
+        end subroutine
     end subroutine
 end module

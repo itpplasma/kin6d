@@ -30,6 +30,7 @@ module kin6d_grad_shafranov
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
+   public :: gs_recovery_t
    integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
    integer, parameter :: geometry_arithmetic = 3
    public :: gs_cell_data, apply_gs, gs_factor_ready, gs_apply_inverse
@@ -45,6 +46,19 @@ module kin6d_grad_shafranov
    ! polygonal approximation; nested flux surfaces are not solver inputs.
    ! A result is a candidate, NOT a continuous certificate. Geometry,
    ! discretization and source-model errors remain separate open budgets.
+   ! Mesh-only data of the functional-majorant recovery system (vector Pk
+   ! grad-div plus r-mass): element blocks, CSR matrix and Cholesky factor are
+   ! built on the first majorant evaluation and shared by copies of the state.
+   type :: gs_recovery_t
+      logical :: ready = .false.
+      integer :: nodes = 0, cells = 0, order = 0
+      real(dp) :: signature = 0, cf2 = 0
+      integer, allocatable :: indices(:, :)
+      real(dp), allocatable :: matrix(:, :, :), diagonal(:)
+      type(csr_matrix_t) :: system
+      type(gs_direct_t) :: factor
+   end type gs_recovery_t
+
    type :: gs_state_t
       real(dp), allocatable :: points(:, :), psi(:)
       integer, allocatable :: triangles(:, :)
@@ -59,6 +73,7 @@ module kin6d_grad_shafranov
       ! state (they describe the same matrix); it lives until the program ends.
       type(csr_matrix_t) :: op
       type(gs_direct_t), pointer :: direct => null()
+      type(gs_recovery_t), pointer :: recovery => null()
       logical :: mapped = .false., ready = .false.
       integer :: element_order = 1
       real(dp) :: residual = huge(1.0_dp)
@@ -359,6 +374,7 @@ contains
         if (.not. all(ieee_is_finite(state%diagonal))) return
         call gs_csr_build(state%op, state%triangles, state%stiffness, n)
         allocate (state%direct)
+        allocate (state%recovery)
         state%ready = .true.
         status = 0
     end subroutine initialize_gs
