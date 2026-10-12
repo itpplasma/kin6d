@@ -356,6 +356,11 @@ set_tests_properties(grad_shafranov_prescribed_q_jacobian_richardson
 set_tests_properties(grad_shafranov_prescribed_q_knots64_uniform
     grad_shafranov_prescribed_q_knots64_graded PROPERTIES
     TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_prescribed_q_pedestal test/test_gs_prescribed_q_pedestal.f90)
+target_link_libraries(test_gs_prescribed_q_pedestal PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_pedestal COMMAND test_gs_prescribed_q_pedestal)
+set_tests_properties(grad_shafranov_prescribed_q_pedestal PROPERTIES
+    TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)

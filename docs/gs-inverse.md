@@ -96,23 +96,35 @@ basis conversion: the profile law demands continuity to 128 epsilon, which
 rounding across hundreds of knots otherwise violates.
 
 Cost. The exact Jacobian needs one weak-equation Jacobian, and per coefficient
-one load assembly, one response solve (conjugate gradients on the existing
-profile-load operator, not a factorization) and two contour readbacks; the
-columns run on OpenMP threads (`OMP_NUM_THREADS`). The profile load of every
-forward solve integrates the cells in 64 fixed chunks on OpenMP threads and
-adds them in chunk order, so the result does not depend on the thread count.
-The circle case with 16 intervals on n = 24 runs in 15.1 s, 5.8 s and 2.4 s on
-1, 4 and 16 threads with identical output. The secant path costs 2(n+1) full
-forward solves per iteration (89 against 8 solves in the 4-interval
-comparison test). TC24-size measurement (I0 boundary and q table, 400 graded
-FFprime intervals, 96 boundary nodes, scalar pprime, 32 threads): the first
-exact Jacobian of 401 columns took 127 s (3800 thread-s of contour readback,
-320 of load, 560 of response); the line search of that iteration needed four
-forward solves, 639 s together; the secant path would need 802 forward solves
-per iteration. The I0 pressure law (512 intervals) does not yet yield a
-converged seed forward solve on this mesh, with 2 or 16 FFprime intervals alike.
-The conjugate-gradient response and the contour readback of
-one state are not threaded.
+one load assembly, one response solve and two contour readbacks. The response
+solve is the conjugate-gradient iteration on the profile-load operator
+preconditioned by the cached Cholesky factor of A (the direct path of
+`gs_apply_inverse`; a few iterations independent of the mesh). The factor is
+one MUMPS instance, which is not reentrant, so the Jacobian runs in blocks of
+64 columns: loads on OpenMP threads, then the response solves one after the
+other, then the readbacks on OpenMP threads. The profile load of every forward
+solve integrates the cells in 64 fixed chunks on OpenMP threads and adds them
+in chunk order, so the result does not depend on the thread count.
+The secant path costs 2(n+1) full forward solves per iteration (89 against 8
+solves in the 4-interval comparison test).
+
+TC24-size measurement (sCluster, 48 threads, I0 boundary and q table, 400
+graded FFprime intervals, 96 boundary nodes, scalar pprime = -1e4): the exact
+Jacobian of 401 columns takes 24 s (60 thread-s load, 1.3 response, 580
+readback; before the direct path 127 s with 560 thread-s of response). The
+forward solves of the line search dominate: 260 to 620 s per iteration, most of
+them non-converging trial solves. The run did not converge within 30 min
+(three Newton iterations, max|r| about 0.5, steps 0.125, 0.031, 0.016).
+
+Pressure homotopy. The seed field is built with the mean p'. For a strongly
+structured p'(s) (the I0 pedestal law) the first forward solve stalls under
+line-search damping, and when it does converge the field has no readable q
+profile near the axis. The solver then solves the inverse problem for p'
+blended from the mean to the requested law, each stage warm-started from the
+previous one with step halving (`test_gs_prescribed_q_pedestal`, which fails
+with status 101/102 without it). The I0 pressure law on the 96-node TC24 mesh
+now starts and advances through the blend (0.25 reached with 16 graded
+intervals), but does not complete within 30 min.
 
 After convergence, an interleaved radial grid and doubled angular budget
 check q independently of the fitted moments. Status 9 retains the physical

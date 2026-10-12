@@ -1,7 +1,8 @@
 module kin6d_gs_prescribed_q
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, output_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, solve_gs, gs_axis_candidate
+    use kin6d_grad_shafranov, only: gs_state_t, solve_gs, gs_axis_candidate, &
+                                    gs_factor_ready
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_forcing_t, &
                                   gs_cubic_load, gs_profile_jacobian_t, &
@@ -289,7 +290,9 @@ contains
         if (exact) then
             allocate (warm_psi(size(seed%psi)))
             warm_psi = seed%psi
-            call newton_exact()
+            call newton_exact(x0)
+            if (failure /= 0 .and. newton == 0 .and. any(law%pp(:, 2:) /= 0)) &
+                call pressure_homotopy()
         else
             ! The secant fallback proposes coefficients from central differences
             ! of full forward solves; nothing it computes is a sensitivity.
@@ -370,10 +373,55 @@ contains
             values(n + 1) = readback%phi_edge/phi - 1
         end subroutine
 
-        subroutine newton_exact()
+        subroutine pressure_homotopy()
+            ! The seed field is built with the mean p'. With a strongly
+            ! structured p'(s) (pedestal) the first forward field can have no
+            ! readable q profile, so the outer Newton cannot start. Solve the
+            ! inverse problem for p' blended from the mean to the full law,
+            ! each stage warm-started from the previous one, halving the
+            ! blend step on failure.
+            real(dp), allocatable :: pp_full(:, :), pp_mean(:, :), x_good(:), psi_good(:)
+            real(dp) :: blend, blend_ok, step
+            integer :: tries
+            logical :: stage_ok
+            allocate (pp_full(size(law%pp, 1), size(law%pp, 2)))
+            allocate (pp_mean, mold=pp_full)
+            pp_full = law%pp
+            pp_mean = 0; pp_mean(1, :) = ppeff
+            allocate (x_good(n + 1), psi_good(size(seed%psi)))
+            x_good = x0; psi_good = seed%psi
+            blend = 0; blend_ok = -1; step = 0.5_dp
+            do tries = 1, 64
+                law%pp = (1 - blend)*pp_mean + blend*pp_full
+                failure = 0; newton = 0
+                warm_psi = psi_good
+                call newton_exact(x_good)
+                stage_ok = failure == 0
+                if (stage_ok) stage_ok = maxval(abs(residual)) <= tol
+                if (stage_ok) then
+                    x_good = solution; psi_good = accepted_state%psi
+                    blend_ok = blend
+                    if (talk) print '(a,f8.4)', '  pressure homotopy blend ', blend
+                    if (blend >= 1) exit
+                    blend = min(1.0_dp, blend + step)
+                else
+                    if (blend_ok < 0) exit
+                    step = step/2
+                    if (step < 1.0_dp/32) exit
+                    blend = min(1.0_dp, blend_ok + step)
+                end if
+            end do
+            law%pp = pp_full
+            if (blend_ok < 1) then
+                if (failure == 0) failure = 105
+            end if
+        end subroutine
+
+        subroutine newton_exact(xstart)
             ! Damped Newton with the equation-level Jacobian, evaluated only at
             ! accepted iterates. The forward solve of each trial starts from
             ! the last accepted field.
+            real(dp), intent(in) :: xstart(:)
             real(dp), allocatable :: x(:), xtrial(:), r(:), rtrial(:), dx(:), &
                                      jac(:, :)
             real(dp) :: lambda, merit, merit_trial
@@ -382,7 +430,7 @@ contains
             logical :: ok, moved
             allocate (x(n + 1), xtrial(n + 1), r(n + 1), rtrial(n + 1), dx(n + 1), &
                       jac(n + 1, n + 1))
-            x = x0
+            x = xstart
             call equations(x, r)
             solution = x; residual = r
             if (failure /= 0) return
@@ -479,7 +527,10 @@ contains
             !     the residual derivative is the central difference of the
             !     contour readback along (dpsi, dFF'_k) with the axis flux
             !     following the field. No nonlinear forward solve is made.
-            !     The columns are independent and run on OpenMP threads.
+            !     Loads and readbacks of the columns run on OpenMP threads in
+            !     blocks; the response solves between them run one after the
+            !     other, because they share the cached MUMPS Cholesky factor
+            !     of A (a MUMPS instance is not reentrant) and the phase timers.
             !   column n+1: F_edge enters only the F primitive, not psi.
             real(dp), intent(out) :: jac(:, :)
             logical, intent(out) :: ok
@@ -487,10 +538,12 @@ contains
             type(gs_profile_law_t) :: base, plus, minus
             type(gs_profile_jacobian_t) :: operator
             type(gs_readback_t) :: rplus, rminus
-            real(dp), allocatable :: rhs0(:)
+            real(dp), allocatable :: rhs0(:), rhs_block(:, :), dpsi_block(:, :)
             real(dp) :: load_tol, tl, tr, tb
-            integer :: kk, st
-            logical :: column_ok(n)
+            integer :: kk, st, first, last, b, nblock
+            integer(int64) :: t1, t2, rate
+            logical :: column_ok(n), load_ok(n), direct_ready
+            integer, parameter :: block_size = 64
             ok = .false.
             jac = 0
             work = accepted_state; base = accepted_law
@@ -499,15 +552,41 @@ contains
             call gs_cubic_load(work, mu0, base, rhs0, operator, st, load_tol, &
                                jacobian_tolerance=1.0e-6_dp)
             if (st /= 0) return
-            column_ok = .false.
+            ! The first use creates the factor; the parallel phases only read it.
+            direct_ready = gs_factor_ready(accepted_state)
+            column_ok = .false.; load_ok = .false.
             tl = 0; tr = 0; tb = 0
-            !$omp parallel do default(shared) schedule(dynamic) &
-            !$omp reduction(+:tl, tr, tb) private(kk)
-            do kk = 1, n
-                call jacobian_column(kk, base, operator, jac(:, kk), column_ok(kk), &
-                                     tl, tr, tb)
+            nblock = min(n, block_size)
+            allocate (rhs_block(size(work%psi), nblock), dpsi_block(size(work%psi), nblock))
+            do first = 1, n, nblock
+                last = min(n, first + nblock - 1)
+                !$omp parallel do default(shared) schedule(dynamic) &
+                !$omp reduction(+:tl) private(kk, b)
+                do kk = first, last
+                    b = kk - first + 1
+                    call column_load(kk, base, rhs_block(:, b), load_ok(kk), tl)
+                end do
+                !$omp end parallel do
+                call system_clock(t1, rate)
+                do kk = first, last
+                    b = kk - first + 1
+                    dpsi_block(:, b) = 0
+                    if (.not. load_ok(kk)) cycle
+                    call gs_profile_response(accepted_state, operator, &
+                                             rhs_block(:, b), dpsi_block(:, b), st)
+                    load_ok(kk) = st == 0
+                end do
+                call system_clock(t2)
+                tr = tr + real(t2 - t1, dp)/rate
+                !$omp parallel do default(shared) schedule(dynamic) &
+                !$omp reduction(+:tb) private(kk, b)
+                do kk = first, last
+                    b = kk - first + 1
+                    if (load_ok(kk)) call column_readback(kk, base, dpsi_block(:, b), &
+                                                          jac(:, kk), column_ok(kk), tb)
+                end do
+                !$omp end parallel do
             end do
-            !$omp end parallel do
             t_load = t_load + tl; t_response = t_response + tr
             t_readback = t_readback + tb
             if (.not. all(column_ok)) return
@@ -525,36 +604,28 @@ contains
             jac(:n, n + 1) = matmul(basis, (rplus%q - rminus%q)/(2.0e-3_dp*target))
             jac(n + 1, n + 1) = (rplus%phi_edge - rminus%phi_edge)/(2.0e-3_dp*phi)
             ok = all(ieee_is_finite(jac))
-            if (talk) print '(a,3f9.2)', '  jacobian load/response/readback thread-s:', &
-                t_load, t_response, t_readback
+            if (talk) print '(a,3f9.2,a,l2)', '  jacobian load/response/readback thread-s:', &
+                t_load, t_response, t_readback, '  direct factor:', direct_ready
             if (talk) flush (output_unit)
         end subroutine
 
-        subroutine jacobian_column(kk, base, operator, col, good_col, tl, tr, tb)
-            ! One FF' coefficient column. Everything mutable is local, so
-            ! concurrent calls share only the read-only accepted iterate.
+        subroutine column_load(kk, base, rhs_k, good_col, tl)
+            ! Load of the k-th basis law at fixed psi (OpenMP-safe: all state
+            ! is local, the accepted iterate is read-only).
             integer, intent(in) :: kk
             type(gs_profile_law_t), intent(in) :: base
-            type(gs_profile_jacobian_t), intent(in) :: operator
-            real(dp), intent(out) :: col(:)
+            real(dp), intent(out) :: rhs_k(:)
             logical, intent(out) :: good_col
-            real(dp), intent(inout) :: tl, tr, tb
-            type(gs_state_t) :: work, moved
-            type(gs_profile_law_t) :: column, plus, minus
+            real(dp), intent(inout) :: tl
+            type(gs_state_t) :: work
+            type(gs_profile_law_t) :: column
             type(gs_profile_jacobian_t) :: unused
-            type(gs_readback_t) :: rplus, rminus
-            real(dp), allocatable :: rhs_k(:), dpsi(:), grad(:)
-            real(dp) :: amplitude, eps, load_tol
-            integer :: jmin, jmax, attempt, st, m, nk, i, j
-            integer(int64) :: t1, t2, t3, t4, rate
-            logical :: good
+            real(dp) :: load_tol
+            integer :: jmin, jmax, st, m, nk, i, j
+            integer(int64) :: t1, t2, rate
             good_col = .false.
-            col = 0
-            allocate (rplus%q(nr), rminus%q(nr))
-            rplus%q = 0; rminus%q = 0
-            work = accepted_state; moved = accepted_state
-            allocate (grad(size(work%psi)), rhs_k(size(work%psi)), &
-                      dpsi(size(work%psi)))
+            rhs_k = 0
+            work = accepted_state
             load_tol = 1.0e-6_dp
             jmin = 0; jmax = 0
             do j = 1, nu - 1
@@ -585,9 +656,33 @@ contains
             if (st /= 0) return
             rhs_k = ffscale*rhs_k
             call system_clock(t2)
-            call gs_profile_response(work, operator, rhs_k, dpsi, st)
-            if (st /= 0) return
-            call system_clock(t3)
+            tl = tl + real(t2 - t1, dp)/rate
+            good_col = .true.
+        end subroutine
+
+        subroutine column_readback(kk, base, dpsi, col, good_col, tb)
+            ! Central-difference readback of the k-th column along dpsi.
+            integer, intent(in) :: kk
+            type(gs_profile_law_t), intent(in) :: base
+            real(dp), intent(in) :: dpsi(:)
+            real(dp), intent(out) :: col(:)
+            logical, intent(out) :: good_col
+            real(dp), intent(inout) :: tb
+            type(gs_state_t) :: moved
+            type(gs_profile_law_t) :: plus, minus
+            type(gs_readback_t) :: rplus, rminus
+            real(dp), allocatable :: grad(:)
+            real(dp) :: amplitude, eps
+            integer :: attempt, st
+            integer(int64) :: t3, t4, rate
+            logical :: good
+            good_col = .false.
+            col = 0
+            allocate (rplus%q(nr), rminus%q(nr))
+            rplus%q = 0; rminus%q = 0
+            moved = accepted_state
+            allocate (grad(size(moved%psi)))
+            call system_clock(t3, rate)
             amplitude = maxval(abs(dpsi))
             eps = 1.0e-3_dp
             if (amplitude > 0) eps = min(1.0_dp, 1.0e-3_dp*abs(base%axis)/amplitude)
@@ -604,8 +699,6 @@ contains
             end do
             if (.not. good) return
             call system_clock(t4)
-            tl = tl + real(t2 - t1, dp)/rate
-            tr = tr + real(t3 - t2, dp)/rate
             tb = tb + real(t4 - t3, dp)/rate
             col(:n) = matmul(basis, (rplus%q - rminus%q)/(2*eps*target))
             col(n + 1) = (rplus%phi_edge - rminus%phi_edge)/(2*eps*phi)
