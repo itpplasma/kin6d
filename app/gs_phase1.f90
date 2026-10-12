@@ -14,7 +14,12 @@ program gs_phase1_main
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
     use kin6d_gs_prescribed_q, only: solve_gs_prescribed_q
     use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_calls, &
+        gs_timer_iterations, gs_timer_event_count, gs_timer_event_get, &
+        gs_timer_reset, gs_progress_set, gs_progress, GS_T_ASSEMBLY, GS_T_FIXED_CG, &
+        GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG
     use fortplot_system_runtime, only: create_directory_runtime
+    !$ use omp_lib, only: omp_get_max_threads
     implicit none
     type(gs_state_t) :: state
     type(gs_profile_law_t), allocatable :: law
@@ -38,10 +43,15 @@ program gs_phase1_main
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
     integer :: unit, status, n, i, next, majorant_status, recovery_iterations
     integer(int64) :: start, finish, rate
+    real(dp) :: mesh_s = 0, newton_s = 0, readback_s = 0, io_s = 0, io_total_s = 0
+    real(dp) :: clock, program_start_s
+    integer :: threads = 1
+    character(16) :: determinism = 'fast'
     logical :: curved = .true., directory_ok, recovery_converged
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
     character(512) :: q_file = '', interior_points_file = '', pprime_law_file = ''
     character(256) :: message
+    character(16) :: phase
     character(512) :: argument
     character(:), allocatable :: commit, dirty
     namelist /gs_phase1/ boundary_file, mesh_file, boundary_nodes, max_area, &
@@ -50,6 +60,14 @@ program gs_phase1_main
         phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s, &
         interior_points_file, pprime_law_file
     call run%start('gs_phase1')
+    program_start_s = gs_wall_s()
+    call gs_timer_reset()
+    call gs_progress_set(.true.)
+    !$ threads = omp_get_max_threads()
+    call get_environment_variable('KIN6D_DETERMINISM', determinism)
+    if (len_trim(determinism) == 0) determinism = 'fast'
+    if (trim(determinism) /= 'deterministic' .and. trim(determinism) /= 'fast') &
+        error stop 'KIN6D_DETERMINISM must be fast (default) or deterministic (debug)'
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
         select case (trim(argument))
@@ -72,6 +90,10 @@ program gs_phase1_main
     if (degree /= 2 .and. degree /= 3) error stop 'degree must be 2 or 3'
     if (boundary_nodes < 8) error stop 'at least eight boundary nodes required'
     call system_clock(start, rate)
+    clock = gs_wall_s()
+    write (output_unit, '(a,i0,a,a)') 'gs_phase1 start: omp_threads=', threads, &
+        ' determinism=', trim(determinism)
+    flush (output_unit)
     open (newunit=unit, file=trim(boundary_file), status='old', action='read')
     read (unit, *) n
     if (n < 4) error stop 'boundary requires four samples without closing duplicate'
@@ -104,6 +126,8 @@ program gs_phase1_main
         end do
         close (unit)
     end if
+    io_s = gs_wall_s() - clock
+    clock = gs_wall_s()
     if (curved) then
         call initialize_gs(state, contour, max_area, status, degree, curve=boundary, &
             interior_points=interior_points)
@@ -112,6 +136,10 @@ program gs_phase1_main
             interior_points=interior_points)
     end if
     if (status /= 0) error stop 'mesh/assembly failed'
+    mesh_s = gs_wall_s() - clock
+    write (output_unit, '(a,i0,a,f10.3)') 'mesh done: dof=', &
+        count(.not. state%boundary), ' mesh_s=', mesh_s
+    flush (output_unit)
     if (len_trim(pprime_law_file) > 0 .and. len_trim(q_file) == 0) &
         error stop 'pprime_law_file requires q_file'
     if (len_trim(q_file) > 0) then
@@ -125,6 +153,7 @@ program gs_phase1_main
         end do
         close (unit)
         call gs_readback_resolution(state, radial_points, angular_points)
+        clock = gs_wall_s()
         if (len_trim(pprime_law_file) > 0) then
             ! Variable p'(s): the pp rows of a normalized law file replace pprime.
             if (pprime /= 0) error stop 'pprime and pprime_law_file conflict'
@@ -144,15 +173,20 @@ program gs_phase1_main
                 q_tolerance=q_tolerance)
         end if
         f_edge = law%f_edge
+        newton_s = gs_wall_s() - clock
     else if (len_trim(profile_file) > 0) then
         allocate (law)
         call read_gs_profile_law(trim(profile_file), law, status)
         if (status /= 0) error stop 'invalid cubic source profile file'
         f_edge = law%f_edge
+        clock = gs_wall_s()
         call solve_gs_cubic_profiles(state, mu0, law, status, nonlinear_tolerance, &
             quadrature_tolerance=quadrature_tolerance)
+        newton_s = gs_wall_s() - clock
     else
+        clock = gs_wall_s()
         call solve_gs(state, mu0, pprime, ffprime, status)
+        newton_s = gs_wall_s() - clock
     end if
     if (status /= 0) then
         print *, 'solve status, iteration, residual:', status, state%iterations, &
@@ -173,9 +207,11 @@ program gs_phase1_main
         ' wall_s=', wall_s, ' residual=', state%residual
     if (wall_s > solve_wall_limit_s) error stop 'solve exceeded solve_wall_limit_s'
     flush (output_unit)
+    clock = gs_wall_s()
     call write_gs_mesh(state, trim(mesh_file), status)
     if (status /= 0) error stop 'mesh export failed'
     if (allocated(law)) call write_gs_profile_law('profile-law.dat', law)
+    io_s = io_s + gs_wall_s() - clock
     call system_clock(start)
     call gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
         flux_defect, balance_defect, majorant_status, law=law, &
@@ -186,13 +222,21 @@ program gs_phase1_main
         error stop 'recovered-flux recovery failed'
     call system_clock(finish)
     estimator_s = real(finish - start, dp)/rate
+    write (output_unit, '(a,f10.3,a,i0)') 'majorant done: estimator_s=', estimator_s, &
+        ' recovery_iterations=', recovery_iterations
+    flush (output_unit)
+    clock = gs_wall_s()
     call gs_readback_resolution(state, radial_points, angular_points)
     call read_gs_equilibrium(state, f_edge, ffprime, radial_points, angular_points, &
         readback, status, law)
+    readback_s = gs_wall_s() - clock
+    write (output_unit, '(a,f10.3)') 'readback done: readback_s=', readback_s
+    flush (output_unit)
     if (status /= 0) then
         print *, 'readback status:', status
         error stop 'equilibrium contour readback failed'
     end if
+    clock = gs_wall_s()
     call run%open_resolved(unit)
     write (unit, nml=gs_phase1)
     call run%close_resolved(unit)
@@ -200,6 +244,8 @@ program gs_phase1_main
     if (.not. directory_ok) error stop 'cannot create output directory'
     call result%create(run)
     call result%attribute('convention', 'COCOS 3; SI; psi in Wb/rad; psi_edge=0')
+    call result%attribute('omp_threads', int_text(threads))
+    call result%attribute('determinism', trim(determinism))
     call result%write('boundary_samples', samples, 'm', 'supplied closed R Z curve')
     call result%write('points', state%points, 'm', &
         'physical isoparametric geometry nodes')
@@ -236,6 +282,34 @@ program gs_phase1_main
     call result%write('contour_s', readback%contour_s, 's', 'contour readback time')
     call result%write('integral_s', readback%integral_s, 's', 'area integrals time')
     call result%write('wall_s', wall_s, 's', 'mesh assembly and solve wall time')
+    call result%write('omp_threads', real(threads, dp), '1', 'OpenMP maximum threads')
+    call result%write('mesh_s', mesh_s, 's', 'mesh generation and element setup')
+    call result%write('assembly_s', gs_timer_total(GS_T_ASSEMBLY), 's', &
+        'source and Jacobian assembly (gs_cubic_load)')
+    call result%write('assembly_calls', real(gs_timer_calls(GS_T_ASSEMBLY), dp), '1', &
+        'gs_cubic_load calls')
+    call result%write('fixed_cg_s', gs_timer_total(GS_T_FIXED_CG), 's', &
+        'fixed-source linear CG solves')
+    call result%write('fixed_cg_iterations', &
+        real(gs_timer_iterations(GS_T_FIXED_CG), dp), '1', 'fixed-source CG iterations')
+    call result%write('jacobian_cg_s', gs_timer_total(GS_T_JAC_CG), 's', &
+        'Newton Jacobian symmetric CG solves')
+    call result%write('jacobian_cg_iterations', &
+        real(gs_timer_iterations(GS_T_JAC_CG), dp), '1', 'Jacobian CG iterations')
+    call result%write('jacobian_gmres_s', gs_timer_total(GS_T_JAC_GMRES), 's', &
+        'Newton Jacobian GMRES fallback, including nested preconditioner CG')
+    call result%write('jacobian_gmres_iterations', &
+        real(gs_timer_iterations(GS_T_JAC_GMRES), dp), '1', 'GMRES iterations')
+    call result%write('precond_cg_s', gs_timer_total(GS_T_PRECOND_CG), 's', &
+        'nested preconditioner CG solves (inside jacobian_gmres_s)')
+    call result%write('precond_cg_iterations', &
+        real(gs_timer_iterations(GS_T_PRECOND_CG), dp), '1', 'nested CG iterations')
+    call result%write('newton_s', newton_s, 's', &
+        'whole nonlinear or linear solve call, including assembly and linear solves')
+    call result%write('readback_s', readback_s, 's', 'equilibrium readback')
+    call result%write('io_s', io_s, 's', &
+        'input reading, mesh export and resolved config; summary.dat io_total_s adds '// &
+        'NetCDF and profiles.dat')
     call result%write('dof', real(count(.not. state%boundary), dp), '1', &
         'free unknowns')
     call result%write('iterations', real(state%iterations, dp), '1', &
@@ -270,6 +344,7 @@ program gs_phase1_main
             readback%q(i), pressure, f, pp, ff
     end do
     close (unit)
+    io_total_s = io_s + gs_wall_s() - clock
     call runtime_git(commit, dirty, 'gs_phase1')
     open (newunit=unit, file='summary.dat', status='replace')
     write (unit, '(a,1x,es25.16e3)') 'total_current', measured_current
@@ -298,10 +373,43 @@ program gs_phase1_main
     write (unit, '(a,1x,i0)') 'majorant_recovery_converged', merge(1, 0, recovery_converged)
     write (unit, '(a,1x,i0)') 'majorant_iterations', recovery_iterations
     write (unit, '(a,1x,es25.16e3)') 'estimator_s', estimator_s
+    write (unit, '(a,1x,i0)') 'omp_threads', threads
+    write (unit, '(a,1x,a)') 'determinism', trim(determinism)
+    write (unit, '(a,1x,es25.16e3)') 'mesh_s', mesh_s
+    write (unit, '(a,1x,es25.16e3)') 'assembly_s', gs_timer_total(GS_T_ASSEMBLY)
+    write (unit, '(a,1x,i0)') 'assembly_calls', gs_timer_calls(GS_T_ASSEMBLY)
+    write (unit, '(a,1x,es25.16e3)') 'fixed_cg_s', gs_timer_total(GS_T_FIXED_CG)
+    write (unit, '(a,1x,i0)') 'fixed_cg_iterations', gs_timer_iterations(GS_T_FIXED_CG)
+    write (unit, '(a,1x,es25.16e3)') 'jacobian_cg_s', gs_timer_total(GS_T_JAC_CG)
+    write (unit, '(a,1x,i0)') 'jacobian_cg_iterations', gs_timer_iterations(GS_T_JAC_CG)
+    write (unit, '(a,1x,es25.16e3)') 'jacobian_gmres_s', gs_timer_total(GS_T_JAC_GMRES)
+    write (unit, '(a,1x,i0)') 'jacobian_gmres_iterations', &
+        gs_timer_iterations(GS_T_JAC_GMRES)
+    write (unit, '(a,1x,es25.16e3)') 'precond_cg_s', gs_timer_total(GS_T_PRECOND_CG)
+    write (unit, '(a,1x,i0)') 'precond_cg_iterations', &
+        gs_timer_iterations(GS_T_PRECOND_CG)
+    write (unit, '(a,1x,es25.16e3)') 'newton_s', newton_s
+    write (unit, '(a,1x,es25.16e3)') 'readback_s', readback_s
+    write (unit, '(a,1x,es25.16e3)') 'io_total_s', io_total_s
+    write (unit, '(a,1x,es25.16e3)') 'total_s', gs_wall_s() - program_start_s
     write (unit, '(a,1x,a)') 'code_commit', commit
     write (unit, '(a,1x,a)') 'code_tree', dirty
     close (unit)
+    open (newunit=unit, file='timing.dat', status='replace')
+    write (unit, '(a)') '# per-call log: phase seconds iterations (nested '// &
+        'preconditioner CG is aggregated in summary.dat only)'
+    do i = 1, gs_timer_event_count()
+        call gs_timer_event_get(i, phase, clock, next)
+        write (unit, '(a16,1x,es25.16e3,1x,i0)') phase, clock, next
+    end do
+    close (unit)
 contains
+    function int_text(value) result(text)
+        integer, intent(in) :: value
+        character(16) :: text
+        write (text, '(i0)') value
+    end function
+
     subroutine evaluate_source_file()
         character(512) :: path
         real(dp) :: psi
