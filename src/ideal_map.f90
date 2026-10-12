@@ -29,10 +29,16 @@ module kin6d_ideal_map
     ! Fixed boundary: nu on boundary nodes is held (all modes); omega's n = 0
     ! value at one node fixes the rigid toroidal rotation. At n = 0 any
     ! omega = f(chi) is a continuum null direction (rigid rotation of each
-    ! surface); it is discretely near-null and left to the damped Newton.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    ! surface); discretely it is near-null and Newton wanders along it. A gauge
+    ! term fixes it: (gauge_weight/2) int R^2 (det G grad chi . grad omega_0)^2
+    ! / det G over the reference, the perpendicular counterpart of the physical
+    ! R^2 (b_pol . grad omega)^2 / J. The physics never sees the surface
+    ! function it selects (continuum); the discrete bias is measured by the
+    ! tests at two weights.
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_curved_triangle, only: triangle_locate
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_map_leaves, only: ideal_energy_density, ideal_energy_gradient, &
         ideal_energy_hessian, cylindrical_chart_position, cylindrical_chart_first, &
@@ -42,13 +48,15 @@ module kin6d_ideal_map
         csr_assemble_blocks
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_SYM_GENERAL
+        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE
+    use kin6d_gs_direct, only: gs_direct_available
     implicit none
     private
-    public :: ideal_chart_t, cylindrical_chart_t, ideal_map_t, frozen_field
+    public :: ideal_chart_t, cylindrical_chart_t, ideal_map_t, ideal_frozen_t
     public :: ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_hessian
     public :: ideal_map_solve, ideal_map_point, ideal_map_dof, ideal_map_mode_norms
     public :: ideal_map_reduce, ideal_map_expand, ideal_map_rdof, ideal_map_axis_dof
+    public :: ideal_map_prolong
     public :: ideal_map_solve_report_t
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
@@ -79,9 +87,14 @@ module kin6d_ideal_map
     ! Frozen reference data at a reference point y = (q1, q2): poloidal flux
     ! label chi and its gradient, toroidal flux density b3 (contravariant density
     ! in (q1, q2, phi-hat)) and pressure. b_pol = (-d chi/dq2, d chi/dq1).
+    type, abstract :: ideal_frozen_t
+    contains
+        procedure(frozen_evaluate), deferred :: evaluate
+    end type
     abstract interface
-        subroutine frozen_field(point, chi, chi_gradient, b3, pressure)
-            import :: dp
+        subroutine frozen_evaluate(field, point, chi, chi_gradient, b3, pressure)
+            import :: ideal_frozen_t, dp
+            class(ideal_frozen_t), intent(in) :: field
             real(dp), intent(in) :: point(2)
             real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
         end subroutine
@@ -98,6 +111,13 @@ module kin6d_ideal_map
         ! axis_basis(j, node) = T P_j at the node; npoly monomials per mode.
         real(dp), allocatable :: direction(:, :), axis_basis(:, :)
         integer :: npoly = 0
+        ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
+        real(dp) :: gauge_weight = 1.0e-4_dp
+        real(dp), allocatable :: omega_gauge(:, :, :)
+        ! Nodal label, its reference gradient, axis-expansion weight T and the
+        ! axis node.
+        real(dp), allocatable :: chi_node(:), chi_grad(:, :), axis_t(:)
+        integer :: axis_node = 0
         real(dp), allocatable :: reference(:, :)
         logical, allocatable :: boundary(:), fixed(:)
         real(dp), allocatable :: weight(:), shape(:, :), dshape(:, :, :)
@@ -112,6 +132,8 @@ module kin6d_ideal_map
         integer :: iterations = 0
         real(dp) :: energy = 0, gradient = huge(1.0_dp), step = huge(1.0_dp)
         real(dp) :: min_jacobian = 0, damping = 0
+        ! Wall seconds: energy/gradient, Hessian assembly, factor + solve.
+        real(dp) :: energy_s = 0, hessian_s = 0, factor_s = 0
     end type
 contains
     pure subroutine cylindrical_jet(chart, q, x, d1, d2, d3)
@@ -343,39 +365,34 @@ contains
         ! b^s = (-d chi/ds2, d chi/ds1), b^3 = b3*det(DG), with G the isoparametric
         ! reference geometry. Exactly closed for any label chi.
         type(ideal_map_t), intent(inout) :: map
-        procedure(frozen_field) :: field
+        class(ideal_frozen_t), intent(in) :: field
         integer, intent(out) :: status
         real(dp) :: dg(2, 2), y(2), grad(2), ds(2), b3, pressure, chi, lo, hi, t
-        real(dp) :: centre(2), radius, u(2)
         real(dp), allocatable :: labels(:, :)
-        integer :: e, g, a, j, k, d, i
+        integer :: e, g, a, k
         status = IDEAL_MAP_OK
-        allocate (labels(map%nodes, 1))
+        allocate (labels(map%nodes, 1), map%axis_t(map%nodes), &
+            map%chi_grad(2, map%nodes))
         do a = 1, map%nodes
-            call field(map%reference(:, a), chi, grad, b3, pressure)
+            call field%evaluate(map%reference(:, a), chi, grad, b3, pressure)
             if (norm2(grad) > 0) map%direction(:, a) = grad/norm2(grad)
             labels(a, 1) = chi
+            map%chi_grad(:, a) = grad
         end do
         ! Axis expansion: T in [0, 1], monomials about the extreme-label node,
         ! scaled by the reference radius.
         lo = sum(labels(:, 1), mask=map%boundary)/count(map%boundary)
         k = maxloc(abs(labels(:, 1) - lo), dim=1)
         hi = labels(k, 1)
-        centre = map%reference(:, k)
-        radius = maxval(norm2(map%reference - spread(centre, 2, map%nodes), dim=1))
+        map%axis_node = k
+        map%chi_node = labels(:, 1)
         do a = 1, map%nodes
             t = 0
             if (.not. map%boundary(a)) &
                 t = min(1.0_dp, max(0.0_dp, (labels(a, 1) - lo)/(hi - lo)))
-            u = (map%reference(:, a) - centre)/radius
-            j = 0
-            do d = 0, merge(1, 2, map%nloc == 6)
-                do i = 0, d
-                    j = j + 1
-                    map%axis_basis(j, a) = t*u(1)**(d - i)*u(2)**i
-                end do
-            end do
+            map%axis_t(a) = t
         end do
+        call axis_expansion(map, map%reference)
         do e = 1, map%cells
             do g = 1, map%nq
                 y = matmul(map%reference(:, map%conn(:, e)), map%shape(:, g))
@@ -383,12 +400,147 @@ contains
                     transpose(map%dshape(:, :, g)))
                 map%det(g, e) = dg(1, 1)*dg(2, 2) - dg(1, 2)*dg(2, 1)
                 if (.not. map%det(g, e) > 0) status = IDEAL_MAP_FOLDED
-                call field(y, chi, grad, b3, pressure)
+                call field%evaluate(y, chi, grad, b3, pressure)
                 ds = matmul(transpose(dg), grad)
                 map%b(:, g, e) = [-ds(2), ds(1), b3*map%det(g, e)]
                 map%p(g, e) = pressure
             end do
         end do
+        call build_gauge(map)
+    end subroutine
+
+    subroutine axis_expansion(map, position)
+        ! axis_basis(j, a) = T_a P_j((y_a - y_axis)/radius) on node positions.
+        type(ideal_map_t), intent(inout) :: map
+        real(dp), intent(in) :: position(:, :)
+        real(dp) :: centre(2), radius, u(2)
+        integer :: a, j, d, i
+        centre = position(:, map%axis_node)
+        radius = maxval(norm2(position - spread(centre, 2, map%nodes), dim=1))
+        do a = 1, map%nodes
+            u = (position(:, a) - centre)/radius
+            j = 0
+            do d = 0, merge(1, 2, map%nloc == 6)
+                do i = 0, d
+                    j = j + 1
+                    map%axis_basis(j, a) = map%axis_t(a)*u(1)**(d - i)*u(2)**i
+                end do
+            end do
+        end do
+    end subroutine
+
+    subroutine ideal_map_prolong(fine, coarse, status)
+        ! Grid sequencing (VMEC's ns ladder): initialise the coefficients of a
+        ! map on a finer reference mesh of the same domain and labels from a
+        ! solved coarse map, evaluated at the fine reference nodes. Boundary
+        ! nodes keep their reference position (held dofs).
+        type(ideal_map_t), intent(inout) :: fine
+        type(ideal_map_t), intent(in) :: coarse
+        integer, intent(out) :: status
+        real(dp) :: xi(2), shape(10), grad(2, 10), y(2)
+        integer :: a, e, k, owner, located, j
+        status = IDEAL_MAP_BAD_INPUT
+        if (fine%nmode /= coarse%nmode .or. fine%nfp /= coarse%nfp) return
+        owner = 1
+        do a = 1, fine%nodes
+            y = fine%reference(:, a)
+            located = 0
+            do k = 0, coarse%cells - 1
+                e = 1 + mod(owner - 1 + merge(k/2, coarse%cells - (k + 1)/2, &
+                    mod(k, 2) == 0), coarse%cells)
+                call triangle_locate(coarse%reference(:, coarse%conn(:, e)), y, xi, j)
+                if (j /= 0) cycle
+                if (minval([xi, 1 - sum(xi)]) < -1.0e-10_dp) cycle
+                located = e; exit
+            end do
+            if (located == 0) then
+                if (.not. fine%boundary(a)) return
+                cycle
+            end if
+            owner = located
+            call triangle_basis_jet(xi, shape(:coarse%nloc), grad(:, :coarse%nloc))
+            do k = 1, fine%nmode
+                fine%x(:, k, a) = matmul(coarse%x(:, k, coarse%conn(:, located)), &
+                    shape(:coarse%nloc))
+            end do
+        end do
+        do a = 1, fine%nodes
+            if (.not. fine%boundary(a)) cycle
+            fine%x(1:2, 1, a) = fine%reference(:, a)
+            fine%x(1:2, 2:, a) = 0
+        end do
+        fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
+        call regauge(fine)
+        status = IDEAL_MAP_OK
+    end subroutine
+
+    subroutine regauge(map)
+        ! Transversals normal to the current (n = 0) image of the label
+        ! contours, d = F^-T grad_y chi/|.| with F = dx/dy averaged from cell
+        ! centroids to nodes, and the axis expansion about the current position
+        ! of the axis node. A seed's directions are not transversal to small
+        ! surfaces around a distant true axis; this restores it after
+        ! prolongation. Only the parametrisation of later increments changes.
+        type(ideal_map_t), intent(inout) :: map
+        real(dp), allocatable :: f(:, :, :), position(:, :)
+        integer, allocatable :: hits(:)
+        real(dp) :: shape(10), grad(2, 10), dx(2, 2), dy(2, 2), fe(2, 2), v(2), det
+        integer :: e, a
+        allocate (f(2, 2, map%nodes), hits(map%nodes))
+        position = map%x(1:2, 1, :)
+        f = 0; hits = 0
+        call triangle_basis_jet([1.0_dp/3, 1.0_dp/3], shape(:map%nloc), &
+            grad(:, :map%nloc))
+        do e = 1, map%cells
+            dx = matmul(position(:, map%conn(:, e)), transpose(grad(:, :map%nloc)))
+            dy = matmul(map%reference(:, map%conn(:, e)), &
+                transpose(grad(:, :map%nloc)))
+            det = dy(1, 1)*dy(2, 2) - dy(1, 2)*dy(2, 1)
+            fe = matmul(dx, reshape([dy(2, 2), -dy(2, 1), -dy(1, 2), dy(1, 1)], &
+                [2, 2])/det)
+            do a = 1, map%nloc
+                f(:, :, map%conn(a, e)) = f(:, :, map%conn(a, e)) + fe
+                hits(map%conn(a, e)) = hits(map%conn(a, e)) + 1
+            end do
+        end do
+        do a = 1, map%nodes
+            fe = f(:, :, a)/hits(a)
+            det = fe(1, 1)*fe(2, 2) - fe(1, 2)*fe(2, 1)
+            v = [fe(2, 2)*map%chi_grad(1, a) - fe(2, 1)*map%chi_grad(2, a), &
+                -fe(1, 2)*map%chi_grad(1, a) + fe(1, 1)*map%chi_grad(2, a)]/det
+            if (norm2(v) > 0) map%direction(:, a) = v/norm2(v)
+        end do
+        call axis_expansion(map, position)
+    end subroutine
+
+    subroutine build_gauge(map)
+        ! Reference-metric form of the omega gauge term; weight relative to the
+        ! largest physical omega stiffness R^2 |b_pol|^2/det G of the reference.
+        type(ideal_map_t), intent(inout) :: map
+        real(dp) :: dg(2, 2), ginv(2, 2), y(2), chi_s(2), v(10), scale, w
+        integer :: e, g, n
+        n = map%nloc
+        allocate (map%omega_gauge(n, n, map%cells))
+        map%omega_gauge = 0
+        scale = 0
+        do e = 1, map%cells
+            do g = 1, map%nq
+                dg = matmul(map%reference(:, map%conn(:, e)), &
+                    transpose(map%dshape(:, :, g)))
+                y = matmul(map%reference(:, map%conn(:, e)), map%shape(:, g))
+                ! Inverse metric of s -> y; chi_s = (b2, -b1) in master coordinates.
+                ginv = matmul(transpose(dg), dg)
+                ginv = reshape([ginv(2, 2), -ginv(2, 1), -ginv(1, 2), ginv(1, 1)], &
+                    [2, 2])/(ginv(1, 1)*ginv(2, 2) - ginv(1, 2)*ginv(2, 1))
+                chi_s = [map%b(2, g, e), -map%b(1, g, e)]
+                v(:n) = map%det(g, e)*matmul(matmul(chi_s, ginv), map%dshape(:, :n, g))
+                w = map%weight(g)*y(1)**2/map%det(g, e)
+                scale = max(scale, y(1)**2*sum(map%b(1:2, g, e)**2)/map%det(g, e)**2)
+                map%omega_gauge(:, :, e) = map%omega_gauge(:, :, e) &
+                    + w*spread(v(:n), 2, n)*spread(v(:n), 1, n)
+            end do
+        end do
+        map%omega_gauge = map%gauge_weight*map%omega_gauge/max(scale, tiny(1.0_dp))
     end subroutine
 
     subroutine point_jet(map, e, g, j, x, q, qd)
@@ -570,6 +722,10 @@ contains
             end do
         end do
         !$omp end parallel do
+        do e = 1, map%cells
+            energy = energy + 0.5_dp*dot_product(x(3, 1, map%conn(:, e)), &
+                matmul(map%omega_gauge(:, :, e), x(3, 1, map%conn(:, e))))
+        end do
         status = IDEAL_MAP_OK
         if (.not. (minjac > 0) .or. .not. ieee_is_finite(energy)) &
             status = IDEAL_MAP_FOLDED
@@ -578,6 +734,11 @@ contains
         gradient = 0
         do e = 1, map%cells
             gradient(map%dofconn(:, e)) = gradient(map%dofconn(:, e)) + local(:, e)
+            do a = 1, map%nloc
+                c = ideal_map_dof(map, 3, 1, map%conn(a, e))
+                gradient(c) = gradient(c) + dot_product(map%omega_gauge(a, :, e), &
+                    x(3, 1, map%conn(:, e)))
+            end do
         end do
     end subroutine
 
@@ -631,6 +792,13 @@ contains
                             end do
                         end do
                     end do
+                end do
+            end do
+            do a = 1, map%nloc
+                do c = 1, map%nloc
+                    l = 3*(1 + map%nmode*(a - 1))
+                    r = 3*(1 + map%nmode*(c - 1))
+                    full(l, r) = full(l, r) + map%omega_gauge(a, c, e)
                 end do
             end do
             ! Reduce to (nu, omega): P maps (nu, omega) of local node-mode l to
@@ -698,14 +866,16 @@ contains
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
         real(dp), allocatable :: trial(:, :, :), rhs(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
-        real(dp) :: cap_x, cap_w
+        real(dp) :: cap_x, cap_w, t0
         integer :: it, i, k, tries, estatus
         logical :: talk, accepted
         talk = .false.
         if (present(verbose)) talk = verbose
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
             diag(map%nred), rhs(map%nred))
+        t0 = wall()
         call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
+        report%energy_s = report%energy_s + wall() - t0
         if (estatus /= IDEAL_MAP_OK) then
             status = IDEAL_MAP_FOLDED; return
         end if
@@ -724,7 +894,9 @@ contains
                 status = IDEAL_MAP_OK; exit
             end if
             report%iterations = it
+            t0 = wall()
             call ideal_map_hessian(map, map%x, matrix)
+            report%hessian_s = report%hessian_s + wall() - t0
             do i = 1, map%nred
                 do k = matrix%rowptr(i), matrix%rowptr(i + 1) - 1
                     if (matrix%colidx(k) == i) diag(i) = matrix%val(k)
@@ -733,6 +905,7 @@ contains
             scale = maxval(abs(diag), mask=.not. map%fixed)
             accepted = .false.
             do tries = 1, 30
+                t0 = wall()
                 call factor_damped(mu, estatus)
                 if (estatus /= 0) then
                     mu = mu*10; cycle
@@ -740,6 +913,7 @@ contains
                 rhs = -gred
                 call sparse_solve(solver, rhs, step, sstatus)
                 call sparse_destroy(solver)
+                report%factor_s = report%factor_s + wall() - t0
                 if (.not. status_ok(sstatus)) then
                     status = IDEAL_MAP_SOLVE_FAILED; return
                 end if
@@ -758,7 +932,9 @@ contains
                 end do
                 full = alpha*full; step = alpha*step
                 trial = map%x + reshape(full, shape(map%x))
+                t0 = wall()
                 call ideal_map_energy(map, trial, trial_energy, estatus)
+                report%energy_s = report%energy_s + wall() - t0
                 if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
                     + 64*epsilon(1.0_dp)*abs(energy)) then
                     accepted = .true.; exit
@@ -768,7 +944,9 @@ contains
             if (.not. accepted) exit
             map%x = trial
             report%step = maxval(abs(full))
+            t0 = wall()
             call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
+            report%energy_s = report%energy_s + wall() - t0
             call ideal_map_reduce(map, grad, gred)
             where (map%fixed) gred = 0
             gnorm = norm2(gred)
@@ -783,6 +961,12 @@ contains
         end do
         if (.not. gnorm > tolerance*g0) status = IDEAL_MAP_OK
     contains
+        real(dp) function wall()
+            integer(int64) :: count, rate
+            call system_clock(count, rate)
+            wall = real(count, dp)/rate
+        end function
+
         subroutine factor_damped(damping, info)
             ! H + damping*|diag H| with identity rows/columns for fixed dofs.
             real(dp), intent(in) :: damping
@@ -799,8 +983,17 @@ contains
                     end if
                 end do
             end do
-            solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
-            solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            ! Threaded MUMPS LDL^T (nested dissection) when KIN6D is built with
+            ! MUMPS; serial SuperLU LU otherwise. The damped system is symmetric
+            ! and may be indefinite.
+            if (gs_direct_available()) then
+                solver%backend_id = FORTSPARSE_BACKEND_MUMPS
+                solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+                solver%options%nthreads = 0
+            else
+                solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+                solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            end if
             call sparse_factor(solver, map%nred, map%nred, size(val), &
                 matrix%rowptr, matrix%colidx, val, sstatus)
             info = merge(0, 1, status_ok(sstatus))
