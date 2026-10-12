@@ -674,15 +674,46 @@ mode. The staged path is:
 5. a general physical-space three-dimensional ideal-MHD stationary solver that
    does not require global nested surfaces and can represent islands/stochastic
    regions when the equations permit them;
-6. explicit comparison with HINT/PIES-like nonnested full-pressure relaxation
-   and, for a different relaxation model, SPEC/SPECTRE/MRxMHD cases;
-7. resistive-MHD and Hall/XMHD stationary/evolution paths where reconnection and
-   history are part of the selected physics;
-8. kinetic-MHD and kinetic continuation where pressure/current closure is no
-   longer adequately fluid;
-9. ideal/resistive linear response, eigenmodes and nonlinear stability through
-   the common S0 consumer;
-10. conducting structures, vacuum/BEM, coils and external circuits.
+6. weak/current-sheet ideal MHD with the function-space contract of
+   [equilibria-inference.md](docs/equilibria-inference.md#solution-space-contract)
+   (broken/interface FEEC, B in H(div), interface-aware J = curl B);
+7. native MRxMHD, with SPEC/SPECTRE as comparators;
+8. a native nested-surface fast path: a spectral/surface representation of the
+   same physics residual, not only VMEC/DESC/GVEC imports;
+9. flowing/rotating stationary MHD equilibria;
+10. anisotropic/tensor-pressure equilibria (CGL, then kinetic-MHD; ANIMEC as
+    comparator);
+11. explicit comparison with HINT/PIES-like nonnested full-pressure relaxation
+    and MRX/Zhang--Zhu--Hegna-type non-nested solvers, within matched models;
+12. resistive-MHD and Hall/XMHD stationary/evolution paths where reconnection and
+    history are part of the selected physics;
+13. kinetic-MHD and kinetic continuation where pressure/current closure is no
+    longer adequately fluid;
+14. ideal/resistive linear response, eigenmodes and nonlinear stability through
+    the common S0 consumer;
+15. conducting structures, vacuum/BEM, coils and external circuits.
+
+Milestone: general 3D free-boundary physical-space equilibrium with
+islands/stochastic regions.
+
+Ambition: the broadest framework, with near-best-in-class performance per
+regime through specialised representations, not one discretisation for
+everything. MRX is the main performance target for the non-nested branch.
+Dispatch picks the cheapest valid representation:
+
+| Physics/topology | Representation |
+|---|---|
+| smooth nested | surface/spectral fast path |
+| unusual nested geometry | mapped surface |
+| smooth islands / non-nested ideal | physical-space FEEC |
+| current sheets | broken/interface FEEC |
+| chaotic relaxed regions | MRxMHD |
+| reconnection | resistive |
+| Hall | Hall/XMHD |
+| anisotropic pressure | CGL/kinetic-MHD |
+| strong flow | flowing MHD |
+| kinetic closure | DK/GK/FK |
+| free boundary | plasma + BEM vacuum + coils/circuits |
 
 For static smooth ideal MHD, retain the actual constraint
 \(B\cdot\nabla p=0\): removing the nested-surface representation does not
@@ -692,7 +723,7 @@ state/continuation provenance; no general probabilistic branch machinery belongs
 in KIN6D.
 
 ARES/MEPHIT/MARS/GPEC and later JOREK/NIMROD-type cases remain response and
-evolution landmarks. VMEC/DESC/GVEC, HINT/PIES and SPEC/SPECTRE are equilibrium
+evolution landmarks. VMEC/DESC/GVEC, MRX, HINT/PIES and SPEC/SPECTRE are equilibrium
 comparators with different model assumptions. Do not reimplement their entire
 feature sets before a KIN6D use case requires a shared capability.
 
