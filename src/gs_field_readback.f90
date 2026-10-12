@@ -34,10 +34,12 @@ contains
         if (.not. ieee_is_finite(f)) return
         degree = state%element_order
         if (degree < 2) then
+            !$omp parallel do default(shared) private(i) schedule(static)
             do i = 1, size(points, 2)
                 call sample_gs(state, points(1, i), points(2, i), f, &
                     values(1, i), values(2, i), values(3, i), values(4, i), statuses(i))
             end do
+            !$omp end parallel do
             return
         end if
         locator%npoints = size(state%points, 2)
@@ -90,6 +92,12 @@ contains
             end do
         end do
         seed = 1
+        ! Queries are independent; the locator is read-only here. Each thread
+        ! walks from its own previous cell.
+        !$omp parallel do default(shared) schedule(static) firstprivate(seed) &
+        !$omp& private(i, cell, location, local, grad, hessian, query, k, a, b, e, &
+        !$omp& ambiguous, crossings, xmin, xmax, ymin, ymax, dx, dy, edge_len2, &
+        !$omp& fraction, rx, ry, side, upward, downward)
         do i = 1, size(points, 2)
             if (.not. all(ieee_is_finite(points(:, i)))) cycle
             call locate_point(locator, points(1, i), points(2, i), cell, location, seed)
@@ -173,5 +181,6 @@ contains
             call sample_gs(state, points(1, i), points(2, i), f, &
                 values(1, i), values(2, i), values(3, i), values(4, i), statuses(i))
         end do
+        !$omp end parallel do
     end subroutine
 end module

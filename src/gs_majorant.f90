@@ -2,7 +2,7 @@ module kin6d_gs_majorant
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
-                                  gs_linear_response
+                                  gs_linear_response, gs_recovery_t
     use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp
     use kin6d_triangle_basis, only: triangle_bernstein_controls
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
@@ -10,7 +10,7 @@ module kin6d_gs_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK, &
         KRYLOV_MAX_ITERATIONS
-    use kin6d_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_apply_full
+    use kin6d_gs_csr, only: gs_csr_build, gs_csr_apply_full
     use kin6d_gs_options, only: gs_use_direct
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
@@ -38,18 +38,15 @@ contains
         procedure(gs_forcing_t), optional :: forcing
         logical, intent(in), optional :: estimate_stability
         real(dp), intent(out), optional :: stability_estimate
-        real(dp), allocatable :: x(:), y(:), w(:), matrix(:, :, :)
-        real(dp), allocatable :: rhs(:), recovered(:), diagonal(:)
-        integer, allocatable :: indices(:, :)
-        real(dp), allocatable :: shape(:), gradients(:, :), hessians(:, :, :)
-        real(dp), allocatable :: local(:, :), d(:), bezier(:, :)
+        real(dp), allocatable :: x(:), y(:), w(:)
+        real(dp), allocatable :: rhs(:), recovered(:), rhs_local(:, :)
         real(dp), allocatable :: source_mass(:, :, :)
-        real(dp) :: point(2), det
-        real(dp) :: grad(2), source, weight, cf2, lo(2), hi(2)
-        real(dp) :: flux(2), divergence, residual, pp, ff, psi
-        real(dp) :: dpp, dff, derivative, alpha
-        logical :: practical, solved
-        integer :: e, q, j, k, a, b, row, col, n, iterations, ndof
+        type(gs_recovery_t), pointer :: rec
+        type(gs_recovery_t), target :: local_rec
+        real(dp) :: cf2, lo(2), hi(2), residual, alpha, signature
+        real(dp) :: flux_sum, balance_sum
+        logical :: practical, solved, build, cached
+        integer :: e, j, n, iterations, ndof, nel, failed_element, failed_status
         majorant = huge(1.0_dp); flux_defect = 0; balance_defect = 0
         status = 1
         practical = .false.
@@ -69,83 +66,163 @@ contains
             allocate (source_mass(ndof, ndof, size(state%triangles, 2)))
             source_mass = 0
         end if
-        allocate (shape(ndof), gradients(2, ndof), hessians(2, 2, ndof), &
-            local(2, ndof), d(ndof), bezier(2, ndof))
+        nel = size(state%triangles, 2)
         if (any(abs(pack(state%psi, state%boundary)) > tiny(1.0_dp))) return
         if (mu0 <= 0) return
         if (.not. all(ieee_is_finite([mu0, pprime, ffprime]))) return
-        lo = huge(1.0_dp); hi = -huge(1.0_dp)
-        do e = 1, size(state%triangles, 2)
-            bezier = state%points(:, state%triangles(:, e))
-            do j = 1, 2
-                call triangle_bernstein_controls( &
-                    state%points(j, state%triangles(:, e)), bezier(j, :))
-            end do
-            lo = min(lo, minval(bezier, dim=2))
-            hi = max(hi, maxval(bezier, dim=2))
-        end do
-        if (lo(1) <= 0 .or. any(hi <= lo)) return
-        ! Zero extension to the enclosing rectangle gives this Poincare bound.
-        cf2 = hi(1)/(acos(-1.0_dp)**2*sum(1/(hi - lo)**2))
+        cached = associated(state%recovery)
+        if (cached) then
+            rec => state%recovery
+        else
+            rec => local_rec
+        end if
+        signature = sum(state%points) + sum(state%area)
+        build = .true.
+        if (rec%ready) build = rec%nodes /= size(state%psi) .or. rec%cells /= nel &
+            .or. rec%order /= state%element_order &
+            .or. abs(rec%signature - signature) > 0
+        if (build) then
+            ! Mesh-only part: the Poincare constant of the enclosing box.
+            lo = huge(1.0_dp); hi = -huge(1.0_dp)
+            !$omp parallel default(shared)
+            block
+                real(dp) :: bezier(2, ndof), block_lo(2), block_hi(2)
+                integer :: ie, jj
+                block_lo = huge(1.0_dp); block_hi = -huge(1.0_dp)
+                !$omp do schedule(static)
+                do ie = 1, nel
+                    bezier = state%points(:, state%triangles(:, ie))
+                    do jj = 1, 2
+                        call triangle_bernstein_controls( &
+                            state%points(jj, state%triangles(:, ie)), bezier(jj, :))
+                    end do
+                    block_lo = min(block_lo, minval(bezier, dim=2))
+                    block_hi = max(block_hi, maxval(bezier, dim=2))
+                end do
+                !$omp end do
+                !$omp critical(gs_majorant_box)
+                lo = min(lo, block_lo)
+                hi = max(hi, block_hi)
+                !$omp end critical(gs_majorant_box)
+            end block
+            !$omp end parallel
+            if (lo(1) <= 0 .or. any(hi <= lo)) return
+            ! Zero extension to the enclosing rectangle gives this Poincare bound.
+            cf2 = hi(1)/(acos(-1.0_dp)**2*sum(1/(hi - lo)**2))
+        else
+            cf2 = rec%cf2
+        end if
         n = 2*size(state%psi)
-        allocate (rhs(n), recovered(n), diagonal(n), &
-            matrix(2*ndof, 2*ndof, size(state%triangles, 2)), &
-            indices(2*ndof, size(state%triangles, 2)))
-        rhs = 0; diagonal = 0; matrix = 0; recovered = 0
+        if (build) then
+            rec%ready = .false.
+            call gs_direct_free(rec%factor)
+            if (allocated(rec%matrix)) deallocate (rec%matrix)
+            if (allocated(rec%indices)) deallocate (rec%indices)
+            if (allocated(rec%diagonal)) deallocate (rec%diagonal)
+            allocate (rec%matrix(2*ndof, 2*ndof, nel), rec%indices(2*ndof, nel), &
+                      rec%diagonal(n))
+            rec%matrix = 0; rec%diagonal = 0
+        end if
+        allocate (rhs(n), recovered(n), rhs_local(2*ndof, nel))
+        rhs = 0; recovered = 0; rhs_local = 0
         call triangle_duffy_quadrature(8, x, y, w, status)
         if (status /= 0) return
-        do e = 1, size(state%triangles, 2)
-            do j = 1, ndof
-                indices(2*j - 1:2*j, e) = &
-                    [2*state%triangles(j, e) - 1, 2*state%triangles(j, e)]
-            end do
-            d = state%psi(state%triangles(:, e)) - state%psi(state%triangles(1, e))
-            do q = 1, size(w)
-                call gs_cell_data(state, e, [x(q), y(q)], point, det, shape, &
-                    gradients, hessians, status)
-                if (status /= 0) return
-                weight = w(q)*det
-                grad = matmul(gradients, d)
-                pp = pprime; ff = ffprime
-                if (present(law)) then
-                    psi = state%psi(state%triangles(1, e)) + dot_product(shape, d)
-                    if (practical) then
-                        call gs_law_sources(law, psi, pp, ff, dpp, dff)
-                        call gs_source_jvp(point(1), mu0, pp, ff, &
-                            0.0_dp, 0.0_dp, dpp, dff, derivative)
-                        do k = 1, ndof
-                            do j = 1, ndof
-                                source_mass(j, k, e) = source_mass(j, k, e) &
-                                    + weight*max(0.0_dp, derivative)*shape(j)*shape(k)
-                            end do
-                        end do
-                    else
-                        call gs_law_sources(law, psi, pp, ff)
-                    end if
+        failed_element = huge(1); failed_status = 1
+        !$omp parallel default(shared)
+        block
+            real(dp) :: shape(ndof), gradients(2, ndof), hessians(2, 2, ndof)
+            real(dp) :: d(ndof), point(2), det, grad(2), source, weight, pp, ff, psi
+            real(dp) :: dpp, dff, derivative
+            integer :: ie, q, jj, kk, aa, bb, row, col, stat, snapshot
+            !$omp do schedule(static)
+            do ie = 1, nel
+                !$omp atomic read
+                snapshot = failed_element
+                if (ie > snapshot) cycle
+                if (build) then
+                    do jj = 1, ndof
+                        rec%indices(2*jj - 1:2*jj, ie) = &
+                            [2*state%triangles(jj, ie) - 1, 2*state%triangles(jj, ie)]
+                    end do
                 end if
-                call gs_source(point(1), mu0, pp, ff, source)
-                if (present(forcing)) source = source + forcing(point(1), point(2))
-                do j = 1, ndof
-                    do a = 1, 2
-                        row = 2*(j - 1) + a
-                        rhs(indices(row, e)) = rhs(indices(row, e)) + weight &
-                            *(shape(j)*grad(a) - cf2*source*gradients(a, j))
-                        do k = 1, ndof
-                            do b = 1, 2
-                                col = 2*(k - 1) + b
-                                matrix(row, col, e) = matrix(row, col, e) &
-                                    + weight*cf2*gradients(a, j)*gradients(b, k)
-                                if (a == b) matrix(row, col, e) = matrix(row, col, e) &
-                                    + weight*point(1)*shape(j)*shape(k)
+                d = state%psi(state%triangles(:, ie)) &
+                    - state%psi(state%triangles(1, ie))
+                do q = 1, size(w)
+                    call gs_cell_data(state, ie, [x(q), y(q)], point, det, shape, &
+                        gradients, hessians, stat)
+                    if (stat /= 0) then
+                        call record_failure(ie, stat)
+                        exit
+                    end if
+                    weight = w(q)*det
+                    grad = matmul(gradients, d)
+                    pp = pprime; ff = ffprime
+                    if (present(law)) then
+                        psi = state%psi(state%triangles(1, ie)) + dot_product(shape, d)
+                        if (practical) then
+                            call gs_law_sources(law, psi, pp, ff, dpp, dff)
+                            call gs_source_jvp(point(1), mu0, pp, ff, &
+                                0.0_dp, 0.0_dp, dpp, dff, derivative)
+                            do kk = 1, ndof
+                                do jj = 1, ndof
+                                    source_mass(jj, kk, ie) = source_mass(jj, kk, ie) &
+                                        + weight*max(0.0_dp, derivative) &
+                                        *shape(jj)*shape(kk)
+                                end do
+                            end do
+                        else
+                            call gs_law_sources(law, psi, pp, ff)
+                        end if
+                    end if
+                    call gs_source(point(1), mu0, pp, ff, source)
+                    if (present(forcing)) source = source + forcing(point(1), point(2))
+                    do jj = 1, ndof
+                        do aa = 1, 2
+                            row = 2*(jj - 1) + aa
+                            rhs_local(row, ie) = rhs_local(row, ie) + weight &
+                                *(shape(jj)*grad(aa) - cf2*source*gradients(aa, jj))
+                            if (.not. build) cycle
+                            do kk = 1, ndof
+                                do bb = 1, 2
+                                    col = 2*(kk - 1) + bb
+                                    rec%matrix(row, col, ie) = &
+                                        rec%matrix(row, col, ie) &
+                                        + weight*cf2*gradients(aa, jj)*gradients(bb, kk)
+                                    if (aa == bb) rec%matrix(row, col, ie) = &
+                                        rec%matrix(row, col, ie) &
+                                        + weight*point(1)*shape(jj)*shape(kk)
+                                end do
                             end do
                         end do
                     end do
                 end do
             end do
+            !$omp end do
+        end block
+        !$omp end parallel
+        if (failed_element /= huge(1)) then
+            status = failed_status
+            return
+        end if
+        ! Ordered gather: the sums do not depend on the thread count.
+        do e = 1, nel
             do j = 1, 2*ndof
-                diagonal(indices(j, e)) = diagonal(indices(j, e)) + matrix(j, j, e)
+                rhs(rec%indices(j, e)) = rhs(rec%indices(j, e)) + rhs_local(j, e)
             end do
+            if (build) then
+                do j = 1, 2*ndof
+                    rec%diagonal(rec%indices(j, e)) = rec%diagonal(rec%indices(j, e)) &
+                        + rec%matrix(j, j, e)
+                end do
+            end if
         end do
+        if (build) then
+            call gs_csr_build(rec%system, rec%indices, rec%matrix, n)
+            rec%nodes = size(state%psi); rec%cells = nel
+            rec%order = state%element_order
+            rec%signature = signature; rec%cf2 = cf2
+            rec%ready = .true.
+        end if
         if (present(recovery_converged)) recovery_converged = .true.
         if (norm2(rhs) > tiny(1.0_dp)) then
             solved = .false.
@@ -171,29 +248,53 @@ contains
                 return
             end if
         end if
-        do e = 1, size(state%triangles, 2)
-            local = reshape(recovered(indices(:, e)), [2, ndof])
-            d = state%psi(state%triangles(:, e)) - state%psi(state%triangles(1, e))
-            do q = 1, size(w)
-                call gs_cell_data(state, e, [x(q), y(q)], point, det, shape, &
-                    gradients, hessians, status)
-                if (status /= 0) return
-                weight = w(q)*det
-                grad = matmul(gradients, d)
-                flux = matmul(local, shape)
-                divergence = sum(local*gradients)
-                pp = pprime; ff = ffprime
-                if (present(law)) then
-                    psi = state%psi(state%triangles(1, e)) + dot_product(shape, d)
-                    call gs_law_sources(law, psi, pp, ff)
-                end if
-                call gs_source(point(1), mu0, pp, ff, source)
-                if (present(forcing)) source = source + forcing(point(1), point(2))
-                flux_defect = flux_defect + weight*point(1) &
-                    *sum((flux - grad/point(1))**2)
-                balance_defect = balance_defect + weight*(source + divergence)**2
+        flux_sum = 0; balance_sum = 0
+        failed_element = huge(1); failed_status = 1
+        !$omp parallel default(shared)
+        block
+            real(dp) :: shape(ndof), gradients(2, ndof), hessians(2, 2, ndof)
+            real(dp) :: d(ndof), local(2, ndof), point(2), det, grad(2), source
+            real(dp) :: weight, flux(2), divergence, pp, ff, psi
+            integer :: ie, q, stat, snapshot
+            !$omp do schedule(static) reduction(+: flux_sum, balance_sum)
+            do ie = 1, nel
+                !$omp atomic read
+                snapshot = failed_element
+                if (ie > snapshot) cycle
+                local = reshape(recovered(rec%indices(:, ie)), [2, ndof])
+                d = state%psi(state%triangles(:, ie)) &
+                    - state%psi(state%triangles(1, ie))
+                do q = 1, size(w)
+                    call gs_cell_data(state, ie, [x(q), y(q)], point, det, shape, &
+                        gradients, hessians, stat)
+                    if (stat /= 0) then
+                        call record_failure(ie, stat)
+                        exit
+                    end if
+                    weight = w(q)*det
+                    grad = matmul(gradients, d)
+                    flux = matmul(local, shape)
+                    divergence = sum(local*gradients)
+                    pp = pprime; ff = ffprime
+                    if (present(law)) then
+                        psi = state%psi(state%triangles(1, ie)) + dot_product(shape, d)
+                        call gs_law_sources(law, psi, pp, ff)
+                    end if
+                    call gs_source(point(1), mu0, pp, ff, source)
+                    if (present(forcing)) source = source + forcing(point(1), point(2))
+                    flux_sum = flux_sum + weight*point(1) &
+                        *sum((flux - grad/point(1))**2)
+                    balance_sum = balance_sum + weight*(source + divergence)**2
+                end do
             end do
-        end do
+            !$omp end do
+        end block
+        !$omp end parallel
+        if (failed_element /= huge(1)) then
+            status = failed_status
+            return
+        end if
+        flux_defect = flux_sum; balance_defect = balance_sum
         flux_defect = sqrt(flux_defect)
         balance_defect = sqrt(cf2*balance_defect)
         majorant = flux_defect + balance_defect
@@ -222,45 +323,55 @@ contains
             end if
         end if
     contains
+        subroutine record_failure(element, code)
+            ! The lowest failing element decides the status, as in a serial pass.
+            integer, intent(in) :: element, code
+            !$omp critical(gs_majorant_failure)
+            if (element < failed_element) then
+                failed_element = element
+                failed_status = code
+            end if
+            !$omp end critical(gs_majorant_failure)
+        end subroutine
+
         subroutine direct_recovery(converged)
             ! The recovery system is symmetric positive definite: one Cholesky
-            ! factor, one back-substitution and iterative refinement. When the
-            ! factor or the refinement fails, the caller runs the CG path.
+            ! factor (cached with the mesh), one back-substitution and iterative
+            ! refinement. When the factor or the refinement fails, the caller
+            ! runs the CG path.
             logical, intent(out) :: converged
-            type(csr_matrix_t) :: system
-            type(gs_direct_t) :: factor
             real(dp), allocatable :: residual_vector(:), correction(:)
             real(dp) :: rnorm, previous, target
             logical :: ok
             integer :: sweep
             converged = .false.
             rnorm = huge(1.0_dp)
-            call gs_csr_build(system, indices, matrix, n)
-            call gs_direct_factor(factor, n, system%rowptr, system%colidx, &
-                                  system%val, ok)
-            if (.not. ok) then
-                call gs_direct_free(factor)
-                return
+            if (rec%factor%failed) return
+            if (.not. rec%factor%factored) then
+                call gs_direct_factor(rec%factor, n, rec%system%rowptr, &
+                                      rec%system%colidx, rec%system%val, ok)
+                if (.not. ok) return
             end if
             allocate (residual_vector(n), correction(n))
-            call gs_direct_solve(factor, rhs, recovered, ok)
+            call gs_direct_solve(rec%factor, rhs, recovered, ok)
             iterations = 1
             previous = huge(1.0_dp)
             target = 1.0e-11_dp*min(1.0_dp, norm2(rhs))
             do sweep = 0, 4
                 if (.not. ok) exit
-                call gs_csr_apply_full(system, recovered, residual_vector)
+                call gs_csr_apply_full(rec%system, recovered, residual_vector)
                 residual_vector = rhs - residual_vector
                 rnorm = norm2(residual_vector)
                 if (rnorm <= 1.0e-2_dp*target .or. sweep == 4) exit
                 if (rnorm > 0.5_dp*previous) exit
                 previous = rnorm
-                call gs_direct_solve(factor, residual_vector, correction, ok)
+                call gs_direct_solve(rec%factor, residual_vector, correction, ok)
                 recovered = recovered + correction
                 iterations = iterations + 1
             end do
             converged = ok .and. rnorm <= target
-            call gs_direct_free(factor)
+            ! An uncached (hand-built) state keeps no factor.
+            if (.not. cached) call gs_direct_free(rec%factor)
         end subroutine
 
         subroutine estimate_coercivity(alpha)
@@ -323,22 +434,24 @@ contains
             real(dp) :: value(2*ndof)
             integer :: cell, i, j
             output = 0
-            do cell = 1, size(indices, 2)
+            do cell = 1, size(rec%indices, 2)
                 value = 0
                 do j = 1, 2*ndof
                     do i = 1, 2*ndof
-                        value(i) = value(i) + matrix(i, j, cell)*input(indices(j, cell))
+                        value(i) = value(i) &
+                            + rec%matrix(i, j, cell)*input(rec%indices(j, cell))
                     end do
                 end do
                 do i = 1, 2*ndof
-                    output(indices(i, cell)) = output(indices(i, cell)) + value(i)
+                    output(rec%indices(i, cell)) = &
+                        output(rec%indices(i, cell)) + value(i)
                 end do
             end do
         end subroutine
         subroutine precondition(input, output)
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
-            output = input/diagonal
+            output = input/rec%diagonal
         end subroutine
     end subroutine
 end module
