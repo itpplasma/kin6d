@@ -1018,8 +1018,8 @@ contains
         real(dp) :: pp, ff, tol, damping, old_norm, new_norm, load_tolerance
         real(dp) :: work_tolerance, next_tolerance, previous_axis, clock, start_s
         character(160) :: line
-        integer :: iteration, backtrack
-        logical :: reuse_jacobian
+        real(dp) :: stall_norm
+        integer :: iteration, backtrack, stalled
         status = 1
         if (.not. state%ready .or. mu0 <= 0) return
         if (.not. ieee_is_finite(mu0)) return
@@ -1039,6 +1039,7 @@ contains
         allocate (rhs(size(state%psi)), action(size(state%psi)), &
            step(size(state%psi)), previous(size(state%psi)), trial_rhs(size(state%psi)))
         state%iterations = 0
+        stalled = 0; stall_norm = 0
         ! Algebraic convergence and source integration are separate controls.
         load_tolerance = 1.0e-8_dp
         if (present(quadrature_tolerance)) load_tolerance = quadrature_tolerance
@@ -1093,14 +1094,20 @@ contains
             call gs_profile_response(state, jacobian, action, step, status)
             if (status /= 0) return
             previous = state%psi; previous_axis = law%axis; damping = 1
-            reuse_jacobian = state%residual < 1.0e-3_dp
+            ! Exact Newton: every accepted iterate gets the Jacobian assembled
+            ! at that iterate. A Jacobian frozen at an earlier iterate (chord)
+            ! contracts only by |I - J_old^-1 J|; near a fold of the profile
+            ! problem (steep p'(s) pedestal) that factor approaches one and
+            ! the iteration stalls. The full step carries its Jacobian; a
+            ! backtracked trial loads the source only and the accepted one is
+            ! reassembled with its Jacobian.
             do backtrack = 0, 14
                 state%psi = previous + damping*step
                 clock = gs_wall_s()
                 call gs_cubic_load(state, mu0, law, trial_rhs, trial_jacobian, &
                                    status, work_tolerance, forcing, &
                                    max(work_tolerance, 1.0e-3_dp), &
-                                   load_only=reuse_jacobian)
+                                   load_only=backtrack > 0)
                 call gs_timer_add(GS_T_ASSEMBLY, gs_wall_s() - clock)
                 if (status == 0) then
                     call apply_gs(state, state%psi, action)
@@ -1114,12 +1121,37 @@ contains
                 status = 2
                 return
             end if
-            rhs = trial_rhs
-            if (.not. reuse_jacobian) then
+            ! Stagnation: three consecutive damped steps that together reduce
+            ! the residual norm by less than one percent approach a nonzero
+            ! minimum of the residual with a singular Jacobian (no solution of
+            ! this law nearby, e.g. beyond a fold). Report failure now
+            ! instead of spending the remaining iterations there.
+            if (backtrack == 0) then
+                stalled = 0
+            else
+                if (stalled == 0) stall_norm = old_norm
+                stalled = stalled + 1
+                if (stalled == 3) then
+                    if (new_norm > 0.99_dp*stall_norm) then
+                        status = 2
+                        return
+                    end if
+                    stalled = 0
+                end if
+            end if
+            if (backtrack == 0) then
+                rhs = trial_rhs
                 call move_alloc(trial_jacobian%mass, jacobian%mass)
                 call move_alloc(trial_jacobian%axis_load, jacobian%axis_load)
                 call move_alloc(trial_jacobian%axis_gradient, jacobian%axis_gradient)
                 call move_alloc(trial_jacobian%mval, jacobian%mval)
+            else
+                clock = gs_wall_s()
+                call gs_cubic_load(state, mu0, law, rhs, jacobian, status, &
+                                   work_tolerance, forcing, &
+                                   max(work_tolerance, 1.0e-3_dp))
+                call gs_timer_add(GS_T_ASSEMBLY, gs_wall_s() - clock)
+                if (status /= 0) return
             end if
         end do
         status = 2
