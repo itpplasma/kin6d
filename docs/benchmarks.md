@@ -100,6 +100,20 @@ equilibrium problem, not automatically stationary Vlasov–Maxwell–collisions.
 [Guazzotto and Freidberg](https://doi.org/10.1017/S002237782100009X)
 provide exact shaped equilibria and flux derivatives for this layer.
 
+[Landreman's analytic families (arXiv:2609.26742)](https://arxiv.org/abs/2609.26742)
+are exact 3D ideal-MHD equilibria with nested toroidal surfaces, not
+perturbative in aspect ratio or symmetry breaking:
+
+- Family 1 (uniform ι=2) is a constant linear stretch of a Solov'ev-type
+  axisymmetric field, with ψ and p = p_a − 2ψ in closed form.
+- Family 2 (sheared ι) is written in complex variables and avoids its branch
+  cut by the choice of domain.
+
+Both give B, J, p, ι and volume averages (|B|², β) in closed form. They test
+3D force balance, div B and the surface geometry for the nested and
+physical-space 3D solvers, and give the same oracle to VMEC++, DESC and
+GVEC. They do not test islands or stochastic regions.
+
 For large aspect ratio epsilon=a/R0 tending to zero, specify what remains
 fixed: q profile, collisionality normalization, gyroradius ratios, beta,
 profiles, and source/boundary data. Compare torus-to-cylinder geometry,

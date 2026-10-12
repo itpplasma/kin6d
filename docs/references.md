@@ -165,6 +165,14 @@ No equilibrium input or production benchmark has yet been selected.
 
 ## Analytical and bulk-model references
 
+- [Landreman 2026, arXiv:2609.26742](https://arxiv.org/abs/2609.26742) gives
+  analytic, non-axisymmetric toroidal MHD equilibria (steady Euler flows)
+  with exact nested surfaces. They are counterexamples to Grad's conjecture
+  and exact 3D benchmarks. Full text read 2026-10-12.
+- [Gómez-Serrano, Liehr and Taylor 2026, arXiv:2609.24739](https://arxiv.org/abs/2609.24739)
+  give a Lean-certified family of smooth counterexamples to Grad's conjecture
+  with cyclic symmetry. Abstract only; not yet read in full.
+
 The [Analytical Benchmark Atlas](benchmarks.md) identifies closed forms,
 semi-analytic evaluation, asymptotes, identities, and numerical comparisons.
 Guazzotto–Freidberg exact Grad–Shafranov geometry uses
