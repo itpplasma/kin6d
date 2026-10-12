@@ -82,7 +82,9 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_inv2_jvp_fortad.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_linalg.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90)
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_bvls.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_gsvd.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 target_link_libraries(kin6d_ode PUBLIC kin6d_intervals)
 # Generated derivative families retain the primal ABI even for constant partials.
@@ -244,7 +246,7 @@ else()
     target_sources(kin6d PRIVATE src/gs_direct_stub.f90)
 endif()
 target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90
-    src/gs_free_boundary.f90)
+    src/gs_free_boundary.f90 src/gs_coil_inverse.f90)
 # gs_coupling and gs_free_boundary threads come from the project-wide KIN6D_ENABLE_OPENMP option.
 add_executable(test_gs_coils test/test_gs_coils.f90)
 target_link_libraries(test_gs_coils PRIVATE kin6d)
@@ -272,6 +274,16 @@ add_test(NAME gs_free_boundary_t7_jacobian_finite_differences COMMAND test_gs_fb
 set_tests_properties(gs_free_boundary_t7_jacobian_finite_differences PROPERTIES TIMEOUT 900)
 add_executable(test_gs_fb_manufactured test/test_gs_fb_manufactured.f90)
 target_link_libraries(test_gs_fb_manufactured PRIVATE kin6d_gs_fb_test)
+add_library(kin6d_gs_ci_test STATIC test/support/gs_ci_fixture.f90)
+target_link_libraries(kin6d_gs_ci_test PUBLIC kin6d_gs_fb_test)
+add_executable(test_gs_coil_inverse test/test_gs_coil_inverse.f90)
+target_link_libraries(test_gs_coil_inverse PRIVATE kin6d_gs_ci_test)
+add_test(NAME gs_coil_inverse_t6_twin COMMAND test_gs_coil_inverse)
+set_tests_properties(gs_coil_inverse_t6_twin PROPERTIES TIMEOUT 1800)
+add_executable(test_gs_fb_refit test/test_gs_fb_refit.f90)
+target_link_libraries(test_gs_fb_refit PRIVATE kin6d_gs_fb_test)
+add_test(NAME gs_free_boundary_p8_refit_loop COMMAND test_gs_fb_refit)
+set_tests_properties(gs_free_boundary_p8_refit_loop PROPERTIES TIMEOUT 1800)
 add_executable(test_gs_fb_greens test/test_gs_fb_greens.f90)
 target_link_libraries(test_gs_fb_greens PRIVATE kin6d_gs_fb_test)
 if(OpenMP_Fortran_FOUND)
@@ -321,17 +333,19 @@ target_link_libraries(test_gs_inverse PRIVATE kin6d)
 add_executable(test_gs_prescribed_q test/test_gs_prescribed_q.f90)
 target_link_libraries(test_gs_prescribed_q PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_p3_convergence COMMAND test_gs_prescribed_q)
-set_tests_properties(grad_shafranov_prescribed_q_p3_convergence PROPERTIES TIMEOUT 300)
+set_tests_properties(grad_shafranov_prescribed_q_p3_convergence PROPERTIES
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_variable_p test/test_gs_prescribed_q_variable_p.f90)
 target_link_libraries(test_gs_prescribed_q_variable_p PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_variable_p COMMAND test_gs_prescribed_q_variable_p)
-set_tests_properties(grad_shafranov_prescribed_q_variable_p PROPERTIES TIMEOUT 900)
+set_tests_properties(grad_shafranov_prescribed_q_variable_p PROPERTIES
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
 add_test(NAME grad_shafranov_prescribed_q_e2 COMMAND test_gs_prescribed_q_circle 2)
 set_tests_properties(grad_shafranov_prescribed_q_e1 grad_shafranov_prescribed_q_e2
-    PROPERTIES TIMEOUT 900)
+    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME grad_shafranov_phase1_inverse_app COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_phase1> -DDECK=$<TARGET_FILE:test_gs_prescribed_q_circle>
     -DWORK=${CMAKE_BINARY_DIR}/phase1_inverse_app
@@ -852,6 +866,7 @@ add_executable(test_gs_direct test/test_gs_direct.f90)
 target_link_libraries(test_gs_direct PRIVATE kin6d)
 add_test(NAME grad_shafranov_csr_direct_newton_oracles COMMAND test_gs_direct)
 set_tests_properties(grad_shafranov_csr_direct_newton_oracles PROPERTIES
+    SKIP_RETURN_CODE 77
     TIMEOUT 600 ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_solver_work test/test_gs_solver_work.f90)
 target_link_libraries(test_gs_solver_work PRIVATE kin6d)
@@ -877,6 +892,14 @@ set_tests_properties(grad_shafranov_curved_readback PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(gs_phase1 app/gs_phase1.f90)
 target_link_libraries(gs_phase1 PRIVATE kin6d_io fortplot)
+add_executable(gs_free app/gs_free.f90)
+target_link_libraries(gs_free PRIVATE kin6d_io fortplot)
+add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_free> -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
+    -DWORK=${CMAKE_BINARY_DIR}/gs_free_app
+    -P ${CMAKE_SOURCE_DIR}/test/gs_free_app.cmake)
+set_tests_properties(gs_free_app_contract PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
 # The comparison producer is optional; the native solver needs no Python.
 
 add_executable(test_gs_readback_order test/test_gs_readback_order.f90)
