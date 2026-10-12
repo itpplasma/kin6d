@@ -130,6 +130,34 @@ if(NOT status EQUAL 0 OR NOT repeated STREQUAL "${single}${single}")
     message(FATAL_ERROR "streaming changed a field response or failed to stop on EOF")
 endif()
 
+# 2b. seed_file: a flux map sampled from the converged forward solution (points
+# outside Gamma_c filled from the nearest valid sample) restarts the same equilibrium.
+file(MAKE_DIRECTORY "${WORK}/seeded")
+execute_process(COMMAND "${Python3_EXECUTABLE}" -I -c "
+import subprocess, sys, math
+app, wd, pb, out = sys.argv[1:5]
+r = [1.6 + 0.05*i for i in range(57)]; z = [-2.0 + 0.05*j for j in range(81)]
+pts = [(a, b) for b in z for a in r]
+req = '%d\\n' % len(pts) + ''.join('%r %r\\n' % p for p in pts)
+txt = subprocess.run([app, '--evaluate', 'mesh.dat', '5', '0', 'profile-law.dat', pb], cwd=wd,
+                     input=req, capture_output=True, text=True, check=True).stdout.split()
+psi = [float(v) for v in txt[0::4]]
+good = [k for k, v in enumerate(psi) if not math.isnan(v)]
+for k, v in enumerate(psi):
+    if math.isnan(v):
+        a, b = pts[k]
+        psi[k] = psi[min(good, key=lambda g: (pts[g][0]-a)**2 + (pts[g][1]-b)**2)]
+with open(out, 'w') as f:
+    f.write('57 81\\n' + ' '.join(map(repr, r)) + '\\n' + ' '.join(map(repr, z)) + '\\n')
+    f.write('\\n'.join(map(repr, psi)) + '\\n')
+" "${APP}" "${WORK}/forward" "${pb}" "${WORK}/seeded/seed.dat" RESULT_VARIABLE seed_status)
+if(NOT seed_status EQUAL 0)
+    message(FATAL_ERROR "seed map could not be sampled")
+endif()
+run_app(seeded "currents=-10000.0,0.0, seed_file='seed.dat'" TRUE)
+summary_value("${WORK}/seeded/summary.dat" psi_bound seeded_pb)
+require_near("seeded restart reaches the same psi_b" "${seeded_pb}" "${pb}" 1e-7)
+
 # 3. Coil-inverse twin: constraints are the flux at four points of the forward
 # solution; every fit variant recovers the circuit currents from a displaced start.
 file(WRITE "${WORK}/forward/points.txt" "4\n2.9 0.2\n3.2 -0.3\n2.6 0.0\n3.1 0.5\n")

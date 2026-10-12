@@ -75,7 +75,7 @@ Units: m, A, Wb/rad. Flux is absolute with psi = 0 on the symmetry axis.
 | coils | `coil_file` (`gs_coils` text table), `currents(:)` (circuit currents, table order) |
 | profiles | `profile_file` (normalised law file, as `gs_phase1`), `mu0` |
 | LCFS | `lcfs_mode` = `xpoint`, `limiter`, `target_mean`; `cut_fraction`; `axis_guess`, `xpoint_guess`, `search_radius`; `points_file` (limiter or target points); `axis_sign` |
-| solve | `max_refits`, `refit_tolerance`, `newton_tolerance`, `quadrature_tolerance`, `max_newton_iterations`, `seed_amplitude` |
+| solve | `max_refits`, `refit_tolerance`, `newton_tolerance`, `quadrature_tolerance`, `max_newton_iterations`, `seed_amplitude`, `seed_file` (initial flux map: `nr nz`, R, Z, psi with R fastest; replaces the vacuum-plus-Gaussian seed) |
 | inverse | `fit` = `none`, `unconstrained`, `bounded`, `fixed_at_limit`; `constraints_file`; `lambda`; `reference_currents`, `n_reference`; `tie_a`, `tie_b`; `emulate_freegs`, `relaxation`, `max_fit_iterations`, `fit_step_tolerance` |
 | output | `mesh_file`, `profile_points` |
 
