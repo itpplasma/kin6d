@@ -92,7 +92,7 @@ again as an explicit kinetic stress.
 
 External equilibria are first-class inputs before every solver is reproduced
 internally. Adapters may support axisymmetric G-EQDSK/EFIT/CLISTE/CHEASE and
-3D VMEC/VMEC++/DESC/GVEC/SPEC/SPECTRE candidates, with explicit units, signs,
+3D VMEC/VMEC++/DESC/GVEC/MRX/SPEC/SPECTRE candidates, with explicit units, signs,
 topology and provenance. These are interchange representations or named-model
 candidates, not the ontology of equilibrium.
 
@@ -107,15 +107,25 @@ Internal progression is:
 \rightarrow
 {\rm nested\ 3D\ specialization\ and\ general\ physical\!\!\!-space\ 3D}
 \rightarrow
-{\rm resistive/XMHD/relaxed\ stationary\ states}
+{\rm weak/current\!-\!sheet,\ resistive/XMHD\ and\ MRxMHD\ stationary\ states}
 \rightarrow
 {\rm flowing/anisotropic/kinetic\ equilibrium}.
 \]
 
 Nested flux surfaces are exploited where they exist but are not required by the
-general physical-space model. HINT/PIES-like nonnested full-pressure methods and
-SPEC/SPECTRE relaxed-region models are comparators with different physical
-constraints, not alternate file readers for one identical problem.
+general physical-space model. The 3D solution classes (smooth ideal; weak ideal
+with current sheets in broken/interface FEEC spaces; resistive stationary;
+MRxMHD relaxed) are defined in
+[equilibria-inference.md](equilibria-inference.md#solution-space-contract), and
+the roadmap dispatch table maps physics/topology to the cheapest valid
+representation. MRX and the Zhang--Zhu--Hegna resistive solver are
+non-nested comparators; HINT/PIES-like nonnested full-pressure methods and
+SPEC/SPECTRE relaxed-region models have different physical constraints. None is
+an alternate file reader for one identical problem; compare codes only within
+a matched model lane ([benchmarks](benchmarks.md)). Flowing and
+anisotropic/tensor-pressure equilibria (CGL, then kinetic-MHD; ANIMEC as
+comparator) are separate model entries, not options of the isotropic static
+solver.
 
 An imported equilibrium is not certified merely because the producer reports a
 small force residual. KIN6D may certify an external candidate against its stated

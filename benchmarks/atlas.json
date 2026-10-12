@@ -1011,6 +1011,230 @@
       "reference_definition": "separate ARES, GPEC, MARS, MEPHIT and JOREK overlapping cases; no presumed full parity"
     },
     {
+      "id": "landreman_3d_nested",
+      "family": "mhd",
+      "reference_class": "E0",
+      "status": "planned",
+      "geometry": "two-field-period non-axisymmetric torus with exact nested surfaces; both analytic families",
+      "model_lane": "ideal nested",
+      "producers": [
+        "KIN6D",
+        "MRX",
+        "Zhang-Zhu-Hegna solver",
+        "VMEC++",
+        "DESC",
+        "GVEC"
+      ],
+      "observables": [
+        "errors in B, J and p",
+        "div B",
+        "force residual",
+        "iota",
+        "V",
+        "<B^2>",
+        "beta on an independent Cartesian mesh",
+        "convergence order",
+        "cost to reach accuracy"
+      ],
+      "reference_definition": "closed-form B, J, p, iota and volume averages of the cited analytic families; same oracle for every producer",
+      "reference_sources": [
+        "https://arxiv.org/abs/2609.26742"
+      ],
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
+      "id": "issan_3d_nonsymmetric",
+      "family": "mhd",
+      "reference_class": "E0",
+      "status": "planned",
+      "geometry": "non-stellarator-symmetric generalisation of the nested analytic families",
+      "model_lane": "ideal nested",
+      "producers": [
+        "KIN6D",
+        "MRX",
+        "VMEC++",
+        "DESC",
+        "GVEC"
+      ],
+      "observables": [
+        "errors in B, J and p",
+        "div B",
+        "force residual",
+        "iota",
+        "V",
+        "<B^2>",
+        "beta on an independent Cartesian mesh",
+        "convergence order",
+        "cost to reach accuracy"
+      ],
+      "reference_definition": "closed-form symmetry-breaking generalisation; activate only after the equations are read and re-derived (abstract only checked)",
+      "reference_sources": [
+        "https://arxiv.org/abs/2610.07304"
+      ],
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
+      "id": "rotating_ellipse_3d",
+      "family": "cross_code",
+      "reference_class": "X",
+      "status": "planned",
+      "geometry": "rotating-ellipse stellarator boundary, free or fixed boundary stated per run",
+      "model_lane": "ideal non-nested / weak (finite beta) or vacuum, stated per run",
+      "producers": [
+        "KIN6D",
+        "MRX",
+        "SPECTRE"
+      ],
+      "observables": [
+        "errors in B, J and p",
+        "div B",
+        "force residual",
+        "iota",
+        "V",
+        "island observables where present"
+      ],
+      "reference_definition": "pinned numerical result with stated uncertainty; MRX parameters to be confirmed (rotating ellipse not found in the MRX text read); SPECTRE section 3.4 is a free-boundary rotating ellipse",
+      "reference_sources": [
+        "https://arxiv.org/abs/2607.27135"
+      ],
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
+      "id": "finite_pressure_island",
+      "family": "cross_code",
+      "reference_class": "X",
+      "status": "planned",
+      "geometry": "finite-beta 3D torus with a pressure-driven or seeded island",
+      "model_lane": "ideal non-nested / weak, and resistive relaxed lane separately",
+      "producers": [
+        "KIN6D",
+        "Zhang-Zhu-Hegna solver",
+        "MRX",
+        "HINT where the equations match"
+      ],
+      "observables": [
+        "O- and X-point positions",
+        "island width",
+        "helical phase",
+        "iota on surviving surfaces",
+        "p profile across the island",
+        "energies",
+        "B.grad p",
+        "Poincare plots (diagnostic only)"
+      ],
+      "reference_definition": "matched-model numerical comparison; no producer is an oracle",
+      "reference_sources": [
+        "https://arxiv.org/abs/2412.18922",
+        "https://arxiv.org/abs/2510.26986"
+      ],
+      "topology_analysis_spec": "required before activation: integration length, initial points and thresholds; null until pinned",
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
+      "id": "stochastic_finite_pressure",
+      "family": "cross_code",
+      "reference_class": "X",
+      "status": "planned",
+      "geometry": "finite-beta 3D torus with a stochastic region",
+      "model_lane": "resistive relaxed; ideal non-nested only where the model admits it",
+      "producers": [
+        "KIN6D",
+        "Zhang-Zhu-Hegna solver",
+        "HINT",
+        "PIES"
+      ],
+      "observables": [
+        "surviving tori",
+        "island widths",
+        "field-line excursion and diffusion",
+        "connection lengths",
+        "classified volume fractions",
+        "p variation along lines",
+        "pressure flattening",
+        "Poincare plots (diagnostic only)"
+      ],
+      "reference_definition": "matched-model numerical comparison; B.grad p=0 forces constant p on ergodic connected regions in ideal models",
+      "reference_sources": [
+        "https://arxiv.org/abs/2412.18922"
+      ],
+      "topology_analysis_spec": "required before activation: integration length, initial points and thresholds; null until pinned",
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
+      "id": "mrxmhd_island_chaos",
+      "family": "cross_code",
+      "reference_class": "X",
+      "status": "planned",
+      "geometry": "multi-region relaxed 3D torus with island and chaotic layers",
+      "model_lane": "MRxMHD",
+      "producers": [
+        "KIN6D-MRxMHD",
+        "SPEC",
+        "SPECTRE"
+      ],
+      "observables": [
+        "O- and X-point positions",
+        "island width",
+        "helical phase",
+        "iota on surviving surfaces",
+        "p profile across the island",
+        "energies",
+        "B.grad p",
+        "Poincare plots (diagnostic only)",
+        "classified volume fractions"
+      ],
+      "reference_definition": "matched interfaces, invariants (flux, helicity) and pressure steps; relaxed-state comparison only",
+      "reference_sources": [
+        "https://arxiv.org/abs/2607.27135"
+      ],
+      "topology_analysis_spec": "required before activation: integration length, initial points and thresholds; null until pinned",
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
+      "id": "free_boundary_3d_nonnested",
+      "family": "cross_code",
+      "reference_class": "X",
+      "status": "planned",
+      "geometry": "free-boundary 3D plasma with coils and vacuum region, islands allowed",
+      "model_lane": "MRxMHD and ideal non-nested/weak, separate lanes",
+      "producers": [
+        "SPECTRE",
+        "KIN6D"
+      ],
+      "observables": [
+        "O- and X-point positions",
+        "island width",
+        "helical phase",
+        "iota on surviving surfaces",
+        "p profile across the island",
+        "energies",
+        "B.grad p",
+        "Poincare plots (diagnostic only)",
+        "boundary location",
+        "coil/vacuum field consistency"
+      ],
+      "reference_definition": "matched coils, boundary conditions and model lane",
+      "reference_sources": [
+        "https://arxiv.org/abs/2607.27135"
+      ],
+      "topology_analysis_spec": "required before activation: integration length, initial points and thresholds; null until pinned",
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
       "id": "cartesian_mapped_geometry",
       "family": "geometry",
       "reference_class": "I",

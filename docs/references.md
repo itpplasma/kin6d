@@ -172,6 +172,9 @@ No equilibrium input or production benchmark has yet been selected.
 - [Gómez-Serrano, Liehr and Taylor 2026, arXiv:2609.24739](https://arxiv.org/abs/2609.24739)
   give a Lean-certified family of smooth counterexamples to Grad's conjecture
   with cyclic symmetry. Abstract only; not yet read in full.
+- [Issan, Citrin, Landreman and Tracey 2026, arXiv:2610.07304](https://arxiv.org/abs/2610.07304)
+  (v1, 5 Oct 2026) generalise both Landreman families with a symmetry-breaking
+  parameter (no stellarator symmetry). Abstract only.
 
 The [Analytical Benchmark Atlas](benchmarks.md) identifies closed forms,
 semi-analytic evaluation, asymptotes, identities, and numerical comparisons.
@@ -194,6 +197,46 @@ to the external corpus under the [literature policy](literature-policy.md).
 Metadata resolution, lawful OA provenance, attachment hashes, review queues
 and Zotero imports are outside the solver repository. DOI metadata and a PDF
 download do not substitute for reading and checking a benchmark's assumptions.
+
+## Three-dimensional equilibrium comparators
+
+Checked 2026-10-12; "abstract" means the arXiv/Crossref abstract or metadata
+only.
+
+- [Blickhan, Stratton and Kaptanoglu, arXiv:2510.26986](https://arxiv.org/abs/2510.26986),
+  "MRX: A differentiable 3D MHD equilibrium solver without nested flux
+  surfaces" (v1 30 Oct 2025, v3 28 Sep 2026). Abstract plus HTML v3 §1.2 and
+  table of contents read: JAX, spline FEEC, VMEC and manufactured-solution
+  checks, autodiff shape derivatives, finite-β islands, inexact Newton, high-
+  resolution islands and chaos in minutes on one GPU. VMEC, GVEC and DESC are
+  stated to assume nested flux surfaces.
+- [Zhang, Zhu and Hegna, arXiv:2412.18922](https://arxiv.org/abs/2412.18922)
+  (25 Dec 2024), published as Computer Physics Communications 320, 109961
+  (March 2026), [DOI 10.1016/j.cpc.2025.109961](https://doi.org/10.1016/j.cpc.2025.109961)
+  (Crossref metadata). Abstract: hybrid spectral/finite-element resistive
+  finite-pressure solver without nested surfaces, isoparametric C¹ triangles
+  times toroidal Fourier modes; stellarator, helical-core tokamak and RFP
+  quasi-single-helicity cases. Whether it reports islands or stochastic
+  regions is not established from the abstract.
+- [Balkovic et al., arXiv:2607.27135](https://arxiv.org/abs/2607.27135),
+  "SPECTRE: A robust solver for 3D equilibria with arbitrary topology"
+  (29 Jul 2026). Abstract and section list read: MRxMHD, fixed and free
+  boundary, QA vacuum, free-boundary W7-X vacuum, classical-stellarator
+  finite-β free boundary, rotating-ellipse free boundary, finite-β QI with a
+  core island compared with HINT.
+- [Hudson et al., Phys. Plasmas 19, 112502 (2012)](https://doi.org/10.1063/1.4765691),
+  "Computation of multi-region relaxed magnetohydrodynamic equilibria"
+  (stepped-pressure SPEC; abstract).
+- [Cooper et al., Comput. Phys. Commun. 180, 1524 (2009)](https://doi.org/10.1016/j.cpc.2009.04.006),
+  "Three-dimensional anisotropic pressure free boundary equilibria" (ANIMEC;
+  Crossref metadata only).
+- HINT/HINT2 and PIES: Hayashi et al., Contrib. Plasma Phys. 42, 309 (2002),
+  "Island formation for finite pressure equilibria in non-axisymmetric tori
+  obtained by the HINT code" (title); Suzuki et al., Nucl. Fusion 46, L19
+  (2006), HINT2 (abstract); "Pressure-induced breaking of equilibrium flux surfaces in the W7AS
+  stellarator", Nucl. Fusion (2007), chaotic regions (abstract; the code is
+  not named there); Salas et al. 2004, TJ-II with PIES (title). Island and stochastic
+  capability is taken from these records only.
 
 ## Cartesian maps, edge data and broader scope
 

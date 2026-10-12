@@ -114,6 +114,45 @@ Both give B, J, p, ι and volume averages (|B|², β) in closed form. They test
 physical-space 3D solvers, and give the same oracle to VMEC++, DESC and
 GVEC. They do not test islands or stochastic regions.
 
+## Three-dimensional equilibrium programme (planned)
+
+[Issan et al. (arXiv:2610.07304)](https://arxiv.org/abs/2610.07304) add a
+symmetry-breaking parameter to both Landreman families, giving exact nested
+benchmarks without stellarator symmetry (abstract checked only; equations are
+re-derived before activation). Non-nested cases are cross-code (X) and named
+after the physics problem:
+
+| Case | Class | Model lane | Producers |
+|---|---|---|---|
+| landreman_3d_nested | E0 | ideal nested | KIN6D, MRX, Zhang--Zhu--Hegna, VMEC++, DESC, GVEC |
+| issan_3d_nonsymmetric | E0 | ideal nested | KIN6D, MRX, VMEC++, DESC, GVEC |
+| rotating_ellipse_3d | X | ideal non-nested/weak or vacuum | KIN6D, MRX, SPECTRE |
+| finite_pressure_island | X | ideal non-nested/weak; resistive relaxed | KIN6D, Zhang--Zhu--Hegna, MRX/HINT where equations match |
+| stochastic_finite_pressure | X | resistive relaxed | KIN6D, Zhang--Zhu--Hegna, HINT/PIES |
+| mrxmhd_island_chaos | X | MRxMHD | KIN6D-MRxMHD, SPEC/SPECTRE |
+| free_boundary_3d_nonnested | X | MRxMHD; ideal non-nested/weak | SPECTRE, KIN6D |
+
+Compare codes only within one model lane (ideal nested; ideal non-nested/weak;
+resistive relaxed; MRxMHD). A result from another lane is context, not a
+reference.
+
+Observables by class:
+
+- E0: errors in B, J and p; div B; force residual; ι; V; ⟨B²⟩; β, all on an
+  independent Cartesian mesh; convergence order and cost to reach accuracy.
+- Islands: O- and X-point positions, island width, helical phase, ι on
+  surviving surfaces, p profile across the island, energies and B·∇p. Poincaré
+  plots are diagnostic only.
+- Stochastic: surviving tori, island widths, field-line excursion and
+  diffusion, connection lengths, classified volume fractions, p variation
+  along lines, and pressure flattening.
+
+Every island or stochastic case needs a topology-analysis specification before
+activation: integration length, initial points and thresholds. The first
+Zhang--Zhu--Hegna case reproduces one of its published cases verbatim (data
+from the paper, pinned before activation). All entries are planned; the atlas
+nulls are resolved at activation.
+
 For large aspect ratio epsilon=a/R0 tending to zero, specify what remains
 fixed: q profile, collisionality normalization, gyroradius ratios, beta,
 profiles, and source/boundary data. Compare torus-to-cylinder geometry,

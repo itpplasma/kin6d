@@ -65,9 +65,26 @@ KIN6D equilibrium definition.
 
 The general physical-space formulation must remain valid through islands,
 stochastic/ergodic regions, separatrices and wall contact. Reference families
-with different assumptions include VMEC/DESC/GVEC for nested equilibria,
-HINT/PIES-like nonnested full-pressure methods, and SPEC/SPECTRE for
-multi-region relaxed MHD.
+with different assumptions:
+
+- VMEC/DESC/GVEC assume nested flux surfaces
+  ([MRX §1.2](https://arxiv.org/abs/2510.26986) says so for VMEC, GVEC and
+  DESC) and are the nested-equilibrium references.
+- [MRX](https://arxiv.org/abs/2510.26986) (Blickhan, Stratton, Kaptanoglu) is
+  the closest structure-preserving, differentiable, physical-space comparator:
+  FEEC splines, relaxation and inexact Newton, finite-β islands and chaos.
+  It is the performance target for the non-nested branch.
+- The resistive finite-pressure solver of
+  [Zhang, Zhu and Hegna](https://arxiv.org/abs/2412.18922) (CPC 320,
+  109961, 2026) is the closest resistive non-nested comparator: isoparametric C¹ triangles
+  in the poloidal plane times toroidal Fourier modes, no nested-surface
+  assumption.
+- HINT/HINT2 and PIES are earlier nonnested full-pressure iterations.
+- SPEC and [SPECTRE](https://arxiv.org/abs/2607.27135) solve the multi-region
+  relaxed MHD (MRxMHD) model, which has stepped pressure and a different
+  constraint set.
+- ANIMEC ([Cooper et al., CPC 180, 1524, 2009](https://doi.org/10.1016/j.cpc.2009.04.006))
+  is the 3D free-boundary anisotropic-pressure comparator.
 
 Dropping nested surfaces does not drop ideal-MHD force balance. For smooth
 static ideal MHD,
@@ -96,6 +113,39 @@ Existence is therefore not an obstruction in principle. Whether a given
 boundary and set of profiles admits a smooth nested solution, and what happens
 on rational surfaces with sheared ι, stay case-specific questions. The
 analytic families serve as exact 3D benchmarks ([benchmarks](benchmarks.md)).
+
+## Solution-space contract
+
+State which of four classes a 3D computation targets; the class fixes the
+function space, the residual and what "converged" means.
+
+| Class | Solutions | Space and residual |
+|---|---|---|
+| (a) Smooth ideal | Smooth B, p with J×B=∇p, B·∇p=0 | Conforming FEEC, B ∈ H(div), J = curl B strongly |
+| (b) Weak ideal | Current sheets, tangential discontinuities, pressure jumps, singular rational-surface currents | Broken/interface FEEC; B ∈ H(div), J = curl B in an interface-aware sense (jump conditions on interfaces) |
+| (c) Resistive stationary | Steady states of resistive (or Hall/XMHD) evolution | Residual of the stated non-ideal stationary equations |
+| (d) MRxMHD relaxed | Stepped-pressure Taylor-relaxed states | Multi-region energy functional with declared invariants |
+
+A class (a) solver does not certify a class (b) state, and a class (b) state is
+not a class (c) or (d) state, even when the plotted fields look alike.
+
+## Topology rules
+
+- In an ergodic connected region p is constant, because B·∇p=0.
+- Islands can carry p(ψ_island) on their internal surfaces.
+- Ideal evolution cannot reconnect. A topology different from the initial one
+  needs one of: initial or continuation data with that topology, an admissible
+  weak state (class b), an ideal bifurcation, or non-ideal physics.
+- The physics model, not a numerical switch, decides which topology changes
+  are allowed. Do not tune a regularisation until islands appear or vanish.
+
+## Certification outcome
+
+Besides "certified", a 3D result may be: candidate equilibrium, residual
+verified, topology diagnostic converged, existence certificate unavailable.
+This is a legitimate outcome; near bifurcations and in stochastic regions
+certification can fail. Report which parts were established and do not
+upgrade the label.
 
 ## Topology and history
 
