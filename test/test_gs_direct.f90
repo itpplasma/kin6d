@@ -8,6 +8,7 @@ program test_gs_direct
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
     use kin6d_gs_options, only: gs_set_options
+    use kin6d_gs_direct, only: gs_direct_available
     use kin6d_gs_timers, only: gs_timer_reset, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG, &
         GS_T_FACTOR, GS_T_DIRECT
@@ -56,6 +57,13 @@ program test_gs_direct
         difference = maxval(abs(csr - element))/maxval(abs(element))
         if (difference > 1.0e-12_dp) error stop 'CSR operator differs from element-wise'
         deallocate (input, element, csr)
+
+        ! The direct oracles need the MUMPS backend (KIN6D_ENABLE_MUMPS); CTest
+        ! reports exit code 77 as skipped (SKIP_RETURN_CODE).
+        if (.not. gs_direct_available()) then
+            print '(a)', 'SKIP: built without MUMPS; CSR operator check passed'
+            stop 77
+        end if
 
         direct_law = law
         call gs_set_options(.true., .true.)

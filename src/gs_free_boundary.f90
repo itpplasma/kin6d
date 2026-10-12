@@ -57,8 +57,9 @@ module kin6d_gs_free_boundary
     use fortfem_sparse_direct, only: sparse_direct_factor_t, &
                          sparse_direct_factor_csc, sparse_direct_factor_transpose_csc, &
                                      sparse_direct_solve_factored, sparse_direct_free
+    use fortnum_quadrature, only: gauss_legendre
     use kin6d_sort_keys, only: sort_key_order
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
+    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs
     use kin6d_gs_coils, only: gs_circuit_set_t
     use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
                                  gs_coupling_coil_load, GS_COUPLING_OK
@@ -67,7 +68,7 @@ module kin6d_gs_free_boundary
     use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_roots, &
                                     cubic_segment_stationary, &
                                     triangle_bernstein_controls
-    use kin6d_curved_triangle, only: triangle_locate
+    use kin6d_curved_triangle, only: triangle_locate, boundary_curve
     implicit none
     private
 
@@ -84,6 +85,8 @@ module kin6d_gs_free_boundary
     integer, parameter, public :: GS_FB_FACTOR_FAILED = 6
     integer, parameter, public :: GS_FB_NOT_CONVERGED = 7
     integer, parameter, public :: GS_FB_LINE_SEARCH = 8
+    integer, parameter, public :: GS_FB_REFIT_FAILED = 9
+    integer, parameter, public :: GS_FB_REFIT_NOT_CONVERGED = 10
 
     type, public :: gs_fb_config_t
         integer :: mode = GS_FB_XPOINT
@@ -96,6 +99,9 @@ module kin6d_gs_free_boundary
         real(dp) :: quadrature_tolerance = 1.0e-9_dp
         real(dp) :: jacobian_tolerance = 1.0e-9_dp
         real(dp) :: tolerance = 1.0e-10_dp      !< Newton: ||F|| / ||b + loads||
+        !> A cell face whose nodes all satisfy |psi - psi_b| <= face_tolerance
+        !! |psi_a - psi_b| lies on the plasma boundary (fitted mesh). 0 disables.
+        real(dp) :: face_tolerance = 1.0e-10_dp
         integer :: max_iterations = 30
     end type gs_fb_config_t
 
@@ -124,6 +130,7 @@ module kin6d_gs_free_boundary
         real(dp) :: axis(2) = 0.0_dp, xpoint(2) = 0.0_dp
         real(dp) :: plasma_current = 0.0_dp      !< int mu0 j dA / mu0 (A)
         real(dp) :: interface_dropped = 0.0_dp   !< arcs that stalled at a saddle
+        integer :: face_cells = 0                !< plasma cell faces on the boundary
         logical :: has_jacobian = .false.
     end type gs_fb_eval_t
 
@@ -142,6 +149,44 @@ module kin6d_gs_free_boundary
         real(dp), allocatable :: ip(:)
     end type gs_fb_history_t
 
+    type, public :: gs_fb_refit_config_t
+        integer :: max_refits = 4
+        real(dp) :: tolerance = 1.0e-3_dp   !< stop when Gamma_p moves < this * h
+        integer :: dense_factor = 8         !< rays per chain point (Gamma_p trace)
+        integer :: project_iterations = 4
+        !> A refit that leaves the distance above contraction * (previous distance)
+        !! ends the loop at the discretisation floor (reported as stagnated).
+        real(dp) :: contraction = 0.7_dp
+    end type gs_fb_refit_config_t
+
+    type, public :: gs_fb_refit_report_t
+        integer :: refits = 0               !< mesh rebuilds performed
+        logical :: converged = .false.      !< chain within tolerance * h of boundary
+        logical :: stagnated = .false.      !< movement stopped contracting (floor)
+        real(dp) :: h = 0.0_dp              !< chain spacing of the final mesh
+        real(dp) :: psi_bound = 0.0_dp
+        !> Distance of the chain from the computed boundary, in units of h, on the
+        !! mesh of pass 0, 1, ... (the last entry used is the final mesh).
+        real(dp), allocatable :: movement(:)
+        integer, allocatable :: newton_iterations(:)
+    end type gs_fb_refit_report_t
+
+    type :: gs_fb_grid_t
+        integer :: nx = 0, ny = 0
+        real(dp) :: origin(2) = 0.0_dp, step(2) = 1.0_dp
+        integer, allocatable :: start(:), list(:)
+    end type gs_fb_grid_t
+
+    abstract interface
+        subroutine gs_fb_extra_cb(state, sys)
+            import :: gs_state_t, gs_fb_system_t
+            type(gs_state_t), intent(inout) :: state
+            type(gs_fb_system_t), intent(inout) :: sys
+        end subroutine gs_fb_extra_cb
+    end interface
+
+    public :: gs_fb_refit_solve, gs_fb_trace_lcfs, gs_fb_refit_mesh
+    public :: gs_fb_chain_movement
     public :: gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply
     public :: gs_fb_factor, gs_fb_solve, gs_fb_release, gs_fb_newton
     public :: gs_fb_interface_mass, gs_fb_lcfs_levels
@@ -935,6 +980,123 @@ contains
     ! Residual and Jacobian pieces.
     ! ------------------------------------------------------------------
 
+    ! ------------------------------------------------------------------
+    ! Faces that coincide with the plasma boundary (fitted mesh).
+    ! ------------------------------------------------------------------
+
+    subroutine edge_nodes(order, k, nodes)
+        !! Local node numbers of edge k (vertex k, vertex k+1, interior nodes).
+        integer, intent(in) :: order, k
+        integer, intent(out) :: nodes(order + 1)
+        integer :: j
+
+        nodes(1) = k
+        nodes(2) = mod(k, 3) + 1
+        do j = 1, order - 1
+            nodes(2 + j) = 3 + (k - 1)*(order - 1) + j
+        end do
+    end subroutine edge_nodes
+
+    subroutine snap_faces(state, psi, psi_bound, psi_axis, sigma, tol, plasma, &
+                          cell_phi, face_edge)
+        !! cell_phi(:, e) = psi - psi_b at the nodes of cell e. A face of a
+        !! plasma-flagged cell whose nodes all lie within tol |psi_a - psi_b| of
+        !! the boundary level is snapped to exactly zero, which removes the
+        !! sliver cuts that rounding noise would create on both sides of it, and
+        !! the cell is assigned by the sign of the flux at its centroid: a cell
+        !! on the plasma side keeps the face as its boundary (face_edge), a cell
+        !! on the vacuum side is removed from the plasma. A cell that is zero
+        !! at its centroid too counts as vacuum.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:), psi_bound, psi_axis, sigma, tol
+        logical, intent(inout) :: plasma(:)
+        real(dp), intent(out) :: cell_phi(:, :)
+        logical, intent(out) :: face_edge(:, :)
+        real(dp) :: shp(10), grd(2, 10), phic, limit
+        integer :: e, k, ndof, order, nodes(4)
+        logical :: zero_edge(3)
+
+        ndof = size(state%triangles, 1)
+        order = merge(2, 3, ndof == 6)
+        face_edge = .false.
+        limit = tol*abs(psi_axis - psi_bound)
+        call triangle_basis_jet([1.0_dp/3.0_dp, 1.0_dp/3.0_dp], shp(:ndof), &
+                                grd(:, :ndof))
+        do e = 1, size(state%triangles, 2)
+            cell_phi(:, e) = psi(state%triangles(:, e)) - psi_bound
+            if (tol <= 0.0_dp) cycle
+            if (.not. plasma(e)) cycle
+            zero_edge = .false.
+            do k = 1, 3
+                call edge_nodes(order, k, nodes(:order + 1))
+                zero_edge(k) = all(abs(cell_phi(nodes(:order + 1), e)) <= limit)
+            end do
+            if (.not. any(zero_edge)) cycle
+            phic = sigma*dot_product(shp(:ndof), cell_phi(:, e))
+            do k = 1, 3
+                if (.not. zero_edge(k)) cycle
+                call edge_nodes(order, k, nodes(:order + 1))
+                cell_phi(nodes(:order + 1), e) = 0.0_dp
+            end do
+            if (phic > limit) then
+                face_edge(:, e) = zero_edge
+            else
+                plasma(e) = .false.
+            end if
+        end do
+    end subroutine snap_faces
+
+    subroutine face_interface_mass(state, e, k, psi, mu0, pp_edge, ff_edge, sigma, &
+                                   mass, status)
+        !! sigma int_face f_edge v_i v_j / |grad psi| dl over local edge k of
+        !! cell e, with the gradient of this cell: the interface term of a cut
+        !! that lies on the face (same expression as gs_fb_interface_mass).
+        type(gs_state_t), intent(in) :: state
+        integer, intent(in) :: e, k
+        real(dp), intent(in) :: psi(:), mu0, pp_edge, ff_edge, sigma
+        real(dp), intent(out) :: mass(:, :)
+        integer, intent(out) :: status
+        real(dp), parameter :: verts(2, 3) = reshape([0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, &
+                                                      0.0_dp, 1.0_dp], [2, 3])
+        real(dp), parameter :: dt = 1.0e-5_dp
+        real(dp) :: x(8), w(8), t, xi(2), point(2), pa(2), pb(2), det, dl, gnorm
+        real(dp) :: shape(10), grads(2, 10), hess(2, 2, 10), g(2), fe, local(10)
+        integer :: q, ndof, st, a, b
+
+        status = 1
+        ndof = size(state%triangles, 1)
+        mass = 0.0_dp
+        local(:ndof) = psi(state%triangles(:, e))
+        a = k
+        b = mod(k, 3) + 1
+        call gauss_legendre(8, x, w)
+        do q = 1, 8
+            t = 0.5_dp*(x(q) + 1.0_dp)
+            xi = (1.0_dp - t)*verts(:, a) + t*verts(:, b)
+            call gs_cell_data(state, e, xi, point, det, shape(:ndof), &
+                              grads(:, :ndof), hess(:, :, :ndof), st)
+            if (st /= 0) return
+            call gs_cell_data(state, e, xi + dt*(verts(:, b) - verts(:, a)), pb, det, &
+                              shape(:ndof), grads(:, :ndof), hess(:, :, :ndof), st)
+            if (st /= 0) return
+            call gs_cell_data(state, e, xi - dt*(verts(:, b) - verts(:, a)), pa, det, &
+                              shape(:ndof), grads(:, :ndof), hess(:, :, :ndof), st)
+            if (st /= 0) return
+            dl = norm2(pb - pa)/(2.0_dp*dt)
+            call gs_cell_data(state, e, xi, point, det, shape(:ndof), &
+                              grads(:, :ndof), hess(:, :, :ndof), st)
+            if (st /= 0) return
+            g = matmul(grads(:, :ndof), local(:ndof))
+            gnorm = norm2(g)
+            if (gnorm <= tiny(1.0_dp)) return
+            fe = ff_edge/point(1) + mu0*pp_edge*point(1)
+            mass(:ndof, :ndof) = mass(:ndof, :ndof) + 0.5_dp*w(q)*sigma*fe*dl/gnorm &
+                                 *spread(shape(:ndof), 2, ndof) &
+                                 *spread(shape(:ndof), 1, ndof)
+        end do
+        status = 0
+    end subroutine face_interface_mass
+
     subroutine gs_fb_evaluate(state, sys, psi, currents, ev, status, jacobian)
         type(gs_state_t), intent(inout) :: state
         type(gs_fb_system_t), intent(in) :: sys
@@ -947,6 +1109,8 @@ contains
         real(dp), allocatable :: saved(:), action(:), load(:)
     real(dp) :: pp_edge, ff_edge, controls(10), phi(10), dropped_cell, cell_mass(10, 10)
         real(dp) :: sigma, integral
+        real(dp), allocatable :: cell_phi(:, :)
+        logical, allocatable :: face_edge(:, :)
         integer :: e, ndof, n, ne, stat, k, i
         integer :: dropped_total
         logical :: need_jacobian
@@ -971,6 +1135,12 @@ contains
                           sys%cfg%cut_fraction, ev%axis, ev%xpoint, ev%plasma_cell)
         law = sys%law
         law%axis = ev%psi_axis - ev%psi_bound
+        ! Per-cell boundary-level flux; faces that coincide with the boundary
+        ! are snapped onto it and their cells assigned by the centroid sign.
+        allocate (cell_phi(ndof, ne), face_edge(3, ne))
+        call snap_faces(state, psi, ev%psi_bound, ev%psi_axis, sigma, &
+                        sys%cfg%face_tolerance, ev%plasma_cell, cell_phi, face_edge)
+        ev%face_cells = count(face_edge)
         allocate (saved(n), ev%source(n))
         saved = state%psi
         state%psi = psi - ev%psi_bound
@@ -978,7 +1148,7 @@ contains
                            sys%cfg%quadrature_tolerance, &
                            jacobian_tolerance=sys%cfg%jacobian_tolerance, &
                            load_only=.not. need_jacobian, source_integral=integral, &
-                           plasma_cell=ev%plasma_cell)
+                           plasma_cell=ev%plasma_cell, cell_psi=cell_phi)
         state%psi = saved
         if (stat /= 0) then
             status = GS_FB_SOURCE_FAILED
@@ -1006,7 +1176,7 @@ contains
                 !$omp reduction(+:dropped_total) schedule(dynamic, 4)
                 do e = 1, ne
                     if (.not. ev%plasma_cell(e)) cycle
-                    phi(:ndof) = psi(state%triangles(:, e)) - ev%psi_bound
+                    phi(:ndof) = cell_phi(:ndof, e)
                     call triangle_bernstein_controls(phi(:ndof), controls(:ndof))
                     if (minval(controls(:ndof)) >= 0.0_dp) cycle
                     if (maxval(controls(:ndof)) <= 0.0_dp) cycle
@@ -1019,6 +1189,20 @@ contains
                     dropped_total = dropped_total + int(dropped_cell)
                 end do
                 !$omp end parallel do
+                ! Faces on the boundary: the cut is the face itself.
+                do e = 1, ne
+                    if (.not. any(face_edge(:, e))) cycle
+                    do k = 1, 3
+                        if (.not. face_edge(k, e)) cycle
+                        call face_interface_mass(state, e, k, psi, sys%mu0, pp_edge, &
+                                                 ff_edge, sigma, &
+                                                 cell_mass(:ndof, :ndof), stat)
+                        if (stat /= 0) cycle
+                        ev%mass(:, :, e) = ev%mass(:, :, e) + cell_mass(:ndof, :ndof)
+                        ev%interface_mass(:, :, e) = ev%interface_mass(:, :, e) &
+                                                     + cell_mass(:ndof, :ndof)
+                    end do
+                end do
             end if
             ev%interface_dropped = real(dropped_total, dp)
             ev%ua = jac%axis_load
@@ -1356,6 +1540,7 @@ contains
             to%xpoint = from%xpoint
             to%plasma_current = from%plasma_current
             to%interface_dropped = from%interface_dropped
+            to%face_cells = from%face_cells
             to%has_jacobian = from%has_jacobian
             call move_alloc(from%residual, to%residual)
             call move_alloc(from%source, to%source)
@@ -1368,5 +1553,478 @@ contains
             call move_alloc(from%plasma_cell, to%plasma_cell)
         end subroutine move_ev
     end subroutine gs_fb_newton
+
+    ! ------------------------------------------------------------------
+    ! P8: outer refit loop (DESIGN 1.2, step 2).
+    ! ------------------------------------------------------------------
+
+    subroutine cell_contains(state, e, r, z, local, ok)
+        !! Reference coordinates of (r, z) in cell e, ok when inside it.
+        type(gs_state_t), intent(in) :: state
+        integer, intent(in) :: e
+        real(dp), intent(in) :: r, z
+        real(dp), intent(out) :: local(2)
+        logical, intent(out) :: ok
+        integer :: status
+
+        ok = .false.
+        local = matmul(transpose(state%gradient(:, 2:3, e)), &
+                       [r, z] - state%points(:, state%triangles(1, e)))
+        if (minval([1.0_dp - sum(local), local]) < -0.5_dp) return
+        if (state%mapped .and. state%curved_cell(e)) then
+            call triangle_locate(state%points(:, state%triangles(:, e)), [r, z], &
+                                 local, status)
+            if (status /= 0) return
+        end if
+        ok = minval([1.0_dp - sum(local), local]) >= -1.0e-10_dp
+    end subroutine cell_contains
+
+    subroutine build_grid(state, grid)
+        !! Uniform bucket grid over the bounding boxes of the cells (CSR lists).
+        type(gs_state_t), intent(in) :: state
+        type(gs_fb_grid_t), intent(out) :: grid
+        real(dp) :: lo(2), hi(2)
+        integer, allocatable :: fill(:)
+        integer :: e, ne, i, j, i0, i1, j0, j1, nb, pass, b
+
+        ne = size(state%triangles, 2)
+        lo = minval(state%points, dim=2)
+        hi = maxval(state%points, dim=2)
+        grid%nx = max(1, nint(sqrt(real(ne, dp)*(hi(1) - lo(1))/(hi(2) - lo(2)))))
+        grid%ny = max(1, nint(sqrt(real(ne, dp)*(hi(2) - lo(2))/(hi(1) - lo(1)))))
+        grid%origin = lo
+        grid%step = (hi - lo)/real([grid%nx, grid%ny], dp)
+        nb = grid%nx*grid%ny
+        allocate (grid%start(nb + 1), fill(nb))
+        grid%start = 0
+        fill = 0
+        do pass = 1, 2
+            do e = 1, ne
+                call cell_range(e, i0, i1, j0, j1)
+                do j = j0, j1
+                    do i = i0, i1
+                        b = (j - 1)*grid%nx + i
+                        if (pass == 1) then
+                            grid%start(b + 1) = grid%start(b + 1) + 1
+                        else
+                            grid%list(grid%start(b) + fill(b)) = e
+                            fill(b) = fill(b) + 1
+                        end if
+                    end do
+                end do
+            end do
+            if (pass == 1) then
+                grid%start(1) = 1
+                do b = 1, nb
+                    grid%start(b + 1) = grid%start(b) + grid%start(b + 1)
+                end do
+                allocate (grid%list(grid%start(nb + 1) - 1))
+            end if
+        end do
+    contains
+        subroutine cell_range(cell, ia, ib, ja, jb)
+            integer, intent(in) :: cell
+            integer, intent(out) :: ia, ib, ja, jb
+            real(dp) :: low(2), high(2), pad
+
+            low = minval(state%points(:, state%triangles(:, cell)), dim=2)
+            high = maxval(state%points(:, state%triangles(:, cell)), dim=2)
+            pad = 0.05_dp*maxval(high - low)
+            low = low - pad
+            high = high + pad
+            ia = bucket(low(1), 1, grid%nx)
+            ib = bucket(high(1), 1, grid%nx)
+            ja = bucket(low(2), 2, grid%ny)
+            jb = bucket(high(2), 2, grid%ny)
+        end subroutine cell_range
+
+        integer function bucket(x, dim, n) result(index)
+            real(dp), intent(in) :: x
+            integer, intent(in) :: dim, n
+            index = min(n, max(1, 1 + int((x - grid%origin(dim))/grid%step(dim))))
+        end function bucket
+    end subroutine build_grid
+
+    subroutine grid_locate(state, grid, r, z, element, xi, found)
+        type(gs_state_t), intent(in) :: state
+        type(gs_fb_grid_t), intent(in) :: grid
+        real(dp), intent(in) :: r, z
+        integer, intent(out) :: element
+        real(dp), intent(out) :: xi(2)
+        logical, intent(out) :: found
+        integer :: i, j, b, k, e
+        logical :: ok
+
+        found = .false.
+        element = 0
+        xi = 0.0_dp
+        i = 1 + int((r - grid%origin(1))/grid%step(1))
+        j = 1 + int((z - grid%origin(2))/grid%step(2))
+        if (i < 1 .or. i > grid%nx .or. j < 1 .or. j > grid%ny) return
+        b = (j - 1)*grid%nx + i
+        do k = grid%start(b), grid%start(b + 1) - 1
+            e = grid%list(k)
+            call cell_contains(state, e, r, z, xi, ok)
+            if (ok) then
+                element = e
+                found = .true.
+                return
+            end if
+        end do
+    end subroutine grid_locate
+
+    subroutine grid_flux(state, grid, psi, r, z, value, gradient, found)
+        !! Value and physical gradient of the finite element flux at (r, z).
+        type(gs_state_t), intent(in) :: state
+        type(gs_fb_grid_t), intent(in) :: grid
+        real(dp), intent(in) :: psi(:), r, z
+        real(dp), intent(out) :: value, gradient(2)
+        logical, intent(out) :: found
+        real(dp) :: xi(2), point(2), det, shape(10), grads(2, 10), hess(2, 2, 10)
+        integer :: e, ndof, status
+
+        value = 0.0_dp
+        gradient = 0.0_dp
+        call grid_locate(state, grid, r, z, e, xi, found)
+        if (.not. found) return
+        ndof = size(state%triangles, 1)
+        call gs_cell_data(state, e, xi, point, det, shape(:ndof), grads(:, :ndof), &
+                          hess(:, :, :ndof), status)
+        found = status == 0
+        if (.not. found) return
+        value = dot_product(shape(:ndof), psi(state%triangles(:, e)))
+        gradient = matmul(grads(:, :ndof), psi(state%triangles(:, e)))
+    end subroutine grid_flux
+
+    subroutine gs_fb_trace_lcfs(state, psi, axis, psi_bound, sigma, n_points, chain, &
+                                status, dense_factor, project_iterations)
+        !! n_points points on the connected curve {psi = psi_b} around the axis,
+        !! equally spaced in arc length of the traced polyline and projected
+        !! onto the curve (Newton along grad psi), in counter-clockwise order.
+        !! The curve is found along rays from the axis (star-shaped plasma).
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:), axis(2), psi_bound, sigma
+        integer, intent(in) :: n_points
+        real(dp), allocatable, intent(out) :: chain(:, :)
+        integer, intent(out) :: status
+        integer, intent(in), optional :: dense_factor, project_iterations
+        type(gs_fb_grid_t) :: grid
+        real(dp), allocatable :: dense(:, :), arc(:)
+        real(dp) :: step, theta, tau, tau_prev, v, v_prev, g(2), x(2), total, target, f
+        real(dp) :: lo, hi, mid
+        integer :: m, nd, k, it, project, kk, bis, factor
+        logical :: found, failed
+
+        status = GS_FB_BAD_LCFS
+        factor = 8
+        if (present(dense_factor)) factor = dense_factor
+        project = 4
+        if (present(project_iterations)) project = project_iterations
+        nd = factor*n_points
+        call build_grid(state, grid)
+        step = 0.5_dp*sqrt(sum(state%area)/size(state%area))
+        allocate (dense(2, nd), arc(nd + 1))
+        failed = .false.
+        !$omp parallel do default(shared) &
+        !$omp private(m, theta, tau, tau_prev, v, v_prev, g, found, lo, hi, mid) &
+        !$omp private(bis, x) &
+        !$omp schedule(static)
+        do m = 1, nd
+            theta = 2.0_dp*acos(-1.0_dp)*real(m - 1, dp)/nd
+            tau_prev = 0.0_dp
+            tau = 0.0_dp
+            v_prev = 1.0_dp
+            found = .false.
+            do
+                tau = tau + step
+                x = axis + tau*[cos(theta), sin(theta)]
+                call grid_flux(state, grid, psi, x(1), x(2), v, g, found)
+                if (.not. found) then
+                    failed = .true.
+                    exit
+                end if
+                v = sigma*(v - psi_bound)
+                if (v <= 0.0_dp) exit
+                tau_prev = tau
+                v_prev = v
+            end do
+            if (.not. found) cycle
+            lo = tau_prev
+            hi = tau
+            do bis = 1, 60
+                mid = 0.5_dp*(lo + hi)
+                x = axis + mid*[cos(theta), sin(theta)]
+                call grid_flux(state, grid, psi, x(1), x(2), v, g, found)
+                if (.not. found) exit
+                if (sigma*(v - psi_bound) > 0.0_dp) then
+                    lo = mid
+                else
+                    hi = mid
+                end if
+            end do
+            dense(:, m) = axis + 0.5_dp*(lo + hi)*[cos(theta), sin(theta)]
+        end do
+        !$omp end parallel do
+        if (failed) return
+        arc(1) = 0.0_dp
+        do m = 1, nd
+            k = mod(m, nd) + 1
+            arc(m + 1) = arc(m) + norm2(dense(:, k) - dense(:, m))
+        end do
+        total = arc(nd + 1)
+        allocate (chain(2, n_points))
+        kk = 1
+        do it = 1, n_points
+            target = total*real(it - 1, dp)/n_points
+            do while (arc(kk + 1) < target .and. kk < nd)
+                kk = kk + 1
+            end do
+            f = (target - arc(kk))/max(arc(kk + 1) - arc(kk), tiny(1.0_dp))
+            chain(:, it) = (1.0_dp - f)*dense(:, kk) + f*dense(:, mod(kk, nd) + 1)
+        end do
+        !$omp parallel do default(shared) private(it, k, v, g, found) schedule(static)
+        do it = 1, n_points
+            do k = 1, project
+                call grid_flux(state, grid, psi, chain(1, it), chain(2, it), v, g, &
+                               found)
+                if (.not. found .or. dot_product(g, g) <= tiny(1.0_dp)) exit
+                chain(:, it) = chain(:, it) - (v - psi_bound)*g/dot_product(g, g)
+            end do
+        end do
+        !$omp end parallel do
+        status = GS_FB_OK
+    end subroutine gs_fb_trace_lcfs
+
+    function chain_distance(state, psi, psi_bound, chain) result(distance)
+        !! Largest first-order distance |psi - psi_b| / |grad psi| of the chain
+        !! points from the computed boundary.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:), psi_bound, chain(:, :)
+        real(dp) :: distance
+        type(gs_fb_grid_t) :: grid
+        real(dp) :: v, g(2)
+        integer :: j
+        logical :: found
+
+        distance = huge(1.0_dp)
+        call build_grid(state, grid)
+        distance = 0.0_dp
+        do j = 1, size(chain, 2)
+            call grid_flux(state, grid, psi, chain(1, j), chain(2, j), v, g, found)
+            if (.not. found .or. norm2(g) <= tiny(1.0_dp)) then
+                distance = huge(1.0_dp)
+                return
+            end if
+            distance = max(distance, abs(v - psi_bound)/norm2(g))
+        end do
+    end function chain_distance
+
+    subroutine transfer_flux(old, old_psi, fresh, new_psi)
+        !! Finite element interpolation of the flux of mesh `old` at the nodes of
+        !! mesh `fresh`. A node outside every old cell (curved outer boundary
+        !! discretised differently) takes the value of the nearest cell, with the
+        !! reference coordinates clamped to the triangle.
+        type(gs_state_t), intent(in) :: old, fresh
+        real(dp), intent(in) :: old_psi(:)
+        real(dp), allocatable, intent(out) :: new_psi(:)
+        type(gs_fb_grid_t) :: grid
+        real(dp), allocatable :: centroid(:, :)
+        real(dp) :: xi(2), point(2), det, shape(10), grads(2, 10), hess(2, 2, 10)
+        real(dp) :: best, d, x(2)
+        integer :: i, e, ndof, status, ne, k
+        logical :: found
+
+        ndof = size(old%triangles, 1)
+        ne = size(old%triangles, 2)
+        allocate (new_psi(size(fresh%points, 2)), centroid(2, ne))
+        do e = 1, ne
+            centroid(:, e) = sum(old%points(:, old%triangles(1:3, e)), dim=2)/3.0_dp
+        end do
+        call build_grid(old, grid)
+        !$omp parallel do default(shared) &
+        !$omp private(i, e, xi, point, det, shape, grads, hess, status, best, d) &
+        !$omp private(k, x, found) &
+        !$omp schedule(static)
+        do i = 1, size(fresh%points, 2)
+            x = fresh%points(:, i)
+            call grid_locate(old, grid, x(1), x(2), e, xi, found)
+            if (.not. found) then
+                best = huge(1.0_dp)
+                e = 1
+                do k = 1, ne
+                    d = sum((centroid(:, k) - x)**2)
+                    if (d < best) then
+                        best = d
+                        e = k
+                    end if
+                end do
+                xi = matmul(transpose(old%gradient(:, 2:3, e)), &
+                            x - old%points(:, old%triangles(1, e)))
+                xi = max(xi, 0.0_dp)
+                if (sum(xi) > 1.0_dp) xi = xi/sum(xi)
+            end if
+            call gs_cell_data(old, e, xi, point, det, shape(:ndof), grads(:, :ndof), &
+                              hess(:, :, :ndof), status)
+            new_psi(i) = dot_product(shape(:ndof), old_psi(old%triangles(:, e)))
+        end do
+        !$omp end parallel do
+    end subroutine transfer_flux
+
+    function gs_fb_chain_movement(state, psi, psi_bound, chain) result(movement)
+        !! Largest first-order distance |psi - psi_b| / |grad psi| of the chain
+        !! points from the computed boundary, in units of the chain spacing.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:), psi_bound, chain(:, :)
+        real(dp) :: movement
+
+        movement = chain_distance(state, psi, psi_bound, chain) &
+                   /(sum(norm2(chain - cshift(chain, 1, dim=2), dim=1))/size(chain, 2))
+    end function gs_fb_chain_movement
+
+    subroutine gs_fb_refit_mesh(state, axis, psi_bound, sigma, contour, max_area, &
+                                chain, rcfg, status, curve)
+        !! One refit: trace the boundary of the flux in state%psi, rebuild the mesh
+        !! (same Gamma_c, element order and curvature) with the Gamma_p chain on
+        !! it, and interpolate the flux onto the new mesh. state and chain are
+        !! replaced; on failure they are unchanged.
+        type(gs_state_t), intent(inout) :: state
+        real(dp), intent(in) :: axis(2), psi_bound, sigma, contour(:, :), max_area
+        real(dp), intent(inout) :: chain(:, :)
+        type(gs_fb_refit_config_t), intent(in) :: rcfg
+        integer, intent(out) :: status
+        procedure(boundary_curve), optional :: curve
+        type(gs_state_t) :: old
+        real(dp), allocatable :: psi_new(:), new_chain(:, :)
+        integer :: stat
+
+        call gs_fb_trace_lcfs(state, state%psi, axis, psi_bound, sigma, &
+                              size(chain, 2), new_chain, status, &
+                              rcfg%dense_factor, rcfg%project_iterations)
+        if (status /= GS_FB_OK) return
+        old = state
+        if (present(curve)) then
+            call initialize_gs(state, contour, max_area, stat, old%element_order, &
+                               curved=old%mapped, curve=curve, interior_chain=new_chain)
+        else
+            call initialize_gs(state, contour, max_area, stat, old%element_order, &
+                               curved=old%mapped, interior_chain=new_chain)
+        end if
+        if (stat /= 0) then
+            state = old
+            status = GS_FB_REFIT_FAILED
+            return
+        end if
+        chain = new_chain
+        call transfer_flux(old, old%psi, state, psi_new)
+        state%psi = psi_new
+        status = GS_FB_OK
+    end subroutine gs_fb_refit_mesh
+
+    subroutine gs_fb_refit_solve(state, sys, law, cfg, currents, contour, max_area, &
+                                 chain, rcfg, report, status, set, curve, extra_cb, &
+                                 history)
+        !! Newton on the fixed mesh of `state` (psi seed in state%psi), then up to
+        !! rcfg%max_refits times: trace the computed boundary, rebuild the mesh with
+        !! the Gamma_p chain on it (same Gamma_c, same element order), transfer the
+        !! flux by interpolation and re-solve. Stops when the chain lies within
+        !! rcfg%tolerance * h of the boundary of the solution computed on its own
+        !! mesh (h = chain length / chain points); that mesh is then the final one.
+        !! state, sys and chain are returned for the final mesh. extra_cb, if
+        !! present, rebuilds the psi-independent load sys%extra_load after every
+        !! mesh change (it is mesh dependent).
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(out) :: sys
+        type(gs_profile_law_t), intent(in) :: law
+        type(gs_fb_config_t), intent(in) :: cfg
+        real(dp), intent(in) :: currents(:), contour(:, :), max_area
+        real(dp), intent(inout) :: chain(:, :)
+        type(gs_fb_refit_config_t), intent(in) :: rcfg
+        type(gs_fb_refit_report_t), intent(out) :: report
+        integer, intent(out) :: status
+        type(gs_circuit_set_t), intent(in), optional :: set
+        procedure(boundary_curve), optional :: curve
+        procedure(gs_fb_extra_cb), optional :: extra_cb
+        type(gs_fb_history_t), intent(out), optional :: history
+        type(gs_fb_config_t) :: current
+        type(gs_fb_eval_t) :: ev
+        type(gs_fb_history_t) :: last
+        integer :: pass, stat, n_chain
+
+        n_chain = size(chain, 2)
+        current = cfg
+        allocate (report%movement(0:rcfg%max_refits), &
+                  report%newton_iterations(0:rcfg%max_refits))
+        report%movement = 0.0_dp
+        report%newton_iterations = 0
+        call solve_stage(state, sys, law, current, currents, set, extra_cb, last, &
+                         status)
+        report%newton_iterations(0) = last%iterations
+        if (status /= GS_FB_OK) return
+        do pass = 0, rcfg%max_refits
+            call gs_fb_evaluate(state, sys, state%psi, currents, ev, stat, &
+                                jacobian=.false.)
+            if (stat /= GS_FB_OK) then
+                status = stat
+                return
+            end if
+            report%h = sum(norm2(chain - cshift(chain, 1, dim=2), dim=1))/n_chain
+            report%movement(pass) = gs_fb_chain_movement(state, state%psi, &
+                                                         ev%psi_bound, chain)
+            report%psi_bound = ev%psi_bound
+            if (report%movement(pass) <= rcfg%tolerance) then
+                report%converged = .true.
+                exit
+            end if
+            ! The chain cannot follow the boundary closer than the discretisation
+            ! error of the flux: stop once a refit no longer contracts the distance.
+            if (pass >= 1) then
+                if (report%movement(pass) >= &
+                    rcfg%contraction*report%movement(pass - 1)) then
+                    report%stagnated = .true.
+                    exit
+                end if
+            end if
+            if (pass == rcfg%max_refits) exit
+            call gs_fb_refit_mesh(state, ev%axis, ev%psi_bound, &
+                                  real(sys%cfg%axis_sign, dp), contour, max_area, &
+                                  chain, rcfg, stat, curve)
+            if (stat /= GS_FB_OK) then
+                status = stat
+                return
+            end if
+            current = sys%cfg
+            current%axis_guess = sys%axis_hint
+            current%xpoint_guess = sys%xpoint_hint
+            call solve_stage(state, sys, law, current, currents, set, extra_cb, last, &
+                             status)
+            report%newton_iterations(pass + 1) = last%iterations
+            if (status /= GS_FB_OK) return
+            report%refits = pass + 1
+        end do
+        if (present(history)) history = last
+        status = GS_FB_OK
+        if (.not. (report%converged .or. report%stagnated) .and. rcfg%max_refits > 0) &
+            status = GS_FB_REFIT_NOT_CONVERGED
+
+    end subroutine gs_fb_refit_solve
+
+    subroutine solve_stage(state, sys, law, cfg, currents, set, extra_cb, history, &
+                           status)
+        !! Setup, optional rebuild of the nodal extra load, Newton.
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(out) :: sys
+        type(gs_profile_law_t), intent(in) :: law
+        type(gs_fb_config_t), intent(in) :: cfg
+        real(dp), intent(in) :: currents(:)
+        type(gs_circuit_set_t), intent(in), optional :: set
+        procedure(gs_fb_extra_cb), optional :: extra_cb
+        type(gs_fb_history_t), intent(out) :: history
+        integer, intent(out) :: status
+
+        call gs_fb_setup(state, sys, law, cfg, set, status)
+        if (status /= GS_FB_OK) return
+        if (present(extra_cb)) call extra_cb(state, sys)
+        call gs_fb_newton(state, sys, currents, status, history)
+    end subroutine solve_stage
 
 end module kin6d_gs_free_boundary
