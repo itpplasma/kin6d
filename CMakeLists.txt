@@ -985,3 +985,8 @@ target_link_libraries(test_mhd_ideal_n PRIVATE kin6d)
 add_test(NAME mhd_ideal_n_mde_force_free_identity COMMAND test_mhd_ideal_n)
 set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(test_mhd_newcomb test/test_mhd_newcomb.f90)
+target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
+add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)
+set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
