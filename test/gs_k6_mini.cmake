@@ -1,7 +1,7 @@
 # K6-mini regression (docs/equilibrium-core.md, migration M0): gs_phase1 on
 # the K6 law and path with a coarse mesh, then a native field query, compared
 # with the fixture to 1e-12 relative by CHECK. The fixture was produced by
-# this script at the M0 base (origin/main 260ce1d) with OMP_NUM_THREADS=4;
+# this script at the M0 base (origin/main 260ce1d) with OMP_NUM_THREADS=1;
 # boundary.dat is every eighth sample of the K6 boundary, source.dat the K6
 # cubic-source law unchanged.
 file(REMOVE_RECURSE "${WORK}")
