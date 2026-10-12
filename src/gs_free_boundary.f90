@@ -151,8 +151,8 @@ module kin6d_gs_free_boundary
 
     type, public :: gs_fb_refit_config_t
         integer :: max_refits = 4
-        real(dp) :: tolerance = 1.0e-3_dp   !< stop when Gamma_p moves less than this * h
-        integer :: dense_factor = 8         !< rays per chain point used to trace Gamma_p
+        real(dp) :: tolerance = 1.0e-3_dp   !< stop when Gamma_p moves < this * h
+        integer :: dense_factor = 8         !< rays per chain point (Gamma_p trace)
         integer :: project_iterations = 4
         !> A refit that leaves the distance above contraction * (previous distance)
         !! ends the loop at the discretisation floor (reported as stagnated).
@@ -161,7 +161,7 @@ module kin6d_gs_free_boundary
 
     type, public :: gs_fb_refit_report_t
         integer :: refits = 0               !< mesh rebuilds performed
-        logical :: converged = .false.      !< chain within tolerance * h of the boundary
+        logical :: converged = .false.      !< chain within tolerance * h of boundary
         logical :: stagnated = .false.      !< movement stopped contracting (floor)
         real(dp) :: h = 0.0_dp              !< chain spacing of the final mesh
         real(dp) :: psi_bound = 0.0_dp
@@ -1195,8 +1195,8 @@ contains
                     do k = 1, 3
                         if (.not. face_edge(k, e)) cycle
                         call face_interface_mass(state, e, k, psi, sys%mu0, pp_edge, &
-                                                 ff_edge, sigma, cell_mass(:ndof, :ndof), &
-                                                 stat)
+                                                 ff_edge, sigma, &
+                                                 cell_mass(:ndof, :ndof), stat)
                         if (stat /= 0) cycle
                         ev%mass(:, :, e) = ev%mass(:, :, e) + cell_mass(:ndof, :ndof)
                         ev%interface_mass(:, :, e) = ev%interface_mass(:, :, e) &
@@ -1726,7 +1726,8 @@ contains
         allocate (dense(2, nd), arc(nd + 1))
         failed = .false.
         !$omp parallel do default(shared) &
-        !$omp private(m, theta, tau, tau_prev, v, v_prev, g, found, lo, hi, mid, bis, x) &
+        !$omp private(m, theta, tau, tau_prev, v, v_prev, g, found, lo, hi, mid) &
+        !$omp private(bis, x) &
         !$omp schedule(static)
         do m = 1, nd
             theta = 2.0_dp*acos(-1.0_dp)*real(m - 1, dp)/nd
@@ -1784,7 +1785,8 @@ contains
         !$omp parallel do default(shared) private(it, k, v, g, found) schedule(static)
         do it = 1, n_points
             do k = 1, project
-                call grid_flux(state, grid, psi, chain(1, it), chain(2, it), v, g, found)
+                call grid_flux(state, grid, psi, chain(1, it), chain(2, it), v, g, &
+                               found)
                 if (.not. found .or. dot_product(g, g) <= tiny(1.0_dp)) exit
                 chain(:, it) = chain(:, it) - (v - psi_bound)*g/dot_product(g, g)
             end do
@@ -1840,7 +1842,8 @@ contains
         end do
         call build_grid(old, grid)
         !$omp parallel do default(shared) &
-        !$omp private(i, e, xi, point, det, shape, grads, hess, status, best, d, k, x, found) &
+        !$omp private(i, e, xi, point, det, shape, grads, hess, status, best, d) &
+        !$omp private(k, x, found) &
         !$omp schedule(static)
         do i = 1, size(fresh%points, 2)
             x = fresh%points(:, i)
@@ -1894,9 +1897,9 @@ contains
         real(dp), allocatable :: psi_new(:), new_chain(:, :)
         integer :: stat
 
-        call gs_fb_trace_lcfs(state, state%psi, axis, psi_bound, sigma, size(chain, 2), &
-                              new_chain, status, rcfg%dense_factor, &
-                              rcfg%project_iterations)
+        call gs_fb_trace_lcfs(state, state%psi, axis, psi_bound, sigma, &
+                              size(chain, 2), new_chain, status, &
+                              rcfg%dense_factor, rcfg%project_iterations)
         if (status /= GS_FB_OK) return
         old = state
         if (present(curve)) then
@@ -1953,7 +1956,8 @@ contains
                   report%newton_iterations(0:rcfg%max_refits))
         report%movement = 0.0_dp
         report%newton_iterations = 0
-        call solve_stage(state, sys, law, current, currents, set, extra_cb, last, status)
+        call solve_stage(state, sys, law, current, currents, set, extra_cb, last, &
+                         status)
         report%newton_iterations(0) = last%iterations
         if (status /= GS_FB_OK) return
         do pass = 0, rcfg%max_refits
@@ -1974,16 +1978,16 @@ contains
             ! The chain cannot follow the boundary closer than the discretisation
             ! error of the flux: stop once a refit no longer contracts the distance.
             if (pass >= 1) then
-                if (report%movement(pass) >= rcfg%contraction*report%movement(pass - 1)) &
-                    then
+                if (report%movement(pass) >= &
+                    rcfg%contraction*report%movement(pass - 1)) then
                     report%stagnated = .true.
                     exit
                 end if
             end if
             if (pass == rcfg%max_refits) exit
             call gs_fb_refit_mesh(state, ev%axis, ev%psi_bound, &
-                                  real(sys%cfg%axis_sign, dp), contour, max_area, chain, &
-                                  rcfg, stat, curve)
+                                  real(sys%cfg%axis_sign, dp), contour, max_area, &
+                                  chain, rcfg, stat, curve)
             if (stat /= GS_FB_OK) then
                 status = stat
                 return
@@ -2004,7 +2008,8 @@ contains
 
     end subroutine gs_fb_refit_solve
 
-    subroutine solve_stage(state, sys, law, cfg, currents, set, extra_cb, history, status)
+    subroutine solve_stage(state, sys, law, cfg, currents, set, extra_cb, history, &
+                           status)
         !! Setup, optional rebuild of the nodal extra load, Newton.
         type(gs_state_t), intent(inout) :: state
         type(gs_fb_system_t), intent(out) :: sys
