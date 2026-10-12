@@ -97,7 +97,7 @@ found = find_surface_q(g, target, psin_rat_min, psin_rat_max, 256, 1.0e-13_dp, r
             do j = 1, ntheta
                 bb(1, j) = bn(1, in, off + j)
                 bb(2, j) = bn(3, in, off + j)
-       write (ur, '(es22.14e3,i4,es22.14e3,2f16.10,2es22.14e3,2es24.15e3,3es22.14e3)') &
+       write (ur, '(es24.14e3,i4,es24.14e3,2f16.10,2es24.14e3,2es24.15e3,3es24.14e3)') &
                   psis(i), n_list(in), surf(i)%theta_g(j), surf(i)%r(j), surf(i)%z(j), &
                     surf(i)%nr(j), surf(i)%nz(j), &
                     2*(bb(1, j)*surf(i)%nr(j) + bb(2, j)*surf(i)%nz(j)), &
