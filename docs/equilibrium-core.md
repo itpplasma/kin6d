@@ -14,7 +14,7 @@ per-n linear response lane L3–L8 (MARS-F/GPEC class), and a planned
 non-nested Eulerian branch (MRX/HINT class). If each keeps its own state,
 residual, boundary coupling, readback and tests, KIN6D becomes four separate
 codes. Decision: they are constrained parametrisations of one problem; each
-lane keeps its unknowns and seed, and everything below D1–D8 is shared.
+lane keeps its unknowns and seed, and shares the pieces D1–D8.
 
 ## D1. One physical state
 
