@@ -11,156 +11,52 @@ program test_ideal_map_axisymmetric
     !   leakage          N=1, nfp=3, n=3 interior seed: n/=0 content decays
     !   solovev <k>      A3 ladder, degree k, observed orders
     !   shaped <k>       shaped ladder, degree k, observed orders
+    !   seed <k>, seedshaped <k>  frozen data from the nested-seed builder
+    !                    (boundary + exact q(s), p(s), Phi_edge) with the seed
+    !                    axis at the boundary-box centre (VMEC-like), offset from
+    !                    the magnetic axis; the solver must return it
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
     use kin6d_ideal_map, only: ideal_map_t, cylindrical_chart_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
-        ideal_map_reduce, ideal_map_expand
+        ideal_map_reduce, ideal_map_expand, ideal_map_prolong
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
+    use kin6d_ideal_map, only: ideal_frozen_t
+    use kin6d_ideal_seed, only: nested_seed_t, ideal_seed_init
+    use ideal_map_cases, only: setup_case, psi_exact, boundary_point, label, &
+        phi_edge, pullback_field_t, solovev_profile_t, pi, a, raxis, psi_axis, &
+        pprime, ffprime, shaped
     implicit none
-    real(dp), parameter :: r0 = 6.2_dp, f0 = 32.86_dp, c = f0/(12*r0**3)
-    real(dp), parameter :: pi = acos(-1.0_dp)
-    ! shaped coefficients: psi/c = (R^2-R0^2)^2 + s2 R^2 Z^2
-    !   + tau (R^4 - 4 R^2 Z^2 - R0^4) + dd Z^2 - level
-    real(dp), parameter :: kappa = 2.2_dp, tau = -0.1_dp, dd = 5.0_dp
-    logical :: shaped
-    real(dp) :: a, level, raxis, psi_axis, pprime, ffprime, shift(2)
+    type(pullback_field_t) :: pullback
     character(16) :: mode, argument
     integer :: degree
     logical :: verbose_solve = .false.
-    real(dp), parameter :: solve_tolerance = 1.0e-6_dp
+    real(dp) :: solve_tolerance = 1.0e-6_dp
     mode = 'solovev'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
     if (command_argument_count() > 1) then
         call get_command_argument(2, argument)
         read (argument, *) degree
     end if
-    shaped = trim(mode) == 'shaped'
     if (command_argument_count() > 2) verbose_solve = .true.
-    call setup_case()
+    call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
     case ('derivatives')
         call derivative_checks()
     case ('leakage')
         call leakage_check()
     case ('solovev', 'shaped')
-        call ladder()
+        call ladder(pullback)
+    case ('seed', 'seedshaped')
+        call seed_ladder()
     case default
         error stop 'unknown mode'
     end select
 contains
-    subroutine setup_case()
-        real(dp) :: g(2)
-        a = r0/3
-        if (shaped) then
-            ! axis: d/dR on Z=0 of (R^2-R0^2)^2 + tau R^4 vanishes
-            raxis = r0/sqrt(1 + tau)
-            level = 0
-            call psi_raw((raxis + a), 0.0_dp, level)
-            pprime = -(8 + 2*(4/kappa**2))*c
-            ffprime = -2*dd*c
-        else
-            raxis = r0
-            level = 4*r0*r0*a*a
-            pprime = -16*c
-            ffprime = 0
-        end if
-        call psi_exact(raxis, 0.0_dp, psi_axis, g)
-        if (.not. psi_axis < 0) error stop 'axis flux sign'
-        shift = [0.10_dp, 0.06_dp]*a
-    end subroutine
-
-    subroutine psi_raw(r, z, value)
-        real(dp), intent(in) :: r, z
-        real(dp), intent(out) :: value
-        value = (r*r - r0*r0)**2 + 4/kappa**2*r*r*z*z &
-            + tau*(r**4 - 4*r*r*z*z - r0**4) + dd*z*z
-    end subroutine
-
-    pure subroutine psi_exact(r, z, value, grad)
-        real(dp), intent(in) :: r, z
-        real(dp), intent(out) :: value, grad(2)
-        if (shaped) then
-            value = c*((r*r - r0*r0)**2 + 4/kappa**2*r*r*z*z &
-                + tau*(r**4 - 4*r*r*z*z - r0**4) + dd*z*z - level)
-            grad = c*[4*r*(r*r - r0*r0) + 8/kappa**2*r*z*z + tau*(4*r**3 - 8*r*z*z), &
-                8/kappa**2*r*r*z - 8*tau*r*r*z + 2*dd*z]
-        else
-            value = c*((r*r - r0*r0)**2 + 4*r*r*z*z - level)
-            grad = c*[4*r*(r*r - r0*r0 + 2*z*z), 8*r*r*z]
-        end if
-    end subroutine
-
-    pure real(dp) function f_of_psi(psi)
-        real(dp), intent(in) :: psi
-        f_of_psi = sqrt(f0*f0 + 2*ffprime*psi)
-    end function
-
-    subroutine boundary_point(t, point)
-        ! Exact LCFS: psi = 0 along the ray from the axis at angle 2*pi*t.
-        real(dp), intent(in) :: t
-        real(dp), intent(out) :: point(2)
-        real(dp) :: angle, lo, hi, rho, v, g(2)
-        integer :: it
-        if (.not. shaped) then
-            angle = 2*pi*t
-            point(1) = sqrt(r0*r0 + 2*r0*a*cos(angle))
-            point(2) = r0*a*sin(angle)/point(1)
-            return
-        end if
-        angle = 2*pi*t
-        lo = 1.0e-3_dp*a; hi = 3*a
-        do it = 1, 200
-            rho = (lo + hi)/2
-            call psi_exact(raxis + rho*cos(angle), rho*sin(angle), v, g)
-            if (v < 0) then
-                lo = rho
-            else
-                hi = rho
-            end if
-            if (hi - lo <= 2*spacing(hi)) exit
-        end do
-        rho = (lo + hi)/2
-        point = [raxis + rho*cos(angle), rho*sin(angle)]
-    end subroutine
-
-    subroutine seed_map(y, x, dy)
-        ! Y(y) = y + shift*psi_exact(y)/psi_axis (identity on the LCFS).
-        real(dp), intent(in) :: y(2)
-        real(dp), intent(out) :: x(2), dy(2, 2)
-        real(dp) :: v, g(2)
-        call psi_exact(y(1), y(2), v, g)
-        x = y + shift*v/psi_axis
-        dy(1, :) = shift(1)*g/psi_axis
-        dy(2, :) = shift(2)*g/psi_axis
-        dy(1, 1) = dy(1, 1) + 1; dy(2, 2) = dy(2, 2) + 1
-    end subroutine
-
-    subroutine frozen(point, chi, chi_gradient, b3, pressure)
-        ! Pull-back of the exact state through Y: chi = psi o Y,
-        ! b3 = det(DY) F(psi(Y))/R(Y), p = p(psi(Y)).
-        real(dp), intent(in) :: point(2)
-        real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
-        real(dp) :: x(2), dy(2, 2), v, g(2)
-        call seed_map(point, x, dy)
-        call psi_exact(x(1), x(2), v, g)
-        chi_gradient = matmul(transpose(dy), g)
-        b3 = (dy(1, 1)*dy(2, 2) - dy(1, 2)*dy(2, 1))*f_of_psi(v)/x(1)
-        pressure = pprime*v
-        chi = v
-    end subroutine
-
-    real(dp) function label(point)
-        real(dp), intent(in) :: point(2)
-        real(dp) :: x(2), dy(2, 2), g(2)
-        call seed_map(point, x, dy)
-        call psi_exact(x(1), x(2), label, g)
-    end function
-
     subroutine make_mesh(n, k, state)
         integer, intent(in) :: n, k
         type(gs_state_t), intent(out) :: state
@@ -177,8 +73,9 @@ contains
         if (status /= 0) error stop 'mesh'
     end subroutine
 
-    subroutine build_map(state, nfp, ntor, map)
+    subroutine build_map(state, nfp, ntor, map, field)
         type(gs_state_t), intent(in) :: state
+        class(ideal_frozen_t), intent(in), optional :: field
         integer, intent(in) :: nfp, ntor
         type(ideal_map_t), intent(out) :: map
         type(cylindrical_chart_t) :: chart
@@ -186,7 +83,11 @@ contains
         call ideal_map_init(map, state, chart, nfp, ntor, status)
         if (status /= 0) error stop 'map init'
         if (map%sigma /= -1) error stop 'cylindrical orientation'
-        call ideal_map_freeze(map, frozen, status)
+        if (present(field)) then
+            call ideal_map_freeze(map, field, status)
+        else
+            call ideal_map_freeze(map, pullback, status)
+        end if
         if (status /= 0) error stop 'freeze'
     end subroutine
 
@@ -281,22 +182,23 @@ contains
         type(ideal_map_solve_report_t), intent(out) :: report
         logical, intent(in) :: verbose
         integer :: status
-        call ideal_map_solve(map, solve_tolerance, 60, report, status, verbose)
+        call ideal_map_solve(map, solve_tolerance, 100, report, status, verbose)
         if (status /= 0) then
             print *, 'solve status', status, report%iterations, report%gradient
             error stop 'ideal map solve'
         end if
     end subroutine
 
-    subroutine defects(map, state2d, errors)
+    subroutine defects(map, state2d, field, errors)
         ! errors(1) ||psi_exact(X) - chi||, (2) ||psi_2D(X) - chi||,
         ! (3) seed ||psi_exact(y) - chi||, (4) ||psi_2D - psi_exact|| (2D alone),
         ! all over the reference with area weights, divided by |psi_axis|*sqrt(A).
         type(ideal_map_t), intent(in) :: map
         type(gs_state_t), intent(in) :: state2d
+        class(ideal_frozen_t), intent(in) :: field
         real(dp), intent(out) :: errors(4)
         type(gauss_quadrature_triangle_t) :: rule
-        real(dp) :: q(3), y(2), chi, ex, two, ex_y, g(2), area, w
+        real(dp) :: q(3), y(2), chi, ex, two, ex_y, g(2), area, w, b3, p
         real(dp) :: shape(10), dshape(2, 10), dg(2, 2), det
         integer :: e, k, status, owner
         call rule%init(7)
@@ -310,7 +212,7 @@ contains
                     transpose(dshape(:, :map%nloc)))
                 det = dg(1, 1)*dg(2, 2) - dg(1, 2)*dg(2, 1)
                 w = rule%weights(k)*det
-                chi = label(y)
+                call field%evaluate(y, chi, g, b3, p)
                 call psi_exact(q(1), q(2), ex, g)
                 call psi_exact(y(1), y(2), ex_y, g)
                 call locate_sample(state2d, q(1), q(2), owner, two, status)
@@ -344,9 +246,30 @@ contains
         end do
     end subroutine
 
-    subroutine ladder()
+    subroutine seed_ladder()
+        type(nested_seed_t) :: seed
+        type(solovev_profile_t) :: profile
+        integer :: status
+        ! Seed axis: the harmonic-extension centre Y(0) (boundary mean in its
+        ! parameter); the magnetic axis is elsewhere and must be found.
+        call ideal_seed_init(seed, boundary_point, phi_edge(), profile, status)
+        print '(a,2f9.4)', 'seed axis offset from magnetic axis (m) ', &
+            real(seed%a(0)) - raxis, aimag(seed%a(0))
+        if (status /= 0) error stop 'seed init'
+        if (abs(seed%psi_axis/psi_axis - 1) > 1.0e-12_dp) error stop 'seed axis flux'
+        ! The seed is far from equilibrium (large initial gradient), so the
+        ! relative stopping tolerance is tightened accordingly.
+        solve_tolerance = 1.0e-9_dp
+        call ladder(seed, sequenced=.true.)
+    end subroutine
+
+    subroutine ladder(field, sequenced)
+        ! sequenced: each finer map starts from the previous solution (grid
+        ! sequencing); otherwise every mesh starts from the seed X0 = id.
+        class(ideal_frozen_t), intent(in) :: field
+        logical, intent(in), optional :: sequenced
         type(gs_state_t) :: state
-        type(ideal_map_t) :: map
+        type(ideal_map_t) :: map, previous
         type(ideal_map_solve_report_t) :: report
         real(dp) :: errors(4, 3), rates(4), elapsed
         integer :: mesh, n, status, base
@@ -358,15 +281,24 @@ contains
             n = base*2**(mesh - 1)
             call make_mesh(n, degree, state)
             call system_clock(start, rate)
-            call build_map(state, 1, 0, map)
+            call build_map(state, 1, 0, map, field)
+            if (present(sequenced) .and. mesh > 1) then
+                if (sequenced) then
+                    call ideal_map_prolong(map, previous, status)
+                    if (status /= 0) error stop 'prolong'
+                end if
+            end if
             call solve_map(map, report, verbose_solve)
+            previous = map
             call system_clock(finish)
             elapsed = real(finish - start, dp)/rate
             call solve_gs(state, 1.0_dp, pprime, ffprime, status)
             if (status /= 0) error stop '2D GS solve'
-            call defects(map, state, errors(:, mesh))
+            call defects(map, state, field, errors(:, mesh))
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
                 count(.not. map%fixed), report%iterations, elapsed, errors(:, mesh)
+            print '(a,3f9.2)', '  wall energy hessian factor+solve ', &
+                report%energy_s, report%hessian_s, report%factor_s
         end do
         do mesh = 2, 3
             rates = log(errors(:, mesh - 1)/errors(:, mesh))/log(2.0_dp)

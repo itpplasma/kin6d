@@ -249,10 +249,11 @@ target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90
     src/gs_free_boundary.f90 src/gs_coil_inverse.f90)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d PRIVATE src/generated/kin6d_ideal_map_leaves.f90
-    src/ideal_map.f90)
+    src/ideal_map.f90 src/ideal_seed.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90)
+add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
+    test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
 add_test(NAME ideal_map_derivatives_and_rotation_null
     COMMAND test_ideal_map_axisymmetric derivatives)
