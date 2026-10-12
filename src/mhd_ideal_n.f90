@@ -49,6 +49,7 @@ module kin6d_mhd_ideal_n
         surface_t, surface_build
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate, flux_mesh_ring_edge
     use kin6d_mhd_ampere_n, only: mu0
+    use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     implicit none
     private
 
@@ -131,7 +132,7 @@ contains
         real(dp) :: xi, eta, x(2), th, h, bp(3), bm(3), jp(3), jm(3), gp(2), pq
         real(dp) :: vp(3), vm(3), vzp(3), vzm(3), rho2, ulab
         real(dp) :: b0(3), j0(3)
-        integer :: k, st, nl
+        integer :: k, st, nl, bad
 
         status = 1
         call surface_build(g, u*u, np, s, st)
@@ -147,14 +148,24 @@ contains
             sr%gsig(2, np), sr%pp(np), sr%fac(np), sr%nup(np), sr%b0sq(np))
         ulab = u
         if (strip > 1) ulab = 0.5_dp*(fm%u(strip - 1) + fm%u(strip))
+        bad = 0
+        !$omp parallel do schedule(dynamic, 16) reduction(max:bad) &
+        !$omp private(k, th, st, xi, eta, x, b0, j0, gp, pq, rho2, h, vp, vm, &
+        !$omp vzp, vzm, bp, bm, jp, jm)
         do k = 1, np
             th = s%theta_g(k)
             sr%x(:, k) = [s%r(k), s%z(k)]
             call flux_mesh_locate(fm, sr%x(:, k), ulab, th, sr%tri(k), xi, eta, st)
-            if (st /= 0) return
+            if (st /= 0) then
+                bad = 1
+                cycle
+            end if
             call meridian_point_basis(fs, pb, 2, sr%tri(k), xi, eta, x, &
                 sr%phi(:, :, k), st)
-            if (st /= 0) return
+            if (st /= 0) then
+                bad = 1
+                cycle
+            end if
             call equilibrium_point(g, opt, s%r(k), s%z(k), b0, j0, gp, pq)
             sr%b0(:, k) = b0
             sr%j0(:, k) = j0
@@ -181,6 +192,8 @@ contains
             sr%gsig(2, k) = (sigma_at(s%r(k), s%z(k) + h) &
                 - sigma_at(s%r(k), s%z(k) - h))/(2*h)
         end do
+        !$omp end parallel do
+        if (bad /= 0) return
         allocate (sr%bc(3, np))
         sr%bc = (0.0_dp, 0.0_dp)
         status = 0
@@ -218,82 +231,63 @@ contains
         end do
     end subroutine sample_field
 
-    subroutine dft(f, fk, inverse)
-        !! fk(k) = (1/N) sum_j f_j e^{-i k theta_j}, k = -N/2 .. N/2 - 1 (stored
-        !! at index k + N/2 + 1); inverse: f_j = sum_k fk e^{i k theta_j}.
-        complex(dp), intent(in) :: f(:)
-        complex(dp), intent(out) :: fk(:)
-        logical, intent(in) :: inverse
-        complex(dp) :: tw(0:size(f) - 1), s
-        integer :: n, j, k, kk
-        real(dp) :: sg
+    pure integer function wavenumber(i, np)
+        !! Fourier index of entry i of an unshifted length-np DFT.
+        integer, intent(in) :: i, np
+        wavenumber = i - 1
+        if (2*(i - 1) >= np) wavenumber = i - 1 - np
+    end function wavenumber
 
-        n = size(f)
-        sg = -1.0_dp
-        if (inverse) sg = 1.0_dp
-        do j = 0, n - 1
-            tw(j) = exp(cmplx(0.0_dp, sg*2.0_dp*pi*j/n, dp))
-        end do
-        if (.not. inverse) then
-            do kk = 1, n
-                k = kk - 1 - n/2
-                s = (0.0_dp, 0.0_dp)
-                do j = 1, n
-                    s = s + f(j)*tw(modulo(k*(j - 1), n))
-                end do
-                fk(kk) = s/n
-            end do
-        else
-            do j = 1, n
-                s = (0.0_dp, 0.0_dp)
-                do kk = 1, n
-                    k = kk - 1 - n/2
-                    s = s + f(kk)*tw(modulo(k*(j - 1), n))
-                end do
-                fk(j) = s
-            end do
-        end if
-    end subroutine dft
-
-    subroutine dtheta(f, df)
-        !! Spectral derivative in theta_g of periodic samples.
+    subroutine dtheta(f, df, plan)
+        !! Spectral derivative in theta_g of periodic samples (the Nyquist
+        !! mode of an even length is dropped).
         complex(dp), intent(in) :: f(:)
         complex(dp), intent(out) :: df(:)
-        complex(dp) :: fk(size(f))
-        integer :: n, kk, k
+        type(fortnum_fft_plan_t), intent(in) :: plan
+        integer :: np, i, k
 
-        n = size(f)
-        call dft(f, fk, .false.)
-        do kk = 1, n
-            k = kk - 1 - n/2
-            if (kk == 1) then
-                fk(kk) = (0.0_dp, 0.0_dp)
+        np = size(f)
+        df = f
+        call fft_c2c(df, -1, plan)
+        do i = 1, np
+            k = wavenumber(i, np)
+            if (2*k == -np) then
+                df(i) = (0.0_dp, 0.0_dp)
             else
-                fk(kk) = cmplx(0.0_dp, k, dp)*fk(kk)
+                df(i) = cmplx(0.0_dp, k, dp)*df(i)/np
             end if
         end do
-        call dft(fk, df, .true.)
+        call fft_c2c(df, 1, plan)
     end subroutine dtheta
 
-    subroutine mde_solve(sr, n, r, f)
+    subroutine mde_solve(sr, n, r, f, plan)
         !! Solve B0 . grad (f e^{i n phi}) = r e^{i n phi} on the sample
         !! surface (see the module header).
         type(sample_ring_t), intent(in) :: sr
         integer, intent(in) :: n
         complex(dp), intent(in) :: r(:)
         complex(dp), intent(out) :: f(:)
-        complex(dp) :: rho(sr%np), rk(sr%np), ph(sr%np)
-        integer :: kk, k, np
+        type(fortnum_fft_plan_t), intent(in), optional :: plan
+        type(fortnum_fft_plan_t) :: own
+        integer :: i, np
 
         np = sr%np
-        rho = r*sr%fac*exp(cmplx(0.0_dp, n*sr%nup, dp))
-        call dft(rho, rk, .false.)
-        do kk = 1, np
-            k = kk - 1 - np/2
-            rk(kk) = rk(kk)/cmplx(0.0_dp, k + n*sr%q, dp)
+        f = r*sr%fac*exp(cmplx(0.0_dp, n*sr%nup, dp))
+        if (present(plan)) then
+            call fft_c2c(f, -1, plan)
+        else
+            call fft_c2c_plan_init(own, np)
+            call fft_c2c(f, -1, own)
+        end if
+        do i = 1, np
+            f(i) = f(i)/(cmplx(0.0_dp, wavenumber(i, np) + n*sr%q, dp)*np)
         end do
-        call dft(rk, ph, .true.)
-        f = ph*exp(cmplx(0.0_dp, -n*sr%nup, dp))
+        if (present(plan)) then
+            call fft_c2c(f, 1, plan)
+        else
+            call fft_c2c(f, 1, own)
+        end if
+        f = f*exp(cmplx(0.0_dp, -n*sr%nup, dp))
     end subroutine mde_solve
 
     subroutine ideal_current(rings, n, sgn_dpsi, qlow, b, jcur, kap, bnd)
@@ -308,11 +302,13 @@ contains
         complex(dp), allocatable :: p(:, :), dpth(:), dpsi(:), g(:), dg(:)
         complex(dp), allocatable :: rhs(:), h(:), jn(:)
         complex(dp) :: gradp(3), v(3), jxb(3), bb(3)
+        type(fortnum_fft_plan_t) :: plan
         integer :: nr, ir, k, np, lo, hi
         real(dp) :: ds
 
         nr = size(rings)
         np = rings(1)%np
+        call fft_c2c_plan_init(plan, np)
         allocate (p(np, nr))
         ! 1. pressure on every sample ring
         !$omp parallel do schedule(dynamic) private(ir, rhs) if(nr > 1)
@@ -320,7 +316,7 @@ contains
             allocate (rhs(np))
             rhs = -rings(ir)%pp*(b(1, :, ir)*rings(ir)%gpsi(1, :) &
                 + b(3, :, ir)*rings(ir)%gpsi(2, :))
-            call mde_solve(rings(ir), n, rhs, p(:, ir))
+            call mde_solve(rings(ir), n, rhs, p(:, ir), plan)
             deallocate (rhs)
         end do
         !$omp end parallel do
@@ -330,7 +326,7 @@ contains
         !$omp jxb, bb)
         do ir = 1, nr
             allocate (dpth(np), dpsi(np), g(np), dg(np), rhs(np), h(np))
-            call dtheta(p(:, ir), dpth)
+            call dtheta(p(:, ir), dpth, plan)
             ! d/dpsi at fixed theta_g between neighbouring rings of the
             ! sequence (the boundary ring follows the last half ring)
             lo = max(1, ir - 1)
@@ -347,7 +343,7 @@ contains
                 jcur(:, k, ir) = cross_rc(rings(ir)%b0(:, k), v)/rings(ir)%b0sq(k)
                 g(k) = dot_product(rings(ir)%b0(:, k), bb)/rings(ir)%b0sq(k)
             end do
-            call dtheta(g, dg)
+            call dtheta(g, dg, plan)
             do k = 1, np
                 bb = b(:, k, ir)
                 gradp(1) = dpsi(k)*rings(ir)%gpsi(1, k) + dpth(k)*rings(ir)%gth(1, k)
@@ -359,7 +355,7 @@ contains
                     + rings(ir)%j0(2, k)/rings(ir)%x(1, k)*cmplx(0.0_dp, n, dp)*g(k) &
                     - (bb(1)*rings(ir)%gsig(1, k) + bb(3)*rings(ir)%gsig(2, k))
             end do
-            call mde_solve(rings(ir), n, rhs, h)
+            call mde_solve(rings(ir), n, rhs, h, plan)
             do k = 1, np
                 jcur(:, k, ir) = jcur(:, k, ir) + h(k)*rings(ir)%b0(:, k)
             end do
@@ -376,7 +372,7 @@ contains
                     + jcur(3, k, bnd)*rings(bnd)%gpsi(2, k)) &
                     /norm2(rings(bnd)%gpsi(:, k))
             end do
-            call mde_solve(rings(bnd), n, jn, kap)
+            call mde_solve(rings(bnd), n, jn, kap, plan)
         end if
     end subroutine ideal_current
 
