@@ -230,6 +230,10 @@ add_executable(test_gs_prescribed_q test/test_gs_prescribed_q.f90)
 target_link_libraries(test_gs_prescribed_q PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_p3_convergence COMMAND test_gs_prescribed_q)
 set_tests_properties(grad_shafranov_prescribed_q_p3_convergence PROPERTIES TIMEOUT 300)
+add_executable(test_gs_prescribed_q_variable_p test/test_gs_prescribed_q_variable_p.f90)
+target_link_libraries(test_gs_prescribed_q_variable_p PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_variable_p COMMAND test_gs_prescribed_q_variable_p)
+set_tests_properties(grad_shafranov_prescribed_q_variable_p PROPERTIES TIMEOUT 900)
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
@@ -240,6 +244,10 @@ add_test(NAME grad_shafranov_phase1_inverse_app COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_phase1> -DDECK=$<TARGET_FILE:test_gs_prescribed_q_circle>
     -DWORK=${CMAKE_BINARY_DIR}/phase1_inverse_app
     -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_inverse.cmake)
+add_test(NAME grad_shafranov_phase1_inverse_pressure_law_app COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_phase1> -DDECK=$<TARGET_FILE:test_gs_prescribed_q_circle>
+    -DWORK=${CMAKE_BINARY_DIR}/phase1_inverse_pressure_law_app
+    -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_inverse_pressure_law.cmake)
 add_test(NAME grad_shafranov_constant_q_inverse_unit COMMAND test_gs_inverse)
 add_test(NAME grad_shafranov_constant_q_inverse_refinement COMMAND test_gs_inverse fine)
 set_tests_properties(grad_shafranov_constant_q_inverse_unit grad_shafranov_constant_q_inverse_refinement PROPERTIES TIMEOUT 120)

@@ -1,9 +1,24 @@
 # Prescribed-q fixed-boundary equilibrium
 
 `solve_gs_prescribed_q` solves the current Phase 3 contract on curved P2/P3:
-constant physical pprime, a signed q(s_pol) table, and signed total toroidal
+a physical pressure source, a signed q(s_pol) table, and signed total toroidal
 Phi. The boundary gauge is psi=0. q and Phi have the same nonzero sign;
 the supported branch has an interior minimum of psi and nonnegative pressure.
+
+The pressure source is either the scalar `pprime` (a constant law) or the
+optional `pressure_law`, a normalized piecewise-cubic `gs_profile_law_t` whose
+knots span 0..1 and whose `pp` coefficients are physical dp/dpsi in Pa/(Wb/rad)
+as a function of s_pol (0 axis, 1 edge). Only its knots and `pp` are used;
+`pprime` is then ignored. The recovered law lives on the union of the FFprime
+spline breaks and the pressure knots (exact Taylor re-expansion). A constant
+pressure law on [0,1] reproduces the scalar path bit for bit. The sign
+guard is per point: with psi_axis<0 and psi_edge=0 the pressure
+p(s)=psi_axis*integral_s^1 pp ds' must be nonnegative on a 32-point probe of
+every interval, evaluated with the law's own primitive (`gs_law_primitives`).
+For a constant law this is pprime<=0; a variable p' may be positive on part
+of the interval while p stays nonnegative. A discontinuous, unnormalized or
+non-spanning law, or negative pressure, returns status 1. The optional
+`forcing` argument adds an extra source for manufactured-solution tests.
 Reversing both q and Phi reverses F and Bphi while preserving psi and FFprime.
 The input F_edge is not an inverse constraint. The solver recovers it.
 
@@ -28,7 +43,9 @@ No derivative of an iteration sequence is reported.
 ordinary `pprime`, `mu0`, boundary and mesh options. `q_file` contains a row
 count followed by ascending `s_pol q` pairs, at least four rows, spanning 0..1.
 Local four-point cubic interpolation defines the input q law. `profile_file`
-and `q_file` are mutually exclusive. `inverse_intervals` (default 2) is the
+and `q_file` are mutually exclusive. `pprime_law_file` (with `q_file`, and
+`pprime=0`) names a normalized law file (the format of `profile-law.dat`) whose
+`pp` rows supply p'(s); its `ff` rows and `f_edge` are ignored. `inverse_intervals` (default 2) is the
 number of cubic FFprime spline intervals; `nonlinear_tolerance` controls the
 outer residual (default 1e-9), and `q_tolerance` controls the independent
 relative q defect (default 1e-3). Radial/angular budgets have the same meaning
@@ -47,6 +64,12 @@ q, p, F, pprime and FFprime. NetCDF retains the literal/resolved namelist,
 input q table, Phi constraint, solved law and provenance. The iter_tc24
 producer extension uses the Phase 3 `prescribed_q` schema without using the
 case's forward FFprime or nominal F_edge as constraints.
+
+`grad_shafranov_prescribed_q_variable_p` verifies a manufactured circular
+solution psi=psi_axis(1-rho^2) with cubic pp(s), ff(s) and an analytic forcing,
+against closed-form q(s) and Phi (concentric circles, Gauss-Legendre for Phi).
+It checks psi, FFprime and F_edge convergence on curved P3, knot-union
+invariance, scalar bit-compatibility and the pressure guard.
 
 The behavioral CTests cover an independent Phase 1 Solovev q integral, P3
 psi/field/source convergence, constant-q zero/finite-pressure self-convergence,
