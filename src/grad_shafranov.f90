@@ -11,7 +11,13 @@ module kin6d_grad_shafranov
    use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
    use fortnum_krylov, only: real_conjugate_gradient_operator, real_gmres_operator, &
        KRYLOV_OK, KRYLOV_MAX_ITERATIONS
-   use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, GS_T_FIXED_CG
+   use kin6d_gs_timers, only: gs_wall_s, gs_timer_add, GS_T_FIXED_CG, GS_T_FACTOR, &
+       GS_T_DIRECT
+   use kin6d_gs_options, only: gs_use_csr, gs_use_direct
+   use kin6d_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_dirichlet_apply, &
+       gs_csr_spd_matrix
+   use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+       gs_direct_solve, gs_direct_free
    use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights, &
        lagrange_combined_jvp, &
        lagrange_combined_vjp, lagrange_nodes_jvp, lagrange_nodes_vjp
@@ -26,7 +32,7 @@ module kin6d_grad_shafranov
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
    integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
    integer, parameter :: geometry_arithmetic = 3
-   public :: gs_cell_data, apply_gs
+   public :: gs_cell_data, apply_gs, gs_factor_ready, gs_apply_inverse
    public :: write_gs_mesh, read_gs_mesh
    public :: gs_profile_response, gs_profile_implicit_response, gs_profile_tangent_cache
    public :: gs_profile_response_cache_t, prepare_gs_profile_response_cache
@@ -47,6 +53,12 @@ module kin6d_grad_shafranov
       real(dp), allocatable :: stiffness(:, :, :), gradient(:, :, :)
       real(dp), allocatable :: area(:), diagonal(:)
       logical, allocatable :: curved_cell(:)
+      ! Row-parallel CSR copy of `stiffness` (full pattern) used by apply_gs. A
+      ! hand-built state has none and keeps the element-wise operator. The
+      ! Cholesky factor is created on first use and shared by copies of the
+      ! state (they describe the same matrix); it lives until the program ends.
+      type(csr_matrix_t) :: op
+      type(gs_direct_t), pointer :: direct => null()
       logical :: mapped = .false., ready = .false.
       integer :: element_order = 1
       real(dp) :: residual = huge(1.0_dp)
@@ -345,6 +357,8 @@ contains
         where (state%boundary) state%diagonal = 1
         if (minval(state%diagonal) <= 0) return
         if (.not. all(ieee_is_finite(state%diagonal))) return
+        call gs_csr_build(state%op, state%triangles, state%stiffness, n)
+        allocate (state%direct)
         state%ready = .true.
         status = 0
     end subroutine initialize_gs
@@ -476,6 +490,10 @@ contains
         real(dp), intent(out) :: output(:)
         real(dp) :: local(10), exchange
         integer :: e, k, l, i, j, ndof
+        if (allocated(state%op%rowptr) .and. gs_use_csr()) then
+            call gs_csr_dirichlet_apply(state%op, state%boundary, input, output)
+            return
+        end if
         ndof = size(state%triangles, 1)
         output = 0
         do e = 1, size(state%triangles, 2)
@@ -497,6 +515,91 @@ contains
         where (state%boundary) output = input
     end subroutine apply_gs
 
+    logical function gs_factor_ready(state) result(ready)
+        ! True when a Cholesky factor of the stiffness matrix is cached (created
+        ! on the first call) and the direct path is selected. A failed
+        ! factorisation is recorded, never retried, and leaves the iterative path.
+        type(gs_state_t), intent(in) :: state
+        integer, allocatable :: rowptr(:), colidx(:)
+        real(dp), allocatable :: val(:)
+        real(dp) :: clock
+        logical :: ok
+        ready = .false.
+        if (.not. gs_use_direct()) return
+        if (.not. gs_direct_available()) return
+        if (.not. associated(state%direct)) return
+        if (.not. allocated(state%op%rowptr)) return
+        if (allocated(state%direct%mask)) then
+            if (any(state%direct%mask .neqv. state%boundary)) then
+                call gs_direct_free(state%direct)
+                deallocate (state%direct%mask)
+            end if
+        end if
+        if (state%direct%failed) return
+        if (.not. state%direct%factored) then
+            clock = gs_wall_s()
+            if (allocated(state%direct%mask)) deallocate (state%direct%mask)
+            allocate (state%direct%mask, source=state%boundary)
+            call gs_csr_spd_matrix(state%op, state%boundary, rowptr, colidx, val)
+            call gs_direct_factor(state%direct, state%op%n, rowptr, colidx, val, ok)
+            call gs_timer_add(GS_T_FACTOR, gs_wall_s() - clock)
+            if (.not. ok) return
+        end if
+        ready = state%direct%factored
+    end function
+
+    subroutine gs_apply_inverse(state, input, output, ok)
+        ! output = A^-1 input by one back-substitution of the cached factor (no
+        ! refinement): the preconditioner of the Newton Krylov solves.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        logical, intent(out) :: ok
+        real(dp) :: clock
+        ok = .false.
+        output = 0
+        if (.not. gs_factor_ready(state)) return
+        clock = gs_wall_s()
+        call gs_direct_solve(state%direct, input, output, ok)
+        call gs_timer_add(GS_T_DIRECT, gs_wall_s() - clock, 1)
+        if (.not. ok) return
+        ok = all(ieee_is_finite(output))
+    end subroutine
+
+    subroutine gs_direct_response(state, source, response, tolerance, iterations, ok)
+        ! Direct solve of A x = source with iterative refinement against the
+        ! applied operator. ok is false when the residual stays above `tolerance`
+        ! (absolute), which sends the caller to the iterative solver.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: source(:), tolerance
+        real(dp), intent(out) :: response(:)
+        integer, intent(out) :: iterations
+        logical, intent(out) :: ok
+        real(dp), allocatable :: action(:), correction(:)
+        real(dp) :: rnorm, previous
+        integer :: sweep
+        iterations = 0
+        call gs_apply_inverse(state, source, response, ok)
+        if (.not. ok) return
+        iterations = 1
+        allocate (action(size(source)), correction(size(source)))
+        previous = huge(1.0_dp)
+        do sweep = 0, 4
+            call apply_gs(state, response, action)
+            action = source - action
+            rnorm = norm2(action)
+            if (.not. ieee_is_finite(rnorm)) exit
+            if (rnorm <= 1.0e-2_dp*tolerance .or. sweep == 4) exit
+            if (rnorm > 0.5_dp*previous) exit
+            previous = rnorm
+            call gs_apply_inverse(state, action, correction, ok)
+            if (.not. ok) return
+            response = response + correction
+            iterations = iterations + 1
+        end do
+        ok = ieee_is_finite(rnorm) .and. rnorm <= tolerance
+    end subroutine
+
    subroutine gs_linear_response(state, source, response, status, iteration_count, &
                                  relative_tolerance, stagnation_ok, residual_norm, &
                                  timer_kind)
@@ -514,7 +617,7 @@ contains
       integer, intent(in), optional :: timer_kind
       real(dp) :: residual, tolerance, clock
       real(dp), allocatable :: action(:)
-      logical :: keep_stagnant
+      logical :: keep_stagnant, direct_ok
       integer :: iterations
       status = 1
       if (present(iteration_count)) iteration_count = 0
@@ -533,7 +636,19 @@ contains
       if (tolerance <= 0) return
       if (norm2(source) > 0.0_dp) tolerance = tolerance*min(1.0_dp, norm2(source))
       clock = gs_wall_s()
-      call real_conjugate_gradient_operator(matvec, source, response, &
+      direct_ok = .false.
+      if (gs_factor_ready(state)) then
+         call gs_direct_response(state, source, response, tolerance, iterations, &
+                                 direct_ok)
+         if (direct_ok) then
+            status = KRYLOV_OK
+            residual = 0.0_dp
+         else
+            response = 0.0_dp
+         end if
+      end if
+      if (.not. direct_ok) &
+         call real_conjugate_gradient_operator(matvec, source, response, &
                    tolerance, max(500, 10*ceiling(sqrt(real(size(source), dp)))), &
                    status, iterations, residual, &
                                             preconditioner)

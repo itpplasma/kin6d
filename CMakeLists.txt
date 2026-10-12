@@ -133,7 +133,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "8da622b2f3f5fc58dc4fedf96d5d5c28f4a2bf81")
+set(KIN6D_FORTFEM_REVISION "5e743639306e5dbe247a7015b06ee3ec5b2373c7")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -146,6 +146,7 @@ file(GLOB KIN6D_TRIANGLE_SOURCES CONFIGURE_DEPENDS
     ${fortfem_SOURCE_DIR}/src/triangle_compat/*.f90)
 add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/utils/kinds.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/element_to_csr.f90
     ${fortfem_SOURCE_DIR}/src/triangulation/delaunay_types.f90
     ${fortfem_SOURCE_DIR}/src/triangulation/robust_predicates.f90
     ${fortfem_SOURCE_DIR}/src/triangulation/geometric_predicates.f90
@@ -167,7 +168,7 @@ set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
-    src/gs_timers.f90 src/grad_shafranov.f90)
+    src/gs_timers.f90 src/gs_options.f90 src/gs_csr.f90 src/grad_shafranov.f90)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d PUBLIC OpenMP::OpenMP_Fortran)
 endif()
@@ -203,13 +204,32 @@ foreach(domain valid zero negative nan)
 endforeach()
 # Sparse direct factorisation (SuperLU through fortsparse) for the indefinite
 # free-boundary Newton Jacobian; FortFEM's wrapper is the only entry point.
+# Threaded MUMPS Cholesky (through fortsparse) for the Grad-Shafranov stiffness
+# matrix: factor once per mesh, then direct solves, refinement and the A^-1
+# Newton preconditioner. ON by default when a sequential OpenMP MUMPS is found
+# (CMAKE_PREFIX_PATH or MUMPS_DIR); OFF builds the iterative path only.
+# Detected by file, not find_package: fortsparse runs the config itself and the
+# config may define its imported targets only once.
+find_file(KIN6D_MUMPS_CONFIG NAMES MUMPSConfig.cmake
+    HINTS ${MUMPS_DIR} ENV MUMPS_DIR
+    PATH_SUFFIXES cmake lib/cmake lib/cmake/MUMPS)
+if(KIN6D_MUMPS_CONFIG)
+    set(KIN6D_MUMPS_DEFAULT ON)
+else()
+    set(KIN6D_MUMPS_DEFAULT OFF)
+endif()
+option(KIN6D_ENABLE_MUMPS "Direct Cholesky solves through fortsparse MUMPS"
+    ${KIN6D_MUMPS_DEFAULT})
+if(KIN6D_ENABLE_MUMPS)
+    set(FORTSPARSE_ENABLE_MUMPS ON CACHE BOOL "" FORCE)
+endif()
 if(NOT TARGET fortsparse)
     set(FORTSPARSE_BUILD_TESTING OFF CACHE BOOL "" FORCE)
     set(FORTSPARSE_INSTALL_HELPER OFF CACHE BOOL "" FORCE)
     set(FORTSPARSE_USE_SYSTEM_DEPS ON CACHE BOOL "" FORCE)
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG a96c148651af0cab7205618ba17bab9c75159529
+        GIT_TAG d913253ce2d45aa54336a83eb7c089cc347b5c8b
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
@@ -218,6 +238,11 @@ add_library(kin6d_sparse_direct
     ${fortfem_SOURCE_DIR}/src/solvers/fortfem_sparse_direct.f90)
 target_link_libraries(kin6d_sparse_direct PUBLIC kin6d_spatial fortsparse)
 target_link_libraries(kin6d PUBLIC kin6d_sparse_direct)
+if(KIN6D_ENABLE_MUMPS)
+    target_sources(kin6d PRIVATE src/gs_direct.f90)
+else()
+    target_sources(kin6d PRIVATE src/gs_direct_stub.f90)
+endif()
 target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90
     src/gs_free_boundary.f90)
 # gs_coupling and gs_free_boundary threads come from the project-wide KIN6D_ENABLE_OPENMP option.
@@ -815,6 +840,11 @@ set_tests_properties(grad_shafranov_p2_nonlinear_convergence
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 target_link_libraries(test_gs_p3 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p3_physical_oracles COMMAND test_gs_p3)
+add_executable(test_gs_direct test/test_gs_direct.f90)
+target_link_libraries(test_gs_direct PRIVATE kin6d)
+add_test(NAME grad_shafranov_csr_direct_newton_oracles COMMAND test_gs_direct)
+set_tests_properties(grad_shafranov_csr_direct_newton_oracles PROPERTIES
+    TIMEOUT 600 ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_solver_work test/test_gs_solver_work.f90)
 target_link_libraries(test_gs_solver_work PRIVATE kin6d)
 add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)

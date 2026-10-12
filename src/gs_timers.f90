@@ -14,7 +14,9 @@ module kin6d_gs_timers
     integer, parameter, public :: GS_T_JAC_CG = 3     ! Jacobian symmetric CG
     integer, parameter, public :: GS_T_JAC_GMRES = 4  ! Jacobian GMRES (incl. nested)
     integer, parameter, public :: GS_T_PRECOND_CG = 5 ! nested CG inside GMRES
-    integer, parameter, public :: GS_T_COUNT = 5
+    integer, parameter, public :: GS_T_FACTOR = 6    ! Cholesky factorisation of A
+    integer, parameter, public :: GS_T_DIRECT = 7    ! back-substitutions with A
+    integer, parameter, public :: GS_T_COUNT = 7
     integer, parameter :: max_events = 512
     real(dp) :: seconds(GS_T_COUNT) = 0
     integer(int64) :: calls(GS_T_COUNT) = 0, iterations(GS_T_COUNT) = 0
@@ -47,7 +49,7 @@ contains
         seconds(kind) = seconds(kind) + elapsed
         calls(kind) = calls(kind) + 1
         iterations(kind) = iterations(kind) + n
-        if (kind == GS_T_PRECOND_CG) return
+        if (kind == GS_T_PRECOND_CG .or. kind == GS_T_DIRECT) return
         if (events >= max_events) return
         events = events + 1
         event_label(events) = kind_name(kind)
@@ -63,6 +65,7 @@ contains
         case (GS_T_FIXED_CG); name = 'fixed_cg'
         case (GS_T_JAC_CG); name = 'jacobian_cg'
         case (GS_T_JAC_GMRES); name = 'jacobian_gmres'
+        case (GS_T_FACTOR); name = 'factor'
         case default; name = 'other'
         end select
     end function

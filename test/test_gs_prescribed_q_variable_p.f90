@@ -187,10 +187,10 @@ contains
     end function
 
     subroutine check_scalar_compat()
-        ! A constant pressure law on [0,1] is the scalar path, bit for bit.
+        ! A constant pressure law on [0,1] is the scalar path (equal to roundoff).
         type(gs_state_t) :: one, two
         type(gs_profile_law_t) :: l1, l2, constant
-        real(dp) :: sq(4), qq(4), p0, ph
+        real(dp) :: sq(4), qq(4), p0, ph, diff
         integer :: st
         sq = [0.0_dp, 1.0_dp/3, 2.0_dp/3, 1.0_dp]; qq = 1.5_dp
         p0 = -2*5.3_dp/(1.5_dp*mu0*r0*r0)
@@ -206,9 +206,14 @@ contains
                       radial_points=2*n + 1, tolerance=1.0e-10_dp, &
                                    pressure_law=constant)
         if (st /= 0) error stop 'constant-law inverse'
-        if (any(one%psi /= two%psi) .or. any(l1%ff /= l2%ff) .or. &
-            any(l1%pp /= l2%pp) .or. l1%f_edge /= l2%f_edge) &
-            error stop 'constant law differs from scalar pprime'
+        ! Same operations, so equal to roundoff. The threaded direct solver does
+        ! not fix its summation order, so repeated solves are not bitwise equal.
+        diff = max(maxval(abs(one%psi - two%psi))/maxval(abs(one%psi)), &
+                   maxval(abs(l1%ff - l2%ff))/max(maxval(abs(l1%ff)), tiny(1.0_dp)), &
+                   maxval(abs(l1%pp - l2%pp))/max(maxval(abs(l1%pp)), tiny(1.0_dp)), &
+                   abs(l1%f_edge - l2%f_edge)/abs(l1%f_edge))
+        print '(a,es10.2)', ' constant law vs scalar pprime, max relative diff:', diff
+        if (diff > 1.0e-11_dp) error stop 'constant law differs from scalar pprime'
         ! Pressure stays nonnegative although p' > 0 on part of the interval.
         constant = pressure_cubic([0.0_dp, 1.0_dp])
         constant%pp = 0
