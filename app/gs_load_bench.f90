@@ -7,7 +7,8 @@ program gs_load_bench
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use kin6d_gs_nonlinear, only: gs_profile_jacobian_t, gs_cubic_load
-    use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_reset, GS_T_LOAD_CELLS
+    use kin6d_gs_timers, only: gs_wall_s, gs_timer_total, gs_timer_reset, &
+                               GS_T_LOAD_CELLS
     implicit none
     type(gs_state_t) :: state
     type(gs_profile_law_t) :: law
