@@ -966,7 +966,7 @@ if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 target_sources(kin6d PRIVATE src/mhd_mesh.f90 src/mhd_ampere_n.f90
-    src/mhd_response_n.f90)
+    src/mhd_response_n.f90 src/mhd_ideal_n.f90)
 target_link_libraries(kin6d PUBLIC kin6d_feec_n)
 add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
 target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
@@ -980,3 +980,8 @@ set_tests_properties(mhd_shielding_cylinder_limit_reciprocity PROPERTIES TIMEOUT
     ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(gs_response_3d app/gs_response_3d.f90)
 target_link_libraries(gs_response_3d PRIVATE kin6d)
+add_executable(test_mhd_ideal_n test/test_mhd_ideal_n.f90)
+target_link_libraries(test_mhd_ideal_n PRIVATE kin6d)
+add_test(NAME mhd_ideal_n_mde_force_free_identity COMMAND test_mhd_ideal_n)
+set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
