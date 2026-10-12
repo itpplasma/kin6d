@@ -896,3 +896,18 @@ add_test(NAME grad_shafranov_stream_readback
     -DWORK=${CMAKE_BINARY_DIR}/gs_stream_test
     -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_stream.cmake)
 set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
+
+# K-C1/L3: 3D polyline coils, per-n Fourier projection, vacuum b_mn (L3).
+target_sources(kin6d PRIVATE src/coils_3d.f90 src/vacuum_surfaces.f90)
+add_executable(test_coils_3d test/test_coils_3d.f90)
+target_link_libraries(test_coils_3d PRIVATE kin6d)
+add_test(NAME coils_3d_biot_savart_fourier_oracles COMMAND test_coils_3d)
+set_tests_properties(coils_3d_biot_savart_fourier_oracles PROPERTIES TIMEOUT 120)
+add_executable(test_vacuum_surfaces test/test_vacuum_surfaces.f90)
+target_link_libraries(test_vacuum_surfaces PRIVATE kin6d)
+add_test(NAME vacuum_surfaces_sfl_harmonics_oracles COMMAND test_vacuum_surfaces)
+set_tests_properties(vacuum_surfaces_sfl_harmonics_oracles PROPERTIES TIMEOUT 300)
+add_executable(coil_modes app/coil_modes.f90)
+target_link_libraries(coil_modes PRIVATE kin6d)
+add_executable(gs_vacuum_3d app/gs_vacuum_3d.f90)
+target_link_libraries(gs_vacuum_3d PRIVATE kin6d)
