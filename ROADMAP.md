@@ -722,6 +722,17 @@ stationary solutions are stored as different equilibria with their own initial
 state/continuation provenance; no general probabilistic branch machinery belongs
 in KIN6D.
 
+The nested-surface 3D equilibrium lane (energy minimisation over a map from a
+reference domain) keeps its reference chart behind an abstract interface: the
+energy, quadrature, generated leaves and solver see only the map Jacobian. The
+first chart is cylindrical (TC24 RMP). A later step adds a curve-following
+frame, X = Gamma(zeta) + q1 N(zeta) + q2 B(zeta) with a closed axis curve and a
+Frenet or user-defined frame, as GVEC's G-Frame does, so that non-planar-axis
+and Figure-8 stellarators can be solved. Its gate is the atlas case
+`g_frame_figure8_equilibrium`: first an analytic curve-frame case, then a
+frozen public Figure-8 equilibrium compared with GVEC on the same frame and
+boundary. Not scheduled before the TC24 lanes close.
+
 ARES/MEPHIT/MARS/GPEC and later JOREK/NIMROD-type cases remain response and
 evolution landmarks. VMEC/DESC/GVEC, MRX, HINT/PIES and SPEC/SPECTRE are equilibrium
 comparators with different model assumptions. Do not reimplement their entire
