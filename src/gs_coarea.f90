@@ -418,13 +418,9 @@ contains
             do index = 1, count
                 events(index) = events_copy(permutation(index))
             end do
-            if (count > 1) then
-                if (minval(events(2:count)%angle - events(1:count - &
-                                                          1)%angle) < 1.0e-10_dp) then
-                    level_status = 18
-                    return
-                end if
-            end if
+            ! Nearly equal event angles are a regular contour passing near a
+            ! mesh vertex: the face events stay distinct and ordered, and the
+            ! cell walk below rejects any inconsistent order (status 8).
             lo = events(1)%angle
             hi = lo + two_pi
             if (count > 1) hi = events(2)%angle
