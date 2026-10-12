@@ -77,6 +77,8 @@ module kin6d_mhd_ideal_n
         !> No volume response on surfaces with |q| < qlow (the core inside the
         !> integration start of DCON, qlow there; 0 keeps the whole plasma).
         real(dp) :: qlow = 0.0_dp
+        !> Moved equilibrium current xi_n J0 at the boundary (cut edge).
+        logical :: moved_current = .false.
     end type ideal_options_t
 
     public :: equilibrium_point
@@ -290,7 +292,8 @@ contains
         f = f*exp(cmplx(0.0_dp, -n*sr%nup, dp))
     end subroutine mde_solve
 
-    subroutine ideal_current(rings, n, sgn_dpsi, qlow, b, jcur, kap, bnd, seg)
+    subroutine ideal_current(rings, n, sgn_dpsi, qlow, b, jcur, kap, bnd, seg, &
+            moved)
         !! Plasma current jcur(3, np, ring) of the total field b(3, np, ring) on
         !! the sample rings (half rings 2 .. nring and, last, the boundary ring
         !! bnd), and the boundary-sheet coefficient kap(np) (K = kap B0).
@@ -302,9 +305,12 @@ contains
         !> surface carry different labels); d/dpsi never differences across a
         !> rational surface, where the ideal pressure and current jump.
         integer, intent(in), optional :: seg(:)
+        !> Add the moved equilibrium current xi_n J0 of the displaced plasma
+        !> boundary (J0 jumps to zero at a cut edge) to the boundary sheet.
+        logical, intent(in), optional :: moved
         complex(dp), intent(out) :: jcur(:, :, :), kap(:)
         complex(dp), allocatable :: p(:, :), dpth(:), dpsi(:), g(:), dg(:)
-        complex(dp), allocatable :: rhs(:), h(:), jn(:)
+        complex(dp), allocatable :: rhs(:), h(:), jn(:), xin(:), dxin(:)
         complex(dp) :: gradp(3), v(3), jxb(3), bb(3)
         type(fortnum_fft_plan_t) :: plan
         integer :: nr, ir, k, np, lo, hi
@@ -384,7 +390,35 @@ contains
                     + jcur(3, k, bnd)*rings(bnd)%gpsi(2, k)) &
                     /norm2(rings(bnd)%gpsi(:, k))
             end do
+            if (present(moved)) then
+                if (moved) then
+                    ! xi . grad psi from B0 . grad (xi . grad psi) = B . grad psi
+                    allocate (xin(np), dxin(np))
+                    xin = b(1, :, bnd)*rings(bnd)%gpsi(1, :) &
+                        + b(3, :, bnd)*rings(bnd)%gpsi(2, :)
+                    call mde_solve(rings(bnd), n, xin, dxin, plan)
+                    do k = 1, np
+                        xin(k) = sgn_dpsi*dxin(k)/norm2(rings(bnd)%gpsi(:, k))
+                    end do
+                    ! K_mv = xi_n J0 has surface divergence J0 . grad xi_n
+                    call dtheta(xin, dxin, plan)
+                    do k = 1, np
+                        jn(k) = jn(k) - (rings(bnd)%j0(1, k)*rings(bnd)%gth(1, k) &
+                            + rings(bnd)%j0(3, k)*rings(bnd)%gth(2, k))*dxin(k) &
+                            - rings(bnd)%j0(2, k)/rings(bnd)%x(1, k) &
+                            *cmplx(0.0_dp, n, dp)*xin(k)
+                    end do
+                end if
+            end if
             call mde_solve(rings(bnd), n, jn, kap, plan)
+            if (allocated(xin)) then
+                ! poloidal part of xi_n J0 as an equivalent kap (J0_pol || B0_pol)
+                do k = 1, np
+                    kap(k) = kap(k) + xin(k)*(rings(bnd)%j0(1, k)*rings(bnd)%b0(1, k) &
+                        + rings(bnd)%j0(3, k)*rings(bnd)%b0(3, k)) &
+                        /(rings(bnd)%b0(1, k)**2 + rings(bnd)%b0(3, k)**2)
+                end do
+            end if
         end if
     end subroutine ideal_current
 
@@ -628,7 +662,8 @@ contains
             complex(dp), allocatable :: jc(:, :, :), kap(:), f(:)
             integer :: st2
             allocate (jc(3, np, nr), kap(np), f(amp%nn))
-            call ideal_current(rings, n, g%sgn_dpsi, opt%qlow, bf, jc, kap, bnd, seg)
+            call ideal_current(rings, n, g%sgn_dpsi, opt%qlow, bf, jc, kap, bnd, seg, &
+                opt%moved_current)
             call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f)
             call ampere_n_solve(amp, f, y, st2)
         end subroutine apply_k_inv_load
