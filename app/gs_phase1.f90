@@ -46,7 +46,7 @@ program gs_phase1_main
     real(dp) :: mesh_s = 0, newton_s = 0, readback_s = 0, io_s = 0, io_total_s = 0
     real(dp) :: clock, program_start_s
     integer :: threads = 1
-    character(16) :: determinism = 'deterministic'
+    character(16) :: determinism = 'fast'
     logical :: curved = .true., directory_ok, recovery_converged
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
     character(512) :: q_file = '', interior_points_file = '', pprime_law_file = ''
@@ -65,9 +65,9 @@ program gs_phase1_main
     call gs_progress_set(.true.)
     !$ threads = omp_get_max_threads()
     call get_environment_variable('KIN6D_DETERMINISM', determinism)
-    if (len_trim(determinism) == 0) determinism = 'deterministic'
+    if (len_trim(determinism) == 0) determinism = 'fast'
     if (trim(determinism) /= 'deterministic' .and. trim(determinism) /= 'fast') &
-        error stop 'KIN6D_DETERMINISM must be deterministic or fast'
+        error stop 'KIN6D_DETERMINISM must be fast (default) or deterministic (debug)'
     if (run%argument_count() > 0) then
         call run%argument(1, argument)
         select case (trim(argument))
