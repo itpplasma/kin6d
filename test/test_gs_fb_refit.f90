@@ -460,7 +460,9 @@ contains
                             chain, rcfg, report, status, set=coils, curve=outer_curve, &
                                extra_cb=smooth_extra, history=hist)
         if (status == GS_FB_REFIT_NOT_CONVERGED) status = GS_FB_OK
-        if (status /= GS_FB_OK) print '(a,i4,a,i4,a,i4)', '   free solve status ', status, ' order ', order, ' edges ', n_outer
+        if (status /= GS_FB_OK) &
+            print '(a,i4,a,i4,a,i4)', '   free solve status ', status, ' order ', &
+            order, ' edges ', n_outer
         if (status /= GS_FB_OK) return
       call gs_fb_evaluate(state, sys, state%psi, currents, ev, status, jacobian=.false.)
         if (status /= GS_FB_OK) return
@@ -484,7 +486,8 @@ contains
     end subroutine free_solve
 
     subroutine reference_study()
-        real(dp) :: ref(10), run(10), info(2), errors(4, 3), dummy(2), fixed_finest(4), rates(4), fixed_rates(3)
+        real(dp) :: ref(10), run(10), info(2), errors(4, 3), dummy(2)
+        real(dp) :: fixed_finest(4), rates(4), fixed_rates(3)
         integer :: status, k, order, level, n, j
         character(len=2) :: tag
         integer, parameter :: sizes(3) = [18, 36, 72]

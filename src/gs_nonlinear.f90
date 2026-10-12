@@ -240,8 +240,8 @@ contains
                 if (ie > snapshot) cycle
                 call gs_load_element(state, mu0, law, ie, free_mode, smooth_law, &
                                      need_jacobian, nc, tol, jtol, levels, tables, &
-                                     forcing, scratch, local_evaluations, status_local, &
-                                     cell_psi)
+                                     forcing, scratch, local_evaluations, &
+                                     status_local, cell_psi)
                 element_evaluations(ie) = local_evaluations
                 if (status_local /= 0) then
                     element_status(ie) = status_local
