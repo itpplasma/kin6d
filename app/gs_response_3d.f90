@@ -1,11 +1,14 @@
 program gs_response_3d
-    !! L4 (first stage): per-n response of an axisymmetric G-EQDSK equilibrium
-    !! to 3D coils in the vacuum-shielding model: the coil field (L3,
-    !! closed-form Biot-Savart) plus resonant sheet currents on the rational
-    !! surfaces that cancel the total resonant flux (ideal shielding), with the
-    !! field of the sheets computed by the per-n FEEC Ampere operator on a
-    !! flux-aligned mesh of the plasma and the exact exterior (BEM).  No
-    !! volume plasma current responds in this model.
+    !! L4: per-n linear response of an axisymmetric G-EQDSK equilibrium to 3D
+    !! coils.  The coil field (L3, closed-form Biot-Savart) drives
+    !!  - model = 'shield': resonant sheet currents on the rational surfaces
+    !!    that cancel the total resonant flux (ideal shielding of a vacuum
+    !!    plasma, no volume current);
+    !!  - model = 'ideal': in addition the volume current of the linear ideal
+    !!    perturbed equilibrium (kin6d_mhd_ideal_n, MEPHIT form) with the
+    !!    field-aligned boundary sheet (boundary_sheet).
+    !! Fields of all plasma currents come from the per-n FEEC Ampere operator
+    !! on a flux-aligned mesh of the plasma with the exact exterior (BEM).
     !!
     !! Usage: gs_response_3d input.nml   (namelist /l4/, see below)
     !!
@@ -29,6 +32,8 @@ program gs_response_3d
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_points, ring_flux_harmonic, ring_flux_from_values, &
         ring_sheet_load, ring_area
+    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+        ideal_options_t, ideal_response
     implicit none
     integer, parameter :: maxr = 32, maxp = 4
     real(dp), parameter :: pi = 3.14159265358979323846_dp
@@ -38,9 +43,15 @@ program gs_response_3d
     integer :: nphi = 64, nfine = 1024, angle = 2
     integer :: rat_num(maxr) = 0, rat_den(maxr) = 0
     real(dp) :: psin_rat_min = 0.05_dp, psin_rat_max = 1.0_dp, min_gap = 0.3_dp
+    character(len=16) :: model = 'shield'
+    integer :: np_sample = 512, gmres_maxit = 300
+    real(dp) :: gmres_tol = 1.0e-9_dp
+    logical :: boundary_sheet = .true.
+    real(dp) :: qlow = 0.0_dp
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
-        psin_rat_max, min_gap
+        psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
+        boundary_sheet, qlow
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -58,8 +69,12 @@ program gs_response_3d
     complex(dp), allocatable :: phil3(:), bs(:, :, :), bb(:, :)
     complex(dp) :: bmn1(1), phimn1(1)
     real(dp), allocatable :: xs(:, :)
-    real(dp) :: qref, target, root, t0, t1
-    integer :: unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk
+    type(sample_ring_t), allocatable :: rings(:)
+    type(ideal_options_t) :: opt
+    real(dp), allocatable :: xr(:, :)
+    complex(dp), allocatable :: bcr(:, :, :), avol(:), lam_id(:)
+    real(dp) :: qref, target, root, t0, t1, res
+    integer :: unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk, its, nsr
     logical :: found
 
     if (command_argument_count() /= 1) error stop 'usage: gs_response_3d input.nml'
@@ -125,6 +140,27 @@ program gs_response_3d
         fs%mm%topology%n_triangles, ', unknowns ', amp%nn, ', boundary panels ', &
         amp%bd%n_panels, ', setup cpu ', t1 - t0, ' s'
 
+    if (trim(model) == 'ideal') then
+        opt%boundary_sheet = boundary_sheet
+        opt%qlow = qlow
+        nsr = nr
+        allocate (rings(nsr))
+        do j = 2, nr
+            call sample_ring_build(g, opt, fm, fs, pb, 0.5_dp*(ul(j - 1) + ul(j)), &
+                j, np_sample, rings(j - 1), st)
+            if (st /= 0) error stop 'half ring'
+        end do
+        call sample_ring_build(g, opt, fm, fs, pb, ul(nr), nr, np_sample, &
+            rings(nsr), st)
+        if (st /= 0) error stop 'boundary sample ring'
+        allocate (avol(amp%nn), lam_id(nrat))
+        avol = (0.0_dp, 0.0_dp)
+        write (*, '(a,i0,a,i0,a)') 'ideal model: ', nsr, ' sample rings of ', &
+            np_sample, ' points'
+    else if (trim(model) /= 'shield') then
+        error stop 'model must be shield or ideal'
+    end if
+
     ! ring angles and unit-sheet fields
     allocate (ra(nrat), area(nrat), b2(fs%sp(2)%ndof, nrat), f(amp%nn), a(amp%nn))
     do i = 1, nrat
@@ -189,11 +225,35 @@ program gs_response_3d
             phil3(i) = phimn1(1)
             deallocate (xs, bs, bb)
         end do
+        if (trim(model) == 'ideal') then
+            ! coil field on the sample rings
+            allocate (xr(2, nsr*np_sample), bcr(3, 1, nsr*np_sample))
+            do j = 1, nsr
+                xr(:, (j - 1)*np_sample + 1:j*np_sample) = rings(j)%x
+            end do
+            call coil_set_modes(set, w, xr, nphi, [n], bcr, st)
+            if (st /= 0) error stop 'coil projection on sample rings'
+            do j = 1, nsr
+                rings(j)%bc = bcr(:, 1, (j - 1)*np_sample + 1:j*np_sample)
+            end do
+            deallocate (xr, bcr)
+        end if
         call cpu_time(t1)
         lu = mm
         lam = -phivac
         call zgesv(nrat, 1, lu, nrat, ipiv, lam, nrat, info)
         if (info /= 0) error stop 'shielding system singular'
+        if (trim(model) == 'ideal') then
+            call cpu_time(t0)
+            call ideal_response(fs, pb, fm, g, amp, opt, n, rings, ring_of, ra, &
+                m_rat(1:nrat), mm, b2, phivac, avol, lam_id, gmres_tol, &
+                gmres_maxit, info, its, res)
+            call cpu_time(t1)
+            write (*, '(a,i0,a,i0,a,es10.2,a,f10.1,a)') 'ideal response: info ', &
+                info, ', GMRES iterations ', its, ', residual ', res, ', cpu ', &
+                t1 - t0, ' s'
+            lam = lam_id
+        end if
         do i = 1, nrat
             write (ur, '(i3,f10.6,f14.10,i5,es16.8,10es16.8)') ip, q_rat(i), &
                 ul(ring_of(i))**2, m_rat(i), area(i), phivac(i), &
@@ -227,7 +287,7 @@ contains
 
     subroutine merge_rings(nu, extra, gap, u)
         !! u_j = j/nu merged with extra labels; uniform labels closer than
-        !! gap/nu to an extra label are dropped.
+        !! gap/nu to an extra label are dropped, except the boundary u = 1.
         integer, intent(in) :: nu
         real(dp), intent(in) :: extra(:), gap
         real(dp), allocatable, intent(out) :: u(:)
@@ -236,7 +296,7 @@ contains
         c = 0
         do j = 1, nu
             v = real(j, dp)/nu
-            if (size(extra) > 0) then
+            if (size(extra) > 0 .and. j < nu) then
                 if (minval(abs(extra - v)) < gap/nu) cycle
             end if
             c = c + 1
