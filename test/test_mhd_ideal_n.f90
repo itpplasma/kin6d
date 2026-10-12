@@ -44,6 +44,7 @@ program test_mhd_ideal_n
     call make_equilibrium()
     call mde_check()
     call force_free_check()
+    call divergence_check()
     if (.not. all_passed) error stop 1
     print '(a)', "test_mhd_ideal_n: all checks passed"
 
@@ -134,6 +135,129 @@ contains
         real(dp), intent(in) :: th
         ftest = exp(cmplx(0.0_dp, 3*th, dp))*cos(th) + 0.3_dp
     end function ftest
+
+    subroutine divergence_check()
+        use kin6d_mhd_ideal_n, only: ideal_current
+        type(flux_mesh_t) :: fm
+        type(meridian_feec_t) :: fs
+        type(meridian_point_basis_t) :: pb
+        type(ideal_options_t) :: opt
+        type(sample_ring_t) :: rings(3)
+        type(psi_grid_t) :: g0
+        integer, parameter :: np = 256
+        complex(dp) :: b(3, np, 3), jc(3, np, 3), kap(np), dj(np), djp(np)
+        complex(dp) :: jperp(3, np, 3)
+        real(dp) :: ul(16), du, uc, jac(np, 3), xx, gth(2)
+        integer :: i, k, st, nf
+        g0 = g
+        ! profiles with p' /= 0 and F' /= 0 (any smooth profiles: the identity
+        ! does not need an equilibrium)
+        nf = size(g%fcoef) - 2
+        do i = 0, nf + 1
+            xx = real(i - 1, dp)/(nf - 1)
+            g%fcoef(i) = fval*(1.0_dp - 0.08_dp*xx**2)
+        end do
+        allocate (g%pcoef(0:nf + 1))
+        do i = 0, nf + 1
+            xx = real(i - 1, dp)/(nf - 1)
+            g%pcoef(i) = 2.0e5_dp*(1.0_dp - xx**2)**2
+        end do
+        do k = 1, 16
+            ul(k) = k/16.0_dp
+        end do
+        call flux_mesh_build(ul, 8, 64, 2, polar_map, fm, st)
+        call meridian_feec_build(fm%mm, 2, fs, st)
+        call meridian_point_basis_init(fs, pb, st)
+        uc = 0.6_dp
+        du = 2.0e-3_dp
+        do i = 1, 3
+            call sample_ring_build(g, opt, fm, fs, pb, uc + (i - 2)*du, 10, np, &
+                rings(i), st)
+            if (st /= 0) error stop "divergence rings"
+            do k = 1, np
+                call btest_fun(rings(i)%x(:, k), b(:, k, i))
+                gth = rings(i)%gth(:, k)
+                jac(k, i) = rings(i)%x(1, k)/(rings(i)%gpsi(2, k)*gth(1) &
+                    - rings(i)%gpsi(1, k)*gth(2))
+            end do
+        end do
+        call ideal_current(rings, nmode, g%sgn_dpsi, 0.0_dp, b, jc, kap, 0)
+        ! J_perp alone: remove the parallel part h B0 (h = J . B0/B0^2 minus
+        ! the parallel part of J_perp, which vanishes)
+        do i = 1, 3
+            do k = 1, np
+                jperp(:, k, i) = jc(:, k, i) - dot_product(rings(i)%b0(:, k), &
+                    jc(:, k, i))/rings(i)%b0sq(k)*rings(i)%b0(:, k)
+            end do
+        end do
+        call fd_div(rings, jac, jc, dj)
+        call fd_div(rings, jac, jperp, djp)
+        print '(a,es10.2)', "  max|div J|/max|div J_perp|", maxval(abs(dj))/maxval(abs(djp))
+        call record(maxval(abs(dj)) < 1.0e-3_dp*maxval(abs(djp)), &
+            "charge conservation with pressure and poloidal current")
+        g = g0
+    end subroutine divergence_check
+
+    subroutine fd_div(rings, jac, v, d)
+        !! div v at the middle of three surfaces: (1/J)[d_psi(J v^psi) +
+        !! d_theta(J v^theta)] + i n v_phi/R, J the (psi, theta_g, phi) Jacobian.
+        type(sample_ring_t), intent(in) :: rings(3)
+        real(dp), intent(in) :: jac(:, :)
+        complex(dp), intent(in) :: v(:, :, :)
+        complex(dp), intent(out) :: d(:)
+        complex(dp) :: fpsi(size(d), 3), jth(size(d)), djth(size(d))
+        integer :: np
+        real(dp) :: dpsi
+        integer :: ii, kk
+        np = size(d)
+        do ii = 1, 3
+            do kk = 1, np
+                fpsi(kk, ii) = jac(kk, ii)*(v(1, kk, ii)*rings(ii)%gpsi(1, kk) &
+                    + v(3, kk, ii)*rings(ii)%gpsi(2, kk))
+            end do
+        end do
+        dpsi = rings(3)%psi - rings(1)%psi
+        do kk = 1, np
+            jth(kk) = jac(kk, 2)*(v(1, kk, 2)*rings(2)%gth(1, kk) &
+                + v(3, kk, 2)*rings(2)%gth(2, kk))
+        end do
+        call spectral_dtheta(jth, djth)
+        do kk = 1, np
+            d(kk) = ((fpsi(kk, 3) - fpsi(kk, 1))/dpsi + djth(kk))/jac(kk, 2) &
+                + cmplx(0.0_dp, nmode, dp)*v(2, kk, 2)/rings(2)%x(1, kk)
+        end do
+    end subroutine fd_div
+    subroutine spectral_dtheta(f, df)
+        complex(dp), intent(in) :: f(:)
+        complex(dp), intent(out) :: df(:)
+        complex(dp) :: c
+        integer :: kk, jj, m, np
+        np = size(f)
+        df = (0.0_dp, 0.0_dp)
+        do m = -np/2 + 1, np/2 - 1
+            c = (0.0_dp, 0.0_dp)
+            do jj = 1, np
+                c = c + f(jj)*exp(cmplx(0.0_dp, -m*2*pi*(jj - 1)/np, dp))
+            end do
+            c = c/np
+            do kk = 1, np
+                df(kk) = df(kk) + cmplx(0.0_dp, m, dp)*c &
+                    *exp(cmplx(0.0_dp, m*2*pi*(kk - 1)/np, dp))
+            end do
+        end do
+    end subroutine spectral_dtheta
+
+    subroutine btest_fun(x, b)
+        !! Vacuum per-n field grad_n (R^n (1 + Z/2)) (curl and divergence free).
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: b(3)
+        real(dp) :: u
+        u = x(1)**nmode*(1.0_dp + 0.5_dp*x(2))
+        b(1) = nmode*x(1)**(nmode - 1)*(1.0_dp + 0.5_dp*x(2))
+        b(2) = cmplx(0.0_dp, nmode, dp)*u/x(1)
+        b(3) = 0.5_dp*x(1)**nmode
+        b = b*1.0e-3_dp
+    end subroutine btest_fun
 
     subroutine bext_fun(x, b)
         !! Exact per-n vacuum field grad_n (R^n).
