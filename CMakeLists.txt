@@ -247,6 +247,29 @@ else()
 endif()
 target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90
     src/gs_free_boundary.f90 src/gs_coil_inverse.f90)
+# N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
+target_sources(kin6d PRIVATE src/generated/kin6d_ideal_map_leaves.f90
+    src/ideal_map.f90)
+set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90)
+target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+add_test(NAME ideal_map_derivatives_and_rotation_null
+    COMMAND test_ideal_map_axisymmetric derivatives)
+add_test(NAME ideal_map_n3_leakage COMMAND test_ideal_map_axisymmetric leakage)
+foreach(k 2 3)
+    add_test(NAME ideal_map_n0_solovev_a3_p${k}
+        COMMAND test_ideal_map_axisymmetric solovev ${k})
+    add_test(NAME ideal_map_n0_shaped_solovev_p${k}
+        COMMAND test_ideal_map_axisymmetric shaped ${k})
+endforeach()
+# Three-mesh ladders: 1-3 min each with 4 threads; shaped P3 about 10 min
+# (serial SuperLU on 5e4 dofs dominates).
+set_tests_properties(ideal_map_n3_leakage ideal_map_n0_solovev_a3_p2
+    ideal_map_n0_solovev_a3_p3 ideal_map_n0_shaped_solovev_p2 PROPERTIES
+    TIMEOUT 900 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
+set_tests_properties(ideal_map_n0_shaped_solovev_p3 PROPERTIES
+    TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 # gs_coupling and gs_free_boundary threads come from the project-wide KIN6D_ENABLE_OPENMP option.
 add_executable(test_gs_coils test/test_gs_coils.f90)
 target_link_libraries(test_gs_coils PRIVATE kin6d)
@@ -580,7 +603,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov gs_coarea gs_inverse gs_reference_error
+    foreach(generator grad_shafranov ideal_map gs_coarea gs_inverse gs_reference_error
             laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud

@@ -1,0 +1,823 @@
+module kin6d_ideal_map
+    ! Nonlinear 3D ideal equilibrium as frozen-in energy minimisation over maps
+    ! (DESIGN 7.1, choice A). The unknown is a map from abstract coordinates
+    ! s = (s1, s2, s3): (s1, s2) the master coordinates of each triangle of a
+    ! 2D reference mesh and s3 = phi-hat, into Cartesian space,
+    !     X(s) = H(q(s)),  q = (q1, q2, phi-hat + omega),
+    ! where H is a chart (cylindrical here) and q1, q2, omega are Lagrange P_k in
+    ! the plane times a real Fourier series in phi-hat with n in nfp*Z, |n| <=
+    ! nfp*ntor. The frozen flux density b (a closed 2-form, contravariant density
+    ! in s) and pressure p (gamma = 0) are carried by the reference; the field is
+    ! B = DX b/J with J = sigma*det DX, and
+    !     W[X] = int ( |DX b|^2/(2 mu0 J) - p J ) ds   (one field period).
+    ! The energy density, its DX-gradient and DX-Hessian are generated leaves;
+    ! the energy, quadrature and solver see the chart only through H(q) and its
+    ! q-derivatives, so a curve-following frame is a further ideal_chart_t.
+    ! Relabelling gauge (DESIGN 7.1): each node moves in the poloidal plane only
+    ! along a fixed transversal d_a = grad chi/|grad chi| of the reference label,
+    !     (q1, q2)(a) = y_a + nu_a(phi-hat) d_a,
+    ! so the unknowns are (nu, omega) per node and mode (a VMEC-like fixed-angle
+    ! gauge; omega plays the role of lambda). Surfaces still move freely; only
+    ! the tangential reparametrisation along them is fixed. A fixed direction
+    ! cannot translate surfaces smaller than the axis shift, and any transversal
+    ! field is singular at the O-point (a cone-type map that loses order). A
+    ! global axis expansion (VMEC's raxis/zaxis generalised) is therefore added:
+    !     (q1, q2)(a) = y_a + nu_a d_a + T_a sum_j sigma_j P_j(y_a),
+    ! with T = (chi - chi_edge)/(chi_axis - chi_edge) in [0, 1] and P_j the
+    ! monomials of degree <= k-1 about the O-point node, so the remaining
+    ! transversal part is smooth enough for the P_k interpolation order.
+    ! Fixed boundary: nu on boundary nodes is held (all modes); omega's n = 0
+    ! value at one node fixes the rigid toroidal rotation. At n = 0 any
+    ! omega = f(chi) is a continuum null direction (rigid rotation of each
+    ! surface); it is discretely near-null and left to the damped Newton.
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_grad_shafranov, only: gs_state_t
+    use kin6d_ideal_map_leaves, only: ideal_energy_density, ideal_energy_gradient, &
+        ideal_energy_hessian, cylindrical_chart_position, cylindrical_chart_first, &
+        cylindrical_chart_second, cylindrical_chart_third
+    use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
+    use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
+        csr_assemble_blocks
+    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
+        sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
+        FORTSPARSE_SYM_GENERAL
+    implicit none
+    private
+    public :: ideal_chart_t, cylindrical_chart_t, ideal_map_t, frozen_field
+    public :: ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_hessian
+    public :: ideal_map_solve, ideal_map_point, ideal_map_dof, ideal_map_mode_norms
+    public :: ideal_map_reduce, ideal_map_expand, ideal_map_rdof, ideal_map_axis_dof
+    public :: ideal_map_solve_report_t
+    integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
+        IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
+        IDEAL_MAP_BAD_INPUT = 4
+
+    ! A chart X = H(q). jet returns H, dH(a,k) = dH_a/dq_k and the second and
+    ! third q-derivatives d2(a,k,l), d3(a,k,l,m). The map fixes the orientation
+    ! sigma = sign(det dH) at the reference.
+    type, abstract :: ideal_chart_t
+    contains
+        procedure(chart_jet), deferred :: jet
+    end type
+    abstract interface
+        pure subroutine chart_jet(chart, q, x, d1, d2, d3)
+            import :: ideal_chart_t, dp
+            class(ideal_chart_t), intent(in) :: chart
+            real(dp), intent(in) :: q(3)
+            real(dp), intent(out) :: x(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        end subroutine
+    end interface
+
+    ! q = (R, Z, phi); X = (R cos phi, R sin phi, Z). (R, Z, phi) is left-handed.
+    type, extends(ideal_chart_t) :: cylindrical_chart_t
+    contains
+        procedure :: jet => cylindrical_jet
+    end type
+
+    ! Frozen reference data at a reference point y = (q1, q2): poloidal flux
+    ! label chi and its gradient, toroidal flux density b3 (contravariant density
+    ! in (q1, q2, phi-hat)) and pressure. b_pol = (-d chi/dq2, d chi/dq1).
+    abstract interface
+        subroutine frozen_field(point, chi, chi_gradient, b3, pressure)
+            import :: dp
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
+        end subroutine
+    end interface
+
+    type :: ideal_map_t
+        class(ideal_chart_t), allocatable :: chart
+        integer :: nfp = 1, ntor = 0, nmode = 1, nphi = 1
+        integer :: nodes = 0, cells = 0, nloc = 0, nq = 0, ndof = 0, gauge = 0
+        integer :: nred = 0
+        real(dp) :: mu0 = 1, sigma = 1
+        integer, allocatable :: conn(:, :), dofconn(:, :), redconn(:, :)
+        ! Transversal directions d(2, node); fixed(nred) flags reduced dofs.
+        ! axis_basis(j, node) = T P_j at the node; npoly monomials per mode.
+        real(dp), allocatable :: direction(:, :), axis_basis(:, :)
+        integer :: npoly = 0
+        real(dp), allocatable :: reference(:, :)
+        logical, allocatable :: boundary(:), fixed(:)
+        real(dp), allocatable :: weight(:), shape(:, :), dshape(:, :, :)
+        real(dp), allocatable :: phi(:), trig(:, :), dtrig(:, :)
+        ! Frozen master-coordinate data b(3, q, e), p(q, e), reference det(q, e).
+        real(dp), allocatable :: b(:, :, :), p(:, :), det(:, :)
+        ! Coefficients x(3, mode, node): q1, q2 and omega.
+        real(dp), allocatable :: x(:, :, :)
+    end type
+
+    type :: ideal_map_solve_report_t
+        integer :: iterations = 0
+        real(dp) :: energy = 0, gradient = huge(1.0_dp), step = huge(1.0_dp)
+        real(dp) :: min_jacobian = 0, damping = 0
+    end type
+contains
+    pure subroutine cylindrical_jet(chart, q, x, d1, d2, d3)
+        class(cylindrical_chart_t), intent(in) :: chart
+        real(dp), intent(in) :: q(3)
+        real(dp), intent(out) :: x(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        call cylindrical_chart_position(q(1), q(2), q(3), x(1), x(2), x(3))
+        call cylindrical_chart_first(q(1), q(2), q(3), d1(1, 1), d1(2, 1), &
+            d1(3, 1), d1(1, 2), d1(2, 2), d1(3, 2), d1(1, 3), d1(2, 3), d1(3, 3))
+        call jet2(d2)
+        call jet3(d3)
+    contains
+        pure subroutine jet2(t)
+            real(dp), intent(out) :: t(27)
+            call cylindrical_chart_second(q(1), q(2), q(3), t(1), t(2), t(3), t(4), &
+                t(5), t(6), t(7), t(8), t(9), t(10), t(11), t(12), t(13), t(14), &
+                t(15), t(16), t(17), t(18), t(19), t(20), t(21), t(22), t(23), &
+                t(24), t(25), t(26), t(27))
+        end subroutine
+        pure subroutine jet3(t)
+            real(dp), intent(out) :: t(81)
+            call cylindrical_chart_third(q(1), q(2), q(3), t(1), t(2), t(3), t(4), &
+                t(5), t(6), t(7), t(8), t(9), t(10), t(11), t(12), t(13), t(14), &
+                t(15), t(16), t(17), t(18), t(19), t(20), t(21), t(22), t(23), &
+                t(24), t(25), t(26), t(27), t(28), t(29), t(30), t(31), t(32), &
+                t(33), t(34), t(35), t(36), t(37), t(38), t(39), t(40), t(41), &
+                t(42), t(43), t(44), t(45), t(46), t(47), t(48), t(49), t(50), &
+                t(51), t(52), t(53), t(54), t(55), t(56), t(57), t(58), t(59), &
+                t(60), t(61), t(62), t(63), t(64), t(65), t(66), t(67), t(68), &
+                t(69), t(70), t(71), t(72), t(73), t(74), t(75), t(76), t(77), &
+                t(78), t(79), t(80), t(81))
+        end subroutine
+    end subroutine
+
+    pure integer function ideal_map_dof(map, component, mode, node) result(dof)
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: component, mode, node
+        dof = component + 3*(mode - 1) + 3*map%nmode*(node - 1)
+    end function
+
+    pure integer function ideal_map_rdof(map, j, mode, node) result(dof)
+        ! Reduced dof: j = 1 transversal displacement nu, j = 2 omega.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: j, mode, node
+        dof = j + 2*(mode - 1) + 2*map%nmode*(node - 1)
+    end function
+
+    pure integer function ideal_map_axis_dof(map, i, j, mode) result(dof)
+        ! Reduced dof of axis-expansion monomial j, component i (q1 or q2).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: i, j, mode
+        dof = 2*map%nmode*map%nodes + i + 2*(j - 1) + 2*map%npoly*(mode - 1)
+    end function
+
+    subroutine ideal_map_reduce(map, g, gr)
+        ! Coefficient gradient (or any dual vector) to the reduced dofs.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: g(:)
+        real(dp), intent(out) :: gr(:)
+        integer :: a, m, k, j
+        do a = 1, map%nodes
+            do m = 1, map%nmode
+                k = ideal_map_dof(map, 1, m, a)
+                gr(ideal_map_rdof(map, 1, m, a)) = dot_product(map%direction(:, a), &
+                    g(k:k + 1))
+                gr(ideal_map_rdof(map, 2, m, a)) = g(k + 2)
+            end do
+        end do
+        do m = 1, map%nmode
+            do j = 1, map%npoly
+                do k = 1, 2
+                    gr(ideal_map_axis_dof(map, k, j, m)) = 0
+                    do a = 1, map%nodes
+                        gr(ideal_map_axis_dof(map, k, j, m)) = &
+                            gr(ideal_map_axis_dof(map, k, j, m)) &
+                            + map%axis_basis(j, a)*g(ideal_map_dof(map, k, m, a))
+                    end do
+                end do
+            end do
+        end do
+    end subroutine
+
+    subroutine ideal_map_expand(map, vr, v)
+        ! Reduced increment to coefficient increment.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: vr(:)
+        real(dp), intent(out) :: v(:)
+        integer :: a, m, k, j
+        do a = 1, map%nodes
+            do m = 1, map%nmode
+                k = ideal_map_dof(map, 1, m, a)
+                v(k:k + 1) = vr(ideal_map_rdof(map, 1, m, a))*map%direction(:, a)
+                do j = 1, map%npoly
+                    v(k:k + 1) = v(k:k + 1) + map%axis_basis(j, a) &
+                        *vr(ideal_map_axis_dof(map, 1, j, m) + [0, 1])
+                end do
+                v(k + 2) = vr(ideal_map_rdof(map, 2, m, a))
+            end do
+        end do
+    end subroutine
+
+    subroutine ideal_map_init(map, mesh, chart, nfp, ntor, status, nphi, &
+                              quadrature_order, mu0)
+        ! Reference mesh, element order and boundary flags from a KIN6D GS mesh.
+        ! The reference chart coordinates of the nodes are mesh%points.
+        type(ideal_map_t), intent(out) :: map
+        type(gs_state_t), intent(in) :: mesh
+        class(ideal_chart_t), intent(in) :: chart
+        integer, intent(in) :: nfp, ntor
+        integer, intent(out) :: status
+        integer, intent(in), optional :: nphi, quadrature_order
+        real(dp), intent(in), optional :: mu0
+        type(gauss_quadrature_triangle_t) :: rule
+        real(dp) :: h(2, 2, 10)
+        integer :: g, j, m, k, a, c, e, l, order
+        status = IDEAL_MAP_BAD_INPUT
+        if (nfp < 1 .or. ntor < 0) return
+        map%nloc = size(mesh%triangles, 1)
+        if (map%nloc /= 6 .and. map%nloc /= 10) return
+        allocate (map%chart, source=chart)
+        map%nfp = nfp; map%ntor = ntor; map%nmode = 2*ntor + 1
+        map%nphi = 3*ntor + 1
+        if (present(nphi)) map%nphi = nphi
+        if (map%nphi < 2*ntor + 1) return
+        if (present(mu0)) map%mu0 = mu0
+        map%nodes = size(mesh%points, 2); map%cells = size(mesh%triangles, 2)
+        map%conn = mesh%triangles
+        map%reference = mesh%points
+        map%boundary = mesh%boundary
+        order = 7
+        if (present(quadrature_order)) order = quadrature_order
+        call rule%init(order)
+        map%nq = rule%n_points
+        allocate (map%weight(map%nq), map%shape(map%nloc, map%nq), &
+            map%dshape(2, map%nloc, map%nq))
+        do g = 1, map%nq
+            map%weight(g) = rule%weights(g)
+            call triangle_basis_jet([rule%xi(g), rule%eta(g)], map%shape(:, g), &
+                map%dshape(:, :, g), h(:, :, :map%nloc))
+        end do
+        allocate (map%phi(map%nphi), map%trig(map%nmode, map%nphi), &
+            map%dtrig(map%nmode, map%nphi))
+        do j = 1, map%nphi
+            map%phi(j) = 2*acos(-1.0_dp)*(j - 1)/(nfp*map%nphi)
+            map%trig(1, j) = 1; map%dtrig(1, j) = 0
+            do k = 1, ntor
+                map%trig(2*k, j) = cos(k*nfp*map%phi(j))
+                map%trig(2*k + 1, j) = sin(k*nfp*map%phi(j))
+                map%dtrig(2*k, j) = -k*nfp*sin(k*nfp*map%phi(j))
+                map%dtrig(2*k + 1, j) = k*nfp*cos(k*nfp*map%phi(j))
+            end do
+        end do
+        map%ndof = 3*map%nmode*map%nodes
+        k = merge(2, 3, map%nloc == 6)
+        map%npoly = k*(k + 1)/2
+        map%nred = 2*map%nmode*map%nodes + 2*map%npoly*map%nmode
+        allocate (map%dofconn(3*map%nmode*map%nloc, map%cells))
+        allocate (map%redconn(2*map%nmode*map%nloc + 2*map%npoly*map%nmode, &
+            map%cells))
+        do m = 1, map%nmode
+            do j = 1, map%npoly
+                do c = 1, 2
+                    map%redconn(2*map%nmode*map%nloc + c + 2*(j - 1) &
+                        + 2*map%npoly*(m - 1), :) = ideal_map_axis_dof(map, c, j, m)
+                end do
+            end do
+        end do
+        do e = 1, map%cells
+            l = 0
+            do a = 1, map%nloc
+                do m = 1, map%nmode
+                    do c = 1, 3
+                        l = l + 1
+                        map%dofconn(l, e) = ideal_map_dof(map, c, m, map%conn(a, e))
+                        if (c < 3) map%redconn(2*((l - 1)/3) + c, e) = &
+                            ideal_map_rdof(map, c, m, map%conn(a, e))
+                    end do
+                end do
+            end do
+        end do
+        allocate (map%x(3, map%nmode, map%nodes))
+        map%x = 0
+        map%x(1:2, 1, :) = map%reference
+        block
+            real(dp) :: pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3), det
+            call map%chart%jet([map%reference(:, 1), 0.0_dp], pos, d1, d2, d3)
+            det = d1(1, 1)*(d1(2, 2)*d1(3, 3) - d1(2, 3)*d1(3, 2)) &
+                - d1(1, 2)*(d1(2, 1)*d1(3, 3) - d1(2, 3)*d1(3, 1)) &
+                + d1(1, 3)*(d1(2, 1)*d1(3, 2) - d1(2, 2)*d1(3, 1))
+            if (.not. abs(det) > 0) return
+            map%sigma = sign(1.0_dp, det)
+        end block
+        ! Gauge node: the interior node nearest the reference centroid.
+        map%gauge = 0
+        block
+            real(dp) :: centre(2), best, distance
+            integer :: i
+            centre = sum(map%reference, dim=2)/map%nodes
+            best = huge(1.0_dp)
+            do i = 1, map%nodes
+                if (map%boundary(i)) cycle
+                distance = norm2(map%reference(:, i) - centre)
+                if (distance < best) then
+                    best = distance; map%gauge = i
+                end if
+            end do
+        end block
+        if (map%gauge == 0) return
+        allocate (map%fixed(map%nred))
+        map%fixed = .false.
+        do a = 1, map%nodes
+            if (.not. map%boundary(a)) cycle
+            do m = 1, map%nmode
+                map%fixed(ideal_map_rdof(map, 1, m, a)) = .true.
+            end do
+        end do
+        map%fixed(ideal_map_rdof(map, 2, 1, map%gauge)) = .true.
+        allocate (map%direction(2, map%nodes), map%axis_basis(map%npoly, map%nodes))
+        map%direction(1, :) = 1; map%direction(2, :) = 0
+        map%axis_basis = 0
+        allocate (map%b(3, map%nq, map%cells), map%p(map%nq, map%cells), &
+            map%det(map%nq, map%cells))
+        map%b = 0; map%p = 0; map%det = 0
+        status = IDEAL_MAP_OK
+    end subroutine
+
+    subroutine ideal_map_freeze(map, field, status)
+        ! Pull the frozen reference data back to master coordinates:
+        ! b^s = (-d chi/ds2, d chi/ds1), b^3 = b3*det(DG), with G the isoparametric
+        ! reference geometry. Exactly closed for any label chi.
+        type(ideal_map_t), intent(inout) :: map
+        procedure(frozen_field) :: field
+        integer, intent(out) :: status
+        real(dp) :: dg(2, 2), y(2), grad(2), ds(2), b3, pressure, chi, lo, hi, t
+        real(dp) :: centre(2), radius, u(2)
+        real(dp), allocatable :: labels(:, :)
+        integer :: e, g, a, j, k, d, i
+        status = IDEAL_MAP_OK
+        allocate (labels(map%nodes, 1))
+        do a = 1, map%nodes
+            call field(map%reference(:, a), chi, grad, b3, pressure)
+            if (norm2(grad) > 0) map%direction(:, a) = grad/norm2(grad)
+            labels(a, 1) = chi
+        end do
+        ! Axis expansion: T in [0, 1], monomials about the extreme-label node,
+        ! scaled by the reference radius.
+        lo = sum(labels(:, 1), mask=map%boundary)/count(map%boundary)
+        k = maxloc(abs(labels(:, 1) - lo), dim=1)
+        hi = labels(k, 1)
+        centre = map%reference(:, k)
+        radius = maxval(norm2(map%reference - spread(centre, 2, map%nodes), dim=1))
+        do a = 1, map%nodes
+            t = 0
+            if (.not. map%boundary(a)) &
+                t = min(1.0_dp, max(0.0_dp, (labels(a, 1) - lo)/(hi - lo)))
+            u = (map%reference(:, a) - centre)/radius
+            j = 0
+            do d = 0, merge(1, 2, map%nloc == 6)
+                do i = 0, d
+                    j = j + 1
+                    map%axis_basis(j, a) = t*u(1)**(d - i)*u(2)**i
+                end do
+            end do
+        end do
+        do e = 1, map%cells
+            do g = 1, map%nq
+                y = matmul(map%reference(:, map%conn(:, e)), map%shape(:, g))
+                dg = matmul(map%reference(:, map%conn(:, e)), &
+                    transpose(map%dshape(:, :, g)))
+                map%det(g, e) = dg(1, 1)*dg(2, 2) - dg(1, 2)*dg(2, 1)
+                if (.not. map%det(g, e) > 0) status = IDEAL_MAP_FOLDED
+                call field(y, chi, grad, b3, pressure)
+                ds = matmul(transpose(dg), grad)
+                map%b(:, g, e) = [-ds(2), ds(1), b3*map%det(g, e)]
+                map%p(g, e) = pressure
+            end do
+        end do
+    end subroutine
+
+    subroutine point_jet(map, e, g, j, x, q, qd)
+        ! q(3) and Q(k, i) = dq_k/ds_i at quadrature point g, plane j.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        integer, intent(in) :: e, g, j
+        real(dp), intent(out) :: q(3), qd(3, 3)
+        real(dp) :: v
+        integer :: a, m, node
+        q = 0; qd = 0
+        do a = 1, map%nloc
+            node = map%conn(a, e)
+            do m = 1, map%nmode
+                v = map%trig(m, j)
+                q = q + x(:, m, node)*map%shape(a, g)*v
+                qd(:, 1) = qd(:, 1) + x(:, m, node)*map%dshape(1, a, g)*v
+                qd(:, 2) = qd(:, 2) + x(:, m, node)*map%dshape(2, a, g)*v
+                qd(:, 3) = qd(:, 3) + x(:, m, node)*map%shape(a, g)*map%dtrig(m, j)
+            end do
+        end do
+        q(3) = q(3) + map%phi(j)
+        qd(3, 3) = qd(3, 3) + 1
+    end subroutine
+
+    subroutine ideal_map_point(map, e, xi, phi, q, y)
+        ! Chart coordinates q of the map at master point xi of cell e and angle
+        ! phi-hat, and the reference point y.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e
+        real(dp), intent(in) :: xi(2), phi
+        real(dp), intent(out) :: q(3), y(2)
+        real(dp) :: shape(10), grad(2, 10), t
+        integer :: a, k
+        call triangle_basis_jet(xi, shape(:map%nloc), grad(:, :map%nloc))
+        q = 0
+        do a = 1, map%nloc
+            q = q + map%x(:, 1, map%conn(a, e))*shape(a)
+            do k = 1, map%ntor
+                t = k*map%nfp*phi
+                q = q + (map%x(:, 2*k, map%conn(a, e))*cos(t) &
+                    + map%x(:, 2*k + 1, map%conn(a, e))*sin(t))*shape(a)
+            end do
+        end do
+        q(3) = q(3) + phi
+        y = matmul(map%reference(:, map%conn(:, e)), shape(:map%nloc))
+    end subroutine
+
+    subroutine local_derivatives(map, e, g, j, x, w, jac, gv, hv, want_hessian)
+        ! Energy density w, Jacobian and its first/second derivatives with
+        ! respect to v = (q(1:3), Q(1:3, 1:3)) (index 3 + k + 3*(i-1) for Q(k,i)).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(in) :: x(:, :, :)
+        real(dp), intent(out) :: w, jac, gv(12), hv(12, 12)
+        logical, intent(in) :: want_hessian
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: dx(3, 3), gd(3, 3), hd(9, 9), dvx(9, 12), hflat(45)
+        integer :: a, i, k, m, n, r, c
+        call point_jet(map, e, g, j, x, q, qd)
+        call map%chart%jet(q, pos, d1, d2, d3)
+        dx = matmul(d1, qd)
+        call ideal_energy_density(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+            dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
+            map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, &
+            map%sigma, w, jac)
+        call ideal_energy_gradient(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+            dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
+            map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, &
+            map%sigma, gd(1, 1), gd(2, 1), gd(3, 1), gd(1, 2), &
+            gd(2, 2), gd(3, 2), gd(1, 3), gd(2, 3), gd(3, 3))
+        ! dDX(a,i)/dv: q_m -> sum_k d2(a,k,m) Q(k,i); Q(k,i') -> d1(a,k) delta.
+        dvx = 0
+        do i = 1, 3
+            do a = 1, 3
+                r = a + 3*(i - 1)
+                do m = 1, 3
+                    dvx(r, m) = dot_product(d2(a, :, m), qd(:, i))
+                end do
+                do k = 1, 3
+                    dvx(r, 3 + k + 3*(i - 1)) = d1(a, k)
+                end do
+            end do
+        end do
+        gv = matmul(reshape(gd, [9]), dvx)
+        hv = 0
+        if (.not. want_hessian) return
+        call hessian_leaf(hflat)
+        n = 0
+        do c = 1, 9
+            do r = 1, c
+                n = n + 1
+                hd(r, c) = hflat(n); hd(c, r) = hflat(n)
+            end do
+        end do
+        hv = matmul(transpose(dvx), matmul(hd, dvx))
+        do m = 1, 3
+            do n = 1, 3
+                do i = 1, 3
+                    do a = 1, 3
+                        hv(m, n) = hv(m, n) + gd(a, i)*dot_product(d3(a, :, m, n), &
+                            qd(:, i))
+                    end do
+                end do
+            end do
+            do i = 1, 3
+                do k = 1, 3
+                    r = 3 + k + 3*(i - 1)
+                    hv(m, r) = hv(m, r) + dot_product(gd(:, i), d2(:, k, m))
+                    hv(r, m) = hv(m, r)
+                end do
+            end do
+        end do
+    contains
+        subroutine hessian_leaf(t)
+            real(dp), intent(out) :: t(45)
+            call ideal_energy_hessian(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+                dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
+                map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, &
+                map%sigma, t(1), t(2), t(3), t(4), t(5), t(6), t(7), &
+                t(8), t(9), t(10), t(11), t(12), t(13), t(14), t(15), t(16), t(17), &
+                t(18), t(19), t(20), t(21), t(22), t(23), t(24), t(25), t(26), &
+                t(27), t(28), t(29), t(30), t(31), t(32), t(33), t(34), t(35), &
+                t(36), t(37), t(38), t(39), t(40), t(41), t(42), t(43), t(44), t(45))
+        end subroutine
+    end subroutine
+
+    pure subroutine test_functions(map, g, j, a, m, f)
+        ! f(0:3) = (N T, dN/ds1 T, dN/ds2 T, N dT/ds3) of node a, mode m.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: g, j, a, m
+        real(dp), intent(out) :: f(0:3)
+        f(0) = map%shape(a, g)*map%trig(m, j)
+        f(1) = map%dshape(1, a, g)*map%trig(m, j)
+        f(2) = map%dshape(2, a, g)*map%trig(m, j)
+        f(3) = map%shape(a, g)*map%dtrig(m, j)
+    end subroutine
+
+    subroutine ideal_map_energy(map, x, energy, status, gradient, min_jacobian)
+        ! Energy per field period and its coefficient gradient. status
+        ! IDEAL_MAP_FOLDED when J <= 0 at any quadrature point.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        real(dp), intent(out) :: energy
+        integer, intent(out) :: status
+        real(dp), intent(out), optional :: gradient(:), min_jacobian
+        real(dp), allocatable :: local(:, :)
+        real(dp) :: w, jac, gv(12), hv(12, 12), f(0:3), dphi, weight, minjac
+        integer :: e, g, j, a, m, c, l
+        logical :: want
+        want = present(gradient)
+        allocate (local(3*map%nmode*map%nloc, map%cells))
+        dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
+        energy = 0; minjac = huge(1.0_dp)
+        !$omp parallel do default(none) shared(map, x, local, want, dphi) &
+        !$omp private(e, g, j, a, m, c, l, w, jac, gv, hv, f, weight) &
+        !$omp reduction(+: energy) reduction(min: minjac) schedule(static)
+        do e = 1, map%cells
+            local(:, e) = 0
+            do j = 1, map%nphi
+                do g = 1, map%nq
+                    call local_derivatives(map, e, g, j, x, w, jac, gv, hv, .false.)
+                    minjac = min(minjac, jac/map%det(g, e))
+                    weight = map%weight(g)*dphi
+                    energy = energy + weight*w
+                    if (.not. want) cycle
+                    l = 0
+                    do a = 1, map%nloc
+                        do m = 1, map%nmode
+                            call test_functions(map, g, j, a, m, f)
+                            do c = 1, 3
+                                l = l + 1
+                                local(l, e) = local(l, e) + weight*(gv(c)*f(0) &
+                                    + gv(3 + c)*f(1) + gv(6 + c)*f(2) + gv(9 + c)*f(3))
+                            end do
+                        end do
+                    end do
+                end do
+            end do
+        end do
+        !$omp end parallel do
+        status = IDEAL_MAP_OK
+        if (.not. (minjac > 0) .or. .not. ieee_is_finite(energy)) &
+            status = IDEAL_MAP_FOLDED
+        if (present(min_jacobian)) min_jacobian = minjac
+        if (.not. want) return
+        gradient = 0
+        do e = 1, map%cells
+            gradient(map%dofconn(:, e)) = gradient(map%dofconn(:, e)) + local(:, e)
+        end do
+    end subroutine
+
+    subroutine ideal_map_hessian(map, x, matrix)
+        ! Assembled coefficient Hessian (all Fourier modes coupled) as CSR.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        type(csr_matrix_t), intent(out) :: matrix
+        real(dp), allocatable :: blocks(:, :, :), fa(:, :), fb(:, :), full(:, :)
+        real(dp), allocatable :: half(:, :)
+        real(dp) :: w, jac, gv(12), hv(12, 12), dphi, weight, s
+        integer :: e, g, j, a, m, c, r, l, lb, nl, c2, r2, nr
+        nl = 3*map%nmode*map%nloc
+        nr = 2*map%nmode*map%nloc + 2*map%npoly*map%nmode
+        allocate (blocks(nr, nr, map%cells))
+        dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
+        !$omp parallel do default(none) shared(map, x, blocks, dphi, nl, nr) &
+        !$omp private(e, g, j, a, m, c, r, l, lb, w, jac, gv, hv, weight, fa, fb, &
+        !$omp s, c2, r2, full, half) schedule(static)
+        do e = 1, map%cells
+            allocate (fa(0:3, map%nloc*map%nmode), fb(nl, 12), full(nl, nl), &
+                half(nl, nr))
+            full = 0
+            do j = 1, map%nphi
+                do g = 1, map%nq
+                    call local_derivatives(map, e, g, j, x, w, jac, gv, hv, .true.)
+                    weight = map%weight(g)*dphi
+                    l = 0
+                    do a = 1, map%nloc
+                        do m = 1, map%nmode
+                            l = l + 1
+                            call test_functions(map, g, j, a, m, fa(:, l))
+                        end do
+                    end do
+                    ! fb(row, v) = sum_r f_r(row) hv(idx(c,r), v)
+                    do l = 1, map%nloc*map%nmode
+                        do c = 1, 3
+                            lb = 3*(l - 1) + c
+                            fb(lb, :) = 0
+                            do r = 0, 3
+                                fb(lb, :) = fb(lb, :) + fa(r, l)*hv(c + 3*r, :)
+                            end do
+                        end do
+                    end do
+                    do l = 1, map%nloc*map%nmode
+                        do c2 = 1, 3
+                            lb = 3*(l - 1) + c2
+                            do r2 = 0, 3
+                                s = weight*fa(r2, l)
+                                full(:, lb) = full(:, lb) + s*fb(:, c2 + 3*r2)
+                            end do
+                        end do
+                    end do
+                end do
+            end do
+            ! Reduce to (nu, omega): P maps (nu, omega) of local node-mode l to
+            ! (d1 nu, d2 nu, omega).
+            do l = 1, map%nloc*map%nmode
+                a = map%conn(1 + (l - 1)/map%nmode, e)
+                half(:, 2*l - 1) = full(:, 3*l - 2)*map%direction(1, a) &
+                    + full(:, 3*l - 1)*map%direction(2, a)
+                half(:, 2*l) = full(:, 3*l)
+            end do
+            do m = 1, map%nmode
+                do j = 1, map%npoly
+                    do c = 1, 2
+                        r = 2*map%nmode*map%nloc + c + 2*(j - 1) + 2*map%npoly*(m - 1)
+                        half(:, r) = 0
+                        do a = 1, map%nloc
+                            l = m + map%nmode*(a - 1)
+                            half(:, r) = half(:, r) &
+                                + map%axis_basis(j, map%conn(a, e))*full(:, 3*l - 3 + c)
+                        end do
+                    end do
+                end do
+            end do
+            do l = 1, map%nloc*map%nmode
+                a = map%conn(1 + (l - 1)/map%nmode, e)
+                blocks(2*l - 1, :, e) = half(3*l - 2, :)*map%direction(1, a) &
+                    + half(3*l - 1, :)*map%direction(2, a)
+                blocks(2*l, :, e) = half(3*l, :)
+            end do
+            do m = 1, map%nmode
+                do j = 1, map%npoly
+                    do c = 1, 2
+                        r = 2*map%nmode*map%nloc + c + 2*(j - 1) + 2*map%npoly*(m - 1)
+                        blocks(r, :, e) = 0
+                        do a = 1, map%nloc
+                            l = m + map%nmode*(a - 1)
+                            blocks(r, :, e) = blocks(r, :, e) &
+                                + map%axis_basis(j, map%conn(a, e))*half(3*l - 3 + c, :)
+                        end do
+                    end do
+                end do
+            end do
+            deallocate (fa, fb, full, half)
+        end do
+        !$omp end parallel do
+        call csr_build_pattern(map%nred, map%redconn, .false., matrix)
+        call csr_assemble_blocks(matrix, map%redconn, blocks)
+    end subroutine
+
+    subroutine ideal_map_solve(map, tolerance, max_iterations, report, status, verbose)
+        ! Damped Newton on the reduced (nu, omega) coefficients: Levenberg-Marquardt
+        ! with the Hessian diagonal as metric, shrinking the damping after every
+        ! accepted step. Steps keep J > 0 and do not raise W beyond roundoff.
+        ! Converged when the free reduced-gradient norm is below tolerance times
+        ! its initial value or the step stalls at roundoff.
+        type(ideal_map_t), intent(inout) :: map
+        real(dp), intent(in) :: tolerance
+        integer, intent(in) :: max_iterations
+        type(ideal_map_solve_report_t), intent(out) :: report
+        integer, intent(out) :: status
+        logical, intent(in), optional :: verbose
+        type(csr_matrix_t) :: matrix
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sstatus
+        real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
+        real(dp), allocatable :: trial(:, :, :), rhs(:)
+        real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
+        real(dp) :: cap_x, cap_w
+        integer :: it, i, k, tries, estatus
+        logical :: talk, accepted
+        talk = .false.
+        if (present(verbose)) talk = verbose
+        allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
+            diag(map%nred), rhs(map%nred))
+        call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
+        if (estatus /= IDEAL_MAP_OK) then
+            status = IDEAL_MAP_FOLDED; return
+        end if
+        call ideal_map_reduce(map, grad, gred)
+        where (map%fixed) gred = 0
+        g0 = norm2(gred); gnorm = g0
+        mu = 1.0e-6_dp
+        cap_x = 0.05_dp*maxval(maxval(map%reference, dim=2) &
+            - minval(map%reference, dim=2))
+        cap_w = 1
+        alpha = 1
+        status = IDEAL_MAP_NOT_CONVERGED
+        report%energy = energy; report%gradient = gnorm
+        do it = 1, max_iterations
+            if (.not. gnorm > tolerance*g0) then
+                status = IDEAL_MAP_OK; exit
+            end if
+            report%iterations = it
+            call ideal_map_hessian(map, map%x, matrix)
+            do i = 1, map%nred
+                do k = matrix%rowptr(i), matrix%rowptr(i + 1) - 1
+                    if (matrix%colidx(k) == i) diag(i) = matrix%val(k)
+                end do
+            end do
+            scale = maxval(abs(diag), mask=.not. map%fixed)
+            accepted = .false.
+            do tries = 1, 30
+                call factor_damped(mu, estatus)
+                if (estatus /= 0) then
+                    mu = mu*10; cycle
+                end if
+                rhs = -gred
+                call sparse_solve(solver, rhs, step, sstatus)
+                call sparse_destroy(solver)
+                if (.not. status_ok(sstatus)) then
+                    status = IDEAL_MAP_SOLVE_FAILED; return
+                end if
+                where (map%fixed) step = 0
+                call ideal_map_expand(map, step, full)
+                ! Trust region: near-null (relabelling) directions can carry
+                ! large Newton components; cap the displacement and rotation.
+                alpha = 1
+                do i = 1, map%nodes
+                    k = ideal_map_dof(map, 1, 1, i)
+                    alpha = min(alpha, cap_x/max(tiny(1.0_dp), &
+                        maxval(abs(full(k:k + 3*map%nmode - 1:3))), &
+                        maxval(abs(full(k + 1:k + 3*map%nmode - 1:3)))), &
+                        cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
+                        - 1:3)))))
+                end do
+                full = alpha*full; step = alpha*step
+                trial = map%x + reshape(full, shape(map%x))
+                call ideal_map_energy(map, trial, trial_energy, estatus)
+                if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
+                    + 64*epsilon(1.0_dp)*abs(energy)) then
+                    accepted = .true.; exit
+                end if
+                mu = mu*10
+            end do
+            if (.not. accepted) exit
+            map%x = trial
+            report%step = maxval(abs(full))
+            call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
+            call ideal_map_reduce(map, grad, gred)
+            where (map%fixed) gred = 0
+            gnorm = norm2(gred)
+            report%energy = energy; report%gradient = gnorm/g0
+            report%min_jacobian = minjac; report%damping = mu
+            if (talk) print '(a,i3,5es12.4)', 'ideal map newton', it, energy, &
+                gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu
+            if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
+            if (report%step <= 1.0e-13_dp*maxval(abs(map%reference))) then
+                status = IDEAL_MAP_OK; exit
+            end if
+        end do
+        if (.not. gnorm > tolerance*g0) status = IDEAL_MAP_OK
+    contains
+        subroutine factor_damped(damping, info)
+            ! H + damping*|diag H| with identity rows/columns for fixed dofs.
+            real(dp), intent(in) :: damping
+            integer, intent(out) :: info
+            real(dp), allocatable :: val(:)
+            integer :: row, kk
+            val = matrix%val
+            do row = 1, map%nred
+                do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
+                    if (map%fixed(row) .or. map%fixed(matrix%colidx(kk))) then
+                        val(kk) = merge(1.0_dp, 0.0_dp, matrix%colidx(kk) == row)
+                    else if (matrix%colidx(kk) == row) then
+                        val(kk) = val(kk) + damping*(abs(diag(row)) + 1.0e-12_dp*scale)
+                    end if
+                end do
+            end do
+            solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            call sparse_factor(solver, map%nred, map%nred, size(val), &
+                matrix%rowptr, matrix%colidx, val, sstatus)
+            info = merge(0, 1, status_ok(sstatus))
+            if (info /= 0) call sparse_destroy(solver)
+        end subroutine
+    end subroutine
+
+    subroutine ideal_map_mode_norms(map, norms)
+        ! Max-norm of the coefficients per Fourier mode, excluding the n = 0
+        ! reference part of q1, q2: norms(component, mode).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(out) :: norms(3, map%nmode)
+        integer :: c, m
+        do m = 1, map%nmode
+            do c = 1, 3
+                norms(c, m) = maxval(abs(map%x(c, m, :)))
+            end do
+        end do
+    end subroutine
+end module kin6d_ideal_map
