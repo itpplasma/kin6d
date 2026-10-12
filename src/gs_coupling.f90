@@ -72,6 +72,7 @@ module kin6d_gs_coupling
     public :: gs_coupling_build, gs_coupled_apply, gs_coupled_matrix
     public :: gs_coupling_coil_load, gs_coupling_source_load, gs_coupled_solve
     public :: gs_coupling_energies, gs_coupling_edge_points
+    public :: gs_coupling_bem_nodes, gs_coupling_edge_weights
 
 contains
 
@@ -151,9 +152,9 @@ contains
         real(dp), allocatable :: s_bem(:, :), bem_nodes(:, :), restriction(:, :)
         real(dp), allocatable :: work(:, :)
         integer, allocatable :: first_edge(:)
-        integer :: e, k, i, j, p, q, n, order, ne, np, m, ids(0:3), row, col_j
+        integer :: e, k, i, j, n, order, ne, np, m, ids(0:3)
         integer :: next_edge, stat
-        real(dp) :: w(0:3), dw(0:3), t, area
+        real(dp) :: area
 
         status = GS_COUPLING_BAD_STATE
         if (.not. state % ready) return
@@ -225,30 +226,8 @@ contains
             coupling % trace_node((i - 1) * order + 1:i * order) = ids(0:order - 1)
         end do
 
-        ! BEM panels: node 2p-1 at the panel start, 2p at its middle.
         np = coupling % n_edges * m
-        allocate (bem_nodes(2, 2 * np), restriction(2 * np, coupling % n_trace))
-        restriction = 0.0_dp
-        do i = 1, coupling % n_edges
-            call edge_node_ids(state, coupling % edge_element(i), &
-                               coupling % edge_side(i), ids(0:order))
-            do q = 1, m
-                p = (i - 1) * m + q
-                do j = 1, 2
-                    t = (real(q - 1, dp) + 0.5_dp * real(j - 1, dp)) / m
-                    call edge_lagrange(order, t, w(0:order), dw(0:order))
-                    row = 2 * p - 2 + j
-                    bem_nodes(:, row) = 0.0_dp
-                    do k = 0, order
-                        bem_nodes(:, row) = bem_nodes(:, row) &
-                                            + w(k) * state % points(:, ids(k))
-                        col_j = (i - 1) * order + k + 1
-                        if (k == order) col_j = mod(i, coupling % n_edges) * order + 1
-                        restriction(row, col_j) = restriction(row, col_j) + w(k)
-                    end do
-                end do
-            end do
-        end do
+        call gs_coupling_bem_nodes(state, coupling, m, bem_nodes, restriction)
         ! Counter-clockwise orientation (shoelace) is required by the BEM.
         area = 0.0_dp
         do j = 1, 2 * np
@@ -283,6 +262,59 @@ contains
         call build_stiffness(state, coupling)
         status = GS_COUPLING_OK
     end subroutine gs_coupling_build
+
+    subroutine gs_coupling_bem_nodes(state, coupling, m, nodes, restriction)
+        !! BEM trace nodes of m panels per mesh edge of Gamma_c (node 2p-1 at
+        !! the start of panel p, 2p at its middle) and the restriction from
+        !! the FEM trace dofs to them (exact for P2 elements).
+        type(gs_state_t), intent(in) :: state
+        type(gs_coupling_t), intent(in) :: coupling
+        integer, intent(in) :: m
+        real(dp), allocatable, intent(out) :: nodes(:, :), restriction(:, :)
+        real(dp) :: t, w(0:3)
+        integer :: i, q, p, j, k, row, cols(0:3)
+
+        allocate (nodes(2, 2 * coupling % n_edges * m), &
+                  restriction(2 * coupling % n_edges * m, coupling % n_trace))
+        restriction = 0.0_dp
+        do i = 1, coupling % n_edges
+            do q = 1, m
+                p = (i - 1) * m + q
+                do j = 1, 2
+                    t = (real(q - 1, dp) + 0.5_dp * real(j - 1, dp)) / m
+                    call gs_coupling_edge_weights(coupling, i, t, cols, w)
+                    row = 2 * p - 2 + j
+                    nodes(:, row) = 0.0_dp
+                    do k = 0, coupling % order
+                        nodes(:, row) = nodes(:, row) + w(k) &
+                            * state % points(:, coupling % trace_node(cols(k)))
+                        restriction(row, cols(k)) = restriction(row, cols(k)) + w(k)
+                    end do
+                end do
+            end do
+        end do
+    end subroutine gs_coupling_bem_nodes
+
+    pure subroutine gs_coupling_edge_weights(coupling, edge, t, cols, w, dw)
+        !! Trace dofs cols(0:order) of boundary edge `edge` and the Lagrange
+        !! weights (and t-derivatives) of a trace function at t in [0, 1].
+        type(gs_coupling_t), intent(in) :: coupling
+        integer, intent(in) :: edge
+        real(dp), intent(in) :: t
+        integer, intent(out) :: cols(0:)
+        real(dp), intent(out) :: w(0:)
+        real(dp), intent(out), optional :: dw(0:)
+        real(dp) :: d(0:3)
+        integer :: j, order
+
+        order = coupling % order
+        call edge_lagrange(order, t, w(0:order), d(0:order))
+        if (present(dw)) dw(0:order) = d(0:order)
+        do j = 0, order
+            cols(j) = (edge - 1) * order + j + 1
+        end do
+        cols(order) = mod(edge, coupling % n_edges) * order + 1
+    end subroutine gs_coupling_edge_weights
 
     subroutine build_stiffness(state, coupling)
         !! CSR copy of the element stiffness matrices. Duplicates are summed

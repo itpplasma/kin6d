@@ -293,6 +293,14 @@ add_test(NAME gs_free_boundary_t4_green_function_cross_check COMMAND test_gs_fb_
 set_tests_properties(gs_free_boundary_t4_green_function_cross_check PROPERTIES TIMEOUT 1800)
 add_test(NAME gs_free_boundary_t3_manufactured_newton COMMAND test_gs_fb_manufactured)
 set_tests_properties(gs_free_boundary_t3_manufactured_newton PROPERTIES TIMEOUT 1800)
+add_executable(test_gs_coupled_majorant test/test_gs_coupled_majorant.f90)
+target_link_libraries(test_gs_coupled_majorant PRIVATE kin6d_gs_fb_test)
+add_test(NAME gs_free_boundary_p10_coupled_majorant COMMAND test_gs_coupled_majorant)
+set_tests_properties(gs_free_boundary_p10_coupled_majorant PROPERTIES TIMEOUT 1800)
+add_executable(test_gs_fb_large_aspect test/test_gs_fb_large_aspect.f90)
+target_link_libraries(test_gs_fb_large_aspect PRIVATE kin6d)
+add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_large_aspect)
+set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEOUT 1800)
 target_sources(kin6d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90
     src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
@@ -542,6 +550,14 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(test_gs_forward_majorant_identities
         test/test_gs_forward_majorant_identities.f90)
     target_link_libraries(test_gs_forward_majorant_identities PRIVATE kin6d_gen_support)
+    add_executable(test_gs_coupled_majorant_identities
+        test/test_gs_coupled_majorant_identities.f90)
+    target_link_libraries(test_gs_coupled_majorant_identities PRIVATE kin6d_gen_support)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/gs_coupled_majorant_evidence)
+    add_test(NAME grad_shafranov_coupled_majorant_exact_identities
+        COMMAND test_gs_coupled_majorant_identities)
+    set_tests_properties(grad_shafranov_coupled_majorant_exact_identities PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/gs_coupled_majorant_evidence)
     set(gs_majorant_check_dir ${CMAKE_BINARY_DIR}/gs_forward_majorant_evidence)
     file(MAKE_DIRECTORY ${gs_majorant_check_dir}/native)
     add_test(NAME grad_shafranov_forward_majorant_exact_identities

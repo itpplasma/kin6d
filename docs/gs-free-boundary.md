@@ -64,6 +64,66 @@ cannot discriminate: its nodal load subtracts the source of the interpolated exa
 flux, which cancels the jump on any mesh. With the refit it gives nodal orders 3.7
 (P2) and 3.8 (P3) against 2.7 and 3.3 fixed (`test_gs_fb_refit sweep`).
 
+## Error estimates (`src/gs_majorant.f90`, DESIGN section 4, P10)
+
+Energy norm |||v|||^2 = int |grad v|^2/R dA + <S v, v>. For the frozen problem
+a(psi,v) + <S psi,v> = (f,v) + <g,v> and every continuous vector P2/P3 flux y,
+
+    |||psi - psi_h||| <= D + B_T + N,
+    D   = ||sqrt(R)(y - grad psi_h/R)||,
+    B_T = C_F ||Pi0 r|| + (sum_T (h_T/pi)^2 R_max,T ||r - Pi0 r||_T^2)^(1/2),
+    N   = ||y.n + S psi_h - g||_{S^-1},   r = f + div y,
+
+from the residual identity a(e,v) + <S e,v> = (y - grad psi_h/R, grad v) +
+(f + div y, v) + <g - S psi_h - y.n, v>, checked exactly by FortSym
+(`test_gs_coupled_majorant_identities`, with omitted-defect and flipped-normal
+controls). B_T splits the balance residual into cell means (coupled Friedrichs
+constant C_F) and mean-free parts (Payne-Weinberger h_T/pi); it is at most C_F
+||r||, the form in DESIGN, and makes B_T of higher order than D. y minimises
+D^2 + sum of the B_T squares + N^2 (PCG preconditioned with the sparse LU of the
+volume part). The estimate is practical, not rigorous: S and the dual norm of N
+come from a reference BEM with three P2 panels per mesh edge
+(`gs_coupled_estimator_t`), and C_F^2 is the power-iteration estimate of the
+largest eigenvalue of (K + S_ref)^-1 M, approached from below.
+
+Nonlinear free boundary (`gs_fb_majorant`): M0 is the frozen-source majorant at
+psi_h (law in the plasma cells where s < 1, plus a pointwise forcing that must
+match `sys%extra_load`); beta is the smallest singular value of J in the energy
+pairing (`gs_fb_inf_sup`, power iteration on J^-1 A J^-T A, which approaches
+1/beta^2 from below); the bound |||e||| <~ M0/beta is first order. Goals
+(`gs_coupled_goal`): Q(psi) = int q psi + <q_b, psi> lies in Q(psi_h) + rho +-
+M_psi M_z for the frozen problem, M_z the adjoint majorant; the Ip goal is
+Ampere on Gamma_c (`gs_coupled_ip_moments`, z = 1/mu0 is exact). For the
+nonlinear solution `gs_fb_goal` returns |||z_h||| M0, with J^T z_h = Q' (first
+order). `gs_coil_current_bounds` propagates row bounds b_i to |dI_k| <=
+sum_i |(H^-1 D^T)_ki| b_i on the free set (attained by the sign vector).
+
+`test_gs_coupled_majorant` (exact psi* = coils + C^5 bump, OMP 4):
+
+| case | edges | energy error | majorant | I_eff |
+|------|------:|--------:|---------:|------:|
+| frozen P2 | 24 / 48 / 96 | 2.78e-1 / 9.09e-2 / 2.24e-2 | 5.64e-1 / 1.48e-1 / 2.93e-2 | 2.03 / 1.63 / 1.31 |
+| frozen P3 | 24 / 48 | 7.38e-2 / 1.53e-2 | 1.79e-1 / 2.44e-2 | 2.42 / 1.60 |
+| nonlinear P2, M0/beta | 24 / 48 / 96 | 2.78e-1 / 9.09e-2 / 2.24e-2 | 5.89e-1 / 1.57e-1 / 3.16e-2 | 2.12 / 1.73 / 1.41 |
+
+The efficiency index decreases towards 1 (majorant order 2.34 against 2.02 for
+P2, 2.87 against 2.27 for P3); beta (0.956) equals the dense SVD to 1e-5; the
+shape and Ip enclosures contain the exact values.
+
+## Large aspect ratio (T5, `test_gs_fb_large_aspect`, P13)
+
+Circular plasma, a = 0.5 m, R0 = a/eps, uniform vertical field from a ring pair at
+(3 R0, +-1.5 R0); the Shafranov field mu0 Ip/(4 pi R_g)(ln(8 R_g/a_g) + beta_p +
+l_i/2 - 3/2), from the measured boundary centre, half width, beta_p and l_i,
+against the coil field at (R_g, 0):
+
+| eps | 1/4 | 1/8 | 1/16 | 1/32 |
+|-----|----:|----:|-----:|-----:|
+| relative mismatch | -2.48e-2 | -6.57e-3 | -1.71e-3 | -4.08e-4 |
+
+observed order 1.9 to 2.1. A quadrupole with current of the sign of Ip raises the
+elongation (1.024 to 1.092 at eps = 1/8), the opposite sign lowers it (0.962).
+
 ## Application `gs_free`
 
 `gs_free --config input.nml` reads `&gs_free`; `gs_free --evaluate` reuses a result.
