@@ -193,6 +193,14 @@ foreach(domain valid zero negative nan)
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
 target_sources(kin6d PRIVATE src/gs_coils.f90 src/gs_coupling.f90)
+# The coupled apply and the dense Gamma_c block products run on OpenMP threads;
+# only this unit is compiled with -fopenmp so other numerics keep their flags.
+find_package(OpenMP COMPONENTS Fortran)
+if(OpenMP_Fortran_FOUND)
+    set_source_files_properties(src/gs_coupling.f90 PROPERTIES
+        COMPILE_OPTIONS "${OpenMP_Fortran_FLAGS}")
+    target_link_libraries(kin6d PUBLIC OpenMP::OpenMP_Fortran)
+endif()
 add_executable(test_gs_coils test/test_gs_coils.f90)
 target_link_libraries(test_gs_coils PRIVATE kin6d)
 add_test(NAME gs_coils_independent_oracles COMMAND test_gs_coils)
