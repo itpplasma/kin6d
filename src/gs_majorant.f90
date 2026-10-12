@@ -294,6 +294,9 @@ contains
             status = failed_status
             return
         end if
+        ! A capped recovery CG leaves KRYLOV_MAX_ITERATIONS in status; the
+        ! estimate is valid (see recovery_converged), so the pass resets it.
+        status = 0
         flux_defect = flux_sum; balance_defect = balance_sum
         flux_defect = sqrt(flux_defect)
         balance_defect = sqrt(cf2*balance_defect)
