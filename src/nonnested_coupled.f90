@@ -29,6 +29,15 @@ module kin6d_nonnested_coupled
     ! mode-0 lambda and Phi on those nodes to one unknown each. This removes
     ! the harmonic A of a shell domain and imposes zero net current into
     ! the conductor. See docs/equilibrium-nonnested-nn2.md.
+    ! Data hooks: source / g_par_shape take (R, Z) and are axisymmetric;
+    ! source_3d / g_par_shape_3d (nc_scalar3_i) take (R, Z, phi) and are
+    ! evaluated at every phi point of the element quadrature (exactly one of
+    ! source and source_3d, at most one g_par shape). The 3D source is loaded
+    ! into every Fourier block with the residual's phi rule. Landreman family
+    ! 1 uses them: S = -chi_perp lap p = -chi_perp div(J x B) (B.grad p = 0),
+    ! Phi = 0 (a nonzero g_perp forbids grad Phi perpendicular to b), and
+    ! g_par = g0 w/w_ref with w = R J.B/B_phi so that J.B = g_par V B_phi/
+    ! (2 pi R) with V = 2 pi w_ref/g0 (the Pfirsch-Schlueter current included).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad, &
@@ -48,6 +57,16 @@ module kin6d_nonnested_coupled
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
+    public :: nc_scalar3_i, nc_continue
+
+    abstract interface
+        function nc_scalar3_i(x, phi) result(w)
+            ! A declared datum at (R, Z) = x and toroidal angle phi.
+            import :: dp
+            real(dp), intent(in) :: x(2), phi
+            real(dp) :: w
+        end function
+    end interface
 
     type :: nc_problem_t
         real(dp) :: chi_par = 1, chi_perp = 1, g_par = 1, g_perp = 1
@@ -55,6 +74,9 @@ module kin6d_nonnested_coupled
         integer :: nphi = 0     ! phi points; 0 selects 4 N + 1
         procedure(meridian_weight_i), pointer, nopass :: source => null()
         procedure(meridian_weight_i), pointer, nopass :: g_par_shape => null()
+        ! Phi-dependent alternatives; at most one of each pair is associated.
+        procedure(nc_scalar3_i), pointer, nopass :: source_3d => null()
+        procedure(nc_scalar3_i), pointer, nopass :: g_par_shape_3d => null()
         logical, allocatable :: floating(:) ! V0 boundary nodes of a conductor
     end type
 
@@ -71,6 +93,7 @@ module kin6d_nonnested_coupled
         real(dp) :: residual(5) = 0     ! blockwise backward errors at exit
         real(dp) :: history(0:40) = -1  ! max blockwise backward error per step
         real(dp) :: voltage = 0, multiplier = 0, divergence = 0
+        integer :: stages = 0, total_steps = 0 ! nc_continue only
         character(32) :: claim = 'candidate'
     end type
 
@@ -373,7 +396,9 @@ contains
         if (present(max_steps)) steps = min(max_steps, 40)
         if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
         if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
-        if (.not. associated(problem%source)) return
+        if (associated(problem%source) .eqv. associated(problem%source_3d)) return
+        if (associated(problem%g_par_shape) .and. associated(problem%g_par_shape_3d)) &
+            return
         call operators(field, problem, ops, st)
         if (st /= 0) return
         lay = nc_layout(field)
@@ -381,7 +406,7 @@ contains
         mask = nc_fixed(field, problem)
         rep = representative(field, problem)
         if (any(abs(x - x(rep)) > 0)) return
-        call source_load(field, problem, lay, load, st)
+        call source_load(field, problem, lay, ops%nphi, load, st)
         if (st /= 0) return
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)
@@ -428,25 +453,107 @@ contains
         status = 0
     end subroutine
 
-    subroutine source_load(field, problem, lay, load, status)
-        ! |<v, S>| on the mode-0 pressure rows (S does not depend on phi)
-        ! and |I_phi| on the loop row; zero elsewhere.
+    subroutine nc_continue(field, problem, x, report, status, tol, decades, &
+            max_steps)
+        ! Natural-parameter continuation in the anisotropy: chi_par/chi_perp
+        ! = rc^s and g_par/g_perp = rg^s (rc, rg the targets of problem; the
+        ! perpendicular chi_perp and parallel g_par are kept) for s from 0 to
+        ! 1. Each stage is nc_solve to tol seeded by the previous converged
+        ! state, so the end point is the discrete solution at the target and
+        ! does not depend on the path. The Newton basin shrinks like
+        ! 1/ratio (the pressure rows carry chi_par b(A).grad p, so a b error
+        ! enters times chi_par), while the solution itself moves little with
+        ! the ratio. Steps are at most `decades` of the larger ratio (default
+        ! 1); a stage that fails or needs more than max_steps (default 12)
+        ! Newton steps is retried from the last converged state with half
+        ! the step, down to 1/64 decade. report is the last stage's, with
+        ! the stage count and the total Newton steps.
+        type(free_b_field_t), intent(inout) :: field
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(inout) :: x(:)
+        type(nc_report_t), intent(out) :: report
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: tol, decades
+        integer, intent(in), optional :: max_steps
+        type(nc_problem_t) :: stage
+        real(dp), allocatable :: xs(:)
+        real(dp) :: span, s, s_ok, ds, ds_max, target
+        integer :: steps, stages, total, st
+        status = 1
+        target = 1.0e-11_dp; ds_max = 1; steps = 12
+        if (present(tol)) target = tol
+        if (present(decades)) ds_max = decades
+        if (present(max_steps)) steps = max_steps
+        if (ds_max <= 0) return
+        if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
+        if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
+        span = max(log10(problem%chi_par/problem%chi_perp), &
+            log10(problem%g_par/problem%g_perp))
+        ds_max = merge(1.0_dp, min(1.0_dp, ds_max/max(span, tiny(1.0_dp))), &
+            span <= 0)
+        stage = problem
+        s = merge(1.0_dp, 0.0_dp, span <= 0) ! isotropic: one plain solve
+        s_ok = 0; ds = ds_max; stages = 0; total = 0
+        do
+            xs = x
+            call set_stage(s)
+            call nc_solve(field, stage, xs, report, st, tol=target, max_steps=steps)
+            stages = stages + 1; total = total + report%newton_steps
+            if (st == 0) then
+                x = xs; s_ok = s
+                if (s >= 1) exit
+                ds = min(ds_max, 2*ds)
+            else
+                if (s <= 0 .or. ds*span < 1.0_dp/64) then
+                    report%stages = stages; report%total_steps = total
+                    return
+                end if
+                ds = ds/2
+            end if
+            s = min(1.0_dp, s_ok + ds)
+        end do
+        report%stages = stages; report%total_steps = total
+        status = 0
+    contains
+        subroutine set_stage(t)
+            real(dp), intent(in) :: t
+            stage%chi_par = problem%chi_perp*(problem%chi_par/problem%chi_perp)**t
+            stage%g_perp = problem%g_par/(problem%g_par/problem%g_perp)**t
+            if (t >= 1) then
+                stage%chi_par = problem%chi_par; stage%g_perp = problem%g_perp
+            end if
+        end subroutine
+    end subroutine
+
+    subroutine source_load(field, problem, lay, nphi, load, status)
+        ! |<v, S>| on the pressure rows of every block (the phi rule of the
+        ! residual) and |I_phi| on the loop row; zero elsewhere.
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
         type(nc_layout_t), intent(in) :: lay
+        integer, intent(in) :: nphi
         real(dp), allocatable, intent(out) :: load(:)
         integer, intent(out) :: status
         real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
-        integer :: t, q
+        real(dp) :: tr(lay%nb), dtr(lay%nb), phi
+        integer :: t, q, j, bk
         allocate (load(lay%n))
         load = 0
         do t = 1, field%fs%mm%topology%n_triangles
             do q = 1, field%fs%nq
                 call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, status)
                 if (status /= 0) return
-                associate (g => lay%ip + field%fs%sp(0)%dof(:, t))
-                    load(g) = load(g) + wq*val*problem%source(xq)
-                end associate
+                do j = 1, nphi
+                    phi = 2*acos(-1.0_dp)*(j - 1)/nphi
+                    call trig(lay%modes, phi, tr, dtr)
+                    do bk = 1, lay%nb
+                        associate (g => lay%ip + (bk - 1)*lay%n0 &
+                                   + field%fs%sp(0)%dof(:, t))
+                            load(g) = load(g) + wq/nphi*tr(bk)*val &
+                                *source_value(problem, xq, phi)
+                        end associate
+                    end do
+                end do
             end do
         end do
         load = abs(load)
@@ -481,6 +588,16 @@ contains
         field%p = x(lay%ip + 1:lay%ip + lay%nv)
         status = 0
     end subroutine
+
+    real(dp) function source_value(problem, x, phi) result(s)
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(in) :: x(2), phi
+        if (associated(problem%source_3d)) then
+            s = problem%source_3d(x, phi)
+        else
+            s = problem%source(x)
+        end if
+    end function
 
     pure integer function local_rows(field, lay) result(nr)
         type(free_b_field_t), intent(in) :: field
@@ -558,12 +675,16 @@ contains
             pv = matmul(val, pl); pg = matmul(grad, pl)
             fv = matmul(val, fl); fg = matmul(grad, fl)
             ephi = x(lay%iv)/(two_pi*rr)
-            gpar = problem%g_par
-            if (associated(problem%g_par_shape)) gpar = gpar*problem%g_par_shape(xq)
-            src = problem%source(xq)
             w = wq/nphi
             do j = 1, nphi
                 phi = two_pi*(j - 1)/nphi
+                gpar = problem%g_par
+                if (associated(problem%g_par_shape)) then
+                    gpar = gpar*problem%g_par_shape(xq)
+                else if (associated(problem%g_par_shape_3d)) then
+                    gpar = gpar*problem%g_par_shape_3d(xq, phi)
+                end if
+                src = source_value(problem, xq, phi)
                 call trig(lay%modes, phi, tr, dtr)
                 bq = matmul(bm, tr)
                 bq(2) = bq(2) + field%f_vac/rr
