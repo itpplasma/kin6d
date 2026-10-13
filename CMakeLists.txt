@@ -1228,6 +1228,10 @@ add_test(NAME nonnested_hudson_breslau_integrable_exact_p3
     COMMAND test_nonnested_hudson_breslau integrable 3)
 set_tests_properties(nonnested_hudson_breslau_integrable_exact_p3 PROPERTIES
     TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+add_test(NAME nonnested_hudson_breslau_chaos_responds_p3
+    COMMAND test_nonnested_hudson_breslau chaos 3 7 48 3)
+set_tests_properties(nonnested_hudson_breslau_chaos_responds_p3 PROPERTIES
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN2 (second increment): axisymmetric coupled transport / Ampere / Ohm Newton.
 target_sources(kin6d PRIVATE src/nonnested_coupled.f90)
