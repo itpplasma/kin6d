@@ -52,6 +52,7 @@ module kin6d_mhd_ideal_n
         surface_t, surface_build
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate, flux_mesh_ring_edge
     use kin6d_mhd_ampere_n, only: mu0
+    use kin6d_mhd_closure_n, only: frobenius_basis
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     implicit none
     private
@@ -88,6 +89,11 @@ module kin6d_mhd_ideal_n
         !> Near-rational radial shape of the strip current (ideal_load);
         !> .false. holds the half-ring current constant across every strip.
         logical :: strip_shape = .true.
+        !> Signed poloidal numbers m = nint(n q) of the rationals and their
+        !! Mercier exponent offsets eps = sqrt(-D_I) - 1/2; the strip shape of
+        !! a rational uses the Frobenius basis of its eps (0 when absent).
+        integer, allocatable :: res_m(:)
+        real(dp), allocatable :: res_eps(:)
     end type ideal_options_t
 
     public :: equilibrium_point
@@ -442,7 +448,7 @@ contains
         c(3) = a(1)*b(2) - a(2)*b(1)
     end function cross_rc
 
-    subroutine ideal_load(fs, pb, fm, g, jcur, kap, bnd, f, rings, n)
+    subroutine ideal_load(fs, pb, fm, g, jcur, kap, bnd, f, rings, n, res_m, res_eps)
         !! f = mu0 (A', J) for the Nedelec test functions: volume current of
         !! strip h from sample ring h - 1 (half ring of strip h), interpolated
         !! linearly in angle; boundary sheet K = kap B0 on the last ring with
@@ -458,8 +464,12 @@ contains
         !! D/D_h, D = kres + n q(psi), the strip current at a quadrature point
         !! is the interpolant J = sum_k L_k(t) J_k of the three neighbouring
         !! half-ring currents (h-1..h+1, else h..h+2 or h-2..h; active, same
-        !! kres, same side of the rational) that is exact for t J in span{1,
-        !! t, t ln t}; q(psi) is quadratic between half rings.  A strip-
+        !! kres, same side of the rational) that is exact for t J in the
+        !! Frobenius span {t^-eps, t, (t^(1+eps) - t)/eps} of the Mercier
+        !! exponent eps = sqrt(-D_I) - 1/2 of the rational (res_m, res_eps;
+        !! eps = 0: span{1, t, t ln t}; J in span{x^(-1/2-mu), 1, x^(-1/2+mu)}
+        !! since xi = Phi/x ~ x^(-1/2 +- mu), Glasser, Greene and Johnson, Phys.
+        !! Fluids 18, 875 (1975)); q(psi) is quadratic between half rings.  A strip-
         !! constant 1/x current misses ln r - 2 (r - 1)/(r + 1) of the net
         !! current of each strip of ratio r and a ln|x| current its first
         !! moment; on left/right-asymmetric strip sequences these leave a
@@ -473,9 +483,12 @@ contains
         complex(dp), intent(out) :: f(:)
         type(sample_ring_t), intent(in), optional :: rings(:)
         integer, intent(in), optional :: n
+        integer, intent(in), optional :: res_m(:)
+        real(dp), intent(in), optional :: res_eps(:)
         complex(dp), allocatable :: bl(:, :)
         real(dp), allocatable :: phi(:, :), ref(:, :), sinv(:, :, :), tk(:, :)
-        real(dp), allocatable :: dres(:)
+        real(dp), allocatable :: dres(:), epsr(:)
+        real(dp) :: dbas(3)
         integer, allocatable :: i1(:), kres(:)
         real(dp) :: x(2), wq, th, gx(6), gw(6), xi, eta, nh(2), ta, tb
         real(dp) :: psi, pr, pz, bt, plo, phi2, qv, tt, bas(3), lk(3)
@@ -488,11 +501,12 @@ contains
         nri = size(jcur, 3)
         wres = present(rings) .and. present(n)
         if (wres) wres = nri >= 3
-        if (wres) call strip_shape_fit(rings(1:nri), n, jcur, i1, kres, dres, tk, sinv)
+        if (wres) call strip_shape_fit(rings(1:nri), n, jcur, i1, kres, dres, tk, sinv, &
+                                       epsr, res_m, res_eps)
         allocate (bl(nl, nt))
         bl = (0.0_dp, 0.0_dp)
         !$omp parallel default(shared) private(t, q, i, st, ir, jr, x, wq, th, jj, phi, &
-        !$omp psi, pr, pz, plo, phi2, qv, tt, bas, lk, k, j1)
+        !$omp psi, pr, pz, plo, phi2, qv, tt, bas, dbas, lk, k, j1)
         allocate (phi(3, fs%sp(1)%nloc))
         !$omp do schedule(static)
         do t = fm%tlast(1) + 1, nt
@@ -514,7 +528,7 @@ contains
                         j1 = min(max(ir - 1, 1), nri - 2)
                         qv = lagrange3(rings(j1:j1 + 2)%psi, rings(j1:j1 + 2)%q, psi)
                         tt = max((kres(ir) + n*qv)/dres(ir), 1.0e-3_dp)
-                        bas = [1.0_dp, tt, tt*log(tt)]
+                        call frobenius_basis(epsr(ir), tt, bas, dbas)
                         do k = 1, 3
                             lk(k) = tk(k, ir)/tt*dot_product(bas, sinv(:, k, ir))
                         end do
@@ -560,30 +574,43 @@ contains
         end do
     end subroutine ideal_load
 
-    subroutine strip_shape_fit(rings, n, jcur, i1, kres, dres, tk, sinv)
+    subroutine strip_shape_fit(rings, n, jcur, i1, kres, dres, tk, sinv, epsr, res_m, &
+                               res_eps)
         !! Per half ring h (see ideal_load): first ring i1(h) of the three
         !! neighbours of the strip interpolant (0: strip-constant current),
         !! kres(h), D_h = dres(h), t_k = D_k/D_h of the neighbours and the
-        !! inverse sinv of the matrix [1, t_k, t_k ln t_k].
+        !! inverse sinv of the matrix of the Frobenius basis (t^-eps, t,
+        !! (t^(1+eps) - t)/eps) at t_k; eps = epsr(h) is the Mercier offset
+        !! sqrt(-D_I) - 1/2 of the rational |m| = |kres(h)| (res_m, res_eps;
+        !! 0 without them), which reduces the basis to [1, t, t ln t].
         type(sample_ring_t), intent(in) :: rings(:)
         integer, intent(in) :: n
         complex(dp), intent(in) :: jcur(:, :, :)
         integer, allocatable, intent(out) :: i1(:), kres(:)
-        real(dp), allocatable, intent(out) :: dres(:), tk(:, :), sinv(:, :, :)
-        integer :: nr, h, c, k, ii, start(3)
-        real(dp) :: a(3, 3), det
+        real(dp), allocatable, intent(out) :: dres(:), tk(:, :), sinv(:, :, :), epsr(:)
+        integer, intent(in), optional :: res_m(:)
+        real(dp), intent(in), optional :: res_eps(:)
+        integer :: nr, h, c, k, ii, start(3), l
+        real(dp) :: a(3, 3), det, df(3)
         logical, allocatable :: live(:)
         logical :: ok
 
         nr = size(rings)
-        allocate (i1(nr), kres(nr), dres(nr), tk(3, nr), sinv(3, 3, nr), live(nr))
+        allocate (i1(nr), kres(nr), dres(nr), tk(3, nr), sinv(3, 3, nr), live(nr), &
+                  epsr(nr))
         i1 = 0
+        epsr = 0.0_dp
         tk = 1.0_dp
         sinv = 0.0_dp
         do h = 1, nr
             live(h) = any(abs(jcur(:, :, h)) > 0.0_dp)
             kres(h) = -nint(n*rings(h)%q)
             dres(h) = kres(h) + n*rings(h)%q
+            if (present(res_m) .and. present(res_eps)) then
+                do l = 1, min(size(res_m), size(res_eps))
+                    if (abs(res_m(l)) == abs(kres(h))) epsr(h) = res_eps(l)
+                end do
+            end if
         end do
         do h = 1, nr
             if (.not. live(h) .or. abs(dres(h)) <= 0.0_dp) cycle
@@ -599,7 +626,7 @@ contains
                 if (.not. ok) cycle
                 do k = 1, 3
                     tk(k, h) = (kres(h) + n*rings(ii + k - 1)%q)/dres(h)
-                    a(k, :) = [1.0_dp, tk(k, h), tk(k, h)*log(tk(k, h))]
+                    call frobenius_basis(epsr(h), tk(k, h), a(k, :), df)
                 end do
                 det = det3(a)
                 if (abs(det) < 1.0e-13_dp) cycle
@@ -823,8 +850,13 @@ contains
             call ideal_current(rings, n, g%sgn_dpsi, opt%qlow, bf, jc, kap, bnd, seg, &
                 opt%moved_current)
             if (opt%strip_shape) then
-                call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f, &
-                    rings(1:nr - 1), n)
+                if (allocated(opt%res_m) .and. allocated(opt%res_eps)) then
+                    call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f, &
+                        rings(1:nr - 1), n, opt%res_m, opt%res_eps)
+                else
+                    call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f, &
+                        rings(1:nr - 1), n)
+                end if
             else
                 call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f)
             end if

@@ -76,6 +76,10 @@ module kin6d_mhd_closure_n
         real(dp), allocatable :: pinv(:, :, :)   !! (3, nfit, 2) a = pinv Phi
         real(dp), allocatable :: preg(:, :, :)   !! (3, nfit, 2) smooth fit 1, t, t^2
         real(dp), allocatable :: pjump(:)        !! (2 nfit) two-sided kink fit
+        !> (2 nfit) kink of the small solution |x|^(1+eps) at |x| = delta
+        !! (layer_kink); pkinks: the same after removing the large-solution
+        !! part a1 t^-eps of each side with its Frobenius coefficient a1.
+        real(dp), allocatable :: pkink(:), pkinks(:)
     end type rational_layer_t
 
     public :: mercier_di
@@ -88,6 +92,7 @@ module kin6d_mhd_closure_n
     public :: layer_slope
     public :: layer_regular_slope
     public :: layer_jump
+    public :: layer_kink
     public :: layer_inside
 
 contains
@@ -230,7 +235,8 @@ contains
         type(rational_layer_t), intent(out) :: lay
         integer, intent(out) :: status
         real(dp) :: bm(nfit, 3), br(nfit, 3), f(3), df(3), x, mu
-        real(dp) :: bj(2*nfit, 5), pj(5, 2*nfit)
+        real(dp) :: bj(2*nfit, 5), pj(5, 2*nfit), bk(2*nfit, 5), pk(5, 2*nfit)
+        real(dp) :: wk(nfit)
         integer :: k, side, j
 
         status = 1
@@ -246,7 +252,7 @@ contains
         lay%delta = delta
         lay%ring_rat = minloc(abs(ul - sqrt(psin_s)), 1)
         allocate (lay%ring(nfit, 2), lay%t(nfit, 2), lay%pinv(3, nfit, 2), &
-            lay%preg(3, nfit, 2), lay%pjump(2*nfit))
+            lay%preg(3, nfit, 2), lay%pjump(2*nfit), lay%pkink(2*nfit), lay%pkinks(2*nfit))
         do side = 1, 2
             do k = 1, nfit
                 x = delta*ratio**(k - 1)
@@ -281,6 +287,32 @@ contains
         call pseudo_inverse_n(bj, pj, status)
         if (status /= 0) return
         lay%pjump = pj(3, :)
+        ! the same fit with the small solution |x|^(1+eps) of the Mercier
+        ! exponent as the kink column (columns 1, sigma t, t^(1+eps), t^2,
+        ! sigma t^(2+eps)); the large solution t^-eps of each side is first
+        ! removed with its Frobenius coefficient a1 (rows of pinv) for pkinks;
+        ! for a1 = 0 (ideal) the removal would only inject the a1 error of the
+        ! small-solution corrections, so pkink uses the raw fluxes
+        do side = 1, 2
+            do k = 1, nfit
+                x = lay%t(k, side)
+                bk((side - 1)*nfit + k, :) = [1.0_dp, (2*side - 3)*x, &
+                    x**(1 + lay%eps), x**2, (2*side - 3)*x**(2 + lay%eps)]
+            end do
+        end do
+        call pseudo_inverse_n(bk, pk, status)
+        if (status /= 0) return
+        lay%pkink = pk(3, :)
+        do side = 1, 2
+            do k = 1, nfit
+                wk(k) = pk(3, (side - 1)*nfit + k)
+            end do
+            ! w (I - f1 pinv1^T): weights on the raw fluxes of this side
+            do k = 1, nfit
+                lay%pkinks((side - 1)*nfit + k) = wk(k) &
+                    - sum(wk*lay%t(:, side)**(-lay%eps))*lay%pinv(1, k, side)
+            end do
+        end do
         status = 0
     end subroutine layer_init
 
@@ -418,6 +450,31 @@ contains
         d = 2*(sum(lay%pjump(1:n)*phi(1:n, 1)) &
                + sum(lay%pjump(n + 1:2*n)*phi(1:n, 2)))/lay%delta
     end function layer_jump
+
+    pure function layer_kink(lay, phi, subtract_large) result(d)
+        !! Jump of d Phi/d psin across the rational surface carried by the
+        !! small solution |x|^(1/2 + mu) = |x|^(1+eps), evaluated at |x| = delta:
+        !! 2 (1 + eps) c/delta with c the coefficient of t^(1+eps) in the joint
+        !! two-sided fit (columns 1, sigma t, t^(1+eps), t^2, sigma t^(2+eps)).
+        !! Multiply by (x/delta)^eps for the jump at |x| = x; at eps = 0 this is
+        !! layer_jump.  With a1 /= 0 (resistive layer) subtract_large removes
+        !! the large solution a1 t^-eps of each side first; for a1 = 0 (ideal
+        !! shielding) leave it off, the removal would only add the a1 error.
+        type(rational_layer_t), intent(in) :: lay
+        complex(dp), intent(in) :: phi(:, :)
+        logical, intent(in), optional :: subtract_large
+        complex(dp) :: d
+        real(dp), allocatable :: w(:)
+        integer :: n
+
+        n = lay%nfit
+        w = lay%pkink
+        if (present(subtract_large)) then
+            if (subtract_large) w = lay%pkinks
+        end if
+        d = 2*(1 + lay%eps)*(sum(w(1:n)*phi(1:n, 1)) &
+                             + sum(w(n + 1:2*n)*phi(1:n, 2)))/lay%delta
+    end function layer_kink
 
     pure logical function layer_inside(lays, ul, u)
         !! u lies strictly between the edge rings of one of the layers.
