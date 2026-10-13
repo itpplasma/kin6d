@@ -30,7 +30,7 @@ function(require_below what value limit)
     endif()
 endfunction()
 
-set(common "mesh_file='../ref/mesh.dat', law_file='../ref/profile-law.dat', summary_file='../ref/summary.dat', coil_file='../ref/coils.txt', boundary_file='../ref/boundary.dat', boundary_nodes=64, degree=3, chain_nodes=48, nfp=1, ntor=0, max_iterations=60, verbose=.false.")
+set(common "mesh_file='../ref/mesh.dat', law_file='../ref/profile-law.dat', summary_file='../ref/summary.dat', coil_file='../ref/coils.txt', boundary_file='../ref/boundary.dat', boundary_nodes=64, degree=3, chain_nodes=48, nfp=1, ntor=0, max_iterations=150, verbose=.false.")
 foreach(case "r0;offset_r=0.0" "rp;offset_r=0.015" "rm;offset_r=-0.015" "zp;offset_z=0.015" "zm;offset_z=-0.015" "el;elongation=0.02")
     list(GET case 0 name)
     list(GET case 1 offset)
