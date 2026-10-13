@@ -288,15 +288,20 @@ contains
         if (status /= 0) return
         lay%pjump = pj(3, :)
         ! the same fit with the small solution |x|^(1+eps) of the Mercier
-        ! exponent as the kink column (columns 1, sigma t, t^(1+eps), t^2,
-        ! sigma t^(2+eps)); the large solution t^-eps of each side is first
-        ! removed with its Frobenius coefficient a1 (rows of pinv) for pkinks;
+        ! exponent as the kink column and the even large solution t^-eps in
+        ! place of the constant (columns t^-eps, sigma t, t^(1+eps), t^2,
+        ! sigma t^(2+eps); eps = 0: the polynomial kink fit).  With the
+        ! constant column a residual large solution A|x|^-eps (eps > 0) leaks
+        ! into the kink as A delta^(-1-2 eps); the odd large part sigma t^-eps
+        ! drops out on the symmetric rings.  For pkinks the large solution
+        ! t^-eps of each side is first removed with its Frobenius coefficient
+        ! a1 (rows of pinv);
         ! for a1 = 0 (ideal) the removal would only inject the a1 error of the
         ! small-solution corrections, so pkink uses the raw fluxes
         do side = 1, 2
             do k = 1, nfit
                 x = lay%t(k, side)
-                bk((side - 1)*nfit + k, :) = [1.0_dp, (2*side - 3)*x, &
+                bk((side - 1)*nfit + k, :) = [x**(-lay%eps), (2*side - 3)*x, &
                     x**(1 + lay%eps), x**2, (2*side - 3)*x**(2 + lay%eps)]
             end do
         end do
@@ -455,7 +460,7 @@ contains
         !! Jump of d Phi/d psin across the rational surface carried by the
         !! small solution |x|^(1/2 + mu) = |x|^(1+eps), evaluated at |x| = delta:
         !! 2 (1 + eps) c/delta with c the coefficient of t^(1+eps) in the joint
-        !! two-sided fit (columns 1, sigma t, t^(1+eps), t^2, sigma t^(2+eps)).
+        !! two-sided fit (columns t^-eps, sigma t, t^(1+eps), t^2, sigma t^(2+eps)).
         !! Multiply by (x/delta)^eps for the jump at |x| = x; at eps = 0 this is
         !! layer_jump.  With a1 /= 0 (resistive layer) subtract_large removes
         !! the large solution a1 t^-eps of each side first; for a1 = 0 (ideal
