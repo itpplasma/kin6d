@@ -130,7 +130,8 @@ program gs_free_3d_main
     real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
     real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
-    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, tangential_damping = 0, rigid(2, 2) = 0, seed_amplitude = 0
+    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, tangential_damping = 0
+    integer :: homotopy_steps = 1, stage_iterations = 15, rigid(2, 2) = 0, seed_amplitude = 0
     real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
     integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
@@ -148,7 +149,8 @@ program gs_free_3d_main
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
-        stability, shifts, gamma_c_scale, tangential_damping
+        stability, shifts, gamma_c_scale, tangential_damping, homotopy_steps, &
+        stage_iterations
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -254,6 +256,25 @@ program gs_free_3d_main
     call ideal_fb_solve_multipliers(fb, st)
     if (st /= IDEAL_FB_OK) error stop 'initial multiplier solve'
     call xrow_norm('after multipliers')
+    if (homotopy_steps > 1) then
+        ! Newton homotopy from the offset start: g(U) = (1 - k/K) g(U0),
+        ! k = 1 .. K - 1, each stage to a 20-fold residual reduction, then the
+        ! true system. The start U0 is unchanged (a genuine offset start).
+        block
+            real(dp), allocatable :: g0(:)
+            integer :: k, s2
+            allocate (g0(fb%n))
+            call ideal_fb_gradient(fb, g0, s2)
+            do k = 1, homotopy_steps - 1
+                fb%shift = (1 - real(k, dp)/homotopy_steps)*g0
+                call ideal_fb_solve(fb, 0.05_dp, stage_iterations, report, s2, verbose)
+                write (output_unit, '(a,i0,a,i0,a,i0,a,es10.3)') 'homotopy stage ', k, &
+                    ' status ', s2, ' iterations ', report%iterations, ' residual ', &
+                    report%residual
+            end do
+            deallocate (fb%shift)
+        end block
+    end if
     call ideal_fb_solve(fb, tolerance, max_iterations, report, st, verbose, &
         step_tolerance, residual_tolerance)
     call cpu_time(t1)
