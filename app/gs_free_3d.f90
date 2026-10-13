@@ -136,7 +136,8 @@ program gs_free_3d_main
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
     integer :: panels_per_edge = 0, st, i, nc, unit
     logical :: verbose = .true., start_at_target = .false., stability = .false.
-    real(dp) :: stab(64) = 0
+    real(dp) :: stab(64) = 0, shifts(8) = [-1.0e-8_dp, -1.0e-7_dp, -1.0e-6_dp, &
+        -1.0e-5_dp, -1.0e-4_dp, -1.0e-3_dp, -1.0e-2_dp, -1.0e-1_dp]
     character(512) :: mesh_file = 'mesh.dat', law_file = 'profile-law.dat'
     character(512) :: summary_file = 'summary.dat', coil_file = ''
     character(512) :: boundary_file = '', rmp_coil_file = '', rmp_current_file = ''
@@ -147,7 +148,7 @@ program gs_free_3d_main
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
-        stability
+        stability, shifts
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -259,13 +260,23 @@ program gs_free_3d_main
     if (stability) then
         block
             real(dp) :: lam
-            integer :: m, s2
+            integer :: m, s2, j
             do m = 1, fb%nmode
-                call ideal_fb_mode_stability(fb, m, lam, s2)
-                stab(m) = lam
-                write (output_unit, '(a,i0,a,i0,a,es12.4,a,i0)') 'stability mode ', m, &
-                    ' (n=', (m/2)*nfp, ') smallest-|lambda| eigenvalue ', lam, &
-                    ' status ', s2
+                if (m > 1 .and. mod(m, 2) == 1) cycle
+                stab(m) = huge(1.0_dp)
+                do j = 0, size(shifts)
+                    if (j > 0) then
+                        if (.not. shifts(j) < 0) cycle
+                        call ideal_fb_mode_stability(fb, m, lam, s2, shift=shifts(j))
+                    else
+                        call ideal_fb_mode_stability(fb, m, lam, s2)
+                    end if
+                    stab(m) = min(stab(m), lam)
+                    write (output_unit, '(a,i0,a,i0,a,es10.2,a,es12.4,a,i0)') &
+                        'stability mode ', m, ' (n=', (m/2)*nfp, ') shift ', &
+                        merge(0.0_dp, shifts(max(j, 1)), j == 0), ' eigenvalue ', lam, &
+                        ' status ', s2
+                end do
             end do
         end block
     end if
@@ -547,7 +558,8 @@ contains
         write (u, '(a,2(1x,es16.8))') 'rigid_Z_force_stiffness', rigid(:, 2)
         if (stability) then
             do k = 1, fb%nmode
-                write (u, '(a,i0,1x,es16.8)') 'stability_lambda_mode', k, stab(k)
+                if (k > 1 .and. mod(k, 2) == 1) cycle
+                write (u, '(a,i0,1x,es16.8)') 'stability_min_lambda_mode', k, stab(k)
             end do
         end if
         write (u, '(a,1x,es16.8)') 'offset_r', offset_r
