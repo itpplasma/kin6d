@@ -188,7 +188,7 @@ contains
         if (st /= 0) error stop 'ellipse map'
         call nn_mapped_data(field, map, nphi, potential, data, st)
         if (st /= 0) error stop 'ellipse data'
-        call nn_mapped_solve(field, map, nphi, data, 1.0e-12_dp, report, st)
+        call nn_mapped_solve(field, map, nphi, data, 1.0e-14_dp, report, st)
         if (st /= 0) error stop 'ellipse solve'
         call nn_mapped_error(field, map, 2*nphi + 1, exact_field, err, dev, eh, ee, st)
         if (st /= 0) error stop 'ellipse error'

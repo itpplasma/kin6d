@@ -70,7 +70,7 @@ with `phi` (map degree 2). Ctests (`ctest -R nonnested_mapped`):
 1. `identity_regression`: identity map reproduces NN1 (nr=2, P2, N=3) to
    `max|b - b_NN1|/max|b| = 5.3e-14`, 1 FGMRES iteration, `div = 7e-15`; field
    error 1.479e-2 vs the oracle, identical to NN1.
-2. `ellipse_h_ladder` (`hladder 5 2 4`) and 3. `ellipse_mode_ladder`
+2. `ellipse_h_ladder` (`hladder 10 4 8 16`) and 3. `ellipse_mode_ladder`
    (`modes 2 1 3`).
 
 Measured (local, 4 threads, 2026-10-13):
@@ -86,12 +86,9 @@ expected 2 for P2. The mode ladder at nr=2 falls 1.09 (N=1), 0.105 (N=3), 6.27e-
 (N=5), 6.25e-2 (N=7): it saturates at the spatial error from N=5. Iterations are
 flat in `h` and `N` as predicted; `div B` stays at roundoff.
 
-The CTest gate on the h order is an interim 1.2
-(`KIN6D_MAPPED_MIN_ORDER`, default 1.7 in the program). It is not a claim of
-second order. The Slurm ladder (nr up to 16, N=6) decides whether the order
-reaches 2 or whether a floor remains. Candidate floors: the Lagrange
-interpolation of the map (order of `DF` is one lower than that of `d`), and the
-L2-projected data.
+The CTest h ladder runs at N = 10 (`hladder 10 4 8 16`) with the program gate 1.7 on the
+finest pair (`KIN6D_MAPPED_MIN_ORDER` default): measured 1.64 (nr 4->8) and 1.80 (nr 8->16).
+The order loss at N = 5-6 was mode truncation (docs/nn1-qa-benchmark.md).
 
 ## Open items
 

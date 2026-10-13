@@ -77,5 +77,14 @@ consistent with a pre-asymptotic range for the strongly shaped wall.
 
 Ellipse reruns at N = 10 (field L2 error): nr 4/8/16 -> 2.43e-2 / 7.83e-3 / 2.25e-3, orders
 1.64 and 1.80 (at fixed N = 6 they were 1.50 and 0.97). The earlier order loss came from
-mode truncation; the spatial order recovers toward 2. The nr = 16 ellipse runs stopped at
-the program's FGMRES residual gate (1.6e-9 > 1e-9); the gate was not changed.
+mode truncation; the spatial order recovers toward 2. The nr = 16 ellipse run
+stopped at the program's FGMRES residual check (1.6e-9 > 1e-9) with the solve tolerance at
+1e-12. The check is unchanged; the FGMRES solve tolerance of the ellipse cases is now 1e-14
+(1e-15 stagnates). At N = 10 this gives residuals 2.2e-12 (nr 4) and 4.9e-12 (nr 8) with 20
+and 21 iterations (before 1.8e-10 and 3.4e-10 with 17 and 18). The CTest ellipse h ladder is
+now `hladder 10 4 8 16` with the program's order gate 1.7 on the finest pair (measured 1.80).
+
+The failed rule items (nr = 4 mode gain, order 0.97 at nr 2->4) stay failed under the
+pre-declared rule. The coarse range (nr <= 4) is pre-asymptotic; the finest pairs pass
+(order 1.64 at nr 8->16 on the stellarator wall, 1.80 on the ellipse; nr = 16 mode ladder
+ratio 0.12).
