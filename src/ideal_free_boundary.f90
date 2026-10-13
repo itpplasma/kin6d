@@ -149,7 +149,7 @@ contains
 
     subroutine ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, f_vac, &
                              circulation, status, mu0, nphi, panels_per_edge, &
-                             quadrature_order)
+                             quadrature_order, omega0_free)
         ! mesh: curved P2/P3 mesh of the Gamma_c region with Gamma_p as the
         ! constrained internal chain (initialize_gs with interior_chain);
         ! chain: the Gamma_p vertices used for it; field: frozen plasma data.
@@ -162,6 +162,7 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: mu0
         integer, intent(in), optional :: nphi, panels_per_edge, quadrature_order
+        logical, intent(in), optional :: omega0_free
         type(gs_state_t) :: sub
         logical, allocatable :: inside(:), in_plasma(:), in_shell(:)
         integer :: e, a, m, nodes, cells, nplasma, k, st, ppe
@@ -251,6 +252,20 @@ contains
                 fb%plasma%fixed(ideal_map_rdof(fb%plasma, 1, m, a)) = .false.
             end do
         end do
+        ! omega_0 (the n = 0 toroidal displacement) is held at zero. Its
+        ! surface-function part omega_0 = f(chi) is the continuum relabelling
+        ! null of the map lane; with frozen data sampled from a finite-element
+        ! flux (gradients only C0) the weak N1 gauge term does not hold it and
+        ! Newton drifts along it, dragging the surfaces (measured: 1-5 cm
+        ! interior surface defect on the gs_free fixture, fixed or free
+        ! boundary). Its non-f(chi) part twists field lines and is zero at
+        ! any axisymmetric equilibrium. The cost is the O(eps^2) n = 0
+        ! toroidal shear of a 3D state, outside the linear and NL-3a gates.
+        if (present(omega0_free)) then
+            if (.not. omega0_free) call pin_omega0()
+        else
+            call pin_omega0()
+        end if
         call ideal_map_freeze(fb%plasma, field, st)
         if (st /= IDEAL_MAP_OK) return
         fb%mu0 = fb%plasma%mu0
@@ -280,6 +295,13 @@ contains
             if (fb%role(k) == 1) fb%xs(:, :, k) = fb%plasma%x(:, :, fb%plasma_node(k))
         end do
         status = IDEAL_FB_OK
+    contains
+        subroutine pin_omega0()
+            integer :: node
+            do node = 1, fb%plasma%nodes
+                fb%plasma%fixed(ideal_map_rdof(fb%plasma, 2, 1, node)) = .true.
+            end do
+        end subroutine
     end subroutine
 
     pure logical function point_in_polygon(poly, p) result(inside)
