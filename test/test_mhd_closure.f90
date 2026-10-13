@@ -37,7 +37,8 @@ program test_mhd_closure
         meridian_point_basis_t, meridian_point_basis_init
     use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point, &
         surface_t, surface_build, find_surface_q
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge
+    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
+        ring_labels_smooth
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
     use kin6d_mhd_response_n, only: ring_sheet_load, sheet_closure_t, closure_fluxes
@@ -648,13 +649,14 @@ contains
         do l = 1, nrat
             qa = 2*sqrt(psin_s(l))/(nrad*(ratio - 1))
             do k = 1, nrat
-                if (k /= l) qa = min(qa, 0.4_dp*abs(psin_s(k) - psin_s(l)))
+                if (k /= l) qa = min(qa, 0.45_dp*abs(psin_s(k) - psin_s(l)))
             end do
             call layer_labels(psin_s(l), delta, ratio, qa, (0.5_dp/nrad)**2, &
                 (1 - 0.5_dp/nrad)**2, lab)
             extra = [extra, sqrt(lab)]
         end do
         call ring_labels_merge(nrad, extra, 0.3_dp, ul)
+        call ring_labels_smooth(ul, 2*ratio)
         nr = size(ul)
         call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
         if (st /= 0) error stop "mesh"
@@ -668,7 +670,7 @@ contains
             if (st /= 0) error stop "Mercier"
             qa = 2*sqrt(psin_s(l))/(nrad*(ratio - 1))
             do k = 1, nrat
-                if (k /= l) qa = min(qa, 0.4_dp*abs(psin_s(k) - psin_s(l)))
+                if (k /= l) qa = min(qa, 0.45_dp*abs(psin_s(k) - psin_s(l)))
             end do
             call layer_init(ul, psin_s(l), real(abs(mr(l)), dp)/nmode, dq, di, mr(l), &
                 delta, ratio, nfit, lays(l), st)
