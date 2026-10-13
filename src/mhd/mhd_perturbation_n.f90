@@ -36,10 +36,13 @@ module kin6d_mhd_perturbation_n
     private
 
     real(dp), parameter :: pi = 3.14159265358979323846_dp
-    integer, parameter, public :: nq_spec = 6
+    integer, parameter, public :: nq_spec = 7
+    !! phi_n: flux-density harmonics of the normal Eulerian field, the
+    !! coefficients phi_mn of surface_harmonics (T m^2 per rad^2, one-sided:
+    !! half of the peak amplitude of surface_harmonics and of the L4 res.dat)
     character(len=10), parameter, public :: spec_names(nq_spec) = &
         [character(len=10) :: 'xi_n', 'xi_b', 'dB_n_E', 'dB_par_E', 'dBmag_L', &
-         'kappa_xi']
+         'kappa_xi', 'phi_n']
 
     type, public :: perturbation_t
         integer :: n = 0, np = 0
@@ -365,10 +368,14 @@ contains
         if (allocated(res%spec)) deallocate (res%spec)
         allocate (res%spec(mmin:mmax, nq_spec, 2))
         do ic = 1, 2
-            do iq = 1, nq_spec
+            do iq = 1, nq_spec - 1
                 call perturbation_spectrum(s, ic, res%n, f(:, iq), mmin, mmax, &
                     res%spec(:, iq, ic))
             end do
+            ! flux density: weight R dl per dtheta_g divided by the chart Jacobian
+            f(:, nq_spec) = f(:, 3)*s%r*s%dl/s%dtheta_s(:, ic)
+            call perturbation_spectrum(s, ic, res%n, f(:, nq_spec), mmin, mmax, &
+                res%spec(:, nq_spec, ic))
         end do
     end subroutine perturbation_add_spectra
 

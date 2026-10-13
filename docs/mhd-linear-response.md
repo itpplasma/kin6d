@@ -224,7 +224,9 @@ periodic Fourier collocation in the geometric angle; `div xi` drops out), and
 returns `dB_L = dB_E + (xi.grad) B0`, `|B|_L = b.dB_E + xi.grad|B|`,
 `kappa = (b.grad) b` and `kappa.xi` (`perturbation_t`, in memory).
 `gs_response_3d` writes it for `export_psin(:)`, `export_np`, `export_mmax` to
-`prefix_l7_ph<k>.dat` (format `kin6d-l7-v1`: header with n, n-sign, declared
+`prefix_l7_ph<k>.dat` (spectrum quantity `phi_n` = flux-density harmonics of the normal
+Eulerian field in T m^2 per rad^2, one-sided: the peak-amplitude `phi_mn` of
+`surface_harmonics`, `res.dat` and GPEC/MARS is twice it) (format `kin6d-l7-v1`: header with n, n-sign, declared
 COCOS 3, `sgn_dpsi`, `s_pol`, `ip` sign, chart definitions; point table; PEST and
 Hamada spectra) with a `sha256sum`-compatible sidecar `.sha256`.
 
