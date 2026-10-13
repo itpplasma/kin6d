@@ -63,7 +63,7 @@ program gs_response_3d
         ideal_options_t, ideal_response
     use kin6d_mhd_response_n, only: sheet_closure_t, closure_shield_init, &
         closure_fluxes
-    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, layer_xmax, &
         layer_init, layer_closure, layer_coefficients, layer_slope, &
         layer_regular_slope, layer_inside
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
@@ -196,10 +196,9 @@ program gs_response_3d
                     ', dq/dpsin = ', dq_rat(i)
                 ! grade up to the uniform spacing, at most 0.45 of the gap to the
                 ! neighbouring rationals
-                qa = 2*u_rat(i)/(nrad*(layer_ratio - 1))
-                do k = 1, nrat
-                    if (k /= i) qa = min(qa, 0.45_dp*abs(psin_rat(k) - psin_rat(i)))
-                end do
+                qa = layer_xmax(psin_rat(i), &
+                    [psin_rat(:i - 1), psin_rat(i + 1:nrat)], layer_delta, &
+                    layer_ratio, layer_nfit, nrad)
                 call layer_labels(psin_rat(i), layer_delta, layer_ratio, qa, &
                     (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, lab)
                 extra = [extra, sqrt(lab)]

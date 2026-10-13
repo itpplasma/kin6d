@@ -80,6 +80,7 @@ module kin6d_mhd_closure_n
     public :: mercier_di
     public :: frobenius_basis
     public :: layer_labels
+    public :: layer_xmax
     public :: layer_init
     public :: layer_closure
     public :: layer_coefficients
@@ -176,6 +177,23 @@ contains
             end if
         end function expm1
     end subroutine frobenius_basis
+
+    pure function layer_xmax(psin_s, others, delta, ratio, nfit, nrad) result(xmax)
+        !! Largest layer-ring offset: grade up to the uniform spacing
+        !! 2 sqrt(psin_s)/nrad, but never below the outermost fit ring
+        !! delta ratio^(nfit-1), and at most 0.45 of the gap to the other
+        !! rationals (others).
+        real(dp), intent(in) :: psin_s, others(:), delta, ratio
+        integer, intent(in) :: nfit, nrad
+        real(dp) :: xmax
+        integer :: k
+
+        xmax = 2*sqrt(psin_s)/(nrad*(ratio - 1))
+        xmax = max(xmax, delta*ratio**(nfit - 1)*(1 + 1.0e-9_dp))
+        do k = 1, size(others)
+            xmax = min(xmax, 0.45_dp*abs(others(k) - psin_s))
+        end do
+    end function layer_xmax
 
     subroutine layer_labels(psin_s, delta, ratio, xmax, lo, hi, psin)
         !! psin labels of the layer rings: psin_s -+ delta ratio^k, k = 0, 1,
