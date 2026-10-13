@@ -291,7 +291,9 @@ contains
         integer, intent(out) :: stat
         type(gs_bem_operators_t) :: ops
         integer :: slot, shift, nn, i, j
+        real(dp) :: t0
 
+        t0 = -1
         do slot = 1, steklov_slots
             if (steklov_cache(slot) % flux_degree /= flux_degree) cycle
             if (.not. allocated(steklov_cache(slot) % nodes)) cycle
@@ -321,9 +323,12 @@ contains
         end do
         call gs_bem_curve_from_nodes(nodes, curve, stat)
         if (stat /= 0) return
+        call gs_phase_tick('', t0)
         call gs_bem_assemble(curve, flux_degree, ops, stat)
         if (stat /= 0) return
+        call gs_phase_tick('bem.assemble', t0)
         call gs_bem_steklov_symmetric(ops, s_bem, stat)
+        call gs_phase_tick('bem.steklov_dense', t0)
         if (stat /= 0) return
         slot = steklov_next
         steklov_next = mod(steklov_next, steklov_slots) + 1
