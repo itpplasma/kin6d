@@ -62,7 +62,7 @@ program test_mhd_closure
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_xmax, layer_jump, layer_init, layer_closure, layer_wmax, &
+        layer_xmax, layer_jump, layer_kink, layer_init, layer_closure, layer_wmax, &
         layer_coefficients, layer_regular_slope
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
@@ -107,6 +107,7 @@ program test_mhd_closure
     call layer_conditioning()
     call layer_ring_cap()
     call layer_jump_exact()
+    call layer_kink_finite_mu()
     call shield_cylinder()
     prof = 1
     call fe_ladder("Wesson j = (1 - r^2)^2", [10.0_dp, 40.0_dp], 2.0e-2_dp)
@@ -713,6 +714,79 @@ contains
             "layer_jump recovers the kink of a manufactured layer solution")
     end subroutine layer_jump_exact
 
+    subroutine layer_kink_finite_mu()
+        !! Finite-beta layer exponent mu = sqrt(-D_I) /= 1/2 (Glasser, Greene
+        !! and Johnson, Phys. Fluids 18, 875 (1975)): near the rational surface
+        !! the outer flux is Phi = A|x|^(1/2 - mu) + B|x|^(1/2 + mu) + C x
+        !! (the Frobenius solutions of (x^2 xi')' = (mu^2 - 1/4) xi, xi = Phi/x).
+        !! layer_kink recovers the jump 2 (1 + eps) B delta^eps of the small
+        !! solution at |x| = delta, eps = mu - 1/2, from the fit rings for every
+        !! ring ratio and fit size, without and with the large solution
+        !! (a1 /= 0 on both sides), against the polynomial-kink estimate that
+        !! is biased by (xbar/delta)^eps.
+        real(dp), parameter :: ps = 0.49_dp, delta = 1.0e-3_dp
+        real(dp), parameter :: mus(3) = [0.5_dp, 0.6_dp, 0.75_dp]
+        real(dp), parameter :: ratios(3) = [1.5_dp, 2.0_dp, 1.5_dp]
+        integer, parameter :: nfs(3) = [3, 3, 5]
+        real(dp), parameter :: bb = 0.8_dp, cc = -2.3_dp, b1 = 3.0_dp, b2 = 200.0_dp
+        real(dp), parameter :: c2 = 40.0_dp, c4 = 50.0_dp
+        real(dp), allocatable :: lab(:), ul(:)
+        real(dp) :: xm, x, eps, jtrue, err, errl, errb, a1(2), ax
+        complex(dp), allocatable :: phi(:, :)
+        type(rational_layer_t) :: lay
+        integer :: st, k, side, im, ir, ia
+
+        err = 0.0_dp
+        errl = 0.0_dp
+        errb = 0.0_dp
+        do im = 1, 3
+            eps = mus(im) - 0.5_dp
+            jtrue = 2.0_dp*(1.0_dp + eps)*bb*delta**eps
+            do ir = 1, 3
+                xm = layer_xmax(ps, [0.9_dp], delta, ratios(ir), nfs(ir), 96)
+                call layer_labels(ps, delta, ratios(ir), xm, 1.0e-6_dp, 0.999_dp, lab)
+                ul = sqrt(sorted([lab, ps]))
+                call layer_init(ul, ps, 1.5_dp, 1.0_dp, -mus(im)**2, 3, delta, &
+                    ratios(ir), nfs(ir), lay, st)
+                if (st /= 0) error stop "layer_kink_finite_mu init"
+                allocate (phi(nfs(ir), 2))
+                do ia = 1, 2
+                    ! ia = 1: small solution with analytic corrections; ia = 2:
+                    ! exact Frobenius span with different a1 on the two sides
+                    a1 = 0.0_dp
+                    if (ia == 2) a1 = [0.3_dp, -0.2_dp]
+                    do side = 1, 2
+                        do k = 1, nfs(ir)
+                            x = ul(lay%ring(k, side))**2 - ps
+                            ax = abs(x)
+                            if (ia == 1) then
+                                phi(k, side) = cmplx(cc*x &
+                                    + bb*ax**(1.0_dp + eps)*(1.0_dp + b1*x + b2*x*x) &
+                                    + c2*x*x + c4*x**3, 0.0_dp, dp)
+                            else
+                                phi(k, side) = cmplx(a1(side)*(ax/delta)**(-eps) &
+                                    + cc*x + bb*ax**(1.0_dp + eps), 0.0_dp, dp)
+                            end if
+                        end do
+                    end do
+                    if (ia == 1) then
+                        err = max(err, abs(layer_kink(lay, phi) - jtrue)/jtrue)
+                        if (im > 1) errb = max(errb, abs(layer_jump(lay, phi) &
+                            *delta**eps - jtrue)/jtrue)
+                    else
+                        errl = max(errl, abs(layer_kink(lay, phi, .true.) - jtrue)/jtrue)
+                    end if
+                end do
+                deallocate (phi)
+            end do
+        end do
+        print '(a,3es10.2)', "  layer_kink finite mu: error small / with a1 / "// &
+            "polynomial kink ", err, errl, errb
+        call record(err < 2.0e-2_dp .and. errl < 2.0e-2_dp, &
+            "layer_kink recovers the small-solution jump for mu = 0.5, 0.6, 0.75 "// &
+            "(ratio 1.5/2, nfit 3/5, also with a large solution)")
+    end subroutine layer_kink_finite_mu
+
     pure function sorted(v) result(w)
         real(dp), intent(in) :: v(:)
         real(dp) :: w(size(v)), t
@@ -849,6 +923,8 @@ contains
                 delta, ratio, nfit, lays(l), st)
             if (st /= 0) error stop "layer"
         end do
+        opt%res_m = mr(1:nrat)
+        opt%res_eps = lays(1:nrat)%eps
         call layer_closure(g, ul, lays, 1024, 2, cl, st)
         if (st /= 0) error stop "closure"
         cl%target(2*itest - 1:2*itest) = (1.0_dp, 0.0_dp)
@@ -1114,6 +1190,8 @@ contains
                 delta, ratio, nfit, lays(l), st)
             if (st /= 0) error stop "layer"
         end do
+        opt%res_m = mr(1:nrat)
+        opt%res_eps = lays(1:nrat)%eps
         call layer_closure(g, ul, lays, 1024, 2, cl, st)
         if (st /= 0) error stop "closure"
         allocate (a(amp%nn), f(amp%nn), b2cl(fs%sp(2)%ndof, cl%ns))
@@ -1192,7 +1270,7 @@ contains
             base = base + 2*lays(l)%nfit
         end do
         ph = reshape(phit(base + 1:base + 2*nfit), [nfit, 2])
-        jfit = layer_jump(lays(itest), ph)
+        jfit = layer_kink(lays(itest), ph)
         cf = layer_coefficients(lays(itest), ph)
         ! total over applied resonant flux on the boundary ring
         call ampere_n_curl(amp, a, b2)
