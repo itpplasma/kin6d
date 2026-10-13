@@ -455,6 +455,11 @@ contains
             if (.not. all_passed) error stop 1
             stop
         end if
+        if (trim(env) == 'reconnect') then
+            call reconnect_cylinder()
+            if (.not. all_passed) error stop 1
+            stop
+        end if
         if (env(1:6) == 'shield') then
             call shield_study(env(7:))
             stop
@@ -1015,7 +1020,7 @@ contains
     end subroutine shield_study
 
     subroutine fe_shield(delta, ratio, nrad, rs_cyl, s_fit, s_sheet, edge, bsheet, &
-            moved, dlay, prec)
+            moved, dlay, prec, dprime, dpr)
         !! Driven ideal response of the torus with the Frobenius closure
         !! (a1 = 0 on both sides of every rational, the gs_response_3d
         !! 'frobenius' path): s_fit = r_s [psi']/psi_vac from layer_jump of
@@ -1025,6 +1030,8 @@ contains
         !! q = mres/nmode is resistive (resistive_closure) with the prescribed
         !! layer response r_s Delta_layer = dlay (the other layers stay ideal)
         !! and prec returns the reconnected flux A/psi_vac (a1 average).
+        !! dprime (or KIN6D_SHIELD_DPRIME) replaces the drive by unit large-
+        !! solution targets; dpr returns r_s Delta' from the edge sheets.
         use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
             ring_flux_harmonic
         real(dp), intent(in) :: delta, ratio, rs_cyl
@@ -1032,7 +1039,8 @@ contains
         real(dp), intent(out) :: s_fit, s_sheet, edge
         logical, intent(in), optional :: bsheet, moved
         complex(dp), intent(in), optional :: dlay
-        complex(dp), intent(out), optional :: prec
+        complex(dp), intent(out), optional :: prec, dpr
+        logical, intent(in), optional :: dprime
         integer, parameter :: np = 256
         type(flux_mesh_t) :: fm
         type(meridian_feec_t) :: fs
@@ -1054,6 +1062,11 @@ contains
         logical :: found
 
         nfit = nfit_fe
+        block
+            character(len=4) :: rsh
+            call get_environment_variable('KIN6D_RES_SHAPE', rsh)
+            if (rsh(1:1) == '0') opt%strip_shape = .false.
+        end block
         if (present(bsheet)) opt%boundary_sheet = bsheet
         if (present(moved)) opt%moved_current = moved
         call surface_build(g, 0.25_dp, 256, s, st)
@@ -1152,8 +1165,11 @@ contains
         end do
         block
             character(len=8) :: dbg
+            logical :: dpm
+            dpm = .false.
+            if (present(dprime)) dpm = dprime
             call get_environment_variable('KIN6D_SHIELD_DPRIME', dbg)
-            if (len_trim(dbg) > 0) then
+            if (len_trim(dbg) > 0 .or. dpm) then
                 phe = (0.0_dp, 0.0_dp)
                 do j = 1, nr
                     sr(j)%bc = (0.0_dp, 0.0_dp)
@@ -1194,6 +1210,8 @@ contains
         call ring_angles_set(s%q, s%theta_s(:, 2), s%nu, rac)
         phv = drive_flux(fm, lays(itest)%ring_rat, rac, mr(itest))
         if (present(prec)) prec = 0.5_dp*(cf(1, 1) + cf(1, 2))/phv
+        if (present(dpr)) dpr = (lam(2*itest - 1) + lam(2*itest))*junit &
+            /(0.5_dp*(cf(1, 1) + cf(1, 2)))*dpsindr*rs_cyl
         s_fit = real(jfit/phv, dp)*dpsindr*rs_cyl
         s_sheet = real((lam(2*itest - 1) + lam(2*itest))*junit/phv, dp)*dpsindr*rs_cyl
         print '(a,i0,a,i0,a,es9.2,a,2es10.2,a,2es11.3,a,2es11.3)', "      rings ", nr, &
@@ -1306,7 +1324,62 @@ contains
             errl(2) < errl(1), &
             "ideal limit: eta -> 0 gives the ideal-inertial layer; its current "// &
             "tends to the L6 closure as the inertial width -> 0")
+        call reconnect_cylinder()
     end subroutine resistive_suite
+
+    subroutine reconnect_cylinder()
+        !! Resistive cylinder q = 3/1 (GPEC lar default profile, q0 = 2.2, R0/a
+        !! = 40): r_s Delta' of the edge sheets with unit large-solution
+        !! targets, and the fully reconnected flux A/psi_vac of a resistive
+        !! layer with r_s Delta_layer = 0, against the cylinder ODE
+        !! (cyl_response.py: r_s Delta' = -0.5862, P = S/(-r_s Delta') =
+        !! 3.918).  The omitted layer current biases the edge-sheet value by
+        !! C delta (ln delta - 1); both are extrapolated from delta = 1e-3,
+        !! 5e-4 (1/P is linear in Delta').  Layer ratio 1.5, nfit 5, nrad 32.
+        !! A strip-constant 1/x current (strip_shape off) gives r_s Delta'
+        !! -0.667 here.  Im(A)/Re(A) is a discretisation error (exact: 0).
+        real(dp), parameter :: dl(2) = [1.0e-3_dp, 5.0e-4_dp]
+        real(dp) :: rs, sref, eref, dpe, sfe, sl, efe, fd(2), pref, edp, ep, tol0
+        complex(dp) :: dpr(2), pr(2), dinf, pinv
+        integer :: i, nfit0
+        prof = 4
+        q0 = 2.2_dp
+        nmode = 1
+        mres = 3
+        r0 = 40.0_dp
+        call make_tables()
+        rs = r_of_q(real(mres, dp)/nmode)
+        call ode_shield(rs, sref, eref, dpe)
+        pref = sref/(-dpe)
+        call make_equilibrium()
+        nfit0 = nfit_fe
+        nfit_fe = 5
+        ! GMRES stagnates near 1.5e-6 at ratio 1.5, delta 5e-4 (with or
+        ! without the strip shape)
+        tol0 = shield_tol
+        shield_tol = 1.0e-5_dp
+        do i = 1, 2
+            call fe_shield(dl(i), 1.5_dp, 32, rs, sfe, sl, efe, dprime=.true., &
+                dpr=dpr(i))
+            call fe_shield(dl(i), 1.5_dp, 32, rs, sfe, sl, efe, &
+                dlay=(0.0_dp, 0.0_dp), prec=pr(i))
+            fd(i) = dl(i)*(log(dl(i)) - 1)
+            print '(a,es9.2,a,2f10.5,a,2f10.5)', "    delta", dl(i), ": r_s Delta'", &
+                dpr(i), ", A/psi_vac", pr(i)
+        end do
+        nfit_fe = nfit0
+        shield_tol = tol0
+        dinf = dpr(2) - (dpr(1) - dpr(2))/(fd(1) - fd(2))*fd(2)
+        pinv = 1/pr(2) - (1/pr(1) - 1/pr(2))/(fd(1) - fd(2))*fd(2)
+        edp = abs(real(dinf, dp)/dpe - 1)
+        ep = abs(real(1/pinv, dp)/pref - 1)
+        print '(a,2f10.5,a,f10.5,a,2f10.5,a,f9.5)', "    delta -> 0: r_s Delta'", &
+            dinf, " (ODE", dpe, "), A/psi_vac", 1/pinv, " (ODE", pref
+        call record(edp < 1.0e-2_dp .and. ep < 1.0e-2_dp .and. &
+            abs(aimag(1/pinv)) < 2.0e-2_dp*abs(1/pinv), &
+            "resistive cylinder: delta-extrapolated Delta' and reconnected flux "// &
+            "within 1 % of the ODE, |Im A| < 2 %")
+    end subroutine reconnect_cylinder
 
     subroutine layer_checks()
         !! Scaled layer solver against the constant-psi resistive-inertial
