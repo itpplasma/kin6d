@@ -73,18 +73,22 @@ module kin6d_mhd_response_n
 
     !> Resonant sheets and the linear constraints that fix their amplitudes.
     !> Sheet s carries the harmonic m = sheet_m(s) on ring sheet_ring(s);
-    !> constraint r reads sum_k w(r, k) Phi_{flux_m(k)}(flux_ring(k)) =
-    !> target(r) for the total field.  L4 shielding: one sheet per rational
-    !> ring with Phi_m = 0 there (w = identity); L6 (kin6d_mhd_closure_n):
-    !> two layer-edge sheets per rational with vanishing large-solution
-    !> coefficients on both sides.
+    !> constraint r reads sum_k w(r, k) Phi_{flux_m(k)}(flux_ring(k)) +
+    !> sum_s wl(r, s) lambda_s = target(r) for the total field (wl, when
+    !> allocated, couples the sheet amplitudes directly).  L4 shielding: one
+    !> sheet per rational ring with Phi_m = 0 there (w = identity); L6
+    !> (kin6d_mhd_closure_n): two layer-edge sheets per rational with
+    !> vanishing large-solution coefficients on both sides; L5
+    !> (kin6d_mhd_layer_n): continuous large coefficient and net layer
+    !> current = Delta_layer times the reconnected flux.
     type, public :: sheet_closure_t
         integer :: ns = 0, nf = 0
         integer, allocatable :: sheet_ring(:), sheet_m(:)
         type(ring_angles_t), allocatable :: sheet_ra(:)
         integer, allocatable :: flux_ring(:), flux_m(:)
         type(ring_angles_t), allocatable :: flux_ra(:)
-        real(dp), allocatable :: w(:, :)          !! (ns, nf)
+        complex(dp), allocatable :: w(:, :)        !! (ns, nf)
+        complex(dp), allocatable :: wl(:, :)       !! (ns, ns), optional
         complex(dp), allocatable :: target(:)      !! (ns)
     end type sheet_closure_t
 
