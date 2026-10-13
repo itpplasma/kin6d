@@ -243,7 +243,7 @@ map → 𝒮 waits for N1 on main. M2 `equilibrium_readback` on
 | L5, L6 | – | L4 only |
 | L7 (spectra, Boozer, exports) | – | M2; built on D7, not on `vacuum_surfaces` ψ grids |
 | L8 | – | L7 |
-| Non-nested branch | – | M0–M4 and M6; its seed comes from 𝒮 of the ψ or map lane; its p-model is declared first |
+| Non-nested branch | [NN1](equilibrium-nonnested.md): prescribed-trace vacuum and the N=0 constant-p' restriction | General finite-pressure/free-boundary work still needs M3, M4 and M6; seeds come from 𝒮 and the p-model is declared first |
 
 L3 (vacuum response) needs no core piece and continues. Its Γ_c/BEM_n and
 coil code is written as the D6 layer, which M4 then reuses for `gs_coupling`.

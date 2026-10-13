@@ -247,8 +247,12 @@ contains
             statuses = 1
             return
         end if
+        if (size(points, 1) < 2 .or. size(points, 1) > 3) then
+            statuses = 1
+            return
+        end if
         allocate (raw(4, size(points, 2)))
-        call sample_gs_many(field%view, points, 1.0_dp, raw, statuses)
+        call sample_gs_many(field%view, points(:2, :), 1.0_dp, raw, statuses)
         do i = 1, size(points, 2)
             if (statuses(i) /= 0) cycle
             u = field%orientation*raw(1, i)

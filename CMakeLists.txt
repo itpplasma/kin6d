@@ -640,7 +640,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov equilibrium_core gs_coarea gs_inverse
+    foreach(generator grad_shafranov equilibrium_core nonnested gs_coarea gs_inverse
             gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
@@ -1084,6 +1084,31 @@ target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
 add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)
 set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
+
+# NN1: closed free-B states and the vacuum / axisymmetric-pressure restrictions.
+target_sources(kin6d PRIVATE src/generated/kin6d_nonnested_leaves.f90
+    src/equilibrium_nonnested.f90 src/nonnested_residual.f90)
+set_source_files_properties(src/generated/kin6d_nonnested_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+
+add_executable(test_nonnested_solovev test/test_nonnested_solovev.f90)
+target_link_libraries(test_nonnested_solovev PRIVATE kin6d)
+foreach(k 2 3)
+    add_test(NAME nonnested_n0_solovev_p${k} COMMAND test_nonnested_solovev ${k})
+    set_tests_properties(nonnested_n0_solovev_p${k} PROPERTIES TIMEOUT 600
+        ENVIRONMENT "OMP_NUM_THREADS=4")
+endforeach()
+
+add_executable(test_nonnested_vacuum test/test_nonnested_vacuum.f90)
+target_link_libraries(test_nonnested_vacuum PRIVATE kin6d)
+add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
+set_tests_properties(nonnested_vacuum_helical_coil_island PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+
+add_executable(test_nonnested_leaves test/test_nonnested_leaves.f90)
+target_link_libraries(test_nonnested_leaves PRIVATE kin6d)
+add_test(NAME nonnested_symbolic_derivatives_and_d3_identity
+    COMMAND test_nonnested_leaves)
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
 # thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
