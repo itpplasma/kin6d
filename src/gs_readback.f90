@@ -17,7 +17,7 @@ module kin6d_gs_readback
 contains
     subroutine read_gs_equilibrium(state, f_edge, ffprime, radial_points, &
                                    angular_points, result, status, law, &
-                                   psi_bound, plasma_cell)
+                                   psi_bound, plasma_cell, rho_grid)
         !! Flux-surface readback: q, normalised toroidal flux, volume and edge
         !! toroidal flux on rho = sqrt((psi - psi_a)/(psi_b - psi_a)) levels.
         !!
@@ -32,7 +32,8 @@ contains
         !! psi_bound (law%axis = psi_a - psi_b). On a plasma sub-mesh phi_edge
         !! is the contour integral itself, volume and flux_consistency are NaN
         !! (the cut cells need the level-cut quadrature of the solver).
-        !! result%psi and psi_axis are absolute.
+        !! result%psi and psi_axis are absolute. rho_grid (optional) replaces
+        !! the uniform rho levels (strictly increasing from 0 to 1).
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: f_edge, ffprime
         integer, intent(in) :: radial_points, angular_points
@@ -41,6 +42,7 @@ contains
         type(gs_profile_law_t), intent(in), optional :: law
         real(dp), intent(in), optional :: psi_bound
         logical, intent(in), optional :: plasma_cell(:)
+        real(dp), intent(in), optional :: rho_grid(:)
         type(equilibrium_state_t) :: eq
         status = 1
         if (present(plasma_cell) .and. .not. present(psi_bound)) return
@@ -52,6 +54,7 @@ contains
             status = 1
             return
         end if
-        call read_equilibrium(eq, radial_points, angular_points, result, status)
+        call read_equilibrium(eq, radial_points, angular_points, result, status, &
+                              rho_grid)
     end subroutine
 end module kin6d_gs_readback
