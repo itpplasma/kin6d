@@ -48,7 +48,9 @@ program gs_response_3d
         ring_points, ring_flux_harmonic, ring_flux_from_values, &
         ring_sheet_load, ring_area, resonant_surfaces_missing
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
-        ideal_options_t, ideal_response
+        ideal_options_t, ideal_response, sample_field
+    use kin6d_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
+        perturbation_add_spectra, perturbation_export
     use kin6d_mhd_response_n, only: sheet_closure_t, closure_shield_init, &
         closure_fluxes
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
@@ -74,11 +76,15 @@ program gs_response_3d
     character(len=16) :: closure = 'sheet'
     real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 1.5_dp, spot = 5.0e-4_dp
     integer :: layer_nfit = 3
+    !! L7 export: psin of the surfaces, points per surface, spectral window
+    real(dp) :: export_psin(maxr) = 0.0_dp
+    integer :: export_np = 256, export_mmax = 40
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
         boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current, closure, &
-        layer_delta, layer_ratio, layer_nfit, spot, rat_auto
+        layer_delta, layer_ratio, layer_nfit, spot, rat_auto, export_psin, &
+        export_np, export_mmax
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -414,6 +420,7 @@ program gs_response_3d
                 lam = lam_cl
             end if
         end if
+        call export_l7(ip)
         do i = 1, nrat
             write (ur, '(i3,f10.6,f14.10,i5,es16.8,10es16.8)') ip, q_rat(i), &
                 ul(ring_of(i))**2, m_rat(i), area(i), phivac(i), &
@@ -478,6 +485,72 @@ contains
                 ' |lambda_eq| ', abs(lam(l)), ' large residual in/out ', res1
         end do
     end subroutine layer_report
+
+    subroutine export_l7(iph)
+        !! L7: displacement, Eulerian/Lagrangian field and curvature coupling
+        !! of the total response (coil + plasma + sheets) on the surfaces
+        !! export_psin, written to prefix_l7_ph<iph>.dat with a .sha256 sidecar.
+        integer, intent(in) :: iph
+        type(perturbation_t), allocatable :: pr(:)
+        type(surface_t) :: sx
+        type(sample_ring_t) :: sr
+        complex(dp), allocatable :: b2tot(:), bt(:), bf(:, :), bcx(:, :, :), dbe(:, :)
+        character(len=512) :: fname
+        integer :: ne, ie, js, s2, st2, ngood
+        real(dp) :: ue
+
+        ne = count(export_psin > 0.0_dp)
+        if (ne == 0) return
+        allocate (b2tot(fs%sp(2)%ndof), pr(ne))
+        b2tot = (0.0_dp, 0.0_dp)
+        if (trim(model) == 'ideal') then
+            call ampere_n_curl(amp, avol, bt)
+            b2tot = bt
+            do s2 = 1, cl%ns
+                b2tot = b2tot + lam_cl(s2)*b2cl(:, s2)
+            end do
+        else
+            do s2 = 1, nrat
+                b2tot = b2tot + lam(s2)*b2(:, s2)
+            end do
+        end if
+        ngood = 0
+        do ie = 1, ne
+            ue = sqrt(export_psin(ie))
+            js = nr
+            do s2 = 2, nr
+                if (ul(s2) >= ue) then
+                    js = s2
+                    exit
+                end if
+            end do
+            call surface_build(g, export_psin(ie), export_np, sx, st2)
+            if (st2 /= 0) error stop 'export surface'
+            call sample_ring_build(g, opt, fm, fs, pb, ue, js, export_np, sr, st2)
+            if (st2 /= 0) error stop 'export sample ring'
+            allocate (bf(3, export_np), bcx(3, 1, export_np), dbe(3, export_np))
+            call sample_field(fs, sr, b2tot, bf)
+            call coil_set_modes(set, w, sr%x, nphi, [n], bcx, st2)
+            if (st2 /= 0) error stop 'export coil projection'
+            dbe = bf + bcx(:, 1, :)
+            call perturbation_on_surface(g, opt, sx, n, dbe, pr(ngood + 1), st2)
+            if (st2 == 0) then
+                call perturbation_add_spectra(sx, pr(ngood + 1), -export_mmax, &
+                    export_mmax)
+                ngood = ngood + 1
+            else
+                write (*, '(a,f10.6,a,i0)') 'L7 export: psin ', export_psin(ie), &
+                    ' skipped, status ', st2
+            end if
+            deallocate (bf, bcx, dbe)
+        end do
+        if (ngood == 0) return
+        write (fname, '(a,a,i0,a)') trim(prefix), '_l7_ph', iph, '.dat'
+        call perturbation_export(trim(fname), pr(1:ngood), 'gs_response_3d '// &
+            trim(nml)//' model='//trim(model), 3, g%s_pol, sign(1.0_dp, g%ip), st2)
+        write (*, '(a,i0,a,a,a,i0)') 'L7 export: ', ngood, ' surfaces to ', &
+            trim(fname), ', status ', st2
+    end subroutine export_l7
 
     subroutine polar_map(u, theta, x)
         !! Flux-surface map: psin = u^2 on the ray of geometric angle theta.
