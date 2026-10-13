@@ -42,6 +42,9 @@ program test_equilibrium_core
     !   chart              jet of the cylindrical chart against finite differences
     !   compare WORK FIX   K6-mini regression: gs_phase1 outputs in WORK against
     !                      the fixture FIX to 1e-12 relative
+    !   readback K         D7 on P_K Solov'ev: flux gauge shift and sign flip
+    !                      leave q and s_tor unchanged; a plasma sub-mesh
+    !                      reproduces the whole-mesh q at its boundary level
     !   residual K         D3 of the exact Solov'ev state (quadrature level) and
     !                      of psi-lane P_K solutions on three meshes (order >= K;
     !                      observed K + 1)
@@ -53,6 +56,8 @@ program test_equilibrium_core
         equilibrium_residual
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
     use kin6d_gs_equilibrium, only: gs_equilibrium
+    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     implicit none
     character(512) :: mode, work, fixtures
     call get_command_argument(1, mode)
@@ -63,11 +68,14 @@ program test_equilibrium_core
         call get_command_argument(2, work)
         call get_command_argument(3, fixtures)
         call compare_k6_mini(trim(work), trim(fixtures))
+    case ('readback')
+        call get_command_argument(2, work)
+        call test_readback(merge(3, 2, trim(work) == '3'))
     case ('residual')
         call get_command_argument(2, work)
         call test_residual(merge(3, 2, trim(work) == '3'))
     case default
-        error stop 'mode: chart | compare WORK FIXTURES | residual K'
+        error stop 'mode: chart | compare WORK FIXTURES | readback K | residual K'
     end select
 contains
     subroutine test_residual(order)
@@ -109,6 +117,76 @@ contains
         if (rate < order) error stop 'psi-lane D3 order below K'
         ! TODO(N1): the same gate for the map lane once ideal_map is on main.
         print '(a)', 'PASS: D3 residual'
+    end subroutine
+
+    subroutine test_readback(order)
+        ! Gate of migration M2 beyond the K6-mini fixture: the readback reads
+        ! the state's own boundary flux and orientation, never psi = 0.
+        integer, intent(in) :: order
+        real(dp), parameter :: shift = 0.37_dp
+        type(gs_state_t) :: mesh, moved
+        type(equilibrium_state_t) :: eq
+        type(equilibrium_readback_t) :: base, shifted, flipped, inner
+        logical, allocatable :: plasma(:)
+        real(dp) :: psi_b
+        integer :: status, k, e
+        call solovev_mesh(48, order, mesh)
+        call solve_gs(mesh, 1.0_dp, -16*c_sol, 0.0_dp, status)
+        if (status /= 0) error stop 'Solov''ev solve'
+        call gs_equilibrium(mesh, eq, status, f_tor, 0.0_dp, pprime=-16*c_sol)
+        if (status /= 0) error stop 'psi adapter'
+        call read_equilibrium(eq, 65, 0, base, status)
+        if (status /= 0) error stop 'fixed-boundary readback'
+        ! Axis gauge: the same field with psi = 0 on the symmetry axis.
+        moved = mesh
+        moved%psi = mesh%psi + shift
+        call gs_equilibrium(moved, eq, status, f_tor, 0.0_dp, pprime=-16*c_sol, &
+            psi_bound=shift)
+        if (status /= 0) error stop 'shifted adapter'
+        call read_equilibrium(eq, 65, 0, shifted, status)
+        if (status /= 0) error stop 'shifted readback'
+        call check('gauge shift q', maxval(abs(shifted%q/base%q - 1)), 1.0e-12_dp)
+        call check('gauge shift s_tor', maxval(abs(shifted%s_tor - base%s_tor)), &
+            1.0e-12_dp)
+        call check('gauge shift psi', maxval(abs(shifted%psi - shift - base%psi)), &
+            1.0e-12_dp)
+        call check('gauge shift volume', abs(shifted%volume/base%volume - 1), &
+            1.0e-14_dp)
+        ! Reversed flux (and poloidal field): q changes sign, s_tor does not.
+        moved%psi = -mesh%psi
+        call gs_equilibrium(moved, eq, status, f_tor, 0.0_dp, pprime=16*c_sol)
+        if (status /= 0) error stop 'flipped adapter'
+        call read_equilibrium(eq, 65, 0, flipped, status)
+        if (status /= 0) error stop 'flipped readback'
+        call check('flip q', maxval(abs(flipped%q/base%q + 1)), 1.0e-12_dp)
+        call check('flip s_tor', maxval(abs(flipped%s_tor - base%s_tor)), 1.0e-12_dp)
+        call check('flip axis flux', abs(flipped%psi_axis + base%psi_axis), &
+            1.0e-14_dp)
+        ! An interior level as plasma boundary on the cells reaching it.
+        k = 33
+        psi_b = base%psi(k)
+        allocate (plasma(size(mesh%triangles, 2)))
+        do e = 1, size(plasma)
+            plasma(e) = minval(mesh%psi(mesh%triangles(:, e))) &
+                <= psi_b - 0.05_dp*base%psi_axis
+        end do
+        if (all(plasma)) error stop 'sub-mesh is the whole mesh'
+        call gs_equilibrium(mesh, eq, status, f_tor, 0.0_dp, pprime=-16*c_sol, &
+            psi_bound=psi_b, plasma_cell=plasma)
+        if (status /= 0) error stop 'sub-mesh adapter'
+        call read_equilibrium(eq, 65, 0, inner, status)
+        if (status /= 0) error stop 'sub-mesh readback'
+        call check('sub-mesh edge q', abs(inner%q(65)/base%q(k) - 1), 1.0e-10_dp)
+        call check('sub-mesh edge level', abs(inner%psi(65) - psi_b), 1.0e-14_dp)
+        if (.not. ieee_is_nan(inner%volume)) error stop 'sub-mesh volume must be NaN'
+        print '(a)', 'PASS: D7 readback'
+    end subroutine
+
+    subroutine check(label, value, tolerance)
+        character(*), intent(in) :: label
+        real(dp), intent(in) :: value, tolerance
+        print '(a30,es10.3)', label, value
+        if (.not. value <= tolerance) error stop 'D7 readback check failed'
     end subroutine
 
     subroutine solovev_mesh(n, order, mesh)
