@@ -116,3 +116,30 @@ the vacuum resonant flux `Φ_vac` and `b_vac = Φ_vac/area`, the sheet amplitude
 `λ` and `b_shield = −M_ss λ/area`, the resonant flux of the shielding current
 alone per area (GPEC's `singflx`); `m = n q` with the signed `q` of
 `kin6d_vacuum_surfaces` (GPEC labels it `−m`).
+
+## Perturbation export (L7 core)
+
+`kin6d_mhd_perturbation_n` (`src/mhd_perturbation_n.f90`), test
+`mhd_perturbation_l7_xi_lagrangian_charts`. From the total Eulerian per-n field
+`dB_E` (coil + plasma + sheets, coefficient of `e^{i n phi}`, physical field
+`dB_E e^{i n phi} + c.c.`, cylindrical `(R, phi, Z)`, SI) on a flux surface it
+reconstructs the ideal displacement `xi = xi_n nhat + xi_b ebin`
+(`nhat = sgn grad psi/|grad psi|` outward, `ebin = b x nhat`, `xi_par = 0`) from
+`dB.grad psi = B0.grad(xi.grad psi)` and the binormal component of
+`dB = curl(xi x B0)` (both first-order ODEs along the field line, solved by
+periodic Fourier collocation in the geometric angle; `div xi` drops out), and
+returns `dB_L = dB_E + (xi.grad) B0`, `|B|_L = b.dB_E + xi.grad|B|`,
+`kappa = (b.grad) b` and `kappa.xi` (`perturbation_t`, in memory).
+`gs_response_3d` writes it for `export_psin(:)`, `export_np`, `export_mmax` to
+`prefix_l7_ph<k>.dat` (format `kin6d-l7-v1`: header with n, n-sign, declared
+COCOS 3, `sgn_dpsi`, `s_pol`, `ip` sign, chart definitions; point table; PEST and
+Hamada spectra) with a `sha256sum`-compatible sidecar `.sha256`.
+
+Limits. The singular set is `n q = m`: surfaces within `dist_rational < 1e-3`
+are refused (status 2); `xi` near a rational layer is the ideal-equivalent
+displacement of the sheet-closed field, not a resolved layer solution.
+`xi_par` is a gauge that shifts `|B|_L` by `xi_par b.grad|B|`; it is set to
+zero. `grad B0` comes from central differences of the spline equilibrium.
+Boozer angles are not provided (no Boozer map in the D7 layer yet), so no
+`.bc` file is written; NEO-2/NEO-RT, PENTRC and MARS (`BPLASMA`/`XPLASMA`)
+conversions consume this file or the in-memory type.
