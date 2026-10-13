@@ -58,7 +58,11 @@ module kin6d_gs_free_boundary
                          sparse_direct_factor_csc, sparse_direct_factor_transpose_csc, &
                                      sparse_direct_solve_factored, sparse_direct_free
     use fortnum_quadrature, only: gauss_legendre
+    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+                               gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
+                               GS_DIRECT_INDEFINITE
     use kin6d_sort_keys, only: sort_key_order
+    use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs
     use kin6d_gs_coils, only: gs_circuit_set_t
     use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
@@ -136,6 +140,9 @@ module kin6d_gs_free_boundary
 
     type, public :: gs_fb_factor_t
         type(sparse_direct_factor_t) :: lu, lu_t
+        !> Threaded MUMPS LDL^T of the symmetric J0 (replaces lu and lu_t).
+        type(gs_direct_t) :: direct
+        logical :: use_direct = .false.
         real(dp), allocatable :: values(:), z(:, :), zt(:, :)
         real(dp) :: schur(2, 2) = 0.0_dp, schur_t(2, 2) = 0.0_dp
         logical :: ready = .false., have_transpose = .false.
@@ -208,6 +215,8 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: panels_per_edge, flux_degree
         integer :: stat
+        real(dp) :: t0
+        t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
         if (.not. law%normalized) return
@@ -225,6 +234,7 @@ contains
             status = GS_FB_BAD_INPUT + 100*stat
             return
         end if
+        call gs_phase_tick('setup.coupling_build', t0)
         sys%n = sys%coupling%n_nodes
         allocate (sys%extra_load(sys%n))
         sys%extra_load = 0.0_dp
@@ -237,7 +247,9 @@ contains
         else
             allocate (sys%coil_load(sys%n, 0))
         end if
+        call gs_phase_tick('setup.coil_load', t0)
         call build_pattern(state, sys)
+        call gs_phase_tick('setup.pattern', t0)
         sys%ready = .true.
         status = GS_FB_OK
     end subroutine gs_fb_setup
@@ -1114,6 +1126,8 @@ contains
         integer :: e, ndof, n, ne, stat, k, i
         integer :: dropped_total
         logical :: need_jacobian
+        real(dp) :: t0
+        t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
         need_jacobian = .true.
@@ -1131,6 +1145,7 @@ contains
             status = stat
             return
         end if
+        call gs_phase_tick('eval.lcfs_levels', t0)
         call plasma_cells(state, psi, sigma, ev%psi_bound, k, sys%cfg%mode, &
                           sys%cfg%cut_fraction, ev%axis, ev%xpoint, ev%plasma_cell)
         law = sys%law
@@ -1142,6 +1157,7 @@ contains
                         sys%cfg%face_tolerance, ev%plasma_cell, cell_phi, face_edge)
         ev%face_cells = count(face_edge)
         allocate (saved(n), ev%source(n))
+        call gs_phase_tick('eval.plasma_snap', t0)
         saved = state%psi
         state%psi = psi - ev%psi_bound
         call gs_cubic_load(state, sys%mu0, law, ev%source, jac, stat, &
@@ -1150,6 +1166,7 @@ contains
                            load_only=.not. need_jacobian, source_integral=integral, &
                            plasma_cell=ev%plasma_cell, cell_psi=cell_phi)
         state%psi = saved
+        call gs_phase_tick('eval.cubic_load', t0)
         if (stat /= 0) then
             status = GS_FB_SOURCE_FAILED
             return
@@ -1204,6 +1221,7 @@ contains
                     end do
                 end do
             end if
+            call gs_phase_tick('eval.interface', t0)
             ev%interface_dropped = real(dropped_total, dp)
             ev%ua = jac%axis_load
             allocate (ev%ub(n))
@@ -1268,14 +1286,20 @@ contains
     end subroutine gs_fb_jacobian_apply
 
     subroutine gs_fb_factor(state, sys, ev, fac, status)
-        !! Sparse LU of J0 = A - M and the two Woodbury columns.
+        !! Sparse factor of J0 = A - M and the two Woodbury columns. J0 is
+        !! symmetric (stiffness, coupling, source and interface mass), so the
+        !! threaded MUMPS LDL^T serves J and J^T; an asymmetric J0, or a build
+        !! without MUMPS, uses the serial SuperLU LU and a transposed LU.
         type(gs_state_t), intent(in) :: state
         type(gs_fb_system_t), intent(in) :: sys
         type(gs_fb_eval_t), intent(in) :: ev
         type(gs_fb_factor_t), intent(inout) :: fac
         integer, intent(out) :: status
         real(dp), allocatable :: rhs2(:), col(:)
+        real(dp) :: t0, asym, vmax
         integer :: n, nt, ndof, e, k, l, i, j, p, stat
+        logical :: use_mumps, ok
+        t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
         if (.not. ev%has_jacobian) return
@@ -1310,13 +1334,50 @@ contains
             end do
         end do
         !$omp end parallel do
+        call gs_phase_tick('factor.assemble', t0)
+        use_mumps = mumps_enabled()
+        if (use_mumps) then
+            call asymmetry(n, sys%colptr, sys%rowind, fac%values, asym, vmax)
+            use_mumps = asym <= 1.0e-12_dp*vmax
+        end if
+        allocate (fac%z(n, 2), fac%zt(n, 2), rhs2(n), col(n))
+        if (use_mumps) then
+            call gs_direct_factor(fac%direct, n, sys%colptr, sys%rowind, fac%values, &
+                                  ok, GS_DIRECT_INDEFINITE)
+            call gs_phase_tick('factor.mumps', t0)
+            if (.not. ok) then
+                call gs_direct_free(fac%direct)
+                status = GS_FB_FACTOR_FAILED
+                return
+            end if
+            fac%use_direct = .true.
+            block
+                real(dp), allocatable :: two(:, :)
+                allocate (two(n, 2))
+                two(:, 1) = ev%ua
+                two(:, 2) = ev%ub
+                call gs_direct_solve_block(fac%direct, two, fac%z, ok)
+            end block
+            if (.not. ok) then
+                status = GS_FB_FACTOR_FAILED
+                return
+            end if
+            call gs_phase_tick('factor.z', t0)
+            fac%schur(1, 1) = 1.0_dp - dot_product(ev%ga, fac%z(:, 1))
+            fac%schur(1, 2) = -dot_product(ev%ga, fac%z(:, 2))
+            fac%schur(2, 1) = -dot_product(ev%gb, fac%z(:, 1))
+            fac%schur(2, 2) = 1.0_dp - dot_product(ev%gb, fac%z(:, 2))
+            fac%ready = .true.
+            status = GS_FB_OK
+            return
+        end if
         call sparse_direct_factor_csc(fac%lu, n, sys%colptr, sys%rowind, &
                                       fac%values, stat)
+        call gs_phase_tick('factor.lu', t0)
         if (stat /= 0) then
             status = GS_FB_FACTOR_FAILED
             return
         end if
-        allocate (fac%z(n, 2), fac%zt(n, 2), rhs2(n), col(n))
         rhs2 = ev%ua
         call sparse_direct_solve_factored(fac%lu, rhs2, col, stat)
         if (stat /= 0) then
@@ -1331,6 +1392,7 @@ contains
             return
         end if
         fac%z(:, 2) = col
+        call gs_phase_tick('factor.z', t0)
         fac%schur(1, 1) = 1.0_dp - dot_product(ev%ga, fac%z(:, 1))
         fac%schur(1, 2) = -dot_product(ev%ga, fac%z(:, 2))
         fac%schur(2, 1) = -dot_product(ev%gb, fac%z(:, 1))
@@ -1338,6 +1400,58 @@ contains
         fac%ready = .true.
         status = GS_FB_OK
     end subroutine gs_fb_factor
+
+    logical function mumps_enabled() result(enabled)
+        !! Threaded MUMPS when built in; KIN6D_FB_SOLVER=superlu forces the
+        !! serial SuperLU path (A/B comparisons).
+        character(len=16) :: choice
+        integer :: length, stat
+
+        enabled = gs_direct_available()
+        if (.not. enabled) return
+        call get_environment_variable('KIN6D_FB_SOLVER', choice, length, stat)
+        if (stat == 0 .and. length > 0) enabled = trim(choice) /= 'superlu'
+    end function mumps_enabled
+
+    subroutine asymmetry(n, colptr, rowind, values, asym, vmax)
+        !! max |A_ij - A_ji| and max |A_ij| of a CSC matrix with sorted rows.
+        integer, intent(in) :: n, colptr(:), rowind(:)
+        real(dp), intent(in) :: values(:)
+        real(dp), intent(out) :: asym, vmax
+        integer :: c, p, r, lo, hi, mid
+
+        asym = 0.0_dp
+        vmax = 0.0_dp
+        !$omp parallel do default(shared) private(c, p, r, lo, hi, mid) &
+        !$omp reduction(max:asym, vmax) schedule(static)
+        do c = 1, n
+            do p = colptr(c), colptr(c + 1) - 1
+                r = rowind(p)
+                vmax = max(vmax, abs(values(p)))
+                ! Entry (c, r) lives in column r.
+                lo = colptr(r)
+                hi = colptr(r + 1) - 1
+                do while (lo < hi)
+                    mid = (lo + hi)/2
+                    if (rowind(mid) < c) then
+                        lo = mid + 1
+                    else
+                        hi = mid
+                    end if
+                end do
+                if (lo <= colptr(r + 1) - 1) then
+                    if (rowind(lo) == c) then
+                        asym = max(asym, abs(values(p) - values(lo)))
+                    else
+                        asym = max(asym, abs(values(p)))
+                    end if
+                else
+                    asym = max(asym, abs(values(p)))
+                end if
+            end do
+        end do
+        !$omp end parallel do
+    end subroutine asymmetry
 
     subroutine gs_fb_solve(sys, ev, fac, rhs, solution, status, transpose)
         !! solution = J^{-1} rhs (or J^{-T} rhs) with the factor of J0 and the
@@ -1352,7 +1466,7 @@ contains
         real(dp), allocatable :: y(:), col(:), rhs_v(:)
         real(dp) :: w(2), c(2, 2), det, d(2)
         integer :: n, stat, j
-        logical :: adjoint
+        logical :: adjoint, ok
 
         status = GS_FB_BAD_INPUT
         if (.not. fac%ready) return
@@ -1361,7 +1475,12 @@ contains
         n = sys%n
         allocate (y(n), col(n), rhs_v(n))
         if (.not. adjoint) then
-            call sparse_direct_solve_factored(fac%lu, rhs, y, stat)
+            if (fac%use_direct) then
+                call gs_direct_solve(fac%direct, rhs, y, ok)
+                stat = merge(0, 1, ok)
+            else
+                call sparse_direct_solve_factored(fac%lu, rhs, y, stat)
+            end if
             if (stat /= 0) then
                 status = GS_FB_FACTOR_FAILED
                 return
@@ -1369,6 +1488,25 @@ contains
             w = [dot_product(ev%ga, y), dot_product(ev%gb, y)]
             c = fac%schur
         else
+            if (fac%use_direct .and. .not. fac%have_transpose) then
+                ! J0 is symmetric: the same factor solves J0^T.
+                block
+                    real(dp), allocatable :: two(:, :)
+                    allocate (two(n, 2))
+                    two(:, 1) = ev%ga
+                    two(:, 2) = ev%gb
+                    call gs_direct_solve_block(fac%direct, two, fac%zt, ok)
+                end block
+                if (.not. ok) then
+                    status = GS_FB_FACTOR_FAILED
+                    return
+                end if
+                fac%schur_t(1, 1) = 1.0_dp - dot_product(ev%ua, fac%zt(:, 1))
+                fac%schur_t(1, 2) = -dot_product(ev%ua, fac%zt(:, 2))
+                fac%schur_t(2, 1) = -dot_product(ev%ub, fac%zt(:, 1))
+                fac%schur_t(2, 2) = 1.0_dp - dot_product(ev%ub, fac%zt(:, 2))
+                fac%have_transpose = .true.
+            end if
             if (.not. fac%have_transpose) then
                 call sparse_direct_factor_transpose_csc(fac%lu_t, n, sys%colptr, &
                                                         sys%rowind, fac%values, stat)
@@ -1393,7 +1531,12 @@ contains
                 fac%schur_t(2, 2) = 1.0_dp - dot_product(ev%ub, fac%zt(:, 2))
                 fac%have_transpose = .true.
             end if
-            call sparse_direct_solve_factored(fac%lu_t, rhs, y, stat)
+            if (fac%use_direct) then
+                call gs_direct_solve(fac%direct, rhs, y, ok)
+                stat = merge(0, 1, ok)
+            else
+                call sparse_direct_solve_factored(fac%lu_t, rhs, y, stat)
+            end if
             if (stat /= 0) then
                 status = GS_FB_FACTOR_FAILED
                 return
@@ -1418,8 +1561,13 @@ contains
     subroutine gs_fb_release(fac)
         type(gs_fb_factor_t), intent(inout) :: fac
 
-        if (fac%ready) call sparse_direct_free(fac%lu)
-        if (fac%have_transpose) call sparse_direct_free(fac%lu_t)
+        if (fac%use_direct) then
+            call gs_direct_free(fac%direct)
+        else
+            if (fac%ready) call sparse_direct_free(fac%lu)
+            if (fac%have_transpose) call sparse_direct_free(fac%lu_t)
+        end if
+        fac%use_direct = .false.
         fac%ready = .false.
         fac%have_transpose = .false.
         if (allocated(fac%values)) deallocate (fac%values)
@@ -1896,10 +2044,13 @@ contains
         type(gs_state_t) :: old
         real(dp), allocatable :: psi_new(:), new_chain(:, :)
         integer :: stat
+        real(dp) :: t0
+        t0 = -1; call gs_phase_tick('', t0)
 
         call gs_fb_trace_lcfs(state, state%psi, axis, psi_bound, sigma, &
                               size(chain, 2), new_chain, status, &
                               rcfg%dense_factor, rcfg%project_iterations)
+        call gs_phase_tick('refit.trace', t0)
         if (status /= GS_FB_OK) return
         old = state
         if (present(curve)) then
@@ -1914,8 +2065,10 @@ contains
             status = GS_FB_REFIT_FAILED
             return
         end if
+        call gs_phase_tick('refit.initialize_gs', t0)
         chain = new_chain
         call transfer_flux(old, old%psi, state, psi_new)
+        call gs_phase_tick('refit.transfer', t0)
         state%psi = psi_new
         status = GS_FB_OK
     end subroutine gs_fb_refit_mesh
