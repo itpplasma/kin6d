@@ -45,6 +45,7 @@ program test_mhd_ideal_n
     call mde_check()
     call force_free_check()
     call divergence_check()
+    call load_thread_check()
     if (.not. all_passed) error stop 1
     print '(a)', "test_mhd_ideal_n: all checks passed"
 
@@ -197,6 +198,53 @@ contains
             "charge conservation with pressure and poloidal current")
         g = g0
     end subroutine divergence_check
+
+    subroutine load_thread_check()
+        !! ideal_load with the near-rational strip shape (psi and q at every
+        !! quadrature point in the OpenMP region) is independent of the
+        !! thread count: 1 against 4 threads to roundoff.
+        use kin6d_mhd_ideal_n, only: ideal_load
+        integer, parameter :: np = 128, nu = 16
+        type(flux_mesh_t) :: fm
+        type(meridian_feec_t) :: fs
+        type(meridian_point_basis_t) :: pb
+        type(ideal_options_t) :: opt
+        type(sample_ring_t) :: rings(nu - 1)
+        complex(dp) :: jc(3, np, nu - 1), kap(np)
+        complex(dp), allocatable :: f1(:), f4(:)
+        real(dp) :: ul(nu), th
+        integer :: i, k, st, nth0
+        do k = 1, nu
+            ul(k) = k/real(nu, dp)
+        end do
+        call flux_mesh_build(ul, 8, 64, 2, polar_map, fm, st)
+        call meridian_feec_build(fm%mm, 2, fs, st)
+        call meridian_point_basis_init(fs, pb, st)
+        do i = 2, nu
+            call sample_ring_build(g, opt, fm, fs, pb, 0.5_dp*(ul(i - 1) + ul(i)), i, &
+                np, rings(i - 1), st)
+            if (st /= 0) error stop "load rings"
+            do k = 1, np
+                th = 2*pi*(k - 1)/np
+                jc(:, k, i - 1) = [cmplx(cos(3*th), sin(2*th), dp), &
+                    cmplx(i*0.1_dp, cos(th), dp), cmplx(sin(th), 0.3_dp, dp)]/ &
+                    (1.0_dp + 0.2_dp*i)
+            end do
+        end do
+        kap = (0.0_dp, 0.0_dp)
+        allocate (f1(fs%sp(1)%ndof), f4(fs%sp(1)%ndof))
+        nth0 = 1
+        !$ nth0 = omp_get_max_threads()
+        !$ call omp_set_num_threads(1)
+        call ideal_load(fs, pb, fm, g, jc, kap, 0, f1, rings, nmode)
+        !$ call omp_set_num_threads(4)
+        call ideal_load(fs, pb, fm, g, jc, kap, 0, f4, rings, nmode)
+        !$ call omp_set_num_threads(nth0)
+        print '(a,es10.2)', "  ideal_load 1 vs 4 threads, max rel diff", &
+            maxval(abs(f4 - f1))/maxval(abs(f1))
+        call record(maxval(abs(f4 - f1)) <= 1.0e-13_dp*maxval(abs(f1)), &
+            "ideal_load (strip shape) independent of the thread count")
+    end subroutine load_thread_check
 
     subroutine fd_div(rings, jac, v, d)
         !! div v at the middle of three surfaces: (1/J)[d_psi(J v^psi) +
