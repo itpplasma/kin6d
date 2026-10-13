@@ -6,7 +6,7 @@ module kin6d_nonnested_residual
     use fortfem_meridian_feec_n, only: meridian_qpoint
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use kin6d_mhd_mesh, only: flux_mesh_geometry
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_riesz
+    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_riesz, nn_fourier_value
     use kin6d_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_equilibrium_core_leaves, only: maxwell_stress_delta
     use kin6d_nonnested_leaves, only: axisymmetric_pressure
@@ -97,7 +97,8 @@ contains
                 call meridian_qpoint(field%fs, 0, t, q, x, wq, v0, status)
                 if (status /= 0) return
                 if (allocated(field%p)) then
-                    p = dot_product(v0(1, :), field%p(field%fs%sp(0)%dof(:, t)))
+                    p = nn_fourier_value(field%p, field%fs%n0, &
+                        field%fs%sp(0)%dof(:, t), v0(1, :), 0.0_dp)
                 else
                     psi = dot_product(v0(1, :), field%psi(field%fs%sp(0)%dof(:, t)))
                     call axisymmetric_pressure(psi - field%psi_bound, field%pprime, p)
@@ -111,8 +112,11 @@ contains
                 b0 = field%f_vac/x(1)
                 average = 0
                 mean(1) = mean(1) + wq
-                mean(3) = mean(3) + wq*abs(p)
                 do j = 1, nphi
+                    if (allocated(field%p)) p = nn_fourier_value(field%p, &
+                        field%fs%n0, field%fs%sp(0)%dof(:, t), v0(1, :), &
+                        two_pi*(j - 1)/nphi)
+                    mean(3) = mean(3) + wq*abs(p)/nphi
                     b = real(bn(:, 0), dp)
                     do n = 1, modes
                         b = b + 2*real(bn(:, n)*phases(n, j), dp)
