@@ -92,9 +92,12 @@ cached CSR pattern), finest mesh (5.1e4 dofs, 35-41 Newton steps), seconds:
 Before caching the pattern the Hessian took 24.1 s (1 thread) and 16.4 s (32);
 serial SuperLU took 627 s for the ladder locally (4 threads). Element work
 scales (energy 14x at 32 threads). MUMPS factorisation of 5e4 unknowns
-(analysis repeated every step) is now the floor and stops scaling beyond
-4-8 threads; reusing the analysis and the per-n block preconditioner (L4) are
-the next levers.
+is now the floor and stops scaling beyond 4 threads. Its symbolic analysis
+(METIS ordering, repeated every Newton step) is 14.4 of 27.7 s at 1 thread and
+12.2-12.7 of 19-20 s at 4-32 threads (aaae9b1), so reusing it across steps
+would remove about 60% of the factor time; fortsparse has no refactor entry
+point yet (numerical JOB=2 on a kept analysis). The per-n block
+preconditioner (L4) is the other lever.
 
 ## Nested seed (`src/ideal_seed.f90`)
 
