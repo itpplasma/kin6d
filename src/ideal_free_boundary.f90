@@ -2,8 +2,17 @@ module kin6d_ideal_free_boundary
     ! 3D free boundary of the nested map lane (DESIGN 7.3, core note D6, N4).
     ! One reference mesh of the region inside a fixed axisymmetric coupling
     ! curve Gamma_c, with the plasma boundary Gamma_p as an internal chain:
-    !   plasma cells: the frozen-in map of kin6d_ideal_map (unchanged), with the
-    !     Gamma_p nodes free in their transversal (normal) direction;
+    !   plasma cells: the frozen-in energy of kin6d_ideal_map (unchanged), in
+    !     the position gauge: every node (Gamma_p included) carries its full
+    !     poloidal position (q1, q2) per Fourier mode and the toroidal
+    !     displacement omega is zero. Relabelling along B needs a toroidal
+    !     component, so this gauge has no relabelling null; it represents
+    !     rigid motions exactly. (N1's transversal + omega gauge cannot slide
+    !     material along surfaces without omega_0, whose surface-function part
+    !     is a continuum null; pinning omega_0 there over-constrains the map
+    !     and stalls an offset start 7 mm short of the equilibrium; leaving it
+    !     free makes Newton crawl along the null. Measured on the gs_free
+    !     fixture.)
     !   shell cells (Gamma_p -> Gamma_c): a vacuum field B = grad Phi,
     !       Phi = F_vac q3 + c theta/(2 pi) + Phi~,
     !     q3 the physical toroidal angle of the shell map, c the poloidal
@@ -39,8 +48,9 @@ module kin6d_ideal_free_boundary
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_chart_t, ideal_frozen_t, &
-        ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_hessian, &
-        ideal_map_reduce, ideal_map_expand, ideal_map_rdof, IDEAL_MAP_OK
+        ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
+        IDEAL_MAP_OK
+    use kin6d_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
     use kin6d_vacuum_shell_leaves, only: vacuum_energy_density, &
         vacuum_energy_gradient, vacuum_energy_hessian
     use kin6d_triangle_basis, only: triangle_basis_jet
@@ -62,6 +72,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, ideal_fb_solve
     public :: ideal_fb_shell_field, ideal_fb_sampler, ideal_fb_mode_weight
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
+    public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -114,6 +125,8 @@ module kin6d_ideal_free_boundary
         real(dp) :: merit0 = 0, merit = 0, residual = huge(1.0_dp)
         real(dp) :: step = huge(1.0_dp), boundary_step = huge(1.0_dp)
         real(dp) :: constraint = 0, min_jacobian = 0, damping = 0
+        ! Stopped at the roundoff floor of the merit.
+        logical :: floor = .false.
         real(dp) :: assemble_s = 0, factor_s = 0
     end type
 contains
@@ -141,6 +154,13 @@ contains
         il = fb%np + fb%nx + c + 3*(m - 1) + 3*fb%nmode*(s - 1)
     end function
 
+    pure integer function pidx(fb, c, m, a)
+        ! Plasma unknown: position component c (q1, q2) of mode m at node a.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: c, m, a
+        pidx = c + 2*(m - 1) + 2*fb%nmode*(a - 1)
+    end function
+
     pure integer function iphi(fb, m, s)
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: m, s
@@ -149,7 +169,7 @@ contains
 
     subroutine ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, f_vac, &
                              circulation, status, mu0, nphi, panels_per_edge, &
-                             quadrature_order, omega0_free)
+                             quadrature_order)
         ! mesh: curved P2/P3 mesh of the Gamma_c region with Gamma_p as the
         ! constrained internal chain (initialize_gs with interior_chain);
         ! chain: the Gamma_p vertices used for it; field: frozen plasma data.
@@ -162,10 +182,9 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: mu0
         integer, intent(in), optional :: nphi, panels_per_edge, quadrature_order
-        logical, intent(in), optional :: omega0_free
         type(gs_state_t) :: sub
         logical, allocatable :: inside(:), in_plasma(:), in_shell(:)
-        integer :: e, a, m, nodes, cells, nplasma, k, st, ppe
+        integer :: e, a, nodes, cells, nplasma, k, st, ppe
         real(dp) :: centre(2)
         status = IDEAL_FB_BAD_INPUT
         fb%nloc = size(mesh%triangles, 1)
@@ -245,27 +264,6 @@ contains
         call ideal_map_init(fb%plasma, sub, chart, nfp, ntor, st, nphi, &
             quadrature_order, mu0)
         if (st /= IDEAL_MAP_OK) return
-        ! Free boundary: Gamma_p nodes move along their transversal.
-        do a = 1, nplasma
-            if (.not. sub%boundary(a)) cycle
-            do m = 1, fb%nmode
-                fb%plasma%fixed(ideal_map_rdof(fb%plasma, 1, m, a)) = .false.
-            end do
-        end do
-        ! omega_0 (the n = 0 toroidal displacement) is held at zero. Its
-        ! surface-function part omega_0 = f(chi) is the continuum relabelling
-        ! null of the map lane; with frozen data sampled from a finite-element
-        ! flux (gradients only C0) the weak N1 gauge term does not hold it and
-        ! Newton drifts along it, dragging the surfaces (measured: 1-5 cm
-        ! interior surface defect on the gs_free fixture, fixed or free
-        ! boundary). Its non-f(chi) part twists field lines and is zero at
-        ! any axisymmetric equilibrium. The cost is the O(eps^2) n = 0
-        ! toroidal shear of a 3D state, outside the linear and NL-3a gates.
-        if (present(omega0_free)) then
-            if (.not. omega0_free) call pin_omega0()
-        else
-            call pin_omega0()
-        end if
         call ideal_map_freeze(fb%plasma, field, st)
         if (st /= IDEAL_MAP_OK) return
         fb%mu0 = fb%plasma%mu0
@@ -284,7 +282,7 @@ contains
         status = IDEAL_FB_BEM_FAILED
         call gamma_c_operators(fb, ppe, st)
         if (st /= 0) return
-        fb%np = fb%plasma%nred; fb%nx = 3*fb%nmode*fb%ns; fb%nf = fb%nmode*fb%ns
+        fb%np = 2*fb%nmode*fb%plasma%nodes; fb%nx = 3*fb%nmode*fb%ns; fb%nf = fb%nmode*fb%ns
         fb%n = fb%np + 2*fb%nx + fb%nf
         allocate (fb%xs(3, fb%nmode, fb%ns), fb%phi(fb%nmode, fb%ns), &
             fb%lam(3, fb%nmode, fb%ns), fb%drive(fb%nt, fb%nmode), &
@@ -295,13 +293,6 @@ contains
             if (fb%role(k) == 1) fb%xs(:, :, k) = fb%plasma%x(:, :, fb%plasma_node(k))
         end do
         status = IDEAL_FB_OK
-    contains
-        subroutine pin_omega0()
-            integer :: node
-            do node = 1, fb%plasma%nodes
-                fb%plasma%fixed(ideal_map_rdof(fb%plasma, 2, 1, node)) = .true.
-            end do
-        end subroutine
     end subroutine
 
     pure logical function point_in_polygon(poly, p) result(inside)
@@ -853,22 +844,27 @@ contains
     end subroutine
 
     subroutine ideal_fb_gradient(fb, grad, status, lagrangian, min_jacobian)
-        ! Gradient of L with respect to (plasma reduced, xs, lambda, Phi~);
-        ! fixed plasma dofs have zero rows.
+        ! Gradient of L with respect to (plasma positions, xs, lambda, Phi~).
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(out) :: grad(:)
         integer, intent(out) :: status
         real(dp), intent(out), optional :: lagrangian, min_jacobian
         real(dp), allocatable :: gfull(:), gx(:, :, :), gf(:, :), res(:, :, :), u(:)
         real(dp), allocatable :: cx(:, :, :)
-        real(dp) :: wp, ev, ec, minp, mins, cm, d(2)
+        real(dp) :: wp, ev, ec, minp, mins, cm
         integer :: st, s, m, c, p, a, k
         allocate (gfull(fb%plasma%ndof), gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns), &
             res(3, fb%nmode, fb%ns), cx(3, fb%nmode, fb%ns))
         status = IDEAL_FB_OK
         call ideal_map_energy(fb%plasma, fb%plasma%x, wp, st, gfull, minp)
         if (st /= IDEAL_MAP_OK) status = IDEAL_FB_FOLDED
-        call ideal_map_reduce(fb%plasma, gfull, grad(1:fb%np))
+        do a = 1, fb%plasma%nodes
+            do m = 1, fb%nmode
+                do c = 1, 2
+                    grad(pidx(fb, c, m, a)) = gfull(ideal_map_dof(fb%plasma, c, m, a))
+                end do
+            end do
+        end do
         call shell_energy(fb, fb%xs, fb%phi, ev, gx, gf, mins)
         if (.not. mins > 0 .or. .not. ieee_is_finite(ev)) status = IDEAL_FB_FOLDED
         ! Gamma_c terms.
@@ -890,12 +886,11 @@ contains
             case (1)
                 cx(:, :, s) = cx(:, :, s) + fb%lam(:, :, s)
                 a = fb%plasma_node(s)
-                d = fb%plasma%direction(:, a)
                 do m = 1, fb%nmode
-                    p = ideal_map_rdof(fb%plasma, 1, m, a)
-                    grad(p) = grad(p) - dot_product(d, fb%lam(1:2, m, s))
-                    p = ideal_map_rdof(fb%plasma, 2, m, a)
-                    grad(p) = grad(p) - fb%lam(3, m, s)
+                    do c = 1, 2
+                        p = pidx(fb, c, m, a)
+                        grad(p) = grad(p) - fb%lam(c, m, s)
+                    end do
                 end do
             case (3)
                 cx(:, :, s) = cx(:, :, s) + fb%lam(:, :, s)
@@ -915,14 +910,13 @@ contains
                 grad(iphi(fb, m, s)) = -gf(m, s)
             end do
         end do
-        where (fb%plasma%fixed) grad(1:fb%np) = 0
         if (present(lagrangian)) lagrangian = wp - ev - ec + sum(fb%lam*res)
         if (present(min_jacobian)) min_jacobian = min(minp, mins)
     end subroutine
 
     subroutine ideal_fb_hessian(fb, rowptr, colidx, val)
         ! Assembled KKT matrix of L (symmetric, indefinite), CSR with sorted
-        ! columns; fixed plasma dofs get identity rows and columns.
+        ! columns (equal to its CSC form, which is what fortsparse reads).
         type(ideal_fb_t), intent(in) :: fb
         integer, allocatable, intent(out) :: rowptr(:), colidx(:)
         real(dp), allocatable, intent(out) :: val(:)
@@ -930,10 +924,10 @@ contains
         real(dp), allocatable :: blocks(:, :, :), gx(:, :, :), gf(:, :)
         integer, allocatable :: sconn(:, :), ci(:), cj(:)
         real(dp), allocatable :: cv(:)
-        real(dp) :: ev, mins, cm, d(2)
+        real(dp) :: ev, mins, cm
         integer :: e, a, m, c, l, nl, cnt, i, k, p, s, t1, t2, nsb, cap
         nl = 4*fb%nmode*fb%nloc
-        call ideal_map_hessian(fb%plasma, fb%plasma%x, hp)
+        call plasma_hessian(fb, hp)
         allocate (blocks(nl, nl, fb%ncell), gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns))
         call shell_energy(fb, fb%xs, fb%phi, ev, gx, gf, mins, blocks)
         ! Shell block numbering: xs as 1..nx, Phi~ as nx + 1..nx + nf.
@@ -958,12 +952,7 @@ contains
         allocate (ci(cap), cj(cap), cv(cap))
         cnt = 0
         do i = 1, fb%np
-            if (fb%plasma%fixed(i)) then
-                call push(i, i, 1.0_dp)
-                cycle
-            end if
             do p = hp%rowptr(i), hp%rowptr(i + 1) - 1
-                if (fb%plasma%fixed(hp%colidx(p))) cycle
                 call push(i, hp%colidx(p), hp%val(p))
             end do
         end do
@@ -987,16 +976,11 @@ contains
                 do c = 1, 3
                     select case (fb%role(s))
                     case (1)
+                        ! Gamma_p tie: shell (q1, q2) = plasma (q1, q2), shell
+                        ! omega = 0 (position gauge of the plasma).
                         call pair(il(fb, c, m, s), ix(fb, c, m, s), 1.0_dp)
-                        a = fb%plasma_node(s)
-                        d = fb%plasma%direction(:, a)
-                        if (c < 3) then
-                            call pair(il(fb, c, m, s), ideal_map_rdof(fb%plasma, 1, m, &
-                                a), -d(min(c, 2)))
-                        else
-                            call pair(il(fb, c, m, s), ideal_map_rdof(fb%plasma, 2, m, &
-                                a), -1.0_dp)
-                        end if
+                        if (c < 3) call pair(il(fb, c, m, s), &
+                            pidx(fb, c, m, fb%plasma_node(s)), -1.0_dp)
                     case (3)
                         call pair(il(fb, c, m, s), ix(fb, c, m, s), 1.0_dp)
                     case default
@@ -1024,15 +1008,151 @@ contains
         end subroutine
 
         subroutine pair(r, col, v)
-            ! Constraint entry and its transpose; plasma fixed columns skipped.
+            ! Constraint entry and its transpose.
             integer, intent(in) :: r, col
             real(dp), intent(in) :: v
-            if (col <= fb%np) then
-                if (fb%plasma%fixed(col)) return
-            end if
             call push(r, col, v)
             call push(col, r, v)
         end subroutine
+    end subroutine
+
+    subroutine plasma_hessian(fb, matrix)
+        ! Hessian of the plasma energy W_p in the position gauge (q1, q2 per
+        ! node and mode, omega = 0): the second variation of N1's frozen-in
+        ! density (same generated leaves, chart chain rule and quadrature as
+        ! ideal_map_hessian), kept in full coefficients instead of N1's
+        ! (transversal, omega) reduction.
+        type(ideal_fb_t), intent(in) :: fb
+        type(csr_matrix_t), intent(out) :: matrix
+        real(dp), allocatable :: blocks(:, :, :), rows(:, :), tmp(:, :)
+        integer, allocatable :: conn(:, :)
+        real(dp) :: hv(12, 12), weight, dphi, f(0:3)
+        integer :: e, g, j, a, m, c, l, nl
+        nl = 2*fb%nmode*fb%nloc
+        allocate (blocks(nl, nl, fb%plasma%cells), conn(nl, fb%plasma%cells))
+        dphi = 2*pi/(fb%nfp*fb%plasma%nphi)
+        !$omp parallel default(shared) private(e, g, j, a, m, c, l, hv, weight, f, &
+        !$omp rows, tmp)
+        allocate (rows(12, nl), tmp(12, nl))
+        !$omp do schedule(static)
+        do e = 1, fb%plasma%cells
+            blocks(:, :, e) = 0
+            do j = 1, fb%plasma%nphi
+                do g = 1, fb%plasma%nq
+                    call plasma_point_hessian(fb%plasma, e, g, j, hv)
+                    weight = fb%plasma%weight(g)*dphi
+                    rows = 0
+                    do a = 1, fb%nloc
+                        do m = 1, fb%nmode
+                            f(0) = fb%plasma%shape(a, g)*fb%plasma%trig(m, j)
+                            f(1) = fb%plasma%dshape(1, a, g)*fb%plasma%trig(m, j)
+                            f(2) = fb%plasma%dshape(2, a, g)*fb%plasma%trig(m, j)
+                            f(3) = fb%plasma%shape(a, g)*fb%plasma%dtrig(m, j)
+                            do c = 1, 2
+                                l = c + 2*(m - 1) + 2*fb%nmode*(a - 1)
+                                rows(c, l) = f(0)
+                                rows(3 + c, l) = f(1)
+                                rows(6 + c, l) = f(2)
+                                rows(9 + c, l) = f(3)
+                            end do
+                        end do
+                    end do
+                    tmp = matmul(hv, rows)
+                    blocks(:, :, e) = blocks(:, :, e) + weight*matmul(transpose(rows), tmp)
+                end do
+            end do
+        end do
+        !$omp end do
+        deallocate (rows, tmp)
+        !$omp end parallel
+        do e = 1, fb%plasma%cells
+            do a = 1, fb%nloc
+                do m = 1, fb%nmode
+                    do c = 1, 2
+                        conn(c + 2*(m - 1) + 2*fb%nmode*(a - 1), e) = &
+                            pidx(fb, c, m, fb%plasma%conn(a, e))
+                    end do
+                end do
+            end do
+        end do
+        call csr_build_pattern(fb%np, conn, .false., matrix)
+        call csr_assemble_blocks(matrix, conn, blocks)
+    end subroutine
+
+    subroutine plasma_point_hessian(map, e, g, j, hv)
+        ! Second derivatives of N1's energy density w(DX) with respect to
+        ! v = (q(1:3), Q(k,i) at 3 + k + 3(i-1)), DX = dH(q) Q (chart chain
+        ! rule as in ideal_map's local_derivatives).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(out) :: hv(12, 12)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: dx(3, 3), gd(3, 3), hd(9, 9), dvx(9, 12), t(45), tt, dt
+        integer :: a, i, k, m, n, r, c, node
+        q = 0; qd = 0
+        do a = 1, map%nloc
+            node = map%conn(a, e)
+            do m = 1, map%nmode
+                tt = map%trig(m, j); dt = map%dtrig(m, j)
+                q = q + map%x(:, m, node)*map%shape(a, g)*tt
+                qd(:, 1) = qd(:, 1) + map%x(:, m, node)*map%dshape(1, a, g)*tt
+                qd(:, 2) = qd(:, 2) + map%x(:, m, node)*map%dshape(2, a, g)*tt
+                qd(:, 3) = qd(:, 3) + map%x(:, m, node)*map%shape(a, g)*dt
+            end do
+        end do
+        q(3) = q(3) + map%phi(j); qd(3, 3) = qd(3, 3) + 1
+        call map%chart%jet(q, pos, d1, d2, d3)
+        dx = matmul(d1, qd)
+        call ideal_energy_gradient(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+            dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
+            map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, map%sigma, &
+            gd(1, 1), gd(2, 1), gd(3, 1), gd(1, 2), gd(2, 2), gd(3, 2), gd(1, 3), &
+            gd(2, 3), gd(3, 3))
+        call ideal_energy_hessian(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+            dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
+            map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, map%sigma, &
+            t(1), t(2), t(3), t(4), t(5), t(6), t(7), t(8), t(9), t(10), t(11), &
+            t(12), t(13), t(14), t(15), t(16), t(17), t(18), t(19), t(20), t(21), &
+            t(22), t(23), t(24), t(25), t(26), t(27), t(28), t(29), t(30), t(31), &
+            t(32), t(33), t(34), t(35), t(36), t(37), t(38), t(39), t(40), t(41), &
+            t(42), t(43), t(44), t(45))
+        dvx = 0
+        do i = 1, 3
+            do a = 1, 3
+                r = a + 3*(i - 1)
+                do m = 1, 3
+                    dvx(r, m) = dot_product(d2(a, :, m), qd(:, i))
+                end do
+                do k = 1, 3
+                    dvx(r, 3 + k + 3*(i - 1)) = d1(a, k)
+                end do
+            end do
+        end do
+        n = 0
+        do c = 1, 9
+            do r = 1, c
+                n = n + 1
+                hd(r, c) = t(n); hd(c, r) = t(n)
+            end do
+        end do
+        hv = matmul(transpose(dvx), matmul(hd, dvx))
+        do m = 1, 3
+            do n = 1, 3
+                do i = 1, 3
+                    do a = 1, 3
+                        hv(m, n) = hv(m, n) + gd(a, i)*dot_product(d3(a, :, m, n), &
+                            qd(:, i))
+                    end do
+                end do
+            end do
+            do i = 1, 3
+                do k = 1, 3
+                    r = 3 + k + 3*(i - 1)
+                    hv(m, r) = hv(m, r) + dot_product(gd(:, i), d2(:, k, m))
+                    hv(r, m) = hv(m, r)
+                end do
+            end do
+        end do
     end subroutine
 
     subroutine coo_to_csr(n, ci, cj, cv, rowptr, colidx, val)
@@ -1073,13 +1193,15 @@ contains
         ! U <- U + alpha du in the global layout.
         type(ideal_fb_t), intent(inout) :: fb
         real(dp), intent(in) :: du(:), alpha
-        real(dp), allocatable :: full(:), dr(:)
-        integer :: s, m, c
-        allocate (full(fb%plasma%ndof))
-        dr = alpha*du(1:fb%np)
-        where (fb%plasma%fixed) dr = 0
-        call ideal_map_expand(fb%plasma, dr, full)
-        fb%plasma%x = fb%plasma%x + reshape(full, shape(fb%plasma%x))
+        integer :: s, m, c, a
+        do a = 1, fb%plasma%nodes
+            do m = 1, fb%nmode
+                do c = 1, 2
+                    fb%plasma%x(c, m, a) = fb%plasma%x(c, m, a) &
+                        + alpha*du(pidx(fb, c, m, a))
+                end do
+            end do
+        end do
         do s = 1, fb%ns
             do m = 1, fb%nmode
                 do c = 1, 3
@@ -1092,7 +1214,7 @@ contains
     end subroutine
 
     subroutine ideal_fb_solve(fb, tolerance, max_iterations, report, status, verbose, &
-                              step_tolerance)
+                              step_tolerance, residual_tolerance)
         ! Newton on the KKT system of L (symmetric, indefinite: negative
         ! vacuum block, multipliers, and with fixed coil currents a negative
         ! vertical direction of the reduced plasma Hessian). Globalisation:
@@ -1107,15 +1229,20 @@ contains
         !     reduced by 100 after every full step, so Newton is recovered;
         !   - trust radii: displacement <= 2 % of the Gamma_c extent, omega
         !     <= 0.5 rad; a capped direction raises mu.
-        ! Converged when sqrt(merit/merit0) <= tolerance or the last
-        ! displacement increment is below step_tolerance (m).
+        ! Converged when sqrt(merit/merit0) <= tolerance, when the residual
+        ! sqrt(merit/(sigma V)) <= residual_tolerance (sigma V = energy_scale,
+        ! the poloidal-field and pressure energy: toroidal field removed from
+        ! the normalisation), or at the roundoff floor: the merit stagnates
+        ! (less than a factor 2 over 5 accepted steps) with displacement
+        ! increments below step_tolerance (m) or no acceptable step remains
+        ! below residual 1e-6.
         type(ideal_fb_t), intent(inout) :: fb
         real(dp), intent(in) :: tolerance
         integer, intent(in) :: max_iterations
         type(ideal_fb_report_t), intent(out) :: report
         integer, intent(out) :: status
         logical, intent(in), optional :: verbose
-        real(dp), intent(in), optional :: step_tolerance
+        real(dp), intent(in), optional :: step_tolerance, residual_tolerance
         integer, allocatable :: rowptr(:), colidx(:), dpos(:)
         real(dp), allocatable :: val(:), dval(:), grad(:), du(:), diag(:), wts(:)
         real(dp), allocatable :: rhs(:), x0(:, :, :), xs0(:, :, :), phi0(:, :)
@@ -1123,13 +1250,16 @@ contains
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
         real(dp) :: merit, tmerit, alpha, cap_x, cap_w, disp, rot, minjac, t0
-        real(dp) :: step_tol, mu, scale_p
+        real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5)
         integer :: it, i, p, st, tries
         logical :: talk, accepted
         talk = .false.
         if (present(verbose)) talk = verbose
-        step_tol = 1.0e-10_dp
+        step_tol = 1.0e-5_dp
         if (present(step_tolerance)) step_tol = step_tolerance
+        res_tol = 0
+        if (present(residual_tolerance)) res_tol = residual_tolerance
+        history = huge(1.0_dp)
         cap_x = 0.02_dp*maxval(maxval(fb%reference, dim=2) - minval(fb%reference, dim=2))
         cap_w = 0.5_dp
         mu = 1.0e-8_dp
@@ -1152,7 +1282,7 @@ contains
                     end if
                 end do
             end do
-            scale_p = maxval(diag(1:fb%np), mask=.not. fb%plasma%fixed)
+            scale_p = maxval(diag(1:fb%np))
             call merit_weights(fb, diag, wts)
             merit = sum(wts*grad**2)
             if (it == 1) report%merit0 = merit
@@ -1161,18 +1291,28 @@ contains
             if (talk) print '(a,i3,a,es10.3,a,es10.3,a,es10.3,a,es9.2)', 'fb newton', &
                 it - 1, ' merit/m0 ', sqrt(merit/report%merit0), ' res/sigmaV ', &
                 report%residual, ' step ', report%step, ' mu ', mu
-            if (.not. sqrt(merit) > tolerance*sqrt(report%merit0)) then
+            if (talk) call boundary_report(fb)
+            if (talk) print '(a,4es10.2)', '   merit/sigmaV by block (plasma, shell map, &
+                &constraint, potential)', sum(wts(1:fb%np)*grad(1:fb%np)**2) &
+                /fb%energy_scale, sum(wts(fb%np + 1:fb%np + fb%nx)*grad(fb%np + 1:fb%np &
+                + fb%nx)**2)/fb%energy_scale, sum(wts(fb%np + fb%nx + 1:fb%np + 2*fb%nx) &
+                *grad(fb%np + fb%nx + 1:fb%np + 2*fb%nx)**2)/fb%energy_scale, &
+                sum(wts(fb%np + 2*fb%nx + 1:)*grad(fb%np + 2*fb%nx + 1:)**2)/fb%energy_scale
+            if (.not. sqrt(merit) > tolerance*sqrt(report%merit0) .or. &
+                .not. report%residual > res_tol) then
                 status = IDEAL_FB_OK; exit
             end if
-            if (report%step < step_tol .and. mu < 1.0e-10_dp) then
-                status = IDEAL_FB_OK; exit
+            history = eoshift(history, 1, merit)
+            if (history(0) < huge(1.0_dp)) then
+                if (history(5) > 0.5_dp*history(0) .and. report%step < step_tol) then
+                    report%floor = .true.; status = IDEAL_FB_OK; exit
+                end if
             end if
             accepted = .false.
             x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
-            do tries = 1, 40
+            do tries = 1, 16
                 dval = val
                 do i = 1, fb%np
-                    if (fb%plasma%fixed(i)) cycle
                     dval(dpos(i)) = dval(dpos(i)) + mu*(diag(i) + 1.0e-12_dp*scale_p)
                 end do
                 t0 = wall()
@@ -1195,6 +1335,7 @@ contains
                     cap_w/max(rot, tiny(1.0_dp)))
                 if (talk) print '(a,i3,4es10.2)', '   try mu disp rot alpha', tries, &
                     mu, disp, rot, alpha
+                if (talk .and. tries == 1) call direction_report(fb, du)
                 if (alpha < 1 .and. mu < 1.0e8_dp) then
                     mu = 10*mu; cycle
                 end if
@@ -1209,7 +1350,12 @@ contains
                 fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
                 mu = 10*mu
             end do
-            if (.not. accepted) exit
+            if (.not. accepted) then
+                if (report%residual < 1.0e-6_dp) then
+                    report%floor = .true.; status = IDEAL_FB_OK
+                end if
+                exit
+            end if
             grad = rhs
             report%iterations = it
             report%step = alpha*disp
@@ -1224,6 +1370,47 @@ contains
             call system_clock(count, rate)
             wall = real(count, dp)/rate
         end function
+    end subroutine
+
+    subroutine boundary_report(fb)
+        ! Mean (n = 0) displacement of Gamma_p from its reference.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp) :: mean(2)
+        integer :: s, nb
+        mean = 0; nb = 0
+        do s = 1, fb%ns
+            if (fb%role(s) /= 1) cycle
+            mean = mean + fb%xs(1:2, 1, s) - fb%reference(:, s); nb = nb + 1
+        end do
+        print '(a,2es12.4)', '   Gamma_p mean shift', mean/nb
+    end subroutine
+
+    subroutine direction_report(fb, du)
+        ! Rigid content of a Newton direction on Gamma_p (n = 0 mode): mean
+        ! (dR, dZ) and the rms remainder.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: du(:)
+        real(dp) :: mean(2), rms
+        integer :: s, nb
+        mean = 0; nb = 0; rms = 0
+        do s = 1, fb%ns
+            if (fb%role(s) /= 1) cycle
+            mean = mean + [du(ix(fb, 1, 1, s)), du(ix(fb, 2, 1, s))]; nb = nb + 1
+        end do
+        mean = mean/nb
+        do s = 1, fb%ns
+            if (fb%role(s) /= 1) cycle
+            rms = rms + sum(([du(ix(fb, 1, 1, s)), du(ix(fb, 2, 1, s))] - mean)**2)
+        end do
+        print '(a,2es10.2,a,es10.2)', '   direction on Gamma_p: mean dR dZ', mean, &
+            '  rms remainder', sqrt(rms/nb)
+        block
+            integer :: k, a
+            k = maxloc(abs(du(1:fb%np)), dim=1)
+            a = (k - 1)/(2*fb%nmode) + 1
+            print '(a,es10.2,a,2f9.4,a,l2)', '   largest plasma increment', du(k), &
+                ' at', fb%plasma%reference(:, a), ' boundary', fb%plasma%boundary(a)
+        end block
     end subroutine
 
     subroutine configure(solver)
@@ -1244,14 +1431,9 @@ contains
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(in) :: du(:)
         real(dp), intent(out) :: disp, rot
-        real(dp), allocatable :: full(:), dr(:)
         integer :: s, m
-        allocate (full(fb%plasma%ndof))
-        dr = du(1:fb%np)
-        where (fb%plasma%fixed) dr = 0
-        call ideal_map_expand(fb%plasma, dr, full)
-        disp = max(maxval(abs(full(1::3))), maxval(abs(full(2::3))))
-        rot = maxval(abs(full(3::3)))
+        disp = maxval(abs(du(1:fb%np)))
+        rot = 0
         do s = 1, fb%ns
             do m = 1, fb%nmode
                 disp = max(disp, abs(du(ix(fb, 1, m, s))), abs(du(ix(fb, 2, m, s))))
@@ -1275,7 +1457,6 @@ contains
                 end do
             end do
         end do
-        where (fb%plasma%fixed) w(1:fb%np) = 0
     end subroutine
 
     subroutine constraint_norm(fb, value)
@@ -1311,6 +1492,60 @@ contains
         if (status == IDEAL_FB_OK) fb%lam = fb%lam + reshape(du, shape(fb%lam))
     end subroutine
 
+    subroutine ideal_fb_solve_shell_map(fb, status)
+        ! Shell map from the constraints at fixed plasma map: Gamma_p copies,
+        ! harmonic extension, Gamma_c fixed.
+        type(ideal_fb_t), intent(inout) :: fb
+        integer, intent(out) :: status
+        real(dp), allocatable :: du(:)
+        call block_solve(fb, fb%np + fb%nx, fb%np, fb%nx, du, status)
+        if (status == IDEAL_FB_OK) fb%xs = fb%xs + reshape(du, shape(fb%xs))
+    end subroutine
+
+    subroutine ideal_fb_rigid_stiffness(fb, c, delta, force, stiffness, status)
+        ! Generalised force sum_a dL/dq_c(a) (n = 0) on a rigid plasma shift in
+        ! R (c = 1) or Z (c = 2), with shell map, Phi~ and lambda re-solved at
+        ! each shifted geometry, and its central-difference stiffness
+        ! dforce/dshift (J/m^2 per field period). stiffness < 0 in Z is the
+        ! vertical instability of the fixed-current saddle; the state is
+        ! restored on return.
+        type(ideal_fb_t), intent(inout) :: fb
+        integer, intent(in) :: c
+        real(dp), intent(in) :: delta
+        real(dp), intent(out) :: force, stiffness
+        integer, intent(out) :: status
+        real(dp), allocatable :: x0(:, :, :), xs0(:, :, :), phi0(:, :), lam0(:, :, :)
+        real(dp) :: f(-1:1)
+        integer :: k
+        x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
+        do k = -1, 1
+            fb%plasma%x(c, 1, :) = x0(c, 1, :) + k*delta
+            call settle(f(k))
+            if (status /= IDEAL_FB_OK) exit
+        end do
+        fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+        force = f(0)
+        stiffness = (f(1) - f(-1))/(2*delta)
+    contains
+        subroutine settle(value)
+            real(dp), intent(out) :: value
+            real(dp), allocatable :: g(:)
+            integer :: a, st
+            call ideal_fb_solve_shell_map(fb, status)
+            if (status /= IDEAL_FB_OK) return
+            call ideal_fb_solve_vacuum(fb, status)
+            if (status /= IDEAL_FB_OK) return
+            call ideal_fb_solve_multipliers(fb, status)
+            if (status /= IDEAL_FB_OK) return
+            allocate (g(fb%n))
+            call ideal_fb_gradient(fb, g, st)
+            value = 0
+            do a = 1, fb%plasma%nodes
+                value = value + g(pidx(fb, c, 1, a))
+            end do
+        end subroutine
+    end subroutine
+
     subroutine block_solve(fb, row0, col0, nb, du, status)
         ! Solve A(rows row0+1.., cols col0+1..) du = -g(rows) of the KKT system.
         type(ideal_fb_t), intent(in) :: fb
@@ -1326,13 +1561,16 @@ contains
         allocate (grad(fb%n), du(nb))
         call ideal_fb_gradient(fb, grad, st)
         call ideal_fb_hessian(fb, rowptr, colidx, val)
+        ! fortsparse takes CSC: the CSR rows of the transposed block (rows
+        ! col0.., columns row0.. of the symmetric KKT matrix) are the CSC
+        ! columns of the wanted block.
         allocate (rp(nb + 1), ci(size(val)), v(size(val)))
         nnz = 0; rp(1) = 1
         do i = 1, nb
-            do p = rowptr(row0 + i), rowptr(row0 + i + 1) - 1
-                if (colidx(p) <= col0 .or. colidx(p) > col0 + nb) cycle
+            do p = rowptr(col0 + i), rowptr(col0 + i + 1) - 1
+                if (colidx(p) <= row0 .or. colidx(p) > row0 + nb) cycle
                 nnz = nnz + 1
-                ci(nnz) = colidx(p) - col0; v(nnz) = val(p)
+                ci(nnz) = colidx(p) - row0; v(nnz) = val(p)
             end do
             rp(i + 1) = nnz + 1
         end do
