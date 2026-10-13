@@ -775,6 +775,8 @@ contains
                             *delta**eps - jtrue)/jtrue)
                     else
                         errl = max(errl, abs(layer_kink(lay, phi, .true.) - jtrue)/jtrue)
+                        ! the joint fit carries the large solution itself
+                        errl = max(errl, abs(layer_kink(lay, phi) - jtrue)/jtrue)
                     end if
                 end do
                 deallocate (phi)
