@@ -107,7 +107,7 @@ contains
         result%s_tor(1) = 0
         ! Integrate the cubic interpolant of dPhi/drho. Working in sqrt(s_pol)
         ! resolves the axis cell without giving its Hessian a full O(h) weight.
-        density = -2*(-sigma*depth)*rho*density
+        density = -2*(sigma*depth)*rho*density
         call gauss_legendre_ab(2, 0.0_dp, 1.0_dp, gx, gw)
         do i = 2, nr
             result%s_tor(i) = result%s_tor(i - 1)
