@@ -1247,6 +1247,13 @@ add_test(NAME nonnested_island_d3_ladder_p2
     COMMAND test_nonnested_island ladder 2 4 1 1e4 3)
 set_tests_properties(nonnested_island_flattening_p3 nonnested_island_d3_ladder_p2
     PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
+# Landreman family 1 (exact 3D, uniform iota) through the coupled solve.
+add_executable(test_nonnested_landreman test/test_nonnested_landreman.f90)
+target_link_libraries(test_nonnested_landreman PRIVATE kin6d)
+add_test(NAME nonnested_coupled_landreman_family1_p2
+    COMMAND test_nonnested_landreman 2 1 3 2)
+set_tests_properties(nonnested_coupled_landreman_family1_p2
+    PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
 # thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
