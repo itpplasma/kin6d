@@ -704,6 +704,7 @@ contains
         real(dp), allocatable :: cur(:), psi(:), r(:), dmat(:, :), grad(:), delta(:)
         real(dp), allocatable :: lo(:), up(:), trial(:), psi_try(:), r_try(:), hist(:)
         real(dp) :: phi, phi_try, slope, alpha, axis_save(2), x_save(2), step
+        real(dp) :: resolution
         integer, allocatable :: active(:)
         integer :: n, it, ls, info, stat
         logical :: converged
@@ -777,6 +778,7 @@ contains
             end if
             alpha = 1.0_dp
             status = GS_CI_LINE_SEARCH
+            resolution = 0.0_dp
             do ls = 0, 20
                 trial = min(max(cur + alpha*delta, lo), up)
                 psi_try = psi
@@ -784,6 +786,7 @@ contains
                 if (stat .eq. GS_CI_OK) then
                     call scaled_residual(model, psi_try, ev_try%psi_bound, r_try)
                     phi_try = objective_value(model, cfg, trial, r_try)
+                    if (ls .ge. 10) resolution = max(resolution, abs(phi_try - phi))
                     if (phi_try .le. phi + cfg%armijo*alpha*slope) then
                         status = GS_CI_NOT_CONVERGED
                         exit
@@ -793,7 +796,18 @@ contains
                 sys%axis_hint = axis_save
                 sys%xpoint_hint = x_save
             end do
-            if (status .eq. GS_CI_LINE_SEARCH) exit
+            if (status .eq. GS_CI_LINE_SEARCH) then
+                ! At steps alpha <= 2^-10 a correct model changes Phi by at most
+                ! 1e-3 |slope|; a larger |Phi_try - Phi| there is the resolution
+                ! of Phi under the forward Newton tolerance (each trial
+                ! re-converges the flux). A predicted decrease below it cannot be
+                ! verified: the point is stationary to forward accuracy.
+                if (-slope .le. resolution) then
+                    converged = .true.
+                    status = GS_CI_OK
+                end if
+                exit
+            end if
             cur = trial
             psi = psi_try
         end do
