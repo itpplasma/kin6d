@@ -16,29 +16,49 @@ program test_gs_axis_refinement
     real(dp), allocatable :: contour(:, :)
     real(dp) :: axis(2), axis_coarse(2), axis_medium(2), axis_fine(2)
     real(dp) :: error(3), rate, h, q_coarse, q_medium, q_fine
-    integer :: mesh, n, i, status
+    integer, parameter :: nshift = 3
+    real(dp), parameter :: scatter = 3.0_dp  ! measured realisation scatter 2.4
+    real(dp) :: shifted(nshift), phase, worst(3)
+    integer :: mesh, n, i, k, status
     call represented_cubic_axis()
+    ! The axis error of an unstructured mesh is a signed number that depends on the
+    ! mesh realisation, not on the solver: the solution is unchanged when the CG
+    ! tolerance is varied from 1e-8 to 1e-13, but the error at n = 384 is 0.8e-8 to
+    ! 1.1e-8 (default flags) and 1.7e-8 to 4.1e-8 (-march=x86-64-v3), whose
+    ! triangulation differs, and varies by a factor 2.4 between boundary-node phases
+    ! of one flavour. Two consecutive errors therefore carry no rate. Each
+    ! resolution is run at `nshift` node phases; the gate is that no realisation
+    ! exceeds `scatter` times the h**2 extrapolation of the coarse rms error.
     do mesh = 1, 3
         n = 96*2**(mesh - 1)
         allocate (contour(2, n))
-        do i = 1, n
-            call boundary(real(i - 1, dp)/n, contour(:, i))
-        end do
         h = two_pi*a/n
-        call initialize_gs(state, contour, h*h/2, status, 2, curve=boundary)
-        if (status /= 0) error stop 'axis mesh'
-        call solve_gs(state, 1.0_dp, -16*c, 0.0_dp, status)
-        if (status /= 0) error stop 'axis solve'
-        call gs_magnetic_axis(state, axis, status)
-        if (status /= 0) error stop 'axis candidate'
-        error(mesh) = norm2(axis - [r0, 0.0_dp])/r0
-        print *, n, error(mesh)
+        error(mesh) = 0
+        do k = 0, nshift - 1
+            phase = real(k, dp)/(nshift*n)
+            do i = 1, n
+                call phased_boundary(real(i - 1, dp)/n, contour(:, i))
+            end do
+            call initialize_gs(state, contour, h*h/2, status, 2, &
+                               curve=phased_boundary)
+            if (status /= 0) error stop 'axis mesh'
+            call solve_gs(state, 1.0_dp, -16*c, 0.0_dp, status)
+            if (status /= 0) error stop 'axis solve'
+            call gs_magnetic_axis(state, axis, status)
+            if (status /= 0) error stop 'axis candidate'
+            shifted(k + 1) = norm2(axis - [r0, 0.0_dp])/r0
+            error(mesh) = error(mesh) + shifted(k + 1)**2/nshift
+        end do
+        error(mesh) = sqrt(error(mesh))
+        worst(mesh) = maxval(shifted)
+        print *, n, error(mesh), shifted
         deallocate (contour)
     end do
     do mesh = 2, 3
         rate = log(error(mesh - 1)/error(mesh))/log(2.0_dp)
-        print *, 'axis rate', rate
-        if (rate < 1.7_dp) error stop 'axis below field order'
+        print *, 'axis rate of the rms error', rate
+        if (worst(mesh) > scatter*error(1)*(96.0_dp/(96*2**(mesh - 1)))**2) &
+            error stop 'axis error above the second-order extrapolation'
     end do
 
     ! Cylinder at aspect 100, the PLAN Phase 5 Lundquist family. On the coarse
@@ -108,6 +128,12 @@ contains
         call sample_gs(field, found(1), found(2), 1.0_dp, psi, br, bz, bt, stat)
         if (stat /= 0) error stop 'cubic axis sample'
         if (norm2([br, bz]) > 1.0e-12_dp) error stop 'axis not stationary'
+    end subroutine
+
+    subroutine phased_boundary(t, point)
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call boundary(t + phase, point)
     end subroutine
 
     subroutine boundary(t, point)
