@@ -21,7 +21,7 @@ module kin6d_equilibrium_nonnested
     private
     public :: free_b_field_t, nn_report_t, nn_build, nn_solve, nn_export
     public :: nn_linear_solve, nn_divergence, nn_point, nn_vacuum_mode, nn_riesz
-    public :: nn_velocity
+    public :: nn_velocity, nn_fourier_value
 
     type, extends(equilibrium_field_t) :: free_b_field_t
         type(flux_mesh_t) :: mesh
@@ -29,7 +29,7 @@ module kin6d_equilibrium_nonnested
         type(meridian_point_basis_t) :: pb
         complex(dp), allocatable :: b(:, :) ! V2, modes 0:N
         real(dp), allocatable :: psi(:)     ! N=0 pressure primitive, internal
-        real(dp), allocatable :: p(:)       ! NN2 transported N=0 pressure (V0)
+        real(dp), allocatable :: p(:)       ! NN2 transported p, V0 Fourier blocks
         real(dp) :: f_vac = 0, pprime = 0, psi_bound = 0, mu0 = 1
         real(dp) :: centre(2) = 0, radial_scale = 1
         procedure(polar_coordinates_i), pointer, nopass :: coordinates => &
@@ -75,15 +75,18 @@ contains
         field%f_vac = f_vac; field%mu0 = mu0
     end subroutine
 
-    subroutine nn_solve(field, n, boundary, seed, report, status, pprime, psi_bound)
+    subroutine nn_solve(field, n, boundary, seed, report, status, pprime, psi_bound, &
+                        solution)
         ! For n=0, boundary/seed are scalar R A_phi; for n>0 they are the
         ! Nedelec A_pol in gauge R A_phi=0. Boundary trace is prescribed.
+        ! solution returns that potential (the same unknowns as seed).
         type(free_b_field_t), intent(inout) :: field
         integer, intent(in) :: n
         complex(dp), intent(in) :: boundary(:), seed(:)
         type(nn_report_t), intent(out) :: report
         integer, intent(out) :: status
         real(dp), intent(in), optional :: pprime, psi_bound
+        complex(dp), allocatable, intent(out), optional :: solution(:)
         type(csc_t) :: k
         type(csc_z_t) :: zk, curl
         complex(dp), allocatable :: rhs(:), a(:), delta(:), full(:), r(:)
@@ -172,6 +175,7 @@ contains
         field%b(:, n) = csc_matvec(curl, full)
         call nn_divergence(field, report%divergence, st)
         if (st /= 0) return
+        if (present(solution)) solution = a
         status = 0
     contains
         subroutine pressure_load(t, load, status)
@@ -195,12 +199,13 @@ contains
         end function
     end subroutine
 
-    subroutine nn_vacuum_mode(field, n, potential, report, status)
+    subroutine nn_vacuum_mode(field, n, potential, report, status, solution)
         type(free_b_field_t), intent(inout) :: field
         integer, intent(in) :: n
         procedure(meridian_field_i) :: potential
         type(nn_report_t), intent(out) :: report
         integer, intent(out) :: status
+        complex(dp), allocatable, intent(out), optional :: solution(:)
         type(csc_z_t) :: z
         type(csc_t) :: mass
         complex(dp), allocatable :: rhs(:), a(:), seed(:)
@@ -217,7 +222,7 @@ contains
         call nn_linear_solve(mass, fixed, rhs(:field%fs%nn), a, status)
         if (status /= 0) return
         seed = 0
-        call nn_solve(field, n, a, seed, report, status)
+        call nn_solve(field, n, a, seed, report, status, solution=solution)
     end subroutine
 
     subroutine nn_riesz(field, n, rhs, x, status)
@@ -293,6 +298,13 @@ contains
         end do
         value(EQ_BR) = b(1); value(EQ_BZ) = b(3)
         value(EQ_BPHI) = b(2) + field%f_vac/point(1)
+        if (allocated(field%p)) then
+            call meridian_point_basis(field%fs, field%pb, 0, t, xi, eta, x, &
+                v0, status)
+            if (status /= 0) return
+            value(EQ_P) = nn_fourier_value(field%p, field%fs%n0, &
+                field%fs%sp(0)%dof(:, t), v0(1, :), point(3))
+        end if
         if (ubound(field%b, 2) == 0) then
             call meridian_point_basis(field%fs, field%pb, 0, t, xi, eta, x, &
                 v0, status)
@@ -301,14 +313,25 @@ contains
             value(EQ_PSI) = psi
             value(EQ_PSI_R) = point(1)*b(3)
             value(EQ_PSI_Z) = -point(1)*b(1)
-            if (allocated(field%p)) then
-                value(EQ_P) = dot_product(v0(1, :), field%p(field%fs%sp(0)%dof(:, t)))
-            else
+            if (.not. allocated(field%p)) then
                 call axisymmetric_pressure(psi - field%psi_bound, field%pprime, &
                     value(EQ_P))
             end if
         end if
     end subroutine
+
+    pure real(dp) function nn_fourier_value(v, n0, dof, basis, phi) result(f)
+        ! Value at phi of a V0 field in FortFEM's real Fourier block layout
+        ! (block 0, then cos(n phi), sin(n phi)); size(v)/n0 blocks.
+        real(dp), intent(in) :: v(:), basis(:), phi
+        integer, intent(in) :: n0, dof(:)
+        integer :: n
+        f = dot_product(basis, v(dof))
+        do n = 1, (size(v)/n0 - 1)/2
+            f = f + cos(n*phi)*dot_product(basis, v((2*n - 1)*n0 + dof)) &
+                + sin(n*phi)*dot_product(basis, v(2*n*n0 + dof))
+        end do
+    end function
 
     subroutine nn_velocity(field, point, velocity, status)
         ! Field-line equations in phi; unavailable where B_phi vanishes.

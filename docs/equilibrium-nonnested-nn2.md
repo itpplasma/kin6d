@@ -1,7 +1,8 @@
 # Non-nested equilibrium: NN2 (resistive relaxed lane)
 
-Status: design decision, first increment (transport for a given B) and
-second increment (axisymmetric coupled Newton), 2026-10-13. NN2 is the
+Status: design decision, first increment (transport for a given B),
+second increment (axisymmetric coupled Newton) and third increment
+(Fourier-coupled Newton, N >= 1), 2026-10-13. NN2 is the
 resistive relaxed lane of the three-dimensional programme
 ([benchmarks.md](benchmarks.md)). It fixes open question 5 of
 [equilibrium-core.md](equilibrium-core.md) for this lane only. The ideal
@@ -63,9 +64,14 @@ The ideal limit is the sequence chi_perp/chi_par -> 0, g_perp/g_par -> 0
 at fixed S and I_phi. It is measured as a sequence and extrapolated with
 reported rates; it is never assumed. A smooth p becomes constant on
 ergodic components only in that limit, so islands below the critical width
-for finite chi_perp/chi_par keep a pressure gradient ([Fitzpatrick 1995]
-(https://doi.org/10.1063/1.871434); its width scaling is not yet checked
-against the paper body and is not used as a gate).
+for finite chi_perp/chi_par keep a pressure gradient. [Fitzpatrick 1995]
+(https://doi.org/10.1063/1.871434), Eq. (27), gives the scale width
+W_c = sqrt(8) (kappa_perp/kappa_par)^(1/4) (r_s R_0/(s_s n))^(1/2)
+(checked against the paper body; cylindrical large-aspect-ratio slab
+analysis with constant conductivities, island width W of its Eq. (9)).
+The temperature is flattened inside the separatrix for W >> W_c and not
+for W << W_c. Our toroidal annulus with walls is outside those
+assumptions, so the formula is a comparison for measurements, not a gate.
 
 ## Discretisation
 
@@ -145,7 +151,8 @@ is not relied on.
    and D3 ladders, V and Phi, the gauge multiplier and offset return.
    Landreman family 1 remains the 3D nested limit; see below for what is
    missing.
-4. Finite-pressure island from an offset start (next). The NN1
+4. Finite-pressure island from an offset start (implemented as a
+   measurement, see the third increment). The NN1
    helical-filament vacuum field plus finite S, started from the
    axisymmetric solution, is relaxed by Newton. Measure O/X points, width,
    helical phase and the pressure jump across the island against the
@@ -292,23 +299,107 @@ the MUMPS build. The domain is the axisymmetric chart;
 the periodic-cylinder chart is rejected. Claims stay candidate: there is no
 inf-sup analysis of the coupled saddle system and no enclosure.
 
+## Third increment (implemented): Fourier-coupled Newton
+
+`kin6d_nonnested_coupled` now solves modes 0..N (N = the field's mode
+count). Every V0/V1/V2 unknown uses FortFEM's real block layout (block 0,
+then cos(n phi), sin(n phi)); NN1's complex modes map by 2 B_n = c - i s.
+FortFEM `a27e21f7` (`fortfem_meridian_fourier_curl`) supplies the block
+curl, curl^T M2 curl and M1 grad with the identity tensor, so the constant
+blocks are exact. J and K grad p are evaluated at nq x nphi points
+(nphi = 4N + 1 by default, at least 2N + 1) with phi-dependent B, and the
+toroidal derivatives enter through the phi components of grad p and
+grad Phi. These are the existing generated leaves and JVPs: no new
+symbolic terms were needed. The A-A, A-p, A-Phi and A-V Jacobian blocks
+are contractions of those JVPs with the block trial and test operators,
+so a phi-dependent b couples all mode pairs. The Coulomb multiplier is
+used in every block, and lambda again vanishes by solvability (gate:
+lambda mu0/|A| < 1e-10; observed 1e-14). The backward error now includes
+the source load |<v, S>|, and the line search is scaled by |J|(|x| + |dx|)
+so that a seed with p = 0 or Phi = 0 is admissible.
+
+A shell domain (the NN1 coil annulus) has a harmonic A at n = 0: curl
+grad f = 0 with f = 1 on the inner wall. `problem%floating` marks the
+inner-wall V0 nodes as a floating conductor. Its mode-0 lambda and Phi
+nodes are tied to one unknown each, which removes the null space and
+imposes zero net current into the wall. `nn_solve`/`nn_vacuum_mode`
+return the NN1 potentials (`solution`), and `field%p` holds the p blocks.
+`nn_point` and the D3 residual evaluate p at phi.
+
+Gates and evidence (local, gfortran -O3, 4 threads):
+
+- Reduction (`nonnested_coupled_fourier_reduction_p{2,3}`). The Solov'ev
+  offset seed with N = 1 stays axisymmetric: the n = 1 content is 9e-17
+  relative, the mode-0 blocks equal the N = 0 solve to 3e-15 (A, p),
+  2e-13 (Phi in V/(2 pi)) and 0 (V), and D3 is unchanged. The Jacobian
+  matches a central difference at a non-axisymmetric state to 2e-8.
+- Island flattening (`nonnested_island_flattening_p3`; P3, nr = 8, N = 1,
+  90433 unknowns, 4.6 min). The setup is the NN1 coil vacuum on the annulus u in
+  [0.3, 1.2], a source shell u in [0.75, 1.05] and p = 0 on both walls
+  (beta ~ 1e-3). Each ratio chi_par/chi_perp = g_par/g_perp is solved from
+  the vacuum seed (p = Phi = 0) in 3-4 Newton steps. The measure is G,
+  |dp/dR| at the O point (on Z = 0, phi = 0, +-0.03 m) over the
+  mean slope on R_O +- 0.12 m. G is 1 for an unaffected profile and 0
+  when p is flat at O:
+
+  | ratio | 1 | 1e2 | 1e4 | 1e6 |
+  |---|---:|---:|---:|---:|
+  | G | 0.982 | 0.973 | 0.948 | 0.143 |
+  | D3 | 5.1e-4 | 4.7e-4 | 1.4e-4 | 6.7e-5 |
+
+  The gates are: G non-increasing within 0.01, and G(1e6) < G(1)/2. The
+  island width at 1e6 is 0.189 m in u at Z = 0 (edges 0.382..0.571).
+  Fitzpatrick's W_c with r_s ~ 0.48 m, R_0 = 6 m, n = 1 and s ~ 2 (a line
+  current's vacuum shear, not measured) is 0.34 m at 1e4 and 0.11 m at
+  1e6. W/W_c therefore rises from 0.55 to 1.7 between the two ratios,
+  where the flattening sets in. This is consistent with the formula but
+  not a test of it: the geometry is toroidal with walls, s is estimated,
+  and two ratios do not resolve a power law. The O-X pressure difference
+  is reported but not gated. It changes sign (-0.38, -0.33, +0.012,
+  +0.105), and p_max drops from 9.0e4 to 1.8e4 at 1e6 because source
+  lines connect to the walls. At P2 the same scan loses monotonicity at
+  1e6 (G stays above 0.5, chord non-monotone), as expected from Sovinec
+  pollution on this mesh.
+- D3 against resolution (`nonnested_island_d3_ladder_p2`; P2, N = 1,
+  ratio 1e4, nr = 4/8/16, 5.3 min): 5.8e-3, 9.9e-4, 1.8e-4, order 2.5.
+  G at nr = 8/16 is 0.890/0.945.
+- The O and X points are found on the stellarator-symmetry line Z = 0 by
+  half-turn bisection. The FEEC map is only piecewise smooth, so 2D Newton
+  refinement fails below nr = 16. The one-turn closure is 2e-4 m at P3
+  nr = 8 and 2e-3 m at P2 nr = 8.
+- div curl A rounding is about 1e-12 at |A| ~ 20 Wb, so the island test
+  gates it at 1e-10. Solov'ev keeps 1e-12.
+
+The sCluster island study (`study_nonnested_nn2_scluster.sbatch ... island`)
+runs P3 nr = 8/16 to 1e8, P2 nr = 16 and N = 2 scans, and D3 ladders.
+
+Limits. The Jacobian holds dense element blocks of size
+((n1 + 2 n0)(2N + 1))^2 for every element before compression. Memory and
+time therefore grow like N^2 per element, and N >= 3 at nr >= 16 is
+cluster work. S and g_par_shape are axisymmetric. The phi aliasing of K
+and J is declared, not bounded.
+
 ### Landreman family 1: what is missing
 
-Family 1 (uniform iota, p = p_a - 2 psi) is not reachable in this
-increment. Three items are open:
+Family 1 (uniform iota, p = p_a - 2 psi) now has its solver, but it cannot
+yet be posed as a case. What remains:
 
-1. FortFEM has the Fourier-coupled V0 diffusion but no curl-complex
-   counterpart. Needed are real-Fourier V1/V2 forms with a phi-dependent
-   pointwise tensor (the mixed V1-V2-V0 blocks above for modes 0..N,
-   nphi >= 2N + 1) and the n > 0 gauge R A_phi = 0 inside that coupled
-   system. NN1's 3D solves are mode by mode and linear. This is generic
-   FEM and belongs upstream.
-2. Ohmic compatibility. As for Solov'ev, the exact family 1 current must
-   be Ohmic for a declared g_par(x), V and Phi. Its parallel current has
-   not been derived; the case cannot be posed until it is.
-3. Boundary data. The NN1 domain is an axisymmetric region in (R, Z).
-   Family 1 surfaces are not axisymmetric, so the boundary is not a flux
-   surface. It needs the exact normal B trace and nonconstant Dirichlet
-   p_b and Phi data from the closed form, with S = -chi_perp lap(p) inside.
+1. Solver: done in the third increment. The Fourier-coupled solve is
+   gauge-complete (Coulomb in every block), and nonconstant Dirichlet data
+   in every block are supported, because fixed entries are taken from the
+   seed.
+2. Phi-dependent data hooks. `source` and `g_par_shape` take (R, Z) only.
+   Family 1 needs S(R, Z, phi) = -div(K grad p_exact), which is not zero
+   for finite chi_perp, and a 3D g_par(x). This is a small interface change.
+3. Ohmic compatibility, a derivation. J_par = J.b of family 1 must equal
+   g_par b.(E - grad Phi) for a declared g_par(x), V and Phi, with the
+   current equation satisfied. Its parallel current (including the
+   Pfirsch-Schlueter part) has not been derived. Without it the case cannot
+   be posed.
+4. Boundary data. The NN1 domain is axisymmetric in (R, Z), and family 1
+   surfaces are not, so the wall is not a flux surface. The case needs the
+   exact tangential A trace in every block (a Fourier projection of the
+   closed-form A on the wall) and the Dirichlet p_b and Phi_b of the
+   closed form. Item 3 fixes Phi_b.
 
 Chris&AI
