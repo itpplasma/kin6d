@@ -38,8 +38,11 @@ program test_nonnested_coupled
     implicit none
     type(free_b_field_t) :: field
     type(nc_problem_t) :: problem
-    type(nc_layout_t) :: lay
-    real(dp), allocatable :: nodes(:, :), x(:), xe(:)
+    type(nc_layout_t) :: lay, lay0
+    real(dp), allocatable :: nodes(:, :), x(:), xe(:), x0(:)
+    integer :: modes = 0
+    real(dp) :: tol_run = 1.0e-11_dp
+    real(dp) :: d0(4), dn
     real(dp) :: v_exact
     character(16) :: mode, arg
     integer :: k, lev, nlev
@@ -66,6 +69,28 @@ program test_nonnested_coupled
         if (maxval(ev) > 1.0e-8_dp) error stop 'loop voltage'
         if (eo(3) >= eo(1) .or. maxval(eo) > 1.0e-5_dp) error stop 'Phi'
         print '(a)', 'PASS: NN2 coupled Solovev nested limit'
+    case ('reduction')
+        ! An axisymmetric seed solved with modes 0..1 stays axisymmetric and
+        ! reproduces the n = 0 solve; the 3D Jacobian is checked at a
+        ! non-axisymmetric state.
+        tol_run = 1.0e-13_dp
+        call run(8, .false., .false., ef(1), ep(1), ev(1), ed(1), eo(1))
+        x0 = x; lay0 = lay
+        modes = 1
+        call run(8, .true., .false., ef(2), ep(2), ev(2), ed(2), eo(2))
+        d0 = [blockdiff0(lay%ia, lay0%ia, lay0%na), blockdiff0(lay%ip, lay0%ip, &
+            lay0%nv), maxval(abs(x(lay%iphi + 1:lay%iphi + lay0%nv) &
+            - x0(lay0%iphi + 1:lay0%iphi + lay0%nv)))*2*acos(-1.0_dp)/abs(v_exact), &
+            abs(x(lay%iv) - x0(lay0%iv))/abs(x0(lay0%iv))]
+        dn = max(maxval(abs(x(lay%ia + lay0%na + 1:lay%ia + lay%na))) &
+            /maxval(abs(x0(:lay0%na))), maxval(abs(x(lay%ip + lay0%nv + 1: &
+            lay%ip + lay%nv)))/maxval(abs(x0(lay0%ip + 1:lay0%ip + lay0%nv))))
+        print '(a,4es10.2,a,es10.2)', 'N=1 vs N=0 mode-0 A/p/Phi/V ', d0, &
+            '  n=1 content ', dn
+        print '(a,2es12.4)', 'D3 N=0, N=1 ', ed(1:2)
+        if (maxval(d0) > 1.0e-10_dp .or. dn > 1.0e-12_dp) error stop 'reduction'
+        if (abs(ed(2) - ed(1)) > 1.0e-8_dp*ed(1)) error stop 'reduction D3'
+        print '(a)', 'PASS: NN2 coupled Fourier solve reduces to n = 0'
     case ('offset')
         call run(16, .false., .true., ef(1), ep(1), ev(1), ed(1), eo(1))
         print '(a,es12.4)', 'offset return difference ', eo(1)
@@ -97,7 +122,7 @@ contains
         end do
         call flux_mesh_build(rings, 8, 1024, k, mapping, fm, st)
         if (st /= 0) error stop 'mesh'
-        call nn_build(fm, k, 0, [r0, 0.0_dp], minor, ftor, 1.0_dp, field, st)
+        call nn_build(fm, k, modes, [r0, 0.0_dp], minor, ftor, 1.0_dp, field, st)
         if (st /= 0) error stop 'build'
         field%coordinates => coordinates
         call meridian_lagrange_nodes(field%fs, nodes)
@@ -120,7 +145,7 @@ contains
         if (check_jacobian) call jacobian_check(x)
         ! The offset comparison converges both solves to the rounding floor.
         call nc_solve(field, problem, x, report, st, &
-            tol=merge(1.0e-13_dp, 1.0e-11_dp, offset))
+            tol=merge(1.0e-13_dp, tol_run, offset))
         print '(a,i0,a,i0,a,15es9.1)', 'P', k, ' nr=', nr, ' Newton ', &
             report%history(:report%newton_steps)
         if (st /= 0) error stop 'coupled Newton'
@@ -145,7 +170,7 @@ contains
         end do
         efield = sqrt(efield/sum_b); epres = sqrt(epres/sum_p)
         evolt = abs(report%voltage - v_exact)/abs(v_exact)
-        phi_max = maxval(abs(x(lay%iphi + 1:lay%iphi + lay%n0)))*2*acos(-1.0_dp) &
+        phi_max = maxval(abs(x(lay%iphi + 1:lay%iphi + lay%nv)))*2*acos(-1.0_dp) &
             /abs(v_exact)
         call nn_residual(field, 0, stress, st)
         if (st /= 0) error stop 'D3'
@@ -165,8 +190,8 @@ contains
                 report%history(:report%newton_steps)
             ! Phi is compared in units of the loop potential V/(2 pi).
             diffs = [blockdiff(lay%ia, lay%na, maxval(abs(xe(:lay%na)))), &
-                blockdiff(lay%ip, lay%n0, maxval(abs(xe(lay%ip + 1:lay%iphi)))), &
-                blockdiff(lay%iphi, lay%n0, abs(v_exact)/(2*acos(-1.0_dp))), &
+                blockdiff(lay%ip, lay%nv, maxval(abs(xe(lay%ip + 1:lay%iphi)))), &
+                blockdiff(lay%iphi, lay%nv, abs(v_exact)/(2*acos(-1.0_dp))), &
                 blockdiff(lay%iv - 1, 1, abs(v_exact))]
             print '(a,4es10.2)', 'offset difference A/p/Phi/V ', diffs
             aux = maxval(diffs)
@@ -193,6 +218,13 @@ contains
             where (fixed) s = 0
         end subroutine
 
+        real(dp) function blockdiff0(offset1, offset0, n) result(d)
+            ! Mode-0 block of the N = 1 state against the N = 0 state.
+            integer, intent(in) :: offset1, offset0, n
+            d = maxval(abs(x(offset1 + 1:offset1 + n) - x0(offset0 + 1:offset0 + n))) &
+                /max(tiny(1.0_dp), maxval(abs(x0(offset0 + 1:offset0 + n))))
+        end function
+
         real(dp) function blockdiff(offset0, n, scale) result(d)
             integer, intent(in) :: offset0, n
             real(dp), intent(in) :: scale
@@ -218,9 +250,9 @@ contains
             ! Scale each block by its seed magnitude (V and Phi by V_exact).
             d(lay%ia + 1:lay%ia + lay%na) = d(lay%ia + 1:lay%ia + lay%na) &
                 *maxval(xs(lay%ia + 1:lay%ia + lay%na))
-            d(lay%il + 1:lay%il + lay%n0) = d(lay%il + 1:lay%il + lay%n0)*1.0e-3_dp
-            d(lay%ip + 1:lay%ip + lay%n0) = d(lay%ip + 1:lay%ip + lay%n0) &
-                *maxval(xs(lay%ip + 1:lay%ip + lay%n0))
+            d(lay%il + 1:lay%il + lay%nv) = d(lay%il + 1:lay%il + lay%nv)*1.0e-3_dp
+            d(lay%ip + 1:lay%ip + lay%nv) = d(lay%ip + 1:lay%ip + lay%nv) &
+                *maxval(xs(lay%ip + 1:lay%ip + lay%nv))
             d(lay%iphi + 1:lay%iv) = d(lay%iphi + 1:lay%iv)*abs(v_exact)
             where (fixed) d = 0
             call nc_jacobian(field, problem, x0 + d, jac, st)
