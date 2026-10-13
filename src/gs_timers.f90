@@ -8,7 +8,7 @@ module kin6d_gs_timers
     public :: gs_wall_s, gs_timer_reset, gs_timer_add, gs_timer_total
     public :: gs_timer_calls, gs_timer_iterations, gs_timer_event_count
     public :: gs_timer_event_get, gs_progress_enabled, gs_progress_set
-    public :: gs_progress
+    public :: gs_progress, gs_phase_tick, gs_profile_value
     integer, parameter, public :: GS_T_ASSEMBLY = 1   ! gs_cubic_load
     integer, parameter, public :: GS_T_FIXED_CG = 2   ! solve_gs linear CG
     integer, parameter, public :: GS_T_JAC_CG = 3     ! Jacobian symmetric CG
@@ -27,6 +27,47 @@ module kin6d_gs_timers
     integer :: event_iterations(max_events) = 0
     logical :: progress_on = .false.
 contains
+    subroutine gs_profile_value(label, value)
+        !! `PROF label value` on stderr when KIN6D_PROFILE is set.
+        character(*), intent(in) :: label
+        real(dp), intent(in) :: value
+        real(dp) :: t0
+
+        t0 = -1
+        call gs_phase_tick('', t0)
+        if (profile_enabled()) write (0, '(a,a,f10.3)') 'PROF ', label, value
+    end subroutine
+
+    logical function profile_enabled() result(enabled)
+        character(len=8) :: value
+        integer :: length, stat
+
+        call get_environment_variable('KIN6D_PROFILE', value, length, stat)
+        enabled = stat == 0 .and. length > 0
+    end function
+
+    subroutine gs_phase_tick(label, t0)
+        !! Wall time since the previous tick, written to stderr as
+        !! `PROF label seconds` when KIN6D_PROFILE is set. t0 < 0 starts a
+        !! sequence. Serial sections only.
+        character(*), intent(in) :: label
+        real(dp), intent(inout) :: t0
+        logical, save :: known = .false., enabled = .false.
+        character(len=8) :: value
+        integer :: length, stat
+        real(dp) :: t
+
+        if (.not. known) then
+            call get_environment_variable('KIN6D_PROFILE', value, length, stat)
+            enabled = stat == 0 .and. length > 0
+            known = .true.
+        end if
+        if (.not. enabled) return
+        t = gs_wall_s()
+        if (t0 > 0) write (0, '(a,a,f10.3)') 'PROF ', label, t - t0
+        t0 = t
+    end subroutine
+
     function gs_wall_s() result(t)
         real(dp) :: t
         integer(int64) :: count, rate
