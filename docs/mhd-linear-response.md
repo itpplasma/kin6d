@@ -59,9 +59,49 @@ that of its mid surface, sampled at `np_sample` uniform angles.
 | `mhd_shielding_cylinder_limit_reciprocity` | screened response of a periodic cylinder (modified Bessel functions); sheet reciprocity | 1e-5 at R0/a = 40, second order in a/R0; M Hermitian to 1e-13 |
 | `mhd_newcomb_screw_pinch_limit` | Newcomb ODE (fortnum Cash–Karp), shape of the response inside the plasma | β=0: second order in a/R0, 6e-3 at R0/a=40; β_p≈2 converges to the same limit (pressure-sensitive test needs a periodic-cylinder chart) |
 | `mhd_ideal_n_mde_force_free_identity` | MDE inverse; force-free `μ0 J = σ B` against a direct FEEC solve; charge conservation with `p' ≠ 0`, `F' ≠ 0` | 5e-10; second order in the ring spacing (8.5e-5); 3e-5 |
+| `mhd_closure_tearing_delta_prime` | V5: step-profile closed form `r_sΔ' = −2m(m−1−nq0)/(m−1−nq0+(nq0/m)^m)` for the independent Newcomb-type ODE; FEEC closure Δ' against the ODE (Wesson `j=(1−r²)²`, m/n = 2/1, extrapolated in δ; tanh step); edge current jump (uniform current, response `1+1/(m−nq0−1)`); `D_I = −1/4` at `p' = 0` | ODE: O(w²) to the step limit (3.7e-3 at w = 0.0025); Δ' 1.3e-2 (R0/a = 40), 2.1e-2 (10), tanh step 2.4e-2, at nrad 32; edge 3.2e-3 at R0/a = 40, wrong by 4x without the boundary sheet |
 
 `gs_response_3d` also recomputes the coil resonant flux through the L3
 surface path (`surface_harmonics`), agreeing to 1e-5.
+
+## Ideal closure (L6)
+
+`kin6d_mhd_closure_n`, `closure = 'frobenius'` in `gs_response_3d`. Near a
+rational `q = m/n` at `psin_s`, `x = psin − psin_s`, the resonant flux of an
+ideal outer solution is `Φ_m = A|x|^(1/2−μ) + B|x|^(1/2+μ) + Cx + …` on each
+side (Glasser–Greene–Johnson; `μ = sqrt(−D_I)`, Mercier index from the DCON
+formula). The layer `|x| < δ` carries no volume current; two resonant sheets
+on its edge rings (the shared sheet machinery of `kin6d_mhd_response_n`,
+`sheet_closure_t`) are fixed by vanishing large coefficients `A±`, read from
+fits of `Φ_m` on three graded rings outside the layer on each side (basis
+`t^−ε, t, (t^(1+ε)−t)/ε`, `ε = μ − 1/2`, which tends to `1, t, t ln t` at zero
+beta). Prescribed `A±` give Δ' data. The net layer current (sum of the edge
+sheets) is the jump of `dΦ_m/dpsin` across the layer; carried to GPEC's
+`sing_spot` with `(spot/δ)^(μ−1/2)` it is GPEC's `singcur`, and its self flux
+per area GPEC's `singflx`. For `μ ≠ 1/2` GPEC's value depends on `sing_spot`.
+Rings are graded geometrically (`layer_ratio`) from `±δ` up to the uniform
+spacing or 0.45 of the distance to the next rational and smoothed
+(`ring_labels_smooth`). The Ampère operator, coil drive and the MEPHIT-form
+volume current are unchanged.
+
+Verification: `mhd_closure_tearing_delta_prime` (above). With nrad 96 and
+grading 1.25 the δ-extrapolated Δ' is within 0.8 % of the ODE (R0/a = 20, 40;
+1.4 % at R0/a = 10), the tanh step within 5e-4. `D_I` of the TC24 cut-0.995
+gfile agrees with DCON's `di0` to 3e-4 at q = 4/3 … 8/3, 1 % at q = 3 and
+0.15 % at q = 10/3; `dq/dpsin` to 0.2 %.
+
+Edge model. DCON/GPEC take the plasma energy with continuous `B0`, zero
+traction and no `p_edge` term; its natural boundary condition is linearised
+total-pressure balance. In the current picture this is the field-aligned
+boundary sheet plus the moved current `ξ_n J0` (its perpendicular part is the
+diamagnetic sheet `δp/B0` of pressure balance; the parallel sheet is fixed by
+charge conservation), i.e. `boundary_sheet = .true.`,
+`edge_moved_current = .true.`. This is the exact ideal response of the
+pressure-offset cut equilibrium (`p_edge = 0`, same `p'`, `FF'`); the cut
+gfile itself has `p_edge = 10.5 kPa` with vacuum outside and is not an
+equilibrium at the cut. At zero beta the moved current reduces to the
+boundary sheet, checked by the edge-current-jump oracle. On TC24 the moved
+current changes `singflx` by 4–35x (nrad 96).
 
 ## Usage
 
@@ -69,7 +109,8 @@ surface path (`surface_harmonics`), agreeing to 1e-5.
 (one table per phasing), `n`, `rat_num`/`rat_den`, `nrad`, `nth_max`,
 `order`, `model` (`'shield'` or `'ideal'`), `np_sample`, `qlow`,
 `boundary_sheet`, `rat_pad`/`rat_grade` (rings graded geometrically toward
-each rational), `edge_moved_current`. With MUMPS the Ampère operator is
+each rational), `edge_moved_current`, `closure` (`'sheet'` or `'frobenius'`),
+`layer_delta`, `layer_ratio`, `layer_nfit`, `spot`. With MUMPS the Ampère operator is
 factored as the real SPD form (1M unknowns at nrad 128). Output `prefix_res.dat`: per phasing and rational surface
 the vacuum resonant flux `Φ_vac` and `b_vac = Φ_vac/area`, the sheet amplitude
 `λ` and `b_shield = −M_ss λ/area`, the resonant flux of the shielding current
