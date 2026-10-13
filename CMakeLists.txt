@@ -139,7 +139,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "b1aca63bffa2b89d6ddf17c7a56d229e7bac3eaa")
+set(KIN6D_FORTFEM_REVISION "a27e21f7d498189430bb0a88eeb0c1c45e076243")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1135,6 +1135,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_curl.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
@@ -1194,8 +1195,10 @@ foreach(k 2 3)
         ENVIRONMENT "OMP_NUM_THREADS=4")
 endforeach()
 
+add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90)
+target_link_libraries(kin6d_nn_vacuum_test PUBLIC kin6d)
 add_executable(test_nonnested_vacuum test/test_nonnested_vacuum.f90)
-target_link_libraries(test_nonnested_vacuum PRIVATE kin6d)
+target_link_libraries(test_nonnested_vacuum PRIVATE kin6d_nn_vacuum_test)
 add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
 set_tests_properties(nonnested_vacuum_helical_coil_island PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
@@ -1229,10 +1232,21 @@ foreach(k 2 3)
         COMMAND test_nonnested_coupled solovev ${k} 1e6)
     add_test(NAME nonnested_coupled_offset_return_p${k}
         COMMAND test_nonnested_coupled offset ${k} 1e6)
+    add_test(NAME nonnested_coupled_fourier_reduction_p${k}
+        COMMAND test_nonnested_coupled reduction ${k} 1e6)
     set_tests_properties(nonnested_coupled_solovev_p${k}
-        nonnested_coupled_offset_return_p${k} PROPERTIES
+        nonnested_coupled_offset_return_p${k}
+        nonnested_coupled_fourier_reduction_p${k} PROPERTIES
         TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 endforeach()
+add_executable(test_nonnested_island test/test_nonnested_island.f90)
+target_link_libraries(test_nonnested_island PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME nonnested_island_flattening_p3
+    COMMAND test_nonnested_island ratio 3 8 1)
+add_test(NAME nonnested_island_d3_ladder_p2
+    COMMAND test_nonnested_island ladder 2 4 1 1e4 3)
+set_tests_properties(nonnested_island_flattening_p3 nonnested_island_d3_ladder_p2
+    PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
 # thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
