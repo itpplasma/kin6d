@@ -439,15 +439,15 @@ contains
             real(dp), intent(in) :: xstart(:), target
             real(dp), allocatable :: x(:), xtrial(:), r(:), rtrial(:), dx(:), &
                                      jac(:, :), normal(:, :), gradient(:), system(:, :)
-            real(dp) :: mu, merit, merit_trial, predicted, diagonal
+            real(dp) :: mu, merit, merit_trial, predicted, diagonal, stall_merit
             integer(int64) :: tick, tock, rate
-            integer :: iteration, trial, info, k
+            integer :: iteration, trial, info, k, stalled
             logical :: ok, moved
             allocate (x(n + 1), xtrial(n + 1), r(n + 1), rtrial(n + 1), dx(n + 1), &
                       jac(n + 1, n + 1), normal(n + 1, n + 1), gradient(n + 1), &
                       system(n + 1, n + 1))
             x = xstart
-            mu = 0
+            mu = 0; stalled = 0; stall_merit = 0
             call equations(x, r)
             solution = x; residual = r
             if (failure /= 0) return
@@ -507,10 +507,23 @@ contains
                     failure = 0
                     exit
                 end if
+                ! Three consecutive damped steps that together reduce the
+                ! merit by less than 1%: a nonzero residual minimum (singular
+                ! J, e.g. the TC24 floor max|r| 5.5e-4); stop the stage.
+                if (mu > 0) then
+                    if (stalled == 0) stall_merit = merit
+                    stalled = stalled + 1
+                else
+                    stalled = 0
+                end if
                 mu = mu/10
                 if (mu < 1.0e-6_dp) mu = 0
                 x = xtrial; r = rtrial
                 call accept(x, r)
+                if (stalled == 3) then
+                    if (merit_trial > 0.99_dp*stall_merit) exit
+                    stalled = 0
+                end if
             end do
             ! Report the last accepted iterate.
             if (failure == 0 .or. failure == 4) then
