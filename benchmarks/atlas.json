@@ -1108,6 +1108,34 @@
       "certificate_method": null
     },
     {
+      "id": "helical_filament_vacuum_island_nn1",
+      "family": "mhd",
+      "reference_class": "E0",
+      "status": "implemented scoped vacuum reference-comparison; no enclosure",
+      "species_models": [],
+      "geometry": "cylindrical torus with annular meridian, minor radii 0.3 to 1.2 m about R0=6 m",
+      "model_lane": "free-B vacuum; p=0; prescribed boundary traces",
+      "equations": "curl B=0 and div B=0 outside the filament; closed FEEC 2-form",
+      "field_model": "192-segment 5 MA helical filament plus harmonic F/R with F=100 T m",
+      "initial_boundary_data": "coil vertices R=6+0.02 cos(phi_j), Z=-0.02 sin(phi_j), phi_j=2 pi j/192; n=0 potential and n>0 gauge traces",
+      "parameter_validity_range": "fixed polygon input; coil excluded by 0.3 m cavity; modes 0:3, 32-angle Fourier projection",
+      "reference_definition": "closed-form straight-segment Biot-Savart field; island readback is a finite-time numerical diagnostic",
+      "reference_implementation": "src/coils_3d.f90; test/test_nonnested_vacuum.f90 direct field and FortNum Cash-Karp traces",
+      "source_version_and_section": "NN1 fixture retained in test/test_nonnested_vacuum.f90 and docs/equilibrium-nonnested.md",
+      "observables": [
+        "coil-scale field error",
+        "one-turn return map error",
+        "elliptic and hyperbolic periodic orbit locations",
+        "32/64-turn libration width and scan resolution",
+        "closed-complex divergence defect",
+        "finite-test-space D3 dual norm"
+      ],
+      "certificate_method": "unavailable; reference comparison and structural identity only",
+      "proof_level": "candidate; no continuous field or island-width enclosure",
+      "expected_convergence_order": "P2 field order 2; map and width are separately checked diagnostics",
+      "plot_recipe": "optional Poincare diagnostic from the retained fixture; no certified bands available"
+    },
+    {
       "id": "rotating_ellipse_3d",
       "family": "cross_code",
       "reference_class": "X",

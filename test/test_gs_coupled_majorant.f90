@@ -34,6 +34,9 @@ program test_gs_coupled_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b
     use gs_fb_fixture, only: make_law
+    use kin6d_gs_certificate, only: gs_fb_certifier_t
+    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+        EQ_CLAIM_PRACTICAL
     implicit none
 
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -385,13 +388,15 @@ contains
         integer, intent(in) :: order, n_outer
         logical, intent(in) :: dense
         real(dp), intent(out) :: error, bound
-        type(gs_state_t) :: state
+        type(gs_state_t), target :: state
         type(gs_profile_law_t) :: law
         type(gs_fb_config_t) :: cfg
-        type(gs_fb_system_t) :: sys
+        type(gs_fb_system_t), target :: sys
         type(gs_fb_eval_t) :: ev
         type(gs_fb_history_t) :: history
-        type(gs_coupled_estimator_t) :: est
+        type(gs_coupled_estimator_t), target :: est
+        type(gs_fb_certifier_t) :: certifier
+        type(equilibrium_certificate_t) :: certificate
         type(gs_fb_majorant_t) :: res
         type(gs_coupled_goal_t) :: goal
         real(dp), allocatable :: f_load(:), exact(:)
@@ -436,6 +441,20 @@ contains
                 '  dense SVD ', beta_dense
             call require(abs(res%beta - beta_dense) <= 1.0e-3_dp*beta_dense, &
                          label//': beta matches the dense SVD')
+            ! D4: the psi free-boundary certifier reports the same M0 and
+            ! beta, and the core labels M0/beta a practical estimate.
+            certifier%state => state
+            certifier%sys => sys
+            certifier%est => est
+            certifier%currents = currents
+            certifier%forcing => forcing
+            call certify(certifier, certificate, status)
+            call require(status == 0 .and. certificate%lane_status == GS_CM_OK, &
+                         label//': certifier status')
+            call require(certificate%claim == EQ_CLAIM_PRACTICAL, &
+                         label//': free-boundary claim is a practical estimate')
+            call require(abs(certificate%bound - res%bound) <= 1.0e-10_dp*res%bound, &
+                         label//': certificate bound equals M0/beta')
             call gs_fb_inf_sup(state, sys, ev, beta_dense, its, status)
             call require(status == GS_CM_OK, 'inf-sup direct call')
         end if
