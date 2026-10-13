@@ -282,9 +282,12 @@ set_tests_properties(ideal_map_n3_leakage ideal_map_n0_solovev_a3_p2
 add_test(NAME ideal_map_n0_seed_return_a3_p2 COMMAND test_ideal_map_axisymmetric seed 2)
 add_test(NAME ideal_map_n0_seed_return_shaped_p2
     COMMAND test_ideal_map_axisymmetric seedshaped 2)
-# The P3 seed ladder (seed 3) reaches order 4.0 with SuperLU but 2.7 with
-# MUMPS on the finest mesh: the Newton path still follows near-null
-# relabelling directions there (docs/ideal-map-3d.md); not registered.
+# P3 ladder: transversal gauge weight 1e-2, initial damping 1e-6, stop at
+# 1e-11 x the seed gradient (docs/ideal-map-3d.md). Shaped P3 is open.
+add_test(NAME ideal_map_n0_seed_return_a3_p3
+    COMMAND test_ideal_map_axisymmetric seed 3 v 7 -1 1 1e-6 1e-2 1e-11)
+set_tests_properties(ideal_map_n0_seed_return_a3_p3
+    PROPERTIES TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 set_tests_properties(ideal_map_n0_seed_return_shaped_p2
     PROPERTIES TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 add_test(NAME ideal_map_n0_normalised_residual_a3_p2

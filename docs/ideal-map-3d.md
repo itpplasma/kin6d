@@ -71,11 +71,14 @@ Damped Newton (Levenberg--Marquardt, Hessian diagonal metric) on the reduced
 modes coupled), factorised by threaded MUMPS LDL^T (nested dissection) when
 KIN6D is built with MUMPS, serial SuperLU LU otherwise. The CSR pattern is
 built once per map. Steps must keep J > 0
-at every quadrature point and must not increase W beyond roundoff; a trust
+at every quadrature point. A step is accepted if W decreases clearly; inside
+the roundoff band of W it is accepted only if the trapezoidal energy change
+(g(x) + g(x + s)).s/2 is not positive (a plain gradient decrease test kept the
+damping at 1e-6..1e-9 and 300-600 steps of linear crawl). A trust
 region caps the nodal displacement at 5% of the reference extent and omega at
 1 rad per step, because the near-null directions carry large Newton components.
-Converged when the reduced free gradient falls by 1e-6 (tests; 1e-8 from a
-nested seed, whose initial gradient is large). Element energy, gradient and
+Converged when the reduced free gradient falls by 1e-6 (tests; seed ladders
+stop at 1e-11 x the gradient of X0 = id). Element energy, gradient and
 Hessian blocks are OpenMP-parallel over cells. The report gives wall time for
 energy, Hessian and factor+solve.
 
@@ -152,20 +155,30 @@ solution psi_2D on the same mesh is the second oracle.
 - `ideal_map_n0_seed_return_{a3_p2,a3_p3,shaped_p2}`: nested seed from the
   exact boundary, q(s), p(s) and Phi_edge, seed axis 0.19 m (A3) and 0.38 m
   (shaped) from the magnetic axis; grid-sequenced ladders; gates: return to
-  1e-3 of the seed error and the k + 1 order. Measured (local, SuperLU):
+  1e-3 of the seed error and the k + 1 order. Each mesh stops at 1e-11 x the
+  gradient of the seed X0 = id on that mesh (path independent; prolongation
+  raises the start to 22-210 x that). Measured (sCluster, 4 threads, MUMPS):
 
   | case | k | segments | errors | orders |
   |---|---|---|---|---|
-  | A3 | 2 | 32/64/128 | 2.8e-4, 3.5e-5, 5.4e-6 | 3.00, 2.70 |
-  | A3 | 3 | 24/48/96 | 9.8e-5, 6.2e-6, 3.9e-7 | 3.99, 3.98 |
+  | A3 | 2 | 32/64/128 | 2.776e-4, 3.362e-5, 5.446e-6 | 3.05, 2.63 |
+  | A3 | 3 | 24/48/96 | 9.7915e-5, 6.2296e-6, 4.1551e-7 | 3.97, 3.91 |
   | shaped | 2 | 32/64/128 | 2.2e-3, 2.0e-4, 1.9e-5 | 3.45, 3.45 |
 
-  The A3 P3 seed ladder (9.8e-5, 6.2e-6, 3.9e-7 with SuperLU) is not
-  registered: on the finest mesh the Newton path still follows near-null
-  relabelling directions and the end point depends on factorisation roundoff
-  and on the initial damping (3.8e-7 to 9.8e-7; order 4.0 down to 2.7). The
-  shaped P3 seed ladder stops at a relative gradient of 9e-7 after 100
-  steps. Both are open.
+  A3 P3 uses the transversal gauge weight 1e-2 (default 1e-4 for all other
+  ladders) and initial damping 1e-6; Newton steps 89/84/330 (MUMPS), cap 600.
+  With weight 1e-2 the end points agree between MUMPS and SuperLU to 1e-11,
+  3e-8 and 3e-7 (relative, three meshes) and between damping 1e-6 and 1e-4
+  to 1e-10, 1.5e-7 and 2e-6; damping 1e-4 needs 529 steps on the middle mesh
+  and SuperLU hits the cap, so damping 1e-6 is the registered setting.
+  With weight 1e-4 the middle mesh has two end points (6.1769e-6 and
+  6.1633e-6; finest 3.956e-7 vs 3.965e-7), and damping 1e-5/1e-4 hit the cap;
+  weight 1e-3 stalled. The residual spread (<= 2e-6 relative) is far below
+  the order gates. The P2 gate (2.6) is marginal (2.63, 2.61 measured).
+  The shaped P3 seed ladder is not registered: it converges to a
+  weight-dependent end point on the first two meshes (weight 1e-4: 2.3245e-4,
+  1.6077e-5; weight 1e-2: 2.3140e-4, 1.5728e-5) and the third mesh reaches
+  the 600-step cap. Open.
 
   Reproducibility: cell energies are summed serially and MUMPS factors on one
   thread by default (`factor_threads`), so a solve is identical for any
@@ -182,7 +195,8 @@ solution psi_2D on the same mesh is the second oracle.
   the seed's toroidal flux within surfaces needs poloidal slides of order
   q R d(omega). A transversal phase followed by a position-gauge polish
   returns (A3 P2 2.9e-4, 3.1e-5; shaped P2 orders 3.43, 3.45) but the polish
-  stalls at a relative gradient of 1e-8 on the A3 meshes.
+  stalls at a relative gradient of 1e-8 on the A3 meshes; the polish is not
+  needed once the seed-gradient stopping rule is used, and was removed.
 
   Cause of the earlier deficit (order 2.2-2.4; `seeddiag 2` separates it on
   A3 with the smooth exact map X* = P(xi(y)) of the seed labels,
