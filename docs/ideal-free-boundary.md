@@ -221,3 +221,10 @@ FB-taper 0.997 results (fwd_p3_l3 reference, 256/384, μ_t = 1e-7):
   physics, reported separately). The remaining 2 % gap at the smallest scales
   sits at the N = 0 floor, where the vertical position still creeps by about
   2e-5 m per step.
+- `rigid_vertical = .true.` applies dZ = -F_Z/K_Z (rigid n = 0 Z shift,
+  K_Z from `ideal_fb_rigid_stiffness`, shell map, vacuum and multipliers
+  re-solved) after every accepted step, kept only if the merit decreases. On
+  the base state F_Z = -9 J/m and K_Z = -5.2e6 J/m^2 give dZ = -1.7e-6 m, which
+  the merit rejects; the Gamma_p mean Z still creeps by +9.5e-6 m per step
+  against that sign. The creep is therefore not the rigid vertical mode but a
+  soft shape/gauge direction; the rigid correction is a no-op there.
