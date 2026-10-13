@@ -1153,7 +1153,8 @@ if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 target_sources(kin6d PRIVATE src/mhd_mesh.f90 src/mhd_ampere_n.f90
-    src/mhd_response_n.f90 src/mhd_ideal_n.f90 src/mhd_closure_n.f90)
+    src/mhd_response_n.f90 src/mhd_ideal_n.f90 src/mhd_closure_n.f90
+    src/mhd_layer_n.f90)
 target_link_libraries(kin6d PUBLIC kin6d_feec_n)
 target_sources(kin6d PRIVATE src/mhd_perturbation_n.f90)
 add_executable(test_mhd_perturbation test/test_mhd_perturbation.f90)
@@ -1202,6 +1203,9 @@ set_tests_properties(response_strip_cylinder_layer PROPERTIES TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(response_strip_ladder app/response_strip_ladder.f90)
 target_link_libraries(response_strip_ladder PRIVATE kin6d)
+add_test(NAME mhd_resistive_layer_rotation COMMAND test_mhd_closure resistive)
+set_tests_properties(mhd_resistive_layer_rotation PROPERTIES TIMEOUT 1800
+    ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_mhd_newcomb test/test_mhd_newcomb.f90)
 target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
 add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)

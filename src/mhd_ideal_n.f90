@@ -34,7 +34,10 @@ module kin6d_mhd_ideal_n
     !! is the flux surface u_h = (u_{h-1} + u_h)/2 sampled at np uniform
     !! geometric angles.  The current of strip h is that of its half ring,
     !! constant along u and interpolated in angle (first order in the ring
-    !! spacing, as the strip-wise current of MEPHIT).  The fan around the axis
+    !! spacing, as the strip-wise current of MEPHIT); with
+    !! ideal_options_t%strip_shape (default) the strip current follows the
+    !! near-rational outer form alpha/x + beta + gamma ln|x| through three
+    !! neighbouring half rings (ideal_load).  The fan around the axis
     !! carries no plasma current.  d/dpsi at fixed theta_g uses differences
     !! between half rings.  The volume current that leaves the plasma through
     !! the boundary ring continues in a field-aligned boundary sheet K =
@@ -49,6 +52,7 @@ module kin6d_mhd_ideal_n
         surface_t, surface_build
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate, flux_mesh_ring_edge
     use kin6d_mhd_ampere_n, only: mu0
+    use kin6d_mhd_closure_n, only: frobenius_basis
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     implicit none
     private
@@ -82,6 +86,14 @@ module kin6d_mhd_ideal_n
         real(dp) :: qlow = 0.0_dp
         !> Moved equilibrium current xi_n J0 at the boundary (cut edge).
         logical :: moved_current = .false.
+        !> Near-rational radial shape of the strip current (ideal_load);
+        !> .false. holds the half-ring current constant across every strip.
+        logical :: strip_shape = .true.
+        !> Signed poloidal numbers m = nint(n q) of the rationals and their
+        !! Mercier exponent offsets eps = sqrt(-D_I) - 1/2; the strip shape of
+        !! a rational uses the Frobenius basis of its eps (0 when absent).
+        integer, allocatable :: res_m(:)
+        real(dp), allocatable :: res_eps(:)
     end type ideal_options_t
 
     public :: equilibrium_point
@@ -436,11 +448,32 @@ contains
         c(3) = a(1)*b(2) - a(2)*b(1)
     end function cross_rc
 
-    subroutine ideal_load(fs, pb, fm, g, jcur, kap, bnd, f)
+    subroutine ideal_load(fs, pb, fm, g, jcur, kap, bnd, f, rings, n, res_m, res_eps)
         !! f = mu0 (A', J) for the Nedelec test functions: volume current of
         !! strip h from sample ring h - 1 (half ring of strip h), interpolated
         !! linearly in angle; boundary sheet K = kap B0 on the last ring with
         !! (A', K) = int (A' . t) kap B0_t R dl, A' . t dl = Nhat . (1, 0) dtau.
+        !!
+        !! With the half rings (rings, n) the radial dependence of the strip
+        !! current is the near-rational outer form instead of a constant.  At
+        !! distance x from the rational q = -kres/n (kres = -nint(n q_h)) the
+        !! outer field is psi_s (1 + K x ln|x| + c x + ...), so the current is
+        !!     J = alpha/x + beta + gamma ln|x| + O(x ln|x|)
+        !! (resonant parallel current N(D)/(i D) with the numerator N linear
+        !! in the field, perpendicular current through d psi/dx).  With t =
+        !! D/D_h, D = kres + n q(psi), the strip current at a quadrature point
+        !! is the interpolant J = sum_k L_k(t) J_k of the three neighbouring
+        !! half-ring currents (h-1..h+1, else h..h+2 or h-2..h; active, same
+        !! kres, same side of the rational) that is exact for t J in the
+        !! Frobenius span {t^-eps, t, (t^(1+eps) - t)/eps} of the Mercier
+        !! exponent eps = sqrt(-D_I) - 1/2 of the rational (res_m, res_eps;
+        !! eps = 0: span{1, t, t ln t}; J in span{x^(-1/2-mu), 1, x^(-1/2+mu)}
+        !! since xi = Phi/x ~ x^(-1/2 +- mu), Glasser, Greene and Johnson, Phys.
+        !! Fluids 18, 875 (1975)); q(psi) is quadratic between half rings.  A strip-
+        !! constant 1/x current misses ln r - 2 (r - 1)/(r + 1) of the net
+        !! current of each strip of ratio r and a ln|x| current its first
+        !! moment; on left/right-asymmetric strip sequences these leave a
+        !! spurious current jump at the rational (Delta' bias).
         type(meridian_feec_t), intent(in) :: fs
         type(meridian_point_basis_t), intent(in) :: pb
         type(flux_mesh_t), intent(in) :: fm
@@ -448,18 +481,32 @@ contains
         complex(dp), intent(in) :: jcur(:, :, :), kap(:)
         integer, intent(in) :: bnd
         complex(dp), intent(out) :: f(:)
+        type(sample_ring_t), intent(in), optional :: rings(:)
+        integer, intent(in), optional :: n
+        integer, intent(in), optional :: res_m(:)
+        real(dp), intent(in), optional :: res_eps(:)
         complex(dp), allocatable :: bl(:, :)
-        real(dp), allocatable :: phi(:, :), ref(:, :)
+        real(dp), allocatable :: phi(:, :), ref(:, :), sinv(:, :, :), tk(:, :)
+        real(dp), allocatable :: dres(:), epsr(:)
+        real(dp) :: dbas(3)
+        integer, allocatable :: i1(:), kres(:)
         real(dp) :: x(2), wq, th, gx(6), gw(6), xi, eta, nh(2), ta, tb
-        real(dp) :: psi, pr, pz, bt
+        real(dp) :: psi, pr, pz, bt, plo, phi2, qv, tt, bas(3), lk(3)
         complex(dp) :: jj(3), kk
-        integer :: nt, t, q, i, st, ir, nl, j, ig, te, jr
+        integer :: nt, t, q, i, st, ir, nl, j, ig, te, jr, nri, k, j1
+        logical :: wres
 
         nt = fs%mm%topology%n_triangles
         nl = fs%nln
+        nri = size(jcur, 3)
+        wres = present(rings) .and. present(n)
+        if (wres) wres = nri >= 3
+        if (wres) call strip_shape_fit(rings(1:nri), n, jcur, i1, kres, dres, tk, sinv, &
+                                       epsr, res_m, res_eps)
         allocate (bl(nl, nt))
         bl = (0.0_dp, 0.0_dp)
-        !$omp parallel default(shared) private(t, q, i, st, ir, jr, x, wq, th, jj, phi)
+        !$omp parallel default(shared) private(t, q, i, st, ir, jr, x, wq, th, jj, phi, &
+        !$omp psi, pr, pz, plo, phi2, qv, tt, bas, dbas, lk, k, j1)
         allocate (phi(3, fs%sp(1)%nloc))
         !$omp do schedule(static)
         do t = fm%tlast(1) + 1, nt
@@ -471,6 +518,26 @@ contains
                 call meridian_qpoint(fs, 1, t, q, x, wq, phi, st)
                 th = atan2(x(2) - g%z_axis, x(1) - g%r_axis)
                 jj = interp3(jcur(:, :, ir), th)
+                if (wres) then
+                    if (i1(ir) > 0) then
+                        ! psi of the point, held inside the strip
+                        call psi_eval(g, x(1), x(2), psi, pr, pz)
+                        plo = g%psi_axis + fm%u(jr - 1)**2*(g%psi_edge - g%psi_axis)
+                        phi2 = g%psi_axis + fm%u(jr)**2*(g%psi_edge - g%psi_axis)
+                        psi = min(max(psi, min(plo, phi2)), max(plo, phi2))
+                        j1 = min(max(ir - 1, 1), nri - 2)
+                        qv = lagrange3(rings(j1:j1 + 2)%psi, rings(j1:j1 + 2)%q, psi)
+                        tt = max((kres(ir) + n*qv)/dres(ir), 1.0e-3_dp)
+                        call frobenius_basis(epsr(ir), tt, bas, dbas)
+                        do k = 1, 3
+                            lk(k) = tk(k, ir)/tt*dot_product(bas, sinv(:, k, ir))
+                        end do
+                        jj = (0.0_dp, 0.0_dp)
+                        do k = 1, 3
+                            jj = jj + lk(k)*interp3(jcur(:, :, i1(ir) + k - 1), th)
+                        end do
+                    end if
+                end if
                 do i = 1, nl
                     bl(i, t) = bl(i, t) + wq*(jj(1)*phi(1, i) + jj(2)*phi(2, i) &
                         + jj(3)*phi(3, i))
@@ -506,6 +573,100 @@ contains
             end do
         end do
     end subroutine ideal_load
+
+    subroutine strip_shape_fit(rings, n, jcur, i1, kres, dres, tk, sinv, epsr, res_m, &
+                               res_eps)
+        !! Per half ring h (see ideal_load): first ring i1(h) of the three
+        !! neighbours of the strip interpolant (0: strip-constant current),
+        !! kres(h), D_h = dres(h), t_k = D_k/D_h of the neighbours and the
+        !! inverse sinv of the matrix of the Frobenius basis (t^-eps, t,
+        !! (t^(1+eps) - t)/eps) at t_k; eps = epsr(h) is the Mercier offset
+        !! sqrt(-D_I) - 1/2 of the rational |m| = |kres(h)| (res_m, res_eps;
+        !! 0 without them), which reduces the basis to [1, t, t ln t].
+        type(sample_ring_t), intent(in) :: rings(:)
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: jcur(:, :, :)
+        integer, allocatable, intent(out) :: i1(:), kres(:)
+        real(dp), allocatable, intent(out) :: dres(:), tk(:, :), sinv(:, :, :), epsr(:)
+        integer, intent(in), optional :: res_m(:)
+        real(dp), intent(in), optional :: res_eps(:)
+        integer :: nr, h, c, k, ii, start(3), l
+        real(dp) :: a(3, 3), det, df(3)
+        logical, allocatable :: live(:)
+        logical :: ok
+
+        nr = size(rings)
+        allocate (i1(nr), kres(nr), dres(nr), tk(3, nr), sinv(3, 3, nr), live(nr), &
+                  epsr(nr))
+        i1 = 0
+        epsr = 0.0_dp
+        tk = 1.0_dp
+        sinv = 0.0_dp
+        do h = 1, nr
+            live(h) = any(abs(jcur(:, :, h)) > 0.0_dp)
+            kres(h) = -nint(n*rings(h)%q)
+            dres(h) = kres(h) + n*rings(h)%q
+            if (present(res_m) .and. present(res_eps)) then
+                do l = 1, min(size(res_m), size(res_eps))
+                    if (abs(res_m(l)) == abs(kres(h))) epsr(h) = res_eps(l)
+                end do
+            end if
+        end do
+        do h = 1, nr
+            if (.not. live(h) .or. abs(dres(h)) <= 0.0_dp) cycle
+            start = [h - 1, h, h - 2]
+            do c = 1, 3
+                ii = start(c)
+                if (ii < 1 .or. ii + 2 > nr) cycle
+                ok = .true.
+                do k = ii, ii + 2
+                    if (.not. live(k) .or. kres(k) /= kres(h)) ok = .false.
+                    if ((kres(h) + n*rings(k)%q)/dres(h) <= 0.0_dp) ok = .false.
+                end do
+                if (.not. ok) cycle
+                do k = 1, 3
+                    tk(k, h) = (kres(h) + n*rings(ii + k - 1)%q)/dres(h)
+                    call frobenius_basis(epsr(h), tk(k, h), a(k, :), df)
+                end do
+                det = det3(a)
+                if (abs(det) < 1.0e-13_dp) cycle
+                call inv3(a, det, sinv(:, :, h))
+                i1(h) = ii
+                exit
+            end do
+        end do
+    end subroutine strip_shape_fit
+
+    pure real(dp) function det3(a)
+        real(dp), intent(in) :: a(3, 3)
+        det3 = a(1, 1)*(a(2, 2)*a(3, 3) - a(2, 3)*a(3, 2)) &
+            - a(1, 2)*(a(2, 1)*a(3, 3) - a(2, 3)*a(3, 1)) &
+            + a(1, 3)*(a(2, 1)*a(3, 2) - a(2, 2)*a(3, 1))
+    end function det3
+
+    pure subroutine inv3(a, det, b)
+        !! b = a^{-1} (adjugate over det).
+        real(dp), intent(in) :: a(3, 3), det
+        real(dp), intent(out) :: b(3, 3)
+        b(1, 1) = a(2, 2)*a(3, 3) - a(2, 3)*a(3, 2)
+        b(1, 2) = a(1, 3)*a(3, 2) - a(1, 2)*a(3, 3)
+        b(1, 3) = a(1, 2)*a(2, 3) - a(1, 3)*a(2, 2)
+        b(2, 1) = a(2, 3)*a(3, 1) - a(2, 1)*a(3, 3)
+        b(2, 2) = a(1, 1)*a(3, 3) - a(1, 3)*a(3, 1)
+        b(2, 3) = a(1, 3)*a(2, 1) - a(1, 1)*a(2, 3)
+        b(3, 1) = a(2, 1)*a(3, 2) - a(2, 2)*a(3, 1)
+        b(3, 2) = a(1, 2)*a(3, 1) - a(1, 1)*a(3, 2)
+        b(3, 3) = a(1, 1)*a(2, 2) - a(1, 2)*a(2, 1)
+        b = b/det
+    end subroutine inv3
+
+    pure real(dp) function lagrange3(xs, ys, x)
+        !! Quadratic through (xs(k), ys(k)), k = 1..3, at x.
+        real(dp), intent(in) :: xs(3), ys(3), x
+        lagrange3 = ys(1)*(x - xs(2))*(x - xs(3))/((xs(1) - xs(2))*(xs(1) - xs(3))) &
+            + ys(2)*(x - xs(1))*(x - xs(3))/((xs(2) - xs(1))*(xs(2) - xs(3))) &
+            + ys(3)*(x - xs(1))*(x - xs(2))/((xs(3) - xs(1))*(xs(3) - xs(2)))
+    end function lagrange3
 
     pure function interp3(arr, theta) result(v)
         !! Periodic linear interpolation of samples at uniform angles.
@@ -574,7 +735,8 @@ contains
         !! rings are phi_ext.
         !!
         !! The sheets are eliminated: with the closure matrix M = W Phi(B_s)
-        !! of the vacuum sheet fields B_s (W the constraint weights), a volume
+        !! + W_l of the vacuum sheet fields B_s (W the constraint weights, W_l
+        !! the direct sheet-amplitude weights of a resistive layer), a volume
         !! field a fixes lam(a) = M^{-1} (target - W (phi_ext + Phi(curl a))),
         !! so the total field B = B_ext + curl a + sum lam_s B_s satisfies the
         !! constraints.  The volume field solves the fixed point
@@ -635,7 +797,7 @@ contains
         end do
         allocate (minv(max(ns, 1), max(ns, 1)))
         if (ns > 0) then
-            wc(1:ns, 1:cl%nf) = cmplx(cl%w, 0.0_dp, dp)
+            wc(1:ns, 1:cl%nf) = cl%w
             minv = (0.0_dp, 0.0_dp)
             do s2 = 1, ns
                 minv(s2, s2) = (1.0_dp, 0.0_dp)
@@ -643,6 +805,7 @@ contains
             block
                 complex(dp) :: mcopy(ns, ns)
                 mcopy = matmul(wc(1:ns, 1:cl%nf), fsheet(1:cl%nf, 1:ns))
+                if (allocated(cl%wl)) mcopy = mcopy + cl%wl
                 if (debug) then
                     do s2 = 1, ns
                         print '(a,i3,20es11.3)', '  M row', s2, abs(mcopy(s2, :))
@@ -686,7 +849,17 @@ contains
             allocate (jc(3, np, nr), kap(np), f(amp%nn))
             call ideal_current(rings, n, g%sgn_dpsi, opt%qlow, bf, jc, kap, bnd, seg, &
                 opt%moved_current)
-            call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f)
+            if (opt%strip_shape) then
+                if (allocated(opt%res_m) .and. allocated(opt%res_eps)) then
+                    call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f, &
+                        rings(1:nr - 1), n, opt%res_m, opt%res_eps)
+                else
+                    call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f, &
+                        rings(1:nr - 1), n)
+                end if
+            else
+                call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f)
+            end if
             call ampere_n_solve(amp, f, y, st2)
         end subroutine apply_k_inv_load
         function lam_hom(av) result(l)
