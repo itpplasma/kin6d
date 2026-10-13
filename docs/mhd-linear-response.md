@@ -103,6 +103,54 @@ equilibrium at the cut. At zero beta the moved current reduces to the
 boundary sheet, checked by the edge-current-jump oracle. On TC24 the moved
 current changes `singflx` by 4–35x (nrad 96).
 
+## Resistive closure with rotation (L5)
+
+`kin6d_mhd_layer_n`, `closure = 'resistive'` in `gs_response_3d`. A separate
+current model on the shared operator (equilibrium-core D5): the outer region
+is the static ideal response above (Ampère operator, coil drive, MEPHIT-form
+volume current, unchanged); each rational keeps the L6 layer and its two edge
+sheets, but their amplitudes follow from matching to the resistive inner
+layer of a rotating plasma instead of ideal shielding:
+
+- continuous large coefficient across the layer, `a1(in) = a1(out) = A`
+  (the reconnected flux of the outer solution);
+- net layer current `J = junit (λ_in + λ_out) = Δ_layer A` (`J` the jump of
+  `dΦ_m/dψ_N`; the sheet amplitudes enter the constraint directly,
+  `sheet_closure_t%wl`).
+
+Layer response. Slab resistive-inertial(-viscous) layer of the MARS-F
+single-fluid model (Doppler rate `γ = −i(ω − nΩ)`, `γ = inΩ` for the static
+coil field), `γ b = iF'x v + (η/μ0) b''`, `γ v'' − ν v'''' = i(F'x/μ0ρ) b''`,
+scaled with `L⁴ = |γ|ρη/F'²` to two parameters `ε = Q^(−3/2)` and `P`
+(viscosity) and solved numerically (finite differences on a sinh grid,
+Richardson): `Δ = Δ̂(γ/|γ|, ε, P)/L` and the flux at the rational relative to
+the matching value, `b(0)/b0` (1 in the constant-ψ regime, small in the
+inertial one). No constant-ψ assumption. Toroidal coefficients are the
+cylinder-equivalent ones: `F' = n|q'|⟨B·∇θ⟩G`, `⟨B·∇θ⟩ = 4π²ψ_o/V'`,
+`G = ⟨|∇ψ_N|²⟩^½`, `Δ_ψN = Δ/G`. Not included: curvature (Glasser) terms
+of the layer (TC24 has `D_I ≈ −0.28`, `μ − 1/2 ≈ 0.03`; the large coefficient
+is referred to the layer edge `δ`), the toroidal inertia enhancement (option
+`inertia_q2`, ρ → ρ(1 + 2q²)), MARS-F's parallel sound-wave damping and
+compressibility, and rotation in the outer region (`γτ_A ≪ 1`).
+
+Limits. η → 0 at fixed Ω does not give L6: it gives the ideal-inertial
+layer, with a finite `Δ` of order `1/x_ii`, `x_ii = |γ|(μ0ρ)^½/F'`
+(dissipated at the Alfvén resonances `|x| = x_ii`); the flux at the rational
+`b(0) → 0`, but the layer current differs from the static ideal one by
+`O(x_ii Δ')`. L6 is recovered as `x_ii → 0`.
+
+Verification (`ctest mhd_resistive_layer_rotation`, `test_mhd_closure
+resistive`):
+
+| Oracle | Result |
+|---|---|
+| constant-ψ RI limit `Δ̂ = 2πΓ(3/4)/Γ(1/4) g^(5/4)/ε`, `g = 1, i, e^(−iπ/4)` | 8e-5 at ε = 1e4, order 1 in 1/ε |
+| layer resolution (Q = 1), `g → ḡ` | 7e-9; conjugate to roundoff |
+| viscous-resistive `Δ̂ ∝ g P^(1/6)/ε` | constant 2.107, 2.116 at P = 1e4, 1e6 (literature 2.104) |
+| cylinder, Wesson `q = 2/1`, static drive, rotating plasma: matched (ODE Δ', drive jump E, layer Δ and `b(0)/b0`) against the full linear resistive reduced-MHD BVP (no matching) | `ψ(r_s)` within 2.6e-3 … 5.4e-3 for Q = 0.18 (constant-ψ), 1.8, 4.6, 11.7 (inertial); Ω → −Ω conjugates |
+| FEEC resistive closure, torus R0/a = 40, against the cylinder BVP | 3.3e-3 (Q = 1.8), 6.2e-3 (Q = 11.7); outer A against the matched cylinder 4.9e-3 |
+| ideal limit: η/μ0 = 8.8e-11 at fixed γ, ρ → ρ/100, ρ/10⁴, layer current against L6 | 4.4e-3, 4.4e-4, 4.4e-5 (order 1/2 in ρ, i.e. 1 in x_ii) |
+
 ## Usage
 
 `gs_response_3d input.nml`, namelist `/l4/`: `eqdsk`, `coils`, `currents`
@@ -110,7 +158,11 @@ current changes `singflx` by 4–35x (nrad 96).
 `order`, `model` (`'shield'` or `'ideal'`), `np_sample`, `qlow`,
 `boundary_sheet`, `rat_pad`/`rat_grade` (rings graded geometrically toward
 each rational), `edge_moved_current`, `closure` (`'sheet'` or `'frobenius'`),
-`layer_delta`, `layer_ratio`, `layer_nfit`, `spot`. With MUMPS the Ampère operator is
+`layer_delta`, `layer_ratio`, `layer_nfit`, `spot`; with `closure =
+'resistive'` also `profiles` (table ψ_N, η [Ω m], ρ [kg/m³], Ω [rad/s]),
+`omega_drive`, `layer_nu`, `eta_scale`, `inertia_q2`, and the output
+`prefix_resist.dat` (Δ_layer, L, Q, A, A/area, layer jump at δ and at spot,
+|Φ_vac|, `b(0)/b0` and the flux at the rational per area `A b(0)/b0/area`). With MUMPS the Ampère operator is
 factored as the real SPD form (1M unknowns at nrad 128). Output `prefix_res.dat`: per phasing and rational surface
 the vacuum resonant flux `Φ_vac` and `b_vac = Φ_vac/area`, the sheet amplitude
 `λ` and `b_shield = −M_ss λ/area`, the resonant flux of the shielding current

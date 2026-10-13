@@ -28,6 +28,19 @@ program test_mhd_closure
     !!     1/(m - n q0 - 1) in the cylinder limit (field-aligned boundary
     !!     sheet = moved current xi_n J0 at zero beta).
     !!  4. Mercier index: D_I = -1/4 exactly at zero pressure gradient.
+    !! Argument "resistive" runs the L5 suite instead (kin6d_mhd_layer_n):
+    !!  5. Scaled layer solver: constant-psi resistive-inertial limit 2 pi
+    !!     Gamma(3/4)/Gamma(1/4) g^(5/4)/eps, resolution, g -> conj(g),
+    !!     viscous-resistive scaling g P^(1/6)/eps.
+    !!  6. Cylinder (Wesson profile, q = 2/1, static drive r^m in a plasma
+    !!     rotating with gamma = i n Omega): the matched response (ODE Delta'
+    !!     and drive jump E, numerical layer Delta and b(0)/b0) against the
+    !!     full linear resistive reduced-MHD BVP (no matching), constant-psi
+    !!     and inertial (Q up to 12) layers; Omega -> -Omega conjugates.
+    !!  7. FEEC resistive closure on the torus R0/a = 40 against the BVP.
+    !!  8. Ideal limit: eta -> 0 at fixed rotation gives the ideal-inertial
+    !!     layer, whose current tends to the L6 closure as the inertial width
+    !!     |gamma| (mu0 rho)^(1/2)/F' -> 0 (order 1/2 in rho).
     !! KIN6D_CLOSURE_STUDY="prof R0 nrad delta ratio maxit nfit" runs one FEEC
     !! Delta' case (convergence studies), "edge" the edge oracle alone.
     !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
@@ -46,6 +59,8 @@ program test_mhd_closure
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
         layer_init, layer_closure, layer_coefficients, layer_regular_slope
+    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
+        layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
     implicit none
 
     real(dp), parameter :: pi = 3.14159265358979323846_dp
@@ -60,10 +75,24 @@ program test_mhd_closure
     type(psi_grid_t) :: g
     logical :: all_passed
     integer :: nrad_fe = 32, gmres_max = 400, nfit_fe = 3
+    character(len=32) :: suite
+    ! L5 resistive layer (SI): mass density, magnetic diffusivity eta/mu0,
+    ! Doppler rate gamma = i n Omega of the static drive
+    real(dp) :: rho_l = 1.0e-7_dp, diff_l = 8.8e-5_dp
+    complex(dp) :: gam_l = (0.0_dp, 300.0_dp)
 
     all_passed = .true.
     call study()
     !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
+    if (command_argument_count() > 0) then
+        call get_command_argument(1, suite)
+        if (trim(suite) == 'resistive') then
+            call resistive_suite()
+            if (.not. all_passed) error stop 1
+            print '(a)', "test_mhd_closure resistive: all checks passed"
+            stop
+        end if
+    end if
     call step_closed_form()
     call mercier_zero_beta()
     call edge_current_jump()
@@ -737,5 +766,464 @@ contains
             ", a1 in/out ", abs(cf(1, 1)), abs(cf(1, 2)), ", log-term asymmetry ", &
             abs(cf(3, 1) + cf(3, 2))/max(abs(cf(3, 1)), tiny(1.0_dp))
     end subroutine fe_delta
+
+    ! ===================================================== L5 resistive layer
+
+    subroutine resistive_suite()
+        !! L5: resistive closure with rotation (kin6d_mhd_layer_n).
+        real(dp) :: rs, dprime, ejump, diffs(3), errc(4), fp, dfe(5), rfe_rho(5)
+        complex(dp) :: rm(4), rb(4), dl(4), rfe(5), jfe(5), cfe(5), cen(4)
+        complex(dp) :: rid, jid
+        type(layer_params_t) :: par
+        real(dp) :: lw, eps, pv, errf(4), errl(3)
+        complex(dp) :: gu
+        integer :: i, st
+        prof = 1
+        q0 = 1.2_dp
+        nmode = 1
+        mres = 2
+        r0 = 40.0_dp
+        call make_tables()
+        call layer_checks()
+        ! cylinder: matched asymptotics against the full resistive BVP
+        rs = r_of_q(real(mres, dp)/nmode)
+        dprime = ode_delta(rs)/rs
+        ejump = ode_drive_jump(rs)
+        fp = cyl_fprime(rs)
+        diffs = 8.8e-5_dp*[1.0_dp, 1.0_dp/16, 1.0_dp/256]
+        print '(a,f10.6,a,f12.6,a,f12.6,a,es11.3)', "  cylinder q = 2 at r_s =", rs, &
+            ": r_s Delta' =", dprime*rs, ", E =", ejump, ", F' =", fp
+        print '(a)', "    flux at the rational over the drive, psi(r_s)/r_s^m: "// &
+            "matched (outer Delta', E; layer Delta, b(0)/b0) vs full BVP"
+        do i = 1, 4
+            if (i == 4) gam_l = gam_l/10
+            par = layer_params_t(gam_l, diffs(min(i, 3)), rho_l, 0.0_dp, fp)
+            if (i == 4) par%diff = diffs(1)
+            call layer_scales(par, lw, eps, pv, gu)
+            dl(i) = layer_delta(par, st, cen(i))
+            rm(i) = ejump/(dl(i) - dprime)/rs**mres*cen(i)
+            diff_l = par%diff
+            rb(i) = bvp_ratio(rs, lw)
+            errc(i) = abs(rm(i) - rb(i))/abs(rb(i))
+            print '(a,es9.2,a,es9.2,a,es9.2,a,f7.3,a,2es11.3,a,2es10.2,a,2es11.3,a,'// &
+                '2es11.3,a,es9.2)', "    gamma/i =", aimag(gam_l), " eta/mu0 =", &
+                par%diff, " L =", lw, " Q =", eps**(-2.0_dp/3), " r_s Delta_layer", &
+                dl(i)*rs, " b(0)/b0", cen(i), " matched", rm(i), " BVP", rb(i), &
+                " rel", errc(i)
+            if (i == 4) gam_l = gam_l*10
+        end do
+        call record(maxval(errc) < 1.0e-2_dp, &
+            "cylinder: matched resistive layer (constant- and non-constant-psi) "// &
+            "against the full resistive BVP")
+        ! conjugate symmetry Omega -> -Omega
+        diff_l = diffs(1)
+        gam_l = conjg(gam_l)
+        rid = bvp_ratio(rs, (abs(gam_l)*rho_l*diff_l*1.25663706212e-6_dp/fp**2)**0.25_dp)
+        gam_l = conjg(gam_l)
+        call record(abs(rid - conjg(rb(1))) < 1.0e-8_dp*abs(rb(1)), &
+            "cylinder BVP: Omega -> -Omega conjugates the response")
+        ! FEEC torus R0/a = 40 against the cylinder BVP; ideal limit
+        call make_equilibrium()
+        dfe = [diffs(1), diffs(3), 8.8e-11_dp, 8.8e-11_dp, 8.8e-11_dp]
+        rfe_rho = rho_l*[1.0_dp, 1.0_dp, 1.0_dp, 1.0e-2_dp, 1.0e-4_dp]
+        call fe_resistive(dfe, rfe_rho, rs, rfe, jfe, cfe, rid, jid)
+        do i = 1, 2
+            errf(i) = abs(rfe(i)*cfe(i) - rb(2*i - 1))/abs(rb(2*i - 1))
+            errf(i + 2) = abs(rfe(i)*rs**mres - ejump/(dl(2*i - 1) - dprime)) &
+                /abs(ejump/(dl(2*i - 1) - dprime))
+            print '(a,es9.2,a,2es11.3,a,2es11.3,a,es9.2,a,es9.2)', "    FEEC eta/mu0 =", &
+                dfe(i), ": b(0)/drive", rfe(i)*cfe(i), " BVP", rb(2*i - 1), " rel", &
+                errf(i), "; outer A vs matched cylinder rel", errf(i + 2)
+        end do
+        call record(maxval(errf(1:2)) < 3.0e-2_dp, &
+            "FEEC resistive closure against the cylinder BVP (R0/a = 40)")
+        do i = 1, 3
+            errl(i) = abs(jfe(2 + i) - jid)/abs(jid)
+            print '(a,es9.2,a,es9.2,a,2es11.3,a,2es11.3,a,es9.2,a,es9.2)', &
+                "    eta/mu0 =", dfe(2 + i), " rho =", rfe_rho(2 + i), &
+                ": layer jump", jfe(2 + i), " L6", jid, " rel", errl(i), &
+                ", |b(0)/drive|", abs(rfe(2 + i)*cfe(2 + i))
+        end do
+        print '(a,f6.2)', "    order in rho:", log(errl(1)/errl(3))/log(1.0e4_dp)
+        call record(errl(3) < 1.0e-3_dp .and. errl(3) < errl(2) .and. &
+            errl(2) < errl(1), &
+            "ideal limit: eta -> 0 gives the ideal-inertial layer; its current "// &
+            "tends to the L6 closure as the inertial width -> 0")
+    end subroutine resistive_suite
+
+    subroutine layer_checks()
+        !! Scaled layer solver against the constant-psi resistive-inertial
+        !! closed form, Richardson resolution, symmetry, viscous scaling.
+        complex(dp) :: gs(3), d, dc, d1, d2, dv(2)
+        real(dp) :: eps(3), err(3, 3)
+        integer :: i, k, st
+        gs = [(1.0_dp, 0.0_dp), (0.0_dp, 1.0_dp), &
+            cmplx(1.0_dp, -1.0_dp, dp)/sqrt(2.0_dp)]
+        eps = [1.0e2_dp, 1.0e3_dp, 1.0e4_dp]
+        do k = 1, 3
+            do i = 1, 3
+                d = layer_scaled_delta(gs(k), eps(i), 0.0_dp, st)
+                dc = layer_ri_constant_psi(gs(k), eps(i))
+                err(i, k) = abs(d/dc - 1)
+            end do
+            print '(a,2f7.3,a,3es10.2)', "  layer g =", gs(k), &
+                ": |Dhat/constant-psi - 1| at eps 1e2, 1e3, 1e4:", err(:, k)
+        end do
+        print '(a,f6.2)', "    order in 1/eps:", log(err(1, 1)/err(3, 1))/log(100.0_dp)
+        call record(maxval(err(3, :)) < 2.0e-3_dp .and. all(err(3, :) < err(1, :)), &
+            "layer: constant-psi limit 2 pi Gamma(3/4)/Gamma(1/4) g^(5/4)/eps")
+        d1 = layer_scaled_delta(gs(2), 1.0_dp, 0.0_dp, st, 1000)
+        d2 = layer_scaled_delta(gs(2), 1.0_dp, 0.0_dp, st, 4000)
+        print '(a,2es14.6,a,es9.2)', "  layer eps = 1, g = i:", d2, &
+            "  Richardson 1000 vs 4000:", abs(d1 - d2)/abs(d2)
+        call record(abs(d1 - d2) < 1.0e-6_dp*abs(d2), "layer: resolution (Q = 1)")
+        d1 = layer_scaled_delta(conjg(gs(2)), 1.0_dp, 0.0_dp, st, 4000)
+        call record(abs(d1 - conjg(d2)) < 1.0e-10_dp*abs(d2), &
+            "layer: g -> conj(g) conjugates Dhat")
+        ! viscous, constant psi, inertia-free: Dhat = c_vr g P^(1/6)/eps
+        do i = 1, 2
+            dv(i) = layer_scaled_delta(gs(1), 1.0e4_dp, 1.0e4_dp*100.0_dp**(i - 1), st) &
+                *1.0e4_dp/(1.0e4_dp*100.0_dp**(i - 1))**(1.0_dp/6)
+        end do
+        d = layer_scaled_delta(gs(2), 1.0e4_dp, 1.0e6_dp, st)*1.0e4_dp/1.0e6_dp**(1.0_dp/6)
+        print '(a,2f10.5,a,2f10.5)', "  viscous-resistive constant: P = 1e4, 1e6:", &
+            real(dv), "; g = i:", d
+        call record(abs(dv(2) - dv(1)) < 2.0e-2_dp*abs(dv(2)) .and. &
+            abs(d/dv(2) - (0.0_dp, 1.0_dp)) < 2.0e-2_dp, &
+            "layer: viscous-resistive scaling g P^(1/6)/eps")
+    end subroutine layer_checks
+
+    real(dp) function cyl_fprime(rs)
+        !! |dF/dr| at r_s, F = (m/r) B_theta (1 - n q/m), B_theta = (2 B0/(R0
+        !! q0)) I/r: |F'| = (B_theta/r) n q'.
+        real(dp), intent(in) :: rs
+        real(dp) :: bt, dq
+        bt = 2.0_dp*b0/(r0*q0)*ival(rs)/rs
+        dq = qcyl(rs)*(2.0_dp/rs - jprof(rs)*rs/ival(rs))
+        cyl_fprime = bt/rs*nmode*dq
+    end function cyl_fprime
+
+    real(dp) function ode_drive_jump(rs)
+        !! E: slope at r_s+ of the outer solution with zero resonant flux
+        !! (small solution only) and the vacuum field r^m + c r^-m outside
+        !! (no wall), extrapolated in the matching distance.
+        real(dp), intent(in) :: rs
+        integer, parameter :: ne = 5
+        real(dp) :: eta(ne), y1(2), y2(2), am(ne, 3), rhs(ne), work(64), c
+        integer :: i, info
+        do i = 1, ne
+            eta(i) = 1.0e-3_dp*0.25_dp**(i - 1)
+            y1 = [1.0_dp, real(mres, dp)]
+            y2 = [1.0_dp, -real(mres, dp)]
+            call integrate(1.0_dp, rs + eta(i), y1)
+            call integrate(1.0_dp, rs + eta(i), y2)
+            c = -y1(1)/y2(1)
+            rhs(i) = y1(2) + c*y2(2)
+            am(i, :) = [1.0_dp, eta(i)*log(eta(i)), eta(i)]
+        end do
+        call dgels('N', ne, 3, 1, am, ne, rhs, ne, work, size(work), info)
+        ode_drive_jump = rhs(1)
+    end function ode_drive_jump
+
+    complex(dp) function bvp_ratio(rs, lw)
+        !! psi(r_s)/r_s^m of the full cylindrical resistive response to the
+        !! external field r^m (Richardson in the grid).
+        real(dp), intent(in) :: rs, lw
+        complex(dp) :: p1, p2
+        p1 = bvp_solve(rs, lw, 1500)
+        p2 = bvp_solve(rs, lw, 3000)
+        bvp_ratio = (4*p2 - p1)/3/rs**mres
+    end function bvp_ratio
+
+    complex(dp) function bvp_solve(rs, lw, nside)
+        !! Linear resistive reduced MHD in the periodic cylinder (uniform
+        !! rho, eta/mu0 = diff_l, Doppler rate gam_l), harmonic (m, n):
+        !!   D L psi - gamma psi + i F phi = 0,
+        !!   gamma rho mu0 L phi - i (F L psi - (m/r) mu0 J' psi) = 0,
+        !! L = d^2/dr^2 + (1/r) d/dr - m^2/r^2, regular at r = 0, vacuum
+        !! outside r = 1 with the field r^m + c r^-m (psi' + m psi = 2 m),
+        !! phi = -i gamma psi/F at r = 1.  Second-order finite differences
+        !! on a grid graded at r_s to the layer scale lw.
+        real(dp), intent(in) :: rs, lw
+        integer, intent(in) :: nside
+        real(dp), allocatable :: r(:)
+        complex(dp), allocatable :: ab(:, :), rhs(:, :)
+        integer, allocatable :: ipiv(:)
+        integer, parameter :: kl = 4, ku = 4
+        integer :: nn, nu, j, k, info, ncol, cols(6)
+        real(dp) :: c1, c2, hm, hp, d1(3), d2(3), lap(3), f, rr, bt, mj, h1, h2
+        complex(dp) :: vals(6)
+        real(dp), parameter :: mu0l = 1.25663706212e-6_dp
+
+        nn = 2*nside
+        allocate (r(0:nn))
+        c1 = grading_t(rs, lw/20, nside)
+        c2 = grading_t(1.0_dp - rs, lw/20, nside)
+        do k = 0, nside
+            r(nside - k) = rs - rs*sinh(c1*k/real(nside, dp))/sinh(c1)
+            r(nside + k) = rs + (1.0_dp - rs)*sinh(c2*k/real(nside, dp))/sinh(c2)
+        end do
+        r(0) = 0.0_dp
+        nu = 2*(nn + 1)
+        allocate (ab(2*kl + ku + 1, nu), rhs(nu, 1), ipiv(nu))
+        ab = (0.0_dp, 0.0_dp)
+        rhs = (0.0_dp, 0.0_dp)
+        call setrow(ab, rhs, kl, ku, 1, [1], [(1.0_dp, 0.0_dp)], (0.0_dp, 0.0_dp))
+        call setrow(ab, rhs, kl, ku, 2, [2], [(1.0_dp, 0.0_dp)], (0.0_dp, 0.0_dp))
+        do j = 1, nn - 1
+            hm = r(j) - r(j - 1)
+            hp = r(j + 1) - r(j)
+            rr = r(j)
+            d1 = [-hp/(hm*(hm + hp)), (hp - hm)/(hm*hp), hm/(hp*(hm + hp))]
+            d2 = [2/(hm*(hm + hp)), -2/(hm*hp), 2/(hp*(hm + hp))]
+            lap = d2 + d1/rr
+            lap(2) = lap(2) - mres**2/rr**2
+            bt = 2.0_dp*b0/(r0*q0)*ival(rr)/rr
+            f = mres*bt/rr - nmode*b0/r0
+            mj = mres/rr*2.0_dp*b0/(r0*q0)*djprof(rr)
+            cols = [ix(j - 1, 1), ix(j, 1), ix(j + 1, 1), ix(j, 2), 0, 0]
+            vals(1:4) = [cmplx(diff_l*lap(1), 0.0_dp, dp), diff_l*lap(2) - gam_l, &
+                cmplx(diff_l*lap(3), 0.0_dp, dp), cmplx(0.0_dp, f, dp)]
+            call setrow(ab, rhs, kl, ku, ix(j, 1), cols(1:4), vals(1:4), (0.0_dp, 0.0_dp))
+            cols = [ix(j - 1, 2), ix(j, 2), ix(j + 1, 2), ix(j - 1, 1), ix(j, 1), &
+                ix(j + 1, 1)]
+            vals(1:3) = gam_l*rho_l*mu0l*lap
+            vals(4:6) = cmplx(0.0_dp, -f, dp)*lap
+            vals(5) = vals(5) + cmplx(0.0_dp, mj, dp)
+            call setrow(ab, rhs, kl, ku, ix(j, 2), cols, vals, (0.0_dp, 0.0_dp))
+        end do
+        ! r = 1: psi' + m psi = 2 m, phi = -i gamma psi/F
+        h1 = r(nn) - r(nn - 1)
+        h2 = r(nn - 1) - r(nn - 2)
+        d1 = [h1/(h2*(h1 + h2)), -(h1 + h2)/(h1*h2), (2*h1 + h2)/(h1*(h1 + h2))]
+        cols(1:3) = [ix(nn - 2, 1), ix(nn - 1, 1), ix(nn, 1)]
+        vals(1:3) = cmplx(d1, 0.0_dp, dp)
+        vals(3) = vals(3) + mres
+        call setrow(ab, rhs, kl, ku, ix(nn, 1), cols(1:3), vals(1:3), cmplx(2.0_dp*mres, 0.0_dp, dp))
+        bt = 2.0_dp*b0/(r0*q0)*ival(1.0_dp)
+        f = mres*bt - nmode*b0/r0
+        call setrow(ab, rhs, kl, ku, ix(nn, 2), [ix(nn, 2), ix(nn, 1)], &
+            [(1.0_dp, 0.0_dp), cmplx(0.0_dp, 1.0_dp, dp)*gam_l/f], (0.0_dp, 0.0_dp))
+        call zgbsv(nu, kl, ku, 1, ab, size(ab, 1), ipiv, rhs, nu, info)
+        if (info /= 0) error stop "bvp"
+        bvp_solve = rhs(ix(nside, 1), 1)
+    end function bvp_solve
+
+    pure integer function ix(jj, iv)
+        integer, intent(in) :: jj, iv
+        ix = 2*jj + iv
+    end function ix
+
+    subroutine setrow(ab, rhs, kl, ku, i, cc, vv, b)
+        !! Row i of a banded system, equilibrated by its largest entry.
+        complex(dp), intent(inout) :: ab(:, :), rhs(:, :)
+        integer, intent(in) :: kl, ku, i, cc(:)
+        complex(dp), intent(in) :: vv(:), b
+        real(dp) :: mx
+        integer :: q
+        mx = maxval(abs(vv))
+        do q = 1, size(cc)
+            ab(kl + ku + 1 + i - cc(q), cc(q)) = ab(kl + ku + 1 + i - cc(q), cc(q)) &
+                + vv(q)/mx
+        end do
+        rhs(i, 1) = b/mx
+    end subroutine setrow
+
+    real(dp) function grading_t(len, h0, n) result(c)
+        !! c with len c/(n sinh c) = h0.
+        real(dp), intent(in) :: len, h0
+        integer, intent(in) :: n
+        real(dp) :: lo, hi, mid
+        integer :: it
+        lo = 1.0e-8_dp
+        hi = 300.0_dp
+        do it = 1, 200
+            mid = 0.5_dp*(lo + hi)
+            if (len*mid/(n*sinh(mid)) > h0) then
+                lo = mid
+            else
+                hi = mid
+            end if
+        end do
+        c = 0.5_dp*(lo + hi)
+    end function grading_t
+
+    subroutine fe_resistive(diffs, rhos, rs_cyl, rfe, jfe, cfe, rid, jid)
+        !! FEEC response to the drive r^m e^{-i m theta} with the resistive
+        !! closure at q = mres/nmode (other rationals ideal) for the
+        !! diffusivities diffs, and the ideal L6 closure: Phi_s/Phi_vac
+        !! (reconnected over drive resonant flux) and the layer jump of d Phi/
+        !! d psin.
+        use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+            ring_flux_from_values, ring_points
+        real(dp), intent(in) :: diffs(:), rhos(:), rs_cyl
+        complex(dp), intent(out) :: rfe(:), jfe(:), cfe(:), rid, jid
+        integer, parameter :: np = 256
+        real(dp), parameter :: delta = 1.0e-3_dp, ratio = 1.5_dp
+        type(flux_mesh_t) :: fm
+        type(meridian_feec_t) :: fs
+        type(meridian_point_basis_t) :: pb
+        type(ampere_n_t) :: amp
+        type(ideal_options_t) :: opt
+        type(sample_ring_t), allocatable :: sr(:)
+        type(rational_layer_t), allocatable :: lays(:)
+        type(sheet_closure_t) :: cl0, cl
+        type(surface_t) :: s
+        type(ring_angles_t) :: rar
+        type(layer_params_t) :: par
+        real(dp), allocatable :: ul(:), extra(:), lab(:), psin_s(:)
+        real(dp), allocatable :: xg(:, :), nds(:, :), th(:), tau(:), wq(:)
+        integer, allocatable :: tg(:)
+        complex(dp), allocatable :: a(:), f(:), b2(:), b2cl(:, :), lam(:), phit(:)
+        complex(dp), allocatable :: phe(:), junit(:), dlay(:), bcv(:)
+        complex(dp) :: cf(3, 2), phivac, bb(3)
+        integer, allocatable :: mr(:)
+        real(dp) :: qsgn, qt, di, qa, dq, res, x, vp, bth, gp
+        integer :: nr, j, l, st, info, its, nrat, k, base, itest, ic, kk
+        logical :: found
+
+        call surface_build(g, 0.25_dp, 256, s, st)
+        qsgn = sign(1.0_dp, s%q)
+        msgn = qsgn
+        allocate (psin_s(0), mr(0))
+        do k = 1, 20
+            qt = real(k, dp)/nmode
+            found = find_surface_q(g, qsgn*qt, 0.02_dp, 0.98_dp, 256, 1.0e-13_dp, &
+                x, st)
+            if (.not. found) cycle
+            psin_s = [psin_s, x]
+            mr = [mr, nint(qsgn*qt*nmode)]
+            if (k == mres) itest = size(mr)
+        end do
+        nrat = size(mr)
+        extra = sqrt(psin_s)
+        do l = 1, nrat
+            qa = 2*sqrt(psin_s(l))/(nrad_fe*(ratio - 1))
+            do k = 1, nrat
+                if (k /= l) qa = min(qa, 0.45_dp*abs(psin_s(k) - psin_s(l)))
+            end do
+            call layer_labels(psin_s(l), delta, ratio, qa, (0.5_dp/nrad_fe)**2, &
+                (1 - 0.5_dp/nrad_fe)**2, lab)
+            extra = [extra, sqrt(lab)]
+        end do
+        call ring_labels_merge(nrad_fe, extra, 0.3_dp, ul)
+        call ring_labels_smooth(ul, 2*ratio)
+        nr = size(ul)
+        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        if (st /= 0) error stop "mesh"
+        call meridian_feec_build(fm%mm, 2, fs, st)
+        call ampere_n_build(fs, nmode, amp, st)
+        if (st /= 0) error stop "ampere"
+        call meridian_point_basis_init(fs, pb, st)
+        allocate (lays(nrat), junit(nrat), dlay(nrat))
+        do l = 1, nrat
+            call mercier_di(g, psin_s(l), 512, di, qa, dq, st)
+            if (st /= 0) error stop "Mercier"
+            if (l == itest) then
+                call layer_metrics(g, psin_s(l), 1024, vp, bth, gp, st)
+                par = layer_params_t(gam_l, diffs(1), rho_l, 0.0_dp, &
+                    nmode*abs(dq)*bth*gp)
+                print '(a,es12.4,a,es12.4)', "    torus F' =", par%fprime, &
+                    ", cylinder F' =", cyl_fprime(rs_cyl)
+            end if
+            call layer_init(ul, psin_s(l), real(abs(mr(l)), dp)/nmode, dq, di, mr(l), &
+                delta, ratio, nfit_fe, lays(l), st)
+            if (st /= 0) error stop "layer"
+        end do
+        call layer_closure(g, ul, lays, 1024, 2, cl0, st)
+        if (st /= 0) error stop "closure"
+        allocate (a(amp%nn), f(amp%nn), b2cl(fs%sp(2)%ndof, cl0%ns))
+        do j = 1, cl0%ns
+            f = (0.0_dp, 0.0_dp)
+            call ring_sheet_load(fs, pb, fm, cl0%sheet_ring(j), cl0%sheet_ra(j), &
+                nmode, cl0%sheet_m(j), (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            call ampere_n_curl(amp, a, b2)
+            b2cl(:, j) = b2
+        end do
+        ! jump of d Phi/d psin per unit sheet on each rational ring
+        base = 0
+        do l = 1, nrat
+            f = (0.0_dp, 0.0_dp)
+            call ring_sheet_load(fs, pb, fm, lays(l)%ring_rat, cl0%sheet_ra(2*l - 1), &
+                nmode, mr(l), (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            call ampere_n_curl(amp, a, b2)
+            phe = closure_fluxes(fs, pb, fm, cl0, nmode, b2)
+            junit(l) = layer_regular_slope(lays(l), &
+                reshape(phe(base + 1:base + 2*nfit_fe), [nfit_fe, 2]))
+            base = base + 2*nfit_fe
+        end do
+        allocate (sr(nr))
+        do j = 2, nr
+            call sample_ring_build(g, opt, fm, fs, pb, 0.5_dp*(ul(j - 1) + ul(j)), j, &
+                np, sr(j - 1), st)
+            if (st /= 0) error stop "half ring"
+            do l = 1, nrat
+                if (sr(j - 1)%u > ul(lays(l)%ring(1, 1)) .and. &
+                    sr(j - 1)%u < ul(lays(l)%ring(1, 2))) sr(j - 1)%active = .false.
+            end do
+        end do
+        call sample_ring_build(g, opt, fm, fs, pb, 1.0_dp, nr, np, sr(nr), st)
+        do j = 1, nr
+            do k = 1, np
+                call drive(sr(j)%x(:, k), sr(j)%bc(:, k))
+            end do
+        end do
+        ! drive fluxes on the closure rings and on the rational ring
+        if (allocated(phe)) deallocate (phe)
+        allocate (phe(cl0%nf))
+        do kk = 1, cl0%nf
+            call ring_points(fm, cl0%flux_ring(kk), xg, nds, th, tg, tau, wq)
+            allocate (bcv(size(th)))
+            do k = 1, size(th)
+                call drive(xg(:, k), bb)
+                bcv(k) = (bb(1)*nds(1, k) + bb(3)*nds(2, k))*xg(1, k)
+            end do
+            phe(kk) = ring_flux_from_values(cl0%flux_ra(kk), nmode, cl0%flux_m(kk), &
+                th, bcv, wq)
+            deallocate (bcv)
+        end do
+        call surface_build(g, ul(lays(itest)%ring_rat)**2, 1024, s, st)
+        call ring_angles_set(s%q, s%theta_s(:, 2), s%nu, rar)
+        call ring_points(fm, lays(itest)%ring_rat, xg, nds, th, tg, tau, wq)
+        allocate (bcv(size(th)))
+        do k = 1, size(th)
+            call drive(xg(:, k), bb)
+            bcv(k) = (bb(1)*nds(1, k) + bb(3)*nds(2, k))*xg(1, k)
+        end do
+        phivac = ring_flux_from_values(rar, nmode, mr(itest), th, bcv, wq)
+        base = 2*nfit_fe*(itest - 1)
+        allocate (lam(cl0%ns), phit(cl0%nf))
+        do ic = 0, size(diffs)
+            cl = cl0
+            if (ic > 0) then
+                dlay = (1.0e30_dp, 0.0_dp)
+                par%diff = diffs(ic)
+                par%rho = rhos(ic)
+                dlay(itest) = layer_delta(par, st, cfe(ic))/gp
+                if (st /= 0) error stop "layer solve"
+                call resistive_closure(lays, dlay, junit, cl)
+            end if
+            a = (0.0_dp, 0.0_dp)
+            call ideal_response(fs, pb, fm, g, amp, opt, nmode, sr, cl, b2cl, phe, a, &
+                lam, phit, 1.0e-7_dp, gmres_max, info, its, res)
+            print '(a,i3,a,i3,a,i5,a,es9.2)', "    FEEC case", ic, ": info", info, &
+                ", GMRES", its, ", residual", res
+            call record(info == 0, "GMRES converged")
+            cf = layer_coefficients(lays(itest), &
+                reshape(phit(base + 1:base + 2*nfit_fe), [nfit_fe, 2]))
+            if (ic == 0) then
+                rid = 0.5_dp*(cf(1, 1) + cf(1, 2))/phivac
+                jid = (lam(2*itest - 1) + lam(2*itest))*junit(itest)
+            else
+                rfe(ic) = 0.5_dp*(cf(1, 1) + cf(1, 2))/phivac
+                jfe(ic) = (lam(2*itest - 1) + lam(2*itest))*junit(itest)
+                print '(a,es9.2,a,2es11.3,a,es9.2,a,i4)', "    FEEC eta/mu0", &
+                    diffs(ic), ": Delta_psin", dlay(itest), " |a1 in - out|/|a1|", &
+                    abs(cf(1, 1) - cf(1, 2))/abs(cf(1, 1)), " GMRES", its
+            end if
+        end do
+    end subroutine fe_resistive
 
 end program test_mhd_closure
