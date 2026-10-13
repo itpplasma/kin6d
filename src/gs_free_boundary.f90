@@ -195,7 +195,7 @@ module kin6d_gs_free_boundary
     public :: gs_fb_refit_solve, gs_fb_trace_lcfs, gs_fb_refit_mesh
     public :: gs_fb_chain_movement
     public :: gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply
-    public :: gs_fb_factor, gs_fb_solve, gs_fb_release, gs_fb_newton
+    public :: gs_fb_factor, gs_fb_solve, gs_fb_solve_block, gs_fb_release, gs_fb_newton
     public :: gs_fb_interface_mass, gs_fb_lcfs_levels
     public :: gs_fb_locate
 
@@ -1557,6 +1557,59 @@ contains
         end if
         status = GS_FB_OK
     end subroutine gs_fb_solve
+
+    subroutine gs_fb_solve_block(sys, ev, fac, rhs, solution, status)
+        !! solution(:, k) = J^{-1} rhs(:, k) for every column. A MUMPS factor
+        !! is solved with one threaded block solve (its handle is not safe to
+        !! share between threads); SuperLU solves are threaded over columns.
+        type(gs_fb_system_t), intent(in) :: sys
+        type(gs_fb_eval_t), intent(in) :: ev
+        type(gs_fb_factor_t), intent(inout) :: fac
+        real(dp), intent(in) :: rhs(:, :)
+        real(dp), intent(out) :: solution(:, :)
+        integer, intent(out) :: status
+        real(dp), allocatable :: y(:, :)
+        real(dp) :: c(2, 2), det, w(2), d(2)
+        integer, allocatable :: stats(:)
+        integer :: k, nrhs
+        logical :: ok
+
+        status = GS_FB_BAD_INPUT
+        if (.not. fac%ready) return
+        nrhs = size(rhs, 2)
+        if (.not. fac%use_direct) then
+            allocate (stats(nrhs))
+            stats = GS_FB_OK
+            !$omp parallel do default(shared) private(k) schedule(dynamic, 1)
+            do k = 1, nrhs
+                call gs_fb_solve(sys, ev, fac, rhs(:, k), solution(:, k), stats(k))
+            end do
+            !$omp end parallel do
+            status = GS_FB_OK
+            if (any(stats /= GS_FB_OK)) status = GS_FB_FACTOR_FAILED
+            return
+        end if
+        allocate (y(sys%n, nrhs))
+        call gs_direct_solve_block(fac%direct, rhs, y, ok)
+        if (.not. ok) then
+            status = GS_FB_FACTOR_FAILED
+            return
+        end if
+        c = fac%schur
+        det = c(1, 1)*c(2, 2) - c(1, 2)*c(2, 1)
+        if (abs(det) <= 1.0e-14_dp*max(1.0_dp, abs(c(1, 1)*c(2, 2)))) then
+            status = GS_FB_FACTOR_FAILED
+            return
+        end if
+        !$omp parallel do default(shared) private(k, w, d) schedule(static)
+        do k = 1, nrhs
+            w = [dot_product(ev%ga, y(:, k)), dot_product(ev%gb, y(:, k))]
+            d = [c(2, 2)*w(1) - c(1, 2)*w(2), -c(2, 1)*w(1) + c(1, 1)*w(2)]/det
+            solution(:, k) = y(:, k) + fac%z(:, 1)*d(1) + fac%z(:, 2)*d(2)
+        end do
+        !$omp end parallel do
+        status = GS_FB_OK
+    end subroutine gs_fb_solve_block
 
     subroutine gs_fb_release(fac)
         type(gs_fb_factor_t), intent(inout) :: fac
