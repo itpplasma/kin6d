@@ -7,11 +7,14 @@ module kin6d_gs_direct
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, sparse_solve_block, sparse_factor_stats, sparse_factor_stats_t, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_SPD, &
-        FORTSPARSE_SYM_INDEFINITE
+        FORTSPARSE_SYM_INDEFINITE, FORTSPARSE_ORDER_AMD, FORTSPARSE_ORDER_ND
     implicit none
     private
     public :: gs_direct_t, gs_direct_available, gs_direct_factor, gs_direct_solve
-    public :: gs_direct_free, gs_direct_solve_block, GS_DIRECT_SPD, GS_DIRECT_INDEFINITE
+    public :: gs_direct_free, gs_direct_solve_block, GS_DIRECT_SPD, GS_DIRECT_INDEFINITE, &
+        GS_DIRECT_ORDER_AMD, GS_DIRECT_ORDER_ND
+    integer, parameter :: GS_DIRECT_ORDER_AMD = FORTSPARSE_ORDER_AMD
+    integer, parameter :: GS_DIRECT_ORDER_ND = FORTSPARSE_ORDER_ND
     integer, parameter :: GS_DIRECT_SPD = FORTSPARSE_SYM_SPD
     integer, parameter :: GS_DIRECT_INDEFINITE = FORTSPARSE_SYM_INDEFINITE
     type :: gs_direct_t
@@ -29,7 +32,7 @@ contains
         available = .true.
     end function
 
-    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, symmetry)
+    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, symmetry, ordering)
 !$      use omp_lib
         ! Factor the full symmetric matrix given as CSR (identical to CSC by
         ! symmetry): positive definite Cholesky by default, LDL^T with
@@ -39,7 +42,7 @@ contains
         integer, intent(in) :: n, rowptr(:), colidx(:)
         real(dp), intent(in) :: val(:)
         logical, intent(out) :: ok
-        integer, intent(in), optional :: symmetry
+        integer, intent(in), optional :: symmetry, ordering
         type(fortsparse_status_t) :: status
         type(sparse_factor_stats_t) :: stats
         call gs_direct_free(direct)
@@ -47,6 +50,7 @@ contains
         direct%solver%refine = .false.
         direct%solver%options%symmetry = FORTSPARSE_SYM_SPD
         if (present(symmetry)) direct%solver%options%symmetry = symmetry
+        if (present(ordering)) direct%solver%options%ordering = ordering
         ! A fixed thread count: MUMPS keeps its tree-parallel layout per thread,
         ! so factor and solves must run with the same count even if the caller
         ! changes the OpenMP thread number in between.
