@@ -22,7 +22,7 @@ program test_ideal_map_axisymmetric
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
-        ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual
+        ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
@@ -40,7 +40,7 @@ program test_ideal_map_axisymmetric
     integer :: quadrature_order = 7
     integer :: axis_degree = -1, axis_power = 1
     real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
-    real(dp) :: seed_tolerance = 1.0e-8_dp
+    real(dp) :: seed_tolerance = 1.0e-6_dp
     integer :: max_newton = 200
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
@@ -331,6 +331,19 @@ contains
             error stop 'solution residual order'
     end subroutine
 
+    real(dp) function reduced_gradient_norm(map) result(norm)
+        ! Free reduced-gradient norm of the current map.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), allocatable :: g(:), gr(:)
+        real(dp) :: energy
+        integer :: status
+        allocate (g(map%ndof), gr(map%nred))
+        call ideal_map_energy(map, map%x, energy, status, g)
+        call ideal_map_reduce(map, g, gr)
+        where (map%fixed) gr = 0
+        norm = norm2(gr)
+    end function
+
     subroutine seed_diagnosis()
         ! A3 only. Separates the map space from the solve: X* = P(xi(y)) with
         ! P(xi) = (sqrt(R0^2 + 2 R0 a xi1), R0 a xi2/R) is a smooth exact map
@@ -405,6 +418,8 @@ contains
         logical, intent(in), optional :: sequenced
         type(gs_state_t) :: state
         type(ideal_map_t) :: map, previous
+        type(ideal_map_solve_report_t) :: first
+        real(dp) :: seed_gradient
         type(ideal_map_solve_report_t) :: report
         real(dp) :: errors(4, 3), rates(4), elapsed
         integer :: mesh, n, status, base
@@ -417,6 +432,7 @@ contains
             call make_mesh(n, degree, state)
             call system_clock(start, rate)
             call build_map(state, 1, 0, map, field)
+            if (present(sequenced)) seed_gradient = reduced_gradient_norm(map)
             if (present(sequenced) .and. mesh > 1) then
                 if (sequenced) then
                     call ideal_map_prolong(map, previous, status)
@@ -424,6 +440,23 @@ contains
                 end if
             end if
             call solve_map(map, report, verbose_solve)
+            if (present(sequenced)) then
+                ! Polish in the position gauge (omega frozen, full poloidal
+                ! motion; no relabelling near-null) to 1e-10 of the gradient of
+                ! the seed (X0 = id) on this mesh, so the end point does not
+                ! depend on the path.
+                first = report
+                call ideal_map_position_gauge(map)
+                call ideal_map_solve(map, 1.0e-10_dp, max_newton, report, status, &
+                    verbose_solve, reference_gradient=seed_gradient)
+                if (status /= 0) then
+                    print *, 'polish status', status, report%iterations, report%gradient
+                    error stop 'position-gauge polish'
+                end if
+                print '(a,2i5,es12.4)', '  newton (transversal, polish), final |g|/g0 ', &
+                    first%iterations, report%iterations, report%gradient
+                report%iterations = report%iterations + first%iterations
+            end if
             previous = map
             call system_clock(finish)
             elapsed = real(finish - start, dp)/rate
