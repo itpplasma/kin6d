@@ -252,6 +252,11 @@ Each milestone pairs a derivation with an existing KIN6D experiment:
   to first order, then the gyrokinetic ordering.
 - T6 Lenard--Balescu -> Landau -> Rosenbluth; conservation and H-theorem,
   with a Lean target for the structural identities.
+- T7 drift kinetics -> radially local DK in (theta, alpha, lambda, x) with
+  the finite-shear term -> bounce-averaged precession (NEO-RT Om_tB, shear
+  on/off) and the quasilinear switch set; trapped branch limit-checked
+  ([DK0](../theory/derivations/drift-kinetics-dk0.md),
+  [drift-kinetics.md](drift-kinetics.md)).
 
 Errata found against cited textbooks or papers are recorded in a ledger
 next to the derivation, with the exact reference and the checked correction.

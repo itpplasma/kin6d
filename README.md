@@ -423,6 +423,7 @@ Read [DESIGN.md](DESIGN.md) for the canonical architecture and
 - [Species models](docs/species-models.md)
 - [Moment models](docs/moment-models.md)
 - [Collisions](docs/collisions.md)
+- [Drift kinetics: local neoclassical transport and NTV](docs/drift-kinetics.md)
 - [Numerics](docs/numerics.md)
 - [Differentiability](docs/differentiability.md)
 - [Adjoints and structure](docs/adjoints-structure.md)
