@@ -914,6 +914,15 @@ target_link_libraries(test_gs_readback_order PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_readback_order COMMAND test_gs_readback_order 2)
 add_test(NAME grad_shafranov_p3_readback_order COMMAND test_gs_readback_order 3)
 
+add_executable(test_gs_readback_free test/test_gs_readback_free.f90)
+target_link_libraries(test_gs_readback_free PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_readback_free COMMAND test_gs_readback_free 2)
+add_test(NAME grad_shafranov_p3_readback_free COMMAND test_gs_readback_free 3)
+set_tests_properties(grad_shafranov_p2_readback_free
+    grad_shafranov_p3_readback_free PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1"
+    TIMEOUT 300)
+
 add_executable(test_gs_readback_work test/test_gs_readback_work.f90)
 target_link_libraries(test_gs_readback_work PRIVATE kin6d)
 add_test(NAME grad_shafranov_readback_work COMMAND test_gs_readback_work)
