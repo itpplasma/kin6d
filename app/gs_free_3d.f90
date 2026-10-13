@@ -108,7 +108,7 @@ program gs_free_3d_main
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_report_t, &
         ideal_fb_init, ideal_fb_set_drive, ideal_fb_solve_vacuum, ideal_fb_solve, &
         ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
-        ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, &
+        ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, ideal_fb_mode_stability, &
         IDEAL_FB_OK
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
     use gs_free_3d_support, only: reference_t, reference_locate_jet, &
@@ -135,7 +135,8 @@ program gs_free_3d_main
     integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
     integer :: panels_per_edge = 0, st, i, nc, unit
-    logical :: verbose = .true., start_at_target = .false.
+    logical :: verbose = .true., start_at_target = .false., stability = .false.
+    real(dp) :: stab(64) = 0
     character(512) :: mesh_file = 'mesh.dat', law_file = 'profile-law.dat'
     character(512) :: summary_file = 'summary.dat', coil_file = ''
     character(512) :: boundary_file = '', rmp_coil_file = '', rmp_current_file = ''
@@ -145,7 +146,8 @@ program gs_free_3d_main
         boundary_file, boundary_nodes, max_area, degree, chain_nodes, mu0, nfp, ntor, &
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
-        panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude
+        panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
+        stability
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -253,6 +255,20 @@ program gs_free_3d_main
                 ' stiffness (J/m^2/period) ', k, ' status ', s2
         end do
     end block
+    ! Second variation per real mode (meaningful at an axisymmetric state).
+    if (stability) then
+        block
+            real(dp) :: lam
+            integer :: m, s2
+            do m = 1, fb%nmode
+                call ideal_fb_mode_stability(fb, m, lam, s2)
+                stab(m) = lam
+                write (output_unit, '(a,i0,a,i0,a,es12.4,a,i0)') 'stability mode ', m, &
+                    ' (n=', (m/2)*nfp, ') smallest-|lambda| eigenvalue ', lam, &
+                    ' status ', s2
+            end do
+        end block
+    end if
     write (output_unit, '(a,i0,a,i0,a,es10.3)') 'newton status ', st, &
         ' iterations ', report%iterations, ' residual ', report%residual
     call write_results(st)
@@ -529,6 +545,11 @@ contains
         write (u, '(a,1x,l1)') 'roundoff_floor', report%floor
         write (u, '(a,2(1x,es16.8))') 'rigid_R_force_stiffness', rigid(:, 1)
         write (u, '(a,2(1x,es16.8))') 'rigid_Z_force_stiffness', rigid(:, 2)
+        if (stability) then
+            do k = 1, fb%nmode
+                write (u, '(a,i0,1x,es16.8)') 'stability_lambda_mode', k, stab(k)
+            end do
+        end if
         write (u, '(a,1x,es16.8)') 'offset_r', offset_r
         write (u, '(a,1x,es16.8)') 'offset_z', offset_z
         write (u, '(a,1x,es16.8)') 'elongation', elongation
