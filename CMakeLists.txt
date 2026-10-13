@@ -1034,9 +1034,19 @@ set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
     src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90
-    src/equilibrium_residual.f90 src/equilibrium_readback.f90)
+    src/equilibrium_residual.f90 src/equilibrium_readback.f90
+    src/equilibrium_certificate.f90 src/gs_certificate.f90
+    src/equilibrium_boundary.f90)
 set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_equilibrium_boundary test/test_equilibrium_boundary.f90)
+target_link_libraries(test_equilibrium_boundary PRIVATE kin6d)
+add_test(NAME equilibrium_core_d6_exterior_per_n
+    COMMAND test_equilibrium_boundary exterior)
+set_tests_properties(equilibrium_core_d6_exterior_per_n PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=4" PROCESSORS 4 TIMEOUT 600)
+add_test(NAME equilibrium_core_d6_coil_interface
+    COMMAND test_equilibrium_boundary coils)
 add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
 target_link_libraries(test_equilibrium_core PRIVATE kin6d)
 add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)

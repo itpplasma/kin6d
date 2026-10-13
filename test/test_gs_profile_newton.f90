@@ -7,9 +7,12 @@ program test_gs_profile_newton
                  gs_normalize_current
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
     use kin6d_gs_majorant, only: gs_functional_majorant
+    use kin6d_gs_certificate, only: gs_fixed_certifier_t
+    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+        EQ_CLAIM_RESIDUAL, EQ_CLAIM_PRACTICAL, EQ_CLAIM_CERTIFIED
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
-    type(gs_state_t) :: state
+    type(gs_state_t), target :: state
     type(gs_profile_law_t) :: law
     type(gs_profile_jacobian_t) :: jac, scratch
     type(gs_readback_t) :: positive, negative
@@ -142,6 +145,7 @@ program test_gs_profile_newton
                                     flux, balance, status, law=law, &
                                     estimate_stability=.true.)
         if (status /= 4) error stop 'missing nonlinear stability must be explicit'
+        call require_claim(4, EQ_CLAIM_RESIDUAL, majorant)
         law%normalized = .false.; law%knots = [-10.0_dp, 0.0_dp]
         law%pp = 0; law%ff(:, 1) = [0.3_dp, 0.05_dp, 0.0_dp, 0.0_dp]
         call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, majorant, &
@@ -151,15 +155,39 @@ program test_gs_profile_newton
         if (alpha <= 0 .or. alpha >= 1) error stop 'positive source amplification'
         if (abs(majorant*alpha - flux - balance) > 1.0e-11_dp*majorant) &
             error stop 'linearized majorant scaling'
+        call require_claim(5, EQ_CLAIM_PRACTICAL, majorant)
+        call require_claim(0, EQ_CLAIM_CERTIFIED, (flux + balance)/0.5_dp, 0.5_dp)
         law%ff(:, 1) = [1.0e4_dp, 1.0e3_dp, 0.0_dp, 0.0_dp]
         call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, majorant, &
             flux, balance, status, law=law, estimate_stability=.true.)
         if (status /= 4) error stop 'unstable comparison must not report an estimate'
+        call require_claim(4, EQ_CLAIM_RESIDUAL, flux + balance)
         deallocate (saved, rhs, plus, minus, v, w, jv, jw, law%pp, law%ff)
         call source_cut_oracle(degree)
     end do
    print *, 'PASS: curved cubic profiles, normalization, implicit derivatives and signs'
 contains
+    subroutine require_claim(lane_status, claim, bound, lower)
+        ! The psi certifier reports the gs_functional_majorant status
+        ! unchanged, the core claim for it, and the same bound.
+        integer, intent(in) :: lane_status, claim
+        real(dp), intent(in) :: bound
+        real(dp), intent(in), optional :: lower
+        type(gs_fixed_certifier_t) :: cert
+        type(equilibrium_certificate_t) :: result
+        integer :: stat
+        cert%state => state
+        cert%mu0 = 1.0_dp
+        cert%law = law
+        if (present(lower)) cert%stability_lower_bound = lower
+        call certify(cert, result, stat)
+        if (stat /= 0) error stop 'certificate failed'
+        if (result%lane_status /= lane_status) error stop 'certificate lane status'
+        if (result%claim /= claim) error stop 'certificate claim'
+        if (abs(result%majorant - flux - balance) > 1.0e-12_dp*result%majorant) &
+            error stop 'certificate majorant'
+        if (abs(result%bound - bound) > 1.0e-12_dp*bound) error stop 'certificate bound'
+    end subroutine
     subroutine rank_one_response_oracle()
         type(gs_state_t) :: cell
         type(gs_profile_jacobian_t) :: jacobian

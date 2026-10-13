@@ -28,17 +28,25 @@ module kin6d_gs_coupling
     !!
     !! Flux convention. The source of the weak form is f = mu0 j_phi (A/m^2 in,
     !! Wb/rad out), the coil flux is that of kin6d_gs_coils.
+    !!
+    !! Core boundary layer. Gamma_c, its panels and restriction, the cached
+    !! Steklov-Poincare map and the coil flux come from the D6 layer
+    !! kin6d_equilibrium_boundary (docs/equilibrium-core.md, M4); this module
+    !! is its psi-lane (n = 0, kind GAMMA_C_FLUX) adapter and keeps the
+    !! interior stiffness, the coupled operator and the loads.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
-    use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
-                         gs_bem_operators_t, gs_bem_curve_from_nodes, gs_bem_assemble, &
-                                                             gs_bem_steklov_symmetric
+    use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t
     use fortnum_quadrature, only: gauss_legendre
+    use kin6d_equilibrium_boundary, only: gamma_c_t, gamma_c_chain, gamma_c_build, &
+        gamma_c_edge_weights, gamma_c_edge_point, gamma_c_quadrature, &
+        gamma_c_assemble, gamma_c_steklov, gamma_c_steklov_cache_clear, &
+        gamma_c_exterior, axisymmetric_coils_t, GAMMA_C_FLUX, GAMMA_C_OK
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
     use kin6d_sort_keys, only: sort_key_order
     use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use kin6d_gs_coils, only: gs_circuit_set_t
     implicit none
     private
     public :: gs_coupling_steklov, gs_coupling_steklov_cache_clear
@@ -69,6 +77,7 @@ module kin6d_gs_coupling
         real(dp), allocatable :: s_trace(:, :)      !< R^T S_h R, symmetric
         integer, allocatable :: row_ptr(:), col(:)  !< CSR stiffness
         real(dp), allocatable :: val(:), diag(:)    !< diag: full operator
+        type(gamma_c_t) :: gamma_c                  !< the core curve
     end type gs_coupling_t
 
     public :: gs_coupling_build, gs_coupled_apply, gs_coupled_matrix
@@ -76,62 +85,8 @@ module kin6d_gs_coupling
     public :: gs_coupling_energies, gs_coupling_edge_points
     public :: gs_coupling_bem_nodes, gs_coupling_edge_weights
 
-    !> One cached Steklov-Poincare operator of a fixed artificial curve Gamma_c,
-    !! keyed by the BEM trace nodes and the flux degree. Gamma_c does not change
-    !! between mesh refits, Newton iterations or inverse passes, so the dense BEM
-    !! assembly (the dominant serial-in-practice cost of a refit) is done once.
-    type :: steklov_entry_t
-        integer :: flux_degree = -1
-        real(dp), allocatable :: nodes(:, :), s(:, :)
-        type(gs_bem_curve_t) :: curve
-    end type steklov_entry_t
-    integer, parameter :: steklov_slots = 4
-    type(steklov_entry_t), save :: steklov_cache(steklov_slots)
-    integer, save :: steklov_next = 1
 
 contains
-
-    pure subroutine edge_lagrange(order, t, w, dw)
-        !! Lagrange basis (and derivative) on the equispaced nodes j/order.
-        integer, intent(in) :: order
-        real(dp), intent(in) :: t
-        real(dp), intent(out) :: w(0:order), dw(0:order)
-        real(dp) :: prod
-        integer :: j, l, m
-
-        do j = 0, order
-            w(j) = 1.0_dp
-            dw(j) = 0.0_dp
-            do l = 0, order
-                if (l == j) cycle
-                w(j) = w(j) * (t - real(l, dp) / order) / (real(j - l, dp) / order)
-            end do
-            do m = 0, order
-                if (m == j) cycle
-                prod = 1.0_dp / (real(j - m, dp) / order)
-                do l = 0, order
-                    if (l == j .or. l == m) cycle
-                    prod = prod * (t - real(l, dp) / order) / (real(j - l, dp) / order)
-                end do
-                dw(j) = dw(j) + prod
-            end do
-        end do
-    end subroutine edge_lagrange
-
-    pure subroutine edge_node_ids(state, e, k, ids)
-        !! State nodes of local edge k of triangle e, from vertex k to k+1.
-        type(gs_state_t), intent(in) :: state
-        integer, intent(in) :: e, k
-        integer, intent(out) :: ids(0:)
-        integer :: order, j
-
-        order = state % element_order
-        ids(0) = state % triangles(k, e)
-        do j = 1, order - 1
-            ids(j) = state % triangles(3 + (k - 1) * (order - 1) + j, e)
-        end do
-        ids(order) = state % triangles(mod(k, 3) + 1, e)
-    end subroutine edge_node_ids
 
     subroutine gs_coupling_edge_points(state, coupling, edge, t, x, tangent)
         !! Position and (non-normalised) tangent dx/dt of boundary edge `edge`
@@ -141,19 +96,11 @@ contains
         integer, intent(in) :: edge
         real(dp), intent(in) :: t
         real(dp), intent(out) :: x(2), tangent(2)
-        integer :: ids(0:3), order, j
-        real(dp) :: w(0:3), dw(0:3)
-
-        order = coupling % order
-        call edge_node_ids(state, coupling % edge_element(edge), &
-                           coupling % edge_side(edge), ids(0:order))
-        call edge_lagrange(order, t, w(0:order), dw(0:order))
-        x = 0.0_dp
-        tangent = 0.0_dp
-        do j = 0, order
-            x = x + w(j) * state % points(:, ids(j))
-            tangent = tangent + dw(j) * state % points(:, ids(j))
-        end do
+        if (.not. state % ready) then
+            x = 0.0_dp; tangent = 0.0_dp
+            return
+        end if
+        call gamma_c_edge_point(coupling % gamma_c, edge, t, x, tangent)
     end subroutine gs_coupling_edge_points
 
 
@@ -163,117 +110,38 @@ contains
         type(gs_coupling_t), intent(out) :: coupling
         integer, intent(out) :: status
         integer, intent(in), optional :: panels_per_edge, flux_degree
-        type(gs_bem_curve_t) :: curve
-        real(dp), allocatable :: s_bem(:, :), bem_nodes(:, :), restriction(:, :)
-        real(dp), allocatable :: work(:, :)
-        integer, allocatable :: first_edge(:)
-        integer :: e, k, i, j, n, order, ne, np, m, ids(0:3)
-        integer :: next_edge, stat
-        real(dp) :: area, t0
+        integer :: m, stat
+        real(dp) :: t0
         t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_COUPLING_BAD_STATE
         if (.not. state % ready) return
-        order = state % element_order
         m = 1
         if (present(panels_per_edge)) m = panels_per_edge
         coupling % panels_per_edge = m
         if (present(flux_degree)) coupling % flux_degree = flux_degree
         if (m < 1) return
-        coupling % order = order
-        n = size(state % points, 2)
-        ne = size(state % triangles, 2)
-        coupling % n_nodes = n
+        coupling % order = state % element_order
+        coupling % n_nodes = size(state % points, 2)
 
-        ! Boundary edges in counter-clockwise order, chained by their vertices.
+        ! Boundary edges in counter-clockwise order, chained by their vertices;
+        ! Gamma_c is a single loop.
         status = GS_COUPLING_BAD_BOUNDARY
-        allocate (first_edge(n))
-        first_edge = 0
-        coupling % n_edges = 0
-        do e = 1, ne
-            do k = 1, 3
-                if (state % neighbors(k, e) > 0) cycle
-                if (first_edge(state % triangles(k, e)) /= 0) return
-                first_edge(state % triangles(k, e)) = e * 3 + k - 3
-                coupling % n_edges = coupling % n_edges + 1
-            end do
-        end do
-        if (coupling % n_edges * m < 4) return
-        allocate (coupling % edge_element(coupling % n_edges), &
-                  coupling % edge_side(coupling % n_edges))
-        coupling % edge_element = 0
-        coupling % edge_side = 0
-        do e = 1, ne
-            do k = 1, 3
-                if (state % neighbors(k, e) <= 0) then
-                    coupling % edge_element(1) = e
-                    coupling % edge_side(1) = k
-                    exit
-                end if
-            end do
-            if (coupling % edge_element(1) /= 0) exit
-        end do
-        do i = 2, coupling % n_edges
-            e = coupling % edge_element(i - 1)
-            k = coupling % edge_side(i - 1)
-            next_edge = first_edge(state % triangles(mod(k, 3) + 1, e))
-            if (next_edge == 0) return
-            coupling % edge_element(i) = (next_edge - 1) / 3 + 1
-            coupling % edge_side(i) = next_edge - 3 * (coupling % edge_element(i) - 1)
-        end do
-        e = coupling % edge_element(coupling % n_edges)
-        k = coupling % edge_side(coupling % n_edges)
-        ! The chain must close on its first edge, visiting every boundary
-        ! edge once: Gamma_c is a single loop.
-        if (first_edge(state % triangles(mod(k, 3) + 1, e)) /= &
-            coupling % edge_element(1) * 3 + coupling % edge_side(1) - 3) return
-        first_edge = 0
-        do i = 1, coupling % n_edges
-            e = coupling % edge_element(i)
-            if (first_edge(state % triangles(coupling % edge_side(i), e)) /= 0) return
-            first_edge(state % triangles(coupling % edge_side(i), e)) = 1
-        end do
-
-        coupling % n_trace = coupling % n_edges * order
-        allocate (coupling % trace_node(coupling % n_trace))
-        do i = 1, coupling % n_edges
-            call edge_node_ids(state, coupling % edge_element(i), &
-                               coupling % edge_side(i), ids(0:order))
-            coupling % trace_node((i - 1) * order + 1:i * order) = ids(0:order - 1)
-        end do
-
-        np = coupling % n_edges * m
-        call gs_coupling_bem_nodes(state, coupling, m, bem_nodes, restriction)
-        ! Counter-clockwise orientation (shoelace) is required by the BEM.
-        area = 0.0_dp
-        do j = 1, 2 * np
-            k = mod(j, 2 * np) + 1
-            area = area + bem_nodes(1, j) * bem_nodes(2, k) &
-                   - bem_nodes(1, k) * bem_nodes(2, j)
-        end do
-        if (area <= 0.0_dp) return
-
-        status = GS_COUPLING_BEM_FAILED
+        call gamma_c_chain(state % points, state % triangles, state % neighbors, &
+                           coupling % order, coupling % edge_element, &
+                           coupling % edge_side, coupling % trace_node, stat)
+        if (stat /= GAMMA_C_OK) return
+        coupling % n_edges = size(coupling % edge_element)
+        coupling % n_trace = size(coupling % trace_node)
+        call gamma_c_build(state % points(:, coupling % trace_node), coupling % order, &
+                           m, coupling % gamma_c, stat)
+        if (stat /= GAMMA_C_OK) return
         call gs_phase_tick('cb.chain', t0)
-        call gs_coupling_steklov(bem_nodes, coupling % flux_degree, curve, s_bem, stat)
-        if (stat /= 0) return
-        call gs_phase_tick('cb.steklov', t0)
-        ! S_trace = R^T S_bem R, one column per thread task.
-        allocate (coupling % s_trace(coupling % n_trace, coupling % n_trace))
-        allocate (work(2 * np, coupling % n_trace))
-        !$omp parallel do default(shared) private(j) schedule(static)
-        do j = 1, coupling % n_trace
-            work(:, j) = matmul(s_bem, restriction(:, j))
-        end do
-        !$omp end parallel do
-        !$omp parallel do default(shared) private(j) schedule(static)
-        do j = 1, coupling % n_trace
-            coupling % s_trace(:, j) = matmul(transpose(restriction), work(:, j))
-        end do
-        !$omp end parallel do
-        coupling % s_trace = 0.5_dp * (coupling % s_trace + transpose(coupling % s_trace))
-
-        call gs_phase_tick('cb.strace', t0)
+        status = GS_COUPLING_BEM_FAILED
+        call gamma_c_exterior(coupling % gamma_c, GAMMA_C_FLUX, 0, &
+                              coupling % flux_degree, coupling % s_trace, stat)
+        if (stat /= GAMMA_C_OK) return
+        t0 = -1; call gs_phase_tick('', t0)
         call build_stiffness(state, coupling)
         call gs_phase_tick('cb.stiffness', t0)
         status = GS_COUPLING_OK
@@ -281,92 +149,17 @@ contains
 
     subroutine gs_coupling_steklov(nodes, flux_degree, curve, s_bem, stat)
         !! Curve and symmetric Steklov-Poincare matrix S_h of the BEM trace
-        !! nodes, from the cache when the same nodes were assembled before
-        !! (bitwise equal coordinates). Not for use inside a parallel region;
-        !! the assembly itself is threaded.
+        !! nodes: the n = 0 flux map of the core layer, cached there.
         real(dp), intent(in) :: nodes(:, :)
         integer, intent(in) :: flux_degree
         type(gs_bem_curve_t), intent(out) :: curve
         real(dp), allocatable, intent(out) :: s_bem(:, :)
         integer, intent(out) :: stat
-        type(gs_bem_operators_t) :: ops
-        integer :: slot, shift, nn, i, j
-        real(dp) :: t0
-
-        t0 = -1
-        do slot = 1, steklov_slots
-            if (steklov_cache(slot) % flux_degree /= flux_degree) cycle
-            if (.not. allocated(steklov_cache(slot) % nodes)) cycle
-            if (any(shape(steklov_cache(slot) % nodes) /= shape(nodes))) cycle
-            shift = steklov_shift(steklov_cache(slot) % nodes, nodes)
-            if (shift < 0) cycle
-            nn = size(nodes, 2)
-            if (shift == 0) then
-                curve = steklov_cache(slot) % curve
-                s_bem = steklov_cache(slot) % s
-            else
-                ! The same closed curve entered at another panel: relabel.
-                call gs_bem_curve_from_nodes(nodes, curve, stat)
-                if (stat /= 0) return
-                allocate (s_bem(nn, nn))
-                !$omp parallel do default(shared) private(j, i) schedule(static)
-                do j = 1, nn
-                    do i = 1, nn
-                        s_bem(i, j) = steklov_cache(slot) % s( &
-                            mod(i - 1 + shift, nn) + 1, mod(j - 1 + shift, nn) + 1)
-                    end do
-                end do
-                !$omp end parallel do
-            end if
-            stat = 0
-            return
-        end do
-        call gs_bem_curve_from_nodes(nodes, curve, stat)
-        if (stat /= 0) return
-        call gs_phase_tick('', t0)
-        call gs_bem_assemble(curve, flux_degree, ops, stat)
-        if (stat /= 0) return
-        call gs_phase_tick('bem.assemble', t0)
-        call gs_bem_steklov_symmetric(ops, s_bem, stat)
-        call gs_phase_tick('bem.steklov_dense', t0)
-        if (stat /= 0) return
-        slot = steklov_next
-        steklov_next = mod(steklov_next, steklov_slots) + 1
-        steklov_cache(slot) % flux_degree = flux_degree
-        steklov_cache(slot) % nodes = nodes
-        steklov_cache(slot) % curve = curve
-        steklov_cache(slot) % s = s_bem
+        call gamma_c_steklov(nodes, GAMMA_C_FLUX, 0, flux_degree, curve, s_bem, stat)
     end subroutine gs_coupling_steklov
 
-    pure integer function steklov_shift(cached, nodes) result(shift)
-        !! Even s >= 0 with nodes(:, j) == cached(:, j + s) cyclically for every
-        !! j (panels hold two nodes), or -1 when the point lists differ.
-        real(dp), intent(in) :: cached(:, :), nodes(:, :)
-        integer :: nn, j, s0
-
-        nn = size(nodes, 2)
-        shift = -1
-        do s0 = 0, nn - 2, 2
-            if (all(cached(:, s0 + 1) == nodes(:, 1))) then
-                do j = 1, nn
-                    if (any(cached(:, mod(j - 1 + s0, nn) + 1) /= nodes(:, j))) exit
-                    if (j == nn) shift = s0
-                end do
-                if (shift >= 0) return
-            end if
-        end do
-    end function steklov_shift
-
     subroutine gs_coupling_steklov_cache_clear()
-        integer :: slot
-
-        do slot = 1, steklov_slots
-            steklov_cache(slot) % flux_degree = -1
-            if (allocated(steklov_cache(slot) % nodes)) &
-                deallocate (steklov_cache(slot) % nodes)
-            if (allocated(steklov_cache(slot) % s)) deallocate (steklov_cache(slot) % s)
-        end do
-        steklov_next = 1
+        call gamma_c_steklov_cache_clear()
     end subroutine gs_coupling_steklov_cache_clear
 
     subroutine gs_coupling_bem_nodes(state, coupling, m, nodes, restriction)
@@ -377,28 +170,12 @@ contains
         type(gs_coupling_t), intent(in) :: coupling
         integer, intent(in) :: m
         real(dp), allocatable, intent(out) :: nodes(:, :), restriction(:, :)
-        real(dp) :: t, w(0:3)
-        integer :: i, q, p, j, k, row, cols(0:3)
-
-        allocate (nodes(2, 2 * coupling % n_edges * m), &
-                  restriction(2 * coupling % n_edges * m, coupling % n_trace))
-        restriction = 0.0_dp
-        do i = 1, coupling % n_edges
-            do q = 1, m
-                p = (i - 1) * m + q
-                do j = 1, 2
-                    t = (real(q - 1, dp) + 0.5_dp * real(j - 1, dp)) / m
-                    call gs_coupling_edge_weights(coupling, i, t, cols, w)
-                    row = 2 * p - 2 + j
-                    nodes(:, row) = 0.0_dp
-                    do k = 0, coupling % order
-                        nodes(:, row) = nodes(:, row) + w(k) &
-                            * state % points(:, coupling % trace_node(cols(k)))
-                        restriction(row, cols(k)) = restriction(row, cols(k)) + w(k)
-                    end do
-                end do
-            end do
-        end do
+        type(gamma_c_t) :: panels
+        integer :: stat
+        call gamma_c_build(state % points(:, coupling % trace_node), coupling % order, &
+                           m, panels, stat)
+        call move_alloc(panels % nodes, nodes)
+        call move_alloc(panels % restriction, restriction)
     end subroutine gs_coupling_bem_nodes
 
     pure subroutine gs_coupling_edge_weights(coupling, edge, t, cols, w, dw)
@@ -410,16 +187,7 @@ contains
         integer, intent(out) :: cols(0:)
         real(dp), intent(out) :: w(0:)
         real(dp), intent(out), optional :: dw(0:)
-        real(dp) :: d(0:3)
-        integer :: j, order
-
-        order = coupling % order
-        call edge_lagrange(order, t, w(0:order), d(0:order))
-        if (present(dw)) dw(0:order) = d(0:order)
-        do j = 0, order
-            cols(j) = (edge - 1) * order + j + 1
-        end do
-        cols(order) = mod(edge, coupling % n_edges) * order + 1
+        call gamma_c_edge_weights(coupling % gamma_c, edge, t, cols, w, dw)
     end subroutine gs_coupling_edge_weights
 
     subroutine build_stiffness(state, coupling)
@@ -557,66 +325,40 @@ contains
         !! gamma_k the trace values of the circuit flux g_k and
         !! c_k(i) = int_Gamma_c d_nu g_k phi_i ds by Gauss quadrature on the
         !! curved edges. The coil flux psi = sum_k I_k g_k then enters the right
-        !! hand side as sum_k I_k load(:, k).
+        !! hand side as sum_k I_k load(:, k). The flux comes through the core
+        !! coil interface (axisymmetric circuits).
         type(gs_state_t), intent(in) :: state
         type(gs_coupling_t), intent(in) :: coupling
         type(gs_circuit_set_t), intent(in) :: set
         real(dp), allocatable, intent(out) :: load(:, :)
         integer, intent(out) :: status
         integer, intent(in), optional :: n_gauss
-        real(dp), allocatable :: gq(:, :), gr(:, :), gz(:, :), gt(:, :)
+        type(axisymmetric_coils_t) :: coils
+        real(dp), allocatable :: gq(:, :), gr(:, :), gz(:, :), gt(:, :), dnu(:, :)
         real(dp), allocatable :: xq(:, :), nq(:, :), wq(:), tq(:), c(:, :)
-        real(dp) :: x(2), tan(2), speed, w(0:3), dw(0:3), dnu
-        real(dp), allocatable :: gx(:), gw(:)
-        integer :: ng, order, i, q, j, k, nk, col_j, point
-
+        integer :: ng, k, nk, point, stat
         status = GS_COUPLING_BAD_INPUT
         if (.not. allocated(set % incidence)) return
         nk = size(set % incidence, 2)
         ng = 10
         if (present(n_gauss)) ng = n_gauss
         if (ng < 1) return
-        order = coupling % order
-        allocate (gx(ng), gw(ng))
-        call gauss_legendre(ng, gx, gw)
-        gx = 0.5_dp * (gx + 1.0_dp)
-        gw = 0.5_dp * gw
-        allocate (xq(2, coupling % n_edges * ng), nq(2, coupling % n_edges * ng), &
-                  wq(coupling % n_edges * ng), tq(coupling % n_edges * ng))
-        point = 0
-        do i = 1, coupling % n_edges
-            do q = 1, ng
-                point = point + 1
-                call gs_coupling_edge_points(state, coupling, i, gx(q), x, tan)
-                speed = norm2(tan)
-                xq(:, point) = x
-                nq(:, point) = [tan(2), -tan(1)] / speed
-                wq(point) = gw(q) * speed
-                tq(point) = gx(q)
-            end do
-        end do
+        coils % set = set
+        call gamma_c_quadrature(coupling % gamma_c, ng, xq, nq, wq, tq)
         allocate (gq(size(xq, 2), nk), gr(size(xq, 2), nk), gz(size(xq, 2), nk), &
-                  gt(coupling % n_trace, nk), c(coupling % n_trace, nk))
-        call gs_circuit_flux_vectors(set, xq(1, :), xq(2, :), gq, gr, gz)
-        call gs_circuit_flux_vectors(set, state % points(1, coupling % trace_node), &
-                                     state % points(2, coupling % trace_node), gt)
-        c = 0.0_dp
-        point = 0
-        do i = 1, coupling % n_edges
-            do q = 1, ng
-                point = point + 1
-                call edge_lagrange(order, tq(point), w(0:order), dw(0:order))
-                do k = 1, nk
-                    dnu = (nq(1, point) * gr(point, k) + nq(2, point) * gz(point, k)) &
-                          / xq(1, point)
-                    do j = 0, order
-                        col_j = (i - 1) * order + j + 1
-                        if (j == order) col_j = mod(i, coupling % n_edges) * order + 1
-                        c(col_j, k) = c(col_j, k) + wq(point) * dnu * w(j)
-                    end do
-                end do
+                  gt(coupling % n_trace, nk), c(coupling % n_trace, nk), &
+                  dnu(size(xq, 2), nk))
+        call coils % flux(xq, gq, gr, gz, stat)
+        if (stat /= GAMMA_C_OK) return
+        call coils % flux(state % points(:, coupling % trace_node), gt, status=stat)
+        if (stat /= GAMMA_C_OK) return
+        do point = 1, size(xq, 2)
+            do k = 1, nk
+                dnu(point, k) = (nq(1, point) * gr(point, k) &
+                                 + nq(2, point) * gz(point, k)) / xq(1, point)
             end do
         end do
+        call gamma_c_assemble(coupling % gamma_c, tq, wq, dnu, c)
         c = c + matmul(coupling % s_trace, gt)
         allocate (load(coupling % n_nodes, nk))
         load = 0.0_dp
