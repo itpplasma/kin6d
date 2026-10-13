@@ -18,10 +18,12 @@ module kin6d_mhd_mesh
     !! flux-surface map for G-EQDSK input, or an analytic map for tests).  The
     !! isoparametric nodes of order geo are the images of the equispaced
     !! lattice of each triangle in the polar parameters (u, theta), so every
-    !! node of a ring edge lies on the ring curve x(u_j, .).  In the fan
-    !! triangles the axis has no angle; their lattice uses the collapsed polar
-    !! parameters u = u_1 (l_2 + l_3), theta = (l_2 theta_a + l_3 theta_b)/
-    !! (l_2 + l_3), which agree on shared edges with both neighbours.
+    !! node of a ring edge lies on the ring curve x(u_j, .).  The fan
+    !! triangles cannot use the polar lattice (the angle is undefined at the
+    !! axis and the collapsed map is not smooth there): their nodes are those
+    !! of the straight triangle plus a smooth ring-edge sagitta correction
+    !! (fan_node), so the element maps are polynomial-like at the axis and
+    !! P_k meshes keep order k + 1.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t
@@ -32,6 +34,7 @@ module kin6d_mhd_mesh
     private
 
     real(dp), parameter :: pi = 3.14159265358979323846_dp
+    real(dp), parameter :: u_curv = 0.3_dp  !! see curvature_weight
 
     abstract interface
         subroutine polar_map_i(u, theta, x)
@@ -201,7 +204,7 @@ contains
 
         type(triangle_lagrange_basis_t) :: basis
         real(dp), allocatable :: lat(:, :)
-        real(dp) :: up(3), tp(3), l(3), uu, tt, s
+        real(dp) :: up(3), tp(3), l(3), uu, w, p(2), xs(2)
         logical :: ring(3)
         integer :: t, i, k
 
@@ -226,22 +229,70 @@ contains
             do i = 1, size(lat, 2)
                 l = [1.0_dp - lat(1, i) - lat(2, i), lat(1, i), lat(2, i)]
                 if (topo%triangles(3, t) == 1) then
-                    s = l(1) + l(2)
-                    uu = up(1)*s
-                    if (s > 0.0_dp) then
-                        tt = (l(1)*tp(1) + l(2)*tp(2))/s
-                    else
-                        tt = 0.0_dp
-                    end if
+                    call fan_node(topo, t, l, up(1), tp(1), tp(2), map, &
+                        fm%mm%nodes(:, i, t))
                 else
                     uu = sum(l*up)
-                    tt = sum(l*tp)
+                    call map(uu, sum(l*tp), p)
+                    w = curvature_weight(uu)
+                    if (w < 1.0_dp) then
+                        ! straight-sided triangle plus the weighted curvature
+                        xs = 0.0_dp
+                        do k = 1, 3
+                            xs = xs + l(k)*topo%vertices(:, topo%triangles(k, t))
+                        end do
+                        p = xs + w*(p - xs)
+                    end if
+                    fm%mm%nodes(:, i, t) = p
                 end if
-                call map(uu, tt, fm%mm%nodes(:, i, t))
             end do
         end do
         status = 0
     end subroutine build_nodes
+
+    pure real(dp) function curvature_weight(u)
+        !! Weight of the curved (polar-lattice) part of a node at radial label
+        !! u; zero at the axis, one for u >= u_curv.  A triangle at ring index
+        !! j near the axis has a fixed angular span, so its relative
+        !! non-affinity does not shrink with the mesh size and an isoparametric
+        !! P_k interpolant loses order there (global order 3 for P3).  Damping
+        !! the curvature as (u/u_curv)^2 makes the non-affinity O(h^2) at every
+        !! ring and restores order k + 1; away from the axis the nodes are the
+        !! exact flux-surface images.
+        real(dp), intent(in) :: u
+        real(dp) :: s
+
+        s = min(u/u_curv, 1.0_dp)
+        curvature_weight = s*s*(3.0_dp - 2.0_dp*s)
+    end function curvature_weight
+
+    subroutine fan_node(topo, t, l, ur, th1, th2, map, x)
+        !! Node of barycentric coordinates l in the axis fan triangle t.  The
+        !! polar parameters collapse at the axis (theta = (l2 th1 + l3 th2)/
+        !! (l2 + l3) is direction dependent there), which makes a map through
+        !! them non-polynomial at the vertex and caps the order of a P_k
+        !! interpolant below k + 1.  Instead the element map is the straight
+        !! triangle plus the ring-edge sagitta d(l2) = x(u_1, theta(l2)) -
+        !! chord(l2) with the bubble l1 l2: x = straight + l1 l2 d(l2)/(l2
+        !! (1 - l2)), smooth, exact on the ring edge, straight on both
+        !! edges at the axis (shared with the neighbouring fan triangles).
+        type(mesh_2d_t), intent(in) :: topo
+        integer, intent(in) :: t
+        real(dp), intent(in) :: l(3), ur, th1, th2
+        procedure(polar_map_i) :: map
+        real(dp), intent(out) :: x(2)
+        real(dp) :: xr(2), d(2), tau
+
+        associate (v => topo%vertices, tr => topo%triangles(:, t))
+            x = l(1)*v(:, tr(1)) + l(2)*v(:, tr(2)) + l(3)*v(:, tr(3))
+            tau = l(2)
+            if (tau > 0.0_dp .and. tau < 1.0_dp .and. l(1) > 0.0_dp) then
+                call map(ur, th1 + tau*(th2 - th1), xr)
+                d = xr - ((1.0_dp - tau)*v(:, tr(1)) + tau*v(:, tr(2)))
+                x = x + curvature_weight(ur)*l(1)*d/(1.0_dp - tau)
+            end if
+        end associate
+    end subroutine fan_node
 
     pure subroutine flux_mesh_ring_edge(fm, j, i, t, theta_a, theta_b)
         !! Triangle t of ring edge i of ring j (its local edge 1) and the
