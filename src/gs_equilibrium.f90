@@ -11,18 +11,24 @@ module kin6d_gs_equilibrium
     ! free-boundary mesh (sub-mesh, compactly renumbered).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_grad_shafranov, only: gs_state_t, gs_profile_integral
+    use kin6d_grad_shafranov, only: gs_state_t, gs_profile_integral, &
+        gs_axis_candidate
     use kin6d_gs_field_readback, only: sample_gs_many
+    use kin6d_gs_coarea, only: gs_level_coarea
+    use kin6d_gs_axis_recovery, only: gs_magnetic_axis
+    use kin6d_curved_triangle, only: triangle_geometry
+    use kin6d_triangle_basis, only: triangle_basis_jet
+    use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_equilibrium_state, only: equilibrium_field_t, equilibrium_state_t, &
+    use kin6d_equilibrium_state, only: labelled_field_t, equilibrium_state_t, &
         EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_VALUES, &
-        EQ_GAUGE_AXIS, EQ_GAUGE_BOUNDARY
+        EQ_GAUGE_AXIS, EQ_GAUGE_BOUNDARY, EQ_UNAVAILABLE
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     implicit none
     private
-    public :: gs_field_t, gs_equilibrium, gs_profile_f
+    public :: gs_field_t, gs_equilibrium, gs_profile_f, gs_readback_resolution
 
-    type, extends(equilibrium_field_t) :: gs_field_t
+    type, extends(labelled_field_t) :: gs_field_t
         type(gs_state_t) :: view
         real(dp) :: orientation = 1, psi_bound = 0
         real(dp) :: f_edge = 0, ffprime = 0, pprime = 0
@@ -32,8 +38,145 @@ module kin6d_gs_equilibrium
     contains
         procedure :: sample => gs_field_sample
         procedure :: profiles => gs_field_profiles
+        procedure :: label_axis => gs_field_label_axis
+        procedure :: magnetic_axis => gs_field_magnetic_axis
+        procedure :: label_coarea => gs_field_label_coarea
+        procedure :: region_integrals => gs_field_region_integrals
+        procedure :: resolution => gs_field_resolution
     end type
 contains
+    subroutine gs_readback_resolution(state, radial_points, angular_points)
+        type(gs_state_t), intent(in) :: state
+        integer, intent(inout) :: radial_points, angular_points
+        ! Resolve radial changes on the element scale. Cubic profile
+        ! interpolation/integration is at least the P2/P3 field order;
+        ! each smooth cell arc also shrinks with the mesh.
+        if (radial_points == 0) radial_points = max(17, &
+            ceiling(sqrt(real(size(state%triangles, 2), dp))) + 1)
+        if (angular_points == 0) angular_points = 16*(state%element_order + 2)
+    end subroutine
+
+    subroutine gs_field_resolution(field, radial_points, angular_points)
+        class(gs_field_t), intent(in) :: field
+        integer, intent(inout) :: radial_points, angular_points
+        call gs_readback_resolution(field%view, radial_points, angular_points)
+    end subroutine
+
+    subroutine gs_field_label_axis(field, axis, psi_axis, status)
+        ! Represented flux extremum (the contour and axis-q reference).
+        class(gs_field_t), intent(in) :: field
+        real(dp), intent(out) :: axis(2), psi_axis
+        integer, intent(out) :: status
+        real(dp) :: hessian(2, 2)
+        integer :: element
+        call gs_axis_candidate(field%view, axis, psi_axis, hessian, element, status)
+        psi_axis = field%orientation*psi_axis + field%psi_bound
+    end subroutine
+
+    subroutine gs_field_magnetic_axis(field, axis, status)
+        class(gs_field_t), intent(in) :: field
+        real(dp), intent(out) :: axis(2)
+        integer, intent(out) :: status
+        call gs_magnetic_axis(field%view, axis, status)
+    end subroutine
+
+    subroutine gs_field_label_coarea(field, levels, angular_points, coarea, status, &
+                                     work)
+        class(gs_field_t), intent(in) :: field
+        real(dp), intent(in) :: levels(:)
+        integer, intent(in) :: angular_points
+        real(dp), intent(out) :: coarea(:)
+        integer, intent(out) :: status
+        integer, intent(out), optional :: work(:)
+        real(dp) :: axis(2)
+        call gs_level_coarea(field%view, field%orientation*(levels - field%psi_bound), &
+            angular_points, coarea, axis, status, work=work)
+    end subroutine
+
+    subroutine gs_field_region_integrals(field, volume, phi_tor, status)
+        ! Whole-mesh views only: a plasma sub-mesh holds cut cells whose
+        ! plasma part needs the solver's level-cut quadrature.
+        class(gs_field_t), intent(in) :: field
+        real(dp), intent(out) :: volume, phi_tor
+        integer, intent(out) :: status
+        real(dp), allocatable :: x(:), y(:), w(:)
+        real(dp) :: point(2), jac(2, 2), curvature(2, 2, 2), det, inverse(2, 2)
+        real(dp) :: shape(10), gradients(2, 10), hessians(2, 2, 10)
+        real(dp) :: flux, f, pressure, two_pi, volume_sum, flux_sum
+        real(dp), allocatable :: shapes(:, :)
+        integer :: e, node, ndof, local_status, failed_element, failed_status
+        integer :: snapshot
+        volume = 0; phi_tor = 0
+        status = EQ_UNAVAILABLE
+        if (.not. field%whole) return
+        ndof = size(field%view%triangles, 1)
+        two_pi = 2*acos(-1.0_dp)
+        call triangle_duffy_quadrature(field%view%element_order + 2, x, y, w, status)
+        if (status /= 0) return
+        allocate (shapes(ndof, size(w)))
+        do node = 1, size(w)
+            call triangle_basis_jet([x(node), y(node)], shape(:ndof), &
+                gradients(:, :ndof), hessians(:, :, :ndof))
+            shapes(:, node) = shape(:ndof)
+        end do
+        ! Element-parallel volume and toroidal-flux sums: static partition per
+        ! thread, reduction over the thread partial sums.
+        volume_sum = 0; flux_sum = 0
+        failed_element = huge(1); failed_status = 1
+        !$omp parallel do default(shared) schedule(static) &
+        !$omp& private(node, point, jac, curvature, det, inverse, flux, f, pressure) &
+        !$omp& private(local_status, snapshot) &
+        !$omp& reduction(+: volume_sum, flux_sum)
+        do e = 1, size(field%view%triangles, 2)
+            !$omp atomic read
+            snapshot = failed_element
+            if (e > snapshot) cycle
+            do node = 1, size(w)
+                if (field%view%curved_cell(e)) then
+                    call triangle_geometry(field%view%points(:, &
+                        field%view%triangles(:, e)), [x(node), y(node)], point, &
+                        jac, curvature, det, inverse, local_status)
+                    if (local_status /= 0) then
+                        call record_failure(e, local_status)
+                        exit
+                    end if
+                else
+                    point = matmul(field%view%points(:, field%view%triangles(1:3, e)), &
+                        [1 - x(node) - y(node), x(node), y(node)])
+                    det = 2*field%view%area(e)
+                end if
+                flux = dot_product(shapes(:, node), &
+                    field%view%psi(field%view%triangles(:, e)))
+                call field%profiles(field%orientation*flux, f, pressure)
+                if (abs(f) <= tiny(1.0_dp)) then
+                    call record_failure(e, 1)
+                    exit
+                end if
+                volume_sum = volume_sum + two_pi*w(node)*det*point(1)
+                flux_sum = flux_sum + w(node)*det*f/point(1)
+            end do
+        end do
+        !$omp end parallel do
+        if (failed_element /= huge(1)) then
+            status = failed_status
+            return
+        end if
+        volume = volume_sum
+        phi_tor = flux_sum
+        status = 0
+    contains
+        subroutine record_failure(element, code)
+            ! The lowest failing element decides the status, as in a serial pass.
+            integer, intent(in) :: element, code
+            !$omp critical(gs_equilibrium_failure)
+            if (element < failed_element) then
+                failed_element = element
+                failed_status = code
+            end if
+            !$omp end critical(gs_equilibrium_failure)
+        end subroutine
+    end subroutine
+
     subroutine gs_equilibrium(state, eq, status, f_edge, ffprime, pprime, law, mu0, &
                               psi_bound, plasma_cell, gauge)
         ! Without psi_bound the state is a fixed-boundary solution and its
@@ -109,7 +252,10 @@ contains
         do i = 1, size(points, 2)
             if (statuses(i) /= 0) cycle
             u = field%orientation*raw(1, i)
-            call field%profiles(u, f, pressure)
+            ! Beyond the plasma boundary the profiles keep their edge values
+            ! (vacuum F; the oriented flux there is positive).
+            call field%profiles(field%orientation*min(raw(1, i), 0.0_dp), f, &
+                pressure)
             values(EQ_BR, i) = field%orientation*raw(2, i)
             values(EQ_BZ, i) = field%orientation*raw(3, i)
             values(EQ_BPHI, i) = f/points(1, i)
