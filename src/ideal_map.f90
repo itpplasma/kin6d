@@ -922,18 +922,21 @@ contains
                 t0 = wall()
                 call ideal_map_energy(map, trial, trial_energy, estatus)
                 report%energy_s = report%energy_s + wall() - t0
-                if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
-                    + 64*epsilon(1.0_dp)*abs(energy)) then
+                if (estatus == IDEAL_MAP_OK .and. trial_energy < energy &
+                    - 64*epsilon(1.0_dp)*abs(energy)) then
                     accepted = .true.; exit
                 end if
-                ! Within the roundoff band of W the energy cannot rank steps;
-                ! accept when the free gradient decreases instead.
+                ! Within the roundoff band of W the energy cannot rank steps.
+                ! Rank them by the trapezoidal energy change
+                ! (g(x) + g(x + s)) . s / 2 (error O(|s|^3), no cancellation
+                ! against W); near-null directions need full Newton steps that
+                ! do not decrease |g| monotonically.
                 if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
                     + 1024*epsilon(1.0_dp)*abs(energy)) then
                     call ideal_map_energy(map, trial, trial_energy, estatus, grad)
                     call ideal_map_reduce(map, grad, rhs)
                     where (map%fixed) rhs = 0
-                    if (norm2(rhs) < gnorm) then
+                    if (dot_product(gred + rhs, step) <= 0) then
                         accepted = .true.; exit
                     end if
                 end if
