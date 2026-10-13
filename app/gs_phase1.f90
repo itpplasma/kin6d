@@ -39,6 +39,7 @@ program gs_phase1_main
     real(dp) :: total_current = 0, measured_current = 0
     real(dp) :: majorant, flux_defect, balance_defect, estimator_s, stability_estimate
     real(dp) :: phi_target = 0, inverse_q_error = 0, q_tolerance = 1.0e-3_dp
+    real(dp) :: inverse_lambda = 0, inverse_lambda_used = 0, inverse_q_accuracy = 0
     integer :: inverse_intervals = 2, inverse_evaluations = 0, inverse_newton = 0
     integer :: degree = 2
     integer :: boundary_nodes = 96, radial_points = 0, angular_points = 0
@@ -53,7 +54,7 @@ program gs_phase1_main
     character(512) :: boundary_file = '', mesh_file = 'mesh.dat', profile_file = ''
     character(512) :: q_file = '', interior_points_file = '', pprime_law_file = ''
     character(512) :: inverse_knots_file = ''
-    character(16) :: inverse_jacobian = 'exact'
+    character(16) :: inverse_jacobian = 'exact', inverse_regularization = 'none'
     character(256) :: message
     character(16) :: phase
     character(512) :: argument
@@ -63,7 +64,8 @@ program gs_phase1_main
         profile_file, nonlinear_tolerance, quadrature_tolerance, total_current, q_file, &
         phi_target, inverse_intervals, q_tolerance, solve_wall_limit_s, &
         interior_points_file, pprime_law_file, inverse_knots_file, &
-        inverse_pressure_knots, inverse_jacobian, inverse_verbose
+        inverse_pressure_knots, inverse_jacobian, inverse_verbose, &
+        inverse_regularization, inverse_lambda, inverse_q_accuracy
     call run%start('gs_phase1')
     program_start_s = gs_wall_s()
     call gs_timer_reset()
@@ -188,7 +190,10 @@ program gs_phase1_main
                 q_error=inverse_q_error, evaluations=inverse_evaluations, &
                 q_tolerance=q_tolerance, pressure_law=pressure_law, &
                 knots=inverse_knots, jacobian=trim(inverse_jacobian), &
-                newton_iterations=inverse_newton, verbose=inverse_verbose)
+                newton_iterations=inverse_newton, verbose=inverse_verbose, &
+                regularization=trim(inverse_regularization), &
+                regularization_weight=inverse_lambda, &
+                regularization_used=inverse_lambda_used, q_accuracy=inverse_q_accuracy)
         else
             call solve_gs_prescribed_q(state, mu0, pprime, q_s, q_values, phi_target, &
                 law, status, intervals=inverse_intervals, radial_points=radial_points, &
@@ -196,7 +201,9 @@ program gs_phase1_main
                 q_error=inverse_q_error, evaluations=inverse_evaluations, &
                 q_tolerance=q_tolerance, knots=inverse_knots, &
                 jacobian=trim(inverse_jacobian), newton_iterations=inverse_newton, &
-                verbose=inverse_verbose)
+                verbose=inverse_verbose, regularization=trim(inverse_regularization), &
+                regularization_weight=inverse_lambda, &
+                regularization_used=inverse_lambda_used, q_accuracy=inverse_q_accuracy)
         end if
         f_edge = law%f_edge
         newton_s = gs_wall_s() - clock
@@ -214,6 +221,10 @@ program gs_phase1_main
         call solve_gs(state, mu0, pprime, ffprime, status)
         newton_s = gs_wall_s() - clock
     end if
+    if (len_trim(q_file) > 0) print '(a,i0,a,es10.3,a,es10.3,a,f10.1)', &
+        'inverse status ', status, ' q_error ', inverse_q_error, ' lambda ', &
+        inverse_lambda_used, &
+        ' newton_s ', newton_s
     if (status /= 0) then
         print *, 'solve status, iteration, residual:', status, state%iterations, &
             state%residual
@@ -285,6 +296,8 @@ program gs_phase1_main
         call result%write('phi_target', phi_target, 'Wb', 'prescribed toroidal flux')
         call result%write('inverse_q_error', inverse_q_error, '1', &
             'maximum sampled relative q constraint defect')
+        call result%write('inverse_lambda', inverse_lambda_used, '1', &
+            'FFprime smoothness regularization weight used (0: exact moments)')
     end if
     if (allocated(law)) then
         call result%write('source_knots', law%knots, 'profile coordinate', &
@@ -391,6 +404,7 @@ program gs_phase1_main
     write (unit, '(a,1x,i0)') 'inverse_evaluations', inverse_evaluations
     write (unit, '(a,1x,i0)') 'inverse_newton_iterations', inverse_newton
     write (unit, '(a,1x,es25.16e3)') 'inverse_q_error', inverse_q_error
+    write (unit, '(a,1x,es25.16e3)') 'inverse_lambda', inverse_lambda_used
     write (unit, '(a,1x,i0)') 'iterations', state%iterations
     write (unit, '(a,1x,i0)') 'dof', count(.not. state%boundary)
     write (unit, '(a,1x,es25.16e3)') 'wall_s', wall_s
