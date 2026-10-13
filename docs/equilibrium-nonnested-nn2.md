@@ -379,27 +379,118 @@ time therefore grow like N^2 per element, and N >= 3 at nr >= 16 is
 cluster work. S and g_par_shape are axisymmetric. The phi aliasing of K
 and J is declared, not bounded.
 
-### Landreman family 1: what is missing
+### Landreman family 1 through the coupled solve
 
-Family 1 (uniform iota, p = p_a - 2 psi) now has its solver, but it cannot
-yet be posed as a case. What remains:
+Family 1 (uniform iota, p = p_a - 2 psi) is posed as an exact case
+(`test_nonnested_landreman`). The derivation of the data:
 
-1. Solver: done in the third increment. The Fourier-coupled solve is
-   gauge-complete (Coulomb in every block), and nonconstant Dirichlet data
-   in every block are supported, because fixed entries are taken from the
-   seed.
-2. Phi-dependent data hooks. `source` and `g_par_shape` take (R, Z) only.
-   Family 1 needs S(R, Z, phi) = -div(K grad p_exact), which is not zero
-   for finite chi_perp, and a 3D g_par(x). This is a small interface change.
-3. Ohmic compatibility, a derivation. J_par = J.b of family 1 must equal
-   g_par b.(E - grad Phi) for a declared g_par(x), V and Phi, with the
-   current equation satisfied. Its parallel current (including the
-   Pfirsch-Schlueter part) has not been derived. Without it the case cannot
-   be posed.
-4. Boundary data. The NN1 domain is axisymmetric in (R, Z), and family 1
-   surfaces are not, so the wall is not a flux surface. The case needs the
-   exact tangential A trace in every block (a Fourier projection of the
-   closed-form A on the wall) and the Dirichlet p_b and Phi_b of the
-   closed form. Item 3 fixes Phi_b.
+1. Source. B.grad p = 0, hence K grad p = chi_perp grad p and
+   S = -div(K grad p) = -chi_perp lap p = -chi_perp div(J x B), because
+   J x B = grad p. S(R, Z, phi) is evaluated by complex step from the closed
+   form (rounding accuracy) and declared through `source_3d`.
+2. Phi = 0. With g_perp > 0 the current contains -g_perp (I - b b) grad Phi.
+   The exact J has no such part, so grad Phi is parallel to b and, for a
+   nested state with no parallel potential, Phi is constant and equals the
+   wall value 0. The solve starts from Phi = 0 and must keep it small
+   (reported).
+3. Ohm. J.B = g_par V B_phi/(2 pi R), so
+   g_par(x) = 2 pi R (J.B)/(V B_phi). With w = R J.B/B_phi (measured in
+   [3.3, 8.6] on the domain, positive, also for eps up to 0.25) take
+   g_par = g0 w/w_ref (`g_par_shape_3d`) and V = 2 pi w_ref/g0. The shape
+   carries the Pfirsch-Schlueter part, so no Ohmic mismatch remains.
+4. I_phi is the phi mean of int J_phi dR dZ of the exact state on the
+   discrete domain (32 phi points). V is the unknown and is compared with
+   2 pi w_ref/g0.
+5. Wall data are the L2 projection of the exact potential onto V1 in every
+   Fourier block (gauge A_z = 0) and the nodal projection of p. The seed
+   shifts the interior by 0.05 (1 - u^2) in R with V = Phi = 0.
+6. Truncation. B_phi = a b F/R; the Fourier content of B decays like
+   (eps/2)^(n/2): n = 2/4/6 carry 1.2e-2/1.9e-4/3.8e-6 at eps = 0.02.
+   Errors are measured against the exact state projected on modes 0..N; the
+   untruncated difference is printed as "truncation". At a large
+   chi_par/chi_perp the truncation of b.grad p (not zero for truncated B)
+   is amplified by the ratio, so N = 4 is needed there.
+
+Disk wall R_c = 0.99, r_w = 0.3, eps = 0.02, p_a = 0.25, F_vac = 1,
+w_ref = 5. The case needs the hooks `nc_problem_t%source_3d` and
+`%g_par_shape_3d` (`nc_scalar3_i`: x(2), phi); exactly one of source and
+source_3d, at most one g_par shape.
+
+Gates (pre-declared, not loosened): B order >= k - 0.3, D3 order >= k - 0.3
+with D3 falling, loop-voltage error order >= k - 0.5 on the nr ladder, and
+pressure order >= k + 0.6 at ratio 1 only. CTest
+`nonnested_coupled_landreman_family1_p2`: P2, ratio 1, N = 2, nr = 4/8/16.
+Ratios 1e3 to 1e6, N = 4 and P3 are in the sCluster study (`landreman`
+mode); a failing gate there is reported, not retuned.
+
+Continuation in the anisotropy (`nc_continue`). The first sCluster study
+(jobs 3222997/8) gave no result at ratio 1e6: from the shifted seed the
+Newton iteration took damped steps (line-search factors 1/2 to 1/256)
+with the backward error stuck between 1e-6 and 1e-7. This is a
+globalization failure, not a linear-algebra floor. Locally, P2 N = 2 nr = 4
+eventually entered the quadratic basin at step 19 and reached 2e-16 with
+the same direct LU (the old print overflowed after 15 entries). N = 4 was
+still at 1e-6 after 30 steps. The pressure rows carry chi_par b(A).grad p,
+so an error in b enters times chi_par and the basin shrinks like
+1/ratio. The discrete solution itself barely moves with the ratio.
+`nc_continue` therefore solves at chi_par/chi_perp = rc^s and
+g_par/g_perp = rg^s for s from 0 to 1 in steps of at most one decade.
+Each stage runs Newton to the final tolerance from the previous state. A
+stage that fails, or needs more than 12 steps, is retried with half the
+step. Every stage converges to the discrete solution at its own s, so the
+end point does not depend on the path. The test checks this on the
+coarsest mesh: a second run with 2-decade steps must agree blockwise
+within 1e-6 of the block maximum in A, p and V. Phi is printed only,
+because it vanishes in the exact state. Local P2 nr = 4 at ratio 1e6:
+N = 2 needs 8 stages and 16 Newton steps, and the path differences are
+A 1.1e-9, p 9.8e-8 and V 4.8e-9. N = 4 needs 8 stages and 17 steps, with
+differences A 1.2e-9, p 1.1e-7 and V 5.1e-9. The Newton-step gate now
+applies per stage (at most 12; previously at most 15 for the single
+solve). Ratio 1 is a single plain solve.
+
+Pre-declared study gates with continuation (P2 and P3; ratios 1, 1e3 and
+1e6; N = 4 and 6; nr = 4/8/16). The gates are unchanged: B and D3 orders
+>= k - 0.3 with D3 falling, V order >= k - 0.5 and the path check.
+p >= k + 0.6 applies at ratio 1 only. PASS at 1e6 means that these gates
+hold at N = 4 for P2 and P3. P3 N = 6 at nr = 4/8 failed the B-order
+gate (2.563). The errors there are identical to those at N = 4 on
+nr = 4/8, whose 4-to-8 order is also 2.563 while the 8-to-16 order is 2.952.
+The failure is therefore pre-asymptotic, and N = 6 now runs on nr = 16 too.
+Local P2 N = 4 nr = 4 at 1e6 gives B 5.4e-3 (as at ratio 1), but p 4.1e-3
+(5.8e-4 at ratio 1) and Phi 8.5e-2 of V. With iota = 2 every field line
+closes, so Phi and p are fixed along b only up to the discrete error of
+b, amplified by the ratio. The ladder shows whether B, D3 and V keep
+their orders.
+
+Local P2 results (nr = 4/8/16, 4 threads, previous revision; the gates were
+then rewritten as above). The Jacobian matches a central difference to
+2.7e-11. Newton converges quadratically in 4 steps.
+
+| ratio, N | B | p | D3 | V |
+|---|---|---|---|---|
+| 1, 2 | 5.3e-3, 1.6e-3, 4.0e-4 (order 2.00) | 5.8e-4, 7.1e-5, 1.1e-5 (2.76) | 1.0e-3, 1.8e-4, 2.7e-5 (2.73) | 4.8e-4, 1.2e-4, 3.1e-5 (2.0) |
+| 1e3, 2 | as above | 9.3e-4, 3.1e-4, 2.3e-4 (stalls) | as above | |
+| 1e3, 4 (nr 4/8) | | 1.0e-3, 2.0e-4 (2.36) | | |
+
+Phi stays at 4e-7 to 9e-6 at ratio 1. The sCluster ladders at ratios
+1, 1e3, 1e5, N = 2/4 and P3 are pending (results added with the study).
+
+### NN2c island results (sCluster jobs 3222014, 3222015)
+
+All 180 CTests passed. G (flattening measure) from the island study, N = 1
+unless noted:
+
+| run | G at ratio 1 / 1e2 / 1e4 / 1e6 (1e8) | island width at the top ratio (u) |
+|---|---|---|
+| P3 nr 8 (to 1e8) | 0.982 / 0.973 / 0.948 / 0.143 (0.148) | 0.174 (1e8) |
+| P2 nr 16 (to 1e6) | 0.982 / 0.973 / 0.945 / 0.212 | 0.188 |
+| P3 nr 8, N = 2 (to 1e6) | 0.982 / 0.973 / 0.976 / 0.090 | 0.189 |
+
+D3 ladder, P2, ratio 1e4, nr = 4/8/16/32: 5.8e-3, 9.9e-4, 1.8e-4, 1.2e-4
+(finest order 1.86; the 8 to 16 order is 2.4). The memory peak is 13 GB at
+nr = 32. At 1e6 P3 nr = 8 N = 1 gives G 0.143 and D3 6.7e-5. Two runs
+stopped with `ERROR STOP vacuum mode` (the vacuum-seed mode check) and are
+not results: P3 nr = 16 to 1e8, and the P3 D3 ladder at 1e6 after nr = 8.
+P3 nr = 16 is therefore open.
 
 Chris&AI
