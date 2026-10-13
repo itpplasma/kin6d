@@ -51,7 +51,9 @@ module kin6d_equilibrium_state
         procedure(field_resolution), deferred :: resolution
     end type
     abstract interface
-        ! Point values at points(2, n) = (R, Z); statuses(i) /= 0 marks a point
+        ! Point values at points(2 or 3, n) = (R, Z[, phi]); omitted phi is
+        ! zero. Components remain cylindrical; Cartesian conversion uses C.
+        ! statuses(i) /= 0 marks a point
         ! outside the represented domain (its values are unspecified).
         subroutine field_sample(field, points, values, statuses)
             import :: equilibrium_field_t, dp

@@ -261,6 +261,22 @@ target_sources(kin6d PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/ideal_map.f90 src/ideal_seed.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+# N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
+target_sources(kin6d PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
+    src/ideal_free_boundary.f90)
+set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
+target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
+foreach(k 2 3)
+    add_test(NAME ideal_fb_vacuum_exact_n0_p${k} COMMAND test_ideal_free_boundary vacuum ${k})
+endforeach()
+add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
+    COMMAND test_ideal_free_boundary vacuum3d 3)
+set_tests_properties(ideal_fb_derivatives ideal_fb_vacuum_exact_n0_p2
+    ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
+    TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
@@ -423,6 +439,12 @@ target_link_libraries(test_gs_prescribed_q_pedestal PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_pedestal COMMAND test_gs_prescribed_q_pedestal)
 set_tests_properties(grad_shafranov_prescribed_q_pedestal PROPERTIES
     TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_prescribed_q_edge_mode test/test_gs_prescribed_q_edge_mode.f90)
+target_link_libraries(test_gs_prescribed_q_edge_mode PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_edge_mode
+         COMMAND test_gs_prescribed_q_edge_mode)
+set_tests_properties(grad_shafranov_prescribed_q_edge_mode PROPERTIES
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
@@ -447,6 +469,8 @@ target_link_libraries(grad_shafranov_demo PRIVATE kin6d kin6d_io fortplot)
 add_test(NAME grad_shafranov_inverse_app_contract COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:grad_shafranov_demo> -DWORK=${CMAKE_BINARY_DIR}/gs_inverse_app_check
     -P ${CMAKE_SOURCE_DIR}/test/check_gs_inverse_app.cmake)
+set_tests_properties(grad_shafranov_inverse_app_contract PROPERTIES
+    TIMEOUT 300 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_p1_weak_current test/test_gs_p1_weak_current.f90)
 target_link_libraries(test_gs_p1_weak_current PRIVATE kin6d)
 add_test(NAME grad_shafranov_p1_weak_current COMMAND test_gs_p1_weak_current)
@@ -676,7 +700,8 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov ideal_map equilibrium_core gs_coarea gs_inverse
+    foreach(generator grad_shafranov ideal_map equilibrium_core nonnested vacuum_shell
+            gs_coarea gs_inverse
             gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
@@ -991,6 +1016,17 @@ add_executable(gs_load_bench app/gs_load_bench.f90)
 target_link_libraries(gs_load_bench PRIVATE kin6d)
 add_executable(gs_free app/gs_free.f90)
 target_link_libraries(gs_free PRIVATE kin6d_io fortplot)
+add_executable(gs_free_3d app/gs_free_3d.f90)
+target_link_libraries(gs_free_3d PRIVATE kin6d)
+# NL-3a on the gs_free fixture (N = 0): reproduce the 2D free boundary and
+# return from +-15 mm R/Z and +2 % elongation offset starts.
+add_test(NAME gs_free_3d_nl3a_fixture_return COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_free_3d> -DGS_FREE=$<TARGET_FILE:gs_free>
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
+    -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return -DDISTANCE_LIMIT=1.0e-4
+    -DDEFECT_LIMIT=1.0e-4 -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
+set_tests_properties(gs_free_3d_nl3a_fixture_return PROPERTIES TIMEOUT 3600
+    ENVIRONMENT "OMP_NUM_THREADS=4")
 add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_free> -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
     -DWORK=${CMAKE_BINARY_DIR}/gs_free_app
@@ -1029,9 +1065,19 @@ set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
     src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90
-    src/equilibrium_residual.f90 src/equilibrium_readback.f90)
+    src/equilibrium_residual.f90 src/equilibrium_readback.f90
+    src/equilibrium_certificate.f90 src/gs_certificate.f90
+    src/equilibrium_boundary.f90)
 set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_equilibrium_boundary test/test_equilibrium_boundary.f90)
+target_link_libraries(test_equilibrium_boundary PRIVATE kin6d)
+add_test(NAME equilibrium_core_d6_exterior_per_n
+    COMMAND test_equilibrium_boundary exterior)
+set_tests_properties(equilibrium_core_d6_exterior_per_n PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=4" PROCESSORS 4 TIMEOUT 600)
+add_test(NAME equilibrium_core_d6_coil_interface
+    COMMAND test_equilibrium_boundary coils)
 add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
 target_link_libraries(test_equilibrium_core PRIVATE kin6d)
 add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)
@@ -1096,7 +1142,7 @@ if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 target_sources(kin6d PRIVATE src/mhd_mesh.f90 src/mhd_ampere_n.f90
-    src/mhd_response_n.f90 src/mhd_ideal_n.f90)
+    src/mhd_response_n.f90 src/mhd_ideal_n.f90 src/mhd_closure_n.f90)
 target_link_libraries(kin6d PUBLIC kin6d_feec_n)
 add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
 target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
@@ -1115,11 +1161,41 @@ target_link_libraries(test_mhd_ideal_n PRIVATE kin6d)
 add_test(NAME mhd_ideal_n_mde_force_free_identity COMMAND test_mhd_ideal_n)
 set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(test_mhd_closure test/test_mhd_closure.f90)
+target_link_libraries(test_mhd_closure PRIVATE kin6d)
+add_test(NAME mhd_closure_tearing_delta_prime COMMAND test_mhd_closure)
+set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
+    ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_mhd_newcomb test/test_mhd_newcomb.f90)
 target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
 add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)
 set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
+
+# NN1: closed free-B states and the vacuum / axisymmetric-pressure restrictions.
+target_sources(kin6d PRIVATE src/generated/kin6d_nonnested_leaves.f90
+    src/equilibrium_nonnested.f90 src/nonnested_residual.f90)
+set_source_files_properties(src/generated/kin6d_nonnested_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+
+add_executable(test_nonnested_solovev test/test_nonnested_solovev.f90)
+target_link_libraries(test_nonnested_solovev PRIVATE kin6d)
+foreach(k 2 3)
+    add_test(NAME nonnested_n0_solovev_p${k} COMMAND test_nonnested_solovev ${k})
+    set_tests_properties(nonnested_n0_solovev_p${k} PROPERTIES TIMEOUT 600
+        ENVIRONMENT "OMP_NUM_THREADS=4")
+endforeach()
+
+add_executable(test_nonnested_vacuum test/test_nonnested_vacuum.f90)
+target_link_libraries(test_nonnested_vacuum PRIVATE kin6d)
+add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
+set_tests_properties(nonnested_vacuum_helical_coil_island PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+
+add_executable(test_nonnested_leaves test/test_nonnested_leaves.f90)
+target_link_libraries(test_nonnested_leaves PRIVATE kin6d)
+add_test(NAME nonnested_symbolic_derivatives_and_d3_identity
+    COMMAND test_nonnested_leaves)
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
 # thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
