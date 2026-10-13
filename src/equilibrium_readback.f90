@@ -48,27 +48,40 @@ contains
         q = dot_product(weights, result%q(first:first + 3))
     end function
 
-    subroutine read_equilibrium(eq, radial_points, angular_points, result, status)
+    subroutine read_equilibrium(eq, radial_points, angular_points, result, status, &
+                                rho_grid)
+        !! rho_grid, when present, replaces the uniform rho levels: it must
+        !! increase strictly from 0 to 1 (5..4097 points); radial_points is
+        !! then ignored.
         type(equilibrium_state_t), intent(in) :: eq
         integer, intent(in) :: radial_points, angular_points
         type(equilibrium_readback_t), intent(out) :: result
         integer, intent(out) :: status
+        real(dp), intent(in), optional :: rho_grid(:)
         status = 1
+        if (present(rho_grid)) then
+            if (size(rho_grid) < 5 .or. size(rho_grid) > 4097) return
+            if (.not. all(ieee_is_finite(rho_grid))) return
+            if (abs(rho_grid(1)) > 0) return
+            if (abs(rho_grid(size(rho_grid)) - 1) > 0) return
+            if (any(rho_grid(2:) <= rho_grid(:size(rho_grid) - 1))) return
+        end if
         if (.not. allocated(eq%field)) return
         select type (field => eq%field)
         class is (labelled_field_t)
             call read_labelled(eq, field, radial_points, angular_points, result, &
-                status)
+                status, rho_grid)
         end select
     end subroutine
 
     subroutine read_labelled(eq, field, radial_points, angular_points, result, &
-                             status)
+                             status, rho_grid)
         type(equilibrium_state_t), intent(in) :: eq
         class(labelled_field_t), intent(in) :: field
         integer, intent(in) :: radial_points, angular_points
         type(equilibrium_readback_t), intent(inout) :: result
         integer, intent(out) :: status
+        real(dp), intent(in), optional :: rho_grid(:)
         real(dp), allocatable :: coarea(:), density(:), rho(:), f(:)
         real(dp) :: two_pi, integral, gx(2), gw(2), weights(4), r, sigma, depth
         real(dp) :: volume, phi_tor
@@ -77,6 +90,7 @@ contains
         status = 1
         nr = radial_points; na = angular_points
         call field%resolution(nr, na)
+        if (present(rho_grid)) nr = size(rho_grid)
         if (nr < 5 .or. nr > 4097) return
         result%psi_bound = eq%psi_bound
         call field%label_axis(result%axis, result%psi_axis, status)
@@ -90,6 +104,7 @@ contains
             coarea(nr), density(nr), rho(nr), f(nr), result%contour_work(nr))
         do i = 1, nr
             rho(i) = real(i - 1, dp)/(nr - 1)
+            if (present(rho_grid)) rho(i) = rho_grid(i)
             result%psi(i) = eq%psi_bound + depth*(1 - rho(i)**2)
         end do
         call level_rbphi(field, result%axis, result%psi, f, status)

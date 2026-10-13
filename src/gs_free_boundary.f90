@@ -58,7 +58,12 @@ module kin6d_gs_free_boundary
                          sparse_direct_factor_csc, sparse_direct_factor_transpose_csc, &
                                      sparse_direct_solve_factored, sparse_direct_free
     use fortnum_quadrature, only: gauss_legendre
+    use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
+                               gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
+                               GS_DIRECT_INDEFINITE, GS_DIRECT_ORDER_AMD, &
+                               GS_DIRECT_ORDER_ND
     use kin6d_sort_keys, only: sort_key_order
+    use kin6d_gs_timers, only: gs_phase_tick, gs_profile_value
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs
     use kin6d_gs_coils, only: gs_circuit_set_t
     use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
@@ -136,6 +141,9 @@ module kin6d_gs_free_boundary
 
     type, public :: gs_fb_factor_t
         type(sparse_direct_factor_t) :: lu, lu_t
+        !> Threaded MUMPS LDL^T of the symmetric J0 (replaces lu and lu_t).
+        type(gs_direct_t) :: direct
+        logical :: use_direct = .false.
         real(dp), allocatable :: values(:), z(:, :), zt(:, :)
         real(dp) :: schur(2, 2) = 0.0_dp, schur_t(2, 2) = 0.0_dp
         logical :: ready = .false., have_transpose = .false.
@@ -188,7 +196,7 @@ module kin6d_gs_free_boundary
     public :: gs_fb_refit_solve, gs_fb_trace_lcfs, gs_fb_refit_mesh
     public :: gs_fb_chain_movement
     public :: gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply
-    public :: gs_fb_factor, gs_fb_solve, gs_fb_release, gs_fb_newton
+    public :: gs_fb_factor, gs_fb_solve, gs_fb_solve_block, gs_fb_release, gs_fb_newton
     public :: gs_fb_interface_mass, gs_fb_lcfs_levels
     public :: gs_fb_locate
 
@@ -208,6 +216,8 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: panels_per_edge, flux_degree
         integer :: stat
+        real(dp) :: t0
+        t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
         if (.not. law%normalized) return
@@ -225,6 +235,7 @@ contains
             status = GS_FB_BAD_INPUT + 100*stat
             return
         end if
+        call gs_phase_tick('setup.coupling_build', t0)
         sys%n = sys%coupling%n_nodes
         allocate (sys%extra_load(sys%n))
         sys%extra_load = 0.0_dp
@@ -237,7 +248,9 @@ contains
         else
             allocate (sys%coil_load(sys%n, 0))
         end if
+        call gs_phase_tick('setup.coil_load', t0)
         call build_pattern(state, sys)
+        call gs_phase_tick('setup.pattern', t0)
         sys%ready = .true.
         status = GS_FB_OK
     end subroutine gs_fb_setup
@@ -276,20 +289,22 @@ contains
         nt = sys%coupling%n_trace
         nk = size(sys%coupling%col)
         allocate (keys(nk + nt*nt), order(nk + nt*nt))
-        cnt = 0
+        cnt = nk + nt*nt
+        !$omp parallel do default(shared) private(i, p) schedule(static)
         do i = 1, n
             do p = sys%coupling%row_ptr(i), sys%coupling%row_ptr(i + 1) - 1
-                cnt = cnt + 1
-                keys(cnt) = int(sys%coupling%col(p) - 1, i64)*n + (i - 1)
+                keys(p) = int(sys%coupling%col(p) - 1, i64)*n + (i - 1)
             end do
         end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) private(i, j) schedule(static)
         do j = 1, nt
             do i = 1, nt
-                cnt = cnt + 1
-                keys(cnt) = int(sys%coupling%trace_node(j) - 1, i64)*n &
+                keys(nk + (j - 1)*nt + i) = int(sys%coupling%trace_node(j) - 1, i64)*n &
                             + (sys%coupling%trace_node(i) - 1)
             end do
         end do
+        !$omp end parallel do
         call sort_key_order(keys, order)
         allocate (unique(cnt))
         nu = 0
@@ -313,12 +328,15 @@ contains
             sys%colptr(i + 1) = sys%colptr(i + 1) + sys%colptr(i)
         end do
         allocate (sys%slot_k(nk), sys%slot_trace(nt, nt))
+        !$omp parallel do default(shared) private(i, p) schedule(static)
         do i = 1, n
             do p = sys%coupling%row_ptr(i), sys%coupling%row_ptr(i + 1) - 1
                 sys%slot_k(p) = find_slot(unique(:nu), &
                                           int(sys%coupling%col(p) - 1, i64)*n + (i - 1))
             end do
         end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) private(i, j) schedule(static)
         do j = 1, nt
             do i = 1, nt
                 sys%slot_trace(i, j) = find_slot(unique(:nu), &
@@ -326,6 +344,7 @@ contains
                                                  + (sys%coupling%trace_node(i) - 1))
             end do
         end do
+        !$omp end parallel do
         ndof = size(state%triangles, 1)
         ne = size(state%triangles, 2)
         allocate (sys%slot_cell(ndof, ndof, ne))
@@ -559,7 +578,9 @@ contains
         real(dp), allocatable, intent(out) :: ga(:), gb(:)
         integer, intent(out) :: status
         real(dp) :: shape(10), values(10), xi(2), value, best, point(2), dist, best_dist
-        real(dp) :: psi_x, level
+        real(dp) :: psi_x, level, local_best, local_axis(2), local_dist, local_point(2)
+        real(dp) :: local_shape(10), local_psi
+        integer :: local_cell
         real(dp), allocatable :: shape_x(:)
         integer :: e, ndof, n, k, cell_best, stat, c, element
         logical :: found, any_found, near
@@ -577,6 +598,13 @@ contains
         axis_cell = 0
         best = -huge(1.0_dp)
         cell_best = 0
+        ! Threaded scan; the lowest cell index wins a tie, as in a serial scan.
+        !$omp parallel default(shared) private(e, k, near, values, xi, value, found, &
+        !$omp& local_best, local_cell, local_axis)
+        local_best = -huge(1.0_dp)
+        local_cell = 0
+        local_axis = 0.0_dp
+        !$omp do schedule(static)
         do e = 1, size(state%triangles, 2)
             near = .false.
             do k = 1, ndof
@@ -587,12 +615,24 @@ contains
             values(:ndof) = psi(state%triangles(:, e))
             call cell_maximum(values(:ndof), real(cfg%axis_sign, dp), xi, value, found)
             if (.not. found) cycle
-            if (value > best) then
-                best = value
-                cell_best = e
-                axis = xi
+            if (value > local_best) then
+                local_best = value
+                local_cell = e
+                local_axis = xi
             end if
         end do
+        !$omp end do nowait
+        !$omp critical(gs_fb_axis_scan)
+        if (local_cell /= 0) then
+            if (local_best > best .or. (local_best == best .and. local_cell < cell_best)) &
+                then
+                best = local_best
+                cell_best = local_cell
+                axis = local_axis
+            end if
+        end if
+        !$omp end critical(gs_fb_axis_scan)
+        !$omp end parallel
         if (cell_best == 0) return
         call point_shape(state, cell_best, axis, shape, point, stat)
         if (stat /= 0) return
@@ -606,7 +646,17 @@ contains
             status = GS_FB_NO_XPOINT
             best_dist = huge(1.0_dp)
             any_found = .false.
+            element = 0
             allocate (shape_x(ndof))
+            !$omp parallel default(shared) private(e, k, near, values, xi, found, &
+            !$omp& shape, point, stat, dist, local_dist, local_cell, local_point, &
+            !$omp& local_shape, local_psi)
+            local_dist = huge(1.0_dp)
+            local_cell = 0
+            local_point = 0.0_dp
+            local_shape = 0.0_dp
+            local_psi = 0.0_dp
+            !$omp do schedule(static)
             do e = 1, size(state%triangles, 2)
                 near = .false.
                 do k = 1, ndof
@@ -620,15 +670,29 @@ contains
                 call point_shape(state, e, xi, shape, point, stat)
                 if (stat /= 0) cycle
                 dist = norm2(point - xpoint_hint)
-                if (dist < best_dist) then
-                    best_dist = dist
-                    any_found = .true.
-                    element = e
-                    xpoint = point
-                    shape_x = shape(:ndof)
-                    psi_x = dot_product(shape(:ndof), values(:ndof))
+                if (dist < local_dist) then
+                    local_dist = dist
+                    local_cell = e
+                    local_point = point
+                    local_shape(:ndof) = shape(:ndof)
+                    local_psi = dot_product(shape(:ndof), values(:ndof))
                 end if
             end do
+            !$omp end do nowait
+            !$omp critical(gs_fb_saddle_scan)
+            if (local_cell /= 0) then
+                if (local_dist < best_dist .or. &
+                    (local_dist == best_dist .and. local_cell < element)) then
+                    best_dist = local_dist
+                    any_found = .true.
+                    element = local_cell
+                    xpoint = local_point
+                    shape_x = local_shape(:ndof)
+                    psi_x = local_psi
+                end if
+            end if
+            !$omp end critical(gs_fb_saddle_scan)
+            !$omp end parallel
             if (.not. any_found) return
             level = cfg%cut_fraction
             psi_bound = psi_axis + level*(psi_x - psi_axis)
@@ -1114,6 +1178,8 @@ contains
         integer :: e, ndof, n, ne, stat, k, i
         integer :: dropped_total
         logical :: need_jacobian
+        real(dp) :: t0
+        t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
         need_jacobian = .true.
@@ -1131,6 +1197,7 @@ contains
             status = stat
             return
         end if
+        call gs_phase_tick('eval.lcfs_levels', t0)
         call plasma_cells(state, psi, sigma, ev%psi_bound, k, sys%cfg%mode, &
                           sys%cfg%cut_fraction, ev%axis, ev%xpoint, ev%plasma_cell)
         law = sys%law
@@ -1142,6 +1209,7 @@ contains
                         sys%cfg%face_tolerance, ev%plasma_cell, cell_phi, face_edge)
         ev%face_cells = count(face_edge)
         allocate (saved(n), ev%source(n))
+        call gs_phase_tick('eval.plasma_snap', t0)
         saved = state%psi
         state%psi = psi - ev%psi_bound
         call gs_cubic_load(state, sys%mu0, law, ev%source, jac, stat, &
@@ -1150,6 +1218,7 @@ contains
                            load_only=.not. need_jacobian, source_integral=integral, &
                            plasma_cell=ev%plasma_cell, cell_psi=cell_phi)
         state%psi = saved
+        call gs_phase_tick('eval.cubic_load', t0)
         if (stat /= 0) then
             status = GS_FB_SOURCE_FAILED
             return
@@ -1204,6 +1273,7 @@ contains
                     end do
                 end do
             end if
+            call gs_phase_tick('eval.interface', t0)
             ev%interface_dropped = real(dropped_total, dp)
             ev%ua = jac%axis_load
             allocate (ev%ub(n))
@@ -1268,14 +1338,20 @@ contains
     end subroutine gs_fb_jacobian_apply
 
     subroutine gs_fb_factor(state, sys, ev, fac, status)
-        !! Sparse LU of J0 = A - M and the two Woodbury columns.
+        !! Sparse factor of J0 = A - M and the two Woodbury columns. J0 is
+        !! symmetric (stiffness, coupling, source and interface mass), so the
+        !! threaded MUMPS LDL^T serves J and J^T; an asymmetric J0, or a build
+        !! without MUMPS, uses the serial SuperLU LU and a transposed LU.
         type(gs_state_t), intent(in) :: state
         type(gs_fb_system_t), intent(in) :: sys
         type(gs_fb_eval_t), intent(in) :: ev
         type(gs_fb_factor_t), intent(inout) :: fac
         integer, intent(out) :: status
         real(dp), allocatable :: rhs2(:), col(:)
+        real(dp) :: t0, asym, vmax
         integer :: n, nt, ndof, e, k, l, i, j, p, stat
+        logical :: use_mumps, ok
+        t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
         if (.not. ev%has_jacobian) return
@@ -1310,13 +1386,52 @@ contains
             end do
         end do
         !$omp end parallel do
+        call gs_phase_tick('factor.assemble', t0)
+        use_mumps = mumps_enabled()
+        if (use_mumps) then
+            call asymmetry(n, sys%colptr, sys%rowind, fac%values, asym, vmax)
+            use_mumps = asym <= 1.0e-12_dp*vmax
+        end if
+        allocate (fac%z(n, 2), fac%zt(n, 2), rhs2(n), col(n))
+        if (use_mumps) then
+            call gs_direct_factor(fac%direct, n, sys%colptr, sys%rowind, fac%values, &
+                                  ok, GS_DIRECT_INDEFINITE, direct_ordering())
+            call gs_phase_tick('factor.mumps', t0)
+            call gs_profile_value('mumps.analysis', fac%direct%analysis_s)
+            call gs_profile_value('mumps.factor', fac%direct%factor_s)
+            if (.not. ok) then
+                call gs_direct_free(fac%direct)
+                status = GS_FB_FACTOR_FAILED
+                return
+            end if
+            fac%use_direct = .true.
+            block
+                real(dp), allocatable :: two(:, :)
+                allocate (two(n, 2))
+                two(:, 1) = ev%ua
+                two(:, 2) = ev%ub
+                call gs_direct_solve_block(fac%direct, two, fac%z, ok)
+            end block
+            if (.not. ok) then
+                status = GS_FB_FACTOR_FAILED
+                return
+            end if
+            call gs_phase_tick('factor.z', t0)
+            fac%schur(1, 1) = 1.0_dp - dot_product(ev%ga, fac%z(:, 1))
+            fac%schur(1, 2) = -dot_product(ev%ga, fac%z(:, 2))
+            fac%schur(2, 1) = -dot_product(ev%gb, fac%z(:, 1))
+            fac%schur(2, 2) = 1.0_dp - dot_product(ev%gb, fac%z(:, 2))
+            fac%ready = .true.
+            status = GS_FB_OK
+            return
+        end if
         call sparse_direct_factor_csc(fac%lu, n, sys%colptr, sys%rowind, &
                                       fac%values, stat)
+        call gs_phase_tick('factor.lu', t0)
         if (stat /= 0) then
             status = GS_FB_FACTOR_FAILED
             return
         end if
-        allocate (fac%z(n, 2), fac%zt(n, 2), rhs2(n), col(n))
         rhs2 = ev%ua
         call sparse_direct_solve_factored(fac%lu, rhs2, col, stat)
         if (stat /= 0) then
@@ -1331,6 +1446,7 @@ contains
             return
         end if
         fac%z(:, 2) = col
+        call gs_phase_tick('factor.z', t0)
         fac%schur(1, 1) = 1.0_dp - dot_product(ev%ga, fac%z(:, 1))
         fac%schur(1, 2) = -dot_product(ev%ga, fac%z(:, 2))
         fac%schur(2, 1) = -dot_product(ev%gb, fac%z(:, 1))
@@ -1338,6 +1454,74 @@ contains
         fac%ready = .true.
         status = GS_FB_OK
     end subroutine gs_fb_factor
+
+    integer function direct_ordering() result(ordering)
+        !! Fill-reducing ordering of the MUMPS analysis. The factor is redone
+        !! every Newton iteration and the analysis is serial, so approximate
+        !! minimum degree (cheap analysis, fill slightly above nested
+        !! dissection) is faster overall; KIN6D_FB_ORDERING = nd selects nested
+        !! dissection.
+        character(len=8) :: choice
+        integer :: length, stat
+
+        ordering = GS_DIRECT_ORDER_AMD
+        call get_environment_variable('KIN6D_FB_ORDERING', choice, length, stat)
+        if (stat == 0 .and. length > 0) then
+            if (trim(choice) == 'nd') ordering = GS_DIRECT_ORDER_ND
+        end if
+    end function direct_ordering
+
+    logical function mumps_enabled() result(enabled)
+        !! Threaded MUMPS when built in; KIN6D_FB_SOLVER=superlu forces the
+        !! serial SuperLU path (A/B comparisons).
+        character(len=16) :: choice
+        integer :: length, stat
+
+        enabled = gs_direct_available()
+        if (.not. enabled) return
+        call get_environment_variable('KIN6D_FB_SOLVER', choice, length, stat)
+        if (stat == 0 .and. length > 0) enabled = trim(choice) /= 'superlu'
+    end function mumps_enabled
+
+    subroutine asymmetry(n, colptr, rowind, values, asym, vmax)
+        !! max |A_ij - A_ji| and max |A_ij| of a CSC matrix with sorted rows.
+        integer, intent(in) :: n, colptr(:), rowind(:)
+        real(dp), intent(in) :: values(:)
+        real(dp), intent(out) :: asym, vmax
+        integer :: c, p, r, lo, hi, mid
+
+        asym = 0.0_dp
+        vmax = 0.0_dp
+        !$omp parallel do default(shared) private(c, p, r, lo, hi, mid) &
+        !$omp reduction(max:asym, vmax) schedule(static)
+        do c = 1, n
+            do p = colptr(c), colptr(c + 1) - 1
+                r = rowind(p)
+                vmax = max(vmax, abs(values(p)))
+                ! Entry (c, r) lives in column r.
+                lo = colptr(r)
+                hi = colptr(r + 1) - 1
+                do while (lo < hi)
+                    mid = (lo + hi)/2
+                    if (rowind(mid) < c) then
+                        lo = mid + 1
+                    else
+                        hi = mid
+                    end if
+                end do
+                if (lo <= colptr(r + 1) - 1) then
+                    if (rowind(lo) == c) then
+                        asym = max(asym, abs(values(p) - values(lo)))
+                    else
+                        asym = max(asym, abs(values(p)))
+                    end if
+                else
+                    asym = max(asym, abs(values(p)))
+                end if
+            end do
+        end do
+        !$omp end parallel do
+    end subroutine asymmetry
 
     subroutine gs_fb_solve(sys, ev, fac, rhs, solution, status, transpose)
         !! solution = J^{-1} rhs (or J^{-T} rhs) with the factor of J0 and the
@@ -1352,7 +1536,7 @@ contains
         real(dp), allocatable :: y(:), col(:), rhs_v(:)
         real(dp) :: w(2), c(2, 2), det, d(2)
         integer :: n, stat, j
-        logical :: adjoint
+        logical :: adjoint, ok
 
         status = GS_FB_BAD_INPUT
         if (.not. fac%ready) return
@@ -1361,7 +1545,12 @@ contains
         n = sys%n
         allocate (y(n), col(n), rhs_v(n))
         if (.not. adjoint) then
-            call sparse_direct_solve_factored(fac%lu, rhs, y, stat)
+            if (fac%use_direct) then
+                call gs_direct_solve(fac%direct, rhs, y, ok)
+                stat = merge(0, 1, ok)
+            else
+                call sparse_direct_solve_factored(fac%lu, rhs, y, stat)
+            end if
             if (stat /= 0) then
                 status = GS_FB_FACTOR_FAILED
                 return
@@ -1369,6 +1558,25 @@ contains
             w = [dot_product(ev%ga, y), dot_product(ev%gb, y)]
             c = fac%schur
         else
+            if (fac%use_direct .and. .not. fac%have_transpose) then
+                ! J0 is symmetric: the same factor solves J0^T.
+                block
+                    real(dp), allocatable :: two(:, :)
+                    allocate (two(n, 2))
+                    two(:, 1) = ev%ga
+                    two(:, 2) = ev%gb
+                    call gs_direct_solve_block(fac%direct, two, fac%zt, ok)
+                end block
+                if (.not. ok) then
+                    status = GS_FB_FACTOR_FAILED
+                    return
+                end if
+                fac%schur_t(1, 1) = 1.0_dp - dot_product(ev%ua, fac%zt(:, 1))
+                fac%schur_t(1, 2) = -dot_product(ev%ua, fac%zt(:, 2))
+                fac%schur_t(2, 1) = -dot_product(ev%ub, fac%zt(:, 1))
+                fac%schur_t(2, 2) = 1.0_dp - dot_product(ev%ub, fac%zt(:, 2))
+                fac%have_transpose = .true.
+            end if
             if (.not. fac%have_transpose) then
                 call sparse_direct_factor_transpose_csc(fac%lu_t, n, sys%colptr, &
                                                         sys%rowind, fac%values, stat)
@@ -1393,7 +1601,12 @@ contains
                 fac%schur_t(2, 2) = 1.0_dp - dot_product(ev%ub, fac%zt(:, 2))
                 fac%have_transpose = .true.
             end if
-            call sparse_direct_solve_factored(fac%lu_t, rhs, y, stat)
+            if (fac%use_direct) then
+                call gs_direct_solve(fac%direct, rhs, y, ok)
+                stat = merge(0, 1, ok)
+            else
+                call sparse_direct_solve_factored(fac%lu_t, rhs, y, stat)
+            end if
             if (stat /= 0) then
                 status = GS_FB_FACTOR_FAILED
                 return
@@ -1415,11 +1628,69 @@ contains
         status = GS_FB_OK
     end subroutine gs_fb_solve
 
+    subroutine gs_fb_solve_block(sys, ev, fac, rhs, solution, status)
+        !! solution(:, k) = J^{-1} rhs(:, k) for every column. A MUMPS factor
+        !! is solved with one threaded block solve (its handle is not safe to
+        !! share between threads); SuperLU solves are threaded over columns.
+        type(gs_fb_system_t), intent(in) :: sys
+        type(gs_fb_eval_t), intent(in) :: ev
+        type(gs_fb_factor_t), intent(inout) :: fac
+        real(dp), intent(in) :: rhs(:, :)
+        real(dp), intent(out) :: solution(:, :)
+        integer, intent(out) :: status
+        real(dp), allocatable :: y(:, :)
+        real(dp) :: c(2, 2), det, w(2), d(2)
+        integer, allocatable :: stats(:)
+        integer :: k, nrhs
+        logical :: ok
+
+        status = GS_FB_BAD_INPUT
+        if (.not. fac%ready) return
+        nrhs = size(rhs, 2)
+        if (.not. fac%use_direct) then
+            allocate (stats(nrhs))
+            stats = GS_FB_OK
+            !$omp parallel do default(shared) private(k) schedule(dynamic, 1)
+            do k = 1, nrhs
+                call gs_fb_solve(sys, ev, fac, rhs(:, k), solution(:, k), stats(k))
+            end do
+            !$omp end parallel do
+            status = GS_FB_OK
+            if (any(stats /= GS_FB_OK)) status = GS_FB_FACTOR_FAILED
+            return
+        end if
+        allocate (y(sys%n, nrhs))
+        call gs_direct_solve_block(fac%direct, rhs, y, ok)
+        if (.not. ok) then
+            status = GS_FB_FACTOR_FAILED
+            return
+        end if
+        c = fac%schur
+        det = c(1, 1)*c(2, 2) - c(1, 2)*c(2, 1)
+        if (abs(det) <= 1.0e-14_dp*max(1.0_dp, abs(c(1, 1)*c(2, 2)))) then
+            status = GS_FB_FACTOR_FAILED
+            return
+        end if
+        !$omp parallel do default(shared) private(k, w, d) schedule(static)
+        do k = 1, nrhs
+            w = [dot_product(ev%ga, y(:, k)), dot_product(ev%gb, y(:, k))]
+            d = [c(2, 2)*w(1) - c(1, 2)*w(2), -c(2, 1)*w(1) + c(1, 1)*w(2)]/det
+            solution(:, k) = y(:, k) + fac%z(:, 1)*d(1) + fac%z(:, 2)*d(2)
+        end do
+        !$omp end parallel do
+        status = GS_FB_OK
+    end subroutine gs_fb_solve_block
+
     subroutine gs_fb_release(fac)
         type(gs_fb_factor_t), intent(inout) :: fac
 
-        if (fac%ready) call sparse_direct_free(fac%lu)
-        if (fac%have_transpose) call sparse_direct_free(fac%lu_t)
+        if (fac%use_direct) then
+            call gs_direct_free(fac%direct)
+        else
+            if (fac%ready) call sparse_direct_free(fac%lu)
+            if (fac%have_transpose) call sparse_direct_free(fac%lu_t)
+        end if
+        fac%use_direct = .false.
         fac%ready = .false.
         fac%have_transpose = .false.
         if (allocated(fac%values)) deallocate (fac%values)
@@ -1896,10 +2167,13 @@ contains
         type(gs_state_t) :: old
         real(dp), allocatable :: psi_new(:), new_chain(:, :)
         integer :: stat
+        real(dp) :: t0
+        t0 = -1; call gs_phase_tick('', t0)
 
         call gs_fb_trace_lcfs(state, state%psi, axis, psi_bound, sigma, &
                               size(chain, 2), new_chain, status, &
                               rcfg%dense_factor, rcfg%project_iterations)
+        call gs_phase_tick('refit.trace', t0)
         if (status /= GS_FB_OK) return
         old = state
         if (present(curve)) then
@@ -1914,8 +2188,10 @@ contains
             status = GS_FB_REFIT_FAILED
             return
         end if
+        call gs_phase_tick('refit.initialize_gs', t0)
         chain = new_chain
         call transfer_flux(old, old%psi, state, psi_new)
+        call gs_phase_tick('refit.transfer', t0)
         state%psi = psi_new
         status = GS_FB_OK
     end subroutine gs_fb_refit_mesh

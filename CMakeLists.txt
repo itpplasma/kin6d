@@ -170,6 +170,10 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_boundary_operators_2d.f90)
 target_link_libraries(kin6d_spatial PUBLIC kin6d_ode kin6d_intervals)
+# The upstream BEM assembly (panel-pair colouring) is threaded with OpenMP.
+if(KIN6D_ENABLE_OPENMP)
+    target_link_libraries(kin6d_spatial PUBLIC OpenMP::OpenMP_Fortran)
+endif()
 set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
@@ -307,6 +311,9 @@ add_test(NAME gs_coupling_t2_fixed_current_cubature COMMAND test_gs_coupling_fix
 set_tests_properties(gs_coupling_t2_fixed_current_cubature PROPERTIES TIMEOUT 900)
 add_test(NAME gs_coupling_structure_symmetry_energy COMMAND test_gs_coupling_structure)
 set_tests_properties(gs_coupling_structure_symmetry_energy PROPERTIES TIMEOUT 900)
+add_executable(test_gs_steklov_cache test/test_gs_steklov_cache.f90)
+target_link_libraries(test_gs_steklov_cache PRIVATE kin6d)
+add_test(NAME gs_steklov_cache_relabelled_curve COMMAND test_gs_steklov_cache)
 add_executable(test_gs_fb_interface test/test_gs_fb_interface.f90)
 target_link_libraries(test_gs_fb_interface PRIVATE kin6d)
 add_test(NAME gs_free_boundary_interface_flow_quadrature COMMAND test_gs_fb_interface)
@@ -392,6 +399,27 @@ target_link_libraries(test_gs_prescribed_q_variable_p PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_variable_p COMMAND test_gs_prescribed_q_variable_p)
 set_tests_properties(grad_shafranov_prescribed_q_variable_p PROPERTIES
     TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_prescribed_q_intervals test/test_gs_prescribed_q_intervals.f90)
+target_link_libraries(test_gs_prescribed_q_intervals PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_jacobian_richardson
+         COMMAND test_gs_prescribed_q_intervals jacobian)
+add_test(NAME grad_shafranov_prescribed_q_exact_vs_secant
+         COMMAND test_gs_prescribed_q_intervals secant)
+add_test(NAME grad_shafranov_prescribed_q_knots64_uniform
+         COMMAND test_gs_prescribed_q_intervals mms 64 0 8)
+add_test(NAME grad_shafranov_prescribed_q_knots64_graded
+         COMMAND test_gs_prescribed_q_intervals mms 64 1 8)
+set_tests_properties(grad_shafranov_prescribed_q_jacobian_richardson
+    grad_shafranov_prescribed_q_exact_vs_secant PROPERTIES
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(grad_shafranov_prescribed_q_knots64_uniform
+    grad_shafranov_prescribed_q_knots64_graded PROPERTIES
+    TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_prescribed_q_pedestal test/test_gs_prescribed_q_pedestal.f90)
+target_link_libraries(test_gs_prescribed_q_pedestal PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_pedestal COMMAND test_gs_prescribed_q_pedestal)
+set_tests_properties(grad_shafranov_prescribed_q_pedestal PROPERTIES
+    TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
@@ -459,6 +487,11 @@ target_link_libraries(gold_hoyle_demo PRIVATE kin6d kin6d_io)
 target_compile_options(kin6d PRIVATE -Wall -Wextra -fno-fast-math -ffp-contract=off
     -frecursive)
 add_executable(kin6d_demo app/kin6d_demo.f90)
+find_package(OpenMP COMPONENTS Fortran)
+if(OpenMP_Fortran_FOUND)
+    # Inverse Jacobian columns and other independent loops use OpenMP.
+    target_link_libraries(kin6d PUBLIC OpenMP::OpenMP_Fortran)
+endif()
 target_link_libraries(kin6d_demo PRIVATE kin6d fortplot)
 add_executable(steady_laboratory_demo app/steady_laboratory_demo.f90)
 target_link_libraries(steady_laboratory_demo PRIVATE kin6d fortplot)
@@ -672,7 +705,6 @@ target_link_libraries(benchmark_ocp PRIVATE kin6d)
 # The periodic OCP demos run independent ensemble members on OpenMP threads;
 # the library is reentrant (no module state) and compiled with automatic
 # locals (-frecursive) so that concurrent calls do not share scratch.
-find_package(OpenMP COMPONENTS Fortran)
 foreach(example ocp_oscillation ocp_shielding)
     add_executable(${example}_demo app/${example}_demo.f90)
     target_link_libraries(${example}_demo PRIVATE kin6d fortplot)
@@ -1085,3 +1117,41 @@ target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
 add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)
 set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
+
+# Test resource declaration. Every registered test gets an explicit OpenMP
+# thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
+# Without this, concurrently running tests each start one spinning OpenMP thread
+# per core, oversubscribe the machine under `ctest -j`, and starve each other
+# until a wall-clock limit trips. A test keeps the thread count it declared via
+# ENVIRONMENT (or PROCESSORS); the rest get KIN6D_TEST_DEFAULT_THREADS.
+set(KIN6D_TEST_DEFAULT_THREADS 2 CACHE STRING
+    "OpenMP threads (and ctest PROCESSORS) for tests that do not declare their own")
+get_directory_property(_kin6d_all_tests TESTS)
+foreach(_t IN LISTS _kin6d_all_tests)
+    get_test_property(${_t} ENVIRONMENT _env)
+    get_test_property(${_t} PROCESSORS _procs)
+    if(NOT _env)
+        set(_env "")
+    endif()
+    set(_threads "")
+    foreach(_item IN LISTS _env)
+        if(_item MATCHES "^OMP_NUM_THREADS=([0-9]+)$")
+            set(_threads "${CMAKE_MATCH_1}")
+        endif()
+    endforeach()
+    if(NOT _threads)
+        if(_procs)
+            set(_threads "${_procs}")
+        else()
+            set(_threads "${KIN6D_TEST_DEFAULT_THREADS}")
+        endif()
+        list(APPEND _env "OMP_NUM_THREADS=${_threads}")
+    endif()
+    if(NOT "${_env}" MATCHES "(^|;)OPENBLAS_NUM_THREADS=")
+        list(APPEND _env "OPENBLAS_NUM_THREADS=1")
+    endif()
+    if(NOT "${_env}" MATCHES "(^|;)OMP_WAIT_POLICY=")
+        list(APPEND _env "OMP_WAIT_POLICY=passive")
+    endif()
+    set_tests_properties(${_t} PROPERTIES ENVIRONMENT "${_env}" PROCESSORS "${_threads}")
+endforeach()

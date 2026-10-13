@@ -14,14 +14,14 @@ module kin6d_gs_majorant
     use kin6d_gs_options, only: gs_use_direct
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
+    use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_bem_nodes, &
-        gs_coupling_edge_weights, gs_coupled_apply
+        gs_coupling_edge_weights, gs_coupled_apply, gs_coupling_steklov
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
         gs_fb_evaluate, gs_fb_factor, gs_fb_solve, gs_fb_release, GS_FB_OK
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
-        gs_bem_operators_t, gs_bem_curve_from_nodes, gs_bem_assemble, &
-        gs_bem_steklov_symmetric, gs_bem_panel_point, gs_bem_trace_node_index
+        gs_bem_panel_point, gs_bem_trace_node_index
     use fortfem_sparse_direct, only: sparse_direct_factor_t, &
         sparse_direct_factor_csc, sparse_direct_solve_factored, sparse_direct_free
     use fortnum_quadrature, only: gauss_legendre
@@ -80,6 +80,10 @@ module kin6d_gs_majorant
         integer, allocatable :: indices(:, :)       !< recovery dofs (2 ndof, nel)
         type(csr_matrix_t) :: system                !< R mass + C_F^2 div-div
         type(sparse_direct_factor_t) :: factor
+        !> Threaded MUMPS Cholesky of the recovery system and of the energy
+        !! operator (both symmetric positive definite); used when factored,
+        !! the SuperLU factors above otherwise.
+        type(gs_direct_t) :: factor_direct, energy_direct
         !> Sparse LU of the reference energy operator K + R^T S_ref R.
         type(sparse_direct_factor_t) :: energy_factor
         real(dp) :: cf2 = 0.0_dp                    !< coupled Friedrichs C_F^2
@@ -167,7 +171,6 @@ contains
         type(gs_circuit_set_t), intent(in), optional :: set
         integer, intent(in), optional :: reference_panels
         real(dp), intent(in), optional :: cf2
-        type(gs_bem_operators_t) :: ops
         real(dp), allocatable :: nodes(:, :), gx(:), gw(:), gamma(:, :)
         real(dp), allocatable :: xq(:, :), nq(:, :), wq(:), bq(:, :), gq(:, :)
         real(dp), allocatable :: gr(:, :), gz(:, :), blocks(:, :, :)
@@ -176,7 +179,11 @@ contains
         integer :: m, np, p, i, q, kk, j, l, c, k, info, stat, ng, point_id
         integer :: cols(0:3)
         integer, allocatable :: bq_index(:, :)
+        real(dp) :: t0
+        logical :: direct_ok
 
+        t0 = -1
+        call gs_phase_tick('', t0)
         call gs_coupled_estimator_free(est)
         status = GS_CM_BAD_INPUT
         if (.not. state%ready .or. coupling%n_trace == 0) return
@@ -195,18 +202,16 @@ contains
 
         status = GS_CM_BEM_FAILED
         call gs_coupling_bem_nodes(state, coupling, m, nodes, est%restriction)
-        call gs_bem_curve_from_nodes(nodes, est%curve, stat)
+        call gs_coupling_steklov(nodes, coupling%flux_degree, est%curve, est%s_ref, stat)
         if (stat /= 0) return
-        call gs_bem_assemble(est%curve, coupling%flux_degree, ops, stat)
-        if (stat /= 0) return
-        call gs_bem_steklov_symmetric(ops, est%s_ref, stat)
-        if (stat /= 0) return
+        call gs_phase_tick('est.steklov', t0)
         est%s_chol = est%s_ref
         call dpotrf('U', est%nx, est%s_chol, est%nx, info)
         if (info /= 0) return
         est%s_trace = matmul(transpose(est%restriction), &
                              matmul(est%s_ref, est%restriction))
         est%s_trace = 0.5_dp*(est%s_trace + transpose(est%s_trace))
+        call gs_phase_tick('est.chol_strace', t0)
 
         ! Boundary quadrature on the reference panels: <y.n, phi_j> and the
         ! conormal coil flux moments.
@@ -273,9 +278,11 @@ contains
             allocate (est%coil_moments(est%nx, 0))
         end if
 
+        call gs_phase_tick('est.boundary_maps', t0)
         status = GS_CM_SOLVE_FAILED
         call factor_energy(stat)
         if (stat /= 0) return
+        call gs_phase_tick('est.factor_energy', t0)
         status = GS_CM_CELL_FAILED
         call triangle_duffy_quadrature(8, x, y, w, stat)
         if (stat /= 0) return
@@ -285,6 +292,7 @@ contains
             call friedrichs_estimate(stat)
             if (stat /= 0) return
         end if
+        call gs_phase_tick('est.friedrichs', t0)
         ! Recovery system. The balance term splits r = f + div y into cell
         ! means and mean-free parts (local Poincare, Payne-Weinberger h/pi):
         !   (r, e) <= C_F ||Pi0 r|| |||e||| + (sum w_T ||r - r_T||_T^2)^1/2 |||e|||,
@@ -364,9 +372,10 @@ contains
         if (stat /= 0) return
         call gs_csr_build(est%system, est%indices, blocks, 2*est%n)
         status = GS_CM_SOLVE_FAILED
-        call sparse_direct_factor_csc(est%factor, 2*est%n, est%system%rowptr, &
-                                      est%system%colidx, est%system%val, stat)
+        call gs_phase_tick('est.assemble', t0)
+        call factor_recovery(stat)
         if (stat /= 0) return
+        call gs_phase_tick('est.factor_recovery', t0)
         est%ready = .true.
         status = GS_CM_OK
     contains
@@ -417,9 +426,33 @@ contains
             do i_ = 1, est%n
                 colptr(i_ + 1) = colptr(i_ + 1) + colptr(i_)
             end do
+            if (gs_direct_available()) then
+                call gs_direct_factor(est%energy_direct, est%n, colptr, &
+                                      rowind(:nnz), values(:nnz), direct_ok)
+                if (direct_ok) then
+                    fstat = 0
+                    return
+                end if
+                call gs_direct_free(est%energy_direct)
+            end if
             call sparse_direct_factor_csc(est%energy_factor, est%n, colptr, &
                                           rowind(:nnz), values(:nnz), fstat)
         end subroutine factor_energy
+
+        subroutine factor_recovery(fstat)
+            integer, intent(out) :: fstat
+            if (gs_direct_available()) then
+                call gs_direct_factor(est%factor_direct, 2*est%n, est%system%rowptr, &
+                                      est%system%colidx, est%system%val, direct_ok)
+                if (direct_ok) then
+                    fstat = 0
+                    return
+                end if
+                call gs_direct_free(est%factor_direct)
+            end if
+            call sparse_direct_factor_csc(est%factor, 2*est%n, est%system%rowptr, &
+                                          est%system%colidx, est%system%val, fstat)
+        end subroutine factor_recovery
 
         subroutine friedrichs_estimate(fstat)
             !! C_F^2 = max ||v||^2 / |||v|||^2: power iteration on A^-1 M with
@@ -430,17 +463,25 @@ contains
             real(dp), allocatable :: mblocks(:, :, :), v(:), mv(:), av(:), z(:)
             real(dp) :: theta, previous, shape(10), grads(2, 10), hess(2, 2, 10)
             real(dp) :: pt(2), det
-            integer :: e, qq, a, b, it, cg_stat
+            integer :: e, qq, a, b, it, cg_stat, cstat
 
             fstat = 1
             allocate (mblocks(est%ndof, est%ndof, est%nel))
             mblocks = 0.0_dp
+            fstat = 0
+            !$omp parallel do default(shared) &
+            !$omp private(e, qq, a, b, shape, grads, hess, pt, det, cstat) &
+            !$omp schedule(static)
             do e = 1, est%nel
                 do qq = 1, size(w)
                     call gs_cell_data(state, e, [x(qq), y(qq)], pt, det, &
                                       shape(:est%ndof), grads(:, :est%ndof), &
-                                      hess(:, :, :est%ndof), fstat)
-                    if (fstat /= 0) return
+                                      hess(:, :, :est%ndof), cstat)
+                    if (cstat /= 0) then
+                        !$omp atomic write
+                        fstat = cstat
+                        exit
+                    end if
                     do b = 1, est%ndof
                         do a = 1, est%ndof
                             mblocks(a, b, e) = mblocks(a, b, e) &
@@ -449,6 +490,8 @@ contains
                     end do
                 end do
             end do
+            !$omp end parallel do
+            if (fstat /= 0) return
             call gs_csr_build(mass, state%triangles, mblocks, est%n)
             allocate (v(est%n), mv(est%n), av(est%n), z(est%n))
             v = 1.0_dp
@@ -478,6 +521,8 @@ contains
         if (est%ready) then
             call sparse_direct_free(est%factor)
             call sparse_direct_free(est%energy_factor)
+            call gs_direct_free(est%factor_direct)
+            call gs_direct_free(est%energy_direct)
         end if
         est%ready = .false.
         est%cf2 = 0.0_dp
@@ -525,15 +570,28 @@ contains
         integer :: sweep
 
         allocate (residual(est%n), correction(est%n))
-        call sparse_direct_solve_factored(est%energy_factor, rhs, solution, status)
+        call energy_solve(rhs, solution, status)
         do sweep = 1, 2
             if (status /= 0) return
             call gs_coupled_energy_apply(est, solution, residual)
             residual = rhs - residual
-            call sparse_direct_solve_factored(est%energy_factor, residual, &
-                                              correction, status)
+            call energy_solve(residual, correction, status)
             solution = solution + correction
         end do
+
+    contains
+        subroutine energy_solve(b, x, sstat)
+            real(dp), intent(in) :: b(:)
+            real(dp), intent(out) :: x(:)
+            integer, intent(out) :: sstat
+            logical :: ok
+            if (est%energy_direct%factored) then
+                call gs_direct_solve(est%energy_direct, b, x, ok)
+                sstat = merge(0, 1, ok)
+            else
+                call sparse_direct_solve_factored(est%energy_factor, b, x, sstat)
+            end if
+        end subroutine energy_solve
     end subroutine gs_coupled_reference_solve
 
     function gs_coupled_ip_moments(est, mu0) result(moments)
@@ -719,7 +777,13 @@ contains
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
             integer :: pstat
-            call sparse_direct_solve_factored(est%factor, input, output, pstat)
+            logical :: pok
+            if (est%factor_direct%factored) then
+                call gs_direct_solve(est%factor_direct, input, output, pok)
+                pstat = merge(0, 1, pok)
+            else
+                call sparse_direct_solve_factored(est%factor, input, output, pstat)
+            end if
             if (pstat /= 0) output = input
         end subroutine precondition
     end subroutine gs_coupled_majorant
