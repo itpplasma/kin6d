@@ -109,6 +109,11 @@ module kin6d_ideal_map
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
+        ! True: the gauge form regularises the Hessian only (energy and
+        ! gradient are the physical ones, so the end point is the stationary
+        ! point of W and independent of gauge_weight); False: it is part of
+        ! the energy and biases the end point.
+        logical :: gauge_hessian_only = .false.
         real(dp), allocatable :: omega_gauge(:, :, :)
         ! Nodal label, axis-expansion weight T and the axis node.
         real(dp), allocatable :: chi_node(:), axis_t(:)
@@ -702,10 +707,12 @@ contains
             energy = energy + cell_energy(e)
         end do
         minjac = minval(cell_jac)
-        do e = 1, map%cells
-            energy = energy + 0.5_dp*dot_product(x(3, 1, map%conn(:, e)), &
-                matmul(map%omega_gauge(:, :, e), x(3, 1, map%conn(:, e))))
-        end do
+        if (.not. map%gauge_hessian_only) then
+            do e = 1, map%cells
+                energy = energy + 0.5_dp*dot_product(x(3, 1, map%conn(:, e)), &
+                    matmul(map%omega_gauge(:, :, e), x(3, 1, map%conn(:, e))))
+            end do
+        end if
         status = IDEAL_MAP_OK
         if (.not. (minjac > 0) .or. .not. ieee_is_finite(energy)) &
             status = IDEAL_MAP_FOLDED
@@ -714,6 +721,7 @@ contains
         gradient = 0
         do e = 1, map%cells
             gradient(map%dofconn(:, e)) = gradient(map%dofconn(:, e)) + local(:, e)
+            if (map%gauge_hessian_only) cycle
             do a = 1, map%nloc
                 c = ideal_map_dof(map, 3, 1, map%conn(a, e))
                 gradient(c) = gradient(c) + dot_product(map%omega_gauge(a, :, e), &
@@ -953,8 +961,10 @@ contains
             gnorm = norm2(gred)
             report%energy = energy; report%gradient = gnorm/g0
             report%min_jacobian = minjac; report%damping = mu
-            if (talk) print '(a,i3,5es12.4)', 'ideal map newton', it, energy, &
-                gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu
+            if (talk) print '(a,i3,5es12.4,i3,3es10.2)', 'ideal map newton', it, energy, &
+                gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu, &
+                tries, alpha, norm2(gred(2:2*map%nodes:2))/gnorm, &
+                norm2(step(2:2*map%nodes:2))/norm2(step)
             if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
             if (report%step <= 1.0e-13_dp*maxval(abs(map%reference))) then
                 status = IDEAL_MAP_OK; exit
