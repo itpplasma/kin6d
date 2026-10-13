@@ -209,6 +209,18 @@ contains
 
         ! export and hash
         call perturbation_add_spectra(s, res, -30, 30)
+        ! phi_n: one-sided flux-density harmonics = half the peak-amplitude phi_mn
+        ! of surface_harmonics (independent implementation), both charts
+        block
+            complex(dp) :: bmn(-30:30), pmn(-30:30)
+            integer :: ic
+            do ic = angle_pest, angle_hamada
+                call surface_harmonics(s, n, dbe([1, 3], :), ic, -30, 30, bmn, pmn)
+                call check('phi_n spectrum = phi_mn/2 of surface_harmonics', &
+                    maxval(abs(res%spec(:, nq_spec, ic) - 0.5_dp*pmn))/ &
+                    maxval(abs(pmn)), 1.0e-12_dp)
+            end do
+        end block
         call perturbation_export('l7_test_export.dat', [res], 'test_mhd_perturbation', &
             3, g%s_pol, 1.0_dp, st)
         call check('export written', real(st, dp), 0.0_dp)
