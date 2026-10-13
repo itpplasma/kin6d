@@ -126,6 +126,12 @@ module kin6d_ideal_free_boundary
         ! 2-form). Must stay below the vertical eigenvalue (~1e-7 in this
         ! metric) or the damped step turns against the vertical mode.
         real(dp) :: tangential_damping = 0
+        ! Hard-ish gauge for the same n = 0 null: when > 0, the n = 0 tangential
+        ! component of every plasma node is penalised by tangential_gauge times
+        ! the node diagonal in the Newton matrix and removed from the gradient
+        ! that enters the merit. The surfaces cannot slide poloidally (a slide
+        ! only reparametrises Gamma_p and creeps at lambda/(lambda + mu_t)).
+        real(dp) :: tangential_gauge = 0
         ! Explicit rigid vertical correction dZ = -F_Z/K_Z after every accepted
         ! step (K_Z from ideal_fb_rigid_stiffness at the start of the solve).
         ! The damped Newton matrix cannot resolve the near-null, unstable
@@ -1323,9 +1329,10 @@ contains
                     call merit_weights(fb, diag, wts)
                 end if
             end if
-            if (fb%tangential_damping > 0) call tangential_positions(fb, rowptr, &
-                colidx, tpos)
+            if (fb%tangential_damping > 0 .or. fb%tangential_gauge > 0) &
+                call tangential_positions(fb, rowptr, colidx, tpos)
             call merit_weights(fb, diag, wts)
+            if (fb%tangential_gauge > 0) call project_gauge(fb, grad)
             merit = sum(wts*grad**2)
             if (it == 1) report%merit0 = merit
             report%merit = merit
@@ -1357,7 +1364,8 @@ contains
                 do i = 1, fb%np
                     dval(dpos(i)) = dval(dpos(i)) + mu*(diag(i) + 1.0e-12_dp*scale_p)
                 end do
-                if (fb%tangential_damping > 0) call add_tangential(fb, diag, tpos, dval)
+                if (fb%tangential_damping > 0 .or. fb%tangential_gauge > 0) &
+                    call add_tangential(fb, diag, tpos, dval)
                 t0 = wall()
                 ! One handle for the whole solve: the KKT pattern is fixed, so
                 ! MUMPS keeps its analysis and only refactorises.
@@ -1405,6 +1413,8 @@ contains
                     call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
                     if (cready .and. st == IDEAL_FB_OK) call project_multipliers(fb, &
                         csolver, rhs)
+                    if (fb%tangential_gauge > 0 .and. st == IDEAL_FB_OK) &
+                        call project_gauge(fb, rhs)
                     report%line_s = report%line_s + wall() - t0
                     if (st == IDEAL_FB_OK) then
                         tmerit = sum(wts*rhs**2)
@@ -1483,14 +1493,16 @@ contains
     subroutine boundary_report(fb)
         ! Mean (n = 0) displacement of Gamma_p from its reference.
         type(ideal_fb_t), intent(in) :: fb
-        real(dp) :: mean(2)
+        real(dp) :: mean(2), rms
         integer :: s, nb
-        mean = 0; nb = 0
+        mean = 0; nb = 0; rms = 0
         do s = 1, fb%ns
             if (fb%role(s) /= 1) cycle
             mean = mean + fb%xs(1:2, 1, s) - fb%reference(:, s); nb = nb + 1
+            if (fb%nmode > 1) rms = rms + sum(fb%xs(1:2, 2:fb%nmode, s)**2)
         end do
         print '(a,2es12.4)', '   Gamma_p mean shift', mean/nb
+        if (fb%nmode > 1) print '(a,es12.4)', '   Gamma_p n/=0 rms (m)', sqrt(rms/nb)
     end subroutine
 
     subroutine direction_report(fb, du)
@@ -1638,11 +1650,27 @@ contains
                 k = m + fb%nmode*(a - 1)
                 sa = fb%tangential_damping*0.5_dp*(diag(pidx(fb, 1, m, a)) &
                     + diag(pidx(fb, 2, m, a)))
+                if (m == 1) sa = sa + fb%tangential_gauge*0.5_dp &
+                    *(diag(pidx(fb, 1, m, a)) + diag(pidx(fb, 2, m, a)))
                 val(tpos(1, k)) = val(tpos(1, k)) + sa*t(1)*t(1)
                 val(tpos(2, k)) = val(tpos(2, k)) + sa*t(1)*t(2)
                 val(tpos(3, k)) = val(tpos(3, k)) + sa*t(2)*t(1)
                 val(tpos(4, k)) = val(tpos(4, k)) + sa*t(2)*t(2)
             end do
+        end do
+    end subroutine
+
+    subroutine project_gauge(fb, g)
+        ! Remove the n = 0 tangential component of the plasma-node gradient.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(inout) :: g(:)
+        real(dp) :: t(2), gt
+        integer :: a, i1, i2
+        do a = 1, fb%plasma%nodes
+            t = [-fb%plasma%direction(2, a), fb%plasma%direction(1, a)]
+            i1 = pidx(fb, 1, 1, a); i2 = pidx(fb, 2, 1, a)
+            gt = t(1)*g(i1) + t(2)*g(i2)
+            g(i1) = g(i1) - gt*t(1); g(i2) = g(i2) - gt*t(2)
         end do
     end subroutine
 
