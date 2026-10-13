@@ -21,20 +21,22 @@ program test_ideal_map_axisymmetric
     use kin6d_ideal_map, only: ideal_map_t, cylindrical_chart_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
-        ideal_map_reduce, ideal_map_expand, ideal_map_prolong
+        ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use kin6d_ideal_map, only: ideal_frozen_t
     use kin6d_ideal_seed, only: nested_seed_t, ideal_seed_init
     use ideal_map_cases, only: setup_case, psi_exact, boundary_point, label, &
-        phi_edge, pullback_field_t, solovev_profile_t, pi, a, raxis, psi_axis, &
+        phi_edge, pullback_field_t, solovev_profile_t, pi, a, raxis, psi_axis, r0, &
+        f_edge, seed_map_point, &
         pprime, ffprime, shaped
     implicit none
     type(pullback_field_t) :: pullback
     character(16) :: mode, argument
     integer :: degree
     logical :: verbose_solve = .false.
+    integer :: quadrature_order = 7
     real(dp) :: solve_tolerance = 1.0e-6_dp
     mode = 'solovev'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
@@ -43,6 +45,10 @@ program test_ideal_map_axisymmetric
         read (argument, *) degree
     end if
     if (command_argument_count() > 2) verbose_solve = .true.
+    if (command_argument_count() > 3) then
+        call get_command_argument(4, argument)
+        read (argument, *) quadrature_order
+    end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
     case ('derivatives')
@@ -53,6 +59,10 @@ program test_ideal_map_axisymmetric
         call ladder(pullback)
     case ('seed', 'seedshaped')
         call seed_ladder()
+    case ('seeddiag')
+        call seed_diagnosis()
+    case ('residual')
+        call residual_check()
     case default
         error stop 'unknown mode'
     end select
@@ -80,7 +90,8 @@ contains
         type(ideal_map_t), intent(out) :: map
         type(cylindrical_chart_t) :: chart
         integer :: status
-        call ideal_map_init(map, state, chart, nfp, ntor, status)
+        call ideal_map_init(map, state, chart, nfp, ntor, status, &
+            quadrature_order=quadrature_order)
         if (status /= 0) error stop 'map init'
         if (map%sigma /= -1) error stop 'cylindrical orientation'
         if (present(field)) then
@@ -246,6 +257,97 @@ contains
         end do
     end subroutine
 
+    subroutine residual_check()
+        ! Normalised weak residual (equilibrium-core D3) on the A3 pullback case:
+        ! seed X0 = id, the interpolated exact map X = Y, and the discrete
+        ! solution, on three meshes. sigma excludes the vacuum toroidal field.
+        type(gs_state_t) :: state
+        type(ideal_map_t) :: map
+        type(ideal_map_solve_report_t) :: report
+        real(dp) :: table(3, 3), sigma, x(2), dy(2, 2), bp2
+        integer :: mesh, n, i, status
+        print '(a)', 'n seed exact_interpolant solution sigma'
+        do mesh = 1, 3
+            n = 32*2**(mesh - 1)
+            call make_mesh(n, degree, state)
+            call build_map(state, 1, 0, map)
+            call ideal_map_residual(map, f_edge(), table(1, mesh), sigma, status)
+            if (status /= 0) error stop 'residual (seed)'
+            do i = 1, map%nodes
+                call seed_map_point(map%reference(:, i), x, dy)
+                map%x(1:2, 1, i) = x
+            end do
+            call ideal_map_residual(map, f_edge(), table(2, mesh), sigma, status)
+            if (status /= 0) error stop 'residual (exact)'
+            call build_map(state, 1, 0, map)
+            call solve_map(map, report, .false.)
+            call ideal_map_residual(map, f_edge(), table(3, mesh), sigma, status)
+            if (status /= 0) error stop 'residual (solution)'
+            bp2 = sigma
+            print '(i4,4es12.4)', n, table(:, mesh), bp2
+        end do
+        print '(a,3f8.3)', 'orders pair 1 ', log(table(:, 1)/table(:, 2))/log(2.0_dp)
+        print '(a,3f8.3)', 'orders pair 2 ', log(table(:, 2)/table(:, 3))/log(2.0_dp)
+        ! The discrete solution is stationary in the gauge space only; the
+        ! tangential (relabelling) components remain at discretisation level.
+        ! L2 force of the exact interpolant: order k - 1; of the solution: k.
+        if (any(table(3, :) > table(2, :))) error stop 'solution above interpolant'
+        if (log(table(2, 2)/table(2, 3))/log(2.0_dp) < degree - 1 - 0.3_dp) &
+            error stop 'exact-interpolant residual order'
+        if (log(table(3, 2)/table(3, 3))/log(2.0_dp) < degree - 0.3_dp) &
+            error stop 'solution residual order'
+    end subroutine
+
+    subroutine seed_diagnosis()
+        ! A3 only. Separates the map space from the solve: X* = P(xi(y)) with
+        ! P(xi) = (sqrt(R0^2 + 2 R0 a xi1), R0 a xi2/R) is a smooth exact map
+        ! for the nested-seed labels (psi_exact(X*) = chi). Per mesh: (1) its
+        ! P_k nodal interpolant, unsolved; (2) the solve started from it;
+        ! (3) the solve started from the seed X0 = id.
+        type(nested_seed_t) :: seed
+        type(solovev_profile_t) :: profile
+        type(gs_state_t) :: state
+        type(ideal_map_t) :: map
+        type(ideal_map_solve_report_t) :: report
+        real(dp) :: errors(4), table(3, 3), xi(2)
+        real(dp), allocatable :: start(:, :, :)
+        integer :: mesh, n, i, status
+        logical :: ok
+        call ideal_seed_init(seed, boundary_point, phi_edge(), profile, status)
+        if (status /= 0) error stop 'seed init'
+        solve_tolerance = 1.0e-8_dp
+        print '(a)', 'n interpolant solve_from_exact solve_from_seed'
+        do mesh = 1, 3
+            n = 32*2**(mesh - 1)
+            call make_mesh(n, degree, state)
+            call solve_gs(state, 1.0_dp, pprime, ffprime, status)
+            call build_map(state, 1, 0, map, seed)
+            do i = 1, map%nodes
+                if (map%boundary(i)) cycle
+                call seed%inverse(map%reference(:, i), xi, ok)
+                if (.not. ok) error stop 'seed inverse'
+                map%x(1, 1, i) = sqrt(r0*r0 + 2*r0*a*xi(1))
+                map%x(2, 1, i) = r0*a*xi(2)/map%x(1, 1, i)
+            end do
+            call defects(map, state, seed, errors)
+            table(1, mesh) = errors(1)
+            start = map%x
+            call solve_map(map, report, .false.)
+            call defects(map, state, seed, errors)
+            table(2, mesh) = errors(1)
+            print '(a,3es12.4)', '  moved from X*: max |dq1,dq2| (m), max |domega|, h (m) ', &
+                maxval(norm2(map%x(1:2, 1, :) - start(1:2, 1, :), dim=1)), &
+                maxval(abs(map%x(3, 1, :) - start(3, 1, :))), 2*pi*a/n
+            call build_map(state, 1, 0, map, seed)
+            call solve_map(map, report, .false.)
+            call defects(map, state, seed, errors)
+            table(3, mesh) = errors(1)
+            print '(i4,3es12.4)', n, table(:, mesh)
+        end do
+        print '(a,3f8.3)', 'orders pair 1 ', log(table(:, 1)/table(:, 2))/log(2.0_dp)
+        print '(a,3f8.3)', 'orders pair 2 ', log(table(:, 2)/table(:, 3))/log(2.0_dp)
+    end subroutine
+
     subroutine seed_ladder()
         type(nested_seed_t) :: seed
         type(solovev_profile_t) :: profile
@@ -297,8 +399,9 @@ contains
             call defects(map, state, field, errors(:, mesh))
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
                 count(.not. map%fixed), report%iterations, elapsed, errors(:, mesh)
-            print '(a,3f9.2)', '  wall energy hessian factor+solve ', &
-                report%energy_s, report%hessian_s, report%factor_s
+            print '(a,5f9.2)', '  wall energy hessian factor+solve (analysis numeric) ', &
+                report%energy_s, report%hessian_s, report%factor_s, report%analysis_s, &
+                report%numeric_s
         end do
         do mesh = 2, 3
             rates = log(errors(:, mesh - 1)/errors(:, mesh))/log(2.0_dp)
