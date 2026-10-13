@@ -27,9 +27,10 @@ program gen_equilibrium_core
     type(engine_result_t) :: identity
     type(expr_t) :: q(3), x(3), dx(9), d2x(27), d3x(81)
     type(expr_t) :: r, br, bz, bphi, b0, p, mu0, jet(5), density, coefficient(5)
-    type(expr_t) :: b2, divergence, stress, gs(5), psi_r, psi_z, psi_rr, psi_rz
+    type(expr_t) :: tensor(9), magnetic(3), bp, trace, gs(5)
+    type(expr_t) :: psi_r, psi_z, psi_rr, psi_rz
     type(expr_t) :: psi_zz, f, fp, f0, pp, residual
-    character(8) :: names9(9), names27(27), names81(81)
+    character(8) :: names9(9), names27(27), names81(81), stress_names(9)
     character(8), parameter :: jet_names(5) = [character(8) :: 'cxr', 'cxr_r', &
         'cxr_z', 'cxz_r', 'cxz_z']
     integer :: a, j, k, l, m
@@ -57,11 +58,23 @@ program gen_equilibrium_core
     mu0 = sym(arena, 'mu0')
     jet = [sym(arena, 'xr'), sym(arena, 'xr_r'), sym(arena, 'xr_z'), &
         sym(arena, 'xz_r'), sym(arena, 'xz_z')]
-    b2 = br**2 + bz**2 + bphi**2 - b0**2
-    divergence = jet(2) + jet(1)/r + jet(5)
-    stress = (br**2*jet(2) + br*bz*(jet(4) + jet(3)) + bz**2*jet(5) &
-        + (bphi**2 - b0**2)*jet(1)/r)/mu0
-    density = r*(stress - (b2/(2*mu0) + p)*divergence)
+    ! Authoritative D3 tensor T(B)-T(B0), with expanded background cross
+    ! terms. Both the axisymmetric coefficients and 3D leaf derive from it.
+    bp = sym(arena, 'bp')
+    magnetic = [br, bp + b0, bz]
+    trace = (br**2 + bz**2 + bp**2 + 2*b0*bp)/(2*mu0) + p
+    do k = 1, 3
+        do a = 1, 3
+            j = a + 3*(k - 1)
+            tensor(j) = magnetic(a)*magnetic(k)/mu0
+            if (a == 2 .and. k == 2) tensor(j) = (bp**2 + 2*b0*bp)/mu0
+            if (a == k) tensor(j) = tensor(j) - trace
+            write (stress_names(j), '(a,i1)') 's', j
+        end do
+    end do
+    density = r*(tensor(1)*jet(2) + tensor(3)*(jet(3) + jet(4)) &
+        + tensor(9)*jet(5) + tensor(5)*jet(1)/r)
+    density = subs(density, bp, bphi - b0)
     do j = 1, 5
         coefficient(j) = diff(density, jet(j))
     end do
@@ -95,6 +108,8 @@ program gen_equilibrium_core
     call w%emit('cylindrical_chart_third', ['q1', 'q2', 'q3'], names81, d3x)
     call w%emit('stress_residual_density', [character(8) :: 'r', 'br', 'bz', &
         'bphi', 'b0', 'p', 'mu0'], jet_names, coefficient)
+    call w%emit('maxwell_stress_delta', [character(4) :: 'br', 'bp', 'bz', &
+        'b0', 'p', 'mu0'], stress_names, tensor, ad=.true.)
     call w%line('end module kin6d_equilibrium_core_leaves')
     call w%close()
 contains
