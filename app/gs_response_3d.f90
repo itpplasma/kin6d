@@ -510,7 +510,7 @@ contains
                     complex(dp) :: arec, jedge
                     arec = 0.5_dp*(cf(1, 1) + cf(1, 2))
                     jedge = (lam_cl(2*l - 1) + lam_cl(2*l))*jump_unit(l)
-                    write (ures, '(i3,f10.6,f14.10,i5,2es14.6,2es12.4,13es14.6)') &
+                    write (ures, '(i3,f10.6,f14.10,i5,2es14.6,2es12.4,14es14.6)') &
                         iph, q_rat(l), psin_rat(l), m_rat(l), dlayer(l), &
                         lscale(l), qlay(l), arec, arec/area(l), jedge, jmp, &
                         abs(phivac(l)), abs(cf(1, 1) - cf(1, 2))/max(abs(arec), &
