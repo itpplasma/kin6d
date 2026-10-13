@@ -59,6 +59,9 @@ module kin6d_mhd_ideal_n
     type, public :: sample_ring_t
         integer :: strip = 0, np = 0
         real(dp) :: u = 0.0_dp, psi = 0.0_dp, q = 0.0_dp
+        !> .false. inside a resonant layer of the ideal closure (no volume
+        !> current; the layer is represented by its edge sheets)
+        logical :: active = .true.
         real(dp), allocatable :: x(:, :)        !! (2, np) points
         integer, allocatable :: tri(:)          !! triangle of each point
         real(dp), allocatable :: phi(:, :, :)   !! (3, nloc2, np) V2 basis
@@ -377,7 +380,8 @@ contains
             do k = 1, np
                 jcur(:, k, ir) = jcur(:, k, ir) + h(k)*rings(ir)%b0(:, k)
             end do
-            if (abs(rings(ir)%q) < qlow) jcur(:, :, ir) = (0.0_dp, 0.0_dp)
+            if (abs(rings(ir)%q) < qlow .or. .not. rings(ir)%active) &
+                jcur(:, :, ir) = (0.0_dp, 0.0_dp)
             deallocate (dpth, dpsi, g, dg, rhs, h)
         end do
         !$omp end parallel do
@@ -561,26 +565,27 @@ contains
         end do
     end subroutine gauss6
 
-    subroutine ideal_response(fs, pb, fm, g, amp, opt, n, rings, sheet_ring, &
-            sheet_ra, sheet_m, msheet, b2sheet, phi_ext, a, lam, tol, maxit, &
-            info, iters, resid)
+    subroutine ideal_response(fs, pb, fm, g, amp, opt, n, rings, cl, b2sheet, &
+            phi_ext, a, lam, phi_tot, tol, maxit, info, iters, resid)
         !! Linear ideal response: Nedelec coefficients a of the field of the
         !! volume (and boundary-sheet) plasma current, and the amplitudes lam
-        !! of the resonant shielding sheets, for the external field stored in
-        !! rings(:)%bc whose resonant fluxes on the sheet rings are phi_ext.
+        !! of the resonant sheets of the closure cl, for the external field
+        !! stored in rings(:)%bc whose resonant fluxes on the closure flux
+        !! rings are phi_ext.
         !!
-        !! The sheets are eliminated: for a volume field a the shielding
-        !! amplitudes are lam(a) = -M^{-1} (phi_ext + Phi(curl a)) with the
-        !! vacuum sheet matrix M (kin6d_mhd_response_n), so the total field
-        !! B = B_ext + curl a + sum lam_s B_s has zero resonant flux.  The
-        !! volume field solves the fixed point a = K^{-1} L(B(a)) (L the load
-        !! of the plasma current), i.e. the linear system
+        !! The sheets are eliminated: with the closure matrix M = W Phi(B_s)
+        !! of the vacuum sheet fields B_s (W the constraint weights), a volume
+        !! field a fixes lam(a) = M^{-1} (target - W (phi_ext + Phi(curl a))),
+        !! so the total field B = B_ext + curl a + sum lam_s B_s satisfies the
+        !! constraints.  The volume field solves the fixed point
+        !! a = K^{-1} L(B(a)) (L the load of the plasma current), i.e.
         !!     a - K^{-1} L(B_hom(a)) = K^{-1} L(B_part),
         !! by restarted GMRES (fortnum).  rings(1 .. nr-1) are the half rings
-        !! of strips 2 .. nring, rings(nr) the boundary ring.
+        !! of strips 2 .. nring, rings(nr) the boundary ring.  phi_tot returns
+        !! the resonant fluxes of the total field on the closure flux rings.
         use fortnum_krylov, only: complex_gmres_operator
         use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl
-        use kin6d_mhd_response_n, only: ring_angles_t, ring_flux_harmonic
+        use kin6d_mhd_response_n, only: sheet_closure_t, closure_fluxes
         type(meridian_feec_t), intent(in) :: fs
         type(meridian_point_basis_t), intent(in) :: pb
         type(flux_mesh_t), intent(in) :: fm
@@ -589,18 +594,17 @@ contains
         type(ideal_options_t), intent(in) :: opt
         integer, intent(in) :: n
         type(sample_ring_t), intent(in) :: rings(:)
-        integer, intent(in) :: sheet_ring(:), sheet_m(:)
-        type(ring_angles_t), intent(in) :: sheet_ra(:)
-        complex(dp), intent(in) :: msheet(:, :), b2sheet(:, :), phi_ext(:)
+        type(sheet_closure_t), intent(in) :: cl
+        complex(dp), intent(in) :: b2sheet(:, :), phi_ext(:)
         complex(dp), intent(inout) :: a(:)
-        complex(dp), intent(out) :: lam(:)
+        complex(dp), intent(out) :: lam(:), phi_tot(:)
         real(dp), intent(in) :: tol
         integer, intent(in) :: maxit
         integer, intent(out) :: info, iters
         real(dp), intent(out) :: resid
         complex(dp), allocatable :: bsheet(:, :, :, :), bext(:, :, :), rhs(:)
-        complex(dp), allocatable :: minv(:, :), b(:, :, :)
-        integer :: nr, ns, np, ir, s2, bnd, ipiv(max(1, size(sheet_m))), st
+        complex(dp), allocatable :: minv(:, :), b(:, :, :), fsheet(:, :), wc(:, :)
+        integer :: nr, ns, np, ir, s2, bnd, ipiv(max(1, cl%ns)), st
         logical :: debug
         character(len=8) :: env
         integer, allocatable :: seg(:)
@@ -608,33 +612,42 @@ contains
         call get_environment_variable('KIN6D_L4_DEBUG', env)
         debug = len_trim(env) > 0
         nr = size(rings)
-        ns = size(sheet_m)
+        ns = cl%ns
         np = rings(1)%np
         allocate (seg(nr))
         do ir = 1, nr
-            seg(ir) = count(fm%u(sheet_ring) < rings(ir)%u)
+            seg(ir) = 0
+            if (ns > 0) seg(ir) = count(fm%u(cl%sheet_ring) < rings(ir)%u)
         end do
         bnd = 0
         if (opt%boundary_sheet) bnd = nr
         allocate (bsheet(3, np, nr, max(ns, 1)), bext(3, np, nr), b(3, np, nr))
+        allocate (fsheet(max(cl%nf, 1), max(ns, 1)), wc(max(ns, 1), max(cl%nf, 1)))
         do s2 = 1, ns
             do ir = 1, nr
                 call sample_field(fs, rings(ir), b2sheet(:, s2), &
                     bsheet(:, :, ir, s2))
             end do
+            fsheet(1:cl%nf, s2) = closure_fluxes(fs, pb, fm, cl, n, b2sheet(:, s2))
         end do
         do ir = 1, nr
             bext(:, :, ir) = rings(ir)%bc
         end do
         allocate (minv(max(ns, 1), max(ns, 1)))
         if (ns > 0) then
+            wc(1:ns, 1:cl%nf) = cmplx(cl%w, 0.0_dp, dp)
             minv = (0.0_dp, 0.0_dp)
             do s2 = 1, ns
                 minv(s2, s2) = (1.0_dp, 0.0_dp)
             end do
             block
                 complex(dp) :: mcopy(ns, ns)
-                mcopy = msheet
+                mcopy = matmul(wc(1:ns, 1:cl%nf), fsheet(1:cl%nf, 1:ns))
+                if (debug) then
+                    do s2 = 1, ns
+                        print '(a,i3,20es11.3)', '  M row', s2, abs(mcopy(s2, :))
+                    end do
+                end if
                 call zgesv(ns, ns, mcopy, ns, ipiv, minv, ns, st)
             end block
             if (st /= 0) then
@@ -642,8 +655,8 @@ contains
                 return
             end if
         end if
-        ! particular part: external field and its shielding
-        if (ns > 0) lam = -matmul(minv, phi_ext)
+        ! particular part: external field and its sheets
+        if (ns > 0) lam = matmul(minv, cl%target - matmul(wc(1:ns, 1:cl%nf), phi_ext))
         b = bext
         do s2 = 1, ns
             b = b + lam(s2)*bsheet(:, :, :, s2)
@@ -653,8 +666,17 @@ contains
         if (debug) print '(a,es12.4)', '  |rhs|', norm2(abs(rhs))
         call complex_gmres_operator(matvec, rhs, a, tol, maxit, 60, info, &
             iters, resid)
-        ! total sheet amplitudes
-        if (ns > 0) lam = lam + lam_hom(a)
+        ! total sheet amplitudes and resonant fluxes
+        if (ns > 0) then
+            block
+                complex(dp), allocatable :: b2(:)
+                complex(dp) :: ph(cl%nf)
+                call ampere_n_curl(amp, a, b2)
+                ph = closure_fluxes(fs, pb, fm, cl, n, b2)
+                lam = lam - matmul(minv, matmul(wc(1:ns, 1:cl%nf), ph))
+                phi_tot = phi_ext + ph + matmul(fsheet(1:cl%nf, 1:ns), lam)
+            end block
+        end if
     contains
         subroutine apply_k_inv_load(bf, y)
             complex(dp), intent(in) :: bf(:, :, :)
@@ -669,15 +691,11 @@ contains
         end subroutine apply_k_inv_load
         function lam_hom(av) result(l)
             complex(dp), intent(in) :: av(:)
-            complex(dp) :: l(ns), ph(ns)
+            complex(dp) :: l(ns), ph(cl%nf)
             complex(dp), allocatable :: b2(:)
-            integer :: r2
             call ampere_n_curl(amp, av, b2)
-            do r2 = 1, ns
-                ph(r2) = ring_flux_harmonic(fs, pb, fm, sheet_ring(r2), &
-                    sheet_ra(r2), n, b2, sheet_m(r2))
-            end do
-            l = -matmul(minv, ph)
+            ph = closure_fluxes(fs, pb, fm, cl, n, b2)
+            l = -matmul(minv, matmul(wc(1:ns, 1:cl%nf), ph))
         end function lam_hom
         subroutine matvec(x, y)
             complex(dp), intent(in) :: x(:)
