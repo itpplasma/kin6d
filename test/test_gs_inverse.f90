@@ -65,15 +65,14 @@ program test_gs_inverse
         call solve_gs_constant_q(reversed,-1.5_dp,-1.0_dp,negative,status, &
             flux_points=knots,angular_points=128,relative_tolerance=1.0e-6_dp,q_tolerance=.005_dp)
         if(status/=0)error stop 'signed q/Phi reversal control failed'
-        ! Both solves stop at relative_tolerance 1e-6, and the reversed one starts
-        ! from the converged circular state. Measured: the psi difference is 1.6e-11
-        ! (default flags) and 5.2e-8 (-march=x86-64-v3, 5 instead of 3 Newton
-        ! steps; tolerances 5e-7 to 1e-7 give identical numbers and 1e-8 is not
-        ! attainable there), and the ffprime difference 4e-10 and 7.4e-6 of
-        ! max|ffprime|. psi is gated at the solver tolerance, ffprime at ten times it.
-        if(maxval(abs(reversed%psi-circular%psi))>1.0e-6_dp*maxval(abs(circular%psi))) &
+        ! Known limitation: the nonlinear solve is converged only to about 1e-7 in a
+        ! -march=x86-64-v3 build (5 instead of 3 Newton steps; tolerances 1e-7 to
+        ! 1e-6 give identical output and 1e-8 is not attainable), so there the
+        ! psi difference is 5.2e-8 and the ffprime difference 7.4e-6 of max|ffprime|,
+        ! above these gates. The registered CTest uses default flags: 1.6e-11 and 4e-10.
+        if(maxval(abs(reversed%psi-circular%psi))>2.0e-8_dp) &
             error stop 'F-only reversal changed poloidal flux'
-        if(maxval(abs(negative%ffprime-inverse%ffprime))>1.0e-5_dp*maxval(abs(inverse%ffprime))) &
+        if(maxval(abs(negative%ffprime-inverse%ffprime))>2.0e-5_dp) &
             error stop 'F-only reversal changed GS toroidal-current source'
         call gs_toroidal_flux(reversed,negative,phi,status,12)
         if(status/=0.or.abs(phi+1)>2.0e-6_dp)error stop 'negative physical Phi control'
