@@ -953,8 +953,8 @@ target_link_libraries(gs_free_3d PRIVATE kin6d)
 add_test(NAME gs_free_3d_nl3a_fixture_return COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_free_3d> -DGS_FREE=$<TARGET_FILE:gs_free>
     -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
-    -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return -DDISTANCE_LIMIT=1.0e-3
-    -DDEFECT_LIMIT=1.0e-3 -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
+    -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return -DDISTANCE_LIMIT=1.0e-4
+    -DDEFECT_LIMIT=1.0e-4 -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
 set_tests_properties(gs_free_3d_nl3a_fixture_return PROPERTIES TIMEOUT 3600
     ENVIRONMENT "OMP_NUM_THREADS=4")
 add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
