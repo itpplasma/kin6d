@@ -390,6 +390,13 @@ contains
             low = minval(controls(:ndof)); high = maxval(controls(:ndof))
             left = count(levels <= low) + 1; right = count(levels < high)
             nlevels = max(0, right - left + 1)
+            ! A load-only evaluation with no extra forcing gets nothing from a cell
+            ! whose flux range touches only intervals where both laws vanish
+            ! identically: skip it exactly (boundary lifting is in the gather).
+            if (.not. need_jacobian .and. .not. present(forcing) &
+                .and. .not. free_mode) then
+                if (law_vanishes(left - 1, right)) return
+            end if
             closed_cut = .false.
             if (nlevels > 0 .and. smooth_law) closed_cut = possible_closed_cut()
             scr%values = 0
@@ -402,6 +409,7 @@ contains
                 do rule = 1, size(scr%rules)
                     call smooth_rule(rule, scr%high_values)
                     if (status /= 0) return
+                    if (need_jacobian) call jacobian_epsabs()
                     if (rule > 1) then
                         if (all(abs(scr%high_values - scr%values) <= scr%epsabs + &
                             scr%rtol*abs(scr%high_values))) then
@@ -422,6 +430,7 @@ contains
                 call rule_integral(tables%wh, tables%grads_h, tables%shapes_ht, &
                                    scr%high_values)
                 if (status /= 0) return
+                if (need_jacobian) call jacobian_epsabs()
                 if (any(abs(scr%high_values - scr%values) > scr%epsabs + tol*0.1_dp &
                         *abs(scr%high_values))) then
                     coefficients = 0
@@ -515,6 +524,27 @@ contains
                 end if
             end if
     contains
+        subroutine jacobian_epsabs()
+            ! The Jacobian entries (source derivative times shape products) are
+            ! not in the units of the source: their absolute tolerance is
+            ! relative to the largest entry of this cell, not to the source
+            ! scale (which left them 1e-2 accurate on TC24 at jtol 1e-3).
+            scr%epsabs(ndof + 1:) = jtol*max(maxval(abs(scr%high_values(ndof + 1:))), &
+                                             epsilon(1.0_dp)*scale)
+        end subroutine
+
+        logical function law_vanishes(first_level, last_level) result(zero)
+            ! Intervals between levels first_level..last_level (clamped).
+            integer, intent(in) :: first_level, last_level
+            integer :: lo, hi
+            lo = max(1, min(size(levels) - 1, first_level))
+            hi = max(1, min(size(levels) - 1, last_level))
+            zero = .false.
+            if (.not. law%normalized) return
+            zero = maxval(abs(law%pp(:, lo:hi))) <= 0 .and. &
+                   maxval(abs(law%ff(:, lo:hi))) <= 0
+        end function
+
         logical function possible_closed_cut() result(closed)
             real(dp) :: edge_min, edge_max, t, value, stationary(2), v(4)
             integer :: edge, node, count
@@ -1095,8 +1125,8 @@ contains
         real(dp) :: pp, ff, tol, damping, old_norm, new_norm, load_tolerance
         real(dp) :: work_tolerance, next_tolerance, previous_axis, clock, start_s
         character(160) :: line
-        integer :: iteration, backtrack
-        logical :: reuse_jacobian
+        real(dp) :: stall_norm
+        integer :: iteration, backtrack, stalled
         status = 1
         if (.not. state%ready .or. mu0 <= 0) return
         if (.not. ieee_is_finite(mu0)) return
@@ -1116,6 +1146,7 @@ contains
         allocate (rhs(size(state%psi)), action(size(state%psi)), &
            step(size(state%psi)), previous(size(state%psi)), trial_rhs(size(state%psi)))
         state%iterations = 0
+        stalled = 0; stall_norm = 0
         ! Algebraic convergence and source integration are separate controls.
         load_tolerance = 1.0e-8_dp
         if (present(quadrature_tolerance)) load_tolerance = quadrature_tolerance
@@ -1170,14 +1201,20 @@ contains
             call gs_profile_response(state, jacobian, action, step, status)
             if (status /= 0) return
             previous = state%psi; previous_axis = law%axis; damping = 1
-            reuse_jacobian = state%residual < 1.0e-3_dp
+            ! Exact Newton: every accepted iterate gets the Jacobian assembled
+            ! at that iterate. A Jacobian frozen at an earlier iterate (chord)
+            ! contracts only by |I - J_old^-1 J|; near a fold of the profile
+            ! problem (steep p'(s) pedestal) that factor approaches one and
+            ! the iteration stalls. The full step carries its Jacobian; a
+            ! backtracked trial loads the source only and the accepted one is
+            ! reassembled with its Jacobian.
             do backtrack = 0, 14
                 state%psi = previous + damping*step
                 clock = gs_wall_s()
                 call gs_cubic_load(state, mu0, law, trial_rhs, trial_jacobian, &
                                    status, work_tolerance, forcing, &
                                    max(work_tolerance, 1.0e-3_dp), &
-                                   load_only=reuse_jacobian)
+                                   load_only=backtrack > 0)
                 call gs_timer_add(GS_T_ASSEMBLY, gs_wall_s() - clock)
                 if (status == 0) then
                     call apply_gs(state, state%psi, action)
@@ -1191,12 +1228,37 @@ contains
                 status = 2
                 return
             end if
-            rhs = trial_rhs
-            if (.not. reuse_jacobian) then
+            ! Stagnation: three consecutive damped steps that together reduce
+            ! the residual norm by less than one percent approach a nonzero
+            ! minimum of the residual with a singular Jacobian (no solution of
+            ! this law nearby, e.g. beyond a fold). Report failure now
+            ! instead of spending the remaining iterations there.
+            if (backtrack == 0) then
+                stalled = 0
+            else
+                if (stalled == 0) stall_norm = old_norm
+                stalled = stalled + 1
+                if (stalled == 3) then
+                    if (new_norm > 0.99_dp*stall_norm) then
+                        status = 2
+                        return
+                    end if
+                    stalled = 0
+                end if
+            end if
+            if (backtrack == 0) then
+                rhs = trial_rhs
                 call move_alloc(trial_jacobian%mass, jacobian%mass)
                 call move_alloc(trial_jacobian%axis_load, jacobian%axis_load)
                 call move_alloc(trial_jacobian%axis_gradient, jacobian%axis_gradient)
                 call move_alloc(trial_jacobian%mval, jacobian%mval)
+            else
+                clock = gs_wall_s()
+                call gs_cubic_load(state, mu0, law, rhs, jacobian, status, &
+                                   work_tolerance, forcing, &
+                                   max(work_tolerance, 1.0e-3_dp))
+                call gs_timer_add(GS_T_ASSEMBLY, gs_wall_s() - clock)
+                if (status /= 0) return
             end if
         end do
         status = 2

@@ -75,6 +75,22 @@ if(NOT psi_axis GREATER psi_bound OR NOT ip GREATER 100000)
 endif()
 list(GET currents 0 current_1)
 require_near("circuit currents echoed" "${current_1}" -10000 0.1)
+# Flux-surface readback on the plasma cells (psi = psi_b on the free boundary).
+nc_value("${nc}" q_status q_status)
+if(NOT q_status EQUAL 0)
+    message(FATAL_ERROR "flux-surface readback failed, status ${q_status}")
+endif()
+nc_value("${nc}" q q_values)
+nc_value("${nc}" q_s q_s)
+nc_value("${nc}" toroidal_flux toroidal_flux)
+list(LENGTH q_values q_count)
+list(GET q_s 0 q_s_axis)
+list(GET q_s -1 q_s_edge)
+require_near("q levels start on the axis" "${q_s_axis}" 0 1e-12)
+require_near("q levels end on the boundary" "${q_s_edge}" 1 1e-12)
+if(q_count LESS 17 OR toroidal_flux EQUAL 0)
+    message(FATAL_ERROR "q profile missing: ${q_count} levels, Phi=${toroidal_flux}")
+endif()
 execute_process(COMMAND "${NCDUMP}" -h "${nc}" OUTPUT_VARIABLE header)
 foreach(attribute code_commit code_tree convention lcfs_mode coil_file profile_file omp_threads)
     if(NOT header MATCHES ":${attribute} = ")
@@ -113,6 +129,34 @@ execute_process(COMMAND "${APP}" --evaluate-stream mesh.dat 5 0 profile-law.dat 
 if(NOT status EQUAL 0 OR NOT repeated STREQUAL "${single}${single}")
     message(FATAL_ERROR "streaming changed a field response or failed to stop on EOF")
 endif()
+
+# 2b. seed_file: a flux map sampled from the converged forward solution (points
+# outside Gamma_c filled from the nearest valid sample) restarts the same equilibrium.
+file(MAKE_DIRECTORY "${WORK}/seeded")
+execute_process(COMMAND "${Python3_EXECUTABLE}" -I -c "
+import subprocess, sys, math
+app, wd, pb, out = sys.argv[1:5]
+r = [1.6 + 0.05*i for i in range(57)]; z = [-2.0 + 0.05*j for j in range(81)]
+pts = [(a, b) for b in z for a in r]
+req = '%d\\n' % len(pts) + ''.join('%r %r\\n' % p for p in pts)
+txt = subprocess.run([app, '--evaluate', 'mesh.dat', '5', '0', 'profile-law.dat', pb], cwd=wd,
+                     input=req, capture_output=True, text=True, check=True).stdout.split()
+psi = [float(v) for v in txt[0::4]]
+good = [k for k, v in enumerate(psi) if not math.isnan(v)]
+for k, v in enumerate(psi):
+    if math.isnan(v):
+        a, b = pts[k]
+        psi[k] = psi[min(good, key=lambda g: (pts[g][0]-a)**2 + (pts[g][1]-b)**2)]
+with open(out, 'w') as f:
+    f.write('57 81\\n' + ' '.join(map(repr, r)) + '\\n' + ' '.join(map(repr, z)) + '\\n')
+    f.write('\\n'.join(map(repr, psi)) + '\\n')
+" "${APP}" "${WORK}/forward" "${pb}" "${WORK}/seeded/seed.dat" RESULT_VARIABLE seed_status)
+if(NOT seed_status EQUAL 0)
+    message(FATAL_ERROR "seed map could not be sampled")
+endif()
+run_app(seeded "currents=-10000.0,0.0, seed_file='seed.dat'" TRUE)
+summary_value("${WORK}/seeded/summary.dat" psi_bound seeded_pb)
+require_near("seeded restart reaches the same psi_b" "${seeded_pb}" "${pb}" 1e-7)
 
 # 3. Coil-inverse twin: constraints are the flux at four points of the forward
 # solution; every fit variant recovers the circuit currents from a displaced start.
