@@ -126,6 +126,11 @@ module kin6d_ideal_free_boundary
         ! 2-form). Must stay below the vertical eigenvalue (~1e-7 in this
         ! metric) or the damped step turns against the vertical mode.
         real(dp) :: tangential_damping = 0
+        ! Explicit rigid vertical correction dZ = -F_Z/K_Z after every accepted
+        ! step (K_Z from ideal_fb_rigid_stiffness at the start of the solve).
+        ! The damped Newton matrix cannot resolve the near-null, unstable
+        ! vertical mode, which leaves a creep at the roundoff floor.
+        logical :: rigid_vertical = .false.
         ! Newton-homotopy offset: when allocated, the gradient returned is
         ! g(U) - shift (shift = (1 - t) g(U0) solves g = (1 - t) g(U0)).
         real(dp), allocatable :: shift(:)
@@ -1268,6 +1273,8 @@ contains
         type(sparse_solver_t) :: csolver
         logical :: cready
         logical :: talk, accepted, factored, kept
+        real(dp) :: kz, fz
+        kz = 0
         talk = .false.
         if (present(verbose)) talk = verbose
         step_tol = 1.0e-5_dp
@@ -1285,6 +1292,11 @@ contains
             status = IDEAL_FB_FOLDED; return
         end if
         status = IDEAL_FB_NOT_CONVERGED
+        if (fb%rigid_vertical) then
+            call ideal_fb_rigid_stiffness(fb, 2, 1.0e-3_dp, fz, kz, st)
+            if (st /= IDEAL_FB_OK .or. .not. kz < 0) kz = 0
+            if (talk) print '(a,es12.4)', '   rigid vertical stiffness K_Z ', kz
+        end if
         do it = 1, max_iterations
             t0 = wall()
             call ideal_fb_hessian(fb, rowptr, colidx, val)
@@ -1413,6 +1425,7 @@ contains
                 exit
             end if
             grad = rhs
+            if (kz < 0 .and. cready) call rigid_vertical_correct()
             report%iterations = it
             report%step = alpha*disp
             report%min_jacobian = minjac
@@ -1432,6 +1445,39 @@ contains
             call system_clock(count, rate)
             wall = real(count, dp)/rate
         end function
+
+        subroutine rigid_vertical_correct()
+            ! dZ = -F_Z/K_Z on the rigid n = 0 Z mode; kept only when the
+            ! weighted merit decreases.
+            real(dp), allocatable :: g2(:)
+            real(dp) :: dz, m2
+            integer :: a, s3
+            fz = 0
+            do a = 1, fb%plasma%nodes
+                fz = fz + grad(pidx(fb, 2, 1, a))
+            end do
+            dz = -fz/kz
+            x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
+            fb%plasma%x(2, 1, :) = fb%plasma%x(2, 1, :) + dz
+            call ideal_fb_solve_shell_map(fb, s3)
+            if (s3 == IDEAL_FB_OK) call ideal_fb_solve_vacuum(fb, s3)
+            if (s3 == IDEAL_FB_OK) call ideal_fb_solve_multipliers(fb, s3)
+            allocate (g2(fb%n))
+            if (s3 == IDEAL_FB_OK) call ideal_fb_gradient(fb, g2, s3, &
+                min_jacobian=minjac)
+            if (s3 == IDEAL_FB_OK) then
+                call project_multipliers(fb, csolver, g2)
+                m2 = sum(wts*g2**2)
+                if (m2 < sum(wts*grad**2)) then
+                    if (talk) print '(a,es10.2,a,es10.3,a,es10.3)', &
+                        '   rigid dZ ', dz, ' merit ', sum(wts*grad**2), ' ->', m2
+                    grad = g2
+                    return
+                end if
+            end if
+            fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+            if (talk) print '(a,es10.2,a)', '   rigid dZ ', dz, ' rejected'
+        end subroutine
     end subroutine
 
     subroutine boundary_report(fb)
