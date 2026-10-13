@@ -152,6 +152,7 @@ contains
             1.0e-12_dp)
         call check('gauge shift volume', abs(shifted%volume/base%volume - 1), &
             1.0e-14_dp)
+        call check('contour vs area toroidal flux', base%flux_consistency, 1.0e-5_dp)
         ! Reversed flux (and poloidal field): q changes sign, s_tor does not.
         moved%psi = -mesh%psi
         call gs_equilibrium(moved, eq, status, f_tor, 0.0_dp, pprime=16*c_sol)
@@ -288,7 +289,12 @@ contains
                 print '(2a)', 'missing summary key: ', trim(key)
                 error stop 'K6-mini summary incomplete'
             end if
-            deviation = abs(value - expected)/max(abs(expected), tiny(1.0_dp))
+            ! flux_consistency is a difference |a/b - 1| ~ 1e-4: absolute.
+            if (trim(key) == 'flux_consistency') then
+                deviation = abs(value - expected)
+            else
+                deviation = abs(value - expected)/max(abs(expected), tiny(1.0_dp))
+            end if
             print '(a24,2es25.16e3,es10.3)', key, expected, value, deviation
             worst = max(worst, deviation)
         end do
