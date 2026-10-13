@@ -404,7 +404,15 @@ program test_nonnested_vacuum
     width_long = upper - lower
     print '(a,2es14.6)', '64-turn FEEC width and oracle difference ', &
         width_long, abs(width_long - width_ref_long)
-    if (abs(width_long - width) > 0.003_dp) error stop 'FEEC width resolution'
+    ! The bisected edge is a finite-turn escape classification of a chaotic layer,
+    ! so the width erodes with the turn count and its last 1e-3 depends on roundoff
+    ! (the 64-turn FEEC width is 0.17271 with system gfortran/reference BLAS on a
+    ! Ryzen 5950X and 0.17446 with conda gfortran/OpenBLAS on EPYC 9455, each
+    ! independent of thread count).  Test that FEEC erodes like the direct oracle
+    ! instead of bounding the absolute 32 -> 64 turn change (1.2e-3 for the oracle
+    ! itself); the measured excess, 2.1e-3 and 0.3e-3, stays below 0.003.
+    if (abs((width_long - width) - (width_ref_long - width_ref)) > 0.003_dp) &
+        error stop 'FEEC width resolution'
     if (abs(width_long - width_ref_long) > 0.004_dp) error stop 'long-run width'
     call orbit([5.52_dp, 0.0_dp], 1.0_dp, 512, .false., reference, span)
     call orbit([5.52_dp, 0.0_dp], 1.0_dp, 1024, .false., finish, span)
