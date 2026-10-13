@@ -1551,14 +1551,16 @@ contains
         end subroutine
     end subroutine
 
-    subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations)
+    subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations, shift)
         ! Second variation of the free-boundary system along real Fourier mode
         ! m at an axisymmetric state (where the KKT matrix decouples by mode):
         ! inverse iteration on the Schur complement S of the mode block onto
         ! the plasma position dofs (shell map, multipliers and potential
         ! eliminated exactly), with metric M = |diag H| on those dofs. lambda
         ! is the Rayleigh quotient x^T S x / x^T M x of the converged vector,
-        ! the eigenvalue of smallest magnitude; lambda < 0 is an instability
+        ! the eigenvalue nearest shift (default 0; a negative shift finds
+        ! negative eigenvalues that are not the smallest in magnitude, such
+        ! as the vertical mode); lambda < 0 is an instability
         ! of the fixed-current free-boundary equilibrium in that mode (n = 0:
         ! the vertical mode; n = nfp: the free-boundary kink).
         type(ideal_fb_t), intent(in) :: fb
@@ -1566,13 +1568,17 @@ contains
         real(dp), intent(out) :: lambda
         integer, intent(out) :: status
         integer, intent(in), optional :: iterations
+        real(dp), intent(in), optional :: shift
         integer, allocatable :: rowptr(:), colidx(:), map(:), rp(:), ci(:)
         real(dp), allocatable :: val(:), v(:), mass(:), x(:), z(:), rhs(:)
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
         integer :: i, p, n, nnz, np_m, it, nit, a, c, s2
         logical, allocatable :: plasma_row(:)
+        real(dp) :: sigma
         status = IDEAL_FB_SOLVE_FAILED
+        sigma = 0
+        if (present(shift)) sigma = shift
         nit = 40
         if (present(iterations)) nit = iterations
         call ideal_fb_hessian(fb, rowptr, colidx, val)
@@ -1613,6 +1619,12 @@ contains
                 ! Columns must be sorted within a row.
                 call sort_row(ci(rp(i):nnz), v(rp(i):nnz))
             end do
+            ! K - sigma M on the plasma rows.
+            do i = 1, np_m
+                do p = rp(i), rp(i + 1) - 1
+                    if (ci(p) == i) v(p) = v(p) - sigma*mass(i)
+                end do
+            end do
         end block
         call configure(solver)
         call sparse_factor(solver, n, n, nnz, rp, ci(:nnz), v(:nnz), sst)
@@ -1630,7 +1642,7 @@ contains
                 call sparse_destroy(solver); return
             end if
             ! z_p = S^-1 M x; Rayleigh quotient of S in the M metric.
-            lambda = sum(mass*x**2)/sum(mass*x*z(1:np_m))
+            lambda = sigma + sum(mass*x**2)/sum(mass*x*z(1:np_m))
             x = z(1:np_m)/sqrt(sum(mass*z(1:np_m)**2))
         end do
         call sparse_destroy(solver)
