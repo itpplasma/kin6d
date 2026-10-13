@@ -1,0 +1,6 @@
+&gs_phase1
+ boundary_file='boundary.dat', profile_file='source.dat',
+ degree=3, boundary_nodes=64, nonlinear_tolerance=1e-12,
+ quadrature_tolerance=1e-5, total_current=-1.54815288440514691e+07,
+ radial_points=65, angular_points=64, solve_wall_limit_s=240,
+/
