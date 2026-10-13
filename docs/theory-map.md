@@ -257,6 +257,10 @@ Each milestone pairs a derivation with an existing KIN6D experiment:
   on/off) and the quasilinear switch set; trapped branch limit-checked
   ([DK0](../theory/derivations/drift-kinetics-dk0.md),
   [drift-kinetics.md](drift-kinetics.md)).
+- T8 linearised resistive-viscous two-fluid MHD per n -> frozen-in limit
+  A = xi x B0 and the static ideal current closure; slab layer -> FKR
+  constant-psi Delta_layer, ideal limit -> Glasser-Greene-Johnson sheet
+  ([response-unified.md](response-unified.md), not yet derived).
 
 Errata found against cited textbooks or papers are recorded in a ledger
 next to the derivation, with the exact reference and the checked correction.
