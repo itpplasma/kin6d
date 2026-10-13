@@ -1179,7 +1179,8 @@ target_sources(kin6d PRIVATE src/generated/kin6d_nonnested_leaves.f90
 set_source_files_properties(src/generated/kin6d_nonnested_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 
-add_executable(test_nonnested_solovev test/test_nonnested_solovev.f90)
+add_executable(test_nonnested_solovev test/nn_solovev_fixture.f90
+    test/test_nonnested_solovev.f90)
 target_link_libraries(test_nonnested_solovev PRIVATE kin6d)
 foreach(k 2 3)
     add_test(NAME nonnested_n0_solovev_p${k} COMMAND test_nonnested_solovev ${k})
@@ -1210,6 +1211,21 @@ foreach(k 2 3 4)
     add_test(NAME nonnested_transport_sovinec_chi_ratio_p${k}
         COMMAND test_nonnested_transport sovinec ${k})
     set_tests_properties(nonnested_transport_sovinec_chi_ratio_p${k} PROPERTIES
+        TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+endforeach()
+
+# NN2 (second increment): axisymmetric coupled transport / Ampere / Ohm Newton.
+target_sources(kin6d PRIVATE src/nonnested_coupled.f90)
+add_executable(test_nonnested_coupled test/nn_solovev_fixture.f90
+    test/test_nonnested_coupled.f90)
+target_link_libraries(test_nonnested_coupled PRIVATE kin6d)
+foreach(k 2 3)
+    add_test(NAME nonnested_coupled_solovev_p${k}
+        COMMAND test_nonnested_coupled solovev ${k} 1e6)
+    add_test(NAME nonnested_coupled_offset_return_p${k}
+        COMMAND test_nonnested_coupled offset ${k} 1e6)
+    set_tests_properties(nonnested_coupled_solovev_p${k}
+        nonnested_coupled_offset_return_p${k} PROPERTIES
         TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 endforeach()
 
