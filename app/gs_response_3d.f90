@@ -65,7 +65,7 @@ program gs_response_3d
         closure_fluxes
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, layer_xmax, &
         layer_init, layer_closure, layer_coefficients, layer_slope, &
-        layer_regular_slope, layer_jump, layer_kink, layer_inside
+        layer_regular_slope, layer_jump, layer_kink, layer_large, layer_inside
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
         layer_delta, layer_metrics, resistive_closure
     implicit none
@@ -485,7 +485,7 @@ contains
         !! jump of d Phi/d psin at psin_s -+ spot/(n |q'|), the equivalent
         !! rational-ring sheet amplitude (stored in lam) and the layer data.
         integer, intent(in) :: iph
-        complex(dp) :: cf(3, 2), jmp, jfit, ph(layer_nfit, 2)
+        complex(dp) :: cf(3, 2), jmp, jfit, ph(layer_nfit, 2), a1c(2)
         real(dp) :: xs, res1(2)
         integer :: l, side
         do l = 1, nrat
@@ -499,8 +499,9 @@ contains
             ! to spot with the small-solution power |x|^(mu - 1/2)
             jmp = layer_kink(lays(l), ph, resist)*(xs/lays(l)%delta)**lays(l)%eps
             ! large-solution residual relative to the flux at the layer edge
+            a1c = layer_large(lays(l), ph)
             do side = 1, 2
-                res1(side) = abs(cf(1, side))/max(abs(ph(1, side)), tiny(1.0_dp))
+                res1(side) = abs(a1c(side))/max(abs(ph(1, side)), tiny(1.0_dp))
             end do
             lam(l) = jmp/jump_unit(l)
             write (ulay, &
@@ -513,12 +514,12 @@ contains
             if (resist) then
                 block
                     complex(dp) :: arec, jedge
-                    arec = 0.5_dp*(cf(1, 1) + cf(1, 2))
+                    arec = 0.5_dp*(a1c(1) + a1c(2))
                     jedge = (lam_cl(2*l - 1) + lam_cl(2*l))*jump_unit(l)
                     write (ures, '(i3,f10.6,f14.10,i5,2es14.6,2es12.4,14es14.6)') &
                         iph, q_rat(l), psin_rat(l), m_rat(l), dlayer(l), &
                         lscale(l), qlay(l), arec, arec/area(l), jedge, jmp, &
-                        abs(phivac(l)), abs(cf(1, 1) - cf(1, 2))/max(abs(arec), &
+                        abs(phivac(l)), abs(a1c(1) - a1c(2))/max(abs(arec), &
                         tiny(1.0_dp)), lcen(l), arec*lcen(l)/area(l)
                     write (*, '(a,f8.4,a,es11.3,a,es11.3,a,es11.3)') '  resistive q ', &
                         q_rat(l), ' |A/area| ', abs(arec)/area(l), ' |jump| ', &

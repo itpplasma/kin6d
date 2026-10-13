@@ -63,7 +63,7 @@ program test_mhd_closure
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
         layer_xmax, layer_jump, layer_kink, layer_init, layer_closure, layer_wmax, &
-        layer_coefficients, layer_regular_slope
+        layer_coefficients, layer_regular_slope, layer_large
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
     implicit none
@@ -108,6 +108,7 @@ program test_mhd_closure
     call layer_ring_cap()
     call layer_jump_exact()
     call layer_kink_finite_mu()
+    call layer_closure_finite_mu()
     call shield_cylinder()
     prof = 1
     call fe_ladder("Wesson j = (1 - r^2)^2", [10.0_dp, 40.0_dp], 2.0e-2_dp)
@@ -788,6 +789,99 @@ contains
             "layer_kink recovers the small-solution jump for mu = 0.5, 0.6, 0.75 "// &
             "(ratio 1.5/2, nfit 3/5, also with a large solution)")
     end subroutine layer_kink_finite_mu
+
+    subroutine layer_closure_finite_mu()
+        !! Ideal edge-sheet closure for mu > 1/2 on an exact outer model.  Each
+        !! side carries Phi_s = A_s |x|^-eps + C_s |x|^(1+eps) + sigma g |x|
+        !! + f x^2 (Frobenius span plus the smooth odd x and even x^2 parts),
+        !! with Phi_s(|x| = xb) prescribed; the closure a1_s = 0 (layer_large)
+        !! fixes A_s.  Oracle (ideal: A = 0): the net layer current (outer
+        !! slope jump) is (1 + eps)(C_1 + C_2) delta^eps + 4 f delta, so its
+        !! fitted delta exponent must be eps, and the extracted jump at the
+        !! spot must converge to (1 + eps)(C_1 + C_2) xs^eps as delta -> 0.
+        real(dp), parameter :: ps = 0.49_dp, xb = 0.3_dp, xs = 5.0e-3_dp
+        real(dp), parameter :: mus(3) = [0.553_dp, 0.6_dp, 0.75_dp]
+        real(dp), parameter :: ratios(2) = [1.5_dp, 2.0_dp]
+        real(dp), parameter :: deltas(4) = [1.0e-3_dp, 5.0e-4_dp, 2.5e-4_dp, 1.25e-4_dp]
+        real(dp), parameter :: pb(2) = [0.7_dp, 1.3_dp], gp = -2.0_dp, fp = 1.0_dp
+        integer, parameter :: nfit = 5
+        real(dp), allocatable :: lab(:), ul(:)
+        real(dp) :: eps, am(4, 4), rhs(4), a(nfit, 2), cex(2), sinf, net(4), sk(4)
+        real(dp) :: lx(4), ly(4), slope, errp, errs, sg, w
+        complex(dp) :: phi(nfit, 2), a1(2)
+        type(rational_layer_t) :: lay
+        integer :: im, ir, id, st, side, s2, k, ipiv(4)
+
+        errp = 0.0_dp
+        errs = 0.0_dp
+        do im = 1, 3
+            eps = mus(im) - 0.5_dp
+            do side = 1, 2
+                sg = real(2*side - 3, dp)
+                cex(side) = (pb(side) - sg*gp*xb - fp*xb**2)/xb**(1 + eps)
+            end do
+            sinf = (1 + eps)*sum(cex)*xs**eps
+            do ir = 1, 2
+                do id = 1, 4
+                    call layer_labels(ps, deltas(id), ratios(ir), &
+                        layer_xmax(ps, [0.9_dp], deltas(id), ratios(ir), nfit, 96), &
+                        1.0e-6_dp, 0.999_dp, lab)
+                    ul = sqrt(sorted([lab, ps]))
+                    call layer_init(ul, ps, 1.5_dp, 1.0_dp, -mus(im)**2, 3, deltas(id), &
+                        ratios(ir), nfit, lay, st)
+                    if (st /= 0) error stop "layer_closure_finite_mu init"
+                    a = lay%t*deltas(id)
+                    ! unknowns A_1, A_2, C_1, C_2: boundary rows, closure rows
+                    am = 0.0_dp
+                    do side = 1, 2
+                        sg = real(2*side - 3, dp)
+                        am(side, side) = xb**(-eps)
+                        am(side, 2 + side) = xb**(1 + eps)
+                        rhs(side) = pb(side) - sg*gp*xb - fp*xb**2
+                        rhs(2 + side) = 0.0_dp
+                        do s2 = 1, 2
+                            sg = real(2*s2 - 3, dp)
+                            do k = 1, nfit
+                                w = lay%pa1((s2 - 1)*nfit + k, side)
+                                am(2 + side, s2) = am(2 + side, s2) + w*a(k, s2)**(-eps)
+                                am(2 + side, 2 + s2) = am(2 + side, 2 + s2) &
+                                    + w*a(k, s2)**(1 + eps)
+                                rhs(2 + side) = rhs(2 + side) &
+                                    - w*(sg*gp*a(k, s2) + fp*a(k, s2)**2)
+                            end do
+                        end do
+                    end do
+                    call dgesv(4, 1, am, 4, ipiv, rhs, 4, st)
+                    if (st /= 0) error stop "layer_closure_finite_mu solve"
+                    do side = 1, 2
+                        sg = real(2*side - 3, dp)
+                        phi(:, side) = cmplx(rhs(side)*a(:, side)**(-eps) &
+                            + rhs(2 + side)*a(:, side)**(1 + eps) + sg*gp*a(:, side) &
+                            + fp*a(:, side)**2, 0.0_dp, dp)
+                    end do
+                    a1 = layer_large(lay, phi)
+                    if (maxval(abs(a1)) > 1.0e-10_dp) error stop &
+                        "layer_closure_finite_mu: closure a1 not zero"
+                    ! net current: outer slope jump d Phi/d|x| summed over both sides
+                    net(id) = sum(-eps*rhs(1:2)*deltas(id)**(-1 - eps) &
+                        + (1 + eps)*rhs(3:4)*deltas(id)**eps) + 4*fp*deltas(id)
+                    sk(id) = real(layer_kink(lay, phi), dp)*(xs/deltas(id))**eps
+                end do
+                lx = log(deltas)
+                ly = log(abs(net))
+                slope = sum((lx - sum(lx)/4)*(ly - sum(ly)/4))/sum((lx - sum(lx)/4)**2)
+                errp = max(errp, abs(slope - eps))
+                errs = max(errs, abs(sk(4) - sinf)/abs(sinf))
+                if (abs(sk(4) - sinf) > abs(sk(1) - sinf) + 1.0e-12_dp*abs(sinf)) &
+                    errs = huge(1.0_dp)
+            end do
+        end do
+        print '(a,2es10.2)', "  closure finite mu: |net-current exponent - eps|, "// &
+            "spot-jump error ", errp, errs
+        call record(errp < 2.0e-2_dp .and. errs < 1.0e-2_dp, &
+            "finite-mu edge-sheet closure: net layer current ~ delta^eps and the "// &
+            "spot jump converges (mu 0.553/0.6/0.75, ratio 1.5/2, nfit 5)")
+    end subroutine layer_closure_finite_mu
 
     pure function sorted(v) result(w)
         real(dp), intent(in) :: v(:)
