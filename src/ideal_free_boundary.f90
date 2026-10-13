@@ -1262,8 +1262,9 @@ contains
         type(fortsparse_status_t) :: sst
         real(dp) :: merit, tmerit, alpha, cap_x, cap_w, disp, rot, minjac, t0
         real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5)
-        integer :: it, i, p, st, tries, back
+        integer :: it, i, p, st, tries, back, nback
         integer, allocatable :: tpos(:, :)
+        real(dp), allocatable :: trial_du(:)
         logical :: talk, accepted, factored, kept
         talk = .false.
         if (present(verbose)) talk = verbose
@@ -1361,9 +1362,20 @@ contains
                 ! inertia of H. Raising mu instead would turn the step against
                 ! the vertical mode (negative curvature with fixed currents)
                 ! once mu |H_ii| exceeds its eigenvalue.
-                do back = 1, 8
+                ! With n /= 0 modes, first damp only the n = 0 part of the step
+                ! (its near-null floor components spoil the merit while the
+                ! n /= 0 part is nearly linear), then the whole step.
+                nback = 8
+                if (fb%nmode > 1 .and. alpha >= 1) nback = 14
+                do back = 1, nback
                     t0 = wall()
-                    call ideal_fb_step(fb, du, alpha)
+                    if (nback == 14 .and. back <= 6) then
+                        trial_du = du
+                        call scale_mode(fb, trial_du, 1, 0.5_dp**(back - 1))
+                        call ideal_fb_step(fb, trial_du, 1.0_dp)
+                    else
+                        call ideal_fb_step(fb, du, alpha)
+                    end if
                     call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
                     report%line_s = report%line_s + wall() - t0
                     if (st == IDEAL_FB_OK) then
@@ -1373,7 +1385,7 @@ contains
                         end if
                     end if
                     fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
-                    alpha = alpha/2
+                    if (.not. (nback == 14 .and. back <= 6)) alpha = alpha/2
                 end do
                 if (accepted) exit
                 mu = 10*mu
@@ -1444,6 +1456,27 @@ contains
             print '(a,es10.2,a,2f9.4,a,l2)', '   largest plasma increment', du(k), &
                 ' at', fb%plasma%reference(:, a), ' boundary', fb%plasma%boundary(a)
         end block
+    end subroutine
+
+    subroutine scale_mode(fb, du, m, factor)
+        ! Scale the components of real Fourier mode m of a global increment.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(inout) :: du(:)
+        integer, intent(in) :: m
+        real(dp), intent(in) :: factor
+        integer :: a, s2, c
+        do a = 1, fb%plasma%nodes
+            do c = 1, 2
+                du(pidx(fb, c, m, a)) = factor*du(pidx(fb, c, m, a))
+            end do
+        end do
+        do s2 = 1, fb%ns
+            do c = 1, 3
+                du(ix(fb, c, m, s2)) = factor*du(ix(fb, c, m, s2))
+                du(il(fb, c, m, s2)) = factor*du(il(fb, c, m, s2))
+            end do
+            du(iphi(fb, m, s2)) = factor*du(iphi(fb, m, s2))
+        end do
     end subroutine
 
     subroutine tangential_positions(fb, rowptr, colidx, tpos)
