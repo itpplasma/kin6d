@@ -519,6 +519,50 @@ discretising b.grad with the same discrete B used in Ampere, so that the
 exact discrete equilibrium satisfies b.grad p = 0 exactly. Rerun P2 1e6
 N = 4 on nr = 8/16/32 against the same gates.
 
+Closed-line follow-up (sCluster jobs 3224041 to 3224043 at 693f56c, which
+only adds the coarsest nr as optional argument 6; 16 cores). The second
+option above is already the discretisation: b in the pressure and Phi rows
+is built from the same V2 coefficients as curl A in the Ampere rows. Exact
+b.grad p = 0 is still out of reach, because P_k on unaligned triangles
+cannot be constant on discrete field lines. The mismatch therefore enters
+the current equation tested with a function constant on a closed line: the
+discrete B violates the closed-line condition (oint dl/B constant on
+surfaces) that family 1 satisfies exactly, and only g_perp grad Phi can
+carry it, so Phi grows like g_par/g_perp. All runs P2, N = 4, gates
+unchanged; Phi is relative to V.
+
+| ratio, nr ladder | orders B / p / D3 / V | V error per nr | Phi per nr | gates |
+|---|---|---|---|---|
+| 1, 8/16/32 | 2.51 / 2.65 / 2.90 / 2.25 | 1.22e-4 / 3.13e-5 / 6.59e-6 | 3e-6 / 8e-7 / 4e-7 | PASS |
+| 1e3, 8/16/32 | 2.51 / 1.64 / 2.90 / 2.25 | 1.21e-4 / 3.11e-5 / 6.52e-6 | 4.2e-4 / 1.0e-4 / 4.7e-5 | PASS |
+| 1e6, 8/16/32 | 2.51 / 2.36 / 2.90 / 2.24 | 6.43e-5 / 3.07e-5 / 6.52e-6 | 0.79 / 9.0e-3 / 4.7e-5 | PASS |
+| 1e6, 6/12/24 | 2.15 / 3.54 / 2.81 / **0.40** | 7.56e-5 / 2.40e-5 / 1.82e-5 | 0.69 / 0.26 / 1.5e-3 | FAIL (V) |
+| 1e4, 4/8 | 1.75 / 2.44 / 2.53 / **1.49** | 3.42e-4 / 1.22e-4 | 1.6e-2 / 5.1e-3 | FAIL (V) |
+| 1e5, 4/8 | 1.75 / 1.98 / 2.53 / **0.25** | 1.28e-4 / 1.08e-4 | 5.9e-2 / 8.0e-2 | FAIL (V) |
+
+Wall time and memory: 4 min 14 s, 10 min 15 s and 34 min 40 s with 36 to
+39 GB for the three 8/16/32 ladders; 15 min and 23 GB for 6/12/24. Newton
+converged to 1e-11 in every stage, and the path checks on the coarsest
+mesh agree within 3e-10 in A, p and V.
+
+The Phi absorption is confirmed. At nr = 8 Phi grows almost linearly with
+the ratio (4.2e-4, 5.1e-3, 8.0e-2, 0.79 for 1e3 to 1e6) while B and D3 do
+not change, which is the g_par/g_perp amplification of a fixed closed-line
+mismatch. By the rule declared for this rerun (V order >= 1.5 on 16/32 and
+Phi at nr = 32 not above that at nr = 16), P2 1e6 N = 4 PASSES on
+nr = 8/16/32 and FAILS on 4/8/16. The 6/12/24 ladder shows that the
+pollution is not merely pre-asymptotic: Phi is not monotone in nr
+(0.69 / 0.79 / 0.26 / 9.0e-3 / 1.5e-3 / 4.7e-5 at nr 6/8/12/16/24/32), and
+at nr = 24 the V error is still about 1.6 times the clean nr^-2 value. It
+does not decay like h^k either: at nr = 32 the 1e3 and 1e6 states agree to
+the printed four digits in B, p, V, D3 and Phi, so there is no visible
+ratio amplification at nr = 32, while it is large at nr = 24. The amplitude depends on
+the discrete line closure for each mesh, not on h alone. The P2 verdict at
+1e6 thus depends on the ladder. P3 (all ladders above) is unaffected.
+Making P2 robust at 1e6 needs a design decision: a closed-line gauge for
+Phi paired with a matching source so that weak Ampere stays solvable, or a
+ratio-dependent mesh. Neither is a retune of the gates.
+
 ### NN2c island results (sCluster jobs 3222014, 3222015)
 
 All 180 CTests passed. G (flattening measure) from the island study, N = 1
