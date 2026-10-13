@@ -172,7 +172,7 @@ Compare only within the resistive relaxed lane; other lanes are context.
 | HINT2 ([Suzuki et al. 2006](https://doi.org/10.1088/0029-5515/46/11/L01)) | p averaged along lines over L_in; p = 0 if L_C < L_in; B relaxed at fixed p | same boundary and vessel, I_phi = 0, matched p on surviving surfaces and beta; compare in the ideal-limit extrapolation only, since L_in is not chi_perp |
 | HINT ([Harafuji, Hayashi, Sato 1989](https://doi.org/10.1016/0021-9991(89)90069-7)) | algorithm not yet read from the source | none until read |
 | PIES ([Reiman, Greenside 1986](https://doi.org/10.1016/0010-4655(86)90059-7)) | pressure-driven current, Ampere update, zero net current per surface | ideal limit with V = 0, I_phi = 0; same boundary and p on surviving surfaces |
-| Zhang, Zhu, Hegna ([CPC 2026](https://doi.org/10.1016/j.cpc.2025.109961)) | hyperbolic parallel damping for p, dynamic resistive relaxation for B | their published case verbatim; parameter map from the paper body, not yet read |
+| Zhang, Zhu, Hegna ([CPC 2026](https://doi.org/10.1016/j.cpc.2025.109961)) | parallel-only hyperbolic damping of p (chi_perp = 0) with artificial resistivity and flow; not a chi_par/chi_perp closure | their published case verbatim; parameter map from the paper body, not yet read |
 | JOREK saturated states | full resistive MHD with chi_par, chi_perp, eta and sources | negligible flows; identical chi, eta, S, boundary and current; compare p, island width and phase |
 
 [MRX](https://arxiv.org/abs/2510.26986) relaxes by admissible

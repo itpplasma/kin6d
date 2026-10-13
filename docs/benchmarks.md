@@ -137,6 +137,19 @@ after the physics problem:
 | mrxmhd_island_chaos | X | MRxMHD | KIN6D-MRxMHD, SPEC/SPECTRE |
 | free_boundary_3d_nonnested | X | MRxMHD; ideal non-nested/weak | SPECTRE, KIN6D |
 
+Model match of the resistive comparators (checked against the papers). The
+Zhang--Zhu--Hegna code (NTEC) damps p by a parallel-only hyperbolic equation
+with artificial resistivity and flow; it has no chi_par/chi_perp closure.
+HINT computes p by field-line tracing with a connection-length cutoff. The
+closest published match to NN2's model (anisotropic p transport, momentum,
+resistive induction) is
+[Hudson and Nakajima 2010](https://doi.org/10.1063/1.3431090), which proposes
+it for HINT and has no published results. The transport operator alone is
+tested against Hudson and Breslau
+([PRL 100, 095001](https://doi.org/10.1103/PhysRevLett.100.095001)) in
+`test_nonnested_hudson_breslau`: exact integrable limit gated; the chaotic
+field (k = 2.1e-3) is an unconverged ladder.
+
 Compare codes only within one model lane (ideal nested; ideal non-nested/weak;
 resistive relaxed; MRxMHD). A result from another lane is context, not a
 reference.
