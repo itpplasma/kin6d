@@ -374,6 +374,12 @@ target_link_libraries(test_gs_prescribed_q_pedestal PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_pedestal COMMAND test_gs_prescribed_q_pedestal)
 set_tests_properties(grad_shafranov_prescribed_q_pedestal PROPERTIES
     TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_prescribed_q_edge_mode test/test_gs_prescribed_q_edge_mode.f90)
+target_link_libraries(test_gs_prescribed_q_edge_mode PRIVATE kin6d)
+add_test(NAME grad_shafranov_prescribed_q_edge_mode
+         COMMAND test_gs_prescribed_q_edge_mode)
+set_tests_properties(grad_shafranov_prescribed_q_edge_mode PROPERTIES
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_prescribed_q_circle test/test_gs_prescribed_q_circle.f90)
 target_link_libraries(test_gs_prescribed_q_circle PRIVATE kin6d)
 add_test(NAME grad_shafranov_prescribed_q_e1 COMMAND test_gs_prescribed_q_circle 1)
