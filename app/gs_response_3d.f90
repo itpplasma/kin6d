@@ -46,7 +46,7 @@ program gs_response_3d
         ampere_n_curl
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_points, ring_flux_harmonic, ring_flux_from_values, &
-        ring_sheet_load, ring_area
+        ring_sheet_load, ring_area, resonant_surfaces_missing
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_response_n, only: sheet_closure_t, closure_shield_init, &
@@ -70,6 +70,7 @@ program gs_response_3d
     real(dp) :: qlow = 0.0_dp, rat_pad = 0.0_dp
     integer :: rat_grade = 1
     logical :: edge_moved_current = .false.
+    logical :: rat_auto = .true.
     character(len=16) :: closure = 'sheet'
     real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 1.5_dp, spot = 5.0e-4_dp
     integer :: layer_nfit = 3
@@ -77,7 +78,7 @@ program gs_response_3d
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
         boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current, closure, &
-        layer_delta, layer_ratio, layer_nfit, spot
+        layer_delta, layer_ratio, layer_nfit, spot, rat_auto
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -149,6 +150,16 @@ program gs_response_3d
     frob = trim(closure) == 'frobenius' .and. trim(model) == 'ideal'
     if (trim(closure) /= 'sheet' .and. trim(closure) /= 'frobenius') &
         error stop 'closure must be sheet or frobenius'
+
+    ! Every other resonant surface m/n of the plasma (the sidebands m +- 1 of
+    ! the toroidal coupling, e.g. q = 3 at the edge for n q = 2) carries the
+    ! same 1/(u - u_s) pole of the ideal volume current.  Left unshielded the
+    ! pole makes the response depend on where the nearest half ring falls
+    ! (|b_shield| of the q = 2 surface not mesh converged at q0 1.55, A = 10),
+    ! so the sheet closure shields them all; rat_auto = .false. keeps only the
+    ! listed surfaces.  (The Frobenius closure takes its list as given.)
+    if (rat_auto .and. .not. frob .and. trim(model) == 'ideal') &
+        call add_resonant_surfaces()
 
     ! rings: uniform in u = sqrt(psin) plus the rational surfaces
     allocate (u_rat(nrat))
@@ -484,5 +495,22 @@ contains
     end subroutine polar_map
 
 
+
+    subroutine add_resonant_surfaces()
+        real(dp), allocatable :: px(:), qx(:)
+        integer, allocatable :: mx(:)
+        integer :: ia
+
+        call resonant_surfaces_missing(g, n, psin_rat_min, psin_rat_max, nfine, &
+            m_rat(1:nrat), px, qx, mx)
+        do ia = 1, size(px)
+            write (*, '(a,f10.6,a,f14.10,a,i0,a)') 'rational q = ', qx(ia), &
+                ' at psin = ', px(ia), ', m = ', mx(ia), ' (added, rat_auto)'
+        end do
+        psin_rat = [psin_rat(1:nrat), px]
+        q_rat = [q_rat(1:nrat), qx]
+        m_rat = [m_rat(1:nrat), mx]
+        nrat = nrat + size(px)
+    end subroutine add_resonant_surfaces
 
 end program gs_response_3d
