@@ -60,7 +60,8 @@ module kin6d_gs_free_boundary
     use fortnum_quadrature, only: gauss_legendre
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
                                gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
-                               GS_DIRECT_INDEFINITE
+                               GS_DIRECT_INDEFINITE, GS_DIRECT_ORDER_AMD, &
+                               GS_DIRECT_ORDER_ND
     use kin6d_sort_keys, only: sort_key_order
     use kin6d_gs_timers, only: gs_phase_tick, gs_profile_value
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs
@@ -1343,7 +1344,7 @@ contains
         allocate (fac%z(n, 2), fac%zt(n, 2), rhs2(n), col(n))
         if (use_mumps) then
             call gs_direct_factor(fac%direct, n, sys%colptr, sys%rowind, fac%values, &
-                                  ok, GS_DIRECT_INDEFINITE)
+                                  ok, GS_DIRECT_INDEFINITE, direct_ordering())
             call gs_phase_tick('factor.mumps', t0)
             call gs_profile_value('mumps.analysis', fac%direct%analysis_s)
             call gs_profile_value('mumps.factor', fac%direct%factor_s)
@@ -1402,6 +1403,19 @@ contains
         fac%ready = .true.
         status = GS_FB_OK
     end subroutine gs_fb_factor
+
+    integer function direct_ordering() result(ordering)
+        !! Fill-reducing ordering of the MUMPS analysis; KIN6D_FB_ORDERING =
+        !! amd | nd overrides the default.
+        character(len=8) :: choice
+        integer :: length, stat
+
+        ordering = GS_DIRECT_ORDER_ND
+        call get_environment_variable('KIN6D_FB_ORDERING', choice, length, stat)
+        if (stat == 0 .and. length > 0) then
+            if (trim(choice) == 'amd') ordering = GS_DIRECT_ORDER_AMD
+        end if
+    end function direct_ordering
 
     logical function mumps_enabled() result(enabled)
         !! Threaded MUMPS when built in; KIN6D_FB_SOLVER=superlu forces the
