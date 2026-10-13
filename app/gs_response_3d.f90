@@ -232,6 +232,13 @@ program gs_response_3d
                 qa = layer_xmax(psin_rat(i), &
                     [psin_rat(:i - 1), psin_rat(i + 1:nrat)], layer_delta, &
                     layer_ratio, layer_nfit, nrad)
+                if (psin_rat(i) + layer_delta*layer_ratio**(layer_nfit - 1) &
+                    >= 1 - 2.0e-4_dp) then
+                    write (*, '(a,f10.6,a,f12.8,a)') 'rational q = ', q_rat(i), &
+                        ' at psin = ', psin_rat(i), ': its Frobenius fit rings' &
+                        //' do not fit inside the plasma; lower psin_rat_max'
+                    error stop 'layer outside the plasma'
+                end if
                 call layer_labels(psin_rat(i), layer_delta, layer_ratio, qa, &
                     (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, lab)
                 extra = [extra, sqrt(lab)]

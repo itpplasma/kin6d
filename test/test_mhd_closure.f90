@@ -143,6 +143,7 @@ program test_mhd_closure
     end if
     call step_closed_form()
     call mercier_zero_beta()
+    call layer_rings_fine_mesh()
     call edge_current_jump()
     prof = 1
     call layer_conditioning()
@@ -480,7 +481,44 @@ contains
             ",  |q| =", qa, ", cylinder q =", qcyl(r_of_psi(0.5_dp*psi_of_r(1.0_dp)))
         call record(st == 0 .and. abs(di + 0.25_dp) < 1.0e-12_dp, &
             "Mercier D_I = -1/4 at zero pressure gradient")
+        ! a rational closer to the boundary than the difference step
+        call mercier_di(g, 0.9996_dp, 512, di, qa, dq, st)
+        call record(st == 0 .and. abs(di + 0.25_dp) < 1.0e-12_dp, &
+            "Mercier D_I = -1/4 at psin = 0.9996 (step inside the plasma)")
     end subroutine mercier_zero_beta
+
+    subroutine layer_rings_fine_mesh()
+        !! Layer rings graded with layer_extent on a fine mesh (uniform u
+        !! spacing below the outermost fit offset) contain every fit ring
+        !! that layer_init requires.
+        real(dp), parameter :: delta = 5.0e-4_dp, ratio = 2.0_dp
+        integer, parameter :: nfit = 5
+        real(dp) :: ps(2), xmax
+        real(dp), allocatable :: extra(:), lab(:), ul(:)
+        type(rational_layer_t) :: lay
+        integer :: nrad, l, st
+        logical :: ok
+        ps = [0.49_dp, 0.76_dp]
+        ok = .true.
+        do nrad = 96, 512, 32
+            extra = sqrt(ps)
+            do l = 1, 2
+                xmax = layer_xmax(ps(l), ps(3 - l:3 - l), &
+                    delta, ratio, nfit, nrad)
+                call layer_labels(ps(l), delta, ratio, xmax, (0.5_dp/nrad)**2, &
+                    1 - 2.0e-4_dp, lab)
+                extra = [extra, sqrt(lab)]
+            end do
+            call ring_labels_merge(nrad, extra, 0.3_dp, ul)
+            call ring_labels_smooth(ul, 2*ratio)
+            do l = 1, 2
+                call layer_init(ul, ps(l), 1.5_dp, 2.0_dp, -0.3_dp, 3 + l, delta, &
+                    ratio, nfit, lay, st)
+                ok = ok .and. st == 0
+            end do
+        end do
+        call record(ok, "layer fit rings present for nrad = 96 .. 512")
+    end subroutine layer_rings_fine_mesh
 
     ! ----------------------------------------------------------- FE ladder
 
