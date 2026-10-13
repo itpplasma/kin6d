@@ -78,20 +78,22 @@ nested seed, whose initial gradient is large). Element energy, gradient and
 Hessian blocks are OpenMP-parallel over cells. The report gives wall time for
 energy, Hessian and factor+solve.
 
-Shaped Solovev P3 ladder on sCluster (one node, MUMPS, 9149309), finest mesh
-(5.1e4 dofs, 35-41 Newton steps), seconds:
+Shaped Solovev P3 ladder on sCluster (one exclusive node, MUMPS, 433c1a5,
+cached CSR pattern), finest mesh (5.1e4 dofs, 35-41 Newton steps), seconds:
 
 | threads | 1 | 2 | 4 | 8 | 16 | 32 |
 |---|---|---|---|---|---|---|
-| energy/gradient | 2.38 | 1.08 | 0.58 | 0.34 | 0.23 | 0.16 |
-| Hessian assembly | 24.1 | 18.1 | 17.0 | 16.5 | 16.5 | 16.4 |
-| factor + solve | 27.6 | 21.3 | 19.1 | 18.5 | 18.7 | 19.8 |
-| whole ladder | 63.7 | 49.2 | 44.9 | 43.4 | 43.6 | 44.9 |
+| energy/gradient | 2.43 | 1.08 | 0.65 | 0.36 | 0.23 | 0.17 |
+| Hessian assembly | 9.33 | 5.71 | 5.13 | 4.00 | 3.70 | 3.61 |
+| factor + solve | 28.0 | 21.5 | 20.9 | 19.0 | 19.1 | 19.8 |
+| whole ladder | 48.4 | 36.3 | 33.8 | 30.4 | 30.2 | 31.0 |
 
-Serial SuperLU took 627 s for the same ladder locally (4 threads). Element
-work scales (energy 15x at 32 threads); Hessian assembly then was dominated by
-the serial CSR pattern build, rebuilt every Newton step (now cached), and the
-factorisation of 5e4 unknowns stops scaling beyond 4 threads.
+Before caching the pattern the Hessian took 24.1 s (1 thread) and 16.4 s (32);
+serial SuperLU took 627 s for the ladder locally (4 threads). Element work
+scales (energy 14x at 32 threads). MUMPS factorisation of 5e4 unknowns
+(analysis repeated every step) is now the floor and stops scaling beyond
+4-8 threads; reusing the analysis and the per-n block preconditioner (L4) are
+the next levers.
 
 ## Nested seed (`src/ideal_seed.f90`)
 
