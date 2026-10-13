@@ -32,8 +32,10 @@ values receive zero measure. The residual is sampled uniformly in sqrt(s).
 This avoids feeding pointwise Hessian error into the recovered source law.
 The full off-moment profile is checked separately, including the endpoints.
 
-The outer unknowns are the spline coefficients and log F_edge. A damped
-Newton iteration uses the discrete-residual Jacobian at each accepted iterate
+The outer unknowns are the spline coefficients and log F_edge. A
+Levenberg-Marquardt-damped Newton iteration (a rejected trial raises mu in
+(J^T J + mu max diag J^T J) dx = -J^T r; mu returns to zero, the Newton step,
+near the solution) uses the discrete-residual Jacobian at each accepted iterate
 (`jacobian='exact'`, namelist `inverse_jacobian`, the default). Column k
 solves the converged weak-equation Jacobian (the cubic profile load's source
 mass and axis rank-one term, as in the forward Newton step) for the load of
@@ -45,7 +47,8 @@ law, with the normalizing axis flux following the field. This costs one
 linear solve and two contour readbacks per coefficient and no nonlinear
 forward solve; the F_edge column leaves the field unchanged. Curved and
 P3 contours have no analytic coarea tangent, so the readback difference
-(relative flux step 1e-3, load tolerance 1e-6) is a numerical derivative of the
+(relative flux step and coefficient step at most 1e-3, load tolerance 1e-6) is a
+numerical derivative of the
 discrete map, not a sensitivity product; its agreement with Richardson
 differences of fully converged solves is tested. `jacobian='secant'` keeps
 FortNum's central-difference Jacobian of full forward solves as a fallback;
@@ -122,9 +125,20 @@ line-search damping, and when it does converge the field has no readable q
 profile near the axis. The solver then solves the inverse problem for p'
 blended from the mean to the requested law, each stage warm-started from the
 previous one with step halving (`test_gs_prescribed_q_pedestal`, which fails
-with status 101/102 without it). The I0 pressure law on the 96-node TC24 mesh
-now starts and advances through the blend (0.25 reached with 16 graded
-intervals), but does not complete within 30 min.
+with status 101/102 without it). Intermediate stages are accepted at
+max|r| <= 1e-3; only the full law must meet the tolerance.
+
+TC24 with the I0 pressure law (sCluster, 48 threads, 96 boundary nodes, 16
+graded FF' intervals): blend 0.5 is reached in about 2 min and blend 0.97 within
+14 min (before: blend 0.25 in 30 min), but the full law stops at max|r|
+5.5e-4 and the run ends with status 105. The outer
+Jacobian agrees with Richardson differences to 8e-6 there; the limit is
+conditioning. At the mean-p' solution its singular values span 4.7 to 2.7e-5
+(cond 1.7e5); the weakest direction is an alternating edge FF' mode led by
+the last coefficient, and the remaining residual lies along the matching
+alternating moment combination, which no nearby law removes (a nonzero
+residual minimum with singular J). The edge FF' coefficients on this knot
+vector are not determined by the interior-weighted q moments.
 
 After convergence, an interleaved radial grid and doubled angular budget
 check q independently of the fitted moments. Status 9 retains the physical
