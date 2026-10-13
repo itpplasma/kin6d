@@ -185,14 +185,14 @@ program test_nonnested_landreman
     use kin6d_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
-        nc_layout, nc_residual, nc_jacobian, nc_solve, nc_fixed
+        nc_layout, nc_residual, nc_jacobian, nc_solve, nc_fixed, nc_continue, nc_store
     implicit none
     type(free_b_field_t) :: field
     type(nc_problem_t) :: problem
     type(nc_layout_t) :: lay
     real(dp), allocatable :: nodes(:, :), x(:)
     integer :: k, modes, nlev, lev, nr0
-    real(dp) :: ratio, v_exact, current
+    real(dp) :: ratio, v_exact, current, decades
     real(dp), allocatable :: eb(:), ep(:), ed(:), ev(:)
     real(dp) :: rate(4)
     character(16) :: arg
@@ -202,12 +202,17 @@ program test_nonnested_landreman
     read (arg, *) ratio
     call get_command_argument(3, arg)
     read (arg, *) nlev
-    modes = 2; nr0 = 4
+    modes = 2; nr0 = 4; decades = 1
     if (command_argument_count() >= 4) then
         call get_command_argument(4, arg)
         read (arg, *) modes
     end if
-    if (k < 2 .or. k > 4 .or. ratio < 1 .or. nlev < 2) error stop 'arguments'
+    if (command_argument_count() >= 5) then
+        call get_command_argument(5, arg)
+        read (arg, *) decades
+    end if
+    if (k < 2 .or. k > 4 .or. ratio < 1 .or. nlev < 2 .or. decades <= 0) &
+        error stop 'arguments'
     allocate (eb(nlev), ep(nlev), ed(nlev), ev(nlev))
     do lev = 1, nlev
         call run(nr0*2**(lev - 1), lev == 1, eb(lev), ep(lev), ev(lev), ed(lev))
@@ -233,7 +238,7 @@ contains
         type(flux_mesh_t) :: fm
         type(nc_report_t) :: report
         type(equilibrium_residual_t) :: stress
-        real(dp), allocatable :: rings(:), points(:, :), xe(:)
+        real(dp), allocatable :: rings(:), points(:, :), xe(:), xa(:)
         real(dp) :: values(EQ_VALUES, 192), bt(3), pt, bf(3), jf(3), pf
         real(dp) :: sum_b, sum_p, etrunc, phi_max, xq(2), wq, basis(3, 64), ph
         integer :: i, j, t, q, st, statuses(192)
@@ -270,11 +275,19 @@ contains
         call seed(0.05_dp, x)
         where (nc_fixed(field)) x = xe
         if (check_jacobian) call jacobian_check(x)
-        call nc_solve(field, problem, x, report, st, tol=1.0e-11_dp)
-        print '(a,i0,a,i0,a,i0,a,i0,a,15es9.1)', 'P', k, ' N=', modes, ' nr=', nr, &
-            ' unknowns ', lay%n, ' Newton ', report%history(:report%newton_steps)
+        ! Ratio > 1: continuation from ratio 1 (the Newton basin shrinks like
+        ! 1/ratio). On the coarsest mesh a second path (twice the step)
+        ! must reach the same discrete state.
+        if (ratio > 1) xa = x
+        call nc_continue(field, problem, x, report, st, tol=1.0e-11_dp, &
+            decades=decades)
+        print '(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,*(es9.1))', 'P', k, ' N=', modes, &
+            ' nr=', nr, ' unknowns ', lay%n, ' stages ', report%stages, &
+            ' total Newton ', report%total_steps, ' last stage ', &
+            report%history(:report%newton_steps)
         if (st /= 0) error stop 'coupled Newton'
-        if (report%newton_steps > 15) error stop 'Newton steps'
+        if (report%newton_steps > 12) error stop 'Newton steps'
+        if (check_jacobian .and. ratio > 1) call path_check(x, xa)
         if (report%divergence > 1.0e-11_dp) error stop 'closed 2-form'
         if (report%multiplier > 1.0e-10_dp*maxval(abs(x(:lay%na)))) &
             error stop 'gauge multiplier'
@@ -337,6 +350,32 @@ contains
             end do
         end do
         shift = 0
+    end subroutine
+
+    subroutine path_check(x1, x2)
+        ! Path independence: x2 (the seed) is continued with twice the step
+        ! and compared with x1 blockwise relative to the block maximum. The
+        ! declared bound 1e-6 is two orders below the coarse-mesh errors.
+        real(dp), intent(in) :: x1(:)
+        real(dp), intent(inout) :: x2(:)
+        type(nc_report_t) :: rep2
+        real(dp) :: d(4)
+        integer :: lo(4), hi(4), b, st
+        call nc_continue(field, problem, x2, rep2, st, tol=1.0e-11_dp, &
+            decades=2*decades)
+        if (st /= 0) error stop 'continuation path'
+        lo = [lay%ia, lay%ip, lay%iphi, lay%iv - 1] + 1
+        hi = [lay%il, lay%iphi, lay%iv - 1, lay%iv]
+        do b = 1, 4
+            d(b) = maxval(abs(x1(lo(b):hi(b)) - x2(lo(b):hi(b)))) &
+                /max(tiny(1.0_dp), maxval(abs(x1(lo(b):hi(b)))))
+        end do
+        print '(a,f5.2,a,i0,a,4es10.2)', 'path check: step ', 2*decades, &
+            ' decades, stages ', rep2%stages, ', rel diff A/p/Phi/V ', d
+        ! Phi vanishes in the exact state: compare it with |V| instead.
+        if (maxval(d([1, 2, 4])) > 1.0e-6_dp) error stop 'continuation path'
+        call nc_store(field, x1, st)
+        if (st /= 0) error stop 'store'
     end subroutine
 
     subroutine jacobian_check(x0)

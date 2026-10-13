@@ -57,7 +57,7 @@ module kin6d_nonnested_coupled
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
-    public :: nc_scalar3_i
+    public :: nc_scalar3_i, nc_continue
 
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
@@ -93,6 +93,7 @@ module kin6d_nonnested_coupled
         real(dp) :: residual(5) = 0     ! blockwise backward errors at exit
         real(dp) :: history(0:40) = -1  ! max blockwise backward error per step
         real(dp) :: voltage = 0, multiplier = 0, divergence = 0
+        integer :: stages = 0, total_steps = 0 ! nc_continue only
         character(32) :: claim = 'candidate'
     end type
 
@@ -450,6 +451,78 @@ contains
         call nn_divergence(field, report%divergence, st)
         if (st /= 0) return
         status = 0
+    end subroutine
+
+    subroutine nc_continue(field, problem, x, report, status, tol, decades, &
+            max_steps)
+        ! Natural-parameter continuation in the anisotropy: chi_par/chi_perp
+        ! = rc^s and g_par/g_perp = rg^s (rc, rg the targets of problem; the
+        ! perpendicular chi_perp and parallel g_par are kept) for s from 0 to
+        ! 1. Each stage is nc_solve to tol seeded by the previous converged
+        ! state, so the end point is the discrete solution at the target and
+        ! does not depend on the path. The Newton basin shrinks like
+        ! 1/ratio (the pressure rows carry chi_par b(A).grad p, so a b error
+        ! enters times chi_par), while the solution itself moves little with
+        ! the ratio. Steps are at most `decades` of the larger ratio (default
+        ! 1); a stage that fails or needs more than max_steps (default 12)
+        ! Newton steps is retried from the last converged state with half
+        ! the step, down to 1/64 decade. report is the last stage's, with
+        ! the stage count and the total Newton steps.
+        type(free_b_field_t), intent(inout) :: field
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(inout) :: x(:)
+        type(nc_report_t), intent(out) :: report
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: tol, decades
+        integer, intent(in), optional :: max_steps
+        type(nc_problem_t) :: stage
+        real(dp), allocatable :: xs(:)
+        real(dp) :: span, s, s_ok, ds, ds_max, target
+        integer :: steps, stages, total, st
+        status = 1
+        target = 1.0e-11_dp; ds_max = 1; steps = 12
+        if (present(tol)) target = tol
+        if (present(decades)) ds_max = decades
+        if (present(max_steps)) steps = max_steps
+        if (ds_max <= 0) return
+        if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
+        if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
+        span = max(log10(problem%chi_par/problem%chi_perp), &
+            log10(problem%g_par/problem%g_perp))
+        ds_max = merge(1.0_dp, min(1.0_dp, ds_max/max(span, tiny(1.0_dp))), &
+            span <= 0)
+        stage = problem
+        s = merge(1.0_dp, 0.0_dp, span <= 0) ! isotropic: one plain solve
+        s_ok = 0; ds = ds_max; stages = 0; total = 0
+        do
+            xs = x
+            call set_stage(s)
+            call nc_solve(field, stage, xs, report, st, tol=target, max_steps=steps)
+            stages = stages + 1; total = total + report%newton_steps
+            if (st == 0) then
+                x = xs; s_ok = s
+                if (s >= 1) exit
+                ds = min(ds_max, 2*ds)
+            else
+                if (s <= 0 .or. ds*span < 1.0_dp/64) then
+                    report%stages = stages; report%total_steps = total
+                    return
+                end if
+                ds = ds/2
+            end if
+            s = min(1.0_dp, s_ok + ds)
+        end do
+        report%stages = stages; report%total_steps = total
+        status = 0
+    contains
+        subroutine set_stage(t)
+            real(dp), intent(in) :: t
+            stage%chi_par = problem%chi_perp*(problem%chi_par/problem%chi_perp)**t
+            stage%g_perp = problem%g_par/(problem%g_par/problem%g_perp)**t
+            if (t >= 1) then
+                stage%chi_par = problem%chi_par; stage%g_perp = problem%g_perp
+            end if
+        end subroutine
     end subroutine
 
     subroutine source_load(field, problem, lay, nphi, load, status)

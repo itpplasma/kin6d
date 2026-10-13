@@ -423,6 +423,45 @@ pressure order >= k + 0.6 at ratio 1 only. CTest
 Ratios 1e3 to 1e6, N = 4 and P3 are in the sCluster study (`landreman`
 mode); a failing gate there is reported, not retuned.
 
+Continuation in the anisotropy (`nc_continue`). The first sCluster study
+(jobs 3222997/8) gave no result at ratio 1e6: from the shifted seed the
+Newton iteration took damped steps (line-search factors 1/2 to 1/256)
+with the backward error stuck between 1e-6 and 1e-7. This is a
+globalization failure, not a linear-algebra floor. Locally, P2 N = 2 nr = 4
+eventually entered the quadratic basin at step 19 and reached 2e-16 with
+the same direct LU (the old print overflowed after 15 entries). N = 4 was
+still at 1e-6 after 30 steps. The pressure rows carry chi_par b(A).grad p,
+so an error in b enters times chi_par and the basin shrinks like
+1/ratio. The discrete solution itself barely moves with the ratio.
+`nc_continue` therefore solves at chi_par/chi_perp = rc^s and
+g_par/g_perp = rg^s for s from 0 to 1 in steps of at most one decade.
+Each stage runs Newton to the final tolerance from the previous state. A
+stage that fails, or needs more than 12 steps, is retried with half the
+step. Every stage converges to the discrete solution at its own s, so the
+end point does not depend on the path. The test checks this on the
+coarsest mesh: a second run with 2-decade steps must agree blockwise
+within 1e-6 of the block maximum in A, p and V. Phi is printed only,
+because it vanishes in the exact state. Local P2 nr = 4 at ratio 1e6:
+N = 2 needs 8 stages and 16 Newton steps, and the path differences are
+A 1.1e-9, p 9.8e-8 and V 4.8e-9. N = 4 needs 8 stages and 17 steps, with
+differences A 1.2e-9, p 1.1e-7 and V 5.1e-9. The Newton-step gate now
+applies per stage (at most 12; previously at most 15 for the single
+solve). Ratio 1 is a single plain solve.
+
+Pre-declared study gates with continuation (P2 and P3; ratios 1, 1e3 and
+1e6; N = 4 and 6; nr = 4/8/16). The gates are unchanged: B and D3 orders
+>= k - 0.3 with D3 falling, V order >= k - 0.5 and the path check.
+p >= k + 0.6 applies at ratio 1 only. PASS at 1e6 means that these gates
+hold at N = 4 for P2 and P3. P3 N = 6 at nr = 4/8 failed the B-order
+gate (2.563). The errors there are identical to those at N = 4 on
+nr = 4/8, whose 4-to-8 order is also 2.563 while the 8-to-16 order is 2.952.
+The failure is therefore pre-asymptotic, and N = 6 now runs on nr = 16 too.
+Local P2 N = 4 nr = 4 at 1e6 gives B 5.4e-3 (as at ratio 1), but p 4.1e-3
+(5.8e-4 at ratio 1) and Phi 8.5e-2 of V. With iota = 2 every field line
+closes, so Phi and p are fixed along b only up to the discrete error of
+b, amplified by the ratio. The ladder shows whether B, D3 and V keep
+their orders.
+
 Local P2 results (nr = 4/8/16, 4 threads, previous revision; the gates were
 then rewritten as above). The Jacobian matches a central difference to
 2.7e-11. Newton converges quadratically in 4 steps.
