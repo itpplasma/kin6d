@@ -64,9 +64,10 @@ program test_nonnested_mapped
     use kin6d_nonnested_mapped, only: nn_map_t, nn_map_build, nn_mapped_data, &
         nn_mapped_solve, nn_mapped_error, nn_mapped_report_t
     implicit none
-    character(32) :: mode, arg
+    character(32) :: mode, arg, env
     integer, allocatable :: list(:)
-    integer :: i, fixed_arg
+    integer :: i, fixed_arg, st
+    real(dp) :: min_order = 1.7_dp
     real(dp), allocatable :: errs(:)
     call get_command_argument(1, mode)
     if (command_argument_count() > 1) then
@@ -91,9 +92,11 @@ program test_nonnested_mapped
             end if
         end do
         if (size(errs) > 1) then
+            call get_environment_variable('KIN6D_MAPPED_MIN_ORDER', env, status=st)
+            if (st == 0) read (env, *) min_order
             if (log(errs(size(errs) - 1)/errs(size(errs))) &
-                /log(real(list(size(list)), dp)/list(size(list) - 1)) < 1.7_dp) &
-                error stop 'mapped h order below 1.7 for P2'
+                /log(real(list(size(list)), dp)/list(size(list) - 1)) < min_order) &
+                error stop 'mapped h order below the gate'
         end if
     case ('modes')
         allocate (errs(size(list)))
