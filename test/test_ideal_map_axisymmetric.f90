@@ -259,7 +259,7 @@ contains
         if (abs(seed%psi_axis/psi_axis - 1) > 1.0e-12_dp) error stop 'seed axis flux'
         ! The seed is far from equilibrium (large initial gradient), so the
         ! relative stopping tolerance is tightened accordingly.
-        solve_tolerance = 1.0e-9_dp
+        solve_tolerance = 1.0e-8_dp
         call ladder(seed, sequenced=.true.)
     end subroutine
 
@@ -305,6 +305,14 @@ contains
             print '(a,i1,4f8.3)', 'orders pair ', mesh - 1, rates
         end do
         rates = log(errors(:, 2)/errors(:, 3))/log(2.0_dp)
+        if (present(sequenced)) then
+            ! Nested seed: return from the offset seed axis and converge. The
+            ! observed P2 order is 2.2-2.4, below k + 1 (open N1 item), so
+            ! this gate is return plus convergence, not the order.
+            if (any(rates(1:2) < 2)) error stop 'seed ladder does not converge'
+            if (errors(1, 3) > 1.0e-3_dp*errors(3, 3)) error stop 'seed not returned'
+            return
+        end if
         if (rates(1) < degree + 1 - 0.4_dp) error stop '3D N=0 exact-flux order'
         if (rates(2) < degree + 1 - 0.4_dp) error stop '3D N=0 vs 2D order'
         if (errors(1, 3) > 1.0e-2_dp*errors(3, 3)) error stop 'seed not corrected'

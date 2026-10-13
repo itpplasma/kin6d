@@ -54,22 +54,58 @@ fortsym like the cylindrical ones.
   map becomes cone-like at the axis; the observed order then drops to 2-2.7
   for P2.
 - omega gauge: the n = 0 rigid rotation is pinned at one node. omega = f(chi)
-  remains a continuum null direction at n = 0; it is discretely near-null and
-  left to the damping. Constraining it to be orthogonal to hat functions of chi
-  biased the solution (measured), so it is not done.
+  remains a continuum null direction at n = 0 and is discretely near-null. A
+  small term (gauge_weight = 1e-4 of the largest physical omega stiffness)
+  (w/2) int R^2 (det G grad chi . grad omega_0)^2 / det G penalises the
+  across-surface derivative; the physics never sees the surface function it
+  selects. The pullback ladders are unchanged by it to four digits. Hard
+  orthogonality to hat functions of chi biased the solution (order 1.8,
+  measured) and is not used.
 - Fixed boundary: nu = 0 on boundary nodes for all modes.
 
 ## Solver
 
 Damped Newton (Levenberg--Marquardt, Hessian diagonal metric) on the reduced
 (nu, omega, sigma) coefficients with the exact assembled Hessian (all Fourier
-modes coupled) factorised by SuperLU through fortsparse. Steps must keep J > 0
+modes coupled), factorised by threaded MUMPS LDL^T (nested dissection) when
+KIN6D is built with MUMPS, serial SuperLU LU otherwise. The CSR pattern is
+built once per map. Steps must keep J > 0
 at every quadrature point and must not increase W beyond roundoff; a trust
 region caps the nodal displacement at 5% of the reference extent and omega at
 1 rad per step, because the near-null directions carry large Newton components.
-Converged when the reduced free gradient falls by 1e-6 (tests). Element energy,
-gradient and Hessian blocks are OpenMP-parallel over cells; the factorisation
-is serial SuperLU and dominates the finest ladders.
+Converged when the reduced free gradient falls by 1e-6 (tests; 1e-8 from a
+nested seed, whose initial gradient is large). Element energy, gradient and
+Hessian blocks are OpenMP-parallel over cells. The report gives wall time for
+energy, Hessian and factor+solve.
+
+Shaped Solovev P3 ladder on sCluster (one exclusive node, MUMPS, 433c1a5,
+cached CSR pattern), finest mesh (5.1e4 dofs, 35-41 Newton steps), seconds:
+
+| threads | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| energy/gradient | 2.43 | 1.08 | 0.65 | 0.36 | 0.23 | 0.17 |
+| Hessian assembly | 9.33 | 5.71 | 5.13 | 4.00 | 3.70 | 3.61 |
+| factor + solve | 28.0 | 21.5 | 20.9 | 19.0 | 19.1 | 19.8 |
+| whole ladder | 48.4 | 36.3 | 33.8 | 30.4 | 30.2 | 31.0 |
+
+Before caching the pattern the Hessian took 24.1 s (1 thread) and 16.4 s (32);
+serial SuperLU took 627 s for the ladder locally (4 threads). Element work
+scales (energy 14x at 32 threads). MUMPS factorisation of 5e4 unknowns
+(analysis repeated every step) is now the floor and stops scaling beyond
+4-8 threads; reusing the analysis and the per-n block preconditioner (L4) are
+the next levers.
+
+## Nested seed (`src/ideal_seed.f90`)
+
+`nested_seed_t` builds the frozen data from a boundary b(t), q(s), p(s) in
+normalised poloidal flux s and the total toroidal flux Phi_edge (the KIN6D 2D
+prescribed-q inputs). The boundary is extended harmonically into the unit disk
+(Fourier coefficients of b, kept above 1e-13 of the size), optionally with the
+seed axis moved to a chosen centre; labels chi = psi_axis (1 - |zeta|^2) and
+b3 = 2 |psi_axis| q(s)/det DY are then smooth at the seed axis. A ray map
+y = c + rho (b(t) - c) is only C1 at c for a non-circular boundary and left an
+error floor (measured). `ideal_map_prolong` initialises a finer map from a
+solved coarser one (grid sequencing, VMEC's ns ladder).
 
 ## Verification (`test/test_ideal_map_axisymmetric.f90`)
 
@@ -108,9 +144,24 @@ solution psi_2D on the same mesh is the second oracle.
   3e-10. The variation converges at order 1.6 only, because the relabelling
   gauge (near-null) sets its pattern.
 
+- `ideal_map_n0_seed_return_a3_p2`: nested seed from the exact boundary,
+  q(s), p(s) and Phi_edge, seed axis 0.19 m from the magnetic axis;
+  grid-sequenced ladder 32/64/128. Error 4.3e-2 (seed) to 6.2e-4, 1.3e-4,
+  2.5e-5: observed order 2.2, 2.4, below k + 1 = 3. The gate is return (1e-3
+  of the seed error) and order >= 2. The order deficit is open: it is not the
+  solver tolerance (1e-8 and 1e-9 agree), not re-gauging after prolongation,
+  and not label smoothness at the seed axis.
+- `seedshaped 2` (by hand, not registered): seed axis 0.38 m off; with
+  re-gauging it reached 2.5e-3, 3.6e-4, 7.9e-5 (orders 2.7, 2.2); without it
+  the 64-segment mesh stops at a relative gradient of 2.3e-8 after 100 Newton
+  steps (near-null drift).
+
 ## Not yet done
 
-See the N1 report: Newton--Krylov with the per-n L4 preconditioner, the
-current-constrained profile f(chi), the nested seed builder from boundary and
-profiles, the flux-aligned mesh (K-M1) that removes the near-null omega and
-tangential drift, VMEC/DESC/GVEC-style 3D cases and free boundary.
+Newton--Krylov with the per-n L4 preconditioner and the Hessian = L4_n
+identity (equilibrium-core D5); the prescribed-q GS linearisation identity at
+N = 0; the residual of equilibrium-core D3 normalised by the poloidal-field
+scale; the current-constrained profile f(chi) for forward cases; the seed
+order deficit above; a flux-aligned mesh (K-M1) for the near-null omega and
+tangential drift; 3D cases and free boundary. The N2 producer waits for core
+steps M1 + M2 (chart/state extraction, B-based readback).
