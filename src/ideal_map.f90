@@ -96,6 +96,13 @@ module kin6d_ideal_map
         ! Axis expansion: polynomial degree (-1: k - 1) and power of T (set
         ! before ideal_map_init / ideal_map_freeze respectively).
         integer :: axis_degree = -1, axis_power = 1
+        ! MUMPS threads. The Newton path follows near-null (relabelling)
+        ! directions, so roundoff differences between factorisations move the
+        ! discrete solution along them (measured: 3.9e-7 against 5.4e-7 on the
+        ! finest A3 P3 seed mesh). One thread keeps the factorisation, and with
+        ! the serial cell sums the whole solve, reproducible; 0 uses all
+        ! threads (faster numeric factorisation, not reproducible).
+        integer :: factor_threads = 1
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
@@ -941,13 +948,13 @@ contains
                     end if
                 end do
             end do
-            ! Threaded MUMPS LDL^T (nested dissection) when KIN6D is built with
-            ! MUMPS; serial SuperLU LU otherwise. The damped system is symmetric
-            ! and may be indefinite.
+            ! MUMPS LDL^T (nested dissection) when KIN6D is built with MUMPS;
+            ! serial SuperLU LU otherwise. The damped system is symmetric and
+            ! may be indefinite.
             if (gs_direct_available()) then
                 solver%backend_id = FORTSPARSE_BACKEND_MUMPS
                 solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
-                solver%options%nthreads = 0
+                solver%options%nthreads = map%factor_threads
             else
                 solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
                 solver%options%symmetry = FORTSPARSE_SYM_GENERAL
