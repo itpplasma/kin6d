@@ -1,0 +1,4 @@
+&case
+ r0=3.0d0, ftor=10.0d0, rc=1.6d0, current=200000.0d0,
+ a_in=0.3d0, a_out=0.9d0, nfil=2, kwind=1, nseg=256, nfp=2
+/
