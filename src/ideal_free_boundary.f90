@@ -63,7 +63,7 @@ module kin6d_ideal_free_boundary
     use fortfem_toroidal_mode_boundary_operators_2d, only: tm_bem_assemble, &
         tm_bem_steklov_symmetric
     use fortnum_quadrature, only: gauss_legendre
-    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
+    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, sparse_refactor, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
         FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE
     implicit none
@@ -119,6 +119,13 @@ module kin6d_ideal_free_boundary
         integer :: np = 0, nx = 0, nf = 0, n = 0
         ! Energy scale sigma*V (J per field period) for the reported residual.
         real(dp) :: energy_scale = 1
+        ! Tangential damping (Newton matrix only) on the plasma nodes, relative
+        ! to their diagonal: bounds steps along the n = 0 continuum null of the
+        ! position gauge (surface rotation v ~ grad f(chi) x grad phi / B_phi,
+        ! which keeps the surfaces, the poloidal flux and the toroidal-flux
+        ! 2-form). Must stay below the vertical eigenvalue (~1e-7 in this
+        ! metric) or the damped step turns against the vertical mode.
+        real(dp) :: tangential_damping = 0
     end type
 
     type :: ideal_fb_report_t
@@ -128,7 +135,8 @@ module kin6d_ideal_free_boundary
         real(dp) :: constraint = 0, min_jacobian = 0, damping = 0
         ! Stopped at the roundoff floor of the merit.
         logical :: floor = .false.
-        real(dp) :: assemble_s = 0, factor_s = 0
+        real(dp) :: assemble_s = 0, factor_s = 0, gradient_s = 0, line_s = 0
+        integer :: factorisations = 0, reused = 0
     end type
 contains
     pure real(dp) function ideal_fb_mode_weight(fb, m) result(c)
@@ -1251,7 +1259,8 @@ contains
         real(dp) :: merit, tmerit, alpha, cap_x, cap_w, disp, rot, minjac, t0
         real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5)
         integer :: it, i, p, st, tries, back
-        logical :: talk, accepted
+        integer, allocatable :: tpos(:, :)
+        logical :: talk, accepted, factored, kept
         talk = .false.
         if (present(verbose)) talk = verbose
         step_tol = 1.0e-5_dp
@@ -1263,6 +1272,7 @@ contains
         cap_w = 0.5_dp
         mu = 1.0e-8_dp
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
+        factored = .false.
         call ideal_fb_gradient(fb, grad, st)
         if (st /= IDEAL_FB_OK) then
             status = IDEAL_FB_FOLDED; return
@@ -1282,6 +1292,8 @@ contains
                 end do
             end do
             scale_p = maxval(diag(1:fb%np))
+            if (fb%tangential_damping > 0) call tangential_positions(fb, rowptr, &
+                colidx, tpos)
             call merit_weights(fb, diag, wts)
             merit = sum(wts*grad**2)
             if (it == 1) report%merit0 = merit
@@ -1314,17 +1326,22 @@ contains
                 do i = 1, fb%np
                     dval(dpos(i)) = dval(dpos(i)) + mu*(diag(i) + 1.0e-12_dp*scale_p)
                 end do
+                if (fb%tangential_damping > 0) call add_tangential(fb, diag, tpos, dval)
                 t0 = wall()
-                call configure(solver)
-                call sparse_factor(solver, fb%n, fb%n, size(dval), rowptr, colidx, &
-                    dval, sst)
+                ! One handle for the whole solve: the KKT pattern is fixed, so
+                ! MUMPS keeps its analysis and only refactorises.
+                if (.not. factored) call configure(solver)
+                call sparse_refactor(solver, fb%n, fb%n, size(dval), rowptr, colidx, &
+                    dval, sst, kept)
+                report%factorisations = report%factorisations + 1
+                if (kept) report%reused = report%reused + 1
                 if (.not. status_ok(sst)) then
-                    call sparse_destroy(solver)
+                    factored = .false.
                     mu = 10*mu; cycle
                 end if
+                factored = .true.
                 rhs = -grad
                 call sparse_solve(solver, rhs, du, sst)
-                call sparse_destroy(solver)
                 report%factor_s = report%factor_s + wall() - t0
                 if (.not. status_ok(sst)) then
                     status = IDEAL_FB_SOLVE_FAILED; return
@@ -1341,8 +1358,10 @@ contains
                 ! the vertical mode (negative curvature with fixed currents)
                 ! once mu |H_ii| exceeds its eigenvalue.
                 do back = 1, 8
+                    t0 = wall()
                     call ideal_fb_step(fb, du, alpha)
                     call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
+                    report%line_s = report%line_s + wall() - t0
                     if (st == IDEAL_FB_OK) then
                         tmerit = sum(wts*rhs**2)
                         if (tmerit < (1 - 1.0e-4_dp*alpha)*merit) then
@@ -1368,7 +1387,12 @@ contains
             report%damping = mu
             if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
         end do
+        if (factored) call sparse_destroy(solver)
         call constraint_norm(fb, report%constraint)
+        if (talk) print '(a,4f10.1,a,i0,a,i0)', '   seconds: assemble factor+solve &
+            &line-search', report%assemble_s, report%factor_s, report%line_s, &
+            report%gradient_s, '  factorisations ', report%factorisations, &
+            ' analysis kept ', report%reused
     contains
         real(dp) function wall()
             integer(i64) :: count, rate
@@ -1416,6 +1440,52 @@ contains
             print '(a,es10.2,a,2f9.4,a,l2)', '   largest plasma increment', du(k), &
                 ' at', fb%plasma%reference(:, a), ' boundary', fb%plasma%boundary(a)
         end block
+    end subroutine
+
+    subroutine tangential_positions(fb, rowptr, colidx, tpos)
+        ! CSR positions of the (q1, q2) x (q1, q2) block of every plasma node
+        ! and mode: tpos(1:4, k) = (11, 12, 21, 22), k = (mode, node).
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: rowptr(:), colidx(:)
+        integer, allocatable, intent(inout) :: tpos(:, :)
+        integer :: a, m, k, c, r, p, col
+        if (.not. allocated(tpos)) allocate (tpos(4, fb%nmode*fb%plasma%nodes))
+        do a = 1, fb%plasma%nodes
+            do m = 1, fb%nmode
+                k = m + fb%nmode*(a - 1)
+                do c = 1, 2
+                    r = pidx(fb, c, m, a)
+                    do p = rowptr(r), rowptr(r + 1) - 1
+                        col = colidx(p)
+                        if (col == pidx(fb, 1, m, a)) tpos(2*c - 1, k) = p
+                        if (col == pidx(fb, 2, m, a)) tpos(2*c, k) = p
+                    end do
+                end do
+            end do
+        end do
+    end subroutine
+
+    subroutine add_tangential(fb, diag, tpos, val)
+        ! val += tangential_damping s_a t t^T, t the unit tangent of the
+        ! reference surface at node a, s_a the mean (q1, q2) diagonal.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: diag(:)
+        integer, intent(in) :: tpos(:, :)
+        real(dp), intent(inout) :: val(:)
+        real(dp) :: t(2), sa
+        integer :: a, m, k
+        do a = 1, fb%plasma%nodes
+            t = [-fb%plasma%direction(2, a), fb%plasma%direction(1, a)]
+            do m = 1, fb%nmode
+                k = m + fb%nmode*(a - 1)
+                sa = fb%tangential_damping*0.5_dp*(diag(pidx(fb, 1, m, a)) &
+                    + diag(pidx(fb, 2, m, a)))
+                val(tpos(1, k)) = val(tpos(1, k)) + sa*t(1)*t(1)
+                val(tpos(2, k)) = val(tpos(2, k)) + sa*t(1)*t(2)
+                val(tpos(3, k)) = val(tpos(3, k)) + sa*t(2)*t(1)
+                val(tpos(4, k)) = val(tpos(4, k)) + sa*t(2)*t(2)
+            end do
+        end do
     end subroutine
 
     subroutine configure(solver)
