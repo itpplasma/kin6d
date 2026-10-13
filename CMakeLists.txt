@@ -257,6 +257,13 @@ target_sources(kin6d PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/ideal_map.f90 src/ideal_seed.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+# N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
+target_sources(kin6d PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
+    src/ideal_free_boundary.f90)
+set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
+target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
@@ -609,7 +616,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov ideal_map gs_coarea gs_inverse gs_reference_error
+    foreach(generator grad_shafranov ideal_map vacuum_shell gs_coarea gs_inverse gs_reference_error
             laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
@@ -925,6 +932,8 @@ add_executable(gs_load_bench app/gs_load_bench.f90)
 target_link_libraries(gs_load_bench PRIVATE kin6d)
 add_executable(gs_free app/gs_free.f90)
 target_link_libraries(gs_free PRIVATE kin6d_io fortplot)
+add_executable(gs_free_3d app/gs_free_3d.f90)
+target_link_libraries(gs_free_3d PRIVATE kin6d)
 add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_free> -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
     -DWORK=${CMAKE_BINARY_DIR}/gs_free_app
