@@ -124,6 +124,31 @@ against the coil field at (R_g, 0):
 observed order 1.9 to 2.1. A quadrupole with current of the sign of Ip raises the
 elongation (1.024 to 1.092 at eps = 1/8), the opposite sign lowers it (0.962).
 
+## Wall time of `gs_free` (P13)
+
+`gs_free` forward solve with up to three refits and readback (its `wall_s`) on the
+app fixture, limiter mode, sCluster exclusive node (AMD EPYC 9455), conda gfortran,
+seconds:
+
+| degree | boundary nodes | nodes | 1 thread | 4 | 16 | 32 |
+|-------:|---------------:|------:|---------:|--:|---:|---:|
+| 2 | 48 | 1 401 | 2.27 | 1.28 | 1.05 | 1.08 |
+| 2 | 96 | 5 497 | 5.02 | 3.15 | 2.67 | 2.64 |
+| 2 | 192 | 21 797 | 15.1 | 10.5 | 9.33 | 9.32 |
+| 2 | 384 | 86 693 | 52.1 | 38.7 | 36.0 | 35.3 |
+| 3 | 48 | 3 115 | 6.26 | 2.49 | 1.63 | 1.74 |
+| 3 | 96 | 12 295 | 14.6 | 5.80 | 3.63 | 3.31 |
+| 3 | 192 | 48 898 | 51.9 | 23.7 | 17.4 | 15.8 |
+| 3 | 384 | 194 770 | 311 | 202 | 176 | 167 |
+
+Strong scaling saturates near 1.5x (P2) and 2-4x (P3). A profile (P2, 192 boundary
+nodes) puts about 40 % in the Gamma_c BEM assembly, which `gs_fb_refit_solve`
+repeats in `gs_fb_setup` on every refit although Gamma_c does not change, and a
+few per cent each in the serial SuperLU factorisation and the cut-cell source.
+The coil flux at points (`gs_circuit_flux_vectors`, about 19 %) is threaded over
+points (32-thread time at 384 nodes: 46.8 s before, 35.3 s after for P2; 189 s
+and 167 s for P3).
+
 ## Application `gs_free`
 
 `gs_free --config input.nml` reads `&gs_free`; `gs_free --evaluate` reuses a result.
