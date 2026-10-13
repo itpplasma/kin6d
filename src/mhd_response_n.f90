@@ -69,6 +69,25 @@ module kin6d_mhd_response_n
     !> Gauss rule along ring edges.
     integer, parameter, public :: ring_gauss = 6
 
+    !> Resonant sheets and the linear constraints that fix their amplitudes.
+    !> Sheet s carries the harmonic m = sheet_m(s) on ring sheet_ring(s);
+    !> constraint r reads sum_k w(r, k) Phi_{flux_m(k)}(flux_ring(k)) =
+    !> target(r) for the total field.  L4 shielding: one sheet per rational
+    !> ring with Phi_m = 0 there (w = identity); L6 (kin6d_mhd_closure_n):
+    !> two layer-edge sheets per rational with vanishing large-solution
+    !> coefficients on both sides.
+    type, public :: sheet_closure_t
+        integer :: ns = 0, nf = 0
+        integer, allocatable :: sheet_ring(:), sheet_m(:)
+        type(ring_angles_t), allocatable :: sheet_ra(:)
+        integer, allocatable :: flux_ring(:), flux_m(:)
+        type(ring_angles_t), allocatable :: flux_ra(:)
+        real(dp), allocatable :: w(:, :)          !! (ns, nf)
+        complex(dp), allocatable :: target(:)      !! (ns)
+    end type sheet_closure_t
+
+    public :: closure_shield_init
+    public :: closure_fluxes
     public :: ring_angles_set
     public :: ring_angles_at
     public :: ring_points
@@ -269,6 +288,48 @@ contains
             end do
         end do
     end subroutine ring_sheet_load
+
+    subroutine closure_shield_init(ring, ra, m, cl)
+        !! L4 shielding: a sheet on each given ring, zero resonant flux there.
+        integer, intent(in) :: ring(:), m(:)
+        type(ring_angles_t), intent(in) :: ra(:)
+        type(sheet_closure_t), intent(out) :: cl
+        integer :: s
+
+        cl%ns = size(ring)
+        cl%nf = size(ring)
+        cl%sheet_ring = ring
+        cl%sheet_m = m
+        cl%sheet_ra = ra
+        cl%flux_ring = ring
+        cl%flux_m = m
+        cl%flux_ra = ra
+        allocate (cl%w(cl%ns, cl%nf), cl%target(cl%ns))
+        cl%w = 0.0_dp
+        do s = 1, cl%ns
+            cl%w(s, s) = 1.0_dp
+        end do
+        cl%target = (0.0_dp, 0.0_dp)
+    end subroutine closure_shield_init
+
+    function closure_fluxes(fs, pb, fm, cl, n, b2) result(phi)
+        !! Resonant fluxes Phi_{flux_m(k)}(flux_ring(k)) of the FEEC field b2.
+        type(meridian_feec_t), intent(in) :: fs
+        type(meridian_point_basis_t), intent(in) :: pb
+        type(flux_mesh_t), intent(in) :: fm
+        type(sheet_closure_t), intent(in) :: cl
+        integer, intent(in) :: n
+        complex(dp), intent(in) :: b2(:)
+        complex(dp) :: phi(cl%nf)
+        integer :: k
+
+        !$omp parallel do schedule(dynamic) if(cl%nf > 1)
+        do k = 1, cl%nf
+            phi(k) = ring_flux_harmonic(fs, pb, fm, cl%flux_ring(k), cl%flux_ra(k), &
+                n, b2, cl%flux_m(k))
+        end do
+        !$omp end parallel do
+    end function closure_fluxes
 
     function ring_area(fm, j) result(area)
         !! (1/2 pi) int R ds over ring j (the surface area per rad^2).
