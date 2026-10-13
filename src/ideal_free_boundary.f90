@@ -1279,7 +1279,9 @@ contains
         type(sparse_solver_t) :: csolver
         logical :: cready
         logical :: talk, accepted, factored, kept
-        real(dp) :: kz, fz
+        real(dp) :: kz, fz, fzr, ftry
+        real(dp), parameter :: vertical_tol = 1.0e-6_dp
+        logical :: vertical_open
         kz = 0
         talk = .false.
         if (present(verbose)) talk = verbose
@@ -1332,6 +1334,7 @@ contains
             if (fb%tangential_damping > 0 .or. fb%tangential_gauge > 0) &
                 call tangential_positions(fb, rowptr, colidx, tpos)
             call merit_weights(fb, diag, wts)
+            if (it == 1) fzr = rigid_force(grad)
             if (fb%tangential_gauge > 0) call project_gauge(fb, grad)
             merit = sum(wts*grad**2)
             if (it == 1) report%merit0 = merit
@@ -1347,8 +1350,13 @@ contains
                 + fb%nx)**2)/fb%energy_scale, sum(wts(fb%np + fb%nx + 1:fb%np + 2*fb%nx) &
                 *grad(fb%np + fb%nx + 1:fb%np + 2*fb%nx)**2)/fb%energy_scale, &
                 sum(wts(fb%np + 2*fb%nx + 1:)*grad(fb%np + 2*fb%nx + 1:)**2)/fb%energy_scale
-            if (.not. sqrt(merit) > tolerance*sqrt(report%merit0) .or. &
-                .not. report%residual > res_tol) then
+            ! The gauge-projected merit is nearly blind to the near-null vertical
+            ! mode: with rigid_vertical, converged also needs |F_Z/K_Z| small.
+            vertical_open = fb%rigid_vertical .and. kz < 0 .and. cready .and. &
+                fb%tangential_gauge > 0
+            if (vertical_open) vertical_open = abs(fzr/kz) > vertical_tol
+            if ((.not. sqrt(merit) > tolerance*sqrt(report%merit0) .or. &
+                .not. report%residual > res_tol) .and. .not. vertical_open) then
                 status = IDEAL_FB_OK; exit
             end if
             history = eoshift(history, 1, merit)
@@ -1413,6 +1421,7 @@ contains
                     call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
                     if (cready .and. st == IDEAL_FB_OK) call project_multipliers(fb, &
                         csolver, rhs)
+                    if (st == IDEAL_FB_OK) ftry = rigid_force(rhs)
                     if (fb%tangential_gauge > 0 .and. st == IDEAL_FB_OK) &
                         call project_gauge(fb, rhs)
                     report%line_s = report%line_s + wall() - t0
@@ -1434,7 +1443,7 @@ contains
                 end if
                 exit
             end if
-            grad = rhs
+            grad = rhs; fzr = ftry
             if (kz < 0 .and. cready) call rigid_vertical_correct()
             report%iterations = it
             report%step = alpha*disp
@@ -1456,17 +1465,23 @@ contains
             wall = real(count, dp)/rate
         end function
 
+        real(dp) function rigid_force(g)
+            ! Net Z force on the plasma nodes (before the gauge projection).
+            real(dp), intent(in) :: g(:)
+            integer :: a
+            rigid_force = 0
+            do a = 1, fb%plasma%nodes
+                rigid_force = rigid_force + g(pidx(fb, 2, 1, a))
+            end do
+        end function
+
         subroutine rigid_vertical_correct()
             ! dZ = -F_Z/K_Z on the rigid n = 0 Z mode; kept only when the
             ! weighted merit decreases.
             real(dp), allocatable :: g2(:)
             real(dp) :: dz, m2
-            integer :: a, s3
-            fz = 0
-            do a = 1, fb%plasma%nodes
-                fz = fz + grad(pidx(fb, 2, 1, a))
-            end do
-            dz = -fz/kz
+            integer :: s3
+            dz = -fzr/kz
             x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
             fb%plasma%x(2, 1, :) = fb%plasma%x(2, 1, :) + dz
             call ideal_fb_solve_shell_map(fb, s3)
@@ -1477,11 +1492,13 @@ contains
                 min_jacobian=minjac)
             if (s3 == IDEAL_FB_OK) then
                 call project_multipliers(fb, csolver, g2)
+                ftry = rigid_force(g2)
+                if (fb%tangential_gauge > 0) call project_gauge(fb, g2)
                 m2 = sum(wts*g2**2)
                 if (m2 < sum(wts*grad**2)) then
                     if (talk) print '(a,es10.2,a,es10.3,a,es10.3)', &
                         '   rigid dZ ', dz, ' merit ', sum(wts*grad**2), ' ->', m2
-                    grad = g2
+                    grad = g2; fzr = ftry
                     return
                 end if
             end if
