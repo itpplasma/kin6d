@@ -131,7 +131,8 @@ program gs_free_3d_main
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
     real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
     real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, tangential_damping = 0
-    integer :: homotopy_steps = 1, stage_iterations = 15, rigid(2, 2) = 0, seed_amplitude = 0
+    integer :: homotopy_steps = 1, stage_iterations = 15, gamma_c_modes = 0
+    real(dp) :: rigid(2, 2) = 0, seed_amplitude = 0
     real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
     integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
@@ -150,7 +151,7 @@ program gs_free_3d_main
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
         stability, shifts, gamma_c_scale, tangential_damping, homotopy_steps, &
-        stage_iterations
+        stage_iterations, gamma_c_modes
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -195,6 +196,7 @@ program gs_free_3d_main
         do i = 1, size(samples, 2)
             samples(:, i) = ref%axis + gamma_c_scale*(samples(:, i) - ref%axis)
         end do
+        if (gamma_c_modes > 0) call smooth_curve(samples, gamma_c_modes)
     else
         call read_curve(trim(boundary_file), samples)
     end if
@@ -214,6 +216,7 @@ program gs_free_3d_main
     do i = 1, chain_nodes
         chain(:, i) = offset_forward(field, lcfs(:, i))
     end do
+    call check_plasma_margin()
     circulation = poloidal_circulation()
     write (output_unit, '(a,es14.6,a,es14.6)') 'circulation (T m) ', circulation, &
         '  -mu0 Ip ', -mu0*ip_2d
@@ -321,6 +324,40 @@ contains
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         call curve_value(gamma_curve, t, point)
+    end subroutine
+
+    subroutine smooth_curve(c, mmax)
+        ! Keep the Fourier harmonics |m| <= mmax of R + iZ over the (equal arc
+        ! length) samples: rounds the near-X-point corner of a scaled cut
+        ! boundary so the shell and the BEM curve stay well shaped.
+        real(dp), intent(inout) :: c(:, :)
+        integer, intent(in) :: mmax
+        complex(dp), allocatable :: z(:), a(:)
+        integer :: n, j, m
+        n = size(c, 2)
+        allocate (z(n), a(-mmax:mmax))
+        z = cmplx(c(1, :), c(2, :), dp)
+        do m = -mmax, mmax
+            a(m) = sum(z*exp(cmplx(0, -2*pi*m*[(j - 1, j=1, n)]/real(n, dp), dp)))/n
+        end do
+        do j = 1, n
+            z(j) = sum(a*exp(cmplx(0, 2*pi*[(m, m=-mmax, mmax)]*(j - 1)/real(n, dp), &
+                dp)))
+        end do
+        c(1, :) = real(z); c(2, :) = aimag(z)
+    end subroutine
+
+    subroutine check_plasma_margin()
+        ! Smallest distance of the (offset) plasma chain from Gamma_c.
+        real(dp) :: dmin
+        integer :: k
+        dmin = huge(1.0_dp)
+        do k = 1, size(chain, 2)
+            dmin = min(dmin, minval(hypot(samples(1, :) - chain(1, k), &
+                samples(2, :) - chain(2, k))))
+        end do
+        write (output_unit, '(a,f8.4)') 'plasma margin to Gamma_c (m) ', dmin
+        if (dmin < 0.03_dp) error stop 'Gamma_c closer than 3 cm to the plasma'
     end subroutine
 
     subroutine check_coils_outside()
