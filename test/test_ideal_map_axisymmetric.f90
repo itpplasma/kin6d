@@ -41,6 +41,7 @@ program test_ideal_map_axisymmetric
     integer :: axis_degree = -1, axis_power = 1
     real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
     real(dp) :: seed_tolerance = 1.0e-11_dp
+    logical :: gauge_hessian_only = .false.
     integer :: max_newton = 600
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
@@ -76,6 +77,10 @@ program test_ideal_map_axisymmetric
     if (command_argument_count() > 8) then
         call get_command_argument(9, argument)
         read (argument, *) seed_tolerance
+    end if
+    if (command_argument_count() > 9) then
+        call get_command_argument(10, argument)
+        gauge_hessian_only = trim(argument) == 'h'
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
@@ -126,6 +131,7 @@ contains
         map%initial_damping = initial_damping
         if (gauge_weight > 0) map%gauge_weight = gauge_weight
         map%position_gauge = position_gauge
+        map%gauge_hessian_only = gauge_hessian_only
         if (present(field)) then
             call ideal_map_freeze(map, field, status)
         else
