@@ -140,6 +140,30 @@ alternating moment combination, which no nearby law removes (a nonzero
 residual minimum with singular J). The edge FF' coefficients on this knot
 vector are not determined by the interior-weighted q moments.
 
+Regularized inverse (`regularization='discrepancy'`, namelist
+`inverse_regularization`, `inverse_q_accuracy`). The exact moments ask the
+discrete forward model to reproduce q to better than its own discretization
+error: the reference NS640 law itself, solved on the TC24 meshes, misses the
+q table by a rho-weighted rms of 4.1e-4 (96 boundary nodes) and 6.1e-5 (192),
+with maxima 2.9e-3 and 7.3e-4 at the edge. Weakly seen FF' modes absorb that
+error. The regularized form fits the q samples (weights uniform in sqrt(s),
+reaching axis and edge) and the flux equation in least squares, plus
+lambda^2 integral (d^2 FF'/ds^2)^2 ds (FF' in seed units; F_edge free), by
+Levenberg-Marquardt-damped Gauss-Newton. lambda follows the Morozov
+discrepancy principle: the rms q misfit equals `q_accuracy`, the stated
+accuracy of the q data relative to the discrete model. lambda is re-chosen on
+each linearization (goal max(q_accuracy, half the current misfit)) and frozen
+once the goal is reached or no smaller misfit is attainable and two choices
+agree within 25 %; the result is the Tikhonov minimizer at that lambda,
+converged when a Gauss-Newton step changes no residual or penalty component
+by more than the tolerance. The L-curve corner and GCV were tried and
+rejected: on the square-like moment problem the corner jumped between 1e-8
+and 4e-5 between iterates and GCV decreased monotonically.
+`test_gs_prescribed_q_edge_mode` checks this against a known truth (fine-mesh
+q data, coarse-mesh inverse with edge-graded knots): exact moments give an
+FF' 5e3 times off (status 9), the regularized inverse 4.3 % with q within
+tolerance.
+
 After convergence, an interleaved radial grid and doubled angular budget
 check q independently of the fitted moments. Status 9 retains the physical
 candidate but rejects its q accuracy. Source, contour, boundary geometry and
