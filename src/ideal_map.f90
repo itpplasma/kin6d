@@ -59,7 +59,7 @@ module kin6d_ideal_map
     public :: ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_hessian
     public :: ideal_map_solve, ideal_map_point, ideal_map_dof, ideal_map_mode_norms
     public :: ideal_map_reduce, ideal_map_expand, ideal_map_rdof, ideal_map_axis_dof
-    public :: ideal_map_prolong, ideal_map_residual
+    public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_solve_report_t
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
@@ -103,6 +103,9 @@ module kin6d_ideal_map
         ! the serial cell sums the whole solve, reproducible; 0 uses all
         ! threads (faster numeric factorisation, not reproducible).
         integer :: factor_threads = 1
+        ! Position gauge instead of transversals + axis expansion + omega.
+        logical :: position_gauge = .false.
+        real(dp) :: initial_damping = 1.0e-6_dp
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
@@ -385,6 +388,33 @@ contains
             end do
         end do
         call build_gauge(map)
+        if (map%position_gauge) call ideal_map_position_gauge(map)
+    end subroutine
+
+    subroutine ideal_map_position_gauge(map)
+        ! Position gauge (as N4): full (q1, q2) per interior node and mode, no
+        ! toroidal displacement (omega = 0, toroidal labels follow phi-hat). The
+        ! poloidal slide along surfaces is then physical (it redistributes the
+        ! toroidal flux) instead of a relabelling null, rigid motions are
+        ! exact, and neither the axis expansion nor an omega pin is needed.
+        type(ideal_map_t), intent(inout) :: map
+        integer :: a, m, j
+        map%axis_basis = 0
+        do a = 1, map%nodes
+            map%basis(:, 1, a) = [1.0_dp, 0.0_dp, 0.0_dp]
+            map%basis(:, 2, a) = [0.0_dp, 1.0_dp, 0.0_dp]
+            do m = 1, map%nmode
+                map%fixed(ideal_map_rdof(map, 1, m, a)) = map%boundary(a)
+                map%fixed(ideal_map_rdof(map, 2, m, a)) = map%boundary(a)
+            end do
+        end do
+        do m = 1, map%nmode
+            do j = 1, map%npoly
+                map%fixed(ideal_map_axis_dof(map, 1, j, m)) = .true.
+                map%fixed(ideal_map_axis_dof(map, 2, j, m)) = .true.
+            end do
+        end do
+        map%omega_gauge = 0
     end subroutine
 
     subroutine axis_expansion(map, position)
@@ -833,7 +863,7 @@ contains
         call ideal_map_reduce(map, grad, gred)
         where (map%fixed) gred = 0
         g0 = norm2(gred); gnorm = g0
-        mu = 1.0e-6_dp
+        mu = map%initial_damping
         cap_x = 0.05_dp*maxval(maxval(map%reference, dim=2) &
             - minval(map%reference, dim=2))
         cap_w = 1

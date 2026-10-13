@@ -39,6 +39,10 @@ program test_ideal_map_axisymmetric
     logical :: verbose_solve = .false.
     integer :: quadrature_order = 7
     integer :: axis_degree = -1, axis_power = 1
+    real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
+    real(dp) :: seed_tolerance = 1.0e-8_dp
+    integer :: max_newton = 200
+    logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
     mode = 'solovev'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
@@ -46,7 +50,11 @@ program test_ideal_map_axisymmetric
         call get_command_argument(2, argument)
         read (argument, *) degree
     end if
-    if (command_argument_count() > 2) verbose_solve = .true.
+    if (command_argument_count() > 2) then
+        call get_command_argument(3, argument)
+        verbose_solve = trim(argument) /= 'p'
+        position_gauge = trim(argument) == 'p' .or. trim(argument) == 'pv'
+    end if
     if (command_argument_count() > 3) then
         call get_command_argument(4, argument)
         read (argument, *) quadrature_order
@@ -56,6 +64,19 @@ program test_ideal_map_axisymmetric
         read (argument, *) axis_degree
         call get_command_argument(6, argument)
         read (argument, *) axis_power
+    end if
+    if (command_argument_count() > 6) then
+        call get_command_argument(7, argument)
+        read (argument, *) initial_damping
+    end if
+    if (command_argument_count() > 7) then
+        call get_command_argument(8, argument)
+        read (argument, *) gauge_weight
+    end if
+    if (command_argument_count() > 8) then
+        call get_command_argument(9, argument)
+        read (argument, *) seed_tolerance
+        max_newton = 600
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
@@ -103,6 +124,9 @@ contains
         if (status /= 0) error stop 'map init'
         if (map%sigma /= -1) error stop 'cylindrical orientation'
         map%axis_power = axis_power
+        map%initial_damping = initial_damping
+        if (gauge_weight > 0) map%gauge_weight = gauge_weight
+        map%position_gauge = position_gauge
         if (present(field)) then
             call ideal_map_freeze(map, field, status)
         else
@@ -202,7 +226,7 @@ contains
         type(ideal_map_solve_report_t), intent(out) :: report
         logical, intent(in) :: verbose
         integer :: status
-        call ideal_map_solve(map, solve_tolerance, 200, report, status, verbose)
+        call ideal_map_solve(map, solve_tolerance, max_newton, report, status, verbose)
         if (status /= 0) then
             print *, 'solve status', status, report%iterations, report%gradient
             error stop 'ideal map solve'
@@ -370,7 +394,7 @@ contains
         if (abs(seed%psi_axis/psi_axis - 1) > 1.0e-12_dp) error stop 'seed axis flux'
         ! The seed is far from equilibrium (large initial gradient), so the
         ! relative stopping tolerance is tightened accordingly.
-        solve_tolerance = 1.0e-8_dp
+        solve_tolerance = seed_tolerance
         call ladder(seed, sequenced=.true.)
     end subroutine
 

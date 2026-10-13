@@ -160,8 +160,29 @@ solution psi_2D on the same mesh is the second oracle.
   | A3 | 3 | 24/48/96 | 9.8e-5, 6.2e-6, 3.9e-7 | 3.99, 3.98 |
   | shaped | 2 | 32/64/128 | 2.2e-3, 2.0e-4, 1.9e-5 | 3.45, 3.45 |
 
-  The shaped P3 seed ladder does not yet converge within 100 Newton steps on
-  the 64-segment mesh (relative gradient 9e-7); open.
+  The A3 P3 seed ladder (9.8e-5, 6.2e-6, 3.9e-7 with SuperLU) is not
+  registered: on the finest mesh the Newton path still follows near-null
+  relabelling directions and the end point depends on factorisation roundoff
+  and on the initial damping (3.8e-7 to 9.8e-7; order 4.0 down to 2.7). The
+  shaped P3 seed ladder stops at a relative gradient of 9e-7 after 100
+  steps. Both are open.
+
+  Reproducibility: cell energies are summed serially and MUMPS factors on one
+  thread by default (`factor_threads`), so a solve is identical for any
+  OMP_NUM_THREADS (checked at 4 and 32 threads on sCluster); with threaded
+  MUMPS the seed ladders failed intermittently. `sparse_refactor` (fortsparse
+  7300414) keeps the MUMPS analysis across Newton steps: on the finest shaped
+  P3 mesh the analysis drops from 12-14 s to 0.13 s and factor+solve to
+  13.2 s (one thread).
+
+  Position gauge (`position_gauge`, as in N4: full (q1, q2), omega = 0): the
+  pullback A3 P2 ladder is ten times more accurate (2.8e-5, 3.8e-6, 5.5e-7;
+  orders 2.8, 2.8) but converges slowly (32-97 Newton steps); from a nested
+  seed it does not return (1.2e-2, 8.7e-3, 5.7e-3), because redistributing
+  the seed's toroidal flux within surfaces needs poloidal slides of order
+  q R d(omega). A transversal phase followed by a position-gauge polish
+  returns (A3 P2 2.9e-4, 3.1e-5; shaped P2 orders 3.43, 3.45) but the polish
+  stalls at a relative gradient of 1e-8 on the A3 meshes.
 
   Cause of the earlier deficit (order 2.2-2.4; `seeddiag 2` separates it on
   A3 with the smooth exact map X* = P(xi(y)) of the seed labels,
