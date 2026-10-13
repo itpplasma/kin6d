@@ -166,6 +166,10 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_boundary_operators_2d.f90)
 target_link_libraries(kin6d_spatial PUBLIC kin6d_ode kin6d_intervals)
+# The upstream BEM assembly (panel-pair colouring) is threaded with OpenMP.
+if(KIN6D_ENABLE_OPENMP)
+    target_link_libraries(kin6d_spatial PUBLIC OpenMP::OpenMP_Fortran)
+endif()
 set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
