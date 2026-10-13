@@ -40,7 +40,7 @@ program test_ideal_map_axisymmetric
     integer :: quadrature_order = 7
     integer :: axis_degree = -1, axis_power = 1
     real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
-    real(dp) :: seed_tolerance = 1.0e-6_dp
+    real(dp) :: seed_tolerance = 1.0e-6_dp, polish_tolerance = 1.0e-10_dp
     integer :: max_newton = 200
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
@@ -77,6 +77,10 @@ program test_ideal_map_axisymmetric
         call get_command_argument(9, argument)
         read (argument, *) seed_tolerance
         max_newton = 600
+    end if
+    if (command_argument_count() > 9) then
+        call get_command_argument(10, argument)
+        read (argument, *) polish_tolerance
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
@@ -440,15 +444,15 @@ contains
                 end if
             end if
             call solve_map(map, report, verbose_solve)
-            if (present(sequenced)) then
+            if (present(sequenced) .and. polish_tolerance > 0) then
                 ! Polish in the position gauge (omega frozen, full poloidal
                 ! motion; no relabelling near-null) to 1e-10 of the gradient of
                 ! the seed (X0 = id) on this mesh, so the end point does not
                 ! depend on the path.
                 first = report
                 call ideal_map_position_gauge(map)
-                call ideal_map_solve(map, 1.0e-10_dp, max_newton, report, status, &
-                    verbose_solve, reference_gradient=seed_gradient)
+                call ideal_map_solve(map, polish_tolerance, max_newton, report, &
+                    status, verbose_solve, reference_gradient=seed_gradient)
                 if (status /= 0) then
                     print *, 'polish status', status, report%iterations, report%gradient
                     error stop 'position-gauge polish'
@@ -463,6 +467,8 @@ contains
             call solve_gs(state, 1.0_dp, pprime, ffprime, status)
             if (status /= 0) error stop '2D GS solve'
             call defects(map, state, field, errors(:, mesh))
+            print '(a,2es24.16)', '  end point: d3D_exact, |x|_2 ', errors(1, mesh), &
+                norm2(map%x)
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
                 count(.not. map%fixed), report%iterations, elapsed, errors(:, mesh)
             print '(a,5f9.2)', '  wall energy hessian factor+solve (analysis numeric) ', &
