@@ -65,7 +65,7 @@ program gs_response_3d
         closure_fluxes
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, layer_xmax, &
         layer_init, layer_closure, layer_coefficients, layer_slope, &
-        layer_regular_slope, layer_jump, layer_inside
+        layer_regular_slope, layer_jump, layer_kink, layer_inside
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
         layer_delta, layer_metrics, resistive_closure
     implicit none
@@ -91,12 +91,13 @@ program gs_response_3d
     character(len=512) :: profiles = ''
     real(dp) :: omega_drive = 0.0_dp, layer_nu = 0.0_dp, eta_scale = 1.0_dp
     logical :: inertia_q2 = .false.
+    logical :: zero_pressure = .false.
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
         boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current, closure, &
         layer_delta, layer_ratio, layer_nfit, spot, profiles, omega_drive, &
-        layer_nu, eta_scale, inertia_q2
+        layer_nu, eta_scale, inertia_q2, zero_pressure
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -139,6 +140,8 @@ program gs_response_3d
 
     call eqdsk_read(trim(eqdsk), g, st)
     if (st /= 0) error stop 'cannot read EQDSK'
+    ! discriminating study: p0' = 0 (J0 and the Mercier index D_I = -1/4, mu = 1/2)
+    if (zero_pressure .and. allocated(g%pcoef)) g%pcoef = 0.0_dp
     call coil_set_read(set, trim(coils), st)
     if (st /= 0) error stop 'cannot read coil table'
 
@@ -256,6 +259,10 @@ program gs_response_3d
         opt%boundary_sheet = boundary_sheet
         opt%qlow = qlow
         opt%moved_current = edge_moved_current
+        if (frob) then
+            opt%res_m = m_rat(1:nrat)
+            opt%res_eps = lays(1:nrat)%eps
+        end if
         nsr = nr
         allocate (rings(nsr))
         do j = 2, nr
@@ -490,7 +497,7 @@ contains
                 + layer_slope(lays(l), cf(:, 2), xs)
             ! net layer current: jump of d Phi/d psin across the layer, carried
             ! to spot with the small-solution power |x|^(mu - 1/2)
-            jmp = layer_jump(lays(l), ph)*(xs/lays(l)%delta)**lays(l)%eps
+            jmp = layer_kink(lays(l), ph, resist)*(xs/lays(l)%delta)**lays(l)%eps
             ! large-solution residual relative to the flux at the layer edge
             do side = 1, 2
                 res1(side) = abs(cf(1, side))/max(abs(ph(1, side)), tiny(1.0_dp))
