@@ -33,27 +33,36 @@ displacement xi where a region needs it, and the closure current J_pl.
 
     curl_n curl_n A = mu0 (J_coil + J_pl),   A outside: exact S_n (D6)          (R1)
 
-    -rho w^2 xi = J_pl x B0 + J0 x curl_n A - div P1 - i w div(rho nu grad xi)  (R2)
+    rho (-i w + Omega e_Z x)^2 xi = J_pl x B0 + J0 x curl_n A - div P1
+                                    + div(rho nu grad v1) + (centrifugal)       (R2)
 
-    i w (A - xi x B0) = eta J_pl - s_2f (J_pl x B0 - grad p_e1)/(n_e e)        (R3)
+    i w G - Omega' G_phi grad psi - grad phi_c = eta J_pl
+        + s_2f (J_pl x B0 + J0 x curl_n A - grad p_e1 - (n1/n0) grad p_i0)/(n_e e),
+    G = A - xi x B0,  G_phi = R^2 grad phi . G                                  (R3)
 
     P1 = p1 I,  p1 = -xi.grad p0 - Gamma p0 div xi    (fluid)
     P1 = sum_a int d^3v (m v v) f_a1[xi, A, w]           (kinetic, DK)          (R4)
 
 (R3) is Faraday plus Ohm in the co-moving frame (B1 = curl A); its ideal
-limit eta = 0, s_2f = 0 is the frozen-in law A = xi x B0, the ideal gauge used
-for the DK drive (drift-kinetics.md eq. 2). Coriolis, centrifugal and
-flow-shear terms of MARS-F (Liu et al. 2000) are additional explicit terms in
-(R2), stated here from background knowledge [K] and added only with a gate.
-Signs follow the per-n convention of `kin6d_coils_3d`; (R2)-(R4) are not yet
-derived in theory/ and need the T-ledger check of
-[theory-map.md](theory-map.md) before R-B1 code.
+limit eta = 0, s_2f = 0 is the frozen-in law G = grad chi, phi_c = i w chi:
+A = xi x B0 with Phi = -sigma Omega xi.grad psi in the DK gauge
+(drift-kinetics.md eq. 2; delta Phi_L = 0 there), A = xi x B0 -
+(i sigma/n) grad(xi.grad psi) in the code gauge R A_phi = 0, where the
+co-moving potential phi_c is an unknown of its own. The J0 x curl_n A term
+freezes the flux into the electron fluid (Omega_e). v1 = -i w xi -
+Omega' (xi.grad psi) R^2 grad phi; for the static drive w = -n Omega the
+Coriolis and centrifugal terms are of the order of rho w^2 and are kept with
+it; the s_2f row needs the ion gyroviscous stress in (R2) [K]. Signs follow
+the per-n convention of `kin6d_coils_3d`. Derived in
+[response-r2-r4.md](../theory/derivations/response-r2-r4.md) (T8), with
+`test/check_response_r2_r4.py`; open points listed there.
 
 Static ideal outer region (rho w^2, nu, eta, s_2f -> 0, fluid P1): (R2)
 reduces to J_pl x B0 + J0 x B1 = grad p1 with B0.grad p1 = -p0' B1.grad psi and
 div J_pl = 0. This is exactly the MEPHIT-form closure already in
 `kin6d_mhd_ideal_n` (MDEs solved in the Fourier basis), so xi need not be
-carried there. The MDE denominators (m - n q) are singular at every rational:
+carried there; off rationals p1 = -xi.grad p0 and div xi = 0, so Gamma does
+not enter. The MDE denominators (m - n q) are singular at every rational:
 each rational needs a layer treatment (below), never a raw MDE.
 
 ### Switch table
@@ -156,7 +165,10 @@ s magnetic shear (Fitzpatrick 1998; Cole and Fitzpatrick 2006):
 | visco-resistive | P_m^(1/6) (n s)^(-1/3) S^(-1/3) | 1-2 x static [estimate] |
 | ion gyroradius rho_i (5 keV D, 5 T) | - | ~ 3 mm |
 
-The ITER fluid layer is at or below rho_i: single-fluid resistive layer
+Widths omit the geometric factor (R r_s/a^2)^(1/2). The S^(-1/3) width is
+the w-independent constant-psi boundary: constant-psi RI needs w tau_A <<
+(n s)^(2/3) S^(-1/3) ~ 1e-3, so at ITER w tau_A the layer is
+non-constant-psi (T8, R6). The ITER fluid layer is at or below rho_i: single-fluid resistive layer
 results are a model, and the two-fluid and kinetic rows are needed for
 quantitative penetration. This is an order-of-magnitude statement from the
 scalings, to be replaced by the R-B2 profiles.
@@ -211,7 +223,9 @@ MEPHIT does for its fixed-point iteration), not damped. Many right-hand sides
   through the layer and carries no 1/x pole. Distance to rationals and strip
   widths are exported; the local DK keeps refusing surfaces inside a strip.
 - DK solver: (i) outer delta W_k: P1 of (R4) from the per-surface DK
-  solution with the vector drive (DK4), entering (R2) as div P1; perturbative
+  solution with the vector drive (DK4), entering (R2) as div P1 (returned:
+  delta p_par,n and delta p_perp,n per surface and theta, the delta W_k
+  density and its xi_par term; T8 R7); perturbative
   (one DK pass on the ideal xi, MARS-K perturbative, Liu et al. 2008) first,
   self-consistent by fixed point with the D5 preconditioner later. (ii)
   Kinetic layer: a strip DK with x as a resolved coordinate, k_par = k_par' x,

@@ -260,7 +260,12 @@ Each milestone pairs a derivation with an existing KIN6D experiment:
 - T8 linearised resistive-viscous two-fluid MHD per n -> frozen-in limit
   A = xi x B0 and the static ideal current closure; slab layer -> FKR
   constant-psi Delta_layer, ideal limit -> Glasser-Greene-Johnson sheet
-  ([response-unified.md](response-unified.md), not yet derived).
+  ([response-unified.md](response-unified.md)). Derived and checked
+  ([T8](../theory/derivations/response-r2-r4.md)): co-moving Ohm's law and
+  ideal gauges, static ideal closure, constant-psi RI/VR layers (FKR,
+  Cole-Fitzpatrick, SLAYER limit), pressure-tensor interface; not yet
+  derived: gyroviscous drift-MHD vorticity, Frieman-Rotenberg force terms,
+  xi_par term of delta W_k, Glasser-Greene-Johnson sheet limit.
 
 Errata found against cited textbooks or papers are recorded in a ledger
 next to the derivation, with the exact reference and the checked correction.
