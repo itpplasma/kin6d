@@ -224,3 +224,5 @@ and pressure-flattening gates, plus the Landreman closed-form comparison.
 M3/M4/M6 remain required for the general certificate, boundary and harness
 contracts. FortFEM should own the point-evaluation workspace and any generic
 commuting seed projection; none is privately duplicated here.
+
+Mapped (phi-dependent) domain: [nn1-mapped-3d.md](nn1-mapped-3d.md).
