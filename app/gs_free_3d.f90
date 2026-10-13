@@ -130,7 +130,7 @@ program gs_free_3d_main
     real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
     real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
-    real(dp) :: residual_tolerance = 1.0e-9_dp, rigid(2, 2) = 0
+    real(dp) :: residual_tolerance = 1.0e-9_dp, rigid(2, 2) = 0, seed_amplitude = 0
     real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
     integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
@@ -145,7 +145,7 @@ program gs_free_3d_main
         boundary_file, boundary_nodes, max_area, degree, chain_nodes, mu0, nfp, ntor, &
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
-        panels_per_edge, verbose, start_at_target, residual_tolerance
+        panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -222,6 +222,14 @@ program gs_free_3d_main
         end do
         call ideal_fb_solve_shell_map(fb, st)
         if (st /= IDEAL_FB_OK) error stop 'shell map projection'
+    end if
+    if (seed_amplitude /= 0 .and. ntor > 0) then
+        ! Leakage seed: an interior n = nfp displacement (cos, R) weighted by
+        ! the axis-expansion weight T (0 on Gamma_p, 1 at the axis node); the
+        ! boundary is left axisymmetric. Without RMP drive it must decay.
+        do i = 1, fb%plasma%nodes
+            fb%plasma%x(1, 2, i) = seed_amplitude*fb%plasma%axis_t(i)
+        end do
     end if
     call ideal_fb_solve_vacuum(fb, st)
     if (st /= IDEAL_FB_OK) error stop 'initial vacuum solve'
@@ -456,7 +464,7 @@ contains
         ! normal displacement of Gamma_p per harmonic.
         integer, intent(in) :: status
         real(dp) :: x(2), psi, grad(2), d, dmax, drms, defect, chi, cg(2), b3, p
-        real(dp) :: axis_x(2), amp(0:16), nrm(2), phi
+        real(dp) :: axis_x(2), amp(0:16), nrm(2), phi, interior(16)
         integer :: a, j, m, k, s, u, cnt
         dmax = 0; drms = 0; cnt = 0; amp = 0
         open (newunit=u, file='boundary-3d.dat', status='replace', action='write')
@@ -508,6 +516,9 @@ contains
                     + dot_product(nrm, fb%plasma%x(1:2, 2*k + 1, a))**2))
             end do
         end do
+        do k = 1, ntor
+            interior(k) = maxval(abs(fb%plasma%x(1:2, 2*k:2*k + 1, :)))
+        end do
         open (newunit=u, file='summary-3d.dat', status='replace', action='write')
         write (u, '(a,1x,i0)') 'status', status
         write (u, '(a,1x,i0)') 'iterations', report%iterations
@@ -533,6 +544,7 @@ contains
         write (u, '(a,1x,es16.8)') 'rmp_scale', rmp_scale
         do k = 1, ntor
             write (u, '(a,i0,1x,es16.8)') 'gamma_p_normal_amplitude_n', k*nfp, amp(k)
+            write (u, '(a,i0,1x,es16.8)') 'plasma_max_coefficient_n', k*nfp, interior(k)
         end do
         write (u, '(a,1x,i0)') 'unknowns', fb%n
         write (u, '(a,1x,es16.8)') 'assemble_s', report%assemble_s
@@ -544,8 +556,8 @@ contains
         write (output_unit, '(a,2f12.6,a,2f12.6)') 'axis node ', axis_x, ' 2D axis ', &
             ref%axis
         do k = 1, ntor
-            write (output_unit, '(a,i0,a,es12.4)') 'Gamma_p normal amplitude n=', &
-                k*nfp, ' (m) ', amp(k)
+            write (output_unit, '(a,i0,a,es12.4,a,es12.4)') 'Gamma_p normal amplitude n=', &
+                k*nfp, ' (m) ', amp(k), '  plasma max coefficient ', interior(k)
         end do
     end subroutine
 end program gs_free_3d_main

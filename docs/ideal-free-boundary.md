@@ -12,8 +12,13 @@ One curved P2/P3 reference mesh of the region inside a fixed axisymmetric
 coupling curve Γ_c, with the plasma boundary Γ_p as an internal chain
 (`initialize_gs(..., interior_chain=)`).
 
-- Plasma cells: the frozen-in map of `kin6d_ideal_map`, unchanged, with the
-  Γ_p nodes free along their transversal (normal) direction.
+- Plasma cells: N1's frozen-in energy W_p (unchanged, same generated
+  leaves) in the position gauge. Every node, Γ_p included, carries its full
+  poloidal position (q1, q2) per Fourier mode, and the toroidal displacement ω
+  is zero. Relabelling along B needs a toroidal component, so this gauge has
+  no relabelling null, and rigid motions are represented exactly. The Hessian
+  is assembled in these coefficients (`plasma_hessian`); the gradient is N1's
+  full-coefficient gradient.
 - Shell cells (Γ_p to Γ_c): curl-free field B = ∇Φ,
   Φ = F_vac q3 + c θ/2π + Φ̃, with q3 the physical toroidal angle of the shell
   map, c the poloidal circulation (−μ0 I_p for current along +φ), θ the
@@ -57,13 +62,28 @@ Globalisation:
 Φ̃ and λ are first solved at fixed geometry. fortsparse reads CSC, so blocks
 that are not symmetric are passed transposed.
 
-ω₀ (the n = 0 toroidal displacement) is held at zero. Its ω₀ = f(χ) part is
-the continuum relabelling null of the map lane. With frozen data sampled from
-a finite-element flux (gradients only C0), the N1 gauge term does not hold it,
-and both N1's solver and this one drift along it, dragging the surfaces by
-1–5 cm on the gs_free fixture. Pinning it gives quadratic N1 convergence and a
-1 µm surface defect. The cost is the O(ε²) n = 0 toroidal shear of a 3D
-state.
+Why not N1's gauge (transversal displacement plus ω, axis expansion).
+Material can slide along surfaces there only through ω₀, whose ω₀ = f(χ)
+part is a continuum null. Measured on the gs_free fixture (+15 mm R start):
+
+- With N1's 1e-4 gauge term, Newton (and N1's own solver, even at fixed
+  boundary) drifts along that null and drags the surfaces 1–5 cm.
+- With ω₀ pinned, the map is over-constrained: it stalls 7 mm short, although
+  the exact target is a discrete equilibrium (started there it stays within
+  16 µm).
+- With ω₀ free, Newton crawls (−1.6 mm after 15 iterations).
+
+The position gauge returns in about 3 Newton steps.
+
+Vertical mode. `ideal_fb_rigid_stiffness` reports the generalised force and
+stiffness of rigid R and Z shifts, with shell map, Φ̃ and λ re-solved. On the
+fixture: K_R = +1.5e7 and K_Z = −2.7e4 J/m² per field period (decay index
+−0.44). The vertical mode is unstable with fixed currents and about 600×
+softer than the radial one. Newton converges to the saddle. Near the roundoff
+floor of the merit the vertical position creeps by about 3e-5 m per step, and
+the remaining vertical force over K_Z (0.1–0.3 mm) is the vertical
+uncertainty. Stopping rule: relative merit, absolute residual in σV units, or
+a stagnating merit with sub-step_tolerance increments.
 
 ## Inputs and the offset start
 
