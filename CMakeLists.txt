@@ -1242,16 +1242,12 @@ target_link_libraries(test_nonnested_mapped PRIVATE kin6d)
 add_test(NAME nonnested_mapped_identity_regression
     COMMAND test_nonnested_mapped identity)
 add_test(NAME nonnested_mapped_ellipse_h_ladder
-    COMMAND test_nonnested_mapped hladder 5 2 4)
+    COMMAND test_nonnested_mapped hladder 10 4 8 16)
 add_test(NAME nonnested_mapped_ellipse_mode_ladder
     COMMAND test_nonnested_mapped modes 2 1 3)
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
     PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
-# Interim gate: the measured field order is about 1.35 (nr 2->4), not yet the
-# expected 2; the strict default 1.7 is used by the Slurm ladder (nr up to 16).
-set_property(TEST nonnested_mapped_ellipse_h_ladder APPEND PROPERTY ENVIRONMENT
-    "KIN6D_MAPPED_MIN_ORDER=1.2")
 
 # Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.
 add_executable(test_nonnested_qa test/test_nonnested_qa.f90)
