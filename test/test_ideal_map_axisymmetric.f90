@@ -22,7 +22,8 @@ program test_ideal_map_axisymmetric
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
-        ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual
+        ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, &
+        ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
@@ -42,6 +43,8 @@ program test_ideal_map_axisymmetric
     real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
     real(dp) :: seed_tolerance = 1.0e-11_dp
     logical :: gauge_hessian_only = .false.
+    ! Nested solve: omega eliminated exactly, Newton on W_red(nu) (no gauge form).
+    logical :: omega_elimination = .false.
     integer :: max_newton = 600
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
@@ -81,11 +84,14 @@ program test_ideal_map_axisymmetric
     if (command_argument_count() > 9) then
         call get_command_argument(10, argument)
         gauge_hessian_only = trim(argument) == 'h'
+        omega_elimination = trim(argument) == 'n'
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
     case ('derivatives')
         call derivative_checks()
+    case ('reduced')
+        call reduced_derivative_checks()
     case ('leakage')
         call leakage_check()
     case ('solovev', 'shaped')
@@ -132,6 +138,7 @@ contains
         if (gauge_weight > 0) map%gauge_weight = gauge_weight
         map%position_gauge = position_gauge
         map%gauge_hessian_only = gauge_hessian_only
+        map%omega_elimination = omega_elimination
         if (present(field)) then
             call ideal_map_freeze(map, field, status)
         else
@@ -210,6 +217,95 @@ contains
             if (norm2(hv) > 1.0e-10_dp*maxval(abs(hess%val))*norm2(vr)) &
                 error stop 'rotation hessian null'
             deallocate (v, g, gp, gm, vr, gr, grp, grm, hv)
+        end do
+    end subroutine
+
+    subroutine reduced_derivative_checks()
+        ! Nested omega elimination: after it the omega gradient vanishes;
+        ! the gradient of W_red(nu) = min_omega W against central differences
+        ! of W_red (envelope property: the nu part of the reduced gradient);
+        ! the Schur complement S = H_tt - H_to H_oo^-1 H_ot against
+        ! differences of that gradient, S d = (H [d; y])_t with y = d omega*
+        ! (differenced), and (H [d; y])_o = 0.
+        type(gs_state_t) :: state
+        type(ideal_map_t) :: map
+        type(csr_matrix_t) :: hess
+        real(dp), allocatable :: x(:, :, :), xp(:, :, :), xm(:, :, :), v(:)
+        real(dp), allocatable :: vr(:), gr(:), grp(:), grm(:), z(:), hz(:)
+        logical, allocatable :: omask(:)
+        real(dp) :: e, ep, em, step, fd, an, scale
+        integer :: status, i, ntor, a, m
+        omega_elimination = .true.
+        call make_mesh(16, 2, state)
+        ! ntor > 0 is rejected: J depends on omega there.
+        call build_map(state, 3, 1, map)
+        x = map%x
+        allocate (gr(map%nred))
+        call ideal_map_eliminate_omega(map, x, e, gr, status)
+        if (status /= IDEAL_MAP_BAD_INPUT) error stop 'ntor > 0 elimination'
+        deallocate (gr)
+        do ntor = 0, 0
+            call build_map(state, 3, ntor, map)
+            allocate (v(map%ndof), vr(map%nred), gr(map%nred), grp(map%nred), &
+                grm(map%nred), z(map%nred), hz(map%nred), omask(map%nred))
+            omask = .false.
+            do a = 1, map%nodes
+                do m = 1, map%nmode
+                    omask(ideal_map_rdof(map, 2, m, a)) = .true.
+                end do
+            end do
+            omask = omask .and. .not. map%fixed
+            x = map%x
+            do i = 1, map%nred
+                vr(i) = sin(1.7_dp*i)*1.0e-2_dp
+            end do
+            where (map%fixed) vr = 0
+            call ideal_map_expand(map, vr, v)
+            x = x + reshape(v, shape(x))
+            call ideal_map_eliminate_omega(map, x, e, gr, status)
+            if (status /= 0) error stop 'elimination'
+            print '(a,i1,es14.5)', 'ntor |g_omega|/|g| after elimination ', ntor, &
+                norm2(pack(gr, omask))/norm2(gr)
+            if (norm2(pack(gr, omask)) > 1.0e-8_dp*norm2(gr)) &
+                error stop 'omega gradient after elimination'
+            ! Transversal direction (omega part zero).
+            do i = 1, map%nred
+                vr(i) = cos(0.37_dp*i)
+            end do
+            where (map%fixed .or. omask) vr = 0
+            call ideal_map_expand(map, vr, v)
+            step = 1.0e-5_dp
+            xp = x + step*reshape(v, shape(x))
+            call ideal_map_eliminate_omega(map, xp, ep, grp, status)
+            if (status /= 0) error stop 'elimination +'
+            xm = x - step*reshape(v, shape(x))
+            call ideal_map_eliminate_omega(map, xm, em, grm, status)
+            if (status /= 0) error stop 'elimination -'
+            fd = (ep - em)/(2*step); an = dot_product(gr, vr)
+            print '(a,i1,3es14.5)', 'ntor W_red gradient fd analytic rel ', ntor, fd, &
+                an, abs(fd - an)/abs(an)
+            if (abs(fd - an) > 1.0e-6_dp*abs(an)) error stop 'reduced gradient'
+            ! y = d omega*/d nu . d by differences; z = [d; y].
+            z = vr
+            do a = 1, map%nodes
+                do m = 1, map%nmode
+                    i = ideal_map_rdof(map, 2, m, a)
+                    if (omask(i)) z(i) = (xp(3, m, a) - xm(3, m, a))/(2*step)
+                end do
+            end do
+            call ideal_map_hessian(map, x, hess)
+            call multiply(hess, z, hz)
+            where (map%fixed) hz = 0
+            grp = (grp - grm)/(2*step)
+            where (omask) grp = 0
+            scale = norm2(pack(hz, .not. omask))
+            print '(a,i1,2es14.5)', 'ntor Schur fd rel, |(Hz)_o|/|(Hz)_t| ', ntor, &
+                norm2(grp - merge(0.0_dp, hz, omask))/scale, &
+                norm2(pack(hz, omask))/scale
+            if (norm2(grp - merge(0.0_dp, hz, omask)) > 1.0e-5_dp*scale) &
+                error stop 'Schur complement'
+            if (norm2(pack(hz, omask)) > 1.0e-5_dp*scale) error stop 'omega stationarity'
+            deallocate (v, vr, gr, grp, grm, z, hz, omask)
         end do
     end subroutine
 
@@ -463,8 +559,8 @@ contains
             call solve_gs(state, 1.0_dp, pprime, ffprime, status)
             if (status /= 0) error stop '2D GS solve'
             call defects(map, state, field, errors(:, mesh))
-            print '(a,2es24.16)', '  end point: d3D_exact, |x|_2 ', errors(1, mesh), &
-                norm2(map%x)
+            print '(a,3es24.16)', '  end point: d3D_exact, |x|_2, W ', errors(1, mesh), &
+                norm2(map%x), report%energy
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
                 count(.not. map%fixed), report%iterations, elapsed, errors(:, mesh)
             print '(a,5f9.2)', '  wall energy hessian factor+solve (analysis numeric) ', &
