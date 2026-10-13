@@ -205,7 +205,7 @@ contains
         if (law%normalized) levels = law%axis*(1 - levels)
         if (levels(1) > levels(size(levels))) levels = levels(size(levels):1:-1)
         capacity = 12*size(levels) + 3
-        if (state%element_order == 3 .and. .not. smooth_law) capacity = 27
+        if (state%element_order >= 2 .and. .not. smooth_law) capacity = 27
         nel = size(state%triangles, 2)
         call triangle_duffy_quadrature(2*state%element_order + 2, x, y, w, status)
         if (status /= 0) return
@@ -445,7 +445,7 @@ contains
                     scr%values = scr%high_values
                 end if
             else
-                if (state%element_order == 3 .and. smooth_law .and. &
+                if (state%element_order >= 2 .and. smooth_law .and. &
                     .not. closed_cut) then
                     band_lower = -huge(1.0_dp); band_upper = huge(1.0_dp)
                     ne = 2; scr%events(:2) = [0.0_dp, 1.0_dp]
@@ -454,7 +454,7 @@ contains
                     call integrate_triangle_levels(coefficients, scr%events(:ne), &
                         cut_products, scr%epsabs, tol, scr%workspace, scr%values, &
                         scr%errors, status, message)
-                else if (state%element_order <= 2) then
+                else if (state%element_order <= 1) then
                     call triangle_level_coefficients(state%element_order, &
                                                  local_psi(:ndof), coefficients, status)
                     if (status /= 0) return
@@ -462,7 +462,7 @@ contains
                         source_products, scr%epsabs, tol*0.1_dp, scr%workspace, &
                         scr%values, scr%errors, status, message)
                 else
-                    ! One flux band at a time: work grows with the number of
+                    ! P2 and P3 share this path. One flux band at a time: work grows with the number of
                     ! knots rather than repeating all bands at every event.
                     ! FortFEM owns the positive paired adaptive integration.
                     cell_left = left; cell_right = right; scr%cell_values = 0
