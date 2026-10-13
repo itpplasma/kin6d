@@ -261,11 +261,11 @@ contains
                 rate = log(err(nlev - 1)/err(nlev))/log(2.0_dp)
                 print '(a, i0, a, es8.1, a, f6.2)', 'manufactured P', order, &
                     ' ratio', ratio, ' observed order', rate
-                ! The polar axis fan of flux_mesh_t has a non-polynomial
-                ! geometry map, limiting global L2 to O(h^3) for P3 (order
-                ! 3.98 when the r < 0.3 fan is excluded); quasi-optimality
-                ! against the nodal interpolant bounds the pollution.
-                ok = ok .and. rate > min(order + 1, 3) - 0.35_dp
+                ! Observed order with the corrected polar-axis geometry of
+                ! flux_mesh_t: P2 2.88/3.72, P3 3.62/3.88 (<= 4 threads);
+                ! P3 allows 0.5 below the ideal order 4, P2 0.35 below 3.
+                ok = ok .and. rate > min(order + 1, 4) &
+                     - merge(0.35_dp, 0.5_dp, order == 2)
                 ok = ok .and. err(nlev) <= 5*interp(nlev)
             end do
         end do
