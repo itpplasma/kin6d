@@ -106,7 +106,8 @@ normalised poloidal flux s and the total toroidal flux Phi_edge (the KIN6D 2D
 prescribed-q inputs). The boundary is extended harmonically into the unit disk
 (Fourier coefficients of b, kept above 1e-13 of the size), optionally with the
 seed axis moved to a chosen centre; labels chi = psi_axis (1 - |zeta|^2) and
-b3 = 2 |psi_axis| q(s)/det DY are then smooth at the seed axis. A ray map
+b3 = 4 pi |psi_axis| q(s)/(R K(s)), K(s) = int det DY/R dtheta (toroidal flux
+like 1/R on each surface), are then smooth at the seed axis. A ray map
 y = c + rho (b(t) - c) is only C1 at c for a non-circular boundary and left an
 error floor (measured). `ideal_map_prolong` initialises a finer map from a
 solved coarser one (grid sequencing, VMEC's ns ladder).
@@ -148,33 +149,37 @@ solution psi_2D on the same mesh is the second oracle.
   3e-10. The variation converges at order 1.6 only, because the relabelling
   gauge (near-null) sets its pattern.
 
-- `ideal_map_n0_seed_return_a3_p2`: nested seed from the exact boundary,
-  q(s), p(s) and Phi_edge, seed axis 0.19 m from the magnetic axis;
-  grid-sequenced ladder 32/64/128. Error 4.3e-2 (seed) to 6.2e-4, 1.3e-4,
-  2.5e-5: observed order 2.2, 2.4, below k + 1 = 3. The gate is return (1e-3
-  of the seed error) and order >= 2. The deficit is open; `seeddiag 2`
-  separates its sources on A3 with the smooth exact map for the seed labels,
-  X* = P(xi(y)), P(xi) = (sqrt(R0^2 + 2 R0 a xi1), R0 a xi2/R):
-  - the P2 interpolant of X* has error 2.0e-5, 2.3e-6, 2.8e-7 (order 3.1,
-    3.0): the map space and the frozen data (b, p, chi) are consistent;
-  - quadrature degree 7, 12 and 20 give the same solutions to 4 digits;
-  - the solve started from the interpolant ends 30-55 times worse (6.4e-4,
-    1.3e-4) after moving nodes 0.37-0.39 m along the surfaces and omega by
-    4.4 rad on every mesh. The relabelling directions (tangential slide
-    through nu along fixed reference transversals and through the axis
-    expansion, coupled to omega) are near-null, and the discrete energy picks
-    a node distribution along them that is poor for the surface error.
-  Tried without success: re-gauging after prolongation; a moving gauge with
-  transversals along the current surface normals every Newton step (also
-  degrades the pullback ladder: 3.5e-4, 5.9e-5, then no convergence); an
-  anchor (harmonic-map) regulariser on q and omega (biases: the physical
-  omega is O(rad), so 1e-4 and 1e-6 relative anchors give 4.9e-2 and 8.6e-4).
-  Candidates: a constraint gauge on the increments (xi.B = 0 per node with
-  multipliers, VMEC's angle condition) or a flux-aligned reference (K-M1).
-- `seedshaped 2` (by hand, not registered): seed axis 0.38 m off; with
-  re-gauging it reached 2.5e-3, 3.6e-4, 7.9e-5 (orders 2.7, 2.2); without it
-  the 64-segment mesh stops at a relative gradient of 2.3e-8 after 100 Newton
-  steps (near-null drift).
+- `ideal_map_n0_seed_return_{a3_p2,a3_p3,shaped_p2}`: nested seed from the
+  exact boundary, q(s), p(s) and Phi_edge, seed axis 0.19 m (A3) and 0.38 m
+  (shaped) from the magnetic axis; grid-sequenced ladders; gates: return to
+  1e-3 of the seed error and the k + 1 order. Measured (local, SuperLU):
+
+  | case | k | segments | errors | orders |
+  |---|---|---|---|---|
+  | A3 | 2 | 32/64/128 | 2.8e-4, 3.5e-5, 5.4e-6 | 3.00, 2.70 |
+  | A3 | 3 | 24/48/96 | 9.8e-5, 6.2e-6, 3.9e-7 | 3.99, 3.98 |
+  | shaped | 2 | 32/64/128 | 2.2e-3, 2.0e-4, 1.9e-5 | 3.45, 3.45 |
+
+  The shaped P3 seed ladder does not yet converge within 100 Newton steps on
+  the 64-segment mesh (relative gradient 9e-7); open.
+
+  Cause of the earlier deficit (order 2.2-2.4; `seeddiag 2` separates it on
+  A3 with the smooth exact map X* = P(xi(y)) of the seed labels,
+  P(xi) = (sqrt(R0^2 + 2 R0 a xi1), R0 a xi2/R)): the P2 interpolant of X*
+  converges at 3.1, 3.0 and quadrature degree 7/12/20 changes nothing, so
+  map space, frozen data and quadrature are consistent. With b3 uniform in
+  the seed disk (1/det DY), the equilibrium needs omega of 3-4.4 rad; its
+  P_k error in B_phi, amplified by B_phi/B_pol, set the surface error at
+  order k. Distributing the seed toroidal flux like 1/R on each surface
+  (current seed) cuts omega to about 1 rad and restores k + 1. The linear
+  axis-expansion terms also carried a tangential drift of 0.37-0.39 m
+  (translation only: 2e-4 m), but removing them loses the P3 order (2.4,
+  2.5, cone at the axis), so they stay.
+  Tried without success: re-gauging after prolongation; moving normal
+  gauges (centroid or nodal normals; both also degrade the pullback ladder);
+  increments perpendicular to B per node (cannot change omega by radians
+  without huge poloidal slides; no convergence); an anchor (harmonic-map)
+  regulariser (biases, since the physical omega is O(rad)).
 
 - `ideal_map_n0_normalised_residual_a3_p2`: the weak residual of
   equilibrium-core D3 (`ideal_map_residual`): R[xi] = -dW[xi] for every
