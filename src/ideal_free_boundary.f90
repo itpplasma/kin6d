@@ -73,7 +73,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_shell_field, ideal_fb_sampler, ideal_fb_mode_weight
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
-    public :: ideal_fb_mode_stability
+    public :: ideal_fb_mode_stability, ideal_fb_newton_step
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -1621,6 +1621,52 @@ contains
             value = 0
             do a = 1, fb%plasma%nodes
                 value = value + g(pidx(fb, c, 1, a))
+            end do
+        end subroutine
+    end subroutine
+
+    subroutine ideal_fb_newton_step(fb, status, nonaxisymmetric_only)
+        ! One undamped Newton step on the full KKT system (no line search).
+        type(ideal_fb_t), intent(inout) :: fb
+        integer, intent(out) :: status
+        logical, intent(in), optional :: nonaxisymmetric_only
+        integer, allocatable :: rowptr(:), colidx(:)
+        real(dp), allocatable :: val(:), grad(:), du(:)
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sst
+        integer :: st
+        status = IDEAL_FB_SOLVE_FAILED
+        allocate (grad(fb%n), du(fb%n))
+        call ideal_fb_gradient(fb, grad, st)
+        call ideal_fb_hessian(fb, rowptr, colidx, val)
+        call configure(solver)
+        call sparse_factor(solver, fb%n, fb%n, size(val), rowptr, colidx, val, sst)
+        if (.not. status_ok(sst)) return
+        grad = -grad
+        call sparse_solve(solver, grad, du, sst)
+        call sparse_destroy(solver)
+        if (.not. status_ok(sst)) return
+        if (present(nonaxisymmetric_only)) then
+            ! At an axisymmetric state the modes decouple: keep the n /= 0
+            ! part (the linear response to the n /= 0 drive) only.
+            if (nonaxisymmetric_only) call zero_mode(1)
+        end if
+        call ideal_fb_step(fb, du, 1.0_dp)
+        status = IDEAL_FB_OK
+    contains
+        subroutine zero_mode(m)
+            integer, intent(in) :: m
+            integer :: a, s2, c
+            do a = 1, fb%plasma%nodes
+                do c = 1, 2
+                    du(pidx(fb, c, m, a)) = 0
+                end do
+            end do
+            do s2 = 1, fb%ns
+                do c = 1, 3
+                    du(ix(fb, c, m, s2)) = 0; du(il(fb, c, m, s2)) = 0
+                end do
+                du(iphi(fb, m, s2)) = 0
             end do
         end subroutine
     end subroutine

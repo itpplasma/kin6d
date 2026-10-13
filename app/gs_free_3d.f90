@@ -109,6 +109,7 @@ program gs_free_3d_main
         ideal_fb_init, ideal_fb_set_drive, ideal_fb_solve_vacuum, ideal_fb_solve, &
         ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
         ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, ideal_fb_mode_stability, &
+        ideal_fb_newton_step, &
         IDEAL_FB_OK
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
     use gs_free_3d_support, only: reference_t, reference_locate_jet, &
@@ -143,7 +144,8 @@ program gs_free_3d_main
     character(512) :: mesh_file = 'mesh.dat', law_file = 'profile-law.dat'
     character(512) :: summary_file = 'summary.dat', coil_file = ''
     character(512) :: boundary_file = '', rmp_coil_file = '', rmp_current_file = ''
-    character(512) :: config
+    character(512) :: config, save_state = '', load_state = ''
+    logical :: linear_response = .false.
     character(256) :: message
     namelist /gs_free_3d/ mesh_file, law_file, summary_file, coil_file, &
         boundary_file, boundary_nodes, max_area, degree, chain_nodes, mu0, nfp, ntor, &
@@ -151,7 +153,7 @@ program gs_free_3d_main
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
         stability, shifts, gamma_c_scale, tangential_damping, homotopy_steps, &
-        stage_iterations, gamma_c_modes
+        stage_iterations, gamma_c_modes, save_state, load_state, linear_response
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -235,6 +237,7 @@ program gs_free_3d_main
     write (output_unit, '(a,i0,a,i0,a,i0,a,es10.3)') 'plasma nodes ', &
         fb%plasma%nodes, ' shell nodes ', fb%ns, ' unknowns ', fb%n, &
         ' drive closure ', closure
+    if (len_trim(load_state) > 0) call read_state(trim(load_state))
     if (start_at_target) then
         ! Diagnostic: the exact target X = T^-1 in full coefficients.
         do i = 1, fb%plasma%nodes
@@ -251,13 +254,25 @@ program gs_free_3d_main
             fb%plasma%x(1, 2, i) = seed_amplitude*fb%plasma%axis_t(i)
         end do
     end if
-    call ideal_fb_solve_vacuum(fb, st)
-    if (st /= IDEAL_FB_OK) error stop 'initial vacuum solve'
+    if (len_trim(load_state) == 0) then
+        call ideal_fb_solve_vacuum(fb, st)
+        if (st /= IDEAL_FB_OK) error stop 'initial vacuum solve'
+    end if
     write (output_unit, '(a,es10.3)') 'vacuum shell field vs 2D field, rel L2 ', &
         shell_mismatch()
     call xrow_norm('before multipliers')
-    call ideal_fb_solve_multipliers(fb, st)
-    if (st /= IDEAL_FB_OK) error stop 'initial multiplier solve'
+    if (len_trim(load_state) == 0) then
+        call ideal_fb_solve_multipliers(fb, st)
+        if (st /= IDEAL_FB_OK) error stop 'initial multiplier solve'
+    end if
+    if (linear_response) then
+        ! Exact eps -> 0 limit of this discrete system: one undamped Newton
+        ! step from the loaded (converged axisymmetric) state; at such a
+        ! state the n /= 0 block is linear in the coil drive.
+        call ideal_fb_newton_step(fb, st, nonaxisymmetric_only=.true.)
+        if (st /= IDEAL_FB_OK) error stop 'linear response step'
+        max_iterations = 0
+    end if
     call xrow_norm('after multipliers')
     if (homotopy_steps > 1) then
         ! Newton homotopy from the offset start: g(U) = (1 - k/K) g(U0),
@@ -318,12 +333,43 @@ program gs_free_3d_main
     end if
     write (output_unit, '(a,i0,a,i0,a,es10.3)') 'newton status ', st, &
         ' iterations ', report%iterations, ' residual ', report%residual
+    if (len_trim(save_state) > 0) call write_state(trim(save_state))
     call write_results(st)
 contains
     subroutine gamma(t, point)
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         call curve_value(gamma_curve, t, point)
+    end subroutine
+
+    subroutine write_state(path)
+        ! Plasma, shell map, potential and multipliers (unformatted stream).
+        character(*), intent(in) :: path
+        integer :: u
+        open (newunit=u, file=path, access='stream', form='unformatted', &
+            status='replace', action='write')
+        write (u) fb%nmode, fb%plasma%nodes, fb%ns
+        write (u) fb%plasma%x, fb%xs, fb%phi, fb%lam
+        close (u)
+    end subroutine
+
+    subroutine read_state(path)
+        ! Restart from write_state of a run on the same mesh; modes beyond
+        ! the saved ones start at zero (e.g. an N = 0 state into N = 1).
+        character(*), intent(in) :: path
+        real(dp), allocatable :: x(:, :, :), xs(:, :, :), phi(:, :), lam(:, :, :)
+        integer :: u, nm, np_, ns_, m
+        open (newunit=u, file=path, access='stream', form='unformatted', &
+            status='old', action='read')
+        read (u) nm, np_, ns_
+        if (np_ /= fb%plasma%nodes .or. ns_ /= fb%ns) error stop 'state mesh mismatch'
+        allocate (x(3, nm, np_), xs(3, nm, ns_), phi(nm, ns_), lam(3, nm, ns_))
+        read (u) x, xs, phi, lam
+        close (u)
+        m = min(nm, fb%nmode)
+        fb%plasma%x(:, :m, :) = x(:, :m, :); fb%xs(:, :m, :) = xs(:, :m, :)
+        fb%phi(:m, :) = phi(:m, :); fb%lam(:, :m, :) = lam(:, :m, :)
+        write (output_unit, '(a,a,a,i0,a)') 'state read from ', path, ' (', nm, ' modes)'
     end subroutine
 
     subroutine smooth_curve(c, mmax)
