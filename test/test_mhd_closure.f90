@@ -39,6 +39,7 @@ program test_mhd_closure
         surface_t, surface_build, find_surface_q
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
         ring_labels_smooth
+    use kin6d_gs_direct, only: gs_direct_available
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
     use kin6d_mhd_response_n, only: ring_sheet_load, sheet_closure_t, closure_fluxes
@@ -607,6 +608,7 @@ contains
         !! Frobenius closure in Delta' mode.
         real(dp), intent(in) :: delta, ratio, rs_cyl
         real(dp), intent(out) :: dprime
+        real(dp) :: gmres_tol
         integer, parameter :: np = 256
         integer :: nfit
         integer :: nrad
@@ -702,8 +704,14 @@ contains
         allocate (lam(cl%ns), phit(cl%nf), phe(cl%nf))
         phe = (0.0_dp, 0.0_dp)
         a = (0.0_dp, 0.0_dp)
+        ! GMRES wraps K^-1.  The MUMPS Cholesky inverts K to roundoff; the complex
+        ! SuperLU fallback leaves a relative residual of ~1e-7 at R0/a = 40, which
+        ! stalls GMRES at 2e-6 .. 1.5e-5 (400 iterations, measured; plain or
+        ! GMRES-polished refinement did not pay for itself), so allow 3e-5 there.
+        gmres_tol = 1.0e-6_dp
+        if (.not. gs_direct_available()) gmres_tol = 3.0e-5_dp
         call ideal_response(fs, pb, fm, g, amp, opt, nmode, sr, cl, b2cl, phe, a, &
-            lam, phit, 1.0e-6_dp, gmres_max, info, its, res)
+            lam, phit, gmres_tol, gmres_max, info, its, res)
         call record(info == 0, "GMRES converged")
         base = 0
         do l = 1, itest - 1
