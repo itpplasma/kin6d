@@ -58,7 +58,8 @@ program test_mhd_closure
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_xmax, layer_init, layer_closure, layer_wmax, layer_coefficients, layer_regular_slope
+        layer_xmax, layer_jump, layer_init, layer_closure, layer_wmax, &
+        layer_coefficients, layer_regular_slope
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
     implicit none
@@ -99,6 +100,7 @@ program test_mhd_closure
     prof = 1
     call layer_conditioning()
     call layer_ring_cap()
+    call layer_jump_exact()
     call fe_ladder("Wesson j = (1 - r^2)^2", [10.0_dp, 40.0_dp], 2.0e-2_dp)
     prof = 2
     wstep = 0.08_dp
@@ -646,6 +648,61 @@ contains
         call record(xm >= delta*ratio**2 .and. st == 0, &
             "layer rings reach the outermost fit ring at ratio 3 (layer_xmax)")
     end subroutine layer_ring_cap
+
+    subroutine layer_jump_exact()
+        !! Manufactured layer solution c0 + c1 x + (J/2)|x| + c2 x^2 + c3 x|x|
+        !! on the fit rings: the joint two-sided fit returns J exactly, also
+        !! with an asymmetric (c1, c3) part that would corrupt a difference of
+        !! one-sided fits with a common value constraint.
+        real(dp), parameter :: ps = 0.49_dp, delta = 1.0e-3_dp
+        real(dp), parameter :: c0 = 0.7_dp, c1 = -3.1_dp, c2 = 40.0_dp, c3 = -25.0_dp
+        real(dp), parameter :: jtrue = 0.47_dp
+        integer, parameter :: nf(2) = [3, 4]
+        real(dp), allocatable :: lab(:), ul(:)
+        real(dp) :: xm, x, err
+        complex(dp), allocatable :: phi(:, :)
+        type(rational_layer_t) :: lay
+        integer :: st, k, side, ir
+
+        err = 0.0_dp
+        do ir = 1, 2
+            xm = layer_xmax(ps, [0.9_dp], delta, 2.0_dp, nf(ir), 96)
+            call layer_labels(ps, delta, 2.0_dp, xm, 1.0e-6_dp, 0.999_dp, lab)
+            ul = sqrt(sorted([lab, ps]))
+            call layer_init(ul, ps, 1.5_dp, 1.0_dp, -0.2_dp, 3, delta, 2.0_dp, nf(ir), &
+                lay, st)
+            if (st /= 0) error stop "layer_jump_exact init"
+            allocate (phi(nf(ir), 2))
+            do side = 1, 2
+                do k = 1, nf(ir)
+                    x = ul(lay%ring(k, side))**2 - ps
+                    phi(k, side) = cmplx(c0 + c1*x + 0.5_dp*jtrue*abs(x) + c2*x*x &
+                                         + c3*x*abs(x), 0.0_dp, dp)
+                end do
+            end do
+            err = max(err, abs(layer_jump(lay, phi) - jtrue))
+            deallocate (phi)
+        end do
+        call record(err < 1.0e-9_dp, &
+            "layer_jump recovers the kink of a manufactured layer solution")
+    end subroutine layer_jump_exact
+
+    pure function sorted(v) result(w)
+        real(dp), intent(in) :: v(:)
+        real(dp) :: w(size(v)), t
+        integer :: a, b
+        w = v
+        do a = 2, size(w)
+            t = w(a)
+            b = a - 1
+            do while (b >= 1)
+                if (w(b) <= t) exit
+                w(b + 1) = w(b)
+                b = b - 1
+            end do
+            w(b + 1) = t
+        end do
+    end function sorted
 
     subroutine fe_ladder(name, r0s, tol)
         !! FEEC closure Delta' at the layer half-widths delta = 2, 1, 0.5e-3

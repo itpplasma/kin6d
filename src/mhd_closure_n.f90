@@ -75,6 +75,7 @@ module kin6d_mhd_closure_n
         real(dp), allocatable :: t(:, :)         !! (nfit, 2) |x|/delta of the rings
         real(dp), allocatable :: pinv(:, :, :)   !! (3, nfit, 2) a = pinv Phi
         real(dp), allocatable :: preg(:, :, :)   !! (3, nfit, 2) smooth fit 1, t, t^2
+        real(dp), allocatable :: pjump(:)        !! (2 nfit) two-sided kink fit
     end type rational_layer_t
 
     public :: mercier_di
@@ -86,6 +87,7 @@ module kin6d_mhd_closure_n
     public :: layer_coefficients
     public :: layer_slope
     public :: layer_regular_slope
+    public :: layer_jump
     public :: layer_inside
 
 contains
@@ -228,6 +230,7 @@ contains
         type(rational_layer_t), intent(out) :: lay
         integer, intent(out) :: status
         real(dp) :: bm(nfit, 3), br(nfit, 3), f(3), df(3), x, mu
+        real(dp) :: bj(2*nfit, 5), pj(5, 2*nfit)
         integer :: k, side, j
 
         status = 1
@@ -243,7 +246,7 @@ contains
         lay%delta = delta
         lay%ring_rat = minloc(abs(ul - sqrt(psin_s)), 1)
         allocate (lay%ring(nfit, 2), lay%t(nfit, 2), lay%pinv(3, nfit, 2), &
-            lay%preg(3, nfit, 2))
+            lay%preg(3, nfit, 2), lay%pjump(2*nfit))
         do side = 1, 2
             do k = 1, nfit
                 x = delta*ratio**(k - 1)
@@ -266,8 +269,37 @@ contains
             call pseudo_inverse(br, lay%preg(:, :, side), status)
             if (status /= 0) return
         end do
+        ! symmetric two-sided fit of the regular part with a slope kink at x = 0
+        ! (columns 1, sigma t, t, t^2, sigma t^2; the kink is column 3)
+        do side = 1, 2
+            do k = 1, nfit
+                bj((side - 1)*nfit + k, :) = [1.0_dp, (2*side - 3)*lay%t(k, side), &
+                    lay%t(k, side), lay%t(k, side)**2, &
+                    (2*side - 3)*lay%t(k, side)**2]
+            end do
+        end do
+        call pseudo_inverse_n(bj, pj, status)
+        if (status /= 0) return
+        lay%pjump = pj(3, :)
         status = 0
     end subroutine layer_init
+
+    subroutine pseudo_inverse_n(a, p, status)
+        !! p = (a^T a)^{-1} a^T for a (nrow, ncol) of full column rank.
+        real(dp), intent(in) :: a(:, :)
+        real(dp), intent(out) :: p(:, :)
+        integer, intent(out) :: status
+        real(dp), allocatable :: nn(:, :), rhs(:, :)
+        integer, allocatable :: ipiv(:)
+        integer :: nc
+
+        nc = size(a, 2)
+        allocate (nn(nc, nc), rhs(nc, size(a, 1)), ipiv(nc))
+        nn = matmul(transpose(a), a)
+        rhs = transpose(a)
+        call dgesv(nc, size(a, 1), nn, nc, ipiv, rhs, nc, status)
+        p = rhs
+    end subroutine pseudo_inverse_n
 
     subroutine pseudo_inverse(a, p, status)
         !! p = (a^T a)^{-1} a^T for a (nfit, 3) of full column rank.
@@ -371,6 +403,21 @@ contains
             d = d + sum(lay%preg(2, :, side)*phi(1:lay%nfit, side))/lay%delta
         end do
     end function layer_regular_slope
+
+    pure function layer_jump(lay, phi) result(d)
+        !! Jump of d Phi/d psin across the rational surface from a joint
+        !! two-sided least-squares fit of all fit rings (inner and outer) by
+        !! c0 + c1 x + (J/2) |x| + c2 x^2 + c3 x |x|: the kink J is one
+        !! coefficient of the joint fit, not a difference of one-sided fits.
+        type(rational_layer_t), intent(in) :: lay
+        complex(dp), intent(in) :: phi(:, :)
+        complex(dp) :: d
+        integer :: n
+
+        n = lay%nfit
+        d = 2*(sum(lay%pjump(1:n)*phi(1:n, 1)) &
+               + sum(lay%pjump(n + 1:2*n)*phi(1:n, 2)))/lay%delta
+    end function layer_jump
 
     pure logical function layer_inside(lays, ul, u)
         !! u lies strictly between the edge rings of one of the layers.
