@@ -60,6 +60,8 @@ module kin6d_mhd_mesh
     public :: flux_mesh_ring_edge
     public :: flux_mesh_locate
     public :: flux_mesh_geometry
+    public :: ring_labels_merge
+    public :: ring_labels_smooth
 
 contains
 
@@ -363,5 +365,82 @@ contains
             jac(:, 2) = jac(:, 2) + gg(2, k)*fm%mm%nodes(:, k, t)
         end do
     end subroutine flux_mesh_geometry
+
+    subroutine ring_labels_merge(nu, extra, gap, u)
+        !! u_j = j/nu merged with extra labels; uniform labels closer than
+        !! gap/nu to an extra label are dropped, except the boundary u = 1.
+        integer, intent(in) :: nu
+        real(dp), intent(in) :: extra(:), gap
+        real(dp), allocatable, intent(out) :: u(:)
+        real(dp) :: tmp(nu + size(extra)), v
+        integer :: j, c, i1, i2
+        c = 0
+        do j = 1, nu
+            v = real(j, dp)/nu
+            if (size(extra) > 0 .and. j < nu) then
+                if (minval(abs(extra - v)) < gap/nu) cycle
+            end if
+            c = c + 1
+            tmp(c) = v
+        end do
+        do j = 1, size(extra)
+            c = c + 1
+            tmp(c) = extra(j)
+        end do
+        do i1 = 2, c
+            v = tmp(i1)
+            i2 = i1 - 1
+            do while (i2 >= 1)
+                if (tmp(i2) <= v) exit
+                tmp(i2 + 1) = tmp(i2)
+                i2 = i2 - 1
+            end do
+            tmp(i2 + 1) = v
+        end do
+        ! drop coincident labels
+        i2 = 1
+        do i1 = 2, c
+            if (tmp(i1) - tmp(i2) > 1.0e-12_dp) then
+                i2 = i2 + 1
+                tmp(i2) = tmp(i1)
+            end if
+        end do
+        u = tmp(1:i2)
+    end subroutine ring_labels_merge
+
+    subroutine ring_labels_smooth(u, ratio)
+        !! Halve every strip wider than ratio times a neighbouring strip
+        !! until the strip widths vary by at most that ratio between
+        !! neighbours (no strip much coarser than its graded surroundings).
+        real(dp), allocatable, intent(inout) :: u(:)
+        real(dp), intent(in) :: ratio
+        real(dp), allocatable :: v(:)
+        real(dp) :: w, wn
+        integer :: it, j, c
+        logical :: split
+
+        do it = 1, 60
+            allocate (v(2*size(u)))
+            c = 1
+            v(1) = u(1)
+            split = .false.
+            do j = 2, size(u)
+                w = u(j) - u(j - 1)
+                wn = huge(1.0_dp)
+                if (j > 2) wn = min(wn, u(j - 1) - u(j - 2))
+                if (j < size(u)) wn = min(wn, u(j + 1) - u(j))
+                if (w > ratio*wn) then
+                    c = c + 1
+                    v(c) = 0.5_dp*(u(j - 1) + u(j))
+                    split = .true.
+                end if
+                c = c + 1
+                v(c) = u(j)
+            end do
+            u = v(1:c)
+            deallocate (v)
+            if (.not. split) exit
+        end do
+    end subroutine ring_labels_smooth
 
 end module kin6d_mhd_mesh
