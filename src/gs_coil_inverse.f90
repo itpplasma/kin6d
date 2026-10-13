@@ -800,9 +800,10 @@ contains
                 ! At steps alpha <= 2^-10 a correct model changes Phi by at most
                 ! 1e-3 |slope|; a larger |Phi_try - Phi| there is the resolution
                 ! of Phi under the forward Newton tolerance (each trial
-                ! re-converges the flux). A predicted decrease below it cannot be
-                ! verified: the point is stationary to forward accuracy.
-                if (-slope .le. resolution) then
+                ! re-converges the flux). The Gauss-Newton model predicts at most
+                ! the decrease -slope/2 (at alpha = 1); below the resolution it
+                ! cannot be verified: the point is stationary to forward accuracy.
+                if (-0.5_dp*slope .le. resolution) then
                     converged = .true.
                     status = GS_CI_OK
                 end if
