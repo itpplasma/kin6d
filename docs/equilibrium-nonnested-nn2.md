@@ -472,8 +472,52 @@ then rewritten as above). The Jacobian matches a central difference to
 | 1e3, 2 | as above | 9.3e-4, 3.1e-4, 2.3e-4 (stalls) | as above | |
 | 1e3, 4 (nr 4/8) | | 1.0e-3, 2.0e-4 (2.36) | | |
 
-Phi stays at 4e-7 to 9e-6 at ratio 1. The sCluster ladders at ratios
-1, 1e3, 1e5, N = 2/4 and P3 are pending (results added with the study).
+Phi stays at 4e-7 to 9e-6 at ratio 1.
+
+sCluster study (job 3223744 at f08dbb1 after the full CTest job 3223743,
+181/181 passed; 16 cores; nr = 4/8/16, orders from the finest pair 8/16).
+Stages and Newton steps are given per nr; time is wall time and memory is
+the maximum resident set of the whole ladder.
+
+| P, ratio, N | orders B / p / D3 / V | stages (Newton) nr 4/8/16 | time | memory | gates |
+|---|---|---|---:|---:|---|
+| 2, 1, 4 | 2.02 / 2.76 / 2.73 / 1.96 | 1 (4) / 1 (3) / 1 (3) | 1 min 08 s | 8.9 GB | PASS |
+| 2, 1, 6 | 2.02 / 2.76 / 2.73 / 1.96 | 1 (4) / 1 (4) / 1 (3) | 2 min 45 s | 17.4 GB | PASS |
+| 2, 1e3, 4 | 2.02 / 2.05 / 2.73 / 1.96 | 4 (10) / 4 (6) / 4 (6) | 2 min 27 s | 9.4 GB | PASS |
+| 2, 1e3, 6 | 2.02 / 2.05 / 2.73 / 1.96 | 4 (10) / 4 (7) / 4 (6) | 6 min 50 s | 18.8 GB | PASS |
+| 2, 1e6, 4 | 2.07 / 4.65 / 2.75 / **1.07** | 8 (17) / 24 (193) / 8 (8) | 13 min 27 s | 9.5 GB | FAIL (V) |
+| 2, 1e6, 6 | 2.09 / 5.15 / 2.76 / **0.92** | 8 (18) / 29 (253) / 8 (7) | 43 min 26 s | 19.1 GB | FAIL (V) |
+| 3, 1, 4 | 2.95 / 3.89 / 3.56 / 2.96 | 1 (3) / 1 (3) / 1 (3) | 4 min 08 s | 25.7 GB | PASS |
+| 3, 1, 6 | 2.95 / 3.89 / 3.56 / 2.96 | 1 (4) / 1 (3) / 1 (3) | 10 min 24 s | 52.6 GB | PASS |
+| 3, 1e3, 4 | 2.95 / 4.35 / 3.56 / 2.98 | 4 (6) / 4 (6) / 4 (3) | 8 min 33 s | 25.6 GB | PASS |
+| 3, 1e3, 6 | 2.95 / 4.02 / 3.56 / 2.97 | 4 (7) / 4 (5) / 4 (3) | 21 min 05 s | 52.3 GB | PASS |
+| 3, 1e6, 4 | 2.95 / 4.35 / 3.56 / 2.98 | 8 (7) / 8 (6) / 8 (3) | 12 min 19 s | 25.7 GB | PASS |
+| 3, 1e6, 6 | 2.95 / 5.52 / 3.56 / 2.81 | 8 (8) / 8 (6) / 8 (3) | 32 min 36 s | 52.3 GB | PASS |
+
+Path checks (nr = 4, 2-decade steps) agree within 2e-7 in A, p and V in
+every run; Phi differs by up to 6.8e-5 (P3, 1e6, N = 6), printed only. The
+P3 N = 6 prediction holds: with nr = 16 the B order is 2.95 at ratios 1,
+1e3 and 1e6, so the earlier 2.56 was pre-asymptotic.
+
+Verdict at ratio 1e6: FAIL by the pre-declared rule, since P2 fails the
+V-order gate (>= 1.5) at N = 4 (1.07) and at N = 6 (0.92). P3 passes every
+gate at N = 4 and N = 6. B and D3 keep their orders at P2 too. The P2
+failure sits at nr = 8. There Phi is 0.79 (N = 4) and 0.92 (N = 6) of V,
+p is 2.0e-3 (2.0e-4 at 1e3), and the continuation needed 24 and 29 stages.
+At nr = 16 the V error (3.07e-5) equals that at ratio 1 (3.13e-5), and
+Phi drops to 9e-3. The V error at nr = 8 (6.4e-5) is below the ratio-1
+value (1.2e-4), so the 8-to-16 ratio of 2.1 does not measure convergence.
+The cause is the closed-field-line pollution predicted above. With
+iota = 2 the discrete b.grad has a near-kernel of functions constant on
+closed lines. The P2 error in b on the coarse mesh, amplified by 1e6,
+leaves p and Phi in that near-kernel almost undetermined, and Phi feeds V
+through Ohm's law. At P3 the B error at nr = 8 is 5.7e-5 instead of 1.7e-3. That is
+enough at 1e6, and Phi stays below 8.1e-4 of V. Proposed next step, not a retune: add a gauge for p and Phi
+along closed lines. One option is a weak constraint that sets the
+line average of Phi to its wall-connected value. The other is
+discretising b.grad with the same discrete B used in Ampere, so that the
+exact discrete equilibrium satisfies b.grad p = 0 exactly. Rerun P2 1e6
+N = 4 on nr = 8/16/32 against the same gates.
 
 ### NN2c island results (sCluster jobs 3222014, 3222015)
 
