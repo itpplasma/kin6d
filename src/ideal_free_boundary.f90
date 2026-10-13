@@ -126,6 +126,9 @@ module kin6d_ideal_free_boundary
         ! 2-form). Must stay below the vertical eigenvalue (~1e-7 in this
         ! metric) or the damped step turns against the vertical mode.
         real(dp) :: tangential_damping = 0
+        ! Newton-homotopy offset: when allocated, the gradient returned is
+        ! g(U) - shift (shift = (1 - t) g(U0) solves g = (1 - t) g(U0)).
+        real(dp), allocatable :: shift(:)
     end type
 
     type :: ideal_fb_report_t
@@ -919,6 +922,7 @@ contains
                 grad(iphi(fb, m, s)) = -gf(m, s)
             end do
         end do
+        if (allocated(fb%shift)) grad = grad - fb%shift
         if (present(lagrangian)) lagrangian = wp - ev - ec + sum(fb%lam*res)
         if (present(min_jacobian)) min_jacobian = min(minp, mins)
     end subroutine
