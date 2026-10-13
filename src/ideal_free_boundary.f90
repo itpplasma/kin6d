@@ -1265,6 +1265,8 @@ contains
         integer :: it, i, p, st, tries, back, nback
         integer, allocatable :: tpos(:, :)
         real(dp), allocatable :: trial_du(:)
+        type(sparse_solver_t) :: csolver
+        logical :: cready
         logical :: talk, accepted, factored, kept
         talk = .false.
         if (present(verbose)) talk = verbose
@@ -1277,7 +1279,7 @@ contains
         cap_w = 0.5_dp
         mu = 1.0e-8_dp
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
-        factored = .false.
+        factored = .false.; cready = .false.
         call ideal_fb_gradient(fb, grad, st)
         if (st /= IDEAL_FB_OK) then
             status = IDEAL_FB_FOLDED; return
@@ -1297,6 +1299,18 @@ contains
                 end do
             end do
             scale_p = maxval(diag(1:fb%np))
+            if (.not. cready) then
+                ! C^T (shell-map rows x multiplier columns) depends on the
+                ! reference only: factorise once; after every trial step the
+                ! multipliers are re-solved exactly, so the mesh-motion rows
+                ! (toroidal-field-scale forces on shell nodes, no physics)
+                ! never enter the merit.
+                call factor_constraint(fb, rowptr, colidx, val, csolver, cready)
+                if (cready) then
+                    call project_multipliers(fb, csolver, grad)
+                    call merit_weights(fb, diag, wts)
+                end if
+            end if
             if (fb%tangential_damping > 0) call tangential_positions(fb, rowptr, &
                 colidx, tpos)
             call merit_weights(fb, diag, wts)
@@ -1377,6 +1391,8 @@ contains
                         call ideal_fb_step(fb, du, alpha)
                     end if
                     call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
+                    if (cready .and. st == IDEAL_FB_OK) call project_multipliers(fb, &
+                        csolver, rhs)
                     report%line_s = report%line_s + wall() - t0
                     if (st == IDEAL_FB_OK) then
                         tmerit = sum(wts*rhs**2)
@@ -1404,6 +1420,7 @@ contains
             if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
         end do
         if (factored) call sparse_destroy(solver)
+        if (cready) call sparse_destroy(csolver)
         call constraint_norm(fb, report%constraint)
         if (talk) print '(a,4f10.1,a,i0,a,i0)', '   seconds: assemble factor+solve &
             &line-search', report%assemble_s, report%factor_s, report%line_s, &
@@ -1456,6 +1473,64 @@ contains
             print '(a,es10.2,a,2f9.4,a,l2)', '   largest plasma increment', du(k), &
                 ' at', fb%plasma%reference(:, a), ' boundary', fb%plasma%boundary(a)
         end block
+    end subroutine
+
+    subroutine factor_constraint(fb, rowptr, colidx, val, csolver, ready)
+        ! Factor the C^T block (rows: shell map, columns: multipliers); the
+        ! CSR rows of the transposed block are its CSC columns.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: rowptr(:), colidx(:)
+        real(dp), intent(in) :: val(:)
+        type(sparse_solver_t), intent(inout) :: csolver
+        logical, intent(out) :: ready
+        integer, allocatable :: rp(:), ci(:)
+        real(dp), allocatable :: v(:)
+        type(fortsparse_status_t) :: sst
+        integer :: i, p, nnz, row0, col0
+        row0 = fb%np; col0 = fb%np + fb%nx
+        allocate (rp(fb%nx + 1), ci(size(val)), v(size(val)))
+        nnz = 0; rp(1) = 1
+        do i = 1, fb%nx
+            do p = rowptr(col0 + i), rowptr(col0 + i + 1) - 1
+                if (colidx(p) <= row0 .or. colidx(p) > row0 + fb%nx) cycle
+                nnz = nnz + 1
+                ci(nnz) = colidx(p) - row0; v(nnz) = val(p)
+            end do
+            rp(i + 1) = nnz + 1
+        end do
+        csolver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+        if (gs_direct_available()) csolver%backend_id = FORTSPARSE_BACKEND_MUMPS
+        csolver%options%symmetry = FORTSPARSE_SYM_GENERAL
+        call sparse_factor(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), v(:nnz), sst)
+        ready = status_ok(sst)
+    end subroutine
+
+    subroutine project_multipliers(fb, csolver, grad)
+        ! lambda += delta with C^T delta = -g_x, then the gradient updated:
+        ! the shell-map rows become zero and the Gamma_p plasma rows receive
+        ! -delta (their tie coefficient is -1).
+        type(ideal_fb_t), intent(inout) :: fb
+        type(sparse_solver_t), intent(inout) :: csolver
+        real(dp), intent(inout) :: grad(:)
+        real(dp), allocatable :: rhs(:), d(:)
+        type(fortsparse_status_t) :: sst
+        integer :: s2, m, c, k
+        rhs = -grad(fb%np + 1:fb%np + fb%nx)
+        allocate (d(fb%nx))
+        call sparse_solve(csolver, rhs, d, sst)
+        if (.not. status_ok(sst)) return
+        fb%lam = fb%lam + reshape(d, shape(fb%lam))
+        grad(fb%np + 1:fb%np + fb%nx) = 0
+        do s2 = 1, fb%ns
+            if (fb%role(s2) /= 1) cycle
+            do m = 1, fb%nmode
+                do c = 1, 2
+                    k = c + 3*(m - 1) + 3*fb%nmode*(s2 - 1)
+                    grad(pidx(fb, c, m, fb%plasma_node(s2))) = &
+                        grad(pidx(fb, c, m, fb%plasma_node(s2))) - d(k)
+                end do
+            end do
+        end do
     end subroutine
 
     subroutine scale_mode(fb, du, m, factor)
