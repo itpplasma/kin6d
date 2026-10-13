@@ -78,6 +78,25 @@ are the equilibrium core's (`src/equilibrium_chart.f90`,
   steps 110) the Newton step is 98.5 % omega while 1 % of the gradient is
   omega: the crawl is the near-null omega block under Levenberg--Marquardt
   damping 1e-8.
+  `omega_elimination` (nested solve, ntor = 0 only): W is exactly quadratic
+  in omega at fixed transversal dofs (J does not depend on omega for the
+  cylindrical chart at ntor = 0), so omega is eliminated by one undamped
+  solve of the omega block (pin only, no gauge form) at the start and at
+  every trial point, and Newton runs on W_red(nu) = min_omega W. With
+  g_omega = 0 the full-system solve with right-hand side -g is the
+  Schur-complement step; damping and trust region act on nu only.
+  `ideal_map_eliminate_omega` exposes W_red; the `reduced` test checks
+  |g_omega|/|g| = 1e-14 after elimination, the W_red gradient against
+  differences (2e-8) and the Schur complement (9e-9). Local A3 P2 seed ladder
+  (SuperLU, tol 1e-11): damping 1e-4 and 1e-2 give 2.776263616e-4,
+  3.362744779e-5, 5.45090058e-6 (agree to 3e-12, 1e-10; equal to the
+  `gauge_hessian_only` end points), 49/8/52 Newton steps, orders 3.04, 2.62.
+  Damping 1e-6 converges (|g| = 3e-13) to a second stationary point with
+  higher W (+3.2e-5, 3.5e-9 relative; d3D 2.714e-4, 3.481e-5, 5.331e-6), so
+  the remaining multiplicity is in nu, not omega. The first mesh still
+  crawls (about 30 steps at |g| ~ 1e-5 g_seed). P3 and shaped P3: sCluster
+  job, see the N1 handoff. An inner Newton for ntor > 0 converged only
+  linearly in a probe; ntor > 0 is rejected.
 - Fixed boundary: nu = 0 on boundary nodes for all modes.
 
 ## Solver
