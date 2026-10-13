@@ -61,7 +61,23 @@ are the equilibrium core's (`src/equilibrium_chart.f90`,
   across-surface derivative; the physics never sees the surface function it
   selects. The pullback ladders are unchanged by it to four digits. Hard
   orthogonality to hat functions of chi biased the solution (order 1.8,
-  measured) and is not used.
+  measured) and is not used. The N4 remedy (J = boundary nodes/(8 pi) hat
+  band constraints C^T du = 0 on omega_0, bordered KKT system, merit on the
+  gradient minus its part along C) was tried on the A3 P2 seed ladder: Newton
+  steps drop (16/25/52 against 27/40/118) but the unprojected residual stalls
+  at 4e-6..9e-6 of the seed gradient and the end points are biased (4.8e-5,
+  2.0e-5 against 3.4e-5, 5.4e-6; order 1.3). At the discrete level omega =
+  f(chi) is not a gauge: the discrete minimiser uses it to absorb the P_k
+  error of B_phi, so freezing it per band costs order.
+  `gauge_hessian_only` keeps the form in the Hessian (regularisation of the
+  near-null block) and removes it from energy and gradient, so the end point
+  is the stationary point of W itself. A3 P2: weights 1e-4, 1e-6, 1e-2 give
+  2.77626362e-4, 3.36274479e-5, 5.4509006e-6 (1e-4 and 1e-6 agree to 1e-11,
+  3e-9, 9e-9; 1e-2 to 2e-8, 3e-7, 3e-7), and the penalised default differs
+  from it by 3e-5, 2e-4, 8e-4 relative. In the P2 crawl (finest mesh,
+  steps 110) the Newton step is 98.5 % omega while 1 % of the gradient is
+  omega: the crawl is the near-null omega block under Levenberg--Marquardt
+  damping 1e-8.
 - Fixed boundary: nu = 0 on boundary nodes for all modes.
 
 ## Solver
@@ -178,7 +194,17 @@ solution psi_2D on the same mesh is the second oracle.
   The shaped P3 seed ladder is not registered: it converges to a
   weight-dependent end point on the first two meshes (weight 1e-4: 2.3245e-4,
   1.6077e-5; weight 1e-2: 2.3140e-4, 1.5728e-5) and the third mesh reaches
-  the 600-step cap. Open.
+  the 600-step cap. Open. With `gauge_hessian_only` (sCluster, damping
+  1e-6) the shaped P3 end points agree between weights 1e-4 and 1e-2 on the
+  first mesh (2.3248620e-4, 2.3248602e-4) but need 287-307 steps there and
+  the next mesh is not converged to 3e-5 between weights (1.60749e-5,
+  1.60744e-5); the A3 P3 ladder with weight 1e-4 needs 82/320 steps and fails
+  on the finest mesh (gradient 4e-2 after 208 steps), weight 1e-2 fails on
+  the first. Damping omega less than the transversal dofs (ratios 1e-2..1e-6, P2) did
+  not shorten the crawl reliably (67/52, 69, 195 steps on the finest/middle mesh). Still open: a nested solve of the omega block (W is
+  exactly quadratic in omega at fixed transversal dofs, since J does not
+  depend on omega) so that the flat omega valley is not driven by the
+  nonlinear nu--omega coupling.
 
   Reproducibility: cell energies are summed serially and MUMPS factors on one
   thread by default (`factor_threads`), so a solve is identical for any
