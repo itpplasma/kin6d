@@ -115,9 +115,9 @@ program test_mhd_closure
     integer, allocatable :: mr(:), je_all(:)
     complex(dp), allocatable :: b2(:), f(:), a(:), b2cl(:, :), lam(:), phit(:)
     complex(dp), allocatable :: phe(:), bc(:)
-    complex(dp) :: mo(2, 2), p0(2), dmap(2, 2), vmap(2, 2), smap(2, 2), jr(2)
+    complex(dp) :: mo(2, 2), mfe(2, 2), p0(2), dmap(2, 2), vmap(2, 2), smap(2, 2), jr(2)
     complex(dp) :: lam2(2), lam_l4, ga, gb, fa, fb, gn, bb(3), amat(2, 2)
-    real(dp) :: qsgn, qt, x, pa, rs, re(2), fp, dpr, gr, rb(2, 2), wl, tol
+    real(dp) :: merr, qsgn, qt, x, pa, rs, re(2), fp, dpr, gr, rb(2, 2), wl, tol
     integer :: k, st, nrat, itest, j, je(2), side, nr, ns, info, its, it
     logical :: found
 
@@ -523,6 +523,8 @@ contains
                 "(b) torus growth rate = R-B1 cylinder rate")
         end do
         call record(cerr <= 5.0e-4_dp, "coupled closure = Schur complement form")
+        call record(merr <= 1.0e-3_dp, &
+            "coupling with the sharp-step outer map = R-B1 cylinder rate")
         if (.not. all_passed) error stop 1
         print '(a)', "test_mhd_closure strip: all checks passed"
         stop
@@ -615,12 +617,17 @@ contains
         call build_rings(.true.)
         tol = 1.0e-7_dp
         if (.not. gs_direct_available()) tol = 3.0e-5_dp
+        block
+            character(len=32) :: ev
+            ! KIN6D_STRIP_TOL="tol maxit" overrides the GMRES settings (studies)
+            call get_environment_variable('KIN6D_STRIP_TOL', ev)
+            if (len_trim(ev) > 0) read (ev, *) tol, gmres_max
+        end block
         ! outer response to prescribed edge sheets (no drive): M
         cl%wl(ns - 1:ns, ns - 1:ns) = reshape([1, 0, 0, 1], [2, 2])
         do k = 1, 2
             cl%target = (0.0_dp, 0.0_dp)
             cl%target(ns - 2 + k) = (1.0_dp, 0.0_dp)
-            phe = (0.0_dp, 0.0_dp)
             call solve(.false.)
             mo(:, k) = phit(ns - 1:ns)
         end do
@@ -628,6 +635,17 @@ contains
         cl%target = (0.0_dp, 0.0_dp)
         call solve(.true.)
         p0 = phit(ns - 1:ns)
+        ! linearity of the prescribed-sheet path: P0 + M lx at arbitrary lx
+        block
+            complex(dp) :: lx(2)
+            lx = [(0.3_dp, 0.7_dp), (-1.1_dp, 0.2_dp)]
+            cl%target(ns - 1:ns) = lx
+            call solve(.true.)
+            call record(maxval(abs(phit(ns - 1:ns) - p0 - matmul(mo, lx))) <= &
+                1.0e-3_dp*maxval(abs(matmul(mo, lx))), &
+                "prescribed edge sheets: superposition P0 + M lam")
+            cl%target = (0.0_dp, 0.0_dp)
+        end block
         ! cylinder-equivalent strip
         eq%m = mres
         eq%n = nmode
@@ -643,7 +661,7 @@ contains
         vmap = matmul(vmap, inv2(cmplx(rb, 0.0_dp, dp)))
         print '(a,f6.1,a,es9.2,a,i0,a,2f9.5,a,f9.5,a,f9.4,a,2es11.3)', 'strip R0/a', &
             r0, ' xd', xd, ' rings ', nr, ' r_e', re, ' r_s', rs, ' rs Delta''', &
-            dpr*rs, ' |junit|', abs(jr)
+            dpr, ' |junit|', abs(jr)
         ! (a) ideal limit
         wl = layer_width(0.0_dp, (1.0e-6_dp, 0.0_dp), fp)
         call smat(0.0_dp, (1.0e-6_dp, 0.0_dp), wl)
@@ -674,31 +692,87 @@ contains
         print '(a,2es13.5,a,2es13.5,a,es10.2,a,es10.2)', '  (a) strip current', &
             lam2(1) + lam2(2), ' L4', lam_l4, ' rel', ierr, ' direct/Schur', cerr
         ! (b) growth rates: det(I - S(gamma) M) = 0, mesh from the cylinder rate
+        merr = 0.0_dp
         do k = 1, size(etas)
             call ri_dispersion_gamma(etas(k), fp, dpr, gr, st)
             sopt%xs = max(rs - re(1), re(2) - rs)
             call strip_growth_rate(eq, etas(k), cmplx(1.3_dp*gr, 0.0_dp, dp), sopt, &
                 gcyl(k), ssol, it, st)
             wl = layer_width(etas(k), gcyl(k), fp)
-            ga = gcyl(k)
-            gb = 1.05_dp*gcyl(k)
-            fa = disp(etas(k), ga, wl)
-            fb = disp(etas(k), gb, wl)
-            do it = 1, 40
-                gn = gb - fb*(gb - ga)/(fb - fa)
-                ga = gb
-                fa = fb
-                gb = gn
-                fb = disp(etas(k), gb, wl)
-                if (abs(gb - ga) <= 1.0e-10_dp*abs(gb)) exit
-            end do
-            gtor(k) = gb
-            print '(a,es9.2,a,2es13.5,a,2es13.5,a,es10.2,a,i0)', '  (b) S', &
+            call rate_secant(etas(k), gcyl(k), wl, gtor(k), it)
+            ! same coupling with the exact sharp-step outer map: must give gcyl
+            mfe = mo
+            mo = step_outer_map(.false.)
+            call rate_secant(etas(k), 1.05_dp*gcyl(k), wl, gn, it)
+            ! diagnostic: cylinder map of the smoothed (tanh) profile itself
+            mo = step_outer_map(.true.)
+            call rate_secant(etas(k), 1.05_dp*gcyl(k), wl, gb, it)
+            mo = mfe
+            merr = max(merr, abs(gn/gcyl(k) - 1))
+            print '(a,es9.2,a,2es13.5,a,2es13.5,a,es10.2,a,es10.2)', '  (b) S', &
                 1/etas(k), ' gamma torus', gtor(k), ' cylinder', gcyl(k), ' rel', &
-                abs(gtor(k)/gcyl(k) - 1), ' secant ', it
+                abs(gtor(k)/gcyl(k) - 1), ' step map', abs(gn/gcyl(k) - 1)
+            print '(a,es10.2,a,es10.2)', '      tanh cylinder map / step', &
+                abs(gb/gcyl(k) - 1), ', torus / tanh cylinder', abs(gtor(k)/gb - 1)
         end do
 
     end subroutine fe_strip
+
+    subroutine rate_secant(eta, g0, w, gam, it2)
+        !! Root of det(I - S(gamma) mo) by the secant method from g0.
+        real(dp), intent(in) :: eta, w
+        complex(dp), intent(in) :: g0
+        complex(dp), intent(out) :: gam
+        integer, intent(out) :: it2
+        complex(dp) :: g1, g2, f1, f2, g3
+        g1 = g0
+        g2 = 1.05_dp*g0
+        f1 = disp(eta, g1, w)
+        f2 = disp(eta, g2, w)
+        do it2 = 1, 40
+            g3 = g2 - f2*(g2 - g1)/(f2 - f1)
+            g1 = g2
+            f1 = f2
+            g2 = g3
+            f2 = disp(eta, g2, w)
+            if (abs(g2 - g1) <= 1.0e-10_dp*abs(g2)) exit
+        end do
+        gam = g2
+    end subroutine rate_secant
+
+    function step_outer_map(smooth) result(mc)
+        !! Edge fluxes per unit edge sheet of the cylinder: regular solution
+        !! f inside the sheet (sharp step of eq, a r^m + b r^-m; smooth: the
+        !! tearing ODE of the tabulated tanh profile), r^-m outside, jump jr;
+        !! the cylinder counterpart of the FEEC map mo.
+        logical, intent(in) :: smooth
+        complex(dp) :: mc(2, 2)
+        real(dp) :: gs, as, bs, fin(2), dfin(2), p, y(2)
+        integer :: i2, k2
+        gs = 2.0_dp/(1.0_dp - eq%n*eq%q0/eq%m)
+        as = 1.0_dp - gs/(2*eq%m)
+        bs = gs*eq%r1**(2*eq%m)/(2*eq%m)
+        do i2 = 1, 2
+            fin(i2) = as*re(i2)**mres + bs*re(i2)**(-mres)
+            dfin(i2) = mres*(as*re(i2)**(mres - 1) - bs*re(i2)**(-mres - 1))
+            if (smooth) then
+                y = [1.0e-3_dp**mres, mres*1.0e-3_dp**(mres - 1)]
+                call integrate(1.0e-3_dp, re(i2), y)
+                fin(i2) = y(1)
+                dfin(i2) = y(2)
+            end if
+        end do
+        do k2 = 1, 2
+            p = real(jr(k2), dp)/(-mres/re(k2) - dfin(k2)/fin(k2))
+            do i2 = 1, 2
+                if (i2 <= k2) then
+                    mc(i2, k2) = p*fin(i2)/fin(k2)
+                else
+                    mc(i2, k2) = p*(re(k2)/re(i2))**mres
+                end if
+            end do
+        end do
+    end function step_outer_map
 
     complex(dp) function slope3(j0, j1, j2) result(d)
         integer, intent(in) :: j0, j1, j2
@@ -792,6 +866,7 @@ contains
     subroutine solve(driven)
         logical, intent(in) :: driven
         complex(dp) :: ph(ns)
+        real(dp) :: tl
         integer :: j2
         type(sample_ring_t), allocatable :: s0(:)
         s0 = sr
@@ -804,8 +879,12 @@ contains
             ph = phe
         end if
         a = (0.0_dp, 0.0_dp)
+        ! the edge-sheet responses M enter (I - S M)^-1 amplified: solve them
+        ! three orders tighter than the driven problems
+        tl = tol
+        if (.not. driven) tl = 1.0e-3_dp*tol
         call ideal_response(fs, pb, fm, g, amp, opt, nmode, s0, cl, b2cl, ph, a, &
-            lam, phit, tol, gmres_max, info, its, x)
+            lam, phit, tl, gmres_max, info, its, x)
         call record(info == 0, "GMRES converged")
     end subroutine solve
 
