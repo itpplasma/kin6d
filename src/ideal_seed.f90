@@ -13,8 +13,14 @@ module kin6d_ideal_seed
     ! flux s = |zeta|^2 with the total toroidal flux Phi_edge, as in KIN6D's 2D
     ! prescribed-q solve:
     !     psi_axis = -Phi_edge/(2 pi int_0^1 q ds),   chi = psi_axis (1 - s),
-    !     b3 = 2 |psi_axis| q(s) / det DY,
-    ! i.e. toroidal flux 2 pi |psi_axis| q ds between seed surfaces. Y is a
+    !     b3 = 4 pi |psi_axis| q(s) / (R K(s)),
+    !     K(s) = int_0^2pi det DY(sqrt(s) e_theta)/R dtheta,
+    ! i.e. toroidal flux 2 pi |psi_axis| q ds between seed surfaces, distributed
+    ! like a vacuum toroidal field (B_phi ~ 1/R) on each surface. The omega
+    ! that redistributes it in the equilibrium is then small: a density
+    ! uniform in the disk (b3 ~ 1/det DY) needs omega of several radians, whose
+    ! P_k error enters B_phi and, amplified by B_phi/B_pol, the surfaces
+    ! (measured: P2 seed order 2.3 instead of 3). Y is a
     ! diffeomorphism for convex boundaries (Rado-Kneser-Choquet); init checks
     ! det DY > 0 on a polar grid.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -177,6 +183,24 @@ contains
         ok = r <= 1.0e-13_dp*seed%scale
     end subroutine
 
+    real(dp) function shell_weight(seed, s) result(k)
+        ! K(s) = int_0^2pi det DY/R dtheta on the seed surface |zeta|^2 = s
+        ! (trapezoidal, spectral for the polynomial seed map).
+        class(nested_seed_t), intent(in) :: seed
+        real(dp), intent(in) :: s
+        integer, parameter :: n = 128
+        real(dp) :: y(2), dy(2, 2), theta, rho
+        integer :: j
+        rho = sqrt(max(0.0_dp, s))
+        k = 0
+        do j = 0, n - 1
+            theta = 2*pi*j/n
+            call seed%map(rho*[cos(theta), sin(theta)], y, dy)
+            k = k + (dy(1, 1)*dy(2, 2) - dy(1, 2)*dy(2, 1))/y(1)
+        end do
+        k = 2*pi*k/n
+    end function
+
     subroutine seed_evaluate(field, point, chi, chi_gradient, b3, pressure)
         class(nested_seed_t), intent(in) :: field
         real(dp), intent(in) :: point(2)
@@ -194,6 +218,6 @@ contains
         chi_gradient = [dy(2, 2)*grad_xi(1) - dy(2, 1)*grad_xi(2), &
             -dy(1, 2)*grad_xi(1) + dy(1, 1)*grad_xi(2)]/det
         call field%profile%evaluate(s, q, pressure)
-        b3 = 2*abs(field%psi_axis)*q/det
+        b3 = 4*pi*abs(field%psi_axis)*q/(point(1)*shell_weight(field, s))
     end subroutine
 end module kin6d_ideal_seed
