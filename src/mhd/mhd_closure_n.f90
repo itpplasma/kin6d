@@ -93,7 +93,11 @@ module kin6d_mhd_closure_n
     public :: mercier_di
     public :: frobenius_basis
     public :: layer_labels
+<<<<<<< HEAD:src/mhd/mhd_closure_n.f90
     public :: layer_xmax
+=======
+    public :: layer_extent
+>>>>>>> 606e6d0 (Frobenius closure: Mercier difference step inside the plasma; layer rings never short of the fit rings):src/mhd_closure_n.f90
     public :: layer_init
     public :: layer_closure
     public :: layer_coefficients
@@ -113,11 +117,15 @@ contains
         integer, intent(in) :: nth
         real(dp), intent(out) :: di, q, dq
         integer, intent(out) :: status
-        real(dp), parameter :: h = 1.0e-3_dp
-        real(dp) :: v1m, v1p, v1, v2, qm, qp, avg(5), f, dfdx, p, dpdx, p1
+        real(dp) :: h, v1m, v1p, v1, v2, qm, qp, avg(5), f, dfdx, p, dpdx, p1
         real(dp) :: psio, chi1, twopif, term
 
         status = 1
+        if (psin <= 0.0_dp .or. psin >= 1.0_dp) return
+        ! centred differences in psin, with the step kept inside the plasma
+        ! (a rational closer than 1e-3 to the boundary has no surface at
+        ! psin + 1e-3)
+        h = min(1.0e-3_dp, 0.5_dp*psin, 0.5_dp*(1 - psin))
         psio = abs(g%psi_edge - g%psi_axis)
         call surface_average(psin - h, v1m, qm, avg, status)
         if (status /= 0) return
@@ -194,6 +202,7 @@ contains
         end function expm1
     end subroutine frobenius_basis
 
+<<<<<<< HEAD:src/mhd/mhd_closure_n.f90
     pure function layer_xmax(psin_s, others, delta, ratio, nfit, nrad) result(xmax)
         !! Largest layer-ring offset: grade up to the uniform spacing
         !! 2 sqrt(psin_s)/nrad, but never below the outermost fit ring
@@ -210,6 +219,8 @@ contains
             xmax = min(xmax, 0.45_dp*abs(others(k) - psin_s))
         end do
     end function layer_xmax
+=======
+>>>>>>> 606e6d0 (Frobenius closure: Mercier difference step inside the plasma; layer rings never short of the fit rings):src/mhd_closure_n.f90
 
     subroutine layer_labels(psin_s, delta, ratio, xmax, lo, hi, psin)
         !! psin labels of the layer rings: psin_s -+ delta ratio^k, k = 0, 1,
