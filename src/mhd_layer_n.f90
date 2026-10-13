@@ -327,7 +327,7 @@ contains
         complex(dp), intent(in) :: dlayer(:)
         complex(dp), intent(in) :: junit(:)
         type(sheet_closure_t), intent(inout) :: cl
-        integer :: l, side, k, kf, r1, r2
+        integer :: l, side, k, kf, r1, r2, j
         complex(dp) :: sc
 
         if (allocated(cl%wl)) deallocate (cl%wl)
@@ -347,8 +347,10 @@ contains
             do side = 1, 2
                 do k = 1, lays(l)%nfit
                     kf = kf + 1
-                    cl%w(r1, kf) = (3 - 2*side)*lays(l)%pinv(1, k, side)
-                    cl%w(r2, kf) = -0.5_dp*sc*dlayer(l)*lays(l)%pinv(1, k, side)
+                    j = (side - 1)*lays(l)%nfit + k
+                    cl%w(r1, kf) = lays(l)%pa1(j, 1) - lays(l)%pa1(j, 2)
+                    cl%w(r2, kf) = -0.5_dp*sc*dlayer(l)*(lays(l)%pa1(j, 1) &
+                                                         + lays(l)%pa1(j, 2))
                 end do
             end do
         end do

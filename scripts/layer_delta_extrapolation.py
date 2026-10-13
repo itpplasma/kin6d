@@ -15,8 +15,13 @@ and prints the fitted exponent.  Mode 'fit' reads prefix_layer.dat of TC24
 runs at several deltas and extrapolates S(delta) = J_inf + C delta^p for a
 given p (default 1, the mu = 1/2 form) per (phasing, rational, ratio).
 
+Mode 'net' fits |lambda_in + lambda_out| ~ delta^p (net edge-sheet current)
+per (phasing, rational, ratio); the ideal layer current for mu > 1/2 needs
+p = eps = mu - 1/2 (flagged ok if |p - eps| <= 0.1).
+
 usage: layer_delta_extrapolation.py model
        layer_delta_extrapolation.py fit [--p P] [--pfree] file_d<delta>_ra<r>_layer.dat ...
+       layer_delta_extrapolation.py net file_d<delta>_ra<r>_layer.dat ...
 """
 import argparse
 import re
@@ -84,8 +89,22 @@ def read_layer(files):
                 continue
             v = [float(x) for x in line.split()]
             key = (int(v[0]), round(abs(v[1]), 3), r)
-            data.setdefault(key, {})[d] = (complex(v[8], v[9]), v[5])
+            data.setdefault(key, {})[d] = (complex(v[8], v[9]), v[5],
+                                           complex(v[12] + v[14], v[13] + v[15]))
     return data
+
+
+def net(files):
+    rows = {1: "010", 2: "U", 3: "M", 4: "L"}
+    print("row  q     eps    ratio  |lam_in+lam_out| (delta ascending)    p     ok")
+    for (ph, q, r), sd in sorted(read_layer(files).items()):
+        d = np.array(sorted(sd))
+        n = np.array([abs(sd[x][2]) for x in d])
+        eps = sd[d[0]][1] - 0.5
+        p = np.polyfit(np.log(d), np.log(n), 1)[0] if len(d) >= 2 else np.nan
+        print(f"{rows.get(ph, ph):4s} {q:5.3f} {eps:6.3f} {r:4s}   "
+              + " ".join(f"{x:9.3e}" for x in n)
+              + f"  {p:6.3f}  {'ok' if abs(p - eps) <= 0.1 else 'NO'}")
 
 
 def fit(files, p, pfree):
@@ -123,13 +142,15 @@ def fit(files, p, pfree):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["model", "fit"])
+    ap.add_argument("mode", choices=["model", "fit", "net"])
     ap.add_argument("files", nargs="*")
     ap.add_argument("--p", type=float, default=1.0)
     ap.add_argument("--pfree", action="store_true")
     a = ap.parse_args()
     if a.mode == "model":
         model()
+    elif a.mode == "net":
+        net(a.files)
     else:
         fit(a.files, a.p, a.pfree)
 
