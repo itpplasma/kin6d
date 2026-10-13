@@ -130,7 +130,7 @@ program gs_free_3d_main
     real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
     real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
-    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, rigid(2, 2) = 0, seed_amplitude = 0
+    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, tangential_damping = 0, rigid(2, 2) = 0, seed_amplitude = 0
     real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
     integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
@@ -148,7 +148,7 @@ program gs_free_3d_main
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
-        stability, shifts, gamma_c_scale
+        stability, shifts, gamma_c_scale, tangential_damping
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -225,6 +225,7 @@ program gs_free_3d_main
     if (nphi > 0 .and. nphi /= fb%plasma%nphi) &
         write (output_unit, '(a)') 'note: nphi is set by ideal_map_init (3 ntor + 1)'
     fb%energy_scale = energy_scale()
+    fb%tangential_damping = tangential_damping
     call ideal_fb_set_drive(fb, sampler, st, closure)
     write (output_unit, '(a,i0,a,i0,a,i0,a,es10.3)') 'plasma nodes ', &
         fb%plasma%nodes, ' shell nodes ', fb%ns, ' unknowns ', fb%n, &
@@ -622,6 +623,9 @@ contains
         write (u, '(a,1x,i0)') 'unknowns', fb%n
         write (u, '(a,1x,es16.8)') 'assemble_s', report%assemble_s
         write (u, '(a,1x,es16.8)') 'factor_s', report%factor_s
+        write (u, '(a,1x,es16.8)') 'line_search_s', report%line_s
+        write (u, '(a,1x,i0)') 'factorisations', report%factorisations
+        write (u, '(a,1x,i0)') 'analysis_kept', report%reused
         write (u, '(a,1x,es16.8)') 'cpu_s', t1 - t0
         close (u)
         write (output_unit, '(a,es10.3,a,es10.3,a,es10.3)') 'boundary distance max ', &
