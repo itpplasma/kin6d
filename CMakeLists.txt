@@ -14,7 +14,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "d0bfdb1d507c6f5381b609bfc10becb8870b7e5f")
+set(KIN6D_FORTNUM_REVISION "5d50f9b30f487c5af2a2609e057e2da7e411f63a")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -139,7 +139,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "b1aca63bffa2b89d6ddf17c7a56d229e7bac3eaa")
+set(KIN6D_FORTFEM_REVISION "a27e21f7d498189430bb0a88eeb0c1c45e076243")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1135,6 +1135,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_curl.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
@@ -1233,6 +1234,20 @@ foreach(k 2 3)
         nonnested_coupled_offset_return_p${k} PROPERTIES
         TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 endforeach()
+
+# NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
+target_sources(kin6d PRIVATE src/nonnested_mapped.f90)
+add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
+target_link_libraries(test_nonnested_mapped PRIVATE kin6d)
+add_test(NAME nonnested_mapped_identity_regression
+    COMMAND test_nonnested_mapped identity)
+add_test(NAME nonnested_mapped_ellipse_h_ladder
+    COMMAND test_nonnested_mapped hladder 3 2 4)
+add_test(NAME nonnested_mapped_ellipse_mode_ladder
+    COMMAND test_nonnested_mapped modes 2 1 3)
+set_tests_properties(nonnested_mapped_identity_regression
+    nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
+    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
 # thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
