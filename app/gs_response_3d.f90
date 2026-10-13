@@ -35,6 +35,18 @@ program gs_response_3d
     !! prefix_layer.dat gives per (phasing, rational) D_I, mu, delta, the
     !! jump, the large-solution residuals |a1/Phi| on both sides, the two
     !! edge-sheet amplitudes and the jump of the fitted outer slopes.
+    !! closure = 'resistive' (L5, kin6d_mhd_layer_n) uses the same layers and
+    !! edge sheets with the resistive matching conditions: continuous
+    !! reconnected flux A and net layer current = Delta_layer A, the
+    !! resistive-inertial(-viscous) layer response of a plasma rotating with
+    !! Omega(psin) to the drive of frequency omega_drive (rad/s), from the
+    !! table `profiles` (columns psin, eta [Ohm m], rho [kg/m^3], Omega
+    !! [rad/s]; '#' comments), with rho scaled by 1 + 2 q^2 if inertia_q2
+    !! and viscosity layer_nu (m^2/s).  prefix_resist.dat gives per
+    !! (phasing, rational) Delta_layer (per psin), the layer scale L (psin),
+    !! Q = eps^(-2/3), the reconnected flux A (T m^2/rad^2) and A/area (T),
+    !! the layer jump of d Phi/d psin at the layer edges, the same carried to
+    !! spot, and |Phi_vac|.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
@@ -53,12 +65,15 @@ program gs_response_3d
         perturbation_add_spectra, perturbation_export
     use kin6d_mhd_response_n, only: sheet_closure_t, closure_shield_init, &
         closure_fluxes
-    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, layer_xmax, &
         layer_init, layer_closure, layer_coefficients, layer_slope, &
-        layer_regular_slope, layer_inside
+        layer_regular_slope, layer_jump, layer_kink, layer_large, layer_inside
+    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
+        layer_delta, layer_metrics, resistive_closure
     implicit none
     integer, parameter :: maxr = 32, maxp = 4
     real(dp), parameter :: pi = 3.14159265358979323846_dp
+    real(dp), parameter :: mu0_l = 4.0e-7_dp*pi
     character(len=512) :: eqdsk = '', coils = '', currents(maxp) = '', prefix = 'l4'
     character(len=512) :: nml
     integer :: n = 3, nrad = 64, n_core = 8, nth_max = 512, order = 2
@@ -74,17 +89,22 @@ program gs_response_3d
     logical :: edge_moved_current = .false.
     logical :: rat_auto = .true.
     character(len=16) :: closure = 'sheet'
-    real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 1.5_dp, spot = 5.0e-4_dp
+    real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 2.0_dp, spot = 5.0e-4_dp
     integer :: layer_nfit = 3
     !! L7 export: psin of the surfaces, points per surface, spectral window
     real(dp) :: export_psin(maxr) = 0.0_dp
     integer :: export_np = 256, export_mmax = 40
+    character(len=512) :: profiles = ''
+    real(dp) :: omega_drive = 0.0_dp, layer_nu = 0.0_dp, eta_scale = 1.0_dp
+    logical :: inertia_q2 = .false.
+    logical :: zero_pressure = .false.
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
         boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current, closure, &
         layer_delta, layer_ratio, layer_nfit, spot, rat_auto, export_psin, &
-        export_np, export_mmax
+        export_np, export_mmax, profiles, omega_drive, layer_nu, eta_scale, &
+        inertia_q2, zero_pressure
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -108,11 +128,13 @@ program gs_response_3d
     type(rational_layer_t), allocatable :: lays(:)
     real(dp), allocatable :: di_rat(:), dq_rat(:), jump_unit(:)
     complex(dp), allocatable :: b2cl(:, :), phicl(:), phitot(:), lam_cl(:)
-    logical :: frob
+    logical :: frob, resist
+    real(dp), allocatable :: prof_tab(:, :), lscale(:), qlay(:), gpsi(:)
+    complex(dp), allocatable :: dlayer(:), lcen(:)
     real(dp), allocatable :: xr(:, :)
     complex(dp), allocatable :: bcr(:, :, :), avol(:)
     real(dp) :: qref, target, root, t0, t1, res
-    integer :: ulay, unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk, its, nsr
+    integer :: ulay, ures, unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk, its, nsr
     logical :: found
 
     if (command_argument_count() /= 1) error stop 'usage: gs_response_3d input.nml'
@@ -125,6 +147,8 @@ program gs_response_3d
 
     call eqdsk_read(trim(eqdsk), g, st)
     if (st /= 0) error stop 'cannot read EQDSK'
+    ! discriminating study: p0' = 0 (J0 and the Mercier index D_I = -1/4, mu = 1/2)
+    if (zero_pressure .and. allocated(g%pcoef)) g%pcoef = 0.0_dp
     call coil_set_read(set, trim(coils), st)
     if (st /= 0) error stop 'cannot read coil table'
 
@@ -153,9 +177,16 @@ program gs_response_3d
             ' at psin = ', root, ', m = ', m_rat(k)
     end do
     nrat = k
-    frob = trim(closure) == 'frobenius' .and. trim(model) == 'ideal'
-    if (trim(closure) /= 'sheet' .and. trim(closure) /= 'frobenius') &
-        error stop 'closure must be sheet or frobenius'
+    resist = trim(closure) == 'resistive' .and. trim(model) == 'ideal'
+    frob = (trim(closure) == 'frobenius' .and. trim(model) == 'ideal') .or. resist
+    if (trim(closure) /= 'sheet' .and. trim(closure) /= 'frobenius' .and. &
+        trim(closure) /= 'resistive') &
+        error stop 'closure must be sheet, frobenius or resistive'
+    if (resist) then
+        call read_profiles(trim(profiles), prof_tab)
+        write (*, '(a,i0,a)') 'resistive closure: ', size(prof_tab, 2), &
+            ' profile points'
+    end if
 
     ! Every other resonant surface m/n of the plasma (the sidebands m +- 1 of
     ! the toroidal coupling, e.g. q = 3 at the edge for n q = 2) carries the
@@ -185,10 +216,9 @@ program gs_response_3d
                     ', dq/dpsin = ', dq_rat(i)
                 ! grade up to the uniform spacing, at most 0.45 of the gap to the
                 ! neighbouring rationals
-                qa = 2*u_rat(i)/(nrad*(layer_ratio - 1))
-                do k = 1, nrat
-                    if (k /= i) qa = min(qa, 0.45_dp*abs(psin_rat(k) - psin_rat(i)))
-                end do
+                qa = layer_xmax(psin_rat(i), &
+                    [psin_rat(:i - 1), psin_rat(i + 1:nrat)], layer_delta, &
+                    layer_ratio, layer_nfit, nrad)
                 call layer_labels(psin_rat(i), layer_delta, layer_ratio, qa, &
                     (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, lab)
                 extra = [extra, sqrt(lab)]
@@ -246,6 +276,10 @@ program gs_response_3d
         opt%boundary_sheet = boundary_sheet
         opt%qlow = qlow
         opt%moved_current = edge_moved_current
+        if (frob) then
+            opt%res_m = m_rat(1:nrat)
+            opt%res_eps = lays(1:nrat)%eps
+        end if
         nsr = nr
         allocate (rings(nsr))
         do j = 2, nr
@@ -314,8 +348,12 @@ program gs_response_3d
         ! jump of d Phi/d psin across the rational of the unit rational sheet
         do i = 1, nrat
             phicl = closure_fluxes(fs, pb, fm, cl, n, b2(:, i))
-            jump_unit(i) = layer_regular_slope(lays(i), layer_block(phicl, i))
+            jump_unit(i) = layer_jump(lays(i), layer_block(phicl, i))
         end do
+        if (resist) then
+            call resistive_layers()
+            call resistive_closure(lays, dlayer, cmplx(jump_unit, 0.0_dp, dp), cl)
+        end if
     else if (trim(model) == 'ideal') then
         call closure_shield_init(ring_of, ra, m_rat(1:nrat), cl)
         b2cl = b2
@@ -325,6 +363,13 @@ program gs_response_3d
     write (ur, '(a)') '# phasing q psin m area[m^2/rad] Re,Im Phi_vac[T m^2/rad^2] '// &
         'Re,Im b_vac[T] Re,Im lambda[A] Re,Im b_shield[T] '// &
         'Re,Im Phi_vac(L3 surface path) (peak amplitudes)'
+    if (resist) then
+        open (newunit=ures, file=trim(prefix)//'_resist.dat', status='replace')
+        write (ures, '(a)') '# phasing q psin m Re,Im Delta_layer[1/psin] '// &
+            'L[psin] Q Re,Im A[T m^2/rad^2] Re,Im A/area[T] '// &
+            'Re,Im jump[dPhi/dpsin] Re,Im jump(spot) |Phi_vac| |a1_in-a1_out|/|A| '// &
+            'Re,Im b(0)/b0 Re,Im A b(0)/b0/area[T]'
+    end if
     if (frob) then
         open (newunit=ulay, file=trim(prefix)//'_layer.dat', status='replace')
         write (ulay, '(a)') '# phasing q psin m D_I mu delta[psin] '// &
@@ -435,6 +480,7 @@ program gs_response_3d
     end do
     close (ur)
     if (frob) close (ulay)
+    if (resist) close (ures)
 
 contains
 
@@ -457,7 +503,7 @@ contains
         !! jump of d Phi/d psin at psin_s -+ spot/(n |q'|), the equivalent
         !! rational-ring sheet amplitude (stored in lam) and the layer data.
         integer, intent(in) :: iph
-        complex(dp) :: cf(3, 2), jmp, jfit, ph(layer_nfit, 2)
+        complex(dp) :: cf(3, 2), jmp, jfit, ph(layer_nfit, 2), a1c(2)
         real(dp) :: xs, res1(2)
         integer :: l, side
         do l = 1, nrat
@@ -469,11 +515,11 @@ contains
                 + layer_slope(lays(l), cf(:, 2), xs)
             ! net layer current: jump of d Phi/d psin across the layer, carried
             ! to spot with the small-solution power |x|^(mu - 1/2)
-            jmp = (lam_cl(2*l - 1) + lam_cl(2*l))*jump_unit(l) &
-                *(xs/lays(l)%delta)**lays(l)%eps
+            jmp = layer_kink(lays(l), ph, resist)*(xs/lays(l)%delta)**lays(l)%eps
             ! large-solution residual relative to the flux at the layer edge
+            a1c = layer_large(lays(l), ph)
             do side = 1, 2
-                res1(side) = abs(cf(1, side))/max(abs(ph(1, side)), tiny(1.0_dp))
+                res1(side) = abs(a1c(side))/max(abs(ph(1, side)), tiny(1.0_dp))
             end do
             lam(l) = jmp/jump_unit(l)
             write (ulay, &
@@ -483,6 +529,21 @@ contains
                 lam_cl(2*l - 1), lam_cl(2*l), lam(l), jump_unit(l), jfit
             write (*, '(a,f8.4,a,es11.3,a,2es9.2)') '  layer q ', q_rat(l), &
                 ' |lambda_eq| ', abs(lam(l)), ' large residual in/out ', res1
+            if (resist) then
+                block
+                    complex(dp) :: arec, jedge
+                    arec = 0.5_dp*(a1c(1) + a1c(2))
+                    jedge = (lam_cl(2*l - 1) + lam_cl(2*l))*jump_unit(l)
+                    write (ures, '(i3,f10.6,f14.10,i5,2es14.6,2es12.4,14es14.6)') &
+                        iph, q_rat(l), psin_rat(l), m_rat(l), dlayer(l), &
+                        lscale(l), qlay(l), arec, arec/area(l), jedge, jmp, &
+                        abs(phivac(l)), abs(a1c(1) - a1c(2))/max(abs(arec), &
+                        tiny(1.0_dp)), lcen(l), arec*lcen(l)/area(l)
+                    write (*, '(a,f8.4,a,es11.3,a,es11.3,a,es11.3)') '  resistive q ', &
+                        q_rat(l), ' |A/area| ', abs(arec)/area(l), ' |jump| ', &
+                        abs(jedge), ' |A/Phi_vac| ', abs(arec/phivac(l))
+                end block
+            end if
         end do
     end subroutine layer_report
 
@@ -551,6 +612,75 @@ contains
         write (*, '(a,i0,a,a,a,i0)') 'L7 export: ', ngood, ' surfaces to ', &
             trim(fname), ', status ', st2
     end subroutine export_l7
+
+    subroutine read_profiles(path, tab)
+        !! Columns psin, eta [Ohm m], rho [kg/m^3], Omega [rad/s].
+        character(len=*), intent(in) :: path
+        real(dp), allocatable, intent(out) :: tab(:, :)
+        character(len=512) :: line
+        real(dp) :: v(4), buf(4, 20000)
+        integer :: u, ios, c
+        open (newunit=u, file=path, status='old', action='read')
+        c = 0
+        do
+            read (u, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            line = adjustl(line)
+            if (len_trim(line) == 0 .or. line(1:1) == '#') cycle
+            read (line, *, iostat=ios) v
+            if (ios /= 0) error stop 'profiles: bad line'
+            c = c + 1
+            buf(:, c) = v
+        end do
+        close (u)
+        if (c < 2) error stop 'profiles: need at least two rows'
+        tab = buf(:, 1:c)
+    end subroutine read_profiles
+
+    function prof_at(x) result(v)
+        !! eta, rho, Omega at psin x (linear interpolation, clamped).
+        real(dp), intent(in) :: x
+        real(dp) :: v(3), t
+        integer :: k
+        k = 1
+        do while (k < size(prof_tab, 2) - 1 .and. prof_tab(1, k + 1) < x)
+            k = k + 1
+        end do
+        t = (x - prof_tab(1, k))/(prof_tab(1, k + 1) - prof_tab(1, k))
+        t = min(1.0_dp, max(0.0_dp, t))
+        v = (1 - t)*prof_tab(2:4, k) + t*prof_tab(2:4, k + 1)
+    end function prof_at
+
+    subroutine resistive_layers()
+        !! Layer response Delta_layer (per psin) of every rational.
+        type(layer_params_t) :: par
+        real(dp) :: v(3), vp, bth, eps, pv, lx, rho
+        complex(dp) :: gu
+        integer :: l
+        allocate (dlayer(nrat), lcen(nrat), lscale(nrat), qlay(nrat), gpsi(nrat))
+        do l = 1, nrat
+            v = prof_at(psin_rat(l))
+            call layer_metrics(g, psin_rat(l), nfine, vp, bth, gpsi(l), st)
+            if (st /= 0) error stop 'layer metrics'
+            rho = v(2)
+            if (inertia_q2) rho = rho*(1 + 2*q_rat(l)**2)
+            ! static drive omega_drive in a plasma rotating with Omega:
+            ! gamma = -i (omega - n Omega)
+            par = layer_params_t(cmplx(0.0_dp, -(omega_drive - n*v(3)), dp), &
+                eta_scale*v(1)/mu0_l, rho, layer_nu, abs(n*dq_rat(l))*bth*gpsi(l))
+            call layer_scales(par, lx, eps, pv, gu)
+            dlayer(l) = layer_delta_x(par, st, lcen(l))/gpsi(l)
+            if (st /= 0) error stop 'layer solve'
+            lscale(l) = lx*gpsi(l)
+            qlay(l) = eps**(-2.0_dp/3)
+            write (*, '(a,f8.4,a,es10.3,a,es10.3,a,es10.3,a,2es11.3,a,es10.3,a,f8.3)') &
+                'layer q ', q_rat(l), ': eta ', v(1), ' rho ', rho, ' Omega ', v(3), &
+                ' Delta[1/psin] ', dlayer(l), ' L[psin] ', lscale(l), ' Q ', qlay(l)
+            write (*, '(a,2es11.3,a,es10.3)') '    b(0)/b0 ', lcen(l), &
+                ' inertial width x_ii[psin] ', abs(par%gamma)*sqrt(mu0_l*rho) &
+                /par%fprime*gpsi(l)
+        end do
+    end subroutine resistive_layers
 
     subroutine polar_map(u, theta, x)
         !! Flux-surface map: psin = u^2 on the ray of geometric angle theta.
