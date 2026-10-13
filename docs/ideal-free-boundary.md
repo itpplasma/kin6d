@@ -171,3 +171,53 @@ FB-taper(0.997, w = 0.0228), the adopted stable family. Reference: KIN6D 2D
   iterations). Response/amplitude is 8.2e-3 m at 0.25 and a noisy
   2.9–5.1e-3 m below. The small-amplitude limit must be rerun at 256/384
   (about 2.6M unknowns at N = 1).
+
+## Solver revision (2026-10-13, FB-taper at 256/384 nodes)
+
+Where the iterations went, and the fixes:
+
+1. **Tangential continuum null.** The position gauge still has one null family
+   at n = 0: tangential flow on each surface weighted by 1/B_φ, which keeps
+   the surfaces, the poloidal flux and the toroidal-flux 2-form. Newton
+   directions of 2–7 cm along it were cut back to about 1 mm.
+   - Fix: `tangential_damping` adds μ_t |H| t tᵀ to the plasma node blocks of
+     the Newton matrix only (the gradient is untouched, so the equilibrium is
+     unchanged).
+   - μ_t = 1e-7 lies below the vertical eigenvalue (about 4e-7 in this metric);
+     the ±15 mm Z starts still return.
+   - Effect on r0: residual 1.0e-6 → 3.1e-9 σV in 40 iterations; Γ_p distance
+     6.9e-5 m either way.
+2. **Toroidal-field-scale mesh-motion rows.** The shell-map rows carry
+   toroidal-field-scale forces on shell nodes that the multipliers absorb
+   exactly. Their O(ε²) change after an RMP step outweighed the whole linear
+   residual, so every full step was rejected.
+   - Fix: Cᵀ is factorised once (it depends only on the reference); after every
+     trial step λ is re-solved, those rows are zero, and the Γ_p plasma rows
+     carry the corrected boundary force.
+3. **One MUMPS handle with `sparse_refactor`** (fortsparse 7300414): the
+   analysis is kept on 39 of 40 factorisations. Per iteration at 863k
+   unknowns, N = 0: assembly 2.2 s, factor+solve 2.6 s; the line search is
+   negligible.
+4. **Restart and the ε → 0 limit.** `save_state`/`load_state` restart from a
+   converged axisymmetric state. `linear_response` makes one exact Newton step
+   restricted to n ≠ 0; at an axisymmetric state that is the exact ε → 0 limit
+   of this discrete system.
+5. **Γ_c for in-vessel coils.** `gamma_c_scale` and `gamma_c_modes` give a
+   scaled 2D boundary with low-pass Fourier smoothing; the driver checks coil
+   clearance and plasma margin. The production setting is 1.10 with M = 12:
+   coil clearance 0.27 m, plasma margin 0.18 m. Pass `max_area` explicitly so
+   the plasma mesh does not follow the Γ_c spacing.
+
+FB-taper 0.997 results (fwd_p3_l3 reference, 256/384, μ_t = 1e-7):
+
+- N = 0: r0 6.9e-5 m (max) / 5.9e-6 m (rms) from the 2D boundary.
+- ±15 mm Z starts return to 7.1e-5 / 6.9e-5 m.
+- RMP n = 3 ladder (bl2, phasing (0,0,0), restarted from the converged base):
+  Γ_p normal amplitude per unit scale (90 kAt = 1) is 1.449e-2, 1.464e-2,
+  1.466e-2, 1.472e-2, 1.468e-2 and 1.484e-2 m at 0.25, 0.1, 0.05, 0.02, 0.01
+  and 0.005. The ε → 0 limit (linearised step) is 1.511e-2 m. Residuals are
+  4–7e-8 σV after 40 iterations.
+- The 0.25 point is 1.4 % below the small-amplitude values (finite-amplitude
+  physics, reported separately). The remaining 2 % gap at the smallest scales
+  sits at the N = 0 floor, where the vertical position still creeps by about
+  2e-5 m per step.
