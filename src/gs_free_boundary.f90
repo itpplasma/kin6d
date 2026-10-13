@@ -289,20 +289,22 @@ contains
         nt = sys%coupling%n_trace
         nk = size(sys%coupling%col)
         allocate (keys(nk + nt*nt), order(nk + nt*nt))
-        cnt = 0
+        cnt = nk + nt*nt
+        !$omp parallel do default(shared) private(i, p) schedule(static)
         do i = 1, n
             do p = sys%coupling%row_ptr(i), sys%coupling%row_ptr(i + 1) - 1
-                cnt = cnt + 1
-                keys(cnt) = int(sys%coupling%col(p) - 1, i64)*n + (i - 1)
+                keys(p) = int(sys%coupling%col(p) - 1, i64)*n + (i - 1)
             end do
         end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) private(i, j) schedule(static)
         do j = 1, nt
             do i = 1, nt
-                cnt = cnt + 1
-                keys(cnt) = int(sys%coupling%trace_node(j) - 1, i64)*n &
+                keys(nk + (j - 1)*nt + i) = int(sys%coupling%trace_node(j) - 1, i64)*n &
                             + (sys%coupling%trace_node(i) - 1)
             end do
         end do
+        !$omp end parallel do
         call sort_key_order(keys, order)
         allocate (unique(cnt))
         nu = 0
@@ -326,12 +328,15 @@ contains
             sys%colptr(i + 1) = sys%colptr(i + 1) + sys%colptr(i)
         end do
         allocate (sys%slot_k(nk), sys%slot_trace(nt, nt))
+        !$omp parallel do default(shared) private(i, p) schedule(static)
         do i = 1, n
             do p = sys%coupling%row_ptr(i), sys%coupling%row_ptr(i + 1) - 1
                 sys%slot_k(p) = find_slot(unique(:nu), &
                                           int(sys%coupling%col(p) - 1, i64)*n + (i - 1))
             end do
         end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) private(i, j) schedule(static)
         do j = 1, nt
             do i = 1, nt
                 sys%slot_trace(i, j) = find_slot(unique(:nu), &
@@ -339,6 +344,7 @@ contains
                                                  + (sys%coupling%trace_node(i) - 1))
             end do
         end do
+        !$omp end parallel do
         ndof = size(state%triangles, 1)
         ne = size(state%triangles, 2)
         allocate (sys%slot_cell(ndof, ndof, ne))
@@ -572,7 +578,9 @@ contains
         real(dp), allocatable, intent(out) :: ga(:), gb(:)
         integer, intent(out) :: status
         real(dp) :: shape(10), values(10), xi(2), value, best, point(2), dist, best_dist
-        real(dp) :: psi_x, level
+        real(dp) :: psi_x, level, local_best, local_axis(2), local_dist, local_point(2)
+        real(dp) :: local_shape(10), local_psi
+        integer :: local_cell
         real(dp), allocatable :: shape_x(:)
         integer :: e, ndof, n, k, cell_best, stat, c, element
         logical :: found, any_found, near
@@ -590,6 +598,13 @@ contains
         axis_cell = 0
         best = -huge(1.0_dp)
         cell_best = 0
+        ! Threaded scan; the lowest cell index wins a tie, as in a serial scan.
+        !$omp parallel default(shared) private(e, k, near, values, xi, value, found, &
+        !$omp& local_best, local_cell, local_axis)
+        local_best = -huge(1.0_dp)
+        local_cell = 0
+        local_axis = 0.0_dp
+        !$omp do schedule(static)
         do e = 1, size(state%triangles, 2)
             near = .false.
             do k = 1, ndof
@@ -600,12 +615,24 @@ contains
             values(:ndof) = psi(state%triangles(:, e))
             call cell_maximum(values(:ndof), real(cfg%axis_sign, dp), xi, value, found)
             if (.not. found) cycle
-            if (value > best) then
-                best = value
-                cell_best = e
-                axis = xi
+            if (value > local_best) then
+                local_best = value
+                local_cell = e
+                local_axis = xi
             end if
         end do
+        !$omp end do nowait
+        !$omp critical(gs_fb_axis_scan)
+        if (local_cell /= 0) then
+            if (local_best > best .or. (local_best == best .and. local_cell < cell_best)) &
+                then
+                best = local_best
+                cell_best = local_cell
+                axis = local_axis
+            end if
+        end if
+        !$omp end critical(gs_fb_axis_scan)
+        !$omp end parallel
         if (cell_best == 0) return
         call point_shape(state, cell_best, axis, shape, point, stat)
         if (stat /= 0) return
@@ -619,7 +646,17 @@ contains
             status = GS_FB_NO_XPOINT
             best_dist = huge(1.0_dp)
             any_found = .false.
+            element = 0
             allocate (shape_x(ndof))
+            !$omp parallel default(shared) private(e, k, near, values, xi, found, &
+            !$omp& shape, point, stat, dist, local_dist, local_cell, local_point, &
+            !$omp& local_shape, local_psi)
+            local_dist = huge(1.0_dp)
+            local_cell = 0
+            local_point = 0.0_dp
+            local_shape = 0.0_dp
+            local_psi = 0.0_dp
+            !$omp do schedule(static)
             do e = 1, size(state%triangles, 2)
                 near = .false.
                 do k = 1, ndof
@@ -633,15 +670,29 @@ contains
                 call point_shape(state, e, xi, shape, point, stat)
                 if (stat /= 0) cycle
                 dist = norm2(point - xpoint_hint)
-                if (dist < best_dist) then
-                    best_dist = dist
-                    any_found = .true.
-                    element = e
-                    xpoint = point
-                    shape_x = shape(:ndof)
-                    psi_x = dot_product(shape(:ndof), values(:ndof))
+                if (dist < local_dist) then
+                    local_dist = dist
+                    local_cell = e
+                    local_point = point
+                    local_shape(:ndof) = shape(:ndof)
+                    local_psi = dot_product(shape(:ndof), values(:ndof))
                 end if
             end do
+            !$omp end do nowait
+            !$omp critical(gs_fb_saddle_scan)
+            if (local_cell /= 0) then
+                if (local_dist < best_dist .or. &
+                    (local_dist == best_dist .and. local_cell < element)) then
+                    best_dist = local_dist
+                    any_found = .true.
+                    element = local_cell
+                    xpoint = local_point
+                    shape_x = local_shape(:ndof)
+                    psi_x = local_psi
+                end if
+            end if
+            !$omp end critical(gs_fb_saddle_scan)
+            !$omp end parallel
             if (.not. any_found) return
             level = cfg%cut_fraction
             psi_bound = psi_axis + level*(psi_x - psi_axis)
