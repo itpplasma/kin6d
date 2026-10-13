@@ -1173,6 +1173,15 @@ target_link_libraries(test_mhd_closure PRIVATE kin6d)
 add_test(NAME mhd_closure_tearing_delta_prime COMMAND test_mhd_closure)
 set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
+# R-B1: resolved resistive layer strip, periodic cylinder (response-unified.md (B)).
+target_sources(kin6d PRIVATE src/response_strip.f90)
+add_executable(test_response_strip test/test_response_strip.f90)
+target_link_libraries(test_response_strip PRIVATE kin6d)
+add_test(NAME response_strip_cylinder_layer COMMAND test_response_strip)
+set_tests_properties(response_strip_cylinder_layer PROPERTIES TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=1")
+add_executable(response_strip_ladder app/response_strip_ladder.f90)
+target_link_libraries(response_strip_ladder PRIVATE kin6d)
 add_executable(test_mhd_newcomb test/test_mhd_newcomb.f90)
 target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
 add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)
