@@ -58,7 +58,7 @@ program test_mhd_closure
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_init, layer_closure, layer_coefficients, layer_regular_slope
+        layer_init, layer_closure, layer_wmax, layer_coefficients, layer_regular_slope
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
     implicit none
@@ -97,6 +97,7 @@ program test_mhd_closure
     call mercier_zero_beta()
     call edge_current_jump()
     prof = 1
+    call layer_conditioning()
     call fe_ladder("Wesson j = (1 - r^2)^2", [10.0_dp, 40.0_dp], 2.0e-2_dp)
     prof = 2
     wstep = 0.08_dp
@@ -590,6 +591,32 @@ contains
             dfe, "  rel. error", err
         call record(err < tol, "closure Delta' against the cylinder ODE ("//name//")")
     end subroutine fe_single
+
+    subroutine layer_conditioning()
+        !! The a1 fit of three rings at ratio 1.25 amplifies flux errors by
+        !! |w|_1 = 70 (cond 200) and makes the sheet dipole, a1_in - a1_out of
+        !! O(delta), noise dominated: layer_init must reject it, and accept
+        !! ratios 1.5 and 2.
+        real(dp), parameter :: ratios(3) = [1.25_dp, 1.5_dp, 2.0_dp]
+        real(dp), parameter :: ps = 0.5_dp, delta = 1.0e-3_dp
+        real(dp) :: ul(7), x
+        type(rational_layer_t) :: lay
+        integer :: i, k, st(3)
+
+        do i = 1, 3
+            do k = 1, 3
+                x = delta*ratios(i)**(k - 1)
+                ul(4 - k) = sqrt(ps - x)
+                ul(4 + k) = sqrt(ps + x)
+            end do
+            ul(4) = sqrt(ps)
+            call layer_init(ul, ps, 1.5_dp, 1.0_dp, -0.2_dp, 3, delta, ratios(i), 3, &
+                lay, st(i))
+        end do
+        call record(st(1) /= 0 .and. st(2) == 0 .and. st(3) == 0, &
+            "layer fit rejects ill-conditioned ring ratio 1.25 (|w|_1 > layer_wmax)")
+        if (layer_wmax <= 0.0_dp) error stop
+    end subroutine layer_conditioning
 
     subroutine fe_ladder(name, r0s, tol)
         !! FEEC closure Delta' at the layer half-widths delta = 2, 1, 0.5e-3
