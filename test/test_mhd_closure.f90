@@ -108,6 +108,7 @@ program test_mhd_closure
     call layer_ring_cap()
     call layer_jump_exact()
     call shield_cylinder()
+    prof = 1
     call fe_ladder("Wesson j = (1 - r^2)^2", [10.0_dp, 40.0_dp], 2.0e-2_dp)
     prof = 2
     wstep = 0.08_dp
@@ -798,6 +799,11 @@ contains
 
         nrad = nrad_fe
         nfit = nfit_fe
+        block
+            character(len=4) :: rsh
+            call get_environment_variable('KIN6D_RES_SHAPE', rsh)
+            if (rsh(1:1) == '0') opt%strip_shape = .false.
+        end block
         ! rationals q = m/n inside the plasma (FE equilibrium)
         call surface_build(g, 0.25_dp, 256, s, st)
         qsgn = sign(1.0_dp, s%q)
