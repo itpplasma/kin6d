@@ -155,3 +155,19 @@ RMP stage. The ELM coils (bl2, R ≈ 7.7–8.7 m) lie inside the P12 coupling
 ellipse, which violates the formulation (coils must be outside Γ_c). The first
 scan used that ellipse and is invalid. `gamma_c_scale = 1.08` (the 2D boundary
 scaled about the axis, 0.31 m coil clearance) is the RMP setting.
+
+FB-taper(0.997, w = 0.0228), the adopted stable family. Reference: KIN6D 2D
+`kin6d_fbtaper0997_w023n_fwdref_20261013_01/cases/fwd_p3_l3`.
+
+- Resolution limits accuracy and convergence. With 128 chain and 192 Γ_c
+  nodes, r0 sits 1.77 mm (max) from the 2D boundary and Newton creeps at
+  2e-5 σV. With 256 and 384 nodes (863k unknowns, 8 min on 32 threads) it sits
+  0.066 mm max / 6 µm rms, with surface defect 0.03 mm.
+- At 128/192, the ±15 mm R and +15 mm Z starts return to the r0 state (≈ 1.9
+  mm max, 0.17 mm rms). −15 mm Z and +2 % elongation are not converged.
+- n = 3 stability probe: smallest eigenvalue +3.7e-5 (stable; DCON +0.206).
+- The RMP ladder (0.25 … 0.005 × 90 kAt, Γ_c = 1.08 × LCFS, coil clearance
+  0.31 m) at 128/192 is not converged (merit ratio 0.05–0.9 after 60
+  iterations). Response/amplitude is 8.2e-3 m at 0.25 and a noisy
+  2.9–5.1e-3 m below. The small-amplitude limit must be rerun at 256/384
+  (about 2.6M unknowns at N = 1).
