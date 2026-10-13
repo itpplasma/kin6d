@@ -130,7 +130,7 @@ program gs_free_3d_main
     real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
     real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
-    real(dp) :: residual_tolerance = 1.0e-9_dp, rigid(2, 2) = 0, seed_amplitude = 0
+    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, rigid(2, 2) = 0, seed_amplitude = 0
     real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
     integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
@@ -148,7 +148,7 @@ program gs_free_3d_main
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
-        stability, shifts
+        stability, shifts, gamma_c_scale
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -184,8 +184,18 @@ program gs_free_3d_main
         rmp_currents = rmp_scale*rmp_currents
     end if
 
-    ! Gamma_c, the 2D boundary and the offset chain.
-    call read_curve(trim(boundary_file), samples)
+    ! Gamma_c: the boundary_file curve, or (gamma_c_scale > 0) the 2D
+    ! boundary scaled about the 2D axis, e.g. to keep in-vessel coils outside.
+    if (gamma_c_scale > 0) then
+        call gs_fb_trace_lcfs(ref%mesh, ref%mesh%psi, ref%axis, 0.0_dp, &
+            real(axis_sign, dp), 1024, samples, st)
+        if (st /= 0) error stop 'cannot trace the 2D boundary for Gamma_c'
+        do i = 1, size(samples, 2)
+            samples(:, i) = ref%axis + gamma_c_scale*(samples(:, i) - ref%axis)
+        end do
+    else
+        call read_curve(trim(boundary_file), samples)
+    end if
     call initialize_periodic_curve(gamma_curve, samples, st)
     if (st /= 0) error stop 'invalid Gamma_c'
     allocate (contour(2, boundary_nodes))
@@ -379,11 +389,14 @@ contains
         integer, parameter :: n = 2048
         real(dp) :: x(2), xp(2), psi, grad(2), xm(2)
         integer :: k, s
+        real(dp) :: loop
+        loop = 0.9_dp
+        if (gamma_c_scale > 0) loop = (1 + gamma_c_scale)/(2*gamma_c_scale)
         c = 0
         do k = 1, n
             call gamma(real(k - 1, dp)/n, x)
             call gamma(real(k, dp)/n, xp)
-            x = ref%axis + 0.9_dp*(x - ref%axis); xp = ref%axis + 0.9_dp*(xp - ref%axis)
+            x = ref%axis + loop*(x - ref%axis); xp = ref%axis + loop*(xp - ref%axis)
             xm = 0.5_dp*(x + xp)
             call reference_locate_jet(ref, xm, psi, grad, s)
             if (s /= 0) error stop 'circulation loop outside the 2D mesh'
