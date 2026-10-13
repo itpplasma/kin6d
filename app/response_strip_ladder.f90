@@ -29,7 +29,8 @@ program response_strip_ladder
     type(cyl_step_t) :: eqs(2)
     type(strip_options_t) :: copt(nconv)
     logical :: ok(4)
-    real(dp) :: sl(2), slw(2), dev
+    real(dp) :: sl(2), slw(2), d1, d2, d3
+    integer :: n0, i0, s0
     integer :: k, c, idx, nthreads
 
     nthreads = 1
@@ -58,13 +59,12 @@ program response_strip_ladder
             wid(k, c), wref(k, c), nodes(k, c), its(k, c), sts(k, c))
     end do
     !$omp end parallel do
-    !$omp parallel do schedule(dynamic) private(k, c, dev)
+    !$omp parallel do schedule(dynamic) private(k, c, d1, d2, d3, n0, i0, s0)
     do idx = 1, 4*nconv
         c = 1 + mod(idx - 1, 2)
         k = 1 + mod((idx - 1)/2, 2)
         call one(eqs(c), merge(1.0e8_dp, 1.0e10_dp, k == 1), copt(1 + (idx - 1)/4), &
-            conv(1 + (idx - 1)/4, k, c), dev, dev, dev, nodes(1, 1), its(1, 1), &
-            sts(1, 1))
+            conv(1 + (idx - 1)/4, k, c), d1, d2, d3, n0, i0, s0)
     end do
     !$omp end parallel do
 
@@ -82,14 +82,16 @@ program response_strip_ladder
         slw(c) = slope(log10(slist), log10(wid(:, c)))
         print '(a,f9.5,a,f9.5)', "fitted exponent gamma ", sl(c), "  HWHM ", slw(c)
         do k = 1, 2
-            print '(a,es8.1,a,/,9es11.3)', "convergence S = ", merge(1.0e8_dp, 1.0e10_dp, &
-                k == 1), " gamma/base-1 (hcore .1 .025 ratio 1.1 1.025 xs .04 .06 hmax 2e-3 5e-4):", &
-                conv(2:, k, c)/conv(1, k, c) - 1.0_dp
+            print '(a,es8.1,a,/,9es11.3)', "convergence S = ", &
+                merge(1.0e8_dp, 1.0e10_dp, k == 1), &
+                " gamma/base-1 (hcore .1 .025 ratio 1.1 1.025 xs .04 .06 " // &
+                "hmax 2e-3 5e-4):", conv(2:, k, c)/conv(1, k, c) - 1.0_dp
         end do
     end do
 
     ok(1) = all(sts(:, 1) == 0) .and. maxval(abs(gnum(:, 1)/gref(:, 1) - 1.0_dp)) <= &
-        0.02_dp .and. abs(sl(1) + 0.6_dp) <= 0.03_dp .and. abs(slw(1) + 0.4_dp) <= 0.03_dp
+        0.02_dp .and. abs(sl(1) + 0.6_dp) <= 0.03_dp .and. &
+        abs(slw(1) + 0.4_dp) <= 0.03_dp
     ok(2) = all(sts(:, 2) == 0) .and. maxval(abs(gnum(:, 2)/gref(:, 2) - 1.0_dp)) <= &
         0.02_dp .and. abs(sl(2) + 1.0_dp/3) <= 0.03_dp .and. &
         abs(slw(2) + 1.0_dp/3) <= 0.03_dp
@@ -153,7 +155,8 @@ contains
         rs = step_rational(eq)
         fp = step_fprime(eq)
         ideal = 2*eq%m*real(eq%psi_ext)*rs**eq%m
-        print '(/,a)', "ideal limit, eta = 0: gamma, I/I_ideal - 1, |psi_s|/psi_vac, nodes"
+        print '(/,a)', "ideal limit, eta = 0: gamma, I/I_ideal - 1, " // &
+            "|psi_s|/psi_vac, nodes"
         do k = 4, 7
             g = cmplx(10.0_dp**(-k), 0.0_dp, dp)
             call strip_mesh(rs, layer_width(0.0_dp, g, fp), opt, r)
