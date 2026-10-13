@@ -1060,7 +1060,8 @@ if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 target_sources(kin6d PRIVATE src/mhd_mesh.f90 src/mhd_ampere_n.f90
-    src/mhd_response_n.f90 src/mhd_ideal_n.f90 src/mhd_closure_n.f90)
+    src/mhd_response_n.f90 src/mhd_ideal_n.f90 src/mhd_closure_n.f90
+    src/mhd_layer_n.f90)
 target_link_libraries(kin6d PUBLIC kin6d_feec_n)
 add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
 target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
@@ -1083,6 +1084,9 @@ add_executable(test_mhd_closure test/test_mhd_closure.f90)
 target_link_libraries(test_mhd_closure PRIVATE kin6d)
 add_test(NAME mhd_closure_tearing_delta_prime COMMAND test_mhd_closure)
 set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+add_test(NAME mhd_resistive_layer_rotation COMMAND test_mhd_closure resistive)
+set_tests_properties(mhd_resistive_layer_rotation PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_mhd_newcomb test/test_mhd_newcomb.f90)
 target_link_libraries(test_mhd_newcomb PRIVATE kin6d)

@@ -574,7 +574,8 @@ contains
         !! rings are phi_ext.
         !!
         !! The sheets are eliminated: with the closure matrix M = W Phi(B_s)
-        !! of the vacuum sheet fields B_s (W the constraint weights), a volume
+        !! + W_l of the vacuum sheet fields B_s (W the constraint weights, W_l
+        !! the direct sheet-amplitude weights of a resistive layer), a volume
         !! field a fixes lam(a) = M^{-1} (target - W (phi_ext + Phi(curl a))),
         !! so the total field B = B_ext + curl a + sum lam_s B_s satisfies the
         !! constraints.  The volume field solves the fixed point
@@ -635,7 +636,7 @@ contains
         end do
         allocate (minv(max(ns, 1), max(ns, 1)))
         if (ns > 0) then
-            wc(1:ns, 1:cl%nf) = cmplx(cl%w, 0.0_dp, dp)
+            wc(1:ns, 1:cl%nf) = cl%w
             minv = (0.0_dp, 0.0_dp)
             do s2 = 1, ns
                 minv(s2, s2) = (1.0_dp, 0.0_dp)
@@ -643,6 +644,7 @@ contains
             block
                 complex(dp) :: mcopy(ns, ns)
                 mcopy = matmul(wc(1:ns, 1:cl%nf), fsheet(1:cl%nf, 1:ns))
+                if (allocated(cl%wl)) mcopy = mcopy + cl%wl
                 if (debug) then
                     do s2 = 1, ns
                         print '(a,i3,20es11.3)', '  M row', s2, abs(mcopy(s2, :))
