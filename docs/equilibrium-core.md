@@ -138,6 +138,18 @@ volume from flux integrals of B over them; SFL angles (PEST, Hamada, Boozer);
 exports (G-EQDSK for axisymmetric states with ψ from D1, Boozer `.bc` through
 libneo, L7 spectra).
 
+Kinetic geometry view (`src/equilibrium_geometry.f90`, axisymmetric states):
+on a surface psi = psi_0 of the evaluator it returns B, |B|, grad|B| (five-point
+stencil of the evaluator), grad psi, b.grad theta, (b x grad psi).grad theta,
+the field-line label alpha = phi - nu with grad alpha and d alpha/d psi (shear),
+q, q', dV/dpsi, flux-surface averages (`surface_average`) and the grad-B drift
+factors (b x grad|B|).grad psi/|B|^2 and (b x grad|B|).grad alpha/|B|^2, at
+geometric, PEST or Boozer angles (unwrapped for field lines). Boozer is
+theta_B with Jacobian ~ 1/B^2 and zeta_B = phi + q (theta_B - theta*); the
+covariant components F, I are not exported. Assumes surfaces star-shaped about
+the axis; curvature drift at finite beta (needs p') is not included.
+Tests: `equilibrium_core_d7_geometry_{solovev,circle,drift,state}`.
+
 In the map lane q per label is an input (frozen fluxes); readback recomputes
 it from B in physical space as the cross-lane check and never copies the
 reference. `vacuum_surfaces` (ψ grid from G-EQDSK) becomes an import adapter
