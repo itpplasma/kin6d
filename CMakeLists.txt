@@ -1067,7 +1067,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
     src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90
     src/equilibrium_residual.f90 src/equilibrium_readback.f90
     src/equilibrium_certificate.f90 src/gs_certificate.f90
-    src/equilibrium_boundary.f90)
+    src/equilibrium_boundary.f90 src/equilibrium_geometry.f90)
 set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_equilibrium_boundary test/test_equilibrium_boundary.f90)
@@ -1078,6 +1078,15 @@ set_tests_properties(equilibrium_core_d6_exterior_per_n PROPERTIES
     ENVIRONMENT "OMP_NUM_THREADS=4" PROCESSORS 4 TIMEOUT 600)
 add_test(NAME equilibrium_core_d6_coil_interface
     COMMAND test_equilibrium_boundary coils)
+add_executable(test_equilibrium_geometry test/test_equilibrium_geometry.f90)
+target_link_libraries(test_equilibrium_geometry PRIVATE kin6d)
+foreach(mode solovev circle drift state)
+    add_test(NAME equilibrium_core_d7_geometry_${mode}
+        COMMAND test_equilibrium_geometry ${mode})
+    set_tests_properties(equilibrium_core_d7_geometry_${mode} PROPERTIES
+        TIMEOUT 300 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
 target_link_libraries(test_equilibrium_core PRIVATE kin6d)
 add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)
