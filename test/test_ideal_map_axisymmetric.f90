@@ -18,7 +18,8 @@ program test_ideal_map_axisymmetric
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
-    use kin6d_ideal_map, only: ideal_map_t, cylindrical_chart_t, ideal_map_init, &
+    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
         ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual

@@ -64,7 +64,7 @@ contains
 
     logical function law_valid(law) result(valid)
         class(gs_profile_law_t), intent(in) :: law
-        real(dp) :: left, right, h
+        real(dp) :: left, right, h, magnitude
         integer :: i, k, n
         valid = .false.
         if (.not. allocated(law%knots)) return
@@ -83,19 +83,23 @@ contains
             if (abs(law%axis) <= tiny(1.0_dp)) return
             if (abs(law%knots(1)) > 0 .or. abs(law%knots(n) - 1) > 0) return
         end if
-        ! Moving source-cut terms cancel only for continuous laws.
+        ! Moving source-cut terms cancel only for continuous laws. The
+        ! tolerance scales with the terms of the cubic, not with its value:
+        ! a source crossing zero at a knot cancels terms many times larger.
         do i = 1, n - 2
             h = law%knots(i + 1) - law%knots(i)
             do k = 1, 2
                 if (k == 1) then
                     call polynomial(law%pp(:, i), h, left)
+                    call polynomial(abs(law%pp(:, i)), h, magnitude)
                     right = law%pp(1, i + 1)
                 else
                     call polynomial(law%ff(:, i), h, left)
+                    call polynomial(abs(law%ff(:, i)), h, magnitude)
                     right = law%ff(1, i + 1)
                 end if
                 if (abs(left - right) > 128*epsilon(1.0_dp)*max(1.0_dp, &
-                                                          abs(left), abs(right))) return
+                                                          magnitude, abs(right))) return
             end do
         end do
         valid = .true.

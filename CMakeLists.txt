@@ -614,8 +614,8 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov ideal_map gs_coarea gs_inverse gs_reference_error
-            laboratory poisson fp transport
+    foreach(generator grad_shafranov ideal_map equilibrium_core gs_coarea gs_inverse
+            gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
@@ -955,6 +955,34 @@ add_test(NAME grad_shafranov_stream_readback
     -DWORK=${CMAKE_BINARY_DIR}/gs_stream_test
     -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_stream.cmake)
 set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
+
+# Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
+target_sources(kin6d PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
+    src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90
+    src/equilibrium_residual.f90 src/equilibrium_readback.f90)
+set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
+target_link_libraries(test_equilibrium_core PRIVATE kin6d)
+add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)
+foreach(k 2 3)
+    add_test(NAME equilibrium_core_d7_readback_p${k}
+        COMMAND test_equilibrium_core readback ${k})
+    add_test(NAME equilibrium_core_d3_solovev_p${k}
+        COMMAND test_equilibrium_core residual ${k})
+    set_tests_properties(equilibrium_core_d3_solovev_p${k} PROPERTIES TIMEOUT 300
+        PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+# K6-mini: the accepted TC24 K6 law and path (cubic-profile Newton, P3,
+# direct factor, current constraint, readback, majorant) on a coarse mesh.
+# Every core migration step must reproduce the fixture to 1e-12 relative.
+add_test(NAME gs_k6_mini_regression COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_phase1> -DCHECK=$<TARGET_FILE:test_equilibrium_core>
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/k6_mini
+    -DWORK=${CMAKE_BINARY_DIR}/gs_k6_mini
+    -P ${CMAKE_SOURCE_DIR}/test/gs_k6_mini.cmake)
+set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1")
 
 # K-C1/L3: 3D polyline coils, per-n Fourier projection, vacuum b_mn (L3).
 target_sources(kin6d PRIVATE src/coils_3d.f90 src/vacuum_surfaces.f90)
