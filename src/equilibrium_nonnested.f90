@@ -22,6 +22,8 @@ module kin6d_equilibrium_nonnested
     public :: free_b_field_t, nn_report_t, nn_build, nn_solve, nn_export
     public :: nn_linear_solve, nn_divergence, nn_point, nn_vacuum_mode, nn_riesz
     public :: nn_velocity
+    public :: nn_factor_t, nn_factor, nn_factor_solve, nn_factor_solve_real
+    public :: nn_factor_free
 
     type, extends(equilibrium_field_t) :: free_b_field_t
         type(flux_mesh_t) :: mesh
@@ -45,6 +47,14 @@ module kin6d_equilibrium_nonnested
             real(dp), intent(out) :: u, theta
         end subroutine
     end interface
+
+    type :: nn_factor_t
+        ! Reusable factor of a masked symmetric operator (see nn_factor).
+        logical :: ready = .false., direct_backend = .false.
+        logical, allocatable :: fixed(:)
+        type(gs_direct_t) :: direct
+        type(sparse_solver_t) :: solver
+    end type
 
     type :: nn_report_t
         real(dp) :: energy_before = 0, energy_after = 0, residual = 0
@@ -391,17 +401,31 @@ contains
         complex(dp), intent(in) :: rhs(:)
         complex(dp), intent(out) :: x(:)
         integer, intent(out) :: status
+        type(nn_factor_t) :: factor
+        status = 1
+        if (size(fixed) /= size(rhs) .or. size(x) /= size(rhs)) return
+        call nn_factor(k, fixed, factor, status)
+        if (status /= 0) return
+        call nn_factor_solve(factor, rhs, x, status)
+        call nn_factor_free(factor)
+    end subroutine
+
+    subroutine nn_factor(k, fixed, factor, status)
+        ! Symmetric positive definite factor of k with identity rows and
+        ! columns at the fixed dofs; reused across right-hand sides.
+        type(csc_t), intent(in) :: k
+        logical, intent(in) :: fixed(:)
+        type(nn_factor_t), intent(out) :: factor
+        integer, intent(out) :: status
         type(csc_t) :: a
-        type(gs_direct_t) :: direct
-        type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: st
         integer, allocatable :: row(:), col(:)
-        real(dp), allocatable :: val(:), b(:), sol(:)
-        integer :: n, j, p, count, part
+        real(dp), allocatable :: val(:)
+        integer :: n, j, p, count
         logical :: ok
-        n = size(rhs); status = 1
-        if (size(fixed) /= n .or. size(x) /= n) return
-        allocate (row(k%nnz + n), col(k%nnz + n), val(k%nnz + n), b(n), sol(n))
+        n = size(fixed); status = 1
+        if (k%nrow /= n .or. k%ncol /= n) return
+        allocate (row(k%nnz + n), col(k%nnz + n), val(k%nnz + n))
         count = 0
         do j = 1, n
             if (fixed(j)) then
@@ -417,40 +441,71 @@ contains
         end do
         call csc_from_triplet(n, n, row(:count), col(:count), val(:count), a, st)
         if (.not. status_ok(st)) return
-        if (gs_direct_available()) then
-            call gs_direct_factor(direct, n, a%col_ptr, a%row_idx, a%val, ok)
+        factor%fixed = fixed
+        factor%direct_backend = gs_direct_available()
+        if (factor%direct_backend) then
+            call gs_direct_factor(factor%direct, n, a%col_ptr, a%row_idx, a%val, ok)
             if (.not. ok) return
         else
-            solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
-            call sparse_factor(solver, a, st)
+            factor%solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            call sparse_factor(factor%solver, a, st)
             if (.not. status_ok(st)) return
         end if
+        factor%ready = .true.
+        status = 0
+    end subroutine
+
+    subroutine nn_factor_solve(factor, rhs, x, status)
+        ! Real and imaginary parts are two solves; fixed entries return zero.
+        type(nn_factor_t), intent(inout) :: factor
+        complex(dp), intent(in) :: rhs(:)
+        complex(dp), intent(out) :: x(:)
+        integer, intent(out) :: status
+        real(dp), allocatable :: re(:), im(:)
+        status = 1
         x = 0
-        do part = 1, 2
-            if (part == 1) then
-                b = real(rhs, dp)
-            else
-                b = aimag(rhs)
-            end if
-            where (fixed) b = 0
-            if (gs_direct_available()) then
-                call gs_direct_solve(direct, b, sol, ok)
-            else
-                call sparse_solve(solver, b, sol, st)
-                ok = status_ok(st)
-            end if
-            if (.not. ok) exit
-            if (part == 1) then
-                x = cmplx(sol, 0.0_dp, dp)
-            else
-                x = x + cmplx(0.0_dp, sol, dp)
-            end if
-        end do
-        if (gs_direct_available()) then
-            call gs_direct_free(direct)
+        if (.not. factor%ready) return
+        if (size(rhs) /= size(factor%fixed) .or. size(x) /= size(rhs)) return
+        allocate (re(size(rhs)), im(size(rhs)))
+        call nn_factor_solve_real(factor, real(rhs, dp), re, status)
+        if (status /= 0) return
+        call nn_factor_solve_real(factor, aimag(rhs), im, status)
+        if (status /= 0) return
+        x = cmplx(re, im, dp)
+    end subroutine
+
+    subroutine nn_factor_solve_real(factor, rhs, x, status)
+        type(nn_factor_t), intent(inout) :: factor
+        real(dp), intent(in) :: rhs(:)
+        real(dp), intent(out) :: x(:)
+        integer, intent(out) :: status
+        type(fortsparse_status_t) :: st
+        real(dp), allocatable :: b(:)
+        logical :: ok
+        status = 1
+        x = 0
+        if (.not. factor%ready) return
+        if (size(rhs) /= size(factor%fixed) .or. size(x) /= size(rhs)) return
+        b = rhs
+        where (factor%fixed) b = 0
+        if (factor%direct_backend) then
+            call gs_direct_solve(factor%direct, b, x, ok)
         else
-            call sparse_destroy(solver)
+            call sparse_solve(factor%solver, b, x, st)
+            ok = status_ok(st)
         end if
         if (ok) status = 0
+    end subroutine
+
+    subroutine nn_factor_free(factor)
+        type(nn_factor_t), intent(inout) :: factor
+        if (factor%ready) then
+            if (factor%direct_backend) then
+                call gs_direct_free(factor%direct)
+            else
+                call sparse_destroy(factor%solver)
+            end if
+        end if
+        factor%ready = .false.
     end subroutine
 end module kin6d_equilibrium_nonnested
