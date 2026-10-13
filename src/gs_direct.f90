@@ -30,6 +30,7 @@ contains
     end function
 
     subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, symmetry)
+!$      use omp_lib
         ! Factor the full symmetric matrix given as CSR (identical to CSC by
         ! symmetry): positive definite Cholesky by default, LDL^T with
         ! symmetry = GS_DIRECT_INDEFINITE. A failure (for example a matrix that
@@ -46,7 +47,11 @@ contains
         direct%solver%refine = .false.
         direct%solver%options%symmetry = FORTSPARSE_SYM_SPD
         if (present(symmetry)) direct%solver%options%symmetry = symmetry
+        ! A fixed thread count: MUMPS keeps its tree-parallel layout per thread,
+        ! so factor and solves must run with the same count even if the caller
+        ! changes the OpenMP thread number in between.
         direct%solver%options%nthreads = 0
+!$      direct%solver%options%nthreads = omp_get_max_threads()
         call sparse_factor(direct%solver, n, n, rowptr(n + 1) - 1, rowptr, &
                            colidx, val, status)
         ok = status_ok(status)
