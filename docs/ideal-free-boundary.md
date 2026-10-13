@@ -114,3 +114,44 @@ and p is measured from p_edge, since the map lane sees absolute pressure at
   coil set at shell probes, Γ_c scaled by 1 and 1.12: 2.7e-4 relative (P3),
   1.0e-2 (P2).
 - `gs_free_3d_nl3a_fixture_return`: NL-3a on the gs_free fixture (see below).
+
+## NL-3a results (2026-10-13, sCluster, MUMPS, unregistered dev runs in
+`~/N4work/runs`)
+
+Distances are the gauge-invariant boundary distance of the mapped Γ_p nodes to
+the 2D boundary (max / rms) and the interior surface defect. "Return"
+compares each offset start with the unshifted start r0.
+
+| case | Γ_p distance max / rms (mm) | surface defect (mm) |
+|---|---|---|
+| fixture P3 (limiter, 340 kA), r0 | 0.007 / 0.005 | 0.007 |
+| fixture ±15 mm R, ±15 mm Z | ≤ 0.020 / 0.014 | ≤ 0.037 |
+| fixture +2 % elongation (150 it) | 0.020 / 0.014 | 0.022 |
+| ITER FB-cut 0.997 v2 (gs_free P3 L2, 15.52 MA), r0 | 0.94 / 0.085 | 0.61 |
+| ITER ±15 mm R, ±15 mm Z | 0.95–1.17 / 0.085–0.094 | 0.42–0.60 |
+| ITER +2 % elongation (150 it) | 8.4 / 1.1 | 11.9 (not converged) |
+
+ITER runs: 219k unknowns, about 100 s for 40 iterations on 16 threads.
+
+- The ITER r0 distance is the map-lane/ψ-lane discretisation difference,
+  largest near the X-point side of the 0.997 cut. All four R/Z offsets return
+  to the r0 state within about 0.2 mm.
+- Rigid stiffness on ITER: K_R = +2.5e8 and K_Z = −5.4e6 J/m² per period,
+  vertically unstable with fixed currents.
+- The circulation from the 2D field matches −μ0 I_p to 1e-6, and the vacuum
+  shell field matches the 2D field to 7e-4 (relative L2).
+
+Mode stability (`stability=.true.`, shifted inverse iteration on the Schur
+complement, metric |diag H|) at the ITER r0 state:
+
+- n = 0: negative eigenvalues down to −3.9e-7 (the vertical mode);
+- n = 3: none negative for shifts 0 … −0.1, smallest +3.7e-5.
+
+DCON reports this FB-cut state n = 3 unstable without a wall (−0.097). The
+discrepancy is open: the probe may lack resolution of the edge-current drive
+(128 chain nodes, P3, one shell layer), or the two differ in model.
+
+RMP stage. The ELM coils (bl2, R ≈ 7.7–8.7 m) lie inside the P12 coupling
+ellipse, which violates the formulation (coils must be outside Γ_c). The first
+scan used that ellipse and is invalid. `gamma_c_scale = 1.08` (the 2D boundary
+scaled about the axis, 0.31 m coil clearance) is the RMP setting.
