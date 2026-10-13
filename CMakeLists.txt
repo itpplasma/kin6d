@@ -1046,3 +1046,41 @@ target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
 add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)
 set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
+
+# Test resource declaration. Every registered test gets an explicit OpenMP
+# thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
+# Without this, concurrently running tests each start one spinning OpenMP thread
+# per core, oversubscribe the machine under `ctest -j`, and starve each other
+# until a wall-clock limit trips. A test keeps the thread count it declared via
+# ENVIRONMENT (or PROCESSORS); the rest get KIN6D_TEST_DEFAULT_THREADS.
+set(KIN6D_TEST_DEFAULT_THREADS 2 CACHE STRING
+    "OpenMP threads (and ctest PROCESSORS) for tests that do not declare their own")
+get_directory_property(_kin6d_all_tests TESTS)
+foreach(_t IN LISTS _kin6d_all_tests)
+    get_test_property(${_t} ENVIRONMENT _env)
+    get_test_property(${_t} PROCESSORS _procs)
+    if(NOT _env)
+        set(_env "")
+    endif()
+    set(_threads "")
+    foreach(_item IN LISTS _env)
+        if(_item MATCHES "^OMP_NUM_THREADS=([0-9]+)$")
+            set(_threads "${CMAKE_MATCH_1}")
+        endif()
+    endforeach()
+    if(NOT _threads)
+        if(_procs)
+            set(_threads "${_procs}")
+        else()
+            set(_threads "${KIN6D_TEST_DEFAULT_THREADS}")
+        endif()
+        list(APPEND _env "OMP_NUM_THREADS=${_threads}")
+    endif()
+    if(NOT "${_env}" MATCHES "(^|;)OPENBLAS_NUM_THREADS=")
+        list(APPEND _env "OPENBLAS_NUM_THREADS=1")
+    endif()
+    if(NOT "${_env}" MATCHES "(^|;)OMP_WAIT_POLICY=")
+        list(APPEND _env "OMP_WAIT_POLICY=passive")
+    endif()
+    set_tests_properties(${_t} PROPERTIES ENVIRONMENT "${_env}" PROCESSORS "${_threads}")
+endforeach()
