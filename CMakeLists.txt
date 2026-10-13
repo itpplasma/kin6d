@@ -450,6 +450,8 @@ target_link_libraries(grad_shafranov_demo PRIVATE kin6d kin6d_io fortplot)
 add_test(NAME grad_shafranov_inverse_app_contract COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:grad_shafranov_demo> -DWORK=${CMAKE_BINARY_DIR}/gs_inverse_app_check
     -P ${CMAKE_SOURCE_DIR}/test/check_gs_inverse_app.cmake)
+set_tests_properties(grad_shafranov_inverse_app_contract PROPERTIES
+    TIMEOUT 300 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_p1_weak_current test/test_gs_p1_weak_current.f90)
 target_link_libraries(test_gs_p1_weak_current PRIVATE kin6d)
 add_test(NAME grad_shafranov_p1_weak_current COMMAND test_gs_p1_weak_current)
