@@ -149,6 +149,47 @@ The coil flux at points (`gs_circuit_flux_vectors`, about 19 %) is threaded over
 points (32-thread time at 384 nodes: 46.8 s before, 35.3 s after for P2; 189 s
 and 167 s for P3).
 
+### Parallel free-boundary path (K8)
+
+The P13 stall had three causes, all fixed on `gs-free-parallel`:
+
+- The Gamma_c Steklov operator was reassembled by every `gs_fb_setup`. It is
+  now cached per curve (`gs_coupling_steklov`, keyed on the bitwise BEM trace nodes;
+  a refit that enters the same curve at another panel is relabelled, not
+  reassembled) and shared with the majorant estimator.
+- `kin6d_spatial`, which holds the upstream BEM assembly, was compiled without
+  OpenMP, so its panel-pair colouring ran serially. It now links OpenMP.
+- The indefinite J0 = A - M (symmetric, checked at run time) is factored by threaded
+  MUMPS LDL^T with AMD ordering (nested dissection spends its serial analysis
+  again at every Newton step); an asymmetric J0 or a build without MUMPS keeps
+  SuperLU. `KIN6D_FB_SOLVER=superlu` and `KIN6D_FB_ORDERING=nd` select the
+  alternatives. The circuit sensitivities use one MUMPS block solve, because a
+  MUMPS handle is not shared between threads, and the thread count is fixed at
+  factor time.
+
+The majorant estimator also factors its recovery and energy operators with MUMPS
+Cholesky and threads the Friedrichs mass assembly. The axis and X-point cell
+scans and the CSC pattern build are threaded. `KIN6D_PROFILE=1` prints per-phase
+wall times (`PROF label seconds`) on stderr.
+
+`gs_free` wall time on the same fixture and node, seconds, before / after
+(1 / 4 / 16 / 32 threads, sCluster exclusive node):
+
+| degree | boundary nodes | before | after | speedup at 32 | 1 to 32 threads |
+|-------:|---------------:|--------|-------|--------------:|----------------:|
+| 2 | 96 | 5.0 / 3.1 / 2.7 / 2.6 | 3.43 / 1.04 / 0.45 / 0.38 | 6.8x | 8.9x (was 1.9x) |
+| 2 | 192 | 14.9 / 10.5 / 9.4 / 9.3 | 9.00 / 2.80 / 1.37 / 1.22 | 7.6x | 7.4x (was 1.6x) |
+| 2 | 384 | 51.2 / 38.9 / 35.6 / 35.6 | 26.84 / 8.43 / 4.02 / 3.64 | 9.8x | 7.4x (was 1.4x) |
+| 3 | 96 | 14.7 / 5.8 / 3.6 / 3.3 | 13.06 / 3.66 / 1.35 / 1.02 | 3.3x | 12.8x (was 4.4x) |
+| 3 | 192 | 50.4 / 23.4 / 17.0 / 16.0 | 41.02 / 11.69 / 4.24 / 3.14 | 5.1x | 13.1x (was 3.1x) |
+| 3 | 384 | 305 / 199 / 172 / 168 | 164.9 / 49.3 / 20.2 / 15.6 | 10.7x | 10.6x (was 1.8x) |
+
+Results agree across all thread counts and with the previous code to 2e-6
+relative (psi_axis, psi_bound, plasma current). Part of that spread is old: the
+refit loop flips between two nearly equal end states with roundoff for P2. The
+remaining time at 32 threads is the MUMPS factorisation (about 30 %) and the
+per-element source quadrature of the cut cells.
+
 ## Application `gs_free`
 
 `gs_free --config input.nml` reads `&gs_free`; `gs_free --evaluate` reuses a result.
