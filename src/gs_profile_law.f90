@@ -3,11 +3,13 @@ module kin6d_gs_profile_law
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use kin6d_grad_shafranov_leaves, only: gs_cubic, gs_cubic_jvp, &
                           gs_cubic_primitive, gs_normalized_flux, gs_normalized_flux_jvp
+    use gs_cubic_slope_batch_mod, only: gs_cubic_slope_batch
+    use gs_normalized_flux_jets_batch_mod, only: gs_normalized_flux_jets_batch
     implicit none
     private
     public :: gs_profile_law_t, read_gs_profile_law, write_gs_profile_law
     public :: gs_law_sources, gs_law_primitives, gs_law_coordinate
-    public :: gs_law_kink, gs_law_c1
+    public :: gs_law_kink, gs_law_c1, gs_law_sources_batch
     type :: gs_profile_law_t
         ! Coefficients in ascending powers of (coordinate - knots(i)).
         ! Sources are physical dp/dpsi and d(F^2/2)/dpsi, also for normalized s.
@@ -174,6 +176,59 @@ contains
         if (present(dff)) dff = f*dx
         if (present(app)) app = p*da
         if (present(aff)) aff = f*da
+    end subroutine
+
+    subroutine gs_law_sources_batch(law, np, psi, pp, ff, dpp, dff, app, aff, &
+                                    derivatives, x_work)
+        !! gs_law_sources for np fluxes at once. The points of a cell share one
+        !! profile interval almost always; then the generated SIMD batches
+        !! evaluate the coordinate and both cubic pieces. Cells straddling a knot
+        !! use the scalar routine point by point. The derivative arguments are
+        !! used only when `derivatives` is true. x_work has extent np.
+        type(gs_profile_law_t), intent(in) :: law
+        integer, intent(in) :: np
+        real(dp), intent(in) :: psi(np)
+        real(dp), intent(out) :: pp(np), ff(np)
+        real(dp), intent(inout) :: dpp(np), dff(np), app(np), aff(np), x_work(np)
+        logical, intent(in) :: derivatives
+        real(dp) :: dx(np), da(np), slope(np)
+        integer :: q, i, first
+        if (law%normalized) then
+            call gs_normalized_flux_jets_batch(np, psi, law%axis, x_work, dx, da)
+        else
+            x_work = psi; dx = 1; da = 0
+        end if
+        first = interval(law%knots, x_work(1))
+        do q = 2, np
+            if (interval(law%knots, x_work(q)) /= first) then
+                do i = 1, np
+                    if (derivatives) then
+                        call gs_law_sources(law, psi(i), pp(i), ff(i), dpp(i), &
+                                            dff(i), app(i), aff(i))
+                    else
+                        call gs_law_sources(law, psi(i), pp(i), ff(i))
+                    end if
+                end do
+                return
+            end if
+        end do
+        x_work = x_work - law%knots(first)
+        call gs_cubic_slope_batch(np, x_work, law%pp(1, first), law%pp(2, first), &
+                                  law%pp(3, first), law%pp(4, first), pp, slope)
+        if (derivatives) then
+            do q = 1, np
+                dpp(q) = slope(q)*dx(q)
+                app(q) = slope(q)*da(q)
+            end do
+        end if
+        call gs_cubic_slope_batch(np, x_work, law%ff(1, first), law%ff(2, first), &
+                                  law%ff(3, first), law%ff(4, first), ff, slope)
+        if (derivatives) then
+            do q = 1, np
+                dff(q) = slope(q)*dx(q)
+                aff(q) = slope(q)*da(q)
+            end do
+        end if
     end subroutine
 
     subroutine gs_law_primitives(law, psi, pressure, f, status)
