@@ -12,7 +12,9 @@ program test_gs_coil_inverse
     !!  3. the gradient D^T r + lambda^2 L^2 (I - I_ref) against central
     !!     differences of the converged objective;
     !!  4. the three fit variants, bounds and the series tie honoured exactly;
-    !!  5. FreeGS-emulation mode reaches a higher objective than Gauss-Newton.
+    !!  5. FreeGS-emulation mode reaches a higher objective than Gauss-Newton;
+    !!  6. with a loose forward Newton tolerance, Gauss-Newton stops as converged
+    !!     where the predicted decrease falls below the forward resolution of Phi.
     use, intrinsic :: iso_fortran_env, only: dp => real64
 !$  use omp_lib
     use kin6d_grad_shafranov, only: gs_state_t
@@ -52,6 +54,7 @@ program test_gs_coil_inverse
     call test_gradient()
     call test_variants()
     call test_emulation()
+    call test_forward_resolution()
     if (failures .ne. 0) error stop 'gs_coil_inverse failures'
     print '(a)', 'gs_coil_inverse (P9, T6) oracles passed'
 
@@ -441,5 +444,40 @@ contains
         call require(norm2(zero_ref%currents) .lt. 0.05_dp*norm2(istar &
                                                            ), 'zero reference honoured')
     end subroutine test_emulation
+
+    subroutine test_forward_resolution()
+        !! The forward Newton stops once its relative residual is below
+        !! sys%cfg%tolerance, so Phi at an accepted point and at a line-search
+        !! trial (which re-converges the flux) differ by an offset set by that
+        !! tolerance, not by the step. Once the predicted decrease is below the
+        !! offset no trial passes Armijo; the fit is then stationary to forward
+        !! accuracy and must report convergence at the minimiser of the
+        !! tightly solved problem (noisy targets, so Phi > 0 at the minimum).
+        type(gs_ci_model_t) :: fixed
+        type(gs_ci_config_t) :: cfg, ref_cfg
+        type(gs_ci_result_t) :: res, ref
+        real(dp) :: tol_save, err
+        integer :: status
+
+        call make_model(.true., fixed)
+        call add_noise(fixed, 1.0_dp)
+        ref_cfg%use_bounds = .false.
+        call gs_ci_solve(state, sys, fixed, ref_cfg, start_currents(), psi_star, ref, &
+                         status)
+        call require(status .eq. GS_CI_OK, 'tight forward reference fit')
+        cfg%use_bounds = .false.
+        cfg%step_tolerance = 0.0_dp
+        tol_save = sys%cfg%tolerance
+        sys%cfg%tolerance = 1.0e-8_dp
+        call gs_ci_solve(state, sys, fixed, cfg, start_currents(), psi_star, res, &
+                         status)
+        sys%cfg%tolerance = tol_save
+        err = norm2(res%currents - ref%currents)/norm2(ref%currents)
+        print '(a,i2,a,i3,a,es12.4,a,es10.2)', 'forward tol 1e-8: status ', status, &
+            '  iterations ', res%iterations, '  Phi ', res%phi, &
+            '  |I - I_ref|/|I_ref| ', err
+        call require(status .eq. GS_CI_OK, 'stationary to forward accuracy')
+        call require(err .lt. 1.0e-5_dp, 'loose forward: tight minimiser reached')
+    end subroutine test_forward_resolution
 
 end program test_gs_coil_inverse
