@@ -4,13 +4,16 @@ program test_nonnested_leaves
         maxwell_stress_delta_jvp, maxwell_stress_delta_vjp, stress_residual_density
     use kin6d_nonnested_leaves, only: segment_potential, segment_potential_jvp, &
         segment_potential_vjp, fieldline_velocity, fieldline_velocity_jvp, &
-        fieldline_velocity_vjp
+        fieldline_velocity_vjp, coupled_current, coupled_current_jvp, &
+        coupled_current_vjp, anisotropic_flux
     use kin6d_coils_3d, only: segment_b, coil_mu0
     implicit none
     real(dp) :: x(6), dx(6), g(6), w(9), y(9), yp(9), ym(9), dy(9), c(5)
     real(dp) :: err, dot_error, h, a(3), l(3), p(3), pp(3), ap(3), am(3)
     real(dp) :: grad(3, 3), b(3), bref(3), factor, d, dfd, da, db, dl
     real(dp) :: vx(5), dvx(5), gv(5), v(2), vp(2), vm(2), dv(2), bv(2)
+    real(dp) :: cx(12), cdx(12), cg(12), cj(3), cjp(3), cjm(3), cdj(3), cw(3)
+    real(dp) :: q(3), bb(3), gpv(3), jxb(3)
     integer :: i, j
     h = 1.0e-5_dp
     do i = 1, 4
@@ -74,7 +77,43 @@ program test_nonnested_leaves
     if (abs(dot_product(bv, dv) - dot_product(gv, dvx)) > 1.0e-13_dp) &
         error stop 'velocity VJP'
     print '(a)', 'PASS: potential and field-line derivatives'
+    ! NN2 coupled current: JVP, VJP pairing, J x B = grad_perp p with the
+    ! resistive terms off, and the parallel flux chi_par b.grad p.
+    cx = [0.3_dp, 5.1_dp, -0.4_dp, 0.7_dp, 0.05_dp, -0.2_dp, 0.11_dp, &
+        -0.03_dp, 0.08_dp, -1.1_dp, 2.5_dp, 0.01_dp]
+    cdx = [(cos(1.7_dp*j), j=1, 12)]; cw = [0.4_dp, -0.9_dp, 0.25_dp]
+    call current(cx, cj)
+    call current(cx + h*cdx, cjp)
+    call current(cx - h*cdx, cjm)
+    call coupled_current_jvp(cx(1), cx(2), cx(3), cx(4), cx(5), cx(6), cx(7), &
+        cx(8), cx(9), cx(10), cx(11), cx(12), cdx(1), cdx(2), cdx(3), cdx(4), &
+        cdx(5), cdx(6), cdx(7), cdx(8), cdx(9), cdx(10), cdx(11), cdx(12), &
+        cdj(1), cdj(2), cdj(3))
+    call coupled_current_vjp(cx(1), cx(2), cx(3), cx(4), cx(5), cx(6), cx(7), &
+        cx(8), cx(9), cx(10), cx(11), cx(12), cw(1), cw(2), cw(3), cg(1), cg(2), &
+        cg(3), cg(4), cg(5), cg(6), cg(7), cg(8), cg(9), cg(10), cg(11), cg(12))
+    if (maxval(abs((cjp - cjm)/(2*h) - cdj)) > 1.0e-8_dp) error stop 'current JVP'
+    if (abs(dot_product(cw, cdj) - dot_product(cg, cdx)) > 1.0e-12_dp) &
+        error stop 'current VJP'
+    bb = cx(1:3); gpv = cx(4:6)
+    call coupled_current(bb(1), bb(2), bb(3), gpv(1), gpv(2), gpv(3), 0.0_dp, &
+        0.0_dp, 0.0_dp, 0.0_dp, cx(11), cx(12), cj(1), cj(2), cj(3))
+    jxb = [cj(2)*bb(3) - cj(3)*bb(2), cj(3)*bb(1) - cj(1)*bb(3), &
+        cj(1)*bb(2) - cj(2)*bb(1)]
+    err = maxval(abs(jxb - (gpv - bb*dot_product(bb, gpv)/dot_product(bb, bb))))
+    if (err > 1.0e-14_dp) error stop 'J x B'
+    call anisotropic_flux(bb(1), bb(2), bb(3), gpv(1), gpv(2), gpv(3), 7.0_dp, &
+        0.5_dp, q(1), q(2), q(3))
+    if (abs(dot_product(q, bb) - 7*dot_product(gpv, bb)) > 1.0e-13_dp) &
+        error stop 'parallel flux'
+    print '(a)', 'PASS: NN2 coupled current and flux leaves'
 contains
+    subroutine current(x, y)
+        real(dp), intent(in) :: x(12)
+        real(dp), intent(out) :: y(3)
+        call coupled_current(x(1), x(2), x(3), x(4), x(5), x(6), x(7), x(8), &
+            x(9), x(10), x(11), x(12), y(1), y(2), y(3))
+    end subroutine
     subroutine stress(x, y)
         real(dp), intent(in) :: x(6)
         real(dp), intent(out) :: y(9)
