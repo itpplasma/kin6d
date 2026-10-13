@@ -5,12 +5,15 @@ module kin6d_gs_direct
     ! preconditioner and the majorant recovery.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
-        sparse_destroy, sparse_factor_stats, sparse_factor_stats_t, &
-        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_SPD
+        sparse_destroy, sparse_solve_block, sparse_factor_stats, sparse_factor_stats_t, &
+        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_SPD, &
+        FORTSPARSE_SYM_INDEFINITE
     implicit none
     private
     public :: gs_direct_t, gs_direct_available, gs_direct_factor, gs_direct_solve
-    public :: gs_direct_free
+    public :: gs_direct_free, gs_direct_solve_block, GS_DIRECT_SPD, GS_DIRECT_INDEFINITE
+    integer, parameter :: GS_DIRECT_SPD = FORTSPARSE_SYM_SPD
+    integer, parameter :: GS_DIRECT_INDEFINITE = FORTSPARSE_SYM_INDEFINITE
     type :: gs_direct_t
         type(sparse_solver_t) :: solver
         logical :: factored = .false.
@@ -26,20 +29,23 @@ contains
         available = .true.
     end function
 
-    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok)
-        ! Factor the full symmetric positive definite matrix given as CSR
-        ! (identical to CSC by symmetry). A failure (for example a matrix that is
-        ! not positive definite) is recorded and not retried.
+    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, symmetry)
+        ! Factor the full symmetric matrix given as CSR (identical to CSC by
+        ! symmetry): positive definite Cholesky by default, LDL^T with
+        ! symmetry = GS_DIRECT_INDEFINITE. A failure (for example a matrix that
+        ! is not positive definite) is recorded and not retried.
         type(gs_direct_t), intent(inout) :: direct
         integer, intent(in) :: n, rowptr(:), colidx(:)
         real(dp), intent(in) :: val(:)
         logical, intent(out) :: ok
+        integer, intent(in), optional :: symmetry
         type(fortsparse_status_t) :: status
         type(sparse_factor_stats_t) :: stats
         call gs_direct_free(direct)
         direct%solver%backend_id = FORTSPARSE_BACKEND_MUMPS
         direct%solver%refine = .false.
         direct%solver%options%symmetry = FORTSPARSE_SYM_SPD
+        if (present(symmetry)) direct%solver%options%symmetry = symmetry
         direct%solver%options%nthreads = 0
         call sparse_factor(direct%solver, n, n, rowptr(n + 1) - 1, rowptr, &
                            colidx, val, status)
@@ -66,6 +72,20 @@ contains
         x = 0
         if (.not. direct%factored) return
         call sparse_solve(direct%solver, rhs, x, status)
+        ok = status_ok(status)
+    end subroutine
+
+    subroutine gs_direct_solve_block(direct, rhs, x, ok)
+        ! Several right-hand sides (columns) in one threaded MUMPS solve.
+        type(gs_direct_t), intent(inout) :: direct
+        real(dp), intent(in) :: rhs(:, :)
+        real(dp), intent(out) :: x(:, :)
+        logical, intent(out) :: ok
+        type(fortsparse_status_t) :: status
+        ok = .false.
+        x = 0
+        if (.not. direct%factored) return
+        call sparse_solve_block(direct%solver, rhs, x, status)
         ok = status_ok(status)
     end subroutine
 

@@ -5,7 +5,8 @@ module kin6d_gs_direct
     implicit none
     private
     public :: gs_direct_t, gs_direct_available, gs_direct_factor, gs_direct_solve
-    public :: gs_direct_free
+    public :: gs_direct_free, gs_direct_solve_block, GS_DIRECT_SPD, GS_DIRECT_INDEFINITE
+    integer, parameter :: GS_DIRECT_SPD = 1, GS_DIRECT_INDEFINITE = 2
     type :: gs_direct_t
         logical :: factored = .false.
         logical :: failed = .false.
@@ -20,11 +21,12 @@ contains
         available = .false.
     end function
 
-    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok)
+    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, symmetry)
         type(gs_direct_t), intent(inout) :: direct
         integer, intent(in) :: n, rowptr(:), colidx(:)
         real(dp), intent(in) :: val(:)
         logical, intent(out) :: ok
+        integer, intent(in), optional :: symmetry
         ok = .false.
         direct%failed = .true.
     end subroutine
@@ -33,6 +35,15 @@ contains
         type(gs_direct_t), intent(inout) :: direct
         real(dp), intent(in) :: rhs(:)
         real(dp), intent(out) :: x(:)
+        logical, intent(out) :: ok
+        ok = .false.
+        x = 0
+    end subroutine
+
+    subroutine gs_direct_solve_block(direct, rhs, x, ok)
+        type(gs_direct_t), intent(inout) :: direct
+        real(dp), intent(in) :: rhs(:, :)
+        real(dp), intent(out) :: x(:, :)
         logical, intent(out) :: ok
         ok = .false.
         x = 0
