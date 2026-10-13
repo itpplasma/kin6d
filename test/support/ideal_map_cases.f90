@@ -15,6 +15,7 @@ module ideal_map_cases
     implicit none
     private
     public :: setup_case, psi_exact, f_of_psi, boundary_point, label, phi_edge
+    public :: f_edge, seed_map_point
     public :: pullback_field_t, solovev_profile_t
     public :: r0, pi, a, raxis, psi_axis, pprime, ffprime, shaped
     real(dp), parameter :: r0 = 6.2_dp, f0 = 32.86_dp, c = f0/(12*r0**3)
@@ -197,6 +198,18 @@ contains
         end do
         if (j > ncheb) q = num/den
         pressure = pprime*psi_axis*(1 - s)
+    end subroutine
+
+    real(dp) function f_edge()
+        ! Edge (vacuum) F: psi = 0 on the LCFS.
+        f_edge = f_of_psi(0.0_dp)
+    end function
+
+    subroutine seed_map_point(y, x, dy)
+        ! The pullback shift Y (exact minimiser of the pullback case).
+        real(dp), intent(in) :: y(2)
+        real(dp), intent(out) :: x(2), dy(2, 2)
+        call seed_map(y, x, dy)
     end subroutine
 
     real(dp) function phi_edge()

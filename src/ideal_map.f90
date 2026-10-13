@@ -44,11 +44,14 @@ module kin6d_ideal_map
         ideal_energy_hessian, cylindrical_chart_position, cylindrical_chart_first, &
         cylindrical_chart_second, cylindrical_chart_third
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
+    use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks
+    use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE
+        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE, &
+        sparse_factor_stats, sparse_factor_stats_t
     use kin6d_gs_direct, only: gs_direct_available
     implicit none
     private
@@ -56,7 +59,7 @@ module kin6d_ideal_map
     public :: ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_hessian
     public :: ideal_map_solve, ideal_map_point, ideal_map_dof, ideal_map_mode_norms
     public :: ideal_map_reduce, ideal_map_expand, ideal_map_rdof, ideal_map_axis_dof
-    public :: ideal_map_prolong
+    public :: ideal_map_prolong, ideal_map_residual
     public :: ideal_map_solve_report_t
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
@@ -133,6 +136,9 @@ module kin6d_ideal_map
         real(dp) :: min_jacobian = 0, damping = 0
         ! Wall seconds: energy/gradient, Hessian assembly, factor + solve.
         real(dp) :: energy_s = 0, hessian_s = 0, factor_s = 0
+        ! Backend split of factor_s where reported (MUMPS): symbolic analysis
+        ! and numerical factorisation.
+        real(dp) :: analysis_s = 0, numeric_s = 0
     end type
 contains
     pure subroutine cylindrical_jet(chart, q, x, d1, d2, d3)
@@ -247,6 +253,7 @@ contains
         real(dp), intent(in), optional :: mu0
         type(gauss_quadrature_triangle_t) :: rule
         real(dp) :: h(2, 2, 10)
+        real(dp), allocatable :: qxi(:), qeta(:), qw(:)
         integer :: g, j, m, k, a, c, e, l, order
         status = IDEAL_MAP_BAD_INPUT
         if (nfp < 1 .or. ntor < 0) return
@@ -264,13 +271,21 @@ contains
         map%boundary = mesh%boundary
         order = 7
         if (present(quadrature_order)) order = quadrature_order
-        call rule%init(order)
-        map%nq = rule%n_points
+        ! Symmetric Gauss rules up to degree 7; collapsed (Duffy) Gauss-Legendre
+        ! rules of the requested polynomial degree above that.
+        if (order <= 7) then
+            call rule%init(order)
+            qxi = rule%xi; qeta = rule%eta; qw = rule%weights
+        else
+            call triangle_duffy_quadrature(order, qxi, qeta, qw, g)
+            if (g /= 0) return
+        end if
+        map%nq = size(qw)
         allocate (map%weight(map%nq), map%shape(map%nloc, map%nq), &
             map%dshape(2, map%nloc, map%nq))
         do g = 1, map%nq
-            map%weight(g) = rule%weights(g)
-            call triangle_basis_jet([rule%xi(g), rule%eta(g)], map%shape(:, g), &
+            map%weight(g) = qw(g)
+            call triangle_basis_jet([qxi(g), qeta(g)], map%shape(:, g), &
                 map%dshape(:, :, g), h(:, :, :map%nloc))
         end do
         allocate (map%phi(map%nphi), map%trig(map%nmode, map%nphi), &
@@ -932,6 +947,7 @@ contains
             ! H + damping*|diag H| with identity rows/columns for fixed dofs.
             real(dp), intent(in) :: damping
             integer, intent(out) :: info
+            type(sparse_factor_stats_t) :: stats
             real(dp), allocatable :: val(:)
             integer :: row, kk
             val = matrix%val
@@ -958,7 +974,133 @@ contains
             call sparse_factor(solver, map%nred, map%nred, size(val), &
                 matrix%rowptr, matrix%colidx, val, sstatus)
             info = merge(0, 1, status_ok(sstatus))
-            if (info /= 0) call sparse_destroy(solver)
+            if (info /= 0) then
+                call sparse_destroy(solver)
+                return
+            end if
+            call sparse_factor_stats(solver, stats, sstatus)
+            if (status_ok(sstatus)) then
+                report%analysis_s = report%analysis_s + max(0.0_dp, stats%analysis_s)
+                report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
+            end if
+        end subroutine
+    end subroutine
+
+    subroutine ideal_map_residual(map, f_vac, residual, sigma, status)
+        ! Weak Maxwell-stress residual (equilibrium-core D3) of the current map,
+        ! normalised to the poloidal-field scale. For the map lane R[xi] = -dW[xi],
+        ! so the coefficient gradient g holds R tested with every basis
+        ! displacement xi = (dR, dZ, R d omega) (boundary dR, dZ held). The dual
+        ! norm uses the consistent L2(V) mass of xi: f = M^-1 g is the force
+        ! density and
+        !     residual = ||f||_L2 L / (sigma |V|^1/2),  L = (A_ref/pi)^1/2,
+        !     sigma = <|B - B_0|^2>/mu0 + <p>,  B_0 = F_vac/R e_phi,
+        ! averages over the plasma volume, so a tokamak is measured against
+        ! B_p^2 and pressure, never against B_phi^2.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: f_vac
+        real(dp), intent(out) :: residual, sigma
+        integer, intent(out) :: status
+        real(dp), allocatable :: g(:), f(:), mass(:, :, :, :)
+        real(dp) :: energy, q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: dx(3, 3), bx(3), jac, r, ephi(3), weight, volume, b2, pr, info_res
+        real(dp) :: dphi, y(2), wv
+        integer :: e, gq, j, a, b, m, info, iterations
+        logical, allocatable :: held(:)
+        allocate (g(map%ndof), f(map%ndof), held(map%ndof))
+        call ideal_map_energy(map, map%x, energy, status, g)
+        if (status /= IDEAL_MAP_OK) return
+        held = .false.
+        do a = 1, map%nodes
+            if (.not. map%boundary(a)) cycle
+            do m = 1, map%nmode
+                held(ideal_map_dof(map, 1, m, a)) = .true.
+                held(ideal_map_dof(map, 2, m, a)) = .true.
+            end do
+        end do
+        where (held) g = 0
+        ! Reference-cell mass blocks mass(a, b, component, cell): R and R^3
+        ! weights (n = 0 geometry), times the mode norms 2 pi/nfp or pi/nfp.
+        allocate (mass(map%nloc, map%nloc, 3, map%cells))
+        mass = 0
+        do e = 1, map%cells
+            do gq = 1, map%nq
+                y = matmul(map%x(1:2, 1, map%conn(:, e)), map%shape(:, gq))
+                wv = map%weight(gq)*map%det(gq, e)*y(1)
+                do b = 1, map%nloc
+                    do a = 1, map%nloc
+                        mass(a, b, 1:2, e) = mass(a, b, 1:2, e) &
+                            + wv*map%shape(a, gq)*map%shape(b, gq)
+                        mass(a, b, 3, e) = mass(a, b, 3, e) &
+                            + wv*y(1)**2*map%shape(a, gq)*map%shape(b, gq)
+                    end do
+                end do
+            end do
+        end do
+        f = 0
+        call real_conjugate_gradient_operator(apply_mass, g, f, 1.0e-12_dp, &
+            10*map%ndof, info, iterations, info_res)
+        status = IDEAL_MAP_OK
+        if (info /= KRYLOV_OK) status = IDEAL_MAP_SOLVE_FAILED
+        ! sigma and the volume from the current map.
+        dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
+        volume = 0; b2 = 0; pr = 0
+        do e = 1, map%cells
+            do j = 1, map%nphi
+                do gq = 1, map%nq
+                    call point_jet(map, e, gq, j, map%x, q, qd)
+                    call map%chart%jet(q, pos, d1, d2, d3)
+                    dx = matmul(d1, qd)
+                    jac = map%sigma*(dx(1, 1)*(dx(2, 2)*dx(3, 3) - dx(2, 3)*dx(3, 2)) &
+                        - dx(1, 2)*(dx(2, 1)*dx(3, 3) - dx(2, 3)*dx(3, 1)) &
+                        + dx(1, 3)*(dx(2, 1)*dx(3, 2) - dx(2, 2)*dx(3, 1)))
+                    bx = matmul(dx, map%b(:, gq, e))/jac
+                    r = norm2(pos(1:2))
+                    ephi = [-pos(2), pos(1), 0.0_dp]/r
+                    weight = map%weight(gq)*dphi*jac
+                    volume = volume + weight
+                    b2 = b2 + weight*sum((bx - f_vac/r*ephi)**2)
+                    pr = pr + weight*map%p(gq, e)
+                end do
+            end do
+        end do
+        sigma = (b2/map%mu0 + pr)/volume
+        residual = sqrt(max(0.0_dp, dot_product(f, g))) &
+            *sqrt(area()/acos(-1.0_dp)) &
+            /(sigma*sqrt(volume))
+    contains
+        real(dp) function area()
+            integer :: ee
+            area = 0
+            do ee = 1, map%cells
+                area = area + sum(map%weight*map%det(:, ee))
+            end do
+        end function
+
+        subroutine apply_mass(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            integer :: ee, aa, bb, cc, mm, ka, kb
+            real(dp) :: modal
+            output = 0
+            do ee = 1, map%cells
+                do mm = 1, map%nmode
+                    modal = merge(2.0_dp, 1.0_dp, mm == 1)*acos(-1.0_dp)/map%nfp
+                    do cc = 1, 3
+                        do bb = 1, map%nloc
+                            kb = ideal_map_dof(map, cc, mm, map%conn(bb, ee))
+                            if (held(kb)) cycle
+                            do aa = 1, map%nloc
+                                ka = ideal_map_dof(map, cc, mm, map%conn(aa, ee))
+                                if (held(ka)) cycle
+                                output(ka) = output(ka) &
+                                    + modal*mass(aa, bb, cc, ee)*input(kb)
+                            end do
+                        end do
+                    end do
+                end do
+            end do
+            where (held) output = input
         end subroutine
     end subroutine
 
