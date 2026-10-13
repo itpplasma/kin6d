@@ -1253,6 +1253,14 @@ set_tests_properties(nonnested_mapped_identity_regression
 set_property(TEST nonnested_mapped_ellipse_h_ladder APPEND PROPERTY ENVIRONMENT
     "KIN6D_MAPPED_MIN_ORDER=1.2")
 
+# Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.
+add_executable(test_nonnested_qa test/test_nonnested_qa.f90)
+target_link_libraries(test_nonnested_qa PRIVATE kin6d)
+add_test(NAME nonnested_qa_oracle_check
+    COMMAND test_nonnested_qa ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/nn1_qa check)
+set_tests_properties(nonnested_qa_oracle_check
+    PROPERTIES TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=4")
+
 # Test resource declaration. Every registered test gets an explicit OpenMP
 # thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
 # Without this, concurrently running tests each start one spinning OpenMP thread
