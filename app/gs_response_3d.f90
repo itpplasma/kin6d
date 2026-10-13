@@ -40,7 +40,8 @@ program gs_response_3d
         meridian_point_basis_t, meridian_point_basis_init
     use kin6d_coils_3d
     use kin6d_vacuum_surfaces
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge
+    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
+        ring_labels_smooth
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
@@ -165,17 +166,18 @@ program gs_response_3d
                 write (*, '(a,f10.6,a,f10.6,a,f10.6,a,es11.3)') 'rational q = ', &
                     q_rat(i), ': D_I = ', di_rat(i), ', mu = ', sqrt(-di_rat(i)), &
                     ', dq/dpsin = ', dq_rat(i)
-                ! grade up to the uniform spacing, at most 0.4 of the gap to the
+                ! grade up to the uniform spacing, at most 0.45 of the gap to the
                 ! neighbouring rationals
                 qa = 2*u_rat(i)/(nrad*(layer_ratio - 1))
                 do k = 1, nrat
-                    if (k /= i) qa = min(qa, 0.4_dp*abs(psin_rat(k) - psin_rat(i)))
+                    if (k /= i) qa = min(qa, 0.45_dp*abs(psin_rat(k) - psin_rat(i)))
                 end do
                 call layer_labels(psin_rat(i), layer_delta, layer_ratio, qa, &
                     (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, lab)
                 extra = [extra, sqrt(lab)]
             end do
             call ring_labels_merge(nrad, extra, min_gap, ul)
+            call ring_labels_smooth(ul, 2*layer_ratio)
         end block
     else if (rat_pad > 0.0_dp) then
         ! rings at u_s +- rat_pad 2^-j/nrad (j < rat_grade): the mesh is graded
