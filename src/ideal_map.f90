@@ -51,7 +51,7 @@ module kin6d_ideal_map
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
         FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE, &
-        sparse_factor_stats, sparse_factor_stats_t
+        sparse_factor_stats, sparse_factor_stats_t, sparse_refactor
     use kin6d_gs_direct, only: gs_direct_available
     implicit none
     private
@@ -90,7 +90,12 @@ module kin6d_ideal_map
         integer, allocatable :: conn(:, :), dofconn(:, :), redconn(:, :)
         ! Transversal directions d(2, node); fixed(nred) flags reduced dofs.
         ! axis_basis(j, node) = T P_j at the node; npoly monomials per mode.
-        real(dp), allocatable :: direction(:, :), axis_basis(:, :)
+        ! basis(:, j, node): the two reduced increment directions in
+        ! (dq1, dq2, domega). Transversal gauge: (d, 0) and (0, 0, 1).
+        real(dp), allocatable :: direction(:, :), axis_basis(:, :), basis(:, :, :)
+        ! Axis expansion: polynomial degree (-1: k - 1) and power of T (set
+        ! before ideal_map_init / ideal_map_freeze respectively).
+        integer :: axis_degree = -1, axis_power = 1
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
@@ -148,9 +153,10 @@ contains
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
-                gr(ideal_map_rdof(map, 1, m, a)) = dot_product(map%direction(:, a), &
-                    g(k:k + 1))
-                gr(ideal_map_rdof(map, 2, m, a)) = g(k + 2)
+                gr(ideal_map_rdof(map, 1, m, a)) = dot_product(map%basis(:, 1, a), &
+                    g(k:k + 2))
+                gr(ideal_map_rdof(map, 2, m, a)) = dot_product(map%basis(:, 2, a), &
+                    g(k:k + 2))
             end do
         end do
         do m = 1, map%nmode
@@ -176,18 +182,18 @@ contains
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
-                v(k:k + 1) = vr(ideal_map_rdof(map, 1, m, a))*map%direction(:, a)
+                v(k:k + 2) = vr(ideal_map_rdof(map, 1, m, a))*map%basis(:, 1, a) &
+                    + vr(ideal_map_rdof(map, 2, m, a))*map%basis(:, 2, a)
                 do j = 1, map%npoly
                     v(k:k + 1) = v(k:k + 1) + map%axis_basis(j, a) &
                         *vr(ideal_map_axis_dof(map, 1, j, m) + [0, 1])
                 end do
-                v(k + 2) = vr(ideal_map_rdof(map, 2, m, a))
             end do
         end do
     end subroutine
 
     subroutine ideal_map_init(map, mesh, chart, nfp, ntor, status, nphi, &
-                              quadrature_order, mu0)
+                              quadrature_order, mu0, axis_degree)
         ! Reference mesh, element order and boundary flags from a KIN6D GS mesh.
         ! The reference chart coordinates of the nodes are mesh%points.
         type(ideal_map_t), intent(out) :: map
@@ -197,6 +203,7 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: nphi, quadrature_order
         real(dp), intent(in), optional :: mu0
+        integer, intent(in), optional :: axis_degree
         type(gauss_quadrature_triangle_t) :: rule
         real(dp) :: h(2, 2, 10)
         real(dp), allocatable :: qxi(:), qeta(:), qw(:)
@@ -248,6 +255,8 @@ contains
         end do
         map%ndof = 3*map%nmode*map%nodes
         k = merge(2, 3, map%nloc == 6)
+        if (present(axis_degree)) map%axis_degree = axis_degree
+        if (map%axis_degree >= 0) k = map%axis_degree + 1
         map%npoly = k*(k + 1)/2
         map%nred = 2*map%nmode*map%nodes + 2*map%npoly*map%nmode
         allocate (map%dofconn(3*map%nmode*map%nloc, map%cells))
@@ -313,6 +322,9 @@ contains
         map%fixed(ideal_map_rdof(map, 2, 1, map%gauge)) = .true.
         allocate (map%direction(2, map%nodes), map%axis_basis(map%npoly, map%nodes))
         map%direction(1, :) = 1; map%direction(2, :) = 0
+        allocate (map%basis(3, 2, map%nodes))
+        map%basis = 0
+        map%basis(1, 1, :) = 1; map%basis(3, 2, :) = 1
         map%axis_basis = 0
         allocate (map%b(3, map%nq, map%cells), map%p(map%nq, map%cells), &
             map%det(map%nq, map%cells))
@@ -335,6 +347,7 @@ contains
         do a = 1, map%nodes
             call field%evaluate(map%reference(:, a), chi, grad, b3, pressure)
             if (norm2(grad) > 0) map%direction(:, a) = grad/norm2(grad)
+            map%basis(1:2, 1, a) = map%direction(:, a)
             labels(a, 1) = chi
         end do
         ! Axis expansion: T in [0, 1], monomials about the extreme-label node,
@@ -378,10 +391,11 @@ contains
         do a = 1, map%nodes
             u = (position(:, a) - centre)/radius
             j = 0
-            do d = 0, merge(1, 2, map%nloc == 6)
+            do d = 0, nint((sqrt(8.0_dp*map%npoly + 1) - 1)/2) - 1
                 do i = 0, d
                     j = j + 1
-                    map%axis_basis(j, a) = map%axis_t(a)*u(1)**(d - i)*u(2)**i
+                    map%axis_basis(j, a) = map%axis_t(a)**map%axis_power &
+                        *u(1)**(d - i)*u(2)**i
                 end do
             end do
         end do
@@ -607,25 +621,29 @@ contains
         real(dp), intent(out) :: energy
         integer, intent(out) :: status
         real(dp), intent(out), optional :: gradient(:), min_jacobian
-        real(dp), allocatable :: local(:, :)
+        real(dp), allocatable :: local(:, :), cell_energy(:), cell_jac(:)
         real(dp) :: w, jac, gv(12), hv(12, 12), f(0:3), dphi, weight, minjac
         integer :: e, g, j, a, m, c, l
         logical :: want
         want = present(gradient)
-        allocate (local(3*map%nmode*map%nloc, map%cells))
+        allocate (local(3*map%nmode*map%nloc, map%cells), cell_energy(map%cells), &
+            cell_jac(map%cells))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
-        energy = 0; minjac = huge(1.0_dp)
-        !$omp parallel do default(none) shared(map, x, local, want, dphi) &
-        !$omp private(e, g, j, a, m, c, l, w, jac, gv, hv, f, weight) &
-        !$omp reduction(+: energy) reduction(min: minjac) schedule(static)
+        ! Cell sums are combined serially below, so the energy (which decides
+        ! step acceptance near roundoff) does not depend on the thread count
+        ! or on the order of an OpenMP reduction.
+        !$omp parallel do default(none) shared(map, x, local, want, dphi, &
+        !$omp cell_energy, cell_jac) &
+        !$omp private(e, g, j, a, m, c, l, w, jac, gv, hv, f, weight) schedule(static)
         do e = 1, map%cells
             local(:, e) = 0
+            cell_energy(e) = 0; cell_jac(e) = huge(1.0_dp)
             do j = 1, map%nphi
                 do g = 1, map%nq
                     call local_derivatives(map, e, g, j, x, w, jac, gv, hv, .false.)
-                    minjac = min(minjac, jac/map%det(g, e))
+                    cell_jac(e) = min(cell_jac(e), jac/map%det(g, e))
                     weight = map%weight(g)*dphi
-                    energy = energy + weight*w
+                    cell_energy(e) = cell_energy(e) + weight*w
                     if (.not. want) cycle
                     l = 0
                     do a = 1, map%nloc
@@ -642,6 +660,11 @@ contains
             end do
         end do
         !$omp end parallel do
+        energy = 0
+        do e = 1, map%cells
+            energy = energy + cell_energy(e)
+        end do
+        minjac = minval(cell_jac)
         do e = 1, map%cells
             energy = energy + 0.5_dp*dot_product(x(3, 1, map%conn(:, e)), &
                 matmul(map%omega_gauge(:, :, e), x(3, 1, map%conn(:, e))))
@@ -726,9 +749,8 @@ contains
             ! (d1 nu, d2 nu, omega).
             do l = 1, map%nloc*map%nmode
                 a = map%conn(1 + (l - 1)/map%nmode, e)
-                half(:, 2*l - 1) = full(:, 3*l - 2)*map%direction(1, a) &
-                    + full(:, 3*l - 1)*map%direction(2, a)
-                half(:, 2*l) = full(:, 3*l)
+                half(:, 2*l - 1) = matmul(full(:, 3*l - 2:3*l), map%basis(:, 1, a))
+                half(:, 2*l) = matmul(full(:, 3*l - 2:3*l), map%basis(:, 2, a))
             end do
             do m = 1, map%nmode
                 do j = 1, map%npoly
@@ -745,9 +767,8 @@ contains
             end do
             do l = 1, map%nloc*map%nmode
                 a = map%conn(1 + (l - 1)/map%nmode, e)
-                blocks(2*l - 1, :, e) = half(3*l - 2, :)*map%direction(1, a) &
-                    + half(3*l - 1, :)*map%direction(2, a)
-                blocks(2*l, :, e) = half(3*l, :)
+                blocks(2*l - 1, :, e) = matmul(map%basis(:, 1, a), half(3*l - 2:3*l, :))
+                blocks(2*l, :, e) = matmul(map%basis(:, 2, a), half(3*l - 2:3*l, :))
             end do
             do m = 1, map%nmode
                 do j = 1, map%npoly
@@ -790,8 +811,9 @@ contains
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
         real(dp) :: cap_x, cap_w, t0
         integer :: it, i, k, tries, estatus
-        logical :: talk, accepted
+        logical :: talk, accepted, factored
         talk = .false.
+        factored = .false.
         if (present(verbose)) talk = verbose
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
             diag(map%nred), rhs(map%nred))
@@ -834,9 +856,9 @@ contains
                 end if
                 rhs = -gred
                 call sparse_solve(solver, rhs, step, sstatus)
-                call sparse_destroy(solver)
                 report%factor_s = report%factor_s + wall() - t0
                 if (.not. status_ok(sstatus)) then
+                    call sparse_destroy(solver)
                     status = IDEAL_MAP_SOLVE_FAILED; return
                 end if
                 where (map%fixed) step = 0
@@ -861,6 +883,17 @@ contains
                     + 64*epsilon(1.0_dp)*abs(energy)) then
                     accepted = .true.; exit
                 end if
+                ! Within the roundoff band of W the energy cannot rank steps;
+                ! accept when the free gradient decreases instead.
+                if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
+                    + 1024*epsilon(1.0_dp)*abs(energy)) then
+                    call ideal_map_energy(map, trial, trial_energy, estatus, grad)
+                    call ideal_map_reduce(map, grad, rhs)
+                    where (map%fixed) rhs = 0
+                    if (norm2(rhs) < gnorm) then
+                        accepted = .true.; exit
+                    end if
+                end if
                 mu = mu*10
             end do
             if (.not. accepted) exit
@@ -882,6 +915,7 @@ contains
             end if
         end do
         if (.not. gnorm > tolerance*g0) status = IDEAL_MAP_OK
+        if (factored) call sparse_destroy(solver)
     contains
         real(dp) function wall()
             integer(int64) :: count, rate
@@ -894,6 +928,7 @@ contains
             real(dp), intent(in) :: damping
             integer, intent(out) :: info
             type(sparse_factor_stats_t) :: stats
+            logical :: reused
             real(dp), allocatable :: val(:)
             integer :: row, kk
             val = matrix%val
@@ -917,16 +952,27 @@ contains
                 solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
                 solver%options%symmetry = FORTSPARSE_SYM_GENERAL
             end if
-            call sparse_factor(solver, map%nred, map%nred, size(val), &
-                matrix%rowptr, matrix%colidx, val, sstatus)
+            ! The pattern is fixed per map: after the first factorisation only
+            ! the numerical factorisation is redone (MUMPS keeps its analysis).
+            reused = .false.
+            if (factored) then
+                call sparse_refactor(solver, map%nred, map%nred, size(val), &
+                    matrix%rowptr, matrix%colidx, val, sstatus, reused)
+            else
+                call sparse_factor(solver, map%nred, map%nred, size(val), &
+                    matrix%rowptr, matrix%colidx, val, sstatus)
+            end if
             info = merge(0, 1, status_ok(sstatus))
             if (info /= 0) then
-                call sparse_destroy(solver)
+                if (factored) call sparse_destroy(solver)
+                factored = .false.
                 return
             end if
+            factored = .true.
             call sparse_factor_stats(solver, stats, sstatus)
             if (status_ok(sstatus)) then
-                report%analysis_s = report%analysis_s + max(0.0_dp, stats%analysis_s)
+                if (.not. reused) report%analysis_s = report%analysis_s &
+                    + max(0.0_dp, stats%analysis_s)
                 report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
             end if
         end subroutine

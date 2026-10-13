@@ -232,7 +232,7 @@ if(NOT TARGET fortsparse)
     set(FORTSPARSE_USE_SYSTEM_DEPS ON CACHE BOOL "" FORCE)
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG d913253ce2d45aa54336a83eb7c089cc347b5c8b
+        GIT_TAG 7300414c84d3c02b34af92c6d292a948f0cedb64
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
@@ -270,9 +270,13 @@ endforeach()
 set_tests_properties(ideal_map_n3_leakage ideal_map_n0_solovev_a3_p2
     ideal_map_n0_solovev_a3_p3 ideal_map_n0_shaped_solovev_p2 PROPERTIES
     TIMEOUT 900 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
-# Nested seed with offset axis must return; the shaped seed ladder does not yet
-# converge reliably (docs/ideal-map-3d.md) and is run by hand (seedshaped 2).
+# Nested seed with offset axis must return, at order k + 1.
 add_test(NAME ideal_map_n0_seed_return_a3_p2 COMMAND test_ideal_map_axisymmetric seed 2)
+add_test(NAME ideal_map_n0_seed_return_a3_p3 COMMAND test_ideal_map_axisymmetric seed 3)
+add_test(NAME ideal_map_n0_seed_return_shaped_p2
+    COMMAND test_ideal_map_axisymmetric seedshaped 2)
+set_tests_properties(ideal_map_n0_seed_return_a3_p3 ideal_map_n0_seed_return_shaped_p2
+    PROPERTIES TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 add_test(NAME ideal_map_n0_normalised_residual_a3_p2
     COMMAND test_ideal_map_axisymmetric residual 2)
 set_tests_properties(ideal_map_n0_normalised_residual_a3_p2

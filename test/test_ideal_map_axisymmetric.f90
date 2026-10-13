@@ -38,6 +38,7 @@ program test_ideal_map_axisymmetric
     integer :: degree
     logical :: verbose_solve = .false.
     integer :: quadrature_order = 7
+    integer :: axis_degree = -1, axis_power = 1
     real(dp) :: solve_tolerance = 1.0e-6_dp
     mode = 'solovev'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
@@ -49,6 +50,12 @@ program test_ideal_map_axisymmetric
     if (command_argument_count() > 3) then
         call get_command_argument(4, argument)
         read (argument, *) quadrature_order
+    end if
+    if (command_argument_count() > 5) then
+        call get_command_argument(5, argument)
+        read (argument, *) axis_degree
+        call get_command_argument(6, argument)
+        read (argument, *) axis_power
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
@@ -92,9 +99,10 @@ contains
         type(cylindrical_chart_t) :: chart
         integer :: status
         call ideal_map_init(map, state, chart, nfp, ntor, status, &
-            quadrature_order=quadrature_order)
+            quadrature_order=quadrature_order, axis_degree=axis_degree)
         if (status /= 0) error stop 'map init'
         if (map%sigma /= -1) error stop 'cylindrical orientation'
+        map%axis_power = axis_power
         if (present(field)) then
             call ideal_map_freeze(map, field, status)
         else
@@ -194,7 +202,7 @@ contains
         type(ideal_map_solve_report_t), intent(out) :: report
         logical, intent(in) :: verbose
         integer :: status
-        call ideal_map_solve(map, solve_tolerance, 100, report, status, verbose)
+        call ideal_map_solve(map, solve_tolerance, 200, report, status, verbose)
         if (status /= 0) then
             print *, 'solve status', status, report%iterations, report%gradient
             error stop 'ideal map solve'
@@ -333,14 +341,14 @@ contains
             call defects(map, state, seed, errors)
             table(1, mesh) = errors(1)
             start = map%x
-            call solve_map(map, report, .false.)
+            call solve_map(map, report, verbose_solve)
             call defects(map, state, seed, errors)
             table(2, mesh) = errors(1)
             print '(a,3es12.4)', '  moved from X*: max |dq1,dq2| (m), max |domega|, h (m) ', &
                 maxval(norm2(map%x(1:2, 1, :) - start(1:2, 1, :), dim=1)), &
                 maxval(abs(map%x(3, 1, :) - start(3, 1, :))), 2*pi*a/n
             call build_map(state, 1, 0, map, seed)
-            call solve_map(map, report, .false.)
+            call solve_map(map, report, verbose_solve)
             call defects(map, state, seed, errors)
             table(3, mesh) = errors(1)
             print '(i4,3es12.4)', n, table(:, mesh)
@@ -410,12 +418,9 @@ contains
         end do
         rates = log(errors(:, 2)/errors(:, 3))/log(2.0_dp)
         if (present(sequenced)) then
-            ! Nested seed: return from the offset seed axis and converge. The
-            ! observed P2 order is 2.2-2.4, below k + 1 (open N1 item), so
-            ! this gate is return plus convergence, not the order.
-            if (any(rates(1:2) < 2)) error stop 'seed ladder does not converge'
+            ! Nested seed: return from the offset seed axis (and the k + 1 order
+            ! gates below).
             if (errors(1, 3) > 1.0e-3_dp*errors(3, 3)) error stop 'seed not returned'
-            return
         end if
         if (rates(1) < degree + 1 - 0.4_dp) error stop '3D N=0 exact-flux order'
         if (rates(2) < degree + 1 - 0.4_dp) error stop '3D N=0 vs 2D order'
