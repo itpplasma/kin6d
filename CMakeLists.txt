@@ -14,7 +14,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "474b2f350435e3fb325c7559e09213a840587006")
+set(KIN6D_FORTNUM_REVISION "d0bfdb1d507c6f5381b609bfc10becb8870b7e5f")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -64,6 +64,9 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_elliptic.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_hypergeom_2f1_term_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_toroidal_order_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_toroidal.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
     ${fortnum_SOURCE_DIR}/src/fortnum_ad_backend.f90
@@ -81,6 +84,7 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det3_vjp_fortad.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_inv2_jvp_fortad.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_linalg.f90
+    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_parallel_vector.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_bvls.f90
@@ -135,7 +139,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "5e743639306e5dbe247a7015b06ee3ec5b2373c7")
+set(KIN6D_FORTFEM_REVISION "08a94b25f4c7b9f39f22f66b3f2177bcd68786b3")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -170,6 +174,7 @@ set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 target_sources(kin6d PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
+    src/generated/kin6d_grad_shafranov_batch.f90 src/gs_load_batch.f90
     src/gs_timers.f90 src/gs_options.f90 src/gs_csr.f90 src/grad_shafranov.f90)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d PUBLIC OpenMP::OpenMP_Fortran)
@@ -293,6 +298,14 @@ add_test(NAME gs_free_boundary_t4_green_function_cross_check COMMAND test_gs_fb_
 set_tests_properties(gs_free_boundary_t4_green_function_cross_check PROPERTIES TIMEOUT 1800)
 add_test(NAME gs_free_boundary_t3_manufactured_newton COMMAND test_gs_fb_manufactured)
 set_tests_properties(gs_free_boundary_t3_manufactured_newton PROPERTIES TIMEOUT 1800)
+add_executable(test_gs_coupled_majorant test/test_gs_coupled_majorant.f90)
+target_link_libraries(test_gs_coupled_majorant PRIVATE kin6d_gs_fb_test)
+add_test(NAME gs_free_boundary_p10_coupled_majorant COMMAND test_gs_coupled_majorant)
+set_tests_properties(gs_free_boundary_p10_coupled_majorant PROPERTIES TIMEOUT 1800)
+add_executable(test_gs_fb_large_aspect test/test_gs_fb_large_aspect.f90)
+target_link_libraries(test_gs_fb_large_aspect PRIVATE kin6d)
+add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_large_aspect)
+set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEOUT 1800)
 target_sources(kin6d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90
     src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90)
 add_executable(test_gs_p2 test/test_gs_p2.f90)
@@ -530,7 +543,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "f749e65a4c00f014d88d0a4786a0689662b6a28f")
+set(KIN6D_FORTSYM_REVISION "22ee66773cf722b1d9cb496757d3c9a12b5b056f")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -568,6 +581,14 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(test_gs_forward_majorant_identities
         test/test_gs_forward_majorant_identities.f90)
     target_link_libraries(test_gs_forward_majorant_identities PRIVATE kin6d_gen_support)
+    add_executable(test_gs_coupled_majorant_identities
+        test/test_gs_coupled_majorant_identities.f90)
+    target_link_libraries(test_gs_coupled_majorant_identities PRIVATE kin6d_gen_support)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/gs_coupled_majorant_evidence)
+    add_test(NAME grad_shafranov_coupled_majorant_exact_identities
+        COMMAND test_gs_coupled_majorant_identities)
+    set_tests_properties(grad_shafranov_coupled_majorant_exact_identities PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/gs_coupled_majorant_evidence)
     set(gs_majorant_check_dir ${CMAKE_BINARY_DIR}/gs_forward_majorant_evidence)
     file(MAKE_DIRECTORY ${gs_majorant_check_dir}/native)
     add_test(NAME grad_shafranov_forward_majorant_exact_identities
@@ -606,8 +627,8 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov gs_coarea gs_inverse gs_reference_error
-            laboratory poisson fp transport
+    foreach(generator grad_shafranov equilibrium_core gs_coarea gs_inverse
+            gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
@@ -917,6 +938,8 @@ set_tests_properties(grad_shafranov_curved_readback PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(gs_phase1 app/gs_phase1.f90)
 target_link_libraries(gs_phase1 PRIVATE kin6d_io fortplot)
+add_executable(gs_load_bench app/gs_load_bench.f90)
+target_link_libraries(gs_load_bench PRIVATE kin6d)
 add_executable(gs_free app/gs_free.f90)
 target_link_libraries(gs_free PRIVATE kin6d_io fortplot)
 add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
@@ -932,6 +955,15 @@ target_link_libraries(test_gs_readback_order PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_readback_order COMMAND test_gs_readback_order 2)
 add_test(NAME grad_shafranov_p3_readback_order COMMAND test_gs_readback_order 3)
 
+add_executable(test_gs_readback_free test/test_gs_readback_free.f90)
+target_link_libraries(test_gs_readback_free PRIVATE kin6d)
+add_test(NAME grad_shafranov_p2_readback_free COMMAND test_gs_readback_free 2)
+add_test(NAME grad_shafranov_p3_readback_free COMMAND test_gs_readback_free 3)
+set_tests_properties(grad_shafranov_p2_readback_free
+    grad_shafranov_p3_readback_free PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1"
+    TIMEOUT 300)
+
 add_executable(test_gs_readback_work test/test_gs_readback_work.f90)
 target_link_libraries(test_gs_readback_work PRIVATE kin6d)
 add_test(NAME grad_shafranov_readback_work COMMAND test_gs_readback_work)
@@ -944,6 +976,34 @@ add_test(NAME grad_shafranov_stream_readback
     -DWORK=${CMAKE_BINARY_DIR}/gs_stream_test
     -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_stream.cmake)
 set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
+
+# Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
+target_sources(kin6d PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
+    src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90
+    src/equilibrium_residual.f90 src/equilibrium_readback.f90)
+set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
+target_link_libraries(test_equilibrium_core PRIVATE kin6d)
+add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)
+foreach(k 2 3)
+    add_test(NAME equilibrium_core_d7_readback_p${k}
+        COMMAND test_equilibrium_core readback ${k})
+    add_test(NAME equilibrium_core_d3_solovev_p${k}
+        COMMAND test_equilibrium_core residual ${k})
+    set_tests_properties(equilibrium_core_d3_solovev_p${k} PROPERTIES TIMEOUT 300
+        PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+# K6-mini: the accepted TC24 K6 law and path (cubic-profile Newton, P3,
+# direct factor, current constraint, readback, majorant) on a coarse mesh.
+# Every core migration step must reproduce the fixture to 1e-12 relative.
+add_test(NAME gs_k6_mini_regression COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_phase1> -DCHECK=$<TARGET_FILE:test_equilibrium_core>
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/k6_mini
+    -DWORK=${CMAKE_BINARY_DIR}/gs_k6_mini
+    -P ${CMAKE_SOURCE_DIR}/test/gs_k6_mini.cmake)
+set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1")
 
 # K-C1/L3: 3D polyline coils, per-n Fourier projection, vacuum b_mn (L3).
 target_sources(kin6d PRIVATE src/coils_3d.f90 src/vacuum_surfaces.f90)
@@ -959,3 +1019,55 @@ add_executable(coil_modes app/coil_modes.f90)
 target_link_libraries(coil_modes PRIVATE kin6d)
 add_executable(gs_vacuum_3d app/gs_vacuum_3d.f90)
 target_link_libraries(gs_vacuum_3d PRIVATE kin6d)
+
+# L4 (first stage): per-n FEEC complex, toroidal-mode BEM and their magnetic
+# coupling from FortFEM; flux-aligned meshes and the per-n Ampere operator
+# with the exact exterior.
+add_library(kin6d_feec_n
+    ${fortfem_SOURCE_DIR}/src/boundary/boundary_types.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/triangle_io.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/bowyer_watson.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/constrained_delaunay.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/mesh_refinement.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/triangulation_fortran.f90
+    ${fortfem_SOURCE_DIR}/src/triangulation/triangulator.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/mesh_2d.f90
+    ${fortfem_SOURCE_DIR}/src/geometry/meridian_curved_mesh.f90
+    ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
+    ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
+    ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
+    ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
+target_link_libraries(kin6d_feec_n PUBLIC kin6d_spatial fortsparse)
+if(KIN6D_ENABLE_OPENMP)
+    target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
+endif()
+target_sources(kin6d PRIVATE src/mhd_mesh.f90 src/mhd_ampere_n.f90
+    src/mhd_response_n.f90 src/mhd_ideal_n.f90)
+target_link_libraries(kin6d PUBLIC kin6d_feec_n)
+add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
+target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
+add_test(NAME mhd_ampere_n_exterior_manufactured COMMAND test_mhd_ampere_n)
+set_tests_properties(mhd_ampere_n_exterior_manufactured PROPERTIES TIMEOUT 600
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(test_mhd_shielding test/test_mhd_shielding.f90)
+target_link_libraries(test_mhd_shielding PRIVATE kin6d)
+add_test(NAME mhd_shielding_cylinder_limit_reciprocity COMMAND test_mhd_shielding)
+set_tests_properties(mhd_shielding_cylinder_limit_reciprocity PROPERTIES TIMEOUT 600
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(gs_response_3d app/gs_response_3d.f90)
+target_link_libraries(gs_response_3d PRIVATE kin6d)
+add_executable(test_mhd_ideal_n test/test_mhd_ideal_n.f90)
+target_link_libraries(test_mhd_ideal_n PRIVATE kin6d)
+add_test(NAME mhd_ideal_n_mde_force_free_identity COMMAND test_mhd_ideal_n)
+set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(test_mhd_newcomb test/test_mhd_newcomb.f90)
+target_link_libraries(test_mhd_newcomb PRIVATE kin6d)
+add_test(NAME mhd_newcomb_screw_pinch_limit COMMAND test_mhd_newcomb)
+set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
