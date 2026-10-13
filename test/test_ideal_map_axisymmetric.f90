@@ -22,7 +22,7 @@ program test_ideal_map_axisymmetric
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
-        ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
+        ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
@@ -35,14 +35,13 @@ program test_ideal_map_axisymmetric
     implicit none
     type(pullback_field_t) :: pullback
     character(16) :: mode, argument
-    character(256) :: dump_file
     integer :: degree
     logical :: verbose_solve = .false.
     integer :: quadrature_order = 7
     integer :: axis_degree = -1, axis_power = 1
     real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
-    real(dp) :: seed_tolerance = 1.0e-6_dp, polish_tolerance = 0
-    integer :: max_newton = 200
+    real(dp) :: seed_tolerance = 1.0e-11_dp
+    integer :: max_newton = 600
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
     mode = 'solovev'; degree = 2
@@ -77,14 +76,7 @@ program test_ideal_map_axisymmetric
     if (command_argument_count() > 8) then
         call get_command_argument(9, argument)
         read (argument, *) seed_tolerance
-        max_newton = 600
     end if
-    if (command_argument_count() > 9) then
-        call get_command_argument(10, argument)
-        read (argument, *) polish_tolerance
-    end if
-    dump_file = ''
-    if (command_argument_count() > 10) call get_command_argument(11, dump_file)
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
     case ('derivatives')
@@ -414,9 +406,11 @@ contains
             real(seed%a(0)) - raxis, aimag(seed%a(0))
         if (status /= 0) error stop 'seed init'
         if (abs(seed%psi_axis/psi_axis - 1) > 1.0e-12_dp) error stop 'seed axis flux'
-        ! The seed is far from equilibrium (large initial gradient), so the
-        ! relative stopping tolerance is tightened accordingly.
+        ! Stop at seed_tolerance x |g(X0 = id)| on each mesh. P3 uses the
+        ! stronger transversal gauge weight 1e-2, for which the end point is
+        ! independent of the initial damping and the factoriser.
         solve_tolerance = seed_tolerance
+        if (gauge_weight <= 0 .and. degree >= 3) gauge_weight = 1.0e-2_dp
         call ladder(seed, sequenced=.true.)
     end subroutine
 
@@ -427,7 +421,6 @@ contains
         logical, intent(in), optional :: sequenced
         type(gs_state_t) :: state
         type(ideal_map_t) :: map, previous
-        type(ideal_map_solve_report_t) :: first
         real(dp) :: seed_gradient
         type(ideal_map_solve_report_t) :: report
         real(dp) :: errors(4, 3), rates(4), elapsed
@@ -458,23 +451,6 @@ contains
             else
                 call solve_map(map, report, verbose_solve)
             end if
-            if (present(sequenced) .and. polish_tolerance > 0) then
-                ! Polish in the position gauge (omega frozen, full poloidal
-                ! motion; no relabelling near-null) to 1e-10 of the gradient of
-                ! the seed (X0 = id) on this mesh, so the end point does not
-                ! depend on the path.
-                first = report
-                call ideal_map_position_gauge(map)
-                call ideal_map_solve(map, polish_tolerance, max_newton, report, &
-                    status, verbose_solve, reference_gradient=seed_gradient)
-                if (status /= 0) then
-                    print *, 'polish status', status, report%iterations, report%gradient
-                    error stop 'position-gauge polish'
-                end if
-                print '(a,2i5,es12.4)', '  newton (transversal, polish), final |g|/g0 ', &
-                    first%iterations, report%iterations, report%gradient
-                report%iterations = report%iterations + first%iterations
-            end if
             previous = map
             call system_clock(finish)
             elapsed = real(finish - start, dp)/rate
@@ -483,16 +459,6 @@ contains
             call defects(map, state, field, errors(:, mesh))
             print '(a,2es24.16)', '  end point: d3D_exact, |x|_2 ', errors(1, mesh), &
                 norm2(map%x)
-            if (len_trim(dump_file) > 0 .and. mesh == 3) then
-                block
-                    integer :: u, i
-                    open (newunit=u, file=trim(dump_file), status='replace')
-                    do i = 1, map%nodes
-                        write (u, '(5es25.16e3)') map%reference(:, i), map%x(:, 1, i)
-                    end do
-                    close (u)
-                end block
-            end if
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
                 count(.not. map%fixed), report%iterations, elapsed, errors(:, mesh)
             print '(a,5f9.2)', '  wall energy hessian factor+solve (analysis numeric) ', &
