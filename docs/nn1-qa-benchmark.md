@@ -54,4 +54,28 @@ E = ||B_h - B||_L2 / ||B - F/R e_phi||_L2 over the mapped domain.
 
 ## Results
 
-See the results section appended after the Slurm job.
+Slurm job 3223730 (sCluster, 6 min, MaxRSS 7.0 GB). E = err/|B-Bphi|.
+
+Oracle checks: pass (F(1,0) = F(1.08,0.12) = -0.32 to 12 digits; |curl A - B|/|B|
+<= 1.8e-10; surface <|B.n|>/<|B|> = 4.0e-4, max 1.7e-3).
+
+| Rule item | Result | Numbers |
+|---|---|---|
+| 1 div B <= 1e-12, FGMRES residual <= 1e-9 | pass | div 1.5e-16; residual <= 4.1e-10 |
+| 2 mode ladder, nr = 4 | FAIL | E(4) = 4.89e-2, E(12) = 3.51e-2, ratio 0.72 > 0.5 |
+| 2 mode ladder, nr = 16 (extra) | pass | E(4) = 3.42e-2, E(6) = 5.71e-3, E(8) = 4.25e-3, E(10) = 4.22e-3; ratio 0.12; last step 0.8% |
+| 3 h ladder N = 10, order nr 2->4 | FAIL | E = 6.88e-2, 3.51e-2; order 0.97 < 1.2 |
+| 3 order nr 4->8 | pass | E = 1.32e-2; 1.41 |
+| 3 order nr 8->16 | pass | E = 4.22e-3; 1.64 |
+| 3 E(finest) <= 0.05 | pass | 4.2e-3 |
+| nphi sensitivity (nr 8, N 10) | pass | nphi 44 and 60 identical to 4 digits (1.317e-2) |
+
+The nr = 4 mode ladder fails because the spatial error dominates there, not because the
+modes are insufficient; the nr = 16 ladder shows the expected mode gain. The failed items
+are reported, no gate was changed. The h order rises with resolution (0.97, 1.41, 1.64),
+consistent with a pre-asymptotic range for the strongly shaped wall.
+
+Ellipse reruns at N = 10 (field L2 error): nr 4/8/16 -> 2.43e-2 / 7.83e-3 / 2.25e-3, orders
+1.64 and 1.80 (at fixed N = 6 they were 1.50 and 0.97). The earlier order loss came from
+mode truncation; the spatial order recovers toward 2. The nr = 16 ellipse runs stopped at
+the program's FGMRES residual gate (1.6e-9 > 1e-9); the gate was not changed.
