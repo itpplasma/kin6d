@@ -10,7 +10,7 @@ program gs_free_main
     use kin6d_gs_field_readback, only: sample_gs_many
     use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
                                      curve_value
-    use kin6d_gs_readback, only: gs_profile_f
+    use kin6d_gs_readback, only: gs_profile_f, gs_readback_t, read_gs_equilibrium
     use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
                                     write_gs_profile_law, gs_law_primitives, &
                                     gs_law_sources
@@ -26,6 +26,7 @@ program gs_free_main
         GS_CI_PSI_BOUND, GS_CI_UNCONSTRAINED, GS_CI_BOUNDED, GS_CI_FIXED_AT_LIMIT, &
         GS_CI_OK, GS_CI_NOT_CONVERGED
     use kin6d_result_io, only: run_t, result_file_t, runtime_git
+    use fortnum_polynomial, only: lagrange_weights
     use fortplot_system_runtime, only: create_directory_runtime
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
@@ -46,7 +47,8 @@ program gs_free_main
     type(gs_ci_model_t) :: model
     type(gs_ci_config_t) :: ccfg
     type(gs_ci_result_t) :: fit_result
-    integer :: fit_stat = 0
+    type(gs_readback_t) :: surfaces
+    integer :: fit_stat = 0, q_status = 1
     type(gs_ci_row_t), allocatable :: rows(:)
     real(dp), allocatable :: samples(:, :), contour(:, :), chain(:, :), points(:, :)
     real(dp), allocatable :: cur(:), lcfs(:, :), seed(:), vac(:, :)
@@ -68,6 +70,7 @@ program gs_free_main
     logical :: refit_converged = .false.
     character(512) :: boundary_file = '', coil_file = '', profile_file = ''
     character(512) :: constraints_file = '', points_file = '', mesh_file = 'mesh.dat'
+    character(512) :: seed_file = ''
     character(512) :: argument
     character(32) :: lcfs_mode = 'xpoint', fit = 'none'
     character(256) :: message
@@ -78,7 +81,8 @@ program gs_free_main
         max_refits, refit_tolerance, newton_tolerance, quadrature_tolerance, &
         max_newton_iterations, seed_amplitude, currents, fit, constraints_file, &
         lambda, reference_currents, n_reference, tie_a, tie_b, emulate_freegs, &
-        relaxation, max_fit_iterations, fit_step_tolerance, mesh_file, profile_points
+        relaxation, max_fit_iterations, fit_step_tolerance, mesh_file, profile_points, &
+        seed_file
 
     call run%start('gs_free')
     wall_start = wall_clock()
@@ -156,13 +160,17 @@ program gs_free_main
     if (stat /= 0) error stop 'mesh/assembly failed'
     allocate (seed(size(state%points, 2)), vac(size(state%points, 2), nc))
     call gs_circuit_flux_vectors(set, state%points(1, :), state%points(2, :), vac)
-    do i = 1, size(seed)
-        seed(i) = dot_product(vac(i, :), cur) + &
-                  real(axis_sign, dp)*seed_amplitude* &
-                  exp(-(((state%points(1, i) - plasma_ellipse(1)) &
-                         /plasma_ellipse(2))**2 &
-                        + (state%points(2, i)/plasma_ellipse(3))**2))
-    end do
+    if (len_trim(seed_file) > 0) then
+        call grid_seed(trim(seed_file), seed)
+    else
+        do i = 1, size(seed)
+            seed(i) = dot_product(vac(i, :), cur) + &
+                      real(axis_sign, dp)*seed_amplitude* &
+                      exp(-(((state%points(1, i) - plasma_ellipse(1)) &
+                             /plasma_ellipse(2))**2 &
+                            + (state%points(2, i)/plasma_ellipse(3))**2))
+        end do
+    end if
     state%psi = seed
     write (output_unit, '(a,i0,a,i0,a,i0)') 'gs_free start: omp_threads=', threads, &
         ' nodes=', size(state%points, 2), ' circuits=', nc
@@ -210,8 +218,11 @@ program gs_free_main
             if (status /= GS_FB_OK) error stop 'free-boundary Newton failed'
             call gs_ci_fit(state, sys, model, ccfg, variant, cur, state%psi, &
                            fit_result, fit_stat)
-            if (fit_stat /= GS_CI_OK .and. fit_stat /= GS_CI_NOT_CONVERGED) &
+            if (fit_stat /= GS_CI_OK .and. fit_stat /= GS_CI_NOT_CONVERGED) then
+                write (output_unit, '(a,i0,a,i0)') 'coil-current fit status ', &
+                    fit_stat, ' after iterations ', fit_result%iterations
                 error stop 'coil-current fit failed'
+            end if
             cur = fit_result%currents
             state%psi = fit_result%psi
             call gs_fb_evaluate(state, sys, state%psi, cur, ev, status, &
@@ -219,8 +230,10 @@ program gs_free_main
             if (status /= GS_FB_OK) error stop 'evaluation failed'
             report%movement(pass) = gs_fb_chain_movement(state, state%psi, &
                                                          ev%psi_bound, chain)
-            write (output_unit, '(a,i0,a,es10.3,a,es10.3)') 'inverse pass ', pass, &
-                ' phi=', fit_result%phi, ' chain distance/h=', report%movement(pass)
+            write (output_unit, '(a,i0,a,es10.3,a,es10.3,a,i0,a,i0)') 'inverse pass ', &
+                pass, ' phi=', fit_result%phi, ' chain distance/h=', &
+                report%movement(pass), ' fit status ', fit_stat, ' iterations ', &
+                fit_result%iterations
             flush (output_unit)
             report%refits = pass
             if (report%movement(pass) <= refit_tolerance) then
@@ -295,6 +308,39 @@ contains
         end do
         close (u)
     end subroutine read_curve
+
+    subroutine grid_seed(path, values)
+        !! Initial flux from a rectangular map (e.g. a reference equilibrium):
+        !! "nr nz", R(1:nr), Z(1:nz), then psi(nr, nz) with R fastest. Cubic
+        !! Lagrange interpolation in each direction; every mesh node must lie
+        !! inside the map.
+        character(*), intent(in) :: path
+        real(dp), intent(out) :: values(:)
+        real(dp), allocatable :: r(:), z(:), map(:, :)
+        real(dp) :: wr(4), wz(4)
+        integer :: u, nr, nz, k, ir, iz
+
+        open (newunit=u, file=path, status='old', action='read')
+        read (u, *) nr, nz
+        if (nr < 4 .or. nz < 4) error stop 'seed_file needs at least 4 x 4 points'
+        allocate (r(nr), z(nz), map(nr, nz))
+        read (u, *) r
+        read (u, *) z
+        read (u, *) map
+        close (u)
+        if (any(r(2:) <= r(:nr - 1)) .or. any(z(2:) <= z(:nz - 1))) &
+            error stop 'seed_file coordinates must increase'
+        do k = 1, size(values)
+            if (state%points(1, k) < r(1) .or. state%points(1, k) > r(nr) .or. &
+                state%points(2, k) < z(1) .or. state%points(2, k) > z(nz)) &
+                error stop 'mesh node outside the seed_file map'
+            ir = min(max(count(r <= state%points(1, k)) - 1, 1), nr - 3)
+            iz = min(max(count(z <= state%points(2, k)) - 1, 1), nz - 3)
+            call lagrange_weights(4, state%points(1, k), r(ir:ir + 3), wr)
+            call lagrange_weights(4, state%points(2, k), z(iz:iz + 3), wz)
+            values(k) = dot_product(wr, matmul(map(ir:ir + 3, iz:iz + 3), wz))
+        end do
+    end subroutine grid_seed
 
     subroutine read_rows(path, list)
         !! Constraint rows, one per line: KIND R Z R2 Z2 TARGET SCALE with KIND
@@ -412,6 +458,12 @@ contains
             call gs_law_sources(executed, phi, pp, ff)
             prof(:, k) = [psi_b + phi, s, pressure, f, pp, ff]
         end do
+        ! Flux surfaces of the plasma cells: q and toroidal flux.
+        call read_gs_equilibrium(state, executed%f_edge, 0.0_dp, 0, 0, surfaces, &
+                                 q_status, law=executed, psi_bound=psi_b, &
+                                 plasma_cell=ev%plasma_cell)
+        if (q_status /= 0) write (output_unit, '(a,i0)') &
+            'flux-surface readback failed, status ', q_status
     end subroutine do_readback
 
     subroutine write_outputs()
@@ -481,6 +533,20 @@ contains
         call result%write('profile_pprime', prof(5, :), 'Pa/(Wb/rad)', 'dp/dpsi')
         call result%write('profile_ffprime', prof(6, :), 'T2 m2/(Wb/rad)', 'F F-prime')
         call result%write('volume', volume, 'm3', 'plasma volume, 2 pi int R dA')
+        call result%write('q_status', real(q_status, dp), '1', &
+                          'flux-surface readback status, 0 = q profile written')
+        if (q_status == 0) then
+            call result%write('q_psi', surfaces%psi, 'Wb/rad', &
+                              'absolute flux of the q levels')
+            call result%write('q_s', (surfaces%psi - psi_a)/(psi_b - psi_a), '1', &
+                              'normalised poloidal flux (psi - psi_a)/(psi_b - psi_a)')
+            call result%write('q', surfaces%q, '1', &
+                              'safety factor F/(2 pi) oint dl/(R |grad psi|)')
+            call result%write('s_tor', surfaces%s_tor, '1', &
+                              'normalised toroidal flux Phi/Phi_edge')
+            call result%write('toroidal_flux', surfaces%phi_edge, 'Wb', &
+                              'toroidal flux inside the plasma boundary')
+        end if
         call result%write('wall_s', wall_s, 's', 'solve and readback wall time')
         if (inverse) then
             call result%write('fit_status', real(fit_stat, dp), '1', &
@@ -518,6 +584,12 @@ contains
         write (u, '(a,1x,es25.16e3)') 'axis_R', ev%axis(1)
         write (u, '(a,1x,es25.16e3)') 'axis_Z', ev%axis(2)
         write (u, '(a,1x,i0)') 'refits', report%refits
+        write (u, '(a,1x,i0)') 'q_status', q_status
+        if (q_status == 0) then
+            write (u, '(a,1x,es25.16e3)') 'q_axis', surfaces%q(1)
+            write (u, '(a,1x,es25.16e3)') 'q_edge', surfaces%q(size(surfaces%q))
+            write (u, '(a,1x,es25.16e3)') 'toroidal_flux', surfaces%phi_edge
+        end if
         write (u, '(a,1x,i0)') 'refit_converged', merge(1, 0, refit_converged)
         write (u, '(a,1x,es25.16e3)') 'wall_s', wall_s
         write (u, '(a,1x,i0)') 'omp_threads', threads
