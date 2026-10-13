@@ -35,6 +35,7 @@ program test_ideal_map_axisymmetric
     implicit none
     type(pullback_field_t) :: pullback
     character(16) :: mode, argument
+    character(256) :: dump_file
     integer :: degree
     logical :: verbose_solve = .false.
     integer :: quadrature_order = 7
@@ -82,6 +83,8 @@ program test_ideal_map_axisymmetric
         call get_command_argument(10, argument)
         read (argument, *) polish_tolerance
     end if
+    dump_file = ''
+    if (command_argument_count() > 10) call get_command_argument(11, dump_file)
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
     case ('derivatives')
@@ -480,6 +483,16 @@ contains
             call defects(map, state, field, errors(:, mesh))
             print '(a,2es24.16)', '  end point: d3D_exact, |x|_2 ', errors(1, mesh), &
                 norm2(map%x)
+            if (len_trim(dump_file) > 0 .and. mesh == 3) then
+                block
+                    integer :: u, i
+                    open (newunit=u, file=trim(dump_file), status='replace')
+                    do i = 1, map%nodes
+                        write (u, '(5es25.16e3)') map%reference(:, i), map%x(:, 1, i)
+                    end do
+                    close (u)
+                end block
+            end if
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
                 count(.not. map%fixed), report%iterations, elapsed, errors(:, mesh)
             print '(a,5f9.2)', '  wall energy hessian factor+solve (analysis numeric) ', &
