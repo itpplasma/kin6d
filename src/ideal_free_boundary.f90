@@ -1222,13 +1222,11 @@ contains
         !     constraint rows; a step is accepted when the merit decreases and
         !     every Jacobian stays positive (never on the energy, which is a
         !     saddle);
-        !   - Levenberg damping mu |H_ii| on the plasma map rows only. It
-        !     regularises the continuum gauge directions of the map (rigid
-        !     rotation of surfaces, omega_0 = f(chi)) that are near-null at
-        !     n = 0; it is not applied to the vacuum or multiplier blocks and is
-        !     reduced by 100 after every full step, so Newton is recovered;
-        !   - trust radii: displacement <= 2 % of the Gamma_c extent, omega
-        !     <= 0.5 rad; a capped direction raises mu.
+        !   - backtracking (alpha = 1, 1/2, .., 1/128) along the Newton
+        !     direction; only when that fails, Levenberg damping mu |H_ii| on
+        !     the plasma rows (never on the vacuum or multiplier blocks),
+        !     reduced by 100 after every full step;
+        !   - trust radius: displacement <= 2 % of the Gamma_c extent.
         ! Converged when sqrt(merit/merit0) <= tolerance, when the residual
         ! sqrt(merit/(sigma V)) <= residual_tolerance (sigma V = energy_scale,
         ! the poloidal-field and pressure energy: toroidal field removed from
@@ -1251,7 +1249,7 @@ contains
         type(fortsparse_status_t) :: sst
         real(dp) :: merit, tmerit, alpha, cap_x, cap_w, disp, rot, minjac, t0
         real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5)
-        integer :: it, i, p, st, tries
+        integer :: it, i, p, st, tries, back
         logical :: talk, accepted
         talk = .false.
         if (present(verbose)) talk = verbose
@@ -1336,18 +1334,24 @@ contains
                 if (talk) print '(a,i3,4es10.2)', '   try mu disp rot alpha', tries, &
                     mu, disp, rot, alpha
                 if (talk .and. tries == 1) call direction_report(fb, du)
-                if (alpha < 1 .and. mu < 1.0e8_dp) then
-                    mu = 10*mu; cycle
-                end if
-                call ideal_fb_step(fb, du, alpha)
-                call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
-                if (st == IDEAL_FB_OK) then
-                    tmerit = sum(wts*rhs**2)
-                    if (tmerit < (1 - 1.0e-4_dp*alpha)*merit) then
-                        accepted = .true.; exit
+                ! Backtrack along this direction first: -H^-1 g descends the
+                ! weighted residual merit for any SPD weight, whatever the
+                ! inertia of H. Raising mu instead would turn the step against
+                ! the vertical mode (negative curvature with fixed currents)
+                ! once mu |H_ii| exceeds its eigenvalue.
+                do back = 1, 8
+                    call ideal_fb_step(fb, du, alpha)
+                    call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
+                    if (st == IDEAL_FB_OK) then
+                        tmerit = sum(wts*rhs**2)
+                        if (tmerit < (1 - 1.0e-4_dp*alpha)*merit) then
+                            accepted = .true.; exit
+                        end if
                     end if
-                end if
-                fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                    fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                    alpha = alpha/2
+                end do
+                if (accepted) exit
                 mu = 10*mu
             end do
             if (.not. accepted) then
