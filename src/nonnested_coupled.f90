@@ -29,6 +29,15 @@ module kin6d_nonnested_coupled
     ! mode-0 lambda and Phi on those nodes to one unknown each. This removes
     ! the harmonic A of a shell domain and imposes zero net current into
     ! the conductor. See docs/equilibrium-nonnested-nn2.md.
+    ! Data hooks: source / g_par_shape take (R, Z) and are axisymmetric;
+    ! source_3d / g_par_shape_3d (nc_scalar3_i) take (R, Z, phi) and are
+    ! evaluated at every phi point of the element quadrature (exactly one of
+    ! source and source_3d, at most one g_par shape). The 3D source is loaded
+    ! into every Fourier block with the residual's phi rule. Landreman family
+    ! 1 uses them: S = -chi_perp lap p = -chi_perp div(J x B) (B.grad p = 0),
+    ! Phi = 0 (a nonzero g_perp forbids grad Phi perpendicular to b), and
+    ! g_par = g0 w/w_ref with w = R J.B/B_phi so that J.B = g_par V B_phi/
+    ! (2 pi R) with V = 2 pi w_ref/g0 (the Pfirsch-Schlueter current included).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad, &
@@ -48,6 +57,16 @@ module kin6d_nonnested_coupled
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
+    public :: nc_scalar3_i
+
+    abstract interface
+        function nc_scalar3_i(x, phi) result(w)
+            ! A declared datum at (R, Z) = x and toroidal angle phi.
+            import :: dp
+            real(dp), intent(in) :: x(2), phi
+            real(dp) :: w
+        end function
+    end interface
 
     type :: nc_problem_t
         real(dp) :: chi_par = 1, chi_perp = 1, g_par = 1, g_perp = 1
@@ -55,6 +74,9 @@ module kin6d_nonnested_coupled
         integer :: nphi = 0     ! phi points; 0 selects 4 N + 1
         procedure(meridian_weight_i), pointer, nopass :: source => null()
         procedure(meridian_weight_i), pointer, nopass :: g_par_shape => null()
+        ! Phi-dependent alternatives; at most one of each pair is associated.
+        procedure(nc_scalar3_i), pointer, nopass :: source_3d => null()
+        procedure(nc_scalar3_i), pointer, nopass :: g_par_shape_3d => null()
         logical, allocatable :: floating(:) ! V0 boundary nodes of a conductor
     end type
 
@@ -373,7 +395,9 @@ contains
         if (present(max_steps)) steps = min(max_steps, 40)
         if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
         if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
-        if (.not. associated(problem%source)) return
+        if (associated(problem%source) .eqv. associated(problem%source_3d)) return
+        if (associated(problem%g_par_shape) .and. associated(problem%g_par_shape_3d)) &
+            return
         call operators(field, problem, ops, st)
         if (st /= 0) return
         lay = nc_layout(field)
@@ -381,7 +405,7 @@ contains
         mask = nc_fixed(field, problem)
         rep = representative(field, problem)
         if (any(abs(x - x(rep)) > 0)) return
-        call source_load(field, problem, lay, load, st)
+        call source_load(field, problem, lay, ops%nphi, load, st)
         if (st /= 0) return
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)
@@ -428,25 +452,35 @@ contains
         status = 0
     end subroutine
 
-    subroutine source_load(field, problem, lay, load, status)
-        ! |<v, S>| on the mode-0 pressure rows (S does not depend on phi)
-        ! and |I_phi| on the loop row; zero elsewhere.
+    subroutine source_load(field, problem, lay, nphi, load, status)
+        ! |<v, S>| on the pressure rows of every block (the phi rule of the
+        ! residual) and |I_phi| on the loop row; zero elsewhere.
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
         type(nc_layout_t), intent(in) :: lay
+        integer, intent(in) :: nphi
         real(dp), allocatable, intent(out) :: load(:)
         integer, intent(out) :: status
         real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
-        integer :: t, q
+        real(dp) :: tr(lay%nb), dtr(lay%nb), phi
+        integer :: t, q, j, bk
         allocate (load(lay%n))
         load = 0
         do t = 1, field%fs%mm%topology%n_triangles
             do q = 1, field%fs%nq
                 call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, status)
                 if (status /= 0) return
-                associate (g => lay%ip + field%fs%sp(0)%dof(:, t))
-                    load(g) = load(g) + wq*val*problem%source(xq)
-                end associate
+                do j = 1, nphi
+                    phi = 2*acos(-1.0_dp)*(j - 1)/nphi
+                    call trig(lay%modes, phi, tr, dtr)
+                    do bk = 1, lay%nb
+                        associate (g => lay%ip + (bk - 1)*lay%n0 &
+                                   + field%fs%sp(0)%dof(:, t))
+                            load(g) = load(g) + wq/nphi*tr(bk)*val &
+                                *source_value(problem, xq, phi)
+                        end associate
+                    end do
+                end do
             end do
         end do
         load = abs(load)
@@ -481,6 +515,16 @@ contains
         field%p = x(lay%ip + 1:lay%ip + lay%nv)
         status = 0
     end subroutine
+
+    real(dp) function source_value(problem, x, phi) result(s)
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(in) :: x(2), phi
+        if (associated(problem%source_3d)) then
+            s = problem%source_3d(x, phi)
+        else
+            s = problem%source(x)
+        end if
+    end function
 
     pure integer function local_rows(field, lay) result(nr)
         type(free_b_field_t), intent(in) :: field
@@ -558,12 +602,16 @@ contains
             pv = matmul(val, pl); pg = matmul(grad, pl)
             fv = matmul(val, fl); fg = matmul(grad, fl)
             ephi = x(lay%iv)/(two_pi*rr)
-            gpar = problem%g_par
-            if (associated(problem%g_par_shape)) gpar = gpar*problem%g_par_shape(xq)
-            src = problem%source(xq)
             w = wq/nphi
             do j = 1, nphi
                 phi = two_pi*(j - 1)/nphi
+                gpar = problem%g_par
+                if (associated(problem%g_par_shape)) then
+                    gpar = gpar*problem%g_par_shape(xq)
+                else if (associated(problem%g_par_shape_3d)) then
+                    gpar = gpar*problem%g_par_shape_3d(xq, phi)
+                end if
+                src = source_value(problem, xq, phi)
                 call trig(lay%modes, phi, tr, dtr)
                 bq = matmul(bm, tr)
                 bq(2) = bq(2) + field%f_vac/rr
