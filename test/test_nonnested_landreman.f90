@@ -211,7 +211,13 @@ program test_nonnested_landreman
         call get_command_argument(5, arg)
         read (arg, *) decades
     end if
-    if (k < 2 .or. k > 4 .or. ratio < 1 .or. nlev < 2 .or. decades <= 0) &
+    ! Optional argument 6: the coarsest nr of the ladder nr0 2^(lev - 1).
+    if (command_argument_count() >= 6) then
+        call get_command_argument(6, arg)
+        read (arg, *) nr0
+    end if
+    if (k < 2 .or. k > 4 .or. ratio < 1 .or. nlev < 2 .or. decades <= 0 .or. &
+        nr0 < 2) &
         error stop 'arguments'
     allocate (eb(nlev), ep(nlev), ed(nlev), ev(nlev))
     do lev = 1, nlev
