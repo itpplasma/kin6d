@@ -1405,15 +1405,18 @@ contains
     end subroutine gs_fb_factor
 
     integer function direct_ordering() result(ordering)
-        !! Fill-reducing ordering of the MUMPS analysis; KIN6D_FB_ORDERING =
-        !! amd | nd overrides the default.
+        !! Fill-reducing ordering of the MUMPS analysis. The factor is redone
+        !! every Newton iteration and the analysis is serial, so approximate
+        !! minimum degree (cheap analysis, fill slightly above nested
+        !! dissection) is faster overall; KIN6D_FB_ORDERING = nd selects nested
+        !! dissection.
         character(len=8) :: choice
         integer :: length, stat
 
-        ordering = GS_DIRECT_ORDER_ND
+        ordering = GS_DIRECT_ORDER_AMD
         call get_environment_variable('KIN6D_FB_ORDERING', choice, length, stat)
         if (stat == 0 .and. length > 0) then
-            if (trim(choice) == 'amd') ordering = GS_DIRECT_ORDER_AMD
+            if (trim(choice) == 'nd') ordering = GS_DIRECT_ORDER_ND
         end if
     end function direct_ordering
 
