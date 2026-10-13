@@ -316,5 +316,21 @@ contains
             error stop 'dense smooth Jacobian integral'
         print *, 'dense smooth source evaluations:', degree, evaluations
         if (evaluations > 5000) error stop 'smooth source quadrature work explosion'
+        ! A dense kinked table (kink at a knot, 513 knots crossing the cell) must
+        ! integrate band by band: all-levels cut integration exhausted its budget.
+        do i = 1, 512
+            a = table%knots(i)
+            table%pp(:, i) = 0
+            if (a >= 0.25_dp) table%pp(:, i) = [a - 0.25_dp, 1.0_dp, 0.0_dp, 0.0_dp]
+        end do
+        call gs_cubic_load(cell, 1.0_dp, table, load(:ndof), jacobian, status, &
+            tolerance=1.0e-10_dp, quadrature_evaluations=evaluations)
+        if (status /= 0) error stop 'dense kinked source table'
+        call gauss_legendre_ab(16, 0.25_dp**(1.0_dp/degree), 1.0_dp, x, w)
+        expected = sum(w*(1 + x)*(x**degree - 0.25_dp)*(1 + 0.2_dp*x)*(1 - x))
+        if (abs(sum(load(:ndof)) - expected) > 1.0e-9_dp*expected) &
+            error stop 'dense kinked load integral'
+        print *, 'dense kinked source evaluations:', degree, evaluations
+        if (evaluations > 80000) error stop 'kinked source quadrature work explosion'
     end subroutine
 end program
