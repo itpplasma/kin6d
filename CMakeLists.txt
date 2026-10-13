@@ -139,7 +139,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "08a94b25f4c7b9f39f22f66b3f2177bcd68786b3")
+set(KIN6D_FORTFEM_REVISION "b1aca63bffa2b89d6ddf17c7a56d229e7bac3eaa")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1134,6 +1134,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
@@ -1196,6 +1197,21 @@ add_executable(test_nonnested_leaves test/test_nonnested_leaves.f90)
 target_link_libraries(test_nonnested_leaves PRIVATE kin6d)
 add_test(NAME nonnested_symbolic_derivatives_and_d3_identity
     COMMAND test_nonnested_leaves)
+
+# NN2 (first increment): anisotropic pressure transport for a given B.
+target_sources(kin6d PRIVATE src/nonnested_transport.f90)
+add_executable(test_nonnested_transport test/test_nonnested_transport.f90)
+target_link_libraries(test_nonnested_transport PRIVATE kin6d)
+add_test(NAME nonnested_transport_manufactured_3d
+    COMMAND test_nonnested_transport manufactured)
+set_tests_properties(nonnested_transport_manufactured_3d PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
+foreach(k 2 3 4)
+    add_test(NAME nonnested_transport_sovinec_chi_ratio_p${k}
+        COMMAND test_nonnested_transport sovinec ${k})
+    set_tests_properties(nonnested_transport_sovinec_chi_ratio_p${k} PROPERTIES
+        TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+endforeach()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
 # thread count, a matching PROCESSORS reservation, and OMP_WAIT_POLICY=passive.
