@@ -53,6 +53,8 @@ module kin6d_mhd_response_n
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_ring_edge, &
         flux_mesh_geometry
     use kin6d_mhd_ampere_n, only: mu0
+    use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
+        find_surface_q
     implicit none
     private
 
@@ -87,6 +89,7 @@ module kin6d_mhd_response_n
     end type sheet_closure_t
 
     public :: closure_shield_init
+    public :: resonant_surfaces_missing
     public :: closure_fluxes
     public :: ring_angles_set
     public :: ring_angles_at
@@ -288,6 +291,43 @@ contains
             end do
         end do
     end subroutine ring_sheet_load
+
+    subroutine resonant_surfaces_missing(g, n, psin_lo, psin_hi, nfine, m_have, &
+            psin, q, m)
+        !! Rational surfaces q = m/n (m = 1, 2, ...; q carries the sign of the
+        !! equilibrium) between psin_lo and psin_hi whose |m| is not in m_have:
+        !! their psin, signed q and resonant m = n q (signed as q).  Every one
+        !! is a pole 1/(u - u_s) of the strip-wise ideal volume current, so the
+        !! shielding closure needs a sheet on each, not only on the surface of
+        !! interest (the sidebands m +- 1 of the toroidal coupling).
+        type(psi_grid_t), intent(in) :: g
+        integer, intent(in) :: n, nfine, m_have(:)
+        real(dp), intent(in) :: psin_lo, psin_hi
+        real(dp), allocatable, intent(out) :: psin(:), q(:)
+        integer, allocatable, intent(out) :: m(:)
+        type(surface_t) :: sa, sb, sref
+        real(dp) :: qlo, qhi, root, target
+        integer :: mm, st1, st2, st3, st4
+        logical :: found
+
+        allocate (psin(0), q(0), m(0))
+        call surface_build(g, 0.5_dp, nfine, sref, st1)
+        call surface_build(g, psin_lo, nfine, sa, st2)
+        call surface_build(g, min(psin_hi, 0.9999_dp), nfine, sb, st3)
+        if (st1 /= 0 .or. st2 /= 0 .or. st3 /= 0) return
+        qlo = min(abs(sa%q), abs(sb%q))
+        qhi = max(abs(sa%q), abs(sb%q))
+        do mm = max(1, ceiling(abs(n)*qlo - 1.0e-9_dp)), floor(abs(n)*qhi + 1.0e-9_dp)
+            if (any(abs(m_have) == mm)) cycle
+            target = sign(real(mm, dp)/abs(n), sref%q)
+            found = find_surface_q(g, target, psin_lo, psin_hi, 256, 1.0e-13_dp, &
+                root, st4)
+            if (.not. found) cycle
+            psin = [psin, root]
+            q = [q, target]
+            m = [m, nint(n*target)]
+        end do
+    end subroutine resonant_surfaces_missing
 
     subroutine closure_shield_init(ring, ra, m, cl)
         !! L4 shielding: a sheet on each given ring, zero resonant flux there.

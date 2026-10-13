@@ -1162,6 +1162,12 @@ target_link_libraries(test_mhd_ideal_n PRIVATE kin6d)
 add_test(NAME mhd_ideal_n_mde_force_free_identity COMMAND test_mhd_ideal_n)
 set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
+add_executable(test_mhd_shield_torus test/test_mhd_shield_torus.f90)
+target_link_libraries(test_mhd_shield_torus PRIVATE kin6d)
+add_test(NAME mhd_shield_torus_nrad_convergence COMMAND test_mhd_shield_torus
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/shield_torus_a10.eqdsk)
+set_tests_properties(mhd_shield_torus_nrad_convergence PROPERTIES TIMEOUT 900
+    ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_flux_mesh_axis test/test_flux_mesh_axis.f90)
 target_link_libraries(test_flux_mesh_axis PRIVATE kin6d)
 add_test(NAME flux_mesh_axis_interpolation_order COMMAND test_flux_mesh_axis)
