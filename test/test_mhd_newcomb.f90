@@ -33,7 +33,7 @@ program test_mhd_newcomb
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_curl, mu0
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
-        ring_flux_harmonic, ring_flux_from_values, ring_points
+        ring_flux_harmonic, ring_flux_from_values, ring_points, sheet_closure_t
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     implicit none
@@ -309,10 +309,11 @@ contains
         type(ampere_n_t) :: amp
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
-        type(ring_angles_t) :: ra(0), rac
+        type(ring_angles_t) :: rac
+        type(sheet_closure_t) :: cl
         type(surface_t) :: s
         complex(dp), allocatable :: a(:), b2(:), bc(:)
-        complex(dp) :: lam(0), msh(0, 0), b2s(0, 0), phe(0), phi(nchk)
+        complex(dp) :: lam(0), b2s(0, 0), phe(0), pht(0), phi(nchk)
         real(dp), allocatable :: ul(:), x(:, :), nds(:, :), th(:), tau(:), wq(:)
         integer, allocatable :: tt(:)
         real(dp) :: rs(nchk), shp(nchk), res
@@ -343,8 +344,8 @@ contains
         end do
         allocate (a(amp%nn))
         a = (0.0_dp, 0.0_dp)
-        call ideal_response(fs, pb, fm, g, amp, opt, nmode, sr, [integer ::], ra, &
-            [integer ::], msh, b2s, phe, a, lam, 1.0e-10_dp, 300, info, its, res)
+        call ideal_response(fs, pb, fm, g, amp, opt, nmode, sr, cl, b2s, phe, a, lam, &
+            pht, 1.0e-10_dp, 300, info, its, res)
         call record(info == 0, "GMRES converged")
         call ampere_n_curl(amp, a, b2)
         do j = 1, nchk

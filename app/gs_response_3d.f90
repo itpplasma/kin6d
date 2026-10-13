@@ -7,6 +7,12 @@ program gs_response_3d
     !!  - model = 'ideal': in addition the volume current of the linear ideal
     !!    perturbed equilibrium (kin6d_mhd_ideal_n, MEPHIT form) with the
     !!    field-aligned boundary sheet (boundary_sheet).
+    !! closure selects the treatment of the rational surfaces in the ideal
+    !! model: 'sheet' (L4: one sheet per rational ring, zero resonant flux
+    !! there) or 'frobenius' (L6, kin6d_mhd_closure_n: current-free layer
+    !! |psin - psin_s| < layer_delta with edge sheets fixed by vanishing
+    !! large-solution coefficients; rings graded geometrically with
+    !! layer_ratio away from each layer, layer_nfit fit rings per side).
     !! Fields of all plasma currents come from the per-n FEEC Ampere operator
     !! on a flux-aligned mesh of the plasma with the exact exterior (BEM).
     !!
@@ -21,12 +27,21 @@ program gs_response_3d
     !! area the resonant flux of the shielding sheet alone per area (the
     !! quantity GPEC reports as singflx).  m is the resonant m = n q of the
     !! signed q of kin6d_vacuum_surfaces (GPEC labels it -m).
+    !! With closure = 'frobenius' lambda and b_shield are the equivalent
+    !! sheet amplitude lambda_eq of the jump of d Phi/d psin across
+    !! psin_s -+ spot/(n |dq/dpsin|) (GPEC sing_spot) and its self flux per
+    !! area: the net current of the layer (sum of the edge sheets) carried
+    !! to spot with the small-solution power (spot/delta)^(mu - 1/2).
+    !! prefix_layer.dat gives per (phasing, rational) D_I, mu, delta, the
+    !! jump, the large-solution residuals |a1/Phi| on both sides, the two
+    !! edge-sheet amplitudes and the jump of the fitted outer slopes.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
     use kin6d_coils_3d
     use kin6d_vacuum_surfaces
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
+        ring_labels_smooth
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
@@ -34,6 +49,11 @@ program gs_response_3d
         ring_sheet_load, ring_area
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
+    use kin6d_mhd_response_n, only: sheet_closure_t, closure_shield_init, &
+        closure_fluxes
+    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+        layer_init, layer_closure, layer_coefficients, layer_slope, &
+        layer_regular_slope, layer_inside
     implicit none
     integer, parameter :: maxr = 32, maxp = 4
     real(dp), parameter :: pi = 3.14159265358979323846_dp
@@ -50,10 +70,14 @@ program gs_response_3d
     real(dp) :: qlow = 0.0_dp, rat_pad = 0.0_dp
     integer :: rat_grade = 1
     logical :: edge_moved_current = .false.
+    character(len=16) :: closure = 'sheet'
+    real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 1.5_dp, spot = 5.0e-4_dp
+    integer :: layer_nfit = 3
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
-        boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current
+        boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current, closure, &
+        layer_delta, layer_ratio, layer_nfit, spot
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
@@ -73,10 +97,15 @@ program gs_response_3d
     real(dp), allocatable :: xs(:, :)
     type(sample_ring_t), allocatable :: rings(:)
     type(ideal_options_t) :: opt
+    type(sheet_closure_t) :: cl
+    type(rational_layer_t), allocatable :: lays(:)
+    real(dp), allocatable :: di_rat(:), dq_rat(:), jump_unit(:)
+    complex(dp), allocatable :: b2cl(:, :), phicl(:), phitot(:), lam_cl(:)
+    logical :: frob
     real(dp), allocatable :: xr(:, :)
-    complex(dp), allocatable :: bcr(:, :, :), avol(:), lam_id(:)
+    complex(dp), allocatable :: bcr(:, :, :), avol(:)
     real(dp) :: qref, target, root, t0, t1, res
-    integer :: unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk, its, nsr
+    integer :: ulay, unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk, its, nsr
     logical :: found
 
     if (command_argument_count() /= 1) error stop 'usage: gs_response_3d input.nml'
@@ -117,11 +146,40 @@ program gs_response_3d
             ' at psin = ', root, ', m = ', m_rat(k)
     end do
     nrat = k
+    frob = trim(closure) == 'frobenius' .and. trim(model) == 'ideal'
+    if (trim(closure) /= 'sheet' .and. trim(closure) /= 'frobenius') &
+        error stop 'closure must be sheet or frobenius'
 
     ! rings: uniform in u = sqrt(psin) plus the rational surfaces
     allocate (u_rat(nrat))
     u_rat = sqrt(psin_rat(1:nrat))
-    if (rat_pad > 0.0_dp) then
+    if (frob) then
+        ! Mercier index and shear of each rational, rings of the layers
+        allocate (di_rat(nrat), dq_rat(nrat))
+        block
+            real(dp), allocatable :: extra(:), lab(:)
+            real(dp) :: qa
+            extra = u_rat
+            do i = 1, nrat
+                call mercier_di(g, psin_rat(i), nfine, di_rat(i), qa, dq_rat(i), st)
+                if (st /= 0) error stop 'Mercier index'
+                write (*, '(a,f10.6,a,f10.6,a,f10.6,a,es11.3)') 'rational q = ', &
+                    q_rat(i), ': D_I = ', di_rat(i), ', mu = ', sqrt(-di_rat(i)), &
+                    ', dq/dpsin = ', dq_rat(i)
+                ! grade up to the uniform spacing, at most 0.45 of the gap to the
+                ! neighbouring rationals
+                qa = 2*u_rat(i)/(nrad*(layer_ratio - 1))
+                do k = 1, nrat
+                    if (k /= i) qa = min(qa, 0.45_dp*abs(psin_rat(k) - psin_rat(i)))
+                end do
+                call layer_labels(psin_rat(i), layer_delta, layer_ratio, qa, &
+                    (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, lab)
+                extra = [extra, sqrt(lab)]
+            end do
+            call ring_labels_merge(nrad, extra, min_gap, ul)
+            call ring_labels_smooth(ul, 2*layer_ratio)
+        end block
+    else if (rat_pad > 0.0_dp) then
         ! rings at u_s +- rat_pad 2^-j/nrad (j < rat_grade): the mesh is graded
         ! geometrically toward every rational surface, symmetrically about it
         block
@@ -133,10 +191,10 @@ program gs_response_3d
                     min(u_rat + rat_pad*0.5_dp**jg/nrad, &
                     1.0_dp - 0.5_dp*rat_pad*0.5_dp**jg/nrad)]
             end do
-            call merge_rings(nrad, extra, min_gap, ul)
+            call ring_labels_merge(nrad, extra, min_gap, ul)
         end block
     else
-        call merge_rings(nrad, u_rat, min_gap, ul)
+        call ring_labels_merge(nrad, u_rat, min_gap, ul)
     end if
     nr = size(ul)
     allocate (ring_of(nrat))
@@ -158,6 +216,15 @@ program gs_response_3d
         fs%mm%topology%n_triangles, ', unknowns ', amp%nn, ', boundary panels ', &
         amp%bd%n_panels, ', setup cpu ', t1 - t0, ' s'
 
+    if (frob) then
+        allocate (lays(nrat))
+        do i = 1, nrat
+            call layer_init(ul, psin_rat(i), abs(q_rat(i)), dq_rat(i), di_rat(i), &
+                m_rat(i), layer_delta, layer_ratio, layer_nfit, lays(i), st)
+            if (st /= 0) error stop 'layer fit rings'
+        end do
+    end if
+
     if (trim(model) == 'ideal') then
         opt%boundary_sheet = boundary_sheet
         opt%qlow = qlow
@@ -168,11 +235,12 @@ program gs_response_3d
             call sample_ring_build(g, opt, fm, fs, pb, 0.5_dp*(ul(j - 1) + ul(j)), &
                 j, np_sample, rings(j - 1), st)
             if (st /= 0) error stop 'half ring'
+            if (frob) rings(j - 1)%active = .not. layer_inside(lays, ul, rings(j - 1)%u)
         end do
         call sample_ring_build(g, opt, fm, fs, pb, ul(nr), nr, np_sample, &
             rings(nsr), st)
         if (st /= 0) error stop 'boundary sample ring'
-        allocate (avol(amp%nn), lam_id(nrat))
+        allocate (avol(amp%nn))
         avol = (0.0_dp, 0.0_dp)
         write (*, '(a,i0,a,i0,a)') 'ideal model: ', nsr, ' sample rings of ', &
             np_sample, ' points'
@@ -209,10 +277,44 @@ program gs_response_3d
     write (*, '(a,es10.2)') 'reciprocity |M - M^H|/|M| ', &
         maxval(abs(mm - conjg(transpose(mm))))/maxval(abs(mm))
 
+    ! closure of the ideal model: sheets, their vacuum fields and constraints
+    if (frob) then
+        call layer_closure(g, ul, lays, nfine, angle, cl, st)
+        if (st /= 0) error stop 'layer closure'
+        allocate (b2cl(fs%sp(2)%ndof, cl%ns), jump_unit(nrat))
+        do i = 1, cl%ns
+            f = (0.0_dp, 0.0_dp)
+            call ring_sheet_load(fs, pb, fm, cl%sheet_ring(i), cl%sheet_ra(i), n, &
+                cl%sheet_m(i), (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            if (st /= 0) error stop 'edge sheet solve'
+            block
+                complex(dp), allocatable :: bb(:)
+                call ampere_n_curl(amp, a, bb)
+                b2cl(:, i) = bb
+            end block
+        end do
+        ! jump of d Phi/d psin across the rational of the unit rational sheet
+        do i = 1, nrat
+            phicl = closure_fluxes(fs, pb, fm, cl, n, b2(:, i))
+            jump_unit(i) = layer_regular_slope(lays(i), layer_block(phicl, i))
+        end do
+    else if (trim(model) == 'ideal') then
+        call closure_shield_init(ring_of, ra, m_rat(1:nrat), cl)
+        b2cl = b2
+    end if
+
     open (newunit=ur, file=trim(prefix)//'_res.dat', status='replace')
     write (ur, '(a)') '# phasing q psin m area[m^2/rad] Re,Im Phi_vac[T m^2/rad^2] '// &
         'Re,Im b_vac[T] Re,Im lambda[A] Re,Im b_shield[T] '// &
         'Re,Im Phi_vac(L3 surface path) (peak amplitudes)'
+    if (frob) then
+        open (newunit=ulay, file=trim(prefix)//'_layer.dat', status='replace')
+        write (ulay, '(a)') '# phasing q psin m D_I mu delta[psin] '// &
+            'spot_x[psin] Re,Im jump[dPhi/dpsin] |a1/Phi|_in |a1/Phi|_out '// &
+            'Re,Im lambda_in[A] Re,Im lambda_out[A] Re,Im lambda_eq[A] '// &
+            'Re,Im jump_unit Re,Im jump_fit(spot)'
+    end if
     allocate (w(set%ncoil))
     do ip = 1, nphase
         call coil_read_currents(trim(currents(ip)), set%ncoil, w, st)
@@ -257,6 +359,29 @@ program gs_response_3d
             end do
             deallocate (xr, bcr)
         end if
+        if (trim(model) == 'ideal') then
+            if (frob) then
+                ! coil flux on the closure flux rings
+                if (allocated(phicl)) deallocate (phicl)
+                allocate (phicl(cl%nf))
+                do k = 1, cl%nf
+                    call ring_points(fm, cl%flux_ring(k), xg, nds, thg, tg, tau, wq)
+                    if (allocated(bc)) deallocate (bc)
+                    allocate (bc(3, 1, size(thg)), bn(size(thg)))
+                    call coil_set_modes(set, w, xg, nphi, [n], bc, st)
+                    if (st /= 0) error stop 'coil projection'
+                    do kk = 1, size(thg)
+                        bn(kk) = (bc(1, 1, kk)*nds(1, kk) + bc(3, 1, kk)*nds(2, kk)) &
+                            *xg(1, kk)
+                    end do
+                    phicl(k) = ring_flux_from_values(cl%flux_ra(k), n, cl%flux_m(k), &
+                        thg, bn, wq)
+                    deallocate (bn)
+                end do
+            else
+                phicl = phivac
+            end if
+        end if
         call cpu_time(t1)
         lu = mm
         lam = -phivac
@@ -264,14 +389,19 @@ program gs_response_3d
         if (info /= 0) error stop 'shielding system singular'
         if (trim(model) == 'ideal') then
             call cpu_time(t0)
-            call ideal_response(fs, pb, fm, g, amp, opt, n, rings, ring_of, ra, &
-                m_rat(1:nrat), mm, b2, phivac, avol, lam_id, gmres_tol, &
-                gmres_maxit, info, its, res)
+            if (allocated(lam_cl)) deallocate (lam_cl, phitot)
+            allocate (lam_cl(cl%ns), phitot(cl%nf))
+            call ideal_response(fs, pb, fm, g, amp, opt, n, rings, cl, b2cl, phicl, &
+                avol, lam_cl, phitot, gmres_tol, gmres_maxit, info, its, res)
             call cpu_time(t1)
             write (*, '(a,i0,a,i0,a,es10.2,a,f10.1,a)') 'ideal response: info ', &
                 info, ', GMRES iterations ', its, ', residual ', res, ', cpu ', &
                 t1 - t0, ' s'
-            lam = lam_id
+            if (frob) then
+                call layer_report(ip)
+            else
+                lam = lam_cl
+            end if
         end if
         do i = 1, nrat
             write (ur, '(i3,f10.6,f14.10,i5,es16.8,10es16.8)') ip, q_rat(i), &
@@ -286,8 +416,57 @@ program gs_response_3d
         write (*, '(a,f10.2,a)') 'coil drive cpu ', t1 - t0, ' s'
     end do
     close (ur)
+    if (frob) close (ulay)
 
 contains
+
+    function layer_block(phi, l) result(pb2)
+        !! Fluxes of layer l on its fit rings, (nfit, side).
+        complex(dp), intent(in) :: phi(:)
+        integer, intent(in) :: l
+        complex(dp) :: pb2(lays(l)%nfit, 2)
+        integer :: base, ll
+        base = 0
+        do ll = 1, l - 1
+            base = base + 2*lays(ll)%nfit
+        end do
+        pb2(:, 1) = phi(base + 1:base + lays(l)%nfit)
+        pb2(:, 2) = phi(base + lays(l)%nfit + 1:base + 2*lays(l)%nfit)
+    end function layer_block
+
+    subroutine layer_report(iph)
+        !! Shielding current of every rational from the fitted outer solution:
+        !! jump of d Phi/d psin at psin_s -+ spot/(n |q'|), the equivalent
+        !! rational-ring sheet amplitude (stored in lam) and the layer data.
+        integer, intent(in) :: iph
+        complex(dp) :: cf(3, 2), jmp, jfit, ph(layer_nfit, 2)
+        real(dp) :: xs, res1(2)
+        integer :: l, side
+        do l = 1, nrat
+            ph = layer_block(phitot, l)
+            cf = layer_coefficients(lays(l), ph)
+            xs = spot/(n*lays(l)%dq)
+            ! fitted outer slopes at spot (diagnostic)
+            jfit = layer_slope(lays(l), cf(:, 1), xs) &
+                + layer_slope(lays(l), cf(:, 2), xs)
+            ! net layer current: jump of d Phi/d psin across the layer, carried
+            ! to spot with the small-solution power |x|^(mu - 1/2)
+            jmp = (lam_cl(2*l - 1) + lam_cl(2*l))*jump_unit(l) &
+                *(xs/lays(l)%delta)**lays(l)%eps
+            ! large-solution residual relative to the flux at the layer edge
+            do side = 1, 2
+                res1(side) = abs(cf(1, side))/max(abs(ph(1, side)), tiny(1.0_dp))
+            end do
+            lam(l) = jmp/jump_unit(l)
+            write (ulay, &
+                '(i3,f10.6,f14.10,i5,3es14.6,es12.4,2es16.8,2es11.3,10es16.8)') &
+                iph, q_rat(l), psin_rat(l), m_rat(l), lays(l)%di, &
+                sqrt(-lays(l)%di), lays(l)%delta, xs, jmp, res1, &
+                lam_cl(2*l - 1), lam_cl(2*l), lam(l), jump_unit(l), jfit
+            write (*, '(a,f8.4,a,es11.3,a,2es9.2)') '  layer q ', q_rat(l), &
+                ' |lambda_eq| ', abs(lam(l)), ' large residual in/out ', res1
+        end do
+    end subroutine layer_report
 
     subroutine polar_map(u, theta, x)
         !! Flux-surface map: psin = u^2 on the ray of geometric angle theta.
@@ -304,39 +483,6 @@ contains
         x = [g%r_axis + rho*cos(theta), g%z_axis + rho*sin(theta)]
     end subroutine polar_map
 
-    subroutine merge_rings(nu, extra, gap, u)
-        !! u_j = j/nu merged with extra labels; uniform labels closer than
-        !! gap/nu to an extra label are dropped, except the boundary u = 1.
-        integer, intent(in) :: nu
-        real(dp), intent(in) :: extra(:), gap
-        real(dp), allocatable, intent(out) :: u(:)
-        real(dp) :: tmp(nu + size(extra)), v
-        integer :: j, c, i1, i2
-        c = 0
-        do j = 1, nu
-            v = real(j, dp)/nu
-            if (size(extra) > 0 .and. j < nu) then
-                if (minval(abs(extra - v)) < gap/nu) cycle
-            end if
-            c = c + 1
-            tmp(c) = v
-        end do
-        do j = 1, size(extra)
-            c = c + 1
-            tmp(c) = extra(j)
-        end do
-        do i1 = 2, c
-            v = tmp(i1)
-            i2 = i1 - 1
-            do while (i2 >= 1)
-                if (tmp(i2) <= v) exit
-                tmp(i2 + 1) = tmp(i2)
-                i2 = i2 - 1
-            end do
-            tmp(i2 + 1) = v
-        end do
-        u = tmp(1:c)
-    end subroutine merge_rings
 
 
 end program gs_response_3d
