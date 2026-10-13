@@ -62,6 +62,10 @@ module kin6d_mhd_closure_n
     real(dp), parameter :: pi = 3.14159265358979323846_dp
 
     !> One rational surface and its layer.
+    !> Largest admissible |w|_1 of the a1 fit weights (ratio 1.5 gives about
+    !! 22, ratio 2 about 8, ratio 1.25 about 70 for nfit = 3).
+    real(dp), parameter, public :: layer_wmax = 30.0_dp
+
     type, public :: rational_layer_t
         integer :: m = 0, nfit = 3
         real(dp) :: psin = 0.0_dp, q = 0.0_dp, dq = 0.0_dp, di = -0.25_dp
@@ -235,6 +239,12 @@ contains
             end do
             call pseudo_inverse(bm, lay%pinv(:, :, side), status)
             if (status /= 0) return
+            ! a1 is a difference of fluxes on neighbouring rings; the flux error
+            ! is amplified by |w|_1 / delta in the sheet dipole (ratio 1.25: 70)
+            if (sum(abs(lay%pinv(1, :, side))) > layer_wmax) then
+                status = 2
+                return
+            end if
             call pseudo_inverse(br, lay%preg(:, :, side), status)
             if (status /= 0) return
         end do

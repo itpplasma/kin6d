@@ -86,7 +86,7 @@ program gs_response_3d
     integer :: rat_grade = 1
     logical :: edge_moved_current = .false.
     character(len=16) :: closure = 'sheet'
-    real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 1.5_dp, spot = 5.0e-4_dp
+    real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 2.0_dp, spot = 5.0e-4_dp
     integer :: layer_nfit = 3
     character(len=512) :: profiles = ''
     real(dp) :: omega_drive = 0.0_dp, layer_nu = 0.0_dp, eta_scale = 1.0_dp
