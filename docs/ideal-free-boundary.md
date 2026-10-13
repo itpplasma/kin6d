@@ -228,3 +228,20 @@ FB-taper 0.997 results (fwd_p3_l3 reference, 256/384, μ_t = 1e-7):
   the merit rejects; the Gamma_p mean Z still creeps by +9.5e-6 m per step
   against that sign. The creep is therefore not the rigid vertical mode but a
   soft shape/gauge direction; the rigid correction is a no-op there.
+- **Poloidal-slide gauge (`tangential_gauge`).** Over the 40-iteration ladder
+  the Γ_p shape was fixed (normal change 0.26 µm rms) while the nodes slid
+  along it (tangential rms 0.5 mm, mean 0.7 mm), and the n = 3 tangential
+  content was still converging; the slow decay (0.6 % per step) is the
+  λ/(λ + μ_t) relaxation of that null. With `tangential_gauge = 100` the n = 0
+  tangential component of every plasma node is penalised in the Newton matrix
+  and removed from the gradient of the merit. Result (rigid_vertical, restart
+  from the converged base): s = 0.01 gives 1.51144e-2 m per unit scale against
+  the linear limit 1.51140e-2 m (3e-5 relative, 54 iterations, residual
+  9.7e-13 σV); s = 0.05 gives 1.50206e-2 m (-0.6 %, finite amplitude, 50
+  iterations, 9.1e-13 σV). The old 2–4 % gap (1.4685e-2 at 40 iterations)
+  was the gauge slide.
+- The merit with the gauge projected out is nearly blind to the near-null
+  vertical mode (a 15 mm Z start converged at iteration 1 with the base
+  stopping rule). With `rigid_vertical` and the gauge the solve is therefore
+  not converged while |F_Z/K_Z| > 1e-6 m, F_Z taken before the projection. The
+  fixture-return test case `gzm` uses it.
