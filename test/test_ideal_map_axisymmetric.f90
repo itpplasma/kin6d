@@ -40,7 +40,7 @@ program test_ideal_map_axisymmetric
     integer :: quadrature_order = 7
     integer :: axis_degree = -1, axis_power = 1
     real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
-    real(dp) :: seed_tolerance = 1.0e-6_dp, polish_tolerance = 1.0e-10_dp
+    real(dp) :: seed_tolerance = 1.0e-6_dp, polish_tolerance = 0
     integer :: max_newton = 200
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
@@ -225,12 +225,14 @@ contains
         end do
     end subroutine
 
-    subroutine solve_map(map, report, verbose)
+    subroutine solve_map(map, report, verbose, reference_gradient)
         type(ideal_map_t), intent(inout) :: map
         type(ideal_map_solve_report_t), intent(out) :: report
         logical, intent(in) :: verbose
+        real(dp), intent(in), optional :: reference_gradient
         integer :: status
-        call ideal_map_solve(map, solve_tolerance, max_newton, report, status, verbose)
+        call ideal_map_solve(map, solve_tolerance, max_newton, report, status, verbose, &
+            reference_gradient)
         if (status /= 0) then
             print *, 'solve status', status, report%iterations, report%gradient
             error stop 'ideal map solve'
@@ -443,7 +445,16 @@ contains
                     if (status /= 0) error stop 'prolong'
                 end if
             end if
-            call solve_map(map, report, verbose_solve)
+            if (present(sequenced)) then
+                ! Stop at a fraction of the seed (X0 = id) gradient on this mesh,
+                ! whatever the start (prolongation): an absolute, path-free test.
+                call solve_map(map, report, verbose_solve, seed_gradient)
+                print '(a,i5,2es12.4)', '  newton, |g|/|g_seed|, |g0|/|g_seed| ', &
+                    report%iterations, report%gradient, &
+                    report%initial_gradient/seed_gradient
+            else
+                call solve_map(map, report, verbose_solve)
+            end if
             if (present(sequenced) .and. polish_tolerance > 0) then
                 ! Polish in the position gauge (omega frozen, full poloidal
                 ! motion; no relabelling near-null) to 1e-10 of the gradient of
