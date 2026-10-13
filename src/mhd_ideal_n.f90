@@ -495,6 +495,7 @@ contains
         complex(dp) :: jj(3), kk
         integer :: nt, t, q, i, st, ir, nl, j, ig, te, jr, nri, k, j1
         logical :: wres
+        real(dp), parameter :: t_reach = 1.0e-3_dp
 
         nt = fs%mm%topology%n_triangles
         nl = fs%nln
@@ -503,6 +504,20 @@ contains
         if (wres) wres = nri >= 3
         if (wres) call strip_shape_fit(rings(1:nri), n, jcur, i1, kres, dres, tk, sinv, &
                                        epsr, res_m, res_eps)
+        if (wres) then
+            ! A strip that reaches the rational (L4 sheet on the rational ring)
+            ! has no finite near-rational shape: the clamp t >= 1e-3 would set
+            ! its current by the mesh, so it keeps the strip-constant current.
+            do ir = 1, nri
+                if (i1(ir) <= 0) cycle
+                j1 = min(max(ir - 1, 1), nri - 2)
+                do k = 0, 1
+                    psi = g%psi_axis + fm%u(ir + k)**2*(g%psi_edge - g%psi_axis)
+                    qv = lagrange3(rings(j1:j1 + 2)%psi, rings(j1:j1 + 2)%q, psi)
+                    if ((kres(ir) + n*qv)/dres(ir) < t_reach) i1(ir) = 0
+                end do
+            end do
+        end if
         allocate (bl(nl, nt))
         bl = (0.0_dp, 0.0_dp)
         !$omp parallel default(shared) private(t, q, i, st, ir, jr, x, wq, th, jj, phi, &
@@ -527,7 +542,7 @@ contains
                         psi = min(max(psi, min(plo, phi2)), max(plo, phi2))
                         j1 = min(max(ir - 1, 1), nri - 2)
                         qv = lagrange3(rings(j1:j1 + 2)%psi, rings(j1:j1 + 2)%q, psi)
-                        tt = max((kres(ir) + n*qv)/dres(ir), 1.0e-3_dp)
+                        tt = max((kres(ir) + n*qv)/dres(ir), t_reach)
                         call frobenius_basis(epsr(ir), tt, bas, dbas)
                         do k = 1, 3
                             lk(k) = tk(k, ir)/tt*dot_product(bas, sinv(:, k, ir))
