@@ -114,9 +114,8 @@ module kin6d_ideal_map
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
         real(dp), allocatable :: omega_gauge(:, :, :)
-        ! Nodal label, its reference gradient, axis-expansion weight T and the
-        ! axis node.
-        real(dp), allocatable :: chi_node(:), chi_grad(:, :), axis_t(:)
+        ! Nodal label, axis-expansion weight T and the axis node.
+        real(dp), allocatable :: chi_node(:), axis_t(:)
         integer :: axis_node = 0
         real(dp), allocatable :: reference(:, :)
         logical, allocatable :: boundary(:), fixed(:)
@@ -371,13 +370,11 @@ contains
         real(dp), allocatable :: labels(:, :)
         integer :: e, g, a, k
         status = IDEAL_MAP_OK
-        allocate (labels(map%nodes, 1), map%axis_t(map%nodes), &
-            map%chi_grad(2, map%nodes))
+        allocate (labels(map%nodes, 1), map%axis_t(map%nodes))
         do a = 1, map%nodes
             call field%evaluate(map%reference(:, a), chi, grad, b3, pressure)
             if (norm2(grad) > 0) map%direction(:, a) = grad/norm2(grad)
             labels(a, 1) = chi
-            map%chi_grad(:, a) = grad
         end do
         ! Axis expansion: T in [0, 1], monomials about the extreme-label node,
         ! scaled by the reference radius.
@@ -433,7 +430,9 @@ contains
         ! Grid sequencing (VMEC's ns ladder): initialise the coefficients of a
         ! map on a finer reference mesh of the same domain and labels from a
         ! solved coarse map, evaluated at the fine reference nodes. Boundary
-        ! nodes keep their reference position (held dofs).
+        ! nodes keep their reference position (held dofs). Re-gauging the
+        ! transversals to the coarse surfaces (cell-averaged F) was tried and
+        ! did not change the observed order.
         type(ideal_map_t), intent(inout) :: fine
         type(ideal_map_t), intent(in) :: coarse
         integer, intent(out) :: status
@@ -470,47 +469,7 @@ contains
             fine%x(1:2, 2:, a) = 0
         end do
         fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
-        call regauge(fine)
         status = IDEAL_MAP_OK
-    end subroutine
-
-    subroutine regauge(map)
-        ! Transversals normal to the current (n = 0) image of the label
-        ! contours, d = F^-T grad_y chi/|.| with F = dx/dy averaged from cell
-        ! centroids to nodes, and the axis expansion about the current position
-        ! of the axis node. A seed's directions are not transversal to small
-        ! surfaces around a distant true axis; this restores it after
-        ! prolongation. Only the parametrisation of later increments changes.
-        type(ideal_map_t), intent(inout) :: map
-        real(dp), allocatable :: f(:, :, :), position(:, :)
-        integer, allocatable :: hits(:)
-        real(dp) :: shape(10), grad(2, 10), dx(2, 2), dy(2, 2), fe(2, 2), v(2), det
-        integer :: e, a
-        allocate (f(2, 2, map%nodes), hits(map%nodes))
-        position = map%x(1:2, 1, :)
-        f = 0; hits = 0
-        call triangle_basis_jet([1.0_dp/3, 1.0_dp/3], shape(:map%nloc), &
-            grad(:, :map%nloc))
-        do e = 1, map%cells
-            dx = matmul(position(:, map%conn(:, e)), transpose(grad(:, :map%nloc)))
-            dy = matmul(map%reference(:, map%conn(:, e)), &
-                transpose(grad(:, :map%nloc)))
-            det = dy(1, 1)*dy(2, 2) - dy(1, 2)*dy(2, 1)
-            fe = matmul(dx, reshape([dy(2, 2), -dy(2, 1), -dy(1, 2), dy(1, 1)], &
-                [2, 2])/det)
-            do a = 1, map%nloc
-                f(:, :, map%conn(a, e)) = f(:, :, map%conn(a, e)) + fe
-                hits(map%conn(a, e)) = hits(map%conn(a, e)) + 1
-            end do
-        end do
-        do a = 1, map%nodes
-            fe = f(:, :, a)/hits(a)
-            det = fe(1, 1)*fe(2, 2) - fe(1, 2)*fe(2, 1)
-            v = [fe(2, 2)*map%chi_grad(1, a) - fe(2, 1)*map%chi_grad(2, a), &
-                -fe(1, 2)*map%chi_grad(1, a) + fe(1, 1)*map%chi_grad(2, a)]/det
-            if (norm2(v) > 0) map%direction(:, a) = v/norm2(v)
-        end do
-        call axis_expansion(map, position)
     end subroutine
 
     subroutine build_gauge(map)
@@ -743,10 +702,11 @@ contains
     end subroutine
 
     subroutine ideal_map_hessian(map, x, matrix)
-        ! Assembled coefficient Hessian (all Fourier modes coupled) as CSR.
+        ! Assembled coefficient Hessian (all Fourier modes coupled) as CSR. The
+        ! sparsity pattern of a matrix already built for this map is reused.
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: x(:, :, :)
-        type(csr_matrix_t), intent(out) :: matrix
+        type(csr_matrix_t), intent(inout) :: matrix
         real(dp), allocatable :: blocks(:, :, :), fa(:, :), fb(:, :), full(:, :)
         real(dp), allocatable :: half(:, :)
         real(dp) :: w, jac, gv(12), hv(12, 12), dphi, weight, s
@@ -844,7 +804,8 @@ contains
             deallocate (fa, fb, full, half)
         end do
         !$omp end parallel do
-        call csr_build_pattern(map%nred, map%redconn, .false., matrix)
+        if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
+            call csr_build_pattern(map%nred, map%redconn, .false., matrix)
         call csr_assemble_blocks(matrix, map%redconn, blocks)
     end subroutine
 
