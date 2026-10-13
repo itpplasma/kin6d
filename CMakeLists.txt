@@ -261,6 +261,22 @@ target_sources(kin6d PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/ideal_map.f90 src/ideal_seed.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+# N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
+target_sources(kin6d PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
+    src/ideal_free_boundary.f90)
+set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
+target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
+foreach(k 2 3)
+    add_test(NAME ideal_fb_vacuum_exact_n0_p${k} COMMAND test_ideal_free_boundary vacuum ${k})
+endforeach()
+add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
+    COMMAND test_ideal_free_boundary vacuum3d 3)
+set_tests_properties(ideal_fb_derivatives ideal_fb_vacuum_exact_n0_p2
+    ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
+    TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
@@ -681,7 +697,8 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov ideal_map equilibrium_core nonnested gs_coarea gs_inverse
+    foreach(generator grad_shafranov ideal_map equilibrium_core nonnested vacuum_shell
+            gs_coarea gs_inverse
             gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
@@ -996,6 +1013,17 @@ add_executable(gs_load_bench app/gs_load_bench.f90)
 target_link_libraries(gs_load_bench PRIVATE kin6d)
 add_executable(gs_free app/gs_free.f90)
 target_link_libraries(gs_free PRIVATE kin6d_io fortplot)
+add_executable(gs_free_3d app/gs_free_3d.f90)
+target_link_libraries(gs_free_3d PRIVATE kin6d)
+# NL-3a on the gs_free fixture (N = 0): reproduce the 2D free boundary and
+# return from +-15 mm R/Z and +2 % elongation offset starts.
+add_test(NAME gs_free_3d_nl3a_fixture_return COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_free_3d> -DGS_FREE=$<TARGET_FILE:gs_free>
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
+    -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return -DDISTANCE_LIMIT=1.0e-4
+    -DDEFECT_LIMIT=1.0e-4 -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
+set_tests_properties(gs_free_3d_nl3a_fixture_return PROPERTIES TIMEOUT 3600
+    ENVIRONMENT "OMP_NUM_THREADS=4")
 add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_free> -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
     -DWORK=${CMAKE_BINARY_DIR}/gs_free_app
