@@ -4,7 +4,7 @@ module kin6d_equilibrium_chart
     ! dH, d2H, d3H. Lanes see the chart only through `jet`; a curve-following
     ! frame is a further extension of ideal_chart_t and changes nothing else.
     ! This is the chart of the N1 map lane (ideal_map), lifted unchanged into
-    ! the core; TODO(N1): ideal_map uses this module instead of its own copy.
+    ! the core; ideal_map uses it.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_equilibrium_core_leaves, only: cylindrical_chart_position, &
         cylindrical_chart_first, cylindrical_chart_second, cylindrical_chart_third
