@@ -229,7 +229,21 @@ copy), CTest `gs_k6_mini_regression`. M1 `gs_equilibrium` (ψ → 𝒮 over a
 geometry view), `equilibrium_residual` (D3, fortsym-proved stress leaf);
 map → 𝒮 waits for N1 on main. M2 `equilibrium_readback` on
 `labelled_field_t`; `read_gs_equilibrium` is a thin caller and takes
-`psi_bound` and `plasma_cell` for free-boundary states.
+`psi_bound` and `plasma_cell` for free-boundary states. M3
+`equilibrium_certificate` (`equilibrium_certifier_t`: a lane returns 𝓜 and
+β_h with its kind; `certify` forms 𝓜/β_h and the claim label, written to π);
+`gs_certificate` wraps `gs_functional_majorant` (status 4 → residual
+verified, 5 → practical estimate, 0 → certified) and `gs_fb_majorant`
+(practical estimate) without changing them. M4 `equilibrium_boundary`
+(D6): Γ_c chain from a mesh boundary, P2 panels and trace restriction,
+per-(kind, n) cached Steklov–Poincaré map (`GAMMA_C_SCALAR`: L_n of the
+scalar potential, any n; `GAMMA_C_FLUX`: ψ, n = 0) on the panel and FEM
+trace, quadrature and trace loads, one coil interface
+(`axisymmetric_coils_t` over `gs_coils`, `polyline_coils_t` over
+`coils_3d`) and per-n coil traces on Γ_c (Φ_n and ∫ R B·n N_j ds).
+`gs_coupling` is the n = 0 adapter (same chain, panels, S and coil load
+arithmetic). CTest `equilibrium_core_d6_*`: S_n u + h = 0 for a tilted
+loop inside Γ_c, n = 0..3, third order; ring vs polygon coils at n = 0.
 
 ### Which upcoming steps wait for what
 
