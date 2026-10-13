@@ -38,7 +38,8 @@ program test_ideal_free_boundary
     !                    and the n /= 0 coil traces must be curl free
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_ideal_map, only: ideal_frozen_t, cylindrical_chart_t
+    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use kin6d_ideal_map, only: ideal_frozen_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK
