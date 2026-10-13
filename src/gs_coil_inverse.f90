@@ -68,7 +68,7 @@ module kin6d_gs_coil_inverse
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
-                                      gs_fb_evaluate, gs_fb_factor, gs_fb_solve, &
+                                      gs_fb_evaluate, gs_fb_factor, gs_fb_solve_block, &
                                       gs_fb_release, gs_fb_newton, gs_fb_locate, &
                                       GS_FB_OK, GS_FB_XPOINT, GS_FB_LIMITER
     implicit none
@@ -385,28 +385,14 @@ contains
         type(gs_fb_factor_t), intent(inout) :: fac
         real(dp), allocatable, intent(out) :: ds(:, :)
         integer, intent(out) :: status
-        integer, allocatable :: stat(:)
-        integer :: k, nc
+        integer :: nc, stat
 
         nc = size(sys%coil_load, 2)
-        allocate (ds(sys%n, nc), stat(nc))
-        stat = GS_FB_OK
-        !$omp parallel do default(shared) private(k) schedule(dynamic, 1) &
-        !$omp num_threads(min(nc, max_threads()))
-        do k = 1, nc
-            call gs_fb_solve(sys, ev, fac, sys%coil_load(:, k), ds(:, k), stat(k))
-        end do
-        !$omp end parallel do
+        allocate (ds(sys%n, nc))
+        call gs_fb_solve_block(sys, ev, fac, sys%coil_load, ds, stat)
         status = GS_CI_OK
-        if (any(stat .ne. GS_FB_OK)) status = GS_CI_SENSITIVITY_FAILED
+        if (stat /= GS_FB_OK) status = GS_CI_SENSITIVITY_FAILED
     end subroutine gs_ci_flux_sensitivities
-
-    integer function max_threads() result(n)
-        !! Threads available to the sensitivity solves (1 without OpenMP).
-!$      use omp_lib
-        n = 1
-!$      n = omp_get_max_threads()
-    end function max_threads
 
     subroutine gs_ci_row_jacobian(model, sys, ev, psi, ds, dmat, emulate)
         !! D(i, k) = d r_i / d I_k from ds (full response) or, with `emulate`,

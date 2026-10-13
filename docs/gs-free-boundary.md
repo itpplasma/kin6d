@@ -64,6 +64,132 @@ cannot discriminate: its nodal load subtracts the source of the interpolated exa
 flux, which cancels the jump on any mesh. With the refit it gives nodal orders 3.7
 (P2) and 3.8 (P3) against 2.7 and 3.3 fixed (`test_gs_fb_refit sweep`).
 
+## Error estimates (`src/gs_majorant.f90`, DESIGN section 4, P10)
+
+Energy norm |||v|||^2 = int |grad v|^2/R dA + <S v, v>. For the frozen problem
+a(psi,v) + <S psi,v> = (f,v) + <g,v> and every continuous vector P2/P3 flux y,
+
+    |||psi - psi_h||| <= D + B_T + N,
+    D   = ||sqrt(R)(y - grad psi_h/R)||,
+    B_T = C_F ||Pi0 r|| + (sum_T (h_T/pi)^2 R_max,T ||r - Pi0 r||_T^2)^(1/2),
+    N   = ||y.n + S psi_h - g||_{S^-1},   r = f + div y,
+
+from the residual identity a(e,v) + <S e,v> = (y - grad psi_h/R, grad v) +
+(f + div y, v) + <g - S psi_h - y.n, v>, checked exactly by FortSym
+(`test_gs_coupled_majorant_identities`, with omitted-defect and flipped-normal
+controls). B_T splits the balance residual into cell means (coupled Friedrichs
+constant C_F) and mean-free parts (Payne-Weinberger h_T/pi); it is at most C_F
+||r||, the form in DESIGN, and makes B_T of higher order than D. y minimises
+D^2 + sum of the B_T squares + N^2 (PCG preconditioned with the sparse LU of the
+volume part). The estimate is practical, not rigorous: S and the dual norm of N
+come from a reference BEM with three P2 panels per mesh edge
+(`gs_coupled_estimator_t`), and C_F^2 is the power-iteration estimate of the
+largest eigenvalue of (K + S_ref)^-1 M, approached from below.
+
+Nonlinear free boundary (`gs_fb_majorant`): M0 is the frozen-source majorant at
+psi_h (law in the plasma cells where s < 1, plus a pointwise forcing that must
+match `sys%extra_load`); beta is the smallest singular value of J in the energy
+pairing (`gs_fb_inf_sup`, power iteration on J^-1 A J^-T A, which approaches
+1/beta^2 from below); the bound |||e||| <~ M0/beta is first order. Goals
+(`gs_coupled_goal`): Q(psi) = int q psi + <q_b, psi> lies in Q(psi_h) + rho +-
+M_psi M_z for the frozen problem, M_z the adjoint majorant; the Ip goal is
+Ampere on Gamma_c (`gs_coupled_ip_moments`, z = 1/mu0 is exact). For the
+nonlinear solution `gs_fb_goal` returns |||z_h||| M0, with J^T z_h = Q' (first
+order). `gs_coil_current_bounds` propagates row bounds b_i to |dI_k| <=
+sum_i |(H^-1 D^T)_ki| b_i on the free set (attained by the sign vector).
+
+`test_gs_coupled_majorant` (exact psi* = coils + C^5 bump, OMP 4):
+
+| case | edges | energy error | majorant | I_eff |
+|------|------:|--------:|---------:|------:|
+| frozen P2 | 24 / 48 / 96 | 2.78e-1 / 9.09e-2 / 2.24e-2 | 5.64e-1 / 1.48e-1 / 2.93e-2 | 2.03 / 1.63 / 1.31 |
+| frozen P3 | 24 / 48 | 7.38e-2 / 1.53e-2 | 1.79e-1 / 2.44e-2 | 2.42 / 1.60 |
+| nonlinear P2, M0/beta | 24 / 48 / 96 | 2.78e-1 / 9.09e-2 / 2.24e-2 | 5.89e-1 / 1.57e-1 / 3.16e-2 | 2.12 / 1.73 / 1.41 |
+
+The efficiency index decreases towards 1 (majorant order 2.34 against 2.02 for
+P2, 2.87 against 2.27 for P3); beta (0.956) equals the dense SVD to 1e-5; the
+shape and Ip enclosures contain the exact values.
+
+## Large aspect ratio (T5, `test_gs_fb_large_aspect`, P13)
+
+Circular plasma, a = 0.5 m, R0 = a/eps, uniform vertical field from a ring pair at
+(3 R0, +-1.5 R0); the Shafranov field mu0 Ip/(4 pi R_g)(ln(8 R_g/a_g) + beta_p +
+l_i/2 - 3/2), from the measured boundary centre, half width, beta_p and l_i,
+against the coil field at (R_g, 0):
+
+| eps | 1/4 | 1/8 | 1/16 | 1/32 |
+|-----|----:|----:|-----:|-----:|
+| relative mismatch | -2.48e-2 | -6.57e-3 | -1.71e-3 | -4.08e-4 |
+
+observed order 1.9 to 2.1. A quadrupole with current of the sign of Ip raises the
+elongation (1.024 to 1.092 at eps = 1/8), the opposite sign lowers it (0.962).
+
+## Wall time of `gs_free` (P13)
+
+`gs_free` forward solve with up to three refits and readback (its `wall_s`) on the
+app fixture, limiter mode, sCluster exclusive node (AMD EPYC 9455), conda gfortran,
+seconds:
+
+| degree | boundary nodes | nodes | 1 thread | 4 | 16 | 32 |
+|-------:|---------------:|------:|---------:|--:|---:|---:|
+| 2 | 48 | 1 401 | 2.27 | 1.28 | 1.05 | 1.08 |
+| 2 | 96 | 5 497 | 5.02 | 3.15 | 2.67 | 2.64 |
+| 2 | 192 | 21 797 | 15.1 | 10.5 | 9.33 | 9.32 |
+| 2 | 384 | 86 693 | 52.1 | 38.7 | 36.0 | 35.3 |
+| 3 | 48 | 3 115 | 6.26 | 2.49 | 1.63 | 1.74 |
+| 3 | 96 | 12 295 | 14.6 | 5.80 | 3.63 | 3.31 |
+| 3 | 192 | 48 898 | 51.9 | 23.7 | 17.4 | 15.8 |
+| 3 | 384 | 194 770 | 311 | 202 | 176 | 167 |
+
+Strong scaling saturates near 1.5x (P2) and 2-4x (P3). A profile (P2, 192 boundary
+nodes) puts about 40 % in the Gamma_c BEM assembly, which `gs_fb_refit_solve`
+repeats in `gs_fb_setup` on every refit although Gamma_c does not change, and a
+few per cent each in the serial SuperLU factorisation and the cut-cell source.
+The coil flux at points (`gs_circuit_flux_vectors`, about 19 %) is threaded over
+points (32-thread time at 384 nodes: 46.8 s before, 35.3 s after for P2; 189 s
+and 167 s for P3).
+
+### Parallel free-boundary path (K8)
+
+The P13 stall had three causes, all fixed on `gs-free-parallel`:
+
+- The Gamma_c Steklov operator was reassembled by every `gs_fb_setup`. It is
+  now cached per curve (`gs_coupling_steklov`, keyed on the bitwise BEM trace nodes;
+  a refit that enters the same curve at another panel is relabelled, not
+  reassembled) and shared with the majorant estimator.
+- `kin6d_spatial`, which holds the upstream BEM assembly, was compiled without
+  OpenMP, so its panel-pair colouring ran serially. It now links OpenMP.
+- The indefinite J0 = A - M (symmetric, checked at run time) is factored by threaded
+  MUMPS LDL^T with AMD ordering (nested dissection spends its serial analysis
+  again at every Newton step); an asymmetric J0 or a build without MUMPS keeps
+  SuperLU. `KIN6D_FB_SOLVER=superlu` and `KIN6D_FB_ORDERING=nd` select the
+  alternatives. The circuit sensitivities use one MUMPS block solve, because a
+  MUMPS handle is not shared between threads, and the thread count is fixed at
+  factor time.
+
+The majorant estimator also factors its recovery and energy operators with MUMPS
+Cholesky and threads the Friedrichs mass assembly. The axis and X-point cell
+scans and the CSC pattern build are threaded. `KIN6D_PROFILE=1` prints per-phase
+wall times (`PROF label seconds`) on stderr.
+
+`gs_free` wall time on the same fixture and node, seconds, before / after
+(1 / 4 / 16 / 32 threads, sCluster exclusive node):
+
+| degree | boundary nodes | before | after | speedup at 32 | 1 to 32 threads |
+|-------:|---------------:|--------|-------|--------------:|----------------:|
+| 2 | 96 | 5.0 / 3.1 / 2.7 / 2.6 | 3.43 / 1.04 / 0.45 / 0.38 | 6.8x | 8.9x (was 1.9x) |
+| 2 | 192 | 14.9 / 10.5 / 9.4 / 9.3 | 9.00 / 2.80 / 1.37 / 1.22 | 7.6x | 7.4x (was 1.6x) |
+| 2 | 384 | 51.2 / 38.9 / 35.6 / 35.6 | 26.84 / 8.43 / 4.02 / 3.64 | 9.8x | 7.4x (was 1.4x) |
+| 3 | 96 | 14.7 / 5.8 / 3.6 / 3.3 | 13.06 / 3.66 / 1.35 / 1.02 | 3.3x | 12.8x (was 4.4x) |
+| 3 | 192 | 50.4 / 23.4 / 17.0 / 16.0 | 41.02 / 11.69 / 4.24 / 3.14 | 5.1x | 13.1x (was 3.1x) |
+| 3 | 384 | 305 / 199 / 172 / 168 | 164.9 / 49.3 / 20.2 / 15.6 | 10.7x | 10.6x (was 1.8x) |
+
+Results agree across all thread counts and with the previous code to 2e-6
+relative (psi_axis, psi_bound, plasma current). Part of that spread is old: the
+refit loop flips between two nearly equal end states with roundoff for P2. The
+remaining time at 32 threads is the MUMPS factorisation (about 30 %) and the
+per-element source quadrature of the cut cells.
+
 ## Application `gs_free`
 
 `gs_free --config input.nml` reads `&gs_free`; `gs_free --evaluate` reuses a result.
@@ -75,7 +201,7 @@ Units: m, A, Wb/rad. Flux is absolute with psi = 0 on the symmetry axis.
 | coils | `coil_file` (`gs_coils` text table), `currents(:)` (circuit currents, table order) |
 | profiles | `profile_file` (normalised law file, as `gs_phase1`), `mu0` |
 | LCFS | `lcfs_mode` = `xpoint`, `limiter`, `target_mean`; `cut_fraction`; `axis_guess`, `xpoint_guess`, `search_radius`; `points_file` (limiter or target points); `axis_sign` |
-| solve | `max_refits`, `refit_tolerance`, `newton_tolerance`, `quadrature_tolerance`, `max_newton_iterations`, `seed_amplitude` |
+| solve | `max_refits`, `refit_tolerance`, `newton_tolerance`, `quadrature_tolerance`, `max_newton_iterations`, `seed_amplitude`, `seed_file` (initial flux map: `nr nz`, R, Z, psi with R fastest; replaces the vacuum-plus-Gaussian seed) |
 | inverse | `fit` = `none`, `unconstrained`, `bounded`, `fixed_at_limit`; `constraints_file`; `lambda`; `reference_currents`, `n_reference`; `tie_a`, `tie_b`; `emulate_freegs`, `relaxation`, `max_fit_iterations`, `fit_step_tolerance` |
 | output | `mesh_file`, `profile_points` |
 
@@ -98,6 +224,9 @@ law, axis = psi_a - psi_b), `summary.dat`. NetCDF variables:
 - profile readback of the executed law on the plasma flux range: `profile_psi`,
   `profile_s`, `profile_pressure`, `profile_f`, `profile_pprime`,
   `profile_ffprime`;
+- flux surfaces (`read_gs_equilibrium` with `psi_bound` on the plasma cells):
+  `q_status` (0 when written), `q_psi`, `q_s` (normalised poloidal flux, axis 0,
+  boundary 1), `q`, `s_tor` (normalised toroidal flux), `toroidal_flux` (Wb);
 - coils: `circuit_currents`, `coil_currents`, `circuit_i_min`, `circuit_i_max`;
 - inverse (when `fit /= none`): `fit_status`, `fit_iterations`, `fit_phi`,
   `fit_phi_data`, `fit_phi_reg`, `fit_residual`, `fit_gradient`, `fit_pinned`, and
@@ -110,10 +239,15 @@ as `gs_phase1 --evaluate`; psi is absolute when `psi_bound` is given. B_T = F / 
 with F from the law inside the plasma and `F_edge` outside it. Points outside
 Gamma_c give NaN. `--evaluate-stream` serves repeated requests until EOF.
 
-Limits. The flux-surface readback of `gs_phase1` (q, toroidal flux, volume by the
-whole-mesh sums) assumes psi = 0 on the mesh boundary and is not used; the volume
-is 2 pi times the plasma current of a unit-dp/dpsi law on the same cut cells, and no
-q profile is written yet. The coil table, profile law and constraints for ITER
+Flux surfaces. `read_gs_equilibrium` (`kin6d_gs_readback`) takes the optional
+`psi_bound` and `plasma_cell`: it reads back on the sub-mesh of the plasma cells
+with the flux measured from psi_b, so the same contour code gives q and the
+toroidal flux (contour integral of F |dpsi| / (R |grad psi|)) up to the cut level.
+The whole-mesh volume and flux sums of the fixed-boundary path are not used there;
+the volume is 2 pi times the plasma current of a unit-dp/dpsi law on the same cut
+cells. `test_gs_readback_free` checks the free path against the fixed path (gauge
+shift, and an interior surface taken as the boundary) and the exact Solov'ev
+surfaces. The coil table, profile law and constraints for ITER
 (P12) stay in the iter_tc24 producer.
 
 Tests: `gs_free_app_contract` (CTest; forward solve with refit, NetCDF values and
