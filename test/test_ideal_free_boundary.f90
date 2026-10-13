@@ -209,7 +209,6 @@ contains
                 v(i) = cos(0.71_dp*i)
             end do
             v(fb%np + 2*fb%nx + 1:) = 1.0e2_dp*v(fb%np + 2*fb%nx + 1:)
-            where (fb%plasma%fixed) v(1:fb%np) = 0
             call ideal_fb_gradient(fb, g, st, l0)
             if (st /= IDEAL_FB_OK) error stop 'base state folded'
             h = 1.0e-6_dp
@@ -230,7 +229,6 @@ contains
                     hv(i) = hv(i) + val(p)*v(colidx(p))
                 end do
             end do
-            where (fb%plasma%fixed) hv(1:fb%np) = 0
             gp = (gp - gm)/(2*h)
             scale = maxval(abs(hv))
             err = maxval(abs(gp - hv))/scale

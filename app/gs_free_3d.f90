@@ -104,15 +104,15 @@ program gs_free_3d_main
         curve_value
     use kin6d_coils_3d, only: coil_set_t, coil_set_read, coil_read_currents, &
         coil_set_modes
-    use kin6d_ideal_map, only: cylindrical_chart_t, ideal_map_solve, &
-        ideal_map_solve_report_t
+    use kin6d_ideal_map, only: cylindrical_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_report_t, &
         ideal_fb_init, ideal_fb_set_drive, ideal_fb_solve_vacuum, ideal_fb_solve, &
-        ideal_fb_solve_multipliers, ideal_fb_shell_field, &
+        ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
+        ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, &
         IDEAL_FB_OK
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
     use gs_free_3d_support, only: reference_t, reference_locate_jet, &
-        offset_field_t, offset_forward
+        offset_field_t, offset_forward, offset_backward
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     integer, parameter :: max_circuits = 64
@@ -129,12 +129,13 @@ program gs_free_3d_main
     real(dp), allocatable :: rmp_currents(:)
     real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
-    real(dp) :: step_tolerance = 1.0e-9_dp, currents(max_circuits) = 0
+    real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
+    real(dp) :: residual_tolerance = 1.0e-9_dp, rigid(2, 2) = 0
     real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
     integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
     integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
     integer :: panels_per_edge = 0, st, i, nc, unit
-    logical :: verbose = .true., fixed_boundary = .false.
+    logical :: verbose = .true., start_at_target = .false.
     character(512) :: mesh_file = 'mesh.dat', law_file = 'profile-law.dat'
     character(512) :: summary_file = 'summary.dat', coil_file = ''
     character(512) :: boundary_file = '', rmp_coil_file = '', rmp_current_file = ''
@@ -144,7 +145,7 @@ program gs_free_3d_main
         boundary_file, boundary_nodes, max_area, degree, chain_nodes, mu0, nfp, ntor, &
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
-        panels_per_edge, verbose, fixed_boundary
+        panels_per_edge, verbose, start_at_target, residual_tolerance
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -203,52 +204,47 @@ program gs_free_3d_main
     call initialize_gs(mesh, contour, max_area, st, degree, curve=gamma, &
         interior_chain=chain)
     if (st /= 0) error stop 'mesh'
-    if (panels_per_edge > 0) then
-        call ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, ref%f_edge, &
-            circulation, st, mu0=mu0, panels_per_edge=panels_per_edge)
-    else
-        call ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, ref%f_edge, &
-            circulation, st, mu0=mu0)
-    end if
+    if (panels_per_edge <= 0) panels_per_edge = merge(1, 2, degree == 2)
+    call ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, ref%f_edge, &
+        circulation, st, mu0=mu0, panels_per_edge=panels_per_edge)
     if (st /= IDEAL_FB_OK) error stop 'free-boundary init'
     if (nphi > 0 .and. nphi /= fb%plasma%nphi) &
         write (output_unit, '(a)') 'note: nphi is set by ideal_map_init (3 ntor + 1)'
     fb%energy_scale = energy_scale()
-    if (fixed_boundary) then
-        ! Diagnostic: hold Gamma_p (all modes) as in the fixed-boundary lane.
-        do i = 1, fb%plasma%nodes
-            if (.not. fb%plasma%boundary(i)) cycle
-            fb%plasma%fixed(1:fb%plasma%nred) = fb%plasma%fixed(1:fb%plasma%nred)
-            block
-                integer :: m
-                do m = 1, fb%nmode
-                    fb%plasma%fixed(2*fb%nmode*(i - 1) + 2*m - 1) = .true.
-                end do
-            end block
-        end do
-    end if
     call ideal_fb_set_drive(fb, sampler, st, closure)
     write (output_unit, '(a,i0,a,i0,a,i0,a,es10.3)') 'plasma nodes ', &
         fb%plasma%nodes, ' shell nodes ', fb%ns, ' unknowns ', fb%n, &
         ' drive closure ', closure
+    if (start_at_target) then
+        ! Diagnostic: the exact target X = T^-1 in full coefficients.
+        do i = 1, fb%plasma%nodes
+            fb%plasma%x(1:2, 1, i) = offset_backward(field, fb%plasma%reference(:, i))
+        end do
+        call ideal_fb_solve_shell_map(fb, st)
+        if (st /= IDEAL_FB_OK) error stop 'shell map projection'
+    end if
     call ideal_fb_solve_vacuum(fb, st)
     if (st /= IDEAL_FB_OK) error stop 'initial vacuum solve'
     write (output_unit, '(a,es10.3)') 'vacuum shell field vs 2D field, rel L2 ', &
         shell_mismatch()
+    call xrow_norm('before multipliers')
     call ideal_fb_solve_multipliers(fb, st)
     if (st /= IDEAL_FB_OK) error stop 'initial multiplier solve'
-    if (fixed_boundary) then
-        block
-            type(ideal_map_solve_report_t) :: mrep
-            call ideal_map_solve(fb%plasma, tolerance, max_iterations, mrep, st, &
-                verbose)
-            write (output_unit, '(a,i0,a,i0,a,es10.3)') 'N1 solve status ', st, &
-                ' it ', mrep%iterations, ' grad ', mrep%gradient
-        end block
-    end if
+    call xrow_norm('after multipliers')
     call ideal_fb_solve(fb, tolerance, max_iterations, report, st, verbose, &
-        step_tolerance)
+        step_tolerance, residual_tolerance)
     call cpu_time(t1)
+    block
+        real(dp) :: f, k
+        integer :: c, s2
+        do c = 1, 2
+            call ideal_fb_rigid_stiffness(fb, c, 1.0e-3_dp, f, k, s2)
+            rigid(:, c) = [f, k]
+            write (output_unit, '(a,a,a,es12.4,a,es12.4,a,i0)') 'rigid ', &
+                trim(merge('R', 'Z', c == 1)), ' shift: force ', f, &
+                ' stiffness (J/m^2/period) ', k, ' status ', s2
+        end do
+    end block
     write (output_unit, '(a,i0,a,i0,a,es10.3)') 'newton status ', st, &
         ' iterations ', report%iterations, ' residual ', report%residual
     call write_results(st)
@@ -399,6 +395,17 @@ contains
         end if
     end subroutine
 
+    subroutine xrow_norm(label)
+        character(*), intent(in) :: label
+        real(dp), allocatable :: g(:)
+        integer :: s2
+        allocate (g(fb%n))
+        call ideal_fb_gradient(fb, g, s2)
+        write (output_unit, '(a,a,4es11.3)') label, ' |g| p x l f ', &
+            norm2(g(1:fb%np)), norm2(g(fb%np + 1:fb%np + fb%nx)), &
+            norm2(g(fb%np + fb%nx + 1:fb%np + 2*fb%nx)), norm2(g(fb%np + 2*fb%nx + 1:))
+    end subroutine
+
     real(dp) function shell_mismatch() result(rel)
         ! Shell field of the vacuum solve against the 2D field (B_pol from
         ! psi, B_phi = F_vac/R); meaningful for the unshifted start, where
@@ -508,6 +515,9 @@ contains
         write (u, '(a,1x,es16.8)') 'merit_ratio', sqrt(report%merit/report%merit0)
         write (u, '(a,1x,es16.8)') 'last_step_m', report%step
         write (u, '(a,1x,es16.8)') 'constraint', report%constraint
+        write (u, '(a,1x,l1)') 'roundoff_floor', report%floor
+        write (u, '(a,2(1x,es16.8))') 'rigid_R_force_stiffness', rigid(:, 1)
+        write (u, '(a,2(1x,es16.8))') 'rigid_Z_force_stiffness', rigid(:, 2)
         write (u, '(a,1x,es16.8)') 'offset_r', offset_r
         write (u, '(a,1x,es16.8)') 'offset_z', offset_z
         write (u, '(a,1x,es16.8)') 'elongation', elongation
