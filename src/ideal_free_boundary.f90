@@ -1477,11 +1477,17 @@ contains
 
         subroutine rigid_vertical_correct()
             ! dZ = -F_Z/K_Z on the rigid n = 0 Z mode; kept only when the
-            ! weighted merit decreases.
+            ! weighted merit decreases or, with the gauge, when |F_Z| does: the
+            ! gauge-projected merit is blind to the vertical mode (an offset
+            ! start already has merit ~ 0, so a merit test rejects every return).
             real(dp), allocatable :: g2(:)
             real(dp) :: dz, m2
             integer :: s3
+            logical :: by_force, accept
+            by_force = fb%tangential_gauge > 0
             dz = -fzr/kz
+            if (by_force .and. .not. abs(dz) > vertical_tol) return
+            ftry = fzr
             x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
             fb%plasma%x(2, 1, :) = fb%plasma%x(2, 1, :) + dz
             call ideal_fb_solve_shell_map(fb, s3)
@@ -1495,15 +1501,22 @@ contains
                 ftry = rigid_force(g2)
                 if (fb%tangential_gauge > 0) call project_gauge(fb, g2)
                 m2 = sum(wts*g2**2)
-                if (m2 < sum(wts*grad**2)) then
-                    if (talk) print '(a,es10.2,a,es10.3,a,es10.3)', &
-                        '   rigid dZ ', dz, ' merit ', sum(wts*grad**2), ' ->', m2
+                if (by_force) then
+                    accept = abs(ftry) < abs(fzr)
+                else
+                    accept = m2 < sum(wts*grad**2)
+                end if
+                if (accept) then
+                    if (talk) print '(a,es10.2,a,es10.3,a,es10.3,a,es10.3,a,es10.3)', &
+                        '   rigid dZ ', dz, ' merit ', sum(wts*grad**2), ' ->', m2, &
+                        ' F_Z ', fzr, ' ->', ftry
                     grad = g2; fzr = ftry
                     return
                 end if
             end if
             fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
-            if (talk) print '(a,es10.2,a)', '   rigid dZ ', dz, ' rejected'
+            if (talk) print '(a,es10.2,a,es10.3,a,es10.3)', '   rigid dZ ', dz, &
+                ' rejected F_Z ', fzr, ' ->', ftry
         end subroutine
     end subroutine
 
