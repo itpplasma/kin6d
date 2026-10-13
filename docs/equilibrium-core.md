@@ -223,6 +223,14 @@ last reported digit.
 | M6 | D8 harness and case registry; offset-start return tests for the ψ free-boundary and map lanes | existing ladders reproduced through the harness |
 | M7 | Physical move of the mesh container out of `gs_state_t` (composition) | K6-mini bitwise; full suite |
 
+Implemented: M0 `equilibrium_state` (𝒮, evaluator `equilibrium_field_t`),
+`equilibrium_chart` (`ideal_chart_t`, cylindrical; N1 still has its own
+copy), CTest `gs_k6_mini_regression`. M1 `gs_equilibrium` (ψ → 𝒮 over a
+geometry view), `equilibrium_residual` (D3, fortsym-proved stress leaf);
+map → 𝒮 waits for N1 on main. M2 `equilibrium_readback` on
+`labelled_field_t`; `read_gs_equilibrium` is a thin caller and takes
+`psi_bound` and `plasma_cell` for free-boundary states.
+
 ### Which upcoming steps wait for what
 
 | Step | May proceed now | Must wait for |
