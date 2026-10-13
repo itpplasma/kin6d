@@ -126,7 +126,7 @@ module kin6d_ideal_map
     type :: ideal_map_solve_report_t
         integer :: iterations = 0
         real(dp) :: energy = 0, gradient = huge(1.0_dp), step = huge(1.0_dp)
-        real(dp) :: min_jacobian = 0, damping = 0
+        real(dp) :: min_jacobian = 0, damping = 0, initial_gradient = 0
         ! Wall seconds: energy/gradient, Hessian assembly, factor + solve.
         real(dp) :: energy_s = 0, hessian_s = 0, factor_s = 0
         ! Backend split of factor_s where reported (MUMPS): symbolic analysis
@@ -828,7 +828,8 @@ contains
         call csr_assemble_blocks(matrix, map%redconn, blocks)
     end subroutine
 
-    subroutine ideal_map_solve(map, tolerance, max_iterations, report, status, verbose)
+    subroutine ideal_map_solve(map, tolerance, max_iterations, report, status, verbose, &
+                               reference_gradient)
         ! Damped Newton on the reduced (nu, omega) coefficients: Levenberg-Marquardt
         ! with the Hessian diagonal as metric, shrinking the damping after every
         ! accepted step. Steps keep J > 0 and do not raise W beyond roundoff.
@@ -840,6 +841,9 @@ contains
         type(ideal_map_solve_report_t), intent(out) :: report
         integer, intent(out) :: status
         logical, intent(in), optional :: verbose
+        ! Absolute gradient the tolerance refers to (default: the initial one),
+        ! e.g. the first-phase gradient for a polishing solve.
+        real(dp), intent(in), optional :: reference_gradient
         type(csr_matrix_t) :: matrix
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sstatus
@@ -863,6 +867,8 @@ contains
         call ideal_map_reduce(map, grad, gred)
         where (map%fixed) gred = 0
         g0 = norm2(gred); gnorm = g0
+        report%initial_gradient = g0
+        if (present(reference_gradient)) g0 = reference_gradient
         mu = map%initial_damping
         cap_x = 0.05_dp*maxval(maxval(map%reference, dim=2) &
             - minval(map%reference, dim=2))
