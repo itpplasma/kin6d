@@ -271,7 +271,6 @@ program gs_free_3d_main
         ! state the n /= 0 block is linear in the coil drive.
         call ideal_fb_newton_step(fb, st, nonaxisymmetric_only=.true.)
         if (st /= IDEAL_FB_OK) error stop 'linear response step'
-        max_iterations = 0
     end if
     call xrow_norm('after multipliers')
     if (homotopy_steps > 1) then
