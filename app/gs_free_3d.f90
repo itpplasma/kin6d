@@ -131,7 +131,7 @@ program gs_free_3d_main
     real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
     real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
-    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, tangential_damping = 0
+    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, tangential_damping = 0, tangential_gauge = 0
     logical :: rigid_vertical = .false.
     integer :: homotopy_steps = 1, stage_iterations = 15, gamma_c_modes = 0
     real(dp) :: rigid(2, 2) = 0, seed_amplitude = 0
@@ -153,9 +153,8 @@ program gs_free_3d_main
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
-        stability, shifts, gamma_c_scale, tangential_damping, rigid_vertical, &
-        homotopy_steps, &
-        stage_iterations, gamma_c_modes, save_state, load_state, linear_response
+        stability, shifts, gamma_c_scale, tangential_damping, tangential_gauge, &
+        rigid_vertical, homotopy_steps, stage_iterations, gamma_c_modes, save_state, load_state, linear_response
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -235,6 +234,7 @@ program gs_free_3d_main
         write (output_unit, '(a)') 'note: nphi is set by ideal_map_init (3 ntor + 1)'
     fb%energy_scale = energy_scale()
     fb%tangential_damping = tangential_damping
+    fb%tangential_gauge = tangential_gauge
     fb%rigid_vertical = rigid_vertical
     call ideal_fb_set_drive(fb, sampler, st, closure)
     write (output_unit, '(a,i0,a,i0,a,i0,a,es10.3)') 'plasma nodes ', &
