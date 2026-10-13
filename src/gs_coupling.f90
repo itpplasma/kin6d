@@ -36,10 +36,12 @@ module kin6d_gs_coupling
     use fortnum_quadrature, only: gauss_legendre
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
     use kin6d_sort_keys, only: sort_key_order
+    use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     implicit none
     private
+    public :: gs_coupling_steklov, gs_coupling_steklov_cache_clear
 
     integer, parameter, public :: GS_COUPLING_OK = 0
     integer, parameter, public :: GS_COUPLING_BAD_STATE = 1
@@ -73,6 +75,19 @@ module kin6d_gs_coupling
     public :: gs_coupling_coil_load, gs_coupling_source_load, gs_coupled_solve
     public :: gs_coupling_energies, gs_coupling_edge_points
     public :: gs_coupling_bem_nodes, gs_coupling_edge_weights
+
+    !> One cached Steklov-Poincare operator of a fixed artificial curve Gamma_c,
+    !! keyed by the BEM trace nodes and the flux degree. Gamma_c does not change
+    !! between mesh refits, Newton iterations or inverse passes, so the dense BEM
+    !! assembly (the dominant serial-in-practice cost of a refit) is done once.
+    type :: steklov_entry_t
+        integer :: flux_degree = -1
+        real(dp), allocatable :: nodes(:, :), s(:, :)
+        type(gs_bem_curve_t) :: curve
+    end type steklov_entry_t
+    integer, parameter :: steklov_slots = 4
+    type(steklov_entry_t), save :: steklov_cache(steklov_slots)
+    integer, save :: steklov_next = 1
 
 contains
 
@@ -141,6 +156,7 @@ contains
         end do
     end subroutine gs_coupling_edge_points
 
+
     subroutine gs_coupling_build(state, coupling, status, panels_per_edge, flux_degree)
         !! Assemble the sparse stiffness and the dense Gamma_c block.
         type(gs_state_t), intent(in) :: state
@@ -148,13 +164,13 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: panels_per_edge, flux_degree
         type(gs_bem_curve_t) :: curve
-        type(gs_bem_operators_t) :: ops
         real(dp), allocatable :: s_bem(:, :), bem_nodes(:, :), restriction(:, :)
         real(dp), allocatable :: work(:, :)
         integer, allocatable :: first_edge(:)
         integer :: e, k, i, j, n, order, ne, np, m, ids(0:3)
         integer :: next_edge, stat
-        real(dp) :: area
+        real(dp) :: area, t0
+        t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_COUPLING_BAD_STATE
         if (.not. state % ready) return
@@ -238,12 +254,10 @@ contains
         if (area <= 0.0_dp) return
 
         status = GS_COUPLING_BEM_FAILED
-        call gs_bem_curve_from_nodes(bem_nodes, curve, stat)
+        call gs_phase_tick('cb.chain', t0)
+        call gs_coupling_steklov(bem_nodes, coupling % flux_degree, curve, s_bem, stat)
         if (stat /= 0) return
-        call gs_bem_assemble(curve, coupling % flux_degree, ops, stat)
-        if (stat /= 0) return
-        call gs_bem_steklov_symmetric(ops, s_bem, stat)
-        if (stat /= 0) return
+        call gs_phase_tick('cb.steklov', t0)
         ! S_trace = R^T S_bem R, one column per thread task.
         allocate (coupling % s_trace(coupling % n_trace, coupling % n_trace))
         allocate (work(2 * np, coupling % n_trace))
@@ -259,9 +273,96 @@ contains
         !$omp end parallel do
         coupling % s_trace = 0.5_dp * (coupling % s_trace + transpose(coupling % s_trace))
 
+        call gs_phase_tick('cb.strace', t0)
         call build_stiffness(state, coupling)
+        call gs_phase_tick('cb.stiffness', t0)
         status = GS_COUPLING_OK
     end subroutine gs_coupling_build
+
+    subroutine gs_coupling_steklov(nodes, flux_degree, curve, s_bem, stat)
+        !! Curve and symmetric Steklov-Poincare matrix S_h of the BEM trace
+        !! nodes, from the cache when the same nodes were assembled before
+        !! (bitwise equal coordinates). Not for use inside a parallel region;
+        !! the assembly itself is threaded.
+        real(dp), intent(in) :: nodes(:, :)
+        integer, intent(in) :: flux_degree
+        type(gs_bem_curve_t), intent(out) :: curve
+        real(dp), allocatable, intent(out) :: s_bem(:, :)
+        integer, intent(out) :: stat
+        type(gs_bem_operators_t) :: ops
+        integer :: slot, shift, nn, i, j
+
+        do slot = 1, steklov_slots
+            if (steklov_cache(slot) % flux_degree /= flux_degree) cycle
+            if (.not. allocated(steklov_cache(slot) % nodes)) cycle
+            if (any(shape(steklov_cache(slot) % nodes) /= shape(nodes))) cycle
+            shift = steklov_shift(steklov_cache(slot) % nodes, nodes)
+            if (shift < 0) cycle
+            nn = size(nodes, 2)
+            if (shift == 0) then
+                curve = steklov_cache(slot) % curve
+                s_bem = steklov_cache(slot) % s
+            else
+                ! The same closed curve entered at another panel: relabel.
+                call gs_bem_curve_from_nodes(nodes, curve, stat)
+                if (stat /= 0) return
+                allocate (s_bem(nn, nn))
+                !$omp parallel do default(shared) private(j, i) schedule(static)
+                do j = 1, nn
+                    do i = 1, nn
+                        s_bem(i, j) = steklov_cache(slot) % s( &
+                            mod(i - 1 + shift, nn) + 1, mod(j - 1 + shift, nn) + 1)
+                    end do
+                end do
+                !$omp end parallel do
+            end if
+            stat = 0
+            return
+        end do
+        call gs_bem_curve_from_nodes(nodes, curve, stat)
+        if (stat /= 0) return
+        call gs_bem_assemble(curve, flux_degree, ops, stat)
+        if (stat /= 0) return
+        call gs_bem_steklov_symmetric(ops, s_bem, stat)
+        if (stat /= 0) return
+        slot = steklov_next
+        steklov_next = mod(steklov_next, steklov_slots) + 1
+        steklov_cache(slot) % flux_degree = flux_degree
+        steklov_cache(slot) % nodes = nodes
+        steklov_cache(slot) % curve = curve
+        steklov_cache(slot) % s = s_bem
+    end subroutine gs_coupling_steklov
+
+    pure integer function steklov_shift(cached, nodes) result(shift)
+        !! Even s >= 0 with nodes(:, j) == cached(:, j + s) cyclically for every
+        !! j (panels hold two nodes), or -1 when the point lists differ.
+        real(dp), intent(in) :: cached(:, :), nodes(:, :)
+        integer :: nn, j, s0
+
+        nn = size(nodes, 2)
+        shift = -1
+        do s0 = 0, nn - 2, 2
+            if (all(cached(:, s0 + 1) == nodes(:, 1))) then
+                do j = 1, nn
+                    if (any(cached(:, mod(j - 1 + s0, nn) + 1) /= nodes(:, j))) exit
+                    if (j == nn) shift = s0
+                end do
+                if (shift >= 0) return
+            end if
+        end do
+    end function steklov_shift
+
+    subroutine gs_coupling_steklov_cache_clear()
+        integer :: slot
+
+        do slot = 1, steklov_slots
+            steklov_cache(slot) % flux_degree = -1
+            if (allocated(steklov_cache(slot) % nodes)) &
+                deallocate (steklov_cache(slot) % nodes)
+            if (allocated(steklov_cache(slot) % s)) deallocate (steklov_cache(slot) % s)
+        end do
+        steklov_next = 1
+    end subroutine gs_coupling_steklov_cache_clear
 
     subroutine gs_coupling_bem_nodes(state, coupling, m, nodes, restriction)
         !! BEM trace nodes of m panels per mesh edge of Gamma_c (node 2p-1 at

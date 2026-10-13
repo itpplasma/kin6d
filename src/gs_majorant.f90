@@ -15,13 +15,12 @@ module kin6d_gs_majorant
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
     use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_bem_nodes, &
-        gs_coupling_edge_weights, gs_coupled_apply
+        gs_coupling_edge_weights, gs_coupled_apply, gs_coupling_steklov
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
         gs_fb_evaluate, gs_fb_factor, gs_fb_solve, gs_fb_release, GS_FB_OK
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
-        gs_bem_operators_t, gs_bem_curve_from_nodes, gs_bem_assemble, &
-        gs_bem_steklov_symmetric, gs_bem_panel_point, gs_bem_trace_node_index
+        gs_bem_panel_point, gs_bem_trace_node_index
     use fortfem_sparse_direct, only: sparse_direct_factor_t, &
         sparse_direct_factor_csc, sparse_direct_solve_factored, sparse_direct_free
     use fortnum_quadrature, only: gauss_legendre
@@ -167,7 +166,6 @@ contains
         type(gs_circuit_set_t), intent(in), optional :: set
         integer, intent(in), optional :: reference_panels
         real(dp), intent(in), optional :: cf2
-        type(gs_bem_operators_t) :: ops
         real(dp), allocatable :: nodes(:, :), gx(:), gw(:), gamma(:, :)
         real(dp), allocatable :: xq(:, :), nq(:, :), wq(:), bq(:, :), gq(:, :)
         real(dp), allocatable :: gr(:, :), gz(:, :), blocks(:, :, :)
@@ -195,11 +193,7 @@ contains
 
         status = GS_CM_BEM_FAILED
         call gs_coupling_bem_nodes(state, coupling, m, nodes, est%restriction)
-        call gs_bem_curve_from_nodes(nodes, est%curve, stat)
-        if (stat /= 0) return
-        call gs_bem_assemble(est%curve, coupling%flux_degree, ops, stat)
-        if (stat /= 0) return
-        call gs_bem_steklov_symmetric(ops, est%s_ref, stat)
+        call gs_coupling_steklov(nodes, coupling%flux_degree, est%curve, est%s_ref, stat)
         if (stat /= 0) return
         est%s_chol = est%s_ref
         call dpotrf('U', est%nx, est%s_chol, est%nx, info)
