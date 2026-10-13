@@ -229,7 +229,12 @@ copy), CTest `gs_k6_mini_regression`. M1 `gs_equilibrium` (ψ → 𝒮 over a
 geometry view), `equilibrium_residual` (D3, fortsym-proved stress leaf);
 map → 𝒮 waits for N1 on main. M2 `equilibrium_readback` on
 `labelled_field_t`; `read_gs_equilibrium` is a thin caller and takes
-`psi_bound` and `plasma_cell` for free-boundary states.
+`psi_bound` and `plasma_cell` for free-boundary states. M3
+`equilibrium_certificate` (`equilibrium_certifier_t`: a lane returns 𝓜 and
+β_h with its kind; `certify` forms 𝓜/β_h and the claim label, written to π);
+`gs_certificate` wraps `gs_functional_majorant` (status 4 → residual
+verified, 5 → practical estimate, 0 → certified) and `gs_fb_majorant`
+(practical estimate) without changing them.
 
 ### Which upcoming steps wait for what
 
