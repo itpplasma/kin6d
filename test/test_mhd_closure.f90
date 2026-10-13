@@ -28,6 +28,10 @@ program test_mhd_closure
     !!     1/(m - n q0 - 1) in the cylinder limit (field-aligned boundary
     !!     sheet = moved current xi_n J0 at zero beta).
     !!  4. Mercier index: D_I = -1/4 exactly at zero pressure gradient.
+    !!  4b. Driven ideal shielding of q = 3/1 in the GPEC lar default cylinder
+    !!     (q = 2.2 (1 + r^2), edge current j(1) /= 0) against the cylinder
+    !!     ODE with the edge-current jump (cyl_response.py S_edge_current =
+    !!     2.2967, edge total/applied 0.6507) at ring ratios 2 and 3.
     !! Argument "resistive" runs the L5 suite instead (kin6d_mhd_layer_n):
     !!  5. Scaled layer solver: constant-psi resistive-inertial limit 2 pi
     !!     Gamma(3/4)/Gamma(1/4) g^(5/4)/eps, resolution, g -> conj(g),
@@ -68,7 +72,8 @@ program test_mhd_closure
     real(dp), parameter :: b0 = 2.0_dp
     integer, parameter :: ntab = 14001
     real(dp), parameter :: rtab_max = 1.4_dp
-    integer :: prof = 1                  ! 1 Wesson, 2 tanh step, 3 uniform
+    integer :: prof = 1                  ! 1 Wesson, 2 tanh step, 3 uniform,
+                                         ! 4 GPEC lar default j = 1/(1 + r^2)^2
     real(dp) :: q0 = 1.2_dp, r1 = 0.5_dp, wstep = 0.08_dp
     integer :: nmode = 1, mres = 2
     real(dp) :: r0, msgn = 1.0_dp
@@ -76,6 +81,7 @@ program test_mhd_closure
     type(psi_grid_t) :: g
     logical :: all_passed
     integer :: nrad_fe = 32, gmres_max = 400, nfit_fe = 3
+    real(dp) :: shield_tol = 1.0e-6_dp
     character(len=32) :: suite
     ! L5 resistive layer (SI): mass density, magnetic diffusivity eta/mu0,
     ! Doppler rate gamma = i n Omega of the static drive
@@ -101,6 +107,7 @@ program test_mhd_closure
     call layer_conditioning()
     call layer_ring_cap()
     call layer_jump_exact()
+    call shield_cylinder()
     call fe_ladder("Wesson j = (1 - r^2)^2", [10.0_dp, 40.0_dp], 2.0e-2_dp)
     prof = 2
     wstep = 0.08_dp
@@ -127,6 +134,8 @@ contains
         real(dp), intent(in) :: r
         if (prof == 3) then
             jprof = 1.0_dp
+        else if (prof == 4) then
+            jprof = 1.0_dp/(1.0_dp + r*r)**2
         else if (prof == 1) then
             jprof = max(0.0_dp, 1.0_dp - r*r)**2
         else
@@ -138,6 +147,8 @@ contains
         real(dp), intent(in) :: r
         if (prof == 3) then
             djprof = 0.0_dp
+        else if (prof == 4) then
+            djprof = -4.0_dp*r/(1.0_dp + r*r)**3
         else if (prof == 1) then
             djprof = -4.0_dp*r*max(0.0_dp, 1.0_dp - r*r)
         else
@@ -437,6 +448,15 @@ contains
         if (len_trim(env) == 0) return
         if (trim(env) == 'edge') then
             call edge_current_jump()
+            stop
+        end if
+        if (trim(env) == 'shieldcyl') then
+            call shield_cylinder()
+            if (.not. all_passed) error stop 1
+            stop
+        end if
+        if (env(1:6) == 'shield') then
+            call shield_study(env(7:))
             stop
         end if
         read (env, *) prof, r0, nrad_fe, delta, ratio, gmres_max, nfit_fe
@@ -879,6 +899,330 @@ contains
             ", a1 in/out ", abs(cf(1, 1)), abs(cf(1, 2)), ", log-term asymmetry ", &
             abs(cf(3, 1) + cf(3, 2))/max(abs(cf(3, 1)), tiny(1.0_dp))
     end subroutine fe_delta
+
+    ! ============================================== driven ideal shielding
+
+    subroutine ode_shield(rs, s_edge, edge, dp_edge)
+        !! Ideal shielding of the vacuum drive (r/a)^m in the cylinder with
+        !! the edge current: the outer solution u(r_s) = 0, u'(r_s) = 1, the
+        !! edge jump psi'(1-) = psi'(1+) + kappa psi(1), kappa = j(1)/(I(1)
+        !! (1 - n q(1)/m)), matched to the drive plus r^-m outside (no wall).
+        !! s_edge = r_s [psi']/psi_vac(r_s), edge = psi(1)/psi_vac(1)
+        !! (cyl_response.py S_edge_current, edge_total_over_applied), and
+        !! dp_edge = r_s Delta' with the same edge jump (psi'(1-) = (kappa -
+        !! m) psi(1) for the free tearing solution).
+        real(dp), intent(in) :: rs
+        real(dp), intent(out) :: s_edge, edge, dp_edge
+        integer, parameter :: ne = 6
+        real(dp) :: eta(ne), sv(ne), ev(ne), y(2), am(ne, 4), am2(ne, 4), kap
+        real(dp) :: work(64), le, rhs(ne, 3), yl(2)
+        integer :: i, info
+        kap = jprof(1.0_dp)/(ival(1.0_dp)*(1.0_dp - nmode*qcyl(1.0_dp)/mres))
+        do i = 1, ne
+            eta(i) = 1.0e-3_dp*0.25_dp**(i - 1)
+            y = [eta(i), 1.0_dp]
+            call integrate(rs + eta(i), 1.0_dp, y)
+            ev(i) = 2*mres/(mres - kap + y(2)/y(1))
+            sv(i) = rs*(ev(i)/y(1))/rs**mres
+            yl = [1.0e-3_dp**mres, mres*1.0e-3_dp**(mres - 1)]
+            call integrate(1.0e-3_dp, rs - eta(i), yl)
+            y = [1.0_dp, kap - mres]
+            call integrate(1.0_dp, rs + eta(i), y)
+            rhs(i, 3) = rs*(y(2)/y(1) - yl(2)/yl(1))
+            le = log(eta(i))
+            am(i, :) = [1.0_dp, eta(i)*le*le, eta(i)*le, eta(i)]
+        end do
+        rhs(:, 1) = sv
+        rhs(:, 2) = ev
+        am2 = am
+        call dgels('N', ne, 4, 3, am2, ne, rhs, ne, work, size(work), info)
+        s_edge = rhs(1, 1)
+        edge = rhs(1, 2)
+        dp_edge = rhs(1, 3)
+    end subroutine ode_shield
+
+    subroutine shield_cylinder()
+        !! Driven ideal shielding of q = 3/1 in the GPEC lar default cylinder
+        !! (q = q0 (1 + r^2), q0 = 2.2, j(1) /= 0: edge current) at R0/a = 40:
+        !! the jump of d Phi/d psin across the layer over the vacuum resonant
+        !! flux, r_s [psi']/psi_vac, against the cylinder ODE with the edge
+        !! current (cyl_response.py S_edge_current = 2.2967), at the ring
+        !! ratios 2 and 3 of the layer fit.
+        real(dp) :: rs, sref, eref, dpe, sfe(2), sl(2), efe(2), err
+        integer :: i
+        prof = 4
+        q0 = 2.2_dp
+        nmode = 1
+        mres = 3
+        r0 = 40.0_dp
+        call make_tables()
+        rs = r_of_q(real(mres, dp)/nmode)
+        call ode_shield(rs, sref, eref, dpe)
+        print '(a,f10.6,a,f10.6,a,f10.6)', "  shielding q = 3/1, q0 = 2.2: r_s =", rs, &
+            ", ODE r_s [psi']/psi_vac =", sref, ", edge total/applied =", eref
+        call make_equilibrium()
+        err = 0.0_dp
+        do i = 1, 2
+            call fe_shield(1.0e-3_dp, real(i + 1, dp), 32, rs, sfe(i), sl(i), efe(i))
+            err = max(err, abs(sfe(i) - sref)/sref, abs(sl(i) - sref)/sref)
+            print '(a,f4.1,a,3f10.6)', "    ratio", real(i + 1, dp), &
+                ": FEEC S (fit, sheets), edge ratio", sfe(i), sl(i), efe(i)
+        end do
+        call record(err < 2.0e-2_dp .and. abs(efe(1) - eref) < 2.0e-2_dp*eref, &
+            "driven ideal shielding with edge current against the cylinder ODE")
+    end subroutine shield_cylinder
+
+    subroutine shield_study(args)
+        !! KIN6D_CLOSURE_STUDY="shield q0 m r0 nrad delta ratio bs mc [ReD ImD
+        !! [nfit]]" (GPEC lar default profile, R0/a = r0, boundary sheet bs and
+        !! moved edge current mc as 0/1).  KIN6D_SHIELD_DPRIME=1 replaces the
+        !! drive by unit large-solution targets (Delta' mode, ReD >= 900) and
+        !! prints r_s Delta' from the fitted slopes and from the sheets;
+        !! KIN6D_SHIELD_TOL sets the GMRES tolerance (default 1e-6)."
+        !! (with r_s Delta_layer = ReD + i ImD the layer is resistive)
+        character(len=*), intent(in) :: args
+        real(dp) :: rs, sref, eref, dpe, delta, ratio, sfe, sl, efe, dd(2)
+        complex(dp) :: pr, pex
+        integer :: nrad, ibs, imc, ios
+        read (args, *) q0, mres, r0, nrad, delta, ratio, ibs, imc
+        block
+            character(len=16) :: tv
+            call get_environment_variable('KIN6D_SHIELD_TOL', tv)
+            if (len_trim(tv) > 0) read (tv, *) shield_tol
+        end block
+        read (args, *, iostat=ios) q0, mres, r0, nrad, delta, ratio, ibs, imc, dd, &
+            nfit_fe
+        if (ios /= 0) nfit_fe = 3
+        read (args, *, iostat=ios) q0, mres, r0, nrad, delta, ratio, ibs, imc, dd
+        prof = 4
+        nmode = 1
+        call make_tables()
+        rs = r_of_q(real(mres, dp)/nmode)
+        call ode_shield(rs, sref, eref, dpe)
+        call make_equilibrium()
+        if (ios == 0 .and. dd(1) < 900.0_dp) then
+            call fe_shield(delta, ratio, nrad, rs, sfe, sl, efe, ibs == 1, imc == 1, &
+                cmplx(dd(1), dd(2), dp), pr)
+            pex = sref/(cmplx(dd(1), dd(2), dp) - dpe)
+            print '(a,2f9.4,a,2f11.6,a,2f11.6,a,f10.6)', 'resist D', dd, &
+                ' FE A/psi_vac', pr, ' exact S/(D - Delta_p)', pex, ' rs Delta_p', dpe
+        else
+            call fe_shield(delta, ratio, nrad, rs, sfe, sl, efe, ibs == 1, imc == 1)
+        end if
+        print '(a,f5.2,i3,f6.1,i5,es10.2,f5.2,2i2,a,3f11.6,a,2f11.6)', 'shield', &
+            q0, mres, r0, nrad, delta, ratio, ibs, imc, ' FE S fit/sheets edge', &
+            sfe, sl, efe, ' ODE', sref, eref
+    end subroutine shield_study
+
+    subroutine fe_shield(delta, ratio, nrad, rs_cyl, s_fit, s_sheet, edge, bsheet, &
+            moved, dlay, prec)
+        !! Driven ideal response of the torus with the Frobenius closure
+        !! (a1 = 0 on both sides of every rational, the gs_response_3d
+        !! 'frobenius' path): s_fit = r_s [psi']/psi_vac from layer_jump of
+        !! the total fluxes on the fit rings, s_sheet the same from the edge
+        !! sheet amplitudes (lam_in + lam_out) jump_unit, edge the total over
+        !! applied resonant flux on the boundary ring.  With dlay the layer of
+        !! q = mres/nmode is resistive (resistive_closure) with the prescribed
+        !! layer response r_s Delta_layer = dlay (the other layers stay ideal)
+        !! and prec returns the reconnected flux A/psi_vac (a1 average).
+        use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+            ring_flux_harmonic
+        real(dp), intent(in) :: delta, ratio, rs_cyl
+        integer, intent(in) :: nrad
+        real(dp), intent(out) :: s_fit, s_sheet, edge
+        logical, intent(in), optional :: bsheet, moved
+        complex(dp), intent(in), optional :: dlay
+        complex(dp), intent(out), optional :: prec
+        integer, parameter :: np = 256
+        type(flux_mesh_t) :: fm
+        type(meridian_feec_t) :: fs
+        type(meridian_point_basis_t) :: pb
+        type(ampere_n_t) :: amp
+        type(ideal_options_t) :: opt
+        type(sample_ring_t), allocatable :: sr(:)
+        type(rational_layer_t), allocatable :: lays(:)
+        type(sheet_closure_t) :: cl
+        type(surface_t) :: s
+        type(ring_angles_t) :: rac
+        real(dp), allocatable :: ul(:), extra(:), lab(:), psin_s(:)
+        complex(dp), allocatable :: a(:), f(:), b2(:), b2cl(:, :), lam(:), phit(:)
+        complex(dp), allocatable :: phe(:), phu(:), jun(:), dll(:)
+        complex(dp) :: ph(nfit_fe, 2), cf(3, 2), junit, jfit, phv, pht1, phb
+        integer, allocatable :: mr(:)
+        real(dp) :: qsgn, qt, di, qa, dq, res, dpsindr, xx
+        integer :: nr, j, l, st, info, its, nrat, k, base, itest, mk, nfit
+        logical :: found
+
+        nfit = nfit_fe
+        if (present(bsheet)) opt%boundary_sheet = bsheet
+        if (present(moved)) opt%moved_current = moved
+        call surface_build(g, 0.25_dp, 256, s, st)
+        qsgn = sign(1.0_dp, s%q)
+        msgn = qsgn
+        allocate (psin_s(0), mr(0))
+        do k = 1, 20
+            qt = real(k, dp)/nmode
+            found = find_surface_q(g, qsgn*qt, 0.02_dp, 0.98_dp, 256, 1.0e-13_dp, &
+                xx, st)
+            if (.not. found) cycle
+            psin_s = [psin_s, xx]
+            mr = [mr, nint(qsgn*qt*nmode)]
+            if (k == mres) itest = size(mr)
+        end do
+        nrat = size(mr)
+        extra = sqrt(psin_s)
+        do l = 1, nrat
+            qa = layer_xmax(psin_s(l), [psin_s(:l - 1), psin_s(l + 1:)], delta, ratio, &
+                nfit, nrad)
+            call layer_labels(psin_s(l), delta, ratio, qa, (0.5_dp/nrad)**2, &
+                1 - 2.0e-4_dp, lab)
+            extra = [extra, sqrt(lab)]
+        end do
+        call ring_labels_merge(nrad, extra, 0.3_dp, ul)
+        call ring_labels_smooth(ul, 2*ratio)
+        nr = size(ul)
+        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        if (st /= 0) error stop "mesh"
+        call meridian_feec_build(fm%mm, 2, fs, st)
+        call ampere_n_build(fs, nmode, amp, st)
+        if (st /= 0) error stop "ampere"
+        call meridian_point_basis_init(fs, pb, st)
+        allocate (lays(nrat))
+        do l = 1, nrat
+            call mercier_di(g, psin_s(l), 512, di, qa, dq, st)
+            if (st /= 0) error stop "Mercier"
+            call layer_init(ul, psin_s(l), real(abs(mr(l)), dp)/nmode, dq, di, mr(l), &
+                delta, ratio, nfit, lays(l), st)
+            if (st /= 0) error stop "layer"
+        end do
+        call layer_closure(g, ul, lays, 1024, 2, cl, st)
+        if (st /= 0) error stop "closure"
+        allocate (a(amp%nn), f(amp%nn), b2cl(fs%sp(2)%ndof, cl%ns))
+        do j = 1, cl%ns
+            f = (0.0_dp, 0.0_dp)
+            call ring_sheet_load(fs, pb, fm, cl%sheet_ring(j), cl%sheet_ra(j), nmode, &
+                cl%sheet_m(j), (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            call ampere_n_curl(amp, a, b2)
+            b2cl(:, j) = b2
+        end do
+        dpsindr = 2.0_dp*b0/q0*ival(rs_cyl)/rs_cyl/psi_of_r(1.0_dp)
+        ! jump of d Phi/d psin per unit rational-ring sheet of every layer
+        ! (gs_response_3d jump_unit)
+        allocate (jun(nrat), dll(nrat))
+        base = 0
+        do l = 1, nrat
+            f = (0.0_dp, 0.0_dp)
+            call surface_build(g, ul(lays(l)%ring_rat)**2, 1024, s, st)
+            call ring_angles_set(s%q, s%theta_s(:, 2), s%nu, rac)
+            call ring_sheet_load(fs, pb, fm, lays(l)%ring_rat, rac, nmode, mr(l), &
+                (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            call ampere_n_curl(amp, a, b2)
+            phu = closure_fluxes(fs, pb, fm, cl, nmode, b2)
+            jun(l) = layer_jump(lays(l), reshape(phu(base + 1:base + 2*nfit), &
+                [nfit, 2]))
+            base = base + 2*nfit
+        end do
+        if (present(dlay)) then
+            dll = (1.0e12_dp, 0.0_dp)
+            dll(itest) = dlay/(rs_cyl*dpsindr)
+            call resistive_closure(lays, dll, jun, cl)
+        end if
+        allocate (sr(nr))
+        do j = 2, nr
+            call sample_ring_build(g, opt, fm, fs, pb, 0.5_dp*(ul(j - 1) + ul(j)), j, &
+                np, sr(j - 1), st)
+            if (st /= 0) error stop "half ring"
+            do l = 1, nrat
+                if (sr(j - 1)%u > ul(lays(l)%ring(1, 1)) .and. &
+                    sr(j - 1)%u < ul(lays(l)%ring(1, 2))) sr(j - 1)%active = .false.
+            end do
+        end do
+        call sample_ring_build(g, opt, fm, fs, pb, 1.0_dp, nr, np, sr(nr), st)
+        do j = 1, nr
+            do k = 1, np
+                call drive(sr(j)%x(:, k), sr(j)%bc(:, k))
+            end do
+        end do
+        ! drive fluxes on the closure flux rings
+        allocate (lam(cl%ns), phit(cl%nf), phe(cl%nf))
+        do k = 1, cl%nf
+            phe(k) = drive_flux(fm, cl%flux_ring(k), cl%flux_ra(k), cl%flux_m(k))
+        end do
+        block
+            character(len=8) :: dbg
+            call get_environment_variable('KIN6D_SHIELD_DPRIME', dbg)
+            if (len_trim(dbg) > 0) then
+                phe = (0.0_dp, 0.0_dp)
+                do j = 1, nr
+                    sr(j)%bc = (0.0_dp, 0.0_dp)
+                end do
+                cl%target(2*itest - 1:2*itest) = (1.0_dp, 0.0_dp)
+            end if
+        end block
+        a = (0.0_dp, 0.0_dp)
+        call ideal_response(fs, pb, fm, g, amp, opt, nmode, sr, cl, b2cl, phe, a, &
+            lam, phit, shield_tol, gmres_max, info, its, res)
+        call record(info == 0, "GMRES converged")
+        base = 0
+        do l = 1, itest - 1
+            base = base + 2*lays(l)%nfit
+        end do
+        ph = reshape(phit(base + 1:base + 2*nfit), [nfit, 2])
+        jfit = layer_jump(lays(itest), ph)
+        cf = layer_coefficients(lays(itest), ph)
+        ! total over applied resonant flux on the boundary ring
+        call ampere_n_curl(amp, a, b2)
+        do j = 1, cl%ns
+            b2 = b2 + lam(j)*b2cl(:, j)
+        end do
+        call surface_build(g, 1.0_dp, 1024, s, st)
+        mk = nint(sign(real(mres, dp), s%q))
+        call ring_angles_set(s%q, s%theta_s(:, 2), s%nu, rac)
+        phb = drive_flux(fm, nr, rac, mk)
+        pht1 = ring_flux_harmonic(fs, pb, fm, nr, rac, nmode, b2, mk)
+        edge = real((pht1 + phb)/phb, dp)
+        junit = jun(itest)
+        if (abs(cl%target(2*itest)) > 0.0_dp) &
+            print '(a,2f11.5,a,2f11.5)', '      DPRIME fit (a2+ + a2-)/(delta a1)', &
+            (cf(2, 1) + cf(2, 2))/(delta*0.5_dp*(cf(1, 1) + cf(1, 2)))*dpsindr*rs_cyl, &
+            ' sheets', (lam(2*itest - 1) + lam(2*itest))*junit &
+            /(0.5_dp*(cf(1, 1) + cf(1, 2)))*dpsindr*rs_cyl
+        ! vacuum resonant flux on the rational ring
+        call surface_build(g, ul(lays(itest)%ring_rat)**2, 1024, s, st)
+        call ring_angles_set(s%q, s%theta_s(:, 2), s%nu, rac)
+        phv = drive_flux(fm, lays(itest)%ring_rat, rac, mr(itest))
+        if (present(prec)) prec = 0.5_dp*(cf(1, 1) + cf(1, 2))/phv
+        s_fit = real(jfit/phv, dp)*dpsindr*rs_cyl
+        s_sheet = real((lam(2*itest - 1) + lam(2*itest))*junit/phv, dp)*dpsindr*rs_cyl
+        print '(a,i0,a,i0,a,es9.2,a,2es10.2,a,2es11.3,a,2es11.3)', "      rings ", nr, &
+            ", GMRES ", its, " res", res, ", |a1/Phi| in/out ", &
+            abs(cf(1, :))/abs(ph(1, :)), ", lam+- ", abs(lam(2*itest - 1)), &
+            abs(lam(2*itest)), ", Im S fit/sheet ", aimag(jfit/phv)*dpsindr*rs_cyl, &
+            aimag((lam(2*itest - 1) + lam(2*itest))*junit/phv)*dpsindr*rs_cyl
+    end subroutine fe_shield
+
+    complex(dp) function drive_flux(fm, ring, rang, m)
+        !! Resonant flux harmonic m of the vacuum drive on mesh ring ring.
+        use kin6d_mhd_response_n, only: ring_angles_t, ring_flux_from_values, &
+            ring_points
+        type(flux_mesh_t), intent(in) :: fm
+        integer, intent(in) :: ring, m
+        type(ring_angles_t), intent(in) :: rang
+        real(dp), allocatable :: x(:, :), nds(:, :), th(:), tau(:), wq(:)
+        integer, allocatable :: tt(:)
+        complex(dp), allocatable :: bc(:)
+        complex(dp) :: bb(3)
+        integer :: kk
+        call ring_points(fm, ring, x, nds, th, tt, tau, wq)
+        allocate (bc(size(th)))
+        do kk = 1, size(th)
+            call drive(x(:, kk), bb)
+            bc(kk) = (bb(1)*nds(1, kk) + bb(3)*nds(2, kk))*x(1, kk)
+        end do
+        drive_flux = ring_flux_from_values(rang, nmode, m, th, bc, wq)
+    end function drive_flux
 
     ! ===================================================== L5 resistive layer
 
