@@ -47,7 +47,8 @@ module kin6d_ideal_free_boundary
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_chart_t, ideal_frozen_t, &
+    use kin6d_equilibrium_chart, only: ideal_chart_t
+    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, &
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
     use kin6d_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian

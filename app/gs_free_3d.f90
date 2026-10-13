@@ -104,7 +104,7 @@ program gs_free_3d_main
         curve_value
     use kin6d_coils_3d, only: coil_set_t, coil_set_read, coil_read_currents, &
         coil_set_modes
-    use kin6d_ideal_map, only: cylindrical_chart_t
+    use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_report_t, &
         ideal_fb_init, ideal_fb_set_drive, ideal_fb_solve_vacuum, ideal_fb_solve, &
         ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
