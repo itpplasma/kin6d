@@ -198,6 +198,7 @@ program gs_free_3d_main
     end if
     call initialize_periodic_curve(gamma_curve, samples, st)
     if (st /= 0) error stop 'invalid Gamma_c'
+    if (allocated(rmp_currents)) call check_coils_outside()
     allocate (contour(2, boundary_nodes))
     do i = 1, boundary_nodes
         call gamma(real(i - 1, dp)/boundary_nodes, contour(:, i))
@@ -298,6 +299,32 @@ contains
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         call curve_value(gamma_curve, t, point)
+    end subroutine
+
+    subroutine check_coils_outside()
+        ! The formulation needs every coil outside Gamma_c (coil fields enter
+        ! only through their traces): reject RMP polyline points inside it,
+        ! and report the smallest clearance.
+        real(dp) :: r, z, clear
+        integer :: k, i, j, inside, n
+        n = size(samples, 2)
+        clear = huge(1.0_dp)
+        do k = 1, rmp%nseg
+            r = hypot(rmp%a(1, k), rmp%a(2, k)); z = rmp%a(3, k)
+            inside = 0
+            j = n
+            do i = 1, n
+                if ((samples(2, i) > z) .neqv. (samples(2, j) > z)) then
+                    if (r < (samples(1, j) - samples(1, i))*(z - samples(2, i)) &
+                        /(samples(2, j) - samples(2, i)) + samples(1, i)) &
+                        inside = 1 - inside
+                end if
+                j = i
+            end do
+            if (inside == 1) error stop 'RMP coil inside Gamma_c'
+            clear = min(clear, minval(hypot(samples(1, :) - r, samples(2, :) - z)))
+        end do
+        write (output_unit, '(a,f8.4)') 'RMP coil clearance from Gamma_c (m) ', clear
     end subroutine
 
     subroutine read_curve(path, points)
