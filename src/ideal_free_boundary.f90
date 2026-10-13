@@ -73,6 +73,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_shell_field, ideal_fb_sampler, ideal_fb_mode_weight
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
+    public :: ideal_fb_mode_stability
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -1546,6 +1547,107 @@ contains
             value = 0
             do a = 1, fb%plasma%nodes
                 value = value + g(pidx(fb, c, 1, a))
+            end do
+        end subroutine
+    end subroutine
+
+    subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations)
+        ! Second variation of the free-boundary system along real Fourier mode
+        ! m at an axisymmetric state (where the KKT matrix decouples by mode):
+        ! inverse iteration on the Schur complement S of the mode block onto
+        ! the plasma position dofs (shell map, multipliers and potential
+        ! eliminated exactly), with metric M = |diag H| on those dofs. lambda
+        ! is the Rayleigh quotient x^T S x / x^T M x of the converged vector,
+        ! the eigenvalue of smallest magnitude; lambda < 0 is an instability
+        ! of the fixed-current free-boundary equilibrium in that mode (n = 0:
+        ! the vertical mode; n = nfp: the free-boundary kink).
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: m
+        real(dp), intent(out) :: lambda
+        integer, intent(out) :: status
+        integer, intent(in), optional :: iterations
+        integer, allocatable :: rowptr(:), colidx(:), map(:), rp(:), ci(:)
+        real(dp), allocatable :: val(:), v(:), mass(:), x(:), z(:), rhs(:)
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sst
+        integer :: i, p, n, nnz, np_m, it, nit, a, c, s2
+        logical, allocatable :: plasma_row(:)
+        status = IDEAL_FB_SOLVE_FAILED
+        nit = 40
+        if (present(iterations)) nit = iterations
+        call ideal_fb_hessian(fb, rowptr, colidx, val)
+        ! Dofs of mode m, plasma first.
+        allocate (map(fb%n))
+        map = 0; n = 0
+        do a = 1, fb%plasma%nodes
+            do c = 1, 2
+                n = n + 1; map(pidx(fb, c, m, a)) = n
+            end do
+        end do
+        np_m = n
+        do s2 = 1, fb%ns
+            do c = 1, 3
+                n = n + 1; map(ix(fb, c, m, s2)) = n
+                n = n + 1; map(il(fb, c, m, s2)) = n
+            end do
+            n = n + 1; map(iphi(fb, m, s2)) = n
+        end do
+        allocate (rp(n + 1), ci(size(val)), v(size(val)), mass(np_m), &
+            plasma_row(n))
+        ! Rows in the new order (the block is symmetric: CSR = CSC).
+        block
+            integer, allocatable :: inverse(:)
+            allocate (inverse(n))
+            do i = 1, fb%n
+                if (map(i) > 0) inverse(map(i)) = i
+            end do
+            nnz = 0; rp(1) = 1
+            do i = 1, n
+                do p = rowptr(inverse(i)), rowptr(inverse(i) + 1) - 1
+                    if (map(colidx(p)) == 0) cycle
+                    nnz = nnz + 1
+                    ci(nnz) = map(colidx(p)); v(nnz) = val(p)
+                    if (ci(nnz) == i .and. i <= np_m) mass(i) = abs(val(p))
+                end do
+                rp(i + 1) = nnz + 1
+                ! Columns must be sorted within a row.
+                call sort_row(ci(rp(i):nnz), v(rp(i):nnz))
+            end do
+        end block
+        call configure(solver)
+        call sparse_factor(solver, n, n, nnz, rp, ci(:nnz), v(:nnz), sst)
+        if (.not. status_ok(sst)) return
+        allocate (x(np_m), z(n), rhs(n))
+        do i = 1, np_m
+            x(i) = 1 + 0.1_dp*sin(1.7_dp*i)
+        end do
+        x = x/sqrt(sum(mass*x**2))
+        lambda = 0
+        do it = 1, nit
+            rhs = 0; rhs(1:np_m) = mass*x
+            call sparse_solve(solver, rhs, z, sst)
+            if (.not. status_ok(sst)) then
+                call sparse_destroy(solver); return
+            end if
+            ! z_p = S^-1 M x; Rayleigh quotient of S in the M metric.
+            lambda = sum(mass*x**2)/sum(mass*x*z(1:np_m))
+            x = z(1:np_m)/sqrt(sum(mass*z(1:np_m)**2))
+        end do
+        call sparse_destroy(solver)
+        status = IDEAL_FB_OK
+    contains
+        subroutine sort_row(col, value)
+            integer, intent(inout) :: col(:)
+            real(dp), intent(inout) :: value(:)
+            integer :: j, k, key
+            real(dp) :: tv
+            do j = 2, size(col)
+                key = col(j); tv = value(j); k = j - 1
+                do while (k >= 1)
+                    if (col(k) <= key) exit
+                    col(k + 1) = col(k); value(k + 1) = value(k); k = k - 1
+                end do
+                col(k + 1) = key; value(k + 1) = tv
             end do
         end subroutine
     end subroutine
