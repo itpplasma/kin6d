@@ -18,6 +18,16 @@ module kin6d_gs_prescribed_q
     implicit none
     private
     public :: solve_gs_prescribed_q, gs_q_table_value
+    interface
+        subroutine dgels(trans, m, n, nrhs, a, lda, b, ldb, work, lwork, info)
+            import :: dp
+            character, intent(in) :: trans
+            integer, intent(in) :: m, n, nrhs, lda, ldb, lwork
+            real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+            real(dp), intent(out) :: work(*)
+            integer, intent(out) :: info
+        end subroutine
+    end interface
 contains
     real(dp) function gs_q_table_value(s, q, x) result(value)
         real(dp), intent(in) :: s(:), q(:), x
@@ -33,7 +43,9 @@ contains
                                      q_error, evaluations, q_tolerance, &
                                      pressure_law, forcing, knots, jacobian, &
                                      newton_iterations, verbose, probe_x, &
-                                     probe_residual, probe_jacobian, probe_seed)
+                                     probe_residual, probe_jacobian, probe_seed, &
+                                     regularization, regularization_weight, &
+                                     regularization_used, q_accuracy)
         ! Pressure source dp/dpsi: the scalar pprime on every interval, or, when
         ! pressure_law is present, its piecewise-cubic pp(s) in the normalized
         ! flux s (0 axis, 1 edge; pprime is then ignored). Only the knots and pp
@@ -74,6 +86,30 @@ contains
         real(dp), intent(out), optional :: probe_residual(:)
         real(dp), intent(out), optional :: probe_jacobian(:, :)
         real(dp), intent(out), optional :: probe_seed(:)
+        ! Smoothness regularization of FF' (default 'none': the n q moments
+        ! and the flux equation are solved exactly). The exact moments ask the
+        ! discrete forward model to reproduce q to better than its own
+        ! discretization error; FF' modes that q barely sees (an alternating
+        ! edge mode on edge-graded knots, Jacobian cond 1.7e5 on TC24) then
+        ! absorb that error and the iteration ends at a fold. Regularized,
+        ! the weighted q samples themselves are fitted (overdetermined least
+        ! squares, w = sample weights normalized to unit sum) together with
+        ! the flux equation, and
+        !   |r|^2 + lambda^2 integral_0^1 (d^2 FF'/ds^2)^2 ds
+        ! is minimized (FF' in units of the seed scale; F_edge free) by
+        ! Levenberg-Marquardt-damped Gauss-Newton. 'discrepancy' (Morozov)
+        ! chooses lambda so that the weighted rms q misfit equals q_accuracy,
+        ! the stated accuracy of the q data relative to the discrete model.
+        ! It is re-chosen on each linearization (goal max(q_accuracy, half the
+        ! current misfit), a continuation) and frozen once the goal is
+        ! q_accuracy and two choices agree within 25 %; the result is the
+        ! Tikhonov minimizer at that lambda. A positive regularization_weight
+        ! fixes lambda instead. Convergence: the Gauss-Newton step changes no
+        ! residual or penalty component by more than tolerance at the final
+        ! lambda (regularization_used).
+        character(*), intent(in), optional :: regularization
+        real(dp), intent(in), optional :: regularization_weight, q_accuracy
+        real(dp), intent(out), optional :: regularization_used
         type(gs_state_t) :: seed, candidate, accepted_state
         type(gs_profile_law_t) :: candidate_law, plaw, accepted_law
         type(gs_readback_t) :: readback
@@ -90,7 +126,10 @@ contains
         real(dp) :: pressure, fprobe, jacobian_seconds, solve_seconds
         real(dp) :: t_load, t_response, t_readback
         integer :: n, nb, nr, na, nu, i, j, k, element, calls, failure, newton
-        logical :: exact, talk, uniform_grid, good
+        logical :: exact, talk, uniform_grid, good, regularized, adaptive, converged
+        real(dp), allocatable :: smooth_rows(:, :), wsqrt(:), sample_now(:)
+        real(dp), allocatable :: jac_samples(:, :)
+        real(dp) :: lambda_fixed, lambda, misfit_target
         status = 1; calls = 0; failure = 0; newton = 0
         jacobian_seconds = 0; solve_seconds = 0
         t_load = 0; t_response = 0; t_readback = 0
@@ -100,6 +139,28 @@ contains
             exact = jacobian == 'exact'
         end if
         if (present(verbose)) talk = verbose
+        regularized = .false.; adaptive = .false.; lambda_fixed = 0; lambda = 0
+        misfit_target = 0
+        converged = .false.
+        if (present(regularization_used)) regularization_used = 0
+        if (present(regularization)) then
+            if (regularization /= 'none' .and. regularization /= 'discrepancy') return
+            adaptive = regularization == 'discrepancy'
+        end if
+        if (present(regularization_weight)) then
+            if (.not. ieee_is_finite(regularization_weight)) return
+            if (regularization_weight < 0) return
+            lambda_fixed = regularization_weight
+        end if
+        if (adaptive) then
+            if (lambda_fixed > 0) return
+            if (.not. present(q_accuracy)) return
+            if (.not. ieee_is_finite(q_accuracy)) return
+            if (q_accuracy <= 0 .or. q_accuracy >= 1) return
+            misfit_target = q_accuracy
+        end if
+        regularized = adaptive .or. lambda_fixed > 0
+        if (regularized .and. .not. exact) return
         if (present(newton_iterations)) newton_iterations = 0
         if (present(q_error)) q_error = huge(1.0_dp)
         if (present(evaluations)) evaluations = 0
@@ -219,6 +280,19 @@ contains
             conv(3, i, :) = conv(3, i, :)/2
             conv(4, i, :) = conv(4, i, :)/6
         end do
+        ! Rows of the FF'' seminorm: two Gauss points per break interval
+        ! integrate the squared (piecewise linear) second derivative exactly.
+        allocate (smooth_rows(2*(nb - 1), n + 1))
+        smooth_rows = 0
+        do i = 1, nb - 1
+            h = breaks(i + 1) - breaks(i)
+            do k = 1, 2
+                x = (breaks(i) + breaks(i + 1))/2 + (2*k - 3)*h/(2*sqrt(3.0_dp))
+                call bspline_eval_deriv(spline, x, 3, derivative, stat)
+                if (stat%code /= FORTNUM_OK) return
+                smooth_rows(2*(i - 1) + k, :n) = sqrt(h/2)*derivative(2, :)
+            end do
+        end do
         call union_knots(breaks, plaw%knots, ukn, ipf, ipp)
         nu = size(ukn)
         allocate (conversion(4, nu - 1, n))
@@ -245,6 +319,17 @@ contains
             if (sum(basis(j, :)) <= 0) return
             basis(j, :) = basis(j, :)/sum(basis(j, :))
         end do
+        ! Regularized mode fits the samples themselves (an overdetermined
+        ! least-squares problem with a data/model floor) with weights uniform
+        ! in rho = sqrt(s), reaching the axis and the edge: the q check bounds
+        ! q there too, and the regularization, not a vanishing weight, keeps
+        ! the less accurate axis and edge readback from being over-fitted.
+        allocate (wsqrt(nr), sample_now(nr + 1), jac_samples(nr + 1, n + 1))
+        do i = 1, nr
+            wsqrt(i) = (rho(min(nr, i + 1)) - rho(max(1, i - 1)))/2
+        end do
+        wsqrt = sqrt(wsqrt/sum(wsqrt))
+        sample_now = 0; jac_samples = 0
         law%knots = ukn
         allocate (law%pp(4, nu - 1), law%ff(4, nu - 1))
         law%ff = 0
@@ -291,6 +376,8 @@ contains
             allocate (warm_psi(size(seed%psi)))
             warm_psi = seed%psi
             call newton_exact(x0, tol)
+            if (talk .and. regularized) print '(a,es10.3)', &
+                '  regularization lambda ', lambda
             if (failure /= 0 .and. newton == 0 .and. any(abs(law%pp(:, 2:)) > 0)) &
                 call pressure_homotopy()
         else
@@ -299,6 +386,7 @@ contains
             call multiroot_hybrids(equations, n + 1, x0, solution, stat, &
                                    xtol=tol*0.1_dp, ftol=tol, max_iter=20)
             call equations(solution, residual)
+            converged = failure == 0 .and. maxval(abs(residual)) <= tol
         end if
         if (present(evaluations)) evaluations = calls
         if (present(newton_iterations)) newton_iterations = newton
@@ -307,7 +395,8 @@ contains
             status = failure
             return
         end if
-        if (maxval(abs(residual)) > tol) return
+        if (.not. converged) return
+        if (present(regularization_used)) regularization_used = lambda
         state = candidate; law = candidate_law
         ! Independent interleaved radial probes and doubled arc quadrature
         ! check the q profile, beyond the finite set of fitted moments.
@@ -315,11 +404,16 @@ contains
         call read_gs_equilibrium(state, law%f_edge, 0.0_dp, size(rho_check), &
                                  2*na, readback, status, law, rho_grid=rho_check)
         if (status /= 0) return
-        defect = 0
+        defect = 0; j = 1
         do i = 1, size(readback%q)
             x = rho_check(i)**2
+            if (abs(readback%q(i)/gs_q_table_value(s, q, x) - 1) > defect) j = i
             defect = max(defect, abs(readback%q(i)/gs_q_table_value(s, q, x) - 1))
         end do
+        if (talk) print '(a,es10.3,a,f9.6,a,2es14.6)', '  q check: max defect ', &
+            defect, &
+            ' at s ', rho_check(j)**2, ' q, target ', readback%q(j), &
+            gs_q_table_value(s, q, rho_check(j)**2)
         if (present(q_error)) q_error = defect
         if (defect > qtol) then
             status = 9
@@ -371,6 +465,8 @@ contains
             end if
             values(:n) = matmul(basis, readback%q/target - 1)
             values(n + 1) = readback%phi_edge/phi - 1
+            sample_now(:nr) = wsqrt*(readback%q/target - 1)
+            sample_now(nr + 1) = values(n + 1)
         end subroutine
 
         subroutine pressure_homotopy()
@@ -405,8 +501,7 @@ contains
                 stage_target = tol
                 if (blend < 1) stage_target = max(tol, 1.0e-3_dp)
                 call newton_exact(x_good, stage_target)
-                stage_ok = failure == 0
-                if (stage_ok) stage_ok = maxval(abs(residual)) <= stage_target
+                stage_ok = failure == 0 .and. converged
                 if (stage_ok) then
                     x_good = solution; psi_good = accepted_state%psi
                     blend_ok = blend
@@ -436,24 +531,38 @@ contains
             ! copy of it left the forward problem's solution set. The forward
             ! solve of each trial starts from the last accepted field. Near
             ! the solution mu returns to zero, so convergence is quadratic.
+            ! Regularized: the same iteration on |r|^2 + lambda^2 |S x|^2
+            ! (S = smooth_rows), Gauss-Newton steps from stacked least squares,
+            ! converged when the undamped step is below target at frozen lambda.
             real(dp), intent(in) :: xstart(:), target
             real(dp), allocatable :: x(:), xtrial(:), r(:), rtrial(:), dx(:), &
                                      jac(:, :), normal(:, :), gradient(:), system(:, :)
             real(dp) :: mu, merit, merit_trial, predicted, diagonal, stall_merit
+            real(dp) :: lambda_new, change
+            logical :: settled
+            real(dp), allocatable :: rs(:), rstrial(:), js(:, :)
             integer(int64) :: tick, tock, rate
-            integer :: iteration, trial, info, k, stalled
-            logical :: ok, moved
+            integer :: iteration, trial, info, k, stalled, updates
+            logical :: ok, moved, frozen
             allocate (x(n + 1), xtrial(n + 1), r(n + 1), rtrial(n + 1), dx(n + 1), &
                       jac(n + 1, n + 1), normal(n + 1, n + 1), gradient(n + 1), &
                       system(n + 1, n + 1))
             x = xstart
             mu = 0; stalled = 0; stall_merit = 0
+            converged = .false.
+            frozen = .not. adaptive; updates = 0
+            if (lambda_fixed > 0) lambda = lambda_fixed
+            if (adaptive) lambda = 0
             call equations(x, r)
             solution = x; residual = r
             if (failure /= 0) return
+            rs = sample_now; rstrial = rs
             call accept(x, r)
-            do iteration = 1, 25
-                if (maxval(abs(r)) <= target) exit
+            do iteration = 1, merge(80, 25, adaptive)
+                if (.not. regularized .and. maxval(abs(r)) <= target) then
+                    converged = .true.
+                    exit
+                end if
                 call system_clock(tick, rate)
                 call exact_jacobian(jac, ok)
                 call system_clock(tock)
@@ -462,15 +571,52 @@ contains
                     failure = 4
                     exit
                 end if
+                js = jac_samples
+                if (regularized) then
+                    ! Discrepancy (Morozov) choice on each linearization until
+                    ! it settles: the step's linearized q misfit is the larger
+                    ! of q_accuracy and half the current misfit (a continuation
+                    ! that keeps early steps smooth). lambda is frozen once the
+                    ! goal is q_accuracy and two choices agree within 25 %.
+                    if (.not. frozen) then
+                        call discrepancy_lambda(js, rs, x, lambda_new, settled)
+                        if (settled .and. lambda > 0) frozen = lambda_new <= &
+                            1.25_dp*lambda .and. lambda <= 1.25_dp*lambda_new
+                        updates = updates + 1
+                        if (updates >= 40) frozen = .true.
+                        if (.not. frozen) lambda = lambda_new
+                    end if
+                    call stacked_step(js, rs, x, lambda, 0.0_dp, dx, info)
+                    if (info /= 0) then
+                        failure = 4
+                        exit
+                    end if
+                    ! Largest change the Gauss-Newton step makes in a fitted
+                    ! residual or penalty component (relative q units).
+                    change = max(maxval(abs(matmul(js, dx))), &
+                                 lambda*maxval(abs(matmul(smooth_rows, dx))))
+                    if (talk) print '(a,es10.3,a,es10.3,a,es10.3,a,l2)', &
+                        '  Gauss-Newton step change ', change, ' lambda ', lambda, &
+                        ' rms q misfit ', norm2(rs(:nr)), ' frozen', frozen
+                    if (frozen .and. change <= target) then
+                        converged = .true.
+                        exit
+                    end if
+                end if
                 newton = iteration
                 merit = 0.5_dp*dot_product(r, r)
+                if (regularized) merit = 0.5_dp*(dot_product(rs, rs) &
+                                         + lambda**2*sum(matmul(smooth_rows, x)**2))
                 normal = matmul(transpose(jac), jac)
+                if (regularized) normal = matmul(transpose(js), js)
                 gradient = matmul(transpose(jac), r)
                 diagonal = maxval([(normal(k, k), k=1, n + 1)])
                 moved = .false.
                 call system_clock(tick)
                 do trial = 1, 16
-                    if (mu > 0) then
+                    if (regularized) then
+                        call stacked_step(js, rs, x, lambda, mu*diagonal, dx, info)
+                    else if (mu > 0) then
                         system = normal
                         do k = 1, n + 1
                             system(k, k) = system(k, k) + mu*diagonal
@@ -488,6 +634,13 @@ contains
                     if (failure == 0) then
                         merit_trial = 0.5_dp*dot_product(rtrial, rtrial)
                         predicted = merit - 0.5_dp*sum((r + matmul(jac, dx))**2)
+                        if (regularized) then
+                            rstrial = sample_now
+                            merit_trial = 0.5_dp*(dot_product(rstrial, rstrial) + &
+                                lambda**2*sum(matmul(smooth_rows, xtrial)**2))
+                            predicted = merit - 0.5_dp*(sum((rs + matmul(js, dx))**2) &
+                                        + lambda**2*sum(matmul(smooth_rows, xtrial)**2))
+                        end if
                         if (merit_trial < merit .and. &
                             merit - merit_trial >= 1.0e-4_dp*predicted) then
                             moved = .true.
@@ -498,8 +651,9 @@ contains
                 end do
                 call system_clock(tock)
                 solve_seconds = real(tock - tick, dp)/rate
-                if (talk) print '(a,i3,a,es10.3,a,f9.2,a,f9.2,a,es9.2)', &
+                if (talk) print '(a,i3,a,es10.3,a,es10.3,a,f9.2,a,f9.2,a,es9.2)', &
                     'inverse newton ', iteration, ' max|r|=', maxval(abs(r)), &
+                    ' max|dx|=', maxval(abs(dx)), &
                     ' jacobian_s=', jacobian_seconds, ' forward_s=', solve_seconds, &
                     ' mu=', mu
                 if (talk) flush (output_unit)
@@ -509,7 +663,7 @@ contains
                 end if
                 ! Three consecutive damped steps that together reduce the
                 ! merit by less than 1%: a nonzero residual minimum (singular
-                ! J, e.g. the TC24 floor max|r| 5.5e-4); stop the stage.
+                ! J, e.g. the unregularized TC24 floor max|r| 5.5e-4); stop.
                 if (mu > 0) then
                     if (stalled == 0) stall_merit = merit
                     stalled = stalled + 1
@@ -518,7 +672,7 @@ contains
                 end if
                 mu = mu/10
                 if (mu < 1.0e-6_dp) mu = 0
-                x = xtrial; r = rtrial
+                x = xtrial; r = rtrial; rs = rstrial
                 call accept(x, r)
                 if (stalled == 3) then
                     if (merit_trial > 0.99_dp*stall_merit) exit
@@ -532,6 +686,63 @@ contains
             solution = x; residual = r
             if (failure == 4) return
             failure = 0
+        end subroutine
+
+        subroutine stacked_step(jac, r, x, weight, damping, dx, info)
+            ! Least-squares step of [J; weight S; sqrt(damping) I] dx =
+            ! [-r; -weight S x; 0] (LAPACK QR; no normal equations).
+            real(dp), intent(in) :: jac(:, :), r(:), x(:), weight, damping
+            real(dp), intent(out) :: dx(:)
+            integer, intent(out) :: info
+            real(dp), allocatable :: a(:, :), b(:), work(:)
+            real(dp) :: query(1)
+            integer :: m, p, k, q
+            p = size(smooth_rows, 1); q = size(jac, 1); m = q + p + (n + 1)
+            allocate (a(m, n + 1), b(m))
+            a = 0; b = 0
+            a(:q, :) = jac; b(:q) = -r
+            a(q + 1:q + p, :) = weight*smooth_rows
+            b(q + 1:q + p) = -weight*matmul(smooth_rows, x)
+            do k = 1, n + 1
+                a(q + p + k, k) = sqrt(damping)
+            end do
+            call dgels('N', m, n + 1, 1, a, m, b, m, query, -1, info)
+            allocate (work(max(1, int(query(1)))))
+            call dgels('N', m, n + 1, 1, a, m, b, m, work, size(work), info)
+            dx = b(:n + 1)
+            if (info == 0 .and. .not. all(ieee_is_finite(dx))) info = 1
+        end subroutine
+
+        subroutine discrepancy_lambda(jac, r, x, weight, settled)
+            ! lambda whose linearized step at x has q misfit |r_q + J_q dx| =
+            ! max(q_accuracy, |r_q|/2) (at least 1.01 times the unregularized
+            ! floor), by bisection in log lambda; the misfit grows with lambda.
+            ! settled: the goal is q_accuracy or, when the data cannot be met
+            ! that closely (an intermediate homotopy law), the floor.
+            real(dp), intent(in) :: jac(:, :), r(:), x(:)
+            real(dp), intent(out) :: weight
+            logical, intent(out) :: settled
+            real(dp) :: lo, hi, mid, goal, floor_misfit, step(n + 1), base
+            integer :: k, st
+            base = norm2(jac(:, :n))/max(norm2(smooth_rows), tiny(1.0_dp))
+            hi = log(base) + 6*log(10.0_dp); lo = log(base) - 12*log(10.0_dp)
+            call stacked_step(jac, r, x, exp(lo), 0.0_dp, step, st)
+            floor_misfit = norm2(r(:nr) + matmul(jac(:nr, :), step))
+            goal = max(misfit_target, 0.5_dp*norm2(r(:nr)), 1.01_dp*floor_misfit)
+            settled = 0.5_dp*norm2(r(:nr)) <= max(misfit_target, 1.01_dp*floor_misfit)
+            do k = 1, 80
+                mid = (lo + hi)/2
+                call stacked_step(jac, r, x, exp(mid), 0.0_dp, step, st)
+                if (norm2(r(:nr) + matmul(jac(:nr, :), step)) > goal) then
+                    hi = mid
+                else
+                    lo = mid
+                end if
+                if (hi - lo < 1.0e-3_dp) exit
+            end do
+            weight = exp(lo)
+            if (talk) print '(a,es10.3,a,es10.3,a,l2)', '  discrepancy lambda ', &
+                weight, ' goal ', goal, ' settled', settled
         end subroutine
 
         subroutine perturbed(step, kk, base, dpsi, moved, grad, law_out, readout, st)
@@ -627,8 +838,9 @@ contains
                 !$omp reduction(+:tb) private(kk, b)
                 do kk = first, last
                     b = kk - first + 1
-                    if (load_ok(kk)) call column_readback(kk, base, dpsi_block(:, b), &
-                                                          jac(:, kk), column_ok(kk), tb)
+                    if (load_ok(kk)) call column_readback(kk, base, &
+                        dpsi_block(:, b), jac(:, kk), jac_samples(:, kk), &
+                        column_ok(kk), tb)
                 end do
                 !$omp end parallel do
             end do
@@ -648,6 +860,8 @@ contains
             if (st /= 0) return
             jac(:n, n + 1) = matmul(basis, (rplus%q - rminus%q)/(2.0e-3_dp*target))
             jac(n + 1, n + 1) = (rplus%phi_edge - rminus%phi_edge)/(2.0e-3_dp*phi)
+            jac_samples(:nr, n + 1) = wsqrt*(rplus%q - rminus%q)/(2.0e-3_dp*target)
+            jac_samples(nr + 1, n + 1) = jac(n + 1, n + 1)
             ok = all(ieee_is_finite(jac))
             if (talk) print '(a,3f9.2,a,l2)', '  jacobian load/response/readback thread-s:', &
                 t_load, t_response, t_readback, '  direct factor:', direct_ready
@@ -705,12 +919,12 @@ contains
             good_col = .true.
         end subroutine
 
-        subroutine column_readback(kk, base, dpsi, col, good_col, tb)
+        subroutine column_readback(kk, base, dpsi, col, col_samples, good_col, tb)
             ! Central-difference readback of the k-th column along dpsi.
             integer, intent(in) :: kk
             type(gs_profile_law_t), intent(in) :: base
             real(dp), intent(in) :: dpsi(:)
-            real(dp), intent(out) :: col(:)
+            real(dp), intent(out) :: col(:), col_samples(:)
             logical, intent(out) :: good_col
             real(dp), intent(inout) :: tb
             type(gs_state_t) :: moved
@@ -722,7 +936,7 @@ contains
             integer(int64) :: t3, t4, rate
             logical :: good
             good_col = .false.
-            col = 0
+            col = 0; col_samples = 0
             allocate (rplus%q(nr), rminus%q(nr))
             rplus%q = 0; rminus%q = 0
             moved = accepted_state
@@ -751,6 +965,8 @@ contains
             tb = tb + real(t4 - t3, dp)/rate
             col(:n) = matmul(basis, (rplus%q - rminus%q)/(2*eps*target))
             col(n + 1) = (rplus%phi_edge - rminus%phi_edge)/(2*eps*phi)
+            col_samples(:nr) = wsqrt*(rplus%q - rminus%q)/(2*eps*target)
+            col_samples(nr + 1) = col(n + 1)
             good_col = .true.
         end subroutine
     end subroutine
