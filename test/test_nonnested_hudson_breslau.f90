@@ -42,6 +42,12 @@ module hb_fixture
 
     ! Weak flux load f = K grad w of the lift w = ln(r_u/r)/big_l; with the
     ! discrete solution p, load . p is the heat flux through the annulus.
+    ! No volume source: the temperature problem is div(K grad T) = 0.
+    type, extends(meridian_fourier_source_t) :: zero_source_t
+    contains
+        procedure :: source => zero_source
+    end type
+
     type, extends(meridian_fourier_source_t) :: flux_lift_t
         class(hb_field_t), pointer :: field => null()
         real(dp) :: chi_par = 1, chi_perp = 1
@@ -89,6 +95,16 @@ contains
             values(EQ_BPHI, i) = 1
             statuses(i) = 0
         end do
+    end subroutine
+
+    subroutine zero_source(self, t, x, f0, f, status)
+        class(zero_source_t), intent(in) :: self
+        integer, intent(in) :: t
+        real(dp), intent(in) :: x(:, :)
+        real(dp), intent(out) :: f0(:), f(:, :)
+        integer, intent(out) :: status
+        f0 = 0; f = 0
+        status = 0
     end subroutine
 
     subroutine flux_lift_source(self, t, x, f0, f, status)
@@ -176,6 +192,9 @@ program test_nonnested_hudson_breslau
     !   integrable : k = 0.  T = ln(r_u/r)/ln(r_u/r_l) is exact for every
     !     chi_par/chi_perp (grad r is perpendicular to B); L2 error, observed
     !     order and the flux against 4 pi^2/ln(r_u/r_l).
+    !   ladder     : chaos at one mesh and one chi_par/chi_perp = 10^arg7 (arg
+    !     order nr nth modes k log10ratio): LADDER and BIN lines for the Slurm
+    !     array.
     !   chaos k    : the paper's field at k (default 2.1e-3).  Rigorous
     !     (Dirichlet principle): Q/Q_int >= 1 and nondecreasing in the ratio.
     !     Paper: Q/Q_int about 2 for chi_perp/chi_par = 1e-10.
@@ -188,11 +207,11 @@ program test_nonnested_hudson_breslau
     use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
     implicit none
     character(32) :: mode, arg
-    real(dp) :: kpert
+    real(dp) :: kpert, lratio
     integer :: order, nr, nth, modes
     logical :: ok
     call get_command_argument(1, mode)
-    order = 3; nr = 7; nth = 48; modes = 3; kpert = 2.1e-3_dp
+    order = 3; nr = 7; nth = 48; modes = 3; kpert = 2.1e-3_dp; lratio = 0
     call get_command_argument(2, arg)
     if (len_trim(arg) > 0) read (arg, *) order
     call get_command_argument(3, arg)
@@ -203,11 +222,15 @@ program test_nonnested_hudson_breslau
     if (len_trim(arg) > 0) read (arg, *) modes
     call get_command_argument(6, arg)
     if (len_trim(arg) > 0) read (arg, *) kpert
+    call get_command_argument(7, arg)
+    if (len_trim(arg) > 0) read (arg, *) lratio
     select case (trim(mode))
     case ('integrable')
         call run_integrable(order, ok)
     case ('chaos')
         call run_chaos(order, nr, nth, modes, kpert, ok)
+    case ('ladder')
+        call run_ladder(order, nr, nth, modes, kpert, lratio, ok)
     case default
         ok = .false.
     end select
@@ -225,6 +248,7 @@ contains
         integer, intent(out) :: st
         type(nt_conductivity_t) :: cond
         type(flux_lift_t) :: lift
+        type(zero_source_t) :: zero
         real(dp), allocatable :: bc(:), xy(:, :), load(:)
         integer :: i, s2
         cond%field => field
@@ -238,7 +262,7 @@ contains
             if (fs%sp(0)%bnd(i) .and. norm2(xy(:, i)) < 0.5_dp*(r_l + r_u)) &
                 bc(meridian_fourier_index(fs%n0, 0, 0, i)) = 1
         end do
-        call nt_solve(fs, modes, 4*modes + 4, cond, lift, bc, p, report, st)
+        call nt_solve(fs, modes, 4*modes + 4, cond, zero, bc, p, report, st)
         qflux = 0
         if (st /= 0) return
         call meridian_fourier_load(fs, modes, 4*modes + 4, lift, load, s2)
@@ -248,16 +272,18 @@ contains
         qflux = dot_product(load, p)
     end subroutine
 
-    subroutine profile(fs, modes, p, nbin, tbar, tvar, psi)
-        ! Volume-binned mean and variance of T in nbin equal-psi bins.
+    subroutine profile(fs, modes, p, nbin, tbar, tvar, psi, tex)
+        ! Volume-binned mean and variance of T in nbin equal-psi bins; tex is the
+        ! bin mean of the integrable solution (reference for flattening).
         type(meridian_feec_t), intent(in) :: fs
         integer, intent(in) :: modes, nbin
         real(dp), intent(in) :: p(:)
-        real(dp), intent(out) :: tbar(nbin), tvar(nbin), psi(nbin)
+        real(dp), intent(out) :: tbar(nbin), tvar(nbin), psi(nbin), tex(nbin)
         real(dp) :: x(2), wq, phi(3, fs%nl0), th, w(nbin), s1(nbin), s2(nbin)
+        real(dp) :: s3(nbin)
         real(dp) :: ps
         integer :: t, q, j, st, ib
-        w = 0; s1 = 0; s2 = 0
+        w = 0; s1 = 0; s2 = 0; s3 = 0
         do t = 1, fs%mm%topology%n_triangles
             do q = 1, fs%nq
                 call meridian_qpoint(fs, 0, t, q, x, wq, phi, st)
@@ -269,12 +295,14 @@ contains
                     w(ib) = w(ib) + wq
                     s1(ib) = s1(ib) + wq*th
                     s2(ib) = s2(ib) + wq*th*th
+                    s3(ib) = s3(ib) + wq*t_exact(norm2(x))
                 end do
             end do
         end do
         do ib = 1, nbin
             psi(ib) = psi_l + (ib - 0.5_dp)*(psi_u - psi_l)/nbin
             tbar(ib) = s1(ib)/w(ib)
+            tex(ib) = s3(ib)/w(ib)
             tvar(ib) = max(0.0_dp, s2(ib)/w(ib) - tbar(ib)**2)
         end do
     end subroutine
@@ -357,7 +385,7 @@ contains
         type(hb_field_t) :: field
         type(nt_report_t) :: report
         real(dp), allocatable :: p(:)
-        real(dp) :: ratio, qflux, qprev, tbar(nbin), tvar(nbin), psi(nbin)
+        real(dp) :: ratio, qflux, qprev, tbar(nbin), tvar(nbin), psi(nbin), tex(nbin)
         integer :: ir, st, ib
         ok = .true.
         call field%set_hb(kpert, 'hb')
@@ -379,10 +407,57 @@ contains
                  .and. qflux >= qprev*(1 - 1.0e-6_dp)
             qprev = qflux
         end do
-        call profile(fs, modes, p, nbin, tbar, tvar, psi)
+        ! The solution must respond to the perturbation: a source-free solve
+        ! that returns the integrable T would only reproduce the lift.
+        ok = ok .and. l2_error_exact(fs, modes, p) > 0.1_dp
+        call profile(fs, modes, p, nbin, tbar, tvar, psi, tex)
         do ib = 1, nbin
             print '(a, f7.4, a, f8.4, a, es10.3)', 'psi', psi(ib), ' Tbar', &
                 tbar(ib), ' var', tvar(ib)
         end do
+    end subroutine
+
+    subroutine run_ladder(order, nr, nth, modes, kpert, lratio, ok)
+        ! One mesh, one ratio: Q/Q_int and psi-binned diagnostics.  Output
+        ! lines 'LADDER' (one per run) and 'BIN' (psi, Tbar, Tint, var).
+        ! Flux-function check: var is the within-bin variance of T (includes
+        ! the surface wiggle ~ k/psi-scale, so compare var across ratios, not
+        ! with zero).  Flattening: -dTbar/dpsi over the integrable slope
+        ! -dTint/dpsi per bin is 1 on a transport barrier and ~0 in an island.
+        integer, intent(in) :: order, nr, nth, modes
+        real(dp), intent(in) :: kpert, lratio
+        logical, intent(out) :: ok
+        integer, parameter :: nbin = 36
+        type(meridian_feec_t) :: fs
+        type(hb_field_t), target :: field
+        type(nt_report_t) :: report
+        real(dp), allocatable :: p(:)
+        real(dp) :: ratio, qflux, tbar(nbin), tvar(nbin), psi(nbin), tex(nbin)
+        real(dp) :: slope
+        integer :: st, ib
+        ok = .false.
+        call field%set_hb(kpert, 'hb')
+        call build_annulus(nr, nth, order, fs, st)
+        if (st /= 0) return
+        ratio = 10.0_dp**lratio
+        call solve(fs, modes, field, ratio, p, report, qflux, st)
+        if (st /= 0) return
+        print '(a,i0,a,i0,a,i0,a,i0,a,f5.1,a,i8,a,f10.5,a,es9.2,a,es10.3)', &
+            'LADDER P', order, ' nr ', nr, ' nth ', nth, ' modes ', modes, &
+            ' log10ratio ', lratio, ' ndof ', report%ndof, ' Q/Q_int ', &
+            qflux/q_integrable, ' res ', report%residual, ' L2(T-Tint) ', &
+            l2_error_exact(fs, modes, p)
+        call profile(fs, modes, p, nbin, tbar, tvar, psi, tex)
+        do ib = 1, nbin
+            if (ib == 1) then
+                slope = 0
+            else
+                slope = (tbar(ib - 1) - tbar(ib))/(tex(ib - 1) - tex(ib))
+            end if
+            print '(a, f8.4, a, f9.5, a, f9.5, a, es10.3, a, f9.4)', 'BIN ', &
+                psi(ib), ' Tbar ', tbar(ib), ' Tint ', tex(ib), ' var ', &
+                tvar(ib), ' flat ', slope
+        end do
+        ok = qflux/q_integrable >= 1 - 1.0e-6_dp
     end subroutine
 end program
