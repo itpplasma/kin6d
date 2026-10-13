@@ -58,7 +58,7 @@ program test_mhd_closure
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_init, layer_closure, layer_wmax, layer_coefficients, layer_regular_slope
+        layer_xmax, layer_init, layer_closure, layer_wmax, layer_coefficients, layer_regular_slope
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
     implicit none
@@ -98,6 +98,7 @@ program test_mhd_closure
     call edge_current_jump()
     prof = 1
     call layer_conditioning()
+    call layer_ring_cap()
     call fe_ladder("Wesson j = (1 - r^2)^2", [10.0_dp, 40.0_dp], 2.0e-2_dp)
     prof = 2
     wstep = 0.08_dp
@@ -617,6 +618,34 @@ contains
             "layer fit rejects ill-conditioned ring ratio 1.25 (|w|_1 > layer_wmax)")
         if (layer_wmax <= 0.0_dp) error stop
     end subroutine layer_conditioning
+
+    subroutine layer_ring_cap()
+        !! Ratio 3 with a rational at small psin: the uniform-spacing cap
+        !! 2u/(nrad (ratio-1)) = 0.0073 lies below the third fit ring
+        !! delta ratio^2 = 9e-3, which used to be dropped (layer_init status 1).
+        real(dp), parameter :: ps = 0.49_dp, delta = 1.0e-3_dp, ratio = 3.0_dp
+        real(dp), allocatable :: lab(:), ul(:)
+        real(dp) :: xm, t
+        type(rational_layer_t) :: lay
+        integer :: st, i, j
+
+        xm = layer_xmax(ps, [0.9_dp], delta, ratio, 3, 96)
+        call layer_labels(ps, delta, ratio, xm, 1.0e-6_dp, 0.999_dp, lab)
+        ul = sqrt([lab, ps])
+        do i = 2, size(ul)
+            t = ul(i)
+            j = i - 1
+            do while (j >= 1)
+                if (ul(j) <= t) exit
+                ul(j + 1) = ul(j)
+                j = j - 1
+            end do
+            ul(j + 1) = t
+        end do
+        call layer_init(ul, ps, 1.5_dp, 1.0_dp, -0.2_dp, 3, delta, ratio, 3, lay, st)
+        call record(xm >= delta*ratio**2 .and. st == 0, &
+            "layer rings reach the outermost fit ring at ratio 3 (layer_xmax)")
+    end subroutine layer_ring_cap
 
     subroutine fe_ladder(name, r0s, tol)
         !! FEEC closure Delta' at the layer half-widths delta = 2, 1, 0.5e-3
