@@ -214,7 +214,8 @@ finite-pressure island, stochastic finite-pressure and Landreman entries
 are not promoted by this vacuum fixture.
 
 NN2 is designed in [equilibrium-nonnested-nn2.md](equilibrium-nonnested-nn2.md)
-(resistive relaxed lane; anisotropic transport for a given B implemented).
+(resistive relaxed lane; anisotropic transport for a given B and the
+axisymmetric coupled transport/Ampere/Ohm Newton implemented).
 NN2 must first choose and derive pressure transport/weak field-line
 constraints and their tangent/adjoint semantics, then couple the free-B
 unknowns to the common nonlinear D3 equation with conserved flux/helicity

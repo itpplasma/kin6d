@@ -9,7 +9,13 @@ program gen_nonnested
     type(expr_t) :: r1, r2, len, r, br, bz, bp, b0, psi, pp, n
     type(expr_t) :: velocity(2), gauge(2)
     type(expr_t) :: bphi, cpar, cperp, q, d, conductivity(6)
+    type(expr_t) :: gpr, gpp, gpz, gfr, gfp, gfz, ephi, gpar, gperp
+    type(expr_t) :: bg, bf, coef, flux(3), current(3)
     call arena%init()
+    gpr = sym(arena, 'gpr'); gpp = sym(arena, 'gpp'); gpz = sym(arena, 'gpz')
+    gfr = sym(arena, 'gfr'); gfp = sym(arena, 'gfp'); gfz = sym(arena, 'gfz')
+    ephi = sym(arena, 'ephi'); gpar = sym(arena, 'gpar')
+    gperp = sym(arena, 'gperp')
     r1 = sym(arena, 'r1'); r2 = sym(arena, 'r2'); len = sym(arena, 'len')
     r = sym(arena, 'r'); br = sym(arena, 'br')
     bz = sym(arena, 'bz'); bp = sym(arena, 'bp'); b0 = sym(arena, 'b0')
@@ -46,6 +52,25 @@ program gen_nonnested
     call w%emit('anisotropic_conductivity', &
         ['br   ', 'bphi ', 'bz   ', 'cpar ', 'cperp'], &
         ['krr', 'krp', 'krz', 'kpp', 'kpz', 'kzz'], conductivity, ad=.true.)
+    ! NN2 coupled lane. Transport flux K grad p and the current
+    !     J = B x grad p / |B|^2 + g_par b b.E - G grad Phi,
+    !     G = g_par b b + g_perp (I - b b),  E = ephi e_phi,
+    ! all in physical (R, phi, Z) components. Their JVPs in (B, grad p,
+    ! grad Phi, ephi) are the Newton blocks of kin6d_nonnested_coupled.
+    bg = br*gpr + bphi*gpp + bz*gpz
+    flux = [cperp*gpr + d*bg*br, cperp*gpp + d*bg*bphi, cperp*gpz + d*bg*bz]
+    call w%emit('anisotropic_flux', &
+        ['br   ', 'bphi ', 'bz   ', 'gpr  ', 'gpp  ', 'gpz  ', 'cpar ', 'cperp'], &
+        ['qr', 'qp', 'qz'], flux, ad=.true.)
+    bf = br*gfr + bphi*gfp + bz*gfz
+    coef = (gpar*bphi*ephi - (gpar - gperp)*bf)/q
+    current = [(bphi*gpz - bz*gpp)/q + coef*br - gperp*gfr, &
+        (bz*gpr - br*gpz)/q + coef*bphi - gperp*gfp, &
+        (br*gpp - bphi*gpr)/q + coef*bz - gperp*gfz]
+    call w%emit('coupled_current', &
+        ['br   ', 'bphi ', 'bz   ', 'gpr  ', 'gpp  ', 'gpz  ', 'gfr  ', &
+        'gfp  ', 'gfz  ', 'ephi ', 'gpar ', 'gperp'], &
+        ['jr', 'jp', 'jz'], current, ad=.true.)
     call w%line('end module kin6d_nonnested_leaves')
     call w%close()
 end program gen_nonnested

@@ -29,6 +29,7 @@ module kin6d_equilibrium_nonnested
         type(meridian_point_basis_t) :: pb
         complex(dp), allocatable :: b(:, :) ! V2, modes 0:N
         real(dp), allocatable :: psi(:)     ! N=0 pressure primitive, internal
+        real(dp), allocatable :: p(:)       ! NN2 transported N=0 pressure (V0)
         real(dp) :: f_vac = 0, pprime = 0, psi_bound = 0, mu0 = 1
         real(dp) :: centre(2) = 0, radial_scale = 1
         procedure(polar_coordinates_i), pointer, nopass :: coordinates => &
@@ -300,8 +301,12 @@ contains
             value(EQ_PSI) = psi
             value(EQ_PSI_R) = point(1)*b(3)
             value(EQ_PSI_Z) = -point(1)*b(1)
-            call axisymmetric_pressure(psi - field%psi_bound, field%pprime, &
-                value(EQ_P))
+            if (allocated(field%p)) then
+                value(EQ_P) = dot_product(v0(1, :), field%p(field%fs%sp(0)%dof(:, t)))
+            else
+                call axisymmetric_pressure(psi - field%psi_bound, field%pprime, &
+                    value(EQ_P))
+            end if
         end if
     end subroutine
 

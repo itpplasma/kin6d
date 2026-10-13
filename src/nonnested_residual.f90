@@ -96,8 +96,12 @@ contains
                 end do
                 call meridian_qpoint(field%fs, 0, t, q, x, wq, v0, status)
                 if (status /= 0) return
-                psi = dot_product(v0(1, :), field%psi(field%fs%sp(0)%dof(:, t)))
-                call axisymmetric_pressure(psi - field%psi_bound, field%pprime, p)
+                if (allocated(field%p)) then
+                    p = dot_product(v0(1, :), field%p(field%fs%sp(0)%dof(:, t)))
+                else
+                    psi = dot_product(v0(1, :), field%psi(field%fs%sp(0)%dof(:, t)))
+                    call axisymmetric_pressure(psi - field%psi_bound, field%pprime, p)
+                end if
                 call flux_mesh_geometry(field%mesh, t, xi(q), eta(q), x, jac)
                 det = jac(1, 1)*jac(2, 2) - jac(1, 2)*jac(2, 1)
                 grad(1, :) = (jac(2, 2)*field%fs%tlg(1, :, q) &
