@@ -1194,6 +1194,21 @@ foreach(k 2 3)
         ENVIRONMENT "OMP_NUM_THREADS=4")
 endforeach()
 
+add_executable(nn1_spec_case test/nn1_spec_case.f90)
+target_link_libraries(nn1_spec_case PRIVATE kin6d)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+    add_test(NAME nn1_spec_case_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DEXE=$<TARGET_FILE:nn1_spec_case>
+            -DDATA=${CMAKE_SOURCE_DIR}/test/data/nn1_spec
+            -DCHECK=${CMAKE_SOURCE_DIR}/test/check_nn1_spec_case.py
+            -DPY=${Python3_EXECUTABLE} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/nn1_spec_smoke
+            -P ${CMAKE_SOURCE_DIR}/test/run_nn1_spec_case.cmake)
+    set_tests_properties(nn1_spec_case_smoke PROPERTIES TIMEOUT 300
+        ENVIRONMENT "OMP_NUM_THREADS=4")
+endif()
+
 add_executable(test_nonnested_vacuum test/test_nonnested_vacuum.f90)
 target_link_libraries(test_nonnested_vacuum PRIVATE kin6d)
 add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
