@@ -174,7 +174,9 @@ solution psi_2D on the same mesh is the second oracle.
   With weight 1e-4 the middle mesh has two end points (6.1769e-6 and
   6.1633e-6; finest 3.956e-7 vs 3.965e-7), and damping 1e-5/1e-4 hit the cap;
   weight 1e-3 stalled. The residual spread (<= 2e-6 relative) is far below
-  the order gates. The P2 gate (2.6) is marginal (2.63, 2.61 measured).
+  the order gates. The P2 gate (2.6) is marginal (2.63, 2.61 measured with
+  default flags; 2.57-2.59 with -march=x86-64-v3, a known limitation of that
+  flavour; the registered CTest uses default flags).
   The shaped P3 seed ladder is not registered: it converges to a
   weight-dependent end point on the first two meshes (weight 1e-4: 2.3245e-4,
   1.6077e-5; weight 1e-2: 2.3140e-4, 1.5728e-5) and the third mesh reaches
