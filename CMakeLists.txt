@@ -724,6 +724,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator grad_shafranov ideal_map equilibrium_core nonnested vacuum_shell
+            response_fluid
             gs_coarea gs_inverse
             gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
@@ -1230,6 +1231,13 @@ set_tests_properties(response_strip_torus_coupling PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
 # R-B1: resolved resistive layer strip, periodic cylinder (response-unified.md (B)).
 target_sources(kin6d PRIVATE src/response_strip.f90)
+target_sources(kin6d PRIVATE src/generated/kin6d_response_fluid_leaves.f90
+    src/response_fluid.f90)
+add_executable(test_response_fluid test/test_response_fluid.f90)
+target_link_libraries(test_response_fluid PRIVATE kin6d)
+add_test(NAME response_fluid_full_pressure_oracles COMMAND test_response_fluid)
+set_tests_properties(response_fluid_full_pressure_oracles PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OMP_WAIT_POLICY=PASSIVE")
 add_executable(test_response_strip test/test_response_strip.f90)
 target_link_libraries(test_response_strip PRIVATE kin6d)
 add_test(NAME response_strip_cylinder_layer COMMAND test_response_strip)
