@@ -1156,6 +1156,7 @@ target_link_libraries(gs_vacuum_3d PRIVATE kin6d)
 # coupling from FortFEM; flux-aligned meshes and the per-n Ampere operator
 # with the exact exterior.
 add_library(kin6d_feec_n
+    ${fortfem_SOURCE_DIR}/src/operators/direct_fourier_transform.f90
     ${fortfem_SOURCE_DIR}/src/boundary/boundary_types.f90
     ${fortfem_SOURCE_DIR}/src/mesh/triangle_io.f90
     ${fortfem_SOURCE_DIR}/src/triangulation/bowyer_watson.f90
@@ -1232,7 +1233,19 @@ set_tests_properties(response_strip_torus_coupling PROPERTIES TIMEOUT 1800
 # R-B1: resolved resistive layer strip, periodic cylinder (response-unified.md (B)).
 target_sources(kin6d PRIVATE src/response_strip.f90)
 target_sources(kin6d PRIVATE src/generated/kin6d_response_fluid_leaves.f90
-    src/response_fluid.f90)
+    src/response_fluid.f90 src/response_toroidal_strip.f90)
+add_executable(test_response_toroidal_strip test/test_response_toroidal_strip.f90)
+target_link_libraries(test_response_toroidal_strip PRIVATE kin6d)
+add_test(NAME response_toroidal_strip_pressure_action
+    COMMAND test_response_toroidal_strip action)
+add_test(NAME response_toroidal_strip_pressure_solve
+    COMMAND test_response_toroidal_strip solve)
+add_test(NAME response_toroidal_strip_radial_convergence
+    COMMAND test_response_toroidal_strip convergence)
+set_tests_properties(response_toroidal_strip_pressure_action
+    response_toroidal_strip_pressure_solve response_toroidal_strip_radial_convergence
+    PROPERTIES TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=PASSIVE")
 add_executable(test_response_fluid test/test_response_fluid.f90)
 target_link_libraries(test_response_fluid PRIVATE kin6d)
 add_test(NAME response_fluid_full_pressure_oracles COMMAND test_response_fluid)
