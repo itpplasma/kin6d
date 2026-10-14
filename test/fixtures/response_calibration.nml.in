@@ -1,0 +1,5 @@
+&spot_calibration
+ eqdsk='@CMAKE_CURRENT_SOURCE_DIR@/test/fixtures/shield_torus_a10.eqdsk'
+ n=1, qabs=2, nrad=16, nth_max=128, nfine=256, order=2
+ spot=5.0e-4, stencil_fraction=0.1
+/
