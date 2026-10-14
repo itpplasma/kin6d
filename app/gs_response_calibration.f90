@@ -5,7 +5,7 @@ program gs_response_calibration
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_result_io, only: run_t, result_file_t
     use kin6d_vacuum_surfaces, only: psi_grid_t, eqdsk_read, flux_ray_point, &
-        surface_t, surface_build, find_surface_q, profiles_of_psin
+        surface_t, surface_build, find_surface_q, profiles_of_psin, angle_hamada
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
@@ -13,7 +13,7 @@ program gs_response_calibration
         ampere_n_curl
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_flux_harmonic, ring_sheet_load, ring_area, resonant_surfaces_missing
-    use kin6d_response_calibration, only: spot_weights, spot_jump
+    use kin6d_response_calibration, only: spot_weights, spot_jump, spot_distance
     implicit none
     character(512) :: eqdsk = '', argument, message
     integer :: n = 3, nrad = 64, nth_max = 512, order = 2, nfine = 1024
@@ -76,7 +76,8 @@ program gs_response_calibration
     dq = (plus%q - minus%q)/(2*h)
     if (.not. ieee_is_finite(dq)) error stop 'nonfinite shear'
     if (abs(dq) <= tiny(1.0_dp)) error stop 'zero shear'
-    xs = spot/(abs(real(n, dp))*abs(dq))
+    call spot_distance(n, dq, spot, xs, st)
+    if (st /= 0) error stop 'spot distance'
     do side = 1, 2
         do i = 1, 5
             nodes(i, side) = root + merge(-xs, xs, side == 1) &
@@ -109,7 +110,7 @@ program gs_response_calibration
     js = minloc(abs(labels**2 - root), 1)
     call surface_build(g, labels(js)**2, nfine, surf, st)
     if (st /= 0) error stop 'sheet surface'
-    call ring_angles_set(surf%q, surf%theta_s(:, 2), surf%nu, ra)
+    call ring_angles_set(surf%q, surf%theta_s(:, angle_hamada), surf%nu, ra)
     call ring_sheet_load(fs, pb, fm, js, ra, n, m, (1.0_dp, 0.0_dp), f)
     call ampere_n_solve(amp, f, a, st)
     if (st /= 0) error stop 'unit sheet solve'
@@ -121,7 +122,7 @@ program gs_response_calibration
             ring = minloc(abs(labels**2 - nodes(i, side)), 1)
             call surface_build(g, labels(ring)**2, nfine, surf, st)
             if (st /= 0) error stop 'sample surface'
-            call ring_angles_set(surf%q, surf%theta_s(:, 2), surf%nu, ra)
+            call ring_angles_set(surf%q, surf%theta_s(:, angle_hamada), surf%nu, ra)
             flux(i, side) = ring_flux_harmonic(fs, pb, fm, ring, ra, n, field, m)
         end do
     end do
