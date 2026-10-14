@@ -1055,7 +1055,8 @@ contains
                         do a = 1, map%nloc
                             l = m + map%nmode*(a - 1)
                             if (allocated(map%axis_vec)) then
-                                half(:, r) = half(:, r) + matmul(full(:, 3*l - 2:3*l - 1), &
+                                half(:, r) = half(:, r) &
+                                    + matmul(full(:, 3*l - 2:3*l - 1), &
                                     map%axis_vec(:, c + 2*(j - 1), map%conn(a, e)))
                                 cycle
                             end if
@@ -1246,8 +1247,8 @@ contains
             gnorm = norm2(gred)
             report%energy = energy; report%gradient = gnorm/g0
             report%min_jacobian = minjac; report%damping = mu
-            if (talk) print '(a,i3,5es12.4,i3,3es10.2)', 'ideal map newton', it, energy, &
-                gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu, &
+            if (talk) print '(a,i3,5es12.4,i3,3es10.2)', 'ideal map newton', it, &
+                energy, gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu, &
                 tries, alpha, norm2(gred(2:2*map%nodes:2))/gnorm, &
                 norm2(step(2:2*map%nodes:2))/norm2(step)
             if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
