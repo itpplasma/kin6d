@@ -201,12 +201,13 @@ contains
         f = dot_product(b, g%fcoef(i0 - 1:i0 + 2))
     end function
 
-    subroutine profiles_of_psin(g, x, f, dfdx, p, dpdx)
+    subroutine profiles_of_psin(g, x, f, dfdx, p, dpdx, d2pdx2)
         !! F and p with their derivatives in psin (cubic B-splines on the
         !! uniform psin grid of the G-EQDSK profiles; p = 0 without pcoef).
         type(psi_grid_t), intent(in) :: g
         real(dp), intent(in) :: x
         real(dp), intent(out) :: f, dfdx, p, dpdx
+        real(dp), intent(out), optional :: d2pdx2
         real(dp) :: u, t, b(4), db(4), d2b(4)
         integer :: i0
         u = max(0.0_dp, min(1.0_dp, x))*(g%nf - 1) + 1
@@ -217,9 +218,12 @@ contains
         dfdx = dot_product(db, g%fcoef(i0 - 1:i0 + 2))*(g%nf - 1)
         p = 0.0_dp
         dpdx = 0.0_dp
+        if (present(d2pdx2)) d2pdx2 = 0.0_dp
         if (allocated(g%pcoef)) then
             p = dot_product(b, g%pcoef(i0 - 1:i0 + 2))
             dpdx = dot_product(db, g%pcoef(i0 - 1:i0 + 2))*(g%nf - 1)
+            if (present(d2pdx2)) d2pdx2 = &
+                dot_product(d2b, g%pcoef(i0 - 1:i0 + 2))*(g%nf - 1)**2
         end if
     end subroutine profiles_of_psin
 
