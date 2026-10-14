@@ -50,7 +50,9 @@ contains
         if (present(nodal_weights)) nodal_weights = 0
         if (present(source_current)) source_current = 0
         if (state%element_order < 2 .or. state%element_order > 3) return
-        if (order < 1 .or. mu0 <= 0 .or. .not. ieee_is_finite(mu0)) return
+        if (order < 1) return
+        if (mu0 <= 0) return
+        if (.not. ieee_is_finite(mu0)) return
         if (.not. any(state%boundary)) return
         if (present(nodal_weights)) then
             if (size(nodal_weights) /= size(state%psi)) return
@@ -133,7 +135,9 @@ contains
         status = 1; current = 0
         if (present(nodal_weights)) nodal_weights = 0
         if (state%element_order < 2 .or. state%element_order > 3) return
-        if (order < 1 .or. mu0 <= 0 .or. .not. ieee_is_finite(mu0)) return
+        if (order < 1) return
+        if (mu0 <= 0) return
+        if (.not. ieee_is_finite(mu0)) return
         if (present(nodal_weights)) then
             if (size(nodal_weights) /= size(state%psi)) return
         end if
