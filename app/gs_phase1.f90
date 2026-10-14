@@ -4,6 +4,7 @@ program gs_phase1_main
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         write_gs_mesh, read_gs_mesh, sample_gs
     use kin6d_gs_field_readback, only: sample_gs_many
+    use kin6d_gs_ampere_loop, only: gs_boundary_current
     use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
         curve_value
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
@@ -88,6 +89,8 @@ program gs_phase1_main
         select case (trim(argument))
         case ('--evaluate', '--evaluate-stream')
             call evaluate_file(trim(argument) == '--evaluate-stream')
+        case ('--current')
+            call evaluate_current_file()
         case ('--q')
             call evaluate_q_file()
         case ('--source')
@@ -616,6 +619,26 @@ contains
             read (input_unit, *) s
             write (*, '(es25.16e3)') gs_readback_q(readback, s)
         end do
+    end subroutine
+
+    subroutine evaluate_current_file()
+        character(512) :: path, text
+        real(dp) :: current, previous, permeability
+        integer :: stat, order
+        if (run%argument_count() /= 4) error stop '--current mesh.dat mu0 order'
+        call run%argument(2, path)
+        call read_gs_mesh(state, path, stat)
+        if (stat /= 0) error stop 'invalid native field export'
+        call run%argument(3, text)
+        read (text, *) permeability
+        call run%argument(4, text)
+        read (text, *) order
+        call gs_boundary_current(state, permeability, order, previous, stat)
+        if (stat /= 0) error stop 'boundary current integration failed'
+        call gs_boundary_current(state, permeability, 2*order, current, stat)
+        if (stat /= 0) error stop 'boundary current refinement failed'
+        write (*, '(a)') '# current_A quadrature_difference_A (candidate, bound unavailable)'
+        write (*, '(2es25.16e3)') current, abs(current - previous)
     end subroutine
 
     subroutine evaluate_file(streaming)
