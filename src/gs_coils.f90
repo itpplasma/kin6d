@@ -49,6 +49,7 @@ module kin6d_gs_coils
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_rect_coil_t, &
         gs_rect_coil_flux, gs_rect_coil_flux_gradient, gs_green, gs_green_gradient
+    use kin6d_real_identity, only: same_real_value
     implicit none
     private
 
@@ -218,7 +219,7 @@ contains
         !$omp schedule(dynamic, 16) if (size(r) > 8)
         do i = 1, size(r)
             do c = 1, size(set%coils)
-                if (all(set%incidence(c, :) == 0.0_dp)) cycle
+                if (all(abs(set%incidence(c, :)) <= 0.0_dp)) cycle
                 if (gradient) then
                     call gs_coil_flux_gradient(set%coils(c), r(i), z(i), psi, pr, pz)
                 else
@@ -255,7 +256,7 @@ contains
 
         turns = 0.0_dp
         do c = 1, size(set%coils)
-            if (set%incidence(c, k) /= 0.0_dp) then
+            if (.not. (abs(set%incidence(c, k)) <= 0.0_dp)) then
                 turns = gs_coil_turns(set%coils(c))
                 return
             end if
@@ -376,8 +377,8 @@ contains
             write (line, '(3a,2(1x,es24.16e3))') 'circuit ', &
                 trim(set%circuit_names(k)), '', set%i_min(k), set%i_max(k)
             do c = 1, size(set%coils)
-                if (set%incidence(c, k) == 0.0_dp) cycle
-                if (set%incidence(c, k) == 1.0_dp) then
+                if (abs(set%incidence(c, k)) <= 0.0_dp) cycle
+                if (same_real_value(set%incidence(c, k), 1.0_dp)) then
                     member = trim(set%coils(c)%name)
                 else
                     member = trim(set%coils(c)%name)//'*'// &
@@ -403,7 +404,7 @@ contains
         character(len=512) :: line
         character(len=128), allocatable :: tok(:)
         real(dp) :: x(5), fac
-        integer :: u, ios, nline, ntok, nc, nk, c, k, t, star, pos
+        integer :: u, ios, nline, ntok, nc, nk, c, t, star, pos
         logical :: ok, header
 
         stat = 0

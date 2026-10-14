@@ -60,7 +60,7 @@ contains
         c2 = dot_product(c, c)
         n1 = norm2(r1)
         n2 = norm2(r2)
-        if (c2 <= 1.0e-24_dp*len*len .or. n1 == 0 .or. n2 == 0) then
+        if (c2 <= 1.0e-24_dp*len*len .or. n1 <= 0.0_dp .or. n2 <= 0.0_dp) then
             b = 0     ! on the supporting line: field of the segment is zero or singular
             return
         end if
@@ -90,7 +90,7 @@ contains
         off = 0
         do k = 1, set%ncoil
             n = npts(k)
-            if (norm2(pts(:, off + 1) - pts(:, off + n)) == 0) n = n - 1
+            if (norm2(pts(:, off + 1) - pts(:, off + n)) <= 0.0_dp) n = n - 1
             nclosed = nclosed + n
             off = off + npts(k)
         end do
@@ -100,7 +100,7 @@ contains
         off = 0
         do k = 1, set%ncoil
             n = npts(k)
-            if (norm2(pts(:, off + 1) - pts(:, off + n)) == 0) n = n - 1
+            if (norm2(pts(:, off + 1) - pts(:, off + n)) <= 0.0_dp) n = n - 1
             set%first(k) = iseg + 1
             do i = 1, n
                 iseg = iseg + 1
@@ -110,7 +110,7 @@ contains
                 else
                     set%l(:, iseg) = pts(:, off + 1) - pts(:, off + n)
                 end if
-                if (norm2(set%l(:, iseg)) == 0) return
+                if (norm2(set%l(:, iseg)) <= 0.0_dp) return
             end do
             off = off + npts(k)
         end do
@@ -221,7 +221,7 @@ contains
         integer :: k, s
         b = 0
         do k = 1, set%ncoil
-            if (weights(k) == 0) cycle
+            if (abs(weights(k)) <= 0.0_dp) cycle
             do s = set%first(k), set%first(k + 1) - 1
                 b = b + weights(k)*segment_b(set%a(:, s), set%l(:, s), p)
             end do
@@ -260,9 +260,9 @@ contains
                 ph(j, im) = cmplx(cos(arg), -sin(arg), dp)
             end do
         end do
-        nact = count(weights /= 0)
+        nact = count(.not. (abs(weights) <= 0.0_dp))
         allocate (act(nact))
-        act = pack([(k, k=1, set%ncoil)], weights /= 0)
+        act = pack([(k, k=1, set%ncoil)], .not. (abs(weights) <= 0.0_dp))
         !$omp parallel do default(none) schedule(dynamic, 1) &
         !$omp shared(set, weights, rz, nphi, nm, cp, sp, ph, bn, act, nact) &
         !$omp private(ip, j, im, k, p, r, z, bc, bcyl, acc)

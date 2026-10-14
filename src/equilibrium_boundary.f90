@@ -39,6 +39,7 @@ module kin6d_equilibrium_boundary
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use kin6d_coils_3d, only: coil_set_t, coil_set_modes
     use kin6d_equilibrium_state, only: EQ_UNAVAILABLE
+    use kin6d_real_identity, only: same_real_value
     implicit none
     private
     public :: gamma_c_t, gamma_c_chain, gamma_c_build, gamma_c_edge_weights
@@ -458,9 +459,10 @@ contains
         nn = size(nodes, 2)
         shift = -1
         do s0 = 0, nn - 2, 2
-            if (all(cached(:, s0 + 1) == nodes(:, 1))) then
+            if (all(same_real_value(cached(:, s0 + 1), nodes(:, 1)))) then
                 do j = 1, nn
-                    if (any(cached(:, mod(j - 1 + s0, nn) + 1) /= nodes(:, j))) exit
+                    if (any(.not. same_real_value( &
+                        cached(:, mod(j - 1 + s0, nn) + 1), nodes(:, j)))) exit
                     if (j == nn) shift = s0
                 end do
                 if (shift >= 0) return

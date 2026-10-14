@@ -83,7 +83,7 @@ contains
         logical, intent(out) :: ok
         real(dp), allocatable :: edges(:)
         real(dp) :: h, rr, dref(order, order)
-        integer :: ne, e, a, b, q, deg, kd, i, j
+        integer :: ne, e, a, b, deg, kd, i, j
         ok = .false.
         if (order < 3 .or. order > 40) return
         if (.not. (rmax > 0 .and. hmax > 0 .and. h0 > 0 .and. growth >= 1)) return

@@ -96,6 +96,7 @@ target_link_libraries(kin6d_ode PUBLIC kin6d_intervals)
 set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_library(kin6d src/generated/kin6d_leaves.f90 src/laboratory.f90 src/sort_keys.f90
+    src/real_identity.f90
     src/generated/kin6d_species_leaves.f90 src/species.f90
     src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90
     src/generated/kin6d_ocp_leaves.f90 src/near_encounter.f90 src/pme.f90
@@ -197,6 +198,9 @@ set_source_files_properties(src/generated/kin6d_gs_inverse_leaves.f90
 set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_spatial)
+add_executable(test_real_identity test/test_real_identity.f90)
+target_link_libraries(test_real_identity PRIVATE kin6d)
+add_test(NAME real_value_identity_edge_cases COMMAND test_real_identity)
 add_executable(test_grad_shafranov test/test_grad_shafranov.f90)
 target_link_libraries(test_grad_shafranov PRIVATE kin6d)
 add_test(NAME grad_shafranov_analytic_and_derivative_oracles
