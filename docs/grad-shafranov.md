@@ -249,6 +249,52 @@ circular domain. Its analytic volume current checks the loop sign, accuracy
 and field-order mesh convergence. Export/readback, gauge invariance, current
 reversal and a coefficient directional derivative are checked separately.
 
+### Variational boundary flux
+
+`gs_phase1 --weak-current mesh.dat MU0 ORDER profile-law.dat [TOLERANCE]`
+evaluates the saved field and its executed source law without a solve or a
+stiffness assembly. It retains all source-load rows before Dirichlet
+elimination and evaluates Green's identity on a finite-element lift `v_h`
+that is one on boundary nodes and zero on interior nodes:
+
+```
+f = mu0*R*pprime(psi) + FFprime(psi)/R
+I_h = (integral f*v_h dA - integral grad(psi_h).grad(v_h)/R dA)/mu0.
+```
+
+The physical boundary trace of this lift is exactly one. The source uses the
+existing profile-cut quadrature and normalized-axis definition. The stiffness
+functional uses positive Duffy quadrature. The output gives the current at
+`2*ORDER`, its difference from `ORDER` (also tightening the source tolerance
+by eight), the volume-source current, and their signed balance defect in A.
+The default source tolerance is `1e-8`. These are candidates and numerical
+indicators; continuous error bounds and shape derivatives remain unavailable.
+
+`gs_weak_boundary_current` accepts an alternative nodal lift with the same
+boundary trace and optional coefficient weights. These weights include source
+mass and normalized stationary-axis derivatives, defining a fixed-geometry,
+fixed-law JVP and coefficient-dual VJP. For an exact Galerkin solution the
+flux is independent of the lift and equals the volume-source current.
+An imposed volume-current constraint therefore makes this a balance check,
+not independent evidence of boundary-field resolution. A displaced loop
+continues to measure a different enclosed current.
+
+For smooth solutions and homogeneous-error boundary data on the same domain,
+Galerkin orthogonality gives the smooth goal error as a product of primal
+and dual approximation errors: `O(h^(2p))`. Geometry, boundary data,
+quadrature and algebraic defects must be accounted for separately. In
+particular, the native equispaced P3 circle has order-four area error; it
+does not give order-six physical-domain current convergence.
+
+The P2/P3 weak-loop tests retain the curved-circle Solov'ev volume oracle
+and separately measure field convergence on an exact rectangle. There,
+`psi=c*R^2*(Z^2-a^2)` has quadratic edge traces and `Delta*psi=2*c*R^2`.
+A monotone linear profile source plus an independently specified forcing
+preserves that exact solution while making current depend on the computed
+state. Measured refinement rates are approximately four and six, with the
+same `1e-5` accuracy requirement. Readback, polarity, gauge, lift dependence,
+off-equation perturbations and normalized-source derivatives are also checked.
+
 ## Fixed-source error estimator
 
 `kin6d_gs_majorant::gs_functional_majorant` computes a Repin functional
