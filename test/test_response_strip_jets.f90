@@ -9,7 +9,7 @@ program test_response_strip_jets
     type(strip_equilibrium_jets_t) :: grid(5, 9)
     real(dp), parameter :: r0 = 3.0_dp, kappa = 1.4_dp, minor = 0.8_dp
     real(dp), parameter :: p0 = 7.0_dp, p1 = -3.0_dp, p2 = 1.2_dp
-    real(dp) :: theta, u, h, ray, c, sn, rr, zz, x, depth, pr, pz
+    real(dp) :: theta, u, h, ray, c, sn, rr, zz, x, depth, pr, pz, pp
     real(dp) :: gp(3), hp(3, 3), identity(2, 2), err, radial(5)
     integer :: i, j, status
     character(512) :: file
@@ -17,18 +17,17 @@ program test_response_strip_jets
     if (len_trim(file) > 0) then
         call eqdsk_read(trim(file), g, status)
         call check(status == 0, 'read TC24')
-        do j = 1, 3
-            radial = sqrt([0.15_dp, 0.4_dp, 0.65_dp, 0.85_dp, 0.999_dp])
-            call strip_equilibrium_grid(g, radial, 9, 1.0e-6_dp, &
-                1.0e-7_dp, grid, status)
-            call check(status == 0, 'TC24 grid jets')
-        end do
+        radial = sqrt([0.15_dp, 0.4_dp, 0.65_dp, 0.85_dp, 0.999_dp])
+        call strip_equilibrium_grid(g, radial, 9, 1.0e-6_dp, &
+            1.0e-7_dp, grid, status)
+        call check(status == 0, 'TC24 grid jets')
         print '(a,es12.4)', 'TC24 max label defect=', maxval(grid%label_defect)
         print '(a,es12.4)', 'TC24 max Ampere defect [A/m^2]=', &
             maxval(grid%ampere_defect)
         print '(a,2es12.4)', 'TC24 retained outer pressure [Pa]=', &
             minval(grid(5, :)%fluid%p), maxval(grid(5, :)%fluid%p)
         call check(maxval(grid%label_defect) < 2.0e-12_dp, 'TC24 level equation')
+        call check(minval(grid(5, :)%fluid%p) > 0, 'TC24 edge pressure retained')
         h = 2.0e-6_dp
         err = 0
         do j = 1, 9
@@ -50,6 +49,30 @@ program test_response_strip_jets
                     /max(1.0_dp, norm2(gp)) < 2.0e-5_dp, 'TC24 pressure Hessian')
                 call check(maxval(abs((plus%x - minus%x)/(2*h) - jet%jac(:, 1))) &
                     < 2.0e-5_dp, 'TC24 implicit map tangent')
+                call check(maxval(abs((plus%jac - minus%jac)/(2*h) &
+                    - jet%hmap(:, 1:2)))/max(1.0_dp, maxval(abs(jet%hmap(:, 1:2)))) &
+                    < 2.0e-5_dp, 'TC24 implicit map Hessian radial column')
+                pp = dot_product(jet%fluid%gp([1, 3]), jet%jac(:, 1))
+                call check(abs((plus%fluid%p - minus%fluid%p)/(2*h) - pp) &
+                    /max(1.0_dp, abs(pp)) < 2.0e-5_dp, 'TC24 pressure tangent')
+                call strip_equilibrium_point(g, u, theta + h, 1.0e-6_dp, &
+                    1.0e-7_dp, plus, status)
+                call check(status == 0, 'TC24 theta plus')
+                call strip_equilibrium_point(g, u, theta - h, 1.0e-6_dp, &
+                    1.0e-7_dp, minus, status)
+                call check(status == 0, 'TC24 theta minus')
+                gp = matmul(jet%db(:, [1, 3]), jet%jac(:, 2))
+                err = max(err, norm2((plus%fluid%b0 - minus%fluid%b0)/(2*h) - gp) &
+                    /max(1.0_dp, norm2(gp)))
+                call check(maxval(abs((plus%x - minus%x)/(2*h) - jet%jac(:, 2))) &
+                    < 2.0e-5_dp, 'TC24 implicit map angular tangent')
+                call check(maxval(abs((plus%jac - minus%jac)/(2*h) &
+                    - jet%hmap(:, 2:3)))/max(1.0_dp, maxval(abs(jet%hmap(:, 2:3)))) &
+                    < 2.0e-5_dp, 'TC24 implicit map Hessian angular column')
+                gp = matmul(jet%fluid%hp(:, [1, 3]), jet%jac(:, 2))
+                call check(norm2((plus%fluid%gp - minus%fluid%gp)/(2*h) - gp) &
+                    /max(1.0_dp, norm2(gp)) < 2.0e-5_dp, &
+                    'TC24 angular pressure Hessian')
             end do
         end do
         print '(a,es12.4)', 'TC24 B-jet difference error=', err
