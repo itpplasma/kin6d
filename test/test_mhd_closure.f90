@@ -500,27 +500,40 @@ contains
         !! sheets.  Pre-declared rules (RB2 handoff, before the first run):
         !!  (a) eta = 0, gamma = 1e-6: strip net current / L4 sheet current on
         !!      the rational ring, same mesh and drive: |ratio - 1| <= 1e-3;
-        !!  (b) R0/a = 40: torus growth rate / R-B1 cylinder rate (same eta,
-        !!      r1 = sqrt(2 I_tot)), S = 1e6, 1e7, 1e8: |ratio - 1| <= 2 %;
+        !!  (b) as first declared: R0/a = 40: torus growth rate / R-B1 sharp-
+        !!      step cylinder rate (same eta, r1 = sqrt(2 I_tot)), S = 1e6, 1e7,
+        !!      1e8: |ratio - 1| <= 2 %;
         !!  consistency: the coupled closure solve equals the Schur form
         !!      (I - S M)^-1 S P0 to the GMRES tolerance (5e-4 relative).
+        !! (b) re-declared 2026-10-14 (controller): the sharp-step cylinder
+        !! (r_s Delta' = 5.000) is a different problem from the tanh profile
+        !! solved here (width 0.02, ODE r_s Delta' = 5.247, about +3.9 % in
+        !! gamma ~ Delta'^(4/5)), so it does not test the torus coupling.  (b)
+        !! is now: torus growth rate / cylinder growth rate of the SAME tanh
+        !! profile (strip coupling with the cylinder tearing-ODE outer map,
+        !! step_outer_map(.true.)), same S values, |ratio - 1| <= 2 % (limit
+        !! unchanged), with the gap shrinking under nrad refinement (ladder in
+        !! docs/response-unified.md, R-B2 increment 1).  The gated run uses
+        !! the smallest nrad of that ladder at which (b) passes.  The old
+        !! ratio to the sharp-step rate stays printed ("rel").
         !! KIN6D_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
         character(len=128) :: env
         real(dp) :: r0l, xdl, ierr, cerr
         integer :: nr, i
+        integer, parameter :: nrad_gate = 96
         real(dp), parameter :: etas(3) = [1.0e-6_dp, 1.0e-7_dp, 1.0e-8_dp]
-        complex(dp) :: gt(3), gc(3)
+        complex(dp) :: gt(3), gc(3), gs(3)
         call get_environment_variable('KIN6D_STRIP_LADDER', env)
         if (len_trim(env) > 0) then
             read (env, *) r0l, xdl, nr
-            call fe_strip(r0l, xdl, nr, etas, gt, gc, ierr, cerr)
+            call fe_strip(r0l, xdl, nr, etas, gt, gc, gs, ierr, cerr)
             stop
         end if
-        call fe_strip(40.0_dp, 2.0e-2_dp, 32, etas, gt, gc, ierr, cerr)
+        call fe_strip(40.0_dp, 2.0e-2_dp, nrad_gate, etas, gt, gc, gs, ierr, cerr)
         call record(ierr <= 1.0e-3_dp, "(a) ideal limit: strip current = L4 sheet")
         do i = 1, 3
-            call record(abs(gt(i)/gc(i) - 1) <= 2.0e-2_dp, &
-                "(b) torus growth rate = R-B1 cylinder rate")
+            call record(abs(gt(i)/gs(i) - 1) <= 2.0e-2_dp, &
+                "(b) torus growth rate = same-profile cylinder rate")
         end do
         call record(cerr <= 5.0e-4_dp, "coupled closure = Schur complement form")
         call record(merr <= 1.0e-3_dp, &
@@ -530,10 +543,12 @@ contains
         stop
     end subroutine strip_suite
 
-    subroutine fe_strip(r0a, xd, nrad, etas, gtor, gcyl, ierr, cerr)
+    subroutine fe_strip(r0a, xd, nrad, etas, gtor, gcyl, gsame, ierr, cerr)
+        !! gcyl: R-B1 sharp-step cylinder rate; gsame: cylinder rate of the
+        !! same (tanh) profile, the reference of gate (b).
         real(dp), intent(in) :: r0a, xd, etas(:)
         integer, intent(in) :: nrad
-        complex(dp), intent(out) :: gtor(:), gcyl(:)
+        complex(dp), intent(out) :: gtor(:), gcyl(:), gsame(:)
         real(dp), intent(out) :: ierr, cerr
         nmode = 1
         mres = 2
@@ -568,6 +583,19 @@ contains
             extra = [extra, sqrt(psin_s(itest) - xd*(1 - 0.25_dp*k*(k + 1)/2)), &
                 sqrt(psin_s(itest) + xd*(1 - 0.25_dp*k*(k + 1)/2))]
         end do
+        block
+            character(len=16) :: ev2
+            integer :: nsr
+            nsr = 0
+            call get_environment_variable('KIN6D_STRIP_STEPRINGS', ev2)
+            if (len_trim(ev2) > 0) read (ev2, *) nsr
+            ! rings across the tanh current step, spacing wstep/2
+            if (nsr > 0) then
+                do k = -nsr, nsr
+                    extra = [extra, sqrt(psi_of_r(r1 + 0.5_dp*k*wstep)/pa)]
+                end do
+            end if
+        end block
         call ring_labels_merge(nrad, extra, 0.3_dp, ul)
         nr = size(ul)
         do side = 1, 2
@@ -662,6 +690,8 @@ contains
         print '(a,f6.1,a,es9.2,a,i0,a,2f9.5,a,f9.5,a,f9.4,a,2es11.3)', 'strip R0/a', &
             r0, ' xd', xd, ' rings ', nr, ' r_e', re, ' r_s', rs, ' rs Delta''', &
             dpr, ' |junit|', abs(jr)
+        print '(a,f9.5)', '  same-profile (tanh) cylinder ODE r_s Delta''', &
+            ode_delta(rs)
         ! (a) ideal limit
         wl = layer_width(0.0_dp, (1.0e-6_dp, 0.0_dp), fp)
         call smat(0.0_dp, (1.0e-6_dp, 0.0_dp), wl)
@@ -707,13 +737,15 @@ contains
             ! diagnostic: cylinder map of the smoothed (tanh) profile itself
             mo = step_outer_map(.true.)
             call rate_secant(etas(k), 1.05_dp*gcyl(k), wl, gb, it)
+            gsame(k) = gb
             mo = mfe
             merr = max(merr, abs(gn/gcyl(k) - 1))
             print '(a,es9.2,a,2es13.5,a,2es13.5,a,es10.2,a,es10.2)', '  (b) S', &
                 1/etas(k), ' gamma torus', gtor(k), ' cylinder', gcyl(k), ' rel', &
                 abs(gtor(k)/gcyl(k) - 1), ' step map', abs(gn/gcyl(k) - 1)
-            print '(a,es10.2,a,es10.2)', '      tanh cylinder map / step', &
-                abs(gb/gcyl(k) - 1), ', torus / tanh cylinder', abs(gtor(k)/gb - 1)
+            print '(a,es10.2,a,es10.2)', '      same-profile cylinder / step', &
+                abs(gb/gcyl(k) - 1), ', torus / same-profile cylinder (b)', &
+                abs(gtor(k)/gb - 1)
         end do
 
     end subroutine fe_strip
@@ -743,7 +775,8 @@ contains
     function step_outer_map(smooth) result(mc)
         !! Edge fluxes per unit edge sheet of the cylinder: regular solution
         !! f inside the sheet (sharp step of eq, a r^m + b r^-m; smooth: the
-        !! tearing ODE of the tabulated tanh profile), r^-m outside, jump jr;
+        !! tearing ODE of the tabulated tanh profile up to the inner edge and
+        !! its current-free continuation across the strip), r^-m outside, jump jr;
         !! the cylinder counterpart of the FEEC map mo.
         logical, intent(in) :: smooth
         complex(dp) :: mc(2, 2)
@@ -755,11 +788,18 @@ contains
         do i2 = 1, 2
             fin(i2) = as*re(i2)**mres + bs*re(i2)**(-mres)
             dfin(i2) = mres*(as*re(i2)**(mres - 1) - bs*re(i2)**(-mres - 1))
-            if (smooth) then
+            if (smooth .and. i2 == 1) then
                 y = [1.0e-3_dp**mres, mres*1.0e-3_dp**(mres - 1)]
-                call integrate(1.0e-3_dp, re(i2), y)
-                fin(i2) = y(1)
-                dfin(i2) = y(2)
+                call integrate(1.0e-3_dp, re(1), y)
+                fin(1) = y(1)
+                dfin(1) = y(2)
+            else if (smooth) then
+                ! current-free continuation across the strip (as the FEEC
+                ! interior map V); the ODE must not be integrated through r_s
+                as = (fin(1) + re(1)*dfin(1)/mres)/(2*re(1)**mres)
+                bs = (fin(1) - re(1)*dfin(1)/mres)*re(1)**mres/2
+                fin(2) = as*re(2)**mres + bs*re(2)**(-mres)
+                dfin(2) = mres*(as*re(2)**(mres - 1) - bs*re(2)**(-mres - 1))
             end if
         end do
         do k2 = 1, 2
