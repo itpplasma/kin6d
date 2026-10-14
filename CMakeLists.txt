@@ -1194,6 +1194,13 @@ target_link_libraries(test_mhd_closure PRIVATE kin6d)
 add_test(NAME mhd_closure_tearing_delta_prime COMMAND test_mhd_closure)
 set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
+# R-B2 increment 1: strip coupled to the FEEC torus (response-unified.md, R-B2).
+# Gated at nrad 64 (smallest passing nrad of the (b) ladder; ~15 s with MUMPS,
+# GMRES tol 1e-7).  DISABLED until gate (a) is decided: it stays at 1.0e-3
+# for xd = 0.02 at every nrad (strip-width truncation, see the doc).
+add_test(NAME response_strip_torus_coupling COMMAND test_mhd_closure strip)
+set_tests_properties(response_strip_torus_coupling PROPERTIES TIMEOUT 1800
+    ENVIRONMENT "OMP_NUM_THREADS=4" DISABLED TRUE)
 # R-B1: resolved resistive layer strip, periodic cylinder (response-unified.md (B)).
 target_sources(kin6d PRIVATE src/response_strip.f90)
 add_executable(test_response_strip test/test_response_strip.f90)
