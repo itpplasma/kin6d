@@ -221,6 +221,34 @@ used internally for contour levels and axis-q. Recovery sensitivities are
 unavailable. `grad_shafranov_axis_refinement` checks at least field-order
 convergence against the exact Solovev axis on three independently meshed LCFSs.
 
+## Ampere-loop total-current diagnostic
+
+`gs_phase1 --current mesh.dat MU0 ORDER` reads the saved native P2/P3 field
+without assembling an operator or rerunning the equilibrium. It integrates
+`I = -integral(B_R dR + B_Z dZ)/mu0` along the represented outer boundary,
+with the reference triangle's counter-clockwise edge orientation. Each edge
+uses its owning cell's physical gradient and its affine or isoparametric
+curve tangent. Gauss quadrature is split at every boundary-cell edge; no
+point locator, smooth field fit or inward displacement enters the integral.
+For example, use SI `MU0=1.2566370614359173e-6` and `ORDER=8`.
+
+The output is the current at twice the requested order and the absolute
+successive-order difference in A. Both are numerical candidates: that
+quadrature indicator does not bound FEM field or boundary geometry errors,
+and a rigorous current enclosure is unavailable. A mesh convergence gate
+must still be checked independently. An inward loop measures enclosed current
+and excludes its edge layer; it is a different observable from total current.
+Do not replace a pre-declared inward-loop gate silently with a boundary loop.
+
+`kin6d_gs_ampere_loop::gs_boundary_current` also returns optional nodal
+weights. At fixed geometry and mu0 they define the linear coefficient JVP
+and Euclidean transpose VJP; shape derivatives are unavailable. It reuses
+the generated GS current-sheet leaf for the signed physical contraction.
+The P2/P3 CTests solve an independently specified Solov'ev polynomial on a
+circular domain. Its analytic volume current checks the loop sign, accuracy
+and field-order mesh convergence. Export/readback, gauge invariance, current
+reversal and a coefficient directional derivative are checked separately.
+
 ## Fixed-source error estimator
 
 `kin6d_gs_majorant::gs_functional_majorant` computes a Repin functional
