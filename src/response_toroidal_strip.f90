@@ -14,7 +14,8 @@ module kin6d_response_toroidal_strip
     use kin6d_mhd_ampere_n, only: mu0
     use kin6d_response_fluid, only: &
         response_fluid_equilibrium_t, response_fluid_jet_t, &
-        response_fluid_result_t, response_fluid_residual, response_fluid_adjoint
+        response_fluid_result_t, response_fluid_residual, response_fluid_adjoint, &
+        response_fluid_stress, response_fluid_stress_adjoint
     implicit none
     private
     complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
@@ -45,7 +46,168 @@ module kin6d_response_toroidal_strip
     public :: toroidal_strip_init, toroidal_strip_action, toroidal_strip_solve
     public :: toroidal_strip_vjp
     public :: toroidal_strip_defects
+    public :: toroidal_strip_traces, toroidal_strip_traces_vjp
+    public :: toroidal_strip_domains
 contains
+    subroutine toroidal_strip_domains(centers, widths, lo, hi, bounds, owner, info)
+        !! Connected unions of rational strips in the caller's radial coordinate.
+        !! Clip at the physical domain, merge overlaps/touching intervals and
+        !! retain every center, including a rational exactly on either cut.
+        !! Topology is discrete: no derivative across a merge/split is asserted.
+        real(dp), intent(in) :: centers(:), widths(:), lo, hi
+        real(dp), allocatable, intent(out) :: bounds(:, :)
+        integer, allocatable, intent(out) :: owner(:)
+        integer, intent(out) :: info
+        real(dp), allocatable :: intervals(:, :)
+        integer, allocatable :: order(:)
+        real(dp) :: left, right
+        integer :: i, j, k, groups, count
+        info = 1
+        count = size(centers)
+        if (size(widths) /= count) return
+        if (.not. ieee_is_finite(lo) .or. .not. ieee_is_finite(hi)) return
+        if (lo >= hi) return
+        if (any(.not. ieee_is_finite(centers))) return
+        if (any(.not. ieee_is_finite(widths))) return
+        if (any(widths <= 0.0_dp)) return
+        if (any(centers < lo) .or. any(centers > hi)) return
+        allocate (intervals(2, count), order(count), owner(count))
+        do i = 1, count
+            order(i) = i
+        end do
+        do i = 2, count
+            k = order(i); j = i - 1
+            do while (j >= 1)
+                if (max(lo, centers(order(j)) - widths(order(j))) &
+                    <= max(lo, centers(k) - widths(k))) exit
+                order(j + 1) = order(j)
+                j = j - 1
+            end do
+            order(j + 1) = k
+        end do
+        groups = 0
+        do i = 1, count
+            k = order(i)
+            left = max(lo, centers(k) - widths(k))
+            right = min(hi, centers(k) + widths(k))
+            if (groups == 0) then
+                groups = 1
+                intervals(1, groups) = left; intervals(2, groups) = right
+            else if (left <= intervals(2, groups)) then
+                intervals(2, groups) = max(intervals(2, groups), right)
+                intervals(1, groups) = min(intervals(1, groups), left)
+            else
+                groups = groups + 1
+                intervals(1, groups) = left; intervals(2, groups) = right
+            end if
+            owner(k) = groups
+        end do
+        bounds = intervals(:, 1:groups)
+        info = 0
+    end subroutine toroidal_strip_domains
+
+    subroutine toroidal_strip_traces(s, work, gamma, x, traces)
+        !! Both rings, in one orientation N = grad(u)/|grad(u)|, T=(-N_Z,0,N_R).
+        !! traces(:,theta,side) = (A.T,A_phi,B.N,E.T,E_phi,xi.N,traction(3),Ptot1).
+        !! E=-gamma A-grad Phi; traction is Eulerian Maxwell-plus-fluid stress.
+        !! A matching outer trace uses the same N, so continuity is subtraction;
+        !! outward tractions instead add. No sheet or applied traction assumed.
+        !! Fixed equilibrium JVP is this linear map. Bounds are unavailable.
+        type(toroidal_strip_t), intent(in) :: s
+        type(toroidal_strip_work_t), intent(inout) :: work
+        complex(dp), intent(in) :: gamma, x(6, s%nr, s%nt)
+        complex(dp), intent(out) :: traces(10, s%nt, 2)
+        type(response_fluid_jet_t) :: jet
+        type(response_fluid_result_t) :: res
+        complex(dp) :: electric(3), stress(4)
+        real(dp) :: normal(3), tangent(3)
+        integer :: side, i, j
+        work%vector(1, :, :) = x(1, :, :)
+        work%vector(2, :, :) = 0.0_dp
+        work%vector(3, :, :) = x(2, :, :)
+        call vector_gradient(s, work%vector, work%gradient)
+        call curl_from_gradient(s, work%gradient, work%magnetic)
+        work%vector = x(3:5, :, :)
+        call vector_gradient(s, work%vector, work%gradient)
+        call scalar_gradient(s, x(6, :, :), work%gp)
+        !$omp parallel do collapse(2) schedule(static) &
+        !$omp private(i,jet,res,electric,stress,normal,tangent)
+        do side = 1, 2
+            do j = 1, s%nt
+                i = 1 + (side - 1)*(s%nr - 1)
+                normal(1) = s%normal(1, i, j); normal(2) = 0.0_dp
+                normal(3) = s%normal(2, i, j)
+                tangent(1) = -normal(3); tangent(2) = 0.0_dp
+                tangent(3) = normal(1)
+                jet = response_fluid_jet_t()
+                jet%a(1) = x(1, i, j); jet%a(2) = 0.0_dp
+                jet%a(3) = x(2, i, j)
+                jet%xi = x(3:5, i, j)
+                jet%dxi = work%gradient(:, :, i, j)
+                call response_fluid_residual(s%eq(i, j), jet, gamma, res)
+                electric = -gamma*jet%a - work%gp(:, i, j)
+                call response_fluid_stress(s%eq(i, j)%b0, normal, res%p1, &
+                    work%magnetic(:, i, j), stress)
+                traces(1, j, side) = sum(tangent*jet%a)
+                traces(2, j, side) = jet%a(2)
+                traces(3, j, side) = sum(normal*work%magnetic(:, i, j))
+                traces(4, j, side) = sum(tangent*electric)
+                traces(5, j, side) = electric(2)
+                traces(6, j, side) = sum(normal*jet%xi)
+                traces(7:10, j, side) = stress
+            end do
+        end do
+        !$omp end parallel do
+    end subroutine toroidal_strip_traces
+
+    subroutine toroidal_strip_traces_vjp(s, work, gamma, seed, adj)
+        !! Hermitian storage transpose. Physical surface weights multiply seed
+        !! before this call; volume Riesz weights are applied by the consumer.
+        type(toroidal_strip_t), intent(in) :: s
+        type(toroidal_strip_work_t), intent(inout) :: work
+        complex(dp), intent(in) :: gamma, seed(10, s%nt, 2)
+        complex(dp), intent(out) :: adj(6, s%nr, s%nt)
+        type(response_fluid_result_t) :: res
+        type(response_fluid_jet_t) :: jet
+        complex(dp) :: electric(3), magnetic(3)
+        real(dp) :: normal(3), tangent(3)
+        integer :: side, i, j
+        adj = 0.0_dp; work%gradient = 0.0_dp; work%gp = 0.0_dp
+        work%magnetic = 0.0_dp
+        !$omp parallel do collapse(2) schedule(static) &
+        !$omp private(i,res,jet,electric,magnetic,normal,tangent)
+        do side = 1, 2
+            do j = 1, s%nt
+                i = 1 + (side - 1)*(s%nr - 1)
+                normal(1) = s%normal(1, i, j); normal(2) = 0.0_dp
+                normal(3) = s%normal(2, i, j)
+                tangent(1) = -normal(3); tangent(2) = 0.0_dp
+                tangent(3) = normal(1)
+                res = response_fluid_result_t()
+                call response_fluid_stress_adjoint(s%eq(i, j)%b0, normal, &
+                    seed(7:10, j, side), res%p1, magnetic)
+                call response_fluid_adjoint(s%eq(i, j), gamma, res, jet)
+                electric = tangent*seed(4, j, side)
+                electric(2) = seed(5, j, side)
+                jet%a = tangent*seed(1, j, side) - conjg(gamma)*electric
+                jet%a(2) = jet%a(2) + seed(2, j, side)
+                adj(1, i, j) = jet%a(1); adj(2, i, j) = jet%a(3)
+                adj(3:5, i, j) = jet%xi + normal*seed(6, j, side)
+                work%gradient(:, :, i, j) = jet%dxi
+                work%magnetic(:, i, j) = magnetic + normal*seed(3, j, side)
+                work%gp(:, i, j) = -electric
+            end do
+        end do
+        !$omp end parallel do
+        call scalar_gradient_vjp(s, work%gp, adj(6, :, :))
+        call vector_gradient_vjp(s, work%gradient, work%vector)
+        adj(3:5, :, :) = adj(3:5, :, :) + work%vector
+        call curl_from_gradient_vjp(s, work%magnetic, work%gradient)
+        call vector_gradient_vjp(s, work%gradient, work%vector)
+        adj(1, :, :) = adj(1, :, :) + work%vector(1, :, :)
+        adj(2, :, :) = adj(2, :, :) + work%vector(3, :, :)
+    end subroutine toroidal_strip_traces_vjp
+
     subroutine toroidal_strip_init(s, work, radial, radius, inverse, eq, n, info)
         !! inverse(:, :, i, j) = d(u, theta)/d(R, Z); theta_j = 2 pi(j-1)/nt.
         !! Local five-node radial polynomial derivatives and complete odd-size

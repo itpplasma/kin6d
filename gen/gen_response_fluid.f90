@@ -15,6 +15,8 @@ program gen_response_fluid
     type(expr_t) :: b0(3), j0(3), acc(3), electric(3), velocity(3)
     type(expr_t) :: current(3), magnetic(3), force(6)
     type(expr_t) :: jb(3), j0b(3), vb(3)
+    type(expr_t) :: p1, inv_mu, normal(3), stress(4), bn, b0n, total
+    type(expr_t) :: inner, outer, xin, grad_jump
     type(expr_t), allocatable :: vars(:)
     character(12), allocatable :: names(:)
     character(12) :: label
@@ -86,6 +88,34 @@ program gen_response_fluid
     end do
     call emit('fluid_force', [character(12) :: 'm1', 'm2', 'm3', &
                               'o1', 'o2', 'o3'], force)
+    vars = vars(1:0); names = names(1:0)
+    p1 = variable('p1'); inv_mu = variable('inv_mu')
+    do a = 1, 3
+        write (label, '(a,i1)') 'b0', a
+        b0(a) = variable(label)
+        write (label, '(a,i1)') 'normal', a
+        normal(a) = variable(label)
+        write (label, '(a,i1)') 'magnetic', a
+        magnetic(a) = variable(label)
+    end do
+    total = p1; bn = magnetic(1)*normal(1); b0n = b0(1)*normal(1)
+    do a = 1, 3
+        total = total + inv_mu*b0(a)*magnetic(a)
+        if (a == 1) cycle
+        bn = bn + magnetic(a)*normal(a)
+        b0n = b0n + b0(a)*normal(a)
+    end do
+    do a = 1, 3
+        stress(a) = inv_mu*(b0(a)*bn + magnetic(a)*b0n) - total*normal(a)
+    end do
+    stress(4) = total
+    call emit('fluid_stress', &
+        [character(12) :: 'traction1', 'traction2', 'traction3', 'total'], stress)
+    vars = vars(1:0); names = names(1:0)
+    inner = variable('inner'); outer = variable('outer')
+    xin = variable('xin'); grad_jump = variable('grad_jump')
+    call emit('fluid_cut_balance', [character(12) :: 'balance'], &
+        [inner - outer + xin*grad_jump])
     write (unit, '(a)') 'end module kin6d_response_fluid_leaves'
     close (unit)
     call execute_command_line('fprettify --disable-indent -i 4 -l 88 '// &
