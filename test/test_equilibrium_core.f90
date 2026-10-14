@@ -266,8 +266,19 @@ contains
         character(256) :: line
         real(dp) :: expected, value, deviation
         integer :: unit, ref_unit, stat
+        real(dp) :: psi_scale
         logical :: found
         open (newunit=ref_unit, file=reference, status='old', action='read')
+        psi_scale = 0
+        do
+            read (ref_unit, '(a)', iostat=stat) line
+            if (stat /= 0) exit
+            if (len_trim(line) == 0) cycle
+            read (line, *) key, expected
+            if (trim(key) == 'psi_axis') psi_scale = abs(expected)
+        end do
+        if (psi_scale == 0) error stop 'K6-mini reference lacks psi_axis'
+        rewind (ref_unit)
         do
             read (ref_unit, '(a)', iostat=stat) line
             if (stat /= 0) exit
@@ -292,6 +303,17 @@ contains
             ! flux_consistency is a difference |a/b - 1| ~ 1e-4: absolute.
             if (trim(key) == 'flux_consistency') then
                 deviation = abs(value - expected)
+            else if (any(trim(key) == [character(16) :: 'majorant', &
+                'majorant_flux', 'majorant_balance'])) then
+                ! A-posteriori estimators are differences of solution-sized
+                ! quantities (|psi_axis| ~ 12, majorant_flux ~ 5e-2), so their
+                ! absolute noise is the solve's, not relative to themselves.
+                ! The solve stops at nonlinear_tolerance 1e-12, and the fast
+                ! reductions/FMA move the iterate at that level. Measure
+                ! against the solution scale |psi_axis|: the observed spread
+                ! is ~1e-14 there, 100x below the gate, while a 1e-8 change
+                ! of the solution still gives ~1e-8.
+                deviation = abs(value - expected)/max(psi_scale, tiny(1.0_dp))
             else
                 deviation = abs(value - expected)/max(abs(expected), tiny(1.0_dp))
             end if

@@ -381,6 +381,11 @@ including every quadratic minimum where linear FF′ crosses from negative
 to positive. Positive knot values alone are insufficient. Signed q must be
 finite and nonzero. The native q/Phi signs must agree; reversal changes F
 and toroidal flux while retaining the poloidal state and FF′.
+Known limitation: with `-march=x86-64-v3` the nonlinear solve converges only
+to about 1e-7 (5 instead of 3 Newton steps; tolerances 1e-7 to 1e-6 give
+identical output), so the reversal check in `grad_shafranov_constant_q_inverse_unit`
+(psi 2e-8, FF′ 2e-5 absolute) does not hold in that flavour (5.2e-8 and
+7.4e-6 relative to max|FF′|). The registered CTest uses default flags.
 
 Convergence requires a weak source residual, independent off-knot q probes,
 coarea quadrature refinement, and physical Phi quadrature refinement. The
