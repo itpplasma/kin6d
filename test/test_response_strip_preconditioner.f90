@@ -44,7 +44,6 @@ program test_response_strip_preconditioner
         if (command == 'scaling') then
             gamma = (2.0_dp, 0.2_dp)
             nr = 2**(level + 2) + 1; nt = 2**(level + 2) + 1
-            solve_tol = 1.2e-12_dp
         end if
         call setup(nr, nt, gamma, eta)
         call system_clock(tick, rate)
@@ -52,6 +51,10 @@ program test_response_strip_preconditioner
         call system_clock(tock)
         setup_s = real(tock - tick, dp)/rate
         call check(info == 0, 'band factors')
+        call toroidal_strip_action(strip, work, gamma, exact, ax, .true.)
+        print '(a,es11.3)', 'analytic state equation defect=', &
+            norm2(reshape(abs((ax - rhs)/scale), [6*nr*nt])) &
+            /norm2(reshape(abs(rhs/scale), [6*nr*nt]))
         x = 0
         call system_clock(tick)
         call strip_preconditioned_solve(pc, strip, work, rhs, x, &
@@ -96,14 +99,16 @@ program test_response_strip_preconditioner
             do repeat = 1, 2
                 amplitude = 10.0_dp**(24*repeat - 36)
                 x = 0.05_dp*amplitude*exact
-                call strip_preconditioned_solve(pc, strip, work, amplitude*rhs, &
+                seed = amplitude*rhs
+                call strip_preconditioned_solve(pc, strip, work, seed, &
                     x, 2.0e-10_dp, 1000, 180, st)
                 call check(st%info == 0, 'amplitude-independent relative residual')
                 call check(maxval(abs(x/amplitude - exact))/maxval(abs(exact)) &
                     < 2.0e-6_dp, 'small/large drive with nonzero initial guess')
             end do
             x = exact
-            call strip_preconditioned_solve(pc, strip, work, 0.0_dp*rhs, &
+            seed = 0
+            call strip_preconditioned_solve(pc, strip, work, seed, &
                 x, 2.0e-10_dp, 1000, 180, st)
             call check(st%info == 0, 'zero drive')
             call check(maxval(abs(x)) <= 0.0_dp, 'zero drive clears initial guess')
@@ -119,11 +124,17 @@ program test_response_strip_preconditioner
             call check(maxval(abs(x - exact))/maxval(abs(exact)) < 2.0e-5_dp, &
                 'adjoint inverse against supplied exact state')
             x = 0
-            call strip_preconditioned_solve(pc, strip, work, 1.0e-12_dp*adj, &
+            seed = 1.0e-12_dp*adj
+            call strip_preconditioned_solve(pc, strip, work, seed, &
                 x, 1.0e-13_dp, 1000, 180, st, .true.)
             call check(st%info == 0, 'small adjoint drive relative residual')
             call check(maxval(abs(x/1.0e-12_dp - exact))/maxval(abs(exact)) &
                 < 2.0e-5_dp, 'small adjoint drive analytic state')
+            x = 0
+            call strip_preconditioned_solve(pc, strip, work, rhs, &
+                x, 2.0e-10_dp, 1, 1, st)
+            call check(st%info /= 0, 'iteration-limited solve remains failed')
+            call check(st%residual > 2.0e-10_dp, 'failed solve physical residual')
             x = 0
             call toroidal_strip_solve(strip, work, gamma, rhs, x, scale, &
                 2.0e-10_dp, 1000, 180, baseline)

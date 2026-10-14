@@ -7,7 +7,7 @@ module kin6d_response_strip_preconditioner
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c, &
         fortnum_fft_workspace_t, fft_workspace_init
-    use fortnum_krylov, only: complex_fgmres_operator
+    use fortnum_krylov, only: complex_fgmres_operator, KRYLOV_OK, KRYLOV_STAGNATION
     use kin6d_response_toroidal_strip, only: toroidal_strip_t, &
         toroidal_strip_work_t, toroidal_strip_status_t, toroidal_strip_action, &
         toroidal_strip_vjp, toroidal_strip_defects
@@ -327,13 +327,19 @@ contains
         if (rhs_scale <= 0.0_dp) rhs_scale = 1.0_dp
         b = b/rhs_scale; v = v/rhs_scale
         pre_info = 0
-        call complex_fgmres_operator(matvec, precondition, b, v, tol, &
+        ! Reserve half the residual budget for reconstruction and the final
+        ! physical action. Krylov stagnation at this tighter internal target
+        ! is acceptable only if the independently recomputed residual meets tol.
+        call complex_fgmres_operator(matvec, precondition, b, v, 0.5_dp*tol, &
             maxit, restart, st%info, st%iterations, st%residual)
         v = v*rhs_scale
         b = reshape(rhs, [nn])
         if (.not. reverse) call scale_vector(pc, b)
         call matvec(v, ax)
         st%residual = norm2(abs(ax - b))/max(norm2(abs(b)), tiny(1.0_dp))
+        if (st%info == KRYLOV_STAGNATION) then
+            if (st%residual <= tol) st%info = KRYLOV_OK
+        end if
         if (st%residual > tol .and. st%info == 0) st%info = 1
         if (pre_info /= 0) st%info = pre_info
         x = reshape(v, shape(x))
