@@ -270,7 +270,11 @@ there is no separate post-step rigid correction in this mode.
 
 The merit includes the unprojected net vertical force, weighted by
 `cap_x**2 / energy_scale`, as well as the normal-projected residual. All stopping
-paths require the last accepted global shift to be below 1 micrometre.
+paths require the last full Newton shift estimate to be below 1 micrometre,
+and retain the pre-existing `|F_Z/K_Z| <= 1 micrometre` guard when the initial
+rigid-stiffness diagnostic is available. That finite-difference diagnostic is
+used only for stopping, never for the augmented equation or its Jacobian.
+Backtracking cannot satisfy the shift guard simply by reducing the step length.
 Without a tangential gauge, `rigid_vertical` retains its earlier behavior.
 Restart files still contain physical map coefficients, not solver coordinates.
 

@@ -57,7 +57,8 @@ program test_ideal_free_boundary
                ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
                              ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
        ideal_fb_vertical_system, ideal_fb_vertical_gradient, ideal_fb_vertical_expand, &
-                                         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers
+                                         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
+        ideal_fb_solve, ideal_fb_report_t
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
@@ -274,6 +275,7 @@ contains
         ! unchanged throughout each Newton solve. This tests the nonlinear
         ! equations, not a claim of a coil-supported analytic free boundary.
         type(ideal_fb_t) :: fb
+        type(ideal_fb_report_t) :: report
         integer, allocatable :: rp(:), ci(:), vrp(:), vci(:)
         real(dp), allocatable :: val(:), vv(:), g(:), gp(:), gm(:), v(:), du(:)
         real(dp), allocatable :: reduced(:), plus(:), minus(:), hv(:), x0(:, :, :)
@@ -332,6 +334,10 @@ contains
             ! The affine manufactured load makes this exact discrete target.
             call ideal_fb_gradient(fb, g, st)
             fb%shift = g
+            call ideal_fb_solve(fb, 1.0e-10_dp, 2, report, st, &
+                residual_tolerance=1.0e-12_dp)
+            if (st /= IDEAL_FB_OK .or. report%iterations /= 0) &
+                error stop 'exact manufactured target not recognized'
             x0 = fb%plasma%x
             do sign_z = -1, 1, 2
                 dz = sign_z*0.004_dp
