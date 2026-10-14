@@ -6,6 +6,7 @@ module ideal_fb_test_field
     implicit none
     private
     type, extends(ideal_frozen_t), public :: simple_field_t
+        logical :: solovev = .false.
     contains
         procedure :: evaluate => simple_evaluate
     end type
@@ -14,6 +15,18 @@ contains
         class(simple_field_t), intent(in) :: field
         real(dp), intent(in) :: point(2)
         real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
+        if (field%solovev) then
+            ! Solov'ev polynomial: Delta* chi = 16 C R^2, F constant.
+            ! Its axis is deliberately displaced by +37 mm in Z.
+            chi = 0.04_dp*((point(1)**2 - 3.05_dp**2)**2 &
+                           + 4*point(1)**2*(point(2) - 0.037_dp)**2 - 10.0_dp)
+            chi_gradient = 0.04_dp*[4*point(1)*(point(1)**2 - 3.05_dp**2 &
+                                                + 2*(point(2) - 0.037_dp)**2), &
+                                    8*point(1)**2*(point(2) - 0.037_dp)]
+            b3 = 6.0_dp/point(1)
+            pressure = -16*0.04_dp*min(chi, 0.0_dp)/(4.0e-7_dp*acos(-1.0_dp))
+            return
+        end if
         chi = 0.5_dp*((point(1) - 3.05_dp)**2 + (point(2)/1.5_dp)**2)
         chi_gradient = [point(1) - 3.05_dp, point(2)/1.5_dp**2]
         b3 = 6.0_dp/point(1)
@@ -41,8 +54,10 @@ program test_ideal_free_boundary
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_frozen_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
-        ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
-        ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK
+               ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
+                             ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
+       ideal_fb_vertical_system, ideal_fb_vertical_gradient, ideal_fb_vertical_expand, &
+                                         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
@@ -71,6 +86,8 @@ program test_ideal_free_boundary
     select case (trim(mode))
     case ('derivatives')
         call derivative_checks()
+    case ('vertical')
+        call vertical_checks()
     case ('vacuum')
         call vacuum_ladder()
     case ('vacuum3d')
@@ -151,10 +168,11 @@ contains
         end do
     end subroutine
 
-    subroutine build(nc, nchain, order, flux_chain, nfp, ntor, fb)
+    subroutine build(nc, nchain, order, flux_chain, nfp, ntor, fb, solovev)
         integer, intent(in) :: nc, nchain, order, nfp, ntor
         logical, intent(in) :: flux_chain
         type(ideal_fb_t), intent(out) :: fb
+        logical, intent(in), optional :: solovev
         type(gs_state_t) :: mesh
         type(cylindrical_chart_t) :: chart
         type(simple_field_t) :: field
@@ -174,6 +192,7 @@ contains
                     0.9_dp*sin(2*pi*(j - 1)/nchain)]
             end do
         end if
+        if (present(solovev)) field%solovev = solovev
         h = 2*pi*ac/nc
         call initialize_gs(mesh, contour, area_factor*h*h, st, order, curve=gamma_c, &
             interior_chain=chain)
@@ -248,6 +267,115 @@ contains
             deallocate (g, gp, gm, v, hv, du)
         end do
         print '(a)', 'derivatives ok'
+    end subroutine
+
+    subroutine vertical_checks()
+        ! Manufactured discrete load at a displaced Solov'ev state, retained
+        ! unchanged throughout each Newton solve. This tests the nonlinear
+        ! equations, not a claim of a coil-supported analytic free boundary.
+        type(ideal_fb_t) :: fb
+        integer, allocatable :: rp(:), ci(:), vrp(:), vci(:)
+        real(dp), allocatable :: val(:), vv(:), g(:), gp(:), gm(:), v(:), du(:)
+        real(dp), allocatable :: reduced(:), plus(:), minus(:), hv(:), x0(:, :, :)
+        real(dp) :: h, error(0:3), residual(0:3), scale, fd_error, dz
+        integer :: ntor, i, p, st, a, z, it, sign_z
+        do ntor = 0, 1
+            call build(16, 12, 2, .false., 3, ntor, fb, solovev=.true.)
+            call ideal_fb_set_drive(fb, sampler, st)
+            if (st /= IDEAL_FB_OK) error stop 'vertical drive'
+            fb%rigid_vertical = .true.; fb%tangential_gauge = 100
+            allocate (g(fb%n), gp(fb%n), gm(fb%n), du(fb%n), v(fb%n + 1), &
+                      reduced(fb%n + 1), plus(fb%n + 1), minus(fb%n + 1), hv(fb%n + 1))
+            ! Nonaxisymmetric perturbations exercise the off-diagonal blocks.
+            do i = 1, fb%n
+                du(i) = 2.0e-4_dp*sin(0.71_dp*i)
+            end do
+            call ideal_fb_step(fb, du, 1.0_dp)
+            call ideal_fb_gradient(fb, g, st)
+            call ideal_fb_hessian(fb, rp, ci, val)
+            call ideal_fb_vertical_system(fb, rp, ci, val, val, vrp, vci, vv)
+            call check_symmetry(vrp, vci, vv)
+            v = [(cos(0.31_dp*i), i=1, fb%n + 1)]
+            do a = 1, fb%plasma%nodes
+                z = 2 + 2*fb%nmode*(a - 1)
+                v(z) = 0
+            end do
+            do a = 1, fb%ns
+                i = fb%np + fb%nx + 2 + 3*fb%nmode*(a - 1)
+                v(i) = 1.0e3_dp
+            end do
+            v(fb%n + 1) = 0.73_dp
+            call ideal_fb_vertical_expand(fb, v, du)
+            h = 1.0e-6_dp
+            call ideal_fb_step(fb, du, h)
+            call ideal_fb_gradient(fb, gp, st)
+            call ideal_fb_vertical_gradient(fb, gp, plus)
+            call ideal_fb_step(fb, du, -2*h)
+            call ideal_fb_gradient(fb, gm, st)
+            call ideal_fb_vertical_gradient(fb, gm, minus)
+            call ideal_fb_step(fb, du, h)
+            hv = 0
+            do i = 1, fb%n + 1
+                do p = vrp(i), vrp(i + 1) - 1
+                    hv(i) = hv(i) + vv(p)*v(vci(p))
+                end do
+            end do
+            scale = maxval(abs(hv))
+            fd_error = maxval(abs((plus - minus)/(2*h) - hv))/scale
+           print '(a,i0,a,es12.4)', 'vertical N=', ntor, ' Jacobian FD error ', fd_error
+            if (fd_error > 1.0e-6_dp) error stop 'vertical Jacobian mismatch'
+            ! Explicitly check the force row on its own scale.
+            fd_error = abs((plus(fb%n + 1) - minus(fb%n + 1))/(2*h) &
+                           - hv(fb%n + 1))/max(abs(hv(fb%n + 1)), 1.0_dp)
+            print '(a,es12.4)', 'vertical force row FD error ', fd_error
+            if (fd_error > 1.0e-5_dp) error stop 'vertical force Jacobian mismatch'
+            ! The affine manufactured load makes this exact discrete target.
+            call ideal_fb_gradient(fb, g, st)
+            fb%shift = g
+            x0 = fb%plasma%x
+            do sign_z = -1, 1, 2
+                dz = sign_z*0.004_dp
+                fb%plasma%x(2, 1, :) = x0(2, 1, :) + dz
+                ! Keep copies of the other target variables: the loop restores
+                ! all state via an inverse accumulated step below.
+                block
+                    real(dp), allocatable :: xs0(:, :, :), phi0(:, :), lam0(:, :, :)
+                    xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
+                    call ideal_fb_solve_shell_map(fb, st)
+                    if (st /= IDEAL_FB_OK) error stop 'displaced shell map'
+                    call ideal_fb_solve_vacuum(fb, st)
+                    if (st /= IDEAL_FB_OK) error stop 'displaced vacuum'
+                    call ideal_fb_solve_multipliers(fb, st)
+                    if (st /= IDEAL_FB_OK) error stop 'displaced multipliers'
+                    do it = 0, 3
+                        error(it) = max(maxval(abs(fb%plasma%x - x0)), &
+                            maxval(abs(fb%xs - xs0)), &
+                            maxval(abs(fb%phi - phi0))/f_vac, &
+                            maxval(abs(fb%lam - lam0))/1.0e6_dp)
+                        call ideal_fb_gradient(fb, g, st)
+                        call ideal_fb_vertical_gradient(fb, g, reduced)
+                        residual(it) = maxval(abs(reduced))
+                        print '(a,3i3,2es14.5)', 'vertical Newton ', ntor, sign_z, it, &
+                            error(it), residual(it)
+                        if (it == 3) exit
+                        call ideal_fb_newton_step(fb, st)
+                        if (st /= IDEAL_FB_OK) error stop 'vertical Newton solve'
+                    end do
+                    if (error(1) > 0.1_dp*error(0)) error stop 'vertical return'
+                    do it = 1, 2
+                        if (error(it) > 1.0e-10_dp) then
+                            if (error(it + 1) > 100*error(it)**2) &
+                                error stop 'vertical Newton not quadratic'
+                        end if
+                    end do
+                    if (error(3) > 1.0e-9_dp) error stop 'vertical target error'
+                    fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                    fb%plasma%x = x0
+                end block
+            end do
+            deallocate (g, gp, gm, du, v, reduced, plus, minus, hv)
+        end do
+        print '(a)', 'vertical coupled Jacobian and quadratic return ok'
     end subroutine
 
     subroutine block_report(name, fd, an)

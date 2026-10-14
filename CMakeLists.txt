@@ -283,12 +283,14 @@ set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
+add_test(NAME ideal_fb_vertical_newton COMMAND test_ideal_free_boundary vertical)
 foreach(k 2 3)
     add_test(NAME ideal_fb_vacuum_exact_n0_p${k} COMMAND test_ideal_free_boundary vacuum ${k})
 endforeach()
 add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
     COMMAND test_ideal_free_boundary vacuum3d 3)
-set_tests_properties(ideal_fb_derivatives ideal_fb_vacuum_exact_n0_p2
+set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
+    ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90

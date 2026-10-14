@@ -245,3 +245,39 @@ FB-taper 0.997 results (fwd_p3_l3 reference, 256/384, μ_t = 1e-7):
   stopping rule). With `rigid_vertical` and the gauge the solve is therefore
   not converged while |F_Z/K_Z| > 1e-6 m, F_Z taken before the projection. The
   fixture-return test case `gzm` uses it.
+
+## Coupled vertical Newton coordinate
+
+With `rigid_vertical = .true.` and `tangential_gauge > 0`, the Newton
+unknowns are the normal n = 0 plasma-node displacements, unchanged shell,
+vacuum and nonaxisymmetric coordinates, and one global plasma Z shift.
+Writing the physical increment as `dU = T dy + v dz`, with fixed reference
+normals in T and unit Z entries on the plasma nodes in v, the equations are
+`T^T g = 0` and `F_Z = v^T g = 0`. Their symmetric Jacobian is
+
+```
+[ T^T H T   T^T H v ]
+[ v^T H T   v^T H v ]
+```
+
+Here H is the existing generated Lagrangian Hessian, including shell ties,
+magnetostatics and multipliers. Unused tangential slots are identity rows with
+zero right-hand sides; they do not enter the physical increment. This is an
+exact normal-coordinate gauge, rather than a finite penalty. Levenberg and
+tangential damping do not act on the global shift or its force row. The full
+coupled increment goes through the existing Jacobian/trust/backtracking checks;
+there is no separate post-step rigid correction in this mode.
+
+The merit includes the unprojected net vertical force, weighted by
+`cap_x**2 / energy_scale`, as well as the normal-projected residual. All stopping
+paths require the last accepted global shift to be below 1 micrometre.
+Without a tangential gauge, `rigid_vertical` retains its earlier behavior.
+Restart files still contain physical map coefficients, not solver coordinates.
+
+`ideal_fb_vertical_newton` checks the bordered Jacobian against finite
+differences, its force row independently and symmetry, for N = 0 and N = 1
+(nfp = 3). A retained constant manufactured load makes a discrete state with
+vertically displaced Solov'ev frozen data an exact target. Both signs of a
+4 mm shift return quadratically after shell/vacuum equilibration. This is a
+manufactured discrete solver oracle, not an analytic coil-supported free
+boundary or a continuous equilibrium certificate.
