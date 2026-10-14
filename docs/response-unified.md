@@ -416,9 +416,11 @@ equilibrium, all represented poloidal modes at n = +/-3, the forced state and
 drive tangent, JVP/VJP pairings with and without trace rows, zero-divergence
 analytic identities, and radial refinement against an independently
 differentiated degree-six electrostatic field. These establish an isolated
-candidate strip, not a TC24 layer-current or Glasser result. Representative
-small-eta/gamma conditioning, a scalable preconditioner, TC24 equilibrium-jet
-sampling and coupled-interface refinement are still required.
+candidate strip, not a TC24 layer-current or Glasser result. Imported TC24
+map/B/pressure jets and radial Fourier preconditioning now have
+[isolated candidate gates](response-strip-jets.md), including a bounded finite
+eta/gamma ladder. Coupled-interface refinement and TC24 physical qualification
+remain required.
 
 ### Two-ring traces and cut balance (candidate increment)
 
