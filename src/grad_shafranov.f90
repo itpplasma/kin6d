@@ -27,6 +27,7 @@ module kin6d_grad_shafranov
    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
        curve_value, boundary_curve, triangle_shapes, triangle_locate
    use kin6d_gs_inverse_leaves, only: gs_normalized_profile_response
+    use kin6d_real_identity, only: same_real_value
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
@@ -974,7 +975,7 @@ contains
             if (status /= 0) exit
             ! A full cell on a genuine profile kink has no linear derivative.
             if (mode /= 1) then
-                if (all(coefficients(2:) == 0.0_dp)) then
+                if (all(abs(coefficients(2:)) <= 0.0_dp)) then
                     if (profile_has_kink(flux, pp, ff, coefficients(1))) then
                         status = 4
                         exit
@@ -1138,7 +1139,7 @@ contains
         integer :: j
         kink = .false.
         do j = 1, size(flux)
-            if (psi /= flux(j)) cycle
+            if (.not. same_real_value(psi, flux(j))) cycle
             left_pp = 0; right_pp = 0; left_ff = 0; right_ff = 0
             if (j > 1) then
                 call lagrange_deriv_weights(2,psi,flux(j-1:j),weights)
@@ -1150,7 +1151,8 @@ contains
                 right_pp = dot_product(weights,pp(j:j+1))
                 right_ff = dot_product(weights,ff(j:j+1))
             end if
-            kink = left_pp /= right_pp .or. left_ff /= right_ff
+            kink = .not. same_real_value(left_pp, right_pp) .or. &
+                .not. same_real_value(left_ff, right_ff)
             return
         end do
     end function profile_has_kink
@@ -1241,7 +1243,7 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         if (any(.not. ieee_is_finite(ff))) return
         if (any(.not. ieee_is_finite(state%psi))) return
         if (.not. ieee_is_finite(axis_flux)) return
-        if (axis_flux == 0.0_dp) return
+        if (abs(axis_flux) <= 0.0_dp) return
         if (any(flux(2:) <= flux(:size(flux)-1))) return
         work_limit = 200000
         if (present(max_evaluations)) work_limit = max_evaluations
@@ -1263,7 +1265,7 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             call triangle_level_coefficients(state%element_order, &
                 local_psi(:ndof), coefficients, status)
             if (status /= 0) exit
-            if (all(coefficients(2:) == 0)) then
+            if (all(abs(coefficients(2:)) <= 0.0_dp)) then
                 if (profile_has_kink(flux, zero_profile, ff, coefficients(1))) then
                     status = 4
                     exit
@@ -1472,7 +1474,7 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             call gs_source(r, 1.0_dp, 0.0_dp, 1.0_dp, source)
             output = 0
             do column = 1, nf
-                if (profile_weights(column) == 0) cycle
+                if (abs(profile_weights(column)) <= 0.0_dp) cycle
                 output((column - 1)*ndof + 1:column*ndof) = &
                     source*profile_weights(column)*shape(:ndof)
             end do
@@ -1566,28 +1568,29 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         if (.not. cache%ready) return
         if (state%element_order /= cache%state%element_order) return
         if (size(flux) /= size(cache%flux) .or. size(ff) /= size(cache%ff)) return
-        if (any(flux /= cache%flux) .or. any(ff /= cache%ff)) return
+        if (any(.not. same_real_value(flux, cache%flux))) return
+        if (any(.not. same_real_value(ff, cache%ff))) return
         if (.not. allocated(state%psi)) return
         if (size(state%psi) /= size(cache%state%psi)) return
-        if (any(state%psi /= cache%state%psi)) return
+        if (any(.not. same_real_value(state%psi, cache%state%psi))) return
         if (.not. allocated(state%points)) return
         if (any(shape(state%points) /= shape(cache%state%points))) return
-        if (any(state%points /= cache%state%points)) return
+        if (any(.not. same_real_value(state%points, cache%state%points))) return
         if (.not. allocated(state%triangles)) return
         if (any(shape(state%triangles) /= shape(cache%state%triangles))) return
         if (any(state%triangles /= cache%state%triangles)) return
         if (.not. allocated(state%gradient)) return
         if (any(shape(state%gradient) /= shape(cache%state%gradient))) return
-        if (any(state%gradient /= cache%state%gradient)) return
+        if (any(.not. same_real_value(state%gradient, cache%state%gradient))) return
         if (.not. allocated(state%stiffness)) return
         if (any(shape(state%stiffness) /= shape(cache%state%stiffness))) return
-        if (any(state%stiffness /= cache%state%stiffness)) return
+        if (any(.not. same_real_value(state%stiffness, cache%state%stiffness))) return
         if (.not. allocated(state%area)) return
         if (size(state%area) /= size(cache%state%area)) return
-        if (any(state%area /= cache%state%area)) return
+        if (any(.not. same_real_value(state%area, cache%state%area))) return
         if (.not. allocated(state%diagonal)) return
         if (size(state%diagonal) /= size(cache%state%diagonal)) return
-        if (any(state%diagonal /= cache%state%diagonal)) return
+        if (any(.not. same_real_value(state%diagonal, cache%state%diagonal))) return
         if (.not. allocated(state%boundary)) return
         if (size(state%boundary) /= size(cache%state%boundary)) return
         if (any(state%boundary .neqv. cache%state%boundary)) return
