@@ -54,10 +54,10 @@ program test_ideal_free_boundary
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_frozen_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
-               ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
-                             ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
-       ideal_fb_vertical_system, ideal_fb_vertical_gradient, ideal_fb_vertical_expand, &
-                                         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
+        ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
+        ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
+        ideal_fb_vertical_system, ideal_fb_vertical_gradient, ideal_fb_vertical_expand, &
+        ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
         ideal_fb_solve, ideal_fb_report_t
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
