@@ -57,6 +57,8 @@ Globalisation:
 
 - merit Σ g²/|H_ii| (primal rows) and Σ g²|H_xx| (constraint rows);
 - Levenberg damping on the plasma map rows only;
+- tangential step damping reduced by 100 after accepted full steps, while the
+  axisymmetric tangential gauge remains fixed;
 - trust radii of 2 % of the Γ_c extent for displacement and 0.5 rad for ω.
 
 Φ̃ and λ are first solved at fixed geometry. fortsparse reads CSC, so blocks
@@ -82,8 +84,12 @@ fixture: K_R = +1.5e7 and K_Z = −2.7e4 J/m² per field period (decay index
 softer than the radial one. Newton converges to the saddle. Near the roundoff
 floor of the merit the vertical position creeps by about 3e-5 m per step, and
 the remaining vertical force over K_Z (0.1–0.3 mm) is the vertical
-uncertainty. Stopping rule: relative merit, absolute residual in σV units, or
-a stagnating merit with sub-step_tolerance increments.
+uncertainty. With a positive `residual_tolerance`, success requires that
+absolute residual in σV units; relative merit, small increments and a
+stagnation heuristic cannot bypass it. Without an absolute target, the legacy
+relative-merit and stagnation rules apply. An unmet absolute target returns
+not-converged even when no acceptable step remains. The historical floor
+diagnostic is heuristic, not a proved arithmetic bound.
 
 ## Inputs and the offset start
 

@@ -1483,10 +1483,11 @@ contains
         !     the plasma rows (never on the vacuum or multiplier blocks),
         !     reduced by 100 after every full step;
         !   - trust radius: displacement <= 2 % of the Gamma_c extent.
-        ! Converged when sqrt(merit/merit0) <= tolerance, when the residual
+        ! With a positive residual_tolerance, convergence requires the residual
         ! sqrt(merit/(sigma V)) <= residual_tolerance (sigma V = energy_scale,
         ! the poloidal-field and pressure energy: toroidal field removed from
-        ! the normalisation), or at the roundoff floor: the merit stagnates
+        ! the normalisation). Otherwise use relative merit or the legacy floor:
+        ! the merit stagnates
         ! (less than a factor 2 over 5 accepted steps) with displacement
         ! increments below step_tolerance (m) or no acceptable step remains
         ! below residual 1e-6.
@@ -1504,7 +1505,7 @@ contains
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
         real(dp) :: merit, tmerit, alpha, cap_x, cap_w, disp, rot, minjac, t0
-        real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5)
+        real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5), tangent_damping
         integer :: it, i, p, st, tries, back, nback
         integer, allocatable :: tpos(:, :), vrows(:), vcols(:)
         real(dp), allocatable :: trial_du(:), vmat(:), vg(:), vdu(:)
@@ -1539,6 +1540,7 @@ contains
         cap_w = 0.5_dp
         force_weight = cap_x**2/fb%energy_scale
         mu = 1.0e-8_dp
+        tangent_damping = fb%tangential_damping
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
         factored = .false.; cready = .false.
         call ideal_fb_gradient(fb, grad, st)
@@ -1610,14 +1612,19 @@ contains
                 if (abs(kz) > tiny(1.0_dp)) vertical_open = vertical_open &
                     .or. abs(rigid_force(grad)/kz) > vertical_tol
             end if
-            if ((.not. sqrt(merit) > tolerance*sqrt(report%merit0) .or. &
-                .not. report%residual > res_tol) .and. .not. vertical_open) then
-                status = IDEAL_FB_OK; exit
+            if (.not. vertical_open) then
+                if (res_tol > 0) then
+                    if (report%residual <= res_tol) then
+                        status = IDEAL_FB_OK; exit
+                    end if
+                else if (sqrt(merit) <= tolerance*sqrt(report%merit0)) then
+                    status = IDEAL_FB_OK; exit
+                end if
             end if
             history = eoshift(history, 1, merit)
             if (history(0) < huge(1.0_dp)) then
                 if (history(5) > 0.5_dp*history(0) .and. report%step < step_tol &
-                    .and. .not. vertical_open) then
+                    .and. .not. vertical_open .and. res_tol <= 0) then
                     report%floor = .true.; status = IDEAL_FB_OK; exit
                 end if
             end if
@@ -1629,7 +1636,7 @@ contains
                     dval(dpos(i)) = dval(dpos(i)) + mu*(diag(i) + 1.0e-12_dp*scale_p)
                 end do
                 if (fb%tangential_damping > 0 .or. fb%tangential_gauge > 0) &
-                    call add_tangential(fb, diag, tpos, dval)
+                    call add_tangential(fb, diag, tpos, dval, tangent_damping)
                 if (joint_vertical) call ideal_fb_vertical_system(fb, rowptr, &
                                                   colidx, val, dval, vrows, vcols, vmat)
                 if (slide_gauge) call slide_system(fb, rowptr, colidx, dval, sscale, &
@@ -1743,8 +1750,9 @@ contains
                 mu = 10*mu
             end do
             if (.not. accepted) then
-                if (report%residual < 1.0e-6_dp .and. .not. vertical_open) then
-                    report%floor = .true.; status = IDEAL_FB_OK
+                report%floor = report%residual < 1.0e-6_dp .and. .not. vertical_open
+                if (report%floor .and. res_tol <= 0) then
+                    status = IDEAL_FB_OK
                 end if
                 exit
             end if
@@ -1762,7 +1770,14 @@ contains
             report%step = alpha*disp
             report%min_jacobian = minjac
             report%damping = mu
-            if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
+            if (.not. alpha < 1) then
+                mu = max(mu/100, 1.0e-14_dp)
+                ! This is step regularisation, not part of the equations.
+                ! A fixed tangential penalty stalls near-null n /= 0 modes
+                ! on fine meshes. Recover Newton as full steps succeed,
+                ! retaining the n = 0 gauge and the residual acceptance test.
+                tangent_damping = tangent_damping/100
+            end if
         end do
         if (factored) call sparse_destroy(solver)
         if (cready) call sparse_destroy(csolver)
@@ -1992,20 +2007,21 @@ contains
         end do
     end subroutine
 
-    subroutine add_tangential(fb, diag, tpos, val)
+    subroutine add_tangential(fb, diag, tpos, val, damping)
         ! val += tangential_damping s_a t t^T, t the unit tangent of the
         ! reference surface at node a, s_a the mean (q1, q2) diagonal.
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(in) :: diag(:)
         integer, intent(in) :: tpos(:, :)
         real(dp), intent(inout) :: val(:)
+        real(dp), intent(in) :: damping
         real(dp) :: t(2), sa
         integer :: a, m, k
         do a = 1, fb%plasma%nodes
             t = [-fb%plasma%direction(2, a), fb%plasma%direction(1, a)]
             do m = 1, fb%nmode
                 k = m + fb%nmode*(a - 1)
-                sa = fb%tangential_damping*0.5_dp*(diag(pidx(fb, 1, m, a)) &
+                sa = damping*0.5_dp*(diag(pidx(fb, 1, m, a)) &
                                                    + diag(pidx(fb, 2, m, a)))
                 if (m == 1 .and. fb%rigid_vertical .and. &
                     fb%tangential_gauge > 0) cycle
