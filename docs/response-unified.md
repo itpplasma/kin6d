@@ -285,7 +285,7 @@ gate.
   SLAYER drift-MHD (Park 2022) in the cylinder.
 
   Increment 1 (2026-10-14, `test_mhd_closure strip`, ctest
-  `response_strip_torus_coupling`, disabled until gate (a) is decided):
+  `response_strip_torus_coupling`):
   the R-B1 strip coupled to the FEEC torus by trace continuity on the two
   edge rings. Case: tanh step (q0 1.2, r1 0.5, width 0.02, zero beta),
   n = 1, 2/1 strip with edges at psin_s -+ xd, 3/1 and 4/1 L4 sheets.
@@ -321,7 +321,8 @@ gate.
   (b) converges to the same-profile cylinder at about second order in
   1/nrad (64 -> 128: 4.8x; 80 -> 160: 4.6x) and passes from nrad 64, which
   is the gated resolution. R0/a 20 / 80 at nrad 96: (b) 9.0e-3 / 5.7e-3;
-  xd 0.01 / 0.04 at nrad 96: (b) 6.6e-3 / 6.2e-3.
+  xd 0.01 / 0.04 at nrad 96: (b) 6.6e-3 / 6.2e-3; xd 0.01 at nrad 64:
+  1.65e-2.
   (a) does not close under refinement: 1.02e-3 -> 1.01e-3 over nrad 32-160,
   independent of the GMRES tolerance (1.04e-3 at 1e-7, 1.02e-3 at 3e-8). It
   scales with the strip width: 1.55e-4 (xd 0.01, nrad 64-128), 1.01e-3
@@ -329,8 +330,15 @@ gate.
   (6.2e-4, 1.01e-3, 1.11e-3 at R0/a 20, 40, 80). It is a finite-strip
   truncation of the comparison with a sheet on the rational (presumably the
   linear-F local equations of the strip; not isolated), not a mesh or
-  coupling error. Gate (a) is kept at 1e-3 for xd 0.02 and fails by 1 %;
-  the decision (declared xd or strip local equations) is open.
+  coupling error. Under the first declaration (xd 0.02) gate (a) failed by
+  1 %. (a) was re-declared on 2026-10-14 (controller) because its error is
+  the finite strip width relative to the sheet limit, which is what (a)
+  tests: at xd 0.01, |ratio - 1| <= 1e-3 (limit unchanged), and the order
+  of that error between xd 0.02 and 0.01 at the same nrad must be >= 1.8
+  (measured 1.01e-3 / 1.55e-4: order 2.7). The gated run is therefore at
+  xd 0.01, nrad 64, plus an (a)-only run at xd 0.02 for the order. (b) at
+  xd 0.01 (job 3225264): nrad 64 1.65e-2 / 1.63e-2 / 1.64e-2, nrad 96
+  6.6e-3, nrad 128 3.4e-3, so nrad 64 stays the gated resolution.
 - R-K: kinetic. K1 outer delta W_k (perturbative, then self-consistent)
   after DK4 passes, against MARS-K perturbative on rung c; K2 kinetic strip
   against KiLCA and MEPHIT hybrid kinetic-MHD (Lainer et al. 2026) in the
