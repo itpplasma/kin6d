@@ -106,7 +106,7 @@ program test_response_strip_preconditioner
             call strip_preconditioned_solve(pc, strip, work, 0.0_dp*rhs, &
                 x, 2.0e-10_dp, 1000, 180, st)
             call check(st%info == 0, 'zero drive')
-            call check(maxval(abs(x)) == 0.0_dp, 'zero drive clears initial guess')
+            call check(maxval(abs(x)) <= 0.0_dp, 'zero drive clears initial guess')
             ! Independently check the adjoint inverse by constructing A^*x.
             call toroidal_strip_vjp(strip, work, gamma, exact/scale, adj, .true.)
             x = 0

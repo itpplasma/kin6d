@@ -1655,6 +1655,16 @@ target_sources(kin6d PRIVATE src/response_strip_preconditioner.f90)
 add_executable(test_response_strip_preconditioner
     test/test_response_strip_preconditioner.f90)
 target_link_libraries(test_response_strip_preconditioner PRIVATE kin6d)
+if(KIN6D_STRIP_EQDSK_TEST)
+    add_executable(test_response_strip_tc24_preconditioner
+        test/test_response_strip_tc24_preconditioner.f90)
+    target_link_libraries(test_response_strip_tc24_preconditioner PRIVATE kin6d)
+    add_test(NAME response_strip_tc24_preconditioner
+        COMMAND test_response_strip_tc24_preconditioner ${KIN6D_STRIP_EQDSK_TEST})
+    set_tests_properties(response_strip_tc24_preconditioner PROPERTIES
+        ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive"
+        PROCESSORS 2 TIMEOUT 180)
+endif()
 foreach(check oracles negative limits scaling)
     add_test(NAME response_strip_preconditioner_${check}
         COMMAND test_response_strip_preconditioner ${check})
