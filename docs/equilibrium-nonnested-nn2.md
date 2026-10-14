@@ -562,6 +562,9 @@ the discrete line closure for each mesh, not on h alone. The P2 verdict at
 Making P2 robust at 1e6 needs a design decision: a closed-line gauge for
 Phi paired with a matching source so that weak Ampere stays solvable, or a
 ratio-dependent mesh. Neither is a retune of the gates.
+Decision (2026-10-14): NN2 comparisons at conductivity ratio >= 1e6 (NTEC)
+use P3; P2 robustness at high ratio needs a closed-line Phi gauge with a
+matching source and is not pursued now.
 
 ### NN2c island results (sCluster jobs 3222014, 3222015)
 
