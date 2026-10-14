@@ -179,7 +179,14 @@ contains
         ! Mean trace rate over the sweep and sample rate on the finest pair.
   call require(log(errors(1, 1)/errors(1, n))/log(2.0_dp)/(n - 1) > min_rate - 1.0_dp, &
                      'mean trace rate')
-        call require(rate(n - 1) > min_rate, 'sample rate on the finest pair')
+        ! The sample error is the maximum over a few points of a signed
+        ! mesh-realisation dependent error: with the CG tolerance varied from 1e-9
+        ! to 1e-12 the sample values are unchanged, but a flag that perturbs the
+        ! triangulation (the axis test shows 2616 vs 2622 cells) moved the finest-mesh
+        ! error by a factor 1.8 (single-pair rate 2.9 to 3.7). The rate is
+        ! therefore the slope over the two finest pairs.
+        call require(log(errors(2, n - 2)/errors(2, n))/log(2.0_dp)/2 > min_rate, &
+                     'sample rate over the two finest pairs')
       call require(errors(4, n) < 1.0e-6_dp, 'whole-plane energy against mu0 int j psi')
     end subroutine sweep
 
