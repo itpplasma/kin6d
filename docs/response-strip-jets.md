@@ -65,7 +65,11 @@ use `A/scale`; adjoint solves use `(A/scale)^*`. A physical adjoint additionally
 requires the caller's volume/surface Riesz weights. Drive tangents solve the same
 linear equation. Equilibrium/mesh/rate derivatives of the complete solve remain
 caller-owned through `A dx=db-dA x`; differentiating the preconditioner is not
-required. Residuals are re-evaluated after Krylov termination. Returned states
+required. Krylov uses half the requested residual tolerance to allow for
+reconstruction and the final physical action. Stagnation at that tighter
+internal target is accepted only when the independently recomputed physical
+residual meets the original requested tolerance. Other Krylov failures remain
+failures. Residuals are re-evaluated after Krylov termination. Returned states
 remain candidates; neither an inverse bound nor a discrete/continuous certificate
 is available. Gamma=0 is rejected rather than regularizing a static nullspace.
 
