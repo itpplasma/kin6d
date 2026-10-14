@@ -91,6 +91,12 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_gsvd.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 target_link_libraries(kin6d_ode PUBLIC kin6d_intervals)
+if(KIN6D_ENABLE_OPENMP)
+    # These numerical leaves are also called from threaded KIN6D operators.
+    # Compile them for concurrent calls, including runtime-checked Debug.
+    target_link_libraries(kin6d_ode PUBLIC OpenMP::OpenMP_Fortran)
+    target_link_libraries(kin6d_intervals PUBLIC OpenMP::OpenMP_Fortran)
+endif()
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES

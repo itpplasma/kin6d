@@ -543,6 +543,12 @@ contains
             call ideal_map_eliminate_omega(map, x0, e0, gr, status)
             if (status /= 0) error stop 'elimination'
             do k = 1, 6
+                ! The quadratic axis monomials for probe 4 exist only at P3.
+                ! P2 already reports this inapplicable probe as zero below.
+                if (k == 4 .and. map%npoly < 6) then
+                    d2(k) = 0
+                    cycle
+                end if
                 do i = 1, map%nodes
                     call seed%evaluate(map%reference(:, i), chi, grad, b3, p)
                     t = [-map%direction(2, i), map%direction(1, i)]
@@ -581,7 +587,6 @@ contains
                     s(abs(sgn)) = s(abs(sgn)) + ep
                 end do
                 d2(k) = (4*s(1) - s(2)/4)/3
-                if (k == 4 .and. map%npoly < 6) d2(k) = 0
             end do
             ! Omega gauge f(chi) (probes 7, 8: f = T, sin(2 pi T)) at fixed
             ! transversal dofs: W is quadratic in omega, so the second
