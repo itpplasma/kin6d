@@ -59,7 +59,9 @@ program test_mhd_closure
     use kin6d_gs_direct, only: gs_direct_available
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
-    use kin6d_mhd_response_n, only: ring_sheet_load, sheet_closure_t, closure_fluxes
+    use kin6d_mhd_response_n, only: ring_sheet_load, sheet_closure_t, closure_fluxes, &
+        ring_angles_t, ring_angles_set, ring_flux_harmonic, ring_flux_from_values, &
+        ring_points
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
@@ -67,6 +69,10 @@ program test_mhd_closure
         layer_coefficients, layer_regular_slope, layer_large
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
+    use kin6d_response_strip, only: cyl_step_t, strip_options_t, strip_mesh, &
+        layer_width, step_fprime, step_delta_prime, step_rational, &
+        strip_dirichlet_map, strip_growth_rate, strip_solution_t, &
+        ri_dispersion_gamma
     implicit none
 
     real(dp), parameter :: pi = 3.14159265358979323846_dp
@@ -88,9 +94,43 @@ program test_mhd_closure
     ! Doppler rate gamma = i n Omega of the static drive
     real(dp) :: rho_l = 1.0e-7_dp, diff_l = 8.8e-5_dp
     complex(dp) :: gam_l = (0.0_dp, 300.0_dp)
+    ! R-B2 strip coupling state (fe_strip and its helpers)
+    integer, parameter :: np = 256
+    real(dp), parameter :: ratio = 1.5_dp
+    type(flux_mesh_t) :: fm
+    type(meridian_feec_t) :: fs
+    type(meridian_point_basis_t) :: pb
+    type(ampere_n_t) :: amp
+    type(ideal_options_t) :: opt
+    type(sample_ring_t), allocatable :: sr(:)
+    type(sheet_closure_t) :: cl
+    type(surface_t) :: s
+    type(ring_angles_t), allocatable :: ras(:)
+    type(cyl_step_t) :: eq
+    type(strip_options_t) :: sopt
+    type(strip_solution_t) :: ssol
+    real(dp), allocatable :: extra(:), ul(:), psin_s(:), rr(:), xq(:, :), nds(:, :)
+    real(dp), allocatable :: th(:), tau(:), wq(:)
+    integer, allocatable :: tt(:)
+    integer, allocatable :: mr(:), je_all(:)
+    complex(dp), allocatable :: b2(:), f(:), a(:), b2cl(:, :), lam(:), phit(:)
+    complex(dp), allocatable :: phe(:), bc(:)
+    complex(dp) :: mo(2, 2), mfe(2, 2), p0(2), dmap(2, 2), vmap(2, 2), smap(2, 2), jr(2)
+    complex(dp) :: lam2(2), lam_l4, ga, gb, fa, fb, gn, bb(3), amat(2, 2)
+    real(dp) :: merr, qsgn, qt, x, pa, rs, re(2), fp, dpr, gr, rb(2, 2), wl, tol
+    integer :: k, st, nrat, itest, j, je(2), side, nr, ns, info, its, it
+    logical :: found
 
     all_passed = .true.
     call study()
+    block
+        character(len=16) :: mode
+        call get_command_argument(1, mode)
+        if (trim(mode) == 'strip') then
+            !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
+            call strip_suite()
+        end if
+    end block
     !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
     if (command_argument_count() > 0) then
         call get_command_argument(1, suite)
@@ -443,6 +483,518 @@ contains
     end subroutine mercier_zero_beta
 
     ! ----------------------------------------------------------- FE ladder
+
+    ! ------------------------------------------------ R-B2 strip coupling
+
+    subroutine strip_suite()
+        !! R-B2 first increment (docs/response-unified.md (B)): the resolved
+        !! resistive strip of kin6d_response_strip (single fluid, no
+        !! rotation, resonant harmonic resolved in the strip, cylinder-
+        !! equivalent local equations) coupled to the FEEC torus outer region
+        !! by trace continuity on the two strip edge rings: the strip's
+        !! Dirichlet-to-Neumann map D(gamma), the current-free interior that
+        !! the FEEC sees between the edges (map V) and the jump of
+        !! d Phi_m/dr per unit edge sheet give the edge sheets lam = S Phi,
+        !! imposed as the closure rows S Phi - lam = 0 (sheet_closure_t w, wl).
+        !! Tanh step (q0 1.2, r1 0.5, width 0.02), 2/1 strip, 3/1 and 4/1 L4
+        !! sheets.  Pre-declared rules (RB2 handoff, before the first run):
+        !!  (a) eta = 0, gamma = 1e-6: strip net current / L4 sheet current on
+        !!      the rational ring, same mesh and drive: |ratio - 1| <= 1e-3;
+        !!  (b) as first declared: R0/a = 40: torus growth rate / R-B1 sharp-
+        !!      step cylinder rate (same eta, r1 = sqrt(2 I_tot)), S = 1e6, 1e7,
+        !!      1e8: |ratio - 1| <= 2 %;
+        !!  consistency: the coupled closure solve equals the Schur form
+        !!      (I - S M)^-1 S P0 to the GMRES tolerance (5e-4 relative).
+        !! (b) re-declared 2026-10-14 (controller): the sharp-step cylinder
+        !! (r_s Delta' = 5.000) is a different problem from the tanh profile
+        !! solved here (width 0.02, ODE r_s Delta' = 5.247, about +3.9 % in
+        !! gamma ~ Delta'^(4/5)), so it does not test the torus coupling.  (b)
+        !! is now: torus growth rate / cylinder growth rate of the SAME tanh
+        !! profile (strip coupling with the cylinder tearing-ODE outer map,
+        !! step_outer_map(.true.)), same S values, |ratio - 1| <= 2 % (limit
+        !! unchanged), with the gap shrinking under nrad refinement (ladder in
+        !! docs/response-unified.md, R-B2 increment 1).  The gated run uses
+        !! the smallest nrad of that ladder at which (b) passes.  The old
+        !! ratio to the sharp-step rate stays printed ("rel").
+        !! (a) re-declared 2026-10-14 (controller).  As first declared it was
+        !! run at strip half-width xd = 0.02 (in psi_n) and gave 1.02e-3 ..
+        !! 1.01e-3 for nrad 32 .. 160 and every GMRES tolerance: it does not
+        !! close with the mesh.  Measured xd ladder (R0/a 40, nrad 64-128,
+        !! independent of nrad): xd 0.01 / 0.02 / 0.04 -> 1.55e-4 / 1.01e-3 /
+        !! 4.40e-3, i.e. ~xd^2: the finite strip width versus the sheet limit,
+        !! which is what (a) tests.  (a) is now: at xd = 0.01, |strip / L4
+        !! current - 1| <= 1e-3 (limit unchanged), AND the convergence order
+        !! of that error between xd 0.02 and 0.01 (same nrad) is >= 1.8.  The
+        !! gated run is at xd 0.01; (b) was re-checked there at nrad 64
+        !! (1.65e-2 / 1.63e-2 / 1.64e-2, job 3225264), so nrad stays 64.
+        !! KIN6D_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
+        character(len=128) :: env
+        real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order
+        integer :: nr, i
+        integer, parameter :: nrad_gate = 64
+        real(dp), parameter :: etas(3) = [1.0e-6_dp, 1.0e-7_dp, 1.0e-8_dp]
+        real(dp), parameter :: xd_gate = 1.0e-2_dp
+        real(dp) :: none(0)
+        complex(dp) :: gt(3), gc(3), gs(3), g0(0)
+        call get_environment_variable('KIN6D_STRIP_LADDER', env)
+        if (len_trim(env) > 0) then
+            read (env, *) r0l, xdl, nr
+            call fe_strip(r0l, xdl, nr, etas, gt, gc, gs, ierr, cerr)
+            stop
+        end if
+        ! (a) at twice the gated width, no growth rates: the xd-order reference
+        call fe_strip(40.0_dp, 2*xd_gate, nrad_gate, none, g0, g0, g0, ierr2, &
+            cerr2)
+        call fe_strip(40.0_dp, xd_gate, nrad_gate, etas, gt, gc, gs, ierr, cerr)
+        order = log(ierr2/ierr)/log(2.0_dp)
+        print '(a,es10.3,a,es10.3,a,f6.3)', "  (a) xd 0.02 rel", ierr2, &
+            ", xd 0.01 rel", ierr, ", xd order", order
+        call record(ierr <= 1.0e-3_dp, "(a) ideal limit: strip current = L4 sheet")
+        call record(order >= 1.8_dp, "(a) strip -> sheet error converges as xd^2")
+        do i = 1, 3
+            call record(abs(gt(i)/gs(i) - 1) <= 2.0e-2_dp, &
+                "(b) torus growth rate = same-profile cylinder rate")
+        end do
+        call record(cerr <= 5.0e-4_dp, "coupled closure = Schur complement form")
+        call record(merr <= 1.0e-3_dp, &
+            "coupling with the sharp-step outer map = R-B1 cylinder rate")
+        if (.not. all_passed) error stop 1
+        print '(a)', "test_mhd_closure strip: all checks passed"
+        stop
+    end subroutine strip_suite
+
+    subroutine fe_strip(r0a, xd, nrad, etas, gtor, gcyl, gsame, ierr, cerr)
+        !! gcyl: R-B1 sharp-step cylinder rate; gsame: cylinder rate of the
+        !! same (tanh) profile, the reference of gate (b).
+        real(dp), intent(in) :: r0a, xd, etas(:)
+        integer, intent(in) :: nrad
+        complex(dp), intent(out) :: gtor(:), gcyl(:), gsame(:)
+        real(dp), intent(out) :: ierr, cerr
+        nmode = 1
+        mres = 2
+        q0 = 1.2_dp
+        prof = 2
+        wstep = 0.02_dp
+        call make_tables()
+        r0 = r0a
+        call make_equilibrium()
+        pa = psi_of_r(1.0_dp)
+        call surface_build(g, 0.25_dp, 256, s, st)
+        qsgn = sign(1.0_dp, s%q)
+        ! fe_strip is called twice by strip_suite: release the previous call
+        if (allocated(psin_s)) deallocate (psin_s)
+        if (allocated(mr)) deallocate (mr)
+        if (allocated(ras)) deallocate (ras)
+        if (allocated(f)) deallocate (f)
+        if (allocated(a)) deallocate (a)
+        if (allocated(sr)) deallocate (sr)
+        if (allocated(lam)) deallocate (lam)
+        if (allocated(phit)) deallocate (phit)
+        if (allocated(phe)) deallocate (phe)
+        if (allocated(b2cl)) deallocate (b2cl)
+        allocate (psin_s(0), mr(0))
+        do k = 1, 20
+            qt = real(k, dp)/nmode
+            found = find_surface_q(g, qsgn*qt, 0.02_dp, 0.98_dp, 256, 1.0e-13_dp, &
+                x, st)
+            if (.not. found) cycle
+            psin_s = [psin_s, x]
+            mr = [mr, nint(qsgn*qt*nmode)]
+            if (k == mres) itest = size(mr)
+        end do
+        nrat = size(mr)
+        msgn = sign(1.0_dp, real(mr(itest), dp))
+        ! rings: rationals, strip edges and two graded rings on each side
+        extra = sqrt(psin_s)
+        do k = 0, 2
+            extra = [extra, sqrt(psin_s(itest) - xd*(1 + 0.25_dp*k*(k + 1))), &
+                sqrt(psin_s(itest) + xd*(1 + 0.25_dp*k*(k + 1)))]
+        end do
+        do k = 1, 2
+            extra = [extra, sqrt(psin_s(itest) - xd*(1 - 0.25_dp*k*(k + 1)/2)), &
+                sqrt(psin_s(itest) + xd*(1 - 0.25_dp*k*(k + 1)/2))]
+        end do
+        block
+            character(len=16) :: ev2
+            integer :: nsr
+            nsr = 0
+            call get_environment_variable('KIN6D_STRIP_STEPRINGS', ev2)
+            if (len_trim(ev2) > 0) read (ev2, *) nsr
+            ! rings across the tanh current step, spacing wstep/2
+            if (nsr > 0) then
+                do k = -nsr, nsr
+                    extra = [extra, sqrt(psi_of_r(r1 + 0.5_dp*k*wstep)/pa)]
+                end do
+            end if
+        end block
+        call ring_labels_merge(nrad, extra, 0.3_dp, ul)
+        nr = size(ul)
+        do side = 1, 2
+            je(side) = minloc(abs(ul**2 - (psin_s(itest) + (2*side - 3)*xd)), 1)
+            if (abs(ul(je(side))**2 - psin_s(itest) - (2*side - 3)*xd) > 1.0e-8_dp) &
+                error stop "strip edge ring"
+        end do
+        if (je(1) + 2 >= je(2) - 2) error stop "strip interior rings"
+        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        if (st /= 0) error stop "mesh"
+        call meridian_feec_build(fm%mm, 2, fs, st)
+        call ampere_n_build(fs, nmode, amp, st)
+        if (st /= 0) error stop "ampere"
+        call meridian_point_basis_init(fs, pb, st)
+        allocate (ras(nr))
+        do j = 1, nr
+            call surface_build(g, min(ul(j), 0.999_dp)**2, 1024, s, st)
+            call ring_angles_set(s%q, s%theta_s(:, 2), s%nu, ras(j))
+        end do
+        ! jump of d Phi/dr per unit sheet on each edge ring (vacuum sheet field,
+        ! one-sided quadratic slopes in psin on two rings each side)
+        allocate (f(amp%nn), a(amp%nn))
+        do side = 1, 2
+            j = je(side)
+            f = (0.0_dp, 0.0_dp)
+            call ring_sheet_load(fs, pb, fm, j, ras(j), nmode, mr(itest), &
+                (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            call ampere_n_curl(amp, a, b2)
+            jr(side) = slope3(j, j + 1, j + 2) - slope3(j, j - 1, j - 2)
+            re(side) = r_of_psi(ul(j)**2*pa)
+            jr(side) = jr(side)*(psi_of_r(re(side) + 1.0e-5_dp) &
+                - psi_of_r(re(side) - 1.0e-5_dp))/(2.0e-5_dp*pa)
+        end do
+        ! closures: 3/1, 4/1 (and 1/1 if present) L4 sheets; 2/1 strip rows
+        ns = nrat + 1
+        allocate (sr(nr), lam(ns), phit(ns), phe(ns), b2cl(fs%sp(2)%ndof, ns))
+        call build_closure(.true.)
+        do j = 1, ns
+            f = (0.0_dp, 0.0_dp)
+            call ring_sheet_load(fs, pb, fm, cl%sheet_ring(j), cl%sheet_ra(j), nmode, &
+                cl%sheet_m(j), (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            call ampere_n_curl(amp, a, b2)
+            b2cl(:, j) = b2
+        end do
+        call build_rings(.true.)
+        tol = 1.0e-7_dp
+        if (.not. gs_direct_available()) tol = 3.0e-5_dp
+        block
+            character(len=32) :: ev
+            ! KIN6D_STRIP_TOL="tol maxit" overrides the GMRES settings (studies)
+            call get_environment_variable('KIN6D_STRIP_TOL', ev)
+            if (len_trim(ev) > 0) read (ev, *) tol, gmres_max
+        end block
+        ! outer response to prescribed edge sheets (no drive): M
+        cl%wl(ns - 1:ns, ns - 1:ns) = reshape([1, 0, 0, 1], [2, 2])
+        do k = 1, 2
+            cl%target = (0.0_dp, 0.0_dp)
+            cl%target(ns - 2 + k) = (1.0_dp, 0.0_dp)
+            call solve(.false.)
+            mo(:, k) = phit(ns - 1:ns)
+        end do
+        ! driven, lam = 0: P0
+        cl%target = (0.0_dp, 0.0_dp)
+        call solve(.true.)
+        p0 = phit(ns - 1:ns)
+        ! linearity of the prescribed-sheet path: P0 + M lx at arbitrary lx
+        block
+            complex(dp) :: lx(2)
+            lx = [(0.3_dp, 0.7_dp), (-1.1_dp, 0.2_dp)]
+            cl%target(ns - 1:ns) = lx
+            call solve(.true.)
+            call record(maxval(abs(phit(ns - 1:ns) - p0 - matmul(mo, lx))) <= &
+                1.0e-3_dp*maxval(abs(matmul(mo, lx))), &
+                "prescribed edge sheets: superposition P0 + M lam")
+            cl%target = (0.0_dp, 0.0_dp)
+        end block
+        ! cylinder-equivalent strip
+        eq%m = mres
+        eq%n = nmode
+        eq%q0 = q0
+        eq%r1 = sqrt(2*ival(1.0_dp))
+        rs = step_rational(eq)
+        fp = step_fprime(eq)
+        dpr = step_delta_prime(eq)
+        rb(1, :) = [re(1)**mres, re(1)**(-mres)]
+        rb(2, :) = [re(2)**mres, re(2)**(-mres)]
+        vmap(1, :) = mres*[re(1)**(mres - 1), -re(1)**(-mres - 1)]
+        vmap(2, :) = mres*[re(2)**(mres - 1), -re(2)**(-mres - 1)]
+        vmap = matmul(vmap, inv2(cmplx(rb, 0.0_dp, dp)))
+        print '(a,f6.1,a,es9.2,a,i0,a,2f9.5,a,f9.5,a,f9.4,a,2es11.3)', 'strip R0/a', &
+            r0, ' xd', xd, ' rings ', nr, ' r_e', re, ' r_s', rs, ' rs Delta''', &
+            dpr, ' |junit|', abs(jr)
+        print '(a,f9.5)', '  same-profile (tanh) cylinder ODE r_s Delta''', &
+            ode_delta(rs)
+        ! (a) ideal limit
+        wl = layer_width(0.0_dp, (1.0e-6_dp, 0.0_dp), fp)
+        call smat(0.0_dp, (1.0e-6_dp, 0.0_dp), wl)
+        lam2 = matmul(inv2(eye2() - matmul(smap, mo)), matmul(smap, p0))
+        ! direct coupled closure solve
+        cl%w(ns - 1:ns, ns - 1:ns) = smap
+        cl%wl(ns - 1:ns, ns - 1:ns) = -eye2()
+        cl%target = (0.0_dp, 0.0_dp)
+        call solve(.true.)
+        cerr = maxval(abs(lam(ns - 1:ns) - lam2))/maxval(abs(lam2))
+        print '(a,4es12.4)', '  direct: |S Phi - lam|, |Phi - P0 - M lam|', &
+            abs(matmul(smap, phit(ns - 1:ns)) - lam(ns - 1:ns)), &
+            abs(phit(ns - 1:ns) - p0 - matmul(mo, lam(ns - 1:ns)))
+        ! L4 reference: one sheet on the rational ring, all half rings active
+        call build_closure(.false.)
+        do j = ns - 1, ns
+            f = (0.0_dp, 0.0_dp)
+            call ring_sheet_load(fs, pb, fm, cl%sheet_ring(j), cl%sheet_ra(j), nmode, &
+                cl%sheet_m(j), (1.0_dp, 0.0_dp), f)
+            call ampere_n_solve(amp, f, a, st)
+            call ampere_n_curl(amp, a, b2)
+            b2cl(:, j) = b2
+        end do
+        call build_rings(.false.)
+        call solve(.true.)
+        lam_l4 = lam(ns - 1) + lam(ns)
+        ierr = abs((lam2(1) + lam2(2))/lam_l4 - 1)
+        print '(a,2es13.5,a,2es13.5,a,es10.2,a,es10.2)', '  (a) strip current', &
+            lam2(1) + lam2(2), ' L4', lam_l4, ' rel', ierr, ' direct/Schur', cerr
+        ! (b) growth rates: det(I - S(gamma) M) = 0, mesh from the cylinder rate
+        merr = 0.0_dp
+        do k = 1, size(etas)
+            call ri_dispersion_gamma(etas(k), fp, dpr, gr, st)
+            sopt%xs = max(rs - re(1), re(2) - rs)
+            call strip_growth_rate(eq, etas(k), cmplx(1.3_dp*gr, 0.0_dp, dp), sopt, &
+                gcyl(k), ssol, it, st)
+            wl = layer_width(etas(k), gcyl(k), fp)
+            call rate_secant(etas(k), gcyl(k), wl, gtor(k), it)
+            ! same coupling with the exact sharp-step outer map: must give gcyl
+            mfe = mo
+            mo = step_outer_map(.false.)
+            call rate_secant(etas(k), 1.05_dp*gcyl(k), wl, gn, it)
+            ! diagnostic: cylinder map of the smoothed (tanh) profile itself
+            mo = step_outer_map(.true.)
+            call rate_secant(etas(k), 1.05_dp*gcyl(k), wl, gb, it)
+            gsame(k) = gb
+            mo = mfe
+            merr = max(merr, abs(gn/gcyl(k) - 1))
+            print '(a,es9.2,a,2es13.5,a,2es13.5,a,es10.2,a,es10.2)', '  (b) S', &
+                1/etas(k), ' gamma torus', gtor(k), ' cylinder', gcyl(k), ' rel', &
+                abs(gtor(k)/gcyl(k) - 1), ' step map', abs(gn/gcyl(k) - 1)
+            print '(a,es10.2,a,es10.2)', '      same-profile cylinder / step', &
+                abs(gb/gcyl(k) - 1), ', torus / same-profile cylinder (b)', &
+                abs(gtor(k)/gb - 1)
+        end do
+
+    end subroutine fe_strip
+
+    subroutine rate_secant(eta, g0, w, gam, it2)
+        !! Root of det(I - S(gamma) mo) by the secant method from g0.
+        real(dp), intent(in) :: eta, w
+        complex(dp), intent(in) :: g0
+        complex(dp), intent(out) :: gam
+        integer, intent(out) :: it2
+        complex(dp) :: g1, g2, f1, f2, g3
+        g1 = g0
+        g2 = 1.05_dp*g0
+        f1 = disp(eta, g1, w)
+        f2 = disp(eta, g2, w)
+        do it2 = 1, 40
+            g3 = g2 - f2*(g2 - g1)/(f2 - f1)
+            g1 = g2
+            f1 = f2
+            g2 = g3
+            f2 = disp(eta, g2, w)
+            if (abs(g2 - g1) <= 1.0e-10_dp*abs(g2)) exit
+        end do
+        gam = g2
+    end subroutine rate_secant
+
+    function step_outer_map(smooth) result(mc)
+        !! Edge fluxes per unit edge sheet of the cylinder: regular solution
+        !! f inside the sheet (sharp step of eq, a r^m + b r^-m; smooth: the
+        !! tearing ODE of the tabulated tanh profile up to the inner edge and
+        !! its current-free continuation across the strip), r^-m outside, jump jr;
+        !! the cylinder counterpart of the FEEC map mo.
+        logical, intent(in) :: smooth
+        complex(dp) :: mc(2, 2)
+        real(dp) :: gs, as, bs, fin(2), dfin(2), p, y(2)
+        integer :: i2, k2
+        gs = 2.0_dp/(1.0_dp - eq%n*eq%q0/eq%m)
+        as = 1.0_dp - gs/(2*eq%m)
+        bs = gs*eq%r1**(2*eq%m)/(2*eq%m)
+        do i2 = 1, 2
+            fin(i2) = as*re(i2)**mres + bs*re(i2)**(-mres)
+            dfin(i2) = mres*(as*re(i2)**(mres - 1) - bs*re(i2)**(-mres - 1))
+            if (smooth .and. i2 == 1) then
+                y = [1.0e-3_dp**mres, mres*1.0e-3_dp**(mres - 1)]
+                call integrate(1.0e-3_dp, re(1), y)
+                fin(1) = y(1)
+                dfin(1) = y(2)
+            else if (smooth) then
+                ! current-free continuation across the strip (as the FEEC
+                ! interior map V); the ODE must not be integrated through r_s
+                as = (fin(1) + re(1)*dfin(1)/mres)/(2*re(1)**mres)
+                bs = (fin(1) - re(1)*dfin(1)/mres)*re(1)**mres/2
+                fin(2) = as*re(2)**mres + bs*re(2)**(-mres)
+                dfin(2) = mres*(as*re(2)**(mres - 1) - bs*re(2)**(-mres - 1))
+            end if
+        end do
+        do k2 = 1, 2
+            p = real(jr(k2), dp)/(-mres/re(k2) - dfin(k2)/fin(k2))
+            do i2 = 1, 2
+                if (i2 <= k2) then
+                    mc(i2, k2) = p*fin(i2)/fin(k2)
+                else
+                    mc(i2, k2) = p*(re(k2)/re(i2))**mres
+                end if
+            end do
+        end do
+    end function step_outer_map
+
+    complex(dp) function slope3(j0, j1, j2) result(d)
+        integer, intent(in) :: j0, j1, j2
+        real(dp) :: x0, x1, x2
+        complex(dp) :: f0, f1, f2
+        x0 = ul(j0)**2
+        x1 = ul(j1)**2
+        x2 = ul(j2)**2
+        f0 = ring_flux_harmonic(fs, pb, fm, j0, ras(j0), nmode, b2, mr(itest))
+        f1 = ring_flux_harmonic(fs, pb, fm, j1, ras(j1), nmode, b2, mr(itest))
+        f2 = ring_flux_harmonic(fs, pb, fm, j2, ras(j2), nmode, b2, mr(itest))
+        d = f0*(2*x0 - x1 - x2)/((x0 - x1)*(x0 - x2)) &
+            + f1*(x0 - x2)/((x1 - x0)*(x1 - x2)) &
+            + f2*(x0 - x1)/((x2 - x0)*(x2 - x1))
+    end function slope3
+
+    subroutine build_closure(strip)
+        logical, intent(in) :: strip
+        integer :: l2, q2
+        if (allocated(cl%sheet_ring)) deallocate (cl%sheet_ring, cl%sheet_m, &
+            cl%sheet_ra, cl%flux_ring, cl%flux_m, cl%flux_ra, cl%w, cl%target, &
+            cl%wl)
+        cl%ns = ns
+        cl%nf = ns
+        allocate (cl%sheet_ring(ns), cl%sheet_m(ns), cl%sheet_ra(ns), &
+            cl%flux_ring(ns), cl%flux_m(ns), cl%flux_ra(ns), cl%w(ns, ns), &
+            cl%target(ns), cl%wl(ns, ns))
+        cl%w = (0.0_dp, 0.0_dp)
+        cl%wl = (0.0_dp, 0.0_dp)
+        cl%target = (0.0_dp, 0.0_dp)
+        q2 = 0
+        do l2 = 1, nrat
+            if (l2 == itest) cycle
+            q2 = q2 + 1
+            cl%sheet_ring(q2) = minloc(abs(ul**2 - psin_s(l2)), 1)
+            cl%sheet_m(q2) = mr(l2)
+        end do
+        if (strip) then
+            cl%sheet_ring(ns - 1:ns) = je
+            cl%sheet_m(ns - 1:ns) = mr(itest)
+        else
+            ! L4: the rational ring carries the sheet; ns - 1 is a dummy
+            ! sheet on the inner edge fixed to zero amplitude
+            cl%sheet_ring(ns - 1) = je(1)
+            cl%sheet_ring(ns) = minloc(abs(ul**2 - psin_s(itest)), 1)
+            cl%sheet_m(ns - 1:ns) = mr(itest)
+        end if
+        cl%flux_ring = cl%sheet_ring
+        cl%flux_m = cl%sheet_m
+        do l2 = 1, ns
+            cl%sheet_ra(l2) = ras(cl%sheet_ring(l2))
+            cl%flux_ra(l2) = ras(cl%flux_ring(l2))
+            if (l2 < ns - 1) cl%w(l2, l2) = (1.0_dp, 0.0_dp)
+        end do
+        if (.not. strip) then
+            cl%wl(ns - 1, ns - 1) = (1.0_dp, 0.0_dp)
+            cl%w(ns, ns) = (1.0_dp, 0.0_dp)
+        end if
+    end subroutine build_closure
+
+    subroutine build_rings(strip)
+        logical, intent(in) :: strip
+        integer :: j2, k2, st2
+        do j2 = 2, nr
+            call sample_ring_build(g, opt, fm, fs, pb, 0.5_dp*(ul(j2 - 1) + ul(j2)), &
+                j2, np, sr(j2 - 1), st2)
+            if (st2 /= 0) error stop "half ring"
+            if (strip .and. sr(j2 - 1)%u > ul(je(1)) .and. sr(j2 - 1)%u < ul(je(2))) &
+                sr(j2 - 1)%active = .false.
+        end do
+        call sample_ring_build(g, opt, fm, fs, pb, 1.0_dp, nr, np, sr(nr), st2)
+        do j2 = 1, nr
+            do k2 = 1, np
+                call drive(sr(j2)%x(:, k2), sr(j2)%bc(:, k2))
+            end do
+        end do
+        ! resonant drive fluxes on the closure flux rings
+        do k2 = 1, ns
+            call ring_points(fm, cl%flux_ring(k2), xq, nds, th, tt, tau, wq)
+            if (allocated(bc)) deallocate (bc)
+            allocate (bc(size(th)))
+            do j2 = 1, size(th)
+                call drive(xq(:, j2), bb)
+                bc(j2) = (bb(1)*nds(1, j2) + bb(3)*nds(2, j2))*xq(1, j2)
+            end do
+            phe(k2) = ring_flux_from_values(cl%flux_ra(k2), nmode, cl%flux_m(k2), &
+                th, bc, wq)
+        end do
+    end subroutine build_rings
+
+    subroutine solve(driven)
+        logical, intent(in) :: driven
+        complex(dp) :: ph(ns)
+        real(dp) :: tl
+        integer :: j2
+        type(sample_ring_t), allocatable :: s0(:)
+        s0 = sr
+        if (.not. driven) then
+            do j2 = 1, nr
+                s0(j2)%bc = (0.0_dp, 0.0_dp)
+            end do
+            ph = (0.0_dp, 0.0_dp)
+        else
+            ph = phe
+        end if
+        a = (0.0_dp, 0.0_dp)
+        ! the edge-sheet responses M enter (I - S M)^-1 amplified: solve them
+        ! three orders tighter than the driven problems
+        tl = tol
+        if (.not. driven) tl = 1.0e-3_dp*tol
+        call ideal_response(fs, pb, fm, g, amp, opt, nmode, s0, cl, b2cl, ph, a, &
+            lam, phit, tl, gmres_max, info, its, x)
+        call record(info == 0, "GMRES converged")
+    end subroutine solve
+
+    subroutine smat(eta, gam, w)
+        real(dp), intent(in) :: eta, w
+        complex(dp), intent(in) :: gam
+        integer :: n2, h2, st2
+        sopt%xs = max(rs - re(1), re(2) - rs)
+        call strip_mesh(rs, w, sopt, rr)
+        n2 = size(rr)
+        h2 = (n2 + 1)/2
+        rr(1:h2) = rs + (rr(1:h2) - rs)*(rs - re(1))/sopt%xs
+        rr(h2:n2) = rs + (rr(h2:n2) - rs)*(re(2) - rs)/sopt%xs
+        call strip_dirichlet_map(eq, eta, gam, rr, dmap, st2)
+        if (st2 /= 0) error stop "strip LU"
+        smap(1, :) = (vmap(1, :) - dmap(1, :))/jr(1)
+        smap(2, :) = (dmap(2, :) - vmap(2, :))/jr(2)
+    end subroutine smat
+
+    complex(dp) function disp(eta, gam, w) result(d)
+        real(dp), intent(in) :: eta, w
+        complex(dp), intent(in) :: gam
+        call smat(eta, gam, w)
+        amat = eye2() - matmul(smap, mo)
+        d = amat(1, 1)*amat(2, 2) - amat(1, 2)*amat(2, 1)
+    end function disp
+
+    pure function eye2() result(e)
+        complex(dp) :: e(2, 2)
+        e = reshape([(1.0_dp, 0.0_dp), (0.0_dp, 0.0_dp), (0.0_dp, 0.0_dp), &
+            (1.0_dp, 0.0_dp)], [2, 2])
+    end function eye2
+
+    pure function inv2(m2) result(v)
+        complex(dp), intent(in) :: m2(2, 2)
+        complex(dp) :: v(2, 2), det
+        det = m2(1, 1)*m2(2, 2) - m2(1, 2)*m2(2, 1)
+        v = reshape([m2(2, 2), -m2(2, 1), -m2(1, 2), m2(1, 1)], [2, 2])/det
+    end function inv2
 
     subroutine study()
         !! KIN6D_CLOSURE_STUDY="prof r0 nrad delta ratio": one FE Delta'.
