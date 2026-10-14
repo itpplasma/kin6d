@@ -1236,6 +1236,18 @@ target_sources(kin6d PRIVATE src/generated/kin6d_response_fluid_leaves.f90
     src/response_fluid.f90 src/response_toroidal_strip.f90)
 add_executable(test_response_toroidal_strip test/test_response_toroidal_strip.f90)
 target_link_libraries(test_response_toroidal_strip PRIVATE kin6d)
+add_executable(test_response_interfaces test/test_response_interfaces.f90)
+target_link_libraries(test_response_interfaces PRIVATE kin6d)
+add_test(NAME response_toroidal_strip_two_ring_traces
+    COMMAND test_response_interfaces traces)
+add_test(NAME response_cut_total_pressure_balance
+    COMMAND test_response_interfaces cut)
+add_test(NAME response_toroidal_strip_edge_merged_domains
+    COMMAND test_response_interfaces domains)
+set_tests_properties(response_toroidal_strip_two_ring_traces
+    response_cut_total_pressure_balance response_toroidal_strip_edge_merged_domains
+    PROPERTIES TIMEOUT 120 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=PASSIVE")
 add_test(NAME response_toroidal_strip_pressure_action
     COMMAND test_response_toroidal_strip action)
 add_test(NAME response_toroidal_strip_pressure_solve
