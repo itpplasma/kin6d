@@ -15,6 +15,7 @@ program test_ideal_map_axisymmetric
     !                    (boundary + exact q(s), p(s), Phi_edge) with the seed
     !                    axis at the boundary-box centre (VMEC-like), offset from
     !                    the magnetic axis; the solver must return it
+    !   gauge <k>        W_red curvature of field-line slides at the exact map
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
@@ -23,7 +24,7 @@ program test_ideal_map_axisymmetric
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
         ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, &
-        ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT
+        ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT, ideal_map_gauge_project
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
@@ -100,6 +101,8 @@ program test_ideal_map_axisymmetric
         call seed_ladder()
     case ('seeddiag')
         call seed_diagnosis()
+    case ('gauge')
+        call gauge_probe()
     case ('residual')
         call residual_check()
     case default
@@ -304,6 +307,11 @@ contains
                 norm2(pack(hz, omask))/scale
             if (norm2(grp - merge(0.0_dp, hz, omask)) > 1.0e-5_dp*scale) &
                 error stop 'Schur complement'
+            ! Constrained omega (gauge moments): (Hz)_o = C lambda, zero after
+            ! projection onto ker C^T.
+            call ideal_map_gauge_project(map, hz)
+            print '(a,es14.5)', 'ntor projected |(Hz)_o|/|(Hz)_t| ', &
+                norm2(pack(hz, omask))/scale
             if (norm2(pack(hz, omask)) > 1.0e-5_dp*scale) error stop 'omega stationarity'
             deallocate (v, vr, gr, grp, grm, z, hz, omask)
         end do
@@ -497,6 +505,140 @@ contains
         print '(a,3f8.3)', 'orders pair 2 ', log(table(:, 2)/table(:, 3))/log(2.0_dp)
     end subroutine
 
+    subroutine gauge_probe()
+        ! A3, nested. W_red curvature along probe directions at the exact
+        ! map X* (as seed_diagnosis), relative to a physical axis shift
+        ! (probe 6), and of W along omega = f(chi) (probes 7, 8).
+        ! Relabellings y -> y + eps v (X* o (id + eps v), exact
+        ! through the seed inverse): field-line slides v = g b_pol with
+        ! g = T, T u1, T u2 (probes 1-3, continuum-exact nulls of W_red: the
+        ! ratio must vanish with h), the tangential part of the r^2-weighted
+        ! translation (4, = -u2 r t: a smooth slide only for circular
+        ! surfaces) and of the plain translation (5, not a smooth slide).
+        type(nested_seed_t) :: seed
+        type(solovev_profile_t) :: profile
+        type(gs_state_t) :: state
+        type(ideal_map_t) :: map
+        real(dp) :: xi(2), chi, grad(2), b3, p, t(2), e0, ep, eps
+        real(dp) :: kappa(8, 2), d2(8), s(2), floor, w(-1:1)
+        real(dp), allocatable :: v(:, :), x0(:, :, :), x(:, :, :), gr(:)
+        integer :: mesh, n, i, k, status, sgn, nk
+        logical :: ok
+        call ideal_seed_init(seed, boundary_point, phi_edge(), profile, status)
+        if (status /= 0) error stop 'seed init'
+        omega_elimination = .true.
+        print '(a)', 'n  W_red curvature / axis-shift curvature, probes 1-6, floor'
+        do mesh = 1, 2
+            n = merge(24, 32, degree == 3)*2**(mesh - 1)
+            call make_mesh(n, degree, state)
+            call build_map(state, 1, 0, map, seed)
+            do i = 1, map%nodes
+                if (map%boundary(i)) cycle
+                call seed%inverse(map%reference(:, i), xi, ok)
+                if (.not. ok) error stop 'seed inverse'
+                map%x(1:2, 1, i) = exact(xi)
+            end do
+            x0 = map%x
+            allocate (v(2, map%nodes), gr(map%nred))
+            call ideal_map_eliminate_omega(map, x0, e0, gr, status)
+            if (status /= 0) error stop 'elimination'
+            do k = 1, 6
+                do i = 1, map%nodes
+                    call seed%evaluate(map%reference(:, i), chi, grad, b3, p)
+                    t = [-map%direction(2, i), map%direction(1, i)]
+                    select case (k)
+                    case (1:3)
+                        v(:, i) = map%axis_basis(k, i)*[-grad(2), grad(1)]
+                    case (4)
+                        v(:, i) = t*t(1)*(map%axis_basis(4, i) + map%axis_basis(6, i))
+                    case (5)
+                        v(:, i) = t*t(1)*map%axis_basis(1, i)
+                    case (6)
+                        v(:, i) = [map%axis_basis(1, i), 0.0_dp]
+                    end select
+                end do
+                ! Second differences at eps and 2 eps (amplitude 1e-3 a),
+                ! Richardson-combined: the linear relabelling id + eps v differs
+                ! from the slide flow at O(eps^2), which the combination removes.
+                eps = 1.0e-3_dp*a/maxval(norm2(v, dim=1))
+                s = -2*e0
+                do sgn = -2, 2
+                    if (sgn == 0) cycle
+                    x = x0
+                    do i = 1, map%nodes
+                        if (map%boundary(i)) cycle
+                        if (k == 6) then
+                            x(1:2, 1, i) = x0(1:2, 1, i) + sgn*eps*v(:, i)
+                        else
+                            call seed%inverse(map%reference(:, i) + sgn*eps*v(:, i), &
+                                xi, ok)
+                            if (.not. ok) error stop 'seed inverse (probe)'
+                            x(1:2, 1, i) = exact(xi)
+                        end if
+                    end do
+                    call ideal_map_eliminate_omega(map, x, ep, gr, status)
+                    if (status /= 0) error stop 'elimination (probe)'
+                    s(abs(sgn)) = s(abs(sgn)) + ep
+                end do
+                d2(k) = (4*s(1) - s(2)/4)/3
+                if (k == 4 .and. map%npoly < 6) d2(k) = 0
+            end do
+            ! Omega gauge f(chi) (probes 7, 8: f = T, sin(2 pi T)) at fixed
+            ! transversal dofs: W is quadratic in omega, so the second
+            ! difference is the exact curvature f.H_oo f.
+            do k = 7, 8
+                do sgn = -1, 1
+                    x = x0
+                    do i = 1, map%nodes
+                        eps = map%axis_t(i)
+                        if (k == 8) eps = sin(2*pi*eps)
+                        x(3, 1, i) = x0(3, 1, i) + sgn*1.0e-3_dp*eps
+                    end do
+                    call ideal_map_energy(map, x, w(sgn), status)
+                    if (status /= 0) error stop 'energy (omega probe)'
+                end do
+                ! Same amplitude scale as the axis shift: |eps v| = 1e-3 a.
+                d2(k) = (w(1) + w(-1) - 2*w(0))*a**2
+            end do
+            kappa(:, mesh) = d2/d2(6)
+            ! Roundoff floor of the differences (W_red to ~64 ulp).
+            floor = 64*epsilon(1.0_dp)*abs(e0)/abs(d2(6))
+            print '(i4,9es11.3)', n, kappa(:, mesh), floor
+            deallocate (v, gr)
+        end do
+        d2 = 0
+        do k = 1, 8
+            if (abs(kappa(k, 2)) > 0) &
+                d2(k) = log(abs(kappa(k, 1)/kappa(k, 2)))/log(2.0_dp)
+        end do
+        print '(a,8f8.2)', 'orders ', d2
+        ! Field-line slides (1-3) and, at P3, the tangential part of the
+        ! r^2-weighted translation (4, = -u2 r t, a slide of the same kind):
+        ! curvature far below the physical one (either sign) and decreasing
+        ! at least at order 1 with h (measured 2.7-6.8). The tangential
+        ! translation (5) is not a smooth slide: O(1).
+        nk = merge(4, 3, degree >= 3)
+        if (any(abs(kappa(1:nk, 2)) > 1.0e-3_dp)) error stop 'slide not near-null'
+        if (any(abs(kappa(1:nk, 2)) > max(abs(kappa(1:nk, 1))/2, floor))) &
+            error stop 'slide curvature not vanishing with h'
+        if (abs(kappa(5, 2)) < 0.1_dp) &
+            error stop 'translation slide unexpectedly null'
+        ! Omega gauge f(chi) (7: f = T, near-null; 8: f = sin(2 pi T), one
+        ! radial wave): curvature vanishing with h (measured orders 4.3, 2.8
+        ! at P2; at P3 probe 7 reaches the roundoff floor on the finer mesh).
+        if (abs(kappa(7, 2)) > 1.0e-3_dp) error stop 'omega gauge not near-null'
+        if (any(abs(kappa(7:8, 2)) > max(abs(kappa(7:8, 1))/2, floor))) &
+            error stop 'omega gauge curvature not vanishing with h'
+    end subroutine
+
+    function exact(xi) result(q)
+        ! Smooth exact A3 map P(xi) of the nested-seed labels (seed_diagnosis).
+        real(dp), intent(in) :: xi(2)
+        real(dp) :: q(2)
+        q(1) = sqrt(r0*r0 + 2*r0*a*xi(1))
+        q(2) = r0*a*xi(2)/q(1)
+    end function
+
     subroutine seed_ladder()
         type(nested_seed_t) :: seed
         type(solovev_profile_t) :: profile
@@ -536,6 +678,8 @@ contains
             call make_mesh(n, degree, state)
             call system_clock(start, rate)
             call build_map(state, 1, 0, map, field)
+            if (allocated(map%axis_removed)) print '(a,6es10.2)', &
+                '  axis: dropped normal |h|^2/|F|^2, slide cos^2 ', map%axis_removed
             if (present(sequenced)) seed_gradient = reduced_gradient_norm(map)
             if (present(sequenced) .and. mesh > 1) then
                 if (sequenced) then

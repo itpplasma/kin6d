@@ -81,22 +81,66 @@ are the equilibrium core's (`src/equilibrium_chart.f90`,
   `omega_elimination` (nested solve, ntor = 0 only): W is exactly quadratic
   in omega at fixed transversal dofs (J does not depend on omega for the
   cylindrical chart at ntor = 0), so omega is eliminated by one undamped
-  solve of the omega block (pin only, no gauge form) at the start and at
-  every trial point, and Newton runs on W_red(nu) = min_omega W. With
-  g_omega = 0 the full-system solve with right-hand side -g is the
-  Schur-complement step; damping and trust region act on nu only.
-  `ideal_map_eliminate_omega` exposes W_red; the `reduced` test checks
-  |g_omega|/|g| = 1e-14 after elimination, the W_red gradient against
-  differences (2e-8) and the Schur complement (9e-9). Local A3 P2 seed ladder
-  (SuperLU, tol 1e-11): damping 1e-4 and 1e-2 give 2.776263616e-4,
-  3.362744779e-5, 5.45090058e-6 (agree to 3e-12, 1e-10; equal to the
-  `gauge_hessian_only` end points), 49/8/52 Newton steps, orders 3.04, 2.62.
-  Damping 1e-6 converges (|g| = 3e-13) to a second stationary point with
-  higher W (+3.2e-5, 3.5e-9 relative; d3D 2.714e-4, 3.481e-5, 5.331e-6), so
-  the remaining multiplicity is in nu, not omega. The first mesh still
-  crawls (about 30 steps at |g| ~ 1e-5 g_seed). P3 and shaped P3: sCluster
-  job, see the N1 handoff. An inner Newton for ntor > 0 converged only
-  linearly in a probe; ntor > 0 is rejected.
+  solve of the omega block at the start and at every trial point, and Newton
+  runs on W_red(nu) = min_omega W (no gauge form). With g_omega = 0 the
+  full-system solve with right-hand side -g is the Schur-complement step;
+  damping and trust region act on nu only. `ideal_map_eliminate_omega`
+  exposes W_red; the `reduced` test checks g_omega after elimination
+  (1e-14), the W_red gradient against differences (3e-8) and the Schur
+  complement (1e-8).
+  Gauge directions are excluded from the unknowns, not damped:
+  (1) Nested axis basis (`nested_axis_basis`): of the 2 npoly axis fields
+  only the 2K tangential harmonics (shift, elongation, triangularity) are
+  kept; the near-normal fields (duplicated by nu; tangential fractions
+  <= 6e-3) and the field-line slides g b_pol, g = T P (deg P <= K - 2;
+  cos^2 >= 0.98 with the dropped directions) are removed.
+  (2) Omega gauge (`nested_omega_gauge`): at n = 0 every omega = f(chi) is
+  a continuum-exact null (b_pol . grad f(chi) = 0); discretely the smooth f
+  are near-nulls of H_oo (curvature ~ h^(2k)), along which omega* jittered
+  with the roundoff of g_omega and set a nu-gradient floor of 1e-11 (P2) to
+  5e-9 (P3) x g_seed on the finest meshes. Omega is constrained by its L2
+  moments against the C1 partition of unity cos^2(pi/2 (L rho - l)),
+  rho = (1 - T)^1/2, L = one per element layer, entered as Lagrange rows of
+  the omega and Schur solves (the omega pin, a point condition, is
+  released; the moments exclude the constant). The moments are smooth
+  functionals, so a smooth f restores them for any continuum minimiser.
+  The gradient reported for omega is projected onto ker C^T.
+  `gauge <k>` (`ideal_map_nested_slide_null_p{2,3}`) measures the W_red
+  curvature at the exact A3 map relative to an axis shift (Richardson
+  second differences; roundoff floor 1.2e-7):
+
+  | probe | P2 32/64 | P3 24/48 | P3 order |
+  |---|---|---|---|
+  | slide g = T | 6.1e-4/1.3e-5 | -3.6e-5/-2.0e-6 | 4.2 |
+  | slide g = T u1 | 2.5e-3/3.9e-4 | 6.0e-5/1.1e-6 | 5.8 |
+  | slide g = T u2 | 2.9e-3/1.8e-4 | 9.2e-5/-8.0e-7 | 6.8 |
+  | r^2-translation, tangential | n/a | 7.8e-4/1.8e-5 | 5.4 |
+  | translation, tangential | 1.9/2.4 | 4.6/3.3 | (physical) |
+  | omega f = T (fixed nu) | 6.2e-5/3.2e-6 (order 4.3) | 5.5e-8/floor | |
+  | omega f = sin(2 pi T) | 0.98/0.14 | 0.15/0.029 | 2.4 |
+
+  Outer step (`nested_line_search`): damped Schur Newton direction d
+  (g.d >= 0 raises the damping), line search with Armijo 1e-4 and
+  g(t).d <= |g.d|/2, cubic interpolation in [0.1 t, 0.9 t]; inside the
+  roundoff band of W the change is the trapezoid (g.d + g(t).d) t/2. There
+  is no stall exit: convergence is the gradient tolerance only.
+Local seed ladders (SuperLU, OMP 4, tol 1e-11 x g_seed per mesh, all
+  converged to 6e-14 to 3.4e-12; damping 1e-4 and 1e-2 reach the same end
+  points to all printed digits):
+
+  | case | Newton steps (1e-4; 1e-2) | d3D_exact | orders |
+  |---|---|---|---|
+  | A3 P2 32/64/128 | 9/4/5; 9/5/6 | 2.7686e-4, 3.4298e-5, 5.3369e-6 | 3.01, 2.68 |
+  | A3 P3 24/48/96 | 14/6/8; 15/7/9 | 1.0106e-4, 6.3603e-6, 4.1899e-7 | 3.99, 3.92 |
+  | shaped P2 32/64/128 | 13/6/6; 13/7/7 | 2.1376e-3, 2.0351e-4, 2.0125e-5 | 3.39, 3.34 |
+  | shaped P3 32/64/128 | 26/12/15; 24/13/16 | 2.3029e-4, 1.5962e-5, 9.9914e-7 | 3.85, 4.00 |
+
+  The constrained omega space is a different discrete gauge, so the end
+  points differ from the pinned ones at the discretisation level (A3 P3
+  finest 4.190e-7 against 4.155e-7) with unchanged orders. Non-nested
+  paths are bitwise unchanged (`seed 2`, `solovev 2` end points).
+  An inner Newton for ntor > 0 converged only linearly in a probe; ntor > 0
+  is rejected.
 - Fixed boundary: nu = 0 on boundary nodes for all modes.
 
 ## Solver
