@@ -1,0 +1,25 @@
+% Shared preamble for the KIN6D derivations (input by kin6d_derivations.tex).
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=24mm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs,longtable,array}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}[proposition]{Lemma}
+\theoremstyle{remark}
+\newtheorem{remark}[proposition]{Remark}
+% \code{text}: verbatim-like identifier; underscores must be written \_.
+\newcommand{\code}[1]{\texttt{#1}}
+% \src{path:line} cites code. Underscores in the argument must be \_.
+\newcommand{\src}[1]{\textsf{\small #1}}
+% \bug{text}: candidate mismatch between derivation and code.
+\newcommand{\bug}[1]{\par\smallskip\noindent\fcolorbox{red!70!black}{red!4}{\parbox{0.96\linewidth}{\textbf{Candidate bug.} #1}}\par\smallskip}
+% \gap{text}: a statement the code does not let us verify.
+\newcommand{\gap}[1]{\par\smallskip\noindent\fcolorbox{orange!80!black}{orange!5}{\parbox{0.96\linewidth}{\textbf{Unverified.} #1}}\par\smallskip}
+\sloppy\emergencystretch=3em
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\Dstar}{\Delta^{\!*}}

@@ -1,0 +1,287 @@
+\section{Ampere-loop total-current diagnostic and the variational boundary flux}
+\label{sec:ampere}
+
+Code references in this section are to commit \code{efc94ae} on the unmerged
+branch \code{fix/ampere-loop-diag} for \src{src/gs\_ampere\_loop.f90},
+\src{src/gs\_nonlinear.f90}, \src{app/gs\_phase1.f90} and the two tests, and to
+\code{origin/main} \code{9e41d24} for \src{src/grad\_shafranov.f90},
+\src{gen/gen\_grad\_shafranov.f90} and
+\src{src/generated/kin6d\_grad\_shafranov\_leaves.f90} (identical on both
+commits).
+
+\subsection{Inventory}
+\begin{itemize}
+\item \code{docs/grad-shafranov.md} on the branch (sections ``Ampere-loop
+  total-current diagnostic'' and ``Variational boundary flux'', +74 lines)
+  states the two formulas, the CLI and the claimed rates (field order for the
+  trace; $O(h^{2p})$ for the weak flux; order four for the equispaced P3 circle
+  area). It gives no derivation of the sign convention, the lift independence,
+  the exactness for $\psi$-independent sources, or the duality argument.
+\item \code{theory/derivations/grad-shafranov*.md} on main derive the
+  fixed-boundary weak form, the P1 current and the reference enclosures; none
+  treats the boundary flux.
+\end{itemize}
+This section supplies the missing derivations and checks them against the code.
+
+\subsection{Conventions and Ampere's law}
+The code uses the per-radian poloidal flux $\psi$ with
+\begin{equation}
+B_R=-\frac{\psi_Z}{R},\qquad B_Z=\frac{\psi_R}{R}
+\label{eq:amp-field}
+\end{equation}
+(\src{gen/gen\_grad\_shafranov.f90:85}), i.e.\ $\mathbf B_p=\nabla\psi\times\nabla\phi$
+in the right-handed system $(R,\phi,Z)$: indeed $\nabla\psi\times\nabla\phi
+=R^{-1}(\psi_R\hat R+\psi_Z\hat Z)\times\hat\phi=R^{-1}(\psi_R\hat Z-\psi_Z\hat R)$,
+using $\hat R\times\hat\phi=\hat Z$ and $\hat Z\times\hat\phi=-\hat R$.
+The toroidal current density is
+\begin{equation}
+\mu_0 j_\phi=(\nabla\times\mathbf B)_\phi=\partial_Z B_R-\partial_R B_Z
+=-\frac{\psi_{ZZ}}{R}-\frac{\psi_{RR}}{R}+\frac{\psi_R}{R^2}
+=-\frac{\Dstar\psi}{R},
+\label{eq:amp-jphi}
+\end{equation}
+$\Dstar\psi=\psi_{RR}-\psi_R/R+\psi_{ZZ}$, which is the generated leaf
+\code{gs\_current\_density}, $j_\phi=-(h_{RR}+h_{ZZ}-\psi_R/R)/(\mu_0R)$
+(\src{gen/gen\_grad\_shafranov.f90:89-90}). With the source leaf
+$f=\mu_0Rp'+FF'/R$ (\src{gen/gen\_grad\_shafranov.f90:83-84}) the
+Grad--Shafranov equation $\Dstar\psi=-\mu_0R^2p'-FF'$ reads $f=\mu_0 j_\phi$.
+Since $\nabla\cdot(R^{-1}\nabla\psi)=R^{-1}\Dstar\psi$,
+\begin{equation}
+-\nabla\cdot\Bigl(\frac{1}{R}\nabla\psi\Bigr)=f\quad\text{in }\Omega\subset\{(R,Z):R>0\}.
+\label{eq:amp-strong}
+\end{equation}
+The total toroidal current through the poloidal section is
+$I=\int_\Omega j_\phi\dd R\dd Z$. Integrating \eqref{eq:amp-strong} with the
+outward unit normal $n$,
+\begin{equation}
+\mu_0 I=\int_\Omega f\dd A=-\oint_{\partial\Omega}\frac{1}{R}\,\partial_n\psi\dd l .
+\label{eq:amp-gauss}
+\end{equation}
+For a counter-clockwise (in the $(R,Z)$ plane) parametrisation $x(s)$ with
+tangent $t=x'(s)$, the outward normal is $n\dd l=(t_Z,-t_R)\dd s$, so
+$R^{-1}\partial_n\psi\dd l=R^{-1}(\psi_Rt_Z-\psi_Zt_R)\dd s=\mathbf B\cdot t\dd s$
+by \eqref{eq:amp-field}. Hence $\mu_0I=-\oint_{\mathrm{CCW}}\mathbf B\cdot\dd\mathbf l$,
+which is Stokes' theorem with the CCW orientation normal $\hat R\times\hat Z=-\hat\phi$.
+This is the sign stated in \src{src/gs\_ampere\_loop.f90:3}.
+
+\subsection{Strong (trace) loop}
+\code{gs\_boundary\_current} sums over every element edge whose two vertices
+and all interior edge nodes are boundary nodes (\src{src/gs\_ampere\_loop.f90:148-155}).
+For the reference edge from vertex $k$ to $k{+}1$, parametrised by
+$s\in[0,1]$, the physical tangent is
+$t=\sum_i x_i\,(\nabla_\xi\varphi_i\cdot d)$, $d=\hat v_{k+1}-\hat v_k$, on
+curved cells and $t=x_{k+1}-x_k$ on affine cells
+(\src{src/gs\_ampere\_loop.f90:157-170}). For a positively oriented element the
+reference edges $1\to2\to3$ run counter-clockwise with the element on the left,
+so $(t_Z,-t_R)$ is the outward normal of the domain on a boundary edge.
+With $s_q,w_q$ the Gauss--Legendre rule on $[0,1]$ (\src{src/gs\_ampere\_loop.f90:146})
+the code computes
+\begin{equation}
+I_{\mathrm{tr},h}=\sum_{\text{bdry edges}}\sum_q w_q\,
+\Bigl[-\frac{\partial_R\psi_h\,t_Z-\partial_Z\psi_h\,t_R}{\mu_0R}\Bigr]_{x(s_q)}
+\label{eq:amp-trace}
+\end{equation}
+through \code{gs\_current\_sheet}$(R,\mu_0,\nabla\psi_h,(t_Z,-t_R))
+=-(\nabla\psi_h\cdot(t_Z,-t_R))/(\mu_0R)$
+(\src{src/generated/kin6d\_grad\_shafranov\_leaves.f90:176},
+\src{src/gs\_ampere\_loop.f90:173-174}), with the one-sided gradient of the
+owning cell (\src{src/gs\_ampere\_loop.f90:171-172}). This is
+\eqref{eq:amp-gauss} with $\psi\to\psi_h$: the code agrees with the derivation.
+The subtraction of $\psi_h$ at local node 1 uses
+$\sum_i\nabla\varphi_i=0$ and does not change the gradient (gauge invariance).
+
+\paragraph{Order of the trace loop.} Let $e=\psi-\psi_h$. On quasi-uniform
+meshes with $\psi\in H^{p+1}$, $\|\nabla e\|_{L^\infty(K)}=O(h^p)$, so the
+integrand of \eqref{eq:amp-trace} has an $O(h^p)$ error and
+$|I-I_{\mathrm{tr},h}|=O(h^p)$ with a boundary of length $O(1)$. No
+orthogonality is available because the boundary trace of $\nabla\psi_h$ is not
+a Galerkin functional. An equivalent statement: elementwise integration by parts
+gives
+\begin{equation}
+\mu_0(I_{\mathrm w,h}-I_{\mathrm{tr},h})=\sum_K\int_K r_K\,w_h\dd A
++\sum_{F\ \mathrm{interior}}\int_F J_F\,w_h\dd l,
+\label{eq:amp-trace-weak}
+\end{equation}
+with $r_K=f+\nabla\cdot(R^{-1}\nabla\psi_h)=O(h^{p-1})$, the normal-flux jumps
+$J_F=[R^{-1}\partial_n\psi_h]=O(h^p)$, and $w_h$ the lift of
+\S\ref{sec:amp-weak}, supported in the one-cell boundary strip. The strip has
+area $O(h)$ and interior faces of total length $O(1)$, so both sums are
+$O(h^p)$. The branch test requires a rate $\ge p-\tfrac12$
+(\src{test/test\_gs\_ampere\_loop.f90:86}).
+
+\subsection{Variational boundary flux}\label{sec:amp-weak}
+\paragraph{Weak form of the solver.} The solver stiffness is
+\begin{equation}
+a(u,v)=\int_{\Omega_h}\frac{1}{R}\nabla u\cdot\nabla v\dd R\dd Z,
+\qquad A^{K}_{kl}=\sum_q \frac{w_q\det J}{R(x_q)}\nabla\varphi_k\cdot\nabla\varphi_l
+\label{eq:amp-a}
+\end{equation}
+(\src{src/grad\_shafranov.f90:360-364}, rule \code{gs\_quadrature(p)}), and the
+load is $l_i(\psi)=\int f(\psi)\varphi_i\dd A$ assembled by
+\code{gs\_cubic\_load} (\src{src/gs\_nonlinear.f90:281,311}). The fixed-boundary
+discrete problem is: $\psi_h\in V_h$, $\psi_h=g_h$ at boundary nodes, and
+\begin{equation}
+a(\psi_h,\varphi_i)=l_i(\psi_h)\quad\text{for all interior nodes } i,
+\label{eq:amp-galerkin}
+\end{equation}
+the boundary rows being replaced by $\psi_i=g_i$ and lifted
+(\src{src/gs\_nonlinear.f90:315-329}). Multiplying \eqref{eq:amp-strong} by
+$v\in H^1(\Omega)$ and integrating by parts gives, for the exact solution,
+\begin{equation}
+\oint_{\partial\Omega}\frac{1}{R}\partial_n\psi\,v\dd l=a(\psi,v)-\int_\Omega fv\dd A .
+\label{eq:amp-green}
+\end{equation}
+If $v|_{\partial\Omega}=1$, \eqref{eq:amp-gauss} and \eqref{eq:amp-green} give
+$\mu_0I=l(v)-a(\psi,v)$, independent of the interior values of $v$.
+
+\paragraph{Definition in code.} With the lift $w_h=\sum_{i\in\partial}\varphi_i$
+(\src{src/gs\_ampere\_loop.f90:61}) or any user lift equal to one at all
+boundary nodes (\src{src/gs\_ampere\_loop.f90:62-67}),
+\begin{equation}
+I_{\mathrm w,h}=\frac{1}{\mu_0}\Bigl(\sum_i w_i\,l_i(\psi_h)
+-\sum_K\sum_q w_q\det J\,\frac{\nabla\psi_h\cdot\nabla w_h}{R}\Bigr),
+\label{eq:amp-weak}
+\end{equation}
+where $l_i$ is the \emph{uneliminated} load (\code{uneliminated=.true.},
+which skips the Dirichlet lifting and row replacement,
+\src{src/gs\_nonlinear.f90:317,325}), the first term is
+\src{src/gs\_ampere\_loop.f90:69-77} and the second is
+\src{src/gs\_ampere\_loop.f90:94-106} with the Duffy rule of the requested order
+and the same \code{gs\_current\_sheet} leaf, now contracted with $\nabla w_h$.
+On a boundary edge the trace of $w_h$ is the partition of unity of the edge
+basis, hence exactly one on the represented boundary $\partial\Omega_h$; cells
+on which $w_h$ is constant are skipped because $\nabla w_h=0$
+(\src{src/gs\_ampere\_loop.f90:96}). For P3 the bubble node is interior, so no
+cell with a non-constant lift is skipped. The definition agrees with
+$\mu_0I=l(w_h)-a(\psi_h,w_h)$.
+
+\begin{proposition}[Lift independence and exact balance]\label{prop:amp-balance}
+Assume \eqref{eq:amp-galerkin} holds exactly with the same bilinear form and
+load used in \eqref{eq:amp-weak}. Then (i) $I_{\mathrm w,h}$ is the same for
+every lift $w_h\in V_h$ with $w_h=1$ at boundary nodes, and (ii)
+$\mu_0I_{\mathrm w,h}=\int_{\Omega_h}f(\psi_h)\dd A$.
+\end{proposition}
+\begin{proof}
+(i) Two lifts differ by $v_h\in V_{h,0}=\mathrm{span}\{\varphi_i:i\ \text{interior}\}$, and
+$l(v_h)-a(\psi_h,v_h)=0$ by \eqref{eq:amp-galerkin}.
+(ii) Take $w_h\equiv1=\sum_i\varphi_i\in V_h$ (partition of unity); then
+$a(\psi_h,1)=0$ and $l(1)=\int f(\psi_h)\dd A$.
+\end{proof}
+The code reports $\int f(\psi_h)\dd A/\mu_0$ as \code{source\_current} from
+$\sum_e\sum_i l^{(e)}_i$ (\src{src/gs\_nonlinear.f90:282,307-308};
+\src{src/gs\_ampere\_loop.f90:78}), and the CLI prints the signed balance
+$I_{\mathrm w,h}-I_{\mathrm{src}}$ (\src{app/gs\_phase1.f90:583-586}).
+Proposition~\ref{prop:amp-balance}(ii) explains the branch documentation's
+remark that an imposed $I_p$ constraint turns the weak flux into a balance check.
+
+\begin{remark}[Consistency defects]\label{rem:amp-defects}
+The proposition holds only up to three algebraic/quadrature defects, each
+visible in the balance column: (a) the diagnostic integrates $a(\cdot,\cdot)$
+with the Duffy rule of order \code{order} and \code{2*order}
+(\src{src/gs\_ampere\_loop.f90:92}, \src{app/gs\_phase1.f90:576-581}), whereas
+the solver uses \code{gs\_quadrature(p)} (\src{src/grad\_shafranov.f90:342}).
+On curved cells and because of the $1/R$ weight the integrand is not
+polynomial, so the two forms differ by the quadrature error $\delta a$ and the
+balance defect is $\delta a(\psi_h,w_h-1)$; (b) the adaptive source tolerance
+of the diagnostic (default $10^{-8}$, \src{app/gs\_phase1.f90:571}, divided
+by eight on the second call, \src{app/gs\_phase1.f90:581}) versus the solver's quadrature tolerance
+(\code{quadrature\_tolerance}, default $10^{-8}$, \src{app/gs\_phase1.f90:38});
+(c) the nonlinear residual of \eqref{eq:amp-galerkin} at the Newton stopping
+tolerance. Defect (c) is the ``algebraic floor'' of commit \code{efc94ae}. None
+of these is a derivation/code mismatch; they are bounded only by indicators,
+as the module header states (\src{src/gs\_ampere\_loop.f90:32}).
+\end{remark}
+
+\subsection{Convergence theory of the weak flux}
+Let $\Omega_h=\Omega$ (exact geometry), constant Dirichlet data (the
+fixed-boundary GS case $\psi|_{\partial\Omega}=\mathrm{const}$, so the boundary
+data are interpolated exactly), exact quadrature, and $\psi_h$ the exact
+discrete solution. Write $e=\psi-\psi_h$.
+
+\paragraph{Linear source ($f$ independent of $\psi$).} By
+Proposition~\ref{prop:amp-balance}(ii) and \eqref{eq:amp-gauss},
+$\mu_0(I-I_{\mathrm w,h})=\int_\Omega f-\int_\Omega f=0$: the weak flux is exact.
+The only remaining errors are geometric. For Solov'ev with $f=-16cR$
+(\src{test/test\_gs\_weak\_ampere\_loop.f90:10,213}, verified:
+$\Dstar[(R^2-R_0^2)^2]=8R^2$, $\Dstar[4R^2Z^2]=8R^2$),
+$\mu_0(I-I_{\mathrm w,h})=-16c\,(\int_\Omega R-\int_{\Omega_h}R)$, i.e.\ the
+$R$-weighted area error of the curved boundary. With degree-$p$ interpolation of
+a smooth boundary at equispaced edge nodes, the signed normal deviation per edge
+is $O(h^{p+1})$ and integrates to $O(h^{p+1})$ per unit length for odd $p$ and
+to $O(h^{p+2})$ for even $p$ (the leading error term is the odd-symmetric nodal
+polynomial for even $p$, which integrates to zero over the edge). Both P2 and P3
+therefore give $O(h^4)$, which is the rate $\ge3.5$ required for the curved
+disk (\src{test/test\_gs\_weak\_ampere\_loop.f90:133}).
+
+\paragraph{Nonlinear source ($f=f(\psi;x)$).} Then
+$\mu_0(I_{\mathrm w,h}-I)=\int_\Omega[f(\psi_h)-f(\psi)]\dd A
+=-\int_\Omega f_\psi\,e\dd A+O(\|e\|_{L^2}^2)$. Define the dual (adjoint of the
+linearised operator) problem
+\begin{equation}
+-\nabla\cdot\Bigl(\frac1R\nabla z\Bigr)-f_\psi z=-f_\psi\ \text{in }\Omega,\qquad z=0\ \text{on }\partial\Omega .
+\label{eq:amp-dual}
+\end{equation}
+Galerkin orthogonality of the linearised problem,
+$a(e,v_h)-\int f_\psi e\,v_h=O(\|e\|^2)$ for $v_h\in V_{h,0}$, gives
+\begin{equation}
+-\int_\Omega f_\psi e=a(e,z)-\int f_\psi e z=a(e,z-z_h)-\int f_\psi e(z-z_h)+O(\|e\|^2),
+\end{equation}
+so $|I-I_{\mathrm w,h}|\le C\|e\|_{H^1}\inf_{z_h}\|z-z_h\|_{H^1}+O(\|e\|_{L^2}^2)
+=O(h^p)\,O(h^p)+O(h^{2p+2})=O(h^{2p})$, provided $\psi,z\in H^{p+1}$, which
+needs $f$ (hence $p'$, $FF'$ and, for a normalised law, the axis dependence)
+smooth enough and the linearised operator invertible. For a normalised law
+$f$ depends on $\psi_{\mathrm{axis}}[\psi]$ too; its derivative
+$\partial\psi_{\mathrm{axis}}/\partial\psi_j=\varphi_j(x_{\mathrm{axis}})$
+(stationary axis) adds a rank-one term to $f_\psi$ and to
+\eqref{eq:amp-dual} without changing the argument. A profile law with a
+derivative jump at a knot, or a source discontinuous at the boundary flux
+(free-boundary mode), limits $z$ and the rate.
+
+\paragraph{Effects excluded by the assumptions.} Non-constant Dirichlet data
+interpolated at boundary nodes add $O(h^{p+1})$ trace errors that enter
+$a(e,w_h)$ at the boundary strip; the curved-geometry error enters as above;
+both are absent in the rectangle manufactured case
+(\src{test/test\_gs\_weak\_ampere\_loop.f90:136-188}: $\psi=cR^2(Z^2-a^2)$,
+$\Dstar\psi=2cR^2$, verified; edge traces are quadratic in $Z$ at $R=$ const and
+zero at $Z=\pm a$, hence exact in P2/P3), where the test requires the rate
+$\ge2p-\tfrac12$ (\src{test/test\_gs\_weak\_ampere\_loop.f90:182}).
+
+\subsection{Linearisation (JVP/VJP weights)}
+At fixed geometry and law, differentiating \eqref{eq:amp-weak} in the nodal
+values gives
+\begin{equation}
+\mu_0\frac{\partial I_{\mathrm w,h}}{\partial\psi_j}
+=\frac{\partial\psi_{\mathrm{axis}}}{\partial\psi_j}\sum_i w_i\frac{\partial l_i}{\partial\psi_{\mathrm{axis}}}
++\sum_K\sum_{k}w_k M^{K}_{kj}
+-a(\varphi_j,w_h),
+\label{eq:amp-jvp}
+\end{equation}
+The three terms are \src{src/gs\_ampere\_loop.f90:81-82}, \src{src/gs\_ampere\_loop.f90:83-90} and \src{src/gs\_ampere\_loop.f90:108-113}, with $M^K_{kj}=\partial l^{(K)}_k/\partial\psi_j=\int_K f_\psi\varphi_k\varphi_j$
+(\code{jacobian\%mass}, \src{src/gs\_nonlinear.f90:285-286}). For the trace loop the
+weights are $\partial I_{\mathrm{tr},h}/\partial\psi_j$ of \eqref{eq:amp-trace},
+computed with the same leaf on $\nabla\varphi_j$
+(\src{src/gs\_ampere\_loop.f90:179-184}). Both agree with the derivation. The
+contraction in line 87 uses \code{mass(:,j,e)}, i.e.\ the first index as the row
+of $\partial l/\partial\psi$; $M^K$ is symmetric for a pointwise $f_\psi$, so the
+index order is immaterial there.
+
+\subsection{Verification}
+\begin{longtable}{p{0.42\linewidth}p{0.18\linewidth}p{0.32\linewidth}}
+\toprule
+Derivation step & Code & Agreement\\\midrule
+$\mathbf B_p=\nabla\psi\times\nabla\phi$, \eqref{eq:amp-field} & \src{gen/gen\_grad\_shafranov.f90:85} & yes\\
+$\mu_0j_\phi=-\Dstar\psi/R$ \eqref{eq:amp-jphi} & \src{gen/gen\_grad\_shafranov.f90:89-90} & yes\\
+$f=\mu_0Rp'+FF'/R=\mu_0j_\phi$ & \src{gen/gen\_grad\_shafranov.f90:83-84} & yes\\
+trace loop sign and normal \eqref{eq:amp-trace} & \src{src/gs\_ampere\_loop.f90:157-174} & yes (CCW reference edges)\\
+stiffness $1/R$ weight \eqref{eq:amp-a} & \src{src/grad\_shafranov.f90:360} & yes\\
+weak flux \eqref{eq:amp-weak} & \src{src/gs\_ampere\_loop.f90:69-106} & yes\\
+uneliminated load & \src{src/gs\_nonlinear.f90:317,325} & yes\\
+JVP weights \eqref{eq:amp-jvp} & \src{src/gs\_ampere\_loop.f90:81-113} & yes\\
+\bottomrule
+\end{longtable}
+
+\paragraph{Numerical checks.} \input{ampere_loop_results}
+
+\paragraph{Candidate bugs.} None found: every coded expression agrees with
+the derivation. Remark~\ref{rem:amp-defects} lists the quadrature/algebraic
+consistency defects; they are reported as indicators, not bounds.

@@ -1,0 +1,40 @@
+\documentclass[11pt]{article}
+\input{preamble}
+\title{KIN6D derivations: equilibrium, free boundary, 3D maps, response,
+diagnostics, drift kinetics and non-nested equilibria}
+\author{KIN6D}
+\date{14 October 2026}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+These notes derive the KIN6D components that the repository did not yet
+derive: governing equations and weak forms, discretisation, boundary
+conditions and free-boundary coupling, Newton linearisations, expected
+convergence orders and diagnostic definitions. Every equation attributed to
+the code cites \src{file:line}; the commit is stated at the start of each
+section (code on unmerged branches is cited at the branch commit). Each
+section ends with a verification table: derivation against code, numerical
+checks with observed orders, and candidate bugs, which are also marked inline
+in red boxes. Orange boxes mark statements the code does not let us verify.
+\end{abstract}
+
+\tableofcontents
+
+\section{Scope and existing documentation}
+The repository already contains Markdown specifications in \code{docs/} and
+derivations in \code{theory/derivations/}. Each section below starts with an
+inventory of these sources for its component and derives only the gap.
+Unless stated otherwise, code references are to \code{origin/main} at
+\code{9e41d24}. Sections whose code is not yet on \code{main} name the branch
+and commit.
+
+\IfFileExists{gs_fe.tex}{\input{gs_fe}}{}
+\IfFileExists{gs_free_n4.tex}{\input{gs_free_n4}}{}
+\IfFileExists{ideal_map_n1.tex}{\input{ideal_map_n1}}{}
+\IfFileExists{response_rb2.tex}{\input{response_rb2}}{}
+\IfFileExists{ampere_loop.tex}{\input{ampere_loop}}{}
+\IfFileExists{dk1.tex}{\input{dk1}}{}
+\IfFileExists{nonnested.tex}{\input{nonnested}}{}
+
+\end{document}
