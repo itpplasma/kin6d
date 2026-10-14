@@ -60,7 +60,8 @@ module kin6d_ideal_map
     public :: ideal_map_solve, ideal_map_point, ideal_map_dof, ideal_map_mode_norms
     public :: ideal_map_reduce, ideal_map_expand, ideal_map_rdof, ideal_map_axis_dof
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
-    public :: ideal_map_solve_report_t
+    public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
+    public :: ideal_map_gauge_project
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
@@ -93,6 +94,13 @@ module kin6d_ideal_map
         ! basis(:, j, node): the two reduced increment directions in
         ! (dq1, dq2, domega). Transversal gauge: (d, 0) and (0, 0, 1).
         real(dp), allocatable :: direction(:, :), axis_basis(:, :), basis(:, :, :)
+        ! Nested solve: vector axis basis axis_vec(:, p, node) of axis dof
+        ! p = i + 2 (j - 1) (tangential fields, see nested_axis_basis); when
+        ! allocated it replaces e_i axis_basis(j, node). axis_removed(1, :):
+        ! tangential fraction^2 of the dropped near-normal directions;
+        ! axis_removed(2, :): cos^2 of the dropped directions with the
+        ! field-line slides.
+        real(dp), allocatable :: axis_vec(:, :, :), axis_removed(:, :)
         ! Axis expansion: polynomial degree (-1: k - 1) and power of T (set
         ! before ideal_map_init / ideal_map_freeze respectively).
         integer :: axis_degree = -1, axis_power = 1
@@ -109,6 +117,25 @@ module kin6d_ideal_map
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
+        ! True: the gauge form regularises the Hessian only (energy and
+        ! gradient are the physical ones, so the end point is the stationary
+        ! point of W and independent of gauge_weight); False: it is part of
+        ! the energy and biases the end point.
+        logical :: gauge_hessian_only = .false.
+        ! True: nested solve. Newton on the transversal dofs of the reduced
+        ! functional W_red(nu) = min_omega W(nu, omega); omega is eliminated
+        ! exactly after every step (W is quadratic in omega at fixed nu since J
+        ! does not depend on omega at ntor = 0; ntor > 0 is rejected) and
+        ! the outer step is the Schur-complement Newton step, damped on the
+        ! transversal block only. No gauge form: only the exact null (the
+        ! omega pin) is fixed. Set before ideal_map_freeze.
+        logical :: omega_elimination = .false.
+        ! Nested solve: surface-label gauge of omega (nested_omega_gauge).
+        ! omega_layers bumps in rho = (1 - T)^1/2 (0: none; -1 before freeze:
+        ! one per element layer); omega_c(l, node): moment weights, omega_cgi:
+        ! inverse Gram matrix of their free-omega columns.
+        integer :: omega_layers = -1
+        real(dp), allocatable :: omega_c(:, :), omega_cgi(:, :)
         real(dp), allocatable :: omega_gauge(:, :, :)
         ! Nodal label, axis-expansion weight T and the axis node.
         real(dp), allocatable :: chi_node(:), axis_t(:)
@@ -159,7 +186,7 @@ contains
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: g(:)
         real(dp), intent(out) :: gr(:)
-        integer :: a, m, k, j
+        integer :: a, m, k, j, l
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
@@ -173,6 +200,16 @@ contains
             do j = 1, map%npoly
                 do k = 1, 2
                     gr(ideal_map_axis_dof(map, k, j, m)) = 0
+                    if (allocated(map%axis_vec)) then
+                        do a = 1, map%nodes
+                            l = ideal_map_dof(map, 1, m, a)
+                            gr(ideal_map_axis_dof(map, k, j, m)) = &
+                                gr(ideal_map_axis_dof(map, k, j, m)) &
+                                + dot_product(map%axis_vec(:, k + 2*(j - 1), a), &
+                                g(l:l + 1))
+                        end do
+                        cycle
+                    end if
                     do a = 1, map%nodes
                         gr(ideal_map_axis_dof(map, k, j, m)) = &
                             gr(ideal_map_axis_dof(map, k, j, m)) &
@@ -194,6 +231,13 @@ contains
                 k = ideal_map_dof(map, 1, m, a)
                 v(k:k + 2) = vr(ideal_map_rdof(map, 1, m, a))*map%basis(:, 1, a) &
                     + vr(ideal_map_rdof(map, 2, m, a))*map%basis(:, 2, a)
+                if (allocated(map%axis_vec)) then
+                    do j = 1, 2*map%npoly
+                        v(k:k + 1) = v(k:k + 1) + map%axis_vec(:, j, a) &
+                            *vr(ideal_map_axis_dof(map, 1, 1, m) + j - 1)
+                    end do
+                    cycle
+                end if
                 do j = 1, map%npoly
                     v(k:k + 1) = v(k:k + 1) + map%axis_basis(j, a) &
                         *vr(ideal_map_axis_dof(map, 1, j, m) + [0, 1])
@@ -350,12 +394,13 @@ contains
         class(ideal_frozen_t), intent(in) :: field
         integer, intent(out) :: status
         real(dp) :: dg(2, 2), y(2), grad(2), ds(2), b3, pressure, chi, lo, hi, t
-        real(dp), allocatable :: labels(:, :)
+        real(dp), allocatable :: labels(:, :), slope(:)
         integer :: e, g, a, k
         status = IDEAL_MAP_OK
-        allocate (labels(map%nodes, 1), map%axis_t(map%nodes))
+        allocate (labels(map%nodes, 1), map%axis_t(map%nodes), slope(map%nodes))
         do a = 1, map%nodes
             call field%evaluate(map%reference(:, a), chi, grad, b3, pressure)
+            slope(a) = norm2(grad)
             if (norm2(grad) > 0) map%direction(:, a) = grad/norm2(grad)
             map%basis(1:2, 1, a) = map%direction(:, a)
             labels(a, 1) = chi
@@ -388,7 +433,215 @@ contains
             end do
         end do
         call build_gauge(map)
-        if (map%position_gauge) call ideal_map_position_gauge(map)
+        if (map%position_gauge) then
+            map%omega_layers = 0
+            call ideal_map_position_gauge(map)
+        else if (map%omega_elimination) then
+            call nested_axis_basis(map, slope, k)
+            if (k /= IDEAL_MAP_OK) status = k
+            call nested_omega_gauge(map)
+        else
+            map%omega_layers = 0
+        end if
+    end subroutine
+
+    subroutine nested_omega_gauge(map)
+        ! At n = 0 every omega = f(chi) rotates each surface rigidly in phi:
+        ! b_pol . grad f(chi) = 0, so W is exactly invariant in the continuum
+        ! for any f (a gauge of the same kind as the field-line slides of the
+        ! axis basis; the gauge probe measures its discrete curvature vanishing
+        ! with h). Discretely the smooth f are near-nulls of H_oo; omega* then
+        ! jitters along them with the roundoff of g_omega and the nu gradient
+        ! inherits it. They are removed from the unknowns by constraints, the
+        ! L2 moments int phi_l(rho) omega dA = 0 (reference quadrature) of
+        ! the C1 partition of unity phi_l = cos^2(pi/2 (L rho - l)),
+        ! l = 0..L, rho = (1 - T)^1/2, L = omega_layers (one per element layer).
+        ! The moments are smooth functionals, so a smooth f restores them for
+        ! any continuum minimiser omega* + f: no physics is fixed and the
+        ! order is kept; the f(chi) left free oscillate within a layer and are
+        ! stiff. They enter the omega solves as Lagrange rows.
+        type(ideal_map_t), intent(inout) :: map
+        real(dp), allocatable :: gram(:, :), lam(:)
+        logical, allocatable :: free(:)
+        real(dp) :: rho, w, x, pi
+        integer :: e, g, l, nc, k, info
+        pi = acos(-1.0_dp)
+        if (map%omega_layers < 0) map%omega_layers = max(1, &
+            nint(sqrt(map%cells*sqrt(3.0_dp)/(4*pi))))
+        if (map%omega_layers == 0) return
+        nc = map%omega_layers + 1
+        ! The moments exclude the constant (sum phi_l = 1): the omega pin, a
+        ! point condition that would force layer-scale f, is released.
+        map%fixed(ideal_map_rdof(map, 2, 1, map%gauge)) = .false.
+        allocate (map%omega_c(nc, map%nodes))
+        map%omega_c = 0
+        do e = 1, map%cells
+            do g = 1, map%nq
+                rho = map%omega_layers*sqrt(max(0.0_dp, &
+                    1 - dot_product(map%axis_t(map%conn(:, e)), map%shape(:, g))))
+                w = map%weight(g)*map%det(g, e)
+                do l = max(0, floor(rho)), min(nc - 1, ceiling(rho))
+                    x = rho - l
+                    if (abs(x) >= 1) cycle
+                    map%omega_c(l + 1, map%conn(:, e)) = map%omega_c(l + 1, &
+                        map%conn(:, e)) + w*cos(pi*x/2)**2*map%shape(:, g)
+                end do
+            end do
+        end do
+        ! Scale: unit largest weight.
+        map%omega_c = map%omega_c/maxval(abs(map%omega_c))
+        allocate (free(map%nodes))
+        do k = 1, map%nodes
+            free(k) = .not. map%fixed(ideal_map_rdof(map, 2, 1, k))
+        end do
+        gram = matmul(map%omega_c, transpose(map%omega_c) &
+            *spread(merge(1.0_dp, 0.0_dp, free), 2, nc))
+        call symmetric_eigen(gram, lam, info)
+        map%omega_cgi = matmul(gram, transpose(gram)/spread(lam, 2, nc))
+    end subroutine
+
+    subroutine ideal_map_gauge_project(map, gred)
+        ! Remove the Lagrange part C lambda from the free omega gradient
+        ! (orthogonal projection onto ker C^T): the gradient of W on the
+        ! constrained omega space.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(inout) :: gred(:)
+        real(dp), allocatable :: go(:)
+        integer :: a
+        if (.not. allocated(map%omega_c)) return
+        allocate (go(map%nodes))
+        do a = 1, map%nodes
+            go(a) = gred(ideal_map_rdof(map, 2, 1, a))
+            if (map%fixed(ideal_map_rdof(map, 2, 1, a))) go(a) = 0
+        end do
+        go = go - matmul(matmul(matmul(map%omega_cgi, map%omega_c), go), map%omega_c)
+        do a = 1, map%nodes
+            if (map%fixed(ideal_map_rdof(map, 2, 1, a))) cycle
+            gred(ideal_map_rdof(map, 2, 1, a)) = go(a)
+        end do
+    end subroutine
+
+    subroutine nested_axis_basis(map, slope, status)
+        ! Axis basis of the nested solve, free of relabelling directions.
+        ! The nodal span {nu_a d_a} + span{e_i T P_j} equals {nu_a d_a} + the
+        ! tangential parts t_a (t_a . e_i) T P_j (t_a = d_a rotated by +90 deg),
+        ! so only tangential content h_a is parametrised. Of the 2 npoly
+        ! polynomial fields of degree <= K - 1 two kinds of directions are not
+        ! unknowns (ng = npoly - K of each, leaving 2K):
+        ! (1) near-normal fields, duplicated by nu: the ng directions with the
+        !     smallest tangential fraction |h|/|F| (circular surfaces: the
+        !     dilation u and the radial fields P u, deg P <= K - 2);
+        ! (2) field-line slides: any v = g b_pol, b_pol = |grad chi| t, with
+        !     omega* following preserves the frozen flux and pressure, so W_red
+        !     is exactly invariant in the continuum. Smooth slides of the axis
+        !     degree, g = T P (deg P <= K - 2: the T-weighted rotation, its
+        !     u-linear 1/R part and the r^2-weighted translation), are removed:
+        !     the ng remaining directions with the largest cosine to them.
+        ! Kept: the 2K harmonics r^d e^{i(d+1) theta} for circular surfaces
+        ! (shift, elongation, triangularity). Contents use the nodal sum.
+        type(ideal_map_t), intent(inout) :: map
+        real(dp), intent(in) :: slope(:)
+        integer, intent(out) :: status
+        real(dp), allocatable :: f(:, :), h(:, :), mm(:, :), w(:, :), lam(:), y(:, :)
+        real(dp), allocatable :: c(:, :), q(:, :), mu(:)
+        real(dp) :: t(2)
+        integer :: n, np2, kd, ng, nk, a, p, i, j
+        n = map%nodes; np2 = 2*map%npoly
+        kd = nint((sqrt(8.0_dp*map%npoly + 1) - 1)/2)
+        ng = map%npoly - kd; nk = np2 - 2*ng
+        allocate (f(2*n, np2), h(n, np2))
+        do a = 1, n
+            t = [-map%direction(2, a), map%direction(1, a)]
+            do j = 1, map%npoly
+                do i = 1, 2
+                    p = i + 2*(j - 1)
+                    f(2*a - 1:2*a, p) = 0
+                    f(2*a - 2 + i, p) = map%axis_basis(j, a)
+                    h(a, p) = t(i)*map%axis_basis(j, a)
+                end do
+            end do
+        end do
+        ! Whiten with the field Gram matrix: |h y| / |y| is the tangential fraction.
+        mm = matmul(transpose(f), f)
+        call symmetric_eigen(mm, lam, status)
+        if (status /= IDEAL_MAP_OK) return
+        if (.not. minval(lam) > 0) then
+            status = IDEAL_MAP_BAD_INPUT; return
+        end if
+        w = matmul(mm, matmul(diag_matrix(1/sqrt(lam)), transpose(mm)))
+        h = matmul(h, w)
+        y = matmul(transpose(h), h)
+        call symmetric_eigen(y, lam, status)
+        if (status /= IDEAL_MAP_OK) return
+        allocate (map%axis_removed(2, ng))
+        map%axis_removed(1, :) = lam(1:ng)
+        ! Orthonormal contents of the kept near-tangential directions.
+        c = matmul(h, matmul(y(:, ng + 1:), diag_matrix(1/sqrt(lam(ng + 1:)))))
+        if (ng > 0) then
+            ! Orthonormal slide contents T P_k |grad chi|, k <= ng.
+            allocate (q(n, ng))
+            do j = 1, ng
+                q(:, j) = map%axis_basis(j, :)*slope
+            end do
+            mm = matmul(transpose(q), q)
+            call symmetric_eigen(mm, lam, status)
+            if (status /= IDEAL_MAP_OK) return
+            q = matmul(q, matmul(mm, diag_matrix(1/sqrt(lam))))
+            mm = matmul(transpose(c), q)
+            mm = matmul(mm, transpose(mm))
+            call symmetric_eigen(mm, mu, status)
+            if (status /= IDEAL_MAP_OK) return
+            map%axis_removed(2, :) = mu(nk + 1:)
+            c = matmul(c, mm(:, :nk))
+        end if
+        allocate (map%axis_vec(2, np2, n))
+        map%axis_vec = 0
+        do p = 1, nk
+            c(:, p) = c(:, p)/maxval(abs(c(:, p)))
+            do a = 1, n
+                map%axis_vec(:, p, a) = [-map%direction(2, a), map%direction(1, a)] &
+                    *c(a, p)
+            end do
+        end do
+        do p = 1, map%nmode
+            do j = nk + 1, np2
+                map%fixed(ideal_map_axis_dof(map, 1, 1, p) + j - 1) = .true.
+            end do
+        end do
+    contains
+        pure function diag_matrix(v) result(d)
+            real(dp), intent(in) :: v(:)
+            real(dp) :: d(size(v), size(v))
+            integer :: k
+            d = 0
+            do k = 1, size(v)
+                d(k, k) = v(k)
+            end do
+        end function
+    end subroutine
+
+    subroutine symmetric_eigen(a, w, status)
+        ! Eigenvalues ascending in w, orthonormal eigenvectors overwrite a.
+        real(dp), intent(inout) :: a(:, :)
+        real(dp), allocatable, intent(out) :: w(:)
+        integer, intent(out) :: status
+        interface
+            subroutine dsyev(jobz, uplo, n, a, lda, w, work, lwork, info)
+                import :: dp
+                character, intent(in) :: jobz, uplo
+                integer, intent(in) :: n, lda, lwork
+                real(dp), intent(inout) :: a(lda, *)
+                real(dp), intent(out) :: w(*), work(*)
+                integer, intent(out) :: info
+            end subroutine
+        end interface
+        real(dp), allocatable :: work(:)
+        integer :: n, info
+        n = size(a, 1)
+        allocate (w(n), work(max(1, 66*n)))
+        call dsyev('V', 'U', n, a, n, w, work, size(work), info)
+        status = IDEAL_MAP_OK
+        if (info /= 0) status = IDEAL_MAP_BAD_INPUT
     end subroutine
 
     subroutine ideal_map_position_gauge(map)
@@ -399,6 +652,7 @@ contains
         ! exact, and neither the axis expansion nor an omega pin is needed.
         type(ideal_map_t), intent(inout) :: map
         integer :: a, m, j
+        if (allocated(map%axis_vec)) deallocate (map%axis_vec)
         map%axis_basis = 0
         do a = 1, map%nodes
             map%basis(:, 1, a) = [1.0_dp, 0.0_dp, 0.0_dp]
@@ -512,6 +766,7 @@ contains
             end do
         end do
         map%omega_gauge = map%gauge_weight*map%omega_gauge/max(scale, tiny(1.0_dp))
+        if (map%omega_elimination) map%omega_gauge = 0
     end subroutine
 
     subroutine point_jet(map, e, g, j, x, q, qd)
@@ -702,10 +957,12 @@ contains
             energy = energy + cell_energy(e)
         end do
         minjac = minval(cell_jac)
-        do e = 1, map%cells
-            energy = energy + 0.5_dp*dot_product(x(3, 1, map%conn(:, e)), &
-                matmul(map%omega_gauge(:, :, e), x(3, 1, map%conn(:, e))))
-        end do
+        if (.not. map%gauge_hessian_only) then
+            do e = 1, map%cells
+                energy = energy + 0.5_dp*dot_product(x(3, 1, map%conn(:, e)), &
+                    matmul(map%omega_gauge(:, :, e), x(3, 1, map%conn(:, e))))
+            end do
+        end if
         status = IDEAL_MAP_OK
         if (.not. (minjac > 0) .or. .not. ieee_is_finite(energy)) &
             status = IDEAL_MAP_FOLDED
@@ -714,6 +971,7 @@ contains
         gradient = 0
         do e = 1, map%cells
             gradient(map%dofconn(:, e)) = gradient(map%dofconn(:, e)) + local(:, e)
+            if (map%gauge_hessian_only) cycle
             do a = 1, map%nloc
                 c = ideal_map_dof(map, 3, 1, map%conn(a, e))
                 gradient(c) = gradient(c) + dot_product(map%omega_gauge(a, :, e), &
@@ -796,6 +1054,12 @@ contains
                         half(:, r) = 0
                         do a = 1, map%nloc
                             l = m + map%nmode*(a - 1)
+                            if (allocated(map%axis_vec)) then
+                                half(:, r) = half(:, r) &
+                                    + matmul(full(:, 3*l - 2:3*l - 1), &
+                                    map%axis_vec(:, c + 2*(j - 1), map%conn(a, e)))
+                                cycle
+                            end if
                             half(:, r) = half(:, r) &
                                 + map%axis_basis(j, map%conn(a, e))*full(:, 3*l - 3 + c)
                         end do
@@ -814,6 +1078,12 @@ contains
                         blocks(r, :, e) = 0
                         do a = 1, map%nloc
                             l = m + map%nmode*(a - 1)
+                            if (allocated(map%axis_vec)) then
+                                blocks(r, :, e) = blocks(r, :, e) + matmul( &
+                                    map%axis_vec(:, c + 2*(j - 1), map%conn(a, e)), &
+                                    half(3*l - 2:3*l - 1, :))
+                                cycle
+                            end if
                             blocks(r, :, e) = blocks(r, :, e) &
                                 + map%axis_basis(j, map%conn(a, e))*half(3*l - 3 + c, :)
                         end do
@@ -835,6 +1105,12 @@ contains
         ! accepted step. Steps keep J > 0 and do not raise W beyond roundoff.
         ! Converged when the free reduced-gradient norm is below tolerance times
         ! its initial value or the step stalls at roundoff.
+        ! With map%omega_elimination the iteration is Newton on W_red(nu) =
+        ! min_omega W(nu, omega): omega is eliminated exactly at the start and
+        ! at every trial point, so its gradient vanishes and the full-system
+        ! solve with right-hand side -g is the Schur-complement step
+        ! (H_tt - H_to H_oo^-1 H_ot) d nu = -g_t; damping acts on the
+        ! transversal block only and the trust region on nu only.
         type(ideal_map_t), intent(inout) :: map
         real(dp), intent(in) :: tolerance
         integer, intent(in) :: max_iterations
@@ -844,23 +1120,27 @@ contains
         ! Absolute gradient the tolerance refers to (default: the initial one),
         ! e.g. the first-phase gradient for a polishing solve.
         real(dp), intent(in), optional :: reference_gradient
-        type(csr_matrix_t) :: matrix
-        type(sparse_solver_t) :: solver
+        type(csr_matrix_t) :: matrix, omatrix
+        type(sparse_solver_t) :: solver, osolver
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
-        real(dp), allocatable :: trial(:, :, :), rhs(:)
+        real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
+        logical, allocatable :: omask(:), damped(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
-        real(dp) :: cap_x, cap_w, t0
+        real(dp) :: cap_x, cap_w, t0, trial_minjac
         integer :: it, i, k, tries, estatus
-        logical :: talk, accepted, factored
+        logical :: talk, accepted, factored, ofactored, nested
         talk = .false.
-        factored = .false.
+        factored = .false.; ofactored = .false.
         if (present(verbose)) talk = verbose
+        nested = map%omega_elimination .and. .not. map%position_gauge
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
-            diag(map%nred), rhs(map%nred))
-        t0 = wall()
+            diag(map%nred), rhs(map%nred), shift(map%nred))
+        call omega_mask(map, nested, omask)
+        damped = .not. (map%fixed .or. omask)
+        t0 = wall_seconds()
         call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
-        report%energy_s = report%energy_s + wall() - t0
+        report%energy_s = report%energy_s + wall_seconds() - t0
         if (estatus /= IDEAL_MAP_OK) then
             status = IDEAL_MAP_FOLDED; return
         end if
@@ -869,10 +1149,19 @@ contains
         g0 = norm2(gred); gnorm = g0
         report%initial_gradient = g0
         if (present(reference_gradient)) g0 = reference_gradient
+        if (nested) then
+            call eliminate_omega(map, map%x, omask, omatrix, osolver, ofactored, &
+                energy, gred, minjac, report, estatus)
+            if (estatus /= IDEAL_MAP_OK) then
+                status = estatus; call cleanup(); return
+            end if
+            gnorm = norm2(gred)
+        end if
         mu = map%initial_damping
         cap_x = 0.05_dp*maxval(maxval(map%reference, dim=2) &
             - minval(map%reference, dim=2))
         cap_w = 1
+        if (nested) cap_w = huge(1.0_dp)
         alpha = 1
         status = IDEAL_MAP_NOT_CONVERGED
         report%energy = energy; report%gradient = gnorm
@@ -881,9 +1170,9 @@ contains
                 status = IDEAL_MAP_OK; exit
             end if
             report%iterations = it
-            t0 = wall()
+            t0 = wall_seconds()
             call ideal_map_hessian(map, map%x, matrix)
-            report%hessian_s = report%hessian_s + wall() - t0
+            report%hessian_s = report%hessian_s + wall_seconds() - t0
             do i = 1, map%nred
                 do k = matrix%rowptr(i), matrix%rowptr(i + 1) - 1
                     if (matrix%colidx(k) == i) diag(i) = matrix%val(k)
@@ -891,37 +1180,37 @@ contains
             end do
             scale = maxval(abs(diag), mask=.not. map%fixed)
             accepted = .false.
+            if (nested) then
+                call nested_line_search()
+                if (status == IDEAL_MAP_SOLVE_FAILED) then
+                    call cleanup(); return
+                end if
+            end if
+            if (.not. nested) then
             do tries = 1, 30
-                t0 = wall()
-                call factor_damped(mu, estatus)
+                t0 = wall_seconds()
+                shift = merge(mu*(abs(diag) + 1.0e-12_dp*scale), 0.0_dp, damped)
+                call factor_masked(map, matrix, .not. map%fixed, shift, solver, &
+                    factored, estatus, report)
                 if (estatus /= 0) then
                     mu = mu*10; cycle
                 end if
                 rhs = -gred
                 call sparse_solve(solver, rhs, step, sstatus)
-                report%factor_s = report%factor_s + wall() - t0
+                report%factor_s = report%factor_s + wall_seconds() - t0
                 if (.not. status_ok(sstatus)) then
-                    call sparse_destroy(solver)
-                    status = IDEAL_MAP_SOLVE_FAILED; return
+                    status = IDEAL_MAP_SOLVE_FAILED; call cleanup(); return
                 end if
                 where (map%fixed) step = 0
                 call ideal_map_expand(map, step, full)
                 ! Trust region: near-null (relabelling) directions can carry
                 ! large Newton components; cap the displacement and rotation.
-                alpha = 1
-                do i = 1, map%nodes
-                    k = ideal_map_dof(map, 1, 1, i)
-                    alpha = min(alpha, cap_x/max(tiny(1.0_dp), &
-                        maxval(abs(full(k:k + 3*map%nmode - 1:3))), &
-                        maxval(abs(full(k + 1:k + 3*map%nmode - 1:3)))), &
-                        cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
-                        - 1:3)))))
-                end do
+                call trust_region()
                 full = alpha*full; step = alpha*step
                 trial = map%x + reshape(full, shape(map%x))
-                t0 = wall()
+                t0 = wall_seconds()
                 call ideal_map_energy(map, trial, trial_energy, estatus)
-                report%energy_s = report%energy_s + wall() - t0
+                report%energy_s = report%energy_s + wall_seconds() - t0
                 if (estatus == IDEAL_MAP_OK .and. trial_energy < energy &
                     - 64*epsilon(1.0_dp)*abs(energy)) then
                     accepted = .true.; exit
@@ -942,87 +1231,391 @@ contains
                 end if
                 mu = mu*10
             end do
+            end if
             if (.not. accepted) exit
+            report%step = maxval(abs(trial - map%x))
             map%x = trial
-            report%step = maxval(abs(full))
-            t0 = wall()
-            call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
-            report%energy_s = report%energy_s + wall() - t0
-            call ideal_map_reduce(map, grad, gred)
-            where (map%fixed) gred = 0
+            if (nested) then
+                energy = trial_energy; gred = rhs; minjac = trial_minjac
+            else
+                t0 = wall_seconds()
+                call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
+                report%energy_s = report%energy_s + wall_seconds() - t0
+                call ideal_map_reduce(map, grad, gred)
+                where (map%fixed) gred = 0
+            end if
             gnorm = norm2(gred)
             report%energy = energy; report%gradient = gnorm/g0
             report%min_jacobian = minjac; report%damping = mu
-            if (talk) print '(a,i3,5es12.4)', 'ideal map newton', it, energy, &
-                gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu
+            if (talk) print '(a,i3,5es12.4,i3,3es10.2)', 'ideal map newton', it, &
+                energy, gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu, &
+                tries, alpha, norm2(gred(2:2*map%nodes:2))/gnorm, &
+                norm2(step(2:2*map%nodes:2))/norm2(step)
             if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
             if (report%step <= 1.0e-13_dp*maxval(abs(map%reference))) then
                 status = IDEAL_MAP_OK; exit
             end if
         end do
         if (.not. gnorm > tolerance*g0) status = IDEAL_MAP_OK
-        if (factored) call sparse_destroy(solver)
+        call cleanup()
     contains
-        real(dp) function wall()
-            integer(int64) :: count, rate
-            call system_clock(count, rate)
-            wall = real(count, dp)/rate
-        end function
-
-        subroutine factor_damped(damping, info)
-            ! H + damping*|diag H| with identity rows/columns for fixed dofs.
-            real(dp), intent(in) :: damping
-            integer, intent(out) :: info
-            type(sparse_factor_stats_t) :: stats
-            logical :: reused
-            real(dp), allocatable :: val(:)
-            integer :: row, kk
-            val = matrix%val
-            do row = 1, map%nred
-                do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
-                    if (map%fixed(row) .or. map%fixed(matrix%colidx(kk))) then
-                        val(kk) = merge(1.0_dp, 0.0_dp, matrix%colidx(kk) == row)
-                    else if (matrix%colidx(kk) == row) then
-                        val(kk) = val(kk) + damping*(abs(diag(row)) + 1.0e-12_dp*scale)
-                    end if
-                end do
+        subroutine trust_region()
+            ! alpha = largest fraction of full within the displacement caps.
+            alpha = 1
+            do i = 1, map%nodes
+                k = ideal_map_dof(map, 1, 1, i)
+                alpha = min(alpha, cap_x/max(tiny(1.0_dp), &
+                    maxval(abs(full(k:k + 3*map%nmode - 1:3))), &
+                    maxval(abs(full(k + 1:k + 3*map%nmode - 1:3)))), &
+                    cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
+                    - 1:3)))))
             end do
-            ! MUMPS LDL^T (nested dissection) when KIN6D is built with MUMPS;
-            ! serial SuperLU LU otherwise. The damped system is symmetric and
-            ! may be indefinite.
-            if (gs_direct_available()) then
-                solver%backend_id = FORTSPARSE_BACKEND_MUMPS
-                solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
-                solver%options%nthreads = map%factor_threads
-            else
-                solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
-                solver%options%symmetry = FORTSPARSE_SYM_GENERAL
-            end if
-            ! The pattern is fixed per map: after the first factorisation only
-            ! the numerical factorisation is redone (MUMPS keeps its analysis).
-            reused = .false.
-            if (factored) then
-                call sparse_refactor(solver, map%nred, map%nred, size(val), &
-                    matrix%rowptr, matrix%colidx, val, sstatus, reused)
-            else
-                call sparse_factor(solver, map%nred, map%nred, size(val), &
-                    matrix%rowptr, matrix%colidx, val, sstatus)
-            end if
-            info = merge(0, 1, status_ok(sstatus))
-            if (info /= 0) then
-                if (factored) call sparse_destroy(solver)
-                factored = .false.
-                return
-            end if
-            factored = .true.
-            call sparse_factor_stats(solver, stats, sstatus)
-            if (status_ok(sstatus)) then
-                if (.not. reused) report%analysis_s = report%analysis_s &
-                    + max(0.0_dp, stats%analysis_s)
-                report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
-            end if
+        end subroutine
+
+        subroutine nested_line_search()
+            ! Nested step: the damped Schur-complement Newton direction d of
+            ! W_red, then a line search along it (W_red is strongly nonlinear
+            ! along near-null shaping directions, where full steps zigzag).
+            ! d must be a descent direction; g.d >= 0 means negative
+            ! curvature of the damped Schur complement along d and raises the
+            ! damping. The step length t (from the trust-region cap) is
+            ! accepted when W_red(t) - W_red(0) <= 1e-4 t g.d (Armijo) and
+            ! g(t).d <= |g.d|/2 (no overshoot past the line minimum); otherwise
+            ! t moves to the minimiser of the cubic through W_red and g.d at 0
+            ! and t, kept in [0.1 t, 0.9 t]. Within the roundoff band of W the
+            ! change is the trapezoidal (g.d + g(t).d) t/2.
+            real(dp) :: gd, g1d, t, dw, d1, d2
+            integer :: ls
+            status = IDEAL_MAP_NOT_CONVERGED
+            do tries = 1, 30
+                t0 = wall_seconds()
+                shift = merge(mu*(abs(diag) + 1.0e-12_dp*scale), 0.0_dp, damped)
+                call factor_masked(map, matrix, .not. map%fixed, shift, solver, &
+                    factored, estatus, report, gauge=.true.)
+                if (estatus /= 0) then
+                    mu = mu*10; cycle
+                end if
+                rhs = -gred
+                call gauge_solve(map, solver, rhs, 0*gauge_moments(map, map%x), step, &
+                    sstatus)
+                report%factor_s = report%factor_s + wall_seconds() - t0
+                if (.not. status_ok(sstatus)) then
+                    status = IDEAL_MAP_SOLVE_FAILED; return
+                end if
+                ! omega is re-eliminated at every trial point.
+                where (map%fixed .or. omask) step = 0
+                gd = dot_product(gred, step)
+                if (.not. gd < 0) then
+                    mu = mu*10; cycle
+                end if
+                call ideal_map_expand(map, step, full)
+                call trust_region()
+                t = alpha
+                do ls = 1, 30
+                    trial = map%x + t*reshape(full, shape(map%x))
+                    call eliminate_omega(map, trial, omask, omatrix, osolver, &
+                        ofactored, trial_energy, rhs, trial_minjac, report, estatus)
+                    if (estatus == IDEAL_MAP_SOLVE_FAILED) then
+                        status = estatus; return
+                    end if
+                    if (estatus /= IDEAL_MAP_OK) then
+                        t = t/4; cycle
+                    end if
+                    g1d = dot_product(rhs, step)
+                    dw = trial_energy - energy
+                    if (abs(dw) <= 64*epsilon(1.0_dp)*abs(energy)) dw = (gd + g1d)*t/2
+                    if (dw <= 1.0e-4_dp*t*gd .and. g1d <= abs(gd)/2) then
+                        accepted = .true.; alpha = t
+                        step = t*step
+                        return
+                    end if
+                    ! Cubic in s in [0, t]: f(0) = 0, f'(0) = gd, f(t) = dw,
+                    ! f'(t) = g1d.
+                    d1 = gd + g1d - 3*dw/t
+                    d2 = d1*d1 - gd*g1d
+                    if (d2 > 0) then
+                        d2 = sqrt(d2)
+                        d1 = t - t*(g1d + d2 - d1)/(g1d - gd + 2*d2)
+                    else
+                        d1 = t/2
+                    end if
+                    if (.not. ieee_is_finite(d1)) d1 = t/2
+                    t = min(0.9_dp*t, max(0.1_dp*t, d1))
+                end do
+                mu = mu*10
+            end do
+        end subroutine
+
+        subroutine cleanup()
+            if (factored) call sparse_destroy(solver)
+            if (ofactored) call sparse_destroy(osolver)
+            factored = .false.; ofactored = .false.
         end subroutine
     end subroutine
+
+    subroutine omega_mask(map, nested, omask)
+        ! Free omega dofs (all modes) when nested; none otherwise.
+        type(ideal_map_t), intent(in) :: map
+        logical, intent(in) :: nested
+        logical, allocatable, intent(out) :: omask(:)
+        integer :: a, m
+        allocate (omask(map%nred))
+        omask = .false.
+        if (.not. nested) return
+        do a = 1, map%nodes
+            do m = 1, map%nmode
+                omask(ideal_map_rdof(map, 2, m, a)) = .true.
+            end do
+        end do
+        omask = omask .and. .not. map%fixed
+    end subroutine
+
+    subroutine ideal_map_eliminate_omega(map, x, energy, gradient, status)
+        ! Reduced functional W_red(nu) = min_omega W(nu, omega) at the
+        ! transversal dofs of x: x(3, mode, node) is returned with omega
+        ! replaced by the minimiser omega*(nu) (fixed dofs kept), energy =
+        ! W_red, gradient(nred) the reduced gradient there (fixed dofs zero;
+        ! its omega part vanishes, the rest is grad W_red by the envelope
+        ! property). Transversal gauge only; the gauge form is not used when
+        ! map%omega_elimination is set before ideal_map_freeze.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(inout) :: x(:, :, :)
+        real(dp), intent(out) :: energy, gradient(:)
+        integer, intent(out) :: status
+        type(csr_matrix_t) :: matrix
+        type(sparse_solver_t) :: slv
+        type(ideal_map_solve_report_t) :: report
+        logical, allocatable :: omask(:)
+        logical :: done
+        real(dp) :: minjac
+        done = .false.
+        if (map%position_gauge) then
+            status = IDEAL_MAP_BAD_INPUT; return
+        end if
+        call omega_mask(map, .true., omask)
+        call eliminate_omega(map, x, omask, matrix, slv, done, energy, gradient, &
+            minjac, report, status)
+        if (done) call sparse_destroy(slv)
+    end subroutine
+
+    subroutine eliminate_omega(map, x, omask, matrix, slv, done, energy, gred, &
+                               minjac, report, info)
+        ! Minimise W over the free omega dofs (omask) at fixed transversal
+        ! dofs: one undamped solve H_oo d omega = -g_o (the pin removes the
+        ! exact null). At ntor = 0 with the cylindrical chart J does not depend
+        ! on omega and W is exactly quadratic in it, so the solve is exact.
+        ! ntor > 0 is rejected (IDEAL_MAP_BAD_INPUT): there J depends on
+        ! omega, and an undamped inner Newton probe (P2, 16 segments, nfp 3)
+        ! converged only linearly (|g_o| halving per pass).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(inout) :: x(:, :, :)
+        logical, intent(in) :: omask(:)
+        type(csr_matrix_t), intent(inout) :: matrix
+        type(sparse_solver_t), intent(inout) :: slv
+        logical, intent(inout) :: done
+        real(dp), intent(out) :: energy, gred(:), minjac
+        type(ideal_map_solve_report_t), intent(inout) :: report
+        integer, intent(out) :: info
+        type(fortsparse_status_t) :: sstatus
+        real(dp), allocatable :: grad(:), rhs(:), dw(:), full(:), shift(:)
+        real(dp) :: t0
+        if (map%ntor /= 0) then
+            info = IDEAL_MAP_BAD_INPUT; return
+        end if
+        allocate (grad(map%ndof), full(map%ndof), rhs(map%nred), dw(map%nred), &
+            shift(map%nred))
+        shift = 0
+        call evaluate()
+        if (info /= IDEAL_MAP_OK) return
+        t0 = wall_seconds()
+        call ideal_map_hessian(map, x, matrix)
+        report%hessian_s = report%hessian_s + wall_seconds() - t0
+        t0 = wall_seconds()
+        call factor_masked(map, matrix, omask, shift, slv, done, info, report, &
+            gauge=.true.)
+        if (info /= 0) then
+            info = IDEAL_MAP_SOLVE_FAILED; return
+        end if
+        rhs = merge(-gred, 0.0_dp, omask)
+        ! The step also restores the gauge moments to zero (after prolong).
+        call gauge_solve(map, slv, rhs, -gauge_moments(map, x), dw, sstatus)
+        report%factor_s = report%factor_s + wall_seconds() - t0
+        if (.not. status_ok(sstatus)) then
+            info = IDEAL_MAP_SOLVE_FAILED; return
+        end if
+        dw = merge(dw, 0.0_dp, omask)
+        call ideal_map_expand(map, dw, full)
+        x = x + reshape(full, shape(x))
+        call evaluate()
+    contains
+        subroutine evaluate()
+            t0 = wall_seconds()
+            call ideal_map_energy(map, x, energy, info, grad, minjac)
+            report%energy_s = report%energy_s + wall_seconds() - t0
+            call ideal_map_reduce(map, grad, gred)
+            where (map%fixed) gred = 0
+            call ideal_map_gauge_project(map, gred)
+        end subroutine
+    end subroutine
+
+    pure integer function gauge_rows(map) result(nc)
+        ! Number of omega gauge constraints (Lagrange rows after the nred).
+        type(ideal_map_t), intent(in) :: map
+        nc = 0
+        if (allocated(map%omega_c)) nc = size(map%omega_c, 1)
+    end function
+
+    subroutine gauge_solve(map, slv, b, rc, x, sstatus)
+        ! Solve with a factorisation from factor_masked(gauge = .true.):
+        ! right-hand side b (nred) and constraint values rc, x(nred) returned.
+        type(ideal_map_t), intent(in) :: map
+        type(sparse_solver_t), intent(inout) :: slv
+        real(dp), intent(in) :: b(:), rc(:)
+        real(dp), intent(out) :: x(:)
+        type(fortsparse_status_t), intent(out) :: sstatus
+        real(dp), allocatable :: bb(:), xx(:)
+        allocate (bb(map%nred + gauge_rows(map)), xx(map%nred + gauge_rows(map)))
+        bb(:map%nred) = b; bb(map%nred + 1:) = rc
+        call sparse_solve(slv, bb, xx, sstatus)
+        x = xx(:map%nred)
+    end subroutine
+
+    function gauge_moments(map, x) result(rc)
+        ! Constraint values sum_a phi_l(rho_a) omega_a of the coefficients x.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        real(dp), allocatable :: rc(:)
+        allocate (rc(gauge_rows(map)))
+        if (size(rc) == 0) return
+        rc = matmul(map%omega_c, x(3, 1, :))
+    end function
+
+    subroutine factor_masked(map, matrix, keep, shift, slv, done, info, report, gauge)
+        ! Factorise the reduced Hessian restricted to the keep rows/columns
+        ! (identity elsewhere), plus shift on the diagonal. done: slv holds a
+        ! factorisation of this pattern (only the numerical one is redone).
+        ! gauge: append the omega gauge constraints (nested_omega_gauge) on
+        ! the free n = 0 omega dofs as Lagrange rows/columns (saddle point;
+        ! solve with gauge_solve).
+        type(ideal_map_t), intent(in) :: map
+        type(csr_matrix_t), intent(in) :: matrix
+        logical, intent(in) :: keep(:)
+        real(dp), intent(in) :: shift(:)
+        type(sparse_solver_t), intent(inout) :: slv
+        logical, intent(inout) :: done
+        integer, intent(out) :: info
+        type(ideal_map_solve_report_t), intent(inout) :: report
+        logical, intent(in), optional :: gauge
+        type(sparse_factor_stats_t) :: stats
+        type(fortsparse_status_t) :: sstatus
+        logical :: reused
+        real(dp), allocatable :: val(:)
+        integer, allocatable :: rowptr(:), colidx(:), node(:)
+        integer :: row, kk, nc, n, a, l, c
+        val = matrix%val
+        do row = 1, map%nred
+            do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
+                if (.not. keep(row)) then
+                    val(kk) = merge(1.0_dp, 0.0_dp, matrix%colidx(kk) == row)
+                else if (.not. keep(matrix%colidx(kk))) then
+                    val(kk) = 0
+                else if (matrix%colidx(kk) == row) then
+                    val(kk) = val(kk) + shift(row)
+                end if
+            end do
+        end do
+        rowptr = matrix%rowptr; colidx = matrix%colidx
+        n = map%nred; nc = 0
+        if (present(gauge)) then
+            if (gauge) nc = gauge_rows(map)
+        end if
+        if (nc > 0) then
+            ! Constrained dofs: free n = 0 omega (kept in every gauge use).
+            allocate (node(map%nred))
+            node = 0
+            do a = 1, map%nodes
+                row = ideal_map_rdof(map, 2, 1, a)
+                if (.not. map%fixed(row)) node(row) = a
+            end do
+            n = map%nred + nc
+            deallocate (rowptr, colidx, val)
+            kk = count(map%omega_c /= 0)
+            allocate (rowptr(n + 1), colidx(size(matrix%val) + 2*kk + nc), &
+                val(size(matrix%val) + 2*kk + nc))
+            c = 0; rowptr(1) = 1
+            do row = 1, map%nred
+                do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
+                    c = c + 1; colidx(c) = matrix%colidx(kk)
+                    if (.not. keep(row)) then
+                        val(c) = merge(1.0_dp, 0.0_dp, matrix%colidx(kk) == row)
+                    else if (.not. keep(matrix%colidx(kk))) then
+                        val(c) = 0
+                    else
+                        val(c) = matrix%val(kk)
+                        if (matrix%colidx(kk) == row) val(c) = val(c) + shift(row)
+                    end if
+                end do
+                a = node(row)
+                if (a > 0) then
+                    do l = 1, nc
+                        if (map%omega_c(l, a) == 0) cycle
+                        c = c + 1; colidx(c) = map%nred + l; val(c) = map%omega_c(l, a)
+                    end do
+                end if
+                rowptr(row + 1) = c + 1
+            end do
+            do l = 1, nc
+                do row = 1, map%nred
+                    a = node(row)
+                    if (a == 0) cycle
+                    if (map%omega_c(l, a) == 0) cycle
+                    c = c + 1; colidx(c) = row; val(c) = map%omega_c(l, a)
+                end do
+                c = c + 1; colidx(c) = map%nred + l; val(c) = 0
+                rowptr(map%nred + l + 1) = c + 1
+            end do
+            colidx = colidx(:c); val = val(:c)
+        end if
+        ! MUMPS LDL^T (nested dissection) when KIN6D is built with MUMPS;
+        ! serial SuperLU LU otherwise. The damped system is symmetric and
+        ! may be indefinite.
+        if (gs_direct_available()) then
+            slv%backend_id = FORTSPARSE_BACKEND_MUMPS
+            slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+            slv%options%nthreads = map%factor_threads
+        else
+            slv%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            slv%options%symmetry = FORTSPARSE_SYM_GENERAL
+        end if
+        ! The pattern is fixed per map: after the first factorisation only
+        ! the numerical factorisation is redone (MUMPS keeps its analysis).
+        reused = .false.
+        if (done) then
+            call sparse_refactor(slv, n, n, size(val), rowptr, colidx, val, sstatus, &
+                reused)
+        else
+            call sparse_factor(slv, n, n, size(val), rowptr, colidx, val, sstatus)
+        end if
+        info = merge(0, 1, status_ok(sstatus))
+        if (info /= 0) then
+            if (done) call sparse_destroy(slv)
+            done = .false.
+            return
+        end if
+        done = .true.
+        call sparse_factor_stats(slv, stats, sstatus)
+        if (status_ok(sstatus)) then
+            if (.not. reused) report%analysis_s = report%analysis_s &
+                + max(0.0_dp, stats%analysis_s)
+            report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
+        end if
+    end subroutine
+
+    real(dp) function wall_seconds()
+        integer(int64) :: count, rate
+        call system_clock(count, rate)
+        wall_seconds = real(count, dp)/rate
+    end function
 
     subroutine ideal_map_residual(map, f_vac, residual, sigma, status)
         ! Weak Maxwell-stress residual (equilibrium-core D3) of the current map,
