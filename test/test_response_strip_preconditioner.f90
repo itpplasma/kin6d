@@ -1,5 +1,5 @@
 program test_response_strip_preconditioner
-    use, intrinsic :: iso_fortran_env, only: dp => real64, int64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64, real128
     use kin6d_mhd_ampere_n, only: mu0
     use kin6d_response_fluid, only: response_fluid_equilibrium_t
     use kin6d_response_toroidal_strip, only: toroidal_strip_t, &
@@ -9,6 +9,7 @@ program test_response_strip_preconditioner
         strip_preconditioner_init, strip_preconditioner_apply, &
         strip_preconditioned_solve, strip_preconditioner_bytes
     implicit none
+    integer, parameter :: wp = merge(real128, dp, real128 > 0)
     type(toroidal_strip_t) :: strip
     type(toroidal_strip_work_t) :: work
     type(strip_preconditioner_t) :: pc
@@ -19,7 +20,7 @@ program test_response_strip_preconditioner
     complex(dp), allocatable :: exact(:, :, :), rhs(:, :, :), x(:, :, :), ax(:, :, :)
     complex(dp), allocatable :: seed(:, :, :), adj(:, :, :), pre(:, :, :), padj(:, :, :)
     complex(dp) :: gamma
-    real(dp) :: eta, err, pairing, setup_s, solve_s, apply_s
+    real(dp) :: eta, err, pairing, setup_s, solve_s, apply_s, solve_tol
     integer(int64) :: tick, tock, rate
     integer :: nr, nt, level, info, i, j, a, repeat, count, forward_iterations, n
     character(16) :: command
@@ -31,6 +32,7 @@ program test_response_strip_preconditioner
         nr = 7; nt = 9; n = 3
         if (command == 'negative') n = -3
         gamma = (0.7_dp, 0.2_dp); eta = 0.2_dp*mu0
+        solve_tol = 2.0e-12_dp
         if (command == 'limits') then
             if (level <= 4) then
                 eta = mu0*0.2_dp*10.0_dp**(-2*(level - 1))
@@ -42,6 +44,7 @@ program test_response_strip_preconditioner
         if (command == 'scaling') then
             gamma = (2.0_dp, 0.2_dp)
             nr = 2**(level + 2) + 1; nt = 2**(level + 2) + 1
+            solve_tol = 1.2e-12_dp
         end if
         call setup(nr, nt, gamma, eta)
         call system_clock(tick, rate)
@@ -52,7 +55,7 @@ program test_response_strip_preconditioner
         x = 0
         call system_clock(tick)
         call strip_preconditioned_solve(pc, strip, work, rhs, x, &
-            2.0e-12_dp, 1000, min(240, 6*nr*nt), st)
+                                        solve_tol, 1000, min(240, 6*nr*nt), st)
         call system_clock(tock)
         solve_s = real(tock - tick, dp)/rate
         err = maxval(abs(x - exact))/maxval(abs(exact))
@@ -138,9 +141,10 @@ contains
         complex(dp), intent(in) :: gamma
         real(dp), intent(in) :: eta
         real(dp), parameter :: alpha = 0.03_dp/mu0, pbase = 0.4_dp/mu0
-        complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
-        complex(dp) :: div, pressure, gp(3), mom(3), ohm(3)
-        real(dp) :: r, z, c, sn, th, bp, j0, j1
+        complex(wp), parameter :: iq = (0.0_wp, 1.0_wp)
+        complex(wp) :: div, pressure, gp(3), mom(3), ohm(3), state(6), rateq
+        real(wp) :: rq, zq, cq, sq, p0q, g0q, hrq, htq, bq, jq, j1q
+        real(dp) :: r, z, c, sn, th, bp, j0
         integer :: i, j
         allocate (radial(nr), radius(nr, nt), inverse(2, 2, nr, nt), &
             scale(6, nr, nt), eq(nr, nt), exact(6, nr, nt), rhs(6, nr, nt), &
@@ -163,7 +167,7 @@ contains
                 inverse(:, 1, i, j) = [c, -sn/radial(i)]
                 inverse(:, 2, i, j) = [sn, c/radial(i)]
                 bp = sqrt(9/r**2 - mu0*alpha*r**2)
-                j0 = -2*alpha*r/bp; j1 = (n*n - 4)/mu0
+                j0 = -2*alpha*r/bp
                 eq(i, j)%b0 = [0.0_dp, bp, 0.0_dp]
                 eq(i, j)%j0 = [0.0_dp, 0.0_dp, j0]
                 eq(i, j)%p = pbase + alpha*r*r
@@ -171,24 +175,40 @@ contains
                 eq(i, j)%hp = 0
                 eq(i, j)%hp(1, 1) = 2*alpha; eq(i, j)%hp(2, 2) = 2*alpha
                 eq(i, j)%rho = 1/mu0; eq(i, j)%eta = eta
-                exact(:, i, j) = cmplx([0.0_dp, r*r, r*r, r*z, z*z, r*z], 0.0_dp, dp)
-                div = 3*r + (2 + iu*n)*z
-                pressure = -2*alpha*r**3 - eq(i, j)%adiabatic*eq(i, j)%p*div
-                gp(1) = -6*alpha*r*r - eq(i, j)%adiabatic &
-                    *(2*alpha*r*div + 3*eq(i, j)%p)
-                gp(2) = iu*n*pressure/r
-                gp(3) = -eq(i, j)%adiabatic*eq(i, j)%p*(2 + iu*n)
-                mom = eq(i, j)%rho*gamma**2*exact(3:5, i, j) + gp
-                mom(1) = mom(1) + j1*bp - 2*r*j0
-                mom(2) = mom(2) - iu*n*r*j0
-                ohm(1) = -z - gamma*z*z*bp; ohm(2) = -iu*n*z
-                ohm(3) = -gamma*r*r - r + gamma*r*r*bp - eta*j1
-                rhs(:, i, j) = [ohm(1), ohm(3), mom, ohm(2)]
+                ! Independent polynomial oracle: compose the map and state
+                ! before rounding, and differentiate using the represented
+                ! background jets. Production leaves are not called here.
+                cq = real(c, wp); sq = real(sn, wp)
+                rq = 2.0_wp + real(radial(i), wp)*cq
+                zq = real(radial(i), wp)*sq
+                rateq = cmplx(gamma, kind=wp)
+                state = cmplx([0.0_wp, rq*rq, rq*rq, rq*zq, zq*zq, rq*zq], &
+                              kind=wp)
+                exact(:, i, j) = cmplx(state, kind=dp)
+                p0q = real(eq(i, j)%p, wp); g0q = real(eq(i, j)%gp(1), wp)
+                hrq = real(eq(i, j)%hp(1, 1), wp)
+                htq = real(eq(i, j)%hp(2, 2), wp)
+                bq = real(bp, wp); jq = real(j0, wp)
+                j1q = real(n*n - 4, wp)/real(mu0, wp)
+                div = 3*rq + (2 + iq*n)*zq
+                pressure = -state(3)*g0q - real(eq(i, j)%adiabatic, wp)*p0q*div
+                gp(1) = -2*rq*g0q - state(3)*hrq - real(eq(i, j)%adiabatic, wp) &
+                        *(g0q*div + 3*p0q)
+                gp(2) = -(iq*n*state(3)/rq - state(4)/rq)*g0q - state(4)*htq &
+                        - real(eq(i, j)%adiabatic, wp)*p0q*iq*n*div/rq
+                gp(3) = -real(eq(i, j)%adiabatic, wp)*p0q*(2 + iq*n)
+                mom = real(eq(i, j)%rho, wp)*rateq**2*state(3:5) + gp
+                mom(1) = mom(1) + j1q*bq - 2*rq*jq
+                mom(2) = mom(2) - iq*n*rq*jq
+                ohm(1) = -zq - rateq*zq*zq*bq
+                ohm(2) = -iq*n*zq
+                ohm(3) = -rateq*rq*rq - rq + rateq*rq*rq*bq - real(eta, wp)*j1q
+                rhs(:, i, j) = cmplx([ohm(1), ohm(3), mom, ohm(2)], kind=dp)
                 if (i == 1 .or. i == nr) then
-                    rhs(1, i, j) = c*ohm(1) + sn*ohm(3)
-                    rhs(2, i, j) = -sn*exact(1, i, j) + c*exact(2, i, j)
-                    rhs(3, i, j) = c*exact(3, i, j) + sn*exact(5, i, j)
-                    rhs(5, i, j) = -sn*mom(1) + c*mom(3)
+                    rhs(1, i, j) = cmplx(cq*ohm(1) + sq*ohm(3), kind=dp)
+                    rhs(2, i, j) = cmplx(-sq*state(1) + cq*state(2), kind=dp)
+                    rhs(3, i, j) = cmplx(cq*state(3) + sq*state(5), kind=dp)
+                    rhs(5, i, j) = cmplx(-sq*mom(1) + cq*mom(3), kind=dp)
                 end if
             end do
         end do

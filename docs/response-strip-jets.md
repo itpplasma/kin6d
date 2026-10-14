@@ -45,7 +45,9 @@ size at fixed bandwidth. Setup also includes the existing quadratic-cost angular
 collocation action. No mesh-independent iteration count is promised.
 
 Two-sided row/column equilibration addresses mixed SI units and small rate
-scales, without a diagonal shift. The caller supplies the same positive equation
+scales, without a diagonal shift. Krylov RHS/state normalization reduces
+finite-precision cancellation; the original RHS is reconstructed for the
+independent physical residual check. The caller supplies the same positive equation
 scales used to measure the full residual. Initialization must receive the same
 geometry and dimensions as the strip; rebuild after changing geometry,
 equilibrium, resistivity or gamma. Each solver instance owns its mutable scratch.

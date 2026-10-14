@@ -15,6 +15,22 @@ module kin6d_response_strip_preconditioner
     private
     integer, parameter :: bw = 41, ld = 3*bw + 1, colors = 9
     complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
+    interface
+        subroutine zgbtrf(m, n, kl, ku, ab, ldab, ipiv, info)
+            import :: dp
+            integer, intent(in) :: m, n, kl, ku, ldab
+            complex(dp), intent(inout) :: ab(ldab, *)
+            integer, intent(out) :: ipiv(*), info
+        end subroutine
+        subroutine zgbtrs(trans, n, kl, ku, nrhs, ab, ldab, ipiv, b, ldb, info)
+            import :: dp
+            character, intent(in) :: trans
+            integer, intent(in) :: n, kl, ku, nrhs, ldab, ldb, ipiv(*)
+            complex(dp), intent(in) :: ab(ldab, *)
+            complex(dp), intent(inout) :: b(ldb, *)
+            integer, intent(out) :: info
+        end subroutine
+    end interface
     type, public :: strip_preconditioner_t
         private
         integer :: nr = 0, nt = 0
@@ -260,6 +276,25 @@ contains
             + size(pc%scale), int64)*8 + int(size(pc%piv), int64)*4
     end function
 
+    subroutine scale_vector(pc, values)
+        !! Divide the canonical storage vector without materializing a reshaped
+        !! copy of the full equation-scale field in every Krylov callback.
+        type(strip_preconditioner_t), intent(in) :: pc
+        complex(dp), intent(inout) :: values(:)
+        integer :: a, i, j, k
+        !$omp parallel do collapse(2) if(pc%nr*pc%nt >= 4096) &
+        !$omp private(a,k) schedule(static)
+        do j = 1, pc%nt
+            do i = 1, pc%nr
+                do a = 1, 6
+                    k = 6*((j - 1)*pc%nr + i - 1) + a
+                    values(k) = values(k)/pc%scale(a, i, j)
+                end do
+            end do
+        end do
+        !$omp end parallel do
+    end subroutine
+
     subroutine strip_preconditioned_solve(pc, strip, work, rhs, x, tol, &
         maxit, restart, st, adjoint)
         type(strip_preconditioner_t), intent(inout) :: pc
@@ -274,6 +309,7 @@ contains
         complex(dp), allocatable :: b(:), v(:), ax(:), weighted(:)
         logical :: reverse
         integer :: nn, pre_info
+        real(dp) :: rhs_scale
         if (.not. pc%ready) return
         if (.not. ieee_is_finite(tol) .or. tol <= 0) return
         if (maxit < 1 .or. restart < 1) return
@@ -282,10 +318,16 @@ contains
         nn = 6*pc%nr*pc%nt
         allocate (b(nn), v(nn), ax(nn), weighted(nn))
         b = reshape(rhs, [nn]); v = reshape(x, [nn])
-        if (.not. reverse) b = b/reshape(pc%scale, [nn])
+        if (.not. reverse) call scale_vector(pc, b)
+        rhs_scale = norm2(abs(b))
+        if (rhs_scale == 0.0_dp) rhs_scale = 1.0_dp
+        b = b/rhs_scale; v = v/rhs_scale
         pre_info = 0
         call complex_fgmres_operator(matvec, precondition, b, v, tol, &
             maxit, restart, st%info, st%iterations, st%residual)
+        v = v*rhs_scale
+        b = reshape(rhs, [nn])
+        if (.not. reverse) call scale_vector(pc, b)
         call matvec(v, ax)
         st%residual = norm2(abs(ax - b))/max(norm2(abs(b)), tiny(1.0_dp))
         if (st%residual > tol .and. st%info == 0) st%info = 1
@@ -297,11 +339,12 @@ contains
             complex(dp), intent(in) :: u(:)
             complex(dp), intent(out) :: w(:)
             if (reverse) then
-                weighted = u/reshape(pc%scale, [nn])
+                weighted = u
+                call scale_vector(pc, weighted)
                 call toroidal_strip_vjp(strip, work, pc%gamma, weighted, w, .true.)
             else
                 call toroidal_strip_action(strip, work, pc%gamma, u, w, .true.)
-                w = w/reshape(pc%scale, [nn])
+                call scale_vector(pc, w)
             end if
         end subroutine
         subroutine precondition(u, w)
