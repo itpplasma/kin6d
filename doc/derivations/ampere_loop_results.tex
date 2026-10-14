@@ -1,0 +1,43 @@
+% Results of the Ampere-loop checks (branch fix/ampere-loop-diag, efc94ae),
+% built in a scratch worktree, preset cpu, OMP_NUM_THREADS=2:
+%   ctest -R ampere_loop -V
+The four branch CTests \code{grad\_shafranov\_p\{2,3\}\_ampere\_loop} and
+\code{grad\_shafranov\_p\{2,3\}\_weak\_ampere\_loop} pass. Observed successive
+rates $\log_2(e_{h}/e_{h/2})$:
+
+\begin{center}
+\begin{tabular}{p{0.46\linewidth}lll}
+\toprule
+Quantity & P2 & P3 & Expected\\\midrule
+trace loop, Solov'ev disk (rel.\ err.\ $3.95\times10^{-6}$ / $9.9\times10^{-8}$ finest) & 1.99, 1.97 & 2.90, 2.94 & $p$\\
+weak flux, Solov'ev disk (curved $\Omega_h$) & 3.99, 4.00 & 3.98, 4.00 & 4 (geometry)\\
+weak flux, rectangle with $\psi$-dependent source & 3.96, 3.90 & 5.75, 5.78 & $2p$\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+An independent Python check (scratch \code{area.py}) of the $R$-weighted area
+error of a circle bounded by equispaced-node degree-$p$ interpolants gives
+rates 3.99, 4.00, 4.00, 4.00 (P2) and 3.98, 4.00, 4.00, 3.96 (P3) for 12 to 192
+edges, confirming the order-four geometric limit for both degrees.
+
+The printed balance $I_{\mathrm w,h}-I_{\mathrm{src}}$ is not zero but
+decreases at about $h^{5}$: on the disk (P2) $-1.27\times10^{-6}$,
+$-4.19\times10^{-8}$, $-1.24\times10^{-9}$ (current $\approx-2.217$); on the
+rectangle (P2) $-3.9\times10^{-10}$, $-1.2\times10^{-11}$, $-3.7\times10^{-13}$
+and (P3) $5.3\times10^{-12}$, $9.5\times10^{-14}$, $1.7\times10^{-15}$. This is
+the consistency defect (a)--(c) of Remark~\ref{rem:amp-defects}: the solver
+integrates the $1/R$-weighted stiffness with a fixed rule, so the discrete
+equations \eqref{eq:amp-galerkin} hold for a slightly different form than the
+one the diagnostic evaluates. It is far below the $O(h^{2p})$ goal error for
+P2 and of the same size for P3 on the finest rectangle, so a balance column
+near $10^{-12}$ relative should not be read as a field-resolution bound.
+
+\gap{The TC24 K6 c0997 run (iter\_tc24 \code{PLAN.md}, ``Root 3'') reports an
+Ampere-loop current gate miss of $3.95\times10^{-5}$ with the loop ``itself
+$5\times10^{-4}$ off''. This section shows that the trace loop converges only at
+$O(h^p)$ and that an inward loop measures a different (enclosed) current, while
+the weak flux equals the volume source up to the indicators above. Which loop the
+K6 gate used, and whether its $5\times10^{-4}$ is trace error or the edge-layer
+current excluded by an inward loop, cannot be decided from the code alone; it
+needs the LOOPDIAG-2 run on the K6 mesh.}
