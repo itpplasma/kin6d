@@ -139,6 +139,9 @@ Local seed ladders (SuperLU, OMP 4, tol 1e-11 x g_seed per mesh, all
   points differ from the pinned ones at the discretisation level (A3 P3
   finest 4.190e-7 against 4.155e-7) with unchanged orders. Non-nested
   paths are bitwise unchanged (`seed 2`, `solovev 2` end points).
+  sCluster (MUMPS, job 3225970) reproduces all eight ladders to the printed
+  digits (|g|/g_seed 6e-14 to 8.1e-12; steps within 8 of SuperLU); A3 P3
+  with damping 1e-6 takes 14/6/7 steps to the same end points.
   An inner Newton for ntor > 0 converged only linearly in a probe; ntor > 0
   is rejected.
 - Fixed boundary: nu = 0 on boundary nodes for all modes.
@@ -236,13 +239,14 @@ solution psi_2D on the same mesh is the second oracle.
   (shaped) from the magnetic axis; grid-sequenced ladders; gates: return to
   1e-3 of the seed error and the k + 1 order. Each mesh stops at 1e-11 x the
   gradient of the seed X0 = id on that mesh (path independent; prolongation
-  raises the start to 22-210 x that). Measured (sCluster, 4 threads, MUMPS):
+  raises the start to 22-210 x that). Measured (sCluster, 4 threads, MUMPS,
+  job 3225970):
 
   | case | k | segments | errors | orders |
   |---|---|---|---|---|
   | A3 | 2 | 32/64/128 | 2.776e-4, 3.362e-5, 5.446e-6 | 3.05, 2.63 |
   | A3 | 3 | 24/48/96 | 9.7915e-5, 6.2296e-6, 4.1551e-7 | 3.97, 3.91 |
-  | shaped | 2 | 32/64/128 | 2.2e-3, 2.0e-4, 1.9e-5 | 3.45, 3.45 |
+  | shaped | 2 | 32/64/128 | 2.2243e-3, 2.0380e-4, 1.8702e-5 | 3.45, 3.45 |
 
   A3 P3 uses the transversal gauge weight 1e-2 (default 1e-4 for all other
   ladders) and initial damping 1e-6; Newton steps 89/84/330 (MUMPS), cap 600.
