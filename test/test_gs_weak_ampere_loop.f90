@@ -163,7 +163,7 @@ program test_gs_weak_ampere_loop
             state%psi(j) = rectangle_solovev(state%points(1, j), state%points(2, j))
         end do
         call solve_gs_cubic_profiles(state, mu0, law, status, &
-                                     relative_tolerance=1.0e-12_dp, &
+                                     relative_tolerance=1.0e-14_dp, &
                                      quadrature_tolerance=1.0e-12_dp, forcing=forcing)
         if (status /= 0) error stop 'manufactured Solovev reaction solve'
         call gs_weak_boundary_current(state, mu0, law, 16, current, status, &
