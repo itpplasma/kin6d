@@ -306,6 +306,29 @@ set_tests_properties(ideal_map_n0_seed_return_a3_p3
     PROPERTIES TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 set_tests_properties(ideal_map_n0_seed_return_shaped_p2
     PROPERTIES TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
+# Nested solve: omega eliminated exactly (no gauge form), Newton on W_red(nu)
+# with the Schur-complement step; LM damping 1e-4 on nu only (1e-6 reached a
+# second stationary point with higher W on the P2 ladder).
+add_test(NAME ideal_map_reduced_omega_derivatives
+    COMMAND test_ideal_map_axisymmetric reduced)
+# Field-line slides g b_pol (and, at P3, the r^2-weighted translation) are
+# near-nulls of W_red that vanish with h; the nested axis basis removes them.
+# omega = f(chi) is a near-null of W at fixed nu (probes 7, 8), removed by
+# the omega gauge moments.
+foreach(k 2 3)
+    add_test(NAME ideal_map_nested_slide_null_p${k}
+        COMMAND test_ideal_map_axisymmetric gauge ${k})
+endforeach()
+add_test(NAME ideal_map_n0_seed_nested_a3_p2
+    COMMAND test_ideal_map_axisymmetric seed 2 v 7 -1 1 1e-4 -1 1e-11 n)
+add_test(NAME ideal_map_n0_seed_nested_a3_p3
+    COMMAND test_ideal_map_axisymmetric seed 3 v 7 -1 1 1e-4 -1 1e-11 n)
+add_test(NAME ideal_map_n0_seed_nested_shaped_p3
+    COMMAND test_ideal_map_axisymmetric seedshaped 3 v 7 -1 1 1e-4 -1 1e-11 n)
+set_tests_properties(ideal_map_n0_seed_nested_a3_p2 ideal_map_n0_seed_nested_a3_p3
+    PROPERTIES TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
+set_tests_properties(ideal_map_n0_seed_nested_shaped_p3
+    PROPERTIES TIMEOUT 4800 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 add_test(NAME ideal_map_n0_normalised_residual_a3_p2
     COMMAND test_ideal_map_axisymmetric residual 2)
 set_tests_properties(ideal_map_n0_normalised_residual_a3_p2
