@@ -1509,6 +1509,7 @@ contains
         type(sparse_factor_stats_t) :: stats
         type(fortsparse_status_t) :: sstatus
         logical :: reused
+        logical, allocatable :: omega_active(:, :)
         real(dp), allocatable :: val(:)
         integer, allocatable :: rowptr(:), colidx(:), node(:)
         integer :: row, kk, nc, n, a, l, c
@@ -1539,7 +1540,10 @@ contains
             end do
             n = map%nred + nc
             deallocate (rowptr, colidx, val)
-            kk = count(map%omega_c /= 0)
+            ! Keep every nonzero moment, including tiny signed P_k weights.
+            ! This is sparse support, not an approximation/error tolerance.
+            omega_active = abs(map%omega_c) > 0.0_dp
+            kk = count(omega_active)
             allocate (rowptr(n + 1), colidx(size(matrix%val) + 2*kk + nc), &
                 val(size(matrix%val) + 2*kk + nc))
             c = 0; rowptr(1) = 1
@@ -1558,7 +1562,7 @@ contains
                 a = node(row)
                 if (a > 0) then
                     do l = 1, nc
-                        if (map%omega_c(l, a) == 0) cycle
+                        if (.not. omega_active(l, a)) cycle
                         c = c + 1; colidx(c) = map%nred + l; val(c) = map%omega_c(l, a)
                     end do
                 end if
@@ -1568,7 +1572,7 @@ contains
                 do row = 1, map%nred
                     a = node(row)
                     if (a == 0) cycle
-                    if (map%omega_c(l, a) == 0) cycle
+                    if (.not. omega_active(l, a)) cycle
                     c = c + 1; colidx(c) = row; val(c) = map%omega_c(l, a)
                 end do
                 c = c + 1; colidx(c) = map%nred + l; val(c) = 0
