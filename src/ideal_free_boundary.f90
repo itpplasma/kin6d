@@ -75,6 +75,8 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
     public :: ideal_fb_mode_stability, ideal_fb_newton_step
+    public :: ideal_fb_vertical_system, ideal_fb_vertical_gradient
+    public :: ideal_fb_vertical_expand
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -133,10 +135,9 @@ module kin6d_ideal_free_boundary
         ! that enters the merit. The surfaces cannot slide poloidally (a slide
         ! only reparametrises Gamma_p and creeps at lambda/(lambda + mu_t)).
         real(dp) :: tangential_gauge = 0
-        ! Explicit rigid vertical correction dZ = -F_Z/K_Z after every accepted
-        ! step (K_Z from ideal_fb_rigid_stiffness at the start of the solve).
-        ! The damped Newton matrix cannot resolve the near-null, unstable
-        ! vertical mode, which leaves a creep at the roundoff floor.
+        ! With tangential_gauge > 0, solve normal n = 0 shape and a global
+        ! vertical shift together, including its force equation and exact
+        ! Hessian couplings. Without the gauge retain the legacy correction.
         logical :: rigid_vertical = .false.
         ! Newton-homotopy offset: when allocated, the gradient returned is
         ! g(U) - shift (shift = (1 - t) g(U0) solves g = (1 - t) g(U0)).
@@ -1238,6 +1239,100 @@ contains
         end do
     end subroutine
 
+    subroutine vertical_coordinates(fb, index, coefficient, vertical)
+        ! U = T y + v z: one normal coordinate per n = 0 plasma node,
+        ! unchanged other coordinates, and a rigid plasma Z shift. The unused
+        ! second node slot is an identity row, with zero residual/step.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(out) :: index(:)
+        real(dp), intent(out) :: coefficient(:), vertical(:)
+        integer :: i, a, r, z
+        index = [(i, i=1, fb%n)]
+        coefficient = 1; vertical = 0
+        do a = 1, fb%plasma%nodes
+            r = pidx(fb, 1, 1, a); z = pidx(fb, 2, 1, a)
+            index(z) = r
+            coefficient(r) = fb%plasma%direction(1, a)
+            coefficient(z) = fb%plasma%direction(2, a)
+            vertical(z) = 1
+        end do
+    end subroutine
+
+    subroutine ideal_fb_vertical_gradient(fb, g, reduced)
+        ! [T^T g, v^T g], including the unprojected net vertical force.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: g(:)
+        real(dp), intent(out) :: reduced(:)
+        integer :: a, r, z
+        reduced(:fb%n) = g
+        reduced(fb%n + 1) = 0
+        do a = 1, fb%plasma%nodes
+            r = pidx(fb, 1, 1, a); z = pidx(fb, 2, 1, a)
+            reduced(r) = dot_product(fb%plasma%direction(:, a), [g(r), g(z)])
+            reduced(z) = 0
+            reduced(fb%n + 1) = reduced(fb%n + 1) + g(z)
+        end do
+    end subroutine
+
+    subroutine ideal_fb_vertical_expand(fb, reduced, du)
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: reduced(:)
+        real(dp), intent(out) :: du(:)
+        integer :: a, r, z
+        du = reduced(:fb%n)
+        do a = 1, fb%plasma%nodes
+            r = pidx(fb, 1, 1, a); z = pidx(fb, 2, 1, a)
+            du(r) = fb%plasma%direction(1, a)*reduced(r)
+            du(z) = fb%plasma%direction(2, a)*reduced(r) + reduced(fb%n + 1)
+        end do
+    end subroutine
+
+    subroutine ideal_fb_vertical_system(fb, rowptr, colidx, val, damped, &
+                                        rows, cols, matrix)
+        ! Exact congruence of the generated Lagrangian Hessian:
+        ! [T^T H T, T^T H v; v^T H T, v^T H v]. Damping acts only on shape,
+        ! never on the shift or its force row. No finite-difference stiffness.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: rowptr(:), colidx(:)
+        real(dp), intent(in) :: val(:), damped(:)
+        integer, allocatable, intent(out) :: rows(:), cols(:)
+        real(dp), allocatable, intent(out) :: matrix(:)
+        integer, allocatable :: index(:), ci(:), cj(:)
+        real(dp), allocatable :: coefficient(:), vertical(:), border(:), cv(:)
+        real(dp) :: zz
+        integer :: i, j, p, k, a
+        allocate (index(fb%n), coefficient(fb%n), vertical(fb%n), border(fb%n))
+        call vertical_coordinates(fb, index, coefficient, vertical)
+        allocate (ci(size(val) + 3*fb%n + 1), cj(size(val) + 3*fb%n + 1), &
+                  cv(size(val) + 3*fb%n + 1))
+        border = 0; zz = 0; k = 0
+        do i = 1, fb%n
+            do p = rowptr(i), rowptr(i + 1) - 1
+                j = colidx(p)
+                k = k + 1
+                ci(k) = index(i); cj(k) = index(j)
+                cv(k) = coefficient(i)*damped(p)*coefficient(j)
+                border(index(i)) = border(index(i)) &
+                                   + coefficient(i)*val(p)*vertical(j)
+                zz = zz + vertical(i)*val(p)*vertical(j)
+            end do
+        end do
+        do i = 1, fb%n
+            ci(k + 1:k + 2) = [i, fb%n + 1]
+            cj(k + 1:k + 2) = [fb%n + 1, i]
+            cv(k + 1:k + 2) = border(i)
+            k = k + 2
+        end do
+        do a = 1, fb%plasma%nodes
+            k = k + 1
+            i = pidx(fb, 2, 1, a)
+            ci(k) = i; cj(k) = i; cv(k) = 1
+        end do
+        k = k + 1
+        ci(k) = fb%n + 1; cj(k) = fb%n + 1; cv(k) = zz
+        call coo_to_csr(fb%n + 1, ci(:k), cj(:k), cv(:k), rows, cols, matrix)
+    end subroutine
+
     subroutine ideal_fb_solve(fb, tolerance, max_iterations, report, status, verbose, &
                               step_tolerance, residual_tolerance)
         ! Newton on the KKT system of L (symmetric, indefinite: negative
@@ -1275,15 +1370,19 @@ contains
         real(dp) :: merit, tmerit, alpha, cap_x, cap_w, disp, rot, minjac, t0
         real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5)
         integer :: it, i, p, st, tries, back, nback
-        integer, allocatable :: tpos(:, :)
-        real(dp), allocatable :: trial_du(:)
+        integer, allocatable :: tpos(:, :), vrows(:), vcols(:)
+        real(dp), allocatable :: trial_du(:), vmat(:), vg(:), vdu(:)
         type(sparse_solver_t) :: csolver
         logical :: cready
         logical :: talk, accepted, factored, kept
         real(dp) :: kz, fz, fzr, ftry
         real(dp), parameter :: vertical_tol = 1.0e-6_dp
-        logical :: vertical_open
+        logical :: vertical_open, joint_vertical
+        real(dp) :: vertical_step, force_weight
         kz = 0
+        joint_vertical = fb%rigid_vertical .and. fb%tangential_gauge > 0
+        vertical_step = huge(1.0_dp)
+        allocate (vg(fb%n + 1), vdu(fb%n + 1))
         talk = .false.
         if (present(verbose)) talk = verbose
         step_tol = 1.0e-5_dp
@@ -1293,6 +1392,7 @@ contains
         history = huge(1.0_dp)
         cap_x = 0.02_dp*maxval(maxval(fb%reference, dim=2) - minval(fb%reference, dim=2))
         cap_w = 0.5_dp
+        force_weight = cap_x**2/fb%energy_scale
         mu = 1.0e-8_dp
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
         factored = .false.; cready = .false.
@@ -1301,7 +1401,7 @@ contains
             status = IDEAL_FB_FOLDED; return
         end if
         status = IDEAL_FB_NOT_CONVERGED
-        if (fb%rigid_vertical) then
+        if (fb%rigid_vertical .and. .not. joint_vertical) then
             call ideal_fb_rigid_stiffness(fb, 2, 1.0e-3_dp, fz, kz, st)
             if (st /= IDEAL_FB_OK .or. .not. kz < 0) kz = 0
             if (talk) print '(a,es12.4)', '   rigid vertical stiffness K_Z ', kz
@@ -1336,8 +1436,9 @@ contains
                 call tangential_positions(fb, rowptr, colidx, tpos)
             call merit_weights(fb, diag, wts)
             if (it == 1) fzr = rigid_force(grad)
-            if (fb%tangential_gauge > 0) call project_gauge(fb, grad)
-            merit = sum(wts*grad**2)
+            if (fb%tangential_gauge > 0 .and. .not. joint_vertical) &
+                call project_gauge(fb, grad)
+            merit = solve_merit(grad)
             if (it == 1) report%merit0 = merit
             report%merit = merit
             report%residual = sqrt(merit/fb%energy_scale)
@@ -1356,13 +1457,15 @@ contains
             vertical_open = fb%rigid_vertical .and. kz < 0 .and. cready .and. &
                 fb%tangential_gauge > 0
             if (vertical_open) vertical_open = abs(fzr/kz) > vertical_tol
+            if (joint_vertical) vertical_open = abs(vertical_step) > vertical_tol
             if ((.not. sqrt(merit) > tolerance*sqrt(report%merit0) .or. &
                 .not. report%residual > res_tol) .and. .not. vertical_open) then
                 status = IDEAL_FB_OK; exit
             end if
             history = eoshift(history, 1, merit)
             if (history(0) < huge(1.0_dp)) then
-                if (history(5) > 0.5_dp*history(0) .and. report%step < step_tol) then
+                if (history(5) > 0.5_dp*history(0) .and. report%step < step_tol &
+                    .and. .not. vertical_open) then
                     report%floor = .true.; status = IDEAL_FB_OK; exit
                 end if
             end if
@@ -1375,12 +1478,19 @@ contains
                 end do
                 if (fb%tangential_damping > 0 .or. fb%tangential_gauge > 0) &
                     call add_tangential(fb, diag, tpos, dval)
+                if (joint_vertical) call ideal_fb_vertical_system(fb, rowptr, &
+                                                  colidx, val, dval, vrows, vcols, vmat)
                 t0 = wall()
                 ! One handle for the whole solve: the KKT pattern is fixed, so
                 ! MUMPS keeps its analysis and only refactorises.
                 if (.not. factored) call configure(solver)
-                call sparse_refactor(solver, fb%n, fb%n, size(dval), rowptr, colidx, &
-                    dval, sst, kept)
+                if (joint_vertical) then
+                    call sparse_refactor(solver, fb%n + 1, fb%n + 1, size(vmat), &
+                                         vrows, vcols, vmat, sst, kept)
+                else
+                    call sparse_refactor(solver, fb%n, fb%n, size(dval), rowptr, &
+                                         colidx, dval, sst, kept)
+                end if
                 report%factorisations = report%factorisations + 1
                 if (kept) report%reused = report%reused + 1
                 if (.not. status_ok(sst)) then
@@ -1389,7 +1499,13 @@ contains
                 end if
                 factored = .true.
                 rhs = -grad
-                call sparse_solve(solver, rhs, du, sst)
+                if (joint_vertical) then
+                    call ideal_fb_vertical_gradient(fb, grad, vg)
+                    call sparse_solve(solver, -vg, vdu, sst)
+                    call ideal_fb_vertical_expand(fb, vdu, du)
+                else
+                    call sparse_solve(solver, rhs, du, sst)
+                end if
                 report%factor_s = report%factor_s + wall() - t0
                 if (.not. status_ok(sst)) then
                     status = IDEAL_FB_SOLVE_FAILED; return
@@ -1423,11 +1539,12 @@ contains
                     if (cready .and. st == IDEAL_FB_OK) call project_multipliers(fb, &
                         csolver, rhs)
                     if (st == IDEAL_FB_OK) ftry = rigid_force(rhs)
-                    if (fb%tangential_gauge > 0 .and. st == IDEAL_FB_OK) &
+                    if (fb%tangential_gauge > 0 .and. st == IDEAL_FB_OK &
+                        .and. .not. joint_vertical) &
                         call project_gauge(fb, rhs)
                     report%line_s = report%line_s + wall() - t0
                     if (st == IDEAL_FB_OK) then
-                        tmerit = sum(wts*rhs**2)
+                        tmerit = solve_merit(rhs)
                         if (tmerit < (1 - 1.0e-4_dp*alpha)*merit) then
                             accepted = .true.; exit
                         end if
@@ -1439,10 +1556,17 @@ contains
                 mu = 10*mu
             end do
             if (.not. accepted) then
-                if (report%residual < 1.0e-6_dp) then
+                if (report%residual < 1.0e-6_dp .and. .not. vertical_open) then
                     report%floor = .true.; status = IDEAL_FB_OK
                 end if
                 exit
+            end if
+            if (joint_vertical) then
+                vertical_step = alpha*vdu(fb%n + 1)
+                if (nback == 14 .and. back <= 6) &
+                    vertical_step = vdu(fb%n + 1)*0.5_dp**(back - 1)
+                if (talk) print '(a,2es12.4)', '   joint dZ, F_Z ', &
+                    vertical_step, ftry
             end if
             grad = rhs; fzr = ftry
             if (kz < 0 .and. cready) call rigid_vertical_correct()
@@ -1464,6 +1588,15 @@ contains
             integer(i64) :: count, rate
             call system_clock(count, rate)
             wall = real(count, dp)/rate
+        end function
+
+        real(dp) function solve_merit(g) result(value)
+            real(dp), intent(in) :: g(:)
+            real(dp) :: projected(size(g))
+            projected = g
+            if (joint_vertical) call project_gauge(fb, projected)
+            value = sum(wts*projected**2)
+            if (joint_vertical) value = value + force_weight*rigid_force(g)**2
         end function
 
         real(dp) function rigid_force(g)
@@ -1680,7 +1813,9 @@ contains
             do m = 1, fb%nmode
                 k = m + fb%nmode*(a - 1)
                 sa = fb%tangential_damping*0.5_dp*(diag(pidx(fb, 1, m, a)) &
-                    + diag(pidx(fb, 2, m, a)))
+                                                   + diag(pidx(fb, 2, m, a)))
+                if (m == 1 .and. fb%rigid_vertical .and. &
+                    fb%tangential_gauge > 0) cycle
                 if (m == 1) sa = sa + fb%tangential_gauge*0.5_dp &
                     *(diag(pidx(fb, 1, m, a)) + diag(pidx(fb, 2, m, a)))
                 val(tpos(1, k)) = val(tpos(1, k)) + sa*t(1)*t(1)
@@ -1843,8 +1978,8 @@ contains
         type(ideal_fb_t), intent(inout) :: fb
         integer, intent(out) :: status
         logical, intent(in), optional :: nonaxisymmetric_only
-        integer, allocatable :: rowptr(:), colidx(:)
-        real(dp), allocatable :: val(:), grad(:), du(:)
+        integer, allocatable :: rowptr(:), colidx(:), rows(:), cols(:)
+        real(dp), allocatable :: val(:), grad(:), du(:), matrix(:), vg(:), vdu(:)
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
         integer :: st
@@ -1853,10 +1988,22 @@ contains
         call ideal_fb_gradient(fb, grad, st)
         call ideal_fb_hessian(fb, rowptr, colidx, val)
         call configure(solver)
-        call sparse_factor(solver, fb%n, fb%n, size(val), rowptr, colidx, val, sst)
-        if (.not. status_ok(sst)) return
-        grad = -grad
-        call sparse_solve(solver, grad, du, sst)
+        if (fb%rigid_vertical .and. fb%tangential_gauge > 0) then
+            call ideal_fb_vertical_system(fb, rowptr, colidx, val, val, &
+                                          rows, cols, matrix)
+            allocate (vg(fb%n + 1), vdu(fb%n + 1))
+            call ideal_fb_vertical_gradient(fb, grad, vg)
+            call sparse_factor(solver, fb%n + 1, fb%n + 1, size(matrix), &
+                               rows, cols, matrix, sst)
+            if (.not. status_ok(sst)) return
+            call sparse_solve(solver, -vg, vdu, sst)
+            call ideal_fb_vertical_expand(fb, vdu, du)
+        else
+            call sparse_factor(solver, fb%n, fb%n, size(val), rowptr, colidx, val, sst)
+            if (.not. status_ok(sst)) return
+            grad = -grad
+            call sparse_solve(solver, grad, du, sst)
+        end if
         call sparse_destroy(solver)
         if (.not. status_ok(sst)) return
         if (present(nonaxisymmetric_only)) then
