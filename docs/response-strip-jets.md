@@ -47,12 +47,15 @@ collocation action. No mesh-independent iteration count is promised.
 Two-sided row/column equilibration addresses mixed SI units and small rate
 scales, without a diagonal shift. Krylov RHS/state normalization reduces
 finite-precision cancellation; the original RHS is reconstructed for the
-independent physical residual check. The caller supplies the same positive equation
-scales used to measure the full residual. Initialization must receive the same
+independent physical residual check, including for small-amplitude drives.
+The caller supplies the same positive equation scales used to measure the full
+residual. Initialization must receive the same
 geometry and dimensions as the strip; rebuild after changing geometry,
 equilibrium, resistivity or gamma. Each solver instance owns its mutable scratch.
 FortNum's shared read-only FFT plan and per-transform reusable workspace keep
-mixed-radix/Bluestein scratch outside the hot call; radial factors run in parallel.
+mixed-radix/Bluestein scratch outside the hot call. Independent mode
+factorizations and radial factor solves run in parallel, with no shared LAPACK
+status or temporary band matrix in the factorization loop.
 The required upstream FFT change is retained on local branch
 `work/sol-rb2-jets-fft`, pending controller integration. Development CMake uses its
 source override; no dependency hash pin is introduced by this task.
@@ -78,7 +81,14 @@ its failed exploration remains in external evidence, not a qualified limit.
 
 Configure `KIN6D_STRIP_EQDSK_TEST` to register the imported TC24 jet checks. They
 compare B/map/pressure jets with independent spatial differences and retain the
-actual pressure. This verifies sampling, not a coupled response solve.
+actual pressure. Both columns of the implicit map Hessian and pressure Hessian
+are checked. An additional imported-background inverse oracle sets `A=xi=0`,
+`Phi=exp(i*n*phi)` and independently supplies the toroidal `-grad Phi` drive.
+On a 7x25 annulus spanning psin=0.94..0.96, it covers eta=1e-7, 1e-9 and zero
+Ohm m at gamma=`2000+500i`, then gamma=`600+150i` and `200+50i` at eta=0,
+with rho=1e-7 kg/m^3. A bounded restart of 600 is needed; restart 240 failed
+at the first imported rate. This verifies sampling and an isolated inverse,
+not a coupled response solve or the pre-declared TC24 sheet-limit ladders.
 `benchmarks/response-strip/run.sh` records matched-input one/two/four-thread
 trials, setup/solve/warm-apply time, iterations, state error, attributed array
 storage and process peak RSS. Outputs must be written outside source history.
