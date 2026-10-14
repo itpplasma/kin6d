@@ -283,6 +283,54 @@ gate.
   GPEC singflx on rung c; TC24 full pressure q = 3 and q = 10/3 converged in
   strip resolution and X_s without any fit; two-fluid switch s_2f against
   SLAYER drift-MHD (Park 2022) in the cylinder.
+
+  Increment 1 (2026-10-14, `test_mhd_closure strip`, ctest
+  `response_strip_torus_coupling`, disabled until gate (a) is decided):
+  the R-B1 strip coupled to the FEEC torus by trace continuity on the two
+  edge rings. Case: tanh step (q0 1.2, r1 0.5, width 0.02, zero beta),
+  n = 1, 2/1 strip with edges at psin_s -+ xd, 3/1 and 4/1 L4 sheets.
+  Rules declared before the first run: (a) eta = 0, gamma = 1e-6: strip net
+  edge current / L4 sheet current, |ratio - 1| <= 1e-3 at R0/a 40, xd 0.02;
+  (b) torus growth rate / R-B1 sharp-step cylinder rate at S = 1e6, 1e7,
+  1e8 within 2 %. (b) was re-declared on 2026-10-14 (controller): the
+  sharp-step cylinder (r_s Delta' = 5.000) is a different problem from the
+  tanh profile solved (ODE r_s Delta' = 5.247, +3.9 % in gamma), so it does
+  not test the coupling. (b) now compares with the cylinder rate of the same
+  tanh profile (same strip coupling, cylinder tearing-ODE outer map), limit
+  unchanged at 2 %, and requires the gap to shrink with nrad. Checks kept:
+  coupled closure = Schur form (I - S M)^-1 S P0 (5e-4); the same coupling
+  with the analytic sharp-step map returns the R-B1 rate (<= 1e-3, measured
+  2e-4). The same-profile map first integrated the ODE through r_s for the
+  outer edge; it now continues current-free across the strip, as the FEEC
+  interior map does (same/step 3.9 %, matching (5.247/5)^(4/5)).
+
+  nrad ladder, R0/a 40, xd 0.02, GMRES 3e-8, MUMPS (sCluster job 3225264,
+  kin6d 8021456; times 11-29 s on 4 threads):
+
+  | nrad | rings | (a) rel | (b) S 1e6 | S 1e7 | S 1e8 |
+  |---:|---:|---:|---:|---:|---:|
+  | 32 | 42 | 1.02e-3 | 9.46e-2 | 9.59e-2 | 9.63e-2 |
+  | 48 | 56 | 1.02e-3 | 2.86e-2 | 2.90e-2 | 2.91e-2 |
+  | 64 | 72 | 1.02e-3 | 1.60e-2 | 1.62e-2 | 1.63e-2 |
+  | 80 | 86 | 1.01e-3 | 9.60e-3 | 9.72e-3 | 9.75e-3 |
+  | 96 | 103 | 1.01e-3 | 6.36e-3 | 6.45e-3 | 6.47e-3 |
+  | 112 | 120 | 1.01e-3 | 4.47e-3 | 4.53e-3 | 4.54e-3 |
+  | 128 | 133 | 1.01e-3 | 3.32e-3 | 3.37e-3 | 3.38e-3 |
+  | 160 | 163 | 1.01e-3 | 2.06e-3 | 2.09e-3 | 2.09e-3 |
+
+  (b) converges to the same-profile cylinder at about second order in
+  1/nrad (64 -> 128: 4.8x; 80 -> 160: 4.6x) and passes from nrad 64, which
+  is the gated resolution. R0/a 20 / 80 at nrad 96: (b) 9.0e-3 / 5.7e-3;
+  xd 0.01 / 0.04 at nrad 96: (b) 6.6e-3 / 6.2e-3.
+  (a) does not close under refinement: 1.02e-3 -> 1.01e-3 over nrad 32-160,
+  independent of the GMRES tolerance (1.04e-3 at 1e-7, 1.02e-3 at 3e-8). It
+  scales with the strip width: 1.55e-4 (xd 0.01, nrad 64-128), 1.01e-3
+  (0.02), 4.40e-3 (0.04), i.e. about xd^2-xd^2.7, with a weak R0/a trend
+  (6.2e-4, 1.01e-3, 1.11e-3 at R0/a 20, 40, 80). It is a finite-strip
+  truncation of the comparison with a sheet on the rational (presumably the
+  linear-F local equations of the strip; not isolated), not a mesh or
+  coupling error. Gate (a) is kept at 1e-3 for xd 0.02 and fails by 1 %;
+  the decision (declared xd or strip local equations) is open.
 - R-K: kinetic. K1 outer delta W_k (perturbative, then self-consistent)
   after DK4 passes, against MARS-K perturbative on rung c; K2 kinetic strip
   against KiLCA and MEPHIT hybrid kinetic-MHD (Lainer et al. 2026) in the

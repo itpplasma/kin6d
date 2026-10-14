@@ -520,7 +520,7 @@ contains
         character(len=128) :: env
         real(dp) :: r0l, xdl, ierr, cerr
         integer :: nr, i
-        integer, parameter :: nrad_gate = 96
+        integer, parameter :: nrad_gate = 64
         real(dp), parameter :: etas(3) = [1.0e-6_dp, 1.0e-7_dp, 1.0e-8_dp]
         complex(dp) :: gt(3), gc(3), gs(3)
         call get_environment_variable('KIN6D_STRIP_LADDER', env)
