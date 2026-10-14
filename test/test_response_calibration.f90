@@ -2,14 +2,27 @@ program test_response_calibration
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use kin6d_response_calibration, only: spot_weights, spot_jump, &
-        spot_jump_vjp, equivalent_sheet_field
+        spot_jump_vjp, equivalent_sheet_field, spot_distance
     use kin6d_response_calibration_leaves, only: sheet_field, &
-        sheet_field_jvp, sheet_field_vjp
+        sheet_field_jvp, sheet_field_vjp, spot_distance_jvp, spot_distance_vjp
     implicit none
     real(dp) :: x(5, 2), w(5, 2), v(7), d(7), vp(7), vm(7), adj(7)
     real(dp) :: yp(2), ym(2), dy(2), seed(2), h, t
+    real(dp) :: xs, xp, xm, dxs, location_adj(3)
     complex(dp) :: phi(5, 2), direction(5, 2), pa(5, 2), j, b
     integer :: i, side, st
+    call spot_distance(-2, -0.5_dp, 0.1_dp, xs, st)
+    call check(st == 0 .and. abs(xs - 0.1_dp) < 1.0e-15_dp, 'spot distance')
+    h = 1.0e-5_dp
+    call spot_distance(2, 0.5_dp + h*0.13_dp, 0.1_dp - h*0.02_dp, xp, st)
+    call spot_distance(2, 0.5_dp - h*0.13_dp, 0.1_dp + h*0.02_dp, xm, st)
+    call spot_distance_jvp(2.0_dp, 0.5_dp, 0.1_dp, 0.0_dp, 0.13_dp, &
+        -0.02_dp, dxs)
+    call spot_distance_vjp(2.0_dp, 0.5_dp, 0.1_dp, 0.3_dp, &
+        location_adj(1), location_adj(2), location_adj(3))
+    call check(abs(dxs - (xp - xm)/(2*h)) < 1.0e-10_dp, 'spot distance JVP')
+    call check(abs(0.3_dp*dxs - 0.13_dp*location_adj(2) + &
+        0.02_dp*location_adj(3)) < 1.0e-14_dp, 'spot distance VJP')
     do side = 1, 2
         do i = 1, 5
             x(i, side) = 0.5_dp + merge(-0.1_dp, 0.1_dp, side == 1) &
