@@ -624,7 +624,7 @@ contains
         !$omp end do nowait
         !$omp critical(gs_fb_axis_scan)
         if (local_cell /= 0) then
-            if (local_best > best .or. (local_best == best .and. local_cell < cell_best)) &
+            if (local_best > best .or. (local_best >= best .and. local_cell < cell_best)) &
                 then
                 best = local_best
                 cell_best = local_cell
@@ -682,7 +682,7 @@ contains
             !$omp critical(gs_fb_saddle_scan)
             if (local_cell /= 0) then
                 if (local_dist < best_dist .or. &
-                    (local_dist == best_dist .and. local_cell < element)) then
+                    (local_dist <= best_dist .and. local_cell < element)) then
                     best_dist = local_dist
                     any_found = .true.
                     element = local_cell

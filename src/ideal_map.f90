@@ -1542,7 +1542,7 @@ contains
             deallocate (rowptr, colidx, val)
             ! Keep every nonzero moment, including tiny signed P_k weights.
             ! This is sparse support, not an approximation/error tolerance.
-            omega_active = abs(map%omega_c) > 0.0_dp
+            omega_active = .not. (abs(map%omega_c) <= 0.0_dp)
             kk = count(omega_active)
             allocate (rowptr(n + 1), colidx(size(matrix%val) + 2*kk + nc), &
                 val(size(matrix%val) + 2*kk + nc))

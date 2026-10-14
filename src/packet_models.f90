@@ -37,6 +37,7 @@ module kin6d_packet_models
                                        SECTOR_PRODUCT, SECTOR_SINGLET, SECTOR_TRIPLET
     use kin6d_radial_dvr, only: radial_band_hamiltonian, radial_band_matvec
     use fortnum_ode_cash_karp, only: cash_karp_step
+    use kin6d_real_identity, only: same_real_value
     implicit none
     private
     public :: packet_spec_t, packet_sample_t, packet_trace_t
@@ -531,7 +532,8 @@ contains
                 y = [enc%cfg%b, -enc%cfg%z0, 0.0_dp, hb*kz, sig**2, 0.0_dp, -kz*enc%cfg%z0]
             else
                 message = 'M2 needs equal masses and no harmonic term'
-                if (enc%cfg%m1 /= enc%cfg%m2 .or. spec%kappa /= 0) return
+                if (.not. same_real_value(enc%cfg%m1, enc%cfg%m2) .or. &
+                    .not. (abs(spec%kappa) <= 0.0_dp)) return
                 y = [enc%cfg%b/2, -enc%cfg%z0/2, -enc%cfg%b/2, enc%cfg%z0/2, 0.0_dp, hb*kz, &
                      0.0_dp, -hb*kz, sig**2/2, sig**2/2, 0.0_dp, 0.0_dp, -kz*enc%cfg%z0, 0.0_dp]
             end if
@@ -765,7 +767,7 @@ contains
         type(packet_trace_t), intent(out) :: tr
         complex(dp), allocatable :: am(:, :, :), ad(:, :, :), ar(:, :, :), r(:, :)
         real(dp), allocatable :: hb(:, :, :), x(:, :), yv(:, :)
-        real(dp) :: ns, hbar, num, eh, ov2
+        real(dp) :: ns, hbar, num, eh, ov2, previous_total_residual
         complex(dp) :: ov
         integer :: ns_t, it, l, nm, n, sector
         integer(i64) :: c0, c1, rate
@@ -784,6 +786,7 @@ contains
         ns = encounter_norm(enc, ar, sector)
         tr%status = 'ok'
         call system_clock(c0, rate)
+        previous_total_residual = 0.0_dp
         do it = 1, ns_t
             tr%t(it) = samples(it)%t
             call packet_project(enc, samples(it)%g, samples(it)%rate, am, ad)
@@ -822,9 +825,10 @@ contains
                                (tr%residual(it) + tr%residual(it - 1))/(2*hbar)
                 tr%total_bound(it) = tr%total_bound(it - 1) + (tr%t(it) - tr%t(it - 1))* &
                                      (hypot(tr%residual(it), samples(it)%cm_residual) + &
-                                      hypot(tr%residual(it - 1), samples(it - 1)%cm_residual)) &
+                                      previous_total_residual) &
                                      /(2*hbar)
             end if
+            previous_total_residual = hypot(tr%residual(it), samples(it)%cm_residual)
             tr%max_condition = max(tr%max_condition, samples(it)%condition)
             tr%max_overlap_condition = max(tr%max_overlap_condition, &
                                            samples(it)%overlap_condition)

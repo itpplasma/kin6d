@@ -30,6 +30,7 @@ module kin6d_vacuum_surfaces
     !!    f = (B.n) R |x'| (T m^2 per rad^2, = J B.grad psi) in place of B.n and
     !!    no Jacobian factor d theta_s/d theta_g.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use kin6d_real_identity, only: same_real_value
     implicit none
     private
 
@@ -139,7 +140,7 @@ contains
         do it = 1, 50
             call psi_eval(g, r, z, psi, pr, pz, prr, prz, pzz)
             det = prr*pzz - prz*prz
-            if (det == 0) return
+            if (abs(det) <= 0.0_dp) return
             dr = -(pzz*pr - prz*pz)/det
             dz = -(-prz*pr + prr*pz)/det
             r = r + dr; z = z + dz
@@ -148,7 +149,7 @@ contains
         if (it > 50) return
         call psi_eval(g, r, z, psi, pr, pz)
         g%r_axis = r; g%z_axis = z; g%psi_axis = psi
-        if (psi_edge == psi) return
+        if (same_real_value(psi_edge, psi)) return
         g%sgn_dpsi = sign(1.0_dp, psi_edge - psi)
         g%s_pol = sign(1.0_dp, ip)*g%sgn_dpsi
         status = 0
@@ -352,7 +353,7 @@ contains
                 lo = rho
             end if
             rp = pr*er(1) + pz*er(2)
-            if (rp /= 0) then
+            if (.not. (abs(rp) <= 0.0_dp)) then
                 rho = rho - f/rp
             else
                 rho = 0.5_dp*(lo + hi)

@@ -334,7 +334,7 @@ contains
         if (radius < 0.0_dp) return
         do i = 1, n
             if (.not. finite_interval(x_points(i))) return
-            if (x_points(i)%lo /= x_points(i)%hi) return
+            if (x_points(i)%lo < x_points(i)%hi) return
         end do
         do i = 1, n - 1
             if (x_points(i + 1)%lo <= x_points(i)%lo) return

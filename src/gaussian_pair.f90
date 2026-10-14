@@ -128,7 +128,7 @@ contains
         tcoef = tcoef + (kap/2)*[cmplx(sum(gl%q**2), 0, dp), cmplx(2*gl%q(1), 0, dp), &
                                  cmplx(2*gl%q(2), 0, dp), (1.0_dp, 0.0_dp)]
         hel = s*matmul(sig, tcoef)
-        if (g == 0) return
+        if (abs(g) <= 0.0_dp) return
         ! Coulomb moments W0 = int e^{..}/r, W_a = int r_a e^{..}/r, W_r2.
         call boys_scaled(rule, t, tau, f)
         fac = (2*pi/a)*exp(tau + cc)
