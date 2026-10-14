@@ -254,6 +254,10 @@ if(NOT TARGET fortsparse)
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
+if(KIN6D_ENABLE_OPENMP)
+    # Block-RHS callers enter sparse solves concurrently even without MUMPS.
+    target_link_libraries(fortsparse PRIVATE OpenMP::OpenMP_Fortran)
+endif()
 add_library(kin6d_sparse_direct
     ${fortfem_SOURCE_DIR}/src/topology/tree_cotree_gauge.f90
     ${fortfem_SOURCE_DIR}/src/solvers/fortfem_sparse_direct.f90)
