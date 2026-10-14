@@ -994,6 +994,10 @@ add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)
 add_executable(test_gs_axis_refinement test/test_gs_axis_refinement.f90)
 target_link_libraries(test_gs_axis_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_axis_refinement COMMAND test_gs_axis_refinement)
+add_executable(test_gs_profile_law_readback test/test_gs_profile_law_readback.f90)
+target_link_libraries(test_gs_profile_law_readback PRIVATE kin6d)
+add_test(NAME grad_shafranov_profile_law_readback
+    COMMAND test_gs_profile_law_readback)
 set_tests_properties(grad_shafranov_curved_convergence
     grad_shafranov_p3_curved_convergence grad_shafranov_axis_refinement
     grad_shafranov_shaped_solver_work PROPERTIES
