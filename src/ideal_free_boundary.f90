@@ -1381,7 +1381,7 @@ contains
         real(dp) :: vertical_step, force_weight
         kz = 0
         joint_vertical = fb%rigid_vertical .and. fb%tangential_gauge > 0
-        vertical_step = huge(1.0_dp)
+        vertical_step = 0
         allocate (vg(fb%n + 1), vdu(fb%n + 1))
         talk = .false.
         if (present(verbose)) talk = verbose
@@ -1401,9 +1401,10 @@ contains
             status = IDEAL_FB_FOLDED; return
         end if
         status = IDEAL_FB_NOT_CONVERGED
-        if (fb%rigid_vertical .and. .not. joint_vertical) then
+        if (fb%rigid_vertical) then
             call ideal_fb_rigid_stiffness(fb, 2, 1.0e-3_dp, fz, kz, st)
-            if (st /= IDEAL_FB_OK .or. .not. kz < 0) kz = 0
+            if (st /= IDEAL_FB_OK) kz = 0
+            if (.not. joint_vertical .and. .not. kz < 0) kz = 0
             if (talk) print '(a,es12.4)', '   rigid vertical stiffness K_Z ', kz
         end if
         do it = 1, max_iterations
@@ -1457,7 +1458,11 @@ contains
             vertical_open = fb%rigid_vertical .and. kz < 0 .and. cready .and. &
                 fb%tangential_gauge > 0
             if (vertical_open) vertical_open = abs(fzr/kz) > vertical_tol
-            if (joint_vertical) vertical_open = abs(vertical_step) > vertical_tol
+            if (joint_vertical) then
+                vertical_open = abs(vertical_step) > vertical_tol
+                if (abs(kz) > tiny(1.0_dp)) vertical_open = vertical_open &
+                    .or. abs(rigid_force(grad)/kz) > vertical_tol
+            end if
             if ((.not. sqrt(merit) > tolerance*sqrt(report%merit0) .or. &
                 .not. report%residual > res_tol) .and. .not. vertical_open) then
                 status = IDEAL_FB_OK; exit
@@ -1562,14 +1567,15 @@ contains
                 exit
             end if
             if (joint_vertical) then
-                vertical_step = alpha*vdu(fb%n + 1)
-                if (nback == 14 .and. back <= 6) &
-                    vertical_step = vdu(fb%n + 1)*0.5_dp**(back - 1)
-                if (talk) print '(a,2es12.4)', '   joint dZ, F_Z ', &
+                ! Backtracking must not turn an unresolved shift into a
+                ! convergence certificate just by making alpha small.
+                vertical_step = vdu(fb%n + 1)
+                if (talk) print '(a,2es12.4)', '   joint Newton dZ, F_Z ', &
                     vertical_step, ftry
             end if
             grad = rhs; fzr = ftry
-            if (kz < 0 .and. cready) call rigid_vertical_correct()
+            if (kz < 0 .and. cready .and. .not. joint_vertical) &
+                call rigid_vertical_correct()
             report%iterations = it
             report%step = alpha*disp
             report%min_jacobian = minjac
