@@ -388,10 +388,41 @@ differenced polynomials, batch linearity, and pressure/force JVP/VJP products.
 These are point-operator checks. No continuous or discrete error certificate
 is available, and no TC24 convergence or Glasser-layer result is claimed.
 
-The full-pressure R-B2 solve still needs a discretisation of these coupled
-equations through the strip, all coupled poloidal harmonics, electric-potential
-and mechanical interface conditions, and the two-ring magnetic Schur/mortar
-coupling. `gs_response_3d` currently has only sheet and asymptotic closures.
+`kin6d_response_toroidal_strip` adds a candidate mapped-annulus discretisation
+at fixed nonzero toroidal n, in the outer operator's `A_phi = 0` gauge. Its six
+unknowns are `(A_R, A_Z, xi_R, xi_phi, xi_Z, Phi)`. A complete odd-size poloidal
+Fourier grid retains both signs of every represented harmonic; equilibrium and
+metric coefficients couple these harmonics. Five-node local polynomial radial
+derivatives come from FortNum, and the Fourier transform comes from FortFEM.
+The supplied inverse map transforms derivatives to physical R/Z coordinates;
+cylindrical basis derivatives are included before the Cartesian point kernel.
+The caller must supply the equilibrium pressure gradient and Cartesian Hessian.
+There are no rational denominators, fitted exponents or single-helicity kernels.
+
+The isolated strip prescribes tangential A and normal displacement on both
+rings, retaining the other four equations there. FortNum GMRES solves the
+resulting linear equation with explicit caller-supplied equation scales and
+rechecks its residual. The perturbation JVP is the same linear action; the
+storage VJP composes the generated point VJPs with transposed spatial actions.
+Its pairing is the stored-grid Hermitian pairing. A physical weighted adjoint
+needs the volume-quadrature mass factors. RHS tangents solve the equation again.
+Equilibrium/mesh/parameter derivatives and a validated adjoint inverse are
+unavailable. No continuous or discrete error certificate is supplied. Nodal
+`div B` and `div J` defects are reported in SI units because this collocation
+action does not have FEEC's exact commuting-complex identities.
+
+Registered CTests check analytic forcing on a pressure-balanced curved toroidal
+equilibrium, all represented poloidal modes at n = +/-3, the forced state and
+drive tangent, JVP/VJP pairings with and without trace rows, zero-divergence
+analytic identities, and radial refinement against an independently
+differentiated degree-six electrostatic field. These establish an isolated
+candidate strip, not a TC24 layer-current or Glasser result. Representative
+small-eta/gamma conditioning, a scalable preconditioner, TC24 equilibrium-jet
+sampling and coupled-interface refinement are still required.
+
+The full-pressure R-B2 application still needs electric-potential and mechanical
+interface conditions and the two-ring magnetic Schur/mortar coupling.
+`gs_response_3d` currently has only sheet and asymptotic closures.
 Its cut-edge pressure jump is also explicitly outside the ideal outer model;
 TC24 pressure-retaining cuts need consistent total-pressure boundary balance.
 The increment-1 test and the new point residual cannot substitute for these
