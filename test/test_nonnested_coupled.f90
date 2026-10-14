@@ -130,7 +130,8 @@ contains
         area = 0
         do t = 1, field%fs%mm%topology%n_triangles
             do q = 1, field%fs%nq
-                call meridian_qpoint(field%fs, 0, t, q, xq, wq, basis, st)
+                call meridian_qpoint(field%fs, 0, t, q, xq, wq, &
+                    basis(:, :field%fs%nl0), st)
                 if (st /= 0) error stop 'quadrature'
                 area = area + wq
             end do
