@@ -96,3 +96,23 @@ not a coupled response solve or the pre-declared TC24 sheet-limit ladders.
 `benchmarks/response-strip/run.sh` records matched-input one/two/four-thread
 trials, setup/solve/warm-apply time, iterations, state error, attributed array
 storage and process peak RSS. Outputs must be written outside source history.
+
+The 2026-10-14 GNU Release/OpenMP trials on a shared Ryzen 9 5950X used
+`OMP_DYNAMIC=false`, passive waiting and one BLAS thread, without affinity.
+Three matched trials at 33x33 gave these median wall times:
+
+| Threads | Setup (s) | Solve (s) | Setup + solve (s) | Warm inverse (ms) |
+|---:|---:|---:|---:|---:|
+| 1 | 0.3203 | 0.9380 | 1.2583 | 1.4060 |
+| 2 | 0.2384 | 0.3114 | 0.5498 | 0.6218 |
+| 4 | 0.1686 | 0.2311 | 0.3997 | 0.3919 |
+
+Every trial took 185 iterations and returned relative physical residual
+`1.159e-12` and maximum relative state error `1.815e-6`, against the unchanged
+`2e-12` and `2e-5` targets. Four-thread speedups were 4.06 for solve, 3.59 for
+the warm inverse and 3.15 for setup plus solve. These shared-host measurements
+are not a hardware speed ranking; earlier trials showed contention and slower
+two-thread runs. Attributed preconditioner arrays used 14.18 MB; median process
+peak RSS was 57.2..58.0 MiB. No certificate or certification timing is available.
+Raw logs, resource samples and hardware details are retained in the external
+`sol_rb2_jets2_evidence/scaling-budget` directory beside the controller handoff.
