@@ -674,8 +674,11 @@ contains
             b2cl(:, j) = b2
         end do
         call build_rings(.true.)
+        ! One GMRES tolerance on every backend: with the SuperLU K solve the old
+        ! 3e-5 fallback left a solver floor (direct/Schur 3.7e-4) above the
+        ! xd 0.01 discretisation error 1.55e-4; 1e-7 converges within 400
+        ! iterations on both SuperLU and MUMPS and gives the same (a) values.
         tol = 1.0e-7_dp
-        if (.not. gs_direct_available()) tol = 3.0e-5_dp
         block
             character(len=32) :: ev
             ! KIN6D_STRIP_TOL="tol maxit" overrides the GMRES settings (studies)
