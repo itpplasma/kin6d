@@ -1181,6 +1181,16 @@ foreach(degree 2 3)
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/ampere_p${degree}_test
         TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 endforeach()
+add_executable(test_gs_weak_ampere_loop test/test_gs_weak_ampere_loop.f90)
+target_link_libraries(test_gs_weak_ampere_loop PRIVATE kin6d)
+foreach(degree 2 3)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/weak_ampere_p${degree}_test)
+    add_test(NAME grad_shafranov_p${degree}_weak_ampere_loop
+        COMMAND test_gs_weak_ampere_loop ${degree})
+    set_tests_properties(grad_shafranov_p${degree}_weak_ampere_loop PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/weak_ampere_p${degree}_test
+        TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_executable(gs_phase1 app/gs_phase1.f90)
 target_link_libraries(gs_phase1 PRIVATE kin6d_io fortplot)
 add_executable(gs_load_bench app/gs_load_bench.f90)

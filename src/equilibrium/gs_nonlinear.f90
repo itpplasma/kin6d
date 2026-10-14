@@ -127,7 +127,7 @@ contains
     subroutine gs_cubic_load(state, mu0, law, rhs, jacobian, status, tolerance, &
                              forcing, jacobian_tolerance, load_only, &
                              quadrature_evaluations, source_integral, plasma_cell, &
-                             cell_psi)
+                             cell_psi, uneliminated)
         !! Free-boundary mode (`plasma_cell` present): the flux handed in is
         !! measured from the plasma boundary flux, law%axis is the axis flux
         !! in the same measure, and the source is the law inside the cells
@@ -150,6 +150,9 @@ contains
         !> Free-boundary mode only: per-cell nodal flux (ndof, cells) that replaces
         !! state%psi in the level cuts (face-coincident cut handling).
         real(dp), intent(in), optional :: cell_psi(:, :)
+        ! Evaluation-only residuals need the full load, including boundary rows.
+        ! This path also accepts read_gs_mesh states: no stiffness or solve is used.
+        logical, intent(in), optional :: uneliminated
         real(dp), intent(in), optional :: jacobian_tolerance
         logical, intent(in), optional :: load_only
         integer, intent(out), optional :: quadrature_evaluations
@@ -158,7 +161,7 @@ contains
         real(dp), allocatable :: rhs_local(:, :), axis_local(:, :), source_local(:)
         integer, allocatable :: element_status(:), element_evaluations(:)
         type(load_tables_t) :: tables
-        logical :: smooth_law, need_jacobian, free_mode, scratch_failed
+        logical :: smooth_law, need_jacobian, free_mode, scratch_failed, raw_load, csr
         real(dp) :: jtol, tol, h(2, 2, 10), clock
         integer :: e, ndof, nc, i, j, k, q, nel, capacity, first_failure
         integer :: evaluations
@@ -166,9 +169,15 @@ contains
         if (present(source_integral)) source_integral = 0
         need_jacobian = .true.
         if (present(load_only)) need_jacobian = .not. load_only
+        raw_load = .false.
+        if (present(uneliminated)) raw_load = uneliminated
         if (present(quadrature_evaluations)) quadrature_evaluations = 0
         evaluations = 0
-        if (.not. state%ready .or. mu0 <= 0) return
+        if (.not. raw_load) then
+            if (.not. state%ready) return
+        end if
+        if (mu0 <= 0) return
+        if (size(rhs) /= size(state%psi)) return
         if (.not. ieee_is_finite(mu0)) return
         if (.not. law%valid()) return
         smooth_law = gs_law_c1(law)
@@ -305,7 +314,7 @@ contains
             end do
             do j = 1, ndof
                 k = state%triangles(j, e)
-                if (free_mode) exit
+                if (free_mode .or. raw_load) exit
                 if (.not. state%boundary(k)) cycle
                 do i = 1, ndof
                     rhs(state%triangles(i, e)) = rhs(state%triangles(i, e)) &
@@ -313,7 +322,7 @@ contains
                 end do
             end do
         end do
-        if (.not. free_mode) then
+        if (.not. free_mode .and. .not. raw_load) then
             where (state%boundary)
                 rhs = state%psi
                 jacobian%axis_gradient = 0
@@ -322,7 +331,9 @@ contains
                 where (state%boundary) jacobian%axis_load = 0
             end if
         end if
-        if (need_jacobian .and. allocated(state%op%rowptr) .and. gs_use_csr()) then
+        csr = gs_use_csr()
+        if (need_jacobian .and. .not. raw_load &
+            .and. allocated(state%op%rowptr) .and. csr) then
             allocate (jacobian%mval(size(state%op%val)))
             call gs_csr_fill_masked(state%op, state%triangles, state%boundary, &
                                     jacobian%mass, jacobian%mval)
