@@ -286,7 +286,10 @@ gate.
 
   Increment 1 (2026-10-14, `test_mhd_closure strip`, ctest
   `response_strip_torus_coupling`):
-  the R-B1 strip coupled to the FEEC torus by trace continuity on the two
+  This gate couples a single-helicity, zero-beta cylindrical strip to the
+  toroidal outer operator. It does not resolve toroidal sidebands or pressure
+  inside the strip, and it does not expose a strip closure in `gs_response_3d`.
+  The R-B1 strip is coupled to the FEEC torus by trace continuity on the two
   edge rings. Case: tanh step (q0 1.2, r1 0.5, width 0.02, zero beta),
   n = 1, 2/1 strip with edges at psin_s -+ xd, 3/1 and 4/1 L4 sheets.
   Rules declared before the first run: (a) eta = 0, gamma = 1e-6: strip net
@@ -350,6 +353,49 @@ only), no resistive wall or RWM eigenvalue solver (operator kept compatible,
 D6 S_n can carry a thin wall later), no nonlinear islands or time-dependent
 penetration, no 3D (stellarator) equilibria, no MEPHIT-style artificial
 k_par damping (it is a layer width without a layer model).
+
+## Full-pressure strip residual
+
+`kin6d_response_fluid` supplies the non-rotating, single-fluid point residual
+of (R2)-(R4), in Cartesian physical components and SI units. With
+`gamma = -i omega`, the supplied spatial jets give
+
+    p1 = -xi.grad p0 - Gamma p0 div xi,
+    momentum = rho gamma^2 xi - J1 x B0 - J0 x B1 + grad p1,
+    Ohm = -gamma A1 - grad Phi1 + gamma xi x B0 - eta J1.
+
+The pressure gradient keeps both the equilibrium pressure Hessian and
+`grad(div xi)`. This admits parallel compression and pressure forces in curved
+fields without an inserted Mercier coefficient or fitted layer parameter.
+`J1 = curl B1/mu0` and `B1 = curl A1` remain the magnetic discretisation's
+responsibility. Electrical resistivity here is in Ohm m, unlike the normalised
+`eta = 1/S` of the cylindrical strip. The input jets must include chart and
+basis derivatives before conversion to Cartesian components.
+
+The source is `gen/gen_response_fluid.f90`, which uses FortSym to emit the
+pressure and force leaves and their real JVP/VJP products. Regenerate from the
+repository root with `gen_response_fluid` linked to FortSym; the generator
+applies the project formatter. The complex residual is linear in perturbation
+jets at fixed equilibrium and gamma, so its perturbation JVP is the same
+action. Parameter sensitivities of a future strip solve require differentiating
+the discretised equation and its interfaces; point products alone do not supply
+those sensitivities. The batch action uses OpenMP with fixed scratch arrays.
+
+CTest `response_fluid_full_pressure_oracles` checks fast and slow magnetosonic
+dispersion at nonzero pressure, resistive Alfven damping, translation of a
+curved pressure-balanced equilibrium, pressure gradients against independently
+differenced polynomials, batch linearity, and pressure/force JVP/VJP products.
+These are point-operator checks. No continuous or discrete error certificate
+is available, and no TC24 convergence or Glasser-layer result is claimed.
+
+The full-pressure R-B2 solve still needs a discretisation of these coupled
+equations through the strip, all coupled poloidal harmonics, electric-potential
+and mechanical interface conditions, and the two-ring magnetic Schur/mortar
+coupling. `gs_response_3d` currently has only sheet and asymptotic closures.
+Its cut-edge pressure jump is also explicitly outside the ideal outer model;
+TC24 pressure-retaining cuts need consistent total-pressure boundary balance.
+The increment-1 test and the new point residual cannot substitute for these
+missing pieces.
 
 ## Decisions for Chris
 
