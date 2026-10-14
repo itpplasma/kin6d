@@ -406,6 +406,31 @@ contains
                     if (st /= IDEAL_FB_OK) error stop 'displaced vacuum'
                     call ideal_fb_solve_multipliers(fb, st)
                     if (st /= IDEAL_FB_OK) error stop 'displaced multipliers'
+                    block
+                        real(dp), allocatable :: x1(:, :, :), xs1(:, :, :)
+                        real(dp), allocatable :: phi1(:, :), lam1(:, :, :)
+                        x1 = fb%plasma%x; xs1 = fb%xs
+                        phi1 = fb%phi; lam1 = fb%lam
+                        ! A loose relative/step tolerance must not bypass an
+                        ! explicit residual target. The manufactured load is
+                        ! an independent state oracle for the damped solve.
+                        fb%tangential_damping = 1.0e-3_dp
+                        call ideal_fb_solve(fb, 1.0_dp, 20, report, st, &
+                                    step_tolerance=1.0_dp, residual_tolerance=1.0e-8_dp)
+                        if (st /= IDEAL_FB_OK .or. report%residual > 1.0e-8_dp) &
+                            error stop 'explicit vertical residual target'
+                        if (maxval(abs(fb%plasma%x - x0)) > 1.0e-8_dp) &
+                            error stop 'damped manufactured target error'
+                        fb%plasma%x = x1; fb%xs = xs1
+                        fb%phi = phi1; fb%lam = lam1
+                        call ideal_fb_solve(fb, 1.0_dp, 20, report, st, &
+                                   step_tolerance=1.0_dp, residual_tolerance=1.0e-20_dp)
+                        if (st == IDEAL_FB_OK) &
+                            error stop 'unmet residual target reported success'
+                        fb%tangential_damping = 0
+                        fb%plasma%x = x1; fb%xs = xs1
+                        fb%phi = phi1; fb%lam = lam1
+                    end block
                     do it = 0, 3
                         error(it) = max(maxval(abs(fb%plasma%x - x0)), &
                             maxval(abs(fb%xs - xs0)), &
