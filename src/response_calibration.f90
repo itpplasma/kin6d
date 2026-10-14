@@ -6,11 +6,29 @@ module kin6d_response_calibration
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortnum_polynomial, only: lagrange_deriv_weights
-    use kin6d_response_calibration_leaves, only: sheet_field
+    use kin6d_response_calibration_leaves, only: sheet_field, &
+        distance_leaf => spot_distance
     implicit none
     private
     public :: spot_weights, spot_jump, spot_jump_vjp, equivalent_sheet_field
+    public :: spot_distance
 contains
+    subroutine spot_distance(n, dq, spot, xs, status)
+        integer, intent(in) :: n
+        real(dp), intent(in) :: dq, spot
+        real(dp), intent(out) :: xs
+        integer, intent(out) :: status
+        xs = 0.0_dp
+        status = 1
+        if (n == 0) return
+        if (.not. ieee_is_finite(dq) .or. .not. ieee_is_finite(spot)) return
+        if (abs(dq) <= tiny(1.0_dp) .or. spot <= 0.0_dp) return
+        call distance_leaf(abs(real(n, dp)), abs(dq), spot, xs)
+        if (.not. ieee_is_finite(xs)) return
+        if (xs <= 0.0_dp) return
+        status = 0
+    end subroutine spot_distance
+
     subroutine spot_weights(psin, center, n, dq, spot, weights, status)
         real(dp), intent(in) :: psin(:, :), center, dq, spot
         integer, intent(in) :: n
@@ -25,8 +43,9 @@ contains
         if (nn < 3 .or. n == 0) return
         if (.not. all(ieee_is_finite(psin))) return
         if (.not. all(ieee_is_finite([center, dq, spot]))) return
-        if (abs(dq) <= tiny(1.0_dp) .or. spot <= 0.0_dp) return
-        xs = spot/(abs(real(n, dp))*abs(dq))
+        call spot_distance(n, dq, spot, xs, status)
+        if (status /= 0) return
+        status = 1
         do side = 1, 2
             at = center + merge(-xs, xs, side == 1)
             if (at < psin(1, side) .or. at > psin(nn, side)) return
