@@ -99,6 +99,8 @@ storage and process peak RSS. Outputs must be written outside source history.
 
 The 2026-10-14 GNU Release/OpenMP trials on a shared Ryzen 9 5950X used
 `OMP_DYNAMIC=false`, passive waiting and one BLAS thread, without affinity.
+Setup here means preconditioner initialization; strip construction, equilibrium
+sampling and oracle evaluation are outside these timers.
 Three matched trials at 33x33 gave these median wall times:
 
 | Threads | Setup (s) | Solve (s) | Setup + solve (s) | Warm inverse (ms) |
@@ -110,7 +112,7 @@ Three matched trials at 33x33 gave these median wall times:
 Every trial took 185 iterations and returned relative physical residual
 `1.159e-12` and maximum relative state error `1.815e-6`, against the unchanged
 `2e-12` and `2e-5` targets. Four-thread speedups were 4.06 for solve, 3.59 for
-the warm inverse and 3.15 for setup plus solve. These shared-host measurements
+the warm inverse and 3.15 for preconditioner setup plus solve. These measurements
 are not a hardware speed ranking; earlier trials showed contention and slower
 two-thread runs. Attributed preconditioner arrays used 14.18 MB; median process
 peak RSS was 57.2..58.0 MiB. No certificate or certification timing is available.
