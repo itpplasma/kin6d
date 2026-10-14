@@ -1632,6 +1632,37 @@ endforeach()
 add_executable(em_slab_demo app/em_slab_demo.f90)
 target_link_libraries(em_slab_demo PRIVATE kin6d kin6d_io)
 
+# R-B2 jets: independent of outer coupling and cut-boundary orchestration.
+target_sources(kin6d PRIVATE src/generated/kin6d_response_strip_jets_leaves.f90
+    src/response_strip_jets.f90)
+set_source_files_properties(src/generated/kin6d_response_strip_jets_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_response_strip_jets test/test_response_strip_jets.f90)
+target_link_libraries(test_response_strip_jets PRIVATE kin6d)
+add_test(NAME response_strip_equilibrium_jets COMMAND test_response_strip_jets)
+set_tests_properties(response_strip_equilibrium_jets PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive"
+    PROCESSORS 2 TIMEOUT 60)
+set(KIN6D_STRIP_EQDSK_TEST "" CACHE FILEPATH
+    "Optional imported equilibrium for independent strip-jet difference checks")
+if(KIN6D_STRIP_EQDSK_TEST)
+    add_test(NAME response_strip_tc24_jets
+        COMMAND test_response_strip_jets ${KIN6D_STRIP_EQDSK_TEST})
+    set_tests_properties(response_strip_tc24_jets PROPERTIES
+        ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1" TIMEOUT 60)
+endif()
+target_sources(kin6d PRIVATE src/response_strip_preconditioner.f90)
+add_executable(test_response_strip_preconditioner
+    test/test_response_strip_preconditioner.f90)
+target_link_libraries(test_response_strip_preconditioner PRIVATE kin6d)
+foreach(check oracles negative limits scaling)
+    add_test(NAME response_strip_preconditioner_${check}
+        COMMAND test_response_strip_preconditioner ${check})
+    set_tests_properties(response_strip_preconditioner_${check} PROPERTIES
+        ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive"
+    PROCESSORS 2 TIMEOUT 180)
+endforeach()
+
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
 kin6d_layers_finalize()
@@ -1673,14 +1704,3 @@ foreach(_t IN LISTS _kin6d_all_tests)
     endif()
     set_tests_properties(${_t} PROPERTIES ENVIRONMENT "${_env}" PROCESSORS "${_threads}")
 endforeach()
-
-# R-B2 jets: independent of outer coupling and cut-boundary orchestration.
-target_sources(kin6d PRIVATE src/generated/kin6d_response_strip_jets_leaves.f90
-    src/response_strip_jets.f90)
-set_source_files_properties(src/generated/kin6d_response_strip_jets_leaves.f90
-    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-add_executable(test_response_strip_jets test/test_response_strip_jets.f90)
-target_link_libraries(test_response_strip_jets PRIVATE kin6d)
-add_test(NAME response_strip_equilibrium_jets COMMAND test_response_strip_jets)
-set_tests_properties(response_strip_equilibrium_jets PROPERTIES
-    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1" TIMEOUT 60)

@@ -7,7 +7,7 @@ module kin6d_response_strip_jets
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_vacuum_surfaces, only: psi_grid_t, psi_eval, profiles_of_psin, &
-                                     flux_ray_point
+        flux_ray_point
     use kin6d_mhd_ideal_n, only: equilibrium_point, ideal_options_t
     use kin6d_mhd_ampere_n, only: mu0
     use kin6d_response_fluid, only: response_fluid_equilibrium_t
@@ -51,23 +51,23 @@ contains
         if (p < 0) return
         jets%fluid%p = p; jets%fluid%rho = rho; jets%fluid%eta = eta
         call equilibrium_point(g, opt, jets%x(1), jets%x(2), &
-                               jets%fluid%b0, jets%fluid%j0, gp, pp)
+            jets%fluid%b0, jets%fluid%j0, gp, pp)
         call strip_field_jets(jets%x(1), depth, g%s_pol, pr, pz, prr, prz, &
-                              pzz, f, fx, px, pxx, 1/mu0, &
-                              jets%db(1, 1), jets%db(2, 1), jets%db(3, 1), &
-                              jets%db(1, 2), jets%db(2, 2), jets%db(3, 2), &
-                              jets%db(1, 3), jets%db(2, 3), jets%db(3, 3), &
-                              jets%fluid%gp(1), jets%fluid%gp(2), jets%fluid%gp(3), &
-                        jets%fluid%hp(1, 1), jets%fluid%hp(2, 1), jets%fluid%hp(3, 1), &
-                        jets%fluid%hp(1, 2), jets%fluid%hp(2, 2), jets%fluid%hp(3, 2), &
-                        jets%fluid%hp(1, 3), jets%fluid%hp(2, 3), jets%fluid%hp(3, 3), &
-                       jets%curl_current(1), jets%curl_current(2), jets%curl_current(3))
+            pzz, f, fx, px, pxx, 1/mu0, &
+            jets%db(1, 1), jets%db(2, 1), jets%db(3, 1), &
+            jets%db(1, 2), jets%db(2, 2), jets%db(3, 2), &
+            jets%db(1, 3), jets%db(2, 3), jets%db(3, 3), &
+            jets%fluid%gp(1), jets%fluid%gp(2), jets%fluid%gp(3), &
+            jets%fluid%hp(1, 1), jets%fluid%hp(2, 1), jets%fluid%hp(3, 1), &
+            jets%fluid%hp(1, 2), jets%fluid%hp(2, 2), jets%fluid%hp(3, 2), &
+            jets%fluid%hp(1, 3), jets%fluid%hp(2, 3), jets%fluid%hp(3, 3), &
+            jets%curl_current(1), jets%curl_current(2), jets%curl_current(3))
         call strip_map_jets(u, depth, ray, c, s, pr, pz, prr, prz, pzz, &
-                       jets%jac(1, 1), jets%jac(2, 1), jets%jac(1, 2), jets%jac(2, 2), &
-                            jets%inverse(1, 1), jets%inverse(2, 1), &
-                            jets%inverse(1, 2), jets%inverse(2, 2), &
-                            jets%hmap(1, 1), jets%hmap(2, 1), jets%hmap(1, 2), &
-                            jets%hmap(2, 2), jets%hmap(1, 3), jets%hmap(2, 3))
+            jets%jac(1, 1), jets%jac(2, 1), jets%jac(1, 2), jets%jac(2, 2), &
+            jets%inverse(1, 1), jets%inverse(2, 1), &
+            jets%inverse(1, 2), jets%inverse(2, 2), &
+            jets%hmap(1, 1), jets%hmap(2, 1), jets%hmap(1, 2), &
+            jets%hmap(2, 2), jets%hmap(1, 3), jets%hmap(2, 3))
         det = jets%jac(1, 1)*jets%jac(2, 2) - jets%jac(1, 2)*jets%jac(2, 1)
         if (.not. ieee_is_finite(det) .or. abs(det) <= tiny(1.0_dp)) return
         jets%label_defect = abs((psi - g%psi_axis)/depth - u*u)
@@ -91,7 +91,7 @@ contains
         do j = 1, nt
             do i = 1, size(radial)
                 call strip_equilibrium_point(g, radial(i), &
-                                   2*acos(-1.0_dp)*(j - 1)/nt, rho, eta, jets(i, j), st)
+                    2*acos(-1.0_dp)*(j - 1)/nt, rho, eta, jets(i, j), st)
                 if (st /= 0) failures = failures + 1
             end do
         end do
