@@ -20,7 +20,7 @@ program test_response_strip_preconditioner
     complex(dp), allocatable :: exact(:, :, :), rhs(:, :, :), x(:, :, :), ax(:, :, :)
     complex(dp), allocatable :: seed(:, :, :), adj(:, :, :), pre(:, :, :), padj(:, :, :)
     complex(dp) :: gamma
-    real(dp) :: eta, err, pairing, setup_s, solve_s, apply_s, solve_tol
+    real(dp) :: eta, err, pairing, setup_s, solve_s, apply_s, solve_tol, amplitude
     integer(int64) :: tick, tock, rate
     integer :: nr, nt, level, info, i, j, a, repeat, count, forward_iterations, n
     character(16) :: command
@@ -93,6 +93,20 @@ program test_response_strip_preconditioner
             call check(st%info == 0, 'equation-level drive tangent')
             call check(maxval(abs(x - exact*(0.13_dp, -0.08_dp))) &
                 /maxval(abs(exact)) < 2.0e-6_dp, 'analytic drive tangent')
+            do repeat = 1, 2
+                amplitude = 10.0_dp**(24*repeat - 36)
+                x = 0.05_dp*amplitude*exact
+                call strip_preconditioned_solve(pc, strip, work, amplitude*rhs, &
+                    x, 2.0e-10_dp, 1000, 180, st)
+                call check(st%info == 0, 'amplitude-independent relative residual')
+                call check(maxval(abs(x/amplitude - exact))/maxval(abs(exact)) &
+                    < 2.0e-6_dp, 'small/large drive with nonzero initial guess')
+            end do
+            x = exact
+            call strip_preconditioned_solve(pc, strip, work, 0.0_dp*rhs, &
+                x, 2.0e-10_dp, 1000, 180, st)
+            call check(st%info == 0, 'zero drive')
+            call check(maxval(abs(x)) == 0.0_dp, 'zero drive clears initial guess')
             ! Independently check the adjoint inverse by constructing A^*x.
             call toroidal_strip_vjp(strip, work, gamma, exact/scale, adj, .true.)
             x = 0
@@ -104,6 +118,12 @@ program test_response_strip_preconditioner
             call check(st%info == 0, 'equation-level adjoint inverse')
             call check(maxval(abs(x - exact))/maxval(abs(exact)) < 2.0e-5_dp, &
                 'adjoint inverse against supplied exact state')
+            x = 0
+            call strip_preconditioned_solve(pc, strip, work, 1.0e-12_dp*adj, &
+                x, 1.0e-13_dp, 1000, 180, st, .true.)
+            call check(st%info == 0, 'small adjoint drive relative residual')
+            call check(maxval(abs(x/1.0e-12_dp - exact))/maxval(abs(exact)) &
+                < 2.0e-5_dp, 'small adjoint drive analytic state')
             x = 0
             call toroidal_strip_solve(strip, work, gamma, rhs, x, scale, &
                 2.0e-10_dp, 1000, 180, baseline)
