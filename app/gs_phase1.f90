@@ -4,7 +4,7 @@ program gs_phase1_main
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         write_gs_mesh, read_gs_mesh, sample_gs
     use kin6d_gs_field_readback, only: sample_gs_many
-    use kin6d_gs_ampere_loop, only: gs_boundary_current
+    use kin6d_gs_ampere_loop, only: gs_boundary_current, gs_weak_boundary_current
     use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
         curve_value
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
@@ -91,6 +91,8 @@ program gs_phase1_main
             call evaluate_file(trim(argument) == '--evaluate-stream')
         case ('--current')
             call evaluate_current_file()
+        case ('--weak-current')
+            call evaluate_weak_current_file()
         case ('--q')
             call evaluate_q_file()
         case ('--source')
@@ -639,6 +641,41 @@ contains
         if (stat /= 0) error stop 'boundary current refinement failed'
         write (*, '(a)') '# current_A quadrature_difference_A (candidate, bound unavailable)'
         write (*, '(2es25.16e3)') current, abs(current - previous)
+    end subroutine
+
+    subroutine evaluate_weak_current_file()
+        character(512) :: path, text
+        type(gs_profile_law_t) :: executed
+        real(dp) :: current, previous, permeability, source, tol
+        integer :: stat, order
+        if (run%argument_count() /= 5 .and. run%argument_count() /= 6) &
+            error stop '--weak-current mesh.dat mu0 order profile-law.dat [tolerance]'
+        call run%argument(2, path)
+        call read_gs_mesh(state, path, stat)
+        if (stat /= 0) error stop 'invalid native field export'
+        call run%argument(3, text)
+        read (text, *) permeability
+        call run%argument(4, text)
+        read (text, *) order
+        call run%argument(5, path)
+        call read_gs_profile_law(trim(path), executed, stat)
+        if (stat /= 0) error stop 'invalid executed profile law'
+        tol = 1.0e-8_dp
+        if (run%argument_count() == 6) then
+            call run%argument(6, text)
+            read (text, *) tol
+        end if
+        call gs_weak_boundary_current(state, permeability, executed, order, &
+                                      previous, stat, tolerance=tol)
+        if (stat /= 0) error stop 'weak boundary current evaluation failed'
+        call gs_weak_boundary_current(state, permeability, executed, 2*order, &
+                                      current, stat, source_current=source, &
+                                      tolerance=tol/8)
+        if (stat /= 0) error stop 'weak boundary current refinement failed'
+        write (*, '(a)') '# weak_current_A quadrature_difference_A source_current_A '// &
+            'balance_defect_A (candidate, bound unavailable)'
+        write (*, '(4es25.16e3)') current, abs(current - previous), source, &
+            current - source
     end subroutine
 
     subroutine evaluate_file(streaming)
