@@ -69,7 +69,7 @@ module kin6d_response_strip
 
     public :: step_rational, step_fprime, step_delta_prime, step_q, step_dj
     public :: step_traces, layer_width, strip_mesh, strip_solve
-    public :: strip_growth_rate
+    public :: strip_growth_rate, strip_dirichlet_map
     public :: ri_layer_dhat, ri_dispersion_gamma
 
 contains
@@ -181,15 +181,17 @@ contains
         end do
     end subroutine strip_mesh
 
-    subroutine strip_solve(eq, eta, gamma, r, sol)
+    subroutine strip_solve(eq, eta, gamma, r, sol, traces)
         !! Driven strip response at complex gamma on the mesh r (from
         !! strip_mesh, node of r_s in the middle), coupled to the exact outer
-        !! traces of eq.  Banded LU (LAPACK zgbsv), kl = ku = 4.
+        !! traces of eq, or to the given traces(1:2) (inner, outer) of another
+        !! outer region (R-B2: the FEEC torus).  Banded LU (LAPACK zgbsv).
         type(cyl_step_t), intent(in) :: eq
         real(dp), intent(in) :: eta
         complex(dp), intent(in) :: gamma
         real(dp), intent(in) :: r(:)
         type(strip_solution_t), intent(out) :: sol
+        type(trace_t), intent(in), optional :: traces(2)
         complex(dp), allocatable :: ab(:, :), rhs(:, :)
         integer, allocatable :: ipiv(:)
         type(trace_t) :: tin, tout
@@ -204,7 +206,12 @@ contains
         allocate (ab(ldab, ntot), rhs(ntot, 1), ipiv(ntot))
         ab = (0.0_dp, 0.0_dp)
         rhs = (0.0_dp, 0.0_dp)
-        call step_traces(eq, r(1), r(nn), tin, tout)
+        if (present(traces)) then
+            tin = traces(1)
+            tout = traces(2)
+        else
+            call step_traces(eq, r(1), r(nn), tin, tout)
+        end if
 
         do i = 2, nn - 1
             call lap_stencil(eq%m, r(i - 1:i + 1), lc)
@@ -284,6 +291,46 @@ contains
         end subroutine put
 
     end subroutine strip_solve
+
+    subroutine strip_dirichlet_map(eq, eta, gamma, r, dmap, info)
+        !! Dirichlet-to-Neumann map of the strip on the mesh r: the edge
+        !! slopes psi'(r(1)), psi'(r(n)) = dmap psi(r(1)), psi(r(n)) (one-sided
+        !! second-order differences, as in the trace rows), with the ideal Ohm
+        !! law on both edges.  This is the strip's Schur complement on its two
+        !! interface rings (R-B2 coupling to the FEEC outer region).
+        type(cyl_step_t), intent(in) :: eq
+        real(dp), intent(in) :: eta
+        complex(dp), intent(in) :: gamma
+        real(dp), intent(in) :: r(:)
+        complex(dp), intent(out) :: dmap(2, 2)
+        integer, intent(out) :: info
+        type(trace_t) :: tr(2)
+        type(strip_solution_t) :: sol
+        real(dp) :: hm, hp, d1(3), d2(3)
+        integer :: k, nn
+
+        nn = size(r)
+        hm = r(2) - r(1)
+        hp = r(3) - r(2)
+        d1 = [-(2*hm + hp)/(hm*(hm + hp)), (hm + hp)/(hm*hp), -hm/(hp*(hm + hp))]
+        hm = r(nn - 1) - r(nn - 2)
+        hp = r(nn) - r(nn - 1)
+        d2 = [hp/(hm*(hm + hp)), -(hm + hp)/(hm*hp), (2*hp + hm)/(hp*(hm + hp))]
+        info = 0
+        do k = 1, 2
+            tr%alpha = (0.0_dp, 0.0_dp)
+            tr%beta = (1.0_dp, 0.0_dp)
+            tr%s = (0.0_dp, 0.0_dp)
+            tr(k)%s = (1.0_dp, 0.0_dp)
+            call strip_solve(eq, eta, gamma, r, sol, tr)
+            if (sol%info /= 0) then
+                info = sol%info
+                return
+            end if
+            dmap(1, k) = sum(d1*sol%psi(1:3))
+            dmap(2, k) = sum(d2*sol%psi(nn - 2:nn))
+        end do
+    end subroutine strip_dirichlet_map
 
     pure subroutine lap_stencil(m, rr, lc)
         !! Conservative three-point (1/r)(r f')' - m^2 f/r^2 on a nonuniform mesh.
