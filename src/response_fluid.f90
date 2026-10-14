@@ -5,7 +5,9 @@ module kin6d_response_fluid
     !! This kernel does not discretise or solve a strip or an outer interface.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_response_fluid_leaves, only: fluid_pressure, fluid_force, &
-                                           fluid_pressure_vjp, fluid_force_vjp
+        fluid_pressure_vjp, fluid_force_vjp, fluid_stress, fluid_stress_vjp, &
+        fluid_cut_balance, fluid_cut_balance_vjp
+    use kin6d_mhd_ampere_n, only: mu0
     implicit none
     private
 
@@ -31,7 +33,79 @@ module kin6d_response_fluid
     end type response_fluid_result_t
 
     public :: response_fluid_residual, response_fluid_batch, response_fluid_adjoint
+    public :: response_fluid_stress, response_fluid_stress_adjoint
+    public :: response_cut_balance, response_cut_balance_adjoint
 contains
+    pure subroutine response_fluid_stress(b0, normal, p1, magnetic, stress)
+        !! stress(1:3) = delta[-(p+B^2/2mu0)I+BB/mu0] normal, Pa.
+        !! stress(4) = Eulerian total-pressure perturbation, Pa.
+        !! Fixed unit normal: material-interface geometry terms are separate.
+        real(dp), intent(in) :: b0(3), normal(3)
+        complex(dp), intent(in) :: p1, magnetic(3)
+        complex(dp), intent(out) :: stress(4)
+        real(dp) :: parts(4, 2), bp(3, 2), pp(2)
+        integer :: part
+        bp(:, 1) = real(magnetic, dp); bp(:, 2) = aimag(magnetic)
+        pp(1) = real(p1, dp); pp(2) = aimag(p1)
+        do part = 1, 2
+            call fluid_stress(pp(part), 1/mu0, &
+                b0(1), normal(1), bp(1, part), &
+                b0(2), normal(2), bp(2, part), &
+                b0(3), normal(3), bp(3, part), &
+                parts(1, part), parts(2, part), parts(3, part), parts(4, part))
+        end do
+        stress = cmplx(parts(:, 1), parts(:, 2), dp)
+    end subroutine response_fluid_stress
+
+    pure subroutine response_fluid_stress_adjoint(b0, normal, seed, p1, magnetic)
+        !! Fixed-background Hermitian transpose; seeds already include any
+        !! physical surface quadrature. Parameter/normal cotangents omitted.
+        real(dp), intent(in) :: b0(3), normal(3)
+        complex(dp), intent(in) :: seed(4)
+        complex(dp), intent(out) :: p1, magnetic(3)
+        real(dp) :: sp(4, 2), pp(2), bp(3, 2), unused(7)
+        integer :: part
+        sp(:, 1) = real(seed, dp); sp(:, 2) = aimag(seed)
+        do part = 1, 2
+            call fluid_stress_vjp(0.0_dp, 1/mu0, &
+                b0(1), normal(1), 0.0_dp, b0(2), normal(2), 0.0_dp, &
+                b0(3), normal(3), 0.0_dp, sp(1, part), sp(2, part), &
+                sp(3, part), sp(4, part), pp(part), unused(1), &
+                unused(2), unused(3), bp(1, part), unused(4), unused(5), &
+                bp(2, part), unused(6), unused(7), bp(3, part))
+        end do
+        p1 = cmplx(pp(1), pp(2), dp)
+        magnetic = cmplx(bp(:, 1), bp(:, 2), dp)
+    end subroutine response_fluid_stress_adjoint
+
+    pure complex(dp) function response_cut_balance(inner, outer, xin, grad_jump) &
+            result(balance)
+        !! Lagrangian total-pressure jump for a flux-surface boundary (B0.n=0).
+        !! inner/outer are Eulerian delta(p+B^2/2mu0), and grad_jump is
+        !! d_n(Ptot_inner-Ptot_outer) at the unperturbed cut. No pressure offset.
+        complex(dp), intent(in) :: inner, outer, xin
+        real(dp), intent(in) :: grad_jump
+        real(dp) :: re, im
+        call fluid_cut_balance(real(inner, dp), real(outer, dp), real(xin, dp), &
+            grad_jump, re)
+        call fluid_cut_balance(aimag(inner), aimag(outer), aimag(xin), grad_jump, im)
+        balance = cmplx(re, im, dp)
+    end function response_cut_balance
+
+    pure subroutine response_cut_balance_adjoint(grad_jump, seed, inner, outer, xin)
+        real(dp), intent(in) :: grad_jump
+        complex(dp), intent(in) :: seed
+        complex(dp), intent(out) :: inner, outer, xin
+        real(dp) :: parts(3, 2), unused
+        call fluid_cut_balance_vjp(0.0_dp, grad_jump, real(seed, dp), &
+            parts(1, 1), parts(2, 1), parts(3, 1), unused)
+        call fluid_cut_balance_vjp(0.0_dp, grad_jump, aimag(seed), &
+            parts(1, 2), parts(2, 2), parts(3, 2), unused)
+        inner = cmplx(parts(1, 1), parts(1, 2), dp)
+        outer = cmplx(parts(2, 1), parts(2, 2), dp)
+        xin = cmplx(parts(3, 1), parts(3, 2), dp)
+    end subroutine response_cut_balance_adjoint
+
     pure subroutine response_fluid_residual(eq, jet, gamma, res)
         type(response_fluid_equilibrium_t), intent(in) :: eq
         type(response_fluid_jet_t), intent(in) :: jet
