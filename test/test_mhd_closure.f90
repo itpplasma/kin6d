@@ -516,21 +516,41 @@ contains
         !! docs/response-unified.md, R-B2 increment 1).  The gated run uses
         !! the smallest nrad of that ladder at which (b) passes.  The old
         !! ratio to the sharp-step rate stays printed ("rel").
+        !! (a) re-declared 2026-10-14 (controller).  As first declared it was
+        !! run at strip half-width xd = 0.02 (in psi_n) and gave 1.02e-3 ..
+        !! 1.01e-3 for nrad 32 .. 160 and every GMRES tolerance: it does not
+        !! close with the mesh.  Measured xd ladder (R0/a 40, nrad 64-128,
+        !! independent of nrad): xd 0.01 / 0.02 / 0.04 -> 1.55e-4 / 1.01e-3 /
+        !! 4.40e-3, i.e. ~xd^2: the finite strip width versus the sheet limit,
+        !! which is what (a) tests.  (a) is now: at xd = 0.01, |strip / L4
+        !! current - 1| <= 1e-3 (limit unchanged), AND the convergence order
+        !! of that error between xd 0.02 and 0.01 (same nrad) is >= 1.8.  The
+        !! gated run is at xd 0.01; (b) was re-checked there at nrad 64
+        !! (1.65e-2 / 1.63e-2 / 1.64e-2, job 3225264), so nrad stays 64.
         !! KIN6D_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
         character(len=128) :: env
-        real(dp) :: r0l, xdl, ierr, cerr
+        real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order
         integer :: nr, i
         integer, parameter :: nrad_gate = 64
         real(dp), parameter :: etas(3) = [1.0e-6_dp, 1.0e-7_dp, 1.0e-8_dp]
-        complex(dp) :: gt(3), gc(3), gs(3)
+        real(dp), parameter :: xd_gate = 1.0e-2_dp
+        real(dp) :: none(0)
+        complex(dp) :: gt(3), gc(3), gs(3), g0(0)
         call get_environment_variable('KIN6D_STRIP_LADDER', env)
         if (len_trim(env) > 0) then
             read (env, *) r0l, xdl, nr
             call fe_strip(r0l, xdl, nr, etas, gt, gc, gs, ierr, cerr)
             stop
         end if
-        call fe_strip(40.0_dp, 2.0e-2_dp, nrad_gate, etas, gt, gc, gs, ierr, cerr)
+        ! (a) at twice the gated width, no growth rates: the xd-order reference
+        call fe_strip(40.0_dp, 2*xd_gate, nrad_gate, none, g0, g0, g0, ierr2, &
+            cerr2)
+        call fe_strip(40.0_dp, xd_gate, nrad_gate, etas, gt, gc, gs, ierr, cerr)
+        order = log(ierr2/ierr)/log(2.0_dp)
+        print '(a,es10.3,a,es10.3,a,f6.3)', "  (a) xd 0.02 rel", ierr2, &
+            ", xd 0.01 rel", ierr, ", xd order", order
         call record(ierr <= 1.0e-3_dp, "(a) ideal limit: strip current = L4 sheet")
+        call record(order >= 1.8_dp, "(a) strip -> sheet error converges as xd^2")
         do i = 1, 3
             call record(abs(gt(i)/gs(i) - 1) <= 2.0e-2_dp, &
                 "(b) torus growth rate = same-profile cylinder rate")
@@ -561,6 +581,17 @@ contains
         pa = psi_of_r(1.0_dp)
         call surface_build(g, 0.25_dp, 256, s, st)
         qsgn = sign(1.0_dp, s%q)
+        ! fe_strip is called twice by strip_suite: release the previous call
+        if (allocated(psin_s)) deallocate (psin_s)
+        if (allocated(mr)) deallocate (mr)
+        if (allocated(ras)) deallocate (ras)
+        if (allocated(f)) deallocate (f)
+        if (allocated(a)) deallocate (a)
+        if (allocated(sr)) deallocate (sr)
+        if (allocated(lam)) deallocate (lam)
+        if (allocated(phit)) deallocate (phit)
+        if (allocated(phe)) deallocate (phe)
+        if (allocated(b2cl)) deallocate (b2cl)
         allocate (psin_s(0), mr(0))
         do k = 1, 20
             qt = real(k, dp)/nmode
