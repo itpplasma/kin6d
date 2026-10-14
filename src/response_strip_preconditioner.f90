@@ -137,38 +137,42 @@ contains
         ! Six edge probes retain the dominant high-mode collocation aliasing.
         ! Remaining alias tails are omitted only from the preconditioner;
         ! the full operator always determines the solution.
-        do k = 1, nt
+        !$omp parallel do private(m,p,col,row,value) schedule(static)
+        factors: do k = 1, nt
+            pc%solve_info(k) = 1
             m = k - 1
             if (m > (nt - 1)/2) m = m - nt
-            band = (1.0_dp - real(m, dp)**2)*samples(:, :, 1) &
+            pc%lu(:, :, k) = (1.0_dp - real(m, dp)**2)*samples(:, :, 1) &
                 + (real(m, dp)**2 + m)*samples(:, :, 2)/2 &
                 + (real(m, dp)**2 - m)*samples(:, :, 3)/2
             do p = 1, probes
-                if (m == modes(p)) band = samples(:, :, p)
+                if (m == modes(p)) pc%lu(:, :, k) = samples(:, :, p)
             end do
             ! Two-sided equilibration controls mixed SI units and gamma/eta
             ! magnitudes. No diagonal shift or change of the target equations.
             pc%rows(:, k) = 0
             do col = 1, nv
                 do row = max(1, col - bw), min(nv, col + bw)
-                    value = abs(band(2*bw + 1 + row - col, col))
+                    value = abs(pc%lu(2*bw + 1 + row - col, col, k))
                     pc%rows(row, k) = max(pc%rows(row, k), value)
                 end do
             end do
-            if (any(pc%rows(:, k) <= tiny(1.0_dp))) return
+            if (any(pc%rows(:, k) <= tiny(1.0_dp))) cycle factors
             do col = 1, nv
                 do row = max(1, col - bw), min(nv, col + bw)
-                    band(2*bw + 1 + row - col, col) = &
-                        band(2*bw + 1 + row - col, col)/pc%rows(row, k)
+                    pc%lu(2*bw + 1 + row - col, col, k) = &
+                        pc%lu(2*bw + 1 + row - col, col, k)/pc%rows(row, k)
                 end do
-                pc%cols(col, k) = maxval(abs(band(:, col)))
-                if (pc%cols(col, k) <= tiny(1.0_dp)) return
-                band(:, col) = band(:, col)/pc%cols(col, k)
+                pc%cols(col, k) = maxval(abs(pc%lu(:, col, k)))
+                if (pc%cols(col, k) <= tiny(1.0_dp)) cycle factors
+                pc%lu(:, col, k) = pc%lu(:, col, k)/pc%cols(col, k)
             end do
-            call zgbtrf(nv, nv, bw, bw, band, ld, pc%piv(:, k), info)
-            if (info /= 0) return
-            pc%lu(:, :, k) = band
-        end do
+            call zgbtrf(nv, nv, bw, bw, pc%lu(:, :, k), ld, pc%piv(:, k), &
+                pc%solve_info(k))
+        end do factors
+        !$omp end parallel do
+        info = maxval(abs(pc%solve_info))
+        if (info /= 0) return
         pc%ready = .true.
         info = 0
     end subroutine
@@ -320,7 +324,7 @@ contains
         b = reshape(rhs, [nn]); v = reshape(x, [nn])
         if (.not. reverse) call scale_vector(pc, b)
         rhs_scale = norm2(abs(b))
-        if (rhs_scale == 0.0_dp) rhs_scale = 1.0_dp
+        if (rhs_scale <= 0.0_dp) rhs_scale = 1.0_dp
         b = b/rhs_scale; v = v/rhs_scale
         pre_info = 0
         call complex_fgmres_operator(matvec, precondition, b, v, tol, &
