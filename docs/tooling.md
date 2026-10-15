@@ -19,16 +19,39 @@ cold Fo build. The original kin6d transport gates pass 2/2 and its cached
 benchmark executes through this driver in Debug. Returning to native Release
 passes 5/5, retains empty global flags and reproduces the exact final benchmark
 executable digest. Final performance measurements use that clean Release.
-The existing CMake-only resident input-capture blocker remains a separate
-upstream capability gap; this evidence concerns delegated profile behavior.
+This historical evidence concerns delegated profile behavior. The current
+focused resident evidence is recorded below.
 
 Fo `17db6d81e0cf86b2325da159aa62964755eb92e6` additionally repairs public
 execution from the selected external CMake build root. The quantum slice uses
 `/var/tmp/fo-cmake-exec-root-20261005/build/gfortran_B54CC5252B24789C/app/fo`,
 SHA256 `23f14fb2e36f0e999d4e6db9a421f57743fe477921c786f882be945d4a6c7aa6`.
 Its independent stale-binary fixture, old/new profile fixture, and kin6d
-Release/Debug evolution gates pass. Existing resident lanes are preserved;
-the CMake-only input-capture limitation remains explicit.
+Release/Debug evolution gates pass. Existing resident lanes are preserved.
+
+## Focused development workflow
+
+Fo main `5bdc786` supports focused CMake target builds, label/layer selection and
+resident capture of KIN6D's populated dependency sources. On KIN6D `a93e74b`,
+the verified driver SHA256 is
+`2e6392ba836aabf9489c85dec6971f77247429536521121e9b69b47532e37333`.
+The named `real_value_identity_edge_cases` case passes through both ordinary
+Fo and a resident lane. Its ordinary plan selects `kin6d_core`, `kin6d_fft`,
+`kin6d_intervals`, `kin6d_ode` and `test_real_identity`, without widening.
+
+```sh
+fo test real_value_identity_edge_cases -L '^core$' --layer kin6d_core
+fo gremlin start --lane development --target real_value_identity_edge_cases \
+    --random 0 -L '^core$' --layer kin6d_core
+```
+
+An edit to `src/real_identity.f90` is selected by `--only-changed` with that
+source as its reason. A deliberately incorrect identity is rejected by the
+registered test, a syntax error is rejected at build time, and restoring the
+source passes. These edit/reject/restore checks use ordinary Fo. The resident
+repeat was blocked by an unrelated ARES lane holding the host admission slots;
+it does not establish resident edit/reject/restore or complete scope coverage.
+Run only the affected named cases. Never run the full test suite.
 
 ## Stack and ownership
 
@@ -246,11 +269,12 @@ thread-capable runtime through the solver's ordinary failure status. Application
 that manage MPI must free all solver handles before finalizing it. Sequential
 MUMPS builds retain their mpiseq runtime and need no Fortran MPI module.
 
-The existing KIN6D resident lane has a documented CMake-only input-capture
-defect; native CMake/CTest evidence remains authoritative while that upstream
-gap is open. Do not reset another owner's lane or claim complete captured-input
-evidence from it. The exact selected Fo driver and current limitation are
-recorded in the steady laboratory evidence.
+The focused resident workflow above captures and builds the real CMake-only
+consumer, including populated dependency sources; the historical capture
+blocker was not reproduced. Native CMake/CTest remain authoritative. Keep one
+owned resident lane, preserve other owners' lanes and respect host admission.
+Concurrent builds in another build directory can produce a large watcher-event
+backlog; keep that independent build outside the watched checkout.
 
 Every generated/operator family keeps:
 
