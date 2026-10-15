@@ -440,7 +440,8 @@ add_executable(test_gs_fb_large_aspect test/test_gs_fb_large_aspect.f90)
 target_link_libraries(test_gs_fb_large_aspect PRIVATE kin6d)
 add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_large_aspect)
 set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEOUT 1800)
-target_sources(kin6d_fem2d PRIVATE src/fem2d/curved_triangle.f90 src/fem2d/triangle_basis.f90)
+target_sources(kin6d_fem2d PRIVATE src/fem2d/curved_triangle.f90
+    src/generated/kin6d_segment_leaves.f90 src/fem2d/triangle_basis.f90)
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_majorant.f90 src/equilibrium/gs_profile_law.f90 src/equilibrium/gs_nonlinear.f90
     src/equilibrium/gs_equilibrated.f90 src/generated/kin6d_gs_error_leaves.f90)
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_quadrature_budget.f90)
