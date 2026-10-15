@@ -156,6 +156,17 @@ Storage is linear in cells and retained modes, with sparse operators and
 bounded per-cell quadrature work. The focused oracle must finish within
 900 seconds at four declared OpenMP threads; no MRX speed claim is made.
 
+The n = 0 restriction has an equilibrated energy bound,
+`nn_axisymmetric_error` (`src/mhd/nonnested_error.f90`): FortFEM's patchwise
+RT_k recovery for -div(grad psi/R) = mu0 p' R on the isoparametric meridian
+cells bounds the error to the continuous solution with the same discrete
+Dirichlet trace. Its claim is `practical-fixed-dirichlet-trace`, because the
+integrals use the meridian quadrature. Against the exact Solov'ev flux
+(`nonnested_n0_equilibrated_solovev`, 8/16 rings), the efficiency index is
+1.018/1.013 at P2 and 1.83/1.82 at P3. The n > 0 vacuum modes have no bound.
+FortFEM's meridian H(curl) bound applies only to the problem with the
+projected tangential trace. The projection error of that trace has no bound.
+
 FortFEM's arbitrary-point basis evaluator currently allocates scratch arrays
 per query. This limits tracing performance, while the new solver loads and
 D3 cell loops use cached quadrature and OpenMP. A reusable allocation-free
