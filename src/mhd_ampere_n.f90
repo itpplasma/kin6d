@@ -37,9 +37,12 @@ module kin6d_mhd_ampere_n
     !! Complex amplitudes follow kin6d_coils_3d: a field X(R, Z) e^{i n phi}
     !! stands for the physical field X e^{i n phi} + c.c.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_op_complex, &
         meridian_stiffness, meridian_point_basis_t, meridian_point_basis_init, &
-        meridian_point_basis, meridian_zcsc_matmul
+        meridian_point_basis, meridian_zcsc_matmul, meridian_field_i
+    use fortfem_equilibrated_hcurl_meridian_n, only: &
+        meridian_hcurl_estimate_t, meridian_hcurl_equilibrated_bound, HCURL_OK
     use fortfem_meridian_magnetic_coupling, only: meridian_boundary_t, &
         meridian_boundary_build, meridian_flux_pairing
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_operators_t
@@ -55,12 +58,32 @@ module kin6d_mhd_ampere_n
 
     real(dp), parameter, public :: mu0 = 4.0e-7_dp*3.14159265358979323846_dp
 
+    type, public :: ampere_n_error_t
+        !! Ordinary-arithmetic diagnostics, never a continuous certificate.
+        !! The coupled discrete norm includes the exterior Steklov energy;
+        !! the equilibrated reconstruction covers a different problem with
+        !! the candidate's tangential trace fixed. Its missing exterior
+        !! remainder is explicit and is never silently set to zero.
+        real(dp) :: discrete_energy_error = huge(1.0_dp)
+        real(dp) :: residual_norm = huge(1.0_dp)
+        type(meridian_hcurl_estimate_t) :: interior
+        integer :: discrete_status = -1
+        integer :: interior_status = -1
+        character(len=32) :: discrete_claim = 'unavailable'
+        character(len=32) :: interior_claim = 'unavailable'
+        character(len=32) :: continuous_claim = 'unavailable-exterior-remainder'
+        character(len=32) :: derivative_claim = 'unavailable'
+        logical :: exterior_remainder_available = .false.
+    end type ampere_n_error_t
+
     type, public :: ampere_n_t
         integer :: n = 0
         integer :: nn = 0          !! Nedelec dofs (unknowns)
         integer :: n2 = 0          !! V2 dofs
         integer :: ntr = 0         !! P2 boundary trace dofs
         type(meridian_boundary_t) :: bd
+        type(csc_z_t) :: matrix    !! full coupled operator for residual checks
+        type(ampere_n_error_t) :: error
         type(csc_z_t) :: curl      !! V2 <- Nedelec, curl_n in the gauge a = 0
         integer, allocatable :: bdof(:)          !! boundary Nedelec dofs
         complex(dp), allocatable :: cb(:, :)     !! C on bdof, (ntr, nbe)
@@ -72,6 +95,7 @@ module kin6d_mhd_ampere_n
     end type ampere_n_t
 
     public :: ampere_n_build
+    public :: ampere_n_error, ampere_n_equilibrated_error
     public :: ampere_n_solve
     public :: ampere_n_curl
     public :: ampere_n_trace
@@ -178,6 +202,7 @@ contains
         call csc_from_triplet(nn, nn, rows(1:cnt), cols(1:cnt), zv(1:cnt), &
             kfull, fst)
         if (.not. status_ok(fst)) return
+        amp%matrix = kfull
         if (gs_direct_available()) then
             call factor_real_form(kfull, amp, st)
             if (st /= 0) return
@@ -244,21 +269,49 @@ contains
         status = 0
     end subroutine leading_columns
 
-    subroutine ampere_n_solve(amp, f, a, status)
-        !! Solve (K + C^H S^{-1} C) a = f for the Nedelec coefficients a;
-        !! f = mu0 (A', J) is the caller's load.
+    subroutine ampere_n_solve(amp, f, a, status, fs, fsd, current)
+        !! Solve the coupled equation. Every result carries a discrete
+        !! residual/energy diagnostic and explicit continuous-error status.
+        !! Optional fs, fsd and current enable the fixed-trace interior
+        !! reconstruction; current is already mu0-scaled, in T/m. The callback
+        !! must be thread safe; fs must be the space used to build amp.
+        !! This does not certify the exterior problem.
+        type(ampere_n_t), intent(inout) :: amp
+        complex(dp), intent(in) :: f(:)
+        complex(dp), intent(out) :: a(:)
+        integer, intent(out) :: status
+        type(meridian_feec_t), intent(in), optional :: fs, fsd
+        procedure(meridian_field_i), optional :: current
+        integer :: st
+        type(ampere_n_error_t) :: estimate
+
+        amp%error = ampere_n_error_t()
+        call solve_factored(amp, f, a, status)
+        if (status /= 0) return
+        call ampere_n_error(amp, f, a, estimate, st)
+        estimate%discrete_status = st
+        amp%error = estimate
+        ! Failure of a diagnostic does not invalidate the candidate solve.
+        if (.not. present(fs)) return
+        if (.not. present(fsd)) return
+        if (.not. present(current)) return
+        call ampere_n_equilibrated_error(fs, fsd, amp, a, current, estimate, st)
+        amp%error = estimate
+    end subroutine ampere_n_solve
+
+    subroutine solve_factored(amp, f, a, status)
         type(ampere_n_t), intent(inout) :: amp
         complex(dp), intent(in) :: f(:)
         complex(dp), intent(out) :: a(:)
         integer, intent(out) :: status
         type(fortsparse_status_t) :: fst
-
         real(dp), allocatable :: fr(:), xr(:)
         integer :: n
         logical :: ok
 
         status = 1
         if (.not. amp%factored) return
+        if (size(f) /= amp%nn .or. size(a) /= amp%nn) return
         if (amp%use_direct) then
             n = size(f)
             allocate (fr(2*n), xr(2*n))
@@ -272,7 +325,74 @@ contains
         end if
         call sparse_solve(amp%solver, f, a, fst)
         if (status_ok(fst)) status = 0
-    end subroutine ampere_n_solve
+    end subroutine solve_factored
+
+    subroutine ampere_n_error(amp, f, a, estimate, status)
+        !! Residual dual norm sqrt(real(r^H K^-1 r)) for the full coupled
+        !! discrete equation K a = f. An equation-level correction solve is
+        !! independent of the candidate algorithm and includes C^H S^-1 C.
+        !! Rounding/factorization errors are not enclosed: this is an
+        !! indicator, not a rigorous finite-dimensional certificate.
+        type(ampere_n_t), intent(inout) :: amp
+        complex(dp), intent(in) :: f(:), a(:)
+        type(ampere_n_error_t), intent(out) :: estimate
+        integer, intent(out) :: status
+        complex(dp), allocatable :: residual(:), correction(:)
+        real(dp) :: energy
+
+        estimate = ampere_n_error_t()
+        estimate%discrete_status = 1
+        status = 1
+        if (.not. amp%factored) return
+        if (size(f) /= amp%nn .or. size(a) /= amp%nn) return
+        residual = f - csc_matvec(amp%matrix, a)
+        if (.not. all(ieee_is_finite(real(residual, dp)))) return
+        if (.not. all(ieee_is_finite(aimag(residual)))) return
+        estimate%residual_norm = norm2(abs(residual))
+        allocate (correction(amp%nn))
+        call solve_factored(amp, residual, correction, status)
+        if (status /= 0) return
+        energy = real(dot_product(residual, correction), dp)
+        if (.not. ieee_is_finite(energy) .or. energy < 0.0_dp) then
+            status = 2
+            estimate%discrete_status = status
+            return
+        end if
+        estimate%discrete_energy_error = sqrt(energy)
+        estimate%discrete_claim = 'indicator'
+        estimate%discrete_status = 0
+    end subroutine ampere_n_error
+
+    subroutine ampere_n_equilibrated_error(fs, fsd, amp, a, current, estimate, &
+            status)
+        !! Fixed-trace interior Prager--Synge diagnostic with R dR dZ pairing.
+        !! This estimates the interior solution whose tangential A equals the
+        !! candidate's trace; it is not a bound for the coupled solution.
+        !! Non-polynomial quadrature and exterior/derivative remainders remain
+        !! unavailable. Existing algebraic diagnostics are preserved.
+        type(meridian_feec_t), intent(in) :: fs, fsd
+        type(ampere_n_t), intent(in) :: amp
+        complex(dp), intent(in) :: a(:)
+        procedure(meridian_field_i) :: current
+        type(ampere_n_error_t), intent(inout) :: estimate
+        integer, intent(out) :: status
+        complex(dp), allocatable :: full_a(:)
+
+        estimate%interior = meridian_hcurl_estimate_t()
+        estimate%interior_claim = 'unavailable'
+        estimate%interior_status = -1
+        status = 1
+        if (.not. amp%factored) return
+        if (size(a) /= amp%nn .or. fs%nn /= amp%nn) return
+        allocate (full_a(fs%sp(1)%ndof))
+        full_a = (0.0_dp, 0.0_dp)
+        full_a(:amp%nn) = a
+        call meridian_hcurl_equilibrated_bound(fs, fsd, amp%n, full_a, current, &
+            estimate%interior, status)
+        estimate%interior_status = status
+        if (status /= HCURL_OK) return
+        estimate%interior_claim = 'indicator-fixed-tangential-trace'
+    end subroutine ampere_n_equilibrated_error
 
     subroutine ampere_n_curl(amp, a, b2)
         !! V2 coefficients of B = curl_n A.
@@ -327,6 +447,8 @@ contains
         if (amp%use_direct) call gs_direct_free(amp%direct)
         amp%use_direct = .false.
         amp%factored = .false.
+        amp%error = ampere_n_error_t()
+        amp%matrix = csc_z_t()
         if (allocated(amp%bdof)) deallocate (amp%bdof)
         if (allocated(amp%cb)) deallocate (amp%cb)
         if (allocated(amp%sinv)) deallocate (amp%sinv)
