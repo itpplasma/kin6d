@@ -843,6 +843,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map equilibrium_core nonnested vacuum_shell
+            response_strip_jets
             response_fluid
             gs_coarea gs_inverse
             gs_reference_error laboratory poisson fp transport
@@ -1633,8 +1634,8 @@ add_executable(em_slab_demo app/em_slab_demo.f90)
 target_link_libraries(em_slab_demo PRIVATE kin6d kin6d_io)
 
 # R-B2 jets: independent of outer coupling and cut-boundary orchestration.
-target_sources(kin6d PRIVATE src/generated/kin6d_response_strip_jets_leaves.f90
-    src/response_strip_jets.f90)
+target_sources(kin6d_mhd PRIVATE src/generated/kin6d_response_strip_jets_leaves.f90
+    src/mhd/response_strip_jets.f90)
 set_source_files_properties(src/generated/kin6d_response_strip_jets_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_response_strip_jets test/test_response_strip_jets.f90)
@@ -1651,7 +1652,7 @@ if(KIN6D_STRIP_EQDSK_TEST)
     set_tests_properties(response_strip_tc24_jets PROPERTIES
         ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1" TIMEOUT 60)
 endif()
-target_sources(kin6d PRIVATE src/response_strip_preconditioner.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/response_strip_preconditioner.f90)
 add_executable(test_response_strip_preconditioner
     test/test_response_strip_preconditioner.f90)
 target_link_libraries(test_response_strip_preconditioner PRIVATE kin6d)
