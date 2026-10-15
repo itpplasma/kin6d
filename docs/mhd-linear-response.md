@@ -194,7 +194,9 @@ and finite-pressure layers go to resolved strips
 `order`, `model` (`'shield'` or `'ideal'`), `np_sample`, `qlow`,
 `boundary_sheet`, `rat_pad`/`rat_grade` (rings graded geometrically toward
 each rational), `edge_moved_current`, `closure` (`'sheet'` or `'frobenius'`),
-`layer_delta`, `layer_ratio`, `layer_nfit`, `spot`; with `closure =
+`layer_delta`, `layer_ratio`, `layer_nfit`, `spot`, `error_estimate`
+(default true: equilibrated coupled bound of every unit-sheet solve in
+`prefix_sheet_error.dat`); with `closure =
 'resistive'` also `profiles` (table ψ_N, η [Ω m], ρ [kg/m³], Ω [rad/s]),
 `omega_drive`, `layer_nu`, `eta_scale`, `inertia_q2`, and the output
 `prefix_resist.dat` (Δ_layer, L, Q, A, A/area, layer jump at δ and at spot,
