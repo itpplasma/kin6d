@@ -331,6 +331,24 @@ optimization. Planned scope is not implemented functionality.
 - Publish new plots and PDFs through slopbox only; never commit the generated
   plots or PDFs. Retain scripts, input data and provenance to reproduce them.
 
+## Build layers and development loop
+
+- Library sources belong to one layer target (`cmake/kin6d_layers.cmake`):
+  L0 `kin6d_core`; L1 `kin6d_fem2d`, `kin6d_pairs`; L2 `kin6d_equilibrium`,
+  `kin6d_mhd`, `kin6d_classical`, `kin6d_quantum`, `kin6d_continuum`; L3
+  applications and `kin6d_io`. A source uses only its own or lower layers; of
+  the L2 classes only mhd uses equilibrium. Add a new source with
+  `target_sources(kin6d_<layer> PRIVATE ...)`; the `kin6d_layering` test fails
+  on an upward or sideways `use`. Fix a violation by assigning the source to
+  the right layer, not by bending the physics code.
+- Every test needs a class label and one tier (`fast` or `slow`; `regression`
+  and `performance` are also accepted) in `cmake/kin6d_test_labels.cmake`;
+  `slow` means more than 60 s in a full run.
+- Development loop: `cmake --build build --target kin6d_check_<class>`, then
+  `ctest --test-dir build -j 32 -L <class> -LE slow` (or configure the
+  `dev-fast` preset and run `ctest --preset <class>`). Run only the tests
+  affected by a change; never the full suite.
+
 ## Communication
 
 Scientific and technical communication is English. Messages drafted or sent on
