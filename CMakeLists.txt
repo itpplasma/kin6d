@@ -1430,6 +1430,12 @@ target_link_libraries(test_nonnested_error PRIVATE kin6d_nn_solovev_test)
 add_test(NAME nonnested_n0_equilibrated_solovev COMMAND test_nonnested_error)
 set_tests_properties(nonnested_n0_equilibrated_solovev PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
+add_executable(test_nonnested_transport_error test/test_nonnested_transport_error.f90)
+target_link_libraries(test_nonnested_transport_error PRIVATE kin6d)
+add_test(NAME nonnested_transport_equilibrated_n0
+    COMMAND test_nonnested_transport_error)
+set_tests_properties(nonnested_transport_equilibrated_n0 PROPERTIES TIMEOUT 60
+    PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 
 add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90)
 target_link_libraries(kin6d_nn_vacuum_test PUBLIC kin6d)

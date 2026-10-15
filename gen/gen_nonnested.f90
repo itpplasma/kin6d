@@ -1,7 +1,7 @@
 program gen_nonnested
     use fortsym_arena, only: arena_t
-    use fortsym_expr, only: expr_t, sym, log, operator(+), operator(-), &
-        operator(*), operator(/), operator(**)
+    use fortsym_expr, only: expr_t, sym, log, sqrt, pi_expr, operator(+), &
+        operator(-), operator(*), operator(/), operator(**)
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
     type(arena_t), target :: arena
@@ -11,6 +11,8 @@ program gen_nonnested
     type(expr_t) :: bphi, cpar, cperp, q, d, conductivity(6)
     type(expr_t) :: gpr, gpp, gpz, gfr, gfp, gfz, ephi, gpar, gperp
     type(expr_t) :: bg, bf, coef, flux(3), current(3)
+    type(expr_t) :: krr, krz, kzz, f0, fr, fz, data(6), lower, width, height
+    type(expr_t) :: rmin, chil
     call arena%init()
     gpr = sym(arena, 'gpr'); gpp = sym(arena, 'gpp'); gpz = sym(arena, 'gpz')
     gfr = sym(arena, 'gfr'); gfp = sym(arena, 'gfp'); gfz = sym(arena, 'gfz')
@@ -71,6 +73,29 @@ program gen_nonnested
         ['br   ', 'bphi ', 'bz   ', 'gpr  ', 'gpp  ', 'gpz  ', 'gfr  ', &
         'gfp  ', 'gfz  ', 'ephi ', 'gpar ', 'gperp'], &
         ['jr', 'jp', 'jz'], current, ad=.true.)
+    ! NN2 equilibrated-flux data of the axisymmetric N = 0 block with
+    ! measure R dR dZ, as a planar problem in dR dZ: tensor A = R K_pol,
+    ! strong source R f0 and flux R (K_pol grad p_h - f_pol) of the weak load
+    ! <v f0 + grad v . f>; K_pol = (krr, krz; krz, kzz).
+    krr = sym(arena, 'krr'); krz = sym(arena, 'krz'); kzz = sym(arena, 'kzz')
+    f0 = sym(arena, 'f0'); fr = sym(arena, 'fr'); fz = sym(arena, 'fz')
+    data = [r*krr, r*krz, r*kzz, r*f0, r*(krr*gpr + krz*gpz - fr), &
+        r*(krz*gpr + kzz*gpz - fz)]
+    call w%emit('transport_error_data', &
+        ['r  ', 'krr', 'krz', 'kzz', 'f0 ', 'fr ', 'fz ', 'gpr', 'gpz'], &
+        ['a11   ', 'a12   ', 'a22   ', 'source', 'qr    ', 'qz    '], data, &
+        ad=.true.)
+    ! Cell lower eigenvalue bound of A from R >= rmin and K >= chil I.
+    rmin = sym(arena, 'rmin'); chil = sym(arena, 'chil')
+    call w%emit('transport_error_lower', ['rmin', 'chil'], ['lower'], &
+        [rmin*chil], ad=.true.)
+    ! Friedrichs constant of the energy norm from the enclosing W x H
+    ! rectangle and A >= lower on the whole domain.
+    lower = sym(arena, 'lower')
+    width = sym(arena, 'width'); height = sym(arena, 'height')
+    call w%emit('transport_error_friedrichs', ['lower ', 'width ', 'height'], &
+        ['cf'], [1/(pi_expr(arena)*sqrt(lower*(1/width**2 + 1/height**2)))], &
+        ad=.true.)
     call w%line('end module kin6d_nonnested_leaves')
     call w%close()
 end program gen_nonnested
