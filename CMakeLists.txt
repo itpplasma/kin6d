@@ -1168,6 +1168,13 @@ add_test(NAME grad_shafranov_stream_readback
     -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_stream.cmake)
 set_tests_properties(grad_shafranov_stream_readback PROPERTIES TIMEOUT 30)
 
+add_test(NAME grad_shafranov_production_estimator
+    COMMAND ${CMAKE_COMMAND} -DBINARY=$<TARGET_FILE:gs_phase1>
+    -DWORK=${CMAKE_BINARY_DIR}/gs_estimator_test
+    -P ${CMAKE_SOURCE_DIR}/test/gs_phase1_estimator.cmake)
+set_tests_properties(grad_shafranov_production_estimator PROPERTIES
+    TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
     src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90

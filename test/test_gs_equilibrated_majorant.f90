@@ -21,7 +21,8 @@ program test_gs_equilibrated_majorant
     real(dp), allocatable :: contour(:, :), rhs(:), psi(:)
     real(dp) :: error, previous_error, previous_bound, effectivity, rate
     real(dp) :: functional, flux_defect, balance_defect, area
-    integer :: order, level, status, levels
+    integer :: order, level, status, levels, node
+    real(dp) :: r, z
 
     print '(a)', 'p level dofs energy_error equilibrated eff functional eff'
     do order = 1, 3
@@ -60,6 +61,30 @@ program test_gs_equilibrated_majorant
             previous_error = error
             previous_bound = est%bound
         end do
+    end do
+
+    ! Interior isoparametric warping leaves every boundary point on the same
+    ! rectangle. With u_h=0 the exact manufactured energy error is independent
+    ! of stored assembly matrices: this exercises mapped geometry and the
+    ! Bernstein-domain constants directly without a second solver oracle.
+    do order = 2, 3
+        call rectangle(0.3_dp, contour)
+        call initialize_gs(state, contour, 0.3_dp, status, order)
+        if (status /= 0) error stop 'curved mesh'
+        do node = 1, size(state%points, 2)
+            r = state%points(1, node); z = state%points(2, node)
+            state%points(1, node) = r + 0.025_dp &
+                                    *((r - r0)**2 - a*a)*(z*z - (kap*a)**2)
+        end do
+        state%mapped = .true.; state%curved_cell = .true.
+        if (allocated(psi)) deallocate (psi)
+        allocate (psi(size(state%psi))); psi = 0
+        error = energy_error(psi)
+        call gs_equilibrated_majorant(state, psi, source, est, status)
+        if (status /= GS_EQ_OK) error stop 'mapped equilibrated status'
+        if (.not. (est%bound >= error)) error stop 'mapped bound below error'
+        if (est%bound > 5*error) error stop 'mapped bound uninformative'
+        print '(a,i1,2es13.5)', 'mapped zero candidate P', order, error, est%bound
     end do
 
 contains
