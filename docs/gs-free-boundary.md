@@ -207,7 +207,7 @@ Units: m, A, Wb/rad. Flux is absolute with psi = 0 on the symmetry axis.
 | LCFS | `lcfs_mode` = `xpoint`, `limiter`, `target_mean`; `cut_fraction`; `axis_guess`, `xpoint_guess`, `search_radius`; `points_file` (limiter or target points); `axis_sign` |
 | solve | `max_refits`, `refit_tolerance`, `newton_tolerance`, `quadrature_tolerance`, `max_newton_iterations`, `seed_amplitude`, `seed_file` (initial flux map: `nr nz`, R, Z, psi with R fastest; replaces the vacuum-plus-Gaussian seed) |
 | inverse | `fit` = `none`, `unconstrained`, `bounded`, `fixed_at_limit`; `constraints_file`; `lambda`; `reference_currents`, `n_reference`; `tie_a`, `tie_b`; `emulate_freegs`, `relaxation`, `max_fit_iterations`, `fit_step_tolerance` |
-| output | `mesh_file`, `profile_points` |
+| output | `mesh_file`, `profile_points`, `error_estimate` (default true) |
 
 Constraint rows, one per line, `#` comments: `KIND R Z R2 Z2 TARGET SCALE`, with KIND
 `isoflux_pair`, `xpoint_br`, `xpoint_bz`, `psi_point`, `isoflux_lcfs`, `psi_bound`
@@ -232,6 +232,15 @@ law, axis = psi_a - psi_b), `summary.dat`. NetCDF variables:
   `q_status` (0 when written), `q_psi`, `q_s` (normalised poloidal flux, axis 0,
   boundary 1), `q`, `s_tor` (normalised toroidal flux), `toroidal_flux` (Wb);
 - coils: `circuit_currents`, `coil_currents`, `circuit_i_min`, `circuit_i_max`;
+- error estimate of the final psi (`gs_fb_majorant` through `gs_fb_certifier_t`):
+  `majorant_status` (0 available, -1 not requested, otherwise the lane status),
+  `majorant` (M0/beta), `majorant_frozen` (M0), `majorant_stability` (beta),
+  `majorant_flux` (D), `majorant_balance` (B), `majorant_interface` (N),
+  `estimator_s`, with the attributes `majorant_claim` (`practical estimate`, or
+  `unavailable`/`unavailable-not-requested`), `majorant_method`,
+  `majorant_quadrature_status` (`approximate`) and `majorant_scope`. The claim
+  stays practical for the reasons listed under Error estimates; `wall_s`
+  excludes the estimator;
 - inverse (when `fit /= none`): `fit_status`, `fit_iterations`, `fit_phi`,
   `fit_phi_data`, `fit_phi_reg`, `fit_residual`, `fit_gradient`, `fit_pinned`, and
   the GSVD report `gsvd_values` (ascending), `gsvd_modes`, `gsvd_factor_x`,
