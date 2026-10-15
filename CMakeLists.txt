@@ -430,6 +430,10 @@ add_executable(test_gs_coupled_majorant test/test_gs_coupled_majorant.f90)
 target_link_libraries(test_gs_coupled_majorant PRIVATE kin6d_gs_fb_test)
 add_test(NAME gs_free_boundary_p10_coupled_majorant COMMAND test_gs_coupled_majorant)
 set_tests_properties(gs_free_boundary_p10_coupled_majorant PROPERTIES TIMEOUT 1800)
+add_test(NAME gs_free_boundary_equilibrated_quick
+    COMMAND test_gs_coupled_majorant quick)
+set_tests_properties(gs_free_boundary_equilibrated_quick PROPERTIES TIMEOUT 60
+    PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_fb_large_aspect test/test_gs_fb_large_aspect.f90)
 target_link_libraries(test_gs_fb_large_aspect PRIVATE kin6d)
 add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_large_aspect)
