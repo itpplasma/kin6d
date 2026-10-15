@@ -8,7 +8,11 @@ program gs_phase1_main
         curve_value
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium, gs_profile_f, &
         gs_readback_resolution, gs_readback_q
-    use kin6d_gs_majorant, only: gs_functional_majorant
+    use kin6d_gs_certificate, only: gs_fixed_certifier_t
+    use kin6d_gs_error_control, only: gs_linear_goal_t, gs_fixed_linear_goal
+    use kin6d_grad_shafranov_leaves, only: gs_source
+    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, &
+        certify, claim_name
     use kin6d_gs_profile_law, only: gs_profile_law_t, read_gs_profile_law, &
         write_gs_profile_law, gs_law_sources, gs_law_primitives
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles, gs_normalize_current
@@ -22,7 +26,10 @@ program gs_phase1_main
     use fortplot_system_runtime, only: create_directory_runtime
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
-    type(gs_state_t) :: state
+    type(gs_state_t), target :: state
+    type(gs_fixed_certifier_t) :: certifier
+    type(equilibrium_certificate_t) :: certificate
+    type(gs_linear_goal_t) :: flux_goal
     type(gs_profile_law_t), allocatable :: law
     type(gs_profile_law_t) :: pressure_law
     type(periodic_curve_t) :: curve
@@ -250,13 +257,22 @@ program gs_phase1_main
     if (allocated(law)) call write_gs_profile_law('profile-law.dat', law)
     io_s = io_s + gs_wall_s() - clock
     call system_clock(start)
-    call gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
-        flux_defect, balance_defect, majorant_status, law=law, &
-        recovery_converged=recovery_converged, &
-        recovery_iterations=recovery_iterations, &
-        estimate_stability=.true., stability_estimate=stability_estimate)
-    if (majorant_status /= 0 .and. majorant_status /= 4 .and. majorant_status /= 5) &
-        error stop 'recovered-flux recovery failed'
+    certifier%state => state
+    certifier%mu0 = mu0; certifier%pprime = pprime; certifier%ffprime = ffprime
+    if (allocated(law)) certifier%law = law
+    call certify(certifier, certificate, status)
+    if (status /= 0) error stop 'GS error estimator failed'
+    majorant = certificate%bound
+    majorant_status = certificate%lane_status
+    flux_defect = certifier%flux_defect; balance_defect = certifier%balance_defect
+    stability_estimate = certificate%stability
+    recovery_converged = certifier%recovery_converged
+    recovery_iterations = certifier%recovery_iterations
+    if (.not. allocated(law)) then
+        call gs_fixed_linear_goal(state, state%psi, fixed_source, unit_weight, &
+                                  flux_goal, status)
+        if (status /= 0) flux_goal%available = .false.
+    end if
     call system_clock(finish)
     estimator_s = real(finish - start, dp)/rate
     write (output_unit, '(a,f10.3,a,i0)') 'majorant done: estimator_s=', estimator_s, &
@@ -369,11 +385,35 @@ program gs_phase1_main
     call result%write('residual', state%residual, '1', 'relative weak residual')
     call result%write('flux_consistency', readback%flux_consistency, '1', &
         'relative contour versus area flux quadrature difference')
+    call result%attribute('integrated_psi_goal_status', &
+                          merge('approximate', 'unavailable', flux_goal%available))
+    if (flux_goal%available) then
+        call result%write('integrated_psi', flux_goal%value, 'Wb m2', &
+                          'area integral of poloidal flux on represented domain')
+        call result%write('integrated_psi_correction', flux_goal%correction, 'Wb m2', &
+                          'adjoint weighted residual correction')
+        call result%write('integrated_psi_radius', flux_goal%radius, 'Wb m2', &
+                          'primal-adjoint energy product; approximate quadrature')
+        call result%write('integrated_psi_lower', flux_goal%lower, 'Wb m2', &
+                          'practical lower endpoint; not a pointwise flux band')
+        call result%write('integrated_psi_upper', flux_goal%upper, 'Wb m2', &
+                          'practical upper endpoint; not a pointwise flux band')
+    end if
+    call result%attribute('majorant_method', trim(certifier%method))
+    call result%attribute('majorant_claim', trim(claim_name(certificate%claim)))
+    call result%attribute('majorant_quadrature_status', &
+        trim(certifier%quadrature_status))
+    call result%attribute('majorant_stability_status', &
+                         merge('available  ', 'unavailable', certificate%stability > 0))
+    call result%attribute('majorant_scope', &
+                     merge('solution energy error     ', 'frozen-source energy error', &
+                                certificate%stability > 0))
     call result%write('majorant_status', real(majorant_status, dp), '1', &
-        '0 conditional estimate; 4 residual only; 5 practical linearized estimate')
-    call result%write('majorant', majorant, 'Wb/m^0.5', 'recovered-flux energy error estimate')
+                      '4 frozen-source residual only; 5 practical solution estimate')
+    call result%write('majorant', majorant, 'Wb/m^0.5', &
+        'energy error estimate; see majorant_scope and majorant_claim')
     call result%write('stability_estimate', stability_estimate, '1', &
-        'numerical linearized coercivity estimate; not a continuous bound')
+                   'stability divisor; residual quadrature remains separately declared')
     call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', 'weighted flux defect')
     call result%write('majorant_balance', balance_defect, 'Wb/m^0.5', 'weighted balance defect')
     call result%write('majorant_recovery_converged', merge(1.0_dp, 0.0_dp, recovery_converged), &
@@ -413,6 +453,23 @@ program gs_phase1_main
     write (unit, '(a,1x,i0)') 'radial_points', radial_points
     write (unit, '(a,1x,i0)') 'angular_points', angular_points
     write (unit, '(a,1x,es25.16e3)') 'psi_axis', readback%psi_axis
+    write (unit, '(a,1x,a)') 'integrated_psi_goal_status', &
+        merge('approximate', 'unavailable', flux_goal%available)
+    if (flux_goal%available) then
+        write (unit, '(a,1x,es25.16e3)') 'integrated_psi', flux_goal%value
+        write (unit, '(a,1x,es25.16e3)') &
+            'integrated_psi_correction', flux_goal%correction
+        write (unit, '(a,1x,es25.16e3)') 'integrated_psi_radius', flux_goal%radius
+        write (unit, '(a,1x,es25.16e3)') 'integrated_psi_lower', flux_goal%lower
+        write (unit, '(a,1x,es25.16e3)') 'integrated_psi_upper', flux_goal%upper
+    end if
+    write (unit, '(a,1x,a)') 'majorant_method', trim(certifier%method)
+    write (unit, '(a,1x,a)') 'majorant_claim', trim(claim_name(certificate%claim))
+    write (unit, '(a,1x,a)') 'majorant_quadrature_status', &
+        trim(certifier%quadrature_status)
+    write (unit, '(a,1x,a)') 'majorant_scope', &
+        merge('solution-energy-error     ', 'frozen-source-energy-error', &
+              certificate%stability > 0)
     write (unit, '(a,1x,i0)') 'majorant_status', majorant_status
     write (unit, '(a,1x,es25.16e3)') 'stability_estimate', stability_estimate
     write (unit, '(a,1x,es25.16e3)') 'axis_R', readback%axis(1)
@@ -465,6 +522,20 @@ program gs_phase1_main
     end do
     close (unit)
 contains
+    function fixed_source(cell, r, z, psi) result(source)
+        integer, intent(in) :: cell
+        real(dp), intent(in) :: r, z, psi
+        real(dp) :: source
+        call gs_source(r, mu0, pprime, ffprime, source)
+        source = source + 0.0_dp*(cell + z + psi)
+    end function fixed_source
+
+    function unit_weight(r, z) result(weight)
+        real(dp), intent(in) :: r, z
+        real(dp) :: weight
+        weight = 1.0_dp + 0.0_dp*(r + z)
+    end function unit_weight
+
     function int_text(value) result(text)
         integer, intent(in) :: value
         character(16) :: text
