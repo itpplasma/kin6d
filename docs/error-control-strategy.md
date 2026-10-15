@@ -135,6 +135,7 @@ run. See the CSV for inputs, scales, widths, timing method and all repetitions.
 | Q7 screening | enclosed tails plus quadrature indicators; instrumented total about 2.6× with estimator work larger than candidate | checkpoint/cache E quadrature differences and separate D/S tails; full response remains candidate until integration/input remainders close |
 | C3/C4 PME | RMS force estimate about 2.1× / 3.6× for one force action | cache parameter estimate outside hot steps; E only, since positional law and omitted mesh/self terms do not establish an all-configuration bound |
 | NN1 axisymmetric P2/P3 | practical fixed-trace RT bound; P3 index 1.179/1.076 on 8/16 rings | local mapped source oscillation; quadrature/arithmetic and physical trace error remain unenclosed |
+| NN2 phi-dependent transport | practical full Fourier-Galerkin RT residual bound; manufactured index 1.21–1.23; generic estimator: 14.5–19% of assembly/solve at 83,205 DOFs, four threads | retain separate Fourier/phi-quadrature and trace errors; ellipticity uses the declared chi_perp; anisotropy robustness and enclosed quadrature remain separate work |
 | H1a/H1b | batch interval summarization negligible beside sampling | statistical intervals with autocorrelation/mixing checks; algorithmic P needs an explicit finite-sample law; increase independent batches/realizations when width misses budget |
 
 ## Implemented Q0 arithmetic and approximate mode
@@ -248,8 +249,17 @@ enclosed. On a coarse Solov'ev psi-lane state the lower bound of a finer test
 space lies below it. The NN2 transport solve
 (`nt_solve(..., estimate_error=.true.)`) bounds its N = 0 block with tensor RT
 recovery (A = R K_pol, A_min = R_min chi_perp) when K does not depend on phi;
-a phi-dependent K with modes > 0 couples the modes and reports
-`unavailable-mode-coupling`. The bound holds for any anisotropy, but the
+a phi-dependent K with modes > 0 now uses the full retained Fourier system.
+FortFEM projects `K grad p - f`, retains its toroidal component and
+reconstructs `R j_pol` with RT fluxes mode by mode, with source
+`(R f0 + d_phi j_phi)_b`. The defect norm uses the guaranteed lower
+ellipticity constant chi_perp and Parseval weights 1 and 1/2. Its scope is
+`phi-sampled-fourier-galerkin`, with the discrete Dirichlet trace fixed;
+meridional and phi quadrature remain approximate. The coupled manufactured
+P2 index is 1.21–1.23 with order 1.97–1.99. Sampling uses FFTs, so cost is
+O(cells * nphi log nphi) plus O(cells * modes) reconstruction at fixed
+spatial degree; storage is O(cells * modes). In the N = 0 tensor path the
+bound holds for any anisotropy, but the
 hat-function localisation is not robust in it: on the Sovinec test the index
 is 1.05 at chi ratio 1, 3--6 at 1e3, and grows with h at 1e6--1e9 (P2
 solution polluted). Opt-in FortFEM `correction_sweeps` adds parallel,

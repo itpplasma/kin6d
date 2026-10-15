@@ -11,7 +11,7 @@ module kin6d_nonnested_transport
     ! NN1 symmetric Dirichlet solve. See docs/equilibrium-nonnested-nn2.md.
     ! With estimate_error, the N = 0 block carries the equilibrated energy
     ! bound of kin6d_nonnested_error (nt_axisymmetric_error); a phi-dependent
-    ! K with modes > 0 couples the modes and reports no bound.
+    ! K with modes > 0 uses the full Fourier-Galerkin residual bound.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_feec_t
