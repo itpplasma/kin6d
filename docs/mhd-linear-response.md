@@ -73,9 +73,47 @@ tangential trace fixed**. It does not include surface-current loads or the
 exterior Steklov remainder. Consequently `interior_claim` is
 `indicator-fixed-tangential-trace`, `continuous_claim` remains
 `unavailable-exterior-remainder`, and no finite exterior radius is reported.
-Closing that gap requires an upstream reconstruction constrained by the
-exterior dual trace, plus enclosed quadrature. A small coupled algebraic
-residual does not close either gap. The derivative enclosure also remains
+`ampere_n_coupled_error` instead imposes the sheet jump and the boundary
+dual trace in a broken scalar potential `sigma = R H_phi`. It bounds the
+coupled problem with the **Galerkin** exterior and interpolated sheet data.
+Its zero Steklov term is an algebraic identity for that exterior operator;
+it does not bound its difference from the exact exterior map.
+
+An optional thread-safe `sheet_derivative` callback returning `dG/dtau`
+adds `sheet_remainder` to `coupled_bound`, with `sheet_status=practical-lift`.
+For each oriented sheet edge, set `r = G - I_k G`. On its listed adjacent
+triangle the potential `sigma_r = -(lambda_a + lambda_b)^4 r(tau)`,
+`tau = lambda_b/(lambda_a + lambda_b)`, vanishes on the other two edges.
+It has jump `-r`. Summing these lifts gives
+`H_r = (grad(sigma_r)/(i n), sigma_r/R)`, satisfying
+`(curl_n v,H_r)_R = L_r(v)` by cellwise integration by parts. Testing the
+correction equation with its solution gives `|||A_G-A_IG||| <= ||H_r||_R`,
+also with a nonnegative exterior energy. This is a continuous inequality
+with constant one. The numerical norm uses ordinary sampled quadrature,
+so the returned correction remains practical. Missing callbacks and
+inconsistent shared-node jumps have explicit unavailable statuses. Without
+the callback the original bound still concerns interpolated sheet data.
+
+The same integration-by-parts identity gives constant one for the interior
+Prager--Synge reconstruction: `||curl_n e||^2 + ||H-B||^2 = ||H-B_h||^2`.
+No unknown Friedrichs constant is needed. If equilibration has a volume
+defect `d`, the gauge implies `||v/sqrt(R)|| <= ||curl_n v||_R/|n|`, hence
+the additional term is `||R^(3/2) d||/|n|` (or `Rmax ||d||_R/|n|`).
+The nonnegative exterior term only strengthens this estimate. These
+constants do not enclose quadrature or floating-point evaluation.
+
+In the small toroidal ring fixture the new sheet term costs 17--41% of a
+reused Ampere solve (including its residual diagnostic), or below 0.05% of
+boundary assembly, factorization and solve. Three repeated measurements
+were taken on the shared host. The independent cylinder test's eight loaded
+cells give about 2x speedup from one to four threads, with unchanged radii
+to `1e-12` relative. This is evidence for the added term only; the existing
+global potential reconstruction and dense BEM path are not O(N) algorithms.
+
+The exact-exterior remainder still requires a computable continuous trace
+residual norm and its reliability constant; the assembled BEM matrices
+alone do not provide them. A small coupled algebraic residual does not close
+that gap. The derivative enclosure also remains
 explicitly unavailable; the primal diagnostic does not certify response
 sensitivities. Mode zero still requires a separate gauge and is rejected.
 
@@ -137,6 +175,8 @@ efficiency and an O(N) runtime bound remain unavailable.
 | Test | Oracle | Result |
 |---|---|---|
 | `mhd_ampere_n_error_status` | affine/curved meshes, both mode signs, independent coupled energy, nonzero exactly representable field, perturbed candidates | energy diagnostic and explicit exterior/derivative status |
+| `mhd_ampere_n_sheet_interpolation_remainder` | continuous cosine-series solution for a cylinder sheet, cubic exact recovery, mode parity, generated JVP/VJP | index 2.23--2.39; order 3.47--3.49; practical |
+| `mhd_ampere_n_sheet_coupled_equilibrated` | toroidal ring sheets, perturbed candidates, missing loads, optional interpolation correction | discrete-exterior reconstruction plus explicit sheet remainder/status |
 | `mhd_ampere_n_exterior_manufactured` | current `curl_n W` of a compact bump; field from toroidal-angle quadrature of `1/(4π|x−y|)` | field order k (k = 1, 2), exterior trace order ≥ 2 |
 | `mhd_shielding_cylinder_limit_reciprocity` | screened response of a periodic cylinder (modified Bessel functions); sheet reciprocity | 1e-5 at R0/a = 40, second order in a/R0; M Hermitian to 1e-13 |
 | `mhd_newcomb_screw_pinch_limit` | Newcomb ODE (fortnum Cash–Karp), shape of the response inside the plasma | β=0: second order in a/R0, 6e-3 at R0/a=40; β_p≈2 converges to the same limit (pressure-sensitive test needs a periodic-cylinder chart) |

@@ -34,6 +34,20 @@ contains
         g = ring_sheet_density(angles, mode_n, mode_m, (1.0_dp, 0.0_dp), &
             sheet_ta(i) + tau*(sheet_tb(i) - sheet_ta(i)))
     end subroutine
+
+    subroutine sheet_derivative(cell, edge, tau, dg)
+        integer, intent(in) :: cell, edge
+        real(dp), intent(in) :: tau
+        complex(dp), intent(out) :: dg
+        complex(dp) :: g
+        integer :: i
+        call sheet(cell, edge, tau, g)
+        dg = (0.0_dp, 0.0_dp)
+        i = findloc(sheet_cells, cell, dim=1)
+        if (i == 0) return
+        ! Here theta_s=nu=theta, q=1: G=mu0*i*n*exp(-i*m*theta).
+        dg = cmplx(0.0_dp, -mode_m*(sheet_tb(i) - sheet_ta(i)), dp)*g
+    end subroutine sheet_derivative
 end module
 
 program test_mhd_ampere_sheet_error
@@ -48,7 +62,7 @@ program test_mhd_ampere_sheet_error
     !  - omitting the sheet loads leaves an O(1) bound;
     !  - claim metadata: practical-discrete-exterior, Steklov term zero by
     !    construction, exterior remainder unavailable.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use ampere_sheet_fixture
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_point_basis_t, meridian_point_basis_init
@@ -57,6 +71,7 @@ program test_mhd_ampere_sheet_error
         ampere_n_solve, ampere_n_error, ampere_n_coupled_error, ampere_n_free
     use kin6d_mhd_response_n, only: ring_angles_set, ring_sheet_load, &
         ring_sheet_edges
+    use fortfem_equilibrated_hcurl_meridian_n, only: meridian_hcurl_edge_remainder
     implicit none
     real(dp) :: bound(2), field(2), theta(64)
     integer :: lev, i
@@ -92,8 +107,10 @@ contains
         type(ampere_n_t) :: amp
         type(ampere_n_error_t) :: est
         complex(dp), allocatable :: f(:), a(:), delta(:)
-        real(dp) :: rings(nr), index_
+        real(dp) :: rings(nr), index_, setup_solve_time, solve_time, term_time
+        real(dp) :: correction
         integer :: st, j, i
+        integer(int64) :: tick, tock, ticks_per_second
 
         rings = [(real(i, dp)/nr, i=1, nr)]
         call flux_mesh_build(rings, 8, 64, 2, circle, fm, st)
@@ -103,6 +120,7 @@ contains
         call meridian_feec_build(fm%mm, 3, fsd, st, quad_degree=10)
         call require(st == 0, 'potential FEEC')
         call meridian_point_basis_init(fs, pb, st)
+        call system_clock(tick, ticks_per_second)
         call ampere_n_build(fs, mode_n, amp, st)
         call require(st == 0, 'Ampere build')
         j = nr/2
@@ -113,6 +131,15 @@ contains
             (1.0_dp, 0.0_dp), f)
         call ampere_n_solve(amp, f, a, st)
         call require(st == 0, 'sheet solve')
+        call system_clock(tock)
+        setup_solve_time = real(tock - tick, dp)/ticks_per_second
+        call system_clock(tick)
+        do i = 1, 20
+            call ampere_n_solve(amp, f, a, st)
+            call require(st == 0, 'reused sheet solve')
+        end do
+        call system_clock(tock)
+        solve_time = real(tock - tick, dp)/ticks_per_second/20
 
         est = amp%error
         call ampere_n_coupled_error(fs, fsd, amp, a, zero_current, est, st, &
@@ -130,7 +157,28 @@ contains
             'Steklov status')
         call require(est%continuous_claim == 'unavailable-exterior-remainder', &
             'exact exterior remainder stays unavailable')
+        call require(est%sheet_status == 'unavailable-sheet-derivative', &
+            'missing sheet derivative is explicit')
         call require(galerkin_bound < 0.2_dp*field_norm, 'small Galerkin bound')
+
+        call ampere_n_coupled_error(fs, fsd, amp, a, zero_current, est, st, &
+            sheet_cells, [(1, i=1, size(sheet_cells))], sheet, sheet_derivative)
+        call require(st == 0, 'sheet-corrected coupled error')
+        call require(est%sheet_status == 'practical-lift', 'sheet remainder status')
+        call require(est%sheet_remainder > 0.0_dp, 'nonzero sheet remainder')
+        call require(abs(est%coupled_bound - galerkin_bound - &
+            est%sheet_remainder) < 1.0e-12_dp*field_norm, 'remainder added once')
+        print '(a,es12.4)', '  sheet interpolation remainder ', est%sheet_remainder
+        call system_clock(tick)
+        do i = 1, 10
+            call meridian_hcurl_edge_remainder(fsd, mode_n, sheet_cells, &
+                [(1, j=1, size(sheet_cells))], sheet, sheet_derivative, correction, st)
+            call require(st == 0, 'timed sheet remainder')
+        end do
+        call system_clock(tock)
+        term_time = real(tock - tick, dp)/ticks_per_second/10
+        print '(a,4es12.4)', '  setup+solve, reused solve, sheet, sheet/reused ', &
+            setup_solve_time, solve_time, term_time, term_time/solve_time
 
         ! Perturbed candidates: bound >= discrete coupled energy error.
         allocate (delta(amp%nn))
@@ -156,6 +204,8 @@ contains
         print '(a, es11.3)', '  without sheet loads: bound', est%coupled_bound
         call require(st == 0 .and. est%coupled_bound > 0.2_dp*field_norm, &
             'missing sheet loads are detected')
+        call require(est%sheet_status == 'zero-no-sheet', 'sheet status reset')
+        call require(est%sheet_remainder == 0.0_dp, 'sheet remainder reset')
         call ampere_n_free(amp)
     end subroutine
 end program
