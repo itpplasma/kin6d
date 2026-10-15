@@ -1,9 +1,8 @@
 \section{Ampere-loop total-current diagnostic and the variational boundary flux}
 \label{sec:ampere}
 
-Code references in this section are to commit \code{efc94ae} on the unmerged
-branch \code{fix/ampere-loop-diag} for \src{src/gs\_ampere\_loop.f90},
-\src{src/gs\_nonlinear.f90}, \src{app/gs\_phase1.f90} and the two tests, and to
+Code references in this section are to the integrated commit \code{e56e0dd} for \src{src/equilibrium/gs\_ampere\_loop.f90},
+\src{src/equilibrium/gs\_nonlinear.f90}, \src{app/gs\_phase1.f90} and the two tests, and to
 \code{origin/main} \code{9e41d24} for \src{src/grad\_shafranov.f90},
 \src{gen/gen\_grad\_shafranov.f90} and
 \src{src/generated/kin6d\_grad\_shafranov\_leaves.f90} (identical on both
@@ -62,19 +61,19 @@ tangent $t=x'(s)$, the outward normal is $n\dd l=(t_Z,-t_R)\dd s$, so
 $R^{-1}\partial_n\psi\dd l=R^{-1}(\psi_Rt_Z-\psi_Zt_R)\dd s=\mathbf B\cdot t\dd s$
 by \eqref{eq:amp-field}. Hence $\mu_0I=-\oint_{\mathrm{CCW}}\mathbf B\cdot\dd\mathbf l$,
 which is Stokes' theorem with the CCW orientation normal $\hat R\times\hat Z=-\hat\phi$.
-This is the sign stated in \src{src/gs\_ampere\_loop.f90:3}.
+This is the sign stated in \src{src/equilibrium/gs\_ampere\_loop.f90:3}.
 
 \subsection{Strong (trace) loop}
 \code{gs\_boundary\_current} sums over every element edge whose two vertices
-and all interior edge nodes are boundary nodes (\src{src/gs\_ampere\_loop.f90:148-155}).
+and all interior edge nodes are boundary nodes (\src{src/equilibrium/gs\_ampere\_loop.f90:148-155}).
 For the reference edge from vertex $k$ to $k{+}1$, parametrised by
 $s\in[0,1]$, the physical tangent is
 $t=\sum_i x_i\,(\nabla_\xi\varphi_i\cdot d)$, $d=\hat v_{k+1}-\hat v_k$, on
 curved cells and $t=x_{k+1}-x_k$ on affine cells
-(\src{src/gs\_ampere\_loop.f90:157-170}). For a positively oriented element the
+(\src{src/equilibrium/gs\_ampere\_loop.f90:157-170}). For a positively oriented element the
 reference edges $1\to2\to3$ run counter-clockwise with the element on the left,
 so $(t_Z,-t_R)$ is the outward normal of the domain on a boundary edge.
-With $s_q,w_q$ the Gauss--Legendre rule on $[0,1]$ (\src{src/gs\_ampere\_loop.f90:146})
+With $s_q,w_q$ the Gauss--Legendre rule on $[0,1]$ (\src{src/equilibrium/gs\_ampere\_loop.f90:146})
 the code computes
 \begin{equation}
 I_{\mathrm{tr},h}=\sum_{\text{bdry edges}}\sum_q w_q\,
@@ -84,14 +83,14 @@ I_{\mathrm{tr},h}=\sum_{\text{bdry edges}}\sum_q w_q\,
 through \code{gs\_current\_sheet}$(R,\mu_0,\nabla\psi_h,(t_Z,-t_R))
 =-(\nabla\psi_h\cdot(t_Z,-t_R))/(\mu_0R)$
 (\src{src/generated/kin6d\_grad\_shafranov\_leaves.f90:176},
-\src{src/gs\_ampere\_loop.f90:173-174}), with the one-sided gradient of the
-owning cell (\src{src/gs\_ampere\_loop.f90:171-172}). This is
+\src{src/equilibrium/gs\_ampere\_loop.f90:173-174}), with the one-sided gradient of the
+owning cell (\src{src/equilibrium/gs\_ampere\_loop.f90:171-172}). This is
 \eqref{eq:amp-gauss} with $\psi\to\psi_h$: the code agrees with the derivation.
 The subtraction of $\psi_h$ at local node 1 uses
 $\sum_i\nabla\varphi_i=0$ and does not change the gradient (gauge invariance).
 
-\paragraph{Order of the trace loop.} Let $e=\psi-\psi_h$. On quasi-uniform
-meshes with $\psi\in H^{p+1}$, $\|\nabla e\|_{L^\infty(K)}=O(h^p)$, so the
+\paragraph{Order of the trace loop.} Let $e=\psi-\psi_h$. Assuming the usual maximum-norm gradient estimate on quasi-uniform
+meshes for $\psi\in W^{p+1,\infty}$, $\|\nabla e\|_{L^\infty(K)}=O(h^p)$, so the
 integrand of \eqref{eq:amp-trace} has an $O(h^p)$ error and
 $|I-I_{\mathrm{tr},h}|=O(h^p)$ with a boundary of length $O(1)$. No
 orthogonality is available because the boundary trace of $\nabla\psi_h$ is not
@@ -125,7 +124,7 @@ a(\psi_h,\varphi_i)=l_i(\psi_h)\quad\text{for all interior nodes } i,
 \label{eq:amp-galerkin}
 \end{equation}
 the boundary rows being replaced by $\psi_i=g_i$ and lifted
-(\src{src/gs\_nonlinear.f90:315-329}). Multiplying \eqref{eq:amp-strong} by
+(\src{src/equilibrium/gs\_nonlinear.f90:315-329}). Multiplying \eqref{eq:amp-strong} by
 $v\in H^1(\Omega)$ and integrating by parts gives, for the exact solution,
 \begin{equation}
 \oint_{\partial\Omega}\frac{1}{R}\partial_n\psi\,v\dd l=a(\psi,v)-\int_\Omega fv\dd A .
@@ -135,8 +134,8 @@ If $v|_{\partial\Omega}=1$, \eqref{eq:amp-gauss} and \eqref{eq:amp-green} give
 $\mu_0I=l(v)-a(\psi,v)$, independent of the interior values of $v$.
 
 \paragraph{Definition in code.} With the lift $w_h=\sum_{i\in\partial}\varphi_i$
-(\src{src/gs\_ampere\_loop.f90:61}) or any user lift equal to one at all
-boundary nodes (\src{src/gs\_ampere\_loop.f90:62-67}),
+(\src{src/equilibrium/gs\_ampere\_loop.f90:61}) or any user lift equal to one at all
+boundary nodes (\src{src/equilibrium/gs\_ampere\_loop.f90:62-67}),
 \begin{equation}
 I_{\mathrm w,h}=\frac{1}{\mu_0}\Bigl(\sum_i w_i\,l_i(\psi_h)
 -\sum_K\sum_q w_q\det J\,\frac{\nabla\psi_h\cdot\nabla w_h}{R}\Bigr),
@@ -145,13 +144,13 @@ I_{\mathrm w,h}=\frac{1}{\mu_0}\Bigl(\sum_i w_i\,l_i(\psi_h)
 where $l_i$ is the \emph{uneliminated} load (\code{uneliminated=.true.},
 which skips the Dirichlet lifting and row replacement,
 \src{src/gs\_nonlinear.f90:317,325}), the first term is
-\src{src/gs\_ampere\_loop.f90:69-77} and the second is
-\src{src/gs\_ampere\_loop.f90:94-106} with the Duffy rule of the requested order
+\src{src/equilibrium/gs\_ampere\_loop.f90:69-77} and the second is
+\src{src/equilibrium/gs\_ampere\_loop.f90:94-106} with the Duffy rule of the requested order
 and the same \code{gs\_current\_sheet} leaf, now contracted with $\nabla w_h$.
 On a boundary edge the trace of $w_h$ is the partition of unity of the edge
 basis, hence exactly one on the represented boundary $\partial\Omega_h$; cells
 on which $w_h$ is constant are skipped because $\nabla w_h=0$
-(\src{src/gs\_ampere\_loop.f90:96}). For P3 the bubble node is interior, so no
+(\src{src/equilibrium/gs\_ampere\_loop.f90:96}). For P3 the bubble node is interior, so no
 cell with a non-constant lift is skipped. The definition agrees with
 $\mu_0I=l(w_h)-a(\psi_h,w_h)$.
 
@@ -169,8 +168,8 @@ $a(\psi_h,1)=0$ and $l(1)=\int f(\psi_h)\dd A$.
 \end{proof}
 The code reports $\int f(\psi_h)\dd A/\mu_0$ as \code{source\_current} from
 $\sum_e\sum_i l^{(e)}_i$ (\src{src/gs\_nonlinear.f90:282,307-308};
-\src{src/gs\_ampere\_loop.f90:78}), and the CLI prints the signed balance
-$I_{\mathrm w,h}-I_{\mathrm{src}}$ (\src{app/gs\_phase1.f90:583-586}).
+\src{src/equilibrium/gs\_ampere\_loop.f90:78}), and the CLI prints the signed balance
+$I_{\mathrm w,h}-I_{\mathrm{src}}$ (\src{app/gs\_phase1.f90:675-678}).
 Proposition~\ref{prop:amp-balance}(ii) explains the branch documentation's
 remark that an imposed $I_p$ constraint turns the weak flux into a balance check.
 
@@ -178,18 +177,18 @@ remark that an imposed $I_p$ constraint turns the weak flux into a balance check
 The proposition holds only up to three algebraic/quadrature defects, each
 visible in the balance column: (a) the diagnostic integrates $a(\cdot,\cdot)$
 with the Duffy rule of order \code{order} and \code{2*order}
-(\src{src/gs\_ampere\_loop.f90:92}, \src{app/gs\_phase1.f90:576-581}), whereas
+(\src{src/equilibrium/gs\_ampere\_loop.f90:92}, \src{app/gs\_phase1.f90:668-673}), whereas
 the solver uses \code{gs\_quadrature(p)} (\src{src/grad\_shafranov.f90:342}).
 On curved cells and because of the $1/R$ weight the integrand is not
 polynomial, so the two forms differ by the quadrature error $\delta a$ and the
 balance defect is $\delta a(\psi_h,w_h-1)$; (b) the adaptive source tolerance
-of the diagnostic (default $10^{-8}$, \src{app/gs\_phase1.f90:571}, divided
-by eight on the second call, \src{app/gs\_phase1.f90:581}) versus the solver's quadrature tolerance
-(\code{quadrature\_tolerance}, default $10^{-8}$, \src{app/gs\_phase1.f90:38});
+of the diagnostic (default $10^{-8}$, \src{app/gs\_phase1.f90:663}, divided
+by eight on the second call, \src{app/gs\_phase1.f90:673}) versus the solver's quadrature tolerance
+(\code{quadrature\_tolerance}, default $10^{-8}$, \src{app/gs\_phase1.f90:45});
 (c) the nonlinear residual of \eqref{eq:amp-galerkin} at the Newton stopping
 tolerance. Defect (c) is the ``algebraic floor'' of commit \code{efc94ae}. None
 of these is a derivation/code mismatch; they are bounded only by indicators,
-as the module header states (\src{src/gs\_ampere\_loop.f90:32}).
+as the module header states (\src{src/equilibrium/gs\_ampere\_loop.f90:32}).
 \end{remark}
 
 \subsection{Convergence theory of the weak flux}
@@ -256,11 +255,11 @@ values gives
 -a(\varphi_j,w_h),
 \label{eq:amp-jvp}
 \end{equation}
-The three terms are \src{src/gs\_ampere\_loop.f90:81-82}, \src{src/gs\_ampere\_loop.f90:83-90} and \src{src/gs\_ampere\_loop.f90:108-113}, with $M^K_{kj}=\partial l^{(K)}_k/\partial\psi_j=\int_K f_\psi\varphi_k\varphi_j$
-(\code{jacobian\%mass}, \src{src/gs\_nonlinear.f90:285-286}). For the trace loop the
+The three terms are \src{src/equilibrium/gs\_ampere\_loop.f90:81-82}, \src{src/equilibrium/gs\_ampere\_loop.f90:83-90} and \src{src/equilibrium/gs\_ampere\_loop.f90:108-113}, with $M^K_{kj}=\partial l^{(K)}_k/\partial\psi_j=\int_K f_\psi\varphi_k\varphi_j$
+(\code{jacobian\%mass}, \src{src/equilibrium/gs\_nonlinear.f90:285-286}). For the trace loop the
 weights are $\partial I_{\mathrm{tr},h}/\partial\psi_j$ of \eqref{eq:amp-trace},
 computed with the same leaf on $\nabla\varphi_j$
-(\src{src/gs\_ampere\_loop.f90:179-184}). Both agree with the derivation. The
+(\src{src/equilibrium/gs\_ampere\_loop.f90:179-184}). Both agree with the derivation. The
 contraction in line 87 uses \code{mass(:,j,e)}, i.e.\ the first index as the row
 of $\partial l/\partial\psi$; $M^K$ is symmetric for a pointwise $f_\psi$, so the
 index order is immaterial there.
@@ -272,11 +271,11 @@ Derivation step & Code & Agreement\\\midrule
 $\mathbf B_p=\nabla\psi\times\nabla\phi$, \eqref{eq:amp-field} & \src{gen/gen\_grad\_shafranov.f90:85} & yes\\
 $\mu_0j_\phi=-\Dstar\psi/R$ \eqref{eq:amp-jphi} & \src{gen/gen\_grad\_shafranov.f90:89-90} & yes\\
 $f=\mu_0Rp'+FF'/R=\mu_0j_\phi$ & \src{gen/gen\_grad\_shafranov.f90:83-84} & yes\\
-trace loop sign and normal \eqref{eq:amp-trace} & \src{src/gs\_ampere\_loop.f90:157-174} & yes (CCW reference edges)\\
+trace loop sign and normal \eqref{eq:amp-trace} & \src{src/equilibrium/gs\_ampere\_loop.f90:157-174} & yes (CCW reference edges)\\
 stiffness $1/R$ weight \eqref{eq:amp-a} & \src{src/grad\_shafranov.f90:360} & yes\\
-weak flux \eqref{eq:amp-weak} & \src{src/gs\_ampere\_loop.f90:69-106} & yes\\
+weak flux \eqref{eq:amp-weak} & \src{src/equilibrium/gs\_ampere\_loop.f90:69-106} & yes\\
 uneliminated load & \src{src/gs\_nonlinear.f90:317,325} & yes\\
-JVP weights \eqref{eq:amp-jvp} & \src{src/gs\_ampere\_loop.f90:81-113} & yes\\
+JVP weights \eqref{eq:amp-jvp} & \src{src/equilibrium/gs\_ampere\_loop.f90:81-113} & yes\\
 \bottomrule
 \end{longtable}
 
