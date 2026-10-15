@@ -115,6 +115,7 @@ run. See the CSV for inputs, scales, widths, timing method and all repetitions.
 
 | Case class | Current evidence | Default schedule and next escalation |
 |---|---|---|
+| Elliptic production consumers | Repeated toroidal timings; practical bounds; [scaling ledger](benchmarks.md#production-estimator-scaling) | NN1/NN2/D3 remain above the small-fraction cost target; sheet recovery retains a global serial solve; keep setup and reused-solve denominators distinct |
 | Streaming snapshot / comparison | strict analytical/reconstruction checks; snapshot about 111× | E during evolution, final D where implemented; retain S small references; prepare immutable source/cell packets once |
 | Damped transport | D residual/inverse check about 44× on 64 cells | E residual/adaptation, final D goal and tangent checks; tighten goal inverse before full-state over-refinement |
 | Bounded OU/FP | strict reference check about 370×, submillisecond checker | E flux diagnostic, final S reference packet; general forced-FP D remains pending; reuse a prepared check for immutable data |
@@ -179,6 +180,12 @@ heterogeneous and sparse vectors, and Q0 checks 200 streams against an
 independent residual. Coverage experiments supplement the tail theorem.
 
 ## Elliptic discretization error: equilibrated residuals
+
+The production-consumer scaling ledger is in
+[benchmarks](benchmarks.md#production-estimator-scaling). It records repeated
+1/2/4/8/16-thread measurements on toroidal NN1/NN2, sheet Ampere, D3 and
+coupled/refitted `gs_free` paths. These timings do not upgrade their practical
+claims. In particular, setup amortization matters for the sheet solves.
 
 For every elliptic or coercive spatial model, the standard numerical-error
 metric is the patchwise equilibrated-residual (Prager--Synge) energy bound.

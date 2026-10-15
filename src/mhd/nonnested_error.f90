@@ -301,6 +301,9 @@ contains
             geometry(:, :, t) = fs%mm%nodes(:, order, t)
             vertices(:, triangles(:, t)) = geometry(:, 1:3, t)
         end do
+        !$omp parallel do default(shared) schedule(static) &
+        !$omp& private(t, axis, controls) reduction(max:failed) &
+        !$omp& reduction(min:lo) reduction(max:hi)
         do t = 1, nt
             if (any(abs(geometry(:, 1:3, t) - vertices(:, triangles(:, t))) > &
                 1.0e-12_dp*maxval(abs(geometry(:, :, t))))) failed = 1
@@ -319,6 +322,7 @@ contains
             lo = min(lo, minval(controls(:, :ngeo), dim=2))
             hi = max(hi, maxval(controls(:, :ngeo), dim=2))
         end do
+        !$omp end parallel do
         if (failed /= 0 .or. any(hi <= lo)) return
         status = 0
     end subroutine

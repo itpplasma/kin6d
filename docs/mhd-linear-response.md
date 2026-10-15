@@ -294,3 +294,10 @@ zero. `grad B0` comes from central differences of the spline equilibrium.
 Boozer angles are not provided (no Boozer map in the D7 layer yet), so no
 `.bc` file is written; NEO-2/NEO-RT, PENTRC and MARS (`BPLASMA`/`XPLASMA`)
 conversions consume this file or the in-memory type.
+
+The [production scaling ledger](benchmarks.md#production-estimator-scaling)
+measures the same unit-sheet Ampere APIs used by `gs_response_3d`, including
+both fresh setup and a reused per-n factor. The sheet reconstruction currently
+requires FortFEM's global potential solve; its one-shot complex factorization
+selects serial SuperLU. Timings do not establish O(N) complexity or a
+small-fraction cost relative to a reused sheet solve.

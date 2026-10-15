@@ -300,3 +300,10 @@ surfaces. The coil table, profile law and constraints for ITER
 Tests: `gs_free_app_contract` (CTest; forward solve with refit, NetCDF values and
 provenance, `--evaluate` against the axis flux and stream parity, the three fit
 variants on twin data, rejected input) and `gs_free_boundary_p8_refit_loop`.
+
+The [production scaling ledger](benchmarks.md#production-estimator-scaling)
+records the coupled/refitted `gs_free` fixture at three boundary resolutions.
+`estimator_s` includes recovery, reference BEM and practical stability work;
+`wall_s` includes mesh setup, the nonlinear solve, refits and readback.
+Consequently their ratio describes the application workload, not one Newton
+factorization. Refinement may change the final triangulation between threads.

@@ -95,9 +95,11 @@ contains
         call eq%field%sample(points, values, statuses)
         if (any(statuses /= 0)) return
         if (.not. all(ieee_is_finite(values))) return
+        !$omp parallel do default(shared) private(k) schedule(static)
         do k = 1, size(points, 2)
             call stress_load(eq, points(:, k), values(:, k), load(:, k))
         end do
+        !$omp end parallel do
         status = 0
     end subroutine
 
@@ -254,17 +256,23 @@ contains
         end do
         allocate (geometry(2, nloc, ncell), lower(ncell))
         lo = huge(1.0_dp); hi = -huge(1.0_dp)
+        failed = 0
+        !$omp parallel do default(shared) schedule(static) &
+        !$omp& private(e, axis, controls) reduction(max:failed) &
+        !$omp& reduction(min:lo) reduction(max:hi)
         do e = 1, ncell
             geometry(:, :, e) = mesh%points(:, mesh%triangles(:, e))
             do axis = 1, 2
                 call triangle_bernstein_controls(geometry(axis, :, e), &
                     controls(axis, :nloc))
             end do
-            if (minval(controls(1, :nloc)) <= 0) return
+            if (minval(controls(1, :nloc)) <= 0) failed = 1
             call riesz_coefficient(minval(controls(1, :nloc)), lower(e))
             lo = min(lo, minval(controls(:, :nloc), dim=2))
             hi = max(hi, maxval(controls(:, :nloc), dim=2))
         end do
+        !$omp end parallel do
+        if (failed /= 0) return
         if (any(hi <= lo)) return
         call riesz_friedrichs(lo(1), hi(1) - lo(1), hi(2) - lo(2), cf)
         allocate (x(2, nq*ncell), gradient(2, nloc, nq, ncell))

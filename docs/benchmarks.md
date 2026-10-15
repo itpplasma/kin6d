@@ -299,3 +299,83 @@ device gates. Plot generation remains on demand; no output figures are
 committed. [Demonstrations](demonstrations.md) defines the band contract.
 
 Chris&AI
+
+## Production estimator scaling
+
+Verified measurements, 2026-10-15: Release `-O3`, GNU Fortran 16, OpenMP MUMPS,
+Ryzen 9 5950X (16 physical cores, 32 logical CPUs), shared host. The
+[raw ledger](../benchmarks/error-control/production-consumers.tsv) retains both
+samples at every size/thread point, the baseline and optimized revisions,
+and a three-repeat paired NN2 comparison. These are modest toroidal
+production-path cases, not a large-device scaling limit. No production
+true-error oracle is available, so production efficiency indices are unavailable.
+The existing independent efficiency/containment CTests pass; claim levels stay
+practical/approximate.
+
+The table uses medians at four threads. `E/S` divides estimator time by solve
+time. The exponent is `log(E_large/E_small)/log(N_large/N_small)`; it is a
+measurement, not a complexity proof. The final free-boundary mesh has 5,481 or
+5,489 DOFs at the largest size because the refit rebuilds its triangulation.
+
+| Consumer | Three DOF counts | E/S, small / medium / large | Large E (s) | Measured DOF exponent |
+|---|---|---|---:|---:|
+| NN1, P2 mapped Solov'ev, 16/32/64 rings | 3,105 / 12,193 / 47,777 | 1.41 / 1.39 / 1.07 | 0.573 | 0.90 |
+| NN2, NN1 field, heating 1, chi ratio 1,000, 8/16/24 rings | 865 / 3,105 / 7,201 | 1.24 / 1.39 / 1.24 | 0.535 | 1.01 |
+| Ampere n=2, m=3 ring sheet, setup + first solve, 4/8/12 rings | 592 / 2,064 / 4,624 | 0.028 / 0.045 / 0.119 | 0.070 | 1.30 |
+| Same Ampere estimator / reused sheet solve | same | 3.88 / 2.98 / 5.38 | 0.070 | 1.30 |
+| D3, solved GS field, P2 displacement, 48/96/144 boundary nodes | 2,378 / 9,386 / 21,010 | 3.55 / 3.64 / 3.40 | 0.342 | 1.07 |
+| Coupled/refitted gs_free, 48/72/96 boundary nodes | 1,377 / 3,177 / about 5,485 | 0.52 / 0.70 / 0.85 | 2.217 | 0.99 |
+
+| Largest case: estimator speedup relative to one thread | 1 | 2 | 4 | 8 | 16 |
+|---|---:|---:|---:|---:|---:|
+| NN1 | 1 | 1.81 | 3.48 | 5.52 | 9.00 |
+| NN2 | 1 | 1.85 | 2.51 | 4.40 | 6.16 |
+| Ampere sheet | 1 | 1.66 | 1.83 | 1.06 | 1.77 |
+| D3 | 1 | 2.31 | 3.10 | 6.13 | 8.10 |
+| gs_free | 1 | 1.73 | 2.68 | 5.19 | 7.71 |
+
+NN1/NN2 exclude mesh/FEEC construction. NN2 exercises
+`nt_solve(..., estimate_error=.true.)` and checks its bound against the timed
+`nt_axisymmetric_error` call. Ampere includes BEM assembly/factorization in the
+fresh denominator and separately times a reused `ampere_n_solve`, as in
+`gs_response_3d`. D3 estimator time is the paired difference of calls with and
+without `error_estimate`; its denominator is assembly/sampling plus the Riesz
+solve. `gs_free` uses its existing `estimator_s` and `wall_s`: the latter
+includes mesh setup, Newton, refits and readback. Setup is not silently
+amortized into the sheet-solve comparison.
+
+Contention is material: at the largest size, optimized max/min repeat ratios
+reach 1.06 (NN1), 1.15 (NN2), 1.44 (Ampere), 1.58 (D3) and 1.25 (gs_free).
+Consult the individual samples before comparing thread counts. Baseline gs_free at 16 threads ranged from 0.86 to 7.47 s at
+the largest size. The table does not establish hardware-independent speedups.
+
+`perf record` on NN2 identified triangle Lagrange evaluation (54.7% of sampled
+cycles), with allocation and a dense Bernstein-to-nodal transform per query.
+The FortFEM campaign branch removes that allocation/transform, reuses retained
+generated P1/P2 jets and generated cardinal-product leaves, and preserves node
+ordering. In the paired four-thread, 3,105-DOF check, median estimator cost
+fell from 0.554 to 0.227 s (2.44x); bounds changed by less than 4e-12 relative.
+KIN6D additionally parallelizes meridian/D3 geometry hulls, GS profile
+conversion and D3 stress-load conversion. Across the full driver sweeps,
+optimized bounds differ from baseline by less than 9e-10 relative. For
+`gs_free` the 48/72-node bounds agree within 8e-11; the 96-node bound spans
+0.051% across the two final triangulations, already present on the baseline.
+No identical-mesh claim is made for that adaptive trajectory.
+
+The small-fraction cost target remains unmet for NN1, NN2, D3 and reused sheet
+solves. FortFEM `equilibrated_hcurl_meridian_n.f90:239` rejects patch recovery
+for sheet/free-trace data, and `solve_global` at line 387 ends with
+`sparse_solve_once` at line 427. FortSparse's default solver selects serial
+SuperLU (`fortsparse_solver.F90:49,592`): the sheet path retains a global serial
+factorization and has no O(N) claim. The math-owning workers must close that
+path. `ideal_map%factor_threads=1` is absent from these consumers' call paths
+and is unchanged; `gs_direct` uses the OpenMP maximum thread count instead.
+
+Reproduce with the opt-in `benchmark_estimator_consumers` target and
+`benchmarks/run_estimator_consumers.sh BUILD OUT`; the coupled application
+recipe is `benchmarks/run_estimator_gs_free.sh BUILD OUT`. Both retain two
+measurements at 1/2/4/8/16 threads and cap individual processes at 60 s. The
+optimized build uses `FETCHCONTENT_SOURCE_DIR_FORTFEM` pointing to FortFEM
+`eb/scale` at `a0f6fd49ba11b22dc019c518a94937dd54cd75a5`;
+KIN6D's dependency pin is unchanged. Source revisions are recorded in the
+campaign handoff. No plots or large generated artifacts are tracked.

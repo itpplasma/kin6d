@@ -253,6 +253,7 @@ contains
         end if
         allocate (raw(4, size(points, 2)))
         call sample_gs_many(field%view, points(:2, :), 1.0_dp, raw, statuses)
+        !$omp parallel do default(shared) private(i, u, f, pressure) schedule(static)
         do i = 1, size(points, 2)
             if (statuses(i) /= 0) cycle
             u = field%orientation*raw(1, i)
@@ -268,6 +269,7 @@ contains
             values(EQ_PSI_R, i) = points(1, i)*values(EQ_BZ, i)
             values(EQ_PSI_Z, i) = -points(1, i)*values(EQ_BR, i)
         end do
+        !$omp end parallel do
     end subroutine
 
     subroutine gs_field_profiles(field, u, f, pressure)
