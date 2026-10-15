@@ -437,6 +437,8 @@ set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEO
 target_sources(kin6d_fem2d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90)
 target_sources(kin6d_equilibrium PRIVATE src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90
     src/gs_equilibrated.f90 src/generated/kin6d_gs_error_leaves.f90)
+set_source_files_properties(src/generated/kin6d_gs_error_leaves.f90 PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_gs_error_leaves test/test_gs_error_leaves.f90)
 target_link_libraries(test_gs_error_leaves PRIVATE kin6d_equilibrium)
 add_test(NAME grad_shafranov_error_leaf_oracles COMMAND test_gs_error_leaves)
