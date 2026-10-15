@@ -95,6 +95,9 @@ These rules are hard constraints:
   is owed only to real consumers or explicitly stabilized contracts.
 - Measure before optimizing. Keep scientific definitions independent of
   performance specializations and optimize the owning layer.
+- Never run the full ctest suite. Run only the tests affected by the change
+  (by name, model-class label and tier label, e.g. `ctest -L <class> -LE slow`)
+  with `ctest -j <cores>`; `-j` counts the PROCESSORS each test reserves.
 
 ## Architectural rules
 
