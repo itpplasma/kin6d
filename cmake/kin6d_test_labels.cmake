@@ -448,3 +448,11 @@ kin6d_test_labels(gs_fixed_stability_and_linear_goal fast CLASSES equilibrium
     TARGETS test_gs_error_control)
 kin6d_test_labels(grad_shafranov_production_estimator fast CLASSES apps
     TARGETS gs_phase1)
+
+# Saved-field Ampere current diagnostics.
+foreach(degree 2 3)
+    kin6d_test_labels(grad_shafranov_p${degree}_ampere_loop fast CLASSES equilibrium
+        TARGETS test_gs_ampere_loop)
+    kin6d_test_labels(grad_shafranov_p${degree}_weak_ampere_loop fast CLASSES equilibrium
+        TARGETS test_gs_weak_ampere_loop)
+endforeach()
