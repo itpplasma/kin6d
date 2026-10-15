@@ -96,7 +96,6 @@ module kin6d_mhd_closure_n
 <<<<<<< HEAD:src/mhd/mhd_closure_n.f90
     public :: layer_xmax
 =======
-    public :: layer_extent
 >>>>>>> 606e6d0 (Frobenius closure: Mercier difference step inside the plasma; layer rings never short of the fit rings):src/mhd_closure_n.f90
     public :: layer_init
     public :: layer_closure
