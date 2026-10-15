@@ -150,7 +150,8 @@ program test_nonnested_transport_error
         meridian_qgrad
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
     use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
-    use kin6d_nonnested_error, only: NN_ERROR_OK
+    use kin6d_nonnested_error, only: NN_ERROR_OK, NN_ERROR_MODE_COUPLING, &
+        nn_error_t, nt_axisymmetric_error
     implicit none
     logical :: ok
 
@@ -352,6 +353,7 @@ contains
         type(nt_conductivity_t) :: cond
         type(torus_source_t) :: src
         type(nt_report_t) :: report
+        type(nn_error_t) :: violated
         real(dp), allocatable :: p(:), bc(:)
         integer :: st
         field%eps = 0.2_dp
@@ -374,5 +376,13 @@ contains
         ok = ok .and. trim(report%error%scope) == 'phi-sampled-fourier-galerkin'
         ok = ok .and. report%error%bound >= &
             helical_energy_error(fs, cond, p, modes, nphi)
+        ! A declared chi_lower above the sampled eigenvalues of K breaks the
+        ! ellipticity contract: the coupled band stays unavailable.
+        call nt_axisymmetric_error(fs, modes, nphi, cond, 2*cond%chi_perp, src, &
+            p, violated, st)
+        print '(a, i0, 1x, a)', 'helical violated chi_lower ', st, &
+            trim(violated%claim)
+        ok = ok .and. st == NN_ERROR_MODE_COUPLING
+        ok = ok .and. trim(violated%claim) == 'unavailable-mode-coupling'
     end subroutine
 end program
