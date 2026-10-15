@@ -1,7 +1,8 @@
 module kin6d_gs_error_control
-    !! Continuous fixed-Dirichlet GS error-control composition. All numerical
-    !! evaluations here use FP64: analytical coercivity is not an arithmetic
-    !! certificate. Physical boundary/model errors remain separate.
+    !! Continuous fixed-Dirichlet GS error-control composition. The verified
+    !! single-polynomial coercivity path uses outward interval arithmetic;
+    !! sampled residual/goal integrals retain their independent status.
+    !! Physical boundary/model errors remain separate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, apply_gs, &
@@ -17,10 +18,15 @@ module kin6d_gs_error_control
                                      gs_error_goal_corrected, gs_error_state, &
                                      gs_error_slope_vertex
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
+    use fortnum_interval, only: interval_t, interval, operator(-)
+    use kin6d_gs_error_leaves, only: gs_error_friedrichs_squared_interval, &
+        gs_error_source_lipschitz_interval, gs_error_coercivity_interval, &
+        gs_error_slope_max_interval, gs_error_state_interval
     implicit none
     private
     public :: gs_stability_t, gs_linear_goal_t, gs_fixed_stability
     public :: gs_fixed_source_stability, gs_coercivity_bound
+    public :: gs_fixed_stability_verified
     public :: gs_fixed_linear_goal, gs_state_error_bound
     integer, parameter, public :: GS_ERROR_OK = 0, GS_ERROR_BAD_INPUT = 1
     integer, parameter, public :: GS_ERROR_UNAVAILABLE = 2, GS_ERROR_NONCOERCIVE = 3
@@ -83,6 +89,9 @@ contains
         type(gs_stability_t), intent(out) :: stability
         integer, intent(out) :: status
         real(dp) :: lo(2), hi(2), pp_upper, ff_upper
+        call gs_fixed_stability_verified(state, law, mu0, stability, status)
+        if (status == GS_ERROR_OK .or. status == GS_ERROR_NONCOERCIVE) return
+        stability = gs_stability_t()
         status = GS_ERROR_BAD_INPUT
         if (.not. law%valid()) return
         if (.not. ieee_is_finite(mu0)) return
@@ -104,6 +113,103 @@ contains
                                  stability%source_lipschitz, stability%alpha, status)
         stability%available = status == GS_ERROR_OK
     end subroutine
+
+    subroutine gs_fixed_stability_verified(state, law, mu0, stability, status)
+        !! Continuous energy coercivity on the represented affine domain for
+        !! one absolute-flux polynomial (including both infinite extensions).
+        !! A concave quadratic derivative has a global, outward-evaluated
+        !! maximum. This controls ALL states, so no local Newton remainder
+        !! or eigenvalue iteration is needed. Residual norms remain separate.
+        !! Multiple pieces are refused: law%valid() allows small upward value
+        !! jumps, which invalidate a global one-sided Lipschitz constant.
+        type(gs_state_t), intent(in) :: state
+        type(gs_profile_law_t), intent(in) :: law
+        real(dp), intent(in) :: mu0
+        type(gs_stability_t), intent(out) :: stability
+        integer, intent(out) :: status
+        type(interval_t) :: cf2, lipschitz, alpha, widths(2)
+        real(dp) :: lo(2), hi(2), pp, ff
+        integer :: j, k, failed
+
+        status = GS_ERROR_BAD_INPUT
+        if (.not. state%ready) return
+        if (.not. law%valid()) return
+        if (.not. ieee_is_finite(mu0)) return
+        if (mu0 <= 0) return
+        status = GS_ERROR_UNAVAILABLE
+        if (law%normalized) return
+        if (size(law%pp, 2) /= 1) return
+        if (.not. allocated(state%points)) return
+        if (size(state%points, 1) /= 2) return
+        if (size(state%points, 2) == 0) return
+        call global_slope(law%pp(:, 1), pp, status)
+        if (status /= GS_ERROR_OK) return
+        call global_slope(law%ff(:, 1), ff, status)
+        if (status /= GS_ERROR_OK) return
+        ! For affine cells every coordinate lies in the nodal bounding box.
+        ! Min/max select exact input coordinates; only differences need rounding.
+        lo = huge(1.0_dp); hi = -huge(1.0_dp); failed = 0
+        !$omp parallel default(shared) private(j,k) &
+        !$omp reduction(min:lo) reduction(max:hi,failed)
+        !$omp do schedule(static)
+        do j = 1, size(state%points, 2)
+            do k = 1, 2
+                if (.not. ieee_is_finite(state%points(k, j))) failed = 1
+                lo(k) = min(lo(k), state%points(k, j))
+                hi(k) = max(hi(k), state%points(k, j))
+            end do
+        end do
+        !$omp end do
+        if (allocated(state%curved_cell)) then
+            !$omp do schedule(static)
+            do j = 1, size(state%curved_cell)
+                if (state%curved_cell(j)) failed = max(failed, 2)
+            end do
+            !$omp end do
+        end if
+        !$omp end parallel
+        status = GS_ERROR_UNAVAILABLE
+        if (failed == 2) return
+        status = GS_ERROR_BAD_INPUT
+        if (failed /= 0) return
+        if (lo(1) <= 0 .or. any(hi <= lo)) return
+        widths = interval(hi) - interval(lo)
+        if (any(widths%lo <= 0)) return
+        call gs_error_friedrichs_squared_interval(interval(hi(1)), &
+            widths(1), widths(2), cf2)
+        call gs_error_source_lipschitz_interval(interval(mu0), interval(hi(1)), &
+            interval(lo(1)), interval(pp), interval(ff), lipschitz)
+        call gs_error_coercivity_interval(lipschitz, cf2, alpha)
+        if (.not. all(ieee_is_finite([cf2%hi, lipschitz%hi, alpha%lo]))) return
+        stability%friedrichs_squared = cf2%hi
+        stability%source_lipschitz = lipschitz%hi
+        stability%alpha = alpha%lo
+        stability%arithmetic_rigorous = .true.
+        status = GS_ERROR_NONCOERCIVE
+        if (alpha%lo <= 0) return
+        stability%available = .true.
+        status = GS_ERROR_OK
+    contains
+        subroutine global_slope(c, upper, stat)
+            real(dp), intent(in) :: c(4)
+            real(dp), intent(out) :: upper
+            integer, intent(out) :: stat
+            type(interval_t) :: value
+            upper = 0
+            stat = GS_ERROR_UNAVAILABLE
+            if (c(4) > 0) return
+            if (abs(c(4)) <= 0) then
+                if (abs(c(3)) > 0) return
+                upper = max(0.0_dp, c(2))
+            else
+                call gs_error_slope_max_interval(interval(c(2)), interval(c(3)), &
+                    interval(c(4)), value)
+                if (.not. ieee_is_finite(value%hi)) return
+                upper = max(0.0_dp, value%hi)
+            end if
+            stat = GS_ERROR_OK
+        end subroutine global_slope
+    end subroutine gs_fixed_stability_verified
 
     subroutine profile_slope_upper(knots, coefficients, upper, status)
         !! Maxima of a quadratic derivative occur at endpoints or its vertex;
@@ -171,7 +277,16 @@ contains
         status = GS_ERROR_BAD_INPUT
         if (.not. ieee_is_finite(residual_majorant)) return
         if (residual_majorant < 0 .or. stability%alpha <= 0) return
-        call gs_error_state(residual_majorant, stability%alpha, radius)
+        if (stability%arithmetic_rigorous) then
+            block
+                type(interval_t) :: enclosed
+                call gs_error_state_interval(interval(residual_majorant), &
+                    interval(stability%alpha), enclosed)
+                radius = enclosed%hi
+            end block
+        else
+            call gs_error_state(residual_majorant, stability%alpha, radius)
+        end if
         if (.not. ieee_is_finite(radius)) return
         status = GS_ERROR_OK
     end subroutine

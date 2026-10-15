@@ -18,7 +18,8 @@ program test_gs_error_leaves
         gs_error_goal_jvp, gs_error_goal_vjp, &
         gs_error_goal_corrected, gs_error_goal_corrected_jvp, &
         gs_error_goal_corrected_vjp, gs_error_slope_vertex, &
-        gs_error_slope_vertex_jvp, gs_error_slope_vertex_vjp
+        gs_error_slope_vertex_jvp, gs_error_slope_vertex_vjp, &
+        gs_error_slope_max, gs_error_slope_max_jvp, gs_error_slope_max_vjp
     implicit none
     real(dp) :: x(5), direction(5), weights(2), value(2), tangent(2), gradient(5)
     real(dp) :: plus(2), minus(2), oracle(2), h, cf, cf2, pi
@@ -31,7 +32,7 @@ program test_gs_error_leaves
     h = 2.0e-5_dp
     direction = [0.13_dp, -0.21_dp, 0.17_dp, 0.09_dp, -0.07_dp]
     weights = [-0.7_dp, 1.3_dp]
-    do leaf = 1, 10
+    do leaf = 1, 11
         do trial = 1, 8
             x = [2.0_dp, 1.1_dp, 0.8_dp, 0.3_dp, 0.4_dp] &
                 + 0.03_dp*real(trial, dp)
@@ -68,6 +69,8 @@ program test_gs_error_leaves
                 oracle(1) = x(1) + x(2)
             case (10)
                 oracle(1) = -x(1)/(3*x(2))
+            case (11)
+                oracle(1) = x(1) - x(2)**2/(3*x(3))
             end select
             if (maxval(abs(value - oracle)) > 5.0e-14_dp) &
                 error stop 'GS error leaf independent primal formula'
@@ -154,6 +157,8 @@ contains
             call gs_error_goal_corrected(x(1), x(2), y(1))
         case (10)
             call gs_error_slope_vertex(x(1), x(2), y(1))
+        case (11)
+            call gs_error_slope_max(x(1), x(2), x(3), y(1))
         end select
     end subroutine evaluate
 
@@ -201,6 +206,11 @@ contains
         case (10)
             call gs_error_slope_vertex_jvp(x(1), x(2), d(1), d(2), tangent(1))
             call gs_error_slope_vertex_vjp(x(1), x(2), b(1), gradient(1), gradient(2))
+        case (11)
+            call gs_error_slope_max_jvp(x(1), x(2), x(3), &
+                d(1), d(2), d(3), tangent(1))
+            call gs_error_slope_max_vjp(x(1), x(2), x(3), b(1), &
+                gradient(1), gradient(2), gradient(3))
         end select
     end subroutine derivative
 end program test_gs_error_leaves
