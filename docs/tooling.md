@@ -263,10 +263,18 @@ Lean. The explicit `formal` preset also checks the retained theorem package and
 Fortran-produced rational certificate. This changes dependency selection, not
 the claimed strength of a numerical result.
 
-The `mumps` preset enables the optional FortSparse MUMPS backend, including
-system MPI builds. KIN6D initializes MPI with serialized thread support on first
-factorization if needed, and rejects an already finalized or insufficiently
-thread-capable runtime through the solver's ordinary failure status. Applications
+MUMPS (through FortSparse, threaded with OpenMP) is the default sparse direct
+backend and is required: configure fails unless MUMPS is found through
+`MUMPS_DIR` or `CMAKE_PREFIX_PATH` (an OpenMP scivision/mumps install) or as a
+distribution package, and warns when the found library has no OpenMP. The
+`superlu` preset (`KIN6D_ENABLE_MUMPS=OFF`) builds the serial SuperLU path for
+every direct solve; the `mumps` preset adds a focused direct-solver test
+filter. A build tree configured before MUMPS became the default may still cache
+`KIN6D_ENABLE_MUMPS=OFF`; reconfigure it with `-DKIN6D_ENABLE_MUMPS=ON`. System
+MPI builds are supported: KIN6D initializes MPI with serialized thread support
+on first factorization if needed, each MUMPS instance runs on
+`MPI_COMM_SELF`, and an already finalized or insufficiently thread-capable
+runtime is rejected through the solver's ordinary failure status. Applications
 that manage MPI must free all solver handles before finalizing it. Sequential
 MUMPS builds retain their mpiseq runtime and need no Fortran MPI module.
 

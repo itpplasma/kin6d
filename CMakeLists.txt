@@ -238,26 +238,62 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-# Sparse direct factorisation (SuperLU through fortsparse) for the indefinite
-# free-boundary Newton Jacobian; FortFEM's wrapper is the only entry point.
-# Threaded MUMPS Cholesky (through fortsparse) for the Grad-Shafranov stiffness
-# matrix: factor once per mesh, then direct solves, refinement and the A^-1
-# Newton preconditioner. ON by default when a sequential OpenMP MUMPS is found
-# (CMAKE_PREFIX_PATH or MUMPS_DIR); OFF builds the iterative path only.
-# Detected by file, not find_package: fortsparse runs the config itself and the
-# config may define its imported targets only once.
-find_file(KIN6D_MUMPS_CONFIG NAMES MUMPSConfig.cmake
-    HINTS ${MUMPS_DIR} ENV MUMPS_DIR
-    PATH_SUFFIXES cmake lib/cmake lib/cmake/MUMPS)
-if(KIN6D_MUMPS_CONFIG)
-    set(KIN6D_MUMPS_DEFAULT ON)
-else()
-    set(KIN6D_MUMPS_DEFAULT OFF)
-endif()
-option(KIN6D_ENABLE_MUMPS "Direct Cholesky solves through fortsparse MUMPS"
-    ${KIN6D_MUMPS_DEFAULT})
+# Sparse direct factorisations go through FortSparse. Threaded MUMPS (OpenMP,
+# METIS nested dissection) is the default backend of every general direct solve
+# (GS stiffness Cholesky, ideal-map and coupled Newton LDL^T/LU); like OpenMP it
+# is required when enabled, so configure fails if it is not found.
+# KIN6D_ENABLE_MUMPS=OFF selects serial SuperLU for the Newton systems and the
+# iterative GS path. FortFEM's sparse_direct wrapper (SuperLU) stays the
+# fallback for asymmetric systems.
+# MUMPS is a sequential OpenMP scivision/mumps install (MUMPSConfig.cmake on
+# CMAKE_PREFIX_PATH or MUMPS_DIR) or a distribution package (libdmumps,
+# sequential or MPI). Detected by file, not find_package: fortsparse runs the
+# config itself and the config may define its imported targets only once.
+option(KIN6D_ENABLE_MUMPS "Direct sparse solves through fortsparse MUMPS" ON)
 if(KIN6D_ENABLE_MUMPS)
+    find_file(KIN6D_MUMPS_CONFIG NAMES MUMPSConfig.cmake
+        HINTS ${MUMPS_DIR} ENV MUMPS_DIR
+        PATH_SUFFIXES cmake lib/cmake lib/cmake/MUMPS)
+    if(KIN6D_MUMPS_CONFIG)
+        file(STRINGS "${KIN6D_MUMPS_CONFIG}" _kin6d_mumps_omp
+            REGEX "set\\(MUMPS_openmp ON\\)")
+        set(_kin6d_mumps_found "${KIN6D_MUMPS_CONFIG}")
+        # The config resolves METIS/GKlib with plain find_library; without its
+        # prefix first a system libmetis.so is mixed with the install's static
+        # GKlib, which corrupts the heap inside METIS_NodeND.
+        get_filename_component(_kin6d_mumps_prefix "${KIN6D_MUMPS_CONFIG}" DIRECTORY)
+        foreach(_kin6d_level RANGE 2)
+            get_filename_component(_kin6d_name "${_kin6d_mumps_prefix}" NAME)
+            if(_kin6d_name MATCHES "^(MUMPS|cmake|lib|lib64)$")
+                get_filename_component(_kin6d_mumps_prefix
+                    "${_kin6d_mumps_prefix}" DIRECTORY)
+            endif()
+        endforeach()
+        list(PREPEND CMAKE_PREFIX_PATH "${_kin6d_mumps_prefix}")
+    else()
+        find_library(KIN6D_MUMPS_LIBRARY NAMES dmumps
+            HINTS ${MUMPS_DIR} ${MUMPS_ROOT} ENV MUMPS_DIR PATH_SUFFIXES lib lib64)
+        if(NOT KIN6D_MUMPS_LIBRARY)
+            message(FATAL_ERROR "MUMPS not found. Point MUMPS_DIR or "
+                "CMAKE_PREFIX_PATH at an OpenMP MUMPS installation, or configure "
+                "with -DKIN6D_ENABLE_MUMPS=OFF to use SuperLU.")
+        endif()
+        # An OpenMP build references the GNU OpenMP runtime entry points.
+        file(STRINGS "${KIN6D_MUMPS_LIBRARY}" _kin6d_mumps_omp
+            REGEX "^GOMP_parallel" LIMIT_COUNT 1)
+        set(_kin6d_mumps_found "${KIN6D_MUMPS_LIBRARY}")
+    endif()
+    if(_kin6d_mumps_omp)
+        message(STATUS "KIN6D sparse direct backend: MUMPS with OpenMP "
+            "(${_kin6d_mumps_found})")
+    else()
+        message(WARNING "MUMPS at ${_kin6d_mumps_found} is not built with "
+            "OpenMP: factorisations run on one thread. Prefer an OpenMP MUMPS "
+            "via MUMPS_DIR.")
+    endif()
     set(FORTSPARSE_ENABLE_MUMPS ON CACHE BOOL "" FORCE)
+else()
+    message(STATUS "KIN6D sparse direct backend: SuperLU (KIN6D_ENABLE_MUMPS=OFF)")
 endif()
 if(NOT TARGET fortsparse)
     set(FORTSPARSE_BUILD_TESTING OFF CACHE BOOL "" FORCE)
