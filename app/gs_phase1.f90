@@ -432,7 +432,7 @@ program gs_phase1_main
         'sampled residual before stability division; approximate quadrature', &
         status='approximate')
     call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', &
-        'sampled RT flux defect; rigorous RT0 audit uses its own full residual')
+        'sampled RT flux defect; rigorous BDM audit uses its own full residual')
     call result%write('majorant_balance', balance_defect, 'Wb/m^0.5', 'weighted balance defect')
     call result%write('majorant_recovery_converged', merge(1.0_dp, 0.0_dp, recovery_converged), &
         '1', 'recovery minimization met its algebraic tolerance')

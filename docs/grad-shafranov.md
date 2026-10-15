@@ -268,18 +268,23 @@ An energy radius is not a pointwise flux band or a physical-boundary error.
 
 For affine P1/P2, constant profiles and no additional forcing, the independent
 `gs_checked_equilibrated_majorant` audit supplies a continuous energy bound.
-It selects one shared edge moment per mesh edge, constructs an exact H(div)
-RT0 Piola field, and encloses the full flux defect and residual by outward
-interval range integration on dyadic subtriangles. This includes quadrature
-and arithmetic error. Production uses the upper endpoint, records
-`equilibrated-rt0-audit` and `certified-continuous`, and retains the sampled RTp
-majorant separately. The strict RT0 radius may be wider than the sampled RTp
-estimate. The claim assumes a conforming nonoverlapping native affine mesh,
-complete boundary tags, and FortNum's strict IEEE execution contract; it
-certifies the represented polygon model's energy norm only. Curved meshes,
-P3, nonlinear sources, arbitrary forcing and pointwise bands remain outside
-this strict audit. A certified state-energy radius does not upgrade the
-separately approximate goal or readback outputs.
+FortFEM's `verified_bernstein_majorant` fits the sampled RTp flux by a
+degree-(p+1) Bernstein field, selects one normal component per mesh edge and
+Bernstein position, and so defines an exact H(div) field. With
+`q=R*sigma-grad(psi)` and `t=mu0*pprime*R^2+ffprime+R*div(sigma)`, it bounds
+`int |q|^2/R` and `int t^2/R^2` by the chords of `1/R` and `1/R^2` and
+integrates the resulting polynomials exactly in outward interval arithmetic.
+This includes quadrature and arithmetic error. Production uses the upper
+endpoint, records `equilibrated-bdm-audit` and `certified-continuous`, and
+retains the sampled RTp majorant separately. The certified radius uses the
+global Friedrichs constant instead of the elementwise oscillation term; its
+excess over the sampled estimate is of higher order in h. The
+claim assumes a conforming nonoverlapping native affine mesh, complete
+boundary tags, and FortNum's strict IEEE execution contract; it certifies the
+represented polygon model's energy norm only. Curved meshes, P3, nonlinear
+sources, arbitrary forcing and pointwise bands remain outside this strict
+audit. A certified state-energy radius does not upgrade the separately
+approximate goal or readback outputs.
 
 `grad_shafranov_equilibrated_flux_majorant` checks the bound against the exact
 weighted energy error on a manufactured R x Z box and requires

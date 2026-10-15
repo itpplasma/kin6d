@@ -160,7 +160,7 @@ target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quant
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "9be2c6daa556f473182c1cfd6660d1710cee82e6")
+set(KIN6D_FORTFEM_REVISION "91661ba863bc9e6fe0ab2cca302b1fdffca9c804")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -450,11 +450,13 @@ set_source_files_properties(
     src/generated/kin6d_grad_shafranov_leaves.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_rt0_products.f90
     ${fortfem_SOURCE_DIR}/src/estimators/verified_rt0_majorant.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_bernstein_products.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/verified_bernstein_majorant.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 add_executable(test_gs_checked_majorant test/test_gs_checked_majorant.f90)
 target_link_libraries(test_gs_checked_majorant PRIVATE kin6d_equilibrium)
-add_test(NAME grad_shafranov_checked_rt0_majorant COMMAND test_gs_checked_majorant)
-set_tests_properties(grad_shafranov_checked_rt0_majorant PROPERTIES
+add_test(NAME grad_shafranov_checked_bdm_majorant COMMAND test_gs_checked_majorant)
+set_tests_properties(grad_shafranov_checked_bdm_majorant PROPERTIES
     TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 set_property(SOURCE src/generated/kin6d_gs_error_leaves.f90 APPEND PROPERTY
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -1284,6 +1286,8 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_hcurl_equilibration_products.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_hcurl_meridian_n.f90
     ${fortfem_SOURCE_DIR}/src/estimators/verified_rt0_majorant.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_bernstein_products.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/verified_bernstein_majorant.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90

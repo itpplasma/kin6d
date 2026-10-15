@@ -4,6 +4,7 @@ program gen_gs_error
     !! Geometry, topology, solves and status checks belong to the caller.
     use fortsym
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
+    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     implicit none
     type(arena_t), target :: arena
     type(leaf_writer_t) :: writer
@@ -72,6 +73,33 @@ program gen_gs_error
     ! The caller checks c3 /= 0 and whether this point lies in its piece.
     call writer%emit('gs_error_slope_vertex', ['c2', 'c3'], ['x'], &
         [-c2/(3*c3)], ad=.true.)
+    ! Bernstein coefficients on an affine cell (vertex major radii r1..r3)
+    ! of the source numerator s = R*source = mu0*pprime*R^2 + ffprime, in
+    ! FortFEM's verified Bernstein order (2,0,0), (1,1,0), (1,0,1), (0,2,0),
+    ! (0,1,1), (0,0,2): descending first, then second barycentric power.
+    call source_numerator()
     call writer%line('end module kin6d_gs_error_leaves')
     call writer%close()
+
+contains
+
+    subroutine source_numerator()
+        type(expr_t) :: r1, r2, r3, pp, ff, l1, l2, l3, rr, b(6), total
+        type(engine_result_t) :: proved
+        r1 = sym(arena, 'r1'); r2 = sym(arena, 'r2'); r3 = sym(arena, 'r3')
+        pp = sym(arena, 'pprime'); ff = sym(arena, 'ffprime')
+        l1 = sym(arena, 'l1'); l2 = sym(arena, 'l2'); l3 = sym(arena, 'l3')
+        b = [mu0*pp*r1*r1 + ff, mu0*pp*r1*r2 + ff, mu0*pp*r1*r3 + ff, &
+             mu0*pp*r2*r2 + ff, mu0*pp*r2*r3 + ff, mu0*pp*r3*r3 + ff]
+        ! Homogeneous identity in the barycentric coordinates: the quadratic
+        ! Bernstein form equals mu0*pprime*R^2 + ffprime*(l1+l2+l3)^2.
+        rr = r1*l1 + r2*l2 + r3*l3
+        total = b(1)*l1**2 + 2*b(2)*l1*l2 + 2*b(3)*l1*l3 + b(4)*l2**2 &
+                + 2*b(5)*l2*l3 + b(6)*l3**2
+        proved = writer%engine%zero_test(mu0*pp*rr**2 + ff*(l1 + l2 + l3)**2 - total)
+        if (proved%verdict /= VERDICT_TRUE) error stop 'source numerator unproved'
+        call writer%emit('gs_error_source_numerator_interval', &
+            ['mu0    ', 'pprime ', 'ffprime', 'r1     ', 'r2     ', 'r3     '], &
+            ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'], b, rigorous=.true.)
+    end subroutine source_numerator
 end program gen_gs_error

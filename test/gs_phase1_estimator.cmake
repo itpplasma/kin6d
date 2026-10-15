@@ -58,9 +58,9 @@ if(NOT status EQUAL 0)
     message(FATAL_ERROR "production audit run failed: ${out}${err}")
 endif()
 file(READ "${WORK}/summary.dat" summary)
-if(NOT summary MATCHES "majorant_method equilibrated-rt0-audit" OR
+if(NOT summary MATCHES "majorant_method equilibrated-bdm-audit" OR
    NOT summary MATCHES "majorant_claim certified" OR
-   NOT summary MATCHES "majorant_quadrature_status rigorous-rt0-audit" OR
+   NOT summary MATCHES "majorant_quadrature_status rigorous-bdm-audit" OR
    NOT summary MATCHES "majorant_certification_status certified-continuous")
     message(FATAL_ERROR "supported affine audit was not reported: ${summary}")
 endif()
