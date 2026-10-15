@@ -9,11 +9,13 @@ module kin6d_gs_inverse
     use kin6d_gs_inverse_leaves, only: gs_f_from_coarea, gs_square_slope, gs_f_from_square, &
         gs_f_from_square_jvp, gs_profile_square_response, gs_q_log_residual, gs_q_log_residual_jvp, &
         gs_profile_mean_last, gs_profile_mean_last_jvp, gs_ff_zero
+    use kin6d_gs_profile_law, only: gs_profile_law_t
     use fortnum_linalg, only: dense_solve
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none
     private
     public :: gs_inverse_result_t, solve_gs_constant_q, gs_inverse_f, gs_toroidal_flux, gs_inverse_profile_status
+    public :: gs_inverse_profile_law
     type :: gs_inverse_result_t
         real(dp), allocatable :: flux(:), f_squared(:), ffprime(:)
         real(dp) :: q_target = 0, phi_target = 0, phi_native = 0
@@ -360,6 +362,41 @@ contains
         end do
         status=0
     end subroutine gs_inverse_profile_status
+
+    subroutine gs_inverse_profile_law(result, law, status)
+        !! The executed source of a converged inverse result as a profile law:
+        !! zero pressure and the piecewise-linear FF'(psi) table with the
+        !! constant extension of gs_profile_value (guard segments one table
+        !! width wide on both sides), so the fixed-source estimator sees the
+        !! source the solve used.
+        type(gs_inverse_result_t), intent(in) :: result
+        type(gs_profile_law_t), intent(out) :: law
+        integer, intent(out) :: status
+        real(dp) :: pad
+        integer :: n, i, stat
+        status = 1
+        call gs_inverse_profile_status(result, stat)
+        if (stat /= 0) return
+        n = size(result%flux)
+        pad = result%flux(n) - result%flux(1)
+        allocate (law%knots(n + 2), law%pp(4, n + 1), law%ff(4, n + 1))
+        law%knots(1) = result%flux(1) - pad
+        law%knots(2:n + 1) = result%flux
+        law%knots(n + 2) = result%flux(n) + pad
+        law%pp = 0; law%ff = 0
+        law%ff(1, 1) = result%ffprime(1)
+        do i = 1, n - 1
+            law%ff(1, i + 1) = result%ffprime(i)
+            law%ff(2, i + 1) = (result%ffprime(i + 1) - result%ffprime(i)) &
+                /(result%flux(i + 1) - result%flux(i))
+        end do
+        law%ff(1, n + 1) = result%ffprime(n)
+        law%p_edge = 0
+        law%f_edge = sign(sqrt(result%f_squared(n)), result%q_target)
+        law%normalized = .false.
+        if (.not. law%valid()) return
+        status = 0
+    end subroutine gs_inverse_profile_law
 
     subroutine gs_inverse_f(result, psi, f, status)
         type(gs_inverse_result_t), intent(in) :: result

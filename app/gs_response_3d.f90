@@ -136,6 +136,11 @@ program gs_response_3d
     real(dp) :: qref, target, root, t0, t1, res
     integer :: ulay, ures, unit, ur, st, i, j, k, nr, nrat, ip, nphase, info, kk, its, nsr
     logical :: found
+    ! Discrete residual-energy indicator of the app's own unit-sheet Ampere
+    ! solves (algebraic residual of the discrete system, not a discretization
+    ! bound): worst value, solve count and number of solves without indicator.
+    real(dp) :: ampere_indicator = 0.0_dp
+    integer :: ampere_solves = 0, ampere_missing = 0
 
     if (command_argument_count() /= 1) error stop 'usage: gs_response_3d input.nml'
     call get_command_argument(1, nml)
@@ -311,6 +316,7 @@ program gs_response_3d
             (1.0_dp, 0.0_dp), f)
         call ampere_n_solve(amp, f, a, st)
         if (st /= 0) error stop 'sheet solve'
+        call note_ampere_indicator()
         block
             complex(dp), allocatable :: bb(:)
             call ampere_n_curl(amp, a, bb)
@@ -339,6 +345,7 @@ program gs_response_3d
                 cl%sheet_m(i), (1.0_dp, 0.0_dp), f)
             call ampere_n_solve(amp, f, a, st)
             if (st /= 0) error stop 'edge sheet solve'
+            call note_ampere_indicator()
             block
                 complex(dp), allocatable :: bb(:)
                 call ampere_n_curl(amp, a, bb)
@@ -359,7 +366,15 @@ program gs_response_3d
         b2cl = b2
     end if
 
+    write (*, '(a,es10.3,a,i0,a,i0,a)') 'Ampere discrete residual-energy '// &
+        'indicator (max over sheet solves) ', ampere_indicator, ', solves ', &
+        ampere_solves, ', without indicator ', ampere_missing, &
+        '; claim indicator, continuous error unavailable-exterior-remainder'
     open (newunit=ur, file=trim(prefix)//'_res.dat', status='replace')
+    write (ur, '(a,es14.6,a,i0,a,i0,a)') '# ampere_discrete_energy_error_max ', &
+        ampere_indicator, ' sheet_solves ', ampere_solves, ' without_indicator ', &
+        ampere_missing, ' claim indicator (algebraic residual energy of the '// &
+        'discrete Ampere solves) continuous_claim unavailable-exterior-remainder'
     write (ur, '(a)') '# phasing q psin m area[m^2/rad] Re,Im Phi_vac[T m^2/rad^2] '// &
         'Re,Im b_vac[T] Re,Im lambda[A] Re,Im b_shield[T] '// &
         'Re,Im Phi_vac(L3 surface path) (peak amplitudes)'
@@ -483,6 +498,15 @@ program gs_response_3d
     if (resist) close (ures)
 
 contains
+
+    subroutine note_ampere_indicator()
+        ampere_solves = ampere_solves + 1
+        if (amp%error%discrete_status /= 0) then
+            ampere_missing = ampere_missing + 1
+        else
+            ampere_indicator = max(ampere_indicator, amp%error%discrete_energy_error)
+        end if
+    end subroutine note_ampere_indicator
 
     function layer_block(phi, l) result(pb2)
         !! Fluxes of layer l on its fit rings, (nfit, side).
