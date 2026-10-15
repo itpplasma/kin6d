@@ -441,7 +441,20 @@ set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEO
 target_sources(kin6d_fem2d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90)
 target_sources(kin6d_equilibrium PRIVATE src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90
     src/gs_equilibrated.f90 src/generated/kin6d_gs_error_leaves.f90)
-set_source_files_properties(src/generated/kin6d_gs_error_leaves.f90 PROPERTIES
+target_sources(kin6d_equilibrium PRIVATE src/gs_quadrature_budget.f90)
+set_source_files_properties(
+    src/gs_quadrature_budget.f90
+    src/generated/kin6d_gs_error_leaves.f90
+    src/generated/kin6d_grad_shafranov_leaves.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_rt0_products.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/verified_rt0_majorant.f90
+    PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+add_executable(test_gs_checked_majorant test/test_gs_checked_majorant.f90)
+target_link_libraries(test_gs_checked_majorant PRIVATE kin6d_equilibrium)
+add_test(NAME grad_shafranov_checked_rt0_majorant COMMAND test_gs_checked_majorant)
+set_tests_properties(grad_shafranov_checked_rt0_majorant PROPERTIES
+    TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
+set_property(SOURCE src/generated/kin6d_gs_error_leaves.f90 APPEND PROPERTY
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_gs_error_leaves test/test_gs_error_leaves.f90)
 target_link_libraries(test_gs_error_leaves PRIVATE kin6d_equilibrium)
@@ -1259,10 +1272,12 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_equilibrated_flux_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_rt0_products.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_topology.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_2d.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_hcurl_equilibration_products.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_hcurl_meridian_n.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/verified_rt0_majorant.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
