@@ -66,25 +66,25 @@ flux, which cancels the jump on any mesh. With the refit it gives nodal orders 3
 
 ## Error estimates (`src/gs_majorant.f90`, DESIGN section 4, P10)
 
-Energy norm |||v|||^2 = int |grad v|^2/R dA + <S v, v>. For the frozen problem
-a(psi,v) + <S psi,v> = (f,v) + <g,v> and every continuous vector P2/P3 flux y,
+Energy norm `|||v|||^2 = int |grad v|^2/R dA + <S v,v>`. For the frozen
+problem `a(psi,v)+<S psi,v>=(f,v)+<g,v>` and every conforming H(div) flux sigma,
 
-    |||psi - psi_h||| <= D + B_T + N,
-    D   = ||sqrt(R)(y - grad psi_h/R)||,
-    B_T = C_F ||Pi0 r|| + (sum_T (h_T/pi)^2 R_max,T ||r - Pi0 r||_T^2)^(1/2),
-    N   = ||y.n + S psi_h - g||_{S^-1},   r = f + div y,
+    |||psi-psi_h||| <= D + B + N,
+    D = ||sqrt(R)(sigma-grad psi_h/R)||,
+    B = source_oscillation + C_F ||div sigma+Pi_p f||,
+    N = ||sigma.n+S psi_h-g||_{S^-1}.
 
-from the residual identity a(e,v) + <S e,v> = (y - grad psi_h/R, grad v) +
-(f + div y, v) + <g - S psi_h - y.n, v>, checked exactly by FortSym
-(`test_gs_coupled_majorant_identities`, with omitted-defect and flipped-normal
-controls). B_T splits the balance residual into cell means (coupled Friedrichs
-constant C_F) and mean-free parts (Payne-Weinberger h_T/pi); it is at most C_F
-||r||, the form in DESIGN, and makes B_T of higher order than D. y minimises
-D^2 + sum of the B_T squares + N^2 (PCG preconditioned with the sparse LU of the
-volume part). The estimate is practical, not rigorous: S and the dual norm of N
-come from a reference BEM with three P2 panels per mesh edge
-(`gs_coupled_estimator_t`), and C_F^2 is the power-iteration estimate of the
-largest eigenvalue of (K + S_ref)^-1 M, approached from below.
+The continuous residual identity is checked by the retained FortSym identities.
+Recovery now uses FortFEM's mapped RT vertex patches. Boundary flux moments
+remain free reconstruction unknowns; their Piola-transformed traces enter the
+same reference-BEM mismatch N. This preserves arbitrary boundary loads without
+asserting homogeneous Dirichlet data. The global vector recovery matrix and
+factorization have been removed. Affine cells use local mean-free source
+bounds; curved cells use the coupled Friedrichs constant.
+
+The estimate remains practical: S and its inverse norm come from a refined
+reference BEM, the coupled Friedrichs constant is estimated, and integrals use
+ordinary quadrature. Patch recovery does not validate those remaining premises.
 
 Nonlinear free boundary (`gs_fb_majorant`): M0 is the frozen-source majorant at
 psi_h (law in the plasma cells where s < 1, plus a pointwise forcing that must
@@ -98,17 +98,20 @@ nonlinear solution `gs_fb_goal` returns |||z_h||| M0, with J^T z_h = Q' (first
 order). `gs_coil_current_bounds` propagates row bounds b_i to |dI_k| <=
 sum_i |(H^-1 D^T)_ki| b_i on the free set (attained by the sign vector).
 
-`test_gs_coupled_majorant` (exact psi* = coils + C^5 bump, OMP 4):
+The short `gs_free_boundary_equilibrated_quick` gate uses the retained
+exact coil-plus-bump solution on curved meshes (two threads):
 
-| case | edges | energy error | majorant | I_eff |
-|------|------:|--------:|---------:|------:|
-| frozen P2 | 24 / 48 / 96 | 2.78e-1 / 9.09e-2 / 2.24e-2 | 5.64e-1 / 1.48e-1 / 2.93e-2 | 2.03 / 1.63 / 1.31 |
-| frozen P3 | 24 / 48 | 7.38e-2 / 1.53e-2 | 1.79e-1 / 2.44e-2 | 2.42 / 1.60 |
-| nonlinear P2, M0/beta | 24 / 48 / 96 | 2.78e-1 / 9.09e-2 / 2.24e-2 | 5.89e-1 / 1.57e-1 / 3.16e-2 | 2.12 / 1.73 / 1.41 |
+| Case | Boundary edges | Energy error | Majorant |
+|---|---:|---:|---:|
+| Frozen P2 | 12 | 0.9031 | 4.679 |
+| Frozen P2 | 24 | 0.2783 | 0.5208 |
+| Frozen P3 | 12 | 0.4724 | 2.788 |
+| Nonlinear P2, M0/beta | 24 | 0.2783 | 0.5444 |
 
-The efficiency index decreases towards 1 (majorant order 2.34 against 2.02 for
-P2, 2.87 against 2.27 for P3); beta (0.956) equals the dense SVD to 1e-5; the
-shape and Ip enclosures contain the exact values.
+It also checks the shape/current goals and a perturbed boundary-load ledger.
+At the nonlinear rung beta is about 0.95557 and agrees with the independent
+dense SVD. These small cases establish their stated containment/refinement
+checks, without a general efficiency or rigorous-certification claim.
 
 ## Large aspect ratio (T5, `test_gs_fb_large_aspect`, P13)
 
@@ -167,8 +170,9 @@ The P13 stall had three causes, all fixed on `gs-free-parallel`:
   MUMPS handle is not shared between threads, and the thread count is fixed at
   factor time.
 
-The majorant estimator also factors its recovery and energy operators with MUMPS
-Cholesky and threads the Friedrichs mass assembly. The axis and X-point cell
+The majorant estimator factors its reference energy operator with MUMPS
+Cholesky, uses independent local RT recovery solves and threads the Friedrichs
+mass assembly. The timing baselines below predate the RT recovery replacement. The axis and X-point cell
 scans and the CSC pattern build are threaded. `KIN6D_PROFILE=1` prints per-phase
 wall times (`PROF label seconds`) on stderr.
 

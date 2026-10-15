@@ -240,19 +240,31 @@ limit. It prints the flux and balance contributions separately. Recovery uses
 O(DOF) storage and a separate symmetric positive-definite solve; its cost is
 not included in the reported primal mesh/assembly/solve timing.
 
-`kin6d_gs_equilibrated::gs_equilibrated_majorant` is the scalable
-alternative on straight-sided meshes (P1--P3; curved cells return
-`GS_EQ_CURVED`). FortFEM's `fortfem_equilibrated_flux_2d` solves one small
-dense RT_p saddle-point problem per vertex patch, so there is no global solve
-and the cost is linear in the mesh size. The Prager--Synge bound
+`kin6d_gs_equilibrated::gs_equilibrated_majorant` is the production default
+through `gs_fixed_certifier_t` and `gs_phase1`, on affine and mapped P1--P3
+meshes. FortFEM solves one small RT_p saddle-point problem per vertex patch;
+there is no global recovery solve. Physical coefficient/flux factors and their
+JVP/VJP leaves come from `gen/gen_gs_error.f90`. Bezier control hulls bound the
+mapped domain and positive-R coefficient range. The Prager--Synge expression
 `||sqrt(R)(sigma-grad(psi)/R)|| + oscillation + C_F||div(sigma)+Pi_p f||`
-holds for any H(div) flux, so local solve errors only loosen it. Its constants
-are guaranteed: `1/max_T R` at the affine cell's vertices for the local
-Payne--Weinberger term and the bounding-box Friedrichs constant times
-`sqrt(Rmax)`; the measured divergence defect also absorbs algebraic and
-load-quadrature inconsistencies. The remaining non-rigorous step is the
-quadrature of the rational `1/R` and source integrands, so the claim is an
-approximate bound, not a certificate.
+accounts for the measured divergence defect and source oscillation. Its sampled
+quadrature remains approximate. The legacy functional recovery is an explicit
+fallback, with its method and status retained in the output.
+
+For absolute-flux laws, `gs_fixed_stability` bounds the one-sided source
+slope over every polynomial piece and both exterior half-lines. When that bound
+is finite and `alpha=1-L*C_F^2` is positive, strong monotonicity controls the
+solution error by the frozen residual majorant divided by alpha. Moving-axis
+normalization, unbounded positive slopes and noncoercive cases retain a
+frozen-residual status. Ordinary floating evaluation of this theorem does not
+by itself supply a rigorous numerical lower bound.
+
+For a fixed source and scalar linear goal, `gs_fixed_linear_goal` solves an
+independent adjoint and reports `Q_h+r(z_h)` with product radius `M_psi*M_z`.
+The center includes the algebraic residual correction. Goal quadrature remains
+approximate; nonlinear goals require a separate nonlinear remainder. NetCDF
+and text results retain method, claim, quadrature and error scope separately.
+An energy radius is not a pointwise flux band or a physical-boundary error.
 
 `grad_shafranov_equilibrated_flux_majorant` checks the bound against the exact
 weighted energy error on a manufactured R x Z box and requires
