@@ -5,7 +5,7 @@ module kin6d_gs_certificate
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_equilibrium_certificate, only: equilibrium_certifier_t, &
-        EQ_STABILITY_NONE, EQ_STABILITY_ESTIMATE
+        EQ_STABILITY_NONE, EQ_STABILITY_ESTIMATE, EQ_STABILITY_BOUND
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_grad_shafranov_leaves, only: gs_source
     use kin6d_gs_profile_law, only: gs_law_sources
@@ -13,6 +13,9 @@ module kin6d_gs_certificate
         equilibrated_flux_estimate_t, GS_EQ_OK
     use kin6d_gs_error_control, only: gs_stability_t, gs_fixed_stability, &
         gs_fixed_source_stability, GS_ERROR_OK
+    use kin6d_gs_quadrature_budget, only: gs_checked_equilibrated_majorant, &
+        GS_CHECKED_OK
+    use fortnum_interval, only: interval_t
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use kin6d_gs_nonlinear, only: gs_forcing_t
     use kin6d_gs_free_boundary, only: gs_fb_system_t
@@ -62,7 +65,8 @@ contains
         real(dp), intent(out) :: majorant, stability
         integer, intent(out) :: kind, status, lane_status
         real(dp) :: bounded
-        integer :: eq_status, stability_status
+        type(interval_t) :: energy_bound
+        integer :: eq_status, stability_status, checked_status
         majorant = huge(1.0_dp); stability = 0; kind = EQ_STABILITY_NONE
         status = 1; lane_status = 1
         certifier%method = 'unavailable'
@@ -121,8 +125,24 @@ contains
             kind = EQ_STABILITY_ESTIMATE
             lane_status = 5
         end if
-        ! A theoretical lower bound of stability alone cannot enclose the
-        ! sampled residual norms; approximate M always gives practical status.
+        ! Stability alone cannot upgrade sampled residual norms. An independent
+        ! outward audit may establish the full continuous polygon-model bound
+        ! for affine P1/P2 and the fixed constant-profile source only.
+        if (eq_status == GS_EQ_OK .and. .not. allocated(certifier%law)) then
+            if (.not. associated(certifier%forcing)) then
+                call gs_checked_equilibrated_majorant(certifier%state, &
+                    certifier%state%psi, certifier%last, certifier%mu0, &
+                    certifier%pprime, certifier%ffprime, energy_bound, checked_status)
+                if (checked_status == GS_CHECKED_OK) then
+                    majorant = energy_bound%hi
+                    stability = 1
+                    kind = EQ_STABILITY_BOUND
+                    lane_status = 0
+                    certifier%method = 'equilibrated-rt0-audit'
+                    certifier%quadrature_status = 'rigorous-rt0-audit'
+                end if
+            end if
+        end if
     contains
         function source(cell, r, z, psi) result(f)
             integer, intent(in) :: cell
