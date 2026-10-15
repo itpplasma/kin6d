@@ -49,6 +49,11 @@ program test_ideal_free_boundary
     !                    the shell field must not depend on the choice of
     !                    Gamma_c (two coupling curves, common probe points),
     !                    and the n /= 0 coil traces must be curl free
+    !   slide            n = 0 relabelling gauge: the slide moments of every
+    !                    curl-free displacement (translations, elongation,
+    !                    radial stretch) vanish to discretisation accuracy and
+    !                    converge under refinement, while a relabelling slide
+    !                    has O(1) moments (the gauge fixes labels, not shape)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
@@ -93,6 +98,8 @@ program test_ideal_free_boundary
         call vacuum_ladder()
     case ('vacuum3d')
         call vacuum_3d()
+    case ('slide')
+        call slide_checks()
     case default
         error stop 'unknown mode'
     end select
@@ -205,6 +212,52 @@ contains
             error stop 'fb init'
         end if
     end subroutine
+
+    subroutine slide_checks()
+        type(ideal_fb_t) :: fb
+        real(dp), allocatable :: u(:, :)
+        real(dp) :: ratio(2), slide, curl_free
+        integer :: level, k, a
+        do level = 1, 2
+            call build(24*2**level, 16*2**level, 3, .false., 1, 0, fb)
+            allocate (u(2, fb%plasma%nodes))
+            ! Relabelling slide: unit tangent of the reference surfaces.
+            do a = 1, fb%plasma%nodes
+                u(:, a) = [-fb%plasma%direction(2, a), fb%plasma%direction(1, a)]
+            end do
+            slide = slide_moments(fb, u)
+            curl_free = 0
+            do k = 1, 4
+                select case (k)
+                case (1)
+                    u(1, :) = 1; u(2, :) = 0
+                case (2)
+                    u(1, :) = 0; u(2, :) = 1
+                case (3)
+                    u(1, :) = 0; u(2, :) = fb%plasma%reference(2, :)
+                case (4)
+                    u(1, :) = fb%plasma%reference(1, :) - 3.05_dp; u(2, :) = 0
+                end select
+                curl_free = max(curl_free, slide_moments(fb, u))
+            end do
+            ratio(level) = curl_free/slide
+            print '(a,i0,a,i0,a,es10.3,a,es10.3)', 'slide gauge level ', level, &
+                ' layers ', size(fb%slide, 3), ' slide moment ', slide, &
+                ' curl-free / slide ', ratio(level)
+            deallocate (u)
+        end do
+        if (.not. ratio(2) < 1.0e-3_dp) error stop 'slide moments see a curl-free motion'
+        if (.not. ratio(2) < 0.5_dp*ratio(1)) error stop 'slide moments do not converge'
+        if (.not. slide > 0.1_dp) error stop 'slide moments miss the relabelling slide'
+    end subroutine
+
+    real(dp) function slide_moments(fb, v) result(largest)
+        ! Largest |M_l(v)| of the n = 0 slide-gauge rows for a nodal field v.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: v(:, :)
+        largest = maxval(abs(sum(sum(fb%slide*spread(v, 3, size(fb%slide, 3)), &
+            dim=1), dim=1)))
+    end function
 
     subroutine derivative_checks()
         type(ideal_fb_t) :: fb
