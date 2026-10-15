@@ -4,7 +4,10 @@ set -euo pipefail
 strip_evidence=${1:?usage: run.sh ABSOLUTE_EVIDENCE_DIRECTORY}
 mkdir -p "$strip_evidence"
 cmake --build --preset cpu --target test_response_strip_preconditioner -j 6
-ctest --test-dir build -R '^response_strip_preconditioner_.*$' --output-on-failure
+for strip_check in oracles negative limits scaling; do
+    ctest --test-dir build -R "^response_strip_preconditioner_${strip_check}$" \
+        -j 8 --output-on-failure
+done
 lscpu > "$strip_evidence/hardware.txt"
 for strip_threads in 1 2 4; do
     for strip_trial in 1 2 3; do
