@@ -483,6 +483,7 @@ target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_majorant.f90 src/equ
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_quadrature_budget.f90)
 set_source_files_properties(
     src/equilibrium/gs_quadrature_budget.f90
+    src/equilibrium/gs_error_control.f90
     src/generated/kin6d_gs_error_leaves.f90
     src/generated/kin6d_grad_shafranov_leaves.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_rt0_products.f90
@@ -505,6 +506,11 @@ target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_error_control.f90)
 add_executable(test_gs_error_control test/test_gs_error_control.f90)
 target_link_libraries(test_gs_error_control PRIVATE kin6d)
 add_test(NAME gs_fixed_stability_and_linear_goal COMMAND test_gs_error_control)
+add_executable(test_gs_verified_stability test/test_gs_verified_stability.f90)
+target_link_libraries(test_gs_verified_stability PRIVATE kin6d_equilibrium)
+add_test(NAME gs_verified_nonlinear_coercivity COMMAND test_gs_verified_stability)
+set_tests_properties(gs_verified_nonlinear_coercivity PROPERTIES
+    TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(gs_fixed_stability_and_linear_goal PROPERTIES
     TIMEOUT 30 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_equilibrated_majorant test/test_gs_equilibrated_majorant.f90)

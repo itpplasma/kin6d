@@ -330,8 +330,36 @@ slope over every polynomial piece and both exterior half-lines. When that bound
 is finite and `alpha=1-L*C_F^2` is positive, strong monotonicity controls the
 solution error by the frozen residual majorant divided by alpha. Moving-axis
 normalization, unbounded positive slopes and noncoercive cases retain a
-frozen-residual status. Ordinary floating evaluation of this theorem does not
-by itself supply a rigorous numerical lower bound.
+frozen-residual status.
+
+On an affine domain with one absolute-flux polynomial piece,
+`gs_fixed_stability` first tries `gs_fixed_stability_verified`. For each profile
+`c0+c1*x+c2*x^2+c3*x^3`, a negative `c3` gives the global derivative upper bound
+`c1-c2^2/(3*c3)`; an affine profile gives `c1`. Both exterior half-lines are
+included. Positive cubic tails and nonconstant quadratic profiles are refused.
+FortSym-generated interval leaves evaluate the slope, the enclosing rectangle
+constant and `alpha=1-L*C_F^2` outwardly. The coordinate scan is OpenMP-parallel,
+O(N), with constant scratch and no solves. A positive lower endpoint sets
+`arithmetic_rigorous=.true.`; `gs_state_error_bound` then divides outwardly.
+
+The proof uses zero-trace differences and `A=1/R`: the bounding rectangle gives
+`||v||_2^2 <= C_F^2 int |grad v|^2/R`, while the global source derivative bound
+gives `<F(u)-F(v),u-v> >= alpha*|||u-v|||^2`. Consequently every weak solution
+with the same trace satisfies `|||u-psi_h||| <= ||F(psi_h)||_*/alpha`. This is a
+global monotonicity argument, so no local Newton remainder is needed. A bound
+on a sampled residual remains practical even with this guaranteed stability
+constant; the full nonlinear certificate and nonlinear goal remainder are not
+implemented here. The claim assumes a conforming native affine mesh, the same
+Dirichlet trace and FortNum's strict IEEE arithmetic contract.
+
+The verified path rejects curved geometry, moving-axis normalization and
+multiple polynomial pieces. In particular, the tolerance in `law%valid()` can
+admit small upward value jumps, which have no finite one-sided Lipschitz
+constant. Other supported laws retain the existing floating stability estimate
+with `arithmetic_rigorous=.false.`. The fast
+`gs_verified_nonlinear_coercivity` test checks exact recovery, a high-precision
+coercivity oracle, refusal cases and three meshes of a manufactured cubic
+problem; its residual quadrature is approximate.
 
 For a fixed source and scalar linear goal, `gs_fixed_linear_goal` solves an
 independent adjoint and reports `Q_h+r(z_h)` with product radius `M_psi*M_z`.
