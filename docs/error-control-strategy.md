@@ -119,6 +119,7 @@ run. See the CSV for inputs, scales, widths, timing method and all repetitions.
 | Damped transport | D residual/inverse check about 44× on 64 cells | E residual/adaptation, final D goal and tangent checks; tighten goal inverse before full-state over-refinement |
 | Bounded OU/FP | strict reference check about 370×, submillisecond checker | E flux diagnostic, final S reference packet; general forced-FP D remains pending; reuse a prepared check for immutable data |
 | Poisson / manufactured VPFP | tiny interval coefficient/source-balanced oracle checks; coupled about 56× | final D/S; general nonlinear existence and complement are separate missing premises |
+| Per-n ideal-MHD response | final frozen-current algebraic defect and directional contraction indicator | E at final state; discretization, current sampling and ideal stability remain unavailable |
 | Cold slab | strict Hermite residual about 9× | E embedded RK indicator, final S; larger trajectories can use D action budgets when measured need appears |
 | Planar shielding | strict step residual about 102× | E during candidate evolution, checkpoint/final D redesign next; preserve all segment residuals, not just endpoint agreement |
 | Debye sphere | strict analytic point evaluation about 371×, about 9 microseconds | prepare/reuse S for small references; D transcendental tables belong upstream when many queries dominate |
@@ -241,10 +242,15 @@ boundary trace, so the bound holds for the problem with the Galerkin exterior
 converges at order 1.6--1.8 towards 2 (P2), with index near 1 for large
 perturbations. `gs_response_3d` writes it per unit-sheet solve
 (`prefix_sheet_error.dat`). The exact-exterior and derivative remainders, the
-quadrature and the sheet-data interpolation remain unavailable; the ideal
-response of `mhd_ideal_n` (sampled volume currents inside a GMRES fixed point)
-has no coercive Ampere bound for its final state. These results do not certify
-all MHD operators.
+quadrature and the sheet-data interpolation remain unavailable. The ideal
+response of `mhd_ideal_n` now optionally recomputes the frozen-current
+algebraic defect at the actual GMRES final state, including sheet elimination,
+and reports a practical directional-contraction estimate in the coupled
+discrete Ampere energy norm. The sampled ratio is not a contraction upper
+bound. Current-sampling and discretization remainders and a continuous ideal
+stability bound remain explicitly unavailable; the frozen-current defect is
+not a final continuous error bound. These results do not certify all MHD
+operators.
 
 Priorities: (1) the equilibrated bound for each existing operator family (H1
 affine, curved and Neumann, tetrahedral, mixed and SIPG; planar H(curl) and

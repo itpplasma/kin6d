@@ -848,7 +848,8 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator gs_error grad_shafranov ideal_map equilibrium_core nonnested vacuum_shell
+    foreach(generator gs_error grad_shafranov ideal_map ideal_response_error
+            equilibrium_core nonnested vacuum_shell
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -1365,6 +1366,7 @@ if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 target_sources(kin6d_mhd PRIVATE src/mhd/mhd_mesh.f90 src/mhd/mhd_ampere_n.f90
+    src/generated/kin6d_ideal_response_error_leaves.f90
     src/mhd/mhd_response_n.f90 src/mhd/mhd_ideal_n.f90 src/mhd/mhd_closure_n.f90
     src/mhd/mhd_layer_n.f90)
 target_link_libraries(kin6d_fem2d PUBLIC kin6d_feec_n)
@@ -1405,6 +1407,16 @@ set_tests_properties(gs_response_3d_ampere_indicator_contract PROPERTIES TIMEOUT
 add_executable(test_mhd_ideal_n test/test_mhd_ideal_n.f90)
 target_link_libraries(test_mhd_ideal_n PRIVATE kin6d)
 add_test(NAME mhd_ideal_n_mde_force_free_identity COMMAND test_mhd_ideal_n)
+add_test(NAME mhd_ideal_n_final_state_error COMMAND test_mhd_ideal_n error)
+set_tests_properties(mhd_ideal_n_final_state_error PROPERTIES TIMEOUT 60
+    ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
+add_test(NAME gs_response_3d_ideal_error_contract COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_response_3d>
+    -DWORK=${CMAKE_BINARY_DIR}/gs_response_3d_ideal_check
+    -DEQDSK=${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/shield_torus_a10.eqdsk
+    -P ${CMAKE_SOURCE_DIR}/test/check_gs_response_3d_ideal_error.cmake)
+set_tests_properties(gs_response_3d_ideal_error_contract PROPERTIES TIMEOUT 60
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_mhd_shield_torus test/test_mhd_shield_torus.f90)
