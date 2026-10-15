@@ -1345,6 +1345,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_piola_maps.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_mapped_oscillation_products.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_equilibrated_flux_products.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_rt0_products.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_topology.f90
