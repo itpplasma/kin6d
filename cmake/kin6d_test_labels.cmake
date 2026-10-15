@@ -99,7 +99,7 @@ kin6d_test_labels(gs_free_boundary_t5_large_aspect_shafranov fast CLASSES equili
     TARGETS test_gs_fb_large_aspect)
 kin6d_test_labels(grad_shafranov_equilibrated_flux_majorant fast CLASSES equilibrium
     TARGETS test_gs_equilibrated_majorant)
-kin6d_test_labels(grad_shafranov_checked_rt0_majorant fast CLASSES equilibrium
+kin6d_test_labels(grad_shafranov_checked_bdm_majorant fast CLASSES equilibrium
     TARGETS test_gs_checked_majorant)
 kin6d_test_labels(grad_shafranov_p2_physical_oracles fast CLASSES equilibrium
     TARGETS test_gs_p2)

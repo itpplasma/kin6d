@@ -187,10 +187,13 @@ patch problems are O(N) and parallel; any H(div)/H(curl) reconstruction gives
 a valid bound, so local solve errors only loosen it, and the measured
 divergence defect absorbs algebraic and load-quadrature inconsistency. The
 sampled paths retain approximate status because their non-polynomial
-quadrature is unchecked. A separate strict RT0 audit now encloses the complete
-continuous residual and flux-defect integrals for affine P1/P2 constant-profile
-GS. It reports its own potentially wider radius; it does not promote the
-sampled RTp radius. Other source/geometry families remain approximate.
+quadrature is unchecked. For affine P1/P2 constant-profile GS, a separate
+strict audit (FortFEM `verified_bernstein_majorant`) turns the sampled RTp
+flux into an exact H(div) Bernstein field, bounds the 1/R weights by chords
+and integrates the resulting polynomials exactly in outward interval
+arithmetic. Its certified radius is reported in place of the sampled one; it
+is not a check of the sampled quadrature. Other source/geometry families
+remain approximate.
 
 Observable bands use `Q_h + r(z_h) +- M_psi*M_z`, with both majorants
 equilibrated and one adjoint solve per goal. Nonlinear and free-boundary
@@ -237,11 +240,18 @@ remainders.
 | Product goal band `M_psi*M_z` | Default goal band | One adjoint and estimator per goal |
 | DWR, enriched adjoint | Indicator; nonlinear primal only | Equals a P(p+1) re-solve for linear problems; misses energy goals; radius does not shrink |
 | p-, h-refined re-solve, Richardson | Reference checks | Not a bound; Richardson unreliable on non-nested meshes |
-| Outward interval residual audit | Supported continuous energy certificate | Current RT0 reconstruction can give a wider radius |
+| Outward Bernstein audit of the RTp flux | Supported continuous energy certificate | Affine P1/P2, polynomial source numerator, Dirichlet only |
 
 The measurements behind the table are on a manufactured GS box at 4
-threads and up to 1.9e5 DOF. The equilibrated bound has efficiency
-1.004--1.07 and costs 25% of the solve at 1.9e5 DOF. Goal bands with
+threads and up to 7.6e5 interior DOF. The sampled equilibrated bound has
+efficiency 1.044--1.08 (P1) and 1.017--1.04 (P2); the certified audit has
+1.045--1.12 (P1) and 1.018--1.08 (P2), against 7 (P1) and 140--7000 (P2) for
+the former RT0 audit. On the constant-profile production path the certified
+radius exceeds the sampled one by at most 0.05%. Estimator and audit cost
+grow with DOF exponents 0.97--1.06. At 7.6e5 DOF they cost 20% and 15% (P1)
+and 15% and 4% (P2) of mesh, assembly and the Jacobi-CG solve, whose own
+exponent is 1.55--1.64. From 1 to 16 threads at 1.9e5 DOF the estimator
+speeds up 6.6--8.4 times and the audit 10 times, on a shared host. Goal bands with
 equilibrated majorants are 3--8 times the true error. An enriched DWR
 correction reproduced the P(p+1) primal result.
 

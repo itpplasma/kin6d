@@ -23,9 +23,13 @@ program test_gs_checked_majorant
         if (status /= 0) error stop 'candidate RTp reconstruction'
         sampled = estimate%bound
         call gs_checked_equilibrated_majorant(state, state%psi, estimate, &
-                                              1.0_dp, 0.1_dp, 0.2_dp, bound, status, 2)
+                                              1.0_dp, 0.1_dp, 0.2_dp, bound, status)
         if (status /= 0) error stop 'continuous interval audit'
         if (bound%lo < 0 .or. bound%hi >= 10.0_dp) error stop 'unusable bound'
+        ! The audited degree-(p+1) field reproduces the sampled RTp flux; only
+        ! the chord of 1/R and the global Friedrichs residual can widen it.
+        ! A wrong source numerator or edge repair would give an O(1) excess.
+        if (bound%hi > 1.05_dp*sampled) error stop 'certified bound not narrow'
         print '(a,i0,2es14.5)', 'P', order, sampled, bound%hi
         ! Exact zero solution independently exercises every accumulated
         ! quadrature and arithmetic budget without an assumed relative slack.
