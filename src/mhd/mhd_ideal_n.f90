@@ -44,14 +44,15 @@ module kin6d_mhd_ideal_n
     !! kappa B0, B0 . grad kappa = J . n, so the total current is divergence
     !! free; the boundary pressure jump of a cut equilibrium (p0_edge > 0
     !! with vacuum outside) is not modelled.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use fortfem_meridian_feec_n, only: meridian_feec_t, &
         meridian_point_basis_t, meridian_point_basis, meridian_qpoint
     use fortfem_meridian_magnetic_coupling, only: meridian_edge_point
     use kin6d_vacuum_surfaces, only: psi_grid_t, psi_eval, profiles_of_psin, &
         surface_t, surface_build
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate, flux_mesh_ring_edge
-    use kin6d_mhd_ampere_n, only: mu0
+    use kin6d_mhd_ampere_n, only: mu0, ampere_n_error_t
+    use kin6d_ideal_response_error_leaves, only: ideal_ratio, ideal_tail
     use kin6d_mhd_closure_n, only: frobenius_basis
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
     implicit none
@@ -95,6 +96,24 @@ module kin6d_mhd_ideal_n
         integer, allocatable :: res_m(:)
         real(dp), allocatable :: res_eps(:)
     end type ideal_options_t
+
+    type, public :: ideal_response_error_t
+        !! Final-state algebraic diagnostics in the coupled Ampere energy norm.
+        !! The directional ratio is NOT an upper bound on the operator norm.
+        !! No continuous ideal-MHD bound follows from this report.
+        type(ampere_n_error_t) :: frozen_current
+        real(dp) :: defect_energy = huge(1.0_dp)
+        real(dp) :: contraction_probe = huge(1.0_dp)
+        real(dp) :: algebraic_estimate = huge(1.0_dp)
+        real(dp) :: seconds = 0.0_dp
+        integer :: status = -1
+        character(len=40) :: algebraic_claim = 'unavailable'
+        character(len=40) :: contraction_claim = 'unavailable'
+        character(len=40) :: discretization_claim = 'unavailable-current-reconstruction'
+        character(len=40) :: sampling_claim = 'unavailable-current-sampling'
+        character(len=40) :: continuous_claim = 'unavailable-ideal-stability'
+        character(len=40) :: derivative_claim = 'unavailable'
+    end type ideal_response_error_t
 
     public :: equilibrium_point
     public :: sample_ring_build
@@ -742,7 +761,7 @@ contains
     end subroutine gauss6
 
     subroutine ideal_response(fs, pb, fm, g, amp, opt, n, rings, cl, b2sheet, &
-            phi_ext, a, lam, phi_tot, tol, maxit, info, iters, resid)
+            phi_ext, a, lam, phi_tot, tol, maxit, info, iters, resid, error)
         !! Linear ideal response: Nedelec coefficients a of the field of the
         !! volume (and boundary-sheet) plasma current, and the amplitudes lam
         !! of the resonant sheets of the closure cl, for the external field
@@ -761,8 +780,11 @@ contains
         !! of strips 2 .. nring, rings(nr) the boundary ring.  phi_tot returns
         !! the resonant fluxes of the total field on the closure flux rings.
         use fortnum_krylov, only: complex_gmres_operator
-        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl
+        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
+            ampere_n_error
         use kin6d_mhd_response_n, only: sheet_closure_t, closure_fluxes
+        use fortsparse, only: csc_matvec
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
         type(meridian_feec_t), intent(in) :: fs
         type(meridian_point_basis_t), intent(in) :: pb
         type(flux_mesh_t), intent(in) :: fm
@@ -779,13 +801,19 @@ contains
         integer, intent(in) :: maxit
         integer, intent(out) :: info, iters
         real(dp), intent(out) :: resid
+        type(ideal_response_error_t), intent(out), optional :: error
         complex(dp), allocatable :: bsheet(:, :, :, :), bext(:, :, :), rhs(:)
         complex(dp), allocatable :: minv(:, :), b(:, :, :), fsheet(:, :), wc(:, :)
-        integer :: nr, ns, np, ir, s2, bnd, ipiv(max(1, cl%ns)), st
+        integer :: nr, ns, np, ir, s2, bnd, ipiv(max(1, cl%ns)), st, solve_status
         logical :: debug
         character(len=8) :: env
         integer, allocatable :: seg(:)
 
+        if (present(error)) error = ideal_response_error_t()
+        info = -1
+        iters = 0
+        resid = huge(1.0_dp)
+        solve_status = 0
         call get_environment_variable('KIN6D_L4_DEBUG', env)
         debug = len_trim(env) > 0
         nr = size(rings)
@@ -841,9 +869,17 @@ contains
         end do
         allocate (rhs(amp%nn))
         call apply_k_inv_load(b, rhs)
+        if (solve_status /= 0) then
+            info = -3
+            return
+        end if
         if (debug) print '(a,es12.4)', '  |rhs|', norm2(abs(rhs))
-        call complex_gmres_operator(matvec, rhs, a, tol, maxit, 60, info, &
+        call complex_gmres_operator(matvec, rhs, a, tol, maxit, min(60, maxit), info, &
             iters, resid)
+        if (solve_status /= 0) then
+            info = -3
+            return
+        end if
         ! total sheet amplitudes and resonant fluxes
         if (ns > 0) then
             block
@@ -855,10 +891,12 @@ contains
                 phi_tot = phi_ext + ph + matmul(fsheet(1:cl%nf, 1:ns), lam)
             end block
         end if
+        if (present(error)) call final_error(error)
     contains
-        subroutine apply_k_inv_load(bf, y)
+        subroutine apply_k_inv_load(bf, y, load)
             complex(dp), intent(in) :: bf(:, :, :)
             complex(dp), intent(out) :: y(:)
+            complex(dp), intent(out), optional :: load(:)
             complex(dp), allocatable :: jc(:, :, :), kap(:), f(:)
             integer :: st2
             allocate (jc(3, np, nr), kap(np), f(amp%nn))
@@ -876,6 +914,11 @@ contains
                 call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f)
             end if
             call ampere_n_solve(amp, f, y, st2)
+            if (present(load)) load = f
+            if (st2 /= 0) then
+                solve_status = st2
+                y = (0.0_dp, 0.0_dp)
+            end if
         end subroutine apply_k_inv_load
         function lam_hom(av) result(l)
             complex(dp), intent(in) :: av(:)
@@ -885,28 +928,92 @@ contains
             ph = closure_fluxes(fs, pb, fm, cl, n, b2)
             l = -matmul(minv, matmul(wc(1:ns, 1:cl%nf), ph))
         end function lam_hom
-        subroutine matvec(x, y)
+        subroutine homogeneous_field(x, bb)
             complex(dp), intent(in) :: x(:)
-            complex(dp), intent(out) :: y(:)
-            complex(dp), allocatable :: b2(:), bb(:, :, :), ky(:)
+            complex(dp), intent(out) :: bb(:, :, :)
+            complex(dp), allocatable :: b2(:)
             complex(dp) :: lh(max(ns, 1))
             integer :: r2, s3
             call ampere_n_curl(amp, x, b2)
-            allocate (bb(3, np, nr), ky(size(x)))
+            if (ns > 0) lh(1:ns) = lam_hom(x)
+            !$omp parallel do schedule(static) private(r2, s3)
             do r2 = 1, nr
                 call sample_field(fs, rings(r2), b2, bb(:, :, r2))
-            end do
-            if (ns > 0) then
-                lh(1:ns) = lam_hom(x)
                 do s3 = 1, ns
-                    bb = bb + lh(s3)*bsheet(:, :, :, s3)
+                    bb(:, :, r2) = bb(:, :, r2) + lh(s3)*bsheet(:, :, r2, s3)
                 end do
-            end if
+            end do
+            !$omp end parallel do
+        end subroutine homogeneous_field
+        subroutine matvec(x, y)
+            complex(dp), intent(in) :: x(:)
+            complex(dp), intent(out) :: y(:)
+            complex(dp), allocatable :: bb(:, :, :), ky(:)
+            allocate (bb(3, np, nr), ky(size(x)))
+            call homogeneous_field(x, bb)
             call apply_k_inv_load(bb, ky)
             y = x - ky
             if (debug) print '(a,3es12.4)', '  matvec |x| |Kx| |y|', norm2(abs(x)), &
                 norm2(abs(ky)), norm2(abs(y))
         end subroutine matvec
+        subroutine final_error(estimate)
+            !! F(a) = K^-1 L(B(a)), T its homogeneous part, d = F(a)-a.
+            !! If ||T||_K <= q < 1, ||a*-a||_K <= ||d||_K/(1-q).
+            !! Here q = ||T d||_K/||d||_K is only a directional probe.
+            !! Reuse the exact production load including eliminated sheets.
+            type(ideal_response_error_t), intent(out) :: estimate
+            complex(dp), allocatable :: bb(:, :, :), y(:), f(:), d(:), td(:)
+            type(ampere_n_error_t) :: frozen
+            real(dp) :: td_energy
+            integer :: st2
+            integer(int64) :: clock0, clock1, clock_rate
+
+            estimate = ideal_response_error_t()
+            amp%error = ampere_n_error_t()
+            call system_clock(clock0, clock_rate)
+            allocate (bb(3, np, nr), y(amp%nn), f(amp%nn), d(amp%nn), td(amp%nn))
+            call homogeneous_field(a, bb)
+            !$omp parallel workshare
+            bb = bb + b  ! retained particular field, including its sheets
+            !$omp end parallel workshare
+            call apply_k_inv_load(bb, y, f)
+            estimate%status = 1
+            if (solve_status /= 0) return
+            d = y - a
+            call ampere_n_error(amp, f, a, frozen, st2)
+            if (st2 /= 0) return
+            estimate%frozen_current = frozen
+            estimate%defect_energy = frozen%discrete_energy_error
+            estimate%algebraic_claim = 'indicator-frozen-current-defect'
+            if (estimate%defect_energy <= 0.0_dp) then
+                estimate%algebraic_estimate = 0.0_dp
+                estimate%contraction_claim = 'unavailable-zero-defect'
+            else
+                call homogeneous_field(d, bb)
+                call apply_k_inv_load(bb, td)
+                amp%error = frozen
+                if (solve_status /= 0) return
+                td_energy = real(dot_product(td, csc_matvec(amp%matrix, td)), dp)
+                if (.not. ieee_is_finite(td_energy)) return
+                if (td_energy < 0.0_dp) return
+                call ideal_ratio(estimate%defect_energy, sqrt(td_energy), &
+                    estimate%contraction_probe)
+                estimate%contraction_claim = 'directional-probe-not-upper-bound'
+                if (estimate%contraction_probe < 1.0_dp) then
+                    call ideal_tail(estimate%defect_energy, &
+                        estimate%contraction_probe, estimate%algebraic_estimate)
+                    estimate%algebraic_claim = 'practical-directional-contraction'
+                else
+                    estimate%algebraic_claim = 'unavailable-noncontractive-probe'
+                end if
+            end if
+            ! Internal solves overwrite amp%error. Restore the diagnostic of
+            ! the actual returned candidate with its own frozen load.
+            amp%error = frozen
+            estimate%status = 0
+            call system_clock(clock1)
+            estimate%seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
+        end subroutine final_error
     end subroutine ideal_response
 
 end module kin6d_mhd_ideal_n

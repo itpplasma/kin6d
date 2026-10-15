@@ -23,10 +23,12 @@ program test_mhd_ideal_n
     use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
-        ampere_n_curl, mu0
+        ampere_n_curl, ampere_n_error, ampere_n_error_t, mu0
     use kin6d_mhd_response_n, only: sheet_closure_t
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
-        sample_field, mde_solve, ideal_options_t, ideal_response
+        sample_field, mde_solve, ideal_options_t, ideal_response, &
+        ideal_response_error_t, ideal_current, ideal_load
+    use fortsparse, only: csc_matvec
     implicit none
 
     real(dp), parameter :: pi = 3.14159265358979323846_dp
@@ -35,6 +37,7 @@ program test_mhd_ideal_n
     integer, parameter :: nmode = 2
     type(psi_grid_t) :: g
     logical :: all_passed
+    character(len=16) :: mode
     type(flux_mesh_t), pointer :: pfm => null()
     type(meridian_feec_t), pointer :: pfs => null()
     type(ampere_n_t), pointer :: pamp => null()
@@ -42,6 +45,12 @@ program test_mhd_ideal_n
     all_passed = .true.
     !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
     call make_equilibrium()
+    call get_command_argument(1, mode)
+    if (trim(mode) == 'error') then
+        call error_check()
+        if (.not. all_passed) error stop 1
+        stop
+    end if
     call mde_check()
     call force_free_check()
     call divergence_check()
@@ -50,6 +59,176 @@ program test_mhd_ideal_n
     print '(a)', "test_mhd_ideal_n: all checks passed"
 
 contains
+
+    subroutine error_check()
+        !! Final state versus a tightly solved discrete reference. This tests
+        !! an algebraic indicator, not containment of the continuous solution.
+        type(flux_mesh_t) :: fm
+        type(meridian_feec_t) :: fs
+        type(meridian_point_basis_t) :: pb
+        type(ampere_n_t) :: amp
+        type(ideal_options_t) :: opt
+        type(sample_ring_t), allocatable :: rings(:)
+        type(sheet_closure_t) :: cl
+        type(ideal_response_error_t) :: estimate
+        type(ampere_n_error_t) :: independent
+        complex(dp), allocatable :: a(:), reference(:), delta(:), b2(:), f(:)
+        complex(dp), allocatable :: bf(:, :, :), jc(:, :, :), kap(:)
+        complex(dp) :: lam(0), b2s(0, 0), phe(0), pht(0)
+        real(dp), allocatable :: ul(:)
+        real(dp) :: res, truth, efficiency, elapsed, tsolve, tol
+        integer :: lev, nrad, j, k, st, info, its, c0, c1, cr, trial
+        integer, parameter :: np = 128
+
+        call error_leaf_check()
+        do lev = 1, 3
+            nrad = 4*2**(lev - 1)
+            allocate (ul(nrad), rings(nrad))
+            do j = 1, nrad
+                ul(j) = real(j, dp)/nrad
+            end do
+            call flux_mesh_build(ul, 8, 64, 2, polar_map, fm, st)
+            if (st /= 0) error stop 'error mesh'
+            call meridian_feec_build(fm%mm, 2, fs, st)
+            if (st /= 0) error stop 'error FEEC'
+            call ampere_n_build(fs, nmode, amp, st)
+            if (st /= 0) error stop 'error Ampere build'
+            call meridian_point_basis_init(fs, pb, st)
+            if (st /= 0) error stop 'error point basis'
+            opt%force_free = .true.
+            opt%sigma = sigma
+            opt%boundary_sheet = .false.
+            opt%strip_shape = .false.
+            do j = 2, nrad
+                call sample_ring_build(g, opt, fm, fs, pb, &
+                    0.5_dp*(ul(j - 1) + ul(j)), j, np, rings(j - 1), st)
+                if (st /= 0) error stop 'error half ring'
+            end do
+            call sample_ring_build(g, opt, fm, fs, pb, 1.0_dp, nrad, np, &
+                rings(nrad), st)
+            if (st /= 0) error stop 'error boundary ring'
+            do j = 1, nrad
+                do k = 1, np
+                    call bext_fun(rings(j)%x(:, k), rings(j)%bc(:, k))
+                end do
+            end do
+            allocate (a(amp%nn), reference(amp%nn), f(amp%nn), &
+                bf(3, np, nrad), jc(3, np, nrad), kap(np))
+            reference = (0.0_dp, 0.0_dp)
+            call ideal_response(fs, pb, fm, g, amp, opt, nmode, rings, cl, &
+                b2s, phe, reference, lam, pht, 1.0e-12_dp, 60, info, its, res)
+            call record(info == 0, 'tight discrete reference converged')
+            tol = 10.0_dp**(-lev - 1)
+            do trial = 1, 3
+                a = (0.0_dp, 0.0_dp)
+                call system_clock(c0, cr)
+                call ideal_response(fs, pb, fm, g, amp, opt, nmode, rings, cl, &
+                    b2s, phe, a, lam, pht, tol, 60, info, its, res, error=estimate)
+                call system_clock(c1)
+                elapsed = real(c1 - c0, dp)/cr
+                tsolve = elapsed - estimate%seconds
+                delta = a - reference
+                truth = sqrt(real(dot_product(delta, &
+                    csc_matvec(amp%matrix, delta)), dp))
+                efficiency = estimate%algebraic_estimate/truth
+                print '(a,4i6,7es13.5)', 'ideal error: ', nrad, amp%nn, its, trial, &
+                    truth, estimate%defect_energy, estimate%contraction_probe, &
+                    efficiency, tsolve, estimate%seconds, &
+                    estimate%seconds/max(tsolve, 1.0e-12_dp)
+                call record(info == 0 .and. estimate%status == 0, &
+                    'final-state diagnostic succeeds')
+                call record(efficiency >= 1.0_dp .and. efficiency < 2.0_dp, &
+                    'practical estimate contains this discrete reference, index < 2')
+            end do
+            call record(estimate%continuous_claim == 'unavailable-ideal-stability', &
+                'no continuous certificate from directional contraction')
+            call record(estimate%sampling_claim == 'unavailable-current-sampling', &
+                'current-sampling remainder is explicit')
+            call ampere_n_curl(amp, a, b2)
+            do j = 1, nrad
+                call sample_field(fs, rings(j), b2, bf(:, :, j))
+                bf(:, :, j) = bf(:, :, j) + rings(j)%bc
+            end do
+            call ideal_current(rings, nmode, g%sgn_dpsi, opt%qlow, bf, jc, kap, 0)
+            call ideal_load(fs, pb, fm, g, jc(:, :, 1:nrad - 1), kap, 0, f)
+            call ampere_n_error(amp, f, a, independent, st)
+            call record(st == 0, 'independent final frozen-current audit succeeds')
+            call record(abs(independent%discrete_energy_error &
+                - estimate%defect_energy) < 1.0e-9_dp*truth, &
+                'reported defect uses the returned state and its actual current')
+            call record(abs(amp%error%discrete_energy_error &
+                - estimate%defect_energy) < 1.0e-9_dp*truth, &
+                'amp error restored after internal probe solves')
+            ! Matched production-tolerance cost, separate from the deliberately
+            ! loose candidates used to resolve algebraic truth above rounding.
+            do trial = 1, 3
+                a = (0.0_dp, 0.0_dp)
+                call system_clock(c0, cr)
+                call ideal_response(fs, pb, fm, g, amp, opt, nmode, rings, cl, &
+                    b2s, phe, a, lam, pht, 1.0e-10_dp, 60, info, its, res, &
+                    error=estimate)
+                call system_clock(c1)
+                elapsed = real(c1 - c0, dp)/cr
+                tsolve = elapsed - estimate%seconds
+                print '(a,4i6,3es13.5)', 'ideal cost: ', nrad, amp%nn, its, trial, &
+                    tsolve, estimate%seconds, &
+                    estimate%seconds/max(tsolve, 1.0e-12_dp)
+                call record(info == 0 .and. estimate%status == 0, &
+                    'production-tolerance final-state diagnostic succeeds')
+            end do
+            if (lev == 1) then
+                do j = 1, nrad
+                    rings(j)%j0 = 100.0_dp*rings(j)%j0
+                end do
+                a = (0.0_dp, 0.0_dp)
+                call ideal_response(fs, pb, fm, g, amp, opt, nmode, rings, cl, &
+                    b2s, phe, a, lam, pht, 1.0e-14_dp, 1, info, its, res, &
+                    error=estimate)
+                call record(info == 1 .and. its == 1 .and. estimate%status == 0, &
+                    'nonconverged candidate still has a final-state defect')
+                call record(estimate%contraction_probe >= 1.0_dp, &
+                    'strong-current probe detects a noncontraction')
+                call record(estimate%algebraic_claim == &
+                    'unavailable-noncontractive-probe', &
+                    'noncontractive probe never supplies a finite tail estimate')
+            end if
+            ! Exact-recovery case: no equilibrium current or pressure gradient.
+            do j = 1, nrad
+                rings(j)%j0 = 0.0_dp
+                rings(j)%gsig = 0.0_dp
+            end do
+            a = (0.0_dp, 0.0_dp)
+            call ideal_response(fs, pb, fm, g, amp, opt, nmode, rings, cl, b2s, &
+                phe, a, lam, pht, 1.0e-12_dp, 60, info, its, res, error=estimate)
+            call record(info == 0 .and. estimate%status == 0, &
+                'zero-current diagnostic succeeds')
+            call record(estimate%defect_energy < 1.0e-14_dp .and. &
+                estimate%algebraic_estimate < 1.0e-14_dp, &
+                'exact recovery of zero response')
+            deallocate (ul, rings, a, reference, f, bf, jc, kap)
+        end do
+    end subroutine error_check
+
+    subroutine error_leaf_check()
+        use kin6d_ideal_response_error_leaves, only: ideal_ratio, ideal_tail, &
+            ideal_ratio_jvp, ideal_ratio_vjp, ideal_tail_jvp, ideal_tail_vjp
+        real(dp) :: q, tail, dq, dtail, gd, ga, bd, bq
+
+        call ideal_ratio(2.0_dp, 0.5_dp, q)
+        call ideal_tail(2.0_dp, q, tail)
+        call record(abs(tail - 8.0_dp/3) < 1.0e-14_dp, &
+            'geometric-series formula against rational arithmetic')
+        call ideal_ratio_jvp(2.0_dp, 0.5_dp, 0.3_dp, -0.2_dp, dq)
+        call ideal_ratio_vjp(2.0_dp, 0.5_dp, 1.0_dp, gd, ga)
+        call record(abs(dq + 0.1375_dp) < 1.0e-14_dp .and. &
+            abs(dq - (0.3_dp*gd - 0.2_dp*ga)) < 1.0e-14_dp, &
+            'ratio JVP and VJP against independent rational derivative')
+        call ideal_tail_jvp(2.0_dp, q, 0.3_dp, 0.2_dp, dtail)
+        call ideal_tail_vjp(2.0_dp, q, 1.0_dp, bd, bq)
+        call record(abs(dtail - 10.0_dp/9) < 1.0e-14_dp .and. &
+            abs(dtail - (0.3_dp*bd + 0.2_dp*bq)) < 1.0e-14_dp, &
+            'tail JVP and VJP against independent rational derivative')
+    end subroutine error_leaf_check
 
     subroutine record(c, d)
         logical, intent(in) :: c
