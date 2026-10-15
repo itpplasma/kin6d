@@ -133,6 +133,7 @@ run. See the CSV for inputs, scales, widths, timing method and all repetitions.
 | Q5 HF/Temple | parent residual plus candidate-gap input about 1.25× | E by default; D requires a verified excited-state/gap premise; interval arithmetic around candidate gap is insufficient |
 | Q7 screening | enclosed tails plus quadrature indicators; instrumented total about 2.6× with estimator work larger than candidate | checkpoint/cache E quadrature differences and separate D/S tails; full response remains candidate until integration/input remainders close |
 | C3/C4 PME | RMS force estimate about 2.1× / 3.6× for one force action | cache parameter estimate outside hot steps; E only, since positional law and omitted mesh/self terms do not establish an all-configuration bound |
+| NN1 axisymmetric P2/P3 | practical fixed-trace RT bound; P3 index 1.179/1.076 on 8/16 rings | local mapped source oscillation; quadrature/arithmetic and physical trace error remain unenclosed |
 | H1a/H1b | batch interval summarization negligible beside sampling | statistical intervals with autocorrelation/mixing checks; algorithmic P needs an explicit finite-sample law; increase independent batches/realizations when width misses budget |
 
 ## Implemented Q0 arithmetic and approximate mode
@@ -215,8 +216,13 @@ Coupled/free-boundary GS uses RT recovery with its existing measured BEM
 interface defect and practical stability estimate. The `gs_free` application
 writes this practical estimate, M0/beta with its terms, for its final state.
 The NN1 axisymmetric restriction uses isoparametric RT recovery. Against the
-exact Solov'ev flux its efficiency index is 1.02 at P2 and 1.8 at P3; the
-discrete Dirichlet trace is fixed. The `grad_shafranov_demo` constant-q
+exact Solov'ev flux on 8/16 rings, its efficiency index is 1.014/1.011 at P2
+and 1.179/1.076 at P3; the discrete Dirichlet trace is fixed. The former P3
+index 1.83/1.82 came from global-C_F source oscillation on curved cells, not
+the RT3 flux defect. FortFEM now uses a local mapped-cell Poincare bound with
+Bernstein Jacobian/determinant hulls and the directly integrated reference
+source residual, retaining the global fallback. Quadrature and trace controls
+are recorded in [NN1](equilibrium-nonnested.md). The `grad_shafranov_demo` constant-q
 inverse state is estimated through the same fixed-source path with its executed
 zero-pressure FF' table as a profile law (claim `practical estimate`, method
 `equilibrated-rt`, quadrature `approximate`). The D3 Riesz solve
