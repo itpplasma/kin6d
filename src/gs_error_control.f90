@@ -216,8 +216,8 @@ contains
         type(equilibrated_flux_estimate_t) :: primal, adjoint
         real(dp), allocatable :: x(:), y(:), w(:), rhs(:, :), z(:), action(:)
         real(dp) :: point(2), det, shape(10), grad(2, 10), hess(2, 2, 10)
-        real(dp) :: ph, f, q, center
-        integer :: stat, e, j, nd, n
+        real(dp) :: ph, f, q, center, value, local_rhs(10, 2)
+        integer :: stat, e, j, nd, n, a, failed
         status = GS_ERROR_BAD_INPUT
         if (.not. state%ready) return
         n = size(state%psi)
@@ -229,22 +229,42 @@ contains
         rhs = 0
         call triangle_duffy_quadrature(14, x, y, w, stat)
         if (stat /= 0) return
+        value = 0; failed = 0
+        !$omp parallel do default(shared) schedule(static) &
+        !$omp private(j, a, point, det, shape, grad, hess, ph, f, q, stat, local_rhs) &
+        !$omp reduction(+:value) reduction(max:failed)
         do e = 1, size(state%triangles, 2)
+            local_rhs = 0
             do j = 1, size(w)
                 call gs_cell_data(state, e, [x(j), y(j)], point, det, &
                                   shape(:nd), grad(:, :nd), hess(:, :, :nd), stat)
-                if (stat /= 0) return
+                if (stat /= 0) then
+                    failed = 1
+                    cycle
+                end if
                 ph = dot_product(shape(:nd), psi(state%triangles(:, e)))
                 f = source(e, point(1), point(2), ph)
                 q = weight(point(1), point(2))
-                if (.not. all(ieee_is_finite([f, q]))) return
-                rhs(state%triangles(:, e), 1) = rhs(state%triangles(:, e), 1) &
-                                                + w(j)*det*f*shape(:nd)
-                rhs(state%triangles(:, e), 2) = rhs(state%triangles(:, e), 2) &
-                                                + w(j)*det*q*shape(:nd)
-                goal%value = goal%value + w(j)*det*q*ph
+                if (.not. all(ieee_is_finite([f, q]))) then
+                    failed = 1
+                    cycle
+                end if
+                local_rhs(:nd, 1) = local_rhs(:nd, 1) + w(j)*det*f*shape(:nd)
+                local_rhs(:nd, 2) = local_rhs(:nd, 2) + w(j)*det*q*shape(:nd)
+                value = value + w(j)*det*q*ph
+            end do
+            do a = 1, nd
+                !$omp atomic update
+                rhs(state%triangles(a, e), 1) = rhs(state%triangles(a, e), 1) &
+                    + local_rhs(a, 1)
+                !$omp atomic update
+                rhs(state%triangles(a, e), 2) = rhs(state%triangles(a, e), 2) &
+                    + local_rhs(a, 2)
             end do
         end do
+        !$omp end parallel do
+        if (failed /= 0) return
+        goal%value = value
         where (spread(state%boundary, 2, 2)) rhs = 0
         status = GS_ERROR_SOLVE_FAILED
         call gs_linear_response(state, rhs(:, 2), z, stat, &
