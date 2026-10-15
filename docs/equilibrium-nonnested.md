@@ -163,7 +163,36 @@ cells bounds the error to the continuous solution with the same discrete
 Dirichlet trace. Its claim is `practical-fixed-dirichlet-trace`, because the
 integrals use the meridian quadrature. Against the exact Solov'ev flux
 (`nonnested_n0_equilibrated_solovev`, 8/16 rings), the efficiency index is
-1.018/1.013 at P2 and 1.83/1.82 at P3. The n > 0 vacuum modes have no bound.
+1.014/1.011 at P2 and 1.179/1.076 at P3, with bound convergence rates 1.81
+and 2.68. The test requires containment and index <= 1.2 on every mesh, plus
+rounding-level recovery of the nonzero harmonic flux on an affine P3 space
+and of the zero field on curved P3 geometry.
+
+The former P3 index 1.83/1.82 was source-oscillation pessimism: the RT3 flux
+term alone has index 1.016/1.019, while the global-C_F oscillation adds
+0.815/0.797. Doubling quadrature order (14 to 28) leaves these numbers
+unchanged; replacing the zero trace by the exact nodal Solov'ev values also
+does so. On affine geometry with exact nodal trace, RT3 gives 1.003/1.005.
+RT4 on the original curved geometry gives 1.006/1.004 but costs about three
+times RT3 in the small fixture, so the production degree stays unchanged.
+FortFEM instead pulls source oscillation back to the straight vertex triangle,
+using whole-cell Bernstein bounds for the Jacobian spectral norm and positive
+determinant, together with the directly integrated reference residual norm.
+This is valid without convexity of the curved cell; inconclusive determinant
+hulls retain the global constant. The exact-arithmetic derivation is in
+FortFEM `doc/MAPPED_OSCILLATION.md`. Evaluation and the represented Dirichlet
+trace keep the same practical claim.
+
+A shared-host Release measurement (P3, 27,241/107,113 DOFs, four threads,
+six interleaved repetitions per version) gives estimator medians 0.349/1.472 s
+versus 0.355/1.512 s before the change: no measured cost increase. Its cost
+remains 2.09/1.69 times the solve, so the small-fraction-of-solve target is not
+met. A separate three-repetition 1/4-thread ladder gives 2.58/2.41 times
+estimator speedup; the DOF exponent from 27,241 to 107,113 is 1.03 at one
+thread and 1.08 at four threads. Timings are contention-sensitive; these are
+scoped measurements, not a general performance guarantee. Solve timing spans
+`nn_solve`; mesh/complex construction is reported separately and excluded.
+The n > 0 vacuum modes have no bound.
 FortFEM's meridian H(curl) bound applies only to the problem with the
 projected tangential trace. The projection error of that trace has no bound.
 
