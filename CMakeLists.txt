@@ -146,7 +146,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "0b0f0d5ec293b0b455a3e931ccd07e9754e3d866")
+set(KIN6D_FORTFEM_REVISION "1843de419dcb4e7a1877f33e5ba7e45c4fe8f198")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1197,6 +1197,8 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_piola_maps.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_equilibrated_flux_products.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_topology.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_2d.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
