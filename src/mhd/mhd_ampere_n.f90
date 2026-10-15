@@ -49,9 +49,10 @@ module kin6d_mhd_ampere_n
     !! (int G (v . t) dl on oriented interior edges, the form of
     !! ring_sheet_load) enter the same reconstruction.  The bound is for the
     !! problem with the discrete exterior operator and the V0-interpolated
-    !! sheet density; the remainder of the exact exterior, the quadrature
-    !! and the sheet-data interpolation (reported as load_defect) are not
-    !! enclosed: claim 'practical-discrete-exterior'.
+    !! sheet density. With sheet_derivative = dG/dtau, a local lift bounds
+    !! the sheet interpolation correction and is added to coupled_bound.
+    !! The exact-exterior and quadrature remainders are not enclosed:
+    !! claim 'practical-discrete-exterior'.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_op_complex, &
@@ -59,7 +60,7 @@ module kin6d_mhd_ampere_n
         meridian_point_basis, meridian_zcsc_matmul, meridian_field_i
     use fortfem_equilibrated_hcurl_meridian_n, only: &
         meridian_hcurl_estimate_t, meridian_hcurl_equilibrated_bound, HCURL_OK, &
-        meridian_edge_load_i
+        meridian_edge_load_i, meridian_hcurl_edge_remainder
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: p2_basis
     use fortfem_meridian_magnetic_coupling, only: meridian_boundary_t, &
         meridian_boundary_build, meridian_flux_pairing
@@ -100,6 +101,10 @@ module kin6d_mhd_ampere_n
         integer :: coupled_status = -1
         character(len=32) :: coupled_claim = 'unavailable'
         character(len=40) :: steklov_status = 'unavailable'
+        !> Sampled majorant for the difference between G and I_k G.
+        !> coupled_bound includes it only when sheet_status says practical-lift.
+        real(dp) :: sheet_remainder = huge(1.0_dp)
+        character(len=40) :: sheet_status = 'unavailable'
     end type ampere_n_error_t
 
     type, public :: ampere_n_t
@@ -421,13 +426,14 @@ contains
     end subroutine ampere_n_equilibrated_error
 
     subroutine ampere_n_coupled_error(fs, fsd, amp, a, current, estimate, status, &
-            sheet_cell, sheet_edge, sheet_load)
+            sheet_cell, sheet_edge, sheet_load, sheet_derivative)
         !! Equilibrated bound of the coupled problem (module header) for the
         !! candidate a with the mu0-scaled volume current and optional sheet
         !! loads (oriented interior edges, density as in ring_sheet_load).
         !! fsd: potential complex on the same mesh, order >= 2 (>= k + 1 for
-        !! efficiency). Callbacks must be thread safe (current) or are called
-        !! serially (sheet_load).
+        !! efficiency). Optional sheet_derivative gives dG/dtau and enables
+        !! the sheet interpolation remainder. All callbacks must then be
+        !! thread safe. Quadrature and exact-exterior errors stay unavailable.
         type(meridian_feec_t), intent(in) :: fs, fsd
         type(ampere_n_t), intent(in) :: amp
         complex(dp), intent(in) :: a(:)
@@ -436,6 +442,7 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: sheet_cell(:), sheet_edge(:)
         procedure(meridian_edge_load_i), optional :: sheet_load
+        procedure(meridian_edge_load_i), optional :: sheet_derivative
         complex(dp), allocatable :: full_a(:), mu(:)
         integer, allocatable :: cells(:), edges(:), panel(:, :)
         integer :: np, p, nsheet
@@ -447,13 +454,19 @@ contains
         estimate%coupled_bound = huge(1.0_dp)
         estimate%steklov_term = huge(1.0_dp)
         estimate%coupled_status = -1
+        estimate%sheet_remainder = huge(1.0_dp)
+        estimate%sheet_status = 'unavailable'
         status = 1
         if (.not. amp%factored) return
         if (size(a) /= amp%nn .or. fs%nn /= amp%nn) return
         if (fsd%k < 2) return
         nsheet = 0
+        if (present(sheet_edge) .neqv. present(sheet_cell)) return
+        if (present(sheet_load) .neqv. present(sheet_cell)) return
+        if (present(sheet_derivative)) then
+            if (.not. present(sheet_cell)) return
+        end if
         if (present(sheet_cell)) then
-            if (.not. present(sheet_edge) .or. .not. present(sheet_load)) return
             if (size(sheet_edge) /= size(sheet_cell)) return
             nsheet = size(sheet_cell)
             sheet_ptr => sheet_load
@@ -486,6 +499,23 @@ contains
         estimate%steklov_status = 'zero-by-construction-discrete-S'
         estimate%coupled_bound = estimate%coupled%bound
         estimate%coupled_claim = 'practical-discrete-exterior'
+        if (nsheet == 0) then
+            estimate%sheet_remainder = 0.0_dp
+            estimate%sheet_status = 'zero-no-sheet'
+        else
+            estimate%sheet_status = 'unavailable-sheet-derivative'
+            if (.not. present(sheet_derivative)) return
+            ! Shared-node averaging of inconsistent jump data is a separate
+            ! defect: an edge-interior lift cannot repair a vertex mismatch.
+            estimate%sheet_status = 'unavailable-inconsistent-jump'
+            if (estimate%coupled%lift_mismatch > 1.0e-10_dp) return
+            call meridian_hcurl_edge_remainder(fsd, amp%n, sheet_cell, sheet_edge, &
+                sheet_load, sheet_derivative, estimate%sheet_remainder, status)
+            estimate%sheet_status = 'unavailable-lift-failed'
+            if (status /= HCURL_OK) return
+            estimate%sheet_status = 'practical-lift'
+            estimate%coupled_bound = estimate%coupled_bound + estimate%sheet_remainder
+        end if
     contains
         subroutine loads(cell, edge, tau, g)
             integer, intent(in) :: cell, edge
