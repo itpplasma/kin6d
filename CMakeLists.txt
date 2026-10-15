@@ -146,7 +146,7 @@ target_sources(kin6d PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d PUBLIC kin6d_intervals kin6d_ode LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "a27e21f7d498189430bb0a88eeb0c1c45e076243")
+set(KIN6D_FORTFEM_REVISION "0b0f0d5ec293b0b455a3e931ccd07e9754e3d866")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -411,7 +411,14 @@ target_link_libraries(test_gs_fb_large_aspect PRIVATE kin6d)
 add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_large_aspect)
 set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEOUT 1800)
 target_sources(kin6d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90
-    src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90)
+    src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90
+    src/gs_equilibrated.f90)
+add_executable(test_gs_equilibrated_majorant test/test_gs_equilibrated_majorant.f90)
+target_link_libraries(test_gs_equilibrated_majorant PRIVATE kin6d)
+add_test(NAME grad_shafranov_equilibrated_flux_majorant
+    COMMAND test_gs_equilibrated_majorant)
+set_tests_properties(grad_shafranov_equilibrated_flux_majorant PROPERTIES
+    TIMEOUT 600 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_gs_p2 test/test_gs_p2.f90)
 target_link_libraries(test_gs_p2 PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_physical_oracles COMMAND test_gs_p2)
@@ -1186,6 +1193,9 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_piola_maps.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_2d.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
