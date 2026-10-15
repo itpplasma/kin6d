@@ -592,6 +592,14 @@ contains
         call result%attribute('majorant_claim', trim(error_claim))
         call result%attribute('majorant_method', 'coupled FEM-BEM RT equilibration')
         call result%attribute('majorant_quadrature_status', 'approximate')
+        call result%attribute('majorant_interface_scope', &
+            'dual norm restricted to the reference-BEM trace space')
+        if (error_claim(1:11) /= 'unavailable') then
+            call result%attribute('majorant_exterior_status', &
+                trim(certifier%last%frozen%exterior_status))
+        else
+            call result%attribute('majorant_exterior_status', trim(error_claim))
+        end if
         call result%attribute('majorant_scope', &
             'energy norm int |grad e|^2/R dA + <S e,e> of the discrete '// &
             'free-boundary model; reference-BEM Steklov map, estimated '// &
@@ -613,7 +621,7 @@ contains
                               'oscillation plus C_F divergence defect B')
             call result%write('majorant_interface', &
                               certifier%last%frozen%neumann_defect, 'Wb/m^0.5', &
-                              'reference-BEM interface defect N')
+                              'reference-BEM trace-space interface indicator N')
             call result%write('estimator_s', estimator_s, 's', &
                               'error estimator wall time')
         end if

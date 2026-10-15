@@ -215,6 +215,13 @@ linear goals use an independently solved adjoint and the product majorant.
 Coupled/free-boundary GS uses RT recovery with its existing measured BEM
 interface defect and practical stability estimate. The `gs_free` application
 writes this practical estimate, M0/beta with its terms, for its final state.
+The interface norm tests only the finite reference-BEM trace space; it does
+not control its continuous complement. Results therefore separately report
+`majorant_exterior_status=unavailable-bem-remainder`. FortFEM's finite
+single-layer residual energy diagnostic measures an enriched flux-space
+correction, not an upper bound on that complement. A proved full-trace
+Neumann residual bound and a continuous single/double-layer remainder are
+still required before combining it with the interior equilibrated bound.
 The NN1 axisymmetric restriction uses isoparametric RT recovery. Against the
 exact Solov'ev flux on 8/16 rings, its efficiency index is 1.014/1.011 at P2
 and 1.179/1.076 at P3; the discrete Dirichlet trace is fixed. The former P3
@@ -274,8 +281,9 @@ remainders.
 | DWR, enriched adjoint | Indicator; nonlinear primal only | Equals a P(p+1) re-solve for linear problems; misses energy goals; radius does not shrink |
 | p-, h-refined re-solve, Richardson | Reference checks | Not a bound; Richardson unreliable on non-nested meshes |
 | Outward Bernstein audit of the RTp flux | Supported continuous energy certificate | Affine P1/P2, polynomial source numerator, Dirichlet only |
+| Free-boundary FEM-BEM interface | Practical finite trace-space indicator | Continuous exterior remainder `unavailable-bem-remainder`; enriched flux residual norms are not upper bounds |
 
-The measurements behind the table are on a manufactured GS box at 4
+The fixed-boundary measurements behind the table are on a manufactured GS box at 4
 threads and up to 7.6e5 interior DOF. The sampled equilibrated bound has
 efficiency 1.044--1.08 (P1) and 1.017--1.04 (P2); the certified audit has
 1.045--1.12 (P1) and 1.018--1.08 (P2), against 7 (P1) and 140--7000 (P2) for
