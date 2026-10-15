@@ -499,9 +499,12 @@ contains
         integer, intent(out) :: status
         real(dp) :: xq(2, self%fs%nq), w, val(self%fs%nl0, self%fs%nq)
         real(dp) :: dval(2, self%fs%nl0, self%fs%nq), kj(3, 3)
+        real(dp) :: kmean(3, 3, self%fs%nq)
+        logical :: have_mean(self%fs%nq)
         integer :: p, q, j, nm
         status = 1
         k = 0
+        have_mean = .false.
         if (self%kind == METRIC_IDENTITY) then
             do p = 1, size(x, 2)
                 k(1, 1, p) = 1; k(2, 2, p) = 1; k(3, 3, p) = 1
@@ -519,11 +522,17 @@ contains
             q = minloc(sum((xq - spread(x(:2, p), 2, self%fs%nq))**2, 1), 1)
             if (sum((xq(:, q) - x(:2, p))**2) > 1.0e-24_dp*(1 + sum(x(:2, p)**2))) return
             if (self%kind == METRIC_MEAN) then
-                nm = self%nphi_mean
-                do j = 1, nm
-                    if (.not. pulled(q, 2*pi*(j - 1)/nm, kj)) return
-                    k(:, :, p) = k(:, :, p) + kj/nm
-                end do
+                ! The phi mean is the same at every angle of a meridian point.
+                if (.not. have_mean(q)) then
+                    nm = self%nphi_mean
+                    kmean(:, :, q) = 0
+                    do j = 1, nm
+                        if (.not. pulled(q, 2*pi*(j - 1)/nm, kj)) return
+                        kmean(:, :, q) = kmean(:, :, q) + kj/nm
+                    end do
+                    have_mean(q) = .true.
+                end if
+                k(:, :, p) = kmean(:, :, q)
             else
                 if (.not. pulled(q, x(3, p), k(:, :, p))) return
             end if
