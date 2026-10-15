@@ -52,7 +52,7 @@ module kin6d_ideal_map
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
         FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE, &
         sparse_factor_stats, sparse_factor_stats_t, sparse_refactor
-    use kin6d_gs_direct, only: gs_direct_available
+    use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
     private
     public :: ideal_map_t, ideal_frozen_t
@@ -1584,6 +1584,12 @@ contains
         ! serial SuperLU LU otherwise. The damped system is symmetric and
         ! may be indefinite.
         if (gs_direct_available()) then
+            if (.not. gs_direct_mpi_ready()) then
+                info = 1
+                if (done) call sparse_destroy(slv)
+                done = .false.
+                return
+            end if
             slv%backend_id = FORTSPARSE_BACKEND_MUMPS
             slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
             slv%options%nthreads = map%factor_threads
