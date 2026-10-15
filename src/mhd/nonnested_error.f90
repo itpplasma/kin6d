@@ -227,8 +227,15 @@ contains
         !$omp end parallel
         if (failed /= 0) return
         if (coupled /= 0 .and. modes > 0) then
+            ! Without a coupled bound (e.g. a sampled K below chi_lower I) the
+            ! coupled band keeps its unavailable status.
             call nt_fourier_error(fs, modes, nphi, conductivity, chi_lower, &
                 source, p, error, status)
+            if (status /= NN_ERROR_OK) then
+                status = NN_ERROR_MODE_COUPLING
+                error%claim = 'unavailable-mode-coupling'
+                error%scope = 'unavailable'
+            end if
             return
         end if
         call transport_error_friedrichs(minval(lower), hi(1) - lo(1), hi(2) - lo(2), &
