@@ -11,6 +11,8 @@
      "cacheVariables":{"KIN6D_CHECK_LEAN":"ON"}},
     {"name":"mumps","inherits":"cpu","binaryDir":"${sourceDir}/build-mumps",
      "cacheVariables":{"KIN6D_ENABLE_MUMPS":"ON"}},
+    {"name":"superlu","inherits":"cpu","binaryDir":"${sourceDir}/build-superlu",
+     "cacheVariables":{"KIN6D_ENABLE_MUMPS":"OFF"}},
     {"name":"dev-fast","inherits":"cpu","binaryDir":"${sourceDir}/build-dev-fast",
      "cacheVariables":{"KIN6D_BUILD_EXTRAS":"OFF",
       "CMAKE_PROJECT_TOP_LEVEL_INCLUDES":"${sourceDir}/cmake/kin6d_shared_deps.cmake"}}
@@ -19,6 +21,7 @@
                     {"name":"debug","configurePreset":"debug"},
                     {"name":"formal","configurePreset":"formal"},
                     {"name":"mumps","configurePreset":"mumps"},
+                    {"name":"superlu","configurePreset":"superlu"},
                     {"name":"dev-fast","configurePreset":"dev-fast"}],
   "testPresets": [{"name":"cpu","configurePreset":"cpu","output":{"outputOnFailure":true}},
                    {"name":"debug","configurePreset":"debug","output":{"outputOnFailure":true}},
