@@ -207,10 +207,21 @@ interface defect and practical stability estimate. The `gs_free` application
 writes this practical estimate, M0/beta with its terms, for its final state.
 The NN1 axisymmetric restriction uses isoparametric RT recovery. Against the
 exact Solov'ev flux its efficiency index is 1.02 at P2 and 1.8 at P3; the
-discrete Dirichlet trace is fixed. Per-mode Ampere solves
-report a coupled discrete residual-energy indicator and optional fixed-trace
-interior reconstruction; the missing exterior and derivative remainders remain
-explicitly unavailable. These results do not certify all MHD operators.
+discrete Dirichlet trace is fixed. The `grad_shafranov_demo` constant-q
+inverse state is estimated through the same fixed-source path with its executed
+zero-pressure FF' table as a profile law (claim `practical estimate`, method
+`equilibrated-rt`, quadrature `approximate`). The D3 Riesz solve
+(`equilibrium_residual` with `error_estimate`) adds a practical upper bound
+`sqrt(dual^2 + M^2)` of the continuous dual norm to its finite-test-space lower
+bound: `M` is the equilibrated bound of the weighted vector-Laplace Riesz error
+with discrete flux `A grad r_h - g`, and the estimator quadrature is not
+enclosed. On a coarse Solov'ev psi-lane state the lower bound of a finer test
+space lies below it. Per-mode Ampere solves
+report a coupled discrete residual-energy indicator (the algebraic residual
+energy of the discrete system, also written by `gs_response_3d` for its sheet
+solves) and optional fixed-trace interior reconstruction; the missing exterior
+and derivative remainders remain explicitly unavailable. These results do not
+certify all MHD operators.
 
 Priorities: (1) the equilibrated bound for each existing operator family (H1
 affine, curved and Neumann, tetrahedral, mixed and SIPG; planar H(curl) and

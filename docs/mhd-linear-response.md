@@ -203,7 +203,10 @@ factored as the real SPD form (1M unknowns at nrad 128). Output `prefix_res.dat`
 the vacuum resonant flux `Φ_vac` and `b_vac = Φ_vac/area`, the sheet amplitude
 `λ` and `b_shield = −M_ss λ/area`, the resonant flux of the shielding current
 alone per area (GPEC's `singflx`); `m = n q` with the signed `q` of
-`kin6d_vacuum_surfaces` (GPEC labels it `−m`).
+`kin6d_vacuum_surfaces` (GPEC labels it `−m`). The file also carries a
+`# ampere_discrete_energy_error_max` comment: the worst discrete residual-energy
+indicator of the app's unit-sheet Ampère solves (claim `indicator`; the
+continuous claim stays `unavailable-exterior-remainder`).
 
 ## Perturbation export (L7 core)
 
