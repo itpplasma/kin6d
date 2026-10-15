@@ -11,7 +11,7 @@ program gen_gs_error
     type(expr_t) :: source_lipschitz, friedrichs_squared, alpha
     type(expr_t) :: primal_majorant, adjoint_majorant, goal_value, residual_adjoint
     type(expr_t) :: mu0, r_max, r_min, pp_slope_max, ff_slope_max
-    type(expr_t) :: residual_majorant
+    type(expr_t) :: residual_majorant, c2, c3
 
     call arena%init()
     r = sym(arena, 'r')
@@ -30,6 +30,7 @@ program gen_gs_error
     pp_slope_max = sym(arena, 'pp_slope_max')
     ff_slope_max = sym(arena, 'ff_slope_max')
     residual_majorant = sym(arena, 'residual_majorant')
+    c2 = sym(arena, 'c2'); c3 = sym(arena, 'c3')
     goal_value = sym(arena, 'goal_value')
     residual_adjoint = sym(arena, 'residual_adjoint')
 
@@ -42,15 +43,16 @@ program gen_gs_error
     call writer%line('implicit none')
     call writer%line('contains')
     call writer%emit('gs_error_coefficient', ['r'], ['coefficient'], &
-        [1/r], ad=.true.)
+        [1/r], ad=.true., interval=.true.)
     call writer%emit('gs_error_flux', ['r     ', 'grad_r', 'grad_z'], &
         ['flux_r', 'flux_z'], [grad_r/r, grad_z/r], ad=.true.)
     ! Domain monotonicity from enclosing W x H rectangle, and A_min=1/Rmax.
     call writer%emit('gs_error_friedrichs', ['rmax  ', 'width ', 'height'], &
-        ['cf'], [sqrt(rmax)/(pi*sqrt(1/width**2 + 1/height**2))], ad=.true.)
+        ['cf'], [sqrt(rmax)/(pi*sqrt(1/width**2 + 1/height**2))], &
+        ad=.true., interval=.true.)
     call writer%emit('gs_error_friedrichs_squared', &
         ['rmax  ', 'width ', 'height'], ['constant_squared'], &
-        [rmax/(pi**2*(1/width**2 + 1/height**2))], ad=.true.)
+        [rmax/(pi**2*(1/width**2 + 1/height**2))], ad=.true., interval=.true.)
     call writer%emit('gs_error_coercivity', &
         ['source_lipschitz  ', 'friedrichs_squared'], ['alpha'], &
         [1 - source_lipschitz*friedrichs_squared], ad=.true.)
@@ -66,6 +68,10 @@ program gen_gs_error
     call writer%emit('gs_error_goal_corrected', &
         ['goal_value      ', 'residual_adjoint'], ['corrected_value'], &
         [goal_value + residual_adjoint], ad=.true.)
+    ! Critical point of the quadratic derivative of a cubic profile piece.
+    ! The caller checks c3 /= 0 and whether this point lies in its piece.
+    call writer%emit('gs_error_slope_vertex', ['c2', 'c3'], ['x'], &
+        [-c2/(3*c3)], ad=.true.)
     call writer%line('end module kin6d_gs_error_leaves')
     call writer%close()
 end program gen_gs_error
