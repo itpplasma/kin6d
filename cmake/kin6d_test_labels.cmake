@@ -461,3 +461,16 @@ endforeach()
 foreach(mode oracles vacuum reflection transmission refinement)
     kin6d_test_labels(em_slab_${mode} fast CLASSES continuum TARGETS test_em_slab)
 endforeach()
+
+kin6d_test_labels(response_strip_equilibrium_jets fast CLASSES mhd
+    TARGETS test_response_strip_jets)
+kin6d_test_labels(response_strip_tc24_jets fast CLASSES mhd
+    TARGETS test_response_strip_jets)
+kin6d_test_labels(response_strip_tc24_preconditioner slow CLASSES mhd
+    TARGETS test_response_strip_tc24_preconditioner)
+foreach(check oracles negative limits)
+    kin6d_test_labels(response_strip_preconditioner_${check} fast CLASSES mhd
+        TARGETS test_response_strip_preconditioner)
+endforeach()
+kin6d_test_labels(response_strip_preconditioner_scaling performance CLASSES mhd
+    TARGETS test_response_strip_preconditioner)
