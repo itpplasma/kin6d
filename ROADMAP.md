@@ -965,6 +965,54 @@ Keep Fortran namelist configuration and NetCDF-4-compatible HDF5 results stable
 across physics milestones. Every result retains original/resolved input and
 provenance. Optional Python/web UX is layered above this contract.
 
+### Build structure and fast development loop
+
+Decision 2026-10-15 (Chris + Claude). KIN6D stays one repository and one CMake/CTest
+project, but stops being one monolithic `kin6d` library: today about 106 modules,
+145 executables and about 200 unlabelled tests. Separate repositories may follow
+later along the same seams. The build stays on CMake; no conversion to fpm.
+
+Vertical layers (a layer uses only layers below it):
+
+| Layer | Target | Content |
+|---|---|---|
+| L0 | `kin6d_core` | intervals, ODE, species, sort keys, result IO, series statistics, laboratory, identity helpers |
+| L1 | `kin6d_fem2d` | FortFEM slice, triangle/curved bases, CSR and direct solvers, GS options, timers, load batches |
+| L1 | `kin6d_pairs` | Ewald, near encounter, PME, N-body, pair laws, radial DVR, quantum collision kernels |
+| L2 | model classes | `kin6d_equilibrium` (GS, equilibrium, 3D coils, equilibrated bounds); `kin6d_mhd` (MHD, ideal, response, vacuum surfaces, nonnested; may use equilibrium); `kin6d_classical`; `kin6d_quantum`; `kin6d_continuum` |
+| L3 | apps | applications, demos, animation export; only L3 links plotting and graphics IO |
+
+Rules:
+
+- `kin6d` remains an umbrella INTERFACE target, so existing consumers and tests
+  keep working.
+- A layering CTest checks the Fortran `use` graph against the table; an upward
+  `use` fails it.
+- Every test carries CTest `LABELS`: its model class (or layer) plus a tier
+  `quick`, `slow`, `regression` or `performance`.
+- Each class has a `kin6d_check_<class>` build target that builds its tests'
+  executables, and a CTest preset per class.
+- A `dev-fast` configure preset turns plotting and IO extras off and shares the
+  FetchContent cache across worktrees.
+
+Migration:
+
+1. CMake-only partition: assign the existing sources to layer targets, add labels,
+   per-class targets, presets and the layering test. No files move. This starts
+   after the open estimator branches are merged.
+2. Move sources into `src/<layer>/` directories once the partition is stable.
+
+Development loop (to go into AGENTS.md with step 1): edit, then
+`cmake --build build --target kin6d_check_<class>` and `ctest -L <class> -LE slow`;
+the full `ctest` runs only at controller integration. With `fo`, the same loop is
+`fo test -L <class>`, building only the selected tests' targets, and a Gremlin lane
+scoped by label. That `fo` support is being implemented in `fo` as a
+backend-neutral project model (fo doc/CMAKE_GREMLIN_PLAN.md, 2026-10-15) that reads
+targets from the CMake file API and labels from CTest; KIN6D needs no fo-specific
+files. Baseline for the speed-up: an incremental rebuild after touching one source
+takes 2-6 s, a single target 2.9 s, a clean build about 800 CPU-s; single tests run
+up to 1600 s.
+
 ### Literature and validation
 
 Every new rung enters the analytical benchmark atlas and has a frozen
