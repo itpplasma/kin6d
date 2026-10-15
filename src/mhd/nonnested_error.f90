@@ -21,9 +21,9 @@ module kin6d_nonnested_error
     ! equilibration bounds int R grad e . K_pol grad e dR dZ for the
     ! continuous solution with the discrete Dirichlet trace. A_T,min =
     ! R_min,T chi_lower (Cauchy interlacing: K >= chi_lower I gives K_pol >=
-    ! chi_lower I). A phi-dependent K couples the modes and no bound is
-    ! claimed for modes > 0; with modes = 0 the bound is for the planar model
-    ! with the phi-sampled mean coefficient (scope string).
+    ! chi_lower I). A phi-dependent K couples the modes and is
+    ! treated by nt_fourier_error for modes > 0; with modes = 0 the bound is
+    ! for the planar model with the phi-sampled mean coefficient (scope string).
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_equilibrium_nonnested, only: free_b_field_t
@@ -43,9 +43,12 @@ module kin6d_nonnested_error
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_tensor, equilibrated_flux_estimate_t, &
         EQUILIBRATION_OK
+    use fortfem_meridian_fourier_equilibration, only: &
+        meridian_fourier_equilibrated_estimate, fourier_equilibrated_t
     implicit none
     private
     public :: nn_error_t, nn_axisymmetric_error, nt_axisymmetric_error
+    public :: nt_fourier_error
 
     integer, parameter, public :: NN_ERROR_OK = 0, NN_ERROR_BAD_INPUT = 1
     integer, parameter, public :: NN_ERROR_BAD_CELL = 2
@@ -139,7 +142,7 @@ contains
             source, p, error, status)
         ! p: the Fourier-V0 solution of nt_solve(fs, modes, nphi, conductivity,
         ! source, ...); chi_lower > 0 a lower bound of the eigenvalues of K
-        ! (chi_perp for nt_conductivity_t). Bounds the N = 0 block.
+        ! (chi_perp for nt_conductivity_t). Bounds N = 0 or the coupled band.
         type(meridian_feec_t), intent(in) :: fs
         integer, intent(in) :: modes, nphi
         class(meridian_fourier_tensor_t), intent(in) :: conductivity
@@ -224,8 +227,8 @@ contains
         !$omp end parallel
         if (failed /= 0) return
         if (coupled /= 0 .and. modes > 0) then
-            status = NN_ERROR_MODE_COUPLING
-            error%claim = 'unavailable-mode-coupling'
+            call nt_fourier_error(fs, modes, nphi, conductivity, chi_lower, &
+                source, p, error, status)
             return
         end if
         call transport_error_friedrichs(minval(lower), hi(1) - lo(1), hi(2) - lo(2), &
@@ -244,6 +247,54 @@ contains
         else
             error%scope = 'phi-sampled-mean-planar-model'
         end if
+        status = NN_ERROR_OK
+    end subroutine
+
+    subroutine nt_fourier_error(fs, modes, nphi, conductivity, chi_lower, &
+            source, p, error, status)
+        ! Full coupled Fourier-Galerkin energy, with the sampled phi rule and
+        ! discrete Dirichlet trace. K >= chi_lower I is a caller contract on
+        ! the whole domain, not a bound inferred from coefficient samples.
+        type(meridian_feec_t), intent(in) :: fs
+        integer, intent(in) :: modes, nphi
+        class(meridian_fourier_tensor_t), intent(in) :: conductivity
+        real(dp), intent(in) :: chi_lower
+        class(meridian_fourier_source_t), intent(in) :: source
+        real(dp), intent(in) :: p(:)
+        type(nn_error_t), intent(out) :: error
+        integer, intent(out) :: status
+        type(fourier_equilibrated_t) :: estimate
+        real(dp), allocatable :: xi(:), eta(:), w(:), vertices(:, :)
+        real(dp), allocatable :: geometry(:, :, :), rlo(:), rhi(:), lower(:)
+        integer, allocatable :: triangles(:, :)
+        real(dp) :: lo(2), hi(2), cf
+        integer :: st, t
+
+        status = NN_ERROR_BAD_INPUT
+        if (.not. ieee_is_finite(chi_lower)) return
+        if (chi_lower <= 0) return
+        call meridian_rule(fs, xi, eta, w, st)
+        if (st /= 0) return
+        status = NN_ERROR_BAD_CELL
+        call meridian_cells(fs, vertices, triangles, geometry, rlo, rhi, lo, hi, st)
+        if (st /= 0) return
+        allocate (lower(size(rlo)))
+        do t = 1, size(lower)
+            call transport_error_lower(rlo(t), chi_lower, lower(t))
+        end do
+        call transport_error_friedrichs(minval(lower), hi(1) - lo(1), &
+            hi(2) - lo(2), cf)
+        call meridian_fourier_equilibrated_estimate(fs, modes, nphi, &
+            conductivity, source, p, chi_lower, vertices, triangles, xi, eta, &
+            w, lower, cf, estimate, st, geometry_nodes=geometry)
+        status = NN_ERROR_EQUILIBRATION_FAILED
+        if (st /= EQUILIBRATION_OK) return
+        error%bound = estimate%bound
+        error%flux_defect = estimate%flux_defect
+        error%oscillation = estimate%oscillation
+        error%divergence_defect = estimate%divergence_defect
+        error%claim = 'practical-fixed-dirichlet-trace'
+        error%scope = 'phi-sampled-fourier-galerkin'
         status = NN_ERROR_OK
     end subroutine
 

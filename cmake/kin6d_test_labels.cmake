@@ -504,3 +504,5 @@ kin6d_test_labels(nonnested_transport_anisotropy_pollution fast CLASSES mhd
     TARGETS test_nonnested_anisotropy)
 kin6d_test_labels(nonnested_transport_anisotropy_correction fast CLASSES mhd
     TARGETS test_nonnested_anisotropy)
+kin6d_test_labels(nonnested_transport_fourier_equilibrated fast CLASSES mhd
+    TARGETS test_nonnested_fourier_error)
