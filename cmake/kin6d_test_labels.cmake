@@ -430,3 +430,5 @@ kin6d_test_labels(grad_shafranov_rejects_wrong_weak_source_weight fast CLASSES e
 
 kin6d_test_labels(grad_shafranov_error_leaf_oracles fast CLASSES equilibrium
     TARGETS test_gs_error_leaves)
+kin6d_test_labels(gs_free_boundary_equilibrated_quick fast CLASSES equilibrium
+    TARGETS test_gs_coupled_majorant)
