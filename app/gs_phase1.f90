@@ -63,6 +63,7 @@ program gs_phase1_main
     character(512) :: inverse_knots_file = ''
     character(16) :: inverse_jacobian = 'exact', inverse_regularization = 'none'
     character(256) :: message
+    character(32) :: error_claim = 'candidate'
     character(16) :: phase
     character(512) :: argument
     character(:), allocatable :: commit, dirty
@@ -264,6 +265,9 @@ program gs_phase1_main
     if (status /= 0) error stop 'GS error estimator failed'
     majorant = certificate%bound
     majorant_status = certificate%lane_status
+    error_claim = 'frozen-source-residual'
+    if (certificate%stability > 0) error_claim = 'practical-estimate'
+    if (majorant_status == 0) error_claim = 'certified-continuous'
     flux_defect = certifier%flux_defect; balance_defect = certifier%balance_defect
     stability_estimate = certificate%stability
     recovery_converged = certifier%recovery_converged
@@ -303,7 +307,9 @@ program gs_phase1_main
     call result%write('boundary_samples', samples, 'm', 'supplied closed R Z curve')
     call result%write('points', state%points, 'm', &
         'physical isoparametric geometry nodes')
-    call result%write('psi', state%psi, 'Wb/rad', 'native FE coefficients')
+    call result%write('psi', state%psi, 'Wb/rad', &
+        'native FE coefficients; global energy estimate reported separately', &
+        status='candidate')
     call result%write('triangles', real(state%triangles, dp), '1', &
         'isoparametric connectivity')
     if (allocated(q_s)) then
@@ -329,12 +335,12 @@ program gs_phase1_main
         call result%write('source_p_edge', law%p_edge, 'Pa', 'edge pressure')
         call result%write('source_f_edge', law%f_edge, 'T m', 'signed edge F')
     end if
-    call result%write('axis', readback%axis, 'm', 'physical magnetic axis')
-    call result%write('volume', readback%volume, 'm3', 'revolved plasma volume')
-    call result%write('phi_edge', readback%phi_edge, 'Wb', 'signed full toroidal flux')
-    call result%write('s_tor', readback%s_tor, '1', 'normalized toroidal flux')
-    call result%write('q', readback%q, '1', 'signed safety factor on FE contours')
-    call result%write('profile_psi', readback%psi, 'Wb/rad', 'native contour levels')
+    call result%write('axis', readback%axis, 'm', 'physical magnetic axis', status='unavailable')
+    call result%write('volume', readback%volume, 'm3', 'revolved plasma volume', status='unavailable')
+    call result%write('phi_edge', readback%phi_edge, 'Wb', 'signed full toroidal flux', status='unavailable')
+    call result%write('s_tor', readback%s_tor, '1', 'normalized toroidal flux', status='unavailable')
+    call result%write('q', readback%q, '1', 'signed safety factor on FE contours', status='unavailable')
+    call result%write('profile_psi', readback%psi, 'Wb/rad', 'native contour levels', status='unavailable')
     call result%write('contour_s', readback%contour_s, 's', 'contour readback time')
     call result%write('integral_s', readback%integral_s, 's', 'area integrals time')
     call result%write('wall_s', wall_s, 's', 'mesh assembly and solve wall time')
@@ -389,18 +395,25 @@ program gs_phase1_main
                           merge('approximate', 'unavailable', flux_goal%available))
     if (flux_goal%available) then
         call result%write('integrated_psi', flux_goal%value, 'Wb m2', &
-                          'area integral of poloidal flux on represented domain')
+                          'area integral of poloidal flux on represented domain', status='approximate')
         call result%write('integrated_psi_correction', flux_goal%correction, 'Wb m2', &
-                          'adjoint weighted residual correction')
+                          'adjoint weighted residual correction', status='approximate')
         call result%write('integrated_psi_radius', flux_goal%radius, 'Wb m2', &
-                          'primal-adjoint energy product; approximate quadrature')
+                          'primal-adjoint energy product; approximate quadrature', status='approximate')
         call result%write('integrated_psi_lower', flux_goal%lower, 'Wb m2', &
-                          'practical lower endpoint; not a pointwise flux band')
+                          'practical lower endpoint; not a pointwise flux band', status='approximate')
         call result%write('integrated_psi_upper', flux_goal%upper, 'Wb m2', &
-                          'practical upper endpoint; not a pointwise flux band')
+                          'practical upper endpoint; not a pointwise flux band', status='approximate')
     end if
     call result%attribute('majorant_method', trim(certifier%method))
     call result%attribute('majorant_claim', trim(claim_name(certificate%claim)))
+    call result%attribute('majorant_certification_status', &
+        merge('certified-continuous', 'unavailable         ', majorant_status == 0))
+    call result%attribute('pointwise_enclosure_status', 'unavailable')
+    call result%attribute('physical_model_error_status', 'unavailable')
+    call result%attribute('physical_input_error_status', 'unavailable')
+    call result%attribute('majorant_model_scope', &
+        'represented domain; physical boundary/model/input error unavailable')
     call result%attribute('majorant_quadrature_status', &
         trim(certifier%quadrature_status))
     call result%attribute('majorant_stability_status', &
@@ -409,12 +422,17 @@ program gs_phase1_main
                      merge('solution energy error     ', 'frozen-source energy error', &
                                 certificate%stability > 0))
     call result%write('majorant_status', real(majorant_status, dp), '1', &
-                      '4 frozen-source residual only; 5 practical solution estimate')
+        '0 checked continuous polygon bound; 4 frozen residual; 5 practical estimate')
     call result%write('majorant', majorant, 'Wb/m^0.5', &
-        'energy error estimate; see majorant_scope and majorant_claim')
+        'energy error estimate; see majorant_scope and majorant_claim', &
+        status=trim(error_claim))
     call result%write('stability_estimate', stability_estimate, '1', &
                    'stability divisor; residual quadrature remains separately declared')
-    call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', 'weighted flux defect')
+    call result%write('sampled_majorant', flux_defect + balance_defect, 'Wb/m^0.5', &
+        'sampled residual before stability division; approximate quadrature', &
+        status='approximate')
+    call result%write('majorant_flux', flux_defect, 'Wb/m^0.5', &
+        'sampled RT flux defect; rigorous RT0 audit uses its own full residual')
     call result%write('majorant_balance', balance_defect, 'Wb/m^0.5', 'weighted balance defect')
     call result%write('majorant_recovery_converged', merge(1.0_dp, 0.0_dp, recovery_converged), &
         '1', 'recovery minimization met its algebraic tolerance')
@@ -465,6 +483,8 @@ program gs_phase1_main
     end if
     write (unit, '(a,1x,a)') 'majorant_method', trim(certifier%method)
     write (unit, '(a,1x,a)') 'majorant_claim', trim(claim_name(certificate%claim))
+    write (unit, '(a,1x,a)') 'majorant_certification_status', &
+        merge('certified-continuous', 'unavailable         ', majorant_status == 0)
     write (unit, '(a,1x,a)') 'majorant_quadrature_status', &
         trim(certifier%quadrature_status)
     write (unit, '(a,1x,a)') 'majorant_scope', &
@@ -479,6 +499,7 @@ program gs_phase1_main
     write (unit, '(a,1x,es25.16e3)') 'residual', state%residual
     write (unit, '(a,1x,es25.16e3)') 'flux_consistency', readback%flux_consistency
     write (unit, '(a,1x,es25.16e3)') 'majorant', majorant
+    write (unit, '(a,1x,es25.16e3)') 'sampled_majorant', flux_defect + balance_defect
     write (unit, '(a,1x,es25.16e3)') 'majorant_flux', flux_defect
     write (unit, '(a,1x,es25.16e3)') 'majorant_balance', balance_defect
     write (unit, '(a,1x,i0)') 'majorant_recovery_converged', merge(1, 0, recovery_converged)
