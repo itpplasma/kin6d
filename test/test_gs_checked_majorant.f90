@@ -14,7 +14,7 @@ program test_gs_checked_majorant
 
     contour = reshape([2.0_dp, -1.0_dp, 4.0_dp, -1.0_dp, &
                        4.0_dp, 1.0_dp, 2.0_dp, 1.0_dp], [2, 4])
-    do order = 1, 2
+    do order = 1, 3
         call initialize_gs(state, contour, 0.25_dp, status, order)
         if (status /= 0) error stop 'affine test mesh'
         call solve_gs(state, 1.0_dp, 0.1_dp, 0.2_dp, status)

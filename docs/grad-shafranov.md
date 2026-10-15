@@ -368,7 +368,7 @@ approximate; nonlinear goals require a separate nonlinear remainder. NetCDF
 and text results retain method, claim, quadrature and error scope separately.
 An energy radius is not a pointwise flux band or a physical-boundary error.
 
-For affine P1/P2, constant profiles and no additional forcing, the independent
+For affine P1--P3, constant profiles and no additional forcing, the independent
 `gs_checked_equilibrated_majorant` audit supplies a continuous energy bound.
 FortFEM's `verified_bernstein_majorant` fits the sampled RTp flux by a
 degree-(p+1) Bernstein field, selects one normal component per mesh edge and
@@ -383,10 +383,49 @@ global Friedrichs constant instead of the elementwise oscillation term; its
 excess over the sampled estimate is of higher order in h. The
 claim assumes a conforming nonoverlapping native affine mesh, complete
 boundary tags, and FortNum's strict IEEE execution contract; it certifies the
-represented polygon model's energy norm only. Curved meshes, P3, nonlinear
-sources, arbitrary forcing and pointwise bands remain outside this strict
-audit. A certified state-energy radius does not upgrade the separately
+represented polygon model's energy norm only. Curved meshes, Neumann traces,
+unchecked forcing, nonlinear solution error and pointwise bands remain outside
+this strict audit. A certified state-energy radius does not upgrade the separately
 approximate goal or readback outputs.
+
+`gs_checked_fixed_source_majorant` also accepts outward Bernstein coefficients
+of a polynomial `p` and an optional whole-cell source-numerator remainder
+`|s-p| <= rho_T`, for the frozen equation with source `s/R^m`, `m=0,1,2`.
+The caller proves that contract; a sampled difference does not suffice. With
+`P_T` bounding the polynomial residual integral, the checker uses
+`||f+div sigma||_T <= sqrt(P_T)+rho_T*sqrt(|T|)/R_min^m`, entirely outward.
+This permits non-polynomial forcing without assuming quadrature exactness.
+It does not automatically enclose a production profile law or certify the
+nonlinear solution. Invalid/unavailable callbacks fail closed. The constant
+profile production route now admits affine P3 without a new configuration flag.
+
+`grad_shafranov_checked_source_remainder` solves
+`psi=(1-(R-3)^2)(1-Z^2)` on `[2,4] x [-1,1]`. Its non-polynomial numerator
+`R*f=6(1-Z^2)/R+2(1-(R-3)^2)` is approximated by Taylor polynomials of degree
+`p+3`; the exact geometric-series identity supplies the remainder. On all
+three meshes per P1/P2/P3, the bound covers the independently integrated true
+energy error, has index 1.01--1.11, remains within 3.7% of the sampled radius,
+and passes the `h^p` rate check. Exact-zero recovery is checked for all orders;
+FortFEM additionally recovers the nonzero cubic `xy(1-x-y)` to radius
+`1.75e-13`. Release and runtime-checked Debug gates pass.
+
+The separate `slow` CTest `grad_shafranov_checked_source_study` retains repeated
+1/2/4-thread audits (three per configuration), including source evaluation.
+A Release run with GNU Fortran 16.2.1, OpenBLAS limited to one thread, gave:
+
+| P3 interior DOF | Index | Checked/sampled | Median audit, 1/2/4 threads (s) |
+|---|---|---|---|
+| 17,653 | 1.0101 | 1.0026 | 0.406 / 0.197 / 0.102 |
+| 71,293 | 1.0086 | 1.0007 | 1.553 / 0.791 / 0.432 |
+
+The audit scales by 3.6x at four threads on the larger mesh. Work exponents
+are 0.96 (one thread) and 1.03 (four threads), consistent with linear work for
+fixed order and bounded vertex valence. Host contention changes absolute times:
+across two runs the larger audit costs 83--116% of first factorization/solve
+and 31--34% of mesh/stiffness/manufactured-load/solve time. The requested
+few-tens-percent fraction of solve alone remains unmet. Mapped Jacobian and
+Neumann trace enclosures, automatic profile-law approximation/remainder
+builders and lower audit cost are still required for the full campaign goal.
 
 `grad_shafranov_equilibrated_flux_majorant` checks the bound against the exact
 weighted energy error on a manufactured R x Z box and requires
