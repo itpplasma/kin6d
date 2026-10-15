@@ -11,7 +11,7 @@ validated scalable models.
 ## Models (one assumption changed at a time)
 
 Same physical parameters, preparation, observables and bins as Q1
-(`packet_spec_t`, `src/packet_models.f90`).
+(`packet_spec_t`, `src/quantum/packet_models.f90`).
 
 | ID | State manifold | Approximation added |
 |---|---|---|
@@ -38,7 +38,7 @@ eigendecomposition with Tikhonov eps (1e-10, 1e-6 for M4). Zero-population
 Gaussians (K > 1 starts from one Gaussian, others with d = 0 at fixed
 phase-space offsets) follow their own one-Gaussian TDVP in the metric null
 space until the variational equations give them weight: basis enrichment,
-initial state identical to Q1. Pair integrals (`src/gaussian_pair.f90`):
+initial state identical to Q1. Pair integrals (`src/quantum/gaussian_pair.f90`):
 overlap, moments to fourth order, kinetic, harmonic and Coulomb elements via
 the complex Boys function E_n(T) = int_0^1 u^2n e^{T(1-u^2)} du (Gauss-Legendre
 for |T| <= 36, erfc endpoint asymptotics beyond). They are hand-written

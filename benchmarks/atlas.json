@@ -1120,7 +1120,7 @@
       "initial_boundary_data": "coil vertices R=6+0.02 cos(phi_j), Z=-0.02 sin(phi_j), phi_j=2 pi j/192; n=0 potential and n>0 gauge traces",
       "parameter_validity_range": "fixed polygon input; coil excluded by 0.3 m cavity; modes 0:3, 32-angle Fourier projection",
       "reference_definition": "closed-form straight-segment Biot-Savart field; island readback is a finite-time numerical diagnostic",
-      "reference_implementation": "src/coils_3d.f90; test/test_nonnested_vacuum.f90 direct field and FortNum Cash-Karp traces",
+      "reference_implementation": "src/equilibrium/coils_3d.f90; test/test_nonnested_vacuum.f90 direct field and FortNum Cash-Karp traces",
       "source_version_and_section": "NN1 fixture retained in test/test_nonnested_vacuum.f90 and docs/equilibrium-nonnested.md",
       "observables": [
         "coil-scale field error",

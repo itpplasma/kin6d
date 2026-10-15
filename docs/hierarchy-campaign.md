@@ -96,9 +96,9 @@ run from the repository root and must reproduce committed leaves exactly.
   `KIN6D_FORTSYM_REVISION` (configured include). `gen/kin6d_symbolic_physics.f90`
   holds the single symbolic Coulomb/sphere/Ewald/jellium/partial-wave and
   scale definitions; `gen_coulomb` and `gen_species` emit them.
-  `src/species.f90` (units with SI map, species, pair/plasma scales),
-  `src/ewald.f90` (alpha/cutoffs from a tolerance with a shell-sum truncation
-  bound) and `src/nbody.f90` (one FortNum Strang KDK path, any N, tiled
+  `src/core/species.f90` (units with SI map, species, pair/plasma scales),
+  `src/pairs/ewald.f90` (alpha/cutoffs from a tolerance with a shell-sum truncation
+  bound) and `src/pairs/nbody.f90` (one FortNum Strang KDK path, any N, tiled
   direct and structure-factor Ewald sums, force/step tangents,
   encounter-resolved step, fail-closed coincidence) are shared by C0, C1, C2;
   Q0 and the Debye bare sphere use the shared definitions. New
@@ -110,7 +110,7 @@ run from the repository root and must reproduce committed leaves exactly.
   each step (max energy defect 6.2e-5 vs 2.6e-5, one histogram count moved).
   Open: modal Poisson still duplicated (gen_poisson, gen_shielding_dynamics);
   fp/laboratory/poisson keep their own emit convention; no VJP of the KDK step.
-- 2026-10-05 (worker Q3/Q8): Q3 `src/fermion_ensemble.f90` +
+- 2026-10-05 (worker Q3/Q8): Q3 `src/quantum/fermion_ensemble.f90` +
   `gen_fermion_ensemble` (docs/fermion-ensemble.md). It provides canonical
   fixed-N box/trap sums through a subtraction-free recursion, interval
   enclosures with a rigorous omitted-orbital remainder, exchange hole,
@@ -139,8 +139,8 @@ run from the repository root and must reproduce committed leaves exactly.
   nonrelativistic certificate; per-degree scaling for cold large-N
   canonical sums; FortNum interval layer compiled without
   `-ffp-contract=off` in FortNum's own build (audit directed rounding).
-- 2026-10-05 (worker, Q1/Q1b): `src/coulomb_encounter.f90`,
-  `src/radial_dvr.f90`, `src/coulomb_kepler.f90`, leaves from
+- 2026-10-05 (worker, Q1/Q1b): `src/quantum/coulomb_encounter.f90`,
+  `src/pairs/radial_dvr.f90`, `src/quantum/coulomb_kepler.f90`, leaves from
   `gen/gen_coulomb_encounter.f90`, docs/coulomb-encounter.md. Partial waves
   on a GLL FEM-DVR (exact singular integrals in the origin element), banded
   LAPACK eigen windows, exact discrete evolution; product/singlet/triplet
@@ -152,14 +152,14 @@ run from the repository root and must reproduce committed leaves exactly.
   autocorrelation vs exact levels 1e-10 to 1.1 T_rev. 23/23 CTest green in
   Release and Debug. Open: GLL and normalized Legendre belong in FortNum; no
   continuum discretization bound.
-- 2026-10-05 (F5 worker): `kin6d_io` (`src/result_io.f90`) plus FortIO
+- 2026-10-05 (F5 worker): `kin6d_io` (`src/apps/result_io.f90`) plus FortIO
   pinned at 38add03 via FetchContent. All 22 applications read `--config FILE`
   namelists (defaults unchanged, one group per app) and write
   `output/<app>.nc` (NetCDF-4/HDF5) with units, per-variable `kin6d_status`,
   literal/resolved configuration, build-time and runtime git commit/tree
   state, compiler version/options, FortSym/FortNum/fortplot/FortIO pins, UTC
   time and command line. quantum_reference_demo and classical_pair_demo share
-  `&periodic_pair` (`src/periodic_pair_config.f90`). The classical demo
+  `&periodic_pair` (`src/apps/periodic_pair_config.f90`). The classical demo
   rejects a mass/coupling it cannot realize; the old
   `&quantum_reference length=` spelling is rejected. With defaults, every
   migrated app's numerical CSV/text output matched the pre-migration
@@ -170,8 +170,8 @@ run from the repository root and must reproduce committed leaves exactly.
   Open: in-file groups, generated schema, external-input hashes, hardware
   records; new apps (coulomb_encounter, ocp_*, jellium_cell, screening,
   wigner) must adopt the module and join the `kin6d_io` list in CMake.
-- 2026-10-05 (worker, Q7): `src/screening_hierarchy.f90`,
-  `src/wigner_poisson.f90`, `src/wigner_dispersion.f90` (independent Z-ODE
+- 2026-10-05 (worker, Q7): `src/quantum/screening_hierarchy.f90`,
+  `src/continuum/wigner_poisson.f90`, `src/continuum/wigner_dispersion.f90` (independent Z-ODE
   dispersion oracle), leaves from `gen/gen_screening.f90` and
   `gen/gen_wigner.f90` (deterministic regeneration); FortNum fft compiled as
   `kin6d_fft`; docs/screening-wigner.md. Static ideal-gas RPA (no LFC):
@@ -214,7 +214,7 @@ run from the repository root and must reproduce committed leaves exactly.
   1.9888e-7, n=125 8.719e-6; ~15 ms/cell, dominated by the kin6d dense
   interval action). The slab moved to the componentwise first-order
   reconstruction: O(h^3) instead of O(h^2) residual, demo radius 6.61e-3 ->
-  3.30e-4. Q4: `src/jellium_cell.f90` on new engine pieces (sector bases,
+  3.30e-4. Q4: `src/quantum/jellium_cell.f90` on new engine pieces (sector bases,
   sparse coupled action with fail-closed leakage, factorized 1/2/3-RDMs,
   `add_fock_one_body`) and new FortNum `fortnum_symmetric_eigen` (dense
   eigen + block Lanczos; branch `symmetric-lanczos-eigen` 80b7340, NOT
@@ -229,7 +229,7 @@ run from the repository root and must reproduce committed leaves exactly.
   steps, certificate 0.16 s). Theta=0.5 ensembles for N=3,4 are NOT
   converged with nev=8 per sector (truncation estimate 0.05-0.2 / 2-4);
   treat those rows as indicators. 27/27 CTest Release and Debug.
-- 2026-10-06 (worker, Q5): `src/mean_field_cell.f90` + `gen_mean_field_cell`
+- 2026-10-06 (worker, Q5): `src/quantum/mean_field_cell.f90` + `gen_mean_field_cell`
   (docs/mean-field-cell.md): Hartree, RHF, UHF (DIIS + trust-region
   second-order SCF, instability following, multi-start, aufbau-repair
   attempt), restricted Mermin HF and static TDHF/TDH response in the Q4
@@ -256,10 +256,10 @@ run from the repository root and must reproduce committed leaves exactly.
   Q5 N=4 response panel clipping/legend and symmetry-broken TDHF note;
   Q1 movie redesign; Mott fine bins; Wigner run into saturation.
 
-- 2026-10-06 (worker, QG6): `src/quantum_collision_kernel.f90` (pure
+- 2026-10-06 (worker, QG6): `src/pairs/quantum_collision_kernel.f90` (pure
   Coulomb Rutherford/Mott, ring sums with complex digamma, Yukawa phase
   shifts on the shared radial DVR at fixed energy with implicit d/d eta,
-  classical Yukawa orbit integral, first Born) and `src/hybrid_encounter.f90`
+  classical Yukawa orbit integral, first Born) and `src/quantum/hybrid_encounter.f90`
   (test electrons in a Maxwellian background, nbody KDK encounters with exact
   Kepler lift/project, promotion for eta < 1 and b < b_s to the l-local ring
   kernel chi_l = 2 atan(eta/(l+1)); docs/hybrid-encounter.md). New symbolic
@@ -278,7 +278,7 @@ run from the repository root and must reproduce committed leaves exactly.
   not in the hybrid Monte Carlo;
   digamma/Riccati-Bessel belong in FortNum; FortNum legendre_q upward
   recurrence loses accuracy for large l near x = 1 (5e-4 at l = 400).
-- 2026-10-06 (worker, Q2): `src/packet_models.f90`, `src/gaussian_pair.f90`,
+- 2026-10-06 (worker, Q2): `src/quantum/packet_models.f90`, `src/quantum/gaussian_pair.f90`,
   leaves from `gen/gen_packet_models.f90` (Gaussian-averaged Coulomb added to
   `kin6d_symbolic_physics`), `encounter_project` (generic Q1 projection),
   docs/packet-models.md, `packet_models_demo` (result_io). Models M2 (WPMD
@@ -318,12 +318,12 @@ run from the repository root and must reproduce committed leaves exactly.
   repeats each of 61 computed frames 3x (frame count shared with
   classical_pair_demo).
 - 2026-10-06 (worker, H1a classical correlation map; docs/correlation-hierarchy.md):
-  `src/ocp_monte_carlo.f90` (canonical Metropolis MC, exact incremental
+  `src/classical/ocp_monte_carlo.f90` (canonical Metropolis MC, exact incremental
   Ewald with the new `real_cutoff = 0` option of `ewald_select`),
-  `src/correlation_hierarchy.f90` (g3 with an exact triangle-clipped ideal
+  `src/classical/correlation_hierarchy.f90` (g3 with an exact triangle-clipped ideal
   measure, Kirkwood/cumulant references, c3/U3/delta_K sizes, conditional
-  mean force, YBG closure integrals, pair observables), `src/ocp_hnc.f90`
-  (HNC, Ng split, DST through the FortNum FFT), `src/series_statistics.f90`,
+  mean force, YBG closure integrals, pair observables), `src/classical/ocp_hnc.f90`
+  (HNC, Ng split, DST through the FortNum FFT), `src/core/series_statistics.f90`,
   leaves from `gen/gen_correlation_hierarchy.f90`, CTest
   `correlation_hierarchy_h1a_oracles` (direct-Ewald energy, FD forces, N = 2
   chain against quadrature, two-ball measure, ideal gas, Gaussian-cloud YBG,
@@ -369,15 +369,15 @@ run from the repository root and must reproduce committed leaves exactly.
   quantum-microscopic-validation, microscopic-many-body, teaching docs);
   full gallery render into one directory; slopbox upload of all figures.
 - 2026-10-06 (worker, C3/C4, branch worktree-agent-a6bde7f3f0e416042):
-  periodic electron OCP, bare Coulomb, no softening. New `src/pme.f90`
+  periodic electron OCP, bare Coulomb, no softening. New `src/pairs/pme.f90`
   (cell-list real space + B-spline PME, energy-optimal influence function,
   parameters from an rms force tolerance via Kolafa-Perram + exact reciprocal
   pair-error functional, factor-2 margin for the unestimated mesh self force),
-  `src/near_encounter.f90` (exact C2 near/far split of the pair interaction;
+  `src/pairs/near_encounter.f90` (exact C2 near/far split of the pair interaction;
   Strang far-kick / cluster-substepped near flow; verified cluster
-  completeness, fail closed; tangent with frozen structure), `src/ocp.f90`,
-  `src/vlasov_response.f90` (Z function, Landau root, Volterra linear Vlasov
-  IVP), `src/pair_correlation.f90`, `gen/gen_ocp.f90` (B-spline weights,
+  completeness, fail closed; tangent with frozen structure), `src/classical/ocp.f90`,
+  `src/continuum/vlasov_response.f90` (Z function, Landau root, Volterra linear Vlasov
+  IVP), `src/classical/pair_correlation.f90`, `gen/gen_ocp.f90` (B-spline weights,
   assignment factor, switch pair, periodic Debye Green function terms,
   DH/Bohm-Gross oracles); nbody gains the mesh action, fixed particles and
   the encounter split. Tests `test_pme`, `test_ocp` (30/30 incl. merge,
@@ -410,12 +410,12 @@ run from the repository root and must reproduce committed leaves exactly.
   of the mean-profile fit, Landau-rate fit at larger eps or ensemble, VJP of
   the split step, quiet start. Docs: docs/ocp-microscopic.md.
 - 2026-10-06 (worker, H1b): quantum vs classical finite-N correlations
-  (docs/quantum-classical-correlations.md). New `src/classical_cell.f90`
+  (docs/quantum-classical-correlations.md). New `src/classical/classical_cell.f90`
   (shared nbody/Ewald zero-mean pair energy; N = 2 quadrature, N = 3, 4
   Metropolis; Kelbg/Kelbg+Pauli pair laws; WK + exchange reweighting;
-  covariance dg/dbeta), `src/quantum_pair_cell.f90` (exact N = 2
+  covariance dg/dbeta), `src/quantum/quantum_pair_cell.f90` (exact N = 2
   centre-of-mass/relative separation on the torus, twist classes, parity =
-  spin, all states, spectral dg/dTheta), `src/quantum_classical_map.f90`
+  spin, all states, spectral dg/dTheta), `src/quantum/quantum_classical_map.f90`
   (Q4 dense full-sector spectra, ensemble diagonal pair/triplet Fourier
   moments, Q3 all-S_z ideal pair, basis-saturation gate), generic
   `fock_rdm2_entries` in quantum_fock (sparse 2-RDM; rdm3 shares the

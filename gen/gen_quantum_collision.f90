@@ -1,7 +1,7 @@
 program gen_quantum_collision
     ! Generates the project-owned numerical leaves of the QG6 binary-collision
-    ! kernel (src/quantum_collision_kernel.f90) and hybrid classical/quantum
-    ! encounter (src/hybrid_encounter.f90). Physics from
+    ! kernel (src/pairs/quantum_collision_kernel.f90) and hybrid classical/quantum
+    ! encounter (src/quantum/hybrid_encounter.f90). Physics from
     ! gen/kin6d_symbolic_physics.f90 (screened partial-wave potential,
     ! Sommerfeld parameter); kinematics of the repulsive Kepler hyperbola.
     use fortsym_arena, only: arena_t

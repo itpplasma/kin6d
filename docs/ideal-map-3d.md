@@ -2,7 +2,7 @@
 
 Status: first verified stage of step N1 of the 3D TC24 design (nonlinear lane,
 DESIGN section 7). Fixed boundary, ideal, nested-compatible, gamma = 0.
-Module `kin6d_ideal_map` (`src/ideal_map.f90`); generated leaves
+Module `kin6d_ideal_map` (`src/mhd/ideal_map.f90`); generated leaves
 `src/generated/kin6d_ideal_map_leaves.f90` from `gen/gen_ideal_map.f90`.
 
 ## Formulation
@@ -37,7 +37,7 @@ frame (GVEC hmap_axisNB/hmap_frenet type, H = Gamma(q3) + q1 N(q3) + q2 B(q3)
 for a closed axis curve Gamma with nfp periodicity) is a further extension of
 `ideal_chart_t` supplying the same jet; the reference mesh then lives in the
 normal plane. Nothing else changes. The chart types and their generated jets
-are the equilibrium core's (`src/equilibrium_chart.f90`,
+are the equilibrium core's (`src/equilibrium/equilibrium_chart.f90`,
 `gen/gen_equilibrium_core.f90`); a new chart is added there.
 
 ## Discretisation
@@ -184,7 +184,7 @@ would remove about 60% of the factor time; fortsparse has no refactor entry
 point yet (numerical JOB=2 on a kept analysis). The per-n block
 preconditioner (L4) is the other lever.
 
-## Nested seed (`src/ideal_seed.f90`)
+## Nested seed (`src/mhd/ideal_seed.f90`)
 
 `nested_seed_t` builds the frozen data from a boundary b(t), q(s), p(s) in
 normalised poloidal flux s and the total toroidal flux Phi_edge (the KIN6D 2D

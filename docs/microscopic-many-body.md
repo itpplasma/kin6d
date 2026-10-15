@@ -264,10 +264,10 @@ transport closures.
 ## Microscopic teaching and verification cases
 
 The classical cases share one foundation: the species/unit record
-(`src/species.f90`), the single symbolic Coulomb, uniform-sphere and Ewald
+(`src/core/species.f90`), the single symbolic Coulomb, uniform-sphere and Ewald
 source (`gen/kin6d_symbolic_physics.f90`), Ewald parameters chosen from a
-tolerance with a shell-sum truncation bound (`src/ewald.f90`) or PME, and one
-general-N FortNum Strang kick-drift-kick path (`src/nbody.f90`) with tiled
+tolerance with a shell-sum truncation bound (`src/pairs/ewald.f90`) or PME, and one
+general-N FortNum Strang kick-drift-kick path (`src/pairs/nbody.f90`) with tiled
 direct and Ewald sums, an encounter-resolved step and fail-closed coincidence
 checks; no softening is used. Results carry embedded configuration and
 provenance ([interface-reproducibility.md](interface-reproducibility.md)).

@@ -99,7 +99,7 @@ p'(\psi)=\frac{2\pi q}{\Phi_{edge}}\frac{dp}{ds}.
 
 | Lane | Executed structure | Established / still open |
 |---|---|---|
-| KIN6D | `src/grad_shafranov.f90` weighted P1 assembly; generated source/field/primitive leaves | Strong/source algebra and assembly inspected. Weak boundary theorem, quadrature/continuous error and nonlinear implicit derivatives are separate. |
+| KIN6D | `src/equilibrium/grad_shafranov.f90` weighted P1 assembly; generated source/field/primitive leaves | Strong/source algebra and assembly inspected. Weak boundary theorem, quadrature/continuous error and nonlinear implicit derivatives are separate. |
 | FreeGS | `gradshafranov.py::GSsparse`, `equilibrium.py::solve`, `jtor.py::ProfilesPprimeFfprime` | Native second-order operator/current law inspected. Curved-LCFS mask is external; signed q and boundary refinement remain open. |
 | Public CHEASE | `setupa/setupb/curent/matrix/surface` | Hermite weak/Picard paths inspected with native normalization. Every source/constraint selector and full SI current correspondence are not proved. |
 | MARS CHEASE | Monolithic `SETUPA/SETUPB/CURENT/SURFACE` | Shared algorithm ancestry with public CHEASE. Native exports/endpoint derivatives differ; no separate independence vote. |
