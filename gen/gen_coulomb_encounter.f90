@@ -1,6 +1,6 @@
 program gen_coulomb_encounter
     ! Generates the project-owned numerical leaves of the Q1/Q1b localized
-    ! two-body quantum Coulomb encounter (src/coulomb_encounter.f90).
+    ! two-body quantum Coulomb encounter (src/quantum/coulomb_encounter.f90).
     use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, sqrt, sin, cos, exp, log, erfc, rat, pi_expr, &
                             operator(+), operator(-), operator(*), operator(/), operator(**)

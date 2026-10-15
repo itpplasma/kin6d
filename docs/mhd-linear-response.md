@@ -207,7 +207,7 @@ alone per area (GPEC's `singflx`); `m = n q` with the signed `q` of
 
 ## Perturbation export (L7 core)
 
-`kin6d_mhd_perturbation_n` (`src/mhd_perturbation_n.f90`), test
+`kin6d_mhd_perturbation_n` (`src/mhd/mhd_perturbation_n.f90`), test
 `mhd_perturbation_l7_xi_lagrangian_charts`. From the total Eulerian per-n field
 `dB_E` (coil + plasma + sheets, coefficient of `e^{i n phi}`, physical field
 `dB_E e^{i n phi} + c.c.`, cylindrical `(R, phi, Z)`, SI) on a flux surface it

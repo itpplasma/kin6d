@@ -25,7 +25,7 @@ along z and impact parameter b along x. Rotational invariance makes this
 choice general for isotropic Gaussians. For two equal-mass electrons with equal
 rms width sigma_e this is the exact factorization of two independent Gaussian
 electrons: sigma = sqrt(2) sigma_e, sigma_cm = sigma_e/sqrt(2) = sigma/2.
-Configuration fields: `encounter_config_t` (src/coulomb_encounter.f90).
+Configuration fields: `encounter_config_t` (src/quantum/coulomb_encounter.f90).
 
 Spin/exchange: Y_lm(-r) = (-1)^l Y_lm(r). The spatial singlet keeps even l,
 the triplet odd l, the product (|up,down>, distinguishable) preparation all l.
@@ -43,7 +43,7 @@ leaves; physics from gen/kin6d_symbolic_physics.f90).
 psi(r) = sum_{l, m>=0} u_lm(r)/r P_lm(cos theta) c_m cos(m phi): real
 harmonics suffice because psi0 is even in y. H_l is independent of m.
 
-Radial FEM-DVR (src/radial_dvr.f90): Gauss-Lobatto-Legendre Lagrange
+Radial FEM-DVR (src/pairs/radial_dvr.f90): Gauss-Lobatto-Legendre Lagrange
 elements, bridge functions, node r=0 removed (u(0)=0 built in) and node r=R
 removed (hard wall). In the first element every retained basis function
 vanishes at the origin, so chi_i chi_j/r and chi_i chi_j/r^2 are polynomials
@@ -100,7 +100,7 @@ integrals (output/coulomb-eta-summary.csv).
   positive initial Wigner function (relative and CM), relative motion by the
   shared nbody/interaction-laboratory step with encounter-resolved step
   control, CM free. Repulsive only. Statistical intervals are binomial.
-- Q1b (src/coulomb_kepler.f90): one partial wave, radial Gaussian at rest at
+- Q1b (src/quantum/coulomb_kepler.f90): one partial wave, radial Gaussian at rest at
   the outer turning point of nbar; <r>(t), breathing amplitude per period,
   radial density, autocorrelation A(t) and its oracle with every identified
   bound eigenvalue replaced by E_n = -mu g^2/(2 hbar^2 n^2).
@@ -206,7 +206,7 @@ sqrt(2 z0) lambdabar) and below the classical histogram's one-count floor
 also runs at eta ~ 0.03 (`test_coulomb_encounter`).
 
 `--export DIR` writes compact animation data for the lecture scenes
-(`kin6d_animation_export`, src/animation_export.f90) to
+(`kin6d_animation_export`, src/apps/animation_export.f90) to
 DIR/coulomb-encounter-{headon,offaxis,hot}/: every second movie frame (132),
 the quantum slices averaged over 2x2 pixels onto the 120 x 120 classical grid,
 panels classical / spin-unresolved product / singlet / triplet, log10 density

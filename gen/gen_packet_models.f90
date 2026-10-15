@@ -1,6 +1,6 @@
 program gen_packet_models
     ! Generates the canonical thawed-Gaussian (TDVP / wave-packet molecular
-    ! dynamics) leaves of campaign case Q2 (src/packet_models.f90).
+    ! dynamics) leaves of campaign case Q2 (src/quantum/packet_models.f90).
     !
     ! An isotropic Gaussian psi = (2 pi s)^(-3/4) exp(-(1/(4s) - i beta)|r-q|^2
     ! + i p.(r-q)/hbar + i gamma) has |psi|^2 variance s per axis. The

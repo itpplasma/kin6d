@@ -45,7 +45,8 @@ fo gremlin start --lane development --target real_value_identity_edge_cases \
     --random 0 -L '^core$' --layer kin6d_core
 ```
 
-An edit to `src/real_identity.f90` is selected by `--only-changed` with that
+The pre-move edit to `src/real_identity.f90` (now
+`src/core/real_identity.f90`) is selected by `--only-changed` with that
 source as its reason. A deliberately incorrect identity is rejected by the
 registered test, a syntax error is rejected at build time, and restoring the
 source passes. These edit/reject/restore checks use ordinary Fo. The resident

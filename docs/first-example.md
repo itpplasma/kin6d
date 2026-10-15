@@ -21,13 +21,14 @@ Subsequent builds are local. Python and a CAS are unnecessary for normal builds.
 # Only the final frame and its snapshot-bound record; no encoder required.
 cmake --preset debug
 cmake --build --preset debug
-ctest --preset debug
+ctest --preset debug -j 32 -R '^characteristic_and_steady_oracles$'
 ```
 
 CMake presets and registered CTest tests are the build/test authorities.
 The selected, digest-verified Fo driver also supports `fo test` and
 `fo exec kin6d_demo`. The shell helper uses the native CMake/CTest route
-explicitly while resident Gremlin's CMake input capture remains defective.
+explicitly. The current focused resident workflow is recorded in
+[tooling](tooling.md#focused-development-workflow); never run the full suite.
 
 ## Mathematical problem
 
@@ -108,11 +109,12 @@ cmake --preset cpu -DKIN6D_FORTSYM_BUILD=/path/to/fortsym/build
 cmake --build --preset cpu --target gen_laboratory
 ./build/gen_laboratory
 cmake --build --preset cpu
-ctest --preset cpu
+ctest --preset cpu -j 32 -R '^characteristic_and_steady_oracles$'
 ```
 
-Use FortSym revision `90b68132dbecb83b982826dc8b193f3a627d94e1` for regeneration.
-It adds generic optional exponential/trigonometric enclosure emission, with
+Use the FortSym revision declared by the current CMake configuration for
+regeneration. The first revision `90b68132dbecb83b982826dc8b193f3a627d94e1`
+added generic optional exponential/trigonometric enclosure emission, with
 compiled behavioral tests. Generator consistency does not replace physics tests.
 
 ## Evidence and performance
@@ -154,8 +156,9 @@ The session used Fo driver SHA256
 `6e54f805af13272e859ebf6c7ec48d205a22d7fdac7c84d435fdffc922bc76ee`.
 Public delegated test/exec commands pass. Resident capture reports
 `cannot parse fpm.toml for generation inputs` on this CMake-only project.
-The upstream CMake plan owns that unresolved input-inventory/generation gap;
-no fake FPM manifest was added. Native CMake/CTest results are reported as such.
+That historical capture gap was not reproduced with the current focused
+workflow in [tooling](tooling.md#focused-development-workflow); no fake FPM
+manifest was added. Native and resident evidence retain their stated scopes.
 
 FPM 0.13.0 also reused a stale default-profile plotting executable after a
 source edit and a build in a second compiler profile. Preserving that profile

@@ -21,7 +21,7 @@
 !> therefore carried by the near rings l < O(max(eta,1)).
 !>
 !> Yukawa: phase shifts delta_l from the shared radial FEM-DVR
-!> (src/radial_dvr.f90) at fixed energy with the screened radial operator,
+!> (src/pairs/radial_dvr.f90) at fixed energy with the screened radial operator,
 !> Dirichlet data deep inside the centrifugal barrier and at a bridge node
 !> beyond r_turn + tail*lambda_D, matched to Riccati-Bessel functions by least
 !> squares. d delta_l/d eta from the same factorization (implicit equation-level
