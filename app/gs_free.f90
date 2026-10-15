@@ -25,6 +25,11 @@ program gs_free_main
         GS_CI_XPOINT_BR, GS_CI_XPOINT_BZ, GS_CI_PSI_POINT, GS_CI_ISOFLUX_LCFS, &
         GS_CI_PSI_BOUND, GS_CI_UNCONSTRAINED, GS_CI_BOUNDED, GS_CI_FIXED_AT_LIMIT, &
         GS_CI_OK, GS_CI_NOT_CONVERGED
+    use kin6d_gs_majorant, only: gs_coupled_estimator_t, gs_coupled_estimator_build, &
+        gs_coupled_estimator_free, GS_CM_OK
+    use kin6d_gs_certificate, only: gs_fb_certifier_t
+    use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+        claim_name
     use kin6d_result_io, only: run_t, result_file_t, runtime_git
     use fortnum_polynomial, only: lagrange_weights
     use fortplot_system_runtime, only: create_directory_runtime
@@ -34,11 +39,14 @@ program gs_free_main
     integer, parameter :: max_circuits = 64, max_ties = 16
     type(run_t) :: run
     type(result_file_t) :: result
-    type(gs_state_t) :: state
+    type(gs_state_t), target :: state
     type(gs_profile_law_t) :: law
     type(gs_circuit_set_t) :: set
     type(gs_fb_config_t) :: cfg
-    type(gs_fb_system_t) :: sys
+    type(gs_fb_system_t), target :: sys
+    type(gs_coupled_estimator_t), target :: est
+    type(gs_fb_certifier_t) :: certifier
+    type(equilibrium_certificate_t) :: certificate
     type(gs_fb_eval_t) :: ev
     type(gs_fb_refit_config_t) :: rcfg
     type(gs_fb_refit_report_t) :: report
@@ -61,18 +69,22 @@ program gs_free_main
     real(dp) :: reference_currents(max_circuits) = 0.0_dp
     real(dp) :: lambda = 0.0_dp, relaxation = 1.0_dp, fit_step_tolerance = 1.0e-8_dp
     real(dp) :: volume = 0.0_dp, perimeter, h, wall_start, wall_s, psi_a, psi_b
+    real(dp) :: estimator_s = 0.0_dp
     integer :: boundary_nodes = 96, degree = 2, chain_nodes = 48, axis_sign = 1
     integer :: max_refits = 4, max_newton_iterations = 30, max_fit_iterations = 30
     integer :: n_reference = 0, profile_points = 65
     integer :: tie_a(max_ties) = 0, tie_b(max_ties) = 0
     integer :: unit, status, i, j, n, nc, pass, variant, stat, threads = 1
+    integer :: estimator_status = -1
     logical :: curved = .true., emulate_freegs = .false., directory_ok, inverse
+    logical :: error_estimate = .true.
     logical :: refit_converged = .false.
     character(512) :: boundary_file = '', coil_file = '', profile_file = ''
     character(512) :: constraints_file = '', points_file = '', mesh_file = 'mesh.dat'
     character(512) :: seed_file = ''
     character(512) :: argument
     character(32) :: lcfs_mode = 'xpoint', fit = 'none'
+    character(32) :: error_claim = 'unavailable-not-requested'
     character(256) :: message
     character(:), allocatable :: commit, dirty
     namelist /gs_free/ boundary_file, boundary_nodes, max_area, degree, curved, &
@@ -82,7 +94,7 @@ program gs_free_main
         max_newton_iterations, seed_amplitude, currents, fit, constraints_file, &
         lambda, reference_currents, n_reference, tie_a, tie_b, emulate_freegs, &
         relaxation, max_fit_iterations, fit_step_tolerance, mesh_file, profile_points, &
-        seed_file
+        seed_file, error_estimate
 
     call run%start('gs_free')
     wall_start = wall_clock()
@@ -260,9 +272,38 @@ program gs_free_main
     call do_readback()
     call plasma_volume()
     wall_s = wall_clock() - wall_start
+    if (error_estimate) call estimate_error()
     call write_outputs()
 
 contains
+
+    subroutine estimate_error()
+        !! Coupled FEM-BEM equilibrated majorant M0 of the final psi and the
+        !! power-iteration inf-sup estimate beta (gs_fb_majorant); the bound
+        !! M0/beta is first order and practical (docs/gs-free-boundary.md).
+        real(dp) :: clock
+
+        clock = wall_clock()
+        error_claim = 'unavailable'
+        call gs_coupled_estimator_build(state, sys%coupling, est, estimator_status, &
+                                        set=set)
+        if (estimator_status == GS_CM_OK) then
+            certifier%state => state
+            certifier%sys => sys
+            certifier%est => est
+            certifier%currents = cur
+            call certify(certifier, certificate, stat)
+            estimator_status = certificate%lane_status
+            if (stat == 0) error_claim = claim_name(certificate%claim)
+        end if
+        call gs_coupled_estimator_free(est)
+        estimator_s = wall_clock() - clock
+        write (output_unit, '(a,a,a,i0,a,es10.3,a,es10.3,a,f8.2)') &
+            'error estimate: claim=', trim(error_claim), ' status=', &
+            estimator_status, ' bound=', certificate%bound, ' beta=', &
+            certificate%stability, ' estimator_s=', estimator_s
+        flush (output_unit)
+    end subroutine estimate_error
 
     real(dp) function wall_clock() result(t)
         integer(8) :: count, rate
@@ -548,6 +589,34 @@ contains
                               'toroidal flux inside the plasma boundary')
         end if
         call result%write('wall_s', wall_s, 's', 'solve and readback wall time')
+        call result%attribute('majorant_claim', trim(error_claim))
+        call result%attribute('majorant_method', 'coupled FEM-BEM RT equilibration')
+        call result%attribute('majorant_quadrature_status', 'approximate')
+        call result%attribute('majorant_scope', &
+            'energy norm int |grad e|^2/R dA + <S e,e> of the discrete '// &
+            'free-boundary model; reference-BEM Steklov map, estimated '// &
+            'Friedrichs constant, '// &
+            'power-iteration inf-sup; M0/beta is first order')
+        call result%write('majorant_status', real(estimator_status, dp), '1', &
+                          'estimator status, 0 = available, -1 = not requested')
+        if (error_claim(1:11) /= 'unavailable') then
+            call result%write('majorant', certificate%bound, 'Wb/m^0.5', &
+                              'energy error estimate M0/beta')
+            call result%write('majorant_frozen', certificate%majorant, 'Wb/m^0.5', &
+                              'frozen-source equilibrated majorant M0')
+            call result%write('majorant_stability', certificate%stability, '1', &
+                              'inf-sup estimate beta of the Newton Jacobian')
+            call result%write('majorant_flux', certifier%last%frozen%flux_defect, &
+                              'Wb/m^0.5', 'equilibrated flux defect D')
+            call result%write('majorant_balance', &
+                              certifier%last%frozen%balance_defect, 'Wb/m^0.5', &
+                              'oscillation plus C_F divergence defect B')
+            call result%write('majorant_interface', &
+                              certifier%last%frozen%neumann_defect, 'Wb/m^0.5', &
+                              'reference-BEM interface defect N')
+            call result%write('estimator_s', estimator_s, 's', &
+                              'error estimator wall time')
+        end if
         if (inverse) then
             call result%write('fit_status', real(fit_stat, dp), '1', &
                               '0 converged, 5 iteration limit')
@@ -591,6 +660,10 @@ contains
             write (u, '(a,1x,es25.16e3)') 'toroidal_flux', surfaces%phi_edge
         end if
         write (u, '(a,1x,i0)') 'refit_converged', merge(1, 0, refit_converged)
+        write (u, '(a,1x,a)') 'majorant_claim', trim(error_claim)
+        write (u, '(a,1x,i0)') 'majorant_status', estimator_status
+        if (error_claim(1:11) /= 'unavailable') &
+            write (u, '(a,1x,es25.16e3)') 'majorant', certificate%bound
         write (u, '(a,1x,es25.16e3)') 'wall_s', wall_s
         write (u, '(a,1x,i0)') 'omp_threads', threads
         do k = 1, nc
