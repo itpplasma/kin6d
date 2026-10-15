@@ -61,7 +61,7 @@ program gs_response_3d
         ring_sheet_load, ring_area, resonant_surfaces_missing, ring_sheet_edges, &
         ring_sheet_density
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
-        ideal_options_t, ideal_response, sample_field
+        ideal_options_t, ideal_response, sample_field, ideal_response_error_t
     use kin6d_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
         perturbation_add_spectra, perturbation_export
     use kin6d_mhd_response_n, only: sheet_closure_t, closure_shield_init, &
@@ -132,6 +132,7 @@ program gs_response_3d
     real(dp), allocatable :: xs(:, :)
     type(sample_ring_t), allocatable :: rings(:)
     type(ideal_options_t) :: opt
+    type(ideal_response_error_t) :: ideal_error
     type(sheet_closure_t) :: cl
     type(rational_layer_t), allocatable :: lays(:)
     real(dp), allocatable :: di_rat(:), dq_rat(:), jump_unit(:)
@@ -496,8 +497,27 @@ program gs_response_3d
             call cpu_time(t0)
             if (allocated(lam_cl)) deallocate (lam_cl, phitot)
             allocate (lam_cl(cl%ns), phitot(cl%nf))
-            call ideal_response(fs, pb, fm, g, amp, opt, n, rings, cl, b2cl, phicl, &
-                avol, lam_cl, phitot, gmres_tol, gmres_maxit, info, its, res)
+            if (error_estimate) then
+                call ideal_response(fs, pb, fm, g, amp, opt, n, rings, cl, b2cl, &
+                    phicl, avol, lam_cl, phitot, gmres_tol, gmres_maxit, info, &
+                    its, res, error=ideal_error)
+                write (ur, '(a,i0,a,i0,4(a,es14.6))') '# ideal_error phasing ', &
+                    ip, ' status ', ideal_error%status, &
+                    ' frozen_defect_energy ', ideal_error%defect_energy, &
+                    ' contraction_probe ', ideal_error%contraction_probe, &
+                    ' algebraic_estimate ', ideal_error%algebraic_estimate, &
+                    ' diagnostic_seconds ', ideal_error%seconds
+                write (ur, '(10a)') '# ideal_error claims: algebraic ', &
+                    trim(ideal_error%algebraic_claim), ' discretization ', &
+                    trim(ideal_error%discretization_claim), ' sampling ', &
+                    trim(ideal_error%sampling_claim), ' continuous ', &
+                    trim(ideal_error%continuous_claim), ' contraction ', &
+                    trim(ideal_error%contraction_claim)
+            else
+                call ideal_response(fs, pb, fm, g, amp, opt, n, rings, cl, b2cl, &
+                    phicl, avol, lam_cl, phitot, gmres_tol, gmres_maxit, info, &
+                    its, res)
+            end if
             call cpu_time(t1)
             write (*, '(a,i0,a,i0,a,es10.2,a,f10.1,a)') 'ideal response: info ', &
                 info, ', GMRES iterations ', its, ', residual ', res, ', cpu ', &
