@@ -13,8 +13,8 @@ program gen_equilibrium_core
     ! F(psi) grad phi and p(psi) the Euler-Lagrange form of these
     ! coefficients is the Grad-Shafranov residual times grad psi/(mu0 R).
     use fortsym_arena, only: arena_t
-    use fortsym_expr, only: expr_t, sym, sin, cos, operator(+), operator(*), &
-        operator(-), operator(/), operator(**)
+    use fortsym_expr, only: expr_t, sym, sin, cos, pi_expr, operator(+), &
+        operator(*), operator(-), operator(/), operator(**), sqrt
     use fortsym_diff, only: diff
     use fortsym_subs, only: subs
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
@@ -108,6 +108,21 @@ program gen_equilibrium_core
     call w%emit('cylindrical_chart_third', ['q1', 'q2', 'q3'], names81, d3x)
     call w%emit('stress_residual_density', [character(8) :: 'r', 'br', 'bz', &
         'bphi', 'b0', 'p', 'mu0'], jet_names, coefficient)
+    ! Riesz error leaves of the D3 solve: the load of the Riesz problem
+    ! int 2 pi R grad r . grad v = int 2 pi (c1 v + (c2, c3) . grad v) is a
+    ! source f = 2 pi c1 and a flux load g = 2 pi (c2, c3); the discrete flux of
+    ! the equilibrated estimator is A grad r_h - g with A = 2 pi R. C_F bounds
+    ! ||v|| <= C_F (int 2 pi R |grad v|^2)^(1/2) on the box W x H with R >= rmin.
+    call w%emit('riesz_source', ['c'], ['source'], [2*pi_expr(arena)*sym(arena, 'c')])
+    call w%emit('riesz_coefficient', ['r'], ['coefficient'], &
+        [2*pi_expr(arena)*r])
+    call w%emit('riesz_flux', [character(6) :: 'r', 'grad_r', 'grad_z', 'c_r', &
+        'c_z'], ['flux_r', 'flux_z'], &
+        [2*pi_expr(arena)*(r*sym(arena, 'grad_r') - sym(arena, 'c_r')), &
+         2*pi_expr(arena)*(r*sym(arena, 'grad_z') - sym(arena, 'c_z'))])
+    call w%emit('riesz_friedrichs', [character(6) :: 'rmin', 'width', 'height'], &
+        ['cf'], [1/(sqrt(2*pi_expr(arena)*sym(arena, 'rmin'))*pi_expr(arena) &
+        *sqrt(1/sym(arena, 'width')**2 + 1/sym(arena, 'height')**2))])
     call w%emit('maxwell_stress_delta', [character(4) :: 'br', 'bp', 'bz', &
         'b0', 'p', 'mu0'], stress_names, tensor, ad=.true.)
     call w%line('end module kin6d_equilibrium_core_leaves')

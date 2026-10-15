@@ -1226,6 +1226,10 @@ foreach(k 2 3)
     set_tests_properties(equilibrium_core_d3_solovev_p${k} PROPERTIES TIMEOUT 300
         PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endforeach()
+add_test(NAME equilibrium_core_d3_upper_bound_p2
+    COMMAND test_equilibrium_core residual_bound)
+set_tests_properties(equilibrium_core_d3_upper_bound_p2 PROPERTIES TIMEOUT 60
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 # K6-mini: the accepted TC24 K6 law and path (cubic-profile Newton, P3,
 # direct factor, current constraint, readback, majorant) on a coarse mesh.
 # Every core migration step must reproduce the fixture to 1e-12 relative.
@@ -1317,6 +1321,12 @@ set_tests_properties(mhd_shielding_cylinder_limit_reciprocity PROPERTIES TIMEOUT
     ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(gs_response_3d app/gs_response_3d.f90)
 target_link_libraries(gs_response_3d PRIVATE kin6d)
+add_test(NAME gs_response_3d_ampere_indicator_contract COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_response_3d> -DWORK=${CMAKE_BINARY_DIR}/gs_response_3d_check
+    -DEQDSK=${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/shield_torus_a10.eqdsk
+    -P ${CMAKE_SOURCE_DIR}/test/check_gs_response_3d_app.cmake)
+set_tests_properties(gs_response_3d_ampere_indicator_contract PROPERTIES TIMEOUT 60
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_mhd_ideal_n test/test_mhd_ideal_n.f90)
 target_link_libraries(test_mhd_ideal_n PRIVATE kin6d)
 add_test(NAME mhd_ideal_n_mde_force_free_identity COMMAND test_mhd_ideal_n)
