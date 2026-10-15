@@ -45,7 +45,8 @@ module kin6d_ideal_free_boundary
     ! Everything is per field period; c_m = 2 pi/nfp for the n = 0 mode and
     ! pi/nfp for cos/sin modes.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
+        ieee_quiet_nan
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_equilibrium_chart, only: ideal_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, &
@@ -64,6 +65,7 @@ module kin6d_ideal_free_boundary
     use fortfem_toroidal_mode_boundary_operators_2d, only: tm_bem_assemble, &
         tm_bem_steklov_symmetric
     use fortnum_quadrature, only: gauss_legendre
+    use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, sparse_refactor, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
         FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE
@@ -1508,7 +1510,7 @@ contains
         real(dp), allocatable :: trial_du(:), vmat(:), vg(:), vdu(:)
         type(sparse_solver_t) :: csolver
         logical :: cready
-        logical :: talk, accepted, factored, kept
+        logical :: talk, accepted, factored, kept, reused_factor
         real(dp) :: kz, fz, fzr, ftry
         real(dp), parameter :: vertical_tol = 1.0e-6_dp
         logical :: vertical_open, joint_vertical, slide_gauge
@@ -1633,43 +1635,66 @@ contains
                 if (slide_gauge) call slide_system(fb, rowptr, colidx, dval, sscale, &
                                                    srows, scols, smat)
                 t0 = wall()
-                ! One handle for the whole solve: the KKT pattern is fixed, so
-                ! MUMPS keeps its analysis and only refactorises.
-                if (.not. factored) then
-                    if (.not. configure(solver)) exit
-                end if
-                if (joint_vertical) then
-                    call sparse_refactor(solver, fb%n + 1, fb%n + 1, size(vmat), &
-                                         vrows, vcols, vmat, sst, kept)
-                else if (slide_gauge) then
-                    call sparse_refactor(solver, fb%n + nslide, fb%n + nslide, &
-                                         size(smat), srows, scols, smat, sst, kept)
-                else
-                    call sparse_refactor(solver, fb%n, fb%n, size(dval), rowptr, &
-                                         colidx, dval, sst, kept)
-                end if
-                report%factorisations = report%factorisations + 1
-                if (kept) report%reused = report%reused + 1
-                if (.not. status_ok(sst)) then
-                    factored = .false.
-                    mu = 10*mu; cycle
-                end if
-                factored = .true.
                 rhs = -grad
+                if (joint_vertical) call ideal_fb_vertical_gradient(fb, grad, vg)
+                ! The first try of a Newton step reuses the factor of the
+                ! previous step as the preconditioner of FGMRES on the current
+                ! KKT matrix (accepted only at full solve accuracy); damped
+                ! retries and Krylov failures refactorise as before.
+                reused_factor = .false.
+                if (factored .and. tries == 1) then
+                    if (joint_vertical) then
+                        call preconditioned_solve(solver, vrows, vcols, vmat, -vg, &
+                                                  vdu, reused_factor)
+                    else if (slide_gauge) then
+                        call preconditioned_solve(solver, srows, scols, smat, &
+                            [rhs, (0.0_dp, i = 1, nslide)], sol, reused_factor)
+                    else
+                        call preconditioned_solve(solver, rowptr, colidx, dval, rhs, &
+                                                  du, reused_factor)
+                    end if
+                end if
+                if (.not. reused_factor) then
+                    ! One handle for the whole solve: the KKT pattern is fixed,
+                    ! so MUMPS keeps its analysis and only refactorises.
+                    if (.not. factored) then
+                        if (.not. configure(solver)) exit
+                    end if
+                    if (joint_vertical) then
+                        call sparse_refactor(solver, fb%n + 1, fb%n + 1, size(vmat), &
+                                             vrows, vcols, vmat, sst, kept)
+                    else if (slide_gauge) then
+                        call sparse_refactor(solver, fb%n + nslide, fb%n + nslide, &
+                                             size(smat), srows, scols, smat, sst, kept)
+                    else
+                        call sparse_refactor(solver, fb%n, fb%n, size(dval), rowptr, &
+                                             colidx, dval, sst, kept)
+                    end if
+                    report%factorisations = report%factorisations + 1
+                    if (kept) report%reused = report%reused + 1
+                    if (.not. status_ok(sst)) then
+                        factored = .false.
+                        mu = 10*mu; cycle
+                    end if
+                    factored = .true.
+                    if (joint_vertical) then
+                        call sparse_solve(solver, -vg, vdu, sst)
+                    else if (slide_gauge) then
+                        call sparse_solve(solver, [rhs, (0.0_dp, i = 1, nslide)], sol, &
+                                          sst)
+                    else
+                        call sparse_solve(solver, rhs, du, sst)
+                    end if
+                    if (.not. status_ok(sst)) then
+                        status = IDEAL_FB_SOLVE_FAILED; return
+                    end if
+                end if
                 if (joint_vertical) then
-                    call ideal_fb_vertical_gradient(fb, grad, vg)
-                    call sparse_solve(solver, -vg, vdu, sst)
                     call ideal_fb_vertical_expand(fb, vdu, du)
                 else if (slide_gauge) then
-                    call sparse_solve(solver, [rhs, (0.0_dp, i = 1, nslide)], sol, sst)
                     du = sol(:fb%n)
-                else
-                    call sparse_solve(solver, rhs, du, sst)
                 end if
                 report%factor_s = report%factor_s + wall() - t0
-                if (.not. status_ok(sst)) then
-                    status = IDEAL_FB_SOLVE_FAILED; return
-                end if
                 call map_steps(fb, du, disp, rot)
                 alpha = min(1.0_dp, cap_x/max(disp, tiny(1.0_dp)), &
                     cap_w/max(rot, tiny(1.0_dp)))
@@ -2006,6 +2031,50 @@ contains
             gt = t(1)*g(i1) + t(2)*g(i2)
             g(i1) = g(i1) - gt*t(1); g(i2) = g(i2) - gt*t(2)
         end do
+    end subroutine
+
+    subroutine preconditioned_solve(solver, col_ptr, row_idx, val, b, x, ok)
+        ! x solves A x = b, A given in the compressed layout the sparse
+        ! factor reads (column pointers, row indices), by FGMRES right-
+        ! preconditioned with the factor of an earlier matrix of the same
+        ! pattern; ok only when the relative residual reaches krylov_tol.
+        type(sparse_solver_t), intent(inout) :: solver
+        integer, intent(in) :: col_ptr(:), row_idx(:)
+        real(dp), intent(in) :: val(:), b(:)
+        real(dp), intent(out) :: x(:)
+        logical, intent(out) :: ok
+        real(dp), parameter :: krylov_tol = 1.0e-10_dp
+        integer, parameter :: krylov_max = 20
+        real(dp) :: bnorm, rnorm
+        integer :: info, iterations
+        ok = .false.
+        x = 0
+        bnorm = norm2(b)
+        if (.not. bnorm > 0) return
+        call real_fgmres_operator(apply, precondition, b/bnorm, x, krylov_tol, &
+            krylov_max, krylov_max, info, iterations, rnorm)
+        ok = info == KRYLOV_OK .and. all(ieee_is_finite(x))
+        x = bnorm*x
+    contains
+        subroutine apply(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            integer :: j, p
+            output = 0
+            do j = 1, size(input)
+                do p = col_ptr(j), col_ptr(j + 1) - 1
+                    output(row_idx(p)) = output(row_idx(p)) + val(p)*input(j)
+                end do
+            end do
+        end subroutine
+
+        subroutine precondition(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            type(fortsparse_status_t) :: pst
+            call sparse_solve(solver, input, output, pst)
+            if (.not. status_ok(pst)) output = ieee_value(1.0_dp, ieee_quiet_nan)
+        end subroutine
     end subroutine
 
     logical function configure(solver) result(ready)
