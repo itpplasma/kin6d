@@ -176,6 +176,50 @@ Generic sampler coverage uses 2000 streams on each of constant,
 heterogeneous and sparse vectors, and Q0 checks 200 streams against an
 independent residual. Coverage experiments supplement the tail theorem.
 
+## Elliptic discretization error: equilibrated residuals
+
+For every elliptic or coercive spatial model, the standard numerical-error
+metric is the patchwise equilibrated-residual (Prager--Synge) energy bound.
+FortFEM owns one implementation per operator family; KIN6D wraps it with the
+physical coefficient, source and guaranteed constants
+([GS estimator](grad-shafranov.md#fixed-source-error-estimator)). Local
+patch problems are O(N) and parallel; any H(div)/H(curl) reconstruction gives
+a valid bound, so local solve errors only loosen it, and the measured
+divergence defect absorbs algebraic and load-quadrature inconsistency. The
+remaining non-rigorous step is the quadrature of non-polynomial integrands:
+the claim is Tier A until an explicit remainder makes it Tier D.
+
+Observable bands use `Q_h + r(z_h) +- M_psi*M_z`, with both majorants
+equilibrated and one adjoint solve per goal. Nonlinear and free-boundary
+problems add a stability constant; a power-iteration estimate keeps the claim
+approximate.
+
+Priorities: (1) the equilibrated bound for each existing operator family (H1
+affine, curved and Neumann, tetrahedral, mixed and SIPG; planar H(curl) and
+the per-n `curl_n` operator); (2) guaranteed stability lower bounds; (3) goal
+bands, later two-sided parallelogram bounds; (4) explicit quadrature
+remainders.
+
+| Approach | Use | Limitation |
+|---|---|---|
+| Equilibrated flux, patchwise | Default energy bound and refinement indicator | Needs a reconstruction per operator family |
+| Global functional majorant | Superseded fallback | O(N^1.5) global recovery; efficiency about 2 |
+| `\|\|\|z_h\|\|\|*M` goal radius | None for linear goals | First order: 10^2--10^6 too wide |
+| Product goal band `M_psi*M_z` | Default goal band | One adjoint and estimator per goal |
+| DWR, enriched adjoint | Indicator; nonlinear primal only | Equals a P(p+1) re-solve for linear problems; misses energy goals; radius does not shrink |
+| p-, h-refined re-solve, Richardson | Reference checks | Not a bound; Richardson unreliable on non-nested meshes |
+| Interval arithmetic throughout | Tiny strict audits | Cost without benefit when discretization error dominates |
+
+The measurements behind the table are on a manufactured GS box at 4
+threads and up to 1.9e5 DOF. The equilibrated bound has efficiency
+1.004--1.07 and costs 25% of the solve at 1.9e5 DOF. Goal bands with
+equilibrated majorants are 3--8 times the true error. An enriched DWR
+correction reproduced the P(p+1) primal result.
+
+Local formulas of these estimators (integrands, geometry factors, reference
+jets) are FortSym-generated like every other project leaf
+([tooling](tooling.md#fortsym-is-the-mathematical-source-of-project-owned-leaves)).
+
 ## Derivatives and long-time dynamics
 
 An equation-level tangent/adjoint has its own norm, scale, stability,
