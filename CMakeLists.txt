@@ -1409,6 +1409,13 @@ foreach(k 2 3)
     set_tests_properties(nonnested_n0_solovev_p${k} PROPERTIES TIMEOUT 600
         ENVIRONMENT "OMP_NUM_THREADS=4")
 endforeach()
+# Equilibrated energy bound of the N = 0 restriction against the Solov'ev flux.
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_error.f90)
+add_executable(test_nonnested_error test/test_nonnested_error.f90)
+target_link_libraries(test_nonnested_error PRIVATE kin6d_nn_solovev_test)
+add_test(NAME nonnested_n0_equilibrated_solovev COMMAND test_nonnested_error)
+set_tests_properties(nonnested_n0_equilibrated_solovev PROPERTIES TIMEOUT 60
+    PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 
 add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90)
 target_link_libraries(kin6d_nn_vacuum_test PUBLIC kin6d)
