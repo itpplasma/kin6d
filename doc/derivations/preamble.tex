@@ -14,7 +14,17 @@
 % \code{text}: verbatim-like identifier; underscores must be written \_.
 \newcommand{\code}[1]{\texttt{#1}}
 % \src{path:line} cites code. Underscores in the argument must be \_.
-\newcommand{\src}[1]{\textsf{\small #1}}
+\ExplSyntaxOn
+\NewDocumentCommand{\src}{m}{
+  \group_begin:
+  \small\sffamily
+  \tl_set:Nn \l_tmpa_tl {#1}
+  \tl_replace_all:Nnn \l_tmpa_tl {/} {/\allowbreak}
+  \tl_replace_all:Nnn \l_tmpa_tl {\_} {\_\allowbreak}
+  \tl_use:N \l_tmpa_tl
+  \group_end:
+}
+\ExplSyntaxOff
 % \bug{text}: candidate mismatch between derivation and code.
 \newcommand{\bug}[1]{\par\smallskip\noindent\fcolorbox{red!70!black}{red!4}{\parbox{0.96\linewidth}{\textbf{Candidate bug.} #1}}\par\smallskip}
 % \gap{text}: a statement the code does not let us verify.

@@ -205,8 +205,11 @@ The CTests run with `OMP_NUM_THREADS=4` in about 7 s together.
 ## Reproduction and lecture data
 
 ```sh
-cmake --preset cpu && cmake --build --preset cpu
-ctest --preset cpu -R em_slab
+cmake --preset cpu
+cmake --build --preset cpu --target em_slab_demo test_em_slab -j 8
+for mode in oracles vacuum reflection transmission refinement; do
+    ctest --test-dir build -R "^em_slab_${mode}$" -j 8 --output-on-failure
+done
 em_slab_demo [--config FILE] [--export DIR]   # namelist &em_slab
 ```
 
