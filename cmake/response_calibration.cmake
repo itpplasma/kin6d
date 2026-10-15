@@ -1,5 +1,5 @@
 # Independent response readback/qualification; separate from coupled solver.
-target_sources(kin6d PRIVATE src/response_calibration.f90
+target_sources(kin6d_mhd PRIVATE src/mhd/response_calibration.f90
     src/generated/kin6d_response_calibration_leaves.f90)
 add_executable(test_response_calibration test/test_response_calibration.f90)
 target_link_libraries(test_response_calibration PRIVATE kin6d)
@@ -13,7 +13,7 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_response_calibration gen/gen_response_calibration.f90)
     target_link_libraries(gen_response_calibration PRIVATE kin6d_gen_support)
 endif()
-target_sources(kin6d PRIVATE src/response_qualification.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/response_qualification.f90)
 add_executable(test_response_qualification test/test_response_qualification.f90)
 target_link_libraries(test_response_qualification PRIVATE kin6d)
 add_test(NAME response_qualification_frozen_rules COMMAND test_response_qualification)

@@ -474,3 +474,18 @@ foreach(check oracles negative limits)
 endforeach()
 kin6d_test_labels(response_strip_preconditioner_scaling performance CLASSES mhd
     TARGETS test_response_strip_preconditioner)
+
+kin6d_test_labels(response_spot_calibration_algebra fast CLASSES mhd
+    TARGETS test_response_calibration)
+kin6d_test_labels(response_unit_sheet_spot_cylinder fast CLASSES mhd
+    TARGETS test_response_sheet_cylinder)
+kin6d_test_labels(response_qualification_frozen_rules fast CLASSES mhd
+    TARGETS test_response_qualification)
+kin6d_test_labels(response_qualification_external_adapter fast CLASSES apps
+    TARGETS response_qualify)
+kin6d_test_labels(response_spot_resolved_single_ring fast CLASSES mhd
+    TARGETS test_response_strip_readback)
+kin6d_test_labels(response_calibration_deck_validation fast CLASSES apps
+    TARGETS gs_response_calibration)
+kin6d_test_labels(response_calibration_deck_rejects_zero_mode fast CLASSES apps
+    TARGETS gs_response_calibration)
