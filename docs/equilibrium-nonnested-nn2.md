@@ -123,6 +123,63 @@ reformulation ([Degond, Deluzet, Negulescu 2010]
 finite-element paper (doi:10.1016/j.jcp.2007.07.016) is not yet read and
 is not relied on.
 
+## Anisotropy estimator diagnostic
+
+The tensor patch minimisation already uses the full A^(-1) metric. FortFEM's
+opt-in `correction_sweeps` adds divergence-free RT corrections on the same
+vertex patches. A simultaneous sweep is damped by 1/3, since three vertex
+patches overlap each triangle. Orthogonal projection and Cauchy--Schwarz give
+`||e_next||^2 <= ||e||^2 - sum_a ||delta_a||^2/3` in the sampled A^(-1) metric.
+Divergence is unchanged in exact arithmetic; its measured defect still enters
+the bound. The correction solves use block scaling to retain the constraint
+accuracy. At fixed degree and sweep count the work and storage are O(N), and
+the cell and vertex passes use OpenMP. No anisotropy-uniform contraction is
+proved. The sampled integrals remain approximate, and `nt_solve` retains its
+existing default reconstruction.
+
+| P2 Sovinec mesh | Ratio | Original index | Eight-sweep index | Status |
+|---|---:|---:|---:|---|
+| nr = 4 | 1e9 | 7.35 | 1.26 | Practical sampled bound |
+| nr = 8 | 1e9 | 27.5 | 4.50 | Practical sampled bound |
+| nr = 32 | 1e6 | 163 | 20.1 | Uniform-efficiency target missed |
+| nr = 32 | 1e9 | 389 | 47.8 | Uniform-efficiency target missed |
+
+`nonnested_transport_anisotropy_correction` checks containment, improvement,
+index < 5 on nr = 4/8 and convergence for ratios 1 and 1e3. The larger study
+is `test_nonnested_anisotropy study 32 8`; it reports containment and cost,
+without asserting the unmet uniform-efficiency target. The upstream tensor
+test checks exact polynomial recovery and a rotated constant-tensor ladder.
+
+On a shared host, three Release runs at nr = 32 (12,193 DOFs), ratio 1e9,
+give median reconstruction times 2.80 s at one thread and 0.781 s at four
+threads (3.59x); the four-thread range is 0.768--0.791 s. The median
+per-run cost is 9.44 times assembly plus the direct solve (range
+8.57--10.81), excluding mesh construction and estimator input sampling.
+At nr = 16 (3,105 DOFs) the four-thread median is 0.208 s: the two-point
+DOF exponent is 0.97. This supports linear work at fixed sweep count but
+misses the required small fraction of the solve.
+
+The companion `nonnested_transport_anisotropy_pollution` test compares the
+production tensor assembly/sparse solve with an independent directional-Gram
+assembly/dense Cholesky solve, equivalent strong and weak loads, and quadrature
+degree 24 instead of 8. At ratios 1e6/1e9 on nr = 4/8, solver/assembly
+agreement is within 2.2e-11 and the quadrature change is below 1e-6, while the
+center-pressure error exceeds 0.96. The energy error agrees with the independent
+identity `||grad psi||^2 - 2(f,p_h) + a(p_h,p_h)` to 2e-8.
+
+There is also an exact fixed-mesh explanation. If a cell polynomial q obeys
+`cos(pi x) sin(pi y) q_x - sin(pi x) cos(pi y) q_y = 0` on an open triangle,
+real analyticity extends the identity to the plane. At every integer x it
+forces q_x to vanish for all y. A polynomial with infinitely many such roots
+has q_x = 0 identically; the identity then gives q_y = 0. Thus the parallel
+Gram operator is positive definite on the conforming, zero-trace polynomial
+space. At fixed mesh/order `(L + (chi_par-1) G) p_h = f` therefore gives
+p_h -> 0 as chi_par -> infinity, whereas the exact Sovinec solution is psi.
+This proves fixed-mesh pollution for this discretization. It does not diagnose
+the separately observed P4 conditioning floor or prove correctness of every
+assembly path. A field-aware coarse correction or different localisation is
+still required for the campaign's uniform-efficiency and cost targets.
+
 ## Verification gates
 
 1. Manufactured 3D transport (implemented). An exactly divergence-free
