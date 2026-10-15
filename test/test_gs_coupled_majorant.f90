@@ -51,12 +51,28 @@ program test_gs_coupled_majorant
     type(gs_profile_law_t) :: law_exact
     real(dp) :: psi_axis_exact, psi_bound_exact
     integer :: failures
+    character(len=16) :: mode
+    real(dp) :: quick_errors(2), quick_bounds(2)
 
     failures = 0
     call build_coils(coils)
-    call linear_sweep('P2', 2, [24, 48, 96])
-    call linear_sweep('P3', 3, [24, 48])
-    call nonlinear_sweep('P2 limiter', 2, [24, 48, 96])
+    call get_command_argument(1, mode)
+    if (trim(mode) == 'quick') then
+        call linear_case('P2 quick', 2, 12, quick_errors(1), quick_bounds(1))
+        call linear_case('P2 quick', 2, 24, quick_errors(2), quick_bounds(2))
+        call require(all(quick_bounds >= quick_errors), &
+            'RT bound contains energy error')
+        call require(quick_bounds(2) < quick_bounds(1), &
+            'RT bound decreases on refinement')
+        call linear_case('P3 quick', 3, 12, quick_errors(1), quick_bounds(1))
+        call require(quick_bounds(1) >= quick_errors(1), &
+            'P3 bound contains energy error')
+        call nonlinear_sweep('P2 limiter quick', 2, [24])
+    else
+        call linear_sweep('P2', 2, [24, 48, 96])
+        call linear_sweep('P3', 3, [24, 48])
+        call nonlinear_sweep('P2 limiter', 2, [24, 48, 96])
+    end if
     call coil_bound_check()
     if (failures /= 0) error stop 'gs_coupled_majorant failures'
     print '(a)', 'gs_coupled_majorant (P10) checks passed'
@@ -259,7 +275,7 @@ contains
         type(gs_state_t) :: state
         type(gs_coupling_t) :: coupling
         type(gs_coupled_estimator_t) :: est
-        type(gs_coupled_majorant_t) :: res
+        type(gs_coupled_majorant_t) :: res, shifted
         type(gs_coupled_goal_t) :: shape_goal, ip_goal
         real(dp), allocatable :: coil_load(:, :), f_load(:), rhs(:), psi(:), bl(:)
         real(dp) :: q_exact, ip_h
@@ -285,6 +301,16 @@ contains
         print '(a,i7,a,f8.3,a,f8.3)', '   nodes ', size(psi), '  estimator build s ', &
             real(t1 - t0, dp)/rate, '  majorant s ', real(t2 - t1, dp)/rate
         call require(status == GS_CM_OK, 'coupled majorant')
+        if (trim(mode) == 'quick') then
+            call gs_coupled_majorant(state, est, psi, linear_source, &
+                bl + 1.0_dp, shifted, status)
+            call require(status == GS_CM_OK, 'perturbed boundary estimate')
+            call require(shifted%neumann_defect > res%neumann_defect, &
+                'arbitrary boundary-load mismatch increases interface defect')
+            call require(abs(shifted%flux_defect - res%flux_defect) &
+                <= 1.0e-12_dp*max(1.0_dp, res%flux_defect), &
+                'boundary load does not change local interior RT recovery')
+        end if
         error = energy_error(state, est, psi)
         majorant = res%majorant
         print '(a,a,i4,a,es10.3,a,es10.3,a,f6.3,a,3es10.2,a,es10.3,a,i4)', label, &
