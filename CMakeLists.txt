@@ -1674,6 +1674,8 @@ foreach(check oracles negative limits scaling)
     PROCESSORS 2 TIMEOUT 180)
 endforeach()
 
+include(cmake/response_calibration.cmake)
+
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
 kin6d_layers_finalize()
@@ -1716,4 +1718,3 @@ foreach(_t IN LISTS _kin6d_all_tests)
     set_tests_properties(${_t} PROPERTIES ENVIRONMENT "${_env}" PROCESSORS "${_threads}")
 endforeach()
 
-include(cmake/response_calibration.cmake)
