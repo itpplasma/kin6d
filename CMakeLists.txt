@@ -300,10 +300,11 @@ endif()
 if(NOT TARGET fortsparse)
     set(FORTSPARSE_BUILD_TESTING OFF CACHE BOOL "" FORCE)
     set(FORTSPARSE_INSTALL_HELPER OFF CACHE BOOL "" FORCE)
-    set(FORTSPARSE_USE_SYSTEM_DEPS ON CACHE BOOL "" FORCE)
+    # FortSparse's fetched solvers share the selected BLAS; a prebuilt system
+    # SuperLU may carry an incompatible reference-BLAS dependency.
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG df2398b2cae8f1c93c027e2b704915b5373b990a
+        GIT_TAG a651a40972d96e07e89aded59f8c7d613a2b81cd
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
