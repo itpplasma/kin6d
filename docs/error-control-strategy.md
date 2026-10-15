@@ -197,8 +197,13 @@ remain approximate.
 
 Observable bands use `Q_h + r(z_h) +- M_psi*M_z`, with both majorants
 equilibrated and one adjoint solve per goal. Nonlinear and free-boundary
-problems add a stability constant; a power-iteration estimate keeps the claim
-approximate.
+problems add a stability constant. Affine fixed-Dirichlet GS with a single
+absolute-flux cubic/affine profile now has an outward-rounded global
+monotonicity lower bound, with no eigenvalue solve. Its sampled residual still
+keeps the complete nonlinear result practical. Free-boundary GS retains the
+power-iteration estimate: its flux-level point evaluations are unbounded in
+the current H1 energy space, so a discrete eigenvalue enclosure alone cannot
+validate the continuous stability premise or nonlinear goal bands.
 
 Production fixed-boundary GS now selects RT equilibration on affine and mapped
 P1--P3 meshes, with explicit legacy fallback. Absolute-flux profile laws have a
@@ -253,6 +258,7 @@ remainders.
 | Global functional majorant | Superseded fallback | O(N^1.5) global recovery; efficiency about 2 |
 | `\|\|\|z_h\|\|\|*M` goal radius | None for linear goals | First order: 10^2--10^6 too wide |
 | Product goal band `M_psi*M_z` | Default goal band | One adjoint and estimator per goal |
+| Outward global GS coercivity `1-L*C_F^2` | Affine fixed-Dirichlet, one absolute-flux polynomial | Refuses noncoercivity, unbounded positive slope, curved/normalized/multiple-piece laws; residual quadrature remains separate |
 | DWR, enriched adjoint | Indicator; nonlinear primal only | Equals a P(p+1) re-solve for linear problems; misses energy goals; radius does not shrink |
 | p-, h-refined re-solve, Richardson | Reference checks | Not a bound; Richardson unreliable on non-nested meshes |
 | Outward Bernstein audit of the RTp flux | Supported continuous energy certificate | Affine P1/P2, polynomial source numerator, Dirichlet only |

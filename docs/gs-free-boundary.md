@@ -98,6 +98,19 @@ nonlinear solution `gs_fb_goal` returns |||z_h||| M0, with J^T z_h = Q' (first
 order). `gs_coil_current_bounds` propagates row bounds b_i to |dI_k| <=
 sum_i |(H^-1 D^T)_ki| b_i on the free set (attained by the sign vector).
 
+A guaranteed continuous lower stability bound is still unavailable for this
+normalized free-boundary formulation. Its Jacobian contains the point-value
+functionals `g_a` and `g_b` (`gs_free_boundary.f90`, module contract). Point
+evaluation is unbounded in the two-dimensional H1 energy space: a logarithmic
+spike, constant inside radius epsilon and proportional to
+`log(1/r)/sqrt(log(1/epsilon))` outside, has bounded gradient norm but an
+unbounded center value. Thus an enclosed eigenvalue of the discrete Jacobian
+alone would not establish the required continuous operator bound. A stronger
+function-space/regularity argument or bounded flux-level functionals, a
+continuous FEM-BEM remainder and a nonlinear neighborhood theorem are needed
+before replacing beta or asserting nonlinear product goal bands. The verified
+fixed-Dirichlet absolute-flux coercivity path does not apply to this model.
+
 The short `gs_free_boundary_equilibrated_quick` gate uses the retained
 exact coil-plus-bump solution on curved meshes (two threads):
 

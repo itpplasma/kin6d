@@ -12,7 +12,7 @@ program gen_gs_error
     type(expr_t) :: source_lipschitz, friedrichs_squared, alpha
     type(expr_t) :: primal_majorant, adjoint_majorant, goal_value, residual_adjoint
     type(expr_t) :: mu0, r_max, r_min, pp_slope_max, ff_slope_max
-    type(expr_t) :: residual_majorant, c2, c3
+    type(expr_t) :: residual_majorant, c1, c2, c3
 
     call arena%init()
     r = sym(arena, 'r')
@@ -31,7 +31,7 @@ program gen_gs_error
     pp_slope_max = sym(arena, 'pp_slope_max')
     ff_slope_max = sym(arena, 'ff_slope_max')
     residual_majorant = sym(arena, 'residual_majorant')
-    c2 = sym(arena, 'c2'); c3 = sym(arena, 'c3')
+    c1 = sym(arena, 'c1'); c2 = sym(arena, 'c2'); c3 = sym(arena, 'c3')
     goal_value = sym(arena, 'goal_value')
     residual_adjoint = sym(arena, 'residual_adjoint')
 
@@ -56,13 +56,13 @@ program gen_gs_error
         [rmax/(pi**2*(1/width**2 + 1/height**2))], ad=.true., interval=.true.)
     call writer%emit('gs_error_coercivity', &
         ['source_lipschitz  ', 'friedrichs_squared'], ['alpha'], &
-        [1 - source_lipschitz*friedrichs_squared], ad=.true.)
+        [1 - source_lipschitz*friedrichs_squared], ad=.true., interval=.true.)
     call writer%emit('gs_error_source_lipschitz', &
         ['mu0         ', 'r_max       ', 'r_min       ', &
          'pp_slope_max', 'ff_slope_max'], ['lipschitz'], &
-        [mu0*r_max*pp_slope_max + ff_slope_max/r_min], ad=.true.)
+        [mu0*r_max*pp_slope_max + ff_slope_max/r_min], ad=.true., interval=.true.)
     call writer%emit('gs_error_state', ['residual_majorant', 'alpha            '], &
-        ['state_radius'], [residual_majorant/alpha], ad=.true.)
+        ['state_radius'], [residual_majorant/alpha], ad=.true., interval=.true.)
     call writer%emit('gs_error_goal', &
         ['primal_majorant ', 'adjoint_majorant', 'alpha           '], &
         ['goal_radius'], [primal_majorant*adjoint_majorant/alpha], ad=.true.)
@@ -73,6 +73,9 @@ program gen_gs_error
     ! The caller checks c3 /= 0 and whether this point lies in its piece.
     call writer%emit('gs_error_slope_vertex', ['c2', 'c3'], ['x'], &
         [-c2/(3*c3)], ad=.true.)
+    ! Global maximum of c1+2*c2*x+3*c3*x^2 for c3 < 0.
+    call writer%emit('gs_error_slope_max', ['c1', 'c2', 'c3'], ['upper'], &
+        [c1 - c2**2/(3*c3)], ad=.true., interval=.true.)
     ! Bernstein coefficients on an affine cell (vertex major radii r1..r3)
     ! of the source numerator s = R*source = mu0*pprime*R^2 + ffprime, in
     ! FortFEM's verified Bernstein order (2,0,0), (1,1,0), (1,0,1), (0,2,0),
