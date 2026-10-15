@@ -1,12 +1,12 @@
 module kin6d_gs_direct
     ! Cached sparse Cholesky factor of the Grad--Shafranov stiffness matrix
-    ! (threaded MUMPS, METIS nested dissection, through fortsparse). One factor
+    ! (fortsparse AUTO: SuperLU for small, threaded MUMPS for large systems). One factor
     ! serves every solve on the mesh: fixed-source solves, the A^-1 Newton
     ! preconditioner and the majorant recovery.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, sparse_solve_block, sparse_factor_stats, sparse_factor_stats_t, &
-        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_SPD, &
+        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_SPD, &
         FORTSPARSE_SYM_INDEFINITE, FORTSPARSE_ORDER_AMD, FORTSPARSE_ORDER_ND
     implicit none
     private
@@ -52,7 +52,7 @@ contains
             direct%failed = .true.
             return
         end if
-        direct%solver%backend_id = FORTSPARSE_BACKEND_MUMPS
+        direct%solver%backend_id = FORTSPARSE_BACKEND_AUTO
         direct%solver%refine = .false.
         direct%solver%options%symmetry = FORTSPARSE_SYM_SPD
         if (present(symmetry)) direct%solver%options%symmetry = symmetry

@@ -68,7 +68,7 @@ module kin6d_ideal_free_boundary
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, sparse_refactor, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE
+        FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE
     implicit none
     private
     public :: ideal_fb_t, ideal_fb_report_t, ideal_fb_init, ideal_fb_set_drive
@@ -1928,7 +1928,7 @@ contains
         if (gs_direct_available()) then
             ready = gs_direct_mpi_ready()
             if (.not. ready) return
-            csolver%backend_id = FORTSPARSE_BACKEND_MUMPS
+            csolver%backend_id = FORTSPARSE_BACKEND_AUTO
         end if
         csolver%options%symmetry = FORTSPARSE_SYM_GENERAL
         call sparse_factor(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), v(:nnz), sst)
@@ -2094,12 +2094,13 @@ contains
     end subroutine
 
     logical function configure(solver) result(ready)
-        ! Threaded MUMPS LDL^T when available, serial SuperLU LU otherwise.
+        ! FortSparse AUTO (threaded MUMPS LDL^T for large systems) when
+        ! available, serial SuperLU LU otherwise.
         type(sparse_solver_t), intent(inout) :: solver
         if (gs_direct_available()) then
             ready = gs_direct_mpi_ready()
             if (.not. ready) return
-            solver%backend_id = FORTSPARSE_BACKEND_MUMPS
+            solver%backend_id = FORTSPARSE_BACKEND_AUTO
             solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
             solver%options%nthreads = 0
         else
@@ -2434,7 +2435,7 @@ contains
             solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
             if (gs_direct_available()) then
                 if (.not. gs_direct_mpi_ready()) return
-                solver%backend_id = FORTSPARSE_BACKEND_MUMPS
+                solver%backend_id = FORTSPARSE_BACKEND_AUTO
             end if
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
         end if
