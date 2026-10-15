@@ -8,7 +8,6 @@ module kin6d_triangle_basis
         generated_factor_product_jet2_order1
     use fortfem_generated_factor_product_jet3_order2, only: &
         generated_factor_product_jet3_order2
-    use fortnum_polynomial, only: lagrange_weights, lagrange_deriv_weights
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     implicit none
@@ -16,6 +15,15 @@ module kin6d_triangle_basis
     public :: triangle_basis_jet, cubic_segment_roots, cubic_segment_stationary
     public :: triangle_bernstein_controls
     real(dp), parameter :: segment_nodes(4) = [0.0_dp, 1.0_dp/3, 2.0_dp/3, 1.0_dp]
+    ! Derivatives of the cubic Lagrange basis on segment_nodes at t = 0, 1/2,
+    ! 1 (columns), and the barycentric constants 1/prod_(k/=i)(x_i - x_k);
+    ! all exact binary fractions.
+    real(dp), parameter :: segment_slopes(4, 3) = reshape([ &
+        -5.5_dp, 9.0_dp, -4.5_dp, 1.0_dp, &
+        0.125_dp, -3.375_dp, 3.375_dp, -0.125_dp, &
+        -1.0_dp, 4.5_dp, -9.0_dp, 5.5_dp], [4, 3])
+    real(dp), parameter :: segment_barycentric(4) = &
+        [-4.5_dp, 13.5_dp, -13.5_dp, 4.5_dp]
 contains
     pure subroutine triangle_bernstein_controls(values, controls)
         real(dp), intent(in) :: values(:)
@@ -99,11 +107,10 @@ contains
         real(dp), intent(in) :: values(4)
         real(dp), intent(out) :: roots(2)
         integer, intent(out) :: count
-        real(dp) :: g(3), weights(4), a, b, c, discriminant, q, trial(2)
+        real(dp) :: g(3), a, b, c, discriminant, q, trial(2)
         integer :: j
         do j = 1, 3
-            call lagrange_deriv_weights(4, real(j - 1, dp)/2, segment_nodes, weights)
-            g(j) = dot_product(weights, values - values(1))
+            g(j) = dot_product(segment_slopes(:, j), values - values(1))
         end do
         a = 2*(g(1) + g(3) - 2*g(2)); b = g(3) - g(1) - a; c = g(1)
         count = 0; roots = 0
@@ -161,9 +168,12 @@ contains
     contains
         pure function polynomial(t) result(value)
             real(dp), intent(in) :: t
-            real(dp) :: value, weights(4)
-            call lagrange_weights(4, t, segment_nodes, weights)
-            value = dot_product(weights, values - level)
+            real(dp) :: value, d(4)
+            d = t - segment_nodes
+            value = segment_barycentric(1)*d(2)*d(3)*d(4)*(values(1) - level) &
+                + segment_barycentric(2)*d(1)*d(3)*d(4)*(values(2) - level) &
+                + segment_barycentric(3)*d(1)*d(2)*d(4)*(values(3) - level) &
+                + segment_barycentric(4)*d(1)*d(2)*d(3)*(values(4) - level)
         end function
     end subroutine
 end module
