@@ -39,7 +39,8 @@ module kin6d_nonnested_coupled
     ! g_par = g0 w/w_ref with w = R J.B/B_phi so that J.B = g_par V B_phi/
     ! (2 pi R) with V = 2 pi w_ref/g0 (the Pfirsch-Schlueter current included).
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
+        ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad, &
         meridian_weight_i
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t
@@ -49,6 +50,7 @@ module kin6d_nonnested_coupled
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
         FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND
+    use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
@@ -385,12 +387,15 @@ contains
         type(nc_layout_t) :: lay
         type(nc_ops_t) :: ops
         type(csc_t) :: jac
+        type(sparse_solver_t) :: solver
         real(dp), allocatable :: r(:), dx(:), trial(:), scale(:), rt(:), load(:)
         logical, allocatable :: mask(:)
         integer, allocatable :: rep(:)
         real(dp) :: target, merit, merit_trial, alpha, w(5)
         integer :: it, steps, st, ls
+        logical :: factored
         status = 1
+        factored = .false.
         target = 1.0e-11_dp; steps = 30
         if (present(tol)) target = tol
         if (present(max_steps)) steps = min(max_steps, 40)
@@ -410,9 +415,9 @@ contains
         if (st /= 0) return
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)
-            if (st /= 0) return
+            if (st /= 0) exit
             call jacobian_ops(field, problem, ops, x, jac, st)
-            if (st /= 0) return
+            if (st /= 0) exit
             ! Normwise backward error |r|/(|J||x| + |load|): the load keeps
             ! the pressure rows scaled when the seed has p = 0.
             scale = abs_matvec(jac, magnitude(x, lay)) + load
@@ -421,9 +426,9 @@ contains
             report%history(it) = maxval(w); report%residual = w
             report%newton_steps = it
             if (maxval(w) <= target) exit
-            if (it == steps) return
-            call lu_solve(jac, mask, rep, -r, dx, st)
-            if (st /= 0) return
+            if (it == steps) exit
+            call newton_step(jac, mask, rep, -r, solver, factored, dx, st)
+            if (st /= 0) exit
             ! The line search scales by |J|(|x| + |dx|): a block that is zero
             ! in x (p or Phi of a vacuum seed) is scaled by its step.
             scale = abs_matvec(jac, magnitude(abs(x) + abs(dx), lay)) + load
@@ -441,9 +446,14 @@ contains
                 end if
                 alpha = alpha/2
             end do
-            if (ls > 12) return
+            if (ls > 12) then
+                st = 1
+                exit
+            end if
             x = trial
         end do
+        if (factored) call sparse_destroy(solver)
+        if (st /= 0 .or. maxval(w) > target) return
         call nc_store(field, x, st)
         if (st /= 0) return
         report%voltage = x(lay%iv)
@@ -915,25 +925,89 @@ contains
         end do
     end subroutine
 
-    subroutine lu_solve(a, fixed, rep, rhs, x, status)
-!$      use omp_lib, only: omp_get_max_threads
-        ! General sparse LU (the Jacobian is not symmetric) of the reduced
-        ! system: fixed dofs have zero increment, tied dofs share the
-        ! increment of their representative (rows summed, columns summed).
+    subroutine newton_step(a, fixed, rep, rhs, solver, factored, x, status)
+        ! Newton increment from the reduced system: fixed dofs have zero
+        ! increment, tied dofs share the increment of their representative
+        ! (rows summed, columns summed). The sparse LU of an earlier Jacobian
+        ! of the same solve is kept as a right preconditioner of GMRES on the
+        ! current exact Jacobian; the step is accepted only when the
+        ! residual of the current reduced system falls below gmres_tol
+        ! relative to the right-hand side, otherwise the current Jacobian is
+        ! factored and the step is the direct solve, as without reuse.
         type(csc_t), intent(in) :: a
         logical, intent(in) :: fixed(:)
         integer, intent(in) :: rep(:)
         real(dp), intent(in) :: rhs(:)
+        type(sparse_solver_t), intent(inout) :: solver
+        logical, intent(inout) :: factored
         real(dp), allocatable, intent(out) :: x(:)
         integer, intent(out) :: status
+        real(dp), parameter :: gmres_tol = 1.0e-10_dp
+        integer, parameter :: gmres_max = 20
         type(csc_t) :: reduced
-        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: st
+        real(dp), allocatable :: b(:), y(:)
+        real(dp) :: bnorm, rnorm
+        integer :: info, iterations
+        status = 1
+        call reduced_system(a, fixed, rep, reduced, status)
+        if (status /= 0) return
+        status = 1
+        ! rhs is already reduced (tied rows summed, the others zero).
+        b = merge(0.0_dp, rhs, fixed)
+        allocate (y(size(b)))
+        y = 0
+        bnorm = norm2(b)
+        if (factored .and. bnorm > 0) then
+            call real_fgmres_operator(apply, precondition, b/bnorm, y, gmres_tol, &
+                gmres_max, gmres_max, info, iterations, rnorm)
+            if (info == KRYLOV_OK .and. all(ieee_is_finite(y))) then
+                x = bnorm*y(rep)
+                status = 0
+                return
+            end if
+        end if
+        if (factored) call sparse_destroy(solver)
+        factored = .false.
+        call factor_reduced(reduced, solver, status)
+        if (status /= 0) return
+        status = 1
+        factored = .true.
+        call sparse_solve(solver, b, y, st)
+        if (.not. status_ok(st)) return
+        x = y(rep)
+        if (.not. all(ieee_is_finite(x))) return
+        status = 0
+    contains
+        subroutine apply(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            output = csc_matvec(reduced, input)
+        end subroutine
+
+        subroutine precondition(input, output)
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            type(fortsparse_status_t) :: pst
+            call sparse_solve(solver, input, output, pst)
+            if (.not. status_ok(pst)) output = ieee_value(1.0_dp, ieee_quiet_nan)
+        end subroutine
+    end subroutine
+
+    subroutine reduced_system(a, fixed, rep, reduced, status)
+        ! The Jacobian with the Dirichlet and tie reductions applied: unit
+        ! rows and columns for fixed and non-representative dofs.
+        type(csc_t), intent(in) :: a
+        logical, intent(in) :: fixed(:)
+        integer, intent(in) :: rep(:)
+        type(csc_t), intent(out) :: reduced
+        integer, intent(out) :: status
         type(fortsparse_status_t) :: st
         integer, allocatable :: row(:), col(:)
-        real(dp), allocatable :: val(:), b(:), y(:)
+        real(dp), allocatable :: val(:)
         integer :: n, j, p, count
-        n = size(rhs); status = 1
-        allocate (row(a%nnz + n), col(a%nnz + n), val(a%nnz + n), y(n))
+        n = size(fixed); status = 1
+        allocate (row(a%nnz + n), col(a%nnz + n), val(a%nnz + n))
         count = 0
         do j = 1, n
             if (fixed(j) .or. rep(j) /= j) then
@@ -951,6 +1025,17 @@ contains
         call csc_from_triplet(n, n, row(:count), col(:count), val(:count), &
             reduced, st)
         if (.not. status_ok(st)) return
+        status = 0
+    end subroutine
+
+    subroutine factor_reduced(reduced, solver, status)
+!$      use omp_lib, only: omp_get_max_threads
+        ! General sparse LU (the Jacobian is not symmetric).
+        type(csc_t), intent(in) :: reduced
+        type(sparse_solver_t), intent(inout) :: solver
+        integer, intent(out) :: status
+        type(fortsparse_status_t) :: st
+        status = 1
         if (gs_direct_available()) then
             ! Threaded MUMPS unsymmetric LU, nested dissection.
             if (.not. gs_direct_mpi_ready()) return
@@ -963,13 +1048,6 @@ contains
         end if
         call sparse_factor(solver, reduced, st)
         if (.not. status_ok(st)) return
-        ! rhs is already reduced (tied rows summed, the others zero).
-        b = merge(0.0_dp, rhs, fixed)
-        call sparse_solve(solver, b, y, st)
-        call sparse_destroy(solver)
-        if (.not. status_ok(st)) return
-        x = y(rep)
-        if (.not. all(ieee_is_finite(x))) return
         status = 0
     end subroutine
 end module kin6d_nonnested_coupled
