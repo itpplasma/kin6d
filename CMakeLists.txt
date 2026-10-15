@@ -502,6 +502,18 @@ target_link_libraries(test_gs_checked_majorant PRIVATE kin6d_equilibrium)
 add_test(NAME grad_shafranov_checked_bdm_majorant COMMAND test_gs_checked_majorant)
 set_tests_properties(grad_shafranov_checked_bdm_majorant PROPERTIES
     TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
+add_executable(test_gs_checked_source_remainder test/test_gs_checked_source_remainder.f90)
+target_link_libraries(test_gs_checked_source_remainder PRIVATE kin6d_equilibrium)
+target_compile_options(test_gs_checked_source_remainder PRIVATE
+    -fno-fast-math -ffp-contract=off)
+add_test(NAME grad_shafranov_checked_source_remainder
+    COMMAND test_gs_checked_source_remainder)
+set_tests_properties(grad_shafranov_checked_source_remainder PROPERTIES
+    TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+add_test(NAME grad_shafranov_checked_source_study
+    COMMAND test_gs_checked_source_remainder study)
+set_tests_properties(grad_shafranov_checked_source_study PROPERTIES
+    TIMEOUT 300 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 set_property(SOURCE src/generated/kin6d_gs_error_leaves.f90 APPEND PROPERTY
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_gs_error_leaves test/test_gs_error_leaves.f90)
