@@ -197,13 +197,17 @@ patch problems are O(N) and parallel; any H(div)/H(curl) reconstruction gives
 a valid bound, so local solve errors only loosen it, and the measured
 divergence defect absorbs algebraic and load-quadrature inconsistency. The
 sampled paths retain approximate status because their non-polynomial
-quadrature is unchecked. For affine P1/P2 constant-profile GS, a separate
+quadrature is unchecked. For affine P1--P3 constant-profile GS, a separate
 strict audit (FortFEM `verified_bernstein_majorant`) turns the sampled RTp
 flux into an exact H(div) Bernstein field, bounds the 1/R weights by chords
 and integrates the resulting polynomials exactly in outward interval
 arithmetic. Its certified radius is reported in place of the sampled one; it
-is not a check of the sampled quadrature. Other source/geometry families
-remain approximate.
+is not a check of the sampled quadrature. A fixed-source callback may now
+supply a Bernstein polynomial plus a proved whole-cell numerator remainder;
+FortFEM adds its weighted L2 norm by Minkowski in outward arithmetic. The GS
+wrapper `gs_checked_fixed_source_majorant` exposes this conditional guarantee.
+Automatic profile-law enclosures, mapped geometry and Neumann traces remain
+unavailable in the strict audit; their sampled paths remain approximate.
 
 Observable bands use `Q_h + r(z_h) +- M_psi*M_z`, with both majorants
 equilibrated and one adjoint solve per goal. Nonlinear and free-boundary
@@ -313,7 +317,7 @@ remainders.
 | Outward global GS coercivity `1-L*C_F^2` | Affine fixed-Dirichlet, one absolute-flux polynomial | Refuses noncoercivity, unbounded positive slope, curved/normalized/multiple-piece laws; residual quadrature remains separate |
 | DWR, enriched adjoint | Indicator; nonlinear primal only | Equals a P(p+1) re-solve for linear problems; misses energy goals; radius does not shrink |
 | p-, h-refined re-solve, Richardson | Reference checks | Not a bound; Richardson unreliable on non-nested meshes |
-| Outward Bernstein audit of the RTp flux | Supported continuous energy certificate | Affine P1/P2, polynomial source numerator, Dirichlet only |
+| Outward Bernstein audit of the RTp flux | Supported continuous energy certificate | Affine P1--P3; polynomial numerator or caller-proved remainder; homogeneous Dirichlet only. Mapped/Neumann and automatic profile enclosures unavailable |
 | Free-boundary FEM-BEM interface | Practical finite trace-space indicator | Continuous exterior remainder `unavailable-bem-remainder`; enriched flux residual norms are not upper bounds |
 | Per-mode sheet interpolation lift | Practical correction for `G - I_k G` | Needs `dG/dtau`; sampled quadrature; exact exterior unavailable |
 
@@ -321,14 +325,25 @@ The fixed-boundary measurements behind the table are on a manufactured GS box at
 threads and up to 7.6e5 interior DOF. The sampled equilibrated bound has
 efficiency 1.044--1.08 (P1) and 1.017--1.04 (P2); the certified audit has
 1.045--1.12 (P1) and 1.018--1.08 (P2), against 7 (P1) and 140--7000 (P2) for
-the former RT0 audit. On the constant-profile production path the certified
-radius exceeds the sampled one by at most 0.05%. Estimator and audit cost
+the former RT0 audit. On the measured P1/P2 constant-profile production
+path the certified radius exceeds the sampled one by at most 0.05%. Estimator and audit cost
 grow with DOF exponents 0.97--1.06. At 7.6e5 DOF they cost 20% and 15% (P1)
 and 15% and 4% (P2) of mesh, assembly and the Jacobi-CG solve, whose own
 exponent is 1.55--1.64. From 1 to 16 threads at 1.9e5 DOF the estimator
 speeds up 7.3--8.1 times and the audit 10 times, on a shared host. Goal bands with
 equilibrated majorants are 3--8 times the true error. An enriched DWR
 correction reproduced the P(p+1) primal result.
+
+The explicit source-tail extension is checked separately on a quartic GS
+manufactured state with a rational source numerator. On P1--P3 its certified
+radius is within 3.7% of the sampled one on every tested mesh. At 71,293 P3
+interior DOF the index is 1.009 and excess 0.07%; repeated 1/2/4-thread audits
+show 3.6x speedup, with measured work exponents 0.96--1.03 on the two largest
+meshes. On this shared host the audit costs 83--116% of factorization/solve
+and 31--34% of mesh/assembly/manufactured-load/solve time across two runs.
+Thus the source-tail path has not met the requested small fraction of solve
+cost. See the retained slow study and exact scope in
+[the GS specification](grad-shafranov.md#fixed-source-error-estimator).
 
 Local formulas of these estimators (integrands, geometry factors, reference
 jets) are FortSym-generated like every other project leaf
