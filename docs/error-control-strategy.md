@@ -203,7 +203,11 @@ strong-monotonicity test from a bounded one-sided source slope; unsupported
 normalization or noncoercivity retains frozen-residual status. Fixed-source
 linear goals use an independently solved adjoint and the product majorant.
 Coupled/free-boundary GS uses RT recovery with its existing measured BEM
-interface defect and practical stability estimate. Per-mode Ampere solves
+interface defect and practical stability estimate. The `gs_free` application
+writes this practical estimate, M0/beta with its terms, for its final state.
+The NN1 axisymmetric restriction uses isoparametric RT recovery. Against the
+exact Solov'ev flux its efficiency index is 1.02 at P2 and 1.8 at P3; the
+discrete Dirichlet trace is fixed. Per-mode Ampere solves
 report a coupled discrete residual-energy indicator and optional fixed-trace
 interior reconstruction; the missing exterior and derivative remainders remain
 explicitly unavailable. These results do not certify all MHD operators.
