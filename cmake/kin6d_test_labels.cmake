@@ -448,6 +448,8 @@ kin6d_test_labels(grad_shafranov_error_leaf_oracles fast CLASSES equilibrium
     TARGETS test_gs_error_leaves)
 kin6d_test_labels(gs_free_boundary_equilibrated_quick fast CLASSES equilibrium
     TARGETS test_gs_coupled_majorant)
+kin6d_test_labels(gs_bem_single_layer_reference_residual fast CLASSES equilibrium
+    TARGETS test_gs_bem_residual)
 kin6d_test_labels(gs_fixed_stability_and_linear_goal fast CLASSES equilibrium
     TARGETS test_gs_error_control)
 kin6d_test_labels(gs_verified_nonlinear_coercivity fast CLASSES equilibrium

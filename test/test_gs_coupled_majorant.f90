@@ -301,6 +301,8 @@ contains
         print '(a,i7,a,f8.3,a,f8.3)', '   nodes ', size(psi), '  estimator build s ', &
             real(t1 - t0, dp)/rate, '  majorant s ', real(t2 - t1, dp)/rate
         call require(status == GS_CM_OK, 'coupled majorant')
+        call require(res%exterior_status == 'unavailable-bem-remainder', &
+            'measured interface norm does not bound the continuous BEM remainder')
         if (trim(mode) == 'quick') then
             call gs_coupled_majorant(state, est, psi, linear_source, &
                 bl + 1.0_dp, shifted, status)

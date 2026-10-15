@@ -97,6 +97,8 @@ module kin6d_gs_majorant
         !> Source oscillation plus C_F ||div sigma + Pi_k f||.
         real(dp) :: balance_defect = 0.0_dp
         real(dp) :: neumann_defect = 0.0_dp  !< N
+        ! A finite inverse norm has no control of untested boundary directions.
+        character(32) :: exterior_status = 'unavailable-bem-remainder'
         integer :: iterations = 0
         logical :: converged = .false.
     end type gs_coupled_majorant_t

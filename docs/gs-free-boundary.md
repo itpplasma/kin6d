@@ -85,6 +85,22 @@ bounds; curved cells use the coupled Friedrichs constant.
 The estimate remains practical: S and its inverse norm come from a refined
 reference BEM, the coupled Friedrichs constant is estimated, and integrals use
 ordinary quadrature. Patch recovery does not validate those remaining premises.
+In addition, N tests the residual only against the finite reference trace
+space. A nonzero full-trace residual can annihilate that space, so increasing
+the reference panel count supplies no upper bound on the omitted part.
+`gs_coupled_majorant_t%exterior_status` explicitly retains
+`unavailable-bem-remainder`, independently of the nonlinear stability status.
+
+FortFEM's `bem_residual_factor` and `bem_residual_energy` quantify flux
+enrichment on a common curve: for single-layer matrix V_h and residual
+`r_h=b_h-V_h lambda_H`, the diagnostic is `sqrt(r_h^T V_h^-1 r_h)`.
+It equals the V_h energy of the enriched Galerkin flux correction. With exact
+continuous operators it is a lower bound on the omitted flux error; it is not
+added to M0 as a purported continuous upper bound. The fast
+`gs_bem_single_layer_reference_residual` test checks the correction identity
+on the GS boundary operator and exact recovery in the reference space. The
+independent FortFEM Fourier test exhibits a zero restricted residual with
+nonzero error. Neither test supplies the missing continuous BEM remainder.
 
 Nonlinear free boundary (`gs_fb_majorant`): M0 is the frozen-source majorant at
 psi_h (law in the plasma cells where s < 1, plus a pointwise forcing that must
@@ -254,6 +270,11 @@ law, axis = psi_a - psi_b), `summary.dat`. NetCDF variables:
   `majorant_quadrature_status` (`approximate`) and `majorant_scope`. The claim
   stays practical for the reasons listed under Error estimates; `wall_s`
   excludes the estimator;
+- interface scope/status: `majorant_interface_scope` states that N is a dual
+  norm restricted to the reference-BEM trace space; `majorant_exterior_status`
+  is `unavailable-bem-remainder` for an available practical estimate and the
+  estimator's unavailable status otherwise. No finite continuous exterior
+  radius is supplied;
 - inverse (when `fit /= none`): `fit_status`, `fit_iterations`, `fit_phi`,
   `fit_phi_data`, `fit_phi_reg`, `fit_residual`, `fit_gradient`, `fit_pinned`, and
   the GSVD report `gsvd_values` (ascending), `gsvd_modes`, `gsvd_factor_x`,

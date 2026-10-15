@@ -189,7 +189,8 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_level_geometry.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_level_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_kernel.f90
-    ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_boundary_operators_2d.f90)
+    ${fortfem_SOURCE_DIR}/src/bem/axisymmetric_gs_boundary_operators_2d.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/bem_residual_energy.f90)
 target_link_libraries(kin6d_spatial PUBLIC kin6d_ode kin6d_intervals)
 # The upstream BEM assembly (panel-pair colouring) is threaded with OpenMP.
 if(KIN6D_ENABLE_OPENMP)
@@ -471,6 +472,11 @@ set_tests_properties(gs_free_boundary_p10_coupled_majorant PROPERTIES TIMEOUT 18
 add_test(NAME gs_free_boundary_equilibrated_quick
     COMMAND test_gs_coupled_majorant quick)
 set_tests_properties(gs_free_boundary_equilibrated_quick PROPERTIES TIMEOUT 60
+    PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_bem_residual test/test_gs_bem_residual.f90)
+target_link_libraries(test_gs_bem_residual PRIVATE kin6d_equilibrium)
+add_test(NAME gs_bem_single_layer_reference_residual COMMAND test_gs_bem_residual)
+set_tests_properties(gs_bem_single_layer_reference_residual PROPERTIES TIMEOUT 30
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_fb_large_aspect test/test_gs_fb_large_aspect.f90)
 target_link_libraries(test_gs_fb_large_aspect PRIVATE kin6d)
