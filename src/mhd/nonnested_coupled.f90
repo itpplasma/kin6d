@@ -413,6 +413,7 @@ contains
         if (any(abs(x - x(rep)) > 0)) return
         call source_load(field, problem, lay, ops%nphi, load, st)
         if (st /= 0) return
+        w = huge(1.0_dp)
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)
             if (st /= 0) exit
@@ -453,7 +454,8 @@ contains
             x = trial
         end do
         if (factored) call sparse_destroy(solver)
-        if (st /= 0 .or. maxval(w) > target) return
+        if (st /= 0) return
+        if (maxval(w) > target) return
         call nc_store(field, x, st)
         if (st /= 0) return
         report%voltage = x(lay%iv)
