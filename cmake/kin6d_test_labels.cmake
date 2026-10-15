@@ -101,6 +101,10 @@ kin6d_test_labels(grad_shafranov_equilibrated_flux_majorant fast CLASSES equilib
     TARGETS test_gs_equilibrated_majorant)
 kin6d_test_labels(grad_shafranov_checked_bdm_majorant fast CLASSES equilibrium
     TARGETS test_gs_checked_majorant)
+kin6d_test_labels(grad_shafranov_checked_source_remainder fast CLASSES equilibrium
+    TARGETS test_gs_checked_source_remainder)
+kin6d_test_labels(grad_shafranov_checked_source_study slow CLASSES equilibrium
+    TARGETS test_gs_checked_source_remainder)
 kin6d_test_labels(grad_shafranov_p2_physical_oracles fast CLASSES equilibrium
     TARGETS test_gs_p2)
 kin6d_test_labels(grad_shafranov_p2_gauge_oracles fast CLASSES equilibrium

@@ -127,7 +127,7 @@ contains
         end if
         ! Stability alone cannot upgrade sampled residual norms. An independent
         ! outward audit may establish the full continuous polygon-model bound
-        ! for affine P1/P2 and the fixed constant-profile source only.
+        ! for affine P1--P3 and the fixed constant-profile source only.
         if (eq_status == GS_EQ_OK .and. .not. allocated(certifier%law)) then
             if (.not. associated(certifier%forcing)) then
                 call gs_checked_equilibrated_majorant(certifier%state, &
