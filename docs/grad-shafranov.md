@@ -240,6 +240,30 @@ limit. It prints the flux and balance contributions separately. Recovery uses
 O(DOF) storage and a separate symmetric positive-definite solve; its cost is
 not included in the reported primal mesh/assembly/solve timing.
 
+`kin6d_gs_equilibrated::gs_equilibrated_majorant` is the scalable
+alternative on straight-sided meshes (P1--P3; curved cells return
+`GS_EQ_CURVED`). FortFEM's `fortfem_equilibrated_flux_2d` solves one small
+dense RT_p saddle-point problem per vertex patch, so there is no global solve
+and the cost is linear in the mesh size. The Prager--Synge bound
+`||sqrt(R)(sigma-grad(psi)/R)|| + oscillation + C_F||div(sigma)+Pi_p f||`
+holds for any H(div) flux, so local solve errors only loosen it. Its constants
+are guaranteed: `1/max_T R` at the affine cell's vertices for the local
+Payne--Weinberger term and the bounding-box Friedrichs constant times
+`sqrt(Rmax)`; the measured divergence defect also absorbs algebraic and
+load-quadrature inconsistencies. The remaining non-rigorous step is the
+quadrature of the rational `1/R` and source integrands, so the claim is an
+approximate bound, not a certificate.
+
+`grad_shafranov_equilibrated_flux_majorant` checks the bound against the exact
+weighted energy error on a manufactured R x Z box and requires
+efficiency at most 1.15 and the h^p rate. Measured on that box (4 threads,
+up to 1.9e5 interior DOF), the efficiency index is 1.04 (P1), 1.01--1.03 (P2)
+and 1.01--1.03 (P3), against 1.7--2.1 for the functional majorant. Its cost
+falls from about the primal time on 160 DOF to 25% of the primal
+mesh/assembly/solve time at 1.9e5 DOF, where the functional majorant takes
+seven times the primal time. Patch solves are independent: 1 to 16 threads
+give a 10x speedup at 1.9e5 P2 DOF.
+
 ## Cubic-profile Newton solve on curved P2/P3
 
 `solve_gs_cubic_profiles` uses the same stiffness, geometry and field as
