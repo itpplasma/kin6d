@@ -280,6 +280,12 @@ runtime is rejected through the solver's ordinary failure status. Applications
 that manage MPI must free all solver handles before finalizing it. Sequential
 MUMPS builds retain their mpiseq runtime and need no Fortran MPI module.
 
+FortSparse's default fetched SuperLU shares the selected system BLAS/LAPACK
+with MUMPS. Existing build trees that cached `FORTSPARSE_USE_SYSTEM_DEPS=ON`
+must unset it (`cmake -U FORTSPARSE_USE_SYSTEM_DEPS ...`) to use this default.
+An explicit system-dependency choice remains supported, but prebuilt solvers
+must share the selected BLAS to avoid mixing implementations in one process.
+
 The focused resident workflow above captures and builds the real CMake-only
 consumer, including populated dependency sources; the historical capture
 blocker was not reproduced. Native CMake/CTest remain authoritative. Keep one
