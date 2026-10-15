@@ -363,6 +363,8 @@ kin6d_test_labels(nonnested_n0_solovev_p2 fast CLASSES mhd
     TARGETS test_nonnested_solovev)
 kin6d_test_labels(nonnested_n0_solovev_p3 fast CLASSES mhd
     TARGETS test_nonnested_solovev)
+kin6d_test_labels(nonnested_n0_equilibrated_solovev fast CLASSES mhd
+    TARGETS test_nonnested_error)
 kin6d_test_labels(nn1_spec_case_smoke fast CLASSES mhd TARGETS nn1_spec_case)
 kin6d_test_labels(nonnested_vacuum_helical_coil_island slow CLASSES mhd
     TARGETS test_nonnested_vacuum)
