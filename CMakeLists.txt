@@ -1313,6 +1313,12 @@ target_link_libraries(test_mhd_ampere_error PRIVATE kin6d)
 add_test(NAME mhd_ampere_n_error_status COMMAND test_mhd_ampere_error)
 set_tests_properties(mhd_ampere_n_error_status PROPERTIES TIMEOUT 30
     ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+add_executable(test_mhd_ampere_sheet_error test/test_mhd_ampere_sheet_error.f90)
+target_link_libraries(test_mhd_ampere_sheet_error PRIVATE kin6d)
+add_test(NAME mhd_ampere_n_sheet_coupled_equilibrated
+    COMMAND test_mhd_ampere_sheet_error)
+set_tests_properties(mhd_ampere_n_sheet_coupled_equilibrated PROPERTIES TIMEOUT 60
+    PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
 target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
 add_test(NAME mhd_ampere_n_exterior_manufactured COMMAND test_mhd_ampere_n)

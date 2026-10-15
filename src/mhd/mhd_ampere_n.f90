@@ -36,13 +36,31 @@ module kin6d_mhd_ampere_n
     !! measure R dR dZ (the 2 pi of the phi integral is dropped throughout).
     !! Complex amplitudes follow kin6d_coils_3d: a field X(R, Z) e^{i n phi}
     !! stands for the physical field X e^{i n phi} + c.c.
+    !!
+    !! Coupled error (ampere_n_coupled_error).  The equilibrated bound of
+    !! fortfem_equilibrated_hcurl_meridian_n with a free trace bounds the
+    !! energy |||A - A_h|||^2 = ||curl_n e||^2 + <C e, S^{-1} C e> of the
+    !! coupled problem with this (Galerkin) S.  For real test fields
+    !! (C v)_i = i n int psi_i (v . t) ds (R B . n = i n v . t), so the exterior
+    !! functional -<C v, mu> is the boundary load G_b = i n mu(tau) on each
+    !! panel; with mu = S^{-1} C A_h the exterior (Steklov) term of the bound
+    !! ||mu - S^{-1} C A_h||_S is zero by construction, and the P2 trace mu is
+    !! represented exactly by V0 of fsd for fsd%k >= 2.  Optional sheet loads
+    !! (int G (v . t) dl on oriented interior edges, the form of
+    !! ring_sheet_load) enter the same reconstruction.  The bound is for the
+    !! problem with the discrete exterior operator and the V0-interpolated
+    !! sheet density; the remainder of the exact exterior, the quadrature
+    !! and the sheet-data interpolation (reported as load_defect) are not
+    !! enclosed: claim 'practical-discrete-exterior'.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_op_complex, &
         meridian_stiffness, meridian_point_basis_t, meridian_point_basis_init, &
         meridian_point_basis, meridian_zcsc_matmul, meridian_field_i
     use fortfem_equilibrated_hcurl_meridian_n, only: &
-        meridian_hcurl_estimate_t, meridian_hcurl_equilibrated_bound, HCURL_OK
+        meridian_hcurl_estimate_t, meridian_hcurl_equilibrated_bound, HCURL_OK, &
+        meridian_edge_load_i
+    use fortfem_axisymmetric_gs_boundary_operators_2d, only: p2_basis
     use fortfem_meridian_magnetic_coupling, only: meridian_boundary_t, &
         meridian_boundary_build, meridian_flux_pairing
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_operators_t
@@ -74,6 +92,14 @@ module kin6d_mhd_ampere_n
         character(len=32) :: continuous_claim = 'unavailable-exterior-remainder'
         character(len=32) :: derivative_claim = 'unavailable'
         logical :: exterior_remainder_available = .false.
+        !> Coupled (free-trace) reconstruction with the discrete exterior;
+        !> bound = (||H - B_h||^2 + steklov_term^2)^(1/2).
+        type(meridian_hcurl_estimate_t) :: coupled
+        real(dp) :: coupled_bound = huge(1.0_dp)
+        real(dp) :: steklov_term = huge(1.0_dp)
+        integer :: coupled_status = -1
+        character(len=32) :: coupled_claim = 'unavailable'
+        character(len=40) :: steklov_status = 'unavailable'
     end type ampere_n_error_t
 
     type, public :: ampere_n_t
@@ -95,7 +121,7 @@ module kin6d_mhd_ampere_n
     end type ampere_n_t
 
     public :: ampere_n_build
-    public :: ampere_n_error, ampere_n_equilibrated_error
+    public :: ampere_n_error, ampere_n_equilibrated_error, ampere_n_coupled_error
     public :: ampere_n_solve
     public :: ampere_n_curl
     public :: ampere_n_trace
@@ -393,6 +419,98 @@ contains
         if (status /= HCURL_OK) return
         estimate%interior_claim = 'indicator-fixed-tangential-trace'
     end subroutine ampere_n_equilibrated_error
+
+    subroutine ampere_n_coupled_error(fs, fsd, amp, a, current, estimate, status, &
+            sheet_cell, sheet_edge, sheet_load)
+        !! Equilibrated bound of the coupled problem (module header) for the
+        !! candidate a with the mu0-scaled volume current and optional sheet
+        !! loads (oriented interior edges, density as in ring_sheet_load).
+        !! fsd: potential complex on the same mesh, order >= 2 (>= k + 1 for
+        !! efficiency). Callbacks must be thread safe (current) or are called
+        !! serially (sheet_load).
+        type(meridian_feec_t), intent(in) :: fs, fsd
+        type(ampere_n_t), intent(in) :: amp
+        complex(dp), intent(in) :: a(:)
+        procedure(meridian_field_i) :: current
+        type(ampere_n_error_t), intent(inout) :: estimate
+        integer, intent(out) :: status
+        integer, intent(in), optional :: sheet_cell(:), sheet_edge(:)
+        procedure(meridian_edge_load_i), optional :: sheet_load
+        complex(dp), allocatable :: full_a(:), mu(:)
+        integer, allocatable :: cells(:), edges(:), panel(:, :)
+        integer :: np, p, nsheet
+        procedure(meridian_edge_load_i), pointer :: sheet_ptr
+
+        estimate%coupled = meridian_hcurl_estimate_t()
+        estimate%coupled_claim = 'unavailable'
+        estimate%steklov_status = 'unavailable'
+        estimate%coupled_bound = huge(1.0_dp)
+        estimate%steklov_term = huge(1.0_dp)
+        estimate%coupled_status = -1
+        status = 1
+        if (.not. amp%factored) return
+        if (size(a) /= amp%nn .or. fs%nn /= amp%nn) return
+        if (fsd%k < 2) return
+        nsheet = 0
+        if (present(sheet_cell)) then
+            if (.not. present(sheet_edge) .or. .not. present(sheet_load)) return
+            if (size(sheet_edge) /= size(sheet_cell)) return
+            nsheet = size(sheet_cell)
+            sheet_ptr => sheet_load
+        end if
+        np = amp%bd%n_panels
+        ! mu = S^{-1} C A_h on the P2 trace dofs of the boundary curve
+        mu = matmul(cmplx(amp%sinv, 0.0_dp, dp), matmul(amp%cb, a(amp%bdof)))
+        allocate (panel(3, fs%mm%topology%n_triangles))
+        panel = 0
+        do p = 1, np
+            panel(amp%bd%edge(p), amp%bd%tri(p)) = p
+        end do
+        allocate (cells(nsheet + np), edges(nsheet + np))
+        if (nsheet > 0) then
+            cells(:nsheet) = sheet_cell
+            edges(:nsheet) = sheet_edge
+        end if
+        cells(nsheet + 1:) = amp%bd%tri
+        edges(nsheet + 1:) = amp%bd%edge
+        allocate (full_a(fs%sp(1)%ndof))
+        full_a = (0.0_dp, 0.0_dp)
+        full_a(:amp%nn) = a
+        call meridian_hcurl_equilibrated_bound(fs, fsd, amp%n, full_a, current, &
+            estimate%coupled, status, edge_cell=cells, edge_local=edges, &
+            edge_load=loads, free_trace=.true.)
+        estimate%coupled_status = status
+        if (status /= HCURL_OK) return
+        ! mu equals S^{-1} C A_h: the exterior term of the bound vanishes.
+        estimate%steklov_term = 0.0_dp
+        estimate%steklov_status = 'zero-by-construction-discrete-S'
+        estimate%coupled_bound = estimate%coupled%bound
+        estimate%coupled_claim = 'practical-discrete-exterior'
+    contains
+        subroutine loads(cell, edge, tau, g)
+            integer, intent(in) :: cell, edge
+            real(dp), intent(in) :: tau
+            complex(dp), intent(out) :: g
+            real(dp) :: psi(3), dpsi(3)
+            integer :: pp, k, idx
+
+            pp = panel(edge, cell)
+            if (pp == 0) then
+                g = (0.0_dp, 0.0_dp)
+                if (nsheet > 0) call sheet_ptr(cell, edge, tau, g)
+                return
+            end if
+            ! boundary: G_b = i n mu(tau), mu in the P2 panel basis
+            call p2_basis(tau, psi, dpsi)
+            g = (0.0_dp, 0.0_dp)
+            do k = 1, 3
+                idx = 2*pp - 2 + k
+                if (idx > 2*np) idx = 1
+                g = g + psi(k)*mu(idx)
+            end do
+            g = cmplx(0.0_dp, real(amp%n, dp), dp)*g
+        end subroutine loads
+    end subroutine ampere_n_coupled_error
 
     subroutine ampere_n_curl(amp, a, b2)
         !! V2 coefficients of B = curl_n A.

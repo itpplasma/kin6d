@@ -55,10 +55,11 @@ program gs_response_3d
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
         ring_labels_smooth
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
-        ampere_n_curl
+        ampere_n_curl, ampere_n_error_t, ampere_n_coupled_error
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_points, ring_flux_harmonic, ring_flux_from_values, &
-        ring_sheet_load, ring_area, resonant_surfaces_missing
+        ring_sheet_load, ring_area, resonant_surfaces_missing, ring_sheet_edges, &
+        ring_sheet_density
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response, sample_field
     use kin6d_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
@@ -98,20 +99,27 @@ program gs_response_3d
     real(dp) :: omega_drive = 0.0_dp, layer_nu = 0.0_dp, eta_scale = 1.0_dp
     logical :: inertia_q2 = .false.
     logical :: zero_pressure = .false.
+    !! Equilibrated bound of every unit-sheet Ampere solve (prefix_sheet_error.dat)
+    logical :: error_estimate = .true.
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
         boundary_sheet, qlow, rat_pad, rat_grade, edge_moved_current, closure, &
         layer_delta, layer_ratio, layer_nfit, spot, rat_auto, export_psin, &
         export_np, export_mmax, profiles, omega_drive, layer_nu, eta_scale, &
-        inertia_q2, zero_pressure
+        inertia_q2, zero_pressure, error_estimate
 
     type(psi_grid_t) :: g
     type(coil_set_t) :: set
     type(surface_t) :: sref, surf
     type(flux_mesh_t) :: fm
-    type(meridian_feec_t) :: fs
+    type(meridian_feec_t) :: fs, fsd
     type(meridian_point_basis_t) :: pb
+    ! sheet of the current error estimate (callback state) and its output
+    type(ring_angles_t) :: err_ra
+    integer :: err_m = 0, uerr = 0
+    integer, allocatable :: err_cells(:)
+    real(dp), allocatable :: err_ta(:), err_tb(:)
     type(ampere_n_t) :: amp
     type(ring_angles_t), allocatable :: ra(:)
     real(dp), allocatable :: w(:), ul(:), u_rat(:), psin_rat(:), q_rat(:)
@@ -263,6 +271,17 @@ program gs_response_3d
     call ampere_n_build(fs, n, amp, st)
     if (st /= 0) error stop 'Ampere operator'
     call meridian_point_basis_init(fs, pb, st)
+    if (error_estimate) then
+        ! potential space of order k + 1 with the quadrature of fs
+        call meridian_feec_build(fm%mm, order + 1, fsd, st, &
+            quad_degree=2*order + 2*fs%g + 2)
+        if (st /= 0) error stop 'potential FEEC'
+        open (newunit=uerr, file=trim(prefix)//'_sheet_error.dat', status='replace')
+        write (uerr, '(a)') '# kind ring m bound[T m^(3/2), R dR dZ] |B_h| '// &
+            'bound/|B_h| load_defect steklov_term status claim steklov_status '// &
+            'scope: coupled per-n Ampere with the discrete Galerkin exterior; '// &
+            'exact-exterior remainder and quadrature unavailable'
+    end if
     call cpu_time(t1)
     write (*, '(a,i0,a,i0,a,i0,a,f10.2,a)') 'triangles ', &
         fs%mm%topology%n_triangles, ', unknowns ', amp%nn, ', boundary panels ', &
@@ -317,6 +336,7 @@ program gs_response_3d
         call ampere_n_solve(amp, f, a, st)
         if (st /= 0) error stop 'sheet solve'
         call note_ampere_indicator()
+        call sheet_error('rational', ring_of(i), ra(i), m_rat(i))
         block
             complex(dp), allocatable :: bb(:)
             call ampere_n_curl(amp, a, bb)
@@ -346,6 +366,7 @@ program gs_response_3d
             call ampere_n_solve(amp, f, a, st)
             if (st /= 0) error stop 'edge sheet solve'
             call note_ampere_indicator()
+            call sheet_error('edge', cl%sheet_ring(i), cl%sheet_ra(i), cl%sheet_m(i))
             block
                 complex(dp), allocatable :: bb(:)
                 call ampere_n_curl(amp, a, bb)
@@ -494,10 +515,59 @@ program gs_response_3d
         write (*, '(a,f10.2,a)') 'coil drive cpu ', t1 - t0, ' s'
     end do
     close (ur)
+    if (uerr /= 0) close (uerr)
     if (frob) close (ulay)
     if (resist) close (ures)
 
 contains
+    subroutine sheet_error(label, ring, angles, m)
+        !! Coupled equilibrated bound of the unit-sheet solution a on ring
+        !! (kin6d_mhd_ampere_n, ampere_n_coupled_error); one output row.
+        character(*), intent(in) :: label
+        integer, intent(in) :: ring, m
+        type(ring_angles_t), intent(in) :: angles
+        type(ampere_n_error_t) :: est
+        integer :: ste, e
+
+        if (.not. error_estimate) return
+        call ring_sheet_edges(fm, ring, err_cells, err_ta, err_tb)
+        err_ra = angles
+        err_m = m
+        est = amp%error
+        call ampere_n_coupled_error(fs, fsd, amp, a, no_current, est, ste, &
+            err_cells, [(1, e=1, size(err_cells))], unit_sheet)
+        write (uerr, '(a, 1x, i0, 1x, i0, 5es14.6, 1x, i0, 2(1x, a))') label, ring, &
+            m, est%coupled_bound, est%coupled%field_norm, &
+            est%coupled_bound/max(est%coupled%field_norm, tiny(1.0_dp)), &
+            est%coupled%load_defect, est%steklov_term, ste, &
+            trim(est%coupled_claim), trim(est%steklov_status)
+        write (*, '(a, a, a, i0, a, es10.3, a, a)') 'sheet error (', label, &
+            ') ring ', ring, ': bound/|B_h| ', &
+            est%coupled_bound/max(est%coupled%field_norm, tiny(1.0_dp)), ' ', &
+            trim(est%coupled_claim)
+    end subroutine sheet_error
+
+    subroutine no_current(x, jv)
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: jv(3)
+        jv = cmplx(0.0_dp*x(1), 0.0_dp, dp)
+    end subroutine no_current
+
+    subroutine unit_sheet(cell, edge, tau, g_out)
+        !! Density of the unit sheet of ring_sheet_load on the current ring.
+        integer, intent(in) :: cell, edge
+        real(dp), intent(in) :: tau
+        complex(dp), intent(out) :: g_out
+        integer :: ie
+
+        g_out = (0.0_dp, 0.0_dp)
+        if (edge /= 1) return
+        ie = findloc(err_cells, cell, dim=1)
+        if (ie == 0) return
+        g_out = ring_sheet_density(err_ra, n, err_m, (1.0_dp, 0.0_dp), &
+            err_ta(ie) + tau*(err_tb(ie) - err_ta(ie)))
+    end subroutine unit_sheet
+
 
     subroutine note_ampere_indicator()
         ampere_solves = ampere_solves + 1

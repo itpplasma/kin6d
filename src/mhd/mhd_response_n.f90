@@ -101,6 +101,7 @@ module kin6d_mhd_response_n
     public :: ring_flux_harmonic
     public :: ring_flux_from_values
     public :: ring_sheet_load
+    public :: ring_sheet_edges, ring_sheet_density
     public :: ring_area
 
 contains
@@ -295,6 +296,35 @@ contains
             end do
         end do
     end subroutine ring_sheet_load
+
+    subroutine ring_sheet_edges(fm, j, cells, theta_a, theta_b)
+        !! Oriented edges (cells(i), local edge 1) of ring j and their end
+        !! angles: the edges of ring_sheet_load, for the equilibrated bound.
+        type(flux_mesh_t), intent(in) :: fm
+        integer, intent(in) :: j
+        integer, allocatable, intent(out) :: cells(:)
+        real(dp), allocatable, intent(out) :: theta_a(:), theta_b(:)
+        integer :: i
+
+        allocate (cells(fm%nth(j)), theta_a(fm%nth(j)), theta_b(fm%nth(j)))
+        do i = 1, fm%nth(j)
+            call flux_mesh_ring_edge(fm, j, i, cells(i), theta_a(i), theta_b(i))
+        end do
+    end subroutine ring_sheet_edges
+
+    pure complex(dp) function ring_sheet_density(ra, n, m, lambda, theta) result(g)
+        !! Density G of ring_sheet_load at ring angle theta: the load is
+        !! int G (v . t) dl along the ring (t counter-clockwise).
+        type(ring_angles_t), intent(in) :: ra
+        integer, intent(in) :: n, m
+        complex(dp), intent(in) :: lambda
+        real(dp), intent(in) :: theta
+        real(dp) :: ths, nu
+
+        call ring_angles_at(ra, theta, ths, nu)
+        g = mu0*cmplx(0.0_dp, n, dp)*lambda &
+            *exp(cmplx(0.0_dp, n*(ra%q*ths - nu) - m*ths, dp))
+    end function ring_sheet_density
 
     subroutine resonant_surfaces_missing(g, n, psin_lo, psin_hi, nfine, m_have, &
             psin, q, m)
