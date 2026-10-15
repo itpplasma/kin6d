@@ -194,6 +194,17 @@ equilibrated and one adjoint solve per goal. Nonlinear and free-boundary
 problems add a stability constant; a power-iteration estimate keeps the claim
 approximate.
 
+Production fixed-boundary GS now selects RT equilibration on affine and mapped
+P1--P3 meshes, with explicit legacy fallback. Absolute-flux profile laws have a
+strong-monotonicity test from a bounded one-sided source slope; unsupported
+normalization or noncoercivity retains frozen-residual status. Fixed-source
+linear goals use an independently solved adjoint and the product majorant.
+Coupled/free-boundary GS uses RT recovery with its existing measured BEM
+interface defect and practical stability estimate. Per-mode Ampere solves
+report a coupled discrete residual-energy indicator and optional fixed-trace
+interior reconstruction; the missing exterior and derivative remainders remain
+explicitly unavailable. These results do not certify all MHD operators.
+
 Priorities: (1) the equilibrated bound for each existing operator family (H1
 affine, curved and Neumann, tetrahedral, mixed and SIPG; planar H(curl) and
 the per-n `curl_n` operator); (2) guaranteed stability lower bounds; (3) goal
