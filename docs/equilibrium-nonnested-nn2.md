@@ -647,3 +647,9 @@ not results: P3 nr = 16 to 1e8, and the P3 D3 ladder at 1e6 after nr = 8.
 P3 nr = 16 is therefore open.
 
 Chris&AI
+
+The [production scaling ledger](benchmarks.md#production-estimator-scaling)
+uses an NN1 magnetic state, constant heating and chi_parallel/chi_perp = 1000
+through `nt_solve(..., estimate_error=.true.)`. It verifies equality with the
+separately timed estimator. The production efficiency index is unavailable
+without a true-error oracle; these timings retain the practical claim.

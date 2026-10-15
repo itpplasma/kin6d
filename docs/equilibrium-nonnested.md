@@ -196,11 +196,10 @@ The n > 0 vacuum modes have no bound.
 FortFEM's meridian H(curl) bound applies only to the problem with the
 projected tangential trace. The projection error of that trace has no bound.
 
-FortFEM's arbitrary-point basis evaluator currently allocates scratch arrays
-per query. This limits tracing performance, while the new solver loads and
-D3 cell loops use cached quadrature and OpenMP. A reusable allocation-free
-point-evaluation workspace belongs upstream in FortFEM. It is non-blocking
-for these small readback oracles and no private replacement is introduced.
+FortFEM's campaign branch removes per-query allocation from triangle Lagrange
+evaluation and dispatches P1/P2 to retained generated jets. Other FEEC point
+evaluators still allocate scratch. Further reusable point-evaluation work
+belongs upstream; no private replacement is introduced here.
 
 ## Numerical evidence
 
@@ -266,3 +265,9 @@ contracts. FortFEM should own the point-evaluation workspace and any generic
 commuting seed projection; none is privately duplicated here.
 
 Mapped (phi-dependent) domain: [nn1-mapped-3d.md](nn1-mapped-3d.md).
+
+The [production scaling ledger](benchmarks.md#production-estimator-scaling)
+records NN1 reconstruction/solve ratios and strong scaling on the mapped
+Solov'ev torus. Its geometry-hull preparation now uses OpenMP. The measured
+upstream basis optimization requires the FortFEM campaign branch; the KIN6D
+dependency pin is unchanged.

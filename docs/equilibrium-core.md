@@ -332,3 +332,9 @@ time-to-accuracy measurements):
    hypothesis; NL-3a with offset starts decides it.
 
 Chris&AI
+
+The [production scaling ledger](benchmarks.md#production-estimator-scaling)
+times D3 on a solved GS field. Profile conversion, stress-load conversion
+and estimator geometry hulls use OpenMP. The estimator cost is the paired
+difference between calls with and without `error_estimate`; it includes both
+Riesz-component reconstructions and additional field sampling.
