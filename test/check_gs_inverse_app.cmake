@@ -32,6 +32,28 @@ endif()
 if(NOT F_edge GREATER 1)
     message(FATAL_ERROR "inverse used the forward b0/source seed instead of solving F")
 endif()
+# The inverse state is estimated through the fixed-source equilibrated path;
+# sampled quadrature keeps the claim practical, never certified.
+execute_process(COMMAND "${NCDUMP}" -h "${WORK}/output/grad_shafranov.nc"
+    RESULT_VARIABLE status OUTPUT_VARIABLE header)
+if(NOT status EQUAL 0 OR NOT header MATCHES ":majorant_claim = \"practical estimate\""
+        OR NOT header MATCHES ":majorant_method = \"equilibrated-rt\""
+        OR NOT header MATCHES ":majorant_quadrature_status = \"approximate\"")
+    message(FATAL_ERROR "inverse result lacks the practical fixed-source estimate claim")
+endif()
+execute_process(COMMAND "${NCDUMP}" -v majorant,majorant_stability,majorant_bound,majorant_status
+    "${WORK}/output/grad_shafranov.nc" RESULT_VARIABLE status OUTPUT_VARIABLE data)
+foreach(name majorant majorant_stability majorant_bound majorant_status)
+    string(REGEX MATCH "[\n ]${name} = ([^ ;]+)" match "${data}")
+    if(NOT match)
+        message(FATAL_ERROR "missing inverse estimate ${name}")
+    endif()
+    set(${name} "${CMAKE_MATCH_1}")
+endforeach()
+if(NOT majorant_status EQUAL 5 OR NOT majorant GREATER 0 OR NOT majorant_stability GREATER 0
+        OR NOT majorant_bound GREATER 0)
+    message(FATAL_ERROR "inverse fixed-source estimate is not a positive practical estimate")
+endif()
 file(WRITE "${WORK}/unsupported.nml"
     "&grad_shafranov solve_mode='prescribed_constant_q',element_order=2,pressure_mode='finite_beta',toroidal_flux_target=1 /\n")
 execute_process(COMMAND "${APP}" --config unsupported.nml WORKING_DIRECTORY "${WORK}"

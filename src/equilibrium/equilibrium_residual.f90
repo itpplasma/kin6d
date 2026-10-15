@@ -14,40 +14,104 @@ module kin6d_equilibrium_residual
     ! factorisation) divided by sigma sqrt(V), V the volume of the mesh.
     ! The edge consistency |F_edge - F_vac|/F_vac is a separate gate of the
     ! caller.
+    !
+    ! The dual norm over the finite test space is a lower bound of the dual
+    ! norm over H1_0. With error_estimate the Riesz problem of each displacement
+    ! component, int A grad r . grad v = int f v + g . grad v with A = 2 pi R,
+    ! f = 2 pi c1 and g = 2 pi (c2, c3) (c the pointwise stress load, see
+    ! equilibrium_residual_load), is bounded by FortFEM's equilibrated-flux
+    ! estimate with the discrete flux A grad r_h - g: |||r - r_h||| <= M_j.
+    ! Galerkin orthogonality gives ||R||_*^2 = ||r_h||^2 + sum_j |||r_j - r_h,j|||^2,
+    ! so dual <= dual_upper = sqrt(dual^2 + M^2). The estimator integrals use the
+    ! quadrature rule of degree 2k + 6 on the sampled state and are not
+    ! enclosed: the claim is a practical upper bound, never a certificate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_geometry
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls
     use kin6d_gs_csr, only: csr_matrix_t, gs_csr_build, gs_csr_spd_matrix
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
     use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_BR, EQ_BZ, &
         EQ_BPHI, EQ_P, EQ_VALUES
     use kin6d_equilibrium_core_leaves, only: stress_residual_density
+    use kin6d_equilibrium_core_leaves, only: riesz_source, riesz_coefficient, &
+        riesz_flux, riesz_friedrichs
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
+    use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
+        equilibrated_flux_estimate_t, EQUILIBRATION_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_SUPERLU, FORTSPARSE_SYM_GENERAL
     implicit none
     private
-    public :: equilibrium_residual_t, equilibrium_residual
+    public :: equilibrium_residual_t, equilibrium_residual, equilibrium_residual_load
 
     type :: equilibrium_residual_t
         ! dual = ||R||_* [Pa m^(3/2)], normalized = dual/(sigma sqrt(volume)),
         ! sigma [Pa] and the means over the mesh volume [m^3].
         real(dp) :: dual = 0, sigma = 0, volume = 0, normalized = 0
         real(dp) :: b2_mean = 0, p_mean = 0
+        ! error_estimate only: dual_upper >= ||R||_* over H1_0 (practical, the
+        ! estimator quadrature is not enclosed), riesz_error = M above,
+        ! normalized_upper = dual_upper/(sigma sqrt(volume)); bound_status 0
+        ! when available, -1 when not requested, > 0 when the estimator failed.
+        real(dp) :: dual_upper = huge(1.0_dp), riesz_error = huge(1.0_dp)
+        real(dp) :: normalized_upper = huge(1.0_dp)
+        integer :: bound_status = -1
+        character(len=32) :: claim = 'unavailable-not-requested'
+        character(len=32) :: quadrature_status = 'approximate'
     end type
 contains
-    subroutine equilibrium_residual(eq, mesh, report, status, residual)
+    pure subroutine stress_load(eq, x, values, c)
+        ! Pointwise stress load c(5) per dR dZ of R[xi] = int 2 pi (c1 xi_R +
+        ! c2 d_R xi_R + c3 d_Z xi_R + c4 d_R xi_Z + c5 d_Z xi_Z) dR dZ.
+        type(equilibrium_state_t), intent(in) :: eq
+        real(dp), intent(in) :: x(2), values(:)
+        real(dp), intent(out) :: c(5)
+        call stress_residual_density(x(1), values(EQ_BR), values(EQ_BZ), &
+            values(EQ_BPHI), eq%f_vac/x(1), values(EQ_P), eq%mu0, c(1), c(2), &
+            c(3), c(4), c(5))
+    end subroutine
+
+    subroutine equilibrium_residual_load(eq, points, load, status)
+        ! load(:, k): the five coefficients c of the stress load at points(:, k),
+        ! the integrand of R[xi] per dR dZ before the factor 2 pi (background
+        ! B0 removed). The same leaf feeds the Riesz right-hand side.
+        type(equilibrium_state_t), intent(in) :: eq
+        real(dp), intent(in) :: points(:, :)
+        real(dp), intent(out) :: load(:, :)
+        integer, intent(out) :: status
+        real(dp), allocatable :: values(:, :)
+        integer, allocatable :: statuses(:)
+        integer :: k
+        status = 1
+        if (.not. allocated(eq%field)) return
+        if (size(points, 1) /= 2 .or. size(load, 1) /= 5) return
+        if (size(load, 2) /= size(points, 2)) return
+        if (any(points(1, :) <= 0)) return
+        allocate (values(EQ_VALUES, size(points, 2)), statuses(size(points, 2)))
+        call eq%field%sample(points, values, statuses)
+        if (any(statuses /= 0)) return
+        if (.not. all(ieee_is_finite(values))) return
+        do k = 1, size(points, 2)
+            call stress_load(eq, points(:, k), values(:, k), load(:, k))
+        end do
+        status = 0
+    end subroutine
+
+    subroutine equilibrium_residual(eq, mesh, report, status, residual, &
+                                    error_estimate)
         ! residual(2, node) returns R[phi_node e_R], R[phi_node e_Z] (zero on
-        ! boundary nodes) when present.
+        ! boundary nodes) when present. error_estimate (default .false.) adds
+        ! the equilibrated upper bound of the dual norm over H1_0.
         type(equilibrium_state_t), intent(in) :: eq
         type(gs_state_t), intent(in) :: mesh
         type(equilibrium_residual_t), intent(out) :: report
         integer, intent(out) :: status
         real(dp), intent(out), optional :: residual(:, :)
+        logical, intent(in), optional :: error_estimate
         real(dp), allocatable :: xi(:), eta(:), weight(:), shapes(:, :)
         real(dp), allocatable :: dshape(:, :, :), points(:, :), values(:, :)
         real(dp), allocatable :: measure(:, :), gradient(:, :, :, :)
@@ -115,9 +179,7 @@ contains
                 b2_sum = b2_sum + wq*b2
                 p_sum = p_sum + wq*abs(values(EQ_P, k))
                 volume = volume + wq
-                call stress_residual_density(points(1, k), values(EQ_BR, k), &
-                    values(EQ_BZ, k), values(EQ_BPHI, k), b0, values(EQ_P, k), &
-                    eq%mu0, c(1), c(2), c(3), c(4), c(5))
+                call stress_load(eq, points(:, k), values(:, k), c)
                 ! c is per dR dZ; the measure carries 2 pi R.
                 c = c*wq/points(1, k)
                 do a = 1, nloc
@@ -153,7 +215,114 @@ contains
             if (size(residual, 1) /= 2 .or. size(residual, 2) /= nnode) return
             residual = transpose(rhs)
         end if
+        report%claim = 'unavailable-not-requested'
+        if (present(error_estimate)) then
+            if (error_estimate) call riesz_error_bound(eq, mesh, riesz, report)
+        end if
         status = 0
+    end subroutine
+
+    subroutine riesz_error_bound(eq, mesh, riesz, report)
+        ! Equilibrated-flux bound of both Riesz components (see the header).
+        ! A failure leaves the lower bound intact and reports bound_status > 0.
+        type(equilibrium_state_t), intent(in) :: eq
+        type(gs_state_t), intent(in) :: mesh
+        real(dp), intent(in) :: riesz(:, :)
+        type(equilibrium_residual_t), intent(inout) :: report
+        type(equilibrated_flux_estimate_t) :: estimate
+        real(dp), allocatable :: xi(:), eta(:), w(:), shapes(:, :), dshape(:, :, :)
+        real(dp), allocatable :: x(:, :), load(:, :), coefficient(:, :), f(:, :)
+        real(dp), allocatable :: flux(:, :, :), lower(:), geometry(:, :, :)
+        real(dp), allocatable :: gradient(:, :, :, :)
+        real(dp) :: hessians(2, 2, 10), jac(2, 2), curvature(2, 2, 2), det
+        real(dp) :: inverse(2, 2), controls(2, 10), lo(2), hi(2), cf, slope(2)
+        real(dp) :: squared
+        integer :: nloc, nq, ncell, k, e, g, a, axis, st, failed, comp, q
+
+        report%bound_status = 1
+        report%claim = 'unavailable'
+        nloc = size(mesh%triangles, 1)
+        ncell = size(mesh%triangles, 2)
+        k = mesh%element_order
+        call triangle_duffy_quadrature(2*k + 6, xi, eta, w, st)
+        if (st /= 0) return
+        nq = size(w)
+        allocate (shapes(nloc, nq), dshape(2, nloc, nq))
+        do g = 1, nq
+            call triangle_basis_jet([xi(g), eta(g)], shapes(:, g), dshape(:, :, g), &
+                hessians(:, :, :nloc))
+        end do
+        allocate (geometry(2, nloc, ncell), lower(ncell))
+        lo = huge(1.0_dp); hi = -huge(1.0_dp)
+        do e = 1, ncell
+            geometry(:, :, e) = mesh%points(:, mesh%triangles(:, e))
+            do axis = 1, 2
+                call triangle_bernstein_controls(geometry(axis, :, e), &
+                    controls(axis, :nloc))
+            end do
+            if (minval(controls(1, :nloc)) <= 0) return
+            call riesz_coefficient(minval(controls(1, :nloc)), lower(e))
+            lo = min(lo, minval(controls(:, :nloc), dim=2))
+            hi = max(hi, maxval(controls(:, :nloc), dim=2))
+        end do
+        if (any(hi <= lo)) return
+        call riesz_friedrichs(lo(1), hi(1) - lo(1), hi(2) - lo(2), cf)
+        allocate (x(2, nq*ncell), gradient(2, nloc, nq, ncell))
+        failed = 0
+        !$omp parallel do default(shared) schedule(static) &
+        !$omp& private(e, g, a, q, jac, curvature, det, inverse, st) &
+        !$omp& reduction(max: failed)
+        do e = 1, ncell
+            do g = 1, nq
+                q = g + nq*(e - 1)
+                call triangle_geometry(geometry(:, :, e), [xi(g), eta(g)], x(:, q), &
+                    jac, curvature, det, inverse, st)
+                if (st /= 0) failed = 1
+                do a = 1, nloc
+                    gradient(:, a, g, e) = matmul(transpose(inverse), dshape(:, a, g))
+                end do
+            end do
+        end do
+        !$omp end parallel do
+        if (failed /= 0) return
+        allocate (load(5, nq*ncell), coefficient(nq, ncell), f(nq, ncell), &
+            flux(2, nq, ncell))
+        call equilibrium_residual_load(eq, x, load, st)
+        if (st /= 0) return
+        squared = 0
+        do comp = 1, 2
+            !$omp parallel do default(shared) schedule(static) &
+            !$omp& private(e, g, a, q, slope)
+            do e = 1, ncell
+                do g = 1, nq
+                    q = g + nq*(e - 1)
+                    slope = 0
+                    do a = 2, nloc
+                        slope = slope + (riesz(mesh%triangles(a, e), comp) &
+                            - riesz(mesh%triangles(1, e), comp))*gradient(:, a, g, e)
+                    end do
+                    call riesz_coefficient(x(1, q), coefficient(g, e))
+                    f(g, e) = 0
+                    if (comp == 1) call riesz_source(load(1, q), f(g, e))
+                    call riesz_flux(x(1, q), slope(1), slope(2), &
+                        load(2*comp, q), load(2*comp + 1, q), flux(1, g, e), &
+                        flux(2, g, e))
+                end do
+            end do
+            !$omp end parallel do
+            call equilibrated_flux_estimate(mesh%points, mesh%triangles(1:3, :), k, &
+                xi, eta, w, coefficient, f, flux, lower, cf, estimate, st, &
+                geometry_nodes=geometry)
+            report%bound_status = 2
+            if (st /= EQUILIBRATION_OK) return
+            squared = squared + estimate%bound**2
+        end do
+        report%riesz_error = sqrt(squared)
+        report%dual_upper = sqrt(report%dual**2 + squared)
+        if (report%sigma > 0) report%normalized_upper = &
+            report%dual_upper/(report%sigma*sqrt(report%volume))
+        report%bound_status = 0
+        report%claim = 'practical-upper-bound'
     end subroutine
 
     subroutine solve_riesz(mesh, blocks, rhs, riesz, status)
