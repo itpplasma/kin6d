@@ -447,6 +447,12 @@ add_executable(test_gs_error_leaves test/test_gs_error_leaves.f90)
 target_link_libraries(test_gs_error_leaves PRIVATE kin6d_equilibrium)
 add_test(NAME grad_shafranov_error_leaf_oracles COMMAND test_gs_error_leaves)
 set_tests_properties(grad_shafranov_error_leaf_oracles PROPERTIES TIMEOUT 20)
+target_sources(kin6d_equilibrium PRIVATE src/gs_error_control.f90)
+add_executable(test_gs_error_control test/test_gs_error_control.f90)
+target_link_libraries(test_gs_error_control PRIVATE kin6d)
+add_test(NAME gs_fixed_stability_and_linear_goal COMMAND test_gs_error_control)
+set_tests_properties(gs_fixed_stability_and_linear_goal PROPERTIES
+    TIMEOUT 30 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_equilibrated_majorant test/test_gs_equilibrated_majorant.f90)
 target_link_libraries(test_gs_equilibrated_majorant PRIVATE kin6d)
 add_test(NAME grad_shafranov_equilibrated_flux_majorant
