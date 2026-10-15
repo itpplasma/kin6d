@@ -488,7 +488,7 @@ contains
     end subroutine mercier_zero_beta
 
     subroutine layer_rings_fine_mesh()
-        !! Layer rings graded with layer_extent on a fine mesh (uniform u
+        !! Layer rings graded with layer_xmax on a fine mesh (uniform u
         !! spacing below the outermost fit offset) contain every fit ring
         !! that layer_init requires.
         real(dp), parameter :: delta = 5.0e-4_dp, ratio = 2.0_dp
