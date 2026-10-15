@@ -1,8 +1,9 @@
 program test_gs_error_leaves
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, real128
     use fortnum_interval, only: interval_t, interval, contains
     use kin6d_grad_shafranov_leaves, only: gs_source_interval
-    use kin6d_gs_error_leaves, only: &
+    use kin6d_gs_error_leaves, only: gs_error_coefficient_interval, &
+        gs_error_friedrichs_interval, gs_error_friedrichs_squared_interval, &
         gs_error_coefficient, gs_error_coefficient_jvp, &
         gs_error_coefficient_vjp, gs_error_flux, &
         gs_error_flux_jvp, gs_error_flux_vjp, &
@@ -16,11 +17,13 @@ program test_gs_error_leaves
         gs_error_state_vjp, gs_error_goal, &
         gs_error_goal_jvp, gs_error_goal_vjp, &
         gs_error_goal_corrected, gs_error_goal_corrected_jvp, &
-        gs_error_goal_corrected_vjp
+        gs_error_goal_corrected_vjp, gs_error_slope_vertex, &
+        gs_error_slope_vertex_jvp, gs_error_slope_vertex_vjp
     implicit none
     real(dp) :: x(5), direction(5), weights(2), value(2), tangent(2), gradient(5)
     real(dp) :: plus(2), minus(2), oracle(2), h, cf, cf2, pi
-    type(interval_t) :: source_enclosure
+    type(interval_t) :: source_enclosure, cf_enclosure, cf2_enclosure, coeff_enclosure
+    real(real128) :: reference, rq, wq, hq, piq
     integer :: leaf, trial, ir, ip, iff
     real(dp) :: radius, pprime, ffprime, exact_source
 
@@ -28,7 +31,7 @@ program test_gs_error_leaves
     h = 2.0e-5_dp
     direction = [0.13_dp, -0.21_dp, 0.17_dp, 0.09_dp, -0.07_dp]
     weights = [-0.7_dp, 1.3_dp]
-    do leaf = 1, 9
+    do leaf = 1, 10
         do trial = 1, 8
             x = [2.0_dp, 1.1_dp, 0.8_dp, 0.3_dp, 0.4_dp] &
                 + 0.03_dp*real(trial, dp)
@@ -63,6 +66,8 @@ program test_gs_error_leaves
                 oracle(1) = x(1)*x(2)/x(3)
             case (9)
                 oracle(1) = x(1) + x(2)
+            case (10)
+                oracle(1) = -x(1)/(3*x(2))
             end select
             if (maxval(abs(value - oracle)) > 5.0e-14_dp) &
                 error stop 'GS error leaf independent primal formula'
@@ -91,8 +96,38 @@ program test_gs_error_leaves
             end do
         end do
     end do
+    ! Independent real128 evaluation checks containment of physical-factor
+    ! leaves, including the rigorous pi enclosure, at every input-box corner.
+    call gs_error_coefficient_interval(interval(2.0_dp, 3.0_dp), coeff_enclosure)
+    call gs_error_friedrichs_interval(interval(2.0_dp, 3.0_dp), &
+        interval(0.5_dp, 1.0_dp), interval(1.0_dp, 2.0_dp), cf_enclosure)
+    call gs_error_friedrichs_squared_interval(interval(2.0_dp, 3.0_dp), &
+        interval(0.5_dp, 1.0_dp), interval(1.0_dp, 2.0_dp), cf2_enclosure)
+    piq = acos(-1.0_real128)
+    do ir = 0, 1
+        rq = real(2 + ir, real128)
+        reference = 1/rq
+        call contained_quad(coeff_enclosure, reference)
+        do ip = 0, 1
+            wq = real(1 + ip, real128)/2
+            do iff = 0, 1
+                hq = real(1 + iff, real128)
+                reference = rq*wq**2*hq**2/(piq**2*(wq**2 + hq**2))
+                call contained_quad(cf2_enclosure, reference)
+                call contained_quad(cf_enclosure, sqrt(reference))
+            end do
+        end do
+    end do
     print *, 'PASS: GS error leaf formulas, directional differences and adjoint pairing'
 contains
+    subroutine contained_quad(enclosure, reference)
+        type(interval_t), intent(in) :: enclosure
+        real(real128), intent(in) :: reference
+        if (real(enclosure%lo, real128) > reference &
+            .or. real(enclosure%hi, real128) < reference) &
+            error stop 'GS error interval leaf real128 oracle containment'
+    end subroutine contained_quad
+
     subroutine evaluate(leaf, x, y)
         integer, intent(in) :: leaf
         real(dp), intent(in) :: x(5)
@@ -117,6 +152,8 @@ contains
             call gs_error_goal(x(1), x(2), x(3), y(1))
         case (9)
             call gs_error_goal_corrected(x(1), x(2), y(1))
+        case (10)
+            call gs_error_slope_vertex(x(1), x(2), y(1))
         end select
     end subroutine evaluate
 
@@ -161,6 +198,9 @@ contains
         case (9)
             call gs_error_goal_corrected_jvp(x(1), x(2), d(1), d(2), tangent(1))
             call gs_error_goal_corrected_vjp(x(1), x(2), b(1), gradient(1), gradient(2))
+        case (10)
+            call gs_error_slope_vertex_jvp(x(1), x(2), d(1), d(2), tangent(1))
+            call gs_error_slope_vertex_vjp(x(1), x(2), b(1), gradient(1), gradient(2))
         end select
     end subroutine derivative
 end program test_gs_error_leaves
