@@ -160,7 +160,7 @@ target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quant
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "2ed9d024d7c105e4afb69414f50c45abac00c94a")
+set(KIN6D_FORTFEM_REVISION "e2113cc09c2764412f2a3bb7e1c4d89811e50fb9")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
