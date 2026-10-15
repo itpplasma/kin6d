@@ -337,6 +337,10 @@ kin6d_test_labels(mhd_shielding_cylinder_limit_reciprocity fast CLASSES mhd
     TARGETS test_mhd_shielding)
 kin6d_test_labels(mhd_ideal_n_mde_force_free_identity fast CLASSES mhd
     TARGETS test_mhd_ideal_n)
+kin6d_test_labels(mhd_ideal_n_final_state_error fast CLASSES mhd
+    TARGETS test_mhd_ideal_n)
+kin6d_test_labels(gs_response_3d_ideal_error_contract fast CLASSES apps mhd
+    TARGETS gs_response_3d)
 kin6d_test_labels(mhd_shield_torus_nrad_convergence fast CLASSES mhd
     TARGETS test_mhd_shield_torus)
 kin6d_test_labels(flux_mesh_axis_interpolation_order fast CLASSES mhd
