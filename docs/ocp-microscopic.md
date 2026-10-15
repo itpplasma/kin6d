@@ -21,7 +21,7 @@ ion.
 
 ## Numerics
 
-- `src/pme.f90`: particle-mesh Ewald (PME). Real space uses a linked cell
+- `src/pairs/pme.f90`: particle-mesh Ewald (PME). Real space uses a linked cell
   list with cutoff `< L/2`. The mesh part uses cardinal B-splines of order
   4/6/8 and an energy-optimal influence function over aliases `|M| <= 2`.
   Transforms are FortNum 1D FFTs applied along x, y and z. Forces are the
@@ -33,7 +33,7 @@ ion.
   covers the mesh self force, which is not estimated. The cost model picks
   among the admissible (order, cutoff, mesh) choices. The direct Ewald sum
   of `kin6d_nbody` is the oracle.
-- `src/near_encounter.f90`: encounter-resolved near/far splitting. Fixed-step
+- `src/pairs/near_encounter.f90`: encounter-resolved near/far splitting. Fixed-step
   KDK with bare Coulomb heats an OCP at `Lambda = 100` by about 20% in
   `10/omega_p` (`dt = 0.05` and `0.01`; measured). This is the reason for
   the splitting. The pair interaction is split exactly with a C2 switch
@@ -43,14 +43,14 @@ ion.
   periapsis Kepler, crossing and switch-crossing times. All other particles
   drift exactly. Cluster completeness is verified after the flow and fails
   closed. The tangent uses the same flow with the substep structure frozen.
-- `src/vlasov_response.f90` (independent oracles):
+- `src/continuum/vlasov_response.f90` (independent oracles):
   - the plasma dispersion function from the entire Dawson series in
     quadruple precision;
   - the Landau root of the Maxwellian dielectric, found by Newton iteration;
   - the full finite-k linear Vlasov initial-value response of a density
     perturbation, solved as a Volterra equation (trapezoid rule plus
     Richardson extrapolation).
-- `src/pair_correlation.f90`: estimators for `g(r)` (cell list) and for the
+- `src/classical/pair_correlation.f90`: estimators for `g(r)` (cell list) and for the
   shell-averaged `S(k)`.
 - `kin6d_ocp`: preparation, mode amplitude, displacement and its tangent,
   and the radial histogram. It also holds the periodic screened-Poisson Green

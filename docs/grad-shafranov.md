@@ -561,7 +561,7 @@ Exact book equation numbers are not asserted.
 - Every export is a **candidate**. Polygonal boundary, P1/P2 field jumps,
   discretization and profile-model errors need independent refinement.
   A small residual does not certify the continuous equilibrium.
-- Free boundary is a library path only (`src/gs_free_boundary.f90`: FEM-BEM
+- Free boundary is a library path only (`src/equilibrium/gs_free_boundary.f90`: FEM-BEM
   Newton, limiter / X-point / target-mean flux levels, cut source with the
   interface Jacobian; no application, mesh refit or inverse problem yet).
   No 3D MHD, kinetic transport or perturbation model.

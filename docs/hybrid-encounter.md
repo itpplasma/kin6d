@@ -24,7 +24,7 @@ Not included: relativistic/radiative corrections, degeneracy and Pauli
 blocking (Theta >> 1 assumed), dynamic screening, three-body encounters,
 exchange in the hybrid Monte Carlo (see open issues).
 
-## Kernel (src/quantum_collision_kernel.f90)
+## Kernel (src/pairs/quantum_collision_kernel.f90)
 
 Pure Coulomb. The quantum differential cross section of distinguishable
 particles equals Rutherford at every angle (`ce_rutherford`, reused from Q1);
@@ -56,7 +56,7 @@ Mott term adds -ln2/2 for eta -> 0 (singlet +ln2, triplet -ln2) and averages
 out for eta >> 1.
 
 Yukawa (`yukawa_plan`, `yukawa_phases`, `yukawa_transfer_log`): phase
-shifts at fixed energy on the shared radial FEM-DVR (`src/radial_dvr.f90`
+shifts at fixed energy on the shared radial FEM-DVR (`src/pairs/radial_dvr.f90`
 mesh/kinetic band; dimensionless k = hbar = mu = 1, so the coupling is eta
 and lambda_D is kappa). For each l the banded system (H_l - E) a = 0 is solved
 (LAPACK dgbtrf/dgbtrs) with a = 0 at a bridge node where the WKB barrier
@@ -78,7 +78,7 @@ Second moment: `viscosity_from_phases` gives sigma^(2) = int sin^2 dsigma =
 (4 pi/k^2) sum (l+1)(l+2)/(2l+3) sin^2(delta_l - delta_{l+2});
 `coulomb_ring_viscosity` the same moment of the ring kernel below.
 
-## Hybrid scheme (src/hybrid_encounter.f90)
+## Hybrid scheme (src/quantum/hybrid_encounter.f90)
 
 Test electrons in a fixed Maxwellian electron background; binary encounters
 with bare Coulomb inside the impact cut b_max = lambda_D (Spitzer screening

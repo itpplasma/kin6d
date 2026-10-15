@@ -1010,13 +1010,15 @@ Migration:
    their sources use instead of the umbrella. The dev-fast preset shares the
    MakeAvailable checkouts (fortplot, fortio, fortsparse) by pin; fortnum and
    fortfem stay per build tree.
-2. Move sources into `src/<layer>/` directories once the partition is stable.
+2. Implemented: handwritten library sources live in `src/<layer>/`, matching
+   their target ownership. Generated leaves stay in `src/generated/`, and
+   generators retain their canonical output paths.
 
 Development loop (to go into AGENTS.md with step 1): edit, then
 `cmake --build build --target kin6d_check_<class>` and `ctest -L <class> -LE slow`;
 never run the full suite, including at controller integration. With `fo`, the same
 loop is `fo test -L <class> -LE slow`, building only the selected tests' targets, and a Gremlin lane
-scoped by label. That `fo` support is being implemented in `fo` as a
+scoped by label. That `fo` support is implemented in `fo` as a
 backend-neutral project model (fo doc/CMAKE_GREMLIN_PLAN.md, 2026-10-15) that reads
 targets from the CMake file API and labels from CTest; KIN6D needs no fo-specific
 files. Baseline for the speed-up: an incremental rebuild after touching one source

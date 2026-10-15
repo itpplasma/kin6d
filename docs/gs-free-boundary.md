@@ -6,7 +6,7 @@ exact interface Jacobian, Newton on the coupled operator) is in the P6/P7 module
 `kin6d_gs_coupling` and `kin6d_gs_free_boundary`; the coil-current inverse is
 `kin6d_gs_coil_inverse` (P9). This note covers what P8 and P11 add.
 
-## Refit loop (`gs_fb_refit_solve`, `src/gs_free_boundary.f90`)
+## Refit loop (`gs_fb_refit_solve`, `src/equilibrium/gs_free_boundary.f90`)
 
 1. Newton on the given mesh (`gs_fb_newton`).
 2. Distance of the Gamma_p chain from the computed boundary,
@@ -64,7 +64,7 @@ cannot discriminate: its nodal load subtracts the source of the interpolated exa
 flux, which cancels the jump on any mesh. With the refit it gives nodal orders 3.7
 (P2) and 3.8 (P3) against 2.7 and 3.3 fixed (`test_gs_fb_refit sweep`).
 
-## Error estimates (`src/gs_majorant.f90`, DESIGN section 4, P10)
+## Error estimates (`src/equilibrium/gs_majorant.f90`, DESIGN section 4, P10)
 
 Energy norm `|||v|||^2 = int |grad v|^2/R dA + <S v,v>`. For the frozen
 problem `a(psi,v)+<S psi,v>=(f,v)+<g,v>` and every conforming H(div) flux sigma,

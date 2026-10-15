@@ -88,7 +88,7 @@ Aκ²T₂ and Bκ²T₂+A(2κT₂+κ²sT₃), respectively. The generated polyno
 curvatures and these remainder terms bound the exact reference curvature.
 The exterior formula is evaluated directly with outward interval arithmetic.
 
-[The reference wrapper](../src/debye_sphere_reference.f90) validates the
+[The reference wrapper](../src/continuum/debye_sphere_reference.f90) validates the
 admitted finite domain and splits radial intervals crossing s=1. Each plotted
 node first receives its strict reference interval. Every radial cell then
 adds the chord margin M h²/8, with M bounding the second radial derivative;

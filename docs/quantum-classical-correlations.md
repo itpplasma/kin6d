@@ -16,7 +16,7 @@ a function of `Theta` alone.
 
 ## Models (one cell, two mechanics)
 
-- Classical parent (`src/classical_cell.f90`): N point electrons with the
+- Classical parent (`src/classical/classical_cell.f90`): N point electrons with the
   shared Ewald energy (`kin6d_nbody`/`kin6d_ewald`). The energy is pairwise
   additive with the zero-mean Ewald pair potential `u` (Fourier `Q = 0`
   removed, as in the quantum Hamiltonian). Spin does not enter the classical
@@ -27,15 +27,15 @@ a function of `Theta` alone.
     moments) and by spherical Gauss rules (shell bins). This is deterministic.
   - N = 3, 4: canonical Metropolis Monte Carlo with single-particle moves
     by the one periodic-cell sampler shared with H1a
-    (`src/ocp_monte_carlo.f90`, `mc_setup_cell`: incremental Ewald with a
+    (`src/classical/ocp_monte_carlo.f90`, `mc_setup_cell`: incremental Ewald with a
     real image cube chosen by the `kin6d_ewald` cost model). The Kelbg and
     Kelbg+Pauli laws are a declared short-range addition
-    (`src/pair_law.f90`) on top of the one Ewald Coulomb energy.
+    (`src/pairs/pair_law.f90`) on top of the one Ewald Coulomb energy.
     Intervals are batch-means statistical errors (40 batches,
     `kin6d_series_statistics`). They are labelled statistical, never
     certified. The N = 2 quadrature uses the independent two-body
     `kin6d_nbody` pair potential and is the sampler's oracle.
-- Exact quantum N = 2 (`src/quantum_pair_cell.f90`): the centre of mass and
+- Exact quantum N = 2 (`src/quantum/quantum_pair_cell.f90`): the centre of mass and
   relative coordinate separate exactly on the torus. The relative wave
   function is periodic or antiperiodic per axis according to the parity of
   the centre-of-mass momentum component (twist classes t = 0..3). Even and
