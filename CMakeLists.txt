@@ -367,8 +367,8 @@ foreach(k 2 3)
     add_test(NAME ideal_map_n0_shaped_solovev_p${k}
         COMMAND test_ideal_map_axisymmetric shaped ${k})
 endforeach()
-# Three-mesh ladders: 15-40 s each with 4 threads; shaped P3 about 2 min
-# (serial SuperLU numeric factorisation dominates).
+# Three-mesh ladders: 6-15 s each with 4 threads; shaped P3 about 30 s with
+# MUMPS (one factor thread, see factor_threads), about 1 min with SuperLU.
 set_tests_properties(ideal_map_n3_leakage ideal_map_n0_solovev_a3_p2
     ideal_map_n0_solovev_a3_p3 ideal_map_n0_shaped_solovev_p2 PROPERTIES
     TIMEOUT 900 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
