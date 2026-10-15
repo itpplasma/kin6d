@@ -246,6 +246,51 @@ FB-taper 0.997 results (fwd_p3_l3 reference, 256/384, μ_t = 1e-7):
   not converged while |F_Z/K_Z| > 1e-6 m, F_Z taken before the projection. The
   fixture-return test case `gzm` uses it.
 
+## Relabelling (slide) gauge (2026-10-15)
+
+Without `tangential_gauge`, the n = 0 relabelling null is now fixed exactly.
+A map of the reference onto itself that keeps χ and the toroidal-flux 2-form
+b3 dR dZ moves points with v = f(χ) ∇^⊥χ / b3 for any f. The fields, pressure
+and surfaces do not change, so this is an exact continuum symmetry. It is
+near-null once discretised.
+
+- Diagnosis on the gs_free fixture (r0, SuperLU). The Newton direction was
+  1.5 mm tangential and 2e-5 m normal. Its plasma block matched central
+  differences of the gradient to 9e-4. Along it the merit followed (1 - α)²
+  up to α = 1/32 and grew 1.9e4-fold at α = 1: the straight tangent line
+  leaves the curved surfaces at second order. Adding the second-order path
+  term (H a = -g'') gave merit 0.27 at α = 1/2. However, the iterate drifted
+  along the null and the Newton target kept moving, so the solve crept:
+  -0.3 % merit per step, step 1.1e-5 m, just above `step_tolerance`. The
+  discrete minimiser along the null carries no physics.
+- Gauge. The b3-weighted slide moments of the displacement from the start,
+  M_l(u) = ∫ φ_l(ρ) b3 v · u dR dZ, are held at zero. φ_l is the C¹ partition
+  of unity in ρ = (1 - T)^1/2 with one layer per element layer (the nested
+  ω gauge of the map lane). The moments enter the Newton matrix as bordered
+  Lagrange rows, and the merit is taken with their multiplier removed.
+  Integration by parts shows that M_l vanishes for every curl-free u
+  (translations, elongation). Offset starts therefore need no relabelling,
+  and a smooth f restores the moments for any continuum equilibrium.
+  `ideal_fb_slide_gauge_curl_free` checks this: curl-free/slide moment ratio
+  1.9e-3 → 5.4e-4 under refinement.
+- Result (fixture, max_iterations 150). All six ungauged cases converge to
+  residual ≤ 4.4e-11 σV: r0 in 2 iterations, rp 5, rm 4, zp 4, zm 4, el 18.
+  They reach the same state: Γ_p distance 1.97–1.98e-5 m and surface defect
+  2.02–2.04e-5 m. The previous r0 value of 2.7e-6 m was the start state
+  before convergence.
+- A first version that held the Euclidean nodal projection onto
+  P_k(2T - 1) v at zero did not leave translations free. It returned rp to
+  1.15e-4 m, which shows that the gauge metric matters.
+- `tangential_gauge` is not a gauge. It removes every n = 0 tangential
+  component of the plasma gradient. Where the surface tangent is R, these
+  components include the net force on the plasma, so an offset start stops
+  short of the equilibrium. With rp, the gauge converged (3e-13 σV,
+  projected) with Γ_p moved only -0.18 mm instead of -15 mm, a net rigid R
+  force of 1.4e3 J/m against ≤ 1.3e-4 J/m at the slide-gauged states, and
+  a distance of 17 mm. The `gr0` and `gzm` cases still use it and pass: gr0
+  starts at the equilibrium, and in gzm the joint vertical coordinate carries
+  the net Z force explicitly.
+
 ## Coupled vertical Newton coordinate
 
 With `rigid_vertical = .true.` and `tangential_gauge > 0`, the Newton

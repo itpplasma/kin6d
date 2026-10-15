@@ -132,13 +132,19 @@ module kin6d_ideal_free_boundary
         ! Hard-ish gauge for the same n = 0 null: when > 0, the n = 0 tangential
         ! component of every plasma node is penalised by tangential_gauge times
         ! the node diagonal in the Newton matrix and removed from the gradient
-        ! that enters the merit. The surfaces cannot slide poloidally (a slide
-        ! only reparametrises Gamma_p and creeps at lambda/(lambda + mu_t)).
+        ! that enters the merit. The surfaces cannot slide poloidally. This
+        ! removes more than the relabelling null: where the tangent is R or Z
+        ! the dropped components carry the net force, so an offset R start
+        ! stops short of equilibrium (17 mm on the gs_free fixture). Without
+        ! it the null is fixed exactly by the slide moments (slide_directions).
         real(dp) :: tangential_gauge = 0
         ! With tangential_gauge > 0, solve normal n = 0 shape and a global
         ! vertical shift together, including its force equation and exact
         ! Hessian couplings. Without the gauge retain the legacy correction.
         logical :: rigid_vertical = .false.
+        ! Slide-moment rows of the n = 0 relabelling gauge (2, plasma node,
+        ! layer), unit Euclidean norm; see slide_directions.
+        real(dp), allocatable :: slide(:, :, :)
         ! Newton-homotopy offset: when allocated, the gradient returned is
         ! g(U) - shift (shift = (1 - t) g(U0) solves g = (1 - t) g(U0)).
         real(dp), allocatable :: shift(:)
@@ -291,6 +297,7 @@ contains
         if (st /= IDEAL_MAP_OK) return
         call ideal_map_freeze(fb%plasma, field, st)
         if (st /= IDEAL_MAP_OK) return
+        call slide_directions(fb)
         fb%mu0 = fb%plasma%mu0
         ! Centre of the poloidal-angle lift: the reference axis node, or the
         ! interior plasma node nearest the plasma centroid when the frozen
@@ -1333,6 +1340,133 @@ contains
         call coo_to_csr(fb%n + 1, ci(:k), cj(:k), cv(:k), rows, cols, matrix)
     end subroutine
 
+    subroutine slide_directions(fb)
+        ! Gauge of the n = 0 relabelling null. A map of the reference onto
+        ! itself that keeps chi and the toroidal-flux 2-form b3 dR dZ moves
+        ! points with v = f(chi) (-d chi/dZ, d chi/dR)/b3 for any f
+        ! (div(b3 v) = 0, v.grad chi = 0): fields, pressure and surfaces are
+        ! unchanged, an exact continuum null that is near-null discretely.
+        ! It is fixed by the b3-weighted slide moments of the displacement u,
+        !   M_l(u) = int phi_l(rho) b3 v[f = 1] . u dR dZ
+        !          = int phi_l(rho) (DG b_s) . u ds   (b_s the frozen poloidal
+        !            flux density, master coordinates, reference quadrature),
+        ! with the C1 partition of unity phi_l = cos^2(pi/2 (L rho - l)),
+        ! l = 0..L, rho = (1 - T)^1/2 and one layer per element layer, as in
+        ! the nested omega gauge of kin6d_ideal_map. Integrating by parts,
+        ! M_l vanishes for every curl-free u (translations, elongation), and
+        ! a smooth f restores the moments for any continuum equilibrium: the
+        ! gauge selects the labelling only (to discretisation accuracy) and
+        ! leaves the geometry and the fields free. The f(chi) left free
+        ! oscillate within a layer and are stiff.
+        type(ideal_fb_t), intent(inout) :: fb
+        real(dp) :: dg(2, 2), flux(2), rho, x, w
+        integer :: e, g, l, nl, k
+        nl = max(1, nint(sqrt(fb%plasma%cells*sqrt(3.0_dp)/(4*pi))))
+        allocate (fb%slide(2, fb%plasma%nodes, nl + 1))
+        fb%slide = 0
+        associate (map => fb%plasma)
+            do e = 1, map%cells
+                do g = 1, map%nq
+                    rho = nl*sqrt(max(0.0_dp, &
+                        1 - dot_product(map%axis_t(map%conn(:, e)), map%shape(:, g))))
+                    dg = matmul(map%reference(:, map%conn(:, e)), &
+                        transpose(map%dshape(:, :, g)))
+                    flux = matmul(dg, map%b(1:2, g, e))*map%weight(g)
+                    do l = max(0, floor(rho)), min(nl, ceiling(rho))
+                        x = rho - l
+                        if (abs(x) >= 1) cycle
+                        w = cos(pi*x/2)**2
+                        do k = 1, map%nloc
+                            fb%slide(:, map%conn(k, e), l + 1) = &
+                                fb%slide(:, map%conn(k, e), l + 1) &
+                                + w*map%shape(k, g)*flux
+                        end do
+                    end do
+                end do
+            end do
+        end associate
+        do l = 1, nl + 1
+            fb%slide(:, :, l) = fb%slide(:, :, l)/norm2(fb%slide(:, :, l))
+        end do
+    end subroutine
+
+    subroutine slide_system(fb, rowptr, colidx, val, scale, rows, cols, matrix)
+        ! Newton matrix bordered by the slide gauge: [H, s G^T; s G, 0], with
+        ! G the slide directions on the n = 0 plasma rows.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: rowptr(:), colidx(:)
+        real(dp), intent(in) :: val(:), scale
+        integer, allocatable, intent(out) :: rows(:), cols(:)
+        real(dp), allocatable, intent(out) :: matrix(:)
+        integer, allocatable :: ci(:), cj(:)
+        real(dp), allocatable :: cv(:)
+        integer :: i, p, k, a, c, m, nl
+        nl = size(fb%slide, 3)
+        m = size(val) + 2*count(abs(fb%slide) > 0)
+        allocate (ci(m), cj(m), cv(m))
+        m = 0
+        do i = 1, fb%n
+            do p = rowptr(i), rowptr(i + 1) - 1
+                m = m + 1
+                ci(m) = i; cj(m) = colidx(p); cv(m) = val(p)
+            end do
+        end do
+        do k = 1, nl
+            do a = 1, fb%plasma%nodes
+                do c = 1, 2
+                    if (.not. abs(fb%slide(c, a, k)) > 0) cycle
+                    ci(m + 1:m + 2) = [fb%n + k, pidx(fb, c, 1, a)]
+                    cj(m + 1:m + 2) = [pidx(fb, c, 1, a), fb%n + k]
+                    cv(m + 1:m + 2) = scale*fb%slide(c, a, k)
+                    m = m + 2
+                end do
+            end do
+        end do
+        call coo_to_csr(fb%n + nl, ci(:m), cj(:m), cv(:m), rows, cols, matrix)
+    end subroutine
+
+    subroutine project_slide(fb, w, g)
+        ! Remove the slide component of the plasma gradient in the merit
+        ! metric: g <- g - G^T mu, mu = argmin sum w (g + G^T mu)^2. This is
+        ! the gauge multiplier of the bordered Newton system, so the merit
+        ! measures only the physical (gauge-invariant) residual.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: w(:)
+        real(dp), intent(inout) :: g(:)
+        real(dp) :: a(size(fb%slide, 3), size(fb%slide, 3)), b(size(fb%slide, 3))
+        integer :: i, j, k, n, c, nl
+        nl = size(fb%slide, 3)
+        a = 0; b = 0
+        do n = 1, fb%plasma%nodes
+            do c = 1, 2
+                i = pidx(fb, c, 1, n)
+                b = b + w(i)*fb%slide(c, n, :)*g(i)
+                do k = 1, nl
+                    a(:, k) = a(:, k) + w(i)*fb%slide(c, n, :)*fb%slide(c, n, k)
+                end do
+            end do
+        end do
+        ! Cholesky solve a mu = b (a is SPD: the slide directions are independent).
+        do j = 1, nl
+            a(j, j) = sqrt(a(j, j) - sum(a(j, :j - 1)**2))
+            do i = j + 1, nl
+                a(i, j) = (a(i, j) - sum(a(i, :j - 1)*a(j, :j - 1)))/a(j, j)
+            end do
+        end do
+        do i = 1, nl
+            b(i) = (b(i) - sum(a(i, :i - 1)*b(:i - 1)))/a(i, i)
+        end do
+        do i = nl, 1, -1
+            b(i) = (b(i) - sum(a(i + 1:, i)*b(i + 1:)))/a(i, i)
+        end do
+        do n = 1, fb%plasma%nodes
+            do c = 1, 2
+                i = pidx(fb, c, 1, n)
+                g(i) = g(i) - dot_product(fb%slide(c, n, :), b)
+            end do
+        end do
+    end subroutine
+
     subroutine ideal_fb_solve(fb, tolerance, max_iterations, report, status, verbose, &
                               step_tolerance, residual_tolerance)
         ! Newton on the KKT system of L (symmetric, indefinite: negative
@@ -1377,10 +1511,19 @@ contains
         logical :: talk, accepted, factored, kept
         real(dp) :: kz, fz, fzr, ftry
         real(dp), parameter :: vertical_tol = 1.0e-6_dp
-        logical :: vertical_open, joint_vertical
+        logical :: vertical_open, joint_vertical, slide_gauge
+        integer, allocatable :: srows(:), scols(:)
+        real(dp), allocatable :: smat(:), sol(:)
+        real(dp) :: sscale
+        integer :: nslide
         real(dp) :: vertical_step, force_weight
         kz = 0
         joint_vertical = fb%rigid_vertical .and. fb%tangential_gauge > 0
+        ! The legacy tangential gauge removes every tangential plasma motion;
+        ! otherwise the slide (relabelling) null is gauged exactly.
+        slide_gauge = .not. fb%tangential_gauge > 0
+        nslide = size(fb%slide, 3)
+        allocate (sol(fb%n + nslide))
         vertical_step = 0
         allocate (vg(fb%n + 1), vdu(fb%n + 1))
         talk = .false.
@@ -1421,6 +1564,7 @@ contains
                 end do
             end do
             scale_p = maxval(diag(1:fb%np))
+            sscale = sum(diag(1:fb%np))/fb%np
             if (.not. cready) then
                 ! C^T (shell-map rows x multiplier columns) depends on the
                 ! reference only: factorise once; after every trial step the
@@ -1439,6 +1583,7 @@ contains
             if (it == 1) fzr = rigid_force(grad)
             if (fb%tangential_gauge > 0 .and. .not. joint_vertical) &
                 call project_gauge(fb, grad)
+            if (slide_gauge) call project_slide(fb, wts, grad)
             merit = solve_merit(grad)
             if (it == 1) report%merit0 = merit
             report%merit = merit
@@ -1485,6 +1630,8 @@ contains
                     call add_tangential(fb, diag, tpos, dval)
                 if (joint_vertical) call ideal_fb_vertical_system(fb, rowptr, &
                                                   colidx, val, dval, vrows, vcols, vmat)
+                if (slide_gauge) call slide_system(fb, rowptr, colidx, dval, sscale, &
+                                                   srows, scols, smat)
                 t0 = wall()
                 ! One handle for the whole solve: the KKT pattern is fixed, so
                 ! MUMPS keeps its analysis and only refactorises.
@@ -1492,6 +1639,9 @@ contains
                 if (joint_vertical) then
                     call sparse_refactor(solver, fb%n + 1, fb%n + 1, size(vmat), &
                                          vrows, vcols, vmat, sst, kept)
+                else if (slide_gauge) then
+                    call sparse_refactor(solver, fb%n + nslide, fb%n + nslide, &
+                                         size(smat), srows, scols, smat, sst, kept)
                 else
                     call sparse_refactor(solver, fb%n, fb%n, size(dval), rowptr, &
                                          colidx, dval, sst, kept)
@@ -1508,6 +1658,9 @@ contains
                     call ideal_fb_vertical_gradient(fb, grad, vg)
                     call sparse_solve(solver, -vg, vdu, sst)
                     call ideal_fb_vertical_expand(fb, vdu, du)
+                else if (slide_gauge) then
+                    call sparse_solve(solver, [rhs, (0.0_dp, i = 1, nslide)], sol, sst)
+                    du = sol(:fb%n)
                 else
                     call sparse_solve(solver, rhs, du, sst)
                 end if
@@ -1547,6 +1700,8 @@ contains
                     if (fb%tangential_gauge > 0 .and. st == IDEAL_FB_OK &
                         .and. .not. joint_vertical) &
                         call project_gauge(fb, rhs)
+                    if (slide_gauge .and. st == IDEAL_FB_OK) &
+                        call project_slide(fb, wts, rhs)
                     report%line_s = report%line_s + wall() - t0
                     if (st == IDEAL_FB_OK) then
                         tmerit = solve_merit(rhs)
@@ -1640,6 +1795,7 @@ contains
                 call project_multipliers(fb, csolver, g2)
                 ftry = rigid_force(g2)
                 if (fb%tangential_gauge > 0) call project_gauge(fb, g2)
+                if (slide_gauge) call project_slide(fb, wts, g2)
                 m2 = sum(wts*g2**2)
                 if (by_force) then
                     accept = abs(ftry) < abs(fzr)
