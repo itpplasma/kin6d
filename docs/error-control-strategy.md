@@ -245,7 +245,16 @@ a phi-dependent K with modes > 0 couples the modes and reports
 `unavailable-mode-coupling`. The bound holds for any anisotropy, but the
 hat-function localisation is not robust in it: on the Sovinec test the index
 is 1.05 at chi ratio 1, 3--6 at 1e3, and grows with h at 1e6--1e9 (P2
-solution polluted). Per-mode Ampere solves report a coupled discrete
+solution polluted). Opt-in FortFEM `correction_sweeps` adds parallel,
+damped divergence-free vertex corrections; it leaves the production default
+unchanged. Eight sweeps reduce the P2 Sovinec index at ratio 1e9 from 27.5
+to 4.5 at nr = 8 and from 389 to 48 at nr = 32. This is an improvement,
+not an anisotropy-robust localisation: its contraction degrades with mesh
+refinement and its cost exceeds the solve in this small study. The independent
+directional-Gram/Cholesky and oversampled-load checks identify the dominant
+P2 pollution as a discretization effect
+([NN2 diagnosis](equilibrium-nonnested-nn2.md#anisotropy-estimator-diagnostic)).
+Per-mode Ampere solves report a coupled discrete
 residual-energy indicator (the algebraic residual energy of the discrete
 system, also written by `gs_response_3d` for its sheet solves), the optional
 fixed-trace interior reconstruction and the coupled reconstruction `ampere_n_coupled_error`: sheet loads enter as
@@ -274,6 +283,7 @@ remainders.
 | Approach | Use | Limitation |
 |---|---|---|
 | Equilibrated flux, patchwise | Default energy bound and refinement indicator | Needs a reconstruction per operator family |
+| NN2 tensor divergence-free correction, opt-in | Reduces weighted flux defect; practical sampled bound | Uniform tensor robustness and small cost remain unavailable |
 | Global functional majorant | Superseded fallback | O(N^1.5) global recovery; efficiency about 2 |
 | `\|\|\|z_h\|\|\|*M` goal radius | None for linear goals | First order: 10^2--10^6 too wide |
 | Product goal band `M_psi*M_z` | Default goal band | One adjoint and estimator per goal |

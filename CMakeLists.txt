@@ -1527,6 +1527,16 @@ add_test(NAME nonnested_transport_equilibrated_n0
 set_tests_properties(nonnested_transport_equilibrated_n0 PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 
+add_executable(test_nonnested_anisotropy test/test_nonnested_anisotropy.f90)
+target_link_libraries(test_nonnested_anisotropy PRIVATE kin6d)
+add_test(NAME nonnested_transport_anisotropy_pollution
+    COMMAND test_nonnested_anisotropy pollution)
+add_test(NAME nonnested_transport_anisotropy_correction
+    COMMAND test_nonnested_anisotropy correction)
+set_tests_properties(nonnested_transport_anisotropy_pollution
+    nonnested_transport_anisotropy_correction PROPERTIES TIMEOUT 60
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
 add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90)
 target_link_libraries(kin6d_nn_vacuum_test PUBLIC kin6d)
 

@@ -497,3 +497,8 @@ kin6d_test_labels(response_calibration_deck_validation fast CLASSES apps
     TARGETS gs_response_calibration)
 kin6d_test_labels(response_calibration_deck_rejects_zero_mode fast CLASSES apps
     TARGETS gs_response_calibration)
+
+kin6d_test_labels(nonnested_transport_anisotropy_pollution fast CLASSES mhd
+    TARGETS test_nonnested_anisotropy)
+kin6d_test_labels(nonnested_transport_anisotropy_correction fast CLASSES mhd
+    TARGETS test_nonnested_anisotropy)
