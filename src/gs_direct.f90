@@ -11,7 +11,8 @@ module kin6d_gs_direct
     implicit none
     private
     public :: gs_direct_t, gs_direct_available, gs_direct_factor, gs_direct_solve
-    public :: gs_direct_free, gs_direct_solve_block, GS_DIRECT_SPD, GS_DIRECT_INDEFINITE, &
+    public :: gs_direct_free, gs_direct_solve_block, gs_direct_mpi_ready
+    public :: GS_DIRECT_SPD, GS_DIRECT_INDEFINITE, &
         GS_DIRECT_ORDER_AMD, GS_DIRECT_ORDER_ND
     integer, parameter :: GS_DIRECT_ORDER_AMD = FORTSPARSE_ORDER_AMD
     integer, parameter :: GS_DIRECT_ORDER_ND = FORTSPARSE_ORDER_ND
@@ -46,6 +47,11 @@ contains
         type(fortsparse_status_t) :: status
         type(sparse_factor_stats_t) :: stats
         call gs_direct_free(direct)
+        ok = .false.
+        if (.not. gs_direct_mpi_ready()) then
+            direct%failed = .true.
+            return
+        end if
         direct%solver%backend_id = FORTSPARSE_BACKEND_MUMPS
         direct%solver%refine = .false.
         direct%solver%options%symmetry = FORTSPARSE_SYM_SPD
@@ -70,6 +76,33 @@ contains
             direct%factor_nnz = int(min(int(huge(1), 8), stats%factor_nnz))
         end if
     end subroutine
+
+    logical function gs_direct_mpi_ready() result(ready)
+        ! Serial control-flow entry, before any MUMPS factorization. Only the
+        ! MPI-parallel backend needs a runtime; sequential mpiseq builds do not.
+        ! Preserve an application-owned runtime. Factor handles do not own MPI:
+        ! the application may finalize it only after freeing all its solvers.
+#ifdef KIN6D_MUMPS_MPI
+        use mpi, only: MPI_Initialized, MPI_Finalized, MPI_Init_thread, MPI_Query_thread, &
+            MPI_THREAD_SERIALIZED, MPI_SUCCESS
+        logical :: initialized, finalized
+        integer :: ierr, provided
+        ready = .false.
+        call MPI_Finalized(finalized, ierr)
+        if (ierr /= MPI_SUCCESS) return
+        if (finalized) return
+        call MPI_Initialized(initialized, ierr)
+        if (ierr /= MPI_SUCCESS) return
+        if (.not. initialized) then
+            call MPI_Init_thread(MPI_THREAD_SERIALIZED, provided, ierr)
+        else
+            call MPI_Query_thread(provided, ierr)
+        end if
+        if (ierr /= MPI_SUCCESS) return
+        if (provided < MPI_THREAD_SERIALIZED) return
+#endif
+        ready = .true.
+    end function
 
     subroutine gs_direct_solve(direct, rhs, x, ok)
         type(gs_direct_t), intent(inout) :: direct

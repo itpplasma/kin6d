@@ -56,7 +56,7 @@ module kin6d_ideal_free_boundary
         vacuum_energy_gradient, vacuum_energy_hessian
     use kin6d_triangle_basis, only: triangle_basis_jet
     use kin6d_sort_keys, only: sort_key_order
-    use kin6d_gs_direct, only: gs_direct_available
+    use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks
     use fortfem_axisymmetric_gs_boundary_operators_2d, only: gs_bem_curve_t, &
@@ -1635,7 +1635,9 @@ contains
                 t0 = wall()
                 ! One handle for the whole solve: the KKT pattern is fixed, so
                 ! MUMPS keeps its analysis and only refactorises.
-                if (.not. factored) call configure(solver)
+                if (.not. factored) then
+                    if (.not. configure(solver)) exit
+                end if
                 if (joint_vertical) then
                     call sparse_refactor(solver, fb%n + 1, fb%n + 1, size(vmat), &
                                          vrows, vcols, vmat, sst, kept)
@@ -1883,7 +1885,11 @@ contains
             rp(i + 1) = nnz + 1
         end do
         csolver%backend_id = FORTSPARSE_BACKEND_SUPERLU
-        if (gs_direct_available()) csolver%backend_id = FORTSPARSE_BACKEND_MUMPS
+        if (gs_direct_available()) then
+            ready = gs_direct_mpi_ready()
+            if (.not. ready) return
+            csolver%backend_id = FORTSPARSE_BACKEND_MUMPS
+        end if
         csolver%options%symmetry = FORTSPARSE_SYM_GENERAL
         call sparse_factor(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), v(:nnz), sst)
         ready = status_ok(sst)
@@ -2002,10 +2008,12 @@ contains
         end do
     end subroutine
 
-    subroutine configure(solver)
+    logical function configure(solver) result(ready)
         ! Threaded MUMPS LDL^T when available, serial SuperLU LU otherwise.
         type(sparse_solver_t), intent(inout) :: solver
         if (gs_direct_available()) then
+            ready = gs_direct_mpi_ready()
+            if (.not. ready) return
             solver%backend_id = FORTSPARSE_BACKEND_MUMPS
             solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
             solver%options%nthreads = 0
@@ -2013,7 +2021,8 @@ contains
             solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
         end if
-    end subroutine
+        ready = .true.
+    end function
 
     subroutine map_steps(fb, du, disp, rot)
         ! Largest displacement (m) and omega (rad) increment of a direction.
@@ -2149,7 +2158,7 @@ contains
         allocate (grad(fb%n), du(fb%n))
         call ideal_fb_gradient(fb, grad, st)
         call ideal_fb_hessian(fb, rowptr, colidx, val)
-        call configure(solver)
+        if (.not. configure(solver)) return
         if (fb%rigid_vertical .and. fb%tangential_gauge > 0) then
             call ideal_fb_vertical_system(fb, rowptr, colidx, val, val, &
                                           rows, cols, matrix)
@@ -2268,7 +2277,7 @@ contains
                 end do
             end do
         end block
-        call configure(solver)
+        if (.not. configure(solver)) return
         call sparse_factor(solver, n, n, nnz, rp, ci(:nnz), v(:nnz), sst)
         if (.not. status_ok(sst)) return
         allocate (x(np_m), z(n), rhs(n))
@@ -2335,10 +2344,13 @@ contains
             rp(i + 1) = nnz + 1
         end do
         if (row0 == col0) then
-            call configure(solver)
+            if (.not. configure(solver)) return
         else
             solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
-            if (gs_direct_available()) solver%backend_id = FORTSPARSE_BACKEND_MUMPS
+            if (gs_direct_available()) then
+                if (.not. gs_direct_mpi_ready()) return
+                solver%backend_id = FORTSPARSE_BACKEND_MUMPS
+            end if
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
         end if
         call sparse_factor(solver, nb, nb, nnz, rp, ci(:nnz), v(:nnz), sst)
