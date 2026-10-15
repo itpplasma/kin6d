@@ -5,6 +5,13 @@ module kin6d_gs_majorant
                                   gs_linear_response, gs_recovery_t
     use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp
     use kin6d_triangle_basis, only: triangle_bernstein_controls
+    use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
+        equilibrated_flux_estimate_t, EQUILIBRATION_OK
+    use fortfem_triangle_rt_arbitrary_order, only: triangle_rt_basis_t, &
+        initialize_triangle_raviart_thomas, evaluate_triangle_raviart_thomas
+    use kin6d_gs_error_leaves, only: gs_error_coefficient, gs_error_flux
+    use fortfem_generated_equilibrated_flux_normal_component, only: &
+        generated_equilibrated_flux_normal_component
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
     use kin6d_gs_nonlinear, only: gs_forcing_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
@@ -16,7 +23,7 @@ module kin6d_gs_majorant
         gs_direct_solve, gs_direct_free
     use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_bem_nodes, &
-        gs_coupling_edge_weights, gs_coupled_apply, gs_coupling_steklov
+        gs_coupled_apply, gs_coupling_steklov
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_eval_t, gs_fb_factor_t, &
         gs_fb_evaluate, gs_fb_factor, gs_fb_solve, gs_fb_release, GS_FB_OK
@@ -65,7 +72,7 @@ module kin6d_gs_majorant
     !> Mesh data of the coupled estimates: a reference BEM on Gamma_c with
     !! `reference_panels` P2 panels per mesh edge (the stand-in for the exact
     !! Steklov-Poincare map S), the boundary moments of the recovered flux,
-    !! the coupled Friedrichs constant and the factored recovery system.
+    !! the coupled Friedrichs constant and reference energy factor.
     type :: gs_coupled_estimator_t
         integer :: n = 0, nt = 0, nx = 0, nk = 0, ndof = 0, nel = 0
         integer :: reference_panels = 0
@@ -75,29 +82,19 @@ module kin6d_gs_majorant
         real(dp), allocatable :: s_chol(:, :)       !< its Cholesky factor
         real(dp), allocatable :: restriction(:, :)  !< (nx, nt) FEM -> BEM trace
         real(dp), allocatable :: s_trace(:, :)      !< R^T S_ref R (nt, nt)
-        real(dp), allocatable :: normal_map(:, :)   !< (nx, 2 nt) <y.n, phi_j>
         real(dp), allocatable :: coil_moments(:, :) !< (nx, nk) <(S+d_nu)G_k, phi_j>
-        integer, allocatable :: indices(:, :)       !< recovery dofs (2 ndof, nel)
-        type(csr_matrix_t) :: system                !< R mass + C_F^2 div-div
-        type(sparse_direct_factor_t) :: factor
-        !> Threaded MUMPS Cholesky of the recovery system and of the energy
-        !! operator (both symmetric positive definite); used when factored,
-        !! the SuperLU factors above otherwise.
-        type(gs_direct_t) :: factor_direct, energy_direct
+        type(gs_direct_t) :: energy_direct
         !> Sparse LU of the reference energy operator K + R^T S_ref R.
         type(sparse_direct_factor_t) :: energy_factor
         real(dp) :: cf2 = 0.0_dp                    !< coupled Friedrichs C_F^2
-        !> Per cell: area, local Poincare weight w_T = min((h_T/pi)^2 R_max,T,
-        !! C_F^2) and g_T(j) = int_T d phi_j / d x_a (row 2(j-1)+a).
-        real(dp), allocatable :: cell_area(:), cell_weight(:), cell_g(:, :)
         integer :: cf_iterations = 0
         logical :: ready = .false.
     end type gs_coupled_estimator_t
 
     type :: gs_coupled_majorant_t
-        real(dp) :: majorant = huge(1.0_dp)  !< D + B_T + N
+        real(dp) :: majorant = huge(1.0_dp)  !< D + oscillation + balance + N
         real(dp) :: flux_defect = 0.0_dp     !< D
-        !> B_T = C_F ||Pi0 r|| + (sum_T w_T ||r - Pi0 r||_T^2)^1/2, r = f + div y
+        !> Source oscillation plus C_F ||div sigma + Pi_k f||.
         real(dp) :: balance_defect = 0.0_dp
         real(dp) :: neumann_defect = 0.0_dp  !< N
         integer :: iterations = 0
@@ -146,23 +143,23 @@ contains
     ! ------------------------------------------------------------------
     ! Coupled FEM-BEM majorant (DESIGN section 4). Energy norm
     !   |||v|||^2 = int |grad v|^2 / R dA + <S v, v>_Gamma_c.
-    ! For every y in H(div) and psi the solution of
+    ! For every sigma in H(div) and psi the solution of
     !   a(psi, v) + <S psi, v> = (f, v) + <g, v>,
-    !   |||psi - psi_h||| <= D + B_T + N,
-    !   D = ||sqrt(R) (y - grad psi_h / R)||,
-    !   B_T = C_F ||Pi0 r|| + (sum_T (h_T/pi)^2 R_max,T ||r - Pi0 r||_T^2)^1/2,
-    !   r = f + div y, Pi0 the cell mean (B_T <= C_F ||r||, DESIGN's C_F B),
-    !   N = ||y.n + S psi_h - g||_{S^-1} (dual norm on Gamma_c),
-    ! from the identity (fortsym check: test_gs_coupled_majorant_identities)
-    !   a(e, v) + <S e, v> = (y - grad psi_h/R, grad v) + (f + div y, v)
-    !                        + <g - S psi_h - y.n, v>.
+    ! the error identity is
+    !   a(e, v) + <S e, v> = (sigma - grad psi_h/R, grad v)
+    !       + (f + div sigma, v) + <g - S psi_h - sigma.n, v>.
+    ! FortFEM supplies a patchwise RT flux and the first two terms, with
+    ! coupled C_F for the measured divergence defect and curved-cell source
+    ! oscillation (local Payne--Weinberger only for affine cells). The last
+    ! term is measured in the reference Steklov inverse norm below. Boundary
+    ! RT moments are free recovery unknowns, never Dirichlet data for psi.
     ! Practical, not rigorous: S and its dual norm are those of a reference
     ! BEM with more panels, and C_F is a discrete eigenvalue estimate.
     ! ------------------------------------------------------------------
 
     subroutine gs_coupled_estimator_build(state, coupling, est, status, set, &
                                           reference_panels, cf2)
-        !! Reference BEM, boundary moment maps, C_F^2 and the recovery factor.
+        !! Reference BEM, coil moments, C_F^2 and the reference energy factor.
         !! cf2, when given, replaces the eigenvalue estimate of C_F^2.
         type(gs_state_t), intent(in) :: state
         type(gs_coupling_t), intent(in) :: coupling
@@ -173,11 +170,10 @@ contains
         real(dp), intent(in), optional :: cf2
         real(dp), allocatable :: nodes(:, :), gx(:), gw(:), gamma(:, :)
         real(dp), allocatable :: xq(:, :), nq(:, :), wq(:), bq(:, :), gq(:, :)
-        real(dp), allocatable :: gr(:, :), gz(:, :), blocks(:, :, :)
+        real(dp), allocatable :: gr(:, :), gz(:, :)
         real(dp), allocatable :: x(:), y(:), w(:)
-        real(dp) :: point(2), tau(2), speed, t, lw(0:3), basis(3)
-        integer :: m, np, p, i, q, kk, j, l, c, k, info, stat, ng, point_id
-        integer :: cols(0:3)
+        real(dp) :: point(2), tau(2), speed, basis(3)
+        integer :: m, np, p, kk, j, l, k, info, stat, ng, point_id
         integer, allocatable :: bq_index(:, :)
         real(dp) :: t0
         logical :: direct_ok
@@ -213,8 +209,7 @@ contains
         est%s_trace = 0.5_dp*(est%s_trace + transpose(est%s_trace))
         call gs_phase_tick('est.chol_strace', t0)
 
-        ! Boundary quadrature on the reference panels: <y.n, phi_j> and the
-        ! conormal coil flux moments.
+        ! Boundary quadrature on the reference panels for coil moments.
         ng = 8
         allocate (gx(ng), gw(ng))
         call gauss_legendre(ng, gx, gw)
@@ -222,35 +217,20 @@ contains
         gw = 0.5_dp*gw
         allocate (xq(2, np*ng), nq(2, np*ng), wq(np*ng), bq(3, np*ng), &
                   bq_index(3, np*ng))
-        allocate (est%normal_map(est%nx, 2*est%nt))
-        est%normal_map = 0.0_dp
         point_id = 0
         do p = 1, np
-            i = (p - 1)/m + 1
-            q = p - (i - 1)*m
             do l = 1, ng
                 point_id = point_id + 1
                 call gs_bem_panel_point(est%curve, p, gx(l), point, tau, speed)
                 basis = [(1.0_dp - gx(l))*(1.0_dp - 2.0_dp*gx(l)), &
-                         4.0_dp*gx(l)*(1.0_dp - gx(l)), gx(l)*(2.0_dp*gx(l) - 1.0_dp)]
+                         4.0_dp*gx(l)*(1.0_dp - gx(l)), &
+                         gx(l)*(2.0_dp*gx(l) - 1.0_dp)]
                 xq(:, point_id) = point
                 nq(:, point_id) = [tau(2), -tau(1)]
                 wq(point_id) = gw(l)*speed
                 bq(:, point_id) = basis
                 do kk = 1, 3
                     bq_index(kk, point_id) = gs_bem_trace_node_index(est%curve, p, kk)
-                end do
-                t = (real(q - 1, dp) + gx(l))/m
-                call gs_coupling_edge_weights(coupling, i, t, cols, lw)
-                do kk = 1, 3
-                    j = bq_index(kk, point_id)
-                    do k = 0, coupling%order
-                        do c = 1, 2
-                            est%normal_map(j, 2*(cols(k) - 1) + c) = &
-                                est%normal_map(j, 2*(cols(k) - 1) + c) &
-                                + wq(point_id)*basis(kk)*lw(k)*nq(c, point_id)
-                        end do
-                    end do
                 end do
             end do
         end do
@@ -293,89 +273,6 @@ contains
             if (stat /= 0) return
         end if
         call gs_phase_tick('est.friedrichs', t0)
-        ! Recovery system. The balance term splits r = f + div y into cell
-        ! means and mean-free parts (local Poincare, Payne-Weinberger h/pi):
-        !   (r, e) <= C_F ||Pi0 r|| |||e||| + (sum w_T ||r - r_T||_T^2)^1/2 |||e|||,
-        ! w_T = (h_T/pi)^2 R_max,T (cells with w_T >= C_F^2 stay global). The
-        ! quadratic surrogate minimised is
-        !   int R |y - grad psi_h/R|^2 + sum_T [w_T ||r||_T^2
-        !       + (C_F^2 - w_T) (int_T r)^2 / |T|] + N^2.
-        allocate (est%indices(2*est%ndof, est%nel), &
-                  blocks(2*est%ndof, 2*est%ndof, est%nel), est%cell_area(est%nel), &
-                  est%cell_weight(est%nel), est%cell_g(2*est%ndof, est%nel))
-        blocks = 0.0_dp
-        est%cell_area = 0.0_dp
-        est%cell_g = 0.0_dp
-        stat = 0
-        !$omp parallel default(shared)
-        block
-            real(dp) :: shape(est%ndof), gradients(2, est%ndof)
-            real(dp) :: hessians(2, 2, est%ndof), pt(2), det, weight
-            real(dp) :: controls(2, est%ndof), diameter, wt
-            integer :: ie, qq, jj, kj, aa, bb, row, col, cstat
-            !$omp do schedule(static)
-            do ie = 1, est%nel
-                do jj = 1, est%ndof
-                    est%indices(2*jj - 1:2*jj, ie) = &
-                        [2*state%triangles(jj, ie) - 1, 2*state%triangles(jj, ie)]
-                end do
-                do aa = 1, 2
-                    call triangle_bernstein_controls( &
-                        state%points(aa, state%triangles(:, ie)), controls(aa, :))
-                end do
-                diameter = 0.0_dp
-                do jj = 1, est%ndof
-                    do kj = jj + 1, est%ndof
-                        diameter = max(diameter, &
-                                       norm2(controls(:, jj) - controls(:, kj)))
-                    end do
-                end do
-                wt = min(est%cf2, (diameter/acos(-1.0_dp))**2*maxval(controls(1, :)))
-                est%cell_weight(ie) = wt
-                do qq = 1, size(w)
-                    call gs_cell_data(state, ie, [x(qq), y(qq)], pt, det, shape, &
-                                      gradients, hessians, cstat)
-                    if (cstat /= 0) then
-                        !$omp atomic write
-                        stat = cstat
-                        exit
-                    end if
-                    weight = w(qq)*det
-                    est%cell_area(ie) = est%cell_area(ie) + weight
-                    do jj = 1, est%ndof
-                        do aa = 1, 2
-                            row = 2*(jj - 1) + aa
-                            est%cell_g(row, ie) = est%cell_g(row, ie) &
-                                + weight*gradients(aa, jj)
-                            do kj = 1, est%ndof
-                                do bb = 1, 2
-                                    col = 2*(kj - 1) + bb
-                                    blocks(row, col, ie) = blocks(row, col, ie) &
-                                        + weight*wt*gradients(aa, jj) &
-                                        *gradients(bb, kj)
-                                    if (aa == bb) blocks(row, col, ie) = &
-                                        blocks(row, col, ie) &
-                                        + weight*pt(1)*shape(jj)*shape(kj)
-                                end do
-                            end do
-                        end do
-                    end do
-                end do
-                do col = 1, 2*est%ndof
-                    blocks(:, col, ie) = blocks(:, col, ie) + (est%cf2 - wt) &
-                        /est%cell_area(ie)*est%cell_g(:, ie)*est%cell_g(col, ie)
-                end do
-            end do
-            !$omp end do
-        end block
-        !$omp end parallel
-        if (stat /= 0) return
-        call gs_csr_build(est%system, est%indices, blocks, 2*est%n)
-        status = GS_CM_SOLVE_FAILED
-        call gs_phase_tick('est.assemble', t0)
-        call factor_recovery(stat)
-        if (stat /= 0) return
-        call gs_phase_tick('est.factor_recovery', t0)
         est%ready = .true.
         status = GS_CM_OK
     contains
@@ -438,21 +335,6 @@ contains
             call sparse_direct_factor_csc(est%energy_factor, est%n, colptr, &
                                           rowind(:nnz), values(:nnz), fstat)
         end subroutine factor_energy
-
-        subroutine factor_recovery(fstat)
-            integer, intent(out) :: fstat
-            if (gs_direct_available()) then
-                call gs_direct_factor(est%factor_direct, 2*est%n, est%system%rowptr, &
-                                      est%system%colidx, est%system%val, direct_ok)
-                if (direct_ok) then
-                    fstat = 0
-                    return
-                end if
-                call gs_direct_free(est%factor_direct)
-            end if
-            call sparse_direct_factor_csc(est%factor, 2*est%n, est%system%rowptr, &
-                                          est%system%colidx, est%system%val, fstat)
-        end subroutine factor_recovery
 
         subroutine friedrichs_estimate(fstat)
             !! C_F^2 = max ||v||^2 / |||v|||^2: power iteration on A^-1 M with
@@ -519,9 +401,7 @@ contains
         type(gs_coupled_estimator_t), intent(inout) :: est
 
         if (est%ready) then
-            call sparse_direct_free(est%factor)
             call sparse_direct_free(est%energy_factor)
-            call gs_direct_free(est%factor_direct)
             call gs_direct_free(est%energy_direct)
         end if
         est%ready = .false.
@@ -530,12 +410,7 @@ contains
         if (allocated(est%s_chol)) deallocate (est%s_chol)
         if (allocated(est%restriction)) deallocate (est%restriction)
         if (allocated(est%s_trace)) deallocate (est%s_trace)
-        if (allocated(est%normal_map)) deallocate (est%normal_map)
         if (allocated(est%coil_moments)) deallocate (est%coil_moments)
-        if (allocated(est%indices)) deallocate (est%indices)
-        if (allocated(est%cell_area)) deallocate (est%cell_area)
-        if (allocated(est%cell_weight)) deallocate (est%cell_weight)
-        if (allocated(est%cell_g)) deallocate (est%cell_g)
     end subroutine gs_coupled_estimator_free
 
     subroutine gs_coupled_energy_apply(est, input, output)
@@ -607,185 +482,137 @@ contains
 
     subroutine gs_coupled_majorant(state, est, psi, source, boundary_load, res, &
                                    status)
-        !! D + B_T + N for the frozen problem a(psi,v) + <S psi,v> = (f,v) +
-        !! <g,v>, f = source(cell, R, Z, psi_h), g the functional with reference
-        !! moments boundary_load (est%coil_moments . I for coils). y minimises
-        !! D^2 + C_F^2 B^2 + N^2 over continuous vector Pk: PCG preconditioned
-        !! with the factor of the volume part.
+        !! Patchwise H(div) flux with the physical FEM--BEM interface residual.
+        !! Boundary patch moments are free in the RT recovery. This does not
+        !! impose a Dirichlet condition on psi: its arbitrary trace enters the
+        !! separately measured ||sigma.n + S_ref psi - g||_{S_ref^-1} term.
+        !! Both source balance and curved-cell oscillation use the COUPLED
+        !! Friedrichs constant. Reference BEM, that constant and quadrature
+        !! remain approximate, so this is a practical energy estimate.
         type(gs_state_t), intent(in) :: state
         type(gs_coupled_estimator_t), intent(inout) :: est
         real(dp), intent(in) :: psi(:), boundary_load(:)
         procedure(gs_point_source_fn) :: source
         type(gs_coupled_majorant_t), intent(out) :: res
         integer, intent(out) :: status
-        real(dp), allocatable :: x(:), y(:), w(:), rhs(:), rhs_local(:, :)
-        real(dp), allocatable :: c(:), sc(:), recovered(:), mu(:), smu(:)
-        integer, allocatable :: ymap(:)
-        real(dp) :: residual, flux_sum, balance_sum, local_sum
-        integer :: e, j, n2, stat, iterations, d, k
+        type(equilibrated_flux_estimate_t) :: recovered
+        type(triangle_rt_basis_t) :: rt
+        real(dp), allocatable :: x(:), y(:), w(:), coefficient(:, :), f(:, :)
+        real(dp), allocatable :: flux(:, :, :), lower(:), geometry(:, :, :)
+        real(dp), allocatable :: mu(:), smu(:), gx(:), gw(:), rt_value(:, :)
+        real(dp), allocatable :: rt_div(:)
+        real(dp) :: point(2), det, shape(10), grads(2, 10), hess(2, 2, 10)
+        real(dp) :: vals(10), controls(10), grad(2), xi(2), normal(2), sigma(2)
+        real(dp) :: t, basis(3), normal_flux
+        integer :: e, q, nd, stat, failed, p, i, panel, side, j, node, ng
 
         status = GS_CM_BAD_INPUT
         if (.not. est%ready) return
         if (size(psi) /= est%n .or. size(boundary_load) /= est%nx) return
-        n2 = 2*est%n
-        allocate (ymap(2*est%nt))
-        do d = 1, est%nt
-            do k = 1, 2
-                ymap(2*(d - 1) + k) = 2*(est%coupling%trace_node(d) - 1) + k
-            end do
-        end do
+        if (.not. all(ieee_is_finite(psi))) return
+        if (.not. all(ieee_is_finite(boundary_load))) return
+        if (.not. (est%cf2 > 0.0_dp)) return
+        nd = est%ndof
         status = GS_CM_CELL_FAILED
-        call triangle_duffy_quadrature(8, x, y, w, stat)
+        call triangle_duffy_quadrature(2*state%element_order + 6, x, y, w, stat)
         if (stat /= 0) return
-        allocate (rhs(n2), rhs_local(2*est%ndof, est%nel))
-        rhs_local = 0.0_dp
-        stat = 0
-        !$omp parallel default(shared)
-        block
-            real(dp) :: shape(est%ndof), gradients(2, est%ndof)
-            real(dp) :: hessians(2, 2, est%ndof), pt(2), det, weight, grad(2), f
-            real(dp) :: vals(est%ndof), f_cell
-            integer :: ie, qq, jj, aa, cstat
-            !$omp do schedule(static)
-            do ie = 1, est%nel
-                vals = psi(state%triangles(:, ie))
-                f_cell = 0.0_dp
-                do qq = 1, size(w)
-                    call gs_cell_data(state, ie, [x(qq), y(qq)], pt, det, shape, &
-                                      gradients, hessians, cstat)
-                    if (cstat /= 0) then
-                        !$omp atomic write
-                        stat = cstat
-                        exit
-                    end if
-                    weight = w(qq)*det
-                    grad = matmul(gradients, vals)
-                    f = source(ie, pt(1), pt(2), dot_product(shape, vals))
-                    f_cell = f_cell + weight*f
-                    do jj = 1, est%ndof
-                        do aa = 1, 2
-                            rhs_local(2*(jj - 1) + aa, ie) = &
-                                rhs_local(2*(jj - 1) + aa, ie) + weight &
-                                *(shape(jj)*grad(aa) &
-                                  - est%cell_weight(ie)*f*gradients(aa, jj))
-                        end do
-                    end do
-                end do
-                rhs_local(:, ie) = rhs_local(:, ie) - (est%cf2 - est%cell_weight(ie)) &
-                    /est%cell_area(ie)*f_cell*est%cell_g(:, ie)
-            end do
-            !$omp end do
-        end block
-        !$omp end parallel
-        if (stat /= 0) return
-        rhs = 0.0_dp
+        allocate (coefficient(size(w), est%nel), f(size(w), est%nel), &
+            flux(2, size(w), est%nel), lower(est%nel), geometry(2, nd, est%nel))
+        failed = 0
+        !$omp parallel do schedule(static) reduction(max:failed) &
+        !$omp private(q, point, det, shape, grads, hess, vals, controls, grad, stat)
         do e = 1, est%nel
-            do j = 1, 2*est%ndof
-                rhs(est%indices(j, e)) = rhs(est%indices(j, e)) + rhs_local(j, e)
+            geometry(:, :, e) = state%points(:, state%triangles(:, e))
+            call triangle_bernstein_controls(geometry(1, :, e), controls(:nd))
+            if (minval(controls(:nd)) <= 0.0_dp) then
+                failed = 1
+                cycle
+            end if
+            call gs_error_coefficient(maxval(controls(:nd)), lower(e))
+            vals(:nd) = psi(state%triangles(:, e))
+            do q = 1, size(w)
+                call gs_cell_data(state, e, [x(q), y(q)], point, det, &
+                    shape(:nd), grads(:, :nd), hess(:, :, :nd), stat)
+                if (stat /= 0) then
+                    failed = 1
+                    exit
+                end if
+                call gs_error_coefficient(point(1), coefficient(q, e))
+                f(q, e) = source(e, point(1), point(2), &
+                    dot_product(shape(:nd), vals(:nd)))
+                grad = matmul(grads(:, :nd), vals(:nd) - vals(1))
+                call gs_error_flux(point(1), grad(1), grad(2), &
+                    flux(1, q, e), flux(2, q, e))
             end do
         end do
-        ! c = S psi_h - g on the reference trace space; N^2 = |T y + c|_{S^-1}^2.
-        c = matmul(est%s_ref, matmul(est%restriction, &
-                                     psi(est%coupling%trace_node))) - boundary_load
-        sc = c
-        call s_solve(sc)
-        rhs(ymap) = rhs(ymap) - matmul(transpose(est%normal_map), sc)
-        allocate (recovered(n2))
-        recovered = 0.0_dp
+        !$omp end parallel do
+        if (failed /= 0) return
         status = GS_CM_SOLVE_FAILED
-        call real_conjugate_gradient_operator(action, rhs, recovered, &
-            1.0e-11_dp*max(norm2(rhs), tiny(1.0_dp)), 500, stat, iterations, &
-            residual, precondition)
-        res%iterations = iterations
-        res%converged = stat == KRYLOV_OK
-        if (stat /= KRYLOV_OK .and. stat /= KRYLOV_MAX_ITERATIONS) return
-        if (.not. all(ieee_is_finite(recovered))) return
-        status = GS_CM_CELL_FAILED
-        flux_sum = 0.0_dp
-        balance_sum = 0.0_dp
-        local_sum = 0.0_dp
-        stat = 0
-        !$omp parallel default(shared)
-        block
-            real(dp) :: shape(est%ndof), gradients(2, est%ndof)
-            real(dp) :: hessians(2, 2, est%ndof), pt(2), det, weight, grad(2), f
-            real(dp) :: vals(est%ndof), local(2, est%ndof), flux(2), divergence
-            real(dp) :: r_mean, r_square
-            integer :: ie, qq, cstat
-            !$omp do schedule(static) reduction(+: flux_sum, balance_sum, local_sum)
-            do ie = 1, est%nel
-                vals = psi(state%triangles(:, ie))
-                local = reshape(recovered(est%indices(:, ie)), [2, est%ndof])
-                r_mean = 0.0_dp
-                r_square = 0.0_dp
-                do qq = 1, size(w)
-                    call gs_cell_data(state, ie, [x(qq), y(qq)], pt, det, shape, &
-                                      gradients, hessians, cstat)
-                    if (cstat /= 0) then
-                        !$omp atomic write
-                        stat = cstat
-                        exit
-                    end if
-                    weight = w(qq)*det
-                    grad = matmul(gradients, vals)
-                    flux = matmul(local, shape)
-                    divergence = sum(local*gradients)
-                    f = source(ie, pt(1), pt(2), dot_product(shape, vals))
-                    flux_sum = flux_sum + weight*pt(1)*sum((flux - grad/pt(1))**2)
-                    r_mean = r_mean + weight*(f + divergence)
-                    r_square = r_square + weight*(f + divergence)**2
-                end do
-                ! Mean part (global C_F) and mean-free part (local Poincare);
-                ! a cell with w_T = C_F^2 keeps its whole residual global.
-                r_square = max(0.0_dp, r_square - r_mean**2/est%cell_area(ie))
-                balance_sum = balance_sum + r_mean**2/est%cell_area(ie)
-                if (est%cell_weight(ie) < est%cf2) then
-                    local_sum = local_sum + est%cell_weight(ie)*r_square
-                else
-                    balance_sum = balance_sum + r_square
-                end if
-            end do
-            !$omp end do
-        end block
-        !$omp end parallel
+        call equilibrated_flux_estimate(state%points, state%triangles(1:3, :), &
+            state%element_order, x, y, w, coefficient, f, flux, lower, &
+            sqrt(est%cf2), recovered, stat, geometry_nodes=geometry)
+        if (stat /= EQUILIBRATION_OK) return
+
+        ! Piola preserves sigma.n ds = sigma_hat.n_hat dt exactly, including
+        ! curved edges. Integrate these RT normal moments against the SAME
+        ! reference BEM trace basis used by S_ref and boundary_load.
+        call initialize_triangle_raviart_thomas(state%element_order, rt, stat)
         if (stat /= 0) return
-        mu = matmul(est%normal_map, recovered(ymap)) + c
+        allocate (rt_value(2, size(recovered%flux_coefficients, 1)), &
+            rt_div(size(recovered%flux_coefficients, 1)))
+        mu = matmul(est%s_ref, matmul(est%restriction, &
+            psi(est%coupling%trace_node))) - boundary_load
+        ng = 8
+        allocate (gx(ng), gw(ng))
+        call gauss_legendre(ng, gx, gw)
+        gx = (gx + 1.0_dp)/2
+        gw = gw/2
+        do p = 1, est%coupling%n_edges*est%reference_panels
+            i = (p - 1)/est%reference_panels + 1
+            panel = p - (i - 1)*est%reference_panels
+            e = est%coupling%edge_element(i)
+            side = est%coupling%edge_side(i)
+            do q = 1, ng
+                t = (real(panel - 1, dp) + gx(q))/est%reference_panels
+                select case (side)
+                case (1)
+                    xi = [t, 0.0_dp]
+                    normal = [0.0_dp, -1.0_dp]
+                case (2)
+                    xi = [1.0_dp - t, t]
+                    normal = [1.0_dp, 1.0_dp]
+                case (3)
+                    xi = [0.0_dp, 1.0_dp - t]
+                    normal = [-1.0_dp, 0.0_dp]
+                case default
+                    return
+                end select
+                call evaluate_triangle_raviart_thomas(rt, xi(1), xi(2), &
+                    rt_value, rt_div, stat)
+                if (stat /= 0) return
+                sigma = matmul(rt_value, recovered%flux_coefficients(:, e))
+                call generated_equilibrated_flux_normal_component(sigma, normal, &
+                    normal_flux)
+                basis = [(1.0_dp - gx(q))*(1.0_dp - 2.0_dp*gx(q)), &
+                    4.0_dp*gx(q)*(1.0_dp - gx(q)), gx(q)*(2.0_dp*gx(q) - 1.0_dp)]
+                do j = 1, 3
+                    node = gs_bem_trace_node_index(est%curve, p, j)
+                    mu(node) = mu(node) + gw(q)/est%reference_panels &
+                        *basis(j)*normal_flux
+                end do
+            end do
+        end do
         smu = mu
-        call s_solve(smu)
-        res%flux_defect = sqrt(flux_sum)
-        res%balance_defect = sqrt(est%cf2*balance_sum) + sqrt(local_sum)
+        call dpotrs('U', est%nx, 1, est%s_chol, est%nx, smu, est%nx, stat)
+        if (stat /= 0) return
+        res%flux_defect = recovered%flux_defect
+        res%balance_defect = recovered%oscillation + recovered%divergence_defect
         res%neumann_defect = sqrt(max(0.0_dp, dot_product(mu, smu)))
         res%majorant = res%flux_defect + res%balance_defect + res%neumann_defect
+        res%iterations = 0
+        res%converged = .true.
         if (.not. ieee_is_finite(res%majorant)) return
         status = GS_CM_OK
-    contains
-        subroutine s_solve(v)
-            real(dp), intent(inout) :: v(:)
-            integer :: info
-            call dpotrs('U', est%nx, 1, est%s_chol, est%nx, v, est%nx, info)
-        end subroutine s_solve
-        subroutine action(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            real(dp), allocatable :: t(:)
-            call gs_csr_apply_full(est%system, input, output)
-            t = matmul(est%normal_map, input(ymap))
-            call s_solve(t)
-            output(ymap) = output(ymap) + matmul(transpose(est%normal_map), t)
-        end subroutine action
-        subroutine precondition(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            integer :: pstat
-            logical :: pok
-            if (est%factor_direct%factored) then
-                call gs_direct_solve(est%factor_direct, input, output, pok)
-                pstat = merge(0, 1, pok)
-            else
-                call sparse_direct_solve_factored(est%factor, input, output, pstat)
-            end if
-            if (pstat /= 0) output = input
-        end subroutine precondition
     end subroutine gs_coupled_majorant
 
     subroutine goal_loads(state, est, psi, source, weight, loads, value, status)
