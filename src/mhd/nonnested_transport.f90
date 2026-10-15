@@ -9,6 +9,9 @@ module kin6d_nonnested_transport
     ! JVP/VJP in B is the transport-field block of the later coupled Newton.
     ! Generic Fourier-V0 assembly lives in FortFEM; the sparse solve is the
     ! NN1 symmetric Dirichlet solve. See docs/equilibrium-nonnested-nn2.md.
+    ! With estimate_error, the N = 0 block carries the equilibrated energy
+    ! bound of kin6d_nonnested_error (nt_axisymmetric_error); a phi-dependent
+    ! K with modes > 0 couples the modes and reports no bound.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_feec_t
@@ -20,6 +23,7 @@ module kin6d_nonnested_transport
         EQ_BPHI, EQ_VALUES
     use kin6d_equilibrium_nonnested, only: nn_linear_solve
     use kin6d_nonnested_leaves, only: anisotropic_conductivity
+    use kin6d_nonnested_error, only: nn_error_t, nt_axisymmetric_error
     implicit none
     private
     public :: nt_conductivity_t, nt_report_t, nt_solve
@@ -37,6 +41,9 @@ module kin6d_nonnested_transport
         real(dp) :: residual = 0, chi_ratio = 0
         integer :: ndof = 0, modes = 0, nphi = 0, refinements = 0
         character(32) :: claim = 'candidate'
+        ! N = 0 energy bound (int R grad e . K_pol grad e dR dZ)^(1/2).
+        type(nn_error_t) :: error
+        integer :: error_status = -1
     end type
 contains
     subroutine nt_tensor(self, t, x, k, status)
@@ -67,7 +74,7 @@ contains
     end subroutine
 
     subroutine nt_solve(fs, modes, nphi, conductivity, source, boundary, p, &
-                        report, status)
+                        report, status, estimate_error)
         ! Dirichlet data are the boundary entries of boundary(:) in the
         ! FortFEM Fourier layout; p has the same layout. Derivatives with
         ! respect to S, p_b and chi are the same symmetric solve
@@ -81,6 +88,7 @@ contains
         real(dp), allocatable, intent(out) :: p(:)
         type(nt_report_t), intent(out) :: report
         integer, intent(out) :: status
+        logical, intent(in), optional :: estimate_error
         type(csc_t) :: a, aabs
         real(dp), allocatable :: rhs(:), r(:)
         complex(dp), allocatable :: delta(:)
@@ -130,5 +138,11 @@ contains
         report%ndof = ndof; report%modes = modes; report%nphi = nphi
         if (.not. all(ieee_is_finite(p))) return
         status = 0
+        report%error%claim = 'unavailable-not-requested'
+        if (.not. present(estimate_error)) return
+        if (.not. estimate_error) return
+        ! A failed estimate does not invalidate the solve; it is reported.
+        call nt_axisymmetric_error(fs, modes, nphi, conductivity, &
+            conductivity%chi_perp, source, p, report%error, report%error_status)
     end subroutine
 end module kin6d_nonnested_transport
