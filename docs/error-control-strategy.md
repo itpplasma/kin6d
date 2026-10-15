@@ -186,8 +186,11 @@ physical coefficient, source and guaranteed constants
 patch problems are O(N) and parallel; any H(div)/H(curl) reconstruction gives
 a valid bound, so local solve errors only loosen it, and the measured
 divergence defect absorbs algebraic and load-quadrature inconsistency. The
-remaining non-rigorous step is the quadrature of non-polynomial integrands:
-the claim is Tier A until an explicit remainder makes it Tier D.
+sampled paths retain approximate status because their non-polynomial
+quadrature is unchecked. A separate strict RT0 audit now encloses the complete
+continuous residual and flux-defect integrals for affine P1/P2 constant-profile
+GS. It reports its own potentially wider radius; it does not promote the
+sampled RTp radius. Other source/geometry families remain approximate.
 
 Observable bands use `Q_h + r(z_h) +- M_psi*M_z`, with both majorants
 equilibrated and one adjoint solve per goal. Nonlinear and free-boundary
@@ -219,7 +222,7 @@ remainders.
 | Product goal band `M_psi*M_z` | Default goal band | One adjoint and estimator per goal |
 | DWR, enriched adjoint | Indicator; nonlinear primal only | Equals a P(p+1) re-solve for linear problems; misses energy goals; radius does not shrink |
 | p-, h-refined re-solve, Richardson | Reference checks | Not a bound; Richardson unreliable on non-nested meshes |
-| Interval arithmetic throughout | Tiny strict audits | Cost without benefit when discretization error dominates |
+| Outward interval residual audit | Supported continuous energy certificate | Current RT0 reconstruction can give a wider radius |
 
 The measurements behind the table are on a manufactured GS box at 4
 threads and up to 1.9e5 DOF. The equilibrated bound has efficiency
