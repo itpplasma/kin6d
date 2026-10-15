@@ -436,7 +436,11 @@ add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_larg
 set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEOUT 1800)
 target_sources(kin6d_fem2d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90)
 target_sources(kin6d_equilibrium PRIVATE src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90
-    src/gs_equilibrated.f90)
+    src/gs_equilibrated.f90 src/generated/kin6d_gs_error_leaves.f90)
+add_executable(test_gs_error_leaves test/test_gs_error_leaves.f90)
+target_link_libraries(test_gs_error_leaves PRIVATE kin6d_equilibrium)
+add_test(NAME grad_shafranov_error_leaf_oracles COMMAND test_gs_error_leaves)
+set_tests_properties(grad_shafranov_error_leaf_oracles PROPERTIES TIMEOUT 20)
 add_executable(test_gs_equilibrated_majorant test/test_gs_equilibrated_majorant.f90)
 target_link_libraries(test_gs_equilibrated_majorant PRIVATE kin6d)
 add_test(NAME grad_shafranov_equilibrated_flux_majorant
@@ -772,7 +776,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator grad_shafranov ideal_map equilibrium_core nonnested vacuum_shell
+    foreach(generator gs_error grad_shafranov ideal_map equilibrium_core nonnested vacuum_shell
             response_fluid
             gs_coarea gs_inverse
             gs_reference_error laboratory poisson fp transport
