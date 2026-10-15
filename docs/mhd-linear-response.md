@@ -51,10 +51,39 @@ geometry of order ≤ 2 whose ring-edge nodes lie on the flux surfaces. FEEC
 order `k` (P_k Nédélec). The volume current of the strip between two rings is
 that of its mid surface, sampled at `np_sample` uniform angles.
 
+## Error diagnostics
+
+Every `ampere_n_solve` stores `amp%error`. Its `discrete_energy_error` is
+`(r^H (K + C^H S^-1 C)^-1 r)^(1/2)`, evaluated with the retained coupled
+operator and one correction solve using the existing factorization. It measures
+algebraic error in the interior-plus-exterior energy norm with the same
+`R dR dZ` pairing and toroidal amplitude convention as the solve. Ordinary
+arithmetic and factorization errors are not enclosed, so its claim is
+`indicator`, including when the value is near zero.
+
+Passing `fs`, an enriched `fsd` on the same mesh and quadrature, and a
+thread-safe `current` callback to `ampere_n_solve` also computes FortFEM's
+per-mode equilibrated reconstruction. The callback returns the already
+`mu0`-scaled smooth volume current in T/m. The result is available as
+`amp%error%interior`, including per-cell indicators. The same diagnostic for an
+arbitrary candidate is exposed by `ampere_n_equilibrated_error`.
+
+This reconstruction estimates the **interior problem with the candidate's
+tangential trace fixed**. It does not include surface-current loads or the
+exterior Steklov remainder. Consequently `interior_claim` is
+`indicator-fixed-tangential-trace`, `continuous_claim` remains
+`unavailable-exterior-remainder`, and no finite exterior radius is reported.
+Closing that gap requires an upstream reconstruction constrained by the
+exterior dual trace, plus enclosed quadrature. A small coupled algebraic
+residual does not close either gap. The derivative enclosure also remains
+explicitly unavailable; the primal diagnostic does not certify response
+sensitivities. Mode zero still requires a separate gauge and is rejected.
+
 ## Verification (ctest `mhd_*`)
 
 | Test | Oracle | Result |
 |---|---|---|
+| `mhd_ampere_n_error_status` | affine/curved meshes, both mode signs, independent coupled energy, nonzero exactly representable field, perturbed candidates | energy diagnostic and explicit exterior/derivative status |
 | `mhd_ampere_n_exterior_manufactured` | current `curl_n W` of a compact bump; field from toroidal-angle quadrature of `1/(4π|x−y|)` | field order k (k = 1, 2), exterior trace order ≥ 2 |
 | `mhd_shielding_cylinder_limit_reciprocity` | screened response of a periodic cylinder (modified Bessel functions); sheet reciprocity | 1e-5 at R0/a = 40, second order in a/R0; M Hermitian to 1e-13 |
 | `mhd_newcomb_screw_pinch_limit` | Newcomb ODE (fortnum Cash–Karp), shape of the response inside the plasma | β=0: second order in a/R0, 6e-3 at R0/a=40; β_p≈2 converges to the same limit (pressure-sensitive test needs a periodic-cylinder chart) |

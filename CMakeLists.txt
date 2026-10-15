@@ -1244,6 +1244,8 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_equilibrated_flux_products.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_topology.f90
     ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_flux_2d.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_hcurl_equilibration_products.f90
+    ${fortfem_SOURCE_DIR}/src/estimators/equilibrated_hcurl_meridian_n.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
@@ -1264,6 +1266,11 @@ add_executable(test_mhd_perturbation test/test_mhd_perturbation.f90)
 target_link_libraries(test_mhd_perturbation PRIVATE kin6d)
 add_test(NAME mhd_perturbation_l7_xi_lagrangian_charts COMMAND test_mhd_perturbation)
 set_tests_properties(mhd_perturbation_l7_xi_lagrangian_charts PROPERTIES TIMEOUT 300)
+add_executable(test_mhd_ampere_error test/test_mhd_ampere_error.f90)
+target_link_libraries(test_mhd_ampere_error PRIVATE kin6d)
+add_test(NAME mhd_ampere_n_error_status COMMAND test_mhd_ampere_error)
+set_tests_properties(mhd_ampere_n_error_status PROPERTIES TIMEOUT 30
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
 target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
 add_test(NAME mhd_ampere_n_exterior_manufactured COMMAND test_mhd_ampere_n)
