@@ -8,22 +8,13 @@ module kin6d_triangle_basis
         generated_factor_product_jet2_order1
     use fortfem_generated_factor_product_jet3_order2, only: &
         generated_factor_product_jet3_order2
+    use kin6d_segment_leaves, only: gs_segment_cubic_value, gs_segment_cubic_slopes
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     implicit none
     private
     public :: triangle_basis_jet, cubic_segment_roots, cubic_segment_stationary
     public :: triangle_bernstein_controls
-    real(dp), parameter :: segment_nodes(4) = [0.0_dp, 1.0_dp/3, 2.0_dp/3, 1.0_dp]
-    ! Derivatives of the cubic Lagrange basis on segment_nodes at t = 0, 1/2,
-    ! 1 (columns), and the barycentric constants 1/prod_(k/=i)(x_i - x_k);
-    ! all exact binary fractions.
-    real(dp), parameter :: segment_slopes(4, 3) = reshape([ &
-        -5.5_dp, 9.0_dp, -4.5_dp, 1.0_dp, &
-        0.125_dp, -3.375_dp, 3.375_dp, -0.125_dp, &
-        -1.0_dp, 4.5_dp, -9.0_dp, 5.5_dp], [4, 3])
-    real(dp), parameter :: segment_barycentric(4) = &
-        [-4.5_dp, 13.5_dp, -13.5_dp, 4.5_dp]
 contains
     pure subroutine triangle_bernstein_controls(values, controls)
         real(dp), intent(in) :: values(:)
@@ -109,9 +100,8 @@ contains
         integer, intent(out) :: count
         real(dp) :: g(3), a, b, c, discriminant, q, trial(2)
         integer :: j
-        do j = 1, 3
-            g(j) = dot_product(segment_slopes(:, j), values - values(1))
-        end do
+        call gs_segment_cubic_slopes(values(1), values(2), values(3), values(4), &
+                                     g(1), g(2), g(3))
         a = 2*(g(1) + g(3) - 2*g(2)); b = g(3) - g(1) - a; c = g(1)
         count = 0; roots = 0
         if (abs(a) <= 32*epsilon(1.0_dp)*max(abs(b), abs(c))) then
@@ -168,12 +158,9 @@ contains
     contains
         pure function polynomial(t) result(value)
             real(dp), intent(in) :: t
-            real(dp) :: value, d(4)
-            d = t - segment_nodes
-            value = segment_barycentric(1)*d(2)*d(3)*d(4)*(values(1) - level) &
-                + segment_barycentric(2)*d(1)*d(3)*d(4)*(values(2) - level) &
-                + segment_barycentric(3)*d(1)*d(2)*d(4)*(values(3) - level) &
-                + segment_barycentric(4)*d(1)*d(2)*d(3)*(values(4) - level)
+            real(dp) :: value
+            call gs_segment_cubic_value(t, level, values(1), values(2), values(3), &
+                                        values(4), value)
         end function
     end subroutine
 end module
