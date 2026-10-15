@@ -138,8 +138,8 @@ contains
                     stability = 1
                     kind = EQ_STABILITY_BOUND
                     lane_status = 0
-                    certifier%method = 'equilibrated-rt0-audit'
-                    certifier%quadrature_status = 'rigorous-rt0-audit'
+                    certifier%method = 'equilibrated-bdm-audit'
+                    certifier%quadrature_status = 'rigorous-bdm-audit'
                 end if
             end if
         end if
