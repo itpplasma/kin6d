@@ -197,7 +197,10 @@ Where the iterations went, and the fixes:
 3. **One MUMPS handle with `sparse_refactor`** (fortsparse 7300414): the
    analysis is kept on 39 of 40 factorisations. Per iteration at 863k
    unknowns, N = 0: assembly 2.2 s, factor+solve 2.6 s; the line search is
-   negligible.
+   negligible. The first try of each later Newton step is FGMRES on the
+   current KKT matrix preconditioned by the previous factor (relative
+   residual 1e-10 within 20 iterations, else refactorise); on the NL-3a
+   +15 mm return start this takes SuperLU from 5 to 3 factorisations.
 4. **Restart and the ε → 0 limit.** `save_state`/`load_state` restart from a
    converged axisymmetric state. `linear_response` makes one exact Newton step
    restricted to n ≠ 0; at an axisymmetric state that is the exact ε → 0 limit

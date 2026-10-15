@@ -247,8 +247,13 @@ central difference of the residual (6e-11 at P2, 1e-12 at P3 for ratio
 1e4). The leaf test checks JVP/VJP pairing, J x B = grad_perp p and
 q.b = chi_par b.grad p. Newton uses a general sparse LU (MUMPS unsymmetric
 when available, otherwise SuperLU) with backtracking on the blockwise
-backward error |r|/(|J| m), where m is |x| plus the block maximum. Tangents
-and adjoints of a converged state are solves with that Jacobian.
+backward error |r|/(|J| m), where m is |x| plus the block maximum. A later
+step first runs FGMRES on the current exact Jacobian, right-preconditioned
+by the LU of an earlier step of the same solve, and accepts it at relative
+residual 1e-10 within 20 iterations; otherwise it refactors. The Newton
+histories are unchanged; the factorisations drop from one per step to
+typically one or two per solve. Tangents and adjoints of a converged state
+are solves with that Jacobian.
 
 Solov'ev evidence (local, gfortran -O3, 4 threads, ratio chi_par/chi_perp =
 g_par/g_perp = 1e6, seed with the axis shifted by 0.1 m and V = 0). Errors
