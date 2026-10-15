@@ -1717,4 +1717,3 @@ foreach(_t IN LISTS _kin6d_all_tests)
     endif()
     set_tests_properties(${_t} PROPERTIES ENVIRONMENT "${_env}" PROCESSORS "${_threads}")
 endforeach()
-
