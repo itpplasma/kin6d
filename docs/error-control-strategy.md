@@ -270,8 +270,14 @@ boundary trace, so the bound holds for the problem with the Galerkin exterior
 (Steklov term zero by construction). For a ring sheet the Galerkin bound
 converges at order 1.6--1.8 towards 2 (P2), with index near 1 for large
 perturbations. `gs_response_3d` writes it per unit-sheet solve
-(`prefix_sheet_error.dat`). The exact-exterior and derivative remainders, the
-quadrature and the sheet-data interpolation remain unavailable. The ideal
+(`prefix_sheet_error.dat`). An optional `sheet_derivative = dG/dtau` in
+`ampere_n_coupled_error` adds FortFEM's local lift majorant for `G - I_k G`;
+its sampled quadrature keeps the claim practical. The manufactured cylinder
+test has index 2.23--2.39 and order 3.47--3.49 for cubic sheet interpolation.
+The curl_n Prager--Synge constant is one in the gauge `R A_phi = 0`;
+an unequilibrated volume defect has the explicit weighted factor `1/|n|`
+([argument](mhd-linear-response.md#error-diagnostics)). The exact-exterior
+and derivative remainders and enclosed quadrature remain unavailable. The ideal
 response of `mhd_ideal_n` now optionally recomputes the frozen-current
 algebraic defect at the actual GMRES final state, including sheet elimination,
 and reports a practical directional-contraction estimate in the coupled
@@ -299,6 +305,7 @@ remainders.
 | p-, h-refined re-solve, Richardson | Reference checks | Not a bound; Richardson unreliable on non-nested meshes |
 | Outward Bernstein audit of the RTp flux | Supported continuous energy certificate | Affine P1/P2, polynomial source numerator, Dirichlet only |
 | Free-boundary FEM-BEM interface | Practical finite trace-space indicator | Continuous exterior remainder `unavailable-bem-remainder`; enriched flux residual norms are not upper bounds |
+| Per-mode sheet interpolation lift | Practical correction for `G - I_k G` | Needs `dG/dtau`; sampled quadrature; exact exterior unavailable |
 
 The fixed-boundary measurements behind the table are on a manufactured GS box at 4
 threads and up to 7.6e5 interior DOF. The sampled equilibrated bound has

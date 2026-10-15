@@ -160,7 +160,7 @@ target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quant
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "f16c3359e772ec4079cb8866fa06a0203c03e068")
+set(KIN6D_FORTFEM_REVISION "dc42abfedcfb82dea56117df9e599c5c80dd9e62")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1393,6 +1393,13 @@ add_test(NAME mhd_ampere_n_sheet_coupled_equilibrated
     COMMAND test_mhd_ampere_sheet_error)
 set_tests_properties(mhd_ampere_n_sheet_coupled_equilibrated PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+add_executable(test_meridian_edge_remainder
+    ${fortfem_SOURCE_DIR}/test/test_meridian_edge_remainder.f90)
+target_link_libraries(test_meridian_edge_remainder PRIVATE kin6d)
+add_test(NAME mhd_ampere_n_sheet_interpolation_remainder
+    COMMAND test_meridian_edge_remainder)
+set_tests_properties(mhd_ampere_n_sheet_interpolation_remainder PROPERTIES TIMEOUT 30
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_mhd_ampere_n test/test_mhd_ampere_n.f90)
 target_link_libraries(test_mhd_ampere_n PRIVATE kin6d)
 add_test(NAME mhd_ampere_n_exterior_manufactured COMMAND test_mhd_ampere_n)
