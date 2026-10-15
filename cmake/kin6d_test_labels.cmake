@@ -329,6 +329,8 @@ kin6d_test_labels(mhd_perturbation_l7_xi_lagrangian_charts fast CLASSES mhd
     TARGETS test_mhd_perturbation)
 kin6d_test_labels(mhd_ampere_n_error_status fast CLASSES mhd
     TARGETS test_mhd_ampere_error)
+kin6d_test_labels(mhd_ampere_n_sheet_coupled_equilibrated fast CLASSES mhd
+    TARGETS test_mhd_ampere_sheet_error)
 kin6d_test_labels(mhd_ampere_n_exterior_manufactured fast CLASSES mhd
     TARGETS test_mhd_ampere_n)
 kin6d_test_labels(mhd_shielding_cylinder_limit_reciprocity fast CLASSES mhd

@@ -219,12 +219,27 @@ zero-pressure FF' table as a profile law (claim `practical estimate`, method
 bound: `M` is the equilibrated bound of the weighted vector-Laplace Riesz error
 with discrete flux `A grad r_h - g`, and the estimator quadrature is not
 enclosed. On a coarse Solov'ev psi-lane state the lower bound of a finer test
-space lies below it. Per-mode Ampere solves
-report a coupled discrete residual-energy indicator (the algebraic residual
-energy of the discrete system, also written by `gs_response_3d` for its sheet
-solves) and optional fixed-trace interior reconstruction; the missing exterior
-and derivative remainders remain explicitly unavailable. These results do not
-certify all MHD operators.
+space lies below it. The NN2 transport solve
+(`nt_solve(..., estimate_error=.true.)`) bounds its N = 0 block with tensor RT
+recovery (A = R K_pol, A_min = R_min chi_perp) when K does not depend on phi;
+a phi-dependent K with modes > 0 couples the modes and reports
+`unavailable-mode-coupling`. The bound holds for any anisotropy, but the
+hat-function localisation is not robust in it: on the Sovinec test the index
+is 1.05 at chi ratio 1, 3--6 at 1e3, and grows with h at 1e6--1e9 (P2
+solution polluted). Per-mode Ampere solves report a coupled discrete
+residual-energy indicator (the algebraic residual energy of the discrete
+system, also written by `gs_response_3d` for its sheet solves), the optional
+fixed-trace interior reconstruction and the coupled reconstruction `ampere_n_coupled_error`: sheet loads enter as
+a jump of R H_phi and the discrete Steklov-Poincare trace as a prescribed
+boundary trace, so the bound holds for the problem with the Galerkin exterior
+(Steklov term zero by construction). For a ring sheet the Galerkin bound
+converges at order 1.6--1.8 towards 2 (P2), with index near 1 for large
+perturbations. `gs_response_3d` writes it per unit-sheet solve
+(`prefix_sheet_error.dat`). The exact-exterior and derivative remainders, the
+quadrature and the sheet-data interpolation remain unavailable; the ideal
+response of `mhd_ideal_n` (sampled volume currents inside a GMRES fixed point)
+has no coercive Ampere bound for its final state. These results do not certify
+all MHD operators.
 
 Priorities: (1) the equilibrated bound for each existing operator family (H1
 affine, curved and Neumann, tetrahedral, mixed and SIPG; planar H(curl) and
