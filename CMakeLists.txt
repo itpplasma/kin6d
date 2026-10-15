@@ -265,7 +265,7 @@ if(NOT TARGET fortsparse)
     set(FORTSPARSE_USE_SYSTEM_DEPS ON CACHE BOOL "" FORCE)
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG aa786664d7e2988047a3fabe12c1da25a1eb6f9b
+        GIT_TAG 358a2aec42e3beca024491eebbac573e5cb5ef75
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
@@ -331,8 +331,8 @@ foreach(k 2 3)
     add_test(NAME ideal_map_n0_shaped_solovev_p${k}
         COMMAND test_ideal_map_axisymmetric shaped ${k})
 endforeach()
-# Three-mesh ladders: 1-3 min each with 4 threads; shaped P3 about 10 min
-# (serial SuperLU on 5e4 dofs dominates).
+# Three-mesh ladders: 15-40 s each with 4 threads; shaped P3 about 2 min
+# (serial SuperLU numeric factorisation dominates).
 set_tests_properties(ideal_map_n3_leakage ideal_map_n0_solovev_a3_p2
     ideal_map_n0_solovev_a3_p3 ideal_map_n0_shaped_solovev_p2 PROPERTIES
     TIMEOUT 900 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)

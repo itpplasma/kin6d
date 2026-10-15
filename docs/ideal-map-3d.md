@@ -281,7 +281,12 @@ solution psi_2D on the same mesh is the second oracle.
   MUMPS the seed ladders failed intermittently. `sparse_refactor` (fortsparse
   7300414) keeps the MUMPS analysis across Newton steps: on the finest shaped
   P3 mesh the analysis drops from 12-14 s to 0.13 s and factor+solve to
-  13.2 s (one thread).
+  13.2 s (one thread). The SuperLU backend (fortsparse 358a2ae) keeps its
+  minimum-degree column ordering across same-pattern refactorizations; the
+  factor equals a fresh one, so the Newton traces are bitwise unchanged, and
+  the ordering, which was most of each SuperLU factorization, is skipped:
+  on the finest A3 P3 seed mesh (23269 dofs, 490 factorizations)
+  factor+solve drops from 322 s to 116 s.
 
   Position gauge (`position_gauge`, as in N4: full (q1, q2), omega = 0): the
   pullback A3 P2 ladder is ten times more accurate (2.8e-5, 3.8e-6, 5.5e-7;
