@@ -50,7 +50,7 @@ module kin6d_ideal_map
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_INDEFINITE, &
+        FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_INDEFINITE, &
         sparse_factor_stats, sparse_factor_stats_t, sparse_refactor
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
@@ -1580,8 +1580,9 @@ contains
             end do
             colidx = colidx(:c); val = val(:c)
         end if
-        ! MUMPS LDL^T (nested dissection) when KIN6D is built with MUMPS;
-        ! serial SuperLU LU otherwise. The damped system is symmetric and
+        ! FortSparse AUTO when KIN6D is built with MUMPS (MUMPS LDL^T for
+        ! large systems, SuperLU below the measured crossover); serial
+        ! SuperLU LU otherwise. The damped system is symmetric and
         ! may be indefinite. The same hint selects structure-aware ordering
         ! and threshold pivoting in the SuperLU fallback.
         slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
@@ -1592,7 +1593,7 @@ contains
                 done = .false.
                 return
             end if
-            slv%backend_id = FORTSPARSE_BACKEND_MUMPS
+            slv%backend_id = FORTSPARSE_BACKEND_AUTO
             slv%options%nthreads = map%factor_threads
         else
             slv%backend_id = FORTSPARSE_BACKEND_SUPERLU

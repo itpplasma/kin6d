@@ -49,7 +49,7 @@ module kin6d_nonnested_coupled
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, csc_matmul, &
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND
+        FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_GENERAL
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
@@ -1039,11 +1039,11 @@ contains
         type(fortsparse_status_t) :: st
         status = 1
         if (gs_direct_available()) then
-            ! Threaded MUMPS unsymmetric LU, nested dissection.
+            ! Unsymmetric LU: FortSparse picks SuperLU or threaded MUMPS by
+            ! size, and MUMPS its ordering.
             if (.not. gs_direct_mpi_ready()) return
-            solver%backend_id = FORTSPARSE_BACKEND_MUMPS
+            solver%backend_id = FORTSPARSE_BACKEND_AUTO
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
-            solver%options%ordering = FORTSPARSE_ORDER_ND
 !$          solver%options%nthreads = omp_get_max_threads()
         else
             solver%backend_id = FORTSPARSE_BACKEND_SUPERLU

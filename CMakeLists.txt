@@ -160,7 +160,7 @@ target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quant
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "7a79e4cc825acba32b80b502542cc6df90756cb7")
+set(KIN6D_FORTFEM_REVISION "72a2c44bac62d61f08541359c79590b1dfcf99ab")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -239,10 +239,11 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-# Sparse direct factorisations go through FortSparse. Threaded MUMPS (OpenMP,
-# METIS nested dissection) is the default backend of every general direct solve
-# (GS stiffness Cholesky, ideal-map and coupled Newton LDL^T/LU); like OpenMP it
-# is required when enabled, so configure fails if it is not found.
+# Sparse direct factorisations go through FortSparse. Its AUTO backend picks
+# per matrix between serial SuperLU (small systems) and threaded MUMPS (OpenMP,
+# AMD or METIS ordering) for every general direct solve (GS stiffness Cholesky,
+# ideal-map and coupled Newton LDL^T/LU); like OpenMP, MUMPS is required when
+# enabled, so configure fails if it is not found.
 # KIN6D_ENABLE_MUMPS=OFF selects serial SuperLU for the Newton systems and the
 # iterative GS path. FortFEM's sparse_direct wrapper (SuperLU) stays the
 # fallback for asymmetric systems.
@@ -302,7 +303,7 @@ if(NOT TARGET fortsparse)
     set(FORTSPARSE_USE_SYSTEM_DEPS ON CACHE BOOL "" FORCE)
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG de78538f96acc18b75de70e7331e969cf727c1e7
+        GIT_TAG df2398b2cae8f1c93c027e2b704915b5373b990a
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
