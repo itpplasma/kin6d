@@ -263,8 +263,10 @@ Lean. The explicit `formal` preset also checks the retained theorem package and
 Fortran-produced rational certificate. This changes dependency selection, not
 the claimed strength of a numerical result.
 
-MUMPS (through FortSparse, threaded with OpenMP) is the default sparse direct
-backend and is required: configure fails unless MUMPS is found through
+MUMPS (through FortSparse, threaded with OpenMP) is required, and direct
+solves use FortSparse's AUTO backend: SuperLU below 40000 stored entries,
+where its factor + solve is faster, MUMPS above (measured crossover in the
+FortSparse README). Configure fails unless MUMPS is found through
 `MUMPS_DIR` or `CMAKE_PREFIX_PATH` (an OpenMP scivision/mumps install) or as a
 distribution package, and warns when the found library has no OpenMP. The
 `superlu` preset (`KIN6D_ENABLE_MUMPS=OFF`) builds the serial SuperLU path for
