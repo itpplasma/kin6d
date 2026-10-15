@@ -251,7 +251,7 @@ radius exceeds the sampled one by at most 0.05%. Estimator and audit cost
 grow with DOF exponents 0.97--1.06. At 7.6e5 DOF they cost 20% and 15% (P1)
 and 15% and 4% (P2) of mesh, assembly and the Jacobi-CG solve, whose own
 exponent is 1.55--1.64. From 1 to 16 threads at 1.9e5 DOF the estimator
-speeds up 6.6--8.4 times and the audit 10 times, on a shared host. Goal bands with
+speeds up 7.3--8.1 times and the audit 10 times, on a shared host. Goal bands with
 equilibrated majorants are 3--8 times the true error. An enriched DWR
 correction reproduced the P(p+1) primal result.
 
