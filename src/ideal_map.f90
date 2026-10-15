@@ -50,7 +50,7 @@ module kin6d_ideal_map
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE, &
+        FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_INDEFINITE, &
         sparse_factor_stats, sparse_factor_stats_t, sparse_refactor
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
@@ -1582,7 +1582,9 @@ contains
         end if
         ! MUMPS LDL^T (nested dissection) when KIN6D is built with MUMPS;
         ! serial SuperLU LU otherwise. The damped system is symmetric and
-        ! may be indefinite.
+        ! may be indefinite. The same hint selects structure-aware ordering
+        ! and threshold pivoting in the SuperLU fallback.
+        slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
         if (gs_direct_available()) then
             if (.not. gs_direct_mpi_ready()) then
                 info = 1
@@ -1591,11 +1593,9 @@ contains
                 return
             end if
             slv%backend_id = FORTSPARSE_BACKEND_MUMPS
-            slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
             slv%options%nthreads = map%factor_threads
         else
             slv%backend_id = FORTSPARSE_BACKEND_SUPERLU
-            slv%options%symmetry = FORTSPARSE_SYM_GENERAL
         end if
         ! The pattern is fixed per map: after the first factorisation only
         ! the numerical factorisation is redone (MUMPS keeps its analysis).
