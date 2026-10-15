@@ -142,7 +142,7 @@ program test_nonnested_transport_error
     !     chi_par/chi_perp = 1, 1e3, 1e6, 1e9 (P2, nr = 4, 8);
     !   torus: axisymmetric tokamak-like field, weak load, ratio 1e4, modes
     !     = 1 (the N = 0 block decouples), P2 and P3;
-    !   helical: phi-dependent K with modes > 0 reports mode coupling.
+    !   helical: phi-dependent K with modes > 0 reaches the full-band wrapper.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nt_error_fixture
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
@@ -150,7 +150,7 @@ program test_nonnested_transport_error
         meridian_qgrad
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_source_t
     use kin6d_nonnested_transport, only: nt_conductivity_t, nt_report_t, nt_solve
-    use kin6d_nonnested_error, only: NN_ERROR_OK, NN_ERROR_MODE_COUPLING
+    use kin6d_nonnested_error, only: NN_ERROR_OK
     implicit none
     logical :: ok
 
@@ -306,6 +306,44 @@ contains
         end do
     end subroutine
 
+    real(dp) function helical_energy_error(fs, cond, p, modes, nphi) result(err)
+        type(meridian_feec_t), intent(in) :: fs
+        type(nt_conductivity_t), intent(in) :: cond
+        real(dp), intent(in) :: p(:)
+        integer, intent(in) :: modes, nphi
+        real(dp) :: x(2), wq, val(fs%nl0), grad(2, fs%nl0), k(3, 3, 1)
+        real(dp) :: te, g(2), gh(3), e(3), phi, c, s, vc, vs, e2
+        integer :: t, q, j, n, off, st
+        e2 = 0
+        do t = 1, fs%mm%topology%n_triangles
+            do q = 1, fs%nq
+                call meridian_qgrad(fs, t, q, x, wq, val, grad, st)
+                call exact([x(1) - r0, x(2)], te, g)
+                do j = 1, nphi
+                    phi = 2*pi*(j - 1)/nphi
+                    call cond%tensor(t, reshape([x, phi], [3, 1]), k, st)
+                    gh = 0
+                    gh([1, 3]) = matmul(grad, p(fs%sp(0)%dof(:, t)))
+                    do n = 1, modes
+                        c = cos(n*phi); s = sin(n*phi)
+                        off = (2*n - 1)*fs%n0
+                        vc = dot_product(val, p(off + fs%sp(0)%dof(:, t)))
+                        gh([1, 3]) = gh([1, 3]) &
+                            + c*matmul(grad, p(off + fs%sp(0)%dof(:, t)))
+                        off = 2*n*fs%n0
+                        vs = dot_product(val, p(off + fs%sp(0)%dof(:, t)))
+                        gh([1, 3]) = gh([1, 3]) &
+                            + s*matmul(grad, p(off + fs%sp(0)%dof(:, t)))
+                        gh(2) = gh(2) + n*(-vc*s + vs*c)/x(1)
+                    end do
+                    e = [g(1), 0.0_dp, g(2)] - gh
+                    e2 = e2 + wq*dot_product(e, matmul(k(:, :, 1), e))/nphi
+                end do
+            end do
+        end do
+        err = sqrt(e2)
+    end function
+
     subroutine run_helical(ok)
         logical, intent(inout) :: ok
         integer, parameter :: modes = 2, nphi = 8
@@ -328,9 +366,13 @@ contains
         call nt_solve(fs, modes, nphi, cond, src, bc, p, report, st, &
             estimate_error=.true.)
         if (st /= 0) error stop 'helical solve'
-        print '(a, i0, 1x, a)', 'helical status ', report%error_status, &
-            trim(report%error%claim)
-        ok = ok .and. report%error_status == NN_ERROR_MODE_COUPLING
-        ok = ok .and. trim(report%error%claim) == 'unavailable-mode-coupling'
+        print '(a, i0, 1x, a, 2(a, es12.4))', &
+            'helical status ', report%error_status, trim(report%error%claim), &
+            ' bound ', report%error%bound, &
+            ' error ', helical_energy_error(fs, cond, p, modes, nphi)
+        ok = ok .and. report%error_status == NN_ERROR_OK
+        ok = ok .and. trim(report%error%scope) == 'phi-sampled-fourier-galerkin'
+        ok = ok .and. report%error%bound >= &
+            helical_energy_error(fs, cond, p, modes, nphi)
     end subroutine
 end program

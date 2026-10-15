@@ -281,6 +281,34 @@ sparse direct solve. The coefficient callback of an NN1 field locates each
 point in the mesh. Evaluation in the same triangle is the obvious next
 optimisation, to be made only after measurement.
 
+## Transport error estimate
+
+`nt_solve(..., estimate_error=.true.)` retains the N = 0 tensor estimator
+for a phi-independent K. For phi-dependent K and N > 0 it now reports a
+practical energy majorant of the full retained, phi-sampled Fourier-Galerkin
+system (`scope='phi-sampled-fourier-galerkin'`). FortFEM reconstructs
+`R (K grad p - f)_pol` mode by mode in H(div), retaining the toroidal flux
+and its cosine/sine derivative in the equilibrium constraint. The residual
+uses the guaranteed domain-wide lower ellipticity constant chi_perp and
+Parseval weights. Local divergence defects and data oscillation are
+included. Neither phi/meridional quadrature, the omitted Fourier complement
+nor the error of the imposed Dirichlet trace is enclosed; the claim remains
+`practical-fixed-dirichlet-trace`. Derivatives of this estimator are unavailable.
+
+The fast test `nonnested_transport_fourier_equilibrated` uses a strong
+manufactured source with nonzero cosine/sine modes and phi-dependent scalar
+K. P4 exact recovery leaves a 2.3e-11 bound; the P2 ladder gives energy order
+1.97–1.99 and efficiency 1.21–1.23. At 83,205 DOFs and four threads,
+three generic-estimator repetitions average 0.818 s against 5.64 s for assembly
+and SuperLU solve (14.5%); one-thread estimator time is 2.53 s (3.09x speedup).
+An earlier shared-host repeat gave 19% cost and 3.39x speedup.
+These shared-host timings exclude the automatic wrapper's preliminary
+phi-dependence scan and are indicative. The existing helical anisotropic
+case also checks the full coupled energy: bound 0.206 versus error 0.133
+at chi ratio 100. The lower-ellipticity defect norm may become loose at
+large anisotropy. FFT sampling costs O(cells * nphi log nphi); reconstruction
+and storage are O(cells * modes) at fixed spatial degree.
+
 ## Second increment (implemented): axisymmetric coupled Newton
 
 `kin6d_nonnested_coupled` solves the full n = 0 system on the NN1 complex.
