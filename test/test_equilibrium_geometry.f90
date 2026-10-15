@@ -105,7 +105,7 @@ contains
 end module test_geometry_fields
 
 program test_equilibrium_geometry
-    ! Kinetic geometry view of D7 (src/equilibrium_geometry.f90).
+    ! Kinetic geometry view of D7 (src/equilibrium/equilibrium_geometry.f90).
     !   solovev   closed-form B, |B|, grad|B|; q, q', dV/dpsi and flux-surface
     !             averages against independent quadrature on the exact surface
     !             parametrisation; b.grad theta* = B_phi/(q R B); Boozer

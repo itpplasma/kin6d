@@ -4,7 +4,7 @@ Campaign case Q7 (docs/hierarchy-campaign.md). Two independent slices share
 the species record, the finite-T Fermi EOS and the free-streaming leaf.
 Status labels follow AGENTS.md: *bound* is rigorous, *indicator* is not.
 
-## Part 1: Debye -> finite-T Fermi -> Lindhard (`src/screening_hierarchy.f90`)
+## Part 1: Debye -> finite-T Fermi -> Lindhard (`src/quantum/screening_hierarchy.f90`)
 
 Model: homogeneous ideal 3D spin-two electron gas with a neutralizing
 background, static linear response (ideal-gas RPA). A static local-field
@@ -63,7 +63,7 @@ The cause was one Gauss rule across the Fermi window; the graded mesh split
 at the Fermi surface (docs/fermi-gas.md) brings `G(0)/k_s - 1` at
 `theta = 0.01` from 8.3e-6 to 3e-10.
 
-## Part 2: 1X1V Wigner-Poisson (`src/wigner_poisson.f90`)
+## Part 2: 1X1V Wigner-Poisson (`src/continuum/wigner_poisson.f90`)
 
 Electrons (`q = -1`, `m = 1`) with a neutralizing background, periodic in x;
 units `omega_p`, `v_ref`, `lambda = v_ref/omega_p`,
@@ -84,7 +84,7 @@ never clipped; its negative mass is a diagnostic. The forward tangent
 `wigner_phase_coefficient_jvp`), so the discrete JVP matches finite
 differences.
 
-The independent oracle (`src/wigner_dispersion.f90`) shares no formula with
+The independent oracle (`src/continuum/wigner_dispersion.f90`) shares no formula with
 the solver: `eps = 1 - (1/(k^3 hbar)) sum_b w_b/(sqrt2 sigma_b)
 [Z(xi+) - Z(xi-)]`, `xi+- = (omega/k +- hbar k/2 - u_b)/(sqrt2 sigma_b)`.
 Z is integrated from `Z' = -2(1 + zeta Z)`, `Z(0) = i sqrt(pi)`, which gives

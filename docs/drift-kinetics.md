@@ -162,7 +162,7 @@ and D_ij functionals. NEO-2 refines only at collisional boundaries, never at
 the reversal layer; that is the measured cause of its superbanana-plateau
 failure (below).
 
-Energy: nodal GLL elements in x on [0, x_max] (pattern `src/radial_dvr.f90`),
+Energy: nodal GLL elements in x on [0, x_max] (pattern `src/pairs/radial_dvr.f90`),
 shared with the collision laboratory speed grid. The drift term is then
 diagonal in x. Sonine/Laguerre stays as the field-part projection basis.
 

@@ -138,7 +138,7 @@ volume from flux integrals of B over them; SFL angles (PEST, Hamada, Boozer);
 exports (G-EQDSK for axisymmetric states with ψ from D1, Boozer `.bc` through
 libneo, L7 spectra).
 
-Kinetic geometry view (`src/equilibrium_geometry.f90`, axisymmetric states):
+Kinetic geometry view (`src/equilibrium/equilibrium_geometry.f90`, axisymmetric states):
 on a surface psi = psi_0 of the evaluator it returns B, |B|, grad|B| (five-point
 stencil of the evaluator), grad psi, b.grad theta, (b x grad psi).grad theta,
 the field-line label alpha = phi - nu with grad alpha and d alpha/d psi (shear),

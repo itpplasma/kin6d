@@ -106,26 +106,26 @@ set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
 # umbrella. Each source names its layer; the kin6d_layering test checks the use
 # graph against this partition.
 include(cmake/kin6d_layers.cmake)
-target_sources(kin6d_core PRIVATE src/generated/kin6d_leaves.f90 src/laboratory.f90
-    src/sort_keys.f90 src/real_identity.f90
-    src/generated/kin6d_species_leaves.f90 src/species.f90)
-target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_leaves.f90 src/ewald.f90
-    src/generated/kin6d_ocp_leaves.f90 src/near_encounter.f90 src/pme.f90
-    src/nbody.f90 src/generated/kin6d_interaction_leaves.f90
-    src/interaction_laboratory.f90)
-target_sources(kin6d_classical PRIVATE src/ocp.f90 src/pair_correlation.f90
-    src/generated/kin6d_cloud_leaves.f90 src/microscopic_cloud.f90)
-target_sources(kin6d_continuum PRIVATE src/vlasov_response.f90
-    src/generated/kin6d_poisson_leaves.f90 src/poisson_laboratory.f90
-    src/generated/kin6d_fp_leaves.f90 src/fp_laboratory.f90
-    src/generated/kin6d_transport_leaves.f90 src/transport_laboratory.f90
-    src/transport_certificate.f90 src/transport_sampling.f90
-    src/generated/kin6d_streaming_leaves.f90 src/streaming_comparison.f90
-    src/streaming_particle_density.f90
-    src/generated/kin6d_streaming_moments_leaves.f90 src/streaming_moments.f90
-    src/generated/kin6d_debye_sphere_leaves.f90 src/debye_sphere_reference.f90
-    src/generated/kin6d_slab_oscillation_leaves.f90 src/slab_oscillation.f90
-    src/generated/kin6d_shielding_dynamics_leaves.f90 src/shielding_dynamics.f90)
+target_sources(kin6d_core PRIVATE src/generated/kin6d_leaves.f90 src/core/laboratory.f90
+    src/core/sort_keys.f90 src/core/real_identity.f90
+    src/generated/kin6d_species_leaves.f90 src/core/species.f90)
+target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_leaves.f90 src/pairs/ewald.f90
+    src/generated/kin6d_ocp_leaves.f90 src/pairs/near_encounter.f90 src/pairs/pme.f90
+    src/pairs/nbody.f90 src/generated/kin6d_interaction_leaves.f90
+    src/pairs/interaction_laboratory.f90)
+target_sources(kin6d_classical PRIVATE src/classical/ocp.f90 src/classical/pair_correlation.f90
+    src/generated/kin6d_cloud_leaves.f90 src/classical/microscopic_cloud.f90)
+target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
+    src/generated/kin6d_poisson_leaves.f90 src/continuum/poisson_laboratory.f90
+    src/generated/kin6d_fp_leaves.f90 src/continuum/fp_laboratory.f90
+    src/generated/kin6d_transport_leaves.f90 src/continuum/transport_laboratory.f90
+    src/continuum/transport_certificate.f90 src/continuum/transport_sampling.f90
+    src/generated/kin6d_streaming_leaves.f90 src/continuum/streaming_comparison.f90
+    src/continuum/streaming_particle_density.f90
+    src/generated/kin6d_streaming_moments_leaves.f90 src/continuum/streaming_moments.f90
+    src/generated/kin6d_debye_sphere_leaves.f90 src/continuum/debye_sphere_reference.f90
+    src/generated/kin6d_slab_oscillation_leaves.f90 src/continuum/slab_oscillation.f90
+    src/generated/kin6d_shielding_dynamics_leaves.f90 src/continuum/shielding_dynamics.f90)
 set_source_files_properties(
     src/generated/kin6d_species_leaves.f90 src/generated/kin6d_coulomb_leaves.f90
     src/generated/kin6d_ocp_leaves.f90
@@ -144,8 +144,10 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     if(quantum_family STREQUAL "classical_pair")
         set(family_layer kin6d_classical)
     endif()
+    string(REPLACE "kin6d_" "" family_directory "${family_layer}")
     target_sources(${family_layer} PRIVATE
-        src/generated/kin6d_${quantum_family}_leaves.f90 src/${quantum_family}.f90)
+        src/generated/kin6d_${quantum_family}_leaves.f90
+        src/${family_directory}/${quantum_family}.f90)
     set_source_files_properties(src/generated/kin6d_${quantum_family}_leaves.f90
         PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 endforeach()
@@ -153,8 +155,8 @@ endforeach()
 # the external numerical dependency FortNum already declares.
 find_package(LAPACK REQUIRED)
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
-    src/radial_dvr.f90)
-target_sources(kin6d_quantum PRIVATE src/coulomb_encounter.f90 src/coulomb_kepler.f90)
+    src/pairs/radial_dvr.f90)
+target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
@@ -196,10 +198,10 @@ endif()
 set_source_files_properties(
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_scalar_intervals.f90
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
-target_sources(kin6d_fem2d PRIVATE src/gs_load_batch.f90
-    src/gs_timers.f90 src/gs_options.f90 src/gs_csr.f90)
+target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_load_batch.f90
+    src/fem2d/gs_timers.f90 src/fem2d/gs_options.f90 src/fem2d/gs_csr.f90)
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
-    src/generated/kin6d_grad_shafranov_batch.f90 src/grad_shafranov.f90)
+    src/generated/kin6d_grad_shafranov_batch.f90 src/equilibrium/grad_shafranov.f90)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_core PUBLIC OpenMP::OpenMP_Fortran)
 endif()
@@ -208,9 +210,9 @@ add_library(kin6d_gs_reference_test STATIC
     test/support/gs_reference_error.f90)
 target_link_libraries(kin6d_gs_reference_test PUBLIC kin6d)
 target_compile_options(kin6d_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
-target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_coarea_leaves.f90 src/gs_coarea.f90)
+target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_coarea_leaves.f90 src/equilibrium/gs_coarea.f90)
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_inverse_leaves.f90
-    src/gs_inverse.f90 src/gs_prescribed_q.f90)
+    src/equilibrium/gs_inverse.f90 src/equilibrium/gs_prescribed_q.f90)
 set_source_files_properties(src/generated/kin6d_gs_inverse_leaves.f90
     src/generated/kin6d_gs_coarea_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -277,29 +279,29 @@ add_library(kin6d_sparse_direct
 target_link_libraries(kin6d_sparse_direct PUBLIC kin6d_spatial fortsparse)
 target_link_libraries(kin6d_fem2d PUBLIC kin6d_sparse_direct)
 if(KIN6D_ENABLE_MUMPS)
-    target_sources(kin6d_fem2d PRIVATE src/gs_direct.f90)
+    target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_direct.f90)
     # Follow the selected FortSparse backend, including sequential mpiseq
     # installations that do not provide a Fortran MPI module.
-    set_source_files_properties(src/gs_direct.f90 PROPERTIES Fortran_PREPROCESS ON)
+    set_source_files_properties(src/fem2d/gs_direct.f90 PROPERTIES Fortran_PREPROCESS ON)
     get_target_property(_kin6d_sparse_definitions fortsparse COMPILE_DEFINITIONS)
     if("FORTSPARSE_MUMPS_MPI" IN_LIST _kin6d_sparse_definitions)
-        set_property(SOURCE src/gs_direct.f90 APPEND PROPERTY
+        set_property(SOURCE src/fem2d/gs_direct.f90 APPEND PROPERTY
             COMPILE_DEFINITIONS KIN6D_MUMPS_MPI)
         set(_kin6d_mumps_mpi ON)
     endif()
 else()
-    target_sources(kin6d_fem2d PRIVATE src/gs_direct_stub.f90)
+    target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_direct_stub.f90)
 endif()
-target_sources(kin6d_equilibrium PRIVATE src/gs_coils.f90 src/gs_coupling.f90
-    src/gs_free_boundary.f90 src/gs_coil_inverse.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_coils.f90 src/equilibrium/gs_coupling.f90
+    src/equilibrium/gs_free_boundary.f90 src/equilibrium/gs_coil_inverse.f90)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
-    src/ideal_map.f90 src/ideal_seed.f90)
+    src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
-    src/ideal_free_boundary.f90)
+    src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
@@ -438,12 +440,12 @@ add_executable(test_gs_fb_large_aspect test/test_gs_fb_large_aspect.f90)
 target_link_libraries(test_gs_fb_large_aspect PRIVATE kin6d)
 add_test(NAME gs_free_boundary_t5_large_aspect_shafranov COMMAND test_gs_fb_large_aspect)
 set_tests_properties(gs_free_boundary_t5_large_aspect_shafranov PROPERTIES TIMEOUT 1800)
-target_sources(kin6d_fem2d PRIVATE src/curved_triangle.f90 src/triangle_basis.f90)
-target_sources(kin6d_equilibrium PRIVATE src/gs_majorant.f90 src/gs_profile_law.f90 src/gs_nonlinear.f90
-    src/gs_equilibrated.f90 src/generated/kin6d_gs_error_leaves.f90)
-target_sources(kin6d_equilibrium PRIVATE src/gs_quadrature_budget.f90)
+target_sources(kin6d_fem2d PRIVATE src/fem2d/curved_triangle.f90 src/fem2d/triangle_basis.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_majorant.f90 src/equilibrium/gs_profile_law.f90 src/equilibrium/gs_nonlinear.f90
+    src/equilibrium/gs_equilibrated.f90 src/generated/kin6d_gs_error_leaves.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_quadrature_budget.f90)
 set_source_files_properties(
-    src/gs_quadrature_budget.f90
+    src/equilibrium/gs_quadrature_budget.f90
     src/generated/kin6d_gs_error_leaves.f90
     src/generated/kin6d_grad_shafranov_leaves.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_verified_rt0_products.f90
@@ -460,7 +462,7 @@ add_executable(test_gs_error_leaves test/test_gs_error_leaves.f90)
 target_link_libraries(test_gs_error_leaves PRIVATE kin6d_equilibrium)
 add_test(NAME grad_shafranov_error_leaf_oracles COMMAND test_gs_error_leaves)
 set_tests_properties(grad_shafranov_error_leaf_oracles PROPERTIES TIMEOUT 20)
-target_sources(kin6d_equilibrium PRIVATE src/gs_error_control.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_error_control.f90)
 add_executable(test_gs_error_control test/test_gs_error_control.f90)
 target_link_libraries(test_gs_error_control PRIVATE kin6d)
 add_test(NAME gs_fixed_stability_and_linear_goal COMMAND test_gs_error_control)
@@ -860,7 +862,7 @@ add_executable(test_fermi_gas_cold test/test_fermi_gas_cold.f90)
 target_link_libraries(test_fermi_gas_cold PRIVATE kin6d)
 add_test(NAME fermi_gas_cold_sommerfeld COMMAND test_fermi_gas_cold)
 target_sources(kin6d_quantum PRIVATE src/generated/kin6d_fermion_ensemble_leaves.f90
-    src/fermion_ensemble.f90)
+    src/quantum/fermion_ensemble.f90)
 set_source_files_properties(src/generated/kin6d_fermion_ensemble_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_fermion_ensemble test/test_fermion_ensemble.f90)
@@ -872,7 +874,7 @@ add_executable(relativistic_fermi_demo app/relativistic_fermi_demo.f90)
 target_link_libraries(relativistic_fermi_demo PRIVATE kin6d fortplot)
 
 # Campaign F5: namelist configuration in, NetCDF-4/HDF5 result with embedded
-# literal/resolved configuration and provenance out (src/result_io.f90).
+# literal/resolved configuration and provenance out (src/apps/result_io.f90).
 # Physics stays in kin6d; only kin6d_io and applications see FortIO.
 set(kin6d_build_info_inc ${CMAKE_BINARY_DIR}/result_include/kin6d_build_info.inc)
 string(TOUPPER "${CMAKE_BUILD_TYPE}" kin6d_build_type_upper)
@@ -889,8 +891,8 @@ add_custom_target(kin6d_build_info
         -DKIN6D_FORTFEM_REVISION=${KIN6D_FORTFEM_REVISION}
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
-add_library(kin6d_io src/result_io.f90 src/periodic_pair_config.f90
-    src/animation_export.f90)
+add_library(kin6d_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
+    src/apps/animation_export.f90)
 add_dependencies(kin6d_io kin6d_build_info)
 target_include_directories(kin6d_io PRIVATE ${CMAKE_BINARY_DIR}/result_include)
 target_link_libraries(kin6d_io PUBLIC kin6d fortio::fortio)
@@ -927,11 +929,11 @@ add_library(kin6d_fft
 target_link_libraries(kin6d_fft PUBLIC kin6d_ode)
 target_compile_options(kin6d_fft PRIVATE -fno-fast-math -ffp-contract=off)
 target_sources(kin6d_quantum PRIVATE
-    src/generated/kin6d_screening_leaves.f90 src/screening_hierarchy.f90)
+    src/generated/kin6d_screening_leaves.f90 src/quantum/screening_hierarchy.f90)
 # Wigner-Poisson is a phase-space continuum solver sharing the streaming leaves.
 target_sources(kin6d_continuum PRIVATE
-    src/generated/kin6d_wigner_leaves.f90 src/wigner_dispersion.f90
-    src/wigner_poisson.f90)
+    src/generated/kin6d_wigner_leaves.f90 src/continuum/wigner_dispersion.f90
+    src/continuum/wigner_poisson.f90)
 set_source_files_properties(src/generated/kin6d_screening_leaves.f90
     src/generated/kin6d_wigner_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -953,7 +955,7 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(gen_mean_field_cell PRIVATE kin6d_gen_support)
 endif()
 target_sources(kin6d_quantum PRIVATE src/generated/kin6d_mean_field_cell_leaves.f90
-    src/mean_field_cell.f90)
+    src/quantum/mean_field_cell.f90)
 set_source_files_properties(src/generated/kin6d_mean_field_cell_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_mean_field_cell test/test_mean_field_cell.f90)
@@ -968,10 +970,10 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(gen_quantum_collision PRIVATE kin6d_gen_support)
 endif()
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_quantum_collision_leaves.f90
-    src/quantum_collision_kernel.f90)
+    src/pairs/quantum_collision_kernel.f90)
 set_source_files_properties(src/generated/kin6d_quantum_collision_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
-target_sources(kin6d_quantum PRIVATE src/hybrid_encounter.f90)
+target_sources(kin6d_quantum PRIVATE src/quantum/hybrid_encounter.f90)
 add_executable(test_quantum_collision test/test_quantum_collision.f90)
 target_link_libraries(test_quantum_collision PRIVATE kin6d)
 add_test(NAME quantum_collision_qg6_oracles COMMAND test_quantum_collision)
@@ -982,13 +984,13 @@ add_executable(hybrid_encounter_demo app/hybrid_encounter_demo.f90)
 target_link_libraries(hybrid_encounter_demo PRIVATE kin6d kin6d_io fortplot)
 
 # Campaign Q2: Gaussian/coherent-sum packet models measured against the Q1
-# partial-wave reference (src/packet_models.f90, docs/packet-models.md).
+# partial-wave reference (src/quantum/packet_models.f90, docs/packet-models.md).
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_packet_models gen/gen_packet_models.f90)
     target_link_libraries(gen_packet_models PRIVATE kin6d_gen_support)
 endif()
 target_sources(kin6d_quantum PRIVATE src/generated/kin6d_packet_models_leaves.f90
-    src/gaussian_pair.f90 src/packet_models.f90)
+    src/quantum/gaussian_pair.f90 src/quantum/packet_models.f90)
 set_source_files_properties(src/generated/kin6d_packet_models_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_packet_models test/test_packet_models.f90)
@@ -1004,10 +1006,10 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(gen_quantum_classical PRIVATE kin6d_gen_support)
 endif()
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_quantum_classical_leaves.f90
-    src/pair_law.f90)
-target_sources(kin6d_classical PRIVATE src/classical_cell.f90)
-target_sources(kin6d_quantum PRIVATE src/quantum_pair_cell.f90
-    src/quantum_classical_map.f90)
+    src/pairs/pair_law.f90)
+target_sources(kin6d_classical PRIVATE src/classical/classical_cell.f90)
+target_sources(kin6d_quantum PRIVATE src/quantum/quantum_pair_cell.f90
+    src/quantum/quantum_classical_map.f90)
 set_source_files_properties(src/generated/kin6d_quantum_classical_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_quantum_classical test/test_quantum_classical.f90)
@@ -1022,9 +1024,9 @@ if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_correlation_hierarchy gen/gen_correlation_hierarchy.f90)
     target_link_libraries(gen_correlation_hierarchy PRIVATE kin6d_gen_support)
 endif()
-target_sources(kin6d_core PRIVATE src/series_statistics.f90)
+target_sources(kin6d_core PRIVATE src/core/series_statistics.f90)
 target_sources(kin6d_classical PRIVATE src/generated/kin6d_correlation_hierarchy_leaves.f90
-    src/ocp_monte_carlo.f90 src/correlation_hierarchy.f90 src/ocp_hnc.f90)
+    src/classical/ocp_monte_carlo.f90 src/classical/correlation_hierarchy.f90 src/classical/ocp_hnc.f90)
 set_source_files_properties(src/generated/kin6d_correlation_hierarchy_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_correlation_hierarchy test/test_correlation_hierarchy.f90)
@@ -1117,8 +1119,8 @@ set_tests_properties(grad_shafranov_curved_convergence
     grad_shafranov_p3_curved_convergence grad_shafranov_axis_refinement
     grad_shafranov_shaped_solver_work PROPERTIES
     TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
-target_sources(kin6d_equilibrium PRIVATE src/gs_readback.f90 src/gs_axis_recovery.f90
-    src/gs_field_readback.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_readback.f90 src/equilibrium/gs_axis_recovery.f90
+    src/equilibrium/gs_field_readback.f90)
 add_executable(test_gs_curved_readback test/test_gs_curved_readback.f90)
 target_link_libraries(test_gs_curved_readback PRIVATE kin6d)
 add_test(NAME grad_shafranov_curved_readback COMMAND test_gs_curved_readback)
@@ -1190,10 +1192,10 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
 
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
-    src/equilibrium_chart.f90 src/equilibrium_state.f90 src/gs_equilibrium.f90
-    src/equilibrium_residual.f90 src/equilibrium_readback.f90
-    src/equilibrium_certificate.f90 src/gs_certificate.f90
-    src/equilibrium_boundary.f90 src/equilibrium_geometry.f90)
+    src/equilibrium/equilibrium_chart.f90 src/equilibrium/equilibrium_state.f90 src/equilibrium/gs_equilibrium.f90
+    src/equilibrium/equilibrium_residual.f90 src/equilibrium/equilibrium_readback.f90
+    src/equilibrium/equilibrium_certificate.f90 src/equilibrium/gs_certificate.f90
+    src/equilibrium/equilibrium_boundary.f90 src/equilibrium/equilibrium_geometry.f90)
 set_source_files_properties(src/generated/kin6d_equilibrium_core_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_equilibrium_boundary test/test_equilibrium_boundary.f90)
@@ -1236,8 +1238,8 @@ set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1")
 
 # K-C1/L3: 3D polyline coils, per-n Fourier projection, vacuum b_mn (L3).
-target_sources(kin6d_equilibrium PRIVATE src/coils_3d.f90)
-target_sources(kin6d_mhd PRIVATE src/vacuum_surfaces.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/coils_3d.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/vacuum_surfaces.f90)
 add_executable(test_coils_3d test/test_coils_3d.f90)
 target_link_libraries(test_coils_3d PRIVATE kin6d)
 add_test(NAME coils_3d_biot_savart_fourier_oracles COMMAND test_coils_3d)
@@ -1289,11 +1291,11 @@ target_link_libraries(kin6d_feec_n PUBLIC kin6d_spatial fortsparse)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
-target_sources(kin6d_mhd PRIVATE src/mhd_mesh.f90 src/mhd_ampere_n.f90
-    src/mhd_response_n.f90 src/mhd_ideal_n.f90 src/mhd_closure_n.f90
-    src/mhd_layer_n.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/mhd_mesh.f90 src/mhd/mhd_ampere_n.f90
+    src/mhd/mhd_response_n.f90 src/mhd/mhd_ideal_n.f90 src/mhd/mhd_closure_n.f90
+    src/mhd/mhd_layer_n.f90)
 target_link_libraries(kin6d_fem2d PUBLIC kin6d_feec_n)
-target_sources(kin6d_mhd PRIVATE src/mhd_perturbation_n.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/mhd_perturbation_n.f90)
 add_executable(test_mhd_perturbation test/test_mhd_perturbation.f90)
 target_link_libraries(test_mhd_perturbation PRIVATE kin6d)
 add_test(NAME mhd_perturbation_l7_xi_lagrangian_charts COMMAND test_mhd_perturbation)
@@ -1344,9 +1346,9 @@ add_test(NAME response_strip_torus_coupling COMMAND test_mhd_closure strip)
 set_tests_properties(response_strip_torus_coupling PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
 # R-B1: resolved resistive layer strip, periodic cylinder (response-unified.md (B)).
-target_sources(kin6d_mhd PRIVATE src/response_strip.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/response_strip.f90)
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_response_fluid_leaves.f90
-    src/response_fluid.f90 src/response_toroidal_strip.f90)
+    src/mhd/response_fluid.f90 src/mhd/response_toroidal_strip.f90)
 add_executable(test_response_toroidal_strip test/test_response_toroidal_strip.f90)
 target_link_libraries(test_response_toroidal_strip PRIVATE kin6d)
 add_executable(test_response_interfaces test/test_response_interfaces.f90)
@@ -1394,7 +1396,7 @@ set_tests_properties(mhd_newcomb_screw_pinch_limit PROPERTIES TIMEOUT 900
 
 # NN1: closed free-B states and the vacuum / axisymmetric-pressure restrictions.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_nonnested_leaves.f90
-    src/equilibrium_nonnested.f90 src/nonnested_residual.f90)
+    src/mhd/equilibrium_nonnested.f90 src/mhd/nonnested_residual.f90)
 set_source_files_properties(src/generated/kin6d_nonnested_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 
@@ -1438,7 +1440,7 @@ add_test(NAME nonnested_symbolic_derivatives_and_d3_identity
     COMMAND test_nonnested_leaves)
 
 # NN2 (first increment): anisotropic pressure transport for a given B.
-target_sources(kin6d_mhd PRIVATE src/nonnested_transport.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_transport.f90)
 add_executable(test_nonnested_transport test/test_nonnested_transport.f90)
 target_link_libraries(test_nonnested_transport PRIVATE kin6d)
 add_test(NAME nonnested_transport_manufactured_3d
@@ -1466,7 +1468,7 @@ set_tests_properties(nonnested_hudson_breslau_chaos_responds_p3 PROPERTIES
     TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN2 (second increment): axisymmetric coupled transport / Ampere / Ohm Newton.
-target_sources(kin6d_mhd PRIVATE src/nonnested_coupled.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_coupled.f90)
 add_executable(test_nonnested_coupled test/test_nonnested_coupled.f90)
 target_link_libraries(test_nonnested_coupled PRIVATE kin6d_nn_solovev_test)
 foreach(k 2 3)
@@ -1498,7 +1500,7 @@ set_tests_properties(nonnested_coupled_landreman_family1_p2
     PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
-target_sources(kin6d_mhd PRIVATE src/nonnested_mapped.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90)
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
 target_link_libraries(test_nonnested_mapped PRIVATE kin6d)
 add_test(NAME nonnested_mapped_identity_regression

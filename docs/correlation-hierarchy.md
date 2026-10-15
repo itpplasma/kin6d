@@ -18,7 +18,7 @@ Gamma = 0.1, 0.3, 1, 3, 10, 30 (fluid; freezing near 175).
 
 ## Sampling
 
-- `src/ocp_monte_carlo.f90` runs canonical Metropolis Monte Carlo with
+- `src/classical/ocp_monte_carlo.f90` runs canonical Metropolis Monte Carlo with
   single-particle moves, uniform in `[-d, d]^3`. The energy is the Ewald sum
   of `kin6d_coulomb_leaves`. Its parameters come from `kin6d_ewald` with the
   new `real_cutoff = 0` (minimum-image real space; every omitted image is at
@@ -123,7 +123,7 @@ Stillinger-Lovett moment `n int r^2 h d3r kappa^2/6 -> -1`.
 
 Reduced models:
 
-- HNC (`src/ocp_hnc.f90`): Ornstein-Zernike with the Ng (1974) Ewald split
+- HNC (`src/classical/ocp_hnc.f90`): Ornstein-Zernike with the Ng (1974) Ewald split
   of the Coulomb tail, a DST-I through the FortNum FFT and damped Picard
   iteration. Kernels are generated leaves.
 - Debye-Hueckel `exp(-Gamma e^{-kappa r}/r)` and its linearization.

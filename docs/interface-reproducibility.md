@@ -59,7 +59,7 @@ transformations applied, content hash and access/redistribution limitations.
 ## Implemented contract (campaign F5)
 
 Status 2026-10-05. Every application in `app/` uses `kin6d_io`
-(`src/result_io.f90`, linked against FortIO pinned in `CMakeLists.txt`):
+(`src/apps/result_io.f90`, linked against FortIO pinned in `CMakeLists.txt`):
 
 - `--config FILE` names an optional namelist file; all other arguments
   (`--snapshot [frame]`, benchmark sizes, paths) are unchanged; a command-line
@@ -68,7 +68,7 @@ Status 2026-10-05. Every application in `app/` uses `kin6d_io`
   a group named like the program, so a demo's group drops `_demo`
   (`&debye_sphere`) and a benchmark keeps its name (`&benchmark_fp`) with
   the program renamed `benchmark_fp_main`. The two periodic-pair demos also read the shared `&periodic_pair`
-  group (`src/periodic_pair_config.f90`: length, mass, coupling, time_max,
+  group (`src/apps/periodic_pair_config.f90`: length, mass, coupling, time_max,
   frames). `classical_pair_demo` rejects a mass or coupling other than the
   declared electron pair rather than silently simulating another system.
 - Unknown entries and malformed values fail with the group name; a group in
