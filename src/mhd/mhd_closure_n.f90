@@ -93,10 +93,7 @@ module kin6d_mhd_closure_n
     public :: mercier_di
     public :: frobenius_basis
     public :: layer_labels
-<<<<<<< HEAD:src/mhd/mhd_closure_n.f90
     public :: layer_xmax
-=======
->>>>>>> 606e6d0 (Frobenius closure: Mercier difference step inside the plasma; layer rings never short of the fit rings):src/mhd_closure_n.f90
     public :: layer_init
     public :: layer_closure
     public :: layer_coefficients
@@ -201,7 +198,6 @@ contains
         end function expm1
     end subroutine frobenius_basis
 
-<<<<<<< HEAD:src/mhd/mhd_closure_n.f90
     pure function layer_xmax(psin_s, others, delta, ratio, nfit, nrad) result(xmax)
         !! Largest layer-ring offset: grade up to the uniform spacing
         !! 2 sqrt(psin_s)/nrad, but never below the outermost fit ring
@@ -218,8 +214,6 @@ contains
             xmax = min(xmax, 0.45_dp*abs(others(k) - psin_s))
         end do
     end function layer_xmax
-=======
->>>>>>> 606e6d0 (Frobenius closure: Mercier difference step inside the plasma; layer rings never short of the fit rings):src/mhd_closure_n.f90
 
     subroutine layer_labels(psin_s, delta, ratio, xmax, lo, hi, psin)
         !! psin labels of the layer rings: psin_s -+ delta ratio^k, k = 0, 1,
