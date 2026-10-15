@@ -425,3 +425,6 @@ kin6d_test_labels(grad_shafranov_rejects_wrong_field_orientation fast CLASSES eq
     TARGETS test_gs_variational_identities)
 kin6d_test_labels(grad_shafranov_rejects_wrong_weak_source_weight fast CLASSES equilibrium
     TARGETS test_gs_variational_identities)
+
+kin6d_test_labels(grad_shafranov_error_leaf_oracles fast CLASSES equilibrium
+    TARGETS test_gs_error_leaves)

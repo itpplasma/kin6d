@@ -81,7 +81,7 @@ program gen_grad_shafranov
    call w%line('implicit none')
    call w%line('contains')
    call w%emit('gs_source', ['r      ', 'mu0    ', 'pprime ', 'ffprime'], &
-               ['source'], [mu0*r*pp + ff/r], ad=.true.)
+               ['source'], [mu0*r*pp + ff/r], ad=.true., interval=.true.)
    br = -pz/r; bz = pr/r; bt = f/r
    call w%emit('gs_field', ['r    ', 'psi_r', 'psi_z', 'f    '], &
                ['b_r  ', 'b_z  ', 'b_phi'], [br, bz, bt], ad=.true.)
