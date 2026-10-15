@@ -1364,11 +1364,13 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_fourier_equilibration_products.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_equilibration.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_curl.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
-target_link_libraries(kin6d_feec_n PUBLIC kin6d_spatial fortsparse)
+target_link_libraries(kin6d_feec_n PUBLIC kin6d_spatial kin6d_fft fortsparse)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
@@ -1527,6 +1529,14 @@ target_link_libraries(test_nonnested_error PRIVATE kin6d_nn_solovev_test)
 add_test(NAME nonnested_n0_equilibrated_solovev COMMAND test_nonnested_error)
 set_tests_properties(nonnested_n0_equilibrated_solovev PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
+add_executable(test_nonnested_fourier_error
+    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration.f90)
+target_link_libraries(test_nonnested_fourier_error PRIVATE kin6d_feec_n)
+add_test(NAME nonnested_transport_fourier_equilibrated
+    COMMAND test_nonnested_fourier_error)
+set_tests_properties(nonnested_transport_fourier_equilibrated PROPERTIES
+    TIMEOUT 60 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
 add_executable(test_nonnested_transport_error test/test_nonnested_transport_error.f90)
 target_link_libraries(test_nonnested_transport_error PRIVATE kin6d)
 add_test(NAME nonnested_transport_equilibrated_n0
@@ -1720,6 +1730,7 @@ include(cmake/response_calibration.cmake)
 
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
+
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
