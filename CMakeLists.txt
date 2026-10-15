@@ -160,7 +160,7 @@ target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quant
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "dc42abfedcfb82dea56117df9e599c5c80dd9e62")
+set(KIN6D_FORTFEM_REVISION "7a79e4cc825acba32b80b502542cc6df90756cb7")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1730,7 +1730,6 @@ include(cmake/response_calibration.cmake)
 
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
-
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
