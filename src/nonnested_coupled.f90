@@ -49,7 +49,7 @@ module kin6d_nonnested_coupled
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
         FORTSPARSE_BACKEND_MUMPS, FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND
-    use kin6d_gs_direct, only: gs_direct_available
+    use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
         anisotropic_flux, anisotropic_flux_jvp
@@ -953,6 +953,7 @@ contains
         if (.not. status_ok(st)) return
         if (gs_direct_available()) then
             ! Threaded MUMPS unsymmetric LU, nested dissection.
+            if (.not. gs_direct_mpi_ready()) return
             solver%backend_id = FORTSPARSE_BACKEND_MUMPS
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
             solver%options%ordering = FORTSPARSE_ORDER_ND

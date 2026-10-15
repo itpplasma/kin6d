@@ -263,7 +263,7 @@ if(NOT TARGET fortsparse)
     set(FORTSPARSE_USE_SYSTEM_DEPS ON CACHE BOOL "" FORCE)
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG 447226832b48312f2fe44d6bda9fa21b946a0bb2
+        GIT_TAG aa786664d7e2988047a3fabe12c1da25a1eb6f9b
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
@@ -278,6 +278,15 @@ target_link_libraries(kin6d_sparse_direct PUBLIC kin6d_spatial fortsparse)
 target_link_libraries(kin6d_fem2d PUBLIC kin6d_sparse_direct)
 if(KIN6D_ENABLE_MUMPS)
     target_sources(kin6d_fem2d PRIVATE src/gs_direct.f90)
+    # Follow the selected FortSparse backend, including sequential mpiseq
+    # installations that do not provide a Fortran MPI module.
+    set_source_files_properties(src/gs_direct.f90 PROPERTIES Fortran_PREPROCESS ON)
+    get_target_property(_kin6d_sparse_definitions fortsparse COMPILE_DEFINITIONS)
+    if("FORTSPARSE_MUMPS_MPI" IN_LIST _kin6d_sparse_definitions)
+        set_property(SOURCE src/gs_direct.f90 APPEND PROPERTY
+            COMPILE_DEFINITIONS KIN6D_MUMPS_MPI)
+        set(_kin6d_mumps_mpi ON)
+    endif()
 else()
     target_sources(kin6d_fem2d PRIVATE src/gs_direct_stub.f90)
 endif()
@@ -1053,6 +1062,15 @@ set_tests_properties(grad_shafranov_p3_thread_invariance PROPERTIES
 add_executable(test_gs_direct test/test_gs_direct.f90)
 target_link_libraries(test_gs_direct PRIVATE kin6d)
 add_test(NAME grad_shafranov_csr_direct_newton_oracles COMMAND test_gs_direct)
+if(_kin6d_mumps_mpi)
+    add_executable(test_gs_direct_mpi test/test_gs_direct_mpi.f90)
+    target_link_libraries(test_gs_direct_mpi PRIVATE kin6d)
+    foreach(_mode automatic external finalized)
+        add_test(NAME gs_direct_mpi_${_mode} COMMAND test_gs_direct_mpi ${_mode})
+        set_tests_properties(gs_direct_mpi_${_mode} PROPERTIES
+            TIMEOUT 15 ENVIRONMENT "OMP_NUM_THREADS=1")
+    endforeach()
+endif()
 set_tests_properties(grad_shafranov_csr_direct_newton_oracles PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 600 ENVIRONMENT "OPENBLAS_NUM_THREADS=1")

@@ -239,6 +239,13 @@ Lean. The explicit `formal` preset also checks the retained theorem package and
 Fortran-produced rational certificate. This changes dependency selection, not
 the claimed strength of a numerical result.
 
+The `mumps` preset enables the optional FortSparse MUMPS backend, including
+system MPI builds. KIN6D initializes MPI with serialized thread support on first
+factorization if needed, and rejects an already finalized or insufficiently
+thread-capable runtime through the solver's ordinary failure status. Applications
+that manage MPI must free all solver handles before finalizing it. Sequential
+MUMPS builds retain their mpiseq runtime and need no Fortran MPI module.
+
 The existing KIN6D resident lane has a documented CMake-only input-capture
 defect; native CMake/CTest evidence remains authoritative while that upstream
 gap is open. Do not reset another owner's lane or claim complete captured-input
