@@ -311,6 +311,10 @@ kin6d_test_labels(equilibrium_core_d7_readback_p2 fast CLASSES equilibrium
     TARGETS test_equilibrium_core)
 kin6d_test_labels(equilibrium_core_d3_solovev_p2 fast CLASSES equilibrium
     TARGETS test_equilibrium_core)
+kin6d_test_labels(equilibrium_core_d3_upper_bound_p2 fast CLASSES equilibrium
+    TARGETS test_equilibrium_core)
+kin6d_test_labels(gs_response_3d_ampere_indicator_contract fast CLASSES mhd
+    TARGETS gs_response_3d)
 kin6d_test_labels(equilibrium_core_d7_readback_p3 fast CLASSES equilibrium
     TARGETS test_equilibrium_core)
 kin6d_test_labels(equilibrium_core_d3_solovev_p3 fast CLASSES equilibrium

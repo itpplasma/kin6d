@@ -48,6 +48,11 @@ program test_equilibrium_core
     !   residual K         D3 of the exact Solov'ev state (quadrature level) and
     !                      of psi-lane P_K solutions on three meshes (order >= K;
     !                      observed K + 1)
+    !   residual_bound     D3 equilibrated upper bound (P2): the exact Solov'ev
+    !                      state has D3 = 0, so the bound is pure estimator
+    !                      error and shrinks; for a coarse psi-lane state the
+    !                      bound brackets D3: the lower bound of a finer
+    !                      test space does not exceed it
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_equilibrium_state, only: equilibrium_state_t
@@ -74,6 +79,8 @@ program test_equilibrium_core
     case ('residual')
         call get_command_argument(2, work)
         call test_residual(merge(3, 2, trim(work) == '3'))
+    case ('residual_bound')
+        call test_residual_bound()
     case default
         error stop 'mode: chart | compare WORK FIXTURES | readback K | residual K'
     end select
@@ -117,6 +124,53 @@ contains
         if (rate < order) error stop 'psi-lane D3 order below K'
         ! TODO(N1): the same gate for the map lane once ideal_map is on main.
         print '(a)', 'PASS: D3 residual'
+    end subroutine
+
+    subroutine test_residual_bound()
+        ! D3 = 0 for the exact state: dual_upper = sqrt(0 + M^2) is estimator
+        ! error only (practical claim, quadrature not enclosed) and must shrink
+        ! under refinement. For the coarse psi-lane state, the lower bound on a
+        ! finer test space (same state, finer mesh) is below the coarse upper
+        ! bound, which is above the coarse lower bound.
+        type(equilibrium_state_t) :: exact, lane
+        type(equilibrium_residual_t) :: report, coarse, fine
+        type(gs_state_t) :: mesh, fine_mesh
+        real(dp) :: upper(2)
+        integer :: level, status
+        allocate (solovev_field_t :: exact%field)
+        exact%mu0 = 1; exact%f_vac = f_tor
+        do level = 1, 2
+            call solovev_mesh(12*2**level, 2, mesh)
+            call equilibrium_residual(exact, mesh, report, status, &
+                error_estimate=.true.)
+            if (status /= 0) error stop 'exact residual evaluation'
+            if (report%bound_status /= 0) error stop 'exact upper bound unavailable'
+            if (trim(report%claim) /= 'practical-upper-bound') &
+                error stop 'upper-bound claim label'
+            if (trim(report%quadrature_status) /= 'approximate') &
+                error stop 'upper-bound quadrature status'
+            if (report%dual_upper < report%dual) error stop 'upper below lower'
+            upper(level) = report%normalized_upper
+            print '(a,i0,a,es10.3,a,es10.3)', 'exact Solov''ev n=', 12*2**level, &
+                ': normalized D3 lower ', report%normalized, ' upper ', upper(level)
+        end do
+        if (upper(2) > upper(1)/2.8_dp) error stop 'exact upper bound not shrinking'
+        call solovev_mesh(24, 2, mesh)
+        call solve_gs(mesh, 1.0_dp, -16*c_sol, 0.0_dp, status)
+        if (status /= 0) error stop 'Solov''ev solve'
+        call gs_equilibrium(mesh, lane, status, f_tor, 0.0_dp, pprime=-16*c_sol, &
+            mu0=1.0_dp)
+        if (status /= 0) error stop 'psi adapter'
+        call equilibrium_residual(lane, mesh, coarse, status, error_estimate=.true.)
+        if (status /= 0 .or. coarse%bound_status /= 0) error stop 'coarse bound'
+        call solovev_mesh(72, 2, fine_mesh)
+        call equilibrium_residual(lane, fine_mesh, fine, status)
+        if (status /= 0) error stop 'fine lower bound'
+        print '(a,3es11.3)', 'psi lane P2 n=24 dual: lower, upper; finer lower ', &
+            coarse%dual, coarse%dual_upper, fine%dual
+        if (coarse%dual > coarse%dual_upper) error stop 'coarse lower above upper'
+        if (fine%dual > coarse%dual_upper) error stop 'finer lower bound above upper'
+        print '(a)', 'PASS: D3 upper bound'
     end subroutine
 
     subroutine test_readback(order)

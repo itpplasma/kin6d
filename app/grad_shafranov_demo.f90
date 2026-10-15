@@ -4,12 +4,22 @@ program grad_shafranov_demo
    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
       solve_gs_profiles, gs_profile_integral, write_gs_mesh, gs_element_jet, &
       gs_classical_current, gs_current_jump, gs_axis_candidate, gs_axis_safety_factor
-   use kin6d_gs_inverse, only: gs_inverse_result_t, solve_gs_constant_q
+   use kin6d_gs_inverse, only: gs_inverse_result_t, solve_gs_constant_q, &
+      gs_inverse_profile_law
+   use kin6d_gs_profile_law, only: gs_profile_law_t
+   use kin6d_gs_certificate, only: gs_fixed_certifier_t
+   use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
+      claim_name
    use kin6d_result_io, only: run_t, result_file_t
    use kin6d_grad_shafranov_leaves, only: gs_field
    use fortplot_system_runtime, only: create_directory_runtime
    implicit none
-   type(gs_state_t) :: state
+   type(gs_state_t), target :: state
+   type(gs_profile_law_t) :: inverse_law
+   type(gs_fixed_certifier_t) :: certifier
+   type(equilibrium_certificate_t) :: certificate
+   integer :: certify_status = 1
+   logical :: certified_inverse
    type(gs_inverse_result_t)::inverse
    type(run_t) :: run
    type(result_file_t) :: result
@@ -73,6 +83,7 @@ program grad_shafranov_demo
    if(prescribed_q.and.(trim(pressure_mode)/='zero_beta'.or.len_trim(profile_file)>0)) &
        error stop 'prescribed-q mode requires zero pressure and no forward profile input'
    has_profiles=len_trim(profile_file)>0.or.prescribed_q
+   certified_inverse=.false.
    if(prescribed_q)then
       pprime=0; ffprime=0
    else
@@ -100,6 +111,17 @@ program grad_shafranov_demo
          pp=0; pressure=0
          fpol=sign(sqrt(inverse%f_squared),q_target)
          pprime=0; ffprime=0
+         ! Fixed-source estimate of the inverse state: the executed zero-pressure
+         ! FF' table is the profile law of the existing equilibrated estimator.
+         ! The sampled residual quadrature stays practical, never certified.
+         call gs_inverse_profile_law(inverse, inverse_law, certify_status)
+         if (certify_status == 0) then
+            certifier%state => state
+            certifier%mu0 = mu0
+            certifier%law = inverse_law
+            call certify(certifier, certificate, certify_status)
+         end if
+         certified_inverse = certify_status == 0
       end if
    else if (len_trim(profile_file) > 0) then
       open (newunit=unit, file=trim(profile_file), status='old')
@@ -201,7 +223,17 @@ program grad_shafranov_demo
    call result%attribute('equations', 'Delta*psi=-mu0*R^2*pprime-FFprime')
    call result%attribute('conventions', 'SI; phi CCW; psi flux per radian')
    call result%attribute('geometry_error', 'polygonal LCFS; bound unavailable')
-   call result%attribute('continuous_error', 'bound unavailable; refine independently')
+   if (certified_inverse) then
+      call result%attribute('continuous_error', &
+         'practical frozen-source estimate; quadrature not enclosed')
+      call result%attribute('majorant_claim', trim(claim_name(certificate%claim)))
+      call result%attribute('majorant_method', trim(certifier%method))
+      call result%attribute('majorant_quadrature_status', &
+         trim(certifier%quadrature_status))
+   else
+      call result%attribute('continuous_error', 'bound unavailable; refine independently')
+      if (prescribed_q) call result%attribute('majorant_claim', 'unavailable')
+   end if
    call result%attribute('profile_model', &
           'constant source or piecewise-linear flux table; constant endpoint extension')
     call result%attribute('fieldlaw', &
@@ -268,6 +300,16 @@ program grad_shafranov_demo
       call result%write('q_half_knot_error',inverse%half_indicator,'1','native q sampled half-knot relative error')
       call result%write('q_validation_error',inverse%validation_indicator,'1','native q sampled uniform rho_pol error')
       call result%write('coarea_angular_indicator',inverse%angular_indicator,'1','arc Gauss order N/16 versus2N/16 indicator')
+      if (certified_inverse) then
+         call result%write('majorant', certificate%majorant, 'Wb/rad', &
+            'frozen-source equilibrated flux residual dual norm of the inverse state')
+         call result%write('majorant_stability', certificate%stability, '1', &
+            'coercivity estimate of the inverse source; 0 when unavailable')
+         call result%write('majorant_bound', certificate%bound, 'Wb/rad', &
+            'energy-norm estimate majorant/stability, or the frozen-source majorant')
+         call result%write('majorant_status', real(certificate%lane_status, dp), '1', &
+            '0 certified; 4 frozen-source residual only; 5 practical estimate')
+      end if
       call result%write('Phi_quadrature_indicator',inverse%flux_indicator,'1','degree8 versus12 area indicator')
    end if
     call result%write('residual', state%residual, '1', 'relative weak equation residual')
@@ -277,6 +319,13 @@ program grad_shafranov_demo
    if(prescribed_q)then
       print *, 'prescribed q/Phi discrete indicators:',inverse%knot_indicator, &
           inverse%profile_indicator,inverse%angular_indicator,inverse%flux_indicator
+      if (certified_inverse) then
+         print *, 'inverse fixed-source estimate claim/method/majorant/stability/bound:', &
+            trim(claim_name(certificate%claim)), ' ', trim(certifier%method), ' ', &
+            certificate%majorant, certificate%stability, certificate%bound
+      else
+         print *, 'inverse fixed-source estimate unavailable, status', certify_status
+      end if
    else
       print *, 'q_seed is a source parameter, not a prescribed q profile.'
    end if
