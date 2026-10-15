@@ -168,12 +168,24 @@ contains
             end do
         end do
         unit%fs => field%fs; unit%kind = METRIC_IDENTITY
-        call meridian_fourier_mass(field%fs, 1, modes, nphi, unit, mass, st)
+        ! The trigonometric basis is orthogonal on the nphi-point grid (nphi >=
+        ! 2 modes + 1) and the identity metric is phi-independent, so the
+        ! Fourier-V1 mass is blockdiag(c_b M0) with c_0 = 1, c_b > 0 = 1/2.
+        ! Factor the single meridian mass M0 once: assembling all nb blocks
+        ! stores O(nb^2) roundoff cross-mode entries that make the direct
+        ! factorisation fail at fine meshes.
+        call meridian_fourier_mass(field%fs, 1, 0, nphi, unit, mass, st)
         if (st /= 0) return
-        call nn_factor(mass, spread(.false., 1, nb*n1), factor, st)
+        call nn_factor(mass, spread(.false., 1, n1), factor, st)
         if (st /= 0) return
         allocate (data(nb*n1))
-        call nn_factor_solve_real(factor, load, data, st)
+        do b = 0, nb - 1
+            call nn_factor_solve_real(factor, load(b*n1 + 1:(b + 1)*n1), &
+                data(b*n1 + 1:(b + 1)*n1), st)
+            if (st /= 0) exit
+            data(b*n1 + 1:(b + 1)*n1) = data(b*n1 + 1:(b + 1)*n1)* &
+                merge(1.0_dp, 2.0_dp, b == 0)
+        end do
         call nn_factor_free(factor)
         if (st /= 0) return
         call meridian_fourier_gradient(field%fs, modes, grad, st)
