@@ -262,6 +262,10 @@ kin6d_test_labels(grad_shafranov_p3_thread_invariance fast CLASSES equilibrium
     TARGETS test_gs_threads)
 kin6d_test_labels(grad_shafranov_csr_direct_newton_oracles fast CLASSES equilibrium
     TARGETS test_gs_direct)
+foreach(_mode automatic external finalized)
+    kin6d_test_labels(gs_direct_mpi_${_mode} fast CLASSES fem2d
+        TARGETS test_gs_direct_mpi)
+endforeach()
 kin6d_test_labels(grad_shafranov_shaped_solver_work fast CLASSES equilibrium
     TARGETS test_gs_solver_work)
 kin6d_test_labels(grad_shafranov_axis_refinement fast CLASSES equilibrium

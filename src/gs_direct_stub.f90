@@ -5,7 +5,8 @@ module kin6d_gs_direct
     implicit none
     private
     public :: gs_direct_t, gs_direct_available, gs_direct_factor, gs_direct_solve
-    public :: gs_direct_free, gs_direct_solve_block, GS_DIRECT_SPD, GS_DIRECT_INDEFINITE, &
+    public :: gs_direct_free, gs_direct_solve_block, gs_direct_mpi_ready
+    public :: GS_DIRECT_SPD, GS_DIRECT_INDEFINITE, &
         GS_DIRECT_ORDER_AMD, GS_DIRECT_ORDER_ND
     integer, parameter :: GS_DIRECT_ORDER_AMD = 1, GS_DIRECT_ORDER_ND = 2
     integer, parameter :: GS_DIRECT_SPD = 1, GS_DIRECT_INDEFINITE = 2
@@ -21,6 +22,10 @@ module kin6d_gs_direct
 contains
     logical function gs_direct_available() result(available)
         available = .false.
+    end function
+
+    logical function gs_direct_mpi_ready() result(ready)
+        ready = .true.
     end function
 
     subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, symmetry, ordering)
