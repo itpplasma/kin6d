@@ -47,9 +47,9 @@ module kin6d_nonnested_coupled
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl, &
         meridian_fourier_curl_curl, meridian_fourier_gradient_coupling
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, csc_matmul, &
-        csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, &
-        sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_GENERAL
+        csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
+        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_ORDER_AMD, &
+        FORTSPARSE_SYM_GENERAL
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
@@ -1039,14 +1039,14 @@ contains
         type(fortsparse_status_t) :: st
         status = 1
         if (gs_direct_available()) then
-            ! Unsymmetric LU: FortSparse picks SuperLU or threaded MUMPS by
-            ! size, and MUMPS its ordering.
+            ! The assembled reduced Jacobian requires native unsymmetric LU.
             if (.not. gs_direct_mpi_ready()) return
-            solver%backend_id = FORTSPARSE_BACKEND_AUTO
+            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%ordering = FORTSPARSE_ORDER_AMD
 !$          solver%options%nthreads = omp_get_max_threads()
         else
-            solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
         call sparse_factor(solver, reduced, st)
         if (.not. status_ok(st)) return

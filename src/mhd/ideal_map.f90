@@ -49,9 +49,11 @@ module kin6d_ideal_map
         csr_assemble_blocks
     use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
-        sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_INDEFINITE, &
-        sparse_factor_stats, sparse_factor_stats_t, sparse_refactor
+        sparse_destroy, fortsparse_status_t, status_ok, &
+        FORTSPARSE_BACKEND_NATIVE, csc_normalize_symmetric_raw, &
+        FORTSPARSE_ORDER_AMD, &
+        FORTSPARSE_SYM_INDEFINITE, sparse_factor_stats, sparse_factor_stats_t, &
+        sparse_refactor
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
     private
@@ -104,7 +106,7 @@ module kin6d_ideal_map
         ! Axis expansion: polynomial degree (-1: k - 1) and power of T (set
         ! before ideal_map_init / ideal_map_freeze respectively).
         integer :: axis_degree = -1, axis_power = 1
-        ! MUMPS threads. The Newton path follows near-null (relabelling)
+        ! Native factor thread budget. Newton follows near-null (relabelling)
         ! directions, so roundoff differences between factorisations move the
         ! discrete solution along them (measured: 3.9e-7 against 5.4e-7 on the
         ! finest A3 P3 seed mesh). One thread keeps the factorisation, and with
@@ -156,9 +158,10 @@ module kin6d_ideal_map
         real(dp) :: min_jacobian = 0, damping = 0, initial_gradient = 0
         ! Wall seconds: energy/gradient, Hessian assembly, factor + solve.
         real(dp) :: energy_s = 0, hessian_s = 0, factor_s = 0
-        ! Backend split of factor_s where reported (MUMPS): symbolic analysis
+        ! Backend split of factor_s where reported: symbolic analysis
         ! and numerical factorisation.
         real(dp) :: analysis_s = 0, numeric_s = 0
+        real(dp) :: assembly_roundoff = 0
     end type
 contains
     pure integer function ideal_map_dof(map, component, mode, node) result(dof)
@@ -1511,6 +1514,7 @@ contains
         logical :: reused
         logical, allocatable :: omega_active(:, :)
         real(dp), allocatable :: val(:)
+        real(dp) :: correction
         integer, allocatable :: rowptr(:), colidx(:), node(:)
         integer :: row, kk, nc, n, a, l, c
         val = matrix%val
@@ -1580,12 +1584,21 @@ contains
             end do
             colidx = colidx(:c); val = val(:c)
         end if
-        ! FortSparse AUTO when KIN6D is built with MUMPS (MUMPS LDL^T for
-        ! large systems, SuperLU below the measured crossover); serial
-        ! SuperLU LU otherwise. The damped system is symmetric and
-        ! may be indefinite. The same hint selects structure-aware ordering
-        ! and threshold pivoting in the SuperLU fallback.
+        ! One canonical triangle preserves the scalar Hessian's exact
+        ! symmetry after independently rounded cell/constraint accumulation.
+        call csc_normalize_symmetric_raw(n, rowptr, colidx, val, &
+            1.0e-12_dp, correction, sstatus)
+        if (.not. status_ok(sstatus)) then
+            info = 1
+            if (done) call sparse_destroy(slv)
+            done = .false.
+            return
+        end if
+        report%assembly_roundoff = max(report%assembly_roundoff, correction)
+        ! The damped system is symmetric and may be indefinite; use native
+        ! pivoted LDL^T with the same symmetry contract as the assembled KKT.
         slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+        slv%options%ordering = FORTSPARSE_ORDER_AMD
         if (gs_direct_available()) then
             if (.not. gs_direct_mpi_ready()) then
                 info = 1
@@ -1593,13 +1606,13 @@ contains
                 done = .false.
                 return
             end if
-            slv%backend_id = FORTSPARSE_BACKEND_AUTO
+            slv%backend_id = FORTSPARSE_BACKEND_NATIVE
             slv%options%nthreads = map%factor_threads
         else
-            slv%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            slv%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
         ! The pattern is fixed per map: after the first factorisation only
-        ! the numerical factorisation is redone (MUMPS keeps its analysis).
+        ! the numerical factorisation is redone when the backend can reuse it.
         reused = .false.
         if (done) then
             call sparse_refactor(slv, n, n, size(val), rowptr, colidx, val, sstatus, &

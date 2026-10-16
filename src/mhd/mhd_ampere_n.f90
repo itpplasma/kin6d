@@ -27,10 +27,8 @@ module kin6d_mhd_ampere_n
     !! L_n (fortfem_toroidal_mode_boundary_operators_2d).  The exterior
     !! potential trace is u = -S^{-1} C A.  The Schur block is dense on the
     !! boundary Nedelec dofs; the operator is Hermitian positive definite and
-    !! factored once per (mesh, n).  With MUMPS (fortsparse, KIN6D_ENABLE_MUMPS)
-    !! the Hermitian H = A + i B is factored as its real symmetric positive
-    !! definite equivalent [[A, -B], [B, A]] by nested-dissection Cholesky
-    !! (the fortsparse MUMPS backend is real); otherwise by complex SuperLU.
+    !! factored once per (mesh, n). The Hermitian H = A + i B uses its real
+    !! SPD equivalent [[A, -B], [B, A]] with native sparse Cholesky.
     !!
     !! Units.  SI; A in T m, B in T, J in A/m^2.  Inner products carry the
     !! measure R dR dZ (the 2 pi of the phi integral is dropped throughout).
@@ -120,7 +118,7 @@ module kin6d_mhd_ampere_n
         complex(dp), allocatable :: cb(:, :)     !! C on bdof, (ntr, nbe)
         real(dp), allocatable :: sinv(:, :)      !! S^{-1}, (ntr, ntr)
         type(sparse_solver_t) :: solver
-        type(gs_direct_t) :: direct      !! MUMPS Cholesky of the real form
+        type(gs_direct_t) :: direct      !! Native sparse Cholesky of the real form
         logical :: use_direct = .false.
         logical :: factored = .false.
     end type ampere_n_t
@@ -247,7 +245,7 @@ contains
     end subroutine ampere_n_build
 
     subroutine factor_real_form(h, amp, status)
-        !! MUMPS Cholesky of [[A, -B], [B, A]] for H = A + i B (Hermitian
+        !! Native sparse Cholesky of [[A, -B], [B, A]] for H = A + i B (Hermitian
         !! positive definite, so the real form is symmetric positive
         !! definite; its CSC is its CSR).
         type(csc_z_t), intent(in) :: h
