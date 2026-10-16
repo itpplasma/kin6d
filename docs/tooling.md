@@ -299,6 +299,14 @@ regressions; build their executable targets first. The former `mumps` and
 an old external-solver build. FortFEM and FortSparse revisions are pinned in
 `CMakeLists.txt` and retained in result provenance.
 
+The nonnested coupled reduced Jacobian uses native unsymmetric LU. When METIS
+is available and no host payload cap or LOW policy is requested, it selects ND
+on the original graph. Otherwise it uses bounded AMD with structural matching.
+Both paths retain the same pivot threshold and original nonlinear checks. METIS
+remains optional; its opaque ordering workspace cannot satisfy a strict host
+payload cap. Querying ordering availability does not certify that a matrix class
+or memory policy supports that ordering.
+
 The focused resident workflow above captures and builds the real CMake-only
 consumer, including populated dependency sources; the historical capture
 blocker was not reproduced. Native CMake/CTest remain authoritative. Keep one
