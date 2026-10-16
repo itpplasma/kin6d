@@ -67,7 +67,8 @@ module kin6d_mhd_ampere_n
         tm_bem_steklov_symmetric, tm_bem_neumann_to_dirichlet
     use fortsparse, only: csc_t, csc_z_t, csc_from_triplet, csc_matvec, &
         csc_conjugate_transpose, fortsparse_status_t, status_ok, &
-        sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy
+        sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
+        csc_normalize_symmetric_raw
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, &
         gs_direct_factor, gs_direct_solve, gs_direct_free
     implicit none
@@ -119,6 +120,8 @@ module kin6d_mhd_ampere_n
         real(dp), allocatable :: sinv(:, :)      !! S^{-1}, (ntr, ntr)
         type(sparse_solver_t) :: solver
         type(gs_direct_t) :: direct      !! Native sparse Cholesky of the real form
+        ! Maximum entry correction in the real SPD assembly, not a norm bound.
+        real(dp) :: assembly_roundoff = 0
         logical :: use_direct = .false.
         logical :: factored = .false.
     end type ampere_n_t
@@ -274,6 +277,12 @@ contains
         end do
         call csc_from_triplet(2*n, 2*n, rows, cols, vals, m, fst)
         if (.not. status_ok(fst)) return
+        ! The variational operator is Hermitian. Its independently accumulated
+        ! boundary Schur entries may differ by roundoff; normalize explicitly
+        ! before the unchanged strict SPD validator. Residuals retain h.
+        call csc_normalize_symmetric_raw(2*n, m%col_ptr, m%row_idx, m%val, &
+            1.0e-12_dp, amp%assembly_roundoff, fst)
+        if (.not. status_ok(fst)) return
         call gs_direct_factor(amp%direct, 2*n, m%col_ptr, m%row_idx, m%val, ok)
         if (ok) status = 0
     end subroutine factor_real_form
@@ -315,6 +324,7 @@ contains
         type(ampere_n_error_t) :: estimate
 
         amp%error = ampere_n_error_t()
+        amp%assembly_roundoff = 0
         call solve_factored(amp, f, a, status)
         if (status /= 0) return
         call ampere_n_error(amp, f, a, estimate, st)

@@ -69,7 +69,7 @@ module kin6d_ideal_free_boundary
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_refactor, sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, &
-        FORTSPARSE_SYM_INDEFINITE, csc_normalize_symmetric_raw, &
+        csc_normalize_symmetric_raw, &
         FORTSPARSE_ORDER_AMD
     implicit none
     private
@@ -1936,7 +1936,8 @@ contains
             csolver%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
         csolver%options%symmetry = FORTSPARSE_SYM_GENERAL
-        call factor_kkt_raw(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), v(:nnz), sst)
+        call factor_kkt_raw(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), &
+                            v(:nnz), sst, symmetric=.false.)
         ready = status_ok(sst)
     end subroutine
 
@@ -2098,7 +2099,8 @@ contains
         end subroutine
     end subroutine
 
-    subroutine prepare_kkt_values(solver, n, ptr, idx, values, correction, status)
+    subroutine prepare_kkt_values(solver, n, ptr, idx, values, correction, &
+                                  status, symmetric)
         ! CSR is also CSC after this checked, explicit symmetry completion.
         ! The underlying scalar Lagrangian defines the symmetric matrix;
         ! independent accumulation may differ within the roundoff budget.
@@ -2107,21 +2109,27 @@ contains
         real(dp), intent(inout) :: values(:)
         real(dp), intent(out) :: correction
         type(fortsparse_status_t), intent(out) :: status
+        logical, optional, intent(in) :: symmetric
         correction = 0
         status = fortsparse_status_t()
-        if (solver%options%symmetry /= FORTSPARSE_SYM_INDEFINITE) return
+        if (present(symmetric)) then
+            if (.not. symmetric) return
+        end if
         call csc_normalize_symmetric_raw(n, ptr, idx, values, 1.0e-12_dp, &
             correction, status)
         if (.not. status_ok(status)) solver%factored = .false.
     end subroutine
 
-    subroutine factor_kkt_raw(solver, nr, nc, nnz, ptr, idx, values, status)
+    subroutine factor_kkt_raw(solver, nr, nc, nnz, ptr, idx, values, status, &
+                              symmetric)
         type(sparse_solver_t), intent(inout) :: solver
         integer, intent(in) :: nr, nc, nnz, ptr(:), idx(:)
         real(dp), intent(inout) :: values(:)
         type(fortsparse_status_t), intent(out) :: status
+        logical, optional, intent(in) :: symmetric
         real(dp) :: correction
-        call prepare_kkt_values(solver, nc, ptr, idx, values, correction, status)
+        call prepare_kkt_values(solver, nc, ptr, idx, values, correction, &
+                                status, symmetric)
         if (.not. status_ok(status)) return
         call sparse_factor(solver, nr, nc, nnz, ptr, idx, values, status)
     end subroutine
@@ -2144,13 +2152,15 @@ contains
     end subroutine
 
     logical function configure(solver) result(ready)
-        ! Native pivoted LDL^T for the symmetric indefinite KKT system.
+        ! Native pivoted LU for the KKT system. Symmetry completion remains
+        ! an assembly contract, independent of this factorization choice.
+        ! Native LDL^T has not met the runtime budget for this system.
         type(sparse_solver_t), intent(inout) :: solver
         if (gs_direct_available()) then
             ready = gs_direct_mpi_ready()
             if (.not. ready) return
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
-            solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+            solver%options%symmetry = FORTSPARSE_SYM_GENERAL
             solver%options%ordering = FORTSPARSE_ORDER_AMD
             solver%options%nthreads = 0
         else
@@ -2489,7 +2499,8 @@ contains
             end if
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
         end if
-        call factor_kkt_raw(solver, nb, nb, nnz, rp, ci(:nnz), v(:nnz), sst)
+        call factor_kkt_raw(solver, nb, nb, nnz, rp, ci(:nnz), v(:nnz), &
+                            sst, symmetric=(row0 == col0))
         if (.not. status_ok(sst)) return
         rhs = -grad(row0 + 1:row0 + nb)
         call sparse_solve(solver, rhs, du, sst)

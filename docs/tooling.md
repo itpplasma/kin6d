@@ -266,19 +266,23 @@ the claimed strength of a numerical result.
 All sparse factorizations use FortSparse's native CPU backend explicitly.
 SuperLU, UMFPACK and MUMPS are disabled in the dependency build; no MPI runtime
 is required for these solves. BLAS/LAPACK and AMD graph ordering remain
-numerical dependencies; METIS nested dissection is optional. SPD, symmetric indefinite and general systems keep
+numerical dependencies; METIS nested dissection is optional. SPD, symmetric
+indefinite and general systems keep
 their existing mathematical symmetry contracts. A native factorization failure
 is reported through the ordinary solver status.
 
 The unstructured reduced Jacobian and scalar Hessian factors explicitly request
-AMD. The known symmetric variational Hessians complete one canonical triangle
+AMD. The larger free-boundary KKT systems use native pivoted LU; native LDLT
+has not met their runtime budget. The known symmetric variational Hessians and
+Ampere real SPD form complete one canonical triangle
 after accumulation. FortSparse first verifies full canonical structure and a
 maximum discrepancy no larger than `1e-12 * max(abs(A))`; larger discrepancies
 are rejected before mutation. This is an explicit assembly-roundoff policy,
 not a relaxed factorization check. The factor/solve reports retain the maximum
 entry correction where available, and the existing derivative, original-operator
 and nonlinear residual checks remain unchanged. Native factors require exact
-symmetry after this step. No rigorous continuous enclosure is claimed by these
+symmetry when a symmetric factor class is requested. Ampere residual checks
+retain the original complex operator. No rigorous continuous enclosure is claimed by these
 candidate equilibrium solves.
 
 The `cpu` and `debug` presets both select this native-only configuration. The
