@@ -272,7 +272,14 @@ their existing mathematical symmetry contracts. A native factorization failure
 is reported through the ordinary solver status.
 
 The unstructured reduced Jacobian and scalar Hessian factors explicitly request
-AMD. The larger free-boundary KKT systems use native pivoted LU; native LDLT
+AMD. The general reduced Jacobian first requests native structural matching,
+then AMD on the matched graph, with a pivot threshold of `0.1`. Matching only
+changes elimination choices: the original equations, derivative checks and
+nonlinear residual gates remain unchanged. The original coupled P2 convergence
+test passes its first two meshes with this policy, but exceeds its unchanged
+900-second limit on the largest mesh. Full native qualification and a successful
+full-case CPU/memory comparison remain unavailable. The larger free-boundary KKT systems
+use native pivoted LU; native LDLT
 has not met their runtime budget. The known symmetric variational Hessians and
 Ampere real SPD form complete one canonical triangle
 after accumulation. FortSparse first verifies full canonical structure and a

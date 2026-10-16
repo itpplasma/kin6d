@@ -1044,6 +1044,10 @@ contains
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
             solver%options%ordering = FORTSPARSE_ORDER_AMD
+            ! Match the gauge saddle rows before ordering; preserve the
+            ! original equations and gate the step with their residual.
+            solver%options%structural_matching = .true.
+            solver%options%pivot_tolerance = 0.1_dp
 !$          solver%options%nthreads = omp_get_max_threads()
         else
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
