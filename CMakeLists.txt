@@ -160,7 +160,7 @@ target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quant
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "6210f96f2d94f719244cf449e181d3485dc4cf9c")
+set(KIN6D_FORTFEM_REVISION "ce8d923ee7ed36dc9315db9fc1d68f4d5ed2208b")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -241,7 +241,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "886f7dcf8d61e122e7c83b26accdcb17fe5dba70")
+set(KIN6D_FORTSPARSE_REVISION "1cc17e31a01f5fa3ec5db58f5f399e2f7eb97955")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
