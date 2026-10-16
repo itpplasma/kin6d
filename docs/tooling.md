@@ -263,28 +263,30 @@ Lean. The explicit `formal` preset also checks the retained theorem package and
 Fortran-produced rational certificate. This changes dependency selection, not
 the claimed strength of a numerical result.
 
-MUMPS (through FortSparse, threaded with OpenMP) is required, and direct
-solves use FortSparse's AUTO backend: SuperLU below 40000 stored entries,
-where its factor + solve is faster, MUMPS above (measured crossover in the
-FortSparse README). Configure fails unless MUMPS is found through
-`MUMPS_DIR` or `CMAKE_PREFIX_PATH` (an OpenMP scivision/mumps install) or as a
-distribution package, and warns when the found library has no OpenMP. The
-`superlu` preset (`KIN6D_ENABLE_MUMPS=OFF`) builds the serial SuperLU path for
-every direct solve; the `mumps` preset adds a focused direct-solver test
-filter. A build tree configured before MUMPS became the default may still cache
-`KIN6D_ENABLE_MUMPS=OFF`; reconfigure it with `-DKIN6D_ENABLE_MUMPS=ON`. System
-MPI builds are supported: KIN6D initializes MPI with serialized thread support
-on first factorization if needed, each MUMPS instance runs on
-`MPI_COMM_SELF`, and an already finalized or insufficiently thread-capable
-runtime is rejected through the solver's ordinary failure status. Applications
-that manage MPI must free all solver handles before finalizing it. Sequential
-MUMPS builds retain their mpiseq runtime and need no Fortran MPI module.
+All sparse factorizations use FortSparse's native CPU backend explicitly.
+SuperLU, UMFPACK and MUMPS are disabled in the dependency build; no MPI runtime
+is required for these solves. BLAS/LAPACK and AMD graph ordering remain
+numerical dependencies; METIS nested dissection is optional. SPD, symmetric indefinite and general systems keep
+their existing mathematical symmetry contracts. A native factorization failure
+is reported through the ordinary solver status.
 
-FortSparse's default fetched SuperLU shares the selected system BLAS/LAPACK
-with MUMPS. Existing build trees that cached `FORTSPARSE_USE_SYSTEM_DEPS=ON`
-must unset it (`cmake -U FORTSPARSE_USE_SYSTEM_DEPS ...`) to use this default.
-An explicit system-dependency choice remains supported, but prebuilt solvers
-must share the selected BLAS to avoid mixing implementations in one process.
+The unstructured reduced Jacobian and scalar Hessian factors explicitly request
+AMD. The known symmetric variational Hessians complete one canonical triangle
+after accumulation. FortSparse first verifies full canonical structure and a
+maximum discrepancy no larger than `1e-12 * max(abs(A))`; larger discrepancies
+are rejected before mutation. This is an explicit assembly-roundoff policy,
+not a relaxed factorization check. The factor/solve reports retain the maximum
+entry correction where available, and the existing derivative, original-operator
+and nonlinear residual checks remain unchanged. Native factors require exact
+symmetry after this step. No rigorous continuous enclosure is claimed by these
+candidate equilibrium solves.
+
+The `cpu` and `debug` presets both select this native-only configuration. The
+`native-sparse` test preset runs the affected direct-solve and derivative
+regressions; build their executable targets first. The former `mumps` and
+`superlu` presets have been removed. Use a fresh build directory when migrating
+an old external-solver build. FortFEM and FortSparse revisions are pinned in
+`CMakeLists.txt` and retained in result provenance.
 
 The focused resident workflow above captures and builds the real CMake-only
 consumer, including populated dependency sources; the historical capture

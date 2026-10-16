@@ -42,8 +42,8 @@ module kin6d_equilibrium_residual
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_t, EQUILIBRATION_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
-        sparse_destroy, fortsparse_status_t, status_ok, &
-        FORTSPARSE_BACKEND_SUPERLU, FORTSPARSE_SYM_GENERAL
+        sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, &
+        FORTSPARSE_SYM_GENERAL
     implicit none
     private
     public :: equilibrium_residual_t, equilibrium_residual, equilibrium_residual_load
@@ -335,7 +335,7 @@ contains
 
     subroutine solve_riesz(mesh, blocks, rhs, riesz, status)
         ! A riesz = rhs with A the weighted H1_0 stiffness (Dirichlet rows
-        ! identity): MUMPS Cholesky when built, serial SuperLU otherwise.
+        ! identity), solved with native sparse Cholesky.
         type(gs_state_t), intent(in) :: mesh
         real(dp), intent(in) :: blocks(:, :, :), rhs(:, :)
         real(dp), intent(out) :: riesz(:, :)
@@ -362,7 +362,7 @@ contains
             call gs_direct_free(direct)
             if (.not. ok) return
         else
-            solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
             call sparse_factor(solver, n, n, size(val), rowptr, colidx, val, sstatus)
             if (.not. status_ok(sstatus)) return
