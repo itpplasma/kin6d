@@ -241,7 +241,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "ccc87e72f520cbee95a1c13fd814bd89baf494ee")
+set(KIN6D_FORTSPARSE_REVISION "ee1cdc9d6806111674e3fbde0d13862ddd7fca74")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
