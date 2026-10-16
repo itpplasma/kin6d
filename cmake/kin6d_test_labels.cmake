@@ -400,7 +400,7 @@ kin6d_test_labels(nonnested_hudson_breslau_integrable_exact_p3 fast CLASSES mhd
     TARGETS test_nonnested_hudson_breslau)
 kin6d_test_labels(nonnested_hudson_breslau_chaos_responds_p3 fast CLASSES mhd
     TARGETS test_nonnested_hudson_breslau)
-kin6d_test_labels(nonnested_coupled_solovev_p2 fast CLASSES mhd
+kin6d_test_labels(nonnested_coupled_solovev_p2 slow CLASSES mhd
     TARGETS test_nonnested_coupled)
 kin6d_test_labels(nonnested_coupled_offset_return_p2 fast CLASSES mhd
     TARGETS test_nonnested_coupled)
