@@ -59,7 +59,7 @@ Globalisation:
 - merit Σ g²/|H_ii| (primal rows) and Σ g²|H_xx| (constraint rows);
 - Levenberg damping on the plasma map rows only;
 - tangential step damping reduced by 100 after accepted full steps, while the
-  axisymmetric tangential gauge remains fixed;
+  slide gauge (bordered rows) remains fixed;
 - trust radii of 2 % of the Γ_c extent for displacement and 0.5 rad for ω.
 
 Φ̃ and λ are first solved at fixed geometry. fortsparse reads CSC, so blocks
@@ -238,7 +238,8 @@ FB-taper 0.997 results (fwd_p3_l3 reference, 256/384, μ_t = 1e-7):
   the merit rejects; the Gamma_p mean Z still creeps by +9.5e-6 m per step
   against that sign. The creep is therefore not the rigid vertical mode but a
   soft shape/gauge direction; the rigid correction is a no-op there.
-- **Poloidal-slide gauge (`tangential_gauge`).** Over the 40-iteration ladder
+- **Poloidal-slide gauge (`tangential_gauge`; historical, removed from the
+  code on 2026-10-19, see below).** Over the 40-iteration ladder
   the Γ_p shape was fixed (normal change 0.26 µm rms) while the nodes slid
   along it (tangential rms 0.5 mm, mean 0.7 mm), and the n = 3 tangential
   content was still converging; the slow decay (0.6 % per step) is the
@@ -297,46 +298,89 @@ near-null once discretised.
   short of the equilibrium. With rp, the gauge converged (3e-13 σV,
   projected) with Γ_p moved only -0.18 mm instead of -15 mm, a net rigid R
   force of 1.4e3 J/m against ≤ 1.3e-4 J/m at the slide-gauged states, and
-  a distance of 17 mm. The `gr0` and `gzm` cases still use it and pass: gr0
-  starts at the equilibrium, and in gzm the joint vertical coordinate carries
-  the net Z force explicitly.
+  a distance of 17 mm. It was removed from the code on 2026-10-19
+  (free-boundary-theory.md FB-D4, gap item 4): every solve is slide-gauged.
+  The fixture case `gr0` (r0 with the tangential gauge) was dropped, as it is
+  r0; `gzm` now runs the zm start with `rigid_vertical` in the slide gauge.
 
-## Coupled vertical Newton coordinate
+## Vertical return test (slide gauge)
 
-With `rigid_vertical = .true.` and `tangential_gauge > 0`, the Newton
-unknowns are the normal n = 0 plasma-node displacements, unchanged shell,
-vacuum and nonaxisymmetric coordinates, and one global plasma Z shift.
-Writing the physical increment as `dU = T dy + v dz`, with fixed reference
-normals in T and unit Z entries on the plasma nodes in v, the equations are
-`T^T g = 0` and `F_Z = v^T g = 0`. Their symmetric Jacobian is
+The coupled normal-plus-rigid-Z Newton coordinate (`rigid_vertical` with
+`tangential_gauge > 0`) was removed with the tangential gauge on 2026-10-19:
+its restriction to normal n = 0 node motions is not a gauge (FB-D4).
+`rigid_vertical = .true.` keeps the rigid correction dZ = -F_Z/K_Z after
+accepted steps, accepted only on a merit decrease; F_Z and K_Z stay reported
+diagnostics. `ideal_fb_newton_step` is one undamped step of the slide-gauged
+KKT system.
 
-```
-[ T^T H T   T^T H v ]
-[ v^T H T   v^T H v ]
-```
+`ideal_fb_vertical_newton` checks, for N = 0 and N = 1 (nfp = 3), the
+slide-bordered Newton matrix against central differences of the gradient
+(the border rows exactly), its symmetry and the net vertical force row. A
+retained constant manufactured load makes a discrete state with vertically
+displaced Solov'ev frozen data an exact target; Γ_p is the zero-pressure
+level of that data, so the frozen field is tangent to Γ_p as the slide gauge
+assumes. The start is the target shifted rigidly by ±2 mm in Z and projected
+onto the gauge set (zero slide moments of target − start; the projection
+changes nodes by at most 27 µm). The damped solve meets an explicit residual
+target and the target to 1e-8 m, and an unmet target is reported as such.
+Pure gauged Newton returns quadratically: plasma error 2.0e-3, 1.3e-6,
+2.0e-11 and then the 2e-13 roundoff floor. From ±4 mm the second iterate is
+3.2e-10, where the unchanged quadratic check (applied above 1e-10) would ask
+for 1e-17 at the third. This is a manufactured discrete solver oracle, not an
+analytic coil-supported free boundary or a continuous equilibrium
+certificate.
 
-Here H is the existing generated Lagrangian Hessian, including shell ties,
-magnetostatics and multipliers. Unused tangential slots are identity rows with
-zero right-hand sides; they do not enter the physical increment. This is an
-exact normal-coordinate gauge, rather than a finite penalty. Levenberg and
-tangential damping do not act on the global shift or its force row. The full
-coupled increment goes through the existing Jacobian/trust/backtracking checks;
-there is no separate post-step rigid correction in this mode.
+## Discrete hypothesis diagnostics (FB-A2, FB-C5, FB-D2, FB-E1)
 
-The merit includes the unprojected net vertical force, weighted by
-`cap_x**2 / energy_scale`, as well as the normal-projected residual. All stopping
-paths require the last full Newton shift estimate to be below 1 micrometre,
-and retain the pre-existing `|F_Z/K_Z| <= 1 micrometre` guard when the initial
-rigid-stiffness diagnostic is available. That finite-difference diagnostic is
-used only for stopping, never for the augmented equation or its Jacobian.
-Backtracking cannot satisfy the shift guard simply by reducing the step length.
-Without a tangential gauge, `rigid_vertical` retains its earlier behavior.
-Restart files still contain physical map coefficients, not solver coordinates.
+`ideal_fb_hypotheses` evaluates, at the current state, the open discrete
+hypotheses of [free-boundary-theory.md](free-boundary-theory.md). These are
+diagnostics, not stopping criteria. `gs_free_3d` writes them to
+`summary-3d.dat` with `hypotheses = .true.`, and prints them at every Newton
+state of a verbose solve with `monitor_hypotheses = .true.`.
 
-`ideal_fb_vertical_newton` checks the bordered Jacobian against finite
-differences, its force row independently and symmetry, for N = 0 and N = 1
-(nfp = 3). A retained constant manufactured load makes a discrete state with
-vertically displaced Solov'ev frozen data an exact target. Both signs of a
-4 mm shift return quadratically after shell/vacuum equilibration. This is a
-manufactured discrete solver oracle, not an analytic coil-supported free
-boundary or a continuous equilibrium certificate.
+- (V) A_h + S_h ≻ 0: the asymmetry of the Galerkin W and V of every
+  harmonic before FortFEM symmetrises them, λ_min of every S_k, and the
+  extreme eigenvalues and asymmetry of −μ0 H_ΦΦ (dense).
+- (R) full row rank of R = [∇C; M] on the map unknowns: σ_min from inverse
+  iteration through the factor of [I Rᵀ; R 0] (nonsingular iff R has full
+  row rank; the value is an upper bound of σ_min), σ_max by power iteration;
+  full rank means σ_min > 1e-10 σ_max.
+- S_red: the exact Schur complement S_q of the KKT matrix onto the plasma
+  positions (one sparse solve per Γ_p-coupled plasma unknown; the shell map,
+  Φ̃ and λ are eliminated), restricted to ker M with a QR basis. Since ∇C
+  fixes the shell map as xs = E q, this is Zᵀ S_map Z with Z = [I; E] Z_M,
+  Z_M orthonormal in the Euclidean metric of the plasma coefficients
+  (eigenvalues in J/m² per field period). Inertia with zero tolerance
+  1e-10 max |λ|, smallest |λ| and the overlap of the lowest eigenvector
+  with the rigid Z shift.
+- The slide multiplier of the merit projection (FB-C5) and the residual it
+  removes, in σV units.
+- The bordered KKT inertia implied by FB-D2, In(S_red) + (r, r + dim Φ̃, 0).
+  The pinned FortSparse exposes no MUMPS inertia, so the reduced inertia is
+  computed densely (np, nf ≤ 8000). `ideal_fb_hypotheses_bordering` checks
+  the relation against a dense Bunch–Kaufman LDLᵀ of the slide-bordered KKT
+  matrix on a small mesh (the manufactured Solov'ev state of the vertical
+  test, not an equilibrium): N = 0, 1392 unknowns, In(K) = (634, 758, 0) and
+  In(S_red) = (68, 4, 0); N = 1, 4172 unknowns, (1906, 2266, 0) and
+  (212, 8, 0), both matching exactly.
+
+Fixture values (`gs_free_3d_fixture_hypotheses`, gs_free fixture, P3, N = 0,
+31535 unknowns; converged r0 start h0 and +15 mm Z start hzp, identical to
+the digits shown):
+
+| quantity | value |
+|---|---|
+| W, V asymmetry before symmetrisation | 5.6e-15, 3.3e-16 |
+| λ_min(S_h) | 2.5e-2 |
+| λ_min, λ_max of −μ0 H_ΦΦ (A_h + S_h) | 1.0e-2, 6.9e2 |
+| rows of [∇C; M]; σ_min, σ_max | 12203; 1.5e-2, 25 (full row rank) |
+| dim S_red; In(S_red) | 3072; (3071, 1, 0) |
+| λ_min(S_red) = smallest \|λ\|; λ_max | −17.9; 9.2e8 J/m² per period |
+| overlap of the negative mode with rigid Z | 0.9994 |
+| slide multiplier; residual it removes | 2.3e-2 J/m; 5.8e-9 σV |
+
+The one negative direction is the vertical mode at fixed coil currents. The
+rigid Z shift gives the Rayleigh quotient K_Z/(plasma nodes) ≈ −2.68e4/1.55e3
+≈ −17.4, consistent with λ_min = −17.9 (a Rayleigh quotient bounds λ_min from
+above). The +15 mm Z start was monitored at all 6 Newton
+states (status 0 and full row rank at each).
