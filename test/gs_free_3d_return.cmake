@@ -61,9 +61,13 @@ else()
         "zp|offset_z=0.015" "zm|offset_z=-0.015" "el|elongation=0.02"
         "gzm|offset_z=-0.015, rigid_vertical=.true.")
 endif()
+# CASE (optional) restricts the run to one named case.
 foreach(case IN LISTS cases)
     string(REPLACE "|" ";" case "${case}")
     list(GET case 0 name)
+    if(DEFINED CASE AND NOT "${CASE}" STREQUAL "" AND NOT name STREQUAL CASE)
+        continue()
+    endif()
     list(GET case 1 offset)
     file(MAKE_DIRECTORY "${WORK}/${name}")
     file(WRITE "${WORK}/${name}/in.nml" "&gs_free_3d ${common}, ${offset} /\n")
