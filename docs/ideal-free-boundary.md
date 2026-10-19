@@ -5,6 +5,7 @@ map lane and the L4 per-n BEM). Design: kin6d_3d_tc24 DESIGN §7.3, row N4;
 [equilibrium-core.md](equilibrium-core.md) D3, D6, D8. Module
 `kin6d_ideal_free_boundary` (`src/mhd/ideal_free_boundary.f90`), vacuum leaves
 `gen/gen_vacuum_shell.f90`, driver `app/gs_free_3d.f90`.
+Formulation theory and proof-obligation map: [free-boundary-theory.md](free-boundary-theory.md).
 
 ## Formulation
 
