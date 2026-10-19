@@ -101,7 +101,7 @@ The column "Audit 2026-10-19" records the verdict of the independent proof audit
 | FB-C4 | Discrete: L + 1 layer moments remove every discrete near-null | N (six fixture starts converge) | not audited | `gs_free_3d_nl3a_fixture_return` | smallest gauged eigenvalue under refinement |
 | FB-C5 | At a gauged solution near X₀ the multiplier vanishes, so it is an equilibrium | P continuum, local (radius unquantified), via the FB-C1 bridge (§3); discrete μ = O(h) H | valid with repair (local; depends on FB-C1 bridge) | none | report μ; quantify the neighbourhood |
 | FB-C6 | 3D/figure-8 slide gauge on all reference modes | P (formula); not implemented | not audited (note: curl-free motions free only modulo ξ_f in 3D) | none | implementation and test |
-| FB-D1 | Bordering lemma; inertia In(K) = In(ZᵀHZ) + (r, r, 0) on ker M, rank M = r | P (§4); Lean target | PASS | none | `proof/Kin6d/Bordered.lean` |
+| FB-D1 | Bordering lemma; inertia In(K) = In(ZᵀHZ) + (r, r, 0) on ker M, rank M = r | P (§4); Lean: B1 and B2 (`proof/Kin6d/Bordered.lean`, `lemma_B1`, `lemma_B2`) | PASS | `lean_continuous_certificates` (formal preset) | — |
 | FB-D2 | In(K_full) = (0, dim Φ̃, 0) + In(S_red) + (r, r, 0), S_red = ZᵀS_mapZ, Z a basis of ker[∇C; M] on map unknowns; physical Morse index neg(S_red); fixed-current vertical is a negative direction of S_red | P conditional on A_h + S_h ≻ 0 (FB-A2 discrete) and full row rank of [∇C; M]; C [Haynsworth 1968](https://doi.org/10.1016/0024-3795(68)90050-5); negativity N (K_Z < 0) | first invalid bridge (index off by rank C), repaired; conditional | `ideal_fb_rigid_stiffness`, `ideal_fb_mode_stability` | check both hypotheses per state; neg(S_red) = 1 per state (H) |
 | FB-D3 | Newton direction is a descent direction for the residual merit in a fixed scaling | P (§6) | PASS | none | check that `ideal_fb_solve` compares merits in one scaling |
 | FB-D4 | Normal-only + rigid-Z restriction is not equivalent to ∇L = 0 | P (§7), counterexample N | not audited | rp/tangential_gauge run | remove from production path |
@@ -119,7 +119,7 @@ The column "Audit 2026-10-19" records the verdict of the independent proof audit
 | FB-G6 | Approximate drive: computable flux and traction defect on S0 | P (residual statement) | verified (traction expansion) | none | error bound needs FB-E2 β_h |
 | FB-H1 | Axisymmetric well-posedness and solver literature | C (see §3) | metadata verified; content not audited | — | read full texts; no 3D free-boundary existence theorem adopted |
 
-No obligation is promoted on numerical evidence. Lean coverage of this map is currently empty. FB-D1 is the first realistic Lean target.
+No obligation is promoted on numerical evidence. Lean covers FB-D1 only (the discrete matrix lemmas B1 and B2, not the PDE or the per-state hypotheses).
 
 ## 3. Axisymmetric literature (FB-H1)
 
@@ -171,6 +171,6 @@ Bibliographic metadata verified by Crossref (2026-10-19). The content claims are
    - ε = 0 Solov'ev case first, cross-checked with `gs_free`;
    - case registered in D8.
 10. Fixed-flux variant (FB-A4) only if continuation through vertical marginality needs it.
-11. Lean: `Bordered.lean` (FB-D1).
+11. Lean: `Bordered.lean` (FB-D1), done: B1 and B2.
 
 Chris&AI
