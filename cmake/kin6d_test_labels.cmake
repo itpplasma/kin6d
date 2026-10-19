@@ -284,8 +284,10 @@ kin6d_test_labels(grad_shafranov_curved_readback fast CLASSES equilibrium
     TARGETS test_gs_curved_readback)
 kin6d_test_labels(grad_shafranov_p3_curved_readback fast CLASSES equilibrium
     TARGETS test_gs_curved_readback)
-kin6d_test_labels(gs_free_3d_nl3a_fixture_return slow CLASSES mhd
-    TARGETS gs_free_3d gs_free)
+foreach(case r0 rp rm zp zm el gzm)
+    kin6d_test_labels(gs_free_3d_nl3a_fixture_return_${case} slow CLASSES mhd
+        TARGETS gs_free_3d gs_free)
+endforeach()
 kin6d_test_labels(gs_free_3d_fixture_hypotheses slow CLASSES mhd
     TARGETS gs_free_3d gs_free)
 kin6d_test_labels(gs_free_app_contract fast CLASSES equilibrium TARGETS gs_free)

@@ -120,7 +120,7 @@ and p is measured from p_edge, since the map lane sees absolute pressure at
 - `ideal_fb_vacuum_gamma_c_independence_n3`: n = 3 field of a 3-fold window
   coil set at shell probes, Γ_c scaled by 1 and 1.12: 2.7e-4 relative (P3),
   1.0e-2 (P2).
-- `gs_free_3d_nl3a_fixture_return`: NL-3a on the gs_free fixture (see below).
+- `gs_free_3d_nl3a_fixture_return_{r0,rp,rm,zp,zm,el,gzm}` (one test per start case): NL-3a on the gs_free fixture (see below).
 
 ## NL-3a results (2026-10-13, sCluster, MUMPS, unregistered dev runs in
 `~/N4work/runs`)

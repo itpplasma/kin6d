@@ -1230,13 +1230,17 @@ add_executable(gs_free_3d app/gs_free_3d.f90)
 target_link_libraries(gs_free_3d PRIVATE kin6d)
 # NL-3a on the gs_free fixture (N = 0): reproduce the 2D free boundary and
 # return from +-15 mm R/Z and +2 % elongation offset starts.
-add_test(NAME gs_free_3d_nl3a_fixture_return COMMAND ${CMAKE_COMMAND}
-    -DAPP=$<TARGET_FILE:gs_free_3d> -DGS_FREE=$<TARGET_FILE:gs_free>
-    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
-    -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return -DDISTANCE_LIMIT=1.0e-4
-    -DDEFECT_LIMIT=1.0e-4 -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
-set_tests_properties(gs_free_3d_nl3a_fixture_return PROPERTIES TIMEOUT 3600
-    ENVIRONMENT "OMP_NUM_THREADS=4")
+# One registered test per start case (see kin6d_test_labels.cmake).
+foreach(case r0 rp rm zp zm el gzm)
+    add_test(NAME gs_free_3d_nl3a_fixture_return_${case} COMMAND ${CMAKE_COMMAND}
+        -DAPP=$<TARGET_FILE:gs_free_3d> -DGS_FREE=$<TARGET_FILE:gs_free>
+        -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
+        -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return_${case} -DCASE=${case}
+        -DDISTANCE_LIMIT=1.0e-4 -DDEFECT_LIMIT=1.0e-4
+        -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
+    set_tests_properties(gs_free_3d_nl3a_fixture_return_${case} PROPERTIES
+        TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4")
+endforeach()
 # Discrete hypotheses (FB-A2, FB-D2) at converged fixture states: A_h + S_h > 0,
 # [grad C; M] of full row rank and one negative direction of S_red (vertical).
 add_test(NAME gs_free_3d_fixture_hypotheses COMMAND ${CMAKE_COMMAND}
