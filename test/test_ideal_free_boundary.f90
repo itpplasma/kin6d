@@ -54,6 +54,12 @@ program test_ideal_free_boundary
     !                    radial stretch) vanish to discretisation accuracy and
     !                    converge under refinement, while a relabelling slide
     !                    has O(1) moments (the gauge fixes labels, not shape)
+    !   vertical         slide-gauged Newton matrix against differences of the
+    !                    gradient (N = 0, 1), and quadratic return of the gauged
+    !                    Newton step to a manufactured displaced Solov'ev state
+    !   hypotheses       ideal_fb_hypotheses: (V), (R) and In(S_red); the
+    !                    FB-D2 bordering relation against a dense eigen-solve of
+    !                    the slide-bordered KKT matrix (N = 0, 1)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
@@ -61,7 +67,8 @@ program test_ideal_free_boundary
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
-        ideal_fb_vertical_system, ideal_fb_vertical_gradient, ideal_fb_vertical_expand, &
+        ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses, &
+        ideal_fb_hypotheses_print, &
         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
         ideal_fb_solve, ideal_fb_report_t
     use kin6d_curved_triangle, only: triangle_locate
@@ -100,6 +107,8 @@ program test_ideal_free_boundary
         call vacuum_3d()
     case ('slide')
         call slide_checks()
+    case ('hypotheses')
+        call hypothesis_checks()
     case default
         error stop 'unknown mode'
     end select
@@ -151,6 +160,34 @@ contains
         point = [rc + gamma_scale*ac*cos(2*pi*t), zc + gamma_scale*bc*sin(2*pi*t)]
     end subroutine
 
+    subroutine solovev_chain(n, chain)
+        ! Gamma_p on the zero-pressure level chi = 0 of the Solov'ev data,
+        ! traced along rays from (3.05, 0.037): the frozen field is then
+        ! tangent to Gamma_p, as the slide gauge assumes (b.n = 0, FB-C2).
+        integer, intent(in) :: n
+        real(dp), allocatable, intent(out) :: chain(:, :)
+        type(simple_field_t) :: field
+        real(dp) :: lo, hi, mid, chi, grad(2), b3, p, t
+        integer :: j, it
+        field%solovev = .true.
+        allocate (chain(2, n))
+        do j = 1, n
+            t = 2*pi*(j - 1)/n
+            lo = 0.0_dp; hi = 1.0_dp
+            do it = 1, 200
+                mid = 0.5_dp*(lo + hi)
+                call field%evaluate([3.05_dp + mid*cos(t), 0.037_dp + mid*sin(t)], &
+                    chi, grad, b3, p)
+                if (chi < 0) then
+                    lo = mid
+                else
+                    hi = mid
+                end if
+            end do
+            chain(:, j) = [3.05_dp, 0.037_dp] + mid*[cos(t), sin(t)]
+        end do
+    end subroutine
+
     subroutine flux_surface_chain(n, chain)
         ! Level psi_ext(fil + 0.55 e_R) traced along rays from the filament.
         integer, intent(in) :: n
@@ -191,7 +228,12 @@ contains
         do j = 1, nc
             call gamma_c(real(j - 1, dp)/nc, contour(:, j))
         end do
-        if (flux_chain) then
+        if (present(solovev)) then
+            if (solovev) call solovev_chain(nchain, chain)
+        end if
+        if (allocated(chain)) then
+            continue
+        else if (flux_chain) then
             call flux_surface_chain(nchain, chain)
         else
             allocate (chain(2, nchain))
@@ -326,62 +368,79 @@ contains
     subroutine vertical_checks()
         ! Manufactured discrete load at a displaced Solov'ev state, retained
         ! unchanged throughout each Newton solve. This tests the nonlinear
-        ! equations, not a claim of a coil-supported analytic free boundary.
+        ! equations of the slide-gauged system, not a claim of a
+        ! coil-supported analytic free boundary.
         type(ideal_fb_t) :: fb
         type(ideal_fb_report_t) :: report
-        integer, allocatable :: rp(:), ci(:), vrp(:), vci(:)
-        real(dp), allocatable :: val(:), vv(:), g(:), gp(:), gm(:), v(:), du(:)
-        real(dp), allocatable :: reduced(:), plus(:), minus(:), hv(:), x0(:, :, :)
-        real(dp) :: h, error(0:3), residual(0:3), scale, fd_error, dz
-        integer :: ntor, i, p, st, a, z, it, sign_z
+        integer, allocatable :: rp(:), ci(:), srp(:), sci(:)
+        real(dp), allocatable :: val(:), sv(:), g(:), gp(:), gm(:), v(:), du(:)
+        real(dp), allocatable :: hv(:), hh(:), fd(:), x0(:, :, :), d(:, :), q(:, :, :)
+        real(dp) :: h, error(0:3), residual(0:3), scale, fd_error, dz, fz(2)
+        integer :: ntor, i, p, st, a, it, sign_z, nl, n, k, j
         do ntor = 0, 1
             call build(16, 12, 2, .false., 3, ntor, fb, solovev=.true.)
             call ideal_fb_set_drive(fb, sampler, st)
             if (st /= IDEAL_FB_OK) error stop 'vertical drive'
-            fb%rigid_vertical = .true.; fb%tangential_gauge = 100
-            allocate (g(fb%n), gp(fb%n), gm(fb%n), du(fb%n), v(fb%n + 1), &
-                      reduced(fb%n + 1), plus(fb%n + 1), minus(fb%n + 1), hv(fb%n + 1))
+            n = fb%n; nl = size(fb%slide, 3)
+            allocate (g(n), gp(n), gm(n), du(n), v(n + nl), hv(n + nl), hh(n), &
+                      fd(n + nl))
             ! Nonaxisymmetric perturbations exercise the off-diagonal blocks.
-            do i = 1, fb%n
+            do i = 1, n
                 du(i) = 2.0e-4_dp*sin(0.71_dp*i)
             end do
             call ideal_fb_step(fb, du, 1.0_dp)
             call ideal_fb_gradient(fb, g, st)
             call ideal_fb_hessian(fb, rp, ci, val)
-            call ideal_fb_vertical_system(fb, rp, ci, val, val, vrp, vci, vv)
-            call check_symmetry(vrp, vci, vv)
-            v = [(cos(0.31_dp*i), i=1, fb%n + 1)]
-            do a = 1, fb%plasma%nodes
-                z = 2 + 2*fb%nmode*(a - 1)
-                v(z) = 0
-            end do
+            call ideal_fb_slide_system(fb, rp, ci, val, 1.0_dp, srp, sci, sv)
+            call check_symmetry(srp, sci, sv)
+            ! Bordered residual [g(U) + G^T mu; G (U - U_start)] along (du, nu).
+            v = [(cos(0.31_dp*i), i=1, n + nl)]
             do a = 1, fb%ns
                 i = fb%np + fb%nx + 2 + 3*fb%nmode*(a - 1)
                 v(i) = 1.0e3_dp
             end do
-            v(fb%n + 1) = 0.73_dp
-            call ideal_fb_vertical_expand(fb, v, du)
+            du = v(:n)
             h = 1.0e-6_dp
             call ideal_fb_step(fb, du, h)
             call ideal_fb_gradient(fb, gp, st)
-            call ideal_fb_vertical_gradient(fb, gp, plus)
             call ideal_fb_step(fb, du, -2*h)
             call ideal_fb_gradient(fb, gm, st)
-            call ideal_fb_vertical_gradient(fb, gm, minus)
             call ideal_fb_step(fb, du, h)
+            fd = 0
+            fd(:n) = (gp - gm)/(2*h)
+            do k = 1, nl
+                do a = 1, fb%plasma%nodes
+                    do j = 1, 2
+                        i = j + 2*fb%nmode*(a - 1)
+                        fd(i) = fd(i) + fb%slide(j, a, k)*v(n + k)
+                        fd(n + k) = fd(n + k) + fb%slide(j, a, k)*du(i)
+                    end do
+                end do
+            end do
             hv = 0
-            do i = 1, fb%n + 1
-                do p = vrp(i), vrp(i + 1) - 1
-                    hv(i) = hv(i) + vv(p)*v(vci(p))
+            do i = 1, n + nl
+                do p = srp(i), srp(i + 1) - 1
+                    hv(i) = hv(i) + sv(p)*v(sci(p))
                 end do
             end do
             scale = maxval(abs(hv))
-            fd_error = maxval(abs((plus - minus)/(2*h) - hv))/scale
-           print '(a,i0,a,es12.4)', 'vertical N=', ntor, ' Jacobian FD error ', fd_error
-            if (fd_error > 1.0e-6_dp) error stop 'vertical Jacobian mismatch'
-            ! Explicitly check the force row on its own scale.
-            fd_error = abs((plus(fb%n + 1) - minus(fb%n + 1))/(2*h) &
-                           - hv(fb%n + 1))/max(abs(hv(fb%n + 1)), 1.0_dp)
+            fd_error = maxval(abs(fd - hv))/scale
+            print '(a,i0,a,es12.4)', 'gauged N=', ntor, ' Jacobian FD error ', fd_error
+            if (fd_error > 1.0e-6_dp) error stop 'gauged Jacobian mismatch'
+            ! Net vertical force row (n = 0 plasma Z rows) on its own scale.
+            hh = 0
+            do i = 1, n
+                do p = rp(i), rp(i + 1) - 1
+                    hh(i) = hh(i) + val(p)*du(ci(p))
+                end do
+            end do
+            fz = 0
+            do a = 1, fb%plasma%nodes
+                i = 2 + 2*fb%nmode*(a - 1)
+                fz = fz + [fd(i) - dot_product(v(n + 1:n + nl), fb%slide(2, a, :)), &
+                    hh(i)]
+            end do
+            fd_error = abs(fz(1) - fz(2))/max(abs(fz(2)), 1.0_dp)
             print '(a,es12.4)', 'vertical force row FD error ', fd_error
             if (fd_error > 1.0e-5_dp) error stop 'vertical force Jacobian mismatch'
             ! The affine manufactured load makes this exact discrete target.
@@ -392,9 +451,30 @@ contains
             if (st /= IDEAL_FB_OK .or. report%iterations /= 0) &
                 error stop 'exact manufactured target not recognized'
             x0 = fb%plasma%x
+            ! Orthonormal slide rows: the displaced start keeps the target in
+            ! the gauge (zero slide moments of target - start).
+            q = fb%slide
+            do k = 1, nl
+                do j = 1, k - 1
+                    q(:, :, k) = q(:, :, k) - sum(q(:, :, j)*q(:, :, k))*q(:, :, j)
+                end do
+                q(:, :, k) = q(:, :, k)/norm2(q(:, :, k))
+            end do
             do sign_z = -1, 1, 2
-                dz = sign_z*0.004_dp
-                fb%plasma%x(2, 1, :) = x0(2, 1, :) + dz
+                ! 2 mm: from 4 mm the slide-gauged iterates pass 3e-10 at step 2,
+                ! where the quadratic test below would ask for 1e-17 at step 3,
+                ! below the 2e-13 roundoff floor of the state.
+                dz = sign_z*0.002_dp
+                allocate (d(2, fb%plasma%nodes))
+                d(1, :) = 0; d(2, :) = dz
+                do k = 1, nl
+                    d = d - sum(q(:, :, k)*d)*q(:, :, k)
+                end do
+                fb%plasma%x(1:2, 1, :) = x0(1:2, 1, :) + d
+                print '(a,es12.4,a,es12.4)', 'gauged start: mean dZ ', &
+                    sum(d(2, :))/size(d, 2), ' max |d - dZ| ', &
+                    maxval(abs(d - spread([0.0_dp, dz], 2, size(d, 2))))
+                deallocate (d)
                 ! Keep copies of the other target variables: the loop restores
                 ! all state via an inverse accumulated step below.
                 block
@@ -437,8 +517,7 @@ contains
                             maxval(abs(fb%phi - phi0))/f_vac, &
                             maxval(abs(fb%lam - lam0))/1.0e6_dp)
                         call ideal_fb_gradient(fb, g, st)
-                        call ideal_fb_vertical_gradient(fb, g, reduced)
-                        residual(it) = maxval(abs(reduced))
+                        residual(it) = maxval(abs(g))
                         print '(a,3i3,2es14.5)', 'vertical Newton ', ntor, sign_z, it, &
                             error(it), residual(it)
                         if (it == 3) exit
@@ -457,10 +536,112 @@ contains
                     fb%plasma%x = x0
                 end block
             end do
-            deallocate (g, gp, gm, du, v, reduced, plus, minus, hv)
+            deallocate (g, gp, gm, du, v, hv, hh, fd)
         end do
-        print '(a)', 'vertical coupled Jacobian and quadratic return ok'
+        print '(a)', 'slide-gauged Jacobian and vertical quadratic return ok'
     end subroutine
+
+    subroutine hypothesis_checks()
+        ! FB-D2 bordering relation as an independent oracle of
+        ! ideal_fb_hypotheses: the Sylvester inertia of the slide-bordered KKT
+        ! matrix from a dense Bunch-Kaufman LDL^T (after a symmetric diagonal
+        ! equilibration, a congruence) must equal In(S_red) + (r, r + dim
+        ! Phi~, 0), with In(S_red) from the plasma Schur complement and its QR
+        ! gauge basis. The hypotheses (V) and (R) of that relation are checked.
+        type(ideal_fb_t) :: fb
+        type(ideal_fb_hypotheses_t) :: hyp
+        integer, allocatable :: rp(:), ci(:), srp(:), sci(:), ipiv(:)
+        real(dp), allocatable :: val(:), sv(:), k(:, :), work(:), scale(:)
+        real(dp) :: sscale, query(1), det
+        integer :: ntor, st, i, p, m, info, inertia(3)
+        interface
+            subroutine dsytrf(uplo, n, a, lda, ipiv, work, lwork, info)
+                import :: dp
+                character, intent(in) :: uplo
+                integer, intent(in) :: n, lda, lwork
+                real(dp), intent(inout) :: a(lda, *)
+                integer, intent(out) :: ipiv(*), info
+                real(dp), intent(out) :: work(*)
+            end subroutine
+        end interface
+        do ntor = 0, 1
+            call build(16, 12, 2, .false., 3, ntor, fb, solovev=.true.)
+            call ideal_fb_set_drive(fb, sampler, st)
+            if (st /= IDEAL_FB_OK) error stop 'hypotheses drive'
+            call ideal_fb_solve_vacuum(fb, st)
+            if (st /= IDEAL_FB_OK) error stop 'hypotheses vacuum'
+            call ideal_fb_solve_multipliers(fb, st)
+            if (st /= IDEAL_FB_OK) error stop 'hypotheses multipliers'
+            call ideal_fb_hypotheses(fb, hyp, st)
+            call ideal_fb_hypotheses_print(hyp)
+            if (st /= IDEAL_FB_OK) error stop 'hypotheses status'
+            if (.not. hyp%s_min > 0) error stop 'S_h not positive'
+            if (.not. hyp%vacuum_min > 0) error stop 'A_h + S_h not positive'
+            if (.not. hyp%full_rank) error stop '[grad C; M] rank deficient'
+            if (hyp%n_zero /= 0) error stop 'S_red singular'
+            call ideal_fb_hessian(fb, rp, ci, val)
+            sscale = 0
+            do i = 1, fb%np
+                do p = rp(i), rp(i + 1) - 1
+                    if (ci(p) == i) sscale = sscale + abs(val(p))
+                end do
+            end do
+            call ideal_fb_slide_system(fb, rp, ci, val, sscale/fb%np, srp, sci, sv)
+            m = size(srp) - 1
+            allocate (k(m, m), scale(m), ipiv(m))
+            k = 0; scale = 1
+            do i = 1, m
+                do p = srp(i), srp(i + 1) - 1
+                    k(i, sci(p)) = sv(p)
+                    if (sci(p) == i .and. abs(sv(p)) > 0) scale(i) = 1/sqrt(abs(sv(p)))
+                end do
+            end do
+            do i = 1, m
+                k(:, i) = scale*k(:, i)*scale(i)
+            end do
+            call dsytrf('L', m, k, m, ipiv, query, -1, info)
+            allocate (work(max(1, nint(query(1)))))
+            call dsytrf('L', m, k, m, ipiv, work, size(work), info)
+            if (info < 0) error stop 'dense KKT factorisation'
+            inertia = 0
+            i = 1
+            do while (i <= m)
+                if (ipiv(i) > 0) then
+                    inertia = inertia + sign_count(k(i, i), 1)
+                    i = i + 1
+                else
+                    det = k(i, i)*k(i + 1, i + 1) - k(i + 1, i)**2
+                    if (det < 0) then
+                        inertia(1:2) = inertia(1:2) + 1
+                    else
+                        inertia = inertia + sign_count(k(i, i) + k(i + 1, i + 1), 2)
+                    end if
+                    i = i + 2
+                end if
+            end do
+            print '(a,i0,a,i0,a,3(1x,i0),a,3(1x,i0))', 'bordering N=', ntor, &
+                ' size ', m, ' dense LDL^T In(K)', inertia, ' predicted', &
+                hyp%kkt_inertia
+            if (any(inertia /= hyp%kkt_inertia)) error stop 'bordering inertia mismatch'
+            deallocate (k, scale, ipiv, work)
+        end do
+        print '(a)', 'hypotheses and bordering inertia ok'
+    end subroutine
+
+    pure function sign_count(d, times) result(add)
+        ! (positive, negative, zero) increment of an inertia count.
+        real(dp), intent(in) :: d
+        integer, intent(in) :: times
+        integer :: add(3)
+        add = 0
+        if (d > 0) then
+            add(1) = times
+        else if (d < 0) then
+            add(2) = times
+        else
+            add(3) = times
+        end if
+    end function
 
     subroutine block_report(name, fd, an)
         character(*), intent(in) :: name
