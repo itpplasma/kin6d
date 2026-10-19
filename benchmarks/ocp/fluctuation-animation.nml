@@ -1,0 +1,13 @@
+! C4 lecture animation (thermal-charge-fluctuations): no impurity (kappa = 0),
+! thermal charge-density fluctuations only. Lambda = 30, L = 6 lambda_D
+! (N = 6480), 2 members (the minimum; the scene uses member 1), 40/omega_p of
+! Hamiltonian sampling at 0.2/omega_p (200 frames).
+! Run: ocp_shielding_demo --config benchmarks/ocp/fluctuation-animation.nml --export DIR
+&ocp_shielding
+ label='ocp-fluctuation-animation',
+ debye_volumes=30.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+ impurities=0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+ average_times=40.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+ members=2, 0, 0, 0, 0, 0,
+ box=6.0
+/

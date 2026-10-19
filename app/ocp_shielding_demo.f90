@@ -12,8 +12,12 @@
 !> the isolated Yukawa -kappa exp(-r)/r is an overlay with a finite-box model
 !> difference. Statistical 95% Student-t intervals over independent
 !> realizations are reported separately from the numerical settings.
+!> A case with kappa = 0 has no impurity: thermal fluctuations only. Its
+!> screening-length fit is unavailable (NaN), its reference is delta n = 0,
+!> and the S(2 pi/L) gate tests the fluctuations against Debye-Hueckel.
 module ocp_shielding_app
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
     use kin6d_ocp, only: ocp_model_t, ocp_system, ocp_prepare, ocp_advance, &
         ocp_thermostat, ocp_kinetic_temperature, ocp_mode, ocp_radial_histogram, &
@@ -261,12 +265,18 @@ contains
             call interval(profile(b, :nm, c), mean, half)
             pstat(b, :, c) = [mean, mean - half, mean + half]
         end do
-        do r = 1, nm
-            fitted(r, c) = fit_length(profile(:, r, c), impurities(c))
-        end do
-        fitted(nm + 1, c) = fit_length(pstat(:, 1, c), impurities(c))
-        call interval(fitted(:nm, c), gates(1, c), gates(2, c))
-        gates(3, c) = fitted(nm + 1, c)
+        if (impurities(c) > 0) then
+            do r = 1, nm
+                fitted(r, c) = fit_length(profile(:, r, c), impurities(c))
+            end do
+            fitted(nm + 1, c) = fit_length(pstat(:, 1, c), impurities(c))
+            call interval(fitted(:nm, c), gates(1, c), gates(2, c))
+            gates(3, c) = fitted(nm + 1, c)
+        else
+            ! No impurity: no screening length to fit (unavailable).
+            fitted(:, c) = ieee_value(0.0_dp, ieee_quiet_nan)
+            gates(1:3, c) = ieee_value(0.0_dp, ieee_quiet_nan)
+        end if
         call interval(sk(:nm), gates(4, c), gates(5, c))
         call debye_structure((two_pi/box)**2, 1.0_dp, gates(6, c))
         ! Geometry gate: periodic vs isolated reference over the fit window,
@@ -425,12 +435,19 @@ contains
     !> sample, the final per-bin 95% Student-t interval over members, and the
     !> bin-averaged references per unit kappa (periodic Debye, isolated
     !> Yukawa, unscreened 1/r). Statistical status only; no deterministic
-    !> certificate is claimed.
+    !> certificate is claimed. Without impurity (kappa = 0) the slug is
+    !> thermal-charge-fluctuations, delta n/n is taken around the arbitrary
+    !> origin and the per-unit-kappa references are not written.
     subroutine export_animation()
         type(animation_export_t) :: export
         real(dp), allocatable :: mean_profile(:, :), bare(:)
         real(dp) :: density, shell
         integer :: b, j
+        character(32) :: slug
+        logical :: screened
+        screened = impurities(1) > 0
+        slug = 'debye-shielding-particles'
+        if (.not. screened) slug = 'thermal-charge-fluctuations'
         allocate (mean_profile(bins, samples), bare(bins))
         density = electrons(1)/box**3
         do b = 1, bins
@@ -441,17 +458,27 @@ contains
             end do
             bare(b) = -bin_mean_inverse_r(b)
         end do
-        call export%create(run, export_dir, 'debye-shielding-particles')
-        call export%note('model', 'classical electron OCP, periodic cube, uniform '// &
-            'neutralizing background, bare Coulomb (PME), fixed repulsive point '// &
-            'impurity Q = -kappa 4 pi Lambda e compensated in the background (C4)')
+        call export%create(run, export_dir, trim(slug))
+        if (screened) then
+            call export%note('model', 'classical electron OCP, periodic cube, '// &
+                'uniform neutralizing background, bare Coulomb (PME), fixed '// &
+                'repulsive point impurity Q = -kappa 4 pi Lambda e compensated in '// &
+                'the background (C4)')
+        else
+            call export%note('model', 'classical electron OCP, periodic cube, '// &
+                'uniform neutralizing background, bare Coulomb (PME), no impurity: '// &
+                'thermal charge-density fluctuations only (C4, kappa = 0)')
+        end if
         call export%note('units', 'k_B T = m = 1, lambda_D = 1, omega_p = 1')
         call export%note('status', 'candidate dynamics; profile intervals are '// &
             'statistical (95% Student-t over members), not certificates')
-        call export%note('references', 'delta n/n reference = kappa * periodic '// &
-            '(linear response with the periodic screened-Poisson Green function); '// &
-            'yukawa: isolated kappa exp(-r)/r overlay; bare: unscreened linear '// &
-            'Boltzmann response kappa/r; all bin-averaged, sign included')
+        if (screened) call export%note('references', 'delta n/n reference = kappa '// &
+            '* periodic (linear response with the periodic screened-Poisson Green '// &
+            'function); yukawa: isolated kappa exp(-r)/r overlay; bare: unscreened '// &
+            'linear Boltzmann response kappa/r; all bin-averaged, sign included')
+        if (.not. screened) call export%note('references', 'delta n/n around '// &
+            'the origin (no impurity) has the reference 0; S(2 pi/L) Debye-Hueckel '// &
+            'gate in the run output')
         call export%parameter('Lambda', debye_volumes(1), '1', 'n lambda_D^3')
         call export%parameter('kappa', impurities(1), '1', &
             'impurity coupling, nonlinear radius r_nl = kappa lambda_D')
@@ -468,21 +495,24 @@ contains
             '1/omega_p', 'time since the end of equilibration')
         call export%quantized('positions', reshape(trajectory, [size(trajectory)]), &
             [3, electrons(1), samples], -box/2, box/2, 16, 'lambda_D', &
-            'electron positions (x, y, z) of member 1, impurity at the origin')
+            'electron positions (x, y, z) of member 1, '// &
+            trim(merge('impurity at the origin', 'no impurity           ', screened)))
         call export%real32('r', rb, [bins], 'lambda_D', 'shell-bin centres')
         call export%real32('dn_running', reshape(mean_profile, [size(mean_profile)]), &
             [bins, samples], '1', 'delta n/n, ensemble mean of the time average '// &
             'up to each frame')
         call export%real32('dn_interval', reshape(pstat(:, :, 1), [3*bins]), [bins, 3], &
             '1', 'final delta n/n: mean, lower, upper 95% Student-t over members')
-        call export%real32('periodic', periodic, [bins], '1', &
-            'periodic Debye reference per unit kappa (delta n/(n kappa))')
-        call export%real32('yukawa', yukawa, [bins], '1', &
-            'isolated -exp(-r)/r per unit kappa')
-        call export%real32('bare', bare, [bins], '1', 'unscreened -1/r per unit kappa')
+        if (screened) then
+            call export%real32('periodic', periodic, [bins], '1', &
+                'periodic Debye reference per unit kappa (delta n/(n kappa))')
+            call export%real32('yukawa', yukawa, [bins], '1', &
+                'isolated -exp(-r)/r per unit kappa')
+            call export%real32('bare', bare, [bins], '1', &
+                'unscreened -1/r per unit kappa')
+        end if
         call export%close()
-        print '(2a)', 'animation data written to ', &
-            trim(export_dir)//'/debye-shielding-particles'
+        print '(2a)', 'animation data written to ', trim(export_dir)//'/'//trim(slug)
     contains
         !> Bin-volume average of 1/r (exact: (3/2)(b^2 - a^2)/(b^3 - a^3)).
         real(dp) function bin_mean_inverse_r(b) result(v)
@@ -532,7 +562,8 @@ contains
         close (u)
         call result%create(run)
         call result%attribute('model', 'classical electron OCP with fixed repulsive '// &
-            'point impurity; periodic 3D3V; bare Coulomb (PME); no softening')
+            'point impurity (kappa = 0: none); periodic 3D3V; bare Coulomb (PME); '// &
+            'no softening')
         call result%attribute('responsive_species', 'electrons only; lambda_De = 1')
         call result%attribute('preparation', 'uniform x Boltzmann factor exp(-kappa/r) '// &
             'of the bare impurity, Maxwellian T=1, isokinetic thermostat during '// &
@@ -553,26 +584,32 @@ contains
         call result%close()
     end subroutine
 
+    !> Profiles are shown per unit kappa; a case without impurity (kappa = 0)
+    !> shows -delta n/n itself against the reference 0.
     subroutine draw_figures()
-        real(dp) :: lam(cases), lo(cases), hi(cases), view
+        real(dp) :: lam(cases), lo(cases), hi(cases), view, scale(cases), refs(cases)
+        logical :: screened(cases)
         integer :: c, frames
+        screened = impurities(:cases) > 0
+        scale = merge(impurities(:cases), 1.0_dp, screened)
+        refs = merge(1.0_dp, 0.0_dp, screened)
         call figure(figsize=[13.2_dp, 8.8_dp])
         do c = 1, min(cases, 4)
             call subplot(2, 2, c)
-            call fill_between(rb, -pstat(:, 2, c)/impurities(c), -pstat(:, 3, c)/ &
-                              impurities(c), color=blue, alpha=0.25_dp)
-            call plot(rb, -pstat(:, 1, c)/impurities(c), color=blue, linewidth=1.8_dp, &
+            call fill_between(rb, -pstat(:, 2, c)/scale(c), -pstat(:, 3, c)/scale(c), &
+                              color=blue, alpha=0.25_dp)
+            call plot(rb, -pstat(:, 1, c)/scale(c), color=blue, linewidth=1.8_dp, &
                       label='microscopic (95% stat.)')
-            call plot(rb, -yukawa, color=green, linestyle=':', linewidth=1.2_dp, &
-                      label='isolated Yukawa exp(-r)/r')
-            call plot(rb, -periodic, color=black, linestyle='--', linewidth=1.2_dp, &
-                      label='periodic Debye G(r)')
+            call plot(rb, -refs(c)*yukawa, color=green, linestyle=':', &
+                      linewidth=1.2_dp, label='isolated Yukawa exp(-r)/r')
+            call plot(rb, -refs(c)*periodic, color=black, linestyle='--', &
+                      linewidth=1.2_dp, label='periodic Debye G(r)')
             call plot([fit_min, fit_min], [-1.0_dp, 6.0_dp], color=[0.6_dp, 0.6_dp, &
                       0.6_dp], linestyle=':', linewidth=1.0_dp, label='fit window start')
             write (heading, '(a,f6.0,a,f5.2,a,f6.3,a,f5.3)') '$\Lambda$ = ', debye_volumes(c), &
                 ', $\kappa$ = ', impurities(c), ': $\lambda_{fit}$ = ', gates(1, c), ' ± ', gates(2, c)
             call title(trim(heading))
-            call xlabel('$r/\lambda_D$'); call ylabel('$-\delta n/(n\kappa)$')
+            call xlabel('$r/\lambda_D$'); call ylabel(response_label(c))
             call xlim(0.0_dp, rmax); call ylim(-0.5_dp, 5.0_dp)
             call legend(loc='upper right')
         end do
@@ -584,13 +621,17 @@ contains
         lo = gates(1, :cases) - gates(2, :cases); hi = gates(1, :cases) + gates(2, :cases)
         call figure(figsize=[12.8_dp, 6.4_dp])
         call subplot(1, 2, 1)
-        call scatter(lam, gates(1, :cases), color=blue, s=36.0_dp, &
-                     label='member mean $\lambda_{fit}$')
+        if (any(screened)) then
+            call scatter(pack(lam, screened), pack(gates(1, :cases), screened), &
+                         color=blue, s=36.0_dp, label='member mean $\lambda_{fit}$')
+            call scatter(pack(lam, screened), pack(gates(3, :cases), screened), &
+                         color=vermillion, s=36.0_dp, marker='s', &
+                         label='fit of the mean profile')
+        end if
         do c = 1, cases
-            call plot([lam(c), lam(c)], [lo(c), hi(c)], color=blue, linewidth=1.8_dp)
+            if (screened(c)) call plot([lam(c), lam(c)], [lo(c), hi(c)], color=blue, &
+                                       linewidth=1.8_dp)
         end do
-        call scatter(lam, gates(3, :cases), color=vermillion, s=36.0_dp, marker='s', &
-                     label='fit of the mean profile')
         call plot([0.5_dp*minval(lam), 2*maxval(lam)], [1.0_dp, 1.0_dp], color=black, &
                   linestyle='--', linewidth=1.2_dp, label='$\lambda_{De}$ = 1')
         call title('Fitted screening length (95% stat. bars)')
@@ -624,6 +665,13 @@ contains
         call save_animation(animation, 'output/'//trim(label)//'.mp4', fps=24, status=c)
         if (c /= 0) print '(a)', 'animation encoding failed'
     contains
+        function response_label(c) result(text)
+            integer, intent(in) :: c
+            character(len=:), allocatable :: text
+            text = '$-\delta n/n$'
+            if (screened(c)) text = '$-\delta n/(n\kappa)$'
+        end function
+
         subroutine update_frame(index)
             integer, intent(in) :: index
             frame = min(samples, index)
@@ -645,14 +693,14 @@ contains
             call xlim(-view, view); call ylim(-view, view)
             call legend(loc='upper right')
             call subplot(1, 2, 2)
-            call plot(rb, -running(:, frame)/impurities(1), color=blue, linewidth=1.8_dp, &
+            call plot(rb, -running(:, frame)/scale(1), color=blue, linewidth=1.8_dp, &
                       label='running average, one realization')
-            call plot(rb, -periodic, color=black, linestyle='--', linewidth=1.2_dp, &
-                      label='periodic Debye G(r)')
+            call plot(rb, -refs(1)*periodic, color=black, linestyle='--', &
+                      linewidth=1.2_dp, label='periodic Debye G(r)')
             write (heading, '(a,f6.1,a,f6.2)') 'Accumulated response, $\Lambda$ = ', &
                 debye_volumes(1), ', $\omega_p t$ = ', frame*sample_interval
             call title(trim(heading))
-            call xlabel('$r/\lambda_D$'); call ylabel('$-\delta n/(n\kappa)$')
+            call xlabel('$r/\lambda_D$'); call ylabel(response_label(1))
             call xlim(0.0_dp, rmax); call ylim(-3.0_dp, 6.0_dp)
             call legend(loc='upper right')
             call tight_layout()
