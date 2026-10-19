@@ -3,6 +3,12 @@ set -euo pipefail
 cd -- "$(dirname -- "$0")"
 lake build
 lake env lean tests/Accepted.lean
+bordered=$(lake env lean tests/Bordered.lean)
+printf '%s\n' "$bordered"
+if rg -q 'sorryAx' <<<"$bordered"; then
+    echo "ERROR: bordering lemmas depend on sorry" >&2
+    exit 1
+fi
 if [[ $# -gt 0 ]]; then
     mkdir -p ../output
     # Run from the repository root so output/formal_krook_certificate.nc
