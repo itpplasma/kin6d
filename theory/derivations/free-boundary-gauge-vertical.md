@@ -1,12 +1,12 @@
 # Free boundary: relabelling gauge, bordered Newton system and the vertical saddle
 
 - Scope: the map-lane free-boundary Lagrangian L of [free-boundary-first-variation.md](free-boundary-first-variation.md), γ = 0, nested plasma region Ω with label χ (χ_a on the axis, χ_b on Γ_p), chart-abstract (q3 is the chart's third coordinate: the physical φ for the cylindrical chart, the curve parameter for a curve frame).
-- Obligations FB-C1 to FB-C6 and FB-D1 to FB-D4 of [free-boundary-theory.md](../../docs/free-boundary-theory.md). Status labels: **proved**, **cited**, **hypothesis**.
+- Obligations FB-C1 to FB-C6 and FB-D1 to FB-D4 of [free-boundary-theory.md](../../docs/free-boundary-theory.md). Status labels: **proved**, **cited**, **hypothesis**, **open**. Repairs from the independent proof audit of 2026-10-19 are marked **verified** (re-derived in the audit and the repair) or **hypothesis**.
 - Standing hypotheses (H0): B, χ smooth on Ω̄; ∇χ ≠ 0 off the axis; each level set of χ is a connected torus; the axis is nondegenerate (χ − χ_a ≍ r², r the distance to the axis); B·∇q3 > 0 on Ω (field lines advance monotonically in q3). H0 is checked pointwise per case; for a curve frame, B·∇q3 > 0 is a **hypothesis** to be checked on the frozen state.
 
 ## 1. The relabelling symmetry (proved)
 
-- Let Ψ_t be the flow of a reference vector field v tangent to Γ̂_p. Then W_p[X∘Ψ_t] = W_p[X] for every X iff Ψ_t preserves the frozen data: Ψ_t^* b̂ = b̂ and χ̂∘Ψ_t = χ̂ (p̂ = p(χ̂)).
+- Let Ψ_t be the flow of a reference vector field v tangent to Γ̂_p. If Ψ_t preserves the frozen data, Ψ_t^* b̂ = b̂ and χ̂∘Ψ_t = χ̂ (p̂ = p(χ̂)), then W_p[X∘Ψ_t] = W_p[X] for every X. (The converse is neither proved nor used; repair 2026-10-19.)
   - Reason: B = X_* b̂ and p∘X = p̂ are then unchanged, and W_p is the integral of an X-independent function of (B, p) over X(Ω̂).
 - The vacuum part depends on X only through Γ_p = X(Γ̂_p) and the shell map. Γ_p is invariant, because v is tangent to Γ̂_p. The shell map is a continuum gauge (first-variation file, section 5). So L is invariant in the continuum.
 - Infinitesimally, using db̂ = 0 and Cartan's formula: L_v b̂ = d(i_v b̂) = 0 and v·∇χ̂ = 0. By naturality of the push-forward, the physical displacement ξ = X_* v = DX v satisfies the same at X:
@@ -36,14 +36,20 @@
 
 ### Invariance identities (proved)
 
-- L[X∘Ψ_t] = L[X] for all X and t. Differentiating at t = 0:
+- Let P_g = {X : q3∘X = q̂3 on plasma nodes} be the position-gauged set. The reference generator v_f = (DX)⁻¹ξ_f of ξ_f is X-independent only on P_g, because ∇q3 pulls back to the fixed dq̂3 exactly when q3∘X = q̂3. Hence L[X∘Ψ_t] = L[X] for all X ∈ P_g and t (restriction **verified**, repair 2026-10-19; for X ∉ P_g the flow Ψ_t still preserves L, but its push-forward is not ξ_f). Differentiating at t = 0:
 
 \[
-\langle\nabla L(X),\xi_f\rangle=0\quad\forall f,\ \forall X .
+\langle\nabla L(X),\xi_f\rangle=0\quad\forall f,\ \forall X\in P_g .
 \]
 
-  The gradient is everywhere orthogonal to the orbit, not only at equilibria.
+  The gradient is orthogonal to the orbit on all of P_g, not only at equilibria.
 - Differentiating again in X at a critical point: H(X*)ξ_f = 0. The relabelling null is an exact Hessian kernel of the continuum problem. Discretely it is only near-null, because ξ_f is not an exact symmetry of the quadrature and P_k map.
+
+### Position-gauged stationarity is full stationarity (proved; repair 2026-10-19)
+
+- Every smooth ξ on Ω splits as ξ = ξ′ + λB with λ = ξ·∇q3/(B·∇q3) (smooth, B·∇q3 > 0 under H0) and ξ′·∇q3 = 0. In the shell the map is not position-gauged, so no splitting is needed there.
+- For every X, at Φ̃ = Φ̃*(X): ⟨∇L, λB⟩ = 0. By the first variation (first-variation file, section 6), δL[λB] = −∫λB·(J×B − ∇p) dV − ∮λ(B·n)[…] dS. Here B·(J×B) = 0, B·∇p = p′(χ)B·∇χ = 0 (B = X_*b̂ and b̂(∇χ̂) = 0 for every X), and B·n = 0 on Γ_p. The vacuum part depends only on the normal trace ξ·n on Γ_p, which is 0 (**verified**).
+- Hence, if (X, Φ̃) is stationary for all single-valued δΦ̃ and all position-gauged ξ′, it is stationary for all ξ, and FB-A1 applies. This is the step used by section 3 and by the first-variation result.
 
 ## 2. The slide gauge functional (proved)
 
@@ -55,7 +61,7 @@ M_\Lambda(\xi)=\int_\Omega\Lambda(\chi)\,\nabla q_3\cdot(\nabla\times\xi)\,dV .
 
 ∇q3 is single valued although q3 is multivalued.
 
-(i) **Curl-free displacements are free.** M_Λ(ξ) = 0 for every ξ with ∇×ξ = 0 in Ω, trivially. This covers translations, gradients of potentials (elongation (a x, −a z)-type strains) and the toroidal harmonic field. A rigid poloidal rotation (curl = 2ω) is not free, which is correct: it is not a symmetry of the problem with coils.
+(i) **Curl-free displacements are free.** M_Λ(ξ) = 0 for every ξ with ∇×ξ = 0 in Ω, trivially. This covers translations, gradients of potentials (elongation (a x, −a z)-type strains) and the toroidal harmonic field. A rigid poloidal rotation (curl = 2ω) is not free, which is correct: it is not a symmetry of the problem with coils. In 3D, a curl-free motion with ξ·∇q3 ≠ 0 is represented in the position gauge by ξ − λB (section 1), which is not curl-free in general. The gauge stays complete by (iv), but "translations need no relabelling" then holds only modulo an added ξ_f (**verified** note, audit 2026-10-19; relevant to FB-C6).
 
 (ii) **Derivative-free form.** With ∇·(ξ×A) = A·∇×ξ − ξ·∇×A, A = Λ∇q3 and ∇×A = Λ′∇χ×∇q3:
 
@@ -63,7 +69,7 @@ M_\Lambda(\xi)=\int_\Omega\Lambda(\chi)\,\nabla q_3\cdot(\nabla\times\xi)\,dV .
 M_\Lambda(\xi)=\int_\Omega\Lambda'(\chi)\,(\nabla\chi\times\nabla q_3)\cdot\xi\,dV+\oint_{\Gamma_p}\Lambda(\chi_b)\,(\xi\times\nabla q_3)\cdot n\,dS ,
 \]
 
-and the boundary term vanishes. In the cylindrical n = 0 case, (∇χ×e_φ) = ∇^⊥χ and dV = R dR dZ dφ give M_Λ = 2π∫ Λ′ ∇^⊥χ·u dR dZ. This is the code's M_l with φ_l = Λ_l′ (`ideal_free_boundary.f90:1350–1356`), up to sign and 2π. The code's claim "M_l vanishes for every curl-free u" is therefore **proved** in the continuum.
+and the boundary term vanishes. In the cylindrical n = 0 case, (∇χ×e_φ) = ∇^⊥χ and dV = R dR dZ dφ give M_Λ = 2π∫ Λ′ ∇^⊥χ·u dR dZ. This is the code's M_l with φ_l = Λ_l′ (`src/mhd/ideal_free_boundary.f90:1350–1356`), up to sign and 2π. The code's claim "M_l vanishes for every curl-free u" is therefore **proved** in the continuum.
 
 (iii) **Transversality.** For ξ_f, by (ii) and the coarea formula,
 
@@ -72,7 +78,7 @@ M_\Lambda(\xi_f)=\int_{\chi_a}^{\chi_b}\Lambda'(\chi)f(\chi)\,w(\chi)\,d\chi,\qq
 w(\chi)=\oint_{\chi}\frac{|\nabla\chi\times\nabla q_3|^2}{(B\cdot\nabla q_3)\,|\nabla\chi|}\,dS>0 .
 \]
 
-For the code's partition φ_l ≥ 0 (C¹, one per element layer, Λ_l(χ) = −∫_χ^{χ_b}φ_l), the gauge matrix A_lk = M_{Λ_l}(ξ_{φ_k}) = ∫φ_lφ_k w dχ is a Gram matrix. It is symmetric positive definite whenever the φ_l are linearly independent. The code normalises its directions and uses a Cholesky factor of the analogous matrix (`project_slide`, lines 1430–1470).
+For the code's partition φ_l ≥ 0 (C¹, one per element layer, Λ_l(χ) = −∫_χ^{χ_b}φ_l), the gauge matrix A_lk = M_{Λ_l}(ξ_{φ_k}) = ∫φ_lφ_k w dχ is a Gram matrix. It is symmetric positive definite whenever the φ_l are linearly independent. The code normalises its directions and uses a Cholesky factor of the analogous matrix (`project_slide`, `src/mhd/ideal_free_boundary.f90:1430–1470`).
 
 (iv) **Exact continuum decomposition.** Let G_∞ = {ξ : M_Λ(ξ) = 0 ∀Λ}. Define m_ξ(χ) = ∫_{χ′<χ}∇q3·∇×ξ dV. Up to sign, this equals the circulation-type quantity ∮_χ(∇χ×∇q3)·ξ/|∇χ| dS, by (ii) applied to the step Λ = 1_{χ′<χ} (limit of C¹ functions). Then:
 - G_∞ = {ξ : m_ξ ≡ 0}.
@@ -84,11 +90,11 @@ For the code's partition φ_l ≥ 0 (C¹, one per element layer, Λ_l(χ) = −�
 
 ## 3. The gauged stationary point is an equilibrium (proved, continuum)
 
-The bordered system solves ∇L(X) + Σ_l μ_l ∇M_l = 0 and M_l(X − X₀) = 0. Pair the first equation with ξ_{φ_k}:
-- ⟨∇L, ξ_{φ_k}⟩ = 0 by the invariance identity;
-- ⟨∇M_l, ξ_{φ_k}⟩ = A_lk(X) is nonsingular for X near X₀.
+The bordered system solves ∇L(X) + Σ_l μ_l ∇M_l = 0 on position-gauged variations, and M_l(X − X₀) = 0, with X ∈ P_g. Pair the first equation with ξ_{φ_k}:
+- ⟨∇L, ξ_{φ_k}⟩ = 0 by the invariance identity (X ∈ P_g);
+- ⟨∇M_l, ξ_{φ_k}⟩ = A_lk(X). A is a Gram matrix only at X₀, where the moments are fixed functionals built from X₀ (section 2 iii). For X ≠ X₀ it is nonsingular by continuity only, in a neighbourhood of X₀ whose radius is not quantified (**proved**, local; repair 2026-10-19).
 
-Hence μ = 0 and ∇L(X) = 0. The gauge multiplier vanishes at a solution, which justifies taking the merit with the multiplier removed ([ideal-free-boundary.md](../../docs/ideal-free-boundary.md), "Relabelling (slide) gauge"). Discretely, μ = O(discretisation) is a **hypothesis**.
+Hence, for X in that neighbourhood, μ = 0 and ∇L(X) = 0 on position-gauged variations. By "Position-gauged stationarity is full stationarity" (section 1), ∇L(X) = 0 for all ξ. The result is local near X₀ and depends on that step (**verified**, audit 2026-10-19). The same argument applies to the code's projected form (`project_slide`): if the projected gradient Π g vanishes, then g = Σ μ_l s_l, so μA = 0 and μ = 0. The gauge multiplier vanishes at a solution, which justifies taking the merit with the multiplier removed ([ideal-free-boundary.md](../../docs/ideal-free-boundary.md), "Relabelling (slide) gauge"). Discretely, μ = O(discretisation) is a **hypothesis**.
 
 ## 4. Bordered matrix lemma (proved)
 
@@ -116,23 +122,35 @@ The result is diag(ZᵀHZ, [0 Cᵀ; C 0]). The second block has eigenvalues ±σ
 
 ## 5. Vacuum elimination and the vertical saddle
 
-- Order the unknowns as (plasma map and multipliers x, vacuum Φ̃). With H_ΦΦ ≺ 0 (strict concavity, first-variation section 3), the Haynsworth inertia additivity ([Haynsworth 1968](https://doi.org/10.1016/0024-3795(68)90050-5), **cited**; it follows from the same congruence argument with a nonsingular pivot block) gives
+Repaired 2026-10-19 (audit: first invalid bridge). The earlier text took x = (plasma map and multipliers), so its Schur complement was still bordered by the shell constraints, and neg(S|_{ker M}) exceeded the physical index by rank C.
+
+- Unknowns: map coefficients q (plasma and shell nodes), shell-constraint multipliers λ (constraint rows ∇C), slide multipliers μ (rows M), and Φ̃. The constraint rows do not involve Φ̃, so
 
 \[
-\mathrm{In}(K_{\rm full})=\mathrm{In}(H_{\Phi\Phi})+\mathrm{In}(S),\qquad S=H_{xx}-H_{x\Phi}H_{\Phi\Phi}^{-1}H_{\Phi x}.
+K_{\rm full}=\begin{pmatrix}H_{qq}&H_{q\Phi}&\nabla C^T&M^T\\H_{\Phi q}&H_{\Phi\Phi}&0&0\\\nabla C&0&0&0\\M&0&0&0\end{pmatrix},
 \]
 
-  S is the reduced plasma Hessian at fixed coil currents, the discrete δW. The full KKT matrix therefore always has dim Φ̃ negative eigenvalues (plus r from each bordering). Indefiniteness of K_full says nothing about physical stability; the physical Morse index is neg(S|_{ker M}).
+  with H_qq the Hessian of the Lagrangian (including λ·∇²C).
+- **Hypotheses (open, per state):** (V) H_ΦΦ ≺ 0, i.e. A_h + S_h ≻ 0 (first-variation file, section 3; FB-A2 discrete); (R) the stacked rows R = [∇C; M] have full row rank r = r_C + r_M on the map unknowns.
+- Define the map Schur complement S_map = H_qq − H_qΦ H_ΦΦ⁻¹ H_Φq and Z a basis of ker R on the map unknowns. Under (V), Haynsworth inertia additivity ([Haynsworth 1968](https://doi.org/10.1016/0024-3795(68)90050-5), **cited**; it follows from the same congruence argument with a nonsingular pivot block) eliminates Φ̃. Under (R), Lemma B2 applied to the bordered Schur complement gives
+
+\[
+\mathrm{In}(K_{\rm full})=\mathrm{In}(H_{\Phi\Phi})+\mathrm{In}(Z^TS_{\rm map}Z)+(r,r,0),\qquad \mathrm{In}(H_{\Phi\Phi})=(0,\dim\tilde\Phi,0).
+\]
+
+  (**verified**, repair 2026-10-19: the bordered Schur complement in (q, λ, μ) has exactly the form of Lemma B2 with H = S_map and M = R.)
+- S_red := ZᵀS_map Z is the reduced plasma Hessian at fixed coil currents on the gauged space (shell map eliminated by its constraints, Φ̃ eliminated, slide gauge imposed): the discrete δW in the sense of FB-A3. The physical Morse index is neg(S_red). If R has full rank this equals neg(S_b|_{ker M}) − r_C, where S_b is the Schur complement still bordered by ∇C.
+- Indefiniteness of K_full says nothing about physical stability: it always has dim Φ̃ + r negative eigenvalues besides neg(S_red).
 - Vertical saddle (numerical evidence, not proof):
   - fixture: K_Z = −2.7e4 against K_R = +1.5e7 J/m² per period;
   - ITER: K_Z = −5.4e6 against K_R = +2.5e8;
   - n = 0 shifted inverse iteration finds the vertical negative eigenvalue (−3.9e-7, ITER r0).
   
-  So neg(S|_{ker M}) ≥ 1 at fixed currents ([ideal-free-boundary.md](../../docs/ideal-free-boundary.md), lines 80–86 and NL-3a). That it equals 1 at the n = 0 fixture states (no other n = 0 negative mode) is a **hypothesis**: the probe found one.
-- Nonsingularity condition (proved, by B1 applied to S): the gauged Newton matrix is nonsingular iff S|_{ker M} has no zero eigenvalue. The negative vertical eigenvalue is harmless.
-  - Singularity occurs exactly when an eigenvalue of S|_{ker M} crosses zero along a continuation path, i.e. at marginal vertical stability (K_Z → 0) or at a fold of the equilibrium branch.
-  - The eigenvalues depend continuously on the parameters, so the Morse index is constant along a path that avoids such crossings.
-- Conditioning (proved, linear algebra): |δZ| ≤ ‖K⁻¹‖ ‖F‖ and ‖K⁻¹‖ ≥ 1/σ_min. Hence the vertical position error is controlled by the residual over |K_Z|-scale stiffness, matching the observed "F_Z/K_Z is the vertical uncertainty".
+  So neg(S_red) ≥ 1 at fixed currents ([ideal-free-boundary.md](../../docs/ideal-free-boundary.md), lines 80–86 and NL-3a). K_R and K_Z re-solve shell, Φ̃ and λ for a rigid shift, so they are Rayleigh numerators of S_red (rigid shifts are curl-free and satisfy M = 0 by section 2 i). That neg(S_red) = 1 at the n = 0 fixture states (no other n = 0 negative mode) is a **hypothesis**: the probe found one.
+- Nonsingularity condition (proved, conditional on (V)): K_full is nonsingular iff R has full row rank and S_red is nonsingular. Proof: Lemma B1 on the whole KKT matrix with constraint rows [R 0] gives "full rank and diag(Z, I)ᵀ H diag(Z, I) nonsingular"; under (V) the latter is nonsingular iff its Schur complement S_red is. Without (V), only the Lemma B1 form on the whole KKT matrix holds. The negative vertical eigenvalue is harmless.
+  - Singularity occurs exactly when S_red has a zero eigenvalue. Along a continuation path this need not be a sign crossing. It includes marginal vertical stability (K_Z → 0), folds of the equilibrium branch, branch points (e.g. the up-down-symmetric pitchfork at K_Z = 0) and any other marginal mode (**verified** correction, repair 2026-10-19).
+  - The eigenvalues depend continuously on the parameters, so the Morse index is constant along a path on which S_red stays nonsingular.
+- Conditioning (proved, linear algebra): for the Newton correction, |δZ| ≤ ‖δx‖ ≤ ‖K⁻¹‖‖F‖ with ‖K⁻¹‖₂ = 1/σ_min(K). Since σ_min ≤ |λ_v| for the vertical eigenvalue λ_v, ‖F‖/|λ_v| is a **lower** estimate of this bound. It is the bound only if the vertical mode is the smallest singular direction (**hypothesis**, per state). The observed "F_Z/K_Z is the vertical uncertainty" uses |K_Z| as an estimate of |λ_v| (numerical; repair 2026-10-19).
 
 ## 6. Globalisation at a saddle (proved)
 

@@ -3,18 +3,19 @@
 - Scope: static ideal MHD, scalar pressure, nested plasma region Ω (solid torus) bounded by the material surface Γ_p, vacuum shell V between Γ_p and a fixed closed surface Γ_c, coils outside Γ_c. SI units. Smooth (C²) data up to Γ_p; the Sobolev version is not claimed.
 - Geometry is chart-abstract: the map is X = H∘q with H an `ideal_chart_t` jet (cylindrical, or the curve frame H = Γ(q3) + q1 N(q3) + q2 B(q3)). Only X, DX, det DX and dH appear. The exterior is an abstract Steklov–Poincaré operator S on Γ_c; per-n toroidal modes are one realisation.
 - Owning specification: [free-boundary-theory.md](../../docs/free-boundary-theory.md), obligations FB-A1, FB-A2, FB-B1. Implementation: [ideal-free-boundary.md](../../docs/ideal-free-boundary.md).
-- Status labels: **proved** (complete argument here), **cited** (verified primary reference, not reproduced), **hypothesis**.
+- Status labels: **proved** (complete argument here), **cited** (verified primary reference, not reproduced), **hypothesis**, **open**. Repairs from the independent proof audit of 2026-10-19 are marked **verified** (re-derived in the audit and the repair) or **hypothesis**.
 
 ## 1. Data and unknowns
 
 - Reference domain Ω̂ = Ω̂_p ∪ Ω̂_s with internal surface Γ̂_p and outer surface Γ̂_c. X: Ω̂ → R³ is continuous, cellwise smooth, J = σ det DX > 0. X is fixed on Γ̂_c.
 - Frozen plasma data on Ω̂_p: a closed 2-form b̂ with b̂·n̂ = 0 on Γ̂_p, a label χ̂ with b̂(∇χ̂) = 0, pressure p(χ̂) (γ = 0, as in N1/N4). B = DX b̂ / J (push-forward), p∘X = p̂.
-- Shell potential Φ = F τ₁ + c τ₂ + Φ̃ on V. τ₁, τ₂ are fixed closed 1-forms on the shell with periods (1, 0) on a toroidal and (0, 1) on a poloidal cycle; Φ̃ is single valued. The code uses τ₁ = dq3 (chart coordinate) and τ₂ = dθ̂/2π (reference angle), `src/mhd/ideal_free_boundary.f90:707`. Neither needs to be harmonic: Φ̃ absorbs the difference. F (2π F = toroidal circulation) and c (poloidal circulation) are fixed.
+- Shell potential Φ = F τ₁ + c τ₂ + Φ̃ on V. τ₁, τ₂ are fixed closed 1-forms on the shell with periods (2π, 0) and (0, 1) on a toroidal and a poloidal cycle (**verified**, repair 2026-10-19: τ₁ = dq3 has period 2π, not 1); Φ̃ is single valued. The code uses τ₁ = dq3 (chart coordinate) and τ₂ = dθ̂/2π (reference angle), `src/mhd/ideal_free_boundary.f90:707` (`gg = gt + f_vac*qd(3,:) + circulation*theta_s`). Neither needs to be harmonic: Φ̃ absorbs the difference. F (2π F = toroidal circulation) and c (poloidal circulation) are fixed.
 - Exterior (outside Γ_c): the field is B_e + B_i. B_e is the coil field (sources outside Γ_c, harmonic in the solid region D_c inside Γ_c). B_i = c B_f + ∇w has its sources inside Γ_c: B_f is a fixed unit-circulation field (a filament inside Γ_c), w is harmonic outside Γ_c and decays.
-- Abstract exterior operator. For u ∈ H^{1/2}(Γ_c) let w_u be the decaying exterior harmonic extension and S u = −∂_n w_u (n outward from D_c). Then ⟨S u, v⟩ = ∫_{R³∖D_c} ∇w_u·∇w_v dV, so S is symmetric. In 3D, ⟨S u, u⟩ > 0 for u ≠ 0, because a constant trace has a nonzero capacity potential (**proved** by Green's identity on a large ball, with decay O(1/r) of w and O(1/r²) of ∇w).
+- Abstract exterior operator. For u ∈ H^{1/2}(Γ_c) let w_u be the decaying exterior harmonic extension and S u = −∂_n w_u (n outward from D_c). Then ⟨S u, v⟩ = ∫_{R³∖D_c} ∇w_u·∇w_v dV, so S is symmetric. In 3D, ⟨S u, u⟩ > 0 for u ≠ 0, because a constant trace has a nonzero capacity potential (**proved** by Green's identity on a large ball, with decay O(1/r) of w and O(1/r²) of ∇w). This is positivity, not H^{1/2} coercivity; coercivity is true but not shown here.
   - Realisation R1 (implemented): axisymmetric Γ_c, physical cylindrical φ, per-mode operator L_n u = −div(R∇u) + n²u/R, symmetric Costabel coupling (`fortfem_toroidal_mode_boundary_operators_2d`, header lines 1–15; `src/equilibrium/equilibrium_boundary.f90:2–28`; `src/mhd/ideal_free_boundary.f90:435–479`). This realisation requires a global cylindrical angle on Γ_c and an axisymmetric Γ_c (**verified** against source).
   - Realisation R2 (not implemented): 3D Laplace BEM on a general closed Γ_c, S = W + (½ − K′)V⁻¹(½ − K), with V, K, K′, W the single-layer, double-layer, adjoint double-layer and hypersingular operators. It needs no chart.
-- Coil drive on Γ_c: a = the single-valued trace of the coil potential plus the filament potential, h = (B_e + c B_f)·n. Both are fixed data.
+- Coil drive on Γ_c: h = (B_e + c B_f)·n, and a = the trace of a potential of B_e + c B_f − F τ₁ − c τ₂, which is single valued under H_per below. Both are fixed data.
+- **Hypothesis H_per (period matching, repair 2026-10-19).** The periods of B_e + c B_f on the toroidal and poloidal cycles of Γ_c equal those of F τ₁ + c τ₂, namely (2πF, c). Physically, 2πF = μ0 × (TF current through the hole of D_c), and the filament carries the poloidal circulation c. Without H_per, a single-valued Φ̃ cannot match the exterior field and a sheet current remains on Γ_c. H_per is a condition on the data (F, c, a, h), checked per case.
 
 ## 2. The Lagrangian at fixed coil currents
 
@@ -40,8 +41,9 @@ For δΦ̃ single valued:
 - Stationarity for all δΦ̃ gives ΔΦ = 0 in V, so B = ∇Φ is curl- and divergence-free.
 - On Γ_p it gives B·n = 0 as a **natural** condition: the flux does not cross the material boundary, and no constraint is imposed.
 - On Γ_c it gives ∂_nΦ = h − S u = (B_e + cB_f)·n + ∂_n w_u, the continuity of B·n with the exterior field B_e + cB_f + ∇w_u.
-- Tangential continuity holds because the traces agree: Φ|_{Γ_c} = a + u, the coil and filament potentials plus w_u.
-- E_v is strictly convex in Φ̃: ∫_V|∇Φ̃|² has the constants as its kernel, and ⟨S·,·⟩ is positive on constants. So Φ̃* is unique, and L is strictly concave in Φ̃ (a saddle, maximised in Φ̃). The discrete vacuum block is negative definite, as stated in the N4 doc.
+- Tangential continuity holds because, under H_per, the multivalued parts have equal periods on Γ_c and the single-valued traces agree: Φ̃|_{Γ_c} = a + u, the coil and filament potentials (minus F τ₁ + c τ₂) plus w_u. H_per is needed here (**verified**, audit 2026-10-19).
+- E_v is strictly convex in Φ̃: ∫_V|∇Φ̃|² has the constants as its kernel, and ⟨S·,·⟩ is positive on constants. So Φ̃* is unique, and L is strictly concave in Φ̃ (a saddle, maximised in Φ̃) in the continuum.
+- Discrete vacuum block (**hypothesis**, FB-A2 discrete, open; repair 2026-10-19). The continuum argument does not transfer automatically. Discretely, H_ΦΦ = −(A_h + TᵀS_hT)/μ0, with A_h the pulled-back shell stiffness matrix (A_h ⪰ 0, kernel the constants for a connected shell mesh) and T the trace onto the Γ_c nodes; below this is written A_h + S_h. H_ΦΦ ≺ 0 iff A_h + S_h ≻ 0. A sufficient condition is S_h ⪰ 0 and 1ᵀS_h1 > 0. Neither is proved for the implemented S_h; λ_min(A_h + S_h) > 0 must be checked per state. The N4 statement "the vacuum block is negative definite" is this hypothesis, not a consequence of the continuum argument.
 - Chart independence: only V, ∇Φ and S enter. τ₁ need not be harmonic.
 
 ## 4. Variation of the plasma map: force balance and boundary traction (proved)
@@ -75,9 +77,9 @@ Here ∇·T_v = (ΔΦ)∇Φ = 0, so
 de[\theta]=-\oint_{\partial V}\theta\cdot T_v n_V\,dS=\oint_{\Gamma_p}\frac{|B_v|^2}2\,\theta\cdot n_V\,dS=-\oint_{\Gamma_p}\frac{|B_v|^2}2\,\xi\cdot n\,dS .
 \]
 
-The second equality uses ∂_{n_V}Φ = 0 on Γ_p, and n_V = −n is the shell normal there. The closed forms τ₁ and τ₂ are transported as forms, so their periods F and c do not change.
+The second equality uses ∂_{n_V}Φ = 0 on Γ_p, and n_V = −n is the shell normal there. The periods of the multivalued part do not change: periods of closed forms are topological. The code's τ₁ = dq3 is a fixed physical form and is not transported. Its pulled-back change is exact, d/dt X_t^*dq3 = L_θ dq3 = d(θ·∇q3), with θ·∇q3 single valued (∇q3 is) and zero on Γ_c. It is therefore a single-valued variation of Φ̃ vanishing on Γ_c, and by Φ̃-stationarity it does not change de (**verified**, Cartan formula, repair 2026-10-19). τ₂ = dθ̂/2π is a reference form and is transported.
 
-- Only ξ·n on Γ_p remains. The interior values of the shell map are a continuum gauge: the energy does not depend on them. The discrete shell energy does, which is why N4 imposes the harmonic-extension constraint and re-solves its multipliers ([ideal-free-boundary.md](../../docs/ideal-free-boundary.md), "Solver revision", item 2).
+- Only ξ·n on Γ_p remains. The interior values of the shell map are a continuum gauge of the reduced functional e(X), equivalently of L at Φ̃ = Φ̃*(X). For L at arbitrary Φ̃ it is a gauge only together with the transport Φ̃ → Φ̃∘ψ of the potential (wording repair 2026-10-19, **verified**). The discrete shell energy does, which is why N4 imposes the harmonic-extension constraint and re-solves its multipliers ([ideal-free-boundary.md](../../docs/ideal-free-boundary.md), "Solver revision", item 2).
 
 ## 6. Result (proved)
 
@@ -89,10 +91,11 @@ The second equality uses ∂_{n_V}Φ = 0 on Γ_p, and n_V = −n is the shell no
 
 1. J×B = ∇p in Ω (B·n = 0 on Γ_p holds by construction of the push-forward);
 2. ∇×B_v = 0 and ∇·B_v = 0 in V, with B_v·n = 0 on Γ_p;
-3. B_v·n and B_v tangential are continuous on Γ_c with the field of the fixed coils plus a decaying field of internal sources;
+3. B_v·n and B_v tangential are continuous on Γ_c with the field of the fixed coils plus a decaying field of internal sources (tangential part under H_per);
 4. [[p + |B|²/2μ0]] = 0 on Γ_p.
 
 - The map unknowns are q, with ξ = dH(q)δq. Stationarity in q is equivalent to stationarity in ξ wherever dH is invertible: on the whole image for the cylindrical chart away from R = 0, and within the injectivity radius for a curve frame (**hypothesis** per case, checked by det dH > 0).
+- N4 varies only (q1, q2) on plasma nodes (position gauge, ξ·∇q3 = 0). Stationarity on that set implies stationarity for all ξ, because the remaining component λB is a relabelling with ⟨∇L, λB⟩ = 0 ([gauge file](free-boundary-gauge-vertical.md), section 1, "Position-gauged stationarity is full stationarity"; **verified**, repair 2026-10-19).
 - The tangential field may jump on Γ_p (a surface current) while 4 holds. The vacuum circulation c is fixed data, and the interior circulation follows from X, so a mismatch is an admitted surface current rather than an inconsistency.
 - Literature: frozen-in energy principle, [Kruskal and Kulsrud 1958](https://doi.org/10.1063/1.1705884) (**cited**); free-boundary energy with vacuum, [Bernstein, Frieman, Kruskal and Kulsrud 1958](https://doi.org/10.1098/rspa.1958.0023) (**cited**). The argument above is reproduced in KIN6D notation and does not rely on them.
 
@@ -104,7 +107,7 @@ The second equality uses ∂_{n_V}Φ = 0 on Γ_p, and n_V = −n is the shell no
 
 ## 8. Second variation (cited, not reproduced)
 
-- At an equilibrium, the Hessian of the reduced functional X ↦ L[X, Φ̃*(X)] on displacements is the ideal δW = δW_F + δW_S + δW_V of [Bernstein et al. 1958](https://doi.org/10.1098/rspa.1958.0023), with δW_V the vacuum energy at fixed coil currents.
+- At an equilibrium, the Hessian of the reduced functional X ↦ L[X, Φ̃*(X)] on displacements is the ideal δW = δW_F + δW_S + δW_V of [Bernstein et al. 1958](https://doi.org/10.1098/rspa.1958.0023), with δW_V the vacuum energy at fixed coil currents. At fixed coil currents with no conducting wall, this is the BFKK case with the wall at infinity.
 - The per-n vacuum Green's-function evaluation of δW_V is [Chance 1997](https://doi.org/10.1063/1.872380) (VACUUM).
 - Identifying the discrete Hessian with the discrete δW_n is FB-A3 (open; D5/M5 of the equilibrium core).
 
@@ -113,4 +116,4 @@ The second equality uses ∂_{n_V}Φ = 0 on Γ_p, and n_V = −n is the shell no
 - Discrete L_h: the same densities at Gauss points, cellwise P_k × Fourier map, S_h symmetrised, `src/mhd/ideal_free_boundary.f90:475–476`. Its gradient is the generated derivative of the same leaf, assembled by the chain rule through the chart jet; see FB-B1.
 - `ideal_fb_derivatives` checks gradient against central differences and Hessian against gradient differences (numerical evidence, not proof).
 - `gen/gen_vacuum_shell.f90:52` proves with the FortSym native zero test that the leaf reduces to R|∇Φ|²/2μ0 at the identity cylindrical map.
-- Not checked: positivity of S_h (FB-A2). Symmetrisation hides any assembly asymmetry and needs a separate defect report.
+- Not checked: positivity of S_h and of A_h + S_h (FB-A2; the discrete H_ΦΦ ≺ 0 hypothesis of section 3). Symmetrisation hides any assembly asymmetry and needs a separate defect report.
