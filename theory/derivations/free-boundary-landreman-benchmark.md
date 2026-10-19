@@ -4,7 +4,7 @@
 - Answer: **yes, conditionally.**
   - The construction below is proved, except for one analytic hypothesis (G4): the harmonic continuation of the virtual-casing field must reach Γ_c.
   - G4 is proved only for a thin unquantified shell around S0. Whether it reaches a given axisymmetric (realisation R1) or general (R2) Γ_c is open, and must be checked per case.
-- Obligations FB-G1 to FB-G6 of [free-boundary-theory.md](../../docs/free-boundary-theory.md). Status labels: **proved**, **cited**, **hypothesis**. Units μ0 = 1 in the Landreman formulas; restore μ0 by B → B/√μ0.
+- Obligations FB-G1 to FB-G6 of [free-boundary-theory.md](../../docs/free-boundary-theory.md). Status labels: **proved**, **cited**, **hypothesis**, **open**. Repairs from the independent proof audit of 2026-10-19 are marked **verified** (re-derived in the audit and the repair) or **hypothesis**; "content not verified" marks a citation whose cited statement was not read. Units μ0 = 1 in the Landreman formulas; restore μ0 by B → B/√μ0.
 
 ## 0. The source equilibrium (verified against the paper)
 
@@ -48,11 +48,11 @@ B_{in}\chi_\Omega=B_J+B_K,\qquad B_J={\rm BS}[\mu_0J\chi_\Omega],\quad B_K={\rm 
 - Hence B_K = B_in − B_J inside Ω and B_K = −B_J outside.
 - B_x := B_K|_Ω is curl- and divergence-free in Ω: its sources are on S0.
 - This is the virtual-casing principle in its interior form: [Shafranov and Zakharov 1972](https://doi.org/10.1088/0029-5515/12/5/009), 3D form in [Lazerson 2012](https://doi.org/10.1088/0741-3335/54/12/122002) (**cited**; the proof above is self-contained).
-- Regularity: J is bounded and piecewise smooth, so B_J is C^{0,α}(R³), continuous across S0 ([Gilbarg and Trudinger 2001](https://doi.org/10.1007/978-3-642-61798-0), Lemma 4.1, Newton potential of a bounded density).
+- Regularity (repair 2026-10-19): J is bounded and piecewise smooth. B_J is the curl of the vector Newton potential of μ0Jχ_Ω, which is C¹(R³) for a bounded integrable density ([Gilbarg and Trudinger 2001](https://doi.org/10.1007/978-3-642-61798-0), Lemma 4.1; statement as recalled, content not verified). Hence B_J is continuous on R³, in particular across S0, which is all that section 2 uses. The earlier claim B_J ∈ C^{0,α} needs a different result and is not used.
 
 ## 2. Exterior construction and exact pressure balance (FB-G2, proved conditional on G4)
 
-**Hypothesis G4.** Let D_c be the solid torus bounded by Γ_c, with Ω̄ ⊂ D_c. B_x extends to a curl- and divergence-free field B̃_x on an open set containing D̄_c.
+**Hypothesis G4** (restated 2026-10-19 to match the converse). Let D_c be the open solid torus bounded by Γ_c, with Ω̄ ⊂ D_c. B_x extends to a curl- and divergence-free field B̃_x on D_c, C¹ up to Γ_c.
 
 **Theorem G2.** Under G4, let B_out = B_J + B̃_x on the shell V = D_c ∖ Ω̄. Then:
 1. ∇×B_out = 0 and ∇·B_out = 0 in V (B_J is curl-free outside Ω̄).
@@ -63,27 +63,28 @@ B_{in}\chi_\Omega=B_J+B_K,\qquad B_J={\rm BS}[\mu_0J\chi_\Omega],\quad B_K={\rm 
 [\![\tilde p+|B|^2/2\mu_0]\!]_{S_0}=\tilde p|_{S_0}+\frac{|B_{in}|^2-|B_{out}|^2}{2\mu_0}=0 .
 \]
 
-4. With coil field B_e := B̃_x|_{D_c} (all sources outside Γ_c) and internal field B_i := B_J outside Γ_c (decaying, dipole-like), (B_in, p̃ on Ω; B_out on V) satisfies conditions 1–4 of the first variation ([free-boundary-first-variation.md](free-boundary-first-variation.md), section 6). It is therefore a stationary point of the continuous KIN6D Lagrangian with this drive.
+4. With coil field B_e := B̃_x|_{D_c} (all sources outside Γ_c) and internal field B_i := B_J outside Γ_c (decaying, dipole-like), (B_in, p̃ on Ω; B_out on V) satisfies conditions 1–4 of the first variation ([free-boundary-first-variation.md](free-boundary-first-variation.md), section 6). It is therefore a stationary point of the continuous KIN6D Lagrangian with this drive. The period hypothesis H_per of the first-variation file holds by construction, because F and c are defined as the periods of B_out (section 3).
 
 **Converse and uniqueness (proved).**
-- If any vacuum field B_out on V equals B_in on S0 as a vector, then B_out − B_J on V and B_x on Ω glue across S0 without jumps. The glued field is curl- and divergence-free in the sense of distributions, hence harmonic componentwise (Weyl's lemma). So G4 is necessary for a surface-current-free exterior.
-- B_out is unique: two such fields differ by a gradient ∇Φ with zero Cauchy data on S0, which vanishes on the connected V by unique continuation for harmonic functions.
+- If any vacuum field B_out on V equals B_in on S0 as a vector, then B_out − B_J on V and B_x on Ω glue across S0 without jumps. The glued field is curl- and divergence-free in the sense of distributions, hence harmonic componentwise (Weyl's lemma). So G4 (extension on the open D_c with traces on Γ_c) is necessary for a surface-current-free exterior that is C¹ up to Γ_c (**verified**: the converse yields exactly this form).
+- B_out is unique: two such fields differ by a curl- and divergence-free field on V that vanishes on S0 (C¹ up to S0). Its circulations vanish, since every loop in V deforms into S0, so it is ∇Φ with zero Cauchy data on S0. Extending Φ by a constant into Ω gives a weakly harmonic function (Weyl), hence analytic, vanishing on Ω, hence on the connected V.
 - Allowing a surface current with |B_out| = |B_in| but different tangential direction gives other, current-sheet solutions. They are excluded here.
 
-## 3. Circulations and topology (FB-G3, proved)
+## 3. Circulations and topology (FB-G3, proved with the linking condition below; repair 2026-10-19)
 
 - The shell V has H₁ ≅ Z² (toroidal and poloidal cycles). D_c, a solid torus, has H₁ ≅ Z (toroidal).
 - Poloidal circulation of B_out = μ0 × (flux of J through a meridian section of Ω) = μ0 I_tor. It comes entirely from B_J. B̃_x is curl-free on D_c, which contains a spanning disk of every poloidal loop, so it contributes 0. This fixes c (with the sign convention of N4: c = −μ0 I_p for current along +φ).
-- Toroidal circulation of B_J on toroidal loops in V is 0.
-  - The flux of the divergence-free J (tangent to S0) through Σ ∩ Ω, with Σ a disk spanning the loop, is a relative cycle with zero intersection with the core circle.
-  - Axisymmetric check: B_{J,φ} = 0 outside Ω.
-- Hence 2πF := toroidal circulation of B̃_x = ∮_γ B_in·dl, for γ ⊂ S0 in the class (1 toroidal, 0 poloidal). At ε = 0, F = I(δ) = √(1 − 4δ). F is the TF-coil content of the drive, the current through the hole of D_c, which must avoid the z-axis.
+- Toroidal circulation of B_J on a toroidal loop γ in V̄ (including γ ⊂ S0) is μ0 × (flux of J through a surface Σ spanning γ) = k μ0 I_tor, where k = lk(γ, magnetic axis) (orientation sign). J is divergence-free and tangent to S0, so its flux through Σ ∩ Ω is I_tor times the intersection number of Σ with the core circle; poloidal current contributes nothing because meridians bound disks inside Ω (**verified**, audit 2026-10-19).
+  - It vanishes only for a longitude with k = 0. Axisymmetric check: for coaxial circles {R, Z = const}, k = 0 and B_{J,φ} = 0 outside Ω.
+- KIN6D's toroidal cycle is the class of {θ̂ = const} (τ₂ = dθ̂/2π has zero period on it), so 2πF = ∮_γ B_out·dl = ∮_γ B_in·dl for γ ⊂ S0 the image of that cycle. This holds for any k. The split is 2πF = ∮_γ B̃_x·dl + k μ0 I_tor.
+- **Linking condition (hypothesis, per case).** "F comes from B̃_x only" and "F is the TF-coil content of the drive, the current through the hole of D_c" hold iff k = 0. If the reference cycle {θ̂ = const} links the axis k ≠ 0 times, 2πF gains k μ0 I_tor. The linking number of the reference toroidal cycle must be computed per case. At ε = 0 with the geometric θ̂, k = 0 and F = I(δ) = √(1 − 4δ). The TF content must avoid the z-axis.
+- Sign c = −μ0 I_p is consistent with a counter-clockwise θ̂ in (R, Z) and right-handed (R, φ, Z) (**verified** by hand); that the code uses this convention is not verified.
 - The single-valued remainder of B̃_x on D_c is ∇χ_x. Its traces on Γ_c are the coil drive (a, h) of the first-variation file. For R1 they are per-n Fourier traces in the physical φ: the Landreman field has two field periods, so n ∈ 2Z; with nfp = 2 the drive has k = n/2. For R2 they are plain surface traces.
 
 ## 4. The continuation hypothesis G4 (partly proved, mostly open)
 
 - Proved: S0 is a real-analytic surface. ψ is a real-analytic function on U_ε (elementary functions with F > 0, s > 0), and ∇ψ ≠ 0 on S0 (paper: ∇ψ vanishes only on the axis). The Cauchy data of the exterior potential (∂_nΦ = 0, tangential gradient = B_in,t) are real-analytic.
-- By Cauchy–Kovalevskaya, a harmonic Φ_out with these data exists in a neighbourhood of S0. By Holmgren's theorem it is unique ([John 1982](https://doi.org/10.1007/978-1-4684-9333-7), ch. 3; **cited**). So G4 holds for every Γ_c in some shell {0 < dist(x, S0) < r₀}, with r₀ > 0 not quantified. This does not guarantee an axisymmetric Γ_c (R1) enclosing the non-axisymmetric S0 inside that shell; for small ε it is plausible (**hypothesis**).
+- By Cauchy–Kovalevskaya, a harmonic Φ_out with these data exists in a neighbourhood of S0. By Holmgren's theorem it is unique ([John 1982](https://doi.org/10.1007/978-1-4684-9333-7), ch. 3; **cited**, content not verified: the chapter attribution was not read). Cauchy–Kovalevskaya is applied to the div–curl system or to local potentials, because the tangential data form a closed, multivalued 1-form; uniqueness patches the local solutions to a collar. Single-valuedness of the continuation on D_c presumes that the shell between S0 and Γ_c is a collar of S0. So G4 holds for every Γ_c in some shell {0 < dist(x, S0) < r₀}, with r₀ > 0 not quantified. This does not guarantee an axisymmetric Γ_c (R1) enclosing the non-axisymmetric S0 inside that shell; for small ε it is plausible (**hypothesis**).
 - The singularities of the continuation are the "coils" of the benchmark. If they lie between S0 and the chosen Γ_c, the case is inadmissible. This is the same coil-inside-Γ_c violation the N4 RMP stage met ([ideal-free-boundary.md](../../docs/ideal-free-boundary.md), "RMP stage").
 - Proposed evidence route (numerical, not proof): represent B̃_x in D_c by sources on a surface outside Γ_c (method of fundamental solutions, or toroidal harmonics). Fit it to B_x = B_in − B_J at interior points of Ω, with B_J by high-order Biot–Savart quadrature. Monitor coefficient decay and the fit residual. Report the drive defect of section 5.
 - The ε = 0 (Solov'ev) case reduces to a 2D Cauchy problem for Δ*ψ_out = 0, the cheapest first check.
@@ -104,11 +105,11 @@ B_{in}\chi_\Omega=B_J+B_K,\qquad B_J={\rm BS}[\mu_0J\chi_\Omega],\quad B_K={\rm 
 | frozen b̂, χ̂ on the reference plasma domain | pull-back of B_in, ψ through the chosen reference map | proved (exact data); needs a 3D frozen reference (N1/N3), see gap list |
 | pressure per label | p̃ = 2(δ − ψ) | proved |
 | poloidal circulation c | −μ0 I_tor (flux of J through a section) | proved |
-| toroidal constant F | (1/2π)∮_γ B_in·dl, γ ⊂ S0 toroidal | proved; ε = 0: √(1 − 4δ) |
-| drive (a, h) on Γ_c | traces of ∇χ_x = B̃_x − F τ₁ | conditional on G4 |
-| exact target | X* with X*_* b̂ = B_in, X*(Γ̂_p) = S0 | proved stationary (G2) |
+| toroidal constant F | (1/2π)∮_γ B_in·dl, γ ⊂ S0 the image of {θ̂ = const} | proved; from B̃_x only iff lk(γ, axis) = 0; ε = 0: √(1 − 4δ) |
+| drive (a, h) on Γ_c | traces of ∇χ_x = B̃_x − F τ₁ | conditional on G4; written for lk = 0 (otherwise the period k μ0 I_tor of B_J enters the bookkeeping) |
+| exact target | X* with X*_* b̂ = B_in, X*(Γ̂_p) = S0 | stationary, conditional on G4 (G2) |
 
-- Nondegeneracy (**hypothesis, at risk** for family 1). ι = 2 is constant and the field lines are closed. Perturbations constant along field lines make interchange-type terms of δW degenerate, so S|_{ker M} may have additional (near-)zero modes. The bordered Newton system would then be singular there (Lemma B1), and the Kantorovich certificate unavailable.
+- Nondegeneracy (**hypothesis, at risk** for family 1). ι = 2 is constant and the field lines are closed. Perturbations constant along field lines make interchange-type terms of δW degenerate, so S_red (gauge file, section 5) may have additional (near-)zero modes. The bordered Newton system would then be singular there (Lemma B1), and the Kantorovich certificate unavailable.
   - Use family 1 as a stationarity and residual test (start at the target, expect zero residual to discretisation order).
   - Use the sheared family or Issan et al. for offset-start return and certificates.
 - Physical stability is not required. The fixed-"coil" state may be vertically or otherwise unstable; Newton converges to it if it is nondegenerate (gauge file, section 5).
