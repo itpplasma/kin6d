@@ -108,6 +108,12 @@ electron positions of member 1 per sample (16-bit, minimum image around the
 impurity), the running ensemble mean of the time-averaged shell deficit, the
 final per-bin Student-t interval and the bin-averaged periodic, Yukawa and
 unscreened 1/r references, with provenance.json.
+`benchmarks/ocp/fluctuation-animation.nml` (kappa = 0: no impurity,
+Lambda = 30, L = 6 lambda_D, 2 members, 200 samples) writes
+DIR/thermal-charge-fluctuations/ with the same positions, times and shell
+profile around the origin but no per-unit-kappa references; its
+screening-length fit is reported as unavailable (NaN) and the S(2 pi/L)
+gate tests the thermal fluctuations against Debye-Hueckel.
 
 ## Results
 
