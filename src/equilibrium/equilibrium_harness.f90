@@ -141,9 +141,9 @@ contains
         if (min(report%oracle_error, report%seed_error, report%residual) < 0 &
             .or. report%iterations < 0 .or. report%residual_norm == 'unavailable') &
             report%status = D8_BAD_REPORT
-        if (report%oracle_error == huge(1.0_dp) &
-            .or. report%seed_error == huge(1.0_dp) &
-            .or. report%residual == huge(1.0_dp)) report%status = D8_BAD_REPORT
+        if (report%oracle_error >= huge(1.0_dp) &
+            .or. report%seed_error >= huge(1.0_dp) &
+            .or. report%residual >= huge(1.0_dp)) report%status = D8_BAD_REPORT
     end subroutine
 
     subroutine write_equilibrium_report(unit, report)

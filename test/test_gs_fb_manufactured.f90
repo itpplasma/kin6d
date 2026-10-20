@@ -240,7 +240,7 @@ contains
             case_name = 'targets-'
         case (GS_FB_XPOINT)
             case_name = 'xpoint-'
-            if (case_fraction == 1.0_dp) case_name = 'separatrix-'
+            if (case_fraction >= 1.0_dp) case_name = 'separatrix-'
         end select
         if (jump) then
             case_name = trim(case_name)//'jump'
