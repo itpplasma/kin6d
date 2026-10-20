@@ -168,9 +168,9 @@ The corrected superallowed ft=3071.4 s and g_A=1.2695 are deliberately frozen
 to Solar Fusion II. Rather than combining incompatible radiative conventions
 for G_F and V_ud, the effective vector coupling is inferred from
 
-    ft = 2π³ ln2 ℏ/(G_V² m_e⁵).
+    K = 2π³ ln2 ℏ/m_e⁵,    |M_F|²=2,    ft = K/(2 G_V²).
 
-`pp_vector_coupling()` returns this G_V in MeV⁻². Thus the weak normalization is independently supplied by beta decay,
+`pp_vector_coupling()` returns G_V=1.14974681×10⁻¹¹ MeV⁻². Thus the weak normalization is independently supplied by beta decay,
 not inferred from the target S factor. Solar Fusion II relates its convention
 to |V_ud|=0.97418; the inner electroweak correction is already in G_V.
 

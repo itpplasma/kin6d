@@ -51,8 +51,9 @@ program gen_pp_fusion
     call w%emit('pp_phase_integrand', ['ep      ', 'endpoint', 'v       '], &
         ['value'], [ep*p*(endpoint - ep)**2*v], ad=.true.)
     q = sym(arena, 'q'); me = sym(arena, 'me'); gv = sym(arena, 'gv')
+    ! Superallowed T=1 Fermi matrix element squared is 2: ft=K/(2 GV^2).
     call w%emit('pp_ft', ['gv', 'me', 'hb'], ['ft'], &
-        [2*pi_expr(arena)**3*log(rat(arena, 2_8, 1_8))*hb/(gv**2*me**5)], &
+        [pi_expr(arena)**3*log(rat(arena, 2_8, 1_8))*hb/(gv**2*me**5)], &
         ad=.true.)
     call w%emit('pp_lambda_integrand', ['gamma', 'q    ', 'r    '], &
         ['value'], [sqrt(gamma**3/2)*q*r], ad=.true.)
@@ -70,7 +71,7 @@ program gen_pp_fusion
     call w%emit('pp_overlap', ['gamma', 'q    ', 'c2   ', 'k    '], &
         ['lam2'], [gamma**3*q**2/(2*c2*k**2)], ad=.true.)
     call w%emit('pp_gv', ['ft', 'me', 'hb'], ['gv'], &
-        [sqrt(2*pi_expr(arena)**3*log(rat(arena, 2_8, 1_8))*hb/(ft*me**5))], &
+        [sqrt(pi_expr(arena)**3*log(rat(arena, 2_8, 1_8))*hb/(ft*me**5))], &
         ad=.true.)
     node = sym(arena, 'node')
     ep = 1 + (endpoint - 1)*(node + 1)/2
