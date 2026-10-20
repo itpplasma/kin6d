@@ -911,7 +911,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_response_error
-            equilibrium_core nonnested vacuum_shell
+            equilibrium_core curve_chart nonnested vacuum_shell
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -925,6 +925,11 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/curve-chart-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_curve_chart_regeneration.cmake)
 endif()
 # Explicit performance audit; not part of the ordinary correctness gate.
 add_executable(benchmark_streaming app/benchmark_streaming.f90)
@@ -1336,6 +1341,7 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
 
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
+    src/generated/kin6d_curve_chart_leaves.f90
     src/equilibrium/equilibrium_chart.f90 src/equilibrium/equilibrium_state.f90 src/equilibrium/gs_equilibrium.f90
     src/equilibrium/equilibrium_residual.f90 src/equilibrium/equilibrium_readback.f90
     src/equilibrium/equilibrium_certificate.f90 src/equilibrium/gs_certificate.f90
@@ -1362,6 +1368,12 @@ endforeach()
 add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
 target_link_libraries(test_equilibrium_core PRIVATE kin6d)
 add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)
+add_executable(test_curve_chart test/test_curve_chart.f90)
+set_source_files_properties(test/test_curve_chart.f90 PROPERTIES Fortran_PREPROCESS ON)
+target_link_libraries(test_curve_chart PRIVATE kin6d_equilibrium)
+foreach(mode circle jets tube periodic invalid)
+    add_test(NAME equilibrium_curve_chart_${mode} COMMAND test_curve_chart ${mode})
+endforeach()
 foreach(k 2 3)
     add_test(NAME equilibrium_core_d7_readback_p${k}
         COMMAND test_equilibrium_core readback ${k})
