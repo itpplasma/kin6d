@@ -48,6 +48,32 @@ compatibility, zero-mean potential gauge, and integrated field energy
 `integral E² = pi*a²` are checked. This component theorem does not supply a
 nonlinear Vlasov–Poisson error enclosure.
 
+`Bordered.lean` proves the discrete bordering lemmas of the free-boundary
+Newton system (obligation FB-D1, `theory/derivations/free-boundary-gauge-vertical.md`
+§4) for real matrices over arbitrary finite index types. With
+`K = [H Mᵀ; M 0]`, `M : m × n` and `Z : n × k` whose columns form a basis of
+`ker M` (`IsKernelBasis`):
+
+- `lemma_B1`: `K` is nonsingular iff `rank M = card m` and `Zᵀ H Z` is
+  nonsingular. `H` need not be symmetric.
+- `lemma_B2`: for symmetric `H` and `rank M = card m = r`,
+  `In(K) = In(Zᵀ H Z) + (r, r, 0)`.
+
+Inertia is defined variationally: `posIndex` is the largest dimension of a
+subspace on which `xᵀ A x` is positive definite, `negIndex A = posIndex (-A)`
+and `zeroIndex A = card - rank A`. `posIndex_eq_card_pos`,
+`negIndex_eq_card_neg` and `zeroIndex_eq_card_zero` show that for symmetric
+matrices these are the counts of positive, negative and zero eigenvalues of
+mathlib's spectral theorem, so `lemma_B2` is the eigenvalue statement used in
+the derivation. `tests/Bordered.lean` applies both lemmas to explicit 3×3
+examples, with an explicit inverse and an explicit kernel vector as independent
+oracles for the nonsingular and singular cases.
+
+These are finite-dimensional matrix lemmas only. They do not cover the PDE,
+the discretisation, the vacuum Schur-complement step (FB-D2, Haynsworth with
+a nonsingular pivot), or any check that a computed KKT matrix satisfies the
+hypotheses (full row rank of `M`, a valid kernel basis, symmetric `H`).
+
 ## Reproduce
 
 The package pins Lean `4.33.0`, mathlib commit
@@ -62,7 +88,8 @@ lake exe cache get
 
 The public mathlib cache is optional; building the pinned sources produces
 the same kernel obligations. `check.sh` builds the theorem library, checks
-both accepted numerical applications, prints their axioms, and requires Lean
+both accepted numerical applications and the bordering-lemma applications,
+prints their axioms, and requires Lean
 to reject independently corrupted residual and radius certificates. The
 accepted module also proves that the actual continuous residual and solution
 error exceed the corrupted values at `(x,v)=(0,0)`. Those concrete mathematical
