@@ -48,7 +48,7 @@ module kin6d_ideal_free_boundary
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
         ieee_quiet_nan
     use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_equilibrium_chart, only: ideal_chart_t
+    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, &
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
@@ -259,6 +259,12 @@ contains
         integer :: e, a, nodes, cells, nplasma, k, st, ppe
         real(dp) :: centre(2)
         status = IDEAL_FB_BAD_INPUT
+        ! Gamma_c and its exterior BEM use cylindrical R,Z and toroidal modes.
+        select type (chart)
+        class is (cylindrical_chart_t)
+        class default
+            return
+        end select
         fb%nloc = size(mesh%triangles, 1)
         if (fb%nloc /= 6 .and. fb%nloc /= 10) return
         fb%order = merge(2, 3, fb%nloc == 6)
