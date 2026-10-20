@@ -32,13 +32,118 @@ The energy, quadrature, leaves and solver see the geometry only through
 X = H(q) and its q-derivatives (`ideal_chart_t%jet`: H, dH, d2H, d3H). The map
 unknowns are q1, q2 (Lagrange P_k in the plane times a real Fourier series in
 phi-hat, n in nfp*Z, |n| <= nfp*N) and omega with q3 = phi-hat + omega.
-`cylindrical_chart_t` is H = (q1 cos q3, q1 sin q3, q2). A curve-following
-frame (GVEC hmap_axisNB/hmap_frenet type, H = Gamma(q3) + q1 N(q3) + q2 B(q3)
-for a closed axis curve Gamma with nfp periodicity) is a further extension of
-`ideal_chart_t` supplying the same jet; the reference mesh then lives in the
-normal plane. Nothing else changes. The chart types and their generated jets
-are the equilibrium core's (`src/equilibrium/equilibrium_chart.f90`,
-`gen/gen_equilibrium_core.f90`); a new chart is added there.
+`cylindrical_chart_t` is H = (q1 cos q3, q1 sin q3, q2).
+`curve_chart_t` supplies the same jet for
+
+    H(q) = Gamma(q3) + q1 N(q3) + q2 B(q3).
+
+Both extend `ideal_chart_t` in `src/equilibrium/equilibrium_chart.f90`.
+The curve chart is available independently; it is not wired into the
+free-boundary solver. A reference mesh using it lives in the normal plane.
+
+### Curve chart: Fourier axis and projected-guide G-frame
+
+**Definition.** `chart%init(axis_c, axis_s, nfp, status, guide_c, guide_s,
+samples)` accepts real Cartesian coefficient arrays `(3,0:M)`:
+
+    Gamma(t) = sum_m [axis_c(:,m) cos(m t) + axis_s(:,m) sin(m t)].
+
+The sine coefficient at m = 0 must be zero. Both optional guide arrays must
+be supplied together with matching shapes; their truncation can differ from
+the axis. The default guide is g(t) = e_z. The frame is
+
+    T = Gamma'/|Gamma'|,  B = (T x g)/|T x g|,  N = B x T.
+
+This orthonormal G-frame is a particular member of the flexible frame family
+of [Hindenlang, Plunk and Maj, §3.2](https://arxiv.org/html/2410.17595v2#S3.SS2).
+It does not divide by curvature, so inflections are regular. It requires
+Gamma' != 0 and Gamma' x g != 0 everywhere. The default guide consequently
+excludes vertical tangencies; supply a transverse periodic Fourier guide for
+such an axis. Failure to establish either margin rejects initialization.
+There is no claim that a fixed guide works for every closed curve.
+
+**Closure and twist.** The frame is constructed algebraically from periodic
+inputs, without integrating a transport ODE or applying a seam correction.
+The positive normalization fixes its sign. N and B and all jets therefore
+close after 2 pi; no half-turn/sign mismatch is permitted. This is not a
+rotation-minimizing frame and does not promise zero self-linking: any smooth
+integer winding inherited from the guide is retained. Changing the guide
+changes the chart. The coefficient checks enforce rotational field-period
+symmetry Gamma(t + 2 pi/nfp) = R_z(2 pi/nfp) Gamma(t), and the same relation
+for g, hence for H and its jets. Modes are full-turn Cartesian integer modes,
+not multiples of nfp: restricting all axis modes to nfp*m would retrace the
+same axis nfp times and violate injectivity. nfp = 1 admits general curves.
+
+**Generated mathematics and derivatives.** `gen/gen_curve_chart.f90` emits
+`src/generated/kin6d_curve_chart_leaves.f90` using pinned FortSym. The leaves
+supply Fourier derivatives through order four, normalization and cross-product
+jets, and H through d3H. Handwritten code sums modes and assembles tensor
+symmetries. For fixed axis/guide data, the jet defines consistent q tangents
+and Euclidean adjoints by contraction with dH (and their derivatives with
+d2H/d3H). Parameter sensitivities of the admission decisions are unavailable;
+these discrete decisions are not differentiated. Ordinary consumers need no
+CAS. With `KIN6D_FORTSYM_BUILD` configured, build `gen_curve_chart`, run it
+from the source root, and run `equilibrium_curve_chart_regeneration` to check
+both the circular symbolic identities and equality of regenerated output.
+
+**Admission and tube validity.** Initialization status is 0 for an admitted
+frame, 1 for invalid input/symmetry, and 2 for an unresolved regularity margin.
+A failed initialization invalidates the previous chart; calling its jet
+returns NaNs. Initialization checks the frame, not the global embedding.
+`chart%tube_radii(samples, curvature_radius, tube_radius, status)` reports a
+sampled local curvature ceiling 1/max(kappa) and a conservative global tube
+radius. Here kappa = |Gamma' x Gamma''|/|Gamma'|^3, and
+
+    det DH = |Gamma'| [1 - q1 kappa_vector.N - q2 kappa_vector.B].
+
+Thus a round tube must have radius strictly below the curvature ceiling;
+positive determinant alone does not exclude distant self-overlap. The second
+radius includes that check. Its real-arithmetic justification is as follows.
+Fourier coefficient norm sums bound V >= |Gamma'| and A >= |Gamma''|.
+On an initialization mesh of spacing h, v = min_sample |Gamma'| - A h/2
+is a lower speed bound; the analogous Lipschitz bound for Gamma' x g checks
+guide transversality between samples. Set delta = min(pi, v/A). On a tube
+mesh of spacing h_t < delta/2, let D be the minimum distance between sampled
+axis pairs with cyclic parameter separation at least delta - h_t. The returned
+radius is max(0, min(v^2/(4 A), (D - V h_t)/2)).
+For parameter separations below delta, the chord projected on the first
+tangent is at least v times the separation divided by two; two normal offsets
+of radius r can cancel at most r A/v times that separation. Hence
+r < v^2/(4 A) excludes a collision. For separations at least delta, the nearest
+mesh pair has distance at least D and the continuous chord at least D - V h_t,
+which excludes a collision when 2r is smaller. This proves nonoverlap in exact
+arithmetic, modulo the identified 2 pi endpoints. The curvature bound also
+keeps the Jacobian positive. Status 0 means the diagnostic was computed, not
+that the returned radius is positive; status 1 means invalid chart or
+insufficient tube sampling. Require 0 <= r < tube_radius before admitting a
+tube. The quadratic pair scan and its O(samples) storage occur only in this
+explicit diagnostic; each jet costs O(M_axis + M_guide), fixed scratch, no
+allocation. No performance ranking is claimed.
+
+**Evidence/status (2026-10-20).** `equilibrium_curve_chart_{circle,jets,tube,
+periodic,invalid}` are native fast equilibrium CTests. The circle
+Gamma = 3(cos t, sin t, 0), g = e_z gives N = e_z, B = e_R and exactly the
+fixed affine relabelling (R,Z,phi) = (3 + q2, q1, q3). FortSym proves the
+position/determinant identities; CTest checks all tensor entries through d3H
+against the cylindrical chart. Nine-point centered finite differences of an
+independent direct position formula check all jet entries at two step sizes
+on the closed toroidal helix Gamma = (3 + 0.2 cos 3t)e_R + 0.2 sin 3t e_z
+(nfp = 3), including a nonconstant guide, and the analytic lifted Gerono
+figure-8 Gamma = (sin t, sin 2t, 0.3 cos t) (nfp = 1). The planar Gerono
+limit checks exact inflections and returns zero global tube radius because
+its axis crosses. These are schematic analytic geometry tests, not the
+[Plunk et al. equilibrium](https://arxiv.org/abs/2411.16411).
+
+Verified numerical local curvature ceilings / conservative global radii at
+2048 tube samples are: circle 3 / 0.370412; helix 2.12 / 0.169364; lifted
+figure-8 0.130904 / 0.0239944. Sampled det DH is positive at 80% of each
+conservative radius; metric determinants agree with (det DH)^2. Full jets
+close periodically and obey rotational nfp symmetry. The FD and sampling
+checks are numerical evidence. All margins and radii use ordinary floating
+point: outward rounding and rigorous geometry enclosures are **unavailable**.
+The corresponding continuous validity is a **hypothesis** until rounding is
+bounded. There is no plasma solution, field-line-advance claim, certified
+figure-8 equilibrium, or completed `g_frame_figure8_equilibrium` gate here.
 
 ## Discretisation
 

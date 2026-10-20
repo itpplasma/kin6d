@@ -27,7 +27,8 @@ module kin6d_radial_dvr
     private
     public :: radial_mesh_t, build_radial_mesh, mesh_spacing
     public :: radial_band_hamiltonian, radial_band_matvec, radial_eigen_window
-    public :: radial_locate, radial_dimension
+    public :: radial_locate, radial_dimension, radial_band_eigen_window
+    public :: radial_coupled_hamiltonian, radial_bound_response
 
     type :: radial_mesh_t
         integer :: order = 0          ! GLL points per element (polynomial degree + 1)
@@ -41,6 +42,12 @@ module kin6d_radial_dvr
     end type radial_mesh_t
 
     interface
+        subroutine dgbsv(n, kl, ku, nrhs, ab, ldab, ipiv, b, ldb, info)
+            import dp
+            integer, intent(in) :: n, kl, ku, nrhs, ldab, ldb
+            real(dp), intent(inout) :: ab(ldab, *), b(ldb, *)
+            integer, intent(out) :: ipiv(*), info
+        end subroutine
         subroutine dsbevd(jobz, uplo, n, kd, ab, ldab, w, z, ldz, work, lwork, iwork, &
                           liwork, info)
             import :: dp
@@ -76,11 +83,12 @@ contains
     end function mesh_spacing
 
     ! Graded mesh: first element h0, geometric growth up to hmax, ending at rmax.
-    subroutine build_radial_mesh(mesh, rmax, order, hmax, h0, growth, ok)
+    subroutine build_radial_mesh(mesh, rmax, order, hmax, h0, growth, ok, retain_outer)
         type(radial_mesh_t), intent(out) :: mesh
         real(dp), intent(in) :: rmax, hmax, h0, growth
         integer, intent(in) :: order
         logical, intent(out) :: ok
+        logical, intent(in), optional :: retain_outer
         real(dp), allocatable :: edges(:)
         real(dp) :: h, rr, dref(order, order)
         integer :: ne, e, a, b, deg, kd, i, j
@@ -106,6 +114,9 @@ contains
         deg = order - 1; kd = deg
         mesh%order = order; mesh%nelem = ne; mesh%rmax = rmax
         mesh%n = ne*deg - 1
+        if (present(retain_outer)) then
+            if (retain_outer) mesh%n = mesh%n + 1
+        end if
         allocate (mesh%edges(0:ne), mesh%xi(order), mesh%wi(order), mesh%bary(order))
         mesh%edges = edges(0:ne)
         call gauss_lobatto_legendre(order, mesh%xi, mesh%wi)
@@ -145,11 +156,12 @@ contains
     end subroutine build_radial_mesh
 
     ! Lower band of H_l = (hbar^2/2mu) T + diag(V_l(r_i)) in the normalized DVR.
-    subroutine radial_band_hamiltonian(mesh, l, g, mu, hbar, hb)
+    subroutine radial_band_hamiltonian(mesh, l, g, mu, hbar, hb, potential)
         type(radial_mesh_t), intent(in) :: mesh
         integer, intent(in) :: l
         real(dp), intent(in) :: g, mu, hbar
         real(dp), intent(out) :: hb(:, :)
+        real(dp), intent(in), optional :: potential(:)
         real(dp) :: c, v
         integer :: i
         call ce_kinetic_scale(mu, hbar, c)
@@ -158,7 +170,33 @@ contains
             call ce_radial_potential(mesh%r(i), real(l, dp), g, mu, hbar, v)
             hb(1, i) = hb(1, i) + v
         end do
+        if (present(potential)) hb(1, :) = hb(1, :) + potential
     end subroutine radial_band_hamiltonian
+
+    ! Interleaved (radius,channel), symmetric 2x2 nodal potential; bandwidth
+    ! 2*(order-1). v includes centrifugal terms, in the same units as kinetic.
+    subroutine radial_coupled_hamiltonian(mesh, kinetic, potential, hb)
+        type(radial_mesh_t), intent(in) :: mesh
+        real(dp), intent(in) :: kinetic, potential(2, 2, mesh%n)
+        real(dp), intent(out) :: hb(:, :)
+        integer :: i, j, a, b, row, col
+        hb = 0
+        !$omp parallel do private(i, a, b, row, col) schedule(static)
+        do j = 1, mesh%n
+            do a = 1, 2
+                col = 2*(j - 1) + a
+                do i = j, min(mesh%n, j + mesh%order - 1)
+                    row = 2*(i - 1) + a
+                    hb(1 + row - col, col) = kinetic*mesh%tband(1 + i - j, j)
+                end do
+                do b = a, 2
+                    row = 2*(j - 1) + b
+                    hb(1 + row - col, col) = hb(1 + row - col, col) + potential(b, a, j)
+                end do
+            end do
+        end do
+        !$omp end parallel do
+    end subroutine radial_coupled_hamiltonian
 
     ! y = A x for a symmetric matrix in lower band storage, several columns.
     pure subroutine radial_band_matvec(hb, x, y)
@@ -189,16 +227,32 @@ contains
         real(dp), intent(out) :: orthogonality
         logical, intent(out) :: ok
         real(dp), intent(out), optional :: estimator_seconds
-        real(dp), allocatable :: hb(:, :), ab(:, :), q(:, :), z(:, :), work(:), w(:)
+        real(dp), allocatable :: hb(:, :)
+        allocate (hb(mesh%order, mesh%n))
+        call radial_band_hamiltonian(mesh, l, g, mu, hbar, hb)
+        call radial_band_eigen_window(hb, emax, e, v, resid, orthogonality, &
+                                      ok, emin, estimator_seconds)
+    end subroutine radial_eigen_window
+
+    ! Generic symmetric lower-band eigensolve. The Coulomb wrapper above keeps
+    ! its original arithmetic and API; coupled channels use this same solver.
+    subroutine radial_band_eigen_window(hb, emax, e, v, resid, orthogonality, &
+                                        ok, emin, estimator_seconds)
+        real(dp), intent(in) :: hb(:, :), emax
+        real(dp), intent(in), optional :: emin
+        real(dp), allocatable, intent(out) :: e(:), v(:, :), resid(:)
+        real(dp), intent(out) :: orthogonality
+        logical, intent(out) :: ok
+        real(dp), intent(out), optional :: estimator_seconds
+        real(dp), allocatable :: ab(:, :), q(:, :), z(:, :), work(:), w(:)
         real(dp), allocatable :: hv(:, :)
         integer, allocatable :: iwork(:), ifail(:)
         real(dp) :: vl, vu, glo, ghi, off, estimator_start, estimator_end
         integer :: n, kd, m, info, j, i, i0
         ok = .false.; orthogonality = huge(1.0_dp)
         if (present(estimator_seconds)) estimator_seconds = 0
-        n = mesh%n; kd = mesh%order - 1
-        allocate (hb(kd + 1, n), ab(kd + 1, n))
-        call radial_band_hamiltonian(mesh, l, g, mu, hbar, hb)
+        n = size(hb, 2); kd = size(hb, 1) - 1
+        allocate (ab(kd + 1, n))
         if (.not. all(ieee_is_finite(hb))) return
         glo = huge(1.0_dp); ghi = -huge(1.0_dp)
         do i = 1, n
@@ -263,9 +317,43 @@ contains
         end do
         call cpu_time(estimator_end)
         if (present(estimator_seconds)) &
-            estimator_seconds = estimator_end-estimator_start
+            estimator_seconds = estimator_end - estimator_start
         ok = all(ieee_is_finite(e)) .and. all(ieee_is_finite(resid))
-    end subroutine radial_eigen_window
+    end subroutine radial_band_eigen_window
+
+    ! Equation-level response of an isolated normalized bound eigenpair.
+    ! Fix one nonzero component to solve the singular equation, then project
+    ! the solution onto v^perp. No differentiation of LAPACK iterations.
+    subroutine radial_bound_response(hb, energy, v, dhb, de, dv, ok)
+        real(dp), intent(in) :: hb(:, :), energy, v(:), dhb(:, :)
+        real(dp), intent(out) :: de, dv(:)
+        logical, intent(out) :: ok
+        real(dp), allocatable :: ab(:, :), rhs(:, :), hv(:, :)
+        integer, allocatable :: piv(:)
+        integer :: n, kd, pivot, i, j, info
+        n = size(v); kd = size(hb, 1) - 1
+        allocate (ab(3*kd + 1, n), rhs(n, 1), hv(n, 1), piv(n))
+        rhs(:, 1) = v
+        call radial_band_matvec(dhb, rhs, hv)
+        de = dot_product(v, hv(:, 1))
+        rhs(:, 1) = -hv(:, 1) + de*v
+        pivot = maxloc(abs(v), dim=1)
+        ab = 0
+        do j = 1, n
+            do i = max(1, j - kd), min(n, j + kd)
+                if (i == pivot .or. j == pivot) cycle
+                ab(2*kd + 1 + i - j, j) = hb(1 + abs(i - j), min(i, j))
+                if (i == j) ab(2*kd + 1, j) = ab(2*kd + 1, j) - energy
+            end do
+        end do
+        ab(2*kd + 1, pivot) = 1; rhs(pivot, 1) = 0
+        call dgbsv(n, kd, kd, 1, ab, 3*kd + 1, piv, rhs, n, info)
+        ok = info == 0
+        dv = 0
+        if (.not. ok) return
+        dv = rhs(:, 1) - v*dot_product(v, rhs(:, 1))
+        ok = all(ieee_is_finite(dv))
+    end subroutine radial_bound_response
 
     ! Values of the retained basis functions at radius rq: u(rq) = sum val*a(idx),
     ! with a the normalized DVR coefficients. Exact interpolation of the represented

@@ -39,6 +39,8 @@ kin6d_test_labels(ideal_fb_vacuum_gamma_c_independence_n3 fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_slide_gauge_curl_free fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
+kin6d_test_labels(ideal_fb_hypotheses_bordering fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_map_derivatives_and_rotation_null fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n3_leakage fast CLASSES mhd
@@ -282,7 +284,11 @@ kin6d_test_labels(grad_shafranov_curved_readback fast CLASSES equilibrium
     TARGETS test_gs_curved_readback)
 kin6d_test_labels(grad_shafranov_p3_curved_readback fast CLASSES equilibrium
     TARGETS test_gs_curved_readback)
-kin6d_test_labels(gs_free_3d_nl3a_fixture_return slow CLASSES mhd
+foreach(case r0 rp rm zp zm el gzm)
+    kin6d_test_labels(gs_free_3d_nl3a_fixture_return_${case} slow CLASSES mhd
+        TARGETS gs_free_3d gs_free)
+endforeach()
+kin6d_test_labels(gs_free_3d_fixture_hypotheses slow CLASSES mhd
     TARGETS gs_free_3d gs_free)
 kin6d_test_labels(gs_free_app_contract fast CLASSES equilibrium TARGETS gs_free)
 kin6d_test_labels(grad_shafranov_p2_readback_order fast CLASSES equilibrium
@@ -516,3 +522,19 @@ kin6d_test_labels(gs_native_adapter_contract fast CLASSES fem2d
 
 kin6d_test_labels(gs_free_boundary_t7_native_lu fast CLASSES equilibrium
     TARGETS test_gs_fb_jacobian)
+kin6d_test_labels(pp_fusion_oracles fast CLASSES quantum TARGETS test_pp_fusion)
+kin6d_test_labels(pp_fusion_export_contract fast CLASSES quantum TARGETS pp_fusion_export)
+
+kin6d_test_labels(pp_fusion_eft_oracles fast CLASSES quantum TARGETS test_pp_fusion_eft)
+kin6d_test_labels(pp_fusion_eft_export_contract fast CLASSES quantum TARGETS pp_fusion_eft_export)
+
+foreach(mode circle jets tube periodic invalid)
+    kin6d_test_labels(equilibrium_curve_chart_${mode} fast CLASSES equilibrium
+        TARGETS test_curve_chart)
+endforeach()
+if(TARGET gen_curve_chart)
+    kin6d_test_labels(equilibrium_curve_chart_regeneration fast CLASSES equilibrium
+        TARGETS gen_curve_chart)
+endif()
+kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
+    TARGETS test_landreman_free_boundary)
