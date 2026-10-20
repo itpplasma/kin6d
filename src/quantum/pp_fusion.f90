@@ -21,7 +21,7 @@ module kin6d_pp_fusion
     real(dp), parameter, public :: pp_mp = 938.27208943_dp
     real(dp), parameter, public :: pp_mn = 939.56542194_dp
     real(dp), parameter, public :: pp_me = 0.51099895069_dp
-    real(dp), parameter :: axial = 1.2695_dp, ft0 = 3071.4_dp
+    real(dp), parameter, public :: axial = 1.2695_dp, ft0 = 3071.4_dp
     real(dp), parameter :: outer_radiative = 1.0162_dp
     ! Reid's fitted kinetic coefficient. Using modern masses instead shifts B.
     real(dp), parameter, public :: reid_kinetic = 41.47_dp
