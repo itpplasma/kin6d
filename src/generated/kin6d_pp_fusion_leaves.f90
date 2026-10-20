@@ -249,7 +249,7 @@ pure elemental subroutine pp_ft(gv, me, hb, ft)
     real(dp), intent(in) :: gv, me, hb
     real(dp), intent(out) :: ft
 
-    ft = hb*log(2.0_dp)*3.1415926535897931E+000_dp**3*2/(gv**2*me**5)
+    ft = hb*log(2.0_dp)*3.1415926535897931E+000_dp**3/(gv**2*me**5)
 
 end subroutine pp_ft
 
@@ -267,7 +267,7 @@ pure elemental subroutine pp_ft_jvp(gv, me, hb, dgv, dme, dhb, dft)
 
     t1 = log(2.0_dp)
     t2 = 3.1415926535897931E+000_dp**3
-    dft = dhb*t1*t2*2/gv**2/me**5 + (-dgv*hb*me*t1*t2*4 - dme*gv*hb*t1*t2*10)/gv**3/me**6
+    dft = dhb*t1*t2/gv**2/me**5 + (-dgv*hb*me*t1*t2*2 - dme*gv*hb*t1*t2*5)/gv**3/me**6
 
 end subroutine pp_ft_jvp
 
@@ -285,9 +285,9 @@ pure elemental subroutine pp_ft_vjp(gv, me, hb, bft, ggv, gme, ghb)
 
     t1 = log(2.0_dp)
     t2 = 3.1415926535897931E+000_dp**3
-    ggv = -bft*hb*t1*t2*4/gv**3/me**5
-    gme = -bft*hb*t1*t2*10/gv**2/me**6
-    ghb = bft*t1*t2*2/gv**2/me**5
+    ggv = -bft*hb*t1*t2*2/gv**3/me**5
+    gme = -bft*hb*t1*t2*5/gv**2/me**6
+    ghb = bft*t1*t2/gv**2/me**5
 
 end subroutine pp_ft_vjp
 
@@ -561,7 +561,7 @@ pure elemental subroutine pp_gv(ft, me, hb, gv)
     real(dp), intent(in) :: ft, me, hb
     real(dp), intent(out) :: gv
 
-    gv = sqrt(hb*log(2.0_dp)*3.1415926535897931E+000_dp**3*2/(ft*me**5))
+    gv = sqrt(hb*log(2.0_dp)*3.1415926535897931E+000_dp**3/(ft*me**5))
 
 end subroutine pp_gv
 
@@ -579,8 +579,8 @@ pure elemental subroutine pp_gv_jvp(ft, me, hb, dft, dme, dhb, dgv)
 
     t1 = log(2.0_dp)
     t2 = 3.1415926535897931E+000_dp**3
-    dgv = (-dft*hb*me*t1*t2 + dhb*ft*me*t1*t2 - dme*ft*hb*t1*t2*5)/ft**2/me**6/sqrt(hb*t1*t2*2/ft/ &
-        me**5)
+    dgv = (-dft*hb*me*t1*t2*1.0_dp/2.0_dp + dhb*ft*me*t1*t2*1.0_dp/2.0_dp - dme*ft*hb*t1*t2*5.0_dp/ &
+        2.0_dp)/ft**2/me**6/sqrt(hb*t1*t2/ft/me**5)
 
 end subroutine pp_gv_jvp
 
@@ -598,9 +598,9 @@ pure elemental subroutine pp_gv_vjp(ft, me, hb, bgv, gft, gme, ghb)
 
     t1 = log(2.0_dp)
     t2 = 3.1415926535897931E+000_dp**3
-    gft = -bgv*hb*t1*t2/ft**2/me**5/sqrt(hb*t1*t2*2/ft/me**5)
-    gme = -bgv*hb*t1*t2*5/ft/me**6/sqrt(hb*t1*t2*2/ft/me**5)
-    ghb = bgv*t1*t2/ft/me**5/sqrt(hb*t1*t2*2/ft/me**5)
+    gft = -bgv*hb*t1*t2*1.0_dp/2.0_dp/ft**2/me**5/sqrt(hb*t1*t2/ft/me**5)
+    gme = -bgv*hb*t1*t2*5.0_dp/2.0_dp/ft/me**6/sqrt(hb*t1*t2/ft/me**5)
+    ghb = bgv*t1*t2*1.0_dp/2.0_dp/ft/me**5/sqrt(hb*t1*t2/ft/me**5)
 
 end subroutine pp_gv_vjp
 
