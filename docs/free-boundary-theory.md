@@ -1,6 +1,6 @@
 # Free-boundary equilibrium: native formulation and proof obligations
 
-Status: theory specification, stage 1 (2026-10-19), repaired after the independent proof audit of 2026-10-19. Code: gap item 1 implemented as a standalone chart 2026-10-20 (numerical validity diagnostics, no solver integration); gap items 4 and 6 implemented 2026-10-19 (status rows FB-A2, FB-C5, FB-D2, FB-D4, FB-E1). Implementation: `src/mhd/ideal_free_boundary.f90`.
+Status: theory specification, stage 1 (2026-10-19), repaired after the independent proof audit of 2026-10-19. Code: gap item 1 implemented as a standalone chart 2026-10-20 (numerical validity diagnostics, no solver integration); gap items 4 and 6 implemented 2026-10-19; item 9 has an ε = 0 map-lane benchmark (2026-10-20) (status rows FB-A2, FB-C5, FB-D2, FB-D4, FB-E1). Implementation: `src/mhd/ideal_free_boundary.f90`.
 
 This document owns the mathematical formulation of KIN6D's free-boundary map-lane equilibrium and the numbered proof-obligation map. Other ownership is unchanged:
 
@@ -111,12 +111,12 @@ The column "Audit 2026-10-19" records the verdict of the independent proof audit
 | FB-F1 | Descent converges to a saddle, locally, only from a local C¹ manifold of codimension ≥ neg(S) (non-hyperbolic: ξ_f nulls) | P (local, centre-stable manifold); global measure-zero claim O ([Lee et al. 2019](https://doi.org/10.1007/s10107-019-01374-3) needs a globally Lipschitz gradient on R^d) | valid with repair (local only) | none | global statement on U |
 | FB-F2 | Descent rate (κ−1)/(κ+1); κ ≥ K_R/\|K_Z\| if the rigid R and Z shifts have equal P-norm and the vertical mode is stable; heavy ball (√κ−1)/(√κ+1) | P; C [Polyak 1964](https://doi.org/10.1016/0041-5553(64)90137-5); fixture K_R/\|K_Z\| ≈ 556 ⇒ ≈ 6396 plain / 271 heavy-ball iterations for d = 10 (P = I) | valid with repair (equal-P-norm hypothesis) | none | — |
 | FB-F3 | Picard/frozen-B² updates: linear rate ρ(DΦ), oscillation from non-symmetric DΦ | C [Ortega–Rheinboldt 2000](https://doi.org/10.1137/1.9780898719468) (Ostrowski clause, content not verified); application to GVEC H | cited/hypothesis as labelled | none | FD spectrum of DΦ at a converged state |
-| FB-G1 | Inside virtual casing B_in χ_Ω = BS[μ0Jχ_Ω] + BS[(B_in×n)δ]; B_J continuous on R³ | P ([benchmark](../theory/derivations/free-boundary-landreman-benchmark.md) §1); C [Shafranov–Zakharov 1972](https://doi.org/10.1088/0029-5515/12/5/009), [Lazerson 2012](https://doi.org/10.1088/0741-3335/54/12/122002) | PASS (regularity statement corrected: C¹ Newton potential, B_J continuous) | none | — |
-| FB-G2 | Exterior B_J + B̃_x gives an exact surface-current-free free-boundary equilibrium with p̃ = p − p(S0); necessity and uniqueness | P conditional on G4 (§2) | PASS, conditional on G4 | none | — |
-| FB-G3 | Circulations: c = −μ0 I_tor from B_J; 2πF = ∮_γ B_in·dl on the reference toroidal cycle; from B̃_x only iff lk(γ, axis) = 0 (else + k μ0 I_tor) | P (§3); linking number H per case | valid with repair (linking condition) | none | compute lk of the reference toroidal cycle |
-| FB-G4 | Harmonic continuation of B_x to the open D_c, C¹ up to Γ_c | P only in a thin unquantified shell (Cauchy–Kovalevskaya; Holmgren, [John 1982](https://doi.org/10.1007/978-1-4684-9333-7) ch. 3, content not verified); O for a given Γ_c | valid as stated (restated to match the converse) | none | validated continuation or numerical evidence (ε = 0 first) |
-| FB-G5 | Benchmark data satisfy every KIN6D constraint; target is stationary; nondegenerate | P stationarity conditional on G4; nondegeneracy H (at risk for ι = 2, closed lines) | conditional on G4 | none | use sheared family/Issan for return tests |
-| FB-G6 | Approximate drive: computable flux and traction defect on S0 | P (residual statement) | verified (traction expansion) | none | error bound needs FB-E2 β_h |
+| FB-G1 | Inside virtual casing B_in χ_Ω = BS[μ0Jχ_Ω] + BS[(B_in×n)δ]; B_J continuous on R³ | P ([benchmark](../theory/derivations/free-boundary-landreman-benchmark.md) §1); C [Shafranov–Zakharov 1972](https://doi.org/10.1088/0029-5515/12/5/009), [Lazerson 2012](https://doi.org/10.1088/0741-3335/54/12/122002) | PASS (regularity statement corrected: C¹ Newton potential, B_J continuous) | `gen_landreman` (six native symbolic identities); `ideal_fb_landreman_axisymmetric` (N: volume quadrature 48/96, tangential split defect 5.2e-9) | validated Biot–Savart quadrature; ε > 0 |
+| FB-G2 | Exterior B_J + B̃_x gives an exact surface-current-free free-boundary equilibrium with p̃ = p − p(S0); necessity and uniqueness | P conditional on G4 (§2) | PASS, conditional on G4 | `ideal_fb_landreman_axisymmetric` (N, ε = 0: tangential jump 5.2e-9, flux leak 4.7e-9, traction 1.1e-9 for approximate drive) | G4 remains H for the exact drive; validated bounds unavailable |
+| FB-G3 | Circulations: c = −μ0 I_tor from B_J; 2πF = ∮_γ B_in·dl on the reference toroidal cycle; from B̃_x only iff lk(γ, axis) = 0 (else + k μ0 I_tor) | P (§3); linking number H per case | valid with repair (linking condition) | `ideal_fb_landreman_axisymmetric` (N: c = −I_p = −0.12630, exterior-drive poloidal period zero, F = 0.97979590; Gauss lk ≈ 1e-17 for the coaxial longitude) | ε > 0 reference-cycle linking; validated quadrature |
+| FB-G4 | Harmonic continuation of B_x to the open D_c, C¹ up to Γ_c | P only in a thin unquantified shell (Cauchy–Kovalevskaya; Holmgren, [John 1982](https://doi.org/10.1007/978-1-4684-9333-7) ch. 3, content not verified); O for a given Γ_c | valid as stated (restated to match the converse) | `ideal_fb_landreman_axisymmetric` (N: external ring-source fit; curl/div finite-difference residual ≤ 2.1e-10 through Γ_c at 1.6 minor radii) | validated continuation of the exact B_x; the fitted field alone does not prove G4 |
+| FB-G5 | Benchmark data satisfy every KIN6D constraint; target is stationary; nondegenerate | P stationarity conditional on G4; nondegeneracy H (at risk for ι = 2, closed lines) | conditional on G4 | `ideal_fb_landreman_axisymmetric` (N: unforced target-start N = 0 Newton solve and P3 refinement; sampled distance to S0 ≤ 8.9e-7) | nondegeneracy; sheared/Issan offset return; ε > 0 frozen input (gap 8) |
+| FB-G6 | Approximate drive: computable flux and traction defect on S0 | P (residual statement) | verified (traction expansion) | `ideal_fb_landreman_axisymmetric` (N: independent holdout flux/traction defects and solved-vacuum trace check) | error bound needs FB-E2 β_h |
 | FB-H1 | Axisymmetric well-posedness and solver literature | C (see §3) | metadata verified; content not audited | — | read full texts; no 3D free-boundary existence theorem adopted |
 
 No obligation is promoted on numerical evidence. Lean covers FB-D1 only (the discrete matrix lemmas B1 and B2, not the PDE or the per-state hypotheses).
@@ -165,11 +165,14 @@ Bibliographic metadata verified by Crossref (2026-10-19). The content claims are
 6. Done (2026-10-19): `ideal_fb_hypotheses` reports μ, the asymmetry of W and V before symmetrisation (S_h is symmetric by construction), λ_min(S_h), λ_min(A_h + S_h), σ_min/σ_max and full row rank of [∇C; M], and the inertia of S_red; `gs_free_3d` writes them with `hypotheses = .true.` (per Newton state with `monitor_hypotheses`). The reduced inertia is dense (fixture sizes): the pinned FortSparse has no MUMPS inertia; upstream main reports inertia only for its native LDLᵀ (FB-A2, FB-C5, FB-D2).
 7. Third-derivative (or Hessian-Lipschitz) generated leaves, interval evaluation, and outward residual for a discrete Kantorovich certificate. Register it as a D4 `equilibrium_certifier_t` (FB-E2).
 8. 3D frozen reference input for N4: N1/N3 frozen data in place of a pushed-forward 2D gs_free state, needed for Landreman ε > 0 and every stellarator.
-9. Landreman benchmark harness:
-   - Biot–Savart B_J of the closed-form J by high-order quadrature;
-   - continuation fit of B̃_x and its S0 defect (FB-G4, FB-G6);
-   - ε = 0 Solov'ev case first, cross-checked with `gs_free`;
-   - case registered in D8.
+9. Landreman benchmark harness: ε = 0 map-lane stage implemented 2026-10-20
+   (`ideal_fb_landreman_axisymmetric`; [evidence and tolerances](ideal-free-boundary.md#landreman-axisymmetric-benchmark)).
+   Retains FortSym fields/current/derivatives, volume Biot–Savart quadrature,
+   external-source continuation fit, independent S0 defects, linking and
+   circulation checks, and the actual free-boundary solve under refinement.
+   G4 and nondegeneracy remain hypotheses. The ψ-lane `gs_free` cross-check uses the same external rings and passes.
+   The shared D8 runner and ε > 0 family 1/sheared cases remain open; the
+   latter require gap 8 (and the full 3D slide gauge, gap 3).
 10. Fixed-flux variant (FB-A4) only if continuation through vertical marginality needs it.
 11. Lean: `Bordered.lean` (FB-D1), done: B1 and B2.
 
