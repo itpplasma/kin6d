@@ -109,6 +109,7 @@ program gs_free_3d_main
         ideal_fb_init, ideal_fb_set_drive, ideal_fb_solve_vacuum, ideal_fb_solve, &
         ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
         ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, ideal_fb_mode_stability, &
+        ideal_fb_hypotheses_t, ideal_fb_hypotheses, ideal_fb_hypotheses_print, &
         ideal_fb_newton_step, &
         IDEAL_FB_OK
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
@@ -126,13 +127,16 @@ program gs_free_3d_main
     type(cylindrical_chart_t) :: chart
     type(ideal_fb_t) :: fb
     type(ideal_fb_report_t) :: report
+    type(ideal_fb_hypotheses_t) :: hyp
     real(dp), allocatable :: samples(:, :), contour(:, :), lcfs(:, :), chain(:, :)
     real(dp), allocatable :: rmp_currents(:)
     real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
     real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
     real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
-    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp, tangential_damping = 0, tangential_gauge = 0
-    logical :: rigid_vertical = .false.
+    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp
+    real(dp) :: tangential_damping = 0
+    logical :: rigid_vertical = .false., hypotheses = .false.
+    logical :: monitor_hypotheses = .false.
     integer :: homotopy_steps = 1, stage_iterations = 15, gamma_c_modes = 0
     real(dp) :: rigid(2, 2) = 0, seed_amplitude = 0
     real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
@@ -153,8 +157,9 @@ program gs_free_3d_main
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
         rmp_scale, rmp_nphi, tolerance, step_tolerance, max_iterations, axis_sign, &
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
-        stability, shifts, gamma_c_scale, tangential_damping, tangential_gauge, &
-        rigid_vertical, homotopy_steps, stage_iterations, gamma_c_modes, save_state, load_state, linear_response
+        stability, shifts, gamma_c_scale, tangential_damping, hypotheses, &
+        monitor_hypotheses, rigid_vertical, homotopy_steps, stage_iterations, &
+        gamma_c_modes, save_state, load_state, linear_response
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -234,7 +239,7 @@ program gs_free_3d_main
         write (output_unit, '(a)') 'note: nphi is set by ideal_map_init (3 ntor + 1)'
     fb%energy_scale = energy_scale()
     fb%tangential_damping = tangential_damping
-    fb%tangential_gauge = tangential_gauge
+    fb%monitor_hypotheses = monitor_hypotheses
     fb%rigid_vertical = rigid_vertical
     call ideal_fb_set_drive(fb, sampler, st, closure)
     write (output_unit, '(a,i0,a,i0,a,i0,a,es10.3)') 'plasma nodes ', &
@@ -331,6 +336,15 @@ program gs_free_3d_main
                         ' status ', s2
                 end do
             end do
+        end block
+    end if
+    if (hypotheses) then
+        ! Discrete hypotheses of FB-A2/FB-D2/FB-E1 and the FB-C5 multiplier at
+        ! the final state (diagnostics, docs/free-boundary-theory.md).
+        block
+            integer :: s2
+            call ideal_fb_hypotheses(fb, hyp, s2)
+            call ideal_fb_hypotheses_print(hyp)
         end block
     end if
     write (output_unit, '(a,i0,a,i0,a,es10.3)') 'newton status ', st, &
@@ -708,6 +722,31 @@ contains
                 if (k > 1 .and. mod(k, 2) == 1) cycle
                 write (u, '(a,i0,1x,es16.8)') 'stability_min_lambda_mode', k, stab(k)
             end do
+        end if
+        if (hypotheses) then
+            write (u, '(a,1x,i0)') 'hypotheses_status', hyp%status
+            write (u, '(a,2(1x,es16.8))') 'gamma_c_w_v_asymmetry', hyp%w_asymmetry, &
+                hyp%v_asymmetry
+            write (u, '(a,1x,es16.8)') 'gamma_c_s_min_eigenvalue', hyp%s_min
+            write (u, '(a,2(1x,es16.8))') 'vacuum_block_eigenvalue_min_max', &
+                hyp%vacuum_min, hyp%vacuum_max
+            write (u, '(a,1x,es16.8)') 'vacuum_block_asymmetry', hyp%vacuum_asymmetry
+            write (u, '(a,1x,i0)') 'constraint_rows', hyp%constraint_rows
+            write (u, '(a,2(1x,es16.8))') 'constraint_sigma_min_max', &
+                hyp%constraint_sigma_min, hyp%constraint_sigma_max
+            write (u, '(a,1x,i0)') 'constraint_full_rank', merge(1, 0, hyp%full_rank)
+            write (u, '(a,1x,i0)') 'reduced_hessian_dim', hyp%reduced_dim
+            write (u, '(a,3(1x,i0))') 'reduced_hessian_inertia', hyp%n_positive, &
+                hyp%n_negative, hyp%n_zero
+            write (u, '(a,1x,es16.8)') 'reduced_hessian_zero_tolerance', &
+                hyp%zero_tolerance
+            write (u, '(a,3(1x,es16.8))') 'reduced_hessian_min_minabs_max', &
+                hyp%reduced_min, hyp%reduced_min_abs, hyp%reduced_max
+            write (u, '(a,1x,es16.8)') 'reduced_hessian_vertical_overlap', &
+                hyp%vertical_overlap
+            write (u, '(a,3(1x,i0))') 'kkt_inertia_bordering', hyp%kkt_inertia
+            write (u, '(a,1x,es16.8)') 'slide_multiplier_max', hyp%slide_multiplier
+            write (u, '(a,1x,es16.8)') 'slide_residual_sigma', hyp%slide_residual
         end if
         write (u, '(a,1x,es16.8)') 'offset_r', offset_r
         write (u, '(a,1x,es16.8)') 'offset_z', offset_z
