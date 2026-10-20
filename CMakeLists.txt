@@ -14,7 +14,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "b29e82cf6e41dc1e5509c2e6722ad99f5a5132bd")
+set(KIN6D_FORTNUM_REVISION "0a27a7f84249fc91e42118a1a8ae7f8573de1bd4")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -62,6 +62,8 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/interp/fortnum_bspline.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_coulomb_series_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_coulomb.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_elliptic.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_hypergeom_2f1_term_kernel.f90
@@ -99,7 +101,9 @@ if(KIN6D_ENABLE_OPENMP)
 endif()
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
-set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
+set_source_files_properties(src/generated/kin6d_leaves.f90
+    src/generated/kin6d_pp_fusion_leaves.f90
+    src/generated/kin6d_pp_fusion_eft_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # Layered libraries (ROADMAP "Build structure and fast development loop"):
 # L0 kin6d_core; L1 kin6d_fem2d, kin6d_pairs; L2 model classes; `kin6d` is the
@@ -156,7 +160,10 @@ endforeach()
 find_package(LAPACK REQUIRED)
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
     src/pairs/radial_dvr.f90)
-target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
+target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
+    src/quantum/pp_fusion.f90
+    src/generated/kin6d_pp_fusion_eft_leaves.f90 src/quantum/pp_fusion_eft.f90
+    src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
@@ -241,7 +248,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "1cc17e31a01f5fa3ec5db58f5f399e2f7eb97955")
+set(KIN6D_FORTSPARSE_REVISION "09fc2b406aecf4f5ddda30e53aef8cc8bdb8b0c5")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -287,6 +294,15 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
     src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_sources(kin6d_mhd PRIVATE src/generated/kin6d_landreman_leaves.f90
+    src/mhd/landreman_benchmark.f90)
+set_source_files_properties(src/generated/kin6d_landreman_leaves.f90 PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_landreman_free_boundary test/test_landreman_free_boundary.f90)
+target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
+set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
+    TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
@@ -297,8 +313,9 @@ endforeach()
 add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
     COMMAND test_ideal_free_boundary vacuum3d 3)
 add_test(NAME ideal_fb_slide_gauge_curl_free COMMAND test_ideal_free_boundary slide)
+add_test(NAME ideal_fb_hypotheses_bordering COMMAND test_ideal_free_boundary hypotheses)
 set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
-    ideal_fb_slide_gauge_curl_free
+    ideal_fb_slide_gauge_curl_free ideal_fb_hypotheses_bordering
     ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
@@ -712,6 +729,40 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     target_link_libraries(test_${quantum_family} PRIVATE kin6d)
     add_test(NAME ${quantum_family}_oracles COMMAND test_${quantum_family})
 endforeach()
+add_executable(pp_fusion_export app/pp_fusion_export.f90)
+add_dependencies(pp_fusion_export kin6d_build_info)
+target_include_directories(pp_fusion_export PRIVATE ${CMAKE_BINARY_DIR}/result_include)
+target_link_libraries(pp_fusion_export PRIVATE kin6d kin6d_io)
+
+add_test(NAME pp_fusion_export_contract
+    COMMAND ${CMAKE_COMMAND} -DPROGRAM=$<TARGET_FILE:pp_fusion_export>
+        -DWORK=${CMAKE_BINARY_DIR}/pp-fusion-export-test
+        -P ${CMAKE_SOURCE_DIR}/test/check_pp_fusion_export.cmake)
+set_tests_properties(pp_fusion_export_contract PROPERTIES PROCESSORS 4)
+
+add_executable(pp_fusion_eft_export app/pp_fusion_eft_export.f90)
+add_dependencies(pp_fusion_eft_export kin6d_build_info)
+target_include_directories(pp_fusion_eft_export PRIVATE ${CMAKE_BINARY_DIR}/result_include)
+target_link_libraries(pp_fusion_eft_export PRIVATE kin6d kin6d_io)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/pp_fusion_eft_export_contract)
+add_test(NAME pp_fusion_eft_export_contract
+    COMMAND ${CMAKE_COMMAND} -DPROGRAM=$<TARGET_FILE:pp_fusion_eft_export>
+        -DWORK=${CMAKE_BINARY_DIR}/pp_fusion_eft_export_contract
+        -P ${CMAKE_SOURCE_DIR}/test/check_pp_fusion_eft_export.cmake)
+set_tests_properties(pp_fusion_eft_export_contract PROPERTIES PROCESSORS 4)
+
+add_executable(test_pp_fusion_eft test/test_pp_fusion_eft.f90)
+target_link_libraries(test_pp_fusion_eft PRIVATE kin6d)
+add_test(NAME pp_fusion_eft_oracles COMMAND test_pp_fusion_eft
+    ${CMAKE_SOURCE_DIR}/test/reference/pp_fusion_eft.dat)
+set_tests_properties(pp_fusion_eft_oracles PROPERTIES PROCESSORS 4)
+
+add_executable(test_pp_fusion test/test_pp_fusion.f90)
+target_link_libraries(test_pp_fusion PRIVATE kin6d)
+add_test(NAME pp_fusion_oracles COMMAND test_pp_fusion
+    ${CMAKE_SOURCE_DIR}/test/reference/pp_fusion_ode.dat)
+set_tests_properties(pp_fusion_oracles PROPERTIES PROCESSORS 4)
+
 add_executable(test_coulomb_encounter test/test_coulomb_encounter.f90)
 target_link_libraries(test_coulomb_encounter PRIVATE kin6d)
 add_test(NAME coulomb_encounter_oracles COMMAND test_coulomb_encounter)
@@ -816,7 +867,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_response_error
-            equilibrium_core nonnested vacuum_shell
+            equilibrium_core curve_chart nonnested vacuum_shell landreman
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -825,10 +876,16 @@ if(KIN6D_FORTSYM_BUILD)
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
+            pp_fusion pp_fusion_eft
             jellium_cell ocp)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/curve-chart-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_curve_chart_regeneration.cmake)
 endif()
 # Explicit performance audit; not part of the ordinary correctness gate.
 add_executable(benchmark_streaming app/benchmark_streaming.f90)
@@ -1173,12 +1230,25 @@ add_executable(gs_free_3d app/gs_free_3d.f90)
 target_link_libraries(gs_free_3d PRIVATE kin6d)
 # NL-3a on the gs_free fixture (N = 0): reproduce the 2D free boundary and
 # return from +-15 mm R/Z and +2 % elongation offset starts.
-add_test(NAME gs_free_3d_nl3a_fixture_return COMMAND ${CMAKE_COMMAND}
+# One registered test per start case (see kin6d_test_labels.cmake).
+foreach(case r0 rp rm zp zm el gzm)
+    add_test(NAME gs_free_3d_nl3a_fixture_return_${case} COMMAND ${CMAKE_COMMAND}
+        -DAPP=$<TARGET_FILE:gs_free_3d> -DGS_FREE=$<TARGET_FILE:gs_free>
+        -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
+        -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return_${case} -DCASE=${case}
+        -DDISTANCE_LIMIT=1.0e-4 -DDEFECT_LIMIT=1.0e-4
+        -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
+    set_tests_properties(gs_free_3d_nl3a_fixture_return_${case} PROPERTIES
+        TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4")
+endforeach()
+# Discrete hypotheses (FB-A2, FB-D2) at converged fixture states: A_h + S_h > 0,
+# [grad C; M] of full row rank and one negative direction of S_red (vertical).
+add_test(NAME gs_free_3d_fixture_hypotheses COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_free_3d> -DGS_FREE=$<TARGET_FILE:gs_free>
-    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
-    -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_return -DDISTANCE_LIMIT=1.0e-4
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free -DMODE=hypotheses
+    -DWORK=${CMAKE_BINARY_DIR}/gs_free_3d_hypotheses -DDISTANCE_LIMIT=1.0e-4
     -DDEFECT_LIMIT=1.0e-4 -P ${CMAKE_SOURCE_DIR}/test/gs_free_3d_return.cmake)
-set_tests_properties(gs_free_3d_nl3a_fixture_return PROPERTIES TIMEOUT 3600
+set_tests_properties(gs_free_3d_fixture_hypotheses PROPERTIES TIMEOUT 3600
     ENVIRONMENT "OMP_NUM_THREADS=4")
 add_test(NAME gs_free_app_contract COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_free> -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_free
@@ -1224,6 +1294,7 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
 
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
+    src/generated/kin6d_curve_chart_leaves.f90
     src/equilibrium/equilibrium_chart.f90 src/equilibrium/equilibrium_state.f90 src/equilibrium/gs_equilibrium.f90
     src/equilibrium/equilibrium_residual.f90 src/equilibrium/equilibrium_readback.f90
     src/equilibrium/equilibrium_certificate.f90 src/equilibrium/gs_certificate.f90
@@ -1250,6 +1321,12 @@ endforeach()
 add_executable(test_equilibrium_core test/test_equilibrium_core.f90)
 target_link_libraries(test_equilibrium_core PRIVATE kin6d)
 add_test(NAME equilibrium_core_chart_jet COMMAND test_equilibrium_core chart)
+add_executable(test_curve_chart test/test_curve_chart.f90)
+set_source_files_properties(test/test_curve_chart.f90 PROPERTIES Fortran_PREPROCESS ON)
+target_link_libraries(test_curve_chart PRIVATE kin6d_equilibrium)
+foreach(mode circle jets tube periodic invalid)
+    add_test(NAME equilibrium_curve_chart_${mode} COMMAND test_curve_chart ${mode})
+endforeach()
 foreach(k 2 3)
     add_test(NAME equilibrium_core_d7_readback_p${k}
         COMMAND test_equilibrium_core readback ${k})

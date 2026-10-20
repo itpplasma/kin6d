@@ -1,8 +1,15 @@
 # NL-3a on the gs_free fixture: the 3D free boundary at N = 0 must reproduce
 # the 2D free-boundary solution (gs_free, P3, refit) and return to it from
-# offset starts (+-15 mm in R and Z, +2 % elongation). Gauge-invariant
-# measures: largest distance of the mapped Gamma_p nodes from the 2D boundary
-# (psi/|grad psi| of the 2D result) and the interior surface defect.
+# offset starts (+-15 mm in R and Z, +2 % elongation) with the slide gauge
+# alone (no tangential_gauge, which is not a gauge: free-boundary-theory.md
+# FB-D4). Gauge-invariant measures: largest distance of the mapped Gamma_p
+# nodes from the 2D boundary (psi/|grad psi| of the 2D result) and the
+# interior surface defect; every solve must report convergence.
+# MODE=hypotheses instead checks the discrete hypotheses of FB-A2/FB-D2 at
+# converged states (ideal_fb_hypotheses): A_h + S_h > 0, [grad C; M] of full
+# row rank, and In(S_red) with exactly one negative direction (the vertical
+# mode at fixed coil currents) and none zero; one start also monitors them at
+# every Newton state.
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}/ref")
 foreach(name boundary.dat coils.txt profile.dat limiter.dat)
@@ -30,11 +37,37 @@ function(require_below what value limit)
     endif()
 endfunction()
 
+function(require_equal what value expected)
+    if(NOT "${value}" STREQUAL "${expected}")
+        message(FATAL_ERROR "${what}: ${value}, expected ${expected}")
+    endif()
+endfunction()
+function(require_positive what value)
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -I -c
+        "import sys; sys.exit(0 if float(sys.argv[1]) > 0 else 1)"
+        "${value}" RESULT_VARIABLE positive)
+    if(NOT positive EQUAL 0)
+        message(FATAL_ERROR "${what}: ${value} is not positive")
+    endif()
+endfunction()
+
 set(common "mesh_file='../ref/mesh.dat', law_file='../ref/profile-law.dat', summary_file='../ref/summary.dat', coil_file='../ref/coils.txt', boundary_file='../ref/boundary.dat', boundary_nodes=64, degree=3, chain_nodes=48, nfp=1, ntor=0, max_iterations=150, verbose=.false.")
-foreach(case "r0;offset_r=0.0" "rp;offset_r=0.015" "rm;offset_r=-0.015" "zp;offset_z=0.015" "zm;offset_z=-0.015" "el;elongation=0.02"
-    "gr0;offset_r=0.0, tangential_gauge=100.0"
-    "gzm;offset_z=-0.015, tangential_gauge=100.0, rigid_vertical=.true.")
+# Cases are "name|namelist settings".
+if(MODE STREQUAL "hypotheses")
+    set(cases "h0|offset_r=0.0, hypotheses=.true."
+        "hzp|offset_z=0.015, hypotheses=.true., monitor_hypotheses=.true., verbose=.true.")
+else()
+    set(cases "r0|offset_r=0.0" "rp|offset_r=0.015" "rm|offset_r=-0.015"
+        "zp|offset_z=0.015" "zm|offset_z=-0.015" "el|elongation=0.02"
+        "gzm|offset_z=-0.015, rigid_vertical=.true.")
+endif()
+# CASE (optional) restricts the run to one named case.
+foreach(case IN LISTS cases)
+    string(REPLACE "|" ";" case "${case}")
     list(GET case 0 name)
+    if(DEFINED CASE AND NOT "${CASE}" STREQUAL "" AND NOT name STREQUAL CASE)
+        continue()
+    endif()
     list(GET case 1 offset)
     file(MAKE_DIRECTORY "${WORK}/${name}")
     file(WRITE "${WORK}/${name}/in.nml" "&gs_free_3d ${common}, ${offset} /\n")
@@ -43,10 +76,49 @@ foreach(case "r0;offset_r=0.0" "rp;offset_r=0.015" "rm;offset_r=-0.015" "zp;offs
     if(NOT status EQUAL 0)
         message(FATAL_ERROR "gs_free_3d ${name} failed: ${out}${err}")
     endif()
-    message(STATUS "${name}: ${out}")
     set(summary "${WORK}/${name}/summary-3d.dat")
+    summary_value("${summary}" status newton)
+    summary_value("${summary}" iterations iterations)
+    summary_value("${summary}" cpu_s cpu)
     summary_value("${summary}" boundary_distance_max_m distance)
     summary_value("${summary}" surface_defect_max_m defect)
+    message(STATUS "${name}: status ${newton} iterations ${iterations} cpu_s ${cpu} distance ${distance} defect ${defect}")
+    require_equal("${name} Newton status" "${newton}" 0)
     require_below("${name} boundary distance (m)" "${distance}" "${DISTANCE_LIMIT}")
     require_below("${name} surface defect (m)" "${defect}" "${DEFECT_LIMIT}")
+    if(MODE STREQUAL "hypotheses")
+        file(STRINGS "${summary}" lines REGEX "^(hypotheses_|gamma_c_|vacuum_|constraint_|reduced_|kkt_|slide_)")
+        foreach(line IN LISTS lines)
+            message(STATUS "${name}: ${line}")
+        endforeach()
+        summary_value("${summary}" hypotheses_status hstatus)
+        summary_value("${summary}" vacuum_block_eigenvalue_min_max vacuum)
+        summary_value("${summary}" constraint_full_rank rank)
+        summary_value("${summary}" reduced_hessian_inertia inertia)
+        string(REGEX REPLACE " +" ";" vacuum "${vacuum}")
+        string(REGEX REPLACE " +" ";" inertia "${inertia}")
+        list(GET vacuum 0 vacuum_min)
+        list(GET inertia 1 negative)
+        list(GET inertia 2 zero)
+        require_equal("${name} hypotheses status" "${hstatus}" 0)
+        require_positive("${name} smallest eigenvalue of A_h + S_h" "${vacuum_min}")
+        require_equal("${name} [grad C; M] full row rank" "${rank}" 1)
+        require_equal("${name} negative directions of S_red" "${negative}" 1)
+        require_equal("${name} zero directions of S_red" "${zero}" 0)
+        string(REGEX MATCHALL "   hypotheses[^\n]*" monitored "${out}")
+        list(LENGTH monitored states)
+        math(EXPR expected "${iterations} + 1")
+        if(name STREQUAL "hzp")
+            if(states LESS expected)
+                message(FATAL_ERROR "hzp: ${states} monitored Newton states, expected ${expected}")
+            endif()
+            foreach(line IN LISTS monitored)
+                message(STATUS "hzp:${line}")
+                if(NOT line MATCHES "status 0 .* full rank T")
+                    message(FATAL_ERROR "hzp: monitored state fails (V)/(R) or status: ${line}")
+                endif()
+            endforeach()
+            message(STATUS "hzp: ${states} monitored Newton states satisfy full rank")
+        endif()
+    endif()
 endforeach()

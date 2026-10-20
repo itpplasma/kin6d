@@ -79,8 +79,8 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
     public :: ideal_fb_mode_stability, ideal_fb_newton_step
-    public :: ideal_fb_vertical_system, ideal_fb_vertical_gradient
-    public :: ideal_fb_vertical_expand
+    public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
+    public :: ideal_fb_hypotheses_print
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -133,19 +133,17 @@ module kin6d_ideal_free_boundary
         ! 2-form). Must stay below the vertical eigenvalue (~1e-7 in this
         ! metric) or the damped step turns against the vertical mode.
         real(dp) :: tangential_damping = 0
-        ! Hard-ish gauge for the same n = 0 null: when > 0, the n = 0 tangential
-        ! component of every plasma node is penalised by tangential_gauge times
-        ! the node diagonal in the Newton matrix and removed from the gradient
-        ! that enters the merit. The surfaces cannot slide poloidally. This
-        ! removes more than the relabelling null: where the tangent is R or Z
-        ! the dropped components carry the net force, so an offset R start
-        ! stops short of equilibrium (17 mm on the gs_free fixture). Without
-        ! it the null is fixed exactly by the slide moments (slide_directions).
-        real(dp) :: tangential_gauge = 0
-        ! With tangential_gauge > 0, solve normal n = 0 shape and a global
-        ! vertical shift together, including its force equation and exact
-        ! Hessian couplings. Without the gauge retain the legacy correction.
+        ! After every accepted Newton step, try the rigid n = 0 Z correction
+        ! dZ = -F_Z/K_Z (K_Z from ideal_fb_rigid_stiffness), kept only when the
+        ! merit decreases.
         logical :: rigid_vertical = .false.
+        ! Evaluate ideal_fb_hypotheses at every Newton state and print it
+        ! (verbose solves only; a diagnostic, never a stopping criterion).
+        logical :: monitor_hypotheses = .false.
+        ! Relative asymmetry ||A - A^T||_F/||A||_F of the assembled Galerkin
+        ! hypersingular W (1) and single-layer V (2) operators per harmonic k,
+        ! before FortFEM symmetrises them into S_k (FB-A2).
+        real(dp), allocatable :: bem_asymmetry(:, :)
         ! Slide-moment rows of the n = 0 relabelling gauge (2, plasma node,
         ! layer), unit Euclidean norm; see slide_directions.
         real(dp), allocatable :: slide(:, :, :)
@@ -164,6 +162,44 @@ module kin6d_ideal_free_boundary
         real(dp) :: assemble_s = 0, factor_s = 0, gradient_s = 0, line_s = 0
         real(dp) :: assembly_roundoff = 0
         integer :: factorisations = 0, reused = 0
+    end type
+
+    type :: ideal_fb_hypotheses_t
+        ! Per-state checks of the open discrete hypotheses of
+        ! docs/free-boundary-theory.md (FB-A2, FB-C5, FB-D2, FB-E1). These are
+        ! diagnostics, never stopping criteria. status = IDEAL_FB_OK when every
+        ! entry was evaluated; the dense parts are limited to fixture sizes.
+        integer :: status = IDEAL_FB_NOT_CONVERGED
+        ! (V), FB-A2: largest relative asymmetry of the Galerkin W and V
+        ! before FortFEM symmetrises them (S_k is symmetric by construction),
+        ! smallest eigenvalue of S_k over k; extreme eigenvalues and relative
+        ! asymmetry of -mu0 H_PhiPhi, the assembled A_h + S_h block (times
+        ! the mode weights c_m).
+        real(dp) :: w_asymmetry = 0, v_asymmetry = 0, s_min = 0
+        real(dp) :: vacuum_min = 0, vacuum_max = 0, vacuum_asymmetry = 0
+        ! (R): R = [grad C; G] on the map unknowns (G the unit slide rows):
+        ! rows, extreme singular values (inverse/power iteration) and full row
+        ! rank, decided as sigma_min > rank_tolerance sigma_max.
+        integer :: constraint_rows = 0
+        real(dp) :: constraint_sigma_min = 0, constraint_sigma_max = 0
+        real(dp) :: rank_tolerance = 1.0e-10_dp
+        logical :: full_rank = .false.
+        ! S_red = Z^T S_map Z, Z = [I; E] Z_G: E the shell-map extension of
+        ! the plasma positions, Z_G an orthonormal basis of ker G in the
+        ! Euclidean metric of the plasma position coefficients (m), so the
+        ! eigenvalues are J/m^2 per field period. Inertia (n+, n-, n0) with
+        ! n0 counting |lambda| <= zero_tolerance = 1e-10 max |lambda|;
+        ! vertical_overlap = |<z_min, unit rigid Z shift>| of the lowest
+        ! eigenvector.
+        integer :: reduced_dim = 0, n_positive = 0, n_negative = 0, n_zero = 0
+        real(dp) :: zero_tolerance = 0, reduced_min = 0, reduced_min_abs = 0
+        real(dp) :: reduced_max = 0, vertical_overlap = 0
+        ! Inertia of the bordered KKT matrix implied by FB-D2 under (V) and (R):
+        ! (n+ + r, n- + dim Phi~ + r, n0), r = constraint_rows.
+        integer :: kkt_inertia(3) = 0
+        ! FB-C5: largest slide-gauge multiplier (J/m per field period, unit
+        ! slide rows) and the residual it removes, in sigma V units.
+        real(dp) :: slide_multiplier = 0, slide_residual = 0
     end type
 contains
     pure real(dp) function ideal_fb_mode_weight(fb, m) result(c)
@@ -467,10 +503,12 @@ contains
         end do
         call gs_bem_curve_from_nodes(nodes, curve, st)
         if (st /= 0) return
-        allocate (fb%s_trace(fb%nt, fb%nt, 0:fb%ntor))
+        allocate (fb%s_trace(fb%nt, fb%nt, 0:fb%ntor), fb%bem_asymmetry(2, 0:fb%ntor))
         do k = 0, fb%ntor
             call tm_bem_assemble(curve, k*fb%nfp, 2, ops, st)
             if (st /= 0) return
+            fb%bem_asymmetry(:, k) = [norm2(ops%w - transpose(ops%w))/norm2(ops%w), &
+                norm2(ops%v - transpose(ops%v))/norm2(ops%v)]
             call tm_bem_steklov_symmetric(ops, s_bem, st)
             if (st /= 0) return
             fb%s_trace(:, :, k) = matmul(transpose(restriction), &
@@ -1251,100 +1289,6 @@ contains
         end do
     end subroutine
 
-    subroutine vertical_coordinates(fb, index, coefficient, vertical)
-        ! U = T y + v z: one normal coordinate per n = 0 plasma node,
-        ! unchanged other coordinates, and a rigid plasma Z shift. The unused
-        ! second node slot is an identity row, with zero residual/step.
-        type(ideal_fb_t), intent(in) :: fb
-        integer, intent(out) :: index(:)
-        real(dp), intent(out) :: coefficient(:), vertical(:)
-        integer :: i, a, r, z
-        index = [(i, i=1, fb%n)]
-        coefficient = 1; vertical = 0
-        do a = 1, fb%plasma%nodes
-            r = pidx(fb, 1, 1, a); z = pidx(fb, 2, 1, a)
-            index(z) = r
-            coefficient(r) = fb%plasma%direction(1, a)
-            coefficient(z) = fb%plasma%direction(2, a)
-            vertical(z) = 1
-        end do
-    end subroutine
-
-    subroutine ideal_fb_vertical_gradient(fb, g, reduced)
-        ! [T^T g, v^T g], including the unprojected net vertical force.
-        type(ideal_fb_t), intent(in) :: fb
-        real(dp), intent(in) :: g(:)
-        real(dp), intent(out) :: reduced(:)
-        integer :: a, r, z
-        reduced(:fb%n) = g
-        reduced(fb%n + 1) = 0
-        do a = 1, fb%plasma%nodes
-            r = pidx(fb, 1, 1, a); z = pidx(fb, 2, 1, a)
-            reduced(r) = dot_product(fb%plasma%direction(:, a), [g(r), g(z)])
-            reduced(z) = 0
-            reduced(fb%n + 1) = reduced(fb%n + 1) + g(z)
-        end do
-    end subroutine
-
-    subroutine ideal_fb_vertical_expand(fb, reduced, du)
-        type(ideal_fb_t), intent(in) :: fb
-        real(dp), intent(in) :: reduced(:)
-        real(dp), intent(out) :: du(:)
-        integer :: a, r, z
-        du = reduced(:fb%n)
-        do a = 1, fb%plasma%nodes
-            r = pidx(fb, 1, 1, a); z = pidx(fb, 2, 1, a)
-            du(r) = fb%plasma%direction(1, a)*reduced(r)
-            du(z) = fb%plasma%direction(2, a)*reduced(r) + reduced(fb%n + 1)
-        end do
-    end subroutine
-
-    subroutine ideal_fb_vertical_system(fb, rowptr, colidx, val, damped, &
-                                        rows, cols, matrix)
-        ! Exact congruence of the generated Lagrangian Hessian:
-        ! [T^T H T, T^T H v; v^T H T, v^T H v]. Damping acts only on shape,
-        ! never on the shift or its force row. No finite-difference stiffness.
-        type(ideal_fb_t), intent(in) :: fb
-        integer, intent(in) :: rowptr(:), colidx(:)
-        real(dp), intent(in) :: val(:), damped(:)
-        integer, allocatable, intent(out) :: rows(:), cols(:)
-        real(dp), allocatable, intent(out) :: matrix(:)
-        integer, allocatable :: index(:), ci(:), cj(:)
-        real(dp), allocatable :: coefficient(:), vertical(:), border(:), cv(:)
-        real(dp) :: zz
-        integer :: i, j, p, k, a
-        allocate (index(fb%n), coefficient(fb%n), vertical(fb%n), border(fb%n))
-        call vertical_coordinates(fb, index, coefficient, vertical)
-        allocate (ci(size(val) + 3*fb%n + 1), cj(size(val) + 3*fb%n + 1), &
-                  cv(size(val) + 3*fb%n + 1))
-        border = 0; zz = 0; k = 0
-        do i = 1, fb%n
-            do p = rowptr(i), rowptr(i + 1) - 1
-                j = colidx(p)
-                k = k + 1
-                ci(k) = index(i); cj(k) = index(j)
-                cv(k) = coefficient(i)*damped(p)*coefficient(j)
-                border(index(i)) = border(index(i)) &
-                                   + coefficient(i)*val(p)*vertical(j)
-                zz = zz + vertical(i)*val(p)*vertical(j)
-            end do
-        end do
-        do i = 1, fb%n
-            ci(k + 1:k + 2) = [i, fb%n + 1]
-            cj(k + 1:k + 2) = [fb%n + 1, i]
-            cv(k + 1:k + 2) = border(i)
-            k = k + 2
-        end do
-        do a = 1, fb%plasma%nodes
-            k = k + 1
-            i = pidx(fb, 2, 1, a)
-            ci(k) = i; cj(k) = i; cv(k) = 1
-        end do
-        k = k + 1
-        ci(k) = fb%n + 1; cj(k) = fb%n + 1; cv(k) = zz
-        call coo_to_csr(fb%n + 1, ci(:k), cj(:k), cv(:k), rows, cols, matrix)
-    end subroutine
-
     subroutine slide_directions(fb)
         ! Gauge of the n = 0 relabelling null. A map of the reference onto
         ! itself that keeps chi and the toroidal-flux 2-form b3 dR dZ moves
@@ -1395,9 +1339,11 @@ contains
         end do
     end subroutine
 
-    subroutine slide_system(fb, rowptr, colidx, val, scale, rows, cols, matrix)
+    subroutine ideal_fb_slide_system(fb, rowptr, colidx, val, scale, rows, cols, &
+                                     matrix)
         ! Newton matrix bordered by the slide gauge: [H, s G^T; s G, 0], with
-        ! G the slide directions on the n = 0 plasma rows.
+        ! G the slide directions on the n = 0 plasma rows (fb%n + size(slide, 3)
+        ! rows; the gauge rows follow the KKT unknowns).
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: rowptr(:), colidx(:)
         real(dp), intent(in) :: val(:), scale
@@ -1430,14 +1376,17 @@ contains
         call coo_to_csr(fb%n + nl, ci(:m), cj(:m), cv(:m), rows, cols, matrix)
     end subroutine
 
-    subroutine project_slide(fb, w, g)
+    subroutine project_slide(fb, w, g, multiplier)
         ! Remove the slide component of the plasma gradient in the merit
         ! metric: g <- g - G^T mu, mu = argmin sum w (g + G^T mu)^2. This is
         ! the gauge multiplier of the bordered Newton system, so the merit
-        ! measures only the physical (gauge-invariant) residual.
+        ! measures only the physical (gauge-invariant) residual. multiplier
+        ! returns G^T-coefficients b with g_removed = G^T b (FB-C5: b -> 0 at
+        ! an equilibrium in the gauge).
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(in) :: w(:)
         real(dp), intent(inout) :: g(:)
+        real(dp), intent(out), optional :: multiplier(:)
         real(dp) :: a(size(fb%slide, 3), size(fb%slide, 3)), b(size(fb%slide, 3))
         integer :: i, j, k, n, c, nl
         nl = size(fb%slide, 3)
@@ -1470,13 +1419,17 @@ contains
                 g(i) = g(i) - dot_product(fb%slide(c, n, :), b)
             end do
         end do
+        if (present(multiplier)) multiplier = b
     end subroutine
 
     subroutine ideal_fb_solve(fb, tolerance, max_iterations, report, status, verbose, &
                               step_tolerance, residual_tolerance)
-        ! Newton on the KKT system of L (symmetric, indefinite: negative
-        ! vacuum block, multipliers, and with fixed coil currents a negative
-        ! vertical direction of the reduced plasma Hessian). Globalisation:
+        ! Newton on the slide-gauged KKT system of L (symmetric, indefinite:
+        ! negative vacuum block, multipliers, and with fixed coil currents a
+        ! negative vertical direction of the reduced plasma Hessian). The n = 0
+        ! relabelling null is fixed by the bordered slide moments
+        ! (slide_directions); the merit is taken with their multiplier removed.
+        ! Globalisation:
         !   - merit = sum g_i^2/|H_ii| over primal rows, g_i^2 |H_xx| over
         !     constraint rows; a step is accepted when the merit decreases and
         !     every Jacobian stays positive (never on the energy, which is a
@@ -1510,28 +1463,20 @@ contains
         real(dp) :: merit, tmerit, alpha, cap_x, cap_w, disp, rot, minjac, t0
         real(dp) :: step_tol, mu, scale_p, res_tol, history(0:5), tangent_damping
         integer :: it, i, p, st, tries, back, nback
-        integer, allocatable :: tpos(:, :), vrows(:), vcols(:)
-        real(dp), allocatable :: trial_du(:), vmat(:), vg(:), vdu(:)
+        integer, allocatable :: tpos(:, :)
+        real(dp), allocatable :: trial_du(:)
         type(sparse_solver_t) :: csolver
+        type(ideal_fb_hypotheses_t) :: hyp
         logical :: cready
         logical :: talk, accepted, factored, kept, reused_factor
         real(dp) :: kz, fz, fzr, ftry
-        real(dp), parameter :: vertical_tol = 1.0e-6_dp
-        logical :: vertical_open, joint_vertical, slide_gauge
         integer, allocatable :: srows(:), scols(:)
         real(dp), allocatable :: smat(:), sol(:)
         real(dp) :: sscale
         integer :: nslide
-        real(dp) :: vertical_step, force_weight
         kz = 0
-        joint_vertical = fb%rigid_vertical .and. fb%tangential_gauge > 0
-        ! The legacy tangential gauge removes every tangential plasma motion;
-        ! otherwise the slide (relabelling) null is gauged exactly.
-        slide_gauge = .not. fb%tangential_gauge > 0
         nslide = size(fb%slide, 3)
         allocate (sol(fb%n + nslide))
-        vertical_step = 0
-        allocate (vg(fb%n + 1), vdu(fb%n + 1))
         talk = .false.
         if (present(verbose)) talk = verbose
         step_tol = 1.0e-5_dp
@@ -1541,7 +1486,6 @@ contains
         history = huge(1.0_dp)
         cap_x = 0.02_dp*maxval(maxval(fb%reference, dim=2) - minval(fb%reference, dim=2))
         cap_w = 0.5_dp
-        force_weight = cap_x**2/fb%energy_scale
         mu = 1.0e-8_dp
         tangent_damping = fb%tangential_damping
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
@@ -1553,8 +1497,7 @@ contains
         status = IDEAL_FB_NOT_CONVERGED
         if (fb%rigid_vertical) then
             call ideal_fb_rigid_stiffness(fb, 2, 1.0e-3_dp, fz, kz, st)
-            if (st /= IDEAL_FB_OK) kz = 0
-            if (.not. joint_vertical .and. .not. kz < 0) kz = 0
+            if (st /= IDEAL_FB_OK .or. .not. kz < 0) kz = 0
             if (talk) print '(a,es12.4)', '   rigid vertical stiffness K_Z ', kz
         end if
         do it = 1, max_iterations
@@ -1584,14 +1527,12 @@ contains
                     call merit_weights(fb, diag, wts)
                 end if
             end if
-            if (fb%tangential_damping > 0 .or. fb%tangential_gauge > 0) &
+            if (fb%tangential_damping > 0) &
                 call tangential_positions(fb, rowptr, colidx, tpos)
             call merit_weights(fb, diag, wts)
             if (it == 1) fzr = rigid_force(grad)
-            if (fb%tangential_gauge > 0 .and. .not. joint_vertical) &
-                call project_gauge(fb, grad)
-            if (slide_gauge) call project_slide(fb, wts, grad)
-            merit = solve_merit(grad)
+            call project_slide(fb, wts, grad)
+            merit = sum(wts*grad**2)
             if (it == 1) report%merit0 = merit
             report%merit = merit
             report%residual = sqrt(merit/fb%energy_scale)
@@ -1605,29 +1546,21 @@ contains
                 + fb%nx)**2)/fb%energy_scale, sum(wts(fb%np + fb%nx + 1:fb%np + 2*fb%nx) &
                 *grad(fb%np + fb%nx + 1:fb%np + 2*fb%nx)**2)/fb%energy_scale, &
                 sum(wts(fb%np + 2*fb%nx + 1:)*grad(fb%np + 2*fb%nx + 1:)**2)/fb%energy_scale
-            ! The gauge-projected merit is nearly blind to the near-null vertical
-            ! mode: with rigid_vertical, converged also needs |F_Z/K_Z| small.
-            vertical_open = fb%rigid_vertical .and. kz < 0 .and. cready .and. &
-                fb%tangential_gauge > 0
-            if (vertical_open) vertical_open = abs(fzr/kz) > vertical_tol
-            if (joint_vertical) then
-                vertical_open = abs(vertical_step) > vertical_tol
-                if (abs(kz) > tiny(1.0_dp)) vertical_open = vertical_open &
-                    .or. abs(rigid_force(grad)/kz) > vertical_tol
+            if (talk .and. fb%monitor_hypotheses) then
+                call ideal_fb_hypotheses(fb, hyp, st)
+                call ideal_fb_hypotheses_print(hyp, it - 1)
             end if
-            if (.not. vertical_open) then
-                if (res_tol > 0) then
-                    if (report%residual <= res_tol) then
-                        status = IDEAL_FB_OK; exit
-                    end if
-                else if (sqrt(merit) <= tolerance*sqrt(report%merit0)) then
+            if (res_tol > 0) then
+                if (report%residual <= res_tol) then
                     status = IDEAL_FB_OK; exit
                 end if
+            else if (sqrt(merit) <= tolerance*sqrt(report%merit0)) then
+                status = IDEAL_FB_OK; exit
             end if
             history = eoshift(history, 1, merit)
             if (history(0) < huge(1.0_dp)) then
                 if (history(5) > 0.5_dp*history(0) .and. report%step < step_tol &
-                    .and. .not. vertical_open .and. res_tol <= 0) then
+                    .and. res_tol <= 0) then
                     report%floor = .true.; status = IDEAL_FB_OK; exit
                 end if
             end if
@@ -1638,50 +1571,29 @@ contains
                 do i = 1, fb%np
                     dval(dpos(i)) = dval(dpos(i)) + mu*(diag(i) + 1.0e-12_dp*scale_p)
                 end do
-                if (fb%tangential_damping > 0 .or. fb%tangential_gauge > 0) &
+                if (fb%tangential_damping > 0) &
                     call add_tangential(fb, diag, tpos, dval, tangent_damping)
-                if (joint_vertical) call ideal_fb_vertical_system(fb, rowptr, &
-                                                  colidx, val, dval, vrows, vcols, vmat)
-                if (slide_gauge) call slide_system(fb, rowptr, colidx, dval, sscale, &
-                                                   srows, scols, smat)
+                call ideal_fb_slide_system(fb, rowptr, colidx, dval, sscale, &
+                                           srows, scols, smat)
                 t0 = wall()
                 rhs = -grad
-                if (joint_vertical) call ideal_fb_vertical_gradient(fb, grad, vg)
                 ! The first try of a Newton step reuses the factor of the
                 ! previous step as the preconditioner of FGMRES on the current
                 ! KKT matrix (accepted only at full solve accuracy); damped
                 ! retries and Krylov failures refactorise as before.
                 reused_factor = .false.
-                if (factored .and. tries == 1) then
-                    if (joint_vertical) then
-                        call preconditioned_solve(solver, vrows, vcols, vmat, -vg, &
-                                                  vdu, reused_factor)
-                    else if (slide_gauge) then
-                        call preconditioned_solve(solver, srows, scols, smat, &
-                            [rhs, (0.0_dp, i = 1, nslide)], sol, reused_factor)
-                    else
-                        call preconditioned_solve(solver, rowptr, colidx, dval, rhs, &
-                                                  du, reused_factor)
-                    end if
-                end if
+                if (factored .and. tries == 1) &
+                    call preconditioned_solve(solver, srows, scols, smat, &
+                        [rhs, (0.0_dp, i = 1, nslide)], sol, reused_factor)
                 if (.not. reused_factor) then
                     ! One handle for the whole solve: the KKT pattern is fixed,
                     ! so the native backend may reuse its symbolic analysis.
                     if (.not. factored) then
                         if (.not. configure(solver)) exit
                     end if
-                    if (joint_vertical) then
-                        call refactor_kkt_raw(solver, fb%n + 1, fb%n + 1, size(vmat), &
-                            vrows, vcols, vmat, sst, kept, &
-                            report%assembly_roundoff)
-                    else if (slide_gauge) then
-                        call refactor_kkt_raw(solver, fb%n + nslide, fb%n + nslide, &
-                            size(smat), srows, scols, smat, sst, kept, &
-                            report%assembly_roundoff)
-                    else
-                        call refactor_kkt_raw(solver, fb%n, fb%n, size(dval), rowptr, &
-                            colidx, dval, sst, kept, report%assembly_roundoff)
-                    end if
+                    call refactor_kkt_raw(solver, fb%n + nslide, fb%n + nslide, &
+                        size(smat), srows, scols, smat, sst, kept, &
+                        report%assembly_roundoff)
                     report%factorisations = report%factorisations + 1
                     if (kept) report%reused = report%reused + 1
                     if (.not. status_ok(sst)) then
@@ -1689,23 +1601,12 @@ contains
                         mu = 10*mu; cycle
                     end if
                     factored = .true.
-                    if (joint_vertical) then
-                        call sparse_solve(solver, -vg, vdu, sst)
-                    else if (slide_gauge) then
-                        call sparse_solve(solver, [rhs, (0.0_dp, i = 1, nslide)], sol, &
-                                          sst)
-                    else
-                        call sparse_solve(solver, rhs, du, sst)
-                    end if
+                    call sparse_solve(solver, [rhs, (0.0_dp, i = 1, nslide)], sol, sst)
                     if (.not. status_ok(sst)) then
                         status = IDEAL_FB_SOLVE_FAILED; return
                     end if
                 end if
-                if (joint_vertical) then
-                    call ideal_fb_vertical_expand(fb, vdu, du)
-                else if (slide_gauge) then
-                    du = sol(:fb%n)
-                end if
+                du = sol(:fb%n)
                 report%factor_s = report%factor_s + wall() - t0
                 call map_steps(fb, du, disp, rot)
                 alpha = min(1.0_dp, cap_x/max(disp, tiny(1.0_dp)), &
@@ -1735,15 +1636,13 @@ contains
                     call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
                     if (cready .and. st == IDEAL_FB_OK) call project_multipliers(fb, &
                         csolver, rhs)
-                    if (st == IDEAL_FB_OK) ftry = rigid_force(rhs)
-                    if (fb%tangential_gauge > 0 .and. st == IDEAL_FB_OK &
-                        .and. .not. joint_vertical) &
-                        call project_gauge(fb, rhs)
-                    if (slide_gauge .and. st == IDEAL_FB_OK) &
+                    if (st == IDEAL_FB_OK) then
+                        ftry = rigid_force(rhs)
                         call project_slide(fb, wts, rhs)
+                    end if
                     report%line_s = report%line_s + wall() - t0
                     if (st == IDEAL_FB_OK) then
-                        tmerit = solve_merit(rhs)
+                        tmerit = sum(wts*rhs**2)
                         if (tmerit < (1 - 1.0e-4_dp*alpha)*merit) then
                             accepted = .true.; exit
                         end if
@@ -1755,22 +1654,14 @@ contains
                 mu = 10*mu
             end do
             if (.not. accepted) then
-                report%floor = report%residual < 1.0e-6_dp .and. .not. vertical_open
+                report%floor = report%residual < 1.0e-6_dp
                 if (report%floor .and. res_tol <= 0) then
                     status = IDEAL_FB_OK
                 end if
                 exit
             end if
-            if (joint_vertical) then
-                ! Backtracking must not turn an unresolved shift into a
-                ! convergence certificate just by making alpha small.
-                vertical_step = vdu(fb%n + 1)
-                if (talk) print '(a,2es12.4)', '   joint Newton dZ, F_Z ', &
-                    vertical_step, ftry
-            end if
             grad = rhs; fzr = ftry
-            if (kz < 0 .and. cready .and. .not. joint_vertical) &
-                call rigid_vertical_correct()
+            if (kz < 0 .and. cready) call rigid_vertical_correct()
             report%iterations = it
             report%step = alpha*disp
             report%min_jacobian = minjac
@@ -1780,7 +1671,7 @@ contains
                 ! This is step regularisation, not part of the equations.
                 ! A fixed tangential penalty stalls near-null n /= 0 modes
                 ! on fine meshes. Recover Newton as full steps succeed,
-                ! retaining the n = 0 gauge and the residual acceptance test.
+                ! retaining the slide gauge and the residual acceptance test.
                 tangent_damping = tangent_damping/100
             end if
         end do
@@ -1798,15 +1689,6 @@ contains
             wall = real(count, dp)/rate
         end function
 
-        real(dp) function solve_merit(g) result(value)
-            real(dp), intent(in) :: g(:)
-            real(dp) :: projected(size(g))
-            projected = g
-            if (joint_vertical) call project_gauge(fb, projected)
-            value = sum(wts*projected**2)
-            if (joint_vertical) value = value + force_weight*rigid_force(g)**2
-        end function
-
         real(dp) function rigid_force(g)
             ! Net Z force on the plasma nodes (before the gauge projection).
             real(dp), intent(in) :: g(:)
@@ -1818,17 +1700,12 @@ contains
         end function
 
         subroutine rigid_vertical_correct()
-            ! dZ = -F_Z/K_Z on the rigid n = 0 Z mode; kept only when the
-            ! weighted merit decreases or, with the gauge, when |F_Z| does: the
-            ! gauge-projected merit is blind to the vertical mode (an offset
-            ! start already has merit ~ 0, so a merit test rejects every return).
+            ! dZ = -F_Z/K_Z on the rigid n = 0 Z mode, kept only when the
+            ! weighted (slide-projected) merit decreases.
             real(dp), allocatable :: g2(:)
             real(dp) :: dz, m2
             integer :: s3
-            logical :: by_force, accept
-            by_force = fb%tangential_gauge > 0
             dz = -fzr/kz
-            if (by_force .and. .not. abs(dz) > vertical_tol) return
             ftry = fzr
             x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
             fb%plasma%x(2, 1, :) = fb%plasma%x(2, 1, :) + dz
@@ -1841,15 +1718,9 @@ contains
             if (s3 == IDEAL_FB_OK) then
                 call project_multipliers(fb, csolver, g2)
                 ftry = rigid_force(g2)
-                if (fb%tangential_gauge > 0) call project_gauge(fb, g2)
-                if (slide_gauge) call project_slide(fb, wts, g2)
+                call project_slide(fb, wts, g2)
                 m2 = sum(wts*g2**2)
-                if (by_force) then
-                    accept = abs(ftry) < abs(fzr)
-                else
-                    accept = m2 < sum(wts*grad**2)
-                end if
-                if (accept) then
+                if (m2 < sum(wts*grad**2)) then
                     if (talk) print '(a,es10.2,a,es10.3,a,es10.3,a,es10.3,a,es10.3)', &
                         '   rigid dZ ', dz, ' merit ', sum(wts*grad**2), ' ->', m2, &
                         ' F_Z ', fzr, ' ->', ftry
@@ -2029,29 +1900,11 @@ contains
                 k = m + fb%nmode*(a - 1)
                 sa = damping*0.5_dp*(diag(pidx(fb, 1, m, a)) &
                                                    + diag(pidx(fb, 2, m, a)))
-                if (m == 1 .and. fb%rigid_vertical .and. &
-                    fb%tangential_gauge > 0) cycle
-                if (m == 1) sa = sa + fb%tangential_gauge*0.5_dp &
-                    *(diag(pidx(fb, 1, m, a)) + diag(pidx(fb, 2, m, a)))
                 val(tpos(1, k)) = val(tpos(1, k)) + sa*t(1)*t(1)
                 val(tpos(2, k)) = val(tpos(2, k)) + sa*t(1)*t(2)
                 val(tpos(3, k)) = val(tpos(3, k)) + sa*t(2)*t(1)
                 val(tpos(4, k)) = val(tpos(4, k)) + sa*t(2)*t(2)
             end do
-        end do
-    end subroutine
-
-    subroutine project_gauge(fb, g)
-        ! Remove the n = 0 tangential component of the plasma-node gradient.
-        type(ideal_fb_t), intent(in) :: fb
-        real(dp), intent(inout) :: g(:)
-        real(dp) :: t(2), gt
-        integer :: a, i1, i2
-        do a = 1, fb%plasma%nodes
-            t = [-fb%plasma%direction(2, a), fb%plasma%direction(1, a)]
-            i1 = pidx(fb, 1, 1, a); i2 = pidx(fb, 2, 1, a)
-            gt = t(1)*g(i1) + t(2)*g(i2)
-            g(i1) = g(i1) - gt*t(1); g(i2) = g(i2) - gt*t(2)
         end do
     end subroutine
 
@@ -2291,38 +2144,31 @@ contains
     end subroutine
 
     subroutine ideal_fb_newton_step(fb, status, nonaxisymmetric_only)
-        ! One undamped Newton step on the full KKT system (no line search).
+        ! One undamped Newton step on the slide-gauged KKT system (no line
+        ! search): [H, s G^T; s G, 0] [du; mu] = [-g; 0].
         type(ideal_fb_t), intent(inout) :: fb
         integer, intent(out) :: status
         logical, intent(in), optional :: nonaxisymmetric_only
         integer, allocatable :: rowptr(:), colidx(:), rows(:), cols(:)
-        real(dp), allocatable :: val(:), grad(:), du(:), matrix(:), vg(:), vdu(:)
+        real(dp), allocatable :: val(:), grad(:), du(:), matrix(:), sol(:)
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
-        integer :: st
+        integer :: st, nslide
         status = IDEAL_FB_SOLVE_FAILED
-        allocate (grad(fb%n), du(fb%n))
+        nslide = size(fb%slide, 3)
+        allocate (grad(fb%n), du(fb%n), sol(fb%n + nslide))
         call ideal_fb_gradient(fb, grad, st)
         call ideal_fb_hessian(fb, rowptr, colidx, val)
+        call ideal_fb_slide_system(fb, rowptr, colidx, val, plasma_diagonal_mean(fb, &
+            rowptr, colidx, val), rows, cols, matrix)
         if (.not. configure(solver)) return
-        if (fb%rigid_vertical .and. fb%tangential_gauge > 0) then
-            call ideal_fb_vertical_system(fb, rowptr, colidx, val, val, &
-                                          rows, cols, matrix)
-            allocate (vg(fb%n + 1), vdu(fb%n + 1))
-            call ideal_fb_vertical_gradient(fb, grad, vg)
-            call factor_kkt_raw(solver, fb%n + 1, fb%n + 1, size(matrix), &
-                               rows, cols, matrix, sst)
-            if (.not. status_ok(sst)) return
-            call sparse_solve(solver, -vg, vdu, sst)
-            call ideal_fb_vertical_expand(fb, vdu, du)
-        else
-            call factor_kkt_raw(solver, fb%n, fb%n, size(val), rowptr, colidx, val, sst)
-            if (.not. status_ok(sst)) return
-            grad = -grad
-            call sparse_solve(solver, grad, du, sst)
-        end if
+        call factor_kkt_raw(solver, fb%n + nslide, fb%n + nslide, size(matrix), &
+                           rows, cols, matrix, sst)
+        if (.not. status_ok(sst)) return
+        call sparse_solve(solver, [-grad, (0.0_dp, st = 1, nslide)], sol, sst)
         call sparse_destroy(solver)
         if (.not. status_ok(sst)) return
+        du = sol(:fb%n)
         if (present(nonaxisymmetric_only)) then
             ! At an axisymmetric state the modes decouple: keep the n /= 0
             ! part (the linear response to the n /= 0 drive) only.
@@ -2347,6 +2193,21 @@ contains
             end do
         end subroutine
     end subroutine
+
+    real(dp) function plasma_diagonal_mean(fb, rowptr, colidx, val) result(mean)
+        ! Mean |H_ii| over the plasma rows: scale of the slide-gauge border.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: rowptr(:), colidx(:)
+        real(dp), intent(in) :: val(:)
+        integer :: i, p
+        mean = 0
+        do i = 1, fb%np
+            do p = rowptr(i), rowptr(i + 1) - 1
+                if (colidx(p) == i) mean = mean + abs(val(p))
+            end do
+        end do
+        mean = mean/fb%np
+    end function
 
     subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations, shift)
         ! Second variation of the free-boundary system along real Fourier mode
@@ -2459,6 +2320,352 @@ contains
                 col(k + 1) = key; value(k + 1) = tv
             end do
         end subroutine
+    end subroutine
+
+    subroutine ideal_fb_hypotheses(fb, h, status, dense_limit)
+        ! Checks of the open discrete hypotheses at the current state
+        ! (docs/free-boundary-theory.md FB-A2, FB-C5, FB-D2, FB-E1; derivation
+        ! theory/derivations/free-boundary-gauge-vertical.md section 5):
+        !   (V) A_h + S_h > 0 (H_PhiPhi < 0): dense eigenvalues of every S_k
+        !       and of the assembled -mu0 H_PhiPhi;
+        !   (R) full row rank of R = [grad C; G] on the map unknowns:
+        !       lambda_min(R R^T) by inverse iteration through the augmented
+        !       factor [I R^T; R 0] (nonsingular iff R has full row rank; the
+        !       Rayleigh value is an upper bound), sigma_max by power iteration;
+        !   S_red: the Schur complement S_q of the exact KKT matrix onto the
+        !       plasma positions q (shell map, Phi~ and lambda eliminated).
+        !       grad C fixes the shell map as xs = E q, so S_q = [I; E]^T S_map
+        !       [I; E], and S_red = Z_G^T S_q Z_G with Z_G a QR basis of ker G.
+        !       Only the Gamma_p tie rows couple q to the other unknowns, so
+        !       S_q = H_qq - K_qw K_ww^-1 K_wq needs one solve per coupled
+        !       plasma unknown. Dense eigenvalues give its inertia;
+        !   FB-C5: the slide multiplier of the merit projection.
+        ! Under (V) and (R), FB-D2 (Haynsworth inertia additivity and the
+        ! bordering Lemma B2) gives In(K_full) = In(S_red) + (r, r + dim Phi~,
+        ! 0) for the slide-bordered KKT matrix; this is reported as kkt_inertia
+        ! and checked against a dense eigen-solve in test_ideal_free_boundary.
+        ! FortSparse (pinned) exposes no MUMPS inertia, hence the dense path:
+        ! nf and np must not exceed dense_limit (default 8000).
+        type(ideal_fb_t), intent(in) :: fb
+        type(ideal_fb_hypotheses_t), intent(out) :: h
+        integer, intent(out) :: status
+        integer, intent(in), optional :: dense_limit
+        interface
+            subroutine dgeqrf(m, n, a, lda, tau, work, lwork, info)
+                import :: dp
+                integer, intent(in) :: m, n, lda, lwork
+                real(dp), intent(inout) :: a(lda, *)
+                real(dp), intent(out) :: tau(*), work(*)
+                integer, intent(out) :: info
+            end subroutine
+            subroutine dormqr(side, trans, m, n, k, a, lda, tau, c, ldc, work, &
+                              lwork, info)
+                import :: dp
+                character, intent(in) :: side, trans
+                integer, intent(in) :: m, n, k, lda, ldc, lwork
+                real(dp), intent(in) :: a(lda, *), tau(*)
+                real(dp), intent(inout) :: c(ldc, *)
+                real(dp), intent(out) :: work(*)
+                integer, intent(out) :: info
+            end subroutine
+        end interface
+        integer, allocatable :: rowptr(:), colidx(:), ci(:), cj(:), arow(:), acol(:)
+        integer, allocatable :: coupled(:)
+        real(dp), allocatable :: val(:), a(:, :), w(:), cv(:), aval(:), y(:), z(:)
+        real(dp), allocatable :: rhs(:), sol(:), grad(:), diag(:), wts(:), gs(:)
+        real(dp), allocatable :: mult(:), gt(:, :), tau(:), work(:), x(:), v(:)
+        integer, allocatable :: ri(:), rj(:)
+        real(dp), allocatable :: rv(:)
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sst
+        integer :: limit, i, j, p, k, q, it, info, nl, i0, nmap, nr, nred, nw, nc, cnt
+        integer :: c, aa, st
+        real(dp) :: est, num, den, tol, query(1)
+        logical :: ok
+        limit = 8000
+        if (present(dense_limit)) limit = dense_limit
+        status = IDEAL_FB_BAD_INPUT
+        h%status = status
+        if (fb%nf > limit .or. fb%np > limit) return
+        status = IDEAL_FB_SOLVE_FAILED
+        nl = size(fb%slide, 3)
+        call ideal_fb_hessian(fb, rowptr, colidx, val)
+
+        ! (V): S_k and -mu0 H_PhiPhi.
+        h%w_asymmetry = maxval(fb%bem_asymmetry(1, :))
+        h%v_asymmetry = maxval(fb%bem_asymmetry(2, :))
+        h%s_min = huge(1.0_dp)
+        do k = 0, fb%ntor
+            a = fb%s_trace(:, :, k)
+            call symmetric_eigen(a, w, .false., info)
+            if (info /= 0) return
+            h%s_min = min(h%s_min, w(1))
+        end do
+        i0 = fb%np + 2*fb%nx
+        deallocate (a)
+        allocate (a(fb%nf, fb%nf))
+        a = 0
+        do i = 1, fb%nf
+            do p = rowptr(i0 + i), rowptr(i0 + i + 1) - 1
+                if (colidx(p) > i0) a(i, colidx(p) - i0) = -fb%mu0*val(p)
+            end do
+        end do
+        num = 0; den = 0
+        do j = 1, fb%nf
+            do i = 1, fb%nf
+                num = num + (a(i, j) - a(j, i))**2; den = den + a(i, j)**2
+            end do
+        end do
+        h%vacuum_asymmetry = sqrt(num/den)
+        call symmetric_eigen(a, w, .false., info)
+        if (info /= 0) return
+        h%vacuum_min = w(1); h%vacuum_max = w(fb%nf)
+        deallocate (a)
+
+        ! (R): R = [grad C; G] on the map unknowns (plasma, shell map).
+        nmap = fb%np + fb%nx; nr = fb%nx + nl
+        h%constraint_rows = nr
+        cnt = count(abs(fb%slide) > 0)
+        do i = fb%np + fb%nx + 1, fb%np + 2*fb%nx
+            cnt = cnt + count(colidx(rowptr(i):rowptr(i + 1) - 1) <= nmap)
+        end do
+        allocate (ri(cnt), rj(cnt), rv(cnt))
+        cnt = 0
+        do i = fb%np + fb%nx + 1, fb%np + 2*fb%nx
+            do p = rowptr(i), rowptr(i + 1) - 1
+                if (colidx(p) > nmap) cycle
+                cnt = cnt + 1
+                ri(cnt) = i - fb%np - fb%nx; rj(cnt) = colidx(p); rv(cnt) = val(p)
+            end do
+        end do
+        do k = 1, nl
+            do aa = 1, fb%plasma%nodes
+                do c = 1, 2
+                    if (.not. abs(fb%slide(c, aa, k)) > 0) cycle
+                    cnt = cnt + 1
+                    ri(cnt) = fb%nx + k; rj(cnt) = pidx(fb, c, 1, aa)
+                    rv(cnt) = fb%slide(c, aa, k)
+                end do
+            end do
+        end do
+        ! Augmented [I R^T; R 0]: its (2, 2) inverse block is -(R R^T)^-1.
+        allocate (ci(nmap + 2*cnt), cj(nmap + 2*cnt), cv(nmap + 2*cnt))
+        ci(:nmap) = [(i, i=1, nmap)]; cj(:nmap) = ci(:nmap); cv(:nmap) = 1
+        ci(nmap + 1:nmap + cnt) = nmap + ri; cj(nmap + 1:nmap + cnt) = rj
+        ci(nmap + cnt + 1:) = rj; cj(nmap + cnt + 1:) = nmap + ri
+        cv(nmap + 1:nmap + cnt) = rv; cv(nmap + cnt + 1:) = rv
+        call coo_to_csr(nmap + nr, ci, cj, cv, arow, acol, aval)
+        deallocate (ci, cj, cv)
+        allocate (y(nr), z(nr), rhs(nmap + nr), sol(nmap + nr), x(nmap))
+        ok = configure(solver)
+        if (ok) then
+            call sparse_factor(solver, nmap + nr, nmap + nr, size(aval), arow, acol, &
+                               aval, sst)
+            ok = status_ok(sst)
+        end if
+        h%constraint_sigma_min = 0
+        est = 0
+        if (ok) then
+            y = [(1 + 0.1_dp*sin(1.3_dp*i), i=1, nr)]
+            y = y/norm2(y)
+            do it = 1, 40
+                rhs = 0; rhs(nmap + 1:) = y
+                call sparse_solve(solver, rhs, sol, sst)
+                if (.not. status_ok(sst)) exit
+                z = -sol(nmap + 1:)
+                est = dot_product(y, z)
+                y = z/norm2(z)
+            end do
+            if (status_ok(sst) .and. est > 0) h%constraint_sigma_min = sqrt(1/est)
+            call sparse_destroy(solver)
+        end if
+        y = [(1 + 0.1_dp*cos(0.7_dp*i), i=1, nr)]
+        y = y/norm2(y)
+        do it = 1, 40
+            x = 0
+            do p = 1, cnt
+                x(rj(p)) = x(rj(p)) + rv(p)*y(ri(p))
+            end do
+            z = 0
+            do p = 1, cnt
+                z(ri(p)) = z(ri(p)) + rv(p)*x(rj(p))
+            end do
+            est = norm2(z)
+            y = z/est
+        end do
+        h%constraint_sigma_max = sqrt(est)
+        h%full_rank = h%constraint_sigma_min > h%rank_tolerance*h%constraint_sigma_max
+        deallocate (arow, acol, aval, y, z, rhs, sol, x)
+
+        ! S_q: K_ww (all unknowns but the plasma positions), factorised once.
+        nw = fb%n - fb%np
+        cnt = 0
+        do i = fb%np + 1, fb%n
+            cnt = cnt + count(colidx(rowptr(i):rowptr(i + 1) - 1) > fb%np)
+        end do
+        allocate (ci(cnt), cj(cnt), cv(cnt))
+        cnt = 0
+        do i = fb%np + 1, fb%n
+            do p = rowptr(i), rowptr(i + 1) - 1
+                if (colidx(p) <= fb%np) cycle
+                cnt = cnt + 1
+                ci(cnt) = i - fb%np; cj(cnt) = colidx(p) - fb%np; cv(cnt) = val(p)
+            end do
+        end do
+        call coo_to_csr(nw, ci, cj, cv, arow, acol, aval)
+        deallocate (ci, cj, cv)
+        if (.not. configure(solver)) return
+        call sparse_factor(solver, nw, nw, size(aval), arow, acol, aval, sst)
+        if (.not. status_ok(sst)) return
+        allocate (a(fb%np, fb%np), coupled(fb%np), rhs(nw), sol(nw))
+        a = 0; nc = 0
+        do i = 1, fb%np
+            do p = rowptr(i), rowptr(i + 1) - 1
+                if (colidx(p) <= fb%np) then
+                    a(i, colidx(p)) = val(p)
+                else if (nc == 0) then
+                    nc = nc + 1; coupled(nc) = i
+                else if (coupled(nc) /= i) then
+                    nc = nc + 1; coupled(nc) = i
+                end if
+            end do
+        end do
+        do q = 1, nc
+            j = coupled(q)
+            rhs = 0
+            do p = rowptr(j), rowptr(j + 1) - 1
+                if (colidx(p) > fb%np) rhs(colidx(p) - fb%np) = val(p)
+            end do
+            call sparse_solve(solver, rhs, sol, sst)
+            if (.not. status_ok(sst)) then
+                call sparse_destroy(solver); return
+            end if
+            do k = 1, nc
+                i = coupled(k)
+                do p = rowptr(i), rowptr(i + 1) - 1
+                    if (colidx(p) > fb%np) a(i, j) = a(i, j) &
+                        - val(p)*sol(colidx(p) - fb%np)
+                end do
+            end do
+        end do
+        call sparse_destroy(solver)
+        do j = 1, fb%np
+            do i = j + 1, fb%np
+                a(i, j) = 0.5_dp*(a(i, j) + a(j, i)); a(j, i) = a(i, j)
+            end do
+        end do
+        ! Z_G: the trailing columns of Q in G^T = Q R.
+        allocate (gt(fb%np, nl), tau(nl), work(1))
+        gt = 0
+        do k = 1, nl
+            do aa = 1, fb%plasma%nodes
+                do c = 1, 2
+                    gt(pidx(fb, c, 1, aa), k) = fb%slide(c, aa, k)
+                end do
+            end do
+        end do
+        call dgeqrf(fb%np, nl, gt, fb%np, tau, query, -1, info)
+        if (info /= 0) return
+        deallocate (work); allocate (work(max(1, nint(query(1)))))
+        call dgeqrf(fb%np, nl, gt, fb%np, tau, work, size(work), info)
+        if (info /= 0) return
+        deallocate (work); allocate (work(max(1, 64*fb%np)))
+        call dormqr('L', 'T', fb%np, fb%np, nl, gt, fb%np, tau, a, fb%np, work, &
+                    size(work), info)
+        if (info /= 0) return
+        call dormqr('R', 'N', fb%np, fb%np, nl, gt, fb%np, tau, a, fb%np, work, &
+                    size(work), info)
+        if (info /= 0) return
+        nred = fb%np - nl
+        h%reduced_dim = nred
+        block
+            real(dp), allocatable :: b(:, :)
+            b = a(nl + 1:, nl + 1:)
+            deallocate (a)
+            call symmetric_eigen(b, w, .true., info)
+            if (info /= 0) return
+            tol = 1.0e-10_dp*maxval(abs(w))
+            h%zero_tolerance = tol
+            h%n_positive = count(w > tol); h%n_negative = count(w < -tol)
+            h%n_zero = nred - h%n_positive - h%n_negative
+            h%reduced_min = w(1); h%reduced_max = w(nred)
+            h%reduced_min_abs = minval(abs(w))
+            allocate (x(fb%np), v(fb%np))
+            x = 0; x(nl + 1:) = b(:, 1)
+            call dormqr('L', 'N', fb%np, 1, nl, gt, fb%np, tau, x, fb%np, work, &
+                        size(work), info)
+            if (info /= 0) return
+            v = 0
+            do aa = 1, fb%plasma%nodes
+                v(pidx(fb, 2, 1, aa)) = 1
+            end do
+            h%vertical_overlap = abs(dot_product(x, v))/(norm2(x)*norm2(v))
+        end block
+        h%kkt_inertia = [h%n_positive + nr, h%n_negative + nr + fb%nf, h%n_zero]
+
+        ! FB-C5: slide multiplier of the merit projection.
+        allocate (grad(fb%n), diag(fb%n), wts(fb%n), mult(nl))
+        call ideal_fb_gradient(fb, grad, st)
+        if (st /= IDEAL_FB_OK) return
+        diag = 0
+        do i = 1, fb%n
+            do p = rowptr(i), rowptr(i + 1) - 1
+                if (colidx(p) == i) diag(i) = abs(val(p))
+            end do
+        end do
+        call merit_weights(fb, diag, wts)
+        gs = grad
+        call project_slide(fb, wts, gs, mult)
+        h%slide_multiplier = maxval(abs(mult))
+        h%slide_residual = sqrt(sum(wts*(grad - gs)**2)/fb%energy_scale)
+        status = IDEAL_FB_OK
+        h%status = status
+    end subroutine
+
+    subroutine ideal_fb_hypotheses_print(h, iteration)
+        ! One line of the per-state hypothesis report.
+        type(ideal_fb_hypotheses_t), intent(in) :: h
+        integer, intent(in), optional :: iteration
+        integer :: it
+        it = -1
+        if (present(iteration)) it = iteration
+        print '(a,i4,a,i0,a,2es9.2,a,es10.3,a,es10.3,a,l1,a,3(1x,i0),a,es11.3, &
+            &a,es10.3,a,es10.3)', '   hypotheses', it, ' status ', h%status, &
+            ' W,V asym ', h%w_asymmetry, h%v_asymmetry, ' min eig(A+S) ', &
+            h%vacuum_min, ' sigma_min(R) ', h%constraint_sigma_min, ' full rank ', &
+            h%full_rank, ' In(S_red)', h%n_positive, h%n_negative, h%n_zero, &
+            ' min ', h%reduced_min, ' min|.| ', h%reduced_min_abs, ' slide mu ', &
+            h%slide_multiplier
+    end subroutine
+
+    subroutine symmetric_eigen(a, w, vectors, info)
+        ! Eigenvalues (ascending) and optionally eigenvectors (in a) of a dense
+        ! symmetric matrix, LAPACK dsyev with a workspace query.
+        real(dp), intent(inout) :: a(:, :)
+        real(dp), allocatable, intent(out) :: w(:)
+        logical, intent(in) :: vectors
+        integer, intent(out) :: info
+        interface
+            subroutine dsyev(jobz, uplo, n, a, lda, w, work, lwork, info)
+                import :: dp
+                character, intent(in) :: jobz, uplo
+                integer, intent(in) :: n, lda, lwork
+                real(dp), intent(inout) :: a(lda, *)
+                real(dp), intent(out) :: w(*), work(*)
+                integer, intent(out) :: info
+            end subroutine
+        end interface
+        real(dp) :: query(1)
+        real(dp), allocatable :: work(:)
+        character :: job
+        integer :: n
+        n = size(a, 1)
+        job = merge('V', 'N', vectors)
+        allocate (w(n))
+        call dsyev(job, 'U', n, a, n, w, query, -1, info)
+        if (info /= 0) return
+        allocate (work(max(1, nint(query(1)))))
+        call dsyev(job, 'U', n, a, n, w, work, size(work), info)
     end subroutine
 
     subroutine block_solve(fb, row0, col0, nb, du, status)
