@@ -384,3 +384,117 @@ rigid Z shift gives the Rayleigh quotient K_Z/(plasma nodes) ≈ −2.68e4/1.55e
 ≈ −17.4, consistent with λ_min = −17.9 (a Rayleigh quotient bounds λ_min from
 above). The +15 mm Z start was monitored at all 6 Newton
 states (status 0 and full row rank at each).
+
+
+## Landreman axisymmetric benchmark
+
+Implemented 2026-10-20: `ideal_fb_landreman_axisymmetric` exercises the existing
+N = 0 free-boundary map solver with an independently constructed external
+field. `src/mhd/landreman_benchmark.f90` provides frozen data and the existing
+`ideal_fb_set_drive` sampler contract; no new solver input path is needed.
+This is the first stage of [gap 9](free-boundary-theory.md#5-implementation-gap-list-status-tracked-per-item).
+
+The source is [Landreman v2, equations (7)–(8)](https://arxiv.org/html/2609.26742v2#S2.SS1),
+with μ0 = 1, δ = 0.01, ψ = (R² − 1)²/4 + Z² and S0 = {ψ = δ}:
+
+- B_in = (2Z/R, sqrt(1 − 4ψ)/R, 1 − R²) in (R, φ, Z) components;
+- p̃ = 2(δ − ψ), with zero pressure at S0;
+- J = curl B_in = (4Z/(R sqrt(1 − 4ψ)), 2/R + 2R,
+  −2(R² − 1)/sqrt(1 − 4ψ)).
+
+`gen/gen_landreman.f90` retains these definitions and emits checked-in primal,
+JVP and VJP leaves in `src/generated/kin6d_landreman_leaves.f90`. Six exact
+FortSym native zero tests check divergence, field tangency, all three force
+balance components and current tangency. UNKNOWN fails; no probe is accepted.
+CTest checks the invariants at roundoff, the current against an independent
+closed form, field derivatives by finite differences, and JVP/VJP pairing in
+the Euclidean scalar-input/output pairing. No CAS is required for ordinary
+builds. To regenerate with the repository-pinned FortSym build:
+
+```sh
+cmake -S . -B build -DKIN6D_FORTSYM_BUILD=/path/to/pinned/fortsym/build
+cmake --build build --target gen_landreman
+./build/gen_landreman
+```
+
+For B_J on S0, the toroidal current is integrated over the meridian section,
+using FortFEM's ring Green function. Boundary-centred Duffy rays in
+(u = (R² − 1)/2, Z) remove the leading singularity. The poloidal current's
+Biot–Savart field is purely toroidal, (F(ψ) − F(δ))/R inside and zero outside;
+its continuous trace on S0 is zero. This supplies the full B_J boundary vector.
+A 48/96 Gauss-order comparison checks quadrature convergence numerically.
+
+The continuation fits B_in − B_J on 96 S0 points to 24 toroidal ring sources
+on ψ = 9δ, outside Γ_c = {ψ = 2.56δ}. LAPACK SVD uses cutoff 1e-12. The TF
+part is F(δ)/R, with F(δ) = sqrt(1 − 4δ). Half-step and independently shifted
+holdout points check the fit and the full traction defect. The sources are
+outside the open solid torus D_c and the TF singular axis is excluded. The
+fitted field is vacuum there; finite-difference curl/div checks at radii
+1.2, 1.4 and 1.6 times sqrt(δ) report continuation evidence. Agreement with the
+exact B_x is sampled only: **G4 for the exact field remains a hypothesis**.
+Neither a small residual nor exterior source placement validates analytic
+continuation of the exact Cauchy data.
+
+The sampler supplies the fitted external field plus the standard
+c = −I_p circulation filament. B_J itself is not added to the drive: its
+remaining exterior multipoles are the BEM's unknown plasma response.
+Independent boundary circulation confirms the sign of c; the external field
+has zero poloidal period. The reference toroidal cycle is a coaxial longitude
+and has linking number zero with the circular magnetic axis (also checked by
+a resolved Gauss linking integral). Both interior and external toroidal periods
+are 2πF. These checks cover this cycle, not an arbitrary ε > 0 reference map.
+
+Measured numerical evidence (GNU Fortran, Release, two OpenMP threads):
+
+| quantity | value |
+|---|---:|
+| holdout full-vector drive defect | 4.8e-9 |
+| volume quadrature change, 48 → 96 | 1.1e-9 |
+| S0 tangential jump / flux leak / traction defect | 5.2e-9 / 4.7e-9 / 1.1e-9 |
+| vacuum curl/div FD residual through Γ_c | 2.1e-10 |
+| P3 chains 16 → 32: sampled S0 distance | 1.7e-5 → 8.9e-7 |
+| interior max field error | 1.3e-4 → 1.0e-5 |
+| interior max pressure error | 3.1e-6 → 1.4e-7 |
+| solved-vacuum trace field error | 3.0e-4 → 4.4e-5 |
+| solved-vacuum traction defect | 5.2e-5 → 6.1e-6 |
+| ψ-lane S0 flux-distance indicator | 1.6e-4 → 1.5e-5 |
+| ψ-lane interior poloidal field error | 3.2e-4 → 3.3e-5 |
+| ψ-lane interior pressure error (μ0-scaled) | 4.8e-5 → 4.9e-6 |
+
+The same test also runs `kin6d_gs_free_boundary` on both meshes with the
+fitted rings as ordinary filament coils. Its χ = −ψ convention requires
+p′ = 2/μ0 and FF′ = 2, and circuit current scale 1/μ0 for the dimensionless
+ring coefficients. The target-mean boundary functional sets χ_b on S0.
+There is no extra manufactured load. The converged χ − χ_b and poloidal field
+are checked against δ − ψ and B_in; the boundary flux error divided by
+|∇ψ| is reported as a distance indicator. Both lanes use the same physical
+drive and independent discretizations. The general D8 cross-lane state adapter
+and common registry runner remain open.
+
+The map-lane distance uses an explicit projection onto S0 along radial lines in (u,Z);
+it is a sampled upper estimate of nearest-surface distance, including edge
+interiors. It is not a whole-surface or interval bound. The solve starts from
+S0, uses the physical gradient without manufactured loads, and requires an
+absolute residual below 1e-8 in σV units. Family 1 has closed lines; this tests
+stationarity and refinement, not nondegeneracy or offset-start recovery.
+
+Acceptance budgets are 1% of the declared scales a = sqrt(δ), 2a for the
+poloidal field and 2δ for pressure: 1e-3, 2e-3 and 2e-4 respectively. The drive
+field defect receives 1% of the field allowance (2e-5). Stress tolerance follows
+|B·dB| + |dB|²/2 + |dp| with |B| ≤ 1.2 as the engineering scale. Errors must
+also fall under refinement. These are benchmark tolerances, not rigorous
+solution bounds from FB-E2. The exact solution is an oracle only.
+
+Run `ctest --test-dir build -j 2 -R '^ideal_fb_landreman_axisymmetric$'`.
+The fit stores a 192 × 24 matrix (about 36 KiB); quadrature costs
+O(Nfit Nq²), and field sampling costs O(Nsources). The complete two-mesh, two-lane test
+takes about 5 seconds on the development host. There is no performance ranking.
+The generated leaves expose derivatives; fit and equilibrium sensitivities are
+not reported here. All outputs have **candidate / numerical evidence** status;
+validated quadrature, G4 continuation, β_h and continuous bounds are unavailable.
+
+The ε > 0 family 1 and sheared/Issan return tests remain blocked by the separate
+3D frozen-data input and all-mode slide-gauge gaps. The present
+`ideal_frozen_t%evaluate(point(2), ...)` cannot encode those data. The sheared
+family also has p′ = −1/λ² in its paper's flux normalization; it must not reuse
+family 1's pressure law blindly.
