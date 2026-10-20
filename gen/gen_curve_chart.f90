@@ -95,6 +95,9 @@ program gen_curve_chart
     call w%emit('curve_geometry', vn(1:6), ['speed', 'kappa'], &
                 [sqrt(speed2), sqrt(curvature2)])
     call w%emit('curve_norm', vn(1:3), ['norm'], [sqrt(speed2)])
+    ! Reference omega length scale for the map solver's fixed gauge form.
+    ! In a cylindrical chart this is R^2; q1 itself need not be a radius.
+    call w%emit('curve_omega_metric', vn(1:3), ['metric'], [speed2])
     call w%emit('curve_rotate', [vn(1:3), 't       '], &
                 ['x', 'y', 'z'], [v(1, 0)*cos(t) - v(2, 0)*sin(t), &
                                   v(1, 0)*sin(t) + v(2, 0)*cos(t), v(3, 0)])
