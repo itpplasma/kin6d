@@ -311,7 +311,7 @@ if(NOT TARGET fortsparse)
     # SuperLU may carry an incompatible reference-BLAS dependency.
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG a651a40972d96e07e89aded59f8c7d613a2b81cd
+        GIT_TAG 09fc2b406aecf4f5ddda30e53aef8cc8bdb8b0c5
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
