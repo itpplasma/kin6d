@@ -43,6 +43,10 @@ kin6d_test_labels(ideal_fb_hypotheses_bordering fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_map_derivatives_and_rotation_null fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_curve_chart_landreman fast CLASSES mhd
+    TARGETS test_curve_chart_solver)
+kin6d_test_labels(ideal_map_curve_chart_figure8 fast CLASSES mhd
+    TARGETS test_curve_chart_solver)
 kin6d_test_labels(ideal_map_n3_leakage fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_solovev_a3_p2 slow CLASSES mhd
