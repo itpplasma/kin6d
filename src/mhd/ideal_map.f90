@@ -4,7 +4,7 @@ module kin6d_ideal_map
     ! s = (s1, s2, s3): (s1, s2) the master coordinates of each triangle of a
     ! 2D reference mesh and s3 = phi-hat, into Cartesian space,
     !     X(s) = H(q(s)),  q = (q1, q2, phi-hat + omega),
-    ! where H is a chart (cylindrical here) and q1, q2, omega are Lagrange P_k in
+    ! where H is a chart and q1, q2, omega are Lagrange P_k in
     ! the plane times a real Fourier series in phi-hat with n in nfp*Z, |n| <=
     ! nfp*ntor. The frozen flux density b (a closed 2-form, contravariant density
     ! in s) and pressure p (gamma = 0) are carried by the reference; the field is
@@ -42,7 +42,8 @@ module kin6d_ideal_map
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_map_leaves, only: ideal_energy_density, ideal_energy_gradient, &
         ideal_energy_hessian
-    use kin6d_equilibrium_chart, only: ideal_chart_t
+    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t, curve_chart_t
+    use kin6d_curve_chart_leaves, only: curve_omega_metric
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
@@ -264,6 +265,13 @@ contains
         integer :: g, j, m, k, a, c, e, l, order
         status = IDEAL_MAP_BAD_INPUT
         if (nfp < 1 .or. ntor < 0) return
+        select type (chart)
+        class is (curve_chart_t)
+            ! Geometry couples modes even when the unknown has ntor=0.
+            ! Require an explicit periodic quadrature and the admitted period.
+            if (.not. present(nphi)) return
+            if (nfp /= chart%field_periods()) return
+        end select
         map%nloc = size(mesh%triangles, 1)
         if (map%nloc /= 6 .and. map%nloc /= 10) return
         allocate (map%chart, source=chart)
@@ -742,8 +750,9 @@ contains
         ! Reference-metric form of the omega gauge term; weight relative to the
         ! largest physical omega stiffness R^2 |b_pol|^2/det G of the reference.
         type(ideal_map_t), intent(inout) :: map
-        real(dp) :: dg(2, 2), ginv(2, 2), y(2), chi_s(2), v(10), scale, w
-        integer :: e, g, n
+        real(dp) :: dg(2, 2), ginv(2, 2), y(2), chi_s(2), v(10), scale, w, metric, h33
+        real(dp) :: pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        integer :: e, g, n, j
         n = map%nloc
         allocate (map%omega_gauge(n, n, map%cells))
         map%omega_gauge = 0
@@ -759,8 +768,14 @@ contains
                     [2, 2])/(ginv(1, 1)*ginv(2, 2) - ginv(1, 2)*ginv(2, 1))
                 chi_s = [map%b(2, g, e), -map%b(1, g, e)]
                 v(:n) = map%det(g, e)*matmul(matmul(chi_s, ginv), map%dshape(:, :n, g))
-                w = map%weight(g)*y(1)**2/map%det(g, e)
-                scale = max(scale, y(1)**2*sum(map%b(1:2, g, e)**2)/map%det(g, e)**2)
+                metric = 0
+                do j = 1, map%nphi
+                    call map%chart%jet([y, map%phi(j)], pos, d1, d2, d3)
+                    call curve_omega_metric(d1(1, 3), d1(2, 3), d1(3, 3), h33)
+                    metric = metric + h33/map%nphi
+                end do
+                w = map%weight(g)*metric/map%det(g, e)
+                scale = max(scale, metric*sum(map%b(1:2, g, e)**2)/map%det(g, e)**2)
                 map%omega_gauge(:, :, e) = map%omega_gauge(:, :, e) &
                     + w*spread(v(:n), 2, n)*spread(v(:n), 1, n)
             end do
@@ -1422,6 +1437,13 @@ contains
         if (map%ntor /= 0) then
             info = IDEAL_MAP_BAD_INPUT; return
         end if
+        ! The one-solve quadratic elimination is specific to an axisymmetric
+        ! cylindrical chart, not to a zero Fourier mode in an arbitrary chart.
+        select type (chart => map%chart)
+        class is (cylindrical_chart_t)
+        class default
+            info = IDEAL_MAP_BAD_INPUT; return
+        end select
         allocate (grad(map%ndof), full(map%ndof), rhs(map%nred), dw(map%nred), &
             shift(map%nred))
         shift = 0
@@ -1649,6 +1671,14 @@ contains
         real(dp) :: dphi, y(2), wv
         integer :: e, gq, j, a, b, m, info, iterations
         logical, allocatable :: held(:)
+        ! This diagnostic's mass and background field are cylindrical.
+        residual = huge(1.0_dp); sigma = 0
+        status = IDEAL_MAP_BAD_INPUT
+        select type (chart => map%chart)
+        class is (cylindrical_chart_t)
+        class default
+            return
+        end select
         allocate (g(map%ndof), f(map%ndof), held(map%ndof))
         call ideal_map_energy(map, map%x, energy, status, g)
         if (status /= IDEAL_MAP_OK) return
