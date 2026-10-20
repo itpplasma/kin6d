@@ -14,7 +14,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "b29e82cf6e41dc1e5509c2e6722ad99f5a5132bd")
+set(KIN6D_FORTNUM_REVISION "0a27a7f84249fc91e42118a1a8ae7f8573de1bd4")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -62,6 +62,8 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/interp/fortnum_bspline.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
+    ${fortnum_SOURCE_DIR}/src/generated/fortnum_coulomb_series_kernel.f90
+    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_coulomb.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
     ${fortnum_SOURCE_DIR}/src/special/fortnum_special_elliptic.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_hypergeom_2f1_term_kernel.f90
@@ -99,7 +101,8 @@ if(KIN6D_ENABLE_OPENMP)
 endif()
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
-set_source_files_properties(src/generated/kin6d_leaves.f90 PROPERTIES
+set_source_files_properties(src/generated/kin6d_leaves.f90
+    src/generated/kin6d_pp_fusion_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # Layered libraries (ROADMAP "Build structure and fast development loop"):
 # L0 kin6d_core; L1 kin6d_fem2d, kin6d_pairs; L2 model classes; `kin6d` is the
@@ -156,7 +159,8 @@ endforeach()
 find_package(LAPACK REQUIRED)
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
     src/pairs/radial_dvr.f90)
-target_sources(kin6d_quantum PRIVATE src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
+target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
+    src/quantum/pp_fusion.f90 src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
@@ -765,6 +769,23 @@ foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlat
     target_link_libraries(test_${quantum_family} PRIVATE kin6d)
     add_test(NAME ${quantum_family}_oracles COMMAND test_${quantum_family})
 endforeach()
+add_executable(pp_fusion_export app/pp_fusion_export.f90)
+add_dependencies(pp_fusion_export kin6d_build_info)
+target_include_directories(pp_fusion_export PRIVATE ${CMAKE_BINARY_DIR}/result_include)
+target_link_libraries(pp_fusion_export PRIVATE kin6d kin6d_io)
+
+add_test(NAME pp_fusion_export_contract
+    COMMAND ${CMAKE_COMMAND} -DPROGRAM=$<TARGET_FILE:pp_fusion_export>
+        -DWORK=${CMAKE_BINARY_DIR}/pp-fusion-export-test
+        -P ${CMAKE_SOURCE_DIR}/test/check_pp_fusion_export.cmake)
+set_tests_properties(pp_fusion_export_contract PROPERTIES PROCESSORS 4)
+
+add_executable(test_pp_fusion test/test_pp_fusion.f90)
+target_link_libraries(test_pp_fusion PRIVATE kin6d)
+add_test(NAME pp_fusion_oracles COMMAND test_pp_fusion
+    ${CMAKE_SOURCE_DIR}/test/reference/pp_fusion_ode.dat)
+set_tests_properties(pp_fusion_oracles PROPERTIES PROCESSORS 4)
+
 add_executable(test_coulomb_encounter test/test_coulomb_encounter.f90)
 target_link_libraries(test_coulomb_encounter PRIVATE kin6d)
 add_test(NAME coulomb_encounter_oracles COMMAND test_coulomb_encounter)
@@ -877,7 +898,7 @@ if(KIN6D_FORTSYM_BUILD)
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
-            quantum_reference_gallery classical_pair coulomb species coulomb_encounter
+            quantum_reference_gallery classical_pair coulomb species coulomb_encounter pp_fusion
             jellium_cell ocp)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
