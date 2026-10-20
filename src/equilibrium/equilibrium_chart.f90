@@ -51,8 +51,15 @@ module kin6d_equilibrium_chart
         procedure :: init => curve_init
         procedure :: jet => curve_jet
         procedure :: tube_radii => curve_tube_radii
+        procedure :: field_periods => curve_field_periods
     end type
 contains
+    pure integer function curve_field_periods(chart) result(nfp)
+        class(curve_chart_t), intent(in) :: chart
+        nfp = 0
+        if (allocated(chart%axis_c)) nfp = chart%nfp
+    end function
+
     subroutine curve_init(chart, axis_c, axis_s, nfp, status, guide_c, guide_s, &
                           samples)
         ! status: 0 admitted, 1 invalid input/symmetry, 2 unresolved frame.
