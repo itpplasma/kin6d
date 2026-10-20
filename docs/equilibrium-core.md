@@ -173,6 +173,13 @@ lane:
    and seeds lane B, which must stay stationary to discretisation accuracy.
 5. The D5 identities.
 
+Registered first-stage free-boundary case: `ideal_fb_landreman_axisymmetric`
+([data and evidence](ideal-free-boundary.md#landreman-axisymmetric-benchmark)).
+It checks Landreman E0 through the N = 0 map solve, source-fit vacuum drive,
+S0 distance and field/pressure refinement, and solves the same ring-coil
+drive through `gs_free`. Offset recovery and a shared registry runner remain open; the closed-line family supplies
+stationarity evidence only.
+
 Solvers are Newton(–Krylov) with exact derivatives and shared globalisation
 (Armijo or trust region, quadrature tightening, det DX > 0 guard); heuristic
 gradient descent is not an acceptance path.
