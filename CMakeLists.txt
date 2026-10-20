@@ -340,6 +340,10 @@ else()
 endif()
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_coils.f90 src/equilibrium/gs_coupling.f90
     src/equilibrium/gs_free_boundary.f90 src/equilibrium/gs_coil_inverse.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/equilibrium_harness.f90)
+add_executable(test_equilibrium_harness test/test_equilibrium_harness.f90)
+target_link_libraries(test_equilibrium_harness PRIVATE kin6d)
+add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90)
@@ -483,6 +487,13 @@ endif()
 add_test(NAME gs_free_boundary_t4_green_function_cross_check COMMAND test_gs_fb_greens)
 set_tests_properties(gs_free_boundary_t4_green_function_cross_check PROPERTIES TIMEOUT 1800)
 add_test(NAME gs_free_boundary_t3_manufactured_newton COMMAND test_gs_fb_manufactured)
+foreach(start reference rp rm zp zm el)
+    add_test(NAME equilibrium_d8_psi_offset_${start}
+        COMMAND test_gs_fb_manufactured offset ${start})
+    set_tests_properties(equilibrium_d8_psi_offset_${start} PROPERTIES
+        TIMEOUT 600 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 set_tests_properties(gs_free_boundary_t3_manufactured_newton PROPERTIES TIMEOUT 1800)
 add_executable(test_gs_coupled_majorant test/test_gs_coupled_majorant.f90)
 target_link_libraries(test_gs_coupled_majorant PRIVATE kin6d_gs_fb_test)
