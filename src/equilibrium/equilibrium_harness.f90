@@ -133,8 +133,10 @@ contains
         report%status = D8_BAD_REPORT
         call solve(spec, resolution, start, state, report)
         if (report%status /= D8_OK) return
-        if (.not. all(ieee_is_finite([report%oracle_error, report%seed_error, &
-            report%residual, report%sigma]))) then
+        if (.not. ieee_is_finite(report%oracle_error) &
+            .or. .not. ieee_is_finite(report%seed_error) &
+            .or. .not. ieee_is_finite(report%residual) &
+            .or. .not. ieee_is_finite(report%sigma)) then
             report%status = D8_BAD_REPORT
             return
         end if

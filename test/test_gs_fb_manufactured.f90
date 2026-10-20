@@ -25,7 +25,7 @@ program test_gs_fb_manufactured
     use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
                  gs_fb_history_t, gs_fb_setup, gs_fb_evaluate, gs_fb_newton, GS_FB_OK, &
                                       GS_FB_LIMITER, GS_FB_TARGET_MEAN, GS_FB_XPOINT
-    use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b, fe_value
+    use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b
     use gs_fb_fixture, only: make_law, bump, bump_laplacian
     use kin6d_equilibrium_harness, only: equilibrium_case_t, &
         equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
