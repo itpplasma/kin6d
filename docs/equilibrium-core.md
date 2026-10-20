@@ -330,6 +330,7 @@ time-to-accuracy measurements):
 6. **3D free-boundary conditioning.** That shell + Γ_c keeps the ψ lane's
    position conditioning when Γ_p is a material surface of the map is a
    hypothesis; NL-3a with offset starts decides it.
+   Gauge, saddle and convergence obligations: [free-boundary-theory.md](free-boundary-theory.md).
 
 Chris&AI
 

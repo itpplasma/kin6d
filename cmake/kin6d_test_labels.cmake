@@ -39,6 +39,8 @@ kin6d_test_labels(ideal_fb_vacuum_gamma_c_independence_n3 fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_slide_gauge_curl_free fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
+kin6d_test_labels(ideal_fb_hypotheses_bordering fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_map_derivatives_and_rotation_null fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n3_leakage fast CLASSES mhd
@@ -282,7 +284,11 @@ kin6d_test_labels(grad_shafranov_curved_readback fast CLASSES equilibrium
     TARGETS test_gs_curved_readback)
 kin6d_test_labels(grad_shafranov_p3_curved_readback fast CLASSES equilibrium
     TARGETS test_gs_curved_readback)
-kin6d_test_labels(gs_free_3d_nl3a_fixture_return slow CLASSES mhd
+foreach(case r0 rp rm zp zm el gzm)
+    kin6d_test_labels(gs_free_3d_nl3a_fixture_return_${case} slow CLASSES mhd
+        TARGETS gs_free_3d gs_free)
+endforeach()
+kin6d_test_labels(gs_free_3d_fixture_hypotheses slow CLASSES mhd
     TARGETS gs_free_3d gs_free)
 kin6d_test_labels(gs_free_app_contract fast CLASSES equilibrium TARGETS gs_free)
 kin6d_test_labels(grad_shafranov_p2_readback_order fast CLASSES equilibrium
