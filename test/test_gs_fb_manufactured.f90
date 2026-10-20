@@ -17,7 +17,7 @@ program test_gs_fb_manufactured
     !! error of the coupled operator. Run with an edge jump of the source and
     !! with a law that vanishes at the edge, for the limiter and the
     !! mean-at-targets modes, P2 and P3, on a mesh sequence.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
     use kin6d_gs_coupling, only: gs_coupling_source_load, GS_COUPLING_OK
@@ -27,7 +27,21 @@ program test_gs_fb_manufactured
                                       GS_FB_LIMITER, GS_FB_TARGET_MEAN, GS_FB_XPOINT
     use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b, fe_value
     use gs_fb_fixture, only: make_law, bump, bump_laplacian
+    use kin6d_equilibrium_harness, only: equilibrium_case_t, &
+        equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
+        equilibrium_start, run_equilibrium_case, write_equilibrium_report
     implicit none
+    type :: psi_case_state_t
+        type(gs_state_t) :: gs
+        type(gs_fb_system_t) :: system
+        type(gs_fb_history_t) :: history
+        type(gs_fb_eval_t) :: evaluation
+        real(dp), allocatable :: exact(:), forcing(:)
+        real(dp) :: scale, seed_error
+    end type
+    type(equilibrium_start_t) :: selected_start
+    character(16) :: command, start_name
+    integer :: input_status
 
     real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
     real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
@@ -41,23 +55,36 @@ program test_gs_fb_manufactured
 
     failures = 0
     call build_coils(coils)
-    call sweep('limiter, edge jump, P2', 2, [24, 48, 96], GS_FB_LIMITER, .true., 2.0_dp)
-    call sweep('limiter, vanishing edge, P2', 2, [24, 48, 96], GS_FB_LIMITER, &
-               .false., 2.0_dp)
-    call sweep('targets, edge jump, P3', 3, [24, 48], GS_FB_TARGET_MEAN, .true., 3.0_dp)
-    call sweep('targets, vanishing edge, P3', 3, [24, 48], GS_FB_TARGET_MEAN, &
-               .false., 3.0_dp)
-    ! A second flux bump below the plasma creates a saddle: FB-cut mode with
-    ! psi_b = psi_a + c (psi_X - psi_a), c < 1, and the X-point rank-one term.
-    with_second = .true.
-    call sweep('FB-cut c=0.8 X point, edge jump, P3', 3, [32, 64], GS_FB_XPOINT, &
-               .true., 3.0_dp)
-    ! The separatrix itself (c = 1): the source must vanish at the edge there.
-    case_fraction = 1.0_dp
-    call sweep('separatrix X point, vanishing edge, P2', 2, [32, 64, 128], &
-               GS_FB_XPOINT, .false., 2.0_dp)
-    case_fraction = 0.8_dp
-    with_second = .false.
+    start_name = 'legacy'
+    if (command_argument_count() > 0) then
+        call get_command_argument(1, command)
+        if (command /= 'offset') error stop 'expected offset start-name'
+        call get_command_argument(2, start_name)
+    end if
+    call equilibrium_start(trim(start_name), selected_start, input_status)
+    if (input_status /= 0) error stop 'unknown D8 start'
+    if (start_name /= 'legacy') then
+        call sweep('D8 limiter offset P2', 2, [24, 48, 96], &
+            GS_FB_LIMITER, .true., 2.0_dp)
+    else
+        call sweep('limiter, edge jump, P2', 2, [24, 48, 96], GS_FB_LIMITER, .true., 2.0_dp)
+        call sweep('limiter, vanishing edge, P2', 2, [24, 48, 96], GS_FB_LIMITER, &
+                   .false., 2.0_dp)
+        call sweep('targets, edge jump, P3', 3, [24, 48], GS_FB_TARGET_MEAN, .true., 3.0_dp)
+        call sweep('targets, vanishing edge, P3', 3, [24, 48], GS_FB_TARGET_MEAN, &
+                   .false., 3.0_dp)
+        ! A second flux bump below the plasma creates a saddle: FB-cut mode with
+        ! psi_b = psi_a + c (psi_X - psi_a), c < 1, and the X-point rank-one term.
+        with_second = .true.
+        call sweep('FB-cut c=0.8 X point, edge jump, P3', 3, [32, 64], GS_FB_XPOINT, &
+                   .true., 3.0_dp)
+        ! The separatrix itself (c = 1): the source must vanish at the edge there.
+        case_fraction = 1.0_dp
+        call sweep('separatrix X point, vanishing edge, P2', 2, [32, 64, 128], &
+                   GS_FB_XPOINT, .false., 2.0_dp)
+        case_fraction = 0.8_dp
+        with_second = .false.
+    end if
     if (failures /= 0) error stop 'gs_fb_manufactured failures'
     print '(a)', 'gs_fb_manufactured (T3) oracles passed'
 
@@ -134,18 +161,24 @@ contains
         type(gs_fb_eval_t) :: ev
         type(gs_fb_history_t) :: history
         real(dp), allocatable :: exact(:), seed(:), f_load(:), vac(:)
-        real(dp) :: scale, psib_exact, angle, g(1, 2)
+        real(dp) :: scale, psib_exact, angle, seed_semi(2)
+        type(psi_case_state_t) :: result
+        type(equilibrium_run_report_t) :: verification
+        character(32) :: case_name
         integer :: status, i, n, m, k
 
         call build_state(state, n_outer, order, status)
         call require(status == 0, 'mesh')
         n = size(state%points, 2)
         allocate (exact(n), seed(n), vac(n))
+        seed_semi = semi
+        seed_semi(2) = semi(2)*(1 + selected_start%elongation)
         do i = 1, n
             exact(i) = exact_flux(state%points(1, i), state%points(2, i))
             vac(i) = vacuum(state%points(1, i), state%points(2, i))
             seed(i) = vac(i) + bump(state%points(1, i), state%points(2, i), &
-                                   centre + [0.10_dp, -0.08_dp], semi, 0.3_dp*amplitude)
+                                   centre + selected_start%displacement, seed_semi, &
+                                   selected_start%amplitude*amplitude)
             if (with_second) seed(i) = seed(i) + bump(state%points(1, i), &
                           state%points(2, i), low_c + [0.03_dp, 0.02_dp], low_s, 0.7_dp)
         end do
@@ -193,13 +226,44 @@ contains
         call gs_fb_evaluate(state, sys, exact, currents, ev, status, jacobian=.false.)
         errors(3) = norm2(ev%residual)/norm2(f_load)
         state%psi = seed
-        call gs_fb_newton(state, sys, currents, status, history)
-        iterations = history%iterations
-        if (status /= GS_FB_OK) print '(a,i4)', '   Newton status ', status
-        call require(status == GS_FB_OK, trim(label)//': Newton converged')
         scale = maxval(abs(exact))
-        errors(1) = maxval(abs(state%psi - exact))/scale
-      call gs_fb_evaluate(state, sys, state%psi, currents, ev, status, jacobian=.false.)
+        result%gs = state
+        result%system = sys
+        result%exact = exact
+        result%forcing = f_load
+        result%scale = scale
+        result%seed_error = maxval(abs(seed - exact))/scale
+        select case (mode)
+        case (GS_FB_LIMITER)
+            case_name = 'limiter-'
+        case (GS_FB_TARGET_MEAN)
+            case_name = 'targets-'
+        case (GS_FB_XPOINT)
+            case_name = 'xpoint-'
+            if (case_fraction == 1.0_dp) case_name = 'separatrix-'
+        end select
+        if (jump) then
+            case_name = trim(case_name)//'jump'
+        else
+            case_name = trim(case_name)//'smooth'
+        end if
+        call run_equilibrium_case(trim(case_name), 'psi', &
+            equilibrium_resolution_t(order, n_outer), trim(start_name), &
+            run_psi_case, result, verification)
+        call write_equilibrium_report(output_unit, verification)
+        call require(verification%status == 0, trim(label)//': D8 solve/report')
+        if (verification%status /= 0) error stop 'D8 psi case'
+        state = result%gs
+        history = result%history
+        ev = result%evaluation
+        iterations = verification%iterations
+        errors(1) = verification%oracle_error
+        if (start_name /= 'legacy' .and. n_outer == 96) then
+            call require(errors(1) < 0.03_dp, 'offset return within 3 percent')
+            if (start_name /= 'reference') &
+                call require(errors(1) < 0.1_dp*verification%seed_error, &
+                             'offset corrected beyond seed stationarity')
+        end if
         errors(2) = abs(ev%psi_bound - psib_exact)/scale
     print '(a,a,i4,a,i2,a,3es10.2)', trim(label), ' edges ', n_outer, '  Newton its ', &
             iterations, '  nodal, psi_b, exact-residual ', errors
@@ -207,8 +271,34 @@ contains
         print '(a,12es10.2)', '   damping history  ', history%damping
         print '(a,12es10.2)', '   step history     ', history%step
         print '(a,12es10.2)', '   Ip history       ', history%ip
-        call check_quadratic(history)
+        if (start_name == 'legacy') call check_quadratic(history)
     end subroutine solve_case
+
+    subroutine run_psi_case(spec, resolution, start, state, verification)
+        type(equilibrium_case_t), intent(in) :: spec
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        type(equilibrium_start_t), intent(in) :: start
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(inout) :: verification
+        if (spec%lane /= 'psi') return
+        if (resolution%degree < 2 .or. start%name /= start_name) return
+        select type (state)
+        type is (psi_case_state_t)
+            call gs_fb_newton(state%gs, state%system, currents, &
+                verification%status, state%history)
+            if (verification%status /= GS_FB_OK) return
+            verification%iterations = state%history%iterations
+            verification%oracle_error = &
+                maxval(abs(state%gs%psi - state%exact))/state%scale
+            verification%seed_error = state%seed_error
+            call gs_fb_evaluate(state%gs, state%system, state%gs%psi, &
+                currents, state%evaluation, verification%status, jacobian=.false.)
+            if (verification%status /= GS_FB_OK) return
+            verification%residual = norm2(state%evaluation%residual) &
+                /max(norm2(state%forcing), tiny(1.0_dp))
+            verification%residual_norm = 'forced discrete l2 / l2(manufactured load)'
+        end select
+    end subroutine
 
     subroutine check_quadratic(history)
         !! Quadratic Newton convergence: once the relative residual is below

@@ -533,3 +533,11 @@ if(TARGET gen_curve_chart)
 endif()
 kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
+
+# D8/M6: same native solver and manufactured oracle as the T3 ladder.
+foreach(start reference rp rm zp zm el)
+    kin6d_test_labels(equilibrium_d8_psi_offset_${start} slow CLASSES equilibrium
+        TARGETS test_gs_fb_manufactured)
+endforeach()
+kin6d_test_labels(equilibrium_d8_registry_contract fast CLASSES equilibrium
+    TARGETS test_equilibrium_harness)
