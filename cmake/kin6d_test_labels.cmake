@@ -519,3 +519,6 @@ kin6d_test_labels(nonnested_transport_fourier_equilibrated fast CLASSES mhd
 
 kin6d_test_labels(pp_fusion_oracles fast CLASSES quantum TARGETS test_pp_fusion)
 kin6d_test_labels(pp_fusion_export_contract fast CLASSES quantum TARGETS pp_fusion_export)
+
+kin6d_test_labels(pp_fusion_eft_oracles fast CLASSES quantum TARGETS test_pp_fusion_eft)
+kin6d_test_labels(pp_fusion_eft_export_contract fast CLASSES quantum TARGETS pp_fusion_eft_export)

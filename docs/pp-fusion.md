@@ -15,6 +15,10 @@ The default result is approximately
 | S′(0)/S(0) | 11.2322 MeV⁻¹ | Bahcall–May: 11.2 ± 0.1 MeV⁻¹ |
 | f_pp^R(0) | 0.14444456 | Solar Fusion II rounded convention: 0.144 |
 
+A separate [pionless EFT calculation](pp-fusion-eft.md) uses low-energy
+observables and a lattice two-body axial counterterm, with its own order and
+uncertainty ledger.
+
 The comparison with the full recommended rate is at the few-percent level.
 It does not establish its quoted one-percent uncertainty for this older,
 one-body model. P_D is potential dependent, not a directly measurable fraction.

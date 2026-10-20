@@ -102,7 +102,8 @@ endif()
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
-    src/generated/kin6d_pp_fusion_leaves.f90 PROPERTIES
+    src/generated/kin6d_pp_fusion_leaves.f90
+    src/generated/kin6d_pp_fusion_eft_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # Layered libraries (ROADMAP "Build structure and fast development loop"):
 # L0 kin6d_core; L1 kin6d_fem2d, kin6d_pairs; L2 model classes; `kin6d` is the
@@ -160,7 +161,9 @@ find_package(LAPACK REQUIRED)
 target_sources(kin6d_pairs PRIVATE src/generated/kin6d_coulomb_encounter_leaves.f90
     src/pairs/radial_dvr.f90)
 target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
-    src/quantum/pp_fusion.f90 src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
+    src/quantum/pp_fusion.f90
+    src/generated/kin6d_pp_fusion_eft_leaves.f90 src/quantum/pp_fusion_eft.f90
+    src/quantum/coulomb_encounter.f90 src/quantum/coulomb_kepler.f90)
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
@@ -781,6 +784,23 @@ add_test(NAME pp_fusion_export_contract
         -P ${CMAKE_SOURCE_DIR}/test/check_pp_fusion_export.cmake)
 set_tests_properties(pp_fusion_export_contract PROPERTIES PROCESSORS 4)
 
+add_executable(pp_fusion_eft_export app/pp_fusion_eft_export.f90)
+add_dependencies(pp_fusion_eft_export kin6d_build_info)
+target_include_directories(pp_fusion_eft_export PRIVATE ${CMAKE_BINARY_DIR}/result_include)
+target_link_libraries(pp_fusion_eft_export PRIVATE kin6d kin6d_io)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/pp_fusion_eft_export_contract)
+add_test(NAME pp_fusion_eft_export_contract
+    COMMAND ${CMAKE_COMMAND} -DPROGRAM=$<TARGET_FILE:pp_fusion_eft_export>
+        -DWORK=${CMAKE_BINARY_DIR}/pp_fusion_eft_export_contract
+        -P ${CMAKE_SOURCE_DIR}/test/check_pp_fusion_eft_export.cmake)
+set_tests_properties(pp_fusion_eft_export_contract PROPERTIES PROCESSORS 4)
+
+add_executable(test_pp_fusion_eft test/test_pp_fusion_eft.f90)
+target_link_libraries(test_pp_fusion_eft PRIVATE kin6d)
+add_test(NAME pp_fusion_eft_oracles COMMAND test_pp_fusion_eft
+    ${CMAKE_SOURCE_DIR}/test/reference/pp_fusion_eft.dat)
+set_tests_properties(pp_fusion_eft_oracles PROPERTIES PROCESSORS 4)
+
 add_executable(test_pp_fusion test/test_pp_fusion.f90)
 target_link_libraries(test_pp_fusion PRIVATE kin6d)
 add_test(NAME pp_fusion_oracles COMMAND test_pp_fusion
@@ -899,7 +919,8 @@ if(KIN6D_FORTSYM_BUILD)
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud
             fermi_gas quantum_fock quantum_evolution quantum_correlations
-            quantum_reference_gallery classical_pair coulomb species coulomb_encounter pp_fusion
+            quantum_reference_gallery classical_pair coulomb species coulomb_encounter
+            pp_fusion pp_fusion_eft
             jellium_cell ocp)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
