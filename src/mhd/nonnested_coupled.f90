@@ -50,7 +50,7 @@ module kin6d_nonnested_coupled
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND, FORTSPARSE_MEMORY_LOW, &
-        native_ordering_available
+        native_ordering_available, FORTSPARSE_LU_SUPERNODAL
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
@@ -1044,6 +1044,7 @@ contains
             if (.not. gs_direct_mpi_ready()) return
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
             solver%options%ordering = FORTSPARSE_ORDER_AMD
             solver%options%structural_matching = .true.
             ! ND on the original graph avoids the observed saddle fill growth.
