@@ -94,6 +94,10 @@ namelist/NetCDF provenance contract. It currently provides:
 - a hybrid classical plasma whose close encounters are promoted to quantum
   scattering kernels.
 
+The [pp-fusion teaching case](docs/pp-fusion.md) adds a Reid68 coupled-channel
+deuteron, Coulomb-normalized stationary pp scattering, and a computed one-body
+S factor with independent ODE references and explicit unavailable-bound status.
+
 Each case carries its own claim (certified, certified-discrete, reference
 comparison, indicator or statistical); see
 [microscopic quantum validation](docs/quantum-microscopic-validation.md) and
