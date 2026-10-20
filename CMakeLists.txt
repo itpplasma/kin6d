@@ -1383,6 +1383,13 @@ target_link_libraries(test_curve_chart PRIVATE kin6d_equilibrium)
 foreach(mode circle jets tube periodic invalid)
     add_test(NAME equilibrium_curve_chart_${mode} COMMAND test_curve_chart ${mode})
 endforeach()
+add_executable(test_curve_chart_solver test/test_curve_chart_solver.f90)
+target_link_libraries(test_curve_chart_solver PRIVATE kin6d_mhd)
+foreach(mode landreman figure8)
+    add_test(NAME ideal_map_curve_chart_${mode} COMMAND test_curve_chart_solver ${mode})
+    set_tests_properties(ideal_map_curve_chart_${mode} PROPERTIES TIMEOUT 120
+        PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 foreach(k 2 3)
     add_test(NAME equilibrium_core_d7_readback_p${k}
         COMMAND test_equilibrium_core readback ${k})
