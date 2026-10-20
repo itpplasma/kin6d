@@ -70,7 +70,7 @@ module kin6d_ideal_free_boundary
         sparse_refactor, sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, &
         csc_normalize_symmetric_raw, &
-        FORTSPARSE_ORDER_AMD
+        FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL
     implicit none
     private
     public :: ideal_fb_t, ideal_fb_report_t, ideal_fb_init, ideal_fb_set_drive
@@ -1807,6 +1807,7 @@ contains
             csolver%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
         csolver%options%symmetry = FORTSPARSE_SYM_GENERAL
+        csolver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         call factor_kkt_raw(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), &
                             v(:nnz), sst, symmetric=.false.)
         ready = status_ok(sst)
@@ -2014,11 +2015,13 @@ contains
             if (.not. ready) return
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
             solver%options%ordering = FORTSPARSE_ORDER_AMD
             solver%options%nthreads = 0
         else
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         end if
         ready = .true.
     end function
@@ -2705,6 +2708,7 @@ contains
                 solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             end if
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         end if
         call factor_kkt_raw(solver, nb, nb, nnz, rp, ci(:nnz), v(:nnz), &
                             sst, symmetric=(row0 == col0))
