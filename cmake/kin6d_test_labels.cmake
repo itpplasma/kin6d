@@ -531,3 +531,5 @@ if(TARGET gen_curve_chart)
     kin6d_test_labels(equilibrium_curve_chart_regeneration fast CLASSES equilibrium
         TARGETS gen_curve_chart)
 endif()
+kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
+    TARGETS test_landreman_free_boundary)

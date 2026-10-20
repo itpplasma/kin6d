@@ -350,6 +350,15 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
     src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_sources(kin6d_mhd PRIVATE src/generated/kin6d_landreman_leaves.f90
+    src/mhd/landreman_benchmark.f90)
+set_source_files_properties(src/generated/kin6d_landreman_leaves.f90 PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_landreman_free_boundary test/test_landreman_free_boundary.f90)
+target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
+set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
+    TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
@@ -911,7 +920,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_response_error
-            equilibrium_core curve_chart nonnested vacuum_shell
+            equilibrium_core curve_chart nonnested vacuum_shell landreman
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
