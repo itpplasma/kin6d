@@ -19,6 +19,10 @@ program test_pp_fusion
     call get_command_argument(1, path)
     open (newunit=unit, file=trim(path), status='old')
     read (unit, *) ref
+    ! Schiavilla et al. 1998: GV=1.14939(65)e-11 MeV^-2; the frozen
+    ! 2011 ft update is inside this tolerance. This catches an isospin factor.
+    call require(abs(pp_vector_coupling()-1.14939e-11_dp)<8e-15_dp, &
+        'superallowed weak vector normalization')
     call pp_fusion_solve(cfg, result, ok, jac)
     call require(ok, 'default solve')
     base = observables(result)
