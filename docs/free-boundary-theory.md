@@ -1,6 +1,6 @@
 # Free-boundary equilibrium: native formulation and proof obligations
 
-Status: theory specification, stage 1 (2026-10-19), repaired after the independent proof audit of 2026-10-19. Code: gap items 4 and 6 implemented 2026-10-19 (status rows FB-A2, FB-C5, FB-D2, FB-D4, FB-E1). Implementation: `src/mhd/ideal_free_boundary.f90`.
+Status: theory specification, stage 1 (2026-10-19), repaired after the independent proof audit of 2026-10-19. Code: gap item 1 implemented as a standalone chart 2026-10-20 (numerical validity diagnostics, no solver integration); gap items 4 and 6 implemented 2026-10-19 (status rows FB-A2, FB-C5, FB-D2, FB-D4, FB-E1). Implementation: `src/mhd/ideal_free_boundary.f90`.
 
 This document owns the mathematical formulation of KIN6D's free-boundary map-lane equilibrium and the numbered proof-obligation map. Other ownership is unchanged:
 
@@ -26,7 +26,7 @@ The formulation is native and chart-abstract. It is not VMEC/NESTOR (virtual cas
 - Reference domain Ω̂ = Ω̂_p ∪ Ω̂_s: a curved P_k reference mesh of the region inside Γ̂_c, with the plasma boundary Γ̂_p as an internal chain, times a reference angle φ̂ (Fourier, n ∈ nfp ℤ).
 - Map X = H∘q. The chart H is an `ideal_chart_t` and enters only through its jet (H, dH, d²H, d³H). Two charts are needed:
   - cylindrical (implemented);
-  - curve frame H = Γ(q3) + q1 N(q3) + q2 B(q3) (planned; required for figure-8, [Plunk et al. 2025](https://doi.org/10.1088/1361-6587/adb64b), [Hindenlang, Plunk and Maj, arXiv:2410.17595](https://arxiv.org/abs/2410.17595)).
+  - curve frame H = Γ(q3) + q1 N(q3) + q2 B(q3) (standalone `curve_chart_t` implemented; see [chart contract and evidence](ideal-map-3d.md#curve-chart-fourier-axis-and-projected-guide-g-frame); required for figure-8, [Plunk et al. 2025](https://doi.org/10.1088/1361-6587/adb64b), [Hindenlang, Plunk and Maj, arXiv:2410.17595](https://arxiv.org/abs/2410.17595)).
 - Every statement below uses only X, DX, det DX, dH and the chart coordinate q3. No statement needs a global cylindrical angle.
 - Chart hypothesis (per case): det dH > 0 on the image (within the frame's injectivity radius for a curve frame), and B·∇q3 > 0 on the plasma (field lines advance in q3).
 
@@ -145,7 +145,7 @@ Bibliographic metadata verified by Crossref (2026-10-19). The content claims are
 
 | Piece | Chart dependence today | Required |
 |---|---|---|
-| plasma energy, gradients, Hessian | chart jets only (`ideal_map`, `ideal_fb_init` takes `class(ideal_chart_t)`) | curve-frame chart in `equilibrium_chart` |
+| plasma energy, gradients, Hessian | chart jets only (`ideal_map`, `ideal_fb_init` takes `class(ideal_chart_t)`) | standalone `curve_chart_t` available (verified numerical chart tests); integration into a non-cylindrical case remains |
 | vacuum shell leaf | DX only (`gen_vacuum_shell`) | none |
 | shell multivalued part | F dq3 + c dθ̂/2π, chart coordinate (`src/mhd/ideal_free_boundary.f90:707`) | none (harmonicity not needed) |
 | exterior S | R1 per-n cylindrical, axisymmetric Γ_c (verified) | R2 chart-free 3D BEM on a general Γ_c (FortFEM upstream) |
@@ -155,9 +155,9 @@ Bibliographic metadata verified by Crossref (2026-10-19). The content claims are
 | shell field output | cylindrical components (`src/mhd/ideal_free_boundary.f90:2451–2500`) | Cartesian (DESIGN rule) |
 | Γ_c | scaled 2D boundary | closed surface inside the frame tube and outside the plasma |
 
-## 5. Implementation gap list (not implemented in this stage)
+## 5. Implementation gap list and status
 
-1. Curve-frame chart H = Γ(q3) + q1 N(q3) + q2 B(q3), with jets to third order, in `equilibrium_chart`. Includes an injectivity-radius check and a FortSym identity-reduction test (gate `g_frame_figure8_equilibrium`, [ROADMAP](../ROADMAP.md) R12).
+1. Done as a standalone chart (2026-10-20): `curve_chart_t` in `equilibrium_chart`, H = Γ(q3) + q1 N(q3) + q2 B(q3), with a periodic projected-guide G-frame and FortSym-generated jets through third order. Verified: symbolic circular relabelling/determinant identities; native jet/periodicity/symmetry tests; numerical curvature and conservative nonoverlap radii, including a lifted analytic figure-8. Hypothesis: continuous validity with floating-point rounding bounded; rigorous geometry enclosures are unavailable. No free-boundary solver integration. The full `g_frame_figure8_equilibrium` gate ([ROADMAP](../ROADMAP.md) R12) remains open; see [chart contract and evidence](ideal-map-3d.md#curve-chart-fourier-axis-and-projected-guide-g-frame).
 2. Chart-free exterior operator R2: 3D Laplace Calderón operators on general curved Γ_c panels in FortFEM (upstream), symmetric coupling, plain surface traces of coil fields, and a closed-filament B_f.
 3. 3D slide gauge on all reference modes, with the moment formula ∫φ_l(∇χ×∇q3)·ξ (FB-C6). Test: curl-free defect and Gram positivity on a 3D frozen state.
 4. Done (2026-10-19): `tangential_gauge` and the normal-only vertical coordinate are removed; every solve and `ideal_fb_newton_step` is slide-gauged. F_Z and K_Z remain reported diagnostics (FB-D4).
