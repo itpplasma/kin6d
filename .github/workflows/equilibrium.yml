@@ -25,8 +25,8 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
       - name: Build affected consumers
-        run: cmake --build build -j 4 --target test_curve_chart_solver test_curve_chart test_ideal_map_axisymmetric test_ideal_free_boundary test_landreman_free_boundary test_equilibrium_core test_gs_readback_free gs_phase1
+        run: cmake --build build -j 4 --target test_curve_chart_solver test_curve_chart test_ideal_map_axisymmetric test_ideal_free_boundary test_landreman_free_boundary test_equilibrium_core test_equilibrium_boundary test_equilibrium_geometry test_gs_readback_free gs_phase1
       - name: Run affected native tests
         run: >-
           ctest --test-dir build -j 4 --output-on-failure
-          -R '^(ideal_map_curve_chart_.*|equilibrium_curve_chart_.*|ideal_map_derivatives_and_rotation_null|ideal_map_reduced_omega_derivatives|ideal_map_n3_leakage|ideal_fb_derivatives|ideal_fb_landreman_axisymmetric|equilibrium_core_.*|gs_k6_mini_regression|gs_readback_free.*|kin6d_layering)$'
+          -R '^(ideal_map_curve_chart_.*|equilibrium_curve_chart_.*|ideal_map_derivatives_and_rotation_null|ideal_map_reduced_omega_derivatives|ideal_map_n3_leakage|ideal_fb_derivatives|ideal_fb_landreman_axisymmetric|equilibrium_core_.*|gs_k6_mini_regression|grad_shafranov_p[23]_readback_free|kin6d_layering)$'
