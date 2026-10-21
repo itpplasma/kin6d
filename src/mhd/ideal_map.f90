@@ -1110,6 +1110,14 @@ contains
                     end do
                 end do
             end do
+            ! The scalar-energy Hessian has one authoritative triangle.
+            ! Reflect after P^T H P: cancellation in independently evaluated
+            ! contractions must not create an antisymmetric Newton operator.
+            do c = 1, nr
+                do r = 1, c - 1
+                    blocks(r, c, e) = blocks(c, r, e)
+                end do
+            end do
             deallocate (fa, fb, full, half)
         end do
         !$omp end parallel do
