@@ -76,7 +76,11 @@ contains
         logical :: ok
         character(:), allocatable :: message
         integer :: j
-        spec%name = str(name)
+        spec%name = str(name); spec%generator = str('gen_s0')
+        spec%generator_revision = str(fortsym_revision)
+        spec%regenerate_command = str('gen_s0 from pinned FortSym build')
+        spec%pure_procedure = .true.; spec%elemental_procedure = .true.
+        spec%openmp_declare_target = .false.
         allocate(spec%args(size(args)),spec%outputs(size(outputs)))
         do j = 1, size(args)
             spec%args(j) = str(trim(args(j)))
