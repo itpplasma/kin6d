@@ -211,6 +211,42 @@ addition leaves that solver contract intact. Existing supported fixed-boundary
 map cases remain the solver checks; a claim of a solved eps>0 equilibrium
 requires a compatible reference/chart adapter and the D3/D4 error report.
 
+## Admission of solved-case regression tests
+
+[V] The paper-to-generator check uses Issan (4)--(7) for the integer family
+and (15)--(21) for the sheared family. In the integer field, the generated
+factors `(1+eps)/sqrt(1-eps**2)` and `(1-eps)/sqrt(1-eps**2)` equal a/b and
+b/a on the admitted domain. In the sheared field, replacing the symbolic
+phase by Re(omega K)-S absorbs the pi/2 in Xi: sin(Xi)=cos(phase+i nu) and
+cos(Xi)=-sin(phase+i nu). Expanding these two identities gives the retained
+real field. Setting tau=0 gives the corresponding Landreman definitions.
+The surface inversion solves Issan (19) on the principal branch, and the
+generated `rhs=2 G sqrt((1-Y**2)/(cosh(nu)**2-rho**2))` is (21), since
+`2 G=h+eps cos(2t)` and `rho**2=2 psi`. No equation discrepancy was found in
+these implemented definitions. The eight exact FortSym lemmas and the
+independent complex-formula test check different parts of this argument.
+
+[V] Exact-oracle tests are not fixed-boundary equilibrium solves. Three
+current interfaces prevent registering the requested non-axisymmetric
+Landreman/Issan solved-case gates as already supported:
+
+- `ideal_frozen_t%evaluate` accepts two coordinates, with a reference field
+  and pressure independent of the toroidal coordinate. Neither a 3D oracle
+  initializer nor its frozen-form pullback is supplied here.
+- `map_equilibrium` in `src/mhd/map_equilibrium.f90` returns
+  `EQ_UNAVAILABLE` for `ntor/=0` or a non-cylindrical chart.
+- `ideal_map_residual` in `src/mhd/ideal_map.f90` rejects a non-cylindrical
+  chart; the D7 labelled-field contract and its surface readback are
+  axisymmetric (`src/equilibrium/equilibrium_state.f90`).
+
+[H] A solved-case gate needs an admitted reference/chart pullback, an
+independent 3D field/surface/iota readback and a compatible force diagnostic,
+followed by a small native convergence ladder. Extending those scientific
+contracts is solver work. A boundary export, oracle interpolation, or an
+axisymmetric reduction must not be counted as that solve. The sheared family
+also needs pressure and iota tabulated in the receiving solver's toroidal
+flux coordinate; the existing geometry-only export does not supply them.
+
 
 [V] Optional installed-reader verification is retained in
 `test/external/check_nested_boundary_consumers.py`. Run it with `vmecpp`,
