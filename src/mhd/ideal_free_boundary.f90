@@ -2496,7 +2496,7 @@ contains
             !$omp parallel do default(shared) private(i,p) schedule(static)
             do i = 1, nr
                 do p = rows(i), rows(i + 1) - 1
-                    scaled(p) = scale(i)*values(p)*scale(cols(p))
+                    scaled(p) = values(p)*(scale(i)*scale(cols(p)))
                 end do
             end do
             !$omp end parallel do
