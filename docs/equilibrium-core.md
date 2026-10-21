@@ -266,9 +266,13 @@ geometry view), `equilibrium_residual` (D3, fortsym-proved stress leaf);
 `map_equilibrium` now adapts N = 0 cylindrical maps, retaining the reference
 form and represented geometry without solver factors. It recomputes physical B
 with the generated Piola leaf (including omega shear), checks the supplied
-reference against the frozen quadrature data, and reports a candidate. Curved
-charts and nonzero Fourier maps return unavailable; their D3 displacement
-spaces and D7 contracts still need extension. P2/P3 deformed Solovev tests
+reference against the frozen quadrature data, and reports a candidate. The original adapter still rejects curved charts and nonzero Fourier maps.
+`map_3d_equilibrium` additionally admits cylindrical Fourier maps through the
+common physical-field evaluator, retaining the frozen form and checking its
+consistency with quadrature data. Its D8 consumers report a named free-gradient
+norm, not a 3D D3 dual norm or state-error estimator; see
+[the boundary/profile slice](ideal-seed-3d.md). Curved-chart D7 and the full
+3D D3/D4 contracts remain unavailable. P2/P3 deformed Solovev tests
 check D3 convergence, independent physical fields, generated JVP/VJP and
 OpenMP parity/scaling. Continuous field bounds remain unavailable. M2 `equilibrium_readback` on
 `labelled_field_t`; `read_gs_equilibrium` is a thin caller and takes
