@@ -249,7 +249,7 @@ contains
         do level = 1, 3
             area = 0.0012_dp/4**(level - 1)
             call resolve_geqdsk(imported%data, area, solved, eq, status, &
-                                edge_pressure=0.0_dp)
+                                edge_pressure=0.0_dp, curved_lcfs=.true.)
             call require(status == 0, 'CHEASE native cold solve')
             call read_equilibrium(eq, 17, 96, rb, status, rho_grid=rho)
             call require(status == 0, 'CHEASE native D7')
@@ -269,6 +269,12 @@ contains
             errors(:, 3)
         print '(a,3es14.5)', 'CHEASE native refinement changes in these errors: ', &
             abs(errors(:, 3) - errors(:, 2))
+        ! Reconstructed grid q is a field-integral comparator, not independent
+        ! CHEASE output. A fixed affine 128-point LCFS gives 2.26% here even
+        ! after interior refinement; the curved contour gives about 0.60%.
+        ! Linear pprime/FFprime reconstruction remains a separate error source.
+        call require(abs(rb%q(5)/imported%data%q(17) - 1) < 0.01_dp, &
+                     'CHEASE curved LCFS interior q reconstruction budget')
         if (errors(1, 3) > grid_axis_error .or. &
             errors(2, 3) > abs(half%psi_axis - grid%psi_axis) .or. &
             errors(3, 3) > grid_q_error) then
