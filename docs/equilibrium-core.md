@@ -99,6 +99,11 @@ map-lane Newton, exact at the reference; (2) the regular-space linear ideal
 response operator; (3) the base of the closures L5 (resistive) and L6 (ideal,
 broken + Frobenius) for MARS-F/GPEC-class response.
 
+[V] The first local D5 increment is described in [ideal-xi.md](ideal-xi.md):
+the gamma=0 plasma-volume xi form, exact FortSym Hessian identities and
+per-n cylindrical displacement jets. Global FE assembly, gauge reduction and
+boundary coupling remain next increments.
+
 Required code tests: Hess W |_{X=id} on mode n equals L4_n to roundoff
 (TC24 §7.4). At N = 0 the map lane is prescribed-q GS (the generator proves
 the pointwise reduction), so at a solution its reduced Hessian equals the

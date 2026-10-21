@@ -92,6 +92,12 @@ relative-merit and stagnation rules apply. An unmet absolute target returns
 not-converged even when no acceptable step remains. The historical floor
 diagnostic is heuristic, not a proved arithmetic bound.
 
+`max_iterations` caps accepted Newton steps. The residual is evaluated before
+the first step and after the last allowed step. With zero steps, a loaded state
+is checked against the same stopping criterion; an unmet target reports
+not-converged with its evaluated residual. The last step is zero when no step
+was taken, and the relative merit is zero for an exactly zero initial merit.
+
 ## Inputs and the offset start
 
 `gs_free_3d --config in.nml` (`&gs_free_3d`) reads a gs_free result (`mesh.dat`,
