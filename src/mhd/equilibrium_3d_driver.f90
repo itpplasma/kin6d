@@ -23,7 +23,7 @@ module kin6d_equilibrium_3d_driver
         real(dp), allocatable :: boundary(:, :, :)
         type(toroidal_profile_t) :: profile
         real(dp) :: toroidal_flux = 0, tolerance = 1e-5_dp
-        integer :: nfp = 2, max_iterations = 80
+        integer :: nfp = 2, max_iterations = 160
         type(nested_oracle_t) :: oracle
         type(ideal_map_t) :: map
         type(toroidal_seed_t) :: seed
