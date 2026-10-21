@@ -10,6 +10,7 @@ program gen_ideal_map
    use fortsym_arena, only: arena_t
    use fortsym_expr, only: expr_t, sym, pi_expr, operator(+), operator(-), &
                            operator(*), operator(/), operator(**)
+   use kin6d_symbolic_ideal, only: frozen_energy
    use fortsym_diff, only: diff
    use fortsym_products, only: jvp
    use fortsym_kernel_ir, only: kernel_ir_t, lower_kernel_ir
@@ -26,7 +27,7 @@ program gen_ideal_map
    type(leaf_writer_t) :: w
    type(native_engine_t) :: engine
    type(engine_result_t) :: identity
-   type(expr_t) :: d(3, 3), b(3), p, mu0, sigma, jac, density, bx(3)
+   type(expr_t) :: d(3, 3), b(3), p, mu0, sigma, jac, density
    type(expr_t) :: gradient(9), hessian(45)
    type(expr_t) :: planar(2, 2), ref(2, 2), omega(2), cg(2), cb3, rr
    type(expr_t) :: refdet, detmap, cs(2), pulled(3), flux_value(6)
@@ -45,13 +46,7 @@ program gen_ideal_map
    end do
    b(1) = sym(arena, 'b1'); b(2) = sym(arena, 'b2'); b(3) = sym(arena, 'b3')
    p = sym(arena, 'p'); mu0 = sym(arena, 'mu0'); sigma = sym(arena, 'sigma')
-   jac = sigma*(d(1, 1)*(d(2, 2)*d(3, 3) - d(2, 3)*d(3, 2)) &
-      - d(1, 2)*(d(2, 1)*d(3, 3) - d(2, 3)*d(3, 1)) &
-      + d(1, 3)*(d(2, 1)*d(3, 2) - d(2, 2)*d(3, 1)))
-   do a = 1, 3
-      bx(a) = d(a, 1)*b(1) + d(a, 2)*b(2) + d(a, 3)*b(3)
-   end do
-   density = (bx(1)**2 + bx(2)**2 + bx(3)**2)/(2*mu0*jac) - p*jac
+   density = frozen_energy(d, b, p, mu0, sigma, jac)
    ! Identity cylindrical map at phi=0, columns d/dR, d/dZ, d/dphi, and the
    ! axisymmetric flux density b=(-psi_Z, psi_R, F/R): w = R*B^2/(2 mu0) - p*R.
    r = sym(arena, 'r'); psi_r = sym(arena, 'psi_r'); psi_z = sym(arena, 'psi_z')
