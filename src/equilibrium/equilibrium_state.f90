@@ -15,6 +15,7 @@ module kin6d_equilibrium_state
     implicit none
     private
     public :: equilibrium_field_t, labelled_field_t, equilibrium_state_t
+    public :: flux_labelled_field_t
 
     ! Rows of the batched point evaluation values(EQ_VALUES, n): cylindrical
     ! B components (R, Z, phi), pressure, absolute poloidal flux and its
@@ -49,6 +50,12 @@ module kin6d_equilibrium_state
         procedure(field_region_integrals), deferred :: region_integrals
         ! Default radial levels and angular quadrature budget for 0 inputs.
         procedure(field_resolution), deferred :: resolution
+    end type
+    ! A labelled field whose toroidal flux density must be integrated around
+    ! the contour (map candidates need not have R B_phi constant on a label).
+    type, abstract, extends(labelled_field_t) :: flux_labelled_field_t
+    contains
+        procedure(field_toroidal_density), deferred :: toroidal_density
     end type
     abstract interface
         ! Point values at points(2 or 3, n) = (R, Z[, phi]); omitted phi is
@@ -93,6 +100,17 @@ module kin6d_equilibrium_state
             class(labelled_field_t), intent(in) :: field
             real(dp), intent(out) :: volume, phi_tor
             integer, intent(out) :: status
+        end subroutine
+
+        subroutine field_toroidal_density(field, levels, angular_points, density, &
+                                          status, work)
+            import :: flux_labelled_field_t, dp
+            class(flux_labelled_field_t), intent(in) :: field
+            real(dp), intent(in) :: levels(:)
+            integer, intent(in) :: angular_points
+            real(dp), intent(out) :: density(:)
+            integer, intent(out) :: status
+            integer, intent(out), optional :: work(:)
         end subroutine
 
         subroutine field_resolution(field, radial_points, angular_points)
