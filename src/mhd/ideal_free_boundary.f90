@@ -78,7 +78,8 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_shell_field, ideal_fb_sampler, ideal_fb_mode_weight
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
-    public :: ideal_fb_mode_stability, ideal_fb_newton_step
+    public :: ideal_fb_mode_stability, ideal_fb_mode_energy, ideal_fb_stability_t
+    public :: ideal_fb_newton_step
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
     public :: ideal_fb_hypotheses_print
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
@@ -162,6 +163,14 @@ module kin6d_ideal_free_boundary
         real(dp) :: assemble_s = 0, factor_s = 0, gradient_s = 0, line_s = 0
         real(dp) :: assembly_roundoff = 0
         integer :: factorisations = 0, reused = 0
+    end type
+
+    type :: ideal_fb_stability_t
+        ! Raw second-variation ledger, per field period. These are half of
+        ! u^T H u in the fixed-current co-energy formulation, not a kinetic
+        ! norm or DCON's boundary-normalized response eigenvalues.
+        real(dp) :: plasma = 0, vacuum = 0, exterior = 0, constraint = 0
+        real(dp) :: total = 0, metric_norm = 0, relative_residual = huge(1.0_dp)
     end type
 
     type :: ideal_fb_hypotheses_t
@@ -2218,117 +2227,263 @@ contains
         mean = mean/fb%np
     end function
 
-    subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations, shift)
-        ! Second variation of the free-boundary system along real Fourier mode
-        ! m at an axisymmetric state (where the KKT matrix decouples by mode):
-        ! inverse iteration on the Schur complement S of the mode block onto
-        ! the plasma position dofs (shell map, multipliers and potential
-        ! eliminated exactly), with metric M = |diag H| on those dofs. lambda
-        ! is the Rayleigh quotient x^T S x / x^T M x of the converged vector,
-        ! the eigenvalue nearest shift (default 0; a negative shift finds
-        ! negative eigenvalues that are not the smallest in magnitude, such
-        ! as the vertical mode); lambda < 0 is an instability
-        ! of the fixed-current free-boundary equilibrium in that mode (n = 0:
-        ! the vertical mode; n = nfp: the free-boundary kink).
+    subroutine mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status)
+        ! An axisymmetric state decouples by harmonic, NOT by real phase:
+        ! B_pol.grad and B_phi.d/dphi couple cosine and sine coefficients.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: m
+        integer, allocatable, intent(out) :: rp(:), ci(:), map(:)
+        real(dp), allocatable, intent(out) :: v(:), mass(:)
+        integer, intent(out) :: np_m, status
+        integer, allocatable :: rowptr(:), colidx(:), inverse(:)
+        real(dp), allocatable :: val(:)
+        real(dp) :: correction
+        type(fortsparse_status_t) :: sst
+        integer :: first, last, a, c, phase, i, p, n, nnz, s
+        status = IDEAL_FB_BAD_INPUT
+        np_m = 0
+        if (m < 1 .or. m > fb%nmode) return
+        if (fb%nmode > 1) then
+            if (maxval(abs(fb%plasma%x(:, 2:, :))) > 1.0e-10_dp) return
+            if (maxval(abs(fb%xs(:, 2:, :))) > 1.0e-10_dp) return
+            if (maxval(abs(fb%phi(2:, :))) > 1.0e-10_dp) return
+        end if
+        first = 1; last = 1
+        if (m > 1) then
+            first = 2*(m/2); last = first + 1
+        end if
+        call ideal_fb_hessian(fb, rowptr, colidx, val)
+        ! Apply the same checked symmetry completion as the Newton solve,
+        ! before sub-block extraction changes the matrix's scale.
+        call csc_normalize_symmetric_raw(fb%n, rowptr, colidx, val, &
+            1.0e-12_dp, correction, sst)
+        if (.not. status_ok(sst)) then
+            status = IDEAL_FB_SOLVE_FAILED
+            return
+        end if
+        allocate (map(fb%n))
+        map = 0; n = 0
+        do a = 1, fb%plasma%nodes
+            do phase = first, last
+                do c = 1, 2
+                    n = n + 1; map(pidx(fb, c, phase, a)) = n
+                end do
+            end do
+        end do
+        np_m = n
+        do s = 1, fb%ns
+            do phase = first, last
+                do c = 1, 3
+                    n = n + 1; map(ix(fb, c, phase, s)) = n
+                    n = n + 1; map(il(fb, c, phase, s)) = n
+                end do
+                n = n + 1; map(iphi(fb, phase, s)) = n
+            end do
+        end do
+        allocate (rp(n + 1), ci(size(val)), v(size(val)), mass(np_m), inverse(n))
+        do i = 1, fb%n
+            if (map(i) > 0) inverse(map(i)) = i
+        end do
+        nnz = 0; rp(1) = 1; mass = 0
+        do i = 1, n
+            do p = rowptr(inverse(i)), rowptr(inverse(i) + 1) - 1
+                if (map(colidx(p)) == 0) cycle
+                nnz = nnz + 1
+                ci(nnz) = map(colidx(p)); v(nnz) = val(p)
+                if (ci(nnz) == i .and. i <= np_m) mass(i) = abs(val(p))
+            end do
+            rp(i + 1) = nnz + 1
+            call sort_mode_row(ci(rp(i):nnz), v(rp(i):nnz))
+        end do
+        if (any(mass <= 0)) return
+        ci = ci(:nnz); v = v(:nnz)
+        status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine sort_mode_row(col, value)
+        integer, intent(inout) :: col(:)
+        real(dp), intent(inout) :: value(:)
+        integer :: j, k, key
+        real(dp) :: tv
+        do j = 2, size(col)
+            key = col(j); tv = value(j); k = j - 1
+            do while (k >= 1)
+                if (col(k) <= key) exit
+                col(k + 1) = col(k); value(k + 1) = value(k); k = k - 1
+            end do
+            col(k + 1) = key; value(k + 1) = tv
+        end do
+    end subroutine
+
+    subroutine mode_ledger(fb, rp, ci, v, map, np_m, z, mass, report, action)
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: rp(:), ci(:), map(:), np_m
+        real(dp), intent(in) :: v(:), z(:), mass(:)
+        type(ideal_fb_stability_t), intent(out) :: report
+        real(dp), intent(out) :: action(:)
+        real(dp) :: u(fb%n), cm, trace(fb%nt)
+        integer :: i, p, j, m, a
+        report = ideal_fb_stability_t()
+        action = 0; u = 0
+        do i = 1, fb%n
+            if (map(i) > 0) u(i) = z(map(i))
+        end do
+        do i = 1, size(rp) - 1
+            do p = rp(i), rp(i + 1) - 1
+                action(i) = action(i) + v(p)*z(ci(p))
+                if (i <= np_m .and. ci(p) <= np_m) &
+                    report%plasma = report%plasma + 0.5_dp*z(i)*v(p)*z(ci(p))
+            end do
+        end do
+        report%total = 0.5_dp*dot_product(z, action)
+        do i = fb%np + fb%nx + 1, fb%np + 2*fb%nx
+            if (map(i) > 0) report%constraint = report%constraint + u(i)*action(map(i))
+        end do
+        do m = 1, fb%nmode
+            cm = ideal_fb_mode_weight(fb, m)/fb%mu0
+            do a = 1, fb%nt
+                trace(a) = u(iphi(fb, m, fb%trace(a)))
+            end do
+            do j = 1, fb%nt
+                report%exterior = report%exterior &
+                    - 0.5_dp*cm*trace(j) &
+                    *dot_product(trace, fb%s_trace(:, j, harmonic(m)))
+            end do
+        end do
+        report%vacuum = report%total - report%plasma - report%constraint
+        report%metric_norm = sum(mass*z(:np_m)**2)
+    end subroutine
+
+    subroutine ideal_fb_mode_energy(fb, m, displacement, report, status)
+        ! Schur energy of a prescribed plasma displacement. For n>0 the
+        ! layout is (Rcos,Zcos,Rsin,Zsin) per node; n=0 is (R,Z) per node.
+        ! Shell map, potential and multipliers are solved at fixed plasma.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: m
+        real(dp), intent(in) :: displacement(:)
+        type(ideal_fb_stability_t), intent(out) :: report
+        integer, intent(out) :: status
+        integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
+        real(dp), allocatable :: v(:), mass(:), av(:), rhs(:), z(:), action(:)
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sst
+        integer :: np_m, n, i, p, count
+        report = ideal_fb_stability_t()
+        call mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status)
+        if (status /= IDEAL_FB_OK) return
+        status = IDEAL_FB_BAD_INPUT
+        if (size(displacement) /= np_m) return
+        if (.not. all(ieee_is_finite(displacement))) return
+        n = size(rp) - 1
+        allocate (ar(n - np_m + 1), ac(size(v)), av(size(v)), &
+            rhs(n - np_m), z(n), action(n))
+        z(:np_m) = displacement; rhs = 0; count = 0; ar(1) = 1
+        do i = np_m + 1, n
+            do p = rp(i), rp(i + 1) - 1
+                if (ci(p) <= np_m) then
+                    rhs(i - np_m) = rhs(i - np_m) - v(p)*z(ci(p))
+                else
+                    count = count + 1
+                    ac(count) = ci(p) - np_m; av(count) = v(p)
+                end if
+            end do
+            ar(i - np_m + 1) = count + 1
+        end do
+        status = IDEAL_FB_SOLVE_FAILED
+        if (.not. configure(solver)) return
+        call factor_kkt_raw(solver, n - np_m, n - np_m, count, ar, ac(:count), &
+            av(:count), sst)
+        if (.not. status_ok(sst)) return
+        call sparse_solve(solver, rhs, z(np_m + 1:), sst)
+        call sparse_destroy(solver)
+        if (.not. status_ok(sst)) return
+        call mode_ledger(fb, rp, ci, v, map, np_m, z, mass, report, action)
+        status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations, shift, report)
+        ! Shifted inverse iteration on the full real harmonic pair, with
+        ! shell map, multipliers and potential eliminated by the KKT solve.
+        ! A negative converged Rayleigh quotient witnesses instability of
+        ! this discrete gamma=0 model. A positive quotient is NOT an inertia
+        ! count or proof of stability: only the eigenvalue near shift is sought.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: m
         real(dp), intent(out) :: lambda
         integer, intent(out) :: status
         integer, intent(in), optional :: iterations
         real(dp), intent(in), optional :: shift
-        integer, allocatable :: rowptr(:), colidx(:), map(:), rp(:), ci(:)
-        real(dp), allocatable :: val(:), v(:), mass(:), x(:), z(:), rhs(:)
+        type(ideal_fb_stability_t), intent(out), optional :: report
+        integer, allocatable :: rp(:), ci(:), map(:)
+        real(dp), allocatable :: v(:), original(:), mass(:), x(:), z(:), rhs(:), hz(:)
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
-        integer :: i, p, n, nnz, np_m, it, nit, a, c, s2
-        logical, allocatable :: plasma_row(:)
-        real(dp) :: sigma
-        status = IDEAL_FB_SOLVE_FAILED
+        type(ideal_fb_stability_t) :: ledger
+        integer :: np_m, n, i, p, it, nit, nnz
+        real(dp) :: sigma, norm
+        lambda = ieee_value(0.0_dp, ieee_quiet_nan)
+        if (present(report)) report = ideal_fb_stability_t()
+        call mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status)
+        if (status /= IDEAL_FB_OK) return
         sigma = 0
         if (present(shift)) sigma = shift
-        nit = 40
+        nit = 80
         if (present(iterations)) nit = iterations
-        call ideal_fb_hessian(fb, rowptr, colidx, val)
-        ! Dofs of mode m, plasma first.
-        allocate (map(fb%n))
-        map = 0; n = 0
-        do a = 1, fb%plasma%nodes
-            do c = 1, 2
-                n = n + 1; map(pidx(fb, c, m, a)) = n
+        status = IDEAL_FB_BAD_INPUT
+        if (nit < 1 .or. .not. ieee_is_finite(sigma)) return
+        n = size(rp) - 1; nnz = rp(n + 1) - 1
+        original = v
+        do i = 1, np_m
+            do p = rp(i), rp(i + 1) - 1
+                if (ci(p) == i) v(p) = v(p) - sigma*mass(i)
             end do
         end do
-        np_m = n
-        do s2 = 1, fb%ns
-            do c = 1, 3
-                n = n + 1; map(ix(fb, c, m, s2)) = n
-                n = n + 1; map(il(fb, c, m, s2)) = n
-            end do
-            n = n + 1; map(iphi(fb, m, s2)) = n
-        end do
-        allocate (rp(n + 1), ci(size(val)), v(size(val)), mass(np_m), &
-            plasma_row(n))
-        ! Rows in the new order (the block is symmetric: CSR = CSC).
-        block
-            integer, allocatable :: inverse(:)
-            allocate (inverse(n))
-            do i = 1, fb%n
-                if (map(i) > 0) inverse(map(i)) = i
-            end do
-            nnz = 0; rp(1) = 1
-            do i = 1, n
-                do p = rowptr(inverse(i)), rowptr(inverse(i) + 1) - 1
-                    if (map(colidx(p)) == 0) cycle
-                    nnz = nnz + 1
-                    ci(nnz) = map(colidx(p)); v(nnz) = val(p)
-                    if (ci(nnz) == i .and. i <= np_m) mass(i) = abs(val(p))
-                end do
-                rp(i + 1) = nnz + 1
-                ! Columns must be sorted within a row.
-                call sort_row(ci(rp(i):nnz), v(rp(i):nnz))
-            end do
-            ! K - sigma M on the plasma rows.
-            do i = 1, np_m
-                do p = rp(i), rp(i + 1) - 1
-                    if (ci(p) == i) v(p) = v(p) - sigma*mass(i)
-                end do
-            end do
-        end block
+        status = IDEAL_FB_SOLVE_FAILED
         if (.not. configure(solver)) return
         call factor_kkt_raw(solver, n, n, nnz, rp, ci(:nnz), v(:nnz), sst)
         if (.not. status_ok(sst)) return
-        allocate (x(np_m), z(n), rhs(n))
+        allocate (x(np_m), z(n), rhs(n), hz(n))
         do i = 1, np_m
             x(i) = 1 + 0.1_dp*sin(1.7_dp*i)
         end do
         x = x/sqrt(sum(mass*x**2))
-        lambda = 0
+        status = IDEAL_FB_NOT_CONVERGED
         do it = 1, nit
             rhs = 0; rhs(1:np_m) = mass*x
             call sparse_solve(solver, rhs, z, sst)
             if (.not. status_ok(sst)) then
-                call sparse_destroy(solver); return
+                status = IDEAL_FB_SOLVE_FAILED
+                exit
             end if
-            ! z_p = S^-1 M x; Rayleigh quotient of S in the M metric.
-            lambda = sigma + sum(mass*x**2)/sum(mass*x*z(1:np_m))
-            x = z(1:np_m)/sqrt(sum(mass*z(1:np_m)**2))
+            norm = sqrt(sum(mass*z(:np_m)**2))
+            if (.not. ieee_is_finite(norm) .or. norm <= 0) exit
+            z = z/norm
+            ! The unshifted action gives an actual Rayleigh quotient and a
+            ! metric-scaled eigen-residual, even before iteration converges.
+            !$omp parallel do default(shared) private(i, p) schedule(static)
+            do i = 1, n
+                hz(i) = 0
+                do p = rp(i), rp(i + 1) - 1
+                    hz(i) = hz(i) + original(p)*z(ci(p))
+                end do
+            end do
+            !$omp end parallel do
+            lambda = dot_product(z, hz)
+            ledger%relative_residual = norm2((hz(:np_m) - lambda*mass*z(:np_m)) &
+                /sqrt(mass))/max(abs(lambda), 1.0e-12_dp)
+            x = z(:np_m)
+            if (ledger%relative_residual < 1.0e-6_dp) then
+                status = IDEAL_FB_OK
+                exit
+            end if
         end do
         call sparse_destroy(solver)
-        status = IDEAL_FB_OK
-    contains
-        subroutine sort_row(col, value)
-            integer, intent(inout) :: col(:)
-            real(dp), intent(inout) :: value(:)
-            integer :: j, k, key
-            real(dp) :: tv
-            do j = 2, size(col)
-                key = col(j); tv = value(j); k = j - 1
-                do while (k >= 1)
-                    if (col(k) <= key) exit
-                    col(k + 1) = col(k); value(k + 1) = value(k); k = k - 1
-                end do
-                col(k + 1) = key; value(k + 1) = tv
-            end do
-        end subroutine
+        if (present(report)) then
+            norm = ledger%relative_residual
+            call mode_ledger(fb, rp, ci, original, map, np_m, z, mass, ledger, hz)
+            ledger%relative_residual = norm
+            report = ledger
+        end if
     end subroutine
 
     subroutine ideal_fb_hypotheses(fb, h, status, dense_limit)

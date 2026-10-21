@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.22)
 project(kin6d LANGUAGES Fortran C)
+
+# gfortran < 13 mis-optimizes an allocatable left-hand side of `x = matmul(...)`
+# at -O1 and above: the inlined matmul does not reallocate x and writes past
+# the heap block (minimal reproducer: gfortran 12.2 -O2, valgrind). Calling the
+# library matmul avoids it; newer compilers are not affected.
+if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_Fortran_COMPILER_VERSION VERSION_LESS 13)
+    add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-finline-matmul-limit=0>)
+endif()
 include(CTest)
 include(FetchContent)
 set(CMAKE_Fortran_STANDARD 2018)
@@ -169,7 +178,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "ce8d923ee7ed36dc9315db9fc1d68f4d5ed2208b")
+set(KIN6D_FORTFEM_REVISION "54057d8db247296be4aa0724d431f6e46225ea16")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -337,8 +346,12 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
-add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
+add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
+    test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_external_kink COMMAND test_ideal_free_boundary kink)
+set_tests_properties(ideal_fb_external_kink PROPERTIES ENVIRONMENT
+    "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
 add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
 add_test(NAME ideal_fb_vertical_newton COMMAND test_ideal_free_boundary vertical)
 foreach(k 2 3)
@@ -818,7 +831,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "7e8ef7abdd90c49bb5f75e2c119e7d181656bcc6")
+set(KIN6D_FORTSYM_REVISION "ab86cc4cbf3e3afd6fd3f229ed855f3095e668e3")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -843,6 +856,8 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(test_gs_p1_current_identities PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_p1_exact_current_antiderivatives
         COMMAND test_gs_p1_current_identities)
+    add_executable(gen_ideal_fb_kink gen/gen_ideal_fb_kink.f90)
+    target_link_libraries(gen_ideal_fb_kink PRIVATE kin6d_gen_support)
     add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
     target_link_libraries(test_gs_symbolic PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_symbolic_identities COMMAND test_gs_symbolic)
@@ -922,6 +937,10 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
+    add_executable(check_response_strip_current gen/check_response_strip_current.f90)
+    target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
+    add_test(NAME response_strip_current_exact_identities
+        COMMAND check_response_strip_current)
     add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90
@@ -1515,7 +1534,8 @@ add_test(NAME gs_response_3d_ideal_error_contract COMMAND ${CMAKE_COMMAND}
     -DWORK=${CMAKE_BINARY_DIR}/gs_response_3d_ideal_check
     -DEQDSK=${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/shield_torus_a10.eqdsk
     -P ${CMAKE_SOURCE_DIR}/test/check_gs_response_3d_ideal_error.cmake)
-set_tests_properties(gs_response_3d_ideal_error_contract PROPERTIES TIMEOUT 60
+# ~45 s serial (complex Ampere LU) on a 2026 workstation, ~60 s on sCluster.
+set_tests_properties(gs_response_3d_ideal_error_contract PROPERTIES TIMEOUT 240
     ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
@@ -1532,13 +1552,24 @@ set_tests_properties(flux_mesh_axis_interpolation_order PROPERTIES TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(test_mhd_closure test/test_mhd_closure.f90)
 target_link_libraries(test_mhd_closure PRIVATE kin6d)
+add_test(NAME response_layer_all_rational_setup COMMAND test_mhd_closure setup)
+set_tests_properties(response_layer_all_rational_setup PROPERTIES TIMEOUT 30
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+add_test(NAME gs_response_3d_frobenius_all_rational COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_response_3d>
+    -DWORK=${CMAKE_BINARY_DIR}/gs_response_3d_frobenius_check
+    -DEQDSK=${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/shield_torus_a10.eqdsk
+    -P ${CMAKE_SOURCE_DIR}/test/check_response_all_rational.cmake)
+set_tests_properties(gs_response_3d_frobenius_all_rational PROPERTIES TIMEOUT 180
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_test(NAME mhd_closure_tearing_delta_prime COMMAND test_mhd_closure)
 set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
 # R-B2 increment 1: strip coupled to the FEEC torus (response-unified.md, R-B2).
 # Gated at nrad 64 (smallest passing nrad of the (b) ladder), strip half-width
-# xd 0.01 plus an (a)-only run at xd 0.02 for the xd^2 order of gate (a)
-# (GMRES tolerance 1e-7).
+# xd 0.01 plus an (a)-only run at xd 0.02. Physical strip current is checked
+# at both widths; interface-sheet sum and its width order remain diagnostics
+# with their existing gates (GMRES tolerance 1e-7).
 add_test(NAME response_strip_torus_coupling COMMAND test_mhd_closure strip)
 set_tests_properties(response_strip_torus_coupling PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
