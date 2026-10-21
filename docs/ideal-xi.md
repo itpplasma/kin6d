@@ -71,6 +71,10 @@ convention for inertia. The volume consumer rejects negative weights,
 nonpositive mu0 and nonfinite inputs. Reports always say `candidate`, bound `unavailable`;
 no equilibrium residual, quadrature or discretization bound is implied.
 
+[V] The batch work is O(Nq), with fixed-size scratch per thread and no
+global Hessian storage. This is the performance/memory contract for the
+first correctness increment; no optimized throughput is claimed.
+
 [V] The native test compares all coefficients with the existing emitted map
 Hessian, checks an independent tensor contraction, Hermitian pairing,
 JVP/VJP duality and central differences, both kinds, Cartesian finite
