@@ -553,6 +553,12 @@ endif()
 kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
 
+kin6d_test_labels(cpu_precision_gs_comparison performance CLASSES mhd
+    TARGETS benchmark_cpu_precision)
+kin6d_test_labels(cpu_precision_map_comparison performance CLASSES mhd
+    TARGETS benchmark_cpu_precision)
+kin6d_test_labels(cpu_precision_gs_ir performance CLASSES mhd
+    TARGETS benchmark_cpu_solve)
 # D8/M6: same native solver and manufactured oracle as the T3 ladder.
 foreach(start reference rp rm zp zm el)
     kin6d_test_labels(equilibrium_d8_psi_offset_${start} fast CLASSES equilibrium

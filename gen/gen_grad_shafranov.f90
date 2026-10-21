@@ -8,6 +8,7 @@ program gen_grad_shafranov
    use fortsym_products, only: jvp
    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
    use fortsym_engine_native, only: native_engine_t, make_native_engine
+   use fortsym_precision, only: PRECISION_REAL32, PRECISION_REAL64
    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
    implicit none
    type(arena_t), target :: arena
@@ -186,5 +187,18 @@ program gen_grad_shafranov
                       ['s       ', 'ds_dx   ', 'ds_daxis'], &
                       [1 - x/axis, diff(1 - x/axis, x), diff(1 - x/axis, axis)], &
                       ['axis'])
+   call wb%close()
+   ! Experimental CPU benchmark seam: use the upstream emitter's precision.
+   ! No candidate or estimator policy is changed by these opt-in leaves.
+   call wb%open(arena, 'gen_grad_shafranov', &
+                'src/generated/kin6d_gs_cpu_precision.f90')
+   call wb%emit_batch('gs_cpu_fp64', &
+      ['r       ', 'mu0     ', 'pprime  ', 'ffprime ', 'dpprime ', 'dffprime', &
+       'apprime ', 'affprime'], ['source', 'dsrc  ', 'asrc  '], &
+      [source, df, af], ['mu0'], precision=PRECISION_REAL64)
+   call wb%emit_batch('gs_cpu_fp32', &
+      ['r       ', 'mu0     ', 'pprime  ', 'ffprime ', 'dpprime ', 'dffprime', &
+       'apprime ', 'affprime'], ['source', 'dsrc  ', 'asrc  '], &
+      [source, df, af], ['mu0'], precision=PRECISION_REAL32)
    call wb%close()
 end program gen_grad_shafranov
