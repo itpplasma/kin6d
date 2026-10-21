@@ -110,13 +110,97 @@ claim, including when its weights sum to 1/2.
 At frozen geometry/source/quadrature, the coefficient residual is `K*u-b`,
 its nodal JVP is `K*du` and its coefficient-dual VJP is `K^T*z`.
 Map/shape and source-parameter products for this consumer remain unavailable.
-No global assembly, mapped PDE solve, automatic quadrature certificate or
-mapped current/axis/export support is wired into the affine solver.
+The opt-in mapped state below consumes these forms. Automatic quadrature
+certification and mapped current/axis/export support remain unavailable.
 `grad_shafranov_solovev_cell_p2_weak_forms` checks native affine parity, two
 independent rational nonlinear-node sums, physical coordinate gradients at
 those nodes, energy/partition structure and complete failure clearing. The
 scalar-jet test retains the signed physical-gradient/readback oracle; a common
 gradient sign reversal is invisible to a stiffness Gram matrix alone.
+
+## Mapped P2 state (finite-sum candidate)
+
+An explicit opt-in call is
+`initialize_gs(state, contour, max_area, status, element_order=2, &
+ mapped_r0=r0, mapped_level=level, mapped_tau=tau)`.
+Supply all three map arguments together; the default still uses the existing
+physical affine mesh. In mapped mode `contour` is the computational polygon
+used by the same Solovev geometry record. Geometry inputs contain no source,
+pressure, F or reference-solution amplitude. The geometry premises described
+below remain the caller's separate admission obligations.
+
+Mapped initialization requests Triangle `nobisect=1`. Before publishing any
+state arrays/caches it checks that every returned boundary vertex is bitwise
+one of the supplied vertices, each supplied vertex occurs once, and the actual
+oriented boundary edges form exactly the supplied CCW cycle. A native strict
+convex-turn guard is additional rejection, not an exact inclusion proof.
+Unmodified returned boundary vertices and a geometry constructed from that
+identical contour are mandatory. No alternate polygon is silently substituted.
+Failure leaves `ready=false`; callers must check status before using a state.
+
+`reference_points` and `reference_gradient` store the computational affine
+mesh. `points` stores G at the shared P2 DOFs, including curved boundary
+midpoints; these are positions, **not** quadratic interpolants defining G.
+The old physical-affine `gradient` and `area` caches are unallocated in mapped
+mode. Shared DOFs, the existing matrix action, Jacobi preconditioner and CG
+remain common to both modes. Assembly and each constant-source load use PR7's
+same physical radius/determinant/inverse at the same nodes. The generated
+`gs_source=mu0*pprime*R+FFprime/R` owns the load sign and normalization.
+
+Only the existing positive seven-point degree-five triangle rule is supported
+by this state consumer. Weights integrate the reference area **1/2**. The
+mapped coefficients are rational/nonpolynomial, may cross geometry cuts, and
+have **no quadrature or roundoff enclosure**. A failed node aborts initialization
+or clears the complete RHS; `solve_gs` propagates that status without changing
+`psi`. Nonfinite candidate actions/residuals are rejected. No scientific mapped
+solve is admitted by these unit-level implementation checks.
+
+For the ideal finite sum, positive weights and nonsingular geometry make each
+cell energy positive semidefinite. The rule contains three noncollinear nodes:
+a P2 reference gradient vanishing at all nodes is an affine polynomial
+vanishing identically, so the cell kernel consists of constants. Connected
+conforming topology with nonempty Dirichlet trace then gives the usual SPD
+free-DOF matrix. Native determinant/diagonal checks and CG success do not certify
+these exact premises or finite-arithmetic SPD. Boundary elimination uses the
+complete coefficient lifting; a homogeneous trace is zero on each mapped edge
+when all its shared endpoint/midpoint DOFs are zero. A nonzero trace is the
+computational P2 trace composed with F, not a quadratic in physical arclength.
+
+At fixed geometry and quadrature the supported linear response is the existing
+`A*du=db` solve, with Euclidean coefficient pairing and symmetric ideal A.
+Mapped linear responses enforce their identity-block boundary coefficients
+exactly after CG. The solve recomputes its residual from those actual coefficients
+before committing them; readback uses the same committed field.
+The fixed-source residual is `A*u-b`, so its coefficient products are A and
+its transpose; no geometry/shape derivative or derivative of CG iterations is
+claimed. Source leaves retain their generated products. This API does not
+expose mapped profile-source/inverse or parameter-load products.
+
+`gs_element_jet` takes a physical point, locates F once, and reads the complete
+six-coefficient scalar via the shared PR6 transform. Derivatives subtract a
+constant gauge and include the physical Hessian connection term. No affine
+locator or gradient is substituted. `sample_gs` locates F once for the cell
+search, then uses the same full jet and generated signed cylindrical field.
+It rejects a computational cell-edge guard band (barycentric coordinate
+<=1e-12); an explicitly addressed element jet may give a one-sided cell trace.
+Geometry derivative cuts still return status2 with numeric outputs zero.
+Location/jet arithmetic failures retain statuses1/3. Native F/G inverse
+composition and root errors have no new uniform enclosure here; historical
+geometry/cell certificates do not automatically qualify this implementation.
+
+Mapped profile load/JVP/VJP and nonlinear profile solve, axis search,
+classical/sheet current, coarea and mesh export return
+`GS_UNSUPPORTED_GEOMETRY=20` before affine caches or I/O. Numeric outputs are
+zero, axis flux/failed solve residual are unavailable (`huge`), and an existing
+export file is untouched. No straight-edge boundary measure is used; real
+boundary consumers must implement the curved measures described below.
+
+CTest `grad_shafranov_mapped_p2_finite_forms` uses independent implicit
+forward-chart derivatives and a separate radial position bisection to check
+actual cell finite sums, global shared-DOF algebra, signed source/lifting and
+complete physical polynomial readback. It also checks fail-closed unsupported
+capabilities and failed-load publication. These are finite-node behavioral
+oracles, not an equilibrium accuracy or continuous-error certificate.
 
 ## Profile-source residual and derivatives
 
@@ -264,8 +348,8 @@ F(y)=O+[1-(1-p/h)*(1/h-q)/tau]*d. The inner branch is identity. This is the
 reviewed continuous radial forward map; its scalar leaf comes from the same
 FortSym generator. No derivative of F, parameter/shape product or derivative of
 root iterations is exposed. Tiny stored-parameter position changes do not imply
-tiny derivative changes near moved cuts. These helpers provide no mapped state,
-assembly, readback, current, coarea, export or PDE admission.
+tiny derivative changes near moved cuts. These position helpers alone provide no assembly, readback, current, coarea,
+export or PDE admission. The opt-in state consumer below remains a candidate.
 
 For later real boundary consumers, curved meridional measure is
 `ds=norm(JG*tangent)*dt`, with outward conormal measure
@@ -275,9 +359,8 @@ these measures in this position-only slice.
 
 The map is piecewise smooth and is not globally C2. Its Hessian tensor order is
 physical-component first; FortFEM's generic sampled tensor uses `(i,j,a)`.
-Actual certified mapped panels, root/Jacobian arithmetic budgets and common
-native geometry/assembly/
-readback wiring remain open. This primitive changes no mesh format, assembled
+Actual certified mapped panels and root/Jacobian arithmetic budgets remain
+open; the native state consumer below supplies candidate wiring only. This primitive changes no mesh format, assembled
 GS equation, existing affine solve, coarea or classical-current capability and
 admits no new scientific PDE run. The CTest
 `grad_shafranov_solovev_geometry_primitive` checks noncircular independent formal

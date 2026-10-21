@@ -1,5 +1,5 @@
 module kin6d_grad_shafranov
-   use, intrinsic :: iso_fortran_env, only: dp => real64
+   use, intrinsic :: iso_fortran_env, only: dp => real64, int64
    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
    use triangle_compat, only: tc_result_t, triangulate_compat
    use basis_p1_2d_module, only: basis_p1_2d_t
@@ -15,9 +15,16 @@ module kin6d_grad_shafranov
    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, gs_source_vjp, &
        gs_field, gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
+   use kin6d_solovev_geometry, only: solovev_geometry_t, geometry_position_t, &
+       geometry_sample_t, initialize_solovev_geometry, position_solovev_geometry, &
+       locate_solovev_geometry, geometry_ok, geometry_invalid, geometry_interface, &
+       geometry_arithmetic
+   use kin6d_solovev_cell_jet, only: solovev_cell_scalar_jet
+   use kin6d_solovev_cell_weak, only: solovev_cell_p2_forms
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
+   integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
    public :: write_gs_mesh
    public :: gs_profile_load, gs_profile_load_jvp, gs_profile_load_vjp
    public :: solve_gs_profiles, gs_profile_value, gs_profile_integral
@@ -34,6 +41,9 @@ module kin6d_grad_shafranov
       logical, allocatable :: boundary(:)
       real(dp), allocatable :: stiffness(:, :, :), gradient(:, :, :)
       real(dp), allocatable :: area(:), diagonal(:)
+      real(dp), allocatable :: reference_points(:, :), reference_gradient(:, :, :)
+      type(solovev_geometry_t), allocatable :: mapped_geometry
+      logical :: mapped = .false., ready = .false.
       integer :: element_order = 1
       real(dp) :: residual = huge(1.0_dp)
       integer :: iterations = 0
@@ -48,87 +58,208 @@ module kin6d_grad_shafranov
       end subroutine dgesv
    end interface
 contains
-   subroutine initialize_gs(state, contour, max_area, status, element_order)
-      type(gs_state_t), intent(out) :: state
-      real(dp), intent(in) :: contour(:, :), max_area
-      integer, intent(out) :: status
-      integer, intent(in), optional :: element_order
-      type(tc_result_t) :: mesh
-      type(basis_p1_2d_t) :: basis
-      type(gauss_quadrature_triangle_t) :: quadrature
-      real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3)
-      real(dp) :: point(2), shape(6), grad_q(2, 6), weight
-      integer, allocatable :: segments(:, :)
-      integer :: j, e, k, l, q, pivot(2), stat, n, ndof
-      status = 1
-      if (present(element_order)) state%element_order = element_order
-      if (state%element_order < 1 .or. state%element_order > 2) return
-      if (size(contour, 1) /= 2) return
-      n = size(contour, 2)
-      if (n < 3 .or. max_area <= 0.0_dp) return
-      if (.not. ieee_is_finite(max_area)) return
-      if (any(.not. ieee_is_finite(contour))) return
-      if (minval(contour(1, :)) <= 0.0_dp) return
-      allocate (segments(2, n))
-      do j = 1, n
-         segments(:, j) = [j, mod(j, n) + 1]
-      end do
-      call triangulate_compat(contour, segments, reshape([real(dp) ::], [2, 0]), &
-                           mesh, stat, min_angle=20.0_dp, max_area=max_area, nobisect=0)
-      if (stat /= 0 .or. mesh%ntriangles < 1) return
-      state%neighbors = mesh%neighbors
-      if (state%element_order == 1) then
-         state%points = mesh%points
-         state%triangles = mesh%triangles
-         state%boundary = mesh%pointmarkers /= 0
-      else
-         call quadratic_mesh(mesh, state, stat)
-         if (stat /= 0) return
-      end if
-      ndof = size(state%triangles, 1)
-      n = size(state%points, 2)
-      allocate (state%psi(n), state%diagonal(n), &
-                state%stiffness(ndof, ndof, mesh%ntriangles), &
-                state%gradient(2, 3, mesh%ntriangles), state%area(mesh%ntriangles))
-      state%psi = 0.0_dp; state%diagonal = 0.0_dp
-      call gs_quadrature(state%element_order, quadrature)
-      do e = 1, mesh%ntriangles
-         call basis%compute_jacobian(state%points(:, state%triangles(1:3, e)), &
-                                     jac, det)
-         if (abs(det) <= tiny(det)) return
-         matrix = transpose(jac)
-         do j = 1, 3
-            grads(:, j) = basis%grad(j, 0.0_dp, 0.0_dp)
-         end do
-         call dgesv(2, 3, matrix, 2, pivot, grads, 2, stat)
-         if (stat /= 0) return
-         ! Affine geometry gradients, not the represented P2 flux gradients.
-         state%gradient(:, :, e) = grads
-         state%area(e) = 0.5_dp*abs(det)
-         state%stiffness(:, :, e) = 0.0_dp
-         do q = 1, quadrature%n_points
-            call element_shapes(state, e, quadrature%xi(q), &
-                                quadrature%eta(q), shape(:ndof), grad_q(:, :ndof))
-            point = matmul(state%points(:, state%triangles(1:3, e)), &
-                 [1-quadrature%xi(q)-quadrature%eta(q), &
-                  quadrature%xi(q), quadrature%eta(q)])
-            weight = 2*state%area(e)*quadrature%weights(q)/point(1)
-            do l = 1, ndof
-               do k = 1, ndof
-                  state%stiffness(k, l, e) = state%stiffness(k, l, e) + &
-                       weight*dot_product(grad_q(:, k), grad_q(:, l))
-               end do
+    subroutine initialize_gs(state, contour, max_area, status, element_order, &
+            mapped_r0, mapped_level, mapped_tau)
+        type(gs_state_t), intent(out) :: state
+        real(dp), intent(in) :: contour(:, :), max_area
+        integer, intent(out) :: status
+        integer, intent(in), optional :: element_order
+        real(dp), intent(in), optional :: mapped_r0, mapped_level, mapped_tau
+        type(tc_result_t) :: mesh
+        type(basis_p1_2d_t) :: basis
+        type(gauss_quadrature_triangle_t) :: quadrature
+        type(solovev_geometry_t) :: map
+        type(geometry_position_t) :: position
+        real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3)
+        real(dp) :: point(2), shape(6), grad_q(2, 6), weight
+        real(dp) :: vertices(2, 3), nodes(2, 7), cell_load(6)
+        integer, allocatable :: segments(:, :)
+        integer :: j, e, k, l, q, pivot(2), stat, n, ndof, no_boundary_split
+        logical :: certified
+        status = 1
+        state%mapped = present(mapped_r0) .or. present(mapped_level) .or. &
+                       present(mapped_tau)
+        no_boundary_split = 0
+        if (state%mapped) then
+            if (.not. present(mapped_r0)) return
+            if (.not. present(mapped_level)) return
+            if (.not. present(mapped_tau)) return
+            no_boundary_split = 1
+        end if
+        if (present(element_order)) state%element_order = element_order
+        if (state%element_order < 1 .or. state%element_order > 2) return
+        if (state%mapped) then
+            if (state%element_order /= 2) return
+        end if
+        if (size(contour, 1) /= 2) return
+        n = size(contour, 2)
+        if (n < 3 .or. max_area <= 0.0_dp) return
+        if (.not. ieee_is_finite(max_area)) return
+        if (any(.not. ieee_is_finite(contour))) return
+        if (minval(contour(1, :)) <= 0.0_dp) return
+        allocate (segments(2, n))
+        do j = 1, n
+            segments(:, j) = [j, mod(j, n)+1]
+        end do
+        call triangulate_compat(contour, segments, reshape([real(dp) ::], [2, 0]), &
+            mesh, stat, min_angle=20.0_dp, max_area=max_area, &
+            nobisect=no_boundary_split)
+        if (stat /= 0 .or. mesh%ntriangles < 1) return
+        if (state%mapped) then
+            call mapped_boundary_identity(mesh, contour, stat)
+            if (stat /= 0) return
+            call initialize_solovev_geometry(map, mapped_r0, mapped_level, &
+                mapped_tau, contour, stat)
+            if (stat /= geometry_ok) then
+                status = stat
+                return
+            end if
+        end if
+        state%neighbors = mesh%neighbors
+        if (state%element_order == 1) then
+            state%points = mesh%points
+            state%triangles = mesh%triangles
+            state%boundary = mesh%pointmarkers /= 0
+        else
+            call quadratic_mesh(mesh, state, stat)
+            if (stat /= 0) return
+        end if
+        if (state%mapped) then
+            allocate (state%mapped_geometry, source=map)
+            state%reference_points = state%points
+            do j = 1, size(state%points, 2)
+                point = state%reference_points(:, j)
+                call position_solovev_geometry(map, point, position)
+                if (position%status /= geometry_ok) then
+                    status = position%status
+                    return
+                end if
+                state%points(:, j) = position%value
             end do
-         end do
-         do l = 1, ndof
-            j = state%triangles(l, e)
-            state%diagonal(j) = state%diagonal(j) + state%stiffness(l, l, e)
-         end do
-      end do
-      where (state%boundary) state%diagonal = 1.0_dp
-      if (minval(state%diagonal) <= 0) return
-      status = 0
-   end subroutine initialize_gs
+        end if
+        ndof = size(state%triangles, 1)
+        n = size(state%points, 2)
+        allocate (state%psi(n), state%diagonal(n), &
+            state%stiffness(ndof, ndof, mesh%ntriangles))
+        if (state%mapped) then
+            allocate (state%reference_gradient(2, 3, mesh%ntriangles))
+        else
+            allocate (state%gradient(2, 3, mesh%ntriangles), &
+                state%area(mesh%ntriangles))
+        end if
+        state%psi = 0.0_dp; state%diagonal = 0.0_dp
+        call gs_quadrature(state%element_order, quadrature)
+        if (state%mapped) then
+            nodes(1, :) = quadrature%xi
+            nodes(2, :) = quadrature%eta
+        end if
+        do e = 1, mesh%ntriangles
+            if (state%mapped) then
+                do j = 1, 3
+                    vertices(:, j) = state%reference_points(:, state%triangles(j, e))
+                end do
+            else
+                vertices = state%points(:, state%triangles(1:3, e))
+            end if
+            call basis%compute_jacobian(vertices, jac, det)
+            if (abs(det) <= tiny(det)) return
+            matrix = transpose(jac)
+            do j = 1, 3
+                grads(:, j) = basis%grad(j, 0.0_dp, 0.0_dp)
+            end do
+            call dgesv(2, 3, matrix, 2, pivot, grads, 2, stat)
+            if (stat /= 0) return
+            if (state%mapped) then
+                if (.not. all(ieee_is_finite(grads))) return
+                state%reference_gradient(:, :, e) = grads
+                call solovev_cell_p2_forms(map, vertices, nodes, quadrature%weights, &
+                    1.0_dp, 0.0_dp, 0.0_dp, state%stiffness(:, :, e), cell_load, &
+                    stat, certified)
+                if (stat /= geometry_ok) then
+                    status = stat
+                    return
+                end if
+            else
+                ! Existing affine geometry and quadrature stay unchanged.
+                state%gradient(:, :, e) = grads
+                state%area(e) = 0.5_dp*abs(det)
+                state%stiffness(:, :, e) = 0.0_dp
+                do q = 1, quadrature%n_points
+                    call element_shapes(state, e, quadrature%xi(q), &
+                        quadrature%eta(q), shape(:ndof), grad_q(:, :ndof))
+                    point = matmul(state%points(:, state%triangles(1:3, e)), &
+                        [1-quadrature%xi(q)-quadrature%eta(q), &
+                         quadrature%xi(q), quadrature%eta(q)])
+                    weight = 2*state%area(e)*quadrature%weights(q)/point(1)
+                    do l = 1, ndof
+                        do k = 1, ndof
+                            state%stiffness(k, l, e) = state%stiffness(k, l, e) + &
+                                weight*dot_product(grad_q(:, k), grad_q(:, l))
+                        end do
+                    end do
+                end do
+            end if
+            do l = 1, ndof
+                j = state%triangles(l, e)
+                state%diagonal(j) = state%diagonal(j) + state%stiffness(l, l, e)
+            end do
+        end do
+        where (state%boundary) state%diagonal = 1.0_dp
+        if (minval(state%diagonal) <= 0) return
+        if (state%mapped) then
+            if (.not. all(ieee_is_finite(state%diagonal))) return
+            state%claim = 'mapped finite-sum candidate'
+        end if
+        state%ready = .true.
+        status = 0
+    end subroutine initialize_gs
+
+    subroutine mapped_boundary_identity(mesh, contour, status)
+        type(tc_result_t), intent(in) :: mesh
+        real(dp), intent(in) :: contour(:, :)
+        integer, intent(out) :: status
+        integer, allocatable :: original(:)
+        logical, allocatable :: seen(:)
+        integer :: i, j, e, edge, first, second, n, matches
+        real(dp) :: u(2), v(2), turn
+        status = geometry_invalid
+        n = size(contour, 2)
+        if (count(mesh%pointmarkers /= 0) /= n) return
+        allocate (original(mesh%npoints), seen(n))
+        original = 0; seen = .false.
+        do j = 1, n
+            matches = 0
+            do i = 1, mesh%npoints
+                if (transfer(mesh%points(1, i), 0_int64) /= &
+                    transfer(contour(1, j), 0_int64)) cycle
+                if (transfer(mesh%points(2, i), 0_int64) /= &
+                    transfer(contour(2, j), 0_int64)) cycle
+                if (mesh%pointmarkers(i) == 0) return
+                original(i) = j
+                matches = matches+1
+            end do
+            if (matches /= 1) return
+            ! Native guard only; exact convexity/inclusion remains an admission premise.
+            u = contour(:, mod(j, n)+1)-contour(:, j)
+            v = contour(:, mod(j+1, n)+1)-contour(:, mod(j, n)+1)
+            turn = u(1)*v(2)-u(2)*v(1)
+            if (.not. ieee_is_finite(turn)) return
+            if (turn <= 0) return
+        end do
+        do e = 1, mesh%ntriangles
+            do edge = 1, 3
+                if (mesh%neighbors(edge, e) > 0) cycle
+                first = original(mesh%triangles(edge, e))
+                second = original(mesh%triangles(mod(edge, 3)+1, e))
+                if (first == 0 .or. second == 0) return
+                if (second /= mod(first, n)+1) return
+                if (seen(first)) return
+                seen(first) = .true.
+            end do
+        end do
+        if (.not. all(seen)) return
+        status = geometry_ok
+    end subroutine
 
    subroutine gs_quadrature(order, quadrature)
       integer, intent(in) :: order
@@ -247,6 +378,11 @@ contains
       real(dp) :: residual, tolerance
       integer :: iterations
       status = 1
+      if (state%mapped) then
+         if (.not. state%ready) return
+         if (.not. all(ieee_is_finite(source))) return
+         if (.not. ieee_is_finite(norm2(source))) return
+      end if
       if (size(source) /= size(state%psi)) return
       allocate (response(size(source)))
       response = 0.0_dp
@@ -274,28 +410,68 @@ contains
       integer, intent(out) :: status
       real(dp), allocatable :: rhs(:), solution(:), action(:)
       status = 1
+      if (state%mapped) then
+         if (.not. state%ready) return
+         state%residual = huge(1.0_dp)
+         if (.not. all(ieee_is_finite(state%psi))) return
+      end if
       if (mu0 <= 0.0_dp) return
       if (any(.not. ieee_is_finite([mu0, pprime, ffprime]))) return
       allocate (rhs(size(state%psi)), action(size(state%psi)))
-      call assemble_gs_rhs(state, mu0, pprime, ffprime, rhs)
+      call assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
+      if (status /= 0) return
       call gs_linear_response(state, rhs, solution, status)
       if (status /= KRYLOV_OK) return
-      state%psi = solution
       call apply_gs(state, solution, action)
+      if (state%mapped) then
+         status = geometry_arithmetic
+         if (.not. all(ieee_is_finite(action))) return
+         if (.not. ieee_is_finite(norm2(action-rhs))) return
+         if (.not. ieee_is_finite(norm2(rhs))) return
+      end if
       state%residual = norm2(action - rhs)/max(norm2(rhs), tiny(1.0_dp))
+      if (state%mapped) then
+         if (.not. ieee_is_finite(state%residual)) return
+      end if
+      state%psi = solution
+      status = KRYLOV_OK
    end subroutine solve_gs
 
-   subroutine assemble_gs_rhs(state, mu0, pprime, ffprime, rhs)
+   subroutine assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: mu0, pprime, ffprime
       real(dp), intent(out) :: rhs(:)
+      integer, intent(out) :: status
       type(gauss_quadrature_triangle_t) :: quadrature
       real(dp) :: point(2), shape(6), gradients(2, 6), source, weight
+      real(dp) :: nodes(2, 7), cell_matrix(6, 6), cell_load(6), vertices(2, 3)
       integer :: e, q, k, l, i, j, ndof
+      logical :: certified
       rhs = 0.0_dp
+      status = 1
       ndof = size(state%triangles, 1)
       call gs_quadrature(state%element_order, quadrature)
+      if (state%mapped) then
+         nodes(1, :) = quadrature%xi
+         nodes(2, :) = quadrature%eta
+      end if
       do e = 1, size(state%triangles, 2)
+         if (state%mapped) then
+            do j = 1, 3
+               vertices(:, j) = state%reference_points(:, state%triangles(j, e))
+            end do
+            call solovev_cell_p2_forms(state%mapped_geometry, vertices, nodes, &
+                 quadrature%weights, mu0, pprime, ffprime, cell_matrix, &
+                 cell_load, status, certified)
+            if (status /= geometry_ok) then
+               rhs = 0.0_dp
+               return
+            end if
+            do k = 1, ndof
+               i = state%triangles(k, e)
+               rhs(i) = rhs(i)+cell_load(k)
+            end do
+         else
          do q = 1, quadrature%n_points
             call element_shapes(state, e, quadrature%xi(q), &
                  quadrature%eta(q), shape(:ndof), gradients(:, :ndof))
@@ -309,6 +485,7 @@ contains
                rhs(i) = rhs(i) + weight*source*shape(k)
             end do
          end do
+         end if
          do l = 1, ndof
             j = state%triangles(l, e)
             if (.not. state%boundary(j)) cycle
@@ -344,9 +521,13 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: relative_tolerance
         integer, intent(in), optional :: max_evaluations
-        real(dp) :: rhs(size(state%psi))
+        real(dp), allocatable :: rhs(:)
         tangent = 0.0_dp
         status = 1
+        if (state%mapped) then
+            status = GS_UNSUPPORTED_GEOMETRY
+            return
+        end if
         if (size(tangent) /= size(state%psi)) return
         if (size(dpsi) /= size(state%psi)) return
         if (size(dflux) /= size(flux)) return
@@ -356,6 +537,7 @@ contains
         if (any(.not. ieee_is_finite(dflux))) return
         if (any(.not. ieee_is_finite(dpp))) return
         if (any(.not. ieee_is_finite(dff))) return
+        allocate (rhs(size(state%psi)))
         call profile_load_products(state, mu0, flux, pp, ff, 2, rhs, status, &
                             relative_tolerance, max_evaluations, dpsi=dpsi, dmu0=dmu0, &
                                    dflux=dflux, dpp=dpp, dff=dff, tangent=tangent)
@@ -370,14 +552,19 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: relative_tolerance
         integer, intent(in), optional :: max_evaluations
-        real(dp) :: rhs(size(state%psi))
+        real(dp), allocatable :: rhs(:)
         gpsi = 0; gmu0 = 0; gflux = 0; gpp = 0; gff = 0
         status = 1
+        if (state%mapped) then
+            status = GS_UNSUPPORTED_GEOMETRY
+            return
+        end if
         if (size(cotangent) /= size(state%psi)) return
         if (size(gpsi) /= size(state%psi)) return
         if (size(gflux) /= size(flux)) return
         if (size(gpp) /= size(pp) .or. size(gff) /= size(ff)) return
         if (any(.not. ieee_is_finite(cotangent))) return
+        allocate (rhs(size(state%psi)))
         call profile_load_products(state, mu0, flux, pp, ff, 3, rhs, status, &
                              relative_tolerance, max_evaluations, cotangent=cotangent, &
                                    gpsi=gpsi, gmu0=gmu0, gflux=gflux, gpp=gpp, gff=gff)
@@ -413,6 +600,16 @@ contains
         status = 1
         rhs = 0.0_dp
         if (present(error_estimate)) error_estimate = huge(1.0_dp)
+        if (state%mapped) then
+            if (present(tangent)) tangent = 0.0_dp
+            if (present(gpsi)) gpsi = 0.0_dp
+            if (present(gmu0)) gmu0 = 0.0_dp
+            if (present(gflux)) gflux = 0.0_dp
+            if (present(gpp)) gpp = 0.0_dp
+            if (present(gff)) gff = 0.0_dp
+            status = GS_UNSUPPORTED_GEOMETRY
+            return
+        end if
         if (mu0 <= 0.0_dp) return
         if (.not. ieee_is_finite(mu0)) return
         if (size(rhs) /= size(state%psi)) return
@@ -732,6 +929,11 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       real(dp) :: tolerance
       integer :: iteration
       status = 1
+      if (state%mapped) then
+         status = GS_UNSUPPORTED_GEOMETRY
+         state%residual = huge(1.0_dp)
+         return
+      end if
       if (mu0 <= 0.0_dp) return
       if (.not. ieee_is_finite(mu0)) return
       tolerance = 1.0e-8_dp
@@ -776,10 +978,22 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       integer, intent(out) :: status
       real(dp) :: shape(6), gradients(2, 6), hessians(2, 2, 6), local(2), differences(6)
       integer :: ndof, j
+      type(geometry_position_t) :: position
+      real(dp) :: query(2)
       psi = 0.0_dp; grad = 0.0_dp; hessian = 0.0_dp
       status = 1
       if (.not. ieee_is_finite(r) .or. .not. ieee_is_finite(z)) return
       if (r <= 0) return
+      if (state%mapped) then
+         if (.not. state%ready) return
+         query(1) = r; query(2) = z
+         call locate_solovev_geometry(state%mapped_geometry, query, position)
+         status = position%status
+         if (status /= geometry_ok) return
+         call mapped_element_jet(state, element, position%value, psi, grad, &
+              hessian, status)
+         return
+      end if
       if (element < 1 .or. element > size(state%triangles, 2)) return
       local = matmul(transpose(state%gradient(:, 2:3, element)), &
                      [r, z]-state%points(:, state%triangles(1, element)))
@@ -799,16 +1013,96 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       status = 0
    end subroutine gs_element_jet
 
+   subroutine mapped_element_jet(state, element, point, psi, grad, hessian, status)
+      type(gs_state_t), intent(in) :: state
+      integer, intent(in) :: element
+      real(dp), intent(in) :: point(2)
+      real(dp), intent(out) :: psi, grad(2), hessian(2, 2)
+      integer, intent(out) :: status
+      type(basis_p2_2d_t) :: basis
+      type(geometry_sample_t) :: geometry
+      real(dp) :: xi(2), differences(6), reference_grad(2), reference_h(2, 2)
+      real(dp) :: vertices(2, 3), shape(6), determinant, inverse(2, 2)
+      real(dp) :: value, physical_grad(2), physical_h(2, 2), gauge
+      real(dp) :: offset(2), basis_grad(2), basis_h(2, 2)
+      integer :: j
+      psi = 0.0_dp; grad = 0.0_dp; hessian = 0.0_dp
+      status = geometry_invalid
+      if (element < 1 .or. element > size(state%triangles, 2)) return
+      do j = 1, 3
+         vertices(:, j) = state%reference_points(:, state%triangles(j, element))
+      end do
+      offset = point-vertices(:, 1)
+      xi = matmul(transpose(state%reference_gradient(:, 2:3, element)), offset)
+      gauge = state%psi(state%triangles(1, element))
+      do j = 1, 6
+         differences(j) = state%psi(state%triangles(j, element))-gauge
+      end do
+      reference_grad = 0.0_dp; reference_h = 0.0_dp
+      do j = 1, 6
+         shape(j) = basis%eval(j, xi(1), xi(2))
+         basis_grad = basis%grad(j, xi(1), xi(2))
+         basis_h = basis%hessian(j, xi(1), xi(2))
+         reference_grad = reference_grad+basis_grad*differences(j)
+         reference_h = reference_h+basis_h*differences(j)
+      end do
+      value = gauge+dot_product(shape, differences)
+      call solovev_cell_scalar_jet(state%mapped_geometry, vertices, xi, &
+           reference_grad, reference_h, geometry, determinant, inverse, &
+           physical_grad, physical_h, status)
+      if (status /= geometry_ok) return
+      status = geometry_arithmetic
+      if (.not. ieee_is_finite(value)) return
+      psi = value; grad = physical_grad; hessian = physical_h
+      status = geometry_ok
+   end subroutine mapped_element_jet
+
    subroutine sample_gs(state, r, z, f, psi, br, bz, bt, status)
       type(gs_state_t), intent(in) :: state
       real(dp), intent(in) :: r, z, f
       real(dp), intent(out) :: psi, br, bz, bt
       integer, intent(out) :: status
-      real(dp) :: grad(2), hessian(2, 2)
-      integer :: e
+      real(dp) :: grad(2), hessian(2, 2), local(2), fields(3), query(2), offset(2)
+      type(geometry_position_t) :: position
+      integer :: e, cell_status
+      logical :: on_cell_boundary
       psi = 0.0_dp; br = 0.0_dp; bz = 0.0_dp; bt = 0.0_dp
       status = 1
       if (.not. ieee_is_finite(f)) return
+      if (state%mapped) then
+         if (.not. state%ready) return
+         query(1) = r; query(2) = z
+         call locate_solovev_geometry(state%mapped_geometry, query, position)
+         status = position%status
+         if (status /= geometry_ok) return
+         on_cell_boundary = .false.
+         do e = 1, size(state%triangles, 2)
+            offset = position%value-state%reference_points(:, state%triangles(1, e))
+            local = matmul(transpose(state%reference_gradient(:, 2:3, e)), offset)
+            ! Global readback refuses a guard band around computational cell edges.
+            ! An explicitly addressed element jet supplies a one-sided trace.
+            if (min(1-local(1)-local(2), minval(local)) < -1.0e-12_dp) cycle
+            if (min(1-local(1)-local(2), minval(local)) <= 1.0e-12_dp) then
+               on_cell_boundary = .true.
+               cycle
+            end if
+            call mapped_element_jet(state, e, position%value, psi, grad, &
+                 hessian, cell_status)
+            status = cell_status
+            if (status /= geometry_ok) return
+            call gs_field(r, grad(1), grad(2), f, fields(1), fields(2), fields(3))
+            if (.not. all(ieee_is_finite(fields))) then
+               psi = 0.0_dp
+               status = geometry_arithmetic
+               return
+            end if
+            br = fields(1); bz = fields(2); bt = fields(3)
+            return
+         end do
+         status = geometry_invalid
+         if (on_cell_boundary) status = geometry_interface
+         return
+      end if
       do e = 1, size(state%triangles, 2)
          call gs_element_jet(state, e, r, z, psi, grad, hessian, status)
          if (status /= 0) cycle
@@ -825,6 +1119,10 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       integer, intent(out) :: status
       real(dp) :: psi, grad(2), hessian(2, 2)
       status = 1; current = 0.0_dp
+      if (state%mapped) then
+         status = GS_UNSUPPORTED_GEOMETRY
+         return
+      end if
       if (.not. ieee_is_finite(mu0)) return
       if (mu0 <= 0) return
       call gs_element_jet(state, element, r, z, psi, grad, hessian, status)
@@ -861,6 +1159,10 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       integer :: e, j, k, pivot(2), stat
       axis = 0.0_dp; psi_axis = huge(1.0_dp); hessian_axis = 0.0_dp
       element = 0; status = 3
+      if (state%mapped) then
+         status = GS_UNSUPPORTED_GEOMETRY
+         return
+      end if
       if (state%element_order /= 2) return
       status = 4 ! No regular strict interior minimum; edge/vertex cusp possible.
       edge_min = minval(state%psi)
@@ -929,6 +1231,10 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       real(dp) :: psi, gl(2), gr(2), hessian(2, 2), tangent(2), toward(2)
       integer :: j, k, first, second, edge
       status = 1; current = 0.0_dp
+      if (state%mapped) then
+         status = GS_UNSUPPORTED_GEOMETRY
+         return
+      end if
       if (.not. all(ieee_is_finite([normal, mu0]))) return
       if (mu0 <= 0) return
       if (abs(norm2(normal)-1) > 1.0e-10_dp) return
@@ -961,6 +1267,10 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       character(*), intent(in) :: path
       integer, intent(out) :: status
       integer :: unit, j
+      if (state%mapped) then
+         status = GS_UNSUPPORTED_GEOMETRY
+         return
+      end if
       open (newunit=unit, file=path, status='replace', action='write', &
             iostat=status)
       if (status /= 0) return
