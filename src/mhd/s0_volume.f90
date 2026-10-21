@@ -13,8 +13,9 @@ contains
     subroutine s0_assemble_volume(ndof, dof, weight, b, p, rho, mu, value, &
             gradient, stiffness, mass, status)
         integer, intent(in) :: ndof, dof(:,:)
-        real(dp), intent(in) :: weight(:,:), b(:,:,:), p(:,:), rho(:,:), mu
-        complex(dp), intent(in) :: value(:,:,:,:), gradient(:,:,:,:,:)
+        real(dp), contiguous, intent(in) :: weight(:,:), b(:,:,:), p(:,:), rho(:,:)
+        real(dp), intent(in) :: mu
+        complex(dp), contiguous, intent(in) :: value(:,:,:,:), gradient(:,:,:,:,:)
         type(csc_z_t), intent(out) :: stiffness, mass
         type(fortsparse_status_t), intent(out) :: status
         integer, allocatable :: rows(:), cols(:)
@@ -78,6 +79,11 @@ contains
                             aimag(value(2,i,q,e)),aimag(value(3,i,q,e)),ri)
                         me = me+weight(q,e)*cmplx(rr+ii,ir-ri,dp)
                     end do
+                    ! A Hermitian quadratic form is real. The two independently
+                    ! rounded cross contractions in xi_bilinear can otherwise
+                    ! leave an imaginary diagonal and violate native LDL^H's
+                    ! exact Hermitian input contract for complex physical jets.
+                    if (i == j) ke = cmplx(real(ke,dp),0.0_dp,dp)
                     at = (e-1)*nb*nb+(j-1)*nb+i
                     mirror = (e-1)*nb*nb+(i-1)*nb+j
                     rows(at) = dof(i,e); cols(at) = dof(j,e)
