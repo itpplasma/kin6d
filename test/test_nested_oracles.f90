@@ -20,6 +20,25 @@ real(dp) :: db(3, 3), gp(3), curl(3), force(3), jac, rho, theta, t, error, divma
     type(interval_t) :: ai(8), vi(20)
     integer :: family, asym, k, n, status
     error = 0; divmax = 0; fbmax = 0
+    o%eps = 0
+    ! Independent symmetry limit: fixed conventional theta gives the same
+    ! (R,Z) at every phi. A material-angle export instead winds twice.
+    do asym = 0, 1
+        o%tau = 0.4_dp*asym
+        do n = 1, 17
+            theta = 2*pi*n/17
+            call o%boundary(theta, 0.0_dp, x, status)
+            if (status /= 0) error stop 'axisymmetric boundary at phi=0'
+            do k = 1, 13
+                t = 2*pi*(k - 0.3_dp)/13
+                call o%boundary(theta, t, xx, status)
+                if (status /= 0) error stop 'axisymmetric boundary at phi'
+                if (abs(hypot(x(1), x(2)) - hypot(xx(1), xx(2))) > 2e-13_dp &
+                    .or. abs(x(3) - xx(3)) > 2e-13_dp) &
+                    error stop 'poloidal angle must not wind in axisymmetric limit'
+            end do
+        end do
+    end do
     do family = 1, 2
         do asym = 0, 1
             o%family = family
