@@ -7,7 +7,7 @@ file(WRITE "${WORK}/currents.txt" "1000.0\n")
 foreach(mode automatic explicit)
     set(rationals "rat_num(1)=2, rat_den(1)=1, rat_auto=.true.,")
     if(mode STREQUAL explicit)
-        set(rationals "rat_num(1)=2, rat_den(1)=1, rat_num(2)=3, rat_den(2)=1, rat_auto=.false.,")
+        set(rationals "rat_num(1)=2, rat_den(1)=1, rat_num(2)=3, rat_den(2)=1, rat_num(3)=99, rat_den(3)=1, rat_auto=.false.,")
     endif()
     file(WRITE "${WORK}/${mode}.nml"
         "&l4 eqdsk='${EQDSK}', coils='coils.txt', currents(1)='currents.txt', prefix='${mode}', n=1, ${rationals} nrad=12, nth_max=64, order=2, nphi=32, nfine=256, np_sample=64, model='ideal', closure='frobenius', layer_delta=0.02, layer_ratio=2, zero_pressure=.true., error_estimate=.false., gmres_tol=1e-9, gmres_maxit=400 /\n")

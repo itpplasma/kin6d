@@ -219,7 +219,7 @@ program gs_response_3d
     if (frob) then
         ! Mercier index and shear of each rational, rings of the layers
         allocate (di_rat(nrat), dq_rat(nrat), delta_rat(nrat))
-        call layer_fit_widths(psin_rat, layer_delta, layer_ratio, layer_nfit, &
+        call layer_fit_widths(psin_rat(1:nrat), layer_delta, layer_ratio, layer_nfit, &
             (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, delta_rat, st)
         if (st /= 0) error stop 'rational outside the Frobenius fit domain'
         do i = 1, nrat
