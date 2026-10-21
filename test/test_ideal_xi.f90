@@ -51,6 +51,11 @@ program test_ideal_xi
     value = xi_bilinear(b,p,mu,a,c)
     if (abs(value-conjg(xi_bilinear(b,p,mu,c,a))) > tolerance*max(1.0_dp,abs(value))) &
         error stop 'Hermitian pairing'
+    imag_unit = cmplx(0,1,dp)
+    if (abs(xi_bilinear(b,p,mu,imag_unit*a,c)-imag_unit*value) &
+        > tolerance*max(1.0_dp,abs(value))) error stop 'trial complex linearity'
+    if (abs(xi_bilinear(b,p,mu,a,imag_unit*c)+imag_unit*value) &
+        > tolerance*max(1.0_dp,abs(value))) error stop 'test conjugate linearity'
     expected = oracle(b,p,mu,real(a,dp),real(c,dp)) &
         + oracle(b,p,mu,aimag(a),aimag(c))
     call close(real(value,dp), expected, tolerance, 'independent xi tensor form')
