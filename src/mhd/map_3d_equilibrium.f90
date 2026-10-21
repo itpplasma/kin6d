@@ -47,11 +47,14 @@ contains
         do e = 1, map%cells
             do g = 1, map%nq
                 y = matmul(map%reference(:, map%conn(:, e)), map%shape(:, g))
-           dg = matmul(map%reference(:, map%conn(:, e)), transpose(map%dshape(:, :, g)))
+                dg = matmul(map%reference(:, map%conn(:, e)), &
+                    transpose(map%dshape(:, :, g)))
                 call frozen%evaluate(y, chi, cg, b3, p)
                 call ideal_reference_form(dg(1, 1), dg(2, 1), dg(1, 2), dg(2, 2), &
                                           cg(1), cg(2), b3, b(1), b(2), b(3))
-         mismatch = max(mismatch, maxval(abs(b - map%b(:, g, e))), abs(p - map%p(g, e)))
+                if (.not. all(ieee_is_finite([b,p]))) mismatch=huge(1.0_dp)
+                mismatch = max(mismatch, maxval(abs(b - map%b(:, g, e))), &
+                    abs(p - map%p(g, e)))
             end do
         end do
         !$omp end parallel do
