@@ -38,7 +38,7 @@ load_job_environment() {
 mkdir -p "$root/deps"
 for lib in fortplot fortio fortnum fortfem fortsparse; do
     variable=KIN6D_$(echo "$lib" | tr 'a-z' 'A-Z')_REVISION
-    revision=$(sed -n "s/set($variable \"\\([0-9a-f]\\{40\\}\\)\").*/\\1/p" CMakeLists.txt)
+    revision=$(sed -nE "s/^set\\($variable \"?([0-9a-f]{40})\"?.*/\\1/p" CMakeLists.txt)
     test -n "$revision"
     mkdir -p "$root/deps/$lib"
     git --git-dir="$root/mirrors/lazy-fortran/$lib.git" archive "$revision" | tar -x -C "$root/deps/$lib"
