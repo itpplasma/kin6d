@@ -200,7 +200,11 @@ benchmarks/equilibrium-gpu/analyze.sh gpu.log
 same CTest and two sizes at 1/2/4/8 CPU threads. The T4 job uses sm_75 and
 GCC 11 with CUDA 11.8. Prototype build needs only CMake, Fortran/OpenMP, CUDA
 and the C++ runtime; no production backend configuration was designed.
-The controller still owns build/runtime configuration choices.
+The top-level build offers `KIN6D_BUILD_CUDA_PRECISION_BENCHMARK=ON` with an
+explicit `CMAKE_CUDA_ARCHITECTURES`; the option defaults to OFF. The standalone
+build above also requires an explicit architecture. Production FP64 defaults
+remain unchanged. Submit `run_slurm.sh` from the dedicated snapshot root;
+Slurm copies the script to its spool directory before execution.
 
 [V] Full logs, profiles, compiler/resource reports and binary/library hashes:
 `/home/ert/data/handoffs/20261021_cluster_triage/kin6d_G/`.
