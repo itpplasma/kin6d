@@ -20,7 +20,7 @@ program test_s0_tae
     order = log(errors(:,2)/errors(:,3))/log(2.0_dp)
     call require(all(order > 0.95_dp) .and. all(order < 1.05_dp), &
         'asymptotic P0 continuum-edge convergence')
-    print '(a,2f10.5)', '[V] P0 omega edge convergence orders: ',order
+    print '(a,2f10.5)', 'P0 omega edge convergence orders: ',order
 contains
     subroutine require(ok,label)
         logical, intent(in) :: ok
@@ -171,7 +171,7 @@ contains
             call s0_destroy(pencil)
         end do
         call require(maxval(error) < 0.003_dp,'physical edge frequency accuracy')
-        print '(a,i0,a,2es17.8,a,2es12.4)', '[V] TAE continuum ne=',ne, &
+        print '(a,i0,a,2es17.8,a,2es12.4)', 'TAE continuum ne=',ne, &
             ' omega edges=',measured,' relative errors=',error
     end subroutine gap
 end program test_s0_tae

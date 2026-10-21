@@ -383,7 +383,7 @@ contains
                     alevel = level
                     growth_errors(alevel) = abs(physical_lambda-exact/density) &
                         /abs(exact/density)
-                    print '(a,f7.1,a,4es18.9)', '[V] rigid kink R=',kink_major, &
+                    print '(a,f7.1,a,4es18.9)', 'rigid kink R=',kink_major, &
                         ' gamma,S0-lambda,oracle-lambda,relative-error=', &
                         sqrt(-physical_lambda),physical_lambda,exact/density, &
                         growth_errors(alevel)
@@ -417,7 +417,7 @@ contains
             deallocate (chain, contour)
         end do
         if (rates) then
-            print '(a,2f12.6)', '[V] rigid kink aspect-error orders=', &
+            print '(a,2f12.6)', 'rigid kink aspect-error orders=', &
                 log(growth_errors(:2)/growth_errors(2:))/log(aspects(2:)/aspects(:2))
         end if
     end subroutine
