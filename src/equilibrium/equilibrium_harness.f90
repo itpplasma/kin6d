@@ -20,6 +20,10 @@ module kin6d_equilibrium_harness
     end type
     type(equilibrium_case_t), parameter :: cases(*) = [ &
         equilibrium_case_t('solovev', 'map', 'Solovev A3; independent 2D GS'), &
+        equilibrium_case_t('cerfon-iter-0', 'psi', 'Cerfon-Freidberg symmetric ITER A=0'), &
+        equilibrium_case_t('cerfon-iter-155', 'psi', 'Cerfon-Freidberg symmetric ITER A=-0.155'), &
+        equilibrium_case_t('cerfon-nstx-0', 'psi', 'Cerfon-Freidberg symmetric NSTX A=0'), &
+        equilibrium_case_t('cerfon-nstx-1', 'psi', 'Cerfon-Freidberg symmetric NSTX A=1'), &
         equilibrium_case_t('shaped', 'map', 'shaped Solovev; independent 2D GS'), &
         equilibrium_case_t('seed', 'map', 'nested A3; exact flux and 2D GS'), &
         equilibrium_case_t('seedshaped', 'map', 'nested shaped; exact flux and 2D GS'), &

@@ -12,9 +12,11 @@ module kin6d_gs_equilibrium
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, gs_profile_integral, &
-        gs_axis_candidate
+        gs_axis_candidate, gs_cell_data
     use kin6d_gs_field_readback, only: sample_gs_many
     use kin6d_gs_coarea, only: gs_level_coarea
+    use kin6d_gs_ampere_loop, only: gs_boundary_current
+    use kin6d_equilibrium_bulk_leaves, only: equilibrium_bulk_density
     use kin6d_gs_axis_recovery, only: gs_magnetic_axis
     use kin6d_curved_triangle, only: triangle_geometry
     use kin6d_triangle_basis, only: triangle_basis_jet
@@ -43,6 +45,7 @@ module kin6d_gs_equilibrium
         procedure :: magnetic_axis => gs_field_magnetic_axis
         procedure :: label_coarea => gs_field_label_coarea
         procedure :: region_integrals => gs_field_region_integrals
+        procedure :: bulk_integrals => gs_field_bulk_integrals
         procedure :: resolution => gs_field_resolution
     end type
 contains
@@ -95,15 +98,39 @@ contains
     end subroutine
 
     subroutine gs_field_region_integrals(field, volume, phi_tor, status)
+        class(gs_field_t), intent(in) :: field
+        real(dp), intent(out) :: volume, phi_tor
+        integer, intent(out) :: status
+        call gs_field_integrals(field, volume, phi_tor, status)
+    end subroutine
+
+    subroutine gs_field_bulk_integrals(field, mu0, pint, bint, current, &
+                                      perimeter, status)
+        class(gs_field_t), intent(in) :: field
+        real(dp), intent(in) :: mu0
+        real(dp), intent(out) :: pint, bint, current, perimeter
+        integer, intent(out) :: status
+        real(dp) :: volume, phi_tor
+        pint = 0; bint = 0; current = 0; perimeter = 0
+        call gs_field_integrals(field, volume, phi_tor, status, pint, bint)
+        if (status /= 0) return
+        call gs_boundary_current(field%view, mu0, 8, current, status, &
+                                 perimeter=perimeter)
+        current = field%orientation*current
+    end subroutine
+
+    subroutine gs_field_integrals(field, volume, phi_tor, status, pint, bint)
         ! Whole-mesh views only: a plasma sub-mesh holds cut cells whose
         ! plasma part needs the solver's level-cut quadrature.
         class(gs_field_t), intent(in) :: field
         real(dp), intent(out) :: volume, phi_tor
         integer, intent(out) :: status
+        real(dp), intent(out), optional :: pint, bint
         real(dp), allocatable :: x(:), y(:), w(:)
         real(dp) :: point(2), jac(2, 2), curvature(2, 2, 2), det, inverse(2, 2)
         real(dp) :: shape(10), gradients(2, 10), hessians(2, 2, 10)
         real(dp) :: flux, f, pressure, two_pi, volume_sum, flux_sum
+        real(dp) :: pressure_sum, bpol_sum, grad(2), density_p, density_b
         real(dp), allocatable :: shapes(:, :)
         integer :: e, node, ndof, local_status, failed_element, failed_status
         integer :: snapshot
@@ -122,12 +149,13 @@ contains
         end do
         ! Element-parallel volume and toroidal-flux sums: static partition per
         ! thread, reduction over the thread partial sums.
-        volume_sum = 0; flux_sum = 0
+        volume_sum = 0; flux_sum = 0; pressure_sum = 0; bpol_sum = 0
         failed_element = huge(1); failed_status = 1
         !$omp parallel do default(shared) schedule(static) &
         !$omp& private(node, point, jac, curvature, det, inverse, flux, f, pressure) &
         !$omp& private(local_status, snapshot) &
-        !$omp& reduction(+: volume_sum, flux_sum)
+        !$omp& private(shape, gradients, hessians, grad, density_p, density_b) &
+        !$omp& reduction(+: volume_sum, flux_sum, pressure_sum, bpol_sum)
         do e = 1, size(field%view%triangles, 2)
             !$omp atomic read
             snapshot = failed_element
@@ -155,6 +183,21 @@ contains
                 end if
                 volume_sum = volume_sum + two_pi*w(node)*det*point(1)
                 flux_sum = flux_sum + w(node)*det*f/point(1)
+                if (.not. present(pint)) cycle
+                call gs_cell_data(field%view, e, [x(node), y(node)], point, det, &
+                    shape(:ndof), gradients(:, :ndof), hessians(:, :, :ndof), &
+                    local_status)
+                if (local_status /= 0) then
+                    call record_failure(e, local_status)
+                    exit
+                end if
+                grad = matmul(gradients(:, :ndof), &
+                    field%view%psi(field%view%triangles(:, e)) &
+                    - field%view%psi(field%view%triangles(1, e)))
+                call equilibrium_bulk_density(point(1), grad(1), grad(2), &
+                    pressure, density_p, density_b)
+                pressure_sum = pressure_sum + w(node)*det*density_p
+                bpol_sum = bpol_sum + w(node)*det*density_b
             end do
         end do
         !$omp end parallel do
@@ -164,6 +207,8 @@ contains
         end if
         volume = volume_sum
         phi_tor = flux_sum
+        if (present(pint)) pint = pressure_sum
+        if (present(bint)) bint = bpol_sum
         status = 0
     contains
         subroutine record_failure(element, code)

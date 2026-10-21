@@ -48,6 +48,8 @@ module kin6d_equilibrium_state
         ! Plasma volume and toroidal flux int B_phi dA over the plasma;
         ! EQ_UNAVAILABLE when the lane cannot integrate over its plasma.
         procedure(field_region_integrals), deferred :: region_integrals
+        ! Optional D7 bulk diagnostics. Unsupported lanes retain unavailable.
+        procedure :: bulk_integrals => unavailable_bulk_integrals
         ! Default radial levels and angular quadrature budget for 0 inputs.
         procedure(field_resolution), deferred :: resolution
     end type
@@ -132,4 +134,18 @@ module kin6d_equilibrium_state
         character(32) :: lane = '', claim = 'candidate'
         character(256) :: seed = ''
     end type
+contains
+    subroutine unavailable_bulk_integrals(field, mu0, pint, bint, current, &
+                                         perimeter, status)
+        class(labelled_field_t), intent(in) :: field
+        real(dp), intent(in) :: mu0
+        real(dp), intent(out) :: pint, bint, current, perimeter
+        integer, intent(out) :: status
+        pint = 0; bint = 0; current = 0; perimeter = 0
+        select type (field)
+        class default
+            status = EQ_UNAVAILABLE
+        end select
+        if (mu0 <= 0) status = 1
+    end subroutine
 end module kin6d_equilibrium_state
