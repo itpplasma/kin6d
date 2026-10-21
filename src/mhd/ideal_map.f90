@@ -667,7 +667,17 @@ contains
         type(ideal_map_t), intent(inout) :: map
         integer :: a, m, j
         if (allocated(map%axis_vec)) deallocate (map%axis_vec)
-        map%axis_basis = 0
+        ! Both physical position components already have nodal unknowns. The
+        ! axis expansion is identically zero in this gauge; retaining its
+        ! fixed columns creates global structural zeros in every cell block.
+        if (map%npoly > 0) then
+            map%npoly = 0
+            map%nred = 2*map%nmode*map%nodes
+            map%redconn = map%redconn(:2*map%nmode*map%nloc, :)
+            map%fixed = map%fixed(:map%nred)
+            deallocate (map%axis_basis)
+            allocate (map%axis_basis(0, map%nodes))
+        end if
         do a = 1, map%nodes
             map%basis(:, 1, a) = [1.0_dp, 0.0_dp, 0.0_dp]
             map%basis(:, 2, a) = [0.0_dp, 1.0_dp, 0.0_dp]
