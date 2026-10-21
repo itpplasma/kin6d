@@ -143,6 +143,24 @@ volume from flux integrals of B over them; SFL angles (PEST, Hamada, Boozer);
 exports (G-EQDSK for axisymmetric states with ψ from D1, Boozer `.bc` through
 libneo, L7 spectra).
 
+E2.2 interchange is planned behind `KIN6D_WITH_LIBNEO` (default OFF), using a
+commit-pinned FetchContent dependency and a narrow outer adapter linked to a
+libneo-owned G-EQDSK target. Native GS uses COCOS 3: SI flux per radian,
+`B_R=-psi_Z/R`, `B_Z=psi_R/R`, `B_phi=F/R`
+(`gen/gen_grad_shafranov.f90:85,91`), and signed q with
+`sign(psi_bound-psi_axis)` (`src/equilibrium/equilibrium_readback.f90:104,131`),
+consistent with [Sauter and Medvedev, Table 1](https://doi.org/10.1016/j.cpc.2012.09.010).
+The adapter must convert SI to/from libneo's CGS data, retain an explicit source
+COCOS declaration, and use libneo read/write/classify/standardise before native
+consumption. Dependency integration is blocked at libneo revision
+7d2e1a857456642208cef4370c8da57ef6990b1d:
+`src/coordinates/CMakeLists.txt:6,19` bundles `geqdsk_tools` with VMEC,
+SPECTRE, interpolation and FortNum; `CMakeLists.txt:293,304` excludes it from
+the light build. The proposed upstream split is `LIBNEO::geqdsk`, linked only
+to `neo_util`, available without numerics and re-exported by `coordinates`.
+The option, export/import adapters and round-trip/re-solve qualification remain
+unimplemented pending that split; libneo remains the sole format owner.
+
 Kinetic geometry view (`src/equilibrium/equilibrium_geometry.f90`, axisymmetric states):
 on a surface psi = psi_0 of the evaluator it returns B, |B|, grad|B| (five-point
 stencil of the evaluator), grad psi, b.grad theta, (b x grad psi).grad theta,
