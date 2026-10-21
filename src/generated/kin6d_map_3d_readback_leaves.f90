@@ -87,9 +87,9 @@ pure elemental subroutine map_3d_field(q11, q21, q31, q12, q22, q32, q13, q23, q
     br = (b3*q13*t6 - q11*t7 + q12*t8)/t5
     bz = (b3*q23*t6 - q21*t7 + q22*t8)/t5
     bphi = r*(b3*q33*t6 - q31*t7 + q32*t8)/t5
-    chi_r = (r*(q21*q32 - q22*q31)*0*1 + t8*t1*1 - t7*(q21*q33 - q23*q31))/t4
-    chi_z = (-r*(q11*q32 - q12*q31)*0 - t8*t2 + t7*(q11*q33 - q13*q31)*1)/t4
-    chi_phi = (r*(q11*q22 - q12*q21)*0*1 + t8*t3*1 - t7*(q11*q23 - q13*q21))/t4
+    chi_r = -sigma*(r*(q21*q32 - q22*q31)*0*1 + t8*t1*1 - t7*(q21*q33 - q23*q31))/t4
+    chi_z = -sigma*(-r*(q11*q32 - q12*q31)*0 - t8*t2 + t7*(q11*q33 - q13*q31)*1)/t4
+    chi_phi = -sigma*(r*(q11*q22 - q12*q21)*0*1 + t8*t3*1 - t7*(q11*q23 - q13*q21))/t4
     jac = t5
 
 end subroutine map_3d_field
@@ -108,7 +108,8 @@ pure elemental subroutine map_3d_field_jvp(q11, q21, q31, q12, q22, q32, q13, q2
         chi2, b3, r, sigma, dq11, dq21, dq31, dq12, dq22, dq32, dq13, dq23, dq33, dg11, dg21, dg12, dg22, &
         dchi1, dchi2, db3, dr, dsigma
     real(dp), intent(out) :: dbr, dbz, dbphi, dchi_r, dchi_z, dchi_phi, djac
-    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, &
+        t19, t20, t21, t22
 
     t1 = q22*q33 - q23*q32
     t2 = q12*q33 - q13*q32
@@ -127,20 +128,23 @@ pure elemental subroutine map_3d_field_jvp(q11, q21, q31, q12, q22, q32, q13, q2
     t15 = chi1*dg11 + chi2*dg21 + dchi1*g11 + dchi2*g21
     t16 = b3*q33*t5 - q31*t6 + q32*t7
     t17 = q21*q33 - q23*q31
-    t18 = q11*q33 - q13*q31
-    t19 = q11*q23 - q13*q21
+    t18 = t7*t1 - t6*t17
+    t19 = q11*q33 - q13*q31
+    t20 = -t7*t2 + t6*t19
+    t21 = q11*q23 - q13*q21
+    t22 = t7*t3 - t6*t21
     dbr = -(b3*q13*t5 - q11*t6 + q12*t7)*t12/r**2/sigma**2/t4**2 - (b3*dq13*t5 + b3*q13*t13 + db3* &
         q13*t5 - dq11*t6 + dq12*t7 - q11*t14 + q12*t15)/r/sigma/t4
     dbz = -(b3*q23*t5 - q21*t6 + q22*t7)*t12/r**2/sigma**2/t4**2 - (b3*dq23*t5 + b3*q23*t13 + db3* &
         q23*t5 - dq21*t6 + dq22*t7 - q21*t14 + q22*t15)/r/sigma/t4
     dbphi = -dr*t16/r/sigma/t4 - t16*t12/r/sigma**2/t4**2 - (b3*dq33*t5 + b3*q33*t13 + db3*q33*t5 - &
         dq31*t6 + dq32*t7 - q31*t14 + q32*t15)/sigma/t4
-    dchi_r = -t11*(t7*t1 - t6*t17)/t4**2 + (t15*t1 - t14*t17 + t7*t8 - t6*(dq21*q33 - dq23*q31 - &
-        dq31*q23 + dq33*q21))/t4
-    dchi_z = -t11*(-t7*t2 + t6*t18)/t4**2 + (-t15*t2 + t14*t18 - t7*t9 + t6*(dq11*q33 - dq13*q31 - &
-        dq31*q13 + dq33*q11))/t4
-    dchi_phi = -t11*(t7*t3 - t6*t19)/t4**2 + (t15*t3 - t14*t19 + t7*t10 - t6*(dq11*q23 - dq13*q21 - &
-        dq21*q13 + dq23*q11))/t4
+    dchi_r = -dsigma*t18/t4 + sigma*t11*t18/t4**2 - sigma*(t15*t1 - t14*t17 + t7*t8 - t6*(dq21*q33 - &
+        dq23*q31 - dq31*q23 + dq33*q21))/t4
+    dchi_z = -dsigma*t20/t4 + sigma*t11*t20/t4**2 - sigma*(-t15*t2 + t14*t19 - t7*t9 + t6*(dq11* &
+        q33 - dq13*q31 - dq31*q13 + dq33*q11))/t4
+    dchi_phi = -dsigma*t22/t4 + sigma*t11*t22/t4**2 - sigma*(t15*t3 - t14*t21 + t7*t10 - t6*(dq11* &
+        q23 - dq13*q21 - dq21*q13 + dq23*q11))/t4
     djac = t12
 
 end subroutine map_3d_field_jvp
@@ -159,7 +163,8 @@ pure elemental subroutine map_3d_field_vjp(q11, q21, q31, q12, q22, q32, q13, q2
         chi2, b3, r, sigma, bbr, bbz, bbphi, bchi_r, bchi_z, bchi_phi, bjac
     real(dp), intent(out) :: gq11, gq21, gq31, gq12, gq22, gq32, gq13, gq23, gq33, gg11, gg21, gg12, &
         gg22, gchi1, gchi2, gb3, gr, gsigma
-    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, &
+        t19, t20, t21, t22
 
     t1 = q22*q33 - q23*q32
     t2 = q12*q33 - q13*q32
@@ -172,38 +177,89 @@ pure elemental subroutine map_3d_field_vjp(q11, q21, q31, q12, q22, q32, q13, q2
     t9 = bjac - (bbphi*r*t8 + bbr*(b3*q13*t6 - q11*t5 + q12*t7) + bbz*(b3*q23*t6 - q21*t5 + q22*t7)) &
         /r**2/sigma**2/t4**2
     t10 = q11*q23 - q13*q21
-    t11 = q21*q33 - q23*q31
-    t12 = q11*q33 - q13*q31
-    t13 = -r*sigma*t9 - (bchi_phi*(t7*t3 - t5*t10) + bchi_r*(t7*t1 - t5*t11) + bchi_z*(-t7*t2 + t5* &
-        t12))/t4**2
-    t14 = bchi_phi*t7/t4 + q31*t13
-    t15 = -bchi_z*t7/t4 - q21*t13
-    t16 = bchi_r*t7/t4 + q11*t13
-    t17 = -bbphi*q32/sigma/t4 - bbr*q12/r/sigma/t4 - bbz*q22/r/sigma/t4 + bchi_phi*t3/t4 + bchi_r* &
-        t1/t4 - bchi_z*t2/t4
-    t18 = -b3*bbphi*q33/sigma/t4 - b3*bbr*q13/r/sigma/t4 - b3*bbz*q23/r/sigma/t4
-    t19 = bbphi*q31/sigma/t4 + bbr*q11/r/sigma/t4 + bbz*q21/r/sigma/t4 - bchi_phi*t10/t4 - bchi_r* &
-        t11/t4 + bchi_z*t12/t4
-    gq11 = bbr*t5/r/sigma/t4 - bchi_phi*q23*t5/t4 + bchi_z*q33*t5/t4 + t1*t13
-    gq21 = bbz*t5/r/sigma/t4 + bchi_phi*q13*t5/t4 - bchi_r*q33*t5/t4 - t2*t13
-    gq31 = bbphi*t5/sigma/t4 + bchi_r*q23*t5/t4 - bchi_z*q13*t5/t4 + t3*t13
-    gq12 = -bbr*t7/r/sigma/t4 + q23*t14 + q33*t15
-    gq22 = -bbz*t7/r/sigma/t4 - q13*t14 + q33*t16
-    gq32 = -bbphi*t7/sigma/t4 - q13*t15 - q23*t16
-    gq13 = -b3*bbr*t6/r/sigma/t4 + bchi_phi*q21*t5/t4 - bchi_z*q31*t5/t4 - q22*t14 - q32*t15
-    gq23 = -b3*bbz*t6/r/sigma/t4 - bchi_phi*q11*t5/t4 + bchi_r*q31*t5/t4 + q12*t14 - q32*t16
-    gq33 = -b3*bbphi*t6/sigma/t4 - bchi_r*q21*t5/t4 + bchi_z*q11*t5/t4 + q12*t15 + q22*t16
-    gg11 = chi1*t17 + g22*t18
-    gg21 = chi2*t17 - g12*t18
-    gg12 = chi1*t19 - g21*t18
-    gg22 = chi2*t19 + g11*t18
-    gchi1 = g11*t17 + g12*t19
-    gchi2 = g21*t17 + g22*t19
+    t11 = t7*t3 - t5*t10
+    t12 = q21*q33 - q23*q31
+    t13 = t7*t1 - t5*t12
+    t14 = q11*q33 - q13*q31
+    t15 = -t7*t2 + t5*t14
+    t16 = -r*sigma*t9 - (-bchi_phi*sigma*t11 - bchi_r*sigma*t13 - bchi_z*sigma*t15)/t4**2
+    t17 = -bchi_phi*sigma*t7/t4 + q31*t16
+    t18 = bchi_z*sigma*t7/t4 - q21*t16
+    t19 = -bchi_r*sigma*t7/t4 + q11*t16
+    t20 = -bbphi*q32/sigma/t4 - bbr*q12/r/sigma/t4 - bbz*q22/r/sigma/t4 - bchi_phi*sigma*t3/t4 - &
+        bchi_r*sigma*t1/t4 + bchi_z*sigma*t2/t4
+    t21 = -b3*bbphi*q33/sigma/t4 - b3*bbr*q13/r/sigma/t4 - b3*bbz*q23/r/sigma/t4
+    t22 = bbphi*q31/sigma/t4 + bbr*q11/r/sigma/t4 + bbz*q21/r/sigma/t4 + bchi_phi*sigma*t10/t4 + &
+        bchi_r*sigma*t12/t4 - bchi_z*sigma*t14/t4
+    gq11 = bbr*t5/r/sigma/t4 + bchi_phi*q23*sigma*t5/t4 - bchi_z*q33*sigma*t5/t4 + t1*t16
+    gq21 = bbz*t5/r/sigma/t4 - bchi_phi*q13*sigma*t5/t4 + bchi_r*q33*sigma*t5/t4 - t2*t16
+    gq31 = bbphi*t5/sigma/t4 - bchi_r*q23*sigma*t5/t4 + bchi_z*q13*sigma*t5/t4 + t3*t16
+    gq12 = -bbr*t7/r/sigma/t4 + q23*t17 + q33*t18
+    gq22 = -bbz*t7/r/sigma/t4 - q13*t17 + q33*t19
+    gq32 = -bbphi*t7/sigma/t4 - q13*t18 - q23*t19
+    gq13 = -b3*bbr*t6/r/sigma/t4 - bchi_phi*q21*sigma*t5/t4 + bchi_z*q31*sigma*t5/t4 - q22*t17 - &
+        q32*t18
+    gq23 = -b3*bbz*t6/r/sigma/t4 + bchi_phi*q11*sigma*t5/t4 - bchi_r*q31*sigma*t5/t4 + q12*t17 - &
+        q32*t19
+    gq33 = -b3*bbphi*t6/sigma/t4 + bchi_r*q21*sigma*t5/t4 - bchi_z*q11*sigma*t5/t4 + q12*t18 + q22* &
+        t19
+    gg11 = chi1*t20 + g22*t21
+    gg21 = chi2*t20 - g12*t21
+    gg12 = chi1*t22 - g21*t21
+    gg22 = chi2*t22 + g11*t21
+    gchi1 = g11*t20 + g12*t22
+    gchi2 = g21*t20 + g22*t22
     gb3 = -bbphi*q33*t6/sigma/t4 - bbr*q13*t6/r/sigma/t4 - bbz*q23*t6/r/sigma/t4
     gr = -bbphi*t8/r/sigma/t4 - sigma*t9*t4
-    gsigma = -r*t9*t4
+    gsigma = -bchi_phi*t11/t4 - bchi_r*t13/t4 - bchi_z*t15/t4 - r*t9*t4
 
 end subroutine map_3d_field_vjp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_map_3d_readback
+! Generator revision: 1725c8e16c0af9b7c6650cb82ec05aa6aec99aa4
+! Regenerate with: gen_map_3d_readback from pinned FortSym build
+
+pure elemental subroutine map_3d_flux(chi, sigma, psi)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: chi, sigma
+    real(dp), intent(out) :: psi
+
+    psi = -chi*sigma
+
+end subroutine map_3d_flux
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_map_3d_readback
+! Generator revision: 1725c8e16c0af9b7c6650cb82ec05aa6aec99aa4
+! Regenerate with: gen_map_3d_readback from pinned FortSym build
+
+pure elemental subroutine map_3d_flux_jvp(chi, sigma, dchi, dsigma, dpsi)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: chi, sigma, dchi, dsigma
+    real(dp), intent(out) :: dpsi
+
+    dpsi = -chi*dsigma - dchi*sigma
+
+end subroutine map_3d_flux_jvp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_map_3d_readback
+! Generator revision: 1725c8e16c0af9b7c6650cb82ec05aa6aec99aa4
+! Regenerate with: gen_map_3d_readback from pinned FortSym build
+
+pure elemental subroutine map_3d_flux_vjp(chi, sigma, bpsi, gchi, gsigma)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: chi, sigma, bpsi
+    real(dp), intent(out) :: gchi, gsigma
+
+    gchi = -bpsi*sigma
+    gsigma = -bpsi*chi
+
+end subroutine map_3d_flux_vjp
 
 ! Generated by fortsym. Do not edit.
 ! Generator: gen_map_3d_readback

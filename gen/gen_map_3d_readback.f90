@@ -76,7 +76,9 @@ program gen_map_3d_readback
                        + cofactor(a, 3)*master(3))/detq
     end do
     field(3) = r*field(3)
-    gradient=-sigma*gradient
+    do a=1,3
+        gradient(a)=-sigma*gradient(a)
+    end do
     call w%emit('map_3d_field', names, &
                [character(8)::'br', 'bz', 'bphi', 'chi_r', 'chi_z', 'chi_phi', 'jac'], &
                 [field, gradient, jac], ad=.true.)
