@@ -12,6 +12,8 @@ concurrency:
 
 jobs:
   d8:
+    name: M6 native (${{ matrix.lane }})
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -43,3 +45,25 @@ jobs:
       - name: Check map ladders and offset returns
         if: matrix.lane == 'map'
         run: ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_seed_boundary_label|ideal_map_n0_(solovev_a3_p[23]|shaped_solovev_p[23]|seed_return_(a3_p[23]|shaped_p2)|seed_nested_(a3_p[23]|shaped_p3)))$'
+
+  # Static gate names survive PR skipping; queue gates require the full matrix.
+  d8-psi:
+    name: d8 (psi)
+    needs: d8
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require successful native matrix
+        env:
+          RESULT: ${{ needs.d8.result }}
+        run: test "$RESULT" = success
+  d8-map:
+    name: d8 (map)
+    needs: d8
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require successful native matrix
+        env:
+          RESULT: ${{ needs.d8.result }}
+        run: test "$RESULT" = success

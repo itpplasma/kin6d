@@ -10,7 +10,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  repo-hygiene:
+  hygiene-run:
+    if: github.event_name != 'pull_request'
     uses: itpplasma/.github/.github/workflows/repo-hygiene.yml@04da3fc73d9ead713b93700de7bbf54049b5ac3e
     with:
       hygiene-revision: 04da3fc73d9ead713b93700de7bbf54049b5ac3e
+
+  # The required context stays static while the reusable job runs only in CI.
+  repo-hygiene:
+    name: repo-hygiene / repo-hygiene
+    needs: hygiene-run
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require successful shared hygiene workflow
+        env:
+          RESULT: ${{ needs.hygiene-run.result }}
+        run: test "$RESULT" = success
