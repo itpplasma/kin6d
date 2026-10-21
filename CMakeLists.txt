@@ -932,7 +932,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator gs_error grad_shafranov ideal_map ideal_xi ideal_response_error
+    foreach(generator gs_error grad_shafranov ideal_map ideal_xi ideal_mhd_coordinates ideal_response_error
             equilibrium_core curve_chart nonnested vacuum_shell landreman nested_oracles
             response_strip_jets
             response_fluid
@@ -947,6 +947,11 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME ideal_mhd_coordinates_exact_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_coordinates>
+        -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated/ideal_mhd_energy_generated.f90
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-mhd-coordinate-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_mhd_coordinates.cmake)
     add_test(NAME ideal_xi_exact_identity_and_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_xi>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_xi_leaves.f90
@@ -1373,11 +1378,15 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
     TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
-target_sources(kin6d_mhd PRIVATE src/mhd/ideal_xi.F90
+target_sources(kin6d_mhd PRIVATE src/generated/ideal_mhd_energy_generated.f90
+    src/mhd/ideal_xi.F90
     src/generated/kin6d_ideal_xi_leaves.f90)
 # Generated derivatives retain the primal ABI for constant partials.
 set_source_files_properties(src/generated/kin6d_ideal_xi_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_ideal_mhd_coordinates test/test_ideal_mhd_coordinates.f90)
+target_link_libraries(test_ideal_mhd_coordinates PRIVATE kin6d_mhd)
+add_test(NAME ideal_mhd_coordinate_analytic_limits COMMAND test_ideal_mhd_coordinates)
 add_executable(test_ideal_xi test/test_ideal_xi.f90)
 target_link_libraries(test_ideal_xi PRIVATE kin6d_mhd)
 add_test(NAME ideal_xi_hessian_and_analytic_limits COMMAND test_ideal_xi)
