@@ -19,7 +19,7 @@ module kin6d_equilibrium_readback
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use kin6d_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
-        labelled_field_t, EQ_BPHI, EQ_PSI, EQ_PSI_R, EQ_VALUES
+        labelled_field_t, flux_labelled_field_t, EQ_BPHI, EQ_PSI, EQ_PSI_R, EQ_VALUES
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
@@ -27,6 +27,8 @@ module kin6d_equilibrium_readback
     public :: equilibrium_readback_t, read_equilibrium, readback_q
 
     type :: equilibrium_readback_t
+        character(32) :: claim = 'candidate', bound_status = 'unavailable'
+        character(32) :: source_claim = 'candidate'
         real(dp) :: axis(2) = 0, psi_axis = 0, psi_bound = 0, volume = 0
         real(dp) :: phi_edge = 0, flux_consistency = 0, contour_s = 0, integral_s = 0
         integer, allocatable :: contour_work(:)
@@ -67,6 +69,7 @@ contains
             if (any(rho_grid(2:) <= rho_grid(:size(rho_grid) - 1))) return
         end if
         if (.not. allocated(eq%field)) return
+        result%source_claim = eq%claim
         select type (field => eq%field)
         class is (labelled_field_t)
             call read_labelled(eq, field, radial_points, angular_points, result, &
@@ -107,17 +110,24 @@ contains
             if (present(rho_grid)) rho(i) = rho_grid(i)
             result%psi(i) = eq%psi_bound + depth*(1 - rho(i)**2)
         end do
-        call level_rbphi(field, result%axis, result%psi, f, status)
-        if (status /= 0) return
-        status = 1
-        if (abs(f(1)) <= tiny(1.0_dp)) return
         call system_clock(tick, clock_rate)
-        call field%label_coarea(result%psi, na, coarea, status, &
-            work=result%contour_work)
+        select type (field)
+        class is (flux_labelled_field_t)
+            call field%toroidal_density(result%psi, na, density, status, &
+                result%contour_work)
+        class default
+            call level_rbphi(field, result%axis, result%psi, f, status)
+            if (status /= 0) return
+            status = 1
+            if (abs(f(1)) <= tiny(1.0_dp)) return
+            call field%label_coarea(result%psi, na, coarea, status, &
+                work=result%contour_work)
+            if (status /= 0) return
+            density = f*coarea
+        end select
         call system_clock(tock)
         result%contour_s = real(tock - tick, dp)/clock_rate
         if (status /= 0) return
-        density = f*coarea
         result%q = sigma*density/two_pi
         result%s_tor(1) = 0
         ! Integrate the cubic interpolant of dPhi/drho. Working in sqrt(s_pol)
