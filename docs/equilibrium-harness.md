@@ -37,6 +37,10 @@ plasma bump by +/-15 mm in R or Z, or elongate it by 2%, while holding the
 forcing, limiter, coils and profile law fixed. The finest result must have
 less than 3% relative maximum nodal error and remove at least 90% of the
 nonzero seed error; the original convergence-order gate also applies.
+The nested seed uses FortNum's FFT for the supplied boundary and retains
+coefficients down to roundoff. `ideal_seed_boundary_label` checks its label
+on independent exact LCFS points between the Fourier sampling nodes, against
+the unchanged `1e-12` physical-state export precondition.
 The legacy T3 start retains its larger displacement and amplitude change,
 and its quadratic-Newton-phase gate. A near-solution offset need not traverse
 that same quadratic phase.

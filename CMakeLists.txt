@@ -326,6 +326,8 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+add_test(NAME ideal_seed_boundary_label
+    COMMAND test_ideal_map_axisymmetric seedboundary)
 add_test(NAME ideal_map_derivatives_and_rotation_null
     COMMAND test_ideal_map_axisymmetric derivatives)
 add_test(NAME ideal_map_n3_leakage COMMAND test_ideal_map_axisymmetric leakage)
