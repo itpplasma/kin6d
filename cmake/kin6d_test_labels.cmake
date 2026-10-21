@@ -410,7 +410,7 @@ kin6d_test_labels(nonnested_hudson_breslau_integrable_exact_p3 fast CLASSES mhd
     TARGETS test_nonnested_hudson_breslau)
 kin6d_test_labels(nonnested_hudson_breslau_chaos_responds_p3 fast CLASSES mhd
     TARGETS test_nonnested_hudson_breslau)
-kin6d_test_labels(nonnested_coupled_solovev_p2 fast CLASSES mhd
+kin6d_test_labels(nonnested_coupled_solovev_p2 slow CLASSES mhd
     TARGETS test_nonnested_coupled)
 kin6d_test_labels(nonnested_coupled_offset_return_p2 fast CLASSES mhd
     TARGETS test_nonnested_coupled)
@@ -521,6 +521,11 @@ kin6d_test_labels(nonnested_transport_anisotropy_correction fast CLASSES mhd
 kin6d_test_labels(nonnested_transport_fourier_equilibrated fast CLASSES mhd
     TARGETS test_nonnested_fourier_error)
 
+kin6d_test_labels(gs_native_adapter_contract fast CLASSES fem2d
+    TARGETS test_gs_native_adapter)
+
+kin6d_test_labels(gs_free_boundary_t7_native_lu fast CLASSES equilibrium
+    TARGETS test_gs_fb_jacobian)
 kin6d_test_labels(pp_fusion_oracles fast CLASSES quantum TARGETS test_pp_fusion)
 kin6d_test_labels(pp_fusion_export_contract fast CLASSES quantum TARGETS pp_fusion_export)
 
