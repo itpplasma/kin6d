@@ -44,6 +44,7 @@ program test_map_equilibrium
     use kin6d_map_equilibrium, only: map_equilibrium
     use kin6d_equilibrium_state, only: equilibrium_state_t, EQ_VALUES, &
                  EQ_BR, EQ_BZ, EQ_BPHI, EQ_P, EQ_PSI, EQ_PSI_R, EQ_PSI_Z, EQ_UNAVAILABLE
+    use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
     use kin6d_equilibrium_residual, only: equilibrium_residual_t, equilibrium_residual
     use kin6d_ideal_map_leaves, only: ideal_axisymmetric_field, &
                               ideal_axisymmetric_field_jvp, ideal_axisymmetric_field_vjp
@@ -55,11 +56,13 @@ program test_map_equilibrium
     type(cylindrical_chart_t) :: chart
     type(equilibrium_state_t) :: eq, rejected
     type(equilibrium_residual_t) :: report
+    type(equilibrium_readback_t) :: readback, twisted, repeated
     real(dp), allocatable :: contour(:, :)
     real(dp) :: errors(3), rate
     real(dp) :: point(2), gradient(2), flux, pressure, bt, h
     real(dp) :: points(3, 10000), values(EQ_VALUES, 10000), serial(EQ_VALUES, 10000)
     real(dp) :: start, elapsed, r, z, expected(EQ_VALUES), maximum
+    real(dp) :: q_exact, theta, radius
     integer :: st, i, j, degree, statuses(10000), threads, level, n, k
     character(16) :: argument
     call check_leaf()
@@ -129,15 +132,55 @@ program test_map_equilibrium
     end do
     print '(a,es12.4)', 'pointwise oracle error=', maximum
     if (maximum > 1.0e-10_dp) error stop 'Piola oracle'
-    ! A nonconstant omega changes the toroidal field, not the flux label.
-    map%x(3, 1, :) = 0.02_dp*mesh%points(2, :)
+    call read_equilibrium(eq, 17, 64, readback, st)
+    if (st /= 0) error stop 'map D7'
+    maximum = 0
+    do i = 1, size(readback%q)
+        radius = sqrt(max(0.0_dp, readback%psi(i)/c + 4*r0*r0*minor*minor))
+        q_exact = 0
+        do j = 1, 1024
+            theta = 2*acos(-1.0_dp)*(j - 0.5_dp)/1024
+            q_exact = q_exact + (r0*r0 + radius*cos(theta))**(-1.5_dp)
+        end do
+        q_exact = ftor*q_exact/(8*c*1024)
+        maximum = max(maximum, abs(readback%q(i)/q_exact - 1))
+    end do
+    print '(a,es14.5)', 'independent q error=', maximum
+    if (maximum > 0.01_dp) error stop 'map q oracle'
+    do k = 1, 4
+        threads = 2**(k - 1)
+        call omp_set_num_threads(threads)
+        start = omp_get_wtime()
+        call read_equilibrium(eq, 17, 64, repeated, st)
+        if (st /= 0) error stop 'threaded map D7'
+        elapsed = omp_get_wtime() - start
+        if (maxval(abs(repeated%q - readback%q)) > 1.0e-11_dp) &
+            error stop 'readback q thread parity'
+        if (abs(repeated%phi_edge/readback%phi_edge - 1) > 1.0e-12_dp) &
+            error stop 'readback flux thread parity'
+        print '(a,i0,a,es12.4)', 'readback threads=', threads, ' seconds=', elapsed
+    end do
+    print '(a,3es14.5)', 'readback axis, toroidal flux=',  readback%axis, readback%phi_edge
+    if (norm2(readback%axis - [r0, 0.0_dp]) > 0.01_dp*minor) &
+        error stop 'map readback axis accuracy'
+    if (readback%volume <= 0 .or. readback%phi_edge <= 0) error stop 'map region integral'
+    if (readback%bound_status /= 'unavailable') error stop 'readback bound claim'
+    ! A nonconstant omega changes local Bphi but its contour integral is zero.
+
+    map%x(3, 1, :) = 2.0_dp*mesh%points(2, :)
     call map_equilibrium(map, frozen, mesh, eq, st, ftor)
     if (st /= 0) error stop 'omega adapter'
     call eq%field%sample(points, values, statuses)
     if (any(statuses /= 0)) error stop 'omega sample'
     maximum = maxval(abs(values(EQ_BPHI, :) - serial(EQ_BPHI, :) &
-                         - 0.02_dp*points(1, :)*serial(EQ_BZ, :)))
+                         - 2.0_dp*points(1, :)*serial(EQ_BZ, :)))
     if (maximum > 1.0e-11_dp) error stop 'omega Piola term'
+    call read_equilibrium(eq, 17, 64, twisted, st)
+    if (st /= 0) error stop 'twisted map D7'
+    maximum = maxval(abs(twisted%q - readback%q))/maxval(abs(readback%q))
+    print '(a,es14.5)', 'twist q invariance defect=', maximum
+    if (maximum > 0.003_dp) error stop 'q must integrate local Bphi'
+
     points(:, 1) = [100.0_dp, 100.0_dp, 0.0_dp]
     call eq%field%sample(points(:, :1), values(:, :1), statuses(:1))
     if (statuses(1) == 0) error stop 'outside domain'
