@@ -98,9 +98,11 @@ unavailable until their stability and discretization premises are checked.
 
 ## Shared coordinate and kinetic leaves
 
-[V] `gen/kin6d_symbolic_ideal.f90` owns the frozen-in energy and its
-straight-field-coordinate reduction. `gen/gen_ideal_mhd_coordinates.f90`
-emits `src/generated/ideal_mhd_energy_generated.f90`, also consumed byte for
+[V] The public consumer package
+[GLISS gen/ideal_mhd](https://github.com/itpplasma/GLISS/tree/main/gen/ideal_mhd)
+owns the frozen-in energy and its straight-field-coordinate reduction.
+KIN6D pins that package in `gen/ideal-mhd-revision.txt`; optional codegen fetches
+it (or uses `FETCHCONTENT_SOURCE_DIR_KIN6D_SHARED_MHD`). Its coordinate driver emits `src/generated/ideal_mhd_energy_generated.f90`, also consumed byte for
 byte by [GLISS](https://github.com/itpplasma/GLISS). Ordinary builds need no CAS.
 The coordinate input ordering, SI conversion and signed-chart assumptions are
 retained in the generator. Two-component output is twice delta-W times mu0;
