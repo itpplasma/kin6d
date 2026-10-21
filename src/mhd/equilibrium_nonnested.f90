@@ -9,7 +9,7 @@ module kin6d_equilibrium_nonnested
         meridian_qpoint, meridian_real_to_complex, meridian_load, meridian_field_i
     use fortsparse, only: csc_t, csc_z_t, csc_matvec, csc_from_triplet, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
-        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU
+        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
         gs_direct_solve, gs_direct_free
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_locate
@@ -470,7 +470,7 @@ contains
             call gs_direct_factor(factor%direct, n, a%col_ptr, a%row_idx, a%val, ok)
             if (.not. ok) return
         else
-            factor%solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            factor%solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             call sparse_factor(factor%solver, a, st)
             if (.not. status_ok(st)) return
         end if
