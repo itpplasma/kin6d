@@ -162,7 +162,7 @@ function(kin6d_layers_finalize)
     _kin6d_layer_scan_modules(core kin6d_intervals kin6d_ode kin6d_fft)
     _kin6d_layer_scan_modules(fem2d kin6d_spatial kin6d_sparse_direct kin6d_feec_n
         fortsparse)
-    _kin6d_layer_scan_modules(apps kin6d_io fortplot)
+    _kin6d_layer_scan_modules(apps kin6d_io kin6d_geqdsk fortplot)
     get_directory_property(targets DIRECTORY ${CMAKE_SOURCE_DIR} BUILDSYSTEM_TARGETS)
     set(narrow)
     set(carriers kin6d)

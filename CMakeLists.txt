@@ -1883,6 +1883,7 @@ if(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK)
 endif()
 include(cmake/kin6d_s0.cmake)
 include(cmake/kin6d_mhd_batches.cmake)
+include(cmake/kin6d_libneo.cmake)
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
