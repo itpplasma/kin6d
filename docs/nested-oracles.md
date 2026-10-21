@@ -180,7 +180,11 @@ coefficients and a sampled boundary error in `output/nested_oracle_export.nc`.
 `output/input.nested_oracle` is a geometry-only VMEC namelist with
 RBC/RBS/ZBC/ZBS(n,m), NFP=2, and LASYM selected by tau. The convention is
 cos(m theta-n NFP phi), positive geometric Cartesian phi and clockwise
-poloidal theta. The material chart parameter t is converted to geometric phi
+poloidal theta. For the integer family the material poloidal angle is
+2 phi-theta; this removes its two-turn winding and makes the eps=0 boundary
+independent of phi. Without this conversion the physical surface is correct
+but the transform in the exported poloidal coordinate is shifted by two.
+The material chart parameter t is converted to geometric phi
 by a bracketed solve before projection. Truncation is checked on a denser,
 staggered grid against a requested 1% of the declared minor scale; this is
 explicitly a sampled indicator.
