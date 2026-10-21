@@ -81,7 +81,7 @@ module kin6d_mhd_response_n
     !> vanishing large-solution coefficients on both sides; L5
     !> (kin6d_mhd_layer_n): continuous large coefficient and net layer
     !> current = Delta_layer times the reconnected flux.
-    type, public :: sheet_closure_t
+    type, public :: layer_closure_t
         integer :: ns = 0, nf = 0
         integer, allocatable :: sheet_ring(:), sheet_m(:)
         type(ring_angles_t), allocatable :: sheet_ra(:)
@@ -90,7 +90,7 @@ module kin6d_mhd_response_n
         complex(dp), allocatable :: w(:, :)        !! (ns, nf)
         complex(dp), allocatable :: wl(:, :)       !! (ns, ns), optional
         complex(dp), allocatable :: target(:)      !! (ns)
-    end type sheet_closure_t
+    end type layer_closure_t
 
     public :: closure_shield_init
     public :: resonant_surfaces_missing
@@ -367,7 +367,7 @@ contains
         !! L4 shielding: a sheet on each given ring, zero resonant flux there.
         integer, intent(in) :: ring(:), m(:)
         type(ring_angles_t), intent(in) :: ra(:)
-        type(sheet_closure_t), intent(out) :: cl
+        type(layer_closure_t), intent(out) :: cl
         integer :: s
 
         cl%ns = size(ring)
@@ -391,7 +391,7 @@ contains
         type(meridian_feec_t), intent(in) :: fs
         type(meridian_point_basis_t), intent(in) :: pb
         type(flux_mesh_t), intent(in) :: fm
-        type(sheet_closure_t), intent(in) :: cl
+        type(layer_closure_t), intent(in) :: cl
         integer, intent(in) :: n
         complex(dp), intent(in) :: b2(:)
         complex(dp) :: phi(cl%nf)

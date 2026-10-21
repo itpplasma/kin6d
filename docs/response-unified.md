@@ -116,7 +116,8 @@ ideal limit. Measured failure modes (2026-10-13):
 4. Missing sheets on sideband rationals (q = 3 near the edge with only q = 2
    listed): an unshielded 1/(u - u_s) pole of the strip current made the
    q = 2 result depend on the nearest half ring, up to +14 % (fixed on the
-   sheet closure by `rat_auto`; not yet for the Frobenius closure).
+   sheet closure by `rat_auto`; automatic discovery now also applies to the
+   Frobenius and asymptotic resistive closures).
 5. Layers near the cut or near crowded rationals (q = 10/3 at psin 0.990,
    m +- 1 neighbours unlisted) do not converge at all.
 6. The layer model is the cylinder-equivalent slab: no Glasser curvature

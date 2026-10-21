@@ -64,9 +64,10 @@ program gs_response_3d
         ideal_options_t, ideal_response, sample_field, ideal_response_error_t
     use kin6d_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
         perturbation_add_spectra, perturbation_export
-    use kin6d_mhd_response_n, only: sheet_closure_t, closure_shield_init, &
+    use kin6d_mhd_response_n, only: layer_closure_t, closure_shield_init, &
         closure_fluxes
-    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, layer_xmax, &
+    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+        layer_xmax, layer_fit_widths, &
         layer_init, layer_closure, layer_coefficients, layer_slope, &
         layer_regular_slope, layer_jump, layer_kink, layer_large, layer_inside
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
@@ -133,9 +134,9 @@ program gs_response_3d
     type(sample_ring_t), allocatable :: rings(:)
     type(ideal_options_t) :: opt
     type(ideal_response_error_t) :: ideal_error
-    type(sheet_closure_t) :: cl
+    type(layer_closure_t) :: cl
     type(rational_layer_t), allocatable :: lays(:)
-    real(dp), allocatable :: di_rat(:), dq_rat(:), jump_unit(:)
+    real(dp), allocatable :: di_rat(:), dq_rat(:), jump_unit(:), delta_rat(:)
     complex(dp), allocatable :: b2cl(:, :), phicl(:), phitot(:), lam_cl(:)
     logical :: frob, resist
     real(dp), allocatable :: prof_tab(:, :), lscale(:), qlay(:), gpsi(:)
@@ -207,9 +208,9 @@ program gs_response_3d
     ! same 1/(u - u_s) pole of the ideal volume current.  Left unshielded the
     ! pole makes the response depend on where the nearest half ring falls
     ! (|b_shield| of the q = 2 surface not mesh converged at q0 1.55, A = 10),
-    ! so the sheet closure shields them all; rat_auto = .false. keeps only the
-    ! listed surfaces.  (The Frobenius closure takes its list as given.)
-    if (rat_auto .and. .not. frob .and. trim(model) == 'ideal') &
+    ! so every closure includes them; rat_auto = .false. keeps only the
+    ! explicitly listed surfaces.
+    if (rat_auto .and. trim(model) == 'ideal') &
         call add_resonant_surfaces()
 
     ! rings: uniform in u = sqrt(psin) plus the rational surfaces
@@ -217,7 +218,14 @@ program gs_response_3d
     u_rat = sqrt(psin_rat(1:nrat))
     if (frob) then
         ! Mercier index and shear of each rational, rings of the layers
-        allocate (di_rat(nrat), dq_rat(nrat))
+        allocate (di_rat(nrat), dq_rat(nrat), delta_rat(nrat))
+        call layer_fit_widths(psin_rat, layer_delta, layer_ratio, layer_nfit, &
+            (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, delta_rat, st)
+        if (st /= 0) error stop 'rational outside the Frobenius fit domain'
+        do i = 1, nrat
+            write (*, '(a,f10.6,a,es14.6)') 'rational q = ', q_rat(i), &
+                ': effective layer delta = ', delta_rat(i)
+        end do
         block
             real(dp), allocatable :: extra(:), lab(:)
             real(dp) :: qa
@@ -231,16 +239,9 @@ program gs_response_3d
                 ! grade up to the uniform spacing, at most 0.45 of the gap to the
                 ! neighbouring rationals
                 qa = layer_xmax(psin_rat(i), &
-                    [psin_rat(:i - 1), psin_rat(i + 1:nrat)], layer_delta, &
+                    [psin_rat(:i - 1), psin_rat(i + 1:nrat)], delta_rat(i), &
                     layer_ratio, layer_nfit, nrad)
-                if (psin_rat(i) + layer_delta*layer_ratio**(layer_nfit - 1) &
-                    >= 1 - 2.0e-4_dp) then
-                    write (*, '(a,f10.6,a,f12.8,a)') 'rational q = ', q_rat(i), &
-                        ' at psin = ', psin_rat(i), ': its Frobenius fit rings' &
-                        //' do not fit inside the plasma; lower psin_rat_max'
-                    error stop 'layer outside the plasma'
-                end if
-                call layer_labels(psin_rat(i), layer_delta, layer_ratio, qa, &
+                call layer_labels(psin_rat(i), delta_rat(i), layer_ratio, qa, &
                     (0.5_dp/nrad)**2, 1 - 2.0e-4_dp, lab)
                 extra = [extra, sqrt(lab)]
             end do
@@ -299,7 +300,7 @@ program gs_response_3d
         allocate (lays(nrat))
         do i = 1, nrat
             call layer_init(ul, psin_rat(i), abs(q_rat(i)), dq_rat(i), di_rat(i), &
-                m_rat(i), layer_delta, layer_ratio, layer_nfit, lays(i), st)
+                m_rat(i), delta_rat(i), layer_ratio, layer_nfit, lays(i), st)
             if (st /= 0) error stop 'layer fit rings'
         end do
     end if

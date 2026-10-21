@@ -1538,6 +1538,16 @@ set_tests_properties(flux_mesh_axis_interpolation_order PROPERTIES TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(test_mhd_closure test/test_mhd_closure.f90)
 target_link_libraries(test_mhd_closure PRIVATE kin6d)
+add_test(NAME response_layer_all_rational_setup COMMAND test_mhd_closure setup)
+set_tests_properties(response_layer_all_rational_setup PROPERTIES TIMEOUT 30
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+add_test(NAME gs_response_3d_frobenius_all_rational COMMAND ${CMAKE_COMMAND}
+    -DAPP=$<TARGET_FILE:gs_response_3d>
+    -DWORK=${CMAKE_BINARY_DIR}/gs_response_3d_frobenius_check
+    -DEQDSK=${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/shield_torus_a10.eqdsk
+    -P ${CMAKE_SOURCE_DIR}/test/check_response_all_rational.cmake)
+set_tests_properties(gs_response_3d_frobenius_all_rational PROPERTIES TIMEOUT 180
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_test(NAME mhd_closure_tearing_delta_prime COMMAND test_mhd_closure)
 set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")

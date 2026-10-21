@@ -365,6 +365,10 @@ kin6d_test_labels(flux_mesh_axis_interpolation_order fast CLASSES mhd
     TARGETS test_flux_mesh_axis)
 kin6d_test_labels(mhd_closure_tearing_delta_prime slow CLASSES mhd
     TARGETS test_mhd_closure)
+kin6d_test_labels(response_layer_all_rational_setup fast CLASSES mhd
+    TARGETS test_mhd_closure)
+kin6d_test_labels(gs_response_3d_frobenius_all_rational slow CLASSES apps mhd
+    TARGETS gs_response_3d)
 kin6d_test_labels(response_strip_torus_coupling slow CLASSES mhd
     TARGETS test_mhd_closure)
 kin6d_test_labels(response_toroidal_strip_two_ring_traces fast CLASSES mhd
