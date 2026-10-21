@@ -62,11 +62,72 @@ program gen_s0
             ['omega2'],[frequency])
         call emit('s0_kink'//suffix,[character(8) :: 'q','rho'], &
             ['gamma2'],[2*q*(1-q)/rho])
+        call toroidal_continuum()
     end do
     write(unit,'(a)') 'end module kin6d_s0_leaves'
     close(unit)
-    print '(a)', 'PASS: four exact S0 identities (no probes)'
+    print '(a)', 'PASS: four S0 and five toroidal identities per kind (no probes)'
 contains
+    subroutine toroidal_continuum()
+        ! Cold, large-aspect circular two-harmonic field-line model:
+        ! -D_parallel^2 Phi = omega^2/vA^2 (1+2*epsilon*cos(theta)) Phi.
+        ! Keep the adjacent harmonics; omitted harmonics and O(epsilon^2)
+        ! geometry are model error, not a discretization certificate.
+        type(expr_t) :: a(5), da(5), roots(4), modes(2), back(2), source
+        type(expr_t) :: z, u, v, eps, lam, center, polynomial, checks(5)
+        type(expr_t) :: test(1), seeds(4)
+        type(expr_t), allocatable :: jt(:), va(:)
+        character(8) :: names(5), dn(5), gn(5), sn(4)
+        integer :: j
+        names = [character(8) :: 'kleft','kright','eps','density','alfven2']
+        do j = 1, 5
+            a(j) = sym(arena,trim(names(j)))
+            dn(j) = 'd'//trim(names(j)); gn(j) = 'g'//trim(names(j))
+            da(j) = sym(arena,trim(dn(j)))
+        end do
+        do j = 1, 4
+            sn(j) = 'seed'//achar(iachar('0')+j)
+            seeds(j) = sym(arena,trim(sn(j)))
+        end do
+        z = sym(arena,'z'); u = sym(arena,'u'); v = sym(arena,'v')
+        eps = a(3); center = sym(arena,'center'); lam = sym(arena,'lam')
+        modes = [u+v*z,u+v/z]
+        back = [a(1)*u+a(2)*v*z,a(1)*u+a(2)*v/z]
+        source = (1+eps*(z+1/z))*modes(1)*modes(2)
+        checks(1) = source-(u*u+v*v+2*eps*u*v) &
+            -(u*v+eps*(u*u+v*v))*(z+1/z)-eps*u*v*(z*z+1/(z*z))
+        checks(2) = back(1)*back(2)-a(1)**2*u*u-a(2)**2*v*v &
+            -a(1)*a(2)*u*v*(z+1/z)
+        polynomial = (center-lam)**2-eps**2*lam**2
+        test(1) = (center-center/(1+eps))**2-eps**2*(center/(1+eps))**2
+        checks(3) = test(1)
+        checks(4) = (center-center/(1-eps))**2-eps**2*(center/(1-eps))**2
+        checks(5) = polynomial-((1-eps**2)*lam**2-2*center*lam+center**2)
+        do j = 1, size(checks)
+            check = engine%zero_test(checks(j))
+            if (check%verdict /= VERDICT_TRUE) then
+                print *, 'unproved toroidal identity',j
+                error stop 1
+            end if
+        end do
+        ! The retained Laurent constant is the exact angular Galerkin block.
+        ! Derive K and M from the quadratic energy, rather than copying it.
+        source = a(4)*a(5)*(a(1)**2*u*u+a(2)**2*v*v)/2
+        roots(1) = diff(diff(source,u),u)
+        roots(2) = diff(diff(source,v),v)
+        source = a(4)*(u*u+v*v+2*eps*u*v)/2
+        roots(3) = diff(diff(source,u),u)
+        roots(4) = diff(diff(source,u),v)
+        jt = jvp(roots,a,da); va = vjp(roots,a,seeds)
+        call emit('s0_tae_block'//suffix,names, &
+            [character(8) :: 'k11','k22','m11','m12'],roots)
+        call emit('s0_tae_block_jvp'//suffix,[names,dn], &
+            [character(8) :: 'dk11','dk22','dm11','dm12'],jt)
+        call emit('s0_tae_block_vjp'//suffix,[names,sn],gn,va)
+        call emit('s0_tae_edges'//suffix,[character(8) :: 'center','eps'], &
+            [character(8) :: 'lower','upper'],[center/(1+eps),center/(1-eps)])
+    end subroutine toroidal_continuum
+
     subroutine emit(name,args,outputs,roots)
         character(*), intent(in) :: name,args(:),outputs(:)
         type(expr_t), intent(in) :: roots(:)
