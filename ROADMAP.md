@@ -102,6 +102,116 @@ contract. Cross-cutting tracks may move earlier when they unlock more valuable
 science.
 
 
+## EQS — equilibrium and stability spine (decided 2026-10-21)
+
+KIN6D is the group's code for MHD equilibrium and stability, first for
+axisymmetric (2D) configurations and then for stellarators and RMP-perturbed
+tokamaks (3D). This spine takes priority within [R12](#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
+and [S0](#s0--stabilityresponse-consumer-cross-cutting-starts-with-r1r3). The
+other in-house codes become comparators or input/output partners. Their
+capabilities are absorbed as equations and oracles; their code is not copied.
+
+"2D stability" means toroidal Fourier modes n >= 1 about an axisymmetric
+equilibrium. A milestone is complete only when its registered CTest gates pass
+on main. Each gate uses an analytic or manufactured oracle first and an
+independent external code second. A single literature value or a single
+reference code is the weakest admissible evidence, and it can be wrong.
+Agreement with a reference is numerical evidence. It is not a certificate.
+
+### Starting point (origin/main ca52284)
+
+- 2D equilibrium already works: fixed-boundary P1–P3 curved GS, cubic profile
+  laws, prescribed-q and constant-q inverse solves, free boundary with coils,
+  FEM–BEM coupling and a coil inverse, practical estimators and an affine
+  fixed-source certificate.
+- 3D equilibrium covers the fixed-wall ideal map (P2/P3 x Fourier) with
+  cylindrical and curve-following charts, a native 3D initializer, a free
+  boundary on an axisymmetric shell through per-n FortFEM BEM, NN1/NN2
+  non-nested lanes, and exact Landreman/Issan oracles.
+- Stability covers the S0 sparse K, physical M and shift-invert spectrum with
+  LDL^T inertia, the xi-form delta-W shared with
+  [GLISS](https://github.com/itpplasma/GLISS), local Hess W = L4, static per-n
+  RMP response and resistive-layer closure.
+- The connection is missing. S0 consumes caller-supplied tables only and never
+  a solved GS state. No registered growth rate exists, and no KIN6D test
+  compares against DCON, MISHKA, CAS3D or GLISS. G-EQDSK export, COCOS
+  handling, VMEC wout and chartmap interchange are also absent.
+
+### Architecture boundaries (all milestones)
+
+- Generic numerics live in their owning libraries:
+  [FortNum](https://github.com/lazy-fortran/fortnum) for quadrature, ODEs,
+  Krylov and eigen methods (shift-invert, Krylov–Schur, resolvent and
+  pseudospectrum bounds when needed);
+  [FortSparse](https://github.com/lazy-fortran/fortsparse) for LDL^T/LDL^H
+  inertia and complex LU; [FortFEM](https://github.com/lazy-fortran/fortfem)
+  for FEEC spaces, Piola maps, per-n and 3D parametric BEM. A missing generic
+  capability is added there and pinned by commit, never duplicated in KIN6D.
+- Formats and coordinates belong to [libneo](https://github.com/itpplasma/libneo):
+  G-EQDSK/COCOS, VMEC readers, chartmap and Boozer. KIN6D consumes libneo
+  through a narrow, pinned adapter.
+- Pointwise mathematics is emitted by FortSym generators in `gen/` with
+  checked-in leaves in `src/generated/` and a regeneration test. This covers
+  analytic oracle fields, delta-W and mass integrands, basis jets, Piola and
+  geometry factors, and JVP/VJP leaves. GLISS and KIN6D keep one energy source.
+  Handwritten code owns topology, assembly, solves, schedules and I/O.
+- Parallel hot paths are required. Cell and quadrature assembly, BEM pair
+  loops and eigen solves use OpenMP with measured strong scaling and results
+  unchanged to tolerance. Generated CUDA entry points follow once a CPU path is
+  qualified. Fast SIMD/vector math is the default, and fp64 stays locked on
+  estimators and certificates.
+- A serial hot path, or an O(N^2) dense loop that exceeds a native gate
+  deadline, is a defect of its owning layer. The deadline is not raised to
+  accommodate it.
+
+### Milestones and verification oracles
+
+| ID | Deliverable | Primary oracle | Independent oracle |
+|---|---|---|---|
+| E2.1 | Fixed-boundary GS gate on the Cerfon–Freidberg "one size fits all" family (ITER-like, NSTX-like) beyond Solov'ev A3/shaped; q, beta_p, l_i, axis | FortSym closed form; GS identity of the generated psi to roundoff; observed P2/P3 orders | published coefficients; CHEASE/ESC equilibria on matched boundaries |
+| E2.2 | G-EQDSK export/import with explicit COCOS through libneo; native re-solve from imported LCFS and profiles | analytic Solov'ev round trip; COCOS sign-flip round trips | public CHEASE fixture `shield_torus_a10.eqdsk` re-solve |
+| E2.3 | Public end-to-end free-boundary parity (FreeGS ITER-like example: coils, Ip, profiles) | manufactured coil + bump, Green's-function cross-check (existing) | FreeGS public example; VMEC++ free boundary with n=0 |
+| S2.1 | Solved GS/core state -> admissible xi FE space (axis, gauge, essential BC) -> physical K, M in S0; Hess W = L4 pullback identity assembled globally | screw-pinch/cylinder internal and external kink growth rates (Freidberg, Wesson); Alfvén/slow continua | GLISS screw-pinch energy/mass |
+| S2.2 | Toroidal ideal fixed-boundary n=1..3 growth rates with LDL^T inertia branch counts, eigenvector convergence and signed refinement error bars | Solov'ev/Cerfon–Freidberg equilibria from E2.1; large-aspect expansions | MISHKA and DCON on the identical E2.2 G-EQDSK; GLISS on the identical map |
+| S2.3 | Free-boundary ideal stability: vacuum energy, external kink, wall position scan (RWM marginal points) | cylinder with wall, analytic vacuum energy | DCON free boundary; MARS-F |
+| S2.4 | Resistive: Delta', tearing and resistive spectrum through the existing layer closure | cylinder Delta' and Furth–Killeen–Rosenbluth scalings | RDCON/resistive DCON; CASTOR |
+| E3.1 | 3D fixed-boundary nested equilibrium time-to-accuracy (Landreman/Issan, QA); VMEC wout and chartmap export via libneo | exact Landreman/Issan oracles (existing) | VMEC++, DESC; GVEC only from an exact start (cold start parked) |
+| E3.2 | RMP-perturbed tokamak: per-n linear perturbed equilibrium from E2.2 states | manufactured per-n response; force-free MDE identity (existing) | [MEPHIT](https://github.com/itpplasma/MEPHIT), GPEC, MARS-F on identical G-EQDSK and coils |
+| E3.3 | 3D free boundary on a general enclosing shell (FortFEM 3D parametric BEM), stellarator and curve-chart | Landreman epsilon=0 BEM gate within its 1800 s deadline | VMEC++ free boundary (mgrid) |
+| E3.4 | Non-nested islands and stochastic regions (NN lanes) | vacuum-island Biot–Savart widths (existing) | [SPECTRE](https://gitlab.com/spectre-eq/spectre) and HINT-class at matched model |
+| S3.1 | 3D ideal stability (fixed, then free boundary) on E3.1 states | analytic cylinder/helical limits | GLISS; CAS3D/TERPSICHORE published cases |
+| S3.2 | Alfvén eigenmodes and EP drive (programme wave 4) | FortSym continua/gap widths | ITPA TAE benchmark; NEO-RT and SIMPLE as drive/orbit checks |
+
+Ordering: E2.1 and E2.2 run in parallel. S2.1 needs E2.1. S2.2 needs S2.1 and
+E2.2, followed by S2.3 and S2.4. E3.1 and E3.2 can run alongside S2.x because
+they reuse existing lanes. E3.3 waits until the BEM gate fits its deadline.
+S3.1 needs E3.1 and S2.2.
+
+### Partner codes: absorb, interface or leave
+
+| Code | Disposition |
+|---|---|
+| libneo | interface: G-EQDSK/COCOS, VMEC, chartmap, Boozer; KIN6D never copies these readers |
+| MEPHIT | absorb equations and oracles of the linear perturbed equilibrium; interface as the E3.2 comparator |
+| KAMEL (KiLCA/KIM) | absorb matched cylindrical kinetic limits as oracles for kinetic response; leave its cylindrical background solver |
+| GLISS | one shared FortSym energy package (existing); independent assembled-operator comparator for S2.x/S3.1 |
+| GVEC | comparator and input generator from an exact start; G-frame contracts already absorbed |
+| VMEC++ | nested fixed/free-boundary comparator and mgrid/coil input generator |
+| SPECTRE | MRxMHD/stepped-pressure comparator for E3.4 |
+| FortNum/FortSparse/FortFEM/FortSym | owning libraries for numerics, factorisations, FEM/BEM and code generation |
+
+### Known blocker for E3.3
+
+The native gate `ideal_fb_landreman_bem3d_axisymmetric` of the 3D BEM layer
+(PR #47; TIMEOUT 1800, 8 OpenMP threads) times out in its first resolution
+(chain=16). The cost lies in the all-pairs adaptive panel assembly
+`assemble_parametric_bem_p2` (FortFEM 77c6b8c
+`src/bem/parametric_bem_high_order.f90:492`, `converge_pair`) called through
+`ideal_fb_use_bem3d` with maximum degree 96. The case is axisymmetric with 12
+toroidal copies, so a block-circulant (per-n) reduction or a far-field
+low-degree rule in FortFEM is the expected fix. Removing redundant geometry
+jets did not suffice (d34d080).
+
 ## R0 — retain and harden the first 1X1V slice
 
 **Implemented baseline:** prescribed-field free streaming and Krook balance,
@@ -663,6 +773,8 @@ KAMEL/KiLCA/KIM and appropriate external RF/FP codes provide independent
 oracles.
 
 ## R12 — equilibrium, MHD/kinetic-MHD, vacuum and circuits
+
+The active milestones of this branch are in the [EQS spine](#eqs--equilibrium-and-stability-spine-decided-2026-10-21).
 
 MHD grows as a parallel bulk-model branch using the same physical-space
 geometry/field foundation. Equilibrium is a stationary solve, not a VMEC/EQDSK
