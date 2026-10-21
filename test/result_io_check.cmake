@@ -1,5 +1,5 @@
 # F5 contract check, run by CTest with -P. Inputs: PROBE (test_result_io),
-# CLASSICAL (classical_pair_demo), WORK (scratch directory), FORTIO_PIN.
+# CLASSICAL (classical_pair_demo), WORK, FORTIO_PIN and FORTSPARSE_PIN.
 # Oracles: FortIO's HDF5 reader inside the probe; system ncdump/h5dump when
 # installed (NetCDF-C/HDF5-C are independent implementations).
 file(REMOVE_RECURSE "${WORK}")
@@ -42,6 +42,7 @@ if(NCDUMP)
             "double grid\\(pair, w\\)" "scale:kin6d_status = \"certified-discrete\""
             "weights:units = \"m\"" ":kin6d_config_literal = \"! probe override"
             ":kin6d_config_resolved = \"&PROBE" ":fortio_revision = \"${FORTIO_PIN}\""
+            ":fortsparse_revision = \"${FORTSPARSE_PIN}\""
             ":kin6d_git_commit = \"[0-9a-f]+\"" ":created_utc = \"[0-9-]+T[0-9:]+Z\""
             ":compiler_version = \"" ":probe_argument = \"tag-a\"")
         if(NOT last_output MATCHES "${pattern}")

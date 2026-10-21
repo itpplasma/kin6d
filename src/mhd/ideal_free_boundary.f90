@@ -48,7 +48,7 @@ module kin6d_ideal_free_boundary
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
         ieee_quiet_nan
     use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_equilibrium_chart, only: ideal_chart_t
+    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, &
         ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_dof, &
         IDEAL_MAP_OK
@@ -66,9 +66,11 @@ module kin6d_ideal_free_boundary
         tm_bem_steklov_symmetric
     use fortnum_quadrature, only: gauss_legendre
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
-    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, sparse_refactor, &
-        sparse_destroy, fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_SUPERLU, &
-        FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_GENERAL, FORTSPARSE_SYM_INDEFINITE
+    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
+        sparse_refactor, sparse_destroy, fortsparse_status_t, status_ok, &
+        FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, &
+        csc_normalize_symmetric_raw, &
+        FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL
     implicit none
     private
     public :: ideal_fb_t, ideal_fb_report_t, ideal_fb_init, ideal_fb_set_drive
@@ -158,6 +160,7 @@ module kin6d_ideal_free_boundary
         ! Stopped at the roundoff floor of the merit.
         logical :: floor = .false.
         real(dp) :: assemble_s = 0, factor_s = 0, gradient_s = 0, line_s = 0
+        real(dp) :: assembly_roundoff = 0
         integer :: factorisations = 0, reused = 0
     end type
 
@@ -256,6 +259,12 @@ contains
         integer :: e, a, nodes, cells, nplasma, k, st, ppe
         real(dp) :: centre(2)
         status = IDEAL_FB_BAD_INPUT
+        ! Gamma_c and its exterior BEM use cylindrical R,Z and toroidal modes.
+        select type (chart)
+        class is (cylindrical_chart_t)
+        class default
+            return
+        end select
         fb%nloc = size(mesh%triangles, 1)
         if (fb%nloc /= 6 .and. fb%nloc /= 10) return
         fb%order = merge(2, 3, fb%nloc == 6)
@@ -1584,12 +1593,13 @@ contains
                         [rhs, (0.0_dp, i = 1, nslide)], sol, reused_factor)
                 if (.not. reused_factor) then
                     ! One handle for the whole solve: the KKT pattern is fixed,
-                    ! so MUMPS keeps its analysis and only refactorises.
+                    ! so the native backend may reuse its symbolic analysis.
                     if (.not. factored) then
                         if (.not. configure(solver)) exit
                     end if
-                    call sparse_refactor(solver, fb%n + nslide, fb%n + nslide, &
-                                         size(smat), srows, scols, smat, sst, kept)
+                    call refactor_kkt_raw(solver, fb%n + nslide, fb%n + nslide, &
+                        size(smat), srows, scols, smat, sst, kept, &
+                        report%assembly_roundoff)
                     report%factorisations = report%factorisations + 1
                     if (kept) report%reused = report%reused + 1
                     if (.not. status_ok(sst)) then
@@ -1796,14 +1806,16 @@ contains
             end do
             rp(i + 1) = nnz + 1
         end do
-        csolver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+        csolver%backend_id = FORTSPARSE_BACKEND_NATIVE
         if (gs_direct_available()) then
             ready = gs_direct_mpi_ready()
             if (.not. ready) return
-            csolver%backend_id = FORTSPARSE_BACKEND_AUTO
+            csolver%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
         csolver%options%symmetry = FORTSPARSE_SYM_GENERAL
-        call sparse_factor(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), v(:nnz), sst)
+        csolver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+        call factor_kkt_raw(csolver, fb%nx, fb%nx, nnz, rp, ci(:nnz), &
+                            v(:nnz), sst, symmetric=.false.)
         ready = status_ok(sst)
     end subroutine
 
@@ -1947,19 +1959,75 @@ contains
         end subroutine
     end subroutine
 
+    subroutine prepare_kkt_values(solver, n, ptr, idx, values, correction, &
+                                  status, symmetric)
+        ! CSR is also CSC after this checked, explicit symmetry completion.
+        ! The underlying scalar Lagrangian defines the symmetric matrix;
+        ! independent accumulation may differ within the roundoff budget.
+        type(sparse_solver_t), intent(inout) :: solver
+        integer, intent(in) :: n, ptr(:), idx(:)
+        real(dp), intent(inout) :: values(:)
+        real(dp), intent(out) :: correction
+        type(fortsparse_status_t), intent(out) :: status
+        logical, optional, intent(in) :: symmetric
+        correction = 0
+        status = fortsparse_status_t()
+        if (present(symmetric)) then
+            if (.not. symmetric) return
+        end if
+        call csc_normalize_symmetric_raw(n, ptr, idx, values, 1.0e-12_dp, &
+            correction, status)
+        if (.not. status_ok(status)) solver%factored = .false.
+    end subroutine
+
+    subroutine factor_kkt_raw(solver, nr, nc, nnz, ptr, idx, values, status, &
+                              symmetric)
+        type(sparse_solver_t), intent(inout) :: solver
+        integer, intent(in) :: nr, nc, nnz, ptr(:), idx(:)
+        real(dp), intent(inout) :: values(:)
+        type(fortsparse_status_t), intent(out) :: status
+        logical, optional, intent(in) :: symmetric
+        real(dp) :: correction
+        call prepare_kkt_values(solver, nc, ptr, idx, values, correction, &
+                                status, symmetric)
+        if (.not. status_ok(status)) return
+        call sparse_factor(solver, nr, nc, nnz, ptr, idx, values, status)
+    end subroutine
+
+    subroutine refactor_kkt_raw(solver, nr, nc, nnz, ptr, idx, values, &
+                                status, reused, maximum_correction)
+        type(sparse_solver_t), intent(inout) :: solver
+        integer, intent(in) :: nr, nc, nnz, ptr(:), idx(:)
+        real(dp), intent(inout) :: values(:)
+        type(fortsparse_status_t), intent(out) :: status
+        logical, intent(out) :: reused
+        real(dp), optional, intent(inout) :: maximum_correction
+        real(dp) :: correction
+        reused = .false.
+        call prepare_kkt_values(solver, nc, ptr, idx, values, correction, status)
+        if (.not. status_ok(status)) return
+        if (present(maximum_correction)) &
+            maximum_correction = max(maximum_correction, correction)
+        call sparse_refactor(solver, nr, nc, nnz, ptr, idx, values, status, reused)
+    end subroutine
+
     logical function configure(solver) result(ready)
-        ! FortSparse AUTO (threaded MUMPS LDL^T for large systems) when
-        ! available, serial SuperLU LU otherwise.
+        ! Native pivoted LU for the KKT system. Symmetry completion remains
+        ! an assembly contract, independent of this factorization choice.
+        ! Native LDL^T has not met the runtime budget for this system.
         type(sparse_solver_t), intent(inout) :: solver
         if (gs_direct_available()) then
             ready = gs_direct_mpi_ready()
             if (.not. ready) return
-            solver%backend_id = FORTSPARSE_BACKEND_AUTO
-            solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
+            solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+            solver%options%ordering = FORTSPARSE_ORDER_AMD
             solver%options%nthreads = 0
         else
-            solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         end if
         ready = .true.
     end function
@@ -2103,7 +2171,7 @@ contains
         call ideal_fb_slide_system(fb, rowptr, colidx, val, plasma_diagonal_mean(fb, &
             rowptr, colidx, val), rows, cols, matrix)
         if (.not. configure(solver)) return
-        call sparse_factor(solver, fb%n + nslide, fb%n + nslide, size(matrix), &
+        call factor_kkt_raw(solver, fb%n + nslide, fb%n + nslide, size(matrix), &
                            rows, cols, matrix, sst)
         if (.not. status_ok(sst)) return
         call sparse_solve(solver, [-grad, (0.0_dp, st = 1, nslide)], sol, sst)
@@ -2226,7 +2294,7 @@ contains
             end do
         end block
         if (.not. configure(solver)) return
-        call sparse_factor(solver, n, n, nnz, rp, ci(:nnz), v(:nnz), sst)
+        call factor_kkt_raw(solver, n, n, nnz, rp, ci(:nnz), v(:nnz), sst)
         if (.not. status_ok(sst)) return
         allocate (x(np_m), z(n), rhs(n))
         do i = 1, np_m
@@ -2640,14 +2708,16 @@ contains
         if (row0 == col0) then
             if (.not. configure(solver)) return
         else
-            solver%backend_id = FORTSPARSE_BACKEND_SUPERLU
+            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             if (gs_direct_available()) then
                 if (.not. gs_direct_mpi_ready()) return
-                solver%backend_id = FORTSPARSE_BACKEND_AUTO
+                solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             end if
             solver%options%symmetry = FORTSPARSE_SYM_GENERAL
+            solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         end if
-        call sparse_factor(solver, nb, nb, nnz, rp, ci(:nnz), v(:nnz), sst)
+        call factor_kkt_raw(solver, nb, nb, nnz, rp, ci(:nnz), v(:nnz), &
+                            sst, symmetric=(row0 == col0))
         if (.not. status_ok(sst)) return
         rhs = -grad(row0 + 1:row0 + nb)
         call sparse_solve(solver, rhs, du, sst)
