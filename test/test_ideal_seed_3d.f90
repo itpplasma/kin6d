@@ -16,7 +16,7 @@ program test_ideal_seed_3d
     real(dp) :: point(2), grad(2), chi, b3, p, theta, phi, phase, error, e1, e4
     real(dp) :: iota, integral, inputs(6), direction(6), bar(4), tangent(4), adj(6)
     real(dp) :: plus(4), minus(4), h
-    integer :: status, j, m, n, k
+    integer :: status, j, m, n
     real(dp), parameter :: pi = acos(-1.0_dp), flux = 0.7_dp
     coefficients = 0
     coefficients(1, 0, 0) = 3
