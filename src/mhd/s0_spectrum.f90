@@ -31,6 +31,7 @@ module kin6d_s0_spectrum
         type(eigen_stats_t) :: eigen
         type(sparse_factor_stats_t) :: factor
         character(16) :: claim = 'candidate', bound_status = 'unavailable'
+        character(120) :: message = 'invalid S0 input or unprepared pencil'
     end type s0_report_t
 contains
     subroutine s0_prepare(pencil, stiffness, mass, shift, report)
@@ -56,12 +57,9 @@ contains
         pencil%mass_factor%backend_id = FORTSPARSE_BACKEND_NATIVE
         pencil%shift_factor%backend_id = FORTSPARSE_BACKEND_NATIVE
         pencil%mass_factor%options%symmetry = FORTSPARSE_SYM_SPD
-        if (native_ordering_available(FORTSPARSE_ORDER_AMD)) then
-            pencil%mass_factor%options%ordering = FORTSPARSE_ORDER_AMD
-            pencil%shift_factor%options%ordering = FORTSPARSE_ORDER_AMD
-        end if
         call sparse_factor(pencil%mass_factor,mass,status)
         report%sparse_status = status%code
+        report%message = status%msg
         if (status%code /= FORTSPARSE_OK) return
         shifted = stiffness
         shifted%val = stiffness%val-shift*mass%val
@@ -70,9 +68,12 @@ contains
         else
             pencil%shift_factor%options%symmetry = FORTSPARSE_SYM_GENERAL
             pencil%shift_factor%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+            if (native_ordering_available(FORTSPARSE_ORDER_AMD)) &
+                pencil%shift_factor%options%ordering = FORTSPARSE_ORDER_AMD
         end if
         call sparse_factor(pencil%shift_factor,shifted,status)
         report%sparse_status = status%code
+        report%message = status%msg
         call sparse_factor_stats(pencil%shift_factor,report%factor,status)
         if (abs(aimag(shift)) <= 0) then
             call sparse_inertia(pencil%shift_factor,pencil%below,pencil%at, &
