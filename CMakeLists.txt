@@ -248,7 +248,8 @@ target_link_libraries(test_equilibrium_harness PRIVATE kin6d)
 add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
-    src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90
+    src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
+    src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
     src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -326,6 +327,10 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+add_executable(test_map_3d_equilibrium test/test_map_3d_equilibrium.f90)
+target_link_libraries(test_map_3d_equilibrium PRIVATE kin6d)
+add_test(NAME equilibrium_map_3d_readback COMMAND test_map_3d_equilibrium)
+set_tests_properties(equilibrium_map_3d_readback PROPERTIES PROCESSORS 4 TIMEOUT 60)
 add_executable(test_ideal_seed_3d test/test_ideal_seed_3d.f90)
 target_link_libraries(test_ideal_seed_3d PRIVATE kin6d)
 add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
@@ -896,7 +901,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_xi ideal_response_error
-            equilibrium_core curve_chart ideal_seed_3d nonnested vacuum_shell landreman nested_oracles
+            equilibrium_core curve_chart ideal_seed_3d map_3d_readback nonnested vacuum_shell landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -944,6 +949,11 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_seed_3d_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-seed-3d-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_ideal_seed_3d_regeneration.cmake)
+    add_test(NAME equilibrium_map_3d_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_map_3d_readback>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_map_3d_readback_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/map-3d-readback-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_map_3d_readback_regeneration.cmake)
     add_executable(check_response_strip_current gen/check_response_strip_current.f90)
     target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
     add_test(NAME response_strip_current_exact_identities
