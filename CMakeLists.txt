@@ -206,7 +206,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "7f16e38aaf5ebdfa56b0b8b4f5f57c0c31de212c")
+set(KIN6D_FORTSPARSE_REVISION "4f716f68152a1db44e4b7c58521b52535d6585fa")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -302,6 +302,9 @@ set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
     test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_schur_spectrum COMMAND test_ideal_free_boundary spectrum)
+set_tests_properties(ideal_fb_schur_spectrum PROPERTIES ENVIRONMENT
+    "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
 add_test(NAME ideal_fb_external_kink COMMAND test_ideal_free_boundary kink)
 set_tests_properties(ideal_fb_external_kink PROPERTIES ENVIRONMENT
     "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)

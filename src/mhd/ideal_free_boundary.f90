@@ -44,7 +44,7 @@ module kin6d_ideal_free_boundary
     ! merit, never on the energy.
     ! Everything is per field period; c_m = 2 pi/nfp for the n = 0 mode and
     ! pi/nfp for cos/sin modes.
-    use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64, i64 => int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, &
         ieee_quiet_nan
     use kin6d_grad_shafranov, only: gs_state_t
@@ -66,11 +66,14 @@ module kin6d_ideal_free_boundary
         tm_bem_steklov_symmetric
     use fortnum_quadrature, only: gauss_legendre
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
+    use fortnum_eigen, only: lanczos, eigen_options_t, eigen_stats_t, &
+        EIGEN_OK, EIGEN_NEAREST
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_refactor, sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, &
         csc_normalize_symmetric_raw, &
-        FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL
+        FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL, &
+        FORTSPARSE_SYM_INDEFINITE, sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
     implicit none
     private
     public :: ideal_fb_t, ideal_fb_report_t, ideal_fb_init, ideal_fb_set_drive
@@ -79,6 +82,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
     public :: ideal_fb_mode_stability, ideal_fb_mode_energy, ideal_fb_stability_t
+    public :: ideal_fb_mode_inertia, ideal_fb_mode_lanczos
     public :: ideal_fb_newton_step
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
     public :: ideal_fb_hypotheses_print
@@ -171,6 +175,7 @@ module kin6d_ideal_free_boundary
         ! norm or DCON's boundary-normalized response eigenvalues.
         real(dp) :: plasma = 0, vacuum = 0, exterior = 0, constraint = 0
         real(dp) :: total = 0, metric_norm = 0, relative_residual = huge(1.0_dp)
+        real(dp) :: residual_radius = huge(1.0_dp), backward_error = huge(1.0_dp)
     end type
 
     type :: ideal_fb_hypotheses_t
@@ -2408,6 +2413,250 @@ contains
         if (.not. status_ok(sst)) return
         call mode_ledger(fb, rp, ci, v, map, np_m, z, mass, report, action)
         status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine mode_rest_block(rp, ci, v, np, ar, ac, av)
+        ! Extract the eliminated shell-map/potential/multiplier block C.
+        integer, intent(in) :: rp(:), ci(:), np
+        real(dp), intent(in) :: v(:)
+        integer, allocatable, intent(out) :: ar(:), ac(:)
+        real(dp), allocatable, intent(out) :: av(:)
+        integer :: i, p, count, n
+        n = size(rp) - 1
+        allocate (ar(n - np + 1), ac(size(v)), av(size(v)))
+        count = 0; ar(1) = 1
+        do i = np + 1, n
+            do p = rp(i), rp(i + 1) - 1
+                if (ci(p) <= np) cycle
+                count = count + 1
+                ac(count) = ci(p) - np; av(count) = v(p)
+            end do
+            ar(i - np + 1) = count + 1
+        end do
+        ac = ac(:count); av = av(:count)
+    end subroutine
+
+    subroutine ideal_fb_mode_inertia(fb, m, shifts, counts, status)
+        ! Haynsworth: In(S - sigma M) = In(K - diag(sigma M,0)) - In(C).
+        ! No dense Schur matrix. Counts are (negative,zero,positive) computed
+        ! pivot signs, NOT rigorous enclosures of the exact-real operator.
+        ! C must be nonsingular; uncertain pivot signs reject the diagnostic.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: m
+        real(dp), intent(in) :: shifts(:)
+        integer, intent(out) :: counts(3, size(shifts)), status
+        integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
+        real(dp), allocatable :: v(:), mass(:), av(:), shifted(:)
+        integer :: np, n, j, i, p, base(3), full(3), st
+        counts = -1
+        call mode_matrix(fb, m, rp, ci, v, mass, map, np, status)
+        if (status /= IDEAL_FB_OK) return
+        status = IDEAL_FB_BAD_INPUT
+        if (.not. all(ieee_is_finite(shifts))) return
+        n = size(rp) - 1
+        call mode_rest_block(rp, ci, v, np, ar, ac, av)
+        call count_factor(ar, ac, av, base, st)
+        status = IDEAL_FB_SOLVE_FAILED
+        if (st /= IDEAL_FB_OK .or. base(2) /= 0) return
+        allocate (shifted(size(v)))
+        do j = 1, size(shifts)
+            shifted = v
+            do i = 1, np
+                do p = rp(i), rp(i + 1) - 1
+                    if (ci(p) == i) shifted(p) = v(p) - shifts(j)*mass(i)
+                end do
+            end do
+            call count_factor(rp, ci, shifted, full, st)
+            if (st /= IDEAL_FB_OK) return
+            full = full - base
+            if (any(full < 0) .or. sum(full) /= np) return
+            counts(:, j) = full
+        end do
+        status = IDEAL_FB_OK
+    contains
+        subroutine count_factor(rows, cols, values, inertia, result)
+            integer, intent(in) :: rows(:), cols(:)
+            real(dp), intent(in) :: values(:)
+            integer, intent(out) :: inertia(3), result
+            type(sparse_solver_t) :: solver
+            type(fortsparse_status_t) :: sst
+            real(dp), allocatable :: scale(:), scaled(:)
+            integer :: nr, i, p, reliability
+            integer(int64) :: signs(3)
+            result = IDEAL_FB_SOLVE_FAILED; inertia = -1
+            nr = size(rows) - 1
+            allocate (scale(nr), scaled(size(values)))
+            ! Positive diagonal congruence controls mixed physical units;
+            ! it cannot change inertia. A zero row is a rejected singularity.
+            do i = 1, nr
+                scale(i) = maxval(abs(values(rows(i):rows(i + 1) - 1)))
+            end do
+            if (any(scale <= 0)) return
+            scale = 1/sqrt(scale)
+            !$omp parallel do default(shared) private(i,p) schedule(static)
+            do i = 1, nr
+                do p = rows(i), rows(i + 1) - 1
+                    scaled(p) = scale(i)*values(p)*scale(cols(p))
+                end do
+            end do
+            !$omp end parallel do
+            solver%backend = FORTSPARSE_BACKEND_NATIVE
+            solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+            solver%options%ordering = FORTSPARSE_ORDER_AMD
+            solver%options%ldlt_blocked = .true.
+            call sparse_factor(solver, nr, nr, size(values), rows, cols, scaled, sst)
+            if (status_ok(sst)) then
+                call sparse_inertia(solver, signs(1), signs(2), signs(3), &
+                    reliability, sst)
+                if (status_ok(sst)) then
+                    if (reliability == FORTSPARSE_INERTIA_RELIABLE) then
+                        inertia = int(signs)
+                        result = IDEAL_FB_OK
+                    end if
+                end if
+            end if
+            if (.not. status_ok(sst)) print '(a,a)', 'mode inertia: ', sst%message
+            call sparse_destroy(solver)
+        end subroutine
+    end subroutine
+
+    subroutine ideal_fb_mode_lanczos(fb, m, lambda, report, status, shift)
+        ! Opt-in near-shift Schur eigenpair. FortNum #103 checks the original
+        ! residual with an observed LOWER operator-norm estimate (stricter
+        ! than the exact norm) and exact ||M||_2 = max(mass). No unit floor.
+        ! This gate does not establish extremal ordering or physical accuracy.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: m
+        real(dp), intent(out) :: lambda
+        type(ideal_fb_stability_t), intent(out) :: report
+        integer, intent(out) :: status
+        real(dp), intent(in), optional :: shift
+        integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
+        real(dp), allocatable :: v(:), mass(:), av(:), shifted(:), start(:)
+        real(dp), allocatable :: rhs(:), z(:), crhs(:), cz(:), images(:)
+        real(dp), allocatable :: vectors(:, :)
+        real(dp) :: values(1), residuals(1), sigma, relative_residual, observed_scale
+        real(dp) :: radius, backward
+        type(sparse_solver_t) :: full_solver, rest_solver
+        type(fortsparse_status_t) :: sst
+        type(eigen_options_t) :: options
+        type(eigen_stats_t) :: stats
+        integer :: np, n, i, p, info
+        logical :: action_failed
+        lambda = ieee_value(0.0_dp, ieee_quiet_nan)
+        report = ideal_fb_stability_t()
+        call mode_matrix(fb, m, rp, ci, v, mass, map, np, status)
+        if (status /= IDEAL_FB_OK) return
+        sigma = 0
+        if (present(shift)) sigma = shift
+        status = IDEAL_FB_BAD_INPUT
+        if (.not. ieee_is_finite(sigma)) return
+        n = size(rp) - 1
+        call mode_rest_block(rp, ci, v, np, ar, ac, av)
+        shifted = v
+        do i = 1, np
+            do p = rp(i), rp(i + 1) - 1
+                if (ci(p) == i) shifted(p) = v(p) - sigma*mass(i)
+            end do
+        end do
+        status = IDEAL_FB_SOLVE_FAILED
+        if (.not. configure(full_solver)) return
+        if (.not. configure(rest_solver)) return
+        call factor_kkt_raw(rest_solver, n - np, n - np, size(av), ar, ac, av, sst)
+        if (.not. status_ok(sst)) then
+            call sparse_destroy(rest_solver)
+            return
+        end if
+        call factor_kkt_raw(full_solver, n, n, size(v), rp, ci, shifted, sst)
+        if (.not. status_ok(sst)) then
+            call sparse_destroy(rest_solver)
+            call sparse_destroy(full_solver)
+            return
+        end if
+        allocate (start(np), vectors(np, 1), rhs(n), z(n), &
+            crhs(n - np), cz(n - np), images(n))
+        do i = 1, np
+            start(i) = 1 + 0.1_dp*sin(1.7_dp*i)
+        end do
+        options%max_basis = min(32, np)
+        options%retain = min(16, np - 1)
+        options%max_restarts = 25
+        options%which = EIGEN_NEAREST
+        options%mass_scale = maxval(mass)
+        action_failed = .false.; observed_scale = 0
+        call lanczos(apply_schur, start, values, vectors, residuals, &
+            1.0e-10_dp, options, info, stats, mass=apply_mass, &
+            solve_shift=solve_shift, sigma=sigma)
+        status = IDEAL_FB_NOT_CONVERGED
+        if (info == EIGEN_OK .and. .not. action_failed) then
+            ! Reconstruct the SAME physical Schur vector, then its ledger.
+            call apply_schur(vectors(:, 1), start)
+            if (.not. action_failed) then
+                z(:np) = vectors(:, 1); z(np + 1:) = -cz
+                lambda = values(1)
+                radius = norm2((start - lambda*mass*z(:np))/sqrt(mass))
+                relative_residual = radius/max(abs(lambda), 1.0e-12_dp)
+                backward = norm2(start - lambda*mass*z(:np)) &
+                    /((observed_scale + abs(lambda)*maxval(mass))*norm2(z(:np)))
+                call mode_ledger(fb, rp, ci, v, map, np, z, mass, report, images)
+                report%relative_residual = relative_residual
+                report%residual_radius = radius
+                report%backward_error = backward
+                status = IDEAL_FB_OK
+            end if
+        end if
+        if (action_failed) status = IDEAL_FB_SOLVE_FAILED
+        call sparse_destroy(full_solver)
+        call sparse_destroy(rest_solver)
+    contains
+        subroutine apply_mass(x, y)
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            y = mass*x
+        end subroutine
+        subroutine solve_shift(x, y, info)
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            integer, intent(out) :: info
+            type(fortsparse_status_t) :: st
+            rhs = 0; rhs(:np) = x
+            call sparse_solve(full_solver, rhs, z, st)
+            info = 1
+            if (status_ok(st)) info = 0
+            y = z(:np)
+        end subroutine
+        subroutine apply_schur(x, y)
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            type(fortsparse_status_t) :: st
+            integer :: i, p
+            crhs = 0
+            !$omp parallel do default(shared) private(i,p) schedule(static)
+            do i = np + 1, n
+                do p = rp(i), rp(i + 1) - 1
+                    if (ci(p) <= np) crhs(i - np) = &
+                        crhs(i - np) + v(p)*x(ci(p))
+                end do
+            end do
+            !$omp end parallel do
+            call sparse_solve(rest_solver, crhs, cz, st)
+            if (.not. status_ok(st)) action_failed = .true.
+            y = ieee_value(0.0_dp, ieee_quiet_nan)
+            if (action_failed) return
+            y = 0
+            !$omp parallel do default(shared) private(i,p) schedule(static)
+            do i = 1, np
+                do p = rp(i), rp(i + 1) - 1
+                    if (ci(p) <= np) then
+                        y(i) = y(i) + v(p)*x(ci(p))
+                    else
+                        y(i) = y(i) - v(p)*cz(ci(p) - np)
+                    end if
+                end do
+            end do
+            !$omp end parallel do
+            if (norm2(x) > 0) observed_scale = max(observed_scale, norm2(y)/norm2(x))
+        end subroutine
     end subroutine
 
     subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations, shift, report)
