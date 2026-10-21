@@ -76,7 +76,8 @@ jobs:
     name: d8 (psi)
   d8_map:
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || (github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && fromJSON('["self-hosted","itp-slurm"]') || fromJSON('["self-hosted","itp-build"]') }}
-    timeout-minutes: 30
+    # The existing shaped P3 case permits 80 minutes; allow the full tier.
+    timeout-minutes: 120
     env:
       FC: gfortran-14
       CC: gcc-14
