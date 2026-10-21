@@ -292,7 +292,7 @@ contains
 
     end subroutine strip_solve
 
-    subroutine strip_dirichlet_map(eq, eta, gamma, r, dmap, info)
+    subroutine strip_dirichlet_map(eq, eta, gamma, r, dmap, info, current_map)
         !! Dirichlet-to-Neumann map of the strip on the mesh r: the edge
         !! slopes psi'(r(1)), psi'(r(n)) = dmap psi(r(1)), psi(r(n)) (one-sided
         !! second-order differences, as in the trace rows), with the ideal Ohm
@@ -304,6 +304,10 @@ contains
         real(dp), intent(in) :: r(:)
         complex(dp), intent(out) :: dmap(2, 2)
         integer, intent(out) :: info
+        !> Physical strip current int r L(psi) dr per unit edge trace.
+        !! Fixed-parameter JVP is this linear row; VJP is its Hermitian
+        !! transpose. Artificial interface-sheet amplitudes are not this current.
+        complex(dp), intent(out), optional :: current_map(2)
         type(trace_t) :: tr(2)
         type(strip_solution_t) :: sol
         real(dp) :: hm, hp, d1(3), d2(3)
@@ -317,6 +321,7 @@ contains
         hp = r(nn) - r(nn - 1)
         d2 = [hp/(hm*(hm + hp)), -(hm + hp)/(hm*hp), (2*hp + hm)/(hp*(hm + hp))]
         info = 0
+        if (present(current_map)) current_map = (0.0_dp, 0.0_dp)
         do k = 1, 2
             tr%alpha = (0.0_dp, 0.0_dp)
             tr%beta = (1.0_dp, 0.0_dp)
@@ -329,6 +334,7 @@ contains
             end if
             dmap(1, k) = sum(d1*sol%psi(1:3))
             dmap(2, k) = sum(d2*sol%psi(nn - 2:nn))
+            if (present(current_map)) current_map(k) = sol%current
         end do
     end subroutine strip_dirichlet_map
 
