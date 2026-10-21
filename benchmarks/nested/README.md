@@ -22,7 +22,11 @@ build/benchmark_nested_reference OUT/samples.txt 0.5 0.4 0.015625
 ```
 
 [V] Use tau=0 for Landreman, 0.4 for Issan. The adapter also accepts `desc` and
-`gvec`. Never apply the integer-family comparator to the QA case. VMEC uses
+`gvec`. Add `--clockwise` for the integer-family inputs, including when using
+VMEC: it records iota in the input convention after VMEC's internal theta flip.
+For GVEC this reverses theta as well as zeta, preserving positive Jacobians.
+Omit it for the supplied QA input. Never apply the integer-family comparator
+to the QA case. VMEC uses
 radial splines from SIMSOPT; no DESC fit or secondary solve is substituted.
 Samples exclude the axis and edge and use three normalized toroidal-flux
 surfaces. Vector components are Cartesian. The verifier compares B and pressure
@@ -42,5 +46,7 @@ on sCluster with gfortran 12.2, eight threads and the compiler-floor recipe.
 Timing includes strict point-evaluation intervals and file output. It excludes
 the memory guard's polling delay. Each point has one measurement; these are
 input-preparation costs and cannot rank equilibrium solvers. The source was
-c0ffe910938bd7fdec051b0a9eccfb629e0c9470. Four modes failed the unchanged 1%
-boundary-radius gate; 8, 12 and 16 modes passed for both cases.
+acdcb99923c84bdac1a435ccb7f8758f7bb015b1. All listed points passed the unchanged
+1% boundary-radius gate. Inside Slurm, reproduce the ladder with
+`bash benchmarks/nested/run_inputs.sh BUILD OUT`. Plot the retained ledger
+with `python benchmarks/nested/plot_inputs.py OUT`.
