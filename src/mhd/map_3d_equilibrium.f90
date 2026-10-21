@@ -116,7 +116,7 @@ contains
         real(dp), intent(out) :: point(3), value(EQ_VALUES)
         integer, intent(out) :: status
         real(dp) :: q(3), d(3, 3), reference(2), g(2, 2), chi, cg(2), b3, p
-        real(dp) :: jac, chi_phi, det
+        real(dp) :: jac, psi_phi, det
         call map_3d_coordinates(map, cell, xi, phi, q, d, reference, g)
         point = q
         value = 0; status = 1
@@ -128,7 +128,7 @@ contains
                           d(3, 2), d(1, 3), d(2, 3), d(3, 3), g(1, 1), g(2, 1), &
                           g(1, 2), g(2, 2), cg(1), cg(2), b3, q(1), map%sigma, &
                           value(EQ_BR), value(EQ_BZ), value(EQ_BPHI), &
-                          value(EQ_PSI_R), value(EQ_PSI_Z), chi_phi, jac)
+                          value(EQ_PSI_R), value(EQ_PSI_Z), psi_phi, jac)
         ! In (R,Z,phi), the flux gauge BR=-psi_Z/R has psi=-sigma*chi.
         call map_3d_flux(chi,map%sigma,value(EQ_PSI))
         value(EQ_P) = p
