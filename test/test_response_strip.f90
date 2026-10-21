@@ -17,7 +17,7 @@ program test_response_strip
     use kin6d_response_strip, only: cyl_step_t, strip_options_t, &
         strip_solution_t, step_rational, step_fprime, step_delta_prime, &
         strip_growth_rate, strip_mesh, strip_solve, layer_width, &
-        ri_dispersion_gamma
+        ri_dispersion_gamma, strip_dirichlet_map, trace_t
     implicit none
 
     logical :: all_passed
@@ -26,10 +26,42 @@ program test_response_strip
     call tearing(cyl_step_t(m=1, n=1, q0=0.7_dp, r1=0.5_dp), [1.0e6_dp, 1.0e7_dp])
     call ideal_limit()
     call steady_penetration()
+    call current_trace_map()
     if (.not. all_passed) error stop 1
     print '(a)', "test_response_strip: all checks passed"
 
 contains
+
+    subroutine current_trace_map()
+        !! Compare the two-ring current action with a separately driven solve
+        !! and with the analytic ideal current. Retain a complex drive.
+        type(cyl_step_t) :: eq
+        type(strip_options_t) :: opt
+        type(strip_solution_t) :: sol
+        type(trace_t) :: traces(2)
+        complex(dp) :: gamma, dmap(2, 2), current_map(2), values(2), ideal
+        real(dp), allocatable :: radial(:)
+        real(dp) :: rs
+        integer :: info
+        eq = cyl_step_t(m=2, n=1, q0=1.2_dp, r1=0.5_dp, &
+            psi_ext=(0.7_dp, -0.4_dp))
+        rs = step_rational(eq)
+        gamma = (1.0e-6_dp, 0.0_dp)
+        call strip_mesh(rs, layer_width(0.0_dp, gamma, step_fprime(eq)), opt, radial)
+        call strip_solve(eq, 0.0_dp, gamma, radial, sol)
+        values = [sol%psi(1), sol%psi(size(radial))]
+        ideal = 2*eq%m*eq%psi_ext*rs**eq%m
+        call strip_dirichlet_map(eq, 0.0_dp, gamma, radial, dmap, info, current_map)
+        call record(info == 0, 'physical-current trace map factorization')
+        call record(abs(sum(current_map*values)/ideal - 1) < 1.0e-3_dp, &
+            'physical-current map recovers complex analytic ideal current')
+        traces%alpha = (0.0_dp, 0.0_dp)
+        traces%beta = (1.0_dp, 0.0_dp)
+        traces%s = values
+        call strip_solve(eq, 0.0_dp, gamma, radial, sol, traces)
+        call record(abs(sum(current_map*values) - sol%current) &
+            < 1.0e-8_dp*abs(ideal), 'physical-current map agrees with driven strip')
+    end subroutine current_trace_map
 
     subroutine record(c, d)
         logical, intent(in) :: c
