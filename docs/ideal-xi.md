@@ -49,7 +49,8 @@ A_{:,\phi}=R^{-1}(in\xi_R-\xi_\phi,
 \]
 
 [V] The two basis-rotation terms are essential. The public constructor
-rejects R<=0; regularity at the cylindrical axis is not implemented here.
+rejects R<=0 and nonfinite inputs or jets; regularity at the cylindrical
+axis is not implemented here.
 These are components in a local orthonormal frame of a physical tensor;
 the magnetic field order differs from the core evaluator's (R,Z,phi).
 A future core sampler must reorder it explicitly.
