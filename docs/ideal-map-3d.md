@@ -38,8 +38,28 @@ phi-hat, n in nfp*Z, |n| <= nfp*N) and omega with q3 = phi-hat + omega.
     H(q) = Gamma(q3) + q1 N(q3) + q2 B(q3).
 
 Both extend `ideal_chart_t` in `src/equilibrium/equilibrium_chart.f90`.
-The curve chart is available independently; it is not wired into the
-free-boundary solver. A reference mesh using it lives in the normal plane.
+The fixed-boundary map solver accepts either chart. A curve-chart reference
+mesh uses normal-plane coordinates, and its frozen label, gradient and flux
+density must be expressed in those coordinates, including orientation.
+Pass `nphi` explicitly to `ideal_map_init` for a curve chart and use the
+chart's admitted `nfp` (`chart%field_periods()`). Even at `ntor=0` the geometry
+can couple modes; compare periodic quadrature resolutions. The fixed omega
+gauge uses the periodic mean of |dH/dq3|^2, emitted by FortSym, in place of
+the cylindrical R^2 factor.
+
+`ideal_map_curve_chart_landreman` solves the epsilon=0 Landreman case in
+cylindrical and circular G-frame coordinates, checking gauge and solved-state
+agreement and a 3% field/pressure budget. `ideal_map_curve_chart_figure8`
+checks directional gradient/Hessian consistency, a fixed-wall solve and
+periodic energy refinement on the lifted Gerono tube. These are numerical
+candidate checks; continuous error bounds and implicit equilibrium parameter
+sensitivities are unavailable. The figure-8 is a schematic geometry, not a
+validated device equilibrium.
+
+The cylindrical mass/background residual diagnostic, exact quadratic omega
+elimination and axisymmetric free-boundary exterior reject curve charts with
+their bad-input status. General curve-following free-boundary coupling remains
+unavailable.
 
 ### Curve chart: Fourier axis and projected-guide G-frame
 
@@ -142,14 +162,16 @@ close periodically and obey rotational nfp symmetry. The FD and sampling
 checks are numerical evidence. All margins and radii use ordinary floating
 point: outward rounding and rigorous geometry enclosures are **unavailable**.
 The corresponding continuous validity is a **hypothesis** until rounding is
-bounded. There is no plasma solution, field-line-advance claim, certified
-figure-8 equilibrium, or completed `g_frame_figure8_equilibrium` gate here.
+bounded. These geometry-only checks provide no plasma solution,
+field-line-advance claim, certified figure-8 equilibrium, or completed
+`g_frame_figure8_equilibrium` gate.
 
 ## Discretisation
 
 - Energy density, DX-gradient (9) and DX-Hessian (45) are fortsym leaves; the
   chain rule through the chart is assembled in `local_derivatives`.
-- Planes: N_phi = 3N + 1 by default, trapezoidal in phi-hat; Gauss order 7 in
+- Planes: N_phi = 3N + 1 by default for cylindrical charts; explicit for curve
+  charts, trapezoidal in phi-hat; Gauss order 7 in
   the plane. The integrand is rational, so neither is exact.
 - Relabelling gauge (DESIGN "known difficulties"): each node moves in the
   poloidal plane only along a fixed transversal d_a = grad chi / |grad chi|
