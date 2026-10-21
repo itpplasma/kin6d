@@ -140,9 +140,10 @@ contains
     !> arguments that are scalars across the batch. The driver opens no thread
     !> team: the consumer calls it from inside an element-parallel region, so
     !> threading stays at the element level.
-    subroutine writer_emit_batch(w, name, args, outputs, roots, uniform)
+    subroutine writer_emit_batch(w, name, args, outputs, roots, uniform, precision)
         class(leaf_writer_t), intent(inout) :: w
         character(*), intent(in) :: name, args(:), outputs(:), uniform(:)
+        integer, intent(in), optional :: precision
         type(expr_t), intent(in) :: roots(:)
         type(kernel_ir_t) :: ir
         type(kernel_emit_spec_t) :: spec
@@ -158,6 +159,7 @@ contains
         spec%generator_revision = str(fortsym_revision)
         spec%regenerate_command = str(w%generator//' from pinned FortSym build')
         spec%pure_procedure = .true.
+        if (present(precision)) spec%precision = precision
         spec%batch_threaded = .false.
         spec%batch_deterministic = .false.
         allocate (spec%args(size(args)), spec%outputs(size(outputs)), &

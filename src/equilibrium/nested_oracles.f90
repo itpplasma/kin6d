@@ -158,7 +158,10 @@ contains
         status = 1
         if (.not. o%valid()) return
         rho = sqrt(o%delta)
-        angle = -theta ! Clockwise poloidal angle, positive geometric phi.
+        ! The integer family's material angle winds twice relative to the
+        ! conventional poloidal angle. Untwist before Fourier export so
+        ! iota=2 and an axisymmetric limit refer to the same coordinate.
+        angle = 2*phi - theta
         if (o%family == NESTED_SHEARED) then
             rho = sqrt(2*o%delta)
             angle = theta

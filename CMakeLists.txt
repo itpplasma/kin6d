@@ -320,6 +320,8 @@ if(KIN6D_ENABLE_OPENMP)
     add_test(NAME equilibrium_nested_oracle_batch COMMAND benchmark_nested_oracles 1024)
     set_tests_properties(equilibrium_nested_oracle_batch PROPERTIES PROCESSORS 8)
 endif()
+add_executable(benchmark_nested_reference EXCLUDE_FROM_ALL benchmarks/nested/compare.f90)
+target_link_libraries(benchmark_nested_reference PRIVATE kin6d_equilibrium)
 add_executable(test_nested_boundary_input test/test_nested_boundary_input.f90)
 target_link_libraries(test_nested_boundary_input PRIVATE kin6d)
 foreach(family 1 2)
@@ -1868,6 +1870,7 @@ include(cmake/response_calibration.cmake)
 
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
+include(cmake/kin6d_cpu_precision.cmake)
 
 add_executable(test_map_equilibrium test/test_map_equilibrium.f90)
 target_link_libraries(test_map_equilibrium PRIVATE kin6d_mhd)

@@ -84,7 +84,7 @@ contains
         if (failed /= 0 .or. any(hi <= lo)) return
         failed = 0
         !$omp parallel do schedule(static) reduction(max:failed) &
-        !$omp private(q, point, det, shape, grads, hess, values, ph, stat, gradient)
+        !$omp private(q, point, det, shape, grads, hess, values, ph, stat, gradient, axis)
         do e = 1, nt
             values(:nd) = psi(state%triangles(:, e))
             do q = 1, size(w)
@@ -97,7 +97,10 @@ contains
                 ph = dot_product(shape(:nd), values(:nd))
                 call gs_error_coefficient(point(1), coefficient(q, e))
                 f(q, e) = source(e, point(1), point(2), ph)
-                gradient = matmul(grads(:, :nd), values(:nd) - values(1))
+                do axis = 1, 2
+                    gradient(axis) = dot_product(grads(axis, :nd), &
+                        values(:nd) - values(1))
+                end do
                 call gs_error_flux(point(1), gradient(1), gradient(2), &
                     flux(1, q, e), flux(2, q, e))
             end do
