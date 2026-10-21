@@ -782,7 +782,7 @@ contains
         use fortnum_krylov, only: complex_gmres_operator
         use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
             ampere_n_error
-        use kin6d_mhd_response_n, only: sheet_closure_t, closure_fluxes
+        use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
         use fortsparse, only: csc_matvec
         use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
         type(meridian_feec_t), intent(in) :: fs
@@ -793,7 +793,7 @@ contains
         type(ideal_options_t), intent(in) :: opt
         integer, intent(in) :: n
         type(sample_ring_t), intent(in) :: rings(:)
-        type(sheet_closure_t), intent(in) :: cl
+        type(layer_closure_t), intent(in) :: cl
         complex(dp), intent(in) :: b2sheet(:, :), phi_ext(:)
         complex(dp), intent(inout) :: a(:)
         complex(dp), intent(out) :: lam(:), phi_tot(:)
