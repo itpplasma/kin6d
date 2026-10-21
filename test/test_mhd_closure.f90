@@ -59,13 +59,14 @@ program test_mhd_closure
     use kin6d_gs_direct, only: gs_direct_available
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl
-    use kin6d_mhd_response_n, only: ring_sheet_load, sheet_closure_t, closure_fluxes, &
+    use kin6d_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &
         ring_angles_t, ring_angles_set, ring_flux_harmonic, ring_flux_from_values, &
         ring_points
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_xmax, layer_jump, layer_kink, layer_init, layer_closure, layer_wmax, &
+        layer_xmax, layer_fit_widths, layer_jump, layer_kink, layer_init, &
+        layer_closure, layer_wmax, &
         layer_coefficients, layer_regular_slope, layer_large
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
@@ -103,7 +104,7 @@ program test_mhd_closure
     type(ampere_n_t) :: amp
     type(ideal_options_t) :: opt
     type(sample_ring_t), allocatable :: sr(:)
-    type(sheet_closure_t) :: cl
+    type(layer_closure_t) :: cl
     type(surface_t) :: s
     type(ring_angles_t), allocatable :: ras(:)
     type(cyl_step_t) :: eq
@@ -129,6 +130,11 @@ program test_mhd_closure
         if (trim(mode) == 'strip') then
             !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
             call strip_suite()
+        end if
+        if (trim(mode) == 'setup') then
+            call layer_all_rational_setup()
+            if (.not. all_passed) error stop 1
+            stop
         end if
     end block
     !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
@@ -161,6 +167,53 @@ program test_mhd_closure
     print '(a)', "test_mhd_closure: all checks passed"
 
 contains
+
+    subroutine layer_all_rational_setup()
+        !! Unsorted, crowded and near-boundary rationals must all retain
+        !! two complete fit stencils without crossing a neighbor or boundary.
+        real(dp), parameter :: centers(4) = &
+            [0.9996_dp, 0.49_dp, 0.4902_dp, 0.0001_dp]
+        real(dp), parameter :: lo = 1.0e-6_dp, hi = 0.9998_dp
+        real(dp) :: widths(4), reach, separation
+        real(dp), allocatable :: extra(:), labels(:), grid(:)
+        type(rational_layer_t) :: lay
+        integer :: i, j, st
+
+        call layer_fit_widths(centers, 1.0e-3_dp, 2.0_dp, 3, &
+            lo, hi, widths, st)
+        call record(st == 0, 'all-rational widths accept crowded and edge layers')
+        if (st /= 0) return
+        extra = sqrt(centers)
+        do i = 1, size(centers)
+            reach = 4*widths(i)
+            separation = min(centers(i) - lo, hi - centers(i))
+            do j = 1, size(centers)
+                if (j == i) cycle
+                separation = min(separation, abs(centers(i) - centers(j)))
+            end do
+            call record(reach < 0.5_dp*separation, &
+                'fit stencil remains inside its rational neighborhood')
+            call layer_labels(centers(i), widths(i), 2.0_dp, &
+                reach*(1 + 1.0e-9_dp), lo, hi, labels)
+            call record(size(labels) == 6, 'both complete fit stencils retained')
+            extra = [extra, sqrt(labels)]
+        end do
+        call ring_labels_merge(128, extra, 0.3_dp, grid)
+        do i = 1, size(centers)
+            call layer_init(grid, centers(i), 2.0_dp, 1.0_dp, -0.28_dp, &
+                i, widths(i), 2.0_dp, 3, lay, st)
+            call record(st == 0, 'capped fit rings initialize on the merged mesh')
+        end do
+        call layer_fit_widths([0.5_dp, 0.5_dp], 1.0e-3_dp, 2.0_dp, 3, &
+            lo, hi, widths(:2), st)
+        call record(st /= 0, 'duplicate rational centers refused')
+        call layer_fit_widths([hi], 1.0e-3_dp, 2.0_dp, 3, &
+            lo, hi, widths(:1), st)
+        call record(st /= 0, 'center outside the fit domain refused')
+        call layer_fit_widths([0.5_dp], 1.0e-3_dp, 1.0_dp, 3, &
+            lo, hi, widths(:1), st)
+        call record(st /= 0, 'non-growing fit grading refused')
+    end subroutine layer_all_rational_setup
 
     subroutine record(c, d)
         logical, intent(in) :: c
@@ -533,7 +586,7 @@ contains
         !! Dirichlet-to-Neumann map D(gamma), the current-free interior that
         !! the FEEC sees between the edges (map V) and the jump of
         !! d Phi_m/dr per unit edge sheet give the edge sheets lam = S Phi,
-        !! imposed as the closure rows S Phi - lam = 0 (sheet_closure_t w, wl).
+        !! imposed as the closure rows S Phi - lam = 0 (layer_closure_t w, wl).
         !! Tanh step (q0 1.2, r1 0.5, width 0.02), 2/1 strip, 3/1 and 4/1 L4
         !! sheets.  Pre-declared rules (RB2 handoff, before the first run):
         !!  (a) eta = 0, gamma = 1e-6: strip net current / L4 sheet current on
@@ -1145,7 +1198,7 @@ contains
         type(ampere_n_t) :: amp
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(ring_angles_t) :: rac
         type(surface_t) :: s
         complex(dp), allocatable :: a(:), b2(:), bc(:)
@@ -1550,7 +1603,7 @@ contains
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
         type(rational_layer_t), allocatable :: lays(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(surface_t) :: s
         real(dp), allocatable :: ul(:), extra(:), lab(:), psin_s(:)
         complex(dp), allocatable :: a(:), f(:), b2(:), b2cl(:, :), lam(:), phit(:)
@@ -1828,7 +1881,7 @@ contains
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
         type(rational_layer_t), allocatable :: lays(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(surface_t) :: s
         type(ring_angles_t) :: rac
         real(dp), allocatable :: ul(:), extra(:), lab(:), psin_s(:)
@@ -2378,7 +2431,7 @@ contains
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
         type(rational_layer_t), allocatable :: lays(:)
-        type(sheet_closure_t) :: cl0, cl
+        type(layer_closure_t) :: cl0, cl
         type(surface_t) :: s
         type(ring_angles_t) :: rar
         type(layer_params_t) :: par
