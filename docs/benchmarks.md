@@ -125,6 +125,40 @@ GVEC. They do not test islands or stochastic regions.
 
 ## Three-dimensional equilibrium programme (planned)
 
+### Nested-reference input admission, 2026-10-21
+
+[V] The integer-transform Landreman and nonsymmetric Issan cases now have
+matched pressure, iota and toroidal-flux inputs, emitted from the retained
+FortSym definitions. An independent surface integral checks toroidal flux to
+4.07e-11 relative. The three affected native tests pass on sCluster with
+gfortran 12.2. The sheared families still require pressure/flux conversion.
+
+[V] The Fourier boundary ladder below uses eps=0.5, delta=1/64, tau=0 or 0.4,
+64 angular samples and eight threads. Errors are checked on a staggered grid.
+The minor scale is 0.125 m, so the requested 1% radius is 0.00125 m. Four
+modes fail that gate; each listed resolution passes. Full raw timing and memory
+records are in [the input ledger](../benchmarks/nested/boundary-inputs.tsv).
+
+| Case | Modes m,n | Sampled boundary error (m) | Export time (s) | Peak RSS (KiB) |
+|---|---:|---:|---:|---:|
+| Landreman integer | 8 | 5.174e-6 | 0.32 | 15,056 |
+| Landreman integer | 12 | 2.339e-8 | 0.46 | 15,224 |
+| Landreman integer | 16 | 1.338e-10 | 0.40 | 15,216 |
+| Issan integer | 8 | 1.251e-6 | 0.19 | 15,212 |
+| Issan integer | 12 | 3.353e-9 | 0.28 | 15,188 |
+| Issan integer | 16 | 8.834e-12 | 0.24 | 15,244 |
+
+[V] These are input-preparation measurements, including point intervals and
+I/O, with one timing per point. They establish neither solved equilibria nor
+a speed ranking. Boundary errors are sampled indicators, not continuous
+bounds. The [comparison adapter](../benchmarks/nested/README.md) retains
+external states and uses a Fortran verifier for errors in B, pressure and
+surface labels and for the strong force defect. State bounds and estimator
+effectivity remain unavailable. A solved KIN6D epsilon>0 initializer and D8
+case admission are still required before a production time-to-accuracy claim.
+
+### Catalogue
+
 [Issan et al. (arXiv:2610.07304)](https://arxiv.org/abs/2610.07304) add a
 symmetry-breaking parameter to both Landreman families, giving exact nested
 benchmarks without stellarator symmetry. [V] The equations are retained in
