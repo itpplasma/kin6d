@@ -19,7 +19,7 @@ program gen_nested_oracles
     type(expr_t) :: x(3), eps, tau, pa, saxis, lam, b(3), db(3, 3), j(3), gp(3)
     type(expr_t) :: psi, p, a, bb, s, f, om2, q, kr, ki, d, u, v, ch, sh, wr, wi
     type(expr_t) :: rho, theta, t, xy(3), jac, h, g, xx, yy, sig, l, nu, rhs
-    type(expr_t) :: re, im, root, delta, vol, pavg, bavg, paxes(2)
+    type(expr_t) :: re, im, root, delta, vol, pavg, bavg, paxes(2), torflux
     type(expr_t) :: dkx(2), dky(2), du(3), dv(3), core(3), corep, corepsi
     character(8), parameter :: names(20) = [character(8) :: 'psi', 'p', &
                                  'bx', 'by', 'bz', 'jx', 'jy', 'jz', 'px', 'py', 'pz', &
@@ -67,11 +67,16 @@ program gen_nested_oracles
                 [character(8) :: 'x', 'y', 'z', 'jac'], [xy, jac], ad=.true.)
     vol = 2*pi_expr(arena)**2*a*bb*delta/(om2*sqrt(om2))
     pavg = pa - delta/om2; bavg = 1 - om2*eps**2/2 + delta/om2
+    torflux = pi_expr(arena)*a*bb*delta/om2
     call w%emit('nested_integer_averages', &
                 [character(8) :: 'eps', 'tau', 'pa', 'delta'], &
                 [character(8) :: 'volume', 'pavg', 'b2avg', 'beta', 'iota', 'flux'], &
-             [vol, pavg, bavg, 2*pavg/bavg, 2 + 0*eps, pi_expr(arena)*a*bb*delta/om2], &
+             [vol, pavg, bavg, 2*pavg/bavg, 2 + 0*eps, torflux], &
                 ad=.true., interval=.true.)
+    psi = sym(arena, 'psi')
+    call w%emit('nested_integer_flux', &
+                [character(8) :: 'psi', 'eps', 'tau'], ['phi'], &
+                [subs(torflux, delta, psi)], ad=.true.)
     ! Sheared family: work first in the differential extension K^2=wbar^2+eps.
     ! K_x=wbar/K, K_y=-i*wbar/K. No branch choice enters these local identities.
     kr = sym(arena, 'kr'); ki = sym(arena, 'ki'); d = kr**2 + ki**2
@@ -135,6 +140,16 @@ program gen_nested_oracles
     call w%emit('nested_sheared_surface', &
                 [character(8) :: 'rho', 'theta', 't', 'eps', 'tau', 'saxis', 'lam'], &
                [character(8) :: 'x', 'y', 'z', 'jac', 'rhs'], [xy, jac, rhs], ad=.true.)
+    ! The closed one-form J B^theta dt - J B^t dtheta has periods
+    ! P'=integral J B^theta/rho dt, T'=integral J B^t/rho dtheta,
+    ! where primes are d/dpsi, psi=rho^2/2. Hence iota=P'/T'.
+    ! Cancel rho symbolically BEFORE evaluation, including at the axis.
+    call prove_flux_periods()
+    call w%emit('nested_sheared_flux_density', &
+                [character(8) :: 'rho', 'theta', 't', 'eps', 'tau', 'saxis', 'lam'], &
+                [character(8) :: 'toroidal', 'poloidal'], &
+                [1/(2*lam*h*sqrt(1-yy**2)), &
+                 g/(lam*h*sqrt(ch**2-rho**2))], ad=.true.)
     ! Axis rotation integrand, valid also for Issan's shifted phase.
     call w%emit('nested_sheared_axis_iota', &
                 [character(8) :: 't', 'eps', 'tau', 'saxis'], ['rhs'], &
@@ -159,8 +174,21 @@ program gen_nested_oracles
                 [character(8)::'volume', 'pint', 'b2int'], &
                 [f, f*sym(arena, 'p'), f*(sym(arena, 'bx')**2 + sym(arena, 'by')**2 &
                                           + sym(arena, 'bz')**2)])
-    call w%emit('nested_rotation_number', ['theta', 'turns'], ['iota'], &
-                [theta/(2*pi_expr(arena)*sym(arena, 'turns'))])
+    call w%emit('nested_flux_ratio', ['poloidal', 'toroidal'], ['iota'], &
+                [sym(arena, 'poloidal')/sym(arena, 'toroidal')], ad=.true.)
+    call w%emit('nested_profile_residual', &
+                [character(8) :: 'phi', 'edge', 's', 'x', 'label', 'slope'], &
+                ['f ', 'df'], &
+                [(sym(arena, 'phi') + (sym(arena, 'x') - sym(arena, 'label')) &
+                  *sym(arena, 'slope'))/sym(arena, 'edge') - sym(arena, 's'), &
+                 sym(arena, 'slope')/sym(arena, 'edge')], ad=.true.)
+    psi = sym(arena, 'psi')
+    call w%emit('nested_integer_pressure', &
+                [character(8) :: 'psi', 'tau', 'delta', 'edge'], ['p'], &
+                [subs(paxes(1), delta, delta - psi)], ad=.true.)
+    call w%emit('nested_sheared_pressure', &
+                [character(8) :: 'psi', 'delta', 'lam', 'edge'], ['p'], &
+                [subs(paxes(2), delta, delta - psi)], ad=.true.)
     u = sym(arena, 'radius'); v = sym(arena, 'height')
     q = sym(arena, 'm')*theta - 2*sym(arena, 'n')*sym(arena, 'phi')
     call w%emit('nested_boundary_harmonic', &
@@ -175,8 +203,38 @@ program gen_nested_oracles
                 paxes, interval=.true.)
     call w%line('end module kin6d_nested_oracle_leaves')
     call w%close()
-    print '(a)', '[V] Eight exact FortSym div/tension proof lemmas PASS; no probes.'
+    print '(a)', '[V] Fourteen exact FortSym field/flux proof lemmas PASS; no probes.'
 contains
+    subroutine prove_flux_periods()
+        type(expr_t) :: u, v, z, kr, ki, g, lam, rho, h, a, c, ch, sh, wr, wi
+        type(expr_t) :: bx, by, d, q, bt, btheta, yy, theta, jac
+        u = sym(arena, 'u'); v = sym(arena, 'v'); z = sym(arena, 'z')
+        kr = sym(arena, 'kr'); ki = sym(arena, 'ki'); g = sym(arena, 'g')
+        lam = sym(arena, 'lam'); rho = sym(arena, 'rho'); h = sym(arena, 'h')
+        theta = sym(arena, 'theta')
+        ch = (exp(v) + exp(0 - v))/2; sh = (exp(v) - exp(0 - v))/2
+        a = sin(u)*sh; c = cos(u)*ch
+        wr = (a*kr + c*ki)/(2*(kr**2 + ki**2))
+        wi = (c*kr - a*ki)/(2*(kr**2 + ki**2))
+        bx = cos(z)*wr + sin(z)*wi
+        by = cos(z)*wi - sin(z)*wr
+        d = cos(u)*ch*cos(z) - sin(u)*sh*sin(z)
+        q = sin(u)*ch*cos(z) + cos(u)*sh*sin(z)
+        call prove(2*(ki*bx + kr*by) - d, 'elliptic toroidal component 2g B^t=D')
+        call prove(d**2 + q**2 - ch**2 + sin(z)**2, 'D^2+Q^2=cosh(nu)^2-sin(lam z)^2')
+        ! The inverse chart sets Q=rho cos(theta), sin(lam z)=-rho sin(theta).
+        call prove((ch**2 - rho**2*sin(theta)**2) - rho**2*cos(theta)**2 &
+                   - (ch**2 - rho**2), 'inverse-chart D^2=cosh(nu)^2-rho^2')
+        ! Positive roots on admitted chart: D>0, 1-yy^2>0, lam>0.
+        ! Set d to a positive independent symbol to verify density cancellation.
+        d = sym(arena, 'positive_D'); yy = sym(arena, 'positive_sqrt_1_minus_yy2')
+        jac = rho*g/(lam*h*d*yy)
+        bt = d/(2*g)
+        btheta = yy
+        call prove(jac*bt - rho/(2*lam*h*yy), 'J B^t=rho/(2 lam h sqrt(1-yy^2))')
+        call prove(jac*btheta - rho*g/(lam*h*d), 'J B^theta=rho g/(lam h D)')
+        call prove(btheta/bt - 2*g*yy/d, 'B^theta/B^t equals generated chart RHS')
+    end subroutine
     subroutine prove_integer()
         ! A constant diagonal horizontal stretch preserves divergence and
         ! conjugates the tension. It commutes with diag(Omega^2,Omega^2,4Omega^2).

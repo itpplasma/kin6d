@@ -8,8 +8,10 @@ program test_nested_oracles
                                       nested_integer_field_jvp, nested_integer_field_vjp
     use fortnum_interval, only: interval_t, interval
     use fortnum_quadrature, only: gauss_legendre_ab
+    use fortnum_ode, only: ode_solution_t
     implicit none
-    type(nested_oracle_t) :: o
+    type(nested_oracle_t) :: o, ode_model
+    type(ode_solution_t) :: fieldline_solution
     real(dp), parameter :: pi = acos(-1.0_dp), step = 1e-4_dp
     real(dp) :: x(3), xx(3), v(20), ref(5), vr(5), vp(5), vm(5), vpp(5), vmm(5)
 real(dp) :: db(3, 3), gp(3), curl(3), force(3), jac, rho, theta, t, error, divmax, fbmax
@@ -116,14 +118,16 @@ real(dp) :: db(3, 3), gp(3), curl(3), force(3), jac, rho, theta, t, error, divma
     if (error > 2e-12_dp .or. divmax > 2e-7_dp .or. fbmax > 2e-7_dp) &
         error stop 'independent Cartesian identities'
     print '(a,3es14.5)', '[V] max field,div,force differences ', error, divmax, fbmax
+    call check_matched_profiles()
+    call check_flux_derivatives()
     ! Axis transform from the independent published numerical value.
     o%family = NESTED_SHEARED; o%eps = 2; o%saxis = 1; o%delta = 0.005_dp; o%tau = 0
     call o%rotation(0.0_dp, 8, 1e-7_dp, axis, status)
     if (status /= 0 .or. abs(axis - 2.28690_dp) > 1e-5_dp) error stop 'axis iota oracle'
     call o%rotation(o%delta, 64, 1e-7_dp, lo, status)
     call o%rotation(o%delta, 128, 3e-8_dp, hi, status)
-    if (status /= 0 .or. abs(lo - hi) > 0.01_dp) error stop 'finite turn rotation'
-    print '(a,3f12.7)', '[V] sheared iota: axis,64,128 turns ', axis, lo, hi
+    if (status /= 0 .or. abs(lo - hi) > 1e-7_dp) error stop 'flux-ratio tolerance'
+    print '(a,3f12.7)', '[V] sheared iota: axis,coarse,fine quadrature ', axis, lo, hi
     ! Generated field parameter JVP/VJP and strict point enclosure.
     a = [1.1_dp, 0.3_dp, 0.05_dp, 1.2_dp, 0.4_dp, 1.4_dp, 1.6_dp, 0.1_dp]
     direction = [0.1_dp, -0.2_dp, 0.3_dp, 0.15_dp, 0.1_dp, -0.12_dp, 0.2_dp, 0.4_dp]
@@ -160,6 +164,185 @@ if (maxval(abs((plus - minus)/2e-6_dp - tangent)) > 2e-7_dp) error stop 'integer
     end do
     print '(a)', '[V] JVP/VJP, finite differences and strict point containment PASS'
 contains
+    subroutine check_matched_profiles()
+        use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+        use fortnum_ode, only: ode_problem_t, ode_workspace_t, ode_solution_t, &
+                               ode_integrate
+        use fortnum_status, only: fortnum_status_t
+!$      use omp_lib, only: omp_set_num_threads
+        type(nested_oracle_t) :: model
+        type(ode_problem_t) :: problem
+        type(ode_workspace_t) :: work
+        type(fortnum_status_t) :: ode_status
+        real(dp), parameter :: snodes(5) = [0.0_dp, 0.125_dp, 0.5_dp, 0.875_dp, 1.0_dp]
+        ! gvecshear's independently integrated flux periods, rounded to 8 places.
+        real(dp), parameter :: axis_values(2) = [2.79964725_dp, 2.64613001_dp]
+        real(dp), parameter :: edge_values(2) = [2.81043883_dp, 2.63668554_dp]
+        real(dp), parameter :: ode_values(2) = [2.8100648097671277_dp, &
+                                                2.6369692267616878_dp]
+        real(dp) :: labels(5), phis(5), transforms(5), pressures(5), serial(4, 5)
+        real(dp) :: phiedge, coarse, tight, estimate, finite_turn, xyz(3), j, refv(5)
+        real(dp) :: invalid_s(3), tmp(3), tmp2(3), tmp3(3), tmp4(3), nan
+        integer :: codes(5), bad_codes(3), code, branch, k
+        model%edge_pressure = 0.03_dp
+        do branch = 1, 2
+            model%tau = 0.4_dp*(branch - 1)
+            model%family = NESTED_INTEGER
+            do k = 1, 5
+                call model%rotation(snodes(k)*model%delta, 1, 1e-10_dp, coarse, code)
+                if (code /= 0 .or. coarse /= 2.0_dp) error stop 'integer exact iota'
+            end do
+        call model%profiles(snodes, 1e-8_dp, labels, phis, transforms, pressures, codes)
+            if (any(codes /= 0)) error stop 'integer matched profiles'
+            if (any(transforms /= 2.0_dp)) error stop 'integer profile exact iota'
+            if (maxval(abs(labels - snodes*model%delta)) > 1e-15_dp) &
+                error stop 'integer linear flux label'
+            if (maxval(abs(pressures - model%edge_pressure &
+                           - 2*(model%delta - labels)/(1 - model%tau**2))) > 1e-14_dp) &
+                error stop 'integer profile pressure'
+            model%family = NESTED_SHEARED
+            model%eps = 1.2_dp; model%delta = 0.14_dp
+            call model%flux(model%delta, 1e-9_dp, phiedge, code, estimate)
+            if (code /= 0) error stop 'sheared flux convergence'
+            if (abs(phiedge - 0.09622812651621984_dp) > 1e-10_dp) &
+                error stop 'gvecshear matched toroidal flux'
+            if (estimate > 1e-9_dp*phiedge) error stop 'flux tolerance budget'
+!$          call omp_set_num_threads(1)
+        call model%profiles(snodes, 1e-8_dp, labels, phis, transforms, pressures, codes)
+            if (any(codes /= 0)) error stop 'sheared matched profiles'
+            serial(1, :) = labels; serial(2, :) = phis
+            serial(3, :) = transforms; serial(4, :) = pressures
+!$          call omp_set_num_threads(4)
+        call model%profiles(snodes, 1e-8_dp, labels, phis, transforms, pressures, codes)
+            if (any(codes /= 0)) error stop 'parallel sheared profiles'
+            if (maxval(abs(labels - serial(1, :))) > 1e-12_dp .or. &
+                maxval(abs(phis - serial(2, :))) > 1e-12_dp .or. &
+                maxval(abs(transforms - serial(3, :))) > 1e-12_dp .or. &
+                maxval(abs(pressures - serial(4, :))) > 1e-12_dp) &
+                error stop 'profile thread parity'
+            if (abs(transforms(1) - axis_values(branch)) > 2e-8_dp .or. &
+                abs(transforms(5) - edge_values(branch)) > 2e-8_dp) &
+                error stop 'gvecshear axis/edge transforms'
+            if (maxval(abs(labels - snodes*model%delta)) < 1e-5_dp) &
+                error stop 'sheared toroidal flux is not psi/delta'
+            do k = 1, 5
+                call model%flux(labels(k), 1e-10_dp, tight, code)
+                if (code /= 0 .or. abs(tight/phiedge - snodes(k)) > 1e-8_dp) &
+                    error stop 'matched flux inverse residual'
+                call model%surface(sqrt(2*labels(k)), 0.73_dp, 0.29_dp, xyz, j)
+                call reference(model, xyz, refv)
+                if (abs(refv(2) - pressures(k)) > 2e-10_dp) &
+                    error stop 'matched pressure versus Cartesian field'
+            end do
+            tight = independent_toroidal_flux(model, model%delta)
+            if (abs(tight - phiedge) > 2e-8_dp) error stop 'physical B dot area flux'
+            call model%rotation(model%delta, 1, 1e-7_dp, coarse, code)
+            if (code /= 0) error stop 'coarse flux-ratio convergence'
+            call model%rotation(model%delta, 128, 1e-10_dp, tight, code, estimate)
+            if (code /= 0 .or. abs(coarse - tight) > 1e-7_dp*abs(tight)) &
+                error stop 'flux ratio within quadrature stopping tolerance'
+            if (estimate > 1e-10_dp*abs(tight)) error stop 'iota tolerance budget'
+            ode_model = model
+            problem%rhs => independent_rhs
+            problem%t1 = 256*pi
+            problem%y0 = [0.0_dp]
+            problem%rtol = 1e-10_dp; problem%atol = 1e-10_dp
+            problem%hmax = 0.1_dp
+            call ode_integrate(problem, work, fieldline_solution, ode_status)
+            if (ode_status%code /= 0) error stop 'independent 128-turn integration'
+            finite_turn = fieldline_solution%y(1, size(fieldline_solution%t))/(256*pi)
+            if (abs(finite_turn - ode_values(branch)) > 3e-7_dp) &
+                error stop 'independent 128-turn endpoint'
+            ! Positive toroidal density maps each poloidal turn monotonically
+            ! to a flux angle: its bounded endpoint correction is <1 turn.
+            if (abs(tight - finite_turn) > 1.0_dp/128) &
+                error stop '128-turn winding versus flux-period ratio'
+            if (abs(tight - finite_turn) < 1e-4_dp) &
+                error stop 'finite-turn endpoint must not define exact iota'
+            print '(a,f4.1,4es18.10)', '[V] tau,Phi_edge,iota_axis,edge,128turn ', &
+                model%tau, phiedge, transforms(1), transforms(5), finite_turn
+            model%family = NESTED_INTEGER
+            model%eps = 0.5_dp; model%delta = 1.0_dp/64
+        end do
+        model%family = NESTED_SHEARED
+        model%eps = 1.2_dp; model%delta = 0.14_dp
+        nan = ieee_value(0.0_dp, ieee_quiet_nan)
+        call model%rotation(nan, 1, 1e-8_dp, tight, code)
+        if (code == 0) error stop 'NaN flux label accepted'
+        call model%rotation(0.1_dp, 1, nan, tight, code)
+        if (code == 0) error stop 'NaN tolerance accepted'
+        call model%rotation(0.1_dp, 1, 1e-20_dp, tight, code)
+        if (code == 0) error stop 'unattainable quadrature tolerance accepted'
+        invalid_s = [-0.1_dp, 1.1_dp, nan]
+        call model%profiles(invalid_s, 1e-8_dp, tmp, tmp2, tmp3, tmp4, bad_codes)
+        if (any(bad_codes == 0)) error stop 'invalid normalized flux accepted'
+    end subroutine
+
+    subroutine independent_rhs(time, state, rate, ctx)
+        real(dp), intent(in) :: time, state(:)
+        real(dp), intent(out) :: rate(:)
+        class(*), intent(in), optional :: ctx
+        real(dp) :: rr, y, nu, ch, sigma, h
+        rr = sqrt(2*ode_model%delta)
+        y = rr*sin(state(1)); nu = ode_model%eps*sin(2*time)/2 + ode_model%tau
+        ch = cosh(nu)
+        sigma = ode_model%saxis + atan(tanh(nu)*y/sqrt(1 - y*y)) &
+                + asin(rr*cos(state(1))/sqrt(ch*ch - y*y))
+        h = sqrt(4*sigma*sigma + ode_model%eps**2)
+        rate(1) = (h + ode_model%eps*cos(2*time))*sqrt((1 - y*y)/(ch*ch - rr*rr))
+        if (present(ctx)) continue
+    end subroutine
+
+    function independent_toroidal_flux(model, psi) result(value)
+        type(nested_oracle_t), intent(in) :: model
+        real(dp), intent(in) :: psi
+        real(dp) :: value, radii(24), rw(24), r, angle, chart(3), xp(3), xm(3)
+        real(dp) :: dr(3), dt(3), values(5), jac
+        real(dp), parameter :: dh = 1e-5_dp
+        integer :: ir, it
+        call gauss_legendre_ab(24, 0.0_dp, sqrt(2*psi), radii, rw)
+        value = 0
+        do it = 1, 128
+            angle = 2*pi*(it - 0.37_dp)/128
+            do ir = 1, 24
+                r = radii(ir)
+                call model%surface(r, angle, 0.39_dp, chart, jac)
+                call model%surface(r + dh, angle, 0.39_dp, xp, jac)
+                call model%surface(r - dh, angle, 0.39_dp, xm, jac)
+                dr = (xp - xm)/(2*dh)
+                call model%surface(r, angle + dh, 0.39_dp, xp, jac)
+                call model%surface(r, angle - dh, 0.39_dp, xm, jac)
+                dt = (xp - xm)/(2*dh)
+                call reference(model, chart, values)
+               value = value + rw(ir)*(2*pi/128)*dot_product(values(3:5), cross(dr, dt))
+            end do
+        end do
+    end function
+
+    subroutine check_flux_derivatives()
+        use kin6d_nested_oracle_leaves, only: nested_sheared_flux_density, &
+                        nested_sheared_flux_density_jvp, nested_sheared_flux_density_vjp
+        real(dp) :: a(7), d(7), b(2), jv(2), jt(7), plus(2), minus(2)
+        a = [0.4_dp, 0.7_dp, 0.3_dp, 1.2_dp, 0.4_dp, 1.4_dp, 1.6_dp]
+        d = [0.1_dp, -0.2_dp, 0.3_dp, 0.15_dp, 0.1_dp, -0.12_dp, 0.2_dp]
+        b = [0.7_dp, -0.3_dp]
+        call nested_sheared_flux_density_jvp(a(1), a(2), a(3), a(4), a(5), a(6), a(7), &
+                                 d(1), d(2), d(3), d(4), d(5), d(6), d(7), jv(1), jv(2))
+        call nested_sheared_flux_density_vjp(a(1), a(2), a(3), a(4), a(5), a(6), a(7), &
+                            b(1), b(2), jt(1), jt(2), jt(3), jt(4), jt(5), jt(6), jt(7))
+        if (abs(dot_product(b, jv) - dot_product(jt, d)) > 1e-12_dp) &
+            error stop 'flux density JVP/VJP pairing'
+        a = a + 1e-6_dp*d
+        call nested_sheared_flux_density(a(1), a(2), a(3), a(4), a(5), a(6), a(7), &
+                                         plus(1), plus(2))
+        a = a - 2e-6_dp*d
+        call nested_sheared_flux_density(a(1), a(2), a(3), a(4), a(5), a(6), a(7), &
+                                         minus(1), minus(2))
+        if (maxval(abs((plus - minus)/2e-6_dp - jv)) > 1e-8_dp) &
+            error stop 'flux density independent directional difference'
+        print '(a)', '[V] flux-density JVP/VJP and directional differences PASS'
+    end subroutine
+
     subroutine reference(o, x, v)
         type(nested_oracle_t), intent(in)::o
         real(dp), intent(in)::x(3)
