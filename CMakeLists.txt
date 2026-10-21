@@ -1433,7 +1433,8 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
-target_link_libraries(kin6d_feec_n PUBLIC kin6d_spatial kin6d_fft fortsparse)
+target_link_libraries(kin6d_feec_n PUBLIC
+    kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
