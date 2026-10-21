@@ -21,7 +21,19 @@ module kin6d_ideal_free_boundary_bem3d
     contains
         procedure :: evaluate => evaluate_surface
     end type
+    interface assignment(=)
+        module procedure assign_surface
+    end interface
 contains
+    subroutine assign_surface(lhs, rhs)
+        type(coupling_surface_t), intent(out) :: lhs
+        type(coupling_surface_t), intent(in) :: rhs
+        if (allocated(rhs%chart)) allocate (lhs%chart, source=rhs%chart)
+        if (allocated(rhs%edge)) lhs%edge = rhs%edge
+        if (allocated(rhs%parameters)) lhs%parameters = rhs%parameters
+        if (allocated(rhs%panel_edge)) lhs%panel_edge = rhs%panel_edge
+        lhs%order = rhs%order
+    end subroutine
     pure subroutine edge_basis(order, t, w, dw)
         integer, intent(in) :: order
         real(dp), intent(in) :: t

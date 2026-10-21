@@ -125,7 +125,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "2949d0d40f8cb85692b0d6a410ed127a4d8ac02a")
+set(KIN6D_FORTFEM_REVISION "024ebeaad97be1c3a13144b96490117c61d51707")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1475,12 +1475,16 @@ target_sources(kin6d_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_bem_high_order_products.f90
     ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
-    ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90)
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_harmonic_field_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_exterior_harmonic_products.f90
+    ${fortfem_SOURCE_DIR}/src/bem/exterior_harmonic_fields.f90)
 target_sources(kin6d_equilibrium PRIVATE
     src/equilibrium/equilibrium_boundary_3d.f90)
 target_sources(kin6d_mhd PRIVATE src/mhd/ideal_free_boundary_bem3d.f90)
 add_executable(test_equilibrium_boundary_3d
     ${fortfem_SOURCE_DIR}/src/mesh/sphere_surface_mesh.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/torus_surface_mesh.f90
     ${fortfem_SOURCE_DIR}/src/mesh/sphere_curved_panel.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_sphere_curved_panel_products.f90
     ${fortfem_SOURCE_DIR}/src/mesh/torus_curved_panel.f90
@@ -1489,6 +1493,14 @@ add_executable(test_equilibrium_boundary_3d
     test/test_equilibrium_boundary_3d.f90)
 target_link_libraries(test_equilibrium_boundary_3d PRIVATE kin6d)
 add_test(NAME equilibrium_boundary_3d_d6 COMMAND test_equilibrium_boundary_3d)
+add_test(NAME equilibrium_boundary_3d_harmonic_data
+    COMMAND test_equilibrium_boundary_3d harmonic)
+set_tests_properties(equilibrium_boundary_3d_harmonic_data PROPERTIES TIMEOUT 600
+    PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_test(NAME ideal_fb_landreman_bem3d_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d)
+set_tests_properties(ideal_fb_landreman_bem3d_axisymmetric PROPERTIES TIMEOUT 1800
+    PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_fb_bem3d_derivatives COMMAND test_ideal_free_boundary bem3d)
 set_tests_properties(ideal_fb_bem3d_derivatives PROPERTIES TIMEOUT 600
     PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
