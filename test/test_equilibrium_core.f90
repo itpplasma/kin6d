@@ -62,7 +62,7 @@ program test_equilibrium_core
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
     use kin6d_gs_equilibrium, only: gs_equilibrium
     use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
-    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_is_finite
     implicit none
     character(512) :: mode, work, fixtures
     call get_command_argument(1, mode)
@@ -73,6 +73,10 @@ program test_equilibrium_core
         call get_command_argument(2, work)
         call get_command_argument(3, fixtures)
         call compare_k6_mini(trim(work), trim(fixtures))
+    case ('synthetic_analytic')
+        call get_command_argument(2, work)
+        call get_command_argument(3, fixtures)
+        call check_synthetic_analytic(trim(work), trim(fixtures))
     case ('readback')
         call get_command_argument(2, work)
         call test_readback(merge(3, 2, trim(work) == '3'))
@@ -307,9 +311,39 @@ contains
             fixtures//'/reference_profiles.dat', 7, 1, worst)
         call compare_table(work//'/field.dat', &
             fixtures//'/reference_field.dat', 4, 0, worst)
+        call check_synthetic_analytic(work, fixtures)
         print '(a,es10.3)', 'K6-mini worst relative deviation: ', worst
         if (worst > tolerance) error stop 'K6-mini regression exceeds 1e-12'
         print '(a)', 'PASS: K6-mini regression'
+    end subroutine
+
+    subroutine check_synthetic_analytic(work, fixtures)
+        ! Independent exact Solov'ev oracle, not the retained numerical output.
+        ! psi=C*((R^2-R0^2)^2+4*R^2*Z^2)-4*C*R0^2*a^2,
+        ! Delta*psi=16*C*R^2, p'=-16*C/mu0, FF'=0, F=6.
+        character(*), intent(in) :: work, fixtures
+        real(dp), parameter :: centre = 3, minor = 0.6_dp, amplitude = 0.25_dp
+        real(dp), allocatable :: points(:, :), fields(:, :)
+        real(dp) :: r, z, expected(4), scale(4), worst
+        integer :: j
+        call read_table(fixtures//'/points.dat', 2, 1, points)
+        call read_table(work//'/field.dat', 4, 0, fields)
+        if (size(points, 2) /= size(fields, 2)) error stop 'analytic query count'
+        if (.not. all(ieee_is_finite(fields))) error stop 'nonfinite synthetic field'
+        scale = [4*amplitude*centre**2*minor**2, &
+            8*amplitude*centre*minor, 8*amplitude*centre*minor, 6/centre]
+        worst = 0
+        do j = 1, size(points, 2)
+            r = points(1, j); z = points(2, j)
+            expected = [amplitude*((r*r - centre**2)**2 + 4*r*r*z*z) &
+                - 4*amplitude*centre**2*minor**2, -8*amplitude*r*z, &
+                4*amplitude*(r*r - centre**2 + 2*z*z), 6/r]
+            worst = max(worst, maxval(abs(fields(:, j) - expected)/scale))
+        end do
+        print '(a,es10.3)', 'synthetic Solov''ev analytic scaled error: ', worst
+        ! Coarse P3 mesh/curved-boundary discretization gate (0.1% of the
+        ! declared physical scales), separate from version regression drift.
+        if (worst > 1.0e-3_dp) error stop 'synthetic analytic field mismatch'
     end subroutine
 
     subroutine compare_summary(path, reference, worst)
@@ -320,16 +354,17 @@ contains
         character(256) :: line
         real(dp) :: expected, value, deviation
         integer :: unit, ref_unit, stat
-        real(dp) :: psi_scale
+        real(dp) :: psi_scale, radius_scale
         logical :: found
         open (newunit=ref_unit, file=reference, status='old', action='read')
-        psi_scale = 0
+        psi_scale = 0; radius_scale = 0
         do
             read (ref_unit, '(a)', iostat=stat) line
             if (stat /= 0) exit
             if (len_trim(line) == 0) cycle
             read (line, *) key, expected
             if (trim(key) == 'psi_axis') psi_scale = abs(expected)
+            if (trim(key) == 'axis_R') radius_scale = abs(expected)
         end do
         if (psi_scale == 0) error stop 'K6-mini reference lacks psi_axis'
         rewind (ref_unit)
@@ -355,12 +390,16 @@ contains
                 error stop 'K6-mini summary incomplete'
             end if
             ! flux_consistency is a difference |a/b - 1| ~ 1e-4: absolute.
-            if (trim(key) == 'flux_consistency') then
+            if (trim(key) == 'axis_Z') then
+                ! Up/down symmetry makes Z_axis zero; use the major radius
+                ! as its physical scale, not roundoff in the reference Z.
+                deviation = abs(value - expected)/max(radius_scale, tiny(1.0_dp))
+            else if (trim(key) == 'flux_consistency') then
                 deviation = abs(value - expected)
             else if (any(trim(key) == [character(16) :: 'majorant', &
                 'majorant_flux', 'majorant_balance'])) then
                 ! A-posteriori estimators are differences of solution-sized
-                ! quantities (|psi_axis| ~ 12, majorant_flux ~ 5e-2), so their
+                ! quantities, so their
                 ! absolute noise is the solve's, not relative to themselves.
                 ! The solve stops at nonlinear_tolerance 1e-12, and the fast
                 ! reductions/FMA move the iterate at that level. Measure

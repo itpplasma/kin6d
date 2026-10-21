@@ -1,9 +1,5 @@
-# K6-mini regression (docs/equilibrium-core.md, migration M0): gs_phase1 on
-# the K6 law and path with a coarse mesh, then a native field query, compared
-# with the fixture to 1e-12 relative by CHECK. The fixture was produced by
-# this script at the M0 base (origin/main 260ce1d) with OMP_NUM_THREADS=1;
-# boundary.dat is every eighth sample of the K6 boundary, source.dat the K6
-# cubic-source law unchanged.
+# Public synthetic regression; historical CTest name retained for consumers.
+# The fixture README records its independent analytic oracle and recipe.
 # The three estimator fields now reference the RT equilibration introduced
 # by 5dc6103, rather than its functional-recovery predecessor. The physical
 # state, profiles and field references remain the M0 values. Check the method
@@ -28,7 +24,7 @@ if(NOT summary MATCHES "majorant_method equilibrated-rt" OR
    NOT summary MATCHES "majorant_status 4")
     message(FATAL_ERROR "K6-mini estimator method or error scope changed")
 endif()
-execute_process(COMMAND "${APP}" --evaluate mesh.dat 1 0 profile-law.dat
+execute_process(COMMAND "${APP}" --evaluate mesh.dat 6 0 profile-law.dat
     WORKING_DIRECTORY "${WORK}" INPUT_FILE "${WORK}/points.dat"
     OUTPUT_FILE "${WORK}/field.dat" RESULT_VARIABLE status)
 if(NOT status EQUAL 0)
