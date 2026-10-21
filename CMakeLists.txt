@@ -125,7 +125,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "2b2e5466866e29324c3d71c48b76f38908d30e21")
+set(KIN6D_FORTFEM_REVISION "2949d0d40f8cb85692b0d6a410ed127a4d8ac02a")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1470,6 +1470,26 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
+# General curved P2/P1 Cartesian DtN, shared by the R2 boundary adapter.
+target_sources(kin6d_feec_n PRIVATE
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_bem_high_order_products.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90)
+target_sources(kin6d_equilibrium PRIVATE
+    src/equilibrium/equilibrium_boundary_3d.f90)
+add_executable(test_equilibrium_boundary_3d
+    ${fortfem_SOURCE_DIR}/src/mesh/sphere_surface_mesh.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/sphere_curved_panel.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_sphere_curved_panel_products.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/torus_curved_panel.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_torus_curved_panel_products.f90
+    ${fortfem_SOURCE_DIR}/test/parametric_bem_test_geometry.f90
+    test/test_equilibrium_boundary_3d.f90)
+target_link_libraries(test_equilibrium_boundary_3d PRIVATE kin6d)
+add_test(NAME equilibrium_boundary_3d_d6 COMMAND test_equilibrium_boundary_3d)
+set_tests_properties(equilibrium_boundary_3d_d6 PROPERTIES TIMEOUT 240
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 target_link_libraries(kin6d_feec_n PUBLIC
     kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse)
 if(KIN6D_ENABLE_OPENMP)

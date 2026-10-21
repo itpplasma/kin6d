@@ -597,3 +597,6 @@ if(TARGET gen_ideal_mhd_coordinates)
     kin6d_test_labels(ideal_mhd_coordinates_exact_regeneration fast CLASSES mhd
         TARGETS gen_ideal_mhd_coordinates)
 endif()
+
+kin6d_test_labels(equilibrium_boundary_3d_d6 fast CLASSES equilibrium
+    TARGETS test_equilibrium_boundary_3d)
