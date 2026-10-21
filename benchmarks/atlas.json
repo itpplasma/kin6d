@@ -1014,7 +1014,7 @@
       "id": "landreman_3d_nested",
       "family": "mhd",
       "reference_class": "E0",
-      "status": "planned",
+      "status": "implemented scoped exact field oracle; solver comparisons pending",
       "geometry": "two-field-period non-axisymmetric torus with exact nested surfaces; both analytic families",
       "model_lane": "ideal nested",
       "producers": [
@@ -1036,13 +1036,19 @@
         "convergence order",
         "cost to reach accuracy"
       ],
-      "reference_definition": "closed-form B, J, p, iota and volume averages of the cited analytic families; same oracle for every producer",
+      "reference_definition": "generated closed-form fields and surfaces for both families; integer-family closed-form transform/averages; sheared-family ODE transform and quadrature averages",
       "reference_sources": [
         "https://arxiv.org/abs/2609.26742"
       ],
-      "field_model": null,
-      "reference_implementation": null,
-      "certificate_method": null
+      "field_model": "static smooth ideal MHD; mu0=1",
+      "reference_implementation": "gen/gen_nested_oracles.f90; src/equilibrium/nested_oracles.f90; equilibrium_nested_exact_oracles",
+      "certificate_method": "strict point-evaluation intervals; integrated observables, rotation and Fourier boundary have indicators and unavailable continuous bounds",
+      "source_version_and_section": "arXiv:2609.26742v1 sections 2-3",
+      "species_models": [],
+      "initial_boundary_data": "examples/nested-oracles/; geometry-only VMEC input export",
+      "parameter_validity_range": "docs/nested-oracles.md; runtime domain validation",
+      "proof_level": "eight exact FortSym divergence/tension proof lemmas; independent Cartesian and integral oracles",
+      "observable_reference_classes": {"fields_and_surfaces": "E0", "sheared_iota_and_averages": "E1"}
     },
     {
       "id": "g_frame_figure8_equilibrium",
@@ -1078,7 +1084,7 @@
       "id": "issan_3d_nonsymmetric",
       "family": "mhd",
       "reference_class": "E0",
-      "status": "planned",
+      "status": "implemented scoped exact field oracle; solver comparisons pending",
       "geometry": "non-stellarator-symmetric generalisation of the nested analytic families",
       "model_lane": "ideal nested",
       "producers": [
@@ -1099,13 +1105,19 @@
         "convergence order",
         "cost to reach accuracy"
       ],
-      "reference_definition": "closed-form symmetry-breaking generalisation; activate only after the equations are read and re-derived (abstract only checked)",
+      "reference_definition": "generated closed-form fields and surfaces for both families; integer-family closed-form transform/averages; sheared-family ODE transform and quadrature averages",
       "reference_sources": [
         "https://arxiv.org/abs/2610.07304"
       ],
-      "field_model": null,
-      "reference_implementation": null,
-      "certificate_method": null
+      "field_model": "static smooth ideal MHD; mu0=1",
+      "reference_implementation": "gen/gen_nested_oracles.f90; src/equilibrium/nested_oracles.f90; equilibrium_nested_exact_oracles",
+      "certificate_method": "strict point-evaluation intervals; integrated observables, rotation and Fourier boundary have indicators and unavailable continuous bounds",
+      "source_version_and_section": "arXiv:2610.07304v1 sections 2-3",
+      "species_models": [],
+      "initial_boundary_data": "examples/nested-oracles/; geometry-only VMEC input export",
+      "parameter_validity_range": "docs/nested-oracles.md; runtime domain validation",
+      "proof_level": "eight exact FortSym divergence/tension proof lemmas; independent Cartesian and integral oracles",
+      "observable_reference_classes": {"fields_and_surfaces": "E0", "sheared_iota_and_averages": "E1"}
     },
     {
       "id": "helical_filament_vacuum_island_nn1",
