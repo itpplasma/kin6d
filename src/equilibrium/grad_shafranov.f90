@@ -396,7 +396,10 @@ contains
             end if
         end if
         call element_shapes(state, e, xi(1), xi(2), shape, gradients, hessians)
-        point = matmul(state%points(:, state%triangles(1:3, e)), [1 - sum(xi), xi])
+        point(1) = dot_product(state%points(1, state%triangles(1:3, e)), &
+            [1 - sum(xi), xi])
+        point(2) = dot_product(state%points(2, state%triangles(1:3, e)), &
+            [1 - sum(xi), xi])
         det = 2*state%area(e)
         status = 0
     end subroutine
@@ -487,16 +490,32 @@ contains
         real(dp), intent(in) :: xi, eta
         real(dp), intent(out) :: shape(:), gradients(:, :)
         real(dp), intent(out), optional :: hessians(:, :, :)
-        real(dp) :: reference_g(2, 10), reference_h(2, 2, 10)
-        integer :: j, n
+        real(dp) :: reference_g(2, 10), reference_h(2, 2, 10), product(2, 2)
+        integer :: j, n, a, b
         n = size(shape)
         call triangle_basis_jet([xi, eta], shape, reference_g(:, :n), &
             reference_h(:, :, :n))
         do j = 1, n
-            gradients(:, j) = matmul(state%gradient(:, 2:3, e), reference_g(:, j))
+            ! Keep these fixed-size contractions allocation-free even with
+            ! GNU 12's required -finline-matmul-limit=0. DOT_PRODUCT preserves
+            ! the contraction of the FortFEM-generated reference basis jets.
+            do a = 1, 2
+                gradients(a, j) = dot_product(state%gradient(a, 2:3, e), &
+                    reference_g(:, j))
+            end do
             if (present(hessians)) then
-                hessians(:, :, j) = matmul(matmul(state%gradient(:, 2:3, e), &
-                    reference_h(:, :, j)), transpose(state%gradient(:, 2:3, e)))
+                do b = 1, 2
+                    do a = 1, 2
+                        product(a, b) = dot_product(state%gradient(a, 2:3, e), &
+                            reference_h(:, b, j))
+                    end do
+                end do
+                do b = 1, 2
+                    do a = 1, 2
+                        hessians(a, b, j) = dot_product(product(a, :), &
+                            state%gradient(b, 2:3, e))
+                    end do
+                end do
             end if
         end do
     end subroutine element_shapes
