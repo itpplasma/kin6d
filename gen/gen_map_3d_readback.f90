@@ -1,7 +1,7 @@
 program gen_map_3d_readback
     use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
-                            operator(*), operator(/)
+                            operator(*), operator(/), sin, cos
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     use fortsym_engine_native, only: native_engine_t, make_native_engine
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
@@ -10,7 +10,7 @@ program gen_map_3d_readback
     type(leaf_writer_t) :: w
     type(native_engine_t) :: engine
     type(engine_result_t) :: proof
-    type(expr_t) :: identity
+    type(expr_t) :: identity, phi, z, br, bz, bp
     type(expr_t) :: q(3, 3), g(2, 2), cg(2), b3, r, sigma, detq, detg, jac
     type(expr_t) :: pulled(3), field(3), gradient(3), cofactor(3, 3), master(3)
     character(8) :: names(18)
@@ -79,6 +79,12 @@ program gen_map_3d_readback
     call w%emit('map_3d_field', names, &
                [character(8)::'br', 'bz', 'bphi', 'chi_r', 'chi_z', 'chi_phi', 'jac'], &
                 [field, gradient, jac], ad=.true.)
+    phi=sym(arena,'phi'); z=sym(arena,'z')
+    br=sym(arena,'br'); bz=sym(arena,'bz'); bp=sym(arena,'bp')
+    call w%emit('map_3d_cartesian',[character(8)::'r','z','phi','br','bz','bp'], &
+        [character(8)::'x','y','height','bx','by','bheight'], &
+        [r*cos(phi),r*sin(phi),z,br*cos(phi)-bp*sin(phi), &
+         br*sin(phi)+bp*cos(phi),bz],ad=.true.)
     ! Root solves use the same coordinate Jacobian, independent of physics.
     cg(1) = sym(arena, 'res1'); cg(2) = sym(arena, 'res2'); b3 = sym(arena, 'res3')
     do a = 1, 3
