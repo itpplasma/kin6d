@@ -146,6 +146,24 @@ published 2.28690 value at eps=2, S=1.
 
 ## Boundary interchange and execution
 
+[V] For the integer-transform family, the exporter also writes
+`output/input.nested_equilibrium`. This input matches the exact toroidal flux,
+constant transform and pressure profile, in addition to the boundary. The
+generated formula gives Phi(psi)=pi ab psi/Omega², hence VMEC's normalized
+toroidal-flux coordinate is s=psi/delta. The pressure coefficients are the
+generated axis and edge pressures, with `PRES_SCALE=1/(4 pi 10^-7)` converting
+the oracle's mu0=1 pressure to pascals while retaining B in tesla and lengths
+in metres. `NCURR=0` prescribes iota=2. The existing boundary-consumer test
+independently integrates B dot dS using finite-difference surface tangents
+and checks pressure against the Cartesian oracle.
+
+[V] The suggested radial iteration settings in that file are starting inputs,
+not convergence evidence. The Fourier boundary still has a sampled truncation
+indicator rather than a continuous bound. The sheared family still exports
+geometry only: its pressure must first be expressed in normalized toroidal
+flux. A matched input, a successful reader and an exact-field evaluation do
+not establish that a numerical equilibrium has converged.
+
 [V] Build `nested_oracle_export`, then run, for example:
 
 ```sh
@@ -162,7 +180,11 @@ coefficients and a sampled boundary error in `output/nested_oracle_export.nc`.
 `output/input.nested_oracle` is a geometry-only VMEC namelist with
 RBC/RBS/ZBC/ZBS(n,m), NFP=2, and LASYM selected by tau. The convention is
 cos(m theta-n NFP phi), positive geometric Cartesian phi and clockwise
-poloidal theta. The material chart parameter t is converted to geometric phi
+poloidal theta. For the integer family the material poloidal angle is
+2 phi-theta; this removes its two-turn winding and makes the eps=0 boundary
+independent of phi. Without this conversion the physical surface is correct
+but the transform in the exported poloidal coordinate is shifted by two.
+The material chart parameter t is converted to geometric phi
 by a bracketed solve before projection. Truncation is checked on a denser,
 staggered grid against a requested 1% of the declared minor scale; this is
 explicitly a sampled indicator.
