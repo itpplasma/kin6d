@@ -35,7 +35,7 @@ program test_s0
         call expect(all(errors(:2)/errors(2:) > 3.8_dp),'observed P1 eigenvalue order')
         call expect(all(errors(:2)/errors(2:) < 4.2_dp),'observed P1 eigenvalue order')
         call wave(32,.true.,ignored)
-        print '(a,3es14.5)', '[V] P1 physical relative errors: ',errors
+        print '(a,3es14.5)', 'P1 physical relative errors: ',errors
     end select
 contains
     subroutine expect(condition,label)
@@ -135,7 +135,7 @@ contains
         call expect(error < 0.01_dp,'one percent physical eigenvalue accuracy')
         call s0_destroy(pencil)
         print '(a,i0,a,l1,a,3es14.5,a,2es17.8)', &
-            '[V] wave ne=',ne,' complex=',complex_shift,' assembly/factor/solve s=', &
+            'wave ne=',ne,' complex=',complex_shift,' assembly/factor/solve s=', &
             a_time,f_time,e_time,' omega2=',real(lambda,dp)
     end subroutine wave
 
@@ -198,7 +198,7 @@ contains
                 1.0e-8_dp,'continuum eigenvalue belongs to cell spectrum')
         end do
         call s0_destroy(pencil)
-        print '(a,2es17.8)', '[V] shear-continuum targeted omega2=',real(lambda,dp)
+        print '(a,2es17.8)', 'shear-continuum targeted omega2=',real(lambda,dp)
     end subroutine continuum
 
     subroutine cylinder_continuum()
@@ -286,7 +286,7 @@ contains
         call expect(maxval(abs(real(lambda,dp)-r)) < 0.04_dp*(upper-lower), &
             'frequency targeting inside cylindrical continuum')
         call s0_destroy(pencil)
-        print '(a,2es17.8)', '[V] cylindrical torsional-continuum omega2=',real(lambda,dp)
+        print '(a,2es17.8)', 'cylindrical torsional-continuum omega2=',real(lambda,dp)
     end subroutine cylinder_continuum
 
     subroutine contracts()
@@ -348,6 +348,6 @@ contains
             cmplx(ieee_value(1.0_dp,ieee_quiet_nan),0.0_dp,dp),report)
         call expect(report%status == EIGEN_INVALID,'NaN shift rejected')
         call s0_destroy(pencil)
-        print '(a)', '[V] S0 physical metric, phase, inertia and derivative contracts PASS'
+        print '(a)', 'S0 physical metric, phase, inertia and derivative contracts PASS'
     end subroutine contracts
 end program test_s0
