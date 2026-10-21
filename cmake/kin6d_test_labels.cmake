@@ -27,6 +27,8 @@ kin6d_test_labels(grad_shafranov_profile_mu0_nan fast CLASSES equilibrium
     TARGETS test_gs_profile_domain)
 kin6d_test_labels(grad_shafranov_p2_profile_mu0_nan fast CLASSES equilibrium
     TARGETS test_gs_profile_domain)
+kin6d_test_labels(ideal_fb_external_kink fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_derivatives fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_vertical_newton fast CLASSES mhd
@@ -550,6 +552,17 @@ foreach(start reference rp rm zp zm el)
 endforeach()
 kin6d_test_labels(equilibrium_d8_registry_contract fast CLASSES equilibrium
     TARGETS test_equilibrium_harness)
+kin6d_test_labels(equilibrium_nested_exact_oracles fast CLASSES equilibrium
+    TARGETS test_nested_oracles)
+
+kin6d_test_labels(equilibrium_nested_oracle_batch fast CLASSES equilibrium
+    TARGETS benchmark_nested_oracles)
+kin6d_test_labels(equilibrium_nested_oracle_regeneration fast CLASSES equilibrium
+    TARGETS gen_nested_oracles)
+foreach(family 1 2)
+    kin6d_test_labels(equilibrium_nested_boundary_input_${family} fast CLASSES apps
+        TARGETS nested_oracle_export test_nested_boundary_input)
+endforeach()
 foreach(k 2 3)
     kin6d_test_labels(equilibrium_core_map_state_p${k} fast CLASSES mhd
         TARGETS test_map_equilibrium)
