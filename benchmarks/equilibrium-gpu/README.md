@@ -54,6 +54,25 @@ sampled CPU execution by at most 1/(1-0.0235) = 1.024x with everything else fixe
 The prototype therefore establishes a building block, not dominant-phase or
 whole-solver acceleration. GPU element contractions and assembly remain unported.
 
+[V] Main ead3cca switched sparse solves to native FortSparse CPU factors and was
+merged into this lane. A bounded resample of that real consumer was stopped
+after about 150 s without a completed ladder timing. A five-second sample
+attributes 39.55% to `fortsparse_native_ldlt.f90:629` (`row_put`), 29.32% to
+`fortsparse_status.f90:42` (`status_set`), and 23.10% to
+`fortsparse_native_ldlt.f90:270` (`numeric`). Upstream main was checked and
+remains the pinned 09fc2b4 revision. This is a factorization hotspot observation,
+not a completed solve or an established cause of every slowdown. The earlier
+AUTO-backend totals above must not be attributed to the new native backend.
+The timed ladder is the N=0 restriction of the map lane; a completed
+non-axisymmetric solve profile remains unavailable.
+
+[V] The current element schedule forms dense local `nl` by `nl` matrices with
+`nl = 3*nmode*nloc` and retains per-cell reduced blocks. Its contraction work
+is quadratic in `nmode*nloc` per quadrature point; the scalar HVP alone does
+not remove that work. [H] A complete matrix-free element action can replace
+those quadratic coefficient contractions by gather/action/scatter work linear
+in local coefficient count, subject to chart chains and gauge constraints.
+
 [V] K6-mini GS (3,667 DOFs) took 61.26 s at one thread and 12.16 s at eight
 (5.04x, the eight-thread run includes sampling overhead). The source-cell timer
 was 61.00/11.70 s. Sampling attributes 31.40% to `source_products`, 20.12% to
@@ -119,10 +138,15 @@ solve, global mixed-precision convergence and ill-conditioned geometry are
 
 ## Next measured steps
 
+- [H] Resolve the measured native LDLT insertion/status-update cost in
+  FortSparse before extrapolating full-solver GPU gains. Retain a focused
+  factor/solve reproducer, unchanged residuals and an independent dense oracle;
+  do not duplicate the sparse algorithm in KIN6D. No upstream factorization
+  repair or indefinite GPU factor was implemented in this bounded prototype.
 - [H] First port the complete map element action: geometry jets, chart chain,
   generated local HVP, test-function contractions and element gather/reduce.
   Keep matrix-free actions resident; preallocate per-thread/per-block scratch.
-  Existing `ideal_map_hessian` allocates scratch per element around line 1001;
+  Existing `ideal_map_hessian` allocates scratch per element at line 1019;
   move that schedule allocation out of the loop before treating it as a target
   CPU performance reference. Generic basis/Piola kernels belong in FortFEM;
   physics leaves stay in KIN6D `gen/`.
@@ -132,8 +156,9 @@ solve, global mixed-precision convergence and ill-conditioned geometry are
   Accelerating only `gs_source` will miss the measured callbacks and basis work.
 - [V] The pinned FortSparse already has optional native CUDA SPD panel,
   Schur-update and solve kernels (`cmake/FortSparseNativeCUDA.cmake`), using
-  FP64 and an explicit device option. This KIN6D path still selects CPU AUTO
-  (SuperLU/MUMPS); map gauge-constrained Newton systems can be indefinite.
+  FP64 and an explicit device option. The profiled baseline selected CPU AUTO
+  (SuperLU/MUMPS). Integrated main ead3cca selects native CPU factors; map
+  gauge-constrained Newton systems can be indefinite.
   Existing SPD CUDA capability is not evidence for the required indefinite or
   FP32 mixed solver. It was inspected, not benchmarked here.
 - [H] Reuse and test that upstream SPD path for eligible GS blocks; implement
