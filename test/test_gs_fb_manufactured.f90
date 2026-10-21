@@ -30,6 +30,8 @@ program test_gs_fb_manufactured
     use kin6d_equilibrium_harness, only: equilibrium_case_t, &
         equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
         equilibrium_start, run_equilibrium_case, write_equilibrium_report
+    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use kin6d_gs_equilibrium, only: gs_equilibrium
     implicit none
     type :: psi_case_state_t
         type(gs_state_t) :: gs
@@ -163,6 +165,7 @@ contains
         real(dp), allocatable :: exact(:), seed(:), f_load(:), vac(:)
         real(dp) :: scale, psib_exact, angle, seed_semi(2)
         type(psi_case_state_t) :: result
+        type(equilibrium_state_t) :: equilibrium
         type(equilibrium_run_report_t) :: verification
         character(32) :: case_name
         integer :: status, i, n, m, k
@@ -249,7 +252,7 @@ contains
         end if
         call run_equilibrium_case(trim(case_name), 'psi', &
             equilibrium_resolution_t(order, n_outer), trim(start_name), &
-            run_psi_case, result, verification)
+            run_psi_case, result, verification, equilibrium)
         call write_equilibrium_report(output_unit, verification)
         call require(verification%status == 0, trim(label)//': D8 solve/report')
         if (verification%status /= 0) error stop 'D8 psi case'
@@ -274,12 +277,15 @@ contains
         if (start_name == 'legacy') call check_quadratic(history)
     end subroutine solve_case
 
-    subroutine run_psi_case(spec, resolution, start, state, verification)
+    subroutine run_psi_case(spec, resolution, start, state, verification, &
+                            equilibrium)
         type(equilibrium_case_t), intent(in) :: spec
         type(equilibrium_resolution_t), intent(in) :: resolution
         type(equilibrium_start_t), intent(in) :: start
         class(*), intent(inout) :: state
         type(equilibrium_run_report_t), intent(inout) :: verification
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        type(gs_profile_law_t) :: exported_law
         if (spec%lane /= 'psi') return
         if (resolution%degree < 2 .or. start%name /= start_name) return
         select type (state)
@@ -297,6 +303,12 @@ contains
             verification%residual = norm2(state%evaluation%residual) &
                 /max(norm2(state%forcing), tiny(1.0_dp))
             verification%residual_norm = 'forced discrete l2 / l2(manufactured load)'
+            exported_law = state%system%law
+            exported_law%axis = state%evaluation%psi_axis - state%evaluation%psi_bound
+            call gs_equilibrium(state%gs, equilibrium, verification%status, &
+                f_edge=exported_law%f_edge, ffprime=0.0_dp, law=exported_law, &
+                mu0=state%system%mu0, psi_bound=state%evaluation%psi_bound, &
+                plasma_cell=state%evaluation%plasma_cell)
         end select
     end subroutine
 
