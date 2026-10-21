@@ -146,6 +146,24 @@ published 2.28690 value at eps=2, S=1.
 
 ## Boundary interchange and execution
 
+[V] For the integer-transform family, the exporter also writes
+`output/input.nested_equilibrium`. This input matches the exact toroidal flux,
+constant transform and pressure profile, in addition to the boundary. The
+generated formula gives Phi(psi)=pi ab psi/Omega², hence VMEC's normalized
+toroidal-flux coordinate is s=psi/delta. The pressure coefficients are the
+generated axis and edge pressures, with `PRES_SCALE=1/(4 pi 10^-7)` converting
+the oracle's mu0=1 pressure to pascals while retaining B in tesla and lengths
+in metres. `NCURR=0` prescribes iota=2. The existing boundary-consumer test
+independently integrates B dot dS using finite-difference surface tangents
+and checks pressure against the Cartesian oracle.
+
+[V] The suggested radial iteration settings in that file are starting inputs,
+not convergence evidence. The Fourier boundary still has a sampled truncation
+indicator rather than a continuous bound. The sheared family still exports
+geometry only: its pressure must first be expressed in normalized toroidal
+flux. A matched input, a successful reader and an exact-field evaluation do
+not establish that a numerical equilibrium has converged.
+
 [V] Build `nested_oracle_export`, then run, for example:
 
 ```sh
