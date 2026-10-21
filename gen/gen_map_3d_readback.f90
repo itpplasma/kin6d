@@ -80,7 +80,7 @@ program gen_map_3d_readback
         gradient(a)=-sigma*gradient(a)
     end do
     call w%emit('map_3d_field', names, &
-               [character(8)::'br', 'bz', 'bphi', 'chi_r', 'chi_z', 'chi_phi', 'jac'], &
+               [character(8)::'br', 'bz', 'bphi', 'psi_r', 'psi_z', 'psi_phi', 'jac'], &
                 [field, gradient, jac], ad=.true.)
     z=sym(arena,'chi')
     call w%emit('map_3d_flux',[character(8)::'chi','sigma'],['psi'], &
