@@ -116,7 +116,8 @@ ideal limit. Measured failure modes (2026-10-13):
 4. Missing sheets on sideband rationals (q = 3 near the edge with only q = 2
    listed): an unshielded 1/(u - u_s) pole of the strip current made the
    q = 2 result depend on the nearest half ring, up to +14 % (fixed on the
-   sheet closure by `rat_auto`; not yet for the Frobenius closure).
+   sheet closure by `rat_auto`; automatic discovery now also applies to the
+   Frobenius and asymptotic resistive closures).
 5. Layers near the cut or near crowded rationals (q = 10/3 at psin 0.990,
    m +- 1 neighbours unlisted) do not converge at all.
 6. The layer model is the cylinder-equivalent slab: no Glasser curvature
@@ -342,6 +343,17 @@ gate.
   xd 0.01, nrad 64, plus an (a)-only run at xd 0.02 for the order. (b) at
   xd 0.01 (job 3225264): nrad 64 1.65e-2 / 1.63e-2 / 1.64e-2, nrad 96
   6.6e-3, nrad 128 3.4e-3, so nrad 64 stays the gated resolution.
+  Current readback correction (2026-10-21). The sum of the two artificial
+  Schur sheets is not the physical current integral of the resolved strip.
+  Exact cylinder magnetic moments give an O(width^2) difference even for
+  identical represented fields; see the retained
+  [FortSym derivation](../theory/derivations/response-strip-current.md).
+  `strip_dirichlet_map` now optionally returns the actual strip-current row.
+  The torus test additionally checks that current against L4 at both xd=0.02
+  (the original width) and 0.01 with the original 1e-3 target. The previous
+  interface-amplitude and width-order checks are retained. This corrects the
+  observable; it introduces no fit or code-agreement factor and supplies no
+  finite-pressure toroidal qualification.
 - R-K: kinetic. K1 outer delta W_k (perturbative, then self-consistent)
   after DK4 passes, against MARS-K perturbative on rung c; K2 kinetic strip
   against KiLCA and MEPHIT hybrid kinetic-MHD (Lainer et al. 2026) in the

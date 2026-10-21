@@ -148,15 +148,19 @@ ITER runs: 219k unknowns, about 100 s for 40 iterations on 16 threads.
 - The circulation from the 2D field matches −μ0 I_p to 1e-6, and the vacuum
   shell field matches the 2D field to 7e-4 (relative L2).
 
-Mode stability (`stability=.true.`, shifted inverse iteration on the Schur
-complement, metric |diag H|) at the ITER r0 state:
+Historical mode probe (`stability=.true.`, shifted inverse iteration on the
+Schur complement, metric |diag H|) at the ITER r0 state. [V] The n > 0 result
+below used an incomplete real-phase block and is superseded by the
+[harmonic-pair audit](#harmonic-pair-stability-audit):
 
 - n = 0: negative eigenvalues down to −3.9e-7 (the vertical mode);
 - n = 3: none negative for shifts 0 … −0.1, smallest +3.7e-5.
 
 DCON reports this FB-cut state n = 3 unstable without a wall (−0.097). The
-discrepancy is open: the probe may lack resolution of the edge-current drive
-(128 chain nodes, P3, one shell layer), or the two differ in model.
+historical comparison does not establish disagreement between the physical
+models: the KIN6D probe omitted the sine partner. [H] Resolution of the
+edge-current drive and differences between the supplied equilibria still need
+the corrected resolution ladder.
 
 RMP stage. The ELM coils (bl2, R ≈ 7.7–8.7 m) lie inside the P12 coupling
 ellipse, which violates the formulation (coils must be outside Γ_c). The first
@@ -172,7 +176,8 @@ FB-taper(0.997, w = 0.0228), the adopted stable family. Reference: KIN6D 2D
   0.066 mm max / 6 µm rms, with surface defect 0.03 mm.
 - At 128/192, the ±15 mm R and +15 mm Z starts return to the r0 state (≈ 1.9
   mm max, 0.17 mm rms). −15 mm Z and +2 % elongation are not converged.
-- n = 3 stability probe: smallest eigenvalue +3.7e-5 (stable; DCON +0.206).
+- Historical n = 3 cosine-only probe: smallest eigenvalue +3.7e-5; this
+  does not establish stability (DCON +0.206).
 - The RMP ladder (0.25 … 0.005 × 90 kAt, Γ_c = 1.08 × LCFS, coil clearance
   0.31 m) at 128/192 is not converged (merit ratio 0.05–0.9 after 60
   iterations). Response/amplitude is 8.2e-3 m at 0.25 and a noisy
@@ -498,3 +503,104 @@ The ε > 0 family 1 and sheared/Issan return tests remain blocked by the separat
 `ideal_frozen_t%evaluate(point(2), ...)` cannot encode those data. The sheared
 family also has p′ = −1/λ² in its paper's flux normalization; it must not reuse
 family 1's pressure law blindly.
+
+
+## Harmonic-pair stability audit
+
+[V] `ideal_fb_mode_stability` formerly selected only one real Fourier phase
+with `map(pidx(..., m, ...))`. Axisymmetry decouples distinct |n|, but the
+cross term between B_pol·grad and (B_phi/R) partial_phi couples the cosine and
+sine phases of the same n. The plasma assembly already retains this term in
+`plasma_hessian`; extracting one phase removed it from the stability problem.
+A helical displacement needs both phases. The current extraction retains
+(R_cos, Z_cos, R_sin, Z_sin) at every plasma node and both phases of every
+shell, potential and multiplier unknown. Either phase index selects this same
+block. Nonaxisymmetric states are rejected.
+
+[V] The returned value is the unshifted Rayleigh quotient, with a relative
+residual in the |diag H| metric. An iteration that does not meet 1e-6 returns
+`IDEAL_FB_NOT_CONVERGED`; the driver excludes failed probes from its minimum.
+A negative converged value witnesses a discrete negative direction. Positive
+values near a finite set of shifts do not count negative eigenvalues and do
+not prove stability. The n = 0 slide null and FB-D2 hypotheses still require
+the separate bordered diagnostics. No interval spectral certificate is claimed.
+
+### Independent cylindrical external kink
+
+[V] `gen/gen_ideal_fb_kink.f90` uses native exact FortSym zero tests (UNKNOWN
+fails) for divergence, two force-balance components, the energy identity, its
+surface-term transfer and the standing-wave control. With mu0 = a = 1,
+B = (-y, x, B_z), p = 1 - x² - y² and a rigid displacement
+xi = (cos(kz), sin(kz), 0), let q = k B_z. Then div xi = 0 and
+Q = curl(xi cross B) = (q - 1)(-sin(kz), cos(kz), 0). In units
+C = pi a² L/(2 mu0), the energy-principle volume term is
+
+    delta W_plasma / C = |Q|² + J·(xi cross Q) = q² - 1.
+
+For the unbounded vacuum, Phi_1 is proportional to K_1(kr) sin(theta-kz).
+Its Dirichlet-to-Neumann factor is f(ka) = K_1/(K_1 + ka K_0), so
+
+    delta W_vacuum / C = f(ka) (q - 1)²,
+    delta W_total / C = q² - 1 + f(ka) (q - 1)².
+
+[V] At ka -> 0, f -> 1 and the total is 2q(q - 1), unstable for 0 < q < 1.
+The raw map/co-energy ledger assigns q² to plasma and f(q-1)²-1 to vacuum;
+the surface term of magnitude 1 must be transferred before comparing with
+the energy-principle split. The generator emits the raw terms, total and
+standing-wave control with JVP/VJP, checked in under `test/generated/`.
+Ordinary testing requires no CAS. Regenerate with the repository-pinned
+FortSym build using `gen_ideal_fb_kink`, from the source root.
+
+[V] `ideal_fb_external_kink` embeds this cylinder in a torus at R/a = 80, 160,
+with n = 8, 16, k = n/R = 0.1 and B_z = 10q held fixed. Increasing R at
+fixed n while scaling B_z would retain curvature at leading order and is not
+this cylinder limit. The toroidal states have a finite-curvature equilibrium
+defect; they are an asymptotic energy oracle, not exact toroidal equilibria.
+K_0 and K_1 are evaluated independently by their integral representation.
+The same `ideal_fb_hessian` and fixed-plasma vacuum Schur solve are used as
+in the stability probe, with decaying exterior and no conducting wall.
+
+| q | R/a | raw plasma/C | raw vacuum/C | total/C | cylinder total/C |
+|---|---|---|---|---|---|
+| 0.5 | 80 | 0.25014 | -0.75491 | -0.50477 | -0.50601 |
+| 0.5 | 160 | 0.25002 | -0.75587 | -0.50585 | -0.50601 |
+| 1.5 | 80 | 2.25059 | -0.73922 | 1.51137 | 1.49399 |
+| 1.5 | 160 | 2.25003 | -0.75219 | 1.49784 | 1.49399 |
+
+[V] All three raw terms agree within 3%, with decreasing error for both q
+values. The coupled shifted probe finds a negative eigenvalue near -1.18e-4
+with relative residual below 1e-6 for q = 0.5. The cosine-only displacement
+has positive energy (about +0.235 C at R/a = 160). This provides a concrete
+counterexample to the old phase restriction. The q = 1.5 check concerns the
+named rigid displacement; it is not a full-spectrum stability claim.
+
+### ITER and DCON comparison limits
+
+[V] The original DCON FB-cut output reports plasma -0.2374, vacuum +0.1399,
+total -0.09743 (imaginary part 1.21e-5). Its input has `wall = .false.`.
+DCON constructs W_T = W_P + W_V in `dcon/free.f`, normalizes boundary response
+vectors with `jmat/v1`, and contracts both matrices with the same eigenvector.
+It does not use a volume kinetic-energy norm. KIN6D uses |diag H|, so the
+magnitudes -0.09743 and a KIN6D Rayleigh quotient cannot be compared directly.
+The KIN6D ledger prints raw plasma, vacuum, exterior, constraint and total
+half-quadratic forms for the same converged vector. Exterior is the negative
+potential co-energy trace term; vacuum includes it and shell geometry work.
+It must not be added a second time. A conducting-wall contribution is absent;
+Gamma_c is a transparent coupling surface, not a perfectly conducting wall.
+
+[V] KIN6D's frozen pressure has gamma = 0 (`gen/gen_ideal_map.f90`), without
+an explicit incompressibility constraint or mass-density operator. The
+cylinder displacement above is incompressible, so its comparison does not
+rely on interpreting gamma = 0 as incompressibility. [H] Equivalence of the
+full ITER regular displacement space and DCON's minimized singular-surface
+response space needs a separate comparison on matched equilibrium data and
+the same boundary displacement. The 2D KIN6D re-solve and the imported DCON
+state must not be assumed identical merely because both are called FB-cut.
+
+[V] FB-D2 relates physical Morse index to bordered KKT inertia only under
+vacuum-block negativity and full rank of the constraints plus slide rows.
+`ideal_fb_hypotheses` tests these numerically on small states; the shifted
+probe does not establish either hypothesis or an inertia count at ITER size.
+The verified error is in the old KIN6D stability inference. [H] The corrected
+ITER n = 3 sign, term parity on matched vectors and resolution convergence
+remain pending cluster evidence; no defect in DCON is established here.

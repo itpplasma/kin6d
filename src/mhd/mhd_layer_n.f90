@@ -55,7 +55,7 @@ module kin6d_mhd_layer_n
     use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
         psi_eval
     use kin6d_mhd_ampere_n, only: mu0
-    use kin6d_mhd_response_n, only: sheet_closure_t
+    use kin6d_mhd_response_n, only: layer_closure_t
     use kin6d_mhd_closure_n, only: rational_layer_t
     implicit none
     private
@@ -326,7 +326,7 @@ contains
         type(rational_layer_t), intent(in) :: lays(:)
         complex(dp), intent(in) :: dlayer(:)
         complex(dp), intent(in) :: junit(:)
-        type(sheet_closure_t), intent(inout) :: cl
+        type(layer_closure_t), intent(inout) :: cl
         integer :: l, side, k, kf, r1, r2, j
         complex(dp) :: sc
 

@@ -33,7 +33,7 @@ program test_mhd_newcomb
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_curl, mu0
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
-        ring_flux_harmonic, ring_flux_from_values, ring_points, sheet_closure_t
+        ring_flux_harmonic, ring_flux_from_values, ring_points, layer_closure_t
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     implicit none
@@ -310,7 +310,7 @@ contains
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
         type(ring_angles_t) :: rac
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(surface_t) :: s
         complex(dp), allocatable :: a(:), b2(:), bc(:)
         complex(dp) :: lam(0), b2s(0, 0), phe(0), pht(0), phi(nchk)
