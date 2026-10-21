@@ -928,6 +928,10 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
+    add_executable(check_response_strip_current gen/check_response_strip_current.f90)
+    target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
+    add_test(NAME response_strip_current_exact_identities
+        COMMAND check_response_strip_current)
     add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90
@@ -1554,8 +1558,9 @@ set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
 # R-B2 increment 1: strip coupled to the FEEC torus (response-unified.md, R-B2).
 # Gated at nrad 64 (smallest passing nrad of the (b) ladder), strip half-width
-# xd 0.01 plus an (a)-only run at xd 0.02 for the xd^2 order of gate (a)
-# (GMRES tolerance 1e-7).
+# xd 0.01 plus an (a)-only run at xd 0.02. Physical strip current is checked
+# at both widths; interface-sheet sum and its width order remain diagnostics
+# with their existing gates (GMRES tolerance 1e-7).
 add_test(NAME response_strip_torus_coupling COMMAND test_mhd_closure strip)
 set_tests_properties(response_strip_torus_coupling PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
