@@ -615,3 +615,42 @@ probe does not establish either hypothesis or an inertia count at ITER size.
 The verified error is in the old KIN6D stability inference. [H] The corrected
 ITER n = 3 sign, term parity on matched vectors and resolution convergence
 remain pending cluster evidence; no defect in DCON is established here.
+
+## Harmonic inertia and near-zero Schur probes
+
+`ideal_fb_mode_inertia` counts the paired real harmonic spectrum below supplied
+shifts. For the plasma/rest partition `K = [A B; B^T C]` and the existing
+positive diagonal plasma metric `M`, it uses
+`In(S - sigma M) = In(K - diag(sigma M,0)) - In(C)`, with
+`S = A - B C^-1 B^T`. Both factorizations use FortSparse native real indefinite
+LDL^T with AMD ordering and bounded blocked panels with scalar pivot recovery.
+A positive diagonal congruence controls the mixed physical units. Singular
+elimination or uncertain pivot signs reject the diagnostic. Computed-pivot
+inertia is a floating-point diagnostic; no exact-real or continuous spectral
+certificate is implied. The n=0 slide-gauge reduction is not included here.
+
+The driver enables this n>0 diagnostic with `inertia=.true.`; default shifts
+are 0, 1e-9, 1e-8 and 1e-7 in the existing diagonal metric. Its output lists
+negative, zero and positive counts and a status for each shift.
+
+`eigen_backward_error=.true.` selects `ideal_fb_mode_lanczos` for stability
+probes. It applies the Schur complement through a fixed-rest solve, and
+shift-invert through the full KKT solve, without a dense plasma matrix.
+FortNum checks the original Euclidean residual at tolerance 1e-10, using an
+observed lower estimate for the Schur norm and the exact diagonal-mass norm.
+This automatic norm estimate can make acceptance stricter than using the
+exact norm; it supplies no certified norm bound. The old eigenvalue-relative
+residual remains a separate diagnostic. The reported residual radius is the
+floating-point metric-scaled residual norm of a unit-metric vector, indicating
+proximity to some discrete eigenvalue under exact Schur elimination; it does
+not identify the lowest branch. Inertia and a resolution study remain needed
+for an extremal or physical sign claim. Neither option changes the gamma=0
+physical model or provides derivatives of an eigenpair.
+
+Both diagnostics require a residual-converged axisymmetric equilibrium. The
+opt-in driver paths run only after the equilibrium reports success. The native
+`ideal_fb_schur_spectrum` test independently extracts and eliminates a small
+dense harmonic Hessian, compares its full spectrum with sparse inertia at
+three shifts, checks the Lanczos pair against its residual allowance, and
+rejects a nonaxisymmetric input. The existing generated cylinder identities,
+helical sign oracle and unconverged inverse-iteration rejection remain active.

@@ -88,7 +88,7 @@ program test_ideal_free_boundary
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
         ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses, &
-        ideal_fb_hypotheses_print, &
+        ideal_fb_hypotheses_print, ideal_fb_mode_inertia, ideal_fb_mode_lanczos, &
         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
         ideal_fb_solve, ideal_fb_report_t, ideal_fb_mode_energy, &
         ideal_fb_mode_stability, ideal_fb_stability_t, IDEAL_FB_BAD_INPUT, &
@@ -96,6 +96,7 @@ program test_ideal_free_boundary
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
+    use fortnum_symmetric_eigen, only: dense_oracle => symmetric_eigen
     use fortnum_quadrature, only: gauss_legendre
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use kin6d_triangle_basis, only: triangle_basis_jet
@@ -139,12 +140,112 @@ program test_ideal_free_boundary
         call slide_checks()
     case ('kink')
         call kink_checks()
+    case ('spectrum')
+        call spectrum_checks()
     case ('hypotheses')
         call hypothesis_checks()
     case default
         error stop 'unknown mode'
     end select
 contains
+    subroutine spectrum_checks()
+        ! Independent dense Schur solve/eigenspectrum, without the production
+        ! mode extraction or sparse inertia. The full Hessian is the shared
+        ! physical definition; indexing and elimination here are an oracle.
+        type(ideal_fb_t) :: fb
+        type(ideal_fb_stability_t) :: report
+        integer, allocatable :: rp(:), ci(:), keep(:), piv(:)
+        real(dp), allocatable :: val(:), h(:, :), c(:, :), b(:, :), s(:, :)
+        real(dp), allocatable :: mass(:), w(:), vectors(:, :)
+        real(dp) :: shifts(3), lambda, allowance, norm_s
+        integer :: i, j, p, phase, n, np, nr, st, count, k, expected(3)
+        integer :: counts(3, 3)
+        interface
+            subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                integer, intent(out) :: ipiv(*), info
+                real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+            end subroutine
+        end interface
+        call build(8, 6, 2, .false., 3, 1, fb, solovev=.true.)
+        call ideal_fb_set_drive(fb, sampler, st)
+        if (st /= IDEAL_FB_OK) error stop 'spectrum drive'
+        call ideal_fb_solve_vacuum(fb, st)
+        if (st /= IDEAL_FB_OK) error stop 'spectrum vacuum'
+        call ideal_fb_solve_multipliers(fb, st)
+        if (st /= IDEAL_FB_OK) error stop 'spectrum multipliers'
+        call ideal_fb_hessian(fb, rp, ci, val)
+        allocate (keep(fb%n)); keep = 0; count = 0
+        do i = 1, fb%n
+            if (i <= fb%np) then
+                phase = mod((i - 1)/2, fb%nmode) + 1
+            else if (i <= fb%np + 2*fb%nx) then
+                phase = mod((i - fb%np - 1)/3, fb%nmode) + 1
+            else
+                phase = mod(i - fb%np - 2*fb%nx - 1, fb%nmode) + 1
+            end if
+            if (phase == 1) cycle
+            count = count + 1; keep(i) = count
+        end do
+        n = count; np = 4*fb%plasma%nodes; nr = n - np
+        allocate (h(n, n), c(nr, nr), b(nr, np), piv(nr), s(np, np), &
+            mass(np), w(np), vectors(np, np))
+        h = 0
+        do i = 1, fb%n
+            if (keep(i) == 0) cycle
+            do p = rp(i), rp(i + 1) - 1
+                j = ci(p)
+                if (keep(j) /= 0) h(keep(i), keep(j)) = val(p)
+            end do
+        end do
+        h = 0.5_dp*(h + transpose(h))
+        do i = 1, np
+            mass(i) = abs(h(i, i))
+        end do
+        c = h(np + 1:, np + 1:); b = h(np + 1:, :np)
+        call dgesv(nr, np, c, nr, piv, b, nr, st)
+        if (st /= 0) error stop 'dense eliminated block singular'
+        s = h(:np, :np) - matmul(h(:np, np + 1:), b)
+        do j = 1, np
+            do i = 1, np
+                s(i, j) = s(i, j)/sqrt(mass(i)*mass(j))
+            end do
+        end do
+        norm_s = maxval(sum(abs(s), dim=2))
+        call dense_oracle(s, w, vectors, st)
+        if (st /= 0) error stop 'dense spectrum failed'
+        shifts = [0.0_dp, 1.e-4_dp, 1.e-2_dp]
+        call ideal_fb_mode_inertia(fb, 2, shifts, counts, st)
+        if (st /= IDEAL_FB_OK) error stop 'sparse inertia unavailable'
+        do k = 1, 3
+            expected = [count_negative(w - shifts(k)), 0, count_positive(w - shifts(k))]
+            print '(a,es12.4,6i7)', 'inertia dense/sparse ', shifts(k), &
+                expected, counts(:, k)
+            if (any(counts(:, k) /= expected)) error stop 'Schur inertia mismatch'
+        end do
+        call ideal_fb_mode_lanczos(fb, 2, lambda, report, st)
+        print '(a,i0,4es20.10)', 'Lanczos status/value/radius/backward/dense ', &
+            st, lambda, report%residual_radius, report%backward_error, w(minloc(abs(w), 1))
+        if (st /= IDEAL_FB_OK) error stop 'Schur Lanczos failed'
+        allowance = report%residual_radius + 50*np*epsilon(1.0_dp)*norm_s
+        if (minval(abs(w - lambda)) > allowance) error stop 'eigenpair outside dense oracle'
+        if (report%backward_error > 1.e-10_dp) error stop 'backward gate failed'
+        fb%plasma%x(1, 2, 1) = 1.e-3_dp
+        call ideal_fb_mode_inertia(fb, 2, shifts, counts, st)
+        if (st /= IDEAL_FB_BAD_INPUT) error stop 'nonaxisymmetric inertia admitted'
+    end subroutine
+
+    integer function count_negative(x) result(n)
+        real(dp), intent(in) :: x(:)
+        n = count(x < 0)
+    end function
+
+    integer function count_positive(x) result(n)
+        real(dp), intent(in) :: x(:)
+        n = count(x > 0)
+    end function
+
     subroutine kink_curve(t, point)
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)

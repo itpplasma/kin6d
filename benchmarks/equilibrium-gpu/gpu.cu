@@ -15,102 +15,6 @@ static double seconds(Clock::time_point t) {
     return std::chrono::duration<double>(Clock::now()-t).count();
 }
 
-template<int precision, int action, typename Input, typename Output>
-__global__ void evaluate(int n, const Input* x, Output* y) {
-    int i = blockIdx.x*blockDim.x + threadIdx.x;
-    if (i >= n) return;
-    if constexpr (precision == 0 && action == 0) {
-        ideal_hessian_f64(
-            x[i + 0*n], x[i + 1*n], x[i + 2*n], x[i + 3*n],
-            x[i + 4*n], x[i + 5*n], x[i + 6*n], x[i + 7*n],
-            x[i + 8*n], x[i + 9*n], x[i + 10*n], x[i + 11*n],
-            x[i + 12*n], x[i + 13*n], x[i + 14*n], &y[i + 0*n],
-            &y[i + 1*n], &y[i + 2*n], &y[i + 3*n], &y[i + 4*n],
-            &y[i + 5*n], &y[i + 6*n], &y[i + 7*n], &y[i + 8*n],
-            &y[i + 9*n], &y[i + 10*n], &y[i + 11*n], &y[i + 12*n],
-            &y[i + 13*n], &y[i + 14*n], &y[i + 15*n], &y[i + 16*n],
-            &y[i + 17*n], &y[i + 18*n], &y[i + 19*n], &y[i + 20*n],
-            &y[i + 21*n], &y[i + 22*n], &y[i + 23*n], &y[i + 24*n],
-            &y[i + 25*n], &y[i + 26*n], &y[i + 27*n], &y[i + 28*n],
-            &y[i + 29*n], &y[i + 30*n], &y[i + 31*n], &y[i + 32*n],
-            &y[i + 33*n], &y[i + 34*n], &y[i + 35*n], &y[i + 36*n],
-            &y[i + 37*n], &y[i + 38*n], &y[i + 39*n], &y[i + 40*n],
-            &y[i + 41*n], &y[i + 42*n], &y[i + 43*n], &y[i + 44*n]);
-    }
-    if constexpr (precision == 1 && action == 0) {
-        ideal_hessian_f32(
-            x[i + 0*n], x[i + 1*n], x[i + 2*n], x[i + 3*n],
-            x[i + 4*n], x[i + 5*n], x[i + 6*n], x[i + 7*n],
-            x[i + 8*n], x[i + 9*n], x[i + 10*n], x[i + 11*n],
-            x[i + 12*n], x[i + 13*n], x[i + 14*n], &y[i + 0*n],
-            &y[i + 1*n], &y[i + 2*n], &y[i + 3*n], &y[i + 4*n],
-            &y[i + 5*n], &y[i + 6*n], &y[i + 7*n], &y[i + 8*n],
-            &y[i + 9*n], &y[i + 10*n], &y[i + 11*n], &y[i + 12*n],
-            &y[i + 13*n], &y[i + 14*n], &y[i + 15*n], &y[i + 16*n],
-            &y[i + 17*n], &y[i + 18*n], &y[i + 19*n], &y[i + 20*n],
-            &y[i + 21*n], &y[i + 22*n], &y[i + 23*n], &y[i + 24*n],
-            &y[i + 25*n], &y[i + 26*n], &y[i + 27*n], &y[i + 28*n],
-            &y[i + 29*n], &y[i + 30*n], &y[i + 31*n], &y[i + 32*n],
-            &y[i + 33*n], &y[i + 34*n], &y[i + 35*n], &y[i + 36*n],
-            &y[i + 37*n], &y[i + 38*n], &y[i + 39*n], &y[i + 40*n],
-            &y[i + 41*n], &y[i + 42*n], &y[i + 43*n], &y[i + 44*n]);
-    }
-    if constexpr (precision == 2 && action == 0) {
-        ideal_hessian_mixed(
-            x[i + 0*n], x[i + 1*n], x[i + 2*n], x[i + 3*n],
-            x[i + 4*n], x[i + 5*n], x[i + 6*n], x[i + 7*n],
-            x[i + 8*n], x[i + 9*n], x[i + 10*n], x[i + 11*n],
-            x[i + 12*n], x[i + 13*n], x[i + 14*n], &y[i + 0*n],
-            &y[i + 1*n], &y[i + 2*n], &y[i + 3*n], &y[i + 4*n],
-            &y[i + 5*n], &y[i + 6*n], &y[i + 7*n], &y[i + 8*n],
-            &y[i + 9*n], &y[i + 10*n], &y[i + 11*n], &y[i + 12*n],
-            &y[i + 13*n], &y[i + 14*n], &y[i + 15*n], &y[i + 16*n],
-            &y[i + 17*n], &y[i + 18*n], &y[i + 19*n], &y[i + 20*n],
-            &y[i + 21*n], &y[i + 22*n], &y[i + 23*n], &y[i + 24*n],
-            &y[i + 25*n], &y[i + 26*n], &y[i + 27*n], &y[i + 28*n],
-            &y[i + 29*n], &y[i + 30*n], &y[i + 31*n], &y[i + 32*n],
-            &y[i + 33*n], &y[i + 34*n], &y[i + 35*n], &y[i + 36*n],
-            &y[i + 37*n], &y[i + 38*n], &y[i + 39*n], &y[i + 40*n],
-            &y[i + 41*n], &y[i + 42*n], &y[i + 43*n], &y[i + 44*n]);
-    }
-    if constexpr (precision == 0 && action == 1) {
-        ideal_hvp_f64(
-            x[i + 0*n], x[i + 1*n], x[i + 2*n], x[i + 3*n],
-            x[i + 4*n], x[i + 5*n], x[i + 6*n], x[i + 7*n],
-            x[i + 8*n], x[i + 9*n], x[i + 10*n], x[i + 11*n],
-            x[i + 12*n], x[i + 13*n], x[i + 14*n], x[i + 15*n],
-            x[i + 16*n], x[i + 17*n], x[i + 18*n], x[i + 19*n],
-            x[i + 20*n], x[i + 21*n], x[i + 22*n], x[i + 23*n],
-            &y[i + 0*n], &y[i + 1*n], &y[i + 2*n], &y[i + 3*n],
-            &y[i + 4*n], &y[i + 5*n], &y[i + 6*n], &y[i + 7*n],
-            &y[i + 8*n]);
-    }
-    if constexpr (precision == 1 && action == 1) {
-        ideal_hvp_f32(
-            x[i + 0*n], x[i + 1*n], x[i + 2*n], x[i + 3*n],
-            x[i + 4*n], x[i + 5*n], x[i + 6*n], x[i + 7*n],
-            x[i + 8*n], x[i + 9*n], x[i + 10*n], x[i + 11*n],
-            x[i + 12*n], x[i + 13*n], x[i + 14*n], x[i + 15*n],
-            x[i + 16*n], x[i + 17*n], x[i + 18*n], x[i + 19*n],
-            x[i + 20*n], x[i + 21*n], x[i + 22*n], x[i + 23*n],
-            &y[i + 0*n], &y[i + 1*n], &y[i + 2*n], &y[i + 3*n],
-            &y[i + 4*n], &y[i + 5*n], &y[i + 6*n], &y[i + 7*n],
-            &y[i + 8*n]);
-    }
-    if constexpr (precision == 2 && action == 1) {
-        ideal_hvp_mixed(
-            x[i + 0*n], x[i + 1*n], x[i + 2*n], x[i + 3*n],
-            x[i + 4*n], x[i + 5*n], x[i + 6*n], x[i + 7*n],
-            x[i + 8*n], x[i + 9*n], x[i + 10*n], x[i + 11*n],
-            x[i + 12*n], x[i + 13*n], x[i + 14*n], x[i + 15*n],
-            x[i + 16*n], x[i + 17*n], x[i + 18*n], x[i + 19*n],
-            x[i + 20*n], x[i + 21*n], x[i + 22*n], x[i + 23*n],
-            &y[i + 0*n], &y[i + 1*n], &y[i + 2*n], &y[i + 3*n],
-            &y[i + 4*n], &y[i + 5*n], &y[i + 6*n], &y[i + 7*n],
-            &y[i + 8*n]);
-    }
-}
-
 struct Workspace {
     void *input=nullptr, *output=nullptr;
     cudaEvent_t start=nullptr, stop=nullptr;
@@ -138,8 +42,24 @@ static void run(int n, int repeats, const double* x, double* y, double* metrics)
     checked(cudaMemcpy(w.input, packed.data(), ib, cudaMemcpyHostToDevice));
     metrics[1] = seconds(t);
     auto launch = [&]() {
-        evaluate<precision,action><<<(n+127)/128,128>>>(n,
-            static_cast<Input*>(w.input), static_cast<Output*>(w.output));
+        if constexpr (precision == 0 && action == 0)
+            ideal_hessian_f64_batch<<<(n+127)/128,128>>>(n,
+                static_cast<Input*>(w.input), static_cast<Output*>(w.output));
+        if constexpr (precision == 0 && action == 1)
+            ideal_hvp_f64_batch<<<(n+127)/128,128>>>(n,
+                static_cast<Input*>(w.input), static_cast<Output*>(w.output));
+        if constexpr (precision == 1 && action == 0)
+            ideal_hessian_f32_batch<<<(n+127)/128,128>>>(n,
+                static_cast<Input*>(w.input), static_cast<Output*>(w.output));
+        if constexpr (precision == 1 && action == 1)
+            ideal_hvp_f32_batch<<<(n+127)/128,128>>>(n,
+                static_cast<Input*>(w.input), static_cast<Output*>(w.output));
+        if constexpr (precision == 2 && action == 0)
+            ideal_hessian_mixed_batch<<<(n+127)/128,128>>>(n,
+                static_cast<Input*>(w.input), static_cast<Output*>(w.output));
+        if constexpr (precision == 2 && action == 1)
+            ideal_hvp_mixed_batch<<<(n+127)/128,128>>>(n,
+                static_cast<Input*>(w.input), static_cast<Output*>(w.output));
         checked(cudaGetLastError());
     };
     std::vector<Output> output(size_t(n)*nout);
