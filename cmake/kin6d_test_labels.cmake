@@ -533,3 +533,10 @@ if(TARGET gen_curve_chart)
 endif()
 kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
+
+kin6d_test_labels(cpu_precision_gs_comparison performance CLASSES mhd
+    TARGETS benchmark_cpu_precision)
+kin6d_test_labels(cpu_precision_map_comparison performance CLASSES mhd
+    TARGETS benchmark_cpu_precision)
+kin6d_test_labels(cpu_precision_gs_ir performance CLASSES mhd
+    TARGETS benchmark_cpu_solve)
