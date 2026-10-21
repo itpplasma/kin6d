@@ -216,3 +216,17 @@ no consumer compiler workaround was added. The task-owned Gremlin was stopped;
 no detached watcher remains.
 
 Chris&AI
+
+## Generated batch entry points
+
+[V] The handwritten `evaluate` wrapper has been replaced by FortSym's
+`emit_cuda_batch_ir`. The same Hessian/HVP roots now produce both scalar leaves
+and the coalesced SoA global kernels. Launch geometry, allocations and transfers
+remain in the consumer; CUDA remains opt-in with an explicit architecture list.
+
+[V] RTX 5060 Ti, sm_120, 65536 points, 11 repetitions, 8-thread CPU reference:
+Hessian/HVP FP32 resident medians are 14.82/8.03 microseconds, versus
+271.42/290.66 microseconds in GPU FP64. FP32 maximum scaled defects are
+8.14e-7/6.21e-7. Transfer-inclusive Hessian/HVP costs are approximately
+1.65/0.83 ms, compared with CPU medians 2.29/0.85 ms. Cold setup is separate;
+these shared-host kernel numbers establish no full-solver speedup.

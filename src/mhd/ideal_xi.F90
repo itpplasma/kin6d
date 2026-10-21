@@ -4,6 +4,7 @@ module kin6d_ideal_xi
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_ideal_xi_leaves, only: xi_form_dp, xi_form_sp, &
         xi_gradient_dp, xi_gradient_sp
+    use ideal_mhd_batch, only: mhd_xi_fp64, mhd_xi_fp32, mhd_xi_mixed
     implicit none
     private
     public :: xi_bilinear, xi_gradient_n, xi_volume_energy, xi_energy_report_t
@@ -22,6 +23,11 @@ module kin6d_ideal_xi
     interface xi_volume_energy
         module procedure volume_dp, volume_sp
     end interface
+    public :: xi_bilinear_batch
+    interface xi_bilinear_batch
+        procedure mhd_xi_fp64, mhd_xi_fp32, mhd_xi_mixed
+    end interface
+
 contains
 #define RK real64
 #define BILINEAR bilinear_dp
