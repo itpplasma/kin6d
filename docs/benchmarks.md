@@ -9,7 +9,9 @@ The [NN1 non-nested entry](equilibrium-nonnested.md) adds an independent
 FEEC Solov'ev reduction and a helical-filament vacuum-island comparison
 against direct Biot-Savart tracing. These are candidate/reference-comparison
 results without continuous enclosures; the finite-pressure island, stochastic
-and Landreman cases remain planned.
+cases remain planned. The nested Landreman/Issan field evaluators and boundary
+exports are implemented as [scoped exact references](nested-oracles.md); solver
+comparisons remain pending.
 Other rows remain planned.
 The audience is physicists
 and implementers selecting the next independently verifiable capability.
@@ -114,7 +116,9 @@ perturbative in aspect ratio or symmetry breaking:
 - Family 2 (sheared ι) is written in complex variables and avoids its branch
   cut by the choice of domain.
 
-Both give B, J, p, ι and volume averages (|B|², β) in closed form. They test
+Both give closed-form B, J, p and nested surface maps. Family 1 also gives
+closed-form ι and volume averages; family 2 uses an ODE rotation number and
+quadratures for these integrated observables. They test
 3D force balance, div B and the surface geometry for the nested and
 physical-space 3D solvers, and give the same oracle to VMEC++, DESC and
 GVEC. They do not test islands or stochastic regions.
@@ -123,8 +127,11 @@ GVEC. They do not test islands or stochastic regions.
 
 [Issan et al. (arXiv:2610.07304)](https://arxiv.org/abs/2610.07304) add a
 symmetry-breaking parameter to both Landreman families, giving exact nested
-benchmarks without stellarator symmetry (abstract checked only; equations are
-re-derived before activation). Non-nested cases are cross-code (X) and named
+benchmarks without stellarator symmetry. [V] The equations are retained in
+FortSym, with exact factored proofs and independent numerical checks described
+in [the oracle contract](nested-oracles.md). Both families and both symmetry
+choices have executable inputs. Integrated/rotation/boundary bounds and
+matched external solver comparisons remain unavailable. Non-nested cases are cross-code (X) and named
 after the physics problem:
 
 | Case | Class | Model lane | Producers |
@@ -168,7 +175,7 @@ Observables by class:
 Every island or stochastic case needs a topology-analysis specification before
 activation: integration length, initial points and thresholds. The first
 Zhang--Zhu--Hegna case reproduces one of its published cases verbatim (data
-from the paper, pinned before activation). All entries are planned; the atlas
+from the paper, pinned before activation). Entries without an implementation note remain planned; the atlas
 nulls are resolved at activation.
 
 For large aspect ratio epsilon=a/R0 tending to zero, specify what remains

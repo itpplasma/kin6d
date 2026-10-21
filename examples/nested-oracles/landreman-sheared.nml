@@ -1,0 +1,3 @@
+&nested_oracle
+ family=2, eps=1.2, tau=0, saxis=1.4, lam=1.6, delta=0.14
+/
