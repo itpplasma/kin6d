@@ -513,6 +513,11 @@ family 1's pressure law blindly.
 
 ## Harmonic-pair stability audit
 
+The mode probe allows up to 800 inverse iterations by default; callers may
+override this with `iterations`. This work budget does not change acceptance:
+the unshifted metric-scaled eigen-residual must remain below `1e-6`.
+A probe that exhausts the budget is unavailable, regardless of its quotient.
+
 [V] `ideal_fb_mode_stability` formerly selected only one real Fourier phase
 with `map(pidx(..., m, ...))`. Axisymmetry decouples distinct |n|, but the
 cross term between B_pol·grad and (B_phi/R) partial_phi couples the cosine and
