@@ -27,6 +27,8 @@ kin6d_test_labels(grad_shafranov_profile_mu0_nan fast CLASSES equilibrium
     TARGETS test_gs_profile_domain)
 kin6d_test_labels(grad_shafranov_p2_profile_mu0_nan fast CLASSES equilibrium
     TARGETS test_gs_profile_domain)
+kin6d_test_labels(ideal_fb_external_kink fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_derivatives fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_vertical_newton fast CLASSES mhd
