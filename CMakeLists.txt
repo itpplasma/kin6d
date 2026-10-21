@@ -1373,6 +1373,9 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
 target_sources(kin6d_mhd PRIVATE src/mhd/ideal_xi.F90
     src/generated/kin6d_ideal_xi_leaves.f90)
+# Generated derivatives retain the primal ABI for constant partials.
+set_source_files_properties(src/generated/kin6d_ideal_xi_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_ideal_xi test/test_ideal_xi.f90)
 target_link_libraries(test_ideal_xi PRIVATE kin6d_mhd)
 add_test(NAME ideal_xi_hessian_and_analytic_limits COMMAND test_ideal_xi)
