@@ -928,6 +928,10 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
+    add_executable(check_response_strip_current gen/check_response_strip_current.f90)
+    target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
+    add_test(NAME response_strip_current_exact_identities
+        COMMAND check_response_strip_current)
     add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90

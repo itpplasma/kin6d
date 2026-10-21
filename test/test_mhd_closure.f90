@@ -58,7 +58,7 @@ program test_mhd_closure
         ring_labels_smooth
     use kin6d_gs_direct, only: gs_direct_available
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
-        ampere_n_curl
+        ampere_n_curl, mu0
     use kin6d_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &
         ring_angles_t, ring_angles_set, ring_flux_harmonic, ring_flux_from_values, &
         ring_points
@@ -117,6 +117,7 @@ program test_mhd_closure
     complex(dp), allocatable :: b2(:), f(:), a(:), b2cl(:, :), lam(:), phit(:)
     complex(dp), allocatable :: phe(:), bc(:)
     complex(dp) :: mo(2, 2), mfe(2, 2), p0(2), dmap(2, 2), vmap(2, 2), smap(2, 2), jr(2)
+    complex(dp) :: current_map(2)
     complex(dp) :: lam2(2), lam_l4, ga, gb, fa, fb, gn, bb(3), amat(2, 2)
     real(dp) :: merr, qsgn, qt, x, pa, rs, re(2), fp, dpr, gr, rb(2, 2), wl, tol
     integer :: k, st, nrat, itest, j, je(2), side, nr, ns, info, its, it
@@ -620,7 +621,7 @@ contains
         !! (1.65e-2 / 1.63e-2 / 1.64e-2, job 3225264), so nrad stays 64.
         !! KIN6D_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
         character(len=128) :: env
-        real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order
+        real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order, physical, physical2
         integer :: nr, i
         integer, parameter :: nrad_gate = 64
         real(dp), parameter :: etas(3) = [1.0e-6_dp, 1.0e-7_dp, 1.0e-8_dp]
@@ -635,13 +636,16 @@ contains
         end if
         ! (a) at twice the gated width, no growth rates: the xd-order reference
         call fe_strip(40.0_dp, 2*xd_gate, nrad_gate, none, g0, g0, g0, ierr2, &
-            cerr2)
-        call fe_strip(40.0_dp, xd_gate, nrad_gate, etas, gt, gc, gs, ierr, cerr)
+            cerr2, physical2)
+        call fe_strip(40.0_dp, xd_gate, nrad_gate, etas, gt, gc, gs, ierr, cerr, &
+            physical)
         order = log(ierr2/ierr)/log(2.0_dp)
         print '(a,es10.3,a,es10.3,a,f6.3)', "  (a) xd 0.02 rel", ierr2, &
             ", xd 0.01 rel", ierr, ", xd order", order
         call record(ierr <= 1.0e-3_dp, "(a) ideal limit: strip current = L4 sheet")
         call record(order >= 1.8_dp, "(a) strip -> sheet error converges as xd^2")
+        call record(physical2 <= 1.0e-3_dp .and. physical <= 1.0e-3_dp, &
+            '(a) physical strip current = L4 sheet at original and half width')
         do i = 1, 3
             call record(abs(gt(i)/gs(i) - 1) <= 2.0e-2_dp, &
                 "(b) torus growth rate = same-profile cylinder rate")
@@ -654,13 +658,15 @@ contains
         stop
     end subroutine strip_suite
 
-    subroutine fe_strip(r0a, xd, nrad, etas, gtor, gcyl, gsame, ierr, cerr)
+    subroutine fe_strip(r0a, xd, nrad, etas, gtor, gcyl, gsame, ierr, cerr, current_error)
         !! gcyl: R-B1 sharp-step cylinder rate; gsame: cylinder rate of the
         !! same (tanh) profile, the reference of gate (b).
         real(dp), intent(in) :: r0a, xd, etas(:)
         integer, intent(in) :: nrad
         complex(dp), intent(out) :: gtor(:), gcyl(:), gsame(:)
         real(dp), intent(out) :: ierr, cerr
+        real(dp), intent(out), optional :: current_error
+        complex(dp) :: physical_current
         nmode = 1
         mres = 2
         q0 = 1.2_dp
@@ -821,6 +827,14 @@ contains
         wl = layer_width(0.0_dp, (1.0e-6_dp, 0.0_dp), fp)
         call smat(0.0_dp, (1.0e-6_dp, 0.0_dp), wl)
         lam2 = matmul(inv2(eye2() - matmul(smap, mo)), matmul(smap, p0))
+        ! The Schur sheets replace the interior magnetic field for the outer
+        ! solve; their sum is not the current in the resolved strip. Apply the
+        ! strip's physical-current row to its actual two-ring flux traces.
+        ! In the peak-flux convention Phi=2 R0 r B_r, a cylindrical unit
+        ! stream-function sheet has int r L(Phi) dr = 2 mu0 m^2 R0 Lambda.
+        ! gen/check_response_strip_current.f90 checks this normalization exactly.
+        physical_current = sum(current_map*(p0 + matmul(mo, lam2))) &
+            /(2*mu0*mres**2*r0)
         ! direct coupled closure solve
         cl%w(ns - 1:ns, ns - 1:ns) = smap
         cl%wl(ns - 1:ns, ns - 1:ns) = -eye2()
@@ -844,6 +858,9 @@ contains
         call solve(.true.)
         lam_l4 = lam(ns - 1) + lam(ns)
         ierr = abs((lam2(1) + lam2(2))/lam_l4 - 1)
+        if (present(current_error)) current_error = abs(physical_current/lam_l4 - 1)
+        print '(a,2es13.5,a,es10.2)', '  (a) physical strip current', &
+            physical_current, ' rel to L4', abs(physical_current/lam_l4 - 1)
         print '(a,2es13.5,a,2es13.5,a,es10.2,a,es10.2)', '  (a) strip current', &
             lam2(1) + lam2(2), ' L4', lam_l4, ' rel', ierr, ' direct/Schur', cerr
         ! (b) growth rates: det(I - S(gamma) M) = 0, mesh from the cylinder rate
@@ -1063,7 +1080,7 @@ contains
         h2 = (n2 + 1)/2
         rr(1:h2) = rs + (rr(1:h2) - rs)*(rs - re(1))/sopt%xs
         rr(h2:n2) = rs + (rr(h2:n2) - rs)*(re(2) - rs)/sopt%xs
-        call strip_dirichlet_map(eq, eta, gam, rr, dmap, st2)
+        call strip_dirichlet_map(eq, eta, gam, rr, dmap, st2, current_map)
         if (st2 /= 0) error stop "strip LU"
         smap(1, :) = (vmap(1, :) - dmap(1, :))/jr(1)
         smap(2, :) = (dmap(2, :) - vmap(2, :))/jr(2)
