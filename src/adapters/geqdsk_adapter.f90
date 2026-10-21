@@ -187,13 +187,15 @@ contains
                            status, pressure=data%p)
     end subroutine
 
-    subroutine resolve_geqdsk(data, max_area, state, eq, status, edge_pressure)
+    subroutine resolve_geqdsk(data, max_area, state, eq, status, edge_pressure, &
+                              curved_lcfs)
         type(geqdsk_data_t), intent(in) :: data
         real(dp), intent(in) :: max_area
         type(gs_state_t), intent(out) :: state
         type(equilibrium_state_t), intent(out) :: eq
         integer, intent(out) :: status
         real(dp), intent(in), optional :: edge_pressure
+        logical, intent(in), optional :: curved_lcfs
         type(gs_profile_law_t) :: law
         real(dp), allocatable :: flux(:), pp(:), ff(:)
         integer :: n, i, nb
@@ -203,8 +205,11 @@ contains
         if (nb < 3) return
         ! Gfiles may repeat the closing point; the native mesher closes it.
         if (norm2(data%lcfs(:, nb) - data%lcfs(:, 1)) < 1.0e-10_dp) nb = nb - 1
+        ! Explicit smooth-contour reconstruction. Without this choice the
+        ! native polygon is retained, including any corners. Interior refinement
+        ! alone cannot remove that polygon's boundary reconstruction error.
         call initialize_gs(state, data%lcfs(:, :nb), max_area, status, &
-                           element_order=2)
+                           element_order=2, curved=curved_lcfs)
         if (status /= 0) return
         flux = data%flux - data%psi_edge
         pp = data%pp; ff = data%ff
@@ -228,8 +233,9 @@ contains
         if (status /= 0) return
         call gs_equilibrium(state, eq, status, data%f(n), 0.0_dp, law=law)
         if (status /= 0) return
-        write (eq%seed, '(a,es24.16)') &
-            'G-EQDSK LCFS/profiles; cold solve; edge pressure offset [Pa] ', &
+        write (eq%seed, '(a,l1,a,es24.16)') &
+            'G-EQDSK LCFS/profiles; cold solve; curved LCFS ', state%mapped, &
+            '; edge pressure offset [Pa] ', &
             law%p_edge - data%p(n)
     end subroutine
 

@@ -164,9 +164,14 @@ original SI record, records any classifier profile repair, and standardizes a
 copy to COCOS 3. These operations require well-formed files; libneo's reader
 currently terminates on malformed input. `geqdsk_grid` feeds the existing
 surface consumer. `resolve_geqdsk` performs a cold P2 Newton solve from the
-LCFS and derivative profiles in the boundary gauge; its original absolute
-flux gauge is restored by adding the imported boundary flux when comparing.
-An optional edge-pressure choice records its offset in the native provenance.
+LCFS and piecewise-linear derivative profiles in absolute flux, in the boundary
+gauge. For smooth LCFS samples, `curved_lcfs=.true.` retains their periodic
+cubic spline in the native mesh; the default retains the supplied polygon,
+including corners. Interior mesh refinement alone does not control this boundary
+reconstruction choice. The original absolute flux gauge is restored by adding
+the imported boundary flux when comparing.
+Native provenance records the boundary reconstruction choice and any optional
+edge-pressure offset.
 Interchange and reconstruction return candidates, with derivatives and
 continuous bounds unavailable. The legacy reader remains, with an explicit
 fixture equivalence test. The [fixture recipe](../test/fixtures/shield_torus_a10.md)
