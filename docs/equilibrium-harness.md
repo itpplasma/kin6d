@@ -23,6 +23,8 @@ gradient of the current mesh as its stopping scale. Map Newton steps retain the 
 check, and use FortSparse's existing native supernodal pivoted LU action, as
 the free-boundary KKT systems do. No inertia is consumed by this map driver.
 This factor choice avoids the scalar LDLT Schur-row update cost on the ladders.
+The factor follows the caller's OpenMP budget by default (`factor_threads = 0`);
+a positive `factor_threads` still supplies an explicit cap.
 An offset seed must be
 corrected relative to the independent exact flux; stationarity alone cannot
 pass the retained return gates.

@@ -114,7 +114,8 @@ module kin6d_ideal_map
         ! finest A3 P3 seed mesh). One thread keeps the factorisation, and with
         ! the serial cell sums the whole solve, reproducible; 0 uses all
         ! threads (faster numeric factorisation, not reproducible).
-        integer :: factor_threads = 1
+        ! 0 follows the caller's OpenMP budget; positive values cap the factor.
+        integer :: factor_threads = 0
         ! Position gauge instead of transversals + axis expansion + omega.
         logical :: position_gauge = .false.
         real(dp) :: initial_damping = 1.0e-6_dp
