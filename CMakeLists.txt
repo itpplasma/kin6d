@@ -801,7 +801,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "1725c8e16c0af9b7c6650cb82ec05aa6aec99aa4")
+set(KIN6D_FORTSYM_REVISION "8efec5bfb817ff1ed6c088971f92d927d73a5d7e")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -910,12 +910,23 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_executable(gen_ideal_mhd_batches ${shared_mhd_gen}/gen_ideal_mhd_batches.f90)
+    target_link_libraries(gen_ideal_mhd_batches PRIVATE kin6d_gen_support)
+    add_test(NAME ideal_mhd_batch_exact_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_batches>
+        -DREVISION=${KIN6D_FORTSYM_REVISION}
+        -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-mhd-batch-regeneration
+        -P ${shared_mhd_gen}/check_batches.cmake)
+    kin6d_test_labels(ideal_mhd_batch_exact_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_mhd_batches)
     add_executable(gen_ideal_mhd_coordinates
         ${shared_mhd_gen}/gen_ideal_mhd_coordinates.f90)
     target_link_libraries(gen_ideal_mhd_coordinates PRIVATE kin6d_gen_support)
     add_test(NAME ideal_mhd_coordinates_exact_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_coordinates>
         -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated/ideal_mhd_energy_generated.f90
+        -DREVISION=${KIN6D_FORTSYM_REVISION}
         -DWORK=${CMAKE_BINARY_DIR}/ideal-mhd-coordinate-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_mhd_coordinates.cmake)
     add_test(NAME ideal_xi_exact_identity_and_regeneration COMMAND ${CMAKE_COMMAND}
@@ -1870,6 +1881,7 @@ option(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK
 if(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK)
     add_subdirectory(benchmarks/equilibrium-gpu)
 endif()
+include(cmake/kin6d_mhd_batches.cmake)
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP

@@ -14,7 +14,7 @@ program gen_ideal_map
    use fortsym_diff, only: diff
    use fortsym_products, only: jvp
    use fortsym_kernel_ir, only: kernel_ir_t, lower_kernel_ir
-   use fortsym_kernel_emit, only: kernel_emit_spec_t, emit_cuda_device_ir, &
+   use fortsym_kernel_emit, only: kernel_emit_spec_t, emit_cuda_batch_ir, &
       emit_fortran_kernel_ir, TARGET_CUDA, TARGET_FORTRAN_CPU, &
       PRECISION_MIXED
    use fortsym_string, only: str_t, str, chars
@@ -135,10 +135,10 @@ program gen_ideal_map
    if (command_argument_count() > 0) then
       call get_command_argument(1, argument)
       if (trim(argument) /= '--gpu') error stop 'expected --gpu'
-      call gpu_prototype()
+      call gpu_kernels()
    end if
 contains
-   subroutine gpu_prototype()
+   subroutine gpu_kernels()
       ! Same Hessian roots as the production consumer; schedules stay outside
       ! the leaves. HVP is the JVP of the retained energy gradient.
       type(expr_t) :: direction(9), action(9)
@@ -196,7 +196,7 @@ contains
       spec%generator_revision = str(fortsym_revision)
       spec%regenerate_command = str('build-dev-fast/gen_ideal_map --gpu')
       spec%target = TARGET_CUDA
-      source = emit_cuda_device_ir(ir, spec, ok, message)
+      source = emit_cuda_batch_ir(ir, spec, ok, message)
       if (.not. ok) error stop message
       call write_source(cu, source)
       if (precision /= PRECISION_REAL64) return
