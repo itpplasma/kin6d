@@ -71,6 +71,8 @@ module kin6d_ideal_free_boundary
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_GENERAL, &
         csc_normalize_symmetric_raw, &
         FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL
+    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_energy, &
+        assignment(=)
     implicit none
     private
     public :: ideal_fb_t, ideal_fb_report_t, ideal_fb_init, ideal_fb_set_drive
@@ -82,6 +84,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_newton_step
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
     public :: ideal_fb_hypotheses_print
+    public :: ideal_fb_attach_exterior_3d
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -120,6 +123,10 @@ module kin6d_ideal_free_boundary
         integer :: nt = 0, nedge = 0
         integer, allocatable :: trace(:), edge(:, :)
         real(dp), allocatable :: s_trace(:, :, :), drive(:, :), load(:, :)
+        ! Optional full-surface R2 operator. Flattened traces are node-fast,
+        ! then real Fourier mode. The surface integrals cover a full turn.
+        type(gamma_c_3d_t), allocatable :: exterior_3d
+        real(dp), allocatable :: drive_3d(:), load_3d(:)
         ! State: shell map coefficients (3, nmode, ns), potential (nmode, ns),
         ! multipliers (3, nmode, ns).
         real(dp), allocatable :: xs(:, :, :), phi(:, :), lam(:, :, :)
@@ -534,6 +541,28 @@ contains
         status = 0
     end subroutine
 
+    subroutine ideal_fb_attach_exterior_3d(fb, boundary, drive, load, status)
+        type(ideal_fb_t), intent(inout) :: fb
+        type(gamma_c_3d_t), intent(in) :: boundary
+        real(dp), intent(in) :: drive(:), load(:)
+        integer, intent(out) :: status
+        integer :: n
+        status = IDEAL_FB_BAD_INPUT
+        n = fb%nt*fb%nmode
+        if (.not. allocated(boundary%s)) return
+        if (any(shape(boundary%s) /= [n,n])) return
+        if (size(drive) /= n .or. size(load) /= n) return
+        if (.not. all(ieee_is_finite(boundary%s))) return
+        if (.not. all(ieee_is_finite(drive))) return
+        if (.not. all(ieee_is_finite(load))) return
+        if (allocated(fb%exterior_3d)) deallocate(fb%exterior_3d)
+        allocate(fb%exterior_3d)
+        fb%exterior_3d = boundary
+        fb%drive_3d = drive
+        fb%load_3d = load
+        status = IDEAL_FB_OK
+    end subroutine
+
     subroutine ideal_fb_set_drive(fb, sample, status, closure)
         ! External traces from the field of everything outside Gamma_c plus
         ! the unit-circulation exterior part: drive a_m (single-valued
@@ -550,6 +579,8 @@ contains
         real(dp) :: gx(ng), gw(ng), x(2), tangent(2), w(0:3), bc(3), bs(3)
         real(dp) :: grad_t(2), acc, run, speed, worst, nn, at(2), dmax
         integer :: i, q, j, k, m, col
+        status = IDEAL_FB_BAD_INPUT
+        if (allocated(fb%exterior_3d)) return
         status = IDEAL_FB_OK
         call gauss_legendre(ng, gx, gw)
         gx = 0.5_dp*(gx + 1); gw = 0.5_dp*gw
@@ -940,7 +971,7 @@ contains
         integer, intent(out) :: status
         real(dp), intent(out), optional :: lagrangian, min_jacobian
         real(dp), allocatable :: gfull(:), gx(:, :, :), gf(:, :), res(:, :, :), u(:)
-        real(dp), allocatable :: cx(:, :, :)
+        real(dp), allocatable :: cx(:, :, :), exterior_load(:)
         real(dp) :: wp, ev, ec, minp, mins, cm
         integer :: st, s, m, c, p, a, k
         allocate (gfull(fb%plasma%ndof), gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns), &
@@ -959,6 +990,19 @@ contains
         if (.not. mins > 0 .or. .not. ieee_is_finite(ev)) status = IDEAL_FB_FOLDED
         ! Gamma_c terms.
         ec = 0
+        if (allocated(fb%exterior_3d)) then
+            u = reshape(transpose(fb%phi(:,fb%trace)),[fb%nt*fb%nmode])
+            allocate(exterior_load(size(u)))
+            call gamma_c_3d_energy(fb%exterior_3d,u,fb%drive_3d,fb%load_3d, &
+                fb%mu0,ec,exterior_load,st)
+            if (st /= 0) then
+                status = IDEAL_FB_BEM_FAILED
+                return
+            end if
+            ec = ec/fb%nfp
+            gf(:,fb%trace) = gf(:,fb%trace) + &
+                transpose(reshape(exterior_load,[fb%nt,fb%nmode]))/fb%nfp
+        else
         do m = 1, fb%nmode
             cm = ideal_fb_mode_weight(fb, m)/fb%mu0
             k = harmonic(m)
@@ -968,6 +1012,7 @@ contains
             gf(m, fb%trace) = gf(m, fb%trace) + cm*(matmul(fb%s_trace(:, :, k), u) &
                 - fb%load(:, m))
         end do
+        end if
         call constraint_residual(fb, res)
         ! C^T lambda on xs and on the plasma Gamma_p dofs.
         cx = 0
@@ -1016,7 +1061,7 @@ contains
         integer, allocatable :: sconn(:, :), ci(:), cj(:)
         real(dp), allocatable :: cv(:)
         real(dp) :: ev, mins, cm
-        integer :: e, a, m, c, l, nl, cnt, i, k, p, s, t1, t2, nsb, cap
+        integer :: e, a, m, c, l, nl, cnt, i, k, p, s, t1, t2, nsb, cap, m2
         nl = 4*fb%nmode*fb%nloc
         call plasma_hessian(fb, hp)
         allocate (blocks(nl, nl, fb%ncell), gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns))
@@ -1038,7 +1083,9 @@ contains
         call csr_build_pattern(nsb, sconn, .false., hs)
         call csr_assemble_blocks(hs, sconn, blocks)
         deallocate (blocks)
-        cap = size(hp%val) + size(hs%val) + fb%nmode*fb%nt**2 &
+        cap = fb%nmode*fb%nt**2
+        if (allocated(fb%exterior_3d)) cap = (fb%nmode*fb%nt)**2
+        cap = size(hp%val) + size(hs%val) + cap &
             + 2*3*fb%nmode*(size(fb%lap_val) + 2*fb%ns) + fb%np
         allocate (ci(cap), cj(cap), cv(cap))
         cnt = 0
@@ -1052,6 +1099,20 @@ contains
                 call push(shell_global(i), shell_global(hs%colidx(p)), -hs%val(p))
             end do
         end do
+        if (allocated(fb%exterior_3d)) then
+            do m2 = 1, fb%nmode
+                do m = 1, fb%nmode
+                    do t2 = 1, fb%nt
+                        do t1 = 1, fb%nt
+                            call push(iphi(fb,m,fb%trace(t1)), &
+                                iphi(fb,m2,fb%trace(t2)), &
+                                -fb%exterior_3d%s(t1+(m-1)*fb%nt, &
+                                t2+(m2-1)*fb%nt)/(fb%mu0*fb%nfp))
+                        end do
+                    end do
+                end do
+            end do
+        else
         do m = 1, fb%nmode
             cm = ideal_fb_mode_weight(fb, m)/fb%mu0
             k = harmonic(m)
@@ -1062,6 +1123,7 @@ contains
                 end do
             end do
         end do
+        end if
         do s = 1, fb%ns
             do m = 1, fb%nmode
                 do c = 1, 3
@@ -2251,6 +2313,7 @@ contains
         integer :: first, last, a, c, phase, i, p, n, nnz, s
         status = IDEAL_FB_BAD_INPUT
         np_m = 0
+        if (allocated(fb%exterior_3d)) return
         if (m < 1 .or. m > fb%nmode) return
         if (fb%nmode > 1) then
             if (maxval(abs(fb%plasma%x(:, 2:, :))) > 1.0e-10_dp) return
@@ -2561,6 +2624,7 @@ contains
         if (present(dense_limit)) limit = dense_limit
         status = IDEAL_FB_BAD_INPUT
         h%status = status
+        if (allocated(fb%exterior_3d)) return
         if (fb%nf > limit .or. fb%np > limit) return
         status = IDEAL_FB_SOLVE_FAILED
         nl = size(fb%slide, 3)

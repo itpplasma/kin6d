@@ -1478,6 +1478,7 @@ target_sources(kin6d_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90)
 target_sources(kin6d_equilibrium PRIVATE
     src/equilibrium/equilibrium_boundary_3d.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/ideal_free_boundary_bem3d.f90)
 add_executable(test_equilibrium_boundary_3d
     ${fortfem_SOURCE_DIR}/src/mesh/sphere_surface_mesh.f90
     ${fortfem_SOURCE_DIR}/src/mesh/sphere_curved_panel.f90
@@ -1488,6 +1489,9 @@ add_executable(test_equilibrium_boundary_3d
     test/test_equilibrium_boundary_3d.f90)
 target_link_libraries(test_equilibrium_boundary_3d PRIVATE kin6d)
 add_test(NAME equilibrium_boundary_3d_d6 COMMAND test_equilibrium_boundary_3d)
+add_test(NAME ideal_fb_bem3d_derivatives COMMAND test_ideal_free_boundary bem3d)
+set_tests_properties(ideal_fb_bem3d_derivatives PROPERTIES TIMEOUT 600
+    PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(equilibrium_boundary_3d_d6 PROPERTIES TIMEOUT 240
     PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 target_link_libraries(kin6d_feec_n PUBLIC
