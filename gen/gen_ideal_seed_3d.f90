@@ -109,7 +109,7 @@ program gen_ideal_seed_3d
     if (proof%verdict /= VERDICT_TRUE) error stop 'poloidal phase volume unproved'
     call w%line('end module kin6d_ideal_seed_3d_leaves')
     call w%close()
-    print '(a)', '[V] FortSym closed flux, iota and position/poloidal-phase gauge identities proved'
+    print '(a)', 'FortSym closed flux, iota and position/poloidal-phase gauge identities proved'
 contains
     function dot(a, b) result(value)
         type(expr_t), intent(in) :: a(3), b(3)

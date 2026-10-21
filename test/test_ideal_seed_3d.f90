@@ -138,9 +138,9 @@ program test_ideal_seed_3d
     coefficients(1,0,1)=0.4_dp;coefficients(4,0,1)=0.5_dp
     call ideal_seed_3d_init(threaded,seed,mesh,coefficients,3,flux,profile,status)
     if(status==0) error stop 'negative cylindrical radius admitted'
-    print '(a,3es14.5)', '[V] seed boundary error, energies (1/4 threads): ', error, e1, e4
-    print '(a)', '[V] flux, sheared profiles, fixed wall, derivatives and fold rejection pass'
-    print '(a)', '[V] initializer candidate only; continuous bounds unavailable'
+    print '(a,3es14.5)', 'seed boundary error, energies (1/4 threads): ', error, e1, e4
+    print '(a)', 'flux, sheared profiles, fixed wall, derivatives and fold rejection pass'
+    print '(a)', 'initializer candidate only; continuous bounds unavailable'
 contains
     subroutine prolongation_check()
         type(ideal_map_t) :: coarse, fine
