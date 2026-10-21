@@ -3,7 +3,7 @@ program test_ideal_seed_3d
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh, ideal_seed_boundary_coefficients
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_rdof, ideal_map_energy, &
-        ideal_map_init, ideal_map_freeze
+        ideal_map_init, ideal_map_freeze, ideal_map_prolong
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_seed_3d_leaves, only: seed_boundary_mode, &
@@ -111,6 +111,7 @@ program test_ideal_seed_3d
     call mode_at(inputs - h*direction, minus)
     if (maxval(abs((plus - minus)/(2*h) - tangent)) > 1e-10_dp) &
         error stop 'boundary JVP independent difference'
+    call prolongation_check()
     ! Reversing Z reverses the supplied angle; it does not fold the map.
     coefficients(3:4, :, :) = -coefficients(3:4, :, :)
     call ideal_seed_3d_init(threaded, seed, mesh, coefficients, 3, flux, &
@@ -141,6 +142,62 @@ program test_ideal_seed_3d
     print '(a)', '[V] flux, sheared profiles, fixed wall, derivatives and fold rejection pass'
     print '(a)', '[V] initializer candidate only; continuous bounds unavailable'
 contains
+    subroutine prolongation_check()
+        type(ideal_map_t) :: coarse, fine
+        type(gs_state_t) :: coarse_mesh, fine_mesh
+        type(toroidal_seed_t) :: frozen
+        real(dp) :: extended(4, -2:2, 0:3), y(2), expected(3, 3)
+        real(dp), allocatable :: wall(:, :, :), new_modes(:, :, :)
+        integer :: a, local
+        extended = 0
+        extended(:, -1:1, :) = coefficients
+        extended(1, 2, 1) = 0.002_dp
+        call ideal_seed_disk_mesh(coarse_mesh, 8, 2, local)
+        if (local /= 0) error stop 'coarse prolongation mesh'
+        call ideal_seed_disk_mesh(fine_mesh, 16, 2, local)
+        if (local /= 0) error stop 'fine prolongation mesh'
+        call ideal_seed_3d_init(coarse, frozen, coarse_mesh, coefficients, &
+            3, flux, profile, local)
+        if (local /= 0) error stop 'coarse prolongation seed'
+        call ideal_seed_3d_init(fine, frozen, fine_mesh, extended, &
+            3, flux, profile, local)
+        if (local /= 0) error stop 'fine prolongation seed'
+        ! An affine function composed with the curved reference geometry is
+        ! exactly represented by the isoparametric basis. This oracle
+        ! deliberately differs from the fine wall and is no equilibrium claim.
+        do a = 1, coarse%nodes
+            y = coarse%reference(:, a) - [2.0_dp, 0.0_dp]
+            call manufactured(y, coarse%x(:, :, a))
+        end do
+        wall = fine%x
+        new_modes = fine%x(:, 4:5, :)
+        call ideal_map_prolong(fine, coarse, local)
+        if (local /= 0) error stop '3D Fourier and mesh prolongation'
+        do a = 1, fine%nodes
+            if (fine%boundary(a)) then
+                if (maxval(abs(fine%x(:, :, a) - wall(:, :, a))) > 0) &
+                    error stop 'prolongation changed physical wall'
+            else
+                y = fine%reference(:, a) - [2.0_dp, 0.0_dp]
+                call manufactured(y, expected)
+                if (maxval(abs(fine%x(:, :3, a) - expected)) > 2e-13_dp) &
+                    error stop 'manufactured Fourier prolongation'
+            end if
+        end do
+        if (maxval(abs(fine%x(:, 4:5, :) - new_modes)) > 0) &
+            error stop 'prolongation changed new harmonics'
+    end subroutine
+
+    subroutine manufactured(y, x)
+        real(dp), intent(in) :: y(2)
+        real(dp), intent(out) :: x(3, 3)
+        x = 0
+        x(1, 1) = 3 + 0.4_dp*y(1)
+        x(2, 1) = 0.5_dp*y(2)
+        x(1, 2) = 0.01_dp*y(1)
+        x(2, 3) = 0.02_dp*y(2)
+    end subroutine
+
     subroutine mode_at(x, y)
         real(dp), intent(in) :: x(6)
         real(dp), intent(out) :: y(4)

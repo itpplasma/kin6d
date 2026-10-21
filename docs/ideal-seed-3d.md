@@ -79,3 +79,28 @@ Run `test_equilibrium_3d TAU MPOL NTOR BOUNDARY_NODES [DEGREE]` to reproduce
 one case (`TAU=0` for Landreman, `0.4` for Issan). A physical-accuracy ladder
 must refine both the boundary/unknown Fourier resolution and the P2/P3 mesh;
 passing the coarse CI smoke does not establish 1% accuracy.
+
+## Continuation and the remaining phase gauge
+
+`ideal_map_prolong` transfers common interior Fourier modes between meshes
+with the same reference domain, frozen profiles and field periods. For
+phi-fixed maps it preserves the fine initializer's physical wall and its
+new Fourier harmonics. Both maps must use the same increment gauge. The
+caller remains responsible for the shared reference-domain/profile contract;
+interpolation does not establish convergence or a continuous error bound.
+
+Fixing the toroidal coordinate does not remove every continuum relabelling.
+In `(s,theta,phi)`, the transformation `theta -> theta + f(s)`, with
+`f(1)=0`, fixes the wall and pressure. Its Jacobian is a shear of determinant
+one and preserves the frozen density `(0,iota(s)*bt(s),bt(s))`. The retained
+FortSym generator proves that composing any map Jacobian with this shear
+preserves its determinant and its product with the frozen density. Thus it
+preserves the physical field and energy in the continuum. These four exact
+identities supplement the initializer's existing five identities.
+
+Finite-element interpolation need not preserve this gauge exactly. Near-null
+phase directions are a possible source of slow damped Newton convergence;
+that explanation requires numerical evidence at the state under test. The
+proof alone establishes neither a discrete nullspace nor quadratic Newton
+convergence. The manufactured continuation test checks interior interpolation,
+retention of new harmonics and preservation of the physical wall.
