@@ -53,7 +53,8 @@ module kin6d_ideal_map
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, csc_normalize_symmetric_raw, &
         FORTSPARSE_ORDER_AMD, &
-        FORTSPARSE_SYM_INDEFINITE, sparse_factor_stats, sparse_factor_stats_t, &
+        FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
+        sparse_factor_stats, sparse_factor_stats_t, &
         sparse_refactor
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
@@ -113,7 +114,8 @@ module kin6d_ideal_map
         ! finest A3 P3 seed mesh). One thread keeps the factorisation, and with
         ! the serial cell sums the whole solve, reproducible; 0 uses all
         ! threads (faster numeric factorisation, not reproducible).
-        integer :: factor_threads = 1
+        ! 0 follows the caller's OpenMP budget; positive values cap the factor.
+        integer :: factor_threads = 0
         ! Position gauge instead of transversals + axis expansion + omega.
         logical :: position_gauge = .false.
         real(dp) :: initial_damping = 1.0e-6_dp
@@ -1108,6 +1110,14 @@ contains
                     end do
                 end do
             end do
+            ! The scalar-energy Hessian has one authoritative triangle.
+            ! Reflect after P^T H P: cancellation in independently evaluated
+            ! contractions must not create an antisymmetric Newton operator.
+            do c = 1, nr
+                do r = 1, c - 1
+                    blocks(r, c, e) = blocks(c, r, e)
+                end do
+            end do
             deallocate (fa, fb, full, half)
         end do
         !$omp end parallel do
@@ -1617,9 +1627,12 @@ contains
             return
         end if
         report%assembly_roundoff = max(report%assembly_roundoff, correction)
-        ! The damped system is symmetric and may be indefinite; use native
-        ! pivoted LDL^T with the same symmetry contract as the assembled KKT.
-        slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+        ! The canonical matrix above remains symmetric and may be indefinite.
+        ! Use the native supernodal pivoted LU action (also used for the
+        ! free-boundary KKT): scalar LDLT Schur-row updates are too costly
+        ! on the map ladders. This changes only the factor, not the Hessian.
+        slv%options%symmetry = FORTSPARSE_SYM_GENERAL
+        slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         slv%options%ordering = FORTSPARSE_ORDER_AMD
         if (gs_direct_available()) then
             if (.not. gs_direct_mpi_ready()) then
