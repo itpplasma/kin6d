@@ -18,7 +18,9 @@ program gs_load_bench
     real(dp) :: integral, tol, cells_best
     real(dp), allocatable :: mass_flat(:)
     integer :: j, status, i, n, nrep, rep, unit, evaluations, nread
-    character(64) :: mode, text, action, path
+    integer :: path_length, path_status
+    character(64) :: mode, text, action
+    character(:), allocatable :: path
     call get_command_argument(1, mode)
     call get_command_argument(2, text); read (text, *) area
     call get_command_argument(3, text); read (text, *) nrep
@@ -28,7 +30,11 @@ program gs_load_bench
     end if
     if (command_argument_count() >= 5) then
         call get_command_argument(4, action)
-        call get_command_argument(5, path)
+        call get_command_argument(5, length=path_length, status=path_status)
+        if (path_status /= 0) error stop 'reference path argument'
+        path = repeat(' ', path_length)
+        call get_command_argument(5, path, status=path_status)
+        if (path_status /= 0) error stop 'reference path truncated'
     end if
     do i = 1, 64
         contour(:, i) = [3 + cos(2*acos(-1.0_dp)*real(i - 1, dp)/64), &
