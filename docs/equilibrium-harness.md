@@ -13,6 +13,7 @@ Missing field/chart exports or inconsistent lane provenance fail the run.
 | Lane | Registry cases | Independent oracle |
 |---|---|---|
 | map | `solovev`, `shaped` | exact flux and a separate 2D GS solve |
+| map | `landreman_3d_nested`, `issan_3d_nonsymmetric` | exact nested B/p; matched integer-family boundary, flux and profiles |
 | map | `seed`, `seedshaped` | exact flux from a displaced nested-axis seed, and 2D GS |
 | psi | `limiter-jump`, `limiter-smooth` | manufactured compact flux bump plus exact coil flux |
 | psi | `targets-jump`, `targets-smooth` | the same oracle with target-mean LCFS |
@@ -47,12 +48,19 @@ that same quadratic phase.
 
 Each report records the case/lane/start/resolution, convergence status,
 iterations, independent oracle error, seed error and an a posteriori residual.
-The map residual is the retained sigma-normalised D3 L2 force measure;
+The legacy N=0 map residual is the retained sigma-normalised D3 L2 force measure;
 sigma excludes the curl-free toroidal background. The manufactured psi
 residual is the discrete forced-equation residual divided by the manufactured
 load norm. These are different norms and must not be compared as equal
 quantities. In particular, the manufactured body load is not unforced ideal
 MHD, so its residual is not labelled as D3 force balance.
+
+The boundary/profile 3D driver uses `map_3d_equilibrium` for the common
+physical-field interface. It checks the returned free gradient directly,
+normalized by its initial value, and names that coefficient norm explicitly.
+It is not a D3 force norm or a state-error estimator. See
+[the 3D initializer](ideal-seed-3d.md) for the matched integer-family setup,
+1728-point diagnostics and unavailable sheared-profile/QA/estimator capabilities.
 
 All these results remain **candidate** states. State and derivative error
 bounds are explicitly **unavailable**: sampled oracle errors and algebraic
