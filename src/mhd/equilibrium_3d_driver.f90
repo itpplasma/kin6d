@@ -136,11 +136,11 @@ contains
             report%residual = state%solve%gradient &
                 /max(tiny(1.0_dp),state%solve%initial_gradient)
             ! A solver's roundoff-stall success is insufficient for this gate.
-            if (report%residual > state%tolerance) return
             call metrics(state,status)
             if (status /= 0) return
             report%oracle_error = state%magnetic_error
             report%residual_norm = 'relative free reduced-gradient l2'
+            if (report%residual > state%tolerance) return
             call map_3d_equilibrium(state%map,state%seed,eq,status, &
                 toroidal_flux=state%toroidal_flux)
             if (status /= 0) return
