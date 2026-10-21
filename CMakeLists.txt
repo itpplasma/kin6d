@@ -295,6 +295,10 @@ target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_direct.f90)
 message(STATUS "KIN6D sparse direct backend: native FortSparse CPU")
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_coils.f90 src/equilibrium/gs_coupling.f90
     src/equilibrium/gs_free_boundary.f90 src/equilibrium/gs_coil_inverse.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/equilibrium_harness.f90)
+add_executable(test_equilibrium_harness test/test_equilibrium_harness.f90)
+target_link_libraries(test_equilibrium_harness PRIVATE kin6d)
+add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90)
@@ -371,6 +375,8 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+add_test(NAME ideal_seed_boundary_label
+    COMMAND test_ideal_map_axisymmetric seedboundary)
 add_test(NAME ideal_map_derivatives_and_rotation_null
     COMMAND test_ideal_map_axisymmetric derivatives)
 add_test(NAME ideal_map_n3_leakage COMMAND test_ideal_map_axisymmetric leakage)
@@ -479,6 +485,13 @@ endif()
 add_test(NAME gs_free_boundary_t4_green_function_cross_check COMMAND test_gs_fb_greens)
 set_tests_properties(gs_free_boundary_t4_green_function_cross_check PROPERTIES TIMEOUT 1800)
 add_test(NAME gs_free_boundary_t3_manufactured_newton COMMAND test_gs_fb_manufactured)
+foreach(start reference rp rm zp zm el)
+    add_test(NAME equilibrium_d8_psi_offset_${start}
+        COMMAND test_gs_fb_manufactured offset ${start})
+    set_tests_properties(equilibrium_d8_psi_offset_${start} PROPERTIES
+        TIMEOUT 600 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 set_tests_properties(gs_free_boundary_t3_manufactured_newton PROPERTIES TIMEOUT 1800)
 add_executable(test_gs_coupled_majorant test/test_gs_coupled_majorant.f90)
 target_link_libraries(test_gs_coupled_majorant PRIVATE kin6d_gs_fb_test)

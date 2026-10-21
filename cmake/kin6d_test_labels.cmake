@@ -553,6 +553,13 @@ endif()
 kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
 
+# D8/M6: same native solver and manufactured oracle as the T3 ladder.
+foreach(start reference rp rm zp zm el)
+    kin6d_test_labels(equilibrium_d8_psi_offset_${start} fast CLASSES equilibrium
+        TARGETS test_gs_fb_manufactured)
+endforeach()
+kin6d_test_labels(equilibrium_d8_registry_contract fast CLASSES equilibrium
+    TARGETS test_equilibrium_harness)
 kin6d_test_labels(equilibrium_nested_exact_oracles fast CLASSES equilibrium
     TARGETS test_nested_oracles)
 
@@ -568,3 +575,6 @@ foreach(k 2 3)
     kin6d_test_labels(equilibrium_core_map_state_p${k} fast CLASSES mhd
         TARGETS test_map_equilibrium)
 endforeach()
+
+kin6d_test_labels(ideal_seed_boundary_label fast CLASSES mhd
+    TARGETS test_ideal_map_axisymmetric)
