@@ -10,6 +10,11 @@ on:
       - '.github/workflows/cpu-precision.yml'
   merge_group:
   workflow_dispatch:
+# Only PR runs share a group; pending push and merge-group runs stay independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   comparison:
     runs-on: ubuntu-latest

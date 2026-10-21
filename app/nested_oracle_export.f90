@@ -122,9 +122,9 @@ program nested_oracle_export
     call oracle%averages(quadrature, coarse)
     call oracle%averages(2*quadrature, fine)
     call oracle%rotation(0.0_dp, turns, 1e-7_dp, iota(1), status)
-    if (status /= 0) error stop 'axis rotation integration failed'
+    if (status /= 0) error stop 'axis flux-period evaluation failed'
     call oracle%rotation(delta, turns, 1e-7_dp, iota(2), status)
-    if (status /= 0) error stop 'edge rotation integration failed'
+    if (status /= 0) error stop 'edge flux-period evaluation failed'
     call oracle%rotation(delta, 2*turns, 3e-8_dp, fine_iota, status)
     if (status /= 0) error stop 'rotation refinement failed'
     iota(3) = abs(fine_iota - iota(2))
@@ -133,7 +133,8 @@ program nested_oracle_export
     call result%create(run)
     call result%attribute('physical_model', 'smooth nested ideal MHD; mu0=1')
     call result%attribute('source', 'arXiv:2609.26742v1; arXiv:2610.07304v1')
-    call result%attribute('symbolic_proof', 'eight exact FortSym divergence/tension lemmas')
+    call result%attribute('symbolic_proof', &
+        'eight field and six flux-period FortSym identities')
     call result%attribute('coordinates', &
         'Cartesian vectors; theta clockwise; geometric phi positive')
     call result%attribute('field_rows', &
@@ -157,7 +158,7 @@ program nested_oracle_export
     call result%write('moment_refinement', abs(fine - coarse), 'normalized', &
                       'difference under doubled quadrature', 'moment', status='indicator')
     call result%write('iota', iota, '1', 'axis,edge,edge refinement difference', &
-                      'rotation', status='rotation reference; ODE and finite turn bound unavailable')
+                      'rotation', status='flux-period quadrature reference; continuous bound unavailable')
     call result%write('boundary_sampled_error', error, 'm', &
         'staggered Fourier reconstruction error', &
                       status='sampled indicator; continuous boundary bound unavailable')

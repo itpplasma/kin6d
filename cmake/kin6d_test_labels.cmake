@@ -591,6 +591,13 @@ endif()
 kin6d_test_labels(ideal_seed_boundary_label fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 
+kin6d_test_labels(ideal_seed_3d_boundary_profiles fast CLASSES mhd
+    TARGETS test_ideal_seed_3d)
+if(TARGET gen_ideal_seed_3d)
+    kin6d_test_labels(ideal_seed_3d_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_seed_3d)
+endif()
+
 kin6d_test_labels(ideal_mhd_coordinate_analytic_limits fast CLASSES mhd
     TARGETS test_ideal_mhd_coordinates)
 if(TARGET gen_ideal_mhd_coordinates)
