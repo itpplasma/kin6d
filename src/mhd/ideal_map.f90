@@ -762,6 +762,9 @@ contains
         allocate (map%omega_gauge(n, n, map%cells))
         map%omega_gauge = 0
         scale = 0
+        !$omp parallel do default(shared) schedule(static) &
+        !$omp private(e,g,dg,ginv,y,chi_s,v,w,metric,h33,pos,d1,d2,d3,j) &
+        !$omp reduction(max:scale)
         do e = 1, map%cells
             do g = 1, map%nq
                 dg = matmul(map%reference(:, map%conn(:, e)), &
@@ -785,6 +788,7 @@ contains
                     + w*spread(v(:n), 2, n)*spread(v(:n), 1, n)
             end do
         end do
+        !$omp end parallel do
         map%omega_gauge = map%gauge_weight*map%omega_gauge/max(scale, tiny(1.0_dp))
         if (map%omega_elimination) map%omega_gauge = 0
     end subroutine
