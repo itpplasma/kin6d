@@ -20,6 +20,103 @@ The complete design envelope lives in
 are not backlogs. The roadmap maintains only a small active path chosen by
 scientific value and leverage.
 
+## Controller continuation checkpoint: October 21, 2026
+
+The user requested that agents conclude and preserve this work for the next
+controller. Recheck forge and live-job state before acting. Keep queued branches
+immutable. The controller owns integration and promotion. Do not start further
+layers, jobs, agents or campaigns during this conclusion checkpoint.
+
+[CI migration #52](https://github.com/itpplasma/kin6d/pull/52) merged through the
+normal queue as 5068dfcb7f7255e0dc3c0fd0c9c71a0108f865e0. All required native gates
+passed on owned hardware. All PR CI skips, including full-ci-labelled PRs;
+actual required execution occurs in the merge queue. Preserve the workflows,
+native commands, compiler constraints and selectors. Hosted checks are advisory.
+The earlier queue lost runner communication despite native map output passing
+11/11; retain the infrastructure failure without fabricating a green status.
+
+- [#39 S0 volume spectrum](https://github.com/itpplasma/kin6d/pull/39) is queued
+  at 6500ddccc6611f75a0a04891127e2a457deb6943 under controller approval. Native
+  21817433 passes 6/6 and four exact identities. All 488 sealed native inputs
+  match qualified 4451be6a except test print prefixes. Strict workflows are
+  byte-identical; only S0 build/test selectors were added. Await actual merge.
+- [#35 3D readback](https://github.com/itpplasma/kin6d/pull/35) is published at
+  558f1cee39c697b7422562077c2497d57bdd1a86, awaiting controller final review.
+  Native 21817109 passes 14/14; nine inverse identities are exact. All 488 native
+  inputs match qualified 616ab0b. Workflows remain byte-identical, with qualified
+  selectors added. Do not self-promote.
+- [#41 local continuum/rigid subspace](https://github.com/itpplasma/kin6d/pull/41)
+  remains published at 1c9cfce9d360c04e3098a6d06d7e2a99eb0f878d. Continuation
+  branch completion/kin6d41-20261021 holds
+  f50308e2cefcc14c32e479894679ed7ec1103714. Native 21817477 passes 9/9, with four
+  S0 and five toroidal exact identities per kind. All 489 sealed inputs retain
+  production/generated/dependency bytes; two test print prefixes changed. After
+  #39 actually squashes, transfer only the upper layer using prepared lower
+  4451be6ad1de121b37d7f9c78611c31d59d25b8c, retarget, port selectors and compare
+  seals. Controller approval permits normal queue after that verified transfer
+  and a final-head receipt.
+- [#44 wall-preserving prolongation](https://github.com/itpplasma/kin6d/pull/44)
+  remains published at 99e66f91cbaef82033e6e85e0d8bdfb5b0465848. Continuation
+  branch completion/kin6d44-20261021 holds
+  db30648cd3b1765e36502a2c7be53eeb75d16f0d. Native 21817548 passes 14/14 in
+  33.33 seconds; total job 2:16, guard peak 183 MiB. CAS 3319449 seed44 proves
+  closed-flux/iota/position/poloidal-phase identities. Generated leaves, support
+  and symbolic statements match; only a generator print prefix changed. Its
+  prepared lower is 558f1cee39c697b7422562077c2497d57bdd1a86; original published
+  lower was d5386131048ab9e38b68cc3c17e7cc2ed87ecf9f. After #35 actually squashes,
+  transfer the prepared layer using 558f1ce, compare seals and return to the
+  controller. Do not retarget the published PR before the lower squash.
+- [#46 active axis columns](https://github.com/itpplasma/kin6d/pull/46) remains
+  unchanged draft f580c39678cba9ed0a168eaec85e24f65d3cb04f. Its old lower is
+  99e66f91cbaef82033e6e85e0d8bdfb5b0465848. After #44 actually squashes, transfer
+  its independent 12-line production change and Hessian-action oracle, qualify
+  affected native tests, and return evidence to the controller. No new #46 job
+  was started during conclusion.
+- [#47 swept BEM coupling](https://github.com/itpplasma/kin6d/pull/47) remains
+  draft ea255dbe66b763bcdce01313fae467b406db9a56. Continuation branch
+  completion/kin6d47-performance-20261021 holds
+  d34d080e2f4125b6429b311365ffea6839d3dff9. Original 21817424 passes 6/7, with
+  Landreman alone timing out at the unchanged 1800-second limit. Diagnostic
+  21817533 locates adaptive geometry assembly on eight active cores. The bounded
+  consumer repair passes 8/8 direct equivalence/native controls in 21817540.
+  Original slow gates 21817541 remain running. HOLD promotion until those exact
+  gates pass; zero external MATMUL relocations alone are not acceptance.
+
+Never replay a whole lower stack after squash. Preserve upper-layer changes
+and compare sealed native inputs before reusing evidence. All prepared candidates
+above were pushed to their named continuation branches without changing the
+published upper PR bases or queued #39.
+
+BEM47 retains merged [FortFEM](https://github.com/lazy-fortran/fortfem) pin
+77c6b8c2862009bd6c7dfd969abfad5da54b6467. The controller reviewed the consumer
+repair: nondeferred first-jet fallback, the same cylindrical generated
+position/first leaves, preserved custom/subclass dispatch, and callback-only
+tiny contractions. Geometry, edge basis, quadrature, resolutions, tolerances,
+case deadlines and global flags are unchanged. No upstream cache was started;
+that proposal remains held until a concrete remaining need is measured.
+
+Durable user service kin47-perf-d34d080 collects 21817541 through final sync,
+report and checksums. Service kin6d-native-21817548 has collected #44's terminal
+native output. Neither starts an agent or promotes code. The local continuation
+index ~/data/handoffs/20261021_completion/kin6d.md links source seals, transfer
+receipts, raw outputs, reports and manifests outside Git. Follow it before
+repeating tests. The original unmanaged CLI was fenced and retired without
+cancelling scientific jobs, runners or branches.
+
+Scientific limits remain explicit: three KS1d inertia pilots exhausted six
+hours without a count. Failed dependent chains were removed. The c256 equilibrium
+is admitted but its eigenpair fails the original residual gate. No ITER stability
+sign, lowest branch, marginality or production 3D convergence is established.
+Six admitted near-zero probes and four DCON grids retain unresolved physical-map
+and normalization differences. The extracted large rest-block fixture remains
+private and outside Git, with no admitted completed factor/count/solve. Do not
+restart the six-hour campaign because a small-case repair passed. S0 evidence
+covers volume/analytic contracts, local continuum and projected rigid subspaces,
+not a full global TAE/kink or continuous certificate.
+
+The next controller should collect #47's live result, preserve #39's normal queue,
+review #35, and then transfer approved upper layers in order.
+
 ## Rules for every milestone
 
 The non-negotiable scientific principles in
