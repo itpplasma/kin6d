@@ -182,13 +182,13 @@ contains
         real(dp) :: q, scale, exact, err, previous(2), lambda, wp, wv, ws
         real(dp) :: jv(4), gq, gf, factor, k0, k1, t, gx(96), gw(96)
         real(dp) :: growth_errors(3), physical_lambda, physical_mass, density, r
-        integer :: first_level, alevel, cell, point
+        integer :: last_level, alevel, cell, point
         logical :: rates
         integer :: level, iq, j, a, st
         rates = .false.
         if (present(growth)) rates = growth
-        first_level = 1
-        if (rates) first_level = 0
+        last_level = 2
+        if (rates) last_level = 3
         density = 1.3_dp
         call gauss_legendre(96, gx, gw)
         k0 = 0; k1 = 0
@@ -199,7 +199,7 @@ contains
         end do
         factor = k1/(k1 + 0.1_dp*k0)
         previous = huge(1.0_dp)
-        do level = first_level, 2
+        do level = 1, last_level
             kink_major = 40.0_dp*2**level
             field%major = kink_major
             allocate (contour(2, 16), chain(2, 16))
@@ -277,7 +277,7 @@ contains
                     ! This is the projected rigid subspace, not the minimum
                     ! over the full displacement space.
                     call rigid_spectrum(em%total,physical_mass,physical_lambda)
-                    alevel = level+1
+                    alevel = level
                     growth_errors(alevel) = abs(physical_lambda-exact/density) &
                         /abs(exact/density)
                     print '(a,f7.1,a,4es18.9)', '[V] rigid kink R=',kink_major, &
