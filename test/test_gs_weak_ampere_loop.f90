@@ -44,9 +44,9 @@ program test_gs_weak_ampere_loop
         end do
         call solve_gs(state, mu0, -16*c/mu0, 0.0_dp, status)
         if (status /= 0) error stop 'Solovev solve'
-        call gs_weak_boundary_current(state, mu0, law, 8, current, status)
+        call gs_weak_boundary_current(state, mu0, law, 16, current, status)
         if (status /= 0) error stop 'weak current'
-        call gs_weak_boundary_current(state, mu0, law, 16, refined, status, &
+        call gs_weak_boundary_current(state, mu0, law, 32, refined, status, &
                                       source_current=source)
         if (status /= 0) error stop 'refined weak current'
         if (abs(current - refined) > 1.0e-10_dp*abs(exact)) &

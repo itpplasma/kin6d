@@ -39,7 +39,9 @@ program test_gs_inverse
     call initialize_gs(circular, boundary, area, status, 2)
     if (status /= 0) error stop 'constant-q unit mesh failed'
     call solve_gs_constant_q(circular, 1.5_dp, 1.0_dp, inverse, status, &
-        flux_points=knots, angular_points=128, relative_tolerance=1.0e-6_dp,q_tolerance=.005_dp,verify_jacobian=(trim(mode)/="fine"))
+        flux_points=knots, angular_points=128, &
+        relative_tolerance=1.0e-6_dp,q_tolerance=.005_dp, &
+        verify_jacobian=(trim(mode)/="fine"))
     print *, 'constant-q status/iterations/GS residual:', status, inverse%iterations, &
         inverse%coupled_residual
     print *, 'constant-q Jacobian independent check:', inverse%jacobian_check_error
