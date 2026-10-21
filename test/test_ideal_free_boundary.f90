@@ -2,6 +2,7 @@ module ideal_fb_test_field
     ! Smooth nested frozen data for the derivative checks: elliptic labels
     ! about (3.05, 0), F = 6 T m, pressure linear in the label.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_ideal_map, only: ideal_frozen_t
     implicit none
     private
@@ -531,6 +532,7 @@ contains
         ! coil-supported analytic free boundary.
         type(ideal_fb_t) :: fb
         type(ideal_fb_report_t) :: report
+        type(ideal_fb_report_t) :: checked_report
         integer, allocatable :: rp(:), ci(:), srp(:), sci(:)
         real(dp), allocatable :: val(:), sv(:), g(:), gp(:), gm(:), v(:), du(:)
         real(dp), allocatable :: hv(:), hh(:), fd(:), x0(:, :, :), d(:, :), q(:, :, :)
@@ -605,6 +607,12 @@ contains
             ! The affine manufactured load makes this exact discrete target.
             call ideal_fb_gradient(fb, g, st)
             fb%shift = g
+            call ideal_fb_solve(fb, 1.0e-10_dp, 0, report, st, &
+                residual_tolerance=1.0e-12_dp)
+            if (st /= IDEAL_FB_OK .or. report%iterations /= 0) &
+                error stop 'zero-step exact target not recognized'
+            if (report%residual /= 0 .or. report%step /= 0) &
+                error stop 'zero-step exact target report'
             call ideal_fb_solve(fb, 1.0e-10_dp, 2, report, st, &
                 residual_tolerance=1.0e-12_dp)
             if (st /= IDEAL_FB_OK .or. report%iterations /= 0) &
@@ -650,6 +658,43 @@ contains
                         real(dp), allocatable :: phi1(:, :), lam1(:, :, :)
                         x1 = fb%plasma%x; xs1 = fb%xs
                         phi1 = fb%phi; lam1 = fb%lam
+                        ! A zero-step check must evaluate a displaced state,
+                        ! retaining failure and leaving the plasma map alone.
+                        call ideal_fb_solve(fb, 1.0e-10_dp, 0, report, st, &
+                            residual_tolerance=1.0e-20_dp)
+                        if (st /= IDEAL_FB_NOT_CONVERGED) &
+                            error stop 'zero-step displaced target status'
+                        if (.not. ieee_is_finite(report%residual)) &
+                            error stop 'zero-step displaced target not finite'
+                        if (report%residual <= 1.0e-20_dp .or. &
+                            report%residual >= 1.0_dp) &
+                            error stop 'zero-step displaced target residual'
+                        if (report%iterations /= 0 .or. report%step /= 0) &
+                            error stop 'zero-step displaced target step'
+                        if (any(fb%plasma%x /= x1)) &
+                            error stop 'zero-step check moved the plasma'
+                        ! Independently recheck the state after one capped
+                        ! step: the solve must report that returned state.
+                        call ideal_fb_solve(fb, 1.0e-10_dp, 1, report, st, &
+                            residual_tolerance=1.0e-20_dp)
+                        if (st /= IDEAL_FB_NOT_CONVERGED .or. &
+                            report%iterations /= 1) &
+                            error stop 'one-step cap status'
+                        call ideal_fb_solve(fb, 1.0e-10_dp, 0, checked_report, st, &
+                            residual_tolerance=1.0e-20_dp)
+                        if (abs(checked_report%residual - report%residual) &
+                            > 1.0e-10_dp*report%residual) &
+                            error stop 'capped solve reported stale residual'
+                        ! The same final state must be admitted if it meets
+                        ! the requested absolute target on that last step.
+                        fb%plasma%x = x1; fb%xs = xs1
+                        fb%phi = phi1; fb%lam = lam1
+                        call ideal_fb_solve(fb, 1.0e-10_dp, 1, checked_report, st, &
+                            residual_tolerance=2*report%residual)
+                        if (st /= IDEAL_FB_OK .or. checked_report%iterations /= 1) &
+                            error stop 'last-step convergence not recognized'
+                        fb%plasma%x = x1; fb%xs = xs1
+                        fb%phi = phi1; fb%lam = lam1
                         ! A loose relative/step tolerance must not bypass an
                         ! explicit residual target. The manufactured load is
                         ! an independent state oracle for the damped solve.
