@@ -2,7 +2,8 @@ program nested_oracle_export
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
     use kin6d_nested_oracle_leaves, only: nested_boundary_radius, &
-                                          nested_boundary_harmonic, nested_boundary_phase
+        nested_boundary_harmonic, nested_boundary_phase, nested_setup, &
+        nested_integer_averages
     use kin6d_result_io, only: run_t, result_file_t
     use fortnum_interval, only: interval_t
     implicit none
@@ -14,6 +15,7 @@ program nested_oracle_export
     real(dp) :: eps, tau, delta, saxis, lam, edge_pressure, requested_radius, pi
     real(dp) :: theta, phi, x(3), r, cs, sn, rec(2), error, term(4), iota(3), fine_iota
     real(dp) :: coarse(4), fine(4), radius
+    real(dp) :: limit, extent, pa1, pa2, volume, pmean, bmean, beta, transform, flux
     real(dp), allocatable :: points(:, :), fields(:, :), lower(:, :), upper(:, :), rz(:, :)
     real(dp), allocatable :: coefficients(:, :, :)
     type(interval_t) :: enclosure(20)
@@ -179,6 +181,39 @@ program nested_oracle_export
     end do
     write (unit, '(a)') '/'
     close (unit)
+    if (family == NESTED_INTEGER) then
+        ! Phi(psi) is linear, so s=Phi/Phi_edge=psi/delta. Reuse the
+        ! retained generated pressure setup and exact flux, never a fit.
+        call nested_setup(eps, tau, delta, lam, edge_pressure, &
+                          limit, extent, pa1, pa2)
+        call nested_integer_averages(eps, tau, pa1, delta, volume, pmean, &
+                                     bmean, beta, transform, flux)
+        open (newunit=unit, file='output/input.nested_equilibrium', status='replace')
+        write (unit, '(a)') '! Matched integer-family equilibrium: s=Phi/Phi_edge=psi/delta.'
+        write (unit, '(a)') '! B in tesla, length in metres; normalized pressure divided by SI mu0.'
+        write (unit, '(a)') '&INDATA'
+        write (unit, '(a)') ' NFP=2, LFREEB=F, NCURR=0,'
+        write (unit, '(a,l1,a)') ' LASYM=', abs(tau) > 0, ','
+        write (unit, '(a,i0,a,i0,a)') ' MPOL=', mmax + 1, ', NTOR=', nmax, ','
+        write (unit, '(a,es25.16,a)') ' PHIEDGE=', flux, ','
+        write (unit, '(a)') " PMASS_TYPE='power_series', PIOTA_TYPE='power_series',"
+        write (unit, '(a,es25.16,a,es25.16,a)') ' AM=', pa1, ',', edge_pressure - pa1, ','
+        write (unit, '(a,es25.16,a)') ' AI=', transform, ','
+        write (unit, '(a,es25.16,a)') ' PRES_SCALE=', 1/(4*pi*1e-7_dp), ','
+        write (unit, '(a)') ' NS_ARRAY=17,33,65, FTOL_ARRAY=1e-8,1e-9,1e-10,'
+        write (unit, '(a)') ' NITER_ARRAY=3000,5000,10000,'
+        do m = 0, mmax
+            do n = -nmax, nmax
+                call coefficient('RBC', 1)
+                call coefficient('RBS', 2)
+                call coefficient('ZBC', 3)
+                call coefficient('ZBS', 4)
+            end do
+        end do
+        write (unit, '(a)') '/'
+        close (unit)
+        print '(a)', '[V] matched integer-family input: output/input.nested_equilibrium'
+    end if
     print '(a,4es16.7)', '[V] V,<p>,<B^2>,beta (quadrature reference) ', fine
     print '(a,4es12.3)', '[V] quadrature refinement indicators ', abs(fine - coarse)
     print '(a,3es16.7)', '[V] axis,edge iota; edge refinement indicator ', iota
