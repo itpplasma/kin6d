@@ -591,3 +591,10 @@ if(TARGET gen_ideal_seed_3d)
     kin6d_test_labels(ideal_seed_3d_regeneration fast CLASSES mhd
         TARGETS gen_ideal_seed_3d)
 endif()
+
+kin6d_test_labels(equilibrium_map_3d_readback fast CLASSES mhd
+    TARGETS test_map_3d_equilibrium)
+if(TARGET gen_map_3d_readback)
+    kin6d_test_labels(equilibrium_map_3d_regeneration fast CLASSES mhd
+        TARGETS gen_map_3d_readback)
+endif()
