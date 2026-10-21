@@ -582,5 +582,11 @@ foreach(k 2 3)
         TARGETS test_map_equilibrium)
 endforeach()
 
+kin6d_test_labels(ideal_xi_hessian_and_analytic_limits fast CLASSES mhd
+    TARGETS test_ideal_xi)
+if(TARGET gen_ideal_xi)
+    kin6d_test_labels(ideal_xi_exact_identity_and_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_xi)
+endif()
 kin6d_test_labels(ideal_seed_boundary_label fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
