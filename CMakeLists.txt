@@ -1521,7 +1521,8 @@ add_test(NAME gs_response_3d_ideal_error_contract COMMAND ${CMAKE_COMMAND}
     -DWORK=${CMAKE_BINARY_DIR}/gs_response_3d_ideal_check
     -DEQDSK=${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/shield_torus_a10.eqdsk
     -P ${CMAKE_SOURCE_DIR}/test/check_gs_response_3d_ideal_error.cmake)
-set_tests_properties(gs_response_3d_ideal_error_contract PROPERTIES TIMEOUT 60
+# ~45 s serial (complex Ampere LU) on a 2026 workstation, ~60 s on sCluster.
+set_tests_properties(gs_response_3d_ideal_error_contract PROPERTIES TIMEOUT 240
     ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(mhd_ideal_n_mde_force_free_identity PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
