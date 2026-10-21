@@ -129,9 +129,14 @@ also checked against the production packed Hessian times the direction.
 Tolerance is 2e-12 for FP64 and 3e-5 for FP32/mixed, below the requested few-percent
 candidate target on these samples; neither tolerance is an enclosure theorem.
 
-[V] Native derivative/rotation, normalized map residual, D3 upper-bound,
-layering and K6-mini gates pass. K6-mini preserves its estimator scope/status
-and reference values. No GPU-produced equilibrium has been passed to the
+[V] Before native-backend integration, derivative/rotation, normalized map
+residual, D3 upper-bound, layering and K6-mini gates passed. After integration,
+four gates pass, including K6-mini with its estimator scope/status and reference
+values. The normalized-map residual gate was explicitly stopped at the bounded
+task limit after 286.66 s; Fo records a signal failure, not acceptance. Its
+expensive solve is at `test/test_ideal_map_axisymmetric.f90:427`, on the native
+LDLT path identified above. That current-backend gate remains unverified.
+No GPU-produced equilibrium has been passed to the
 FP64 D3/Repin pipeline: preservation of estimates for an accelerated nonlinear
 solve, global mixed-precision convergence and ill-conditioned geometry are
 **unverified**. The optional prototype changes no production result path.
