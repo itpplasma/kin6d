@@ -1,0 +1,9 @@
+# Optional oracle environment, never a KIN6D runtime/test dependency.
+# Python 3.12; FreeGS v0.8.2 = 8b838c1df162ca770a6937ac79d8c73e8f10a53b.
+FreeGS==0.8.2
+numpy==1.26.4
+scipy==1.12.0
+matplotlib==3.9.4
+shapely==2.2.0
+h5py==3.16.0
+freeqdsk==0.5.2

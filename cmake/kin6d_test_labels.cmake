@@ -5,6 +5,8 @@
 # full run, fast otherwise (regression and performance are also accepted).
 # kin6d_check_<class> builds the TARGETS of its tests. Tests that are not
 # configured (FortSym, Lean) are skipped.
+kin6d_test_labels(gs_free_boundary_freegs_public_parity fast CLASSES equilibrium
+    TARGETS test_gs_freegs)
 kin6d_test_labels(s0_alfven_wave_convergence fast CLASSES mhd TARGETS test_s0)
 kin6d_test_labels(s0_shear_continuum_targeting fast CLASSES mhd TARGETS test_s0)
 kin6d_test_labels(s0_physical_metric_contracts fast CLASSES mhd TARGETS test_s0)
