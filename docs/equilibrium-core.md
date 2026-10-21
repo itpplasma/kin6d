@@ -255,7 +255,14 @@ spaces and D7 contracts still need extension. P2/P3 deformed Solovev tests
 check D3 convergence, independent physical fields, generated JVP/VJP and
 OpenMP parity/scaling. Continuous field bounds remain unavailable. M2 `equilibrium_readback` on
 `labelled_field_t`; `read_gs_equilibrium` is a thin caller and takes
-`psi_bound` and `plasma_cell` for free-boundary states. M3
+`psi_bound` and `plasma_cell` for free-boundary states. The N=0 map adapter
+provides label primitives on the Pk projection of its frozen label, physical
+volume/flux quadrature, and contour-integrated toroidal flux density. The latter
+uses the physical B rather than assuming R B_phi is constant on a candidate's
+label. Label projection and quadrature errors are not enclosed; readback reports
+`candidate` and `bound_status = unavailable`, retaining the source claim
+separately. The current contour calculation requires labels star-shaped about
+the axis and rejects unresolved intersections. M3
 `equilibrium_certificate` (`equilibrium_certifier_t`: a lane returns 𝓜 and
 β_h with its kind; `certify` forms 𝓜/β_h and the claim label, written to π);
 `gs_certificate` wraps `gs_functional_majorant` (status 4 → residual
