@@ -34,6 +34,13 @@ at the candidate's physical positions, the exact flux label and the strong
 force defect. These are equal-weight sample diagnostics, not volume norms,
 surface distances, a D3 dual norm or continuous error bounds.
 
+[V] The DESC adapter translates VMEC's all-zero axis sentinel into DESC's
+native automatic-axis option. Treating it literally puts the initial axis at
+R=0 and gave an unusable QA state despite an optimizer `xtol` success. Optimizer
+termination is recorded separately from physical accuracy. Higher-resolution
+GVEC cold starts can fail its positive-Jacobian gate; retain that failure rather
+than reporting an equilibrium error or a performance success.
+
 [V] Each point records the resolved input, state, solve and total time, process
 peak RSS, thread count, external version and code-specific convergence status.
 Compare physical errors before interpreting timings. `FTOL=1e-8` in VMEC is a
