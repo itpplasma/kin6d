@@ -3,7 +3,9 @@ program test_ideal_seed_3d
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh, ideal_seed_boundary_coefficients
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_rdof, ideal_map_energy, &
-        ideal_map_init, ideal_map_freeze, ideal_map_prolong
+        ideal_map_init, ideal_map_freeze, ideal_map_prolong, ideal_map_hessian, &
+        ideal_map_expand, ideal_map_reduce
+    use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_seed_3d_leaves, only: seed_boundary_mode, &
@@ -111,6 +113,7 @@ program test_ideal_seed_3d
     call mode_at(inputs - h*direction, minus)
     if (maxval(abs((plus - minus)/(2*h) - tangent)) > 1e-10_dp) &
         error stop 'boundary JVP independent difference'
+    call increment_check(map)
     call prolongation_check()
     ! Reversing Z reverses the supplied angle; it does not fold the map.
     coefficients(3:4, :, :) = -coefficients(3:4, :, :)
@@ -142,6 +145,47 @@ program test_ideal_seed_3d
     print '(a)', '[V] flux, sheared profiles, fixed wall, derivatives and fold rejection pass'
     print '(a)', '[V] initializer candidate only; continuous bounds unavailable'
 contains
+    subroutine increment_check(map)
+        type(ideal_map_t), intent(in) :: map
+        type(csr_matrix_t) :: hessian
+        real(dp), allocatable :: direction(:), full(:), action(:)
+        real(dp), allocatable :: plus(:), minus(:), reduced_plus(:), reduced_minus(:)
+        real(dp) :: energy, step, scale
+        integer :: i, k, local
+        allocate (direction(map%nred), full(map%ndof), action(map%nred), &
+            plus(map%ndof), minus(map%ndof), reduced_plus(map%nred), &
+            reduced_minus(map%nred))
+        do i = 1, map%nred
+            direction(i) = cos(0.37_dp*i)
+        end do
+        where (map%fixed) direction = 0
+        call ideal_map_expand(map, direction, full)
+        step = 1e-7_dp/maxval(abs(full))
+        call ideal_map_energy(map, map%x + step*reshape(full, shape(map%x)), &
+            energy, local, plus)
+        if (local /= 0) error stop 'position increment plus folded'
+        call ideal_map_energy(map, map%x - step*reshape(full, shape(map%x)), &
+            energy, local, minus)
+        if (local /= 0) error stop 'position increment minus folded'
+        call ideal_map_reduce(map, plus, reduced_plus)
+        call ideal_map_reduce(map, minus, reduced_minus)
+        call ideal_map_hessian(map, map%x, hessian)
+        action = 0
+        do i = 1, map%nred
+            do k = hessian%rowptr(i), hessian%rowptr(i + 1) - 1
+                action(i) = action(i) + hessian%val(k)*direction(hessian%colidx(k))
+            end do
+        end do
+        where (map%fixed)
+            action = 0
+            reduced_plus = 0
+            reduced_minus = 0
+        end where
+        scale = norm2(action)
+        if (norm2((reduced_plus - reduced_minus)/(2*step) - action) &
+            > 1e-6_dp*scale) error stop 'active position Hessian action'
+    end subroutine
+
     subroutine prolongation_check()
         type(ideal_map_t) :: coarse, fine
         type(gs_state_t) :: coarse_mesh, fine_mesh
