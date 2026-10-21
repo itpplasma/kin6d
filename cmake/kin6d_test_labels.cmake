@@ -600,3 +600,6 @@ endif()
 
 kin6d_test_labels(equilibrium_boundary_3d_d6 fast CLASSES equilibrium
     TARGETS test_equilibrium_boundary_3d)
+
+kin6d_test_labels(ideal_fb_bem3d_derivatives slow CLASSES mhd
+    TARGETS test_ideal_free_boundary)
