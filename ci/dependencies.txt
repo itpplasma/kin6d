@@ -3,3 +3,4 @@ lazy-fortran/fortio
 lazy-fortran/fortnum
 lazy-fortran/fortfem
 lazy-fortran/fortsparse
+itpplasma/libneo
