@@ -380,7 +380,7 @@ contains
         status = 0
     end subroutine initialize_gs
 
-    subroutine gs_cell_data(state, e, xi, point, det, shape, gradients, &
+    pure subroutine gs_cell_data(state, e, xi, point, det, shape, gradients, &
                             hessians, status)
         type(gs_state_t), intent(in) :: state
         integer, intent(in) :: e
@@ -484,7 +484,7 @@ contains
         status = 0
     end subroutine higher_order_mesh
 
-    subroutine element_shapes(state, e, xi, eta, shape, gradients, hessians)
+    pure subroutine element_shapes(state, e, xi, eta, shape, gradients, hessians)
         type(gs_state_t), intent(in) :: state
         integer, intent(in) :: e
         real(dp), intent(in) :: xi, eta
