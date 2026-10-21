@@ -1,13 +1,14 @@
 module kin6d_gs_direct
     ! Cached sparse Cholesky factor of the Grad--Shafranov stiffness matrix
-    ! (fortsparse AUTO: SuperLU for small, threaded MUMPS for large systems). One factor
+    ! through native FortSparse CPU factors. One factor
     ! serves every solve on the mesh: fixed-source solves, the A^-1 Newton
     ! preconditioner and the majorant recovery.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
-        sparse_destroy, sparse_solve_block, sparse_factor_stats, sparse_factor_stats_t, &
-        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_AUTO, FORTSPARSE_SYM_SPD, &
-        FORTSPARSE_SYM_INDEFINITE, FORTSPARSE_ORDER_AMD, FORTSPARSE_ORDER_ND
+        sparse_destroy, sparse_solve_block, sparse_factor_stats, &
+        sparse_factor_stats_t, fortsparse_status_t, status_ok, &
+        FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_SPD, FORTSPARSE_SYM_INDEFINITE, &
+        FORTSPARSE_ORDER_AMD, FORTSPARSE_ORDER_ND
     implicit none
     private
     public :: gs_direct_t, gs_direct_available, gs_direct_factor, gs_direct_solve
@@ -52,14 +53,12 @@ contains
             direct%failed = .true.
             return
         end if
-        direct%solver%backend_id = FORTSPARSE_BACKEND_AUTO
+        direct%solver%backend_id = FORTSPARSE_BACKEND_NATIVE
         direct%solver%refine = .false.
         direct%solver%options%symmetry = FORTSPARSE_SYM_SPD
         if (present(symmetry)) direct%solver%options%symmetry = symmetry
         if (present(ordering)) direct%solver%options%ordering = ordering
-        ! A fixed thread count: MUMPS keeps its tree-parallel layout per thread,
-        ! so factor and solves must run with the same count even if the caller
-        ! changes the OpenMP thread number in between.
+        ! Record the requested CPU thread budget for the retained factor.
         direct%solver%options%nthreads = 0
 !$      direct%solver%options%nthreads = omp_get_max_threads()
         call sparse_factor(direct%solver, n, n, rowptr(n + 1) - 1, rowptr, &
@@ -78,29 +77,7 @@ contains
     end subroutine
 
     logical function gs_direct_mpi_ready() result(ready)
-        ! Serial control-flow entry, before any MUMPS factorization. Only the
-        ! MPI-parallel backend needs a runtime; sequential mpiseq builds do not.
-        ! Preserve an application-owned runtime. Factor handles do not own MPI:
-        ! the application may finalize it only after freeing all its solvers.
-#ifdef KIN6D_MUMPS_MPI
-        use mpi, only: MPI_Initialized, MPI_Finalized, MPI_Init_thread, MPI_Query_thread, &
-            MPI_THREAD_SERIALIZED, MPI_SUCCESS
-        logical :: initialized, finalized
-        integer :: ierr, provided
-        ready = .false.
-        call MPI_Finalized(finalized, ierr)
-        if (ierr /= MPI_SUCCESS) return
-        if (finalized) return
-        call MPI_Initialized(initialized, ierr)
-        if (ierr /= MPI_SUCCESS) return
-        if (.not. initialized) then
-            call MPI_Init_thread(MPI_THREAD_SERIALIZED, provided, ierr)
-        else
-            call MPI_Query_thread(provided, ierr)
-        end if
-        if (ierr /= MPI_SUCCESS) return
-        if (provided < MPI_THREAD_SERIALIZED) return
-#endif
+        ! Native factors require no MPI runtime.
         ready = .true.
     end function
 
@@ -118,7 +95,7 @@ contains
     end subroutine
 
     subroutine gs_direct_solve_block(direct, rhs, x, ok)
-        ! Several right-hand sides (columns) in one threaded MUMPS solve.
+        ! Several right-hand sides (columns) reuse one native factor.
         type(gs_direct_t), intent(inout) :: direct
         real(dp), intent(in) :: rhs(:, :)
         real(dp), intent(out) :: x(:, :)
