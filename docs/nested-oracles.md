@@ -146,6 +146,24 @@ published 2.28690 value at eps=2, S=1.
 
 ## Boundary interchange and execution
 
+[V] For the integer-transform family, the exporter also writes
+`output/input.nested_equilibrium`. This input matches the exact toroidal flux,
+constant transform and pressure profile, in addition to the boundary. The
+generated formula gives Phi(psi)=pi ab psi/Omega², hence VMEC's normalized
+toroidal-flux coordinate is s=psi/delta. The pressure coefficients are the
+generated axis and edge pressures, with `PRES_SCALE=1/(4 pi 10^-7)` converting
+the oracle's mu0=1 pressure to pascals while retaining B in tesla and lengths
+in metres. `NCURR=0` prescribes iota=2. The existing boundary-consumer test
+independently integrates B dot dS using finite-difference surface tangents
+and checks pressure against the Cartesian oracle.
+
+[V] The suggested radial iteration settings in that file are starting inputs,
+not convergence evidence. The Fourier boundary still has a sampled truncation
+indicator rather than a continuous bound. The sheared family still exports
+geometry only: its pressure must first be expressed in normalized toroidal
+flux. A matched input, a successful reader and an exact-field evaluation do
+not establish that a numerical equilibrium has converged.
+
 [V] Build `nested_oracle_export`, then run, for example:
 
 ```sh
@@ -162,7 +180,11 @@ coefficients and a sampled boundary error in `output/nested_oracle_export.nc`.
 `output/input.nested_oracle` is a geometry-only VMEC namelist with
 RBC/RBS/ZBC/ZBS(n,m), NFP=2, and LASYM selected by tau. The convention is
 cos(m theta-n NFP phi), positive geometric Cartesian phi and clockwise
-poloidal theta. The material chart parameter t is converted to geometric phi
+poloidal theta. For the integer family the material poloidal angle is
+2 phi-theta; this removes its two-turn winding and makes the eps=0 boundary
+independent of phi. Without this conversion the physical surface is correct
+but the transform in the exported poloidal coordinate is shifted by two.
+The material chart parameter t is converted to geometric phi
 by a bracketed solve before projection. Truncation is checked on a denser,
 staggered grid against a requested 1% of the declared minor scale; this is
 explicitly a sampled indicator.
@@ -188,6 +210,42 @@ reruns the exact proofs and compares regenerated leaves.
 addition leaves that solver contract intact. Existing supported fixed-boundary
 map cases remain the solver checks; a claim of a solved eps>0 equilibrium
 requires a compatible reference/chart adapter and the D3/D4 error report.
+
+## Admission of solved-case regression tests
+
+[V] The paper-to-generator check uses Issan (4)--(7) for the integer family
+and (15)--(21) for the sheared family. In the integer field, the generated
+factors `(1+eps)/sqrt(1-eps**2)` and `(1-eps)/sqrt(1-eps**2)` equal a/b and
+b/a on the admitted domain. In the sheared field, replacing the symbolic
+phase by Re(omega K)-S absorbs the pi/2 in Xi: sin(Xi)=cos(phase+i nu) and
+cos(Xi)=-sin(phase+i nu). Expanding these two identities gives the retained
+real field. Setting tau=0 gives the corresponding Landreman definitions.
+The surface inversion solves Issan (19) on the principal branch, and the
+generated `rhs=2 G sqrt((1-Y**2)/(cosh(nu)**2-rho**2))` is (21), since
+`2 G=h+eps cos(2t)` and `rho**2=2 psi`. No equation discrepancy was found in
+these implemented definitions. The eight exact FortSym lemmas and the
+independent complex-formula test check different parts of this argument.
+
+[V] Exact-oracle tests are not fixed-boundary equilibrium solves. Three
+current interfaces prevent registering the requested non-axisymmetric
+Landreman/Issan solved-case gates as already supported:
+
+- `ideal_frozen_t%evaluate` accepts two coordinates, with a reference field
+  and pressure independent of the toroidal coordinate. Neither a 3D oracle
+  initializer nor its frozen-form pullback is supplied here.
+- `map_equilibrium` in `src/mhd/map_equilibrium.f90` returns
+  `EQ_UNAVAILABLE` for `ntor/=0` or a non-cylindrical chart.
+- `ideal_map_residual` in `src/mhd/ideal_map.f90` rejects a non-cylindrical
+  chart; the D7 labelled-field contract and its surface readback are
+  axisymmetric (`src/equilibrium/equilibrium_state.f90`).
+
+[H] A solved-case gate needs an admitted reference/chart pullback, an
+independent 3D field/surface/iota readback and a compatible force diagnostic,
+followed by a small native convergence ladder. Extending those scientific
+contracts is solver work. A boundary export, oracle interpolation, or an
+axisymmetric reduction must not be counted as that solve. The sheared family
+also needs pressure and iota tabulated in the receiving solver's toroidal
+flux coordinate; the existing geometry-only export does not supply them.
 
 
 [V] Optional installed-reader verification is retained in

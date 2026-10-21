@@ -15,10 +15,11 @@ program gen_ideal_map
    use fortsym_kernel_ir, only: kernel_ir_t, lower_kernel_ir
    use fortsym_kernel_emit, only: kernel_emit_spec_t, emit_cuda_device_ir, &
       emit_fortran_kernel_ir, TARGET_CUDA, TARGET_FORTRAN_CPU, &
-      PRECISION_REAL64, PRECISION_REAL32, PRECISION_MIXED
+      PRECISION_MIXED
    use fortsym_string, only: str_t, str, chars
    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
    use fortsym_engine_native, only: native_engine_t, make_native_engine
+   use fortsym_precision, only: PRECISION_REAL32, PRECISION_REAL64
    use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
    implicit none
    type(arena_t), target :: arena
@@ -125,6 +126,16 @@ program gen_ideal_map
       /(sym(arena, 'grad_r')*sym(arena, 'cos_t') &
        + sym(arena, 'grad_z')*sym(arena, 'sin_t'))], ad=.true.)
    call w%line('end module kin6d_ideal_map_leaves')
+   call w%close()
+   ! Experimental CPU benchmark seam, retained derivatives of the same density.
+   call w%open(arena, 'gen_ideal_map', &
+      'src/generated/kin6d_map_cpu_precision.f90')
+   call w%emit_batch('map_cpu_fp64', [character(8) :: names9, 'b1', 'b2', 'b3', &
+      'p', 'mu0', 'sigma'], names45, hessian, ['mu0  ', 'sigma'], &
+      precision=PRECISION_REAL64)
+   call w%emit_batch('map_cpu_fp32', [character(8) :: names9, 'b1', 'b2', 'b3', &
+      'p', 'mu0', 'sigma'], names45, hessian, ['mu0  ', 'sigma'], &
+      precision=PRECISION_REAL32)
    call w%close()
    if (command_argument_count() > 0) then
       call get_command_argument(1, argument)
