@@ -861,8 +861,16 @@ if(KIN6D_FORTSYM_BUILD)
     endif()
     configure_file(gen/kin6d_fortsym_revision.inc.in
         ${CMAKE_BINARY_DIR}/gen_include/kin6d_fortsym_revision.inc @ONLY)
+    file(STRINGS "${CMAKE_SOURCE_DIR}/gen/ideal-mhd-revision.txt"
+        KIN6D_IDEAL_MHD_REVISION)
+    FetchContent_Declare(kin6d_shared_mhd
+        URL "https://github.com/itpplasma/GLISS/archive/${KIN6D_IDEAL_MHD_REVISION}.tar.gz"
+        SOURCE_SUBDIR gen/codegen_sources_only)
+    FetchContent_MakeAvailable(kin6d_shared_mhd)
+    set(shared_mhd_gen "${kin6d_shared_mhd_SOURCE_DIR}/gen/ideal_mhd")
     add_library(kin6d_gen_support STATIC gen/kin6d_gen_support.f90
-        gen/kin6d_symbolic_physics.f90 gen/kin6d_symbolic_ideal.f90)
+        gen/kin6d_symbolic_physics.f90 gen/kin6d_symbolic_ideal.f90
+        ${shared_mhd_gen}/ideal_mhd_symbolic.f90)
     target_include_directories(kin6d_gen_support PUBLIC
         ${KIN6D_FORTSYM_BUILD}/include ${CMAKE_BINARY_DIR}/gen_include)
     target_link_libraries(kin6d_gen_support PUBLIC
@@ -932,7 +940,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator gs_error grad_shafranov ideal_map ideal_xi ideal_mhd_coordinates ideal_response_error
+    foreach(generator gs_error grad_shafranov ideal_map ideal_xi ideal_response_error
             equilibrium_core curve_chart nonnested vacuum_shell landreman nested_oracles
             response_strip_jets
             response_fluid
@@ -947,6 +955,9 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_executable(gen_ideal_mhd_coordinates
+        ${shared_mhd_gen}/gen_ideal_mhd_coordinates.f90)
+    target_link_libraries(gen_ideal_mhd_coordinates PRIVATE kin6d_gen_support)
     add_test(NAME ideal_mhd_coordinates_exact_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_coordinates>
         -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated/ideal_mhd_energy_generated.f90
