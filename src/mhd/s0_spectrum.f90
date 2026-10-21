@@ -65,7 +65,7 @@ contains
         if (status%code /= FORTSPARSE_OK) return
         shifted = stiffness
         shifted%val = stiffness%val-shift*mass%val
-        if (aimag(shift) == 0) then
+        if (abs(aimag(shift)) <= 0) then
             pencil%shift_factor%options%symmetry = FORTSPARSE_SYM_HERMITIAN
         else
             pencil%shift_factor%options%symmetry = FORTSPARSE_SYM_GENERAL
@@ -73,8 +73,8 @@ contains
         end if
         call sparse_factor(pencil%shift_factor,shifted,status)
         report%sparse_status = status%code
-        call sparse_factor_stats(pencil%shift_factor,report%factor)
-        if (aimag(shift) == 0) then
+        call sparse_factor_stats(pencil%shift_factor,report%factor,status)
+        if (abs(aimag(shift)) <= 0) then
             call sparse_inertia(pencil%shift_factor,pencil%below,pencil%at, &
                 pencil%above,pencil%inertia_status,status)
             report%below = pencil%below; report%at = pencil%at
@@ -104,6 +104,7 @@ contains
         real(dp), intent(out) :: residuals(:)
         type(s0_report_t), intent(out) :: report
         type(eigen_options_t) :: selected
+        type(fortsparse_status_t) :: status
         real(dp) :: real_values(size(omega2))
         report = s0_report_t()
         omega2 = 0; vectors = 0; residuals = huge(1.0_dp)
@@ -111,11 +112,11 @@ contains
         if (size(start) /= pencil%mass%nrow) return
         report%below = pencil%below; report%at = pencil%at
         report%above = pencil%above; report%inertia_status = pencil%inertia_status
-        call sparse_factor_stats(pencil%shift_factor,report%factor)
+        call sparse_factor_stats(pencil%shift_factor,report%factor,status)
         selected = options
         selected%operator_scale = pencil%stiffness_scale
         selected%mass_scale = pencil%mass_scale
-        if (aimag(pencil%shift) == 0) then
+        if (abs(aimag(pencil%shift)) <= 0) then
             call lanczos(apply_k,start,real_values,vectors,residuals,tolerance, &
                 selected,report%status,report%eigen,mass=apply_m, &
                 solve_mass=solve_m,solve_shift=solve_shift, &
@@ -130,12 +131,12 @@ contains
         subroutine apply_k(x,y)
             complex(dp), intent(in) :: x(:)
             complex(dp), intent(out) :: y(:)
-            call csc_matvec(pencil%stiffness,x,y)
+            y = csc_matvec(pencil%stiffness,x)
         end subroutine apply_k
         subroutine apply_m(x,y)
             complex(dp), intent(in) :: x(:)
             complex(dp), intent(out) :: y(:)
-            call csc_matvec(pencil%mass,x,y)
+            y = csc_matvec(pencil%mass,x)
         end subroutine apply_m
         subroutine solve_m(x,y,info)
             complex(dp), intent(in) :: x(:)
