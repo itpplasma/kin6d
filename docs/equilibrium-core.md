@@ -184,6 +184,12 @@ Solvers are Newton(–Krylov) with exact derivatives and shared globalisation
 (Armijo or trust region, quadrature tightening, det DX > 0 guard); heuristic
 gradient descent is not an acceptance path.
 
+M6's [D8 harness and case registry](equilibrium-harness.md) routes the retained
+map and manufactured psi ladders through one status/report contract. It adds
+psi return ladders for +/-15 mm axis offsets and 2% elongation. Reports name
+their residual norms and unavailable state/derivative bounds explicitly;
+this does not establish all cross-lane and free-B gates listed above.
+
 ## Module classification
 
 The line counts are from `origin/main` (and N1) on 2026-10-13. The

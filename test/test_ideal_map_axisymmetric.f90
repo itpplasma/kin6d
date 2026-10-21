@@ -16,7 +16,7 @@ program test_ideal_map_axisymmetric
     !                    axis at the boundary-box centre (VMEC-like), offset from
     !                    the magnetic axis; the solver must return it
     !   gauge <k>        W_red curvature of field-line slides at the exact map
-    use, intrinsic :: iso_fortran_env, only: dp => real64, int64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64, output_unit
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
@@ -34,7 +34,21 @@ program test_ideal_map_axisymmetric
         phi_edge, pullback_field_t, solovev_profile_t, pi, a, raxis, psi_axis, r0, &
         f_edge, seed_map_point, &
         pprime, ffprime, shaped
+    use kin6d_equilibrium_harness, only: equilibrium_case_t, &
+        equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
+        run_equilibrium_case, write_equilibrium_report
+    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use kin6d_map_equilibrium, only: map_equilibrium
     implicit none
+    type :: map_case_state_t
+        type(gs_state_t) :: gs
+        type(ideal_map_t) :: map
+        type(ideal_map_t), allocatable :: previous
+        class(ideal_frozen_t), allocatable :: field
+        type(ideal_map_solve_report_t) :: solve
+        real(dp) :: errors(4), elapsed
+        logical :: sequenced = .false.
+    end type
     type(pullback_field_t) :: pullback
     character(16) :: mode, argument
     integer :: degree
@@ -89,6 +103,8 @@ program test_ideal_map_axisymmetric
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
+    case ('seedboundary')
+        call seed_boundary_check()
     case ('derivatives')
         call derivative_checks()
     case ('reduced')
@@ -644,6 +660,30 @@ contains
         q(2) = r0*a*xi(2)/q(1)
     end function
 
+    subroutine seed_boundary_check()
+        ! Independent exact LCFS points, away from the Fourier sampling grid.
+        ! This is the M1 export precondition; checking only stationarity misses it.
+        type(nested_seed_t) :: seed
+        type(solovev_profile_t) :: profile
+        real(dp) :: point(2), chi, grad(2), b3, pressure, defect
+        integer :: shape_case, j, status
+        do shape_case = 1, 2
+            call setup_case(shape_case == 2)
+            call ideal_seed_init(seed, boundary_point, phi_edge(), profile, status)
+            if (status /= 0) error stop 'boundary seed init'
+            defect = 0
+            do j = 0, 256
+                call boundary_point((j + 0.5_dp)/257, point)
+                call seed%evaluate(point, chi, grad, b3, pressure)
+                defect = max(defect, abs(chi))
+            end do
+            print '(a,i0,a,es16.8,a)', '[V] seed boundary case=', shape_case, &
+                ' maximum absolute label defect=', defect, &
+                ' claim=oracle-comparison bound=unavailable'
+            if (defect > 1.0e-12_dp) error stop 'seed boundary label defect'
+        end do
+    end subroutine
+
     subroutine seed_ladder()
         type(nested_seed_t) :: seed
         type(solovev_profile_t) :: profile
@@ -668,53 +708,33 @@ contains
         ! sequencing); otherwise every mesh starts from the seed X0 = id.
         class(ideal_frozen_t), intent(in) :: field
         logical, intent(in), optional :: sequenced
-        type(gs_state_t) :: state
-        type(ideal_map_t) :: map, previous
-        real(dp) :: seed_gradient
-        type(ideal_map_solve_report_t) :: report
-        real(dp) :: errors(4, 3), rates(4), elapsed
-        integer :: mesh, n, status, base
-        integer(int64) :: start, finish, rate
+        type(map_case_state_t) :: result
+        type(equilibrium_state_t) :: equilibrium
+        type(equilibrium_run_report_t) :: verification
+        real(dp) :: errors(4, 3), rates(4)
+        integer :: mesh, n, base
         base = 32
         if (degree == 3 .and. .not. shaped) base = 24
+        allocate (result%field, source=field)
+        if (present(sequenced)) result%sequenced = sequenced
         print '(a)', 'case k n dof newton wall_s d3D_exact d3D_2D seed d2D_exact'
         do mesh = 1, 3
             n = base*2**(mesh - 1)
-            call make_mesh(n, degree, state)
-            call system_clock(start, rate)
-            call build_map(state, 1, 0, map, field)
-            if (allocated(map%axis_removed)) print '(a,6es10.2)', &
-                '  axis: dropped normal |h|^2/|F|^2, slide cos^2 ', map%axis_removed
-            if (present(sequenced)) seed_gradient = reduced_gradient_norm(map)
-            if (present(sequenced) .and. mesh > 1) then
-                if (sequenced) then
-                    call ideal_map_prolong(map, previous, status)
-                    if (status /= 0) error stop 'prolong'
-                end if
-            end if
-            if (present(sequenced)) then
-                ! Stop at a fraction of the seed (X0 = id) gradient on this mesh,
-                ! whatever the start (prolongation): an absolute, path-free test.
-                call solve_map(map, report, verbose_solve, seed_gradient)
-                print '(a,i5,2es12.4)', '  newton, |g|/|g_seed|, |g0|/|g_seed| ', &
-                    report%iterations, report%gradient, &
-                    report%initial_gradient/seed_gradient
-            else
-                call solve_map(map, report, verbose_solve)
-            end if
-            previous = map
-            call system_clock(finish)
-            elapsed = real(finish - start, dp)/rate
-            call solve_gs(state, 1.0_dp, pprime, ffprime, status)
-            if (status /= 0) error stop '2D GS solve'
-            call defects(map, state, field, errors(:, mesh))
-            print '(a,3es24.16)', '  end point: d3D_exact, |x|_2, W ', errors(1, mesh), &
-                norm2(map%x), report%energy
+            call run_equilibrium_case(trim(mode), 'map', &
+                equilibrium_resolution_t(degree, n), 'legacy', run_map_case, &
+                result, verification, equilibrium)
+            call write_equilibrium_report(output_unit, verification)
+            if (verification%status /= 0) error stop 'D8 map case'
+            errors(:, mesh) = result%errors
+            print '(a,3es24.16)', '  end point: d3D_exact, |x|_2, W ', &
+                errors(1, mesh), norm2(result%map%x), result%solve%energy
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
-                count(.not. map%fixed), report%iterations, elapsed, errors(:, mesh)
-            print '(a,5f9.2)', '  wall energy hessian factor+solve (analysis numeric) ', &
-                report%energy_s, report%hessian_s, report%factor_s, report%analysis_s, &
-                report%numeric_s
+                count(.not. result%map%fixed), result%solve%iterations, &
+                result%elapsed, errors(:, mesh)
+            print '(a,5f9.2)', &
+                '  wall energy hessian factor+solve (analysis numeric) ', &
+                result%solve%energy_s, result%solve%hessian_s, &
+                result%solve%factor_s, result%solve%analysis_s, result%solve%numeric_s
         end do
         do mesh = 2, 3
             rates = log(errors(:, mesh - 1)/errors(:, mesh))/log(2.0_dp)
@@ -729,6 +749,57 @@ contains
         if (rates(1) < degree + 1 - 0.4_dp) error stop '3D N=0 exact-flux order'
         if (rates(2) < degree + 1 - 0.4_dp) error stop '3D N=0 vs 2D order'
         if (errors(1, 3) > 1.0e-2_dp*errors(3, 3)) error stop 'seed not corrected'
+    end subroutine
+
+    subroutine run_map_case(spec, resolution, start, state, verification, &
+                            equilibrium)
+        type(equilibrium_case_t), intent(in) :: spec
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        type(equilibrium_start_t), intent(in) :: start
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(inout) :: verification
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        real(dp) :: seed_gradient
+        integer :: status
+        integer(int64) :: begin, finish, rate
+        if (spec%lane /= 'map' .or. start%name /= 'legacy') return
+        select type (state)
+        type is (map_case_state_t)
+            call make_mesh(resolution%boundary_nodes, resolution%degree, state%gs)
+            call system_clock(begin, rate)
+            call build_map(state%gs, 1, 0, state%map, state%field)
+            if (state%sequenced) then
+                seed_gradient = reduced_gradient_norm(state%map)
+                if (allocated(state%previous)) then
+                    call ideal_map_prolong(state%map, state%previous, status)
+                    if (status /= 0) then
+                        verification%status = status
+                        return
+                    end if
+                end if
+                call solve_map(state%map, state%solve, verbose_solve, seed_gradient)
+            else
+                call solve_map(state%map, state%solve, verbose_solve)
+            end if
+            state%previous = state%map
+            call system_clock(finish)
+            state%elapsed = real(finish - begin, dp)/rate
+            call solve_gs(state%gs, 1.0_dp, pprime, ffprime, status)
+            if (status /= 0) then
+                verification%status = status
+                return
+            end if
+            call defects(state%map, state%gs, state%field, state%errors)
+            verification%oracle_error = state%errors(1)
+            verification%seed_error = state%errors(3)
+            verification%iterations = state%solve%iterations
+            call ideal_map_residual(state%map, f_edge(), verification%residual, &
+                verification%sigma, verification%status)
+            verification%residual_norm = 'D3: L2 force * L / (sigma sqrt(V))'
+            if (verification%status /= 0) return
+            call map_equilibrium(state%map, state%field, state%gs, equilibrium, &
+                verification%status, f_edge())
+        end select
     end subroutine
 
     subroutine leakage_check()
