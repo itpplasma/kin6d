@@ -612,3 +612,10 @@ kin6d_test_labels(equilibrium_d8_issan_3d_integer fast CLASSES mhd
 
 kin6d_test_labels(equilibrium_d8_landreman_3d_p3 fast CLASSES mhd
     TARGETS test_equilibrium_3d)
+
+kin6d_test_labels(ideal_mhd_coordinate_analytic_limits fast CLASSES mhd
+    TARGETS test_ideal_mhd_coordinates)
+if(TARGET gen_ideal_mhd_coordinates)
+    kin6d_test_labels(ideal_mhd_coordinates_exact_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_mhd_coordinates)
+endif()
