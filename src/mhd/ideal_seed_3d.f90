@@ -8,7 +8,7 @@ module kin6d_ideal_seed_3d
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, ideal_map_init, &
         ideal_map_freeze, ideal_map_energy, ideal_map_rdof, IDEAL_MAP_OK, &
-        IDEAL_MAP_BAD_INPUT
+        IDEAL_MAP_BAD_INPUT, IDEAL_MAP_FOLDED
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
@@ -177,5 +177,12 @@ contains
         !$omp end parallel do
         ! Sampled positive-Jacobian admission, not a whole-cell certificate.
         call ideal_map_energy(map, map%x, energy, status)
+        if (status == IDEAL_MAP_FOLDED) then
+            ! The supplied poloidal angle may be clockwise. Orientation is
+            ! fixed by the initialized physical map, not the identity disk
+            ! used temporarily by ideal_map_init. Mixed signs still fail.
+            map%sigma = -map%sigma
+            call ideal_map_energy(map, map%x, energy, status)
+        end if
     end subroutine
 end module

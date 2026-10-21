@@ -18,7 +18,8 @@ identities exactly, including the chain rule for an arbitrary smooth iota.
 
 The boundary is extended through disk harmonics `(u+i*v)^m`, which are
 regular at the axis. The initializer samples the represented Jacobian for
-positivity and rejects folding. It fixes all boundary omega increments so
+uniform orientation and rejects folding. Clockwise and counterclockwise
+poloidal angles are admitted; the prescribed iota refers to that input angle. It fixes all boundary omega increments so
 Newton cannot move the prescribed nonaxisymmetric wall. The existing
 transversal/axis increment space and Newton solver are retained.
 

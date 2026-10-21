@@ -95,8 +95,13 @@ program test_ideal_seed_3d
     call mode_at(inputs - h*direction, minus)
     if (maxval(abs((plus - minus)/(2*h) - tangent)) > 1e-10_dp) &
         error stop 'boundary JVP independent difference'
-    ! Reversing Z folds an otherwise identical boundary. Reject it.
+    ! Reversing Z reverses the supplied angle; it does not fold the map.
     coefficients(3:4, :, :) = -coefficients(3:4, :, :)
+    call ideal_seed_3d_init(threaded, seed, mesh, coefficients, 3, flux, &
+        profile, status)
+    if (status /= 0) error stop 'clockwise boundary rejected'
+    if (map%sigma*threaded%sigma >= 0) error stop 'boundary orientation not updated'
+    coefficients(1, 0, 2) = 0.8_dp
     call ideal_seed_3d_init(threaded, seed, mesh, coefficients, 3, flux, &
         profile, status)
     if (status == 0) error stop 'folded boundary admitted'
