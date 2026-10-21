@@ -161,6 +161,11 @@ contains
         call ideal_map_init(map, mesh, chart, nfp, ntor, status, nphi=angles)
         if (status /= IDEAL_MAP_OK) return
         seed%profile = profile; seed%flux = flux
+        ! A fixed physical toroidal coordinate admits both R/Z increments.
+        ! Reference-disk radial directions can become tangent to the seeded
+        ! surfaces (already for a clockwise circular boundary). The frozen
+        ! b3 is positive, so the phi-fixed representative is admissible.
+        map%position_gauge = .true.
         call ideal_map_freeze(map, seed, status)
         if (status /= IDEAL_MAP_OK) return
         !$omp parallel do schedule(static) private(a,m)
