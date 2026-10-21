@@ -50,8 +50,13 @@ FetchContent_Declare(fortnum
 FetchContent_MakeAvailable(fortnum)
 add_library(kin6d_intervals INTERFACE)
 target_link_libraries(kin6d_intervals INTERFACE fortnum)
-add_library(kin6d_ode INTERFACE)
-target_link_libraries(kin6d_ode INTERFACE fortnum)
+# The pinned FortNum target does not yet register its geometric ODE module.
+# Retain this existing consumer leaf unchanged until its upstream CMake list
+# includes it; every other numerical module comes from the complete target.
+add_library(kin6d_ode
+    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
+target_link_libraries(kin6d_ode PUBLIC fortnum)
+target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
