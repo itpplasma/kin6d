@@ -89,16 +89,25 @@ if args.consumer == "vmecpp":
     record["iota_input_convention"] = ((-1 if args.clockwise else 1) * splines.iota(s)).tolist()
 elif args.consumer == "desc":
     import desc
+    import f90nml
     desc.set_device("cpu")
     from desc.equilibrium import Equilibrium
     from desc.grid import LinearGrid
 
-    value = Equilibrium.from_input_file(str(args.input))
+    namelist = f90nml.read(args.input)["indata"]
+    axis = [namelist[key] for key in ("raxis_cc", "raxis_cs", "zaxis_cc", "zaxis_cs")
+            if key in namelist]
+    automatic_axis = bool(axis) and all(np.all(np.asarray(x, dtype=float) == 0) for x in axis)
+    # A zero VMEC axis asks VMEC to construct a guess; in DESC it is a
+    # literal curve through R=0. Use DESC's own boundary-centre guess.
+    options = {"axis": None} if automatic_axis else {}
+    value = Equilibrium.from_input_file(str(args.input), **options)
+    record["automatic_axis"] = automatic_axis
     value.change_resolution(L=2*m, M=m, N=m)
     value, result = value.solve(ftol=1e-6, xtol=1e-6, gtol=1e-6,
                                 maxiter=100, verbose=3)
     record["solve_wall_s"] = time.perf_counter() - started
-    record["success"] = bool(result["success"])
+    record["optimizer_success"] = bool(result["success"])
     value.save("equilibrium.h5")
     grid = LinearGrid(rho=np.sqrt(s), theta=angles, zeta=angles/value.NFP,
                       NFP=value.NFP, sym=False)
