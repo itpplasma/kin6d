@@ -3,7 +3,7 @@ module kin6d_gs_options
     ! the fast path (CSR operators, cached Cholesky factor). The old element-wise
     ! operator and the Jacobi-CG solvers stay selectable for comparison:
     !   KIN6D_GS_OPERATOR = csr (default) | element
-    !   KIN6D_GS_LINEAR   = direct (default when MUMPS is built) | iterative
+    !   KIN6D_GS_LINEAR   = direct (native default) | iterative
     ! The variables are read once, on first use, outside parallel regions.
     implicit none
     private

@@ -785,8 +785,8 @@ contains
             !     following the field. No nonlinear forward solve is made.
             !     Loads and readbacks of the columns run on OpenMP threads in
             !     blocks; the response solves between them run one after the
-            !     other, because they share the cached MUMPS Cholesky factor
-            !     of A (a MUMPS instance is not reentrant) and the phase timers.
+            !     other, because they share the cached native Cholesky factor
+            !     of A (retained factors own mutable workspaces) and phase timers.
             !   column n+1: F_edge enters only the F primitive, not psi.
             real(dp), intent(out) :: jac(:, :)
             logical, intent(out) :: ok
