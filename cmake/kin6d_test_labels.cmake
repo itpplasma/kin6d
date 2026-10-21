@@ -603,3 +603,6 @@ kin6d_test_labels(equilibrium_d8_landreman_3d_integer fast CLASSES mhd
     TARGETS test_equilibrium_3d)
 kin6d_test_labels(equilibrium_d8_issan_3d_integer fast CLASSES mhd
     TARGETS test_equilibrium_3d)
+
+kin6d_test_labels(equilibrium_d8_landreman_3d_p3 fast CLASSES mhd
+    TARGETS test_equilibrium_3d)

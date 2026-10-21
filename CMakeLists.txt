@@ -382,6 +382,9 @@ add_executable(test_equilibrium_3d test/test_equilibrium_3d.f90)
 target_link_libraries(test_equilibrium_3d PRIVATE kin6d)
 add_test(NAME equilibrium_d8_landreman_3d_integer
     COMMAND test_equilibrium_3d 0 2 2 8)
+add_test(NAME equilibrium_d8_landreman_3d_p3
+    COMMAND test_equilibrium_3d 0 4 4 16 3)
+set_tests_properties(equilibrium_d8_landreman_3d_p3 PROPERTIES PROCESSORS 4 TIMEOUT 180)
 add_test(NAME equilibrium_d8_issan_3d_integer
     COMMAND test_equilibrium_3d 0.4 2 2 8)
 set_tests_properties(equilibrium_d8_landreman_3d_integer equilibrium_d8_issan_3d_integer
