@@ -6,6 +6,9 @@ The free-boundary probe now retains each full cosine/sine harmonic pair and
 checks its eigen-residual; an analytic cylinder external-kink limit exercises
 the same Hessian and vacuum elimination. See
 [ideal-free-boundary.md](ideal-free-boundary.md#harmonic-pair-stability-audit).
+[V] The first [S0 plasma-volume spectral slice](s0-spectrum.md) adds physical
+inertia, sparse real/complex shift targeting and real-shift inertia diagnostics
+for caller-supplied displacement spaces.
 [V] A positive shifted-iteration result does not establish an inertia count or
 continuous stability. [H] A general consumer covering the hierarchy below
 remains planned; no ITER n=3 continuous stability certificate is available.
