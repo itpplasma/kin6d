@@ -74,3 +74,58 @@ allocation-free spectral path. OpenMP directives alone imply no scaling result.
 boundary terms before admitting kink thresholds or toroidal stability. AE1
 can use the targeting/eigenvector contract when those physical operators and
 their approximation-error gates are available.
+
+## AE1 local toroidal continuum entry point
+
+[V] `s0_toroidal_continuum_gap` tests the cold, large-aspect-ratio circular
+field-line model
+
+\[
+-D_\parallel^2\Phi=\frac{\omega^2}{v_A^2}
+ (1+2\epsilon\cos\theta)\Phi,\qquad
+D_\parallel=R^{-1}(\partial_\zeta+q^{-1}\partial_\theta).
+\]
+
+Retaining adjacent harmonics exp[i(m theta - n zeta)] gives
+K = rho v_A^2 diag(k_m^2,k_{m+1}^2),
+M = rho [[1,epsilon],[epsilon,1]], with
+k_m=(m/q-n)/R. At q=(m+1/2)/n their cylindrical frequencies cross at
+omega0=v_A/(2qR). Toroidicity opens the local gap
+omega_minus^2=omega0^2/(1+epsilon),
+omega_plus^2=omega0^2/(1-epsilon).
+The characteristic determinant is
+(omega0^2-lambda)^2-epsilon^2 lambda^2.
+`gen_s0` derives the blocks from the energy and inertia Hessians, proves the
+angular Laurent constant, line bending, both edge roots and characteristic
+polynomial exactly, and emits FP64/FP32 blocks with JVP/VJP.
+
+[V] The test independently integrates the Fourier functional on a flat-q
+annulus (q=3/2, m=1,2, n=1, R=10, r=0.5..1.5, rho=1.3,
+v_A^2=2.1). P0 radial cells average epsilon=r/R exactly. Shifts inside the
+gap target each edge separately; inertia must count precisely one lower
+branch per cell. Discrete eigenvalue gates follow the original residual and
+M >= rho h (1-r_outer/R) I. Refinement checks first-order convergence of the
+sampled continuum support edges to the inner-surface analytic edges; it is
+not convergence of an isolated eigenfunction. Frequency errors must be below
+0.3%. An independent finite-difference check supplements JVP/VJP duality.
+
+[V] This is a reduced local continuum model, not the complete toroidal
+ideal-MHD operator. It neglects pressure/acoustic coupling, Shafranov shift,
+other harmonics and second-order aspect-ratio terms; their model error is
+unavailable. It supplies no radial envelope or discrete global TAE mode.
+The leading-order physical gap width is O(epsilon omega0); higher-order
+accuracy of these rational edge expressions is claimed only for the retained
+model. Shared-energy GL2 toroidal qualification remains separate.
+
+[V] `s0_external_kink_rigid_growth` projects the existing free-boundary
+Schur energy onto the two degenerate real phases of the rigid helical
+trial. It integrates rho*dV on the actual curved plasma mesh, rather than
+using the free-boundary solver's coefficient metric, then solves that
+physical-mass pencil with S0. The independent FortSym-checked cylinder
+oracle is lambda=[q^2-1+f(ka)(q-1)^2]/rho,
+f=K1(ka)/(K1(ka)+ka K0(ka)), ka=0.1. The existing seven exact kink
+identities retain its equilibrium, vacuum/surface split and ka->0
+Shafranov limit. Three toroidal aspect ratios approach the cylinder;
+reported orders describe that limit at fixed mesh and ka, not spatial
+convergence. This is a prescribed rigid-subspace growth estimate, not the
+full external-kink eigenmode or an internal-kink result.
