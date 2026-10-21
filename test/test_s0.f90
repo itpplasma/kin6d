@@ -1,7 +1,8 @@
 program test_s0
-    use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32
+    use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use kin6d_s0_volume, only: s0_assemble_volume
+    use kin6d_ideal_xi, only: xi_gradient_n, XI_OK
     use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
         s0_solve, s0_destroy
     use kin6d_s0_leaves, only: s0_mass_dp, s0_mass_jvp_dp, s0_mass_vjp_dp, &
@@ -18,6 +19,7 @@ program test_s0
     select case(trim(mode))
     case('continuum')
         call continuum()
+        call cylinder_continuum()
     case('contracts')
         call contracts()
     case('timing')
@@ -61,7 +63,8 @@ contains
         real(dp) :: h, local, pi, speed2, exact, discrete, mu, density, res(2), &
             tolerance, allowance, a_time, f_time, e_time, begin, end
         complex(dp) :: lambda(2), shift
-        integer :: e, q, i, j, n, rate, tick
+        integer :: e, q, i, j, n
+        integer(int64) :: rate, tick
         n = ne-1; h = 1.0_dp/ne; pi = acos(-1.0_dp)
         density = 1.3_dp; mu = 1.7_dp; speed2 = 4/(mu*density)
         allocate(dof(2,ne),w(2,ne),b(3,2,ne),p(2,ne),rho(2,ne), &
@@ -114,8 +117,8 @@ contains
             report%bound_status == 'unavailable','spectral claim')
         do j = 1, 2
             discrete = 6*speed2/h**2*(1-cos(j*pi/ne))/(2+cos(j*pi/ne))
-            call csc_matvec(stiffness,vectors(:,j),kx)
-            call csc_matvec(mass,vectors(:,j),mx)
+            kx = csc_matvec(stiffness,vectors(:,j))
+            mx = csc_matvec(mass,vectors(:,j))
             call expect(abs(dot_product(vectors(:,j),mx)-1) < 1.0e-9_dp, &
                 'physical inertia normalization')
             ! M >= rho*h/3 I. The residual gives distance to the Hermitian
@@ -195,6 +198,94 @@ contains
         call s0_destroy(pencil)
         print '(a,2es17.8)', '[V] shear-continuum targeted omega2=',real(lambda,dp)
     end subroutine continuum
+
+    subroutine cylinder_continuum()
+        ! Torsional n=0 modes on 1<r<2, Bz=1+r, rho constant,
+        ! p+Bz^2/(2mu)=C. The cylindrical cross term integrates to
+        ! -2*pi*C*[eta*xi] on the radial boundary and vanishes here.
+        integer, parameter :: ne=32, n=ne-1
+        integer :: dof(2,ne), e, q, i, j, at, row, col, ierr
+        real(dp) :: w(3,ne), b(3,3,ne), p(3,ne), rho(3,ne), &
+            h, r, k, mu, pi, phi(2), derivative(2), &
+            nodes(3), weights(3), reference(n,n), mass_ref(n,n), res(2), &
+            lower, upper, tolerance
+        complex(dp) :: value(3,2,3,ne), grad(3,3,2,3,ne), &
+            xi(3), dr(3), dz(3), start(n), vectors(n,2), lambda(2), shift
+        type(csc_z_t) :: stiffness,mass
+        type(fortsparse_status_t) :: status
+        type(s0_pencil_t) :: pencil
+        type(s0_report_t) :: report
+        type(eigen_options_t) :: options
+        h = 1.0_dp/ne; k = 0.7_dp; mu = 1.2_dp; pi = acos(-1.0_dp)
+        nodes = [-sqrt(0.6_dp),0.0_dp,sqrt(0.6_dp)]
+        weights = [5.0_dp/9,8.0_dp/9,5.0_dp/9]
+        b = 0; rho = 1.4_dp; value = 0; grad = 0
+        reference = 0; mass_ref = 0; derivative = [-1/h,1/h]
+        do e = 1, ne
+            dof(:,e) = [e-1,e]
+        end do
+        dof(2,ne) = 0
+        do e = 1, ne
+            do q = 1, 3
+                phi = [(1-nodes(q))/2,(1+nodes(q))/2]
+                r = 1+(e-1+phi(2))*h
+                w(q,e) = weights(q)*h*pi*r
+                b(3,q,e) = 1+r; p(q,e) = 5-b(3,q,e)**2/(2*mu)
+                do i = 1, 2
+                    xi = 0; xi(2) = phi(i)
+                    dr = 0; dr(2) = derivative(i)
+                    dz = 0; dz(2) = cmplx(0.0_dp,k*phi(i),dp)
+                    value(:,i,q,e) = xi
+                    call xi_gradient_n(0,r,xi,dr,dz,grad(:,:,i,q,e),ierr)
+                    call expect(ierr == XI_OK,'cylindrical physical jet')
+                end do
+                ! Independent reduced physical multiplication operator;
+                ! polynomial degree five, integrated exactly by three points.
+                do j = 1, 2
+                    col = dof(j,e)
+                    if (col == 0) cycle
+                    do i = 1, 2
+                        row = dof(i,e)
+                        if (row == 0) cycle
+                        reference(row,col) = reference(row,col)+ &
+                            w(q,e)*k*k*(1+r)**2/mu*phi(i)*phi(j)
+                        mass_ref(row,col) = mass_ref(row,col)+ &
+                            w(q,e)*rho(q,e)*phi(i)*phi(j)
+                    end do
+                end do
+            end do
+        end do
+        call s0_assemble_volume(n,dof,w,b,p,rho,mu,value,grad,stiffness,mass,status)
+        call expect(status%code == FORTSPARSE_OK,'cylindrical continuum assembly')
+        tolerance = 1024*epsilon(h)*maxval(abs(reference))
+        do col = 1, n
+            do at = stiffness%col_ptr(col),stiffness%col_ptr(col+1)-1
+                row = stiffness%row_idx(at)
+                call expect(abs(stiffness%val(at)-reference(row,col)) < tolerance, &
+                    'cylindrical boundary cross-term cancellation')
+                call expect(abs(mass%val(at)-mass_ref(row,col)) < tolerance, &
+                    'cylindrical physical inertia')
+            end do
+            start(col) = cmplx(1.0_dp,0.1_dp*col,dp)
+        end do
+        call s0_alfven_dp(k,2.0_dp,mu,rho(1,1),lower)
+        call s0_alfven_dp(k,3.0_dp,mu,rho(1,1),upper)
+        call s0_alfven_dp(k,2.5_dp,mu,rho(1,1),r)
+        shift = cmplx(r,0.0_dp,dp)
+        call s0_prepare(pencil,stiffness,mass,shift,report)
+        call expect(report%status == EIGEN_OK,'cylindrical continuum factor')
+        call expect(report%inertia_status == FORTSPARSE_INERTIA_RELIABLE, &
+            'cylindrical continuum inertia reliability')
+        options%max_basis = n; options%which = EIGEN_NEAREST
+        call s0_solve(pencil,start,1.0e-10_dp,options,lambda,vectors,res,report)
+        call expect(report%status == EIGEN_OK,'cylindrical continuum targeting')
+        call expect(all(real(lambda,dp) > lower) .and. all(real(lambda,dp) < upper), &
+            'continuum spectral range')
+        call expect(maxval(abs(real(lambda,dp)-r)) < 0.04_dp*(upper-lower), &
+            'frequency targeting inside cylindrical continuum')
+        call s0_destroy(pencil)
+        print '(a,2es17.8)', '[V] cylindrical torsional-continuum omega2=',real(lambda,dp)
+    end subroutine cylinder_continuum
 
     subroutine contracts()
         type(csc_z_t) :: stiffness,mass,bad
