@@ -1890,6 +1890,7 @@ option(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK
 if(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK)
     add_subdirectory(benchmarks/equilibrium-gpu)
 endif()
+include(cmake/kin6d_s0.cmake)
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
