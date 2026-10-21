@@ -1,6 +1,11 @@
 name: Equilibrium M6
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
   merge_group:
   workflow_dispatch:
   push:
