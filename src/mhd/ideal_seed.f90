@@ -27,6 +27,7 @@ module kin6d_ideal_seed
     use kin6d_ideal_map, only: ideal_frozen_t
     use kin6d_curved_triangle, only: boundary_curve
     use fortnum_quadrature, only: gauss_legendre_ab
+    use fortnum_fft, only: fft_c2c
     implicit none
     private
     public :: ideal_profile_t, nested_seed_t, ideal_seed_init
@@ -77,15 +78,17 @@ contains
             b(j) = cmplx(point(1), point(2), dp)
         end do
         seed%scale = maxval(abs(b - sum(b)/samples))
-        ! Keep the modes above roundoff; the rest of the spectrum is dropped.
+        ! The FFT avoids cancellation in high-mode direct DFT sums. Retain
+        ! modes down to roundoff so the frozen label stays constant on the
+        ! supplied boundary at the physical-state adapter's accuracy.
+        call fft_c2c(b, -1)
         allocate (seed%a(-samples/2 + 1:samples/2 - 1))
         do m = lbound(seed%a, 1), ubound(seed%a, 1)
-            seed%a(m) = sum(b*exp(cmplx(0, -2*pi*m*[(k, k=0, samples - 1)]/samples, &
-                dp)))/samples
+            seed%a(m) = b(modulo(m, samples))/samples
         end do
         seed%modes = 0
         do m = 1, ubound(seed%a, 1)
-            if (max(abs(seed%a(m)), abs(seed%a(-m))) > 1.0e-13_dp*seed%scale) &
+            if (max(abs(seed%a(m)), abs(seed%a(-m))) > 4*epsilon(1.0_dp)*seed%scale) &
                 seed%modes = m
         end do
         status = 2
