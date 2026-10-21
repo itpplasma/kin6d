@@ -111,7 +111,7 @@ program gs_free_3d_main
         ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
         ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, ideal_fb_mode_stability, &
         ideal_fb_hypotheses_t, ideal_fb_hypotheses, ideal_fb_hypotheses_print, &
-        ideal_fb_stability_t, &
+        ideal_fb_stability_t, ideal_fb_mode_inertia, ideal_fb_mode_lanczos, &
         ideal_fb_newton_step, &
         IDEAL_FB_OK
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
@@ -152,7 +152,9 @@ program gs_free_3d_main
     character(512) :: summary_file = 'summary.dat', coil_file = ''
     character(512) :: boundary_file = '', rmp_coil_file = '', rmp_current_file = ''
     character(512) :: config, save_state = '', load_state = ''
-    logical :: linear_response = .false.
+    logical :: linear_response = .false., inertia = .false.
+    logical :: eigen_backward_error = .false.
+    real(dp) :: inertia_shifts(4) = [0.0_dp, 1.e-9_dp, 1.e-8_dp, 1.e-7_dp]
     character(256) :: message
     namelist /gs_free_3d/ mesh_file, law_file, summary_file, coil_file, &
         boundary_file, boundary_nodes, max_area, degree, chain_nodes, mu0, nfp, ntor, &
@@ -161,7 +163,8 @@ program gs_free_3d_main
         panels_per_edge, verbose, start_at_target, residual_tolerance, seed_amplitude, &
         stability, shifts, gamma_c_scale, tangential_damping, hypotheses, &
         monitor_hypotheses, rigid_vertical, homotopy_steps, stage_iterations, &
-        gamma_c_modes, save_state, load_state, linear_response
+        gamma_c_modes, save_state, load_state, linear_response, inertia, &
+        inertia_shifts, eigen_backward_error
 
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
@@ -317,7 +320,21 @@ program gs_free_3d_main
         end do
     end block
     ! Second variation per real mode (meaningful at an axisymmetric state).
-    if (stability) then
+    if (inertia .and. st == IDEAL_FB_OK) then
+        block
+            integer :: counts(3, size(inertia_shifts)), m, s2, j
+            do m = 2, fb%nmode, 2
+                call ideal_fb_mode_inertia(fb, m, inertia_shifts, counts, s2)
+                do j = 1, size(inertia_shifts)
+                    write (output_unit, '(a,i0,a,es16.8,a,3(1x,i0),a,i0)') &
+                        'inertia n=', (m/2)*nfp, ' shift ', inertia_shifts(j), &
+                        ' negative zero positive', counts(:, j), ' status ', s2
+                end do
+                flush(output_unit)
+            end do
+        end block
+    end if
+    if (stability .and. st == IDEAL_FB_OK) then
         block
             real(dp) :: lam
             type(ideal_fb_stability_t) :: energy
@@ -328,10 +345,18 @@ program gs_free_3d_main
                 do j = 0, size(shifts)
                     if (j > 0) then
                         if (.not. shifts(j) < 0) cycle
-                        call ideal_fb_mode_stability(fb, m, lam, s2, shift=shifts(j), &
-                            report=energy)
+                        if (eigen_backward_error) then
+                            call ideal_fb_mode_lanczos(fb, m, lam, energy, s2, shifts(j))
+                        else
+                            call ideal_fb_mode_stability(fb, m, lam, s2, &
+                                shift=shifts(j), report=energy)
+                        end if
                     else
-                        call ideal_fb_mode_stability(fb, m, lam, s2, report=energy)
+                        if (eigen_backward_error) then
+                            call ideal_fb_mode_lanczos(fb, m, lam, energy, s2)
+                        else
+                            call ideal_fb_mode_stability(fb, m, lam, s2, report=energy)
+                        end if
                     end if
                     if (s2 == IDEAL_FB_OK) then
                         if (ieee_is_nan(stab(m))) then
@@ -349,6 +374,10 @@ program gs_free_3d_main
                         ' plasma vacuum exterior constraint total relative_residual', &
                         energy%plasma, energy%vacuum, energy%exterior, &
                         energy%constraint, energy%total, energy%relative_residual
+                    if (eigen_backward_error) write (output_unit, '(a,2es24.16)') &
+                        'Schur residual_radius backward_error ', &
+                        energy%residual_radius, energy%backward_error
+                    flush(output_unit)
                 end do
             end do
         end block

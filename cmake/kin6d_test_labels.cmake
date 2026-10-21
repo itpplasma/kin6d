@@ -27,6 +27,8 @@ kin6d_test_labels(grad_shafranov_profile_mu0_nan fast CLASSES equilibrium
     TARGETS test_gs_profile_domain)
 kin6d_test_labels(grad_shafranov_p2_profile_mu0_nan fast CLASSES equilibrium
     TARGETS test_gs_profile_domain)
+kin6d_test_labels(ideal_fb_schur_spectrum fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_external_kink fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_derivatives fast CLASSES mhd
@@ -590,6 +592,13 @@ if(TARGET gen_ideal_xi)
 endif()
 kin6d_test_labels(ideal_seed_boundary_label fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+
+kin6d_test_labels(ideal_seed_3d_boundary_profiles fast CLASSES mhd
+    TARGETS test_ideal_seed_3d)
+if(TARGET gen_ideal_seed_3d)
+    kin6d_test_labels(ideal_seed_3d_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_seed_3d)
+endif()
 
 kin6d_test_labels(ideal_mhd_coordinate_analytic_limits fast CLASSES mhd
     TARGETS test_ideal_mhd_coordinates)
