@@ -92,6 +92,7 @@ contains
         begin = end
         call s0_prepare(pencil,stiffness,mass,shift,report)
         call system_clock(tick); end = real(tick,dp)/rate; f_time = end-begin
+        if (report%status /= EIGEN_OK) print *, report%sparse_status,report%message
         call expect(report%status == EIGEN_OK,'wave factorization')
         if (complex_shift) then
             call expect(report%inertia_status == FORTSPARSE_INERTIA_UNAVAILABLE, &
@@ -184,6 +185,7 @@ contains
         shift = (stiffness%val(12)/mass%val(12)+ &
             stiffness%val(13)/mass%val(13))/2
         call s0_prepare(pencil,stiffness,mass,shift,report)
+        if (report%status /= EIGEN_OK) print *, report%sparse_status,report%message
         call expect(report%status == EIGEN_OK,'continuum factor')
         call expect(report%inertia_status == FORTSPARSE_INERTIA_RELIABLE &
             .and. report%below == 12,'continuum counting below shift')
@@ -320,6 +322,7 @@ contains
             [cmplx(2,0,dp),cmplx(0,0.2_dp,dp),cmplx(0,-0.2_dp,dp), &
              cmplx(1,0,dp)],mass,status)
         call s0_prepare(pencil,stiffness,mass,cmplx(0,0,dp),report)
+        if (report%status /= EIGEN_OK) print *, report%sparse_status,report%message
         call expect(report%status == EIGEN_OK,'complex Hermitian pencil')
         call expect(report%below == 1 .and. report%above == 1,'indefinite inertia')
         bad = mass; bad%val = -bad%val
