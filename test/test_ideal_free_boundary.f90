@@ -485,7 +485,8 @@ contains
             end if
             call ideal_fb_set_drive(fb, sampler, st)
             if (present(use_bem3d)) then
-                options%maximum_degree=80
+                options%maximum_degree=96
+                options%maximum_evaluations=200000000
                 call ideal_fb_use_bem3d(fb,12,options,report,st)
                 write(*,'(a,4i10,es18.9)') 'FB3D pair status failed degree accepted ratio ', &
                     st,report%failed_pairs,report%maximum_degree_used, &

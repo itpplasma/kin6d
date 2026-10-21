@@ -257,7 +257,8 @@ contains
         call ideal_fb_set_drive(fb, sampler, st, closure)
         if (st /= 0 .or. closure > 1e-8_dp) error stop 'drive trace closure'
         if(use_bem3d) then
-            options%maximum_degree=80
+            options%maximum_degree=96
+                options%maximum_evaluations=200000000
             call ideal_fb_use_bem3d(fb,12,options,pair_report,st)
             print '(a,4i10,es18.9)', 'Landreman 3D pair status failed degree accepted ratio ', &
                 st,pair_report%failed_pairs,pair_report%maximum_degree_used, &
