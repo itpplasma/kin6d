@@ -337,8 +337,12 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
-add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90)
+add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
+    test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_external_kink COMMAND test_ideal_free_boundary kink)
+set_tests_properties(ideal_fb_external_kink PROPERTIES ENVIRONMENT
+    "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
 add_test(NAME ideal_fb_derivatives COMMAND test_ideal_free_boundary derivatives)
 add_test(NAME ideal_fb_vertical_newton COMMAND test_ideal_free_boundary vertical)
 foreach(k 2 3)
@@ -843,6 +847,8 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(test_gs_p1_current_identities PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_p1_exact_current_antiderivatives
         COMMAND test_gs_p1_current_identities)
+    add_executable(gen_ideal_fb_kink gen/gen_ideal_fb_kink.f90)
+    target_link_libraries(gen_ideal_fb_kink PRIVATE kin6d_gen_support)
     add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
     target_link_libraries(test_gs_symbolic PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_symbolic_identities COMMAND test_gs_symbolic)
