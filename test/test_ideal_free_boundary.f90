@@ -5,12 +5,31 @@ module ideal_fb_test_field
     use kin6d_ideal_map, only: ideal_frozen_t
     implicit none
     private
+    type, extends(ideal_frozen_t), public :: screw_field_t
+        real(dp) :: major = 20, pitch = 0.5_dp
+    contains
+        procedure :: evaluate => screw_evaluate
+    end type
     type, extends(ideal_frozen_t), public :: simple_field_t
         logical :: solovev = .false.
     contains
         procedure :: evaluate => simple_evaluate
     end type
 contains
+    subroutine screw_evaluate(field, point, chi, chi_gradient, b3, pressure)
+        class(screw_field_t), intent(in) :: field
+        real(dp), intent(in) :: point(2)
+        real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
+        real(dp) :: x, y
+        x = point(1) - field%major; y = point(2)
+        ! Unit-radius uniform-current screw pinch, mu0=1. The toroidal
+        ! embedding approaches the exact cylinder as major -> infinity.
+        chi = field%major*(x*x + y*y - 1)/2
+        chi_gradient = field%major*[x, y]
+        b3 = 10*field%pitch*field%major/point(1)
+        pressure = 1 - x*x - y*y
+    end subroutine
+
     subroutine simple_evaluate(field, point, chi, chi_gradient, b3, pressure)
         class(simple_field_t), intent(in) :: field
         real(dp), intent(in) :: point(2)
@@ -70,13 +89,18 @@ program test_ideal_free_boundary
         ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses, &
         ideal_fb_hypotheses_print, &
         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
-        ideal_fb_solve, ideal_fb_report_t
+        ideal_fb_solve, ideal_fb_report_t, ideal_fb_mode_energy, &
+        ideal_fb_mode_stability, ideal_fb_stability_t, IDEAL_FB_BAD_INPUT, &
+        IDEAL_FB_NOT_CONVERGED
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
+    use fortnum_quadrature, only: gauss_legendre
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use kin6d_triangle_basis, only: triangle_basis_jet
-    use ideal_fb_test_field, only: simple_field_t
+    use ideal_fb_kink_leaves, only: cylinder_kink_energy, &
+        cylinder_kink_energy_jvp, cylinder_kink_energy_vjp
+    use ideal_fb_test_field, only: simple_field_t, screw_field_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4.0e-7_dp*pi
     ! Gamma_c ellipse, PF filaments (R, Z, A) and the inner current filament.
@@ -90,6 +114,7 @@ program test_ideal_free_boundary
     logical :: windows_on = .false.
     character(16) :: mode, argument
     integer :: degree
+    real(dp) :: kink_major = 20
     mode = 'derivatives'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
     if (command_argument_count() > 1) then
@@ -107,12 +132,146 @@ program test_ideal_free_boundary
         call vacuum_3d()
     case ('slide')
         call slide_checks()
+    case ('kink')
+        call kink_checks()
     case ('hypotheses')
         call hypothesis_checks()
     case default
         error stop 'unknown mode'
     end select
 contains
+    subroutine kink_curve(t, point)
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        point = [kink_major + 2*cos(2*pi*t), 2*sin(2*pi*t)]
+    end subroutine
+
+    subroutine kink_sampler(r, z, k, bc, bs)
+        ! Curl-free toroidal ring field of unit circulation 2*pi. Its
+        ! large-aspect-ratio limit is B_theta=1/r. No conducting wall.
+        real(dp), intent(in) :: r, z
+        integer, intent(in) :: k
+        real(dp), intent(out) :: bc(3), bs(3)
+        real(dp) :: g, gg(4)
+        bc = 0; bs = 0
+        if (k /= 0) return
+        call gs_green_gradient(r, z, kink_major, 0.0_dp, g, gg)
+        bc([1, 3]) = 2*pi*[gg(2), -gg(1)]/r
+    end subroutine
+
+    subroutine kink_checks()
+        ! Independent cylinder oracle: m=1 rigid helical displacement, ka=0.1.
+        ! delta W / (pi*a^2*L/(2*mu0)) = q^2-1 + f(ka)*(q-1)^2,
+        ! f=K1/(K1+ka*K0). Its ka -> 0 limit is 2*q*(q-1).
+        ! The two real phases are necessary; keeping only cosine replaces
+        ! the helical drive by a standing perturbation.
+        type(ideal_fb_t) :: fb
+        type(gs_state_t) :: mesh
+        type(cylindrical_chart_t) :: chart
+        type(screw_field_t) :: field
+        type(ideal_fb_stability_t) :: ep, em, single, probe
+        real(dp), allocatable :: chain(:, :), contour(:, :), u(:)
+        real(dp) :: q, scale, exact, err, previous(2), lambda, wp, wv, ws
+        real(dp) :: jv(4), gq, gf, factor, k0, k1, t, gx(96), gw(96)
+        integer :: level, iq, j, a, st
+        call gauss_legendre(96, gx, gw)
+        k0 = 0; k1 = 0
+        do j = 1, 96
+            t = 6*(gx(j) + 1)
+            k0 = k0 + 6*gw(j)*exp(-0.1_dp*cosh(t))
+            k1 = k1 + 6*gw(j)*exp(-0.1_dp*cosh(t))*cosh(t)
+        end do
+        factor = k1/(k1 + 0.1_dp*k0)
+        previous = huge(1.0_dp)
+        do level = 1, 2
+            kink_major = 40.0_dp*2**level
+            field%major = kink_major
+            allocate (contour(2, 16), chain(2, 16))
+            do j = 1, 16
+                call kink_curve(real(j - 1, dp)/16, contour(:, j))
+                chain(:, j) = [kink_major + cos(2*pi*(j - 1)/16), &
+                    sin(2*pi*(j - 1)/16)]
+            end do
+            do iq = 1, 2
+                q = merge(0.5_dp, 1.5_dp, iq == 1)
+                field%pitch = q
+                call initialize_gs(mesh, contour, 0.12_dp, st, 3, &
+                    curve=kink_curve, interior_chain=chain)
+                if (st /= 0) error stop 'kink mesh'
+                call ideal_fb_init(fb, mesh, chain, chart, field, &
+                    nint(kink_major/10), 1, 10*q*kink_major, 2*pi, st, mu0=1.0_dp)
+                if (st /= IDEAL_FB_OK) error stop 'kink init'
+                call ideal_fb_set_drive(fb, kink_sampler, st)
+                if (st /= IDEAL_FB_OK) error stop 'kink drive'
+                call ideal_fb_solve_vacuum(fb, st)
+                if (st /= IDEAL_FB_OK) error stop 'kink vacuum'
+                allocate (u(4*fb%plasma%nodes))
+                u = 0
+                do a = 1, fb%plasma%nodes
+                    u(4*a - 3) = 1; u(4*a) = 1
+                end do
+                call ideal_fb_mode_energy(fb, 2, u, ep, st)
+                if (st /= IDEAL_FB_OK) then
+                    print *, 'energy status/amplitudes', st, &
+                        maxval(abs(fb%plasma%x(:, 2:, :))), &
+                        maxval(abs(fb%xs(:, 2:, :))), maxval(abs(fb%phi(2:, :)))
+                    error stop 'kink energy plus'
+                end if
+                u(4::4) = -1
+                call ideal_fb_mode_energy(fb, 3, u, em, st)
+                if (st /= IDEAL_FB_OK) error stop 'kink energy minus'
+                if (ep%total < em%total) em = ep
+                scale = 10*pi*pi
+                call cylinder_kink_energy(q, factor, wp, wv, exact, ws)
+                call cylinder_kink_energy_jvp(q, factor, 0.7_dp, 0.0_dp, &
+                    jv(1), jv(2), jv(3), jv(4))
+                call cylinder_kink_energy_vjp(q, factor, 1.0_dp, -2.0_dp, &
+                    3.0_dp, -4.0_dp, gq, gf)
+                if (abs(dot_product(jv, [1.0_dp, -2.0_dp, 3.0_dp, -4.0_dp]) &
+                    - 0.7_dp*gq) > 1.0e-12_dp) error stop 'kink JVP/VJP'
+                err = abs(em%total/scale - exact)
+                print '(a,f6.1,a,f4.1,a,4es13.5)', 'kink A=', kink_major, &
+                    ' q=', q, ' plasma,vacuum,total,limit ', em%plasma/scale, &
+                    em%vacuum/scale, em%total/scale, exact
+                if (em%total*exact <= 0) error stop 'external kink threshold sign'
+                if (abs(em%constraint)/scale > 1.0e-8_dp) &
+                    error stop 'kink constraint work'
+                if (err > 0.03_dp*abs(exact)) error stop 'cylinder energy limit'
+                if (err >= previous(iq)) error stop 'cylinder aspect convergence'
+                previous(iq) = err
+                if (abs(em%plasma/scale - wp) > 0.03_dp*abs(wp)) &
+                    error stop 'cylinder plasma energy'
+                if (abs(em%vacuum/scale - wv) > 0.03_dp*abs(wv)) &
+                    error stop 'cylinder vacuum energy'
+                if (iq == 1) then
+                    u(4::4) = 0
+                    call ideal_fb_mode_energy(fb, 2, u, single, st)
+                    if (st /= IDEAL_FB_OK) error stop 'standing energy'
+                    print '(a,es13.5)', 'cosine-only energy/scale ', single%total/scale
+                    if (single%total <= 0) error stop 'standing-wave control'
+                    ! A shift near a negative Rayleigh witness must return a
+                    ! negative eigenvalue from the full coupled harmonic.
+                    call ideal_fb_mode_stability(fb, 2, lambda, st, &
+                        shift=2*em%total/em%metric_norm, report=probe)
+                    print '(a,es13.5,a,i0,a,es13.5)', 'paired eigenvalue ', lambda, &
+                        ' status ', st, ' residual ', probe%relative_residual
+                    if (st /= IDEAL_FB_OK) error stop 'kink eigen convergence'
+                    if (lambda >= 0) error stop 'missing helical instability'
+                    call ideal_fb_mode_stability(fb, 2, lambda, st, iterations=1, &
+                        shift=-0.1_dp)
+                    if (st /= IDEAL_FB_NOT_CONVERGED) &
+                        error stop 'unconverged probe accepted'
+                    fb%plasma%x(1, 2, 1) = 1.0e-3_dp
+                    call ideal_fb_mode_stability(fb, 2, lambda, st)
+                    if (st /= IDEAL_FB_BAD_INPUT) &
+                        error stop 'nonaxisymmetric probe accepted'
+                end if
+                deallocate (u)
+            end do
+            deallocate (chain, contour)
+        end do
+    end subroutine
+
     subroutine field_ext(r, z, b, psi)
         ! Poloidal field and flux of the PF filaments plus the unit-circulation
         ! filament scaled by c: B_unit = (G_Z, -G_R)/R, psi_unit = -G.
