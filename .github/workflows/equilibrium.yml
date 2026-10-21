@@ -1,0 +1,32 @@
+name: Equilibrium acceptance
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  equilibrium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      FC: gfortran-14
+      CC: gcc-14
+      OMP_NUM_THREADS: 4
+      OPENBLAS_NUM_THREADS: 1
+      OMP_WAIT_POLICY: passive
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build gfortran-14 gcc-14 libopenblas-dev liblapack-dev libmumps-seq-dev libsuitesparse-dev libmetis-dev libnetcdf-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
+      - name: Build affected consumers
+        run: cmake --build build -j 4 --target test_curve_chart_solver test_curve_chart test_ideal_map_axisymmetric test_ideal_free_boundary test_landreman_free_boundary test_equilibrium_core test_equilibrium_boundary test_equilibrium_geometry test_gs_readback_free gs_phase1 test_gs_native_adapter test_gs_fb_jacobian test_gs_direct test_mhd_ampere_error test_nonnested_coupled test_gs_prescribed_q test_grad_shafranov test_gs_fb_manufactured
+      - name: Run affected native tests
+        run: >-
+          ctest --test-dir build -j 4 --output-on-failure
+          -R '^(ideal_map_curve_chart_.*|equilibrium_curve_chart_.*|ideal_map_derivatives_and_rotation_null|ideal_map_reduced_omega_derivatives|ideal_map_n3_leakage|ideal_fb_derivatives|ideal_fb_landreman_axisymmetric|equilibrium_core_.*|gs_k6_mini_regression|grad_shafranov_p[23]_readback_free|gs_native_adapter_contract|gs_free_boundary_t[37]_.*|grad_shafranov_csr_direct_newton_oracles|grad_shafranov_analytic_and_derivative_oracles|ideal_fb_vertical_newton|mhd_ampere_n_error_status|nonnested_coupled_solovev_p2|kin6d_layering)$'
