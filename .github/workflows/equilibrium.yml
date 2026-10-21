@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   equilibrium:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","itp-slurm"]') }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || (github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && fromJSON('["self-hosted","itp-slurm"]') || fromJSON('["self-hosted","itp-build"]') }}
     timeout-minutes: 25
     env:
       FC: gfortran-14
@@ -21,14 +21,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Run native checks in the build container
+        if: ${{ !github.event.pull_request.head.repo.fork && !(github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+        run: |-
+          ci/run.sh equilibrium-equilibrium
       - name: Bundle exact sources for Slurm
-        if: ${{ !github.event.pull_request.head.repo.fork }}
+        if: ${{ !github.event.pull_request.head.repo.fork && (github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
         env:
           SCI_TIER: equilibrium-equilibrium
         run: |-
           TMPDIR="$RUNNER_TEMP" ci/bundle.sh "$RUNNER_TEMP/ci.tar.zst"
       - name: Run native checks on sCluster
-        if: ${{ !github.event.pull_request.head.repo.fork }}
+        if: ${{ !github.event.pull_request.head.repo.fork && (github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
         run: |-
           sci-dispatch native "$RUNNER_TEMP/ci.tar.zst"
       - name: Install native dependencies
@@ -40,12 +44,7 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=ON -DKIN6D_CHECK_LEAN=OFF
         if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Build affected consumers
-        run: cmake --build build -j 4 --target test_ideal_mhd_coordinates test_ideal_xi test_map_equilibrium test_nested_oracles
-          benchmark_nested_oracles test_nested_boundary_input nested_oracle_export test_curve_chart_solver test_curve_chart
-          test_ideal_map_axisymmetric test_ideal_free_boundary test_landreman_free_boundary test_equilibrium_core test_equilibrium_boundary
-          test_equilibrium_geometry test_gs_readback_free gs_phase1 test_gs_native_adapter test_gs_fb_jacobian test_gs_direct test_mhd_ampere_error
-          test_nonnested_coupled test_nonnested_transport_error test_gs_prescribed_q test_grad_shafranov test_gs_fb_manufactured
-          test_gs_profile_law_readback response_qualify test_response_interfaces
+        run: cmake --build build -j 4 --target test_ideal_mhd_coordinates test_ideal_xi test_map_equilibrium test_nested_oracles benchmark_nested_oracles test_nested_boundary_input nested_oracle_export test_curve_chart_solver test_curve_chart test_ideal_map_axisymmetric test_ideal_free_boundary test_landreman_free_boundary test_equilibrium_core test_equilibrium_boundary test_equilibrium_geometry test_gs_readback_free gs_phase1 test_gs_native_adapter test_gs_fb_jacobian test_gs_direct test_mhd_ampere_error test_nonnested_coupled test_nonnested_transport_error test_gs_prescribed_q test_grad_shafranov test_gs_fb_manufactured test_gs_profile_law_readback response_qualify test_response_interfaces
         if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Run affected native tests
         run: >-
