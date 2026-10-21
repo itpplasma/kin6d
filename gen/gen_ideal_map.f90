@@ -8,7 +8,7 @@ program gen_ideal_map
    ! 2-form) in the abstract coordinates and p the frozen pressure (gamma=0):
    !   w = |DX b|^2/(2*mu0*J) - p*J,  J = sigma*det(DX).
    use fortsym_arena, only: arena_t
-   use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
+   use fortsym_expr, only: expr_t, sym, pi_expr, operator(+), operator(-), &
                            operator(*), operator(/), operator(**)
    use fortsym_diff, only: diff
    use fortsym_engine, only: engine_result_t, VERDICT_TRUE
@@ -109,6 +109,15 @@ program gen_ideal_map
     call w%emit('ideal_axisymmetric_field', [character(8) :: sample_names, 'r'], &
                 [character(8) :: 'br', 'bz', 'bphi', 'psi_r', 'psi_z', 'jac'], &
                 flux_value, ad=.true.)
+   call w%emit('ideal_region_weight', [character(8) :: 'r', 'det', 'bphi'], &
+      [character(8) :: 'volume', 'flux'], &
+      [2*pi_expr(arena)*r*sym(arena, 'det'), &
+       sym(arena, 'bphi')*sym(arena, 'det')], ad=.true.)
+   call w%emit('ideal_contour_density', &
+      [character(8) :: 'rho', 'bphi', 'grad_r', 'grad_z', 'cos_t', 'sin_t'], &
+      [character(8) :: 'density'], [sym(arena, 'rho')*sym(arena, 'bphi') &
+      /(sym(arena, 'grad_r')*sym(arena, 'cos_t') &
+       + sym(arena, 'grad_z')*sym(arena, 'sin_t'))], ad=.true.)
    call w%line('end module kin6d_ideal_map_leaves')
    call w%close()
    ! Experimental CPU benchmark seam, retained derivatives of the same density.

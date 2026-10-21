@@ -190,13 +190,23 @@ surface path (`surface_harmonics`), agreeing to 1e-5.
 
 ## Ideal closure (L6)
 
+L4, L5 and L6 use the shared `layer_closure_t` constraint representation.
+With `rat_auto`, every discovered rational in the requested psin interval
+receives the selected closure, including unlisted toroidal sidebands. For
+Frobenius and asymptotic resistive closures, `layer_delta` is an upper bound:
+each fit stencil is capped to 0.45 of the distance to the nearest rational or
+fit-domain boundary. The effective per-rational delta is printed and retained
+in `prefix_layer.dat`. This is mesh setup; cap/discovery changes have no smooth
+derivative. A rational outside the fit domain is refused explicitly. This
+change does not qualify finite-pressure asymptotic matching or a resolved strip.
+
 `kin6d_mhd_closure_n`, `closure = 'frobenius'` in `gs_response_3d`. Near a
 rational `q = m/n` at `psin_s`, `x = psin − psin_s`, the resonant flux of an
 ideal outer solution is `Φ_m = A|x|^(1/2−μ) + B|x|^(1/2+μ) + Cx + …` on each
 side (Glasser–Greene–Johnson; `μ = sqrt(−D_I)`, Mercier index from the DCON
 formula). The layer `|x| < δ` carries no volume current; two resonant sheets
 on its edge rings (the shared sheet machinery of `kin6d_mhd_response_n`,
-`sheet_closure_t`) are fixed by vanishing large coefficients `A±`, read from
+`layer_closure_t`) are fixed by vanishing large coefficients `A±`, read from
 fits of `Φ_m` on three graded rings outside the layer on each side (basis
 `t^−ε, t, (t^(1+ε)−t)/ε`, `ε = μ − 1/2`, which tends to `1, t, t ln t` at zero
 beta). Prescribed `A±` give Δ' data. The net layer current (sum of the edge
@@ -240,7 +250,7 @@ layer of a rotating plasma instead of ideal shielding:
   (the reconnected flux of the outer solution);
 - net layer current `J = junit (λ_in + λ_out) = Δ_layer A` (`J` the jump of
   `dΦ_m/dψ_N`; the sheet amplitudes enter the constraint directly,
-  `sheet_closure_t%wl`).
+  `layer_closure_t%wl`).
 
 Layer response. Slab resistive-inertial(-viscous) layer of the MARS-F
 single-fluid model (Doppler rate `γ = −i(ω − nΩ)`, `γ = inΩ` for the static

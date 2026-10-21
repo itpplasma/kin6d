@@ -58,14 +58,15 @@ program test_mhd_closure
         ring_labels_smooth
     use kin6d_gs_direct, only: gs_direct_available
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
-        ampere_n_curl
-    use kin6d_mhd_response_n, only: ring_sheet_load, sheet_closure_t, closure_fluxes, &
+        ampere_n_curl, mu0
+    use kin6d_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &
         ring_angles_t, ring_angles_set, ring_flux_harmonic, ring_flux_from_values, &
         ring_points
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_xmax, layer_jump, layer_kink, layer_init, layer_closure, layer_wmax, &
+        layer_xmax, layer_fit_widths, layer_jump, layer_kink, layer_init, &
+        layer_closure, layer_wmax, &
         layer_coefficients, layer_regular_slope, layer_large
     use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
         layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
@@ -103,7 +104,7 @@ program test_mhd_closure
     type(ampere_n_t) :: amp
     type(ideal_options_t) :: opt
     type(sample_ring_t), allocatable :: sr(:)
-    type(sheet_closure_t) :: cl
+    type(layer_closure_t) :: cl
     type(surface_t) :: s
     type(ring_angles_t), allocatable :: ras(:)
     type(cyl_step_t) :: eq
@@ -116,6 +117,7 @@ program test_mhd_closure
     complex(dp), allocatable :: b2(:), f(:), a(:), b2cl(:, :), lam(:), phit(:)
     complex(dp), allocatable :: phe(:), bc(:)
     complex(dp) :: mo(2, 2), mfe(2, 2), p0(2), dmap(2, 2), vmap(2, 2), smap(2, 2), jr(2)
+    complex(dp) :: current_map(2)
     complex(dp) :: lam2(2), lam_l4, ga, gb, fa, fb, gn, bb(3), amat(2, 2)
     real(dp) :: merr, qsgn, qt, x, pa, rs, re(2), fp, dpr, gr, rb(2, 2), wl, tol
     integer :: k, st, nrat, itest, j, je(2), side, nr, ns, info, its, it
@@ -129,6 +131,11 @@ program test_mhd_closure
         if (trim(mode) == 'strip') then
             !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
             call strip_suite()
+        end if
+        if (trim(mode) == 'setup') then
+            call layer_all_rational_setup()
+            if (.not. all_passed) error stop 1
+            stop
         end if
     end block
     !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
@@ -161,6 +168,53 @@ program test_mhd_closure
     print '(a)', "test_mhd_closure: all checks passed"
 
 contains
+
+    subroutine layer_all_rational_setup()
+        !! Unsorted, crowded and near-boundary rationals must all retain
+        !! two complete fit stencils without crossing a neighbor or boundary.
+        real(dp), parameter :: centers(4) = &
+            [0.9996_dp, 0.49_dp, 0.4902_dp, 0.0001_dp]
+        real(dp), parameter :: lo = 1.0e-6_dp, hi = 0.9998_dp
+        real(dp) :: widths(4), reach, separation
+        real(dp), allocatable :: extra(:), labels(:), grid(:)
+        type(rational_layer_t) :: lay
+        integer :: i, j, st
+
+        call layer_fit_widths(centers, 1.0e-3_dp, 2.0_dp, 3, &
+            lo, hi, widths, st)
+        call record(st == 0, 'all-rational widths accept crowded and edge layers')
+        if (st /= 0) return
+        extra = sqrt(centers)
+        do i = 1, size(centers)
+            reach = 4*widths(i)
+            separation = min(centers(i) - lo, hi - centers(i))
+            do j = 1, size(centers)
+                if (j == i) cycle
+                separation = min(separation, abs(centers(i) - centers(j)))
+            end do
+            call record(reach < 0.5_dp*separation, &
+                'fit stencil remains inside its rational neighborhood')
+            call layer_labels(centers(i), widths(i), 2.0_dp, &
+                reach*(1 + 1.0e-9_dp), lo, hi, labels)
+            call record(size(labels) == 6, 'both complete fit stencils retained')
+            extra = [extra, sqrt(labels)]
+        end do
+        call ring_labels_merge(128, extra, 0.3_dp, grid)
+        do i = 1, size(centers)
+            call layer_init(grid, centers(i), 2.0_dp, 1.0_dp, -0.28_dp, &
+                i, widths(i), 2.0_dp, 3, lay, st)
+            call record(st == 0, 'capped fit rings initialize on the merged mesh')
+        end do
+        call layer_fit_widths([0.5_dp, 0.5_dp], 1.0e-3_dp, 2.0_dp, 3, &
+            lo, hi, widths(:2), st)
+        call record(st /= 0, 'duplicate rational centers refused')
+        call layer_fit_widths([hi], 1.0e-3_dp, 2.0_dp, 3, &
+            lo, hi, widths(:1), st)
+        call record(st /= 0, 'center outside the fit domain refused')
+        call layer_fit_widths([0.5_dp], 1.0e-3_dp, 1.0_dp, 3, &
+            lo, hi, widths(:1), st)
+        call record(st /= 0, 'non-growing fit grading refused')
+    end subroutine layer_all_rational_setup
 
     subroutine record(c, d)
         logical, intent(in) :: c
@@ -533,7 +587,7 @@ contains
         !! Dirichlet-to-Neumann map D(gamma), the current-free interior that
         !! the FEEC sees between the edges (map V) and the jump of
         !! d Phi_m/dr per unit edge sheet give the edge sheets lam = S Phi,
-        !! imposed as the closure rows S Phi - lam = 0 (sheet_closure_t w, wl).
+        !! imposed as the closure rows S Phi - lam = 0 (layer_closure_t w, wl).
         !! Tanh step (q0 1.2, r1 0.5, width 0.02), 2/1 strip, 3/1 and 4/1 L4
         !! sheets.  Pre-declared rules (RB2 handoff, before the first run):
         !!  (a) eta = 0, gamma = 1e-6: strip net current / L4 sheet current on
@@ -554,20 +608,17 @@ contains
         !! docs/response-unified.md, R-B2 increment 1).  The gated run uses
         !! the smallest nrad of that ladder at which (b) passes.  The old
         !! ratio to the sharp-step rate stays printed ("rel").
-        !! (a) re-declared 2026-10-14 (controller).  As first declared it was
-        !! run at strip half-width xd = 0.02 (in psi_n) and gave 1.02e-3 ..
-        !! 1.01e-3 for nrad 32 .. 160 and every GMRES tolerance: it does not
-        !! close with the mesh.  Measured xd ladder (R0/a 40, nrad 64-128,
-        !! independent of nrad): xd 0.01 / 0.02 / 0.04 -> 1.55e-4 / 1.01e-3 /
-        !! 4.40e-3, i.e. ~xd^2: the finite strip width versus the sheet limit,
-        !! which is what (a) tests.  (a) is now: at xd = 0.01, |strip / L4
-        !! current - 1| <= 1e-3 (limit unchanged), AND the convergence order
-        !! of that error between xd 0.02 and 0.01 (same nrad) is >= 1.8.  The
-        !! gated run is at xd 0.01; (b) was re-checked there at nrad 64
-        !! (1.65e-2 / 1.63e-2 / 1.64e-2, job 3225264), so nrad stays 64.
+        !! (a) retains the 2026-10-14 interface-sheet diagnostics: their sum
+        !! agrees with L4 to 1e-3 at xd=0.01 and its error has order >=1.8
+        !! between xd=0.02 and 0.01. That sum is the magnetic replacement's
+        !! current, not the resolved strip current. Exact cylinder moments
+        !! explain its finite-width error (response-strip-current.md).
+        !! The physical-current row now supplies the original gate as well:
+        !! actual strip current / L4 within 1e-3 at BOTH xd=0.02 and 0.01.
+        !! No fitted correction is applied to the interface amplitudes.
         !! KIN6D_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
         character(len=128) :: env
-        real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order
+        real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order, physical, physical2
         integer :: nr, i
         integer, parameter :: nrad_gate = 64
         real(dp), parameter :: etas(3) = [1.0e-6_dp, 1.0e-7_dp, 1.0e-8_dp]
@@ -582,13 +633,16 @@ contains
         end if
         ! (a) at twice the gated width, no growth rates: the xd-order reference
         call fe_strip(40.0_dp, 2*xd_gate, nrad_gate, none, g0, g0, g0, ierr2, &
-            cerr2)
-        call fe_strip(40.0_dp, xd_gate, nrad_gate, etas, gt, gc, gs, ierr, cerr)
+            cerr2, physical2)
+        call fe_strip(40.0_dp, xd_gate, nrad_gate, etas, gt, gc, gs, ierr, cerr, &
+            physical)
         order = log(ierr2/ierr)/log(2.0_dp)
         print '(a,es10.3,a,es10.3,a,f6.3)', "  (a) xd 0.02 rel", ierr2, &
             ", xd 0.01 rel", ierr, ", xd order", order
         call record(ierr <= 1.0e-3_dp, "(a) ideal limit: strip current = L4 sheet")
         call record(order >= 1.8_dp, "(a) strip -> sheet error converges as xd^2")
+        call record(physical2 <= 1.0e-3_dp .and. physical <= 1.0e-3_dp, &
+            '(a) physical strip current = L4 sheet at original and half width')
         do i = 1, 3
             call record(abs(gt(i)/gs(i) - 1) <= 2.0e-2_dp, &
                 "(b) torus growth rate = same-profile cylinder rate")
@@ -601,13 +655,15 @@ contains
         stop
     end subroutine strip_suite
 
-    subroutine fe_strip(r0a, xd, nrad, etas, gtor, gcyl, gsame, ierr, cerr)
+    subroutine fe_strip(r0a, xd, nrad, etas, gtor, gcyl, gsame, ierr, cerr, current_error)
         !! gcyl: R-B1 sharp-step cylinder rate; gsame: cylinder rate of the
         !! same (tanh) profile, the reference of gate (b).
         real(dp), intent(in) :: r0a, xd, etas(:)
         integer, intent(in) :: nrad
         complex(dp), intent(out) :: gtor(:), gcyl(:), gsame(:)
         real(dp), intent(out) :: ierr, cerr
+        real(dp), intent(out), optional :: current_error
+        complex(dp) :: physical_current
         nmode = 1
         mres = 2
         q0 = 1.2_dp
@@ -768,6 +824,14 @@ contains
         wl = layer_width(0.0_dp, (1.0e-6_dp, 0.0_dp), fp)
         call smat(0.0_dp, (1.0e-6_dp, 0.0_dp), wl)
         lam2 = matmul(inv2(eye2() - matmul(smap, mo)), matmul(smap, p0))
+        ! The Schur sheets replace the interior magnetic field for the outer
+        ! solve; their sum is not the current in the resolved strip. Apply the
+        ! strip's physical-current row to its actual two-ring flux traces.
+        ! In the peak-flux convention Phi=2 R0 r B_r, a cylindrical unit
+        ! stream-function sheet has int r L(Phi) dr = 2 mu0 m^2 R0 Lambda.
+        ! gen/check_response_strip_current.f90 checks this normalization exactly.
+        physical_current = sum(current_map*(p0 + matmul(mo, lam2))) &
+            /(2*mu0*mres**2*r0)
         ! direct coupled closure solve
         cl%w(ns - 1:ns, ns - 1:ns) = smap
         cl%wl(ns - 1:ns, ns - 1:ns) = -eye2()
@@ -791,6 +855,9 @@ contains
         call solve(.true.)
         lam_l4 = lam(ns - 1) + lam(ns)
         ierr = abs((lam2(1) + lam2(2))/lam_l4 - 1)
+        if (present(current_error)) current_error = abs(physical_current/lam_l4 - 1)
+        print '(a,2es13.5,a,es10.2)', '  (a) physical strip current', &
+            physical_current, ' rel to L4', abs(physical_current/lam_l4 - 1)
         print '(a,2es13.5,a,2es13.5,a,es10.2,a,es10.2)', '  (a) strip current', &
             lam2(1) + lam2(2), ' L4', lam_l4, ' rel', ierr, ' direct/Schur', cerr
         ! (b) growth rates: det(I - S(gamma) M) = 0, mesh from the cylinder rate
@@ -1010,7 +1077,7 @@ contains
         h2 = (n2 + 1)/2
         rr(1:h2) = rs + (rr(1:h2) - rs)*(rs - re(1))/sopt%xs
         rr(h2:n2) = rs + (rr(h2:n2) - rs)*(re(2) - rs)/sopt%xs
-        call strip_dirichlet_map(eq, eta, gam, rr, dmap, st2)
+        call strip_dirichlet_map(eq, eta, gam, rr, dmap, st2, current_map)
         if (st2 /= 0) error stop "strip LU"
         smap(1, :) = (vmap(1, :) - dmap(1, :))/jr(1)
         smap(2, :) = (dmap(2, :) - vmap(2, :))/jr(2)
@@ -1145,7 +1212,7 @@ contains
         type(ampere_n_t) :: amp
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(ring_angles_t) :: rac
         type(surface_t) :: s
         complex(dp), allocatable :: a(:), b2(:), bc(:)
@@ -1550,7 +1617,7 @@ contains
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
         type(rational_layer_t), allocatable :: lays(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(surface_t) :: s
         real(dp), allocatable :: ul(:), extra(:), lab(:), psin_s(:)
         complex(dp), allocatable :: a(:), f(:), b2(:), b2cl(:, :), lam(:), phit(:)
@@ -1828,7 +1895,7 @@ contains
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
         type(rational_layer_t), allocatable :: lays(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(surface_t) :: s
         type(ring_angles_t) :: rac
         real(dp), allocatable :: ul(:), extra(:), lab(:), psin_s(:)
@@ -2378,7 +2445,7 @@ contains
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: sr(:)
         type(rational_layer_t), allocatable :: lays(:)
-        type(sheet_closure_t) :: cl0, cl
+        type(layer_closure_t) :: cl0, cl
         type(surface_t) :: s
         type(ring_angles_t) :: rar
         type(layer_params_t) :: par
