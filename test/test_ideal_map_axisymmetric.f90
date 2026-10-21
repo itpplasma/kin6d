@@ -103,6 +103,8 @@ program test_ideal_map_axisymmetric
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
     select case (trim(mode))
+    case ('seedboundary')
+        call seed_boundary_check()
     case ('derivatives')
         call derivative_checks()
     case ('reduced')
@@ -657,6 +659,30 @@ contains
         q(1) = sqrt(r0*r0 + 2*r0*a*xi(1))
         q(2) = r0*a*xi(2)/q(1)
     end function
+
+    subroutine seed_boundary_check()
+        ! Independent exact LCFS points, away from the Fourier sampling grid.
+        ! This is the M1 export precondition; checking only stationarity misses it.
+        type(nested_seed_t) :: seed
+        type(solovev_profile_t) :: profile
+        real(dp) :: point(2), chi, grad(2), b3, pressure, defect
+        integer :: shape_case, j, status
+        do shape_case = 1, 2
+            call setup_case(shape_case == 2)
+            call ideal_seed_init(seed, boundary_point, phi_edge(), profile, status)
+            if (status /= 0) error stop 'boundary seed init'
+            defect = 0
+            do j = 0, 256
+                call boundary_point((j + 0.5_dp)/257, point)
+                call seed%evaluate(point, chi, grad, b3, pressure)
+                defect = max(defect, abs(chi))
+            end do
+            print '(a,i0,a,es16.8,a)', '[V] seed boundary case=', shape_case, &
+                ' maximum absolute label defect=', defect, &
+                ' claim=oracle-comparison bound=unavailable'
+            if (defect > 1.0e-12_dp) error stop 'seed boundary label defect'
+        end do
+    end subroutine
 
     subroutine seed_ladder()
         type(nested_seed_t) :: seed
