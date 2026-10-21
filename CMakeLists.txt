@@ -93,7 +93,8 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_bvls.f90
     ${fortnum_SOURCE_DIR}/src/linalg/fortnum_gsvd.f90)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
-target_link_libraries(kin6d_ode PUBLIC kin6d_intervals)
+find_package(LAPACK REQUIRED)
+target_link_libraries(kin6d_ode PUBLIC kin6d_intervals LAPACK::LAPACK)
 if(KIN6D_ENABLE_OPENMP)
     # These numerical leaves are also called from threaded KIN6D operators.
     # Compile them for concurrent calls, including runtime-checked Debug.
