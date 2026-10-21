@@ -8,9 +8,10 @@ module kin6d_map_3d_equilibrium
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t
     use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_curve_chart_leaves, only: curve_fourier_mode
     use kin6d_ideal_map_leaves, only: ideal_reference_form
     use kin6d_map_3d_readback_leaves, only: map_3d_field, map_3d_inverse_step, &
-                                            map_3d_determinant
+                                            map_3d_determinant, map_3d_flux
     implicit none
     private
     public :: map_3d_field_t, map_3d_equilibrium, map_3d_coordinates, map_3d_sample
@@ -77,7 +78,7 @@ contains
         real(dp), intent(in) :: xi(2), phi
         real(dp), intent(out) :: q(3), derivative(3, 3), reference(2), dg(2, 2)
         real(dp) :: shape(10), gradient(2, 10), mode, slope, coefficients(3, 10)
-        real(dp) :: phase
+        real(dp) :: phase, c, s, unused(3)
         integer :: k, n
         n = map%nloc
         call triangle_basis_jet(xi, shape(:n), gradient(:, :n))
@@ -85,12 +86,15 @@ contains
         do k = 1, map%nmode
             mode = 1; slope = 0
             if (k > 1) then
-                phase = (k/2)*map%nfp*phi
-                if (mod(k, 2) == 0) then
-                    mode = cos(phase); slope = -(k/2)*map%nfp*sin(phase)
+                phase=real((k/2)*map%nfp,dp)
+                c=0;s=0
+                if(mod(k,2)==0) then
+                    c=1
                 else
-                    mode = sin(phase); slope = (k/2)*map%nfp*cos(phase)
+                    s=1
                 end if
+                call curve_fourier_mode(c,s,phase,phi,mode,slope, &
+                    unused(1),unused(2),unused(3))
             end if
             coefficients(:, :n) = map%x(:, k, map%conn(:, cell))
             q = q + mode*matmul(coefficients(:, :n), shape(:n))
@@ -126,8 +130,7 @@ contains
                           value(EQ_BR), value(EQ_BZ), value(EQ_BPHI), &
                           value(EQ_PSI_R), value(EQ_PSI_Z), chi_phi, jac)
         ! In (R,Z,phi), the flux gauge BR=-psi_Z/R has psi=-sigma*chi.
-        value(EQ_PSI_R:EQ_PSI_Z) = -map%sigma*value(EQ_PSI_R:EQ_PSI_Z)
-        value(EQ_PSI) = -map%sigma*chi
+        call map_3d_flux(chi,map%sigma,value(EQ_PSI))
         value(EQ_P) = p
         status = 1
         if (jac <= 0 .or. q(1) <= 0) return

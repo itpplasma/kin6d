@@ -76,9 +76,13 @@ program gen_map_3d_readback
                        + cofactor(a, 3)*master(3))/detq
     end do
     field(3) = r*field(3)
+    gradient=-sigma*gradient
     call w%emit('map_3d_field', names, &
                [character(8)::'br', 'bz', 'bphi', 'chi_r', 'chi_z', 'chi_phi', 'jac'], &
                 [field, gradient, jac], ad=.true.)
+    z=sym(arena,'chi')
+    call w%emit('map_3d_flux',[character(8)::'chi','sigma'],['psi'], &
+        [-sigma*z],ad=.true.)
     phi=sym(arena,'phi'); z=sym(arena,'z')
     br=sym(arena,'br'); bz=sym(arena,'bz'); bp=sym(arena,'bp')
     call w%emit('map_3d_cartesian',[character(8)::'r','z','phi','br','bz','bp'], &
