@@ -101,6 +101,10 @@ program test_ideal_free_boundary
     use kin6d_triangle_basis, only: triangle_basis_jet
     use ideal_fb_kink_leaves, only: cylinder_kink_energy, &
         cylinder_kink_energy_jvp, cylinder_kink_energy_vjp
+    use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
+        s0_solve, s0_destroy
+    use fortnum_eigen, only: eigen_options_t, EIGEN_OK, EIGEN_NEAREST
+    use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, FORTSPARSE_OK
     use ideal_fb_test_field, only: simple_field_t, screw_field_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4.0e-7_dp*pi
@@ -135,6 +139,8 @@ program test_ideal_free_boundary
         call slide_checks()
     case ('kink')
         call kink_checks()
+    case ('kink_growth')
+        call kink_checks(.true.)
     case ('hypotheses')
         call hypothesis_checks()
     case default
@@ -160,7 +166,8 @@ contains
         bc([1, 3]) = 2*pi*[gg(2), -gg(1)]/r
     end subroutine
 
-    subroutine kink_checks()
+    subroutine kink_checks(growth)
+        logical, intent(in), optional :: growth
         ! Independent cylinder oracle: m=1 rigid helical displacement, ka=0.1.
         ! delta W / (pi*a^2*L/(2*mu0)) = q^2-1 + f(ka)*(q-1)^2,
         ! f=K1/(K1+ka*K0). Its ka -> 0 limit is 2*q*(q-1).
@@ -174,7 +181,15 @@ contains
         real(dp), allocatable :: chain(:, :), contour(:, :), u(:)
         real(dp) :: q, scale, exact, err, previous(2), lambda, wp, wv, ws
         real(dp) :: jv(4), gq, gf, factor, k0, k1, t, gx(96), gw(96)
+        real(dp) :: growth_errors(3), physical_lambda, physical_mass, density, r
+        integer :: first_level, alevel, cell, point
+        logical :: rates
         integer :: level, iq, j, a, st
+        rates = .false.
+        if (present(growth)) rates = growth
+        first_level = 1
+        if (rates) first_level = 0
+        density = 1.3_dp
         call gauss_legendre(96, gx, gw)
         k0 = 0; k1 = 0
         do j = 1, 96
@@ -184,7 +199,7 @@ contains
         end do
         factor = k1/(k1 + 0.1_dp*k0)
         previous = huge(1.0_dp)
-        do level = 1, 2
+        do level = first_level, 2
             kink_major = 40.0_dp*2**level
             field%major = kink_major
             allocate (contour(2, 16), chain(2, 16))
@@ -244,7 +259,34 @@ contains
                     error stop 'cylinder plasma energy'
                 if (abs(em%vacuum/scale - wv) > 0.03_dp*abs(wv)) &
                     error stop 'cylinder vacuum energy'
-                if (iq == 1) then
+                if (rates .and. iq == 1) then
+                    ! Rigid circular polarization has |xi_real|^2=1 at
+                    ! every toroidal angle. Integrate physical rho*dV on
+                    ! the actual curved plasma mesh, not coefficient metric.
+                    physical_mass = 0
+                    do cell = 1, fb%plasma%cells
+                        do point = 1, fb%plasma%nq
+                            r = dot_product(fb%plasma%reference(1, &
+                                fb%plasma%conn(:,cell)),fb%plasma%shape(:,point))
+                            physical_mass = physical_mass+density*r &
+                                *fb%plasma%weight(point)*fb%plasma%det(point,cell) &
+                                *2*pi/fb%plasma%nfp
+                        end do
+                    end do
+                    ! Two real phases are an exact Fourier degeneracy.
+                    ! This is the projected rigid subspace, not the minimum
+                    ! over the full displacement space.
+                    call rigid_spectrum(em%total,physical_mass,physical_lambda)
+                    alevel = level+1
+                    growth_errors(alevel) = abs(physical_lambda-exact/density) &
+                        /abs(exact/density)
+                    print '(a,f7.1,a,4es18.9)', '[V] rigid kink R=',kink_major, &
+                        ' gamma,S0-lambda,oracle-lambda,relative-error=', &
+                        sqrt(-physical_lambda),physical_lambda,exact/density, &
+                        growth_errors(alevel)
+                    if (growth_errors(alevel)>0.03_dp) error stop 'physical kink rate'
+                end if
+                if (iq == 1 .and. .not. rates) then
                     u(4::4) = 0
                     call ideal_fb_mode_energy(fb, 2, u, single, st)
                     if (st /= IDEAL_FB_OK) error stop 'standing energy'
@@ -271,7 +313,42 @@ contains
             end do
             deallocate (chain, contour)
         end do
+        if (rates) then
+            print '(a,2f12.6)', '[V] rigid kink aspect-error orders=', &
+                log(growth_errors(:2)/growth_errors(2:))/log(2.0_dp)
+        end if
     end subroutine
+
+    subroutine rigid_spectrum(energy,physical_mass,lambda)
+        real(dp), intent(in) :: energy,physical_mass
+        real(dp), intent(out) :: lambda
+        type(csc_z_t) :: stiffness,mass
+        type(fortsparse_status_t) :: status
+        type(s0_pencil_t) :: pencil
+        type(s0_report_t) :: report
+        type(eigen_options_t) :: options
+        complex(dp) :: kv(4),mv(4),values(1),vectors(2,1),start(2)
+        real(dp) :: residual(1),allowance
+        kv = 0; mv = 0
+        kv([1,4]) = 2*energy; mv([1,4]) = physical_mass
+        call csc_from_triplet(2,2,[1,2,1,2],[1,1,2,2],kv,stiffness,status)
+        if(status%code/=FORTSPARSE_OK) error stop 'rigid stiffness'
+        call csc_from_triplet(2,2,[1,2,1,2],[1,1,2,2],mv,mass,status)
+        if(status%code/=FORTSPARSE_OK) error stop 'rigid physical mass'
+        call s0_prepare(pencil,stiffness,mass, &
+            cmplx(2.2_dp*energy/physical_mass,0.0_dp,dp),report)
+        if(report%status/=EIGEN_OK) error stop 'rigid shift factor'
+        options%max_basis=2; options%which=EIGEN_NEAREST
+        start=[cmplx(1.0_dp,0.0_dp,dp),cmplx(0.0_dp,1.0_dp,dp)]
+        call s0_solve(pencil,start,1.0e-10_dp,options,values,vectors,residual,report)
+        if(report%status/=EIGEN_OK) error stop 'rigid S0 spectrum'
+        lambda=real(values(1),dp)
+        allowance=residual(1)/sqrt(physical_mass) &
+            +128*epsilon(lambda)*abs(2*energy/physical_mass)
+        if(abs(values(1)-2*energy/physical_mass)>allowance) &
+            error stop 'rigid original-equation tolerance'
+        call s0_destroy(pencil)
+    end subroutine rigid_spectrum
 
     subroutine field_ext(r, z, b, psi)
         ! Poloidal field and flux of the PF filaments plus the unit-circulation

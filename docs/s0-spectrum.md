@@ -116,3 +116,16 @@ unavailable. It supplies no radial envelope or discrete global TAE mode.
 The leading-order physical gap width is O(epsilon omega0); higher-order
 accuracy of these rational edge expressions is claimed only for the retained
 model. Shared-energy GL2 toroidal qualification remains separate.
+
+[V] `s0_external_kink_rigid_growth` projects the existing free-boundary
+Schur energy onto the two degenerate real phases of the rigid helical
+trial. It integrates rho*dV on the actual curved plasma mesh, rather than
+using the free-boundary solver's coefficient metric, then solves that
+physical-mass pencil with S0. The independent FortSym-checked cylinder
+oracle is lambda=[q^2-1+f(ka)(q-1)^2]/rho,
+f=K1(ka)/(K1(ka)+ka K0(ka)), ka=0.1. The existing seven exact kink
+identities retain its equilibrium, vacuum/surface split and ka->0
+Shafranov limit. Three toroidal aspect ratios approach the cylinder;
+reported orders describe that limit at fixed mesh and ka, not spatial
+convergence. This is a prescribed rigid-subspace growth estimate, not the
+full external-kink eigenmode or an internal-kink result.
