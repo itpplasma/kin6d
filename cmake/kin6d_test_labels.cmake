@@ -613,3 +613,8 @@ if(TARGET gen_map_3d_readback)
     kin6d_test_labels(equilibrium_map_3d_regeneration fast CLASSES mhd
         TARGETS gen_map_3d_readback)
 endif()
+
+kin6d_test_labels(equilibrium_d8_landreman_3d_integer fast CLASSES mhd
+    TARGETS test_equilibrium_3d)
+kin6d_test_labels(equilibrium_d8_issan_3d_integer fast CLASSES mhd
+    TARGETS test_equilibrium_3d)

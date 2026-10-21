@@ -249,6 +249,7 @@ add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
+    src/mhd/equilibrium_3d_driver.f90
     src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
     src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
@@ -327,6 +328,14 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+add_executable(test_equilibrium_3d test/test_equilibrium_3d.f90)
+target_link_libraries(test_equilibrium_3d PRIVATE kin6d)
+add_test(NAME equilibrium_d8_landreman_3d_integer
+    COMMAND test_equilibrium_3d 0 2 2 8)
+add_test(NAME equilibrium_d8_issan_3d_integer
+    COMMAND test_equilibrium_3d 0.4 2 2 8)
+set_tests_properties(equilibrium_d8_landreman_3d_integer equilibrium_d8_issan_3d_integer
+    PROPERTIES PROCESSORS 4 TIMEOUT 60)
 add_executable(test_map_3d_equilibrium test/test_map_3d_equilibrium.f90)
 target_link_libraries(test_map_3d_equilibrium PRIVATE kin6d)
 add_test(NAME equilibrium_map_3d_readback COMMAND test_map_3d_equilibrium)
