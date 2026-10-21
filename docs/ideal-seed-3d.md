@@ -20,8 +20,13 @@ The boundary is extended through disk harmonics `(u+i*v)^m`, which are
 regular at the axis. The initializer samples the represented Jacobian for
 uniform orientation and rejects folding. Clockwise and counterclockwise
 poloidal angles are admitted; the prescribed iota refers to that input angle. It fixes all boundary omega increments so
-Newton cannot move the prescribed nonaxisymmetric wall. The existing
-transversal/axis increment space and Newton solver are retained.
+Newton cannot move the prescribed nonaxisymmetric wall. The native Newton solver is retained. This cylindrical positive-toroidal-flux
+slice uses its existing gauge that fixes the toroidal coordinate and allows
+both R/Z increments. Fixed reference-disk radial directions can become tangent
+to seeded surfaces, even for a clockwise circle. FortSym verifies the
+flux-form invariance of the corresponding angle relabelling, conditional on a
+positive relabelling Jacobian. The target must admit B_phi>0 in this chart;
+toroidal-field reversal is outside this initializer's contract.
 
 `ideal_seed_disk_mesh` builds the common P2/P3 reference mesh. Generated
 leaves include primal/JVP/VJP; the initializer parallelizes independent nodal
