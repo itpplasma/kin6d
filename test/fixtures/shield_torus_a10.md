@@ -29,7 +29,9 @@ cmake --build --preset cpu --target complete_shield_torus_fixture
 build/complete_shield_torus_fixture test/fixtures/shield_torus_a10.eqdsk completed.eqdsk
 ```
 
-The source declares COCOS 1; libneo estimates its GS prefactor as 0.9994255092
+The completed fixture is interpreted as COCOS 1; the original source version
+and convention were not retained. Its CHEASE title alone does not establish
+them. Libneo estimates its GS prefactor as 0.9994255092
 and classifies it as 1 without profile repairs. Import standardizes to 3,
 reversing flux, derivative profiles and q. The legacy-reader equivalence gate
 compares physical fields, F and p after this convention change.
@@ -38,8 +40,12 @@ The stored edge pressure is -3.4873077e-20 Pa. The native re-solve explicitly
 chooses zero edge pressure and records the 3.4873077e-20 Pa offset; derivative
 profiles and original imported data are preserved. The native comparison uses
 three P2 meshes and reports axis, flux and q differences alongside 65/33-grid
-interpolation estimates. Exceeding those estimates is printed as a finding,
-not hidden by changing tolerances. These estimates are not rigorous bounds.
+interpolation estimates. The smooth fixture explicitly selects
+`curved_lcfs=.true.` to retain the periodic cubic LCFS curve. Interior mesh
+refinement alone does not control the boundary or derivative-profile
+reconstruction errors. Exceeding a grid estimate remains a printed finding;
+the interior q regression also requires 1% agreement. These comparisons do
+not establish an original CHEASE q oracle or a rigorous bound.
 
 The final empty record represents the zero-length limiter array emitted by
 libneo. It is required by its formatted reader and intentionally retained.
