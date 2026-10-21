@@ -58,3 +58,7 @@ if(TARGET kin6d_gen_support)
         -DWORK=${CMAKE_BINARY_DIR}/s0-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_s0_regeneration.cmake)
 endif()
+
+add_test(NAME s0_external_kink_rigid_growth COMMAND test_ideal_free_boundary kink_growth)
+set_tests_properties(s0_external_kink_rigid_growth PROPERTIES TIMEOUT 60 PROCESSORS 2
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
