@@ -2,7 +2,6 @@
 import importlib.util
 import json
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,8 +22,16 @@ class AdapterTest(unittest.TestCase):
         self.scratch = tempfile.TemporaryDirectory()
         self.root = Path(self.scratch.name)
         (self.root / 'references').mkdir()
-        for path in (ROOT / 'test/fixtures/response_gpec').glob('*.out'):
-            shutil.copy(path, self.root / 'references' / path.name)
+        # Synthetic GPEC-format records exercise every cut/phase/target. The
+        # values are arithmetic test data, independent of machine outputs.
+        for c, cut in enumerate(adapter.CUTS, 1):
+            for p, phase in enumerate(adapter.PHASES, 1):
+                rows = ['# synthetic GPEC-format parser fixture']
+                for t, q in enumerate(adapter.TARGETS, 1):
+                    rows.append(f'  {q:.3f} 0.5 5e-4 {c + p/10 + t/100} '
+                                f'{-c - p - t/10} 0 0')
+                path = self.root / 'references' / f'gpec_{cut}_{phase}.out'
+                path.write_text('\n'.join(rows) + '\n')
         (self.root / 'references/mars_comparison.json').write_text('{}')
         self.cases = []
         for c, cut in enumerate(adapter.CUTS, 1):
