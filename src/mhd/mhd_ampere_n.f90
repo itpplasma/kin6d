@@ -27,10 +27,8 @@ module kin6d_mhd_ampere_n
     !! L_n (fortfem_toroidal_mode_boundary_operators_2d).  The exterior
     !! potential trace is u = -S^{-1} C A.  The Schur block is dense on the
     !! boundary Nedelec dofs; the operator is Hermitian positive definite and
-    !! factored once per (mesh, n).  With MUMPS (fortsparse, KIN6D_ENABLE_MUMPS)
-    !! the Hermitian H = A + i B is factored as its real symmetric positive
-    !! definite equivalent [[A, -B], [B, A]] by nested-dissection Cholesky
-    !! (the fortsparse MUMPS backend is real); otherwise by complex SuperLU.
+    !! factored once per (mesh, n). The Hermitian H = A + i B uses its real
+    !! SPD equivalent [[A, -B], [B, A]] with native sparse Cholesky.
     !!
     !! Units.  SI; A in T m, B in T, J in A/m^2.  Inner products carry the
     !! measure R dR dZ (the 2 pi of the phi integral is dropped throughout).
@@ -69,7 +67,8 @@ module kin6d_mhd_ampere_n
         tm_bem_steklov_symmetric, tm_bem_neumann_to_dirichlet
     use fortsparse, only: csc_t, csc_z_t, csc_from_triplet, csc_matvec, &
         csc_conjugate_transpose, fortsparse_status_t, status_ok, &
-        sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy
+        sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
+        csc_normalize_symmetric_raw
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, &
         gs_direct_factor, gs_direct_solve, gs_direct_free
     implicit none
@@ -120,7 +119,9 @@ module kin6d_mhd_ampere_n
         complex(dp), allocatable :: cb(:, :)     !! C on bdof, (ntr, nbe)
         real(dp), allocatable :: sinv(:, :)      !! S^{-1}, (ntr, ntr)
         type(sparse_solver_t) :: solver
-        type(gs_direct_t) :: direct      !! MUMPS Cholesky of the real form
+        type(gs_direct_t) :: direct      !! Native sparse Cholesky of the real form
+        ! Maximum entry correction in the real SPD assembly, not a norm bound.
+        real(dp) :: assembly_roundoff = 0
         logical :: use_direct = .false.
         logical :: factored = .false.
     end type ampere_n_t
@@ -247,7 +248,7 @@ contains
     end subroutine ampere_n_build
 
     subroutine factor_real_form(h, amp, status)
-        !! MUMPS Cholesky of [[A, -B], [B, A]] for H = A + i B (Hermitian
+        !! Native sparse Cholesky of [[A, -B], [B, A]] for H = A + i B (Hermitian
         !! positive definite, so the real form is symmetric positive
         !! definite; its CSC is its CSR).
         type(csc_z_t), intent(in) :: h
@@ -275,6 +276,12 @@ contains
             end do
         end do
         call csc_from_triplet(2*n, 2*n, rows, cols, vals, m, fst)
+        if (.not. status_ok(fst)) return
+        ! The variational operator is Hermitian. Its independently accumulated
+        ! boundary Schur entries may differ by roundoff; normalize explicitly
+        ! before the unchanged strict SPD validator. Residuals retain h.
+        call csc_normalize_symmetric_raw(2*n, m%col_ptr, m%row_idx, m%val, &
+            1.0e-12_dp, amp%assembly_roundoff, fst)
         if (.not. status_ok(fst)) return
         call gs_direct_factor(amp%direct, 2*n, m%col_ptr, m%row_idx, m%val, ok)
         if (ok) status = 0
@@ -317,6 +324,7 @@ contains
         type(ampere_n_error_t) :: estimate
 
         amp%error = ampere_n_error_t()
+        amp%assembly_roundoff = 0
         call solve_factored(amp, f, a, status)
         if (status /= 0) return
         call ampere_n_error(amp, f, a, estimate, st)

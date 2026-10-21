@@ -167,7 +167,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "72a2c44bac62d61f08541359c79590b1dfcf99ab")
+set(KIN6D_FORTFEM_REVISION "ce8d923ee7ed36dc9315db9fc1d68f4d5ed2208b")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -246,77 +246,33 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-# Sparse direct factorisations go through FortSparse. Its AUTO backend picks
-# per matrix between serial SuperLU (small systems) and threaded MUMPS (OpenMP,
-# AMD or METIS ordering) for every general direct solve (GS stiffness Cholesky,
-# ideal-map and coupled Newton LDL^T/LU); like OpenMP, MUMPS is required when
-# enabled, so configure fails if it is not found.
-# KIN6D_ENABLE_MUMPS=OFF selects serial SuperLU for the Newton systems and the
-# iterative GS path. FortFEM's sparse_direct wrapper (SuperLU) stays the
-# fallback for asymmetric systems.
-# MUMPS is a sequential OpenMP scivision/mumps install (MUMPSConfig.cmake on
-# CMAKE_PREFIX_PATH or MUMPS_DIR) or a distribution package (libdmumps,
-# sequential or MPI). Detected by file, not find_package: fortsparse runs the
-# config itself and the config may define its imported targets only once.
-option(KIN6D_ENABLE_MUMPS "Direct sparse solves through fortsparse MUMPS" ON)
-if(KIN6D_ENABLE_MUMPS)
-    find_file(KIN6D_MUMPS_CONFIG NAMES MUMPSConfig.cmake
-        HINTS ${MUMPS_DIR} ENV MUMPS_DIR
-        PATH_SUFFIXES cmake lib/cmake lib/cmake/MUMPS)
-    if(KIN6D_MUMPS_CONFIG)
-        file(STRINGS "${KIN6D_MUMPS_CONFIG}" _kin6d_mumps_omp
-            REGEX "set\\(MUMPS_openmp ON\\)")
-        set(_kin6d_mumps_found "${KIN6D_MUMPS_CONFIG}")
-        # The config resolves METIS/GKlib with plain find_library; without its
-        # prefix first a system libmetis.so is mixed with the install's static
-        # GKlib, which corrupts the heap inside METIS_NodeND.
-        get_filename_component(_kin6d_mumps_prefix "${KIN6D_MUMPS_CONFIG}" DIRECTORY)
-        foreach(_kin6d_level RANGE 2)
-            get_filename_component(_kin6d_name "${_kin6d_mumps_prefix}" NAME)
-            if(_kin6d_name MATCHES "^(MUMPS|cmake|lib|lib64)$")
-                get_filename_component(_kin6d_mumps_prefix
-                    "${_kin6d_mumps_prefix}" DIRECTORY)
-            endif()
-        endforeach()
-        list(PREPEND CMAKE_PREFIX_PATH "${_kin6d_mumps_prefix}")
-    else()
-        find_library(KIN6D_MUMPS_LIBRARY NAMES dmumps
-            HINTS ${MUMPS_DIR} ${MUMPS_ROOT} ENV MUMPS_DIR PATH_SUFFIXES lib lib64)
-        if(NOT KIN6D_MUMPS_LIBRARY)
-            message(FATAL_ERROR "MUMPS not found. Point MUMPS_DIR or "
-                "CMAKE_PREFIX_PATH at an OpenMP MUMPS installation, or configure "
-                "with -DKIN6D_ENABLE_MUMPS=OFF to use SuperLU.")
-        endif()
-        # An OpenMP build references the GNU OpenMP runtime entry points.
-        file(STRINGS "${KIN6D_MUMPS_LIBRARY}" _kin6d_mumps_omp
-            REGEX "^GOMP_parallel" LIMIT_COUNT 1)
-        set(_kin6d_mumps_found "${KIN6D_MUMPS_LIBRARY}")
-    endif()
-    if(_kin6d_mumps_omp)
-        message(STATUS "KIN6D sparse direct backend: MUMPS with OpenMP "
-            "(${_kin6d_mumps_found})")
-    else()
-        message(WARNING "MUMPS at ${_kin6d_mumps_found} is not built with "
-            "OpenMP: factorisations run on one thread. Prefer an OpenMP MUMPS "
-            "via MUMPS_DIR.")
-    endif()
-    set(FORTSPARSE_ENABLE_MUMPS ON CACHE BOOL "" FORCE)
-else()
-    message(STATUS "KIN6D sparse direct backend: SuperLU (KIN6D_ENABLE_MUMPS=OFF)")
-endif()
+# All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
+# and optional graph-ordering libraries remain numerical dependencies.
+set(KIN6D_FORTSPARSE_REVISION "09fc2b406aecf4f5ddda30e53aef8cc8bdb8b0c5")
+set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
+set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
+set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
+set(FORTSPARSE_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(FORTSPARSE_INSTALL_HELPER OFF CACHE BOOL "" FORCE)
 if(NOT TARGET fortsparse)
-    set(FORTSPARSE_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-    set(FORTSPARSE_INSTALL_HELPER OFF CACHE BOOL "" FORCE)
-    # FortSparse's fetched solvers share the selected BLAS; a prebuilt system
-    # SuperLU may carry an incompatible reference-BLAS dependency.
     FetchContent_Declare(fortsparse
         GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-        GIT_TAG 09fc2b406aecf4f5ddda30e53aef8cc8bdb8b0c5
+        GIT_TAG ${KIN6D_FORTSPARSE_REVISION}
         GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(fortsparse)
 endif()
+get_target_property(_kin6d_sparse_definitions fortsparse COMPILE_DEFINITIONS)
+if(NOT "FORTSPARSE_HAVE_AMD" IN_LIST _kin6d_sparse_definitions)
+    message(FATAL_ERROR "KIN6D native sparse solves require AMD graph ordering. "
+        "Install AMD and configure FortSparse with FORTSPARSE_ENABLE_AMD=ON.")
+endif()
+foreach(_external FORTSPARSE_HAVE_SUPERLU FORTSPARSE_HAVE_MUMPS)
+    if(_external IN_LIST _kin6d_sparse_definitions)
+        message(FATAL_ERROR "KIN6D native-only build received an external "
+            "sparse backend: ${_external}")
+    endif()
+endforeach()
 if(KIN6D_ENABLE_OPENMP)
-    # Block-RHS callers enter sparse solves concurrently even without MUMPS.
     target_link_libraries(fortsparse PRIVATE OpenMP::OpenMP_Fortran)
 endif()
 add_library(kin6d_sparse_direct
@@ -324,20 +280,8 @@ add_library(kin6d_sparse_direct
     ${fortfem_SOURCE_DIR}/src/solvers/fortfem_sparse_direct.f90)
 target_link_libraries(kin6d_sparse_direct PUBLIC kin6d_spatial fortsparse)
 target_link_libraries(kin6d_fem2d PUBLIC kin6d_sparse_direct)
-if(KIN6D_ENABLE_MUMPS)
-    target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_direct.f90)
-    # Follow the selected FortSparse backend, including sequential mpiseq
-    # installations that do not provide a Fortran MPI module.
-    set_source_files_properties(src/fem2d/gs_direct.f90 PROPERTIES Fortran_PREPROCESS ON)
-    get_target_property(_kin6d_sparse_definitions fortsparse COMPILE_DEFINITIONS)
-    if("FORTSPARSE_MUMPS_MPI" IN_LIST _kin6d_sparse_definitions)
-        set_property(SOURCE src/fem2d/gs_direct.f90 APPEND PROPERTY
-            COMPILE_DEFINITIONS KIN6D_MUMPS_MPI)
-        set(_kin6d_mumps_mpi ON)
-    endif()
-else()
-    target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_direct_stub.f90)
-endif()
+target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_direct.f90)
+message(STATUS "KIN6D sparse direct backend: native FortSparse CPU")
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_coils.f90 src/equilibrium/gs_coupling.f90
     src/equilibrium/gs_free_boundary.f90 src/equilibrium/gs_coil_inverse.f90)
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/equilibrium_harness.f90)
@@ -391,8 +335,7 @@ foreach(k 2 3)
     add_test(NAME ideal_map_n0_shaped_solovev_p${k}
         COMMAND test_ideal_map_axisymmetric shaped ${k})
 endforeach()
-# Three-mesh ladders: 6-15 s each with 4 threads; shaped P3 about 30 s with
-# MUMPS (one factor thread, see factor_threads), about 1 min with SuperLU.
+# Three-mesh scientific regression ladders reserve four threads.
 set_tests_properties(ideal_map_n3_leakage ideal_map_n0_solovev_a3_p2
     ideal_map_n0_solovev_a3_p3 ideal_map_n0_shaped_solovev_p2 PROPERTIES
     TIMEOUT 900 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
@@ -466,6 +409,10 @@ target_link_libraries(kin6d_gs_fb_test PUBLIC kin6d_gs_coupling_test)
 add_executable(test_gs_fb_jacobian test/test_gs_fb_jacobian.f90)
 target_link_libraries(test_gs_fb_jacobian PRIVATE kin6d_gs_fb_test)
 add_test(NAME gs_free_boundary_t7_jacobian_finite_differences COMMAND test_gs_fb_jacobian)
+add_test(NAME gs_free_boundary_t7_native_lu COMMAND test_gs_fb_jacobian)
+set_tests_properties(gs_free_boundary_t7_native_lu PROPERTIES
+    TIMEOUT 600 PROCESSORS 2
+    ENVIRONMENT "KIN6D_FB_SOLVER=lu;OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(gs_free_boundary_t7_jacobian_finite_differences PROPERTIES TIMEOUT 900)
 add_executable(test_gs_fb_manufactured test/test_gs_fb_manufactured.f90)
 target_link_libraries(test_gs_fb_manufactured PRIVATE kin6d_gs_fb_test)
@@ -1024,6 +971,7 @@ add_custom_target(kin6d_build_info
         -DKIN6D_FORTPLOT_REVISION=${KIN6D_FORTPLOT_REVISION}
         -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
         -DKIN6D_FORTFEM_REVISION=${KIN6D_FORTFEM_REVISION}
+        -DKIN6D_FORTSPARSE_REVISION=${KIN6D_FORTSPARSE_REVISION}
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
 add_library(kin6d_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
@@ -1052,6 +1000,7 @@ add_test(NAME result_io_contract
         -DQUANTUM=$<TARGET_FILE:quantum_reference_demo>
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
         -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
+        -DFORTSPARSE_PIN=${KIN6D_FORTSPARSE_REVISION}
         -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)
 add_executable(test_animation_export test/test_animation_export.f90)
 target_link_libraries(test_animation_export PRIVATE kin6d_io)
@@ -1225,20 +1174,15 @@ endif()
 add_test(NAME grad_shafranov_p3_thread_invariance COMMAND test_gs_threads)
 set_tests_properties(grad_shafranov_p3_thread_invariance PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_native_adapter test/test_gs_native_adapter.f90)
+target_link_libraries(test_gs_native_adapter PRIVATE kin6d_fem2d)
+add_test(NAME gs_native_adapter_contract COMMAND test_gs_native_adapter)
+set_tests_properties(gs_native_adapter_contract PROPERTIES
+    TIMEOUT 5 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_direct test/test_gs_direct.f90)
 target_link_libraries(test_gs_direct PRIVATE kin6d)
 add_test(NAME grad_shafranov_csr_direct_newton_oracles COMMAND test_gs_direct)
-if(_kin6d_mumps_mpi)
-    add_executable(test_gs_direct_mpi test/test_gs_direct_mpi.f90)
-    target_link_libraries(test_gs_direct_mpi PRIVATE kin6d)
-    foreach(_mode automatic external finalized)
-        add_test(NAME gs_direct_mpi_${_mode} COMMAND test_gs_direct_mpi ${_mode})
-        set_tests_properties(gs_direct_mpi_${_mode} PROPERTIES
-            TIMEOUT 15 ENVIRONMENT "OMP_NUM_THREADS=1")
-    endforeach()
-endif()
 set_tests_properties(grad_shafranov_csr_direct_newton_oracles PROPERTIES
-    SKIP_RETURN_CODE 77
     TIMEOUT 600 ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
 add_executable(test_gs_solver_work test/test_gs_solver_work.f90)
 target_link_libraries(test_gs_solver_work PRIVATE kin6d)
@@ -1563,7 +1507,7 @@ set_tests_properties(mhd_closure_tearing_delta_prime PROPERTIES TIMEOUT 1800
 # R-B2 increment 1: strip coupled to the FEEC torus (response-unified.md, R-B2).
 # Gated at nrad 64 (smallest passing nrad of the (b) ladder), strip half-width
 # xd 0.01 plus an (a)-only run at xd 0.02 for the xd^2 order of gate (a)
-# (~30 s with MUMPS, ~100 s with SuperLU; GMRES tol 1e-7 on both).
+# (GMRES tolerance 1e-7).
 add_test(NAME response_strip_torus_coupling COMMAND test_mhd_closure strip)
 set_tests_properties(response_strip_torus_coupling PROPERTIES TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=4")
