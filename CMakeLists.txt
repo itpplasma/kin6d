@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "0a27a7f84249fc91e42118a1a8ae7f8573de1bd4")
+set(KIN6D_FORTNUM_REVISION "1cfe3cba327e9a32743ed10292e75a1311a6ced4")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -39,77 +39,24 @@ check_fortran_compiler_flag("-ftrampoline-impl=heap" KIN6D_HAVE_HEAP_TRAMPOLINES
 if(KIN6D_HAVE_HEAP_TRAMPOLINES)
     add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-ftrampoline-impl=heap>)
 endif()
-# Compile FortNum's interval and ODE modules unchanged from the pinned tree.
-# The application owns physical laws; generic numerics remain upstream.
+# Use the complete pinned numerical target, including precision modules needed
+# by FortSparse. The compatibility layer names preserve KIN6D's layer graph;
+# FortNum owns module compilation, strict arithmetic and OpenMP settings.
+set(FORTNUM_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(FORTNUM_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortnum
     GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
     GIT_TAG ${KIN6D_FORTNUM_REVISION})
-FetchContent_GetProperties(fortnum)
-if(NOT fortnum_POPULATED)
-    FetchContent_Populate(fortnum)
-endif()
-add_library(kin6d_intervals
-    ${fortnum_SOURCE_DIR}/src/fortnum_status.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_rounding.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_interval.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_verified_midpoint_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_verified_quadrature.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_ode_residual_certificate.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_verified_matvec.f90)
-target_compile_options(kin6d_intervals PRIVATE -fno-fast-math -ffp-contract=off)
+FetchContent_MakeAvailable(fortnum)
+add_library(kin6d_intervals INTERFACE)
+target_link_libraries(kin6d_intervals INTERFACE fortnum)
+# The pinned FortNum target does not yet register its geometric ODE module.
+# Retain this existing consumer leaf unchanged until its upstream CMake list
+# includes it; every other numerical module comes from the complete target.
 add_library(kin6d_ode
-    ${fortnum_SOURCE_DIR}/src/fortnum_kinds.f90
-    ${fortnum_SOURCE_DIR}/src/roots/fortnum_roots.f90
-    ${fortnum_SOURCE_DIR}/src/roots/fortnum_multiroot.f90
-    ${fortnum_SOURCE_DIR}/src/quadrature/fortnum_quadrature.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
-    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
-    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode.f90
-    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
-    ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90
-    ${fortnum_SOURCE_DIR}/src/verified/fortnum_sampled_norm.f90
-    ${fortnum_SOURCE_DIR}/src/interp/fortnum_polynomial.f90
-    ${fortnum_SOURCE_DIR}/src/interp/fortnum_bspline.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_legendre_recurrence_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_legendre.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_coulomb_series_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_coulomb.f90
-    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_gamma.f90
-    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_elliptic.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_hypergeom_2f1_term_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_toroidal_order_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_toroidal.f90
-    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_faddeeva.f90
-    ${fortnum_SOURCE_DIR}/src/special/fortnum_special_riccati_bessel.f90
-    ${fortnum_SOURCE_DIR}/src/fortnum_ad_backend.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det2_jvp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det2_vjp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det3_jvp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_det3_vjp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv2_jvp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv2_vjp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv3_jvp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortnum_inv3_vjp_kernel.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det2_jvp_fortad.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det2_vjp_fortad.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det3_jvp_fortad.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_det3_vjp_fortad.f90
-    ${fortnum_SOURCE_DIR}/src/generated/fortad/fortnum_inv2_jvp_fortad.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_linalg.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_parallel_vector.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_krylov.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_symmetric_eigen.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_bvls.f90
-    ${fortnum_SOURCE_DIR}/src/linalg/fortnum_gsvd.f90)
+    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
+target_link_libraries(kin6d_ode PUBLIC fortnum)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
-find_package(LAPACK REQUIRED)
-target_link_libraries(kin6d_ode PUBLIC kin6d_intervals LAPACK::LAPACK)
-if(KIN6D_ENABLE_OPENMP)
-    # These numerical leaves are also called from threaded KIN6D operators.
-    # Compile them for concurrent calls, including runtime-checked Debug.
-    target_link_libraries(kin6d_ode PUBLIC OpenMP::OpenMP_Fortran)
-    target_link_libraries(kin6d_intervals PUBLIC OpenMP::OpenMP_Fortran)
-endif()
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
@@ -178,7 +125,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "54057d8db247296be4aa0724d431f6e46225ea16")
+set(KIN6D_FORTFEM_REVISION "2b2e5466866e29324c3d71c48b76f38908d30e21")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -259,7 +206,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "09fc2b406aecf4f5ddda30e53aef8cc8bdb8b0c5")
+set(KIN6D_FORTSPARSE_REVISION "7f16e38aaf5ebdfa56b0b8b4f5f57c0c31de212c")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -1286,7 +1233,7 @@ add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)
 add_executable(test_gs_axis_refinement test/test_gs_axis_refinement.f90)
 target_link_libraries(test_gs_axis_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_axis_refinement COMMAND test_gs_axis_refinement)
-add_executable(test_gs_profile_law_readback test/test_gs_profile_law_readback.f90)
+add_executable(test_gs_profile_law_readback test/test_gs_synthetic_law_readback.f90)
 target_link_libraries(test_gs_profile_law_readback PRIVATE kin6d)
 add_test(NAME grad_shafranov_profile_law_readback
     COMMAND test_gs_profile_law_readback)
@@ -1468,12 +1415,11 @@ add_test(NAME equilibrium_core_d3_upper_bound_p2
     COMMAND test_equilibrium_core residual_bound)
 set_tests_properties(equilibrium_core_d3_upper_bound_p2 PROPERTIES TIMEOUT 60
     PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
-# K6-mini: the accepted TC24 K6 law and path (cubic-profile Newton, P3,
-# direct factor, current constraint, readback, majorant) on a coarse mesh.
-# Every core migration step must reproduce the fixture to 1e-12 relative.
+# Synthetic Solov'ev inputs exercise the cubic-profile Newton, P3, direct
+# factor, current constraint, readback and majorant path on a coarse mesh.
 add_test(NAME gs_k6_mini_regression COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_phase1> -DCHECK=$<TARGET_FILE:test_equilibrium_core>
-    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/k6_mini
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_synthetic
     -DWORK=${CMAKE_BINARY_DIR}/gs_k6_mini
     -P ${CMAKE_SOURCE_DIR}/test/gs_k6_mini.cmake)
 set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
@@ -1534,7 +1480,8 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
-target_link_libraries(kin6d_feec_n PUBLIC kin6d_spatial kin6d_fft fortsparse)
+target_link_libraries(kin6d_feec_n PUBLIC
+    kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
@@ -1640,7 +1587,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_response_fluid_leaves.f90
     src/mhd/response_fluid.f90 src/mhd/response_toroidal_strip.f90)
 add_executable(test_response_toroidal_strip test/test_response_toroidal_strip.f90)
 target_link_libraries(test_response_toroidal_strip PRIVATE kin6d)
-add_executable(test_response_interfaces test/test_response_interfaces.f90)
+add_executable(test_response_interfaces test/test_response_synthetic_interfaces.f90)
 target_link_libraries(test_response_interfaces PRIVATE kin6d)
 add_test(NAME response_toroidal_strip_two_ring_traces
     COMMAND test_response_interfaces traces)
