@@ -1,0 +1,12 @@
+# FreeGS 0.8.2, tag v0.8.2, commit 8b838c1df162ca770a6937ac79d8c73e8f10a53b
+# https://github.com/freegs-plasma/freegs/blob/8b838c1df162ca770a6937ac79d8c73e8f10a53b/01-freeboundary.py; machine.py:TestTokamak
+# numpy 1.26.4; scipy 1.12.0; python 3.12.12 environment: requirements.txt
+# ConstrainPaxisIp: paxis=1000 Pa, Ip=200000 A, fvac=2 T m, alpha_m=1, alpha_n=2, Raxis=1 m
+# X targets (1.1,-0.6),(1.1,0.8); isoflux (1.1,-0.6)-(1.1,0.6)
+# freeBoundary; order=4; domain R=[0.1,2], Z=[-1,1]; rtol=1e-9, atol=1e-12; control gamma=1e-12
+# q: ntheta=1024, ray points=800; li2 uses magnetic-axis R
+# candidate reference; continuous bounds unavailable; refinement differences are indicators
+# fixed finest field, window R=[.5,1.8], Z=[-.75,.9]; columns: n_quadrature beta_p li2 volume
+2.57000000000000000e+02 3.21574946365143985e-02 1.42988656353140864e+00 5.18306641285714864e+00
+5.13000000000000000e+02 3.21475519044750399e-02 1.43032880645354932e+00 5.18382243512497354e+00
+1.02500000000000000e+03 3.21514690277269199e-02 1.43015454453447055e+00 5.18358998562893003e+00

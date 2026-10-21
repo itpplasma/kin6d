@@ -392,6 +392,13 @@ set_tests_properties(ideal_map_n0_shaped_solovev_p3 PROPERTIES
 add_executable(test_gs_coils test/test_gs_coils.f90)
 target_link_libraries(test_gs_coils PRIVATE kin6d)
 add_test(NAME gs_coils_independent_oracles COMMAND test_gs_coils)
+add_executable(test_gs_freegs test/test_gs_freegs.f90)
+target_link_libraries(test_gs_freegs PRIVATE kin6d_equilibrium)
+add_test(NAME gs_free_boundary_freegs_public_parity
+    COMMAND test_gs_freegs ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/freegs)
+set_tests_properties(gs_free_boundary_freegs_public_parity PROPERTIES
+    TIMEOUT 60 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;KIN6D_FB_SOLVER=lu")
 add_library(kin6d_gs_coupling_test STATIC test/support/gs_coupling_fixture.f90)
 target_link_libraries(kin6d_gs_coupling_test PUBLIC kin6d)
 foreach(coupling_test vacuum fixed_current structure)

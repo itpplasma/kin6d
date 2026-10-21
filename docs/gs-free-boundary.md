@@ -301,6 +301,99 @@ Tests: `gs_free_app_contract` (CTest; forward solve with refit, NetCDF values an
 provenance, `--evaluate` against the axis flux and stream parity, the three fit
 variants on twin data, rejected input) and `gs_free_boundary_p8_refit_loop`.
 
+## Public FreeGS end-to-end comparison
+
+`gs_free_boundary_freegs_public_parity` solves the physical case in
+[FreeGS 0.8.2's 01-freeboundary.py](https://github.com/freegs-plasma/freegs/blob/8b838c1df162ca770a6937ac79d8c73e8f10a53b/01-freeboundary.py),
+commit 8b838c1df162ca770a6937ac79d8c73e8f10a53b (LGPL-3.0-or-later).
+Its public TestTokamak has two shaped coils and two point coils, 200 kA,
+1 kPa axis pressure, vacuum F = 2 T m, and ConstrainPaxisIp with
+alpha_m = 1, alpha_n = 2 and Raxis = 1 m. The retained coil table exports the
+shaped coils' actual weighted polygon-quadrature filaments. KIN6D fixes the
+finest FreeGS coil currents and solves both profile amplitudes for the same
+pressure/current constraints through FortNum's multiroot driver. The existing
+FortSym-generated cubic law represents `(1-s)^2` exactly; no new production
+physics, profile approximation or named-code mode is introduced.
+
+The reference uses FreeGS's existing direct-Green `freeBoundary` algorithm.
+This is an explicit numerical change from the example's Hagenow selection.
+The unmodified example was also run headlessly, and
+`benchmarks/freegs/hagenow-reference.dat` retains its tightened grid ladder.
+The two boundary methods differ at 257 points by 6.41e-5 Wb/rad in axis flux
+and about 0.020 in q95, beyond their grid changes. In that release,
+`freegs/boundary.py:189,211-231` evaluates the Hagenow integral 1 cm outside
+the domain before assigning the result to the boundary. That offset stays
+fixed under grid refinement; it is also present at upstream main
+5b41fe5565ff8077bf8139051c80c69416fc9b86. The Hagenow result is retained as a
+finding and does not set the parity tolerance.
+
+FreeGS solves on 65/129/257 square grids over R=[0.1,2], Z=[-1,1], fourth
+order, Picard rtol=1e-9 and atol=1e-12. Separate retained studies refine q
+readback from 128 angles/100 ray points to 1024/800 and masked volume
+quadrature on the finest field from 257 to 1025 points. Root polishing of
+the same spline measures the fixed `Bp^2 < 1e-6` stopping floor in
+`freegs/critical.py:121`; the raw 257-grid lower X-point is about 2.3 mm
+from its polished location. These are measured numerical indicators.
+
+KIN6D uses curved P3 meshes with 96/192 outer edges (5,437/21,592 DOF), a
+FEM-BEM vacuum interface enclosing the plasma and excluding all coils, and
+native LU. A small reference grid selects the branch and seeds Newton;
+its flux is never a boundary condition. Each compared value comes from the
+native solve. Both cases use the lower X-point boundary, with limiter checks
+disabled as in the published example. Psi is Wb/rad with zero flux on the
+symmetry axis in both codes.
+FreeGS's positive q is compared with minus KIN6D's signed COCOS-3 q. The
+integral definitions match FreeGS `poloidalBeta` and `internalInductance2`:
+beta_p = 2 mu0 integral(p dV)/integral(Bp^2 dV), and
+li2 = 2 integral(Bp^2 dV)/(mu0^2 R_axis Ip^2).
+
+For each observable the gate uses twice the sum of the larger adjacent
+FreeGS grid change, the applicable readback-refinement indicator, and the
+native mesh difference, plus a 1e-8 relative roundoff floor. For critical
+quantities, the grid indicator is at least the measured root-polishing defect.
+All resulting budgets must themselves be below 1% of the observable scale,
+or 5 mm for positions. LCFS flux-gap budgets include the FreeGS boundary-root
+defect separately from contour interpolation. The current and pressure
+constraints have their own residual gates. Representative verified Release
+results (four threads; the CTest takes about 30 s):
+
+| Quantity | Absolute discrepancy | Measured budget |
+|---|---:|---:|
+| psi_axis | 1.89e-6 Wb/rad | 3.03e-6 |
+| psi_boundary | 1.71e-6 Wb/rad | 2.16e-6 |
+| lower X-point Z | 2.28 mm | 4.60 mm |
+| q95 magnitude | 9.95e-4 | 3.32e-3 |
+| beta_p | 9.50e-6 | 2.38e-5 |
+| li2 | 1.28e-4 | 1.88e-3 |
+| volume | 6.98e-4 m^3 | 3.10e-2 |
+| maximum LCFS flux gap | 2.81e-6 Wb/rad | 3.95e-6 |
+
+These results qualify this branch and physical case at empirical refinement
+budgets. They are candidates with continuous bounds unavailable, and do not
+qualify a cold start, the native coil-current inverse, arbitrary machines or
+a rigorous continuous free-boundary certificate. The test's two-amplitude
+normalization driver does not add a production constraint-sensitivity API.
+
+The optional oracle generator and small text fixtures are in
+`benchmarks/freegs/`; CMake/CTest need neither FreeGS nor a new Python runtime.
+Regenerate headlessly with Python 3.12 and the retained dependency pins:
+
+```sh
+parity_root=/mnt/storage/ert/freegs-parity
+python3.12 -m venv "$parity_root/venv"
+"$parity_root/venv/bin/pip" install -r benchmarks/freegs/requirements.txt
+env -u DISPLAY MPLBACKEND=Agg OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+    "$parity_root/venv/bin/python" benchmarks/freegs/generate_reference.py
+# Optional stock-example boundary-method comparison:
+env -u DISPLAY MPLBACKEND=Agg OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+    "$parity_root/venv/bin/python" benchmarks/freegs/generate_reference.py \
+    --boundary freeBoundaryHagenow --output "$parity_root/hagenow"
+cp "$parity_root/hagenow/reference.dat" benchmarks/freegs/hagenow-reference.dat
+cmake --preset cpu
+cmake --build --preset cpu --target test_gs_freegs -j8
+ctest --preset cpu -j4 -R '^gs_free_boundary_freegs_public_parity$'
+```
+
 The [production scaling ledger](benchmarks.md#production-estimator-scaling)
 records the coupled/refitted `gs_free` fixture at three boundary resolutions.
 `estimator_s` includes recovery, reference BEM and practical stability work;
