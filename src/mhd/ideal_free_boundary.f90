@@ -549,6 +549,7 @@ contains
         integer :: n
         status = IDEAL_FB_BAD_INPUT
         n = fb%nt*fb%nmode
+        if (boundary%genus /= 1) return
         if (.not. allocated(boundary%s)) return
         if (any(shape(boundary%s) /= [n,n])) return
         if (size(drive) /= n .or. size(load) /= n) return
@@ -580,6 +581,7 @@ contains
         real(dp) :: grad_t(2), acc, run, speed, worst, nn, at(2), dmax
         integer :: i, q, j, k, m, col
         status = IDEAL_FB_BAD_INPUT
+        if (present(closure)) closure = huge(1.0_dp)
         if (allocated(fb%exterior_3d)) return
         status = IDEAL_FB_OK
         call gauss_legendre(ng, gx, gw)
