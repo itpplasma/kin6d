@@ -365,6 +365,10 @@ kin6d_test_labels(flux_mesh_axis_interpolation_order fast CLASSES mhd
     TARGETS test_flux_mesh_axis)
 kin6d_test_labels(mhd_closure_tearing_delta_prime slow CLASSES mhd
     TARGETS test_mhd_closure)
+kin6d_test_labels(response_layer_all_rational_setup fast CLASSES mhd
+    TARGETS test_mhd_closure)
+kin6d_test_labels(gs_response_3d_frobenius_all_rational slow CLASSES apps mhd
+    TARGETS gs_response_3d)
 kin6d_test_labels(response_strip_torus_coupling slow CLASSES mhd
     TARGETS test_mhd_closure)
 kin6d_test_labels(response_toroidal_strip_two_ring_traces fast CLASSES mhd
@@ -383,6 +387,10 @@ kin6d_test_labels(response_fluid_full_pressure_oracles fast CLASSES mhd
     TARGETS test_response_fluid)
 kin6d_test_labels(response_strip_cylinder_layer fast CLASSES mhd
     TARGETS test_response_strip)
+if(TARGET check_response_strip_current)
+    kin6d_test_labels(response_strip_current_exact_identities fast CLASSES mhd
+        TARGETS check_response_strip_current)
+endif()
 kin6d_test_labels(mhd_resistive_layer_rotation slow CLASSES mhd
     TARGETS test_mhd_closure)
 kin6d_test_labels(mhd_newcomb_screw_pinch_limit fast CLASSES mhd
