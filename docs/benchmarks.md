@@ -130,23 +130,28 @@ GVEC. They do not test islands or stochastic regions.
 [V] The integer-transform Landreman and nonsymmetric Issan cases now have
 matched pressure, iota and toroidal-flux inputs, emitted from the retained
 FortSym definitions. An independent surface integral checks toroidal flux to
-4.07e-11 relative. The three affected native tests pass on sCluster with
+4.07e-11 relative. The affected native checks pass on sCluster with
 gfortran 12.2. The sheared families still require pressure/flux conversion.
 
 [V] The Fourier boundary ladder below uses eps=0.5, delta=1/64, tau=0 or 0.4,
 64 angular samples and eight threads. Errors are checked on a staggered grid.
-The minor scale is 0.125 m, so the requested 1% radius is 0.00125 m. Four
-modes fail that gate; each listed resolution passes. Full raw timing and memory
+The minor scale is 0.125 m, so the requested 1% radius is 0.00125 m. Each
+listed resolution passes. Full raw timing and memory
 records are in [the input ledger](../benchmarks/nested/boundary-inputs.tsv).
 
 | Case | Modes m,n | Sampled boundary error (m) | Export time (s) | Peak RSS (KiB) |
 |---|---:|---:|---:|---:|
-| Landreman integer | 8 | 5.174e-6 | 0.32 | 15,056 |
-| Landreman integer | 12 | 2.339e-8 | 0.46 | 15,224 |
-| Landreman integer | 16 | 1.338e-10 | 0.40 | 15,216 |
-| Issan integer | 8 | 1.251e-6 | 0.19 | 15,212 |
-| Issan integer | 12 | 3.353e-9 | 0.28 | 15,188 |
-| Issan integer | 16 | 8.834e-12 | 0.24 | 15,244 |
+| Landreman integer | 8 | 4.165e-6 | 0.07 | 15,164 |
+| Landreman integer | 12 | 2.141e-8 | 0.08 | 15,812 |
+| Landreman integer | 16 | 1.117e-10 | 0.11 | 15,616 |
+| Issan integer | 8 | 1.271e-6 | 0.07 | 15,232 |
+| Issan integer | 12 | 3.318e-9 | 0.10 | 15,900 |
+| Issan integer | 16 | 8.776e-12 | 0.24 | 15,508 |
+
+[V] Temporary renders of the input ladder:
+[Landreman](https://box.sloppy.at/f0cf6.png) and
+[Issan](https://box.sloppy.at/7c605.png). The retained
+[plot recipe](../benchmarks/nested/plot_inputs.py) regenerates both figures.
 
 [V] These are input-preparation measurements, including point intervals and
 I/O, with one timing per point. They establish neither solved equilibria nor
@@ -156,6 +161,16 @@ external states and uses a Fortran verifier for errors in B, pressure and
 surface labels and for the strong force defect. State bounds and estimator
 effectivity remain unavailable. A solved KIN6D epsilon>0 initializer and D8
 case admission are still required before a production time-to-accuracy claim.
+
+[V] The first reference runs exposed a coordinate defect in the original
+integer-family boundary adapter: its material poloidal angle winds twice with
+toroidal angle, while iota=2 uses the conventional untwisted angle. The adapter
+now uses material angle 2 phi-theta. An axisymmetric-limit test fails with the
+old mapping and passes with the correction. The physical field and pressure
+definitions are unchanged. GVEC additionally needs both theta and zeta
+reversed for these clockwise boundaries, consistently transforming iota and
+flux. VMEC's internal theta reversal changes the sign of its stored iota;
+compare it after the declared coordinate conversion, not by taking its magnitude.
 
 ### Catalogue
 

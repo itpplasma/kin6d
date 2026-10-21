@@ -1,7 +1,7 @@
 case	modes	boundary_sampled_error_m	export_wall_s	peak_rss_kib	cores
-landreman-integer	8	5.17400000e-06	0.3200	15056	8
-landreman-integer	12	2.33900000e-08	0.4600	15224	8
-landreman-integer	16	1.33800000e-10	0.4000	15216	8
-issan-integer	8	1.25100000e-06	0.1900	15212	8
-issan-integer	12	3.35300000e-09	0.2800	15188	8
-issan-integer	16	8.83400000e-12	0.2400	15244	8
+landreman-integer	8	4.16500000e-06	0.0700	15164	8
+landreman-integer	12	2.14100000e-08	0.0800	15812	8
+landreman-integer	16	1.11700000e-10	0.1100	15616	8
+issan-integer	8	1.27100000e-06	0.0700	15232	8
+issan-integer	12	3.31800000e-09	0.1000	15900	8
+issan-integer	16	8.77600000e-12	0.2400	15508	8

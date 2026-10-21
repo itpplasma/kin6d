@@ -84,6 +84,9 @@ if args.consumer == "vmecpp":
     gradp *= np.broadcast_to(mu0 * splines.d_pressure_d_s(s)[:, None, None], shape).ravel()[:, None]
     labels = np.broadcast_to(s[:, None, None], shape).ravel()
     record["iota_sample"] = splines.iota(s).tolist()
+    # VMEC enforces its own negative-Jacobian poloidal orientation, flipping
+    # a clockwise input's theta and iota together (boundaries.cc:flipTheta).
+    record["iota_input_convention"] = ((-1 if args.clockwise else 1) * splines.iota(s)).tolist()
 elif args.consumer == "desc":
     import desc
     desc.set_device("cpu")
@@ -122,10 +125,12 @@ else:
         parameters = gvec.util.flip_parameters_theta(parameters)
     parameters.update(X1_mn_max=[m, m], X2_mn_max=[m, m], LA_mn_max=[m, m],
                       sgrid=dict(grid_type=0, nElems=max(3, m)),
-                      totalIter=5000, minimize_tol=1e-6, logIter=100)
+                      totalIter=20000, minimize_tol=1e-6, logIter=100)
     gvec.util.write_parameters(parameters, "resolved.ini")
     result = gvec.run(parameters, runpath=Path.cwd()/"solve", quiet=False)
     record["solve_wall_s"] = time.perf_counter() - started
+    record.update(success=bool(result.max_force <= 1e-6),
+                  native_force=float(result.max_force), iterations=int(result.GVEC_iter_used))
     value = result.state
     data = gvec.evaluate(value, "pos", "B", "J", "p", "dp_dr", "grad_rho", "iota",
                          rho=np.sqrt(s), theta=angles, zeta=angles/value.nfp)
