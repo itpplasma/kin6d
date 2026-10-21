@@ -5,6 +5,7 @@ diagnostics, not volume norms or continuous bounds. VMEC sampling uses SIMSOPT's
 native radial splines, not a DESC fit or an additional equilibrium solve.
 """
 import argparse
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -19,6 +20,8 @@ parser.add_argument("consumer", choices=("vmecpp", "desc", "gvec"))
 parser.add_argument("input", type=Path)
 parser.add_argument("resolution", type=int)
 parser.add_argument("output", type=Path)
+parser.add_argument("--clockwise", action="store_true",
+                    help="VMEC boundary uses clockwise poloidal angle (integer oracles)")
 args = parser.parse_args()
 args.input = args.input.resolve()
 args.output = args.output.resolve()
@@ -31,6 +34,8 @@ angles = 2 * np.pi * (np.arange(24) + 0.37) / 24
 record = dict(consumer=args.consumer, input=str(args.input), resolution=m,
               cores=int(os.environ.get("OMP_NUM_THREADS", "1")),
               claim="candidate; sampled diagnostics; bounds unavailable")
+record["input_sha256"] = hashlib.sha256(args.input.read_bytes()).hexdigest()
+Path("original.input").write_bytes(args.input.read_bytes())
 
 
 def cylindrical_to_cartesian(values, phi):
@@ -110,6 +115,11 @@ else:
 
     parameters = gvec.util.parameters_from_vmec(f90nml.read(args.input)["indata"], args.input.name)
     parameters = gvec.util.flip_parameters_zeta(parameters)
+    if args.clockwise:
+        # GVEC's RZ chart embeds phi=-zeta and requires positive Jacobians.
+        # Reverse theta as well for a clockwise VMEC boundary, transforming
+        # iota with both flips. Physical Cartesian fields are unchanged.
+        parameters = gvec.util.flip_parameters_theta(parameters)
     parameters.update(X1_mn_max=[m, m], X2_mn_max=[m, m], LA_mn_max=[m, m],
                       sgrid=dict(grid_type=0, nElems=max(3, m)),
                       totalIter=5000, minimize_tol=1e-6, logIter=100)
