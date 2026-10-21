@@ -835,7 +835,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "435f8975ab5cec1624f8f76a26d9ea57e3b06195")
+set(KIN6D_FORTSYM_REVISION "0cb3349222b90c949da1c4a09e8c177f3dec9097")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -1821,6 +1821,7 @@ include(cmake/response_calibration.cmake)
 
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
+include(cmake/kin6d_cpu_precision.cmake)
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
