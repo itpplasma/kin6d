@@ -132,8 +132,8 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: nphi
         type(cylindrical_chart_t) :: chart
-        real(dp) :: iota, pressure, integral, previous, energy
-        integer :: a, m, ntor, angles
+        real(dp) :: iota, pressure, integral, previous, energy, minimum_radius
+        integer :: a, m, j, ntor, angles
         status = IDEAL_MAP_BAD_INPUT
         if (nfp < 1 .or. .not. flux > 0) return
         if (.not. ieee_is_finite(flux)) return
@@ -168,10 +168,15 @@ contains
         map%position_gauge = .true.
         call ideal_map_freeze(map, seed, status)
         if (status /= IDEAL_MAP_OK) return
-        !$omp parallel do schedule(static) private(a,m)
+        minimum_radius=huge(1.0_dp)
+        !$omp parallel do schedule(static) private(a,m,j) reduction(min:minimum_radius)
         do a = 1, map%nodes
             call ideal_seed_boundary_coefficients(map%reference(:, a), &
                 coefficients, map%x(:, :, a))
+            do j=1,map%nphi
+                minimum_radius=min(minimum_radius, &
+                    dot_product(map%x(1,:,a),map%trig(:,j)))
+            end do
             if (.not. map%boundary(a)) cycle
             ! A nonaxisymmetric fixed wall is parametrized by phi-hat. A
             ! boundary omega would move its points off that prescribed wall.
@@ -180,6 +185,10 @@ contains
             end do
         end do
         !$omp end parallel do
+        if (.not. minimum_radius>0) then
+            status=IDEAL_MAP_BAD_INPUT
+            return
+        end if
         ! Sampled positive-Jacobian admission, not a whole-cell certificate.
         call ideal_map_energy(map, map%x, energy, status)
         if (status == IDEAL_MAP_FOLDED) then
