@@ -12,7 +12,8 @@ module kin6d_ideal_seed_3d
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
-        seed_horner, seed_toroidal_form
+        seed_horner, seed_toroidal_form, seed_disk_coordinates, seed_disk_boundary, &
+        seed_primitive_coefficient, seed_primitive_finish
     implicit none
     private
     public :: toroidal_profile_t, toroidal_seed_t, ideal_seed_3d_init
@@ -35,16 +36,18 @@ contains
         class(toroidal_profile_t), intent(in) :: profile
         real(dp), intent(in) :: s
         real(dp), intent(out) :: iota, pressure, integral
-        real(dp) :: next
+        real(dp) :: next, coefficient
         integer :: k
         iota = 0; pressure = 0; integral = 0
         do k = size(profile%iota), 1, -1
             call seed_horner(s, profile%iota(k), iota, next)
             iota = next
-            call seed_horner(s, profile%iota(k)/k, integral, next)
+            call seed_primitive_coefficient(profile%iota(k), real(k, dp), coefficient)
+            call seed_horner(s, coefficient, integral, next)
             integral = next
         end do
-        integral = s*integral
+        call seed_primitive_finish(s, integral, next)
+        integral = next
         do k = size(profile%pressure), 1, -1
             call seed_horner(s, profile%pressure(k), pressure, next)
             pressure = next
@@ -56,7 +59,7 @@ contains
         real(dp), intent(in) :: point(2)
         real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
         real(dp) :: u, v, s, iota, p, integral, edge, qi, pi_unused
-        u = point(1) - 2; v = point(2); s = u*u + v*v
+        call seed_disk_coordinates(point(1), point(2), u, v, s)
         call field%profile%evaluate(s, iota, p, integral)
         call field%profile%evaluate(1.0_dp, qi, pi_unused, edge)
         call seed_toroidal_form(u, v, field%flux, pi, integral, edge, iota, p, &
@@ -82,7 +85,7 @@ contains
     subroutine disk_boundary(t, point)
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
-        point = [2 + cos(2*pi*t), sin(2*pi*t)]
+        call seed_disk_boundary(t, pi, point(1), point(2))
     end subroutine
 
     subroutine ideal_seed_boundary_coefficients(point, coefficients, values)
@@ -91,11 +94,11 @@ contains
         ! complex recurrence and real Fourier conversion are generated.
         real(dp), intent(in) :: point(2), coefficients(:, :, 0:)
         real(dp), intent(out) :: values(:, :)
-        real(dp) :: u, v, re, im, nr, ni, term(4)
+        real(dp) :: u, v, s, re, im, nr, ni, term(4)
         integer :: m, n, ntor, mode
         ntor = (size(coefficients, 2) - 1)/2
         values = 0; re = 1; im = 0
-        u = point(1) - 2; v = point(2)
+        call seed_disk_coordinates(point(1), point(2), u, v, s)
         do m = 0, ubound(coefficients, 3)
             do n = -ntor, ntor
                 call seed_boundary_mode(re, im, &

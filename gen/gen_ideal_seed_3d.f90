@@ -2,7 +2,7 @@ program gen_ideal_seed_3d
     ! Regular disk harmonics and a closed flux form from toroidal profiles.
     use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
-        operator(*), operator(/), operator(**)
+        operator(*), operator(/), operator(**), sin, cos
     use fortsym_diff, only: diff
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     use fortsym_engine_native, only: native_engine_t, make_native_engine
@@ -25,6 +25,18 @@ program gen_ideal_seed_3d
     call w%line('implicit none')
     call w%line('contains')
     u = sym(arena, 'u'); v = sym(arena, 'v')
+    s = sym(arena, 's'); pi = sym(arena, 'pi')
+    a = sym(arena, 'r'); b = sym(arena, 'z')
+    call w%emit('seed_disk_coordinates', ['r', 'z'], ['u', 'v', 's'], &
+        [a - 2, b, (a - 2)**2 + b**2], ad=.true.)
+    a = sym(arena, 't')
+    call w%emit('seed_disk_boundary', ['t ', 'pi'], ['r', 'z'], &
+        [2 + cos(2*pi*a), sin(2*pi*a)], ad=.true.)
+    a = sym(arena, 'coefficient'); b = sym(arena, 'degree')
+    call w%emit('seed_primitive_coefficient', &
+        [character(11) :: 'coefficient', 'degree'], ['value'], [a/b], ad=.true.)
+    a = sym(arena, 'value')
+    call w%emit('seed_primitive_finish', ['s    ', 'value'], ['out'], [s*a], ad=.true.)
     a = sym(arena, 'a'); b = sym(arena, 'b')
     call w%emit('seed_complex_product', ['u', 'v', 'a', 'b'], &
         ['re', 'im'], [u*a - v*b, u*b + v*a], ad=.true.)
