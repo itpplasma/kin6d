@@ -550,3 +550,7 @@ foreach(start reference rp rm zp zm el)
 endforeach()
 kin6d_test_labels(equilibrium_d8_registry_contract fast CLASSES equilibrium
     TARGETS test_equilibrium_harness)
+foreach(k 2 3)
+    kin6d_test_labels(equilibrium_core_map_state_p${k} fast CLASSES mhd
+        TARGETS test_map_equilibrium)
+endforeach()

@@ -252,7 +252,14 @@ Implemented: M0 `equilibrium_state` (𝒮, evaluator `equilibrium_field_t`),
 `equilibrium_chart` (`ideal_chart_t`, cylindrical; N1 still has its own
 copy), CTest `gs_k6_mini_regression`. M1 `gs_equilibrium` (ψ → 𝒮 over a
 geometry view), `equilibrium_residual` (D3, fortsym-proved stress leaf);
-map → 𝒮 waits for N1 on main. M2 `equilibrium_readback` on
+`map_equilibrium` now adapts N = 0 cylindrical maps, retaining the reference
+form and represented geometry without solver factors. It recomputes physical B
+with the generated Piola leaf (including omega shear), checks the supplied
+reference against the frozen quadrature data, and reports a candidate. Curved
+charts and nonzero Fourier maps return unavailable; their D3 displacement
+spaces and D7 contracts still need extension. P2/P3 deformed Solovev tests
+check D3 convergence, independent physical fields, generated JVP/VJP and
+OpenMP parity/scaling. Continuous field bounds remain unavailable. M2 `equilibrium_readback` on
 `labelled_field_t`; `read_gs_equilibrium` is a thin caller and takes
 `psi_bound` and `plasma_cell` for free-boundary states. M3
 `equilibrium_certificate` (`equilibrium_certifier_t`: a lane returns 𝓜 and
