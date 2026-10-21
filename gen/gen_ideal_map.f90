@@ -22,6 +22,9 @@ program gen_ideal_map
    type(engine_result_t) :: identity
    type(expr_t) :: d(3, 3), b(3), p, mu0, sigma, jac, density, bx(3)
    type(expr_t) :: gradient(9), hessian(45)
+   type(expr_t) :: planar(2, 2), ref(2, 2), omega(2), cg(2), cb3, rr
+   type(expr_t) :: refdet, detmap, cs(2), pulled(3), flux_value(6)
+   character(8) :: sample_names(13)
    type(expr_t) :: r, psi_r, psi_z, f, cyl(3, 3), identity_density
    character(8) :: names9(9), names45(45)
    integer :: a, i, j, n
@@ -76,6 +79,36 @@ program gen_ideal_map
       'p', 'mu0', 'sigma'], [character(8) :: ('g'//names9(i)(2:3), i=1, 9)], gradient)
    call w%emit('ideal_energy_hessian', [character(8) :: names9, 'b1', 'b2', 'b3', &
       'p', 'mu0', 'sigma'], names45, hessian)
+    ! N=0 cylindrical push-forward, including a spatially varying omega.
+    sample_names = [character(8) :: 'a11', 'a21', 'a12', 'a22', &
+                    'g11', 'g21', 'g12', 'g22', 'o1', 'o2', 'c1', 'c2', 'bt']
+    do j = 1, 2
+        do i = 1, 2
+            n = i + 2*(j - 1)
+            planar(i, j) = sym(arena, trim(sample_names(n)))
+            ref(i, j) = sym(arena, trim(sample_names(n + 4)))
+        end do
+        omega(j) = sym(arena, trim(sample_names(8 + j)))
+        cg(j) = sym(arena, trim(sample_names(10 + j)))
+    end do
+    cb3 = sym(arena, 'bt'); rr = sym(arena, 'r')
+    refdet = ref(1, 1)*ref(2, 2) - ref(1, 2)*ref(2, 1)
+    detmap = planar(1, 1)*planar(2, 2) - planar(1, 2)*planar(2, 1)
+    do j = 1, 2
+        cs(j) = ref(1, j)*cg(1) + ref(2, j)*cg(2)
+    end do
+    pulled = [0 - cs(2), cs(1), cb3*refdet]
+    flux_value(1) = (planar(1, 1)*pulled(1) + planar(1, 2)*pulled(2))/(rr*detmap)
+    flux_value(2) = (planar(2, 1)*pulled(1) + planar(2, 2)*pulled(2))/(rr*detmap)
+    flux_value(3) = (omega(1)*pulled(1) + omega(2)*pulled(2) + pulled(3))/detmap
+    flux_value(4) = rr*flux_value(2)
+    flux_value(5) = 0 - rr*flux_value(1)
+    flux_value(6) = rr*detmap
+    call w%emit('ideal_reference_form', [character(8) :: sample_names(5:8), &
+               'c1', 'c2', 'bt'], [character(8) :: 'b1', 'b2', 'b3'], pulled, ad=.true.)
+    call w%emit('ideal_axisymmetric_field', [character(8) :: sample_names, 'r'], &
+                [character(8) :: 'br', 'bz', 'bphi', 'psi_r', 'psi_z', 'jac'], &
+                flux_value, ad=.true.)
    call w%line('end module kin6d_ideal_map_leaves')
    call w%close()
    ! Experimental CPU benchmark seam, retained derivatives of the same density.

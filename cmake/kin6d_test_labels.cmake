@@ -549,3 +549,7 @@ kin6d_test_labels(cpu_precision_map_comparison performance CLASSES mhd
     TARGETS benchmark_cpu_precision)
 kin6d_test_labels(cpu_precision_gs_ir performance CLASSES mhd
     TARGETS benchmark_cpu_solve)
+foreach(k 2 3)
+    kin6d_test_labels(equilibrium_core_map_state_p${k} fast CLASSES mhd
+        TARGETS test_map_equilibrium)
+endforeach()
