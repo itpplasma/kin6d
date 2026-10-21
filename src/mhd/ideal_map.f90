@@ -761,6 +761,10 @@ contains
         n = map%nloc
         allocate (map%omega_gauge(n, n, map%cells))
         map%omega_gauge = 0
+        ! The phi-fixed increment space has no omega unknown. Its gauge
+        ! matrix is identically zero; avoid assembling a form discarded by
+        ! ideal_map_position_gauge immediately after this call.
+        if (map%position_gauge) return
         scale = 0
         !$omp parallel do default(shared) schedule(static) &
         !$omp private(e,g,dg,ginv,y,chi_s,v,w,metric,h33,pos,d1,d2,d3,j) &
