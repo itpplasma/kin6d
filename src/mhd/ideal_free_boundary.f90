@@ -1120,8 +1120,8 @@ contains
                 k = harmonic(m)
                 do t2 = 1, fb%nt
                     do t1 = 1, fb%nt
-                        call push(iphi(fb, m, fb%trace(t1)), iphi(fb, m, fb%trace(t2)), &
-                            -cm*fb%s_trace(t1, t2, k))
+                        call push(iphi(fb,m,fb%trace(t1)), &
+                            iphi(fb,m,fb%trace(t2)),-cm*fb%s_trace(t1,t2,k))
                     end do
                 end do
             end do
