@@ -568,3 +568,10 @@ foreach(k 2 3)
     kin6d_test_labels(equilibrium_core_map_state_p${k} fast CLASSES mhd
         TARGETS test_map_equilibrium)
 endforeach()
+
+kin6d_test_labels(ideal_xi_hessian_and_analytic_limits fast CLASSES mhd
+    TARGETS test_ideal_xi)
+if(TARGET gen_ideal_xi)
+    kin6d_test_labels(ideal_xi_exact_identity_and_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_xi)
+endif()
