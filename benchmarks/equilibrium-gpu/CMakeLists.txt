@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
+if(NOT CMAKE_CUDA_ARCHITECTURES)
+    message(FATAL_ERROR "Set CMAKE_CUDA_ARCHITECTURES explicitly for this prototype")
+endif()
 project(kin6d_gpu_prototype LANGUAGES Fortran CXX CUDA)
 # Standalone experiment; it defines no production backend/configuration policy.
 find_package(OpenMP REQUIRED COMPONENTS Fortran)
