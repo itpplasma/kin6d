@@ -1293,6 +1293,7 @@ set_tests_properties(grad_shafranov_production_estimator PROPERTIES
     TIMEOUT 30 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 
 # Common equilibrium core (docs/equilibrium-core.md): state, chart, adapters.
+target_sources(kin6d_mhd PRIVATE src/mhd/map_equilibrium.f90)
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_equilibrium_core_leaves.f90
     src/generated/kin6d_curve_chart_leaves.f90
     src/equilibrium/equilibrium_chart.f90 src/equilibrium/equilibrium_state.f90 src/equilibrium/gs_equilibrium.f90
@@ -1772,6 +1773,15 @@ include(cmake/response_calibration.cmake)
 
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
+
+add_executable(test_map_equilibrium test/test_map_equilibrium.f90)
+target_link_libraries(test_map_equilibrium PRIVATE kin6d_mhd)
+foreach(k 2 3)
+    add_test(NAME equilibrium_core_map_state_p${k} COMMAND test_map_equilibrium ${k})
+    set_tests_properties(equilibrium_core_map_state_p${k} PROPERTIES
+        PROCESSORS 8 TIMEOUT 120 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
