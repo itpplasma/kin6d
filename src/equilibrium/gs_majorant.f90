@@ -1035,8 +1035,10 @@ contains
             lo = huge(1.0_dp); hi = -huge(1.0_dp)
             !$omp parallel default(shared)
             block
-                real(dp) :: bezier(2, ndof), block_lo(2), block_hi(2)
+                real(dp), allocatable :: bezier(:, :)
+                real(dp) :: block_lo(2), block_hi(2)
                 integer :: ie, jj
+                allocate (bezier(2, ndof))
                 block_lo = huge(1.0_dp); block_hi = -huge(1.0_dp)
                 !$omp do schedule(static)
                 do ie = 1, nel
@@ -1079,10 +1081,12 @@ contains
         failed_element = huge(1); failed_status = 1
         !$omp parallel default(shared)
         block
-            real(dp) :: shape(ndof), gradients(2, ndof), hessians(2, 2, ndof)
-            real(dp) :: d(ndof), point(2), det, grad(2), source, weight, pp, ff, psi
+            real(dp), allocatable :: shape(:), gradients(:, :), hessians(:, :, :)
+            real(dp), allocatable :: d(:)
+            real(dp) :: point(2), det, grad(2), source, weight, pp, ff, psi
             real(dp) :: dpp, dff, derivative
             integer :: ie, q, jj, kk, aa, bb, row, col, stat, snapshot
+            allocate (shape(ndof), gradients(2, ndof), hessians(2, 2, ndof), d(ndof))
             !$omp do schedule(static)
             do ie = 1, nel
                 !$omp atomic read
@@ -1201,10 +1205,13 @@ contains
         failed_element = huge(1); failed_status = 1
         !$omp parallel default(shared)
         block
-            real(dp) :: shape(ndof), gradients(2, ndof), hessians(2, 2, ndof)
-            real(dp) :: d(ndof), local(2, ndof), point(2), det, grad(2), source
+            real(dp), allocatable :: shape(:), gradients(:, :), hessians(:, :, :)
+            real(dp), allocatable :: d(:), local(:, :)
+            real(dp) :: point(2), det, grad(2), source
             real(dp) :: weight, flux(2), divergence, pp, ff, psi
             integer :: ie, q, stat, snapshot
+            allocate (shape(ndof), gradients(2, ndof), hessians(2, 2, ndof), d(ndof), &
+                      local(2, ndof))
             !$omp do schedule(static) reduction(+: flux_sum, balance_sum)
             do ie = 1, nel
                 !$omp atomic read
