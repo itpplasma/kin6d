@@ -95,6 +95,7 @@ program gs_free_3d_main
     ! (stage NL-3a). Reads &gs_free_3d from --config; writes summary-3d.dat and
     ! boundary-3d.dat in the working directory.
     use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_quiet_nan
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, read_gs_mesh
     use kin6d_gs_profile_law, only: read_gs_profile_law, gs_law_primitives
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_read_coil_table, &
@@ -110,6 +111,7 @@ program gs_free_3d_main
         ideal_fb_solve_multipliers, ideal_fb_shell_field, ideal_fb_gradient, &
         ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness, ideal_fb_mode_stability, &
         ideal_fb_hypotheses_t, ideal_fb_hypotheses, ideal_fb_hypotheses_print, &
+        ideal_fb_stability_t, &
         ideal_fb_newton_step, &
         IDEAL_FB_OK
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
@@ -318,22 +320,35 @@ program gs_free_3d_main
     if (stability) then
         block
             real(dp) :: lam
+            type(ideal_fb_stability_t) :: energy
             integer :: m, s2, j
             do m = 1, fb%nmode
                 if (m > 1 .and. mod(m, 2) == 1) cycle
-                stab(m) = huge(1.0_dp)
+                stab(m) = ieee_value(0.0_dp, ieee_quiet_nan)
                 do j = 0, size(shifts)
                     if (j > 0) then
                         if (.not. shifts(j) < 0) cycle
-                        call ideal_fb_mode_stability(fb, m, lam, s2, shift=shifts(j))
+                        call ideal_fb_mode_stability(fb, m, lam, s2, shift=shifts(j), &
+                            report=energy)
                     else
-                        call ideal_fb_mode_stability(fb, m, lam, s2)
+                        call ideal_fb_mode_stability(fb, m, lam, s2, report=energy)
                     end if
-                    stab(m) = min(stab(m), lam)
+                    if (s2 == IDEAL_FB_OK) then
+                        if (ieee_is_nan(stab(m))) then
+                            stab(m) = lam
+                        else
+                            stab(m) = min(stab(m), lam)
+                        end if
+                    end if
                     write (output_unit, '(a,i0,a,i0,a,es10.2,a,es12.4,a,i0)') &
                         'stability mode ', m, ' (n=', (m/2)*nfp, ') shift ', &
                         merge(0.0_dp, shifts(max(j, 1)), j == 0), ' eigenvalue ', lam, &
                         ' status ', s2
+                    write (output_unit, '(a,i0,a,6(1x,es16.8))') &
+                        'stability ledger mode ', m, &
+                        ' plasma vacuum exterior constraint total relative_residual', &
+                        energy%plasma, energy%vacuum, energy%exterior, &
+                        energy%constraint, energy%total, energy%relative_residual
                 end do
             end do
         end block
