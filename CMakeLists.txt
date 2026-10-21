@@ -1576,7 +1576,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_response_fluid_leaves.f90
     src/mhd/response_fluid.f90 src/mhd/response_toroidal_strip.f90)
 add_executable(test_response_toroidal_strip test/test_response_toroidal_strip.f90)
 target_link_libraries(test_response_toroidal_strip PRIVATE kin6d)
-add_executable(test_response_interfaces test/test_response_interfaces.f90)
+add_executable(test_response_interfaces test/test_response_synthetic_interfaces.f90)
 target_link_libraries(test_response_interfaces PRIVATE kin6d)
 add_test(NAME response_toroidal_strip_two_ring_traces
     COMMAND test_response_interfaces traces)
