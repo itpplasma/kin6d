@@ -8,11 +8,12 @@ module kin6d_equilibrium_3d_driver
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
     use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
+    use kin6d_map_3d_readback_leaves, only: map_3d_cartesian
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
     use kin6d_nested_oracle_leaves, only: nested_boundary_harmonic, nested_setup, &
-        nested_integer_averages
+        nested_integer_averages, nested_boundary_radius
     implicit none
     private
     public :: equilibrium_3d_driver_t, run_boundary_profile_equilibrium
@@ -60,7 +61,8 @@ contains
                 theta = 2*pi*k/angles; phi = pi*j/angles
                 call oracle%boundary(theta, phi, x, local)
                 failed = failed + local
-                rz(:, k, j) = [norm2(x(:2)), x(3)]
+                call nested_boundary_radius(x(1),x(2),rz(1,k,j))
+                rz(2,k,j)=x(3)
             end do
         end do
         !$omp end parallel do
@@ -182,9 +184,8 @@ contains
                     call map_3d_sample(state%map,state%seed,e,xi(:,ir,it), &
                         angles(ip)/state%nfp,q,values,local)
                     failed=failed+local
-                    x=[q(1)*cos(q(3)),q(1)*sin(q(3)),q(2)]
-                    b=[values(1)*cos(q(3))-values(3)*sin(q(3)), &
-                        values(1)*sin(q(3))+values(3)*cos(q(3)),values(2)]
+                    call map_3d_cartesian(q(1),q(2),q(3),values(1),values(2),values(3), &
+                        x(1),x(2),x(3),b(1),b(2),b(3))
                     call state%oracle%point(x,exact,local)
                     failed=failed+local
                     sums=sums+[sum((b-exact(3:5))**2),sum(exact(3:5)**2), &
