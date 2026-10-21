@@ -67,8 +67,8 @@ quadrature loop. For one complex Fourier amplitude its output is
 perturbation Re[xi_n exp(i n phi)] with nonzero n, the real-mode energy is
 one half of that complex-amplitude result. For n=0 with real coefficients,
 the result is already the physical energy. Callers must use the same
-convention for inertia. Negative weights, nonpositive mu0 and nonfinite
-inputs are rejected. Reports always say `candidate`, bound `unavailable`;
+convention for inertia. The volume consumer rejects negative weights,
+nonpositive mu0 and nonfinite inputs. Reports always say `candidate`, bound `unavailable`;
 no equilibrium residual, quadrature or discretization bound is implied.
 
 [V] The native test compares all coefficients with the existing emitted map
