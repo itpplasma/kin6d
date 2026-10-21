@@ -618,3 +618,6 @@ kin6d_test_labels(ideal_fb_landreman_bem3d_axisymmetric slow CLASSES mhd
 
 kin6d_test_labels(equilibrium_boundary_3d_harmonic_data slow CLASSES equilibrium
     TARGETS test_equilibrium_boundary_3d)
+
+kin6d_test_labels(ideal_fb_bem3d_geometry fast CLASSES mhd
+    TARGETS test_ideal_fb_bem3d_geometry)

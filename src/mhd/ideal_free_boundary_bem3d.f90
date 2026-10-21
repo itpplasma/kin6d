@@ -12,7 +12,7 @@ module kin6d_ideal_free_boundary_bem3d
                                    ideal_fb_mode_weight, IDEAL_FB_BAD_INPUT
     implicit none
     private
-    public :: ideal_fb_use_bem3d
+    public :: ideal_fb_use_bem3d, ideal_fb_bem3d_surface_jet
     type, extends(bem_surface_t) :: coupling_surface_t
         class(ideal_chart_t), allocatable :: chart
         real(dp), allocatable :: edge(:, :, :), parameters(:, :, :)
@@ -52,24 +52,47 @@ contains
         real(dp), intent(in) :: uv(2)
         real(dp), intent(out) :: x(3), a(3), b(3)
         integer, intent(out) :: status
-        real(dp) :: parameter(2), deriv(2, 2), q(3), qd(3, 2), w(0:3), dw(0:3)
-        real(dp) :: d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
-        integer :: e, k
+        integer :: e
         e = self%panel_edge(panel)
-        parameter = self%parameters(:, 1, panel) + &
-                 uv(1)*(self%parameters(:, 2, panel) - self%parameters(:, 1, panel)) + &
-                    uv(2)*(self%parameters(:, 3, panel) - self%parameters(:, 1, panel))
-        deriv(:, 1) = self%parameters(:, 2, panel) - self%parameters(:, 1, panel)
-        deriv(:, 2) = self%parameters(:, 3, panel) - self%parameters(:, 1, panel)
-        call edge_basis(self%order, parameter(1), w(:self%order), dw(:self%order))
-        q(1:2) = matmul(self%edge(:, :, e), w(:self%order)); q(3) = parameter(2)
+        call ideal_fb_bem3d_surface_jet(self%chart, self%order, self%edge(:, :, e), &
+            self%parameters(:, :, panel), uv, x, a, b, status)
+    end subroutine
+
+    pure subroutine ideal_fb_bem3d_surface_jet(chart, order, edge, parameters, uv, x, a, b, status)
+        !! Cartesian point and parameter tangents of one swept meridional edge.
+        class(ideal_chart_t), intent(in) :: chart
+        integer, intent(in) :: order
+        real(dp), intent(in) :: edge(2, 0:order), parameters(2, 3), uv(2)
+        real(dp), intent(out) :: x(3), a(3), b(3)
+        integer, intent(out) :: status
+        real(dp) :: parameter(2), deriv(2, 2), q(3), qd(3, 2), w(0:3), dw(0:3)
+        real(dp) :: d1(3, 3), tangent(2)
+        integer :: k, i
+        status = IDEAL_FB_BAD_INPUT
+        x = 0; a = 0; b = 0
+        if (order /= 2 .and. order /= 3) return
+        parameter = parameters(:, 1) + uv(1)*(parameters(:, 2) - parameters(:, 1)) + &
+            uv(2)*(parameters(:, 3) - parameters(:, 1))
+        deriv(:, 1) = parameters(:, 2) - parameters(:, 1)
+        deriv(:, 2) = parameters(:, 3) - parameters(:, 1)
+        call edge_basis(order, parameter(1), w(:order), dw(:order))
+        do i = 1, 2
+            q(i) = dot_product(edge(i, :), w(:order))
+            tangent(i) = dot_product(edge(i, :), dw(:order))
+        end do
+        q(3) = parameter(2)
         do k = 1, 2
-            qd(1:2, k) = matmul(self%edge(:, :, e), dw(:self%order))*deriv(1, k)
+            qd(1:2, k) = tangent*deriv(1, k)
             qd(3, k) = deriv(2, k)
         end do
-        call self%chart%jet(q, x, d1, d2, d3)
-        a = matmul(d1, qd(:, 1)); b = matmul(d1, qd(:, 2)); status = 0
+        call chart%first_jet(q, x, d1)
+        do i = 1, 3
+            a(i) = dot_product(d1(i, :), qd(:, 1))
+            b(i) = dot_product(d1(i, :), qd(:, 2))
+        end do
+        status = 0
     end subroutine
+
     subroutine ideal_fb_use_bem3d(fb, nphi, options, report, status)
         !! Existing Fourier drive is converted with its physical full-turn
         !! pairing. Set it BEFORE attaching. No scalar-potential coil fit here.

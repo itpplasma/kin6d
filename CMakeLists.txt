@@ -1524,6 +1524,9 @@ add_test(NAME ideal_fb_landreman_bem3d_axisymmetric
     COMMAND test_landreman_free_boundary bem3d)
 set_tests_properties(ideal_fb_landreman_bem3d_axisymmetric PROPERTIES TIMEOUT 1800
     PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_executable(test_ideal_fb_bem3d_geometry test/test_ideal_fb_bem3d_geometry.f90)
+target_link_libraries(test_ideal_fb_bem3d_geometry PRIVATE kin6d)
+add_test(NAME ideal_fb_bem3d_geometry COMMAND test_ideal_fb_bem3d_geometry)
 add_test(NAME ideal_fb_bem3d_derivatives COMMAND test_ideal_free_boundary bem3d)
 set_tests_properties(ideal_fb_bem3d_derivatives PROPERTIES TIMEOUT 1200
     PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")

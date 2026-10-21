@@ -1,8 +1,9 @@
 module kin6d_equilibrium_chart
     ! Chart of the common equilibrium state (docs/equilibrium-core.md, D1):
     ! X = H(q) from chart coordinates q into Cartesian space, with the jet H,
-    ! dH, d2H, d3H. Lanes see the chart only through `jet`; a curve-following
-    ! frame extends ideal_chart_t and changes nothing else.
+    ! dH, d2H, d3H. first_jet returns only H and dH, with a full-jet
+    ! fallback for charts that do not specialize it. A curve-following frame
+    ! extends ideal_chart_t.
     ! This is the chart of the N1 map lane (ideal_map), lifted unchanged into
     ! the core; ideal_map uses it.
     use, intrinsic :: iso_fortran_env, only: dp => real64
@@ -24,6 +25,7 @@ module kin6d_equilibrium_chart
     type, abstract :: ideal_chart_t
     contains
         procedure(chart_jet), deferred :: jet
+        procedure :: first_jet => chart_first_jet
     end type
     abstract interface
         pure subroutine chart_jet(chart, q, x, d1, d2, d3)
@@ -38,6 +40,7 @@ module kin6d_equilibrium_chart
     type, extends(ideal_chart_t) :: cylindrical_chart_t
     contains
         procedure :: jet => cylindrical_jet
+        procedure :: first_jet => cylindrical_first_jet
     end type
     ! Orthonormal projected-guide G-frame (not Frenet or parallel transport).
     ! All coefficients use full-turn Cartesian Fourier modes, not nfp*m.
@@ -54,6 +57,28 @@ module kin6d_equilibrium_chart
         procedure :: field_periods => curve_field_periods
     end type
 contains
+    pure subroutine chart_first_jet(chart, q, x, d1)
+        class(ideal_chart_t), intent(in) :: chart
+        real(dp), intent(in) :: q(3)
+        real(dp), intent(out) :: x(3), d1(3, 3)
+        real(dp) :: d2(3, 3, 3), d3(3, 3, 3, 3)
+        call chart%jet(q, x, d1, d2, d3)
+    end subroutine
+
+    pure subroutine cylindrical_first_jet(chart, q, x, d1)
+        class(cylindrical_chart_t), intent(in) :: chart
+        real(dp), intent(in) :: q(3)
+        real(dp), intent(out) :: x(3), d1(3, 3)
+        select type (chart)
+        type is (cylindrical_chart_t)
+            call cylindrical_chart_position(q(1), q(2), q(3), x(1), x(2), x(3))
+            call cylindrical_chart_first(q(1), q(2), q(3), d1(1, 1), d1(2, 1), &
+                d1(3, 1), d1(1, 2), d1(2, 2), d1(3, 2), d1(1, 3), d1(2, 3), d1(3, 3))
+        class default
+            call chart_first_jet(chart, q, x, d1)
+        end select
+    end subroutine
+
     pure integer function curve_field_periods(chart) result(nfp)
         class(curve_chart_t), intent(in) :: chart
         nfp = 0
