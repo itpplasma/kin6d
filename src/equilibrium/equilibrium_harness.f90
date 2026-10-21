@@ -19,6 +19,10 @@ module kin6d_equilibrium_harness
         character(80) :: oracle
     end type
     type(equilibrium_case_t), parameter :: cases(*) = [ &
+        equilibrium_case_t('landreman_3d_nested', 'map', &
+            'Landreman exact nested reference; supplied boundary and toroidal profiles'), &
+        equilibrium_case_t('issan_3d_nonsymmetric', 'map', &
+            'Issan exact nested reference; supplied boundary and toroidal profiles'), &
         equilibrium_case_t('solovev', 'map', 'Solovev A3; independent 2D GS'), &
         equilibrium_case_t('shaped', 'map', 'shaped Solovev; independent 2D GS'), &
         equilibrium_case_t('seed', 'map', 'nested A3; exact flux and 2D GS'), &
