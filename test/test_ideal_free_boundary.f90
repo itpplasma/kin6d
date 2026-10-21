@@ -285,6 +285,7 @@ contains
         real(dp), allocatable :: chain(:, :), contour(:, :), u(:)
         real(dp) :: q, scale, exact, err, previous(2), lambda, wp, wv, ws
         real(dp) :: jv(4), gq, gf, factor, k0, k1, t, gx(96), gw(96)
+        real(dp), parameter :: aspects(3) = [80.0_dp,120.0_dp,160.0_dp]
         real(dp) :: growth_errors(3), physical_lambda, physical_mass, density, r
         integer :: last_level, alevel, cell, point
         logical :: rates
@@ -305,6 +306,7 @@ contains
         previous = huge(1.0_dp)
         do level = 1, last_level
             kink_major = 40.0_dp*2**level
+            if (rates) kink_major = aspects(level)
             field%major = kink_major
             allocate (contour(2, 16), chain(2, 16))
             do j = 1, 16
@@ -419,7 +421,7 @@ contains
         end do
         if (rates) then
             print '(a,2f12.6)', '[V] rigid kink aspect-error orders=', &
-                log(growth_errors(:2)/growth_errors(2:))/log(2.0_dp)
+                log(growth_errors(:2)/growth_errors(2:))/log(aspects(2:)/aspects(:2))
         end if
     end subroutine
 
