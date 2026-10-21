@@ -22,7 +22,7 @@ module kin6d_mhd_closure_n
     !! Closure.  The layer |x| < delta around each rational carries no volume
     !! current (kin6d_mhd_ideal_n sample rings inactive); it is replaced by
     !! two resonant sheets on its edge rings, x = -delta and x = +delta
-    !! (kin6d_mhd_response_n sheet_closure_t), whose amplitudes are fixed by
+    !! (kin6d_mhd_response_n layer_closure_t), whose amplitudes are fixed by
     !! the large-solution coefficients a1 of the fits on nfit rings outside
     !! the layer on each side: ideal shielding sets a1 = 0 on both sides;
     !! prescribed a1 gives the Delta' (matching) data.  The two sheets carry
@@ -51,10 +51,11 @@ module kin6d_mhd_closure_n
     !! s = psin, chi1 = 2 pi |psi_edge - psi_axis|, p1 = mu0 dp/ds, v1 = dV/ds,
     !! v2 = d^2V/ds^2, q1 = d|q|/ds, F = |R B_phi|.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_vacuum_surfaces, only: psi_grid_t, surface_t, surface_build, &
         psi_eval, profiles_of_psin
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
-        sheet_closure_t
+        layer_closure_t
     use kin6d_mhd_ampere_n, only: mu0
     implicit none
     private
@@ -94,6 +95,7 @@ module kin6d_mhd_closure_n
     public :: frobenius_basis
     public :: layer_labels
     public :: layer_xmax
+    public :: layer_fit_widths
     public :: layer_init
     public :: layer_closure
     public :: layer_coefficients
@@ -105,6 +107,37 @@ module kin6d_mhd_closure_n
     public :: layer_inside
 
 contains
+
+    subroutine layer_fit_widths(centers, requested, ratio, nfit, lo, hi, widths, status)
+        !! Keep every fit stencil in its own rational neighborhood. The input
+        !! width is an upper bound; boundaries and neighboring centers cap it.
+        !! This is discrete mesh setup, with no derivative across cap changes.
+        real(dp), intent(in) :: centers(:), requested, ratio, lo, hi
+        integer, intent(in) :: nfit
+        real(dp), intent(out) :: widths(size(centers))
+        integer, intent(out) :: status
+        real(dp) :: reach
+        integer :: i, j
+
+        status = 1
+        widths = 0.0_dp
+        if (.not. all(ieee_is_finite([requested, ratio, lo, hi]))) return
+        if (requested <= 0.0_dp .or. ratio <= 1.0_dp .or. nfit < 3) return
+        if (lo >= hi) return
+        if (any(.not. ieee_is_finite(centers))) return
+        if (any(centers <= lo) .or. any(centers >= hi)) return
+        do i = 1, size(centers)
+            reach = min(centers(i) - lo, hi - centers(i))
+            do j = 1, size(centers)
+                if (j == i) cycle
+                reach = min(reach, abs(centers(i) - centers(j)))
+            end do
+            if (reach <= 0.0_dp) return
+            widths(i) = min(requested, 0.45_dp*reach/ratio**(nfit - 1))
+            if (widths(i) <= 0.0_dp) return
+        end do
+        status = 0
+    end subroutine layer_fit_widths
 
     subroutine mercier_di(g, psin, nth, di, q, dq, status)
         !! Mercier index D_I, |q| and d|q|/dpsin of the surface psin.
@@ -394,7 +427,7 @@ contains
         real(dp), intent(in) :: ul(:)
         type(rational_layer_t), intent(in) :: lays(:)
         integer, intent(in) :: nfine, angle
-        type(sheet_closure_t), intent(out) :: cl
+        type(layer_closure_t), intent(out) :: cl
         integer, intent(out) :: status
         type(surface_t) :: s
         integer :: l, side, k, nl, nfit, kf, st

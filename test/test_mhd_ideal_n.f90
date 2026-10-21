@@ -24,7 +24,7 @@ program test_mhd_ideal_n
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
         ampere_n_curl, ampere_n_error, ampere_n_error_t, mu0
-    use kin6d_mhd_response_n, only: sheet_closure_t
+    use kin6d_mhd_response_n, only: layer_closure_t
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         sample_field, mde_solve, ideal_options_t, ideal_response, &
         ideal_response_error_t, ideal_current, ideal_load
@@ -69,7 +69,7 @@ contains
         type(ampere_n_t) :: amp
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: rings(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(ideal_response_error_t) :: estimate
         type(ampere_n_error_t) :: independent
         complex(dp), allocatable :: a(:), reference(:), delta(:), b2(:), f(:)
@@ -517,7 +517,7 @@ contains
         type(ampere_n_t), target :: amp
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: rings(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         complex(dp), allocatable :: a(:), ad(:), b2(:), b2d(:)
         complex(dp), allocatable :: bs(:, :), bsd(:, :)
         complex(dp) :: lam(0), b2s(0, 0), phe(0), pht(0)

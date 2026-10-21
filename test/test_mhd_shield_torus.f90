@@ -30,7 +30,7 @@ program test_mhd_shield_torus
         ampere_n_curl
     use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
         ring_points, ring_flux_harmonic, ring_flux_from_values, ring_sheet_load, &
-        ring_area, sheet_closure_t, closure_shield_init, resonant_surfaces_missing
+        ring_area, layer_closure_t, closure_shield_init, resonant_surfaces_missing
     use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
         ideal_options_t, ideal_response
     implicit none
@@ -129,7 +129,7 @@ contains
         type(ampere_n_t) :: amp
         type(ideal_options_t) :: opt
         type(sample_ring_t), allocatable :: rings(:)
-        type(sheet_closure_t) :: cl
+        type(layer_closure_t) :: cl
         type(ring_angles_t), allocatable :: ra(:)
         type(surface_t) :: surf
         real(dp), allocatable :: ul(:), xg(:, :), nds(:, :), thg(:), tau(:), wq(:)

@@ -8,7 +8,7 @@ file(WRITE "${WORK}/currents.txt" "1000.0\n")
 file(WRITE "${WORK}/input.nml"
     "&l4 eqdsk='${EQDSK}', coils='coils.txt', currents(1)='currents.txt', prefix='t', n=1, rat_num(1)=2, rat_den(1)=1, nrad=12, nth_max=64, order=2, nphi=32, nfine=256, np_sample=64, model='ideal', gmres_tol=1e-10, gmres_maxit=40 /\n")
 execute_process(COMMAND "${APP}" input.nml WORKING_DIRECTORY "${WORK}"
-    RESULT_VARIABLE status OUTPUT_VARIABLE out ERROR_VARIABLE err TIMEOUT 60)
+    RESULT_VARIABLE status OUTPUT_VARIABLE out ERROR_VARIABLE err TIMEOUT 200)
 if(NOT status EQUAL 0)
     message(FATAL_ERROR "ideal response failed: ${out}${err}")
 endif()

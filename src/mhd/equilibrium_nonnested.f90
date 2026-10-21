@@ -8,6 +8,7 @@ module kin6d_equilibrium_nonnested
         meridian_op_complex, meridian_gs_stiffness, meridian_stiffness, &
         meridian_qpoint, meridian_real_to_complex, meridian_load, meridian_field_i
     use fortsparse, only: csc_t, csc_z_t, csc_matvec, csc_from_triplet, &
+        csc_normalize_symmetric_raw, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
@@ -445,10 +446,11 @@ contains
         integer, allocatable :: row(:), col(:)
         real(dp), allocatable :: val(:)
         integer :: n, j, p, count
+        real(dp) :: corr
         logical :: ok
         n = size(fixed); status = 1
         if (k%nrow /= n .or. k%ncol /= n) return
-        allocate (row(k%nnz + n), col(k%nnz + n), val(k%nnz + n))
+        allocate (row(2*(k%nnz + n)), col(2*(k%nnz + n)), val(2*(k%nnz + n)))
         count = 0
         do j = 1, n
             if (fixed(j)) then
@@ -460,9 +462,19 @@ contains
                 if (fixed(k%row_idx(p))) cycle
                 count = count + 1
                 row(count) = k%row_idx(p); col(count) = j; val(count) = k%val(p)
+                ! Explicit zero at the mirror position: assembly can store a
+                ! roundoff entry on one side only.
+                count = count + 1
+                row(count) = j; col(count) = k%row_idx(p); val(count) = 0
             end do
         end do
         call csc_from_triplet(n, n, row(:count), col(:count), val(:count), a, st)
+        if (.not. status_ok(st)) return
+        ! The stiffness is symmetric only to assembly roundoff (anisotropic
+        ! conductivity); the native SPD factor needs bitwise symmetry, so
+        ! project explicitly and reject a real asymmetry.
+        call csc_normalize_symmetric_raw(n, a%col_ptr, a%row_idx, a%val, &
+            1.0e-12_dp, corr, st)
         if (.not. status_ok(st)) return
         factor%fixed = fixed
         factor%direct_backend = gs_direct_available()
