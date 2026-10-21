@@ -12,16 +12,33 @@ on:
   workflow_dispatch:
 jobs:
   comparison:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","itp-slurm"]') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bundle exact sources for Slurm
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        env:
+          SCI_TIER: cpu-precision-comparison
+        run: |-
+          TMPDIR="$RUNNER_TEMP" ci/bundle.sh "$RUNNER_TEMP/ci.tar.zst"
+      - name: Run native checks on sCluster
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        run: |-
+          sci-dispatch native "$RUNNER_TEMP/ci.tar.zst"
       - run: sudo apt-get update && sudo apt-get install -y gfortran ninja-build
+        if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Build the native CPU benchmark
         run: >-
           cmake -S benchmarks/cpu-precision -B build-cpu-precision -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+        if: ${{ github.event.pull_request.head.repo.fork }}
       - run: cmake --build build-cpu-precision --target benchmark_cpu_precision -j 2
+        if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Compare generated variants and independent analytic values
         run: >-
           ctest --test-dir build-cpu-precision -j 2
           -R '^cpu_precision_' --output-on-failure
+        if: ${{ github.event.pull_request.head.repo.fork }}

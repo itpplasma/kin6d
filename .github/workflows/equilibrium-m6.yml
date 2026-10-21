@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   d8:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","itp-slurm"]') }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -22,19 +22,38 @@ jobs:
       MPLBACKEND: Agg
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bundle exact sources for Slurm
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        env:
+          SCI_TIER: equilibrium-m6-d8
+          SCI_MATRIX_LANE: ${{ matrix.lane }}
+        run: |-
+          TMPDIR="$RUNNER_TEMP" ci/bundle.sh "$RUNNER_TEMP/ci.tar.zst"
+      - name: Run native checks on sCluster
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        run: |-
+          sci-dispatch native "$RUNNER_TEMP/ci.tar.zst"
       - name: Install native dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ninja-build gfortran-14 gcc-14 libopenblas-dev liblapack-dev libsuitesparse-dev libmetis-dev libnetcdf-dev
+        if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
+        if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Build affected consumers
         run: cmake --build build -j 4 --target test_equilibrium_harness test_gs_fb_manufactured test_ideal_map_axisymmetric
+        if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Check registry and layering
         run: ctest --test-dir build -j 4 --output-on-failure -R '^(equilibrium_d8_registry_contract|kin6d_layering)$'
+        if: ${{ github.event.pull_request.head.repo.fork }}
       - name: Check psi ladders and offsets
-        if: matrix.lane == 'psi'
+        if: ${{ github.event.pull_request.head.repo.fork && (matrix.lane == 'psi') }}
         run: ctest --test-dir build -j 4 --output-on-failure -R '^(equilibrium_d8_psi_offset_.*|gs_free_boundary_t3_manufactured_newton)$'
       - name: Check map ladders and offset returns
-        if: matrix.lane == 'map'
-        run: ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_seed_boundary_label|ideal_map_n0_(solovev_a3_p[23]|shaped_solovev_p[23]|seed_return_(a3_p[23]|shaped_p2)|seed_nested_(a3_p[23]|shaped_p3)))$'
+        if: ${{ github.event.pull_request.head.repo.fork && (matrix.lane == 'map') }}
+        run: ctest --test-dir build -j 4 --output-on-failure -R
+          '^(ideal_seed_boundary_label|ideal_map_n0_(solovev_a3_p[23]|shaped_solovev_p[23]|seed_return_(a3_p[23]|shaped_p2)|seed_nested_(a3_p[23]|shaped_p3)))$'
