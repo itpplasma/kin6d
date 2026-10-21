@@ -554,3 +554,7 @@ foreach(family 1 2)
     kin6d_test_labels(equilibrium_nested_boundary_input_${family} fast CLASSES apps
         TARGETS nested_oracle_export test_nested_boundary_input)
 endforeach()
+foreach(k 2 3)
+    kin6d_test_labels(equilibrium_core_map_state_p${k} fast CLASSES mhd
+        TARGETS test_map_equilibrium)
+endforeach()
