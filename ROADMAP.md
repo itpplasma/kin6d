@@ -203,8 +203,9 @@ S3.1 needs E3.1 and S2.2.
 ### Known blocker for E3.3
 
 The native gate `ideal_fb_landreman_bem3d_axisymmetric` of the 3D BEM layer
-(PR #47; TIMEOUT 1800, 8 OpenMP threads) times out in its first resolution (chain=16). The cost lies in
-the all-pairs adaptive panel assembly `assemble_parametric_bem_p2` (FortFEM 77c6b8c
+(PR #47; TIMEOUT 1800, 8 OpenMP threads) times out in its first resolution
+(chain=16). The cost lies in the all-pairs adaptive panel assembly
+`assemble_parametric_bem_p2` (FortFEM 77c6b8c
 `src/bem/parametric_bem_high_order.f90:492`, `converge_pair`) called through
 `ideal_fb_use_bem3d` with maximum degree 96. The case is axisymmetric with 12
 toroidal copies, so a block-circulant (per-n) reduction or a far-field
