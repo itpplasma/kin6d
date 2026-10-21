@@ -45,6 +45,8 @@
             g(1,1), g(2,1), g(3,1), g(4,1), g(5,1), g(6,1), g(7,1), g(8,1), g(9,1), &
             g(1,2), g(2,2), g(3,2), g(4,2), g(5,2), g(6,2), g(7,2), g(8,2), g(9,2))
         a = reshape(cmplx(g(:, 1), g(:, 2), RK), [3, 3])
+        if (.not. all(ieee_is_finite(real(a,RK)))) return
+        if (.not. all(ieee_is_finite(aimag(a)))) return
         status = XI_OK
     end subroutine GRADIENT
 

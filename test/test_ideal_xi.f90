@@ -1,5 +1,6 @@
 program test_ideal_xi
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_ideal_xi, only: xi_bilinear, xi_gradient_n, xi_volume_energy, &
         xi_energy_report_t, XI_OK, XI_BAD_INPUT
     use kin6d_ideal_map_leaves, only: ideal_energy_hessian
@@ -98,6 +99,9 @@ program test_ideal_xi
     if (maxval(abs(a)) > tolerance) error stop 'translation null'
     call xi_gradient_n(1,0.0_dp,xi,dr,dz,a,status)
     if (status /= XI_BAD_INPUT) error stop 'axis unsupported'
+    xi(1) = cmplx(2,0,dp)
+    call xi_gradient_n(2,tiny(r)/4,xi,dr,dz,a,status)
+    if (status /= XI_BAD_INPUT) error stop 'overflowing gradient accepted'
     ! Screw-pinch rigid helical translation: raw map plasma Hessian = q^2.
     ! B=(-y,x,Bz), xi=(cos kz,sin kz,0); at kz=0 A_yz=k.
     ! This is the plasma-volume piece; the vacuum/boundary term is separate.
@@ -125,6 +129,10 @@ contains
     subroutine close(actual,wanted,tol,label)
         real(dp), intent(in) :: actual,wanted,tol
         character(*), intent(in) :: label
+        if (.not. ieee_is_finite(actual)) then
+            print *, label, 'nonfinite result'
+            error stop 1
+        end if
         if (abs(actual-wanted) > tol*max(1.0_dp,abs(wanted))) then
             print *, label, actual,wanted
             error stop 1
