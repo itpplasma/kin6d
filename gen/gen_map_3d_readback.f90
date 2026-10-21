@@ -61,7 +61,8 @@ program gen_map_3d_readback
             end do
             if(a==k) identity=identity-detq
             proof=engine%zero_test(identity)
-            if(proof%verdict/=VERDICT_TRUE) error stop 'coordinate inverse identity unproved'
+            if (proof%verdict /= VERDICT_TRUE) &
+                error stop 'coordinate inverse identity unproved'
         end do
     end do
     call w%emit('map_3d_determinant' , names(:9), ['det'], [detq], ad=.true.)
