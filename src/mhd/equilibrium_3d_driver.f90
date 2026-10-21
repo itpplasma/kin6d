@@ -103,7 +103,7 @@ contains
         type(equilibrium_run_report_t), intent(inout) :: report
         type(equilibrium_state_t), intent(out) :: eq
         type(gs_state_t) :: mesh
-        integer :: status
+        integer :: status, solve_status
         report%status = D8_BAD_INPUT
         if (spec%lane /= 'map' .or. start%name /= 'legacy') return
         select type (state)
@@ -131,8 +131,8 @@ contains
             report%status = D8_BAD_REPORT
             call ideal_map_solve(state%map,state%tolerance,state%max_iterations, &
                 state%solve,status)
+            solve_status = status
             report%iterations = state%solve%iterations
-            if (status /= 0) return
             report%residual = state%solve%gradient &
                 /max(tiny(1.0_dp),state%solve%initial_gradient)
             ! A solver's roundoff-stall success is insufficient for this gate.
@@ -140,6 +140,7 @@ contains
             if (status /= 0) return
             report%oracle_error = state%magnetic_error
             report%residual_norm = 'relative free reduced-gradient l2'
+            if (solve_status /= 0) return
             if (report%residual > state%tolerance) return
             call map_3d_equilibrium(state%map,state%seed,eq,status, &
                 toroidal_flux=state%toroidal_flux)
