@@ -2500,7 +2500,7 @@ contains
                 end do
             end do
             !$omp end parallel do
-            solver%backend = FORTSPARSE_BACKEND_NATIVE
+            solver%backend_id = FORTSPARSE_BACKEND_NATIVE
             solver%options%symmetry = FORTSPARSE_SYM_INDEFINITE
             solver%options%ordering = FORTSPARSE_ORDER_AMD
             solver%options%ldlt_blocked = .true.
@@ -2515,7 +2515,7 @@ contains
                     end if
                 end if
             end if
-            if (.not. status_ok(sst)) print '(a,a)', 'mode inertia: ', sst%message
+            if (.not. status_ok(sst)) print '(a,a)', 'mode inertia: ', sst%msg
             call sparse_destroy(solver)
         end subroutine
     end subroutine

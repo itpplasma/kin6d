@@ -172,7 +172,7 @@ contains
         call ideal_fb_solve_multipliers(fb, st)
         if (st /= IDEAL_FB_OK) error stop 'spectrum multipliers'
         call ideal_fb_hessian(fb, rp, ci, val)
-        allocate (keep(fb%n)); count = 0
+        allocate (keep(fb%n)); keep = 0; count = 0
         do i = 1, fb%n
             if (i <= fb%np) then
                 phase = mod((i - 1)/2, fb%nmode) + 1
@@ -183,16 +183,6 @@ contains
             end if
             if (phase == 1) cycle
             count = count + 1; keep(i) = count
-        end do
-        ! Unselected entries must have a known sentinel, not uninitialized data.
-        do i = 1, fb%np, 6
-            keep(i:i + 1) = 0
-        end do
-        do i = fb%np + 1, fb%np + 2*fb%nx, 9
-            keep(i:i + 2) = 0
-        end do
-        do i = fb%np + 2*fb%nx + 1, fb%n, 3
-            keep(i) = 0
         end do
         n = count; np = 4*fb%plasma%nodes; nr = n - np
         allocate (h(n, n), c(nr, nr), b(nr, np), piv(nr), s(np, np), &
