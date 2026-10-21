@@ -42,7 +42,7 @@ The formulation is native and chart-abstract. It is not VMEC/NESTOR (virtual cas
 - Shell map: the harmonic extension of the Γ_p displacement, imposed by multipliers (rows ∇C). It is a continuum gauge of the reduced functional (L at Φ̃ = Φ̃*(X)).
 - Exterior: an abstract symmetric Steklov–Poincaré operator S on the fixed closed surface Γ_c, ⟨Su, v⟩ = ∫_ext ∇w_u·∇w_v. Coil drive: traces (a, h) of the field of all sources outside Γ_c plus a unit-circulation field B_f. Realisations:
   - **R1**, per-n toroidal-mode BEM. Implemented. Verified cylindrical: L_n = −div(R∇·) + n²/R on an axisymmetric Γ_c (FortFEM `toroidal_mode_boundary_operators_2d`, header; `src/equilibrium/equilibrium_boundary.f90:2–28`; `src/mhd/ideal_free_boundary.f90:435–479`). The coil sampler takes (R, Z, k) and returns cos/sin(nφ) harmonics (`src/mhd/ideal_free_boundary.f90:87–96`).
-  - **R2**, chart-free 3D Laplace BEM on a general Γ_c, symmetric coupling S = W + (½ − K′)V⁻¹(½ − K). Not implemented. FortFEM `2ed9d024` has 3D Laplace Galerkin/DtN operators only for an exactly parametrised circular torus (`laplace_torus_curved_bem_3d.f90`, `major_radius, minor_radius` arguments). A general curved Γ_c is missing upstream.
+  - **R2**, chart-free 3D Laplace BEM on a general Γ_c, symmetric coupling S = W + (½ − K′)V⁻¹(½ − K). [V] The curved P2/P1 [FortFEM](https://github.com/lazy-fortran/fortfem) operator now has a full-surface KIN6D restriction and optional shell/KKT integration; see [free-boundary-bem3d.md](free-boundary-bem3d.md). The generic adapter admits caller-owned curved surfaces. The existing shell initializer still requires the cylindrical chart; non-axisymmetric Landreman continuation (G4) and moving-plasma-surface BEM geometry derivatives remain open.
 
 ### Functional
 
