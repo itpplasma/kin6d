@@ -95,3 +95,34 @@ include D6 vacuum/surface terms before making an external-kink threshold
 claim. The existing strip-current response operator is not yet identified
 with this displacement operator. Rigorous spectral and state bounds remain
 unavailable until their stability and discretization premises are checked.
+
+## Shared coordinate and kinetic leaves
+
+[V] The public consumer package
+[GLISS gen/ideal_mhd](https://github.com/itpplasma/GLISS/tree/main/gen/ideal_mhd)
+owns the frozen-in energy and its straight-field-coordinate reduction.
+KIN6D pins that package in `gen/ideal-mhd-revision.txt`; optional codegen fetches
+it (or uses `FETCHCONTENT_SOURCE_DIR_KIN6D_SHARED_MHD`). Its coordinate driver emits `src/generated/ideal_mhd_energy_generated.f90`, also consumed byte for
+byte by [GLISS](https://github.com/itpplasma/GLISS). Ordinary builds need no CAS.
+The coordinate input ordering, SI conversion and signed-chart assumptions are
+retained in the generator. Two-component output is twice delta-W times mu0;
+three-component output includes the SI gamma-p divergence term. The kinetic
+leaf is half rho times the physical perpendicular displacement norm and the
+absolute volume Jacobian. Its displacement Hessian is the mass matrix.
+
+[V] The generator proves all coordinate curl projections, linear coefficient
+reconstruction, accepted simplifications and the kinetic norm. An additional
+exact identity equates the Cartesian frozen-energy Hessian with the reduced
+coordinate energy for a uniform unit-field slab and transverse xi(z). Native
+oracles compare both runtime paths in this limit and check the mass and
+JVP/VJP pairing on both signed-chart branches. The existing 82 KS3 identities
+and public interfaces are preserved.
+
+[V] These are two specializations with different pointwise contracts. General
+material-Hessian and force-balance-reduced integrands differ by integration by
+parts, equilibrium residual and boundary terms. The slab identity does not
+prove their global equality for arbitrary equilibria. Vacuum/surface terms and
+the full lifted-basis M5 identity retain the limitations stated above.
+
+Regenerate with the pinned FortSym build and run
+`ctest --test-dir build -R 'ideal_(xi|mhd)' --output-on-failure`.

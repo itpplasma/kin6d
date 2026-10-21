@@ -2436,7 +2436,9 @@ contains
         if (status /= IDEAL_FB_OK) return
         sigma = 0
         if (present(shift)) sigma = shift
-        nit = 80
+        ! Fine meshes can need more than 80 steps near a clustered spectrum.
+        ! This is a work budget; the unshifted residual gate stays unchanged.
+        nit = 800
         if (present(iterations)) nit = iterations
         status = IDEAL_FB_BAD_INPUT
         if (nit < 1 .or. .not. ieee_is_finite(sigma)) return
