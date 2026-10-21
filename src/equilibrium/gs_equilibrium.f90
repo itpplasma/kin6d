@@ -27,6 +27,7 @@ module kin6d_gs_equilibrium
     implicit none
     private
     public :: gs_field_t, gs_equilibrium, gs_profile_f, gs_readback_resolution
+    public :: gs_geometry_view
 
     type, extends(labelled_field_t) :: gs_field_t
         type(gs_state_t) :: view
@@ -213,7 +214,7 @@ contains
             field%whole = all(plasma_cell)
         end if
         if (field%whole) then
-            call geometry_view(state, field%psi_bound, field%view)
+            call gs_geometry_view(state, field%psi_bound, field%view)
             if (any(abs(pack(field%view%psi, field%view%boundary)) > 1.0e-12_dp)) &
                 return
         else
@@ -304,7 +305,7 @@ contains
         f = sign(sqrt(squared), f_edge)
     end function
 
-    subroutine geometry_view(state, psi_bound, view)
+    subroutine gs_geometry_view(state, psi_bound, view)
         ! Geometry and flux only; no stiffness, operator or factor.
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: psi_bound
