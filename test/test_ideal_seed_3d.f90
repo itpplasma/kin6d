@@ -2,7 +2,9 @@ program test_ideal_seed_3d
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh, ideal_seed_boundary_coefficients
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_rdof, ideal_map_energy
+    use kin6d_ideal_map, only: ideal_map_t, ideal_map_rdof, ideal_map_energy, &
+        ideal_map_init, ideal_map_freeze
+    use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_seed_3d_leaves, only: seed_boundary_mode, &
         seed_boundary_mode_jvp, seed_boundary_mode_vjp
@@ -10,10 +12,11 @@ program test_ideal_seed_3d
     implicit none
     type(toroidal_profile_t) :: profile
     type(toroidal_seed_t) :: seed
-    type(ideal_map_t) :: map, threaded
+    type(ideal_map_t) :: map, threaded, gauge_one, gauge_four
+    type(cylindrical_chart_t) :: chart
     type(gs_state_t) :: mesh
     real(dp) :: coefficients(4, -1:1, 0:3), modes(3, 3), q(3), exact(2)
-    real(dp) :: point(2), grad(2), chi, b3, p, theta, phi, phase, error, e1, e4
+    real(dp) :: point(2), grad(2), chi, b3, p, theta, phi, phase, error, e1, e4, normal(3), span, minimum_span
     real(dp) :: iota, integral, inputs(6), direction(6), bar(4), tangent(4), adj(6)
     real(dp) :: plus(4), minus(4), h
     integer :: status, j, m, n
@@ -64,8 +67,18 @@ program test_ideal_seed_3d
     if (status /= 0) error stop 'threaded seed'
     call ideal_map_energy(threaded, threaded%x, e4, status)
     if (maxval(abs(map%x - threaded%x)) > 1e-15_dp) error stop 'thread seed parity'
-    if (maxval(abs(map%omega_gauge-threaded%omega_gauge)) > &
-        128*epsilon(1.0_dp)*maxval(abs(map%omega_gauge))) &
+    call omp_set_num_threads(1)
+    call ideal_map_init(gauge_one,mesh,chart,3,1,status,nphi=7)
+    if(status/=0) error stop 'serial gauge map'
+    call ideal_map_freeze(gauge_one,seed,status)
+    if(status/=0) error stop 'serial gauge freeze'
+    call omp_set_num_threads(4)
+    call ideal_map_init(gauge_four,mesh,chart,3,1,status,nphi=7)
+    if(status/=0) error stop 'thread gauge map'
+    call ideal_map_freeze(gauge_four,seed,status)
+    if(status/=0) error stop 'thread gauge freeze'
+    if (maxval(abs(gauge_one%omega_gauge-gauge_four%omega_gauge)) > &
+        128*epsilon(1.0_dp)*maxval(abs(gauge_one%omega_gauge))) &
         error stop 'thread gauge assembly parity'
     if (abs(e1 - e4) > 1e-13_dp*abs(e1)) error stop 'thread energy parity'
     do j = 1, map%nodes
@@ -104,6 +117,17 @@ program test_ideal_seed_3d
         profile, status)
     if (status /= 0) error stop 'clockwise boundary rejected'
     if (map%sigma*threaded%sigma >= 0) error stop 'boundary orientation not updated'
+    minimum_span=huge(1.0_dp)
+    do j=1,threaded%nodes
+        if(threaded%boundary(j)) cycle
+        normal=[threaded%reference(1,j)-2,-threaded%reference(2,j),0.0_dp]
+        if(norm2(normal)<0.1_dp) cycle
+        normal=normal/norm2(normal)
+        span=dot_product(normal,threaded%basis(:,1,j))**2 &
+            +dot_product(normal,threaded%basis(:,2,j))**2
+        minimum_span=min(minimum_span,span)
+    end do
+    if(minimum_span<0.5_dp) error stop 'clockwise seed loses a physical normal direction'
     coefficients(1, 0, 2) = 0.8_dp
     call ideal_seed_3d_init(threaded, seed, mesh, coefficients, 3, flux, &
         profile, status)
