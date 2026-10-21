@@ -608,17 +608,14 @@ contains
         !! docs/response-unified.md, R-B2 increment 1).  The gated run uses
         !! the smallest nrad of that ladder at which (b) passes.  The old
         !! ratio to the sharp-step rate stays printed ("rel").
-        !! (a) re-declared 2026-10-14 (controller).  As first declared it was
-        !! run at strip half-width xd = 0.02 (in psi_n) and gave 1.02e-3 ..
-        !! 1.01e-3 for nrad 32 .. 160 and every GMRES tolerance: it does not
-        !! close with the mesh.  Measured xd ladder (R0/a 40, nrad 64-128,
-        !! independent of nrad): xd 0.01 / 0.02 / 0.04 -> 1.55e-4 / 1.01e-3 /
-        !! 4.40e-3, i.e. ~xd^2: the finite strip width versus the sheet limit,
-        !! which is what (a) tests.  (a) is now: at xd = 0.01, |strip / L4
-        !! current - 1| <= 1e-3 (limit unchanged), AND the convergence order
-        !! of that error between xd 0.02 and 0.01 (same nrad) is >= 1.8.  The
-        !! gated run is at xd 0.01; (b) was re-checked there at nrad 64
-        !! (1.65e-2 / 1.63e-2 / 1.64e-2, job 3225264), so nrad stays 64.
+        !! (a) retains the 2026-10-14 interface-sheet diagnostics: their sum
+        !! agrees with L4 to 1e-3 at xd=0.01 and its error has order >=1.8
+        !! between xd=0.02 and 0.01. That sum is the magnetic replacement's
+        !! current, not the resolved strip current. Exact cylinder moments
+        !! explain its finite-width error (response-strip-current.md).
+        !! The physical-current row now supplies the original gate as well:
+        !! actual strip current / L4 within 1e-3 at BOTH xd=0.02 and 0.01.
+        !! No fitted correction is applied to the interface amplitudes.
         !! KIN6D_STRIP_LADDER="r0 xd nrad" runs one ladder case (no gates).
         character(len=128) :: env
         real(dp) :: r0l, xdl, ierr, cerr, ierr2, cerr2, order, physical, physical2
