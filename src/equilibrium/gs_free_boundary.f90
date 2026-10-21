@@ -52,7 +52,7 @@ module kin6d_gs_free_boundary
     !! nonzero edge source then makes the Jacobian inexact in that cell
     !! (DESIGN FB1, deferred); a law that vanishes at s = 1 is exact.
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
-    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
     use fortfem_sparse_direct, only: sparse_direct_factor_t, &
                          sparse_direct_factor_csc, sparse_direct_factor_transpose_csc, &
@@ -60,6 +60,10 @@ module kin6d_gs_free_boundary
     use fortsparse, only: sparse_solve_block, fortsparse_status_t, status_ok, &
         csc_normalize_symmetric_raw
     use fortnum_quadrature, only: gauss_legendre
+    use fortnum_roots, only: root_brent
+    use fortnum_multiroot, only: argsort
+    use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    use kin6d_gs_separatrix_leaves, only: gs_lcfs_ray_jet
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
                                gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
                                GS_DIRECT_INDEFINITE, GS_DIRECT_ORDER_AMD, &
@@ -1837,7 +1841,7 @@ contains
     ! P8: outer refit loop (DESIGN 1.2, step 2).
     ! ------------------------------------------------------------------
 
-    subroutine cell_contains(state, e, r, z, local, ok)
+    pure subroutine cell_contains(state, e, r, z, local, ok)
         !! Reference coordinates of (r, z) in cell e, ok when inside it.
         type(gs_state_t), intent(in) :: state
         integer, intent(in) :: e
@@ -1850,10 +1854,12 @@ contains
         local = matmul(transpose(state%gradient(:, 2:3, e)), &
                        [r, z] - state%points(:, state%triangles(1, e)))
         if (minval([1.0_dp - sum(local), local]) < -0.5_dp) return
-        if (state%mapped .and. state%curved_cell(e)) then
-            call triangle_locate(state%points(:, state%triangles(:, e)), [r, z], &
-                                 local, status)
-            if (status /= 0) return
+        if (state%mapped) then
+            if (state%curved_cell(e)) then
+                call triangle_locate(state%points(:, state%triangles(:, e)), [r, z], &
+                                     local, status)
+                if (status /= 0) return
+            end if
         end if
         ok = minval([1.0_dp - sum(local), local]) >= -1.0e-10_dp
     end subroutine cell_contains
@@ -1924,7 +1930,7 @@ contains
         end function bucket
     end subroutine build_grid
 
-    subroutine grid_locate(state, grid, r, z, element, xi, found)
+    pure subroutine grid_locate(state, grid, r, z, element, xi, found)
         type(gs_state_t), intent(in) :: state
         type(gs_fb_grid_t), intent(in) :: grid
         real(dp), intent(in) :: r, z
@@ -1952,7 +1958,7 @@ contains
         end do
     end subroutine grid_locate
 
-    subroutine grid_flux(state, grid, psi, r, z, value, gradient, found)
+    pure subroutine grid_flux(state, grid, psi, r, z, value, gradient, found)
         !! Value and physical gradient of the finite element flux at (r, z).
         type(gs_state_t), intent(in) :: state
         type(gs_fb_grid_t), intent(in) :: grid
@@ -1975,23 +1981,175 @@ contains
         gradient = matmul(grads(:, :ndof), psi(state%triangles(:, e)))
     end subroutine grid_flux
 
+    subroutine lcfs_xpoints(state, psi, psi_bound, xpoints)
+        !! Reuse the level finder's Newton-on-grad-psi saddle search. Only
+        !! saddles at this level bound the traced separatrix; other saddles
+        !! (and the limiter contact in limited equilibria) are not anchors.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:), psi_bound
+        real(dp), allocatable, intent(out) :: xpoints(:, :)
+        real(dp), allocatable :: candidates(:, :)
+        logical, allocatable :: saddle(:)
+        real(dp) :: xi(2), shape(10), point(2), flux_tol, position_tol
+        integer :: e, ndof, stat, nx, j
+        logical :: found, duplicate
+
+        ndof = size(state%triangles, 1)
+        flux_tol = 128*epsilon(1.0_dp)*maxval(abs(psi - psi_bound))
+        position_tol = 128*epsilon(1.0_dp)*maxval(abs(state%points))
+        allocate (candidates(2, size(state%triangles, 2)))
+        allocate (saddle(size(state%triangles, 2)))
+        saddle = .false.
+        !$omp parallel do default(shared) private(e, xi, found, shape, point, stat) &
+        !$omp schedule(static)
+        do e = 1, size(state%triangles, 2)
+            call cell_saddle(psi(state%triangles(:, e)), xi, found)
+            if (.not. found) cycle
+            call point_shape(state, e, xi, shape, point, stat)
+            if (stat /= 0) cycle
+            if (abs(dot_product(shape(:ndof), psi(state%triangles(:, e))) &
+                    - psi_bound) > flux_tol) cycle
+            candidates(:, e) = point
+            saddle(e) = .true.
+        end do
+        !$omp end parallel do
+        ! Deterministic compaction also merges a saddle on a shared cell edge.
+        nx = 0
+        do e = 1, size(saddle)
+            if (.not. saddle(e)) cycle
+            duplicate = .false.
+            do j = 1, nx
+                if (norm2(candidates(:, e) - candidates(:, j)) <= position_tol) &
+                    duplicate = .true.
+            end do
+            if (duplicate) cycle
+            nx = nx + 1
+            candidates(:, nx) = candidates(:, e)
+        end do
+        xpoints = candidates(:, :nx)
+    end subroutine lcfs_xpoints
+
+    subroutine separatrix_ray(state, grid, psi, axis, psi_bound, sigma, &
+                               theta, step, xpoints, anchor, point, found)
+        !! First exit from the axis component. An X-point radius is a mandatory
+        !! march event. If a step straddles a radial minimum, bracket that
+        !! minimum before bracketing the first flux crossing. Thus a narrow
+        !! vacuum wedge cannot be skipped into the private-flux region.
+        type(gs_state_t), intent(in) :: state
+        type(gs_fb_grid_t), intent(in) :: grid
+        real(dp), intent(in) :: psi(:), axis(2), psi_bound, sigma, theta, step
+        real(dp), intent(in) :: xpoints(:, :)
+        integer, intent(in) :: anchor
+        real(dp), intent(out) :: point(2)
+        logical, intent(out) :: found
+        type(fortnum_status_t) :: root_status
+        real(dp) :: direction(2), lo, hi, value, slope, old_slope, end_slope, minimum
+        real(dp) :: radius, root
+        integer :: j
+        logical :: valid
+
+        direction = [cos(theta), sin(theta)]
+        found = .false.
+        point = axis
+        lo = 0.0_dp
+        call ray_jet(lo, value, old_slope, valid)
+        if (.not. valid) return
+        if (value <= 0.0_dp) return
+        do
+            hi = lo + step
+            do j = 1, size(xpoints, 2)
+                radius = norm2(xpoints(:, j) - axis)
+                if (radius > lo .and. radius < hi) hi = radius
+            end do
+            call ray_jet(hi, value, slope, valid)
+            if (.not. valid) return
+            if (anchor > 0) then
+                radius = norm2(xpoints(:, anchor) - axis)
+                if (hi >= radius) then
+                    point = xpoints(:, anchor)
+                    found = .true.
+                    return
+                end if
+            end if
+            end_slope = slope
+            if (value <= 0.0_dp) exit
+            if (old_slope < 0.0_dp .and. slope >= 0.0_dp) then
+                call root_brent(ray_slope, lo, hi, minimum, root_status, &
+                                xtol=4*epsilon(1.0_dp))
+                if (root_status%code /= FORTNUM_OK) return
+                call ray_jet(minimum, value, slope, valid)
+                if (.not. valid) return
+                if (value <= 0.0_dp) then
+                    hi = minimum
+                    exit
+                end if
+            end if
+            lo = hi
+            old_slope = end_slope
+        end do
+        call root_brent(ray_gap, lo, hi, root, root_status, &
+                        xtol=4*epsilon(1.0_dp))
+        if (root_status%code /= FORTNUM_OK) return
+        call ray_jet(root, value, slope, valid)
+        if (.not. valid) return
+        point = axis + root*direction
+        found = .true.
+    contains
+        pure subroutine ray_jet(t, gap, derivative, valid)
+            real(dp), intent(in) :: t
+            real(dp), intent(out) :: gap, derivative
+            logical, intent(out) :: valid
+            real(dp) :: flux, x(2), gradient(2)
+
+            x = axis + t*direction
+            call grid_flux(state, grid, psi, x(1), x(2), flux, gradient, valid)
+            call gs_lcfs_ray_jet(flux, psi_bound, sigma, gradient(1), &
+                gradient(2), direction(1), direction(2), gap, derivative)
+            if (.not. valid) then
+                gap = ieee_value(0.0_dp, ieee_quiet_nan)
+                derivative = gap
+            end if
+        end subroutine ray_jet
+
+        pure function ray_gap(t) result(gap)
+            real(dp), intent(in) :: t
+            real(dp) :: gap, derivative
+            logical :: valid
+            call ray_jet(t, gap, derivative, valid)
+        end function ray_gap
+
+        pure function ray_slope(t) result(derivative)
+            real(dp), intent(in) :: t
+            real(dp) :: derivative, gap
+            logical :: valid
+            call ray_jet(t, gap, derivative, valid)
+        end function ray_slope
+    end subroutine separatrix_ray
+
     subroutine gs_fb_trace_lcfs(state, psi, axis, psi_bound, sigma, n_points, chain, &
-                                status, dense_factor, project_iterations)
+                                status, dense_factor, project_iterations, xpoints)
         !! n_points points on the connected curve {psi = psi_b} around the axis,
-        !! equally spaced in arc length of the traced polyline and projected
-        !! onto the curve (Newton along grad psi), in counter-clockwise order.
+        !! approximately equally spaced in arc length, in counter-clockwise
+        !! order. Diverted contours retain the X-point corners exactly and
+        !! polish radially; regular contours use Newton along grad psi.
         !! The curve is found along rays from the axis (star-shaped plasma).
+        !! Bounding saddles are returned in xpoints(2, :) when requested and
+        !! retained exactly as corners of chain. This is a candidate contour;
+        !! no continuous bound or derivative at a topology change is asserted.
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: psi(:), axis(2), psi_bound, sigma
         integer, intent(in) :: n_points
         real(dp), allocatable, intent(out) :: chain(:, :)
         integer, intent(out) :: status
         integer, intent(in), optional :: dense_factor, project_iterations
+        real(dp), allocatable, intent(out), optional :: xpoints(:, :)
         type(gs_fb_grid_t) :: grid
-        real(dp), allocatable :: dense(:, :), arc(:)
+        real(dp), allocatable :: dense(:, :), arc(:), saddles(:, :), angles(:)
+        real(dp), allocatable :: targets(:), distances(:)
+        integer, allocatable :: order(:), ray_anchor(:), chain_anchor(:)
         real(dp) :: step, theta, tau, tau_prev, v, v_prev, g(2), x(2), total, target, f
         real(dp) :: lo, hi, mid
-        integer :: m, nd, k, it, project, kk, bis, factor
+        integer :: m, nd, k, it, project, kk, bis, factor, nx, base, j, nearest
         logical :: found, failed
 
         status = GS_FB_BAD_LCFS
@@ -1999,7 +2157,29 @@ contains
         if (present(dense_factor)) factor = dense_factor
         project = 4
         if (present(project_iterations)) project = project_iterations
-        nd = factor*n_points
+        if (n_points < 3 .or. factor < 1) then
+            status = GS_FB_BAD_INPUT
+            return
+        end if
+        call lcfs_xpoints(state, psi, psi_bound, saddles)
+        nx = size(saddles, 2)
+        if (present(xpoints)) xpoints = saddles
+        if (nx > n_points) return
+        base = factor*n_points
+        nd = base + nx
+        allocate (angles(nd), order(nd), ray_anchor(nd))
+        ray_anchor = 0
+        do m = 1, base
+            angles(m) = 2.0_dp*acos(-1.0_dp)*real(m - 1, dp)/base
+        end do
+        do j = 1, nx
+            x = saddles(:, j) - axis
+            angles(base + j) = modulo(atan2(x(2), x(1)), 2.0_dp*acos(-1.0_dp))
+            ray_anchor(base + j) = j
+        end do
+        call argsort(angles, order)
+        angles = angles(order)
+        ray_anchor = ray_anchor(order)
         call build_grid(state, grid)
         step = 0.5_dp*sqrt(sum(state%area)/size(state%area))
         allocate (dense(2, nd), arc(nd + 1))
@@ -2007,9 +2187,15 @@ contains
         !$omp parallel do default(shared) &
         !$omp private(m, theta, tau, tau_prev, v, v_prev, g, found, lo, hi, mid) &
         !$omp private(bis, x) &
-        !$omp schedule(static)
+        !$omp schedule(static) reduction(.or.:failed)
         do m = 1, nd
-            theta = 2.0_dp*acos(-1.0_dp)*real(m - 1, dp)/nd
+            theta = angles(m)
+            if (nx > 0) then
+                call separatrix_ray(state, grid, psi, axis, psi_bound, sigma, &
+                    theta, step, saddles, ray_anchor(m), dense(:, m), found)
+                if (.not. found) failed = .true.
+                cycle
+            end if
             tau_prev = 0.0_dp
             tau = 0.0_dp
             v_prev = 1.0_dp
@@ -2051,18 +2237,51 @@ contains
             arc(m + 1) = arc(m) + norm2(dense(:, k) - dense(:, m))
         end do
         total = arc(nd + 1)
-        allocate (chain(2, n_points))
+        allocate (chain(2, n_points), targets(n_points), chain_anchor(n_points))
+        allocate (distances(n_points))
+        targets = [(total*real(it - 1, dp)/n_points, it=1, n_points)]
+        chain_anchor = 0
+        do m = 1, nd
+            if (ray_anchor(m) == 0) cycle
+            distances = abs(targets - arc(m))
+            distances = min(distances, total - distances)
+            where (chain_anchor /= 0) distances = huge(1.0_dp)
+            nearest = minloc(distances, dim=1)
+            targets(nearest) = arc(m)
+            chain_anchor(nearest) = ray_anchor(m)
+        end do
+        call argsort(targets, order(:n_points))
+        targets = targets(order(:n_points))
+        chain_anchor = chain_anchor(order(:n_points))
         kk = 1
         do it = 1, n_points
-            target = total*real(it - 1, dp)/n_points
+            target = targets(it)
             do while (arc(kk + 1) < target .and. kk < nd)
                 kk = kk + 1
             end do
             f = (target - arc(kk))/max(arc(kk + 1) - arc(kk), tiny(1.0_dp))
             chain(:, it) = (1.0_dp - f)*dense(:, kk) + f*dense(:, mod(kk, nd) + 1)
+            if (chain_anchor(it) > 0) chain(:, it) = saddles(:, chain_anchor(it))
         end do
-        !$omp parallel do default(shared) private(it, k, v, g, found) schedule(static)
+        failed = .false.
+        !$omp parallel do default(shared) private(it, k, v, g, found, theta, x) &
+        !$omp schedule(static) reduction(.or.:failed)
         do it = 1, n_points
+            if (chain_anchor(it) > 0) cycle
+            if (nx > 0 .and. project > 0) then
+                ! Radial polishing keeps the axis-connected branch near a
+                ! saddle, where a normal Newton step is singular.
+                x = chain(:, it) - axis
+                theta = atan2(x(2), x(1))
+                call separatrix_ray(state, grid, psi, axis, psi_bound, sigma, &
+                    theta, step, saddles, 0, x, found)
+                if (.not. found) then
+                    failed = .true.
+                    cycle
+                end if
+                chain(:, it) = x
+                cycle
+            end if
             do k = 1, project
                 call grid_flux(state, grid, psi, chain(1, it), chain(2, it), v, g, &
                                found)
@@ -2071,6 +2290,10 @@ contains
             end do
         end do
         !$omp end parallel do
+        if (failed) then
+            deallocate (chain)
+            return
+        end if
         status = GS_FB_OK
     end subroutine gs_fb_trace_lcfs
 

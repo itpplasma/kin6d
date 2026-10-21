@@ -15,7 +15,8 @@ program test_gs_freegs
     use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, &
                                       gs_fb_eval_t, gs_fb_history_t, &
                                       gs_fb_setup, gs_fb_newton, &
-                                      gs_fb_evaluate, gs_fb_lcfs_levels, GS_FB_XPOINT
+                                      gs_fb_evaluate, gs_fb_lcfs_levels, &
+                                      gs_fb_trace_lcfs, GS_FB_XPOINT
     use kin6d_gs_equilibrium, only: gs_equilibrium
     use kin6d_equilibrium_state, only: equilibrium_state_t, labelled_field_t
     implicit none
@@ -40,13 +41,14 @@ program test_gs_freegs
     type(equilibrium_state_t) :: eq
     real(dp) :: reference(23, 3), seed(33, 25), currents(4), values(16)
     real(dp) :: pa, pb, axis(2), xp(2), f, pressure, coarea(5), flux_levels(5)
-    real(dp), allocatable :: contour(:, :), ga(:), gb(:)
+    real(dp), allocatable :: contour(:, :), ga(:), gb(:), chain(:, :), xpoints(:, :)
     real(dp) :: p_integral, b_integral, volume, r_geo, paxis
     real(dp) :: pt(2), br, bz, bt, psi_probe, gap, max_gap, seed_error
     real(dp) :: candidates(16, 2), pressures(2), gaps(2), expected(16), budgets(16)
     real(dp) :: grid_error(16), q_error(4), q_rows(7, 4), gap_row(2), ref_gap
     real(dp) :: scales(16), caps(16), pressure_budget, gap_budget
     real(dp) :: critical_row(9), volume_rows(4, 3), volume_error(3)
+    real(dp) :: trace_distances(2), trace_gaps(2), distance, trace_gap
     integer :: unit, i, j, n, status, cell, nside, rung, failures
     character(1024) :: path, argument, line
 
@@ -156,6 +158,12 @@ program test_gs_freegs
     print '(a,3es16.7)', 'paxis: candidate, discrepancy, budget ', &
         pressures(2), abs(pressures(2) - 1000.0_dp), pressure_budget
     print '(a,2es16.7)', 'LCFS: flux gap, budget (Wb/rad) ', gaps(2), gap_budget
+    call require(trace_gaps(2) <= gap_budget, &
+                 'native traced LCFS at unchanged FreeGS flux budget')
+    call require(trace_distances(2) <= minval(budgets(5:6)), &
+                 'native traced LCFS at unchanged X-point position budget')
+    print '(a,3es16.7)', 'native LCFS: distance (m), flux-distance, flux budget ', &
+        trace_distances(2), trace_gaps(2), gap_budget
     print '(a)', 'candidate comparison; continuous bounds unavailable'
     if (failures /= 0) error stop 'FreeGS parity budgets failed'
 contains
@@ -211,6 +219,25 @@ contains
                             jacobian=.false.)
         call check(status, 'final residual/current')
         values(1:6) = [ev%psi_axis, ev%psi_bound, ev%axis, ev%xpoint]
+        call gs_fb_trace_lcfs(state, state%psi, ev%axis, ev%psi_bound, &
+                             1.0_dp, 1024, chain, status, xpoints=xpoints)
+        call check(status, 'native separatrix trace')
+        call require(size(xpoints, 2) == 1, 'one bounding lower X-point')
+        if (size(xpoints, 2) == 1) then
+            call require(norm2(xpoints(:, 1)-ev%xpoint) < 2e-14_dp, &
+                         'trace returns the solved bounding X-point')
+        end if
+        call require(minval(norm2(chain-spread(ev%xpoint, 2, size(chain, 2)), &
+                     dim=1)) < 2e-14_dp, 'chain retains the exact X-point')
+        trace_gap = 0
+        do i = 1, size(chain, 2)
+            call sample_gs(state, chain(1, i), chain(2, i), 2.0_dp, &
+                           psi_probe, br, bz, bt, status)
+            call check(status, 'native LCFS point sample')
+            trace_gap = max(trace_gap, abs(psi_probe-ev%psi_bound))
+        end do
+        call require(trace_gap < 2e-13_dp, 'native LCFS flux roots near roundoff')
+        print '(a,es16.7)', 'native LCFS maximum root flux gap ', trace_gap
         cfg%xpoint_guess = reference(14:15, 3)
         call gs_fb_lcfs_levels(state, state%psi, cfg, ev%axis, cfg%xpoint_guess, &
                                pa, pb, axis, xp, cell, ga, gb, status)
@@ -245,6 +272,8 @@ contains
         call integrals(volume, p_integral, b_integral)
         open (newunit=unit, file=trim(path)//'/lcfs.dat', status='old')
         max_gap = 0
+        trace_distances(rung) = 0
+        trace_gaps(rung) = 0
         r_geo = 0
         do j = 1, 64
             call data_line(unit, line)
@@ -253,6 +282,9 @@ contains
             call check(status, 'LCFS point sample')
             gap = abs(psi_probe - ev%psi_bound)
             max_gap = max(gap, max_gap)
+            distance = polyline_distance(pt, chain)
+            trace_distances(rung) = max(distance, trace_distances(rung))
+            trace_gaps(rung) = max(trace_gaps(rung), distance*pt(1)*hypot(br, bz))
         end do
         close (unit)
         ! FreeGS internalInductance2: the normalization uses magnetic-axis R.
@@ -264,6 +296,24 @@ contains
         if (.not. all(ieee_is_finite(values))) error stop 'nonfinite readback'
         deallocate (contour)
     end subroutine
+
+    function polyline_distance(point, chain) result(distance)
+        ! Independent geometric comparison with the returned native contour.
+        real(dp), intent(in) :: point(2), chain(:, :)
+        real(dp) :: distance, edge(2), offset(2), t, length2
+        integer :: i, next
+        distance = huge(1.0_dp)
+        do i = 1, size(chain, 2)
+            next = mod(i, size(chain, 2))+1
+            edge = chain(:, next)-chain(:, i)
+            offset = point-chain(:, i)
+            length2 = dot_product(edge, edge)
+            t = 0
+            if (length2 > 0) t = max(0.0_dp, min(1.0_dp, &
+                dot_product(offset, edge)/length2))
+            distance = min(distance, norm2(offset-t*edge))
+        end do
+    end function polyline_distance
 
     subroutine profile_constraints(amplitudes, residual, ctx)
         real(dp), intent(in) :: amplitudes(:)

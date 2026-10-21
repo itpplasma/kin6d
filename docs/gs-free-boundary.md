@@ -25,6 +25,32 @@ The boundary is traced along rays from the axis, so the plasma must be star-shap
 about the axis. A mesh-dependent psi-independent load (`sys%extra_load`, used by
 manufactured tests) is rebuilt through the `extra_cb` callback after each mesh change.
 
+### Separatrix tracing
+
+`gs_fb_trace_lcfs` reuses the level finder's cell-polynomial Newton search
+on grad psi and negative Hessian determinant to locate saddles at psi_b.
+Its optional allocatable output `xpoints(2, :)` returns those bounding
+X-points. The returned chain includes their exact represented positions.
+Regular limited contours retain the fixed-step ray and normal-projection path.
+
+For diverted contours, each X-point radius is a mandatory ray-march event.
+A change from negative to positive radial derivative brackets a local minimum;
+FortNum polishes that minimum before bracketing the first flux crossing.
+This resolves narrow vacuum wedges that a fixed step can skip into the private
+flux region. Rays through a bounding saddle end at the saddle itself. Arc-length
+resampling retains the corners, and radial polishing preserves the
+axis-connected branch near them. The star-shaped-contour requirement remains.
+The generated signed gap and directional derivative retain JVP/VJP leaves;
+contour derivatives at topology changes and continuous bounds are unavailable.
+
+`gs_free_boundary_separatrix_solovev` uses the E2.1 generated
+Cerfon–Freidberg field for the exact double-null Solov'ev polynomial
+`psi=(R^2-1)^2+(5/4-R^2) Z^2`. Its X-points are
+`(sqrt(5)/2, +/-1/sqrt(2))`, with psi_X=1/16. A reflected native mesh
+preserves both saddle levels. P2/P3 refinement checks exact-field flux and
+critical-position convergence, FE flux roots near roundoff, both returned
+corners, thread parity, and the unchanged limited-circle path.
+
 ### Faces on the boundary and slivers
 
 On a fitted mesh the nodes of a chain edge have psi = psi_b up to rounding. In
@@ -367,6 +393,14 @@ results (four threads; the CTest takes about 30 s):
 | li2 | 1.28e-4 | 1.88e-3 |
 | volume | 6.98e-4 m^3 | 3.10e-2 |
 | maximum LCFS flux gap | 2.81e-6 Wb/rad | 3.95e-6 |
+
+The gate also traces the native LCFS and compares its polyline with all 64
+retained FreeGS samples. The maximum spatial distance is 0.230 mm, below the
+tighter lower-X position budget (0.562 mm). Distance times the local native
+flux-gradient magnitude is 2.66e-6 Wb/rad, below the unchanged 3.95e-6
+LCFS flux-gap budget. The trace retains the solved lower X-point exactly;
+its maximum FE flux gap is below 1e-16 Wb/rad. The position and flux-distance
+comparisons are numerical indicators, without continuous enclosures.
 
 These results qualify this branch and physical case at empirical refinement
 budgets. They are candidates with continuous bounds unavailable, and do not
