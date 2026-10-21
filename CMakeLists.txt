@@ -1867,6 +1867,11 @@ foreach(k 2 3)
         PROCESSORS 8 TIMEOUT 120 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endforeach()
 
+option(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK
+    "Build experimental CUDA equilibrium precision benchmark" OFF)
+if(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK)
+    add_subdirectory(benchmarks/equilibrium-gpu)
+endif()
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
