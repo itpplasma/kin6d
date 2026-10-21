@@ -9,7 +9,7 @@ endif()
 
 # A forged header must not let a P1 reader truncate six-node connectivity.
 file(READ "${MESH}" mesh_text)
-string(REGEX REPLACE "^[^\n]*" "# kin6d-gs-mesh-v1: forged P2 connectivity"
+string(REGEX REPLACE "^[^\n]+" "# kin6d-gs-mesh-v1: forged P2 connectivity"
     forged_mesh_text "${mesh_text}")
 set(forged_mesh "${MESH}.forged-v1")
 file(WRITE "${forged_mesh}" "${forged_mesh_text}")
