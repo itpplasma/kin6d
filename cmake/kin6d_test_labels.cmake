@@ -11,6 +11,15 @@ kin6d_test_labels(s0_alfven_wave_convergence fast CLASSES mhd TARGETS test_s0)
 kin6d_test_labels(s0_shear_continuum_targeting fast CLASSES mhd TARGETS test_s0)
 kin6d_test_labels(s0_physical_metric_contracts fast CLASSES mhd TARGETS test_s0)
 kin6d_test_labels(s0_exact_identities_and_regeneration fast CLASSES mhd TARGETS gen_s0)
+kin6d_test_labels(s0_gs_space_regeneration fast CLASSES mhd TARGETS gen_s0_gs_space)
+kin6d_test_labels(s0_gs_space_jets_and_derivatives fast CLASSES mhd
+    TARGETS test_s0_gs_space)
+kin6d_test_labels(s0_gs_kink_radial_refinement fast CLASSES mhd TARGETS test_s0_gs_kink)
+kin6d_test_labels(s0_gs_kink_serial_refinement fast CLASSES mhd TARGETS test_s0_gs_kink)
+kin6d_test_labels(s0_gs_kink_aspect_ratio fast CLASSES mhd TARGETS test_s0_gs_kink)
+kin6d_test_labels(s0_gs_kink_equilibrium_refinement fast CLASSES mhd
+    TARGETS test_s0_gs_kink)
+kin6d_test_labels(s0_cylinder_oracle_limits fast CLASSES mhd TARGETS test_s0_gs_kink)
 kin6d_test_labels(real_value_identity_edge_cases fast CLASSES core
     TARGETS test_real_identity)
 kin6d_test_labels(grad_shafranov_analytic_and_derivative_oracles fast CLASSES equilibrium
