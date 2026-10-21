@@ -126,3 +126,19 @@ the full lifted-basis M5 identity retain the limitations stated above.
 
 Regenerate with the pinned FortSym build and run
 `ctest --test-dir build -R 'ideal_(xi|mhd)' --output-on-failure`.
+
+The shared `xi_bilinear_batch(n,inputs,outputs)` interface has FP64, FP32 and
+FP32-input/FP64-output overloads. Its SoA input columns are B(3), p, mu,
+A(3,3), C(3,3) (column-major), then 23 tangent entries and one cotangent.
+The 25 output columns are value, JVP and VJP(23). The ordinary scalar API is
+retained. Shared CPU and CUDA products are checked in; optional regeneration
+uses the exact GLISS source pin in `gen/ideal-mhd-revision.txt`.
+
+The optional `ideal_mhd_batch_mixed_refinement` test uses FortNum's stage policy,
+precision storage and defect correction on a manufactured transverse Alfvén
+mode. The strict FP64 residual uses the generated KS3 action; the independent
+coefficient is B^2 k^2/mu. For this condition-one operator, relative state error
+equals relative residual, so the regression gate follows the 1e-6 stopping test.
+FP16/BF16 store candidate coefficients, with FP32 compute and FP64 corrections
+and residuals. This limiting-case test does not admit mixed precision for the
+full constrained equilibrium or S0 solver.
