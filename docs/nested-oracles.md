@@ -130,19 +130,22 @@ coordinates, an approximate Fourier boundary, a numerical equilibrium, or
 parameter uncertainty. The selected component units differ; `field_rows` in
 the result identifies every row.
 
-[V] Smooth field and surface leaves expose generated JVP/VJP. The numerical
-rotation-number driver is an oracle diagnostic with unavailable validated
-ODE/sensitivity bounds. A general continuous equilibrium existence or error
+[V] Smooth field, surface and flux-density leaves expose generated JVP/VJP.
+Integrated flux/profile sensitivities and validated quadrature bounds remain
+unavailable. A general continuous equilibrium existence or error
 certificate is unavailable here; no numerical equilibrium is promoted by an
 exact-reference comparison alone.
 
-[V] The off-axis transform of family 2 is a rotation number. Its generated
-ODE is Landreman (54)/Issan (21), integrated by FortNum. The driver reports
-axis/edge values and the change when doubling the transit count and tightening
-ODE tolerance. Off-axis iota is E1, not a closed-form E0 scalar. Differences
-are indicators, not certificates, and finite-transit bias remains separate
-from local integration error. The independent on-axis check uses the
-published 2.28690 value at eps=2, S=1.
+[V] The off-axis transform of family 2 is the ratio of poloidal and toroidal
+flux derivatives, integrated by FortNum from generated densities. Six exact
+FortSym identities verify the flux formulas. `rotation` retains its transit
+count argument for callers, but the result has no finite-transit bias. The
+exporter reports axis/edge values and the change under tighter quadrature
+tolerance. Off-axis iota is E1, not a closed-form E0 scalar; differences and
+quadrature estimates are indicators, not certificates. An independent
+finite-transit ODE check retains Landreman (54)/Issan (21) and distinguishes
+its endpoint bias from quadrature error. The independent on-axis check uses
+the published 2.28690 value at eps=2, S=1.
 
 ## Boundary interchange and execution
 
@@ -159,9 +162,11 @@ and checks pressure against the Cartesian oracle.
 
 [V] The suggested radial iteration settings in that file are starting inputs,
 not convergence evidence. The Fourier boundary still has a sampled truncation
-indicator rather than a continuous bound. The sheared family still exports
-geometry only: its pressure must first be expressed in normalized toroidal
-flux. A matched input, a successful reader and an exact-field evaluation do
+indicator rather than a continuous bound. For either family, `flux` supplies
+Phi(psi), and `profiles` supplies psi(s), Phi(s), iota(s) and p(s), with
+s=Phi(psi)/Phi(delta). The sheared exporter still writes geometry only;
+connecting these matched profiles to its equilibrium input remains open.
+A matched input, a successful reader and an exact-field evaluation do
 not establish that a numerical equilibrium has converged.
 
 [V] Build `nested_oracle_export`, then run, for example:
