@@ -2,7 +2,6 @@ module ideal_fb_test_field
     ! Smooth nested frozen data for the derivative checks: elliptic labels
     ! about (3.05, 0), F = 6 T m, pressure linear in the label.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_ideal_map, only: ideal_frozen_t
     implicit none
     private
@@ -81,6 +80,7 @@ program test_ideal_free_boundary
     !                    FB-D2 bordering relation against a dense eigen-solve of
     !                    the slide-bordered KKT matrix (N = 0, 1)
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_frozen_t
