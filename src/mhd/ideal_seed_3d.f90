@@ -148,9 +148,9 @@ contains
             if (.not. all(ieee_is_finite([iota, pressure, integral]))) return
             if (abs(iota) <= tiny(iota)) return
             if (a > 0) then
-                if (sign(1.0_dp, iota) /= previous) return
+                if ((iota > 0) .neqv. (previous > 0)) return
             end if
-            previous = sign(1.0_dp, iota)
+            previous = iota
         end do
         ntor = (size(coefficients, 2) - 1)/2
         angles = max(1, 4*ntor + 1)
