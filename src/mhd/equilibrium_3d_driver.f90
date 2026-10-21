@@ -4,7 +4,8 @@ module kin6d_equilibrium_3d_driver
     use kin6d_equilibrium_harness, only: equilibrium_case_t, equilibrium_resolution_t, &
         equilibrium_start_t, equilibrium_run_report_t, D8_OK, D8_BAD_INPUT, D8_BAD_REPORT
     use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t
+    use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
+        ideal_map_energy, ideal_map_reduce
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
     use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
@@ -104,6 +105,8 @@ contains
         type(equilibrium_state_t), intent(out) :: eq
         type(gs_state_t) :: mesh
         integer :: status, solve_status
+        real(dp), allocatable :: gradient(:), reduced(:)
+        real(dp) :: energy
         report%status = D8_BAD_INPUT
         if (spec%lane /= 'map' .or. start%name /= 'legacy') return
         select type (state)
@@ -133,9 +136,16 @@ contains
                 state%solve,status)
             solve_status = status
             report%iterations = state%solve%iterations
-            report%residual = state%solve%gradient &
+            ! The native report changes gradient units after its first
+            ! iteration. Check the returned state directly, with the same
+            ! generated energy and the declared free increment space.
+            allocate(gradient(state%map%ndof),reduced(state%map%nred))
+            call ideal_map_energy(state%map,state%map%x,energy,status,gradient)
+            if(status/=0) return
+            call ideal_map_reduce(state%map,gradient,reduced)
+            where(state%map%fixed) reduced=0
+            report%residual = norm2(reduced) &
                 /max(tiny(1.0_dp),state%solve%initial_gradient)
-            ! A solver's roundoff-stall success is insufficient for this gate.
             call metrics(state,status)
             if (status /= 0) return
             report%oracle_error = state%magnetic_error
