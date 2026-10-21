@@ -69,7 +69,18 @@ program gen_ideal_seed_3d
     proof = engine%zero_test((u*gu + v*gv) &
         - (u**2 + v**2)*b3*iota)
     if (proof%verdict /= VERDICT_TRUE) error stop 'disk iota identity unproved'
+    ! In (s,theta,phi), b=(0,iota*bt,bt). The relabelling
+    ! theta'=theta+iota(s)*omega, phi'=phi+omega leaves this density
+    ! invariant after division by its Jacobian, conditional on J>0.
+    a=sym(arena,'omega_theta'); b=sym(arena,'omega_phi')
+    value=(1+iota*a)*(1+b)-iota*b*a
+    proof=engine%zero_test(value-(1+iota*a+b))
+    if(proof%verdict/=VERDICT_TRUE) error stop 'position-gauge Jacobian unproved'
+    proof=engine%zero_test((1+iota*a)*iota+iota*b-value*iota)
+    if(proof%verdict/=VERDICT_TRUE) error stop 'position-gauge poloidal form unproved'
+    proof=engine%zero_test(a*iota+1+b-value)
+    if(proof%verdict/=VERDICT_TRUE) error stop 'position-gauge toroidal form unproved'
     call w%line('end module kin6d_ideal_seed_3d_leaves')
     call w%close()
-    print '(a)', '[V] FortSym closed disk flux and iota identities proved'
+    print '(a)', '[V] FortSym closed disk flux, iota and conditional position-gauge identities proved'
 end program
