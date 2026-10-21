@@ -1858,6 +1858,7 @@ include(cmake/response_calibration.cmake)
 
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
+include(cmake/kin6d_cpu_precision.cmake)
 
 add_executable(test_map_equilibrium test/test_map_equilibrium.f90)
 target_link_libraries(test_map_equilibrium PRIVATE kin6d_mhd)
