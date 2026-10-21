@@ -58,12 +58,7 @@ program test_gs_direct
         if (difference > 1.0e-12_dp) error stop 'CSR operator differs from element-wise'
         deallocate (input, element, csr)
 
-        ! The direct oracles need the MUMPS backend (KIN6D_ENABLE_MUMPS); CTest
-        ! reports exit code 77 as skipped (SKIP_RETURN_CODE).
-        if (.not. gs_direct_available()) then
-            print '(a)', 'SKIP: built without MUMPS; CSR operator check passed'
-            stop 77
-        end if
+        if (.not. gs_direct_available()) error stop 'native direct backend unavailable'
 
         direct_law = law
         call gs_set_options(.true., .true.)
