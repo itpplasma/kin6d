@@ -1,5 +1,7 @@
 # kin6d
 
+> **Experimental research code.** KIN6D is under active development. Interfaces, file formats and results change without notice, many components are incomplete or unvalidated, and claims in this repository carry explicit status labels (candidate, verified, hypothesis). Do not use it for production or design decisions without independent verification.
+
 KIN6D is a **general plasma multiphysics engine**. Its deepest classical
 reference is the multispecies **relativistic Maxwell--Lorentz many-particle
 system**; relativistic 3X3P Vlasov--Maxwell/FK is the highest continuum
@@ -451,3 +453,7 @@ Fortran-owned configuration/schema and result contract. Generated graphics and
 large benchmark products are not source artifacts.
 
 Chris&AI
+
+## License
+
+MIT; see [LICENSE](LICENSE).
