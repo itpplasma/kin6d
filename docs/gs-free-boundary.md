@@ -191,15 +191,15 @@ The P13 stall had three causes, all fixed on `gs-free-parallel`:
   reassembled) and shared with the majorant estimator.
 - `kin6d_spatial`, which holds the upstream BEM assembly, was compiled without
   OpenMP, so its panel-pair colouring ran serially. It now links OpenMP.
-- The indefinite J0 = A - M (symmetric, checked at run time) is factored by threaded
-  MUMPS LDL^T with AMD ordering (nested dissection spends its serial analysis
-  again at every Newton step); an asymmetric J0 or a build without MUMPS keeps
-  SuperLU. `KIN6D_FB_SOLVER=superlu` and `KIN6D_FB_ORDERING=nd` select the
-  alternatives. The circuit sensitivities use one MUMPS block solve, because a
-  MUMPS handle is not shared between threads, and the thread count is fixed at
-  factor time.
+- The indefinite J0 = A - M (symmetric, checked at run time) uses native
+  FortSparse pivoted LDL^T with AMD ordering. An asymmetric J0 uses native
+  general LU. `KIN6D_FB_SOLVER=lu` selects general LU for diagnostic comparisons;
+  the old value `superlu` remains an alias for this native path.
+  `KIN6D_FB_ORDERING=nd` selects nested dissection. Circuit sensitivities use
+  one retained block solve, including on the LU path: a factor owns mutable
+  solve/refinement workspaces and cannot be shared by concurrent calls.
 
-The majorant estimator factors its reference energy operator with MUMPS
+The majorant estimator factors its reference energy operator with native
 Cholesky, uses independent local RT recovery solves and threads the Friedrichs
 mass assembly. The timing baselines below predate the RT recovery replacement. The axis and X-point cell
 scans and the CSC pattern build are threaded. `KIN6D_PROFILE=1` prints per-phase

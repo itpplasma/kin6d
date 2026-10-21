@@ -11,7 +11,8 @@ program test_gs_fb_jacobian
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
       gs_fb_factor_t, gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply, gs_fb_factor, &
-                    gs_fb_solve, gs_fb_release, GS_FB_OK, GS_FB_XPOINT, GS_FB_LIMITER, &
+                    gs_fb_solve, gs_fb_solve_block, gs_fb_release, GS_FB_OK, &
+                    GS_FB_XPOINT, GS_FB_LIMITER, &
                                       GS_FB_TARGET_MEAN
     use gs_coupling_fixture, only: build_state, gp_r0, gp_a, gp_b
     use gs_fb_fixture, only: make_law, bump, smooth_direction
@@ -64,8 +65,9 @@ contains
         type(gs_fb_factor_t) :: fac
         real(dp), allocatable :: psi(:), delta(:), jd(:), fd(:), lambda(:), jtl(:)
         real(dp), allocatable :: x(:), r(:), none(:), probe(:)
+        real(dp), allocatable :: block_rhs(:, :), block_x(:, :)
         real(dp) :: eps, err, norm_jd, pair_a, pair_b, err_rank, err_noint
-        integer :: status, i, n, m
+        integer :: status, i, n, m, column
         real(dp) :: angle
 
         call build_state(state, 36, order, status)
@@ -154,6 +156,18 @@ contains
         call gs_fb_jacobian_apply(state, sys, ev, x, r)
         print '(a,es10.2)', '   J x = rhs residual ', norm2(r - lambda)/norm2(lambda)
     call require(norm2(r - lambda) <= 1.0e-9_dp*norm2(lambda), trim(label)//': J solve')
+        allocate (block_rhs(n, 3), block_x(n, 3))
+        block_rhs(:, 1) = lambda
+        block_rhs(:, 2) = delta
+        block_rhs(:, 3) = lambda + 0.31_dp*delta
+        call gs_fb_solve_block(sys, ev, fac, block_rhs, block_x, status)
+        call require(status == GS_FB_OK, 'block solve')
+        do column = 1, 3
+            call gs_fb_jacobian_apply(state, sys, ev, block_x(:, column), r)
+            call require(norm2(r - block_rhs(:, column)) &
+                <= 1.0e-9_dp*norm2(block_rhs(:, column)), &
+                trim(label)//': block J solve')
+        end do
         call gs_fb_solve(sys, ev, fac, lambda, x, status, transpose=.true.)
         call require(status == GS_FB_OK, 'transpose solve')
         call gs_fb_jacobian_apply(state, sys, ev, x, r, transpose=.true.)

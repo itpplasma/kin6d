@@ -57,6 +57,8 @@ module kin6d_gs_free_boundary
     use fortfem_sparse_direct, only: sparse_direct_factor_t, &
                          sparse_direct_factor_csc, sparse_direct_factor_transpose_csc, &
                                      sparse_direct_solve_factored, sparse_direct_free
+    use fortsparse, only: sparse_solve_block, fortsparse_status_t, status_ok, &
+        csc_normalize_symmetric_raw
     use fortnum_quadrature, only: gauss_legendre
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, gs_direct_factor, &
                                gs_direct_solve, gs_direct_solve_block, gs_direct_free, &
@@ -141,9 +143,10 @@ module kin6d_gs_free_boundary
 
     type, public :: gs_fb_factor_t
         type(sparse_direct_factor_t) :: lu, lu_t
-        !> Threaded MUMPS LDL^T of the symmetric J0 (replaces lu and lu_t).
+        !> Native pivoted LDL^T of symmetric J0 (replaces lu and lu_t).
         type(gs_direct_t) :: direct
         logical :: use_direct = .false.
+        real(dp) :: symmetry_correction = 0.0_dp
         real(dp), allocatable :: values(:), z(:, :), zt(:, :)
         real(dp) :: schur(2, 2) = 0.0_dp, schur_t(2, 2) = 0.0_dp
         logical :: ready = .false., have_transpose = .false.
@@ -1340,8 +1343,8 @@ contains
     subroutine gs_fb_factor(state, sys, ev, fac, status)
         !! Sparse factor of J0 = A - M and the two Woodbury columns. J0 is
         !! symmetric (stiffness, coupling, source and interface mass), so the
-        !! threaded MUMPS LDL^T serves J and J^T; an asymmetric J0, or a build
-        !! without MUMPS, uses the serial SuperLU LU and a transposed LU.
+        !! native pivoted LDL^T serves J and J^T. An asymmetric J0 uses
+        !! native general LU and a transposed LU.
         type(gs_state_t), intent(in) :: state
         type(gs_fb_system_t), intent(in) :: sys
         type(gs_fb_eval_t), intent(in) :: ev
@@ -1350,7 +1353,8 @@ contains
         real(dp), allocatable :: rhs2(:), col(:)
         real(dp) :: t0, asym, vmax
         integer :: n, nt, ndof, e, k, l, i, j, p, stat
-        logical :: use_mumps, ok
+        logical :: use_symmetric, ok
+        type(fortsparse_status_t) :: normalization_status
         t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
@@ -1387,18 +1391,27 @@ contains
         end do
         !$omp end parallel do
         call gs_phase_tick('factor.assemble', t0)
-        use_mumps = mumps_enabled()
-        if (use_mumps) then
+        use_symmetric = symmetric_direct_enabled()
+        if (use_symmetric) then
             call asymmetry(n, sys%colptr, sys%rowind, fac%values, asym, vmax)
-            use_mumps = asym <= 1.0e-12_dp*vmax
+            use_symmetric = asym <= 1.0e-12_dp*vmax
         end if
         allocate (fac%z(n, 2), fac%zt(n, 2), rhs2(n), col(n))
-        if (use_mumps) then
+        if (use_symmetric) then
+            ! The mathematical bilinear form is symmetric. Fix one triangle
+            ! after accumulation; reject differences beyond the assembly budget.
+            call csc_normalize_symmetric_raw(n, sys%colptr, sys%rowind, &
+                fac%values, 1.0e-12_dp, fac%symmetry_correction, &
+                normalization_status)
+            if (.not. status_ok(normalization_status)) then
+                status = GS_FB_FACTOR_FAILED
+                return
+            end if
             call gs_direct_factor(fac%direct, n, sys%colptr, sys%rowind, fac%values, &
                                   ok, GS_DIRECT_INDEFINITE, direct_ordering())
-            call gs_phase_tick('factor.mumps', t0)
-            call gs_profile_value('mumps.analysis', fac%direct%analysis_s)
-            call gs_profile_value('mumps.factor', fac%direct%factor_s)
+            call gs_phase_tick('factor.native', t0)
+            call gs_profile_value('native.analysis', fac%direct%analysis_s)
+            call gs_profile_value('native.factor', fac%direct%factor_s)
             if (.not. ok) then
                 call gs_direct_free(fac%direct)
                 status = GS_FB_FACTOR_FAILED
@@ -1456,7 +1469,7 @@ contains
     end subroutine gs_fb_factor
 
     integer function direct_ordering() result(ordering)
-        !! Fill-reducing ordering of the MUMPS analysis. The factor is redone
+        !! Fill-reducing ordering of native analysis. The factor is redone
         !! every Newton iteration and the analysis is serial, so approximate
         !! minimum degree (cheap analysis, fill slightly above nested
         !! dissection) is faster overall; KIN6D_FB_ORDERING = nd selects nested
@@ -1471,17 +1484,19 @@ contains
         end if
     end function direct_ordering
 
-    logical function mumps_enabled() result(enabled)
-        !! Threaded MUMPS when built in; KIN6D_FB_SOLVER=superlu forces the
-        !! serial SuperLU path (A/B comparisons).
+    logical function symmetric_direct_enabled() result(enabled)
+        !! Native symmetric factor by default. The diagnostic value 'lu'
+        !! selects native general LU; 'superlu' is its historical alias.
         character(len=16) :: choice
         integer :: length, stat
 
         enabled = gs_direct_available()
         if (.not. enabled) return
         call get_environment_variable('KIN6D_FB_SOLVER', choice, length, stat)
-        if (stat == 0 .and. length > 0) enabled = trim(choice) /= 'superlu'
-    end function mumps_enabled
+        if (stat == 0 .and. length > 0) then
+            enabled = trim(choice) /= 'lu' .and. trim(choice) /= 'superlu'
+        end if
+    end function symmetric_direct_enabled
 
     subroutine asymmetry(n, colptr, rowind, values, asym, vmax)
         !! max |A_ij - A_ji| and max |A_ij| of a CSC matrix with sorted rows.
@@ -1629,9 +1644,8 @@ contains
     end subroutine gs_fb_solve
 
     subroutine gs_fb_solve_block(sys, ev, fac, rhs, solution, status)
-        !! solution(:, k) = J^{-1} rhs(:, k) for every column. A MUMPS factor
-        !! is solved with one threaded block solve (its handle is not safe to
-        !! share between threads); SuperLU solves are threaded over columns.
+        !! solution(:, k) = J^{-1} rhs(:, k). Submit one block per retained
+        !! factor: native factors own mutable solve/refinement workspaces.
         type(gs_fb_system_t), intent(in) :: sys
         type(gs_fb_eval_t), intent(in) :: ev
         type(gs_fb_factor_t), intent(inout) :: fac
@@ -1640,27 +1654,20 @@ contains
         integer, intent(out) :: status
         real(dp), allocatable :: y(:, :)
         real(dp) :: c(2, 2), det, w(2), d(2)
-        integer, allocatable :: stats(:)
+        type(fortsparse_status_t) :: sparse_status
         integer :: k, nrhs
         logical :: ok
 
         status = GS_FB_BAD_INPUT
         if (.not. fac%ready) return
         nrhs = size(rhs, 2)
-        if (.not. fac%use_direct) then
-            allocate (stats(nrhs))
-            stats = GS_FB_OK
-            !$omp parallel do default(shared) private(k) schedule(dynamic, 1)
-            do k = 1, nrhs
-                call gs_fb_solve(sys, ev, fac, rhs(:, k), solution(:, k), stats(k))
-            end do
-            !$omp end parallel do
-            status = GS_FB_OK
-            if (any(stats /= GS_FB_OK)) status = GS_FB_FACTOR_FAILED
-            return
-        end if
         allocate (y(sys%n, nrhs))
-        call gs_direct_solve_block(fac%direct, rhs, y, ok)
+        if (fac%use_direct) then
+            call gs_direct_solve_block(fac%direct, rhs, y, ok)
+        else
+            call sparse_solve_block(fac%lu, rhs, y, sparse_status)
+            ok = status_ok(sparse_status)
+        end if
         if (.not. ok) then
             status = GS_FB_FACTOR_FAILED
             return
@@ -1691,6 +1698,7 @@ contains
             if (fac%have_transpose) call sparse_direct_free(fac%lu_t)
         end if
         fac%use_direct = .false.
+        fac%symmetry_correction = 0.0_dp
         fac%ready = .false.
         fac%have_transpose = .false.
         if (allocated(fac%values)) deallocate (fac%values)
