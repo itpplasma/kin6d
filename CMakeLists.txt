@@ -55,6 +55,7 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/quadrature/fortnum_quadrature.f90
     ${fortnum_SOURCE_DIR}/src/generated/fortnum_rk54_ck_tableau.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_cash_karp.f90
+    ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode.f90
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90
     ${fortnum_SOURCE_DIR}/src/rng/fortnum_rng.f90
     ${fortnum_SOURCE_DIR}/src/verified/fortnum_sampled_norm.f90
@@ -350,6 +351,38 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
     src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+target_sources(kin6d_equilibrium PRIVATE
+    src/generated/kin6d_nested_oracle_leaves.f90 src/equilibrium/nested_oracles.f90)
+set_source_files_properties(src/generated/kin6d_nested_oracle_leaves.f90 PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+if(KIN6D_ENABLE_OPENMP)
+    add_executable(benchmark_nested_oracles test/benchmark_nested_oracles.f90)
+    target_link_libraries(benchmark_nested_oracles PRIVATE kin6d OpenMP::OpenMP_Fortran)
+    add_test(NAME equilibrium_nested_oracle_batch COMMAND benchmark_nested_oracles 1024)
+    set_tests_properties(equilibrium_nested_oracle_batch PROPERTIES PROCESSORS 8)
+endif()
+add_executable(test_nested_boundary_input test/test_nested_boundary_input.f90)
+target_link_libraries(test_nested_boundary_input PRIVATE kin6d)
+foreach(family 1 2)
+    if(family EQUAL 1)
+        set(nested_config issan-integer)
+    else()
+        set(nested_config issan-sheared)
+    endif()
+    add_test(NAME equilibrium_nested_boundary_input_${family} COMMAND ${CMAKE_COMMAND}
+        -DAPP=$<TARGET_FILE:nested_oracle_export>
+        -DCHECK=$<TARGET_FILE:test_nested_boundary_input> -DFAMILY=${family}
+        -DCONFIG=${CMAKE_SOURCE_DIR}/examples/nested-oracles/${nested_config}.nml
+        -DWORK=${CMAKE_BINARY_DIR}/nested-export-${family}
+        -P ${CMAKE_SOURCE_DIR}/test/check_nested_oracle_export.cmake)
+    set_tests_properties(equilibrium_nested_boundary_input_${family} PROPERTIES
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
+endforeach()
+add_executable(test_nested_oracles test/test_nested_oracles.f90)
+target_link_libraries(test_nested_oracles PRIVATE kin6d)
+add_test(NAME equilibrium_nested_exact_oracles COMMAND test_nested_oracles)
+set_tests_properties(equilibrium_nested_exact_oracles PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=4" PROCESSORS 4)
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_landreman_leaves.f90
     src/mhd/landreman_benchmark.f90)
 set_source_files_properties(src/generated/kin6d_landreman_leaves.f90 PROPERTIES
@@ -793,6 +826,8 @@ add_test(NAME pp_fusion_export_contract
         -P ${CMAKE_SOURCE_DIR}/test/check_pp_fusion_export.cmake)
 set_tests_properties(pp_fusion_export_contract PROPERTIES PROCESSORS 4)
 
+add_executable(nested_oracle_export app/nested_oracle_export.f90)
+target_link_libraries(nested_oracle_export PRIVATE kin6d kin6d_io)
 add_executable(pp_fusion_eft_export app/pp_fusion_eft_export.f90)
 add_dependencies(pp_fusion_eft_export kin6d_build_info)
 target_include_directories(pp_fusion_eft_export PRIVATE ${CMAKE_BINARY_DIR}/result_include)
@@ -920,7 +955,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_response_error
-            equilibrium_core curve_chart nonnested vacuum_shell landreman
+            equilibrium_core curve_chart nonnested vacuum_shell landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -934,6 +969,11 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME equilibrium_nested_oracle_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_nested_oracles>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
     add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90
