@@ -88,6 +88,10 @@ contains
             end do
         end do
         !$omp end parallel do
+        if (.not. all(ieee_is_finite(real(kval,dp)))) return
+        if (.not. all(ieee_is_finite(aimag(kval)))) return
+        if (.not. all(ieee_is_finite(real(mval,dp)))) return
+        if (.not. all(ieee_is_finite(aimag(mval)))) return
         call csc_from_triplet(ndof,ndof,rows,cols,kval,stiffness,status)
         if (status%code /= FORTSPARSE_OK) return
         call csc_from_triplet(ndof,ndof,rows,cols,mval,mass,status)

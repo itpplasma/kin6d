@@ -294,7 +294,9 @@ contains
         type(fortsparse_status_t) :: status
         type(s0_pencil_t) :: pencil
         type(s0_report_t) :: report
-        real(dp) :: x(7), d(7), g(7), v, dv, gamma2, mass_value
+        type(eigen_options_t) :: options
+        real(dp) :: x(7), d(7), g(7), v, dv, gamma2, mass_value, res(2), exact(2)
+        complex(dp) :: start(2), vectors(2,2), lambda(2)
         real(sp) :: vs
         integer :: i
         do i = 1, 7
@@ -325,6 +327,17 @@ contains
         if (report%status /= EIGEN_OK) print *, report%sparse_status,report%message
         call expect(report%status == EIGEN_OK,'complex Hermitian pencil')
         call expect(report%below == 1 .and. report%above == 1,'indefinite inertia')
+        options%max_basis = 2; options%which = EIGEN_NEAREST
+        start = [cmplx(1,0,dp),cmplx(0.3_dp,0.7_dp,dp)]
+        call s0_solve(pencil,start,1.0e-10_dp,options,lambda,vectors,res,report)
+        call expect(report%status == EIGEN_OK,'unstable complex Hermitian solve')
+        ! det(K-lambda M) = 1.96 lambda^2 + 0.8 lambda - 4.
+        exact = [(-0.8_dp-sqrt(32.0_dp))/3.92_dp, &
+                 (-0.8_dp+sqrt(32.0_dp))/3.92_dp]
+        do i = 1, 2
+            call expect(minval(abs(lambda(i)-exact)) < &
+                res(i)/sqrt(0.8_dp)+128*epsilon(v),'analytic indefinite pencil roots')
+        end do
         bad = mass; bad%val = -bad%val
         call s0_prepare(pencil,stiffness,bad,cmplx(0,0,dp),report)
         call expect(report%status /= EIGEN_OK,'negative physical metric rejected')
