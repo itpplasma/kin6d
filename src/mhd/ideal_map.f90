@@ -53,7 +53,8 @@ module kin6d_ideal_map
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, csc_normalize_symmetric_raw, &
         FORTSPARSE_ORDER_AMD, &
-        FORTSPARSE_SYM_INDEFINITE, sparse_factor_stats, sparse_factor_stats_t, &
+        FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
+        sparse_factor_stats, sparse_factor_stats_t, &
         sparse_refactor
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
@@ -1617,9 +1618,12 @@ contains
             return
         end if
         report%assembly_roundoff = max(report%assembly_roundoff, correction)
-        ! The damped system is symmetric and may be indefinite; use native
-        ! pivoted LDL^T with the same symmetry contract as the assembled KKT.
-        slv%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+        ! The canonical matrix above remains symmetric and may be indefinite.
+        ! Use the native supernodal pivoted LU action (also used for the
+        ! free-boundary KKT): scalar LDLT Schur-row updates are too costly
+        ! on the map ladders. This changes only the factor, not the Hessian.
+        slv%options%symmetry = FORTSPARSE_SYM_GENERAL
+        slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         slv%options%ordering = FORTSPARSE_ORDER_AMD
         if (gs_direct_available()) then
             if (.not. gs_direct_mpi_ready()) then

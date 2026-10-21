@@ -19,7 +19,11 @@ the M1/M2 physical-state adapters remain owned by the respective lanes.
 The existing `ideal_map_n0_*` and `gs_free_boundary_t3_manufactured_newton`
 CTest ladders run through this interface without changing their Newton
 settings or analytic refinement gates. Grid sequencing still uses the seed
-gradient of the current mesh as its stopping scale. An offset seed must be
+gradient of the current mesh as its stopping scale. Map Newton steps retain the canonical symmetric Hessian and assembly-roundoff
+check, and use FortSparse's existing native supernodal pivoted LU action, as
+the free-boundary KKT systems do. No inertia is consumed by this map driver.
+This factor choice avoids the scalar LDLT Schur-row update cost on the ladders.
+An offset seed must be
 corrected relative to the independent exact flux; stationarity alone cannot
 pass the retained return gates.
 
