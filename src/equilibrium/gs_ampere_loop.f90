@@ -117,13 +117,15 @@ contains
         status = 0
     end subroutine
 
-    subroutine gs_boundary_current(state, mu0, order, current, status, nodal_weights)
+    subroutine gs_boundary_current(state, mu0, order, current, status, nodal_weights, &
+                                   perimeter)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: mu0
         integer, intent(in) :: order
         real(dp), intent(out) :: current
         integer, intent(out) :: status
         real(dp), intent(out), optional :: nodal_weights(:)
+        real(dp), intent(out), optional :: perimeter
         real(dp), parameter :: vertex(2, 3) = reshape( &
                                [0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp], [2, 3])
         real(dp), allocatable :: x(:), w(:)
@@ -133,6 +135,7 @@ contains
         integer :: e, k, next, first, last, q, j, ndof, st, edges
 
         status = 1; current = 0
+        if (present(perimeter)) perimeter = 0
         if (present(nodal_weights)) nodal_weights = 0
         if (state%element_order < 2 .or. state%element_order > 3) return
         if (order < 1) return
@@ -175,6 +178,7 @@ contains
                     contribution = w(q)*density
                     if (.not. ieee_is_finite(contribution)) return
                     current = current + contribution
+                    if (present(perimeter)) perimeter = perimeter + w(q)*norm2(tangent)
                     if (.not. present(nodal_weights)) cycle
                     do j = 1, ndof
                         call gs_current_sheet(point(1), mu0, g(1, j), g(2, j), &

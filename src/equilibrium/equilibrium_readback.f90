@@ -20,6 +20,7 @@ module kin6d_equilibrium_readback
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use kin6d_equilibrium_state, only: equilibrium_state_t, equilibrium_field_t, &
         labelled_field_t, flux_labelled_field_t, EQ_BPHI, EQ_PSI, EQ_PSI_R, EQ_VALUES
+    use kin6d_equilibrium_bulk_leaves, only: equilibrium_bulk_normalize
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_quadrature, only: gauss_legendre_ab
     implicit none
@@ -29,6 +30,11 @@ module kin6d_equilibrium_readback
     type :: equilibrium_readback_t
         character(32) :: claim = 'candidate', bound_status = 'unavailable'
         character(32) :: source_claim = 'candidate'
+        ! beta_p=2 mu0 <p>_V/Bpa^2, li=<Bpol^2>_V/Bpa^2,
+        ! Bpa=mu0 Ip/Lp. Ip is the signed outer Ampere-loop current.
+        character(32) :: bulk_bound_status = 'unavailable'
+        integer :: bulk_status = -1
+        real(dp) :: beta_p = 0, li = 0, current = 0, perimeter = 0
         real(dp) :: axis(2) = 0, psi_axis = 0, psi_bound = 0, volume = 0
         real(dp) :: phi_edge = 0, flux_consistency = 0, contour_s = 0, integral_s = 0
         integer, allocatable :: contour_work(:)
@@ -51,15 +57,17 @@ contains
     end function
 
     subroutine read_equilibrium(eq, radial_points, angular_points, result, status, &
-                                rho_grid)
+                                rho_grid, bulk_quantities)
         !! rho_grid, when present, replaces the uniform rho levels: it must
         !! increase strictly from 0 to 1 (5..4097 points); radial_points is
-        !! then ignored.
+        !! then ignored. bulk_quantities opts into beta_p/li/current/perimeter;
+        !! their quadrature and discretisation bounds remain unavailable.
         type(equilibrium_state_t), intent(in) :: eq
         integer, intent(in) :: radial_points, angular_points
         type(equilibrium_readback_t), intent(out) :: result
         integer, intent(out) :: status
         real(dp), intent(in), optional :: rho_grid(:)
+        logical, intent(in), optional :: bulk_quantities
         status = 1
         if (present(rho_grid)) then
             if (size(rho_grid) < 5 .or. size(rho_grid) > 4097) return
@@ -73,21 +81,22 @@ contains
         select type (field => eq%field)
         class is (labelled_field_t)
             call read_labelled(eq, field, radial_points, angular_points, result, &
-                status, rho_grid)
+                status, rho_grid, bulk_quantities)
         end select
     end subroutine
 
     subroutine read_labelled(eq, field, radial_points, angular_points, result, &
-                             status, rho_grid)
+                             status, rho_grid, bulk_quantities)
         type(equilibrium_state_t), intent(in) :: eq
         class(labelled_field_t), intent(in) :: field
         integer, intent(in) :: radial_points, angular_points
         type(equilibrium_readback_t), intent(inout) :: result
         integer, intent(out) :: status
         real(dp), intent(in), optional :: rho_grid(:)
+        logical, intent(in), optional :: bulk_quantities
         real(dp), allocatable :: coarea(:), density(:), rho(:), f(:)
         real(dp) :: two_pi, integral, gx(2), gw(2), weights(4), r, sigma, depth
-        real(dp) :: volume, phi_tor
+        real(dp) :: volume, phi_tor, pint, bint
         integer(int64) :: tick, tock, clock_rate
         integer :: i, nr, na, first, k, region_status
         status = 1
@@ -95,6 +104,8 @@ contains
         call field%resolution(nr, na)
         if (present(rho_grid)) nr = size(rho_grid)
         if (nr < 5 .or. nr > 4097) return
+        result%beta_p = ieee_value(0.0_dp, ieee_quiet_nan)
+        result%li = ieee_value(0.0_dp, ieee_quiet_nan)
         result%psi_bound = eq%psi_bound
         call field%label_axis(result%axis, result%psi_axis, status)
         if (status /= 0) return
@@ -163,6 +174,23 @@ contains
             result%flux_consistency = ieee_value(0.0_dp, ieee_quiet_nan)
         else
             status = region_status
+            return
+        end if
+        if (present(bulk_quantities)) then
+            if (bulk_quantities) call field%bulk_integrals(eq%mu0, pint, bint, &
+                result%current, result%perimeter, result%bulk_status)
+        end if
+        if (result%bulk_status == 0) then
+            status = 1
+            if (.not. all(ieee_is_finite([pint, bint, result%current, &
+                result%perimeter, result%volume, eq%mu0]))) return
+            if (eq%mu0 <= 0 .or. result%volume <= 0 .or. result%perimeter <= 0) return
+            if (abs(result%current) <= tiny(1.0_dp)) return
+            call equilibrium_bulk_normalize(result%volume, pint, bint, &
+                result%current, result%perimeter, eq%mu0, result%beta_p, result%li)
+            if (.not. all(ieee_is_finite([result%beta_p, result%li]))) return
+        else if (result%bulk_status > 0) then
+            status = result%bulk_status
             return
         end if
         call field%magnetic_axis(result%axis, status)
