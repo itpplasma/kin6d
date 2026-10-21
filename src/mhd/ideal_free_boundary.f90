@@ -1005,15 +1005,15 @@ contains
             gf(:,fb%trace) = gf(:,fb%trace) + &
                 transpose(reshape(exterior_load,[fb%nt,fb%nmode]))/fb%nfp
         else
-        do m = 1, fb%nmode
-            cm = ideal_fb_mode_weight(fb, m)/fb%mu0
-            k = harmonic(m)
-            u = fb%phi(m, fb%trace) - fb%drive(:, m)
-            ec = ec + cm*(0.5_dp*dot_product(u, matmul(fb%s_trace(:, :, k), u)) &
-                - dot_product(fb%load(:, m), fb%phi(m, fb%trace)))
-            gf(m, fb%trace) = gf(m, fb%trace) + cm*(matmul(fb%s_trace(:, :, k), u) &
-                - fb%load(:, m))
-        end do
+            do m = 1, fb%nmode
+                cm = ideal_fb_mode_weight(fb, m)/fb%mu0
+                k = harmonic(m)
+                u = fb%phi(m, fb%trace) - fb%drive(:, m)
+                ec = ec + cm*(0.5_dp*dot_product(u, matmul(fb%s_trace(:, :, k), u)) &
+                    - dot_product(fb%load(:, m), fb%phi(m, fb%trace)))
+                gf(m, fb%trace) = gf(m, fb%trace) + cm*(matmul(fb%s_trace(:, :, k), u) &
+                    - fb%load(:, m))
+            end do
         end if
         call constraint_residual(fb, res)
         ! C^T lambda on xs and on the plasma Gamma_p dofs.
@@ -1115,16 +1115,16 @@ contains
                 end do
             end do
         else
-        do m = 1, fb%nmode
-            cm = ideal_fb_mode_weight(fb, m)/fb%mu0
-            k = harmonic(m)
-            do t2 = 1, fb%nt
-                do t1 = 1, fb%nt
-                    call push(iphi(fb, m, fb%trace(t1)), iphi(fb, m, fb%trace(t2)), &
-                        -cm*fb%s_trace(t1, t2, k))
+            do m = 1, fb%nmode
+                cm = ideal_fb_mode_weight(fb, m)/fb%mu0
+                k = harmonic(m)
+                do t2 = 1, fb%nt
+                    do t1 = 1, fb%nt
+                        call push(iphi(fb, m, fb%trace(t1)), iphi(fb, m, fb%trace(t2)), &
+                            -cm*fb%s_trace(t1, t2, k))
+                    end do
                 end do
             end do
-        end do
         end if
         do s = 1, fb%ns
             do m = 1, fb%nmode

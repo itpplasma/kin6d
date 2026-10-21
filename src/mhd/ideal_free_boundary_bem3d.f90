@@ -20,13 +20,12 @@ module kin6d_ideal_free_boundary_bem3d
         integer :: order = 0
     contains
         procedure :: evaluate => evaluate_surface
+        procedure,private :: assign_surface
+        generic :: assignment(=)=>assign_surface
     end type
-    interface assignment(=)
-        module procedure assign_surface
-    end interface
 contains
     subroutine assign_surface(lhs, rhs)
-        type(coupling_surface_t), intent(out) :: lhs
+        class(coupling_surface_t), intent(out) :: lhs
         type(coupling_surface_t), intent(in) :: rhs
         if (allocated(rhs%chart)) allocate (lhs%chart, source=rhs%chart)
         if (allocated(rhs%edge)) lhs%edge = rhs%edge

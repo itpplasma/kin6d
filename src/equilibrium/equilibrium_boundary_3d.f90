@@ -32,7 +32,8 @@ contains
         if (allocated(rhs%coefficients)) lhs%coefficients = rhs%coefficients
         lhs%genus = rhs%genus
     end subroutine
-   subroutine gamma_c_3d_build(surface,faces,restriction,options,boundary,report,status)
+    subroutine gamma_c_3d_build(surface,faces,restriction,options,boundary, &
+            report,status)
         class(bem_surface_t), intent(in) :: surface
         integer, intent(in) :: faces(:, :)
         real(dp), intent(in) :: restriction(:, :)
@@ -47,7 +48,8 @@ contains
         status = 1; report = bem_pair_report_t()
         if (size(restriction, 2) < 1) return
         if (.not. all(ieee_is_finite(restriction))) return
-    call assemble_parametric_bem_p2(surface, faces, options, op, td, fd, report, status)
+        call assemble_parametric_bem_p2(surface,faces,options,op,td,fd, &
+            report,status)
         if (status /= 0) return
         status = 1
         if (size(restriction, 1) /= size(op%w, 1)) return
@@ -89,7 +91,8 @@ contains
         boundary%gram = gram; boundary%coefficients = coefficients
         status = 0
     end subroutine
-   subroutine gamma_c_3d_energy(boundary,trace,drive,normal_load,mu0,energy,load,status)
+    subroutine gamma_c_3d_energy(boundary,trace,drive,normal_load,mu0,energy, &
+            load,status)
         !! Positive scalar vacuum energy and derivative. Coil drive is the
         !! SINGLE-VALUED remainder; harmonic periods are separate data.
         type(gamma_c_3d_t), intent(in) :: boundary
