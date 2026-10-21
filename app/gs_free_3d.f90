@@ -726,7 +726,8 @@ contains
         write (u, '(a,1x,i0)') 'status', status
         write (u, '(a,1x,i0)') 'iterations', report%iterations
         write (u, '(a,1x,es16.8)') 'residual_sigma', report%residual
-        write (u, '(a,1x,es16.8)') 'merit_ratio', sqrt(report%merit/report%merit0)
+        write (u, '(a,1x,es16.8)') 'merit_ratio', &
+            sqrt(report%merit/max(report%merit0, tiny(1.0_dp)))
         write (u, '(a,1x,es16.8)') 'last_step_m', report%step
         write (u, '(a,1x,es16.8)') 'constraint', report%constraint
         write (u, '(a,1x,l1)') 'roundoff_floor', report%floor

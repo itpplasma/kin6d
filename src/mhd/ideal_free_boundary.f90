@@ -1462,6 +1462,8 @@ contains
         ! (less than a factor 2 over 5 accepted steps) with displacement
         ! increments below step_tolerance (m) or no acceptable step remains
         ! below residual 1e-6.
+        ! max_iterations caps accepted steps, not residual evaluations: zero
+        ! checks the supplied state, and the final accepted step is checked too.
         type(ideal_fb_t), intent(inout) :: fb
         real(dp), intent(in) :: tolerance
         integer, intent(in) :: max_iterations
@@ -1489,6 +1491,10 @@ contains
         real(dp), allocatable :: smat(:), sol(:)
         real(dp) :: sscale
         integer :: nslide
+        report = ideal_fb_report_t()
+        report%step = 0
+        status = IDEAL_FB_BAD_INPUT
+        if (max_iterations < 0) return
         kz = 0
         nslide = size(fb%slide, 3)
         allocate (sol(fb%n + nslide))
@@ -1505,17 +1511,18 @@ contains
         tangent_damping = fb%tangential_damping
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
         factored = .false.; cready = .false.
-        call ideal_fb_gradient(fb, grad, st)
+        call ideal_fb_gradient(fb, grad, st, min_jacobian=minjac)
         if (st /= IDEAL_FB_OK) then
             status = IDEAL_FB_FOLDED; return
         end if
         status = IDEAL_FB_NOT_CONVERGED
+        report%min_jacobian = minjac
         if (fb%rigid_vertical) then
             call ideal_fb_rigid_stiffness(fb, 2, 1.0e-3_dp, fz, kz, st)
             if (st /= IDEAL_FB_OK .or. .not. kz < 0) kz = 0
             if (talk) print '(a,es12.4)', '   rigid vertical stiffness K_Z ', kz
         end if
-        do it = 1, max_iterations
+        do it = 0, max_iterations
             t0 = wall()
             call ideal_fb_hessian(fb, rowptr, colidx, val)
             report%assemble_s = report%assemble_s + wall() - t0
@@ -1545,14 +1552,15 @@ contains
             if (fb%tangential_damping > 0) &
                 call tangential_positions(fb, rowptr, colidx, tpos)
             call merit_weights(fb, diag, wts)
-            if (it == 1) fzr = rigid_force(grad)
+            if (it == 0) fzr = rigid_force(grad)
             call project_slide(fb, wts, grad)
             merit = sum(wts*grad**2)
-            if (it == 1) report%merit0 = merit
+            if (it == 0) report%merit0 = merit
             report%merit = merit
             report%residual = sqrt(merit/fb%energy_scale)
             if (talk) print '(a,i3,a,es10.3,a,es10.3,a,es10.3,a,es9.2)', 'fb newton', &
-                it - 1, ' merit/m0 ', sqrt(merit/report%merit0), ' res/sigmaV ', &
+                it, ' merit/m0 ', sqrt(merit/max(report%merit0, tiny(1.0_dp))), &
+                ' res/sigmaV ', &
                 report%residual, ' step ', report%step, ' mu ', mu
             if (talk) call boundary_report(fb)
             if (talk) print '(a,4es10.2)', '   merit/sigmaV by block (plasma, shell map, &
@@ -1563,7 +1571,7 @@ contains
                 sum(wts(fb%np + 2*fb%nx + 1:)*grad(fb%np + 2*fb%nx + 1:)**2)/fb%energy_scale
             if (talk .and. fb%monitor_hypotheses) then
                 call ideal_fb_hypotheses(fb, hyp, st)
-                call ideal_fb_hypotheses_print(hyp, it - 1)
+                call ideal_fb_hypotheses_print(hyp, it)
             end if
             if (res_tol > 0) then
                 if (report%residual <= res_tol) then
@@ -1572,6 +1580,7 @@ contains
             else if (sqrt(merit) <= tolerance*sqrt(report%merit0)) then
                 status = IDEAL_FB_OK; exit
             end if
+            if (it == max_iterations) exit
             history = eoshift(history, 1, merit)
             if (history(0) < huge(1.0_dp)) then
                 if (history(5) > 0.5_dp*history(0) .and. report%step < step_tol &
@@ -1677,7 +1686,7 @@ contains
             end if
             grad = rhs; fzr = ftry
             if (kz < 0 .and. cready) call rigid_vertical_correct()
-            report%iterations = it
+            report%iterations = it + 1
             report%step = alpha*disp
             report%min_jacobian = minjac
             report%damping = mu
