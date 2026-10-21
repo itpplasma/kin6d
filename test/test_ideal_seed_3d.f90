@@ -64,6 +64,9 @@ program test_ideal_seed_3d
     if (status /= 0) error stop 'threaded seed'
     call ideal_map_energy(threaded, threaded%x, e4, status)
     if (maxval(abs(map%x - threaded%x)) > 1e-15_dp) error stop 'thread seed parity'
+    if (maxval(abs(map%omega_gauge-threaded%omega_gauge)) > &
+        128*epsilon(1.0_dp)*maxval(abs(map%omega_gauge))) &
+        error stop 'thread gauge assembly parity' 
     if (abs(e1 - e4) > 1e-13_dp*abs(e1)) error stop 'thread energy parity'
     do j = 1, map%nodes
         if (.not. map%boundary(j)) cycle
