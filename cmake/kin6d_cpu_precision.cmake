@@ -24,9 +24,8 @@ target_link_libraries(benchmark_cpu_precision PRIVATE
 if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     # Keep the large Hessian leaf inside its SIMD loop. Default inlining
     # heuristics otherwise leave this loop scalar (see benchmark recipe).
-    # Retained generated batch calls can exceed the default free-form limit.
     target_compile_options(benchmark_cpu_precision PRIVATE
-        -finline-limit=100000 -ffree-line-length-none)
+        -finline-limit=100000)
 endif()
 # Native behavioral checks are explicit because this benchmark is opt-in.
 foreach(kernel gs map)

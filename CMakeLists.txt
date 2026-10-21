@@ -206,7 +206,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "7f16e38aaf5ebdfa56b0b8b4f5f57c0c31de212c")
+set(KIN6D_FORTSPARSE_REVISION "4f716f68152a1db44e4b7c58521b52535d6585fa")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -248,7 +248,8 @@ target_link_libraries(test_equilibrium_harness PRIVATE kin6d)
 add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
-    src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90)
+    src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90
+    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
@@ -302,6 +303,9 @@ set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
     test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
+add_test(NAME ideal_fb_schur_spectrum COMMAND test_ideal_free_boundary spectrum)
+set_tests_properties(ideal_fb_schur_spectrum PROPERTIES ENVIRONMENT
+    "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
 add_test(NAME ideal_fb_external_kink COMMAND test_ideal_free_boundary kink)
 set_tests_properties(ideal_fb_external_kink PROPERTIES ENVIRONMENT
     "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4 TIMEOUT 120)
@@ -322,6 +326,10 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+add_executable(test_ideal_seed_3d test/test_ideal_seed_3d.f90)
+target_link_libraries(test_ideal_seed_3d PRIVATE kin6d)
+add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
+set_tests_properties(ideal_seed_3d_boundary_profiles PROPERTIES PROCESSORS 4 TIMEOUT 60)
 add_test(NAME ideal_seed_boundary_label
     COMMAND test_ideal_map_axisymmetric seedboundary)
 add_test(NAME ideal_map_derivatives_and_rotation_null
@@ -793,7 +801,7 @@ if(KIN6D_CHECK_LEAN)
         TIMEOUT 300 PROCESSORS 2)
 endif()
 set(KIN6D_FORTSYM_BUILD "" CACHE PATH "Optional FortSym build tree for regeneration")
-set(KIN6D_FORTSYM_REVISION "1725c8e16c0af9b7c6650cb82ec05aa6aec99aa4")
+set(KIN6D_FORTSYM_REVISION "8efec5bfb817ff1ed6c088971f92d927d73a5d7e")
 if(KIN6D_FORTSYM_BUILD)
     file(STRINGS "${KIN6D_FORTSYM_BUILD}/CMakeCache.txt" fortsym_source
         REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
@@ -888,7 +896,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_xi ideal_response_error
-            equilibrium_core curve_chart nonnested vacuum_shell landreman nested_oracles
+            equilibrium_core curve_chart ideal_seed_3d nonnested vacuum_shell landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -902,12 +910,23 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_executable(gen_ideal_mhd_batches ${shared_mhd_gen}/gen_ideal_mhd_batches.f90)
+    target_link_libraries(gen_ideal_mhd_batches PRIVATE kin6d_gen_support)
+    add_test(NAME ideal_mhd_batch_exact_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_batches>
+        -DREVISION=${KIN6D_FORTSYM_REVISION}
+        -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-mhd-batch-regeneration
+        -P ${shared_mhd_gen}/check_batches.cmake)
+    kin6d_test_labels(ideal_mhd_batch_exact_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_mhd_batches)
     add_executable(gen_ideal_mhd_coordinates
         ${shared_mhd_gen}/gen_ideal_mhd_coordinates.f90)
     target_link_libraries(gen_ideal_mhd_coordinates PRIVATE kin6d_gen_support)
     add_test(NAME ideal_mhd_coordinates_exact_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_mhd_coordinates>
         -DSOURCE=${CMAKE_SOURCE_DIR}/src/generated/ideal_mhd_energy_generated.f90
+        -DREVISION=${KIN6D_FORTSYM_REVISION}
         -DWORK=${CMAKE_BINARY_DIR}/ideal-mhd-coordinate-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_mhd_coordinates.cmake)
     add_test(NAME ideal_xi_exact_identity_and_regeneration COMMAND ${CMAKE_COMMAND}
@@ -920,6 +939,11 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
+    add_test(NAME ideal_seed_3d_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_seed_3d>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_seed_3d_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-seed-3d-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_ideal_seed_3d_regeneration.cmake)
     add_executable(check_response_strip_current gen/check_response_strip_current.f90)
     target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
     add_test(NAME response_strip_current_exact_identities
@@ -1222,7 +1246,7 @@ add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)
 add_executable(test_gs_axis_refinement test/test_gs_axis_refinement.f90)
 target_link_libraries(test_gs_axis_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_axis_refinement COMMAND test_gs_axis_refinement)
-add_executable(test_gs_profile_law_readback test/test_gs_profile_law_readback.f90)
+add_executable(test_gs_profile_law_readback test/test_gs_synthetic_law_readback.f90)
 target_link_libraries(test_gs_profile_law_readback PRIVATE kin6d)
 add_test(NAME grad_shafranov_profile_law_readback
     COMMAND test_gs_profile_law_readback)
@@ -1404,12 +1428,11 @@ add_test(NAME equilibrium_core_d3_upper_bound_p2
     COMMAND test_equilibrium_core residual_bound)
 set_tests_properties(equilibrium_core_d3_upper_bound_p2 PROPERTIES TIMEOUT 60
     PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
-# K6-mini: the accepted TC24 K6 law and path (cubic-profile Newton, P3,
-# direct factor, current constraint, readback, majorant) on a coarse mesh.
-# Every core migration step must reproduce the fixture to 1e-12 relative.
+# Synthetic Solov'ev inputs exercise the cubic-profile Newton, P3, direct
+# factor, current constraint, readback and majorant path on a coarse mesh.
 add_test(NAME gs_k6_mini_regression COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_phase1> -DCHECK=$<TARGET_FILE:test_equilibrium_core>
-    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/k6_mini
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_synthetic
     -DWORK=${CMAKE_BINARY_DIR}/gs_k6_mini
     -P ${CMAKE_SOURCE_DIR}/test/gs_k6_mini.cmake)
 set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
@@ -1577,7 +1600,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_response_fluid_leaves.f90
     src/mhd/response_fluid.f90 src/mhd/response_toroidal_strip.f90)
 add_executable(test_response_toroidal_strip test/test_response_toroidal_strip.f90)
 target_link_libraries(test_response_toroidal_strip PRIVATE kin6d)
-add_executable(test_response_interfaces test/test_response_interfaces.f90)
+add_executable(test_response_interfaces test/test_response_synthetic_interfaces.f90)
 target_link_libraries(test_response_interfaces PRIVATE kin6d)
 add_test(NAME response_toroidal_strip_two_ring_traces
     COMMAND test_response_interfaces traces)
@@ -1859,6 +1882,7 @@ if(KIN6D_BUILD_CUDA_PRECISION_BENCHMARK)
     add_subdirectory(benchmarks/equilibrium-gpu)
 endif()
 include(cmake/kin6d_s0.cmake)
+include(cmake/kin6d_mhd_batches.cmake)
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
