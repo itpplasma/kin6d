@@ -111,6 +111,7 @@ contains
         omega2 = 0; vectors = 0; residuals = huge(1.0_dp)
         if (.not. pencil%ready) return
         if (size(start) /= pencil%mass%nrow) return
+        report%message = ''
         report%below = pencil%below; report%at = pencil%at
         report%above = pencil%above; report%inertia_status = pencil%inertia_status
         call sparse_factor_stats(pencil%shift_factor,report%factor,status)
