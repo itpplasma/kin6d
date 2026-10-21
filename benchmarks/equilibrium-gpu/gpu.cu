@@ -145,6 +145,7 @@ static void run(int n, int repeats, const double* x, double* y, double* metrics)
     std::vector<Output> output(size_t(n)*nout);
     launch();
     checked(cudaMemcpy(output.data(),w.output,ob,cudaMemcpyDeviceToHost));
+    std::copy(output.begin(),output.end(),y);
     metrics[0]=seconds(cold);
     std::vector<double> samples(repeats);
     for (int r=0; r<repeats; ++r) {

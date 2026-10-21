@@ -14,4 +14,5 @@ target_compile_options(benchmark_equilibrium_gpu PRIVATE
 enable_testing()
 add_test(NAME gpu_equilibrium_leaf_oracles COMMAND benchmark_equilibrium_gpu 257 3)
 set_tests_properties(gpu_equilibrium_leaf_oracles PROPERTIES LABELS "mhd;fast"
-    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    PROCESSORS 4 ENVIRONMENT
+    "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")

@@ -150,13 +150,25 @@ contains
       spec%target = TARGET_CUDA
       source = emit_cuda_device_ir(ir, spec, ok, message)
       if (.not. ok) error stop message
-      write (cu, '(a)') chars(source)
+      call write_source(cu, source)
       if (precision /= PRECISION_REAL64) return
       spec%target = TARGET_FORTRAN_CPU
       spec%pure_procedure = .true.
       source = emit_fortran_kernel_ir(ir, spec, ok, message)
       if (.not. ok) error stop message
-      write (fu, '(a)') chars(source)
+      call write_source(fu, source)
+   end subroutine
+
+   subroutine write_source(unit, source)
+      integer, intent(in) :: unit
+      type(str_t), intent(in) :: source
+      character(:), allocatable :: code
+      code = chars(source)
+      do while (len(code) > 0)
+         if (code(len(code):) /= new_line('a')) exit
+         code = code(:len(code) - 1)
+      end do
+      write (unit, '(a)') code
    end subroutine
 
    function substitute_identity() result(value)
