@@ -2,14 +2,17 @@ name: CPU precision comparisons
 on:
   pull_request:
     paths:
-      - 'app/benchmark_cpu_precision.f90'
-      - 'src/generated/kin6d_*_cpu_precision.f90'
-      - 'gen/**'
-      - 'cmake/kin6d_cpu_precision.cmake'
-      - 'benchmarks/cpu-precision/**'
-      - '.github/workflows/cpu-precision.yml'
+      - app/benchmark_cpu_precision.f90
+      - src/generated/kin6d_*_cpu_precision.f90
+      - gen/**
+      - cmake/kin6d_cpu_precision.cmake
+      - benchmarks/cpu-precision/**
+      - .github/workflows/cpu-precision.yml
   merge_group:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 # Only PR runs share a group; pending push and merge-group runs stay independent.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref, github.run_id) }}
@@ -17,24 +20,24 @@ concurrency:
 
 jobs:
   comparison:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || (github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && fromJSON('["self-hosted","itp-slurm"]') || fromJSON('["self-hosted","itp-build"]') }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || (github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && fromJSON('["self-hosted","itp-slurm"]') || fromJSON('["self-hosted","itp-build"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Run native checks in the build container
-        if: ${{ !github.event.pull_request.head.repo.fork && !(github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+        if: ${{ !github.event.pull_request.head.repo.fork && !(github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
         run: |-
           ci/run.sh cpu-precision-comparison
       - name: Bundle exact sources for Slurm
-        if: ${{ !github.event.pull_request.head.repo.fork && (github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+        if: ${{ !github.event.pull_request.head.repo.fork && (github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
         env:
           SCI_TIER: cpu-precision-comparison
         run: |-
           TMPDIR="$RUNNER_TEMP" ci/bundle.sh "$RUNNER_TEMP/ci.tar.zst"
       - name: Run native checks on sCluster
-        if: ${{ !github.event.pull_request.head.repo.fork && (github.event_name == 'merge_group' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+        if: ${{ !github.event.pull_request.head.repo.fork && (github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
         run: |-
           sci-dispatch native "$RUNNER_TEMP/ci.tar.zst"
       - run: sudo apt-get update && sudo apt-get install -y gfortran ninja-build
@@ -51,3 +54,5 @@ jobs:
           ctest --test-dir build-cpu-precision -j 2
           -R '^cpu_precision_' --output-on-failure
         if: ${{ github.event.pull_request.head.repo.fork }}
+    if: >-
+      github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.actor != 'github-merge-queue[bot]') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'full-ci'))
