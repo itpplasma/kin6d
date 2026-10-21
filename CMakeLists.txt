@@ -1232,7 +1232,7 @@ add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)
 add_executable(test_gs_axis_refinement test/test_gs_axis_refinement.f90)
 target_link_libraries(test_gs_axis_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_axis_refinement COMMAND test_gs_axis_refinement)
-add_executable(test_gs_profile_law_readback test/test_gs_profile_law_readback.f90)
+add_executable(test_gs_profile_law_readback test/test_gs_synthetic_law_readback.f90)
 target_link_libraries(test_gs_profile_law_readback PRIVATE kin6d)
 add_test(NAME grad_shafranov_profile_law_readback
     COMMAND test_gs_profile_law_readback)
@@ -1414,12 +1414,11 @@ add_test(NAME equilibrium_core_d3_upper_bound_p2
     COMMAND test_equilibrium_core residual_bound)
 set_tests_properties(equilibrium_core_d3_upper_bound_p2 PROPERTIES TIMEOUT 60
     PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
-# K6-mini: the accepted TC24 K6 law and path (cubic-profile Newton, P3,
-# direct factor, current constraint, readback, majorant) on a coarse mesh.
-# Every core migration step must reproduce the fixture to 1e-12 relative.
+# Synthetic Solov'ev inputs exercise the cubic-profile Newton, P3, direct
+# factor, current constraint, readback and majorant path on a coarse mesh.
 add_test(NAME gs_k6_mini_regression COMMAND ${CMAKE_COMMAND}
     -DAPP=$<TARGET_FILE:gs_phase1> -DCHECK=$<TARGET_FILE:test_equilibrium_core>
-    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/k6_mini
+    -DFIXTURES=${CMAKE_SOURCE_DIR}/test/fixtures/gs_synthetic
     -DWORK=${CMAKE_BINARY_DIR}/gs_k6_mini
     -P ${CMAKE_SOURCE_DIR}/test/gs_k6_mini.cmake)
 set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
@@ -1587,7 +1586,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_response_fluid_leaves.f90
     src/mhd/response_fluid.f90 src/mhd/response_toroidal_strip.f90)
 add_executable(test_response_toroidal_strip test/test_response_toroidal_strip.f90)
 target_link_libraries(test_response_toroidal_strip PRIVATE kin6d)
-add_executable(test_response_interfaces test/test_response_interfaces.f90)
+add_executable(test_response_interfaces test/test_response_synthetic_interfaces.f90)
 target_link_libraries(test_response_interfaces PRIVATE kin6d)
 add_test(NAME response_toroidal_strip_two_ring_traces
     COMMAND test_response_interfaces traces)
