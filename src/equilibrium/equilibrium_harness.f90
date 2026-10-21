@@ -5,6 +5,7 @@ module kin6d_equilibrium_harness
     ! or promotes an oracle comparison to a certificate.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use kin6d_equilibrium_state, only: equilibrium_state_t
     implicit none
     private
     public :: equilibrium_case_t, equilibrium_resolution_t, equilibrium_start_t
@@ -52,14 +53,16 @@ module kin6d_equilibrium_harness
         character(32) :: derivative_bound_status = 'unavailable'
     end type
     abstract interface
-        subroutine lane_run(spec, resolution, start, state, report)
+        subroutine lane_run(spec, resolution, start, state, report, equilibrium)
             import :: equilibrium_case_t, equilibrium_resolution_t
             import :: equilibrium_start_t, equilibrium_run_report_t
+            import :: equilibrium_state_t
             type(equilibrium_case_t), intent(in) :: spec
             type(equilibrium_resolution_t), intent(in) :: resolution
             type(equilibrium_start_t), intent(in) :: start
             class(*), intent(inout) :: state
             type(equilibrium_run_report_t), intent(inout) :: report
+            type(equilibrium_state_t), intent(out) :: equilibrium
         end subroutine
     end interface
 contains
@@ -106,12 +109,13 @@ contains
     end subroutine
 
     subroutine run_equilibrium_case(name, lane, resolution, start_name, solve, &
-            state, report)
+            state, report, equilibrium)
         character(*), intent(in) :: name, lane, start_name
         type(equilibrium_resolution_t), intent(in) :: resolution
         procedure(lane_run) :: solve
         class(*), intent(inout) :: state
         type(equilibrium_run_report_t), intent(out) :: report
+        type(equilibrium_state_t), intent(out) :: equilibrium
         type(equilibrium_case_t) :: spec
         type(equilibrium_start_t) :: start
         integer :: status
@@ -131,8 +135,20 @@ contains
         ! the free-boundary offset registry currently belongs to the psi lane.
         if (lane == 'map' .and. start_name /= 'legacy') return
         report%status = D8_BAD_REPORT
-        call solve(spec, resolution, start, state, report)
+        call solve(spec, resolution, start, state, report, equilibrium)
         if (report%status /= D8_OK) return
+        if (.not. allocated(equilibrium%field) &
+            .or. .not. allocated(equilibrium%chart)) then
+            report%status = D8_BAD_REPORT
+            return
+        end if
+        if (equilibrium%lane /= lane) then
+            report%status = D8_BAD_REPORT
+            return
+        end if
+        equilibrium%claim = report%claim
+        write (equilibrium%seed, '(4a,i0,a,i0)') name, '/', start_name, &
+            ' P', resolution%degree, ' n', resolution%boundary_nodes
         if (.not. ieee_is_finite(report%oracle_error) &
             .or. .not. ieee_is_finite(report%seed_error) &
             .or. .not. ieee_is_finite(report%residual) &

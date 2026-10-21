@@ -37,6 +37,8 @@ program test_ideal_map_axisymmetric
     use kin6d_equilibrium_harness, only: equilibrium_case_t, &
         equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
         run_equilibrium_case, write_equilibrium_report
+    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use kin6d_map_equilibrium, only: map_equilibrium
     implicit none
     type :: map_case_state_t
         type(gs_state_t) :: gs
@@ -681,6 +683,7 @@ contains
         class(ideal_frozen_t), intent(in) :: field
         logical, intent(in), optional :: sequenced
         type(map_case_state_t) :: result
+        type(equilibrium_state_t) :: equilibrium
         type(equilibrium_run_report_t) :: verification
         real(dp) :: errors(4, 3), rates(4)
         integer :: mesh, n, base
@@ -693,7 +696,7 @@ contains
             n = base*2**(mesh - 1)
             call run_equilibrium_case(trim(mode), 'map', &
                 equilibrium_resolution_t(degree, n), 'legacy', run_map_case, &
-                result, verification)
+                result, verification, equilibrium)
             call write_equilibrium_report(output_unit, verification)
             if (verification%status /= 0) error stop 'D8 map case'
             errors(:, mesh) = result%errors
@@ -722,12 +725,14 @@ contains
         if (errors(1, 3) > 1.0e-2_dp*errors(3, 3)) error stop 'seed not corrected'
     end subroutine
 
-    subroutine run_map_case(spec, resolution, start, state, verification)
+    subroutine run_map_case(spec, resolution, start, state, verification, &
+                            equilibrium)
         type(equilibrium_case_t), intent(in) :: spec
         type(equilibrium_resolution_t), intent(in) :: resolution
         type(equilibrium_start_t), intent(in) :: start
         class(*), intent(inout) :: state
         type(equilibrium_run_report_t), intent(inout) :: verification
+        type(equilibrium_state_t), intent(out) :: equilibrium
         real(dp) :: seed_gradient
         integer :: status
         integer(int64) :: begin, finish, rate
@@ -765,6 +770,9 @@ contains
             call ideal_map_residual(state%map, f_edge(), verification%residual, &
                 verification%sigma, verification%status)
             verification%residual_norm = 'D3: L2 force * L / (sigma sqrt(V))'
+            if (verification%status /= 0) return
+            call map_equilibrium(state%map, state%field, state%gs, equilibrium, &
+                verification%status, f_edge())
         end select
     end subroutine
 

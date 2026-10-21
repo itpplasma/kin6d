@@ -2,11 +2,13 @@
 
 `kin6d_equilibrium_harness` owns the M6 case registry, seed descriptions,
 resolution validation and report contract. `run_equilibrium_case` invokes a
-lane driver and returns its native state plus `equilibrium_run_report_t`.
+lane driver and returns `equilibrium_state_t` plus `equilibrium_run_report_t`.
 The driver is an explicit procedure argument: the equilibrium layer does not
-depend upward on the MHD map implementation. The state argument retains the
-mesh, map/frozen labels or free-boundary system needed to reproduce the result;
-the M1/M2 physical-state adapters remain owned by the respective lanes.
+depend upward on the MHD map implementation. Its native context retains the
+mesh, map/frozen labels or free-boundary system needed to reproduce the result.
+The drivers export through `map_equilibrium` and `gs_equilibrium`; the psi
+export uses the solved boundary, plasma-cell mask and resolved profile law.
+Missing field/chart exports or inconsistent lane provenance fail the run.
 
 | Lane | Registry cases | Independent oracle |
 |---|---|---|
