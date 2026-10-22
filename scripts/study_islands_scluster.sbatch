@@ -4,11 +4,11 @@
 #SBATCH -t 03:00:00
 # Supply --chdir and --output in a dedicated run root containing mem_guard.sh
 # from the cluster skill. Build once, then submit studies with afterok:BUILD.
-# Usage: sbatch ... SCRIPT CHECKOUT BUILD_ROOT build|vacuum [DEGREE]
+# Usage: sbatch ... SCRIPT CHECKOUT BUILD_ROOT build|vacuum|driven|response [DEGREE]
 set -euo pipefail
 checkout=${1:?checkout}
 build_root=${2:?build root}
-mode=${3:?build or vacuum}
+mode=${3:?build, vacuum, driven or response}
 run_root=$PWD
 guard="$run_root/mem_guard.sh"
 test -x "$guard"
@@ -32,14 +32,36 @@ case "$mode" in
             -DFORTSPARSE_AMD_INCLUDE_DIR=/usr/include/suitesparse \
             -DFORTSPARSE_AMD_LIBRARY=/usr/lib/x86_64-linux-gnu/libamd.so
         "$guard" 94.4 cmake --build "$build_root" -j 8 --target \
-            test_island_diagnostics test_island_vacuum_oracle test_nonnested_island
+            test_island_diagnostics test_island_vacuum_oracle test_island_driven \
+            test_nonnested_island
         "$guard" 94.4 ctest --test-dir "$build_root" -j 8 --output-on-failure \
-            -R '^island_(diagnostics_pendulum|coil_quadrature|vacuum_seed_p3)$'
+            -R '^island_(diagnostics_pendulum|coil_quadrature|vacuum_seed_p3|zero_beta_ohmic|driven_outer_reference|driven_stable_outer_reference)$'
         ;;
     vacuum)
         degree=${4:?degree}
         sha256sum "$build_root/test_island_vacuum_oracle"
         "$guard" 94.4 "$build_root/test_island_vacuum_oracle" ladder "$degree" 4 4
+        ;;
+    driven)
+        sha256sum "$build_root/test_island_driven"
+        failed=0
+        for nr in 8 16; do
+            for modes in 1 2; do
+                "$guard" 94.4 "$build_root/test_island_driven" stable 3 "$nr" "$modes" \
+                    > "$run_root/driven-${SLURM_JOB_ID}-${nr}-${modes}.log" 2>&1 || failed=1
+            done
+        done
+        exit "$failed"
+        ;;
+    response)
+        sha256sum "$build_root/test_island_driven"
+        failed=0
+        for ratio in 1e-4 1e-6 1e-8; do
+            "$guard" 94.4 "$build_root/test_island_driven" response 3 8 1 \
+                1.2 1.8 "$ratio" > "$run_root/response-${SLURM_JOB_ID}-${ratio}.log" \
+                2>&1 || failed=1
+        done
+        exit "$failed"
         ;;
     *) exit 2 ;;
 esac
