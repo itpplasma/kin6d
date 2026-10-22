@@ -621,3 +621,16 @@ if(TARGET gen_ideal_mhd_coordinates)
     kin6d_test_labels(ideal_mhd_coordinates_exact_regeneration fast CLASSES mhd
         TARGETS gen_ideal_mhd_coordinates)
 endif()
+
+foreach(k 2 3)
+    foreach(case manufactured nested reproduce reproduce3d sampling)
+        kin6d_test_labels(nonnested_fitted_${case}_p${k} fast CLASSES mhd
+            TARGETS test_nonnested_profile)
+    endforeach()
+endforeach()
+
+kin6d_test_labels(nonnested_profile_projection_g1b fast CLASSES mhd
+    TARGETS test_nonnested_projection)
+
+kin6d_test_labels(nonnested_profile_forced_island_g4 fast CLASSES mhd
+    TARGETS test_nonnested_profile_island)

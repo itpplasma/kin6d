@@ -748,3 +748,5 @@ an implementation or machine campaign without its required gates.
 [H22]: https://doi.org/10.1063/5.0067898
 [T23]: https://doi.org/10.1017/S0022377823000934
 [D23]: https://doi.org/10.1017/S0022377823000272
+
+[V] I5a frozen-source and declared-component I5b implementation: [interfaces, numerical gates and limits](nonnested-profiles.md).
