@@ -489,6 +489,22 @@ kin6d_test_labels(nonnested_vacuum_helical_coil_island slow CLASSES mhd
     TARGETS test_nonnested_vacuum)
 kin6d_test_labels(nonnested_vacuum_mode_residual_p3 fast CLASSES mhd
     TARGETS test_nonnested_vacuum_mode_residual)
+kin6d_test_labels(island_diagnostics_pendulum fast CLASSES mhd
+    TARGETS test_island_diagnostics)
+kin6d_test_labels(island_coil_quadrature fast CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_vacuum_seed_p3 fast CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_coarse_feec_map slow CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_coarse_feec_map_p2 slow CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_coarse_nn2_map slow CLASSES mhd
+    TARGETS test_nonnested_island)
+foreach(degree 2 3)
+    kin6d_test_labels(island_vacuum_width_phase_p${degree} slow CLASSES mhd
+        TARGETS test_island_vacuum_oracle)
+endforeach()
 kin6d_test_labels(nonnested_symbolic_derivatives_and_d3_identity fast CLASSES mhd
     TARGETS test_nonnested_leaves)
 kin6d_test_labels(nonnested_transport_manufactured_3d slow CLASSES mhd
