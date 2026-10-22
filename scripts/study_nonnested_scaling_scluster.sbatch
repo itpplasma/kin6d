@@ -23,7 +23,7 @@ if [[ -x $HOME/fs1/env/bin/x86_64-conda-linux-gnu-gfortran ]]; then
     export LD_LIBRARY_PATH=$HOME/fs1/env/lib:${LD_LIBRARY_PATH:-}
 fi
 cmake --preset dev-fast -S "$source_dir" -B "$run_root/build" \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DFORTSPARSE_ENABLE_AMD=ON \
     -DKIN6D_SHARED_DEPS_DIR="$run_root/deps" > "$run_root/configure.log" 2>&1
 "$guard" "$guard_limit" cmake --build "$run_root/build" --target \
     test_nonnested_island test_nonnested_coupled test_nonnested_leaves -j8 > "$run_root/build.log" 2>&1

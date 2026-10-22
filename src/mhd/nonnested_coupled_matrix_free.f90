@@ -19,6 +19,166 @@ contains
         call jvp_ops(field, problem, ops, x, direction, output, status)
     end subroutine
 
+    module subroutine nc_vjp(field, problem, x, weight, output, status)
+        ! Transpose of nc_jvp in the Euclidean coefficient pairing. Reverse
+        ! the row reduction before testing and retain boundary input columns.
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(in) :: x(:), weight(:)
+        real(dp), allocatable, intent(out) :: output(:)
+        integer, intent(out) :: status
+        type(nc_ops_t) :: ops
+        type(nc_layout_t) :: lay
+        type(csc_t) :: ct, st
+        type(fortsparse_status_t) :: sparse_status
+        type(fortnum_fft_plan_t) :: plan
+        type(fortnum_fft_workspace_t) :: work
+        real(dp), allocatable :: b(:), w(:), rb(:, :), rs(:, :), dual_b(:)
+        integer, allocatable :: rep(:)
+        integer :: t, nt, bk, j, failure, local_status, n0, n2
+        status = 1; lay = nc_layout(field)
+        if (size(x) /= lay%n .or. size(weight) /= lay%n) return
+        if (.not. all(ieee_is_finite(x))) return
+        if (.not. all(ieee_is_finite(weight))) return
+        call operators(field, problem, ops, status)
+        if (status /= 0) return
+        status = 1
+        call csc_transpose(ops%c, ct, sparse_status)
+        if (.not. status_ok(sparse_status)) return
+        call csc_transpose(ops%s, st, sparse_status)
+        if (.not. status_ok(sparse_status)) return
+        rep = representative(field, problem)
+        w = weight(rep)
+        where (nc_fixed(field, problem)) w = 0
+        b = csc_matvec(ops%c, x(:lay%na))
+        call fft_c2c_plan_init(plan, ops%nphi)
+        call fft_workspace_init(work, plan)
+        nt = field%fs%mm%topology%n_triangles
+        n0 = field%fs%nl0; n2 = field%fs%sp(2)%nloc
+        allocate (rb(n2*lay%nb, nt), rs(2*n0*lay%nb + 1, nt))
+        failure = 0
+        !$omp parallel do default(shared) private(t, local_status) &
+        !$omp& firstprivate(work) schedule(static) reduction(max:failure)
+        do t = 1, nt
+            call element_vjp(field, problem, lay, ops%nphi, b, x, w, t, &
+                rb(:, t), rs(:, t), plan, work, ops%nfp, local_status)
+            failure = max(failure, local_status)
+        end do
+        !$omp end parallel do
+        if (failure /= 0) return
+        allocate (output(lay%n), dual_b(lay%nb2*lay%nb))
+        output = 0; dual_b = 0
+        output(:lay%na) = csc_matvec(st, w(:lay%na))/field%mu0 &
+            + csc_matvec(ops%mg, w(lay%il + 1:lay%ip))
+        output(lay%il + 1:lay%ip) = csc_matvec(ops%mgt, w(:lay%na))
+        do t = 1, nt
+            do bk = 0, lay%nb - 1
+                do j = 1, n2
+                    local_status = bk*lay%nb2 + field%fs%sp(2)%dof(j, t)
+                    dual_b(local_status) = dual_b(local_status) &
+                        + field%fs%sp(2)%sgn(j, t)*rb(bk*n2 + j, t)
+                end do
+                do j = 1, n0
+                    local_status = bk*lay%n0 + field%fs%sp(0)%dof(j, t)
+                    output(lay%ip + local_status) = output(lay%ip + local_status) &
+                        + rs(bk*n0 + j, t)
+                    output(lay%iphi + local_status) = &
+                        output(lay%iphi + local_status) + rs((lay%nb + bk)*n0 + j, t)
+                end do
+            end do
+            output(lay%iv) = output(lay%iv) + rs(size(rs, 1), t)
+        end do
+        output(:lay%na) = output(:lay%na) + csc_matvec(ct, dual_b)
+        if (.not. all(ieee_is_finite(output))) return
+        status = 0
+    end subroutine
+
+    subroutine element_vjp(field, problem, lay, nphi, b, x, weight, t, rb, rs, &
+                           plan, work, nfp, status)
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        type(nc_layout_t), intent(in) :: lay
+        integer, intent(in) :: nphi, t, nfp
+        real(dp), intent(in) :: b(:), x(:), weight(:)
+        real(dp), intent(out) :: rb(:), rs(:)
+        type(fortnum_fft_plan_t), intent(in) :: plan
+        type(fortnum_fft_workspace_t), intent(inout) :: work
+        integer, intent(out) :: status
+        real(dp) :: v1(3, field%fs%sp(1)%nloc), v2(3, field%fs%sp(2)%nloc)
+        real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
+        real(dp) :: u(10, nphi), w(10, nphi), gu(10, nphi), gq(8)
+        real(dp) :: am(3, lay%nb), wa(3, nphi), gm(9, lay%nb)
+        real(dp) :: al(field%fs%sp(1)%nloc, lay%nb), dummy(2), phi, gpar
+        real(dp) :: dpmean(lay%nb), dfmean(lay%nb)
+        integer :: q, j, k, bk, n, n0, n2
+        n0 = field%fs%nl0
+        n2 = field%fs%sp(2)%nloc
+        rb = 0; rs = 0
+        do bk = 1, lay%nb
+            al(:, bk) = weight((bk - 1)*lay%na1 + field%fs%sp(1)%dof(:, t)) &
+                *field%fs%sp(1)%sgn(:, t)
+        end do
+        do q = 1, field%fs%nq
+            call point_series(field, lay, t, q, b, x, u, xq, wq, &
+                v1, v2, val, grad, plan, work, nfp, status)
+            if (status /= 0) return
+            call point_series(field, lay, t, q, b, weight, w, xq, wq, &
+                v1, v2, val, grad, plan, work, nfp, status)
+            if (status /= 0) return
+            am = matmul(v1, al)
+            do k = 1, 3
+                call synthesize(am(k, :), wa(k, :), plan, work, nfp)
+            end do
+            u(2, :) = u(2, :) + field%f_vac/xq(1)
+            w(7:9, :) = w(7:9, :) - wa
+            w(8, :) = w(8, :) + weight(lay%iv)/xq(1)
+            do j = 1, nphi
+                status = 1
+                if (dot_product(u(:3, j), u(:3, j)) <= tiny(1.0_dp)) return
+                phi = 2*acos(-1.0_dp)*(j - 1)/(nphi*nfp); gpar = problem%g_par
+                if (associated(problem%g_par_shape)) then
+                    gpar = gpar*problem%g_par_shape(xq)
+                else if (associated(problem%g_par_shape_3d)) then
+                    gpar = gpar*problem%g_par_shape_3d(xq, phi)
+                end if
+                call coupled_current_vjp(u(1, j), u(2, j), u(3, j), u(4, j), &
+                    u(5, j), u(6, j), u(7, j), u(8, j), u(9, j), u(10, j), &
+                    gpar, problem%g_perp, w(7, j), w(8, j), w(9, j), &
+                    gu(1, j), gu(2, j), gu(3, j), gu(4, j), gu(5, j), gu(6, j), &
+                    gu(7, j), gu(8, j), gu(9, j), gu(10, j), dummy(1), dummy(2))
+                call anisotropic_flux_vjp(u(1, j), u(2, j), u(3, j), u(4, j), &
+                    u(5, j), u(6, j), problem%chi_par, problem%chi_perp, &
+                    w(4, j), w(5, j), w(6, j), gq(1), gq(2), gq(3), &
+                    gq(4), gq(5), gq(6), gq(7), gq(8))
+                gu(:6, j) = gu(:6, j) + gq(:6)
+            end do
+            do k = 1, 9
+                call project(gu(k, :), gm(k, :), plan, work, nfp)
+            end do
+            dpmean = 0; dfmean = 0
+            do n = 1, lay%modes
+                dpmean(2*n) = -n*gm(5, 2*n + 1)
+                dpmean(2*n + 1) = n*gm(5, 2*n)
+                dfmean(2*n) = -n*gm(8, 2*n + 1)
+                dfmean(2*n + 1) = n*gm(8, 2*n)
+            end do
+            do bk = 1, lay%nb
+                rb((bk - 1)*n2 + 1:bk*n2) = rb((bk - 1)*n2 + 1:bk*n2) &
+                    + wq*matmul(gm(:3, bk), v2)
+                rs((bk - 1)*n0 + 1:bk*n0) = rs((bk - 1)*n0 + 1:bk*n0) &
+                    + wq*(grad(1, :)*gm(4, bk) + grad(2, :)*gm(6, bk) &
+                          + val*dpmean(bk)/xq(1))
+                rs((lay%nb + bk - 1)*n0 + 1:(lay%nb + bk)*n0) = &
+                    rs((lay%nb + bk - 1)*n0 + 1:(lay%nb + bk)*n0) &
+                    + wq*(grad(1, :)*gm(7, bk) + grad(2, :)*gm(9, bk) &
+                          + val*dfmean(bk)/xq(1))
+            end do
+            rs(size(rs)) = rs(size(rs)) &
+                + wq*sum(gu(10, :))/(nphi*2*acos(-1.0_dp)*xq(1))
+        end do
+        status = 0
+    end subroutine
+
     subroutine synthesize(coeff, values, plan, work, nfp, derivative)
         real(dp), intent(in) :: coeff(:)
         real(dp), intent(out) :: values(:)

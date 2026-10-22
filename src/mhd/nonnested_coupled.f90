@@ -43,13 +43,12 @@ module kin6d_nonnested_coupled
         ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad, &
         meridian_weight_i
-    use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl, &
-        meridian_fourier_curl_curl, meridian_fourier_gradient_coupling, &
         meridian_fourier_identity_forms
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, csc_matmul, &
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
-        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_ORDER_AMD, &
+        fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, &
+        FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND, FORTSPARSE_MEMORY_LOW, &
         native_ordering_available, FORTSPARSE_LU_SUPERNODAL
     use kin6d_gs_timers, only: gs_phase_tick
@@ -57,12 +56,13 @@ module kin6d_nonnested_coupled
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
-        anisotropic_flux, anisotropic_flux_jvp
+        anisotropic_flux, anisotropic_flux_jvp, anisotropic_flux_vjp, &
+        coupled_current_vjp
     implicit none
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
-    public :: nc_scalar3_i, nc_continue, nc_jvp
+    public :: nc_scalar3_i, nc_continue, nc_jvp, nc_vjp
 
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
@@ -126,17 +126,19 @@ module kin6d_nonnested_coupled
         logical :: ready = .false.
     end type
 
-    type, extends(meridian_fourier_tensor_t) :: identity_t
-    contains
-        procedure :: tensor => identity_tensor
-    end type
-
     integer, parameter :: chunk = 64
     interface
         module subroutine nc_jvp(field, problem, x, direction, output, status)
             type(free_b_field_t), intent(in) :: field
             type(nc_problem_t), intent(in) :: problem
             real(dp), intent(in) :: x(:), direction(:)
+            real(dp), allocatable, intent(out) :: output(:)
+            integer, intent(out) :: status
+        end subroutine
+        module subroutine nc_vjp(field, problem, x, weight, output, status)
+            type(free_b_field_t), intent(in) :: field
+            type(nc_problem_t), intent(in) :: problem
+            real(dp), intent(in) :: x(:), weight(:)
             real(dp), allocatable, intent(out) :: output(:)
             integer, intent(out) :: status
         end subroutine
@@ -259,7 +261,6 @@ contains
         type(nc_ops_t), intent(out) :: ops
         integer, intent(out) :: status
         type(fortsparse_status_t) :: st
-        type(identity_t) :: id
         integer :: t, nln, modes
         status = 1
         if (.not. allocated(field%b)) return
@@ -280,40 +281,14 @@ contains
             if (any(field%fs%sp(1)%dof(nln + 1:, t) &
                 /= field%fs%nn + field%fs%sp(0)%dof(:, t))) return
         end do
-        if (problem%matrix_free) then
-            call meridian_fourier_identity_forms(field%fs, modes, &
-                ops%c, ops%s, ops%mg, status)
-            if (status /= 0) return
-        else
-            call meridian_fourier_curl(field%fs, modes, ops%c, status)
-            if (status /= 0) return
-            call meridian_fourier_curl_curl(field%fs, modes, &
-                max(ops%nphi, 4*modes + 1), id, ops%s, status)
-            if (status /= 0) return
-            call meridian_fourier_gradient_coupling(field%fs, modes, &
-                max(ops%nphi, 4*modes + 1), id, &
-                ops%mg, status)
-            if (status /= 0) return
-        end if
+        ! Both paths use the same exact constant forms. Quadrature of the
+        ! identity tensor adds roundoff-only off-mode couplings to the oracle.
+        call meridian_fourier_identity_forms(field%fs, modes, &
+            ops%c, ops%s, ops%mg, status)
+        if (status /= 0) return
         status = 1
         call csc_transpose(ops%mg, ops%mgt, st)
         if (.not. status_ok(st)) return
-        status = 0
-    end subroutine
-
-    subroutine identity_tensor(self, t, x, k, status)
-        class(identity_t), intent(in) :: self
-        integer, intent(in) :: t
-        real(dp), intent(in) :: x(:, :)
-        real(dp), intent(out) :: k(:, :, :)
-        integer, intent(out) :: status
-        integer :: m
-        status = 1
-        if (t < 1 .or. size(k, 3) /= size(x, 2)) return
-        k = 0
-        do m = 1, size(x, 2)
-            k(1, 1, m) = 1; k(2, 2, m) = 1; k(3, 3, m) = 1
-        end do
         status = 0
     end subroutine
 

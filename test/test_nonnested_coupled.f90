@@ -27,14 +27,15 @@ program test_nonnested_coupled
     use nn_coupled_case, only: chi_perp, g0, source, g_shape
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
-    use fortsparse, only: csc_t, csc_matvec
+    use fortsparse, only: csc_t, csc_matvec, csc_transpose, &
+        fortsparse_status_t, status_ok
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_residual, only: nn_residual
     use kin6d_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_PSI, &
         EQ_P
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
-        nc_layout, nc_residual, nc_jacobian, nc_jvp, nc_solve, nc_fixed
+        nc_layout, nc_residual, nc_jacobian, nc_jvp, nc_vjp, nc_solve, nc_fixed
     implicit none
     type(free_b_field_t) :: field
     type(nc_problem_t) :: problem
@@ -271,10 +272,11 @@ contains
             ! Central-difference directional derivative of the residual
             ! against the assembled Jacobian (free directions only).
             real(dp), intent(in) :: x0(:)
-            type(csc_t) :: jac
-            real(dp), allocatable :: d(:), rp(:), rm(:), jd(:), xs(:)
+            type(csc_t) :: jac, jac_t
+            type(fortsparse_status_t) :: sparse_status
+            real(dp), allocatable :: d(:), rp(:), rm(:), jd(:), xs(:), adj(:), weight(:)
             logical, allocatable :: fixed(:)
-            real(dp) :: h, err
+            real(dp) :: h, err, pairing(2)
             integer :: n, st
             fixed = nc_fixed(field, problem)
             allocate (d(lay%n))
@@ -299,6 +301,19 @@ contains
             err = norm2(rp - jd)/norm2(jd)
             print '(a,es12.4)', 'FFT JVP vs assembled Jacobian ', err
             if (err > 1.0e-10_dp) error stop 'FFT JVP equivalence'
+            weight = [(cos(0.73_dp*n), n=1, lay%n)]
+            call nc_vjp(field, problem, x0 + d, weight, adj, st)
+            if (st /= 0) error stop 'FFT VJP'
+            pairing = [dot_product(weight, rp), dot_product(adj, d)]
+            err = abs(pairing(1) - pairing(2))/maxval(abs(pairing))
+            print '(a,es12.4)', 'FFT JVP/VJP pairing ', err
+            if (err > 1.0e-10_dp) error stop 'FFT adjoint pairing'
+            call csc_transpose(jac, jac_t, sparse_status)
+            if (.not. status_ok(sparse_status)) error stop 'Jacobian transpose'
+            rp = csc_matvec(jac_t, merge(0.0_dp, weight, fixed))
+            err = norm2(adj - rp)/norm2(rp)
+            print '(a,es12.4)', 'FFT VJP vs assembled transpose ', err
+            if (err > 1.0e-10_dp) error stop 'FFT VJP equivalence'
             h = 1.0e-4_dp
             call nc_residual(field, problem, x0 + d*(1 + h), rp, st)
             if (st /= 0) error stop 'residual +'
@@ -306,6 +321,6 @@ contains
             if (st /= 0) error stop 'residual -'
             err = norm2((rp - rm)/(2*h) - jd)/norm2(jd)
             print '(a,es12.4)', 'Jacobian vs central difference ', err
-            if (err > 1.0e-6_dp) error stop 'Jacobian'
+            if (err > 1.0e-7_dp) error stop 'Jacobian'
         end subroutine
 end program

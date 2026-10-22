@@ -125,7 +125,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "7e3e2d281887081c7280b5c4fafc050be7c633b1")
+set(KIN6D_FORTFEM_REVISION "21f236191c39688bebe25f98b185c32b8209ec70")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1792,13 +1792,13 @@ foreach(k 2 3)
             COMMAND test_nonnested_island compare ${k} 8 ${n} 1e2)
         set_tests_properties(nonnested_matrixfree_reduction_p${k}_n${n}
             nonnested_matrixfree_island_p${k}_n${n} PROPERTIES TIMEOUT 900
-            ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1" PROCESSORS 8)
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
     endforeach()
 endforeach()
 add_test(NAME nonnested_matrixfree_field_period
     COMMAND test_nonnested_coupled matrixfree 2 1e2 5 5)
 set_tests_properties(nonnested_matrixfree_field_period PROPERTIES TIMEOUT 900
-    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1" PROCESSORS 8)
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 # Landreman family 1 (exact 3D, uniform iota) through the coupled solve.
 add_executable(test_nonnested_landreman test/test_nonnested_landreman.f90)
 target_link_libraries(test_nonnested_landreman PRIVATE kin6d)

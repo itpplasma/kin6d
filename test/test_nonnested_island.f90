@@ -33,7 +33,7 @@ program test_nonnested_island
     use kin6d_nonnested_residual, only: nn_residual
     use kin6d_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
-        nc_layout, nc_solve
+        nc_layout, nc_solve, nc_jvp, nc_vjp
     implicit none
     character(16) :: mode, arg
     real(dp), allocatable :: xvac(:), x(:), ratios(:), xd(:), td(:, :), tf(:, :)
@@ -144,6 +144,7 @@ program test_nonnested_island
         end if
         x = xvac
         if (trim(mode) == 'compare') then
+            call check_pairing()
             xd = x; problem%matrix_free = .false.
             call nc_solve(field, problem, xd, dense_report, st, &
                 tol=1.0e-13_dp, iterates=td)
@@ -180,6 +181,24 @@ program test_nonnested_island
         error stop 'mode'
     end select
 contains
+    subroutine check_pairing()
+        ! Includes floating-conductor row reduction and nonzero scalar/B data.
+        real(dp), allocatable :: direction(:), weight(:), state(:), action(:), adj(:)
+        real(dp) :: pairing(2), error
+        integer :: j, status
+        direction = [(sin(0.31_dp*j), j=1, lay%n)]
+        weight = [(cos(0.73_dp*j), j=1, lay%n)]
+        state = xvac + 1.0e-5_dp*direction
+        call nc_jvp(field, problem, state, direction, action, status)
+        if (status /= 0) error stop 'island JVP'
+        call nc_vjp(field, problem, state, weight, adj, status)
+        if (status /= 0) error stop 'island VJP'
+        pairing = [dot_product(weight, action), dot_product(adj, direction)]
+        error = abs(pairing(1) - pairing(2))/maxval(abs(pairing))
+        print '(a,es12.4)', 'floating-conductor JVP/VJP pairing ', error
+        if (error > 1.0e-10_dp) error stop 'floating adjoint pairing'
+    end subroutine
+
     subroutine check_difference(reference, candidate)
         real(dp), intent(in) :: reference(:, :), candidate(:, :)
         real(dp) :: denominator, difference, largest

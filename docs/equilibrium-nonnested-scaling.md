@@ -256,3 +256,60 @@ are in [benchmarks/nn2_scaling](../benchmarks/nn2_scaling/README.md).
 Raw experiments and profiler data remain outside Git. The next acceptance
 step is to improve solve accuracy and pass all
 unchanged dense-equivalence gates before considering promotion.
+
+## I34 derivative and conditioning checks
+
+[V] `nc_vjp` applies the transpose of `nc_jvp` in the Euclidean pairing of
+coefficient arrays, using the existing generated current/flux VJP leaves.
+It reverses the floating-row reduction before the element pass and retains
+boundary input columns. Its FFT testing, spatial contractions and transposed
+curl use O(M) storage at fixed mesh, with OpenMP over elements. The reduction
+fixture checks both the JVP/VJP pairing and the complete assembled transpose,
+and the island fixture independently checks the floating-conductor pairing.
+The finite-difference directional gate is now 1e-7, matching I3.
+
+[V] Both solver paths now use FortFEM's exact constant identity forms.
+The assembled nonlinear element Jacobian remains the independent comparator.
+This removes quadrature-only off-mode entries in the constant curl/gauge
+operators, rather than compensating for them by relaxing the iterate gate.
+FortFEM is pinned to merged #107 (21f236191c39688bebe25f98b185c32b8209ec70),
+which contains the identity-form work from superseded draft #106.
+
+[V] A small failing cell was examined independently: P2, nr=4, N=1,
+chi_parallel/chi_perp = g_parallel/g_perp = 1e6, vacuum seed. The pressure
+Dirichlet block has 1,344 free coefficients. Generalized symmetric eigenvalues
+of the full pressure block against the phi-averaged block range from
+0.4054201588 to 1.5755062. The relative symmetry defects are below 7.5e-17.
+Thus the pressure near-kernel-loss hypothesis is unsupported at this cell.
+The existing averaged preconditioner already retains p/Phi coupling within
+each n block. This pressure-only spectrum does not exclude coupled
+nonnormality or failures on finer meshes and larger mode sets.
+
+| P2/nr4/N1, chi=g=1e6 | Krylov iterations | normalized residual | result |
+|---|---:|---:|---|
+| V3 path | 31 | 4.984e-12 | fails 1e-13 |
+| Trial update-based equilibration | 28 | 5.306e-13 | fails, discarded |
+| Trial identity plus mean-defect action | 45 | 2.375e-10 | fails, discarded |
+
+[V] On the failed V3 increment, the assembled and FFT actions differ by
+2.1401e-11 in the row-scaled, normalized right-hand-side metric. Their
+residuals are 2.1730e-11 and 4.9837e-12 respectively. This is evidence of
+arithmetic sensitivity at the requested linear tolerance. It does not prove
+an irreducible precision floor or identify the complete high-chi root cause.
+Neither unsuccessful trial is retained, and the linear tolerance, nonlinear
+and iterate gates remain unchanged. No new generic numerical primitive was
+justified by these experiments.
+
+[H] A successful repair still needs a stable coupled action or solve and a
+measured high-chi comparison against the assembled states. The matrix-free
+path remains opt-in. The older memory, iteration and strong-scaling tables
+above are V3 baseline evidence, not measurements of the I34 revision.
+
+[V] The four-thread sCluster pilot passes 10/10 registered selections:
+all four reduction comparisons, all four island comparisons, nfp=5 and the
+symbolic-leaf check. P3/nr8/N1's Phi iterate difference is 8.5292e-11 against
+the unchanged 1e-10 gate. This is close to the threshold, and the independent
+eight-thread repeat remains required. On the final local code, the P2/N1
+VJP/assembled-transpose error is 6.0773e-16 and the floating-conductor pairing
+error is 2.7322e-14. The selected reduction, floating island, leaf and layering
+checks pass. These results do not close the high-chi gates.
