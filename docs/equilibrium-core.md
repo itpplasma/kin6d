@@ -308,6 +308,7 @@ loop inside Γ_c, n = 0..3, third order; ring vs polygon coils at n = 0.
 | L7 (spectra, Boozer, exports) | – | M2; built on D7, not on `vacuum_surfaces` ψ grids |
 | L8 | – | L7 |
 | Non-nested branch | [NN1](equilibrium-nonnested.md): prescribed-trace vacuum and the N=0 constant-p' restriction | General finite-pressure/free-boundary work still needs M3, M4 and M6; seeds come from 𝒮 and the p-model is declared first |
+| Island-equilibrium design | [Closure menu and I1–I11](island-equilibrium.md), building on NN1/NN2 and D1–D8 | Controller design review, closure compatibility, scalable coupled actions and pre-machine verification gates |
 
 L3 (vacuum response) needs no core piece and continues. Its Γ_c/BEM_n and
 coil code is written as the D6 layer, which M4 then reuses for `gs_coupling`.
