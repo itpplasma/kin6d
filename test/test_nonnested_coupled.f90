@@ -25,6 +25,7 @@ program test_nonnested_coupled
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, coordinates, exact
     use nn_coupled_case, only: chi_perp, g0, source, g_shape
+    use g6_solovev_oracle, only: exact_flux, exact_iota
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
     use fortsparse, only: csc_t, csc_matvec
@@ -45,7 +46,7 @@ program test_nonnested_coupled
     real(dp) :: d0(4), dn
     real(dp) :: v_exact
     character(16) :: mode, arg
-    integer :: k, lev, nlev
+    integer :: k, lev, nlev, nr_g6
     real(dp) :: ratio, ef(3), ep(3), ev(3), ed(3), eo(3), rate(4)
     call get_command_argument(1, mode)
     call get_command_argument(2, arg)
@@ -54,6 +55,19 @@ program test_nonnested_coupled
     read (arg, *) ratio
     if (k < 2 .or. k > 3 .or. ratio < 1) error stop 'arguments'
     select case (trim(mode))
+    case ('g6')
+        ! A bounded regression for the axisymmetric part of G6. Optional
+        ! external samples use benchmarks/nested/run_reference.py's format.
+        call get_command_argument(4, arg)
+        read (arg, *) nr_g6
+        call get_command_argument(5, arg)
+        read (arg, *) modes
+        if (nr_g6 < 2 .or. modes < 0) error stop 'G6 resolution'
+        call run(nr_g6, .false., .false., ef(1), ep(1), ev(1), ed(1), eo(1))
+        call nested_diagnostics()
+        if (command_argument_count() >= 6) call external_comparison()
+        if (max(ef(1), ep(1)) > 1.0e-3_dp) error stop 'G6 sampled B/p'
+        print '(a)', 'PASS: G6 Solovev oracle checks (external agreement separate)'
     case ('solovev')
         nlev = 3
         do lev = 1, nlev
@@ -104,6 +118,120 @@ program test_nonnested_coupled
         error stop 'mode'
     end select
 contains
+    subroutine nested_diagnostics()
+        ! Integrate the actual D7 point evaluator. For retained Fourier modes,
+        ! first verify axisymmetry, then use its mode-0 flux primitive to
+        ! locate numerical contours. No reference q is copied into readback.
+        type(free_b_field_t) :: axisym
+        real(dp) :: leak_b, leak_p, flux, flux_error, qh, iota_error
+        real(dp) :: radius, theta, lo, hi, mid, target, psi, bb(2), xx, yy
+        real(dp) :: point(3, 1), values(EQ_VALUES, 1), gt(2), wq
+        real(dp) :: basis(3, field%fs%sp(2)%nloc), xq(2)
+        integer :: statuses(1), j, t, iq, st, it, surf
+        leak_b = 0; leak_p = 0
+        if (modes > 0) then
+            leak_b = 2*maxval(abs(field%b(:, 1:)))/maxval(abs(field%b(:, 0)))
+            leak_p = maxval(abs(field%p(field%fs%n0 + 1:))) &
+                /maxval(abs(field%p(:field%fs%n0)))
+        end if
+        print '(a,2es16.7)', '[V] G6 unintended B/p coefficient modes ', leak_b, leak_p
+        if (max(leak_b, leak_p) > 1.0e-10_dp) error stop 'G6 unintended modes'
+        axisym = field
+        deallocate (axisym%b)
+        allocate (axisym%b(size(field%b, 1), 0:0))
+        axisym%b = field%b(:, 0:0)
+        axisym%p = field%p(:field%fs%n0)
+        flux = 0
+        do t = 1, field%fs%mm%topology%n_triangles
+            do iq = 1, field%fs%nq
+                call meridian_qpoint(field%fs, 2, t, iq, xq, wq, basis, st)
+                if (st /= 0) error stop 'G6 flux quadrature'
+                point(:, 1) = [xq, 0.43_dp]
+                call axisym%sample(point, values, statuses)
+                if (any(statuses /= 0)) error stop 'G6 flux sample'
+                flux = flux + wq*values(EQ_BPHI, 1)/xq(1)
+            end do
+        end do
+        flux_error = abs(flux/exact_flux(1.0_dp) - 1)
+        print '(a,3es16.7)', '[V] G6 toroidal flux/numerical,exact,relative ', &
+            flux, exact_flux(1.0_dp), flux_error
+        if (flux_error > 1.0e-4_dp) error stop 'G6 toroidal flux'
+        do surf = 1, 3
+            radius = 0.05_dp + 0.25_dp*surf
+            call mapping(radius, 0.0_dp, xq)
+            call exact(xq, target, bb)
+            qh = 0
+            do j = 1, 512
+                theta = 2*acos(-1.0_dp)*(j - 0.37_dp)/512
+                lo = 0.01_dp; hi = 0.99_dp
+                do it = 1, 38
+                    mid = (lo + hi)/2
+                    call mapping(mid, theta, point(:2, 1))
+                    point(3, 1) = 0.43_dp
+                    call axisym%sample(point, values, statuses)
+                    if (any(statuses /= 0)) error stop 'G6 contour sample'
+                    psi = values(EQ_PSI, 1)
+                    if (psi < target) then
+                        lo = mid
+                    else
+                        hi = mid
+                    end if
+                end do
+                if (abs(values(EQ_PSI, 1) - target) > 1.0e-9_dp*abs(target)) &
+                    error stop 'G6 unbracketed numerical contour'
+                ! theta = atan2(R Z, (R^2-R0^2)/2). On a flux contour,
+                ! dphi/dtheta = B_phi/(R B.grad theta), giving q by a turn.
+                xx = (point(1, 1)**2 - r0*r0)/2
+                yy = point(1, 1)*point(2, 1)
+                gt = [xx*point(2, 1) - yy*point(1, 1), xx*point(1, 1)] &
+                    /(xx*xx + yy*yy)
+                qh = qh + values(EQ_BPHI, 1)/(point(1, 1) &
+                    *dot_product(values([EQ_BR, EQ_BZ], 1), gt))/512
+            end do
+            iota_error = abs(1/qh - exact_iota(radius))
+            print '(a,4es16.7)', '[V] G6 radius/iota,exact,absolute ', radius, &
+                1/qh, exact_iota(radius), iota_error
+            if (iota_error > 1.0e-3_dp) error stop 'G6 surviving-surface iota'
+        end do
+    end subroutine
+
+    subroutine external_comparison()
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        character(1024) :: path
+        character(4096) :: line
+        real(dp) :: row(14), point(3, 1), values(EQ_VALUES, 1)
+        real(dp) :: xyzb(3), phi, berror, perror, bscale, pscale
+        integer :: unit, ios, n, statuses(1)
+        call get_command_argument(6, path)
+        open (newunit=unit, file=trim(path), status='old', action='read')
+        berror = 0; perror = 0; bscale = 0; pscale = 0; n = 0
+        do
+            read (unit, '(a)', iostat=ios) line
+            if (ios < 0) exit
+            if (ios /= 0) error stop 'G6 malformed external sample'
+            read (line, *, iostat=ios) row
+            if (ios /= 0) error stop 'G6 malformed external sample'
+            if (.not. all(ieee_is_finite(row))) error stop 'G6 nonfinite external sample'
+            ! Sample layout: s, Cartesian x/y/z, B(3), mu0 p, mu0 J(3), mu0 grad p(3).
+            phi = atan2(row(3), row(2))
+            point(:, 1) = [norm2(row(2:3)), row(4), phi]
+            call field%sample(point, values, statuses)
+            if (any(statuses /= 0)) error stop 'G6 external point outside domain'
+            xyzb = [values(EQ_BR, 1)*cos(phi) - values(EQ_BPHI, 1)*sin(phi), &
+                values(EQ_BR, 1)*sin(phi) + values(EQ_BPHI, 1)*cos(phi), &
+                values(EQ_BZ, 1)]
+            berror = berror + sum((xyzb - row(5:7))**2)
+            perror = perror + (values(EQ_P, 1) - row(8))**2
+            bscale = bscale + sum(row(5:7)**2); pscale = pscale + row(8)**2
+            n = n + 1
+        end do
+        close (unit)
+        if (n < 3 .or. min(bscale, pscale) <= 0) error stop 'G6 empty reference'
+        berror = sqrt(berror/bscale); perror = sqrt(perror/pscale)
+        print '(a,i0,a,2es16.7)', '[V] G6 external samples=', n, ' B/p RMS ', berror, perror
+        if (max(berror, perror) > 1.0e-3_dp) error stop 'G6 external B/p agreement'
+    end subroutine
+
     subroutine run(nr, check_jacobian, offset, efield, epres, evolt, ed3, aux)
         integer, intent(in) :: nr
         logical, intent(in) :: check_jacobian, offset

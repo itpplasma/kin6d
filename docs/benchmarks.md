@@ -12,6 +12,9 @@ results without continuous enclosures; the finite-pressure island, stochastic
 cases remain planned. The nested Landreman/Issan field evaluators and boundary
 exports are implemented as [scoped exact references](nested-oracles.md); solver
 comparisons remain pending.
+[V] The [G6 nested-limit regression](nested-limit-g6.md) adds relaxed A+D
+Solov'ev flux and transform diagnostics and matched VMEC input preparation.
+Full cross-code G6 acceptance remains open.
 Other rows remain planned.
 The audience is physicists
 and implementers selecting the next independently verifiable capability.

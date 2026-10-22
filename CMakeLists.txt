@@ -1756,8 +1756,17 @@ set_tests_properties(nonnested_hudson_breslau_chaos_responds_p3 PROPERTIES
 
 # NN2 (second increment): axisymmetric coupled transport / Ampere / Ohm Newton.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_coupled.f90)
+add_library(kin6d_g6_solovev_test STATIC test/support/g6_solovev_oracle.f90)
+target_link_libraries(kin6d_g6_solovev_test PUBLIC kin6d_nn_solovev_test fortnum)
+add_executable(benchmark_g6_solovev_input EXCLUDE_FROM_ALL
+    benchmarks/nested/g6_solovev_input.f90)
+target_link_libraries(benchmark_g6_solovev_input PRIVATE kin6d_g6_solovev_test)
 add_executable(test_nonnested_coupled test/test_nonnested_coupled.f90)
-target_link_libraries(test_nonnested_coupled PRIVATE kin6d_nn_solovev_test)
+target_link_libraries(test_nonnested_coupled PRIVATE kin6d_g6_solovev_test)
+add_test(NAME nonnested_g6_solovev_readback_p3
+    COMMAND test_nonnested_coupled g6 3 1e6 8 0)
+set_tests_properties(nonnested_g6_solovev_readback_p3 PROPERTIES
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 foreach(k 2 3)
     add_test(NAME nonnested_coupled_solovev_p${k}
         COMMAND test_nonnested_coupled solovev ${k} 1e6)
