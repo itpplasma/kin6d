@@ -99,12 +99,13 @@ contains
         real(dp), intent(in), optional :: pprime, psi_bound
         complex(dp), allocatable, intent(out), optional :: solution(:)
         type(csc_t) :: k
+        type(nn_factor_t) :: factor
         type(csc_z_t) :: zk, curl
         complex(dp), allocatable :: rhs(:), a(:), delta(:), full(:), r(:)
         logical, allocatable :: mask(:)
         real(dp), allocatable :: loads(:, :)
         real(dp) :: pp, en_scale
-        integer :: st, t, ndof, failure
+        integer :: st, t, ndof, failure, step
         status = 1
         if (.not. allocated(field%b)) return
         if (n < 0 .or. n > ubound(field%b, 2)) return
@@ -158,19 +159,31 @@ contains
         where (mask) a = boundary
         r = rhs - csc_matvec(zk, a)
         where (mask) r = 0
-        call nn_linear_solve(k, mask, r, delta, st)
+        call nn_factor(k, mask, factor, st)
         if (st /= 0) return
         report%energy_before = quadratic(a)
-        a = a + delta
-        report%energy_after = quadratic(a)
         en_scale = max(1.0_dp, abs(report%energy_before))
-        if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) return
-        r = rhs - csc_matvec(zk, a)
-        where (mask) r = 0
-        report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
-            norm2(abs(csc_matvec(zk, a))))
-        report%newton_steps = 1
-        if (report%residual > 1.0e-9_dp) return
+        ! The quadratic problem has one exact Newton step. A floating-point
+        ! factor may need another step to meet the physical residual gate.
+        ! Reuse the same factor and retain both admission gates at every step.
+        do step = 1, 3
+            call nn_factor_solve(factor, r, delta, st)
+            if (st /= 0) exit
+            a = a + delta
+            report%energy_after = quadratic(a)
+            if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) then
+                st = 1
+                exit
+            end if
+            r = rhs - csc_matvec(zk, a)
+            where (mask) r = 0
+            report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
+                norm2(abs(csc_matvec(zk, a))))
+            report%newton_steps = step
+            if (report%residual <= 1.0e-9_dp) exit
+        end do
+        call nn_factor_free(factor)
+        if (st /= 0 .or. report%residual > 1.0e-9_dp) return
         call meridian_op_complex(field%fs%curl, n, curl, st)
         if (st /= 0) return
         allocate (full(field%fs%sp(1)%ndof))

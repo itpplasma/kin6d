@@ -2,12 +2,15 @@ module nn_vacuum_fixture
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_b_cart, &
         coil_set_modes, coil_mu0
-    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_velocity
+    use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_report_t, &
+                                           nn_build, nn_solve, nn_vacuum_mode
+    use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI
     use kin6d_nonnested_leaves, only: segment_potential, vacuum_gauge
-    use fortnum_ode_cash_karp, only: cash_karp_step
-    use fortnum_multiroot, only: multiroot_hybrids
-    use fortnum_status, only: fortnum_status_t
+    use kin6d_equilibrium_state, only: equilibrium_field_t
+    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+                           island_trace, island_symmetry_point, island_periodic_point, &
+                                        island_stability, island_libration_edge
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_mesh_2d, only: mesh_2d_t
     implicit none
@@ -17,7 +20,44 @@ module nn_vacuum_fixture
     type(coil_set_t) :: coils
     type(free_b_field_t) :: field
     integer :: active_mode = 1
+    type, extends(equilibrium_field_t) :: direct_coil_field_t
+    contains
+        procedure :: sample => direct_sample
+    end type
+    type(direct_coil_field_t) :: direct_coil
 contains
+    subroutine solve_vacuum(nr, order, modes)
+        integer, intent(in) :: nr, order, modes
+        type(flux_mesh_t) :: fm
+        type(nn_report_t) :: report
+        real(dp), allocatable :: nodes(:, :)
+        complex(dp), allocatable :: bc(:), seed(:)
+        integer :: j, n, st
+        call annulus_mesh(nr, order, fm)
+        call nn_build(fm, order, modes, [r0, 0.0_dp], 1.0_dp, ftor, &
+                      coil_mu0, field, st)
+        if (st /= 0) error stop 'vacuum build'
+        call meridian_lagrange_nodes(field%fs, nodes)
+        allocate (bc(field%fs%n0), seed(field%fs%n0))
+        bc = 0; seed = 0
+        !$omp parallel do default(shared) private(j) schedule(static)
+        do j = 1, size(bc)
+            if (field%fs%sp(0)%bnd(j)) bc(j) = mean_psi(nodes(:, j))
+        end do
+        !$omp end parallel do
+        call nn_solve(field, 0, bc, seed, report, st)
+        if (st /= 0) error stop 'vacuum n0'
+        do n = 1, modes
+            active_mode = n
+            call nn_vacuum_mode(field, n, gauge_potential, report, st)
+            if (st /= 0) then
+                print '(a,4i10,a,3es16.7)', 'vacuum failure P/nr/mode/status ', &
+                    order, nr, n, st, ' residual/energy-before/after ', &
+                    report%residual, report%energy_before, report%energy_after
+                error stop 'vacuum Fourier mode'
+            end if
+        end do
+    end subroutine
     subroutine annulus_mesh(nr, order, fm)
         ! Rings u in [0.3, 1.2] about the coil, without the current-bearing
         ! cavity (the axis fan is removed).
@@ -112,148 +152,110 @@ contains
         b = [cart(1)*cos(phi) + cart(2)*sin(phi), &
             -cart(1)*sin(phi) + cart(2)*cos(phi) + ftor/x(1), cart(3)]
     end subroutine
-    subroutine rhs(phi, y, dy, ctx)
-        real(dp), intent(in) :: phi, y(:)
-        real(dp), intent(out) :: dy(:)
-        class(*), intent(in), optional :: ctx
-        real(dp) :: b(3)
-        logical :: direct
-        integer :: st
-        direct = .false.
-        if (present(ctx)) then
-            select type (ctx)
-            type is (logical)
-                direct = ctx
-            end select
-        end if
-        if (direct) then
-            call direct_field(y, phi, b)
-        else
-            call nn_velocity(field, [y, phi], dy, st)
-            if (st /= 0) then
-                print '(a,3es14.6)', 'trace outside at R,Z,phi ', y, phi
-                error stop 'trace left vacuum mesh'
-            end if
-            return
-        end if
-        dy = y(1)*[b(1), b(3)]/b(2)
+    subroutine direct_sample(field, points, values, statuses)
+        class(direct_coil_field_t), intent(in) :: field
+        real(dp), intent(in) :: points(:, :)
+        real(dp), intent(out) :: values(:, :)
+        integer, intent(out) :: statuses(:)
+        real(dp) :: b(3), phi
+        integer :: i
+        values = 0; statuses = 0
+        do i = 1, size(points, 2)
+            phi = 0
+            if (size(points, 1) >= 3) phi = points(3, i)
+            call direct_field(points(:2, i), phi, b)
+            values(EQ_BR, i) = b(1); values(EQ_BZ, i) = b(3)
+            values(EQ_BPHI, i) = b(2)
+        end do
     end subroutine
     subroutine orbit(start, turns, steps, direct, finish, span)
         real(dp), intent(in) :: start(2), turns
         integer, intent(in) :: steps
         logical, intent(in) :: direct
         real(dp), intent(out) :: finish(2), span
-        real(dp) :: k1(2), k2(2), k3(2), k4(2), k5(2), k6(2), tmp(2), next(2)
-        real(dp) :: err(2), phi, h, theta, oldtheta, angle, lo, hi
-        integer :: i, nfev, count
-        finish = start
-        oldtheta = atan2(start(2), start(1) - r0)
-        angle = oldtheta; lo = angle; hi = angle
-        count = nint(turns*steps); h = 2*pi*turns/count; nfev = 0
-        do i = 1, count
-            phi = h*(i - 1)
-            call cash_karp_step(rhs, phi, finish, h, .false., k1, k2, k3, k4, &
-                k5, k6, tmp, next, err, nfev, ctx=direct)
-            finish = next
-            theta = atan2(finish(2), finish(1) - r0)
-            angle = angle + atan2(sin(theta - oldtheta), cos(theta - oldtheta))
-            oldtheta = theta
-            lo = min(lo, angle + i*h); hi = max(hi, angle + i*h)
-            ! The range cannot shrink: a completed relative rotation decides
-            ! the finite-time outside predicate immediately.
-            if (turns > 1 .and. hi - lo > 2*pi) exit
-        end do
-        span = hi - lo
+        type(island_trace_options_t) :: opt
+        integer :: st
+        opt%fixed_steps = steps
+        if (direct) then
+            call island_trace(direct_coil, start, 0.0_dp, turns, opt, finish, &
+                              st, [r0, 0.0_dp], 1, -1, span)
+        else
+            call island_trace(field, start, 0.0_dp, turns, opt, finish, &
+                              st, [r0, 0.0_dp], 1, -1, span)
+        end if
+        if (st /= 0) error stop 'island trace domain or integration failure'
     end subroutine
     real(dp) function periodic_radius(left, right, direct, steps) result(root)
         real(dp), intent(in) :: left, right
         logical, intent(in) :: direct
         integer, intent(in) :: steps
-        real(dp) :: a, b, fa, fm, finish(2), span
-        integer :: i
-        a = left; b = right
-        call orbit([a, 0.0_dp], 0.5_dp, steps, direct, finish, span)
-        fa = finish(2)
-        call orbit([b, 0.0_dp], 0.5_dp, steps, direct, finish, span)
-        if (fa*finish(2) >= 0) error stop 'periodic orbit not bracketed'
-        do i = 1, 22
-            root = (a + b)/2
-            call orbit([root, 0.0_dp], 0.5_dp, steps, direct, finish, span)
-            fm = finish(2)
-            if (fa*fm <= 0) then
-                b = root
-            else
-                a = root; fa = fm
-            end if
-        end do
-        root = (a + b)/2
+        type(island_trace_options_t) :: opt
+        real(dp) :: point(2)
+        integer :: st
+        opt%fixed_steps = steps; opt%root_tol = 1.0e-8_dp
+        if (direct) then
+            call island_symmetry_point(direct_coil, [left, right], 0.0_dp, &
+                                       1.0_dp, opt, point, st)
+        else
+            call island_symmetry_point(field, [left, right], 0.0_dp, &
+                                       1.0_dp, opt, point, st)
+        end if
+        if (st /= 0) error stop 'periodic orbit not bracketed'
+        root = point(1)
     end function
     subroutine full_periodic(seed, root, direct)
         real(dp), intent(in) :: seed
         real(dp), intent(out) :: root(2)
         logical, intent(in) :: direct
-        type(fortnum_status_t) :: st
-        real(dp) :: residual(2)
-        call multiroot_hybrids(map_residual, 2, [seed, 0.0_dp], root, st, &
-            xtol=1.0e-8_dp, ftol=2.0e-6_dp, max_iter=30, ctx=direct)
-        call map_residual(root, residual, direct)
-        if (maxval(abs(residual)) > 2.0e-5_dp) error stop 'periodic map root'
-    end subroutine
-    subroutine map_residual(x, residual, ctx)
-        real(dp), intent(in) :: x(:)
-        real(dp), intent(out) :: residual(:)
-        class(*), intent(in), optional :: ctx
-        real(dp) :: finish(2), span
-        logical :: direct
-        direct = .false.
-        if (present(ctx)) then
-            select type (ctx)
-            type is (logical)
-                direct = ctx
-            end select
+        type(island_trace_options_t) :: opt
+        type(island_point_t) :: report
+        opt%fixed_steps = 512; opt%root_tol = 2.0e-5_dp
+        if (direct) then
+            call island_periodic_point(direct_coil, [seed, 0.0_dp], 0.0_dp, &
+                                       1, [r0, 0.0_dp], 1, -1, opt, report)
+        else
+            call island_periodic_point(field, [seed, 0.0_dp], 0.0_dp, &
+                                       1, [r0, 0.0_dp], 1, -1, opt, report)
         end if
-        call orbit(x, 1.0_dp, 512, direct, finish, span)
-        residual = finish - x
+        print '(a,i0,a,es12.4)', 'periodic status ', report%status, &
+            ' closure ', report%closure
+        if (report%status /= 0) error stop 'periodic map root'
+        root = report%x
     end subroutine
     subroutine stability(root, direct, trace, defect)
         real(dp), intent(in) :: root(2)
         logical, intent(in) :: direct
         real(dp), intent(out) :: trace, defect
-        real(dp) :: start(2), plus(2), minus(2), end(2), span, jac(2, 2)
-        real(dp), parameter :: delta = 1.0e-4_dp
-        integer :: j
-        start = root
-        call orbit(start, 1.0_dp, 512, direct, end, span)
-        defect = norm2(end - start)
-        do j = 1, 2
-            start = root; start(j) = start(j) + delta
-            call orbit(start, 1.0_dp, 512, direct, plus, span)
-            start(j) = start(j) - 2*delta
-            call orbit(start, 1.0_dp, 512, direct, minus, span)
-            jac(:, j) = (plus - minus)/(2*delta)
-        end do
+        type(island_trace_options_t) :: opt
+        real(dp) :: jac(2, 2)
+        integer :: st
+        opt%fixed_steps = 512; opt%map_delta = 1.0e-4_dp
+        if (direct) then
+            call island_stability(direct_coil, root, 0.0_dp, 1.0_dp, opt, &
+                                  jac, defect, st)
+        else
+            call island_stability(field, root, 0.0_dp, 1.0_dp, opt, &
+                                  jac, defect, st)
+        end if
+        if (st /= 0) error stop 'stability trace'
         trace = jac(1, 1) + jac(2, 2)
     end subroutine
     real(dp) function island_edge(outside, inside, direct, turns, steps) result(edge)
         real(dp), intent(in) :: outside, inside, turns
         logical, intent(in) :: direct
         integer, intent(in) :: steps
-        real(dp) :: a, b, middle, finish(2), span
-        integer :: i
-        a = outside; b = inside
-        call orbit([r0 - a, 0.0_dp], turns, steps, direct, finish, span)
-        if (span <= 2*pi) error stop 'island outside bracket'
-        call orbit([r0 - b, 0.0_dp], turns, steps, direct, finish, span)
-        if (span > 2*pi) error stop 'island inside bracket'
-        do i = 1, 9
-            middle = (a + b)/2
-            call orbit([r0 - middle, 0.0_dp], turns, steps, direct, finish, span)
-            if (span > 2*pi) then
-                a = middle
-            else
-                b = middle
-            end if
-        end do
-        edge = (a + b)/2
+        type(island_trace_options_t) :: opt
+        integer :: st
+        opt%fixed_steps = steps
+        if (direct) then
+            call island_libration_edge(direct_coil, outside, inside, &
+                                [r0, 0.0_dp], [-1.0_dp, 0.0_dp], 0.0_dp, turns, 1, -1, &
+                                       opt, edge, st, scans=9)
+        else
+            call island_libration_edge(field, outside, inside, &
+                                [r0, 0.0_dp], [-1.0_dp, 0.0_dp], 0.0_dp, turns, 1, -1, &
+                                       opt, edge, st, scans=9)
+        end if
+        if (st /= 0) error stop 'island edge bracket or trace'
     end function
 end module
