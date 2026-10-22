@@ -621,3 +621,9 @@ if(TARGET gen_ideal_mhd_coordinates)
     kin6d_test_labels(ideal_mhd_coordinates_exact_regeneration fast CLASSES mhd
         TARGETS gen_ideal_mhd_coordinates)
 endif()
+
+kin6d_test_labels(island_closure_declaration fast CLASSES mhd TARGETS test_island_closure)
+kin6d_test_labels(island_closure_report fast CLASSES mhd TARGETS test_island_closure)
+kin6d_test_labels(island_closure_drive fast CLASSES mhd TARGETS test_island_closure)
+kin6d_test_labels(nonnested_coupled_closed_line_p3 slow CLASSES mhd
+    TARGETS test_nonnested_landreman)
