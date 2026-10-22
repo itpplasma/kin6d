@@ -125,7 +125,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "2b2e5466866e29324c3d71c48b76f38908d30e21")
+set(KIN6D_FORTFEM_REVISION "07ac237f4095230cd20cef308f35ecc166ceec07")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1458,6 +1458,10 @@ add_executable(test_coils_3d test/test_coils_3d.f90)
 target_link_libraries(test_coils_3d PRIVATE kin6d)
 add_test(NAME coils_3d_biot_savart_fourier_oracles COMMAND test_coils_3d)
 set_tests_properties(coils_3d_biot_savart_fourier_oracles PROPERTIES TIMEOUT 120)
+add_executable(test_coil_adapters test/test_coil_adapters.f90)
+target_link_libraries(test_coil_adapters PRIVATE kin6d)
+add_test(NAME coils_3d_makegrid_public_currents COMMAND test_coil_adapters)
+
 add_executable(test_vacuum_surfaces test/test_vacuum_surfaces.f90)
 target_link_libraries(test_vacuum_surfaces PRIVATE kin6d)
 add_test(NAME vacuum_surfaces_sfl_harmonics_oracles COMMAND test_vacuum_surfaces)
@@ -1506,6 +1510,47 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
+# General 3D exterior DtN from FortFEM, reused from draft PR #47.
+target_sources(kin6d_feec_n PRIVATE
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_bem_high_order_products.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_harmonic_field_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_exterior_harmonic_products.f90
+    ${fortfem_SOURCE_DIR}/src/bem/exterior_harmonic_fields.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/equilibrium_boundary_3d.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_exterior.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/ideal_free_boundary_bem3d.f90)
+add_test(NAME ideal_fb_bem3d_derivatives COMMAND test_ideal_free_boundary bem3d)
+set_tests_properties(ideal_fb_bem3d_derivatives PROPERTIES TIMEOUT 1200
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME equilibrium_boundary_3d_harmonic_data
+    COMMAND test_equilibrium_boundary_3d harmonic)
+set_tests_properties(equilibrium_boundary_3d_harmonic_data PROPERTIES TIMEOUT 600
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME ideal_fb_landreman_bem3d_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d)
+set_tests_properties(ideal_fb_landreman_bem3d_axisymmetric PROPERTIES TIMEOUT 1800
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_nonnested_exterior test/test_nonnested_exterior.f90)
+target_link_libraries(test_nonnested_exterior PRIVATE kin6d)
+add_test(NAME nonnested_exterior_3d_vacuum_pilot COMMAND test_nonnested_exterior)
+set_tests_properties(nonnested_exterior_3d_vacuum_pilot PROPERTIES TIMEOUT 600
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_equilibrium_boundary_3d
+    ${fortfem_SOURCE_DIR}/src/mesh/sphere_surface_mesh.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/torus_surface_mesh.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/sphere_curved_panel.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_sphere_curved_panel_products.f90
+    ${fortfem_SOURCE_DIR}/src/mesh/torus_curved_panel.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_torus_curved_panel_products.f90
+    ${fortfem_SOURCE_DIR}/test/parametric_bem_test_geometry.f90
+    test/test_equilibrium_boundary_3d.f90)
+target_link_libraries(test_equilibrium_boundary_3d PRIVATE kin6d)
+add_test(NAME equilibrium_boundary_3d_d6 COMMAND test_equilibrium_boundary_3d)
+set_tests_properties(equilibrium_boundary_3d_d6 PROPERTIES TIMEOUT 240
+    PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 target_link_libraries(kin6d_feec_n PUBLIC
     kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse)
 if(KIN6D_ENABLE_OPENMP)

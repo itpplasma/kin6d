@@ -17,11 +17,20 @@ program test_landreman_free_boundary
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
              ideal_fb_set_drive, ideal_fb_solve, ideal_fb_report_t, ideal_fb_shell_field
+    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
+    use fortfem_parametric_bem_high_order, only: bem_pair_options_t,bem_pair_report_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), delta = LANDREMAN_DELTA
     type(landreman_drive_t) :: drive
     real(dp) :: distance(2), field_error(2), pressure_error(2)
     integer :: st, l
+    character(16) :: argument
+    logical :: use_bem3d
+    use_bem3d=.false.
+    if(command_argument_count()>0) then
+        call get_command_argument(1,argument)
+        use_bem3d=trim(argument)=='bem3d'
+    end if
     print '(a)', compiler_version()
     print '(a)', compiler_options()
     print '(a)', 'mu0=1; epsilon=0; delta=0.01; sources=24; fit=96; quad=48/96'
@@ -220,6 +229,8 @@ contains
         type(landreman_frozen_t) :: frozen
         type(ideal_fb_t) :: fb
         type(ideal_fb_report_t) :: report
+        type(bem_pair_options_t) :: options
+        type(bem_pair_report_t) :: pair_report
         real(dp), allocatable :: chain(:, :), contour(:, :)
         real(dp) :: dr, dz, h, closure, b(3), j(3), psi, p, gp(2), q(3), qd(3, 3), det
         real(dp) :: mapped(3), r, z, projection(2), xi(2), point(3), vac(3)
@@ -245,6 +256,15 @@ contains
         if (st /= 0) error stop 'Landreman init'
         call ideal_fb_set_drive(fb, sampler, st, closure)
         if (st /= 0 .or. closure > 1e-8_dp) error stop 'drive trace closure'
+        if(use_bem3d) then
+            options%maximum_degree=96
+                options%maximum_evaluations=200000000
+            call ideal_fb_use_bem3d(fb,12,options,pair_report,st)
+            print '(a,4i10,es18.9)', 'Landreman 3D pair status failed degree accepted ratio ', &
+                st,pair_report%failed_pairs,pair_report%maximum_degree_used, &
+                pair_report%accepted_pairs,pair_report%error_ratio
+            if(st/=0) error stop 'Landreman 3D BEM adapter'
+        end if
         ! Family 1 has closed lines: target-start stationarity/refinement
         ! test only. No artificial residual shift or manufactured load.
         call ideal_fb_solve(fb, 1e-9_dp, 50, report, st, verbose=.false., &

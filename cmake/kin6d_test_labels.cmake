@@ -627,3 +627,17 @@ kin6d_test_labels(island_closure_report fast CLASSES mhd TARGETS test_island_clo
 kin6d_test_labels(island_closure_drive fast CLASSES mhd TARGETS test_island_closure)
 kin6d_test_labels(nonnested_coupled_closed_line_p3 slow CLASSES mhd
     TARGETS test_nonnested_landreman)
+kin6d_test_labels(coils_3d_makegrid_public_currents fast CLASSES equilibrium
+    TARGETS test_coil_adapters)
+kin6d_test_labels(equilibrium_boundary_3d_d6 slow CLASSES equilibrium
+    TARGETS test_equilibrium_boundary_3d)
+
+kin6d_test_labels(nonnested_exterior_3d_vacuum_pilot slow CLASSES mhd
+    TARGETS test_nonnested_exterior)
+
+kin6d_test_labels(ideal_fb_bem3d_derivatives slow CLASSES mhd
+    TARGETS test_ideal_free_boundary)
+kin6d_test_labels(equilibrium_boundary_3d_harmonic_data slow CLASSES equilibrium
+    TARGETS test_equilibrium_boundary_3d)
+kin6d_test_labels(ideal_fb_landreman_bem3d_axisymmetric slow CLASSES mhd
+    TARGETS test_landreman_free_boundary)

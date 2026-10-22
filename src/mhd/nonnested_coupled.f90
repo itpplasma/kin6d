@@ -62,7 +62,11 @@ module kin6d_nonnested_coupled
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
-    public :: nc_scalar3_i, nc_continue, nc_validate
+    public :: nc_scalar3_i, nc_continue, nc_validate, nc_trig
+
+    interface nc_trig
+        module procedure trig
+    end interface
 
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
@@ -85,6 +89,10 @@ module kin6d_nonnested_coupled
         procedure(nc_scalar3_i), pointer, nopass :: source_3d => null()
         procedure(nc_scalar3_i), pointer, nopass :: g_par_shape_3d => null()
         logical, allocatable :: floating(:) ! V0 boundary nodes of a conductor
+        ! Coil-driven fixed Gamma_c, assembled by nn_attach_exterior. The
+        ! scalar exterior response has zero prescribed periods (I_phi = 0).
+        type(csc_t) :: exterior
+        real(dp), allocatable :: coil_drive(:)
     end type
 
     ! Global index of local entry j of block b of a space is offset +
@@ -173,6 +181,14 @@ contains
         mask(lay%iv) = .false.
         if (.not. present(problem)) return
         if (problem%closure%drive == 'V') mask(lay%iv) = .true.
+        if (allocated(problem%coil_drive)) then
+            mask(lay%ia + 1:lay%ia + lay%na) = .false.
+            mask(lay%il + 1:lay%il + lay%nv) = .false.
+            ! Pin the constant multiplier and the curl-free toroidal A period.
+            ! The latter is R*A_phi = constant in the mode-0 V0 block.
+            mask(lay%il + 1) = .true.
+            mask(lay%ia + field%fs%nn + 1) = .true.
+        end if
         if (.not. allocated(problem%floating)) return
         where (problem%floating) mask(lay%il + 1:lay%il + lay%n0) = .false.
         where (problem%floating) mask(lay%iphi + 1:lay%iphi + lay%n0) = .false.
@@ -234,6 +250,15 @@ contains
         if (allocated(problem%floating)) then
             if (size(problem%floating) /= field%fs%n0) return
             if (any(problem%floating .and. .not. field%fs%sp(0)%bnd)) return
+        end if
+        if (allocated(problem%coil_drive)) then
+            if (problem%closure%drive /= 'I_phi') return
+            if (allocated(problem%floating)) return
+            if (abs(problem%current) > 0) return
+            if (size(problem%coil_drive) /= field%fs%sp(1)%ndof*(2*modes + 1)) return
+            if (.not. all(ieee_is_finite(problem%coil_drive))) return
+            if (problem%exterior%nrow /= size(problem%coil_drive)) return
+            if (problem%exterior%ncol /= size(problem%coil_drive)) return
         end if
         nln = field%fs%nln
         do t = 1, field%fs%mm%topology%n_triangles
@@ -325,6 +350,11 @@ contains
         do t = 1, nt
             call scatter_residual(field, lay, t, rl(:, t), r)
         end do
+        if (allocated(problem%coil_drive)) then
+            r(lay%ia + 1:lay%ia + lay%na) = r(lay%ia + 1:lay%ia + lay%na) &
+                + (csc_matvec(problem%exterior, x(lay%ia + 1:lay%ia + lay%na)) &
+                   - problem%coil_drive)/field%mu0
+        end if
         if (present(boundary_rows)) then
             if (boundary_rows) then
                 status = 0
@@ -408,6 +438,8 @@ contains
         if (.not. status_ok(st)) return
         call append(xbc, 0, lay%ia, 1.0_dp, rows, cols, vals, count)
         call append(ops%s, lay%ia, lay%ia, 1/field%mu0, rows, cols, vals, count)
+        if (allocated(problem%coil_drive)) call append(problem%exterior, &
+            lay%ia, lay%ia, 1/field%mu0, rows, cols, vals, count)
         call append(ops%mg, lay%ia, lay%il, 1.0_dp, rows, cols, vals, count)
         call append(ops%mgt, lay%il, lay%ia, 1.0_dp, rows, cols, vals, count)
         call csc_from_triplet(lay%n, lay%n, rows(:count), cols(:count), &
@@ -459,6 +491,15 @@ contains
         if (any(abs(x - x(rep)) > 0)) return
         call source_load(field, problem, lay, ops%nphi, load, st)
         if (st /= 0) return
+        if (allocated(problem%coil_drive)) then
+            ! The discrete vacuum subspace p=Phi=V=0 is invariant for a
+            ! zero source and zero current. Eliminate its homogeneous blocks
+            ! exactly, so mixed sparse LU cannot inject roundoff currents
+            ! whose relative backward-error scale is itself zero.
+            if (maxval(load(lay%ip + 1:lay%ip + lay%nv)) <= 0 .and. &
+                maxval(abs(x(lay%ip + 1:lay%iv))) <= 0 .and. &
+                abs(problem%current) <= 0) mask(lay%ip + 1:lay%iv) = .true.
+        end if
         w = huge(1.0_dp)
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)
@@ -631,6 +672,8 @@ contains
             end do
         end do
         load = abs(load)
+        if (allocated(problem%coil_drive)) &
+            load(lay%ia + 1:lay%ia + lay%na) = abs(problem%coil_drive)/field%mu0
         load(lay%iv) = abs(problem%current)
         where (nc_fixed(field, problem)) load = 0
         status = 0

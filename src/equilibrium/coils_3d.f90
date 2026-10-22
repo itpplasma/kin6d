@@ -17,6 +17,7 @@ module kin6d_coils_3d
     !! The DFT aliases n -> n + k Nphi; the error is exp(-Nphi d / R) with d
     !! the distance to the nearest coil.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
 
@@ -34,6 +35,7 @@ module kin6d_coils_3d
     end type
 
     public :: coil_set_from_polylines, coil_set_read, coil_set_rotated_copy
+    public :: coil_set_read_makegrid, coil_w7x_normalized_currents
     public :: coil_read_currents
     public :: coil_set_b_cart, coil_set_modes, coil_synthesis, segment_b
 
@@ -78,6 +80,8 @@ contains
 
         status = 1
         if (size(pts, 1) /= 3 .or. sum(npts) /= size(pts, 2) .or. any(npts < 3)) return
+        if (size(npts) < 1) return
+        if (.not. all(ieee_is_finite(pts))) return
         set%ncoil = size(npts)
         allocate (set%first(set%ncoil + 1), set%name(set%ncoil))
         set%name = ''
@@ -166,6 +170,131 @@ contains
         end subroutine
     end subroutine
 
+    subroutine coil_set_read_makegrid(set, path, currents, groups, status)
+        !! Full-file MAKEGRID filaments: metres, effective A-turns along the
+        !! vertex order. The zero-current closing row carries group and name.
+        !! Periods is metadata: no symmetry copies or winding factors are added.
+        !! Only explicit filaments (mirror NUL) are supported.
+        type(coil_set_t), intent(out) :: set
+        character(len=*), intent(in) :: path
+        real(dp), allocatable, intent(out) :: currents(:)
+        integer, allocatable, intent(out) :: groups(:)
+        integer, intent(out) :: status
+        integer :: unit, ios, record_status, pass, nc, np, n, periods, group
+        integer, allocatable :: npts(:)
+        real(dp), allocatable :: points(:, :)
+        real(dp) :: xyz(3), first(3), current, weight, tolerance
+        character(len=4096) :: line
+        character(len=coil_name_len), allocatable :: names(:)
+        character(len=coil_name_len) :: name
+        character(len=32) :: keyword, value
+
+        status = 1
+        open (newunit=unit, file=path, status='old', action='read', iostat=ios)
+        if (ios /= 0) return
+        ! Count first, then read into exact-size arrays. Close on every failure.
+        do pass = 1, 2
+            rewind (unit)
+            call next_data_line(unit, line, ios)
+            if (ios /= 0) exit
+            read (line, *, iostat=ios) keyword, periods
+            if (ios /= 0) exit
+            if (keyword /= 'periods' .or. periods < 1) exit
+            call next_data_line(unit, line, ios)
+            if (ios /= 0) exit
+            if (trim(line) /= 'begin filament') exit
+            call next_data_line(unit, line, ios)
+            if (ios /= 0) exit
+            read (line, *, iostat=ios) keyword, value
+            if (ios /= 0) exit
+            if (keyword /= 'mirror' .or. value /= 'NUL') exit
+            nc = 0; np = 0; n = 0
+            do
+                call next_data_line(unit, line, ios)
+                if (ios /= 0) exit
+                if (trim(line) == 'end') then
+                    if (n /= 0 .or. nc < 1) exit
+                    if (pass == 1) then
+                        allocate (npts(nc), names(nc), currents(nc), groups(nc))
+                        allocate (points(3, np))
+                    else
+                        call coil_set_from_polylines(set, npts, points, names, status)
+                    end if
+                    exit
+                end if
+                read (line, *, iostat=ios) xyz, current
+                if (ios /= 0) exit
+                if (.not. all(ieee_is_finite(xyz))) exit
+                if (.not. ieee_is_finite(current)) exit
+                if (n == 0) then
+                    first = xyz; weight = current
+                end if
+                n = n + 1; np = np + 1
+                if (pass == 2) points(:, np) = xyz
+                ! The closing row has metadata as well as zero current.
+                ! Ordinary vertices may also have zero current (disabled coils).
+                read (line, *, iostat=record_status) xyz, current, group, name
+                if (record_status > 0) exit
+                if (record_status == 0) then
+                    if (abs(current) > 0 .or. n < 4) exit
+                    if (group < 1) exit
+                    tolerance = 64*epsilon(1.0_dp)*max(1.0_dp, maxval(abs(first)))
+                    if (norm2(xyz - first) > tolerance) exit
+                    nc = nc + 1
+                    if (pass == 2) then
+                        points(:, np) = first
+                        npts(nc) = n; names(nc) = name
+                        currents(nc) = weight; groups(nc) = group
+                    end if
+                    n = 0
+                else
+                    ! A coil has one signed current, not a per-segment drive.
+                    tolerance = 64*epsilon(1.0_dp)*max(abs(weight), tiny(1.0_dp))
+                    if (abs(current - weight) > tolerance) exit
+                end if
+            end do
+            if (ios /= 0) exit
+            if (trim(line) /= 'end') exit
+            if (n /= 0 .or. nc < 1) exit
+            if (pass == 2) then
+                ! Reject trailing data rather than accepting a truncated table.
+                call next_data_line(unit, line, ios)
+                if (ios >= 0) status = 1
+            end if
+        end do
+        close (unit)
+        if (status /= 0) then
+            if (allocated(currents)) deallocate (currents)
+            if (allocated(groups)) deallocate (groups)
+        end if
+    end subroutine
+
+    subroutine coil_w7x_normalized_currents(configuration, currents, status)
+        !! Published filament-current ratios, NPC1..5, PCA, PCB, with scale 1.
+        !! Davies et al., arXiv:2607.14722v1, Table 2. These do not supply
+        !! geometry, circuit signs, winding currents or an operating recipe.
+        character(len=*), intent(in) :: configuration
+        real(dp), intent(out) :: currents(7)
+        integer, intent(out) :: status
+        status = 0
+        select case (configuration)
+        case ('EIM')
+            currents = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, 0.0_dp]
+        case ('DMM')
+            currents = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 0.25_dp, 0.25_dp]
+        case ('FTM')
+            currents = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, -0.23_dp, -0.23_dp]
+        case ('SVM')
+            currents = [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 0.6_dp, -0.23_dp, -0.23_dp]
+        case ('WNJ')
+            currents = [1.0_dp, 1.0_dp, 0.5_dp, 1.0_dp, 0.23_dp, -0.08_dp, 0.08_dp]
+        case ('YFK')
+            currents = [1.0_dp, 1.0_dp, 0.5_dp, 1.0_dp, 0.1_dp, 0.13_dp, 0.25_dp]
+        case default
+            currents = 0; status = 1
+        end select
+    end subroutine
+
     subroutine next_data_line(unit, line, ios)
         integer, intent(in) :: unit
         character(len=*), intent(out) :: line
@@ -173,7 +302,10 @@ contains
         do
             read (unit, '(a)', iostat=ios) line
             if (ios /= 0) return
-            if (len_trim(line) > 0 .and. line(1:1) /= '#') return
+            line = adjustl(line)
+            if (len_trim(line) == 0) cycle
+            if (line(1:1) == '#') cycle
+            return
         end do
     end subroutine
 
