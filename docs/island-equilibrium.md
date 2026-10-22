@@ -43,11 +43,33 @@ coupling the KIN6D interior through FortFEM's exterior Dirichlet-to-Neumann
 large Ω may remain an independent verification oracle.
 
 [H] Prioritise I3/I4 after I1: matrix-free generated JVPs, mode-block
-preconditioning and FFT tiles gate all machine work. P3 stays the minimum.
+preconditioning and FFT tiles gate all machine work. P2/P3 remain the verified
+reference path, with P3 the minimum for the existing high-anisotropy gates.
 Start machines with W7-X vacuum 5/5 (EIM), then 5/4, 5/6 and
 edge-island candidates, then finite beta. Use Davies et al.'s public normalised
 currents with synthetic/private filaments outside the public repo. LHD n=1 RMP
 follows only with an LHD-lane calibrated RMP coil set and I11 gates.
+
+[H] Chris's design decision of 2026-10-22 is to retain general FEM,
+non-nested fields and explicit error control as KIN6D's purpose. Slower solves
+than VMEC are acceptable, but the nested path must pursue VMEC-comparable
+DOF counts at matched accuracy. His 19:30 direction makes **high order the
+default path** within general isoparametric FEM: p=4–8 and higher
+isoparametric/spectral elements and/or periodic B-spline (IGA) angular bases,
+with GVEC-like radial splines times high-continuity angular bases. Fourier
+is reserved for exact symmetry directions on this new path. Existing NN2
+Fourier coupling remains the reference implementation. Nested Newton uses
+the exact generated energy Hessian, including a matrix-free Hessian action.
+
+[H] Pursue IH1 → IH2 → IH3 below: high-order nested efficiency first, then
+field-aligned/curve-following charts constructed from a VMEC++ or KIN6D nested
+solution, then estimator-driven hp-adaptive non-nested solves. These local
+charts supersede NN2's unaligned-mesh-only design restriction without imposing
+nested topology on the solved field. Use high p in smooth regions and local
+h-refinement near islands, separatrices and current sheets, keeping DOFs away
+from those regions close to the nested case. High order must demonstrate
+control of parallel-to-perpendicular pollution through chi_parallel/chi_perp
+of 1e6, rather than assuming alignment alone suffices.
 
 ## Literature and the model distinctions
 
@@ -526,6 +548,41 @@ costs its measured number of JVP and preconditioner actions, plus reductions.
 No mode-independent iteration count or wall time is assumed. Mode-block
 preconditioner factor fill can dominate memory and must be measured separately.
 
+### High-order efficiency gates (IH1–IH3)
+
+[H] IH1 closes the proposed nested DOF gate: at the same G6 accuracy and
+matched model/input data, KIN6D uses **at most 2× VMEC++'s independent real
+solution DOFs**. This factor is a hypothesis, not measured performance.
+[The nested benchmark](../benchmarks/nested/README.md) (lane N1) reports DOFs
+and their counting conventions, achieved accuracy, setup/solve wall time,
+cores and peak RSS per code for VMEC++, GVEC, DESC and KIN6D, including its
+high-order variant once available. Report constraint/auxiliary unknowns
+separately so different state parametrisations remain interpretable. A failed
+2× gate leaves IH1 open for basis/order refinement, with no efficiency claim.
+
+[H] Upstream prerequisites are high-order/IGA compatible bases and generic
+p-multigrid or low-order-refined preconditioning in
+[FortFEM](https://github.com/lazy-fortran/fortfem), and sum-factorisation kernels
+generated through [FortSym](https://github.com/lazy-fortran/fortsym), with
+missing generic generation support added there. I3/I4 (matrix-free lane I34)
+consume these operators rather than implementing them privately in KIN6D.
+Target O(p^4) work per 3D tensor-product element at quadrature order O(p),
+and measure operator cost per element versus p=2,3,4,6,8 and higher before
+claiming that scaling. High-order states/observables must agree with the
+converged P2/P3 reference within combined estimated errors on existing ladders,
+with all stricter G0–G8 gates retained.
+
+[H] IH3 freezes each variant's DOFs across chi_parallel/chi_perp=1e2,1e3,
+1e4,1e5,1e6 and compares low and high order at matched total DOFs. Use an
+independent refined oracle at each ratio, fixed sources/boundary data and
+declared pressure/flux scales with absolute floors. Require flattening error
+|G−G_oracle| ≤0.01 and perpendicular heat-flux error ≤1% of the declared
+scale throughout, with high order reducing both errors relative to low order
+at 1e6. Keep the actual physical ratio dependence of G separate from pollution.
+Apply I1's closure-specific flattening interpretation, including no imposed
+whole-island flattening for B without declared mixing. Failure keeps the
+high-anisotropy efficiency claim open.
+
 ### Machine resolution and cost envelope
 
 [H] The following are sizing examples, **not verified sufficient meshes or
@@ -580,11 +637,11 @@ a converged nonlinear solve. At fixed unaligned polynomial space,
 chi_parallel→∞ can lock the pressure into the wrong discrete near-kernel.
 P3 is a starting requirement, not a proof of uniform accuracy.
 
-[H] Use degree at least P3, h/p and anisotropy ladders, with the same B in
-all magnetic/transport operators. Field-aligned local patches or an FCI
-parallel operator are later alternatives if they preserve commuting magnetic
-operators, conservation and consistent primal/JVP/VJP semantics. They must
-cross separatrices without demanding global nested coordinates. First test
+[H] IH1–IH3 use high order, h/p and anisotropy ladders, with the same B in
+all magnetic/transport operators. IH2's field-aligned local charts must preserve
+commuting magnetic operators, conservation and consistent primal/JVP/VJP
+semantics across separatrices without demanding global nested coordinates.
+An FCI parallel operator remains an alternative with those same gates. Test
 an asymptotic-preserving transport correction in its owning library against
 the existing closed-line oracle, rather than changing a pressure gauge ad hoc.
 
@@ -718,6 +775,9 @@ D1–D8. All dependencies are explicit, and the controller chooses promotion.
 | I2 | Independent CK and matched single-volume Taylor oracles and closure C | I1, G1c/G2/G3; regional interfaces beyond the single volume remain unavailable |
 | I3 | Matrix-free generated JVP/VJP action over existing coupled unknowns | I1, assembled comparison on G0/G1, JVP finite-difference check ≤1e−7 and adjoint pairing ≤1e−10 |
 | I4 | Mode-block preconditioner and FFT/tiled action | I3, G0–G3 unchanged; memory grows ≤2.5× when M doubles at fixed mesh, with timed 1/2/4/8-thread ladder |
+| IH1 | High-order nested path with exact-Hessian Newton and upstream sum-factorised actions | Upstream prerequisites above and I3/I4 (I34); existing-ladder agreement with P2/P3 within estimated error, G6, N1 matched-accuracy report and ≤2× VMEC++ DOF gate closed; operator cost per element versus p reported |
+| IH2 | Construct local field-aligned/curve-following charts from a VMEC++ or KIN6D nested solution | IH1, I1 and I3/I4; positive chart Jacobians, commuting/Piola and conservative transfer checks, G0/G6 unchanged within estimated error; charts remain regular through the G4 separatrix while the solved field may change topology |
+| IH3 | hp-adaptive non-nested path with a refinement indicator from I6 island diagnostics/error estimator, high p in smooth regions and local h-refinement at islands/separatrices/current sheets | IH2, I1, I3/I4 and I6; G4/G5/G7 and fixed-DOF pollution gate above; report DOFs inside/outside the marked region, with unmarked-region DOFs ≤1.25× the nested seed at matched accuracy [H] |
 | I5a | B via frozen fitted S and conductivity/current drive on the reference label, solving A+D | I1/I3, G1a/G1d and seed-target reproduction on G4; expose seed-fit and solved-target defects |
 | I5b | Π_B diagnostic and explicit whole-island mixing diagnostic | I5a, G1b on the projection operator itself and G4; expose trace, target and current-solvability defects |
 | I5c | Optional projected solve mode | I5b, G1b/G4 plus topology-change and derivative-status checks; not a prerequisite of machine work |
