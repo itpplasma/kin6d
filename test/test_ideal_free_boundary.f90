@@ -103,6 +103,8 @@ program test_ideal_free_boundary
     use ideal_fb_kink_leaves, only: cylinder_kink_energy, &
         cylinder_kink_energy_jvp, cylinder_kink_energy_vjp
     use ideal_fb_test_field, only: simple_field_t, screw_field_t
+    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
+    use fortfem_parametric_bem_high_order, only: bem_pair_options_t,bem_pair_report_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4.0e-7_dp*pi
     ! Gamma_c ellipse, PF filaments (R, Z, A) and the inner current filament.
@@ -126,6 +128,8 @@ program test_ideal_free_boundary
     select case (trim(mode))
     case ('derivatives')
         call derivative_checks()
+    case ('bem3d')
+        call derivative_checks(.true.)
     case ('vertical')
         call vertical_checks()
     case ('vacuum')
@@ -562,17 +566,46 @@ contains
             dim=1), dim=1)))
     end function
 
-    subroutine derivative_checks()
+    subroutine derivative_checks(use_bem3d)
+        logical, intent(in), optional :: use_bem3d
+        type(bem_pair_options_t) :: options
+        type(bem_pair_report_t) :: report
         type(ideal_fb_t) :: fb
         integer, allocatable :: rowptr(:), colidx(:)
         real(dp), allocatable :: val(:), g(:), gp(:), gm(:), v(:), hv(:), du(:)
-        real(dp) :: lp, lm, l0, h, fd, an, err, scale
+        real(dp) :: lp, lm, l0, h, fd, an, err, scale, modal_energy, full_energy
+        real(dp), allocatable :: trace_test(:)
         integer :: ntor, i, st, p
         do ntor = 0, 1
             windows_on = ntor > 0
             if (windows_on) call make_windows(1.0e5_dp)
-            call build(24, 16, 2, .false., 3, ntor, fb)
+            if (present(use_bem3d)) then
+                call build(8, 6, 2, .false., 3, ntor, fb)
+            else
+                call build(24, 16, 2, .false., 3, ntor, fb)
+            end if
             call ideal_fb_set_drive(fb, sampler, st)
+            if (present(use_bem3d)) then
+                options%maximum_degree=96
+                options%maximum_evaluations=200000000
+                call ideal_fb_use_bem3d(fb,12,options,report,st)
+                write(*,'(a,4i10,es18.9)') 'FB3D pair status failed degree accepted ratio ', &
+                    st,report%failed_pairs,report%maximum_degree_used, &
+                    report%accepted_pairs,report%error_ratio
+                if(st/=0) error stop '3D free-boundary adapter'
+                if(ntor==0) then
+                    trace_test=cos([(2*pi*real(i-1,dp)/fb%nt,i=1,fb%nt)])
+                    modal_energy=2*pi*dot_product(trace_test, &
+                        matmul(fb%s_trace(:,:,0),trace_test))
+                    full_energy=dot_product(trace_test, &
+                        matmul(fb%exterior_3d%s,trace_test))
+                    print '(a,es16.7)', 'FB3D axisymmetric relative energy defect ', &
+                        abs(full_energy/modal_energy-1)
+                    if(abs(full_energy/modal_energy-1)>0.03_dp) &
+                        error stop '3D BEM axisymmetric limit'
+                    deallocate(trace_test)
+                end if
+            end if
             allocate (g(fb%n), gp(fb%n), gm(fb%n), v(fb%n), hv(fb%n), du(fb%n))
             ! Perturbed base state: map, multipliers, potential.
             do i = 1, fb%n
