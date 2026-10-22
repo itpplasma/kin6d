@@ -941,6 +941,12 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_xi_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-xi-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_xi_regeneration.cmake)
+    add_test(NAME nonnested_exact_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_nonnested>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nonnested_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/nonnested-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nonnested_regeneration.cmake)
+    kin6d_test_labels(nonnested_exact_regeneration fast CLASSES mhd TARGETS gen_nonnested)
     add_test(NAME equilibrium_nested_oracle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_nested_oracles>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
@@ -1755,7 +1761,15 @@ set_tests_properties(nonnested_hudson_breslau_chaos_responds_p3 PROPERTIES
     TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN2 (second increment): axisymmetric coupled transport / Ampere / Ohm Newton.
-target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_coupled.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/island_closure.f90
+    src/mhd/nonnested_coupled.f90 src/mhd/island_case.f90 src/mhd/island_report.f90)
+add_executable(test_island_closure test/test_island_closure.f90)
+target_link_libraries(test_island_closure PRIVATE kin6d_nn_solovev_test)
+foreach(case declaration drive report)
+    add_test(NAME island_closure_${case} COMMAND test_island_closure ${case})
+    set_tests_properties(island_closure_${case} PROPERTIES TIMEOUT 180
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
+endforeach()
 add_executable(test_nonnested_coupled test/test_nonnested_coupled.f90)
 target_link_libraries(test_nonnested_coupled PRIVATE kin6d_nn_solovev_test)
 foreach(k 2 3)
@@ -1786,6 +1800,11 @@ add_test(NAME nonnested_coupled_landreman_family1_p2
 set_tests_properties(nonnested_coupled_landreman_family1_p2
     PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
 
+# G0: retain the published P3 high-ratio closed-line oracle and its gates.
+add_test(NAME nonnested_coupled_closed_line_p3
+    COMMAND test_nonnested_landreman 3 1e6 3 4)
+set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
+    TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
     src/mhd/nonnested_beltrami.f90)

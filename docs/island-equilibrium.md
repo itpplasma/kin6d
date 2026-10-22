@@ -310,24 +310,77 @@ A general static equilibrium is not uniquely selected by force balance alone.
 
 ### Case declaration (user view)
 
-[H] Proposed namelist interface: each region selects A/B + D or opt-in C with
-regional invariants. This example selects B's frozen fit, then solves A+D.
+[H] The full proposed namelist interface lets each region select A/B + D or
+opt-in C with regional invariants. The default below selects A+D.
 
 ```fortran
 &island_case
  domain='large_coil_free_torus', chart='cylindrical_R_Z_phi', nfp=5
  boundary='full_3d_bem_exterior_dtn', coils='synthetic_filaments'
- region(1)='plasma', pressure_closure(1)='B_frozen_fit', current_closure(1)='D'
- reference_label='seed_label', p_target='p_profile', lambda_target='lambda_profile'
- fit_on_seed=.true., freeze_fit=.true.
- source='fit_S', conductivity_drive='fit_lambda', heat_boundary='declared_heat_data'
- ! A instead uses declared sources; C instead uses a marked Taylor region.
+ region(1)='plasma', pressure_closure(1)='A', current_closure(1)='D'
+ source='declared_S', conductivity_drive='declared_g', heat_boundary='declared_heat_data'
+ ! B_frozen_fit adds reference_label, target profiles and a frozen seed fit
+ ! (fit_on_seed, freeze_fit, source='fit_S', conductivity_drive='fit_lambda').
+ ! C instead requires a marked Taylor region and its invariants.
  chi_perp_over_parallel=1.e-4, g_perp_over_parallel=1.e-4, I_phi=0.0 ! or V
  limit_path='refine_then_reduce_both_ratios'
  h_levels=1,2,4, p_levels=3,4,5, K_levels=8,16,24
  observables='B,p,D3,width,phase,flattening,target_defect,fit_defect,trace_defect'
 /
 ```
+
+### Implemented I1 interface
+
+[V] `nc_problem_t%closure` defaults to A+D, current drive `I_phi`, Dirichlet
+heat and potential data and the `regularised` target class. Existing NN2
+callers retain their coefficients, source hooks, boundary seed and current.
+`kin6d_island_case:island_case_read` reads the following **single-region
+subset** from an open Fortran unit, leaving a rejected problem unchanged:
+
+```fortran
+&island_case
+ pressure_closure(1)='A', current_closure(1)='D'
+ chi_par=1.e4, chi_perp=1., g_par=1., g_perp=1.e-4
+ heat_boundary='dirichlet', potential_boundary='dirichlet'
+ target_class='regularised', I_phi=0. ! alternatively V=... (full-torus voltage)
+/
+```
+
+[V] The case adapter supplies exactly one `source` or `source_3d` hook and
+Dirichlet values through the seed, with optional existing floating-conductor
+nodes. Positive finite coefficients obey NN2's parallel >= perpendicular
+contract. Conductivity shapes must remain positive at quadrature points.
+There is no implicit zero source or magnetic-null floor. Unknown combinations,
+simultaneous I_phi/V data, nonfinite coefficients and unsupported boundary or
+ideal requests fail explicitly. `nc_validate` and `nc_report_t%message` explain
+rejections. Status 10 is invalid input, 11 unsupported, 12 delegates B to I5,
+13 delegates C to I2/I8, 14 is a magnetic null and 15 invalid pointwise data.
+B/C names are admitted declarations, not implemented A+D fallbacks. Regional
+masks, target fits, profiles, topology and coil settings in the full sketch
+remain owned by their later milestones.
+
+[V] `island_residual_report(field,problem,x,L,p_scale,report,status)` performs
+an explicit diagnostic pass at the supplied state, updating the common field
+from x. It reports Euclidean norms of the free Ampere, gauge, pressure and
+Ohm/current-continuity rows in NN2's phi-mean measure, the signed drive defect,
+net toroidal current, full-torus source/Dirichlet heat-reaction and boundary
+charge balances, algebraic divergence, epsilon_parallel and perpendicular
+Ohmic-force RMS. Positive finite L and p_scale are mandatory. D3 is the common
+background-subtracted finite-test-space norm with its sigma, volume and test
+modes, not a continuous majorant. The report records its quadrature and phi
+rule. It does not turn a small algebraic residual into ideal force balance.
+Physical sampled divergence, Gamma_c and continuous certification remain
+explicitly unavailable, and regional interfaces are not applicable. Derivatives
+use the generated leaves on a fixed smooth branch and equation-level NN2
+linear systems, not differentiated iterations or topology detection.
+
+[V] `island_closure_declaration` checks rejection and default semantics.
+`island_closure_drive` compares independent offset-start V/I solves on three
+P3 meshes and checks heat/charge balance. `island_closure_report` checks the
+components against independently integrated analytic toroidal-field data,
+including a separate D3 load and Riesz solve. These force-incompatible data
+verify operators without being labelled an equilibrium. The existing NN1/NN2
+cases retain their gates. Matrix-free comparisons belong to I3/I4.
 
 ### A. Pressure transport with sources
 

@@ -52,6 +52,8 @@ module kin6d_nonnested_coupled
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND, FORTSPARSE_MEMORY_LOW, &
         native_ordering_available, FORTSPARSE_LU_SUPERNODAL
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
+    use kin6d_island_closure, only: island_closure_t, island_closure_check, &
+        ISLAND_INVALID, ISLAND_NULL_FIELD, ISLAND_BAD_DATA
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
@@ -60,7 +62,7 @@ module kin6d_nonnested_coupled
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
-    public :: nc_scalar3_i, nc_continue
+    public :: nc_scalar3_i, nc_continue, nc_validate
 
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
@@ -72,6 +74,8 @@ module kin6d_nonnested_coupled
     end interface
 
     type :: nc_problem_t
+        type(island_closure_t) :: closure
+        real(dp) :: voltage = 0 ! full-torus loop voltage when drive = V
         real(dp) :: chi_par = 1, chi_perp = 1, g_par = 1, g_perp = 1
         real(dp) :: current = 0 ! net toroidal current, phi-mean int J_phi dR dZ
         integer :: nphi = 0     ! phi points; 0 selects 4 N + 1
@@ -97,6 +101,7 @@ module kin6d_nonnested_coupled
         real(dp) :: history(0:40) = -1  ! max blockwise backward error per step
         real(dp) :: voltage = 0, multiplier = 0, divergence = 0
         integer :: stages = 0, total_steps = 0 ! nc_continue only
+        character(160) :: message = ''
         character(32) :: claim = 'candidate'
     end type
 
@@ -112,6 +117,27 @@ module kin6d_nonnested_coupled
 
     integer, parameter :: chunk = 64
 contains
+    subroutine nc_validate(problem, status, message)
+        type(nc_problem_t), intent(in) :: problem
+        integer, intent(out) :: status
+        character(*), intent(out) :: message
+        call island_closure_check(problem%closure, status, message)
+        if (status /= 0) return
+        status = ISLAND_INVALID
+        message = 'Require finite drive and parallel >= perpendicular > 0'
+        if (.not. all(ieee_is_finite([problem%chi_par, problem%chi_perp, &
+            problem%g_par, problem%g_perp, problem%current, problem%voltage]))) return
+        if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
+        if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
+        message = 'Declare exactly one pressure source hook (zero source is explicit)'
+        if (associated(problem%source) .eqv. associated(problem%source_3d)) return
+        message = 'Declare at most one parallel conductivity shape hook'
+        if (associated(problem%g_par_shape) .and. associated(problem%g_par_shape_3d)) &
+            return
+        status = 0
+        message = 'A+D regularised candidate; Dirichlet data supplied in the seed'
+    end subroutine
+
     function nc_layout(field) result(lay)
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t) :: lay
@@ -146,6 +172,7 @@ contains
         end do
         mask(lay%iv) = .false.
         if (.not. present(problem)) return
+        if (problem%closure%drive == 'V') mask(lay%iv) = .true.
         if (.not. allocated(problem%floating)) return
         where (problem%floating) mask(lay%il + 1:lay%il + lay%n0) = .false.
         where (problem%floating) mask(lay%iphi + 1:lay%iphi + lay%n0) = .false.
@@ -194,6 +221,9 @@ contains
         type(fortsparse_status_t) :: st
         type(identity_t) :: id
         integer :: t, nln, modes
+        character(160) :: message
+        call nc_validate(problem, status, message)
+        if (status /= 0) return
         status = 1
         if (.not. allocated(field%b)) return
         if (field%fs%cyl_r0 > 0) return
@@ -239,26 +269,29 @@ contains
         status = 0
     end subroutine
 
-    subroutine nc_residual(field, problem, x, r, status)
-        ! Residual with zero rows at fixed dofs and tied rows reduced.
+    subroutine nc_residual(field, problem, x, r, status, boundary_rows)
+        ! Default: fixed rows zero and ties reduced. boundary_rows returns
+        ! all weak rows before those reductions and the current drive target.
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
         real(dp), intent(in) :: x(:)
         real(dp), allocatable, intent(out) :: r(:)
         integer, intent(out) :: status
+        logical, intent(in), optional :: boundary_rows
         type(nc_ops_t) :: ops
         call operators(field, problem, ops, status)
         if (status /= 0) return
-        call residual_ops(field, problem, ops, x, r, status)
+        call residual_ops(field, problem, ops, x, r, status, boundary_rows)
     end subroutine
 
-    subroutine residual_ops(field, problem, ops, x, r, status)
+    subroutine residual_ops(field, problem, ops, x, r, status, boundary_rows)
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
         type(nc_ops_t), intent(in) :: ops
         real(dp), intent(in) :: x(:)
         real(dp), allocatable, intent(out) :: r(:)
         integer, intent(out) :: status
+        logical, intent(in), optional :: boundary_rows
         type(nc_layout_t) :: lay
         real(dp), allocatable :: b(:), rl(:, :), jb(:, :), jd(:, :)
         integer :: t, nt, st, failure
@@ -285,10 +318,20 @@ contains
             failure = max(failure, st)
         end do
         !$omp end parallel do
-        if (failure /= 0) return
+        if (failure /= 0) then
+            status = failure
+            return
+        end if
         do t = 1, nt
             call scatter_residual(field, lay, t, rl(:, t), r)
         end do
+        if (present(boundary_rows)) then
+            if (boundary_rows) then
+                status = 0
+                if (.not. all(ieee_is_finite(r))) status = 1
+                return
+            end if
+        end if
         r(lay%iv) = r(lay%iv) - problem%current
         where (nc_fixed(field, problem)) r = 0
         call nc_reduce(field, problem, r)
@@ -347,7 +390,10 @@ contains
                 failure = max(failure, ierr)
             end do
             !$omp end parallel do
-            if (failure /= 0) return
+            if (failure /= 0) then
+                status = failure
+                return
+            end if
             do t = t0, t1
                 call scatter_jacobian(field, lay, t, jb(:, :, t - t0 + 1), &
                     jd(:, :, t - t0 + 1), rows, cols, vals, count, brows, bcols, &
@@ -400,15 +446,14 @@ contains
         target = 1.0e-11_dp; steps = 30
         if (present(tol)) target = tol
         if (present(max_steps)) steps = min(max_steps, 40)
-        if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
-        if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
-        if (associated(problem%source) .eqv. associated(problem%source_3d)) return
-        if (associated(problem%g_par_shape) .and. associated(problem%g_par_shape_3d)) &
-            return
+        call nc_validate(problem, status, report%message)
+        if (status /= 0) return
+        status = 1
         call operators(field, problem, ops, st)
         if (st /= 0) return
         lay = nc_layout(field)
         if (size(x) /= lay%n) return
+        if (problem%closure%drive == 'V') x(lay%iv) = problem%voltage
         mask = nc_fixed(field, problem)
         rep = representative(field, problem)
         if (any(abs(x - x(rep)) > 0)) return
@@ -449,13 +494,26 @@ contains
                 alpha = alpha/2
             end do
             if (ls > 12) then
-                st = 1
+                if (st == 0) st = 1
                 exit
             end if
             x = trial
         end do
         if (factored) call sparse_destroy(solver)
-        if (st /= 0) return
+        if (st /= 0) then
+            status = st
+            select case (st)
+            case (ISLAND_NULL_FIELD)
+                report%message = &
+                    'Null field: A+D requires |B| > 0, with no floor'
+            case (ISLAND_BAD_DATA)
+                report%message = &
+                    'Nonfinite source/field or nonpositive conductivity shape'
+            case default
+                report%message = 'NN2 assembly or nonlinear solve failed'
+            end select
+            return
+        end if
         if (maxval(w) > target) return
         call nc_store(field, x, st)
         if (st /= 0) return
@@ -497,6 +555,9 @@ contains
         if (present(tol)) target = tol
         if (present(decades)) ds_max = decades
         if (present(max_steps)) steps = max_steps
+        call nc_validate(problem, status, report%message)
+        if (status /= 0) return
+        status = 1
         if (ds_max <= 0) return
         if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
         if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
@@ -697,13 +758,19 @@ contains
                 else if (associated(problem%g_par_shape_3d)) then
                     gpar = gpar*problem%g_par_shape_3d(xq, phi)
                 end if
+                status = ISLAND_BAD_DATA
+                if (.not. ieee_is_finite(gpar)) return
+                if (gpar <= 0) return
                 src = source_value(problem, xq, phi)
+                if (.not. ieee_is_finite(src)) return
                 call trig(lay%modes, phi, tr, dtr)
                 bq = matmul(bm, tr)
                 bq(2) = bq(2) + field%f_vac/rr
                 ! |B| = 0 at a quadrature point is a reported failure.
                 if (.not. all(ieee_is_finite(bq))) return
+                status = ISLAND_NULL_FIELD
                 if (dot_product(bq, bq) <= tiny(1.0_dp)) return
+                status = 1
                 gp = [dot_product(pg(1, :), tr), dot_product(pv, dtr)/rr, &
                     dot_product(pg(2, :), tr)]
                 gf = [dot_product(fg(1, :), tr), dot_product(fv, dtr)/rr, &

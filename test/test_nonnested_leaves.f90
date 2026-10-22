@@ -5,7 +5,9 @@ program test_nonnested_leaves
     use kin6d_nonnested_leaves, only: segment_potential, segment_potential_jvp, &
         segment_potential_vjp, fieldline_velocity, fieldline_velocity_jvp, &
         fieldline_velocity_vjp, coupled_current, coupled_current_jvp, &
-        coupled_current_vjp, anisotropic_flux
+        coupled_current_vjp, anisotropic_flux, island_defect_density, &
+        island_defect_density_jvp, island_defect_density_vjp, island_defect_norm, &
+        island_defect_norm_jvp, island_defect_norm_vjp
     use kin6d_coils_3d, only: segment_b, coil_mu0
     implicit none
     real(dp) :: x(6), dx(6), g(6), w(9), y(9), yp(9), ym(9), dy(9), c(5)
@@ -14,6 +16,8 @@ program test_nonnested_leaves
     real(dp) :: vx(5), dvx(5), gv(5), v(2), vp(2), vm(2), dv(2), bv(2)
     real(dp) :: cx(12), cdx(12), cg(12), cj(3), cjp(3), cjm(3), cdj(3), cw(3)
     real(dp) :: q(3), bb(3), gpv(3), jxb(3)
+    real(dp) :: ix(10), idx(10), ig(10), iy(2), iyp(2), iym(2), idy(2)
+    real(dp) :: nx(5), ndx(5), ng(5), cross(3), reference(2)
     integer :: i, j
     h = 1.0e-5_dp
     do i = 1, 4
@@ -39,6 +43,42 @@ program test_nonnested_leaves
         if (err > 1.0e-12_dp) error stop 'one D3 residual'
     end do
     print '(a)', 'PASS: 3D D3 JVP/VJP and axisymmetric contraction'
+    ! I1 independent dot/cross-product oracle plus generated JVP/VJP checks.
+    ix = [0.3_dp, 2.1_dp, -0.4_dp, 0.7_dp, 0.2_dp, -0.6_dp, &
+        0.1_dp, -0.3_dp, 0.4_dp, 0.5_dp]
+    idx = [(sin(real(i, dp)), i=1, 10)]
+    call defects(ix, iy)
+    cross = [ix(2)*ix(9) - ix(3)*ix(8), ix(3)*ix(7) - ix(1)*ix(9), &
+        ix(1)*ix(8) - ix(2)*ix(7)]
+    reference = [dot_product(ix(1:3), ix(4:6))**2/sum(ix(1:3)**2), &
+        ix(10)**2*sum(cross**2)]
+    if (maxval(abs(iy - reference)) > 1.0e-13_dp) error stop 'I1 density oracle'
+    call defects(ix + h*idx, iyp)
+    call defects(ix - h*idx, iym)
+    call island_defect_density_jvp(ix(1), ix(2), ix(3), ix(4), ix(5), ix(6), &
+        ix(7), ix(8), ix(9), ix(10), idx(1), idx(2), idx(3), idx(4), idx(5), &
+        idx(6), idx(7), idx(8), idx(9), idx(10), idy(1), idy(2))
+    call island_defect_density_vjp(ix(1), ix(2), ix(3), ix(4), ix(5), ix(6), &
+        ix(7), ix(8), ix(9), ix(10), 0.7_dp, -0.3_dp, ig(1), ig(2), ig(3), &
+        ig(4), ig(5), ig(6), ig(7), ig(8), ig(9), ig(10))
+    if (maxval(abs(idy - (iyp - iym)/(2*h))) > 1.0e-8_dp) error stop 'I1 density JVP'
+    if (abs(0.7_dp*idy(1) - 0.3_dp*idy(2) - dot_product(idx, ig)) &
+        > 1.0e-12_dp) error stop 'I1 density VJP'
+    nx = [0.7_dp, 0.3_dp, 2.1_dp, 1.2_dp, 0.4_dp]
+    ndx = [0.2_dp, -0.1_dp, 0.3_dp, 0.5_dp, -0.3_dp]
+    call norms(nx, iy)
+    reference = [nx(4)*sqrt(nx(1)/nx(3))/nx(5), sqrt(nx(2)/nx(3))]
+    if (maxval(abs(iy - reference)) > 1.0e-13_dp) error stop 'I1 norm oracle'
+    call norms(nx + h*ndx, iyp)
+    call norms(nx - h*ndx, iym)
+    call island_defect_norm_jvp(nx(1), nx(2), nx(3), nx(4), nx(5), ndx(1), &
+        ndx(2), ndx(3), ndx(4), ndx(5), idy(1), idy(2))
+    call island_defect_norm_vjp(nx(1), nx(2), nx(3), nx(4), nx(5), &
+        0.7_dp, -0.3_dp, ng(1), ng(2), ng(3), ng(4), ng(5))
+    if (maxval(abs(idy - (iyp - iym)/(2*h))) > 1.0e-8_dp) error stop 'I1 norm JVP'
+    if (abs(0.7_dp*idy(1) - 0.3_dp*idy(2) - dot_product(ndx, ng)) &
+        > 1.0e-12_dp) error stop 'I1 norm VJP'
+    print '(a)', 'PASS: I1 physical defects, JVP/VJP and normalization'
     a = [1.0_dp, -0.4_dp, 0.3_dp]; l = [0.4_dp, 0.7_dp, -0.2_dp]
     p = [0.3_dp, 0.1_dp, 1.2_dp]
     do j = 1, 3
@@ -108,6 +148,17 @@ program test_nonnested_leaves
         error stop 'parallel flux'
     print '(a)', 'PASS: NN2 coupled current and flux leaves'
 contains
+    subroutine defects(v, y)
+        real(dp), intent(in) :: v(10)
+        real(dp), intent(out) :: y(2)
+        call island_defect_density(v(1), v(2), v(3), v(4), v(5), v(6), v(7), &
+            v(8), v(9), v(10), y(1), y(2))
+    end subroutine
+    subroutine norms(v, y)
+        real(dp), intent(in) :: v(5)
+        real(dp), intent(out) :: y(2)
+        call island_defect_norm(v(1), v(2), v(3), v(4), v(5), y(1), y(2))
+    end subroutine
     subroutine current(x, y)
         real(dp), intent(in) :: x(12)
         real(dp), intent(out) :: y(3)
