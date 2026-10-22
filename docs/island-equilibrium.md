@@ -24,6 +24,22 @@ A source comparison does not establish that KIN6D meets the proposed gate.
 
 ## Decisions (controller review 2026-10-22)
 
+[H] **Chris's design decision, 2026-10-22: do not clone VMEC.** Its
+flux-surface-aligned grid offers efficient anisotropy resolution and few DOFs,
+but assumes nesting, has a magnetic-axis coordinate singularity, breaks down
+near separatrices/islands and limits radial resolution control. Target a
+general FEM interior with a BEM free boundary through
+[FortFEM's 3D exterior DtN](https://github.com/lazy-fortran/fortfem/blob/main/doc/PARAMETRIC_LAPLACE_BEM_3D.md).
+Use Cartesian/cylindrical or another regular polar-free chart through the
+magnetic axis, or axis-regular bases, with no singular minor-radius 1/r or
+rho^m treatment and no special-cased axis DOFs (G-axis). On nested cases,
+reach or surpass the fastest VMEC++/GVEC/DESC time-to-solution at matched
+accuracy (G-speed), while handling non-nested/island cases in the same
+framework. Field alignment is an optional accelerator, never a structural
+assumption. The unaligned general path must remain complete and gated.
+This goal steers every milestone below and also applies to
+[FortFEM's](https://github.com/lazy-fortran/fortfem) discretisation-lab lane.
+
 [H] Default A (anisotropic pressure transport with declared sources and heat
 boundary data) + D (Ohm's law with V or I_phi) is the “relaxed equilibrium
 as it is”. An ideal statement requires a measured limit sequence.
@@ -51,9 +67,9 @@ currents with synthetic/private filaments outside the public repo. LHD n=1 RMP
 follows only with an LHD-lane calibrated RMP coil set and I11 gates.
 
 [H] Chris's design decision of 2026-10-22 is to retain general FEM,
-non-nested fields and explicit error control as KIN6D's purpose. Slower solves
-than VMEC are acceptable, but the nested path must pursue VMEC-comparable
-DOF counts at matched accuracy. His 19:30 direction makes **high order the
+non-nested fields and explicit error control as KIN6D's purpose, with G-axis
+and G-speed governing the nested path. DOF counts are secondary to measured
+time-to-solution. His 19:30 direction makes **high order the
 default path** within general isoparametric FEM: p=4–8 and higher
 isoparametric/spectral elements and/or periodic B-spline (IGA) angular bases,
 with GVEC-like radial splines times high-continuity angular bases. Fourier
@@ -61,11 +77,12 @@ is reserved for exact symmetry directions on this new path. Existing NN2
 Fourier coupling remains the reference implementation. Nested Newton uses
 the exact generated energy Hessian, including a matrix-free Hessian action.
 
-[H] Pursue IH1 → IH2 → IH3 below: high-order nested efficiency first, then
+[H] Pursue IH1 → IH3 below: high-order nested efficiency first, then
+estimator-driven hp-adaptive non-nested solves. IH2 adds optional
 field-aligned/curve-following charts constructed from a VMEC++ or KIN6D nested
-solution, then estimator-driven hp-adaptive non-nested solves. These local
-charts supersede NN2's unaligned-mesh-only design restriction without imposing
-nested topology on the solved field. Use high p in smooth regions and local
+solution as an accelerator. These local charts relax NN2's rejection of
+alignment without imposing nested topology or replacing the complete, gated
+unaligned path. Use high p in smooth regions and local
 h-refinement near islands, separatrices and current sheets, keeping DOFs away
 from those regions close to the nested case. High order must demonstrate
 control of parallel-to-perpendicular pollution through chi_parallel/chi_perp
@@ -550,15 +567,20 @@ preconditioner factor fill can dominate memory and must be measured separately.
 
 ### High-order efficiency gates (IH1–IH3)
 
-[H] IH1 closes the proposed nested DOF gate: at the same G6 accuracy and
+[H] IH1 is governed by G-axis and G-speed. Its proposed nested DOF gate is
+secondary to time-to-solution: at the same G6 accuracy and
 matched model/input data, KIN6D uses **at most 2× VMEC++'s independent real
 solution DOFs**. This factor is a hypothesis, not measured performance.
 [The nested benchmark](../benchmarks/nested/README.md) (lane N1) reports DOFs
 and their counting conventions, achieved accuracy, setup/solve wall time,
-cores and peak RSS per code for VMEC++, GVEC, DESC and KIN6D, including its
-high-order variant once available. Report constraint/auxiliary unknowns
-separately so different state parametrisations remain interpretable. A failed
-2× gate leaves IH1 open for basis/order refinement, with no efficiency claim.
+hardware, thread count and peak RSS per code for VMEC++, GVEC, DESC and
+KIN6D, including its high-order variant once available. Report constraint/auxiliary unknowns
+separately so different state parametrisations remain interpretable. N1 is
+the G-speed scoreboard: total time-to-solution, including setup, must be
+≤ the fastest of VMEC++, GVEC and DESC at matched accuracy on the same
+hardware and thread count. Report setup/reuse conditions consistently. A
+failed 2× DOF target motivates basis/order refinement but does not override
+G-speed. The speed target remains [H] until measured.
 
 [H] Upstream prerequisites are high-order/IGA compatible bases and generic
 p-multigrid or low-order-refined preconditioning in
@@ -638,9 +660,11 @@ chi_parallel→∞ can lock the pressure into the wrong discrete near-kernel.
 P3 is a starting requirement, not a proof of uniform accuracy.
 
 [H] IH1–IH3 use high order, h/p and anisotropy ladders, with the same B in
-all magnetic/transport operators. IH2's field-aligned local charts must preserve
-commuting magnetic operators, conservation and consistent primal/JVP/VJP
+all magnetic/transport operators. IH2's optional field-aligned local charts
+must preserve commuting magnetic operators, conservation and consistent primal/JVP/VJP
 semantics across separatrices without demanding global nested coordinates.
+The unaligned path independently retains G-axis and all applicable accuracy
+and pollution gates, with nested performance measured by G-speed.
 An FCI parallel operator remains an alternative with those same gates. Test
 an asymptotic-preserving transport correction in its owning library against
 the existing closed-line oracle, rather than changing a pressure gauge ad hoc.
@@ -717,6 +741,8 @@ For exact smooth Pk cases require B order ≥k−0.3 and falling D3 with order
 | gate | problem and independent oracle | acceptance before promotion |
 |---|---|---|
 | G0 | Existing NN1 vacuum/Solov'ev and NN2 manufactured, transport, coupled, island and closed-line cases | Existing thresholds unchanged, including P3 high-ratio gates; assembled and matrix-free states agree to 1e−8 relative |
+| G-axis [H] | Smooth manufactured solutions (MMS) and nested equilibria with the magnetic axis inside an element interior and at a vertex, checked against analytic/refined oracles | No singular coordinate at the axis, no singular 1/r or rho^m treatment and no special-cased axis DOFs; optimal-order convergence in the declared norms for both axis placements, with smooth fields to rounding across the axis |
+| G-speed [H] | N1 nested benchmark scoreboard versus VMEC++, GVEC and DESC on matched model/input data and G6 accuracy | Total time-to-solution including setup ≤ the fastest comparator on the same hardware and thread count; report DOFs and counting conventions, achieved accuracy, setup/solve times and reuse conditions; target remains [H] until measured |
 | G1a | Closure A manufactured anisotropic transport with analytic B,p, finite-ratio sources and heat boundaries | L² p order ≥k+0.6 at ratio one, existing high-ratio oracle gates, source/heat balance ≤1e−9; force-incompatible manufactured data are labelled as such |
 | G1b | Π_B diagnostic operator itself on integrable field, closed rational lines, an analytic helical island and a declared mixing component | Projection idempotence and mean preservation ≤1e−9 in the stated norms; target/invariant mismatch ≤1e−6 after a trace ladder; island-internal profile and whole-island-mixed cases distinguished; no projected-solve claim |
 | G1c | Closure C manufactured forced curl problem for operator checks, then unforced Taylor eigenfields | Forced source residual ≤1e−10; physical unforced case independently meets Beltrami and D3 gates, with no manufactured force admitted as physical equilibrium |
@@ -768,6 +794,9 @@ focused affected tests, while this design PR changes documentation only.
 changes land in the owner first and the consumer pin is updated only after
 rechecking the actual consumer. I-names are independent of equilibrium-core
 D1–D8. All dependencies are explicit, and the controller chooses promotion.
+Every milestone preserves the complete axis-regular unaligned path and
+records progress against G-axis and, on nested cases, G-speed. Neither
+optional charts nor a DOF reduction establishes either gate.
 
 | milestone | smallest complete change | dependency and gate |
 |---|---|---|
@@ -775,9 +804,9 @@ D1–D8. All dependencies are explicit, and the controller chooses promotion.
 | I2 | Independent CK and matched single-volume Taylor oracles and closure C | I1, G1c/G2/G3; regional interfaces beyond the single volume remain unavailable |
 | I3 | Matrix-free generated JVP/VJP action over existing coupled unknowns | I1, assembled comparison on G0/G1, JVP finite-difference check ≤1e−7 and adjoint pairing ≤1e−10 |
 | I4 | Mode-block preconditioner and FFT/tiled action | I3, G0–G3 unchanged; memory grows ≤2.5× when M doubles at fixed mesh, with timed 1/2/4/8-thread ladder |
-| IH1 | High-order nested path with exact-Hessian Newton and upstream sum-factorised actions | Upstream prerequisites above and I3/I4 (I34); existing-ladder agreement with P2/P3 within estimated error, G6, N1 matched-accuracy report and ≤2× VMEC++ DOF gate closed; operator cost per element versus p reported |
-| IH2 | Construct local field-aligned/curve-following charts from a VMEC++ or KIN6D nested solution | IH1, I1 and I3/I4; positive chart Jacobians, commuting/Piola and conservative transfer checks, G0/G6 unchanged within estimated error; charts remain regular through the G4 separatrix while the solved field may change topology |
-| IH3 | hp-adaptive non-nested path with a refinement indicator from I6 island diagnostics/error estimator, high p in smooth regions and local h-refinement at islands/separatrices/current sheets | IH2, I1, I3/I4 and I6; G4/G5/G7 and fixed-DOF pollution gate above; report DOFs inside/outside the marked region, with unmarked-region DOFs ≤1.25× the nested seed at matched accuracy [H] |
+| IH1 | High-order nested path with exact-Hessian Newton and upstream sum-factorised actions | Upstream prerequisites above and I3/I4 (I34); existing-ladder agreement with P2/P3 within estimated error, G6, G-axis and G-speed through N1; report the secondary ≤2× VMEC++ DOF target and operator cost per element versus p |
+| IH2 | Optional accelerator: local field-aligned/curve-following charts from a VMEC++ or KIN6D nested solution | IH1, I1 and I3/I4; positive chart Jacobians, commuting/Piola and conservative transfer checks, G-axis/G-speed and G0/G6 retained; charts remain regular through the G4 separatrix while the solved field may change topology, and the unaligned path remains complete and independently gated |
+| IH3 | hp-adaptive non-nested path with a refinement indicator from I6 island diagnostics/error estimator, high p in smooth regions and local h-refinement at islands/separatrices/current sheets | IH1, I1, I3/I4 and I6, with IH2 optional; G-axis, nested G-speed, G4/G5/G7 and fixed-DOF pollution gate above; report DOFs inside/outside the marked region, with unmarked-region DOFs ≤1.25× the nested seed at matched accuracy [H] |
 | I5a | B via frozen fitted S and conductivity/current drive on the reference label, solving A+D | I1/I3, G1a/G1d and seed-target reproduction on G4; expose seed-fit and solved-target defects |
 | I5b | Π_B diagnostic and explicit whole-island mixing diagnostic | I5a, G1b on the projection operator itself and G4; expose trace, target and current-solvability defects |
 | I5c | Optional projected solve mode | I5b, G1b/G4 plus topology-change and derivative-status checks; not a prerequisite of machine work |
