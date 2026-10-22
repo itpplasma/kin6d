@@ -22,7 +22,19 @@ parser.add_argument("resolution", type=int)
 parser.add_argument("output", type=Path)
 parser.add_argument("--clockwise", action="store_true",
                     help="VMEC boundary uses clockwise poloidal angle (integer oracles)")
+parser.add_argument("--axisymmetric", action="store_true",
+                    help="retain only n=0 in VMEC's discretization")
+parser.add_argument("--ns", type=int, help="VMEC radial points (default: 4*resolution+1)")
+parser.add_argument("--ftol", type=float, default=1e-8,
+                    help="VMEC squared-force stopping tolerance")
 args = parser.parse_args()
+if args.consumer != "vmecpp" and (args.axisymmetric or args.ns is not None
+                                  or args.ftol != 1e-8):
+    parser.error("--axisymmetric, --ns and --ftol apply only to VMEC++")
+if args.ns is not None and args.ns < 5:
+    parser.error("--ns must be at least 5")
+if not np.isfinite(args.ftol) or args.ftol <= 0:
+    parser.error("--ftol must be finite and positive")
 args.input = args.input.resolve()
 args.output = args.output.resolve()
 args.output.mkdir(parents=True, exist_ok=True)
@@ -52,15 +64,16 @@ if args.consumer == "vmecpp":
 
     value = vmecpp.VmecInput.from_file(args.input)
     value.mpol = m + 1
-    value.ntor = m
-    value.ns_array = np.array([4 * m + 1])
-    value.ftol_array = np.array([1e-8])
+    value.ntor = 0 if args.axisymmetric else m
+    value.ns_array = np.array([args.ns if args.ns is not None else 4 * m + 1])
+    value.ftol_array = np.array([args.ftol])
     value.niter_array = np.array([5000])
     value.save("resolved.json")
     result = vmecpp.run(value, max_threads=record["cores"], verbose=True)
     record["solve_wall_s"] = time.perf_counter() - started
     result.wout.save("wout_reference.nc")
     record.update(version=importlib.metadata.version("vmecpp"),
+                  phiedge=float(result.wout.phi[-1]),
                   fsqr=float(result.wout.fsqr), fsqz=float(result.wout.fsqz),
                   fsql=float(result.wout.fsql), ier_flag=int(result.wout.ier_flag))
     from simsopt.mhd import Vmec
