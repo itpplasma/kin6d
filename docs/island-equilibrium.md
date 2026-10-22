@@ -35,11 +35,12 @@ This retains a smooth differentiable branch. Π_B is diagnostic first (G1b).
 Topology detection inside Newton is non-smooth, so a projected solve is later and optional (I5c).
 C is regional and opt-in, and SPEC single volume (G3) verifies only C.
 
-[H] Stage free boundary as I7a, prescribed coil normal trace on a large coil-free
-Ω (exact for vacuum, finite-beta trace defect from Γ_c comparison and domain
-enlargement), then I7b, D6 Γ_c coupling. Before I10 check whether axisymmetric
-Γ_c fits between W7-X plasma/islands and every NPC/planar filament at every φ.
-If not, accepted FortFEM `bem3d` is an I10 prerequisite and I7a is interim.
+[H] Chris's decision of 2026-10-22 supersedes the staged I7a/I7b plan and
+axisymmetric Γ_c fit check: I7 uses full non-axisymmetric 3D BEM from the start,
+coupling the KIN6D interior through FortFEM's exterior Dirichlet-to-Neumann
+(DtN) API. Reuse the adapter in [draft PR #47](https://github.com/itpplasma/kin6d/pull/47)
+(lane `bem3d5`), subject to its consumer gates. A prescribed coil trace on a
+large Ω may remain an independent verification oracle.
 
 [H] Prioritise I3/I4 after I1: matrix-free generated JVPs, mode-block
 preconditioning and FFT tiles gate all machine work. P3 stays the minimum.
@@ -276,7 +277,7 @@ regional invariants. This example selects B's frozen fit, then solves A+D.
 ```fortran
 &island_case
  domain='large_coil_free_torus', chart='cylindrical_R_Z_phi', nfp=5
- boundary='prescribed_coil_normal_trace', coils='synthetic_filaments'
+ boundary='full_3d_bem_exterior_dtn', coils='synthetic_filaments'
  region(1)='plasma', pressure_closure(1)='B_frozen_fit', current_closure(1)='D'
  reference_label='seed_label', p_target='p_profile', lambda_target='lambda_profile'
  fit_on_seed=.true., freeze_fit=.true.
@@ -418,12 +419,10 @@ own residual and uncertainty, never a hidden correction to an ideal solve.
 
 ## Free boundary and external drive
 
-[H] I7a first prescribes the coil normal trace on a large coil-free Ω,
-retaining harmonic/flux data. This is exact for vacuum. At finite beta, report
-the plasma-response trace defect estimated by Γ_c comparison and Ω enlargement,
-or mark it unavailable until measured. I7b then uses **D6 Γ_c FEM–BEM coupling**
-as the production path. Ω and Γ_c are fixed in vacuum, inside every external coil
-and outside plasma/current support. Ω contains a plasma region and a vacuum
+[H] I7 uses **D6 Γ_c FEM–BEM coupling with full non-axisymmetric 3D BEM**
+from the start through FortFEM's exterior DtN API. The fixed boundary Γ_c of Ω
+lies in vacuum, inside every external coil and outside plasma/current support,
+without an axisymmetry requirement. Ω contains a plasma region and a vacuum
 collar where p=0 and J=0. No globally nested plasma boundary is required.
 The plasma extent needs an explicit support/edge law as part of the closure,
 with matching to the vacuum region. For B, open-line pressure may be tied to
@@ -443,12 +442,32 @@ No physical coil lies in a cell declared current-free vacuum.
 
 [H] Decompose exterior response from imposed coil field, enforce the normal
 and tangential field matching through Γ_c, and carry noncontractible fluxes
-explicitly. Reuse M4's axisymmetric-shell per-mode Steklov–Poincaré operators.
-An axisymmetric Γ_c is a computational convenience compatible with a fully
-three-dimensional plasma and coil field. The full-surface FortFEM BEM from
-lane `bem3d` is the extension for a nonaxisymmetric Γ_c, subject to its own
-consumer verification. Its existence in an unmerged lane is not a verified
-capability of this design's baseline. Do not copy its code into the island lane.
+explicitly. Reuse M4's D6 contract and the exterior DtN adapter in
+[KIN6D draft PR #47](https://github.com/itpplasma/kin6d/pull/47) (`bem3d5`),
+subject to consumer verification. Its unmerged status does not establish a
+verified free-boundary capability of this design's baseline.
+
+[V] [FortFEM's general parametric 3D Laplace BEM](https://github.com/lazy-fortran/fortfem/blob/main/doc/PARAMETRIC_LAPLACE_BEM_3D.md)
+provides P1 potential/P0 flux traces on geometry curved to any order and a
+cached exterior DtN API ([#84](https://github.com/lazy-fortran/fortfem/pull/84)).
+Curved P2 potential/P1 flux traces are available through
+[#93](https://github.com/lazy-fortran/fortfem/pull/93).
+The refined-solve flux error estimate in
+[#88](https://github.com/lazy-fortran/fortfem/pull/88) applies to P0 fluxes and
+is conditional on saturation and quadrature convergence. It is not a
+certificate and does not apply to P1 fluxes. Rotational block-circulant P2 assembly
+([#105](https://github.com/lazy-fortran/fortfem/pull/105), queued) reduces
+repeated-sector work, but the KIN6D gate still stalls on coincident pairs at
+quadrature degree 96.
+
+[H] Close generic coincident-pair quadrature and any further high-order trace
+gaps in FortFEM, without duplicating BEM in KIN6D. Add a compressed operator
+(H-matrix/FMM/ACA) there only if measured dense memory and solve/assembly cost
+at W7-X surface sizes require it. Consumer accuracy gates remain unchanged.
+A prescribed coil normal trace on a large coil-free Ω is an optional
+verification oracle, exact for vacuum with the harmonic/flux data retained.
+At finite beta, estimate its plasma-response trace defect against the coupled
+DtN solve and by Ω enlargement, or mark it unavailable until measured.
 
 [H] Virtual casing is retained as an independent exterior oracle and optional
 adapter for a sufficiently smooth enclosing source surface. It is not the
@@ -651,7 +670,7 @@ For exact smooth Pk cases require B order ≥k−0.3 and falling D3 with order
 | G5 | Ideal shielding/current sheets from L15 and H22 versus reconnecting/island branch; separate closures and topology | Correct branch and current jump/outer field within 1% after convergence; do not demand a smooth pointwise current at the sheet |
 | G6 | Nested limit versus VMEC++/GVEC/DESC through D7 and common-core residuals | Matched B,p RMS ≤1e−3, flux ≤1e−4, ι on surviving surfaces ≤1e−3; zero unintended modes ≤1e−10 for axisymmetric data |
 | G7 | Island W, phase and p for A, B and C, with h/p/K/ratio and trace ladders | Finest two widths differ ≤1%, phases ≤0.02 rad, independent trace contribution ≤0.2% of W; normalised pressure error ≤1% where an oracle exists |
-| G8 | Synthetic free boundary, coils and Γ_c/BEM versus direct vacuum and virtual casing | Field/trace error ≤1e−3, interface/Γ_c defect ≤1e−6, displaced seed returns within 1e−3 minor radii; changing Γ_c in the vacuum collar changes observables within estimated errors |
+| G8 | Synthetic free boundary with non-axisymmetric Γ_c and full 3D exterior DtN coupling versus direct coil/vacuum and virtual-casing oracles | Field/trace error ≤1e−3, interface/Γ_c defect ≤1e−6, displaced seed returns within 1e−3 minor radii; independent geometry/trace/quadrature ladders and changing Γ_c in the vacuum collar keep observables within estimated errors |
 | G9 | Matched nonlinear saturated tearing cylinder from T23, not an inferred “Huang JPP 2022” case | Freeze current/helicity/flux and closure comparison before running; W agreement ≤2% in the small-island regime, report large-island closure discrepancy rather than retuning |
 | G10 | W7-X 5/5, 5/4, 5/6 and LHD n=1 RMP, after G0–G9 | All model/residual statuses retained, numerical W and pressure uncertainty ≤1%, phase ≤0.02 rad where defined, extended mode/mesh ladder required if a gate fails |
 
@@ -693,11 +712,6 @@ changes land in the owner first and the consumer pin is updated only after
 rechecking the actual consumer. I-names are independent of equilibrium-core
 D1–D8. All dependencies are explicit, and the controller chooses promotion.
 
-[H] Before I10, check whether axisymmetric Γ_c fits between W7-X plasma/islands
-and all NPC/planar filaments at every φ. The coils hug the plasma, so this is
-open. If none fits, accepted [FortFEM](https://github.com/lazy-fortran/fortfem)
-nonaxisymmetric BEM (`bem3d`) is an I10 prerequisite. I7a remains interim.
-
 | milestone | smallest complete change | dependency and gate |
 |---|---|---|
 | I1 | Closure declaration/admissibility and residual/report extension using existing A/D equations | Design approved, then G0/G1a/G1d; no new solver family |
@@ -708,11 +722,10 @@ nonaxisymmetric BEM (`bem3d`) is an I10 prerequisite. I7a remains interim.
 | I5b | Π_B diagnostic and explicit whole-island mixing diagnostic | I5a, G1b on the projection operator itself and G4; expose trace, target and current-solvability defects |
 | I5c | Optional projected solve mode | I5b, G1b/G4 plus topology-change and derivative-status checks; not a prerequisite of machine work |
 | I6 | Width/phase/G estimator integration and resonant/current-sheet cases | I2/I4/I5a/I5b, G4/G5/G7 and independent nested-limit G6; practical error labels retained |
-| I7a | Prescribed coil normal trace on a large coil-free Ω | I4/I6, direct vacuum oracle; finite-beta plasma-response trace defect from Γ_c comparison and Ω enlargement, unavailable until measured |
-| I7b | Free-B Γ_c coupling through existing D6 plus coil and casing checks | I7a, M4 and accepted bem3d adapter if needed, G8; no duplicate exterior solver |
-| I8 | Marked regional Taylor interface coupled to A/B exterior pressure closure | I2/I5a/I7b, interface MMS and traction/jump gates of G5/G8, helicity/flux compatibility checked |
+| I7 | Free-B Γ_c coupling through D6 with full non-axisymmetric 3D BEM and exterior DtN from the start, reusing PR #47 (`bem3d5`) | I4/I6, M4 and accepted FortFEM/consumer adapter with coincident-pair quadrature resolved, G8 plus coil and casing checks; optional large-Ω prescribed-trace oracle, no duplicate exterior solver |
+| I8 | Marked regional Taylor interface coupled to A/B exterior pressure closure | I2/I5a/I7, interface MMS and traction/jump gates of G5/G8, helicity/flux compatibility checked |
 | I9 | Small-island nonlinear saturation comparison and machine-size synthetic memory trial | I6–I8, G9 plus measured action/preconditioner memory and cost; no production machine claim |
-| I10 | W7-X vacuum 5/5 EIM, then 5/4, 5/6, edge-island candidates, then finite beta | I9 and prior required gates, Γ_c fit check above (accepted bem3d if it fails), G10 per case; public currents, synthetic/private filaments outside public repo |
+| I10 | W7-X vacuum 5/5 EIM, then 5/4, 5/6, edge-island candidates, then finite beta | I9 and prior required gates including I7 full 3D BEM/DtN, G10 per case; public currents, synthetic/private filaments outside public repo |
 | I11 | Full-torus LHD helix plus n=1 RMP and sidebands | I9 and prior required gates plus calibrated RMP coil set owned by LHD lane, G10 with K≥24,32,48 extended as needed; no symmetry reduction to nfp=10 |
 
 [H] Open mathematical risks are the smooth ideal limit at dense resonances,
