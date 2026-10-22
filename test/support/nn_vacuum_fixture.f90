@@ -66,7 +66,8 @@ contains
         complex(dp) :: bn(3, 1, 1)
         integer :: st, part
         rz(:, 1) = x
-        call coil_set_modes(coils, [current], rz, nphi, [active_mode], bn, st)
+        call coil_set_modes(coils, [current], rz, max(nphi, 4*active_mode + 1), &
+            [active_mode], bn, st)
         if (st /= 0) error stop 'coil Fourier'
         a = 0
         do part = 1, 2

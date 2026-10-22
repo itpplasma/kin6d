@@ -621,3 +621,17 @@ if(TARGET gen_ideal_mhd_coordinates)
     kin6d_test_labels(ideal_mhd_coordinates_exact_regeneration fast CLASSES mhd
         TARGETS gen_ideal_mhd_coordinates)
 endif()
+
+foreach(k 2 3)
+    foreach(n 1 2)
+        kin6d_test_labels(nonnested_matrixfree_reduction_p${k}_n${n} slow CLASSES mhd
+            TARGETS test_nonnested_coupled)
+        kin6d_test_labels(nonnested_matrixfree_island_p${k}_n${n} slow CLASSES mhd
+            TARGETS test_nonnested_island)
+    endforeach()
+endforeach()
+kin6d_test_labels(nonnested_matrixfree_field_period slow CLASSES mhd
+    TARGETS test_nonnested_coupled)
+
+kin6d_test_labels(nonnested_matrixfree_thread_invariance slow CLASSES mhd
+    TARGETS test_nonnested_island)

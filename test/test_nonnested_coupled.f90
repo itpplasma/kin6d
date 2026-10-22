@@ -34,7 +34,7 @@ program test_nonnested_coupled
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_PSI, &
         EQ_P
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
-        nc_layout, nc_residual, nc_jacobian, nc_solve, nc_fixed
+        nc_layout, nc_residual, nc_jacobian, nc_jvp, nc_solve, nc_fixed
     implicit none
     type(free_b_field_t) :: field
     type(nc_problem_t) :: problem
@@ -91,6 +91,19 @@ program test_nonnested_coupled
         if (maxval(d0) > 1.0e-10_dp .or. dn > 1.0e-12_dp) error stop 'reduction'
         if (abs(ed(2) - ed(1)) > 1.0e-8_dp*ed(1)) error stop 'reduction D3'
         print '(a)', 'PASS: NN2 coupled Fourier solve reduces to n = 0'
+    case ('matrixfree')
+        modes = 1
+        if (command_argument_count() >= 4) then
+            call get_command_argument(4, arg)
+            read (arg, *) modes
+        end if
+        if (command_argument_count() >= 5) then
+            call get_command_argument(5, arg)
+            read (arg, *) problem%nfp
+        end if
+        tol_run = 1.0e-13_dp
+        call run(8, .true., .false., ef(1), ep(1), ev(1), ed(1), eo(1))
+        print '(a)', 'PASS: dense / FFT-JVP Newton iterates and solution'
     case ('offset')
         call run(16, .false., .true., ef(1), ep(1), ev(1), ed(1), eo(1))
         print '(a,es12.4)', 'offset return difference ', eo(1)
@@ -112,7 +125,9 @@ contains
         type(flux_mesh_t) :: fm
         type(nc_report_t) :: report
         type(equilibrium_residual_t) :: stress
-        real(dp), allocatable :: rings(:), points(:, :)
+        real(dp), allocatable :: rings(:), points(:, :), xd(:), td(:, :), tf(:, :)
+        type(nc_report_t) :: dense_report
+        real(dp) :: difference
         real(dp) :: values(EQ_VALUES, 128), b(2), psi, area, phi_max
         real(dp) :: sum_b, sum_p, theta, xq(2), wq, basis(3, 64), diffs(4)
         integer :: i, j, t, q, st, statuses(128)
@@ -144,8 +159,27 @@ contains
         v_exact = 2*acos(-1.0_dp)*r0*r0*pp/g0
         call seed(0.1_dp, 0.0_dp, x)
         if (check_jacobian) call jacobian_check(x)
+        if (trim(mode) == 'matrixfree') then
+            xd = x
+            call nc_solve(field, problem, xd, dense_report, st, &
+                tol=tol_run, iterates=td)
+            if (st /= 0) error stop 'dense comparison Newton'
+            problem%matrix_free = .true.
+            call nc_solve(field, problem, x, report, st, tol=tol_run, iterates=tf)
+            print '(a,i0,a,40i6)', 'matrix-free status ', st, ' Krylov ', &
+                report%krylov_iterations(:report%newton_steps)
+            if (st /= 0) error stop 'matrix-free comparison Newton'
+            if (report%newton_steps /= dense_report%newton_steps) &
+                error stop 'Newton iterate count'
+            difference = maxval(abs(td(:, :report%newton_steps) &
+                - tf(:, :report%newton_steps)))/maxval(abs(td))
+            print '(a,es12.4)', 'relative Newton iterate difference ', difference
+            if (difference > 1.0e-10_dp) error stop 'Newton iterate equivalence'
+            if (maxval(abs(x - xd))/maxval(abs(xd)) > 1.0e-10_dp) &
+                error stop 'solution equivalence'
+        end if
         ! The offset comparison converges both solves to the rounding floor.
-        call nc_solve(field, problem, x, report, st, &
+        if (trim(mode) /= 'matrixfree') call nc_solve(field, problem, x, report, st, &
             tol=merge(1.0e-13_dp, tol_run, offset))
         print '(a,i0,a,i0,a,15es9.1)', 'P', k, ' nr=', nr, ' Newton ', &
             report%history(:report%newton_steps)
@@ -215,7 +249,7 @@ contains
                 s(lay%ip + n) = pp*ps
             end do
             s(lay%iv) = voltage
-            fixed = nc_fixed(field)
+            fixed = nc_fixed(field, problem)
             where (fixed) s = 0
         end subroutine
 
@@ -242,7 +276,7 @@ contains
             logical, allocatable :: fixed(:)
             real(dp) :: h, err
             integer :: n, st
-            fixed = nc_fixed(field)
+            fixed = nc_fixed(field, problem)
             allocate (d(lay%n))
             xs = abs(x0)
             do n = 1, lay%n
@@ -260,6 +294,11 @@ contains
             if (st /= 0) error stop 'Jacobian'
             jd = csc_matvec(jac, d)
             where (fixed) jd = 0
+            call nc_jvp(field, problem, x0 + d, d, rp, st)
+            if (st /= 0) error stop 'FFT JVP'
+            err = norm2(rp - jd)/norm2(jd)
+            print '(a,es12.4)', 'FFT JVP vs assembled Jacobian ', err
+            if (err > 1.0e-10_dp) error stop 'FFT JVP equivalence'
             h = 1.0e-4_dp
             call nc_residual(field, problem, x0 + d*(1 + h), rp, st)
             if (st /= 0) error stop 'residual +'
