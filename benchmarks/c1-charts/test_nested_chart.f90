@@ -6,7 +6,7 @@ program test_nested_chart
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_nested_chart, only: nested_map_t, nested_point_t, nested_map_read, &
         nested_map_eval, nested_map_invert, nested_field_direction, nested_forcing, &
-        build_ogrid_chart, CHART_ALIGNED, CHART_UNALIGNED
+        build_ogrid_chart, CHART_ALIGNED, CHART_UNALIGNED, CHART_FIELDLINE
     implicit none
     type(nested_map_t) :: map
     character(512) :: path
@@ -123,6 +123,7 @@ contains
         print '(a,a,2es10.2)', label, ' jet errors ', err1, err2
         call check_chart(map, CHART_ALIGNED, label//' aligned')
         call check_chart(map, CHART_UNALIGNED, label//' unaligned')
+        call check_fieldline(map, label)
     end subroutine
 
     subroutine check_chart(map, kind, label)
@@ -185,4 +186,61 @@ contains
             call expect(surface < 1.e-10_dp, label//' boundary nodes on s = 1')
         end if
     end subroutine
+
+    subroutine check_fieldline(map, label)
+        ! Zeta lines of the field-line chart keep theta + lambda - iota zeta
+        ! fixed; a non-integer iota/nfp must be rejected.
+        type(nested_map_t), intent(in) :: map
+        character(*), intent(in) :: label
+        integer, allocatable :: vertices(:, :)
+        real(dp), allocatable :: geometry(:, :, :)
+        logical, allocatable :: outer(:)
+        real(dp) :: nodes(4), q(3), angle(4), drift, lam, rho, theta
+        integer :: status, e, i, j, t, a, nq
+        real(dp), parameter :: pi = acos(-1.0_dp)
+        nq = size(nodes)
+        nodes = [(-cos(pi*i/(nq - 1)), i=0, nq - 1)]
+        call build_ogrid_chart(map, CHART_FIELDLINE, 3, 6, nodes, 0.35_dp, &
+                               vertices, geometry, outer, status)
+        if (abs(map%iota(1)/map%nfp - nint(map%iota(1)/map%nfp)) > 1.e-10_dp) then
+            call expect(status /= 0, label//' fieldline rejects non-integer iota/nfp')
+            return
+        end if
+        call expect(status == 0, label//' fieldline build')
+        if (status /= 0) return
+        drift = 0
+        do e = 1, size(vertices, 2)
+            if (.not. outer(e)) cycle
+            do j = 1, nq
+                do i = 2, nq
+                    do t = 1, nq
+                        a = i + nq*(j - 1) + nq*nq*(t - 1)
+                        q = 0
+                        call nested_map_invert(map, geometry(:, a, e), q, status)
+                        rho = hypot(q(1), q(2))
+                        theta = atan2(q(2), q(1))
+                        lam = lambda_at(map, rho, theta, q(3))
+                        angle(t) = theta + lam - map%iota(1)*q(3)
+                    end do
+                    angle = modulo(angle - angle(1) + pi, 2*pi) - pi
+                    drift = max(drift, maxval(abs(angle)))
+                end do
+            end do
+        end do
+        call expect(drift < 1.e-9_dp, label//' fieldline zeta lines follow b')
+        print '(a,a,es10.2)', label, ' fieldline drift ', drift
+    end subroutine
+
+    real(dp) function lambda_at(map, rho, theta, zeta)
+        type(nested_map_t), intent(in) :: map
+        real(dp), intent(in) :: rho, theta, zeta
+        integer :: j, k
+        lambda_at = 0
+        do j = 1, map%nmode
+            do k = 1, map%nk
+                lambda_at = lambda_at + map%ls(k, j)*rho**(map%m(j) + 2*(k - 1)) &
+                    *sin(map%m(j)*theta - map%n(j)*zeta)
+            end do
+        end do
+    end function
 end program

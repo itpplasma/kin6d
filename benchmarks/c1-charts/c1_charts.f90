@@ -71,11 +71,11 @@ contains
 end module
 
 program c1_charts
-    ! Usage: c1_charts MAP {aligned|unaligned} P N NPHI CHI_RATIO [TOL] [RHO_CORE]
+    ! Usage: c1_charts MAP {aligned|fieldline|unaligned} P N NPHI CHI_RATIO [TOL] [RHO_CORE]
     ! Prints one CSV row (header with --header as the only argument).
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_nested_chart, only: nested_map_read, build_ogrid_chart, &
-        CHART_ALIGNED, CHART_UNALIGNED
+        CHART_ALIGNED, CHART_UNALIGNED, CHART_FIELDLINE
     use fortfem_gll_line, only: gll_rule
     use fortfem_tensor_mesh, only: tensor_mesh_t, build_tensor_mesh
     use fortfem_tensor_operator, only: tensor_operator_t, build_tensor_operator, &
@@ -112,7 +112,8 @@ program c1_charts
     select case (trim(chart))
     case ('aligned'); kind = CHART_ALIGNED
     case ('unaligned'); kind = CHART_UNALIGNED
-    case default; error stop 'chart must be aligned or unaligned'
+    case ('fieldline'); kind = CHART_FIELDLINE
+    case default; error stop 'chart must be aligned, fieldline or unaligned'
     end select
     call nested_map_read(trim(path), map, status)
     if (status /= 0) error stop 'map read failed'
@@ -144,7 +145,7 @@ program c1_charts
     x = 0; zero = 0
     coef_seconds = 0
     call system_clock(t0)
-    call solve_tensor_diffusion(mesh, coefficient, rhs, tol, x, info, maxiter=20000)
+    call solve_tensor_diffusion(mesh, coefficient, rhs, tol, x, info, maxiter=4000)
     call system_clock(t1)
     t_solve = real(t1 - t0, dp)/rate
     t_coef = coef_seconds

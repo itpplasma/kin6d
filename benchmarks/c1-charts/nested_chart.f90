@@ -12,8 +12,8 @@ module kin6d_nested_chart
     private
     public :: nested_map_t, nested_point_t, nested_map_read, nested_map_eval
     public :: nested_map_invert, nested_field_direction, nested_forcing
-    public :: build_ogrid_chart, CHART_ALIGNED, CHART_UNALIGNED
-    integer, parameter :: CHART_ALIGNED = 1, CHART_UNALIGNED = 2
+    public :: build_ogrid_chart, CHART_ALIGNED, CHART_UNALIGNED, CHART_FIELDLINE
+    integer, parameter :: CHART_ALIGNED = 1, CHART_UNALIGNED = 2, CHART_FIELDLINE = 3
     real(dp), parameter :: pi = acos(-1.0_dp)
     type :: nested_map_t
         integer :: nfp = 1, nmode = 0, nk = 0, sign_theta = 1
@@ -321,7 +321,10 @@ contains
         ! layout (core square + four rotated ring blocks; reference direction 1
         ! radial, 2 tangent, 3 zeta). Ring blocks follow the curve family
         ! C(rho, theta, zeta): nested surfaces for CHART_ALIGNED, scaled copies
-        ! of the boundary about its m=0 centre for CHART_UNALIGNED. The core is
+        ! of the boundary about its m=0 centre for CHART_UNALIGNED. For
+        ! CHART_FIELDLINE the logical angle is the straight-field-line angle
+        ! theta + lambda = theta_logical + iota zeta, so zeta lines are field
+        ! lines; plain periodic vertex IDs then require iota/nfp integer. The core is
         ! a Coons patch of the rho_core curve in (R, Z), so the axis is an
         ! ordinary interior point. Vertex IDs are combinatorial and periodic in
         ! zeta, which identifies the field-period end planes. nodes are the
@@ -337,7 +340,13 @@ contains
         integer :: nq, ng, ne, e, iz, block, ix, iy, a, c, bits(3), n2, &
                    corner(3), idx(3), k, lo(3)
         status = 1
-        if (kind /= CHART_ALIGNED .and. kind /= CHART_UNALIGNED) return
+        if (kind < CHART_ALIGNED .or. kind > CHART_FIELDLINE) return
+        if (kind == CHART_FIELDLINE) then
+            if (map%nk > 1) then
+                if (any(abs(map%iota(2:)) > 1.e-10_dp)) return
+            end if
+            if (abs(map%iota(1)/map%nfp - nint(map%iota(1)/map%nfp)) > 1.e-10_dp) return
+        end if
         if (n < 1 .or. nphi < 1 .or. size(nodes) < 2) return
         if (rho_core <= 0 .or. rho_core >= 1) return
         nq = size(nodes)
@@ -453,7 +462,8 @@ contains
             type(nested_point_t) :: pt
             integer :: j
             theta = map%sign_theta*theta_logical
-            if (kind == CHART_ALIGNED) then
+            if (kind == CHART_FIELDLINE) theta = sfl_theta(rho, theta + map%iota(1)*zt, zt)
+            if (kind /= CHART_UNALIGNED) then
                 call nested_map_eval(map, rho*cos(theta), rho*sin(theta), zt, pt)
                 rz = [pt%r, pt%z]
                 return
@@ -468,6 +478,42 @@ contains
             end do
             call nested_map_eval(map, cos(theta), sin(theta), zt, pt)
             rz = centre + rho*([pt%r, pt%z] - centre)
+        end function
+
+        function sfl_theta(rho, target, zt) result(theta)
+            ! Solve theta + lambda(rho, theta, zeta) = target by Newton.
+            real(dp), intent(in) :: rho, target, zt
+            real(dp) :: theta, f, df
+            type(nested_point_t) :: pt
+            integer :: it
+            theta = target
+            do it = 1, 50
+                call nested_map_eval(map, rho*cos(theta), rho*sin(theta), zt, pt)
+                ! The point jets hold lambda derivatives only, so sum lambda here.
+                f = theta + lambda_value(rho, theta, zt) - target
+                df = 1 - rho*sin(theta)*pt%lam(1) + rho*cos(theta)*pt%lam(2)
+                theta = theta - f/df
+                if (abs(f) < 1.e-15_dp) exit
+            end do
+        end function
+
+        real(dp) function lambda_value(rho, theta, zt)
+            real(dp), intent(in) :: rho, theta, zt
+            integer :: j
+            lambda_value = 0
+            do j = 1, map%nmode
+                lambda_value = lambda_value + rho**map%m(j) &
+                    *poly(map%ls(:, j), rho*rho)*sin(map%m(j)*theta - map%n(j)*zt)
+            end do
+        end function
+
+        real(dp) function poly(c, x)
+            real(dp), intent(in) :: c(:), x
+            integer :: k
+            poly = 0
+            do k = size(c), 1, -1
+                poly = poly*x + c(k)
+            end do
         end function
     end subroutine
 
