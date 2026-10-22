@@ -65,17 +65,19 @@ module kin6d_equilibrium_nonnested
     end type
 contains
     subroutine nn_build(mesh, order, modes, centre, radial_scale, f_vac, mu0, &
-                        field, status)
+                        field, status, cylinder_r0)
         type(flux_mesh_t), intent(in) :: mesh
         integer, intent(in) :: order, modes
         real(dp), intent(in) :: centre(2), radial_scale, f_vac, mu0
         type(free_b_field_t), intent(out) :: field
         integer, intent(out) :: status
+        real(dp), optional, intent(in) :: cylinder_r0
         status = 1
         if (modes < 0 .or. radial_scale <= 0 .or. mu0 <= 0) return
         if (.not. all(ieee_is_finite([centre, radial_scale, f_vac, mu0]))) return
         field%mesh = mesh
-        call meridian_feec_build(mesh%mm, order, field%fs, status)
+        call meridian_feec_build(mesh%mm, order, field%fs, status, &
+            cylinder_r0=cylinder_r0)
         if (status /= 0) return
         call meridian_point_basis_init(field%fs, field%pb, status)
         if (status /= 0) return
@@ -284,7 +286,7 @@ contains
         real(dp), intent(in) :: point(3) ! (R,Z,phi)
         real(dp), intent(out) :: value(EQ_VALUES)
         integer, intent(out) :: status
-        real(dp) :: u, theta, xi, eta, x(2), v2(3, field%fs%sp(2)%nloc)
+        real(dp) :: u, theta, xi, eta, radius, x(2), v2(3, field%fs%sp(2)%nloc)
         real(dp) :: v0(3, field%fs%nl0), b(3), psi
         complex(dp) :: bn(3), phase
         integer :: t, n
@@ -308,7 +310,9 @@ contains
             b = b + merge(1, 2, n == 0)*real(bn*phase, dp)
         end do
         value(EQ_BR) = b(1); value(EQ_BZ) = b(3)
-        value(EQ_BPHI) = b(2) + field%f_vac/point(1)
+        radius = point(1)
+        if (field%fs%cyl_r0 > 0) radius = field%fs%cyl_r0
+        value(EQ_BPHI) = b(2) + field%f_vac/radius
         if (allocated(field%p)) then
             call meridian_point_basis(field%fs, field%pb, 0, t, xi, eta, x, &
                 v0, status)
@@ -322,8 +326,8 @@ contains
             if (status /= 0) return
             psi = dot_product(v0(1, :), field%psi(field%fs%sp(0)%dof(:, t)))
             value(EQ_PSI) = psi
-            value(EQ_PSI_R) = point(1)*b(3)
-            value(EQ_PSI_Z) = -point(1)*b(1)
+            value(EQ_PSI_R) = radius*b(3)
+            value(EQ_PSI_Z) = -radius*b(1)
             if (.not. allocated(field%p)) then
                 call axisymmetric_pressure(psi - field%psi_bound, field%pprime, &
                     value(EQ_P))
@@ -350,14 +354,16 @@ contains
         real(dp), intent(in) :: point(3)
         real(dp), intent(out) :: velocity(2)
         integer, intent(out) :: status
-        real(dp) :: value(EQ_VALUES), background
+        real(dp) :: value(EQ_VALUES), background, radius
         velocity = 0
         call nn_point(field, point, value, status)
         if (status /= 0) return
         status = 1
         if (abs(value(EQ_BPHI)) <= tiny(1.0_dp)) return
-        background = field%f_vac/point(1)
-        call fieldline_velocity(point(1), value(EQ_BR), value(EQ_BZ), &
+        radius = point(1)
+        if (field%fs%cyl_r0 > 0) radius = field%fs%cyl_r0
+        background = field%f_vac/radius
+        call fieldline_velocity(radius, value(EQ_BR), value(EQ_BZ), &
             value(EQ_BPHI) - background, background, velocity(1), velocity(2))
         status = 0
     end subroutine

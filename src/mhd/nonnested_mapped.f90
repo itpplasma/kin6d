@@ -19,6 +19,7 @@ module kin6d_nonnested_mapped
         nn_factor_solve_real, nn_factor_free, nn_divergence
     implicit none
     private
+    public :: map_metric_t, METRIC_IDENTITY, nn_harmonic_forms
     public :: nn_map_t, nn_map_build, nn_map_jet, nn_mapped_report_t
     public :: nn_mapped_data, nn_mapped_solve, nn_mapped_error
     public :: nn_map_function_i, nn_vector_field_i
@@ -126,6 +127,74 @@ contains
         df(2, 2) = y(1)/x(1)
         df(3, :) = [g(2, 1), up(2)/x(1), g(2, 2)]
         jac = df(2, 2)*(g(1, 1)*g(2, 2) - g(1, 2)*g(2, 1))
+    end subroutine
+
+    subroutine nn_harmonic_forms(field, metric, nphi, g, energy, volume, status)
+        ! Unit harmonic h=e_phi/R: <V2,K h>, <h,K h>, and int dR dZ/R.
+        ! The same forms serve the vacuum and Taylor closures.
+        type(free_b_field_t), intent(in) :: field
+        type(map_metric_t), intent(in) :: metric
+        integer, intent(in) :: nphi
+        real(dp), allocatable, intent(out) :: g(:)
+        real(dp), intent(out) :: energy, volume
+        integer, intent(out) :: status
+        real(dp), allocatable :: local(:, :), hk(:), vol(:)
+        integer :: modes, nb, nl, n2, nt, t, b, failure, st
+        modes = ubound(field%b, 2); nb = 2*modes + 1
+        nl = field%fs%sp(2)%nloc; n2 = field%fs%sp(2)%ndof
+        nt = field%fs%mm%topology%n_triangles
+        allocate (local(nl*nb, nt), hk(nt), vol(nt))
+        failure = 0
+        !$omp parallel do default(shared) private(t, st) schedule(static) &
+        !$omp& reduction(max:failure)
+        do t = 1, nt
+            call element(t, local(:, t), hk(t), vol(t), st)
+            failure = max(failure, st)
+        end do
+        !$omp end parallel do
+        status = failure
+        if (status /= 0) return
+        allocate (g(nb*n2)); g = 0
+        do t = 1, nt
+            do b = 0, nb - 1
+                g(b*n2 + field%fs%sp(2)%dof(:, t)) = &
+                    g(b*n2 + field%fs%sp(2)%dof(:, t)) + local(b*nl + 1:(b + 1)*nl, t)
+            end do
+        end do
+        energy = sum(hk); volume = sum(vol)
+    contains
+        subroutine element(t, local, hk, vol, status)
+            integer, intent(in) :: t
+            real(dp), intent(out) :: local(:), hk, vol
+            integer, intent(out) :: status
+            real(dp) :: x(2), w, basis(3, nl), pts(3, nphi), kt(3, 3, nphi)
+            real(dp) :: tr(0:nb - 1), h(3), kh(3), radius
+            integer :: q, j, b
+            local = 0; hk = 0; vol = 0
+            do q = 1, field%fs%nq
+                call meridian_qpoint(field%fs, 2, t, q, x, w, basis, status)
+                if (status /= 0) return
+                radius = x(1)
+                if (field%fs%cyl_r0 > 0) radius = field%fs%cyl_r0
+                vol = vol + w/radius**2
+                do j = 1, nphi
+                    pts(:, j) = [x, 2*pi*(j - 1)/nphi]
+                end do
+                call metric%tensor(t, pts, kt, status)
+                if (status /= 0) return
+                h = [0.0_dp, 1/radius, 0.0_dp]
+                do j = 1, nphi
+                    call trig(modes, pts(3, j), tr)
+                    kh = matmul(kt(:, :, j), h)
+                    hk = hk + (w/nphi)*dot_product(h, kh)
+                    do b = 0, nb - 1
+                        local(b*nl + 1:(b + 1)*nl) = local(b*nl + 1:(b + 1)*nl) &
+                            + (w/nphi)*tr(b)*matmul(kh, basis)*field%fs%sp(2)%sgn(:, t)
+                    end do
+                end do
+            end do
+            status = 0
+        end subroutine
     end subroutine
 
     subroutine nn_mapped_data(field, map, nphi, potential, data, status)
@@ -257,15 +326,15 @@ contains
         type(nn_factor_t) :: factor
         type(fortsparse_status_t) :: fst
         logical, allocatable :: fixed(:)
-        real(dp), allocatable :: g(:), gl(:, :), hkh(:), rhs(:), x(:), r(:), y(:)
+        real(dp), allocatable :: g(:), rhs(:), x(:), r(:), y(:)
         real(dp), allocatable :: bh(:)
-        real(dp) :: scale, rnorm
-        integer :: modes, nb, n1, n2, nn, nl, t, b, n, failure, st
+        real(dp) :: scale, rnorm, energy_h, volume
+        integer :: modes, nb, n1, n2, nn, b, n, st
         status = 1
         modes = ubound(field%b, 2)
         if (nphi < 2*modes + 1 .or. tolerance <= 0) return
         nb = 2*modes + 1; n1 = field%fs%sp(1)%ndof; n2 = field%fs%sp(2)%ndof
-        nn = field%fs%nn; nl = field%fs%sp(2)%nloc
+        nn = field%fs%nn
         if (size(data) /= nb*n1) return
         metric%fs => field%fs; metric%map => map
         mean = metric; mean%kind = METRIC_MEAN; mean%nphi_mean = nphi
@@ -273,25 +342,10 @@ contains
         if (st /= 0) return
         call meridian_fourier_curl(field%fs, modes, c, st)
         if (st /= 0) return
-        allocate (gl(nl*nb, field%fs%mm%topology%n_triangles), &
-            hkh(field%fs%mm%topology%n_triangles))
-        failure = 0
-        !$omp parallel do default(shared) private(t, st) schedule(dynamic, 4) &
-        !$omp& reduction(max:failure)
-        do t = 1, size(gl, 2)
-            call harmonic_load(t, gl(:, t), hkh(t), st)
-            failure = max(failure, st)
-        end do
-        !$omp end parallel do
-        if (failure /= 0) return
-        allocate (g(nb*n2))
-        g = 0
-        do t = 1, size(gl, 2)
-            do b = 0, nb - 1
-                g(b*n2 + field%fs%sp(2)%dof(:, t)) = &
-                    g(b*n2 + field%fs%sp(2)%dof(:, t)) + gl(b*nl + 1:(b + 1)*nl, t)
-            end do
-        end do
+        call nn_harmonic_forms(field, metric, nphi, g, energy_h, volume, st)
+        if (st /= 0) return
+        g = field%f_vac*g
+        energy_h = field%f_vac**2*energy_h
         call csc_transpose(c, ct, fst)
         if (.not. status_ok(fst)) return
         rhs = -csc_matvec(ct, g)
@@ -325,7 +379,7 @@ contains
         report%residual = norm2(r)/max(tiny(1.0_dp), norm2(merge(rhs, 0.0_dp, &
             .not. fixed)), norm2(merge(csc_matvec(s, x), 0.0_dp, .not. fixed)))
         report%energy = (dot_product(x, csc_matvec(s, x)) - 2*dot_product(x, rhs) &
-            + sum(hkh))/(2*field%mu0)
+            + energy_h)/(2*field%mu0)
         bh = csc_matvec(c, x)
         field%b(:, 0) = cmplx(bh(:n2), 0.0_dp, dp)
         do n = 1, modes
@@ -396,39 +450,6 @@ contains
             status = merge(0, 1, status_ok(fst))
         end subroutine
 
-        subroutine harmonic_load(t, local, hk, status)
-            ! g_i = < psi_i . K h > and < h . K h > for h = F/R e_phi.
-            integer, intent(in) :: t
-            real(dp), intent(out) :: local(:), hk
-            integer, intent(out) :: status
-            real(dp) :: xq(2), w, phi(3, nl), pts(3, nphi), kt(3, 3, nphi), h(3)
-            real(dp) :: tr(0:nb - 1), kh(3)
-            integer :: q, j, i, bb
-            local = 0; hk = 0
-            do q = 1, field%fs%nq
-                call meridian_qpoint(field%fs, 2, t, q, xq, w, phi, status)
-                if (status /= 0) return
-                do i = 1, nl
-                    phi(:, i) = phi(:, i)*field%fs%sp(2)%sgn(i, t)
-                end do
-                do j = 1, nphi
-                    pts(:, j) = [xq, 2*pi*(j - 1)/nphi]
-                end do
-                call metric%tensor(t, pts, kt, status)
-                if (status /= 0) return
-                h = [0.0_dp, field%f_vac/xq(1), 0.0_dp]
-                do j = 1, nphi
-                    kh = matmul(kt(:, :, j), h)
-                    hk = hk + (w/nphi)*dot_product(h, kh)
-                    call trig(modes, pts(3, j), tr)
-                    do bb = 0, nb - 1
-                        local(bb*nl + 1:(bb + 1)*nl) = local(bb*nl + 1:(bb + 1)*nl) &
-                            + (w/nphi)*tr(bb)*matmul(kh, phi)
-                    end do
-                end do
-            end do
-            status = 0
-        end subroutine
     end subroutine
 
     subroutine nn_mapped_error(field, map, nphi, exact, error, deviation, &

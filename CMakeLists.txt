@@ -125,7 +125,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "2b2e5466866e29324c3d71c48b76f38908d30e21")
+set(KIN6D_FORTFEM_REVISION "21f236191c39688bebe25f98b185c32b8209ec70")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1787,7 +1787,72 @@ set_tests_properties(nonnested_coupled_landreman_family1_p2
     PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
-target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
+    src/mhd/nonnested_beltrami.f90)
+add_executable(test_nonnested_beltrami_spec test/test_nonnested_beltrami_spec.f90)
+target_link_libraries(test_nonnested_beltrami_spec PRIVATE kin6d)
+set(KIN6D_BELTRAMI_SPEC_SAMPLES "" CACHE PATH "Optional native SPEC sample directory")
+if(KIN6D_BELTRAMI_SPEC_SAMPLES)
+    foreach(case axis helical)
+        if(case STREQUAL "axis")
+            set(helical_amplitude 0)
+            set(modes 0)
+        else()
+            set(helical_amplitude 0.1)
+            set(modes 2)
+        endif()
+        foreach(rings 2 4 8)
+            add_test(NAME nonnested_beltrami_spec_${case}_${rings}
+                COMMAND test_nonnested_beltrami_spec
+                ${KIN6D_BELTRAMI_SPEC_SAMPLES}/${case}.samples
+                ${helical_amplitude} ${rings} 2 ${modes}
+                ${KIN6D_BELTRAMI_SPEC_SAMPLES}/candidate_${case}_${rings}_${modes}.dat)
+            set_tests_properties(nonnested_beltrami_spec_${case}_${rings}
+                PROPERTIES TIMEOUT 900 LABELS "mhd;slow" PROCESSORS 4
+                ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+        endforeach()
+    endforeach()
+    foreach(modes 4 6)
+        add_test(NAME nonnested_beltrami_spec_modes_${modes}
+            COMMAND test_nonnested_beltrami_spec
+            ${KIN6D_BELTRAMI_SPEC_SAMPLES}/helical.samples 0.1 4 2 ${modes}
+            ${KIN6D_BELTRAMI_SPEC_SAMPLES}/candidate_helical_4_${modes}.dat)
+        set_tests_properties(nonnested_beltrami_spec_modes_${modes} PROPERTIES
+            TIMEOUT 900 LABELS "mhd;slow" PROCESSORS 4
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    endforeach()
+endif()
+add_executable(test_nonnested_beltrami_pairing
+    ${fortfem_SOURCE_DIR}/test/check.f90
+    ${fortfem_SOURCE_DIR}/test/meridian_test_meshes.f90
+    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_curl.f90)
+target_link_libraries(test_nonnested_beltrami_pairing PRIVATE kin6d_feec_n)
+add_test(NAME nonnested_beltrami_pairing COMMAND test_nonnested_beltrami_pairing)
+set_tests_properties(nonnested_beltrami_pairing PROPERTIES
+    TIMEOUT 60 LABELS "mhd;fast" PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_nonnested_beltrami test/test_nonnested_beltrami.f90)
+target_link_libraries(test_nonnested_beltrami PRIVATE kin6d)
+add_test(NAME nonnested_beltrami_resonance
+    COMMAND test_nonnested_beltrami resonance 2)
+set_tests_properties(nonnested_beltrami_resonance PROPERTIES
+    TIMEOUT 60 LABELS "mhd;fast" PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME nonnested_beltrami_constraints
+    COMMAND test_nonnested_beltrami constraints 2)
+set_tests_properties(nonnested_beltrami_constraints PROPERTIES
+    TIMEOUT 60 LABELS "mhd;fast" PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+foreach(k 2 3)
+    foreach(case manufactured lundquist vacuum)
+        add_test(NAME nonnested_beltrami_${case}_p${k}
+            COMMAND test_nonnested_beltrami ${case} ${k})
+        set_tests_properties(nonnested_beltrami_${case}_p${k} PROPERTIES
+            TIMEOUT 600 LABELS "mhd;slow" PROCESSORS 4
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    endforeach()
+endforeach()
+
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
 target_link_libraries(test_nonnested_mapped PRIVATE kin6d)
 add_test(NAME nonnested_mapped_identity_regression
