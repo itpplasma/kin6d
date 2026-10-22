@@ -1755,7 +1755,27 @@ set_tests_properties(nonnested_hudson_breslau_chaos_responds_p3 PROPERTIES
     TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN2 (second increment): axisymmetric coupled transport / Ampere / Ohm Newton.
-target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_coupled.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_projection.f90
+    src/mhd/nonnested_profile.f90
+    src/mhd/nonnested_coupled.f90)
+add_executable(test_nonnested_projection test/test_nonnested_projection.f90)
+target_link_libraries(test_nonnested_projection PRIVATE kin6d)
+add_test(NAME nonnested_profile_projection_g1b COMMAND test_nonnested_projection)
+set_tests_properties(nonnested_profile_projection_g1b PROPERTIES TIMEOUT 60 PROCESSORS 4)
+add_executable(test_nonnested_profile_island test/test_nonnested_profile_island.f90)
+target_link_libraries(test_nonnested_profile_island PRIVATE kin6d)
+add_test(NAME nonnested_profile_forced_island_g4 COMMAND test_nonnested_profile_island)
+set_tests_properties(nonnested_profile_forced_island_g4 PROPERTIES TIMEOUT 300 PROCESSORS 4)
+add_executable(test_nonnested_profile test/test_nonnested_profile.f90)
+target_link_libraries(test_nonnested_profile PRIVATE kin6d_nn_solovev_test)
+foreach(k 2 3)
+    foreach(case manufactured nested reproduce reproduce3d sampling)
+        add_test(NAME nonnested_fitted_${case}_p${k}
+            COMMAND test_nonnested_profile ${case} ${k})
+        set_tests_properties(nonnested_fitted_${case}_p${k} PROPERTIES
+            TIMEOUT 600 PROCESSORS 4)
+    endforeach()
+endforeach()
 add_executable(test_nonnested_coupled test/test_nonnested_coupled.f90)
 target_link_libraries(test_nonnested_coupled PRIVATE kin6d_nn_solovev_test)
 foreach(k 2 3)

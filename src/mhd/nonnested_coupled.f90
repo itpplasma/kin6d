@@ -54,8 +54,10 @@ module kin6d_nonnested_coupled
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
+    use kin6d_nonnested_profile, only: nn_fitted_source_t
     use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
-        anisotropic_flux, anisotropic_flux_jvp
+        anisotropic_flux, anisotropic_flux_jvp, parallel_drive_current, &
+        parallel_drive_current_jvp
     implicit none
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
@@ -80,6 +82,9 @@ module kin6d_nonnested_coupled
         ! Phi-dependent alternatives; at most one of each pair is associated.
         procedure(nc_scalar3_i), pointer, nopass :: source_3d => null()
         procedure(nc_scalar3_i), pointer, nopass :: g_par_shape_3d => null()
+        ! Closure B: immutable seed-fitted weak source and parallel current
+        ! drive. Exclusive with scalar source and conductivity-shape hooks.
+        type(nn_fitted_source_t), allocatable :: fitted
         logical, allocatable :: floating(:) ! V0 boundary nodes of a conductor
     end type
 
@@ -402,7 +407,14 @@ contains
         if (present(max_steps)) steps = min(max_steps, 40)
         if (problem%chi_perp <= 0 .or. problem%chi_par < problem%chi_perp) return
         if (problem%g_perp <= 0 .or. problem%g_par < problem%g_perp) return
-        if (associated(problem%source) .eqv. associated(problem%source_3d)) return
+        if (allocated(problem%fitted)) then
+            if (.not. problem%fitted%ready()) return
+            if (associated(problem%source) .or. associated(problem%source_3d)) return
+            if (associated(problem%g_par_shape)) return
+            if (associated(problem%g_par_shape_3d)) return
+        else
+            if (associated(problem%source) .eqv. associated(problem%source_3d)) return
+        end if
         if (associated(problem%g_par_shape) .and. associated(problem%g_par_shape_3d)) &
             return
         call operators(field, problem, ops, st)
@@ -539,7 +551,7 @@ contains
     end subroutine
 
     subroutine source_load(field, problem, lay, nphi, load, status)
-        ! |<v, S>| on the pressure rows of every block (the phi rule of the
+        ! Absolute weak source on the pressure rows (the phi rule of the
         ! residual) and |I_phi| on the loop row; zero elsewhere.
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
@@ -547,31 +559,62 @@ contains
         integer, intent(in) :: nphi
         real(dp), allocatable, intent(out) :: load(:)
         integer, intent(out) :: status
-        real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
-        real(dp) :: tr(lay%nb), dtr(lay%nb), phi
-        integer :: t, q, j, bk
+        real(dp), allocatable :: local(:, :)
+        integer :: t, bk, st, failure, nt
         allocate (load(lay%n))
         load = 0
-        do t = 1, field%fs%mm%topology%n_triangles
-            do q = 1, field%fs%nq
-                call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, status)
-                if (status /= 0) return
-                do j = 1, nphi
-                    phi = 2*acos(-1.0_dp)*(j - 1)/nphi
-                    call trig(lay%modes, phi, tr, dtr)
-                    do bk = 1, lay%nb
-                        associate (g => lay%ip + (bk - 1)*lay%n0 &
-                                   + field%fs%sp(0)%dof(:, t))
-                            load(g) = load(g) + wq/nphi*tr(bk)*val &
-                                *source_value(problem, xq, phi)
-                        end associate
-                    end do
-                end do
+        nt = field%fs%mm%topology%n_triangles
+        allocate (local(field%fs%nl0*lay%nb, nt))
+        failure = 0
+        !$omp parallel do default(shared) private(t,st) reduction(max:failure) &
+        !$omp& schedule(static)
+        do t = 1, nt
+            call pressure_source_element(field, problem, lay, nphi, t, local(:, t), st)
+            failure = max(failure, st)
+        end do
+        !$omp end parallel do
+        status = failure
+        if (status /= 0) return
+        do t = 1, nt
+            do bk = 1, lay%nb
+                associate (g => lay%ip + (bk - 1)*lay%n0 + field%fs%sp(0)%dof(:, t))
+                    load(g) = load(g) &
+                        + local((bk - 1)*field%fs%nl0 + 1:bk*field%fs%nl0, t)
+                end associate
             end do
         end do
         load = abs(load)
         load(lay%iv) = abs(problem%current)
         where (nc_fixed(field, problem)) load = 0
+        status = 0
+    end subroutine
+
+    subroutine pressure_source_element(field, problem, lay, nphi, t, load, status)
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        type(nc_layout_t), intent(in) :: lay
+        integer, intent(in) :: nphi, t
+        real(dp), intent(out) :: load(:)
+        integer, intent(out) :: status
+        real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
+        real(dp) :: tr(lay%nb), dtr(lay%nb), phi, src, flux(3), drive
+        integer :: q, j, bk, n0
+        load = 0; n0 = field%fs%nl0
+        do q = 1, field%fs%nq
+            call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, status)
+            if (status /= 0) return
+            do j = 1, nphi
+                phi = 2*acos(-1.0_dp)*(j - 1)/nphi
+                call source_data(problem, xq, phi, src, flux, drive, status)
+                if (status /= 0) return
+                call trig(lay%modes, phi, tr, dtr)
+                do bk = 1, lay%nb
+                    load((bk - 1)*n0 + 1:bk*n0) = load((bk - 1)*n0 + 1:bk*n0) &
+                        + wq/nphi*(tr(bk)*(val*src + grad(1, :)*flux(1) &
+                        + grad(2, :)*flux(3)) + dtr(bk)*val*flux(2)/xq(1))
+                end do
+            end do
+        end do
         status = 0
     end subroutine
 
@@ -602,15 +645,29 @@ contains
         status = 0
     end subroutine
 
-    real(dp) function source_value(problem, x, phi) result(s)
+    subroutine source_data(problem, x, phi, s, flux, drive, status)
         type(nc_problem_t), intent(in) :: problem
         real(dp), intent(in) :: x(2), phi
-        if (associated(problem%source_3d)) then
+        real(dp), intent(out) :: s, flux(3), drive
+        integer, intent(out) :: status
+        real(dp) :: points(3, 1), f(3, 1), d(1)
+        s = 0; flux = 0; drive = 0; status = 1
+        if (allocated(problem%fitted)) then
+            points(:, 1) = [x, phi]
+            call problem%fitted%data(points, f, d, status)
+            if (status /= 0) return
+            flux = f(:, 1); drive = d(1)
+        else if (associated(problem%source_3d)) then
             s = problem%source_3d(x, phi)
-        else
+        else if (associated(problem%source)) then
             s = problem%source(x)
+        else
+            return
         end if
-    end function
+        status = 1
+        if (.not. ieee_is_finite(s)) return
+        status = 0
+    end subroutine
 
     pure integer function local_rows(field, lay) result(nr)
         type(free_b_field_t), intent(in) :: field
@@ -654,6 +711,7 @@ contains
         real(dp) :: tr(lay%nb), dtr(lay%nb), phi
         real(dp) :: bq(3), gp(3), gf(3), ephi, gpar, src, cj(3), fq(3)
         real(dp) :: dj(3, 10), dq(3, 6), e(12), two_pi
+        real(dp) :: source_flux(3), drive, jdrive(3), ddrive(3)
         real(dp), allocatable :: bop(:, :), dop(:, :), w1(:, :), jc(:, :), qc(:, :)
         integer :: q, j, k, bk, n1, n0, n2, nb, ra, rp, rf, rv, cb, cp, cf
         status = 1
@@ -697,7 +755,9 @@ contains
                 else if (associated(problem%g_par_shape_3d)) then
                     gpar = gpar*problem%g_par_shape_3d(xq, phi)
                 end if
-                src = source_value(problem, xq, phi)
+                call source_data(problem, xq, phi, src, source_flux, drive, status)
+                if (status /= 0) return
+                status = 1
                 call trig(lay%modes, phi, tr, dtr)
                 bq = matmul(bm, tr)
                 bq(2) = bq(2) + field%f_vac/rr
@@ -713,6 +773,10 @@ contains
                     cj(2), cj(3))
                 call anisotropic_flux(bq(1), bq(2), bq(3), gp(1), gp(2), gp(3), &
                     problem%chi_par, problem%chi_perp, fq(1), fq(2), fq(3))
+                call parallel_drive_current(bq(1), bq(2), bq(3), drive, &
+                    jdrive(1), jdrive(2), jdrive(3))
+                cj = cj + jdrive
+                fq = fq - source_flux
                 do bk = 1, nb
                     rl(ra + (bk - 1)*n1 + 1:ra + bk*n1) = &
                         rl(ra + (bk - 1)*n1 + 1:ra + bk*n1) - w*tr(bk)*matmul(cj, v1)
@@ -735,6 +799,9 @@ contains
                         gp(3), gf(1), gf(2), gf(3), ephi, gpar, problem%g_perp, &
                         e(1), e(2), e(3), e(4), e(5), e(6), e(7), e(8), e(9), &
                         e(10), e(11), e(12), dj(1, k), dj(2, k), dj(3, k))
+                    call parallel_drive_current_jvp(bq(1), bq(2), bq(3), drive, &
+                        e(1), e(2), e(3), 0.0_dp, ddrive(1), ddrive(2), ddrive(3))
+                    dj(:, k) = dj(:, k) + ddrive
                 end do
                 do k = 1, 6
                     e = 0
