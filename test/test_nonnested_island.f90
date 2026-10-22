@@ -19,6 +19,7 @@ contains
 end module
 
 program test_nonnested_island
+!$  use omp_lib, only: omp_set_num_threads
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_island_case, only: source
     use nn_vacuum_fixture, only: pi, r0, ftor, field, active_mode, coil_mu0, &
@@ -35,7 +36,10 @@ program test_nonnested_island
         nc_layout, nc_solve
     implicit none
     character(16) :: mode, arg
-    real(dp), allocatable :: xvac(:), x(:), ratios(:)
+    real(dp), allocatable :: xvac(:), x(:), ratios(:), xd(:), td(:, :), tf(:, :)
+    type(nc_report_t) :: profile_report, dense_report
+    integer :: st, steps, nthreads
+    real(dp) :: denom
     real(dp) :: flat(8), oxdiff(8), d3(4), ratio, edges(2)
     integer :: k, modes, nr, i, nlev
     type(nc_layout_t) :: lay
@@ -94,10 +98,108 @@ program test_nonnested_island
         print '(a,f8.3)', 'D3 order ', log(d3(1)/d3(nlev))/log(2.0_dp**(nlev - 1))
         if (any(d3(2:nlev) >= d3(:nlev - 1))) error stop 'D3 does not fall'
         print '(a)', 'PASS: NN2 island D3 falls with resolution'
+    case ('threadcheck')
+        call setup(nr)
+        problem%chi_par = 100; problem%chi_perp = 1
+        problem%g_par = 1; problem%g_perp = 0.01_dp
+        problem%matrix_free = .true.
+!$      call omp_set_num_threads(1)
+        xd = xvac
+        call nc_solve(field, problem, xd, dense_report, st, tol=1.0e-13_dp)
+        if (st /= 0) error stop 'one-thread solve'
+        do i = 1, 3
+            nthreads = 2**i
+!$          call omp_set_num_threads(nthreads)
+            x = xvac
+            call nc_solve(field, problem, x, profile_report, st, tol=1.0e-13_dp)
+            if (st /= 0) error stop 'threaded solve'
+            print '(a,i0)', 'threads ', nthreads
+            call check_difference(spread(xd, 2, 1), spread(x, 2, 1))
+        end do
+        print '(a)', 'PASS: matrix-free state invariant for 1/2/4/8 threads'
+    case ('profile', 'compare')
+        ratio = 1.0e2_dp
+        if (command_argument_count() >= 5) then
+            call get_command_argument(5, arg)
+            read (arg, *) ratio
+        end if
+        call setup(nr)
+        problem%chi_par = ratio; problem%chi_perp = 1
+        problem%g_par = 1; problem%g_perp = 1/ratio
+        if (command_argument_count() >= 6) then
+            call get_command_argument(6, arg)
+            problem%matrix_free = trim(arg) == 'matrixfree'
+        end if
+        if (command_argument_count() >= 8) then
+            call get_command_argument(8, arg)
+            read (arg, *) denom
+            problem%g_perp = 1/denom
+        end if
+        print '(a,2es12.4)', 'chi and g ratios ', &
+            problem%chi_par/problem%chi_perp, problem%g_par/problem%g_perp
+        steps = 30
+        if (command_argument_count() >= 7) then
+            call get_command_argument(7, arg)
+            read (arg, *) steps
+        end if
+        x = xvac
+        if (trim(mode) == 'compare') then
+            xd = x; problem%matrix_free = .false.
+            call nc_solve(field, problem, xd, dense_report, st, &
+                tol=1.0e-13_dp, iterates=td)
+            if (st /= 0) error stop 'dense comparison Newton'
+            problem%matrix_free = .true.
+            call nc_solve(field, problem, x, profile_report, st, &
+                tol=1.0e-13_dp, iterates=tf)
+            print '(a,i0,a,40i6)', 'matrix-free status ', st, ' Krylov ', &
+                profile_report%krylov_iterations(:profile_report%newton_steps)
+            print '(a,41i6)', 'Krylov status ', &
+                profile_report%krylov_status(:profile_report%newton_steps)
+            print '(a,41es11.3)', 'linear residuals ', &
+                profile_report%linear_residual(:profile_report%newton_steps)
+            if (st /= 0) error stop 'matrix-free comparison Newton'
+            if (profile_report%newton_steps /= dense_report%newton_steps) &
+                error stop 'Newton iterate count'
+            call check_difference(td(:, :profile_report%newton_steps), &
+                tf(:, :profile_report%newton_steps))
+            print '(a)', 'PASS: island dense / matrix-free iterates and solution'
+        else
+            call nc_solve(field, problem, x, profile_report, st, max_steps=steps)
+            print '(a,i0,a,i0,a,41es11.3)', 'solve status ', st, ' steps ', &
+                profile_report%newton_steps, ' history ', &
+                profile_report%history(:profile_report%newton_steps)
+            print '(a,41i6)', 'Krylov iterations ', &
+                profile_report%krylov_iterations(:profile_report%newton_steps)
+            print '(a,41es11.3)', 'linear residuals ', &
+                profile_report%linear_residual(:profile_report%newton_steps)
+            print '(a,41i6)', 'Krylov status ', &
+                profile_report%krylov_status(:profile_report%newton_steps)
+            if (st /= 0 .and. steps == 30) error stop 'profile solve'
+        end if
     case default
         error stop 'mode'
     end select
 contains
+    subroutine check_difference(reference, candidate)
+        real(dp), intent(in) :: reference(:, :), candidate(:, :)
+        real(dp) :: denominator, difference, largest
+        integer :: lo(5), hi(5), b
+        lo = [1, lay%il + 1, lay%ip + 1, lay%iphi + 1, lay%iv]
+        hi = [lay%il, lay%ip, lay%iphi, lay%iv - 1, lay%iv]
+        largest = 0
+        do b = 1, 5
+            denominator = maxval(abs(reference(lo(b):hi(b), :)))
+            ! The multiplier vanishes by solvability. Use the Ampere scale.
+            if (b == 2) denominator = maxval(abs(reference(:lay%na, :)))/coil_mu0
+            denominator = max(denominator, tiny(1.0_dp))
+            difference = maxval(abs(reference(lo(b):hi(b), :) &
+                - candidate(lo(b):hi(b), :)))/denominator
+            print '(a,i0,a,es12.4)', 'block ', b, ' iterate difference ', difference
+            largest = max(largest, difference)
+        end do
+        if (largest > 1.0e-10_dp) error stop 'iterate equivalence'
+    end subroutine
+
     subroutine setup(nrad)
         ! Vacuum state (NN1 solves) mapped to the coupled block layout:
         ! mode 0 is R A_phi, mode n the Nedelec A_pol with 2 A_n = c - i s.

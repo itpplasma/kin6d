@@ -45,12 +45,14 @@ module kin6d_nonnested_coupled
         meridian_weight_i
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl, &
-        meridian_fourier_curl_curl, meridian_fourier_gradient_coupling
+        meridian_fourier_curl_curl, meridian_fourier_gradient_coupling, &
+        meridian_fourier_identity_forms
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, csc_matmul, &
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND, FORTSPARSE_MEMORY_LOW, &
         native_ordering_available, FORTSPARSE_LU_SUPERNODAL
+    use kin6d_gs_timers, only: gs_phase_tick
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
@@ -60,7 +62,7 @@ module kin6d_nonnested_coupled
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
-    public :: nc_scalar3_i, nc_continue
+    public :: nc_scalar3_i, nc_continue, nc_jvp
 
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
@@ -74,7 +76,11 @@ module kin6d_nonnested_coupled
     type :: nc_problem_t
         real(dp) :: chi_par = 1, chi_perp = 1, g_par = 1, g_perp = 1
         real(dp) :: current = 0 ! net toroidal current, phi-mean int J_phi dR dZ
-        integer :: nphi = 0     ! phi points; 0 selects 4 N + 1
+        integer :: nphi = 0     ! phi points; 0 selects 4(N/nfp) + 1
+        integer :: nfp = 1 ! retain physical n = 0, nfp, 2*nfp, ...
+        logical :: matrix_free = .false. ! opt-in FFT JVP / mean-n-block FGMRES
+        integer :: krylov_max = 200, krylov_restart = 40
+        real(dp) :: linear_tolerance = 1.0e-13_dp
         procedure(meridian_weight_i), pointer, nopass :: source => null()
         procedure(meridian_weight_i), pointer, nopass :: g_par_shape => null()
         ! Phi-dependent alternatives; at most one of each pair is associated.
@@ -93,16 +99,31 @@ module kin6d_nonnested_coupled
 
     type :: nc_report_t
         integer :: newton_steps = 0
-        real(dp) :: residual(5) = 0     ! blockwise backward errors at exit
+        real(dp) :: residual(5) = 0 ! scaled residuals: dense |J|, matrix-free |P|
         real(dp) :: history(0:40) = -1  ! max blockwise backward error per step
         real(dp) :: voltage = 0, multiplier = 0, divergence = 0
         integer :: stages = 0, total_steps = 0 ! nc_continue only
+        integer :: krylov_iterations(0:40) = 0, krylov_status(0:40) = 0
+        real(dp) :: linear_residual(0:40) = 0
         character(32) :: claim = 'candidate'
     end type
 
     type :: nc_ops_t
         type(csc_t) :: c, s, mg, mgt
-        integer :: nphi = 1
+        integer :: nphi = 1, nfp = 1
+    end type
+
+    type :: nc_mean_t
+        ! Phi mean of pointwise leaf derivatives, O(mesh) independently of N.
+        real(dp), allocatable :: dj(:, :, :, :), dq(:, :, :, :)
+    end type
+
+    type :: nc_mode_factor_t
+        type(sparse_solver_t) :: solver
+        type(csc_t) :: jac
+        integer, allocatable :: indices(:)
+        real(dp), allocatable :: rhs(:), solution(:)
+        logical :: ready = .false.
     end type
 
     type, extends(meridian_fourier_tensor_t) :: identity_t
@@ -111,6 +132,43 @@ module kin6d_nonnested_coupled
     end type
 
     integer, parameter :: chunk = 64
+    interface
+        module subroutine nc_jvp(field, problem, x, direction, output, status)
+            type(free_b_field_t), intent(in) :: field
+            type(nc_problem_t), intent(in) :: problem
+            real(dp), intent(in) :: x(:), direction(:)
+            real(dp), allocatable, intent(out) :: output(:)
+            integer, intent(out) :: status
+        end subroutine
+        module subroutine prepare_modes(field, problem, ops, x, factors, status)
+            type(free_b_field_t), intent(in) :: field
+            type(nc_problem_t), intent(in) :: problem
+            type(nc_ops_t), intent(in) :: ops
+            real(dp), intent(in) :: x(:)
+            type(nc_mode_factor_t), intent(inout) :: factors(0:)
+            integer, intent(out) :: status
+        end subroutine
+        module function mode_scale(factors, x) result(scale)
+            type(nc_mode_factor_t), intent(in) :: factors(0:)
+            real(dp), intent(in) :: x(:)
+            real(dp) :: scale(size(x))
+        end function
+        module subroutine matrix_free_step(field, problem, ops, x, fixed, rep, &
+                                          rhs, factors, dx, status, iterations, &
+                                          residual, krylov_status)
+            type(free_b_field_t), intent(in) :: field
+            type(nc_problem_t), intent(in) :: problem
+            type(nc_ops_t), intent(in) :: ops
+            real(dp), intent(in) :: x(:), rhs(:)
+            logical, intent(in) :: fixed(:)
+            integer, intent(in) :: rep(:)
+            type(nc_mode_factor_t), intent(inout) :: factors(0:)
+            real(dp), allocatable, intent(out) :: dx(:)
+            integer, intent(out) :: status, iterations, krylov_status
+            real(dp), intent(out) :: residual
+        end subroutine
+    end interface
+
 contains
     function nc_layout(field) result(lay)
         type(free_b_field_t), intent(in) :: field
@@ -133,7 +191,7 @@ contains
         type(nc_problem_t), intent(in), optional :: problem
         logical, allocatable :: mask(:)
         type(nc_layout_t) :: lay
-        integer :: b
+        integer :: b, nfp
         lay = nc_layout(field)
         allocate (mask(lay%n))
         do b = 0, lay%nb - 1
@@ -145,6 +203,15 @@ contains
                 field%fs%sp(0)%bnd
         end do
         mask(lay%iv) = .false.
+        nfp = 1
+        if (present(problem)) nfp = problem%nfp
+        do b = 1, lay%nb - 1
+            if (mod((b + 1)/2, max(1, nfp)) == 0) cycle
+            mask(b*lay%na1 + 1:(b + 1)*lay%na1) = .true.
+            mask(lay%il + b*lay%n0 + 1:lay%il + (b + 1)*lay%n0) = .true.
+            mask(lay%ip + b*lay%n0 + 1:lay%ip + (b + 1)*lay%n0) = .true.
+            mask(lay%iphi + b*lay%n0 + 1:lay%iphi + (b + 1)*lay%n0) = .true.
+        end do
         if (.not. present(problem)) return
         if (.not. allocated(problem%floating)) return
         where (problem%floating) mask(lay%il + 1:lay%il + lay%n0) = .false.
@@ -198,9 +265,12 @@ contains
         if (.not. allocated(field%b)) return
         if (field%fs%cyl_r0 > 0) return
         modes = ubound(field%b, 2)
-        ops%nphi = 4*modes + 1
+        if (problem%nfp < 1) return
+        if (mod(modes, problem%nfp) /= 0) return
+        ops%nfp = problem%nfp
+        ops%nphi = 4*(modes/problem%nfp) + 1
         if (problem%nphi > 0) ops%nphi = problem%nphi
-        if (ops%nphi < 2*modes + 1) return
+        if (ops%nphi < 2*(modes/problem%nfp) + 1) return
         if (allocated(problem%floating)) then
             if (size(problem%floating) /= field%fs%n0) return
             if (any(problem%floating .and. .not. field%fs%sp(0)%bnd)) return
@@ -210,13 +280,21 @@ contains
             if (any(field%fs%sp(1)%dof(nln + 1:, t) &
                 /= field%fs%nn + field%fs%sp(0)%dof(:, t))) return
         end do
-        call meridian_fourier_curl(field%fs, modes, ops%c, status)
-        if (status /= 0) return
-        call meridian_fourier_curl_curl(field%fs, modes, ops%nphi, id, ops%s, status)
-        if (status /= 0) return
-        call meridian_fourier_gradient_coupling(field%fs, modes, ops%nphi, id, &
-            ops%mg, status)
-        if (status /= 0) return
+        if (problem%matrix_free) then
+            call meridian_fourier_identity_forms(field%fs, modes, &
+                ops%c, ops%s, ops%mg, status)
+            if (status /= 0) return
+        else
+            call meridian_fourier_curl(field%fs, modes, ops%c, status)
+            if (status /= 0) return
+            call meridian_fourier_curl_curl(field%fs, modes, &
+                max(ops%nphi, 4*modes + 1), id, ops%s, status)
+            if (status /= 0) return
+            call meridian_fourier_gradient_coupling(field%fs, modes, &
+                max(ops%nphi, 4*modes + 1), id, &
+                ops%mg, status)
+            if (status /= 0) return
+        end if
         status = 1
         call csc_transpose(ops%mg, ops%mgt, st)
         if (.not. status_ok(st)) return
@@ -324,6 +402,7 @@ contains
         real(dp), allocatable :: vals(:), bvals(:)
         integer, allocatable :: rows(:), cols(:), brows(:), bcols(:)
         integer :: t, t0, t1, nt, nr, n2, nd, ierr, failure, count, bcount
+        real(dp) :: tick
         status = 1
         lay = nc_layout(field)
         if (size(x) /= lay%n) return
@@ -335,6 +414,8 @@ contains
         allocate (rl(nr, chunk), jb(nr, n2, chunk), jd(nr, nd, chunk))
         allocate (rows(16), cols(16), vals(16), brows(16), bcols(16), bvals(16))
         count = 0; bcount = 0
+        tick = -1
+        call nc_phase('', tick)
         do t0 = 1, nt, chunk
             t1 = min(nt, t0 + chunk - 1)
             failure = 0
@@ -348,17 +429,21 @@ contains
             end do
             !$omp end parallel do
             if (failure /= 0) return
+            call nc_phase('nn2-dense-leaves', tick)
             do t = t0, t1
                 call scatter_jacobian(field, lay, t, jb(:, :, t - t0 + 1), &
                     jd(:, :, t - t0 + 1), rows, cols, vals, count, brows, bcols, &
                     bvals, bcount)
             end do
+            call nc_phase('nn2-triplet-scatter', tick)
         end do
         call csc_from_triplet(lay%n, lay%nb2*lay%nb, brows(:bcount), &
             bcols(:bcount), bvals(:bcount), xb, st)
         if (.not. status_ok(st)) return
         deallocate (brows, bcols, bvals)
+        call nc_phase('nn2-compress-B', tick)
         call csc_matmul(xb, ops%c, xbc, st)
+        call nc_phase('nn2-chain-curl', tick)
         if (.not. status_ok(st)) return
         call append(xbc, 0, lay%ia, 1.0_dp, rows, cols, vals, count)
         call append(ops%s, lay%ia, lay%ia, 1/field%mu0, rows, cols, vals, count)
@@ -367,12 +452,40 @@ contains
         call csc_from_triplet(lay%n, lay%n, rows(:count), cols(:count), &
             vals(:count), jac, st)
         if (.not. status_ok(st)) return
+        call nc_phase('nn2-compress-J', tick)
         if (.not. all(ieee_is_finite(jac%val))) return
         status = 0
     end subroutine
 
-    subroutine nc_solve(field, problem, x, report, status, tol, max_steps)
-        ! Newton with the exact Jacobian and residual backtracking. On entry
+    subroutine nc_phase(label, tick)
+        ! Wall time plus current and high-water resident KiB at phase boundaries.
+        ! /proc is optional. A high-water value is process-wide, not an
+        ! allocation count or a peak attributable solely to this phase.
+        character(*), intent(in) :: label
+        real(dp), intent(inout) :: tick
+        character(256) :: line
+        character(8) :: enabled
+        integer :: unit, ios, length, rss, hwm
+        call get_environment_variable('KIN6D_PROFILE', enabled, length, ios)
+        if (ios /= 0 .or. length == 0) return
+        call gs_phase_tick(label, tick)
+        if (len_trim(label) == 0) return
+        rss = -1; hwm = -1
+        open (newunit=unit, file='/proc/self/status', status='old', iostat=ios)
+        if (ios /= 0) return
+        do
+            read (unit, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            if (index(line, 'VmRSS:') == 1) read (line(7:), *) rss
+            if (index(line, 'VmHWM:') == 1) read (line(7:), *) hwm
+        end do
+        close (unit)
+        write (0, '(a,a,2(a,i0))') 'MEM ', label, ' rss_KiB=', rss, &
+            ' hwm_KiB=', hwm
+    end subroutine
+
+    subroutine nc_solve(field, problem, x, report, status, tol, max_steps, iterates)
+        ! Newton with the exact Jacobian action and residual backtracking. On entry
         ! x is the seed; its fixed entries are the boundary data and tied
         ! entries must agree. On exit the field holds B = curl A (all
         ! modes), psi = a of mode 0 and the transported p blocks.
@@ -385,6 +498,8 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: tol
         integer, intent(in), optional :: max_steps
+        real(dp), allocatable, intent(out), optional :: iterates(:, :)
+        type(nc_mode_factor_t), allocatable :: factors(:)
         type(nc_layout_t) :: lay
         type(nc_ops_t) :: ops
         type(csc_t) :: jac
@@ -392,8 +507,8 @@ contains
         real(dp), allocatable :: r(:), dx(:), trial(:), scale(:), rt(:), load(:)
         logical, allocatable :: mask(:)
         integer, allocatable :: rep(:)
-        real(dp) :: target, merit, merit_trial, alpha, w(5)
-        integer :: it, steps, st, ls
+        real(dp) :: target, merit, merit_trial, alpha, w(5), tick
+        integer :: it, steps, st, ls, n
         logical :: factored
         status = 1
         factored = .false.
@@ -405,35 +520,77 @@ contains
         if (associated(problem%source) .eqv. associated(problem%source_3d)) return
         if (associated(problem%g_par_shape) .and. associated(problem%g_par_shape_3d)) &
             return
+        tick = -1
+        call nc_phase('', tick)
         call operators(field, problem, ops, st)
+        call nc_phase('nn2-operators', tick)
         if (st /= 0) return
         lay = nc_layout(field)
         if (size(x) /= lay%n) return
         mask = nc_fixed(field, problem)
+        do n = 1, lay%modes
+            if (mod(n, problem%nfp) == 0) cycle
+            if (any(abs(x((2*n - 1)*lay%na1 + 1:(2*n + 1)*lay%na1)) > 0)) return
+            if (any(abs(x(lay%il + (2*n - 1)*lay%n0 + 1: &
+                lay%il + (2*n + 1)*lay%n0)) > 0)) return
+            if (any(abs(x(lay%ip + (2*n - 1)*lay%n0 + 1: &
+                lay%ip + (2*n + 1)*lay%n0)) > 0)) return
+            if (any(abs(x(lay%iphi + (2*n - 1)*lay%n0 + 1: &
+                lay%iphi + (2*n + 1)*lay%n0)) > 0)) return
+        end do
         rep = representative(field, problem)
         if (any(abs(x - x(rep)) > 0)) return
+        if (present(iterates)) then
+            allocate (iterates(lay%n, 0:steps)); iterates = 0
+        end if
+        if (problem%matrix_free) allocate (factors(0:lay%modes))
         call source_load(field, problem, lay, ops%nphi, load, st)
+        call nc_phase('nn2-source-load', tick)
         if (st /= 0) return
         w = huge(1.0_dp)
         do it = 0, steps
+            if (present(iterates)) iterates(:, it) = x
+            tick = -1
+            call nc_phase('', tick)
             call residual_ops(field, problem, ops, x, r, st)
             if (st /= 0) exit
-            call jacobian_ops(field, problem, ops, x, jac, st)
+            call nc_phase('nn2-residual', tick)
+            if (problem%matrix_free) then
+                call prepare_modes(field, problem, ops, x, factors, st)
+            else
+                call jacobian_ops(field, problem, ops, x, jac, st)
+            end if
             if (st /= 0) exit
-            ! Normwise backward error |r|/(|J||x| + |load|): the load keeps
-            ! the pressure rows scaled when the seed has p = 0.
-            scale = abs_matvec(jac, magnitude(x, lay)) + load
+            call nc_phase('nn2-jacobian', tick)
+            ! Dense backward-error scale |J||x| + |load|; the opt-in path
+            ! uses |P||x| + |load|. The load scales a seed with p = 0.
+            if (problem%matrix_free) then
+                scale = mode_scale(factors, magnitude(x, lay)) + load
+            else
+                scale = abs_matvec(jac, magnitude(x, lay)) + load
+            end if
             call nc_reduce(field, problem, scale)
             call backward(r, scale, lay, w)
             report%history(it) = maxval(w); report%residual = w
             report%newton_steps = it
             if (maxval(w) <= target) exit
             if (it == steps) exit
-            call newton_step(jac, mask, rep, -r, solver, factored, dx, st)
+            if (problem%matrix_free) then
+                call matrix_free_step(field, problem, ops, x, mask, rep, -r, &
+                    factors, dx, st, report%krylov_iterations(it), &
+                    report%linear_residual(it), report%krylov_status(it))
+            else
+                call newton_step(jac, mask, rep, -r, solver, factored, dx, st)
+            end if
+            call nc_phase('nn2-linear-solve', tick)
             if (st /= 0) exit
-            ! The line search scales by |J|(|x| + |dx|): a block that is zero
-            ! in x (p or Phi of a vacuum seed) is scaled by its step.
-            scale = abs_matvec(jac, magnitude(abs(x) + abs(dx), lay)) + load
+            ! The line search uses the same absolute operator (|J| or |P|).
+            ! A block that vanishes in x is scaled by its increment too.
+            if (problem%matrix_free) then
+                scale = mode_scale(factors, magnitude(abs(x) + abs(dx), lay)) + load
+            else
+                scale = abs_matvec(jac, magnitude(abs(x) + abs(dx), lay)) + load
+            end if
             call nc_reduce(field, problem, scale)
             call backward(r, scale, lay, w)
             merit = sum(w**2)
@@ -452,8 +609,14 @@ contains
                 st = 1
                 exit
             end if
+            call nc_phase('nn2-line-search', tick)
             x = trial
         end do
+        if (allocated(factors)) then
+            do n = 0, lay%modes
+                call sparse_destroy(factors(n)%solver)
+            end do
+        end if
         if (factored) call sparse_destroy(solver)
         if (st /= 0) return
         if (maxval(w) > target) return
@@ -557,7 +720,7 @@ contains
                 call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, status)
                 if (status /= 0) return
                 do j = 1, nphi
-                    phi = 2*acos(-1.0_dp)*(j - 1)/nphi
+                    phi = 2*acos(-1.0_dp)*(j - 1)/(nphi*problem%nfp)
                     call trig(lay%modes, phi, tr, dtr)
                     do bk = 1, lay%nb
                         associate (g => lay%ip + (bk - 1)*lay%n0 &
@@ -690,7 +853,7 @@ contains
             ephi = x(lay%iv)/(two_pi*rr)
             w = wq/nphi
             do j = 1, nphi
-                phi = two_pi*(j - 1)/nphi
+                phi = two_pi*(j - 1)/(nphi*problem%nfp)
                 gpar = problem%g_par
                 if (associated(problem%g_par_shape)) then
                     gpar = gpar*problem%g_par_shape(xq)
@@ -950,7 +1113,7 @@ contains
         type(csc_t) :: reduced
         type(fortsparse_status_t) :: st
         real(dp), allocatable :: b(:), y(:)
-        real(dp) :: bnorm, rnorm
+        real(dp) :: bnorm, rnorm, tick
         integer :: info, iterations
         status = 1
         call reduced_system(a, fixed, rep, reduced, status)
@@ -972,7 +1135,10 @@ contains
         end if
         if (factored) call sparse_destroy(solver)
         factored = .false.
+        tick = -1
+        call nc_phase('', tick)
         call factor_reduced(reduced, solver, status)
+        call nc_phase('nn2-factor', tick)
         if (status /= 0) return
         status = 1
         factored = .true.
@@ -1032,7 +1198,7 @@ contains
     end subroutine
 
     subroutine factor_reduced(reduced, solver, status)
-!$      use omp_lib, only: omp_get_max_threads
+!$      use omp_lib, only: omp_get_max_threads, omp_in_parallel
         ! General sparse LU (the Jacobian is not symmetric).
         type(csc_t), intent(in) :: reduced
         type(sparse_solver_t), intent(inout) :: solver
@@ -1057,6 +1223,7 @@ contains
             end if
             solver%options%pivot_tolerance = 0.1_dp
 !$          solver%options%nthreads = omp_get_max_threads()
+!$          if (omp_in_parallel()) solver%options%nthreads = 1
         else
             solver%backend_id = FORTSPARSE_BACKEND_NATIVE
         end if
