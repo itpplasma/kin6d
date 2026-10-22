@@ -1,6 +1,6 @@
 # General three-dimensional equilibrium with islands
 
-[H] Design for controller review, 2026-10-22. This document proposes the next
+[H] Design accepted with controller decisions, 2026-10-22. This document proposes the next
 non-nested increments of [KIN6D](https://github.com/itpplasma/kin6d), rather
 than claiming an implemented machine equilibrium solver. It admits islands,
 separatrices and stochastic regions without requiring a global flux label or
@@ -21,6 +21,32 @@ scaling and the additional gates, without creating a second equilibrium core.
 contract or mathematical deduction. **[H]** denotes a proposed implementation,
 acceptance threshold or resource estimate that remains to be demonstrated.
 A source comparison does not establish that KIN6D meets the proposed gate.
+
+## Decisions (controller review 2026-10-22)
+
+[H] Default A (anisotropic pressure transport with declared sources and heat
+boundary data) + D (Ohm's law with V or I_phi) is the “relaxed equilibrium
+as it is”. An ideal statement requires a measured limit sequence.
+
+[H] Implement B (“tell it the profile”) first by fitting S and conductivity/
+current drive for λ on the reference label to reproduce p_target/λ_target
+on the seed, freezing, solving A+D and reporting target/fit defects.
+This retains a smooth differentiable branch. Π_B is diagnostic first (G1b).
+Topology detection inside Newton is non-smooth, so a projected solve is later and optional (I5c).
+C is regional and opt-in, and SPEC single volume (G3) verifies only C.
+
+[H] Stage free boundary as I7a, prescribed coil normal trace on a large coil-free
+Ω (exact for vacuum, finite-beta trace defect from Γ_c comparison and domain
+enlargement), then I7b, D6 Γ_c coupling. Before I10 check whether axisymmetric
+Γ_c fits between W7-X plasma/islands and every NPC/planar filament at every φ.
+If not, accepted FortFEM `bem3d` is an I10 prerequisite and I7a is interim.
+
+[H] Prioritise I3/I4 after I1: matrix-free generated JVPs, mode-block
+preconditioning and FFT tiles gate all machine work. P3 stays the minimum.
+Start machines with W7-X vacuum 5/5 (EIM), then 5/4, 5/6 and
+edge-island candidates, then finite beta. Use Davies et al.'s public normalised
+currents with synthetic/private filaments outside the public repo. LHD n=1 RMP
+follows only with an LHD-lane calibrated RMP coil set and I11 gates.
 
 ## Literature and the model distinctions
 
@@ -242,6 +268,27 @@ smooth Newton step. Topology detection may suggest a later mask update, but
 cannot silently change the problem during differentiation or convergence.
 A general static equilibrium is not uniquely selected by force balance alone.
 
+### Case declaration (user view)
+
+[H] Proposed namelist interface: each region selects A/B + D or opt-in C with
+regional invariants. This example selects B's frozen fit, then solves A+D.
+
+```fortran
+&island_case
+ domain='large_coil_free_torus', chart='cylindrical_R_Z_phi', nfp=5
+ boundary='prescribed_coil_normal_trace', coils='synthetic_filaments'
+ region(1)='plasma', pressure_closure(1)='B_frozen_fit', current_closure(1)='D'
+ reference_label='seed_label', p_target='p_profile', lambda_target='lambda_profile'
+ fit_on_seed=.true., freeze_fit=.true.
+ source='fit_S', conductivity_drive='fit_lambda', heat_boundary='declared_heat_data'
+ ! A instead uses declared sources; C instead uses a marked Taylor region.
+ chi_perp_over_parallel=1.e-4, g_perp_over_parallel=1.e-4, I_phi=0.0 ! or V
+ limit_path='refine_then_reduce_both_ratios'
+ h_levels=1,2,4, p_levels=3,4,5, K_levels=8,16,24
+ observables='B,p,D3,width,phase,flattening,target_defect,fit_defect,trace_defect'
+/
+```
+
 ### A. Pressure transport with sources
 
 [V] Reuse NN2's scalar pressure model, p = n0 T at uniform prescribed density:
@@ -275,7 +322,7 @@ each ratio before extrapolation. Raising chi_parallel at fixed chi_perp and
 lowering chi_perp at fixed chi_parallel give different source balances and
 must not be conflated. Quote only the path actually computed.
 
-### B. Prescribed profiles through invariant projection
+### B. Prescribed profiles: frozen fitted sources, then projection
 
 [H] The user supplies a reference label s_ref(x), pressure target f(x) =
 p_target(s_ref(x)) and current target λ_target(s_ref(x)), with units and
@@ -283,6 +330,14 @@ normalisations. s_ref may come from a vacuum/nested seed or a declared
 field-line-averaged label. It is reference data, not an assertion that the
 final field has global surfaces. Prescribing ι where it does not exist is
 rejected. Use λ = J_parallel/|B| or integral current moments instead.
+
+[H] I5a implements B first by fitting S and conductivity/current drive on
+s_ref to reproduce p_target and λ_target on the seed. Freeze these inputs,
+solve A+D and report seed-fit and solved-target defects separately, including
+incompatible fits. Do not re-fit inside Newton. This keeps the smooth branch
+and its equation-level derivatives without topology detection in the solve.
+I5b adds Π_B as a diagnostic gated by G1b on the operator itself. I5c may later
+use it in an optional solve with topology-change and unavailable-derivative status.
 
 [H] Define V_B = {q in L²(Ω): B·∇q = 0 weakly}, with compatible boundary
 data and means, and define Π_B f as the orthogonal projection onto V_B in
@@ -292,7 +347,7 @@ it is the invariant-flow average with time measure dl/|B|, not uniform
 arclength. On an ergodic volume it is a volume average. On a surviving
 irrational torus it is its invariant surface measure average.
 
-[H] Choose and record either p = Π_B[p_target(s_ref)] or
+[H] For the projection diagnostic or optional solve, record either p = Π_B[p_target(s_ref)] or
 p = p_target(Π_B s_ref). They differ for nonlinear targets. The default is
 the first, because it preserves the component mean of the supplied pressure.
 On surfaces for which s_ref is already constant, the requested profile is
@@ -308,15 +363,11 @@ island surfaces. Chaotic components flatten only to the extent supported by
 the stated projection/trace tolerance. Open field lines inherit compatible
 heat/pressure boundary data rather than an arbitrary closed-orbit average.
 
-[H] A computable alternative is a penalised projection or a fitted-source
-version of A. For example, with κ>0, solve
+[H] A later alternative is a penalised projection: with κ>0, solve
 −div(K∇p)+κp=κf, taking chi_parallel large and chi_perp positive.
 At fixed chi_perp its limiting constrained minimiser includes perpendicular
 smoothing and is generally **not** Π_B f. Recovering the unsmoothed projection
 requires a separately resolved chi_perp→0 limit and boundary compatibility.
-Alternatively fit S on surviving surfaces to reproduce the target, freeze
-that source for the solve, and report both target and source-fit defects.
-An arbitrary re-fit after every iterate cannot make a residual meaningful.
 
 [V] A pressure projection does not solve the resonant-current problem. First
 compute a particular λ_PS from current continuity. Its component mean is
@@ -367,8 +418,11 @@ own residual and uncertainty, never a hidden correction to an ideal solve.
 
 ## Free boundary and external drive
 
-[H] Choose the existing **D6 Γ_c FEM–BEM coupling** as the production boundary
-path. Ω and Γ_c are fixed in vacuum, inside every represented external coil
+[H] I7a first prescribes the coil normal trace on a large coil-free Ω,
+retaining harmonic/flux data. This is exact for vacuum. At finite beta, report
+the plasma-response trace defect estimated by Γ_c comparison and Ω enlargement,
+or mark it unavailable until measured. I7b then uses **D6 Γ_c FEM–BEM coupling**
+as the production path. Ω and Γ_c are fixed in vacuum, inside every external coil
 and outside plasma/current support. Ω contains a plasma region and a vacuum
 collar where p=0 and J=0. No globally nested plasma boundary is required.
 The plasma extent needs an explicit support/edge law as part of the closure,
@@ -478,13 +532,20 @@ million samples. Measure bytes/sample and operations/sample on the verified
 cylinder before converting to seconds. Reuse factors only while coefficient
 changes preserve the declared preconditioning quality.
 
-[H] W7-X studies must cover the standard edge 5/5 and alternative 5/4 and 5/6
-island configurations, plus internal-island cases. Use the convention n/m
+[H] Machine order is W7-X vacuum 5/5 (EIM), then 5/4, 5/6 and edge-island
+candidates, then finite beta, including internal-island cases. Use public
+normalised currents with synthetic or privately held filaments, and run
+private geometry outside the public repository. Use the convention n/m
 in these machine names, so ι=n/m, while the helical phase below is mθ−nφ.
 The meridian mesh must resolve m=4,5,6 chains and local widths independently
 of the Fourier ladder. Fivefold periodic runs exclude symmetry-breaking
 responses by construction, so a full-torus check is needed if the input or
 solution under investigation breaks that symmetry.
+
+[V] Davies et al., [arXiv:2607.14722](https://arxiv.org/html/2607.14722v1),
+§4.2/Table 2, gives normalised filament currents, including EIM's unit NPC
+and zero planar currents. Body checked after a local Zotero identifier query
+found no match. Currents do not supply geometry.
 
 [H] LHD uses the l=2, toroidal-period-10 main helix with an n=1 RMP. Retain
 physical toroidal harmonics at least through 2×10 and their sidebands:
@@ -492,6 +553,7 @@ K=24 includes 20±1, while 32 and 48 test additional nonlinear couplings.
 Do not keep only multiples of ten or equate the poloidal helical number l
 with a toroidal mode. These cutoffs are initial ladders and must be extended
 if width, phase, pressure or force residual remains sensitive to the tail.
+Begin only after the LHD lane supplies a calibrated RMP coil set and I11 gates pass.
 
 [V] NN2's recorded high-anisotropy closed-line tests pass at P3, while P2 can
 show mesh-dependent Φ pollution and fail the voltage-order gate even with
@@ -580,11 +642,11 @@ For exact smooth Pk cases require B order ≥k−0.3 and falling D3 with order
 |---|---|---|
 | G0 | Existing NN1 vacuum/Solov'ev and NN2 manufactured, transport, coupled, island and closed-line cases | Existing thresholds unchanged, including P3 high-ratio gates; assembled and matrix-free states agree to 1e−8 relative |
 | G1a | Closure A manufactured anisotropic transport with analytic B,p, finite-ratio sources and heat boundaries | L² p order ≥k+0.6 at ratio one, existing high-ratio oracle gates, source/heat balance ≤1e−9; force-incompatible manufactured data are labelled as such |
-| G1b | Closure B on integrable field, closed rational lines, an analytic helical island and a declared mixing component | Projection idempotence and mean preservation ≤1e−9 in the stated norms; target/invariant mismatch ≤1e−6 after a trace ladder; island-internal profile and whole-island-mixed cases distinguished |
+| G1b | Π_B diagnostic operator itself on integrable field, closed rational lines, an analytic helical island and a declared mixing component | Projection idempotence and mean preservation ≤1e−9 in the stated norms; target/invariant mismatch ≤1e−6 after a trace ladder; island-internal profile and whole-island-mixed cases distinguished; no projected-solve claim |
 | G1c | Closure C manufactured forced curl problem for operator checks, then unforced Taylor eigenfields | Forced source residual ≤1e−10; physical unforced case independently meets Beltrami and D3 gates, with no manufactured force admitted as physical equilibrium |
 | G1d | Closure D manufactured Φ/V/current-continuity system and equivalent voltage/current-driven solutions | Charge balance ≤1e−9, I_phi error ≤1e−6, matched V/I-driven fields agree to 1e−7, incompatible overconstraint rejected |
 | G2 | Force-free Chandrasekhar–Kendall periodic cylinder, B built independently from Bessel/Helmholtz functions | Relative B error ≤1e−4 and expected order, relative curl B−μB ≤1e−6, D3 ≤1e−6; phase/amplitude fixed by declared symmetry/flux normalisations |
-| G3 | Single-volume SPEC at the same wall, μ or helicity, flux and pressure constant | B/energy agreement ≤1e−3 after independent ladders, each solver meets its own residual gate; exclude unmatched regional invariants |
+| G3 | Single-volume SPEC at the same wall, μ or helicity, flux and pressure constant, verifying only C | B/energy agreement ≤1e−3 after independent ladders, each solver meets its own residual gate; exclude unmatched regional invariants |
 | G4 | Weakly forced resonant island in slab/cylinder, then large-aspect-ratio tokamak; analytic Hamiltonian width and independent outer-region solution | W within 1% or 1e−4 minor-radius units, whichever larger, phase within 0.02 rad; four amplitudes recover W proportional to sqrt(perturbation) with log slope 0.5±0.05 |
 | G5 | Ideal shielding/current sheets from L15 and H22 versus reconnecting/island branch; separate closures and topology | Correct branch and current jump/outer field within 1% after convergence; do not demand a smooth pointwise current at the sheet |
 | G6 | Nested limit versus VMEC++/GVEC/DESC through D7 and common-core residuals | Matched B,p RMS ≤1e−3, flux ≤1e−4, ι on surviving surfaces ≤1e−3; zero unintended modes ≤1e−10 for axisymmetric data |
@@ -603,8 +665,8 @@ Delta-prime alone does not determine a forced or saturated island width.
 G9 supplies the additional current-relaxation/saturation assumptions.
 
 [H] Pressure checks must reflect the closure: A tests finite-width transport
-and a resolved anisotropy limit, B tests invariant averages and the separately
-requested mixing rule, C tests a constant regional p and interface traction.
+and a resolved anisotropy limit, B tests frozen fits and target defects, then
+diagnostic invariant averages/mixing, and C tests constant regional p and traction.
 The limiting ideal claim requires ε_parallel and the perpendicular Ohmic
 force contribution each ≤1e−6, with decreasing D3 on spatial/mode ladders.
 If these conditions cannot be reached, return a regularised candidate rather
@@ -631,19 +693,27 @@ changes land in the owner first and the consumer pin is updated only after
 rechecking the actual consumer. I-names are independent of equilibrium-core
 D1–D8. All dependencies are explicit, and the controller chooses promotion.
 
+[H] Before I10, check whether axisymmetric Γ_c fits between W7-X plasma/islands
+and all NPC/planar filaments at every φ. The coils hug the plasma, so this is
+open. If none fits, accepted [FortFEM](https://github.com/lazy-fortran/fortfem)
+nonaxisymmetric BEM (`bem3d`) is an I10 prerequisite. I7a remains interim.
+
 | milestone | smallest complete change | dependency and gate |
 |---|---|---|
 | I1 | Closure declaration/admissibility and residual/report extension using existing A/D equations | Design approved, then G0/G1a/G1d; no new solver family |
 | I2 | Independent CK and matched single-volume Taylor oracles and closure C | I1, G1c/G2/G3; regional interfaces beyond the single volume remain unavailable |
 | I3 | Matrix-free generated JVP/VJP action over existing coupled unknowns | I1, assembled comparison on G0/G1, JVP finite-difference check ≤1e−7 and adjoint pairing ≤1e−10 |
 | I4 | Mode-block preconditioner and FFT/tiled action | I3, G0–G3 unchanged; memory grows ≤2.5× when M doubles at fixed mesh, with timed 1/2/4/8-thread ladder |
-| I5 | Invariant-projected prescribed-pressure/current option and explicit whole-island mixing | I1/I3, G1b and G4; trace, target and current-solvability defects exposed |
-| I6 | Width/phase/G estimator integration and resonant/current-sheet cases | I2–I5, G4/G5/G7 and independent nested-limit G6; practical error labels retained |
-| I7 | Free-B Γ_c coupling through existing D6 plus coil and casing checks | I4/I6, M4 and accepted bem3d adapter if needed, G8; no duplicate exterior solver |
-| I8 | Marked regional Taylor interface coupled to A/B exterior pressure closure | I2/I5/I7, interface MMS and traction/jump gates of G5/G8, helicity/flux compatibility checked |
+| I5a | B via frozen fitted S and conductivity/current drive on the reference label, solving A+D | I1/I3, G1a/G1d and seed-target reproduction on G4; expose seed-fit and solved-target defects |
+| I5b | Π_B diagnostic and explicit whole-island mixing diagnostic | I5a, G1b on the projection operator itself and G4; expose trace, target and current-solvability defects |
+| I5c | Optional projected solve mode | I5b, G1b/G4 plus topology-change and derivative-status checks; not a prerequisite of machine work |
+| I6 | Width/phase/G estimator integration and resonant/current-sheet cases | I2/I4/I5a/I5b, G4/G5/G7 and independent nested-limit G6; practical error labels retained |
+| I7a | Prescribed coil normal trace on a large coil-free Ω | I4/I6, direct vacuum oracle; finite-beta plasma-response trace defect from Γ_c comparison and Ω enlargement, unavailable until measured |
+| I7b | Free-B Γ_c coupling through existing D6 plus coil and casing checks | I7a, M4 and accepted bem3d adapter if needed, G8; no duplicate exterior solver |
+| I8 | Marked regional Taylor interface coupled to A/B exterior pressure closure | I2/I5a/I7b, interface MMS and traction/jump gates of G5/G8, helicity/flux compatibility checked |
 | I9 | Small-island nonlinear saturation comparison and machine-size synthetic memory trial | I6–I8, G9 plus measured action/preconditioner memory and cost; no production machine claim |
-| I10 | Public/synthetic W7-X configuration ladder | I9 and all prior gates, G10 for each 5/5, 5/4, 5/6 case; provenance and separate private-data runs |
-| I11 | Full-torus LHD helix plus n=1 RMP and sidebands | I9 and all prior gates, G10 with K≥24,32,48 extended as needed; no symmetry reduction to nfp=10 |
+| I10 | W7-X vacuum 5/5 EIM, then 5/4, 5/6, edge-island candidates, then finite beta | I9 and prior required gates, Γ_c fit check above (accepted bem3d if it fails), G10 per case; public currents, synthetic/private filaments outside public repo |
+| I11 | Full-torus LHD helix plus n=1 RMP and sidebands | I9 and prior required gates plus calibrated RMP coil set owned by LHD lane, G10 with K≥24,32,48 extended as needed; no symmetry reduction to nfp=10 |
 
 [H] Open mathematical risks are the smooth ideal limit at dense resonances,
 closed-line/chaotic averaging without a uniform finite trace bound, and loss
@@ -651,8 +721,8 @@ of invertibility near bifurcations. Open computational risks are anisotropy-
 uniform preconditioning, Fourier aliasing, factor memory and scalable BEM.
 They are reported as failed or unavailable gates, not removed by changing
 tolerances. No W7-X/LHD result, continuous certificate or speed advantage is
-established by this document. The controller reviews this draft before any
-implementation or machine campaign is promoted.
+established by this document. Controller design acceptance does not promote
+an implementation or machine campaign without its required gates.
 
 [H89]: https://doi.org/10.1016/0021-9991(89)90069-7
 [H06]: https://doi.org/10.1088/0029-5515/46/11/L01
