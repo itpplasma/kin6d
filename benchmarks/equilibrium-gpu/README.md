@@ -59,8 +59,8 @@ merged into this lane. A bounded resample of that real consumer was stopped
 after about 150 s without a completed ladder timing. A five-second sample
 attributes 39.55% to `fortsparse_native_ldlt.f90:629` (`row_put`), 29.32% to
 `fortsparse_status.f90:42` (`status_set`), and 23.10% to
-`fortsparse_native_ldlt.f90:270` (`numeric`). Upstream main was checked and
-remains the pinned 09fc2b4 revision. This is a factorization hotspot observation,
+`fortsparse_native_ldlt.f90:270` (`numeric`). At that measurement, upstream main was checked and
+matched the 09fc2b4 pin. This is a factorization hotspot observation,
 not a completed solve or an established cause of every slowdown. The earlier
 AUTO-backend totals above must not be attributed to the new native backend.
 The timed ladder is the N=0 restriction of the map lane; a completed
@@ -83,6 +83,115 @@ includes current normalization (`app/gs_phase1.f90:248` and
 those overlapping totals must not be added. The estimator was 0.203/0.0644 s
 and its majorant agreed to 9.7e-14 relative (status 4, residual verified,
 approximate frozen-source estimate, continuous certification unavailable).
+
+## Native CPU follow-up, 2026-10-22
+
+[V] KIN6D 072d226 uses native supernodal LU with AMD for the map Newton/KKT
+matrix (`src/mhd/ideal_map.f90`, `factor_masked`). The FortSparse pin now includes
+[the default scalar LDLT row-merge fix](https://github.com/lazy-fortran/fortsparse/pull/28),
+faa7b5348992dbb67eb2c8a2b60c33b17d211759. The historical stalled LDLT sample
+above and the current production LU measurements are different solver paths.
+
+[V] Default LDLT previously repeated binary searches and a 120-character status
+write for each Schur entry. Upstream #26 had fixed blocked recovery, while default
+scalar execution still missed the merge workspace. The new default schedules
+independent row merges through OpenMP, preserves scalar pivot choices and
+contraction order, accounts merge workspace under strict caps, and retains
+entry-wise updates under LOW_MEMORY. Its no-fill regression checks a known
+solution, the original-matrix residual and a relative timing bound against LOW.
+
+[V] sCluster EPYC 9455, GCC 16.2 Release, OpenBLAS 0.3.34 at one thread, AMD 2.4.6,
+OpenMP passive wait, close binding within an eight-core Slurm allocation.
+Five fresh processes per thread count; medians below. Runs used identical source
+snapshots on node4/node18. `Map` times map construction plus Newton at the finest
+rung. `Ladder` is the complete three-rung process, including meshing, independent
+2D solves, defects and D3 checks. CPU is full-process user plus system time;
+RSS is the largest observed individual-process peak, in KiB. Phase medians need
+not add exactly to the median map wall time.
+
+| Free DOFs | Threads | Map s | Energy/gradient s | Hessian s | Factor/solve s | Ladder s | CPU s | Peak RSS KiB |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 18,567 | 1 | 5.46 | 0.82 | 2.21 | 2.39 | 8.45 | 8.40 | 95,932 |
+| 18,567 | 2 | 3.91 | 0.43 | 1.30 | 2.11 | 6.40 | 8.80 | 100,580 |
+| 18,567 | 4 | 3.16 | 0.24 | 0.84 | 2.05 | 5.34 | 9.02 | 105,596 |
+| 18,567 | 8 | 2.80 | 0.14 | 0.62 | 2.01 | 4.83 | 9.56 | 120,392 |
+| 41,615 | 1 | 5.67 | 0.68 | 2.66 | 2.25 | 14.93 | 14.87 | 173,048 |
+| 41,615 | 2 | 3.99 | 0.35 | 1.64 | 1.94 | 11.37 | 14.95 | 180,616 |
+| 41,615 | 4 | 3.18 | 0.20 | 1.16 | 1.77 | 10.00 | 15.65 | 183,088 |
+| 41,615 | 8 | 2.81 | 0.12 | 0.88 | 1.76 | 9.26 | 16.92 | 192,952 |
+
+[V] Matched old-pin controls (4f716f6, five processes per count, same compiler,
+libraries, inputs and binding policy; node4) are below. The measured native LU
+source is unchanged between pins. New-pin ladder wall medians are 2.7–10.5%
+lower in these observations, with overlapping timing ranges and different Slurm
+allocations, so no LU speedup is attributed to the pin change. Peak RSS changes
+range from -1.5% to +4.2%. All printed endpoints agree exactly between pins.
+Control jobs 3355225/3355226 passed after pilot 3355205.
+
+| Free DOFs | Threads | Old map s | Old factor/solve s | Old ladder s | Old CPU s | Old peak RSS KiB |
+|---:|---:|---:|---:|---:|---:|---:|
+| 18,567 | 1 | 5.91 | 2.60 | 9.10 | 9.05 | 97,356 |
+| 18,567 | 2 | 4.04 | 2.21 | 6.58 | 9.00 | 101,536 |
+| 18,567 | 4 | 3.35 | 2.18 | 5.65 | 9.25 | 102,720 |
+| 18,567 | 8 | 3.09 | 2.21 | 5.31 | 10.24 | 115,548 |
+| 41,615 | 1 | 6.05 | 2.50 | 15.90 | 15.85 | 172,944 |
+| 41,615 | 2 | 4.48 | 2.27 | 12.71 | 16.71 | 180,636 |
+| 41,615 | 4 | 3.50 | 1.99 | 11.00 | 17.38 | 184,068 |
+| 41,615 | 8 | 3.01 | 1.92 | 10.17 | 18.45 | 192,560 |
+
+[V] Map scaling is 1.95x/2.02x, while factor/solve scaling is 1.19x/1.28x.
+The finest cases take 21/10 Newton iterations respectively, so their raw times
+are not a fixed-iteration size-scaling comparison. Every run passes the exact
+flux and independent 2D convergence-order gates. Endpoints are identical across
+all five trials and thread counts within each ladder: normalized exact-flux
+defect 2.1522071047864953e-6 / 5.931685014394489e-7, energy
+9361.367520435855 / 9361.36784912228. They remain candidate solutions with
+continuous enclosure unavailable.
+
+[V] Generic scalar LDLT strong scaling is measured separately on a 768-by-768
+signed-diagonal/rank-one fixture. Median factor times at 1/2/4/8 threads are
+0.983715/0.577523/0.330505/0.215278 s (4.57x, 57% efficiency at eight threads).
+Actual maximum teams are 1/2/4/8; maximum absolute original-matrix residuals are 2.89e-14 and
+known-solution errors stay below 2e-13. Full-process wall medians are
+1.02/0.63/0.38/0.26 s, CPU 0.99/1.12/1.14/1.15 s, peak RSS maxima
+37,392/39,312/39,828/40,552 KiB. This longer diagnostic is outside FortSparse's
+sub-second admission corpus. It does not establish scaling of the production LU.
+
+[V] A separate five-process replay of that initial Newton matrix (18,824
+stored rows including fixed identity rows, 18,567 free DOFs) factors in
+4.729101/4.307087/4.109780/3.989423 s at 1/2/4/8 threads, only 1.19x scaling.
+The normalized original-matrix residual is 1.26364e-15 and maximum known-solution
+error 2.11457e-10 at every count. Full-process wall medians are
+4.79/4.37/4.18/4.15 s, CPU 4.76/4.93/5.03/4.94 s and peak RSS maxima
+57,632/58,156/63,972/61,112 KiB. Replay job 3355283 passed. This sparse consumer
+matrix establishes a narrower scaling result than the dense clique.
+
+[V] Reproduce the normal ladder with `test_ideal_map_axisymmetric solovev 2`.
+The larger ladder changes only `base = 32` to `base = 48` in that test driver
+(boundary-node ladders 32/64/128 and 48/96/192). Use `OMP_NUM_THREADS=1,2,4,8`
+in separate processes and `OPENBLAS_NUM_THREADS=1`, `OMP_DYNAMIC=FALSE`,
+`OMP_PROC_BIND=close`, `OMP_PLACES=cores`, `OMP_WAIT_POLICY=PASSIVE`.
+Raw logs, full timing ranges, binary hashes, the larger-driver source and build
+recipes are retained outside Git at `/home/ert/runs/p1ldlt-20261022` on sCluster
+and `/mnt/storage/scratch/kin6d-islands/P1` locally. Measurement jobs:
+3355146/3355168 (normal), 3355147/3355169 (larger), 3355148 (generic LDLT).
+
+[V] A separate blocked-LDLT trial was rejected for the map. Its first frozen
+18,824-row Newton system factors quickly (1.03 s on a shared workstation at four threads,
+normalized residual 7.48e-16), but that sample does not represent later Newton
+matrices. The complete 18,567-DOF one-thread ladder timed out after 300 s on
+sCluster at 1,755,232 KiB peak RSS. The 41,615-DOF one-thread finest solve took
+40.51 s, including 37.00 s in factor/solve, with complete-ladder wall/CPU
+59.95/59.90 s and peak RSS 224,932 KiB. Those single observations support keeping
+production supernodal LU; no consumer factor-family change is included here.
+The outstanding LDLT limitation concerns full Newton matrix sequences, beyond
+the entry-update regression and clique scaling fixture fixed upstream.
+
+[V] These are the N=0 map restriction. They establish no matched-accuracy timing
+comparison with VMEC++ CPU/GPU, no whole-equilibrium GPU speedup and no general
+non-axisymmetric solver performance claim. Saturated-workstation production
+samples at 1/8 threads both timed out at 60 s; those censored observations are
+retained separately from the completed cluster measurements.
 
 ## Device measurements
 
