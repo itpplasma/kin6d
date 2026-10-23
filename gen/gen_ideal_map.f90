@@ -12,6 +12,7 @@ program gen_ideal_map
                            operator(*), operator(/), operator(**)
    use kin6d_symbolic_ideal, only: frozen_energy
    use fortsym_diff, only: diff
+   use fortsym_subs, only: subs_many
    use fortsym_products, only: jvp
    use fortsym_kernel_ir, only: kernel_ir_t, lower_kernel_ir
    use fortsym_kernel_emit, only: kernel_emit_spec_t, emit_cuda_batch_ir, &
@@ -81,6 +82,7 @@ program gen_ideal_map
       'p', 'mu0', 'sigma'], [character(8) :: ('g'//names9(i)(2:3), i=1, 9)], gradient)
    call w%emit('ideal_energy_hessian', [character(8) :: names9, 'b1', 'b2', 'b3', &
       'p', 'mu0', 'sigma'], names45, hessian)
+   call emit_point_leaves()
     ! N=0 cylindrical push-forward, including a spatially varying omega.
     sample_names = [character(8) :: 'a11', 'a21', 'a12', 'a22', &
                     'g11', 'g21', 'g12', 'g22', 'o1', 'o2', 'c1', 'c2', 'bt']
@@ -138,6 +140,329 @@ program gen_ideal_map
       call gpu_kernels()
    end if
 contains
+   subroutine emit_point_leaves()
+      ! Point leaves of the map lane: the density, its gradient and its packed
+      ! Hessian with respect to v = (q(3), Q(3,3)), Q(k,i) = dq_k/ds_i at index
+      ! 3 + k + 3(i-1), through DX(a,i) = sum_k DH(a,k)(q) Q(k,i). The chart
+      ! enters through its jet DH, D2H(a,k,m), D3H(a,k,m,n), symmetric in the
+      ! q-derivative indices (unique components k<=m<=n are arguments), so
+      ! the chain rule is one expression DAG with shared subexpressions.
+      ! The Hessian is packed in three groups for the Fourier-line contraction:
+      ! u,u' in 1..9 (test functions N T, dN/ds1 T, dN/ds2 T: group aa, 45
+      ! entries, column-major upper triangle), u in 1..9 with u' in 10..12
+      ! (N dT/ds3: group ab, 27 entries, u' outer) and u,u' in 10..12 (group
+      ! bb, 6 entries).
+      type(expr_t) :: j1(3, 3), j2(3, 3, 3), j3(3, 3, 3, 3), qd(3, 3)
+      type(expr_t) :: dx(9), dold(9), dens, jacobian, gd(9), hd(9, 9), dvx(9, 12)
+      type(expr_t) :: tmp(9, 12), hv(12, 12), gv(12), acc
+      logical :: started
+      logical :: nz(9, 12)
+      character(8) :: jn(9), kn(18), ln(30), qn(9), pn(78), gn(12), outputs(92)
+      character(8), allocatable :: args(:)
+      integer :: a2, k2, m2, n2, i2, r, s, u, v, ia, ik, im, in2
+      ! Argument order: DH(a,k) a fastest, D2H(a,k<=m), D3H(a,k<=m<=n), Q(k,i), b.
+      ia = 0
+      do k2 = 1, 3
+         do a2 = 1, 3
+            ia = ia + 1
+            write (jn(ia), '(a,2i1)') 'j', a2, k2
+            j1(a2, k2) = sym(arena, trim(jn(ia)))
+         end do
+      end do
+      ik = 0
+      do m2 = 1, 3
+         do k2 = 1, m2
+            do a2 = 1, 3
+               ik = ik + 1
+               write (kn(ik), '(a,3i1)') 'k', a2, k2, m2
+               j2(a2, k2, m2) = sym(arena, trim(kn(ik)))
+               j2(a2, m2, k2) = j2(a2, k2, m2)
+            end do
+         end do
+      end do
+      im = 0
+      do n2 = 1, 3
+         do m2 = 1, n2
+            do k2 = 1, m2
+               do a2 = 1, 3
+                  im = im + 1
+                  write (ln(im), '(a,4i1)') 'l', a2, k2, m2, n2
+                  j3(a2, k2, m2, n2) = sym(arena, trim(ln(im)))
+                  j3(a2, k2, n2, m2) = j3(a2, k2, m2, n2)
+                  j3(a2, m2, k2, n2) = j3(a2, k2, m2, n2)
+                  j3(a2, m2, n2, k2) = j3(a2, k2, m2, n2)
+                  j3(a2, n2, k2, m2) = j3(a2, k2, m2, n2)
+                  j3(a2, n2, m2, k2) = j3(a2, k2, m2, n2)
+               end do
+            end do
+         end do
+      end do
+      in2 = 0
+      do i2 = 1, 3
+         do k2 = 1, 3
+            in2 = in2 + 1
+            write (qn(in2), '(a,2i1)') 'q', k2, i2
+            qd(k2, i2) = sym(arena, trim(qn(in2)))
+         end do
+      end do
+      ! DX = DH Q and the energy roots composed with it.
+      do i2 = 1, 3
+         do a2 = 1, 3
+            r = a2 + 3*(i2 - 1)
+            dold(r) = d(a2, i2)
+            dx(r) = j1(a2, 1)*qd(1, i2) + j1(a2, 2)*qd(2, i2) + j1(a2, 3)*qd(3, i2)
+         end do
+      end do
+      dens = subs_many(density, dold, dx)
+      jacobian = subs_many(jac, dold, dx)
+      do r = 1, 9
+         gd(r) = subs_many(gradient(r), dold, dx)
+      end do
+      do s = 1, 9
+         do r = 1, s
+            hd(r, s) = subs_many(hessian(s*(s - 1)/2 + r), dold, dx)
+            hd(s, r) = hd(r, s)
+         end do
+      end do
+      ! dDX(a,i)/dv: q_m -> sum_k D2H(a,k,m) Q(k,i); Q(k,i') -> DH(a,k) delta_ii'.
+      nz = .false.
+      do i2 = 1, 3
+         do a2 = 1, 3
+            r = a2 + 3*(i2 - 1)
+            do m2 = 1, 3
+               dvx(r, m2) = j2(a2, 1, m2)*qd(1, i2) + j2(a2, 2, m2)*qd(2, i2) &
+                  + j2(a2, 3, m2)*qd(3, i2)
+               nz(r, m2) = .true.
+            end do
+            do k2 = 1, 3
+               u = 3 + k2 + 3*(i2 - 1)
+               dvx(r, u) = j1(a2, k2)
+               nz(r, u) = .true.
+            end do
+         end do
+      end do
+      do u = 1, 12
+         started = .false.
+         do r = 1, 9
+            if (nz(r, u)) call accumulate(acc, gd(r)*dvx(r, u), started)
+         end do
+         gv(u) = acc
+      end do
+      do v = 1, 12
+         do r = 1, 9
+            started = .false.
+            do s = 1, 9
+               if (nz(s, v)) call accumulate(acc, hd(r, s)*dvx(s, v), started)
+            end do
+            tmp(r, v) = acc
+         end do
+      end do
+      do v = 1, 12
+         do u = 1, v
+            started = .false.
+            do r = 1, 9
+               if (nz(r, u)) call accumulate(acc, dvx(r, u)*tmp(r, v), started)
+            end do
+            ! Second derivatives of DX: q_m q_n -> D3H Q, q_m Q(k,i) -> D2H.
+            if (v <= 3) then
+               call add_q_block(j3, qd, gd, u, v, acc, started)
+            else if (u <= 3) then
+               call add_mixed_block(j2, gd, u, v, acc, started)
+            end if
+            hv(u, v) = acc
+         end do
+      end do
+      do u = 1, 12
+         write (gn(u), '(a,i2.2)') 'g', u
+      end do
+      do u = 1, 78
+         write (pn(u), '(a,i2.2)') 'p', u
+      end do
+      outputs(1:2) = ['w  ', 'jac']
+      outputs(3:14) = gn
+      outputs(15:) = pn
+      args = [character(8) :: jn, kn, ln, qn, 'b1', 'b2', 'b3', 'p', 'mu0', 'sigma']
+      call w%emit('ideal_point_gradient', args, outputs(1:14), &
+         [dens, jacobian, gv])
+      call w%emit('ideal_point_hessian', args, outputs, &
+         [dens, jacobian, gv, (hv(packed_u(u), packed_v(u)), u=1, 78)])
+      call w%line('! Point leaves: w, jac, gv(12) and the packed Hessian hp(78) with respect')
+      call w%line('! to v = (q(3), Q(3,3)), Q(k,i) at 3 + k + 3(i-1). hp(1:45): upper triangle')
+      call w%line('! of v(1:9) (column-major); hp(46:72): rows v(1:9) of columns v(10:12);')
+      call w%line('! hp(73:78): upper triangle of v(10:12). The *_jets wrappers take the')
+      call w%line('! chart jet arrays d1, d2, d3 (symmetric in the q-derivative indices).')
+      call wrapper('ideal_point_gradient_jets', 'ideal_point_gradient', .false.)
+      call wrapper('ideal_point_hessian_jets', 'ideal_point_hessian', .true.)
+   end subroutine
+
+   subroutine wrapper(name, leaf, with_hessian)
+      ! Array interface of a point leaf (same unique components as arguments).
+      character(*), intent(in) :: name, leaf
+      logical, intent(in) :: with_hessian
+      call w%line('pure subroutine '//name//'(d1, d2, d3, qd, b, p, mu0, sigma, &')
+      if (with_hessian) then
+         call w%line('        w, jac, gv, hp)')
+      else
+         call w%line('        w, jac, gv)')
+      end if
+      call w%line('    use, intrinsic :: iso_fortran_env, only: dp => real64')
+      call w%line('    implicit none')
+      call w%line('    real(dp), intent(in) :: d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)')
+      call w%line('    real(dp), intent(in) :: qd(3, 3), b(3), p, mu0, sigma')
+      call w%line('    real(dp), intent(out) :: w, jac, gv(12)')
+      if (with_hessian) call w%line('    real(dp), intent(out) :: hp(78)')
+      call w%line(call_text(leaf, merge('hp', '  ', with_hessian)))
+      call w%line('end subroutine '//name)
+      call w%line('')
+   end subroutine
+
+   integer function packed_u(n)
+      ! Row (smaller) index of entry n of the aa/ab/bb packing.
+      integer, intent(in) :: n
+      integer :: j
+      call pair_of(n, packed_u, j)
+   end function
+
+   integer function packed_v(n)
+      integer, intent(in) :: n
+      integer :: i
+      call pair_of(n, i, packed_v)
+   end function
+
+   subroutine pair_of(n, i, j)
+      integer, intent(in) :: n
+      integer, intent(out) :: i, j
+      integer :: t
+      if (n <= 45) then
+         j = 1
+         do while (j*(j + 1)/2 < n)
+            j = j + 1
+         end do
+         i = n - j*(j - 1)/2
+      else if (n <= 72) then
+         t = n - 46
+         j = 10 + t/9
+         i = 1 + mod(t, 9)
+      else
+         t = n - 73
+         j = 10
+         do while ((j - 9)*(j - 8)/2 < t + 1)
+            j = j + 1
+         end do
+         i = 10 + t - (j - 10)*(j - 9)/2
+      end if
+   end subroutine
+
+   subroutine add_q_block(j3, qd, gd, m, n, acc, started)
+      ! sum_(a,i) gd(a,i) sum_k D3H(a,k,m,n) Q(k,i)
+      type(expr_t), intent(in) :: j3(3, 3, 3, 3), qd(3, 3), gd(9)
+      integer, intent(in) :: m, n
+      type(expr_t), intent(inout) :: acc
+      logical, intent(inout) :: started
+      integer :: i3, a3
+      type(expr_t) :: second
+      do i3 = 1, 3
+         do a3 = 1, 3
+            second = j3(a3, 1, m, n)*qd(1, i3) + j3(a3, 2, m, n)*qd(2, i3) &
+               + j3(a3, 3, m, n)*qd(3, i3)
+            call accumulate(acc, gd(a3 + 3*(i3 - 1))*second, started)
+         end do
+      end do
+   end subroutine
+
+   subroutine add_mixed_block(j2, gd, m, v, acc, started)
+      ! sum_a gd(a,i) D2H(a,k,m) for the column v = 3 + k + 3(i-1)
+      type(expr_t), intent(in) :: j2(3, 3, 3), gd(9)
+      integer, intent(in) :: m, v
+      type(expr_t), intent(inout) :: acc
+      logical, intent(inout) :: started
+      integer :: k3, i3, a3
+      k3 = mod(v - 4, 3) + 1
+      i3 = (v - 4)/3 + 1
+      do a3 = 1, 3
+         call accumulate(acc, gd(a3 + 3*(i3 - 1))*j2(a3, k3, m), started)
+      end do
+   end subroutine
+
+   subroutine accumulate(acc, term, started)
+      type(expr_t), intent(inout) :: acc
+      type(expr_t), intent(in) :: term
+      logical, intent(inout) :: started
+      if (started) then
+         acc = acc + term
+      else
+         acc = term
+         started = .true.
+      end if
+   end subroutine
+
+   function call_text(leaf, hessian_out) result(text)
+      ! Call of a point leaf from the jet arrays: unique symmetric components.
+      character(*), intent(in) :: leaf, hessian_out
+      character(:), allocatable :: text
+      integer :: a2, k2, m2, n2, i2, u
+      text = '    call '//leaf//'(&'
+      do k2 = 1, 3
+         do a2 = 1, 3
+            call item(text, 'd1('//num(a2)//', '//num(k2)//')')
+         end do
+      end do
+      do m2 = 1, 3
+         do k2 = 1, m2
+            do a2 = 1, 3
+               call item(text, 'd2('//num(a2)//', '//num(k2)//', '//num(m2)//')')
+            end do
+         end do
+      end do
+      do n2 = 1, 3
+         do m2 = 1, n2
+            do k2 = 1, m2
+               do a2 = 1, 3
+                  call item(text, 'd3('//num(a2)//', '//num(k2)//', '//num(m2) &
+                     //', '//num(n2)//')')
+               end do
+            end do
+         end do
+      end do
+      do i2 = 1, 3
+         do k2 = 1, 3
+            call item(text, 'qd('//num(k2)//', '//num(i2)//')')
+         end do
+      end do
+      do u = 1, 3
+         call item(text, 'b('//num(u)//')')
+      end do
+      call item(text, 'p'); call item(text, 'mu0'); call item(text, 'sigma')
+      call item(text, 'w'); call item(text, 'jac')
+      do u = 1, 12
+         call item(text, 'gv('//num(u)//')')
+      end do
+      if (len_trim(hessian_out) > 0) then
+         do u = 1, 78
+            call item(text, trim(hessian_out)//'('//num(u)//')')
+         end do
+      end if
+      text = text//')'
+   end function
+
+   subroutine item(text, argument)
+      character(:), allocatable, intent(inout) :: text
+      character(*), intent(in) :: argument
+      if (text(len(text):) == '&') then
+         text = text//new_line('a')//'        '//argument
+      else
+         text = text//', &'//new_line('a')//'        '//argument
+      end if
+   end subroutine
+
+   function num(i) result(text)
+      integer, intent(in) :: i
+      character(:), allocatable :: text
+      character(8) :: buffer
+      write (buffer, '(i0)') i
+      text = trim(buffer)
+   end function
+
    subroutine gpu_kernels()
       ! Same Hessian roots as the production consumer; schedules stay outside
       ! the leaves. HVP is the JVP of the retained energy gradient.

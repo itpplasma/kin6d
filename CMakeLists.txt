@@ -326,6 +326,12 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+add_executable(test_ideal_map_hessian test/test_ideal_map_hessian.f90
+    test/support/ideal_map_hessian_oracle.f90)
+target_link_libraries(test_ideal_map_hessian PRIVATE kin6d)
+add_test(NAME ideal_map_hessian_sum_factorisation_oracle COMMAND test_ideal_map_hessian)
+set_tests_properties(ideal_map_hessian_sum_factorisation_oracle PROPERTIES TIMEOUT 120
+    PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_seed_3d test/test_ideal_seed_3d.f90)
 target_link_libraries(test_ideal_seed_3d PRIVATE kin6d)
 add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
