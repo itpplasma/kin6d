@@ -168,8 +168,18 @@ field-line-advance claim, certified figure-8 equilibrium, or completed
 
 ## Discretisation
 
-- Energy density, DX-gradient (9) and DX-Hessian (45) are fortsym leaves; the
-  chain rule through the chart is assembled in `local_derivatives`.
+- Energy density, DX-gradient (9) and DX-Hessian (45) are fortsym leaves. The
+  chain rule through the chart jet is a further fortsym leaf family
+  (`ideal_point_gradient`, `ideal_point_hessian`, array wrappers `*_jets`):
+  density, gradient and packed Hessian with respect to v = (q, Q), emitted
+  from the same expression DAG by `gen/gen_ideal_map.f90`.
+- The coefficient Hessian is assembled per cell in three stages instead of one
+  rank update per point (`ideal_map_hessian`): the weighted point Hessians are
+  contracted over the planes (DGEMMs per trig/dtrig pairing, map-level products
+  `pphi`), then over the quadrature points with the nodal basis (two DGEMM
+  families on the merged N, dN/ds1, dN/ds2 factors), then reduced by P and
+  reflected. Workspaces are thread-private and allocated once per parallel
+  region. The frozen point-loop assembly is the test oracle.
 - Planes: N_phi = 3N + 1 by default for cylindrical charts; explicit for curve
   charts, trapezoidal in phi-hat; Gauss order 7 in
   the plane. The integrand is rational, so neither is exact.
@@ -337,6 +347,11 @@ solution psi_2D on the same mesh is the second oracle.
 - `ideal_map_derivatives_and_rotation_null`: generated gradient against central
   differences of W, reduced Hessian against differences of the reduced
   gradient, at N = 0 and N = 1 (nfp = 3); rigid rotation null to roundoff.
+- `ideal_map_hessian_sum_factorisation_oracle`: the sum-factorised coefficient
+  Hessian against the frozen point-loop assembly
+  (`test/support/ideal_map_hessian_oracle.f90`) on random 3D states, P2 through P6,
+  N = 0..2, plain, nested-axis and position-gauge bases; agreement to 1e-12
+  of the largest entry and exact symmetry.
 - `ideal_map_n0_solovev_a3_p{2,3}`, `ideal_map_n0_shaped_solovev_p{2,3}`:
   three-mesh ladders, observed order >= k + 1 - 0.4 against the exact flux and
   against the 2D solution. Measured (2026-10-13, finest pair; seed defect
