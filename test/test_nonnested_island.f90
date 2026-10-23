@@ -31,6 +31,8 @@ program test_nonnested_island
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_P
     use kin6d_nonnested_residual, only: nn_residual
     use kin6d_equilibrium_residual, only: equilibrium_residual_t
+    use kin6d_island_diagnostics, only: island_trace_options_t, island_point_t, &
+        island_periodic_point
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
         nc_layout, nc_solve
     implicit none
@@ -40,6 +42,8 @@ program test_nonnested_island
     integer :: k, modes, nr, i, nlev
     type(nc_layout_t) :: lay
     type(nc_problem_t) :: problem
+    type(island_trace_options_t) :: trace_opt
+    type(island_point_t) :: point_o, point_x
     call get_command_argument(1, mode)
     call get_command_argument(2, arg)
     read (arg, *) k
@@ -50,6 +54,31 @@ program test_nonnested_island
     if (k < 2 .or. k > 4 .or. nr < 2 .or. modes < 1) error stop 'arguments'
     call make_coil()
     select case (trim(mode))
+    case ('map')
+        ! Diagnose the actual coupled NN2 field, not just its vacuum seed.
+        ! The legacy half-turn points have finite full-map defects. The
+        ! reusable Newton path must meet the complete-map closure tolerance.
+        call get_command_argument(5, arg)
+        read (arg, *) ratio
+        call setup(nr)
+        call solve(ratio, flat(1), d3(1), .false., oxdiff(1), .false.)
+        trace_opt%rtol = 1.0e-9_dp; trace_opt%atol = 1.0e-11_dp
+        trace_opt%root_tol = 2.0e-6_dp
+        call island_periodic_point(field, [5.52_dp, 0.0_dp], 0.0_dp, 1, &
+            [r0, 0.0_dp], 1, -1, trace_opt, point_o, [5.49_dp, 5.54_dp])
+        call island_periodic_point(field, [6.7_dp, 0.0_dp], 0.0_dp, 1, &
+            [r0, 0.0_dp], 1, -1, trace_opt, point_x, [6.69_dp, 6.72_dp])
+        print '(a,2i3,a,4es13.5)', 'coupled O/X status ', &
+            point_o%status, point_x%status, ' closure/residue ', &
+            point_o%closure, point_x%closure, point_o%residue, point_x%residue
+        print '(a,4es13.5)', 'coupled position/phase indicators ', &
+            point_o%position_error, point_x%position_error, &
+            point_o%phase_error, point_x%phase_error
+        if (point_o%status /= 0 .or. point_x%status /= 0) &
+            error stop 'coupled FEEC map unresolved'
+        if (point_o%residue <= 0 .or. point_o%residue >= 1 .or. &
+            point_x%residue >= 0) error stop 'coupled O/X classification'
+        print '(a)', 'PASS: controlled-trace Newton on the coupled NN2 map'
     case ('ratio')
         ! Flattening against chi_par/chi_perp at a fixed mesh, each ratio
         ! solved from the vacuum (zero-pressure) start.
