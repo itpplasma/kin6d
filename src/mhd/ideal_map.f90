@@ -67,6 +67,15 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
     public :: ideal_map_gauge_project
+    ! PF1 profiling instrumentation (islands/pf1prof, islands/sp2meas only, not
+    ! for main). pf1_t/pf1_n: 1 energy, 2 energy+gradient, 3 Hessian cell loop
+    ! (wall), 4 CSR pattern+assembly, 5 leaf (thread sum), 6 rank updates
+    ! (thread sum), 7 P^T H P (thread sum), 8 factor_masked cache update and
+    ! diagonal, 9 sparse_factor, 10 sparse_refactor, 11 sparse_solve,
+    ! 12 refactor reported reused.
+    real(dp), public :: pf1_t(12) = 0
+    integer, public :: pf1_n(12) = 0
+    type(sparse_factor_stats_t), public :: pf1_stats
     ! Damping above which factor_masked no longer tries the SPD Cholesky.
     real(dp), parameter :: spd_mu_limit = 1.0e2_dp
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
@@ -978,6 +987,8 @@ contains
         real(dp) :: w, jac, gv(12), hv(12, 12), f(0:3), dphi, weight, minjac
         integer :: e, g, j, a, m, c, l
         logical :: want
+        real(dp) :: pf1_t0
+        pf1_t0 = wall_seconds()
         want = present(gradient)
         allocate (local(3*map%nmode*map%nloc, map%cells), cell_energy(map%cells), &
             cell_jac(map%cells))
@@ -1028,7 +1039,10 @@ contains
         if (.not. (minjac > 0) .or. .not. ieee_is_finite(energy)) &
             status = IDEAL_MAP_FOLDED
         if (present(min_jacobian)) min_jacobian = minjac
-        if (.not. want) return
+        if (.not. want) then
+            pf1_t(1) = pf1_t(1) + wall_seconds() - pf1_t0; pf1_n(1) = pf1_n(1) + 1
+            return
+        end if
         gradient = 0
         do e = 1, map%cells
             gradient(map%dofconn(:, e)) = gradient(map%dofconn(:, e)) + local(:, e)
@@ -1039,6 +1053,7 @@ contains
                     x(3, 1, map%conn(:, e)))
             end do
         end do
+        pf1_t(2) = pf1_t(2) + wall_seconds() - pf1_t0; pf1_n(2) = pf1_n(2) + 1
     end subroutine
 
     subroutine ideal_map_hessian(map, x, matrix)
@@ -1051,20 +1066,25 @@ contains
         real(dp), allocatable :: half(:, :)
         real(dp) :: w, jac, gv(12), hv(12, 12), dphi, weight, s
         integer :: e, g, j, a, m, c, r, l, lb, nl, c2, r2, nr
+        real(dp) :: pf1_t0, pf1_a, pf1_b, pf1_c, tq
+        pf1_t0 = wall_seconds(); pf1_a = 0; pf1_b = 0; pf1_c = 0
         nl = 3*map%nmode*map%nloc
         nr = 2*map%nmode*map%nloc + 2*map%npoly*map%nmode
         allocate (blocks(nr, nr, map%cells))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
         !$omp parallel do default(none) shared(map, x, blocks, dphi, nl, nr) &
         !$omp private(e, g, j, a, m, c, r, l, lb, w, jac, gv, hv, weight, fa, fb, &
-        !$omp s, c2, r2, full, half) schedule(static)
+        !$omp s, c2, r2, full, half, tq) schedule(static) &
+        !$omp reduction(+:pf1_a, pf1_b, pf1_c)
         do e = 1, map%cells
             allocate (fa(0:3, map%nloc*map%nmode), fb(nl, 12), full(nl, nl), &
                 half(nl, nr))
             full = 0
             do j = 1, map%nphi
                 do g = 1, map%nq
+                    tq = wall_seconds()
                     call local_derivatives(map, e, g, j, x, w, jac, gv, hv, .true.)
+                    pf1_a = pf1_a + wall_seconds() - tq; tq = wall_seconds()
                     weight = map%weight(g)*dphi
                     l = 0
                     do a = 1, map%nloc
@@ -1092,8 +1112,10 @@ contains
                             end do
                         end do
                     end do
+                    pf1_b = pf1_b + wall_seconds() - tq
                 end do
             end do
+            tq = wall_seconds()
             do a = 1, map%nloc
                 do c = 1, map%nloc
                     l = 3*(1 + map%nmode*(a - 1))
@@ -1160,11 +1182,17 @@ contains
                 end do
             end do
             deallocate (fa, fb, full, half)
+            pf1_c = pf1_c + wall_seconds() - tq
         end do
         !$omp end parallel do
+        pf1_t(3) = pf1_t(3) + wall_seconds() - pf1_t0; pf1_n(3) = pf1_n(3) + 1
+        pf1_t(5) = pf1_t(5) + pf1_a; pf1_t(6) = pf1_t(6) + pf1_b
+        pf1_t(7) = pf1_t(7) + pf1_c
+        pf1_t0 = wall_seconds()
         if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
             call csr_build_pattern(map%nred, map%redconn, .false., matrix)
         call csr_assemble_blocks(matrix, map%redconn, blocks)
+        pf1_t(4) = pf1_t(4) + wall_seconds() - pf1_t0; pf1_n(4) = pf1_n(4) + 1
     end subroutine
 
     subroutine ideal_map_solve(map, tolerance, max_iterations, report, status, verbose, &
@@ -1196,7 +1224,7 @@ contains
         real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
         logical, allocatable :: omask(:), damped(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
-        real(dp) :: cap_x, cap_w, t0, trial_minjac
+        real(dp) :: cap_x, cap_w, t0, trial_minjac, pf1_t0
         integer :: it, i, k, tries, estatus
         logical :: talk, accepted, factored, ofactored, nested
         talk = .false.
@@ -1267,7 +1295,9 @@ contains
                     mu = mu*10; cycle
                 end if
                 rhs = -gred
+                pf1_t0 = wall_seconds()
                 call sparse_solve(solver, rhs, step, sstatus)
+                pf1_t(11) = pf1_t(11) + wall_seconds() - pf1_t0; pf1_n(11) = pf1_n(11) + 1
                 report%factor_s = report%factor_s + wall_seconds() - t0
                 if (.not. status_ok(sstatus)) then
                     status = IDEAL_MAP_SOLVE_FAILED; call cleanup(); return
@@ -1589,7 +1619,8 @@ contains
         type(fortsparse_status_t) :: sstatus
         logical :: reused, spd
         integer :: row, n, nc
-        real(dp) :: dscale, mu
+        real(dp) :: dscale, mu, pf1_t0
+        pf1_t0 = wall_seconds()
         nc = 0
         if (present(gauge)) then
             if (gauge) nc = gauge_rows(map)
@@ -1635,6 +1666,8 @@ contains
             end if
             slv%options%ordering = FORTSPARSE_ORDER_AMD
             slv%options%verify_factor = map%verify_factor
+            pf1_t(8) = pf1_t(8) + wall_seconds() - pf1_t0; pf1_n(8) = pf1_n(8) + 1
+            pf1_t0 = wall_seconds()
             if (gs_direct_available()) then
                 if (.not. gs_direct_mpi_ready()) then
                     info = 1
@@ -1653,8 +1686,12 @@ contains
             reused = .false.
             if (done) then
                 call sparse_refactor(slv, c%a, sstatus, reused)
+                pf1_t(10) = pf1_t(10) + wall_seconds() - pf1_t0
+                pf1_n(10) = pf1_n(10) + 1
+                if (reused) pf1_n(12) = pf1_n(12) + 1
             else
                 call sparse_factor(slv, c%a, sstatus)
+                pf1_t(9) = pf1_t(9) + wall_seconds() - pf1_t0; pf1_n(9) = pf1_n(9) + 1
             end if
         end associate
         info = merge(0, 1, status_ok(sstatus))
@@ -1674,6 +1711,7 @@ contains
         done = .true.
         if (.not. reused) report%analyses = report%analyses + 1
         call sparse_factor_stats(slv, stats, sstatus)
+        pf1_stats = stats
         if (status_ok(sstatus)) then
             if (.not. reused) report%analysis_s = report%analysis_s &
                 + max(0.0_dp, stats%analysis_s)
