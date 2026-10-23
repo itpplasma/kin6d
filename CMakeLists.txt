@@ -125,7 +125,11 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
+option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 set(KIN6D_FORTFEM_REVISION "21f236191c39688bebe25f98b185c32b8209ec70")
+if(KIN6D_BUILD_GLL_SPIKE)
+    set(KIN6D_FORTFEM_REVISION "ac673dc63c4810f56a864f694e461c9179d05858")
+endif()
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -913,7 +917,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator gs_error grad_shafranov ideal_map ideal_xi ideal_response_error
+    foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi ideal_response_error
             equilibrium_core curve_chart ideal_seed_3d nonnested vacuum_shell landreman nested_oracles
             response_strip_jets
             response_fluid
@@ -1987,6 +1991,19 @@ include(cmake/kin6d_s0.cmake)
 include(cmake/kin6d_mhd_batches.cmake)
 include(cmake/kin6d_e21.cmake)
 include(cmake/kin6d_separatrix.cmake)
+if(KIN6D_BUILD_GLL_SPIKE)
+    if(NOT KIN6D_ENABLE_OPENMP)
+        message(FATAL_ERROR "The GLL spike requires KIN6D_ENABLE_OPENMP=ON")
+    endif()
+    add_subdirectory(benchmarks/gll)
+    foreach(p 4 6 8)
+        add_test(NAME ideal_gll_derivatives_p${p}
+            COMMAND benchmark_ideal_gll ${p} 1 3)
+        set_tests_properties(ideal_gll_derivatives_p${p} PROPERTIES
+            TIMEOUT 120 PROCESSORS 2
+            ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
+    endforeach()
+endif()
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
