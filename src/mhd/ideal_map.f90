@@ -2034,9 +2034,24 @@ contains
         n = map%nred + nc
         nz = size(matrix%val)
         if (nc == 0) then
-            c%rowptr = matrix%rowptr
-            c%colidx = matrix%colidx
-            c%src = [(k, k=1, nz)]
+            ! Fixed coefficients are identity rows. Their off-diagonal
+            ! entries are identically zero, so exclude them from the symbolic
+            ! factor graph instead of paying for their fill at every trial.
+            c%rowptr = [(0, k=1, n + 1)]
+            c%colidx = [(0, k=1, nz)]
+            c%src = c%colidx
+            k = 0; c%rowptr(1) = 1
+            do row = 1, map%nred
+                do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
+                    col = matrix%colidx(kk)
+                    if (col /= row) then
+                        if (.not. keep(row) .or. .not. keep(col)) cycle
+                    end if
+                    k = k + 1; c%colidx(k) = col; c%src(k) = kk
+                end do
+                c%rowptr(row + 1) = k + 1
+            end do
+            c%colidx = c%colidx(:k); c%src = c%src(:k)
             c%gpos = [integer ::]
             c%gval = [real(dp) ::]
         else
@@ -2167,13 +2182,9 @@ contains
         real(dp) :: delta
         info = 1
         c%correction = 0
-        if (c%nc == 0) then
-            c%base = matrix%val
-        else
-            do k = 1, size(c%base)
-                if (c%src(k) > 0) c%base(k) = matrix%val(c%src(k))
-            end do
-        end if
+        do k = 1, size(c%base)
+            if (c%src(k) > 0) c%base(k) = matrix%val(c%src(k))
+        end do
         c%base(c%gpos) = c%gval
         c%base(c%mpos) = c%mval
         if (.not. all(ieee_is_finite(c%base))) return
