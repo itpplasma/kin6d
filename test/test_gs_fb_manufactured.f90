@@ -1,4 +1,61 @@
-program test_gs_fb_manufactured
+module test_gs_fb_manufactured_callbacks
+    use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
+    use kin6d_grad_shafranov, only: gs_state_t
+    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use kin6d_gs_coupling, only: gs_coupling_source_load, GS_COUPLING_OK
+    use kin6d_gs_profile_law, only: gs_profile_law_t
+    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+                 gs_fb_history_t, gs_fb_setup, gs_fb_evaluate, gs_fb_newton, GS_FB_OK, &
+                                      GS_FB_LIMITER, GS_FB_TARGET_MEAN, GS_FB_XPOINT
+    use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b
+    use gs_fb_fixture, only: make_law, bump, bump_laplacian
+    use kin6d_equilibrium_harness, only: equilibrium_case_t, &
+        equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
+        equilibrium_start, run_equilibrium_case, write_equilibrium_report
+    use kin6d_equilibrium_state, only: equilibrium_state_t
+    use kin6d_gs_equilibrium, only: gs_equilibrium
+
+    use kin6d_equilibrium_harness, only: equilibrium_solver_t
+
+    use kin6d_gs_coupling, only: gs_density_function_t
+    implicit none
+    private
+    public :: run_test_gs_fb_manufactured
+    real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
+    real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
+    real(dp), parameter :: semi(2) = [gp_a, gp_b]
+    real(dp), parameter :: amplitude = 1.5_dp
+    real(dp), parameter :: low_c(2) = [gp_r0, -1.15_dp], low_s(2) = [0.5_dp, 0.45_dp]
+    type :: psi_case_state_t
+        type(gs_state_t) :: gs
+        type(gs_fb_system_t) :: system
+        type(gs_fb_history_t) :: history
+        type(gs_fb_eval_t) :: evaluation
+        real(dp), allocatable :: exact(:), forcing(:)
+        real(dp) :: scale, seed_error
+    end type
+    type :: run_test_gs_fb_manufactured_context_t
+        character(16), pointer :: start_name => null()
+    end type
+
+    type, extends(equilibrium_solver_t) :: run_test_gs_fb_manufactured_run_psi_case_t
+        type(run_test_gs_fb_manufactured_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_fb_manufactured_run_psi_case_binding
+    end type
+
+    type :: run_test_gs_fb_manufactured_density_context_t
+        logical, pointer :: with_second => null()
+    end type
+
+    type, extends(gs_density_function_t) :: run_test_gs_fb_manufactured_density_t
+        type(run_test_gs_fb_manufactured_density_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_fb_manufactured_density_binding
+    end type
+
+contains
+    subroutine run_test_gs_fb_manufactured()
     !! T3 (DESIGN 5.1): a manufactured free-boundary solution and the
     !! quadratic convergence of the Newton iteration.
     !!
@@ -17,44 +74,23 @@ program test_gs_fb_manufactured
     !! error of the coupled operator. Run with an edge jump of the source and
     !! with a law that vanishes at the edge, for the limiter and the
     !! mean-at-targets modes, P2 and P3, on a mesh sequence.
-    use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_coupling, only: gs_coupling_source_load, GS_COUPLING_OK
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
-                 gs_fb_history_t, gs_fb_setup, gs_fb_evaluate, gs_fb_newton, GS_FB_OK, &
-                                      GS_FB_LIMITER, GS_FB_TARGET_MEAN, GS_FB_XPOINT
-    use gs_coupling_fixture, only: build_state, build_coils, gp_r0, gp_a, gp_b
-    use gs_fb_fixture, only: make_law, bump, bump_laplacian
-    use kin6d_equilibrium_harness, only: equilibrium_case_t, &
-        equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
-        equilibrium_start, run_equilibrium_case, write_equilibrium_report
-    use kin6d_equilibrium_state, only: equilibrium_state_t
-    use kin6d_gs_equilibrium, only: gs_equilibrium
     implicit none
-    type :: psi_case_state_t
-        type(gs_state_t) :: gs
-        type(gs_fb_system_t) :: system
-        type(gs_fb_history_t) :: history
-        type(gs_fb_eval_t) :: evaluation
-        real(dp), allocatable :: exact(:), forcing(:)
-        real(dp) :: scale, seed_error
-    end type
     type(equilibrium_start_t) :: selected_start
-    character(16) :: command, start_name
+    character(16) , target :: command, start_name
     integer :: input_status
 
-    real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
-    real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
-    real(dp), parameter :: semi(2) = [gp_a, gp_b]
-    real(dp), parameter :: amplitude = 1.5_dp
-    real(dp), parameter :: low_c(2) = [gp_r0, -1.15_dp], low_s(2) = [0.5_dp, 0.45_dp]
     type(gs_circuit_set_t) :: coils
-    logical :: with_second = .false.
-    real(dp) :: case_fraction = 0.8_dp
+logical , target :: with_second
+real(dp) :: case_fraction
     integer :: failures
+        type(run_test_gs_fb_manufactured_context_t), target :: ctx
+        type(run_test_gs_fb_manufactured_run_psi_case_t), target :: &
+            run_psi_case_operator
+        type(run_test_gs_fb_manufactured_density_context_t), target :: density_data
+        type(run_test_gs_fb_manufactured_density_t), target :: density_operator
 
+        with_second = .false.
+        case_fraction = 0.8_dp
     failures = 0
     call build_coils(coils)
     start_name = 'legacy'
@@ -91,6 +127,16 @@ program test_gs_fb_manufactured
     print '(a)', 'gs_fb_manufactured (T3) oracles passed'
 
 contains
+    subroutine bind_run_test_gs_fb_manufactured_density_context()
+        density_data%with_second => with_second
+        density_operator%data => density_data
+    end subroutine bind_run_test_gs_fb_manufactured_density_context
+
+    subroutine bind_run_test_gs_fb_manufactured_context()
+        ctx%start_name => start_name
+        run_psi_case_operator%data => ctx
+    end subroutine bind_run_test_gs_fb_manufactured_context
+
 
     subroutine require(ok, what)
         logical, intent(in) :: ok
@@ -117,16 +163,6 @@ contains
         if (with_second) psi = psi + bump(r, z, low_c, low_s, 0.9_dp)
     end function exact_flux
 
-    function density(r, z) result(j)
-        !! mu0 j_phi of psi*: the source of the bump.
-        use fortfem_axisymmetric_gs_kernel, only: gs_mu0
-        real(dp), intent(in) :: r, z
-        real(dp) :: j
-
-        j = bump_laplacian(r, z, centre, semi, amplitude)
-        if (with_second) j = j + bump_laplacian(r, z, low_c, low_s, 0.9_dp)
-        j = j/gs_mu0
-    end function density
 
     subroutine sweep(label, order, levels, mode, jump, min_rate)
         character(len=*), intent(in) :: label
@@ -214,7 +250,8 @@ contains
         end if
         call gs_fb_setup(state, sys, law, cfg, coils, status)
         call require(status == GS_FB_OK, 'setup')
-        call gs_coupling_source_load(state, density, f_load, status)
+        call bind_run_test_gs_fb_manufactured_density_context()
+        call gs_coupling_source_load(state, density_operator, f_load, status)
         call require(status == GS_COUPLING_OK, 'forcing load')
         ! extra = int f* v - b(Pi psi*).
         call gs_fb_evaluate(state, sys, exact, currents, ev, status, jacobian=.false.)
@@ -250,9 +287,10 @@ contains
         else
             case_name = trim(case_name)//'smooth'
         end if
+        call bind_run_test_gs_fb_manufactured_context()
         call run_equilibrium_case(trim(case_name), 'psi', &
             equilibrium_resolution_t(order, n_outer), trim(start_name), &
-            run_psi_case, result, verification, equilibrium)
+            run_psi_case_operator, result, verification, equilibrium)
         call write_equilibrium_report(output_unit, verification)
         call require(verification%status == 0, trim(label)//': D8 solve/report')
         if (verification%status /= 0) error stop 'D8 psi case'
@@ -277,40 +315,6 @@ contains
         if (start_name == 'legacy') call check_quadratic(history)
     end subroutine solve_case
 
-    subroutine run_psi_case(spec, resolution, start, state, verification, &
-                            equilibrium)
-        type(equilibrium_case_t), intent(in) :: spec
-        type(equilibrium_resolution_t), intent(in) :: resolution
-        type(equilibrium_start_t), intent(in) :: start
-        class(*), intent(inout) :: state
-        type(equilibrium_run_report_t), intent(inout) :: verification
-        type(equilibrium_state_t), intent(out) :: equilibrium
-        type(gs_profile_law_t) :: exported_law
-        if (spec%lane /= 'psi') return
-        if (resolution%degree < 2 .or. start%name /= start_name) return
-        select type (state)
-        type is (psi_case_state_t)
-            call gs_fb_newton(state%gs, state%system, currents, &
-                verification%status, state%history)
-            if (verification%status /= GS_FB_OK) return
-            verification%iterations = state%history%iterations
-            verification%oracle_error = &
-                maxval(abs(state%gs%psi - state%exact))/state%scale
-            verification%seed_error = state%seed_error
-            call gs_fb_evaluate(state%gs, state%system, state%gs%psi, &
-                currents, state%evaluation, verification%status, jacobian=.false.)
-            if (verification%status /= GS_FB_OK) return
-            verification%residual = norm2(state%evaluation%residual) &
-                /max(norm2(state%forcing), tiny(1.0_dp))
-            verification%residual_norm = 'forced discrete l2 / l2(manufactured load)'
-            exported_law = state%system%law
-            exported_law%axis = state%evaluation%psi_axis - state%evaluation%psi_bound
-            call gs_equilibrium(state%gs, equilibrium, verification%status, &
-                f_edge=exported_law%f_edge, ffprime=0.0_dp, law=exported_law, &
-                mu0=state%system%mu0, psi_bound=state%evaluation%psi_bound, &
-                plasma_cell=state%evaluation%plasma_cell)
-        end select
-    end subroutine
 
     subroutine check_quadratic(history)
         !! Quadratic Newton convergence: once the relative residual is below
@@ -333,4 +337,82 @@ contains
         call require(seen, 'quadratic phase observed')
     end subroutine check_quadratic
 
+
+    end subroutine run_test_gs_fb_manufactured
+
+    subroutine run_test_gs_fb_manufactured_run_psi_case(ctx, spec, resolution, &
+        start, state, verification,  equilibrium)
+        type(run_test_gs_fb_manufactured_context_t), intent(in) :: ctx
+        type(equilibrium_case_t), intent(in) :: spec
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        type(equilibrium_start_t), intent(in) :: start
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(inout) :: verification
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        type(gs_profile_law_t) :: exported_law
+        if (spec%lane /= 'psi') return
+        if (resolution%degree < 2 .or. start%name /= ctx%start_name) return
+        select type (state)
+        type is (psi_case_state_t)
+            call gs_fb_newton(state%gs, state%system, currents, &
+                verification%status, state%history)
+            if (verification%status /= GS_FB_OK) return
+            verification%iterations = state%history%iterations
+            verification%oracle_error = &
+                maxval(abs(state%gs%psi - state%exact))/state%scale
+            verification%seed_error = state%seed_error
+            call gs_fb_evaluate(state%gs, state%system, state%gs%psi, &
+                currents, state%evaluation, verification%status, jacobian=.false.)
+            if (verification%status /= GS_FB_OK) return
+            verification%residual = norm2(state%evaluation%residual) &
+                /max(norm2(state%forcing), tiny(1.0_dp))
+            verification%residual_norm = 'forced discrete l2 / l2(manufactured load)'
+            exported_law = state%system%law
+            exported_law%axis = state%evaluation%psi_axis - state%evaluation%psi_bound
+            call gs_equilibrium(state%gs, equilibrium, verification%status, &
+                f_edge=exported_law%f_edge, ffprime=0.0_dp, law=exported_law, &
+                mu0=state%system%mu0, psi_bound=state%evaluation%psi_bound, &
+                plasma_cell=state%evaluation%plasma_cell)
+        end select
+    end subroutine run_test_gs_fb_manufactured_run_psi_case
+
+    subroutine run_test_gs_fb_manufactured_run_psi_case_binding(self, spec, &
+        resolution, start, state, report, equilibrium)
+        class(run_test_gs_fb_manufactured_run_psi_case_t), intent(in) :: self
+        type(equilibrium_case_t), intent(in) :: spec
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        type(equilibrium_start_t), intent(in) :: start
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(inout) :: report
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        call run_test_gs_fb_manufactured_run_psi_case(self%data, spec, resolution, &
+            start, state, report, equilibrium)
+    end subroutine
+
+    function run_test_gs_fb_manufactured_density(density_data, r, z) result(j)
+        use fortfem_axisymmetric_gs_kernel, only: gs_mu0
+        type(run_test_gs_fb_manufactured_density_context_t), intent(in), target :: &
+            density_data
+        !! mu0 j_phi of psi*: the source of the bump.
+        real(dp), intent(in) :: r, z
+        real(dp) :: j
+
+        j = bump_laplacian(r, z, centre, semi, amplitude)
+        if (density_data%with_second) j = j + bump_laplacian(r, z, low_c, low_s, 0.9_dp)
+        j = j/gs_mu0
+    end function run_test_gs_fb_manufactured_density
+
+    function run_test_gs_fb_manufactured_density_binding(self, r, z) &
+        result(result_value)
+        class(run_test_gs_fb_manufactured_density_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        real(dp) :: result_value
+        result_value = run_test_gs_fb_manufactured_density(self%data, r, z)
+    end function
+end module test_gs_fb_manufactured_callbacks
+
+program test_gs_fb_manufactured
+    use test_gs_fb_manufactured_callbacks, only: run_test_gs_fb_manufactured
+    implicit none
+    call run_test_gs_fb_manufactured()
 end program test_gs_fb_manufactured

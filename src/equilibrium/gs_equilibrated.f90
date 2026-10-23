@@ -19,6 +19,7 @@ module kin6d_gs_equilibrated
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_t, EQUILIBRATION_OK
+    use kin6d_gs_majorant, only: gs_point_source_t
     implicit none
     private
     public :: gs_equilibrated_majorant, equilibrated_flux_estimate_t
@@ -29,17 +30,28 @@ module kin6d_gs_equilibrated
     integer, parameter, public :: GS_EQ_CELL_FAILED = 3
     integer, parameter, public :: GS_EQ_EQUILIBRATION_FAILED = 4
 
+    type, extends(gs_point_source_t) :: gs_point_source_adapter_t
+        procedure(gs_point_source_fn), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_point_source_adapter_t_evaluate
+    end type
+
+    interface gs_equilibrated_majorant
+        module procedure gs_equilibrated_majorant_object, &
+            gs_equilibrated_majorant_procedure
+    end interface
+
 contains
 
-    subroutine gs_equilibrated_majorant(state, psi, source, estimate, status)
+    subroutine gs_equilibrated_majorant_object(state, psi, source, estimate, status)
         !! estimate%bound >= |||psi* - psi|||, |||v|||^2 = int |grad v|^2 / R,
-        !! for the solution psi* of -div(grad psi*/R) = source(cell, R, Z,
+        !! for the solution psi* of -div(grad psi*/R) = source%evaluate(cell, R, Z,
         !! psi(R, Z)) frozen at the represented psi, which must vanish on the
         !! boundary. For a psi-dependent source this is the frozen-source
         !! estimate; dividing by the Jacobian's coercivity remains the caller's.
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: psi(:)
-        procedure(gs_point_source_fn) :: source
+        class(gs_point_source_t), target, intent(in) :: source
         type(equilibrated_flux_estimate_t), intent(out) :: estimate
         integer, intent(out) :: status
         real(dp), allocatable :: xi(:), eta(:), w(:), coefficient(:, :), f(:, :)
@@ -96,7 +108,7 @@ contains
                 end if
                 ph = dot_product(shape(:nd), values(:nd))
                 call gs_error_coefficient(point(1), coefficient(q, e))
-                f(q, e) = source(e, point(1), point(2), ph)
+                f(q, e) = source%evaluate(e, point(1), point(2), ph)
                 do axis = 1, 2
                     gradient(axis) = dot_product(grads(axis, :nd), &
                         values(:nd) - values(1))
@@ -114,6 +126,36 @@ contains
         status = GS_EQ_EQUILIBRATION_FAILED
         if (stat /= EQUILIBRATION_OK) return
         status = GS_EQ_OK
-    end subroutine gs_equilibrated_majorant
+    end subroutine gs_equilibrated_majorant_object
+
+
+    subroutine gs_equilibrated_majorant_procedure(state, psi, source, estimate, status)
+        !! estimate%bound >= |||psi* - psi|||, |||v|||^2 = int |grad v|^2 / R,
+        !! for the solution psi* of -div(grad psi*/R) = source(cell, R, Z,
+        !! psi(R, Z)) frozen at the represented psi, which must vanish on the
+        !! boundary. For a psi-dependent source this is the frozen-source
+        !! estimate; dividing by the Jacobian's coercivity remains the caller's.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:)
+        procedure(gs_point_source_fn) :: source
+        type(equilibrated_flux_estimate_t), intent(out) :: estimate
+        integer, intent(out) :: status
+        type(gs_point_source_adapter_t), target :: source_adapter
+
+        source_adapter%callback => source
+        call gs_equilibrated_majorant_object(state, &
+            psi, &
+            source_adapter, &
+            estimate, &
+            status)
+    end subroutine
+
+    function gs_point_source_adapter_t_evaluate(self, cell, r, z, psi) result(f)
+        class(gs_point_source_adapter_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: f
+        f = self%callback(cell, r, z, psi)
+    end function
 
 end module kin6d_gs_equilibrated

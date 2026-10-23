@@ -1,27 +1,4 @@
-program test_ideal_map_axisymmetric
-    ! N1 axisymmetric reduction of the 3D frozen-in energy map (DESIGN 7.1/7.5).
-    ! Exact Solovev states: A3 (circular-type, FF'=0) and a shaped one
-    ! (kappa 1.61, delta 0.18, FF' /= 0). The frozen labels are the exact state
-    ! pulled back through a smooth interior shift Y (Y = id on the boundary), so
-    ! the seed X0 = id is not an equilibrium; the exact minimiser is X = Y up to
-    ! relabelling. Oracles: (i) the exact flux, through the gauge-invariant
-    ! surface defect psi_exact(X(y)) - chi(y); (ii) KIN6D's 2D GS solution on the
-    ! same mesh, psi_2D(X(y)) - chi(y). Modes:
-    !   derivatives      FD gradient/Hessian, rigid-rotation null, N=1 path
-    !   leakage          N=1, nfp=3, n=3 interior seed: n/=0 content decays
-    !   solovev <k>      A3 ladder, degree k, observed orders
-    !   shaped <k>       shaped ladder, degree k, observed orders
-    !   shapedho <k>     the shaped ladder at degree k = 4 .. 8 against the exact
-    !                    flux only (the 2D GS oracle stops at P3)
-    !   basis            nodal, derivative and mesh checks of the Lagrange
-    !                    triangle jets and curved meshes for k = 2 .. 8
-    !   seed <k>, seedshaped <k>  frozen data from the nested-seed builder
-    !                    (boundary + exact q(s), p(s), Phi_edge) with the seed
-    !                    axis at the boundary-box centre (VMEC-like), offset from
-    !                    the magnetic axis; the solver must return it
-    !   gauge <k>        W_red curvature of field-line slides at the exact map
-    !   factor <k>       cached factor input: the debug-verified solve is bitwise
-    !                    the production solve, one symbolic analysis per solve
+module test_ideal_map_axisymmetric_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, output_unit
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
@@ -46,7 +23,11 @@ program test_ideal_map_axisymmetric
         run_equilibrium_case, write_equilibrium_report
     use kin6d_equilibrium_state, only: equilibrium_state_t
     use kin6d_map_equilibrium, only: map_equilibrium
+
+    use kin6d_equilibrium_harness, only: equilibrium_solver_t
     implicit none
+    private
+    public :: run_test_ideal_map_axisymmetric
     type :: map_case_state_t
         type(gs_state_t) :: gs
         type(ideal_map_t) :: map
@@ -56,20 +37,85 @@ program test_ideal_map_axisymmetric
         real(dp) :: errors(4), elapsed
         logical :: sequenced = .false.
     end type
-    type(pullback_field_t) :: pullback
+    type :: run_test_ideal_map_axisymmetric_run_map_case_context_t
+        integer, pointer :: axis_degree => null()
+        integer, pointer :: axis_power => null()
+        logical, pointer :: gauge_hessian_only => null()
+        real(dp), pointer :: gauge_weight => null()
+        real(dp), pointer :: initial_damping => null()
+        integer, pointer :: max_newton => null()
+        logical, pointer :: omega_elimination => null()
+        logical, pointer :: position_gauge => null()
+        type(pullback_field_t), pointer :: pullback => null()
+        integer, pointer :: quadrature_order => null()
+        real(dp), pointer :: solve_tolerance => null()
+        logical, pointer :: verbose_solve => null()
+    end type
+
+    type, extends(equilibrium_solver_t) :: &
+        run_test_ideal_map_axisymmetric_run_map_case_t
+        type(run_test_ideal_map_axisymmetric_run_map_case_context_t), pointer :: &
+            data => null()
+    contains
+        procedure :: evaluate => run_test_ideal_map_axisymmetric_run_map_case_binding
+    end type
+
+contains
+    subroutine run_test_ideal_map_axisymmetric()
+    ! N1 axisymmetric reduction of the 3D frozen-in energy map (DESIGN 7.1/7.5).
+    ! Exact Solovev states: A3 (circular-type, FF'=0) and a shaped one
+    ! (kappa 1.61, delta 0.18, FF' /= 0). The frozen labels are the exact state
+    ! pulled back through a smooth interior shift Y (Y = id on the boundary), so
+    ! the seed X0 = id is not an equilibrium; the exact minimiser is X = Y up to
+    ! relabelling. Oracles: (i) the exact flux, through the gauge-invariant
+    ! surface defect psi_exact(X(y)) - chi(y); (ii) KIN6D's 2D GS solution on the
+    ! same mesh, psi_2D(X(y)) - chi(y). Modes:
+    !   derivatives      FD gradient/Hessian, rigid-rotation null, N=1 path
+    !   leakage          N=1, nfp=3, n=3 interior seed: n/=0 content decays
+    !   solovev <k>      A3 ladder, degree k, observed orders
+    !   shaped <k>       shaped ladder, degree k, observed orders
+    !   shapedho <k>     the shaped ladder at degree k = 4 .. 8 against the exact
+    !                    flux only (the 2D GS oracle stops at P3)
+    !   basis            nodal, derivative and mesh checks of the Lagrange
+    !                    triangle jets and curved meshes for k = 2 .. 8
+    !   seed <k>, seedshaped <k>  frozen data from the nested-seed builder
+    !                    (boundary + exact q(s), p(s), Phi_edge) with the seed
+    !                    axis at the boundary-box centre (VMEC-like), offset from
+    !                    the magnetic axis; the solver must return it
+    !   gauge <k>        W_red curvature of field-line slides at the exact map
+    !   factor <k>       cached factor input: the debug-verified solve is bitwise
+    !                    the production solve, one symbolic analysis per solve
+    implicit none
+    type(pullback_field_t) , target :: pullback
     character(16) :: mode, argument
     integer :: degree
-    logical :: verbose_solve = .false.
-    integer :: quadrature_order = 7
-    integer :: axis_degree = -1, axis_power = 1
-    real(dp) :: initial_damping = 1.0e-6_dp, gauge_weight = -1
-    real(dp) :: seed_tolerance = 1.0e-11_dp
-    logical :: gauge_hessian_only = .false.
+logical , target :: verbose_solve
+integer , target :: quadrature_order
+integer , target :: axis_degree, axis_power
+real(dp) , target :: initial_damping, gauge_weight
+real(dp) :: seed_tolerance
+logical , target :: gauge_hessian_only
     ! Nested solve: omega eliminated exactly, Newton on W_red(nu) (no gauge form).
-    logical :: omega_elimination = .false.
-    integer :: max_newton = 600
-    logical :: position_gauge = .false.
-    real(dp) :: solve_tolerance = 1.0e-6_dp
+logical , target :: omega_elimination
+integer , target :: max_newton
+logical , target :: position_gauge
+real(dp) , target :: solve_tolerance
+        type(run_test_ideal_map_axisymmetric_run_map_case_context_t), target :: &
+            run_map_case_data
+        type(run_test_ideal_map_axisymmetric_run_map_case_t), target :: &
+            run_map_case_operator
+        verbose_solve = .false.
+        quadrature_order = 7
+        axis_degree = -1
+        axis_power = 1
+        initial_damping = 1.0e-6_dp
+        gauge_weight = -1
+        seed_tolerance = 1.0e-11_dp
+        gauge_hessian_only = .false.
+        omega_elimination = .false.
+        max_newton = 600
+        position_gauge = .false.
+        solve_tolerance = 1.0e-6_dp
     mode = 'solovev'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
     if (command_argument_count() > 1) then
@@ -139,47 +185,21 @@ program test_ideal_map_axisymmetric
         error stop 'unknown mode'
     end select
 contains
-    subroutine make_mesh(n, k, state)
-        integer, intent(in) :: n, k
-        type(gs_state_t), intent(out) :: state
-        real(dp), allocatable :: contour(:, :)
-        real(dp) :: h
-        integer :: j, status
-        allocate (contour(2, n))
-        do j = 1, n
-            call boundary_point(real(j - 1, dp)/n, contour(:, j))
-        end do
-        h = 2*pi*a/n
-        if (shaped) h = h*1.35_dp
-        call initialize_gs(state, contour, h*h/2, status, k, curve=boundary_point, &
-            geometry_only=.true.)
-        if (status /= 0) error stop 'mesh'
-    end subroutine
-
-    subroutine build_map(state, nfp, ntor, map, field)
-        type(gs_state_t), intent(in) :: state
-        class(ideal_frozen_t), intent(in), optional :: field
-        integer, intent(in) :: nfp, ntor
-        type(ideal_map_t), intent(out) :: map
-        type(cylindrical_chart_t) :: chart
-        integer :: status
-        call ideal_map_init(map, state, chart, nfp, ntor, status, &
-            quadrature_order=quadrature_order, axis_degree=axis_degree)
-        if (status /= 0) error stop 'map init'
-        if (map%sigma /= -1) error stop 'cylindrical orientation'
-        map%axis_power = axis_power
-        map%initial_damping = initial_damping
-        if (gauge_weight > 0) map%gauge_weight = gauge_weight
-        map%position_gauge = position_gauge
-        map%gauge_hessian_only = gauge_hessian_only
-        map%omega_elimination = omega_elimination
-        if (present(field)) then
-            call ideal_map_freeze(map, field, status)
-        else
-            call ideal_map_freeze(map, pullback, status)
-        end if
-        if (status /= 0) error stop 'freeze'
-    end subroutine
+    subroutine bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+        run_map_case_data%axis_degree => axis_degree
+        run_map_case_data%axis_power => axis_power
+        run_map_case_data%gauge_hessian_only => gauge_hessian_only
+        run_map_case_data%gauge_weight => gauge_weight
+        run_map_case_data%initial_damping => initial_damping
+        run_map_case_data%max_newton => max_newton
+        run_map_case_data%omega_elimination => omega_elimination
+        run_map_case_data%position_gauge => position_gauge
+        run_map_case_data%pullback => pullback
+        run_map_case_data%quadrature_order => quadrature_order
+        run_map_case_data%solve_tolerance => solve_tolerance
+        run_map_case_data%verbose_solve => verbose_solve
+        run_map_case_operator%data => run_map_case_data
+    end subroutine bind_run_test_ideal_map_axisymmetric_run_map_case_context
 
     subroutine derivative_checks()
         ! Full-coefficient gradient against central differences of W; reduced
@@ -192,9 +212,12 @@ contains
         real(dp), allocatable :: gr(:), grp(:), grm(:), xp(:, :, :)
         real(dp) :: e, ep, em, step, fd, an, scale
         integer :: status, i, ntor
-        call make_mesh(16, 2, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+        call run_test_ideal_map_axisymmetric_make_mesh(16, 2, state)
         do ntor = 0, 1
-            call build_map(state, 3, ntor, map)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                3, ntor, map)
             allocate (v(map%ndof), g(map%ndof), gp(map%ndof), gm(map%ndof), &
                 vr(map%nred), gr(map%nred), grp(map%nred), grm(map%nred), &
                 hv(map%nred))
@@ -270,16 +293,21 @@ contains
         real(dp) :: e, ep, em, step, fd, an, scale
         integer :: status, i, ntor, a, m
         omega_elimination = .true.
-        call make_mesh(16, 2, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+        call run_test_ideal_map_axisymmetric_make_mesh(16, 2, state)
         ! ntor > 0 is rejected: J depends on omega there.
-        call build_map(state, 3, 1, map)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+        call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, 3, &
+            1, map)
         x = map%x
         allocate (gr(map%nred))
         call ideal_map_eliminate_omega(map, x, e, gr, status)
         if (status /= IDEAL_MAP_BAD_INPUT) error stop 'ntor > 0 elimination'
         deallocate (gr)
         do ntor = 0, 0
-            call build_map(state, 3, ntor, map)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                3, ntor, map)
             allocate (v(map%ndof), vr(map%nred), gr(map%nred), grp(map%nred), &
                 grm(map%nred), z(map%nred), hz(map%nred), omask(map%nred))
             omask = .false.
@@ -361,82 +389,6 @@ contains
         end do
     end subroutine
 
-    subroutine solve_map(map, report, verbose, reference_gradient)
-        type(ideal_map_t), intent(inout) :: map
-        type(ideal_map_solve_report_t), intent(out) :: report
-        logical, intent(in) :: verbose
-        real(dp), intent(in), optional :: reference_gradient
-        integer :: status
-        call ideal_map_solve(map, solve_tolerance, max_newton, report, status, verbose, &
-            reference_gradient)
-        if (status /= 0) then
-            print *, 'solve status', status, report%iterations, report%gradient
-            error stop 'ideal map solve'
-        end if
-    end subroutine
-
-    subroutine defects(map, state2d, field, errors)
-        ! errors(1) ||psi_exact(X) - chi||, (2) ||psi_2D(X) - chi||,
-        ! (3) seed ||psi_exact(y) - chi||, (4) ||psi_2D - psi_exact|| (2D alone),
-        ! all over the reference with area weights, divided by |psi_axis|*sqrt(A).
-        ! Without state2d the 2D entries (2) and (4) are zero.
-        type(ideal_map_t), intent(in) :: map
-        type(gs_state_t), intent(in), optional :: state2d
-        class(ideal_frozen_t), intent(in) :: field
-        real(dp), intent(out) :: errors(4)
-        type(gauss_quadrature_triangle_t) :: rule
-        real(dp) :: q(3), y(2), chi, ex, two, ex_y, g(2), area, w, b3, p
-        real(dp) :: shape(TRIANGLE_MAX_NODES), dshape(2, TRIANGLE_MAX_NODES)
-        real(dp) :: dg(2, 2), det
-        integer :: e, k, status, owner
-        call rule%init(7)
-        errors = 0; area = 0; owner = 1
-        do e = 1, map%cells
-            do k = 1, rule%n_points
-                call ideal_map_point(map, e, [rule%xi(k), rule%eta(k)], 0.0_dp, q, y)
-                call triangle_basis_jet([rule%xi(k), rule%eta(k)], &
-                    shape(:map%nloc), dshape(:, :map%nloc))
-                dg = matmul(map%reference(:, map%conn(:, e)), &
-                    transpose(dshape(:, :map%nloc)))
-                det = dg(1, 1)*dg(2, 2) - dg(1, 2)*dg(2, 1)
-                w = rule%weights(k)*det
-                call field%evaluate(y, chi, g, b3, p)
-                call psi_exact(q(1), q(2), ex, g)
-                call psi_exact(y(1), y(2), ex_y, g)
-                two = 0
-                if (present(state2d)) then
-                    call locate_sample(state2d, q(1), q(2), owner, two, status)
-                    if (status /= 0) error stop '2D sample'
-                end if
-                errors(1) = errors(1) + w*(ex - chi)**2
-                errors(2) = errors(2) + w*(two - chi)**2
-                errors(3) = errors(3) + w*(ex_y - chi)**2
-                errors(4) = errors(4) + w*(two - ex)**2
-                area = area + w
-            end do
-        end do
-        errors = sqrt(errors/area)/abs(psi_axis)
-    end subroutine
-
-    subroutine locate_sample(state, r, z, owner, value, status)
-        ! psi_2D at (r, z): walk from the previous owner over all cells.
-        type(gs_state_t), intent(in) :: state
-        real(dp), intent(in) :: r, z
-        integer, intent(inout) :: owner
-        real(dp), intent(out) :: value
-        integer, intent(out) :: status
-        real(dp) :: grad(2), hessian(2, 2)
-        integer :: k, e, n
-        n = size(state%triangles, 2)
-        do k = 0, n - 1
-            e = 1 + mod(owner - 1 + merge(k/2, n - (k + 1)/2, mod(k, 2) == 0), n)
-            call gs_element_jet(state, e, r, z, value, grad, hessian, status)
-            if (status == 0) then
-                owner = e; return
-            end if
-        end do
-    end subroutine
-
     subroutine factor_check()
         ! The cached masked/symmetrised factor input (ideal_map factor_masked)
         ! must not change the solve: the same A3 solve with verify_factor
@@ -449,14 +401,23 @@ contains
         type(ideal_map_solve_report_t) :: report, checked_report
         real(dp), parameter :: damping(3) = [1.0e-6_dp, 1.0e-14_dp, 0.0_dp]
         integer :: k
-        call make_mesh(16, degree, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+        call run_test_ideal_map_axisymmetric_make_mesh(16, degree, state)
         do k = 1, size(damping)
             initial_damping = damping(k)
-            call build_map(state, 1, 0, map)
-            call build_map(state, 1, 0, checked)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, map)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, checked)
             checked%verify_factor = .true.
-            call solve_map(map, report, .false.)
-            call solve_map(checked, checked_report, .false.)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, map, &
+                report, .false.)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, &
+                checked, checked_report, .false.)
             print '(a,es9.1,3i5,es12.4)', 'damping iterations factorizations ' &
                 //'analyses roundoff', damping(k), report%iterations, &
                 report%factorizations, report%analyses, report%assembly_roundoff
@@ -485,8 +446,11 @@ contains
         print '(a)', 'n seed exact_interpolant solution sigma'
         do mesh = 1, 3
             n = 32*2**(mesh - 1)
-            call make_mesh(n, degree, state)
-            call build_map(state, 1, 0, map)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_make_mesh(n, degree, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, map)
             call ideal_map_residual(map, f_edge(), table(1, mesh), sigma, status)
             if (status /= 0) error stop 'residual (seed)'
             do i = 1, map%nodes
@@ -495,8 +459,12 @@ contains
             end do
             call ideal_map_residual(map, f_edge(), table(2, mesh), sigma, status)
             if (status /= 0) error stop 'residual (exact)'
-            call build_map(state, 1, 0, map)
-            call solve_map(map, report, .false.)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, map)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, map, &
+                report, .false.)
             call ideal_map_residual(map, f_edge(), table(3, mesh), sigma, status)
             if (status /= 0) error stop 'residual (solution)'
             bp2 = sigma
@@ -514,18 +482,6 @@ contains
             error stop 'solution residual order'
     end subroutine
 
-    real(dp) function reduced_gradient_norm(map) result(norm)
-        ! Free reduced-gradient norm of the current map.
-        type(ideal_map_t), intent(in) :: map
-        real(dp), allocatable :: g(:), gr(:)
-        real(dp) :: energy
-        integer :: status
-        allocate (g(map%ndof), gr(map%nred))
-        call ideal_map_energy(map, map%x, energy, status, g)
-        call ideal_map_reduce(map, g, gr)
-        where (map%fixed) gr = 0
-        norm = norm2(gr)
-    end function
 
     subroutine seed_diagnosis()
         ! A3 only. Separates the map space from the solve: X* = P(xi(y)) with
@@ -548,9 +504,12 @@ contains
         print '(a)', 'n interpolant solve_from_exact solve_from_seed'
         do mesh = 1, 3
             n = 32*2**(mesh - 1)
-            call make_mesh(n, degree, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_make_mesh(n, degree, state)
             call solve_gs(state, 1.0_dp, pprime, ffprime, status)
-            call build_map(state, 1, 0, map, seed)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, map, seed)
             do i = 1, map%nodes
                 if (map%boundary(i)) cycle
                 call seed%inverse(map%reference(:, i), xi, ok)
@@ -558,18 +517,27 @@ contains
                 map%x(1, 1, i) = sqrt(r0*r0 + 2*r0*a*xi(1))
                 map%x(2, 1, i) = r0*a*xi(2)/map%x(1, 1, i)
             end do
-            call defects(map, state, seed, errors)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_defects(map, state, seed, errors)
             table(1, mesh) = errors(1)
             start = map%x
-            call solve_map(map, report, verbose_solve)
-            call defects(map, state, seed, errors)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, map, &
+                report, verbose_solve)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_defects(map, state, seed, errors)
             table(2, mesh) = errors(1)
             print '(a,3es12.4)', '  moved from X*: max |dq1,dq2| (m), max |domega|, h (m) ', &
                 maxval(norm2(map%x(1:2, 1, :) - start(1:2, 1, :), dim=1)), &
                 maxval(abs(map%x(3, 1, :) - start(3, 1, :))), 2*pi*a/n
-            call build_map(state, 1, 0, map, seed)
-            call solve_map(map, report, verbose_solve)
-            call defects(map, state, seed, errors)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, map, seed)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, map, &
+                report, verbose_solve)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_defects(map, state, seed, errors)
             table(3, mesh) = errors(1)
             print '(i4,3es12.4)', n, table(:, mesh)
         end do
@@ -602,8 +570,11 @@ contains
         print '(a)', 'n  W_red curvature / axis-shift curvature, probes 1-6, floor'
         do mesh = 1, 2
             n = merge(24, 32, degree == 3)*2**(mesh - 1)
-            call make_mesh(n, degree, state)
-            call build_map(state, 1, 0, map, seed)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_make_mesh(n, degree, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, map, seed)
             do i = 1, map%nodes
                 if (map%boundary(i)) cycle
                 call seed%inverse(map%reference(:, i), xi, ok)
@@ -776,8 +747,9 @@ contains
         print '(a)', 'case k n dof newton wall_s d3D_exact d3D_2D seed d2D_exact'
         do mesh = 1, 3
             n = base*2**(mesh - 1)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
             call run_equilibrium_case(trim(mode), 'map', &
-                equilibrium_resolution_t(degree, n), 'legacy', run_map_case, &
+                equilibrium_resolution_t(degree, n), 'legacy', run_map_case_operator, &
                 result, verification, equilibrium)
             call write_equilibrium_report(output_unit, verification)
             if (verification%status /= 0) error stop 'D8 map case'
@@ -831,12 +803,19 @@ contains
         print '(a)', 'case k n dof newton wall_s d3D_exact seed'
         do mesh = 1, 3
             n = base*2**(mesh - 1)
-            call make_mesh(n, degree, gs)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_make_mesh(n, degree, gs)
             call system_clock(begin, rate)
-            call build_map(gs, 1, 0, map, field)
-            call solve_map(map, report, verbose_solve)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, gs, 1, &
+                0, map, field)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, map, &
+                report, verbose_solve)
             call system_clock(finish)
-            call defects(map, field=field, errors=errors(:, mesh))
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_defects(map, field=field, &
+                errors=errors(:, mesh))
             print '(a8,i2,i5,i8,i4,f9.2,2es12.4)', trim(mode), degree, n, &
                 count(.not. map%fixed), report%iterations, &
                 real(finish - begin, dp)/rate, errors(1, mesh), errors(3, mesh)
@@ -916,7 +895,8 @@ contains
         end do
         call rule%init(7)
         do k = 2, 8
-            call make_mesh(16, k, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_make_mesh(16, k, state)
             if (state%ready .neqv. (k <= 3)) error stop 'solver readiness'
             nloc = (k + 1)*(k + 2)/2
             if (size(state%triangles, 1) /= nloc) error stop 'nodes per cell'
@@ -975,56 +955,6 @@ contains
         total = vertices + (k - 1)*edges + (k - 1)*(k - 2)/2*cells
     end function
 
-    subroutine run_map_case(spec, resolution, start, state, verification, &
-                            equilibrium)
-        type(equilibrium_case_t), intent(in) :: spec
-        type(equilibrium_resolution_t), intent(in) :: resolution
-        type(equilibrium_start_t), intent(in) :: start
-        class(*), intent(inout) :: state
-        type(equilibrium_run_report_t), intent(inout) :: verification
-        type(equilibrium_state_t), intent(out) :: equilibrium
-        real(dp) :: seed_gradient
-        integer :: status
-        integer(int64) :: begin, finish, rate
-        if (spec%lane /= 'map' .or. start%name /= 'legacy') return
-        select type (state)
-        type is (map_case_state_t)
-            call make_mesh(resolution%boundary_nodes, resolution%degree, state%gs)
-            call system_clock(begin, rate)
-            call build_map(state%gs, 1, 0, state%map, state%field)
-            if (state%sequenced) then
-                seed_gradient = reduced_gradient_norm(state%map)
-                if (allocated(state%previous)) then
-                    call ideal_map_prolong(state%map, state%previous, status)
-                    if (status /= 0) then
-                        verification%status = status
-                        return
-                    end if
-                end if
-                call solve_map(state%map, state%solve, verbose_solve, seed_gradient)
-            else
-                call solve_map(state%map, state%solve, verbose_solve)
-            end if
-            state%previous = state%map
-            call system_clock(finish)
-            state%elapsed = real(finish - begin, dp)/rate
-            call solve_gs(state%gs, 1.0_dp, pprime, ffprime, status)
-            if (status /= 0) then
-                verification%status = status
-                return
-            end if
-            call defects(state%map, state%gs, state%field, state%errors)
-            verification%oracle_error = state%errors(1)
-            verification%seed_error = state%errors(3)
-            verification%iterations = state%solve%iterations
-            call ideal_map_residual(state%map, f_edge(), verification%residual, &
-                verification%sigma, verification%status)
-            verification%residual_norm = 'D3: L2 force * L / (sigma sqrt(V))'
-            if (verification%status /= 0) return
-            call map_equilibrium(state%map, state%field, state%gs, equilibrium, &
-                verification%status, f_edge())
-        end select
-    end subroutine
 
     subroutine leakage_check()
         ! N = 1, nfp = 3: an n = 3 interior seed (axisymmetric boundary) must
@@ -1039,11 +969,18 @@ contains
         real(dp) :: seeded, final(2), defect(2), difference, v, g(2), rate
         integer :: i, mesh
         do mesh = 1, 2
-            call make_mesh(16*mesh, 2, state)
-            call build_map(state, 1, 0, axisym)
-            call solve_map(axisym, axisym_report, .false.)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_make_mesh(16*mesh, 2, state)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                1, 0, axisym)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, &
+                axisym, axisym_report, .false.)
             call toroidal_variation(axisym, v, defect(mesh))
-            call build_map(state, 3, 1, map)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+                3, 1, map)
             do i = 1, map%nodes
                 if (map%boundary(i)) cycle
                 call psi_exact(map%reference(1, i), map%reference(2, i), v, g)
@@ -1052,7 +989,9 @@ contains
                 map%x(3, 2, i) = 0.02_dp*v/psi_axis
             end do
             call toroidal_variation(map, seeded, v)
-            call solve_map(map, report, verbose_solve)
+        call bind_run_test_ideal_map_axisymmetric_run_map_case_context()
+            call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, map, &
+                report, verbose_solve)
             call toroidal_variation(map, final(mesh), v)
             difference = abs(3*report%energy - axisym_report%energy) &
                 /abs(axisym_report%energy)
@@ -1095,4 +1034,229 @@ contains
         variation = sqrt(variation/area)/abs(psi_axis)
         defect = sqrt(defect/area)/abs(psi_axis)
     end subroutine
-end program
+
+    end subroutine run_test_ideal_map_axisymmetric
+
+    subroutine run_test_ideal_map_axisymmetric_make_mesh(n, k, state)
+        integer, intent(in) :: n, k
+        type(gs_state_t), intent(out) :: state
+        real(dp), allocatable :: contour(:, :)
+        real(dp) :: h
+        integer :: j, status
+        allocate (contour(2, n))
+        do j = 1, n
+            call boundary_point(real(j - 1, dp)/n, contour(:, j))
+        end do
+        h = 2*pi*a/n
+        if (shaped) h = h*1.35_dp
+        call initialize_gs(state, contour, h*h/2, status, k, curve=boundary_point, &
+            geometry_only=.true.)
+        if (status /= 0) error stop 'mesh'
+    end subroutine run_test_ideal_map_axisymmetric_make_mesh
+
+    subroutine run_test_ideal_map_axisymmetric_build_map(run_map_case_data, state, &
+        nfp, ntor, map, field)
+        type(run_test_ideal_map_axisymmetric_run_map_case_context_t), intent(in), &
+            target :: run_map_case_data
+        type(gs_state_t), intent(in) :: state
+        class(ideal_frozen_t), intent(in), optional :: field
+        integer, intent(in) :: nfp, ntor
+        type(ideal_map_t), intent(out) :: map
+        type(cylindrical_chart_t) :: chart
+        integer :: status
+        call ideal_map_init(map, state, chart, nfp, ntor, status, &
+            quadrature_order=run_map_case_data%quadrature_order, &
+                axis_degree=run_map_case_data%axis_degree)
+        if (status /= 0) error stop 'map init'
+        if (map%sigma /= -1) error stop 'cylindrical orientation'
+        map%axis_power = run_map_case_data%axis_power
+        map%initial_damping = run_map_case_data%initial_damping
+        if (run_map_case_data%gauge_weight > 0) map%gauge_weight = &
+            run_map_case_data%gauge_weight
+        map%position_gauge = run_map_case_data%position_gauge
+        map%gauge_hessian_only = run_map_case_data%gauge_hessian_only
+        map%omega_elimination = run_map_case_data%omega_elimination
+        if (present(field)) then
+            call ideal_map_freeze(map, field, status)
+        else
+            call ideal_map_freeze(map, run_map_case_data%pullback, status)
+        end if
+        if (status /= 0) error stop 'freeze'
+    end subroutine run_test_ideal_map_axisymmetric_build_map
+
+    subroutine run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, map, &
+        report, verbose, reference_gradient)
+        type(run_test_ideal_map_axisymmetric_run_map_case_context_t), intent(in), &
+            target :: run_map_case_data
+        type(ideal_map_t), intent(inout) :: map
+        type(ideal_map_solve_report_t), intent(out) :: report
+        logical, intent(in) :: verbose
+        real(dp), intent(in), optional :: reference_gradient
+        integer :: status
+        call ideal_map_solve(map, run_map_case_data%solve_tolerance, &
+            run_map_case_data%max_newton, report, status, verbose, &
+            reference_gradient)
+        if (status /= 0) then
+            print *, 'solve status', status, report%iterations, report%gradient
+            error stop 'ideal map solve'
+        end if
+    end subroutine run_test_ideal_map_axisymmetric_solve_map
+
+    subroutine run_test_ideal_map_axisymmetric_defects(map, state2d, field, errors)
+        ! errors(1) ||psi_exact(X) - chi||, (2) ||psi_2D(X) - chi||,
+        ! (3) seed ||psi_exact(y) - chi||, (4) ||psi_2D - psi_exact|| (2D alone),
+        ! all over the reference with area weights, divided by |psi_axis|*sqrt(A).
+        ! Without state2d the 2D entries (2) and (4) are zero.
+        type(ideal_map_t), intent(in) :: map
+        type(gs_state_t), intent(in), optional :: state2d
+        class(ideal_frozen_t), intent(in) :: field
+        real(dp), intent(out) :: errors(4)
+        type(gauss_quadrature_triangle_t) :: rule
+        real(dp) :: q(3), y(2), chi, ex, two, ex_y, g(2), area, w, b3, p
+        real(dp) :: shape(TRIANGLE_MAX_NODES), dshape(2, TRIANGLE_MAX_NODES)
+        real(dp) :: dg(2, 2), det
+        integer :: e, k, status, owner
+        call rule%init(7)
+        errors = 0; area = 0; owner = 1
+        do e = 1, map%cells
+            do k = 1, rule%n_points
+                call ideal_map_point(map, e, [rule%xi(k), rule%eta(k)], 0.0_dp, q, y)
+                call triangle_basis_jet([rule%xi(k), rule%eta(k)], &
+                    shape(:map%nloc), dshape(:, :map%nloc))
+                dg = matmul(map%reference(:, map%conn(:, e)), &
+                    transpose(dshape(:, :map%nloc)))
+                det = dg(1, 1)*dg(2, 2) - dg(1, 2)*dg(2, 1)
+                w = rule%weights(k)*det
+                call field%evaluate(y, chi, g, b3, p)
+                call psi_exact(q(1), q(2), ex, g)
+                call psi_exact(y(1), y(2), ex_y, g)
+                two = 0
+                if (present(state2d)) then
+                    call run_test_ideal_map_axisymmetric_locate_sample(state2d, &
+                        q(1), q(2), owner, two, status)
+                    if (status /= 0) error stop '2D sample'
+                end if
+                errors(1) = errors(1) + w*(ex - chi)**2
+                errors(2) = errors(2) + w*(two - chi)**2
+                errors(3) = errors(3) + w*(ex_y - chi)**2
+                errors(4) = errors(4) + w*(two - ex)**2
+                area = area + w
+            end do
+        end do
+        errors = sqrt(errors/area)/abs(psi_axis)
+    end subroutine run_test_ideal_map_axisymmetric_defects
+
+    subroutine run_test_ideal_map_axisymmetric_locate_sample(state, r, z, owner, &
+        value, status)
+        ! psi_2D at (r, z): walk from the previous owner over all cells.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: r, z
+        integer, intent(inout) :: owner
+        real(dp), intent(out) :: value
+        integer, intent(out) :: status
+        real(dp) :: grad(2), hessian(2, 2)
+        integer :: k, e, n
+        n = size(state%triangles, 2)
+        do k = 0, n - 1
+            e = 1 + mod(owner - 1 + merge(k/2, n - (k + 1)/2, mod(k, 2) == 0), n)
+            call gs_element_jet(state, e, r, z, value, grad, hessian, status)
+            if (status == 0) then
+                owner = e; return
+            end if
+        end do
+    end subroutine run_test_ideal_map_axisymmetric_locate_sample
+
+    real(dp) function run_test_ideal_map_axisymmetric_reduced_gradient_norm(map) &
+        result(norm)
+        ! Free reduced-gradient norm of the current map.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), allocatable :: g(:), gr(:)
+        real(dp) :: energy
+        integer :: status
+        allocate (g(map%ndof), gr(map%nred))
+        call ideal_map_energy(map, map%x, energy, status, g)
+        call ideal_map_reduce(map, g, gr)
+        where (map%fixed) gr = 0
+        norm = norm2(gr)
+    end function run_test_ideal_map_axisymmetric_reduced_gradient_norm
+
+    subroutine run_test_ideal_map_axisymmetric_run_map_case(run_map_case_data, spec, &
+        resolution, start, state, verification,  equilibrium)
+        type(run_test_ideal_map_axisymmetric_run_map_case_context_t), intent(in), &
+            target :: run_map_case_data
+        type(equilibrium_case_t), intent(in) :: spec
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        type(equilibrium_start_t), intent(in) :: start
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(inout) :: verification
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        real(dp) :: seed_gradient
+        integer :: status
+        integer(int64) :: begin, finish, rate
+        if (spec%lane /= 'map' .or. start%name /= 'legacy') return
+        select type (state)
+        type is (map_case_state_t)
+            call &
+                run_test_ideal_map_axisymmetric_make_mesh(resolution%boundary_nodes, &
+                resolution%degree, state%gs)
+            call system_clock(begin, rate)
+            call run_test_ideal_map_axisymmetric_build_map(run_map_case_data, &
+                state%gs, 1, 0, state%map, state%field)
+            if (state%sequenced) then
+                seed_gradient = &
+                    run_test_ideal_map_axisymmetric_reduced_gradient_norm(state%map)
+                if (allocated(state%previous)) then
+                    call ideal_map_prolong(state%map, state%previous, status)
+                    if (status /= 0) then
+                        verification%status = status
+                        return
+                    end if
+                end if
+                call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, &
+                    state%map, state%solve, run_map_case_data%verbose_solve, &
+                    seed_gradient)
+            else
+                call run_test_ideal_map_axisymmetric_solve_map(run_map_case_data, &
+                    state%map, state%solve, run_map_case_data%verbose_solve)
+            end if
+            state%previous = state%map
+            call system_clock(finish)
+            state%elapsed = real(finish - begin, dp)/rate
+            call solve_gs(state%gs, 1.0_dp, pprime, ffprime, status)
+            if (status /= 0) then
+                verification%status = status
+                return
+            end if
+            call run_test_ideal_map_axisymmetric_defects(state%map, state%gs, &
+                state%field, state%errors)
+            verification%oracle_error = state%errors(1)
+            verification%seed_error = state%errors(3)
+            verification%iterations = state%solve%iterations
+            call ideal_map_residual(state%map, f_edge(), verification%residual, &
+                verification%sigma, verification%status)
+            verification%residual_norm = 'D3: L2 force * L / (sigma sqrt(V))'
+            if (verification%status /= 0) return
+            call map_equilibrium(state%map, state%field, state%gs, equilibrium, &
+                verification%status, f_edge())
+        end select
+    end subroutine run_test_ideal_map_axisymmetric_run_map_case
+
+    subroutine run_test_ideal_map_axisymmetric_run_map_case_binding(self, spec, &
+        resolution, start, state, report, equilibrium)
+        class(run_test_ideal_map_axisymmetric_run_map_case_t), intent(in) :: self
+        type(equilibrium_case_t), intent(in) :: spec
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        type(equilibrium_start_t), intent(in) :: start
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(inout) :: report
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        call run_test_ideal_map_axisymmetric_run_map_case(self%data, spec, &
+            resolution, start, state, report, equilibrium)
+    end subroutine
+end module test_ideal_map_axisymmetric_callbacks
+
+program test_ideal_map_axisymmetric
+    use test_ideal_map_axisymmetric_callbacks, only: run_test_ideal_map_axisymmetric
+    implicit none
+    call run_test_ideal_map_axisymmetric()
+end program test_ideal_map_axisymmetric

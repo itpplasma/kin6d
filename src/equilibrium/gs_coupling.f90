@@ -47,16 +47,16 @@ module kin6d_gs_coupling
     use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_gs_coils, only: gs_circuit_set_t
+    use fortnum_krylov, only: real_linear_operator_t, &
+        real_gmres, real_fgmres, real_conjugate_gradient
     implicit none
     private
     public :: gs_coupling_steklov, gs_coupling_steklov_cache_clear
-
     integer, parameter, public :: GS_COUPLING_OK = 0
     integer, parameter, public :: GS_COUPLING_BAD_STATE = 1
     integer, parameter, public :: GS_COUPLING_BAD_BOUNDARY = 2
     integer, parameter, public :: GS_COUPLING_BEM_FAILED = 3
     integer, parameter, public :: GS_COUPLING_BAD_INPUT = 4
-
     !> Pointwise toroidal current density j_phi(R, Z), independent of psi.
     abstract interface
         function gs_density_fn(r, z) result(j)
@@ -66,7 +66,6 @@ module kin6d_gs_coupling
         end function gs_density_fn
     end interface
     public :: gs_density_fn
-
     type, public :: gs_coupling_t
         integer :: order = 0, n_nodes = 0, n_edges = 0, n_trace = 0
         integer :: panels_per_edge = 1, flux_degree = 2
@@ -79,15 +78,45 @@ module kin6d_gs_coupling
         real(dp), allocatable :: val(:), diag(:)    !< diag: full operator
         type(gamma_c_t) :: gamma_c                  !< the core curve
     end type gs_coupling_t
-
     public :: gs_coupling_build, gs_coupled_apply, gs_coupled_matrix
     public :: gs_coupling_coil_load, gs_coupling_source_load, gs_coupled_solve
     public :: gs_coupling_energies, gs_coupling_edge_points
     public :: gs_coupling_bem_nodes, gs_coupling_edge_weights
+    type, extends(real_linear_operator_t) :: gs_coupled_solve_matvec_t
+        type(gs_coupling_t), pointer :: coupling => null()
+    contains
+        procedure :: apply => gs_coupled_solve_matvec_apply
+    end type
+    type, extends(real_linear_operator_t) :: gs_coupled_solve_preconditioner_t
+        type(gs_coupling_t), pointer :: coupling => null()
+    contains
+        procedure :: apply => gs_coupled_solve_preconditioner_apply
+    end type
+    type, abstract, public :: gs_density_function_t
+    contains
+        procedure(gs_density_function_t_binding), deferred :: evaluate
+    end type
+    abstract interface
+        function gs_density_function_t_binding(self, r, z) result(j)
+            import :: gs_density_function_t, dp
+            class(gs_density_function_t), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            real(dp) :: j
+        end function
+    end interface
 
+    type, extends(gs_density_function_t) :: gs_density_function_adapter_t
+        procedure(gs_density_fn), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_density_function_adapter_t_evaluate
+    end type
+
+    interface gs_coupling_source_load
+        module procedure gs_coupling_source_load_object, &
+            gs_coupling_source_load_procedure
+    end interface
 
 contains
-
     subroutine gs_coupling_edge_points(state, coupling, edge, t, x, tangent)
         !! Position and (non-normalised) tangent dx/dt of boundary edge `edge`
         !! at t in [0, 1].
@@ -102,8 +131,6 @@ contains
         end if
         call gamma_c_edge_point(coupling % gamma_c, edge, t, x, tangent)
     end subroutine gs_coupling_edge_points
-
-
     subroutine gs_coupling_build(state, coupling, status, panels_per_edge, flux_degree)
         !! Assemble the sparse stiffness and the dense Gamma_c block.
         type(gs_state_t), intent(in) :: state
@@ -113,7 +140,6 @@ contains
         integer :: m, stat
         real(dp) :: t0
         t0 = -1; call gs_phase_tick('', t0)
-
         status = GS_COUPLING_BAD_STATE
         if (.not. state % ready) return
         m = 1
@@ -123,7 +149,6 @@ contains
         if (m < 1) return
         coupling % order = state % element_order
         coupling % n_nodes = size(state % points, 2)
-
         ! Boundary edges in counter-clockwise order, chained by their vertices;
         ! Gamma_c is a single loop.
         status = GS_COUPLING_BAD_BOUNDARY
@@ -146,7 +171,6 @@ contains
         call gs_phase_tick('cb.stiffness', t0)
         status = GS_COUPLING_OK
     end subroutine gs_coupling_build
-
     subroutine gs_coupling_steklov(nodes, flux_degree, curve, s_bem, stat)
         !! Curve and symmetric Steklov-Poincare matrix S_h of the BEM trace
         !! nodes: the n = 0 flux map of the core layer, cached there.
@@ -157,11 +181,9 @@ contains
         integer, intent(out) :: stat
         call gamma_c_steklov(nodes, GAMMA_C_FLUX, 0, flux_degree, curve, s_bem, stat)
     end subroutine gs_coupling_steklov
-
     subroutine gs_coupling_steklov_cache_clear()
         call gamma_c_steklov_cache_clear()
     end subroutine gs_coupling_steklov_cache_clear
-
     subroutine gs_coupling_bem_nodes(state, coupling, m, nodes, restriction)
         !! BEM trace nodes of m panels per mesh edge of Gamma_c (node 2p-1 at
         !! the start of panel p, 2p at its middle) and the restriction from
@@ -177,7 +199,6 @@ contains
         call move_alloc(panels % nodes, nodes)
         call move_alloc(panels % restriction, restriction)
     end subroutine gs_coupling_bem_nodes
-
     pure subroutine gs_coupling_edge_weights(coupling, edge, t, cols, w, dw)
         !! Trace dofs cols(0:order) of boundary edge `edge` and the Lagrange
         !! weights (and t-derivatives) of a trace function at t in [0, 1].
@@ -189,7 +210,6 @@ contains
         real(dp), intent(out), optional :: dw(0:)
         call gamma_c_edge_weights(coupling % gamma_c, edge, t, cols, w, dw)
     end subroutine gs_coupling_edge_weights
-
     subroutine build_stiffness(state, coupling)
         !! CSR copy of the element stiffness matrices. Duplicates are summed
         !! in element order, so symmetric entries carry identical sums.
@@ -200,7 +220,6 @@ contains
         integer, allocatable :: order_idx(:), rows(:)
         integer :: e, k, l, ndof, n, cnt, i, nnz, idx
         integer(i64) :: previous, key
-
         n = coupling % n_nodes
         ndof = size(state % triangles, 1)
         cnt = size(state % triangles, 2) * ndof * ndof
@@ -250,7 +269,6 @@ contains
             coupling % diag(idx) = coupling % diag(idx) + coupling % s_trace(i, i)
         end do
     end subroutine build_stiffness
-
     subroutine gs_coupled_apply(coupling, input, output)
         !! output = (K + scatter(S_trace gather)) input.
         type(gs_coupling_t), intent(in) :: coupling
@@ -259,7 +277,6 @@ contains
         real(dp), allocatable :: trace(:), gathered(:)
         real(dp) :: acc
         integer :: i, p
-
         allocate (trace(coupling % n_trace), gathered(coupling % n_trace))
         gathered = input(coupling % trace_node)
         !$omp parallel default(shared) private(i, p, acc)
@@ -282,13 +299,11 @@ contains
         ! trace_node entries are distinct, so this scatter has no conflicts.
         output(coupling % trace_node) = output(coupling % trace_node) + trace
     end subroutine gs_coupled_apply
-
     subroutine gs_coupled_matrix(coupling, a)
         !! Dense coupled matrix; for tests on small meshes only.
         type(gs_coupling_t), intent(in) :: coupling
         real(dp), allocatable, intent(out) :: a(:, :)
         integer :: i, p
-
         allocate (a(coupling % n_nodes, coupling % n_nodes))
         a = 0.0_dp
         do i = 1, coupling % n_nodes
@@ -299,7 +314,6 @@ contains
         a(coupling % trace_node, coupling % trace_node) = &
             a(coupling % trace_node, coupling % trace_node) + coupling % s_trace
     end subroutine gs_coupled_matrix
-
     subroutine gs_coupling_energies(coupling, psi, interior, exterior)
         !! Interior energy psi^T K psi and exterior energy t^T S_trace t.
         type(gs_coupling_t), intent(in) :: coupling
@@ -307,7 +321,6 @@ contains
         real(dp), intent(out) :: interior, exterior
         real(dp), allocatable :: action(:), trace(:)
         integer :: i, p
-
         allocate (action(coupling % n_nodes))
         do i = 1, coupling % n_nodes
             action(i) = 0.0_dp
@@ -319,7 +332,6 @@ contains
         trace = psi(coupling % trace_node)
         exterior = dot_product(trace, matmul(coupling % s_trace, trace))
     end subroutine gs_coupling_energies
-
     subroutine gs_coupling_coil_load(state, coupling, set, load, status, n_gauss)
         !! load(:, k) = scatter of (S_trace gamma_k + c_k) for each circuit k:
         !! gamma_k the trace values of the circuit flux g_k and
@@ -367,14 +379,13 @@ contains
         end do
         status = GS_COUPLING_OK
     end subroutine gs_coupling_coil_load
-
-    subroutine gs_coupling_source_load(state, density, load, status, n_gauss)
+    subroutine gs_coupling_source_load_object(state, density, load, status, n_gauss)
         !! load(i) = int mu0 j_phi(R, Z) phi_i dA, collapsed tensor Gauss rule of
         !! n_gauss x n_gauss points per curved cell. j_phi may be supported on
         !! the interior of a fitted Gamma_p chain and need only be smooth on
         !! each cell.
         type(gs_state_t), intent(in) :: state
-        procedure(gs_density_fn) :: density
+        class(gs_density_function_t), target, intent(in) :: density
         real(dp), allocatable, intent(out) :: load(:)
         integer, intent(out) :: status
         integer, intent(in), optional :: n_gauss
@@ -382,7 +393,6 @@ contains
         real(dp) :: shape(10), grads(2, 10), hess(2, 2, 10), point(2), det, xi(2)
         real(dp) :: weight
         integer :: ng, e, a, b, l, ndof, stat
-
         status = GS_COUPLING_BAD_INPUT
         if (.not. state % ready) return
         ng = 8
@@ -403,7 +413,7 @@ contains
                                       grads(:, :ndof), hess(:, :, :ndof), stat)
                     if (stat /= 0) return
                     weight = gw(a) * gw(b) * (1.0_dp - gx(a)) * det * gs_mu0 * &
-                             density(point(1), point(2))
+                             density%evaluate(point(1), point(2))
                     do l = 1, ndof
                         load(state % triangles(l, e)) = load(state % triangles(l, e)) &
                                                         + weight * shape(l)
@@ -412,12 +422,11 @@ contains
             end do
         end do
         status = GS_COUPLING_OK
-    end subroutine gs_coupling_source_load
-
+    end subroutine gs_coupling_source_load_object
     subroutine gs_coupled_solve(coupling, rhs, psi, status, relative_tolerance, &
                                 iterations)
         !! Jacobi-preconditioned CG on the symmetric positive definite operator.
-        type(gs_coupling_t), intent(in) :: coupling
+        type(gs_coupling_t), intent(in), target :: coupling
         real(dp), intent(in) :: rhs(:)
         real(dp), allocatable, intent(out) :: psi(:)
         integer, intent(out) :: status
@@ -425,7 +434,8 @@ contains
         integer, intent(out), optional :: iterations
         real(dp) :: tolerance, residual
         integer :: iters
-
+        type(gs_coupled_solve_matvec_t) :: matvec_operator
+        type(gs_coupled_solve_preconditioner_t) :: preconditioner_operator
         status = GS_COUPLING_BAD_INPUT
         if (size(rhs) /= coupling % n_nodes) return
         allocate (psi(coupling % n_nodes))
@@ -434,22 +444,52 @@ contains
         if (present(relative_tolerance)) tolerance = relative_tolerance
         tolerance = tolerance * min(1.0_dp, norm2(rhs))
         if (tolerance <= 0.0_dp) tolerance = tiny(1.0_dp)
-        call real_conjugate_gradient_operator(matvec, rhs, psi, tolerance, &
+        matvec_operator%coupling => coupling
+        preconditioner_operator%coupling => coupling
+        call real_conjugate_gradient(matvec_operator, rhs, psi, tolerance, &
                   max(2000, 20 * ceiling(sqrt(real(coupling % n_nodes, dp)))), status, &
-                                              iters, residual, preconditioner)
+                                              iters, residual, preconditioner_operator)
         if (present(iterations)) iterations = iters
         if (status == KRYLOV_OK) status = GS_COUPLING_OK
-    contains
-        subroutine matvec(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            call gs_coupled_apply(coupling, input, output)
-        end subroutine matvec
-        subroutine preconditioner(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            output = input / coupling % diag
-        end subroutine preconditioner
     end subroutine gs_coupled_solve
+    subroutine gs_coupled_solve_matvec_apply(self, input, output)
+        class(gs_coupled_solve_matvec_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            call gs_coupled_apply(self%coupling, input, output)
+    end subroutine gs_coupled_solve_matvec_apply
+    subroutine gs_coupled_solve_preconditioner_apply(self, input, output)
+        class(gs_coupled_solve_preconditioner_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            output = input / self%coupling % diag
+    end subroutine gs_coupled_solve_preconditioner_apply
+
+    subroutine gs_coupling_source_load_procedure(state, density, load, status, n_gauss)
+        !! load(i) = int mu0 j_phi(R, Z) phi_i dA, collapsed tensor Gauss rule of
+        !! n_gauss x n_gauss points per curved cell. j_phi may be supported on
+        !! the interior of a fitted Gamma_p chain and need only be smooth on
+        !! each cell.
+        type(gs_state_t), intent(in) :: state
+        procedure(gs_density_fn) :: density
+        real(dp), allocatable, intent(out) :: load(:)
+        integer, intent(out) :: status
+        integer, intent(in), optional :: n_gauss
+        type(gs_density_function_adapter_t), target :: density_adapter
+
+        density_adapter%callback => density
+        call gs_coupling_source_load_object(state, &
+            density_adapter, &
+            load, &
+            status, &
+            n_gauss)
+    end subroutine
+
+    function gs_density_function_adapter_t_evaluate(self, r, z) result(j)
+        class(gs_density_function_adapter_t), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            real(dp) :: j
+        j = self%callback(r, z)
+    end function
 
 end module kin6d_gs_coupling

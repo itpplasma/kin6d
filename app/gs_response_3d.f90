@@ -1,4 +1,73 @@
-program gs_response_3d
+module gs_response_3d_callbacks
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
+        meridian_point_basis_t, meridian_point_basis_init
+    use kin6d_coils_3d
+    use kin6d_vacuum_surfaces
+    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
+        ring_labels_smooth
+    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+        ampere_n_curl, ampere_n_error_t, ampere_n_coupled_error
+    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+        ring_points, ring_flux_harmonic, ring_flux_from_values, &
+        ring_sheet_load, ring_area, resonant_surfaces_missing, ring_sheet_edges, &
+        ring_sheet_density
+    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+        ideal_options_t, ideal_response, sample_field, ideal_response_error_t
+    use kin6d_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
+        perturbation_add_spectra, perturbation_export
+    use kin6d_mhd_response_n, only: layer_closure_t, closure_shield_init, &
+        closure_fluxes
+    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+        layer_xmax, layer_fit_widths, &
+        layer_init, layer_closure, layer_coefficients, layer_slope, &
+        layer_regular_slope, layer_jump, layer_kink, layer_large, layer_inside
+    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
+        layer_delta, layer_metrics, resistive_closure
+
+    use fortfem_meridian_feec_n, only: meridian_field_t
+    use fortfem_equilibrated_hcurl_meridian_n, only: meridian_edge_load_t
+
+    use kin6d_mhd_mesh, only: polar_map_t
+    implicit none
+    private
+    public :: run_gs_response_3d
+    integer, parameter :: maxr = 32, maxp = 4
+    real(dp), parameter :: pi = 3.14159265358979323846_dp
+    real(dp), parameter :: mu0_l = 4.0e-7_dp*pi
+    type :: run_gs_response_3d_context_t
+        integer, pointer :: err_cells(:) => null()
+        integer, pointer :: err_m => null()
+        type(ring_angles_t), pointer :: err_ra => null()
+        real(dp), pointer :: err_ta(:) => null()
+        real(dp), pointer :: err_tb(:) => null()
+        integer, pointer :: n => null()
+    end type
+
+    type, extends(meridian_field_t) :: run_gs_response_3d_no_current_t
+        type(run_gs_response_3d_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_gs_response_3d_no_current_binding
+    end type
+
+    type, extends(meridian_edge_load_t) :: run_gs_response_3d_unit_sheet_t
+        type(run_gs_response_3d_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_gs_response_3d_unit_sheet_binding
+    end type
+
+    type :: run_gs_response_3d_polar_map_context_t
+        type(psi_grid_t), pointer :: g => null()
+    end type
+
+    type, extends(polar_map_t) :: run_gs_response_3d_polar_map_t
+        type(run_gs_response_3d_polar_map_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_gs_response_3d_polar_map_binding
+    end type
+
+contains
+    subroutine run_gs_response_3d()
     !! L4: per-n linear response of an axisymmetric G-EQDSK equilibrium to 3D
     !! coils.  The coil field (L3, closed-form Biot-Savart) drives
     !!  - model = 'shield': resonant sheet currents on the rational surfaces
@@ -47,61 +116,33 @@ program gs_response_3d
     !! Q = eps^(-2/3), the reconnected flux A (T m^2/rad^2) and A/area (T),
     !! the layer jump of d Phi/d psin at the layer edges, the same carried to
     !! spot, and |Phi_vac|.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
-    use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
-        meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_coils_3d
-    use kin6d_vacuum_surfaces
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
-        ring_labels_smooth
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
-        ampere_n_curl, ampere_n_error_t, ampere_n_coupled_error
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
-        ring_points, ring_flux_harmonic, ring_flux_from_values, &
-        ring_sheet_load, ring_area, resonant_surfaces_missing, ring_sheet_edges, &
-        ring_sheet_density
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
-        ideal_options_t, ideal_response, sample_field, ideal_response_error_t
-    use kin6d_mhd_perturbation_n, only: perturbation_t, perturbation_on_surface, &
-        perturbation_add_spectra, perturbation_export
-    use kin6d_mhd_response_n, only: layer_closure_t, closure_shield_init, &
-        closure_fluxes
-    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_xmax, layer_fit_widths, &
-        layer_init, layer_closure, layer_coefficients, layer_slope, &
-        layer_regular_slope, layer_jump, layer_kink, layer_large, layer_inside
-    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta_x => &
-        layer_delta, layer_metrics, resistive_closure
     implicit none
-    integer, parameter :: maxr = 32, maxp = 4
-    real(dp), parameter :: pi = 3.14159265358979323846_dp
-    real(dp), parameter :: mu0_l = 4.0e-7_dp*pi
-    character(len=512) :: eqdsk = '', coils = '', currents(maxp) = '', prefix = 'l4'
+character(len=512) :: eqdsk, coils, currents(maxp), prefix
     character(len=512) :: nml
-    integer :: n = 3, nrad = 64, n_core = 8, nth_max = 512, order = 2
-    integer :: nphi = 64, nfine = 1024, angle = 2
-    integer :: rat_num(maxr) = 0, rat_den(maxr) = 0
-    real(dp) :: psin_rat_min = 0.05_dp, psin_rat_max = 1.0_dp, min_gap = 0.3_dp
-    character(len=16) :: model = 'shield'
-    integer :: np_sample = 512, gmres_maxit = 300
-    real(dp) :: gmres_tol = 1.0e-9_dp
-    logical :: boundary_sheet = .true.
-    real(dp) :: qlow = 0.0_dp, rat_pad = 0.0_dp
-    integer :: rat_grade = 1
-    logical :: edge_moved_current = .false.
-    logical :: rat_auto = .true.
-    character(len=16) :: closure = 'sheet'
-    real(dp) :: layer_delta = 1.0e-3_dp, layer_ratio = 2.0_dp, spot = 5.0e-4_dp
-    integer :: layer_nfit = 3
+integer , target :: n, nrad, n_core, nth_max, order
+integer :: nphi, nfine, angle
+integer :: rat_num(maxr), rat_den(maxr)
+real(dp) :: psin_rat_min, psin_rat_max, min_gap
+character(len=16) :: model
+integer :: np_sample, gmres_maxit
+real(dp) :: gmres_tol
+logical :: boundary_sheet
+real(dp) :: qlow, rat_pad
+integer :: rat_grade
+logical :: edge_moved_current
+logical :: rat_auto
+character(len=16) :: closure
+real(dp) :: layer_delta, layer_ratio, spot
+integer :: layer_nfit
     !! L7 export: psin of the surfaces, points per surface, spectral window
-    real(dp) :: export_psin(maxr) = 0.0_dp
-    integer :: export_np = 256, export_mmax = 40
-    character(len=512) :: profiles = ''
-    real(dp) :: omega_drive = 0.0_dp, layer_nu = 0.0_dp, eta_scale = 1.0_dp
-    logical :: inertia_q2 = .false.
-    logical :: zero_pressure = .false.
+real(dp) :: export_psin(maxr)
+integer :: export_np, export_mmax
+character(len=512) :: profiles
+real(dp) :: omega_drive, layer_nu, eta_scale
+logical :: inertia_q2
+logical :: zero_pressure
     !! Equilibrated bound of every unit-sheet Ampere solve (prefix_sheet_error.dat)
-    logical :: error_estimate = .true.
+logical :: error_estimate
     namelist /l4/ eqdsk, coils, currents, prefix, n, nrad, n_core, nth_max, &
         order, nphi, nfine, angle, rat_num, rat_den, psin_rat_min, &
         psin_rat_max, min_gap, model, np_sample, gmres_maxit, gmres_tol, &
@@ -110,17 +151,17 @@ program gs_response_3d
         export_np, export_mmax, profiles, omega_drive, layer_nu, eta_scale, &
         inertia_q2, zero_pressure, error_estimate
 
-    type(psi_grid_t) :: g
+    type(psi_grid_t) , target :: g
     type(coil_set_t) :: set
     type(surface_t) :: sref, surf
     type(flux_mesh_t) :: fm
     type(meridian_feec_t) :: fs, fsd
     type(meridian_point_basis_t) :: pb
     ! sheet of the current error estimate (callback state) and its output
-    type(ring_angles_t) :: err_ra
-    integer :: err_m = 0, uerr = 0
-    integer, allocatable :: err_cells(:)
-    real(dp), allocatable :: err_ta(:), err_tb(:)
+    type(ring_angles_t) , target :: err_ra
+integer , target :: err_m, uerr
+    integer, allocatable , target :: err_cells(:)
+    real(dp), allocatable , target :: err_ta(:), err_tb(:)
     type(ampere_n_t) :: amp
     type(ring_angles_t), allocatable :: ra(:)
     real(dp), allocatable :: w(:), ul(:), u_rat(:), psin_rat(:), q_rat(:)
@@ -149,9 +190,61 @@ program gs_response_3d
     ! Discrete residual-energy indicator of the app's own unit-sheet Ampere
     ! solves (algebraic residual of the discrete system, not a discretization
     ! bound): worst value, solve count and number of solves without indicator.
-    real(dp) :: ampere_indicator = 0.0_dp
-    integer :: ampere_solves = 0, ampere_missing = 0
+real(dp) :: ampere_indicator
+integer :: ampere_solves, ampere_missing
+        type(run_gs_response_3d_context_t), target :: captured
+        type(run_gs_response_3d_no_current_t), target :: no_current_operator
+        type(run_gs_response_3d_unit_sheet_t), target :: unit_sheet_operator
+        type(run_gs_response_3d_polar_map_context_t), target :: polar_map_data
+        type(run_gs_response_3d_polar_map_t), target :: polar_map_operator
 
+        eqdsk = ''
+        coils = ''
+        currents = ''
+        prefix = 'l4'
+        n = 3
+        nrad = 64
+        n_core = 8
+        nth_max = 512
+        order = 2
+        nphi = 64
+        nfine = 1024
+        angle = 2
+        rat_num = 0
+        rat_den = 0
+        psin_rat_min = 0.05_dp
+        psin_rat_max = 1.0_dp
+        min_gap = 0.3_dp
+        model = 'shield'
+        np_sample = 512
+        gmres_maxit = 300
+        gmres_tol = 1.0e-9_dp
+        boundary_sheet = .true.
+        qlow = 0.0_dp
+        rat_pad = 0.0_dp
+        rat_grade = 1
+        edge_moved_current = .false.
+        rat_auto = .true.
+        closure = 'sheet'
+        layer_delta = 1.0e-3_dp
+        layer_ratio = 2.0_dp
+        spot = 5.0e-4_dp
+        layer_nfit = 3
+        export_psin = 0.0_dp
+        export_np = 256
+        export_mmax = 40
+        profiles = ''
+        omega_drive = 0.0_dp
+        layer_nu = 0.0_dp
+        eta_scale = 1.0_dp
+        inertia_q2 = .false.
+        zero_pressure = .false.
+        error_estimate = .true.
+        err_m = 0
+        uerr = 0
+        ampere_indicator = 0.0_dp
+        ampere_solves = 0
+        ampere_missing = 0
     if (command_argument_count() /= 1) error stop 'usage: gs_response_3d input.nml'
     call get_command_argument(1, nml)
     open (newunit=unit, file=trim(nml), status='old', action='read')
@@ -273,7 +366,8 @@ program gs_response_3d
     write (*, '(a,i0,a,i0)') 'rings: ', nr, ', rational rings: ', nrat
 
     call cpu_time(t0)
-    call flux_mesh_build(ul, n_core, nth_max, min(order, 2), polar_map, fm, st)
+        call bind_run_gs_response_3d_polar_map_context()
+    call flux_mesh_build(ul, n_core, nth_max, min(order, 2), polar_map_operator, fm, st)
     if (st /= 0) error stop 'mesh'
     call meridian_feec_build(fm%mm, order, fs, st)
     if (st /= 0) error stop 'FEEC'
@@ -548,6 +642,25 @@ program gs_response_3d
     if (resist) close (ures)
 
 contains
+    subroutine bind_run_gs_response_3d_polar_map_context()
+        polar_map_data%g => g
+        polar_map_operator%data => polar_map_data
+    end subroutine bind_run_gs_response_3d_polar_map_context
+
+    subroutine bind_run_gs_response_3d_context()
+        nullify(captured%err_cells)
+        if (allocated(err_cells)) captured%err_cells => err_cells
+        captured%err_m => err_m
+        captured%err_ra => err_ra
+        nullify(captured%err_ta)
+        if (allocated(err_ta)) captured%err_ta => err_ta
+        nullify(captured%err_tb)
+        if (allocated(err_tb)) captured%err_tb => err_tb
+        captured%n => n
+        no_current_operator%data => captured
+        unit_sheet_operator%data => captured
+    end subroutine bind_run_gs_response_3d_context
+
     subroutine sheet_error(label, ring, angles, m)
         !! Coupled equilibrated bound of the unit-sheet solution a on ring
         !! (kin6d_mhd_ampere_n, ampere_n_coupled_error); one output row.
@@ -562,8 +675,9 @@ contains
         err_ra = angles
         err_m = m
         est = amp%error
-        call ampere_n_coupled_error(fs, fsd, amp, a, no_current, est, ste, &
-            err_cells, [(1, e=1, size(err_cells))], unit_sheet)
+        call bind_run_gs_response_3d_context()
+        call ampere_n_coupled_error(fs, fsd, amp, a, no_current_operator, est, ste, &
+            err_cells, [(1, e=1, size(err_cells))], unit_sheet_operator)
         write (uerr, '(a, 1x, i0, 1x, i0, 5es14.6, 1x, i0, 2(1x, a))') label, ring, &
             m, est%coupled_bound, est%coupled%field_norm, &
             est%coupled_bound/max(est%coupled%field_norm, tiny(1.0_dp)), &
@@ -574,28 +688,6 @@ contains
             est%coupled_bound/max(est%coupled%field_norm, tiny(1.0_dp)), ' ', &
             trim(est%coupled_claim)
     end subroutine sheet_error
-
-    subroutine no_current(x, jv)
-        real(dp), intent(in) :: x(2)
-        complex(dp), intent(out) :: jv(3)
-        jv = cmplx(0.0_dp*x(1), 0.0_dp, dp)
-    end subroutine no_current
-
-    subroutine unit_sheet(cell, edge, tau, g_out)
-        !! Density of the unit sheet of ring_sheet_load on the current ring.
-        integer, intent(in) :: cell, edge
-        real(dp), intent(in) :: tau
-        complex(dp), intent(out) :: g_out
-        integer :: ie
-
-        g_out = (0.0_dp, 0.0_dp)
-        if (edge /= 1) return
-        ie = findloc(err_cells, cell, dim=1)
-        if (ie == 0) return
-        g_out = ring_sheet_density(err_ra, n, err_m, (1.0_dp, 0.0_dp), &
-            err_ta(ie) + tau*(err_tb(ie) - err_ta(ie)))
-    end subroutine unit_sheet
-
 
     subroutine note_ampere_indicator()
         ampere_solves = ampere_solves + 1
@@ -804,23 +896,6 @@ contains
         end do
     end subroutine resistive_layers
 
-    subroutine polar_map(u, theta, x)
-        !! Flux-surface map: psin = u^2 on the ray of geometric angle theta.
-        real(dp), intent(in) :: u, theta
-        real(dp), intent(out) :: x(2)
-        real(dp) :: rho
-        logical :: ok
-        if (u <= 0.0_dp) then
-            x = [g%r_axis, g%z_axis]
-            return
-        end if
-        call flux_ray_point(g, u*u, theta, rho, ok)
-        if (.not. ok) error stop 'flux surface ray'
-        x = [g%r_axis + rho*cos(theta), g%z_axis + rho*sin(theta)]
-    end subroutine polar_map
-
-
-
     subroutine add_resonant_surfaces()
         real(dp), allocatable :: px(:), qx(:)
         integer, allocatable :: mx(:)
@@ -838,4 +913,75 @@ contains
         nrat = nrat + size(px)
     end subroutine add_resonant_surfaces
 
+
+    end subroutine run_gs_response_3d
+
+    subroutine run_gs_response_3d_no_current(x, jv)
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: jv(3)
+        jv = cmplx(0.0_dp*x(1), 0.0_dp, dp)
+    end subroutine run_gs_response_3d_no_current
+
+    subroutine run_gs_response_3d_no_current_binding(self, x, v)
+        class(run_gs_response_3d_no_current_t), intent(in) :: self
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: v(3)
+        call run_gs_response_3d_no_current(x, v)
+    end subroutine
+
+    subroutine run_gs_response_3d_unit_sheet(captured, cell, edge, tau, g_out)
+        type(run_gs_response_3d_context_t), intent(in), target :: captured
+        !! Density of the unit sheet of ring_sheet_load on the current ring.
+        integer, intent(in) :: cell, edge
+        real(dp), intent(in) :: tau
+        complex(dp), intent(out) :: g_out
+        integer :: ie
+
+        g_out = (0.0_dp, 0.0_dp)
+        if (edge /= 1) return
+        ie = findloc(captured%err_cells, cell, dim=1)
+        if (ie == 0) return
+        g_out = ring_sheet_density(captured%err_ra, captured%n, captured%err_m, &
+            (1.0_dp, 0.0_dp), &
+            captured%err_ta(ie) + tau*(captured%err_tb(ie) - captured%err_ta(ie)))
+    end subroutine run_gs_response_3d_unit_sheet
+
+    subroutine run_gs_response_3d_unit_sheet_binding(self, cell, edge, tau, g)
+        class(run_gs_response_3d_unit_sheet_t), intent(in) :: self
+        integer, intent(in) :: cell, edge
+        real(dp), intent(in) :: tau
+        complex(dp), intent(out) :: g
+        call run_gs_response_3d_unit_sheet(self%data, cell, edge, tau, g)
+    end subroutine
+
+    subroutine run_gs_response_3d_polar_map(polar_map_data, u, theta, x)
+        type(run_gs_response_3d_polar_map_context_t), intent(in), target :: &
+            polar_map_data
+        !! Flux-surface map: psin = u^2 on the ray of geometric angle theta.
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        real(dp) :: rho
+        logical :: ok
+        if (u <= 0.0_dp) then
+            x = [polar_map_data%g%r_axis, polar_map_data%g%z_axis]
+            return
+        end if
+        call flux_ray_point(polar_map_data%g, u*u, theta, rho, ok)
+        if (.not. ok) error stop 'flux surface ray'
+        x = [polar_map_data%g%r_axis + rho*cos(theta), polar_map_data%g%z_axis + &
+            rho*sin(theta)]
+    end subroutine run_gs_response_3d_polar_map
+
+    subroutine run_gs_response_3d_polar_map_binding(self, u, theta, x)
+        class(run_gs_response_3d_polar_map_t), intent(in) :: self
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        call run_gs_response_3d_polar_map(self%data, u, theta, x)
+    end subroutine
+end module gs_response_3d_callbacks
+
+program gs_response_3d
+    use gs_response_3d_callbacks, only: run_gs_response_3d
+    implicit none
+    call run_gs_response_3d()
 end program gs_response_3d

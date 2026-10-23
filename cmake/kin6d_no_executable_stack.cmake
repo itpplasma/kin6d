@@ -1,0 +1,33 @@
+# Check the final target files, including ELF members of static libraries.
+if(NOT ELF_FORMAT STREQUAL "ELF")
+    message("SKIP: executable-stack checks require ELF targets")
+    return()
+endif()
+if(NOT READELF OR NOT EXISTS "${READELF}")
+    message(FATAL_ERROR "readelf is required to check ELF stack permissions")
+endif()
+include("${TARGET_MANIFEST}")
+foreach(target_file IN LISTS KIN6D_STACK_TARGETS)
+    if(NOT EXISTS "${target_file}")
+        message(FATAL_ERROR "Build the stack-check targets first: ${target_file}")
+    endif()
+    execute_process(COMMAND "${READELF}" -lW "${target_file}"
+        RESULT_VARIABLE status OUTPUT_VARIABLE headers ERROR_VARIABLE error)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "readelf failed for ${target_file}: ${error}")
+    endif()
+    if(headers MATCHES "GNU_STACK[^\n]*[ \t]RWE[ \t]")
+        message(FATAL_ERROR "Executable GNU_STACK in ${target_file}")
+    endif()
+    # Archives have no program headers. Check their object notes as well, so
+    # an unlinked archive member cannot hide an executable-stack requirement.
+    execute_process(COMMAND "${READELF}" -SW "${target_file}"
+        RESULT_VARIABLE status OUTPUT_VARIABLE sections ERROR_VARIABLE error)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "readelf failed for ${target_file}: ${error}")
+    endif()
+    if(sections MATCHES "\\.note\\.GNU-stack[^\n]*[ \t][A-Z]*X[A-Z]*[ \t]")
+        message(FATAL_ERROR "Executable .note.GNU-stack in ${target_file}")
+    endif()
+endforeach()
+message(STATUS "All KIN6D target stacks are non-executable")

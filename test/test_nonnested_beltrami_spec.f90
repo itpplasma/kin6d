@@ -1,5 +1,4 @@
-program test_nonnested_beltrami_spec
-    ! External synthetic SPEC oracle. Samples contain physical (R,Z,phi,B).
+module test_nonnested_beltrami_spec_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, flux_mesh_locate
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
@@ -7,8 +6,26 @@ program test_nonnested_beltrami_spec
     use kin6d_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
         beltrami_prepare, beltrami_solve
     use fortfem_meridian_feec_n, only: meridian_point_basis
+
+    use kin6d_nonnested_mapped, only: nn_map_function_t
     implicit none
+    private
+    public :: run_test_nonnested_beltrami_spec
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 6.0_dp, mu = 1.1_dp
+    type :: run_test_nonnested_beltrami_spec_context_t
+        real(dp), pointer :: epsilon => null()
+    end type
+
+    type, extends(nn_map_function_t) :: run_test_nonnested_beltrami_spec_deform_t
+        type(run_test_nonnested_beltrami_spec_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_nonnested_beltrami_spec_deform_binding
+    end type
+
+contains
+    subroutine run_test_nonnested_beltrami_spec()
+    ! External synthetic SPEC oracle. Samples contain physical (R,Z,phi,B).
+    implicit none
     type(flux_mesh_t) :: mesh
     type(free_b_field_t) :: field
     type(nn_map_t) :: map
@@ -17,12 +34,15 @@ program test_nonnested_beltrami_spec
     real(dp), allocatable :: rings(:), data(:), samples(:, :), values(:, :)
     real(dp), allocatable :: local(:, :)
     integer, allocatable :: cell(:)
-    real(dp) :: epsilon, error(3), mod_error, scale, ref(2), theta, u, xi, eta, phi
+    real(dp) , target :: epsilon, error(3), mod_error, scale, ref(2), theta, u, xi, &
+        eta, phi
     real(dp) :: jac(2, 2), inv(2, 2), point(2), df(3, 3), det, b(3), bp(3), bm(3), &
         xp(2), xm(2)
     real(dp) :: db(3, 3), jx(2, 3), der(3, 3), curl(3), residual, step, total
     integer :: k, nr, modes, st, i, j, t, n, unit
     character(512) :: arg, path, output
+        type(run_test_nonnested_beltrami_spec_context_t), target :: ctx
+        type(run_test_nonnested_beltrami_spec_deform_t), target :: deform_operator
     call get_command_argument(6, output)
     call get_command_argument(1, path)
     call get_command_argument(2, arg); read (arg, *) epsilon
@@ -40,7 +60,8 @@ program test_nonnested_beltrami_spec
     if (st /= 0) error stop 'SPEC mesh'
     call nn_build(mesh, k, modes, [r0, 0.0_dp], 1.0_dp, 0.0_dp, 1.0_dp, field, st)
     if (st /= 0) error stop 'SPEC field'
-    call nn_map_build(field%fs, 2, 9, deform, map, st)
+        call bind_run_test_nonnested_beltrami_spec_context()
+    call nn_map_build(field%fs, 2, 9, deform_operator, map, st)
     if (st /= 0) error stop 'SPEC map'
     allocate (cell(n), local(2, n))
     do i = 1, n
@@ -120,17 +141,15 @@ program test_nonnested_beltrami_spec
         .or. report%residual > 1.0e-9_dp) &
         error stop 'SPEC comparison'
 contains
+    subroutine bind_run_test_nonnested_beltrami_spec_context()
+        ctx%epsilon => epsilon
+        deform_operator%data => ctx
+    end subroutine bind_run_test_nonnested_beltrami_spec_context
+
     subroutine mapping(u, theta, x)
         real(dp), intent(in) :: u, theta
         real(dp), intent(out) :: x(2)
         x = [r0 + u*cos(theta), u*sin(theta)]
-    end subroutine
-    subroutine deform(x, phi, y)
-        real(dp), intent(in) :: x(2), phi
-        real(dp), intent(out) :: y(2)
-        real(dp) :: c, s
-        c = epsilon*cos(2*phi); s = epsilon*sin(2*phi)
-        y = [r0 + (1 + c)*(x(1) - r0) + s*x(2), s*(x(1) - r0) + (1 - c)*x(2)]
     end subroutine
     subroutine deformation(phi, df, det)
         real(dp), intent(in) :: phi
@@ -156,7 +175,8 @@ contains
             hat = hat + merge(1, 2, n == 0)*real(bn*exp(cmplx(0.0_dp, n*phi, dp)), dp)
         end do
         hat(2) = hat(2) + field%f_vac/x(1)
-        call deform(x, phi, y)
+        call bind_run_test_nonnested_beltrami_spec_context()
+        call run_test_nonnested_beltrami_spec_deform(ctx, x, phi, y)
         call deformation(phi, df, det)
         c = epsilon*cos(2*phi); s = epsilon*sin(2*phi)
         df(1, 2) = (-2*s*(x(1) - r0) + 2*c*x(2))/x(1)
@@ -164,4 +184,28 @@ contains
         df(2, 2) = y(1)/x(1); det = det*df(2, 2)
         b = matmul(df, hat)/det
     end subroutine
-end program
+
+    end subroutine run_test_nonnested_beltrami_spec
+
+    subroutine run_test_nonnested_beltrami_spec_deform(ctx, x, phi, y)
+        type(run_test_nonnested_beltrami_spec_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: x(2), phi
+        real(dp), intent(out) :: y(2)
+        real(dp) :: c, s
+        c = ctx%epsilon*cos(2*phi); s = ctx%epsilon*sin(2*phi)
+        y = [r0 + (1 + c)*(x(1) - r0) + s*x(2), s*(x(1) - r0) + (1 - c)*x(2)]
+    end subroutine run_test_nonnested_beltrami_spec_deform
+
+    subroutine run_test_nonnested_beltrami_spec_deform_binding(self, x, phi, y)
+        class(run_test_nonnested_beltrami_spec_deform_t), intent(in) :: self
+        real(dp), intent(in) :: x(2), phi
+        real(dp), intent(out) :: y(2)
+        call run_test_nonnested_beltrami_spec_deform(self%data, x, phi, y)
+    end subroutine
+end module test_nonnested_beltrami_spec_callbacks
+
+program test_nonnested_beltrami_spec
+    use test_nonnested_beltrami_spec_callbacks, only: run_test_nonnested_beltrami_spec
+    implicit none
+    call run_test_nonnested_beltrami_spec()
+end program test_nonnested_beltrami_spec

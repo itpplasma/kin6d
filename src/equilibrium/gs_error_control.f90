@@ -22,6 +22,9 @@ module kin6d_gs_error_control
     use kin6d_gs_error_leaves, only: gs_error_friedrichs_squared_interval, &
         gs_error_source_lipschitz_interval, gs_error_coercivity_interval, &
         gs_error_slope_max_interval, gs_error_state_interval
+    use kin6d_gs_majorant, only: gs_point_source_t, gs_goal_weight_t
+
+    use kin6d_gs_majorant, only: gs_point_source_t
     implicit none
     private
     public :: gs_stability_t, gs_linear_goal_t, gs_fixed_stability
@@ -46,6 +49,32 @@ module kin6d_gs_error_control
         real(dp) :: adjoint_majorant = huge(1.0_dp)
         logical :: approximate = .true., available = .false.
     end type
+    type, extends(gs_point_source_t) :: gs_point_source_adapter_t
+        procedure(gs_point_source_fn), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_point_source_adapter_t_evaluate
+    end type
+
+    type, extends(gs_goal_weight_t) :: gs_goal_weight_adapter_t
+        procedure(gs_goal_weight_fn), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_goal_weight_adapter_t_evaluate
+    end type
+
+    interface gs_fixed_linear_goal
+        module procedure gs_fixed_linear_goal_object, gs_fixed_linear_goal_procedure
+    end interface
+
+    type :: gs_fixed_linear_goal_object_context_t
+        class(gs_goal_weight_t), pointer :: weight => null()
+    end type
+
+    type, extends(gs_point_source_t) :: gs_fixed_linear_goal_object_adjoint_source_t
+        type(gs_fixed_linear_goal_object_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => gs_fixed_linear_goal_object_adjoint_source_binding
+    end type
+
 contains
     subroutine gs_coercivity_bound(cf2, source_lipschitz, alpha, status)
         !! ||v||_L2^2 <= cf2*a(v,v), f'(psi) <= source_lipschitz implies
@@ -316,16 +345,16 @@ contains
         status = GS_ERROR_OK
     end subroutine
 
-    subroutine gs_fixed_linear_goal(state, psi, source, weight, goal, status)
-        !! Q(u)=int weight*u for FIXED source -div(grad u/R)=source(x).
+    subroutine gs_fixed_linear_goal_object(state, psi, source, weight, goal, status)
+        !! Q(u)=int weight*u for FIXED source -div(grad u/R)=source%evaluate(x).
         !! The callback MUST be independent of its psi argument; this API does
         !! not cover nonlinear states/goals. Independently solve a(z_h,v)=Q(v),
         !! then |Q(u)-Q(psi)-r(z_h)| <= M_primal*M_adjoint. Same-space Galerkin
         !! cancellation is retained; a discrete residual alone is no bound.
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: psi(:)
-        procedure(gs_point_source_fn) :: source
-        procedure(gs_goal_weight_fn) :: weight
+        class(gs_point_source_t), target, intent(in) :: source
+        class(gs_goal_weight_t), target, intent(in) :: weight
         type(gs_linear_goal_t), intent(out) :: goal
         integer, intent(out) :: status
         type(equilibrated_flux_estimate_t) :: primal, adjoint
@@ -333,6 +362,9 @@ contains
         real(dp) :: point(2), det, shape(10), grad(2, 10), hess(2, 2, 10)
         real(dp) :: ph, f, q, center, value, local_rhs(10, 2)
         integer :: stat, e, j, nd, n, a, failed
+        type(gs_fixed_linear_goal_object_context_t), target :: ctx
+        type(gs_fixed_linear_goal_object_adjoint_source_t), target :: &
+            adjoint_source_operator
         status = GS_ERROR_BAD_INPUT
         if (.not. state%ready) return
         n = size(state%psi)
@@ -358,8 +390,8 @@ contains
                     cycle
                 end if
                 ph = dot_product(shape(:nd), psi(state%triangles(:, e)))
-                f = source(e, point(1), point(2), ph)
-                q = weight(point(1), point(2))
+                f = source%evaluate(e, point(1), point(2), ph)
+                q = weight%evaluate(point(1), point(2))
                 if (.not. all(ieee_is_finite([f, q]))) then
                     failed = 1
                     cycle
@@ -390,7 +422,8 @@ contains
         status = GS_ERROR_ESTIMATOR_FAILED
         call gs_equilibrated_majorant(state, psi, source, primal, stat)
         if (stat /= GS_EQ_OK) return
-        call gs_equilibrated_majorant(state, z, adjoint_source, adjoint, stat)
+        call bind_gs_fixed_linear_goal_object_context()
+        call gs_equilibrated_majorant(state, z, adjoint_source_operator, adjoint, stat)
         if (stat /= GS_EQ_OK) return
         goal%primal_majorant = primal%bound
         goal%adjoint_majorant = adjoint%bound
@@ -402,11 +435,69 @@ contains
         goal%available = .true.
         status = GS_ERROR_OK
     contains
-        function adjoint_source(cell, r, zz, p) result(f)
+    subroutine bind_gs_fixed_linear_goal_object_context()
+        ctx%weight => weight
+        adjoint_source_operator%data => ctx
+    end subroutine bind_gs_fixed_linear_goal_object_context
+
+    end subroutine
+
+    subroutine gs_fixed_linear_goal_procedure(state, psi, source, weight, goal, status)
+        !! Q(u)=int weight*u for FIXED source -div(grad u/R)=source(x).
+        !! The callback MUST be independent of its psi argument; this API does
+        !! not cover nonlinear states/goals. Independently solve a(z_h,v)=Q(v),
+        !! then |Q(u)-Q(psi)-r(z_h)| <= M_primal*M_adjoint. Same-space Galerkin
+        !! cancellation is retained; a discrete residual alone is no bound.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: psi(:)
+        procedure(gs_point_source_fn) :: source
+        procedure(gs_goal_weight_fn) :: weight
+        type(gs_linear_goal_t), intent(out) :: goal
+        integer, intent(out) :: status
+        type(gs_point_source_adapter_t), target :: source_adapter
+        type(gs_goal_weight_adapter_t), target :: weight_adapter
+
+        source_adapter%callback => source
+        weight_adapter%callback => weight
+        call gs_fixed_linear_goal_object(state, &
+            psi, &
+            source_adapter, &
+            weight_adapter, &
+            goal, &
+            status)
+    end subroutine
+
+    function gs_point_source_adapter_t_evaluate(self, cell, r, z, psi) result(f)
+        class(gs_point_source_adapter_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: f
+        f = self%callback(cell, r, z, psi)
+    end function
+
+    function gs_goal_weight_adapter_t_evaluate(self, r, z) result(q)
+        class(gs_goal_weight_adapter_t), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            real(dp) :: q
+        q = self%callback(r, z)
+    end function
+
+    function gs_fixed_linear_goal_object_adjoint_source(ctx, cell, r, zz, p) result(f)
+        type(gs_fixed_linear_goal_object_context_t), intent(in) :: ctx
             integer, intent(in) :: cell
             real(dp), intent(in) :: r, zz, p
             real(dp) :: f
-            f = weight(r, zz) + 0.0_dp*(cell + p)
-        end function
-    end subroutine
+            f = ctx%weight%evaluate(r, zz) + 0.0_dp*(cell + p)
+    end function gs_fixed_linear_goal_object_adjoint_source
+
+    function gs_fixed_linear_goal_object_adjoint_source_binding(self, cell, r, z, &
+        psi) result(result_value)
+        class(gs_fixed_linear_goal_object_adjoint_source_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: result_value
+        result_value = gs_fixed_linear_goal_object_adjoint_source(self%data, cell, &
+            r, z, psi)
+    end function
+
 end module kin6d_gs_error_control

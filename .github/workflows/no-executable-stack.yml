@@ -1,0 +1,19 @@
+name: Non-executable stacks
+on:
+  merge_group:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  elf-stack:
+    runs-on: [self-hosted, itp-build]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and check every KIN6D target
+        run: ci/run.sh no-executable-stack

@@ -22,6 +22,7 @@ module kin6d_coulomb_encounter
     use kin6d_species_leaves, only: species_pair_scales, species_sommerfeld
     use fortnum_quadrature, only: gauss_legendre, gauss_legendre_ab
     use fortnum_interval, only: interval_t, ipoint
+
     implicit none
     private
     public :: encounter_config_t, encounter_t, encounter_ledger_t
@@ -94,6 +95,38 @@ module kin6d_coulomb_encounter
             logical, intent(out) :: active
         end subroutine encounter_field
     end interface
+    type, abstract, public :: encounter_field_t
+    contains
+        procedure(encounter_field_t_binding), deferred :: evaluate
+    end type
+    type, extends(encounter_field_t) :: encounter_field_t_adapter
+        procedure(encounter_field), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => encounter_field_t_adapter_evaluate
+    end type
+    abstract interface
+        subroutine encounter_field_t_binding(self, rr, x, y, z, psi, active)
+            import :: dp
+            import :: encounter_field_t
+            class(encounter_field_t), intent(in) :: self
+            real(dp), intent(in) :: rr, x(:), y(:), z(:)
+            complex(dp), intent(out) :: psi(:, :)
+            logical, intent(out) :: active
+        end subroutine encounter_field_t_binding
+    end interface
+    interface encounter_project
+        module procedure encounter_project_object, encounter_project_procedure
+    end interface
+
+    type, extends(encounter_field_t) :: project_packet_packet_field_t
+        real(dp), pointer :: d => null()
+        real(dp), pointer :: db => null()
+        real(dp), pointer :: dsigma => null()
+        type(encounter_t), pointer :: enc => null()
+    contains
+        procedure :: evaluate => project_packet_packet_field_evaluate
+    end type
+
 contains
     pure logical function in_sector(l, sector)
         integer, intent(in) :: l, sector
@@ -279,28 +312,25 @@ contains
     ! periodic trapezoid in phi). With (db,dsigma) /= 0 the packet tangent is
     ! projected instead; the map is linear, so this is the exact tangent of a0.
     subroutine project_packet(enc, lest, mest, db, dsigma, a)
-        type(encounter_t), intent(in) :: enc
+        type(encounter_t), intent(in) , target :: enc
         integer, intent(in) :: lest, mest
-        real(dp), intent(in) :: db, dsigma
+        real(dp), intent(in) , target :: db, dsigma
         complex(dp), allocatable, intent(out) :: a(:, :, :)
         complex(dp), allocatable :: a4(:, :, :, :)
-        real(dp) :: d, amax
+        real(dp) , target :: d, amax
         integer :: nph
+        type(project_packet_packet_field_t) :: packet_field_context
         d = sqrt(enc%cfg%b**2 + enc%cfg%z0**2)
         amax = abs(enc%cfg%b)*(d + 12*enc%cfg%sigma)/(2*enc%cfg%sigma**2)
         nph = 2*(mest + ceiling(amax + 6*sqrt(amax)) + 8)
-        call encounter_project(enc, lest, mest, nph, 1, packet_field, a4)
+        packet_field_context%d => d
+        packet_field_context%db => db
+        packet_field_context%dsigma => dsigma
+        packet_field_context%enc => enc
+        call encounter_project(enc, lest, mest, nph, 1, packet_field_context, a4)
         allocate (a(enc%mesh%n, 0:mest, 0:lest))
         a = a4(:, :, :, 1)
-    contains
-        subroutine packet_field(rr, x, y, z, psi, active)
-            real(dp), intent(in) :: rr, x(:), y(:), z(:)
-            complex(dp), intent(out) :: psi(:, :)
-            logical, intent(out) :: active
-            active = abs(rr - d) <= 13*enc%cfg%sigma
-            if (active) call encounter_evaluate_packet(enc%cfg, x, y, z, db, dsigma, &
-                                                       psi(:, 1))
-        end subroutine packet_field
+
     end subroutine project_packet
 
     ! Generic projection of nf fields psi(r) (even in y) onto the partial-wave
@@ -308,10 +338,10 @@ contains
     ! Gauss-Legendre nodes in cos theta and nph periodic trapezoid nodes in phi.
     ! field(rr, x, y, z, psi, active) evaluates psi(nph*nth, nf) on the sphere
     ! |r| = rr (points ordered phi fastest) or reports active = .false. (zero).
-    subroutine encounter_project(enc, lest, mest, nph, nf, field, a)
+    subroutine encounter_project_object(enc, lest, mest, nph, nf, field, a)
         type(encounter_t), intent(in) :: enc
         integer, intent(in) :: lest, mest, nph, nf
-        procedure(encounter_field) :: field
+        class(encounter_field_t), intent(in) :: field
         complex(dp), allocatable, intent(out) :: a(:, :, :, :)
         real(dp), allocatable :: xt(:), wt(:), plm(:, :, :), cphi(:, :), phi(:)
         real(dp), allocatable :: x(:), y(:), z(:)
@@ -345,7 +375,7 @@ contains
                                       z(p))
                 end do
             end do
-            call field(rr, x, y, z, psi, active)
+            call field%evaluate(rr, x, y, z, psi, active)
             if (.not. active) cycle
             scale = rr*sqrt(enc%mesh%w(i))
             do f = 1, nf
@@ -355,7 +385,7 @@ contains
                 end do
             end do
         end do
-    end subroutine encounter_project
+    end subroutine encounter_project_object
 
     ! Per-l eigen window, adaptively widened until the discarded spectral weight
     ! of the initial state fits the budget; accumulates the ledger.
@@ -1016,4 +1046,43 @@ contains
         call project_packet(enc, enc%lmax, enc%mmax, 0.0_dp, 1.0_dp, d0)
         grad(2) = 2*real(sum(conjg(mu0)*d0))
     end subroutine encounter_bin_vjp
+
+    subroutine encounter_project_procedure(enc, lest, mest, nph, nf, field, a)
+        type(encounter_t), intent(in) :: enc
+        integer, intent(in) :: lest, mest, nph, nf
+        procedure(encounter_field) :: field
+        complex(dp), allocatable, intent(out) :: a(:, :, :, :)
+        type(encounter_field_t_adapter) :: adapter
+
+        adapter%callback => field
+        call encounter_project_object(enc, &
+            lest, &
+            mest, &
+            nph, &
+            nf, &
+            adapter, &
+            a)
+    end subroutine
+
+    subroutine encounter_field_t_adapter_evaluate(self, rr, x, y, z, psi, active)
+        class(encounter_field_t_adapter), intent(in) :: self
+            real(dp), intent(in) :: rr, x(:), y(:), z(:)
+            complex(dp), intent(out) :: psi(:, :)
+            logical, intent(out) :: active
+        call self%callback(rr, x, y, z, psi, active)
+    end subroutine
+    subroutine project_packet_packet_field_evaluate(self, rr, x, y, z, psi, active)
+        class(project_packet_packet_field_t), intent(in) :: self
+            real(dp), intent(in) :: rr, x(:), y(:), z(:)
+            complex(dp), intent(out) :: psi(:, :)
+            logical, intent(out) :: active
+        associate(d => self%d, &
+            db => self%db, &
+            dsigma => self%dsigma, &
+            enc => self%enc)
+            active = abs(rr - d) <= 13*enc%cfg%sigma
+            if (active) call encounter_evaluate_packet(enc%cfg, x, y, z, db, dsigma, &
+                                                       psi(:, 1))
+        end associate
+    end subroutine project_packet_packet_field_evaluate
 end module kin6d_coulomb_encounter

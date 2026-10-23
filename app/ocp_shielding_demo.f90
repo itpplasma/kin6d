@@ -29,6 +29,8 @@ module ocp_shielding_app
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
     private
     public :: main
@@ -73,6 +75,16 @@ module ocp_shielding_app
     character(256) :: export_dir = ''
     real(dp), allocatable :: trajectory(:, :, :), member_counts(:, :, :)
     character(160) :: heading
+    type :: draw_figures_context_t
+        real(dp), pointer :: view => null()
+    end type
+
+    type, extends(animation_callback_t) :: draw_figures_update_frame_t
+        type(draw_figures_context_t), pointer :: data => null()
+    contains
+        procedure :: update => draw_figures_update_frame_binding
+    end type
+
 contains
     subroutine main()
         integer :: unit, ios, c
@@ -554,8 +566,10 @@ contains
     end subroutine
 
     subroutine draw_figures()
-        real(dp) :: lam(cases), lo(cases), hi(cases), view
+        real(dp) , target :: lam(cases), lo(cases), hi(cases), view
         integer :: c, frames
+        type(draw_figures_context_t), target :: ctx
+        type(draw_figures_update_frame_t), target :: update_frame_operator
         call figure(figsize=[13.2_dp, 8.8_dp])
         do c = 1, min(cases, 4)
             call subplot(2, 2, c)
@@ -617,22 +631,41 @@ contains
         canvas => get_global_figure()
         samples = size(running, 2)
         frame = samples
-        call draw_frame()
+        call bind_draw_figures_context()
+        call draw_figures_draw_frame(ctx)
         call savefig('output/'//trim(label)//'-particles.png')
         frames = samples + 24
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
+        call bind_draw_figures_context()
+        animation = animation_func(update_frame_operator, frames=frames, &
+            interval=42, fig=canvas)
         call save_animation(animation, 'output/'//trim(label)//'.mp4', fps=24, status=c)
         if (c /= 0) print '(a)', 'animation encoding failed'
     contains
-        subroutine update_frame(index)
+    subroutine bind_draw_figures_context()
+        ctx%view => view
+        update_frame_operator%data => ctx
+    end subroutine bind_draw_figures_context
+
+
+    end subroutine
+
+    subroutine draw_figures_update_frame(ctx, index)
+        type(draw_figures_context_t), intent(in) :: ctx
             integer, intent(in) :: index
             frame = min(samples, index)
             call canvas%clear()
-            call draw_frame()
+            call draw_figures_draw_frame(ctx)
             call canvas%set_rendered(.false.)
-        end subroutine
+    end subroutine draw_figures_update_frame
 
-        subroutine draw_frame()
+    subroutine draw_figures_update_frame_binding(self, frame)
+        class(draw_figures_update_frame_t), intent(inout) :: self
+            integer, intent(in) :: frame
+        call draw_figures_update_frame(self%data, frame)
+    end subroutine
+
+    subroutine draw_figures_draw_frame(ctx)
+        type(draw_figures_context_t), intent(in) :: ctx
             call subplot(1, 2, 1)
             call scatter(sel_x(:, frame), sel_y(:, frame), color=blue, s=6.0_dp, &
                          alpha=0.5_dp, label='electrons, |z| < 0.25 $\lambda_D$')
@@ -642,7 +675,7 @@ contains
                 frame*sample_interval
             call title(trim(heading))
             call xlabel('$x/\lambda_D$'); call ylabel('$y/\lambda_D$')
-            call xlim(-view, view); call ylim(-view, view)
+            call xlim(-ctx%view, ctx%view); call ylim(-ctx%view, ctx%view)
             call legend(loc='upper right')
             call subplot(1, 2, 2)
             call plot(rb, -running(:, frame)/impurities(1), color=blue, linewidth=1.8_dp, &
@@ -656,8 +689,7 @@ contains
             call xlim(0.0_dp, rmax); call ylim(-3.0_dp, 6.0_dp)
             call legend(loc='upper right')
             call tight_layout()
-        end subroutine
-    end subroutine
+    end subroutine draw_figures_draw_frame
 end module ocp_shielding_app
 
 program ocp_shielding_demo

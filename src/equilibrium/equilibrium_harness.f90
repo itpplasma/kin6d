@@ -70,6 +70,35 @@ module kin6d_equilibrium_harness
             type(equilibrium_state_t), intent(out) :: equilibrium
         end subroutine
     end interface
+    type, abstract, public :: equilibrium_solver_t
+    contains
+        procedure(equilibrium_solver_t_binding), deferred :: evaluate
+    end type
+    type, extends(equilibrium_solver_t) :: equilibrium_solver_t_adapter
+        procedure(lane_run), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => equilibrium_solver_t_adapter_evaluate
+    end type
+    abstract interface
+        subroutine equilibrium_solver_t_binding(self, spec, resolution, start, &
+            state, report, equilibrium)
+            import :: equilibrium_case_t, equilibrium_resolution_t
+            import :: equilibrium_start_t, equilibrium_run_report_t
+            import :: equilibrium_state_t
+            import :: equilibrium_solver_t
+            class(equilibrium_solver_t), intent(in) :: self
+            type(equilibrium_case_t), intent(in) :: spec
+            type(equilibrium_resolution_t), intent(in) :: resolution
+            type(equilibrium_start_t), intent(in) :: start
+            class(*), intent(inout) :: state
+            type(equilibrium_run_report_t), intent(inout) :: report
+            type(equilibrium_state_t), intent(out) :: equilibrium
+        end subroutine
+    end interface
+    interface run_equilibrium_case
+        module procedure run_equilibrium_case_object, run_equilibrium_case_procedure
+    end interface
+
 contains
     subroutine equilibrium_case(name, lane, spec, status)
         character(*), intent(in) :: name, lane
@@ -113,11 +142,11 @@ contains
         end select
     end subroutine
 
-    subroutine run_equilibrium_case(name, lane, resolution, start_name, solve, &
+    subroutine run_equilibrium_case_object(name, lane, resolution, start_name, solve, &
             state, report, equilibrium)
         character(*), intent(in) :: name, lane, start_name
         type(equilibrium_resolution_t), intent(in) :: resolution
-        procedure(lane_run) :: solve
+        class(equilibrium_solver_t), intent(in) :: solve
         class(*), intent(inout) :: state
         type(equilibrium_run_report_t), intent(out) :: report
         type(equilibrium_state_t), intent(out) :: equilibrium
@@ -143,7 +172,7 @@ contains
         ! the free-boundary offset registry currently belongs to the psi lane.
         if (lane == 'map' .and. start_name /= 'legacy') return
         report%status = D8_BAD_REPORT
-        call solve(spec, resolution, start, state, report, equilibrium)
+        call solve%evaluate(spec, resolution, start, state, report, equilibrium)
         if (report%status /= D8_OK) return
         if (.not. allocated(equilibrium%field) &
             .or. .not. allocated(equilibrium%chart)) then
@@ -187,5 +216,39 @@ contains
             ' residual_norm=', trim(report%residual_norm), ' sigma=', report%sigma
         write (unit, '(4a)') '[V] state_bound=', trim(report%state_bound_status), &
             ' derivative_bound=', trim(report%derivative_bound_status)
+    end subroutine
+
+    subroutine run_equilibrium_case_procedure(name, lane, resolution, start_name, &
+        solve, &
+            state, report, equilibrium)
+        character(*), intent(in) :: name, lane, start_name
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        procedure(lane_run) :: solve
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(out) :: report
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        type(equilibrium_solver_t_adapter) :: adapter
+
+        adapter%callback => solve
+        call run_equilibrium_case_object(name, &
+            lane, &
+            resolution, &
+            start_name, &
+            adapter, &
+            state, &
+            report, &
+            equilibrium)
+    end subroutine
+
+    subroutine equilibrium_solver_t_adapter_evaluate(self, spec, resolution, start, &
+        state, report, equilibrium)
+        class(equilibrium_solver_t_adapter), intent(in) :: self
+            type(equilibrium_case_t), intent(in) :: spec
+            type(equilibrium_resolution_t), intent(in) :: resolution
+            type(equilibrium_start_t), intent(in) :: start
+            class(*), intent(inout) :: state
+            type(equilibrium_run_report_t), intent(inout) :: report
+            type(equilibrium_state_t), intent(out) :: equilibrium
+        call self%callback(spec, resolution, start, state, report, equilibrium)
     end subroutine
 end module kin6d_equilibrium_harness

@@ -1,4 +1,46 @@
-program test_gs_fb_refit
+module test_gs_fb_refit_callbacks
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
+    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+  use kin6d_gs_coupling, only: gs_coupling_source_load, gs_coupled_apply, GS_COUPLING_OK
+    use kin6d_gs_profile_law, only: gs_profile_law_t
+    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+             gs_fb_refit_config_t, gs_fb_refit_report_t, gs_fb_history_t, gs_fb_setup, &
+  gs_fb_evaluate, gs_fb_jacobian_apply, gs_fb_newton, gs_fb_refit_solve, gs_fb_locate, &
+                                      gs_fb_trace_lcfs, &
+                                      GS_FB_OK, GS_FB_LIMITER, GS_FB_REFIT_NOT_CONVERGED
+    use gs_coupling_fixture, only: build_state, build_coils, outer_curve, pi, gp_r0, &
+                                   gp_a, gp_b, gc_a, gc_b
+    use gs_fb_fixture, only: make_law, bump, bump_laplacian, smooth_direction
+
+    use kin6d_gs_free_boundary, only: gs_fb_extra_t
+    use kin6d_gs_free_boundary, only: gs_fb_refit_solve_object
+    implicit none
+    private
+    public :: run_test_gs_fb_refit
+    real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
+    real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
+    real(dp), parameter :: semi(2) = [gp_a, gp_b]
+    real(dp), parameter :: amplitude = 1.5_dp
+    type :: run_test_gs_fb_refit_smooth_extra_context_t
+        type(gs_circuit_set_t), pointer :: coils => null()
+        integer, pointer :: failures => null()
+    end type
+
+    type, extends(gs_fb_extra_t) :: run_test_gs_fb_refit_manufactured_extra_t
+        type(run_test_gs_fb_refit_smooth_extra_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_fb_refit_manufactured_extra_binding
+    end type
+
+    type, extends(gs_fb_extra_t) :: run_test_gs_fb_refit_smooth_extra_t
+        type(run_test_gs_fb_refit_smooth_extra_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_fb_refit_smooth_extra_binding
+    end type
+
+contains
+    subroutine run_test_gs_fb_refit()
     !! P8 (DESIGN 1.2, step 2): the outer refit loop of the free-boundary solver.
     !!
     !! Part 1, boundary faces. The flux equals the boundary level exactly on
@@ -13,30 +55,19 @@ program test_gs_fb_refit
     !! mesh and with the refit loop; the nodal error orders are compared. Same
     !! manufactured solution as test_gs_fb_manufactured: the nodal load `extra`
     !! is rebuilt after every mesh change.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_element_jet
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-  use kin6d_gs_coupling, only: gs_coupling_source_load, gs_coupled_apply, GS_COUPLING_OK
-    use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
-             gs_fb_refit_config_t, gs_fb_refit_report_t, gs_fb_history_t, gs_fb_setup, &
-  gs_fb_evaluate, gs_fb_jacobian_apply, gs_fb_newton, gs_fb_refit_solve, gs_fb_locate, &
-                                      gs_fb_trace_lcfs, &
-                                      GS_FB_OK, GS_FB_LIMITER, GS_FB_REFIT_NOT_CONVERGED
-    use gs_coupling_fixture, only: build_state, build_coils, outer_curve, pi, gp_r0, &
-                                   gp_a, gp_b, gc_a, gc_b
-    use gs_fb_fixture, only: make_law, bump, bump_laplacian, smooth_direction
     implicit none
 
-    real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
-    real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
-    real(dp), parameter :: semi(2) = [gp_a, gp_b]
-    real(dp), parameter :: amplitude = 1.5_dp
-    type(gs_circuit_set_t) :: coils
-    real(dp) :: law_scale = 5.0_dp, seed_amplitude = 1.5_dp
-    integer :: failures
+    type(gs_circuit_set_t) , target :: coils
+real(dp) :: law_scale, seed_amplitude
+    integer , target :: failures
     character(len=16) :: part, arg
+        type(run_test_gs_fb_refit_smooth_extra_context_t), target :: smooth_extra_data
+        type(run_test_gs_fb_refit_manufactured_extra_t), target :: &
+            manufactured_extra_operator
+        type(run_test_gs_fb_refit_smooth_extra_t), target :: smooth_extra_operator
 
+        law_scale = 5.0_dp
+        seed_amplitude = 1.5_dp
     failures = 0
     call build_coils(coils)
     part = 'all'
@@ -60,15 +91,12 @@ program test_gs_fb_refit
     print '(a)', 'gs_fb_refit (P8) oracles passed'
 
 contains
-
-    subroutine require(ok, what)
-        logical, intent(in) :: ok
-        character(len=*), intent(in) :: what
-        if (.not. ok) then
-            failures = failures + 1
-            print '(2a)', 'FAIL: ', what
-        end if
-    end subroutine require
+    subroutine bind_run_test_gs_fb_refit_smooth_extra_context()
+        smooth_extra_data%coils => coils
+        smooth_extra_data%failures => failures
+        manufactured_extra_operator%data => smooth_extra_data
+        smooth_extra_operator%data => smooth_extra_data
+    end subroutine bind_run_test_gs_fb_refit_smooth_extra_context
 
     ! ------------------------------------------------------------------
     ! Part 1: faces on the boundary.
@@ -92,7 +120,9 @@ contains
         integer :: status, i, n, j, step
 
         call build_state(state, n_outer, order, status)
-        call require(status == 0, label//': mesh')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == 0, &
+            label//': mesh')
         do j = 1, nc
             chain(:, j) = [gp_r0 + gp_a*cos(2.0_dp*pi*(j - 1)/nc), &
                            gp_b*sin(2.0_dp*pi*(j - 1)/nc)]
@@ -109,7 +139,9 @@ contains
         cfg%points(:, 1) = chain(:, 1)
         cfg%points(:, 2) = chain(:, nc/2 + 1)
         call gs_fb_setup(state, sys, law, cfg, status=status)
-        call require(status == GS_FB_OK, label//': setup')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+            label//': setup')
         n = sys%n
         allocate (psi(n), none(0))
         level = 0.3_dp
@@ -120,11 +152,15 @@ contains
             if (on_chain(i)) psi(i) = level
         end do
         call gs_fb_evaluate(state, sys, psi, none, ev, status)
-        call require(status == GS_FB_OK, label//': evaluate on faces')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+            label//': evaluate on faces')
         if (status /= GS_FB_OK) return
         print '(a,a,i4,a,es12.4)', label, ': boundary faces ', ev%face_cells, &
             '  Ip ', ev%plasma_current
-        call require(ev%face_cells == nc, label//': one plasma face per chain edge')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, ev%face_cells == nc, &
+            label//': one plasma face per chain edge')
         ip0 = ev%plasma_current
 
         ! Continuity against rounding noise and slivers.
@@ -132,16 +168,22 @@ contains
             shift = shifts(step)
             call gs_fb_evaluate(state, sys, merge(psi + shift, psi, on_chain), none, &
                                 ev_a, status)
-            call require(status == GS_FB_OK, label//': evaluate, chain nodes raised')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+            call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+                label//': evaluate, chain nodes raised')
             call gs_fb_evaluate(state, sys, merge(psi - shift, psi, on_chain), none, &
                                 ev_b, status)
-            call require(status == GS_FB_OK, label//': evaluate, chain nodes lowered')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+            call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+                label//': evaluate, chain nodes lowered')
             plus = abs(ev_a%plasma_current - ip0)/ip0
             minus = abs(ev_b%plasma_current - ip0)/ip0
             print '(a,es9.1,a,2es10.2,a,2i5)', '   chain shift ', shift, &
                 '  relative change of Ip ', plus, minus, '  face cells ', &
                 ev_a%face_cells, ev_b%face_cells
-            call require(max(plus, minus) < 50.0_dp*shift + 1.0e-12_dp, &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+            call run_test_gs_fb_refit_require(smooth_extra_data, max(plus, minus) < &
+                50.0_dp*shift + 1.0e-12_dp, &
                          label//': source continuous across the face')
         end do
 
@@ -154,10 +196,14 @@ contains
         shift = 1.0e-6_dp
         call gs_fb_evaluate(state, sys, psi + shift*delta, none, ev_a, status, &
                             jacobian=.false.)
-        call require(status == GS_FB_OK, label//': evaluate forward')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+            label//': evaluate forward')
         call gs_fb_evaluate(state, sys, psi - shift*delta, none, ev_b, status, &
                             jacobian=.false.)
-        call require(status == GS_FB_OK, label//': evaluate backward')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+            label//': evaluate backward')
         db = ad - jd
         forward = (ev_a%source - ev%source)/shift
         backward = (ev%source - ev_b%source)/shift
@@ -167,8 +213,12 @@ contains
         err_no_face = min(norm2(db - forward), norm2(db - backward))/norm2(db)
         print '(a,es10.2,a,es10.2)', '   source derivative vs one-sided differences ', &
             err_one, '  without the face term ', err_no_face
-        call require(err_one < 0.05_dp, label//': face Jacobian one-sided difference')
-        call require(err_no_face > 3.0_dp*err_one, label//': the face term matters')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, err_one < 0.05_dp, &
+            label//': face Jacobian one-sided difference')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, err_no_face > &
+            3.0_dp*err_one, label//': the face term matters')
     end subroutine face_case
 
     function strip_faces(state, ev) result(control)
@@ -230,62 +280,6 @@ contains
     ! Part 2: T3 with and without the refit.
     ! ------------------------------------------------------------------
 
-    function vacuum(r, z) result(psi)
-        real(dp), intent(in) :: r, z
-        real(dp) :: psi, g(1, 2)
-
-        call gs_circuit_flux_vectors(coils, [r], [z], g)
-        psi = g(1, 1)*currents(1) + g(1, 2)*currents(2)
-    end function vacuum
-
-    function exact_flux(r, z) result(psi)
-        real(dp), intent(in) :: r, z
-        real(dp) :: psi
-
-        psi = vacuum(r, z) + bump(r, z, centre, semi, amplitude)
-    end function exact_flux
-
-    function density(r, z) result(j)
-        use fortfem_axisymmetric_gs_kernel, only: gs_mu0
-        real(dp), intent(in) :: r, z
-        real(dp) :: j
-
-        j = bump_laplacian(r, z, centre, semi, amplitude)/gs_mu0
-    end function density
-
-    subroutine manufactured_extra(state, sys)
-        !! extra = int f* v - b(Pi psi*) on the current mesh.
-        type(gs_state_t), intent(inout) :: state
-        type(gs_fb_system_t), intent(inout) :: sys
-        type(gs_fb_eval_t) :: ev
-        real(dp), allocatable :: exact(:), f_load(:)
-        integer :: i, status
-
-        allocate (exact(size(state%points, 2)))
-        do i = 1, size(exact)
-            exact(i) = exact_flux(state%points(1, i), state%points(2, i))
-        end do
-        call gs_coupling_source_load(state, density, f_load, status)
-        call require(status == GS_COUPLING_OK, 'forcing load')
-        sys%extra_load = 0.0_dp
-        call gs_fb_evaluate(state, sys, exact, currents, ev, status, jacobian=.false.)
-        call require(status == GS_FB_OK, 'evaluate at the exact flux')
-        sys%extra_load = f_load - ev%source
-    end subroutine manufactured_extra
-
-    subroutine smooth_extra(state, sys)
-        !! extra = int f* v: the smooth load of the bump flux, no cancellation of
-        !! the source jump.
-        type(gs_state_t), intent(inout) :: state
-        type(gs_fb_system_t), intent(inout) :: sys
-        real(dp), allocatable :: f_load(:)
-        integer :: status
-
-        call gs_coupling_source_load(state, density, f_load, status)
-        call require(status == GS_COUPLING_OK, 'forcing load')
-        sys%extra_load = f_load
-    end subroutine smooth_extra
-
     subroutine refit_sweep(label, order, levels, min_rate)
         character(len=*), intent(in) :: label
         integer, intent(in) :: order, levels(:)
@@ -308,9 +302,15 @@ contains
         rate_refit = log(refit(n - 1)/refit(n))/log(2.0_dp)
         print '(a,a,2f7.2)', label, ': finest-pair nodal order fixed, refit ', &
             rate_fixed, rate_refit
-        call require(rate_refit > min_rate, label//': refit nodal convergence order')
-        call require(all(refit(2:) < refit(:n - 1)), label//': refit error decreases')
-        call require(refit(n) <= 1.5_dp*fixed(n), label//': refit not worse than fixed')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, rate_refit > min_rate, &
+            label//': refit nodal convergence order')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, all(refit(2:) < &
+            refit(:n - 1)), label//': refit error decreases')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, refit(n) <= &
+            1.5_dp*fixed(n), label//': refit not worse than fixed')
     end subroutine refit_sweep
 
     subroutine solve_case(order, n_outer, refit, error, bound_error, refits, moved)
@@ -343,10 +343,13 @@ contains
         h = perimeter/n_outer
         call initialize_gs(state, contour, 0.4_dp*h*h, status, element_order=order, &
                            curved=.true., curve=outer_curve, interior_chain=chain)
-        call require(status == 0, 'mesh')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == 0, 'mesh')
         allocate (seed(size(state%points, 2)))
         do i = 1, size(seed)
-            seed(i) = vacuum(state%points(1, i), state%points(2, i)) &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+            seed(i) = run_test_gs_fb_refit_vacuum(smooth_extra_data, state%points(1, &
+                i), state%points(2, i)) &
                       + bump(state%points(1, i), state%points(2, i), &
                              centre + [0.10_dp, -0.08_dp], semi, 0.3_dp*amplitude)
         end do
@@ -360,18 +363,26 @@ contains
         cfg%tolerance = 1.0e-10_dp
         allocate (cfg%points(2, 1))
         cfg%points(:, 1) = [gp_r0 + 0.33_dp, 0.0_dp]
-        psib_exact = exact_flux(cfg%points(1, 1), cfg%points(2, 1))
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        psib_exact = run_test_gs_fb_refit_exact_flux(smooth_extra_data, &
+            cfg%points(1, 1), cfg%points(2, 1))
         state%psi = seed
         rcfg%max_refits = merge(4, 0, refit)
         rcfg%tolerance = 1.0e-3_dp
-        call gs_fb_refit_solve(state, sys, law, cfg, currents, contour, 0.4_dp*h*h, &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call gs_fb_refit_solve_object(state, sys, law, cfg, currents, contour, &
+            0.4_dp*h*h, &
                                chain, rcfg, report, status, set=coils, &
-                               curve=outer_curve, extra_cb=manufactured_extra)
-        call require(status == GS_FB_OK .or. .not. refit, 'refit solve')
+                               curve=outer_curve, extra_cb=manufactured_extra_operator)
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK .or. &
+            .not. refit, 'refit solve')
         if (status /= GS_FB_OK .and. refit) print '(a,i4)', '   refit status ', status
         allocate (exact(size(state%points, 2)))
         do i = 1, size(exact)
-            exact(i) = exact_flux(state%points(1, i), state%points(2, i))
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+            exact(i) = run_test_gs_fb_refit_exact_flux(smooth_extra_data, &
+                state%points(1, i), state%points(2, i))
         end do
         scale = maxval(abs(exact))
         error = maxval(abs(state%psi - exact))/scale
@@ -440,7 +451,9 @@ contains
         if (status /= 0) return
         allocate (seed(size(state%points, 2)))
         do i = 1, size(seed)
-            seed(i) = vacuum(state%points(1, i), state%points(2, i)) &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+            seed(i) = run_test_gs_fb_refit_vacuum(smooth_extra_data, state%points(1, &
+                i), state%points(2, i)) &
                       + bump(state%points(1, i), state%points(2, i), centre, semi, &
                              seed_amplitude)
         end do
@@ -456,9 +469,11 @@ contains
         cfg%points(:, 1) = [gp_r0 + 0.33_dp, 0.0_dp]
         state%psi = seed
         rcfg%max_refits = merge(5, 0, refit)
-        call gs_fb_refit_solve(state, sys, law, cfg, currents, contour, 0.4_dp*h*h, &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call gs_fb_refit_solve_object(state, sys, law, cfg, currents, contour, &
+            0.4_dp*h*h, &
                             chain, rcfg, report, status, set=coils, curve=outer_curve, &
-                               extra_cb=smooth_extra, history=hist)
+                               extra_cb=smooth_extra_operator, history=hist)
         if (status == GS_FB_REFIT_NOT_CONVERGED) status = GS_FB_OK
         if (status /= GS_FB_OK) &
             print '(a,i4,a,i4,a,i4)', '   free solve status ', status, ' order ', &
@@ -493,7 +508,9 @@ contains
         integer, parameter :: sizes(3) = [18, 36, 72]
 
         call free_solve(3, 144, .true., ref, dummy, status)
-        call require(status == GS_FB_OK, 'reference solve')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+            'reference solve')
         if (status /= GS_FB_OK) return
         print '(a,10es12.4)', 'reference (P3, 144 edges, refit): ', ref
         do order = 2, 3
@@ -501,7 +518,9 @@ contains
                 do level = 1, 3
                     n = sizes(level)
                     call free_solve(order, n, k == 2, run, info, status)
-                    call require(status == GS_FB_OK, 'jump-study solve')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+                    call run_test_gs_fb_refit_require(smooth_extra_data, status == &
+                        GS_FB_OK, 'jump-study solve')
                     if (status /= GS_FB_OK) cycle
                 errors(1, level) = maxval(abs(run(4:9) - ref(4:9)))/abs(ref(2) - ref(1))
                     errors(2, level) = abs(run(1) - ref(1))/abs(ref(2) - ref(1))
@@ -519,12 +538,20 @@ contains
                 if (k == 2) then
                     ! The refit recovers the order of the flux level quantities
                     ! and the boundary position; the fixed mesh does not.
-                    call require(all(errors(1:4, 3) < fixed_finest), &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+                    call run_test_gs_fb_refit_require(smooth_extra_data, &
+                        all(errors(1:4, 3) < fixed_finest), &
                                  tag//': refit more accurate than the fixed mesh')
-                    call require(rates(3) > 2.5_dp .and. rates(4) > 2.5_dp, &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+                    call run_test_gs_fb_refit_require(smooth_extra_data, rates(3) > &
+                        2.5_dp .and. rates(4) > 2.5_dp, &
                                  tag//': refit order of Ip and boundary position')
-                    call require(rates(2) > 1.9_dp, tag//': refit order of psi_b')
-                    call require(maxval(fixed_rates) < 2.5_dp, &
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+                    call run_test_gs_fb_refit_require(smooth_extra_data, rates(2) > &
+                        1.9_dp, tag//': refit order of psi_b')
+        call bind_run_test_gs_fb_refit_smooth_extra_context()
+                    call run_test_gs_fb_refit_require(smooth_extra_data, &
+                        maxval(fixed_rates) < 2.5_dp, &
                                  tag//': fixed mesh loses the order')
                 end if
                 if (k == 1) fixed_rates = rates(2:4)
@@ -532,4 +559,108 @@ contains
         end do
     end subroutine reference_study
 
+
+    end subroutine run_test_gs_fb_refit
+
+    subroutine run_test_gs_fb_refit_require(smooth_extra_data, ok, what)
+        type(run_test_gs_fb_refit_smooth_extra_context_t), intent(in), target :: &
+            smooth_extra_data
+        logical, intent(in) :: ok
+        character(len=*), intent(in) :: what
+        if (.not. ok) then
+            smooth_extra_data%failures = smooth_extra_data%failures + 1
+            print '(2a)', 'FAIL: ', what
+        end if
+    end subroutine run_test_gs_fb_refit_require
+
+    function run_test_gs_fb_refit_vacuum(smooth_extra_data, r, z) result(psi)
+        type(run_test_gs_fb_refit_smooth_extra_context_t), intent(in), target :: &
+            smooth_extra_data
+        real(dp), intent(in) :: r, z
+        real(dp) :: psi, g(1, 2)
+
+        call gs_circuit_flux_vectors(smooth_extra_data%coils, [r], [z], g)
+        psi = g(1, 1)*currents(1) + g(1, 2)*currents(2)
+    end function run_test_gs_fb_refit_vacuum
+
+    function run_test_gs_fb_refit_exact_flux(smooth_extra_data, r, z) result(psi)
+        type(run_test_gs_fb_refit_smooth_extra_context_t), intent(in), target :: &
+            smooth_extra_data
+        real(dp), intent(in) :: r, z
+        real(dp) :: psi
+
+        psi = run_test_gs_fb_refit_vacuum(smooth_extra_data, r, z) + bump(r, z, &
+            centre, semi, amplitude)
+    end function run_test_gs_fb_refit_exact_flux
+
+    function run_test_gs_fb_refit_density(r, z) result(j)
+        use fortfem_axisymmetric_gs_kernel, only: gs_mu0
+        real(dp), intent(in) :: r, z
+        real(dp) :: j
+
+        j = bump_laplacian(r, z, centre, semi, amplitude)/gs_mu0
+    end function run_test_gs_fb_refit_density
+
+    subroutine run_test_gs_fb_refit_manufactured_extra(smooth_extra_data, state, sys)
+        type(run_test_gs_fb_refit_smooth_extra_context_t), intent(in), target :: &
+            smooth_extra_data
+        !! extra = int f* v - b(Pi psi*) on the current mesh.
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(inout) :: sys
+        type(gs_fb_eval_t) :: ev
+        real(dp), allocatable :: exact(:), f_load(:)
+        integer :: i, status
+
+        allocate (exact(size(state%points, 2)))
+        do i = 1, size(exact)
+            exact(i) = run_test_gs_fb_refit_exact_flux(smooth_extra_data, &
+                state%points(1, i), state%points(2, i))
+        end do
+        call gs_coupling_source_load(state, run_test_gs_fb_refit_density, f_load, &
+            status)
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == &
+            GS_COUPLING_OK, 'forcing load')
+        sys%extra_load = 0.0_dp
+        call gs_fb_evaluate(state, sys, exact, currents, ev, status, jacobian=.false.)
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == GS_FB_OK, &
+            'evaluate at the exact flux')
+        sys%extra_load = f_load - ev%source
+    end subroutine run_test_gs_fb_refit_manufactured_extra
+
+    subroutine run_test_gs_fb_refit_manufactured_extra_binding(self, state, sys)
+        class(run_test_gs_fb_refit_manufactured_extra_t), intent(in) :: self
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(inout) :: sys
+        call run_test_gs_fb_refit_manufactured_extra(self%data, state, sys)
+    end subroutine
+
+    subroutine run_test_gs_fb_refit_smooth_extra(smooth_extra_data, state, sys)
+        type(run_test_gs_fb_refit_smooth_extra_context_t), intent(in), target :: &
+            smooth_extra_data
+        !! extra = int f* v: the smooth load of the bump flux, no cancellation of
+        !! the source jump.
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(inout) :: sys
+        real(dp), allocatable :: f_load(:)
+        integer :: status
+
+        call gs_coupling_source_load(state, run_test_gs_fb_refit_density, f_load, &
+            status)
+        call run_test_gs_fb_refit_require(smooth_extra_data, status == &
+            GS_COUPLING_OK, 'forcing load')
+        sys%extra_load = f_load
+    end subroutine run_test_gs_fb_refit_smooth_extra
+
+    subroutine run_test_gs_fb_refit_smooth_extra_binding(self, state, sys)
+        class(run_test_gs_fb_refit_smooth_extra_t), intent(in) :: self
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(inout) :: sys
+        call run_test_gs_fb_refit_smooth_extra(self%data, state, sys)
+    end subroutine
+end module test_gs_fb_refit_callbacks
+
+program test_gs_fb_refit
+    use test_gs_fb_refit_callbacks, only: run_test_gs_fb_refit
+    implicit none
+    call run_test_gs_fb_refit()
 end program test_gs_fb_refit

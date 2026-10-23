@@ -1,4 +1,4 @@
-program quantum_reference_demo
+module quantum_reference_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64, &
         compiler_version, &
         compiler_options
@@ -24,9 +24,41 @@ program quantum_reference_demo
     use kin6d_result_io, only: run_t, result_file_t
     use kin6d_periodic_pair_config, only: periodic_pair_t, read_periodic_pair, &
         write_periodic_pair, periodic_pair_bins
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
+    private
+    public :: run_quantum_reference_demo
     integer, parameter :: points = 193, bin_count = periodic_pair_bins, repeat = 3
-    integer :: momentum_cutoff = 2, particles = 2, frames, steps_per_frame = 1
+    type :: run_quantum_reference_demo_context_t
+        type(figure_t), pointer :: canvas => null()
+        integer, pointer :: frames => null()
+        real(dp), pointer :: lower(:,:,:,:) => null()
+        integer, pointer :: mode_momentum(:,:) => null()
+        integer, pointer :: nshow => null()
+        real(dp), pointer :: occupation(:,:,:) => null()
+        real(dp), pointer :: occupation_hi(:,:,:) => null()
+        real(dp), pointer :: occupation_lo(:,:,:) => null()
+        real(dp), pointer :: orbital(:) => null()
+        integer, pointer :: shell_first(:) => null()
+        real(dp), pointer :: times(:) => null()
+        real(dp), pointer :: upper(:,:,:,:) => null()
+        real(dp), pointer :: values(:,:,:,:) => null()
+        real(dp), pointer :: x(:) => null()
+        real(dp), pointer :: ylim_connected(:) => null()
+        real(dp), pointer :: ylim_pair(:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_quantum_reference_demo_update_t
+        type(run_quantum_reference_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_quantum_reference_demo_update_binding
+    end type
+
+contains
+    subroutine run_quantum_reference_demo()
+    implicit none
+integer , target :: momentum_cutoff, particles, frames, steps_per_frame
     ! Box, mass, coupling and time grid come from the &periodic_pair group
     ! shared with classical_pair_demo; hbar stays quantum-only.
     real(dp) :: length, mass, hbar, coupling, time_max
@@ -34,8 +66,8 @@ program quantum_reference_demo
     type(result_file_t) :: result
     type(periodic_pair_t) :: pair
     type(units_t) :: units
-    integer(i64) :: max_states = 10000_i64, max_bytes = 1073741824_i64
-    integer :: initial_terms = 0
+integer(i64) :: max_states, max_bytes
+integer :: initial_terms
     integer, allocatable :: initial_momenta(:, :)
     real(dp), allocatable :: initial_real(:), initial_imag(:)
     namelist /quantum_reference/ momentum_cutoff, particles, steps_per_frame, hbar, &
@@ -47,29 +79,38 @@ program quantum_reference_demo
     type(interval_t) :: norm0, gap, radius_box, time_box
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
-    integer, allocatable :: mode_momentum(:, :)
+    integer, allocatable , target :: mode_momentum(:, :)
     real(dp), allocatable :: initial_re(:), initial_im(:), hr(:, :, :)
     real(dp), allocatable :: hi(:, :, :), re(:), im(:), physical_re(:), physical_im(:)
     type(interval_t), allocatable :: hri(:, :), hii(:, :)
-    real(dp), allocatable :: values(:, :, :, :), lower(:, :, :, :), upper(:, :, :, :)
+    real(dp), allocatable , target :: values(:, :, :, :), lower(:, :, :, :), &
+        upper(:, :, :, :)
     real(dp), allocatable :: bin_value(:, :, :, :), bin_lower(:, :, :, :)
     real(dp), allocatable :: bin_upper(:, :, :, :)
-    real(dp), allocatable :: occupation(:, :, :), occupation_lo(:, :, :)
-    real(dp), allocatable :: occupation_hi(:, :, :), orbital(:), err(:)
-    real(dp), allocatable :: times(:)
-    real(dp) :: x(points), bin_centers(bin_count), widths(3), matrix_defect(2)
+    real(dp), allocatable , target :: occupation(:, :, :), occupation_lo(:, :, :)
+    real(dp), allocatable , target :: occupation_hi(:, :, :), orbital(:), err(:)
+    real(dp), allocatable , target :: times(:)
+    real(dp) , target :: x(points), bin_centers(bin_count), widths(3), matrix_defect(2)
     real(dp) :: before, after, setup_s, strict_setup_s, candidate_s, certified_s
     real(dp) :: common_setup_s
     real(dp) :: post_s, radius, physical_radius, max_gap, max_radius, h, total_s
-    real(dp) :: ylim_pair(2), ylim_connected(2)
-    integer :: nshow
-    integer, allocatable :: shell_first(:)
+    real(dp) , target :: ylim_pair(2), ylim_connected(2)
+    integer , target :: nshow
+    integer, allocatable , target :: shell_first(:)
     integer :: modes, bound, shell, kx, ky, kz, i, j, k, q
     integer :: f, model_index, cell, unit, status, argn, snapshot
     integer :: refinement
     logical :: ok, bounded, snapshot_only, accepted, solved
     character(512) :: argument
     character(256) :: message
+        type(run_quantum_reference_demo_context_t), target :: ctx
+        type(run_quantum_reference_demo_update_t), target :: update_operator
+        momentum_cutoff = 2
+        particles = 2
+        steps_per_frame = 1
+        max_states = 10000_i64
+        max_bytes = 1073741824_i64
+        initial_terms = 0
     call run%start('quantum_reference_demo')
     snapshot_only = .false.; snapshot = -1
     argn = 1
@@ -325,12 +366,15 @@ program quantum_reference_demo
     call display_selection()
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
-    call draw_frame(snapshot)
+        call bind_run_quantum_reference_demo_context()
+    call run_quantum_reference_demo_draw_frame(ctx, snapshot)
     call savefig('output/quantum-correlations.png')
     if (.not. snapshot_only) then
         ! 24 fps; each certified frame is shown for 3 video frames (no
         ! interpolation between frames), then a 1 s hold of the last frame.
-        animation = animation_func(update, frames=repeat*frames + 24, interval=42, &
+        call bind_run_quantum_reference_demo_context()
+        animation = animation_func(update_operator, frames=repeat*frames + 24, &
+            interval=42, &
             fig=canvas)
         call save_animation(animation, 'output/quantum-correlations.mp4', fps=24, &
             status=status)
@@ -339,6 +383,36 @@ program quantum_reference_demo
     print '(a,i0,a,i0,a,es12.4)', 'quantum3D modes=', modes, ', sector=', modes, &
         ', maximum observable radius=', max_radius
 contains
+    subroutine bind_run_quantum_reference_demo_context()
+        ctx%canvas => canvas
+        ctx%frames => frames
+        nullify(ctx%lower)
+        if (allocated(lower)) ctx%lower => lower
+        nullify(ctx%mode_momentum)
+        if (allocated(mode_momentum)) ctx%mode_momentum => mode_momentum
+        ctx%nshow => nshow
+        nullify(ctx%occupation)
+        if (allocated(occupation)) ctx%occupation => occupation
+        nullify(ctx%occupation_hi)
+        if (allocated(occupation_hi)) ctx%occupation_hi => occupation_hi
+        nullify(ctx%occupation_lo)
+        if (allocated(occupation_lo)) ctx%occupation_lo => occupation_lo
+        nullify(ctx%orbital)
+        if (allocated(orbital)) ctx%orbital => orbital
+        nullify(ctx%shell_first)
+        if (allocated(shell_first)) ctx%shell_first => shell_first
+        nullify(ctx%times)
+        if (allocated(times)) ctx%times => times
+        nullify(ctx%upper)
+        if (allocated(upper)) ctx%upper => upper
+        nullify(ctx%values)
+        if (allocated(values)) ctx%values => values
+        ctx%x => x
+        ctx%ylim_connected => ylim_connected
+        ctx%ylim_pair => ylim_pair
+        update_operator%data => ctx
+    end subroutine bind_run_quantum_reference_demo_context
+
     subroutine write_result()
         character(len=*), parameter :: bound = 'certified-discrete finite-basis '// &
             'enclosure; continuum cutoff/model/input uncertainty unavailable'
@@ -532,14 +606,25 @@ write (u, '(a)') 'model,frame,t,bin,x_center_over_L,g,g_lower,g_upper,C,C_lower,
         if (size(shell_first) > 4) shell_first = shell_first(:4)
     end subroutine
 
-    subroutine update(number)
+    end subroutine run_quantum_reference_demo
+
+    subroutine run_quantum_reference_demo_update(ctx, number)
+        type(run_quantum_reference_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
-        call canvas%clear()
-        call draw_frame(min((number - 1)/repeat + 1, frames))
-        call canvas%set_rendered(.false.)
+        call ctx%canvas%clear()
+        call run_quantum_reference_demo_draw_frame(ctx, min((number - 1)/repeat + 1, &
+            ctx%frames))
+        call ctx%canvas%set_rendered(.false.)
+    end subroutine run_quantum_reference_demo_update
+
+    subroutine run_quantum_reference_demo_update_binding(self, frame)
+        class(run_quantum_reference_demo_update_t), intent(inout) :: self
+        integer, intent(in) :: frame
+        call run_quantum_reference_demo_update(self%data, frame)
     end subroutine
 
-    subroutine draw_frame(number)
+    subroutine run_quantum_reference_demo_draw_frame(ctx, number)
+        type(run_quantum_reference_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
         character(120) :: heading
         real(dp), parameter :: blue(3) = [0.0_dp, 0.4471_dp, 0.6980_dp]
@@ -554,77 +639,92 @@ write (u, '(a)') 'model,frame,t,bin,x_center_over_L,g,g_lower,g_upper,C,C_lower,
         shell_color(:, 1) = blue; shell_color(:, 2) = orange
         shell_color(:, 3) = green; shell_color(:, 4) = purple
         call subplot(2, 2, 1)
-        write (heading, '(a,f5.2)') 'Pair occupations, $t/t_0$ = ', times(number)
+        write (heading, '(a,f5.2)') 'Pair occupations, $t/t_0$ = ', ctx%times(number)
         call title(trim(heading))
         call xlabel('orbital pair $(k, -k)$, ordered by shell $|k|^2$')
         call ylabel('occupation per spin orbital')
-        do m = 1, nshow
-            call plot([orbital(m), orbital(m)], &
-                [max(occupation_lo(m, number, 1), floor), &
-                 max(occupation_hi(m, number, 1), floor)], color=blue, linewidth=1.5_dp)
+        do m = 1, ctx%nshow
+            call plot([ctx%orbital(m), ctx%orbital(m)], &
+                [max(ctx%occupation_lo(m, number, 1), floor), &
+                 max(ctx%occupation_hi(m, number, 1), floor)], color=blue, &
+                     linewidth=1.5_dp)
         end do
-        call plot(orbital(:nshow), max(occupation(:nshow, number, 1), floor), &
+        call plot(ctx%orbital(:ctx%nshow), max(ctx%occupation(:ctx%nshow, number, &
+            1), floor), &
             linestyle='none', marker='o', markersize=5.0_dp, color=blue, &
             label='Coulomb, deterministic bound')
-        call plot(orbital(:1), occupation(:1, number, 2), linestyle='none', &
+        call plot(ctx%orbital(:1), ctx%occupation(:1, number, 2), linestyle='none', &
             marker='x', markersize=6.0_dp, color=gray, &
             label='noninteracting (all other orbitals empty)')
-        do s = 1, size(shell_first) - 1
-            call plot([shell_first(s + 1) - 0.5_dp, shell_first(s + 1) - 0.5_dp], &
+        do s = 1, size(ctx%shell_first) - 1
+            call plot([ctx%shell_first(s + 1) - 0.5_dp, ctx%shell_first(s + 1) - &
+                0.5_dp], &
                 [floor, 3.0_dp], color=gray, linestyle=':', linewidth=0.8_dp)
         end do
         call set_yscale('log')
-        call xlim(0.0_dp, real(nshow, dp) + 1.0_dp); call ylim(floor, 3.0_dp)
+        call xlim(0.0_dp, real(ctx%nshow, dp) + 1.0_dp); call ylim(floor, 3.0_dp)
         call legend(loc='upper right')
         call subplot(2, 2, 2)
         call title('Unlike-spin relative pair density')
         call xlabel('relative coordinate $x/L$ (transverse average)')
         call ylabel('unlike-spin pair correlation $g(x)$')
-        call xlim(-0.5_dp, 0.5_dp); call ylim(ylim_pair(1), ylim_pair(2))
-        call band(1, number, blue, 'Coulomb, finite-basis time band', '-')
-        call band(1, number, gray, 'noninteracting, same preparation', ':', 2)
+        call xlim(-0.5_dp, 0.5_dp); call ylim(ctx%ylim_pair(1), ctx%ylim_pair(2))
+        call run_quantum_reference_demo_band(ctx, 1, number, blue, &
+            'Coulomb, finite-basis time band', '-')
+        call run_quantum_reference_demo_band(ctx, 1, number, gray, &
+            'noninteracting, same preparation', ':', 2)
         call legend(loc='upper right')
         call subplot(2, 2, 3)
         call title('Beyond-Wick pair cumulants')
         call xlabel('relative coordinate $x/L$ (transverse average)')
         call ylabel('$V^2 \times$ connected pair cumulant')
-        call xlim(-0.5_dp, 0.5_dp); call ylim(ylim_connected(1), ylim_connected(2))
-        call band(2, number, blue, 'unlike spin: $g - 1$', '-')
-        call band(4, number, orange, 'like spin: fixed-number correlation', '--')
-        call band(2, number, gray, 'noninteracting Slater', ':', 2)
+        call xlim(-0.5_dp, 0.5_dp); call ylim(ctx%ylim_connected(1), &
+            ctx%ylim_connected(2))
+        call run_quantum_reference_demo_band(ctx, 2, number, blue, &
+            'unlike spin: $g - 1$', '-')
+        call run_quantum_reference_demo_band(ctx, 4, number, orange, &
+            'like spin: fixed-number correlation', '--')
+        call run_quantum_reference_demo_band(ctx, 2, number, gray, &
+            'noninteracting Slater', ':', 2)
         call legend(loc='upper right')
         call subplot(2, 2, 4)
         call title('Scattering out of the initial $k = 0$ pair')
         call xlabel('$t/t_0$'); call ylabel('occupation per spin orbital')
-        do s = 1, size(shell_first)
-            m = shell_first(s)
+        do s = 1, size(ctx%shell_first)
+            m = ctx%shell_first(s)
             if (s == 1) then
-                call fill_between(times(:number), max(1 - occupation_hi(m, :number, 1), &
-                    floor), max(1 - occupation_lo(m, :number, 1), floor), &
+                call fill_between(ctx%times(:number), max(1 - ctx%occupation_hi(m, &
+                    :number, 1), &
+                    floor), max(1 - ctx%occupation_lo(m, :number, 1), floor), &
                     color=shell_color(:, s), alpha=0.25_dp)
-                call plot(times(:number), max(1 - occupation(m, :number, 1), floor), &
+                call plot(ctx%times(:number), max(1 - ctx%occupation(m, :number, 1), &
+                    floor), &
                     color=shell_color(:, s), linestyle=trim(shell_style(s)), &
                     label='depletion $1 - n_{k=0}$')
             else
-                call fill_between(times(:number), max(occupation_lo(m, :number, 1), &
-                    floor), max(occupation_hi(m, :number, 1), floor), &
+                call fill_between(ctx%times(:number), max(ctx%occupation_lo(m, &
+                    :number, 1), &
+                    floor), max(ctx%occupation_hi(m, :number, 1), floor), &
                     color=shell_color(:, s), alpha=0.25_dp)
                 write (heading, '(a,i0)') '$n_k$, $|k|^2$ = ', &
-                    sum(mode_momentum(:, m)**2)
-                call plot(times(:number), max(occupation(m, :number, 1), floor), &
+                    sum(ctx%mode_momentum(:, m)**2)
+                call plot(ctx%times(:number), max(ctx%occupation(m, :number, 1), &
+                    floor), &
                     color=shell_color(:, s), linestyle=trim(shell_style(s)), &
                     label=trim(heading))
             end if
         end do
         call set_yscale('log')
-        call xlim(times(1), times(size(times))); call ylim(floor, 30.0_dp)
+        call xlim(ctx%times(1), ctx%times(size(ctx%times))); call ylim(floor, 30.0_dp)
         call legend(loc='upper right')
         call suptitle('Coulomb quench of an opposite-spin pair, periodic 3D box; '// &
             'one-body density stays uniform by symmetry')
         call tight_layout()
-    end subroutine
+    end subroutine run_quantum_reference_demo_draw_frame
 
-    subroutine band(channel, number, color, label, style, model_number)
+    subroutine run_quantum_reference_demo_band(ctx, channel, number, color, label, &
+        style, model_number)
+        type(run_quantum_reference_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: channel, number
         real(dp), intent(in) :: color(3)
         character(*), intent(in) :: label, style
@@ -632,12 +732,22 @@ write (u, '(a)') 'model,frame,t,bin,x_center_over_L,g,g_lower,g_upper,C,C_lower,
         integer :: mi
         mi = 1
         if (present(model_number)) mi = model_number
-        call fill_between(x, lower(channel, :, number, mi), upper(channel, :, &
+        call fill_between(ctx%x, ctx%lower(channel, :, number, mi), &
+            ctx%upper(channel, :, &
             number, mi), &
             color=color, alpha=0.25_dp)
-        call plot(x, lower(channel, :, number, mi), color=color, linewidth=0.5_dp)
-        call plot(x, upper(channel, :, number, mi), color=color, linewidth=0.5_dp)
-        call plot(x, values(channel, :, number, mi), linestyle=style, color=color, &
+        call plot(ctx%x, ctx%lower(channel, :, number, mi), color=color, &
+            linewidth=0.5_dp)
+        call plot(ctx%x, ctx%upper(channel, :, number, mi), color=color, &
+            linewidth=0.5_dp)
+        call plot(ctx%x, ctx%values(channel, :, number, mi), linestyle=style, &
+            color=color, &
             label=label)
-    end subroutine
+    end subroutine run_quantum_reference_demo_band
+end module quantum_reference_demo_callbacks
+
+program quantum_reference_demo
+    use quantum_reference_demo_callbacks, only: run_quantum_reference_demo
+    implicit none
+    call run_quantum_reference_demo()
 end program quantum_reference_demo

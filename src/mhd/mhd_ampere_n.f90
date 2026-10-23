@@ -71,11 +71,12 @@ module kin6d_mhd_ampere_n
         csc_normalize_symmetric_raw
     use kin6d_gs_direct, only: gs_direct_t, gs_direct_available, &
         gs_direct_factor, gs_direct_solve, gs_direct_free
+    use fortfem_meridian_feec_n, only: meridian_field_t
+    use fortfem_equilibrated_hcurl_meridian_n, only: meridian_edge_load_t
+    use fortfem_equilibrated_hcurl_meridian_n, only: meridian_edge_load_t
     implicit none
     private
-
     real(dp), parameter, public :: mu0 = 4.0e-7_dp*3.14159265358979323846_dp
-
     type, public :: ampere_n_error_t
         !! Ordinary-arithmetic diagnostics, never a continuous certificate.
         !! The coupled discrete norm includes the exterior Steklov energy;
@@ -105,7 +106,6 @@ module kin6d_mhd_ampere_n
         real(dp) :: sheet_remainder = huge(1.0_dp)
         character(len=40) :: sheet_status = 'unavailable'
     end type ampere_n_error_t
-
     type, public :: ampere_n_t
         integer :: n = 0
         integer :: nn = 0          !! Nedelec dofs (unknowns)
@@ -125,7 +125,6 @@ module kin6d_mhd_ampere_n
         logical :: use_direct = .false.
         logical :: factored = .false.
     end type ampere_n_t
-
     public :: ampere_n_build
     public :: ampere_n_error, ampere_n_equilibrated_error, ampere_n_coupled_error
     public :: ampere_n_solve
@@ -133,15 +132,40 @@ module kin6d_mhd_ampere_n
     public :: ampere_n_trace
     public :: ampere_n_free
     public :: ampere_n_field_point
+    type, extends(meridian_field_t) :: meridian_field_adapter_t
+        procedure(meridian_field_i), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => meridian_field_adapter_t_evaluate
+    end type
+    type, extends(meridian_edge_load_t) :: meridian_edge_load_adapter_t
+        procedure(meridian_edge_load_i), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => meridian_edge_load_adapter_t_evaluate
+    end type
+    interface ampere_n_coupled_error
+        module procedure ampere_n_coupled_error_object, ampere_n_coupled_error_procedure
+    end interface
+    type, extends(meridian_edge_load_t) :: ampere_n_coupled_error_object_loads_t
+        type(ampere_n_t), pointer :: amp => null()
+        complex(dp), pointer :: mu(:) => null()
+        integer, pointer :: np => null()
+        integer, pointer :: nsheet => null()
+        integer, pointer :: panel(:,:) => null()
+        class(meridian_edge_load_t), pointer :: sheet_ptr => null()
+    contains
+        procedure :: evaluate => ampere_n_coupled_error_object_loads_evaluate
+    end type
+    interface ampere_n_equilibrated_error
+        module procedure ampere_n_equilibrated_error_object, &
+            ampere_n_equilibrated_error_procedure
+    end interface
 
 contains
-
     subroutine ampere_n_build(fs, n, amp, status)
         type(meridian_feec_t), intent(in) :: fs
         integer, intent(in) :: n
         type(ampere_n_t), intent(inout) :: amp
         integer, intent(out) :: status
-
         type(csc_z_t) :: zfull, kfull, c2, cfull
         type(gs_bem_operators_t) :: ops
         type(fortsparse_status_t) :: fst
@@ -149,7 +173,6 @@ contains
         real(dp), allocatable :: vals(:), s(:, :)
         complex(dp), allocatable :: zv(:), d(:, :)
         integer :: nn, j, p, cnt, nbe, i, st, total
-
         status = 1
         if (n == 0) return
         call ampere_n_free(amp)
@@ -157,13 +180,11 @@ contains
         nn = fs%nn
         amp%nn = nn
         amp%n2 = fs%sp(2)%ndof
-
         ! curl_n restricted to the Nedelec columns
         call meridian_op_complex(fs%curl, n, zfull, st)
         if (st /= 0) return
         call leading_columns(zfull, nn, amp%curl, st)
         if (st /= 0) return
-
         ! boundary chain, normal-flux pairing, C = C2 curl
         call meridian_boundary_build(fs, amp%bd, st)
         if (st /= 0) return
@@ -194,7 +215,6 @@ contains
                 amp%cb(cfull%row_idx(p), loc(j)) = cfull%val(p)
             end do
         end do
-
         ! exterior Steklov-Poincare map and its inverse
         call tm_bem_assemble(amp%bd%curve, n, 1, ops, st)
         if (st /= 0) return
@@ -202,7 +222,6 @@ contains
         if (st /= 0) return
         call tm_bem_neumann_to_dirichlet(s, amp%sinv, st)
         if (st /= 0) return
-
         ! K + C^H S^{-1} C
         d = matmul(conjg(transpose(amp%cb)), &
             matmul(cmplx(amp%sinv, 0.0_dp, dp), amp%cb))
@@ -246,7 +265,6 @@ contains
         amp%factored = .true.
         status = 0
     end subroutine ampere_n_build
-
     subroutine factor_real_form(h, amp, status)
         !! Native sparse Cholesky of [[A, -B], [B, A]] for H = A + i B (Hermitian
         !! positive definite, so the real form is symmetric positive
@@ -260,7 +278,6 @@ contains
         real(dp), allocatable :: vals(:)
         integer :: n, j, p, c, i
         logical :: ok
-
         status = 1
         n = h%ncol
         allocate (rows(4*h%nnz), cols(4*h%nnz), vals(4*h%nnz))
@@ -286,7 +303,6 @@ contains
         call gs_direct_factor(amp%direct, 2*n, m%col_ptr, m%row_idx, m%val, ok)
         if (ok) status = 0
     end subroutine factor_real_form
-
     subroutine leading_columns(a, nc, b, status)
         !! b = a(:, 1:nc).
         type(csc_z_t), intent(in) :: a
@@ -294,7 +310,6 @@ contains
         type(csc_z_t), intent(out) :: b
         integer, intent(out) :: status
         integer :: nz
-
         status = 1
         if (nc > a%ncol) return
         nz = a%col_ptr(nc + 1) - 1
@@ -306,7 +321,6 @@ contains
         b%val = a%val(1:nz)
         status = 0
     end subroutine leading_columns
-
     subroutine ampere_n_solve(amp, f, a, status, fs, fsd, current)
         !! Solve the coupled equation. Every result carries a discrete
         !! residual/energy diagnostic and explicit continuous-error status.
@@ -322,7 +336,6 @@ contains
         procedure(meridian_field_i), optional :: current
         integer :: st
         type(ampere_n_error_t) :: estimate
-
         amp%error = ampere_n_error_t()
         amp%assembly_roundoff = 0
         call solve_factored(amp, f, a, status)
@@ -337,7 +350,6 @@ contains
         call ampere_n_equilibrated_error(fs, fsd, amp, a, current, estimate, st)
         amp%error = estimate
     end subroutine ampere_n_solve
-
     subroutine solve_factored(amp, f, a, status)
         type(ampere_n_t), intent(inout) :: amp
         complex(dp), intent(in) :: f(:)
@@ -347,7 +359,6 @@ contains
         real(dp), allocatable :: fr(:), xr(:)
         integer :: n
         logical :: ok
-
         status = 1
         if (.not. amp%factored) return
         if (size(f) /= amp%nn .or. size(a) /= amp%nn) return
@@ -365,7 +376,6 @@ contains
         call sparse_solve(amp%solver, f, a, fst)
         if (status_ok(fst)) status = 0
     end subroutine solve_factored
-
     subroutine ampere_n_error(amp, f, a, estimate, status)
         !! Residual dual norm sqrt(real(r^H K^-1 r)) for the full coupled
         !! discrete equation K a = f. An equation-level correction solve is
@@ -378,7 +388,6 @@ contains
         integer, intent(out) :: status
         complex(dp), allocatable :: residual(:), correction(:)
         real(dp) :: energy
-
         estimate = ampere_n_error_t()
         estimate%discrete_status = 1
         status = 1
@@ -401,8 +410,7 @@ contains
         estimate%discrete_claim = 'indicator'
         estimate%discrete_status = 0
     end subroutine ampere_n_error
-
-    subroutine ampere_n_equilibrated_error(fs, fsd, amp, a, current, estimate, &
+    subroutine ampere_n_equilibrated_error_object(fs, fsd, amp, a, current, estimate, &
             status)
         !! Fixed-trace interior Prager--Synge diagnostic with R dR dZ pairing.
         !! This estimates the interior solution whose tangential A equals the
@@ -412,11 +420,10 @@ contains
         type(meridian_feec_t), intent(in) :: fs, fsd
         type(ampere_n_t), intent(in) :: amp
         complex(dp), intent(in) :: a(:)
-        procedure(meridian_field_i) :: current
+        class(meridian_field_t), target, intent(in) :: current
         type(ampere_n_error_t), intent(inout) :: estimate
         integer, intent(out) :: status
         complex(dp), allocatable :: full_a(:)
-
         estimate%interior = meridian_hcurl_estimate_t()
         estimate%interior_claim = 'unavailable'
         estimate%interior_status = -1
@@ -431,9 +438,9 @@ contains
         estimate%interior_status = status
         if (status /= HCURL_OK) return
         estimate%interior_claim = 'indicator-fixed-tangential-trace'
-    end subroutine ampere_n_equilibrated_error
-
-    subroutine ampere_n_coupled_error(fs, fsd, amp, a, current, estimate, status, &
+    end subroutine ampere_n_equilibrated_error_object
+    subroutine ampere_n_coupled_error_object(fs, fsd, amp, a, current, estimate, &
+        status, &
             sheet_cell, sheet_edge, sheet_load, sheet_derivative)
         !! Equilibrated bound of the coupled problem (module header) for the
         !! candidate a with the mu0-scaled volume current and optional sheet
@@ -443,19 +450,19 @@ contains
         !! the sheet interpolation remainder. All callbacks must then be
         !! thread safe. Quadrature and exact-exterior errors stay unavailable.
         type(meridian_feec_t), intent(in) :: fs, fsd
-        type(ampere_n_t), intent(in) :: amp
+        type(ampere_n_t), intent(in), target :: amp
         complex(dp), intent(in) :: a(:)
-        procedure(meridian_field_i) :: current
+        class(meridian_field_t), target, intent(in) :: current
         type(ampere_n_error_t), intent(inout) :: estimate
         integer, intent(out) :: status
         integer, intent(in), optional :: sheet_cell(:), sheet_edge(:)
-        procedure(meridian_edge_load_i), optional :: sheet_load
-        procedure(meridian_edge_load_i), optional :: sheet_derivative
-        complex(dp), allocatable :: full_a(:), mu(:)
-        integer, allocatable :: cells(:), edges(:), panel(:, :)
-        integer :: np, p, nsheet
-        procedure(meridian_edge_load_i), pointer :: sheet_ptr
-
+        class(meridian_edge_load_t), target, intent(in), optional :: sheet_load
+        class(meridian_edge_load_t), target, intent(in), optional :: sheet_derivative
+        complex(dp), allocatable , target :: full_a(:), mu(:)
+        integer, allocatable , target :: cells(:), edges(:), panel(:, :)
+        integer , target :: np, p, nsheet
+        class(meridian_edge_load_t), pointer :: sheet_ptr
+        type(ampere_n_coupled_error_object_loads_t) :: loads_context
         estimate%coupled = meridian_hcurl_estimate_t()
         estimate%coupled_claim = 'unavailable'
         estimate%steklov_status = 'unavailable'
@@ -497,9 +504,17 @@ contains
         allocate (full_a(fs%sp(1)%ndof))
         full_a = (0.0_dp, 0.0_dp)
         full_a(:amp%nn) = a
+        loads_context%amp => amp
+        nullify(loads_context%mu)
+        if (allocated(mu)) loads_context%mu => mu
+        loads_context%np => np
+        loads_context%nsheet => nsheet
+        nullify(loads_context%panel)
+        if (allocated(panel)) loads_context%panel => panel
+        loads_context%sheet_ptr => sheet_ptr
         call meridian_hcurl_equilibrated_bound(fs, fsd, amp%n, full_a, current, &
             estimate%coupled, status, edge_cell=cells, edge_local=edges, &
-            edge_load=loads, free_trace=.true.)
+            edge_load=loads_context, free_trace=.true.)
         estimate%coupled_status = status
         if (status /= HCURL_OK) return
         ! mu equals S^{-1} C A_h: the exterior term of the bound vanishes.
@@ -524,41 +539,14 @@ contains
             estimate%sheet_status = 'practical-lift'
             estimate%coupled_bound = estimate%coupled_bound + estimate%sheet_remainder
         end if
-    contains
-        subroutine loads(cell, edge, tau, g)
-            integer, intent(in) :: cell, edge
-            real(dp), intent(in) :: tau
-            complex(dp), intent(out) :: g
-            real(dp) :: psi(3), dpsi(3)
-            integer :: pp, k, idx
-
-            pp = panel(edge, cell)
-            if (pp == 0) then
-                g = (0.0_dp, 0.0_dp)
-                if (nsheet > 0) call sheet_ptr(cell, edge, tau, g)
-                return
-            end if
-            ! boundary: G_b = i n mu(tau), mu in the P2 panel basis
-            call p2_basis(tau, psi, dpsi)
-            g = (0.0_dp, 0.0_dp)
-            do k = 1, 3
-                idx = 2*pp - 2 + k
-                if (idx > 2*np) idx = 1
-                g = g + psi(k)*mu(idx)
-            end do
-            g = cmplx(0.0_dp, real(amp%n, dp), dp)*g
-        end subroutine loads
-    end subroutine ampere_n_coupled_error
-
+    end subroutine ampere_n_coupled_error_object
     subroutine ampere_n_curl(amp, a, b2)
         !! V2 coefficients of B = curl_n A.
         type(ampere_n_t), intent(in) :: amp
         complex(dp), intent(in) :: a(:)
         complex(dp), allocatable, intent(out) :: b2(:)
-
         b2 = csc_matvec(amp%curl, a)
     end subroutine ampere_n_curl
-
     subroutine ampere_n_trace(amp, a, u)
         !! Exterior potential trace u = -S^{-1} C A at the P2 trace nodes of
         !! the boundary curve (B = grad_n u outside, in T m).
@@ -566,11 +554,9 @@ contains
         complex(dp), intent(in) :: a(:)
         complex(dp), allocatable, intent(out) :: u(:)
         complex(dp), allocatable :: ca(:)
-
         ca = matmul(amp%cb, a(amp%bdof))
         u = -matmul(cmplx(amp%sinv, 0.0_dp, dp), ca)
     end subroutine ampere_n_trace
-
     subroutine ampere_n_field_point(fs, pb, b2, t, xi, eta, x, b, status)
         !! Physical point x and field B (R, phi, Z components) at the
         !! reference point (xi, eta) of triangle t from V2 coefficients b2.
@@ -585,7 +571,6 @@ contains
         real(dp), allocatable :: phi(:, :)
         complex(dp) :: c
         integer :: i
-
         allocate (phi(3, fs%sp(2)%nloc))
         call meridian_point_basis(fs, pb, 2, t, xi, eta, x, phi, status)
         b = (0.0_dp, 0.0_dp)
@@ -595,10 +580,8 @@ contains
             b = b + c*phi(:, i)
         end do
     end subroutine ampere_n_field_point
-
     subroutine ampere_n_free(amp)
         type(ampere_n_t), intent(inout) :: amp
-
         if (amp%factored .and. .not. amp%use_direct) call sparse_destroy(amp%solver)
         if (amp%use_direct) call gs_direct_free(amp%direct)
         amp%use_direct = .false.
@@ -609,5 +592,117 @@ contains
         if (allocated(amp%cb)) deallocate (amp%cb)
         if (allocated(amp%sinv)) deallocate (amp%sinv)
     end subroutine ampere_n_free
+    subroutine ampere_n_coupled_error_procedure(fs, fsd, amp, a, current, estimate, &
+        status, &
+            sheet_cell, sheet_edge, sheet_load, sheet_derivative)
+        !! Equilibrated bound of the coupled problem (module header) for the
+        !! candidate a with the mu0-scaled volume current and optional sheet
+        !! loads (oriented interior edges, density as in ring_sheet_load).
+        !! fsd: potential complex on the same mesh, order >= 2 (>= k + 1 for
+        !! efficiency). Optional sheet_derivative gives dG/dtau and enables
+        !! the sheet interpolation remainder. All callbacks must then be
+        !! thread safe. Quadrature and exact-exterior errors stay unavailable.
+        type(meridian_feec_t), intent(in) :: fs, fsd
+        type(ampere_n_t), intent(in) :: amp
+        complex(dp), intent(in) :: a(:)
+        procedure(meridian_field_i) :: current
+        type(ampere_n_error_t), intent(inout) :: estimate
+        integer, intent(out) :: status
+        integer, intent(in), optional :: sheet_cell(:), sheet_edge(:)
+        procedure(meridian_edge_load_i), optional :: sheet_load
+        procedure(meridian_edge_load_i), optional :: sheet_derivative
+        type(meridian_field_adapter_t), target :: current_adapter
+        type(meridian_edge_load_adapter_t), target :: sheet_load_adapter
+        class(meridian_edge_load_t), pointer :: sheet_load_object
+        type(meridian_edge_load_adapter_t), target :: sheet_derivative_adapter
+        class(meridian_edge_load_t), pointer :: sheet_derivative_object
+        nullify(sheet_load_object, sheet_derivative_object)
+        current_adapter%callback => current
+        if (present(sheet_load)) then
+            sheet_load_adapter%callback => sheet_load
+            sheet_load_object => sheet_load_adapter
+        end if
+        if (present(sheet_derivative)) then
+            sheet_derivative_adapter%callback => sheet_derivative
+            sheet_derivative_object => sheet_derivative_adapter
+        end if
+        call ampere_n_coupled_error_object(fs, &
+            fsd, &
+            amp, &
+            a, &
+            current_adapter, &
+            estimate, &
+            status, &
+            sheet_cell, &
+            sheet_edge, &
+            sheet_load_object, &
+            sheet_derivative_object)
+    end subroutine
+    subroutine meridian_field_adapter_t_evaluate(self, x, v)
+        class(meridian_field_adapter_t), intent(in) :: self
+            !! Physical components v = (v_R, v_phi, v_Z) at x = (R, Z).
+            real(dp), intent(in) :: x(2)
+            complex(dp), intent(out) :: v(3)
+        call self%callback(x, v)
+    end subroutine
+    subroutine meridian_edge_load_adapter_t_evaluate(self, cell, edge, tau, g)
+        class(meridian_edge_load_adapter_t), intent(in) :: self
+            !! Load density G at parameter tau in [0, 1] of local edge edge of
+            !! triangle cell (from local vertex edge to vertex mod(edge, 3) +
+            !! 1), L(v) = int G (v . t) dl with t along that orientation.
+            integer, intent(in) :: cell, edge
+            real(dp), intent(in) :: tau
+            complex(dp), intent(out) :: g
+        call self%callback(cell, edge, tau, g)
+    end subroutine
+    subroutine ampere_n_coupled_error_object_loads_evaluate(self, cell, edge, tau, g)
+        class(ampere_n_coupled_error_object_loads_t), intent(in) :: self
+            integer, intent(in) :: cell, edge
+            real(dp), intent(in) :: tau
+            complex(dp), intent(out) :: g
+            real(dp) :: psi(3), dpsi(3)
+            integer :: pp, k, idx
+            pp = self%panel(edge, cell)
+            if (pp == 0) then
+                g = (0.0_dp, 0.0_dp)
+                if (self%nsheet > 0) call self%sheet_ptr%evaluate(cell, edge, tau, g)
+                return
+            end if
+            ! boundary: G_b = i n mu(tau), mu in the P2 panel basis
+            call p2_basis(tau, psi, dpsi)
+            g = (0.0_dp, 0.0_dp)
+            do k = 1, 3
+                idx = 2*pp - 2 + k
+                if (idx > 2*self%np) idx = 1
+                g = g + psi(k)*self%mu(idx)
+            end do
+            g = cmplx(0.0_dp, real(self%amp%n, dp), dp)*g
+    end subroutine ampere_n_coupled_error_object_loads_evaluate
+
+    subroutine ampere_n_equilibrated_error_procedure(fs, fsd, amp, a, current, &
+        estimate, &
+            status)
+        !! Fixed-trace interior Prager--Synge diagnostic with R dR dZ pairing.
+        !! This estimates the interior solution whose tangential A equals the
+        !! candidate's trace; it is not a bound for the coupled solution.
+        !! Non-polynomial quadrature and exterior/derivative remainders remain
+        !! unavailable. Existing algebraic diagnostics are preserved.
+        type(meridian_feec_t), intent(in) :: fs, fsd
+        type(ampere_n_t), intent(in) :: amp
+        complex(dp), intent(in) :: a(:)
+        procedure(meridian_field_i) :: current
+        type(ampere_n_error_t), intent(inout) :: estimate
+        integer, intent(out) :: status
+        type(meridian_field_adapter_t), target :: current_adapter
+
+        current_adapter%callback => current
+        call ampere_n_equilibrated_error_object(fs, &
+            fsd, &
+            amp, &
+            a, &
+            current_adapter, &
+            estimate, &
+            status)
+    end subroutine
 
 end module kin6d_mhd_ampere_n

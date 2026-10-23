@@ -9,7 +9,7 @@
 ! Namelist group &coulomb_encounter: etas (four Sommerfeld parameters), nclass
 ! (classical pairs per b-scan ensemble), nclass_scan (pairs per eta-scan
 ! ensemble), seed/movie_seed (classical ensembles), movie.
-program coulomb_encounter_demo
+module coulomb_encounter_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use kin6d_coulomb_encounter
     use kin6d_coulomb_kepler
@@ -21,35 +21,79 @@ program coulomb_encounter_demo
         set_yscale, suptitle, colorbar, text, fill_between
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
+    private
+    public :: run_coulomb_encounter_demo
     real(dp), parameter :: pi = acos(-1.0_dp)
     integer, parameter :: nb = 36
     real(dp), parameter :: bs(4) = [0.0_dp, 5.0_dp, 10.0_dp, 20.0_dp]
-    real(dp) :: etas(4) = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
-    integer :: nclass = 20000, nclass_scan = 100000
-    integer(i64) :: seed = 1234_i64, movie_seed = 77_i64
-    logical :: movie = .true.
+    integer, parameter :: nbf = 180
+    integer, parameter :: nmove = 264, nhold = 24, npx = 240, ncx = 120
+    real(dp), parameter :: mv_slab = 1.0_dp   ! classical slab thickness k h
+    type :: run_coulomb_encounter_demo_context_t
+        character(160), pointer :: arg => null()
+        type(figure_t), pointer :: canvas => null()
+        real(dp), pointer :: mc(:,:,:) => null()
+        real(dp), pointer :: mq(:,:,:,:) => null()
+        real(dp), pointer :: mslow(:) => null()
+        real(dp), pointer :: mtimes(:) => null()
+        real(dp), pointer :: mv_b => null()
+        real(dp), pointer :: mv_eta => null()
+        real(dp), pointer :: mv_lambdabar => null()
+        real(dp), pointer :: mv_lmax => null()
+        real(dp), pointer :: mv_lmin => null()
+        real(dp), pointer :: mv_sigma => null()
+        real(dp), pointer :: mv_speed => null()
+        real(dp), pointer :: mv_z0 => null()
+        real(dp), pointer :: xc(:) => null()
+        real(dp), pointer :: xq(:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_coulomb_encounter_demo_update_t
+        type(run_coulomb_encounter_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_coulomb_encounter_demo_update_binding
+    end type
+
+contains
+    subroutine run_coulomb_encounter_demo()
+    implicit none
+real(dp) :: etas(4)
+integer :: nclass, nclass_scan
+integer(i64) :: seed, movie_seed
+logical :: movie
     namelist /coulomb_encounter/ etas, nclass, nclass_scan, seed, movie_seed, movie
     type(run_t) :: run
     type(result_file_t) :: result
-    character(160) :: arg
+    character(160) , target :: arg
     character(256) :: msg
     integer :: status, i, unit, ios
-    integer, parameter :: nbf = 180
     real(dp) :: ratio(nbf, 4, 4), cratio(nb, 2, 4), theta(nb), theta_fine(nbf)
     ! Evidence for the result file, filled by the scans.
     real(dp) :: eta_summary(6, 4), bscan_quantum(nb, 4), bscan_classical(nb, 4)
     real(dp) :: kepler_errors(2), bin_vjp(4), cost_seconds(6)
     real(dp), allocatable :: kepler_series(:, :)
     ! Movie state shared with the animation callback (host association).
-    integer, parameter :: nmove = 264, nhold = 24, npx = 240, ncx = 120
-    real(dp), parameter :: mv_slab = 1.0_dp   ! classical slab thickness k h
-    real(dp), allocatable :: mq(:, :, :, :), mc(:, :, :)
-    real(dp) :: mtimes(nmove), mslow(nmove), xq(0:npx), xc(0:ncx), mv_lambdabar, &
+    real(dp), allocatable , target :: mq(:, :, :, :), mc(:, :, :)
+    real(dp) , target :: mtimes(nmove), mslow(nmove), xq(0:npx), xc(0:ncx), &
+        mv_lambdabar, &
         mv_speed, mv_z0, mv_b, mv_r0, mv_tc, mv_lmin, mv_lmax, mv_eta, mv_sigma
-    logical :: movie_only = .false.
-    character(256) :: export_dir = ''
-    type(figure_t), pointer :: canvas => null()
+logical :: movie_only
+character(256) :: export_dir
+type(figure_t), pointer :: canvas
+        type(run_coulomb_encounter_demo_context_t), target :: ctx
+        type(run_coulomb_encounter_demo_update_t), target :: update_operator
+        etas = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
+        nclass = 20000
+        nclass_scan = 100000
+        seed = 1234_i64
+        movie_seed = 77_i64
+        movie = .true.
+        movie_only = .false.
+        export_dir = ''
+        nullify(canvas)
     call run%start('coulomb_encounter_demo')
     call run%open_config(unit)
     ios = 0; msg = ''
@@ -86,6 +130,28 @@ program coulomb_encounter_demo
     if (movie) call encounter_movies()
     call write_result()
 contains
+    subroutine bind_run_coulomb_encounter_demo_context()
+        ctx%arg => arg
+        ctx%canvas => canvas
+        nullify(ctx%mc)
+        if (allocated(mc)) ctx%mc => mc
+        nullify(ctx%mq)
+        if (allocated(mq)) ctx%mq => mq
+        ctx%mslow => mslow
+        ctx%mtimes => mtimes
+        ctx%mv_b => mv_b
+        ctx%mv_eta => mv_eta
+        ctx%mv_lambdabar => mv_lambdabar
+        ctx%mv_lmax => mv_lmax
+        ctx%mv_lmin => mv_lmin
+        ctx%mv_sigma => mv_sigma
+        ctx%mv_speed => mv_speed
+        ctx%mv_z0 => mv_z0
+        ctx%xc => xc
+        ctx%xq => xq
+        update_operator%data => ctx
+    end subroutine bind_run_coulomb_encounter_demo_context
+
     subroutine write_result()
         call result%create(run)
         call result%attribute('model', 'localized two-body quantum Coulomb '// &
@@ -685,12 +751,15 @@ contains
             case (3); f = minloc(abs(mtimes - 0.72_dp*tf), 1)
             case default; f = nmove
             end select
-            call draw(f)
+        call bind_run_coulomb_encounter_demo_context()
+            call run_coulomb_encounter_demo_draw(ctx, f)
             write (arg, '(4a,i0,a)') 'output/coulomb-encounter-', tag, '-frame', '-', f, '.png'
             call savefig(trim(arg))
             call canvas%clear()
         end do
-        anim = animation_func(update, frames=nmove + nhold, interval=42, fig=canvas)
+        call bind_run_coulomb_encounter_demo_context()
+        anim = animation_func(update_operator, frames=nmove + nhold, interval=42, &
+            fig=canvas)
         call save_animation(anim, 'output/coulomb-encounter-'//tag//'.mp4', fps=24, &
                             status=status)
         if (status /= 0) print '(a,i0)', 'movie encoding status ', status
@@ -926,52 +995,68 @@ contains
                   color=[0.0_dp, 0.62_dp, 0.45_dp])
     end subroutine classical_curve
 
+    end subroutine run_coulomb_encounter_demo
 
-    subroutine update(number)
+    subroutine run_coulomb_encounter_demo_update(ctx, number)
+        type(run_coulomb_encounter_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
-        call canvas%clear()
-        call draw(min(number, nmove))
-        call canvas%set_rendered(.false.)
-    end subroutine update
+        call ctx%canvas%clear()
+        call run_coulomb_encounter_demo_draw(ctx, min(number, nmove))
+        call ctx%canvas%set_rendered(.false.)
+    end subroutine run_coulomb_encounter_demo_update
 
-    subroutine draw(f)
+    subroutine run_coulomb_encounter_demo_update_binding(self, frame)
+        class(run_coulomb_encounter_demo_update_t), intent(inout) :: self
+        integer, intent(in) :: frame
+        call run_coulomb_encounter_demo_update(self%data, frame)
+    end subroutine
+
+    subroutine run_coulomb_encounter_demo_draw(ctx, f)
+        type(run_coulomb_encounter_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: f
         integer :: p, nt
         real(dp) :: lb, tk(8)
         character(16) :: tl(8)
         character(48), parameter :: names(4) = [character(48) :: 'singlet (even $l$)', &
             'triplet (odd $l$)', 'spin-unresolved product', 'classical ensemble']
-        lb = mv_lambdabar
+        character(160), pointer :: local_arg
+        local_arg => ctx%arg
+        lb = ctx%mv_lambdabar
         nt = 0
-        do p = ceiling(mv_lmin), floor(mv_lmax)
+        do p = ceiling(ctx%mv_lmin), floor(ctx%mv_lmax)
             nt = nt + 1; tk(nt) = p
             write (tl(nt), '(a,i0,a)') '$10^{', p, '}$'
         end do
-        if (mslow(f) > 1.05_dp) then
-            write (arg, '(a,g0.3,a,f3.1,a,f3.1,a,f5.2,a,f4.1,a)') &
-                'Relative density in the plane $y = 0$, $\eta = ', mv_eta, &
-                '$, $k\sigma = ', mv_sigma, '$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
-                mtimes(f)*mv_speed/mv_z0, '   (slow motion ', mslow(f), '$\times$)'
+        if (ctx%mslow(f) > 1.05_dp) then
+            write (local_arg, '(a,g0.3,a,f3.1,a,f3.1,a,f5.2,a,f4.1,a)') &
+                'Relative density in the plane $y = 0$, $\eta = ', ctx%mv_eta, &
+                '$, $k\sigma = ', ctx%mv_sigma, '$, $kb = ', ctx%mv_b*1.0_dp, &
+                    '$:   $t v/z_0$ = ', &
+                ctx%mtimes(f)*ctx%mv_speed/ctx%mv_z0, '   (slow motion ', &
+                    ctx%mslow(f), '$\times$)'
         else
-            write (arg, '(a,g0.3,a,f3.1,a,f3.1,a,f5.2)') &
-                'Relative density in the plane $y = 0$, $\eta = ', mv_eta, &
-                '$, $k\sigma = ', mv_sigma, '$, $kb = ', mv_b*1.0_dp, '$:   $t v/z_0$ = ', &
-                mtimes(f)*mv_speed/mv_z0
+            write (local_arg, '(a,g0.3,a,f3.1,a,f3.1,a,f5.2)') &
+                'Relative density in the plane $y = 0$, $\eta = ', ctx%mv_eta, &
+                '$, $k\sigma = ', ctx%mv_sigma, '$, $kb = ', ctx%mv_b*1.0_dp, &
+                    '$:   $t v/z_0$ = ', &
+                ctx%mtimes(f)*ctx%mv_speed/ctx%mv_z0
         end if
-        call suptitle(trim(arg))
+        call suptitle(trim(local_arg))
         do p = 1, 4
             call subplot(1, 4, p)
             call title(trim(names(p)))
             call xlabel('$k x$')
             if (p == 1) call ylabel('$k z$')
             if (p < 4) then
-                call pcolormesh(xq/lb, xq/lb, mq(:, :, p, f), cmap='viridis', &
-                                vmin=mv_lmin, vmax=mv_lmax)
+                call pcolormesh(ctx%xq/lb, ctx%xq/lb, ctx%mq(:, :, p, f), &
+                    cmap='viridis', &
+                                vmin=ctx%mv_lmin, vmax=ctx%mv_lmax)
             else
-                call pcolormesh(xc/lb, xc/lb, mc(:, :, f), cmap='viridis', &
-                                vmin=mv_lmin, vmax=mv_lmax)
+                call pcolormesh(ctx%xc/lb, ctx%xc/lb, ctx%mc(:, :, f), cmap='viridis', &
+                                vmin=ctx%mv_lmin, vmax=ctx%mv_lmax)
             end if
-            call xlim(xq(0)/lb, xq(npx)/lb); call ylim(xq(0)/lb, xq(npx)/lb)
+            call xlim(ctx%xq(0)/lb, ctx%xq(npx)/lb); call ylim(ctx%xq(0)/lb, &
+                ctx%xq(npx)/lb)
             if (p == 4) then
                 call colorbar(label='$|ψ(x,0,z)|^2 k^{-3}$', ticks=tk(:nt), ticklabels=tl(:nt))
             else
@@ -979,5 +1064,11 @@ contains
             end if
         end do
         call tight_layout()
-    end subroutine draw
+    end subroutine run_coulomb_encounter_demo_draw
+end module coulomb_encounter_demo_callbacks
+
+program coulomb_encounter_demo
+    use coulomb_encounter_demo_callbacks, only: run_coulomb_encounter_demo
+    implicit none
+    call run_coulomb_encounter_demo()
 end program coulomb_encounter_demo

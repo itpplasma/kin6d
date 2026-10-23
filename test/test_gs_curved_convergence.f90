@@ -1,13 +1,31 @@
-program test_gs_curved_convergence
+module test_gs_curved_convergence_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_cell_data, gs_element_jet
     use kin6d_gs_majorant, only: gs_functional_majorant
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
+
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
     implicit none
+    private
+    public :: run_test_gs_curved_convergence
     real(dp), parameter :: r0 = 6.2_dp, f = 32.86_dp
-    real(dp) :: a, level
     real(dp), parameter :: c = f/(12*r0**3)
+    type :: run_test_gs_curved_convergence_context_t
+        real(dp), pointer :: a => null()
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_gs_curved_convergence_exact_boundary_t
+        type(run_test_gs_curved_convergence_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_curved_convergence_exact_boundary_binding
+    end type
+
+contains
+    subroutine run_test_gs_curved_convergence()
+    implicit none
+    real(dp) , target :: a, level
     type(gs_state_t) :: state
     real(dp), allocatable :: boundary(:, :), x(:), y(:), w(:)
     real(dp) :: errors(3, 3, 2), rates(2), point(2), det, shape(10)
@@ -17,6 +35,9 @@ program test_gs_curved_convergence
     integer :: mode, mesh, n, j, e, q, status, degree, ndof
     character(8) :: argument
     integer(int64) :: start, finish, clock_rate
+        type(run_test_gs_curved_convergence_context_t), target :: ctx
+        type(run_test_gs_curved_convergence_exact_boundary_t), target :: &
+            exact_boundary_operator
     degree = 2
     if (command_argument_count() > 0) then
         call get_command_argument(1, argument)
@@ -35,12 +56,15 @@ program test_gs_curved_convergence
             allocate (boundary(2, n))
             call system_clock(start, clock_rate)
             do j = 1, n
-                call exact_boundary(real(j - 1, dp)/n, boundary(:, j))
+        call bind_run_test_gs_curved_convergence_context()
+                call run_test_gs_curved_convergence_exact_boundary(ctx, real(j - 1, &
+                    dp)/n, boundary(:, j))
             end do
             h = 2*acos(-1.0_dp)*a/n
             if (mode == 1) then
-                call initialize_gs(state, boundary, h*h/2, status, degree, &
-                    curve=exact_boundary)
+        call bind_run_test_gs_curved_convergence_context()
+                call initialize_gs_object(state, boundary, h*h/2, status, degree, &
+                    curve=exact_boundary_operator)
             else
                 call initialize_gs(state, boundary, h*h/2, status, degree)
             end if
@@ -112,12 +136,34 @@ program test_gs_curved_convergence
         end do
     end do
 contains
-    subroutine exact_boundary(t, point)
+    subroutine bind_run_test_gs_curved_convergence_context()
+        ctx%a => a
+        exact_boundary_operator%data => ctx
+    end subroutine bind_run_test_gs_curved_convergence_context
+
+
+    end subroutine run_test_gs_curved_convergence
+
+    subroutine run_test_gs_curved_convergence_exact_boundary(ctx, t, point)
+        type(run_test_gs_curved_convergence_context_t), intent(in) :: ctx
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         real(dp) :: angle
         angle = 2*acos(-1.0_dp)*t
-        point(1) = sqrt(r0*r0 + 2*r0*a*cos(angle))
-        point(2) = r0*a*sin(angle)/point(1)
+        point(1) = sqrt(r0*r0 + 2*r0*ctx%a*cos(angle))
+        point(2) = r0*ctx%a*sin(angle)/point(1)
+    end subroutine run_test_gs_curved_convergence_exact_boundary
+
+    subroutine run_test_gs_curved_convergence_exact_boundary_binding(self, t, point)
+        class(run_test_gs_curved_convergence_exact_boundary_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_gs_curved_convergence_exact_boundary(self%data, t, point)
     end subroutine
-end program
+end module test_gs_curved_convergence_callbacks
+
+program test_gs_curved_convergence
+    use test_gs_curved_convergence_callbacks, only: run_test_gs_curved_convergence
+    implicit none
+    call run_test_gs_curved_convergence()
+end program test_gs_curved_convergence

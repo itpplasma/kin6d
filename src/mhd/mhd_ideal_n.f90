@@ -55,11 +55,13 @@ module kin6d_mhd_ideal_n
     use kin6d_ideal_response_error_leaves, only: ideal_ratio, ideal_tail
     use kin6d_mhd_closure_n, only: frobenius_basis
     use fortnum_fft, only: fortnum_fft_plan_t, fft_c2c_plan_init, fft_c2c
+    use fortnum_krylov, only: complex_linear_operator_t
+    use fortnum_krylov, only: complex_gmres
+    use kin6d_mhd_ampere_n, only: ampere_n_t
+    use kin6d_mhd_response_n, only: layer_closure_t
     implicit none
     private
-
     real(dp), parameter :: pi = 3.14159265358979323846_dp
-
     !> Equilibrium and FEEC sampling data on one sample surface.
     type, public :: sample_ring_t
         integer :: strip = 0, np = 0
@@ -75,7 +77,6 @@ module kin6d_mhd_ideal_n
         real(dp), allocatable :: pp(:), fac(:), nup(:), b0sq(:)
         complex(dp), allocatable :: bc(:, :)    !! (3, np) external field
     end type sample_ring_t
-
     !> Override of the equilibrium current for the force-free oracle:
     !> J0 = sigma B0/mu0 with constant sigma and p0' = 0.
     type, public :: ideal_options_t
@@ -96,7 +97,6 @@ module kin6d_mhd_ideal_n
         integer, allocatable :: res_m(:)
         real(dp), allocatable :: res_eps(:)
     end type ideal_options_t
-
     type, public :: ideal_response_error_t
         !! Final-state algebraic diagnostics in the coupled Ampere energy norm.
         !! The directional ratio is NOT an upper bound on the operator norm.
@@ -114,7 +114,6 @@ module kin6d_mhd_ideal_n
         character(len=40) :: continuous_claim = 'unavailable-ideal-stability'
         character(len=40) :: derivative_claim = 'unavailable'
     end type ideal_response_error_t
-
     public :: equilibrium_point
     public :: sample_ring_build
     public :: sample_field
@@ -122,9 +121,35 @@ module kin6d_mhd_ideal_n
     public :: ideal_current
     public :: ideal_load
     public :: ideal_response
-
+    type :: ideal_response_context_t
+        complex(dp), pointer :: a(:) => null()
+        type(ampere_n_t), pointer :: amp => null()
+        complex(dp), pointer :: b(:,:,:) => null()
+        integer, pointer :: bnd => null()
+        complex(dp), pointer :: bsheet(:,:,:,:) => null()
+        type(layer_closure_t), pointer :: cl => null()
+        logical, pointer :: debug => null()
+        type(flux_mesh_t), pointer :: fm => null()
+        type(meridian_feec_t), pointer :: fs => null()
+        type(psi_grid_t), pointer :: g => null()
+        complex(dp), pointer :: minv(:,:) => null()
+        integer, pointer :: n => null()
+        integer, pointer :: np => null()
+        integer, pointer :: nr => null()
+        integer, pointer :: ns => null()
+        type(ideal_options_t), pointer :: opt => null()
+        type(meridian_point_basis_t), pointer :: pb => null()
+        type(sample_ring_t), pointer :: rings(:) => null()
+        integer, pointer :: seg(:) => null()
+        integer, pointer :: solve_status => null()
+        complex(dp), pointer :: wc(:,:) => null()
+    end type
+    type, extends(complex_linear_operator_t) :: ideal_response_matvec_t
+        type(ideal_response_context_t), pointer :: data => null()
+    contains
+        procedure :: apply => ideal_response_matvec_binding
+    end type
 contains
-
     subroutine equilibrium_point(g, opt, r, z, b0, j0, gpsi, pp)
         !! B0, J0 (R, phi, Z), grad psi (R, Z) and p0' = dp/dpsi at (R, Z).
         type(psi_grid_t), intent(in) :: g
@@ -132,7 +157,6 @@ contains
         real(dp), intent(in) :: r, z
         real(dp), intent(out) :: b0(3), j0(3), gpsi(2), pp
         real(dp) :: psi, pr, pz, x, f, dfdx, p, dpdx, dpsi, fp
-
         call psi_eval(g, r, z, psi, pr, pz)
         dpsi = g%psi_edge - g%psi_axis
         x = (psi - g%psi_axis)/dpsi
@@ -150,7 +174,6 @@ contains
             j0(2) = -g%s_pol*(r*pp + f*fp/(mu0*r))
         end if
     end subroutine equilibrium_point
-
     subroutine sample_ring_build(g, opt, fm, fs, pb, u, strip, np, sr, status)
         !! Sample surface u (psin = u^2) at np uniform geometric angles,
         !! located in strip `strip` of the mesh, with the equilibrium data and
@@ -169,7 +192,6 @@ contains
         real(dp) :: vp(3), vm(3), vzp(3), vzm(3), rho2, ulab
         real(dp) :: b0(3), j0(3)
         integer :: k, st, nl, bad
-
         status = 1
         call surface_build(g, u*u, np, s, st)
         if (st /= 0) return
@@ -248,7 +270,6 @@ contains
             sigma_at = dot_product(jj, bb)/sum(bb**2)
         end function sigma_at
     end subroutine sample_ring_build
-
     subroutine sample_field(fs, sr, b2, b)
         !! FEEC field (R, phi, Z) at the sample points from V2 coefficients.
         type(meridian_feec_t), intent(in) :: fs
@@ -256,7 +277,6 @@ contains
         complex(dp), intent(in) :: b2(:)
         complex(dp), intent(out) :: b(:, :)
         integer :: k, l, t
-
         do k = 1, sr%np
             t = sr%tri(k)
             b(:, k) = (0.0_dp, 0.0_dp)
@@ -266,14 +286,12 @@ contains
             end do
         end do
     end subroutine sample_field
-
     pure integer function wavenumber(i, np)
         !! Fourier index of entry i of an unshifted length-np DFT.
         integer, intent(in) :: i, np
         wavenumber = i - 1
         if (2*(i - 1) >= np) wavenumber = i - 1 - np
     end function wavenumber
-
     subroutine dtheta(f, df, plan)
         !! Spectral derivative in theta_g of periodic samples (the Nyquist
         !! mode of an even length is dropped).
@@ -281,7 +299,6 @@ contains
         complex(dp), intent(out) :: df(:)
         type(fortnum_fft_plan_t), intent(in) :: plan
         integer :: np, i, k
-
         np = size(f)
         df = f
         call fft_c2c(df, -1, plan)
@@ -295,7 +312,6 @@ contains
         end do
         call fft_c2c(df, 1, plan)
     end subroutine dtheta
-
     subroutine mde_solve(sr, n, r, f, plan)
         !! Solve B0 . grad (f e^{i n phi}) = r e^{i n phi} on the sample
         !! surface (see the module header).
@@ -306,7 +322,6 @@ contains
         type(fortnum_fft_plan_t), intent(in), optional :: plan
         type(fortnum_fft_plan_t) :: own
         integer :: i, np
-
         np = sr%np
         f = r*sr%fac*exp(cmplx(0.0_dp, n*sr%nup, dp))
         if (present(plan)) then
@@ -325,7 +340,6 @@ contains
         end if
         f = f*exp(cmplx(0.0_dp, -n*sr%nup, dp))
     end subroutine mde_solve
-
     subroutine ideal_current(rings, n, sgn_dpsi, qlow, b, jcur, kap, bnd, seg, &
             moved)
         !! Plasma current jcur(3, np, ring) of the total field b(3, np, ring) on
@@ -349,7 +363,6 @@ contains
         type(fortnum_fft_plan_t) :: plan
         integer :: nr, ir, k, np, lo, hi
         real(dp) :: ds
-
         nr = size(rings)
         np = rings(1)%np
         call fft_c2c_plan_init(plan, np)
@@ -456,7 +469,6 @@ contains
             end if
         end if
     end subroutine ideal_current
-
     pure function cross_rc(a, b) result(c)
         real(dp), intent(in) :: a(3)
         complex(dp), intent(in) :: b(3)
@@ -466,7 +478,6 @@ contains
         c(2) = a(3)*b(1) - a(1)*b(3)
         c(3) = a(1)*b(2) - a(2)*b(1)
     end function cross_rc
-
     subroutine ideal_load(fs, pb, fm, g, jcur, kap, bnd, f, rings, n, res_m, res_eps)
         !! f = mu0 (A', J) for the Nedelec test functions: volume current of
         !! strip h from sample ring h - 1 (half ring of strip h), interpolated
@@ -515,7 +526,6 @@ contains
         integer :: nt, t, q, i, st, ir, nl, j, ig, te, jr, nri, k, j1
         logical :: wres
         real(dp), parameter :: t_reach = 1.0e-3_dp
-
         nt = fs%mm%topology%n_triangles
         nl = fs%nln
         nri = size(jcur, 3)
@@ -607,7 +617,6 @@ contains
             end do
         end do
     end subroutine ideal_load
-
     subroutine strip_shape_fit(rings, n, jcur, i1, kres, dres, tk, sinv, epsr, res_m, &
                                res_eps)
         !! Per half ring h (see ideal_load): first ring i1(h) of the three
@@ -628,7 +637,6 @@ contains
         real(dp) :: a(3, 3), det, df(3)
         logical, allocatable :: live(:)
         logical :: ok
-
         nr = size(rings)
         allocate (i1(nr), kres(nr), dres(nr), tk(3, nr), sinv(3, 3, nr), live(nr), &
                   epsr(nr))
@@ -670,14 +678,12 @@ contains
             end do
         end do
     end subroutine strip_shape_fit
-
     pure real(dp) function det3(a)
         real(dp), intent(in) :: a(3, 3)
         det3 = a(1, 1)*(a(2, 2)*a(3, 3) - a(2, 3)*a(3, 2)) &
             - a(1, 2)*(a(2, 1)*a(3, 3) - a(2, 3)*a(3, 1)) &
             + a(1, 3)*(a(2, 1)*a(3, 2) - a(2, 2)*a(3, 1))
     end function det3
-
     pure subroutine inv3(a, det, b)
         !! b = a^{-1} (adjugate over det).
         real(dp), intent(in) :: a(3, 3), det
@@ -693,7 +699,6 @@ contains
         b(3, 3) = a(1, 1)*a(2, 2) - a(1, 2)*a(2, 1)
         b = b/det
     end subroutine inv3
-
     pure real(dp) function lagrange3(xs, ys, x)
         !! Quadratic through (xs(k), ys(k)), k = 1..3, at x.
         real(dp), intent(in) :: xs(3), ys(3), x
@@ -701,7 +706,6 @@ contains
             + ys(2)*(x - xs(1))*(x - xs(3))/((xs(2) - xs(1))*(xs(2) - xs(3))) &
             + ys(3)*(x - xs(1))*(x - xs(2))/((xs(3) - xs(1))*(xs(3) - xs(2)))
     end function lagrange3
-
     pure function interp3(arr, theta) result(v)
         !! Periodic linear interpolation of samples at uniform angles.
         complex(dp), intent(in) :: arr(:, :)
@@ -717,7 +721,6 @@ contains
         i0 = modulo(i0, np) + 1
         v = (1.0_dp - w)*arr(:, i0) + w*arr(:, i1)
     end function interp3
-
     pure function interp1(arr, theta) result(v)
         complex(dp), intent(in) :: arr(:)
         real(dp), intent(in) :: theta
@@ -732,7 +735,6 @@ contains
         i0 = modulo(i0, np) + 1
         v = (1.0_dp - w)*arr(i0) + w*arr(i1)
     end function interp1
-
     pure subroutine gauss6(xg, wg)
         !! 6-point Gauss-Legendre rule on [0, 1] (the ring rule).
         real(dp), intent(out) :: xg(6), wg(6)
@@ -759,7 +761,6 @@ contains
             wg(7 - ii) = wg(ii)
         end do
     end subroutine gauss6
-
     subroutine ideal_response(fs, pb, fm, g, amp, opt, n, rings, cl, b2sheet, &
             phi_ext, a, lam, phi_tot, tol, maxit, info, iters, resid, error)
         !! Linear ideal response: Nedelec coefficients a of the field of the
@@ -785,30 +786,50 @@ contains
         use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
         use fortsparse, only: csc_matvec
         use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-        type(meridian_feec_t), intent(in) :: fs
-        type(meridian_point_basis_t), intent(in) :: pb
-        type(flux_mesh_t), intent(in) :: fm
-        type(psi_grid_t), intent(in) :: g
-        type(ampere_n_t), intent(inout) :: amp
-        type(ideal_options_t), intent(in) :: opt
-        integer, intent(in) :: n
-        type(sample_ring_t), intent(in) :: rings(:)
-        type(layer_closure_t), intent(in) :: cl
+        type(meridian_feec_t), intent(in), target :: fs
+        type(meridian_point_basis_t), intent(in), target :: pb
+        type(flux_mesh_t), intent(in), target :: fm
+        type(psi_grid_t), intent(in), target :: g
+        type(ampere_n_t), intent(inout), target :: amp
+        type(ideal_options_t), intent(in), target :: opt
+        integer, intent(in), target :: n
+        type(sample_ring_t), intent(in), target :: rings(:)
+        type(layer_closure_t), intent(in), target :: cl
         complex(dp), intent(in) :: b2sheet(:, :), phi_ext(:)
-        complex(dp), intent(inout) :: a(:)
+        complex(dp), intent(inout), target :: a(:)
         complex(dp), intent(out) :: lam(:), phi_tot(:)
         real(dp), intent(in) :: tol
         integer, intent(in) :: maxit
         integer, intent(out) :: info, iters
         real(dp), intent(out) :: resid
         type(ideal_response_error_t), intent(out), optional :: error
-        complex(dp), allocatable :: bsheet(:, :, :, :), bext(:, :, :), rhs(:)
-        complex(dp), allocatable :: minv(:, :), b(:, :, :), fsheet(:, :), wc(:, :)
-        integer :: nr, ns, np, ir, s2, bnd, ipiv(max(1, cl%ns)), st, solve_status
-        logical :: debug
+        complex(dp), allocatable , target :: bsheet(:, :, :, :), bext(:, :, :), rhs(:)
+        complex(dp), allocatable , target :: minv(:, :), b(:, :, :), fsheet(:, :), &
+            wc(:, :)
+        integer , target :: nr, ns, np, ir, s2, bnd, ipiv(max(1, cl%ns)), st, &
+            solve_status
+        logical , target :: debug
         character(len=8) :: env
-        integer, allocatable :: seg(:)
-
+        integer, allocatable , target :: seg(:)
+        type(ideal_response_context_t), target :: ctx
+        type(ideal_response_matvec_t) :: matvec_operator
+        ctx%a => a
+        ctx%amp => amp
+        ctx%bnd => bnd
+        ctx%cl => cl
+        ctx%debug => debug
+        ctx%fm => fm
+        ctx%fs => fs
+        ctx%g => g
+        ctx%n => n
+        ctx%np => np
+        ctx%nr => nr
+        ctx%ns => ns
+        ctx%opt => opt
+        ctx%pb => pb
+        ctx%rings => rings
+        ctx%solve_status => solve_status
+        matvec_operator%data => ctx
         if (present(error)) error = ideal_response_error_t()
         info = -1
         iters = 0
@@ -868,13 +889,33 @@ contains
             b = b + lam(s2)*bsheet(:, :, :, s2)
         end do
         allocate (rhs(amp%nn))
-        call apply_k_inv_load(b, rhs)
+        nullify(ctx%b)
+        if (allocated(b)) ctx%b => b
+        nullify(ctx%bsheet)
+        if (allocated(bsheet)) ctx%bsheet => bsheet
+        nullify(ctx%minv)
+        if (allocated(minv)) ctx%minv => minv
+        nullify(ctx%seg)
+        if (allocated(seg)) ctx%seg => seg
+        nullify(ctx%wc)
+        if (allocated(wc)) ctx%wc => wc
+        call ideal_response_apply_k_inv_load(ctx, b, rhs)
         if (solve_status /= 0) then
             info = -3
             return
         end if
         if (debug) print '(a,es12.4)', '  |rhs|', norm2(abs(rhs))
-        call complex_gmres_operator(matvec, rhs, a, tol, maxit, min(60, maxit), info, &
+        nullify(ctx%b)
+        if (allocated(b)) ctx%b => b
+        nullify(ctx%bsheet)
+        if (allocated(bsheet)) ctx%bsheet => bsheet
+        nullify(ctx%minv)
+        if (allocated(minv)) ctx%minv => minv
+        nullify(ctx%seg)
+        if (allocated(seg)) ctx%seg => seg
+        nullify(ctx%wc)
+        if (allocated(wc)) ctx%wc => wc
+        call complex_gmres(matvec_operator, rhs, a, tol, maxit, min(60, maxit), info, &
             iters, resid)
         if (solve_status /= 0) then
             info = -3
@@ -891,72 +932,128 @@ contains
                 phi_tot = phi_ext + ph + matmul(fsheet(1:cl%nf, 1:ns), lam)
             end block
         end if
-        if (present(error)) call final_error(error)
-    contains
-        subroutine apply_k_inv_load(bf, y, load)
+        nullify(ctx%b)
+        if (allocated(b)) ctx%b => b
+        nullify(ctx%bsheet)
+        if (allocated(bsheet)) ctx%bsheet => bsheet
+        nullify(ctx%minv)
+        if (allocated(minv)) ctx%minv => minv
+        nullify(ctx%seg)
+        if (allocated(seg)) ctx%seg => seg
+        nullify(ctx%wc)
+        if (allocated(wc)) ctx%wc => wc
+        if (present(error)) call ideal_response_final_error(ctx, error)
+    end subroutine ideal_response
+    subroutine ideal_response_apply_k_inv_load(ctx, bf, y, load)
+        use fortnum_krylov, only: complex_gmres_operator
+        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
+            ampere_n_error
+        use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
+        use fortsparse, only: csc_matvec
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        type(ideal_response_context_t), intent(in) :: ctx
             complex(dp), intent(in) :: bf(:, :, :)
             complex(dp), intent(out) :: y(:)
             complex(dp), intent(out), optional :: load(:)
             complex(dp), allocatable :: jc(:, :, :), kap(:), f(:)
             integer :: st2
-            allocate (jc(3, np, nr), kap(np), f(amp%nn))
-            call ideal_current(rings, n, g%sgn_dpsi, opt%qlow, bf, jc, kap, bnd, seg, &
-                opt%moved_current)
-            if (opt%strip_shape) then
-                if (allocated(opt%res_m) .and. allocated(opt%res_eps)) then
-                    call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f, &
-                        rings(1:nr - 1), n, opt%res_m, opt%res_eps)
+            allocate (jc(3, ctx%np, ctx%nr), kap(ctx%np), f(ctx%amp%nn))
+            call ideal_current(ctx%rings, ctx%n, ctx%g%sgn_dpsi, ctx%opt%qlow, bf, &
+                jc, kap, ctx%bnd, ctx%seg, &
+                ctx%opt%moved_current)
+            if (ctx%opt%strip_shape) then
+                if (allocated(ctx%opt%res_m) .and. allocated(ctx%opt%res_eps)) then
+                    call ideal_load(ctx%fs, ctx%pb, ctx%fm, ctx%g, jc(:, :, 1:ctx%nr &
+                        - 1), kap, ctx%bnd, f, &
+                        ctx%rings(1:ctx%nr - 1), ctx%n, ctx%opt%res_m, ctx%opt%res_eps)
                 else
-                    call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f, &
-                        rings(1:nr - 1), n)
+                    call ideal_load(ctx%fs, ctx%pb, ctx%fm, ctx%g, jc(:, :, 1:ctx%nr &
+                        - 1), kap, ctx%bnd, f, &
+                        ctx%rings(1:ctx%nr - 1), ctx%n)
                 end if
             else
-                call ideal_load(fs, pb, fm, g, jc(:, :, 1:nr - 1), kap, bnd, f)
+                call ideal_load(ctx%fs, ctx%pb, ctx%fm, ctx%g, jc(:, :, 1:ctx%nr - &
+                    1), kap, ctx%bnd, f)
             end if
-            call ampere_n_solve(amp, f, y, st2)
+            call ampere_n_solve(ctx%amp, f, y, st2)
             if (present(load)) load = f
             if (st2 /= 0) then
-                solve_status = st2
+                ctx%solve_status = st2
                 y = (0.0_dp, 0.0_dp)
             end if
-        end subroutine apply_k_inv_load
-        function lam_hom(av) result(l)
+    end subroutine ideal_response_apply_k_inv_load
+    function ideal_response_lam_hom(ctx, av) result(l)
+        use fortnum_krylov, only: complex_gmres_operator
+        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
+            ampere_n_error
+        use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
+        use fortsparse, only: csc_matvec
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        type(ideal_response_context_t), intent(in) :: ctx
             complex(dp), intent(in) :: av(:)
-            complex(dp) :: l(ns), ph(cl%nf)
+            complex(dp) :: l(ctx%ns), ph(ctx%cl%nf)
             complex(dp), allocatable :: b2(:)
-            call ampere_n_curl(amp, av, b2)
-            ph = closure_fluxes(fs, pb, fm, cl, n, b2)
-            l = -matmul(minv, matmul(wc(1:ns, 1:cl%nf), ph))
-        end function lam_hom
-        subroutine homogeneous_field(x, bb)
+            call ampere_n_curl(ctx%amp, av, b2)
+            ph = closure_fluxes(ctx%fs, ctx%pb, ctx%fm, ctx%cl, ctx%n, b2)
+            l = -matmul(ctx%minv, matmul(ctx%wc(1:ctx%ns, 1:ctx%cl%nf), ph))
+    end function ideal_response_lam_hom
+    subroutine ideal_response_homogeneous_field(ctx, x, bb)
+        use fortnum_krylov, only: complex_gmres_operator
+        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
+            ampere_n_error
+        use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
+        use fortsparse, only: csc_matvec
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        type(ideal_response_context_t), intent(in) :: ctx
             complex(dp), intent(in) :: x(:)
             complex(dp), intent(out) :: bb(:, :, :)
             complex(dp), allocatable :: b2(:)
-            complex(dp) :: lh(max(ns, 1))
+            complex(dp) :: lh(max(ctx%ns, 1))
             integer :: r2, s3
-            call ampere_n_curl(amp, x, b2)
-            if (ns > 0) lh(1:ns) = lam_hom(x)
+            call ampere_n_curl(ctx%amp, x, b2)
+            if (ctx%ns > 0) lh(1:ctx%ns) = ideal_response_lam_hom(ctx, x)
             !$omp parallel do schedule(static) private(r2, s3)
-            do r2 = 1, nr
-                call sample_field(fs, rings(r2), b2, bb(:, :, r2))
-                do s3 = 1, ns
-                    bb(:, :, r2) = bb(:, :, r2) + lh(s3)*bsheet(:, :, r2, s3)
+            do r2 = 1, ctx%nr
+                call sample_field(ctx%fs, ctx%rings(r2), b2, bb(:, :, r2))
+                do s3 = 1, ctx%ns
+                    bb(:, :, r2) = bb(:, :, r2) + lh(s3)*ctx%bsheet(:, :, r2, s3)
                 end do
             end do
             !$omp end parallel do
-        end subroutine homogeneous_field
-        subroutine matvec(x, y)
+    end subroutine ideal_response_homogeneous_field
+    subroutine ideal_response_matvec(ctx, x, y)
+        use fortnum_krylov, only: complex_gmres_operator
+        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
+            ampere_n_error
+        use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
+        use fortsparse, only: csc_matvec
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        type(ideal_response_context_t), intent(in) :: ctx
             complex(dp), intent(in) :: x(:)
             complex(dp), intent(out) :: y(:)
             complex(dp), allocatable :: bb(:, :, :), ky(:)
-            allocate (bb(3, np, nr), ky(size(x)))
-            call homogeneous_field(x, bb)
-            call apply_k_inv_load(bb, ky)
+            allocate (bb(3, ctx%np, ctx%nr), ky(size(x)))
+            call ideal_response_homogeneous_field(ctx, x, bb)
+            call ideal_response_apply_k_inv_load(ctx, bb, ky)
             y = x - ky
-            if (debug) print '(a,3es12.4)', '  matvec |x| |Kx| |y|', norm2(abs(x)), &
+            if (ctx%debug) print '(a,3es12.4)', '  matvec |x| |Kx| |y|', &
+                norm2(abs(x)), &
                 norm2(abs(ky)), norm2(abs(y))
-        end subroutine matvec
-        subroutine final_error(estimate)
+    end subroutine ideal_response_matvec
+    subroutine ideal_response_matvec_binding(self, input, output)
+        class(ideal_response_matvec_t), intent(inout) :: self
+            complex(dp), intent(in) :: input(:)
+            complex(dp), intent(out) :: output(:)
+        call ideal_response_matvec(self%data, input, output)
+    end subroutine
+    subroutine ideal_response_final_error(ctx, estimate)
+        use fortnum_krylov, only: complex_gmres_operator
+        use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_solve, ampere_n_curl, &
+            ampere_n_error
+        use kin6d_mhd_response_n, only: layer_closure_t, closure_fluxes
+        use fortsparse, only: csc_matvec
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        type(ideal_response_context_t), intent(in) :: ctx
             !! F(a) = K^-1 L(B(a)), T its homogeneous part, d = F(a)-a.
             !! If ||T||_K <= q < 1, ||a*-a||_K <= ||d||_K/(1-q).
             !! Here q = ||T d||_K/||d||_K is only a directional probe.
@@ -967,20 +1064,20 @@ contains
             real(dp) :: td_energy
             integer :: st2
             integer(int64) :: clock0, clock1, clock_rate
-
             estimate = ideal_response_error_t()
-            amp%error = ampere_n_error_t()
+            ctx%amp%error = ampere_n_error_t()
             call system_clock(clock0, clock_rate)
-            allocate (bb(3, np, nr), y(amp%nn), f(amp%nn), d(amp%nn), td(amp%nn))
-            call homogeneous_field(a, bb)
+            allocate (bb(3, ctx%np, ctx%nr), y(ctx%amp%nn), f(ctx%amp%nn), &
+                d(ctx%amp%nn), td(ctx%amp%nn))
+            call ideal_response_homogeneous_field(ctx, ctx%a, bb)
             !$omp parallel workshare
-            bb = bb + b  ! retained particular field, including its sheets
+            bb = bb + ctx%b  ! retained particular field, including its sheets
             !$omp end parallel workshare
-            call apply_k_inv_load(bb, y, f)
+            call ideal_response_apply_k_inv_load(ctx, bb, y, f)
             estimate%status = 1
-            if (solve_status /= 0) return
-            d = y - a
-            call ampere_n_error(amp, f, a, frozen, st2)
+            if (ctx%solve_status /= 0) return
+            d = y - ctx%a
+            call ampere_n_error(ctx%amp, f, ctx%a, frozen, st2)
             if (st2 /= 0) return
             estimate%frozen_current = frozen
             estimate%defect_energy = frozen%discrete_energy_error
@@ -989,11 +1086,11 @@ contains
                 estimate%algebraic_estimate = 0.0_dp
                 estimate%contraction_claim = 'unavailable-zero-defect'
             else
-                call homogeneous_field(d, bb)
-                call apply_k_inv_load(bb, td)
-                amp%error = frozen
-                if (solve_status /= 0) return
-                td_energy = real(dot_product(td, csc_matvec(amp%matrix, td)), dp)
+                call ideal_response_homogeneous_field(ctx, d, bb)
+                call ideal_response_apply_k_inv_load(ctx, bb, td)
+                ctx%amp%error = frozen
+                if (ctx%solve_status /= 0) return
+                td_energy = real(dot_product(td, csc_matvec(ctx%amp%matrix, td)), dp)
                 if (.not. ieee_is_finite(td_energy)) return
                 if (td_energy < 0.0_dp) return
                 call ideal_ratio(estimate%defect_energy, sqrt(td_energy), &
@@ -1009,11 +1106,9 @@ contains
             end if
             ! Internal solves overwrite amp%error. Restore the diagnostic of
             ! the actual returned candidate with its own frozen load.
-            amp%error = frozen
+            ctx%amp%error = frozen
             estimate%status = 0
             call system_clock(clock1)
             estimate%seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
-        end subroutine final_error
-    end subroutine ideal_response
-
+    end subroutine ideal_response_final_error
 end module kin6d_mhd_ideal_n

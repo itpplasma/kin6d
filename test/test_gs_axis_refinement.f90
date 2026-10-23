@@ -1,4 +1,4 @@
-program test_gs_axis_refinement
+module test_gs_axis_refinement_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_axis_candidate, gs_axis_safety_factor, sample_gs
@@ -6,20 +6,41 @@ program test_gs_axis_refinement
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
     use kin6d_gs_readback, only: gs_readback_t, read_gs_equilibrium
+
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
     implicit none
+    private
+    public :: run_test_gs_axis_refinement
     real(dp), parameter :: r0 = 6.2_dp, a = r0/3, c = 32.86_dp/(12*r0**3)
     real(dp), parameter :: rc = 62.0_dp, ac = 0.62_dp
     real(dp), parameter :: mu0 = 1.2566370614359173e-6_dp
     real(dp), parameter :: two_pi = 2*acos(-1.0_dp)
+    integer, parameter :: nshift = 3
+    real(dp), parameter :: scatter = 3.0_dp  ! measured realisation scatter 2.4
+    type :: run_test_gs_axis_refinement_context_t
+        real(dp), pointer :: phase => null()
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_gs_axis_refinement_phased_boundary_t
+        type(run_test_gs_axis_refinement_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_axis_refinement_phased_boundary_binding
+    end type
+
+contains
+    subroutine run_test_gs_axis_refinement()
+    implicit none
     real(dp) :: psi_coarse, psi_medium, psi_fine, shift(2)
     type(gs_state_t) :: state
     real(dp), allocatable :: contour(:, :)
     real(dp) :: axis(2), axis_coarse(2), axis_medium(2), axis_fine(2)
     real(dp) :: error(3), rate, h, q_coarse, q_medium, q_fine
-    integer, parameter :: nshift = 3
-    real(dp), parameter :: scatter = 3.0_dp  ! measured realisation scatter 2.4
-    real(dp) :: shifted(nshift), phase, worst(3)
+    real(dp) , target :: shifted(nshift), phase, worst(3)
     integer :: mesh, n, i, k, status
+        type(run_test_gs_axis_refinement_context_t), target :: ctx
+        type(run_test_gs_axis_refinement_phased_boundary_t), target :: &
+            phased_boundary_operator
     call represented_cubic_axis()
     ! The axis error of an unstructured mesh is a signed number that depends on the
     ! mesh realisation, not on the solver: the solution is unchanged when the CG
@@ -37,10 +58,13 @@ program test_gs_axis_refinement
         do k = 0, nshift - 1
             phase = real(k, dp)/(nshift*n)
             do i = 1, n
-                call phased_boundary(real(i - 1, dp)/n, contour(:, i))
+        call bind_run_test_gs_axis_refinement_context()
+                call run_test_gs_axis_refinement_phased_boundary(ctx, real(i - 1, &
+                    dp)/n, contour(:, i))
             end do
-            call initialize_gs(state, contour, h*h/2, status, 2, &
-                               curve=phased_boundary)
+        call bind_run_test_gs_axis_refinement_context()
+            call initialize_gs_object(state, contour, h*h/2, status, 2, &
+                               curve=phased_boundary_operator)
             if (status /= 0) error stop 'axis mesh'
             call solve_gs(state, 1.0_dp, -16*c, 0.0_dp, status)
             if (status /= 0) error stop 'axis solve'
@@ -97,6 +121,11 @@ program test_gs_axis_refinement
     ! that stays on the wall is still no axis at all.
     call shared_entity_axis
 contains
+    subroutine bind_run_test_gs_axis_refinement_context()
+        ctx%phase => phase
+        phased_boundary_operator%data => ctx
+    end subroutine bind_run_test_gs_axis_refinement_context
+
     subroutine represented_cubic_axis()
         type(gs_state_t) :: field
         real(dp) :: points(2, 48), exact(2), found(2), flux, hessian(2, 2)
@@ -128,19 +157,6 @@ contains
         call sample_gs(field, found(1), found(2), 1.0_dp, psi, br, bz, bt, stat)
         if (stat /= 0) error stop 'cubic axis sample'
         if (norm2([br, bz]) > 1.0e-12_dp) error stop 'axis not stationary'
-    end subroutine
-
-    subroutine phased_boundary(t, point)
-        real(dp), intent(in) :: t
-        real(dp), intent(out) :: point(2)
-        call boundary(t + phase, point)
-    end subroutine
-
-    subroutine boundary(t, point)
-        real(dp), intent(in) :: t
-        real(dp), intent(out) :: point(2)
-        point(1) = sqrt(r0*r0 + 2*r0*a*cos(two_pi*t))
-        point(2) = r0*a*sin(two_pi*t)/point(1)
     end subroutine
 
     pure subroutine cylinder_boundary(t, point)
@@ -320,4 +336,33 @@ contains
         call gs_axis_candidate(state, axis_q, psi_q, hessian, cell, status)
         if (status /= 4) error stop 'wall-centred flux was called an enclosed axis'
     end subroutine shared_entity_axis
-end program
+
+    end subroutine run_test_gs_axis_refinement
+
+    subroutine run_test_gs_axis_refinement_phased_boundary(ctx, t, point)
+        type(run_test_gs_axis_refinement_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_gs_axis_refinement_boundary(t + ctx%phase, point)
+    end subroutine run_test_gs_axis_refinement_phased_boundary
+
+    subroutine run_test_gs_axis_refinement_phased_boundary_binding(self, t, point)
+        class(run_test_gs_axis_refinement_phased_boundary_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_gs_axis_refinement_phased_boundary(self%data, t, point)
+    end subroutine
+
+    subroutine run_test_gs_axis_refinement_boundary(t, point)
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        point(1) = sqrt(r0*r0 + 2*r0*a*cos(two_pi*t))
+        point(2) = r0*a*sin(two_pi*t)/point(1)
+    end subroutine run_test_gs_axis_refinement_boundary
+end module test_gs_axis_refinement_callbacks
+
+program test_gs_axis_refinement
+    use test_gs_axis_refinement_callbacks, only: run_test_gs_axis_refinement
+    implicit none
+    call run_test_gs_axis_refinement()
+end program test_gs_axis_refinement

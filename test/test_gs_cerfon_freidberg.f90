@@ -1,4 +1,4 @@
-program test_gs_cerfon_freidberg
+module test_gs_cerfon_freidberg_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use cerfon_freidberg_fixture, only: cf_case_t, cf_setup, cf_jet, cf_surface, &
@@ -12,20 +12,51 @@ program test_gs_cerfon_freidberg
     use kin6d_equilibrium_harness, only: equilibrium_case_t, equilibrium_start_t, &
         equilibrium_resolution_t, equilibrium_run_report_t, run_equilibrium_case
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
+
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_equilibrium_harness, only: equilibrium_solver_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
     implicit none
+    private
+    public :: run_test_gs_cerfon_freidberg
     real(dp), parameter :: pi = acos(-1.0_dp)
-    type(cf_case_t) :: model
+    type :: run_test_gs_cerfon_freidberg_context_t
+        real(dp), pointer :: last_error(:) => null()
+        type(gs_profile_law_t), pointer :: law => null()
+        type(cf_case_t), pointer :: model => null()
+        real(dp), pointer :: reference(:) => null()
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_gs_cerfon_freidberg_boundary_t
+        type(run_test_gs_cerfon_freidberg_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_cerfon_freidberg_boundary_binding
+    end type
+
+    type, extends(equilibrium_solver_t) :: run_test_gs_cerfon_freidberg_solve_case_t
+        type(run_test_gs_cerfon_freidberg_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_cerfon_freidberg_solve_case_binding
+    end type
+
+contains
+    subroutine run_test_gs_cerfon_freidberg()
+    implicit none
+    type(cf_case_t) , target :: model
     type(gs_state_t) :: state
-    type(gs_profile_law_t) :: law
+    type(gs_profile_law_t) , target :: law
     type(equilibrium_state_t) :: eq
     type(equilibrium_readback_t) :: readback
     type(equilibrium_run_report_t) :: report
-    real(dp) :: errors(3, 3), last_error(3), rates(2), reference(6), again(6)
+    real(dp) , target :: errors(3, 3), last_error(3), rates(2), reference(6), again(6)
     real(dp) :: rho(11), q_error, q_exact, q_coarse, actual(6), globals(6), axis_error
     real(dp) :: elapsed
     integer(int64) :: tick, tock, clock_rate
     integer :: degree, mesh, n, status, j
     character(32) :: name, argument
+        type(run_test_gs_cerfon_freidberg_context_t), target :: ctx
+        type(run_test_gs_cerfon_freidberg_boundary_t), target :: boundary_operator
+        type(run_test_gs_cerfon_freidberg_solve_case_t), target :: solve_case_operator
     name = 'iter-155'; degree = 2
     if (command_argument_count() >= 1) call get_command_argument(1, name)
     if (command_argument_count() >= 2) then
@@ -64,8 +95,9 @@ program test_gs_cerfon_freidberg
     law%axis = model%psi_axis
     do mesh = 1, 3
         n = 64*2**(mesh - 1)
+        call bind_run_test_gs_cerfon_freidberg_context()
         call run_equilibrium_case('cerfon-'//trim(name), 'psi', &
-            equilibrium_resolution_t(degree, n), 'reference', solve_case, &
+            equilibrium_resolution_t(degree, n), 'reference', solve_case_operator, &
             state, report, eq)
         if (report%status /= 0) then
             print *, 'D8 status', report%status
@@ -74,6 +106,7 @@ program test_gs_cerfon_freidberg
         if (report%state_bound_status /= 'unavailable' .or. &
             report%claim /= 'candidate') error stop 'CF numerical evidence promoted'
         errors(:, mesh) = last_error
+        call bind_run_test_gs_cerfon_freidberg_context()
         print '(a,i4,a,i7,a,3es14.5,a,es12.3)', '[V] n=', n, ' dof=', &
             count(.not. state%boundary), ' relative L2 psi/Bpol/Bphi=', last_error, &
             ' weak residual=', state%residual
@@ -124,6 +157,15 @@ program test_gs_cerfon_freidberg
     elapsed = real(tock - tick, dp)/clock_rate
     print '(a,f10.3)', '[V] total wall seconds=', elapsed
 contains
+    subroutine bind_run_test_gs_cerfon_freidberg_context()
+        ctx%last_error => last_error
+        ctx%law => law
+        ctx%model => model
+        ctx%reference => reference
+        boundary_operator%data => ctx
+        solve_case_operator%data => ctx
+    end subroutine bind_run_test_gs_cerfon_freidberg_context
+
     subroutine bulk_contract()
         ! A second pressure/current unit scale and a reversed poloidal field
         ! must preserve dimensionless beta_p/li, and reverse signed Ip and q.
@@ -158,14 +200,26 @@ contains
             error stop 'D7 unavailable bulk values'
     end subroutine
 
-    subroutine boundary(t, point)
+    end subroutine run_test_gs_cerfon_freidberg
+
+    subroutine run_test_gs_cerfon_freidberg_boundary(ctx, t, point)
+        type(run_test_gs_cerfon_freidberg_context_t), intent(in), target :: ctx
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         real(dp) :: radius, slope
-        call cf_surface(model, 2*pi*t, 0.0_dp, point, radius, slope)
+        call cf_surface(ctx%model, 2*pi*t, 0.0_dp, point, radius, slope)
+    end subroutine run_test_gs_cerfon_freidberg_boundary
+
+    subroutine run_test_gs_cerfon_freidberg_boundary_binding(self, t, point)
+        class(run_test_gs_cerfon_freidberg_boundary_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_gs_cerfon_freidberg_boundary(self%data, t, point)
     end subroutine
 
-    subroutine solve_case(spec, resolution, start, native, report, equilibrium)
+    subroutine run_test_gs_cerfon_freidberg_solve_case(ctx, spec, resolution, start, &
+        native, report, equilibrium)
+        type(run_test_gs_cerfon_freidberg_context_t), intent(in), target :: ctx
         type(equilibrium_case_t), intent(in) :: spec
         type(equilibrium_resolution_t), intent(in) :: resolution
         type(equilibrium_start_t), intent(in) :: start
@@ -175,36 +229,55 @@ contains
         real(dp), allocatable :: contour(:, :)
         real(dp) :: h
         integer :: k, stat
+        type(run_test_gs_cerfon_freidberg_boundary_t) :: boundary_operator
+        boundary_operator%data => ctx
         if (spec%lane /= 'psi' .or. start%name /= 'reference') return
         select type (native)
         type is (gs_state_t)
             allocate (contour(2, resolution%boundary_nodes))
             do k = 1, size(contour, 2)
-                call boundary(real(k - 1, dp)/size(contour, 2), contour(:, k))
+                call run_test_gs_cerfon_freidberg_boundary(ctx, real(k - 1, &
+                    dp)/size(contour, 2), contour(:, k))
             end do
-            h = reference(5)/size(contour, 2)
-            call initialize_gs(native, contour, h*h/2, stat, resolution%degree, &
-                curve=boundary)
+            h = ctx%reference(5)/size(contour, 2)
+            call initialize_gs_object(native, contour, h*h/2, stat, resolution%degree, &
+                curve=boundary_operator)
             if (stat /= 0) error stop 'CF initialize_gs'
             ! This forward solve receives ONLY the physical boundary and two
             ! constant source coefficients, never nodal values of exact psi.
-            call solve_gs(native, 1.0_dp, model%a - 1, -model%a, stat)
+            call solve_gs(native, 1.0_dp, ctx%model%a - 1, -ctx%model%a, stat)
             if (stat /= 0) error stop 'CF solve_gs'
-            call gs_equilibrium(native, equilibrium, stat, 1.0_dp, -model%a, &
-                law=law, mu0=1.0_dp)
+            call gs_equilibrium(native, equilibrium, stat, 1.0_dp, -ctx%model%a, &
+                law=ctx%law, mu0=1.0_dp)
             if (stat /= 0) error stop 'CF core adapter'
-            call field_errors(native, equilibrium, last_error)
+            call run_test_gs_cerfon_freidberg_field_errors(ctx, native, equilibrium, &
+                ctx%last_error)
             report%status = 0
-            report%oracle_error = maxval(last_error)
+            report%oracle_error = maxval(ctx%last_error)
             ! Initial zero flux has exactly unit relative psi L2 error.
             report%seed_error = 1
             report%residual = native%residual
             report%iterations = native%iterations
             report%residual_norm = 'relative Euclidean free-row GS weak residual'
         end select
+    end subroutine run_test_gs_cerfon_freidberg_solve_case
+
+    subroutine run_test_gs_cerfon_freidberg_solve_case_binding(self, spec, &
+        resolution, start, state, report, equilibrium)
+        class(run_test_gs_cerfon_freidberg_solve_case_t), intent(in) :: self
+        type(equilibrium_case_t), intent(in) :: spec
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        type(equilibrium_start_t), intent(in) :: start
+        class(*), intent(inout) :: state
+        type(equilibrium_run_report_t), intent(inout) :: report
+        type(equilibrium_state_t), intent(out) :: equilibrium
+        call run_test_gs_cerfon_freidberg_solve_case(self%data, spec, resolution, &
+            start, state, report, equilibrium)
     end subroutine
 
-    subroutine field_errors(native, equilibrium, errors)
+    subroutine run_test_gs_cerfon_freidberg_field_errors(ctx, native, equilibrium, &
+        errors)
+        type(run_test_gs_cerfon_freidberg_context_t), intent(in), target :: ctx
         type(gs_state_t), intent(in) :: native
         type(equilibrium_state_t), intent(in) :: equilibrium
         real(dp), intent(out) :: errors(3)
@@ -248,8 +321,8 @@ contains
         !$omp& private(point, jet, exact_b, error_b) reduction(+:numerator, denominator)
         do k = 1, count_points
             point = points(:, k)
-            call cf_jet(model, point, jet)
-            exact_b = [-jet(3), jet(2), sqrt(1 - 2*model%a*jet(1))]/point(1)
+            call cf_jet(ctx%model, point, jet)
+            exact_b = [-jet(3), jet(2), sqrt(1 - 2*ctx%model%a*jet(1))]/point(1)
             error_b = values([EQ_BR, EQ_BZ, EQ_BPHI], k) - exact_b
             numerator = numerator + weights(k)*[(values(EQ_PSI, k) - jet(1))**2, &
                 sum(error_b(:2)**2), error_b(3)**2]
@@ -258,5 +331,11 @@ contains
         end do
         !$omp end parallel do
         errors = sqrt(numerator/denominator)
-    end subroutine
-end program
+    end subroutine run_test_gs_cerfon_freidberg_field_errors
+end module test_gs_cerfon_freidberg_callbacks
+
+program test_gs_cerfon_freidberg
+    use test_gs_cerfon_freidberg_callbacks, only: run_test_gs_cerfon_freidberg
+    implicit none
+    call run_test_gs_cerfon_freidberg()
+end program test_gs_cerfon_freidberg

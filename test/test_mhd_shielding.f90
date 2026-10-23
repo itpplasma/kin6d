@@ -1,4 +1,31 @@
-program test_mhd_shielding
+module test_mhd_shielding_callbacks
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
+        meridian_point_basis_t, meridian_point_basis_init
+    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
+    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+        ampere_n_curl
+    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
+        ring_flux_harmonic, ring_sheet_load
+
+    use kin6d_mhd_mesh, only: polar_map_t
+    implicit none
+    private
+    public :: run_test_mhd_shielding
+    real(dp), parameter :: pi = 3.14159265358979323846_dp
+    integer, parameter :: nrad = 32, jc = 24, js = 16
+    type :: run_test_mhd_shielding_context_t
+        real(dp), pointer :: r0 => null()
+    end type
+
+    type, extends(polar_map_t) :: run_test_mhd_shielding_circle_map_t
+        type(run_test_mhd_shielding_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_shielding_circle_map_binding
+    end type
+
+contains
+    subroutine run_test_mhd_shielding()
     !! L4 resonant sheet currents and ideal shielding.
     !!
     !! 1. Screened response, cylinder limit (asymptotic oracle).  In a
@@ -17,20 +44,12 @@ program test_mhd_shielding
     !! 3. Shielding: with the amplitudes from M lambda = -Phi_drive the total
     !!    resonant flux on every shielded ring vanishes to roundoff.
     !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
-    use, intrinsic :: iso_fortran_env, only: dp => real64
-    use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
-        meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
-        ampere_n_curl
-    use kin6d_mhd_response_n, only: ring_angles_t, ring_angles_set, &
-        ring_flux_harmonic, ring_sheet_load
     implicit none
 
-    real(dp), parameter :: pi = 3.14159265358979323846_dp
-    integer, parameter :: nrad = 32, jc = 24, js = 16
-    real(dp) :: r0
+    real(dp) , target :: r0
     logical :: all_passed
+        type(run_test_mhd_shielding_context_t), target :: ctx
+        type(run_test_mhd_shielding_circle_map_t), target :: circle_map_operator
 
     all_passed = .true.
     !$ call omp_set_num_threads(min(4, omp_get_max_threads()))
@@ -41,6 +60,11 @@ program test_mhd_shielding
     print '(a)', "test_mhd_shielding: all checks passed"
 
 contains
+    subroutine bind_run_test_mhd_shielding_context()
+        ctx%r0 => r0
+        circle_map_operator%data => ctx
+    end subroutine bind_run_test_mhd_shielding_context
+
 
     subroutine record(c, d)
         logical, intent(in) :: c
@@ -53,11 +77,6 @@ contains
         end if
     end subroutine record
 
-    subroutine circle_map(u, theta, x)
-        real(dp), intent(in) :: u, theta
-        real(dp), intent(out) :: x(2)
-        x = [r0 + u*cos(theta), u*sin(theta)]
-    end subroutine circle_map
 
     subroutine cylinder_angles(q, ra)
         real(dp), intent(in) :: q
@@ -99,7 +118,8 @@ contains
         do j = 1, nrad
             ul(j) = real(j, dp)/nrad
         end do
-        call flux_mesh_build(ul, 8, 4096, 2, circle_map, fm, st)
+        call bind_run_test_mhd_shielding_context()
+        call flux_mesh_build(ul, 8, 4096, 2, circle_map_operator, fm, st)
         if (st /= 0) error stop "mesh"
         call meridian_feec_build(fm%mm, 2, fs, st)
         if (st /= 0) error stop "feec"
@@ -215,4 +235,26 @@ contains
             1.0e-10_dp*maxval(abs(phid)), "total resonant flux shielded")
     end subroutine reciprocity_and_shielding
 
+
+    end subroutine run_test_mhd_shielding
+
+    subroutine run_test_mhd_shielding_circle_map(ctx, u, theta, x)
+        type(run_test_mhd_shielding_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        x = [ctx%r0 + u*cos(theta), u*sin(theta)]
+    end subroutine run_test_mhd_shielding_circle_map
+
+    subroutine run_test_mhd_shielding_circle_map_binding(self, u, theta, x)
+        class(run_test_mhd_shielding_circle_map_t), intent(in) :: self
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        call run_test_mhd_shielding_circle_map(self%data, u, theta, x)
+    end subroutine
+end module test_mhd_shielding_callbacks
+
+program test_mhd_shielding
+    use test_mhd_shielding_callbacks, only: run_test_mhd_shielding
+    implicit none
+    call run_test_mhd_shielding()
 end program test_mhd_shielding

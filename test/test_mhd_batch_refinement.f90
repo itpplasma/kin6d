@@ -1,25 +1,60 @@
-program test_mhd_batch_refinement
-    ! Transverse uniform-field slab Fourier mode: L xi = B^2 k^2 xi/mu.
-    ! For this positive scalar operator the relative solution infinity error
-    ! equals the relative residual; the regression gate follows the stop test.
+module test_mhd_batch_refinement_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, sp => real32
     use kin6d_ideal_xi, only: xi_bilinear_batch
     use fortnum_precision, only: precision_policy_t, precision_pair_t, &
             precision_preset, FP64, FP32, FP16, BF16, STAGE_PRECONDITION, STAGE_RESIDUAL
     use fortnum_precision_vector, only: precision_vector_t
     use fortnum_refinement, only: mixed_refine
+
+    use fortnum_krylov, only: real_linear_operator_t
+    use fortnum_refinement, only: refinement_solver_t
     implicit none
+    private
+    public :: run_test_mhd_batch_refinement
     integer, parameter :: n = 257, formats(4) = [FP64, FP32, FP16, BF16]
   real(dp), parameter :: field = 1.1_dp, wave = 1.3_dp, mu = 1.0_dp, tolerance = 1e-6_dp
     real(dp), parameter :: lambda = field**2*wave**2/mu
-    real(dp) :: inputs(n, 47), outputs(n, 25), rhs(n), exact(n), x(n), ax(n)
-    real(dp) :: low_coefficient(n), wide_coefficient(n), residual, defect, rounding
+    type :: run_test_mhd_batch_refinement_exact_action_context_t
+        real(dp), pointer :: inputs(:,:) => null()
+        real(dp), pointer :: low_coefficient(:) => null()
+        real(dp), pointer :: outputs(:,:) => null()
+    end type
+
+    type, extends(real_linear_operator_t) :: &
+        run_test_mhd_batch_refinement_exact_action_t
+        type(run_test_mhd_batch_refinement_exact_action_context_t), pointer :: data &
+            => null()
+    contains
+        procedure :: apply => run_test_mhd_batch_refinement_exact_action_binding
+    end type
+
+    type, extends(refinement_solver_t) :: run_test_mhd_batch_refinement_correction_t
+        type(run_test_mhd_batch_refinement_exact_action_context_t), pointer :: data &
+            => null()
+    contains
+        procedure :: solve => run_test_mhd_batch_refinement_correction_binding
+    end type
+
+contains
+    subroutine run_test_mhd_batch_refinement()
+    ! Transverse uniform-field slab Fourier mode: L xi = B^2 k^2 xi/mu.
+    ! For this positive scalar operator the relative solution infinity error
+    ! equals the relative residual; the regression gate follows the stop test.
+    implicit none
+    real(dp) , target :: inputs(n, 47), outputs(n, 25), rhs(n), exact(n), x(n), ax(n)
+    real(dp) , target :: low_coefficient(n), wide_coefficient(n), residual, defect, &
+        rounding
     real(sp) :: single_inputs(n, 47), single_outputs(n, 25)
     type(precision_policy_t) :: policy
     type(precision_pair_t) :: pair
     type(precision_vector_t) :: storage
     integer :: i, f, info, steps
     logical :: ok, accepted
+        type(run_test_mhd_batch_refinement_exact_action_context_t), target :: &
+            exact_action_data
+        type(run_test_mhd_batch_refinement_exact_action_t), target :: &
+            exact_action_operator
+        type(run_test_mhd_batch_refinement_correction_t), target :: correction_operator
     inputs = 0; inputs(:, 3) = field; inputs(:, 5) = mu
     inputs(:, 12) = wave; inputs(:, 21) = wave; inputs(:, 47) = 1
     call xi_bilinear_batch(n, inputs, outputs)
@@ -52,10 +87,13 @@ print '(a)', '# storage,steps,relative_residual,relative_state_error,coefficient
         pair = policy%get(STAGE_RESIDUAL)
         if (pair%compute /= FP64 .or. pair%storage /= FP64) error stop 'residual lock'
         x = 0
-        call mixed_refine(exact_action, correction, rhs, x, policy, tolerance, &
+        call bind_run_test_mhd_batch_refinement_exact_action_context()
+        call mixed_refine(exact_action_operator, correction_operator, rhs, x, &
+            policy, tolerance, &
                           8, info, steps, residual)
         if (info /= 0) error stop 'MHD mixed refinement'
-        call exact_action(x, ax)
+        call bind_run_test_mhd_batch_refinement_exact_action_context()
+        call run_test_mhd_batch_refinement_exact_action(exact_action_data, x, ax)
         residual = maxval(abs(rhs - ax))/maxval(abs(rhs))
         defect = maxval(abs(x - exact))/maxval(abs(exact))
         if (residual > tolerance) error stop 'independent FP64 residual'
@@ -64,23 +102,66 @@ print '(a)', '# storage,steps,relative_residual,relative_state_error,coefficient
             ',', defect, ',', rounding
     end do
 contains
-    subroutine exact_action(state, action)
+    subroutine bind_run_test_mhd_batch_refinement_exact_action_context()
+        exact_action_data%inputs => inputs
+        exact_action_data%low_coefficient => low_coefficient
+        exact_action_data%outputs => outputs
+        exact_action_operator%data => exact_action_data
+        correction_operator%data => exact_action_data
+    end subroutine bind_run_test_mhd_batch_refinement_exact_action_context
+
+
+    end subroutine run_test_mhd_batch_refinement
+
+    subroutine run_test_mhd_batch_refinement_exact_action(exact_action_data, state, &
+        action)
+        type(run_test_mhd_batch_refinement_exact_action_context_t), intent(in), &
+            target :: exact_action_data
         real(dp), intent(in) :: state(:)
         real(dp), intent(out) :: action(:)
-        inputs(:, 12) = wave*state
-        call xi_bilinear_batch(n, inputs, outputs)
-        action = outputs(:, 1)
-    end subroutine exact_action
-    subroutine correction(defect, delta, precision, status)
+        exact_action_data%inputs(:, 12) = wave*state
+        call xi_bilinear_batch(n, exact_action_data%inputs, exact_action_data%outputs)
+        action = exact_action_data%outputs(:, 1)
+    end subroutine run_test_mhd_batch_refinement_exact_action
+
+    subroutine run_test_mhd_batch_refinement_exact_action_binding(self, input, output)
+        class(run_test_mhd_batch_refinement_exact_action_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        call run_test_mhd_batch_refinement_exact_action(self%data, input, output)
+    end subroutine
+
+    subroutine run_test_mhd_batch_refinement_correction(exact_action_data, defect, &
+        delta, precision, status)
+        type(run_test_mhd_batch_refinement_exact_action_context_t), intent(in), &
+            target :: exact_action_data
         real(dp), intent(in) :: defect(:)
         real(dp), intent(out) :: delta(:)
         type(precision_pair_t), intent(in) :: precision
         integer, intent(out) :: status
         status = 0
         if (precision%compute == FP64) then
-            delta = defect/low_coefficient
+            delta = defect/exact_action_data%low_coefficient
         else
-            delta = real(real(defect, sp)/real(low_coefficient, sp), dp)
+            delta = real(real(defect, sp)/real(exact_action_data%low_coefficient, &
+                sp), dp)
         end if
-    end subroutine correction
+    end subroutine run_test_mhd_batch_refinement_correction
+
+    subroutine run_test_mhd_batch_refinement_correction_binding(self, rhs, delta, &
+        precision, info)
+        class(run_test_mhd_batch_refinement_correction_t), intent(inout) :: self
+        real(dp), intent(in) :: rhs(:)
+        real(dp), intent(out) :: delta(:)
+        type(precision_pair_t), intent(in) :: precision
+        integer, intent(out) :: info
+        call run_test_mhd_batch_refinement_correction(self%data, rhs, delta, &
+            precision, info)
+    end subroutine
+end module test_mhd_batch_refinement_callbacks
+
+program test_mhd_batch_refinement
+    use test_mhd_batch_refinement_callbacks, only: run_test_mhd_batch_refinement
+    implicit none
+    call run_test_mhd_batch_refinement()
 end program test_mhd_batch_refinement

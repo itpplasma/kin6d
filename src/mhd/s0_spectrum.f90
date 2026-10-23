@@ -11,6 +11,10 @@ module kin6d_s0_spectrum
         FORTSPARSE_SYM_SPD, FORTSPARSE_SYM_HERMITIAN, FORTSPARSE_SYM_GENERAL, &
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD, native_ordering_available, &
         FORTSPARSE_INERTIA_UNAVAILABLE
+    use fortnum_eigen, only: eigen_complex_operator_dp_t
+    use fortnum_eigen, only: eigen_complex_operator_dp_t
+    use fortnum_eigen, only: eigen_complex_solve_dp_t
+    use fortnum_eigen, only: eigen_complex_solve_dp_t
     implicit none
     private
     public :: s0_pencil_t, s0_report_t, s0_prepare, s0_solve, s0_destroy
@@ -33,6 +37,26 @@ module kin6d_s0_spectrum
         character(16) :: claim = 'candidate', bound_status = 'unavailable'
         character(120) :: message = 'invalid S0 input or unprepared pencil'
     end type s0_report_t
+    type, extends(eigen_complex_operator_dp_t) :: s0_solve_apply_k_t
+        type(s0_pencil_t), pointer :: pencil => null()
+    contains
+        procedure :: apply => s0_solve_apply_k_evaluate
+    end type
+    type, extends(eigen_complex_operator_dp_t) :: s0_solve_apply_m_t
+        type(s0_pencil_t), pointer :: pencil => null()
+    contains
+        procedure :: apply => s0_solve_apply_m_evaluate
+    end type
+    type, extends(eigen_complex_solve_dp_t) :: s0_solve_solve_m_t
+        type(s0_pencil_t), pointer :: pencil => null()
+    contains
+        procedure :: solve => s0_solve_solve_m_evaluate
+    end type
+    type, extends(eigen_complex_solve_dp_t) :: s0_solve_solve_shift_t
+        type(s0_pencil_t), pointer :: pencil => null()
+    contains
+        procedure :: solve => s0_solve_solve_shift_evaluate
+    end type
 contains
     subroutine s0_prepare(pencil, stiffness, mass, shift, report)
         type(s0_pencil_t), intent(inout) :: pencil
@@ -94,10 +118,9 @@ contains
         pencil%ready = .true.
         report%status = EIGEN_OK
     end subroutine s0_prepare
-
     subroutine s0_solve(pencil, start, tolerance, options, omega2, vectors, &
             residuals, report)
-        type(s0_pencil_t), intent(inout) :: pencil
+        type(s0_pencil_t), intent(inout), target :: pencil
         complex(dp), intent(in) :: start(:)
         real(dp), intent(in) :: tolerance
         type(eigen_options_t), intent(in) :: options
@@ -107,6 +130,10 @@ contains
         type(eigen_options_t) :: selected
         type(fortsparse_status_t) :: status
         real(dp) :: real_values(size(omega2))
+        type(s0_solve_apply_k_t) :: apply_k_context
+        type(s0_solve_apply_m_t) :: apply_m_context
+        type(s0_solve_solve_m_t) :: solve_m_context
+        type(s0_solve_solve_shift_t) :: solve_shift_context
         report = s0_report_t()
         omega2 = 0; vectors = 0; residuals = huge(1.0_dp)
         if (.not. pencil%ready) return
@@ -119,45 +146,27 @@ contains
         selected%operator_scale = pencil%stiffness_scale
         selected%mass_scale = pencil%mass_scale
         if (abs(aimag(pencil%shift)) <= 0) then
-            call lanczos(apply_k,start,real_values,vectors,residuals,tolerance, &
-                selected,report%status,report%eigen,mass=apply_m, &
-                solve_mass=solve_m,solve_shift=solve_shift, &
+        apply_k_context%pencil => pencil
+        apply_m_context%pencil => pencil
+        solve_m_context%pencil => pencil
+        solve_shift_context%pencil => pencil
+            call &
+                lanczos(apply_k_context,start,real_values,vectors,residuals,tolerance, &
+                selected,report%status,report%eigen,mass=apply_m_context, &
+                solve_mass=solve_m_context,solve_shift=solve_shift_context, &
                 sigma=real(pencil%shift,dp))
             omega2 = cmplx(real_values,0.0_dp,dp)
         else
-            call krylov_schur(apply_k,start,omega2,vectors,residuals,tolerance, &
-                selected,report%status,report%eigen,mass=apply_m, &
-                solve_mass=solve_m,solve_shift=solve_shift,sigma=pencil%shift)
+        apply_k_context%pencil => pencil
+        apply_m_context%pencil => pencil
+        solve_m_context%pencil => pencil
+        solve_shift_context%pencil => pencil
+            call &
+                krylov_schur(apply_k_context,start,omega2,vectors,residuals,tolerance, &
+                selected,report%status,report%eigen,mass=apply_m_context, &
+                solve_mass=solve_m_context,solve_shift=solve_shift_context,sigma=pencil%shift)
         end if
-    contains
-        subroutine apply_k(x,y)
-            complex(dp), intent(in) :: x(:)
-            complex(dp), intent(out) :: y(:)
-            y = csc_matvec(pencil%stiffness,x)
-        end subroutine apply_k
-        subroutine apply_m(x,y)
-            complex(dp), intent(in) :: x(:)
-            complex(dp), intent(out) :: y(:)
-            y = csc_matvec(pencil%mass,x)
-        end subroutine apply_m
-        subroutine solve_m(x,y,info)
-            complex(dp), intent(in) :: x(:)
-            complex(dp), intent(out) :: y(:)
-            integer, intent(out) :: info
-            type(fortsparse_status_t) :: status
-            call sparse_solve(pencil%mass_factor,x,y,status)
-            info = status%code
-        end subroutine solve_m
-        subroutine solve_shift(x,y,info)
-            complex(dp), intent(in) :: x(:)
-            complex(dp), intent(out) :: y(:)
-            integer, intent(out) :: info
-            type(fortsparse_status_t) :: status
-            call sparse_solve(pencil%shift_factor,x,y,status)
-            info = status%code
-        end subroutine solve_shift
     end subroutine s0_solve
-
     logical function hermitian(a) result(ok)
         type(csc_z_t), intent(in) :: a
         type(csc_z_t) :: adjoint
@@ -175,7 +184,6 @@ contains
         ok = maxval(abs(a%val-adjoint%val)) <= &
             64*epsilon(1.0_dp)*max(tiny(1.0_dp),maxval(abs(a%val)))
     end function hermitian
-
     subroutine s0_destroy(pencil)
         type(s0_pencil_t), intent(inout) :: pencil
         call sparse_destroy(pencil%mass_factor)
@@ -185,4 +193,34 @@ contains
         pencil%inertia_status = FORTSPARSE_INERTIA_UNAVAILABLE
         pencil%stiffness_scale = 0; pencil%mass_scale = 0
     end subroutine s0_destroy
+    subroutine s0_solve_apply_k_evaluate(self, x, y)
+        class(s0_solve_apply_k_t), intent(inout) :: self
+            complex(dp), intent(in) :: x(:)
+            complex(dp), intent(out) :: y(:)
+            y = csc_matvec(self%pencil%stiffness,x)
+    end subroutine s0_solve_apply_k_evaluate
+    subroutine s0_solve_apply_m_evaluate(self, x, y)
+        class(s0_solve_apply_m_t), intent(inout) :: self
+            complex(dp), intent(in) :: x(:)
+            complex(dp), intent(out) :: y(:)
+            y = csc_matvec(self%pencil%mass,x)
+    end subroutine s0_solve_apply_m_evaluate
+    subroutine s0_solve_solve_m_evaluate(self, x, y, info)
+        class(s0_solve_solve_m_t), intent(inout) :: self
+            complex(dp), intent(in) :: x(:)
+            complex(dp), intent(out) :: y(:)
+            integer, intent(out) :: info
+            type(fortsparse_status_t) :: status
+            call sparse_solve(self%pencil%mass_factor,x,y,status)
+            info = status%code
+    end subroutine s0_solve_solve_m_evaluate
+    subroutine s0_solve_solve_shift_evaluate(self, x, y, info)
+        class(s0_solve_solve_shift_t), intent(inout) :: self
+            complex(dp), intent(in) :: x(:)
+            complex(dp), intent(out) :: y(:)
+            integer, intent(out) :: info
+            type(fortsparse_status_t) :: status
+            call sparse_solve(self%pencil%shift_factor,x,y,status)
+            info = status%code
+    end subroutine s0_solve_solve_shift_evaluate
 end module kin6d_s0_spectrum

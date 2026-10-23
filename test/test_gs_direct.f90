@@ -1,8 +1,4 @@
-program test_gs_direct
-    ! The CSR operator, the cached Cholesky factor and the A^-1-preconditioned
-    ! Newton solves agree with the element-wise operator and the Jacobi-CG
-    ! solves, and the Krylov work per Newton solve does not grow with the mesh.
-    ! Manufactured P3 problem of test_gs_nonlinear on a circle-like boundary.
+module test_gs_direct_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, apply_gs
     use kin6d_gs_profile_law, only: gs_profile_law_t
@@ -12,15 +8,50 @@ program test_gs_direct
     use kin6d_gs_timers, only: gs_timer_reset, gs_timer_total, gs_timer_calls, &
         gs_timer_iterations, GS_T_JAC_CG, GS_T_JAC_GMRES, GS_T_PRECOND_CG, &
         GS_T_FACTOR, GS_T_DIRECT
+
+    use kin6d_gs_nonlinear, only: gs_forcing_function_t
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
+    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles_object
     implicit none
+    private
+    public :: run_test_gs_direct
     real(dp), parameter :: r0 = 6.2_dp, f = 32.86_dp
     real(dp), parameter :: c = f/(12*r0**3)
-    real(dp) :: a, level
+    type :: run_test_gs_direct_context_t
+        real(dp), pointer :: a => null()
+        real(dp), pointer :: level => null()
+    end type
+
+    type, extends(gs_forcing_function_t) :: run_test_gs_direct_manufactured_source_t
+        type(run_test_gs_direct_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_direct_manufactured_source_binding
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_gs_direct_exact_boundary_t
+        type(run_test_gs_direct_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_direct_exact_boundary_binding
+    end type
+
+contains
+    subroutine run_test_gs_direct()
+    ! The CSR operator, the cached Cholesky factor and the A^-1-preconditioned
+    ! Newton solves agree with the element-wise operator and the Jacobi-CG
+    ! solves, and the Krylov work per Newton solve does not grow with the mesh.
+    ! Manufactured P3 problem of test_gs_nonlinear on a circle-like boundary.
+    implicit none
+    real(dp) , target :: a, level
     type(gs_state_t) :: direct_state, iterative_state
     type(gs_profile_law_t) :: law, direct_law, iterative_law
     real(dp), allocatable :: boundary(:, :), input(:), element(:), csr(:)
     real(dp) :: h, difference, per_solve(3), solves
     integer :: mesh, n, j, status
+        type(run_test_gs_direct_context_t), target :: ctx
+        type(run_test_gs_direct_manufactured_source_t), target :: &
+            manufactured_source_operator
+        type(run_test_gs_direct_exact_boundary_t), target :: exact_boundary_operator
 
     a = r0/3
     level = 4*r0*r0*a*a
@@ -37,11 +68,14 @@ program test_gs_direct
         n = 32*2**(mesh - 1)
         allocate (boundary(2, n))
         do j = 1, n
-            call exact_boundary(real(j - 1, dp)/n, boundary(:, j))
+        call bind_run_test_gs_direct_context()
+            call run_test_gs_direct_exact_boundary(ctx, real(j - 1, dp)/n, &
+                boundary(:, j))
         end do
         h = 2*acos(-1.0_dp)*a/n
-        call initialize_gs(direct_state, boundary, h*h/2, status, 3, &
-                           curve=exact_boundary)
+        call bind_run_test_gs_direct_context()
+        call initialize_gs_object(direct_state, boundary, h*h/2, status, 3, &
+                           curve=exact_boundary_operator)
         if (status /= 0) error stop 'mesh initialization'
         iterative_state = direct_state
         deallocate (boundary)
@@ -63,8 +97,9 @@ program test_gs_direct
         direct_law = law
         call gs_set_options(.true., .true.)
         call gs_timer_reset()
-        call solve_gs_cubic_profiles(direct_state, 1.0_dp, direct_law, status, &
-            relative_tolerance=1.0e-10_dp, forcing=manufactured_source)
+        call bind_run_test_gs_direct_context()
+        call solve_gs_cubic_profiles_object(direct_state, 1.0_dp, direct_law, status, &
+            relative_tolerance=1.0e-10_dp, forcing=manufactured_source_operator)
         if (status /= 0) error stop 'direct nonlinear solve'
         if (gs_timer_total(GS_T_FACTOR) <= 0 .or. gs_timer_calls(GS_T_DIRECT) < 1) &
             error stop 'direct path was not used'
@@ -82,8 +117,10 @@ program test_gs_direct
         iterative_law = law
         call gs_set_options(.false., .false.)
         call gs_timer_reset()
-        call solve_gs_cubic_profiles(iterative_state, 1.0_dp, iterative_law, status, &
-            relative_tolerance=1.0e-10_dp, forcing=manufactured_source)
+        call bind_run_test_gs_direct_context()
+        call solve_gs_cubic_profiles_object(iterative_state, 1.0_dp, iterative_law, &
+            status, &
+            relative_tolerance=1.0e-10_dp, forcing=manufactured_source_operator)
         if (status /= 0) error stop 'iterative nonlinear solve'
         print '(a,i8,a,i8)', '      iterative: CG its', &
             gs_timer_iterations(GS_T_JAC_CG), ' nested CG its', &
@@ -99,19 +136,51 @@ program test_gs_direct
     if (per_solve(3) > 1.5_dp*per_solve(1) + 3) error stop 'iterations grow with mesh'
     print '(a)', 'PASS'
 contains
-    function manufactured_source(r, z) result(source)
+    subroutine bind_run_test_gs_direct_context()
+        ctx%a => a
+        ctx%level => level
+        manufactured_source_operator%data => ctx
+        exact_boundary_operator%data => ctx
+    end subroutine bind_run_test_gs_direct_context
+
+    end subroutine run_test_gs_direct
+
+    function run_test_gs_direct_manufactured_source(ctx, r, z) result(source)
+        type(run_test_gs_direct_context_t), intent(in) :: ctx
         real(dp), intent(in) :: r, z
         real(dp) :: source, exact_s
-        exact_s = ((r*r - r0*r0)**2 + 4*r*r*z*z)/level
+        exact_s = ((r*r - r0*r0)**2 + 4*r*r*z*z)/ctx%level
         source = 16*c*r*(1 + 0.2_dp*exact_s*exact_s - 1)
+    end function run_test_gs_direct_manufactured_source
+
+    function run_test_gs_direct_manufactured_source_binding(self, r, z) &
+        result(result_value)
+        class(run_test_gs_direct_manufactured_source_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        real(dp) :: result_value, exact_s
+        result_value = run_test_gs_direct_manufactured_source(self%data, r, z)
     end function
 
-    subroutine exact_boundary(t, point)
+    subroutine run_test_gs_direct_exact_boundary(ctx, t, point)
+        type(run_test_gs_direct_context_t), intent(in) :: ctx
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         real(dp) :: angle
         angle = 2*acos(-1.0_dp)*t
-        point(1) = sqrt(r0*r0 + 2*r0*a*cos(angle))
-        point(2) = r0*a*sin(angle)/point(1)
+        point(1) = sqrt(r0*r0 + 2*r0*ctx%a*cos(angle))
+        point(2) = r0*ctx%a*sin(angle)/point(1)
+    end subroutine run_test_gs_direct_exact_boundary
+
+    subroutine run_test_gs_direct_exact_boundary_binding(self, t, point)
+        class(run_test_gs_direct_exact_boundary_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_gs_direct_exact_boundary(self%data, t, point)
     end subroutine
-end program
+end module test_gs_direct_callbacks
+
+program test_gs_direct
+    use test_gs_direct_callbacks, only: run_test_gs_direct
+    implicit none
+    call run_test_gs_direct()
+end program test_gs_direct

@@ -51,6 +51,12 @@ module kin6d_correlation_hierarchy
         real(dp), allocatable :: volume(:, :, :), volume_coarse(:, :, :)
         integer :: snapshots = 0
     end type
+    type :: triplet_function_t
+        integer :: kind = 0
+        real(dp), pointer :: rg(:) => null(), g2(:) => null()
+    contains
+        procedure :: evaluate => triplet_function_evaluate
+    end type
 contains
     subroutine triplet_init(t, bins, rmax, sub)
         type(triplet_histogram_t), intent(out) :: t
@@ -70,6 +76,7 @@ contains
         integer, intent(in) :: sub
         real(dp), intent(out) :: volume(:, :, :)
         integer :: a, b, c
+        type(triplet_function_t) :: one
         do c = 1, t%bins
             do b = 1, t%bins
                 do a = 1, t%bins
@@ -77,23 +84,13 @@ contains
                 end do
             end do
         end do
-    contains
-        real(dp) function one(r1, r2, r3)
-            real(dp), intent(in) :: r1, r2, r3
-            one = 1 + 0*(r1 + r2 + r3)
-        end function
     end subroutine
 
     !> int_bin w f with w = r1 r2 r3 [triangle] (see module header).
     real(dp) function bin_average(t, sub, a, b, c, f) result(s)
         type(triplet_histogram_t), intent(in) :: t
         integer, intent(in) :: sub, a, b, c
-        interface
-            real(dp) function f(r1, r2, r3)
-                import :: dp
-                real(dp), intent(in) :: r1, r2, r3
-            end function
-        end interface
+        type(triplet_function_t), intent(in) :: f
         real(dp), parameter :: x4(4) = [-0.8611363115940526_dp, -0.3399810435848563_dp, &
             0.3399810435848563_dp, 0.8611363115940526_dp]
         real(dp), parameter :: w4(4) = [0.3478548451374538_dp, 0.6521451548625461_dp, &
@@ -112,7 +109,7 @@ contains
                 if (hi <= lo) cycle
                 do k = 1, 4
                     r3 = (lo + hi)/2 + (hi - lo)/2*x4(k)
-                    s = s + w4(k)*(hi - lo)/2/d*r1*r2*r3*f(r1, r2, r3)
+                    s = s + w4(k)*(hi - lo)/2/d*r1*r2*r3*f%evaluate(r1, r2, r3)
                 end do
             end do
         end do
@@ -173,10 +170,13 @@ contains
     !> and K at the bin centre (discretization indicator).
     subroutine triplet_references(t, rg, g2, kirkwood, linear, centre)
         type(triplet_histogram_t), intent(in) :: t
-        real(dp), intent(in) :: rg(:), g2(:)
+        real(dp), intent(in), target :: rg(:), g2(:)
         real(dp), intent(out) :: kirkwood(:, :, :), linear(:, :, :), centre(:, :, :)
         integer :: a, b, c
         real(dp) :: h, w
+        type(triplet_function_t) :: product3, sum3
+        product3%kind = 1; product3%rg => rg; product3%g2 => g2
+        sum3%kind = 2; sum3%rg => rg; sum3%g2 => g2
         h = t%rmax/t%bins
         do c = 1, t%bins
             do b = 1, t%bins
@@ -192,17 +192,6 @@ contains
                 end do
             end do
         end do
-    contains
-        real(dp) function product3(r1, r2, r3)
-            real(dp), intent(in) :: r1, r2, r3
-            product3 = pair_value(rg, g2, r1)*pair_value(rg, g2, r2)* &
-                       pair_value(rg, g2, r3)
-        end function
-        real(dp) function sum3(r1, r2, r3)
-            real(dp), intent(in) :: r1, r2, r3
-            sum3 = pair_value(rg, g2, r1) + pair_value(rg, g2, r2) + &
-                   pair_value(rg, g2, r3) - 2
-        end function
     end subroutine
 
     !> Squared size n^2 int int X^2 d3r2 d3r3 over the triplet domain
@@ -341,4 +330,19 @@ contains
         call ch_ocp_energy_fit_jvp(gamma, pc2000(1), pc2000(2), pc2000(3), pc2000(4), &
                                    pc2000(5), pc2000(6), 1.0_dp, z, z, z, z, z, z, dudg)
     end subroutine
+    real(dp) function triplet_function_evaluate(self, r1, r2, r3) result(value)
+        class(triplet_function_t), intent(in) :: self
+        real(dp), intent(in) :: r1, r2, r3
+        select case (self%kind)
+        case (1)
+            value = pair_value(self%rg, self%g2, r1)* &
+                pair_value(self%rg, self%g2, r2)*pair_value(self%rg, self%g2, r3)
+        case (2)
+            value = pair_value(self%rg, self%g2, r1) + &
+                pair_value(self%rg, self%g2, r2) + &
+                pair_value(self%rg, self%g2, r3) - 2
+        case default
+            value = 1 + 0*(r1 + r2 + r3)
+        end select
+    end function
 end module kin6d_correlation_hierarchy

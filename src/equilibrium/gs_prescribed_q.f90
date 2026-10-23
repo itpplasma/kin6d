@@ -28,6 +28,33 @@ module kin6d_gs_prescribed_q
             integer, intent(out) :: info
         end subroutine
     end interface
+    type :: solve_gs_prescribed_q_equations_context_t
+        real(dp), pointer :: basis(:,:) => null()
+        integer, pointer :: calls => null()
+        type(gs_state_t), pointer :: candidate => null()
+        type(gs_profile_law_t), pointer :: candidate_law => null()
+        real(dp), pointer :: conversion(:,:,:) => null()
+        logical, pointer :: exact => null()
+        integer, pointer :: failure => null()
+        real(dp), pointer :: ffscale => null()
+        procedure(gs_forcing_t), pointer, nopass :: forcing => null()
+        real(dp), pointer :: fscale => null()
+        type(gs_profile_law_t), pointer :: law => null()
+        real(dp), pointer :: mu0 => null()
+        integer, pointer :: n => null()
+        integer, pointer :: na => null()
+        integer, pointer :: nr => null()
+        real(dp), pointer :: phi => null()
+        type(gs_readback_t), pointer :: readback => null()
+        real(dp), pointer :: rho(:) => null()
+        real(dp), pointer :: sample_now(:) => null()
+        type(gs_state_t), pointer :: seed => null()
+        logical, pointer :: talk => null()
+        real(dp), pointer :: target(:) => null()
+        real(dp), pointer :: tol => null()
+        real(dp), pointer :: warm_psi(:) => null()
+        real(dp), pointer :: wsqrt(:) => null()
+    end type
 contains
     real(dp) function gs_q_table_value(s, q, x) result(value)
         real(dp), intent(in) :: s(:), q(:), x
@@ -37,7 +64,6 @@ contains
         call lagrange_weights(4, x, s(first:first + 3), weights)
         value = dot_product(weights, q(first:first + 3))
     end function
-
     subroutine solve_gs_prescribed_q(state, mu0, pprime, s, q, phi, law, &
                           status, intervals, radial_points, angular_points, tolerance, &
                                      q_error, evaluations, q_tolerance, &
@@ -63,10 +89,10 @@ contains
         ! field tangent, and never repeats a nonlinear forward solve per column;
         ! 'secant' is the central-difference fallback of full forward solves.
         type(gs_state_t), intent(inout) :: state
-        real(dp), intent(in) :: mu0, pprime, s(:), q(:), phi
+        real(dp), intent(in), target :: mu0, pprime, s(:), q(:), phi
         type(gs_profile_law_t), intent(in), optional :: pressure_law
         procedure(gs_forcing_t), optional :: forcing
-        type(gs_profile_law_t), intent(out) :: law
+        type(gs_profile_law_t), intent(out), target :: law
         integer, intent(out) :: status
         integer, intent(in), optional :: intervals, radial_points, angular_points
         real(dp), intent(in), optional :: tolerance
@@ -110,26 +136,29 @@ contains
         character(*), intent(in), optional :: regularization
         real(dp), intent(in), optional :: regularization_weight, q_accuracy
         real(dp), intent(out), optional :: regularization_used
-        type(gs_state_t) :: seed, candidate, accepted_state
-        type(gs_profile_law_t) :: candidate_law, plaw, accepted_law
-        type(gs_readback_t) :: readback
+        type(gs_state_t), target :: seed, candidate, accepted_state
+        type(gs_profile_law_t), target :: candidate_law, plaw, accepted_law
+        type(gs_readback_t), target :: readback
         type(bspline_workspace_t) :: spline
         type(fortnum_status_t) :: stat
         real(dp), allocatable :: x0(:), solution(:), residual(:), breaks(:)
-        real(dp), allocatable :: basis(:, :), conversion(:, :, :), target(:), weights(:)
+        real(dp), allocatable , target :: basis(:, :), conversion(:, :, :), &
+            target(:), weights(:)
         real(dp), allocatable :: derivative(:, :), ukn(:), conv(:, :, :)
-        real(dp), allocatable :: rho(:), rho_check(:), warm_psi(:)
+        real(dp), allocatable , target :: rho(:), rho_check(:), warm_psi(:)
         integer, allocatable :: ipf(:), ipp(:)
         real(dp) :: axis(2), hessian(2, 2), pressure_axis, unit_axis
-        real(dp) :: axis_target, integral, h, x, ffscale, fscale, tol, ffseed
+        real(dp), target :: axis_target, integral, h, x, ffscale, fscale, tol, ffseed
         real(dp) :: left, right, middle, qtol, defect, ppeff, psi_probe
         real(dp) :: pressure, fprobe, jacobian_seconds, solve_seconds
         real(dp) :: t_load, t_response, t_readback
-        integer :: n, nb, nr, na, nu, i, j, k, element, calls, failure, newton
-        logical :: exact, talk, uniform_grid, good, regularized, adaptive, converged
-        real(dp), allocatable :: smooth_rows(:, :), wsqrt(:), sample_now(:)
+        integer , target :: n, nb, nr, na, nu, i, j, k, element, calls, failure, newton
+        logical , target :: exact, talk, uniform_grid, good, regularized, adaptive, &
+            converged
+        real(dp), allocatable , target :: smooth_rows(:, :), wsqrt(:), sample_now(:)
         real(dp), allocatable :: jac_samples(:, :)
         real(dp) :: lambda_fixed, lambda, misfit_target
+        type(solve_gs_prescribed_q_equations_context_t) :: equations_context
         status = 1; calls = 0; failure = 0; newton = 0
         jacobian_seconds = 0; solve_seconds = 0
         t_load = 0; t_response = 0; t_readback = 0
@@ -355,7 +384,40 @@ contains
             allocate (warm_psi(size(seed%psi)))
             warm_psi = seed%psi
             exact = .false.
-            call equations(probe_x, probe_residual)
+        nullify(equations_context%basis)
+        if (allocated(basis)) equations_context%basis => basis
+        equations_context%calls => calls
+        equations_context%candidate => candidate
+        equations_context%candidate_law => candidate_law
+        nullify(equations_context%conversion)
+        if (allocated(conversion)) equations_context%conversion => conversion
+        equations_context%exact => exact
+        equations_context%failure => failure
+        equations_context%ffscale => ffscale
+        if (present(forcing)) equations_context%forcing => forcing
+        equations_context%fscale => fscale
+        equations_context%law => law
+        equations_context%mu0 => mu0
+        equations_context%n => n
+        equations_context%na => na
+        equations_context%nr => nr
+        equations_context%phi => phi
+        equations_context%readback => readback
+        nullify(equations_context%rho)
+        if (allocated(rho)) equations_context%rho => rho
+        nullify(equations_context%sample_now)
+        if (allocated(sample_now)) equations_context%sample_now => sample_now
+        equations_context%seed => seed
+        equations_context%talk => talk
+        nullify(equations_context%target)
+        if (allocated(target)) equations_context%target => target
+        equations_context%tol => tol
+        nullify(equations_context%warm_psi)
+        if (allocated(warm_psi)) equations_context%warm_psi => warm_psi
+        nullify(equations_context%wsqrt)
+        if (allocated(wsqrt)) equations_context%wsqrt => wsqrt
+            call solve_gs_prescribed_q_equations_callback(probe_x, probe_residual, &
+                context=equations_context)
             if (failure /= 0) then
                 status = failure
                 return
@@ -375,17 +437,148 @@ contains
         if (exact) then
             allocate (warm_psi(size(seed%psi)))
             warm_psi = seed%psi
+        nullify(equations_context%basis)
+        if (allocated(basis)) equations_context%basis => basis
+        equations_context%calls => calls
+        equations_context%candidate => candidate
+        equations_context%candidate_law => candidate_law
+        nullify(equations_context%conversion)
+        if (allocated(conversion)) equations_context%conversion => conversion
+        equations_context%exact => exact
+        equations_context%failure => failure
+        equations_context%ffscale => ffscale
+        if (present(forcing)) equations_context%forcing => forcing
+        equations_context%fscale => fscale
+        equations_context%law => law
+        equations_context%mu0 => mu0
+        equations_context%n => n
+        equations_context%na => na
+        equations_context%nr => nr
+        equations_context%phi => phi
+        equations_context%readback => readback
+        nullify(equations_context%rho)
+        if (allocated(rho)) equations_context%rho => rho
+        nullify(equations_context%sample_now)
+        if (allocated(sample_now)) equations_context%sample_now => sample_now
+        equations_context%seed => seed
+        equations_context%talk => talk
+        nullify(equations_context%target)
+        if (allocated(target)) equations_context%target => target
+        equations_context%tol => tol
+        nullify(equations_context%warm_psi)
+        if (allocated(warm_psi)) equations_context%warm_psi => warm_psi
+        nullify(equations_context%wsqrt)
+        if (allocated(wsqrt)) equations_context%wsqrt => wsqrt
             call newton_exact(x0, tol)
             if (talk .and. regularized) print '(a,es10.3)', &
                 '  regularization lambda ', lambda
+        nullify(equations_context%basis)
+        if (allocated(basis)) equations_context%basis => basis
+        equations_context%calls => calls
+        equations_context%candidate => candidate
+        equations_context%candidate_law => candidate_law
+        nullify(equations_context%conversion)
+        if (allocated(conversion)) equations_context%conversion => conversion
+        equations_context%exact => exact
+        equations_context%failure => failure
+        equations_context%ffscale => ffscale
+        if (present(forcing)) equations_context%forcing => forcing
+        equations_context%fscale => fscale
+        equations_context%law => law
+        equations_context%mu0 => mu0
+        equations_context%n => n
+        equations_context%na => na
+        equations_context%nr => nr
+        equations_context%phi => phi
+        equations_context%readback => readback
+        nullify(equations_context%rho)
+        if (allocated(rho)) equations_context%rho => rho
+        nullify(equations_context%sample_now)
+        if (allocated(sample_now)) equations_context%sample_now => sample_now
+        equations_context%seed => seed
+        equations_context%talk => talk
+        nullify(equations_context%target)
+        if (allocated(target)) equations_context%target => target
+        equations_context%tol => tol
+        nullify(equations_context%warm_psi)
+        if (allocated(warm_psi)) equations_context%warm_psi => warm_psi
+        nullify(equations_context%wsqrt)
+        if (allocated(wsqrt)) equations_context%wsqrt => wsqrt
             if (failure /= 0 .and. newton == 0 .and. any(abs(law%pp(:, 2:)) > 0)) &
                 call pressure_homotopy()
         else
             ! The secant fallback proposes coefficients from central differences
             ! of full forward solves; nothing it computes is a sensitivity.
-            call multiroot_hybrids(equations, n + 1, x0, solution, stat, &
-                                   xtol=tol*0.1_dp, ftol=tol, max_iter=20)
-            call equations(solution, residual)
+        nullify(equations_context%basis)
+        if (allocated(basis)) equations_context%basis => basis
+        equations_context%calls => calls
+        equations_context%candidate => candidate
+        equations_context%candidate_law => candidate_law
+        nullify(equations_context%conversion)
+        if (allocated(conversion)) equations_context%conversion => conversion
+        equations_context%exact => exact
+        equations_context%failure => failure
+        equations_context%ffscale => ffscale
+        if (present(forcing)) equations_context%forcing => forcing
+        equations_context%fscale => fscale
+        equations_context%law => law
+        equations_context%mu0 => mu0
+        equations_context%n => n
+        equations_context%na => na
+        equations_context%nr => nr
+        equations_context%phi => phi
+        equations_context%readback => readback
+        nullify(equations_context%rho)
+        if (allocated(rho)) equations_context%rho => rho
+        nullify(equations_context%sample_now)
+        if (allocated(sample_now)) equations_context%sample_now => sample_now
+        equations_context%seed => seed
+        equations_context%talk => talk
+        nullify(equations_context%target)
+        if (allocated(target)) equations_context%target => target
+        equations_context%tol => tol
+        nullify(equations_context%warm_psi)
+        if (allocated(warm_psi)) equations_context%warm_psi => warm_psi
+        nullify(equations_context%wsqrt)
+        if (allocated(wsqrt)) equations_context%wsqrt => wsqrt
+            call multiroot_hybrids(solve_gs_prescribed_q_equations_callback, n + 1, &
+                x0, solution, stat, &
+                                   xtol=tol*0.1_dp, ftol=tol, max_iter=20, &
+                                       ctx=equations_context)
+        nullify(equations_context%basis)
+        if (allocated(basis)) equations_context%basis => basis
+        equations_context%calls => calls
+        equations_context%candidate => candidate
+        equations_context%candidate_law => candidate_law
+        nullify(equations_context%conversion)
+        if (allocated(conversion)) equations_context%conversion => conversion
+        equations_context%exact => exact
+        equations_context%failure => failure
+        equations_context%ffscale => ffscale
+        if (present(forcing)) equations_context%forcing => forcing
+        equations_context%fscale => fscale
+        equations_context%law => law
+        equations_context%mu0 => mu0
+        equations_context%n => n
+        equations_context%na => na
+        equations_context%nr => nr
+        equations_context%phi => phi
+        equations_context%readback => readback
+        nullify(equations_context%rho)
+        if (allocated(rho)) equations_context%rho => rho
+        nullify(equations_context%sample_now)
+        if (allocated(sample_now)) equations_context%sample_now => sample_now
+        equations_context%seed => seed
+        equations_context%talk => talk
+        nullify(equations_context%target)
+        if (allocated(target)) equations_context%target => target
+        equations_context%tol => tol
+        nullify(equations_context%warm_psi)
+        if (allocated(warm_psi)) equations_context%warm_psi => warm_psi
+        nullify(equations_context%wsqrt)
+        if (allocated(wsqrt)) equations_context%wsqrt => wsqrt
+            call solve_gs_prescribed_q_equations_callback(solution, residual, &
+                context=equations_context)
             converged = failure == 0 .and. maxval(abs(residual)) <= tol
         end if
         if (present(evaluations)) evaluations = calls
@@ -421,54 +614,6 @@ contains
         end if
         status = 0
     contains
-        subroutine equations(coefficients, values, context)
-            real(dp), intent(in) :: coefficients(:)
-            real(dp), intent(out) :: values(:)
-            class(*), intent(in), optional :: context
-            integer :: k, stat
-            calls = calls + 1; values = 1.0e3_dp; failure = 0
-            if (present(context)) error stop 'unexpected inverse solver context'
-            if (.not. all(ieee_is_finite(coefficients))) then
-                failure = 3
-                return
-            end if
-            if (abs(coefficients(n + 1)) > 100) then
-                failure = 3
-                return
-            end if
-            candidate = seed; candidate_law = law
-            if (exact) candidate%psi = warm_psi
-            candidate_law%ff = 0
-            do k = 1, n
-                candidate_law%ff = candidate_law%ff &
-                                   + ffscale*coefficients(k)*conversion(:, :, k)
-            end do
-            call join_cubics(candidate_law%knots, candidate_law%ff)
-            candidate_law%f_edge = sign(fscale*exp(coefficients(n + 1)), phi)
-            call solve_gs_cubic_profiles(candidate, mu0, candidate_law, stat, &
-                           min(1.0e-11_dp, tol*0.01_dp), forcing=forcing, &
-                                         quadrature_tolerance=1.0e-9_dp)
-            if (stat /= 0) then
-                failure = 100 + stat
-                if (talk) then
-                    print '(a,i0,a,es10.3)', '  forward solve status ', stat, &
-                        ' residual ', candidate%residual
-                    flush (output_unit)
-                end if
-                return
-            end if
-            call read_gs_equilibrium(candidate, candidate_law%f_edge, 0.0_dp, &
-                              nr, na, readback, stat, candidate_law, rho_grid=rho)
-            if (stat /= 0) then
-                failure = 200 + stat
-                return
-            end if
-            values(:n) = matmul(basis, readback%q/target - 1)
-            values(n + 1) = readback%phi_edge/phi - 1
-            sample_now(:nr) = wsqrt*(readback%q/target - 1)
-            sample_now(nr + 1) = values(n + 1)
-        end subroutine
-
         subroutine pressure_homotopy()
             ! The seed field is built with the mean p'. With a strongly
             ! structured p'(s) (pedestal) the first forward field can have no
@@ -520,7 +665,6 @@ contains
                 if (failure == 0) failure = 105
             end if
         end subroutine
-
         subroutine newton_exact(xstart, target)
             ! Levenberg-Marquardt-damped Newton with the equation-level Jacobian,
             ! evaluated only at accepted iterates. A trial is the Newton step
@@ -553,7 +697,8 @@ contains
             frozen = .not. adaptive; updates = 0
             if (lambda_fixed > 0) lambda = lambda_fixed
             if (adaptive) lambda = 0
-            call equations(x, r)
+            call solve_gs_prescribed_q_equations_callback(x, r, &
+                context=equations_context)
             solution = x; residual = r
             if (failure /= 0) return
             rs = sample_now; rstrial = rs
@@ -630,7 +775,8 @@ contains
                         cycle
                     end if
                     xtrial = x + dx
-                    call equations(xtrial, rtrial)
+                    call solve_gs_prescribed_q_equations_callback(xtrial, rtrial, &
+                        context=equations_context)
                     if (failure == 0) then
                         merit_trial = 0.5_dp*dot_product(rtrial, rtrial)
                         predicted = merit - 0.5_dp*sum((r + matmul(jac, dx))**2)
@@ -687,7 +833,6 @@ contains
             if (failure == 4) return
             failure = 0
         end subroutine
-
         subroutine stacked_step(jac, r, x, weight, damping, dx, info)
             ! Least-squares step of [J; weight S; sqrt(damping) I] dx =
             ! [-r; -weight S x; 0] (LAPACK QR; no normal equations).
@@ -712,7 +857,6 @@ contains
             dx = b(:n + 1)
             if (info == 0 .and. .not. all(ieee_is_finite(dx))) info = 1
         end subroutine
-
         subroutine discrepancy_lambda(jac, r, x, weight, settled)
             ! lambda whose linearized step at x has q misfit |r_q + J_q dx| =
             ! max(q_accuracy, |r_q|/2) (at least 1.01 times the unregularized
@@ -744,7 +888,6 @@ contains
             if (talk) print '(a,es10.3,a,es10.3,a,l2)', '  discrepancy lambda ', &
                 weight, ' goal ', goal, ' settled', settled
         end subroutine
-
         subroutine perturbed(step, kk, base, dpsi, moved, grad, law_out, readout, st)
             ! Readback of the field moved along dpsi with FF' moved along the
             ! k-th basis function; the normalizing axis flux follows the field.
@@ -767,14 +910,12 @@ contains
             call read_gs_equilibrium(moved, law_out%f_edge, 0.0_dp, nr, na, &
                                      readout, st, law_out, rho_grid=rho)
         end subroutine
-
         subroutine accept(x, r)
             real(dp), intent(in) :: x(:), r(:)
             accepted_state = candidate; accepted_law = candidate_law
             warm_psi = candidate%psi
             solution = x; residual = r
         end subroutine
-
         subroutine exact_jacobian(jac, ok)
             ! Jacobian of the discrete outer residual at the accepted iterate.
             !   column k (FF' coefficient): J dpsi = dL/dc_k with J the
@@ -867,7 +1008,6 @@ contains
                 t_load, t_response, t_readback, '  direct factor:', direct_ready
             if (talk) flush (output_unit)
         end subroutine
-
         subroutine column_load(kk, base, rhs_k, good_col, tl)
             ! Load of the k-th basis law at fixed psi (OpenMP-safe: all state
             ! is local, the accepted iterate is read-only).
@@ -918,7 +1058,6 @@ contains
             tl = tl + real(t2 - t1, dp)/rate
             good_col = .true.
         end subroutine
-
         subroutine column_readback(kk, base, dpsi, col, col_samples, good_col, tb)
             ! Central-difference readback of the k-th column along dpsi.
             integer, intent(in) :: kk
@@ -970,7 +1109,6 @@ contains
             good_col = .true.
         end subroutine
     end subroutine
-
     subroutine join_cubics(knots, ff)
         ! The power-basis conversion of a B-spline carries rounding errors of
         ! a few epsilon, which accumulate with the number of knots. The profile
@@ -985,7 +1123,6 @@ contains
             ff(1, i + 1) = ff(1, i) + h*(ff(2, i) + h*(ff(3, i) + h*ff(4, i)))
         end do
     end subroutine
-
     subroutine sample_grid(nr, breaks, rho, uniform)
         ! Radial sampling in sqrt(s_pol): a uniform grid of nr points plus, in
         ! every FF' spline interval holding fewer than two of them, the points
@@ -1026,7 +1163,6 @@ contains
             end if
         end do
     end subroutine
-
     subroutine check_grid(rho, uniform, finer)
         ! Interleaved probes between the fitted levels. The uniform grid keeps
         ! the exact uniform spacing of twice the points minus one.
@@ -1043,7 +1179,6 @@ contains
             finer(2:2*nr - 2:2) = (rho(:nr - 1) + rho(2:))/2
         end if
     end subroutine
-
     pure function shifted(c, d) result(r)
         ! Cubic coefficients about a point displaced by d from the expansion point.
         real(dp), intent(in) :: c(4), d
@@ -1053,7 +1188,6 @@ contains
         r(3) = c(3) + 3*d*c(4)
         r(4) = c(4)
     end function
-
     subroutine union_knots(first, second, knots, parent_first, parent_second)
         ! Sorted union of two knot sets (merged within 1e-12) and the interval
         ! of each set containing every union interval.
@@ -1088,4 +1222,76 @@ contains
             parent_second(i) = min(size(second) - 1, max(1, count(second <= middle)))
         end do
     end subroutine
+        subroutine solve_gs_prescribed_q_equations_callback(coefficients, values, &
+            context)
+            real(dp), intent(in) :: coefficients(:)
+            real(dp), intent(out) :: values(:)
+            class(*), intent(in), optional  :: context
+            integer :: k, stat
+        type(solve_gs_prescribed_q_equations_context_t) :: callback_context
+        if (.not. present(context)) &
+            error stop "missing private callback context"
+        select type(selected_context => context)
+        type is (solve_gs_prescribed_q_equations_context_t)
+            callback_context = selected_context
+        class default
+            error stop "invalid private callback context"
+        end select
+            callback_context%calls = callback_context%calls + 1; values = 1.0e3_dp; &
+                callback_context%failure = 0
+            if (.not. all(ieee_is_finite(coefficients))) then
+                callback_context%failure = 3
+                return
+            end if
+            if (abs(coefficients(callback_context%n + 1)) > 100) then
+                callback_context%failure = 3
+                return
+            end if
+            callback_context%candidate = callback_context%seed; &
+                callback_context%candidate_law = callback_context%law
+            if (callback_context%exact) callback_context%candidate%psi = &
+                callback_context%warm_psi
+            callback_context%candidate_law%ff = 0
+            do k = 1, callback_context%n
+                callback_context%candidate_law%ff = callback_context%candidate_law%ff &
+                                   + callback_context%ffscale*coefficients(k)*callback_context%conversion(:, :, k)
+            end do
+            call join_cubics(callback_context%candidate_law%knots, &
+                callback_context%candidate_law%ff)
+            callback_context%candidate_law%f_edge = &
+                sign(callback_context%fscale*exp(coefficients(callback_context%n + &
+                1)), callback_context%phi)
+            call solve_gs_cubic_profiles(callback_context%candidate, &
+                callback_context%mu0, callback_context%candidate_law, stat, &
+                           min(1.0e-11_dp, callback_context%tol*0.01_dp), &
+                               forcing=callback_context%forcing, &
+                                         quadrature_tolerance=1.0e-9_dp)
+            if (stat /= 0) then
+                callback_context%failure = 100 + stat
+                if (callback_context%talk) then
+                    print '(a,i0,a,es10.3)', '  forward solve status ', stat, &
+                        ' residual ', callback_context%candidate%residual
+                    flush (output_unit)
+                end if
+                return
+            end if
+            call read_gs_equilibrium(callback_context%candidate, &
+                callback_context%candidate_law%f_edge, 0.0_dp, &
+                              callback_context%nr, callback_context%na, &
+                                  callback_context%readback, stat, &
+                                  callback_context%candidate_law, &
+                                  rho_grid=callback_context%rho)
+            if (stat /= 0) then
+                callback_context%failure = 200 + stat
+                return
+            end if
+            values(:callback_context%n) = matmul(callback_context%basis, &
+                callback_context%readback%q/callback_context%target - 1)
+            values(callback_context%n + 1) = &
+                callback_context%readback%phi_edge/callback_context%phi - 1
+            callback_context%sample_now(:callback_context%nr) = &
+                callback_context%wsqrt*(callback_context%readback%q/callback_context%target - 1)
+            callback_context%sample_now(callback_context%nr + 1) = &
+                values(callback_context%n + 1)
+        end subroutine
 end module

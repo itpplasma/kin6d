@@ -24,13 +24,15 @@ module kin6d_nonnested_beltrami
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, &
         METRIC_IDENTITY, nn_harmonic_forms
+    use fortnum_eigen, only: eigen_real_operator_dp_t
+    use fortnum_eigen, only: eigen_real_solve_dp_t
+    use fortfem_meridian_feec_n, only: meridian_field_t
     implicit none
     private
     public :: beltrami_system_t, beltrami_report_t, beltrami_prepare, beltrami_solve
     public :: beltrami_constraint, BELTRAMI_OK, BELTRAMI_INVALID, BELTRAMI_RESONANT
     integer, parameter :: BELTRAMI_OK = 0, BELTRAMI_INVALID = 1, BELTRAMI_RESONANT = 2
     real(dp), parameter :: pi = acos(-1.0_dp)
-
     type :: beltrami_system_t
         private
         type(csc_t) :: energy, helicity, curl, gauge
@@ -40,7 +42,6 @@ module kin6d_nonnested_beltrami
         real(dp) :: harmonic = 0, flux = 0, h_energy = 0
         logical :: ready = .false., closed = .false.
     end type
-
     type :: beltrami_report_t
         integer :: status = BELTRAMI_INVALID, sparse_status = 0
         integer(i8) :: negative = -1, zero = -1, positive = -1
@@ -50,6 +51,21 @@ module kin6d_nonnested_beltrami
         real(dp) :: nearest_eigenvalue = huge(1.0_dp), eigen_residual = huge(1.0_dp)
         character(24) :: claim = 'candidate', bound_status = 'unavailable'
         character(160) :: message = 'invalid or unprepared Beltrami problem'
+    end type
+    type, extends(eigen_real_operator_dp_t) :: beltrami_solve_apply_operator_t
+        type(csc_t), pointer :: a => null()
+    contains
+        procedure :: apply => beltrami_solve_apply_operator_evaluate
+    end type
+    type, extends(eigen_real_solve_dp_t) :: beltrami_solve_inverse_operator_t
+        type(sparse_solver_t), pointer :: solver => null()
+    contains
+        procedure :: solve => beltrami_solve_inverse_operator_evaluate
+    end type
+    type, extends(meridian_field_t) :: beltrami_prepare_harmonic_unit_t
+        type(free_b_field_t), pointer :: field => null()
+    contains
+        procedure :: evaluate => beltrami_prepare_harmonic_unit_evaluate
     end type
 contains
     subroutine beltrami_prepare(field, flux, data, nphi, system, status, map, nfp)
@@ -69,6 +85,7 @@ contains
         complex(dp), allocatable :: load(:)
         integer :: n, b, st, j, harmonic
         real(dp) :: harmonic_energy, harmonic_volume
+        type(beltrami_prepare_harmonic_unit_t) :: harmonic_unit_context
         status = BELTRAMI_INVALID
         if (.not. allocated(field%b)) return
         if (.not. ieee_is_finite(flux)) return
@@ -168,7 +185,8 @@ contains
             harmonic_volume, st)
         if (st /= 0) return
         system%flux = flux
-        call meridian_load(field%fs, 2, harmonic_unit, load, st)
+        harmonic_unit_context%field => field
+        call meridian_load(field%fs, 2, harmonic_unit_context, load, st)
         if (st /= 0) return
         block
             real(dp), allocatable :: boundary_b(:)
@@ -181,23 +199,13 @@ contains
         call csc_transpose(system%curl, pair, fst)
         if (.not. status_ok(fst)) return
         system%energy_h = system%harmonic*csc_matvec(pair, g)
-        call meridian_load(field%fs, 1, harmonic_unit, load, st)
+        harmonic_unit_context%field => field
+        call meridian_load(field%fs, 1, harmonic_unit_context, load, st)
         if (st /= 0) return
         allocate (system%helicity_h(n)); system%helicity_h = 0
         system%helicity_h(:system%n1) = system%harmonic*real(load, dp)
         system%ready = .true.; status = BELTRAMI_OK
-    contains
-        subroutine harmonic_unit(x, v)
-            real(dp), intent(in) :: x(2)
-            complex(dp), intent(out) :: v(3)
-            real(dp) :: radius
-            radius = x(1)
-            if (field%fs%cyl_r0 > 0) radius = field%fs%cyl_r0
-            v = 0; v(2) = 1/radius
-        end subroutine
-
     end subroutine
-
     subroutine beltrami_solve(system, mu, field, report, source, potential, dmu)
         type(beltrami_system_t), intent(in) :: system
         real(dp), intent(in) :: mu
@@ -206,8 +214,8 @@ contains
         ! source is the weak <v,f> load in the full real Fourier V1 layout.
         real(dp), optional, intent(in) :: source(:)
         real(dp), allocatable, optional, intent(out) :: potential(:), dmu(:)
-        type(csc_t) :: a
-        type(sparse_solver_t) :: solver
+        type(csc_t), target :: a
+        type(sparse_solver_t), target :: solver
         type(fortsparse_status_t) :: fst
         type(sparse_factor_stats_t) :: stats
         type(eigen_options_t) :: eigen_options
@@ -220,6 +228,8 @@ contains
         real(dp), allocatable :: load(:), dx(:)
         real(dp) :: correction
         integer :: cap, k, j, p, i, ii, jj, n, st
+        type(beltrami_solve_apply_operator_t) :: apply_operator_context
+        type(beltrami_solve_inverse_operator_t) :: inverse_operator_context
         report%mu = mu; report%nfp = system%nfp
         if (.not. system%ready .or. .not. ieee_is_finite(mu)) return
         if (.not. allocated(field%b)) return
@@ -317,9 +327,12 @@ contains
             eigen_options%operator_scale = operator_scale
             allocate (eigenvector(n, 1))
             eigenvalue = huge(1.0_dp); eigen_error = huge(1.0_dp)
-            call lanczos(apply_operator, x, eigenvalue, eigenvector, eigen_error, &
+        apply_operator_context%a => a
+        inverse_operator_context%solver => solver
+            call lanczos(apply_operator_context, x, eigenvalue, eigenvector, &
+                eigen_error, &
                 1.0e-10_dp, eigen_options, eigen_status, eigen_stats, &
-                solve_shift=inverse_operator, sigma=0.0_dp)
+                solve_shift=inverse_operator_context, sigma=0.0_dp)
             report%nearest_eigenvalue = eigenvalue(1)
             report%eigen_residual = eigen_error(1)
             report%message = &
@@ -380,19 +393,6 @@ contains
         report%status = BELTRAMI_OK
         report%message = 'Beltrami candidate; bounds unavailable'
     contains
-        subroutine apply_operator(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            output = csc_matvec(a, input)
-        end subroutine
-        subroutine inverse_operator(input, output, info)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            integer, intent(out) :: info
-            type(fortsparse_status_t) :: fst
-            call sparse_solve(solver, input, output, fst)
-            info = fst%code
-        end subroutine
         subroutine put(m, scale)
             type(csc_t), intent(in) :: m
             real(dp), intent(in) :: scale
@@ -409,7 +409,6 @@ contains
             end do
         end subroutine
     end subroutine
-
     subroutine beltrami_constraint(system, kind, target, bracket, tolerance, field, &
         report)
         type(beltrami_system_t), intent(in) :: system
@@ -478,4 +477,28 @@ contains
         report%status = BELTRAMI_INVALID
         report%message = 'helicity constraint did not converge'
     end subroutine
+    subroutine beltrami_solve_apply_operator_evaluate(self, x, y)
+        class(beltrami_solve_apply_operator_t), intent(inout) :: self
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            y = csc_matvec(self%a, x)
+    end subroutine beltrami_solve_apply_operator_evaluate
+    subroutine beltrami_solve_inverse_operator_evaluate(self, x, y, info)
+        class(beltrami_solve_inverse_operator_t), intent(inout) :: self
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            integer, intent(out) :: info
+            type(fortsparse_status_t) :: fst
+            call sparse_solve(self%solver, x, y, fst)
+            info = fst%code
+    end subroutine beltrami_solve_inverse_operator_evaluate
+    subroutine beltrami_prepare_harmonic_unit_evaluate(self, x, v)
+        class(beltrami_prepare_harmonic_unit_t), intent(in) :: self
+            real(dp), intent(in) :: x(2)
+            complex(dp), intent(out) :: v(3)
+            real(dp) :: radius
+            radius = x(1)
+            if (self%field%fs%cyl_r0 > 0) radius = self%field%fs%cyl_r0
+            v = 0; v(2) = 1/radius
+    end subroutine beltrami_prepare_harmonic_unit_evaluate
 end module

@@ -17,6 +17,7 @@ module kin6d_quantum_evolution
         qe_fraction, qe_fraction_interval, qe_complement, &
         qe_action_allowance_interval, &
         qe_evaluate_rate_interval
+    use fortnum_sampled_norm, only: coordinate_enclosure_t
     implicit none
     private
     public :: quantum_evolution_t, initialize_quantum_evolution
@@ -29,7 +30,6 @@ module kin6d_quantum_evolution
     public :: certify_quantum_evolution, quantum_evolution_error, &
         quantum_evolution_indicator, quantum_evolution_sampled_residual
     integer, parameter, public :: QE_WORKHORSE = 1, QE_STRICT = 2, QE_APPROXIMATE = 3
-
     type :: quantum_evolution_t
         private
         integer :: n = 0, steps = 0, active_cell = 0, mode = 0, action_mode = 0
@@ -56,6 +56,15 @@ module kin6d_quantum_evolution
         type(quantum_evolution_t), pointer :: primal => null(), adjoint => null()
         integer :: reverse_cell = 0
     end type
+    type, extends(coordinate_enclosure_t) :: &
+        quantum_evolution_sampled_residual_component_t
+        type(interval_t), pointer :: derivative(:) => null()
+        integer, pointer :: n => null()
+        type(quantum_evolution_t), pointer :: state => null()
+        type(interval_t), pointer :: x(:) => null()
+    contains
+        procedure :: evaluate => quantum_evolution_sampled_residual_component_evaluate
+    end type
 contains
     subroutine initialize_quantum_evolution(state, hre, him, psi_re, psi_im, &
                                             steps, h, hbar, ok, budget)
@@ -67,7 +76,6 @@ contains
         real(dp), intent(in), optional :: budget
         type(interval_t) :: acc, next
         integer :: n, j, status
-
         ok = .false.
         n = size(psi_re)
         if (n < 1 .or. steps < 1) return
@@ -117,7 +125,6 @@ contains
         state%initialized = .true.
         ok = .true.
     end subroutine
-
     subroutine solve_quantum_evolution(state, ok, certify, error_mode)
         type(quantum_evolution_t), intent(inout) :: state
         logical, intent(out) :: ok
@@ -125,7 +132,6 @@ contains
         integer, intent(in), optional :: error_mode
         integer :: cell, nfev
         logical :: check
-
         ok = .false.; state%ready = .false.; state%bounded = .false.
         state%tangent_ready = .false.; state%tangent_bounded = .false.
         state%approximate_ready = .false.; state%embedded_indicator = 0
@@ -157,7 +163,6 @@ contains
         if (check) call certify_trajectory(state, .false.)
         ok = .true.
     end subroutine
-
     ! Deferred certification audits every residual cell of the immutable trace;
     ! reporting only at checkpoints does not omit the intervening integral.
     subroutine certify_quantum_evolution(state, ok, error_mode, epsilon_b)
@@ -184,7 +189,6 @@ contains
         call certify_trajectory(state, .false.)
         ok = state%bounded .or. state%approximate_ready
     end subroutine
-
     subroutine quantum_evolution_indicator(state, value, status)
         type(quantum_evolution_t), intent(in) :: state
         real(dp), intent(out) :: value
@@ -192,21 +196,21 @@ contains
         value = state%embedded_indicator; status = 'indicator'
         if (.not. state%ready) status = 'unavailable'
     end subroutine
-
     ! A one-time residual-norm statement, not the integral needed for a state
     ! certificate. The probability space is iid uniform coordinate draws.
     subroutine quantum_evolution_sampled_residual(state, cell, fraction, samples, &
         delta, draw, estimate, upper, ok)
-        type(quantum_evolution_t), intent(inout) :: state
+        type(quantum_evolution_t), intent(inout), target :: state
         integer, intent(in) :: cell, samples
         real(dp), intent(in) :: fraction, delta
         type(rng_t), intent(inout) :: draw
         real(dp), intent(out) :: estimate, upper
         logical, intent(out) :: ok
-        type(interval_t), allocatable :: x(:), derivative(:)
+        type(interval_t), allocatable , target :: x(:), derivative(:)
         type(interval_t) :: envelope_box
         real(dp) :: envelope
-        integer :: j,n
+        integer , target :: j,n
+        type(quantum_evolution_sampled_residual_component_t) :: component_context
         ok = .false.; estimate = 0; upper = huge(0._dp)
         n = state%n
         if (.not. sample_guard(state,cell,fraction,n,n)) return
@@ -224,34 +228,15 @@ contains
             ipoint(maxval(mag(x))),ipoint(0._dp),ipoint(0._dp),ipoint(1._dp), &
             ipoint(state%hbar),envelope_box)
         envelope = add_up(envelope_box%hi,maxval(mag(derivative)))
-        call sampled_norm_upper(2*n,samples,delta,envelope,draw,component, &
+        nullify(component_context%derivative)
+        if (allocated(derivative)) component_context%derivative => derivative
+        component_context%n => n
+        component_context%state => state
+        nullify(component_context%x)
+        if (allocated(x)) component_context%x => x
+        call sampled_norm_upper(2*n,samples,delta,envelope,draw,component_context, &
             estimate,upper,ok)
-    contains
-        subroutine component(index,value,valid)
-            use fortnum_interval, only: operator(-)
-            integer, intent(in) :: index
-            type(interval_t), intent(out) :: value
-            logical, intent(out) :: valid
-            type(interval_t) :: ar,ai,total,next
-            integer :: i,k
-            i = index
-            if (index > n) i = index-n
-            total = ipoint(0._dp)
-            do k = 1,n
-                call qe_rhs_term_interval(ipoint(state%hr(i,k)),ipoint(state%hi(i,k)), &
-                    x(k),x(n+k),ipoint(state%hbar),ar,ai)
-                if (index <= n) then
-                    call qe_add_interval(total,ar,next)
-                else
-                    call qe_add_interval(total,ai,next)
-                end if
-                total = next
-            end do
-            value = derivative(index)-total
-            valid = finite_interval(value)
-        end subroutine
     end subroutine
-
     ! The approximate action omits proved evaluation allowances. Each prefix
     ! must pass allowance <= epsilon_b*eta. The uninflated eta is not certified.
     subroutine quantum_evolution_error(state, cell, radius, status, epsilon_b, ok, &
@@ -296,14 +281,12 @@ contains
         end if
         ok = .true.
     end subroutine
-
     subroutine evolution_rhs(t, y, dydt, ctx)
         real(dp), intent(in) :: t, y(:)
         real(dp), intent(out) :: dydt(:)
         class(*), intent(in), optional :: ctx
         real(dp) :: a, b, next, fraction, xr, xi, da, db
         integer :: i, j, n, cell
-
         dydt = 0.0_dp
         if (.not. ieee_is_finite(t)) return
         if (.not. present(ctx)) return
@@ -334,13 +317,11 @@ contains
             end do
         end select
     end subroutine
-
     subroutine make_cell(state, cell, tangent, strict)
         type(quantum_evolution_t), intent(inout) :: state
         integer, intent(in) :: cell
         logical, intent(in) :: tangent, strict
         integer :: j
-
         do j = 1, 2*state%n
             if (tangent) then
                 call qe_hermite(state%dy(j, cell - 1), state%dy(j, cell), &
@@ -365,7 +346,6 @@ contains
                                          ipoint(state%h), state%ci(:, :, cell))
         end if
     end subroutine
-
     ! FortNum's Hermite/Bernstein residual and radius accumulation on the
     ! kin6d interval action -i H x/hbar. The generator is skew-adjoint in the
     ! packed real/imag Hilbert pairing, so the logarithmic norm is zero. The
@@ -378,7 +358,6 @@ contains
         type(interval_t) :: allowance
         integer :: cell, k
         logical :: ok
-
         if (tangent) then
             state%dradius(0) = 0.0_dp
             state%tangent_bounded = .false.
@@ -449,7 +428,6 @@ contains
             state%approximate_ready = state%error_mode == QE_APPROXIMATE
         end if
     end subroutine
-
     ! Interval action x -> -i H x/hbar (action_mode 0) or -i dH x/hbar
     ! (action_mode 1) over the packed real/imag split.
     subroutine qe_action(x, ax, ok, ctx)
@@ -460,7 +438,6 @@ contains
         type(interval_t) :: a, b, next
         real(dp) :: ar, ai, sr, si, nc
         integer :: i, j, n
-
         ok = .false.
         ax = ipoint(0.0_dp)
         if (.not. present(ctx)) return
@@ -507,7 +484,6 @@ contains
             ok = all_finite_intervals(ax)
         end select
     end subroutine
-
     subroutine bounded_action(state, x, ax, ok)
         type(quantum_evolution_t), intent(in) :: state
         type(interval_t), intent(in) :: x(:)
@@ -544,7 +520,6 @@ contains
         end do
         ok = all_finite_intervals(ax)
     end subroutine
-
     subroutine sample_quantum_evolution(state, cell, fraction, re, im, radius, &
                                         ok, bounded)
         type(quantum_evolution_t), intent(in) :: state
@@ -553,7 +528,6 @@ contains
         real(dp), intent(out) :: re(:), im(:), radius
         logical, intent(out) :: ok, bounded
         integer :: j, n
-
         ok = .false.; bounded = .false.; radius = huge(0.0_dp)
         if (.not. sample_guard(state, cell, fraction, size(re), size(im))) return
         n = state%n
@@ -571,7 +545,6 @@ contains
                                 bounded)
         end if
     end subroutine
-
     subroutine sampled_radius(state, cell, fraction, re, im, tangent, radius, ok)
         type(quantum_evolution_t), intent(in) :: state
         integer, intent(in) :: cell
@@ -582,7 +555,6 @@ contains
         type(interval_t) :: yr, yi, error, sumsq, next, norm, total
         real(dp) :: partial
         integer :: j, n
-
         n = state%n; sumsq = ipoint(0.0_dp); ok = .false.
         radius = huge(0.0_dp)
         do j = 1, n
@@ -606,14 +578,12 @@ contains
         if (.not. finite_interval(total)) return
         radius = total%hi; ok = .true.
     end subroutine
-
     subroutine reconstructed_point(state, index, cell, fraction, tangent, value)
         type(quantum_evolution_t), intent(in) :: state
         integer, intent(in) :: index, cell
         real(dp), intent(in) :: fraction
         logical, intent(in) :: tangent
         type(interval_t), intent(out) :: value
-
         if (tangent) then
             call qe_evaluate_interval(state%dci(index, 0, cell), &
                                  state%dci(index, 1, cell), state%dci(index, 2, cell), &
@@ -624,7 +594,6 @@ contains
                                       state%ci(index, 3, cell), ipoint(fraction), value)
         end if
     end subroutine
-
     subroutine sample_quantum_evolution_box(state, cell, fraction, re, im, &
                                             radius, ok, bounded)
         type(quantum_evolution_t), intent(in) :: state
@@ -635,7 +604,6 @@ contains
         logical, intent(out) :: ok, bounded
         type(interval_t) :: value, lower, upper
         integer :: j, n
-
         ok = .false.; bounded = .false.; radius = huge(0.0_dp)
         if (.not. sample_guard(state, cell, fraction, size(re), size(im))) return
         if (.not. state%bounded) return
@@ -651,7 +619,6 @@ contains
         ok = all_finite_intervals(re) .and. all_finite_intervals(im)
         bounded = ok
     end subroutine
-
     subroutine quantum_evolution_info(state, n, steps, h, hbar, ready, bounded)
         type(quantum_evolution_t), intent(in) :: state
         integer, intent(out) :: n, steps
@@ -660,7 +627,6 @@ contains
         n = state%n; steps = state%steps; h = state%h; hbar = state%hbar
         ready = state%ready; bounded = state%bounded
     end subroutine
-
     subroutine quantum_evolution_radius(state, radius, ok)
         type(quantum_evolution_t), intent(in) :: state
         real(dp), intent(out) :: radius
@@ -668,14 +634,12 @@ contains
         radius = huge(0.0_dp); ok = state%bounded
         if (ok) radius = state%radius(state%steps)
     end subroutine
-
     logical function quantum_evolution_accepted(state)
         type(quantum_evolution_t), intent(in) :: state
         quantum_evolution_accepted = .false.
         if (.not. state%bounded) return
         quantum_evolution_accepted = state%radius(state%steps) <= state%budget
     end function
-
     subroutine solve_quantum_evolution_tangent(state, dhre, dhim, dpsi_re, &
                                                dpsi_im, ok, certify)
         type(quantum_evolution_t), intent(inout) :: state
@@ -685,7 +649,6 @@ contains
         integer :: n, cell, i, j, nfev, status
         logical :: check
         type(interval_t) :: acc, next, norm
-
         ok = .false.; state%tangent_ready = .false.; state%tangent_bounded = .false.
         if (.not. state%ready) return
         n = state%n
@@ -761,7 +724,6 @@ contains
         if (check) call certify_trajectory(state, .true.)
         ok = .true.
     end subroutine
-
     subroutine sample_quantum_evolution_tangent(state, cell, fraction, re, im, &
                                                 radius, ok, bounded)
         type(quantum_evolution_t), intent(in) :: state
@@ -770,7 +732,6 @@ contains
         real(dp), intent(out) :: re(:), im(:), radius
         logical, intent(out) :: ok, bounded
         integer :: j, n
-
         ok = .false.; bounded = .false.; radius = huge(0.0_dp)
         if (.not. state%tangent_ready) return
         if (.not. sample_guard(state, cell, fraction, size(re), size(im))) return
@@ -787,14 +748,12 @@ contains
         if (bounded) call sampled_radius(state, cell, fraction, re, im, .true., &
                                          radius, bounded)
     end subroutine
-
     subroutine quantum_rhs_action(hre, him, re, im, hbar, out_re, out_im, ok)
         real(dp), intent(in) :: hre(:, :), him(:, :), re(:), im(:), hbar
         real(dp), intent(out) :: out_re(:), out_im(:)
         logical, intent(out) :: ok
         real(dp) :: a, b, next
         integer :: n, i, j
-
         ok = .false.; n = size(re)
         if (size(im) /= n .or. size(out_re) /= n .or. size(out_im) /= n) return
         if (.not. valid_hamiltonian(hre, him, n)) return
@@ -811,14 +770,12 @@ contains
         end do
         ok = all(ieee_is_finite(out_re)) .and. all(ieee_is_finite(out_im))
     end subroutine
-
     subroutine quantum_hamiltonian_action(hre, him, re, im, out_re, out_im, ok)
         real(dp), intent(in) :: hre(:, :), him(:, :), re(:), im(:)
         real(dp), intent(out) :: out_re(:), out_im(:)
         logical, intent(out) :: ok
         real(dp) :: a, b
         integer :: j
-
         call quantum_rhs_action(hre, him, re, im, 1.0_dp, out_re, out_im, ok)
         if (.not. ok) return
         do j = 1, size(re)
@@ -827,7 +784,6 @@ contains
             out_re(j) = b; out_im(j) = a
         end do
     end subroutine
-
     logical function sample_guard(state, cell, fraction, nr, ni)
         type(quantum_evolution_t), intent(in) :: state
         integer, intent(in) :: cell, nr, ni
@@ -840,7 +796,6 @@ contains
         if (fraction < 0.0_dp .or. fraction > 1.0_dp) return
         sample_guard = .true.
     end function
-
     logical function valid_hamiltonian(hr, hi, n)
         real(dp), intent(in) :: hr(:, :), hi(:, :)
         integer, intent(in) :: n
@@ -861,19 +816,16 @@ contains
         end do
         valid_hamiltonian = .true.
     end function
-
     logical function finite_interval(value)
         type(interval_t), intent(in) :: value
         finite_interval = ieee_is_finite(value%lo) .and. &
                           ieee_is_finite(value%hi) .and. value%lo <= value%hi
     end function
-
     logical function all_finite_intervals(values)
         type(interval_t), intent(in) :: values(:)
         all_finite_intervals = all(ieee_is_finite(values%lo)) .and. &
                         all(ieee_is_finite(values%hi)) .and. all(values%lo <= values%hi)
     end function
-
     subroutine squared_norm(sumsq, norm)
         type(interval_t), intent(in) :: sumsq
         type(interval_t), intent(out) :: norm
@@ -884,7 +836,6 @@ contains
         if (sumsq%hi < 0.0_dp) return
         call qe_norm_interval(intersect(sumsq, interval(0.0_dp, huge(0.0_dp))), norm)
     end subroutine
-
     subroutine quantum_evolution_vjp(state, terminal_re, terminal_im, &
                                initial_re, initial_im, ghre, ghim, initial_radius, ok, &
                                      initial_bounded, h_gradient_bounded)
@@ -898,7 +849,6 @@ contains
         real(dp), allocatable :: neg_hr(:, :), neg_hi(:, :), stages(:, :), gradient(:)
         integer :: n, length, nfev, reverse_cell, i, j, idx, status
         logical :: success
-
         ok = .false.; initial_bounded = .false.; h_gradient_bounded = .false.
         initial_radius = huge(0.0_dp)
         if (.not. state%ready) return
@@ -942,7 +892,6 @@ contains
         end do
         ok = .true.
     end subroutine
-
     subroutine gradient_rhs(t, values, derivative, ctx)
         real(dp), intent(in) :: t, values(:)
         real(dp), intent(out) :: derivative(:)
@@ -950,7 +899,6 @@ contains
         real(dp) :: s, forward_s, pr, pi, lr, li, gr, gi, gx, gy, gh
         integer :: i, j, idx, forward_cell, reverse_cell, n, length
         type(quantum_evolution_t), pointer :: state, adjoint
-
         derivative = 0.0_dp
         if (.not. present(ctx)) return
         select type (ctx)
@@ -988,4 +936,30 @@ contains
             end do
         end select
     end subroutine
+    subroutine quantum_evolution_sampled_residual_component_evaluate(self, index, &
+        value, ok)
+            use fortnum_interval, only: operator(-)
+        class(quantum_evolution_sampled_residual_component_t), intent(in) :: self
+            integer, intent(in) :: index
+            type(interval_t), intent(out) :: value
+            logical, intent(out) :: ok
+            type(interval_t) :: ar,ai,total,next
+            integer :: i,k
+            i = index
+            if (index > self%n) i = index-self%n
+            total = ipoint(0._dp)
+            do k = 1,self%n
+                call &
+                    qe_rhs_term_interval(ipoint(self%state%hr(i,k)),ipoint(self%state%hi(i,k)), &
+                    self%x(k),self%x(self%n+k),ipoint(self%state%hbar),ar,ai)
+                if (index <= self%n) then
+                    call qe_add_interval(total,ar,next)
+                else
+                    call qe_add_interval(total,ai,next)
+                end if
+                total = next
+            end do
+            value = self%derivative(index)-total
+            ok = finite_interval(value)
+    end subroutine quantum_evolution_sampled_residual_component_evaluate
 end module kin6d_quantum_evolution

@@ -24,6 +24,7 @@ module kin6d_gs_coarea
     use fortnum_multiroot, only: argsort
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    use fortnum_roots, only: scalar_root_function_t
     implicit none
     private
     public :: gs_level_coarea
@@ -32,6 +33,13 @@ module kin6d_gs_coarea
         ! a small prefix is ever written.
         real(dp) :: angle, tangent, point(2)
         integer :: left, right
+    end type
+    type, extends(scalar_root_function_t) :: bracket_roots_root_t
+        real(dp), pointer :: a => null()
+        real(dp), pointer :: b => null()
+        real(dp), pointer :: c => null()
+    contains
+        procedure :: evaluate => bracket_roots_root_evaluate
     end type
 contains
     subroutine gs_level_coarea(state, levels, &
@@ -470,7 +478,6 @@ contains
             end if
             level_status = 0
         end subroutine integrate_level
-
         subroutine edge_dofs(e, edge, indices)
             integer, intent(in) :: e, edge
             integer, intent(out) :: indices(4)
@@ -483,7 +490,6 @@ contains
                 indices(k + 1) = state%triangles(3 + (edge - 1)*(degree - 1) + k, e)
             end do
         end subroutine
-
         subroutine cubic_jet(e, point, value, grad, h, status)
             integer, intent(in) :: e
             real(dp), intent(in) :: point(2)
@@ -508,7 +514,6 @@ contains
             ! only value and gradient, so no Hessian is reconstructed here.
             status = 0
         end subroutine
-
         subroutine cubic_ray_root(e, lo, hi, direction, level, point, grad, h, status)
             integer, intent(in) :: e
             real(dp), intent(in) :: lo, hi, direction(2), level
@@ -543,7 +548,6 @@ contains
             call cubic_jet(e, point, value, &
                 grad, h, status)
         end subroutine
-
         subroutine measure_factor(e, chart_point, factor, status)
             integer, intent(in) :: e
             real(dp), intent(in) :: chart_point(2)
@@ -561,7 +565,6 @@ contains
             if (status /= 0) return
             factor = det/(2*state%area(e))*chart_point(1)/point(1)
         end subroutine
-
         subroutine point_on_cell(e, theta, level, point, &
                                  grad, h, status, cw)
             integer, intent(in)::e
@@ -637,7 +640,6 @@ contains
             end if
             status = 0
         end subroutine point_on_cell
-
         subroutine arc_weight(e, theta, level, level_delta, &
                               weight, delta_weight, status, cw)
             integer, intent(in)::e
@@ -679,7 +681,6 @@ contains
                                        axis_delta(1) + droot*dir(1), &
                                        dot_product(dg, dir), delta_weight)
         end subroutine arc_weight
-
         subroutine integrate_arc(e, lo, hi, dlo, dhi, j, &
                                  level_delta, status, cw, first_point, last_point)
             integer, intent(in)::e, j
@@ -720,7 +721,6 @@ contains
             end if
             status = 0
         end subroutine integrate_arc
-
         subroutine face_weight(e, face_point, weight, status)
             ! The event already owns the native face intersection. Re-solving
             ! its radial root can place a rounded endpoint outside this cell.
@@ -747,7 +747,6 @@ contains
             end if
             call gs_contour_weight(radius, face_point(1), radial_gradient, weight)
         end subroutine face_weight
-
         subroutine integrate_boundary(j, level_delta, status)
             integer, intent(in)::j
             real(dp), intent(in)::level_delta
@@ -809,14 +808,17 @@ contains
             status = 0
         end subroutine integrate_boundary
     end subroutine gs_level_coarea
-
     subroutine bracket_roots(a, b, c, lo, hi, roots, n)
-        real(dp), intent(in)::a, b, c, lo, hi
+        real(dp), intent(in), target ::a, b, c, lo, hi
         real(dp), intent(out)::roots(2)
         integer, intent(out)::n
         real(dp)::knots(3), fl, fr, ftol, xtol, x, critical
         integer::nk, k
         type(fortnum_status_t)::stat
+        type(bracket_roots_root_t) :: root_function
+        root_function%a => a
+        root_function%b => b
+        root_function%c => c
         roots = 0
         n = 0
         knots(1) = lo
@@ -834,8 +836,8 @@ contains
                                       abs(b)*hi, abs(c), tiny(1.0_dp))
         xtol = 16*epsilon(1.0_dp)*max(1.0_dp, abs(lo), abs(hi))
         do k = 1, nk - 1
-            fl = polynomial(knots(k))
-            fr = polynomial(knots(k + 1))
+            fl = root_function%evaluate(knots(k))
+            fr = root_function%evaluate(knots(k + 1))
             if (abs(fl) <= ftol) then
                 x = knots(k)
             else if (abs(fr) <= ftol) then
@@ -843,7 +845,7 @@ contains
             else
                 if ((fl > 0 .and. fr > 0) .or. (fl < 0 .and. &
                                                 fr < 0)) cycle
-                call root_brent(polynomial, knots(k), knots(k + 1), &
+                call root_brent(root_function, knots(k), knots(k + 1), &
                                 x, stat, xtol, ftol, 64)
                 if (stat%code /= FORTNUM_OK) cycle
             end if
@@ -853,11 +855,11 @@ contains
             n = n + 1
             roots(n) = x
         end do
-    contains
-        pure function polynomial(x) result(y)
+    end subroutine bracket_roots
+    pure function bracket_roots_root_evaluate(self, x) result(y)
+        class(bracket_roots_root_t), intent(in) :: self
             real(dp), intent(in)::x
             real(dp)::y, derivative
-            call gs_ray_trace(c, b, 2*a, x, y, derivative)
-        end function polynomial
-    end subroutine bracket_roots
+            call gs_ray_trace(self%c, self%b, 2*self%a, x, y, derivative)
+    end function bracket_roots_root_evaluate
 end module kin6d_gs_coarea

@@ -22,8 +22,8 @@ endif()
 set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
-set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "5bdd4713ec574d4e2b46c3107b79788b50602ba3")
+set(KIN6D_FORTPLOT_REVISION "f897efdc6695fff4bc3da38a3f15bb497a75e318")
+set(KIN6D_FORTNUM_REVISION "65f30ee92d68aad7736c076e748448f2d8644f7f")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -34,11 +34,6 @@ FetchContent_Declare(fortio
     GIT_REPOSITORY https://github.com/lazy-fortran/fortio.git
     GIT_TAG ${KIN6D_FORTIO_REVISION})
 FetchContent_MakeAvailable(fortio)
-include(CheckFortranCompilerFlag)
-check_fortran_compiler_flag("-ftrampoline-impl=heap" KIN6D_HAVE_HEAP_TRAMPOLINES)
-if(KIN6D_HAVE_HEAP_TRAMPOLINES)
-    add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-ftrampoline-impl=heap>)
-endif()
 # Use the complete pinned numerical target, including precision modules needed
 # by FortSparse. The compatibility layer names preserve KIN6D's layer graph;
 # FortNum owns module compilation, strict arithmetic and OpenMP settings.
@@ -125,7 +120,7 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "21f236191c39688bebe25f98b185c32b8209ec70")
+set(KIN6D_FORTFEM_REVISION "9057e5d8dfd315656eed7a81bc720e9230511591")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -206,7 +201,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "ac324a3567c2f95752bc2857ed29641f8e18f595")
+set(KIN6D_FORTSPARSE_REVISION "bfa1d0a240db4a061ac97c7c9167b627388bd8e5")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -1958,10 +1953,12 @@ target_sources(kin6d_mhd PRIVATE src/mhd/response_strip_preconditioner.f90)
 add_executable(test_response_strip_preconditioner
     test/test_response_strip_preconditioner.f90)
 target_link_libraries(test_response_strip_preconditioner PRIVATE kin6d)
+add_executable(test_response_strip_tc24_preconditioner EXCLUDE_FROM_ALL
+    test/test_response_strip_tc24_preconditioner.f90)
+target_link_libraries(test_response_strip_tc24_preconditioner PRIVATE kin6d)
 if(KIN6D_STRIP_EQDSK_TEST)
-    add_executable(test_response_strip_tc24_preconditioner
-        test/test_response_strip_tc24_preconditioner.f90)
-    target_link_libraries(test_response_strip_tc24_preconditioner PRIVATE kin6d)
+    set_property(TARGET test_response_strip_tc24_preconditioner
+        PROPERTY EXCLUDE_FROM_ALL FALSE)
     add_test(NAME response_strip_tc24_preconditioner
         COMMAND test_response_strip_tc24_preconditioner ${KIN6D_STRIP_EQDSK_TEST})
     set_tests_properties(response_strip_tc24_preconditioner PROPERTIES
@@ -2040,3 +2037,6 @@ foreach(_t IN LISTS _kin6d_all_tests)
 endforeach()
 
 include(cmake/kin6d_estimator_benchmark.cmake)
+
+include(cmake/kin6d_stack_targets.cmake)
+kin6d_stack_targets()

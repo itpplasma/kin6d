@@ -26,9 +26,16 @@ module kin6d_grad_shafranov
        gs_field, gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
-       curve_value, boundary_curve, triangle_shapes, triangle_locate
+       curve_value, boundary_curve, boundary_curve_t, triangle_shapes, triangle_locate
    use kin6d_gs_inverse_leaves, only: gs_normalized_profile_response
     use kin6d_real_identity, only: same_real_value
+    use fortnum_krylov, only: real_linear_operator_t, &
+        real_gmres, real_fgmres, real_conjugate_gradient
+    use fortnum_krylov, only: real_linear_operator_t, &
+        real_gmres, real_fgmres, real_conjugate_gradient
+    use fortfem_triangle_level_quadrature, only: triangle_level_function_t
+    use fortfem_triangle_level_quadrature, only: triangle_level_function_t
+    use fortfem_triangle_level_quadrature, only: triangle_level_function_t
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
@@ -63,7 +70,6 @@ module kin6d_grad_shafranov
       type(csr_matrix_t) :: system
       type(gs_direct_t) :: factor
    end type gs_recovery_t
-
    type :: gs_state_t
       real(dp), allocatable :: points(:, :), psi(:)
       integer, allocatable :: triangles(:, :)
@@ -120,8 +126,83 @@ module kin6d_grad_shafranov
          real(dp), intent(inout) :: a(lda, *), b(ldb, *)
       end subroutine dgesv
    end interface
+    type, extends(real_linear_operator_t) :: gs_linear_response_matvec_t
+        type(gs_state_t), pointer :: state => null()
+    contains
+        procedure :: apply => gs_linear_response_matvec_apply
+    end type
+    type, extends(real_linear_operator_t) :: gs_linear_response_preconditioner_t
+        type(gs_state_t), pointer :: state => null()
+    contains
+        procedure :: apply => gs_linear_response_preconditioner_apply
+    end type
+    type, extends(real_linear_operator_t) :: cached_profile_response_matvec_t
+        type(gs_profile_response_cache_t), pointer :: cache => null()
+    contains
+        procedure :: apply => cached_profile_response_matvec_apply
+    end type
+    type, extends(triangle_level_function_t) :: profile_load_products_source_integrand_t
+        real(dp), pointer :: cotangent(:) => null()
+        real(dp), pointer :: dff(:) => null()
+        real(dp), pointer :: dmu0 => null()
+        real(dp), pointer :: dpp(:) => null()
+        integer, pointer :: e => null()
+        real(dp), pointer :: ff(:) => null()
+        real(dp), pointer :: flux(:) => null()
+        integer, pointer :: iff => null()
+        integer, pointer :: im => null()
+        integer, pointer :: ip => null()
+        integer, pointer :: ix => null()
+        real(dp), pointer :: local_dpsi(:) => null()
+        real(dp), pointer :: local_psi(:) => null()
+        integer, pointer :: mode => null()
+        real(dp), pointer :: mu0 => null()
+        integer, pointer :: ndof => null()
+        real(dp), pointer :: nodes_ff(:) => null()
+        real(dp), pointer :: nodes_pp(:) => null()
+        real(dp), pointer :: pp(:) => null()
+        real(dp), pointer :: shifted_dflux(:) => null()
+        real(dp), pointer :: shifted_flux(:) => null()
+        type(gs_state_t), pointer :: state => null()
+        real(dp), pointer :: values_ff(:) => null()
+        real(dp), pointer :: values_pp(:) => null()
+        real(dp), pointer :: vertices(:,:) => null()
+    contains
+        procedure :: evaluate => profile_load_products_source_integrand_evaluate
+    end type
+    type, extends(triangle_level_function_t) :: &
+        gs_profile_tangent_cache_cache_integrand_t
+        real(dp), pointer :: axis_flux => null()
+        real(dp), pointer :: ff(:) => null()
+        real(dp), pointer :: local_psi(:) => null()
+        integer, pointer :: ndof => null()
+        real(dp), pointer :: shifted_flux(:) => null()
+        type(gs_state_t), pointer :: state => null()
+        real(dp), pointer :: vertices(:,:) => null()
+        real(dp), pointer :: zero_profile(:) => null()
+    contains
+        procedure :: evaluate => gs_profile_tangent_cache_cache_integrand_evaluate
+    end type
+    type, extends(triangle_level_function_t) :: gs_profile_ff_load_basis_integrand_t
+        real(dp), pointer :: local_psi(:) => null()
+        integer, pointer :: ndof => null()
+        integer, pointer :: nf => null()
+        real(dp), pointer :: shifted_flux(:) => null()
+        type(gs_state_t), pointer :: state => null()
+        real(dp), pointer :: vertices(:,:) => null()
+    contains
+        procedure :: evaluate => gs_profile_ff_load_basis_integrand_evaluate
+    end type
+    type, extends(boundary_curve_t) :: boundary_curve_adapter_t
+        procedure(boundary_curve), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => boundary_curve_adapter_t_evaluate
+    end type
+
+    public :: initialize_gs_object
+
 contains
-    subroutine initialize_gs(state, contour, max_area, status, element_order, &
+    subroutine initialize_gs_object(state, contour, max_area, status, element_order, &
                              curved, curve, interior_points, interior_chain, &
                              geometry_only)
         !! Meshes the closed outer curve `contour` (counter-clockwise). The optional
@@ -135,7 +216,7 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: element_order
         logical, intent(in), optional :: curved
-        procedure(boundary_curve), optional :: curve
+        class(boundary_curve_t), target, intent(in), optional :: curve
         real(dp), intent(in), optional :: interior_points(:, :)
         real(dp), intent(in), optional :: interior_chain(:, :)
         logical, intent(in), optional :: geometry_only
@@ -275,7 +356,7 @@ contains
             end if
             if (present(curve)) then
                 do j = 1, n
-                    call curve(real(j - 1, dp)/n, point)
+                    call curve%evaluate(real(j - 1, dp)/n, point)
                     if (norm2(point - contour(:, j)) > &
                         128*epsilon(1.0_dp)*max(1.0_dp, norm2(point))) return
                 end do
@@ -313,7 +394,7 @@ contains
                         if (chain_edge) then
                             call curve_value(chain_spline, t, point)
                         else if (present(curve)) then
-                            call curve(t, point)
+                            call curve%evaluate(t, point)
                         else
                             call curve_value(spline, t, point)
                         end if
@@ -398,8 +479,7 @@ contains
         allocate (state%recovery)
         state%ready = .true.
         status = 0
-    end subroutine initialize_gs
-
+    end subroutine initialize_gs_object
     pure subroutine gs_cell_data(state, e, xi, point, det, shape, gradients, &
                             hessians, status)
         type(gs_state_t), intent(in) :: state
@@ -423,7 +503,6 @@ contains
         det = 2*state%area(e)
         status = 0
     end subroutine
-
    subroutine gs_quadrature(order, quadrature)
       integer, intent(in) :: order
       type(gauss_quadrature_triangle_t), intent(out) :: quadrature
@@ -438,7 +517,6 @@ contains
          call quadrature%init(5)
       end if
    end subroutine gs_quadrature
-
     subroutine higher_order_mesh(mesh, state, status)
         type(tc_result_t), intent(in) :: mesh
         type(gs_state_t), intent(inout) :: state
@@ -596,7 +674,6 @@ contains
             end if
         end do
     end subroutine element_shapes
-
     subroutine apply_gs(state, input, output)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: input(:)
@@ -627,7 +704,6 @@ contains
         end do
         where (state%boundary) output = input
     end subroutine apply_gs
-
     logical function gs_factor_ready(state) result(ready)
         ! True when a Cholesky factor of the stiffness matrix is cached (created
         ! on the first call) and the direct path is selected. A failed
@@ -660,7 +736,6 @@ contains
         end if
         ready = state%direct%factored
     end function
-
     subroutine gs_apply_inverse(state, input, output, ok)
         ! output = A^-1 input by one back-substitution of the cached factor (no
         ! refinement): the preconditioner of the Newton Krylov solves.
@@ -678,7 +753,6 @@ contains
         if (.not. ok) return
         ok = all(ieee_is_finite(output))
     end subroutine
-
     subroutine gs_direct_response(state, source, response, tolerance, iterations, ok)
         ! Direct solve of A x = source with iterative refinement against the
         ! applied operator. ok is false when the residual stays above `tolerance`
@@ -712,11 +786,10 @@ contains
         end do
         ok = ieee_is_finite(rnorm) .and. rnorm <= tolerance
     end subroutine
-
    subroutine gs_linear_response(state, source, response, status, iteration_count, &
                                  relative_tolerance, stagnation_ok, residual_norm, &
                                  timer_kind)
-      type(gs_state_t), intent(in) :: state
+      type(gs_state_t), intent(in), target :: state
       real(dp), intent(in) :: source(:)
       real(dp), allocatable, intent(out) :: response(:)
       integer, intent(out) :: status
@@ -732,6 +805,8 @@ contains
       real(dp), allocatable :: action(:)
       logical :: keep_stagnant, direct_ok
       integer :: iterations
+        type(gs_linear_response_matvec_t) :: matvec_operator
+        type(gs_linear_response_preconditioner_t) :: preconditioner_operator
       status = 1
       if (present(iteration_count)) iteration_count = 0
       if (present(residual_norm)) residual_norm = huge(1.0_dp)
@@ -760,11 +835,14 @@ contains
             response = 0.0_dp
          end if
       end if
-      if (.not. direct_ok) &
-         call real_conjugate_gradient_operator(matvec, source, response, &
+      if (.not. direct_ok) then
+        matvec_operator%state => state
+        preconditioner_operator%state => state
+         call real_conjugate_gradient(matvec_operator, source, response, &
                    tolerance, max(500, 10*ceiling(sqrt(real(size(source), dp)))), &
                    status, iterations, residual, &
-                                            preconditioner)
+                                            preconditioner_operator)
+      end if
       if (present(timer_kind)) then
          if (timer_kind > 0) call gs_timer_add(timer_kind, gs_wall_s() - clock, &
                                                iterations)
@@ -795,19 +873,7 @@ contains
          call apply_gs(state, response, action)
          residual_norm = norm2(source - action)
       end if
-   contains
-      subroutine matvec(input, output)
-         real(dp), intent(in) :: input(:)
-         real(dp), intent(out) :: output(:)
-         call apply_gs(state, input, output)
-      end subroutine matvec
-      subroutine preconditioner(input, output)
-         real(dp), intent(in) :: input(:)
-         real(dp), intent(out) :: output(:)
-         output = input/state%diagonal
-      end subroutine preconditioner
    end subroutine gs_linear_response
-
    subroutine solve_gs(state, mu0, pprime, ffprime, status)
       type(gs_state_t), intent(inout) :: state
       real(dp), intent(in) :: mu0, pprime, ffprime
@@ -853,7 +919,6 @@ contains
       state%psi = solution
       status = KRYLOV_OK
    end subroutine solve_gs
-
     subroutine assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: mu0, pprime, ffprime
@@ -899,7 +964,6 @@ contains
         end if
         status = 0
     end subroutine assemble_gs_rhs
-
     subroutine gs_profile_load(state, mu0, flux, pp, ff, rhs, status, &
                                relative_tolerance, max_evaluations, error_estimate)
         type(gs_state_t), intent(in) :: state
@@ -912,7 +976,6 @@ contains
         call profile_load_products(state, mu0, flux, pp, ff, 1, rhs, status, &
                                    relative_tolerance, max_evaluations, error_estimate)
     end subroutine gs_profile_load
-
     subroutine gs_profile_load_jvp(state, mu0, flux, pp, ff, dpsi, dmu0, &
                                    dflux, dpp, dff, tangent, status, &
                                    relative_tolerance, max_evaluations)
@@ -944,7 +1007,6 @@ contains
                             relative_tolerance, max_evaluations, dpsi=dpsi, dmu0=dmu0, &
                                    dflux=dflux, dpp=dpp, dff=dff, tangent=tangent)
     end subroutine gs_profile_load_jvp
-
     subroutine gs_profile_load_vjp(state, mu0, flux, pp, ff, cotangent, &
                                    gpsi, gmu0, gflux, gpp, gff, status, &
                                    relative_tolerance, max_evaluations)
@@ -971,36 +1033,38 @@ contains
                              relative_tolerance, max_evaluations, cotangent=cotangent, &
                                    gpsi=gpsi, gmu0=gmu0, gflux=gflux, gpp=gpp, gff=gff)
     end subroutine gs_profile_load_vjp
-
     subroutine profile_load_products(state, mu0, flux, pp, ff, mode, rhs, status, &
                                      relative_tolerance, max_evaluations, &
                                      error_estimate, &
                                      dpsi, dmu0, dflux, dpp, dff, tangent, &
                                      cotangent, gpsi, gmu0, gflux, gpp, gff)
-        type(gs_state_t), intent(in) :: state
-        real(dp), intent(in) :: mu0, flux(:), pp(:), ff(:)
-        integer, intent(in) :: mode
+        type(gs_state_t), intent(in), target :: state
+        real(dp), intent(in), target :: mu0, flux(:), pp(:), ff(:)
+        integer, intent(in), target :: mode
         real(dp), intent(out) :: rhs(:)
         integer, intent(out) :: status
         real(dp), intent(in), optional :: relative_tolerance
         integer, intent(in), optional :: max_evaluations
         real(dp), intent(out), optional :: error_estimate
-        real(dp), intent(in), optional :: dpsi(:), dmu0, dflux(:), dpp(:), dff(:)
+        real(dp), intent(in), optional , target :: dpsi(:), dmu0, dflux(:), dpp(:), &
+            dff(:)
         real(dp), intent(out), optional :: tangent(:)
-        real(dp), intent(in), optional :: cotangent(:)
+        real(dp), intent(in), optional , target :: cotangent(:)
         real(dp), intent(out), optional :: gpsi(:), gmu0, gflux(:), gpp(:), gff(:)
         type(triangle_level_workspace_t) :: workspace
         real(dp), allocatable :: assembled_error(:), tangent_error(:)
         real(dp), allocatable :: values(:), errors(:), epsabs(:)
-        real(dp), allocatable :: nodes_pp(:), nodes_ff(:), values_pp(:), values_ff(:)
-        real(dp), allocatable :: shifted_flux(:), shifted_dflux(:)
-        real(dp) :: coefficients(6), tolerance, local_psi(6), local_dpsi(6)
-        real(dp) :: vertices(2, 3)
+        real(dp), allocatable , target :: nodes_pp(:), nodes_ff(:), values_pp(:), &
+            values_ff(:)
+        real(dp), allocatable , target :: shifted_flux(:), shifted_dflux(:)
+        real(dp), target :: coefficients(6), tolerance, local_psi(6), local_dpsi(6)
+        real(dp), target :: vertices(2, 3)
         real(dp) :: source_scale, error_norm, rhs_norm, pp_slope, ff_slope, rmin, rmax
         real(dp) :: activity_scale, dual_scale
-        integer :: e, k, l, node, boundary_node, ndof, work_limit, nc, nf
-        integer :: ip, iff, ix, im
+        integer , target :: e, k, l, node, boundary_node, ndof, work_limit, nc, nf
+        integer , target :: ip, iff, ix, im
         character(160) :: message
+        type(profile_load_products_source_integrand_t) :: source_integrand_context
         status = 1
         rhs = 0.0_dp
         if (present(error_estimate)) error_estimate = huge(1.0_dp)
@@ -1106,7 +1170,39 @@ contains
                 status = 1
                 exit
             end if
-            call integrate_triangle_levels(coefficients, flux, source_integrand, &
+        if (present(cotangent)) source_integrand_context%cotangent => cotangent
+        if (present(dff)) source_integrand_context%dff => dff
+        if (present(dmu0)) source_integrand_context%dmu0 => dmu0
+        if (present(dpp)) source_integrand_context%dpp => dpp
+        source_integrand_context%e => e
+        source_integrand_context%ff => ff
+        source_integrand_context%flux => flux
+        source_integrand_context%iff => iff
+        source_integrand_context%im => im
+        source_integrand_context%ip => ip
+        source_integrand_context%ix => ix
+        source_integrand_context%local_dpsi => local_dpsi
+        source_integrand_context%local_psi => local_psi
+        source_integrand_context%mode => mode
+        source_integrand_context%mu0 => mu0
+        source_integrand_context%ndof => ndof
+        nullify(source_integrand_context%nodes_ff)
+        if (allocated(nodes_ff)) source_integrand_context%nodes_ff => nodes_ff
+        nullify(source_integrand_context%nodes_pp)
+        if (allocated(nodes_pp)) source_integrand_context%nodes_pp => nodes_pp
+        source_integrand_context%pp => pp
+        if (allocated(shifted_dflux)) source_integrand_context%shifted_dflux => &
+            shifted_dflux
+        if (allocated(shifted_flux)) source_integrand_context%shifted_flux => &
+            shifted_flux
+        source_integrand_context%state => state
+        nullify(source_integrand_context%values_ff)
+        if (allocated(values_ff)) source_integrand_context%values_ff => values_ff
+        nullify(source_integrand_context%values_pp)
+        if (allocated(values_pp)) source_integrand_context%values_pp => values_pp
+        source_integrand_context%vertices => vertices
+            call integrate_triangle_levels(coefficients, flux, &
+                source_integrand_context, &
                   epsabs, 0.01_dp*tolerance, workspace, values, errors, status, message)
             if (status /= 0) exit
             values = 2*state%area(e)*values
@@ -1178,46 +1274,6 @@ contains
         end if
         status = 0
     contains
-        subroutine source_integrand(point, output, callback_status)
-            real(dp), intent(in) :: point(2)
-            real(dp), intent(out) :: output(:)
-            integer, intent(out) :: callback_status
-            real(dp) :: shape(6), r, psi_q, pp_q, ff_q, source, dpsi_q, dpp_q, dff_q
-            real(dp) :: dsource, dual, gr, gmu, gp, gf, xp, xf
-            real(dp) :: local_dual(6)
-            call element_values(state%element_order, point(1), point(2), shape(:ndof))
-          r = dot_product(vertices(1, :), [1 - point(1) - point(2), point(1), point(2)])
-            ! Shift flux and knots together before interpolating the profile law.
-            psi_q = dot_product(shape(:ndof), local_psi(:ndof) - local_psi(1))
-            pp_q = gs_profile_value(shifted_flux, pp, psi_q)
-            ff_q = gs_profile_value(shifted_flux, ff, psi_q)
-            call gs_source(r, mu0, pp_q, ff_q, source)
-            output(:ndof) = source*shape(:ndof)
-            if (mode == 2) then
-                dpsi_q = dot_product(shape(:ndof), local_dpsi(:ndof))
-                call profile_tangent(shifted_flux, pp, psi_q, shifted_dflux, &
-                    dpp, dpsi_q, dpp_q)
-                call profile_tangent(shifted_flux, ff, psi_q, shifted_dflux, &
-                    dff, dpsi_q, dff_q)
-             call gs_source_jvp(r, mu0, pp_q, ff_q, 0.0_dp, dmu0, dpp_q, dff_q, dsource)
-                output(ndof + 1:) = dsource*shape(:ndof)
-            else if (mode == 3) then
-                local_dual(:ndof) = cotangent(state%triangles(:, e))
-                where (state%boundary(state%triangles(:, e))) local_dual(:ndof) = 0
-                dual = dot_product(shape(:ndof), local_dual(:ndof))
-                call gs_source_vjp(r, mu0, pp_q, ff_q, dual, gr, gmu, gp, gf)
-              call profile_adjoint(shifted_flux, pp, psi_q, gp, xp, nodes_pp, values_pp)
-              call profile_adjoint(shifted_flux, ff, psi_q, gf, xf, nodes_ff, values_ff)
-                output(ndof + 1:2*ndof) = (xp + xf)*shape(:ndof)
-                output(ip + 1:iff) = values_pp
-                output(iff + 1:ix) = values_ff
-                output(ix + 1:im - 1) = nodes_pp + nodes_ff
-                output(im) = gmu
-            end if
-            callback_status = 0
-            if (any(.not. ieee_is_finite(output))) callback_status = 1
-        end subroutine source_integrand
-
         subroutine clear_outputs()
             rhs = 0
             if (present(tangent)) tangent = 0
@@ -1228,7 +1284,6 @@ contains
             if (present(gff)) gff = 0
         end subroutine clear_outputs
     end subroutine profile_load_products
-
     logical function profile_has_kink(flux, pp, ff, psi) result(kink)
         real(dp), intent(in) :: flux(:), pp(:), ff(:), psi
         real(dp) :: weights(2), left_pp, right_pp, left_ff, right_ff
@@ -1252,7 +1307,6 @@ contains
             return
         end do
     end function profile_has_kink
-
     subroutine profile_tangent(flux, values, psi, dflux, dvalues, dpsi, tangent)
         real(dp), intent(in) :: flux(:), values(:), psi, dflux(:), dvalues(:), dpsi
         real(dp), intent(out) :: tangent
@@ -1274,7 +1328,6 @@ contains
  call lagrange_nodes_jvp(2, psi, flux(j:j + 1), values(j:j + 1), dflux(j:j + 1), motion)
         tangent = tangent + motion
     end subroutine profile_tangent
-
     subroutine profile_adjoint(flux, values, psi, dual, psi_bar, flux_bar, values_bar)
         real(dp), intent(in) :: flux(:), values(:), psi, dual
         real(dp), intent(out) :: psi_bar, flux_bar(:), values_bar(:)
@@ -1295,7 +1348,6 @@ contains
                                    dual, psi_bar, values_bar(j:j + 1))
 call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j:j + 1))
     end subroutine profile_adjoint
-
     subroutine element_values(order, xi, eta, shape)
         integer, intent(in) :: order
         real(dp), intent(in) :: xi, eta
@@ -1311,20 +1363,22 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             end if
         end do
     end subroutine element_values
-
     subroutine gs_profile_tangent_cache(state, flux, ff, axis_flux, mass, &
             axis_response, status, max_evaluations)
-        type(gs_state_t), intent(in) :: state
-        real(dp), intent(in) :: flux(:), ff(:), axis_flux
+        type(gs_state_t), intent(in), target :: state
+        real(dp), intent(in), target :: flux(:), ff(:), axis_flux
         real(dp), allocatable, intent(out) :: mass(:, :, :), axis_response(:)
         integer, intent(out) :: status
         integer, intent(in), optional :: max_evaluations
         type(triangle_level_workspace_t) :: workspace
-        real(dp), allocatable :: values(:), errors(:), epsabs(:), shifted_flux(:)
-        real(dp) :: coefficients(6), local_psi(6), vertices(2, 3), scale, axis_scale
-        real(dp) :: zero_profile(size(flux)), local_axis(6)
-        integer :: ndof, nc, e, k, l, index, work_limit
+        real(dp), allocatable , target :: values(:), errors(:), epsabs(:), &
+            shifted_flux(:)
+        real(dp), target :: coefficients(6), local_psi(6), vertices(2, 3), scale, &
+            axis_scale
+        real(dp), target :: zero_profile(size(flux)), local_axis(6)
+        integer , target :: ndof, nc, e, k, l, index, work_limit
         character(160) :: message
+        type(gs_profile_tangent_cache_cache_integrand_t) :: cache_integrand_context
         status = 1
         if (state%mapped .or. state%element_order > 2) then
             status = GS_UNSUPPORTED_GEOMETRY
@@ -1376,7 +1430,17 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
                 status = 1
                 exit
             end if
-            call integrate_triangle_levels(coefficients, flux, cache_integrand, &
+        cache_integrand_context%axis_flux => axis_flux
+        cache_integrand_context%ff => ff
+        cache_integrand_context%local_psi => local_psi
+        cache_integrand_context%ndof => ndof
+        if (allocated(shifted_flux)) cache_integrand_context%shifted_flux => &
+            shifted_flux
+        cache_integrand_context%state => state
+        cache_integrand_context%vertices => vertices
+        cache_integrand_context%zero_profile => zero_profile
+            call integrate_triangle_levels(coefficients, flux, &
+                cache_integrand_context, &
                 epsabs, 1.0e-13_dp, workspace, values, errors, status, message)
             if (status /= 0) exit
             index = 0
@@ -1396,35 +1460,7 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         if (status /= 0) then
             mass = 0; axis_response = 0
         end if
-    contains
-        subroutine cache_integrand(point, output, callback_status)
-            real(dp), intent(in) :: point(2)
-            real(dp), intent(out) :: output(:)
-            integer, intent(out) :: callback_status
-            real(dp) :: shape(6), psi_q, r, slope, coefficient, source
-            integer :: i, j, offset
-            call element_values(state%element_order,point(1),point(2),shape(:ndof))
-            psi_q = dot_product(shape(:ndof),local_psi(:ndof)-local_psi(1))
-            r = dot_product(vertices(1,:),[1-point(1)-point(2),point(1),point(2)])
-            call profile_tangent(shifted_flux,ff,psi_q,zero_profile, &
-                zero_profile,1.0_dp,slope)
-            call gs_source(r,1.0_dp,0.0_dp,slope,source)
-            offset = 0
-            do j = 1, ndof
-                do i = 1, ndof
-                    offset = offset + 1
-                    output(offset) = source*shape(i)*shape(j)
-                end do
-            end do
-            call gs_normalized_profile_response(slope,0.0_dp, &
-                (psi_q+local_psi(1))/axis_flux,1.0_dp,coefficient)
-            call gs_source(r,1.0_dp,0.0_dp,coefficient,source)
-            output(ndof*ndof+1:) = -source*shape(:ndof)
-            callback_status = 0
-            if (any(.not. ieee_is_finite(output))) callback_status = 1
-        end subroutine cache_integrand
     end subroutine gs_profile_tangent_cache
-
     subroutine gs_profile_response(state, flux, ff, solution, residual, status)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: flux(:), ff(:)
@@ -1445,20 +1481,22 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         residual=norm2(action-rhs)/max(norm2(rhs),tiny(1.0_dp))
         call gs_linear_response(state,rhs,solution,status)
     end subroutine gs_profile_response
-
     subroutine gs_profile_ff_load_basis(state, flux, loads, estimates, status, &
             relative_tolerance, max_evaluations)
-        type(gs_state_t), intent(in) :: state
+        type(gs_state_t), intent(in), target :: state
         real(dp), intent(in) :: flux(:)
         real(dp), allocatable, intent(out) :: loads(:, :), estimates(:, :)
         integer, intent(out) :: status
         real(dp), intent(in), optional :: relative_tolerance
         integer, intent(in), optional :: max_evaluations
         type(triangle_level_workspace_t) :: workspace
-        real(dp), allocatable :: values(:), errors(:), epsabs(:), shifted_flux(:)
-        real(dp) :: coefficients(6), local_psi(6), vertices(2, 3), tolerance, rmin
-        integer :: ndof, nf, e, k, j, node, index, work_limit
+        real(dp), allocatable , target :: values(:), errors(:), epsabs(:), &
+            shifted_flux(:)
+        real(dp), target :: coefficients(6), local_psi(6), vertices(2, 3), &
+            tolerance, rmin
+        integer , target :: ndof, nf, e, k, j, node, index, work_limit
         character(160) :: message
+        type(gs_profile_ff_load_basis_integrand_t) :: integrand_context
         status = 1
         if (state%mapped .or. state%element_order > 2) then
             status = GS_UNSUPPORTED_GEOMETRY
@@ -1520,7 +1558,15 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             if (status /= 0) exit
             ! Identical per-component scale to a native unit FFprime coefficient.
             epsabs = max(tiny(1.0_dp), 0.01_dp*tolerance/rmin)
-            call integrate_triangle_levels(coefficients, flux, integrand, epsabs, &
+        integrand_context%local_psi => local_psi
+        integrand_context%ndof => ndof
+        integrand_context%nf => nf
+        nullify(integrand_context%shifted_flux)
+        if (allocated(shifted_flux)) integrand_context%shifted_flux => shifted_flux
+        integrand_context%state => state
+        integrand_context%vertices => vertices
+            call integrate_triangle_levels(coefficients, flux, integrand_context, &
+                epsabs, &
                 0.01_dp*tolerance, workspace, &
                 values, errors, status, message)
             if (status /= 0) exit
@@ -1551,36 +1597,7 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             loads = 0
             estimates = huge(1.0_dp)
         end if
-    contains
-        subroutine integrand(point, output, callback_status)
-            real(dp), intent(in) :: point(2)
-            real(dp), intent(out) :: output(:)
-            integer, intent(out) :: callback_status
-            real(dp) :: shape(6), r, psi_q, source, profile_weights(nf)
-            real(dp) :: zero_profile(nf), nodes_bar(nf), psi_bar
-            integer :: column
-            call element_values(state%element_order, point(1), point(2), shape(:ndof))
-            r = dot_product(vertices(1, :), &
-                [1 - point(1) - point(2), point(1), point(2)])
-            psi_q = dot_product(shape(:ndof), local_psi(:ndof) - local_psi(1))
-            zero_profile = 0
-            ! The existing interpolation adjoint supplies the authoritative hat basis.
-            call profile_adjoint(shifted_flux, zero_profile, psi_q, 1.0_dp, &
-                psi_bar, nodes_bar, profile_weights)
-            call gs_source(r, 1.0_dp, 0.0_dp, 1.0_dp, source)
-            output = 0
-            do column = 1, nf
-                if (abs(profile_weights(column)) <= 0.0_dp) cycle
-                output((column - 1)*ndof + 1:column*ndof) = &
-                    source*profile_weights(column)*shape(:ndof)
-            end do
-            callback_status = 0
-            if (any(.not. ieee_is_finite(output))) callback_status = 1
-        end subroutine integrand
     end subroutine gs_profile_ff_load_basis
-
-
-
     subroutine prepare_gs_profile_response_cache(state, flux, ff, cache, status)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: flux(:), ff(:)
@@ -1655,7 +1672,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         if (status /= 0) return
         cache%ready = .true.
     end subroutine prepare_gs_profile_response_cache
-
     logical function profile_cache_matches(state, flux, ff, cache) result(matches)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: flux(:), ff(:)
@@ -1692,7 +1708,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         if (any(state%boundary .neqv. cache%state%boundary)) return
         matches = .true.
     end function profile_cache_matches
-
     subroutine gs_profile_implicit_response(state, flux, ff, dff, &
             response, status, cache)
         type(gs_state_t), intent(in) :: state
@@ -1717,15 +1732,15 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             call cached_profile_response(prepared, dff, response, status)
         end if
     end subroutine gs_profile_implicit_response
-
     subroutine cached_profile_response(cache, dff, response, status)
-        type(gs_profile_response_cache_t), intent(in) :: cache
+        type(gs_profile_response_cache_t), intent(in), target :: cache
         real(dp), intent(in) :: dff(:)
         real(dp), allocatable, intent(out) :: response(:)
         integer, intent(out) :: status
         real(dp), allocatable :: rhs(:), pp(:), zero_state(:)
         real(dp) :: residual
         integer :: iterations
+        type(cached_profile_response_matvec_t) :: matvec_operator
         allocate (rhs(size(cache%state%psi)), pp(size(cache%flux)), &
             response(size(cache%state%psi)), &
             zero_state(size(cache%state%psi)))
@@ -1745,38 +1760,11 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         end if
         where (cache%state%boundary) rhs = 0
         rhs = rhs/cache%state%diagonal
-        call real_gmres_operator(matvec, rhs, response, 1.0e-10_dp, &
+        matvec_operator%cache => cache
+        call real_gmres(matvec_operator, rhs, response, 1.0e-10_dp, &
             max(500, 5*size(rhs)), min(80, size(rhs)), &
             status, iterations, residual)
-    contains
-        subroutine matvec(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            real(dp) :: axis_tangent
-            integer :: cell, first, second, ni, nj
-            output = 0
-            axis_tangent = dot_product(cache%axis_shape, &
-                input(cache%state%triangles(:, cache%axis_element)))
-            do cell = 1, size(cache%state%triangles, 2)
-                do second = 1, size(cache%state%triangles, 1)
-                    nj = cache%state%triangles(second, cell)
-                    if (cache%state%boundary(nj)) cycle
-                    do first = 1, size(cache%state%triangles, 1)
-                        ni = cache%state%triangles(first, cell)
-                        if (cache%state%boundary(ni)) cycle
-                        output(ni) = output(ni) + &
-                            cache%matrix(first, second, cell)*input(nj)
-                    end do
-                end do
-            end do
-            output = output + cache%axis_response*axis_tangent
-            where (cache%state%boundary) output = input
-            output = output/cache%state%diagonal
-        end subroutine matvec
     end subroutine cached_profile_response
-
-
-
    real(dp) function gs_profile_value(flux, values, psi) result(value)
       real(dp), intent(in) :: flux(:), values(:), psi
       real(dp) :: weights(2)
@@ -1796,7 +1784,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       end do
       value = values(size(flux))
    end function gs_profile_value
-
    real(dp) function gs_profile_integral(flux, values, psi) result(value)
       real(dp), intent(in) :: flux(:), values(:), psi
       real(dp) :: upper, width, segment
@@ -1817,7 +1804,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       if (psi > flux(size(flux))) value = value + &
                                           (psi - flux(size(flux)))*values(size(flux))
    end function gs_profile_integral
-
    subroutine solve_gs_profiles(state, mu0, flux, pp, ff, status, relative_tolerance)
       type(gs_state_t), intent(inout) :: state
       real(dp), intent(in) :: mu0, flux(:), pp(:), ff(:)
@@ -1868,7 +1854,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       end do
       status = 2 ! Candidate did not solve the declared nonlinear model.
    end subroutine solve_gs_profiles
-
     subroutine gs_element_jet(state, element, r, z, psi, grad, hessian, status, &
                               affine_chart)
         type(gs_state_t), intent(in) :: state
@@ -1919,7 +1904,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             hessian = hessian + hessians(:, :, j)*differences(j)
         end do
     end subroutine gs_element_jet
-
     subroutine sample_gs(state, r, z, f, psi, br, bz, bt, status)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: r, z, f
@@ -1937,7 +1921,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             return
         end do
     end subroutine sample_gs
-
    subroutine gs_classical_current(state, element, r, z, mu0, current, status)
       type(gs_state_t), intent(in) :: state
       integer, intent(in) :: element
@@ -1952,7 +1935,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       if (status /= 0) return
       call gs_current_density(r, mu0, grad(1), hessian(1, 1), hessian(2, 2), current)
    end subroutine gs_classical_current
-
    subroutine gs_axis_safety_factor(r, f_axis, hessian, q, status)
       real(dp), intent(in) :: r, f_axis, hessian(2, 2)
       real(dp), intent(out) :: q
@@ -1971,7 +1953,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       if (.not. ieee_is_finite(q)) return
       status = 0
    end subroutine gs_axis_safety_factor
-
     ! True when a stationary parameter sits on an edge node: that minimum is
     ! already offered as a node entity, so the edge must not offer the same
     ! physical point a second time and turn one axis into an ambiguous pair.
@@ -1982,7 +1963,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         axis_on_edge_node = minval(abs(t*real(order, dp) - &
             [(real(m, dp), m = 1, order - 1)])) <= 1.0e-12_dp
     end function axis_on_edge_node
-
     ! Reference coordinates of one local node slot, following the ordering that
     ! higher_order_mesh builds: three vertices, then (order-1) nodes along each
     ! edge, then the cubic bubble.
@@ -2006,7 +1986,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         local = vertices(:, edge_index) + (real(node_on_edge, dp)/real(order, dp))* &
             (vertices(:, second) - vertices(:, edge_index))
     end subroutine axis_slot_reference
-
     ! Offer every mesh node. A coarse mesh puts the flux minimum exactly on a
     ! node, and node minima are reachable with no interpolation at all, so they
     ! are collected independently of the interior stationary searches: those
@@ -2017,7 +1996,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         integer, intent(in) :: order
         real(dp) :: local(2)
         integer :: e, j, node, stat
-
         do e = 1, size(state%triangles, 2)
             do j = 1, size(state%triangles, 1)
                 node = state%triangles(j, e)
@@ -2032,7 +2010,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
             end do
         end do
     end subroutine axis_node_entities
-
     ! Offer the minimum of one mesh entity to the axis search. A repeated key is
     ! the same entity seen from the adjacent cell, so it is dropped instead of
     ! recorded as a second minimum: a minimum shared by neighbouring cells is one
@@ -2049,7 +2026,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         real(dp) :: d(10), shape(10), gradients(2, 10), hs(2, 2, 10)
         real(dp) :: h(2, 2), point(2), det
         integer :: j, ndof
-
         stat = 0
         if (search%kind == kind .and. search%id == id) return
         if (value >= search%value) then
@@ -2074,7 +2050,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         end do
         search%hessian = h
     end subroutine offer_axis_candidate
-
     subroutine gs_axis_candidate(state, axis, psi_axis, hessian_axis, element, status)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(out) :: axis(2), psi_axis, hessian_axis(2, 2)
@@ -2149,7 +2124,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         hessian_axis = search%hessian; element = search%element
         status = 0
     end subroutine gs_axis_candidate
-
     subroutine cubic_axis_candidate(state, axis, psi_axis, hessian_axis, &
                                      element, status)
         type(gs_state_t), intent(in) :: state
@@ -2251,7 +2225,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         hessian_axis = search%hessian; element = search%element
         status = 0
     end subroutine cubic_axis_candidate
-
    subroutine gs_current_jump(state, left, right, r, z, normal, mu0, current, status)
       type(gs_state_t), intent(in) :: state
       integer, intent(in) :: left, right
@@ -2291,7 +2264,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       call gs_current_sheet(r, mu0, gr(1)-gl(1), gr(2)-gl(2), &
                             normal(1), normal(2), current)
    end subroutine gs_current_jump
-
     subroutine read_gs_mesh(state, path, status)
         ! Evaluation-only restart: preserves native coefficients and geometry.
         ! No operator is assembled; ready remains false to reject a new solve.
@@ -2392,7 +2364,6 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         end do
         status = 0
     end subroutine read_gs_mesh
-
    subroutine write_gs_mesh(state, path, status)
       type(gs_state_t), intent(in) :: state
       character(*), intent(in) :: path
@@ -2421,4 +2392,194 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       end do
       close (unit)
    end subroutine write_gs_mesh
+    subroutine gs_linear_response_matvec_apply(self, input, output)
+        class(gs_linear_response_matvec_t), intent(inout) :: self
+         real(dp), intent(in) :: input(:)
+         real(dp), intent(out) :: output(:)
+         call apply_gs(self%state, input, output)
+    end subroutine gs_linear_response_matvec_apply
+    subroutine gs_linear_response_preconditioner_apply(self, input, output)
+        class(gs_linear_response_preconditioner_t), intent(inout) :: self
+         real(dp), intent(in) :: input(:)
+         real(dp), intent(out) :: output(:)
+         output = input/self%state%diagonal
+    end subroutine gs_linear_response_preconditioner_apply
+    subroutine cached_profile_response_matvec_apply(self, input, output)
+        class(cached_profile_response_matvec_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            real(dp) :: axis_tangent
+            integer :: cell, first, second, ni, nj
+            output = 0
+            axis_tangent = dot_product(self%cache%axis_shape, &
+                input(self%cache%state%triangles(:, self%cache%axis_element)))
+            do cell = 1, size(self%cache%state%triangles, 2)
+                do second = 1, size(self%cache%state%triangles, 1)
+                    nj = self%cache%state%triangles(second, cell)
+                    if (self%cache%state%boundary(nj)) cycle
+                    do first = 1, size(self%cache%state%triangles, 1)
+                        ni = self%cache%state%triangles(first, cell)
+                        if (self%cache%state%boundary(ni)) cycle
+                        output(ni) = output(ni) + &
+                            self%cache%matrix(first, second, cell)*input(nj)
+                    end do
+                end do
+            end do
+            output = output + self%cache%axis_response*axis_tangent
+            where (self%cache%state%boundary) output = input
+            output = output/self%cache%state%diagonal
+    end subroutine cached_profile_response_matvec_apply
+    subroutine profile_load_products_source_integrand_evaluate(self, point, values, &
+        status)
+        class(profile_load_products_source_integrand_t), intent(in) :: self
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: values(:)
+            integer, intent(out) :: status
+            real(dp) :: shape(6), r, psi_q, pp_q, ff_q, source, dpsi_q, dpp_q, dff_q
+            real(dp) :: dsource, dual, gr, gmu, gp, gf, xp, xf
+            real(dp) :: local_dual(6)
+            call element_values(self%state%element_order, point(1), point(2), &
+                shape(:self%ndof))
+          r = dot_product(self%vertices(1, :), [1 - point(1) - point(2), point(1), &
+              point(2)])
+            ! Shift flux and knots together before interpolating the profile law.
+            psi_q = dot_product(shape(:self%ndof), self%local_psi(:self%ndof) - &
+                self%local_psi(1))
+            pp_q = gs_profile_value(self%shifted_flux, self%pp, psi_q)
+            ff_q = gs_profile_value(self%shifted_flux, self%ff, psi_q)
+            call gs_source(r, self%mu0, pp_q, ff_q, source)
+            values(:self%ndof) = source*shape(:self%ndof)
+            if (self%mode == 2) then
+                dpsi_q = dot_product(shape(:self%ndof), self%local_dpsi(:self%ndof))
+                call profile_tangent(self%shifted_flux, self%pp, psi_q, &
+                    self%shifted_dflux, &
+                    self%dpp, dpsi_q, dpp_q)
+                call profile_tangent(self%shifted_flux, self%ff, psi_q, &
+                    self%shifted_dflux, &
+                    self%dff, dpsi_q, dff_q)
+             call gs_source_jvp(r, self%mu0, pp_q, ff_q, 0.0_dp, self%dmu0, dpp_q, &
+                 dff_q, dsource)
+                values(self%ndof + 1:) = dsource*shape(:self%ndof)
+            else if (self%mode == 3) then
+                local_dual(:self%ndof) = self%cotangent(self%state%triangles(:, self%e))
+                where (self%state%boundary(self%state%triangles(:, self%e))) &
+                    local_dual(:self%ndof) = 0
+                dual = dot_product(shape(:self%ndof), local_dual(:self%ndof))
+                call gs_source_vjp(r, self%mu0, pp_q, ff_q, dual, gr, gmu, gp, gf)
+              call profile_adjoint(self%shifted_flux, self%pp, psi_q, gp, xp, &
+                  self%nodes_pp, self%values_pp)
+              call profile_adjoint(self%shifted_flux, self%ff, psi_q, gf, xf, &
+                  self%nodes_ff, self%values_ff)
+                values(self%ndof + 1:2*self%ndof) = (xp + xf)*shape(:self%ndof)
+                values(self%ip + 1:self%iff) = self%values_pp
+                values(self%iff + 1:self%ix) = self%values_ff
+                values(self%ix + 1:self%im - 1) = self%nodes_pp + self%nodes_ff
+                values(self%im) = gmu
+            end if
+            status = 0
+            if (any(.not. ieee_is_finite(values))) status = 1
+    end subroutine profile_load_products_source_integrand_evaluate
+    subroutine gs_profile_tangent_cache_cache_integrand_evaluate(self, point, &
+        values, status)
+        class(gs_profile_tangent_cache_cache_integrand_t), intent(in) :: self
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: values(:)
+            integer, intent(out) :: status
+            real(dp) :: shape(6), psi_q, r, slope, coefficient, source
+            integer :: i, j, offset
+            call &
+                element_values(self%state%element_order,point(1),point(2),shape(:self%ndof))
+            psi_q = &
+                dot_product(shape(:self%ndof),self%local_psi(:self%ndof)-self%local_psi(1))
+            r = dot_product(self%vertices(1,:),[1-point(1)-point(2),point(1),point(2)])
+            call profile_tangent(self%shifted_flux,self%ff,psi_q,self%zero_profile, &
+                self%zero_profile,1.0_dp,slope)
+            call gs_source(r,1.0_dp,0.0_dp,slope,source)
+            offset = 0
+            do j = 1, self%ndof
+                do i = 1, self%ndof
+                    offset = offset + 1
+                    values(offset) = source*shape(i)*shape(j)
+                end do
+            end do
+            call gs_normalized_profile_response(slope,0.0_dp, &
+                (psi_q+self%local_psi(1))/self%axis_flux,1.0_dp,coefficient)
+            call gs_source(r,1.0_dp,0.0_dp,coefficient,source)
+            values(self%ndof*self%ndof+1:) = -source*shape(:self%ndof)
+            status = 0
+            if (any(.not. ieee_is_finite(values))) status = 1
+    end subroutine gs_profile_tangent_cache_cache_integrand_evaluate
+    subroutine gs_profile_ff_load_basis_integrand_evaluate(self, point, values, status)
+        class(gs_profile_ff_load_basis_integrand_t), intent(in) :: self
+            real(dp), intent(in) :: point(2)
+            real(dp), intent(out) :: values(:)
+            integer, intent(out) :: status
+            real(dp) :: shape(6), r, psi_q, source, profile_weights(self%nf)
+            real(dp) :: zero_profile(self%nf), nodes_bar(self%nf), psi_bar
+            integer :: column
+            call element_values(self%state%element_order, point(1), point(2), &
+                shape(:self%ndof))
+            r = dot_product(self%vertices(1, :), &
+                [1 - point(1) - point(2), point(1), point(2)])
+            psi_q = dot_product(shape(:self%ndof), self%local_psi(:self%ndof) - &
+                self%local_psi(1))
+            zero_profile = 0
+            ! The existing interpolation adjoint supplies the authoritative hat basis.
+            call profile_adjoint(self%shifted_flux, zero_profile, psi_q, 1.0_dp, &
+                psi_bar, nodes_bar, profile_weights)
+            call gs_source(r, 1.0_dp, 0.0_dp, 1.0_dp, source)
+            values = 0
+            do column = 1, self%nf
+                if (abs(profile_weights(column)) <= 0.0_dp) cycle
+                values((column - 1)*self%ndof + 1:column*self%ndof) = &
+                    source*profile_weights(column)*shape(:self%ndof)
+            end do
+            status = 0
+            if (any(.not. ieee_is_finite(values))) status = 1
+    end subroutine gs_profile_ff_load_basis_integrand_evaluate
+
+    subroutine initialize_gs(state, contour, max_area, status, element_order, &
+                             curved, curve, interior_points, interior_chain, &
+                                 geometry_only)
+        !! Meshes the closed outer curve `contour` (counter-clockwise). The optional
+        !! `interior_chain` is a second closed loop strictly inside it (free-boundary
+        !! plasma boundary Gamma_p): its segments are constrained edges, never
+        !! split, and with curved elements they carry curved P2/P3 edge nodes on
+        !! the periodic spline through the chain. Only the outer curve is flagged
+        !! `boundary`.
+        type(gs_state_t), intent(out) :: state
+        real(dp), intent(in) :: contour(:, :), max_area
+        integer, intent(out) :: status
+        integer, intent(in), optional :: element_order
+        logical, intent(in), optional :: curved
+        procedure(boundary_curve), optional :: curve
+        real(dp), intent(in), optional :: interior_points(:, :)
+        real(dp), intent(in), optional :: interior_chain(:, :)
+        logical, intent(in), optional :: geometry_only
+        type(boundary_curve_adapter_t), target :: curve_adapter
+        class(boundary_curve_t), pointer :: curve_object
+
+        nullify(curve_object)
+        if (present(curve)) then
+            curve_adapter%callback => curve
+            curve_object => curve_adapter
+        end if
+        call initialize_gs_object(state, &
+            contour, &
+            max_area, &
+            status, &
+            element_order, &
+            curved, &
+            curve_object, &
+            interior_points, &
+            interior_chain, geometry_only)
+    end subroutine
+
+    subroutine boundary_curve_adapter_t_evaluate(self, t, point)
+        class(boundary_curve_adapter_t), intent(in) :: self
+            real(dp), intent(in) :: t
+            real(dp), intent(out) :: point(2)
+        call self%callback(t, point)
+    end subroutine
+
 end module kin6d_grad_shafranov

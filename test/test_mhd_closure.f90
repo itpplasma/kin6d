@@ -1,4 +1,111 @@
-program test_mhd_closure
+module test_mhd_closure_callbacks
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_ode_cash_karp, only: cash_karp_step
+    use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
+        meridian_point_basis_t, meridian_point_basis_init
+    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point, &
+        surface_t, surface_build, find_surface_q
+    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
+        ring_labels_smooth
+    use kin6d_gs_direct, only: gs_direct_available
+    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
+        ampere_n_curl, mu0
+    use kin6d_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &
+        ring_angles_t, ring_angles_set, ring_flux_harmonic, ring_flux_from_values, &
+        ring_points
+    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
+        ideal_options_t, ideal_response
+    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
+        layer_xmax, layer_fit_widths, layer_jump, layer_kink, layer_init, &
+        layer_closure, layer_wmax, &
+        layer_coefficients, layer_regular_slope, layer_large
+    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
+        layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
+    use kin6d_response_strip, only: cyl_step_t, strip_options_t, strip_mesh, &
+        layer_width, step_fprime, step_delta_prime, step_rational, &
+        strip_dirichlet_map, strip_growth_rate, strip_solution_t, &
+        ri_dispersion_gamma
+    use fortnum_integrate_gk, only: gk_function_t
+
+    use fortnum_integrate_gk, only: gk_function_t
+
+    use kin6d_mhd_mesh, only: polar_map_t
+    implicit none
+    private
+    public :: run_test_mhd_closure
+    real(dp), parameter :: pi = 3.14159265358979323846_dp
+    real(dp), parameter :: b0 = 2.0_dp
+    integer, parameter :: ntab = 14001
+    real(dp), parameter :: rtab_max = 1.4_dp
+    integer, parameter :: np = 256
+    real(dp), parameter :: ratio = 1.5_dp
+    type, abstract :: callback_function_t
+    contains
+        procedure(callback_evaluate), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine callback_evaluate(self, t, y, dydt, ctx)
+            import :: callback_function_t, dp
+            class(callback_function_t), intent(in) :: self
+            real(dp), intent(in) :: t, y(:)
+            real(dp), intent(out) :: dydt(:)
+            class(*), optional, intent(in) :: ctx
+        end subroutine
+    end interface
+
+    type :: run_test_mhd_closure_tear_rhs_context_t
+        integer, pointer :: mres => null()
+        integer, pointer :: nmode => null()
+        integer, pointer :: prof => null()
+        real(dp), pointer :: q0 => null()
+        real(dp), pointer :: r1 => null()
+        real(dp), pointer :: tab_i(:) => null()
+        real(dp), pointer :: tab_r(:) => null()
+        real(dp), pointer :: wstep => null()
+    end type
+
+    type, extends(callback_function_t) :: run_test_mhd_closure_profile_rhs_t
+        type(run_test_mhd_closure_tear_rhs_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_closure_profile_rhs_binding
+    end type
+
+    type, extends(gk_function_t) :: run_test_mhd_closure_d_i_t
+        type(run_test_mhd_closure_tear_rhs_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_closure_d_i_binding
+    end type
+
+    type, extends(gk_function_t) :: run_test_mhd_closure_d_p_t
+        type(run_test_mhd_closure_tear_rhs_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_closure_d_p_binding
+    end type
+
+    type, extends(gk_function_t) :: run_test_mhd_closure_d_b_t
+        type(run_test_mhd_closure_tear_rhs_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_closure_d_b_binding
+    end type
+
+    type, extends(callback_function_t) :: run_test_mhd_closure_tear_rhs_t
+        type(run_test_mhd_closure_tear_rhs_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_closure_tear_rhs_binding
+    end type
+
+    type :: run_test_mhd_closure_polar_map_context_t
+        type(psi_grid_t), pointer :: g => null()
+    end type
+
+    type, extends(polar_map_t) :: run_test_mhd_closure_polar_map_t
+        type(run_test_mhd_closure_polar_map_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_closure_polar_map_binding
+    end type
+
+contains
+    subroutine run_test_mhd_closure()
     !! V5: ideal closure at rational surfaces (kin6d_mhd_closure_n) against
     !! cylindrical tearing Delta'.
     !!
@@ -48,56 +155,24 @@ program test_mhd_closure
     !! KIN6D_CLOSURE_STUDY="prof R0 nrad delta ratio maxit nfit" runs one FEEC
     !! Delta' case (convergence studies), "edge" the edge oracle alone.
     !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
-    use, intrinsic :: iso_fortran_env, only: dp => real64
-    use fortnum_ode_cash_karp, only: cash_karp_step
-    use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
-        meridian_point_basis_t, meridian_point_basis_init
-    use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, flux_ray_point, &
-        surface_t, surface_build, find_surface_q
-    use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build, ring_labels_merge, &
-        ring_labels_smooth
-    use kin6d_gs_direct, only: gs_direct_available
-    use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_build, ampere_n_solve, &
-        ampere_n_curl, mu0
-    use kin6d_mhd_response_n, only: ring_sheet_load, layer_closure_t, closure_fluxes, &
-        ring_angles_t, ring_angles_set, ring_flux_harmonic, ring_flux_from_values, &
-        ring_points
-    use kin6d_mhd_ideal_n, only: sample_ring_t, sample_ring_build, &
-        ideal_options_t, ideal_response
-    use kin6d_mhd_closure_n, only: rational_layer_t, mercier_di, layer_labels, &
-        layer_xmax, layer_fit_widths, layer_jump, layer_kink, layer_init, &
-        layer_closure, layer_wmax, &
-        layer_coefficients, layer_regular_slope, layer_large
-    use kin6d_mhd_layer_n, only: layer_params_t, layer_scales, layer_delta, &
-        layer_scaled_delta, layer_ri_constant_psi, layer_metrics, resistive_closure
-    use kin6d_response_strip, only: cyl_step_t, strip_options_t, strip_mesh, &
-        layer_width, step_fprime, step_delta_prime, step_rational, &
-        strip_dirichlet_map, strip_growth_rate, strip_solution_t, &
-        ri_dispersion_gamma
     implicit none
 
-    real(dp), parameter :: pi = 3.14159265358979323846_dp
-    real(dp), parameter :: b0 = 2.0_dp
-    integer, parameter :: ntab = 14001
-    real(dp), parameter :: rtab_max = 1.4_dp
-    integer :: prof = 1                  ! 1 Wesson, 2 tanh step, 3 uniform,
+integer, target :: prof
                                          ! 4 GPEC lar default j = 1/(1 + r^2)^2
-    real(dp) :: q0 = 1.2_dp, r1 = 0.5_dp, wstep = 0.08_dp
-    integer :: nmode = 1, mres = 2
-    real(dp) :: r0, msgn = 1.0_dp
-    real(dp) :: tab_r(ntab), tab_i(ntab), tab_p(ntab), tab_b(ntab)
-    type(psi_grid_t) :: g
+real(dp) , target :: q0, r1, wstep
+integer , target :: nmode, mres
+real(dp) :: r0, msgn
+    real(dp) , target :: tab_r(ntab), tab_i(ntab), tab_p(ntab), tab_b(ntab)
+    type(psi_grid_t) , target :: g
     logical :: all_passed
-    integer :: nrad_fe = 32, gmres_max = 400, nfit_fe = 3
-    real(dp) :: shield_tol = 1.0e-6_dp
+integer :: nrad_fe, gmres_max, nfit_fe
+real(dp) :: shield_tol
     character(len=32) :: suite
     ! L5 resistive layer (SI): mass density, magnetic diffusivity eta/mu0,
     ! Doppler rate gamma = i n Omega of the static drive
-    real(dp) :: rho_l = 1.0e-7_dp, diff_l = 8.8e-5_dp
-    complex(dp) :: gam_l = (0.0_dp, 300.0_dp)
+real(dp) :: rho_l, diff_l
+complex(dp) :: gam_l
     ! R-B2 strip coupling state (fe_strip and its helpers)
-    integer, parameter :: np = 256
-    real(dp), parameter :: ratio = 1.5_dp
     type(flux_mesh_t) :: fm
     type(meridian_feec_t) :: fs
     type(meridian_point_basis_t) :: pb
@@ -122,7 +197,29 @@ program test_mhd_closure
     real(dp) :: merr, qsgn, qt, x, pa, rs, re(2), fp, dpr, gr, rb(2, 2), wl, tol
     integer :: k, st, nrat, itest, j, je(2), side, nr, ns, info, its, it
     logical :: found
+        type(run_test_mhd_closure_tear_rhs_context_t), target :: tear_rhs_data
+        type(run_test_mhd_closure_profile_rhs_t), target :: profile_rhs_operator
+        type(run_test_mhd_closure_d_i_t), target :: d_i_operator
+        type(run_test_mhd_closure_d_p_t), target :: d_p_operator
+        type(run_test_mhd_closure_d_b_t), target :: d_b_operator
+        type(run_test_mhd_closure_tear_rhs_t), target :: tear_rhs_operator
+        type(run_test_mhd_closure_polar_map_context_t), target :: polar_map_data
+        type(run_test_mhd_closure_polar_map_t), target :: polar_map_operator
 
+        prof = 1                  ! 1 Wesson
+        q0 = 1.2_dp
+        r1 = 0.5_dp
+        wstep = 0.08_dp
+        nmode = 1
+        mres = 2
+        msgn = 1.0_dp
+        nrad_fe = 32
+        gmres_max = 400
+        nfit_fe = 3
+        shield_tol = 1.0e-6_dp
+        rho_l = 1.0e-7_dp
+        diff_l = 8.8e-5_dp
+        gam_l = (0.0_dp, 300.0_dp)
     all_passed = .true.
     call study()
     block
@@ -168,6 +265,27 @@ program test_mhd_closure
     print '(a)', "test_mhd_closure: all checks passed"
 
 contains
+    subroutine bind_run_test_mhd_closure_polar_map_context()
+        polar_map_data%g => g
+        polar_map_operator%data => polar_map_data
+    end subroutine bind_run_test_mhd_closure_polar_map_context
+
+    subroutine bind_run_test_mhd_closure_tear_rhs_context()
+        tear_rhs_data%mres => mres
+        tear_rhs_data%nmode => nmode
+        tear_rhs_data%prof => prof
+        tear_rhs_data%q0 => q0
+        tear_rhs_data%r1 => r1
+        tear_rhs_data%tab_i => tab_i
+        tear_rhs_data%tab_r => tab_r
+        tear_rhs_data%wstep => wstep
+        profile_rhs_operator%data => tear_rhs_data
+        d_i_operator%data => tear_rhs_data
+        d_p_operator%data => tear_rhs_data
+        d_b_operator%data => tear_rhs_data
+        tear_rhs_operator%data => tear_rhs_data
+    end subroutine bind_run_test_mhd_closure_tear_rhs_context
+
 
     subroutine layer_all_rational_setup()
         !! Unsorted, crowded and near-boundary rationals must all retain
@@ -229,47 +347,6 @@ contains
 
     ! ------------------------------------------------------------ profiles
 
-    pure real(dp) function jprof(r)
-        real(dp), intent(in) :: r
-        if (prof == 3) then
-            jprof = 1.0_dp
-        else if (prof == 4) then
-            jprof = 1.0_dp/(1.0_dp + r*r)**2
-        else if (prof == 1) then
-            jprof = max(0.0_dp, 1.0_dp - r*r)**2
-        else
-            jprof = (1.0_dp - tanh((r - r1)/wstep))/(1.0_dp + tanh(r1/wstep))
-        end if
-    end function jprof
-
-    pure real(dp) function djprof(r)
-        real(dp), intent(in) :: r
-        if (prof == 3) then
-            djprof = 0.0_dp
-        else if (prof == 4) then
-            djprof = -4.0_dp*r/(1.0_dp + r*r)**3
-        else if (prof == 1) then
-            djprof = -4.0_dp*r*max(0.0_dp, 1.0_dp - r*r)
-        else
-            djprof = -1.0_dp/(wstep*cosh((r - r1)/wstep)**2*(1.0_dp + tanh(r1/wstep)))
-        end if
-    end function djprof
-
-    subroutine profile_rhs(t, y, dydt, ctx)
-        !! y = (I, int I/r, int I j/r)
-        real(dp), intent(in) :: t
-        real(dp), intent(in) :: y(:)
-        real(dp), intent(out) :: dydt(:)
-        class(*), intent(in), optional :: ctx
-        dydt(1) = jprof(t)*t
-        if (t > 0.0_dp) then
-            dydt(2) = y(1)/t
-            dydt(3) = y(1)*jprof(t)/t
-        else
-            dydt(2:3) = 0.0_dp
-        end if
-    end subroutine profile_rhs
-
     subroutine make_tables()
         !! I(r), psi-hat(r) = int I/r and int I j/r on a uniform grid (RK5).
         real(dp) :: y(3), y5(3), yerr(3), k(3, 6), yt(3), h, t
@@ -283,8 +360,11 @@ contains
         tab_p(1) = 0.0_dp
         tab_b(1) = 0.0_dp
         do i = 2, ntab
-            call cash_karp_step(profile_rhs, t, y, h, .false., k(:, 1), k(:, 2), &
-                k(:, 3), k(:, 4), k(:, 5), k(:, 6), yt, y5, yerr, nfev)
+        call bind_run_test_mhd_closure_tear_rhs_context()
+            call cash_karp_step(profile_rhs_bridge, t, y, h, .false., k(:, 1), &
+                k(:, 2), &
+                k(:, 3), k(:, 4), k(:, 5), k(:, 6), yt, y5, yerr, nfev, &
+                    ctx=profile_rhs_operator)
             y = y5
             t = (i - 1)*h
             tab_r(i) = t
@@ -294,66 +374,12 @@ contains
         end do
     end subroutine make_tables
 
-    real(dp) function hermite(tab, dfun, r)
-        !! Cubic Hermite interpolation of a table with known derivative.
-        real(dp), intent(in) :: tab(:), r
-        interface
-            real(dp) function dfun(x)
-                import :: dp
-                real(dp), intent(in) :: x
-            end function dfun
-        end interface
-        real(dp) :: h, s, ra, rb, h00, h10, h01, h11
-        integer :: i
-        h = tab_r(2)
-        i = min(ntab - 1, max(1, int(r/h) + 1))
-        ra = tab_r(i)
-        rb = tab_r(i + 1)
-        s = (r - ra)/h
-        h00 = (1 + 2*s)*(1 - s)**2
-        h10 = s*(1 - s)**2
-        h01 = s*s*(3 - 2*s)
-        h11 = s*s*(s - 1)
-        hermite = h00*tab(i) + h10*h*dfun(ra) + h01*tab(i + 1) + h11*h*dfun(rb)
-    end function hermite
-
-    real(dp) function d_i(r)
-        real(dp), intent(in) :: r
-        d_i = jprof(r)*r
-    end function d_i
-
-    real(dp) function d_p(r)
-        real(dp), intent(in) :: r
-        if (r > 0.0_dp) then
-            d_p = hermite(tab_i, d_i, r)/r
-        else
-            d_p = 0.0_dp
-        end if
-    end function d_p
-
-    real(dp) function d_b(r)
-        real(dp), intent(in) :: r
-        if (r > 0.0_dp) then
-            d_b = hermite(tab_i, d_i, r)*jprof(r)/r
-        else
-            d_b = 0.0_dp
-        end if
-    end function d_b
-
-    real(dp) function ival(r)
-        real(dp), intent(in) :: r
-        ival = hermite(tab_i, d_i, r)
-    end function ival
-
-    real(dp) function qcyl(r)
-        real(dp), intent(in) :: r
-        qcyl = q0*r*r/(2.0_dp*ival(r))
-    end function qcyl
-
     real(dp) function psi_of_r(r)
         !! psi = R0 int B_theta = (2 B0/q0) int I/r
         real(dp), intent(in) :: r
-        psi_of_r = 2.0_dp*b0/q0*hermite(tab_p, d_p, r)
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        psi_of_r = 2.0_dp*b0/q0*run_test_mhd_closure_hermite(tear_rhs_data, tab_p, &
+            d_p_operator, r)
     end function psi_of_r
 
     real(dp) function bz_of_r(r)
@@ -361,7 +387,9 @@ contains
         real(dp), intent(in) :: r
         real(dp) :: c
         c = 2.0_dp*b0/(r0*q0)
-        bz_of_r = sqrt(b0**2 + 2.0_dp*c*c*(tab_b(ntab) - hermite(tab_b, d_b, r)))
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        bz_of_r = sqrt(b0**2 + 2.0_dp*c*c*(tab_b(ntab) - &
+            run_test_mhd_closure_hermite(tear_rhs_data, tab_b, d_b_operator, r)))
     end function bz_of_r
 
     real(dp) function r_of_psi(psi)
@@ -390,7 +418,8 @@ contains
         hi = 1.0_dp
         do it = 80, 1, -1
             mid = 0.5_dp*(lo + hi)
-            if (qcyl(mid) < qt) then
+        call bind_run_test_mhd_closure_tear_rhs_context()
+            if (run_test_mhd_closure_qcyl(tear_rhs_data, mid) < qt) then
                 lo = mid
             else
                 hi = mid
@@ -401,16 +430,6 @@ contains
 
     ! ------------------------------------------------------- ODE Delta'
 
-    subroutine tear_rhs(t, y, dydt, ctx)
-        real(dp), intent(in) :: t
-        real(dp), intent(in) :: y(:)
-        real(dp), intent(out) :: dydt(:)
-        class(*), intent(in), optional :: ctx
-        real(dp) :: gg
-        gg = djprof(t)*t/(ival(t)*(1.0_dp - nmode*qcyl(t)/mres))
-        dydt(1) = y(2)
-        dydt(2) = -y(2)/t + (mres*mres/(t*t) + gg)*y(1)
-    end subroutine tear_rhs
 
     subroutine integrate(ra, rb, y)
         !! Adaptive Cash-Karp from ra to rb (either direction).
@@ -423,8 +442,10 @@ contains
         nfev = 0
         do it = 1, 10000000
             if ((t + h - rb)*sign(1.0_dp, rb - ra) > 0) h = rb - t
-            call cash_karp_step(tear_rhs, t, y, h, .false., k(:, 1), k(:, 2), &
-                k(:, 3), k(:, 4), k(:, 5), k(:, 6), yt, y5, yerr, nfev)
+        call bind_run_test_mhd_closure_tear_rhs_context()
+            call cash_karp_step(tear_rhs_bridge, t, y, h, .false., k(:, 1), k(:, 2), &
+                k(:, 3), k(:, 4), k(:, 5), k(:, 6), yt, y5, yerr, nfev, &
+                    ctx=tear_rhs_operator)
             sc = 1.0e-13_dp*(abs(y(1)) + abs(y(2))*abs(h)) + 1.0e-300_dp
             err = maxval(abs(yerr))/sc
             if (err <= 1.0_dp) then
@@ -508,19 +529,6 @@ contains
         if (st /= 0) error stop "equilibrium"
     end subroutine make_equilibrium
 
-    subroutine polar_map(u, theta, x)
-        real(dp), intent(in) :: u, theta
-        real(dp), intent(out) :: x(2)
-        real(dp) :: rho
-        logical :: ok
-        if (u <= 0.0_dp) then
-            x = [g%r_axis, g%z_axis]
-            return
-        end if
-        call flux_ray_point(g, u*u, theta, rho, ok)
-        if (.not. ok) error stop "ray"
-        x = [g%r_axis + rho*cos(theta), g%z_axis + rho*sin(theta)]
-    end subroutine polar_map
 
     subroutine mercier_zero_beta()
         real(dp) :: di, qa, dq
@@ -531,8 +539,11 @@ contains
         call make_tables()
         call make_equilibrium()
         call mercier_di(g, 0.5_dp, 512, di, qa, dq, st)
+        call bind_run_test_mhd_closure_tear_rhs_context()
         print '(a,es12.4,a,f8.4,a,f8.4)', "  D_I + 1/4 =", di + 0.25_dp, &
-            ",  |q| =", qa, ", cylinder q =", qcyl(r_of_psi(0.5_dp*psi_of_r(1.0_dp)))
+            ",  |q| =", qa, ", cylinder q =", &
+                run_test_mhd_closure_qcyl(tear_rhs_data, &
+                r_of_psi(0.5_dp*psi_of_r(1.0_dp)))
         call record(st == 0 .and. abs(di + 0.25_dp) < 1.0e-12_dp, &
             "Mercier D_I = -1/4 at zero pressure gradient")
         ! a rational closer to the boundary than the difference step
@@ -729,7 +740,8 @@ contains
                 error stop "strip edge ring"
         end do
         if (je(1) + 2 >= je(2) - 2) error stop "strip interior rings"
-        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        call bind_run_test_mhd_closure_polar_map_context()
+        call flux_mesh_build(ul, 8, 256, 2, polar_map_operator, fm, st)
         if (st /= 0) error stop "mesh"
         call meridian_feec_build(fm%mm, 2, fs, st)
         call ampere_n_build(fs, nmode, amp, st)
@@ -806,7 +818,8 @@ contains
         eq%m = mres
         eq%n = nmode
         eq%q0 = q0
-        eq%r1 = sqrt(2*ival(1.0_dp))
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        eq%r1 = sqrt(2*run_test_mhd_closure_ival(tear_rhs_data, 1.0_dp))
         rs = step_rational(eq)
         fp = step_fprime(eq)
         dpr = step_delta_prime(eq)
@@ -1225,7 +1238,8 @@ contains
         do j = 1, nrad
             ul(j) = real(j, dp)/nrad
         end do
-        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        call bind_run_test_mhd_closure_polar_map_context()
+        call flux_mesh_build(ul, 8, 256, 2, polar_map_operator, fm, st)
         call meridian_feec_build(fm%mm, 2, fs, st)
         call ampere_n_build(fs, nmode, amp, st)
         call meridian_point_basis_init(fs, pb, st)
@@ -1663,7 +1677,8 @@ contains
         call ring_labels_merge(nrad, extra, 0.3_dp, ul)
         call ring_labels_smooth(ul, 2*ratio)
         nr = size(ul)
-        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        call bind_run_test_mhd_closure_polar_map_context()
+        call flux_mesh_build(ul, 8, 256, 2, polar_map_operator, fm, st)
         if (st /= 0) error stop "mesh"
         call meridian_feec_build(fm%mm, 2, fs, st)
         call ampere_n_build(fs, nmode, amp, st)
@@ -1736,7 +1751,9 @@ contains
         junit = layer_regular_slope(lays(itest), &
             reshape(phe(base + 1:base + 2*nfit), [nfit, 2]))
         ! Delta' in psin: (a2+ + a2-)/(delta a1); to r with dpsin/dr at r_s
-        dpsindr = 2.0_dp*b0/q0*ival(rs_cyl)/rs_cyl/psi_of_r(1.0_dp)
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        dpsindr = 2.0_dp*b0/q0*run_test_mhd_closure_ival(tear_rhs_data, &
+            rs_cyl)/rs_cyl/psi_of_r(1.0_dp)
         dfit = real((cf(2, 1) + cf(2, 2))/(lays(itest)%delta*cf(1, 1)), dp) &
             *dpsindr*rs_cyl
         dprime = real((lam(2*itest - 1) + lam(2*itest))*junit/cf(1, 1), dp) &
@@ -1768,7 +1785,10 @@ contains
         real(dp) :: eta(ne), sv(ne), ev(ne), y(2), am(ne, 4), am2(ne, 4), kap
         real(dp) :: work(64), le, rhs(ne, 3), yl(2)
         integer :: i, info
-        kap = jprof(1.0_dp)/(ival(1.0_dp)*(1.0_dp - nmode*qcyl(1.0_dp)/mres))
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        kap = run_test_mhd_closure_jprof(tear_rhs_data, &
+            1.0_dp)/(run_test_mhd_closure_ival(tear_rhs_data, 1.0_dp)*(1.0_dp - &
+            nmode*run_test_mhd_closure_qcyl(tear_rhs_data, 1.0_dp)/mres))
         do i = 1, ne
             eta(i) = 1.0e-3_dp*0.25_dp**(i - 1)
             y = [eta(i), 1.0_dp]
@@ -1940,7 +1960,8 @@ contains
         call ring_labels_merge(nrad, extra, 0.3_dp, ul)
         call ring_labels_smooth(ul, 2*ratio)
         nr = size(ul)
-        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        call bind_run_test_mhd_closure_polar_map_context()
+        call flux_mesh_build(ul, 8, 256, 2, polar_map_operator, fm, st)
         if (st /= 0) error stop "mesh"
         call meridian_feec_build(fm%mm, 2, fs, st)
         call ampere_n_build(fs, nmode, amp, st)
@@ -1967,7 +1988,9 @@ contains
             call ampere_n_curl(amp, a, b2)
             b2cl(:, j) = b2
         end do
-        dpsindr = 2.0_dp*b0/q0*ival(rs_cyl)/rs_cyl/psi_of_r(1.0_dp)
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        dpsindr = 2.0_dp*b0/q0*run_test_mhd_closure_ival(tear_rhs_data, &
+            rs_cyl)/rs_cyl/psi_of_r(1.0_dp)
         ! jump of d Phi/d psin per unit rational-ring sheet of every layer
         ! (gs_response_3d jump_unit)
         allocate (jun(nrat), dll(nrat))
@@ -2276,8 +2299,12 @@ contains
         !! q0)) I/r: |F'| = (B_theta/r) n q'.
         real(dp), intent(in) :: rs
         real(dp) :: bt, dq
-        bt = 2.0_dp*b0/(r0*q0)*ival(rs)/rs
-        dq = qcyl(rs)*(2.0_dp/rs - jprof(rs)*rs/ival(rs))
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        bt = 2.0_dp*b0/(r0*q0)*run_test_mhd_closure_ival(tear_rhs_data, rs)/rs
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        dq = run_test_mhd_closure_qcyl(tear_rhs_data, rs)*(2.0_dp/rs - &
+            run_test_mhd_closure_jprof(tear_rhs_data, &
+            rs)*rs/run_test_mhd_closure_ival(tear_rhs_data, rs))
         cyl_fprime = bt/rs*nmode*dq
     end function cyl_fprime
 
@@ -2356,9 +2383,12 @@ contains
             d2 = [2/(hm*(hm + hp)), -2/(hm*hp), 2/(hp*(hm + hp))]
             lap = d2 + d1/rr
             lap(2) = lap(2) - mres**2/rr**2
-            bt = 2.0_dp*b0/(r0*q0)*ival(rr)/rr
+        call bind_run_test_mhd_closure_tear_rhs_context()
+            bt = 2.0_dp*b0/(r0*q0)*run_test_mhd_closure_ival(tear_rhs_data, rr)/rr
             f = mres*bt/rr - nmode*b0/r0
-            mj = mres/rr*2.0_dp*b0/(r0*q0)*djprof(rr)
+        call bind_run_test_mhd_closure_tear_rhs_context()
+            mj = &
+                mres/rr*2.0_dp*b0/(r0*q0)*run_test_mhd_closure_djprof(tear_rhs_data, rr)
             cols = [ix(j - 1, 1), ix(j, 1), ix(j + 1, 1), ix(j, 2), 0, 0]
             vals(1:4) = [cmplx(diff_l*lap(1), 0.0_dp, dp), diff_l*lap(2) - gam_l, &
                 cmplx(diff_l*lap(3), 0.0_dp, dp), cmplx(0.0_dp, f, dp)]
@@ -2378,7 +2408,8 @@ contains
         vals(1:3) = cmplx(d1, 0.0_dp, dp)
         vals(3) = vals(3) + mres
         call setrow(ab, rhs, kl, ku, ix(nn, 1), cols(1:3), vals(1:3), cmplx(2.0_dp*mres, 0.0_dp, dp))
-        bt = 2.0_dp*b0/(r0*q0)*ival(1.0_dp)
+        call bind_run_test_mhd_closure_tear_rhs_context()
+        bt = 2.0_dp*b0/(r0*q0)*run_test_mhd_closure_ival(tear_rhs_data, 1.0_dp)
         f = mres*bt - nmode*b0/r0
         call setrow(ab, rhs, kl, ku, ix(nn, 2), [ix(nn, 2), ix(nn, 1)], &
             [(1.0_dp, 0.0_dp), cmplx(0.0_dp, 1.0_dp, dp)*gam_l/f], (0.0_dp, 0.0_dp))
@@ -2487,7 +2518,8 @@ contains
         call ring_labels_merge(nrad_fe, extra, 0.3_dp, ul)
         call ring_labels_smooth(ul, 2*ratio)
         nr = size(ul)
-        call flux_mesh_build(ul, 8, 256, 2, polar_map, fm, st)
+        call bind_run_test_mhd_closure_polar_map_context()
+        call flux_mesh_build(ul, 8, 256, 2, polar_map_operator, fm, st)
         if (st /= 0) error stop "mesh"
         call meridian_feec_build(fm%mm, 2, fs, st)
         call ampere_n_build(fs, nmode, amp, st)
@@ -2604,4 +2636,241 @@ contains
         end do
     end subroutine fe_resistive
 
+
+    end subroutine run_test_mhd_closure
+
+    pure real(dp) function run_test_mhd_closure_jprof(tear_rhs_data, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: r
+        if (tear_rhs_data%prof == 3) then
+            run_test_mhd_closure_jprof = 1.0_dp
+        else if (tear_rhs_data%prof == 4) then
+            run_test_mhd_closure_jprof = 1.0_dp/(1.0_dp + r*r)**2
+        else if (tear_rhs_data%prof == 1) then
+            run_test_mhd_closure_jprof = max(0.0_dp, 1.0_dp - r*r)**2
+        else
+            run_test_mhd_closure_jprof = (1.0_dp - tanh((r - &
+                tear_rhs_data%r1)/tear_rhs_data%wstep))/(1.0_dp + &
+                tanh(tear_rhs_data%r1/tear_rhs_data%wstep))
+        end if
+    end function run_test_mhd_closure_jprof
+
+    pure real(dp) function run_test_mhd_closure_djprof(tear_rhs_data, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: r
+        if (tear_rhs_data%prof == 3) then
+            run_test_mhd_closure_djprof = 0.0_dp
+        else if (tear_rhs_data%prof == 4) then
+            run_test_mhd_closure_djprof = -4.0_dp*r/(1.0_dp + r*r)**3
+        else if (tear_rhs_data%prof == 1) then
+            run_test_mhd_closure_djprof = -4.0_dp*r*max(0.0_dp, 1.0_dp - r*r)
+        else
+            run_test_mhd_closure_djprof = -1.0_dp/(tear_rhs_data%wstep*cosh((r - &
+                tear_rhs_data%r1)/tear_rhs_data%wstep)**2*(1.0_dp + &
+                tanh(tear_rhs_data%r1/tear_rhs_data%wstep)))
+        end if
+    end function run_test_mhd_closure_djprof
+
+    subroutine run_test_mhd_closure_profile_rhs(tear_rhs_data, t, y, dydt, ctx)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        !! y = (I, int I/r, int I j/r)
+        real(dp), intent(in) :: t
+        real(dp), intent(in) :: y(:)
+        real(dp), intent(out) :: dydt(:)
+        class(*), intent(in), optional :: ctx
+        dydt(1) = run_test_mhd_closure_jprof(tear_rhs_data, t)*t
+        if (t > 0.0_dp) then
+            dydt(2) = y(1)/t
+            dydt(3) = y(1)*run_test_mhd_closure_jprof(tear_rhs_data, t)/t
+        else
+            dydt(2:3) = 0.0_dp
+        end if
+    end subroutine run_test_mhd_closure_profile_rhs
+
+    subroutine run_test_mhd_closure_profile_rhs_binding(self, t, y, dydt, ctx)
+        class(run_test_mhd_closure_profile_rhs_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(in) :: y(:)
+        real(dp), intent(out) :: dydt(:)
+        class(*), intent(in), optional :: ctx
+        call run_test_mhd_closure_profile_rhs(self%data, t, y, dydt, ctx)
+    end subroutine
+
+    real(dp) function run_test_mhd_closure_hermite(tear_rhs_data, tab, dfun, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        !! Cubic Hermite interpolation of a table with known derivative.
+        real(dp), intent(in) :: tab(:), r
+        class(gk_function_t), intent(in) :: dfun
+        real(dp) :: h, s, ra, rb, h00, h10, h01, h11
+        integer :: i
+        h = tear_rhs_data%tab_r(2)
+        i = min(ntab - 1, max(1, int(r/h) + 1))
+        ra = tear_rhs_data%tab_r(i)
+        rb = tear_rhs_data%tab_r(i + 1)
+        s = (r - ra)/h
+        h00 = (1 + 2*s)*(1 - s)**2
+        h10 = s*(1 - s)**2
+        h01 = s*s*(3 - 2*s)
+        h11 = s*s*(s - 1)
+        run_test_mhd_closure_hermite = h00*tab(i) + h10*h*dfun%evaluate(ra) + &
+            h01*tab(i + 1) + h11*h*dfun%evaluate(rb)
+    end function run_test_mhd_closure_hermite
+
+    real(dp) function run_test_mhd_closure_d_i(tear_rhs_data, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: r
+        run_test_mhd_closure_d_i = run_test_mhd_closure_jprof(tear_rhs_data, r)*r
+    end function run_test_mhd_closure_d_i
+
+    function run_test_mhd_closure_d_i_binding(self, x) result(result_value)
+        class(run_test_mhd_closure_d_i_t), intent(in) :: self
+        real(dp), intent(in) :: x
+        real(dp) :: result_value
+        result_value = run_test_mhd_closure_d_i(self%data, x)
+    end function
+
+    real(dp) function run_test_mhd_closure_d_p(tear_rhs_data, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: r
+        type(run_test_mhd_closure_d_i_t) :: d_i_operator
+        d_i_operator%data => tear_rhs_data
+        if (r > 0.0_dp) then
+            run_test_mhd_closure_d_p = run_test_mhd_closure_hermite(tear_rhs_data, &
+                tear_rhs_data%tab_i, d_i_operator, r)/r
+        else
+            run_test_mhd_closure_d_p = 0.0_dp
+        end if
+    end function run_test_mhd_closure_d_p
+
+    function run_test_mhd_closure_d_p_binding(self, x) result(result_value)
+        class(run_test_mhd_closure_d_p_t), intent(in) :: self
+        real(dp), intent(in) :: x
+        real(dp) :: result_value
+        result_value = run_test_mhd_closure_d_p(self%data, x)
+    end function
+
+    real(dp) function run_test_mhd_closure_d_b(tear_rhs_data, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: r
+        type(run_test_mhd_closure_d_i_t) :: d_i_operator
+        d_i_operator%data => tear_rhs_data
+        if (r > 0.0_dp) then
+            run_test_mhd_closure_d_b = run_test_mhd_closure_hermite(tear_rhs_data, &
+                tear_rhs_data%tab_i, d_i_operator, &
+                r)*run_test_mhd_closure_jprof(tear_rhs_data, r)/r
+        else
+            run_test_mhd_closure_d_b = 0.0_dp
+        end if
+    end function run_test_mhd_closure_d_b
+
+    function run_test_mhd_closure_d_b_binding(self, x) result(result_value)
+        class(run_test_mhd_closure_d_b_t), intent(in) :: self
+        real(dp), intent(in) :: x
+        real(dp) :: result_value
+        result_value = run_test_mhd_closure_d_b(self%data, x)
+    end function
+
+    real(dp) function run_test_mhd_closure_ival(tear_rhs_data, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: r
+        type(run_test_mhd_closure_d_i_t) :: d_i_operator
+        d_i_operator%data => tear_rhs_data
+        run_test_mhd_closure_ival = run_test_mhd_closure_hermite(tear_rhs_data, &
+            tear_rhs_data%tab_i, d_i_operator, r)
+    end function run_test_mhd_closure_ival
+
+    real(dp) function run_test_mhd_closure_qcyl(tear_rhs_data, r)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: r
+        run_test_mhd_closure_qcyl = &
+            tear_rhs_data%q0*r*r/(2.0_dp*run_test_mhd_closure_ival(tear_rhs_data, r))
+    end function run_test_mhd_closure_qcyl
+
+    subroutine run_test_mhd_closure_tear_rhs(tear_rhs_data, t, y, dydt, ctx)
+        type(run_test_mhd_closure_tear_rhs_context_t), intent(in), target :: &
+            tear_rhs_data
+        real(dp), intent(in) :: t
+        real(dp), intent(in) :: y(:)
+        real(dp), intent(out) :: dydt(:)
+        class(*), intent(in), optional :: ctx
+        real(dp) :: gg
+        gg = run_test_mhd_closure_djprof(tear_rhs_data, &
+            t)*t/(run_test_mhd_closure_ival(tear_rhs_data, t)*(1.0_dp - &
+            tear_rhs_data%nmode*run_test_mhd_closure_qcyl(tear_rhs_data, &
+            t)/tear_rhs_data%mres))
+        dydt(1) = y(2)
+        dydt(2) = -y(2)/t + (tear_rhs_data%mres*tear_rhs_data%mres/(t*t) + gg)*y(1)
+    end subroutine run_test_mhd_closure_tear_rhs
+
+    subroutine run_test_mhd_closure_tear_rhs_binding(self, t, y, dydt, ctx)
+        class(run_test_mhd_closure_tear_rhs_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(in) :: y(:)
+        real(dp), intent(out) :: dydt(:)
+        class(*), intent(in), optional :: ctx
+        call run_test_mhd_closure_tear_rhs(self%data, t, y, dydt, ctx)
+    end subroutine
+    subroutine tear_rhs_bridge(t, y, dydt, ctx)
+        real(dp), intent(in) :: t, y(:)
+        real(dp), intent(out) :: dydt(:)
+        class(*), optional, intent(in) :: ctx
+        if (.not. present(ctx)) error stop 'missing callback object'
+        select type (ctx)
+        class is (callback_function_t)
+            call ctx%evaluate(t, y, dydt)
+        class default
+            error stop 'invalid callback object'
+        end select
+    end subroutine
+    subroutine profile_rhs_bridge(t, y, dydt, ctx)
+        real(dp), intent(in) :: t, y(:)
+        real(dp), intent(out) :: dydt(:)
+        class(*), optional, intent(in) :: ctx
+        if (.not. present(ctx)) error stop 'missing callback object'
+        select type (ctx)
+        class is (callback_function_t)
+            call ctx%evaluate(t, y, dydt)
+        class default
+            error stop 'invalid callback object'
+        end select
+    end subroutine
+
+    subroutine run_test_mhd_closure_polar_map(polar_map_data, u, theta, x)
+        type(run_test_mhd_closure_polar_map_context_t), intent(in), target :: &
+            polar_map_data
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        real(dp) :: rho
+        logical :: ok
+        if (u <= 0.0_dp) then
+            x = [polar_map_data%g%r_axis, polar_map_data%g%z_axis]
+            return
+        end if
+        call flux_ray_point(polar_map_data%g, u*u, theta, rho, ok)
+        if (.not. ok) error stop "ray"
+        x = [polar_map_data%g%r_axis + rho*cos(theta), polar_map_data%g%z_axis + &
+            rho*sin(theta)]
+    end subroutine run_test_mhd_closure_polar_map
+
+    subroutine run_test_mhd_closure_polar_map_binding(self, u, theta, x)
+        class(run_test_mhd_closure_polar_map_t), intent(in) :: self
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        call run_test_mhd_closure_polar_map(self%data, u, theta, x)
+    end subroutine
+end module test_mhd_closure_callbacks
+
+program test_mhd_closure
+    use test_mhd_closure_callbacks, only: run_test_mhd_closure
+    implicit none
+    call run_test_mhd_closure()
 end program test_mhd_closure

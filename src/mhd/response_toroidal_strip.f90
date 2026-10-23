@@ -16,10 +16,11 @@ module kin6d_response_toroidal_strip
         response_fluid_equilibrium_t, response_fluid_jet_t, &
         response_fluid_result_t, response_fluid_residual, response_fluid_adjoint, &
         response_fluid_stress, response_fluid_stress_adjoint
+    use fortnum_krylov, only: complex_linear_operator_t, &
+        complex_gmres, complex_fgmres
     implicit none
     private
     complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
-
     type, public :: toroidal_strip_t
         private
         integer :: nr = 0, nt = 0, n = 0
@@ -28,26 +29,31 @@ module kin6d_response_toroidal_strip
         complex(dp), allocatable :: dt(:, :)
         type(response_fluid_equilibrium_t), allocatable :: eq(:, :)
     end type toroidal_strip_t
-
     type, public :: toroidal_strip_work_t
         private
         complex(dp), allocatable :: vector(:, :, :), gradient(:, :, :, :)
         complex(dp), allocatable :: magnetic(:, :, :), current(:, :, :)
         complex(dp), allocatable :: divergence(:, :), gd(:, :, :), gp(:, :, :)
     end type toroidal_strip_work_t
-
     type, public :: toroidal_strip_status_t
         integer :: info = -1, iterations = 0
         real(dp) :: residual = huge(1.0_dp)
         real(dp) :: div_b = huge(1.0_dp), div_j = huge(1.0_dp)
         logical :: certified = .false.
     end type toroidal_strip_status_t
-
     public :: toroidal_strip_init, toroidal_strip_action, toroidal_strip_solve
     public :: toroidal_strip_vjp
     public :: toroidal_strip_defects
     public :: toroidal_strip_traces, toroidal_strip_traces_vjp
     public :: toroidal_strip_domains
+    type, extends(complex_linear_operator_t) :: toroidal_strip_solve_matvec_t
+        complex(dp), pointer :: gamma => null()
+        type(toroidal_strip_t), pointer :: s => null()
+        real(dp), pointer :: scales(:) => null()
+        type(toroidal_strip_work_t), pointer :: work => null()
+    contains
+        procedure :: apply => toroidal_strip_solve_matvec_apply
+    end type
 contains
     subroutine toroidal_strip_domains(centers, widths, lo, hi, bounds, owner, info)
         !! Connected unions of rational strips in the caller's radial coordinate.
@@ -105,7 +111,6 @@ contains
         bounds = intervals(:, 1:groups)
         info = 0
     end subroutine toroidal_strip_domains
-
     subroutine toroidal_strip_traces(s, work, gamma, x, traces)
         !! Both rings, in one orientation N = grad(u)/|grad(u)|, T=(-N_Z,0,N_R).
         !! traces(:,theta,side) = (A.T,A_phi,B.N,E.T,E_phi,xi.N,traction(3),Ptot1).
@@ -159,7 +164,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine toroidal_strip_traces
-
     subroutine toroidal_strip_traces_vjp(s, work, gamma, seed, adj)
         !! Hermitian storage transpose. Physical surface weights multiply seed
         !! before this call; volume Riesz weights are applied by the consumer.
@@ -207,7 +211,6 @@ contains
         adj(1, :, :) = adj(1, :, :) + work%vector(1, :, :)
         adj(2, :, :) = adj(2, :, :) + work%vector(3, :, :)
     end subroutine toroidal_strip_traces_vjp
-
     subroutine toroidal_strip_init(s, work, radial, radius, inverse, eq, n, info)
         !! inverse(:, :, i, j) = d(u, theta)/d(R, Z); theta_j = 2 pi(j-1)/nt.
         !! Local five-node radial polynomial derivatives and complete odd-size
@@ -225,7 +228,6 @@ contains
         integer, allocatable :: modes(:)
         real(dp) :: weights(5), length
         integer :: nr, nt, i, j, lo
-
         info = -1
         nr = size(radial); nt = size(radius, 2)
         if (nr < 5 .or. nt < 5 .or. mod(nt, 2) /= 1 .or. n == 0) return
@@ -288,7 +290,6 @@ contains
                   work%divergence(nr, nt), work%gd(3, nr, nt), work%gp(3, nr, nt))
         info = 0
     end subroutine toroidal_strip_init
-
     subroutine scalar_gradient(s, v, g)
         type(toroidal_strip_t), intent(in) :: s
         complex(dp), intent(in) :: v(:, :)
@@ -315,7 +316,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine scalar_gradient
-
     subroutine vector_gradient(s, v, g)
         type(toroidal_strip_t), intent(in) :: s
         complex(dp), intent(in) :: v(3, s%nr, s%nt)
@@ -347,7 +347,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine vector_gradient
-
     subroutine curl_from_gradient(s, g, v)
         type(toroidal_strip_t), intent(in) :: s
         complex(dp), intent(in) :: g(3, 3, s%nr, s%nt)
@@ -363,7 +362,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine curl_from_gradient
-
     subroutine toroidal_strip_action(s, work, gamma, x, y, boundary)
         !! x = (A_R,A_Z,xi_R,xi_phi,xi_Z,Phi), y = (Ohm_R,Ohm_Z,
         !! momentum_R,momentum_phi,momentum_Z,Ohm_phi).
@@ -379,7 +377,6 @@ contains
         type(response_fluid_result_t) :: res
         real(dp) :: nr, nz
         integer :: i, j
-
         work%vector(1, :, :) = x(1, :, :)
         work%vector(2, :, :) = 0.0_dp
         work%vector(3, :, :) = x(2, :, :)
@@ -417,7 +414,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine toroidal_strip_action
-
     subroutine scalar_gradient_vjp(s, g, v)
         type(toroidal_strip_t), intent(in) :: s
         complex(dp), intent(in) :: g(:, :, :)
@@ -443,7 +439,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine scalar_gradient_vjp
-
     subroutine vector_gradient_vjp(s, g, v)
         type(toroidal_strip_t), intent(in) :: s
         complex(dp), intent(in) :: g(3, 3, s%nr, s%nt)
@@ -473,7 +468,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine vector_gradient_vjp
-
     subroutine curl_from_gradient_vjp(s, v, g)
         type(toroidal_strip_t), intent(in) :: s
         complex(dp), intent(in) :: v(3, s%nr, s%nt)
@@ -490,7 +484,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine curl_from_gradient_vjp
-
     subroutine toroidal_strip_vjp(s, work, gamma, seed, adj, boundary)
         !! Complex cotangent transpose for the stored-grid Hermitian pairing.
         !! A physical weighted adjoint is M^-1 L^H M with the caller's volume
@@ -505,7 +498,6 @@ contains
         type(response_fluid_jet_t) :: jet
         real(dp) :: nr, nz
         integer :: i, j, a
-
         !$omp parallel do collapse(2) private(jet,res,nr,nz) schedule(static)
         do j = 1, s%nt
             do i = 1, s%nr
@@ -551,7 +543,6 @@ contains
         adj(1, :, :) = adj(1, :, :) + work%magnetic(1, :, :)
         adj(2, :, :) = adj(2, :, :) + work%magnetic(3, :, :)
     end subroutine toroidal_strip_vjp
-
     subroutine toroidal_strip_defects(s, work, div_b, div_j)
         !! Maximum nodal div(curl A) [T/m] and div(J) [A/m^3] of the last
         !! action. Collocation is not a commuting FEEC complex; these are
@@ -582,23 +573,23 @@ contains
         end do
         !$omp end parallel do
     end subroutine toroidal_strip_defects
-
     subroutine toroidal_strip_solve(s, work, gamma, rhs, x, equation_scale, &
                                     tol, maxit, restart, st)
         !! Same FortNum GMRES as the outer strip-coupling consumer. A tangent
         !! for a supplied RHS perturbation solves this same discrete equation.
         !! Residual is checked again independently of the Krylov recurrence.
         !! No inverse bound or discretisation certificate is available.
-        type(toroidal_strip_t), intent(in) :: s
-        type(toroidal_strip_work_t), intent(inout) :: work
-        complex(dp), intent(in) :: gamma, rhs(6, s%nr, s%nt)
+        type(toroidal_strip_t), intent(in), target :: s
+        type(toroidal_strip_work_t), intent(inout), target :: work
+        complex(dp), intent(in), target :: gamma, rhs(6, s%nr, s%nt)
         complex(dp), intent(inout) :: x(6, s%nr, s%nt)
         real(dp), intent(in) :: equation_scale(6, s%nr, s%nt), tol
         integer, intent(in) :: maxit, restart
         type(toroidal_strip_status_t), intent(out) :: st
         complex(dp), allocatable :: b(:), v(:), ax(:)
-        real(dp), allocatable :: scales(:)
+        real(dp), allocatable , target :: scales(:)
         integer :: nn
+        type(toroidal_strip_solve_matvec_t) :: matvec_operator
         if (.not. ieee_is_finite(real(gamma, dp))) return
         if (.not. ieee_is_finite(aimag(gamma))) return
         if (abs(gamma) <= tiny(1.0_dp)) return
@@ -608,21 +599,27 @@ contains
         allocate (b(nn), v(nn), ax(nn), scales(nn))
         scales = reshape(equation_scale, [nn])
         b = reshape(rhs, [nn])/scales; v = reshape(x, [nn])
-        call complex_gmres_operator(matvec, b, v, tol, maxit, restart, &
+        matvec_operator%gamma => gamma
+        matvec_operator%s => s
+        nullify(matvec_operator%scales)
+        if (allocated(scales)) matvec_operator%scales => scales
+        matvec_operator%work => work
+        call complex_gmres(matvec_operator, b, v, tol, maxit, restart, &
                                     st%info, st%iterations, st%residual)
-        call matvec(v, ax)
+        call matvec_operator%apply(v, ax)
         st%residual = norm2(abs(ax - b))/max(norm2(abs(b)), 1.0_dp)
         if (st%info == 0 .and. st%residual > tol) st%info = 1
         call toroidal_strip_defects(s, work, st%div_b, st%div_j)
         x = reshape(v, shape(x))
-    contains
-        subroutine matvec(u, w)
-            complex(dp), intent(in) :: u(:)
-            complex(dp), intent(out) :: w(:)
+    end subroutine toroidal_strip_solve
+    subroutine toroidal_strip_solve_matvec_apply(self, input, output)
+        class(toroidal_strip_solve_matvec_t), intent(inout) :: self
+            complex(dp), intent(in) :: input(:)
+            complex(dp), intent(out) :: output(:)
             ! Array sequence association preserves the canonical field layout;
             ! FortNum supplies contiguous Krylov columns, without reshape copies.
-            call toroidal_strip_action(s, work, gamma, u, w, .true.)
-            w = w/scales
-        end subroutine matvec
-    end subroutine toroidal_strip_solve
+            call toroidal_strip_action(self%s, self%work, self%gamma, input, output, &
+                .true.)
+            output = output/self%scales
+    end subroutine toroidal_strip_solve_matvec_apply
 end module kin6d_response_toroidal_strip

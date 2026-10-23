@@ -1,4 +1,4 @@
-program streaming_moments_demo
+module streaming_moments_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, hull
     use kin6d_streaming_moments, only: streaming_moments_t, &
@@ -22,42 +22,114 @@ program streaming_moments_demo
     use fortplot_system_runtime, only: create_directory_runtime
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use kin6d_result_io, only: run_t, result_file_t
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
-    integer :: nx = 96, nv = 64, particle_nx = 32, particle_nv = 48
+    private
+    public :: run_streaming_moments_demo
+    character(len=*), parameter :: bound = 'certified-continuous whole-cell '// &
+        'moment enclosure (density strictly positive)'
+    type :: run_streaming_moments_demo_context_t
+        integer, pointer :: bands => null()
+        type(streaming_state_t), pointer :: baseline => null()
+        real(dp), pointer :: bulk(:) => null()
+        type(figure_t), pointer :: canvas => null()
+        real(dp), pointer :: complete_s => null()
+        real(dp), pointer :: current(:) => null()
+        real(dp), pointer :: density(:) => null()
+        integer, pointer :: distribution_data => null()
+        real(dp), pointer :: duration => null()
+        integer, pointer :: evidence => null()
+        real(dp), pointer :: f_record(:,:,:,:) => null()
+        integer, pointer :: frames => null()
+        real(dp), pointer :: glyph(:) => null()
+        real(dp), pointer :: image(:,:) => null()
+        real(dp), pointer :: image_hi(:,:) => null()
+        real(dp), pointer :: image_lo(:,:) => null()
+        type(interval_t), pointer :: jcells(:) => null()
+        real(dp), pointer :: jhi(:) => null()
+        real(dp), pointer :: jlo(:) => null()
+        real(dp), pointer :: moment_record(:,:,:) => null()
+        type(streaming_moments_t), pointer :: moments => null()
+        type(interval_t), pointer :: ncells(:) => null()
+        real(dp), pointer :: nhi(:) => null()
+        real(dp), pointer :: nlo(:) => null()
+        integer, pointer :: np => null()
+        integer, pointer :: nv => null()
+        integer, pointer :: nx => null()
+        logical, pointer :: ok => null()
+        real(dp), pointer :: period => null()
+        real(dp), pointer :: post_s => null()
+        real(dp), pointer :: pv(:) => null()
+        real(dp), pointer :: px(:) => null()
+        logical, pointer :: recorded(:) => null()
+        integer, pointer :: repeats => null()
+        real(dp), pointer :: solve_s => null()
+        real(dp), pointer :: t => null()
+        real(dp), pointer :: times(:) => null()
+        type(interval_t), pointer :: ucells(:) => null()
+        real(dp), pointer :: uhi(:) => null()
+        real(dp), pointer :: ulo(:) => null()
+        real(dp), pointer :: v(:) => null()
+        real(dp), pointer :: x(:) => null()
+        real(dp), pointer :: x0(:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_streaming_moments_demo_update_t
+        type(run_streaming_moments_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_streaming_moments_demo_update_binding
+    end type
+
+contains
+    subroutine run_streaming_moments_demo()
+    implicit none
+integer , target :: nx, nv, particle_nx, particle_nv
     ! 193 frames span T = 0..8 in 8 s at 24 fps; a one-second hold follows.
-    integer :: np, frames = 193, repeats = 20
-    real(dp) :: duration = 8.0_dp
+integer , target :: np, frames, repeats
+real(dp) , target :: duration
     namelist /streaming_moments/ nx, nv, particle_nx, particle_nv, frames, &
         repeats, duration
     type(run_t) :: run
     type(result_file_t) :: result
     integer :: unit, ios
     character(len=256) :: msg
-    character(len=*), parameter :: bound = 'certified-continuous whole-cell '// &
-        'moment enclosure (density strictly positive)'
-    type(streaming_moments_t) :: moments
-    type(streaming_state_t) :: baseline, particle_source
+    type(streaming_moments_t) , target :: moments
+    type(streaming_state_t) , target :: baseline, particle_source
     type(streaming_particles_t) :: particles
     type(animation_t) :: animation
     type(figure_t), pointer :: canvas
-    real(dp), allocatable :: x(:), v(:), a0(:, :), b0(:, :)
-    real(dp) :: vp(2) = [-1.0_dp, 1.0_dp], ap(0:1, 2), bp(0:1, 2)
-    real(dp), allocatable :: x0(:), pv(:), weight(:), px(:), glyph(:)
-    real(dp) :: period, measure
-    real(dp), allocatable :: image(:, :), density(:), current(:), bulk(:)
-    real(dp), allocatable :: image_lo(:, :), image_hi(:, :)
-    real(dp), allocatable :: nlo(:), nhi(:), jlo(:), jhi(:), ulo(:), uhi(:)
-    real(dp) :: t, solve_s, complete_s, post_s
+    real(dp), allocatable , target :: x(:), v(:), a0(:, :), b0(:, :)
+real(dp) :: vp(2), ap(0:1, 2), bp(0:1, 2)
+    real(dp), allocatable , target :: x0(:), pv(:), weight(:), px(:), glyph(:)
+    real(dp) , target :: period, measure
+    real(dp), allocatable , target :: image(:, :), density(:), current(:), bulk(:)
+    real(dp), allocatable , target :: image_lo(:, :), image_hi(:, :)
+    real(dp), allocatable , target :: nlo(:), nhi(:), jlo(:), jhi(:), ulo(:), uhi(:)
+    real(dp) , target :: t, solve_s, complete_s, post_s
     real(dp) :: ignored_x, ignored_v
-    type(interval_t), allocatable :: ncells(:), jcells(:), ucells(:)
+    type(interval_t), allocatable , target :: ncells(:), jcells(:), ucells(:)
     ! Result record of every computed frame (NaN where a frame was not drawn).
-    real(dp), allocatable :: times(:), moment_record(:, :, :), f_record(:, :, :, :)
-    integer :: i, frame, snapshot_frame = 41, status, evidence, bands
-    integer :: distribution_data
-    logical :: ok, snapshot = .false.
-    logical, allocatable :: recorded(:)
+    real(dp), allocatable , target :: times(:), moment_record(:, :, :), f_record(:, &
+        :, :, :)
+integer , target :: i, frame, snapshot_frame, status, evidence, bands
+    integer , target :: distribution_data
+logical , target :: ok, snapshot
+    logical, allocatable , target :: recorded(:)
     character(len=64) :: argument
+        type(run_streaming_moments_demo_context_t), target :: ctx
+        type(run_streaming_moments_demo_update_t), target :: update_operator
 
+        nx = 96
+        nv = 64
+        particle_nx = 32
+        particle_nv = 48
+        frames = 193
+        repeats = 20
+        duration = 8.0_dp
+        vp = [-1.0_dp, 1.0_dp]
+        snapshot_frame = 41
+        snapshot = .false.
     call run%start('streaming_moments_demo')
     ios = 0; msg = ''
     call run%open_config(unit)
@@ -151,11 +223,15 @@ program streaming_moments_demo
     canvas => get_global_figure()
     frame = 1
     if (snapshot) frame = snapshot_frame
-    call compute_frame(frame)
-    call draw_frame()
+        call bind_run_streaming_moments_demo_context()
+    call run_streaming_moments_demo_compute_frame(ctx, frame)
+        call bind_run_streaming_moments_demo_context()
+    call run_streaming_moments_demo_draw_frame(ctx)
     call savefig('output/particles-to-moments.png')
     if (.not. snapshot) then
-        animation = animation_func(update, frames=frames + hold_frames, interval=42, &
+        call bind_run_streaming_moments_demo_context()
+        animation = animation_func(update_operator, frames=frames + hold_frames, &
+            interval=42, &
             fig=canvas)
         call save_animation(animation, 'output/particles-to-moments.mp4', fps=movie_fps, &
             status=status)
@@ -186,6 +262,78 @@ program streaming_moments_demo
         dims='v,x,frame', status='certified-continuous pointwise bound')
     call result%close()
 contains
+    subroutine bind_run_streaming_moments_demo_context()
+        ctx%bands => bands
+        ctx%baseline => baseline
+        nullify(ctx%bulk)
+        if (allocated(bulk)) ctx%bulk => bulk
+        ctx%canvas => canvas
+        ctx%complete_s => complete_s
+        nullify(ctx%current)
+        if (allocated(current)) ctx%current => current
+        nullify(ctx%density)
+        if (allocated(density)) ctx%density => density
+        ctx%distribution_data => distribution_data
+        ctx%duration => duration
+        ctx%evidence => evidence
+        nullify(ctx%f_record)
+        if (allocated(f_record)) ctx%f_record => f_record
+        ctx%frames => frames
+        nullify(ctx%glyph)
+        if (allocated(glyph)) ctx%glyph => glyph
+        nullify(ctx%image)
+        if (allocated(image)) ctx%image => image
+        nullify(ctx%image_hi)
+        if (allocated(image_hi)) ctx%image_hi => image_hi
+        nullify(ctx%image_lo)
+        if (allocated(image_lo)) ctx%image_lo => image_lo
+        nullify(ctx%jcells)
+        if (allocated(jcells)) ctx%jcells => jcells
+        nullify(ctx%jhi)
+        if (allocated(jhi)) ctx%jhi => jhi
+        nullify(ctx%jlo)
+        if (allocated(jlo)) ctx%jlo => jlo
+        nullify(ctx%moment_record)
+        if (allocated(moment_record)) ctx%moment_record => moment_record
+        ctx%moments => moments
+        nullify(ctx%ncells)
+        if (allocated(ncells)) ctx%ncells => ncells
+        nullify(ctx%nhi)
+        if (allocated(nhi)) ctx%nhi => nhi
+        nullify(ctx%nlo)
+        if (allocated(nlo)) ctx%nlo => nlo
+        ctx%np => np
+        ctx%nv => nv
+        ctx%nx => nx
+        ctx%ok => ok
+        ctx%period => period
+        ctx%post_s => post_s
+        nullify(ctx%pv)
+        if (allocated(pv)) ctx%pv => pv
+        nullify(ctx%px)
+        if (allocated(px)) ctx%px => px
+        nullify(ctx%recorded)
+        if (allocated(recorded)) ctx%recorded => recorded
+        ctx%repeats => repeats
+        ctx%solve_s => solve_s
+        ctx%t => t
+        nullify(ctx%times)
+        if (allocated(times)) ctx%times => times
+        nullify(ctx%ucells)
+        if (allocated(ucells)) ctx%ucells => ucells
+        nullify(ctx%uhi)
+        if (allocated(uhi)) ctx%uhi => uhi
+        nullify(ctx%ulo)
+        if (allocated(ulo)) ctx%ulo => ulo
+        nullify(ctx%v)
+        if (allocated(v)) ctx%v => v
+        nullify(ctx%x)
+        if (allocated(x)) ctx%x => x
+        nullify(ctx%x0)
+        if (allocated(x0)) ctx%x0 => x0
+        update_operator%data => ctx
+    end subroutine bind_run_streaming_moments_demo_context
+
     subroutine write_moment(k, name, long_name, status)
         integer, intent(in) :: k
         character(len=*), intent(in) :: name, long_name, status
@@ -193,135 +341,167 @@ contains
             dims='x,frame', status=status)
     end subroutine
 
-    subroutine compute_frame(number)
+    end subroutine run_streaming_moments_demo
+
+    subroutine run_streaming_moments_demo_compute_frame(ctx, number)
+        type(run_streaming_moments_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
         real(dp) :: start, finish, value, lo, hi, unwrapped, factor
         type(interval_t) :: nb, jb, ub
         integer :: ix, iv, p, repeat, turns, left, right
+        integer, pointer :: local_bands
+        integer, pointer :: local_distribution_data
+        integer, pointer :: local_evidence
+        local_bands => ctx%bands
+        local_distribution_data => ctx%distribution_data
+        local_evidence => ctx%evidence
 
-        call streaming_frame_time(real(number - 1, dp), real(frames, dp), duration, t)
+        call streaming_frame_time(real(number - 1, dp), real(ctx%frames, dp), &
+            ctx%duration, ctx%t)
         call cpu_time(start)
-        do repeat = 1, repeats
-            call advance_streaming(baseline, t, ok, certify=.false.)
+        do repeat = 1, ctx%repeats
+            call advance_streaming(ctx%baseline, ctx%t, ctx%ok, certify=.false.)
         end do
         call cpu_time(finish)
-        solve_s = (finish - start)/repeats
-        if (.not. ok) error stop 'primal baseline failed'
+        ctx%solve_s = (finish - start)/ctx%repeats
+        if (.not. ctx%ok) error stop 'primal baseline failed'
         call cpu_time(start)
-        do repeat = 1, repeats
-            call advance_streaming_moments(moments, t, ok)
+        do repeat = 1, ctx%repeats
+            call advance_streaming_moments(ctx%moments, ctx%t, ctx%ok)
         end do
         call cpu_time(finish)
-        complete_s = (finish - start)/repeats
-        if (.not. ok) error stop 'moment certification failed'
+        ctx%complete_s = (finish - start)/ctx%repeats
+        if (.not. ctx%ok) error stop 'moment certification failed'
         call cpu_time(start)
-        do p = 1, np
-            call streaming_characteristic(x0(p), pv(p), t, unwrapped)
-            turns = floor(unwrapped/period)
-            call streaming_display_shift(unwrapped, real(turns, dp), px(p))
+        do p = 1, ctx%np
+            call streaming_characteristic(ctx%x0(p), ctx%pv(p), ctx%t, unwrapped)
+            turns = floor(unwrapped/ctx%period)
+            call streaming_display_shift(unwrapped, real(turns, dp), ctx%px(p))
         end do
-        do ix = 1, nx + 1
-            do iv = 1, nv + 1
-                call sample_streaming_moments_distribution(moments, x(ix), v(iv), &
-                    value, lo, hi, ok)
-                if (.not. ok) error stop 'distribution sampling failed'
-                image(iv, ix) = value
-                image_lo(iv, ix) = lo
-                image_hi(iv, ix) = hi
+        do ix = 1, ctx%nx + 1
+            do iv = 1, ctx%nv + 1
+                call sample_streaming_moments_distribution(ctx%moments, ctx%x(ix), &
+                    ctx%v(iv), &
+                    value, lo, hi, ctx%ok)
+                if (.not. ctx%ok) error stop 'distribution sampling failed'
+                ctx%image(iv, ix) = value
+                ctx%image_lo(iv, ix) = lo
+                ctx%image_hi(iv, ix) = hi
             end do
-            call sample_streaming_moments(moments, x(ix), density(ix), current(ix), &
-                bulk(ix), nb, jb, ub, ok)
-            if (.not. ok) error stop 'positive-density point moments unavailable'
-            nlo(ix) = nb%lo; nhi(ix) = nb%hi
-            jlo(ix) = jb%lo; jhi(ix) = jb%hi
-            ulo(ix) = ub%lo; uhi(ix) = ub%hi
+            call sample_streaming_moments(ctx%moments, ctx%x(ix), ctx%density(ix), &
+                ctx%current(ix), &
+                ctx%bulk(ix), nb, jb, ub, ctx%ok)
+            if (.not. ctx%ok) error stop 'positive-density point moments unavailable'
+            ctx%nlo(ix) = nb%lo; ctx%nhi(ix) = nb%hi
+            ctx%jlo(ix) = jb%lo; ctx%jhi(ix) = jb%hi
+            ctx%ulo(ix) = ub%lo; ctx%uhi(ix) = ub%hi
         end do
-        do ix = 1, nx
-            call sample_streaming_moments_box(moments, interval(x(ix), x(ix + 1)), &
-                ncells(ix), jcells(ix), ucells(ix), ok)
-            if (.not. ok) error stop 'whole-cell moment bands unavailable'
+        do ix = 1, ctx%nx
+            call sample_streaming_moments_box(ctx%moments, interval(ctx%x(ix), &
+                ctx%x(ix + 1)), &
+                ctx%ncells(ix), ctx%jcells(ix), ctx%ucells(ix), ctx%ok)
+            if (.not. ctx%ok) error stop 'whole-cell moment bands unavailable'
         end do
         ! Each vertex covers both adjacent complete cells. Every convex
         ! combination of its lower/upper endpoints therefore covers that cell.
-        do ix = 1, nx + 1
-            nb = interval(nlo(ix), nhi(ix))
-            jb = interval(jlo(ix), jhi(ix))
-            ub = interval(ulo(ix), uhi(ix))
+        do ix = 1, ctx%nx + 1
+            nb = interval(ctx%nlo(ix), ctx%nhi(ix))
+            jb = interval(ctx%jlo(ix), ctx%jhi(ix))
+            ub = interval(ctx%ulo(ix), ctx%uhi(ix))
             left = max(1, ix - 1)
-            right = min(nx, ix)
-            nb = hull(nb, hull(ncells(left), ncells(right)))
-            jb = hull(jb, hull(jcells(left), jcells(right)))
-            ub = hull(ub, hull(ucells(left), ucells(right)))
-            nlo(ix) = nb%lo; nhi(ix) = nb%hi
-            jlo(ix) = jb%lo; jhi(ix) = jb%hi
-            ulo(ix) = ub%lo; uhi(ix) = ub%hi
+            right = min(ctx%nx, ix)
+            nb = hull(nb, hull(ctx%ncells(left), ctx%ncells(right)))
+            jb = hull(jb, hull(ctx%jcells(left), ctx%jcells(right)))
+            ub = hull(ub, hull(ctx%ucells(left), ctx%ucells(right)))
+            ctx%nlo(ix) = nb%lo; ctx%nhi(ix) = nb%hi
+            ctx%jlo(ix) = jb%lo; ctx%jhi(ix) = jb%hi
+            ctx%ulo(ix) = ub%lo; ctx%uhi(ix) = ub%hi
         end do
         call cpu_time(finish)
-        post_s = finish - start
-        if (.not. recorded(number)) then
+        ctx%post_s = finish - start
+        if (.not. ctx%recorded(number)) then
             factor = -1.0_dp
-            if (solve_s > 0.0_dp) factor = complete_s/solve_s
-            write (evidence, '(i0,6(",",es24.16e3))') number, t, solve_s, complete_s, &
-                complete_s - solve_s, factor, post_s
-            do ix = 1, nx + 1
-                write (bands, '(i0,11(",",es24.16e3))') number, t, x(ix), &
-                    density(ix), nlo(ix), nhi(ix), current(ix), jlo(ix), jhi(ix), &
-                    bulk(ix), ulo(ix), uhi(ix)
-                do iv = 1, nv + 1
-                    write (distribution_data, '(i0,6(",",es24.16e3))') &
-                        number, t, x(ix), v(iv), image(iv, ix), &
-                        image_lo(iv, ix), image_hi(iv, ix)
+            if (ctx%solve_s > 0.0_dp) factor = ctx%complete_s/ctx%solve_s
+            write (local_evidence, '(i0,6(",",es24.16e3))') number, ctx%t, &
+                ctx%solve_s, ctx%complete_s, &
+                ctx%complete_s - ctx%solve_s, factor, ctx%post_s
+            do ix = 1, ctx%nx + 1
+                write (local_bands, '(i0,11(",",es24.16e3))') number, ctx%t, &
+                    ctx%x(ix), &
+                    ctx%density(ix), ctx%nlo(ix), ctx%nhi(ix), ctx%current(ix), &
+                        ctx%jlo(ix), ctx%jhi(ix), &
+                    ctx%bulk(ix), ctx%ulo(ix), ctx%uhi(ix)
+                do iv = 1, ctx%nv + 1
+                    write (local_distribution_data, '(i0,6(",",es24.16e3))') &
+                        number, ctx%t, ctx%x(ix), ctx%v(iv), ctx%image(iv, ix), &
+                        ctx%image_lo(iv, ix), ctx%image_hi(iv, ix)
                 end do
             end do
-            recorded(number) = .true.
-            times(number) = t
-            moment_record(:, number, :) = reshape([density, nlo, nhi, current, jlo, &
-                jhi, bulk, ulo, uhi], [nx + 1, 9])
-            f_record(:, :, number, 1) = image
-            f_record(:, :, number, 2) = image_lo
-            f_record(:, :, number, 3) = image_hi
+            ctx%recorded(number) = .true.
+            ctx%times(number) = ctx%t
+            ctx%moment_record(:, number, :) = reshape([ctx%density, ctx%nlo, &
+                ctx%nhi, ctx%current, ctx%jlo, &
+                ctx%jhi, ctx%bulk, ctx%ulo, ctx%uhi], [ctx%nx + 1, 9])
+            ctx%f_record(:, :, number, 1) = ctx%image
+            ctx%f_record(:, :, number, 2) = ctx%image_lo
+            ctx%f_record(:, :, number, 3) = ctx%image_hi
         end if
-    end subroutine
+    end subroutine run_streaming_moments_demo_compute_frame
 
-    subroutine draw_frame()
+    subroutine run_streaming_moments_demo_draw_frame(ctx)
+        type(run_streaming_moments_demo_context_t), intent(in) :: ctx
         call suptitle('Velocity moments compress f(x,v) into density and bulk '// &
             'velocity: they follow the flow but discard the velocity shape')
         call subplot(2, 2, 1)
-        call title('Weighted particles (marker area ~ weight)  |  T = '//num(t, 2))
-        call scatter(px, pv, s=0.6_dp*glyph, color=blue, alpha=0.5_dp)
+        call title('Weighted particles (marker area ~ weight)  |  T = '//num(ctx%t, 2))
+        call scatter(ctx%px, ctx%pv, s=0.6_dp*ctx%glyph, color=blue, alpha=0.5_dp)
         call xlabel('$2\pi x/L$'); call ylabel('$v/v_{ref}$')
-        call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
+        call xlim(0.0_dp, ctx%period); call ylim(-1.0_dp, 1.0_dp)
         call subplot(2, 2, 2)
         call title('Eulerian Fourier/P1 distribution (candidate)')
-        call pcolormesh(x, v, image, cmap='viridis', vmin=0.25_dp, vmax=2.25_dp)
+        call pcolormesh(ctx%x, ctx%v, ctx%image, cmap='viridis', vmin=0.25_dp, &
+            vmax=2.25_dp)
         call colorbar(label='$2 v_{ref} f/n_0$')
         call xlabel('$2\pi x/L$'); call ylabel('$v/v_{ref}$')
-        call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
+        call xlim(0.0_dp, ctx%period); call ylim(-1.0_dp, 1.0_dp)
         call subplot(2, 2, 3)
         call title('Density: zeroth velocity moment')
-        call fill_between(x, nlo, nhi, color=blue, alpha=0.25_dp)
-        call plot(x, density, color=blue, linewidth=2.0_dp, &
+        call fill_between(ctx%x, ctx%nlo, ctx%nhi, color=blue, alpha=0.25_dp)
+        call plot(ctx%x, ctx%density, color=blue, linewidth=2.0_dp, &
             label='n ± whole-cell bound')
         call xlabel('$2\pi x/L$'); call ylabel('$n/n_0$')
-        call xlim(0.0_dp, period); call ylim(0.35_dp, 1.65_dp)
+        call xlim(0.0_dp, ctx%period); call ylim(0.35_dp, 1.65_dp)
         call legend(loc='upper center')
         call subplot(2, 2, 4)
         call title('Bulk velocity u = j/n')
-        call fill_between(x, ulo, uhi, color=blue, alpha=0.25_dp)
-        call plot(x, bulk, color=blue, linewidth=2.0_dp, &
+        call fill_between(ctx%x, ctx%ulo, ctx%uhi, color=blue, alpha=0.25_dp)
+        call plot(ctx%x, ctx%bulk, color=blue, linewidth=2.0_dp, &
             label='u ± whole-cell bound')
         call xlabel('$2\pi x/L$')
         call ylabel('$u/v_{ref}$')
-        call xlim(0.0_dp, period); call ylim(-0.15_dp, 0.40_dp)
+        call xlim(0.0_dp, ctx%period); call ylim(-0.15_dp, 0.40_dp)
         call legend(loc='upper right')
         call tight_layout()
-    end subroutine
+    end subroutine run_streaming_moments_demo_draw_frame
 
-    subroutine update(index)
+    subroutine run_streaming_moments_demo_update(ctx, index)
+        type(run_streaming_moments_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: index
-        call compute_frame(min(index, frames))
-        call canvas%clear()
-        call draw_frame()
-        call canvas%set_rendered(.false.)
+        call run_streaming_moments_demo_compute_frame(ctx, min(index, ctx%frames))
+        call ctx%canvas%clear()
+        call run_streaming_moments_demo_draw_frame(ctx)
+        call ctx%canvas%set_rendered(.false.)
+    end subroutine run_streaming_moments_demo_update
+
+    subroutine run_streaming_moments_demo_update_binding(self, frame)
+        class(run_streaming_moments_demo_update_t), intent(inout) :: self
+        integer, intent(in) :: frame
+        call run_streaming_moments_demo_update(self%data, frame)
     end subroutine
+end module streaming_moments_demo_callbacks
+
+program streaming_moments_demo
+    use streaming_moments_demo_callbacks, only: run_streaming_moments_demo
+    implicit none
+    call run_streaming_moments_demo()
 end program streaming_moments_demo

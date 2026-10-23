@@ -1,4 +1,4 @@
-program shielding_dynamics_demo
+module shielding_dynamics_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, linear_interpolation_remainder
     use kin6d_shielding_dynamics, only: shielding_state_t, init_shielding, &
@@ -14,36 +14,73 @@ program shielding_dynamics_demo
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use kin6d_result_io, only: run_t, result_file_t
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
+    private
+    public :: run_shielding_dynamics_demo
     integer, parameter :: modes = 6
+    character(len=*), parameter :: bound = 'certified-continuous finite-Fourier '// &
+        'residual/contractivity band; physical/model error unavailable'
+    type :: run_shielding_dynamics_demo_context_t
+        real(dp), pointer :: bare(:,:) => null()
+        type(figure_t), pointer :: canvas => null()
+        integer, pointer :: center => null()
+        real(dp), pointer :: equilibrium(:,:) => null()
+        integer, pointer :: frames => null()
+        real(dp), pointer :: history_lower(:) => null()
+        real(dp), pointer :: history_upper(:) => null()
+        real(dp), pointer :: lower(:,:,:) => null()
+        integer, pointer :: points => null()
+        real(dp), pointer :: times(:) => null()
+        real(dp), pointer :: tmax => null()
+        real(dp), pointer :: upper(:,:,:) => null()
+        real(dp), pointer :: values(:,:,:) => null()
+        real(dp), pointer :: x(:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_shielding_dynamics_demo_update_frame_t
+        type(run_shielding_dynamics_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_shielding_dynamics_demo_update_frame_binding
+    end type
+
+contains
+    subroutine run_shielding_dynamics_demo()
+    implicit none
     ! 193 frames span t = 0..4 in 8 s at 24 fps; a one-second hold follows.
-    integer :: points = 193, frames = 193
-    real(dp) :: source(modes) = &
-                           [0.04_dp, 0.025_dp, 0.0125_dp, 0.006_dp, 0.003_dp, 0.0015_dp]
-    real(dp) :: tmax = 4.0_dp, step = 0.0025_dp
+integer , target :: points, frames
+real(dp) :: source(modes)
+real(dp) , target :: tmax, step
     namelist /shielding_dynamics/ points, frames, source, tmax, step
     type(run_t) :: run
     type(result_file_t) :: result
-    integer :: ios, center
+    integer , target :: ios, center
     character(len=256) :: msg
-    character(len=*), parameter :: bound = 'certified-continuous finite-Fourier '// &
-        'residual/contractivity band; physical/model error unavailable'
     type(shielding_state_t) :: state, baseline
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
-    real(dp), allocatable :: x(:), times(:), values(:, :, :)
-    real(dp), allocatable :: lower(:, :, :), upper(:, :, :)
-    real(dp), allocatable :: equilibrium(:, :), bare(:, :)
+    real(dp), allocatable , target :: x(:), times(:), values(:, :, :)
+    real(dp), allocatable , target :: lower(:, :, :), upper(:, :, :)
+    real(dp), allocatable , target :: equilibrium(:, :), bare(:, :)
     real(dp) :: a, d, p, e, padding(3)
     real(dp) :: first, last, solve_time, certified_time, render_first, render_last
     real(dp), allocatable :: candidate_frame_s(:), certified_frame_s(:)
     real(dp) :: frame_first, frame_last, max_x_gap, max_t_gap
     type(interval_t) :: padded_lo, padded_hi, temporal_curvature, next_bound
-    real(dp), allocatable :: history_lower(:), history_upper(:)
+    real(dp), allocatable , target :: history_lower(:), history_upper(:)
     real(dp) :: max_radius(3)
     integer :: f, j, k, q, unit, status, snapshot
     logical :: ok, snapshot_only
     character(128) :: argument
+        type(run_shielding_dynamics_demo_context_t), target :: ctx
+        type(run_shielding_dynamics_demo_update_frame_t), target :: &
+            update_frame_operator
+        points = 193
+        frames = 193
+        source = [0.04_dp, 0.025_dp, 0.0125_dp, 0.006_dp, 0.003_dp, 0.0015_dp]
+        tmax = 4.0_dp
+        step = 0.0025_dp
     call run%start('shielding_dynamics_demo')
     ios = 0; msg = ''
     call run%open_config(unit)
@@ -228,16 +265,45 @@ write(unit,'(a)') '# observable_scales=0.05,0.05,0.05; requested_rtol=0.01; floo
     call result%close()
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
-    call draw_frame(snapshot)
+        call bind_run_shielding_dynamics_demo_context()
+    call run_shielding_dynamics_demo_draw_frame(ctx, snapshot)
     call savefig('output/debye-shielding.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames + hold_frames, &
+        call bind_run_shielding_dynamics_demo_context()
+        animation = animation_func(update_frame_operator, frames=frames + hold_frames, &
             interval=42, fig=canvas)
         call save_animation(animation, 'output/debye-shielding.mp4', fps=movie_fps, &
                             status=status)
         if (status /= 0) error stop 'movie encoding failed'
     end if
 contains
+    subroutine bind_run_shielding_dynamics_demo_context()
+        nullify(ctx%bare)
+        if (allocated(bare)) ctx%bare => bare
+        ctx%canvas => canvas
+        ctx%center => center
+        nullify(ctx%equilibrium)
+        if (allocated(equilibrium)) ctx%equilibrium => equilibrium
+        ctx%frames => frames
+        nullify(ctx%history_lower)
+        if (allocated(history_lower)) ctx%history_lower => history_lower
+        nullify(ctx%history_upper)
+        if (allocated(history_upper)) ctx%history_upper => history_upper
+        nullify(ctx%lower)
+        if (allocated(lower)) ctx%lower => lower
+        ctx%points => points
+        nullify(ctx%times)
+        if (allocated(times)) ctx%times => times
+        ctx%tmax => tmax
+        nullify(ctx%upper)
+        if (allocated(upper)) ctx%upper => upper
+        nullify(ctx%values)
+        if (allocated(values)) ctx%values => values
+        nullify(ctx%x)
+        if (allocated(x)) ctx%x => x
+        update_frame_operator%data => ctx
+    end subroutine bind_run_shielding_dynamics_demo_context
+
     subroutine write_field(q, name, long_name)
         integer, intent(in) :: q
         character(len=*), intent(in) :: name, long_name
@@ -248,13 +314,25 @@ contains
         call result%write(name//'_upper', upper(q, :, :), '1', long_name//' upper', &
             dims='x,frame', status=bound)
     end subroutine
-    subroutine update_frame(number)
+
+    end subroutine run_shielding_dynamics_demo
+
+    subroutine run_shielding_dynamics_demo_update_frame(ctx, number)
+        type(run_shielding_dynamics_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
-        call canvas%clear()
-        call draw_frame(min(number, frames))
-        call canvas%set_rendered(.false.)
+        call ctx%canvas%clear()
+        call run_shielding_dynamics_demo_draw_frame(ctx, min(number, ctx%frames))
+        call ctx%canvas%set_rendered(.false.)
+    end subroutine run_shielding_dynamics_demo_update_frame
+
+    subroutine run_shielding_dynamics_demo_update_frame_binding(self, frame)
+        class(run_shielding_dynamics_demo_update_frame_t), intent(inout) :: self
+        integer, intent(in) :: frame
+        call run_shielding_dynamics_demo_update_frame(self%data, frame)
     end subroutine
-    subroutine draw_frame(number)
+
+    subroutine run_shielding_dynamics_demo_draw_frame(ctx, number)
+        type(run_shielding_dynamics_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
         real(dp), parameter :: floor = 1.0e-6_dp  ! bottom of the log axis
         integer :: panel
@@ -263,30 +341,35 @@ contains
         do panel = 1, 3
             call subplot(2, 2, panel)
             call xlabel('$x/\lambda_D$  (periodic planar model)')
-            call xlim(x(1), x(points))
+            call xlim(ctx%x(1), ctx%x(ctx%points))
             select case (panel)
             case (1)
-                call title('Electron excess builds up  |  t = '//num(times(number), 2))
+                call &
+                    title('Electron excess builds up  |  t = '//num(ctx%times(number), 2))
                 call ylabel('$\eta = \delta n_e/n_0$')
                 call ylim(-0.034_dp, 0.05_dp)
             case (2)
                 call title('Potential drops as the excess screens the source')
                 call ylabel('$e\phi/k_BT$')
                 call ylim(-0.04_dp, 0.08_dp)
-                call plot(x, bare(2, :), linestyle=':', color=grey, linewidth=1.5_dp, &
+                call plot(ctx%x, ctx%bare(2, :), linestyle=':', color=grey, &
+                    linewidth=1.5_dp, &
                           label='bare source (t = 0)')
             case (3)
                 call title('Electric field is reduced, not replaced by a Yukawa force')
                 call ylabel('$e\lambda_D E/k_BT$')
                 call ylim(-0.058_dp, 0.082_dp)
-                call plot(x, bare(3, :), linestyle=':', color=grey, linewidth=1.5_dp, &
+                call plot(ctx%x, ctx%bare(3, :), linestyle=':', color=grey, &
+                    linewidth=1.5_dp, &
                           label='bare source (t = 0)')
             end select
-            call fill_between(x, lower(panel, :, number), upper(panel, :, number), &
+            call fill_between(ctx%x, ctx%lower(panel, :, number), ctx%upper(panel, &
+                :, number), &
                               color=blue, alpha=0.25_dp)
-            call plot(x, values(panel, :, number), color=blue, linewidth=2.0_dp, &
+            call plot(ctx%x, ctx%values(panel, :, number), color=blue, &
+                linewidth=2.0_dp, &
                       label='numerical ± certified band')
-            call plot(x, equilibrium(panel, :), linestyle='--', color=black, &
+            call plot(ctx%x, ctx%equilibrium(panel, :), linestyle='--', color=black, &
                       linewidth=1.2_dp, label='Debye equilibrium')
             call legend(loc='upper right')
         end do
@@ -294,28 +377,39 @@ contains
         call title('Exponential approach to equilibrium at x = 0 (band resolved)')
         call xlabel('$tD/\lambda_D^2$')
         call ylabel('$e|\phi(0,t) - \phi_{eq}(0)|/k_BT$')
-        call xlim(0.0_dp, tmax)
+        call xlim(0.0_dp, ctx%tmax)
         call ylim(1.0e-6_dp, 0.1_dp)
         call set_yscale('log')
         ! Distance of the certified band from the equilibrium value; a band that
         ! contains the equilibrium reaches the axis floor.
         if (number >= 2) then
-            call fill_between(times(:number), &
-                merge(floor, max(floor, min(abs(history_lower(:number) - &
-                equilibrium(2, center)), abs(history_upper(:number) - &
-                equilibrium(2, center)))), history_lower(:number) <= equilibrium(2, center) &
-                .and. history_upper(:number) >= equilibrium(2, center)), &
-                max(floor, max(abs(history_lower(:number) - equilibrium(2, center)), &
-                abs(history_upper(:number) - equilibrium(2, center)))), &
+            call fill_between(ctx%times(:number), &
+                merge(floor, max(floor, min(abs(ctx%history_lower(:number) - &
+                ctx%equilibrium(2, ctx%center)), abs(ctx%history_upper(:number) - &
+                ctx%equilibrium(2, ctx%center)))), ctx%history_lower(:number) <= &
+                    ctx%equilibrium(2, ctx%center) &
+                .and. ctx%history_upper(:number) >= ctx%equilibrium(2, ctx%center)), &
+                max(floor, max(abs(ctx%history_lower(:number) - ctx%equilibrium(2, &
+                    ctx%center)), &
+                abs(ctx%history_upper(:number) - ctx%equilibrium(2, ctx%center)))), &
                 color=blue, alpha=0.25_dp)
-            call plot(times(:number), max(floor, abs(values(2, center, :number) - &
-                equilibrium(2, center))), color=blue, linewidth=2.0_dp, &
+            call plot(ctx%times(:number), max(floor, abs(ctx%values(2, ctx%center, &
+                :number) - &
+                ctx%equilibrium(2, ctx%center))), color=blue, linewidth=2.0_dp, &
                 label='numerical ± certified time band')
         end if
-        call plot([times(number)], [max(floor, abs(values(2, center, number) - &
-            equilibrium(2, center)))], color=blue, linestyle='none', marker='o', &
+        call plot([ctx%times(number)], [max(floor, abs(ctx%values(2, ctx%center, &
+            number) - &
+            ctx%equilibrium(2, ctx%center)))], color=blue, linestyle='none', &
+                marker='o', &
             markersize=6.0_dp)
         if (number >= 2) call legend(loc='upper right')
         call tight_layout()
-    end subroutine
+    end subroutine run_shielding_dynamics_demo_draw_frame
+end module shielding_dynamics_demo_callbacks
+
+program shielding_dynamics_demo
+    use shielding_dynamics_demo_callbacks, only: run_shielding_dynamics_demo
+    implicit none
+    call run_shielding_dynamics_demo()
 end program shielding_dynamics_demo

@@ -34,6 +34,10 @@ module kin6d_gs_majorant
     use fortnum_quadrature, only: gauss_legendre
     use kin6d_sort_keys, only: sort_key_order
     use, intrinsic :: iso_fortran_env, only: i64 => int64
+    use fortnum_krylov, only: real_linear_operator_t, &
+        real_gmres, real_fgmres, real_conjugate_gradient
+
+    use kin6d_gs_nonlinear, only: gs_forcing_function_t
     implicit none
     private
     public :: gs_functional_majorant
@@ -44,14 +48,12 @@ module kin6d_gs_majorant
     public :: gs_coupled_majorant, gs_coupled_goal, gs_coupled_ip_moments
     public :: gs_coupled_energy_apply, gs_coupled_reference_solve
     public :: gs_fb_majorant, gs_fb_inf_sup, gs_fb_goal, gs_coil_current_bounds
-
     integer, parameter, public :: GS_CM_OK = 0
     integer, parameter, public :: GS_CM_BAD_INPUT = 1
     integer, parameter, public :: GS_CM_BEM_FAILED = 2
     integer, parameter, public :: GS_CM_CELL_FAILED = 3
     integer, parameter, public :: GS_CM_SOLVE_FAILED = 4
     integer, parameter, public :: GS_CM_FB_FAILED = 5
-
     abstract interface
         !> Frozen source f of -div(grad psi / R) = f at a point of cell `cell`
         !! where the represented flux is psi.
@@ -68,7 +70,6 @@ module kin6d_gs_majorant
             real(dp) :: q
         end function gs_goal_weight_fn
     end interface
-
     !> Mesh data of the coupled estimates: a reference BEM on Gamma_c with
     !! `reference_panels` P2 panels per mesh edge (the stand-in for the exact
     !! Steklov-Poincare map S), the boundary moments of the recovered flux,
@@ -90,7 +91,6 @@ module kin6d_gs_majorant
         integer :: cf_iterations = 0
         logical :: ready = .false.
     end type gs_coupled_estimator_t
-
     type :: gs_coupled_majorant_t
         real(dp) :: majorant = huge(1.0_dp)  !< D + oscillation + balance + N
         real(dp) :: flux_defect = 0.0_dp     !< D
@@ -102,7 +102,6 @@ module kin6d_gs_majorant
         integer :: iterations = 0
         logical :: converged = .false.
     end type gs_coupled_majorant_t
-
     type :: gs_coupled_goal_t
         real(dp) :: value = 0.0_dp       !< Q(psi_h)
         real(dp) :: correction = 0.0_dp  !< rho(psi_h; z_h)
@@ -110,14 +109,12 @@ module kin6d_gs_majorant
         real(dp) :: adjoint_majorant = 0.0_dp
         real(dp) :: lower = 0.0_dp, upper = 0.0_dp
     end type gs_coupled_goal_t
-
     type :: gs_fb_majorant_t
         type(gs_coupled_majorant_t) :: frozen  !< M0: frozen-source majorant
         real(dp) :: beta = 0.0_dp              !< inf-sup estimate of J
         real(dp) :: bound = huge(1.0_dp)       !< M0 / beta
         integer :: beta_iterations = 0
     end type gs_fb_majorant_t
-
     interface
         subroutine dpotrf(uplo, n, a, lda, info)
             import :: dp
@@ -141,6 +138,116 @@ module kin6d_gs_majorant
             integer, intent(out) :: ipiv(*), info
         end subroutine dgesv
     end interface
+    type, extends(real_linear_operator_t) :: gs_functional_majorant_action_t
+        integer, pointer :: ndof => null()
+        type(gs_recovery_t), pointer :: rec => null()
+    contains
+        procedure :: apply => gs_functional_majorant_action_apply
+    end type
+    type, extends(real_linear_operator_t) :: gs_functional_majorant_precondition_t
+        type(gs_recovery_t), pointer :: rec => null()
+    contains
+        procedure :: apply => gs_functional_majorant_precondition_apply
+    end type
+    type, abstract, public :: gs_point_source_t
+    contains
+        procedure(gs_point_source_t_binding), deferred :: evaluate
+    end type
+    abstract interface
+        function gs_point_source_t_binding(self, cell, r, z, psi) result(f)
+            import :: gs_point_source_t, dp
+            class(gs_point_source_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: f
+        end function
+    end interface
+
+    type, extends(gs_point_source_t) :: gs_point_source_adapter_t
+        procedure(gs_point_source_fn), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_point_source_adapter_t_evaluate
+    end type
+
+    type, abstract, public :: gs_goal_weight_t
+    contains
+        procedure(gs_goal_weight_t_binding), deferred :: evaluate
+    end type
+    abstract interface
+        function gs_goal_weight_t_binding(self, r, z) result(q)
+            import :: gs_goal_weight_t, dp
+            class(gs_goal_weight_t), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            real(dp) :: q
+        end function
+    end interface
+
+    type, extends(gs_goal_weight_t) :: gs_goal_weight_adapter_t
+        procedure(gs_goal_weight_fn), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_goal_weight_adapter_t_evaluate
+    end type
+
+    interface gs_coupled_majorant
+        module procedure gs_coupled_majorant_object, gs_coupled_majorant_procedure
+    end interface
+
+    interface goal_loads
+        module procedure goal_loads_object, goal_loads_procedure
+    end interface
+
+    interface gs_coupled_goal
+        module procedure gs_coupled_goal_object, gs_coupled_goal_procedure
+    end interface
+
+    interface gs_fb_goal
+        module procedure gs_fb_goal_object, gs_fb_goal_procedure
+    end interface
+
+    type :: gs_fb_majorant_context_t
+        type(gs_fb_eval_t), pointer :: ev => null()
+        class(gs_forcing_function_t), pointer :: forcing => null()
+        type(gs_profile_law_t), pointer :: law => null()
+        real(dp), pointer :: sigma => null()
+        type(gs_fb_system_t), pointer :: sys => null()
+    end type
+
+    type, extends(gs_point_source_t) :: gs_fb_majorant_frozen_source_t
+        type(gs_fb_majorant_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => gs_fb_majorant_frozen_source_binding
+    end type
+
+    type :: gs_coupled_goal_object_context_t
+        class(gs_goal_weight_t), pointer :: weight => null()
+    end type
+
+    type, extends(gs_point_source_t) :: gs_coupled_goal_object_adjoint_source_t
+        type(gs_coupled_goal_object_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => gs_coupled_goal_object_adjoint_source_binding
+    end type
+
+    type :: gs_fb_goal_object_context_t
+
+    end type
+
+    type, extends(gs_point_source_t) :: gs_fb_goal_object_zero_source_t
+        type(gs_fb_goal_object_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => gs_fb_goal_object_zero_source_binding
+    end type
+
+    type, extends(gs_forcing_function_t) :: gs_forcing_function_adapter_t
+        procedure(gs_forcing_t), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_forcing_function_adapter_t_evaluate
+    end type
+
+    public :: gs_fb_majorant_object
+
+    public :: gs_functional_majorant_object
+
 contains
     ! ------------------------------------------------------------------
     ! Coupled FEM-BEM majorant (DESIGN section 4). Energy norm
@@ -158,7 +265,6 @@ contains
     ! Practical, not rigorous: S and its dual norm are those of a reference
     ! BEM with more panels, and C_F is a discrete eigenvalue estimate.
     ! ------------------------------------------------------------------
-
     subroutine gs_coupled_estimator_build(state, coupling, est, status, set, &
                                           reference_panels, cf2)
         !! Reference BEM, coil moments, C_F^2 and the reference energy factor.
@@ -179,7 +285,6 @@ contains
         integer, allocatable :: bq_index(:, :)
         real(dp) :: t0
         logical :: direct_ok
-
         t0 = -1
         call gs_phase_tick('', t0)
         call gs_coupled_estimator_free(est)
@@ -197,7 +302,6 @@ contains
         est%nel = size(state%triangles, 2)
         np = coupling%n_edges*m
         est%nx = 2*np
-
         status = GS_CM_BEM_FAILED
         call gs_coupling_bem_nodes(state, coupling, m, nodes, est%restriction)
         call gs_coupling_steklov(nodes, coupling%flux_degree, est%curve, est%s_ref, stat)
@@ -210,7 +314,6 @@ contains
                              matmul(est%s_ref, est%restriction))
         est%s_trace = 0.5_dp*(est%s_trace + transpose(est%s_trace))
         call gs_phase_tick('est.chol_strace', t0)
-
         ! Boundary quadrature on the reference panels for coil moments.
         ng = 8
         allocate (gx(ng), gw(ng))
@@ -259,7 +362,6 @@ contains
         else
             allocate (est%coil_moments(est%nx, 0))
         end if
-
         call gs_phase_tick('est.boundary_maps', t0)
         status = GS_CM_SOLVE_FAILED
         call factor_energy(stat)
@@ -337,7 +439,6 @@ contains
             call sparse_direct_factor_csc(est%energy_factor, est%n, colptr, &
                                           rowind(:nnz), values(:nnz), fstat)
         end subroutine factor_energy
-
         subroutine friedrichs_estimate(fstat)
             !! C_F^2 = max ||v||^2 / |||v|||^2: power iteration on A^-1 M with
             !! A = K + S_ref, M the L2 mass. The Rayleigh quotient approaches
@@ -348,7 +449,6 @@ contains
             real(dp) :: theta, previous, shape(10), grads(2, 10), hess(2, 2, 10)
             real(dp) :: pt(2), det
             integer :: e, qq, a, b, it, cg_stat, cstat
-
             fstat = 1
             allocate (mblocks(est%ndof, est%ndof, est%nel))
             mblocks = 0.0_dp
@@ -398,10 +498,8 @@ contains
             fstat = 0
         end subroutine friedrichs_estimate
     end subroutine gs_coupled_estimator_build
-
     subroutine gs_coupled_estimator_free(est)
         type(gs_coupled_estimator_t), intent(inout) :: est
-
         if (est%ready) then
             call sparse_direct_free(est%energy_factor)
             call gs_direct_free(est%energy_direct)
@@ -414,7 +512,6 @@ contains
         if (allocated(est%s_trace)) deallocate (est%s_trace)
         if (allocated(est%coil_moments)) deallocate (est%coil_moments)
     end subroutine gs_coupled_estimator_free
-
     subroutine gs_coupled_energy_apply(est, input, output)
         !! output = (K + scatter(R^T S_ref R gather)) input: the reference
         !! coupled energy operator.
@@ -423,7 +520,6 @@ contains
         real(dp), intent(out) :: output(:)
         integer :: i, p
         real(dp) :: acc
-
         !$omp parallel do default(shared) private(i, p, acc) schedule(static)
         do i = 1, est%n
             acc = 0.0_dp
@@ -436,7 +532,6 @@ contains
         output(est%coupling%trace_node) = output(est%coupling%trace_node) &
             + matmul(est%s_trace, input(est%coupling%trace_node))
     end subroutine gs_coupled_energy_apply
-
     subroutine gs_coupled_reference_solve(est, rhs, solution, status)
         !! (K + R^T S_ref R) solution = rhs: sparse LU and two refinement steps.
         type(gs_coupled_estimator_t), intent(inout) :: est
@@ -445,7 +540,6 @@ contains
         integer, intent(out) :: status
         real(dp), allocatable :: residual(:), correction(:)
         integer :: sweep
-
         allocate (residual(est%n), correction(est%n))
         call energy_solve(rhs, solution, status)
         do sweep = 1, 2
@@ -455,7 +549,6 @@ contains
             call energy_solve(residual, correction, status)
             solution = solution + correction
         end do
-
     contains
         subroutine energy_solve(b, x, sstat)
             real(dp), intent(in) :: b(:)
@@ -470,7 +563,6 @@ contains
             end if
         end subroutine energy_solve
     end subroutine gs_coupled_reference_solve
-
     function gs_coupled_ip_moments(est, mu0) result(moments)
         !! Boundary moments of Ip(psi) = (<S psi, 1> - <g, 1>)/mu0 (Ampere on
         !! Gamma_c, the conormal flux being g - S psi): S_ref 1 / mu0. The
@@ -478,11 +570,9 @@ contains
         type(gs_coupled_estimator_t), intent(in) :: est
         real(dp), intent(in) :: mu0
         real(dp) :: moments(est%nx)
-
         moments = sum(est%s_ref, dim=2)/mu0
     end function gs_coupled_ip_moments
-
-    subroutine gs_coupled_majorant(state, est, psi, source, boundary_load, res, &
+    subroutine gs_coupled_majorant_object(state, est, psi, source, boundary_load, res, &
                                    status)
         !! Patchwise H(div) flux with the physical FEM--BEM interface residual.
         !! Boundary patch moments are free in the RT recovery. This does not
@@ -494,7 +584,7 @@ contains
         type(gs_state_t), intent(in) :: state
         type(gs_coupled_estimator_t), intent(inout) :: est
         real(dp), intent(in) :: psi(:), boundary_load(:)
-        procedure(gs_point_source_fn) :: source
+        class(gs_point_source_t), target, intent(in) :: source
         type(gs_coupled_majorant_t), intent(out) :: res
         integer, intent(out) :: status
         type(equilibrated_flux_estimate_t) :: recovered
@@ -507,7 +597,6 @@ contains
         real(dp) :: vals(10), controls(10), grad(2), xi(2), normal(2), sigma(2)
         real(dp) :: t, basis(3), normal_flux
         integer :: e, q, nd, stat, failed, p, i, panel, side, j, node, ng
-
         status = GS_CM_BAD_INPUT
         if (.not. est%ready) return
         if (size(psi) /= est%n .or. size(boundary_load) /= est%nx) return
@@ -540,7 +629,7 @@ contains
                     exit
                 end if
                 call gs_error_coefficient(point(1), coefficient(q, e))
-                f(q, e) = source(e, point(1), point(2), &
+                f(q, e) = source%evaluate(e, point(1), point(2), &
                     dot_product(shape(:nd), vals(:nd)))
                 grad = matmul(grads(:, :nd), vals(:nd) - vals(1))
                 call gs_error_flux(point(1), grad(1), grad(2), &
@@ -554,7 +643,6 @@ contains
             state%element_order, x, y, w, coefficient, f, flux, lower, &
             sqrt(est%cf2), recovered, stat, geometry_nodes=geometry)
         if (stat /= EQUILIBRATION_OK) return
-
         ! Piola preserves sigma.n ds = sigma_hat.n_hat dt exactly, including
         ! curved edges. Integrate these RT normal moments against the SAME
         ! reference BEM trace basis used by S_ref and boundary_load.
@@ -615,15 +703,14 @@ contains
         res%converged = .true.
         if (.not. ieee_is_finite(res%majorant)) return
         status = GS_CM_OK
-    end subroutine gs_coupled_majorant
-
-    subroutine goal_loads(state, est, psi, source, weight, loads, value, status)
+    end subroutine gs_coupled_majorant_object
+    subroutine goal_loads_object(state, est, psi, source, weight, loads, value, status)
         !! loads(:, 1) = int f phi_i, loads(:, 2) = int q phi_i, value = int q psi.
         type(gs_state_t), intent(in) :: state
         type(gs_coupled_estimator_t), intent(in) :: est
         real(dp), intent(in) :: psi(:)
-        procedure(gs_point_source_fn) :: source
-        procedure(gs_goal_weight_fn) :: weight
+        class(gs_point_source_t), target, intent(in) :: source
+        class(gs_goal_weight_t), target, intent(in) :: weight
         real(dp), allocatable, intent(out) :: loads(:, :)
         real(dp), intent(out) :: value
         integer, intent(out) :: status
@@ -631,7 +718,6 @@ contains
         real(dp) :: shape(10), grads(2, 10), hess(2, 2, 10), pt(2), det, vals(10)
         real(dp) :: f, q, ph
         integer :: e, qq, a, nd
-
         call triangle_duffy_quadrature(14, x, y, w, status)
         if (status /= 0) return
         nd = est%ndof
@@ -645,8 +731,8 @@ contains
                                   grads(:, :nd), hess(:, :, :nd), status)
                 if (status /= 0) return
                 ph = dot_product(shape(:nd), vals(:nd))
-                f = source(e, pt(1), pt(2), ph)
-                q = weight(pt(1), pt(2))
+                f = source%evaluate(e, pt(1), pt(2), ph)
+                q = weight%evaluate(pt(1), pt(2))
                 value = value + w(qq)*det*q*ph
                 do a = 1, nd
                     loads(state%triangles(a, e), 1) = loads(state%triangles(a, e), 1) &
@@ -656,9 +742,8 @@ contains
                 end do
             end do
         end do
-    end subroutine goal_loads
-
-    subroutine gs_coupled_goal(state, est, psi, source, boundary_load, weight, &
+    end subroutine goal_loads_object
+    subroutine gs_coupled_goal_object(state, est, psi, source, boundary_load, weight, &
                                goal_boundary, primal_majorant, res, status)
         !! Goal Q(psi) = int q psi dA + <q_b, psi> (q_b with reference moments
         !! goal_boundary) of the frozen coupled problem. With z_h the discrete
@@ -668,8 +753,8 @@ contains
         type(gs_state_t), intent(in) :: state
         type(gs_coupled_estimator_t), intent(inout) :: est
         real(dp), intent(in) :: psi(:), boundary_load(:), goal_boundary(:)
-        procedure(gs_point_source_fn) :: source
-        procedure(gs_goal_weight_fn) :: weight
+        class(gs_point_source_t), target, intent(in) :: source
+        class(gs_goal_weight_t), target, intent(in) :: weight
         real(dp), intent(in) :: primal_majorant
         type(gs_coupled_goal_t), intent(out) :: res
         integer, intent(out) :: status
@@ -677,7 +762,8 @@ contains
         real(dp), allocatable :: loads(:, :), rhs(:), z(:), apsi(:), bnd(:)
         real(dp) :: value
         integer :: stat
-
+        type(gs_coupled_goal_object_context_t), target :: ctx
+        type(gs_coupled_goal_object_adjoint_source_t), target :: adjoint_source_operator
         status = GS_CM_BAD_INPUT
         if (.not. est%ready .or. size(goal_boundary) /= est%nx) return
         if (size(boundary_load) /= est%nx .or. size(psi) /= est%n) return
@@ -699,7 +785,9 @@ contains
                                               boundary_load)
         call gs_coupled_energy_apply(est, psi, apsi)
         res%correction = dot_product(z, loads(:, 1) + bnd - apsi)
-        call gs_coupled_majorant(state, est, z, adjoint_source, goal_boundary, &
+        call bind_gs_coupled_goal_object_context()
+        call gs_coupled_majorant(state, est, z, adjoint_source_operator, &
+            goal_boundary, &
                                  adjoint, stat)
         if (stat /= GS_CM_OK) then
             status = stat
@@ -711,14 +799,12 @@ contains
         res%upper = res%value + res%correction + res%bound
         status = GS_CM_OK
     contains
-        function adjoint_source(cell, r, zz, p) result(f)
-            integer, intent(in) :: cell
-            real(dp), intent(in) :: r, zz, p
-            real(dp) :: f
-            f = weight(r, zz) + 0.0_dp*(cell + p)
-        end function adjoint_source
-    end subroutine gs_coupled_goal
+    subroutine bind_gs_coupled_goal_object_context()
+        ctx%weight => weight
+        adjoint_source_operator%data => ctx
+    end subroutine bind_gs_coupled_goal_object_context
 
+    end subroutine gs_coupled_goal_object
     ! ------------------------------------------------------------------
     ! Nonlinear free boundary (DESIGN section 4, "Nonlinear"). M0 is the
     ! frozen-source majorant at psi_h; with fixed coil currents J can be
@@ -726,27 +812,27 @@ contains
     ! by the inf-sup constant beta of J in the energy pairing, and the
     ! practical bound is |||e||| <~ M0 / beta (first order in the error).
     ! ------------------------------------------------------------------
-
-    subroutine gs_fb_majorant(state, sys, est, currents, res, status, forcing, &
+    subroutine gs_fb_majorant_object(state, sys, est, currents, res, status, forcing, &
                               max_iterations)
         !! Frozen-source majorant of the free-boundary solution state%psi and
         !! the inf-sup estimate. The frozen source is the law inside the
-        !! plasma (plasma cells, s < 1) plus forcing(R, Z), which must be the
+        !! plasma (plasma cells, s < 1) plus forcing%evaluate(R, Z), which must be the
         !! pointwise form of sys%extra_load (zero when that load is zero).
         type(gs_state_t), intent(inout) :: state
-        type(gs_fb_system_t), intent(in) :: sys
+        type(gs_fb_system_t), intent(in) , target :: sys
         type(gs_coupled_estimator_t), intent(inout) :: est
         real(dp), intent(in) :: currents(:)
         type(gs_fb_majorant_t), intent(out) :: res
         integer, intent(out) :: status
-        procedure(gs_forcing_t), optional :: forcing
+        class(gs_forcing_function_t), target, intent(in), optional :: forcing
         integer, intent(in), optional :: max_iterations
-        type(gs_fb_eval_t) :: ev
-        type(gs_profile_law_t) :: law
+        type(gs_fb_eval_t) , target :: ev
+        type(gs_profile_law_t) , target :: law
         real(dp), allocatable :: psi(:)
-        real(dp) :: sigma
+        real(dp) , target :: sigma
         integer :: stat
-
+        type(gs_fb_majorant_context_t), target :: ctx
+        type(gs_fb_majorant_frozen_source_t), target :: frozen_source_operator
         status = GS_CM_BAD_INPUT
         if (.not. est%ready .or. size(currents) /= est%nk) return
         psi = state%psi
@@ -756,7 +842,8 @@ contains
         law = sys%law
         law%axis = ev%psi_axis - ev%psi_bound
         sigma = real(sys%cfg%axis_sign, dp)
-        call gs_coupled_majorant(state, est, psi, frozen_source, &
+        call bind_gs_fb_majorant_context()
+        call gs_coupled_majorant(state, est, psi, frozen_source_operator, &
                                  matmul(est%coil_moments, currents), res%frozen, stat)
         if (stat /= GS_CM_OK) then
             status = stat
@@ -771,21 +858,16 @@ contains
         res%bound = res%frozen%majorant/res%beta
         status = GS_CM_OK
     contains
-        function frozen_source(cell, r, z, p) result(f)
-            integer, intent(in) :: cell
-            real(dp), intent(in) :: r, z, p
-            real(dp) :: f, pp, ff
-            f = 0.0_dp
-            if (ev%plasma_cell(cell)) then
-                if (sigma*(p - ev%psi_bound) > 0.0_dp) then
-                    call gs_law_sources(law, p - ev%psi_bound, pp, ff)
-                    call gs_source(r, sys%mu0, pp, ff, f)
-                end if
-            end if
-            if (present(forcing)) f = f + forcing(r, z)
-        end function frozen_source
-    end subroutine gs_fb_majorant
+    subroutine bind_gs_fb_majorant_context()
+        ctx%ev => ev
+        if (present(forcing)) ctx%forcing => forcing
+        ctx%law => law
+        ctx%sigma => sigma
+        ctx%sys => sys
+        frozen_source_operator%data => ctx
+    end subroutine bind_gs_fb_majorant_context
 
+    end subroutine gs_fb_majorant_object
     subroutine gs_fb_inf_sup(state, sys, ev, beta, iterations, status, &
                              max_iterations)
         !! beta = min_v sup_w <J v, w> / (|||v||| |||w|||), the smallest
@@ -804,7 +886,6 @@ contains
         real(dp), allocatable :: v(:), av(:), t(:), u(:), wv(:)
         real(dp) :: theta, previous, energy
         integer :: it, stat, n, cap
-
         status = GS_CM_FB_FAILED
         beta = 0.0_dp
         iterations = 0
@@ -839,8 +920,7 @@ contains
         beta = 1.0_dp/sqrt(theta)
         status = GS_CM_OK
     end subroutine gs_fb_inf_sup
-
-    subroutine gs_fb_goal(state, sys, est, currents, weight, goal_boundary, &
+    subroutine gs_fb_goal_object(state, sys, est, currents, weight, goal_boundary, &
                           residual_majorant, res, status)
         !! Goal of the nonlinear free-boundary solution. With the discrete
         !! adjoint J^T z_h = Q', to first order Q(psi) - Q(psi_h) = <z, r>, r
@@ -855,7 +935,7 @@ contains
         type(gs_fb_system_t), intent(in) :: sys
         type(gs_coupled_estimator_t), intent(in) :: est
         real(dp), intent(in) :: currents(:), goal_boundary(:), residual_majorant
-        procedure(gs_goal_weight_fn) :: weight
+        class(gs_goal_weight_t), target, intent(in) :: weight
         type(gs_coupled_goal_t), intent(out) :: res
         integer, intent(out) :: status
         type(gs_fb_eval_t) :: ev
@@ -864,7 +944,8 @@ contains
         real(dp), allocatable :: plasma_load(:)
         real(dp) :: value
         integer :: stat
-
+        type(gs_fb_goal_object_context_t), target :: ctx
+        type(gs_fb_goal_object_zero_source_t), target :: zero_source_operator
         status = GS_CM_BAD_INPUT
         if (.not. est%ready .or. size(goal_boundary) /= est%nx) return
         if (size(currents) /= est%nk) return
@@ -875,7 +956,9 @@ contains
         call gs_fb_factor(state, sys, ev, fac, stat)
         if (stat /= GS_FB_OK) return
         status = GS_CM_CELL_FAILED
-        call goal_loads(state, est, psi, zero_source, weight, loads, value, stat)
+        call bind_gs_fb_goal_object_context()
+        call goal_loads(state, est, psi, zero_source_operator, weight, loads, value, &
+            stat)
         if (stat /= 0) return
         allocate (bnd(est%n), rhs(est%n), z(est%n), apsi(est%n))
         bnd = 0.0_dp
@@ -900,14 +983,11 @@ contains
         res%upper = res%value + res%bound
         status = GS_CM_OK
     contains
-        function zero_source(cell, r, zz, p) result(f)
-            integer, intent(in) :: cell
-            real(dp), intent(in) :: r, zz, p
-            real(dp) :: f
-            f = 0.0_dp*(cell + r + zz + p)
-        end function zero_source
-    end subroutine gs_fb_goal
+    subroutine bind_gs_fb_goal_object_context()
+        zero_source_operator%data => ctx
+    end subroutine bind_gs_fb_goal_object_context
 
+    end subroutine gs_fb_goal_object
     subroutine fb_evaluate_loads(state, sys, psi, currents, ev, load, status)
         !! Evaluation with Jacobian and load = extra + b(psi) = A_h psi - F(psi)
         !! - sum_k I_k load_k.
@@ -917,14 +997,12 @@ contains
         type(gs_fb_eval_t), intent(inout) :: ev
         real(dp), allocatable, intent(out) :: load(:)
         integer, intent(out) :: status
-
         call gs_fb_evaluate(state, sys, psi, currents, ev, status, jacobian=.true.)
         if (status /= GS_FB_OK) return
         allocate (load(size(psi)))
         call gs_coupled_apply(sys%coupling, psi, load)
         load = load - ev%residual - matmul(sys%coil_load, currents)
     end subroutine fb_evaluate_loads
-
     subroutine gs_coil_current_bounds(d, lambda, scale, free, row_bounds, bounds, &
                                       status, sensitivity)
         !! Coil-current goal (DESIGN 4): at a Gauss-Newton optimum with scaled
@@ -940,7 +1018,6 @@ contains
         real(dp), allocatable :: h(:, :), rhs(:, :), df(:, :)
         integer, allocatable :: idx(:), ipiv(:)
         integer :: nf, info, k
-
         status = GS_CM_BAD_INPUT
         bounds = 0.0_dp
         if (size(d, 2) /= size(scale) .or. size(free) /= size(scale)) return
@@ -966,8 +1043,7 @@ contains
         bounds(idx) = matmul(abs(rhs), row_bounds)
         if (present(sensitivity)) sensitivity(idx, :) = rhs
     end subroutine gs_coil_current_bounds
-
-    subroutine gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
+    subroutine gs_functional_majorant_object(state, mu0, pprime, ffprime, majorant, &
                                      flux_defect, balance_defect, status, &
                                      recovery_converged, recovery_iterations, law, &
                                      stability_lower_bound, forcing, &
@@ -984,7 +1060,7 @@ contains
         integer, intent(out), optional :: recovery_iterations
         type(gs_profile_law_t), intent(in), optional :: law
         real(dp), intent(in), optional :: stability_lower_bound
-        procedure(gs_forcing_t), optional :: forcing
+        class(gs_forcing_function_t), target, intent(in), optional :: forcing
         logical, intent(in), optional :: estimate_stability
         real(dp), intent(out), optional :: stability_estimate
         real(dp), allocatable :: x(:), y(:), w(:)
@@ -995,7 +1071,10 @@ contains
         real(dp) :: cf2, lo(2), hi(2), residual, alpha, signature
         real(dp) :: flux_sum, balance_sum
         logical :: practical, solved, build, cached
-        integer :: e, j, n, iterations, ndof, nel, failed_element, failed_status
+        integer , target :: e, j, n, iterations, ndof, nel, failed_element, &
+            failed_status
+        type(gs_functional_majorant_action_t) :: action_operator
+        type(gs_functional_majorant_precondition_t) :: precondition_operator
         majorant = huge(1.0_dp); flux_defect = 0; balance_defect = 0
         status = 1
         practical = .false.
@@ -1128,7 +1207,8 @@ contains
                         end if
                     end if
                     call gs_source(point(1), mu0, pp, ff, source)
-                    if (present(forcing)) source = source + forcing(point(1), point(2))
+                    if (present(forcing)) source = source + &
+                        forcing%evaluate(point(1), point(2))
                     do jj = 1, ndof
                         do aa = 1, 2
                             row = 2*(jj - 1) + aa
@@ -1185,9 +1265,12 @@ contains
                 status = KRYLOV_OK
             else
                 recovered = 0
-                call real_conjugate_gradient_operator(action, rhs, recovered, &
+        action_operator%ndof => ndof
+        action_operator%rec => rec
+        precondition_operator%rec => rec
+                call real_conjugate_gradient(action_operator, rhs, recovered, &
                     1.0e-11_dp*min(1.0_dp, norm2(rhs)), 6000, status, iterations, &
-                    residual, precondition)
+                    residual, precondition_operator)
             end if
             if (present(recovery_converged)) recovery_converged = status == KRYLOV_OK
             if (present(recovery_iterations)) recovery_iterations = iterations
@@ -1237,7 +1320,8 @@ contains
                         call gs_law_sources(law, psi, pp, ff)
                     end if
                     call gs_source(point(1), mu0, pp, ff, source)
-                    if (present(forcing)) source = source + forcing(point(1), point(2))
+                    if (present(forcing)) source = source + &
+                        forcing%evaluate(point(1), point(2))
                     flux_sum = flux_sum + weight*point(1) &
                         *sum((flux - grad/point(1))**2)
                     balance_sum = balance_sum + weight*(source + divergence)**2
@@ -1292,7 +1376,6 @@ contains
             end if
             !$omp end critical(gs_majorant_failure)
         end subroutine
-
         subroutine direct_recovery(converged)
             ! The recovery system is symmetric positive definite: one Cholesky
             ! factor (cached with the mesh), one back-substitution and iterative
@@ -1332,7 +1415,6 @@ contains
             ! An uncached (hand-built) state keeps no factor.
             if (.not. cached) call gs_direct_free(rec%factor)
         end subroutine
-
         subroutine estimate_coercivity(alpha)
             ! Numerical positive-part comparison: J >= A - M_+.
             ! Power iteration is self-adjoint in the A pairing. Its result is
@@ -1386,31 +1468,312 @@ contains
                 v = z
             end do
         end subroutine
-
-        subroutine action(input, output)
+    end subroutine
+    subroutine gs_functional_majorant_action_apply(self, input, output)
+        class(gs_functional_majorant_action_t), intent(inout) :: self
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
-            real(dp) :: value(2*ndof)
+            real(dp) :: value(2*self%ndof)
             integer :: cell, i, j
             output = 0
-            do cell = 1, size(rec%indices, 2)
+            do cell = 1, size(self%rec%indices, 2)
                 value = 0
-                do j = 1, 2*ndof
-                    do i = 1, 2*ndof
+                do j = 1, 2*self%ndof
+                    do i = 1, 2*self%ndof
                         value(i) = value(i) &
-                            + rec%matrix(i, j, cell)*input(rec%indices(j, cell))
+                            + self%rec%matrix(i, j, cell)*input(self%rec%indices(j, &
+                                cell))
                     end do
                 end do
-                do i = 1, 2*ndof
-                    output(rec%indices(i, cell)) = &
-                        output(rec%indices(i, cell)) + value(i)
+                do i = 1, 2*self%ndof
+                    output(self%rec%indices(i, cell)) = &
+                        output(self%rec%indices(i, cell)) + value(i)
                 end do
             end do
-        end subroutine
-        subroutine precondition(input, output)
+    end subroutine gs_functional_majorant_action_apply
+    subroutine gs_functional_majorant_precondition_apply(self, input, output)
+        class(gs_functional_majorant_precondition_t), intent(inout) :: self
             real(dp), intent(in) :: input(:)
             real(dp), intent(out) :: output(:)
-            output = input/rec%diagonal
-        end subroutine
+            output = input/self%rec%diagonal
+    end subroutine gs_functional_majorant_precondition_apply
+
+    subroutine gs_coupled_majorant_procedure(state, est, psi, source, boundary_load, &
+        res, &
+                                   status)
+        !! Patchwise H(div) flux with the physical FEM--BEM interface residual.
+        !! Boundary patch moments are free in the RT recovery. This does not
+        !! impose a Dirichlet condition on psi: its arbitrary trace enters the
+        !! separately measured ||sigma.n + S_ref psi - g||_{S_ref^-1} term.
+        !! Both source balance and curved-cell oscillation use the COUPLED
+        !! Friedrichs constant. Reference BEM, that constant and quadrature
+        !! remain approximate, so this is a practical energy estimate.
+        type(gs_state_t), intent(in) :: state
+        type(gs_coupled_estimator_t), intent(inout) :: est
+        real(dp), intent(in) :: psi(:), boundary_load(:)
+        procedure(gs_point_source_fn) :: source
+        type(gs_coupled_majorant_t), intent(out) :: res
+        integer, intent(out) :: status
+        type(gs_point_source_adapter_t), target :: source_adapter
+
+        source_adapter%callback => source
+        call gs_coupled_majorant_object(state, &
+            est, &
+            psi, &
+            source_adapter, &
+            boundary_load, &
+            res, &
+            status)
     end subroutine
+
+    subroutine goal_loads_procedure(state, est, psi, source, weight, loads, value, &
+        status)
+        !! loads(:, 1) = int f phi_i, loads(:, 2) = int q phi_i, value = int q psi.
+        type(gs_state_t), intent(in) :: state
+        type(gs_coupled_estimator_t), intent(in) :: est
+        real(dp), intent(in) :: psi(:)
+        procedure(gs_point_source_fn) :: source
+        procedure(gs_goal_weight_fn) :: weight
+        real(dp), allocatable, intent(out) :: loads(:, :)
+        real(dp), intent(out) :: value
+        integer, intent(out) :: status
+        type(gs_point_source_adapter_t), target :: source_adapter
+        type(gs_goal_weight_adapter_t), target :: weight_adapter
+
+        source_adapter%callback => source
+        weight_adapter%callback => weight
+        call goal_loads_object(state, &
+            est, &
+            psi, &
+            source_adapter, &
+            weight_adapter, &
+            loads, &
+            value, &
+            status)
+    end subroutine
+
+    subroutine gs_coupled_goal_procedure(state, est, psi, source, boundary_load, &
+        weight, &
+                               goal_boundary, primal_majorant, res, status)
+        !! Goal Q(psi) = int q psi dA + <q_b, psi> (q_b with reference moments
+        !! goal_boundary) of the frozen coupled problem. With z_h the discrete
+        !! adjoint (K + S_ref) z_h = Q', Q(psi) - Q(psi_h) = r(z_h) + r(z - z_h)
+        !! and |r(z - z_h)| <= |||psi - psi_h||| |||z - z_h||| <= M_psi M_z, so
+        !! Q(psi) lies in Q(psi_h) + rho +- M_psi M_z (rho = r(z_h)).
+        type(gs_state_t), intent(in) :: state
+        type(gs_coupled_estimator_t), intent(inout) :: est
+        real(dp), intent(in) :: psi(:), boundary_load(:), goal_boundary(:)
+        procedure(gs_point_source_fn) :: source
+        procedure(gs_goal_weight_fn) :: weight
+        real(dp), intent(in) :: primal_majorant
+        type(gs_coupled_goal_t), intent(out) :: res
+        integer, intent(out) :: status
+        type(gs_point_source_adapter_t), target :: source_adapter
+        type(gs_goal_weight_adapter_t), target :: weight_adapter
+
+        source_adapter%callback => source
+        weight_adapter%callback => weight
+        call gs_coupled_goal_object(state, &
+            est, &
+            psi, &
+            source_adapter, &
+            boundary_load, &
+            weight_adapter, &
+            goal_boundary, &
+            primal_majorant, &
+            res, &
+            status)
+    end subroutine
+
+    subroutine gs_fb_goal_procedure(state, sys, est, currents, weight, goal_boundary, &
+                          residual_majorant, res, status)
+        !! Goal of the nonlinear free-boundary solution. With the discrete
+        !! adjoint J^T z_h = Q', to first order Q(psi) - Q(psi_h) = <z, r>, r
+        !! the residual functional, |<z, r>| <= |||z||| ||r||_* <= |||z_h||| M0
+        !! (M0 = residual_majorant, the frozen majorant, bounds ||r||_*):
+        !! res%bound = |||z_h||| M0, an estimate (z ~ z_h), not a guaranteed
+        !! bound. rho = -z_h . F_ref(psi_h) (reference S) is the computable part,
+        !! small by Galerkin orthogonality; no remainder bound is claimed for it
+        !! because the adjoint residual carries the interface and point-
+        !! evaluation (axis, boundary flux) terms, which are not in H^-1.
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(in) :: sys
+        type(gs_coupled_estimator_t), intent(in) :: est
+        real(dp), intent(in) :: currents(:), goal_boundary(:), residual_majorant
+        procedure(gs_goal_weight_fn) :: weight
+        type(gs_coupled_goal_t), intent(out) :: res
+        integer, intent(out) :: status
+        type(gs_goal_weight_adapter_t), target :: weight_adapter
+
+        weight_adapter%callback => weight
+        call gs_fb_goal_object(state, &
+            sys, &
+            est, &
+            currents, &
+            weight_adapter, &
+            goal_boundary, &
+            residual_majorant, &
+            res, &
+            status)
+    end subroutine
+
+    function gs_point_source_adapter_t_evaluate(self, cell, r, z, psi) result(f)
+        class(gs_point_source_adapter_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: f
+        f = self%callback(cell, r, z, psi)
+    end function
+
+    function gs_goal_weight_adapter_t_evaluate(self, r, z) result(q)
+        class(gs_goal_weight_adapter_t), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            real(dp) :: q
+        q = self%callback(r, z)
+    end function
+
+    function gs_fb_majorant_frozen_source(ctx, cell, r, z, p) result(f)
+        type(gs_fb_majorant_context_t), intent(in) :: ctx
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, p
+            real(dp) :: f, pp, ff
+            f = 0.0_dp
+            if (ctx%ev%plasma_cell(cell)) then
+                if (ctx%sigma*(p - ctx%ev%psi_bound) > 0.0_dp) then
+                    call gs_law_sources(ctx%law, p - ctx%ev%psi_bound, pp, ff)
+                    call gs_source(r, ctx%sys%mu0, pp, ff, f)
+                end if
+            end if
+            if (associated(ctx%forcing)) f = f + ctx%forcing%evaluate(r, z)
+    end function gs_fb_majorant_frozen_source
+
+    function gs_fb_majorant_frozen_source_binding(self, cell, r, z, psi) &
+        result(result_value)
+        class(gs_fb_majorant_frozen_source_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: result_value, pp, ff
+        result_value = gs_fb_majorant_frozen_source(self%data, cell, r, z, psi)
+    end function
+
+    function gs_coupled_goal_object_adjoint_source(ctx, cell, r, zz, p) result(f)
+        type(gs_coupled_goal_object_context_t), intent(in) :: ctx
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, zz, p
+            real(dp) :: f
+            f = ctx%weight%evaluate(r, zz) + 0.0_dp*(cell + p)
+    end function gs_coupled_goal_object_adjoint_source
+
+    function gs_coupled_goal_object_adjoint_source_binding(self, cell, r, z, psi) &
+        result(result_value)
+        class(gs_coupled_goal_object_adjoint_source_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: result_value
+        result_value = gs_coupled_goal_object_adjoint_source(self%data, cell, r, z, psi)
+    end function
+
+    function gs_fb_goal_object_zero_source(cell, r, zz, p) result(f)
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, zz, p
+            real(dp) :: f
+            f = 0.0_dp*(cell + r + zz + p)
+    end function gs_fb_goal_object_zero_source
+
+    function gs_fb_goal_object_zero_source_binding(self, cell, r, z, psi) &
+        result(result_value)
+        class(gs_fb_goal_object_zero_source_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: result_value
+        associate (unused => self)
+            result_value = gs_fb_goal_object_zero_source(cell, r, z, psi)
+        end associate
+    end function
+
+
+    subroutine gs_fb_majorant(state, sys, est, currents, res, status, forcing, &
+                              max_iterations)
+        !! Frozen-source majorant of the free-boundary solution state%psi and
+        !! the inf-sup estimate. The frozen source is the law inside the
+        !! plasma (plasma cells, s < 1) plus forcing(R, Z), which must be the
+        !! pointwise form of sys%extra_load (zero when that load is zero).
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(in) , target :: sys
+        type(gs_coupled_estimator_t), intent(inout) :: est
+        real(dp), intent(in) :: currents(:)
+        type(gs_fb_majorant_t), intent(out) :: res
+        integer, intent(out) :: status
+        procedure(gs_forcing_t), optional :: forcing
+        integer, intent(in), optional :: max_iterations
+        type(gs_forcing_function_adapter_t), target :: forcing_adapter
+        class(gs_forcing_function_t), pointer :: forcing_object
+
+        nullify(forcing_object)
+        if (present(forcing)) then
+            forcing_adapter%callback => forcing
+            forcing_object => forcing_adapter
+        end if
+        call gs_fb_majorant_object(state, &
+            sys, &
+            est, &
+            currents, &
+            res, &
+            status, &
+            forcing_object, &
+            max_iterations)
+    end subroutine
+
+    subroutine gs_functional_majorant(state, mu0, pprime, ffprime, majorant, &
+                                     flux_defect, balance_defect, status, &
+                                     recovery_converged, recovery_iterations, law, &
+                                     stability_lower_bound, forcing, &
+                                     estimate_stability, stability_estimate)
+        ! Repin functional majorant for -div(grad(psi)/R)=source, homogeneous
+        ! Dirichlet trace, on the represented domain. Recover y in continuous
+        ! vector Pk, k=2 or 3 (a subspace of H(div)) by minimizing D^2+C_F^2*B^2.
+        ! Returns D+C_F*B, with ordinary quadrature; no rigorous enclosure.
+        type(gs_state_t), intent(in) :: state
+        real(dp), intent(in) :: mu0, pprime, ffprime
+        real(dp), intent(out) :: majorant, flux_defect, balance_defect
+        integer, intent(out) :: status
+        logical, intent(out), optional :: recovery_converged
+        integer, intent(out), optional :: recovery_iterations
+        type(gs_profile_law_t), intent(in), optional :: law
+        real(dp), intent(in), optional :: stability_lower_bound
+        procedure(gs_forcing_t), optional :: forcing
+        logical, intent(in), optional :: estimate_stability
+        real(dp), intent(out), optional :: stability_estimate
+        type(gs_forcing_function_adapter_t), target :: forcing_adapter
+        class(gs_forcing_function_t), pointer :: forcing_object
+
+        nullify(forcing_object)
+        if (present(forcing)) then
+            forcing_adapter%callback => forcing
+            forcing_object => forcing_adapter
+        end if
+        call gs_functional_majorant_object(state, &
+            mu0, &
+            pprime, &
+            ffprime, &
+            majorant, &
+            flux_defect, &
+            balance_defect, &
+            status, &
+            recovery_converged, &
+            recovery_iterations, &
+            law, &
+            stability_lower_bound, &
+            forcing_object, &
+            estimate_stability, &
+            stability_estimate)
+    end subroutine
+
+    function gs_forcing_function_adapter_t_evaluate(self, r, z) result(source)
+        class(gs_forcing_function_adapter_t), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            real(dp) :: source
+        source = self%callback(r, z)
+    end function
+
 end module

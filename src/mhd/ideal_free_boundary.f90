@@ -74,6 +74,11 @@ module kin6d_ideal_free_boundary
         csc_normalize_symmetric_raw, &
         FORTSPARSE_ORDER_AMD, FORTSPARSE_LU_SUPERNODAL, &
         FORTSPARSE_SYM_INDEFINITE, sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
+    use fortnum_krylov, only: real_linear_operator_t, &
+        real_gmres, real_fgmres, real_conjugate_gradient
+    use fortnum_eigen, only: eigen_real_operator_dp_t
+    use fortnum_eigen, only: eigen_real_operator_dp_t
+    use fortnum_eigen, only: eigen_real_solve_dp_t
     implicit none
     private
     public :: ideal_fb_t, ideal_fb_report_t, ideal_fb_init, ideal_fb_set_drive
@@ -90,7 +95,6 @@ module kin6d_ideal_free_boundary
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
     real(dp), parameter :: pi = acos(-1.0_dp)
-
     ! External field of real Fourier harmonic k (n = k*nfp) at (R, Z):
     ! B = bcos cos(n phi) + bsin sin(n phi), components (B_R, B_phi, B_Z).
     abstract interface
@@ -101,7 +105,6 @@ module kin6d_ideal_free_boundary
             real(dp), intent(out) :: bcos(3), bsin(3)
         end subroutine
     end interface
-
     type :: ideal_fb_t
         type(ideal_map_t) :: plasma
         integer :: nfp = 1, ntor = 0, nmode = 1, nloc = 0, order = 0
@@ -156,7 +159,6 @@ module kin6d_ideal_free_boundary
         ! g(U) - shift (shift = (1 - t) g(U0) solves g = (1 - t) g(U0)).
         real(dp), allocatable :: shift(:)
     end type
-
     type :: ideal_fb_report_t
         integer :: iterations = 0
         real(dp) :: merit0 = 0, merit = 0, residual = huge(1.0_dp)
@@ -168,7 +170,6 @@ module kin6d_ideal_free_boundary
         real(dp) :: assembly_roundoff = 0
         integer :: factorisations = 0, reused = 0
     end type
-
     type :: ideal_fb_stability_t
         ! Raw second-variation ledger, per field period. These are half of
         ! u^T H u in the fixed-current co-energy formulation, not a kinetic
@@ -177,7 +178,6 @@ module kin6d_ideal_free_boundary
         real(dp) :: total = 0, metric_norm = 0, relative_residual = huge(1.0_dp)
         real(dp) :: residual_radius = huge(1.0_dp), backward_error = huge(1.0_dp)
     end type
-
     type :: ideal_fb_hypotheses_t
         ! Per-state checks of the open discrete hypotheses of
         ! docs/free-boundary-theory.md (FB-A2, FB-C5, FB-D2, FB-E1). These are
@@ -215,6 +215,68 @@ module kin6d_ideal_free_boundary
         ! slide rows) and the residual it removes, in sigma V units.
         real(dp) :: slide_multiplier = 0, slide_residual = 0
     end type
+    type, extends(real_linear_operator_t) :: preconditioned_solve_apply_t
+        integer, pointer :: col_ptr(:) => null()
+        integer, pointer :: row_idx(:) => null()
+        real(dp), pointer :: val(:) => null()
+    contains
+        procedure :: apply => preconditioned_solve_apply_apply
+    end type
+    type, extends(real_linear_operator_t) :: preconditioned_solve_precondition_t
+        type(sparse_solver_t), pointer :: solver => null()
+    contains
+        procedure :: apply => preconditioned_solve_precondition_apply
+    end type
+    type, extends(eigen_real_operator_dp_t) :: ideal_fb_mode_lanczos_apply_schur_t
+        logical, pointer :: action_failed => null()
+        integer, pointer :: ci(:) => null()
+        real(dp), pointer :: crhs(:) => null()
+        real(dp), pointer :: cz(:) => null()
+        integer, pointer :: n => null()
+        integer, pointer :: np => null()
+        real(dp), pointer :: observed_scale => null()
+        type(sparse_solver_t), pointer :: rest_solver => null()
+        integer, pointer :: rp(:) => null()
+        real(dp), pointer :: v(:) => null()
+    contains
+        procedure :: apply => ideal_fb_mode_lanczos_apply_schur_evaluate
+    end type
+    type, extends(eigen_real_operator_dp_t) :: ideal_fb_mode_lanczos_apply_mass_t
+        real(dp), pointer :: mass(:) => null()
+    contains
+        procedure :: apply => ideal_fb_mode_lanczos_apply_mass_evaluate
+    end type
+    type, extends(eigen_real_solve_dp_t) :: ideal_fb_mode_lanczos_solve_shift_t
+        type(sparse_solver_t), pointer :: full_solver => null()
+        integer, pointer :: np => null()
+        real(dp), pointer :: rhs(:) => null()
+        real(dp), pointer :: z(:) => null()
+    contains
+        procedure :: solve => ideal_fb_mode_lanczos_solve_shift_evaluate
+    end type
+    type, abstract, public :: ideal_fb_sampler_t
+    contains
+        procedure(ideal_fb_sampler_t_binding), deferred :: evaluate
+    end type
+    type, extends(ideal_fb_sampler_t) :: ideal_fb_sampler_t_adapter
+        procedure(ideal_fb_sampler), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => ideal_fb_sampler_t_adapter_evaluate
+    end type
+    abstract interface
+        subroutine ideal_fb_sampler_t_binding(self, r, z, k, bcos, bsin)
+            import :: dp
+            import :: ideal_fb_sampler_t
+            class(ideal_fb_sampler_t), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            integer, intent(in) :: k
+            real(dp), intent(out) :: bcos(3), bsin(3)
+        end subroutine
+    end interface
+    interface ideal_fb_set_drive
+        module procedure ideal_fb_set_drive_object, ideal_fb_set_drive_procedure
+    end interface
+
 contains
     pure real(dp) function ideal_fb_mode_weight(fb, m) result(c)
         ! Field-period integral of the squared real Fourier mode m.
@@ -222,37 +284,31 @@ contains
         integer, intent(in) :: m
         c = merge(2*pi, pi, m == 1)/fb%nfp
     end function
-
     pure integer function harmonic(m)
         integer, intent(in) :: m
         harmonic = m/2
     end function
-
     pure integer function ix(fb, c, m, s)
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: c, m, s
         ix = fb%np + c + 3*(m - 1) + 3*fb%nmode*(s - 1)
     end function
-
     pure integer function il(fb, c, m, s)
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: c, m, s
         il = fb%np + fb%nx + c + 3*(m - 1) + 3*fb%nmode*(s - 1)
     end function
-
     pure integer function pidx(fb, c, m, a)
         ! Plasma unknown: position component c (q1, q2) of mode m at node a.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: c, m, a
         pidx = c + 2*(m - 1) + 2*fb%nmode*(a - 1)
     end function
-
     pure integer function iphi(fb, m, s)
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: m, s
         iphi = fb%np + 2*fb%nx + m + fb%nmode*(s - 1)
     end function
-
     subroutine ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, f_vac, &
                              circulation, status, mu0, nphi, panels_per_edge, &
                              quadrature_order)
@@ -387,7 +443,6 @@ contains
         end do
         status = IDEAL_FB_OK
     end subroutine
-
     pure logical function point_in_polygon(poly, p) result(inside)
         real(dp), intent(in) :: poly(:, :), p(2)
         integer :: i, j, n
@@ -402,7 +457,6 @@ contains
             j = i
         end do
     end function
-
     subroutine gamma_c_chain(fb, mesh, number, status)
         ! Counter-clockwise chain of the outer boundary edges; trace dofs are
         ! the edge nodes 0..order-1 of each edge, as shell nodes.
@@ -450,7 +504,6 @@ contains
         if (any(fb%trace == 0)) return
         status = 0
     end subroutine
-
     pure subroutine edge_lagrange(order, t, w, dw)
         integer, intent(in) :: order
         real(dp), intent(in) :: t
@@ -474,7 +527,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine edge_point(fb, i, t, x, tangent, w)
         ! Position, tangent dx/dt and edge basis of Gamma_c edge i at t.
         type(ideal_fb_t), intent(in) :: fb
@@ -490,7 +542,6 @@ contains
             tangent = tangent + dw(j)*fb%reference(:, fb%edge(j, i))
         end do
     end subroutine
-
     subroutine gamma_c_operators(fb, ppe, status)
         ! S_trace(:, :, k) = R^T S_h(n = k nfp) R with R the restriction of
         ! the P_k FEM trace to the P2 panel trace (ppe panels per edge).
@@ -538,8 +589,7 @@ contains
         end do
         status = 0
     end subroutine
-
-    subroutine ideal_fb_set_drive(fb, sample, status, closure)
+    subroutine ideal_fb_set_drive_object(fb, sample, status, closure)
         ! External traces from the field of everything outside Gamma_c plus
         ! the unit-circulation exterior part: drive a_m (single-valued
         ! external potential on the trace nodes) and load h_m = int (B.n)
@@ -548,7 +598,7 @@ contains
         ! a from B_phi = (1/R) dPhi/dphi; closure also returns the largest
         ! mismatch between d a/ds and B.t (curl-free check, T).
         type(ideal_fb_t), intent(inout) :: fb
-        procedure(ideal_fb_sampler) :: sample
+        class(ideal_fb_sampler_t), intent(in) :: sample
         integer, intent(out) :: status
         real(dp), intent(out), optional :: closure
         integer, parameter :: ng = 10
@@ -564,7 +614,7 @@ contains
             do q = 1, ng
                 call edge_point(fb, i, gx(q), x, tangent, w(0:fb%order))
                 do k = 0, fb%ntor
-                    call sample(x(1), x(2), k, bc, bs)
+                    call sample%evaluate(x(1), x(2), k, bc, bs)
                     do j = 0, fb%order
                         col = (i - 1)*fb%order + j + 1
                         if (j == fb%order) col = mod(i, fb%nedge)*fb%order + 1
@@ -589,7 +639,7 @@ contains
                 acc = 0
                 do q = 1, ng
                     call edge_point(fb, i, gx(q)*j/fb%order, x, tangent, w(0:fb%order))
-                    call sample(x(1), x(2), 0, bc, bs)
+                    call sample%evaluate(x(1), x(2), 0, bc, bs)
                     grad_t = theta_gradient(fb, x)
                     acc = acc + gw(q)*real(j, dp)/fb%order*(dot_product(bc([1, 3]) &
                         - fb%circulation*grad_t, tangent))
@@ -609,7 +659,7 @@ contains
                 do j = 0, fb%order - 1
                     col = (i - 1)*fb%order + j + 1
                     x = fb%reference(:, fb%trace(col))
-                    call sample(x(1), x(2), k, bc, bs)
+                    call sample%evaluate(x(1), x(2), k, bc, bs)
                     fb%drive(col, 2*k) = -x(1)*bs(2)/nn
                     fb%drive(col, 2*k + 1) = x(1)*bc(2)/nn
                 end do
@@ -617,7 +667,7 @@ contains
             dmax = 0
             do i = 1, fb%nedge
                 call edge_point(fb, i, 0.5_dp, x, tangent, w(0:fb%order))
-                call sample(x(1), x(2), k, bc, bs)
+                call sample%evaluate(x(1), x(2), k, bc, bs)
                 speed = norm2(tangent)
                 block
                     real(dp) :: dw(0:3), wv(0:3)
@@ -640,7 +690,6 @@ contains
         end do
         if (present(closure)) closure = worst
     end subroutine
-
     pure function theta_gradient(fb, y) result(g)
         ! grad (theta/2 pi) about the reference axis.
         type(ideal_fb_t), intent(in) :: fb
@@ -649,7 +698,6 @@ contains
         d = y - fb%theta_centre
         g = [-d(2), d(1)]/(2*pi*sum(d**2))
     end function
-
     subroutine shell_geometry(fb)
         type(ideal_fb_t), intent(inout) :: fb
         real(dp) :: dg(2, 2), y(2)
@@ -666,7 +714,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine shell_laplacian(fb)
         ! Reference stiffness int grad N_i . grad N_j dy over the shell.
         type(ideal_fb_t), intent(inout) :: fb
@@ -723,7 +770,6 @@ contains
             fb%lap_ptr(i + 1) = fb%lap_ptr(i + 1) + fb%lap_ptr(i)
         end do
     end subroutine
-
     subroutine shell_jet(fb, xs, phi, e, g, j, q, qd, gt)
         ! Chart coordinates q, Q(k,i) = dq_k/ds_i and dPhi~/ds at a shell point.
         type(ideal_fb_t), intent(in) :: fb
@@ -749,7 +795,6 @@ contains
         q(3) = q(3) + fb%plasma%phi(j)
         qd(3, 3) = qd(3, 3) + 1
     end subroutine
-
     subroutine shell_point(fb, xs, phi, e, g, j, w, jac, gv, hv, want_hessian)
         ! Vacuum energy density and its derivatives with respect to
         ! v = (q(1:3), Q(k,i) at 3 + k + 3(i-1), dPhi~/ds_i at 12 + i).
@@ -833,7 +878,6 @@ contains
                 t(71), t(72), t(73), t(74), t(75), t(76), t(77), t(78))
         end subroutine
     end subroutine
-
     subroutine local_rows(fb, g, j, rows)
         ! rows(v, l): dv/dU_l for local dof l = (component c = 1..4, mode m,
         ! node a) at 4*(m-1) + c + 4*nmode*(a-1); c = 4 is Phi~.
@@ -860,7 +904,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine shell_energy(fb, xs, phi, energy, gx, gf, min_jacobian, blocks)
         ! E_v interior part (with 1/mu0), gradients with respect to xs and
         ! Phi~, and optionally the local Hessian blocks (shell-local order).
@@ -915,7 +958,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine constraint_residual(fb, res)
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(out) :: res(:, :, :)
@@ -937,7 +979,6 @@ contains
             end select
         end do
     end subroutine
-
     subroutine ideal_fb_gradient(fb, grad, status, lagrangian, min_jacobian)
         ! Gradient of L with respect to (plasma positions, xs, lambda, Phi~).
         type(ideal_fb_t), intent(in) :: fb
@@ -1009,7 +1050,6 @@ contains
         if (present(lagrangian)) lagrangian = wp - ev - ec + sum(fb%lam*res)
         if (present(min_jacobian)) min_jacobian = min(minp, mins)
     end subroutine
-
     subroutine ideal_fb_hessian(fb, rowptr, colidx, val)
         ! Assembled KKT matrix of L (symmetric, indefinite), CSR with sorted
         ! columns (equal to its CSC form, which is what fortsparse reads).
@@ -1095,14 +1135,12 @@ contains
             shell_global = fb%np + q
             if (q > fb%nx) shell_global = fb%np + fb%nx + q
         end function
-
         subroutine push(r, col, v)
             integer, intent(in) :: r, col
             real(dp), intent(in) :: v
             cnt = cnt + 1
             ci(cnt) = r; cj(cnt) = col; cv(cnt) = v
         end subroutine
-
         subroutine pair(r, col, v)
             ! Constraint entry and its transpose.
             integer, intent(in) :: r, col
@@ -1111,7 +1149,6 @@ contains
             call push(col, r, v)
         end subroutine
     end subroutine
-
     subroutine plasma_hessian(fb, matrix)
         ! Hessian of the plasma energy W_p in the position gauge (q1, q2 per
         ! node and mode, omega = 0): the second variation of N1's frozen-in
@@ -1174,7 +1211,6 @@ contains
         call csr_build_pattern(fb%np, conn, .false., matrix)
         call csr_assemble_blocks(matrix, conn, blocks)
     end subroutine
-
     subroutine plasma_point_hessian(map, e, g, j, hv)
         ! Second derivatives of N1's energy density w(DX) with respect to
         ! v = (q(1:3), Q(k,i) at 3 + k + 3(i-1)), DX = dH(q) Q (chart chain
@@ -1250,7 +1286,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine coo_to_csr(n, ci, cj, cv, rowptr, colidx, val)
         integer, intent(in) :: n, ci(:), cj(:)
         real(dp), intent(in) :: cv(:)
@@ -1284,7 +1319,6 @@ contains
             rowptr(i + 1) = rowptr(i + 1) + rowptr(i)
         end do
     end subroutine
-
     subroutine ideal_fb_step(fb, du, alpha)
         ! U <- U + alpha du in the global layout.
         type(ideal_fb_t), intent(inout) :: fb
@@ -1308,7 +1342,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine slide_directions(fb)
         ! Gauge of the n = 0 relabelling null. A map of the reference onto
         ! itself that keeps chi and the toroidal-flux 2-form b3 dR dZ moves
@@ -1358,7 +1391,6 @@ contains
             fb%slide(:, :, l) = fb%slide(:, :, l)/norm2(fb%slide(:, :, l))
         end do
     end subroutine
-
     subroutine ideal_fb_slide_system(fb, rowptr, colidx, val, scale, rows, cols, &
                                      matrix)
         ! Newton matrix bordered by the slide gauge: [H, s G^T; s G, 0], with
@@ -1395,7 +1427,6 @@ contains
         end do
         call coo_to_csr(fb%n + nl, ci(:m), cj(:m), cv(:m), rows, cols, matrix)
     end subroutine
-
     subroutine project_slide(fb, w, g, multiplier)
         ! Remove the slide component of the plasma gradient in the merit
         ! metric: g <- g - G^T mu, mu = argmin sum w (g + G^T mu)^2. This is
@@ -1441,7 +1472,6 @@ contains
         end do
         if (present(multiplier)) multiplier = b
     end subroutine
-
     subroutine ideal_fb_solve(fb, tolerance, max_iterations, report, status, verbose, &
                               step_tolerance, residual_tolerance)
         ! Newton on the slide-gauged KKT system of L (symmetric, indefinite:
@@ -1717,7 +1747,6 @@ contains
             call system_clock(count, rate)
             wall = real(count, dp)/rate
         end function
-
         real(dp) function rigid_force(g)
             ! Net Z force on the plasma nodes (before the gauge projection).
             real(dp), intent(in) :: g(:)
@@ -1727,7 +1756,6 @@ contains
                 rigid_force = rigid_force + g(pidx(fb, 2, 1, a))
             end do
         end function
-
         subroutine rigid_vertical_correct()
             ! dZ = -F_Z/K_Z on the rigid n = 0 Z mode, kept only when the
             ! weighted (slide-projected) merit decreases.
@@ -1762,7 +1790,6 @@ contains
                 ' rejected F_Z ', fzr, ' ->', ftry
         end subroutine
     end subroutine
-
     subroutine boundary_report(fb)
         ! Mean (n = 0) displacement of Gamma_p from its reference.
         type(ideal_fb_t), intent(in) :: fb
@@ -1777,7 +1804,6 @@ contains
         print '(a,2es12.4)', '   Gamma_p mean shift', mean/nb
         if (fb%nmode > 1) print '(a,es12.4)', '   Gamma_p n/=0 rms (m)', sqrt(rms/nb)
     end subroutine
-
     subroutine direction_report(fb, du)
         ! Rigid content of a Newton direction on Gamma_p (n = 0 mode): mean
         ! (dR, dZ) and the rms remainder.
@@ -1805,7 +1831,6 @@ contains
                 ' at', fb%plasma%reference(:, a), ' boundary', fb%plasma%boundary(a)
         end block
     end subroutine
-
     subroutine factor_constraint(fb, rowptr, colidx, val, csolver, ready)
         ! Factor the C^T block (rows: shell map, columns: multipliers); the
         ! CSR rows of the transposed block are its CSC columns.
@@ -1841,7 +1866,6 @@ contains
                             v(:nnz), sst, symmetric=.false.)
         ready = status_ok(sst)
     end subroutine
-
     subroutine project_multipliers(fb, csolver, grad)
         ! lambda += delta with C^T delta = -g_x, then the gradient updated:
         ! the shell-map rows become zero and the Gamma_p plasma rows receive
@@ -1869,7 +1893,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine scale_mode(fb, du, m, factor)
         ! Scale the components of real Fourier mode m of a global increment.
         type(ideal_fb_t), intent(in) :: fb
@@ -1890,7 +1913,6 @@ contains
             du(iphi(fb, m, s2)) = factor*du(iphi(fb, m, s2))
         end do
     end subroutine
-
     subroutine tangential_positions(fb, rowptr, colidx, tpos)
         ! CSR positions of the (q1, q2) x (q1, q2) block of every plasma node
         ! and mode: tpos(1:4, k) = (11, 12, 21, 22), k = (mode, node).
@@ -1913,7 +1935,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine add_tangential(fb, diag, tpos, val, damping)
         ! val += tangential_damping s_a t t^T, t the unit tangent of the
         ! reference surface at node a, s_a the mean (q1, q2) diagonal.
@@ -1937,51 +1958,36 @@ contains
             end do
         end do
     end subroutine
-
     subroutine preconditioned_solve(solver, col_ptr, row_idx, val, b, x, ok)
         ! x solves A x = b, A given in the compressed layout the sparse
         ! factor reads (column pointers, row indices), by FGMRES right-
         ! preconditioned with the factor of an earlier matrix of the same
         ! pattern; ok only when the relative residual reaches krylov_tol.
-        type(sparse_solver_t), intent(inout) :: solver
-        integer, intent(in) :: col_ptr(:), row_idx(:)
-        real(dp), intent(in) :: val(:), b(:)
+        type(sparse_solver_t), intent(inout), target :: solver
+        integer, intent(in), target :: col_ptr(:), row_idx(:)
+        real(dp), intent(in), target :: val(:), b(:)
         real(dp), intent(out) :: x(:)
         logical, intent(out) :: ok
         real(dp), parameter :: krylov_tol = 1.0e-10_dp
         integer, parameter :: krylov_max = 20
         real(dp) :: bnorm, rnorm
         integer :: info, iterations
+        type(preconditioned_solve_apply_t) :: apply_operator
+        type(preconditioned_solve_precondition_t) :: precondition_operator
         ok = .false.
         x = 0
         bnorm = norm2(b)
         if (.not. bnorm > 0) return
-        call real_fgmres_operator(apply, precondition, b/bnorm, x, krylov_tol, &
+        apply_operator%col_ptr => col_ptr
+        apply_operator%row_idx => row_idx
+        apply_operator%val => val
+        precondition_operator%solver => solver
+        call real_fgmres(apply_operator, precondition_operator, b/bnorm, x, &
+            krylov_tol, &
             krylov_max, krylov_max, info, iterations, rnorm)
         ok = info == KRYLOV_OK .and. all(ieee_is_finite(x))
         x = bnorm*x
-    contains
-        subroutine apply(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            integer :: j, p
-            output = 0
-            do j = 1, size(input)
-                do p = col_ptr(j), col_ptr(j + 1) - 1
-                    output(row_idx(p)) = output(row_idx(p)) + val(p)*input(j)
-                end do
-            end do
-        end subroutine
-
-        subroutine precondition(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            type(fortsparse_status_t) :: pst
-            call sparse_solve(solver, input, output, pst)
-            if (.not. status_ok(pst)) output = ieee_value(1.0_dp, ieee_quiet_nan)
-        end subroutine
     end subroutine
-
     subroutine prepare_kkt_values(solver, n, ptr, idx, values, correction, &
                                   status, symmetric)
         ! CSR is also CSC after this checked, explicit symmetry completion.
@@ -2002,7 +2008,6 @@ contains
             correction, status)
         if (.not. status_ok(status)) solver%factored = .false.
     end subroutine
-
     subroutine factor_kkt_raw(solver, nr, nc, nnz, ptr, idx, values, status, &
                               symmetric)
         type(sparse_solver_t), intent(inout) :: solver
@@ -2016,7 +2021,6 @@ contains
         if (.not. status_ok(status)) return
         call sparse_factor(solver, nr, nc, nnz, ptr, idx, values, status)
     end subroutine
-
     subroutine refactor_kkt_raw(solver, nr, nc, nnz, ptr, idx, values, &
                                 status, reused, maximum_correction)
         type(sparse_solver_t), intent(inout) :: solver
@@ -2033,7 +2037,6 @@ contains
             maximum_correction = max(maximum_correction, correction)
         call sparse_refactor(solver, nr, nc, nnz, ptr, idx, values, status, reused)
     end subroutine
-
     logical function configure(solver) result(ready)
         ! Native pivoted LU for the KKT system. Symmetry completion remains
         ! an assembly contract, independent of this factorization choice.
@@ -2054,7 +2057,6 @@ contains
         end if
         ready = .true.
     end function
-
     subroutine map_steps(fb, du, disp, rot)
         ! Largest displacement (m) and omega (rad) increment of a direction.
         type(ideal_fb_t), intent(in) :: fb
@@ -2070,7 +2072,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine merit_weights(fb, diag, w)
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(in) :: diag(:)
@@ -2087,7 +2088,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine constraint_norm(fb, value)
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(out) :: value
@@ -2096,7 +2096,6 @@ contains
         call constraint_residual(fb, res)
         value = maxval(abs(res))
     end subroutine
-
     subroutine ideal_fb_solve_vacuum(fb, status)
         ! Phi~ at fixed geometry: the vacuum block of the KKT system (linear in
         ! Phi~, negative definite) solved exactly. Used to start Newton from a
@@ -2109,7 +2108,6 @@ contains
         call block_solve(fb, off, off, fb%nf, du, status)
         if (status == IDEAL_FB_OK) fb%phi = fb%phi + reshape(du, shape(fb%phi))
     end subroutine
-
     subroutine ideal_fb_solve_multipliers(fb, status)
         ! Multipliers at fixed geometry and potential: the shell-map rows
         ! -dE_v/dx + C^T lambda = 0 (C square and invertible), so that Newton
@@ -2120,7 +2118,6 @@ contains
         call block_solve(fb, fb%np, fb%np + fb%nx, fb%nx, du, status)
         if (status == IDEAL_FB_OK) fb%lam = fb%lam + reshape(du, shape(fb%lam))
     end subroutine
-
     subroutine ideal_fb_solve_shell_map(fb, status)
         ! Shell map from the constraints at fixed plasma map: Gamma_p copies,
         ! harmonic extension, Gamma_c fixed.
@@ -2130,7 +2127,6 @@ contains
         call block_solve(fb, fb%np + fb%nx, fb%np, fb%nx, du, status)
         if (status == IDEAL_FB_OK) fb%xs = fb%xs + reshape(du, shape(fb%xs))
     end subroutine
-
     subroutine ideal_fb_rigid_stiffness(fb, c, delta, force, stiffness, status)
         ! Generalised force sum_a dL/dq_c(a) (n = 0) on a rigid plasma shift in
         ! R (c = 1) or Z (c = 2), with shell map, Phi~ and lambda re-solved at
@@ -2174,7 +2170,6 @@ contains
             end do
         end subroutine
     end subroutine
-
     subroutine ideal_fb_newton_step(fb, status, nonaxisymmetric_only)
         ! One undamped Newton step on the slide-gauged KKT system (no line
         ! search): [H, s G^T; s G, 0] [du; mu] = [-g; 0].
@@ -2225,7 +2220,6 @@ contains
             end do
         end subroutine
     end subroutine
-
     real(dp) function plasma_diagonal_mean(fb, rowptr, colidx, val) result(mean)
         ! Mean |H_ii| over the plasma rows: scale of the slide-gauge border.
         type(ideal_fb_t), intent(in) :: fb
@@ -2240,7 +2234,6 @@ contains
         end do
         mean = mean/fb%np
     end function
-
     subroutine mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status)
         ! An axisymmetric state decouples by harmonic, NOT by real phase:
         ! B_pol.grad and B_phi.d/dphi couple cosine and sine coefficients.
@@ -2313,7 +2306,6 @@ contains
         ci = ci(:nnz); v = v(:nnz)
         status = IDEAL_FB_OK
     end subroutine
-
     subroutine sort_mode_row(col, value)
         integer, intent(inout) :: col(:)
         real(dp), intent(inout) :: value(:)
@@ -2328,7 +2320,6 @@ contains
             col(k + 1) = key; value(k + 1) = tv
         end do
     end subroutine
-
     subroutine mode_ledger(fb, rp, ci, v, map, np_m, z, mass, report, action)
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: rp(:), ci(:), map(:), np_m
@@ -2367,7 +2358,6 @@ contains
         report%vacuum = report%total - report%plasma - report%constraint
         report%metric_norm = sum(mass*z(:np_m)**2)
     end subroutine
-
     subroutine ideal_fb_mode_energy(fb, m, displacement, report, status)
         ! Schur energy of a prescribed plasma displacement. For n>0 the
         ! layout is (Rcos,Zcos,Rsin,Zsin) per node; n=0 is (R,Z) per node.
@@ -2414,7 +2404,6 @@ contains
         call mode_ledger(fb, rp, ci, v, map, np_m, z, mass, report, action)
         status = IDEAL_FB_OK
     end subroutine
-
     subroutine mode_rest_block(rp, ci, v, np, ar, ac, av)
         ! Extract the eliminated shell-map/potential/multiplier block C.
         integer, intent(in) :: rp(:), ci(:), np
@@ -2435,7 +2424,6 @@ contains
         end do
         ac = ac(:count); av = av(:count)
     end subroutine
-
     subroutine ideal_fb_mode_inertia(fb, m, shifts, counts, status)
         ! Haynsworth: In(S - sigma M) = In(K - diag(sigma M,0)) - In(C).
         ! No dense Schur matrix. Counts are (negative,zero,positive) computed
@@ -2519,7 +2507,6 @@ contains
             call sparse_destroy(solver)
         end subroutine
     end subroutine
-
     subroutine ideal_fb_mode_lanczos(fb, m, lambda, report, status, shift)
         ! Opt-in near-shift Schur eigenpair. FortNum #103 checks the original
         ! residual with an observed LOWER operator-norm estimate (stricter
@@ -2531,18 +2518,22 @@ contains
         type(ideal_fb_stability_t), intent(out) :: report
         integer, intent(out) :: status
         real(dp), intent(in), optional :: shift
-        integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
-        real(dp), allocatable :: v(:), mass(:), av(:), shifted(:), start(:)
-        real(dp), allocatable :: rhs(:), z(:), crhs(:), cz(:), images(:)
+        integer, allocatable , target :: rp(:), ci(:), map(:), ar(:), ac(:)
+        real(dp), allocatable , target :: v(:), mass(:), av(:), shifted(:), start(:)
+        real(dp), allocatable , target :: rhs(:), z(:), crhs(:), cz(:), images(:)
         real(dp), allocatable :: vectors(:, :)
-        real(dp) :: values(1), residuals(1), sigma, relative_residual, observed_scale
+        real(dp), target :: values(1), residuals(1), sigma, relative_residual, &
+            observed_scale
         real(dp) :: radius, backward
-        type(sparse_solver_t) :: full_solver, rest_solver
+        type(sparse_solver_t), target :: full_solver, rest_solver
         type(fortsparse_status_t) :: sst
         type(eigen_options_t) :: options
         type(eigen_stats_t) :: stats
-        integer :: np, n, i, p, info
-        logical :: action_failed
+        integer , target :: np, n, i, p, info
+        logical , target :: action_failed
+        type(ideal_fb_mode_lanczos_apply_schur_t) :: apply_schur_context
+        type(ideal_fb_mode_lanczos_apply_mass_t) :: apply_mass_context
+        type(ideal_fb_mode_lanczos_solve_shift_t) :: solve_shift_context
         lambda = ieee_value(0.0_dp, ieee_quiet_nan)
         report = ideal_fb_stability_t()
         call mode_matrix(fb, m, rp, ci, v, mass, map, np, status)
@@ -2584,13 +2575,51 @@ contains
         options%which = EIGEN_NEAREST
         options%mass_scale = maxval(mass)
         action_failed = .false.; observed_scale = 0
-        call lanczos(apply_schur, start, values, vectors, residuals, &
-            1.0e-10_dp, options, info, stats, mass=apply_mass, &
-            solve_shift=solve_shift, sigma=sigma)
+        apply_schur_context%action_failed => action_failed
+        nullify(apply_schur_context%ci)
+        if (allocated(ci)) apply_schur_context%ci => ci
+        nullify(apply_schur_context%crhs)
+        if (allocated(crhs)) apply_schur_context%crhs => crhs
+        nullify(apply_schur_context%cz)
+        if (allocated(cz)) apply_schur_context%cz => cz
+        apply_schur_context%n => n
+        apply_schur_context%np => np
+        apply_schur_context%observed_scale => observed_scale
+        apply_schur_context%rest_solver => rest_solver
+        nullify(apply_schur_context%rp)
+        if (allocated(rp)) apply_schur_context%rp => rp
+        nullify(apply_schur_context%v)
+        if (allocated(v)) apply_schur_context%v => v
+        nullify(apply_mass_context%mass)
+        if (allocated(mass)) apply_mass_context%mass => mass
+        solve_shift_context%full_solver => full_solver
+        solve_shift_context%np => np
+        nullify(solve_shift_context%rhs)
+        if (allocated(rhs)) solve_shift_context%rhs => rhs
+        nullify(solve_shift_context%z)
+        if (allocated(z)) solve_shift_context%z => z
+        call lanczos(apply_schur_context, start, values, vectors, residuals, &
+            1.0e-10_dp, options, info, stats, mass=apply_mass_context, &
+            solve_shift=solve_shift_context, sigma=sigma)
         status = IDEAL_FB_NOT_CONVERGED
         if (info == EIGEN_OK .and. .not. action_failed) then
             ! Reconstruct the SAME physical Schur vector, then its ledger.
-            call apply_schur(vectors(:, 1), start)
+        apply_schur_context%action_failed => action_failed
+        nullify(apply_schur_context%ci)
+        if (allocated(ci)) apply_schur_context%ci => ci
+        nullify(apply_schur_context%crhs)
+        if (allocated(crhs)) apply_schur_context%crhs => crhs
+        nullify(apply_schur_context%cz)
+        if (allocated(cz)) apply_schur_context%cz => cz
+        apply_schur_context%n => n
+        apply_schur_context%np => np
+        apply_schur_context%observed_scale => observed_scale
+        apply_schur_context%rest_solver => rest_solver
+        nullify(apply_schur_context%rp)
+        if (allocated(rp)) apply_schur_context%rp => rp
+        nullify(apply_schur_context%v)
+        if (allocated(v)) apply_schur_context%v => v
+            call apply_schur_context%apply(vectors(:, 1), start)
             if (.not. action_failed) then
                 z(:np) = vectors(:, 1); z(np + 1:) = -cz
                 lambda = values(1)
@@ -2608,57 +2637,7 @@ contains
         if (action_failed) status = IDEAL_FB_SOLVE_FAILED
         call sparse_destroy(full_solver)
         call sparse_destroy(rest_solver)
-    contains
-        subroutine apply_mass(x, y)
-            real(dp), intent(in) :: x(:)
-            real(dp), intent(out) :: y(:)
-            y = mass*x
-        end subroutine
-        subroutine solve_shift(x, y, info)
-            real(dp), intent(in) :: x(:)
-            real(dp), intent(out) :: y(:)
-            integer, intent(out) :: info
-            type(fortsparse_status_t) :: st
-            rhs = 0; rhs(:np) = x
-            call sparse_solve(full_solver, rhs, z, st)
-            info = 1
-            if (status_ok(st)) info = 0
-            y = z(:np)
-        end subroutine
-        subroutine apply_schur(x, y)
-            real(dp), intent(in) :: x(:)
-            real(dp), intent(out) :: y(:)
-            type(fortsparse_status_t) :: st
-            integer :: i, p
-            crhs = 0
-            !$omp parallel do default(shared) private(i,p) schedule(static)
-            do i = np + 1, n
-                do p = rp(i), rp(i + 1) - 1
-                    if (ci(p) <= np) crhs(i - np) = &
-                        crhs(i - np) + v(p)*x(ci(p))
-                end do
-            end do
-            !$omp end parallel do
-            call sparse_solve(rest_solver, crhs, cz, st)
-            if (.not. status_ok(st)) action_failed = .true.
-            y = ieee_value(0.0_dp, ieee_quiet_nan)
-            if (action_failed) return
-            y = 0
-            !$omp parallel do default(shared) private(i,p) schedule(static)
-            do i = 1, np
-                do p = rp(i), rp(i + 1) - 1
-                    if (ci(p) <= np) then
-                        y(i) = y(i) + v(p)*x(ci(p))
-                    else
-                        y(i) = y(i) - v(p)*cz(ci(p) - np)
-                    end if
-                end do
-            end do
-            !$omp end parallel do
-            if (norm2(x) > 0) observed_scale = max(observed_scale, norm2(y)/norm2(x))
-        end subroutine
     end subroutine
-
     subroutine ideal_fb_mode_stability(fb, m, lambda, status, iterations, shift, report)
         ! Shifted inverse iteration on the full real harmonic pair, with
         ! shell map, multipliers and potential eliminated by the KKT solve.
@@ -2745,7 +2724,6 @@ contains
             report = ledger
         end if
     end subroutine
-
     subroutine ideal_fb_hypotheses(fb, h, status, dense_limit)
         ! Checks of the open discrete hypotheses at the current state
         ! (docs/free-boundary-theory.md FB-A2, FB-C5, FB-D2, FB-E1; derivation
@@ -2814,7 +2792,6 @@ contains
         status = IDEAL_FB_SOLVE_FAILED
         nl = size(fb%slide, 3)
         call ideal_fb_hessian(fb, rowptr, colidx, val)
-
         ! (V): S_k and -mu0 H_PhiPhi.
         h%w_asymmetry = maxval(fb%bem_asymmetry(1, :))
         h%v_asymmetry = maxval(fb%bem_asymmetry(2, :))
@@ -2845,7 +2822,6 @@ contains
         if (info /= 0) return
         h%vacuum_min = w(1); h%vacuum_max = w(fb%nf)
         deallocate (a)
-
         ! (R): R = [grad C; G] on the map unknowns (plasma, shell map).
         nmap = fb%np + fb%nx; nr = fb%nx + nl
         h%constraint_rows = nr
@@ -2920,7 +2896,6 @@ contains
         h%constraint_sigma_max = sqrt(est)
         h%full_rank = h%constraint_sigma_min > h%rank_tolerance*h%constraint_sigma_max
         deallocate (arow, acol, aval, y, z, rhs, sol, x)
-
         ! S_q: K_ww (all unknowns but the plasma positions), factorised once.
         nw = fb%n - fb%np
         cnt = 0
@@ -3026,7 +3001,6 @@ contains
             h%vertical_overlap = abs(dot_product(x, v))/(norm2(x)*norm2(v))
         end block
         h%kkt_inertia = [h%n_positive + nr, h%n_negative + nr + fb%nf, h%n_zero]
-
         ! FB-C5: slide multiplier of the merit projection.
         allocate (grad(fb%n), diag(fb%n), wts(fb%n), mult(nl))
         call ideal_fb_gradient(fb, grad, st)
@@ -3045,7 +3019,6 @@ contains
         status = IDEAL_FB_OK
         h%status = status
     end subroutine
-
     subroutine ideal_fb_hypotheses_print(h, iteration)
         ! One line of the per-state hypothesis report.
         type(ideal_fb_hypotheses_t), intent(in) :: h
@@ -3061,7 +3034,6 @@ contains
             ' min ', h%reduced_min, ' min|.| ', h%reduced_min_abs, ' slide mu ', &
             h%slide_multiplier
     end subroutine
-
     subroutine symmetric_eigen(a, w, vectors, info)
         ! Eigenvalues (ascending) and optionally eigenvectors (in a) of a dense
         ! symmetric matrix, LAPACK dsyev with a workspace query.
@@ -3091,7 +3063,6 @@ contains
         allocate (work(max(1, nint(query(1)))))
         call dsyev(job, 'U', n, a, n, w, work, size(work), info)
     end subroutine
-
     subroutine block_solve(fb, row0, col0, nb, du, status)
         ! Solve A(rows row0+1.., cols col0+1..) du = -g(rows) of the KKT system.
         type(ideal_fb_t), intent(in) :: fb
@@ -3140,7 +3111,6 @@ contains
         if (.not. status_ok(sst)) return
         status = IDEAL_FB_OK
     end subroutine
-
     subroutine ideal_fb_shell_field(fb, e, xi, phi_hat, x, b, status)
         ! Physical point x = (R, Z, phi) and cylindrical field (B_R, B_phi,
         ! B_Z) of the vacuum potential at master point xi of shell cell e.
@@ -3193,7 +3163,6 @@ contains
         x = q([1, 2, 3])
         status = 0
     end subroutine
-
     pure subroutine inverse3(a, inv, det)
         real(dp), intent(in) :: a(3, 3)
         real(dp), intent(out) :: inv(3, 3), det
@@ -3208,5 +3177,107 @@ contains
         inv(3, 3) = a(1, 1)*a(2, 2) - a(1, 2)*a(2, 1)
         det = a(1, 1)*inv(1, 1) + a(1, 2)*inv(2, 1) + a(1, 3)*inv(3, 1)
         if (abs(det) > 0) inv = inv/det
+    end subroutine
+    subroutine preconditioned_solve_apply_apply(self, input, output)
+        class(preconditioned_solve_apply_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            integer :: j, p
+            output = 0
+            do j = 1, size(input)
+                do p = self%col_ptr(j), self%col_ptr(j + 1) - 1
+                    output(self%row_idx(p)) = output(self%row_idx(p)) + &
+                        self%val(p)*input(j)
+                end do
+            end do
+    end subroutine preconditioned_solve_apply_apply
+    subroutine preconditioned_solve_precondition_apply(self, input, output)
+        class(preconditioned_solve_precondition_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            type(fortsparse_status_t) :: pst
+            call sparse_solve(self%solver, input, output, pst)
+            if (.not. status_ok(pst)) output = ieee_value(1.0_dp, ieee_quiet_nan)
+    end subroutine preconditioned_solve_precondition_apply
+    subroutine ideal_fb_mode_lanczos_apply_schur_evaluate(self, x, y)
+        class(ideal_fb_mode_lanczos_apply_schur_t), intent(inout) :: self
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            type(fortsparse_status_t) :: st
+            integer :: i, p
+            self%crhs = 0
+            !$omp parallel do default(shared) private(i,p) schedule(static)
+            do i = self%np + 1, self%n
+                do p = self%rp(i), self%rp(i + 1) - 1
+                    if (self%ci(p) <= self%np) self%crhs(i - self%np) = &
+                        self%crhs(i - self%np) + self%v(p)*x(self%ci(p))
+                end do
+            end do
+            !$omp end parallel do
+            call sparse_solve(self%rest_solver, self%crhs, self%cz, st)
+            if (.not. status_ok(st)) self%action_failed = .true.
+            y = ieee_value(0.0_dp, ieee_quiet_nan)
+            if (self%action_failed) return
+            y = 0
+            !$omp parallel do default(shared) private(i,p) schedule(static)
+            do i = 1, self%np
+                do p = self%rp(i), self%rp(i + 1) - 1
+                    if (self%ci(p) <= self%np) then
+                        y(i) = y(i) + self%v(p)*x(self%ci(p))
+                    else
+                        y(i) = y(i) - self%v(p)*self%cz(self%ci(p) - self%np)
+                    end if
+                end do
+            end do
+            !$omp end parallel do
+            if (norm2(x) > 0) self%observed_scale = max(self%observed_scale, &
+                norm2(y)/norm2(x))
+    end subroutine ideal_fb_mode_lanczos_apply_schur_evaluate
+    subroutine ideal_fb_mode_lanczos_apply_mass_evaluate(self, x, y)
+        class(ideal_fb_mode_lanczos_apply_mass_t), intent(inout) :: self
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            y = self%mass*x
+    end subroutine ideal_fb_mode_lanczos_apply_mass_evaluate
+    subroutine ideal_fb_mode_lanczos_solve_shift_evaluate(self, x, y, info)
+        class(ideal_fb_mode_lanczos_solve_shift_t), intent(inout) :: self
+            real(dp), intent(in) :: x(:)
+            real(dp), intent(out) :: y(:)
+            integer, intent(out) :: info
+            type(fortsparse_status_t) :: st
+            self%rhs = 0; self%rhs(:self%np) = x
+            call sparse_solve(self%full_solver, self%rhs, self%z, st)
+            info = 1
+            if (status_ok(st)) info = 0
+            y = self%z(:self%np)
+    end subroutine ideal_fb_mode_lanczos_solve_shift_evaluate
+
+    subroutine ideal_fb_set_drive_procedure(fb, sample, status, closure)
+        ! External traces from the field of everything outside Gamma_c plus
+        ! the unit-circulation exterior part: drive a_m (single-valued
+        ! external potential on the trace nodes) and load h_m = int (B.n)
+        ! N_i R ds. n = 0: a = int (B - c grad theta/2pi).t ds from trace
+        ! node 1; closure returns its mismatch after one turn (T m). n /= 0:
+        ! a from B_phi = (1/R) dPhi/dphi; closure also returns the largest
+        ! mismatch between d a/ds and B.t (curl-free check, T).
+        type(ideal_fb_t), intent(inout) :: fb
+        procedure(ideal_fb_sampler) :: sample
+        integer, intent(out) :: status
+        real(dp), intent(out), optional :: closure
+        type(ideal_fb_sampler_t_adapter) :: adapter
+
+        adapter%callback => sample
+        call ideal_fb_set_drive_object(fb, &
+            adapter, &
+            status, &
+            closure)
+    end subroutine
+
+    subroutine ideal_fb_sampler_t_adapter_evaluate(self, r, z, k, bcos, bsin)
+        class(ideal_fb_sampler_t_adapter), intent(in) :: self
+            real(dp), intent(in) :: r, z
+            integer, intent(in) :: k
+            real(dp), intent(out) :: bcos(3), bsin(3)
+        call self%callback(r, z, k, bcos, bsin)
     end subroutine
 end module kin6d_ideal_free_boundary

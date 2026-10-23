@@ -1,4 +1,42 @@
-program test_gs_fb_greens
+module test_gs_fb_greens_callbacks
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortfem_axisymmetric_gs_kernel, only: gs_green, gs_mu0
+    use fortnum_quadrature, only: gauss_legendre
+    use kin6d_grad_shafranov, only: gs_state_t
+    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use kin6d_gs_coupling, only: gs_coupling_source_load, GS_COUPLING_OK
+    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
+    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+     gs_fb_history_t, gs_fb_setup, gs_fb_evaluate, gs_fb_newton, GS_FB_OK, GS_FB_LIMITER
+    use gs_coupling_fixture, only: build_state, build_coils, gp_r0, fe_value
+    use gs_fb_fixture, only: make_law, bump, bump_laplacian
+
+    use kin6d_gs_coupling, only: gs_density_function_t
+    implicit none
+    private
+    public :: run_test_gs_fb_greens
+    real(dp), parameter :: pi = acos(-1.0_dp)
+    real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
+    real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
+    real(dp), parameter :: semi(2) = [0.65_dp, 1.0_dp]
+    real(dp), parameter :: amplitude = 1.5_dp
+    real(dp), parameter :: law_scale = 0.25_dp
+    real(dp), parameter :: limiter(2) = [gp_r0 + 0.33_dp, 0.0_dp]
+    type :: run_test_gs_fb_greens_context_t
+        type(gs_circuit_set_t), pointer :: coils => null()
+        type(gs_profile_law_t), pointer :: law_zero => null()
+        real(dp), pointer :: ref_axis => null()
+        real(dp), pointer :: ref_bound => null()
+    end type
+
+    type, extends(gs_density_function_t) :: run_test_gs_fb_greens_forcing_density_t
+        type(run_test_gs_fb_greens_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_fb_greens_forcing_density_binding
+    end type
+
+contains
+    subroutine run_test_gs_fb_greens()
     !! T4 (DESIGN 5.1): cross-check of the FEM-BEM free-boundary solution
     !! against a von Hagenow-style Green's-function evaluation that shares
     !! only the kernel and the coil model with the solver.
@@ -23,33 +61,18 @@ program test_gs_fb_greens
     !!   * Ampere's law: the exterior flux of S_h through Gamma_c is mu0 Ip.
     !! The agreement is the discretisation error of the FEM-BEM solution and
     !! must fall under mesh refinement.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
-    use fortfem_axisymmetric_gs_kernel, only: gs_green, gs_mu0
-    use fortnum_quadrature, only: gauss_legendre
-    use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_coupling, only: gs_coupling_source_load, GS_COUPLING_OK
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
-     gs_fb_history_t, gs_fb_setup, gs_fb_evaluate, gs_fb_newton, GS_FB_OK, GS_FB_LIMITER
-    use gs_coupling_fixture, only: build_state, build_coils, gp_r0, fe_value
-    use gs_fb_fixture, only: make_law, bump, bump_laplacian
     implicit none
 
-    real(dp), parameter :: pi = acos(-1.0_dp)
-    real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
-    real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
-    real(dp), parameter :: semi(2) = [0.65_dp, 1.0_dp]
-    real(dp), parameter :: amplitude = 1.5_dp
-    real(dp), parameter :: law_scale = 0.25_dp
-    real(dp), parameter :: limiter(2) = [gp_r0 + 0.33_dp, 0.0_dp]
-    type(gs_circuit_set_t) :: coils
+    type(gs_circuit_set_t) , target :: coils
     real(dp), allocatable :: yr(:), yz(:), yw(:), yf(:)
     ! Reference levels of the forcing (any fixed numbers; the problem is
     ! defined by them), set once from the analytic flux.
-    type(gs_profile_law_t) :: law_edge, law_zero
-    real(dp) :: ref_axis, ref_bound
+    type(gs_profile_law_t) , target :: law_edge, law_zero
+    real(dp) , target :: ref_axis, ref_bound
     integer :: failures
+        type(run_test_gs_fb_greens_context_t), target :: ctx
+        type(run_test_gs_fb_greens_forcing_density_t), target :: &
+            forcing_density_operator
 
     failures = 0
     call build_coils(coils)
@@ -62,6 +85,14 @@ program test_gs_fb_greens
     print '(a)', 'gs_fb_greens (T4) oracles passed'
 
 contains
+    subroutine bind_run_test_gs_fb_greens_context()
+        ctx%coils => coils
+        ctx%law_zero => law_zero
+        ctx%ref_axis => ref_axis
+        ctx%ref_bound => ref_bound
+        forcing_density_operator%data => ctx
+    end subroutine bind_run_test_gs_fb_greens_context
+
 
     subroutine require(ok, what)
         logical, intent(in) :: ok
@@ -72,21 +103,6 @@ contains
         end if
     end subroutine require
 
-    function vacuum(r, z) result(psi)
-        real(dp), intent(in) :: r, z
-        real(dp) :: psi, g(1, 2)
-
-        call gs_circuit_flux_vectors(coils, [r], [z], g)
-        psi = g(1, 1)*currents(1) + g(1, 2)*currents(2)
-    end function vacuum
-
-    function exact_flux(r, z) result(psi)
-        real(dp), intent(in) :: r, z
-        real(dp) :: psi
-
-        psi = vacuum(r, z) + bump(r, z, centre, semi, amplitude)
-    end function exact_flux
-
     subroutine reference_levels()
         !! psi_a of psi* by a few Newton steps on finite-difference gradients,
         !! psi_b at the limiter point.
@@ -96,14 +112,24 @@ contains
         d = 1.0e-4_dp
         p = centre
         do it = 1, 20
-            g = [exact_flux(p(1) + d, p(2)) - exact_flux(p(1) - d, p(2)), &
-                 exact_flux(p(1), p(2) + d) - exact_flux(p(1), p(2) - d)]/(2.0_dp*d)
-            h(1, 1) = (exact_flux(p(1) + d, p(2)) - 2.0_dp*exact_flux(p(1), p(2)) &
-                       + exact_flux(p(1) - d, p(2)))/d**2
-            h(2, 2) = (exact_flux(p(1), p(2) + d) - 2.0_dp*exact_flux(p(1), p(2)) &
-                       + exact_flux(p(1), p(2) - d))/d**2
-            h(1, 2) = (exact_flux(p(1) + d, p(2) + d) - exact_flux(p(1) + d, p(2) - d) &
-                    - exact_flux(p(1) - d, p(2) + d) + exact_flux(p(1) - d, p(2) - d)) &
+        call bind_run_test_gs_fb_greens_context()
+            g = [run_test_gs_fb_greens_exact_flux(ctx, p(1) + d, p(2)) - &
+                run_test_gs_fb_greens_exact_flux(ctx, p(1) - d, p(2)), &
+                 run_test_gs_fb_greens_exact_flux(ctx, p(1), p(2) + d) - &
+                     run_test_gs_fb_greens_exact_flux(ctx, p(1), p(2) - d)]/(2.0_dp*d)
+        call bind_run_test_gs_fb_greens_context()
+            h(1, 1) = (run_test_gs_fb_greens_exact_flux(ctx, p(1) + d, p(2)) - &
+                2.0_dp*run_test_gs_fb_greens_exact_flux(ctx, p(1), p(2)) &
+                       + run_test_gs_fb_greens_exact_flux(ctx, p(1) - d, p(2)))/d**2
+        call bind_run_test_gs_fb_greens_context()
+            h(2, 2) = (run_test_gs_fb_greens_exact_flux(ctx, p(1), p(2) + d) - &
+                2.0_dp*run_test_gs_fb_greens_exact_flux(ctx, p(1), p(2)) &
+                       + run_test_gs_fb_greens_exact_flux(ctx, p(1), p(2) - d))/d**2
+        call bind_run_test_gs_fb_greens_context()
+            h(1, 2) = (run_test_gs_fb_greens_exact_flux(ctx, p(1) + d, p(2) + d) - &
+                run_test_gs_fb_greens_exact_flux(ctx, p(1) + d, p(2) - d) &
+                    - run_test_gs_fb_greens_exact_flux(ctx, p(1) - d, p(2) + d) + &
+                        run_test_gs_fb_greens_exact_flux(ctx, p(1) - d, p(2) - d)) &
                       /(4.0_dp*d*d)
             h(2, 1) = h(1, 2)
             det = h(1, 1)*h(2, 2) - h(1, 2)**2
@@ -111,43 +137,13 @@ contains
             p = p + step
             if (maxval(abs(step)) < 1.0e-9_dp) exit
         end do
-        ref_axis = exact_flux(p(1), p(2))
-        ref_bound = exact_flux(limiter(1), limiter(2))
+        call bind_run_test_gs_fb_greens_context()
+        ref_axis = run_test_gs_fb_greens_exact_flux(ctx, p(1), p(2))
+        call bind_run_test_gs_fb_greens_context()
+        ref_bound = run_test_gs_fb_greens_exact_flux(ctx, limiter(1), limiter(2))
         call make_law(law_edge, .true., law_scale)
         call make_law(law_zero, .false., law_scale)
     end subroutine reference_levels
-
-    function law_source(law, psi, r) result(f)
-        !! f = mu0 R p' + FF'/R for the normalised law at flux psi, with the
-        !! reference levels, zero for s >= 1.
-        type(gs_profile_law_t), intent(in) :: law
-        real(dp), intent(in) :: psi, r
-        real(dp) :: f, pp, ff
-        type(gs_profile_law_t) :: shifted
-
-        f = 0.0_dp
-        if ((psi - ref_bound)*(ref_axis - ref_bound) <= 0.0_dp) return
-        shifted = law
-        shifted%axis = ref_axis - ref_bound
-        call gs_law_sources(shifted, psi - ref_bound, pp, ff)
-        f = ff/r + gs_mu0*pp*r
-    end function law_source
-
-    function forcing(r, z) result(f)
-        !! Continuous forcing of part B: f* - f_law(psi*).
-        real(dp), intent(in) :: r, z
-        real(dp) :: f
-
-        f = bump_laplacian(r, z, centre, semi, amplitude) &
-            - law_source(law_zero, exact_flux(r, z), r)
-    end function forcing
-
-    function forcing_density(r, z) result(j)
-        real(dp), intent(in) :: r, z
-        real(dp) :: j
-
-        j = forcing(r, z)/gs_mu0
-    end function forcing_density
 
     subroutine ray_radius(state, psi, psi_bound, origin, theta, radius)
         !! First radius along the ray where psi falls to psi_bound.
@@ -205,7 +201,9 @@ c = ((origin(1) - centre(1))/semi(1))**2 + ((origin(2) - centre(2))/semi(2))**2 
         n = size(state%points, 2)
         allocate (exact(n), nodal(n), tests(n, 4))
         do i = 1, n
-            exact(i) = exact_flux(state%points(1, i), state%points(2, i))
+        call bind_run_test_gs_fb_greens_context()
+            exact(i) = run_test_gs_fb_greens_exact_flux(ctx, state%points(1, i), &
+                state%points(2, i))
             do j = 1, 4
                 tests(i, j) = test_function(j, state%points(1, i), state%points(2, i))
             end do
@@ -336,12 +334,15 @@ c = ((origin(1) - centre(1))/semi(1))**2 + ((origin(2) - centre(2))/semi(2))**2 
         cfg%points(:, 1) = limiter
         call gs_fb_setup(state, sys, law_zero, cfg, coils, status)
         call require(status == GS_FB_OK, 'setup')
-        call gs_coupling_source_load(state, forcing_density, f_load, status)
+        call bind_run_test_gs_fb_greens_context()
+        call gs_coupling_source_load(state, forcing_density_operator, f_load, status)
         call require(status == GS_COUPLING_OK, 'forcing load')
         sys%extra_load = f_load
         allocate (seed(n))
         do i = 1, n
-            seed(i) = vacuum(state%points(1, i), state%points(2, i)) &
+        call bind_run_test_gs_fb_greens_context()
+            seed(i) = run_test_gs_fb_greens_vacuum(ctx, state%points(1, i), &
+                state%points(2, i)) &
                       + bump(state%points(1, i), state%points(2, i), &
                              centre + [0.05_dp, -0.04_dp], semi, 0.6_dp*amplitude)
         end do
@@ -385,8 +386,9 @@ c = ((origin(1) - centre(1))/semi(1))**2 + ((origin(2) - centre(2))/semi(2))**2 
                     yw(m) = 2.0_dp*pi/ntheta*w0*x0
                     call fe_value(state, state%psi, xr, xz, value, found)
                     call require(found, 'grid point located')
+        call bind_run_test_gs_fb_greens_context()
                     yf(m) = law_value_zero(value, xr, ev%psi_axis, ev%psi_bound) &
-                            + forcing(xr, xz)
+                            + run_test_gs_fb_greens_forcing(ctx, xr, xz)
                 end do
             end do
         end do
@@ -400,7 +402,9 @@ c = ((origin(1) - centre(1))/semi(1))**2 + ((origin(2) - centre(2))/semi(2))**2 
         flux_range = ev%psi_axis - minval(state%psi(sys%coupling%trace_node))
         !$omp parallel do default(shared) private(i) schedule(static)
         do i = 1, np
-            ref(i) = vacuum(state%points(1, sys%coupling%trace_node(i)), &
+        call bind_run_test_gs_fb_greens_context()
+            ref(i) = run_test_gs_fb_greens_vacuum(ctx, state%points(1, &
+                sys%coupling%trace_node(i)), &
                             state%points(2, sys%coupling%trace_node(i))) &
                      + green_sum(state%points(1, sys%coupling%trace_node(i)), &
                                  state%points(2, sys%coupling%trace_node(i)))
@@ -418,7 +422,9 @@ c = ((origin(1) - centre(1))/semi(1))**2 + ((origin(2) - centre(2))/semi(2))**2 
         do i = 1, 5
             call fe_value(state, state%psi, sample(1, i), sample(2, i), value, found)
             call require(found, 'sample point located')
-            errors(2) = max(errors(2), abs(value - vacuum(sample(1, i), sample(2, i)) &
+        call bind_run_test_gs_fb_greens_context()
+            errors(2) = max(errors(2), abs(value - run_test_gs_fb_greens_vacuum(ctx, &
+                sample(1, i), sample(2, i)) &
                                     - green_sum(sample(1, i), sample(2, i)))/flux_range)
         end do
         allocate (ring(np))
@@ -426,7 +432,9 @@ c = ((origin(1) - centre(1))/semi(1))**2 + ((origin(2) - centre(2))/semi(2))**2 
         ! of the flux; the coil flux is regular outside Gamma_c and has no
         ! share in it.
         do i = 1, np
-          ring(i) = trace_psi(i) - vacuum(state%points(1, sys%coupling%trace_node(i)), &
+        call bind_run_test_gs_fb_greens_context()
+          ring(i) = trace_psi(i) - run_test_gs_fb_greens_vacuum(ctx, state%points(1, &
+              sys%coupling%trace_node(i)), &
                                             state%points(2, sys%coupling%trace_node(i)))
         end do
         ring = matmul(sys%coupling%s_trace, ring)
@@ -464,4 +472,74 @@ c = ((origin(1) - centre(1))/semi(1))**2 + ((origin(2) - centre(2))/semi(2))**2 
         end do
     end function green_sum
 
+
+    end subroutine run_test_gs_fb_greens
+
+    function run_test_gs_fb_greens_vacuum(ctx, r, z) result(psi)
+        type(run_test_gs_fb_greens_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: r, z
+        real(dp) :: psi, g(1, 2)
+
+        call gs_circuit_flux_vectors(ctx%coils, [r], [z], g)
+        psi = g(1, 1)*currents(1) + g(1, 2)*currents(2)
+    end function run_test_gs_fb_greens_vacuum
+
+    function run_test_gs_fb_greens_exact_flux(ctx, r, z) result(psi)
+        type(run_test_gs_fb_greens_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: r, z
+        real(dp) :: psi
+
+        psi = run_test_gs_fb_greens_vacuum(ctx, r, z) + bump(r, z, centre, semi, &
+            amplitude)
+    end function run_test_gs_fb_greens_exact_flux
+
+    function run_test_gs_fb_greens_law_source(ctx, law, psi, r) result(f)
+        type(run_test_gs_fb_greens_context_t), intent(in) :: ctx
+        !! f = mu0 R p' + FF'/R for the normalised law at flux psi, with the
+        !! reference levels, zero for s >= 1.
+        type(gs_profile_law_t), intent(in) :: law
+        real(dp), intent(in) :: psi, r
+        real(dp) :: f, pp, ff
+        type(gs_profile_law_t) :: shifted
+
+        f = 0.0_dp
+        if ((psi - ctx%ref_bound)*(ctx%ref_axis - ctx%ref_bound) <= 0.0_dp) return
+        shifted = law
+        shifted%axis = ctx%ref_axis - ctx%ref_bound
+        call gs_law_sources(shifted, psi - ctx%ref_bound, pp, ff)
+        f = ff/r + gs_mu0*pp*r
+    end function run_test_gs_fb_greens_law_source
+
+    function run_test_gs_fb_greens_forcing(ctx, r, z) result(f)
+        type(run_test_gs_fb_greens_context_t), intent(in) :: ctx
+        !! Continuous forcing of part B: f* - f_law(psi*).
+        real(dp), intent(in) :: r, z
+        real(dp) :: f
+
+        f = bump_laplacian(r, z, centre, semi, amplitude) &
+            - run_test_gs_fb_greens_law_source(ctx, ctx%law_zero, &
+                run_test_gs_fb_greens_exact_flux(ctx, r, z), r)
+    end function run_test_gs_fb_greens_forcing
+
+    function run_test_gs_fb_greens_forcing_density(ctx, r, z) result(j)
+        type(run_test_gs_fb_greens_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: r, z
+        real(dp) :: j
+
+        j = run_test_gs_fb_greens_forcing(ctx, r, z)/gs_mu0
+    end function run_test_gs_fb_greens_forcing_density
+
+    function run_test_gs_fb_greens_forcing_density_binding(self, r, z) &
+        result(result_value)
+        class(run_test_gs_fb_greens_forcing_density_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        real(dp) :: result_value
+        result_value = run_test_gs_fb_greens_forcing_density(self%data, r, z)
+    end function
+end module test_gs_fb_greens_callbacks
+
+program test_gs_fb_greens
+    use test_gs_fb_greens_callbacks, only: run_test_gs_fb_greens
+    implicit none
+    call run_test_gs_fb_greens()
 end program test_gs_fb_greens

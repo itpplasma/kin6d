@@ -13,6 +13,10 @@ module cerfon_freidberg_fixture
     use fortnum_quadrature, only: gauss_legendre_ab
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+
+    use fortnum_roots, only: scalar_root_function_t
+
+    use fortnum_roots, only: scalar_root_function_t
     implicit none
     private
     public :: cf_case_t, cf_setup, cf_jet, cf_surface, cf_oracle, cf_q
@@ -20,6 +24,28 @@ module cerfon_freidberg_fixture
     type :: cf_case_t
         real(dp) :: eps, kappa, delta, a, c(7), axis, psi_axis
     end type
+    type :: cf_setup_context_t
+        type(cf_case_t), pointer :: model => null()
+    end type
+
+    type, extends(scalar_root_function_t) :: cf_setup_axis_derivative_t
+        type(cf_setup_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => cf_setup_axis_derivative_binding
+    end type
+
+    type :: cf_surface_context_t
+        real(dp), pointer :: level => null()
+        type(cf_case_t), pointer :: model => null()
+        real(dp), pointer :: ray(:) => null()
+    end type
+
+    type, extends(scalar_root_function_t) :: cf_surface_residual_t
+        type(cf_surface_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => cf_surface_residual_binding
+    end type
+
 contains
     pure subroutine cf_jet(model, point, jet)
         type(cf_case_t), intent(in) :: model
@@ -32,12 +58,14 @@ contains
 
     subroutine cf_setup(name, model)
         character(*), intent(in) :: name
-        type(cf_case_t), intent(out) :: model
+        type(cf_case_t), intent(out) , target :: model
         type(cf_case_t) :: basis
         real(dp) :: matrix(7, 7), rhs(7), residual(7), jet(6), point(2)
         real(dp) :: alpha, curvature(3), step
         type(fortnum_status_t) :: root_status
         integer :: i, j, status
+        type(cf_setup_context_t), target :: ctx
+        type(cf_setup_axis_derivative_t), target :: axis_derivative_operator
         model%eps = 0.32_dp; model%kappa = 1.7_dp; model%delta = 0.33_dp
         model%a = 0
         select case (name)
@@ -70,7 +98,8 @@ contains
         if (maxval(abs(residual)) > 2e-11_dp) error stop 'CF boundary residual'
         ! Up-down symmetry makes the axis lie on y=0. Bracket the derivative;
         ! no KIN6D axis search or readback enters this oracle.
-        call root_brent(axis_derivative, 1 - model%eps, 1 + model%eps, &
+        call bind_cf_setup_context()
+        call root_brent(axis_derivative_operator, 1 - model%eps, 1 + model%eps, &
             model%axis, root_status, 2e-14_dp, 1e-15_dp, 128)
         if (root_status%code /= FORTNUM_OK) error stop 'CF exact axis root'
         call cf_jet(model, [model%axis, 0.0_dp], jet)
@@ -91,6 +120,11 @@ contains
         end do
         call check_generated_products(model)
     contains
+    subroutine bind_cf_setup_context()
+        ctx%model => model
+        axis_derivative_operator%data => ctx
+    end subroutine bind_cf_setup_context
+
         subroutine constraints(m, result)
             type(cf_case_t), intent(in) :: m
             real(dp), intent(out) :: result(7)
@@ -104,12 +138,6 @@ contains
                 inner(6) + curvature(2)*inner(2), &
                 top(4) + curvature(3)*top(3)]
         end subroutine
-        pure function axis_derivative(r) result(value)
-            real(dp), intent(in) :: r
-            real(dp) :: value, local(6)
-            call cf_jet(model, [r, 0.0_dp], local)
-            value = local(2)
-        end function
         subroutine check_derivative(point, jet, step)
             real(dp), intent(in) :: point(2), jet(6), step
             real(dp) :: plus(6), minus(6), direction(2)
@@ -194,12 +222,14 @@ contains
     end function
 
     subroutine cf_surface(model, angle, level, point, radius, slope)
-        type(cf_case_t), intent(in) :: model
-        real(dp), intent(in) :: angle, level
+        type(cf_case_t), intent(in) , target :: model
+        real(dp), intent(in) , target :: angle, level
         real(dp), intent(out) :: point(2), radius, slope
-        real(dp) :: ray(2), limit, lo, hi, value, jet(6)
+        real(dp) , target :: ray(2), limit, lo, hi, value, jet(6)
         type(fortnum_status_t) :: status
         integer :: k
+        type(cf_surface_context_t), target :: ctx
+        type(cf_surface_residual_t), target :: residual_operator
         ray = model%eps*[cos(angle), model%kappa*sin(angle)]
         limit = 4
         if (ray(1) < 0) limit = min(limit, -0.999_dp*model%axis/ray(1))
@@ -208,24 +238,28 @@ contains
         ! First crossing is the closed surface around this magnetic axis.
         do k = 1, 256
             hi = limit*k/256
-            value = residual(hi)
+        call bind_cf_surface_context()
+            value = cf_surface_residual(ctx, hi)
             if (value >= 0) exit
             lo = hi
         end do
         if (value < 0) error stop 'CF surface bracket'
-        call root_brent(residual, lo, hi, radius, status, 2e-14_dp, 1e-15_dp, 128)
+        call bind_cf_surface_context()
+        call root_brent(residual_operator, lo, hi, radius, status, 2e-14_dp, &
+            1e-15_dp, 128)
         if (status%code /= FORTNUM_OK) error stop 'CF surface root'
         point = [model%axis, 0.0_dp] + radius*ray
         call cf_jet(model, point, jet)
         slope = dot_product(jet(2:3), ray)
         if (slope <= 0) error stop 'CF non-star-shaped contour'
     contains
-        pure function residual(s) result(value)
-            real(dp), intent(in) :: s
-            real(dp) :: value, local(6)
-            call cf_jet(model, [model%axis, 0.0_dp] + s*ray, local)
-            value = local(1) - level
-        end function
+    subroutine bind_cf_surface_context()
+        ctx%level => level
+        ctx%model => model
+        ctx%ray => ray
+        residual_operator%data => ctx
+    end subroutine bind_cf_surface_context
+
     end subroutine
 
     function cf_q(model, psi_n, order) result(q)
@@ -286,4 +320,34 @@ contains
         moments(3) = b_int/moments(1)/(current/length)**2
         moments(4:6) = [current, length, phi]
     end subroutine
+
+    pure function cf_setup_axis_derivative(ctx, r) result(value)
+        type(cf_setup_context_t), intent(in) :: ctx
+            real(dp), intent(in) :: r
+            real(dp) :: value, local(6)
+            call cf_jet(ctx%model, [r, 0.0_dp], local)
+            value = local(2)
+    end function cf_setup_axis_derivative
+
+    pure function cf_setup_axis_derivative_binding(self, x) result(result_value)
+        class(cf_setup_axis_derivative_t), intent(in) :: self
+            real(dp), intent(in) :: x
+            real(dp) :: result_value, local(6)
+        result_value = cf_setup_axis_derivative(self%data, x)
+    end function
+
+    pure function cf_surface_residual(ctx, s) result(value)
+        type(cf_surface_context_t), intent(in) :: ctx
+            real(dp), intent(in) :: s
+            real(dp) :: value, local(6)
+            call cf_jet(ctx%model, [ctx%model%axis, 0.0_dp] + s*ctx%ray, local)
+            value = local(1) - ctx%level
+    end function cf_surface_residual
+
+    pure function cf_surface_residual_binding(self, x) result(result_value)
+        class(cf_surface_residual_t), intent(in) :: self
+            real(dp), intent(in) :: x
+            real(dp) :: result_value, local(6)
+        result_value = cf_surface_residual(self%data, x)
+    end function
 end module

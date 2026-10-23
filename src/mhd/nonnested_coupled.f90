@@ -58,12 +58,13 @@ module kin6d_nonnested_coupled
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
         anisotropic_flux, anisotropic_flux_jvp
+    use fortnum_krylov, only: real_linear_operator_t, &
+        real_gmres, real_fgmres, real_conjugate_gradient
     implicit none
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
     public :: nc_scalar3_i, nc_continue, nc_validate
-
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
             ! A declared datum at (R, Z) = x and toroidal angle phi.
@@ -72,7 +73,6 @@ module kin6d_nonnested_coupled
             real(dp) :: w
         end function
     end interface
-
     type :: nc_problem_t
         type(island_closure_t) :: closure
         real(dp) :: voltage = 0 ! full-torus loop voltage when drive = V
@@ -86,7 +86,6 @@ module kin6d_nonnested_coupled
         procedure(nc_scalar3_i), pointer, nopass :: g_par_shape_3d => null()
         logical, allocatable :: floating(:) ! V0 boundary nodes of a conductor
     end type
-
     ! Global index of local entry j of block b of a space is offset +
     ! b*(per-mode size) + j. na, nv are whole-space sizes (all blocks).
     type :: nc_layout_t
@@ -94,7 +93,6 @@ module kin6d_nonnested_coupled
         integer :: na = 0, nv = 0, n = 0
         integer :: ia = 0, il = 0, ip = 0, iphi = 0, iv = 0
     end type
-
     type :: nc_report_t
         integer :: newton_steps = 0
         real(dp) :: residual(5) = 0     ! blockwise backward errors at exit
@@ -104,18 +102,25 @@ module kin6d_nonnested_coupled
         character(160) :: message = ''
         character(32) :: claim = 'candidate'
     end type
-
     type :: nc_ops_t
         type(csc_t) :: c, s, mg, mgt
         integer :: nphi = 1
     end type
-
     type, extends(meridian_fourier_tensor_t) :: identity_t
     contains
         procedure :: tensor => identity_tensor
     end type
-
     integer, parameter :: chunk = 64
+    type, extends(real_linear_operator_t) :: newton_step_apply_t
+        type(csc_t), pointer :: reduced => null()
+    contains
+        procedure :: apply => newton_step_apply_apply
+    end type
+    type, extends(real_linear_operator_t) :: newton_step_precondition_t
+        type(sparse_solver_t), pointer :: solver => null()
+    contains
+        procedure :: apply => newton_step_precondition_apply
+    end type
 contains
     subroutine nc_validate(problem, status, message)
         type(nc_problem_t), intent(in) :: problem
@@ -137,7 +142,6 @@ contains
         status = 0
         message = 'A+D regularised candidate; Dirichlet data supplied in the seed'
     end subroutine
-
     function nc_layout(field) result(lay)
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t) :: lay
@@ -149,7 +153,6 @@ contains
         lay%iphi = lay%na + 2*lay%nv; lay%iv = lay%na + 3*lay%nv + 1
         lay%n = lay%iv
     end function
-
     function nc_fixed(field, problem) result(mask)
         ! Dirichlet dofs: A trace (normal B and toroidal flux), lambda,
         ! p = p_b and Phi = 0 on the boundary, in every block. V is free.
@@ -177,7 +180,6 @@ contains
         where (problem%floating) mask(lay%il + 1:lay%il + lay%n0) = .false.
         where (problem%floating) mask(lay%iphi + 1:lay%iphi + lay%n0) = .false.
     end function
-
     function representative(field, problem) result(rep)
         ! rep(i) = i, except tied floating dofs, which map to the first one.
         type(free_b_field_t), intent(in) :: field
@@ -196,7 +198,6 @@ contains
             rep(lay%iphi + i) = lay%iphi + first
         end do
     end function
-
     subroutine nc_reduce(field, problem, r)
         ! Rows of tied dofs summed into their representative; the others
         ! become zero. Fixed rows are zero already.
@@ -212,7 +213,6 @@ contains
             r(i) = 0
         end do
     end subroutine
-
     subroutine operators(field, problem, ops, status)
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
@@ -252,7 +252,6 @@ contains
         if (.not. status_ok(st)) return
         status = 0
     end subroutine
-
     subroutine identity_tensor(self, t, x, k, status)
         class(identity_t), intent(in) :: self
         integer, intent(in) :: t
@@ -268,7 +267,6 @@ contains
         end do
         status = 0
     end subroutine
-
     subroutine nc_residual(field, problem, x, r, status, boundary_rows)
         ! Default: fixed rows zero and ties reduced. boundary_rows returns
         ! all weak rows before those reductions and the current drive target.
@@ -283,7 +281,6 @@ contains
         if (status /= 0) return
         call residual_ops(field, problem, ops, x, r, status, boundary_rows)
     end subroutine
-
     subroutine residual_ops(field, problem, ops, x, r, status, boundary_rows)
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
@@ -338,7 +335,6 @@ contains
         if (.not. all(ieee_is_finite(r))) return
         status = 0
     end subroutine
-
     subroutine nc_jacobian(field, problem, x, jac, status)
         ! Exact Jacobian of the unreduced residual, before the Dirichlet
         ! and tie reductions.
@@ -352,7 +348,6 @@ contains
         if (status /= 0) return
         call jacobian_ops(field, problem, ops, x, jac, status)
     end subroutine
-
     subroutine jacobian_ops(field, problem, ops, x, jac, status)
         type(free_b_field_t), intent(in) :: field
         type(nc_problem_t), intent(in) :: problem
@@ -416,7 +411,6 @@ contains
         if (.not. all(ieee_is_finite(jac%val))) return
         status = 0
     end subroutine
-
     subroutine nc_solve(field, problem, x, report, status, tol, max_steps)
         ! Newton with the exact Jacobian and residual backtracking. On entry
         ! x is the seed; its fixed entries are the boundary data and tied
@@ -523,7 +517,6 @@ contains
         if (st /= 0) return
         status = 0
     end subroutine
-
     subroutine nc_continue(field, problem, x, report, status, tol, decades, &
             max_steps)
         ! Natural-parameter continuation in the anisotropy: chi_par/chi_perp
@@ -598,7 +591,6 @@ contains
             end if
         end subroutine
     end subroutine
-
     subroutine source_load(field, problem, lay, nphi, load, status)
         ! |<v, S>| on the pressure rows of every block (the phi rule of the
         ! residual) and |I_phi| on the loop row; zero elsewhere.
@@ -635,7 +627,6 @@ contains
         where (nc_fixed(field, problem)) load = 0
         status = 0
     end subroutine
-
     subroutine nc_store(field, x, status)
         ! B modes in NN1's convention B = B_0 + 2 Re(B_n e^{i n phi}), so
         ! B_n = (c - i s)/2 for the cosine/sine blocks c, s.
@@ -662,7 +653,6 @@ contains
         field%p = x(lay%ip + 1:lay%ip + lay%nv)
         status = 0
     end subroutine
-
     real(dp) function source_value(problem, x, phi) result(s)
         type(nc_problem_t), intent(in) :: problem
         real(dp), intent(in) :: x(2), phi
@@ -672,13 +662,11 @@ contains
             s = problem%source(x)
         end if
     end function
-
     pure integer function local_rows(field, lay) result(nr)
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t), intent(in) :: lay
         nr = (field%fs%sp(1)%nloc + 2*field%fs%nl0)*lay%nb + 1
     end function
-
     pure subroutine trig(modes, phi, tr, dtr)
         ! tr = 1, cos phi, sin phi, cos 2 phi, ...; dtr = d tr / d phi.
         integer, intent(in) :: modes
@@ -691,7 +679,6 @@ contains
             dtr(2*n) = -n*tr(2*n + 1); dtr(2*n + 1) = n*tr(2*n)
         end do
     end subroutine
-
     subroutine element(field, problem, lay, nphi, b, x, t, want, rl, jb, jd, &
                        status)
         ! Local rows [A (n1 per block) | p (n0 per block) | Phi (n0 per
@@ -843,7 +830,6 @@ contains
             jd(r0:r1, :) = jd(r0:r1, :) + matmul(test, cols(:, cb + 1:))
         end subroutine
     end subroutine
-
     subroutine local_maps(field, lay, t, grow, srow, gcol)
         ! Global rows (with signs) and p/Phi/V columns of triangle t.
         type(free_b_field_t), intent(in) :: field
@@ -868,7 +854,6 @@ contains
         grow(size(grow)) = lay%iv
         gcol(size(gcol)) = lay%iv
     end subroutine
-
     subroutine scatter_residual(field, lay, t, rl, r)
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t), intent(in) :: lay
@@ -882,7 +867,6 @@ contains
             r(grow(i)) = r(grow(i)) + srow(i)*rl(i)
         end do
     end subroutine
-
     subroutine scatter_jacobian(field, lay, t, jb, jd, rows, cols, vals, count, &
                                 brows, bcols, bvals, bcount)
         type(free_b_field_t), intent(in) :: field
@@ -920,7 +904,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine append(a, row0, col0, factor, rows, cols, vals, count)
         type(csc_t), intent(in) :: a
         integer, intent(in) :: row0, col0
@@ -938,7 +921,6 @@ contains
             end do
         end do
     end subroutine
-
     subroutine reserve(rows, cols, vals, need)
         integer, allocatable, intent(inout) :: rows(:), cols(:)
         real(dp), allocatable, intent(inout) :: vals(:)
@@ -953,7 +935,6 @@ contains
         call move_alloc(ri, rows); call move_alloc(ci, cols)
         call move_alloc(vi, vals)
     end subroutine
-
     function abs_matvec(a, x) result(y)
         type(csc_t), intent(in) :: a
         real(dp), intent(in) :: x(:)
@@ -966,7 +947,6 @@ contains
             end do
         end do
     end function
-
     function magnitude(x, lay) result(m)
         ! |x| plus the block maximum, so that a block that vanishes (the
         ! seed's A_pol or Phi) still sets the scale of the rows it couples to.
@@ -980,7 +960,6 @@ contains
             m(lo(k):hi(k)) = abs(x(lo(k):hi(k))) + maxval(abs(x(lo(k):hi(k))))
         end do
     end function
-
     subroutine backward(r, scale, lay, w)
         ! Blockwise normwise backward error |r_blk| / | |J| |x| |_blk.
         real(dp), intent(in) :: r(:), scale(:)
@@ -994,7 +973,6 @@ contains
                 norm2(scale(lo(k):hi(k))))
         end do
     end subroutine
-
     subroutine newton_step(a, fixed, rep, rhs, solver, factored, x, status)
         ! Newton increment from the reduced system: fixed dofs have zero
         ! increment, tied dofs share the increment of their representative
@@ -1008,17 +986,19 @@ contains
         logical, intent(in) :: fixed(:)
         integer, intent(in) :: rep(:)
         real(dp), intent(in) :: rhs(:)
-        type(sparse_solver_t), intent(inout) :: solver
+        type(sparse_solver_t), intent(inout), target :: solver
         logical, intent(inout) :: factored
         real(dp), allocatable, intent(out) :: x(:)
         integer, intent(out) :: status
         real(dp), parameter :: gmres_tol = 1.0e-10_dp
         integer, parameter :: gmres_max = 20
-        type(csc_t) :: reduced
+        type(csc_t), target :: reduced
         type(fortsparse_status_t) :: st
         real(dp), allocatable :: b(:), y(:)
         real(dp) :: bnorm, rnorm
         integer :: info, iterations
+        type(newton_step_apply_t) :: apply_operator
+        type(newton_step_precondition_t) :: precondition_operator
         status = 1
         call reduced_system(a, fixed, rep, reduced, status)
         if (status /= 0) return
@@ -1029,7 +1009,10 @@ contains
         y = 0
         bnorm = norm2(b)
         if (factored .and. bnorm > 0) then
-            call real_fgmres_operator(apply, precondition, b/bnorm, y, gmres_tol, &
+        apply_operator%reduced => reduced
+        precondition_operator%solver => solver
+            call real_fgmres(apply_operator, precondition_operator, b/bnorm, y, &
+                gmres_tol, &
                 gmres_max, gmres_max, info, iterations, rnorm)
             if (info == KRYLOV_OK .and. all(ieee_is_finite(y))) then
                 x = bnorm*y(rep)
@@ -1048,22 +1031,7 @@ contains
         x = y(rep)
         if (.not. all(ieee_is_finite(x))) return
         status = 0
-    contains
-        subroutine apply(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            output = csc_matvec(reduced, input)
-        end subroutine
-
-        subroutine precondition(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            type(fortsparse_status_t) :: pst
-            call sparse_solve(solver, input, output, pst)
-            if (.not. status_ok(pst)) output = ieee_value(1.0_dp, ieee_quiet_nan)
-        end subroutine
     end subroutine
-
     subroutine reduced_system(a, fixed, rep, reduced, status)
         ! The Jacobian with the Dirichlet and tie reductions applied: unit
         ! rows and columns for fixed and non-representative dofs.
@@ -1097,7 +1065,6 @@ contains
         if (.not. status_ok(st)) return
         status = 0
     end subroutine
-
     subroutine factor_reduced(reduced, solver, status)
 !$      use omp_lib, only: omp_get_max_threads
         ! General sparse LU (the Jacobian is not symmetric).
@@ -1131,4 +1098,18 @@ contains
         if (.not. status_ok(st)) return
         status = 0
     end subroutine
+    subroutine newton_step_apply_apply(self, input, output)
+        class(newton_step_apply_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            output = csc_matvec(self%reduced, input)
+    end subroutine newton_step_apply_apply
+    subroutine newton_step_precondition_apply(self, input, output)
+        class(newton_step_precondition_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            type(fortsparse_status_t) :: pst
+            call sparse_solve(self%solver, input, output, pst)
+            if (.not. status_ok(pst)) output = ieee_value(1.0_dp, ieee_quiet_nan)
+    end subroutine newton_step_precondition_apply
 end module kin6d_nonnested_coupled

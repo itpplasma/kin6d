@@ -50,28 +50,11 @@ set_target_properties(benchmark_equilibrium_cpu PROPERTIES
     Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cpu-profile-modules)
 target_include_directories(benchmark_equilibrium_cpu PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/cpu-profile-modules)
-# Compile unchanged source slices, as for KIN6D's existing FortNum targets.
-# Separate names preserve the production dependency pins and FP64 default.
-include(FetchContent)
-FetchContent_Declare(kin6d_precision_fortnum
-    GIT_REPOSITORY https://github.com/lazy-fortran/fortnum.git
-    GIT_TAG 0b5fc420deb283308f07d4e1eab48c295c81a932)
-FetchContent_Declare(kin6d_precision_fortsparse
-    GIT_REPOSITORY https://github.com/lazy-fortran/fortsparse.git
-    GIT_TAG 8f4250105fe6e9c02effcd94ea94c52fe87234a8)
-foreach(dependency kin6d_precision_fortnum kin6d_precision_fortsparse)
-    FetchContent_GetProperties(${dependency})
-    if(NOT ${dependency}_POPULATED)
-        FetchContent_Populate(${dependency})
-    endif()
-endforeach()
-add_library(kin6d_cpu_precision_framework
-    ${kin6d_precision_fortnum_SOURCE_DIR}/src/linalg/fortnum_precision.f90
-    ${kin6d_precision_fortnum_SOURCE_DIR}/src/linalg/fortnum_precision_vector.f90
-    ${kin6d_precision_fortnum_SOURCE_DIR}/src/linalg/fortnum_refinement.f90
-    ${kin6d_precision_fortsparse_SOURCE_DIR}/src/fortsparse_precision_csr.f90)
-target_link_libraries(kin6d_cpu_precision_framework PUBLIC
-    kin6d_ode fortgen_runtime OpenMP::OpenMP_Fortran)
+# Reuse the production precision/refinement APIs. Compiling older source
+# slices here would duplicate module providers and reintroduce trampolines.
+add_library(kin6d_cpu_precision_framework INTERFACE)
+target_link_libraries(kin6d_cpu_precision_framework INTERFACE
+    kin6d_ode fortnum fortsparse fortgen_runtime OpenMP::OpenMP_Fortran)
 add_executable(benchmark_cpu_solve app/benchmark_cpu_solve.f90)
 target_link_libraries(benchmark_cpu_solve PRIVATE
     kin6d_equilibrium kin6d_cpu_precision_framework)

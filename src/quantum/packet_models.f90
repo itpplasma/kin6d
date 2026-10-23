@@ -38,6 +38,8 @@ module kin6d_packet_models
     use kin6d_radial_dvr, only: radial_band_hamiltonian, radial_band_matvec
     use fortnum_ode_cash_karp, only: cash_karp_step
     use kin6d_real_identity, only: same_real_value
+
+    use kin6d_coulomb_encounter, only: encounter_field_t
     implicit none
     private
     public :: packet_spec_t, packet_sample_t, packet_trace_t
@@ -116,6 +118,14 @@ module kin6d_packet_models
             integer, intent(out) :: info
         end subroutine dsyev
     end interface
+    type, extends(encounter_field_t) :: packet_project_field_t
+        type(gaussian_t), pointer :: g(:) => null()
+        type(gaussian_t), pointer :: rate(:) => null()
+        logical, pointer :: used(:) => null()
+    contains
+        procedure :: evaluate => packet_project_field_evaluate
+    end type
+
 contains
     function model_name(spec) result(name)
         type(packet_spec_t), intent(in) :: spec
@@ -713,12 +723,13 @@ contains
     ! layout a(n, 0:mmax, 0:lmax) as encounter_state.
     subroutine packet_project(enc, g, rate, a, adot)
         type(encounter_t), intent(in) :: enc
-        type(gaussian_t), intent(in) :: g(:), rate(:)
+        type(gaussian_t), intent(in) , target :: g(:), rate(:)
         complex(dp), allocatable, intent(out) :: a(:, :, :), adot(:, :, :)
         complex(dp), allocatable :: a4(:, :, :, :)
         real(dp) :: amax, ext
         integer :: k, nph
-        logical :: used(size(g))
+        logical , target :: used(size(g))
+        type(packet_project_field_t) :: field_context
         amax = 0
         do k = 1, size(g)
             used(k) = abs(g(k)%d) > 0 .or. abs(rate(k)%d) > 0
@@ -727,34 +738,14 @@ contains
             amax = max(amax, abs(2*g(k)%alpha*g(k)%q(1) + iu*g(k)%kappa(1))*ext)
         end do
         nph = 2*(enc%mmax + ceiling(amax + 6*sqrt(amax)) + 8)
-        call encounter_project(enc, enc%lmax, enc%mmax, nph, 2, field, a4)
+        field_context%g => g
+        field_context%rate => rate
+        field_context%used => used
+        call encounter_project(enc, enc%lmax, enc%mmax, nph, 2, field_context, a4)
         allocate (a(enc%mesh%n, 0:enc%mmax, 0:enc%lmax), &
                   adot(enc%mesh%n, 0:enc%mmax, 0:enc%lmax))
         a = a4(:, :, :, 1); adot = a4(:, :, :, 2)
-    contains
-        subroutine field(rr, x, y, z, psi, active)
-            real(dp), intent(in) :: rr, x(:), y(:), z(:)
-            complex(dp), intent(out) :: psi(:, :)
-            logical, intent(out) :: active
-            complex(dp) :: v(size(x)), lin(size(x))
-            real(dp) :: ux(size(x)), uz(size(x))
-            integer :: j
-            active = .false.
-            psi = 0
-            do j = 1, size(g)
-                if (.not. used(j)) cycle
-                if ((rr - sqrt(sum(g(j)%q**2)))**2*real(g(j)%alpha) > 45) cycle
-                active = .true.
-                v = gaussian_value(g(j), x, y, z)
-                ux = x - g(j)%q(1); uz = z - g(j)%q(2)
-                lin = -rate(j)%alpha*(ux**2 + y**2 + uz**2) &
-                      + 2*g(j)%alpha*(ux*rate(j)%q(1) + uz*rate(j)%q(2)) &
-                      + iu*(rate(j)%kappa(1)*ux + rate(j)%kappa(2)*uz) &
-                      - iu*(g(j)%kappa(1)*rate(j)%q(1) + g(j)%kappa(2)*rate(j)%q(2))
-                psi(:, 1) = psi(:, 1) + g(j)%d*v
-                psi(:, 2) = psi(:, 2) + (rate(j)%d + g(j)%d*lin)*v
-            end do
-        end subroutine field
+
     end subroutine packet_project
 
     ! Errors, residuals and the Duhamel estimator of a model trajectory against
@@ -879,4 +870,32 @@ contains
         nm = encounter_norm(enc, a - da, sector); pm = pq(1)*nm
         dpv = ((pp - pm)/2 - p*(np - nm)/2)/encounter_norm(enc, a, sector)
     end subroutine packet_bin_jvp
+    subroutine packet_project_field_evaluate(self, rr, x, y, z, psi, active)
+        class(packet_project_field_t), intent(in) :: self
+            real(dp), intent(in) :: rr, x(:), y(:), z(:)
+            complex(dp), intent(out) :: psi(:, :)
+            logical, intent(out) :: active
+            complex(dp) :: v(size(x)), lin(size(x))
+            real(dp) :: ux(size(x)), uz(size(x))
+            integer :: j
+        associate(g => self%g, &
+            rate => self%rate, &
+            used => self%used)
+            active = .false.
+            psi = 0
+            do j = 1, size(g)
+                if (.not. used(j)) cycle
+                if ((rr - sqrt(sum(g(j)%q**2)))**2*real(g(j)%alpha) > 45) cycle
+                active = .true.
+                v = gaussian_value(g(j), x, y, z)
+                ux = x - g(j)%q(1); uz = z - g(j)%q(2)
+                lin = -rate(j)%alpha*(ux**2 + y**2 + uz**2) &
+                      + 2*g(j)%alpha*(ux*rate(j)%q(1) + uz*rate(j)%q(2)) &
+                      + iu*(rate(j)%kappa(1)*ux + rate(j)%kappa(2)*uz) &
+                      - iu*(g(j)%kappa(1)*rate(j)%q(1) + g(j)%kappa(2)*rate(j)%q(2))
+                psi(:, 1) = psi(:, 1) + g(j)%d*v
+                psi(:, 2) = psi(:, 2) + (rate(j)%d + g(j)%d*lin)*v
+            end do
+        end associate
+    end subroutine packet_project_field_evaluate
 end module kin6d_packet_models
