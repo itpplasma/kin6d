@@ -135,6 +135,8 @@ program test_ideal_map_axisymmetric
         call residual_check()
     case ('factor')
         call factor_check()
+    case ('factorstep')
+        call masked_factor_step_check()
     case default
         error stop 'unknown mode'
     end select
@@ -434,6 +436,79 @@ contains
             if (status == 0) then
                 owner = e; return
             end if
+        end do
+    end subroutine
+
+    subroutine masked_factor_step_check()
+        ! An independently masked dense solve gives the damped Newton step.
+        ! Extra held interior coefficients exercise disconnected identity rows
+        ! as well as the physical boundary mask, with Cholesky and LU damping.
+        type(gs_state_t) :: state
+        type(ideal_map_t) :: map
+        type(csr_matrix_t) :: hessian
+        type(ideal_map_solve_report_t) :: report
+        real(dp), allocatable :: dense(:, :), rhs(:, :), grad(:), reduced(:)
+        real(dp), allocatable :: full(:), expected(:, :, :)
+        integer, allocatable :: pivots(:)
+        real(dp), parameter :: damping(2) = [1.0e2_dp, 1.0e3_dp]
+        real(dp) :: energy, scale, diagonal, error
+        integer :: i, k, n, trial, status
+        interface
+            subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+                import :: dp
+                integer, intent(in) :: n, nrhs, lda, ldb
+                integer, intent(out) :: ipiv(*), info
+                real(dp), intent(inout) :: a(lda, *), b(ldb, *)
+            end subroutine
+        end interface
+        call make_mesh(8, 2, state)
+        do trial = 1, size(damping)
+            call build_map(state, 1, 0, map)
+            map%initial_damping = damping(trial)
+            do i = 3, map%nred, 5
+                map%fixed(i) = .true.
+            end do
+            n = map%nred
+            allocate (dense(n, n), rhs(n, 1), grad(map%ndof), reduced(n), &
+                full(map%ndof), pivots(n))
+            call ideal_map_energy(map, map%x, energy, status, grad)
+            if (status /= 0) error stop 'factor step: initial energy'
+            call ideal_map_reduce(map, grad, reduced)
+            call ideal_map_hessian(map, map%x, hessian)
+            dense = 0
+            do i = 1, n
+                do k = hessian%rowptr(i), hessian%rowptr(i + 1) - 1
+                    dense(i, hessian%colidx(k)) = hessian%val(k)
+                end do
+            end do
+            scale = 0
+            do i = 1, n
+                if (.not. map%fixed(i)) scale = max(scale, abs(dense(i, i)))
+            end do
+            rhs(:, 1) = -reduced
+            do i = 1, n
+                if (map%fixed(i)) then
+                    dense(i, :) = 0; dense(:, i) = 0
+                    dense(i, i) = 1; rhs(i, 1) = 0
+                else
+                    diagonal = dense(i, i)
+                    dense(i, i) = diagonal + damping(trial) &
+                        *(abs(diagonal) + 1.0e-12_dp*scale)
+                end if
+            end do
+            call dgesv(n, 1, dense, n, pivots, rhs, n, status)
+            if (status /= 0) error stop 'factor step: dense oracle'
+            call ideal_map_expand(map, rhs(:, 1), full)
+            expected = map%x + reshape(full, shape(map%x))
+            call ideal_map_solve(map, 1.0e-12_dp, 1, report, status)
+            if (report%iterations /= 1 .or. report%trials /= 1) &
+                error stop 'factor step: expected one accepted trial'
+            error = maxval(abs(map%x - expected))
+            print '(a,2es14.5)', 'masked factor step damping/error ', &
+                damping(trial), error
+            if (error > 1.0e-11_dp*maxval(abs(full))) &
+                error stop 'factor step: differs from dense oracle'
+            deallocate (dense, rhs, grad, reduced, full, pivots, expected)
         end do
     end subroutine
 
