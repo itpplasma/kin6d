@@ -48,7 +48,8 @@ module kin6d_ideal_map
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks
-    use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
+    use fortnum_krylov, only: real_conjugate_gradient_operator, &
+        real_conjugate_gradient, real_linear_operator_t, KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, csc_normalize_symmetric_raw, &
@@ -224,7 +225,65 @@ module kin6d_ideal_map
         integer :: krylov_solves = 0, krylov_iterations = 0
         type(factor_cache_t), private :: cache
     end type
+
+    type, extends(real_linear_operator_t) :: damped_hessian_t
+        ! Masked Hessian plus shift on the free rows and identity on the fixed
+        ! rows, as the CG operator of the Newton step. matrix and shift belong
+        ! to the caller and are read at every apply.
+        type(csr_matrix_t), pointer :: matrix => null()
+        real(dp), pointer :: shift(:) => null()
+        logical, allocatable :: fixed(:)
+        real(dp), allocatable :: masked(:)
+    contains
+        procedure :: apply => apply_damped_hessian
+    end type
+
+    type, extends(real_linear_operator_t) :: retained_factor_t
+        ! CG preconditioner: solve with the factorisation held by the caller.
+        ! failed records a failed triangular solve (the input is then returned).
+        type(sparse_solver_t), pointer :: solver => null()
+        logical :: failed = .false.
+    contains
+        procedure :: apply => apply_retained_factor
+    end type
 contains
+    subroutine apply_damped_hessian(self, input, output)
+        class(damped_hessian_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        real(dp) :: s
+        integer :: row, kk
+        self%masked = merge(0.0_dp, input, self%fixed)
+        associate (rowptr => self%matrix%rowptr, colidx => self%matrix%colidx, &
+                   val => self%matrix%val, shift => self%shift, &
+                   fixed => self%fixed, masked => self%masked)
+            !$omp parallel do private(row, kk, s) schedule(static)
+            do row = 1, size(fixed)
+                if (fixed(row)) then
+                    output(row) = input(row)
+                    cycle
+                end if
+                s = shift(row)*input(row)
+                do kk = rowptr(row), rowptr(row + 1) - 1
+                    s = s + val(kk)*masked(colidx(kk))
+                end do
+                output(row) = s
+            end do
+            !$omp end parallel do
+        end associate
+    end subroutine
+
+    subroutine apply_retained_factor(self, input, output)
+        class(retained_factor_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        type(fortsparse_status_t) :: pstatus
+        call sparse_solve(self%solver, input, output, pstatus)
+        if (.not. status_ok(pstatus)) then
+            self%failed = .true.; output = input
+        end if
+    end subroutine
+
     pure integer function ideal_map_dof(map, component, mode, node) result(dof)
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: component, mode, node
@@ -1348,21 +1407,26 @@ contains
         ! Absolute gradient the tolerance refers to (default: the initial one),
         ! e.g. the first-phase gradient for a polishing solve.
         real(dp), intent(in), optional :: reference_gradient
-        type(csr_matrix_t) :: matrix, omatrix
-        type(sparse_solver_t) :: solver, osolver
+        type(csr_matrix_t), target :: matrix
+        type(csr_matrix_t) :: omatrix
+        type(sparse_solver_t), target :: solver
+        type(sparse_solver_t) :: osolver
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
-        real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
+        real(dp), allocatable :: trial(:, :, :), rhs(:)
+        real(dp), allocatable, target :: shift(:)
         logical, allocatable :: omask(:), damped(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
         real(dp) :: cap_x, cap_w, t0, trial_minjac, pf1_t0
         character(8) :: int5_env
         real(dp) :: eta, eta_prev, gnorm_prev
-        real(dp), allocatable :: krylov_rhs(:), krylov_mask(:)
+        real(dp), allocatable :: krylov_rhs(:)
+        type(damped_hessian_t) :: damped_op
+        type(retained_factor_t) :: factor_pc
         real(dp), parameter :: eta_max = 0.1_dp, eta_min = 1.0e-4_dp
         real(dp), parameter :: eta_gamma = 0.9_dp
         integer :: it, i, k, tries, estatus, kinfo, kiters
-        logical :: talk, accepted, factored, ofactored, nested, refresh, pc_failed
+        logical :: talk, accepted, factored, ofactored, nested, refresh
         logical :: retained
         talk = .false.
         ! INT5 measurement switch (never for a PR): INT5_KRYLOV=1 enables the CG step.
@@ -1373,13 +1437,16 @@ contains
         ! keeps after a pivot that is not positive; retained: it also holds a
         ! valid numerical factor, the CG preconditioner.
         retained = .false.
-        pc_failed = .false.
         eta = eta_max; eta_prev = eta_max; gnorm_prev = 0
         if (present(verbose)) talk = verbose
         nested = map%omega_elimination .and. .not. map%position_gauge
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
-            diag(map%nred), rhs(map%nred), shift(map%nred), krylov_rhs(map%nred), &
-            krylov_mask(map%nred))
+            diag(map%nred), rhs(map%nred), shift(map%nred), krylov_rhs(map%nred))
+        damped_op%matrix => matrix
+        damped_op%shift => shift
+        damped_op%fixed = map%fixed
+        allocate (damped_op%masked(map%nred))
+        factor_pc%solver => solver
         call omega_mask(map, nested, omask)
         damped = .not. (map%fixed .or. omask)
         t0 = wall_seconds()
@@ -1546,48 +1613,17 @@ contains
             ! scaled to a unit right-hand side: the fortnum tolerance is
             ! absolute below unit norm.
             real(dp) :: bnorm, residual
-            kiters = 0; pc_failed = .false.
+            kiters = 0; factor_pc%failed = .false.
             bnorm = norm2(rhs)
             if (.not. bnorm > 0) return
             krylov_rhs = rhs/bnorm
             step = 0
-            call real_conjugate_gradient_operator(apply_damped, krylov_rhs, step, &
-                eta, map%krylov_max, kinfo, kiters, residual, apply_factor)
+            call real_conjugate_gradient(damped_op, krylov_rhs, step, eta, &
+                map%krylov_max, kinfo, kiters, residual, factor_pc)
             report%krylov_solves = report%krylov_solves + 1
             report%krylov_iterations = report%krylov_iterations + kiters
-            if (pc_failed) kinfo = -1
+            if (factor_pc%failed) kinfo = -1
             if (kinfo == KRYLOV_OK) step = bnorm*step
-        end subroutine
-
-        subroutine apply_damped(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            real(dp) :: s
-            integer :: row, kk
-            krylov_mask = merge(0.0_dp, input, map%fixed)
-            !$omp parallel do private(row, kk, s) schedule(static)
-            do row = 1, map%nred
-                if (map%fixed(row)) then
-                    output(row) = input(row)
-                    cycle
-                end if
-                s = shift(row)*input(row)
-                do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
-                    s = s + matrix%val(kk)*krylov_mask(matrix%colidx(kk))
-                end do
-                output(row) = s
-            end do
-            !$omp end parallel do
-        end subroutine
-
-        subroutine apply_factor(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            type(fortsparse_status_t) :: pstatus
-            call sparse_solve(solver, input, output, pstatus)
-            if (.not. status_ok(pstatus)) then
-                pc_failed = .true.; output = input
-            end if
         end subroutine
 
         subroutine nested_line_search()
