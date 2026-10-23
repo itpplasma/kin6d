@@ -301,6 +301,20 @@ stop at 1e-11 x the gradient of X0 = id). Element energy, gradient and
 Hessian blocks are OpenMP-parallel over cells. The report gives wall time for
 energy, Hessian and factor+solve.
 
+The non-nested step can be an inexact Newton step (`krylov_step`, default
+off): the damped system is solved by fortnum preconditioned CG on the assembled
+Hessian, with the last successful factorisation (the SPD Cholesky factor of
+`factor_masked`, or its pivoted LU at a damping above 100) as preconditioner and
+Eisenstat--Walker forcing eta in [1e-4, 0.1] on the relative residual. The factorisation is redone
+only when CG needs more than `krylov_refactor` (8) iterations, does not converge
+within `krylov_max` (20), or breaks down on a non-positive-definite system, in
+which case the step falls back to factor and solve. A rejected trial raises mu
+and re-solves with the retained factorisation. The report counts trials,
+factorisations and CG iterations. The nested solve is unchanged. The option is
+off by default because the P3 seed ladder (`ideal_map_n0_seed_return_a3_p3`,
+stop at 1e-11) needs 443 exact Newton steps of a near-null crawl and fails to
+converge in 600 with CG forcing 1e-1 to 1e-8 (it matches only at a fixed 1e-6).
+
 Shaped Solovev P3 ladder on sCluster (one exclusive node, MUMPS, 433c1a5,
 cached CSR pattern), finest mesh (5.1e4 dofs, 35-41 Newton steps), seconds:
 

@@ -53,16 +53,24 @@ program test_curve_chart_solver
     call get_command_argument(1, mode)
     c = 0; s = 0
     select case (trim(mode))
-    case ('landreman')
+    case ('landreman', 'krylov')
         c(1, 1) = 1; s(2, 1) = 1
         call chart%init(c, s, 1, st)
         if (st /= 0) error stop 'circular chart'
-        call circle_solve()
-    case ('figure8')
+        if (trim(mode) == 'krylov') then
+            call krylov_equivalence()
+        else
+            call circle_solve()
+        end if
+    case ('figure8', 'krylov3d')
         s(1, 1) = 1; s(2, 2) = 1; c(3, 1) = 0.3_dp
         call chart%init(c, s, 1, st)
         if (st /= 0) error stop 'lifted figure8 chart'
-        call figure8_solve()
+        if (trim(mode) == 'krylov3d') then
+            call krylov_equivalence()
+        else
+            call figure8_solve()
+        end if
     case default
         error stop 'chart solver test mode'
     end select
@@ -71,7 +79,7 @@ contains
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         real(dp) :: dr, dz
-        if (mode == 'landreman') then
+        if (mode == 'landreman' .or. mode == 'krylov') then
             call landreman_surface(2*pi*t, delta, point(1), point(2), dr, dz)
         else
             point = 0.02_dp*[cos(2*pi*t), sin(2*pi*t)]
@@ -82,7 +90,7 @@ contains
         type(gs_state_t), intent(out) :: mesh
         real(dp) :: contour(2, 16), h
         integer :: i, status
-        if (mode == 'figure8') then
+        if (mode == 'figure8' .or. mode == 'krylov3d') then
             call normal_plane_fan(mesh)
             return
         end if
@@ -257,6 +265,53 @@ contains
         call ideal_map_residual(map, 1.0_dp, residual, sigma, status)
         if (status /= IDEAL_MAP_BAD_INPUT) error stop 'cylindrical residual only'
         print '(a)', '[V] schematic fixed-wall candidate; continuous bounds unavailable'
+    end subroutine
+
+    subroutine krylov_equivalence()
+        ! The preconditioned-CG Newton step (retained factorisation, refactor
+        ! on slow CG) must reach the end state of the factor-and-solve step.
+        type(gs_state_t) :: mesh
+        type(landreman_frozen_t) :: landreman
+        type(tube_field_t) :: tube
+        type(cylindrical_chart_t) :: cylinder
+        type(ideal_map_t) :: direct, krylov
+        type(ideal_map_solve_report_t) :: rd, rk
+        real(dp) :: err
+        integer :: status
+        call mesh_build(mesh)
+        if (trim(mode) == 'krylov') then
+            call ideal_map_init(direct, mesh, cylinder, 1, 0, status)
+        else
+            call ideal_map_init(direct, mesh, chart, 1, 1, status, nphi=64)
+        end if
+        if (status /= 0) error stop 'krylov map init'
+        krylov = direct
+        direct%krylov_step = .false.; krylov%krylov_step = .true.
+        if (trim(mode) == 'krylov') then
+            call ideal_map_freeze(direct, landreman, status)
+            call ideal_map_freeze(krylov, landreman, status)
+        else
+            call ideal_map_freeze(direct, tube, status)
+            call ideal_map_freeze(krylov, tube, status)
+        end if
+        if (status /= 0) error stop 'krylov freeze'
+        call ideal_map_solve(direct, 1e-6_dp, 100, rd, status)
+        if (status /= 0) error stop 'direct step solve'
+        call ideal_map_solve(krylov, 1e-6_dp, 100, rk, status)
+        if (status /= 0) error stop 'krylov step solve'
+        err = maxval(abs(direct%x - krylov%x))
+        print '(a,2i4,a,2i4,a,i0,a,i0)', '[V] Newton its direct/krylov', &
+            rd%iterations, rk%iterations, ' factorisations', rd%factorizations, &
+            rk%factorizations, ' CG solves ', rk%krylov_solves, ' iterations ', &
+            rk%krylov_iterations
+        print '(a,es12.4,a,es12.4)', '[V] end state max |dx| ', err, &
+            ' relative energy difference ', abs(rd%energy - rk%energy)/abs(rd%energy)
+        if (rd%krylov_solves /= 0) error stop 'direct path used CG'
+        if (rk%krylov_solves < 1) error stop 'krylov path never used CG'
+        if (rk%factorizations >= rd%factorizations) error stop 'no factorisation saved'
+        if (err > 1e-5_dp) error stop 'krylov end state'
+        if (abs(rd%energy - rk%energy) > 1e-10_dp*abs(rd%energy)) &
+            error stop 'krylov end energy'
     end subroutine
 
     subroutine derivatives(map)
