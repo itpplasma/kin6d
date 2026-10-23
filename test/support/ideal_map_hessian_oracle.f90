@@ -12,7 +12,7 @@ module ideal_map_hessian_oracle
         csr_assemble_blocks
     implicit none
     private
-    public :: ideal_map_hessian_reference
+    public :: ideal_map_hessian_reference, point_jet
 contains
     subroutine point_jet(map, e, g, j, x, q, qd)
         ! q(3) and Q(k, i) = dq_k/ds_i at quadrature point g, plane j.

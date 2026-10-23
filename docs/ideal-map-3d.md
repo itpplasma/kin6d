@@ -351,7 +351,10 @@ solution psi_2D on the same mesh is the second oracle.
   Hessian against the frozen point-loop assembly
   (`test/support/ideal_map_hessian_oracle.f90`) on random 3D states, P2 through P6,
   N = 0..2, plain, nested-axis and position-gauge bases; agreement to 1e-12
-  of the largest entry and exact symmetry.
+  of the largest entry and exact symmetry. P4–P6 random directions are scaled
+  once to bound relative radius and reference-metric derivative changes by
+  1/8 at every sampled point, giving J/J0 >= (7/8)^4 in exact arithmetic.
+  The physical energy/J gate remains required; P2/P3 fixtures are unchanged.
 - `ideal_map_n0_solovev_a3_p{2,3}`, `ideal_map_n0_shaped_solovev_p{2,3}`:
   three-mesh ladders, observed order >= k + 1 - 0.4 against the exact flux and
   against the 2D solution. Measured (2026-10-13, finest pair; seed defect
