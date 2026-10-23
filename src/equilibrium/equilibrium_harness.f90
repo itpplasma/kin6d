@@ -6,6 +6,7 @@ module kin6d_equilibrium_harness
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_equilibrium_state, only: equilibrium_state_t
+    use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
     implicit none
     private
     public :: equilibrium_case_t, equilibrium_resolution_t, equilibrium_start_t
@@ -133,8 +134,11 @@ contains
         report%oracle = spec%oracle
         call equilibrium_start(start_name, start, status)
         if (status /= D8_OK) return
-        if (resolution%degree < 2 .or. resolution%degree > 3) return
-        if (resolution%boundary_nodes < 8) return
+        ! The psi lane needs the GS solver (P2/P3); the isoparametric map lane
+        ! admits every Lagrange degree of the triangle basis.
+        if (resolution%degree < 2) return
+        if (resolution%degree > merge(TRIANGLE_MAX_DEGREE, 3, lane == 'map')) return
+        if (resolution%boundary_nodes < merge(8, 4, resolution%degree <= 3)) return
         ! Map seeds are the retained interior pullback or nested-axis seed;
         ! the free-boundary offset registry currently belongs to the psi lane.
         if (lane == 'map' .and. start_name /= 'legacy') return

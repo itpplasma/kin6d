@@ -37,7 +37,8 @@ module kin6d_ideal_map
     ! tests at two weights.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES, &
+        TRIANGLE_MAX_DEGREE
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_map_leaves, only: ideal_energy_density, ideal_energy_gradient, &
@@ -265,9 +266,9 @@ contains
         real(dp), intent(in), optional :: mu0
         integer, intent(in), optional :: axis_degree
         type(gauss_quadrature_triangle_t) :: rule
-        real(dp) :: h(2, 2, 10)
+        real(dp) :: h(2, 2, TRIANGLE_MAX_NODES)
         real(dp), allocatable :: qxi(:), qeta(:), qw(:)
-        integer :: g, j, m, k, a, c, e, l, order
+        integer :: g, j, m, k, a, c, e, l, order, degree
         status = IDEAL_MAP_BAD_INPUT
         if (nfp < 1 .or. ntor < 0) return
         select type (chart)
@@ -278,7 +279,10 @@ contains
             if (nfp /= chart%field_periods()) return
         end select
         map%nloc = size(mesh%triangles, 1)
-        if (map%nloc /= 6 .and. map%nloc /= 10) return
+        ! Isoparametric Lagrange degree 2 .. TRIANGLE_MAX_DEGREE.
+        degree = nint((sqrt(8.0_dp*map%nloc + 1) - 3)/2)
+        if (degree < 2 .or. degree > TRIANGLE_MAX_DEGREE) return
+        if ((degree + 1)*(degree + 2)/2 /= map%nloc) return
         allocate (map%chart, source=chart)
         map%nfp = nfp; map%ntor = ntor; map%nmode = 2*ntor + 1
         map%nphi = 3*ntor + 1
@@ -289,7 +293,8 @@ contains
         map%conn = mesh%triangles
         map%reference = mesh%points
         map%boundary = mesh%boundary
-        order = 7
+        ! Degree 7 up to P3; the integrand of degree k maps needs 2k + 1 above.
+        order = max(7, 2*degree + 1)
         if (present(quadrature_order)) order = quadrature_order
         ! Symmetric Gauss rules up to degree 7; collapsed (Duffy) Gauss-Legendre
         ! rules of the requested polynomial degree above that.
@@ -321,7 +326,7 @@ contains
             end do
         end do
         map%ndof = 3*map%nmode*map%nodes
-        k = merge(2, 3, map%nloc == 6)
+        k = degree
         if (present(axis_degree)) map%axis_degree = axis_degree
         if (map%axis_degree >= 0) k = map%axis_degree + 1
         map%npoly = k*(k + 1)/2
@@ -715,7 +720,8 @@ contains
         type(ideal_map_t), intent(inout) :: fine
         type(ideal_map_t), intent(in) :: coarse
         integer, intent(out) :: status
-        real(dp) :: xi(2), shape(10), grad(2, 10), y(2)
+        real(dp) :: xi(2), shape(TRIANGLE_MAX_NODES), y(2)
+        real(dp) :: grad(2, TRIANGLE_MAX_NODES)
         integer :: a, e, k, owner, located, j
         status = IDEAL_MAP_BAD_INPUT
         if (fine%nmode /= coarse%nmode .or. fine%nfp /= coarse%nfp) return
@@ -755,7 +761,8 @@ contains
         ! Reference-metric form of the omega gauge term; weight relative to the
         ! largest physical omega stiffness R^2 |b_pol|^2/det G of the reference.
         type(ideal_map_t), intent(inout) :: map
-        real(dp) :: dg(2, 2), ginv(2, 2), y(2), chi_s(2), v(10), scale, w, metric, h33
+        real(dp) :: dg(2, 2), ginv(2, 2), y(2), chi_s(2), scale, w, metric, h33
+        real(dp) :: v(TRIANGLE_MAX_NODES)
         real(dp) :: pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
         integer :: e, g, n, j
         n = map%nloc
@@ -827,7 +834,7 @@ contains
         integer, intent(in) :: e
         real(dp), intent(in) :: xi(2), phi
         real(dp), intent(out) :: q(3), y(2)
-        real(dp) :: shape(10), grad(2, 10), t
+        real(dp) :: shape(TRIANGLE_MAX_NODES), grad(2, TRIANGLE_MAX_NODES), t
         integer :: a, k
         call triangle_basis_jet(xi, shape(:map%nloc), grad(:, :map%nloc))
         q = 0
