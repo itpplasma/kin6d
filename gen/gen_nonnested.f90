@@ -12,7 +12,7 @@ program gen_nonnested
     type(expr_t) :: gpr, gpp, gpz, gfr, gfp, gfz, ephi, gpar, gperp
     type(expr_t) :: bg, bf, coef, flux(3), current(3)
     type(expr_t) :: krr, krz, kzz, f0, fr, fz, data(6), lower, width, height
-    type(expr_t) :: rmin, chil
+    type(expr_t) :: rmin, chil, par2, force2, volume, length_scale, pressure_scale
     call arena%init()
     gpr = sym(arena, 'gpr'); gpp = sym(arena, 'gpp'); gpz = sym(arena, 'gpz')
     gfr = sym(arena, 'gfr'); gfp = sym(arena, 'gfp'); gfz = sym(arena, 'gfz')
@@ -73,6 +73,22 @@ program gen_nonnested
         ['br   ', 'bphi ', 'bz   ', 'gpr  ', 'gpp  ', 'gpz  ', 'gfr  ', &
         'gfp  ', 'gfz  ', 'ephi ', 'gpar ', 'gperp'], &
         ['jr', 'jp', 'jz'], current, ad=.true.)
+    ! I1 physical defects, separate from weak equation residuals and D3.
+    ! b.grad p and the force carried by -g_perp (I-bb) grad Phi.
+    call w%emit('island_defect_density', &
+        ['br   ', 'bphi ', 'bz   ', 'gpr  ', 'gpp  ', 'gpz  ', &
+        'gfr  ', 'gfp  ', 'gfz  ', 'gperp'], ['parallel2', 'force2   '], &
+        [bg**2/q, gperp**2*((bphi*gfz - bz*gfp)**2 &
+        + (bz*gfr - br*gfz)**2 + (br*gfp - bphi*gfr)**2)], &
+        ad=.true.)
+    par2 = sym(arena, 'par2'); force2 = sym(arena, 'force2')
+    volume = sym(arena, 'volume'); length_scale = sym(arena, 'length_scale')
+    pressure_scale = sym(arena, 'pressure_scale')
+    call w%emit('island_defect_norm', &
+        ['par2          ', 'force2        ', 'volume        ', &
+        'length_scale  ', 'pressure_scale'], ['epsilon_parallel', 'ohmic_force_rms '], &
+        [length_scale*sqrt(par2/volume)/pressure_scale, sqrt(force2/volume)], &
+        ad=.true.)
     ! NN2 equilibrated-flux data of the axisymmetric N = 0 block with
     ! measure R dR dZ, as a planar problem in dR dZ: tensor A = R K_pol,
     ! strong source R f0 and flux R (K_pol grad p_h - f_pol) of the weak load
