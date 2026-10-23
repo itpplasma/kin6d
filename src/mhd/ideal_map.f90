@@ -49,8 +49,8 @@ module kin6d_ideal_map
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks
-    use fortnum_krylov, only: real_conjugate_gradient_operator, &
-        real_conjugate_gradient, real_linear_operator_t, KRYLOV_OK
+    use fortnum_krylov, only: real_conjugate_gradient, real_linear_operator_t, &
+        KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, csc_normalize_symmetric_raw, &
@@ -230,6 +230,16 @@ module kin6d_ideal_map
         procedure :: apply => apply_damped_hessian
     end type
 
+    type, extends(real_linear_operator_t) :: mass_operator_t
+        ! Consistent L2 mass of the displacement dofs with held dofs as identity
+        ! rows (ideal_map_residual); all components belong to the caller.
+        type(ideal_map_t), pointer :: map => null()
+        real(dp), pointer :: mass(:, :, :, :) => null()
+        logical, pointer :: held(:) => null()
+    contains
+        procedure :: apply => apply_mass_operator
+    end type
+
     type, extends(real_linear_operator_t) :: retained_factor_t
         ! CG preconditioner: solve with the factorisation held by the caller.
         ! failed records a failed triangular solve (the input is then returned).
@@ -262,6 +272,35 @@ contains
                 output(row) = s
             end do
             !$omp end parallel do
+        end associate
+    end subroutine
+
+    subroutine apply_mass_operator(self, input, output)
+        class(mass_operator_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        integer :: ee, aa, bb, cc, mm, ka, kb
+        real(dp) :: modal
+        output = 0
+        associate (map => self%map, mass => self%mass, held => self%held)
+            do ee = 1, map%cells
+                do mm = 1, map%nmode
+                    modal = merge(2.0_dp, 1.0_dp, mm == 1)*acos(-1.0_dp)/map%nfp
+                    do cc = 1, 3
+                        do bb = 1, map%nloc
+                            kb = ideal_map_dof(map, cc, mm, map%conn(bb, ee))
+                            if (held(kb)) cycle
+                            do aa = 1, map%nloc
+                                ka = ideal_map_dof(map, cc, mm, map%conn(aa, ee))
+                                if (held(ka)) cycle
+                                output(ka) = output(ka) &
+                                    + modal*mass(aa, bb, cc, ee)*input(kb)
+                            end do
+                        end do
+                    end do
+                end do
+            end do
+            where (held) output = input
         end associate
     end subroutine
 
@@ -2185,16 +2224,18 @@ contains
         !     sigma = <|B - B_0|^2>/mu0 + <p>,  B_0 = F_vac/R e_phi,
         ! averages over the plasma volume, so a tokamak is measured against
         ! B_p^2 and pressure, never against B_phi^2.
-        type(ideal_map_t), intent(in) :: map
+        type(ideal_map_t), intent(in), target :: map
         real(dp), intent(in) :: f_vac
         real(dp), intent(out) :: residual, sigma
         integer, intent(out) :: status
-        real(dp), allocatable :: g(:), f(:), mass(:, :, :, :)
+        real(dp), allocatable :: g(:), f(:)
+        real(dp), allocatable, target :: mass(:, :, :, :)
+        type(mass_operator_t) :: mass_op
         real(dp) :: energy, q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
         real(dp) :: dx(3, 3), bx(3), jac, r, ephi(3), weight, volume, b2, pr, info_res
         real(dp) :: dphi, y(2), wv
         integer :: e, gq, j, a, b, m, info, iterations
-        logical, allocatable :: held(:)
+        logical, allocatable, target :: held(:)
         ! This diagnostic's mass and background field are cylindrical.
         residual = huge(1.0_dp); sigma = 0
         status = IDEAL_MAP_BAD_INPUT
@@ -2234,7 +2275,10 @@ contains
             end do
         end do
         f = 0
-        call real_conjugate_gradient_operator(apply_mass, g, f, 1.0e-12_dp, &
+        mass_op%map => map
+        mass_op%mass => mass
+        mass_op%held => held
+        call real_conjugate_gradient(mass_op, g, f, 1.0e-12_dp, &
             10*map%ndof, info, iterations, info_res)
         status = IDEAL_MAP_OK
         if (info /= KRYLOV_OK) status = IDEAL_MAP_SOLVE_FAILED
@@ -2272,32 +2316,6 @@ contains
                 area = area + sum(map%weight*map%det(:, ee))
             end do
         end function
-
-        subroutine apply_mass(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            integer :: ee, aa, bb, cc, mm, ka, kb
-            real(dp) :: modal
-            output = 0
-            do ee = 1, map%cells
-                do mm = 1, map%nmode
-                    modal = merge(2.0_dp, 1.0_dp, mm == 1)*acos(-1.0_dp)/map%nfp
-                    do cc = 1, 3
-                        do bb = 1, map%nloc
-                            kb = ideal_map_dof(map, cc, mm, map%conn(bb, ee))
-                            if (held(kb)) cycle
-                            do aa = 1, map%nloc
-                                ka = ideal_map_dof(map, cc, mm, map%conn(aa, ee))
-                                if (held(ka)) cycle
-                                output(ka) = output(ka) &
-                                    + modal*mass(aa, bb, cc, ee)*input(kb)
-                            end do
-                        end do
-                    end do
-                end do
-            end do
-            where (held) output = input
-        end subroutine
     end subroutine
 
     subroutine ideal_map_mode_norms(map, norms)
