@@ -41,8 +41,8 @@ module kin6d_ideal_map
         TRIANGLE_MAX_DEGREE
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_grad_shafranov, only: gs_state_t
-    use kin6d_ideal_map_leaves, only: ideal_energy_density, ideal_energy_gradient, &
-        ideal_energy_hessian
+    use kin6d_ideal_map_leaves, only: ideal_point_gradient_jets, &
+        ideal_point_hessian_jets
     use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t, curve_chart_t
     use kin6d_curve_chart_leaves, only: curve_omega_metric
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
@@ -156,6 +156,10 @@ module kin6d_ideal_map
         logical, allocatable :: boundary(:), fixed(:)
         real(dp), allocatable :: weight(:), shape(:, :), dshape(:, :, :)
         real(dp), allocatable :: phi(:), trig(:, :), dtrig(:, :)
+        ! Fourier-line products of the Hessian contraction over the nphi planes,
+        ! pphi(j, m + nmode (m' - 1), t) = T_t(m, j) T'_t(m', j) for the pairs
+        ! (trig, trig), (trig, dtrig), (dtrig, dtrig), t = 1, 2, 3.
+        real(dp), allocatable :: pphi(:, :, :)
         ! Frozen master-coordinate data b(3, q, e), p(q, e), reference det(q, e).
         real(dp), allocatable :: b(:, :, :), p(:, :), det(:, :)
         ! Coefficients x(3, mode, node): q1, q2 and omega.
@@ -356,6 +360,15 @@ contains
                 map%trig(2*k + 1, j) = sin(k*nfp*map%phi(j))
                 map%dtrig(2*k, j) = -k*nfp*sin(k*nfp*map%phi(j))
                 map%dtrig(2*k + 1, j) = k*nfp*cos(k*nfp*map%phi(j))
+            end do
+        end do
+        allocate (map%pphi(map%nphi, map%nmode**2, 3))
+        do k = 1, map%nmode
+            do m = 1, map%nmode
+                map%pphi(:, m + map%nmode*(k - 1), 1) = map%trig(m, :)*map%trig(k, :)
+                map%pphi(:, m + map%nmode*(k - 1), 2) = map%trig(m, :)*map%dtrig(k, :)
+                map%pphi(:, m + map%nmode*(k - 1), 3) = &
+                    map%dtrig(m, :)*map%dtrig(k, :)
             end do
         end do
         map%ndof = 3*map%nmode*map%nodes
@@ -883,83 +896,35 @@ contains
         y = matmul(map%reference(:, map%conn(:, e)), shape(:map%nloc))
     end subroutine
 
-    subroutine local_derivatives(map, e, g, j, x, w, jac, gv, hv, want_hessian)
-        ! Energy density w, Jacobian and its first/second derivatives with
-        ! respect to v = (q(1:3), Q(1:3, 1:3)) (index 3 + k + 3*(i-1) for Q(k,i)).
+    subroutine point_gradient(map, e, g, j, x, w, jac, gv)
+        ! Energy density w, Jacobian and the gradient with respect to
+        ! v = (q(1:3), Q(1:3, 1:3)) (index 3 + k + 3*(i-1) for Q(k,i)): the
+        ! generated chain-rule leaf (gen/gen_ideal_map.f90) on the chart jet.
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: e, g, j
         real(dp), intent(in) :: x(:, :, :)
-        real(dp), intent(out) :: w, jac, gv(12), hv(12, 12)
-        logical, intent(in) :: want_hessian
+        real(dp), intent(out) :: w, jac, gv(12)
         real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
-        real(dp) :: dx(3, 3), gd(3, 3), hd(9, 9), dvx(9, 12), hflat(45)
-        integer :: a, i, k, m, n, r, c
         call point_jet(map, e, g, j, x, q, qd)
         call map%chart%jet(q, pos, d1, d2, d3)
-        dx = matmul(d1, qd)
-        call ideal_energy_density(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
-            dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
-            map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, &
-            map%sigma, w, jac)
-        call ideal_energy_gradient(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
-            dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
-            map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, &
-            map%sigma, gd(1, 1), gd(2, 1), gd(3, 1), gd(1, 2), &
-            gd(2, 2), gd(3, 2), gd(1, 3), gd(2, 3), gd(3, 3))
-        ! dDX(a,i)/dv: q_m -> sum_k d2(a,k,m) Q(k,i); Q(k,i') -> d1(a,k) delta.
-        dvx = 0
-        do i = 1, 3
-            do a = 1, 3
-                r = a + 3*(i - 1)
-                do m = 1, 3
-                    dvx(r, m) = dot_product(d2(a, :, m), qd(:, i))
-                end do
-                do k = 1, 3
-                    dvx(r, 3 + k + 3*(i - 1)) = d1(a, k)
-                end do
-            end do
-        end do
-        gv = matmul(reshape(gd, [9]), dvx)
-        hv = 0
-        if (.not. want_hessian) return
-        call hessian_leaf(hflat)
-        n = 0
-        do c = 1, 9
-            do r = 1, c
-                n = n + 1
-                hd(r, c) = hflat(n); hd(c, r) = hflat(n)
-            end do
-        end do
-        hv = matmul(transpose(dvx), matmul(hd, dvx))
-        do m = 1, 3
-            do n = 1, 3
-                do i = 1, 3
-                    do a = 1, 3
-                        hv(m, n) = hv(m, n) + gd(a, i)*dot_product(d3(a, :, m, n), &
-                            qd(:, i))
-                    end do
-                end do
-            end do
-            do i = 1, 3
-                do k = 1, 3
-                    r = 3 + k + 3*(i - 1)
-                    hv(m, r) = hv(m, r) + dot_product(gd(:, i), d2(:, k, m))
-                    hv(r, m) = hv(m, r)
-                end do
-            end do
-        end do
-    contains
-        subroutine hessian_leaf(t)
-            real(dp), intent(out) :: t(45)
-            call ideal_energy_hessian(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
-                dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), map%b(1, g, e), &
-                map%b(2, g, e), map%b(3, g, e), map%p(g, e), map%mu0, &
-                map%sigma, t(1), t(2), t(3), t(4), t(5), t(6), t(7), &
-                t(8), t(9), t(10), t(11), t(12), t(13), t(14), t(15), t(16), t(17), &
-                t(18), t(19), t(20), t(21), t(22), t(23), t(24), t(25), t(26), &
-                t(27), t(28), t(29), t(30), t(31), t(32), t(33), t(34), t(35), &
-                t(36), t(37), t(38), t(39), t(40), t(41), t(42), t(43), t(44), t(45))
-        end subroutine
+        call ideal_point_gradient_jets(d1, d2, d3, qd, map%b(:, g, e), map%p(g, e), &
+            map%mu0, map%sigma, w, jac, gv)
+    end subroutine
+
+    subroutine point_hessian(map, e, g, j, x, w, jac, gv, hp)
+        ! As point_gradient with the Hessian with respect to v, packed in the
+        ! group order of gen/gen_ideal_map.f90: hp(1:45) the upper triangle of
+        ! the block of v(1:9), hp(46:72) the rows v(1:9) of the columns
+        ! v(10:12), hp(73:78) the upper triangle of the block of v(10:12).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(in) :: x(:, :, :)
+        real(dp), intent(out) :: w, jac, gv(12), hp(78)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        call point_jet(map, e, g, j, x, q, qd)
+        call map%chart%jet(q, pos, d1, d2, d3)
+        call ideal_point_hessian_jets(d1, d2, d3, qd, map%b(:, g, e), map%p(g, e), &
+            map%mu0, map%sigma, w, jac, gv, hp)
     end subroutine
 
     pure subroutine test_functions(map, g, j, a, m, f)
@@ -982,7 +947,7 @@ contains
         integer, intent(out) :: status
         real(dp), intent(out), optional :: gradient(:), min_jacobian
         real(dp), allocatable :: local(:, :), cell_energy(:), cell_jac(:)
-        real(dp) :: w, jac, gv(12), hv(12, 12), f(0:3), dphi, weight, minjac
+        real(dp) :: w, jac, gv(12), f(0:3), dphi, weight, minjac
         integer :: e, g, j, a, m, c, l
         logical :: want
         want = present(gradient)
@@ -994,13 +959,13 @@ contains
         ! or on the order of an OpenMP reduction.
         !$omp parallel do default(none) shared(map, x, local, want, dphi, &
         !$omp cell_energy, cell_jac) &
-        !$omp private(e, g, j, a, m, c, l, w, jac, gv, hv, f, weight) schedule(static)
+        !$omp private(e, g, j, a, m, c, l, w, jac, gv, f, weight) schedule(static)
         do e = 1, map%cells
             local(:, e) = 0
             cell_energy(e) = 0; cell_jac(e) = huge(1.0_dp)
             do j = 1, map%nphi
                 do g = 1, map%nq
-                    call local_derivatives(map, e, g, j, x, w, jac, gv, hv, .false.)
+                    call point_gradient(map, e, g, j, x, w, jac, gv)
                     cell_jac(e) = min(cell_jac(e), jac/map%det(g, e))
                     weight = map%weight(g)*dphi
                     cell_energy(e) = cell_energy(e) + weight*w
@@ -1051,127 +1016,289 @@ contains
     subroutine ideal_map_hessian(map, x, matrix)
         ! Assembled coefficient Hessian (all Fourier modes coupled) as CSR. The
         ! sparsity pattern of a matrix already built for this map is reused.
+        ! Per cell the weighted point Hessians hv(12, 12) of v = (q, Q) are
+        ! contracted in stages instead of one rank update per point:
+        !   K[(r,c),(r',c')](m,m',g) = sum_j T_r(m,j) T_r'(m',j) hv_j      (planes)
+        !   full[(a,m,c),(a',m',c')] = sum_g,s,s' phi_s(a,g) phi_s'(a',g) K_ss'
+        !                                                                   (space)
+        !   blocks = P^T full P, reflected                              (reduction)
+        ! with r = 0, 1, 2 for (N T, dN/ds1 T, dN/ds2 T) and r = 3 for N dT/ds3.
+        ! The plane stage is one DGEMM per trig/dtrig pairing over the map-level
+        ! products pphi. The space stage merges r = 0 and 3 (both carry N) into
+        ! s = 1, 2, 3 and runs two DGEMM families. Workspaces are thread-private
+        ! and allocated once per parallel region.
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: x(:, :, :)
         type(csr_matrix_t), intent(inout) :: matrix
-        real(dp), allocatable :: blocks(:, :, :), fa(:, :), fb(:, :), full(:, :)
-        real(dp), allocatable :: half(:, :)
-        real(dp) :: w, jac, gv(12), hv(12, 12), dphi, weight, s
-        integer :: e, g, j, a, m, c, r, l, lb, nl, c2, r2, nr
-        nl = 3*map%nmode*map%nloc
-        nr = 2*map%nmode*map%nloc + 2*map%npoly*map%nmode
-        allocate (blocks(nr, nr, map%cells))
+        interface
+            subroutine dgemm(ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
+                import :: dp
+                character, intent(in) :: ta, tb
+                integer, intent(in) :: m, n, k, lda, ldb, ldc
+                real(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+                real(dp), intent(inout) :: c(ldc, *)
+            end subroutine
+        end interface
+        real(dp), allocatable :: blocks(:, :, :), phig(:, :, :), phik(:, :)
+        real(dp), allocatable :: hwa(:, :), hwb(:, :), hwc(:, :), ka(:, :), kb(:, :)
+        real(dp), allocatable :: kc(:, :), ks(:, :), yw(:, :), ft(:, :)
+        real(dp), allocatable :: full(:, :), half(:, :)
+        real(dp) :: w, jac, gv(12), hp(78), dphi, weight
+        integer :: e, g, j, a, c, l, k, r, nl, nr, nlm, nmm, nmc, nloc, nq, nphi
+        integer :: nmode
+        nloc = map%nloc; nq = map%nq; nphi = map%nphi; nmode = map%nmode
+        nlm = nloc*nmode
+        nl = 3*nlm
+        nr = 2*nlm + 2*map%npoly*nmode
+        nmm = nmode**2
+        nmc = 9*nmm
+        allocate (blocks(nr, nr, map%cells), phig(3, nloc, nq), phik(3*nq, nloc))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
-        !$omp parallel do default(none) shared(map, x, blocks, dphi, nl, nr) &
-        !$omp private(e, g, j, a, m, c, r, l, lb, w, jac, gv, hv, weight, fa, fb, &
-        !$omp s, c2, r2, full, half) schedule(static)
+        ! phi_s(a, g) for s = 1, 2, 3: N, dN/ds1, dN/ds2.
+        do g = 1, nq
+            do a = 1, nloc
+                phig(1, a, g) = map%shape(a, g)
+                phig(2, a, g) = map%dshape(1, a, g)
+                phig(3, a, g) = map%dshape(2, a, g)
+                do k = 1, 3
+                    phik(k + 3*(g - 1), a) = phig(k, a, g)
+                end do
+            end do
+        end do
+        !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, nr, &
+        !$omp nlm, nmm, nmc, nloc, nq, nphi, nmode) &
+        !$omp private(e, g, j, a, c, l, k, r, w, jac, gv, hp, weight, hwa, hwb, hwc, &
+        !$omp ka, kb, kc, ks, yw, ft, full, half)
+        allocate (hwa(nphi, 45*nq), hwb(nphi, 27*nq), hwc(nphi, 6*nq), &
+            ka(nmm, 45*nq), kb(nmm, 27*nq), kc(nmm, 6*nq), ks(3*nmc, 3*nq), &
+            yw(nmc, 3*nq*nloc), ft(nmc, nloc*nloc), full(nl, nl), half(nl, nr))
+        !$omp do schedule(static)
         do e = 1, map%cells
-            allocate (fa(0:3, map%nloc*map%nmode), fb(nl, 12), full(nl, nl), &
-                half(nl, nr))
-            full = 0
-            do j = 1, map%nphi
-                do g = 1, map%nq
-                    call local_derivatives(map, e, g, j, x, w, jac, gv, hv, .true.)
-                    weight = map%weight(g)*dphi
-                    l = 0
-                    do a = 1, map%nloc
-                        do m = 1, map%nmode
-                            l = l + 1
-                            call test_functions(map, g, j, a, m, fa(:, l))
-                        end do
+            ! Weighted point Hessians; column (pair, g) of the plane stage input.
+            do g = 1, nq
+                weight = map%weight(g)*dphi
+                do j = 1, nphi
+                    call point_hessian(map, e, g, j, x, w, jac, gv, hp)
+                    do k = 1, 45
+                        hwa(j, k + 45*(g - 1)) = weight*hp(k)
                     end do
-                    ! fb(row, v) = sum_r f_r(row) hv(idx(c,r), v)
-                    do l = 1, map%nloc*map%nmode
-                        do c = 1, 3
-                            lb = 3*(l - 1) + c
-                            fb(lb, :) = 0
-                            do r = 0, 3
-                                fb(lb, :) = fb(lb, :) + fa(r, l)*hv(c + 3*r, :)
-                            end do
-                        end do
+                    do k = 1, 27
+                        hwb(j, k + 27*(g - 1)) = weight*hp(45 + k)
                     end do
-                    do l = 1, map%nloc*map%nmode
-                        do c2 = 1, 3
-                            lb = 3*(l - 1) + c2
-                            do r2 = 0, 3
-                                s = weight*fa(r2, l)
-                                full(:, lb) = full(:, lb) + s*fb(:, c2 + 3*r2)
-                            end do
-                        end do
+                    do k = 1, 6
+                        hwc(j, k + 6*(g - 1)) = weight*hp(72 + k)
                     end do
                 end do
             end do
-            do a = 1, map%nloc
-                do c = 1, map%nloc
-                    l = 3*(1 + map%nmode*(a - 1))
-                    r = 3*(1 + map%nmode*(c - 1))
+            ! Plane stage: K(m + nmode (m' - 1), pair, g) per pairing.
+            call dgemm('T', 'N', nmm, 45*nq, nphi, 1.0_dp, map%pphi(1, 1, 1), nphi, &
+                hwa, nphi, 0.0_dp, ka, nmm)
+            call dgemm('T', 'N', nmm, 27*nq, nphi, 1.0_dp, map%pphi(1, 1, 2), nphi, &
+                hwb, nphi, 0.0_dp, kb, nmm)
+            call dgemm('T', 'N', nmm, 6*nq, nphi, 1.0_dp, map%pphi(1, 1, 3), nphi, &
+                hwc, nphi, 0.0_dp, kc, nmm)
+            call hessian_merge_pairs(nmode, nq, ka, kb, kc, ks)
+            ! Space stage: contract s' with phi_s'(a', g), then (s, g) with
+            ! phi_s(a, g); yw(mmcc, s + 3 (g - 1) + 3 nq (a' - 1)).
+            do g = 1, nq
+                call dgemm('N', 'N', 3*nmc, nloc, 3, 1.0_dp, ks(1, 3*(g - 1) + 1), &
+                    3*nmc, phig(1, 1, g), 3, 0.0_dp, yw(1, 3*(g - 1) + 1), &
+                    3*nmc*nq)
+            end do
+            do a = 1, nloc
+                call dgemm('N', 'N', nmc, nloc, 3*nq, 1.0_dp, &
+                    yw(1, 3*nq*(a - 1) + 1), nmc, phik, 3*nq, 0.0_dp, &
+                    ft(1, nloc*(a - 1) + 1), nmc)
+            end do
+            call hessian_scatter(nmode, nloc, ft, full)
+            do a = 1, nloc
+                do c = 1, nloc
+                    l = 3*(1 + nmode*(a - 1))
+                    r = 3*(1 + nmode*(c - 1))
                     full(l, r) = full(l, r) + map%omega_gauge(a, c, e)
                 end do
             end do
-            ! Reduce to (nu, omega): P maps (nu, omega) of local node-mode l to
-            ! (d1 nu, d2 nu, omega).
-            do l = 1, map%nloc*map%nmode
-                a = map%conn(1 + (l - 1)/map%nmode, e)
-                half(:, 2*l - 1) = matmul(full(:, 3*l - 2:3*l), map%basis(:, 1, a))
-                half(:, 2*l) = matmul(full(:, 3*l - 2:3*l), map%basis(:, 2, a))
-            end do
-            do m = 1, map%nmode
-                do j = 1, map%npoly
-                    do c = 1, 2
-                        r = 2*map%nmode*map%nloc + c + 2*(j - 1) + 2*map%npoly*(m - 1)
-                        half(:, r) = 0
-                        do a = 1, map%nloc
-                            l = m + map%nmode*(a - 1)
-                            if (allocated(map%axis_vec)) then
-                                half(:, r) = half(:, r) &
-                                    + matmul(full(:, 3*l - 2:3*l - 1), &
-                                    map%axis_vec(:, c + 2*(j - 1), map%conn(a, e)))
-                                cycle
-                            end if
-                            half(:, r) = half(:, r) &
-                                + map%axis_basis(j, map%conn(a, e))*full(:, 3*l - 3 + c)
-                        end do
-                    end do
-                end do
-            end do
-            do l = 1, map%nloc*map%nmode
-                a = map%conn(1 + (l - 1)/map%nmode, e)
-                blocks(2*l - 1, :, e) = matmul(map%basis(:, 1, a), half(3*l - 2:3*l, :))
-                blocks(2*l, :, e) = matmul(map%basis(:, 2, a), half(3*l - 2:3*l, :))
-            end do
-            do m = 1, map%nmode
-                do j = 1, map%npoly
-                    do c = 1, 2
-                        r = 2*map%nmode*map%nloc + c + 2*(j - 1) + 2*map%npoly*(m - 1)
-                        blocks(r, :, e) = 0
-                        do a = 1, map%nloc
-                            l = m + map%nmode*(a - 1)
-                            if (allocated(map%axis_vec)) then
-                                blocks(r, :, e) = blocks(r, :, e) + matmul( &
-                                    map%axis_vec(:, c + 2*(j - 1), map%conn(a, e)), &
-                                    half(3*l - 2:3*l - 1, :))
-                                cycle
-                            end if
-                            blocks(r, :, e) = blocks(r, :, e) &
-                                + map%axis_basis(j, map%conn(a, e))*half(3*l - 3 + c, :)
-                        end do
-                    end do
-                end do
-            end do
-            ! The scalar-energy Hessian has one authoritative triangle.
-            ! Reflect after P^T H P: cancellation in independently evaluated
-            ! contractions must not create an antisymmetric Newton operator.
-            do c = 1, nr
-                do r = 1, c - 1
-                    blocks(r, c, e) = blocks(c, r, e)
-                end do
-            end do
-            deallocate (fa, fb, full, half)
+            call hessian_reduce(map, e, full, half, blocks(:, :, e))
         end do
-        !$omp end parallel do
+        !$omp end do
+        deallocate (hwa, hwb, hwc, ka, kb, kc, ks, yw, ft, full, half)
+        !$omp end parallel
         if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
             call csr_build_pattern(map%nred, map%redconn, .false., matrix)
         call csr_assemble_blocks(matrix, map%redconn, blocks)
+    end subroutine
+
+    subroutine hessian_merge_pairs(nmode, nq, ka, kb, kc, ks)
+        ! Packed pair blocks K_uu'(m, m') (u, u' = 1..12 with u = c + 3 r) to
+        ! ks(mmcc + nmc (s - 1), s' + 3 (g - 1)), mmcc = m + nmode (m' - 1)
+        ! + nmm (c - 1 + 3 (c' - 1)). The lower triangle is the transposed
+        ! upper one, K_u'u(m', m) = K_uu'(m, m'), and r = 0 and r = 3 both
+        ! carry N, so they share s = 1.
+        integer, intent(in) :: nmode, nq
+        real(dp), intent(in) :: ka(:, :), kb(:, :), kc(:, :)
+        real(dp), intent(out) :: ks(:, :)
+        integer :: g, u, v, nmm, nmc
+        nmm = nmode**2
+        nmc = 9*nmm
+        ks = 0
+        do g = 1, nq
+            do v = 1, 9
+                do u = 1, v
+                    call add_pair(u, v, ka(:, u + v*(v - 1)/2 + 45*(g - 1)))
+                end do
+            end do
+            do v = 10, 12
+                do u = 1, 9
+                    call add_pair(u, v, kb(:, u + 9*(v - 10) + 27*(g - 1)))
+                end do
+                do u = 10, v
+                    call add_pair(u, v, kc(:, u - 9 + (v - 10)*(v - 9)/2 + 6*(g - 1)))
+                end do
+            end do
+        end do
+    contains
+        subroutine add_pair(u, v, kv)
+            integer, intent(in) :: u, v
+            real(dp), intent(in) :: kv(:)
+            integer :: m, mp, cu, cv, su, sv, row
+            cu = mod(u - 1, 3) + 1
+            cv = mod(v - 1, 3) + 1
+            su = merge(1, (u - 1)/3 + 1, (u - 1)/3 == 3)
+            sv = merge(1, (v - 1)/3 + 1, (v - 1)/3 == 3)
+            do mp = 1, nmode
+                do m = 1, nmode
+                    row = m + nmode*(mp - 1) + nmm*(cu - 1 + 3*(cv - 1)) + nmc*(su - 1)
+                    ks(row, sv + 3*(g - 1)) = ks(row, sv + 3*(g - 1)) &
+                        + kv(m + nmode*(mp - 1))
+                end do
+            end do
+            if (u == v) return
+            do mp = 1, nmode
+                do m = 1, nmode
+                    row = mp + nmode*(m - 1) + nmm*(cv - 1 + 3*(cu - 1)) + nmc*(sv - 1)
+                    ks(row, su + 3*(g - 1)) = ks(row, su + 3*(g - 1)) &
+                        + kv(m + nmode*(mp - 1))
+                end do
+            end do
+        end subroutine
+    end subroutine
+
+    subroutine hessian_scatter(nmode, nloc, ft, full)
+        ! ft(mmcc, a + nloc (a' - 1)) to full(c + 3 (m - 1) + 3 nmode (a - 1),
+        ! c' + 3 (m' - 1) + 3 nmode (a' - 1)).
+        integer, intent(in) :: nmode, nloc
+        real(dp), intent(in) :: ft(:, :)
+        real(dp), intent(out) :: full(:, :)
+        integer :: a, ap, c, cp, m, mp, nmm
+        nmm = nmode**2
+        do ap = 1, nloc
+            do a = 1, nloc
+                do cp = 1, 3
+                    do c = 1, 3
+                        do mp = 1, nmode
+                            do m = 1, nmode
+                                full(c + 3*(m - 1) + 3*nmode*(a - 1), &
+                                    cp + 3*(mp - 1) + 3*nmode*(ap - 1)) = &
+                                    ft(m + nmode*(mp - 1) + nmm*(c - 1 + 3*(cp - 1)), &
+                                    a + nloc*(ap - 1))
+                            end do
+                        end do
+                    end do
+                end do
+            end do
+        end do
+    end subroutine
+
+    subroutine hessian_reduce(map, e, full, half, blk)
+        ! Cell block P^T full P in the reduced (nu, omega, axis) dofs, reflected
+        ! from the lower triangle. P maps (nu, omega) of local node-mode l to
+        ! (d1 nu, d2 nu, omega) through map%basis and the axis modes to the
+        ! components of the node vectors.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e
+        real(dp), intent(in) :: full(:, :)
+        real(dp), intent(out) :: half(:, :), blk(:, :)
+        real(dp) :: b1(3), b2(3), av(2), t, s
+        integer :: i, l, a, node, m, jp, c, r, nlm, nl, nr, nmode, nloc
+        logical :: nested
+        nmode = map%nmode; nloc = map%nloc
+        nlm = nloc*nmode
+        nl = 3*nlm
+        nr = 2*nlm + 2*map%npoly*nmode
+        nested = allocated(map%axis_vec)
+        do l = 1, nlm
+            node = map%conn(1 + (l - 1)/nmode, e)
+            b1 = map%basis(:, 1, node)
+            b2 = map%basis(:, 2, node)
+            do i = 1, nl
+                half(i, 2*l - 1) = b1(1)*full(i, 3*l - 2) + b1(2)*full(i, 3*l - 1) &
+                    + b1(3)*full(i, 3*l)
+                half(i, 2*l) = b2(1)*full(i, 3*l - 2) + b2(2)*full(i, 3*l - 1) &
+                    + b2(3)*full(i, 3*l)
+            end do
+        end do
+        do m = 1, nmode
+            do jp = 1, map%npoly
+                do c = 1, 2
+                    r = 2*nlm + c + 2*(jp - 1) + 2*map%npoly*(m - 1)
+                    half(:, r) = 0
+                    do a = 1, nloc
+                        l = m + nmode*(a - 1)
+                        node = map%conn(a, e)
+                        if (nested) then
+                            av = map%axis_vec(:, c + 2*(jp - 1), node)
+                            do i = 1, nl
+                                half(i, r) = half(i, r) + av(1)*full(i, 3*l - 2) &
+                                    + av(2)*full(i, 3*l - 1)
+                            end do
+                        else
+                            t = map%axis_basis(jp, node)
+                            do i = 1, nl
+                                half(i, r) = half(i, r) + t*full(i, 3*l - 3 + c)
+                            end do
+                        end if
+                    end do
+                end do
+            end do
+        end do
+        do c = 1, nr
+            do l = 1, nlm
+                node = map%conn(1 + (l - 1)/nmode, e)
+                b1 = map%basis(:, 1, node)
+                b2 = map%basis(:, 2, node)
+                blk(2*l - 1, c) = b1(1)*half(3*l - 2, c) + b1(2)*half(3*l - 1, c) &
+                    + b1(3)*half(3*l, c)
+                blk(2*l, c) = b2(1)*half(3*l - 2, c) + b2(2)*half(3*l - 1, c) &
+                    + b2(3)*half(3*l, c)
+            end do
+            do m = 1, nmode
+                do jp = 1, map%npoly
+                    do i = 1, 2
+                        r = 2*nlm + i + 2*(jp - 1) + 2*map%npoly*(m - 1)
+                        s = 0
+                        do a = 1, nloc
+                            l = m + nmode*(a - 1)
+                            node = map%conn(a, e)
+                            if (nested) then
+                                av = map%axis_vec(:, i + 2*(jp - 1), node)
+                                s = s + av(1)*half(3*l - 2, c) + av(2)*half(3*l - 1, c)
+                            else
+                                s = s + map%axis_basis(jp, node)*half(3*l - 3 + i, c)
+                            end if
+                        end do
+                        blk(r, c) = s
+                    end do
+                end do
+            end do
+        end do
+        ! The scalar-energy Hessian has one authoritative triangle.
+        ! Reflect after P^T H P: cancellation in independently evaluated
+        ! contractions must not create an antisymmetric Newton operator.
+        do c = 1, nr
+            do r = 1, c - 1
+                blk(r, c) = blk(c, r)
+            end do
+        end do
     end subroutine
 
     subroutine ideal_map_solve(map, tolerance, max_iterations, report, status, verbose, &
