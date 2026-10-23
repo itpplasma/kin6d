@@ -1436,6 +1436,12 @@ foreach(mode landreman figure8)
     set_tests_properties(ideal_map_curve_chart_${mode} PROPERTIES TIMEOUT 120
         PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endforeach()
+# CG Newton step with a retained factorisation against factor-and-solve.
+foreach(mode krylov krylov3d)
+    add_test(NAME ideal_map_newton_${mode} COMMAND test_curve_chart_solver ${mode})
+    set_tests_properties(ideal_map_newton_${mode} PROPERTIES TIMEOUT 120
+        PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 foreach(k 2 3)
     add_test(NAME equilibrium_core_d7_readback_p${k}
         COMMAND test_equilibrium_core readback ${k})

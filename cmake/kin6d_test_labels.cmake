@@ -70,6 +70,10 @@ kin6d_test_labels(ideal_map_curve_chart_landreman fast CLASSES mhd
     TARGETS test_curve_chart_solver)
 kin6d_test_labels(ideal_map_curve_chart_figure8 fast CLASSES mhd
     TARGETS test_curve_chart_solver)
+kin6d_test_labels(ideal_map_newton_krylov fast CLASSES mhd
+    TARGETS test_curve_chart_solver)
+kin6d_test_labels(ideal_map_newton_krylov3d fast CLASSES mhd
+    TARGETS test_curve_chart_solver)
 kin6d_test_labels(ideal_map_n3_leakage fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_solovev_a3_p2 slow CLASSES mhd
