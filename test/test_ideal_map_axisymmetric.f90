@@ -442,8 +442,8 @@ contains
         ! must not change the solve: the same A3 solve with verify_factor
         ! (FortSparse residual check, FortSparse canonical projection compared
         ! with the cache) reproduces map%x and the iteration counts bitwise.
-        ! A trial that is not positive definite (undamped start) must refactor
-        ! on the retained symbolic analysis: one analysis per solve.
+        ! A rejected trial (undamped start) must refactor on the retained
+        ! symbolic analysis: one analysis per solve.
         type(gs_state_t) :: state
         type(ideal_map_t) :: map, checked
         type(ideal_map_solve_report_t) :: report, checked_report
@@ -469,7 +469,7 @@ contains
                 error stop 'factor: verified roundoff differs'
             if (report%analyses /= 1) error stop 'factor: more than one analysis'
             if (k == 2 .and. report%factorizations <= report%iterations) &
-                error stop 'factor: no non-positive-definite trial exercised'
+                error stop 'factor: no rejected trial exercised'
         end do
     end subroutine
 
