@@ -49,7 +49,8 @@ module kin6d_ideal_map
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_element_to_csr, only: csr_matrix_t, csr_build_pattern, &
         csr_assemble_blocks
-    use fortnum_krylov, only: real_conjugate_gradient_operator, KRYLOV_OK
+    use fortnum_krylov, only: real_conjugate_gradient, real_linear_operator_t, &
+        KRYLOV_OK
     use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
         sparse_destroy, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_NATIVE, csc_normalize_symmetric_raw, &
@@ -126,6 +127,15 @@ module kin6d_ideal_map
         ! Position gauge instead of transversals + axis expansion + omega.
         logical :: position_gauge = .false.
         real(dp) :: initial_damping = 1.0e-6_dp
+        ! Non-nested Newton step by preconditioned CG on the assembled damped
+        ! Hessian with the last factorisation as preconditioner (inexact
+        ! Newton, Eisenstat-Walker forcing). The factorisation is redone when
+        ! CG needs more than krylov_refactor iterations or does not converge
+        ! within krylov_max. False (default): factor and solve at every trial.
+        ! Off by default because the P3 seed ladder (stop at 1e-11) crawls
+        ! along near-null directions that inexact steps do not resolve.
+        logical :: krylov_step = .false.
+        integer :: krylov_refactor = 8, krylov_max = 20
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
@@ -202,9 +212,109 @@ module kin6d_ideal_map
         ! Factorisation attempts, and symbolic analyses (fresh factors and
         ! refactors that report no reuse).
         integer :: analyses = 0, factorizations = 0
+        ! Non-nested Newton: step trials, CG solves and CG iterations.
+        integer :: trials = 0
+        integer :: krylov_solves = 0, krylov_iterations = 0
         type(factor_cache_t), private :: cache
     end type
+
+    type, extends(real_linear_operator_t) :: damped_hessian_t
+        ! Masked Hessian plus shift on the free rows and identity on the fixed
+        ! rows, as the CG operator of the Newton step. matrix and shift belong
+        ! to the caller and are read at every apply.
+        type(csr_matrix_t), pointer :: matrix => null()
+        real(dp), pointer :: shift(:) => null()
+        logical, allocatable :: fixed(:)
+        real(dp), allocatable :: masked(:)
+    contains
+        procedure :: apply => apply_damped_hessian
+    end type
+
+    type, extends(real_linear_operator_t) :: mass_operator_t
+        ! Consistent L2 mass of the displacement dofs with held dofs as identity
+        ! rows (ideal_map_residual); all components belong to the caller.
+        type(ideal_map_t), pointer :: map => null()
+        real(dp), pointer :: mass(:, :, :, :) => null()
+        logical, pointer :: held(:) => null()
+    contains
+        procedure :: apply => apply_mass_operator
+    end type
+
+    type, extends(real_linear_operator_t) :: retained_factor_t
+        ! CG preconditioner: solve with the factorisation held by the caller.
+        ! failed records a failed triangular solve (the input is then returned).
+        type(sparse_solver_t), pointer :: solver => null()
+        logical :: failed = .false.
+    contains
+        procedure :: apply => apply_retained_factor
+    end type
 contains
+    subroutine apply_damped_hessian(self, input, output)
+        class(damped_hessian_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        real(dp) :: s
+        integer :: row, kk
+        self%masked = merge(0.0_dp, input, self%fixed)
+        associate (rowptr => self%matrix%rowptr, colidx => self%matrix%colidx, &
+                   val => self%matrix%val, shift => self%shift, &
+                   fixed => self%fixed, masked => self%masked)
+            !$omp parallel do private(row, kk, s) schedule(static)
+            do row = 1, size(fixed)
+                if (fixed(row)) then
+                    output(row) = input(row)
+                    cycle
+                end if
+                s = shift(row)*input(row)
+                do kk = rowptr(row), rowptr(row + 1) - 1
+                    s = s + val(kk)*masked(colidx(kk))
+                end do
+                output(row) = s
+            end do
+            !$omp end parallel do
+        end associate
+    end subroutine
+
+    subroutine apply_mass_operator(self, input, output)
+        class(mass_operator_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        integer :: ee, aa, bb, cc, mm, ka, kb
+        real(dp) :: modal
+        output = 0
+        associate (map => self%map, mass => self%mass, held => self%held)
+            do ee = 1, map%cells
+                do mm = 1, map%nmode
+                    modal = merge(2.0_dp, 1.0_dp, mm == 1)*acos(-1.0_dp)/map%nfp
+                    do cc = 1, 3
+                        do bb = 1, map%nloc
+                            kb = ideal_map_dof(map, cc, mm, map%conn(bb, ee))
+                            if (held(kb)) cycle
+                            do aa = 1, map%nloc
+                                ka = ideal_map_dof(map, cc, mm, map%conn(aa, ee))
+                                if (held(ka)) cycle
+                                output(ka) = output(ka) &
+                                    + modal*mass(aa, bb, cc, ee)*input(kb)
+                            end do
+                        end do
+                    end do
+                end do
+            end do
+            where (held) output = input
+        end associate
+    end subroutine
+
+    subroutine apply_retained_factor(self, input, output)
+        class(retained_factor_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        type(fortsparse_status_t) :: pstatus
+        call sparse_solve(self%solver, input, output, pstatus)
+        if (.not. status_ok(pstatus)) then
+            self%failed = .true.; output = input
+        end if
+    end subroutine
+
     pure integer function ideal_map_dof(map, component, mode, node) result(dof)
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: component, mode, node
@@ -1323,22 +1433,42 @@ contains
         ! Absolute gradient the tolerance refers to (default: the initial one),
         ! e.g. the first-phase gradient for a polishing solve.
         real(dp), intent(in), optional :: reference_gradient
-        type(csr_matrix_t) :: matrix, omatrix
-        type(sparse_solver_t) :: solver, osolver
+        type(csr_matrix_t), target :: matrix
+        type(csr_matrix_t) :: omatrix
+        type(sparse_solver_t), target :: solver
+        type(sparse_solver_t) :: osolver
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
-        real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
+        real(dp), allocatable :: trial(:, :, :), rhs(:)
+        real(dp), allocatable, target :: shift(:)
         logical, allocatable :: omask(:), damped(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
         real(dp) :: cap_x, cap_w, t0, trial_minjac
-        integer :: it, i, k, tries, estatus
-        logical :: talk, accepted, factored, ofactored, nested
+        real(dp) :: eta, eta_prev, gnorm_prev
+        real(dp), allocatable :: krylov_rhs(:)
+        type(damped_hessian_t) :: damped_op
+        type(retained_factor_t) :: factor_pc
+        real(dp), parameter :: eta_max = 0.1_dp, eta_min = 1.0e-4_dp
+        real(dp), parameter :: eta_gamma = 0.9_dp
+        integer :: it, i, k, tries, estatus, kinfo, kiters
+        logical :: talk, accepted, factored, ofactored, nested, refresh
+        logical :: retained
         talk = .false.
-        factored = .false.; ofactored = .false.
+        factored = .false.; ofactored = .false.; refresh = .false.
+        ! factored: solver holds the symbolic analysis, which factor_masked
+        ! keeps after a pivot that is not positive; retained: it also holds a
+        ! valid numerical factor, the CG preconditioner.
+        retained = .false.
+        eta = eta_max; eta_prev = eta_max; gnorm_prev = 0
         if (present(verbose)) talk = verbose
         nested = map%omega_elimination .and. .not. map%position_gauge
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
-            diag(map%nred), rhs(map%nred), shift(map%nred))
+            diag(map%nred), rhs(map%nred), shift(map%nred), krylov_rhs(map%nred))
+        damped_op%matrix => matrix
+        damped_op%shift => shift
+        damped_op%fixed = map%fixed
+        allocate (damped_op%masked(map%nred))
+        factor_pc%solver => solver
         call omega_mask(map, nested, omask)
         damped = .not. (map%fixed .or. omask)
         t0 = wall_seconds()
@@ -1392,20 +1522,37 @@ contains
                 end if
             end if
             if (.not. nested) then
+            ! Eisenstat-Walker forcing (choice 2, safeguarded) for the CG step.
+            if (it > 1) then
+                eta = eta_gamma*(gnorm/gnorm_prev)**2
+                if (eta_gamma*eta_prev**2 > 0.1_dp) &
+                    eta = max(eta, eta_gamma*eta_prev**2)
+            end if
+            eta = min(max(eta, eta_min), eta_max)
             do tries = 1, 30
                 t0 = wall_seconds()
                 shift = merge(mu*(abs(diag) + 1.0e-12_dp*scale), 0.0_dp, damped)
-                call factor_masked(map, matrix, .not. map%fixed, shift, solver, &
-                    factored, estatus, report)
-                if (estatus /= 0) then
-                    mu = mu*10; cycle
-                end if
+                report%trials = report%trials + 1
                 rhs = -gred
-                call sparse_solve(solver, rhs, step, sstatus)
-                report%factor_s = report%factor_s + wall_seconds() - t0
-                if (.not. status_ok(sstatus)) then
-                    status = IDEAL_MAP_SOLVE_FAILED; call cleanup(); return
+                kinfo = -1
+                if (map%krylov_step .and. retained .and. .not. refresh) then
+                    call krylov_solve()
+                    if (kiters > map%krylov_refactor) refresh = .true.
                 end if
+                if (kinfo /= KRYLOV_OK) then
+                    call factor_masked(map, matrix, .not. map%fixed, shift, solver, &
+                        factored, estatus, report)
+                    retained = estatus == 0
+                    if (estatus /= 0) then
+                        mu = mu*10; cycle
+                    end if
+                    refresh = .false.
+                    call sparse_solve(solver, rhs, step, sstatus)
+                    if (.not. status_ok(sstatus)) then
+                        status = IDEAL_MAP_SOLVE_FAILED; call cleanup(); return
+                    end if
+                end if
+                report%factor_s = report%factor_s + wall_seconds() - t0
                 where (map%fixed) step = 0
                 call ideal_map_expand(map, step, full)
                 ! Trust region: near-null (relabelling) directions can carry
@@ -1449,6 +1596,7 @@ contains
                 call ideal_map_reduce(map, grad, gred)
                 where (map%fixed) gred = 0
             end if
+            gnorm_prev = gnorm; eta_prev = eta
             gnorm = norm2(gred)
             report%energy = energy; report%gradient = gnorm/g0
             report%min_jacobian = minjac; report%damping = mu
@@ -1475,6 +1623,27 @@ contains
                     cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
                     - 1:3)))))
             end do
+        end subroutine
+
+        subroutine krylov_solve()
+            ! step = -(masked H + shift)^-1 gred by CG to the relative residual
+            ! eta, preconditioned with the retained factorisation (identity on
+            ! the fixed rows, as in factor_masked). kinfo = KRYLOV_OK only for
+            ! a converged solve; otherwise the caller refactors. The system is
+            ! scaled to a unit right-hand side: the fortnum tolerance is
+            ! absolute below unit norm.
+            real(dp) :: bnorm, residual
+            kiters = 0; factor_pc%failed = .false.
+            bnorm = norm2(rhs)
+            if (.not. bnorm > 0) return
+            krylov_rhs = rhs/bnorm
+            step = 0
+            call real_conjugate_gradient(damped_op, krylov_rhs, step, eta, &
+                map%krylov_max, kinfo, kiters, residual, factor_pc)
+            report%krylov_solves = report%krylov_solves + 1
+            report%krylov_iterations = report%krylov_iterations + kiters
+            if (factor_pc%failed) kinfo = -1
+            if (kinfo == KRYLOV_OK) step = bnorm*step
         end subroutine
 
         subroutine nested_line_search()
@@ -2055,16 +2224,18 @@ contains
         !     sigma = <|B - B_0|^2>/mu0 + <p>,  B_0 = F_vac/R e_phi,
         ! averages over the plasma volume, so a tokamak is measured against
         ! B_p^2 and pressure, never against B_phi^2.
-        type(ideal_map_t), intent(in) :: map
+        type(ideal_map_t), intent(in), target :: map
         real(dp), intent(in) :: f_vac
         real(dp), intent(out) :: residual, sigma
         integer, intent(out) :: status
-        real(dp), allocatable :: g(:), f(:), mass(:, :, :, :)
+        real(dp), allocatable :: g(:), f(:)
+        real(dp), allocatable, target :: mass(:, :, :, :)
+        type(mass_operator_t) :: mass_op
         real(dp) :: energy, q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
         real(dp) :: dx(3, 3), bx(3), jac, r, ephi(3), weight, volume, b2, pr, info_res
         real(dp) :: dphi, y(2), wv
         integer :: e, gq, j, a, b, m, info, iterations
-        logical, allocatable :: held(:)
+        logical, allocatable, target :: held(:)
         ! This diagnostic's mass and background field are cylindrical.
         residual = huge(1.0_dp); sigma = 0
         status = IDEAL_MAP_BAD_INPUT
@@ -2104,7 +2275,10 @@ contains
             end do
         end do
         f = 0
-        call real_conjugate_gradient_operator(apply_mass, g, f, 1.0e-12_dp, &
+        mass_op%map => map
+        mass_op%mass => mass
+        mass_op%held => held
+        call real_conjugate_gradient(mass_op, g, f, 1.0e-12_dp, &
             10*map%ndof, info, iterations, info_res)
         status = IDEAL_MAP_OK
         if (info /= KRYLOV_OK) status = IDEAL_MAP_SOLVE_FAILED
@@ -2142,32 +2316,6 @@ contains
                 area = area + sum(map%weight*map%det(:, ee))
             end do
         end function
-
-        subroutine apply_mass(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            integer :: ee, aa, bb, cc, mm, ka, kb
-            real(dp) :: modal
-            output = 0
-            do ee = 1, map%cells
-                do mm = 1, map%nmode
-                    modal = merge(2.0_dp, 1.0_dp, mm == 1)*acos(-1.0_dp)/map%nfp
-                    do cc = 1, 3
-                        do bb = 1, map%nloc
-                            kb = ideal_map_dof(map, cc, mm, map%conn(bb, ee))
-                            if (held(kb)) cycle
-                            do aa = 1, map%nloc
-                                ka = ideal_map_dof(map, cc, mm, map%conn(aa, ee))
-                                if (held(ka)) cycle
-                                output(ka) = output(ka) &
-                                    + modal*mass(aa, bb, cc, ee)*input(kb)
-                            end do
-                        end do
-                    end do
-                end do
-            end do
-            where (held) output = input
-        end subroutine
     end subroutine
 
     subroutine ideal_map_mode_norms(map, norms)
