@@ -20,7 +20,8 @@ module kin6d_map_equilibrium
     use kin6d_gs_axis_recovery, only: gs_magnetic_axis
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use kin6d_gs_equilibrium, only: gs_geometry_view, gs_readback_resolution
-    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls
+    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_bernstein_controls, &
+        TRIANGLE_MAX_NODES
     use kin6d_curved_triangle, only: triangle_geometry, triangle_locate
     use delaunay_types, only: mesh_t
     use point_location, only: locate_point
@@ -54,7 +55,8 @@ contains
         real(dp), intent(in) :: f_vac
         real(dp), intent(in), optional :: psi_bound
         type(map_field_t), allocatable :: field
-        real(dp) :: controls(10), point(2), jac(2, 2), curvature(2, 2, 2)
+        real(dp) :: controls(TRIANGLE_MAX_NODES), point(2), jac(2, 2)
+        real(dp) :: curvature(2, 2, 2)
         real(dp) :: det, inverse(2, 2), chi, grad(2), b3, pressure
         real(dp) :: form(3), dj(2, 2)
         integer :: e, a, j, g, local
@@ -227,7 +229,8 @@ contains
         real(dp), intent(in) :: xi(2)
         real(dp), intent(out) :: value(EQ_VALUES)
         integer, intent(out) :: status
-        real(dp) :: shape(10), grad(2, 10), reference(2), dg(2, 2), a(2, 2)
+        real(dp) :: shape(TRIANGLE_MAX_NODES), grad(2, TRIANGLE_MAX_NODES)
+        real(dp) :: reference(2), dg(2, 2), a(2, 2)
         real(dp) :: omega(2), chi, cg(2), b3, pressure, r, jac
         integer :: n
         n = size(field%geometry%triangles, 1)

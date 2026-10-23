@@ -14,8 +14,40 @@ module kin6d_triangle_basis
     implicit none
     private
     public :: triangle_basis_jet, cubic_segment_roots, cubic_segment_stationary
-    public :: triangle_bernstein_controls
+    public :: triangle_bernstein_controls, triangle_node_powers
+    ! Lagrange degrees above 3 use the generated cardinal products of FortFEM's
+    ! arbitrary-order triangle basis, with the Hessians that it does not return.
+    integer, parameter, public :: TRIANGLE_MAX_DEGREE = 8
+    integer, parameter, public :: TRIANGLE_MAX_NODES = &
+        (TRIANGLE_MAX_DEGREE + 1)*(TRIANGLE_MAX_DEGREE + 2)/2
 contains
+    pure subroutine triangle_node_powers(degree, powers)
+        ! Barycentric powers of the nodal basis in KIN6D's local order: the
+        ! three vertices, then the degree - 1 nodes of each edge k -> k + 1,
+        ! then the interior nodes. Node i sits at powers(:, i)/degree.
+        integer, intent(in) :: degree
+        integer, intent(out) :: powers(:, :)
+        integer :: i, k, next, b, c
+        powers = 0
+        do k = 1, 3
+            powers(k, k) = degree
+        end do
+        do k = 1, 3
+            next = mod(k, 3) + 1
+            do i = 1, degree - 1
+                powers(k, 3 + (k - 1)*(degree - 1) + i) = degree - i
+                powers(next, 3 + (k - 1)*(degree - 1) + i) = i
+            end do
+        end do
+        i = 3*degree
+        do c = 1, degree - 2
+            do b = 1, degree - 1 - c
+                i = i + 1
+                powers(:, i) = [degree - b - c, b, c]
+            end do
+        end do
+    end subroutine
+
     pure subroutine triangle_bernstein_controls(values, controls)
         real(dp), intent(in) :: values(:)
         real(dp), intent(out) :: controls(:)
@@ -36,20 +68,58 @@ contains
             end do
             controls(10) = (27*values(10) - sum(values(:3)) &
                 - 3*sum(controls(4:9)))/6
+        else if (size(values) > 10) then
+            controls = bernstein_solve(values)
         end if
     end subroutine
+
+    pure function bernstein_solve(values) result(controls)
+        ! Bernstein-Bezier controls of the nodal polynomial: solve
+        ! sum_j B_j(node_i) c_j = v_i with partial pivoting. Both index sets
+        ! follow triangle_node_powers, so c_j belongs to the multi-index of node j.
+        real(dp), intent(in) :: values(:)
+        real(dp) :: controls(size(values))
+        real(dp) :: matrix(size(values), size(values) + 1), row(size(values) + 1)
+        real(dp) :: lambda(3), factorial(0:TRIANGLE_MAX_DEGREE), coefficient
+        integer :: powers(3, size(values)), n, degree, i, j, k, pivot
+        n = size(values)
+        degree = nint((sqrt(8.0_dp*n + 1) - 3)/2)
+        call triangle_node_powers(degree, powers)
+        factorial(0) = 1
+        do k = 1, degree
+            factorial(k) = k*factorial(k - 1)
+        end do
+        do i = 1, n
+            lambda = real(powers(:, i), dp)/degree
+            do j = 1, n
+                coefficient = factorial(degree) &
+                    /(factorial(powers(1, j))*factorial(powers(2, j)) &
+                    *factorial(powers(3, j)))
+                matrix(i, j) = coefficient*lambda(1)**powers(1, j) &
+                    *lambda(2)**powers(2, j)*lambda(3)**powers(3, j)
+            end do
+            matrix(i, n + 1) = values(i)
+        end do
+        do k = 1, n
+            pivot = k - 1 + maxloc(abs(matrix(k:, k)), dim=1)
+            row = matrix(k, :); matrix(k, :) = matrix(pivot, :); matrix(pivot, :) = row
+            matrix(k, :) = matrix(k, :)/matrix(k, k)
+            do i = 1, n
+                if (i /= k) matrix(i, :) = matrix(i, :) - matrix(i, k)*matrix(k, :)
+            end do
+        end do
+        controls = matrix(:, n + 1)
+    end function
     pure subroutine triangle_basis_jet(xi, value, gradient, hessian)
         real(dp), intent(in) :: xi(2)
         real(dp), intent(out) :: value(:), gradient(:, :)
         real(dp), intent(out), optional :: hessian(:, :, :)
-        integer, parameter :: powers(3, 10) = reshape([ &
-            3, 0, 0, 0, 3, 0, 0, 0, 3, &
-            2, 1, 0, 1, 2, 0, 0, 2, 1, 0, 1, 2, 1, 0, 2, 2, 0, 1, &
-            1, 1, 1], [3, 10])
-        real(dp) :: v(0:3, 3), g(0:3, 3), h(0:3, 3), lambda(3)
+        integer :: powers(3, TRIANGLE_MAX_NODES)
+        real(dp) :: v(0:TRIANGLE_MAX_DEGREE, 3), g(0:TRIANGLE_MAX_DEGREE, 3)
+        real(dp) :: h(0:TRIANGLE_MAX_DEGREE, 3), lambda(3)
         real(dp) :: next_v, next_g, next_h, unused, unused_z
         real(dp) :: local_hessian(2, 2)
-        integer :: i, j, k, a, b, c
+        integer :: i, j, k, a, b, c, degree
         if (size(value) == 3) then
             do i = 1, 3
                 call generated_p1_jet(i, xi(1), xi(2), value(i), &
@@ -67,17 +137,20 @@ contains
             ! triangle API lacks Hessians and allocates on each evaluation.
             ! Restrict the generated tetrahedral Hessian action to z=0 with
             ! a constant fourth factor, keeping the same symbolic definition.
+            ! The size of `value` selects the degree: 10, 15, ..., 45 nodes.
+            degree = nint((sqrt(8.0_dp*size(value) + 1) - 3)/2)
+            call triangle_node_powers(degree, powers(:, :size(value)))
             lambda = [1 - sum(xi), xi]
             v(0, :) = 1; g(0, :) = 0; h(0, :) = 0
             do j = 1, 3
-                do k = 1, 3
+                do k = 1, degree
                     call generated_cardinal_product_jet1_order2(v(k - 1, j), &
-                        g(k - 1, j), h(k - 1, j), 3.0_dp, real(k - 1, dp), &
+                        g(k - 1, j), h(k - 1, j), real(degree, dp), real(k - 1, dp), &
                         lambda(j), next_v, next_g, next_h)
                     v(k, j) = next_v/k; g(k, j) = next_g/k; h(k, j) = next_h/k
                 end do
             end do
-            do i = 1, 10
+            do i = 1, size(value)
                 a = powers(1, i); b = powers(2, i); c = powers(3, i)
                 call generated_factor_product_jet2_order1(v(a, 1), g(a, 1), &
                     v(b, 2), g(b, 2), v(c, 3), g(c, 3), value(i), &

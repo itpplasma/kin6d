@@ -4,7 +4,8 @@ module kin6d_grad_shafranov
    use triangle_compat, only: tc_result_t, triangulate_compat
    use basis_p1_2d_module, only: basis_p1_2d_t
    use basis_p2_2d_module, only: basis_p2_2d_t
-   use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_stationary
+   use kin6d_triangle_basis, only: triangle_basis_jet, cubic_segment_stationary, &
+       triangle_node_powers, TRIANGLE_MAX_DEGREE, TRIANGLE_MAX_NODES
    use fortfem_triangle_level_quadrature, only: triangle_level_workspace_t, &
        initialize_triangle_level_workspace, integrate_triangle_levels, &
        triangle_level_coefficients
@@ -31,6 +32,9 @@ module kin6d_grad_shafranov
    implicit none
    private
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
+   ! Orders above GS_MAX_SOLVER_ORDER need geometry_only and give a mesh without
+   ! an assembled operator (ready false).
+   integer, parameter, public :: GS_MAX_SOLVER_ORDER = 3
    public :: gs_recovery_t
    integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
    integer, parameter :: geometry_arithmetic = 3
@@ -118,7 +122,8 @@ module kin6d_grad_shafranov
    end interface
 contains
     subroutine initialize_gs(state, contour, max_area, status, element_order, &
-                             curved, curve, interior_points, interior_chain)
+                             curved, curve, interior_points, interior_chain, &
+                             geometry_only)
         !! Meshes the closed outer curve `contour` (counter-clockwise). The optional
         !! `interior_chain` is a second closed loop strictly inside it (free-boundary
         !! plasma boundary Gamma_p): its segments are constrained edges, never
@@ -133,6 +138,7 @@ contains
         procedure(boundary_curve), optional :: curve
         real(dp), intent(in), optional :: interior_points(:, :)
         real(dp), intent(in), optional :: interior_chain(:, :)
+        logical, intent(in), optional :: geometry_only
         type(tc_result_t) :: mesh
         type(basis_p1_2d_t) :: basis
         type(gauss_quadrature_triangle_t) :: quadrature
@@ -150,7 +156,12 @@ contains
         if (present(curved)) state%mapped = curved
         if (present(curve)) state%mapped = .true.
         if (present(element_order)) state%element_order = element_order
-        if (state%element_order < 1 .or. state%element_order > 3) return
+        if (state%element_order < 1) return
+        if (state%element_order > TRIANGLE_MAX_DEGREE) return
+        if (state%element_order > GS_MAX_SOLVER_ORDER) then
+            if (.not. present(geometry_only)) return
+            if (.not. geometry_only) return
+        end if
         if (state%mapped .and. state%element_order < 2) return
         if (size(contour, 1) /= 2) return
         n = size(contour, 2)
@@ -313,6 +324,10 @@ contains
                     end do
                     state%curved_cell(e) = .true.
                 end do
+                if (state%element_order > GS_MAX_SOLVER_ORDER) then
+                    call blend_interior_nodes(state, e)
+                    cycle
+                end if
                 if (state%element_order /= 3) cycle
                 ! Extend the leading quadratic edge curvature to the bubble
                 ! node. Leaving it affine creates O(h^2) cubic map terms and
@@ -352,6 +367,7 @@ contains
             if (stat /= 0) return
             state%gradient(:, :, e) = grads
             state%area(e) = det/2
+            if (state%element_order > GS_MAX_SOLVER_ORDER) cycle
             do q = 1, quadrature%n_points
                 call gs_cell_data(state, e, [quadrature%xi(q), quadrature%eta(q)], &
                     point, det, shape(:ndof), grad_q(:, :ndof), &
@@ -370,6 +386,10 @@ contains
                 state%diagonal(j) = state%diagonal(j) + state%stiffness(l, l, e)
             end do
         end do
+        if (state%element_order > GS_MAX_SOLVER_ORDER) then
+            status = 0
+            return
+        end if
         where (state%boundary) state%diagonal = 1
         if (minval(state%diagonal) <= 0) return
         if (.not. all(ieee_is_finite(state%diagonal))) return
@@ -428,12 +448,15 @@ contains
         real(dp) :: t
         integer :: e, k, other, other_edge, first, second, count, j, next
         integer :: order, edge_node, local_node, remote_node, capacity
+        integer :: powers(3, TRIANGLE_MAX_NODES)
         status = 1
         order = state%element_order
         allocate (state%triangles((order + 1)*(order + 2)/2, mesh%ntriangles))
         state%triangles = 0
         state%triangles(1:3, :) = mesh%triangles
-        capacity = mesh%npoints + (3*(order - 1) + order - 2)*mesh%ntriangles
+        call triangle_node_powers(order, powers(:, :size(state%triangles, 1)))
+        capacity = mesh%npoints + (3*(order - 1) + (order - 1)*(order - 2)/2) &
+            *mesh%ntriangles
         allocate (points(2, capacity), boundary(capacity))
         points(:, :mesh%npoints) = mesh%points
         boundary(:mesh%npoints) = mesh%pointmarkers /= 0
@@ -478,11 +501,65 @@ contains
                 boundary(count) = .false.
                 state%triangles(10, e) = count
             end if
+            do k = 1, merge((order - 1)*(order - 2)/2, 0, order > 3)
+                ! Equispaced interior nodes, in triangle_node_powers order.
+                count = count + 1
+                points(:, count) = matmul(mesh%points(:, mesh%triangles(:, e)), &
+                    real(powers(:, 3*order + k), dp))/order
+                boundary(count) = .false.
+                state%triangles(3*order + k, e) = count
+            end do
         end do
         state%points = points(:, :count)
         state%boundary = boundary(:count)
         status = 0
     end subroutine higher_order_mesh
+
+    subroutine blend_interior_nodes(state, e)
+        ! Interior nodes of a cell with curved edges at order > 3. With
+        ! d_k(t) = x_edge(t) - chord_k(t) = t (1 - t) q_k(t) (q_k of degree
+        ! order - 2, interpolated from the edge nodes), the interior node at
+        ! barycentric lambda moves by sum_k lambda_k lambda_next q_k(lambda_next).
+        ! That polynomial field equals d_k on edge k and vanishes on the other
+        ! edges, and its degree-m term scales as h^(m+2) with the curve, like
+        ! the exact blended map. Straight edges have q = 0.
+        type(gs_state_t), intent(inout) :: state
+        integer, intent(in) :: e
+        integer :: powers(3, TRIANGLE_MAX_NODES), order, nloc, i, j, k, m, next
+        real(dp) :: vertex(2, 3), lambda(3), t(TRIANGLE_MAX_DEGREE - 1)
+        real(dp) :: q(2, TRIANGLE_MAX_DEGREE - 1), shift(2), weight, qvalue(2)
+        order = state%element_order
+        nloc = size(state%triangles, 1)
+        call triangle_node_powers(order, powers(:, :nloc))
+        vertex = state%points(:, state%triangles(1:3, e))
+        do j = 1, order - 1
+            t(j) = real(j, dp)/order
+        end do
+        do i = 3*order + 1, nloc
+            lambda = real(powers(:, i), dp)/order
+            shift = 0
+            do k = 1, 3
+                next = mod(k, 3) + 1
+                do j = 1, order - 1
+                    q(:, j) = (state%points(:, state%triangles( &
+                        3 + (k - 1)*(order - 1) + j, e)) &
+                        - (1 - t(j))*vertex(:, k) - t(j)*vertex(:, next)) &
+                        /(t(j)*(1 - t(j)))
+                end do
+                qvalue = 0
+                do j = 1, order - 1
+                    weight = 1
+                    do m = 1, order - 1
+                        if (m /= j) weight = weight*(lambda(next) - t(m))/(t(j) - t(m))
+                    end do
+                    qvalue = qvalue + weight*q(:, j)
+                end do
+                shift = shift + lambda(k)*lambda(next)*qvalue
+            end do
+            state%points(:, state%triangles(i, e)) = &
+                matmul(vertex, lambda) + shift
+        end do
+    end subroutine blend_interior_nodes
 
     pure subroutine element_shapes(state, e, xi, eta, shape, gradients, hessians)
         type(gs_state_t), intent(in) :: state

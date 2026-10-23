@@ -11,6 +11,10 @@ program test_ideal_map_axisymmetric
     !   leakage          N=1, nfp=3, n=3 interior seed: n/=0 content decays
     !   solovev <k>      A3 ladder, degree k, observed orders
     !   shaped <k>       shaped ladder, degree k, observed orders
+    !   shapedho <k>     the shaped ladder at degree k = 4 .. 8 against the exact
+    !                    flux only (the 2D GS oracle stops at P3)
+    !   basis            nodal, derivative and mesh checks of the Lagrange
+    !                    triangle jets and curved meshes for k = 2 .. 8
     !   seed <k>, seedshaped <k>  frozen data from the nested-seed builder
     !                    (boundary + exact q(s), p(s), Phi_edge) with the seed
     !                    axis at the boundary-box centre (VMEC-like), offset from
@@ -26,7 +30,8 @@ program test_ideal_map_axisymmetric
         ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, &
         ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT, ideal_map_gauge_project
     use fortfem_element_to_csr, only: csr_matrix_t
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_triangle_basis, only: triangle_basis_jet, triangle_node_powers, &
+        triangle_bernstein_controls, TRIANGLE_MAX_NODES
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
     use kin6d_ideal_map, only: ideal_frozen_t
     use kin6d_ideal_seed, only: nested_seed_t, ideal_seed_init
@@ -101,7 +106,8 @@ program test_ideal_map_axisymmetric
         gauge_hessian_only = trim(argument) == 'h'
         omega_elimination = trim(argument) == 'n'
     end if
-    call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped')
+    call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped' &
+        .or. trim(mode) == 'shapedho')
     select case (trim(mode))
     case ('seedboundary')
         call seed_boundary_check()
@@ -113,6 +119,10 @@ program test_ideal_map_axisymmetric
         call leakage_check()
     case ('solovev', 'shaped')
         call ladder(pullback)
+    case ('shapedho')
+        call ladder_exact(pullback)
+    case ('basis')
+        call basis_checks()
     case ('seed', 'seedshaped')
         call seed_ladder()
     case ('seeddiag')
@@ -137,7 +147,8 @@ contains
         end do
         h = 2*pi*a/n
         if (shaped) h = h*1.35_dp
-        call initialize_gs(state, contour, h*h/2, status, k, curve=boundary_point)
+        call initialize_gs(state, contour, h*h/2, status, k, curve=boundary_point, &
+            geometry_only=.true.)
         if (status /= 0) error stop 'mesh'
     end subroutine
 
@@ -364,13 +375,15 @@ contains
         ! errors(1) ||psi_exact(X) - chi||, (2) ||psi_2D(X) - chi||,
         ! (3) seed ||psi_exact(y) - chi||, (4) ||psi_2D - psi_exact|| (2D alone),
         ! all over the reference with area weights, divided by |psi_axis|*sqrt(A).
+        ! Without state2d the 2D entries (2) and (4) are zero.
         type(ideal_map_t), intent(in) :: map
-        type(gs_state_t), intent(in) :: state2d
+        type(gs_state_t), intent(in), optional :: state2d
         class(ideal_frozen_t), intent(in) :: field
         real(dp), intent(out) :: errors(4)
         type(gauss_quadrature_triangle_t) :: rule
         real(dp) :: q(3), y(2), chi, ex, two, ex_y, g(2), area, w, b3, p
-        real(dp) :: shape(10), dshape(2, 10), dg(2, 2), det
+        real(dp) :: shape(TRIANGLE_MAX_NODES), dshape(2, TRIANGLE_MAX_NODES)
+        real(dp) :: dg(2, 2), det
         integer :: e, k, status, owner
         call rule%init(7)
         errors = 0; area = 0; owner = 1
@@ -386,8 +399,11 @@ contains
                 call field%evaluate(y, chi, g, b3, p)
                 call psi_exact(q(1), q(2), ex, g)
                 call psi_exact(y(1), y(2), ex_y, g)
-                call locate_sample(state2d, q(1), q(2), owner, two, status)
-                if (status /= 0) error stop '2D sample'
+                two = 0
+                if (present(state2d)) then
+                    call locate_sample(state2d, q(1), q(2), owner, two, status)
+                    if (status /= 0) error stop '2D sample'
+                end if
                 errors(1) = errors(1) + w*(ex - chi)**2
                 errors(2) = errors(2) + w*(two - chi)**2
                 errors(3) = errors(3) + w*(ex_y - chi)**2
@@ -750,6 +766,174 @@ contains
         if (rates(2) < degree + 1 - 0.4_dp) error stop '3D N=0 vs 2D order'
         if (errors(1, 3) > 1.0e-2_dp*errors(3, 3)) error stop 'seed not corrected'
     end subroutine
+
+    subroutine ladder_exact(field)
+        ! The shaped ladder of `ladder` against the exact flux only: degrees above 3
+        ! have no 2D GS solution to compare with. Same gates on the exact-flux
+        ! error: observed order >= degree + 1 - 0.4 and the seed X0 = id is
+        ! corrected by two orders of magnitude.
+        class(ideal_frozen_t), intent(in) :: field
+        type(gs_state_t) :: gs
+        type(ideal_map_t) :: map
+        type(ideal_map_solve_report_t) :: report
+        real(dp) :: errors(4, 3), rates(2)
+        integer :: mesh, n, base
+        integer(int64) :: begin, finish, rate
+        if (degree < 4) error stop 'shapedho needs degree >= 4'
+        ! Meshes n, 2n, 4n with the error well above the Newton floor of about
+        ! 1e-8 (relative gradient 1e-7 is reachable; 1e-8 stalls on the
+        ! near-null relabelling directions).
+        base = merge(24, merge(16, 12, degree == 5), degree == 4)
+        ! Degree 7 underintegrates the energy of degree >= 4 maps: Newton then
+        ! exploits J ~ 0 between quadrature points. Take 2k + 1.
+        if (command_argument_count() < 4) quadrature_order = 2*degree + 1
+        solve_tolerance = 1.0e-7_dp
+        print '(a)', 'case k n dof newton wall_s d3D_exact seed'
+        do mesh = 1, 3
+            n = base*2**(mesh - 1)
+            call make_mesh(n, degree, gs)
+            call system_clock(begin, rate)
+            call build_map(gs, 1, 0, map, field)
+            call solve_map(map, report, verbose_solve)
+            call system_clock(finish)
+            call defects(map, field=field, errors=errors(:, mesh))
+            print '(a8,i2,i5,i8,i4,f9.2,2es12.4)', trim(mode), degree, n, &
+                count(.not. map%fixed), report%iterations, &
+                real(finish - begin, dp)/rate, errors(1, mesh), errors(3, mesh)
+            print '(a,5f9.2)', &
+                '  wall energy hessian factor+solve (analysis numeric) ', &
+                report%energy_s, report%hessian_s, report%factor_s, &
+                report%analysis_s, report%numeric_s
+        end do
+        rates = log(errors(1, 1:2)/errors(1, 2:3))/log(2.0_dp)
+        print '(a,2f8.3)', 'exact-flux orders pair 1, 2 ', rates
+        if (rates(2) < degree + 1 - 0.4_dp) error stop 'high-order exact-flux order'
+        if (errors(1, 3) > 1.0e-2_dp*errors(3, 3)) error stop 'seed not corrected'
+    end subroutine
+
+    subroutine basis_checks()
+        ! Lagrange jets at degree 2 .. 8: nodal (Kronecker) property at the
+        ! barycentric lattice of triangle_node_powers, partition of unity,
+        ! analytic gradients/Hessians against central differences, the
+        ! Bernstein controls reproducing the nodal polynomial, and curved
+        ! meshes with positive Jacobians at every node and quadrature point.
+        integer :: k, nloc, i, j, c, e, g, d
+        integer :: powers(3, TRIANGLE_MAX_NODES)
+        real(dp) :: value(TRIANGLE_MAX_NODES), gradient(2, TRIANGLE_MAX_NODES)
+        real(dp) :: hessian(2, 2, TRIANGLE_MAX_NODES), vp(TRIANGLE_MAX_NODES)
+        real(dp) :: vm(TRIANGLE_MAX_NODES), gp(2, TRIANGLE_MAX_NODES)
+        real(dp) :: gm(2, TRIANGLE_MAX_NODES), controls(TRIANGLE_MAX_NODES)
+        real(dp) :: xi(2), step, worst, worst_h, delta(2), det, dg(2, 2)
+        real(dp) :: bernstein_value, widest
+        type(gs_state_t) :: state
+        type(gauss_quadrature_triangle_t) :: rule
+        step = 1.0e-5_dp
+        do k = 2, 8
+            nloc = (k + 1)*(k + 2)/2
+            call triangle_node_powers(k, powers(:, :nloc))
+            worst = 0
+            do i = 1, nloc
+                xi = real(powers(2:3, i), dp)/k
+                call triangle_basis_jet(xi, value(:nloc), gradient(:, :nloc))
+                do j = 1, nloc
+                    worst = max(worst, abs(value(j) - merge(1.0_dp, 0.0_dp, i == j)))
+                end do
+            end do
+            if (worst > 1.0e-11_dp) error stop 'nodal property'
+            xi = [0.23_dp, 0.31_dp]
+            call triangle_basis_jet(xi, value(:nloc), gradient(:, :nloc), &
+                hessian(:, :, :nloc))
+            if (abs(sum(value(:nloc)) - 1) > 1.0e-12_dp) error stop 'unity'
+            if (maxval(abs(sum(gradient(:, :nloc), dim=2))) > 1.0e-10_dp) &
+                error stop 'gradient sum'
+            worst = 0; worst_h = 0
+            do d = 1, 2
+                delta = 0; delta(d) = step
+                call triangle_basis_jet(xi + delta, vp(:nloc), gp(:, :nloc))
+                call triangle_basis_jet(xi - delta, vm(:nloc), gm(:, :nloc))
+                do j = 1, nloc
+                    worst = max(worst, abs((vp(j) - vm(j))/(2*step) - gradient(d, j)) &
+                        /max(1.0_dp, abs(gradient(d, j))))
+                    do c = 1, 2
+                        worst_h = max(worst_h, &
+                            abs((gp(c, j) - gm(c, j))/(2*step) - hessian(c, d, j)) &
+                            /max(1.0_dp, abs(hessian(c, d, j))))
+                    end do
+                end do
+            end do
+            print '(a,i2,a,2es11.3)', 'degree ', k, ' fd gradient, hessian ', &
+                worst, worst_h
+            if (worst > 1.0e-6_dp .or. worst_h > 1.0e-5_dp) error stop 'basis fd'
+            ! Bernstein controls of a degree-k polynomial sampled at the nodes
+            ! evaluate back to it at an interior point.
+            do i = 1, nloc
+                vp(i) = 1 + real(powers(2, i), dp)/k - 2*(real(powers(3, i), dp)/k)**k
+            end do
+            call triangle_bernstein_controls(vp(:nloc), controls(:nloc))
+            bernstein_value = bernstein_at(k, powers(:, :nloc), controls(:nloc), xi)
+            if (abs(bernstein_value - (1 + xi(1) - 2*xi(2)**k)) > 1.0e-11_dp) &
+                error stop 'bernstein controls'
+        end do
+        call rule%init(7)
+        do k = 2, 8
+            call make_mesh(16, k, state)
+            if (state%ready .neqv. (k <= 3)) error stop 'solver readiness'
+            nloc = (k + 1)*(k + 2)/2
+            if (size(state%triangles, 1) /= nloc) error stop 'nodes per cell'
+            if (any(state%triangles < 1)) error stop 'connectivity'
+            if (any(state%triangles > size(state%points, 2))) error stop 'connectivity'
+            ! V - E + F = 1 for the disk fixes the global node count.
+            if (size(state%points, 2) /= count_nodes(k, state)) error stop 'node count'
+            call triangle_node_powers(k, powers(:, :nloc))
+            worst = huge(1.0_dp); widest = 0
+            do e = 1, size(state%triangles, 2)
+                do g = 1, rule%n_points + nloc
+                    if (g <= rule%n_points) then
+                        xi = [rule%xi(g), rule%eta(g)]
+                    else
+                        xi = real(powers(2:3, g - rule%n_points), dp)/k
+                    end if
+                    call triangle_basis_jet(xi, value(:nloc), gradient(:, :nloc))
+                    dg = matmul(state%points(:, state%triangles(:, e)), &
+                        transpose(gradient(:, :nloc)))
+                    det = dg(1, 1)*dg(2, 2) - dg(1, 2)*dg(2, 1)
+                    worst = min(worst, det/(2*state%area(e)))
+                    widest = max(widest, det/(2*state%area(e)))
+                end do
+            end do
+            print '(a,i2,a,i6,a,2f8.4)', 'mesh degree ', k, ' nodes ', &
+                size(state%points, 2), ' min, max detJ/detJ_affine ', worst, widest
+            if (widest < 1.0001_dp) error stop 'boundary cells are not curved'
+            if (worst < 0.5_dp) error stop 'curved cell Jacobian'
+        end do
+    end subroutine
+
+    pure function bernstein_at(k, powers, controls, xi) result(value)
+        integer, intent(in) :: k, powers(:, :)
+        real(dp), intent(in) :: controls(:), xi(2)
+        real(dp) :: value, lambda(3), coefficient
+        integer :: j
+        lambda = [1 - sum(xi), xi]
+        value = 0
+        do j = 1, size(controls)
+            coefficient = gamma(k + 1.0_dp)/(gamma(powers(1, j) + 1.0_dp) &
+                *gamma(powers(2, j) + 1.0_dp)*gamma(powers(3, j) + 1.0_dp))
+            value = value + controls(j)*coefficient*lambda(1)**powers(1, j) &
+                *lambda(2)**powers(2, j)*lambda(3)**powers(3, j)
+        end do
+    end function
+
+    integer function count_nodes(k, state) result(total)
+        ! Vertices + (k-1) edge nodes per edge + (k-1)(k-2)/2 per cell, with
+        ! the edge count from V - E + F = 1.
+        integer, intent(in) :: k
+        type(gs_state_t), intent(in) :: state
+        integer :: vertices, cells, edges
+        cells = size(state%triangles, 2)
+        vertices = maxval(state%triangles(1:3, :))
+        edges = vertices + cells - 1
+        total = vertices + (k - 1)*edges + (k - 1)*(k - 2)/2*cells
+    end function
 
     subroutine run_map_case(spec, resolution, start, state, verification, &
                             equilibrium)

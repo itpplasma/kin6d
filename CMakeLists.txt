@@ -341,6 +341,16 @@ foreach(k 2 3)
     add_test(NAME ideal_map_n0_shaped_solovev_p${k}
         COMMAND test_ideal_map_axisymmetric shaped ${k})
 endforeach()
+# Shaped Solovev ladders at degrees 4 - 6 against the exact flux (no 2D GS
+# oracle above P3), and the Lagrange jets and curved meshes for degrees 2 .. 8.
+add_test(NAME ideal_map_triangle_lagrange_p2_p8
+    COMMAND test_ideal_map_axisymmetric basis)
+foreach(k 4 5 6)
+    add_test(NAME ideal_map_n0_shaped_solovev_p${k}
+        COMMAND test_ideal_map_axisymmetric shapedho ${k})
+    set_tests_properties(ideal_map_n0_shaped_solovev_p${k} PROPERTIES
+        TIMEOUT 1800 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
+endforeach()
 # Three-mesh scientific regression ladders reserve four threads.
 set_tests_properties(ideal_map_n3_leakage ideal_map_n0_solovev_a3_p2
     ideal_map_n0_solovev_a3_p3 ideal_map_n0_shaped_solovev_p2 PROPERTIES

@@ -74,6 +74,14 @@ kin6d_test_labels(ideal_map_n0_shaped_solovev_p2 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_solovev_a3_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_triangle_lagrange_p2_p8 fast CLASSES mhd
+    TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_n0_shaped_solovev_p4 fast CLASSES mhd
+    TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_n0_shaped_solovev_p5 fast CLASSES mhd
+    TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_n0_shaped_solovev_p6 fast CLASSES mhd
+    TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_shaped_solovev_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_seed_return_a3_p2 slow CLASSES mhd

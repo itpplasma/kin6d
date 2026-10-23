@@ -1,7 +1,7 @@
 module kin6d_curved_triangle
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_triangle_basis, only: triangle_basis_jet
+    use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     use fortfem_geometry_jet_2d, only: transform_scalar_jet_2d
     implicit none
     private
@@ -86,7 +86,8 @@ contains
         real(dp), intent(out) :: point(2), jac(2, 2), curvature(2, 2, 2)
         real(dp), intent(out) :: det, inverse(2, 2)
         integer, intent(out) :: status
-        real(dp) :: values(10), gradients(2, 10), hessians(2, 2, 10)
+        real(dp) :: values(TRIANGLE_MAX_NODES), gradients(2, TRIANGLE_MAX_NODES)
+        real(dp) :: hessians(2, 2, TRIANGLE_MAX_NODES)
         real(dp) :: offset(2), g(2), h(2, 2), unused_g(2), unused_h(2, 2)
         integer :: j, a, n
         n = size(nodes, 2)
@@ -114,7 +115,8 @@ contains
         real(dp), intent(out) :: point(2), det, shape(:), gradient(:, :)
         real(dp), intent(out) :: hessian(:, :, :)
         integer, intent(out) :: status
-        real(dp) :: values(10), gradients(2, 10), hessians(2, 2, 10)
+        real(dp) :: values(TRIANGLE_MAX_NODES), gradients(2, TRIANGLE_MAX_NODES)
+        real(dp) :: hessians(2, 2, TRIANGLE_MAX_NODES)
         real(dp) :: jac(2, 2), curvature(2, 2, 2), inverse(2, 2), corrected(2, 2)
         integer :: j, n
         n = size(nodes, 2)

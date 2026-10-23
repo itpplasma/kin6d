@@ -10,6 +10,7 @@ module kin6d_ideal_seed_3d
         ideal_map_freeze, ideal_map_energy, ideal_map_rdof, IDEAL_MAP_OK, &
         IDEAL_MAP_BAD_INPUT, IDEAL_MAP_FOLDED
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
         seed_horner, seed_toroidal_form, seed_disk_coordinates, seed_disk_boundary, &
@@ -73,13 +74,16 @@ contains
         real(dp) :: points(2, boundary_nodes), h
         integer :: j
         status = IDEAL_MAP_BAD_INPUT
-        if (boundary_nodes < 8) return
-        if (degree < 2 .or. degree > 3) return
+        if (degree < 2 .or. degree > TRIANGLE_MAX_DEGREE) return
+        ! Fewer, larger cells are the point of the high orders; the periodic
+        ! boundary spline needs four nodes.
+        if (boundary_nodes < merge(8, 4, degree <= 3)) return
         do j = 1, boundary_nodes
             call disk_boundary(real(j - 1, dp)/boundary_nodes, points(:, j))
         end do
         h = 2*pi/boundary_nodes
-        call initialize_gs(mesh, points, h*h/2, status, degree, curve=disk_boundary)
+        call initialize_gs(mesh, points, h*h/2, status, degree, curve=disk_boundary, &
+            geometry_only=.true.)
     end subroutine
 
     subroutine disk_boundary(t, point)
