@@ -55,7 +55,8 @@ module kin6d_ideal_map
         FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
         sparse_factor_stats, sparse_factor_stats_t, &
-        sparse_refactor
+        sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
+        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
     private
@@ -66,6 +67,8 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
     public :: ideal_map_gauge_project
+    ! Damping above which factor_masked no longer tries the SPD Cholesky.
+    real(dp), parameter :: spd_mu_limit = 1.0e2_dp
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
@@ -174,7 +177,11 @@ module kin6d_ideal_map
         integer, allocatable :: rowptr(:), colidx(:), src(:), dpos(:), refl(:)
         integer, allocatable :: mpos(:), gpos(:)
         real(dp), allocatable :: mval(:), gval(:)
-        real(dp), allocatable :: raw(:), base(:), bdiag(:), val(:)
+        real(dp), allocatable :: raw(:), base(:), bdiag(:)
+        ! The factor input itself (a%val: base with the trial diagonal). It
+        ! goes through FortSparse's csc_t entry points, which keep the symbolic
+        ! analysis after a failed numeric factor, unlike the raw-array ones.
+        type(csc_t) :: a
     end type
 
     type :: ideal_map_solve_report_t
@@ -187,7 +194,8 @@ module kin6d_ideal_map
         ! and numerical factorisation.
         real(dp) :: analysis_s = 0, numeric_s = 0
         real(dp) :: assembly_roundoff = 0
-        ! Sparse factorisations: symbolic analyses and numerical factors.
+        ! Factorisation attempts, and symbolic analyses (fresh factors and
+        ! refactors that report no reuse).
         integer :: analyses = 0, factorizations = 0
         type(factor_cache_t), private :: cache
     end type
@@ -1218,7 +1226,9 @@ contains
             end if
             gnorm = norm2(gred)
         end if
-        mu = map%initial_damping
+        ! A failed trial multiplies mu by 10, so mu stays positive (the floor of
+        ! the accept rule below).
+        mu = max(map%initial_damping, 1.0e-14_dp)
         cap_x = 0.05_dp*maxval(maxval(map%reference, dim=2) &
             - minval(map%reference, dim=2))
         cap_w = 1
@@ -1577,8 +1587,9 @@ contains
         logical, intent(in), optional :: gauge
         type(sparse_factor_stats_t) :: stats
         type(fortsparse_status_t) :: sstatus
-        logical :: reused
+        logical :: reused, spd
         integer :: row, n, nc
+        real(dp) :: dscale, mu
         nc = 0
         if (present(gauge)) then
             if (gauge) nc = gauge_rows(map)
@@ -1594,14 +1605,34 @@ contains
             report%assembly_roundoff = max(report%assembly_roundoff, c%correction)
             do row = 1, map%nred
                 if (keep(row) .and. c%dpos(row) > 0) &
-                    c%val(c%dpos(row)) = c%bdiag(row) + shift(row)
+                    c%a%val(c%dpos(row)) = c%bdiag(row) + shift(row)
             end do
-            ! The canonical matrix remains symmetric and may be indefinite.
-            ! Use the native supernodal pivoted LU action (also used for the
+            ! The damped Hessian is symmetric and positive definite near the
+            ! solution, so try the SPD Cholesky first: a trial that is not PD
+            ! fails cheaply and the caller raises the damping. The relative
+            ! damping mu is recovered from the shift mu*(|d| + 1e-12 max|d|).
+            ! The gauge saddle point is indefinite, and at a damping above
+            ! spd_mu_limit a failed Cholesky is no longer informative, so those
+            ! use the native supernodal pivoted LU action (also used for the
             ! free-boundary KKT): scalar LDLT Schur-row updates are too costly
             ! on the map ladders. This changes only the factor, not the Hessian.
-            slv%options%symmetry = FORTSPARSE_SYM_GENERAL
-            slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+            spd = nc == 0
+            if (spd) then
+                dscale = maxval(abs(c%bdiag), mask=keep(:map%nred))
+                mu = 0
+                do row = 1, map%nred
+                    if (keep(row) .and. shift(row) > 0) mu = max(mu, shift(row)/ &
+                        (abs(c%bdiag(row)) + 1.0e-12_dp*dscale))
+                end do
+                spd = .not. mu > spd_mu_limit
+            end if
+            if (spd) then
+                slv%options%symmetry = FORTSPARSE_SYM_SPD
+                slv%options%lu_method = FORTSPARSE_LU_SCALAR
+            else
+                slv%options%symmetry = FORTSPARSE_SYM_GENERAL
+                slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+            end if
             slv%options%ordering = FORTSPARSE_ORDER_AMD
             slv%options%verify_factor = map%verify_factor
             if (gs_direct_available()) then
@@ -1621,21 +1652,26 @@ contains
             ! it.
             reused = .false.
             if (done) then
-                call sparse_refactor(slv, n, n, size(c%val), c%rowptr, c%colidx, &
-                    c%val, sstatus, reused)
+                call sparse_refactor(slv, c%a, sstatus, reused)
             else
-                call sparse_factor(slv, n, n, size(c%val), c%rowptr, c%colidx, &
-                    c%val, sstatus)
+                call sparse_factor(slv, c%a, sstatus)
             end if
         end associate
         info = merge(0, 1, status_ok(sstatus))
+        report%factorizations = report%factorizations + 1
         if (info /= 0) then
+            ! A pivot that is not positive keeps the symbolic analysis: the
+            ! next trial refactors on it without a new analysis.
+            if (spd .and. sstatus%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
+                if (.not. done) report%analyses = report%analyses + 1
+                done = .true.
+                return
+            end if
             if (done) call sparse_destroy(slv)
             done = .false.
             return
         end if
         done = .true.
-        report%factorizations = report%factorizations + 1
         if (.not. reused) report%analyses = report%analyses + 1
         call sparse_factor_stats(slv, stats, sstatus)
         if (status_ok(sstatus)) then
@@ -1785,8 +1821,9 @@ contains
         end do
         c%raw = [(0.0_dp, k=1, size(matrix%val))]
         c%base = [(0.0_dp, k=1, nz)]
-        c%val = c%base
         c%bdiag = [(0.0_dp, k=1, map%nred)]
+        c%a%nrow = n; c%a%ncol = n; c%a%nnz = nz
+        c%a%col_ptr = c%rowptr; c%a%row_idx = c%colidx; c%a%val = c%base
         c%pattern_ok = .true.
     end subroutine
 
@@ -1849,7 +1886,7 @@ contains
         do k = 1, size(c%base)
             if (c%refl(k) > 0) c%base(c%refl(k)) = c%base(k)
         end do
-        c%val = c%base
+        c%a%val = c%base
         c%raw = matrix%val
         do row = 1, map%nred
             if (c%dpos(row) > 0) c%bdiag(row) = c%base(c%dpos(row))
