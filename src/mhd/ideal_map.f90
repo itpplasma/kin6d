@@ -56,7 +56,8 @@ module kin6d_ideal_map
         FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
         sparse_factor_stats, sparse_factor_stats_t, &
-        sparse_refactor
+        sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
+        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
     private
@@ -67,6 +68,8 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
     public :: ideal_map_gauge_project
+    ! Damping above which factor_masked no longer tries the SPD Cholesky.
+    real(dp), parameter :: spd_mu_limit = 1.0e2_dp
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
@@ -117,6 +120,9 @@ module kin6d_ideal_map
         ! threads (faster numeric factorisation, not reproducible).
         ! 0 follows the caller's OpenMP budget; positive values cap the factor.
         integer :: factor_threads = 0
+        ! Debug: verify every sparse factorisation and cross-check the cached
+        ! symmetric factor input (off in production, see factor_masked).
+        logical :: verify_factor = .false.
         ! Position gauge instead of transversals + axis expansion + omega.
         logical :: position_gauge = .false.
         real(dp) :: initial_damping = 1.0e-6_dp
@@ -156,6 +162,29 @@ module kin6d_ideal_map
         real(dp), allocatable :: x(:, :, :)
     end type
 
+    type :: factor_cache_t
+        ! Per-pattern data of factor_masked. base is the masked, symmetrised
+        ! matrix with the diagonal unshifted, so that a trial only rewrites the
+        ! diagonal of val. keep/gauge/pattern identify the entries, raw the
+        ! Hessian values that base was built from.
+        integer :: nc = -1
+        logical :: pattern_ok = .false., base_ok = .false.
+        real(dp) :: scale = 0, correction = 0
+        logical, allocatable :: keep(:)
+        integer, allocatable :: in_rowptr(:), in_colidx(:)
+        ! Factor input pattern, source index in matrix%val (0: gauge entry),
+        ! diagonal positions, masked entries and reflections of the upper
+        ! triangle onto the lower one.
+        integer, allocatable :: rowptr(:), colidx(:), src(:), dpos(:), refl(:)
+        integer, allocatable :: mpos(:), gpos(:)
+        real(dp), allocatable :: mval(:), gval(:)
+        real(dp), allocatable :: raw(:), base(:), bdiag(:)
+        ! The factor input itself (a%val: base with the trial diagonal). It
+        ! goes through FortSparse's csc_t entry points, which keep the symbolic
+        ! analysis after a failed numeric factor, unlike the raw-array ones.
+        type(csc_t) :: a
+    end type
+
     type :: ideal_map_solve_report_t
         integer :: iterations = 0
         real(dp) :: energy = 0, gradient = huge(1.0_dp), step = huge(1.0_dp)
@@ -166,6 +195,10 @@ module kin6d_ideal_map
         ! and numerical factorisation.
         real(dp) :: analysis_s = 0, numeric_s = 0
         real(dp) :: assembly_roundoff = 0
+        ! Factorisation attempts, and symbolic analyses (fresh factors and
+        ! refactors that report no reuse).
+        integer :: analyses = 0, factorizations = 0
+        type(factor_cache_t), private :: cache
     end type
 contains
     pure integer function ideal_map_dof(map, component, mode, node) result(dof)
@@ -1200,7 +1233,9 @@ contains
             end if
             gnorm = norm2(gred)
         end if
-        mu = map%initial_damping
+        ! A failed trial multiplies mu by 10, so mu stays positive (the floor of
+        ! the accept rule below).
+        mu = max(map%initial_damping, 1.0e-14_dp)
         cap_x = 0.05_dp*maxval(maxval(map%reference, dim=2) &
             - minval(map%reference, dim=2))
         cap_w = 1
@@ -1546,7 +1581,8 @@ contains
         ! factorisation of this pattern (only the numerical one is redone).
         ! gauge: append the omega gauge constraints (nested_omega_gauge) on
         ! the free n = 0 omega dofs as Lagrange rows/columns (saddle point;
-        ! solve with gauge_solve).
+        ! solve with gauge_solve). The masked, symmetrised matrix is cached in
+        ! report per pattern; a trial only rewrites the diagonal.
         type(ideal_map_t), intent(in) :: map
         type(csr_matrix_t), intent(in) :: matrix
         logical, intent(in) :: keep(:)
@@ -1558,30 +1594,156 @@ contains
         logical, intent(in), optional :: gauge
         type(sparse_factor_stats_t) :: stats
         type(fortsparse_status_t) :: sstatus
-        logical :: reused
-        logical, allocatable :: omega_active(:, :)
-        real(dp), allocatable :: val(:)
-        real(dp) :: correction
-        integer, allocatable :: rowptr(:), colidx(:), node(:)
-        integer :: row, kk, nc, n, a, l, c
-        val = matrix%val
-        do row = 1, map%nred
-            do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
-                if (.not. keep(row)) then
-                    val(kk) = merge(1.0_dp, 0.0_dp, matrix%colidx(kk) == row)
-                else if (.not. keep(matrix%colidx(kk))) then
-                    val(kk) = 0
-                else if (matrix%colidx(kk) == row) then
-                    val(kk) = val(kk) + shift(row)
-                end if
-            end do
-        end do
-        rowptr = matrix%rowptr; colidx = matrix%colidx
-        n = map%nred; nc = 0
+        logical :: reused, spd
+        integer :: row, n, nc
+        real(dp) :: dscale, mu
+        nc = 0
         if (present(gauge)) then
             if (gauge) nc = gauge_rows(map)
         end if
-        if (nc > 0) then
+        n = map%nred + nc
+        call factor_cache_update(map, matrix, keep, nc, report%cache, info)
+        if (info /= 0) then
+            if (done) call sparse_destroy(slv)
+            done = .false.
+            return
+        end if
+        associate (c => report%cache)
+            report%assembly_roundoff = max(report%assembly_roundoff, c%correction)
+            do row = 1, map%nred
+                if (keep(row) .and. c%dpos(row) > 0) &
+                    c%a%val(c%dpos(row)) = c%bdiag(row) + shift(row)
+            end do
+            ! The damped Hessian is symmetric and positive definite near the
+            ! solution, so try the SPD Cholesky first: a trial that is not PD
+            ! fails cheaply and the caller raises the damping. The relative
+            ! damping mu is recovered from the shift mu*(|d| + 1e-12 max|d|).
+            ! The gauge saddle point is indefinite, and at a damping above
+            ! spd_mu_limit a failed Cholesky is no longer informative, so those
+            ! use the native supernodal pivoted LU action (also used for the
+            ! free-boundary KKT): scalar LDLT Schur-row updates are too costly
+            ! on the map ladders. This changes only the factor, not the Hessian.
+            spd = nc == 0
+            if (spd) then
+                dscale = maxval(abs(c%bdiag), mask=keep(:map%nred))
+                mu = 0
+                do row = 1, map%nred
+                    if (keep(row) .and. shift(row) > 0) mu = max(mu, shift(row)/ &
+                        (abs(c%bdiag(row)) + 1.0e-12_dp*dscale))
+                end do
+                spd = .not. mu > spd_mu_limit
+            end if
+            if (spd) then
+                slv%options%symmetry = FORTSPARSE_SYM_SPD
+                slv%options%lu_method = FORTSPARSE_LU_SCALAR
+            else
+                slv%options%symmetry = FORTSPARSE_SYM_GENERAL
+                slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+            end if
+            slv%options%ordering = FORTSPARSE_ORDER_AMD
+            slv%options%verify_factor = map%verify_factor
+            if (gs_direct_available()) then
+                if (.not. gs_direct_mpi_ready()) then
+                    info = 1
+                    if (done) call sparse_destroy(slv)
+                    done = .false.
+                    return
+                end if
+                slv%backend_id = FORTSPARSE_BACKEND_NATIVE
+                slv%options%nthreads = map%factor_threads
+            else
+                slv%backend_id = FORTSPARSE_BACKEND_NATIVE
+            end if
+            ! The pattern is fixed per map: after the first factorisation only
+            ! the numerical factorisation is redone when the backend can reuse
+            ! it.
+            reused = .false.
+            if (done) then
+                call sparse_refactor(slv, c%a, sstatus, reused)
+            else
+                call sparse_factor(slv, c%a, sstatus)
+            end if
+        end associate
+        info = merge(0, 1, status_ok(sstatus))
+        report%factorizations = report%factorizations + 1
+        if (info /= 0) then
+            ! A pivot that is not positive keeps the symbolic analysis: the
+            ! next trial refactors on it without a new analysis.
+            if (spd .and. sstatus%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
+                if (.not. done) report%analyses = report%analyses + 1
+                done = .true.
+                return
+            end if
+            if (done) call sparse_destroy(slv)
+            done = .false.
+            return
+        end if
+        done = .true.
+        if (.not. reused) report%analyses = report%analyses + 1
+        call sparse_factor_stats(slv, stats, sstatus)
+        if (status_ok(sstatus)) then
+            if (.not. reused) report%analysis_s = report%analysis_s &
+                + max(0.0_dp, stats%analysis_s)
+            report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
+        end if
+    end subroutine
+
+    subroutine factor_cache_update(map, matrix, keep, nc, c, info)
+        ! Bring the cache up to date with the Hessian: rebuild the pattern data
+        ! when the pattern, the mask or the constraints changed, and the base
+        ! matrix when the Hessian values changed (once per Newton iteration,
+        ! not per trial). info /= 0: invalid pattern or asymmetry above 1e-12.
+        type(ideal_map_t), intent(in) :: map
+        type(csr_matrix_t), intent(in) :: matrix
+        logical, intent(in) :: keep(:)
+        integer, intent(in) :: nc
+        type(factor_cache_t), intent(inout) :: c
+        integer, intent(out) :: info
+        logical :: same
+        same = c%nc == nc .and. allocated(c%in_colidx)
+        if (same) same = size(c%in_colidx) == size(matrix%colidx) .and. &
+            size(c%in_rowptr) == size(matrix%rowptr) .and. &
+            all(c%keep .eqv. keep(:map%nred))
+        if (same) same = all(c%in_rowptr == matrix%rowptr) .and. &
+            all(c%in_colidx == matrix%colidx)
+        if (.not. same) then
+            call factor_cache_build(map, matrix, keep, nc, c)
+            c%base_ok = .false.
+        end if
+        info = 1
+        if (.not. c%pattern_ok) return
+        if (c%base_ok) c%base_ok = all(abs(c%raw - matrix%val) <= 0.0_dp)
+        if (.not. c%base_ok) call factor_cache_refresh(map, matrix, c, info)
+        if (c%base_ok) info = 0
+    end subroutine
+
+    subroutine factor_cache_build(map, matrix, keep, nc, c)
+        ! Factor input pattern: the Hessian pattern, extended by the gauge
+        ! constraint rows/columns (nc > 0), with the data of the per-trial and
+        ! per-iteration updates. Every nonzero moment is kept, including tiny
+        ! signed P_k weights: this is sparse support, not an approximation.
+        type(ideal_map_t), intent(in) :: map
+        type(csr_matrix_t), intent(in) :: matrix
+        logical, intent(in) :: keep(:)
+        integer, intent(in) :: nc
+        type(factor_cache_t), intent(inout) :: c
+        logical, allocatable :: omega_active(:, :)
+        integer, allocatable :: node(:)
+        integer :: row, kk, a, l, n, k, nz, nm, ng, previous, col, p
+        c%nc = nc
+        c%pattern_ok = .false.
+        c%keep = keep(:map%nred)
+        c%in_rowptr = matrix%rowptr
+        c%in_colidx = matrix%colidx
+        n = map%nred + nc
+        nz = size(matrix%val)
+        if (nc == 0) then
+            c%rowptr = matrix%rowptr
+            c%colidx = matrix%colidx
+            c%src = [(k, k=1, nz)]
+            c%gpos = [integer ::]
+            c%gval = [real(dp) ::]
+        else
             ! Constrained dofs: free n = 0 omega (kept in every gauge use).
             allocate (node(map%nred))
             node = 0
@@ -1589,100 +1751,164 @@ contains
                 row = ideal_map_rdof(map, 2, 1, a)
                 if (.not. map%fixed(row)) node(row) = a
             end do
-            n = map%nred + nc
-            deallocate (rowptr, colidx, val)
-            ! Keep every nonzero moment, including tiny signed P_k weights.
-            ! This is sparse support, not an approximation/error tolerance.
             omega_active = .not. (abs(map%omega_c) <= 0.0_dp)
-            kk = count(omega_active)
-            allocate (rowptr(n + 1), colidx(size(matrix%val) + 2*kk + nc), &
-                val(size(matrix%val) + 2*kk + nc))
-            c = 0; rowptr(1) = 1
+            ng = count(omega_active)
+            c%rowptr = [(0, k=1, n + 1)]
+            c%colidx = [(0, k=1, nz + 2*ng + nc)]
+            c%src = c%colidx
+            c%gpos = [(0, k=1, 2*ng + nc)]
+            c%gval = [(0.0_dp, k=1, 2*ng + nc)]
+            k = 0; nm = 0; c%rowptr(1) = 1
             do row = 1, map%nred
                 do kk = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
-                    c = c + 1; colidx(c) = matrix%colidx(kk)
-                    if (.not. keep(row)) then
-                        val(c) = merge(1.0_dp, 0.0_dp, matrix%colidx(kk) == row)
-                    else if (.not. keep(matrix%colidx(kk))) then
-                        val(c) = 0
-                    else
-                        val(c) = matrix%val(kk)
-                        if (matrix%colidx(kk) == row) val(c) = val(c) + shift(row)
-                    end if
+                    k = k + 1; c%colidx(k) = matrix%colidx(kk); c%src(k) = kk
                 end do
                 a = node(row)
                 if (a > 0) then
                     do l = 1, nc
                         if (.not. omega_active(l, a)) cycle
-                        c = c + 1; colidx(c) = map%nred + l; val(c) = map%omega_c(l, a)
+                        k = k + 1; c%colidx(k) = map%nred + l; c%src(k) = 0
+                        nm = nm + 1; c%gpos(nm) = k; c%gval(nm) = map%omega_c(l, a)
                     end do
                 end if
-                rowptr(row + 1) = c + 1
+                c%rowptr(row + 1) = k + 1
             end do
             do l = 1, nc
                 do row = 1, map%nred
                     a = node(row)
                     if (a == 0) cycle
                     if (.not. omega_active(l, a)) cycle
-                    c = c + 1; colidx(c) = row; val(c) = map%omega_c(l, a)
+                    k = k + 1; c%colidx(k) = row; c%src(k) = 0
+                    nm = nm + 1; c%gpos(nm) = k; c%gval(nm) = map%omega_c(l, a)
                 end do
-                c = c + 1; colidx(c) = map%nred + l; val(c) = 0
-                rowptr(map%nred + l + 1) = c + 1
+                k = k + 1; c%colidx(k) = map%nred + l; c%src(k) = 0
+                nm = nm + 1; c%gpos(nm) = k; c%gval(nm) = 0
+                c%rowptr(map%nred + l + 1) = k + 1
             end do
-            colidx = colidx(:c); val = val(:c)
+            c%colidx = c%colidx(:k); c%src = c%src(:k)
+            c%gpos = c%gpos(:nm); c%gval = c%gval(:nm)
         end if
-        ! One canonical triangle preserves the scalar Hessian's exact
-        ! symmetry after independently rounded cell/constraint accumulation.
-        call csc_normalize_symmetric_raw(n, rowptr, colidx, val, &
-            1.0e-12_dp, correction, sstatus)
-        if (.not. status_ok(sstatus)) then
-            info = 1
-            if (done) call sparse_destroy(slv)
-            done = .false.
-            return
-        end if
-        report%assembly_roundoff = max(report%assembly_roundoff, correction)
-        ! The canonical matrix above remains symmetric and may be indefinite.
-        ! Use the native supernodal pivoted LU action (also used for the
-        ! free-boundary KKT): scalar LDLT Schur-row updates are too costly
-        ! on the map ladders. This changes only the factor, not the Hessian.
-        slv%options%symmetry = FORTSPARSE_SYM_GENERAL
-        slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
-        slv%options%ordering = FORTSPARSE_ORDER_AMD
-        if (gs_direct_available()) then
-            if (.not. gs_direct_mpi_ready()) then
-                info = 1
-                if (done) call sparse_destroy(slv)
-                done = .false.
+        nz = size(c%colidx)
+        ! Diagonal positions and the masked Hessian entries.
+        c%dpos = [(0, k=1, map%nred)]
+        nm = 0
+        do row = 1, map%nred
+            do k = c%rowptr(row), c%rowptr(row + 1) - 1
+                if (c%src(k) == 0) cycle
+                if (c%colidx(k) == row) c%dpos(row) = k
+                if (.not. keep(row) .or. .not. keep(c%colidx(k))) nm = nm + 1
+            end do
+        end do
+        c%mpos = [(0, k=1, nm)]
+        c%mval = [(0.0_dp, k=1, nm)]
+        nm = 0
+        do row = 1, map%nred
+            do k = c%rowptr(row), c%rowptr(row + 1) - 1
+                if (c%src(k) == 0) cycle
+                col = c%colidx(k)
+                if (keep(row) .and. keep(col)) cycle
+                nm = nm + 1; c%mpos(nm) = k
+                c%mval(nm) = merge(1.0_dp, 0.0_dp, col == row .and. .not. keep(row))
+            end do
+        end do
+        ! A sorted, unique and structurally symmetric full pattern is required
+        ! by the reflection of the upper triangle onto the lower one.
+        c%refl = [(0, k=1, nz)]
+        do row = 1, n
+            previous = 0
+            do k = c%rowptr(row), c%rowptr(row + 1) - 1
+                col = c%colidx(k)
+                if (col <= previous .or. col > n) return
+                previous = col
+                if (col == row) cycle
+                p = find_entry(c, col, row)
+                if (p == 0) return
+                if (col > row) c%refl(k) = p
+            end do
+        end do
+        c%raw = [(0.0_dp, k=1, size(matrix%val))]
+        c%base = [(0.0_dp, k=1, nz)]
+        c%bdiag = [(0.0_dp, k=1, map%nred)]
+        c%a%nrow = n; c%a%ncol = n; c%a%nnz = nz
+        c%a%col_ptr = c%rowptr; c%a%row_idx = c%colidx; c%a%val = c%base
+        c%pattern_ok = .true.
+    end subroutine
+
+    integer function find_entry(c, row, col) result(found)
+        ! Position of (row, col) in the sorted factor pattern, 0 if absent.
+        type(factor_cache_t), intent(in) :: c
+        integer, intent(in) :: row, col
+        integer :: lo, hi, mid
+        found = 0
+        lo = c%rowptr(row); hi = c%rowptr(row + 1) - 1
+        do while (lo <= hi)
+            mid = lo + (hi - lo)/2
+            if (c%colidx(mid) == col) then
+                found = mid
                 return
+            else if (c%colidx(mid) < col) then
+                lo = mid + 1
+            else
+                hi = mid - 1
             end if
-            slv%backend_id = FORTSPARSE_BACKEND_NATIVE
-            slv%options%nthreads = map%factor_threads
+        end do
+    end function
+
+    subroutine factor_cache_refresh(map, matrix, c, info)
+        ! base = masked Hessian (+ gauge rows) on one canonical triangle: the
+        ! strict upper entries are copied onto the lower ones, which preserves
+        ! the scalar Hessian's exact symmetry after independently rounded
+        ! cell/constraint accumulation. The asymmetry removed (outward one-ulp
+        ! bound) must not exceed 1e-12 of the largest entry.
+        type(ideal_map_t), intent(in) :: map
+        type(csr_matrix_t), intent(in) :: matrix
+        type(factor_cache_t), intent(inout) :: c
+        integer, intent(out) :: info
+        real(dp), parameter :: rtol = 1.0e-12_dp
+        real(dp), allocatable :: reference(:)
+        type(fortsparse_status_t) :: sstatus
+        integer :: k, p, row
+        real(dp) :: delta
+        info = 1
+        c%correction = 0
+        if (c%nc == 0) then
+            c%base = matrix%val
         else
-            slv%backend_id = FORTSPARSE_BACKEND_NATIVE
+            do k = 1, size(c%base)
+                if (c%src(k) > 0) c%base(k) = matrix%val(c%src(k))
+            end do
         end if
-        ! The pattern is fixed per map: after the first factorisation only
-        ! the numerical factorisation is redone when the backend can reuse it.
-        reused = .false.
-        if (done) then
-            call sparse_refactor(slv, n, n, size(val), rowptr, colidx, val, sstatus, &
-                reused)
-        else
-            call sparse_factor(slv, n, n, size(val), rowptr, colidx, val, sstatus)
+        c%base(c%gpos) = c%gval
+        c%base(c%mpos) = c%mval
+        if (.not. all(ieee_is_finite(c%base))) return
+        c%scale = maxval(abs(c%base))
+        do k = 1, size(c%base)
+            p = c%refl(k)
+            if (p == 0) cycle
+            delta = abs(c%base(k) - c%base(p))
+            if (delta <= 0.0_dp) cycle
+            c%correction = max(c%correction, nearest(delta, 1.0_dp))
+        end do
+        if (c%correction > rtol*c%scale) return
+        do k = 1, size(c%base)
+            if (c%refl(k) > 0) c%base(c%refl(k)) = c%base(k)
+        end do
+        c%a%val = c%base
+        c%raw = matrix%val
+        do row = 1, map%nred
+            if (c%dpos(row) > 0) c%bdiag(row) = c%base(c%dpos(row))
+        end do
+        if (map%verify_factor) then
+            ! Debug: FortSparse's canonical projection must find nothing to do.
+            reference = c%base
+            call csc_normalize_symmetric_raw(size(c%rowptr) - 1, c%rowptr, c%colidx, &
+                reference, rtol, delta, sstatus)
+            if (.not. status_ok(sstatus) .or. delta > 0.0_dp .or. &
+                any(abs(reference - c%base) > 0.0_dp)) &
+                error stop 'ideal_map: cached factor input is not canonical'
         end if
-        info = merge(0, 1, status_ok(sstatus))
-        if (info /= 0) then
-            if (done) call sparse_destroy(slv)
-            done = .false.
-            return
-        end if
-        done = .true.
-        call sparse_factor_stats(slv, stats, sstatus)
-        if (status_ok(sstatus)) then
-            if (.not. reused) report%analysis_s = report%analysis_s &
-                + max(0.0_dp, stats%analysis_s)
-            report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
-        end if
+        c%base_ok = .true.
+        info = 0
     end subroutine
 
     real(dp) function wall_seconds()

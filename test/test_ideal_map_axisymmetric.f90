@@ -20,6 +20,8 @@ program test_ideal_map_axisymmetric
     !                    axis at the boundary-box centre (VMEC-like), offset from
     !                    the magnetic axis; the solver must return it
     !   gauge <k>        W_red curvature of field-line slides at the exact map
+    !   factor <k>       cached factor input: the debug-verified solve is bitwise
+    !                    the production solve, one symbolic analysis per solve
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64, output_unit
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs, &
         gs_element_jet
@@ -131,6 +133,8 @@ program test_ideal_map_axisymmetric
         call gauge_probe()
     case ('residual')
         call residual_check()
+    case ('factor')
+        call factor_check()
     case default
         error stop 'unknown mode'
     end select
@@ -430,6 +434,42 @@ contains
             if (status == 0) then
                 owner = e; return
             end if
+        end do
+    end subroutine
+
+    subroutine factor_check()
+        ! The cached masked/symmetrised factor input (ideal_map factor_masked)
+        ! must not change the solve: the same A3 solve with verify_factor
+        ! (FortSparse residual check, FortSparse canonical projection compared
+        ! with the cache) reproduces map%x and the iteration counts bitwise.
+        ! A trial that is not positive definite (undamped start) must refactor
+        ! on the retained symbolic analysis: one analysis per solve.
+        type(gs_state_t) :: state
+        type(ideal_map_t) :: map, checked
+        type(ideal_map_solve_report_t) :: report, checked_report
+        real(dp), parameter :: damping(3) = [1.0e-6_dp, 1.0e-14_dp, 0.0_dp]
+        integer :: k
+        call make_mesh(16, degree, state)
+        do k = 1, size(damping)
+            initial_damping = damping(k)
+            call build_map(state, 1, 0, map)
+            call build_map(state, 1, 0, checked)
+            checked%verify_factor = .true.
+            call solve_map(map, report, .false.)
+            call solve_map(checked, checked_report, .false.)
+            print '(a,es9.1,3i5,es12.4)', 'damping iterations factorizations ' &
+                //'analyses roundoff', damping(k), report%iterations, &
+                report%factorizations, report%analyses, report%assembly_roundoff
+            if (report%iterations < 2) error stop 'factor: trivial solve'
+            if (any(map%x /= checked%x)) error stop 'factor: verified solve differs'
+            if (report%iterations /= checked_report%iterations .or. &
+                report%factorizations /= checked_report%factorizations) &
+                error stop 'factor: verified iteration counts differ'
+            if (report%assembly_roundoff /= checked_report%assembly_roundoff) &
+                error stop 'factor: verified roundoff differs'
+            if (report%analyses /= 1) error stop 'factor: more than one analysis'
+            if (k == 2 .and. report%factorizations <= report%iterations) &
+                error stop 'factor: no non-positive-definite trial exercised'
         end do
     end subroutine
 

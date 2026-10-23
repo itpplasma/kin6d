@@ -206,7 +206,7 @@ foreach(domain valid zero negative nan)
 endforeach()
 # All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
 # and optional graph-ordering libraries remain numerical dependencies.
-set(KIN6D_FORTSPARSE_REVISION "faa7b5348992dbb67eb2c8a2b60c33b17d211759")
+set(KIN6D_FORTSPARSE_REVISION "ac324a3567c2f95752bc2857ed29641f8e18f595")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -390,6 +390,7 @@ set_tests_properties(ideal_map_n0_seed_nested_a3_p2 ideal_map_n0_seed_nested_a3_
     PROPERTIES TIMEOUT 2400 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 set_tests_properties(ideal_map_n0_seed_nested_shaped_p3
     PROPERTIES TIMEOUT 4800 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
+add_test(NAME ideal_map_factor_cache COMMAND test_ideal_map_axisymmetric factor 2)
 add_test(NAME ideal_map_n0_normalised_residual_a3_p2
     COMMAND test_ideal_map_axisymmetric residual 2)
 set_tests_properties(ideal_map_n0_normalised_residual_a3_p2
