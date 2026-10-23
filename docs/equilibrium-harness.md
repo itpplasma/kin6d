@@ -21,13 +21,14 @@ Missing field/chart exports or inconsistent lane provenance fail the run.
 The existing `ideal_map_n0_*` and `gs_free_boundary_t3_manufactured_newton`
 CTest ladders run through this interface without changing their Newton
 settings or analytic refinement gates. Grid sequencing still uses the seed
-gradient of the current mesh as its stopping scale. Map Newton steps retain the canonical symmetric Hessian and assembly-roundoff
-check, with the masked matrix cached per pattern so that a trial only rewrites
-the diagonal. The damped Hessian is factored with FortSparse's native SPD
-Cholesky; a trial that is not positive definite fails cheaply, raises the
-damping and refactors on the retained symbolic analysis. The gauge saddle
-point and a damping above 100 use the native supernodal pivoted LU action, as
-the free-boundary KKT systems do. No inertia is consumed by this map driver.
+gradient of the current mesh as its stopping scale. Map Newton steps retain the
+canonical symmetric Hessian and assembly-roundoff check, with the masked matrix
+cached per pattern so that a trial only rewrites the diagonal. The damped Hessian
+uses FortSparse's native supernodal pivoted LU action, as the free-boundary KKT
+systems do. A nonpositive Cholesky pivot is not a rejection of the Newton trial:
+raising the damping before the energy line search changes the nonlinear path
+and can change the attained oracle error at the requested gradient tolerance.
+No inertia is consumed by this map driver.
 `verify_factor` of the map checks every factorisation and the cached input.
 The factor follows the caller's OpenMP budget by default (`factor_threads = 0`);
 a positive `factor_threads` still supplies an explicit cap.

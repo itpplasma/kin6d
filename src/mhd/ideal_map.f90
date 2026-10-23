@@ -56,8 +56,7 @@ module kin6d_ideal_map
         FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
         sparse_factor_stats, sparse_factor_stats_t, &
-        sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
-        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t
+        sparse_refactor, csc_t
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
     private
@@ -68,8 +67,6 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
     public :: ideal_map_gauge_project
-    ! Damping above which factor_masked no longer tries the SPD Cholesky.
-    real(dp), parameter :: spd_mu_limit = 1.0e2_dp
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
@@ -1594,9 +1591,8 @@ contains
         logical, intent(in), optional :: gauge
         type(sparse_factor_stats_t) :: stats
         type(fortsparse_status_t) :: sstatus
-        logical :: reused, spd
+        logical :: reused
         integer :: row, n, nc
-        real(dp) :: dscale, mu
         nc = 0
         if (present(gauge)) then
             if (gauge) nc = gauge_rows(map)
@@ -1614,32 +1610,14 @@ contains
                 if (keep(row) .and. c%dpos(row) > 0) &
                     c%a%val(c%dpos(row)) = c%bdiag(row) + shift(row)
             end do
-            ! The damped Hessian is symmetric and positive definite near the
-            ! solution, so try the SPD Cholesky first: a trial that is not PD
-            ! fails cheaply and the caller raises the damping. The relative
-            ! damping mu is recovered from the shift mu*(|d| + 1e-12 max|d|).
-            ! The gauge saddle point is indefinite, and at a damping above
-            ! spd_mu_limit a failed Cholesky is no longer informative, so those
-            ! use the native supernodal pivoted LU action (also used for the
-            ! free-boundary KKT): scalar LDLT Schur-row updates are too costly
-            ! on the map ladders. This changes only the factor, not the Hessian.
-            spd = nc == 0
-            if (spd) then
-                dscale = maxval(abs(c%bdiag), mask=keep(:map%nred))
-                mu = 0
-                do row = 1, map%nred
-                    if (keep(row) .and. shift(row) > 0) mu = max(mu, shift(row)/ &
-                        (abs(c%bdiag(row)) + 1.0e-12_dp*dscale))
-                end do
-                spd = .not. mu > spd_mu_limit
-            end if
-            if (spd) then
-                slv%options%symmetry = FORTSPARSE_SYM_SPD
-                slv%options%lu_method = FORTSPARSE_LU_SCALAR
-            else
-                slv%options%symmetry = FORTSPARSE_SYM_GENERAL
-                slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
-            end if
+            ! Relabelling directions can leave the map Hessian indefinite near
+            ! equilibrium. Keep the pivoted LU Newton trial: rejecting a
+            ! nonpositive Cholesky pivot would increase damping before the
+            ! energy line search and change the attained approximation at the
+            ! requested gradient tolerance. The cached canonical matrix and
+            ! symbolic reuse apply to this factorisation as well.
+            slv%options%symmetry = FORTSPARSE_SYM_GENERAL
+            slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
             slv%options%ordering = FORTSPARSE_ORDER_AMD
             slv%options%verify_factor = map%verify_factor
             if (gs_direct_available()) then
@@ -1667,13 +1645,6 @@ contains
         info = merge(0, 1, status_ok(sstatus))
         report%factorizations = report%factorizations + 1
         if (info /= 0) then
-            ! A pivot that is not positive keeps the symbolic analysis: the
-            ! next trial refactors on it without a new analysis.
-            if (spd .and. sstatus%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
-                if (.not. done) report%analyses = report%analyses + 1
-                done = .true.
-                return
-            end if
             if (done) call sparse_destroy(slv)
             done = .false.
             return
