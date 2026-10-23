@@ -442,25 +442,35 @@ contains
         ! must not change the solve: the same A3 solve with verify_factor
         ! (FortSparse residual check, FortSparse canonical projection compared
         ! with the cache) reproduces map%x and the iteration counts bitwise.
+        ! A trial that is not positive definite (undamped start) must refactor
+        ! on the retained symbolic analysis: one analysis per solve.
         type(gs_state_t) :: state
         type(ideal_map_t) :: map, checked
         type(ideal_map_solve_report_t) :: report, checked_report
+        real(dp), parameter :: damping(3) = [1.0e-6_dp, 1.0e-14_dp, 0.0_dp]
+        integer :: k
         call make_mesh(16, degree, state)
-        call build_map(state, 1, 0, map)
-        call build_map(state, 1, 0, checked)
-        checked%verify_factor = .true.
-        call solve_map(map, report, .false.)
-        call solve_map(checked, checked_report, .false.)
-        print '(a,3i5,es12.4)', 'iterations factorizations analyses roundoff', &
-            report%iterations, report%factorizations, report%analyses, &
-            report%assembly_roundoff
-        if (report%iterations < 2) error stop 'factor: trivial solve'
-        if (any(map%x /= checked%x)) error stop 'factor: verified solve differs'
-        if (report%iterations /= checked_report%iterations .or. &
-            report%factorizations /= checked_report%factorizations) &
-            error stop 'factor: verified iteration counts differ'
-        if (report%assembly_roundoff /= checked_report%assembly_roundoff) &
-            error stop 'factor: verified roundoff differs'
+        do k = 1, size(damping)
+            initial_damping = damping(k)
+            call build_map(state, 1, 0, map)
+            call build_map(state, 1, 0, checked)
+            checked%verify_factor = .true.
+            call solve_map(map, report, .false.)
+            call solve_map(checked, checked_report, .false.)
+            print '(a,es9.1,3i5,es12.4)', 'damping iterations factorizations ' &
+                //'analyses roundoff', damping(k), report%iterations, &
+                report%factorizations, report%analyses, report%assembly_roundoff
+            if (report%iterations < 2) error stop 'factor: trivial solve'
+            if (any(map%x /= checked%x)) error stop 'factor: verified solve differs'
+            if (report%iterations /= checked_report%iterations .or. &
+                report%factorizations /= checked_report%factorizations) &
+                error stop 'factor: verified iteration counts differ'
+            if (report%assembly_roundoff /= checked_report%assembly_roundoff) &
+                error stop 'factor: verified roundoff differs'
+            if (report%analyses /= 1) error stop 'factor: more than one analysis'
+            if (k == 2 .and. report%factorizations <= report%iterations) &
+                error stop 'factor: no non-positive-definite trial exercised'
+        end do
     end subroutine
 
     subroutine residual_check()
