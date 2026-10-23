@@ -11,6 +11,7 @@ module kin6d_triangle_basis
     use kin6d_segment_leaves, only: gs_segment_cubic_value, gs_segment_cubic_slopes
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    use fortnum_roots, only: scalar_root_function_t
     implicit none
     private
     public :: triangle_basis_jet, cubic_segment_roots, cubic_segment_stationary
@@ -20,6 +21,12 @@ module kin6d_triangle_basis
     integer, parameter, public :: TRIANGLE_MAX_DEGREE = 8
     integer, parameter, public :: TRIANGLE_MAX_NODES = &
         (TRIANGLE_MAX_DEGREE + 1)*(TRIANGLE_MAX_DEGREE + 2)/2
+    type, extends(scalar_root_function_t) :: cubic_segment_roots_root_t
+        real(dp), pointer :: level => null()
+        real(dp), pointer :: values(:) => null()
+    contains
+        procedure :: evaluate => cubic_segment_roots_root_evaluate
+    end type
 contains
     pure subroutine triangle_node_powers(degree, powers)
         ! Barycentric powers of the nodal basis in KIN6D's local order: the
@@ -166,7 +173,6 @@ contains
             end do
         end if
     end subroutine
-
     subroutine cubic_segment_stationary(values, roots, count)
         real(dp), intent(in) :: values(4)
         real(dp), intent(out) :: roots(2)
@@ -197,28 +203,31 @@ contains
             roots(count) = trial(j)
         end do
     end subroutine
-
     subroutine cubic_segment_roots(values, level, roots, count)
-        real(dp), intent(in) :: values(4), level
+        real(dp), intent(in), target :: values(4), level
         real(dp), intent(out) :: roots(3)
         integer, intent(out) :: count
         real(dp) :: critical(2), knots(4), left, right, root, tolerance
         integer :: nc, j
         type(fortnum_status_t) :: status
+        type(cubic_segment_roots_root_t) :: root_function
+        root_function%level => level
+        root_function%values => values
         call cubic_segment_stationary(values, critical, nc)
         knots(1) = 0; knots(nc + 2) = 1
         knots(2:nc + 1) = critical(:nc)
         tolerance = 16*epsilon(1.0_dp)*max(maxval(abs(values - level)), tiny(1.0_dp))
         count = 0; roots = 0
         do j = 1, nc + 1
-            left = polynomial(knots(j)); right = polynomial(knots(j + 1))
+            left = root_function%evaluate(knots(j)); right = &
+                root_function%evaluate(knots(j + 1))
             if (abs(left) <= tolerance) then
                 root = knots(j)
             else if (abs(right) <= tolerance) then
                 root = knots(j + 1)
             else
                 if ((left > 0) .eqv. (right > 0)) cycle
-                call root_brent(polynomial, knots(j), knots(j + 1), root, status, &
+                call root_brent(root_function, knots(j), knots(j + 1), root, status, &
                     16*epsilon(1.0_dp), tolerance, 64)
                 if (status%code /= FORTNUM_OK) cycle
             end if
@@ -228,12 +237,13 @@ contains
             count = count + 1
             roots(count) = root
         end do
-    contains
-        pure function polynomial(t) result(value)
-            real(dp), intent(in) :: t
-            real(dp) :: value
-            call gs_segment_cubic_value(t, level, values(1), values(2), values(3), &
-                                        values(4), value)
-        end function
     end subroutine
+    pure function cubic_segment_roots_root_evaluate(self, x) result(y)
+        class(cubic_segment_roots_root_t), intent(in) :: self
+            real(dp), intent(in) :: x
+            real(dp) :: y
+            call gs_segment_cubic_value(x, self%level, self%values(1), &
+                self%values(2), self%values(3), &
+                                        self%values(4), y)
+    end function cubic_segment_roots_root_evaluate
 end module

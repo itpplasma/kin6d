@@ -29,12 +29,13 @@ module kin6d_fermi_gas
         fermi_rel_theta_derivative, fermi_rel_theta_derivative_interval, &
         fermi_rel_root_bracket, fermi_rel_tail_interval, fermi_rel_window, &
         fermi_rel_grid
+    use fortnum_roots, only: scalar_root_derivative_t
+    use fortnum_verified_quadrature, only: midpoint_batch_function_t
     implicit none
     private
     public :: fermi_workspace_t, fermi_state_t, initialize_fermi_workspace
     public :: solve_fermi_gas, occupation_fermi_gas, fermi_gas_jvp, fermi_gas_vjp
     public :: fermi_si_state_t, solve_fermi_gas_si
-
     type :: fermi_workspace_t
         private
         real(dp), allocatable :: edges(:), nodes(:), weights(:)
@@ -44,7 +45,6 @@ module kin6d_fermi_gas
         integer :: cached_nodes = 0
         logical :: initialized = .false.
     end type fermi_workspace_t
-
     type :: fermi_state_t
         real(dp) :: theta = 0.0_dp, mu = 0.0_dp, pressure = 0.0_dp
         ! Relativity parameter x=pF/(m*c); zero selects the nonrelativistic model.
@@ -67,7 +67,6 @@ module kin6d_fermi_gas
         type(interval_t), private :: prepared_value(6), prepared_derivative(6)
         type(interval_t), private :: prepared_theta_bound, prepared_relativity
     end type fermi_state_t
-
     type :: fermi_si_state_t
         type(fermi_state_t) :: normalized
         real(dp) :: fermi_momentum = 0.0_dp, fermi_energy = 0.0_dp
@@ -80,9 +79,23 @@ module kin6d_fermi_gas
         type(interval_t) :: screening_wavenumber_bound, bulk_modulus_bound
         logical :: certified = .false.
     end type fermi_si_state_t
-
+    type, extends(scalar_root_derivative_t) :: solve_fermi_gas_root_t
+        logical, pointer :: rel => null()
+        real(dp), pointer :: theta => null()
+        type(fermi_workspace_t), pointer :: work => null()
+        real(dp), pointer :: x => null()
+    contains
+        procedure :: evaluate => solve_fermi_gas_root_evaluate
+    end type
+    type, extends(midpoint_batch_function_t) :: verified_moments_evaluate_cell_t
+        type(interval_t), pointer :: mu => null()
+        logical, pointer :: rel => null()
+        type(interval_t), pointer :: theta => null()
+        type(interval_t), pointer :: x => null()
+    contains
+        procedure :: evaluate => verified_moments_evaluate_cell_evaluate
+    end type
 contains
-
     subroutine solve_fermi_gas_si(work, density, temperature, mass, hbar, kb, &
                                  charge, epsilon, state, ok, speed)
         type(fermi_workspace_t), intent(inout) :: work
@@ -147,12 +160,10 @@ contains
         state%certified = .true.
         ok = .true.
     end subroutine solve_fermi_gas_si
-
     subroutine initialize_fermi_workspace(work, max_cells, ok)
         type(fermi_workspace_t), intent(out) :: work
         integer, intent(in) :: max_cells
         logical, intent(out) :: ok
-
         ok = .false.
         if (max_cells < 64 .or. max_cells >= huge(max_cells)) return
         allocate (work%edges(max_cells + 1), work%nodes(work%maximum_nodes), &
@@ -160,11 +171,10 @@ contains
         work%initialized = .true.
         ok = .true.
     end subroutine initialize_fermi_workspace
-
     subroutine solve_fermi_gas(work, theta, state, ok, certify, theta_interval, &
                                relativity, relativity_interval)
-        type(fermi_workspace_t), intent(inout) :: work
-        real(dp), intent(in) :: theta
+        type(fermi_workspace_t), intent(inout), target :: work
+        real(dp), intent(in), target :: theta
         type(fermi_state_t), intent(out) :: state
         logical, intent(out) :: ok
         logical, intent(in), optional :: certify
@@ -174,13 +184,17 @@ contains
         real(dp), intent(in), optional :: relativity
         type(interval_t), intent(in), optional :: relativity_interval
         real(dp) :: lower, upper, radius, xtol, step, mu, x0, f, stats(11), sums(11)
-        real(dp) :: unused_upper, x
+        real(dp), target :: unused_upper, x
         type(interval_t) :: lo, hi, mu_band, left_residual, right_residual
         type(interval_t) :: enclosed(11), values(6), gradients(6), residual
         type(fortnum_status_t) :: root_status
         integer :: j, k, maximum_cells, moments, expansion
-        logical :: check, need_candidate, rel
-
+        logical , target :: check, need_candidate, rel
+        type(solve_fermi_gas_root_t) :: root_function
+        root_function%rel => rel
+        root_function%theta => theta
+        root_function%work => work
+        root_function%x => x
         state = fermi_state_t()
         ok = .false.
         state%status = 'invalid-input'
@@ -228,14 +242,14 @@ contains
                 ! mu; extend the candidate lower bracket until the sign changes.
                 state%status = 'candidate-bracket-failed'
                 do expansion = 1, 64
-                    call density_equation(lower, f, unused_upper)
+                    call root_function%evaluate(lower, f, unused_upper)
                     if (f < 0.0_dp) exit
                     if (expansion == 64 .or. .not. ieee_is_finite(f)) return
                     lower = lower - (abs(lower) + 4.0_dp*theta)
                 end do
             end if
             call fermi_half(lower, upper, x0)
-            call root_newton(density_equation, lower, upper, x0, mu, root_status, &
+            call root_newton(root_function, lower, upper, x0, mu, root_status, &
                              xtol=xtol, ftol=1.0e-12_dp, max_iter=200, &
                              deriv_floor=1.0e-280_dp)
             state%status = 'candidate-root-failed'
@@ -345,36 +359,7 @@ contains
             work%candidate_nodes = work%candidate_nodes*2
             work%cells = 64
         end do
-
-    contains
-
-        pure subroutine density_equation(candidate, value, derivative)
-            real(dp), intent(in) :: candidate
-            real(dp), intent(out) :: value, derivative
-            real(dp) :: occupation, i2, i2mu, sum2, sum_mu, next
-            integer :: node
-            sum2 = 0.0_dp; sum_mu = 0.0_dp
-            do node = 1, work%candidate_nodes
-                occupation = occupation_value(work%nodes(node), theta, candidate, x, rel)
-                if (rel) then
-                    call fermi_rel_density_integrand(work%nodes(node), &
-                        rel_root(work%nodes(node), x), theta, candidate, x, &
-                        occupation, i2, i2mu)
-                else
-                    call fermi_density_integrand(work%nodes(node), theta, candidate, &
-                                                 occupation, i2, i2mu)
-                end if
-                call fermi_weighted_add(sum2, i2, work%weights(node), next)
-                sum2 = next
-                call fermi_weighted_add(sum_mu, i2mu, work%weights(node), next)
-                sum_mu = next
-            end do
-            call fermi_residual(sum2, value)
-            call fermi_scaled_tolerance(sum_mu, 3.0_dp, derivative)
-        end subroutine density_equation
-
     end subroutine solve_fermi_gas
-
     subroutine prepare_nodes(work, theta, radius, x)
         type(fermi_workspace_t), intent(inout) :: work
         real(dp), intent(in) :: theta, radius, x
@@ -407,7 +392,6 @@ contains
         work%cached_nodes = work%candidate_nodes
         work%nodes_relativity = x
     end subroutine prepare_nodes
-
     subroutine prepare_edges(work, radius, theta, x)
         type(fermi_workspace_t), intent(inout) :: work
         real(dp), intent(in) :: radius, theta, x
@@ -434,7 +418,6 @@ contains
         work%edges(1) = 0.0_dp
         work%edges(work%cells + 1) = radius
     end subroutine prepare_edges
-
     !> Degenerate states (relativistic or not) use a four-segment mesh with
     !> equal counts, split at the cold Fermi surface r=1 inside a window of
     !> fermi_rel_window halfwidth. One Gauss rule across the whole window
@@ -457,12 +440,10 @@ contains
                    radius > window(4))) return
         use = .true.
     end subroutine graded_window
-
     pure real(dp) function rel_root(r, x) result(s)
         real(dp), intent(in) :: r, x
         call fermi_rel_root(r, x, s)
     end function rel_root
-
     pure real(dp) function occupation_value(r, theta, mu, x, rel) result(value)
         real(dp), intent(in) :: r, theta, mu, x
         logical, intent(in) :: rel
@@ -478,7 +459,6 @@ contains
             call fermi_negative(argument, value)
         end if
     end function occupation_value
-
     pure subroutine occupation_packet(r, theta, mu, x, rel, value, ok)
         type(interval_t), intent(in) :: r, theta, mu, x
         logical, intent(in) :: rel
@@ -508,17 +488,21 @@ contains
         value = intersect(interval(lower%lo, upper%hi), interval(0.0_dp, 1.0_dp))
         ok = finite_interval(value)
     end subroutine occupation_packet
-
     subroutine verified_moments(theta, mu, x, rel, radius, edges, integral, ok)
         real(dp), intent(in) :: radius, edges(:)
-        type(interval_t), intent(in) :: theta, mu, x
-        logical, intent(in) :: rel
+        type(interval_t), intent(in), target :: theta, mu, x
+        logical, intent(in), target :: rel
         type(interval_t), intent(out) :: integral(:)
         logical, intent(out) :: ok
         type(interval_t) :: tails(11), addition, next, s
         integer :: j
         logical :: positive
-        call composite_midpoint_batch(evaluate_cell, edges, integral, ok)
+        type(verified_moments_evaluate_cell_t) :: evaluate_cell_context
+        evaluate_cell_context%mu => mu
+        evaluate_cell_context%rel => rel
+        evaluate_cell_context%theta => theta
+        evaluate_cell_context%x => x
+        call composite_midpoint_batch(evaluate_cell_context, edges, integral, ok)
         if (.not. ok) return
         if (rel) then
             call fermi_rel_root_interval(interval(radius), x, s)
@@ -554,65 +538,7 @@ contains
                 return
             end if
         end do
-
-    contains
-
-        subroutine evaluate_cell(cell, midpoint, value, curvature, callback_ok)
-            type(interval_t), intent(in) :: cell, midpoint
-            type(interval_t), intent(out) :: value(:), curvature(:)
-            logical, intent(out) :: callback_ok
-            type(interval_t) :: midpoint_f, cell_f, raw(11), unused, s_mid, s_cell
-            integer :: component
-            call occupation_packet(midpoint, theta, mu, x, rel, midpoint_f, &
-                                   callback_ok)
-            if (.not. callback_ok) return
-            call occupation_packet(cell, theta, mu, x, rel, cell_f, callback_ok)
-            if (.not. callback_ok) return
-            if (rel) then
-                call fermi_rel_root_interval(midpoint, x, s_mid)
-                call fermi_rel_root_interval(cell, x, s_cell)
-            end if
-            if (size(value) == 1) then
-                if (rel) then
-                    call fermi_rel_density_integrand_interval(midpoint, s_mid, theta, &
-                        mu, x, midpoint_f, value(1), unused)
-                    call fermi_rel_density_curvature_interval(cell, s_cell, theta, &
-                        mu, x, cell_f, raw(1))
-                else
-                    call fermi_density_integrand_interval(midpoint, theta, &
-                        mu, midpoint_f, value(1), unused)
-                    call fermi_density_curvature_interval(cell, theta, &
-                                                         mu, cell_f, raw(1))
-                end if
-            else if (rel) then
-                call fermi_rel_integrands_interval(midpoint, s_mid, theta, mu, x, &
-                    midpoint_f, value(1), value(2), value(3), value(4), value(5), &
-                    value(6), value(7), value(8), value(9), value(10), value(11))
-                call fermi_rel_curvature_interval(cell, s_cell, theta, mu, x, cell_f, &
-                    raw(1), raw(2), raw(3), raw(4), raw(5), raw(6), raw(7), raw(8), &
-                    raw(9), raw(10), raw(11))
-            else
-                call fermi_integrands_interval(midpoint, theta, mu, &
-                    midpoint_f, value(1), value(2), value(3), value(4), value(5), &
-                    value(6), value(7), value(8))
-                call fermi_curvature_interval(cell, theta, mu, cell_f, &
-                    raw(1), raw(2), raw(3), raw(4), raw(5), raw(6), raw(7), raw(8))
-            end if
-            do component = 1, size(value)
-                if (.not. finite_interval(value(component))) then
-                    callback_ok = .false.
-                    return
-                end if
-                if (.not. finite_interval(raw(component))) then
-                    callback_ok = .false.
-                    return
-                end if
-                curvature(component) = interval(0.0_dp, mag(raw(component)))
-            end do
-        end subroutine evaluate_cell
-
     end subroutine verified_moments
-
     pure subroutine enclosed_eos(mu, integral, rel, value, gradient, ok)
         type(interval_t), intent(in) :: mu, integral(11)
         logical, intent(in) :: rel
@@ -643,14 +569,12 @@ contains
         end do
         ok = .true.
     end subroutine enclosed_eos
-
     pure function center_values(state) result(value)
         type(fermi_state_t), intent(in) :: state
         real(dp) :: value(6)
         value = [state%mu, state%pressure, state%energy, state%susceptibility, &
                  state%screening_ratio, state%bulk_modulus]
     end function center_values
-
     pure logical function accuracy_satisfied(state, value) result(ok)
         type(fermi_state_t), intent(in) :: state
         type(interval_t), intent(in) :: value(6)
@@ -668,7 +592,6 @@ contains
         end do
         ok = .true.
     end function accuracy_satisfied
-
     pure logical function candidate_outside_budget(state, value) result(outside)
         type(fermi_state_t), intent(in) :: state
         type(interval_t), intent(in) :: value(6)
@@ -688,7 +611,6 @@ contains
             end if
         end do
     end function candidate_outside_budget
-
     subroutine set_bounds(state, value, gradient)
         type(fermi_state_t), intent(inout) :: state
         type(interval_t), intent(in) :: value(6), gradient(6)
@@ -716,7 +638,6 @@ contains
         state%prepared_derivative = displayed_gradient
         state%prepared = .true.
     end subroutine set_bounds
-
     subroutine occupation_fermi_gas(state, q, value, lower, upper, ok)
         type(fermi_state_t), intent(in) :: state
         real(dp), intent(in) :: q
@@ -740,7 +661,6 @@ contains
         packet = hull(packet, interval(value))
         lower = packet%lo; upper = packet%hi
     end subroutine occupation_fermi_gas
-
     subroutine fermi_gas_jvp(state, dtheta, tangent, tangent_bound, ok)
         type(fermi_state_t), intent(in) :: state
         real(dp), intent(in) :: dtheta
@@ -766,7 +686,6 @@ contains
         end do
         ok = .true.
     end subroutine fermi_gas_jvp
-
     subroutine fermi_gas_vjp(state, cotangent, gtheta, gtheta_bound, ok)
         type(fermi_state_t), intent(in) :: state
         real(dp), intent(in) :: cotangent(6)
@@ -793,7 +712,6 @@ contains
         gtheta_bound = hull(gtheta_bound, interval(gtheta))
         ok = .true.
     end subroutine fermi_gas_vjp
-
     pure logical function packet_valid(state) result(ok)
         type(fermi_state_t), intent(in) :: state
         type(interval_t) :: bounds(6)
@@ -827,7 +745,6 @@ contains
         end do
         ok = .true.
     end function packet_valid
-
     pure logical function same_interval(a, b) result(ok)
         type(interval_t), intent(in) :: a, b
         ok = .false.
@@ -836,7 +753,6 @@ contains
         if (a%hi < b%hi .or. a%hi > b%hi) return
         ok = .true.
     end function same_interval
-
     pure logical function finite_interval(value) result(ok)
         type(interval_t), intent(in) :: value
         ok = .false.
@@ -844,5 +760,92 @@ contains
         if (.not. ieee_is_finite(value%lo) .or. .not. ieee_is_finite(value%hi)) return
         ok = .true.
     end function finite_interval
-
+    pure subroutine solve_fermi_gas_root_evaluate(self, x, fx, dfx)
+        class(solve_fermi_gas_root_t), intent(in) :: self
+            real(dp), intent(in) :: x
+            real(dp), intent(out) :: fx, dfx
+            real(dp) :: occupation, i2, i2mu, sum2, sum_mu, next
+            integer :: node
+            sum2 = 0.0_dp; sum_mu = 0.0_dp
+            do node = 1, self%work%candidate_nodes
+                occupation = occupation_value(self%work%nodes(node), self%theta, x, &
+                    self%x, self%rel)
+                if (self%rel) then
+                    call fermi_rel_density_integrand(self%work%nodes(node), &
+                        rel_root(self%work%nodes(node), self%x), self%theta, x, &
+                            self%x, &
+                        occupation, i2, i2mu)
+                else
+                    call fermi_density_integrand(self%work%nodes(node), self%theta, x, &
+                                                 occupation, i2, i2mu)
+                end if
+                call fermi_weighted_add(sum2, i2, self%work%weights(node), next)
+                sum2 = next
+                call fermi_weighted_add(sum_mu, i2mu, self%work%weights(node), next)
+                sum_mu = next
+            end do
+            call fermi_residual(sum2, fx)
+            call fermi_scaled_tolerance(sum_mu, 3.0_dp, dfx)
+    end subroutine solve_fermi_gas_root_evaluate
+    subroutine verified_moments_evaluate_cell_evaluate(self, cell, midpoint, value, &
+        curvature, ok)
+        class(verified_moments_evaluate_cell_t), intent(in) :: self
+            type(interval_t), intent(in) :: cell, midpoint
+            type(interval_t), intent(out) :: value(:), curvature(:)
+            logical, intent(out) :: ok
+            type(interval_t) :: midpoint_f, cell_f, raw(11), unused, s_mid, s_cell
+            integer :: component
+            call occupation_packet(midpoint, self%theta, self%mu, self%x, self%rel, &
+                midpoint_f, &
+                                   ok)
+            if (.not. ok) return
+            call occupation_packet(cell, self%theta, self%mu, self%x, self%rel, &
+                cell_f, ok)
+            if (.not. ok) return
+            if (self%rel) then
+                call fermi_rel_root_interval(midpoint, self%x, s_mid)
+                call fermi_rel_root_interval(cell, self%x, s_cell)
+            end if
+            if (size(value) == 1) then
+                if (self%rel) then
+                    call fermi_rel_density_integrand_interval(midpoint, s_mid, &
+                        self%theta, &
+                        self%mu, self%x, midpoint_f, value(1), unused)
+                    call fermi_rel_density_curvature_interval(cell, s_cell, &
+                        self%theta, &
+                        self%mu, self%x, cell_f, raw(1))
+                else
+                    call fermi_density_integrand_interval(midpoint, self%theta, &
+                        self%mu, midpoint_f, value(1), unused)
+                    call fermi_density_curvature_interval(cell, self%theta, &
+                                                         self%mu, cell_f, raw(1))
+                end if
+            else if (self%rel) then
+                call fermi_rel_integrands_interval(midpoint, s_mid, self%theta, &
+                    self%mu, self%x, &
+                    midpoint_f, value(1), value(2), value(3), value(4), value(5), &
+                    value(6), value(7), value(8), value(9), value(10), value(11))
+                call fermi_rel_curvature_interval(cell, s_cell, self%theta, self%mu, &
+                    self%x, cell_f, &
+                    raw(1), raw(2), raw(3), raw(4), raw(5), raw(6), raw(7), raw(8), &
+                    raw(9), raw(10), raw(11))
+            else
+                call fermi_integrands_interval(midpoint, self%theta, self%mu, &
+                    midpoint_f, value(1), value(2), value(3), value(4), value(5), &
+                    value(6), value(7), value(8))
+                call fermi_curvature_interval(cell, self%theta, self%mu, cell_f, &
+                    raw(1), raw(2), raw(3), raw(4), raw(5), raw(6), raw(7), raw(8))
+            end if
+            do component = 1, size(value)
+                if (.not. finite_interval(value(component))) then
+                    ok = .false.
+                    return
+                end if
+                if (.not. finite_interval(raw(component))) then
+                    ok = .false.
+                    return
+                end if
+                curvature(component) = interval(0.0_dp, mag(raw(component)))
+            end do
+    end subroutine verified_moments_evaluate_cell_evaluate
 end module kin6d_fermi_gas

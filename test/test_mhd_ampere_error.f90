@@ -1,5 +1,4 @@
-program test_mhd_ampere_error
-    !! Small independent coupled-energy oracle; no large response iterations.
+module test_mhd_ampere_error_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
@@ -10,14 +9,41 @@ program test_mhd_ampere_error
     use kin6d_mhd_ampere_n, only: ampere_n_t, ampere_n_error_t, &
         ampere_n_build, ampere_n_solve, ampere_n_error, &
         ampere_n_equilibrated_error, ampere_n_free
+
+    use fortfem_meridian_feec_n, only: meridian_field_t
     implicit none
-    integer :: mode_n
+    private
+    public :: run_test_mhd_ampere_error
+
+    type :: run_test_mhd_ampere_error_context_t
+        integer, pointer :: mode_n => null()
+    end type
+
+    type, extends(meridian_field_t) :: run_test_mhd_ampere_error_exact_current_t
+        type(run_test_mhd_ampere_error_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_mhd_ampere_error_exact_current_binding
+    end type
+
+contains
+    subroutine run_test_mhd_ampere_error()
+    !! Small independent coupled-energy oracle; no large response iterations.
+    implicit none
+    integer , target :: mode_n
+        type(run_test_mhd_ampere_error_context_t), target :: ctx
+        type(run_test_mhd_ampere_error_exact_current_t), target :: &
+            exact_current_operator
 
     call mode_case(1, 1)
     call mode_case(2, -2)
     print '(a)', 'Ampere error and exterior-status checks passed'
 
 contains
+    subroutine bind_run_test_mhd_ampere_error_context()
+        ctx%mode_n => mode_n
+        exact_current_operator%data => ctx
+    end subroutine bind_run_test_mhd_ampere_error_context
+
 
     subroutine require(condition, message)
         logical, intent(in) :: condition
@@ -47,12 +73,6 @@ contains
         a(1) = cmplx(x(1), 0.0_dp, dp)
     end subroutine exact_a
 
-    subroutine exact_current(x, j)
-        real(dp), intent(in) :: x(2)
-        complex(dp), intent(out) :: j(3)
-        j = [(0.0_dp, 0.0_dp), (0.0_dp, 0.0_dp), (0.0_dp, 0.0_dp)]
-        j(1) = cmplx(real(mode_n*mode_n, dp)/x(1), 0.0_dp, dp)
-    end subroutine exact_current
 
     subroutine mode_case(geometry, n)
         integer, intent(in) :: geometry, n
@@ -142,7 +162,8 @@ contains
             call sparse_solve_once(mass, work, full, fst)
             call require(status_ok(fst), 'independent L2 projection')
             a = full(:amp%nn)
-            call ampere_n_equilibrated_error(fs, fsd, amp, a, exact_current, &
+        call bind_run_test_mhd_ampere_error_context()
+            call ampere_n_equilibrated_error(fs, fsd, amp, a, exact_current_operator, &
                 perturbed, st)
             call require(st == 0, 'nonzero manufactured equilibration')
             call require(perturbed%interior%bound < 1.0e-9_dp, &
@@ -159,4 +180,27 @@ contains
         call ampere_n_free(amp)
         call require(amp%error%discrete_claim == 'unavailable', 'free clears status')
     end subroutine mode_case
+
+    end subroutine run_test_mhd_ampere_error
+
+    subroutine run_test_mhd_ampere_error_exact_current(ctx, x, j)
+        type(run_test_mhd_ampere_error_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: j(3)
+        j = [(0.0_dp, 0.0_dp), (0.0_dp, 0.0_dp), (0.0_dp, 0.0_dp)]
+        j(1) = cmplx(real(ctx%mode_n*ctx%mode_n, dp)/x(1), 0.0_dp, dp)
+    end subroutine run_test_mhd_ampere_error_exact_current
+
+    subroutine run_test_mhd_ampere_error_exact_current_binding(self, x, v)
+        class(run_test_mhd_ampere_error_exact_current_t), intent(in) :: self
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: v(3)
+        call run_test_mhd_ampere_error_exact_current(self%data, x, v)
+    end subroutine
+end module test_mhd_ampere_error_callbacks
+
+program test_mhd_ampere_error
+    use test_mhd_ampere_error_callbacks, only: run_test_mhd_ampere_error
+    implicit none
+    call run_test_mhd_ampere_error()
 end program test_mhd_ampere_error

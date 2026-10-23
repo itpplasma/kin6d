@@ -17,10 +17,13 @@ module kin6d_gs_certificate
         GS_CHECKED_OK
     use fortnum_interval, only: interval_t
     use kin6d_gs_profile_law, only: gs_profile_law_t
-    use kin6d_gs_nonlinear, only: gs_forcing_t
+    use kin6d_gs_nonlinear, only: gs_forcing_t, gs_forcing_function_t
     use kin6d_gs_free_boundary, only: gs_fb_system_t
     use kin6d_gs_majorant, only: gs_functional_majorant, gs_fb_majorant, &
         gs_coupled_estimator_t, gs_fb_majorant_t, GS_CM_OK
+
+    use kin6d_gs_majorant, only: gs_point_source_t
+    use kin6d_gs_majorant, only: gs_fb_majorant_object
     implicit none
     private
     public :: gs_fixed_certifier_t, gs_fb_certifier_t
@@ -52,12 +55,25 @@ module kin6d_gs_certificate
         type(gs_coupled_estimator_t), pointer :: est => null()
         real(dp), allocatable :: currents(:)
         procedure(gs_forcing_t), pointer, nopass :: forcing => null()
+        class(gs_forcing_function_t), pointer :: forcing_function => null()
         integer :: max_iterations = 200
         ! The lane's full result of the last estimate.
         type(gs_fb_majorant_t) :: last
     contains
         procedure :: estimate => fb_estimate
     end type
+    type :: fixed_estimate_context_t
+        real(dp) :: pprime, ffprime, mu0
+        type(gs_profile_law_t), allocatable :: law
+        procedure(gs_forcing_t), pointer, nopass :: forcing => null()
+    end type
+
+    type, extends(gs_point_source_t) :: fixed_estimate_source_t
+        type(fixed_estimate_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => fixed_estimate_source_binding
+    end type
+
 contains
     subroutine fixed_estimate(certifier, majorant, stability, kind, status, &
                               lane_status)
@@ -67,6 +83,8 @@ contains
         real(dp) :: bounded
         type(interval_t) :: energy_bound
         integer :: eq_status, stability_status, checked_status
+        type(fixed_estimate_context_t), target :: ctx
+        type(fixed_estimate_source_t), target :: source_operator
         majorant = huge(1.0_dp); stability = 0; kind = EQ_STABILITY_NONE
         status = 1; lane_status = 1
         certifier%method = 'unavailable'
@@ -81,8 +99,9 @@ contains
             if (.not. certifier%law%valid()) return
         end if
         certifier%stability_result = gs_stability_t()
+        call bind_fixed_estimate_context()
         call gs_equilibrated_majorant(certifier%state, certifier%state%psi, &
-            source, certifier%last, eq_status)
+            source_operator, certifier%last, eq_status)
         if (eq_status == GS_EQ_OK) then
             certifier%method = 'equilibrated-rt'
             certifier%flux_defect = certifier%last%flux_defect
@@ -144,21 +163,15 @@ contains
             end if
         end if
     contains
-        function source(cell, r, z, psi) result(f)
-            integer, intent(in) :: cell
-            real(dp), intent(in) :: r, z, psi
-            real(dp) :: f, pp, ff
-            if (cell < 1) then
-                f = huge(1.0_dp)
-                return
-            end if
-            pp = certifier%pprime; ff = certifier%ffprime
-            if (allocated(certifier%law)) then
-                call gs_law_sources(certifier%law, psi, pp, ff)
-            end if
-            call gs_source(r, certifier%mu0, pp, ff, f)
-            if (associated(certifier%forcing)) f = f + certifier%forcing(r, z)
-        end function source
+    subroutine bind_fixed_estimate_context()
+        ctx%pprime = certifier%pprime
+        ctx%ffprime = certifier%ffprime
+        ctx%mu0 = certifier%mu0
+        if (allocated(certifier%law)) ctx%law = certifier%law
+        ctx%forcing => certifier%forcing
+        source_operator%data => ctx
+    end subroutine bind_fixed_estimate_context
+
     end subroutine
 
     subroutine fb_estimate(certifier, majorant, stability, kind, status, &
@@ -170,7 +183,11 @@ contains
         status = 1; lane_status = 1
         if (.not. (associated(certifier%state) .and. associated(certifier%sys))) return
         if (.not. (associated(certifier%est) .and. allocated(certifier%currents))) return
-        if (associated(certifier%forcing)) then
+        if (associated(certifier%forcing_function)) then
+            call gs_fb_majorant_object(certifier%state, certifier%sys, &
+                certifier%est, certifier%currents, certifier%last, lane_status, &
+                certifier%forcing_function, certifier%max_iterations)
+        else if (associated(certifier%forcing)) then
             call gs_fb_majorant(certifier%state, certifier%sys, certifier%est, &
                 certifier%currents, certifier%last, lane_status, &
                 certifier%forcing, certifier%max_iterations)
@@ -185,4 +202,29 @@ contains
         stability = certifier%last%beta
         kind = EQ_STABILITY_ESTIMATE
     end subroutine
+
+    function fixed_estimate_source(ctx, cell, r, z, psi) result(f)
+        type(fixed_estimate_context_t), intent(in) :: ctx
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: f, pp, ff
+            if (cell < 1) then
+                f = huge(1.0_dp)
+                return
+            end if
+            pp = ctx%pprime; ff = ctx%ffprime
+            if (allocated(ctx%law)) then
+                call gs_law_sources(ctx%law, psi, pp, ff)
+            end if
+            call gs_source(r, ctx%mu0, pp, ff, f)
+            if (associated(ctx%forcing)) f = f + ctx%forcing(r, z)
+    end function fixed_estimate_source
+
+    function fixed_estimate_source_binding(self, cell, r, z, psi) result(result_value)
+        class(fixed_estimate_source_t), intent(in) :: self
+            integer, intent(in) :: cell
+            real(dp), intent(in) :: r, z, psi
+            real(dp) :: result_value, pp, ff
+        result_value = fixed_estimate_source(self%data, cell, r, z, psi)
+    end function
 end module kin6d_gs_certificate

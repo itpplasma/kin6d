@@ -32,6 +32,8 @@ module ocp_oscillation_app
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
                                   save_animation
     use fortplot_system_runtime, only: create_directory_runtime
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
     private
     public :: main
@@ -83,6 +85,17 @@ module ocp_oscillation_app
     logical :: ok, have_root
     character(256) :: msg
     character(160) :: heading
+
+    type :: draw_figures_context_t
+        real(dp), pointer :: pred(:) => null()
+        real(dp), pointer :: xc(:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: draw_figures_update_frame_t
+        type(draw_figures_context_t), pointer :: data => null()
+    contains
+        procedure :: update => draw_figures_update_frame_binding
+    end type
 
 contains
     subroutine main()
@@ -524,10 +537,13 @@ contains
     end subroutine
 
     subroutine draw_figures()
-        real(dp) :: ylo, yhi, span, xc(profile_bins), pred(profile_bins), sc(nshell)
+        real(dp) , target :: ylo, yhi, span, xc(profile_bins), pred(profile_bins), &
+            sc(nshell)
         real(dp) :: dlo, dhi
         integer :: j, m, frames, nvalid
         logical :: has(nshell)
+        type(draw_figures_context_t), target :: ctx
+        type(draw_figures_update_frame_t), target :: update_frame_operator
         ! The chaotic trajectory tangent is drawn only up to its validity
         ! horizon (first departure > 0.1 from the paired response, min over
         ! realizations); beyond it the tangent diverges and carries no response.
@@ -617,25 +633,45 @@ contains
         call figure(figsize=[12.8_dp, 6.4_dp])
         canvas => get_global_figure()
         frame = (samples + 1)/2
-        call draw_frame()
+        call bind_draw_figures_context()
+        call draw_figures_draw_frame(ctx)
         call savefig('output/'//trim(label)//'-particles.png')
         frames = samples + 24
-        animation = animation_func(update_frame, frames=frames, interval=42, fig=canvas)
+        call bind_draw_figures_context()
+        animation = animation_func(update_frame_operator, frames=frames, &
+            interval=42, fig=canvas)
         call save_animation(animation, 'output/'//trim(label)//'.mp4', fps=24, &
                             status=encode_status)
         if (encode_status /= 0) print '(a)', 'animation encoding failed'
         ylo = 0; yhi = 0; pred = 0
     contains
-        subroutine update_frame(index)
+    subroutine bind_draw_figures_context()
+        ctx%pred => pred
+        ctx%xc => xc
+        update_frame_operator%data => ctx
+    end subroutine bind_draw_figures_context
+
+
+    end subroutine
+
+    subroutine draw_figures_update_frame(ctx, index)
+        type(draw_figures_context_t), intent(in) :: ctx
             integer, intent(in) :: index
             frame = min(samples, index)
             call canvas%clear()
-            call draw_frame()
+            call draw_figures_draw_frame(ctx)
             call canvas%set_rendered(.false.)
-        end subroutine
+    end subroutine draw_figures_update_frame
 
-        subroutine draw_frame()
-            pred = -amplitude*volterra(frame)*cos(k*xc)
+    subroutine draw_figures_update_frame_binding(self, frame)
+        class(draw_figures_update_frame_t), intent(inout) :: self
+            integer, intent(in) :: frame
+        call draw_figures_update_frame(self%data, frame)
+    end subroutine
+
+    subroutine draw_figures_draw_frame(ctx)
+        type(draw_figures_context_t), intent(in) :: ctx
+            ctx%pred = -amplitude*volterra(frame)*cos(k*ctx%xc)
             call subplot(1, 2, 1)
             call scatter(sel_x(:, frame), sel_y(:, frame), c=sel_v(:, frame), &
                          color=blue, cmap='coolwarm', vmin=-vmax_colour, &
@@ -647,9 +683,9 @@ contains
             call xlabel('$x/\lambda_D$'); call ylabel('$y/\lambda_D$')
             call xlim(0.0_dp, box); call ylim(0.0_dp, box)
             call subplot(1, 2, 2)
-            call plot(xc, profile(:, frame), color=blue, linewidth=1.8_dp, &
+            call plot(ctx%xc, profile(:, frame), color=blue, linewidth=1.8_dp, &
                       label='paired difference, one realization')
-            call plot(xc, pred, color=black, linestyle='--', linewidth=1.2_dp, &
+            call plot(ctx%xc, ctx%pred, color=black, linestyle='--', linewidth=1.2_dp, &
                       label='linear Vlasov $-\epsilon N(t)\cos(kx)$')
             write (heading, '(a,f6.2)') 'Density perturbation along x, $\omega_p t$ = ', time(frame)
             call title(trim(heading))
@@ -657,8 +693,7 @@ contains
             call xlim(0.0_dp, box); call ylim(-view_profile, view_profile)
             call legend(loc='upper right')
             call tight_layout()
-        end subroutine
-    end subroutine
+    end subroutine draw_figures_draw_frame
 end module ocp_oscillation_app
 
 program ocp_oscillation_demo

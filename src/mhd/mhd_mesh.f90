@@ -66,12 +66,45 @@ module kin6d_mhd_mesh
     public :: ring_labels_merge
     public :: ring_labels_smooth
 
+    type, abstract, public :: polar_map_t
+    contains
+        procedure(polar_map_t_binding), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine polar_map_t_binding(self, u, theta, x)
+            import :: polar_map_t, dp
+            class(polar_map_t), intent(in) :: self
+            !! Physical point x = (R, Z) of the radial label u and angle
+            !! theta; x(0, theta) is the axis for every theta.
+            real(dp), intent(in) :: u, theta
+            real(dp), intent(out) :: x(2)
+        end subroutine
+    end interface
+
+    type, extends(polar_map_t) :: polar_map_adapter_t
+        procedure(polar_map_i), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => polar_map_adapter_t_evaluate
+    end type
+
+    interface flux_mesh_build
+        module procedure flux_mesh_build_object, flux_mesh_build_procedure
+    end interface
+
+    interface build_nodes
+        module procedure build_nodes_object, build_nodes_procedure
+    end interface
+
+    interface fan_node
+        module procedure fan_node_object, fan_node_procedure
+    end interface
+
 contains
 
-    subroutine flux_mesh_build(u, n_core, nth_max, geo, map, fm, status)
+    subroutine flux_mesh_build_object(u, n_core, nth_max, geo, map, fm, status)
         real(dp), intent(in) :: u(:)
         integer, intent(in) :: n_core, nth_max, geo
-        procedure(polar_map_i) :: map
+        class(polar_map_t), target, intent(in) :: map
         type(flux_mesh_t), intent(out) :: fm
         integer, intent(out) :: status
 
@@ -109,11 +142,11 @@ contains
         topo%n_triangles = nt
         topo%has_triangles = .true.
         allocate (topo%vertices(2, nv), topo%triangles(3, nt))
-        call map(0.0_dp, 0.0_dp, x)
+        call map%evaluate(0.0_dp, 0.0_dp, x)
         topo%vertices(:, 1) = x
         do j = 1, nr
             do i = 1, fm%nth(j)
-                call map(u(j), theta_of(fm, j, i), x)
+                call map%evaluate(u(j), theta_of(fm, j, i), x)
                 topo%vertices(:, fm%vfirst(j) + i - 1) = x
             end do
         end do
@@ -163,7 +196,7 @@ contains
         end do
         if (t /= nt) return
         call build_nodes(fm, topo, geo, map, status)
-    end subroutine flux_mesh_build
+    end subroutine flux_mesh_build_object
 
     pure real(dp) function theta_of(fm, j, i)
         type(flux_mesh_t), intent(in) :: fm
@@ -195,11 +228,11 @@ contains
         th = theta_of(fm, j, v - fm%vfirst(j) + 1)
     end subroutine vertex_polar
 
-    subroutine build_nodes(fm, topo, geo, map, status)
+    subroutine build_nodes_object(fm, topo, geo, map, status)
         type(flux_mesh_t), intent(inout) :: fm
         type(mesh_2d_t), intent(in) :: topo
         integer, intent(in) :: geo
-        procedure(polar_map_i) :: map
+        class(polar_map_t), target, intent(in) :: map
         integer, intent(out) :: status
 
         type(triangle_lagrange_basis_t) :: basis
@@ -233,7 +266,7 @@ contains
                         fm%mm%nodes(:, i, t))
                 else
                     uu = sum(l*up)
-                    call map(uu, sum(l*tp), p)
+                    call map%evaluate(uu, sum(l*tp), p)
                     w = curvature_weight(uu)
                     if (w < 1.0_dp) then
                         ! straight-sided triangle plus the weighted curvature
@@ -248,7 +281,7 @@ contains
             end do
         end do
         status = 0
-    end subroutine build_nodes
+    end subroutine build_nodes_object
 
     pure real(dp) function curvature_weight(u)
         !! Weight of the curved (polar-lattice) part of a node at radial label
@@ -266,7 +299,7 @@ contains
         curvature_weight = s*s*(3.0_dp - 2.0_dp*s)
     end function curvature_weight
 
-    subroutine fan_node(topo, t, l, ur, th1, th2, map, x)
+    subroutine fan_node_object(topo, t, l, ur, th1, th2, map, x)
         !! Node of barycentric coordinates l in the axis fan triangle t.  The
         !! polar parameters collapse at the axis (theta = (l2 th1 + l3 th2)/
         !! (l2 + l3) is direction dependent there), which makes a map through
@@ -279,7 +312,7 @@ contains
         type(mesh_2d_t), intent(in) :: topo
         integer, intent(in) :: t
         real(dp), intent(in) :: l(3), ur, th1, th2
-        procedure(polar_map_i) :: map
+        class(polar_map_t), target, intent(in) :: map
         real(dp), intent(out) :: x(2)
         real(dp) :: xr(2), d(2), tau
 
@@ -287,12 +320,12 @@ contains
             x = l(1)*v(:, tr(1)) + l(2)*v(:, tr(2)) + l(3)*v(:, tr(3))
             tau = l(2)
             if (tau > 0.0_dp .and. tau < 1.0_dp .and. l(1) > 0.0_dp) then
-                call map(ur, th1 + tau*(th2 - th1), xr)
+                call map%evaluate(ur, th1 + tau*(th2 - th1), xr)
                 d = xr - ((1.0_dp - tau)*v(:, tr(1)) + tau*v(:, tr(2)))
                 x = x + curvature_weight(ur)*l(1)*d/(1.0_dp - tau)
             end if
         end associate
-    end subroutine fan_node
+    end subroutine fan_node_object
 
     pure subroutine flux_mesh_ring_edge(fm, j, i, t, theta_a, theta_b)
         !! Triangle t of ring edge i of ring j (its local edge 1) and the
@@ -493,5 +526,77 @@ contains
             if (.not. split) exit
         end do
     end subroutine ring_labels_smooth
+
+
+    subroutine flux_mesh_build_procedure(u, n_core, nth_max, geo, map, fm, status)
+        real(dp), intent(in) :: u(:)
+        integer, intent(in) :: n_core, nth_max, geo
+        procedure(polar_map_i) :: map
+        type(flux_mesh_t), intent(out) :: fm
+        integer, intent(out) :: status
+        type(polar_map_adapter_t), target :: map_adapter
+
+        map_adapter%callback => map
+        call flux_mesh_build_object(u, &
+            n_core, &
+            nth_max, &
+            geo, &
+            map_adapter, &
+            fm, &
+            status)
+    end subroutine
+
+    subroutine build_nodes_procedure(fm, topo, geo, map, status)
+        type(flux_mesh_t), intent(inout) :: fm
+        type(mesh_2d_t), intent(in) :: topo
+        integer, intent(in) :: geo
+        procedure(polar_map_i) :: map
+        integer, intent(out) :: status
+        type(polar_map_adapter_t), target :: map_adapter
+
+        map_adapter%callback => map
+        call build_nodes_object(fm, &
+            topo, &
+            geo, &
+            map_adapter, &
+            status)
+    end subroutine
+
+    subroutine fan_node_procedure(topo, t, l, ur, th1, th2, map, x)
+        !! Node of barycentric coordinates l in the axis fan triangle t.  The
+        !! polar parameters collapse at the axis (theta = (l2 th1 + l3 th2)/
+        !! (l2 + l3) is direction dependent there), which makes a map through
+        !! them non-polynomial at the vertex and caps the order of a P_k
+        !! interpolant below k + 1.  Instead the element map is the straight
+        !! triangle plus the ring-edge sagitta d(l2) = x(u_1, theta(l2)) -
+        !! chord(l2) with the bubble l1 l2: x = straight + l1 l2 d(l2)/(l2
+        !! (1 - l2)), smooth, exact on the ring edge, straight on both
+        !! edges at the axis (shared with the neighbouring fan triangles).
+        type(mesh_2d_t), intent(in) :: topo
+        integer, intent(in) :: t
+        real(dp), intent(in) :: l(3), ur, th1, th2
+        procedure(polar_map_i) :: map
+        real(dp), intent(out) :: x(2)
+        type(polar_map_adapter_t), target :: map_adapter
+
+        map_adapter%callback => map
+        call fan_node_object(topo, &
+            t, &
+            l, &
+            ur, &
+            th1, &
+            th2, &
+            map_adapter, &
+            x)
+    end subroutine
+
+    subroutine polar_map_adapter_t_evaluate(self, u, theta, x)
+        class(polar_map_adapter_t), intent(in) :: self
+            !! Physical point x = (R, Z) of the radial label u and angle
+            !! theta; x(0, theta) is the axis for every theta.
+            real(dp), intent(in) :: u, theta
+            real(dp), intent(out) :: x(2)
+        call self%callback(u, theta, x)
+    end subroutine
 
 end module kin6d_mhd_mesh

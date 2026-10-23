@@ -140,5 +140,13 @@ ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_seed_boundary_label|
     ); fi
     load_job_environment
     ;;
+  no-executable-stack)
+    kin6d_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release \
+        -DKIN6D_BUILD_EXTRAS=ON -DKIN6D_CHECK_LEAN=OFF \
+        -DKIN6D_BUILD_CPU_PRECISION_BENCHMARK=ON
+    cmake --build build -j "$SCI_CPUS" --target kin6d_check_no_executable_stack
+    ctest --test-dir build --output-on-failure --no-tests=error \
+        -R '^kin6d_no_executable_stack$'
+    ;;
   *) echo "unknown CI tier: $tier" >&2; exit 2 ;;
 esac

@@ -18,16 +18,16 @@ module kin6d_screening_hierarchy
         screening_maldague_term, screening_potential_term, screening_potential_term_jvp, &
         screening_momentum_tail_interval, screening_maldague_tail_interval, &
         screening_inversion_tail_interval
+    use fortnum_integrate_gk, only: gk_function_t
+    use fortnum_integrate_gk, only: gk_function_t
     implicit none
     private
     public :: screening_state_t, screening_value_t, screening_setup, &
         screening_setup_normalized, lindhard_zero, lindhard_momentum, &
         lindhard_maldague, lindhard_response, screening_q_table_t, &
         screening_q_table, screened_ratio, screened_ratio_from_table
-
     integer, parameter :: low_order = 12, high_order = 20, max_levels = 48
     real(dp), parameter :: grading = 0.25_dp, pi = acos(-1.0_dp)
-
     !> Static ideal-gas screening state at (theta, kappa2). theta = 0 is the
     !> exact T=0 limit (closed-form Lindhard); theta > 0 uses mu from kin6d_fermi_gas.
     type :: screening_state_t
@@ -43,28 +43,35 @@ module kin6d_screening_hierarchy
         real(dp) :: xh(high_order) = 0.0_dp, wh(high_order) = 0.0_dp
         logical :: ready = .false., zero_temperature = .true.
     end type
-
     !> Candidate value (high-order composite Gauss), rigorous truncation tail
     !> bound and quadrature indicator |Q20 - Q12| (an indicator, not a bound).
     type :: screening_value_t
         real(dp) :: value = 0.0_dp, tail = 0.0_dp, indicator = 0.0_dp
     end type
-
     !> Composite q rule for Fourier inversion with G tabulated on its nodes.
     type :: screening_q_table_t
         real(dp), allocatable :: ql(:), wl(:), gl(:), qh(:), wh(:), gh(:)
         real(dp) :: qmax = 0.0_dp, tail = 0.0_dp, g_indicator = 0.0_dp
     end type
-
+    type, extends(gk_function_t) :: lindhard_momentum_root_t
+        type(screening_state_t), pointer :: state => null()
+        real(dp), pointer :: x => null()
+    contains
+        procedure :: evaluate => lindhard_momentum_root_evaluate
+    end type
+    type, extends(gk_function_t) :: lindhard_maldague_root_t
+        type(screening_state_t), pointer :: state => null()
+        real(dp), pointer :: x => null()
+    contains
+        procedure :: evaluate => lindhard_maldague_root_evaluate
+    end type
 contains
-
     subroutine prepare_rules(state)
         type(screening_state_t), intent(inout) :: state
         call gauss_legendre(low_order, state%xl, state%wl)
         call gauss_legendre(high_order, state%xh, state%wh)
         state%ready = .true.
     end subroutine
-
     !> Physical setup from density and temperature (energy units, k_B = 1)
     !> through the shared species record and the finite-T ideal Fermi EOS.
     subroutine screening_setup(units, s, density, temperature, state, ok)
@@ -99,7 +106,6 @@ contains
         call prepare_rules(state)
         ok = all(ieee_is_finite([state%kappa2, state%mu, state%ks_ratio]))
     end subroutine
-
     !> Normalized setup: theta = T/EF >= 0 and kappa2 = (kTF0/kF)^2.
     subroutine screening_setup_normalized(theta, kappa2, state, ok)
         real(dp), intent(in) :: theta, kappa2
@@ -125,7 +131,6 @@ contains
         call prepare_rules(state)
         ok = .true.
     end subroutine
-
     !> Exact T=0 Lindhard function F(x), x = q/(2 kF), from four generated charts.
     pure real(dp) function lindhard_zero(x) result(f)
         real(dp), intent(in) :: x
@@ -141,7 +146,6 @@ contains
             f = 0.5_dp
         end if
     end function
-
     !> Fermi occupation at r = p/pF from the authoritative kin6d_fermi_gas leaves.
     pure real(dp) function occupation(r, theta, mu) result(f)
         real(dp), intent(in) :: r, theta, mu
@@ -153,7 +157,6 @@ contains
             call fermi_negative(z, f)
         end if
     end function
-
     !> G(x) by the default route: closed form at theta = 0, Maldague otherwise.
     function lindhard_response(state, x, estimator_seconds, certificate_seconds) result(res)
         type(screening_state_t), intent(in) :: state
@@ -166,15 +169,17 @@ contains
             res = lindhard_maldague(state, x, estimator_seconds, certificate_seconds)
         end if
     end function
-
     !> Route A: G = integral r f(r) log|(r+x)/(r-x)| dr/(2x), log singularity
     !> at r = x resolved by geometric panel grading. theta = 0: step occupation.
     function lindhard_momentum(state, x) result(res)
-        type(screening_state_t), intent(in) :: state
-        real(dp), intent(in) :: x
+        type(screening_state_t), intent(in), target :: state
+        real(dp), intent(in), target :: x
         type(screening_value_t) :: res
         real(dp) :: radius, h, q(2)
         type(interval_t) :: bound
+        type(lindhard_momentum_root_t) :: root_function
+        root_function%state => state
+        root_function%x => x
         if (state%zero_temperature) then
             radius = 1.0_dp
             h = 0.05_dp
@@ -187,39 +192,27 @@ contains
         end if
         q = 0.0_dp
         if (x < radius) then
-            call graded_sum(state, 0.0_dp, x, 2, h, integrand, q)
-            call graded_sum(state, x, radius, 1, h, integrand, q)
+            call graded_sum(state, 0.0_dp, x, 2, h, root_function, q)
+            call graded_sum(state, x, radius, 1, h, root_function, q)
         else
-            call graded_sum(state, 0.0_dp, radius, 2, h, integrand, q)
+            call graded_sum(state, 0.0_dp, radius, 2, h, root_function, q)
         end if
         res%value = q(2)
         res%indicator = abs(q(2) - q(1))
     contains
-        real(dp) function integrand(r) result(value)
-            real(dp), intent(in) :: r
-            real(dp) :: f
-            if (state%zero_temperature) then
-                f = 1.0_dp
-            else
-                f = occupation(r, state%theta, state%mu)
-            end if
-            if (r < x) then
-                call screening_momentum_below(r, x, f, value)
-            else
-                call screening_momentum_above(r, x, f, value)
-            end if
-        end function
     end function
-
     !> Route B (Maldague): G = integral w(e) sqrt(e) F(x/sqrt(e)) de over the
     !> exact T=0 response, e = s^2; the kink of F at s = x is graded.
     function lindhard_maldague(state, x, estimator_seconds, certificate_seconds) result(res)
-        type(screening_state_t), intent(in) :: state
-        real(dp), intent(in) :: x
+        type(screening_state_t), intent(in), target :: state
+        real(dp), intent(in), target :: x
         type(screening_value_t) :: res
         real(dp) :: smax, h, q(2), start, finish
         real(dp), intent(inout), optional :: estimator_seconds, certificate_seconds
         type(interval_t) :: bound
+        type(lindhard_maldague_root_t) :: root_function
+        root_function%state => state
+        root_function%x => x
         if (state%theta <= 0.0_dp) error stop 'lindhard_maldague: theta must be > 0'
         smax = sqrt(max(state%mu, 0.0_dp) + 40*state%theta)
         h = min(0.05_dp, state%theta)
@@ -233,22 +226,16 @@ contains
         end if
         q = 0.0_dp
         if (x < smax) then
-            call graded_sum(state, 0.0_dp, x, 2, h, integrand, q, estimator_seconds)
-            call graded_sum(state, x, smax, 1, h, integrand, q, estimator_seconds)
+            call graded_sum(state, 0.0_dp, x, 2, h, root_function, q, estimator_seconds)
+            call graded_sum(state, x, smax, 1, h, root_function, q, estimator_seconds)
         else
-            call graded_sum(state, 0.0_dp, smax, 0, h, integrand, q, estimator_seconds)
+            call graded_sum(state, 0.0_dp, smax, 0, h, root_function, q, &
+                estimator_seconds)
         end if
         res%value = q(2)
         res%indicator = abs(q(2) - q(1))
     contains
-        real(dp) function integrand(s) result(value)
-            real(dp), intent(in) :: s
-            real(dp) :: w
-            call screening_maldague_weight(s*s, state%mu, state%theta, w)
-            call screening_maldague_term(s, w, lindhard_zero(x/s), value)
-        end function
     end function
-
     !> Composite Gauss sums (12 and 20 nodes per panel) on [a,b]; toward = 1/2
     !> grades panels geometrically toward a/b, 0 none; panels are split to
     !> width <= step.
@@ -258,12 +245,7 @@ contains
         integer, intent(in) :: toward
         real(dp), intent(inout) :: total(2)
         real(dp), intent(inout), optional :: estimator_seconds
-        interface
-            real(dp) function f(r)
-                import :: dp
-                real(dp), intent(in) :: r
-            end function
-        end interface
+        class(gk_function_t), intent(in) :: f
         real(dp) :: lo, hi, width, start, finish
         integer :: level, levels, rule
         if (b <= a) return
@@ -305,17 +287,18 @@ contains
                 mid = left + half
                 if (rule==1) then
                     do j = 1, low_order
-                        total(1) = total(1) + half*state%wl(j)*f(mid + half*state%xl(j))
+                        total(1) = total(1) + half*state%wl(j)*f%evaluate(mid + &
+                            half*state%xl(j))
                     end do
                 else
                     do j = 1, high_order
-                        total(2) = total(2) + half*state%wh(j)*f(mid + half*state%xh(j))
+                        total(2) = total(2) + half*state%wh(j)*f%evaluate(mid + &
+                            half*state%xh(j))
                     end do
                 end if
             end do
         end subroutine
     end subroutine
-
     !> Number of geometric levels: the innermost panel keeps a width of at
     !> least 4096 ulp of its singular endpoint so Gauss nodes stay distinct.
     pure integer function grading_levels(a, b, toward) result(levels)
@@ -332,7 +315,6 @@ contains
             levels = levels + 1
         end do
     end function
-
     !> Nodes of the composite q rule on [0, qmax] (kF = 1): panels graded toward
     !> the 2kF kink, width <= near/far, and G tabulated on them by the default
     !> route. The inversion tail bound uses G(q/2) <= 8/(3 q^2).
@@ -440,7 +422,6 @@ contains
             end do
         end subroutine
     end subroutine
-
     !> phi(r)/phi_bare(r) = 1 - integral_0^inf 2 sin(qr) kappa2 G/(pi q (q^2+kappa2 G)) dq
     !> for a point test charge (kF = 1). tail: rigorous q-truncation bound;
     !> indicator: |rule20 - rule12| plus the G indicator propagated to first order.
@@ -473,7 +454,6 @@ contains
         end do
         tail = table%tail
     end subroutine
-
     !> Convenience: build the table and invert in one call.
     subroutine screened_ratio(state, r, ratio, tail, indicator, qmax)
         type(screening_state_t), intent(in) :: state
@@ -488,4 +468,28 @@ contains
                                min(0.25_dp, 4.0_dp/maxval(r)), table)
         call screened_ratio_from_table(state, table, r, ratio, tail, indicator)
     end subroutine
+    function lindhard_momentum_root_evaluate(self, x) result(y)
+        class(lindhard_momentum_root_t), intent(in) :: self
+        real(dp) :: y
+            real(dp), intent(in) :: x
+            real(dp) :: f
+            if (self%state%zero_temperature) then
+                f = 1.0_dp
+            else
+                f = occupation(x, self%state%theta, self%state%mu)
+            end if
+            if (x < self%x) then
+                call screening_momentum_below(x, self%x, f, y)
+            else
+                call screening_momentum_above(x, self%x, f, y)
+            end if
+    end function lindhard_momentum_root_evaluate
+    function lindhard_maldague_root_evaluate(self, x) result(y)
+        class(lindhard_maldague_root_t), intent(in) :: self
+        real(dp) :: y
+            real(dp), intent(in) :: x
+            real(dp) :: w
+            call screening_maldague_weight(x*x, self%state%mu, self%state%theta, w)
+            call screening_maldague_term(x, w, lindhard_zero(self%x/x), y)
+    end function lindhard_maldague_root_evaluate
 end module kin6d_screening_hierarchy

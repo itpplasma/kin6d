@@ -5,7 +5,7 @@
 !> at matched statistical accuracy, and a beam-relaxation movie with promoted
 !> encounters highlighted. Atomic units (hbar = m_e = e^2/(4 pi eps0) = 1).
 !> Usage: hybrid_encounter_demo [--config FILE] (namelist /hybrid_encounter/).
-program hybrid_encounter_demo
+module hybrid_encounter_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use fortnum_rng, only: rng_t, rng_seed, rng_normal
     use fortnum_status, only: fortnum_status_t
@@ -18,7 +18,11 @@ program hybrid_encounter_demo
     use kin6d_quantum_collision_kernel
     use kin6d_hybrid_encounter, single_encounter => hybrid_encounter
     use kin6d_result_io, only: run_t, result_file_t
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
+    private
+    public :: run_hybrid_encounter_demo
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: blue(3) = [0.000_dp, 0.447_dp, 0.698_dp]
     real(dp), parameter :: verm(3) = [0.835_dp, 0.369_dp, 0.000_dp]
@@ -28,14 +32,35 @@ program hybrid_encounter_demo
     real(dp), parameter :: sky(3) = [0.337_dp, 0.706_dp, 0.914_dp]
     real(dp), parameter :: black(3) = [0.0_dp, 0.0_dp, 0.0_dp]
     real(dp), parameter :: grey(3) = [0.6_dp, 0.6_dp, 0.6_dp]
+    type :: run_hybrid_encounter_demo_context_t
+        type(figure_t), pointer :: canvas => null()
+        logical, pointer :: flag(:,:,:) => null()
+        real(dp), pointer :: lims(:) => null()
+        integer, pointer :: movie_frames => null()
+        integer, pointer :: movie_particles => null()
+        real(dp), pointer :: nu0 => null()
+        real(dp), pointer :: tf(:) => null()
+        real(dp), pointer :: vel(:,:,:,:) => null()
+        real(dp), pointer :: vth => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_hybrid_encounter_demo_draw_t
+        type(run_hybrid_encounter_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_hybrid_encounter_demo_draw_binding
+    end type
+
+contains
+    subroutine run_hybrid_encounter_demo()
+    implicit none
     ! Configuration (namelist /hybrid_encounter/).
-    real(dp) :: kappa_log = 100, density = 2.0e-12_dp, tmin = 1.0e-3_dp, tmax = 100
-    real(dp) :: eta_switch = 1, zone = 4, step_eta = 0.02_dp, beam_x = 2
-    real(dp) :: movie_temperature = 1, movie_density = 2.5e-4_dp
-    integer :: neta = 25, ntemp = 11, nsample = 20000, movie_particles = 300
-    integer :: movie_frames = 200
-    integer(i64) :: seed = 20261006_i64
-    logical :: movie = .true.
+real(dp) :: kappa_log, density, tmin, tmax
+real(dp) :: eta_switch, zone, step_eta, beam_x
+real(dp) :: movie_temperature, movie_density
+integer , target :: neta, ntemp, nsample, movie_particles
+integer , target :: movie_frames
+integer(i64) :: seed
+logical :: movie
     namelist /hybrid_encounter/ kappa_log, density, tmin, tmax, eta_switch, zone, &
         step_eta, beam_x, movie_temperature, movie_density, neta, ntemp, nsample, &
         movie_particles, movie_frames, seed, movie
@@ -52,11 +77,31 @@ program hybrid_encounter_demo
     real(dp), allocatable :: cost(:, :), defect(:), nprom(:), edef(:), angch(:), lkern(:, :)
     real(dp) :: fd_check(3)
     ! Section 3 (movie) state shared with the frame callback.
-    real(dp), allocatable :: vel(:, :, :, :), tf(:)
-    logical, allocatable :: flag(:, :, :)
-    real(dp) :: nu0, vth, lims(4)
-    type(figure_t), pointer :: canvas => null()
+    real(dp), allocatable , target :: vel(:, :, :, :), tf(:)
+    logical, allocatable , target :: flag(:, :, :)
+    real(dp) , target :: nu0, vth, lims(4)
+type(figure_t), pointer :: canvas
+        type(run_hybrid_encounter_demo_context_t), target :: ctx
+        type(run_hybrid_encounter_demo_draw_t), target :: draw_operator
 
+        kappa_log = 100
+        density = 2.0e-12_dp
+        tmin = 1.0e-3_dp
+        tmax = 100
+        eta_switch = 1
+        zone = 4
+        step_eta = 0.02_dp
+        beam_x = 2
+        movie_temperature = 1
+        movie_density = 2.5e-4_dp
+        neta = 25
+        ntemp = 11
+        nsample = 20000
+        movie_particles = 300
+        movie_frames = 200
+        seed = 20261006_i64
+        movie = .true.
+        nullify(canvas)
     call run%start('hybrid_encounter_demo')
     if (run%argument_count() > 0) error stop 'usage: hybrid_encounter_demo [--config FILE]'
     ios = 0; msg = ''
@@ -80,6 +125,22 @@ program hybrid_encounter_demo
     call rate_figure()
     if (movie) call beam_movie()
 contains
+    subroutine bind_run_hybrid_encounter_demo_context()
+        ctx%canvas => canvas
+        nullify(ctx%flag)
+        if (allocated(flag)) ctx%flag => flag
+        ctx%lims => lims
+        ctx%movie_frames => movie_frames
+        ctx%movie_particles => movie_particles
+        ctx%nu0 => nu0
+        nullify(ctx%tf)
+        if (allocated(tf)) ctx%tf => tf
+        nullify(ctx%vel)
+        if (allocated(vel)) ctx%vel => vel
+        ctx%vth => vth
+        draw_operator%data => ctx
+    end subroutine bind_run_hybrid_encounter_demo_context
+
     ! 1. Normalized momentum-transfer logarithm vs eta at kappa = k lambda_D.
     subroutine coulomb_logarithm_scan()
         type(yukawa_plan_t) :: plan
@@ -439,37 +500,47 @@ contains
         canvas => get_global_figure()
         do k = 1, 3
             f = max(1, (k - 1)*movie_frames/2)
-            call draw(f)
+        call bind_run_hybrid_encounter_demo_context()
+            call run_hybrid_encounter_demo_draw(ctx, f)
             write (fname, '(a,i3.3,a)') 'output/hybrid-beam-frame', f, '.png'
             call savefig(trim(fname))
         end do
-        anim = animation_func(draw, frames=nall, interval=42, fig=canvas)
+        call bind_run_hybrid_encounter_demo_context()
+        anim = animation_func(draw_operator, frames=nall, interval=42, fig=canvas)
         call save_animation(anim, 'output/hybrid-beam.mp4', fps=24, status=status)
         if (status /= 0) print '(a,i0)', 'movie encoding status ', status
     end subroutine beam_movie
 
-        subroutine draw(frame)
+
+    end subroutine run_hybrid_encounter_demo
+
+    subroutine run_hybrid_encounter_demo_draw(ctx, frame)
+        type(run_hybrid_encounter_demo_context_t), intent(in) :: ctx
             integer, intent(in) :: frame
             integer :: ff, side, nf, k
             real(dp), allocatable :: xs(:), ys(:)
-            real(dp) :: hist(movie_frames, 2, 2)
+            real(dp) :: hist(ctx%movie_frames, 2, 2)
             character(64) :: heading
-            ff = min(frame, movie_frames)
+            ff = min(frame, ctx%movie_frames)
             do side = 1, 2
-                do k = 1, movie_frames
-                    hist(k, side, 1) = sum(vel(3, :, k, side))/movie_particles/vth
-                    hist(k, side, 2) = sum(vel(1, :, k, side)**2 + vel(2, :, k, side)**2) &
-                        /movie_particles/vth**2
+                do k = 1, ctx%movie_frames
+                    hist(k, side, 1) = sum(ctx%vel(3, :, k, &
+                        side))/ctx%movie_particles/ctx%vth
+                    hist(k, side, 2) = sum(ctx%vel(1, :, k, side)**2 + ctx%vel(2, :, &
+                        k, side)**2) &
+                        /ctx%movie_particles/ctx%vth**2
                 end do
             end do
-            call canvas%clear()
+            call ctx%canvas%clear()
             do side = 1, 2
                 call subplot(2, 2, side)
-                xs = vel(3, :, ff, side)/vth
-                ys = sqrt(vel(1, :, ff, side)**2 + vel(2, :, ff, side)**2)/vth
-                nf = count(flag(:, ff, side))
+                xs = ctx%vel(3, :, ff, side)/ctx%vth
+                ys = sqrt(ctx%vel(1, :, ff, side)**2 + ctx%vel(2, :, ff, &
+                    side)**2)/ctx%vth
+                nf = count(ctx%flag(:, ff, side))
                 if (nf > 0) then
-                    call scatter(pack(xs, flag(:, ff, side)), pack(ys, flag(:, ff, side)), &
+                    call scatter(pack(xs, ctx%flag(:, ff, side)), pack(ys, &
+                        ctx%flag(:, ff, side)), &
                         color=black, marker='s', s=30.0_dp, &
                         label=merge('near-zone encounter (classical)', &
                                     'promoted (quantum ring kernel) ', side == 1))
@@ -477,30 +548,46 @@ contains
                 call scatter(xs, ys, color=merge(verm, blue, side == 1), marker='o', &
                              s=9.0_dp, label='test electrons')
                 write (heading, '(a,f4.2)') trim(merge('all-classical, ', 'hybrid,        ', &
-                    side == 1))//' $t\nu_0$ = ', tf(ff)*nu0
+                    side == 1))//' $t\nu_0$ = ', ctx%tf(ff)*ctx%nu0
                 call title(trim(heading))
-                call xlim(lims(1), lims(2)); call ylim(lims(3), lims(4))
+                call xlim(ctx%lims(1), ctx%lims(2)); call ylim(ctx%lims(3), ctx%lims(4))
                 call xlabel('$v_z/v_{th}$'); call ylabel('transverse speed $v_t/v_{th}$')
                 call legend(loc='upper left')
             end do
             call subplot(2, 2, 3)
             call title('Beam slowing down')
-            call plot(tf(:ff)*nu0, hist(:ff, 1, 1), color=verm, label='all-classical')
-            call plot(tf(:ff)*nu0, hist(:ff, 2, 1), color=blue, linestyle='--', label='hybrid')
-            call xlim(0.0_dp, tf(movie_frames)*nu0)
+            call plot(ctx%tf(:ff)*ctx%nu0, hist(:ff, 1, 1), color=verm, &
+                label='all-classical')
+            call plot(ctx%tf(:ff)*ctx%nu0, hist(:ff, 2, 1), color=blue, &
+                linestyle='--', label='hybrid')
+            call xlim(0.0_dp, ctx%tf(ctx%movie_frames)*ctx%nu0)
             call ylim(min(0.0_dp, minval(hist(:, :, 1))), 1.1_dp*maxval(hist(:, :, 1)))
             call xlabel('$t\nu_0$'); call ylabel('mean $v_z/v_{th}$')
             call legend(loc='upper right')
             call subplot(2, 2, 4)
             call title('Transverse heating')
-            call plot(tf(:ff)*nu0, hist(:ff, 1, 2), color=verm, label='all-classical')
-            call plot(tf(:ff)*nu0, hist(:ff, 2, 2), color=blue, linestyle='--', label='hybrid')
-            call xlim(0.0_dp, tf(movie_frames)*nu0)
+            call plot(ctx%tf(:ff)*ctx%nu0, hist(:ff, 1, 2), color=verm, &
+                label='all-classical')
+            call plot(ctx%tf(:ff)*ctx%nu0, hist(:ff, 2, 2), color=blue, &
+                linestyle='--', label='hybrid')
+            call xlim(0.0_dp, ctx%tf(ctx%movie_frames)*ctx%nu0)
             call ylim(0.0_dp, 1.15_dp*maxval(hist(:, :, 2)))
             call xlabel('$t\nu_0$'); call ylabel('mean $v_t^2/v_{th}^2$')
             call legend(loc='lower right')
             call suptitle('Beam relaxation in a Maxwellian electron background: '// &
                 'quantum promotion of close encounters slows the relaxation')
             call tight_layout()
-        end subroutine draw
+    end subroutine run_hybrid_encounter_demo_draw
+
+    subroutine run_hybrid_encounter_demo_draw_binding(self, frame)
+        class(run_hybrid_encounter_demo_draw_t), intent(inout) :: self
+            integer, intent(in) :: frame
+        call run_hybrid_encounter_demo_draw(self%data, frame)
+    end subroutine
+end module hybrid_encounter_demo_callbacks
+
+program hybrid_encounter_demo
+    use hybrid_encounter_demo_callbacks, only: run_hybrid_encounter_demo
+    implicit none
+    call run_hybrid_encounter_demo()
 end program hybrid_encounter_demo

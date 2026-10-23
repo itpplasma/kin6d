@@ -90,10 +90,7 @@ contains
     end subroutine
 end module gs_free_3d_support
 
-program gs_free_3d_main
-    ! N4 driver: 3D free boundary of the map lane against a 2D gs_free result
-    ! (stage NL-3a). Reads &gs_free_3d from --config; writes summary-3d.dat and
-    ! boundary-3d.dat in the working directory.
+module gs_free_3d_main_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_quiet_nan
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, read_gs_mesh
@@ -117,45 +114,92 @@ program gs_free_3d_main
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
     use gs_free_3d_support, only: reference_t, reference_locate_jet, &
         offset_field_t, offset_forward, offset_backward
+
+    use kin6d_ideal_free_boundary, only: ideal_fb_sampler_t
+
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
     implicit none
+    private
+    public :: run_gs_free_3d_main
     real(dp), parameter :: pi = acos(-1.0_dp)
     integer, parameter :: max_circuits = 64
+    type :: run_gs_free_3d_main_context_t
+        real(dp) :: last(2) = -1
+        complex(dp), allocatable :: modes(:, :, :)
+        real(dp), pointer :: circulation => null()
+        type(gs_circuit_set_t), pointer :: coils => null()
+        real(dp), pointer :: currents(:) => null()
+        integer, pointer :: nc => null()
+        integer, pointer :: nfp => null()
+        integer, pointer :: ntor => null()
+        type(reference_t), pointer :: ref => null()
+        type(coil_set_t), pointer :: rmp => null()
+        real(dp), pointer :: rmp_currents(:) => null()
+        integer, pointer :: rmp_nphi => null()
+    end type
+
+    type, extends(ideal_fb_sampler_t) :: run_gs_free_3d_main_sampler_t
+        type(run_gs_free_3d_main_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_gs_free_3d_main_sampler_binding
+    end type
+
+    type :: run_gs_free_3d_main_gamma_context_t
+        type(periodic_curve_t), pointer :: gamma_curve => null()
+    end type
+
+    type, extends(boundary_curve_t) :: run_gs_free_3d_main_gamma_t
+        type(run_gs_free_3d_main_gamma_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_gs_free_3d_main_gamma_binding
+    end type
+
+contains
+    subroutine run_gs_free_3d_main()
+    ! N4 driver: 3D free boundary of the map lane against a 2D gs_free result
+    ! (stage NL-3a). Reads &gs_free_3d from --config; writes summary-3d.dat and
+    ! boundary-3d.dat in the working directory.
+    implicit none
     type(reference_t), target :: ref
     type(offset_field_t) :: field
-    type(gs_circuit_set_t) :: coils
-    type(coil_set_t) :: rmp
-    type(periodic_curve_t) :: gamma_curve
+    type(gs_circuit_set_t) , target :: coils
+    type(coil_set_t) , target :: rmp
+    type(periodic_curve_t) , target :: gamma_curve
     type(gs_state_t) :: mesh
     type(cylindrical_chart_t) :: chart
     type(ideal_fb_t) :: fb
     type(ideal_fb_report_t) :: report
     type(ideal_fb_hypotheses_t) :: hyp
     real(dp), allocatable :: samples(:, :), contour(:, :), lcfs(:, :), chain(:, :)
-    real(dp), allocatable :: rmp_currents(:)
-    real(dp) :: mu0 = 4.0e-7_dp*acos(-1.0_dp), max_area = 0, offset_r = 0
-    real(dp) :: offset_z = 0, elongation = 0, rmp_scale = 1, tolerance = 1.0e-9_dp
-    real(dp) :: step_tolerance = 1.0e-5_dp, currents(max_circuits) = 0
-    real(dp) :: gamma_c_scale = 0, residual_tolerance = 1.0e-9_dp
-    real(dp) :: tangential_damping = 0
-    logical :: rigid_vertical = .false., hypotheses = .false.
-    logical :: monitor_hypotheses = .false.
-    integer :: homotopy_steps = 1, stage_iterations = 15, gamma_c_modes = 0
-    real(dp) :: rigid(2, 2) = 0, seed_amplitude = 0
-    real(dp) :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
-    integer :: boundary_nodes = 96, degree = 3, chain_nodes = 64, nfp = 1, ntor = 0
-    integer :: nphi = 0, max_iterations = 40, rmp_nphi = 128, axis_sign = 1
-    integer :: panels_per_edge = 0, st, i, nc, unit
-    logical :: verbose = .true., start_at_target = .false., stability = .false.
-    real(dp) :: stab(64) = 0, shifts(8) = [-1.0e-8_dp, -1.0e-7_dp, -1.0e-6_dp, &
-        -1.0e-5_dp, -1.0e-4_dp, -1.0e-3_dp, -1.0e-2_dp, -1.0e-1_dp]
-    character(512) :: mesh_file = 'mesh.dat', law_file = 'profile-law.dat'
-    character(512) :: summary_file = 'summary.dat', coil_file = ''
-    character(512) :: boundary_file = '', rmp_coil_file = '', rmp_current_file = ''
-    character(512) :: config, save_state = '', load_state = ''
-    logical :: linear_response = .false., inertia = .false.
-    logical :: eigen_backward_error = .false.
-    real(dp) :: inertia_shifts(4) = [0.0_dp, 1.e-9_dp, 1.e-8_dp, 1.e-7_dp]
+    real(dp), allocatable , target :: rmp_currents(:)
+real(dp) :: mu0, max_area, offset_r
+real(dp) :: offset_z, elongation, rmp_scale, tolerance
+real(dp) , target :: step_tolerance, currents(max_circuits)
+real(dp) :: gamma_c_scale, residual_tolerance
+real(dp) :: tangential_damping
+logical :: rigid_vertical, hypotheses
+logical :: monitor_hypotheses
+integer :: homotopy_steps, stage_iterations, gamma_c_modes
+real(dp) :: rigid(2, 2), seed_amplitude
+    real(dp) , target :: circulation, closure, perimeter, psi_b_abs, ip_2d, t0, t1
+integer , target :: boundary_nodes, degree, chain_nodes, nfp, ntor
+integer , target :: nphi, max_iterations, rmp_nphi, axis_sign
+integer , target :: panels_per_edge, st, i, nc, unit
+logical :: verbose, start_at_target, stability
+real(dp) :: stab(64), shifts(8)
+character(512) :: mesh_file, law_file
+character(512) :: summary_file, coil_file
+character(512) :: boundary_file, rmp_coil_file, rmp_current_file
+character(512) :: config, save_state, load_state
+logical :: linear_response, inertia
+logical :: eigen_backward_error
+real(dp) :: inertia_shifts(4)
     character(256) :: message
+        type(run_gs_free_3d_main_context_t), target :: captured
+        type(run_gs_free_3d_main_sampler_t), target :: sampler_operator
+        type(run_gs_free_3d_main_gamma_context_t), target :: gamma_data
+        type(run_gs_free_3d_main_gamma_t), target :: gamma_operator
     namelist /gs_free_3d/ mesh_file, law_file, summary_file, coil_file, &
         boundary_file, boundary_nodes, max_area, degree, chain_nodes, mu0, nfp, ntor, &
         nphi, offset_r, offset_z, elongation, rmp_coil_file, rmp_current_file, &
@@ -166,6 +210,55 @@ program gs_free_3d_main
         gamma_c_modes, save_state, load_state, linear_response, inertia, &
         inertia_shifts, eigen_backward_error
 
+        mu0 = 4.0e-7_dp*acos(-1.0_dp)
+        max_area = 0
+        offset_r = 0
+        offset_z = 0
+        elongation = 0
+        rmp_scale = 1
+        tolerance = 1.0e-9_dp
+        step_tolerance = 1.0e-5_dp
+        currents = 0
+        gamma_c_scale = 0
+        residual_tolerance = 1.0e-9_dp
+        tangential_damping = 0
+        rigid_vertical = .false.
+        hypotheses = .false.
+        monitor_hypotheses = .false.
+        homotopy_steps = 1
+        stage_iterations = 15
+        gamma_c_modes = 0
+        rigid = 0
+        seed_amplitude = 0
+        boundary_nodes = 96
+        degree = 3
+        chain_nodes = 64
+        nfp = 1
+        ntor = 0
+        nphi = 0
+        max_iterations = 40
+        rmp_nphi = 128
+        axis_sign = 1
+        panels_per_edge = 0
+        verbose = .true.
+        start_at_target = .false.
+        stability = .false.
+        stab = 0
+        shifts = [-1.0e-8_dp, -1.0e-7_dp, -1.0e-6_dp,  -1.0e-5_dp, -1.0e-4_dp, &
+            -1.0e-3_dp, -1.0e-2_dp, -1.0e-1_dp]
+        mesh_file = 'mesh.dat'
+        law_file = 'profile-law.dat'
+        summary_file = 'summary.dat'
+        coil_file = ''
+        boundary_file = ''
+        rmp_coil_file = ''
+        rmp_current_file = ''
+        save_state = ''
+        load_state = ''
+        linear_response = .false.
+        inertia = .false.
+        eigen_backward_error = .false.
+        inertia_shifts = [0.0_dp, 1.e-9_dp, 1.e-8_dp, 1.e-7_dp]
     call get_command_argument(1, config)
     if (trim(config) /= '--config') error stop 'usage: gs_free_3d --config input.nml'
     call get_command_argument(2, config)
@@ -218,7 +311,9 @@ program gs_free_3d_main
     if (allocated(rmp_currents)) call check_coils_outside()
     allocate (contour(2, boundary_nodes))
     do i = 1, boundary_nodes
-        call gamma(real(i - 1, dp)/boundary_nodes, contour(:, i))
+        call bind_run_gs_free_3d_main_gamma_context()
+        call run_gs_free_3d_main_gamma(gamma_data, real(i - 1, dp)/boundary_nodes, &
+            contour(:, i))
     end do
     perimeter = sum(norm2(contour - cshift(contour, 1, dim=2), dim=1))
     if (max_area <= 0) max_area = 0.4_dp*(perimeter/boundary_nodes)**2
@@ -233,7 +328,9 @@ program gs_free_3d_main
     circulation = poloidal_circulation()
     write (output_unit, '(a,es14.6,a,es14.6)') 'circulation (T m) ', circulation, &
         '  -mu0 Ip ', -mu0*ip_2d
-    call initialize_gs(mesh, contour, max_area, st, degree, curve=gamma, &
+        call bind_run_gs_free_3d_main_gamma_context()
+    call initialize_gs_object(mesh, contour, max_area, st, degree, &
+        curve=gamma_operator, &
         interior_chain=chain)
     if (st /= 0) error stop 'mesh'
     if (panels_per_edge <= 0) panels_per_edge = merge(1, 2, degree == 2)
@@ -246,7 +343,8 @@ program gs_free_3d_main
     fb%tangential_damping = tangential_damping
     fb%monitor_hypotheses = monitor_hypotheses
     fb%rigid_vertical = rigid_vertical
-    call ideal_fb_set_drive(fb, sampler, st, closure)
+        call bind_run_gs_free_3d_main_context()
+    call ideal_fb_set_drive(fb, sampler_operator, st, closure)
     write (output_unit, '(a,i0,a,i0,a,i0,a,es10.3)') 'plasma nodes ', &
         fb%plasma%nodes, ' shell nodes ', fb%ns, ' unknowns ', fb%n, &
         ' drive closure ', closure
@@ -396,11 +494,26 @@ program gs_free_3d_main
     if (len_trim(save_state) > 0) call write_state(trim(save_state))
     call write_results(st)
 contains
-    subroutine gamma(t, point)
-        real(dp), intent(in) :: t
-        real(dp), intent(out) :: point(2)
-        call curve_value(gamma_curve, t, point)
-    end subroutine
+    subroutine bind_run_gs_free_3d_main_gamma_context()
+        gamma_data%gamma_curve => gamma_curve
+        gamma_operator%data => gamma_data
+    end subroutine bind_run_gs_free_3d_main_gamma_context
+
+    subroutine bind_run_gs_free_3d_main_context()
+        captured%circulation => circulation
+        captured%coils => coils
+        captured%currents => currents
+        captured%nc => nc
+        captured%nfp => nfp
+        captured%ntor => ntor
+        captured%ref => ref
+        captured%rmp => rmp
+        nullify(captured%rmp_currents)
+        if (allocated(rmp_currents)) captured%rmp_currents => rmp_currents
+        captured%rmp_nphi => rmp_nphi
+        sampler_operator%data => captured
+    end subroutine bind_run_gs_free_3d_main_context
+
 
     subroutine write_state(path)
         ! Plasma, shell map, potential and multipliers (unformatted stream).
@@ -586,8 +699,10 @@ contains
         if (gamma_c_scale > 0) loop = (1 + gamma_c_scale)/(2*gamma_c_scale)
         c = 0
         do k = 1, n
-            call gamma(real(k - 1, dp)/n, x)
-            call gamma(real(k, dp)/n, xp)
+        call bind_run_gs_free_3d_main_gamma_context()
+            call run_gs_free_3d_main_gamma(gamma_data, real(k - 1, dp)/n, x)
+        call bind_run_gs_free_3d_main_gamma_context()
+            call run_gs_free_3d_main_gamma(gamma_data, real(k, dp)/n, xp)
             x = ref%axis + loop*(x - ref%axis); xp = ref%axis + loop*(xp - ref%axis)
             xm = 0.5_dp*(x + xp)
             call reference_locate_jet(ref, xm, psi, grad, s)
@@ -596,44 +711,6 @@ contains
         end do
     end function
 
-    subroutine sampler(r, z, k, bcos, bsin)
-        ! PF/CS circuits and the unit-circulation filament at the 2D axis
-        ! (n = 0), RMP coils (all n in nfp Z, including any n = 0 part).
-        real(dp), intent(in) :: r, z
-        integer, intent(in) :: k
-        real(dp), intent(out) :: bcos(3), bsin(3)
-        real(dp) :: g(1, max_circuits), gr(1, max_circuits), gz(1, max_circuits)
-        real(dp) :: gf, gg(4)
-        real(dp), save :: last(2) = -1
-        complex(dp), allocatable, save :: modes(:, :, :)
-        integer, allocatable :: list(:)
-        integer :: j
-        bcos = 0; bsin = 0
-        if (k == 0) then
-            call gs_circuit_flux_vectors(coils, [r], [z], g(:, :nc), gr(:, :nc), &
-                gz(:, :nc))
-            bcos(1) = -dot_product(gz(1, :nc), currents(:nc))/r
-            bcos(3) = dot_product(gr(1, :nc), currents(:nc))/r
-            call gs_green_gradient(r, z, ref%axis(1), ref%axis(2), gf, gg)
-            bcos([1, 3]) = bcos([1, 3]) + circulation*[gg(2), -gg(1)]/r
-        end if
-        if (.not. allocated(rmp_currents)) return
-        if (any([r, z] /= last) .or. .not. allocated(modes)) then
-            list = [(j*nfp, j=0, ntor)]
-            if (allocated(modes)) deallocate (modes)
-            allocate (modes(3, ntor + 1, 1))
-            call coil_set_modes(rmp, rmp_currents, reshape([r, z], [2, 1]), rmp_nphi, &
-                list, modes, j)
-            if (j /= 0) error stop 'RMP coil modes'
-            last = [r, z]
-        end if
-        if (k == 0) then
-            bcos = bcos + real(modes(:, 1, 1))
-        else
-            bcos = bcos + 2*real(modes(:, k + 1, 1))
-            bsin = bsin - 2*aimag(modes(:, k + 1, 1))
-        end if
-    end subroutine
 
     subroutine xrow_norm(label)
         character(*), intent(in) :: label
@@ -827,4 +904,77 @@ contains
                 k*nfp, ' (m) ', amp(k), '  plasma max coefficient ', interior(k)
         end do
     end subroutine
+
+    end subroutine run_gs_free_3d_main
+
+    subroutine run_gs_free_3d_main_sampler(captured, r, z, k, bcos, bsin)
+        type(run_gs_free_3d_main_context_t), intent(inout), target :: captured
+        ! PF/CS circuits and the unit-circulation filament at the 2D axis
+        ! (n = 0), RMP coils (all n in nfp Z, including any n = 0 part).
+        real(dp), intent(in) :: r, z
+        integer, intent(in) :: k
+        real(dp), intent(out) :: bcos(3), bsin(3)
+        real(dp) :: g(1, max_circuits), gr(1, max_circuits), gz(1, max_circuits)
+        real(dp) :: gf, gg(4)
+        integer, allocatable :: list(:)
+        integer :: j
+        bcos = 0; bsin = 0
+        if (k == 0) then
+            call gs_circuit_flux_vectors(captured%coils, [r], [z], g(:, &
+                :captured%nc), gr(:, :captured%nc), &
+                gz(:, :captured%nc))
+            bcos(1) = -dot_product(gz(1, :captured%nc), &
+                captured%currents(:captured%nc))/r
+            bcos(3) = dot_product(gr(1, :captured%nc), &
+                captured%currents(:captured%nc))/r
+            call gs_green_gradient(r, z, captured%ref%axis(1), captured%ref%axis(2), &
+                gf, gg)
+            bcos([1, 3]) = bcos([1, 3]) + captured%circulation*[gg(2), -gg(1)]/r
+        end if
+        if (.not. associated(captured%rmp_currents)) return
+        if (any([r, z] /= captured%last) .or. .not. allocated(captured%modes)) then
+            list = [(j*captured%nfp, j=0, captured%ntor)]
+            if (allocated(captured%modes)) deallocate (captured%modes)
+            allocate (captured%modes(3, captured%ntor + 1, 1))
+            call coil_set_modes(captured%rmp, captured%rmp_currents, reshape([r, z], &
+                [2, 1]), captured%rmp_nphi, &
+                list, captured%modes, j)
+            if (j /= 0) error stop 'RMP coil captured%modes'
+            captured%last = [r, z]
+        end if
+        if (k == 0) then
+            bcos = bcos + real(captured%modes(:, 1, 1))
+        else
+            bcos = bcos + 2*real(captured%modes(:, k + 1, 1))
+            bsin = bsin - 2*aimag(captured%modes(:, k + 1, 1))
+        end if
+    end subroutine run_gs_free_3d_main_sampler
+
+    subroutine run_gs_free_3d_main_sampler_binding(self, r, z, k, bcos, bsin)
+        class(run_gs_free_3d_main_sampler_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        integer, intent(in) :: k
+        real(dp), intent(out) :: bcos(3), bsin(3)
+        call run_gs_free_3d_main_sampler(self%data, r, z, k, bcos, bsin)
+    end subroutine
+
+    subroutine run_gs_free_3d_main_gamma(gamma_data, t, point)
+        type(run_gs_free_3d_main_gamma_context_t), intent(in), target :: gamma_data
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call curve_value(gamma_data%gamma_curve, t, point)
+    end subroutine run_gs_free_3d_main_gamma
+
+    subroutine run_gs_free_3d_main_gamma_binding(self, t, point)
+        class(run_gs_free_3d_main_gamma_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_gs_free_3d_main_gamma(self%data, t, point)
+    end subroutine
+end module gs_free_3d_main_callbacks
+
+program gs_free_3d_main
+    use gs_free_3d_main_callbacks, only: run_gs_free_3d_main
+    implicit none
+    call run_gs_free_3d_main()
 end program gs_free_3d_main

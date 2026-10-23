@@ -29,6 +29,9 @@ module kin6d_jellium_cell
         jc_fermi, jc_shell_moment, jc_shell_moment_series, jc_shell_average, jc_pair_correlation, jc_susceptibility, &
         jc_half, jc_kick_response, jc_thermal_term, jc_truncation_interval
     use kin6d_sort_keys, only: sort_key_order
+    use fortnum_krylov, only: real_linear_operator_t
+    use fortnum_krylov, only: real_linear_operator_t
+    use fortnum_krylov, only: real_gmres
     implicit none
     private
     public :: jellium_cell_t, jellium_sector_t, jellium_spectrum_t
@@ -40,20 +43,17 @@ module kin6d_jellium_cell
     public :: jellium_kick_evolution, jellium_coupling_derivative
     public :: jellium_coupling_vjp, jellium_orbital
     integer(i64), parameter :: model_budget = 4_i64*1024_i64**3
-
     type :: jellium_cell_t
         integer :: n = 0, m = 0, nmodes = 0
         integer, allocatable :: modes(:, :), momentum(:, :), spin(:)
         real(dp) :: length = 0, volume = 0, hbar = 1, mass = 1, coupling = 1
         real(dp) :: rs = 0, fermi = 0
     end type
-
     type :: jellium_sector_t
         integer :: nup = 0, d = 0
         integer :: k(3) = 0
         type(fock_basis_t) :: basis
     end type
-
     !> Low-lying spectrum over all (S_z, K) sectors; real vectors stored flat
     !> (state j occupies flat(offset(j)+1 : offset(j)+d of its sector)).
     type :: jellium_spectrum_t
@@ -65,6 +65,46 @@ module kin6d_jellium_cell
         integer(i64), allocatable :: offset(:)
         real(dp), allocatable :: energy(:), residual(:), flat(:)
     end type
+    type, extends(real_linear_operator_t) :: jellium_lowest_apply_t
+        logical, pointer :: apply_ok => null()
+        type(fock_basis_t), pointer :: basis => null()
+        type(fock_hamiltonian_t), pointer :: model => null()
+        real(dp), pointer :: scratch(:) => null()
+        real(dp), pointer :: zero(:) => null()
+    contains
+        procedure :: apply => jellium_lowest_apply_evaluate
+    end type
+    type, extends(real_linear_operator_t) :: shifted_solve_apply_t
+        logical, pointer :: apply_ok => null()
+        type(fock_basis_t), pointer :: basis => null()
+        type(fock_hamiltonian_t), pointer :: model => null()
+        real(dp), pointer :: project(:) => null()
+        real(dp), pointer :: scratch(:) => null()
+        real(dp), pointer :: shift => null()
+        real(dp), pointer :: w(:) => null()
+        real(dp), pointer :: zero(:) => null()
+    contains
+        procedure :: apply => shifted_solve_apply_evaluate
+    end type
+    type :: jellium_kick_evolution_rhs_context_t
+        logical, pointer :: apply_ok => null()
+        type(jellium_cell_t), pointer :: cell => null()
+        integer, pointer :: du => null()
+        real(dp), pointer :: hi(:) => null()
+        real(dp), pointer :: hr(:) => null()
+        type(fock_hamiltonian_t), pointer :: model => null()
+        type(jellium_sector_t), pointer :: union => null()
+    end type
+    type :: jellium_kick_evolution_action_context_t
+        type(jellium_cell_t), pointer :: cell => null()
+        integer, pointer :: du => null()
+        type(fock_hamiltonian_t), pointer :: model => null()
+        type(jellium_sector_t), pointer :: union => null()
+        type(interval_t), pointer :: xi(:) => null()
+        type(interval_t), pointer :: xr(:) => null()
+        type(interval_t), pointer :: yi(:) => null()
+        type(interval_t), pointer :: yr(:) => null()
+    end type
 contains
     !> Integer mode vectors with |n|^2 <= cutoff ('spherical') or
     !> max|n_i| <= cutoff ('cubic'), ordered by |n|^2 then lexicographically.
@@ -74,7 +114,6 @@ contains
         integer, allocatable, intent(out) :: modes(:, :)
         integer :: buffer(3, 4096), count, a, b, c, r, s, i, j, tmp(3)
         logical :: take
-
         count = 0
         r = cutoff
         do a = -r, r
@@ -100,7 +139,6 @@ contains
         end do
         modes = buffer(:, 1:count)
     end subroutine
-
     !> Cell for N electrons in the given modes at density parameter rs.
     !> L follows from the shared rs definition (rs scales linearly with L);
     !> an optional coupling replaces g at fixed L (coupling scans).
@@ -114,7 +152,6 @@ contains
         type(species_t) :: e
         type(plasma_scales_t) :: unit_cell, scales
         integer :: a
-
         ok = .false.
         if (n < 1 .or. size(modes, 1) /= 3 .or. 2*size(modes, 2) > 62) return
         if (n > 2*size(modes, 2) .or. .not. (rs > 0)) return
@@ -136,7 +173,6 @@ contains
         end do
         ok = .true.
     end subroutine
-
     !> Spin orbital of mode vector k and spin s (+1 up, -1 down), 0 if absent.
     integer function jellium_orbital(cell, k, s) result(o)
         type(jellium_cell_t), intent(in) :: cell
@@ -151,7 +187,6 @@ contains
             end if
         end do
     end function
-
     !> Combinations of `count` modes as mode-bit masks (bit a-1 = mode a).
     subroutine mode_combinations(nmodes, count, masks, total)
         integer, intent(in) :: nmodes, count
@@ -175,7 +210,6 @@ contains
             mask = ior(ripple, ishft(ieor(mask, ripple)/low, -2))
         end do
     end subroutine
-
     pure function mode_momentum(cell, mask) result(k)
         type(jellium_cell_t), intent(in) :: cell
         integer(i64), intent(in) :: mask
@@ -185,7 +219,6 @@ contains
             if (btest(mask, a - 1)) k = k + cell%modes(:, a)
         end do
     end function
-
     pure integer(i64) function spin_mask(cell, up, down) result(mask)
         type(jellium_cell_t), intent(in) :: cell
         integer(i64), intent(in) :: up, down
@@ -196,7 +229,6 @@ contains
             if (btest(down, a - 1)) mask = ibset(mask, 2*a - 1)
         end do
     end function
-
     !> Sector (or union of sectors) with nup up electrons and total momentum
     !> in the list ks(3, :); the basis is the sorted determinant list.
     subroutine jellium_sector(cell, nup, ks, sector, ok)
@@ -208,7 +240,6 @@ contains
         integer, allocatable :: kup(:, :), kdn(:, :), perm(:)
         integer :: nu, nd, i, j, l, count
         character(80) :: status
-
         ok = .false.
         if (nup < 0 .or. nup > cell%n .or. nup > cell%nmodes) return
         if (cell%n - nup > cell%nmodes) return
@@ -247,7 +278,6 @@ contains
         if (.not. ok) return
         sector%nup = nup; sector%d = count; sector%k = ks(:, 1)
     end subroutine
-
     !> Distinct total momenta (with nonempty sectors) for nup up electrons.
     subroutine jellium_sector_momenta(cell, nup, ks)
         type(jellium_cell_t), intent(in) :: cell
@@ -257,7 +287,6 @@ contains
         integer, allocatable :: perm(:), all_k(:, :)
         integer :: nu, nd, i, j, count, kk(3), b
         integer(i64), parameter :: span = 1000
-
         call mode_combinations(cell%nmodes, nup, up, nu)
         call mode_combinations(cell%nmodes, cell%n - nup, down, nd)
         allocate (keys(nu*nd), all_k(3, nu*nd), perm(nu*nd))
@@ -302,7 +331,6 @@ contains
         call prepare_jellium_hamiltonian(model, basis, cell%momentum, cell%spin, &
             cell%length, cell%hbar, cell%mass, g, model_budget, ok, status)
     end subroutine
-
     !> dH/dg = V1, the interaction at unit coupling (h = 0).
     subroutine jellium_interaction_model(cell, basis, model, ok)
         type(jellium_cell_t), intent(in) :: cell
@@ -322,7 +350,6 @@ contains
         h = 0
         call prepare_fock_hamiltonian(model, basis, h, v, model_budget, ok, status)
     end subroutine
-
     !> One-body operator A = integral cos(q.x) n(x) d^3x: <k+-q,s|A|k,s> = 1/2.
     subroutine jellium_density_model(cell, basis, q, model, ok)
         type(jellium_cell_t), intent(in) :: cell
@@ -346,22 +373,21 @@ contains
         end do
         call prepare_fock_hamiltonian(model, basis, h, v, model_budget, ok, status)
     end subroutine
-
     !> Lowest nev eigenpairs in one sector by FortNum block Lanczos on the
     !> matrix-free coupled action (block 8, full reorthogonalization).
     subroutine jellium_lowest(model, basis, nev, values, vectors, residuals, ok, &
                               iterations)
-        type(fock_hamiltonian_t), intent(in) :: model
-        type(fock_basis_t), intent(in) :: basis
+        type(fock_hamiltonian_t), intent(in), target :: model
+        type(fock_basis_t), intent(in), target :: basis
         integer, intent(in) :: nev
         real(dp), intent(out) :: values(:), vectors(:, :), residuals(:)
         logical, intent(out) :: ok
         integer, intent(out) :: iterations
-        real(dp), allocatable :: start(:, :), zero(:), scratch(:)
+        real(dp), allocatable , target :: start(:, :), zero(:), scratch(:)
         integer :: m, n, d, p, b, i, j, info, kmax, used
         integer(i64) :: bytes
-        logical :: apply_ok
-
+        logical , target :: apply_ok
+        type(jellium_lowest_apply_t) :: apply_context
         ok = .false.; iterations = 0
         call fock_basis_info(basis, m, n, d, p, bytes, apply_ok)
         if (.not. apply_ok .or. nev < 1 .or. nev > d) return
@@ -378,23 +404,22 @@ contains
         ! with a larger (eventually complete) Krylov space.
         kmax = min(d, max(160, 24*nev))
         do
-            call block_lanczos_lowest(apply, start, nev, kmax, 1.0e-10_dp, values, &
+        apply_context%apply_ok => apply_ok
+        apply_context%basis => basis
+        apply_context%model => model
+        nullify(apply_context%scratch)
+        if (allocated(scratch)) apply_context%scratch => scratch
+        nullify(apply_context%zero)
+        if (allocated(zero)) apply_context%zero => zero
+            call block_lanczos_lowest(apply_context, start, nev, kmax, 1.0e-10_dp, &
+                values, &
                                       vectors, residuals, info, used)
             iterations = iterations + used
             if (info == KRYLOV_OK .or. kmax == d) exit
             kmax = min(d, 3*kmax)
         end do
         ok = info == KRYLOV_OK .and. apply_ok
-    contains
-        subroutine apply(x, y)
-            real(dp), intent(in) :: x(:)
-            real(dp), intent(out) :: y(:)
-            logical :: step_ok
-            call fock_matvec(model, basis, x, zero, y, scratch, step_ok)
-            apply_ok = apply_ok .and. step_ok
-        end subroutine
     end subroutine
-
     !> Lowest min(nev, d) states of every (nup, K) sector for nup = 0..N.
     subroutine jellium_build_spectrum(cell, model, nev, spectrum, ok)
         type(jellium_cell_t), intent(in) :: cell
@@ -409,7 +434,6 @@ contains
         real(dp), allocatable :: grow_real(:)
         integer :: nup, l, total, s, k, iterations, d
         integer(i64) :: used
-
         ok = .false.
         total = 0
         do nup = 0, cell%n
@@ -471,7 +495,6 @@ contains
             call move_alloc(grow_real, spectrum%residual)
         end subroutine
     end subroutine
-
     !> Canonical weights at Theta = T/T_F (normalized) and the omitted-weight
     !> estimate sum_s (d_s - kept_s) exp(-beta (top_s - E0))/Z, which bounds
     !> the omitted Boltzmann weight if every kept set is the lowest of its
@@ -486,7 +509,6 @@ contains
         real(dp) :: beta, z, omitted
         type(interval_t) :: bound
         integer :: j, s
-
         ground = minval(spectrum%energy(1:spectrum%count))
         truncation = 0
         if (.not. (theta > 0)) then
@@ -526,7 +548,6 @@ contains
         real(dp) :: cut
         integer :: j, s, d, p
         integer(i64) :: o
-
         ok = .false.; gamma = 0; gamma2 = 0
         cut = 1.0e-12_dp
         if (present(threshold)) cut = threshold
@@ -546,7 +567,6 @@ contains
         end do
         ok = .true.
     end subroutine
-
     !> Antisymmetrized pair-matrix coefficient v(p,q) of the radial-shell pair
     !> operator O_b = sum u_ijkl a_i^+ a_j^+ a_l a_k with
     !> u_ijkl = w_b(k_l-k_j) [s_i=s_k, s_j=s_l, channel] [k_i+k_j=k_k+k_l];
@@ -576,7 +596,6 @@ contains
             call jc_shell_average(fa, fb, qn, ra, rb, u)
         end function
     end function
-
     !> Shell-averaged pair correlation g_same, g_opp from a (transition) 2-RDM:
     !> g = sum_pq v_b(p,q) Gamma(q,p) / (2 (N/2)^2) for both spin channels.
     subroutine jellium_pair_bins(cell, gamma2, edges, g_same, g_opp)
@@ -587,7 +606,6 @@ contains
         integer :: p, q, b, np
         real(dp) :: half, value
         logical :: ok
-
         np = cell%m*(cell%m - 1)/2
         allocate (pi(np), pj(np))
         call pair_lists(cell%m, pi, pj)
@@ -612,7 +630,6 @@ contains
         end do
         ok = .true.
     end subroutine
-
     subroutine shell_moment(x, f)
         real(dp), intent(in) :: x
         real(dp), intent(out) :: f
@@ -622,7 +639,6 @@ contains
             call jc_shell_moment(x, f)
         end if
     end subroutine
-
     subroutine pair_lists(m, pi, pj)
         integer, intent(in) :: m
         integer, intent(out) :: pi(:), pj(:)
@@ -634,7 +650,6 @@ contains
             end do
         end do
     end subroutine
-
     !> Pair and three-body cumulant norms of the ensemble (see
     !> quantum_cumulant_norms): norms = [|Gamma2|, |lambda2|, |Gamma3|, |lambda3|].
     subroutine jellium_cumulants(cell, spectrum, weights, norms, ok, threshold)
@@ -651,7 +666,6 @@ contains
         integer(i64) :: m3, o
         real(dp) :: cut
         integer :: j, s, d, count, used, x, y, nred
-
         norms = 0; ok = .false.
         cut = 1.0e-10_dp
         if (present(threshold)) cut = threshold
@@ -699,44 +713,41 @@ contains
         call quantum_cumulant_norms(cell%m, gamma, gamma2, t3(1:nred), u3(1:nred), &
             g3(1:nred), norms(1), norms(2), norms(3), norms(4), ok)
     end subroutine
-
     !> Solve P (H - shift) P x = P rhs by restarted GMRES on the coupled action
     !> (P projects out `project` when present). x starts at zero.
     subroutine shifted_solve(model, basis, shift, rhs, x, ok, iterations, project)
-        type(fock_hamiltonian_t), intent(in) :: model
-        type(fock_basis_t), intent(in) :: basis
-        real(dp), intent(in) :: shift, rhs(:)
+        type(fock_hamiltonian_t), intent(in), target :: model
+        type(fock_basis_t), intent(in), target :: basis
+        real(dp), intent(in), target :: shift, rhs(:)
         real(dp), intent(out) :: x(:)
         logical, intent(out) :: ok
         integer, intent(out) :: iterations
-        real(dp), intent(in), optional :: project(:)
-        real(dp), allocatable :: zero(:), scratch(:), b(:), w(:)
+        real(dp), intent(in), optional , target :: project(:)
+        real(dp), allocatable , target :: zero(:), scratch(:), b(:), w(:)
         real(dp) :: residual
         integer :: info
-        logical :: apply_ok
-
+        logical , target :: apply_ok
+        type(shifted_solve_apply_t) :: apply_context
         allocate (zero(size(rhs)), scratch(size(rhs)), b(size(rhs)), w(size(rhs)))
         zero = 0; x = 0; b = rhs
         if (present(project)) b = b - dot_product(project, b)*project
         apply_ok = .true.
-        call real_gmres_operator(apply, b, x, 1.0e-11_dp, 4000, 120, info, &
+        apply_context%apply_ok => apply_ok
+        apply_context%basis => basis
+        apply_context%model => model
+        if (present(project)) apply_context%project => project
+        nullify(apply_context%scratch)
+        if (allocated(scratch)) apply_context%scratch => scratch
+        apply_context%shift => shift
+        nullify(apply_context%w)
+        if (allocated(w)) apply_context%w => w
+        nullify(apply_context%zero)
+        if (allocated(zero)) apply_context%zero => zero
+        call real_gmres(apply_context, b, x, 1.0e-11_dp, 4000, 120, info, &
                                  iterations, residual)
         if (present(project)) x = x - dot_product(project, x)*project
         ok = info == KRYLOV_OK .and. apply_ok
-    contains
-        subroutine apply(v, y)
-            real(dp), intent(in) :: v(:)
-            real(dp), intent(out) :: y(:)
-            logical :: step_ok
-            w = v
-            if (present(project)) w = w - dot_product(project, w)*project
-            call fock_matvec(model, basis, w, zero, y, scratch, step_ok)
-            apply_ok = apply_ok .and. step_ok
-            y = y - shift*w
-            if (present(project)) y = y - dot_product(project, y)*project
-        end subroutine
     end subroutine
-
     !> Isothermal static density response per volume of the ensemble,
     !> chi = sum_n w_n chi_n, chi_n = -(4/V) <A psi_n|(H-E_n)^(-1)|A psi_n>.
     !> A psi_n lies in the K+-q sectors, orthogonal to psi_n, so <n|A|n> = 0 and
@@ -759,7 +770,6 @@ contains
         real(dp) :: cut, value
         integer :: j, s, d, du, iterations, ks(3, 2)
         integer(i64) :: o
-
         ok = .false.; chi = 0; chi_state = 0
         cut = 1.0e-10_dp
         if (present(threshold)) cut = threshold
@@ -795,7 +805,6 @@ contains
         end do
         ok = .true.
     end subroutine
-
     !> Ideal (g = 0) response of the same finite cell and orbital set:
     !> canonical chi0 = sum_D p_D S_D/V over all N-determinants D (exact
     !> canonical ensemble; Theta <= 0 averages the ideal ground multiplet),
@@ -813,7 +822,6 @@ contains
         integer :: partner(62), o, total_states, k, it
         integer(i64), allocatable :: masks(:)
         logical :: multiplet
-
         ok = .false.; chi_can = 0; chi_gc = 0; rpa_can = 0; rpa_gc = 0
         do o = 1, cell%m
             call qf_kinetic(cell%length, cell%hbar, cell%mass, &
@@ -888,7 +896,6 @@ contains
             end do
         end function
     end subroutine
-
     subroutine bit_combinations(m, n, masks, total)
         integer, intent(in) :: m, n
         integer(i64), allocatable, intent(out) :: masks(:)
@@ -908,7 +915,6 @@ contains
             mask = ior(ripple, ishft(ieor(mask, ripple)/low, -2))
         end do
     end subroutine
-
     !> Density-mode history after a weak kick kappa*A delta(t) of the state
     !> psi0 (energy e0, sector `sector`): to first order in kappa,
     !> delta<A>(t)/kappa = 2 Im(exp(i e0 t) C(t)), C(t) = <phi0|exp(-iHt) phi0>,
@@ -922,8 +928,8 @@ contains
     subroutine jellium_kick_evolution(cell, model, sector, psi0, e0, q, steps, dt, &
                                       times, response, band, ok, union_dim, &
                                       candidate_seconds, certificate_seconds)
-        type(jellium_cell_t), intent(in) :: cell
-        type(fock_hamiltonian_t), intent(in) :: model
+        type(jellium_cell_t), intent(in), target :: cell
+        type(fock_hamiltonian_t), intent(in), target :: model
         type(jellium_sector_t), intent(in) :: sector
         real(dp), intent(in) :: psi0(:), e0, dt
         integer, intent(in) :: q(3), steps
@@ -931,16 +937,19 @@ contains
         logical, intent(out) :: ok
         integer, intent(out) :: union_dim
         real(dp), intent(out) :: candidate_seconds, certificate_seconds
-        type(jellium_sector_t) :: union
+        type(jellium_sector_t), target :: union
         type(fock_hamiltonian_t) :: density
         type(fortnum_status_t) :: status
         real(dp), allocatable :: phi(:), phi_im(:), zero(:), y(:, :), f(:, :)
-        real(dp), allocatable :: stage(:, :), residual(:), radius(:), hr(:), hi(:)
-        type(interval_t), allocatable :: c(:, :), w(:, :), xr(:), xi(:), yr(:), yi(:)
+        real(dp), allocatable , target :: stage(:, :), residual(:), radius(:), &
+            hr(:), hi(:)
+        type(interval_t), allocatable , target :: c(:, :), w(:, :), xr(:), xi(:), &
+            yr(:), yi(:)
         real(dp) :: t0, t1, norm0, cr, ci
-        integer :: ks(3, 2), du, k, nfev
-        logical :: apply_ok
-
+        integer , target :: ks(3, 2), du, k, nfev
+        logical , target :: apply_ok
+        type(jellium_kick_evolution_rhs_context_t) :: rhs_context
+        type(jellium_kick_evolution_action_context_t) :: action_context
         ok = .false.; union_dim = 0; candidate_seconds = 0; certificate_seconds = 0
         times = 0; response = 0; band = huge(1.0_dp)
         ks(:, 1) = sector%k + q; ks(:, 2) = sector%k - q
@@ -964,21 +973,66 @@ contains
         end do
         apply_ok = .true.
         call cpu_time(t0)
-        call rhs(0.0_dp, y(:, 0), f(:, 0))
+        rhs_context%apply_ok => apply_ok
+        rhs_context%cell => cell
+        rhs_context%du => du
+        nullify(rhs_context%hi)
+        if (allocated(hi)) rhs_context%hi => hi
+        nullify(rhs_context%hr)
+        if (allocated(hr)) rhs_context%hr => hr
+        rhs_context%model => model
+        rhs_context%union => union
+        call jellium_kick_evolution_rhs_callback(0.0_dp, y(:, 0), f(:, 0), &
+            ctx=rhs_context)
         nfev = 0
         do k = 1, steps
-            call cash_karp_step(rhs, times(k - 1), y(:, k - 1), dt, .false., &
+        rhs_context%apply_ok => apply_ok
+        rhs_context%cell => cell
+        rhs_context%du => du
+        nullify(rhs_context%hi)
+        if (allocated(hi)) rhs_context%hi => hi
+        nullify(rhs_context%hr)
+        if (allocated(hr)) rhs_context%hr => hr
+        rhs_context%model => model
+        rhs_context%union => union
+            call cash_karp_step(jellium_kick_evolution_rhs_callback, times(k - 1), &
+                y(:, k - 1), dt, .false., &
                 stage(:, 1), stage(:, 2), stage(:, 3), stage(:, 4), stage(:, 5), &
-                stage(:, 6), stage(:, 7), stage(:, 8), stage(:, 9), nfev)
+                stage(:, 6), stage(:, 7), stage(:, 8), stage(:, 9), nfev, &
+                    ctx=rhs_context)
             y(:, k) = stage(:, 8)
-            call rhs(times(k), y(:, k), f(:, k))
+        rhs_context%apply_ok => apply_ok
+        rhs_context%cell => cell
+        rhs_context%du => du
+        nullify(rhs_context%hi)
+        if (allocated(hi)) rhs_context%hi => hi
+        nullify(rhs_context%hr)
+        if (allocated(hr)) rhs_context%hr => hr
+        rhs_context%model => model
+        rhs_context%union => union
+            call jellium_kick_evolution_rhs_callback(times(k), y(:, k), f(:, k), &
+                ctx=rhs_context)
         end do
         call cpu_time(t1)
         candidate_seconds = t1 - t0
         if (.not. apply_ok) return
         call cpu_time(t0)
-        call certify_linear_trajectory(action, times, y, f, ipoint(0.0_dp), 0.0_dp, &
-                                       c, w, residual, radius, status)
+        action_context%cell => cell
+        action_context%du => du
+        action_context%model => model
+        action_context%union => union
+        nullify(action_context%xi)
+        if (allocated(xi)) action_context%xi => xi
+        nullify(action_context%xr)
+        if (allocated(xr)) action_context%xr => xr
+        nullify(action_context%yi)
+        if (allocated(yi)) action_context%yi => yi
+        nullify(action_context%yr)
+        if (allocated(yr)) action_context%yr => yr
+        call certify_linear_trajectory(jellium_kick_evolution_action_callback, &
+            times, y, f, ipoint(0.0_dp), 0.0_dp, &
+                                       c, w, residual, radius, status, &
+                                           ctx=action_context)
         call cpu_time(t1)
         certificate_seconds = t1 - t0
         if (status%code /= FORTNUM_OK) return
@@ -988,32 +1042,7 @@ contains
             band(k) = 2*norm0*radius(k)
         end do
         ok = .true.
-    contains
-        subroutine rhs(t, x, dxdt, ctx)
-            real(dp), intent(in) :: t, x(:)
-            real(dp), intent(out) :: dxdt(:)
-            class(*), intent(in), optional :: ctx
-            logical :: step_ok
-            call fock_matvec(model, union%basis, x(1:du), x(du + 1:), hr, hi, step_ok)
-            apply_ok = apply_ok .and. step_ok .and. ieee_is_finite(t)
-            dxdt(1:du) = hi/cell%hbar; dxdt(du + 1:) = -hr/cell%hbar
-        end subroutine
-        subroutine action(x, ax, action_ok, ctx)
-            type(interval_t), intent(in) :: x(:)
-            type(interval_t), intent(out) :: ax(:)
-            logical, intent(out) :: action_ok
-            class(*), intent(in), optional :: ctx
-            integer :: i
-            xr = x(1:du); xi = x(du + 1:)
-            call fock_matvec_between_interval(model, union%basis, union%basis, &
-                                              xr, xi, yr, yi, action_ok)
-            do i = 1, du
-                ax(i) = yi(i)/ipoint(cell%hbar)
-                ax(du + i) = (ipoint(0.0_dp) - yr(i))/ipoint(cell%hbar)
-            end do
-        end subroutine
     end subroutine
-
     !> Equation-level coupling derivative of a nondegenerate eigenstate:
     !> dE/dg = <psi|V1|psi> (Hellmann-Feynman), psi' = -(H-E)^+ (V1 - dE/dg) psi
     !> with psi' orthogonal to psi, and dg_b/dg = 2 <psi'|O_b|psi> from the
@@ -1031,7 +1060,6 @@ contains
         real(dp), allocatable :: v1(:), zero(:), scratch(:), x(:), rhs(:)
         real(dp), allocatable :: gr(:, :), gi(:, :), g2r(:, :), g2i(:, :)
         integer :: d, p
-
         d = size(psi); p = cell%m*(cell%m - 1)/2
         allocate (v1(d), zero(d), scratch(d), x(d), rhs(d))
         allocate (gr(cell%m, cell%m), gi(cell%m, cell%m), g2r(p, p), g2i(p, p))
@@ -1050,7 +1078,6 @@ contains
         call jellium_pair_bins(cell, g2r, edges, dg_same, dg_opp)
         dg_same = 2*dg_same; dg_opp = 2*dg_opp
     end subroutine
-
     !> Adjoint (VJP) of (E, g_same, g_opp) with respect to g for a
     !> nondegenerate eigenstate: gbar = bar_e dE/dg + 2 <(V1-dE/dg) psi, lambda>,
     !> P (H-E) P lambda = -P O_bar psi, with O_bar = sum_b bar_b O_b / (N^2/2)
@@ -1070,7 +1097,6 @@ contains
         real(dp) :: de, scale
         integer :: d, p, a, b, k, iterations
         character(120) :: status
-
         d = size(psi); p = cell%m*(cell%m - 1)/2
         allocate (h(cell%m, cell%m), v(p, p), v1(d), zero(d), scratch(d), opsi(d), &
                   lambda(d), pi(p), pj(p))
@@ -1100,4 +1126,81 @@ contains
         if (.not. ok) return
         gbar = bar_e*de + 2*dot_product(v1 - de*psi, lambda)
     end subroutine
+    subroutine jellium_lowest_apply_evaluate(self, input, output)
+        class(jellium_lowest_apply_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            logical :: step_ok
+            call fock_matvec(self%model, self%basis, input, self%zero, output, &
+                self%scratch, step_ok)
+            self%apply_ok = self%apply_ok .and. step_ok
+    end subroutine jellium_lowest_apply_evaluate
+    subroutine shifted_solve_apply_evaluate(self, input, output)
+        class(shifted_solve_apply_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            logical :: step_ok
+            self%w = input
+            if (associated(self%project)) self%w = self%w - &
+                dot_product(self%project, self%w)*self%project
+            call fock_matvec(self%model, self%basis, self%w, self%zero, output, &
+                self%scratch, step_ok)
+            self%apply_ok = self%apply_ok .and. step_ok
+            output = output - self%shift*self%w
+            if (associated(self%project)) output = output - &
+                dot_product(self%project, output)*self%project
+    end subroutine shifted_solve_apply_evaluate
+        subroutine jellium_kick_evolution_rhs_callback(t, x, dxdt, ctx)
+            real(dp), intent(in) :: t, x(:)
+            real(dp), intent(out) :: dxdt(:)
+            class(*), intent(in), optional  :: ctx
+            logical :: step_ok
+        type(jellium_kick_evolution_rhs_context_t) :: callback_context
+        if (.not. present(ctx)) &
+            error stop "missing private callback context"
+        select type(selected_context => ctx)
+        type is (jellium_kick_evolution_rhs_context_t)
+            callback_context = selected_context
+        class default
+            error stop "invalid private callback context"
+        end select
+            call fock_matvec(callback_context%model, callback_context%union%basis, &
+                x(1:callback_context%du), x(callback_context%du + 1:), &
+                callback_context%hr, callback_context%hi, step_ok)
+            callback_context%apply_ok = callback_context%apply_ok .and. step_ok &
+                .and. ieee_is_finite(t)
+            dxdt(1:callback_context%du) = &
+                callback_context%hi/callback_context%cell%hbar; &
+                dxdt(callback_context%du + 1:) = &
+                -callback_context%hr/callback_context%cell%hbar
+        end subroutine
+        subroutine jellium_kick_evolution_action_callback(x, ax, action_ok, ctx)
+            type(interval_t), intent(in) :: x(:)
+            type(interval_t), intent(out) :: ax(:)
+            logical, intent(out) :: action_ok
+            class(*), intent(in), optional  :: ctx
+            integer :: i
+        type(jellium_kick_evolution_action_context_t) :: callback_context
+        if (.not. present(ctx)) &
+            error stop "missing private callback context"
+        select type(selected_context => ctx)
+        type is (jellium_kick_evolution_action_context_t)
+            callback_context = selected_context
+        class default
+            error stop "invalid private callback context"
+        end select
+            callback_context%xr = x(1:callback_context%du); callback_context%xi = &
+                x(callback_context%du + 1:)
+            call fock_matvec_between_interval(callback_context%model, &
+                callback_context%union%basis, callback_context%union%basis, &
+                                              callback_context%xr, &
+                                                  callback_context%xi, &
+                                                  callback_context%yr, &
+                                                  callback_context%yi, action_ok)
+            do i = 1, callback_context%du
+                ax(i) = callback_context%yi(i)/ipoint(callback_context%cell%hbar)
+                ax(callback_context%du + i) = (ipoint(0.0_dp) - &
+                    callback_context%yr(i))/ipoint(callback_context%cell%hbar)
+            end do
+        end subroutine
 end module kin6d_jellium_cell

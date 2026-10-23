@@ -1,4 +1,4 @@
-program debye_sphere_demo
+module debye_sphere_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval, rad
     use kin6d_debye_sphere_reference, only: debye_sphere_values, debye_sphere_bands
@@ -14,39 +14,95 @@ program debye_sphere_demo
     use fortplot_system_runtime, only: create_directory_runtime
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use kin6d_result_io, only: run_t, result_file_t
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
+    private
+    public :: run_debye_sphere_demo
     real(dp), parameter :: pi = 3.14159265358979323846_dp
     integer, parameter :: fps = 24
-    ! Cross-section map: map_cells^2 display cells on [-map_x, map_x] x [-2.5, 2.5].
     integer, parameter :: circle_points = 129, map_cells = 120
     real(dp), parameter :: map_x = 3.23_dp  ! equal aspect in the measured axes box
     character(len=*), parameter :: bound = 'certified-continuous strict analytical '// &
         'reference band; model error unavailable'
-    integer :: cells = 192, points
+    type :: run_debye_sphere_demo_context_t
+        real(dp), pointer :: bare(:) => null()
+        type(figure_t), pointer :: canvas => null()
+        real(dp), pointer :: chi => null()
+        real(dp), pointer :: circle_x(:) => null()
+        real(dp), pointer :: circle_y(:) => null()
+        real(dp), pointer :: complete_cpu => null()
+        real(dp), pointer :: derivative_cpu => null()
+        real(dp), pointer :: finish => null()
+        integer, pointer :: frames => null()
+        integer, pointer :: i => null()
+        real(dp), pointer :: k => null()
+        real(dp), pointer :: lower(:,:) => null()
+        real(dp), pointer :: map(:,:) => null()
+        real(dp), pointer :: map_xe(:) => null()
+        real(dp), pointer :: map_ye(:) => null()
+        real(dp), pointer :: max_g_radius => null()
+        real(dp), pointer :: max_phi_radius => null()
+        real(dp), pointer :: ne(:) => null()
+        type(interval_t), pointer :: ne_box => null()
+        real(dp), pointer :: ne_hi(:) => null()
+        real(dp), pointer :: ne_lo(:) => null()
+        logical, pointer :: ok => null()
+        real(dp), pointer :: phi(:) => null()
+        integer, pointer :: points => null()
+        real(dp), pointer :: primal_cpu => null()
+        real(dp), pointer :: r(:) => null()
+        integer, pointer :: repeat => null()
+        integer, pointer :: repeats => null()
+        real(dp), pointer :: start => null()
+        real(dp), pointer :: tangent(:) => null()
+        real(dp), pointer :: upper(:,:) => null()
+        real(dp), pointer :: work(:,:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_debye_sphere_demo_update_frame_t
+        type(run_debye_sphere_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_debye_sphere_demo_update_frame_binding
+    end type
+
+contains
+    subroutine run_debye_sphere_demo()
+    implicit none
+    ! Cross-section map: map_cells^2 display cells on [-map_x, map_x] x [-2.5, 2.5].
+integer , target :: cells, points
     ! 193 equilibria (kappa = 0.5..2) play in 8 s at 24 fps, then a 1 s hold.
-    integer :: frames = 193, repeats = 3
-    real(dp) :: chi = 0.02_dp
+integer , target :: frames, repeats
+real(dp) , target :: chi
     namelist /debye_sphere/ cells, frames, repeats, chi
     type(run_t) :: run
     type(result_file_t) :: result
     integer :: unit, ios
     character(len=256) :: msg
-    real(dp), allocatable :: r(:), phi(:), bare(:), tangent(:)
-    real(dp), allocatable :: lower(:, :), upper(:, :), work(:, :)
-    real(dp), allocatable :: ne(:), ne_lo(:), ne_hi(:)
+    real(dp), allocatable , target :: r(:), phi(:), bare(:), tangent(:)
+    real(dp), allocatable , target :: lower(:, :), upper(:, :), work(:, :)
+    real(dp), allocatable , target :: ne(:), ne_lo(:), ne_hi(:)
     ! Result record (point, frame, quantity); NaN where a frame was not computed.
     real(dp), allocatable :: kappas(:), record(:, :, :)
-    real(dp) :: circle_x(circle_points), circle_y(circle_points)
-    real(dp) :: map_xe(map_cells + 1), map_ye(map_cells + 1), map(map_cells, map_cells)
-    real(dp) :: k, angle, start, finish
-    real(dp) :: primal_cpu, derivative_cpu, complete_cpu, max_phi_radius, max_g_radius
-    type(interval_t) :: ne_box
+    real(dp) , target :: circle_x(circle_points), circle_y(circle_points)
+    real(dp) , target :: map_xe(map_cells + 1), map_ye(map_cells + 1), &
+        map(map_cells, map_cells)
+    real(dp) , target :: k, angle, start, finish
+    real(dp) , target :: primal_cpu, derivative_cpu, complete_cpu, max_phi_radius, &
+        max_g_radius
+    type(interval_t) , target :: ne_box
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
-    integer :: i, j, frame, repeat, snapshot_frame, status, data, evidence
-    logical :: ok, snapshot_only
+    integer , target :: i, j, frame, repeat, snapshot_frame, status, data, evidence
+    logical , target :: ok, snapshot_only
     character(len=64) :: argument
+        type(run_debye_sphere_demo_context_t), target :: ctx
+        type(run_debye_sphere_demo_update_frame_t), target :: update_frame_operator
 
+        cells = 192
+        frames = 193
+        repeats = 3
+        chi = 0.02_dp
     call run%start('debye_sphere_demo')
     ios = 0; msg = ''
     call run%open_config(unit)
@@ -102,23 +158,28 @@ program debye_sphere_demo
         'extra_over_primal_s,factor_over_primal,extra_over_tangent_s,'// &
         'factor_over_tangent,max_potential_band_radius,max_tangent_band_radius'
     if (snapshot_only) then
-        call compute_frame(snapshot_frame, timed=.true.)
+        call bind_run_debye_sphere_demo_context()
+        call run_debye_sphere_demo_compute_frame(ctx, snapshot_frame, timed=.true.)
         call write_evidence(snapshot_frame)
     else
         do frame = 1, frames
-            call compute_frame(frame, timed=.true.)
+        call bind_run_debye_sphere_demo_context()
+            call run_debye_sphere_demo_compute_frame(ctx, frame, timed=.true.)
             call write_evidence(frame)
         end do
     end if
     close (data); close (evidence)
     call write_result()
-    call compute_frame(snapshot_frame, timed=.false.)
+        call bind_run_debye_sphere_demo_context()
+    call run_debye_sphere_demo_compute_frame(ctx, snapshot_frame, timed=.false.)
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
-    call draw_frame()
+        call bind_run_debye_sphere_demo_context()
+    call run_debye_sphere_demo_draw_frame(ctx)
     call savefig('output/debye-potential-reduction.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames + hold_frames, &
+        call bind_run_debye_sphere_demo_context()
+        animation = animation_func(update_frame_operator, frames=frames + hold_frames, &
             interval=42, fig=canvas)
         call save_animation(animation, 'output/debye-potential-reduction.mp4', fps=fps)
     end if
@@ -132,6 +193,52 @@ program debye_sphere_demo
     write (*, '(a)') 'CPU timings: cold frame bands and repeated references.'
     write (*, '(a)') 'Rendering and encoding excluded from scientific timers.'
 contains
+    subroutine bind_run_debye_sphere_demo_context()
+        nullify(ctx%bare)
+        if (allocated(bare)) ctx%bare => bare
+        ctx%canvas => canvas
+        ctx%chi => chi
+        ctx%circle_x => circle_x
+        ctx%circle_y => circle_y
+        ctx%complete_cpu => complete_cpu
+        ctx%derivative_cpu => derivative_cpu
+        ctx%finish => finish
+        ctx%frames => frames
+        ctx%i => i
+        ctx%k => k
+        nullify(ctx%lower)
+        if (allocated(lower)) ctx%lower => lower
+        ctx%map => map
+        ctx%map_xe => map_xe
+        ctx%map_ye => map_ye
+        ctx%max_g_radius => max_g_radius
+        ctx%max_phi_radius => max_phi_radius
+        nullify(ctx%ne)
+        if (allocated(ne)) ctx%ne => ne
+        ctx%ne_box => ne_box
+        nullify(ctx%ne_hi)
+        if (allocated(ne_hi)) ctx%ne_hi => ne_hi
+        nullify(ctx%ne_lo)
+        if (allocated(ne_lo)) ctx%ne_lo => ne_lo
+        ctx%ok => ok
+        nullify(ctx%phi)
+        if (allocated(phi)) ctx%phi => phi
+        ctx%points => points
+        ctx%primal_cpu => primal_cpu
+        nullify(ctx%r)
+        if (allocated(r)) ctx%r => r
+        ctx%repeat => repeat
+        ctx%repeats => repeats
+        ctx%start => start
+        nullify(ctx%tangent)
+        if (allocated(tangent)) ctx%tangent => tangent
+        nullify(ctx%upper)
+        if (allocated(upper)) ctx%upper => upper
+        nullify(ctx%work)
+        if (allocated(work)) ctx%work => work
+        update_frame_operator%data => ctx
+    end subroutine bind_run_debye_sphere_demo_context
+
     subroutine write_result()
         character(len=16), parameter :: names(12) = [character(len=16) :: &
             'screened', 'screened_lower', 'screened_upper', 'bare', 'bare_lower', &
@@ -158,51 +265,6 @@ contains
         call result%close()
     end subroutine write_result
 
-    subroutine compute_frame(number, timed)
-        integer, intent(in) :: number
-        logical, intent(in) :: timed
-        call sphere_parameter(real(number - 1, dp), real(frames, dp), k)
-        if (timed) then
-            call cpu_time(start)
-            do repeat = 1, repeats
-                do i = 1, points
-                    if (r(i) <= 1.0_dp) then
-                        call sphere_inside(r(i), k, phi(i))
-                        call sphere_bare_inside(r(i), bare(i))
-                    else
-                        call sphere_outside(r(i), k, phi(i))
-                        call sphere_bare_outside(r(i), bare(i))
-                    end if
-                end do
-            end do
-            call cpu_time(finish)
-            primal_cpu = (finish - start)/repeats
-            call cpu_time(start)
-            do repeat = 1, repeats
-                do i = 1, points
-                    call debye_sphere_values(r(i), k, phi(i), bare(i), tangent(i), ok)
-                    if (.not. ok) error stop 'reference derivative evaluation failed'
-                end do
-            end do
-            call cpu_time(finish)
-            derivative_cpu = (finish - start)/repeats
-        end if
-        call cpu_time(start)
-        call debye_sphere_bands(r, k, phi, bare, tangent, lower, upper, work, ok)
-        call cpu_time(finish)
-        if (.not. ok) error stop 'reference whole-cell bands failed'
-        complete_cpu = finish - start
-        max_phi_radius = 0.0_dp; max_g_radius = 0.0_dp
-        do i = 1, points
-            max_phi_radius = max(max_phi_radius, &
-                rad(interval(lower(1, i), upper(1, i))))
-            max_g_radius = max(max_g_radius, rad(interval(lower(3, i), upper(3, i))))
-            call sphere_response(phi(i), chi, ne(i))
-            call sphere_response_interval(interval(lower(1, i), upper(1, i)), &
-                interval(chi), ne_box)
-            ne_lo(i) = ne_box%lo; ne_hi(i) = ne_box%hi
-        end do
-    end subroutine compute_frame
 
     subroutine write_evidence(number)
         integer, intent(in) :: number
@@ -227,58 +289,137 @@ contains
         if (baseline > 0.0_dp) value = total/baseline
     end function timer_factor
 
-    subroutine update_frame(number)
-        integer, intent(in) :: number
-        call compute_frame(min(number, frames), timed=.false.)
-        call canvas%clear()
-        call draw_frame()
-        call canvas%set_rendered(.false.)
-    end subroutine update_frame
+    end subroutine run_debye_sphere_demo
 
-    subroutine draw_frame()
+    subroutine run_debye_sphere_demo_compute_frame(ctx, number, timed)
+        type(run_debye_sphere_demo_context_t), intent(in) :: ctx
+        integer, intent(in) :: number
+        logical, intent(in) :: timed
+        integer, pointer :: local_i
+        integer, pointer :: local_repeat
+        local_i => ctx%i
+        local_repeat => ctx%repeat
+        call sphere_parameter(real(number - 1, dp), real(ctx%frames, dp), ctx%k)
+        if (timed) then
+            call cpu_time(ctx%start)
+            do local_repeat = 1, ctx%repeats
+                do local_i = 1, ctx%points
+                    if (ctx%r(local_i) <= 1.0_dp) then
+                        call sphere_inside(ctx%r(local_i), ctx%k, ctx%phi(local_i))
+                        call sphere_bare_inside(ctx%r(local_i), ctx%bare(local_i))
+                    else
+                        call sphere_outside(ctx%r(local_i), ctx%k, ctx%phi(local_i))
+                        call sphere_bare_outside(ctx%r(local_i), ctx%bare(local_i))
+                    end if
+                end do
+            end do
+            call cpu_time(ctx%finish)
+            ctx%primal_cpu = (ctx%finish - ctx%start)/ctx%repeats
+            call cpu_time(ctx%start)
+            do local_repeat = 1, ctx%repeats
+                do local_i = 1, ctx%points
+                    call debye_sphere_values(ctx%r(local_i), ctx%k, &
+                        ctx%phi(local_i), ctx%bare(local_i), ctx%tangent(local_i), &
+                        ctx%ok)
+                    if (.not. ctx%ok) error stop &
+                        'reference derivative evaluation failed'
+                end do
+            end do
+            call cpu_time(ctx%finish)
+            ctx%derivative_cpu = (ctx%finish - ctx%start)/ctx%repeats
+        end if
+        call cpu_time(ctx%start)
+        call debye_sphere_bands(ctx%r, ctx%k, ctx%phi, ctx%bare, ctx%tangent, &
+            ctx%lower, ctx%upper, ctx%work, ctx%ok)
+        call cpu_time(ctx%finish)
+        if (.not. ctx%ok) error stop 'reference whole-cell bands failed'
+        ctx%complete_cpu = ctx%finish - ctx%start
+        ctx%max_phi_radius = 0.0_dp; ctx%max_g_radius = 0.0_dp
+        do local_i = 1, ctx%points
+            ctx%max_phi_radius = max(ctx%max_phi_radius, &
+                rad(interval(ctx%lower(1, local_i), ctx%upper(1, local_i))))
+            ctx%max_g_radius = max(ctx%max_g_radius, rad(interval(ctx%lower(3, &
+                local_i), ctx%upper(3, local_i))))
+            call sphere_response(ctx%phi(local_i), ctx%chi, ctx%ne(local_i))
+            call sphere_response_interval(interval(ctx%lower(1, local_i), &
+                ctx%upper(1, local_i)), &
+                interval(ctx%chi), ctx%ne_box)
+            ctx%ne_lo(local_i) = ctx%ne_box%lo; ctx%ne_hi(local_i) = ctx%ne_box%hi
+        end do
+    end subroutine run_debye_sphere_demo_compute_frame
+
+    subroutine run_debye_sphere_demo_update_frame(ctx, number)
+        type(run_debye_sphere_demo_context_t), intent(in) :: ctx
+        integer, intent(in) :: number
+        call run_debye_sphere_demo_compute_frame(ctx, min(number, ctx%frames), &
+            timed=.false.)
+        call ctx%canvas%clear()
+        call run_debye_sphere_demo_draw_frame(ctx)
+        call ctx%canvas%set_rendered(.false.)
+    end subroutine run_debye_sphere_demo_update_frame
+
+    subroutine run_debye_sphere_demo_update_frame_binding(self, frame)
+        class(run_debye_sphere_demo_update_frame_t), intent(inout) :: self
+        integer, intent(in) :: frame
+        call run_debye_sphere_demo_update_frame(self%data, frame)
+    end subroutine
+
+    subroutine run_debye_sphere_demo_draw_frame(ctx)
+        type(run_debye_sphere_demo_context_t), intent(in) :: ctx
         integer :: ix, iy, cell
         real(dp) :: rho, w, dr
+        integer, pointer :: local_i
+        local_i => ctx%i
         ! Display only: linear interpolation of the radial reference on the z = 0 plane.
-        dr = r(2) - r(1)
+        dr = ctx%r(2) - ctx%r(1)
         do iy = 1, map_cells
             do ix = 1, map_cells
-                rho = hypot(0.5_dp*(map_xe(ix) + map_xe(ix + 1)), &
-                    0.5_dp*(map_ye(iy) + map_ye(iy + 1)))
-                cell = min(points - 1, int(rho/dr) + 1)
+                rho = hypot(0.5_dp*(ctx%map_xe(ix) + ctx%map_xe(ix + 1)), &
+                    0.5_dp*(ctx%map_ye(iy) + ctx%map_ye(iy + 1)))
+                cell = min(ctx%points - 1, int(rho/dr) + 1)
                 w = rho/dr - real(cell - 1, dp)
-                map(iy, ix) = (1 - w)*phi(cell) + w*phi(cell + 1)
+                ctx%map(iy, ix) = (1 - w)*ctx%phi(cell) + w*ctx%phi(cell + 1)
             end do
         end do
         call suptitle('Linear electron screening shrinks the sphere potential within '// &
             'a Debye length; the bare Coulomb tail disappears')
         call subplot(2, 2, 1)
-        call title('Potential at z = 0 (solid: r = R, dashed: r = $\lambda_D$)  |  $R/\lambda_D$ = '//num(k, 2))
+        call &
+            title('Potential at z = 0 (solid: r = R, dashed: r = $\lambda_D$)  |  $R/\lambda_D$ = '//num(ctx%k, 2))
         call xlabel('x / R'); call ylabel('y / R')
         call xlim(-map_x, map_x); call ylim(-2.5_dp, 2.5_dp)
-        call pcolormesh(map_xe, map_ye, map, cmap='viridis', vmin=0.0_dp, vmax=1.5_dp)
+        call pcolormesh(ctx%map_xe, ctx%map_ye, ctx%map, cmap='viridis', &
+            vmin=0.0_dp, vmax=1.5_dp)
         call colorbar(label='4πε0 R Φ / Q')
         ! Solid circle: source sphere r = R; dashed circle: r = lambda_D.
-        call plot(circle_x, circle_y, color=[1.0_dp, 1.0_dp, 1.0_dp], linewidth=2.0_dp)
-        call plot(circle_x/k, circle_y/k, color=[1.0_dp, 1.0_dp, 1.0_dp], &
+        call plot(ctx%circle_x, ctx%circle_y, color=[1.0_dp, 1.0_dp, 1.0_dp], &
+            linewidth=2.0_dp)
+        call plot(ctx%circle_x/ctx%k, ctx%circle_y/ctx%k, color=[1.0_dp, 1.0_dp, &
+            1.0_dp], &
             linestyle='--', linewidth=1.5_dp)
         call subplot(2, 2, 2)
         call title('Radial potential: bare source and screened equilibrium')
         call xlabel('r / R'); call xlim(0.0_dp, 6.0_dp)
         call ylabel('$4\pi\epsilon_0 R \Phi/Q$'); call ylim(-0.02_dp, 1.60_dp)
-        call fill_between(r, lower(1, :), upper(1, :), color=blue, alpha=0.25_dp)
-        call plot(r, phi, color=blue, linewidth=2.0_dp, label='screened ± certified bound')
-        call plot(r, bare, linestyle='--', color=black, linewidth=1.2_dp, &
+        call fill_between(ctx%r, ctx%lower(1, :), ctx%upper(1, :), color=blue, &
+            alpha=0.25_dp)
+        call plot(ctx%r, ctx%phi, color=blue, linewidth=2.0_dp, &
+            label='screened ± certified bound')
+        call plot(ctx%r, ctx%bare, linestyle='--', color=black, linewidth=1.2_dp, &
             label='bare uniform sphere')
-        call plot([1.0_dp, 1.0_dp]/k, [-0.02_dp, 1.6_dp], color=grey, linestyle=':', &
+        call plot([1.0_dp, 1.0_dp]/ctx%k, [-0.02_dp, 1.6_dp], color=grey, &
+            linestyle=':', &
             linewidth=1.5_dp, label='$r = \lambda_D$')
         call legend(loc='upper right')
         call subplot(2, 2, 3)
         call title('Electron density response $n_e/n_0 = 1 + \chi\Phi$')
         call xlabel('r / R'); call xlim(0.0_dp, 6.0_dp)
         call ylabel('$n_e/n_0$'); call ylim(0.999_dp, 1.035_dp)
-        call fill_between(r, ne_lo, ne_hi, color=blue, alpha=0.25_dp)
-        call plot(r, ne, color=blue, linewidth=2.0_dp, label='linear response ± bound')
-        call plot(r, [(1.0_dp, i=1, points)], linestyle='--', color=black, &
+        call fill_between(ctx%r, ctx%ne_lo, ctx%ne_hi, color=blue, alpha=0.25_dp)
+        call plot(ctx%r, ctx%ne, color=blue, linewidth=2.0_dp, &
+            label='linear response ± bound')
+        call plot(ctx%r, [(1.0_dp, local_i=1, ctx%points)], linestyle='--', &
+            color=black, &
             linewidth=1.2_dp, label='uniform background')
         call legend(loc='upper right')
         call subplot(2, 2, 4)
@@ -286,13 +427,22 @@ contains
         call xlabel('r / R'); call xlim(0.0_dp, 6.0_dp)
         call ylabel('half-width'); call ylim(1.0e-12_dp, 1.0e-2_dp)
         call set_yscale('log')
-        call plot(r, max(0.5_dp*(upper(1, :) - lower(1, :)), 1.0e-12_dp), color=blue, &
+        call plot(ctx%r, max(0.5_dp*(ctx%upper(1, :) - ctx%lower(1, :)), &
+            1.0e-12_dp), color=blue, &
             linewidth=2.0_dp, label='screened potential')
-        call plot(r, max(0.5_dp*(upper(2, :) - lower(2, :)), 1.0e-12_dp), color=black, &
+        call plot(ctx%r, max(0.5_dp*(ctx%upper(2, :) - ctx%lower(2, :)), &
+            1.0e-12_dp), color=black, &
             linestyle='--', linewidth=1.2_dp, label='bare potential')
-        call plot(r, max(0.5_dp*(ne_hi - ne_lo), 1.0e-12_dp), color=vermillion, &
+        call plot(ctx%r, max(0.5_dp*(ctx%ne_hi - ctx%ne_lo), 1.0e-12_dp), &
+            color=vermillion, &
             linestyle='-.', linewidth=1.5_dp, label='electron density')
         call legend(loc='upper right')
         call tight_layout()
-    end subroutine draw_frame
+    end subroutine run_debye_sphere_demo_draw_frame
+end module debye_sphere_demo_callbacks
+
+program debye_sphere_demo
+    use debye_sphere_demo_callbacks, only: run_debye_sphere_demo
+    implicit none
+    call run_debye_sphere_demo()
 end program debye_sphere_demo

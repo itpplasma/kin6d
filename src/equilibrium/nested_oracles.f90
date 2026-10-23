@@ -16,6 +16,7 @@ module kin6d_nested_oracles
     use fortnum_integrate_gk, only: integrate_gk
     use fortnum_multiroot, only: multiroot_hybrid
     use fortnum_status, only: fortnum_status_t
+    use fortnum_integrate_gk, only: gk_function_t
     implicit none
     private
     public :: nested_oracle_t, NESTED_INTEGER, NESTED_SHEARED
@@ -36,6 +37,21 @@ module kin6d_nested_oracles
         procedure, non_overridable :: rotation
         procedure, non_overridable :: flux
         procedure, non_overridable :: profiles
+    end type
+    type, extends(gk_function_t) :: flux_periods_root_t
+        integer, pointer :: k => null()
+        class(nested_oracle_t), pointer :: o => null()
+        real(dp), pointer :: rho => null()
+    contains
+        procedure :: evaluate => flux_periods_root_evaluate
+    end type
+    type :: profile_at_s_residual_context_t
+        real(dp), pointer :: edge => null()
+        integer, pointer :: failed => null()
+        class(nested_oracle_t), pointer :: o => null()
+        real(dp), pointer :: root(:) => null()
+        real(dp), pointer :: s => null()
+        real(dp), pointer :: tolerance => null()
     end type
 contains
     logical function valid(o)
@@ -61,7 +77,6 @@ contains
         end select
         valid = .true.
     end function
-
     subroutine point(o, x, v, status)
         class(nested_oracle_t), intent(in) :: o
         real(dp), intent(in) :: x(3)
@@ -91,7 +106,6 @@ contains
         end if
         if (all(ieee_is_finite(v))) status = 0
     end subroutine
-
     subroutine point_enclosure(o, x, v)
         class(nested_oracle_t), intent(in) :: o
         ! Encloses evaluation at the exact stored Cartesian point and parameters.
@@ -119,7 +133,6 @@ contains
             v(10), v(11), v(12), v(13), v(14), v(15), v(16), v(17), v(18), v(19), v(20))
         end if
     end subroutine
-
     subroutine sample(o, x, v, status)
         class(nested_oracle_t), intent(in) :: o
         real(dp), intent(in) :: x(:, :)
@@ -136,7 +149,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine
-
     pure subroutine surface(o, rho, theta, t, x, jac, rhs)
         class(nested_oracle_t), intent(in) :: o
         ! rho^2=psi (integer); rho^2=2 psi (sheared). t is NOT geometric phi.
@@ -153,7 +165,6 @@ contains
         end if
         if (present(rhs)) rhs = rate
     end subroutine
-
     subroutine boundary(o, theta, phi, x, status)
         class(nested_oracle_t), intent(in) :: o
         real(dp), intent(in) :: theta, phi
@@ -186,7 +197,6 @@ contains
         if (radius <= 0 .or. abs(ray) > 1e-12_dp) return
         status = 0
     end subroutine
-
     subroutine averages(o, n, values)
         class(nested_oracle_t), intent(in) :: o
         integer, intent(in) :: n
@@ -222,7 +232,6 @@ contains
         values(2:3) = acc(2:3)/acc(1)
         values(4) = 2*acc(2)/acc(3)
     end subroutine
-
     subroutine rotation(o, psi, turns, tolerance, iota, status, error_estimate)
         class(nested_oracle_t), intent(in) :: o
         real(dp), intent(in) :: psi, tolerance
@@ -250,7 +259,6 @@ contains
         if (.not. ieee_is_finite(iota)) return
         if (estimate <= tolerance*max(1.0_dp, abs(iota))) status = 0
     end subroutine
-
     logical function admitted_profile(o, psi, tolerance) result(ok)
         class(nested_oracle_t), intent(in) :: o
         real(dp), intent(in) :: psi, tolerance
@@ -260,39 +268,29 @@ contains
         if (psi < 0 .or. psi > o%delta .or. tolerance <= 0) return
         ok = .true.
     end function
-
     subroutine flux_periods(o, psi, tolerance, periods, errors, status)
-        class(nested_oracle_t), intent(in) :: o
+        class(nested_oracle_t), intent(in), target :: o
         real(dp), intent(in) :: psi, tolerance
         ! dPhi_tor/dpsi, dpsi_pol/dpsi. Smooth axis limits need no rho division.
         real(dp), intent(out) :: periods(2), errors(2)
         integer, intent(out) :: status
-        real(dp) :: rho
-        integer :: k, ierr
+        real(dp), target :: rho
+        integer , target :: k, ierr
+        type(flux_periods_root_t) :: root_function
+        root_function%k => k
+        root_function%o => o
+        root_function%rho => rho
         rho = sqrt(2*psi)
         status = 2
         do k = 1, 2
-            call integrate_gk(density, 0.0_dp, 2*pi, 0.0_dp, tolerance, &
+            call integrate_gk(root_function, 0.0_dp, 2*pi, 0.0_dp, tolerance, &
                               periods(k), errors(k), ierr)
             if (ierr /= 0) return
         end do
         if (.not. all(ieee_is_finite(periods))) return
         if (any(periods <= 0)) return
         status = 0
-    contains
-        function density(angle) result(value)
-            real(dp), intent(in) :: angle
-            real(dp) :: value, unused
-            if (k == 1) then
-                call nested_sheared_flux_density(rho, angle, 0.0_dp, o%eps, &
-                                                 o%tau, o%saxis, o%lam, value, unused)
-            else
-                call nested_sheared_flux_density(rho, 0.0_dp, angle, o%eps, &
-                                                 o%tau, o%saxis, o%lam, unused, value)
-            end if
-        end function
     end subroutine
-
     subroutine flux(o, psi, tolerance, phi, status, error_estimate)
         class(nested_oracle_t), intent(in) :: o
         real(dp), intent(in) :: psi, tolerance
@@ -344,7 +342,6 @@ contains
             n = 2*n
         end do
     end subroutine
-
     subroutine profiles(o, s, tolerance, psi, phi, iota, pressure, status)
         class(nested_oracle_t), intent(in) :: o
         ! Matched profiles at normalized TOROIDAL flux s=Phi(psi)/Phi(delta).
@@ -374,15 +371,15 @@ contains
         end do
         !$omp end parallel do
     end subroutine
-
     subroutine profile_at_s(o, s, tolerance, edge, psi, phi, iota, pressure, status)
-        class(nested_oracle_t), intent(in) :: o
-        real(dp), intent(in) :: s, tolerance, edge
+        class(nested_oracle_t), intent(in), target :: o
+        real(dp), intent(in), target :: s, tolerance, edge
         real(dp), intent(out) :: psi, phi, iota, pressure
         integer, intent(out) :: status
         type(fortnum_status_t) :: root_status
-        real(dp) :: check_flux, root(1)
-        integer :: failed, ierr
+        real(dp), target :: check_flux, root(1)
+        integer , target :: failed, ierr
+        type(profile_at_s_residual_context_t) :: residual_context
         status = 1
         psi = ieee_value(0.0_dp, ieee_quiet_nan)
         phi = psi; iota = psi; pressure = psi
@@ -394,8 +391,16 @@ contains
         else
             ! Equation-level derivative: dpsi=(d(s*edge)-dPhi|psi)/Phi'(psi).
             ! Differentiate the equation, not Newton or adaptive schedules.
-            call multiroot_hybrid(residual, 1, [s*o%delta], root, root_status, &
-                                  xtol=tolerance/16, ftol=tolerance/16)
+        residual_context%edge => edge
+        residual_context%failed => failed
+        residual_context%o => o
+        residual_context%root => root
+        residual_context%s => s
+        residual_context%tolerance => tolerance
+            call multiroot_hybrid(profile_at_s_residual_callback, 1, [s*o%delta], &
+                root, root_status, &
+                                  xtol=tolerance/16, ftol=tolerance/16, &
+                                      ctx=residual_context)
             psi = root(1)
             status = 3
             if (root_status%code /= 0 .or. failed /= 0) return
@@ -412,23 +417,47 @@ contains
         else
             call nested_sheared_pressure(psi, o%delta, o%lam, o%edge_pressure, pressure)
         end if
-    contains
-        subroutine residual(x, f, jac, ctx)
+    end subroutine
+    function flux_periods_root_evaluate(self, x) result(y)
+        class(flux_periods_root_t), intent(in) :: self
+            real(dp), intent(in) :: x
+            real(dp) :: y, unused
+            if (self%k == 1) then
+                call nested_sheared_flux_density(self%rho, x, 0.0_dp, self%o%eps, &
+                                                 self%o%tau, self%o%saxis, &
+                                                     self%o%lam, y, unused)
+            else
+                call nested_sheared_flux_density(self%rho, 0.0_dp, x, self%o%eps, &
+                                                 self%o%tau, self%o%saxis, &
+                                                     self%o%lam, unused, y)
+            end if
+    end function flux_periods_root_evaluate
+        subroutine profile_at_s_residual_callback(x, f, jac, ctx)
             real(dp), intent(in) :: x(:)
             real(dp), intent(out) :: f(:), jac(:, :)
-            class(*), intent(in), optional :: ctx
+            class(*), intent(in), optional  :: ctx
             real(dp) :: label, flux_value, periods(2), errors(2)
             integer :: flux_status
+        type(profile_at_s_residual_context_t) :: callback_context
+        if (.not. present(ctx)) &
+            error stop "missing private callback context"
+        select type(selected_context => ctx)
+        type is (profile_at_s_residual_context_t)
+            callback_context = selected_context
+        class default
+            error stop "invalid private callback context"
+        end select
             ! Monotone linear continuation outside the physical domain is
             ! solely for rejected Newton trials; the admitted root is inside.
-            label = max(0.0_dp, min(o%delta, x(1)))
-            call o%flux(label, tolerance/16, flux_value, flux_status)
-            if (flux_status /= 0) failed = flux_status
-            call flux_periods(o, label, tolerance/16, periods, errors, flux_status)
-            if (flux_status /= 0) failed = flux_status
-            call nested_profile_residual(flux_value, edge, s, x(1), label, &
+            label = max(0.0_dp, min(callback_context%o%delta, x(1)))
+            call callback_context%o%flux(label, callback_context%tolerance/16, &
+                flux_value, flux_status)
+            if (flux_status /= 0) callback_context%failed = flux_status
+            call flux_periods(callback_context%o, label, &
+                callback_context%tolerance/16, periods, errors, flux_status)
+            if (flux_status /= 0) callback_context%failed = flux_status
+            call nested_profile_residual(flux_value, callback_context%edge, &
+                callback_context%s, x(1), label, &
                                          periods(1), f(1), jac(1, 1))
-            if (present(ctx)) continue
         end subroutine
-    end subroutine
 end module

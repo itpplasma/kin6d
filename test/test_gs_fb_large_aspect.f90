@@ -1,4 +1,33 @@
-program test_gs_fb_large_aspect
+module test_gs_fb_large_aspect_callbacks
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_rect_coil_t
+    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data
+    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
+    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
+    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
+        gs_fb_setup, gs_fb_evaluate, gs_fb_newton, gs_fb_trace_lcfs, GS_FB_OK, &
+        GS_FB_TARGET_MEAN
+    use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
+
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
+    implicit none
+    private
+    public :: run_test_gs_fb_large_aspect
+    real(dp), parameter :: pi = acos(-1.0_dp), a = 0.5_dp
+    real(dp), parameter :: eps_list(4) = [0.25_dp, 0.125_dp, 0.0625_dp, 0.03125_dp]
+    type :: run_test_gs_fb_large_aspect_context_t
+        real(dp), pointer :: r0 => null()
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_gs_fb_large_aspect_outer_curve_t
+        type(run_test_gs_fb_large_aspect_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_fb_large_aspect_outer_curve_binding
+    end type
+
+contains
+    subroutine run_test_gs_fb_large_aspect()
     !! T5 (DESIGN 5.1, step P13): large-aspect-ratio free-boundary asymptotics.
     !!
     !! A circular plasma of minor radius a = 0.5 m at major radius R0 = a/eps
@@ -22,22 +51,14 @@ program test_gs_fb_large_aspect
     !! carrying -I_q, ramped in two continuation steps) with I_q of the sign
     !! of Ip pulls the plasma vertically and raises the elongation kappa;
     !! the opposite sign lowers it.
-    use, intrinsic :: iso_fortran_env, only: dp => real64
-    use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_rect_coil_t
-    use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data
-    use kin6d_gs_coils, only: gs_circuit_set_t, gs_circuit_flux_vectors
-    use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_primitives
-    use kin6d_gs_free_boundary, only: gs_fb_config_t, gs_fb_system_t, gs_fb_eval_t, &
-        gs_fb_setup, gs_fb_evaluate, gs_fb_newton, gs_fb_trace_lcfs, GS_FB_OK, &
-        GS_FB_TARGET_MEAN
-    use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     implicit none
 
-    real(dp), parameter :: pi = acos(-1.0_dp), a = 0.5_dp
-    real(dp), parameter :: eps_list(4) = [0.25_dp, 0.125_dp, 0.0625_dp, 0.03125_dp]
-    real(dp) :: r0, mismatch(size(eps_list)), kappa(3), kappa_eps(size(eps_list))
+    real(dp) , target :: r0, mismatch(size(eps_list)), kappa(3), &
+        kappa_eps(size(eps_list))
     real(dp) :: rate
     integer :: failures, i
+        type(run_test_gs_fb_large_aspect_context_t), target :: ctx
+        type(run_test_gs_fb_large_aspect_outer_curve_t), target :: outer_curve_operator
 
     failures = 0
     do i = 1, size(eps_list)
@@ -64,6 +85,11 @@ program test_gs_fb_large_aspect
     print '(a)', 'gs_fb_large_aspect (T5) checks passed'
 
 contains
+    subroutine bind_run_test_gs_fb_large_aspect_context()
+        ctx%r0 => r0
+        outer_curve_operator%data => ctx
+    end subroutine bind_run_test_gs_fb_large_aspect_context
+
 
     subroutine require(ok, what)
         logical, intent(in) :: ok
@@ -74,11 +100,6 @@ contains
         end if
     end subroutine require
 
-    subroutine outer_curve(t, point)
-        real(dp), intent(in) :: t
-        real(dp), intent(out) :: point(2)
-        point = [r0 + 2*a*cos(2*pi*t), 2*a*sin(2*pi*t)]
-    end subroutine outer_curve
 
     subroutine shafranov_case(quadrupole, mismatch, kappa)
         !! quadrupole: current of each quadrupole coil per ampere of Ip.
@@ -96,11 +117,14 @@ contains
         real(dp) :: r_geo, a_geo, rho2
         integer :: status, j, pass
         do j = 1, n_outer
-            call outer_curve(real(j - 1, dp)/n_outer, contour(:, j))
+        call bind_run_test_gs_fb_large_aspect_context()
+            call run_test_gs_fb_large_aspect_outer_curve(ctx, real(j - 1, &
+                dp)/n_outer, contour(:, j))
         end do
         h = 2*pi*2*a/n_outer
-        call initialize_gs(state, contour, 0.4_dp*h*h, status, element_order=2, &
-                           curved=.true., curve=outer_curve)
+        call bind_run_test_gs_fb_large_aspect_context()
+        call initialize_gs_object(state, contour, 0.4_dp*h*h, status, element_order=2, &
+                           curved=.true., curve=outer_curve_operator)
         call require(status == 0, 'mesh')
         allocate (set%coils(6), set%incidence(6, 2))
         set%incidence = 0.0_dp
@@ -229,4 +253,26 @@ contains
         l_i = (b2_int/area)/b_pa**2
     end subroutine measure
 
+
+    end subroutine run_test_gs_fb_large_aspect
+
+    subroutine run_test_gs_fb_large_aspect_outer_curve(ctx, t, point)
+        type(run_test_gs_fb_large_aspect_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        point = [ctx%r0 + 2*a*cos(2*pi*t), 2*a*sin(2*pi*t)]
+    end subroutine run_test_gs_fb_large_aspect_outer_curve
+
+    subroutine run_test_gs_fb_large_aspect_outer_curve_binding(self, t, point)
+        class(run_test_gs_fb_large_aspect_outer_curve_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_gs_fb_large_aspect_outer_curve(self%data, t, point)
+    end subroutine
+end module test_gs_fb_large_aspect_callbacks
+
+program test_gs_fb_large_aspect
+    use test_gs_fb_large_aspect_callbacks, only: run_test_gs_fb_large_aspect
+    implicit none
+    call run_test_gs_fb_large_aspect()
 end program test_gs_fb_large_aspect

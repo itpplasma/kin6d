@@ -11,6 +11,8 @@ module kin6d_response_strip_preconditioner
     use kin6d_response_toroidal_strip, only: toroidal_strip_t, &
         toroidal_strip_work_t, toroidal_strip_status_t, toroidal_strip_action, &
         toroidal_strip_vjp, toroidal_strip_defects
+    use fortnum_krylov, only: complex_linear_operator_t, &
+        complex_gmres, complex_fgmres
     implicit none
     private
     integer, parameter :: bw = 41, ld = 3*bw + 1, colors = 9
@@ -45,6 +47,23 @@ module kin6d_response_strip_preconditioner
     end type
     public :: strip_preconditioner_init, strip_preconditioner_apply
     public :: strip_preconditioner_bytes, strip_preconditioned_solve
+    type, extends(complex_linear_operator_t) :: strip_preconditioned_solve_matvec_t
+        type(strip_preconditioner_t), pointer :: pc => null()
+        logical, pointer :: reverse => null()
+        type(toroidal_strip_t), pointer :: strip => null()
+        complex(dp), pointer :: weighted(:) => null()
+        type(toroidal_strip_work_t), pointer :: work => null()
+    contains
+        procedure :: apply => strip_preconditioned_solve_matvec_apply
+    end type
+    type, extends(complex_linear_operator_t) :: &
+        strip_preconditioned_solve_precondition_t
+        type(strip_preconditioner_t), pointer :: pc => null()
+        integer, pointer :: pre_info => null()
+        logical, pointer :: reverse => null()
+    contains
+        procedure :: apply => strip_preconditioned_solve_precondition_apply
+    end type
 contains
     subroutine strip_preconditioner_init(pc, strip, work, gamma, inverse, scale, info)
         type(strip_preconditioner_t), intent(out) :: pc
@@ -176,7 +195,6 @@ contains
         pc%ready = .true.
         info = 0
     end subroutine
-
     subroutine rotate(pc, x, forward, equations)
         type(strip_preconditioner_t), intent(in) :: pc
         complex(dp), intent(inout) :: x(6, pc%nr, pc%nt)
@@ -198,7 +216,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine
-
     subroutine strip_preconditioner_apply(pc, rhs, x, info, adjoint)
         !! Hermitian storage transpose when adjoint=.true. Scaling is included
         !! so this is the inverse approximation for A/scale, not for raw A.
@@ -265,7 +282,6 @@ contains
         call rotate(pc, x, .false., reverse)
         if (reverse) x = x*pc%scale
     end subroutine
-
     integer(int64) function strip_preconditioner_bytes(pc) result(bytes)
         type(strip_preconditioner_t), intent(in) :: pc
         integer :: fft_length
@@ -279,7 +295,6 @@ contains
             + int(size(pc%normal) + size(pc%rows) + size(pc%cols) &
             + size(pc%scale), int64)*8 + int(size(pc%piv), int64)*4
     end function
-
     subroutine scale_vector(pc, values)
         !! Divide the canonical storage vector without materializing a reshaped
         !! copy of the full equation-scale field in every Krylov callback.
@@ -298,22 +313,23 @@ contains
         end do
         !$omp end parallel do
     end subroutine
-
     subroutine strip_preconditioned_solve(pc, strip, work, rhs, x, tol, &
         maxit, restart, st, adjoint)
-        type(strip_preconditioner_t), intent(inout) :: pc
-        type(toroidal_strip_t), intent(in) :: strip
-        type(toroidal_strip_work_t), intent(inout) :: work
+        type(strip_preconditioner_t), intent(inout), target :: pc
+        type(toroidal_strip_t), intent(in), target :: strip
+        type(toroidal_strip_work_t), intent(inout), target :: work
         complex(dp), intent(in) :: rhs(6, pc%nr, pc%nt)
         complex(dp), intent(inout) :: x(6, pc%nr, pc%nt)
         real(dp), intent(in) :: tol
         integer, intent(in) :: maxit, restart
         type(toroidal_strip_status_t), intent(out) :: st
         logical, intent(in), optional :: adjoint
-        complex(dp), allocatable :: b(:), v(:), ax(:), weighted(:)
-        logical :: reverse
-        integer :: nn, pre_info
+        complex(dp), allocatable , target :: b(:), v(:), ax(:), weighted(:)
+        logical , target :: reverse
+        integer , target :: nn, pre_info
         real(dp) :: rhs_scale
+        type(strip_preconditioned_solve_matvec_t) :: matvec_operator
+        type(strip_preconditioned_solve_precondition_t) :: precondition_operator
         if (.not. pc%ready) return
         if (.not. ieee_is_finite(tol) .or. tol <= 0) return
         if (maxit < 1 .or. restart < 1) return
@@ -330,12 +346,21 @@ contains
         ! Reserve half the residual budget for reconstruction and the final
         ! physical action. Krylov stagnation at this tighter internal target
         ! is acceptable only if the independently recomputed residual meets tol.
-        call complex_fgmres_operator(matvec, precondition, b, v, 0.5_dp*tol, &
+        matvec_operator%pc => pc
+        matvec_operator%reverse => reverse
+        matvec_operator%strip => strip
+        nullify(matvec_operator%weighted)
+        if (allocated(weighted)) matvec_operator%weighted => weighted
+        matvec_operator%work => work
+        precondition_operator%pc => pc
+        precondition_operator%pre_info => pre_info
+        precondition_operator%reverse => reverse
+        call complex_fgmres(matvec_operator, precondition_operator, b, v, 0.5_dp*tol, &
             maxit, restart, st%info, st%iterations, st%residual)
         v = v*rhs_scale
         b = reshape(rhs, [nn])
         if (.not. reverse) call scale_vector(pc, b)
-        call matvec(v, ax)
+        call matvec_operator%apply(v, ax)
         st%residual = norm2(abs(ax - b))/max(norm2(abs(b)), tiny(1.0_dp))
         if (st%info == KRYLOV_STAGNATION) then
             if (st%residual <= tol) st%info = KRYLOV_OK
@@ -344,25 +369,29 @@ contains
         if (pre_info /= 0) st%info = pre_info
         x = reshape(v, shape(x))
         if (.not. reverse) call toroidal_strip_defects(strip, work, st%div_b, st%div_j)
-    contains
-        subroutine matvec(u, w)
-            complex(dp), intent(in) :: u(:)
-            complex(dp), intent(out) :: w(:)
-            if (reverse) then
-                weighted = u
-                call scale_vector(pc, weighted)
-                call toroidal_strip_vjp(strip, work, pc%gamma, weighted, w, .true.)
-            else
-                call toroidal_strip_action(strip, work, pc%gamma, u, w, .true.)
-                call scale_vector(pc, w)
-            end if
-        end subroutine
-        subroutine precondition(u, w)
-            complex(dp), intent(in) :: u(:)
-            complex(dp), intent(out) :: w(:)
-            integer :: status
-            call strip_preconditioner_apply(pc, u, w, status, reverse)
-            if (status /= 0) pre_info = status
-        end subroutine
     end subroutine
+    subroutine strip_preconditioned_solve_matvec_apply(self, input, output)
+        class(strip_preconditioned_solve_matvec_t), intent(inout) :: self
+            complex(dp), intent(in) :: input(:)
+            complex(dp), intent(out) :: output(:)
+            if (self%reverse) then
+                self%weighted = input
+                call scale_vector(self%pc, self%weighted)
+                call toroidal_strip_vjp(self%strip, self%work, self%pc%gamma, &
+                    self%weighted, output, .true.)
+            else
+                call toroidal_strip_action(self%strip, self%work, self%pc%gamma, &
+                    input, output, .true.)
+                call scale_vector(self%pc, output)
+            end if
+    end subroutine strip_preconditioned_solve_matvec_apply
+    subroutine strip_preconditioned_solve_precondition_apply(self, input, output)
+        class(strip_preconditioned_solve_precondition_t), intent(inout) :: self
+            complex(dp), intent(in) :: input(:)
+            complex(dp), intent(out) :: output(:)
+            integer :: status
+            call strip_preconditioner_apply(self%pc, input, output, status, &
+                self%reverse)
+            if (status /= 0) self%pre_info = status
+    end subroutine strip_preconditioned_solve_precondition_apply
 end module

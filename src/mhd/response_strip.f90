@@ -30,12 +30,11 @@ module kin6d_response_strip
     !! rho = (r1/r_s)^(2m) g/(2m - g), g = 2/(1 - n q0/m) (m = 1: Delta' =
     !! infinity, the resistive internal kink).
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_roots, only: scalar_root_function_t
     implicit none
     private
-
     complex(dp), parameter :: iu = (0.0_dp, 1.0_dp)
     integer, parameter :: kl = 4, ku = 4
-
     type, public :: cyl_step_t
         !! Current step: q = q0 inside r1, q0 (r/r1)^2 outside, plasma r <= 1,
         !! vacuum beyond (no wall), external drive psi_ext r^m.
@@ -43,7 +42,6 @@ module kin6d_response_strip
         real(dp) :: q0 = 1.2_dp, r1 = 0.5_dp
         complex(dp) :: psi_ext = (1.0_dp, 0.0_dp)
     end type cyl_step_t
-
     type, public :: strip_options_t
         real(dp) :: xs = 0.08_dp       !! strip half width X_s
         real(dp) :: core = 4.0_dp      !! uniform core half width / layer width
@@ -51,13 +49,11 @@ module kin6d_response_strip
         real(dp) :: ratio = 1.05_dp    !! geometric grading ratio beyond the core
         real(dp) :: hmax = 1.0e-3_dp   !! spacing cap (outer ring spacing)
     end type strip_options_t
-
     type, public :: trace_t
         !! Outer trace relation alpha psi' + beta psi = s on one interface.
         complex(dp) :: alpha = (1.0_dp, 0.0_dp), beta = (0.0_dp, 0.0_dp)
         complex(dp) :: s = (0.0_dp, 0.0_dp)
     end type trace_t
-
     type, public :: strip_solution_t
         real(dp), allocatable :: r(:)
         complex(dp), allocatable :: psi(:), phi(:), j(:)
@@ -66,38 +62,36 @@ module kin6d_response_strip
         real(dp) :: width = 0.0_dp                 !! HWHM of |j| about r_s
         integer :: info = 0
     end type strip_solution_t
-
     public :: step_rational, step_fprime, step_delta_prime, step_q, step_dj
     public :: step_traces, layer_width, strip_mesh, strip_solve
     public :: strip_growth_rate, strip_dirichlet_map
     public :: ri_layer_dhat, ri_dispersion_gamma
-
+    type, extends(scalar_root_function_t) :: ri_dispersion_gamma_root_t
+        real(dp), pointer :: target => null()
+    contains
+        procedure :: evaluate => ri_dispersion_gamma_root_evaluate
+    end type
 contains
-
     pure real(dp) function step_rational(eq) result(rs)
         type(cyl_step_t), intent(in) :: eq
         rs = eq%r1*sqrt(real(eq%m, dp)/(eq%n*eq%q0))
     end function step_rational
-
     pure real(dp) function step_q(eq, r) result(q)
         type(cyl_step_t), intent(in) :: eq
         real(dp), intent(in) :: r
         q = eq%q0*max(1.0_dp, (r/eq%r1)**2)
     end function step_q
-
     pure real(dp) function step_dj(eq, r) result(dj)
         !! J0' off the step (the step itself lies outside every strip).
         type(cyl_step_t), intent(in) :: eq
         real(dp), intent(in) :: r
         dj = 0.0_dp*(eq%q0 + r)
     end function step_dj
-
     pure real(dp) function step_fprime(eq) result(fp)
         !! |dF/dr| at r_s; F = m/q - n.
         type(cyl_step_t), intent(in) :: eq
         fp = 2.0_dp*eq%n/step_rational(eq)
     end function step_fprime
-
     pure real(dp) function step_delta_prime(eq) result(dp_rs)
         !! r_s Delta' of the sharp step (huge for the marginal m = 1).
         type(cyl_step_t), intent(in) :: eq
@@ -111,7 +105,6 @@ contains
             dp_rs = -2.0_dp*eq%m/(1.0_dp + rho)
         end if
     end function step_delta_prime
-
     subroutine step_traces(eq, rm, rp, tin, tout)
         !! Exact outer traces of the step at the strip edges rm < r_s < rp.
         !! Inside: psi = r^m (r < r1), [psi'] = -g psi/r1 at r1, A r^m + B r^-m
@@ -136,7 +129,6 @@ contains
         tout%beta = real(m, dp)/rp
         tout%s = 2*m*eq%psi_ext*rp**(m - 1)
     end subroutine step_traces
-
     pure real(dp) function layer_width(eta, gamma, fp) result(w)
         !! Mesh scale: the ideal-inertial width |gamma|/F' or, with
         !! resistivity, the larger of it and min(constant-psi RI width
@@ -147,7 +139,6 @@ contains
         if (eta > 0.0_dp) w = max(w, min((abs(gamma)*eta/fp**2)**0.25_dp, &
             (eta**2/fp**2)**(1.0_dp/6.0_dp)))
     end function layer_width
-
     subroutine strip_mesh(rs, w, opt, r)
         !! Symmetric mesh on [rs - X_s, rs + X_s] with a node at rs: uniform
         !! spacing hcore w for |x| <= core w, then geometric growth by ratio up
@@ -180,7 +171,6 @@ contains
             r(nside + 1 - k) = rs - x(k)
         end do
     end subroutine strip_mesh
-
     subroutine strip_solve(eq, eta, gamma, r, sol, traces)
         !! Driven strip response at complex gamma on the mesh r (from
         !! strip_mesh, node of r_s in the middle), coupled to the exact outer
@@ -199,7 +189,6 @@ contains
         real(dp) :: hm, hp
         integer :: nn, ntot, i, row, ldab, info, mid
         external :: zgbsv
-
         nn = size(r)
         ntot = 2*nn
         ldab = 2*kl + ku + 1
@@ -212,7 +201,6 @@ contains
         else
             call step_traces(eq, r(1), r(nn), tin, tout)
         end if
-
         do i = 2, nn - 1
             call lap_stencil(eq%m, r(i - 1:i + 1), lc)
             fnode = eq%m/step_q(eq, r(i)) - eq%n
@@ -231,7 +219,6 @@ contains
             call put(row, 2*i - 1, -iu*fnode*lc(2) + iu*eq%m/r(i)*step_dj(eq, r(i)))
             call put(row, 2*i + 1, -iu*fnode*lc(3))
         end do
-
         ! inner interface: trace relation with a one-sided second-order psi'
         hm = r(2) - r(1)
         hp = r(3) - r(2)
@@ -255,7 +242,6 @@ contains
         fnode = eq%m/step_q(eq, r(nn)) - eq%n
         call put(2*nn, 2*nn - 1, -gamma)
         call put(2*nn, 2*nn, iu*fnode)
-
         call zgbsv(ntot, kl, ku, 1, ab, ldab, ipiv, rhs, ntot, info)
         sol%info = info
         sol%r = r
@@ -280,18 +266,14 @@ contains
             sol%current = sol%current + r(i)*sol%j(i)*0.5_dp*(hm + hp)
         end do
         sol%width = hwhm(r, sol%j, mid)
-
     contains
-
         subroutine put(i_row, j_col, v)
             integer, intent(in) :: i_row, j_col
             complex(dp), intent(in) :: v
             ab(kl + ku + 1 + i_row - j_col, j_col) = &
                 ab(kl + ku + 1 + i_row - j_col, j_col) + v
         end subroutine put
-
     end subroutine strip_solve
-
     subroutine strip_dirichlet_map(eq, eta, gamma, r, dmap, info, current_map)
         !! Dirichlet-to-Neumann map of the strip on the mesh r: the edge
         !! slopes psi'(r(1)), psi'(r(n)) = dmap psi(r(1)), psi(r(n)) (one-sided
@@ -312,7 +294,6 @@ contains
         type(strip_solution_t) :: sol
         real(dp) :: hm, hp, d1(3), d2(3)
         integer :: k, nn
-
         nn = size(r)
         hm = r(2) - r(1)
         hp = r(3) - r(2)
@@ -337,7 +318,6 @@ contains
             if (present(current_map)) current_map(k) = sol%current
         end do
     end subroutine strip_dirichlet_map
-
     pure subroutine lap_stencil(m, rr, lc)
         !! Conservative three-point (1/r)(r f')' - m^2 f/r^2 on a nonuniform mesh.
         integer, intent(in) :: m
@@ -353,7 +333,6 @@ contains
         lc(3) = c*rph/hp
         lc(2) = -lc(1) - lc(3) - real(m*m, dp)/rr(2)**2
     end subroutine lap_stencil
-
     pure real(dp) function hwhm(r, j, mid) result(w)
         !! Half width at half maximum of |j| about the node mid (mean of the
         !! two sides, linear interpolation).
@@ -381,7 +360,6 @@ contains
         end do
         w = 0.5_dp*sum(side)
     end function hwhm
-
     subroutine strip_growth_rate(eq, eta, guess, opt, gamma, sol, iterations, status)
         !! Tearing eigenvalue of the coupled problem: zero of psi_ext/psi_s(gamma)
         !! (pole of the driven response), complex secant from guess and
@@ -419,17 +397,13 @@ contains
             end if
         end do
         gamma = g1
-
     contains
-
         complex(dp) function response_inverse(g) result(f)
             complex(dp), intent(in) :: g
             call strip_solve(eq, eta, g, r, sol)
             f = eq%psi_ext/sol%psi_s
         end function response_inverse
-
     end subroutine strip_growth_rate
-
     pure real(dp) function ri_layer_dhat(q) result(d)
         !! Oracle, not used by the solver: resistive-inertial slab layer
         !! Delta' d = -(pi/8) Q^(5/4) Gamma((Q^(3/2) - 1)/4)/Gamma((Q^(3/2) + 5)/4)
@@ -443,7 +417,6 @@ contains
         d = -0.125_dp*acos(-1.0_dp)*q**1.25_dp*gamma(0.25_dp*(z - 1.0_dp)) &
             /gamma(0.25_dp*(z + 5.0_dp))
     end function ri_layer_dhat
-
     subroutine ri_dispersion_gamma(eta, fp, dprime, gamma_ri, status)
         !! Oracle growth rate from Delta' d = ri_layer_dhat(Q) (rho = 1);
         !! dprime >= huge/2 means Delta' = infinity (Q = 1).
@@ -453,26 +426,25 @@ contains
         real(dp), intent(out) :: gamma_ri
         integer, intent(out) :: status
         type(fortnum_status_t) :: st
-        real(dp) :: d, target, q
+        real(dp), target :: d, target, q
+        type(ri_dispersion_gamma_root_t) :: root_function
+        root_function%target => target
         d = (eta**2/fp**2)**(1.0_dp/6.0_dp)
         status = 0
         if (dprime >= 0.5_dp*huge(1.0_dp)) then
             q = 1.0_dp
         else
             target = dprime*d
-            call root_brent(residual, 1.0e-14_dp, 1.0_dp - 1.0e-12_dp, q, st, &
+            call root_brent(root_function, 1.0e-14_dp, 1.0_dp - 1.0e-12_dp, q, st, &
                 xtol=1.0e-15_dp)
             if (st%code /= 0) status = 1
         end if
         gamma_ri = q*eta/d**2
-
-    contains
-
-        pure real(dp) function residual(x) result(y)
-            real(dp), intent(in) :: x
-            y = ri_layer_dhat(x) - target
-        end function residual
-
     end subroutine ri_dispersion_gamma
-
+    pure function ri_dispersion_gamma_root_evaluate(self, x) result(y)
+        class(ri_dispersion_gamma_root_t), intent(in) :: self
+        real(dp) :: y
+            real(dp), intent(in) :: x
+            y = ri_layer_dhat(x) - self%target
+    end function ri_dispersion_gamma_root_evaluate
 end module kin6d_response_strip

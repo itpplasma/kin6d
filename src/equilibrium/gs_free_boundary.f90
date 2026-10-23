@@ -80,13 +80,12 @@ module kin6d_gs_free_boundary
                                     cubic_segment_stationary, &
                                     triangle_bernstein_controls
     use kin6d_curved_triangle, only: triangle_locate, boundary_curve
+    use fortnum_roots, only: scalar_root_function_t
     implicit none
     private
-
     integer, parameter, public :: GS_FB_XPOINT = 1
     integer, parameter, public :: GS_FB_LIMITER = 2
     integer, parameter, public :: GS_FB_TARGET_MEAN = 3
-
     integer, parameter, public :: GS_FB_OK = 0
     integer, parameter, public :: GS_FB_BAD_INPUT = 1
     integer, parameter, public :: GS_FB_NO_AXIS = 2
@@ -98,7 +97,6 @@ module kin6d_gs_free_boundary
     integer, parameter, public :: GS_FB_LINE_SEARCH = 8
     integer, parameter, public :: GS_FB_REFIT_FAILED = 9
     integer, parameter, public :: GS_FB_REFIT_NOT_CONVERGED = 10
-
     type, public :: gs_fb_config_t
         integer :: mode = GS_FB_XPOINT
         integer :: axis_sign = 1   !< +1: the axis is the flux maximum, -1 minimum
@@ -115,7 +113,6 @@ module kin6d_gs_free_boundary
         real(dp) :: face_tolerance = 1.0e-10_dp
         integer :: max_iterations = 30
     end type gs_fb_config_t
-
     type, public :: gs_fb_system_t
         type(gs_coupling_t) :: coupling
         type(gs_profile_law_t) :: law          !< normalised law, axis set per call
@@ -130,7 +127,6 @@ module kin6d_gs_free_boundary
         integer :: n = 0
         logical :: ready = .false.
     end type gs_fb_system_t
-
     type, public :: gs_fb_eval_t
         real(dp), allocatable :: residual(:), source(:)
         real(dp), allocatable :: ga(:), gb(:), ua(:), ub(:)
@@ -144,7 +140,6 @@ module kin6d_gs_free_boundary
         integer :: face_cells = 0                !< plasma cell faces on the boundary
         logical :: has_jacobian = .false.
     end type gs_fb_eval_t
-
     type, public :: gs_fb_factor_t
         type(sparse_direct_factor_t) :: lu, lu_t
         !> Native pivoted LDL^T of symmetric J0 (replaces lu and lu_t).
@@ -155,7 +150,6 @@ module kin6d_gs_free_boundary
         real(dp) :: schur(2, 2) = 0.0_dp, schur_t(2, 2) = 0.0_dp
         logical :: ready = .false., have_transpose = .false.
     end type gs_fb_factor_t
-
     type, public :: gs_fb_history_t
         integer :: iterations = 0
         real(dp), allocatable :: residual(:)     !< ||F|| / scale per iterate
@@ -163,7 +157,6 @@ module kin6d_gs_free_boundary
         real(dp), allocatable :: damping(:)
         real(dp), allocatable :: ip(:)
     end type gs_fb_history_t
-
     type, public :: gs_fb_refit_config_t
         integer :: max_refits = 4
         real(dp) :: tolerance = 1.0e-3_dp   !< stop when Gamma_p moves < this * h
@@ -173,7 +166,6 @@ module kin6d_gs_free_boundary
         !! ends the loop at the discretisation floor (reported as stagnated).
         real(dp) :: contraction = 0.7_dp
     end type gs_fb_refit_config_t
-
     type, public :: gs_fb_refit_report_t
         integer :: refits = 0               !< mesh rebuilds performed
         logical :: converged = .false.      !< chain within tolerance * h of boundary
@@ -185,13 +177,11 @@ module kin6d_gs_free_boundary
         real(dp), allocatable :: movement(:)
         integer, allocatable :: newton_iterations(:)
     end type gs_fb_refit_report_t
-
     type :: gs_fb_grid_t
         integer :: nx = 0, ny = 0
         real(dp) :: origin(2) = 0.0_dp, step(2) = 1.0_dp
         integer, allocatable :: start(:), list(:)
     end type gs_fb_grid_t
-
     abstract interface
         subroutine gs_fb_extra_cb(state, sys)
             import :: gs_state_t, gs_fb_system_t
@@ -199,20 +189,58 @@ module kin6d_gs_free_boundary
             type(gs_fb_system_t), intent(inout) :: sys
         end subroutine gs_fb_extra_cb
     end interface
-
     public :: gs_fb_refit_solve, gs_fb_trace_lcfs, gs_fb_refit_mesh
     public :: gs_fb_chain_movement
     public :: gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply
     public :: gs_fb_factor, gs_fb_solve, gs_fb_solve_block, gs_fb_release, gs_fb_newton
     public :: gs_fb_interface_mass, gs_fb_lcfs_levels
     public :: gs_fb_locate
+    type :: separatrix_ray_context_t
+        real(dp), pointer :: axis(:) => null()
+        real(dp), pointer :: direction(:) => null()
+        type(gs_fb_grid_t), pointer :: grid => null()
+        real(dp), pointer :: psi(:) => null()
+        real(dp), pointer :: psi_bound => null()
+        real(dp), pointer :: sigma => null()
+        type(gs_state_t), pointer :: state => null()
+    end type
+    type, extends(scalar_root_function_t) :: separatrix_ray_ray_gap_t
+        type(separatrix_ray_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => separatrix_ray_ray_gap_binding
+    end type
+    type, extends(scalar_root_function_t) :: separatrix_ray_ray_slope_t
+        type(separatrix_ray_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => separatrix_ray_ray_slope_binding
+    end type
+    type, abstract, public :: gs_fb_extra_t
+    contains
+        procedure(gs_fb_extra_t_binding), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine gs_fb_extra_t_binding(self, state, sys)
+            import :: gs_fb_extra_t, gs_state_t, gs_fb_system_t
+            class(gs_fb_extra_t), intent(in) :: self
+            type(gs_state_t), intent(inout) :: state
+            type(gs_fb_system_t), intent(inout) :: sys
+        end subroutine
+    end interface
+
+    type, extends(gs_fb_extra_t) :: gs_fb_extra_adapter_t
+        procedure(gs_fb_extra_cb), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => gs_fb_extra_adapter_t_evaluate
+    end type
+
+    public :: gs_fb_refit_solve_object
+
+    public :: solve_stage_object
 
 contains
-
     ! ------------------------------------------------------------------
     ! Setup: coupling, coil loads, sparsity pattern of J0.
     ! ------------------------------------------------------------------
-
     subroutine gs_fb_setup(state, sys, law, cfg, set, status, panels_per_edge, &
                            flux_degree)
         type(gs_state_t), intent(in) :: state
@@ -225,7 +253,6 @@ contains
         integer :: stat
         real(dp) :: t0
         t0 = -1; call gs_phase_tick('', t0)
-
         status = GS_FB_BAD_INPUT
         if (.not. law%normalized) return
         if (abs(cfg%axis_sign) /= 1) return
@@ -261,11 +288,9 @@ contains
         sys%ready = .true.
         status = GS_FB_OK
     end subroutine gs_fb_setup
-
     integer function find_slot(keys, key) result(slot)
         integer(i64), intent(in) :: keys(:), key
         integer :: lo, hi, mid
-
         lo = 1
         hi = size(keys)
         slot = 0
@@ -281,7 +306,6 @@ contains
             end if
         end do
     end function find_slot
-
     subroutine build_pattern(state, sys)
         !! CSC pattern: the CSR pattern of K united with the dense Gamma_c
         !! block, and the slots of every contribution.
@@ -291,7 +315,6 @@ contains
         integer, allocatable :: order(:)
         integer :: n, nk, nt, cnt, i, j, p, nu, e, k, l, ndof, ne, col
         integer(i64) :: previous
-
         n = sys%n
         nt = sys%coupling%n_trace
         nk = size(sys%coupling%col)
@@ -367,11 +390,9 @@ contains
         end do
         !$omp end parallel do
     end subroutine build_pattern
-
     ! ------------------------------------------------------------------
     ! Point location and reference-space extrema.
     ! ------------------------------------------------------------------
-
     subroutine gs_fb_locate(state, r, z, element, xi, found, hint)
         !! Reference coordinates of the physical point (r, z): the first cell
         !! that contains it (the search starts at `hint`).
@@ -383,7 +404,6 @@ contains
         integer, intent(in), optional :: hint
         integer :: ne, count, e, status
         real(dp) :: local(2)
-
         found = .false.
         element = 0
         xi = 0.0_dp
@@ -408,7 +428,6 @@ contains
             return
         end do
     end subroutine gs_fb_locate
-
     subroutine point_shape(state, e, xi, shape, point, status)
         type(gs_state_t), intent(in) :: state
         integer, intent(in) :: e
@@ -417,12 +436,10 @@ contains
         integer, intent(out) :: status
         real(dp) :: grads(2, 10), hess(2, 2, 10), det
         integer :: ndof
-
         ndof = size(state%triangles, 1)
         call gs_cell_data(state, e, xi, point, det, shape(:ndof), grads(:, :ndof), &
                           hess(:, :, :ndof), status)
     end subroutine point_shape
-
     subroutine cell_maximum(values, sigma, xi, best, found)
         !! Maximum of sigma * psi_hat over the closed reference triangle for
         !! the nodal values of one cell (vertices, edge stationary points,
@@ -435,7 +452,6 @@ contains
         real(dp) :: shape(10), grad(2, 10), hess(2, 2, 10), samples(4), crit(2)
         real(dp) :: p(2), q(2), value, h(2, 2), g(2), det, step(2), start(2)
         integer :: ndof, k, j, count, iter, s
-
         ndof = size(values)
         best = -huge(1.0_dp)
         found = .false.
@@ -510,7 +526,6 @@ contains
             end if
         end do
     end subroutine cell_maximum
-
     subroutine cell_saddle(values, xi, found)
         !! Interior saddle (negative Hessian determinant) of the cell
         !! polynomial nearest to the centroid.
@@ -520,7 +535,6 @@ contains
         real(dp) :: shape(10), grad(2, 10), hess(2, 2, 10), p(2), g(2), h(2, 2)
         real(dp) :: det, step(2), start(2)
         integer :: ndof, iter, j, s
-
         ndof = size(values)
         found = .false.
         xi = 0.0_dp
@@ -566,11 +580,9 @@ contains
             return
         end do
     end subroutine cell_saddle
-
     ! ------------------------------------------------------------------
     ! Boundary flux levels and their nodal gradients.
     ! ------------------------------------------------------------------
-
     subroutine gs_fb_lcfs_levels(state, psi, cfg, axis_hint, xpoint_hint, &
                                  psi_axis, psi_bound, axis, xpoint, axis_cell, ga, gb, &
                                  status)
@@ -591,7 +603,6 @@ contains
         real(dp), allocatable :: shape_x(:)
         integer :: e, ndof, n, k, cell_best, stat, c, element
         logical :: found, any_found, near
-
         status = GS_FB_NO_AXIS
         ndof = size(state%triangles, 1)
         n = size(psi)
@@ -647,7 +658,6 @@ contains
         axis = point
         psi_axis = real(cfg%axis_sign, dp)*best
         ga(state%triangles(:, cell_best)) = shape(:ndof)
-
         select case (cfg%mode)
         case (GS_FB_XPOINT)
             status = GS_FB_NO_XPOINT
@@ -749,7 +759,6 @@ contains
         end if
         status = GS_FB_OK
     end subroutine gs_fb_lcfs_levels
-
   subroutine plasma_cells(state, psi, sigma, psi_bound, axis_cell, mode, cut_fraction, &
                             axis, xpoint, flags)
         !! Cells reached from the axis cell through cells that contain flux
@@ -764,7 +773,6 @@ contains
         real(dp) :: controls(10), centroid(2)
         integer :: head, tail, e, k, nb, ndof, ne
         logical, allocatable :: seen(:)
-
         ndof = size(state%triangles, 1)
         ne = size(state%triangles, 2)
         allocate (flags(ne), seen(ne), queue(ne))
@@ -795,11 +803,9 @@ contains
             end do
         end do
     end subroutine plasma_cells
-
     ! ------------------------------------------------------------------
     ! Interface term of the moving cut.
     ! ------------------------------------------------------------------
-
     subroutine gs_fb_interface_mass(cell_points, affine, phi, mu0, pp_edge, ff_edge, &
                                     sigma, mass, dropped, status)
         !! sigma int_{phi = 0 in the cell} f_edge v_i v_j / |grad psi| dl, with
@@ -819,7 +825,6 @@ contains
         real(dp) :: shape(10), grad(2, 10), vmax
         integer :: ndof, k, j, nr, nstate
         logical :: stalled
-
         ndof = size(phi)
         nstate = 2 + ndof*ndof
         mass = 0.0_dp
@@ -872,7 +877,6 @@ contains
             gg = matmul(grad(:, :ndof), phi)
             gmax = max(gmax, norm2(gg), tiny(1.0_dp))
         end subroutine grad_scale
-
         subroutine rhs(y, dy, speed, ok)
             real(dp), intent(in) :: y(:)
             real(dp), intent(out) :: dy(:)
@@ -880,7 +884,6 @@ contains
             logical, intent(out) :: ok
             real(dp) :: n(10), gr(2, 10), gv(2), r_phys, det, jac(2, 2), weight
             integer :: a, b
-
             call triangle_basis_jet(y(1:2), n(:ndof), gr(:, :ndof))
             gv = matmul(gr(:, :ndof), phi)
             speed = norm2(gv)
@@ -910,7 +913,6 @@ contains
             end do
             ok = .true.
         end subroutine rhs
-
         subroutine trace_arc(y0, y_end, stalled_out)
             !! Dormand-Prince 5(4) along the flow from an entry point to the
             !! exit point of the reference triangle.
@@ -922,7 +924,6 @@ contains
             real(dp) :: atol(102), enorm, edge_min, ymid(102), speed_min, qscale
             integer :: steps, i, bis
             logical :: ok
-
             stalled_out = .false.
             y = y0
             call rhs(y, kk(:, 1), sp, ok)
@@ -991,7 +992,6 @@ contains
             stalled_out = .true.
             y_end = y
         end subroutine trace_arc
-
         subroutine dp_step(y, h, ynew, err, kk, ok)
             real(dp), intent(in) :: y(:), h
             real(dp), intent(out) :: ynew(:), err(:)
@@ -1012,7 +1012,6 @@ contains
                          e4 = 71.0_dp/1920, e5 = -17253.0_dp/339200, e6 = 22.0_dp/525, &
                                    e7 = -1.0_dp/40
             integer :: ns
-
             ns = nstate
             ok = .false.
             ! Stage 1 is the derivative at y, supplied or recomputed here.
@@ -1046,28 +1045,23 @@ contains
             ok = .true.
         end subroutine dp_step
     end subroutine gs_fb_interface_mass
-
     ! ------------------------------------------------------------------
     ! Residual and Jacobian pieces.
     ! ------------------------------------------------------------------
-
     ! ------------------------------------------------------------------
     ! Faces that coincide with the plasma boundary (fitted mesh).
     ! ------------------------------------------------------------------
-
     subroutine edge_nodes(order, k, nodes)
         !! Local node numbers of edge k (vertex k, vertex k+1, interior nodes).
         integer, intent(in) :: order, k
         integer, intent(out) :: nodes(order + 1)
         integer :: j
-
         nodes(1) = k
         nodes(2) = mod(k, 3) + 1
         do j = 1, order - 1
             nodes(2 + j) = 3 + (k - 1)*(order - 1) + j
         end do
     end subroutine edge_nodes
-
     subroutine snap_faces(state, psi, psi_bound, psi_axis, sigma, tol, plasma, &
                           cell_phi, face_edge)
         !! cell_phi(:, e) = psi - psi_b at the nodes of cell e. A face of a
@@ -1086,7 +1080,6 @@ contains
         real(dp) :: shp(10), grd(2, 10), phic, limit
         integer :: e, k, ndof, order, nodes(4)
         logical :: zero_edge(3)
-
         ndof = size(state%triangles, 1)
         order = merge(2, 3, ndof == 6)
         face_edge = .false.
@@ -1116,7 +1109,6 @@ contains
             end if
         end do
     end subroutine snap_faces
-
     subroutine face_interface_mass(state, e, k, psi, mu0, pp_edge, ff_edge, sigma, &
                                    mass, status)
         !! sigma int_face f_edge v_i v_j / |grad psi| dl over local edge k of
@@ -1133,7 +1125,6 @@ contains
         real(dp) :: x(8), w(8), t, xi(2), point(2), pa(2), pb(2), det, dl, gnorm
         real(dp) :: shape(10), grads(2, 10), hess(2, 2, 10), g(2), fe, local(10)
         integer :: q, ndof, st, a, b
-
         status = 1
         ndof = size(state%triangles, 1)
         mass = 0.0_dp
@@ -1167,7 +1158,6 @@ contains
         end do
         status = 0
     end subroutine face_interface_mass
-
     subroutine gs_fb_evaluate(state, sys, psi, currents, ev, status, jacobian)
         type(gs_state_t), intent(inout) :: state
         type(gs_fb_system_t), intent(in) :: sys
@@ -1187,7 +1177,6 @@ contains
         logical :: need_jacobian
         real(dp) :: t0
         t0 = -1; call gs_phase_tick('', t0)
-
         status = GS_FB_BAD_INPUT
         need_jacobian = .true.
         if (present(jacobian)) need_jacobian = jacobian
@@ -1294,10 +1283,8 @@ contains
         end if
         status = GS_FB_OK
     end subroutine gs_fb_evaluate
-
     subroutine reset_eval(ev)
         type(gs_fb_eval_t), intent(inout) :: ev
-
         if (allocated(ev%residual)) deallocate (ev%residual)
         if (allocated(ev%source)) deallocate (ev%source)
         if (allocated(ev%ga)) deallocate (ev%ga)
@@ -1309,7 +1296,6 @@ contains
         if (allocated(ev%plasma_cell)) deallocate (ev%plasma_cell)
         ev%has_jacobian = .false.
     end subroutine reset_eval
-
     subroutine gs_fb_jacobian_apply(state, sys, ev, input, output, transpose)
         !! output = J input, or J^T input.
         type(gs_state_t), intent(in) :: state
@@ -1321,7 +1307,6 @@ contains
         real(dp) :: local(10), product(10)
         integer :: e, i, ndof
         logical :: adjoint
-
         adjoint = .false.
         if (present(transpose)) adjoint = transpose
         ndof = size(state%triangles, 1)
@@ -1343,7 +1328,6 @@ contains
                      - ev%ub*dot_product(ev%gb, input)
         end if
     end subroutine gs_fb_jacobian_apply
-
     subroutine gs_fb_factor(state, sys, ev, fac, status)
         !! Sparse factor of J0 = A - M and the two Woodbury columns. J0 is
         !! symmetric (stiffness, coupling, source and interface mass), so the
@@ -1360,7 +1344,6 @@ contains
         logical :: use_symmetric, ok
         type(fortsparse_status_t) :: normalization_status
         t0 = -1; call gs_phase_tick('', t0)
-
         status = GS_FB_BAD_INPUT
         if (.not. ev%has_jacobian) return
         call gs_fb_release(fac)
@@ -1471,7 +1454,6 @@ contains
         fac%ready = .true.
         status = GS_FB_OK
     end subroutine gs_fb_factor
-
     integer function direct_ordering() result(ordering)
         !! Fill-reducing ordering of native analysis. The factor is redone
         !! every Newton iteration and the analysis is serial, so approximate
@@ -1480,20 +1462,17 @@ contains
         !! dissection.
         character(len=8) :: choice
         integer :: length, stat
-
         ordering = GS_DIRECT_ORDER_AMD
         call get_environment_variable('KIN6D_FB_ORDERING', choice, length, stat)
         if (stat == 0 .and. length > 0) then
             if (trim(choice) == 'nd') ordering = GS_DIRECT_ORDER_ND
         end if
     end function direct_ordering
-
     logical function symmetric_direct_enabled() result(enabled)
         !! Native symmetric factor by default. The diagnostic value 'lu'
         !! selects native general LU; 'superlu' is its historical alias.
         character(len=16) :: choice
         integer :: length, stat
-
         enabled = gs_direct_available()
         if (.not. enabled) return
         call get_environment_variable('KIN6D_FB_SOLVER', choice, length, stat)
@@ -1501,14 +1480,12 @@ contains
             enabled = trim(choice) /= 'lu' .and. trim(choice) /= 'superlu'
         end if
     end function symmetric_direct_enabled
-
     subroutine asymmetry(n, colptr, rowind, values, asym, vmax)
         !! max |A_ij - A_ji| and max |A_ij| of a CSC matrix with sorted rows.
         integer, intent(in) :: n, colptr(:), rowind(:)
         real(dp), intent(in) :: values(:)
         real(dp), intent(out) :: asym, vmax
         integer :: c, p, r, lo, hi, mid
-
         asym = 0.0_dp
         vmax = 0.0_dp
         !$omp parallel do default(shared) private(c, p, r, lo, hi, mid) &
@@ -1541,7 +1518,6 @@ contains
         end do
         !$omp end parallel do
     end subroutine asymmetry
-
     subroutine gs_fb_solve(sys, ev, fac, rhs, solution, status, transpose)
         !! solution = J^{-1} rhs (or J^{-T} rhs) with the factor of J0 and the
         !! rank-two Woodbury update.
@@ -1556,7 +1532,6 @@ contains
         real(dp) :: w(2), c(2, 2), det, d(2)
         integer :: n, stat, j
         logical :: adjoint, ok
-
         status = GS_FB_BAD_INPUT
         if (.not. fac%ready) return
         adjoint = .false.
@@ -1646,7 +1621,6 @@ contains
         end if
         status = GS_FB_OK
     end subroutine gs_fb_solve
-
     subroutine gs_fb_solve_block(sys, ev, fac, rhs, solution, status)
         !! solution(:, k) = J^{-1} rhs(:, k). Submit one block per retained
         !! factor: native factors own mutable solve/refinement workspaces.
@@ -1661,7 +1635,6 @@ contains
         type(fortsparse_status_t) :: sparse_status
         integer :: k, nrhs
         logical :: ok
-
         status = GS_FB_BAD_INPUT
         if (.not. fac%ready) return
         nrhs = size(rhs, 2)
@@ -1691,10 +1664,8 @@ contains
         !$omp end parallel do
         status = GS_FB_OK
     end subroutine gs_fb_solve_block
-
     subroutine gs_fb_release(fac)
         type(gs_fb_factor_t), intent(inout) :: fac
-
         if (fac%use_direct) then
             call gs_direct_free(fac%direct)
         else
@@ -1709,11 +1680,9 @@ contains
         if (allocated(fac%z)) deallocate (fac%z)
         if (allocated(fac%zt)) deallocate (fac%zt)
     end subroutine gs_fb_release
-
     ! ------------------------------------------------------------------
     ! Damped Newton.
     ! ------------------------------------------------------------------
-
     subroutine gs_fb_newton(state, sys, currents, status, history)
         !! Newton iteration from the flux in state%psi; the converged flux is
         !! returned in state%psi. Armijo backtracking on ||F||.
@@ -1728,7 +1697,6 @@ contains
         real(dp), allocatable :: res(:), stp(:), damp(:), ipv(:)
         real(dp) :: old_norm, new_norm, damping, scale, axis_save(2), x_save(2)
         integer :: iteration, backtrack, stat, n
-
         status = GS_FB_BAD_INPUT
         if (.not. sys%ready) return
         n = sys%n
@@ -1814,7 +1782,6 @@ contains
             type(gs_fb_system_t), intent(in) :: s
             flag = s%cfg%mode == GS_FB_XPOINT
         end function cfg_x
-
         subroutine move_ev(from, to)
             type(gs_fb_eval_t), intent(inout) :: from, to
             to%psi_axis = from%psi_axis
@@ -1836,11 +1803,9 @@ contains
             call move_alloc(from%plasma_cell, to%plasma_cell)
         end subroutine move_ev
     end subroutine gs_fb_newton
-
     ! ------------------------------------------------------------------
     ! P8: outer refit loop (DESIGN 1.2, step 2).
     ! ------------------------------------------------------------------
-
     pure subroutine cell_contains(state, e, r, z, local, ok)
         !! Reference coordinates of (r, z) in cell e, ok when inside it.
         type(gs_state_t), intent(in) :: state
@@ -1849,7 +1814,6 @@ contains
         real(dp), intent(out) :: local(2)
         logical, intent(out) :: ok
         integer :: status
-
         ok = .false.
         local = matmul(transpose(state%gradient(:, 2:3, e)), &
                        [r, z] - state%points(:, state%triangles(1, e)))
@@ -1863,7 +1827,6 @@ contains
         end if
         ok = minval([1.0_dp - sum(local), local]) >= -1.0e-10_dp
     end subroutine cell_contains
-
     subroutine build_grid(state, grid)
         !! Uniform bucket grid over the bounding boxes of the cells (CSR lists).
         type(gs_state_t), intent(in) :: state
@@ -1871,7 +1834,6 @@ contains
         real(dp) :: lo(2), hi(2)
         integer, allocatable :: fill(:)
         integer :: e, ne, i, j, i0, i1, j0, j1, nb, pass, b
-
         ne = size(state%triangles, 2)
         lo = minval(state%points, dim=2)
         hi = maxval(state%points, dim=2)
@@ -1911,7 +1873,6 @@ contains
             integer, intent(in) :: cell
             integer, intent(out) :: ia, ib, ja, jb
             real(dp) :: low(2), high(2), pad
-
             low = minval(state%points(:, state%triangles(:, cell)), dim=2)
             high = maxval(state%points(:, state%triangles(:, cell)), dim=2)
             pad = 0.05_dp*maxval(high - low)
@@ -1922,14 +1883,12 @@ contains
             ja = bucket(low(2), 2, grid%ny)
             jb = bucket(high(2), 2, grid%ny)
         end subroutine cell_range
-
         integer function bucket(x, dim, n) result(index)
             real(dp), intent(in) :: x
             integer, intent(in) :: dim, n
             index = min(n, max(1, 1 + int((x - grid%origin(dim))/grid%step(dim))))
         end function bucket
     end subroutine build_grid
-
     pure subroutine grid_locate(state, grid, r, z, element, xi, found)
         type(gs_state_t), intent(in) :: state
         type(gs_fb_grid_t), intent(in) :: grid
@@ -1939,7 +1898,6 @@ contains
         logical, intent(out) :: found
         integer :: i, j, b, k, e
         logical :: ok
-
         found = .false.
         element = 0
         xi = 0.0_dp
@@ -1957,7 +1915,6 @@ contains
             end if
         end do
     end subroutine grid_locate
-
     pure subroutine grid_flux(state, grid, psi, r, z, value, gradient, found)
         !! Value and physical gradient of the finite element flux at (r, z).
         type(gs_state_t), intent(in) :: state
@@ -1967,7 +1924,6 @@ contains
         logical, intent(out) :: found
         real(dp) :: xi(2), point(2), det, shape(10), grads(2, 10), hess(2, 2, 10)
         integer :: e, ndof, status
-
         value = 0.0_dp
         gradient = 0.0_dp
         call grid_locate(state, grid, r, z, e, xi, found)
@@ -1980,7 +1936,6 @@ contains
         value = dot_product(shape(:ndof), psi(state%triangles(:, e)))
         gradient = matmul(grads(:, :ndof), psi(state%triangles(:, e)))
     end subroutine grid_flux
-
     subroutine lcfs_xpoints(state, psi, psi_bound, xpoints)
         !! Reuse the level finder's Newton-on-grad-psi saddle search. Only
         !! saddles at this level bound the traced separatrix; other saddles
@@ -1993,7 +1948,6 @@ contains
         real(dp) :: xi(2), shape(10), point(2), flux_tol, position_tol
         integer :: e, ndof, stat, nx, j
         logical :: found, duplicate
-
         ndof = size(state%triangles, 1)
         flux_tol = 128*epsilon(1.0_dp)*maxval(abs(psi - psi_bound))
         position_tol = 128*epsilon(1.0_dp)*maxval(abs(state%points))
@@ -2028,31 +1982,42 @@ contains
         end do
         xpoints = candidates(:, :nx)
     end subroutine lcfs_xpoints
-
     subroutine separatrix_ray(state, grid, psi, axis, psi_bound, sigma, &
                                theta, step, xpoints, anchor, point, found)
         !! First exit from the axis component. An X-point radius is a mandatory
         !! march event. If a step straddles a radial minimum, bracket that
         !! minimum before bracketing the first flux crossing. Thus a narrow
         !! vacuum wedge cannot be skipped into the private-flux region.
-        type(gs_state_t), intent(in) :: state
-        type(gs_fb_grid_t), intent(in) :: grid
-        real(dp), intent(in) :: psi(:), axis(2), psi_bound, sigma, theta, step
+        type(gs_state_t), intent(in), target :: state
+        type(gs_fb_grid_t), intent(in), target :: grid
+        real(dp), intent(in), target :: psi(:), axis(2), psi_bound, sigma, theta, step
         real(dp), intent(in) :: xpoints(:, :)
         integer, intent(in) :: anchor
         real(dp), intent(out) :: point(2)
         logical, intent(out) :: found
         type(fortnum_status_t) :: root_status
-        real(dp) :: direction(2), lo, hi, value, slope, old_slope, end_slope, minimum
+        real(dp), target :: direction(2), lo, hi, value, slope, old_slope, &
+            end_slope, minimum
         real(dp) :: radius, root
         integer :: j
         logical :: valid
-
+        type(separatrix_ray_context_t), target :: ctx
+        type(separatrix_ray_ray_gap_t) :: ray_gap_operator
+        type(separatrix_ray_ray_slope_t) :: ray_slope_operator
+        ctx%axis => axis
+        ctx%direction => direction
+        ctx%grid => grid
+        ctx%psi => psi
+        ctx%psi_bound => psi_bound
+        ctx%sigma => sigma
+        ctx%state => state
+        ray_gap_operator%data => ctx
+        ray_slope_operator%data => ctx
         direction = [cos(theta), sin(theta)]
         found = .false.
         point = axis
         lo = 0.0_dp
-        call ray_jet(lo, value, old_slope, valid)
+        call separatrix_ray_ray_jet(ctx, lo, value, old_slope, valid)
         if (.not. valid) return
         if (value <= 0.0_dp) return
         do
@@ -2061,7 +2026,7 @@ contains
                 radius = norm2(xpoints(:, j) - axis)
                 if (radius > lo .and. radius < hi) hi = radius
             end do
-            call ray_jet(hi, value, slope, valid)
+            call separatrix_ray_ray_jet(ctx, hi, value, slope, valid)
             if (.not. valid) return
             if (anchor > 0) then
                 radius = norm2(xpoints(:, anchor) - axis)
@@ -2074,10 +2039,10 @@ contains
             end_slope = slope
             if (value <= 0.0_dp) exit
             if (old_slope < 0.0_dp .and. slope >= 0.0_dp) then
-                call root_brent(ray_slope, lo, hi, minimum, root_status, &
+                call root_brent(ray_slope_operator, lo, hi, minimum, root_status, &
                                 xtol=4*epsilon(1.0_dp))
                 if (root_status%code /= FORTNUM_OK) return
-                call ray_jet(minimum, value, slope, valid)
+                call separatrix_ray_ray_jet(ctx, minimum, value, slope, valid)
                 if (.not. valid) return
                 if (value <= 0.0_dp) then
                     hi = minimum
@@ -2087,45 +2052,14 @@ contains
             lo = hi
             old_slope = end_slope
         end do
-        call root_brent(ray_gap, lo, hi, root, root_status, &
+        call root_brent(ray_gap_operator, lo, hi, root, root_status, &
                         xtol=4*epsilon(1.0_dp))
         if (root_status%code /= FORTNUM_OK) return
-        call ray_jet(root, value, slope, valid)
+        call separatrix_ray_ray_jet(ctx, root, value, slope, valid)
         if (.not. valid) return
         point = axis + root*direction
         found = .true.
-    contains
-        pure subroutine ray_jet(t, gap, derivative, valid)
-            real(dp), intent(in) :: t
-            real(dp), intent(out) :: gap, derivative
-            logical, intent(out) :: valid
-            real(dp) :: flux, x(2), gradient(2)
-
-            x = axis + t*direction
-            call grid_flux(state, grid, psi, x(1), x(2), flux, gradient, valid)
-            call gs_lcfs_ray_jet(flux, psi_bound, sigma, gradient(1), &
-                gradient(2), direction(1), direction(2), gap, derivative)
-            if (.not. valid) then
-                gap = ieee_value(0.0_dp, ieee_quiet_nan)
-                derivative = gap
-            end if
-        end subroutine ray_jet
-
-        pure function ray_gap(t) result(gap)
-            real(dp), intent(in) :: t
-            real(dp) :: gap, derivative
-            logical :: valid
-            call ray_jet(t, gap, derivative, valid)
-        end function ray_gap
-
-        pure function ray_slope(t) result(derivative)
-            real(dp), intent(in) :: t
-            real(dp) :: derivative, gap
-            logical :: valid
-            call ray_jet(t, gap, derivative, valid)
-        end function ray_slope
     end subroutine separatrix_ray
-
     subroutine gs_fb_trace_lcfs(state, psi, axis, psi_bound, sigma, n_points, chain, &
                                 status, dense_factor, project_iterations, xpoints)
         !! n_points points on the connected curve {psi = psi_b} around the axis,
@@ -2151,7 +2085,6 @@ contains
         real(dp) :: lo, hi, mid
         integer :: m, nd, k, it, project, kk, bis, factor, nx, base, j, nearest
         logical :: found, failed
-
         status = GS_FB_BAD_LCFS
         factor = 8
         if (present(dense_factor)) factor = dense_factor
@@ -2296,7 +2229,6 @@ contains
         end if
         status = GS_FB_OK
     end subroutine gs_fb_trace_lcfs
-
     function chain_distance(state, psi, psi_bound, chain) result(distance)
         !! Largest first-order distance |psi - psi_b| / |grad psi| of the chain
         !! points from the computed boundary.
@@ -2307,7 +2239,6 @@ contains
         real(dp) :: v, g(2)
         integer :: j
         logical :: found
-
         distance = huge(1.0_dp)
         call build_grid(state, grid)
         distance = 0.0_dp
@@ -2320,7 +2251,6 @@ contains
             distance = max(distance, abs(v - psi_bound)/norm2(g))
         end do
     end function chain_distance
-
     subroutine transfer_flux(old, old_psi, fresh, new_psi)
         !! Finite element interpolation of the flux of mesh `old` at the nodes of
         !! mesh `fresh`. A node outside every old cell (curved outer boundary
@@ -2335,7 +2265,6 @@ contains
         real(dp) :: best, d, x(2)
         integer :: i, e, ndof, status, ne, k
         logical :: found
-
         ndof = size(old%triangles, 1)
         ne = size(old%triangles, 2)
         allocate (new_psi(size(fresh%points, 2)), centroid(2, ne))
@@ -2371,18 +2300,15 @@ contains
         end do
         !$omp end parallel do
     end subroutine transfer_flux
-
     function gs_fb_chain_movement(state, psi, psi_bound, chain) result(movement)
         !! Largest first-order distance |psi - psi_b| / |grad psi| of the chain
         !! points from the computed boundary, in units of the chain spacing.
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: psi(:), psi_bound, chain(:, :)
         real(dp) :: movement
-
         movement = chain_distance(state, psi, psi_bound, chain) &
                    /(sum(norm2(chain - cshift(chain, 1, dim=2), dim=1))/size(chain, 2))
     end function gs_fb_chain_movement
-
     subroutine gs_fb_refit_mesh(state, axis, psi_bound, sigma, contour, max_area, &
                                 chain, rcfg, status, curve)
         !! One refit: trace the boundary of the flux in state%psi, rebuild the mesh
@@ -2400,7 +2326,6 @@ contains
         integer :: stat
         real(dp) :: t0
         t0 = -1; call gs_phase_tick('', t0)
-
         call gs_fb_trace_lcfs(state, state%psi, axis, psi_bound, sigma, &
                               size(chain, 2), new_chain, status, &
                               rcfg%dense_factor, rcfg%project_iterations)
@@ -2426,8 +2351,8 @@ contains
         state%psi = psi_new
         status = GS_FB_OK
     end subroutine gs_fb_refit_mesh
-
-    subroutine gs_fb_refit_solve(state, sys, law, cfg, currents, contour, max_area, &
+    subroutine gs_fb_refit_solve_object(state, sys, law, cfg, currents, contour, &
+        max_area, &
                                  chain, rcfg, report, status, set, curve, extra_cb, &
                                  history)
         !! Newton on the fixed mesh of `state` (psi seed in state%psi), then up to
@@ -2450,20 +2375,20 @@ contains
         integer, intent(out) :: status
         type(gs_circuit_set_t), intent(in), optional :: set
         procedure(boundary_curve), optional :: curve
-        procedure(gs_fb_extra_cb), optional :: extra_cb
+        class(gs_fb_extra_t), target, intent(in), optional :: extra_cb
         type(gs_fb_history_t), intent(out), optional :: history
         type(gs_fb_config_t) :: current
         type(gs_fb_eval_t) :: ev
         type(gs_fb_history_t) :: last
         integer :: pass, stat, n_chain
-
         n_chain = size(chain, 2)
         current = cfg
         allocate (report%movement(0:rcfg%max_refits), &
                   report%newton_iterations(0:rcfg%max_refits))
         report%movement = 0.0_dp
         report%newton_iterations = 0
-        call solve_stage(state, sys, law, current, currents, set, extra_cb, last, &
+        call solve_stage_object(state, sys, law, current, currents, set, extra_cb, &
+            last, &
                          status)
         report%newton_iterations(0) = last%iterations
         if (status /= GS_FB_OK) return
@@ -2502,7 +2427,8 @@ contains
             current = sys%cfg
             current%axis_guess = sys%axis_hint
             current%xpoint_guess = sys%xpoint_hint
-            call solve_stage(state, sys, law, current, currents, set, extra_cb, last, &
+            call solve_stage_object(state, sys, law, current, currents, set, &
+                extra_cb, last, &
                              status)
             report%newton_iterations(pass + 1) = last%iterations
             if (status /= GS_FB_OK) return
@@ -2512,8 +2438,117 @@ contains
         status = GS_FB_OK
         if (.not. (report%converged .or. report%stagnated) .and. rcfg%max_refits > 0) &
             status = GS_FB_REFIT_NOT_CONVERGED
+    end subroutine gs_fb_refit_solve_object
+    subroutine solve_stage_object(state, sys, law, cfg, currents, set, extra_cb, &
+        history, &
+                           status)
+        !! Setup, optional rebuild of the nodal extra load, Newton.
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(out) :: sys
+        type(gs_profile_law_t), intent(in) :: law
+        type(gs_fb_config_t), intent(in) :: cfg
+        real(dp), intent(in) :: currents(:)
+        type(gs_circuit_set_t), intent(in), optional :: set
+        class(gs_fb_extra_t), target, intent(in), optional :: extra_cb
+        type(gs_fb_history_t), intent(out) :: history
+        integer, intent(out) :: status
+        call gs_fb_setup(state, sys, law, cfg, set, status)
+        if (status /= GS_FB_OK) return
+        if (present(extra_cb)) call extra_cb%evaluate(state, sys)
+        call gs_fb_newton(state, sys, currents, status, history)
+    end subroutine solve_stage_object
+    pure subroutine separatrix_ray_ray_jet(ctx, t, gap, derivative, valid)
+        type(separatrix_ray_context_t), intent(in) :: ctx
+            real(dp), intent(in) :: t
+            real(dp), intent(out) :: gap, derivative
+            logical, intent(out) :: valid
+            real(dp) :: flux, x(2), gradient(2)
+            x = ctx%axis + t*ctx%direction
+            call grid_flux(ctx%state, ctx%grid, ctx%psi, x(1), x(2), flux, gradient, &
+                valid)
+            call gs_lcfs_ray_jet(flux, ctx%psi_bound, ctx%sigma, gradient(1), &
+                gradient(2), ctx%direction(1), ctx%direction(2), gap, derivative)
+            if (.not. valid) then
+                gap = ieee_value(0.0_dp, ieee_quiet_nan)
+                derivative = gap
+            end if
+    end subroutine separatrix_ray_ray_jet
+    pure function separatrix_ray_ray_gap(ctx, t) result(gap)
+        type(separatrix_ray_context_t), intent(in) :: ctx
+            real(dp), intent(in) :: t
+            real(dp) :: gap, derivative
+            logical :: valid
+            call separatrix_ray_ray_jet(ctx, t, gap, derivative, valid)
+    end function separatrix_ray_ray_gap
+    pure function separatrix_ray_ray_gap_binding(self, x) result(result_value)
+        class(separatrix_ray_ray_gap_t), intent(in) :: self
+            real(dp), intent(in) :: x
+            real(dp) :: result_value, derivative
+        result_value = separatrix_ray_ray_gap(self%data, x)
+    end function
+    pure function separatrix_ray_ray_slope(ctx, t) result(derivative)
+        type(separatrix_ray_context_t), intent(in) :: ctx
+            real(dp), intent(in) :: t
+            real(dp) :: derivative, gap
+            logical :: valid
+            call separatrix_ray_ray_jet(ctx, t, gap, derivative, valid)
+    end function separatrix_ray_ray_slope
+    pure function separatrix_ray_ray_slope_binding(self, x) result(result_value)
+        class(separatrix_ray_ray_slope_t), intent(in) :: self
+            real(dp), intent(in) :: x
+            real(dp) :: result_value, gap
+        result_value = separatrix_ray_ray_slope(self%data, x)
+    end function
 
-    end subroutine gs_fb_refit_solve
+    subroutine gs_fb_refit_solve(state, sys, law, cfg, currents, contour, max_area, &
+                                 chain, rcfg, report, status, set, curve, extra_cb, &
+                                 history)
+        !! Newton on the fixed mesh of `state` (psi seed in state%psi), then up to
+        !! rcfg%max_refits times: trace the computed boundary, rebuild the mesh with
+        !! the Gamma_p chain on it (same Gamma_c, same element order), transfer the
+        !! flux by interpolation and re-solve. Stops when the chain lies within
+        !! rcfg%tolerance * h of the boundary of the solution computed on its own
+        !! mesh (h = chain length / chain points); that mesh is then the final one.
+        !! state, sys and chain are returned for the final mesh. extra_cb, if
+        !! present, rebuilds the psi-independent load sys%extra_load after every
+        !! mesh change (it is mesh dependent).
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(out) :: sys
+        type(gs_profile_law_t), intent(in) :: law
+        type(gs_fb_config_t), intent(in) :: cfg
+        real(dp), intent(in) :: currents(:), contour(:, :), max_area
+        real(dp), intent(inout) :: chain(:, :)
+        type(gs_fb_refit_config_t), intent(in) :: rcfg
+        type(gs_fb_refit_report_t), intent(out) :: report
+        integer, intent(out) :: status
+        type(gs_circuit_set_t), intent(in), optional :: set
+        procedure(boundary_curve), optional :: curve
+        procedure(gs_fb_extra_cb), optional :: extra_cb
+        type(gs_fb_history_t), intent(out), optional :: history
+        type(gs_fb_extra_adapter_t), target :: extra_cb_adapter
+        class(gs_fb_extra_t), pointer :: extra_cb_object
+
+        nullify(extra_cb_object)
+        if (present(extra_cb)) then
+            extra_cb_adapter%callback => extra_cb
+            extra_cb_object => extra_cb_adapter
+        end if
+        call gs_fb_refit_solve_object(state, &
+            sys, &
+            law, &
+            cfg, &
+            currents, &
+            contour, &
+            max_area, &
+            chain, &
+            rcfg, &
+            report, &
+            status, &
+            set, &
+            curve, &
+            extra_cb_object, &
+            history)
+    end subroutine
 
     subroutine solve_stage(state, sys, law, cfg, currents, set, extra_cb, history, &
                            status)
@@ -2527,11 +2562,30 @@ contains
         procedure(gs_fb_extra_cb), optional :: extra_cb
         type(gs_fb_history_t), intent(out) :: history
         integer, intent(out) :: status
+        type(gs_fb_extra_adapter_t), target :: extra_cb_adapter
+        class(gs_fb_extra_t), pointer :: extra_cb_object
 
-        call gs_fb_setup(state, sys, law, cfg, set, status)
-        if (status /= GS_FB_OK) return
-        if (present(extra_cb)) call extra_cb(state, sys)
-        call gs_fb_newton(state, sys, currents, status, history)
-    end subroutine solve_stage
+        nullify(extra_cb_object)
+        if (present(extra_cb)) then
+            extra_cb_adapter%callback => extra_cb
+            extra_cb_object => extra_cb_adapter
+        end if
+        call solve_stage_object(state, &
+            sys, &
+            law, &
+            cfg, &
+            currents, &
+            set, &
+            extra_cb_object, &
+            history, &
+            status)
+    end subroutine
+
+    subroutine gs_fb_extra_adapter_t_evaluate(self, state, sys)
+        class(gs_fb_extra_adapter_t), intent(in) :: self
+            type(gs_state_t), intent(inout) :: state
+            type(gs_fb_system_t), intent(inout) :: sys
+        call self%callback(state, sys)
+    end subroutine
 
 end module kin6d_gs_free_boundary

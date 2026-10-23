@@ -1,4 +1,4 @@
-program test_gs_nonlinear
+module test_gs_nonlinear_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, &
                                     gs_cell_data, gs_element_jet
@@ -6,10 +6,48 @@ program test_gs_nonlinear
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
+
+    use kin6d_gs_nonlinear, only: gs_forcing_function_t
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
+    use kin6d_gs_nonlinear, only: solve_gs_cubic_profiles_object
+    use kin6d_gs_majorant, only: gs_functional_majorant_object
     implicit none
+    private
+    public :: run_test_gs_nonlinear
     real(dp), parameter :: r0 = 6.2_dp, f = 32.86_dp
-    real(dp) :: a, level
     real(dp), parameter :: c = f/(12*r0**3)
+    real(dp), parameter :: knot_width = 1.0_dp/512, frequency = 7.4_dp
+    real(dp), parameter :: positive_slope = 0.02_dp
+    type :: run_test_gs_nonlinear_context_t
+        real(dp), pointer :: a => null()
+        logical, pointer :: knot_case => null()
+        real(dp), pointer :: level => null()
+    end type
+
+    type, extends(gs_forcing_function_t) :: &
+        run_test_gs_nonlinear_positive_source_forcing_t
+        type(run_test_gs_nonlinear_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_nonlinear_positive_source_forcing_binding
+    end type
+
+    type, extends(gs_forcing_function_t) :: run_test_gs_nonlinear_manufactured_source_t
+        type(run_test_gs_nonlinear_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_nonlinear_manufactured_source_binding
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_gs_nonlinear_exact_boundary_t
+        type(run_test_gs_nonlinear_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_nonlinear_exact_boundary_binding
+    end type
+
+contains
+    subroutine run_test_gs_nonlinear()
+    implicit none
+    real(dp) , target :: a, level
     type(gs_state_t) :: state
     type(gs_profile_law_t) :: law, absolute_law
     real(dp), allocatable :: boundary(:, :), x(:), y(:), w(:)
@@ -17,14 +55,18 @@ program test_gs_nonlinear
     real(dp) :: gradients(2, 10), hessians(2, 2, 10), grad(2), exact_grad(2)
     real(dp) :: psi, exact, h, elapsed, physical_h(2, 2), value, read_grad(2)
     real(dp) :: s, base, majorant, flux_defect, balance_defect, effectivity, alpha
-    real(dp), parameter :: knot_width = 1.0_dp/512, frequency = 7.4_dp
-    real(dp), parameter :: positive_slope = 0.02_dp
-    logical :: knot_case
+    logical , target :: knot_case
     integer :: segments
     integer :: counts(3)
     integer :: mesh, n, j, e, q, status, degree, ndof
     character(8) :: argument
     integer(int64) :: start, finish, clock_rate
+        type(run_test_gs_nonlinear_context_t), target :: ctx
+        type(run_test_gs_nonlinear_positive_source_forcing_t), target :: &
+            positive_source_forcing_operator
+        type(run_test_gs_nonlinear_manufactured_source_t), target :: &
+            manufactured_source_operator
+        type(run_test_gs_nonlinear_exact_boundary_t), target :: exact_boundary_operator
     degree = 3
     knot_case = .false.
     if (command_argument_count() > 0) then
@@ -46,7 +88,9 @@ program test_gs_nonlinear
     do j = 1, segments
         s = law%knots(j)
         law%pp(:, j) = base*[1 + 0.2_dp*s*s, 0.4_dp*s, 0.2_dp, 0.0_dp]
-        if (knot_case) law%pp(:, j) = base*[source_shape(s), &
+        call bind_run_test_gs_nonlinear_context()
+        if (knot_case) law%pp(:, j) = base*[run_test_gs_nonlinear_source_shape(ctx, &
+            s), &
             0.4_dp*s + 0.07_dp*cos(frequency*s), &
             0.2_dp + 0.035_dp*(cos(frequency*(s + knot_width)) &
                 - cos(frequency*s))/knot_width, 0.0_dp]
@@ -61,14 +105,19 @@ program test_gs_nonlinear
         allocate (boundary(2, n))
         call system_clock(start, clock_rate)
         do j = 1, n
-            call exact_boundary(real(j - 1, dp)/n, boundary(:, j))
+        call bind_run_test_gs_nonlinear_context()
+            call run_test_gs_nonlinear_exact_boundary(ctx, real(j - 1, dp)/n, &
+                boundary(:, j))
         end do
         h = 2*acos(-1.0_dp)*a/n
-        call initialize_gs(state, boundary, h*h/2, status, degree, &
-                           curve=exact_boundary)
+        call bind_run_test_gs_nonlinear_context()
+        call initialize_gs_object(state, boundary, h*h/2, status, degree, &
+                           curve=exact_boundary_operator)
         if (status /= 0) error stop 'mesh initialization'
-        call solve_gs_cubic_profiles(state, 1.0_dp, law, status, &
-                             relative_tolerance=1.0e-10_dp, forcing=manufactured_source)
+        call bind_run_test_gs_nonlinear_context()
+        call solve_gs_cubic_profiles_object(state, 1.0_dp, law, status, &
+                             relative_tolerance=1.0e-10_dp, &
+                                 forcing=manufactured_source_operator)
         print *, 'nonlinear status/iterations/residual/axis:', status, &
             state%iterations, state%residual, law%axis
         if (status /= 0) error stop 'nonlinear solve'
@@ -116,16 +165,19 @@ program test_gs_nonlinear
             do j = 1, 4
                 absolute_law%pp(j, :) = law%pp(j, :)/(c*level)**(j - 1)
             end do
-            call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, &
+        call bind_run_test_gs_nonlinear_context()
+            call gs_functional_majorant_object(state, 1.0_dp, 0.0_dp, 0.0_dp, &
                           majorant, flux_defect, balance_defect, status, law=absolute_law, &
-                              stability_lower_bound=1.0_dp, forcing=manufactured_source)
+                              stability_lower_bound=1.0_dp, &
+                                  forcing=manufactured_source_operator)
             if (status /= 0) error stop 'nonlinear recovered-flux majorant'
             effectivity = majorant/errors(3, mesh)
             print *, 'nonlinear monotone majorant, effectivity:', majorant, effectivity
             if (effectivity < 1 .or. effectivity > 3) error stop 'nonlinear effectivity'
-            call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, &
+        call bind_run_test_gs_nonlinear_context()
+            call gs_functional_majorant_object(state, 1.0_dp, 0.0_dp, 0.0_dp, &
                 majorant, flux_defect, balance_defect, status, law=absolute_law, &
-                forcing=manufactured_source, estimate_stability=.true., &
+                forcing=manufactured_source_operator, estimate_stability=.true., &
                 stability_estimate=alpha)
             if (status /= 5 .or. abs(alpha - 1) > 1.0e-12_dp) &
                 error stop 'monotone linearized estimator limit'
@@ -137,9 +189,10 @@ program test_gs_nonlinear
             absolute_law%pp = 0
             absolute_law%pp(1, :) = base + positive_slope*absolute_law%knots(:segments)
             absolute_law%pp(2, :) = positive_slope
-            call gs_functional_majorant(state, 1.0_dp, 0.0_dp, 0.0_dp, &
+        call bind_run_test_gs_nonlinear_context()
+            call gs_functional_majorant_object(state, 1.0_dp, 0.0_dp, 0.0_dp, &
                 majorant, flux_defect, balance_defect, status, law=absolute_law, &
-                forcing=positive_source_forcing, estimate_stability=.true., &
+                forcing=positive_source_forcing_operator, estimate_stability=.true., &
                 stability_estimate=alpha)
             effectivity = majorant/errors(3, mesh)
             print *, 'positive-source alpha/effectivity:', alpha, effectivity
@@ -159,25 +212,56 @@ program test_gs_nonlinear
     end do
     if (maxval(counts) - minval(counts) > 2) error stop 'Newton mesh dependence'
 contains
-    function positive_source_forcing(r, z) result(source)
+    subroutine bind_run_test_gs_nonlinear_context()
+        ctx%a => a
+        ctx%knot_case => knot_case
+        ctx%level => level
+        positive_source_forcing_operator%data => ctx
+        manufactured_source_operator%data => ctx
+        exact_boundary_operator%data => ctx
+    end subroutine bind_run_test_gs_nonlinear_context
+
+    end subroutine run_test_gs_nonlinear
+
+    function run_test_gs_nonlinear_positive_source_forcing(ctx, r, z) result(source)
+        type(run_test_gs_nonlinear_context_t), intent(in) :: ctx
         real(dp), intent(in) :: r, z
         real(dp) :: source
         source = -positive_slope*r*c*((r*r - r0*r0)**2 &
-            + 4*r*r*z*z - level)
+            + 4*r*r*z*z - ctx%level)
+    end function run_test_gs_nonlinear_positive_source_forcing
+
+    function run_test_gs_nonlinear_positive_source_forcing_binding(self, r, z) &
+        result(result_value)
+        class(run_test_gs_nonlinear_positive_source_forcing_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        real(dp) :: result_value
+        result_value = run_test_gs_nonlinear_positive_source_forcing(self%data, r, z)
     end function
 
-    function manufactured_source(r, z) result(source)
+    function run_test_gs_nonlinear_manufactured_source(ctx, r, z) result(source)
+        type(run_test_gs_nonlinear_context_t), intent(in) :: ctx
         real(dp), intent(in) :: r, z
         real(dp) :: source, exact_s
-        exact_s = ((r*r - r0*r0)**2 + 4*r*r*z*z)/level
-        source = 16*c*r*(source_shape(exact_s) - 1)
+        exact_s = ((r*r - r0*r0)**2 + 4*r*r*z*z)/ctx%level
+        source = 16*c*r*(run_test_gs_nonlinear_source_shape(ctx, exact_s) - 1)
+    end function run_test_gs_nonlinear_manufactured_source
+
+    function run_test_gs_nonlinear_manufactured_source_binding(self, r, z) &
+        result(result_value)
+        class(run_test_gs_nonlinear_manufactured_source_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        real(dp) :: result_value, exact_s
+        result_value = run_test_gs_nonlinear_manufactured_source(self%data, r, z)
     end function
-    real(dp) function source_shape(s) result(value)
+
+    real(dp) function run_test_gs_nonlinear_source_shape(ctx, s) result(value)
+        type(run_test_gs_nonlinear_context_t), intent(in) :: ctx
         real(dp), intent(in) :: s
         real(dp) :: t, d, integral
         integer :: k
         value = 1 + 0.2_dp*s*s
-        if (.not. knot_case) return
+        if (.not. ctx%knot_case) return
         k = min(511, max(0, int(s/knot_width)))
         t = k*knot_width; d = s - t
         ! Independent closed sum of trapezoids for the integral of the
@@ -188,13 +272,28 @@ contains
             + cos(frequency*t)*d + (cos(frequency*(t + knot_width)) &
                 - cos(frequency*t))*d*d/(2*knot_width)
         value = value + 0.07_dp*integral
-    end function
-    subroutine exact_boundary(t, point)
+    end function run_test_gs_nonlinear_source_shape
+
+    subroutine run_test_gs_nonlinear_exact_boundary(ctx, t, point)
+        type(run_test_gs_nonlinear_context_t), intent(in) :: ctx
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         real(dp) :: angle
         angle = 2*acos(-1.0_dp)*t
-        point(1) = sqrt(r0*r0 + 2*r0*a*cos(angle))
-        point(2) = r0*a*sin(angle)/point(1)
+        point(1) = sqrt(r0*r0 + 2*r0*ctx%a*cos(angle))
+        point(2) = r0*ctx%a*sin(angle)/point(1)
+    end subroutine run_test_gs_nonlinear_exact_boundary
+
+    subroutine run_test_gs_nonlinear_exact_boundary_binding(self, t, point)
+        class(run_test_gs_nonlinear_exact_boundary_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_gs_nonlinear_exact_boundary(self%data, t, point)
     end subroutine
-end program
+end module test_gs_nonlinear_callbacks
+
+program test_gs_nonlinear
+    use test_gs_nonlinear_callbacks, only: run_test_gs_nonlinear
+    implicit none
+    call run_test_gs_nonlinear()
+end program test_gs_nonlinear

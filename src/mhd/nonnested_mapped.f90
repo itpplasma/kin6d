@@ -17,23 +17,22 @@ module kin6d_nonnested_mapped
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free, nn_divergence
+    use fortnum_krylov, only: real_linear_operator_t, &
+        real_gmres, real_fgmres, real_conjugate_gradient
     implicit none
     private
     public :: map_metric_t, METRIC_IDENTITY, nn_harmonic_forms
     public :: nn_map_t, nn_map_build, nn_map_jet, nn_mapped_report_t
     public :: nn_mapped_data, nn_mapped_solve, nn_mapped_error
     public :: nn_map_function_i, nn_vector_field_i
-
     integer, parameter :: METRIC_MAPPED = 0, METRIC_MEAN = 1, METRIC_IDENTITY = 2
     real(dp), parameter :: pi = acos(-1.0_dp)
-
     type :: nn_map_t
         ! Displacement of (R, Z): Lagrange V0 times real Fourier blocks
         ! b = 0, 2n - 1 (cos n phi), 2n (sin n phi), as the N1 map unknowns.
         integer :: modes = 0
         real(dp), allocatable :: d(:, :, :) ! (n0, 2, 0:2*modes)
     end type
-
     type, extends(meridian_fourier_tensor_t) :: map_metric_t
         type(meridian_feec_t), pointer :: fs => null()
         type(nn_map_t), pointer :: map => null()
@@ -42,12 +41,10 @@ module kin6d_nonnested_mapped
     contains
         procedure :: tensor => metric_tensor
     end type
-
     type :: nn_mapped_report_t
         real(dp) :: energy = 0, residual = 0, divergence = 0
         integer :: iterations = 0, info = 0, ndof = 0
     end type
-
     abstract interface
         subroutine nn_map_function_i(x, phi, y)
             ! Physical (R, Z) of the reference point x = (R, Z) at angle phi.
@@ -62,13 +59,76 @@ module kin6d_nonnested_mapped
             real(dp), intent(out) :: v(3)
         end subroutine
     end interface
+    type, extends(real_linear_operator_t) :: nn_mapped_solve_apply_t
+        logical, pointer :: fixed(:) => null()
+        type(csc_t), pointer :: s => null()
+    contains
+        procedure :: apply => nn_mapped_solve_apply_apply
+    end type
+    type, extends(real_linear_operator_t) :: nn_mapped_solve_precondition_t
+        type(nn_factor_t), pointer :: factor => null()
+    contains
+        procedure :: apply => nn_mapped_solve_precondition_apply
+    end type
+    type, abstract, public :: nn_map_function_t
+    contains
+        procedure(nn_map_function_t_binding), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine nn_map_function_t_binding(self, x, phi, y)
+            import :: nn_map_function_t, dp
+            class(nn_map_function_t), intent(in) :: self
+            ! Physical (R, Z) of the reference point x = (R, Z) at angle phi.
+            real(dp), intent(in) :: x(2), phi
+            real(dp), intent(out) :: y(2)
+        end subroutine
+    end interface
+
+    type, extends(nn_map_function_t) :: nn_map_function_adapter_t
+        procedure(nn_map_function_i), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => nn_map_function_adapter_t_evaluate
+    end type
+
+    type, abstract, public :: nn_vector_field_t
+    contains
+        procedure(nn_vector_field_t_binding), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine nn_vector_field_t_binding(self, x, v)
+            import :: nn_vector_field_t, dp
+            class(nn_vector_field_t), intent(in) :: self
+            ! Physical components (R, phi, Z) at the point x = (R, Z, phi).
+            real(dp), intent(in) :: x(3)
+            real(dp), intent(out) :: v(3)
+        end subroutine
+    end interface
+
+    type, extends(nn_vector_field_t) :: nn_vector_field_adapter_t
+        procedure(nn_vector_field_i), pointer, nopass :: callback => null()
+    contains
+        procedure :: evaluate => nn_vector_field_adapter_t_evaluate
+    end type
+
+    interface nn_map_build
+        module procedure nn_map_build_object, nn_map_build_procedure
+    end interface
+
+    interface nn_mapped_data
+        module procedure nn_mapped_data_object, nn_mapped_data_procedure
+    end interface
+
+    interface nn_mapped_error
+        module procedure nn_mapped_error_object, nn_mapped_error_procedure
+    end interface
+
 contains
-    subroutine nn_map_build(fs, modes, nphi, fun, map, status)
+    subroutine nn_map_build_object(fs, modes, nphi, fun, map, status)
         ! Nodal interpolation in the plane, trigonometric interpolation on
         ! nphi uniform planes (exact for degree < nphi/2).
         type(meridian_feec_t), intent(in) :: fs
         integer, intent(in) :: modes, nphi
-        procedure(nn_map_function_i) :: fun
+        class(nn_map_function_t), target, intent(in) :: fun
         type(nn_map_t), intent(out) :: map
         integer, intent(out) :: status
         real(dp), allocatable :: nodes(:, :)
@@ -84,7 +144,7 @@ contains
         do i = 1, fs%n0
             do j = 1, nphi
                 phi = 2*pi*(j - 1)/nphi
-                call fun(nodes(:, i), phi, y)
+                call fun%evaluate(nodes(:, i), phi, y)
                 call trig(modes, phi, tr)
                 tr(1:) = 2*tr(1:)
                 map%d(i, 1, :) = map%d(i, 1, :) + (y(1) - nodes(1, i))*tr/nphi
@@ -94,7 +154,6 @@ contains
         !$omp end parallel do
         if (all(ieee_is_finite(map%d))) status = 0
     end subroutine
-
     pure subroutine nn_map_jet(map, dofs, val, grad, x, phi, y, df, jac)
         ! Point y = X(x, phi), the Jacobian df in orthonormal cylindrical
         ! frames (rows physical (R, phi, Z), columns reference (R, phi, Z))
@@ -128,7 +187,6 @@ contains
         df(3, :) = [g(2, 1), up(2)/x(1), g(2, 2)]
         jac = df(2, 2)*(g(1, 1)*g(2, 2) - g(1, 2)*g(2, 1))
     end subroutine
-
     subroutine nn_harmonic_forms(field, metric, nphi, g, energy, volume, status)
         ! Unit harmonic h=e_phi/R: <V2,K h>, <h,K h>, and int dR dZ/R.
         ! The same forms serve the vacuum and Taylor closures.
@@ -196,8 +254,7 @@ contains
             status = 0
         end subroutine
     end subroutine
-
-    subroutine nn_mapped_data(field, map, nphi, potential, data, status)
+    subroutine nn_mapped_data_object(field, map, nphi, potential, data, status)
         ! Real-block Fourier-V1 boundary data from the physical potential A:
         ! L2 projection of the pulled-back 1-form DF^T A + F ln R e_Z (the
         ! reference harmonic F/R e_phi is carried by field%f_vac), then the
@@ -205,7 +262,7 @@ contains
         type(free_b_field_t), intent(in), target :: field
         type(nn_map_t), intent(in), target :: map
         integer, intent(in) :: nphi
-        procedure(nn_vector_field_i) :: potential
+        class(nn_vector_field_t), target, intent(in) :: potential
         real(dp), allocatable, intent(out) :: data(:)
         integer, intent(out) :: status
         type(map_metric_t) :: unit
@@ -294,7 +351,7 @@ contains
                         angle, y, df, jac)
                     status = 1
                     if (jac <= 0) return
-                    call potential([y, angle], a)
+                    call potential%evaluate([y, angle], a)
                     ahat = matmul(transpose(df), a)
                     ahat(3) = ahat(3) + field%f_vac*log(x(1))
                     call trig(modes, angle, tr)
@@ -307,7 +364,6 @@ contains
             status = 0
         end subroutine
     end subroutine
-
     subroutine nn_mapped_solve(field, map, nphi, data, tolerance, report, status)
         ! Minimise int |h + curl A|^2 / (2 mu0) over the mapped domain with
         ! the fixed traces of data: S A = -C^T M_2(K) h, S = C^T M_2(K) C.
@@ -322,14 +378,16 @@ contains
         type(nn_mapped_report_t), intent(out) :: report
         integer, intent(out) :: status
         type(map_metric_t) :: metric, mean
-        type(csc_t) :: s, sm, c, ct, p
-        type(nn_factor_t) :: factor
+        type(csc_t), target :: s, sm, c, ct, p
+        type(nn_factor_t), target :: factor
         type(fortsparse_status_t) :: fst
-        logical, allocatable :: fixed(:)
+        logical, allocatable , target :: fixed(:)
         real(dp), allocatable :: g(:), rhs(:), x(:), r(:), y(:)
         real(dp), allocatable :: bh(:)
         real(dp) :: scale, rnorm, energy_h, volume
         integer :: modes, nb, n1, n2, nn, b, n, st
+        type(nn_mapped_solve_apply_t) :: apply_operator
+        type(nn_mapped_solve_precondition_t) :: precondition_operator
         status = 1
         modes = ubound(field%b, 2)
         if (nphi < 2*modes + 1 .or. tolerance <= 0) return
@@ -368,7 +426,12 @@ contains
         allocate (y(size(r)))
         y = 0
         if (scale > 0) then
-            call real_fgmres_operator(apply, precondition, r/scale, y, tolerance, &
+        nullify(apply_operator%fixed)
+        if (allocated(fixed)) apply_operator%fixed => fixed
+        apply_operator%s => s
+        precondition_operator%factor => factor
+            call real_fgmres(apply_operator, precondition_operator, r/scale, y, &
+                tolerance, &
                 400, 100, report%info, report%iterations, rnorm)
         end if
         call nn_factor_free(factor)
@@ -390,21 +453,6 @@ contains
         if (st /= 0) return
         status = 0
     contains
-        subroutine apply(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            output = csc_matvec(s, merge(0.0_dp, input, fixed))
-            where (fixed) output = input
-        end subroutine
-
-        subroutine precondition(input, output)
-            real(dp), intent(in) :: input(:)
-            real(dp), intent(out) :: output(:)
-            integer :: info
-            call nn_factor_solve_real(factor, input, output, info)
-            if (info /= 0) output = input
-        end subroutine
-
         subroutine gauge_regularised(a, out, status)
             ! Mean-metric operator plus eps M_1 on the n = 0 Nedelec block,
             ! whose curl kernel is grad V0. On residuals orthogonal to that
@@ -449,10 +497,8 @@ contains
                 out, fst)
             status = merge(0, 1, status_ok(fst))
         end subroutine
-
     end subroutine
-
-    subroutine nn_mapped_error(field, map, nphi, exact, error, deviation, &
+    subroutine nn_mapped_error_object(field, map, nphi, exact, error, deviation, &
                                energy_h, energy_exact, status)
         ! Physical L2 norms over the mapped domain on nphi planes (choose
         ! nphi different from the assembly rule): ||B_h - B||, ||B - F/R e_phi||
@@ -460,7 +506,7 @@ contains
         type(free_b_field_t), intent(in) :: field
         type(nn_map_t), intent(in) :: map
         integer, intent(in) :: nphi
-        procedure(nn_vector_field_i) :: exact
+        class(nn_vector_field_t), target, intent(in) :: exact
         real(dp), intent(out) :: error, deviation, energy_h, energy_exact
         integer, intent(out) :: status
         real(dp) :: x(2), w, w0, phi(3, field%fs%sp(2)%nloc), val(field%fs%nl0)
@@ -497,7 +543,7 @@ contains
                             *real(bn*exp(cmplx(0.0_dp, n*angle, dp)), dp)
                     end do
                     bh = matmul(df, bhat)/jac
-                    call exact([y, angle], be)
+                    call exact%evaluate([y, angle], be)
                     wt = w*jac/nphi
                     error = error + wt*sum((bh - be)**2)
                     deviation = deviation + wt*(be(1)**2 + be(3)**2 &
@@ -511,7 +557,6 @@ contains
         error = sqrt(error); deviation = sqrt(deviation)
         status = failure
     end subroutine
-
     subroutine metric_tensor(self, t, x, k, status)
         class(map_metric_t), intent(in) :: self
         integer, intent(in) :: t
@@ -572,7 +617,6 @@ contains
             if (ok) kk = matmul(transpose(df), df)/jac
         end function
     end subroutine
-
     pure subroutine trig(modes, phi, tr)
         ! tr = 1, cos phi, sin phi, cos 2 phi, ... (upstream block order).
         integer, intent(in) :: modes
@@ -585,4 +629,102 @@ contains
             tr(2*n) = sin(n*phi)
         end do
     end subroutine
+    subroutine nn_mapped_solve_apply_apply(self, input, output)
+        class(nn_mapped_solve_apply_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            output = csc_matvec(self%s, merge(0.0_dp, input, self%fixed))
+            where (self%fixed) output = input
+    end subroutine nn_mapped_solve_apply_apply
+    subroutine nn_mapped_solve_precondition_apply(self, input, output)
+        class(nn_mapped_solve_precondition_t), intent(inout) :: self
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            integer :: info
+            call nn_factor_solve_real(self%factor, input, output, info)
+            if (info /= 0) output = input
+    end subroutine nn_mapped_solve_precondition_apply
+
+    subroutine nn_map_build_procedure(fs, modes, nphi, fun, map, status)
+        ! Nodal interpolation in the plane, trigonometric interpolation on
+        ! nphi uniform planes (exact for degree < nphi/2).
+        type(meridian_feec_t), intent(in) :: fs
+        integer, intent(in) :: modes, nphi
+        procedure(nn_map_function_i) :: fun
+        type(nn_map_t), intent(out) :: map
+        integer, intent(out) :: status
+        type(nn_map_function_adapter_t), target :: fun_adapter
+
+        fun_adapter%callback => fun
+        call nn_map_build_object(fs, &
+            modes, &
+            nphi, &
+            fun_adapter, &
+            map, &
+            status)
+    end subroutine
+
+    subroutine nn_mapped_data_procedure(field, map, nphi, potential, data, status)
+        ! Real-block Fourier-V1 boundary data from the physical potential A:
+        ! L2 projection of the pulled-back 1-form DF^T A + F ln R e_Z (the
+        ! reference harmonic F/R e_phi is carried by field%f_vac), then the
+        ! exact discrete gauge R A_phi = 0 for n > 0 (A - grad_F lambda).
+        type(free_b_field_t), intent(in), target :: field
+        type(nn_map_t), intent(in), target :: map
+        integer, intent(in) :: nphi
+        procedure(nn_vector_field_i) :: potential
+        real(dp), allocatable, intent(out) :: data(:)
+        integer, intent(out) :: status
+        type(nn_vector_field_adapter_t), target :: potential_adapter
+
+        potential_adapter%callback => potential
+        call nn_mapped_data_object(field, &
+            map, &
+            nphi, &
+            potential_adapter, &
+            data, &
+            status)
+    end subroutine
+
+    subroutine nn_mapped_error_procedure(field, map, nphi, exact, error, deviation, &
+                               energy_h, energy_exact, status)
+        ! Physical L2 norms over the mapped domain on nphi planes (choose
+        ! nphi different from the assembly rule): ||B_h - B||, ||B - F/R e_phi||
+        ! and both energies int |B|^2 / (2 mu0).
+        type(free_b_field_t), intent(in) :: field
+        type(nn_map_t), intent(in) :: map
+        integer, intent(in) :: nphi
+        procedure(nn_vector_field_i) :: exact
+        real(dp), intent(out) :: error, deviation, energy_h, energy_exact
+        integer, intent(out) :: status
+        type(nn_vector_field_adapter_t), target :: exact_adapter
+
+        exact_adapter%callback => exact
+        call nn_mapped_error_object(field, &
+            map, &
+            nphi, &
+            exact_adapter, &
+            error, &
+            deviation, &
+            energy_h, &
+            energy_exact, &
+            status)
+    end subroutine
+
+    subroutine nn_map_function_adapter_t_evaluate(self, x, phi, y)
+        class(nn_map_function_adapter_t), intent(in) :: self
+            ! Physical (R, Z) of the reference point x = (R, Z) at angle phi.
+            real(dp), intent(in) :: x(2), phi
+            real(dp), intent(out) :: y(2)
+        call self%callback(x, phi, y)
+    end subroutine
+
+    subroutine nn_vector_field_adapter_t_evaluate(self, x, v)
+        class(nn_vector_field_adapter_t), intent(in) :: self
+            ! Physical components (R, phi, Z) at the point x = (R, Z, phi).
+            real(dp), intent(in) :: x(3)
+            real(dp), intent(out) :: v(3)
+        call self%callback(x, v)
+    end subroutine
+
 end module kin6d_nonnested_mapped

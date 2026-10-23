@@ -1,4 +1,4 @@
-program streaming_comparison_demo
+module streaming_comparison_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortnum_interval, only: interval_t, interval
     use kin6d_streaming_comparison, only: streaming_state_t, streaming_particles_t, &
@@ -22,48 +22,129 @@ program streaming_comparison_demo
         save_animation
     use fortplot_system_runtime, only: create_directory_runtime
     use kin6d_result_io, only: run_t, result_file_t
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
+    private
+    public :: run_streaming_comparison_demo
     integer, parameter :: modes = 1, fps = 24, cohort_size = 3
-    integer :: nx = 96, nv = 128, particle_nx = 32, particle_nv = 48
+    type :: run_streaming_comparison_demo_context_t
+        real(dp), pointer :: candidate_cpu => null()
+        type(figure_t), pointer :: canvas => null()
+        real(dp), pointer :: cohort_v(:) => null()
+        real(dp), pointer :: cohort_x(:) => null()
+        integer, pointer :: cohorts(:,:) => null()
+        real(dp), pointer :: complete_cpu => null()
+        real(dp), pointer :: density(:) => null()
+        real(dp), pointer :: density_hi(:) => null()
+        real(dp), pointer :: density_lo(:) => null()
+        real(dp), pointer :: density_padding(:) => null()
+        real(dp), pointer :: duration => null()
+        type(streaming_state_t), pointer :: eulerian => null()
+        integer, pointer :: frames => null()
+        real(dp), pointer :: glyph(:) => null()
+        real(dp), pointer :: image(:,:) => null()
+        type(streaming_state_t), pointer :: initial => null()
+        real(dp), pointer :: initial_hi(:) => null()
+        real(dp), pointer :: initial_lo(:) => null()
+        real(dp), pointer :: initial_slice(:) => null()
+        integer, pointer :: np => null()
+        integer, pointer :: nv => null()
+        integer, pointer :: nx => null()
+        logical, pointer :: ok => null()
+        type(particle_density_certificate_t), pointer :: particle_certificate => null()
+        real(dp), pointer :: particle_complete_cpu => null()
+        real(dp), pointer :: particle_density(:) => null()
+        real(dp), pointer :: particle_hi(:) => null()
+        type(streaming_state_t), pointer :: particle_initial => null()
+        real(dp), pointer :: particle_lo(:) => null()
+        real(dp), pointer :: particle_padding(:) => null()
+        real(dp), pointer :: particle_project_cpu => null()
+        real(dp), pointer :: particle_push_cpu => null()
+        real(dp), pointer :: particle_v(:) => null()
+        type(particle_density_workspace_t), pointer :: particle_work => null()
+        real(dp), pointer :: particle_x(:) => null()
+        type(streaming_particles_t), pointer :: particles => null()
+        real(dp), pointer :: pcos(:) => null()
+        real(dp), pointer :: period => null()
+        real(dp), pointer :: postprocess_cpu => null()
+        real(dp), pointer :: psin(:) => null()
+        real(dp), pointer :: radius => null()
+        integer, pointer :: repeats => null()
+        type(result_file_t), pointer :: result => null()
+        real(dp), pointer :: slice(:) => null()
+        real(dp), pointer :: slice_hi(:) => null()
+        real(dp), pointer :: slice_lo(:) => null()
+        real(dp), pointer :: time => null()
+        real(dp), pointer :: unwrapped(:) => null()
+        real(dp), pointer :: v(:) => null()
+        real(dp), pointer :: x(:) => null()
+        real(dp), pointer :: x0(:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_streaming_comparison_demo_update_frame_t
+        type(run_streaming_comparison_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_streaming_comparison_demo_update_frame_binding
+    end type
+
+contains
+    subroutine run_streaming_comparison_demo()
+    implicit none
+integer , target :: nx, nv, particle_nx, particle_nv
     ! 193 frames span t = 0..12 in 8 s at 24 fps; a one-second hold follows.
-    integer :: frames = 193, repeats = 20, np
-    real(dp) :: duration = 12.0_dp
+integer , target :: frames, repeats, np
+real(dp) , target :: duration
     namelist /streaming_comparison/ nx, nv, particle_nx, particle_nv, frames, &
         repeats, duration
     type(run_t) :: run
-    type(result_file_t) :: result
-    type(streaming_state_t) :: eulerian, initial, particle_initial
-    type(streaming_particles_t) :: particles
-    type(particle_density_certificate_t) :: particle_certificate
-    type(particle_density_workspace_t) :: particle_work
+    type(result_file_t) , target :: result
+    type(streaming_state_t) , target :: eulerian, initial, particle_initial
+    type(streaming_particles_t) , target :: particles
+    type(particle_density_certificate_t) , target :: particle_certificate
+    type(particle_density_workspace_t) , target :: particle_work
     type(figure_t), pointer :: canvas
     type(animation_t) :: animation
-    real(dp), allocatable :: v(:), x(:), cosine0(:, :), sine0(:, :)
-    real(dp) :: initial_cosine(0:modes) = [1.0_dp, 0.5_dp]
+    real(dp), allocatable , target :: v(:), x(:), cosine0(:, :), sine0(:, :)
+real(dp) :: initial_cosine(0:modes)
     real(dp) :: particle_cosine0(0:modes, 2), particle_sine0(0:modes, 2)
-    real(dp) :: particle_v0(2) = [-1.0_dp, 1.0_dp]
-    real(dp), allocatable :: x0(:), particle_v(:), weight(:), unwrapped(:)
-    real(dp), allocatable :: particle_x(:), glyph(:)
-    real(dp) :: cohort_x(cohort_size), cohort_v(cohort_size)
-    integer :: cohorts(cohort_size, 3)
+real(dp) :: particle_v0(2)
+    real(dp), allocatable , target :: x0(:), particle_v(:), weight(:), unwrapped(:)
+    real(dp), allocatable , target :: particle_x(:), glyph(:)
+    real(dp) , target :: cohort_x(cohort_size), cohort_v(cohort_size)
+    integer , target :: cohorts(cohort_size, 3)
     type(interval_t), allocatable :: x0_bounds(:), velocity_bounds(:), weight_bounds(:)
-    real(dp), allocatable :: image(:, :), slice(:), slice_lo(:), slice_hi(:)
-    real(dp), allocatable :: initial_slice(:), initial_lo(:), initial_hi(:)
-    real(dp), allocatable :: density(:), density_lo(:), density_hi(:)
-    real(dp), allocatable :: particle_density(:), particle_lo(:), particle_hi(:)
-    real(dp), allocatable :: density_padding(:), particle_padding(:)
+    real(dp), allocatable , target :: image(:, :), slice(:), slice_lo(:), slice_hi(:)
+    real(dp), allocatable , target :: initial_slice(:), initial_lo(:), initial_hi(:)
+    real(dp), allocatable , target :: density(:), density_lo(:), density_hi(:)
+    real(dp), allocatable , target :: particle_density(:), particle_lo(:), &
+        particle_hi(:)
+    real(dp), allocatable , target :: density_padding(:), particle_padding(:)
     ! Per-frame evidence retained for the NetCDF result.
     real(dp), allocatable :: frame_time(:), frame_radius(:), store_density(:, :, :)
     real(dp), allocatable :: store_particle(:, :, :), store_slice(:, :, :)
-    real(dp) :: pcos(0:modes), psin(0:modes), time, radius, period, measure
-    real(dp) :: candidate_cpu, complete_cpu, particle_push_cpu, particle_project_cpu
-    real(dp) :: particle_complete_cpu, postprocess_cpu, ignored_x, ignored_v
+    real(dp) , target :: pcos(0:modes), psin(0:modes), time, radius, period, measure
+    real(dp) , target :: candidate_cpu, complete_cpu, particle_push_cpu, &
+        particle_project_cpu
+    real(dp) , target :: particle_complete_cpu, postprocess_cpu, ignored_x, ignored_v
     integer :: i, frame, status, evidence, bands, slices, particle_data, snapshot_frame
     integer :: unit
-    logical :: ok, snapshot_only
+    logical , target :: ok, snapshot_only
     character(len=64) :: argument
     character(len=256) :: msg
+        type(run_streaming_comparison_demo_context_t), target :: ctx
+        type(run_streaming_comparison_demo_update_frame_t), target :: &
+            update_frame_operator
 
+        nx = 96
+        nv = 128
+        particle_nx = 32
+        particle_nv = 48
+        frames = 193
+        repeats = 20
+        duration = 12.0_dp
+        initial_cosine = [1.0_dp, 0.5_dp]
+        particle_v0 = [-1.0_dp, 1.0_dp]
     call run%start('streaming_comparison_demo')
     status = 0; msg = ''
     call run%open_config(unit)
@@ -168,168 +249,104 @@ program streaming_comparison_demo
     open (newunit=slices, file='output/streaming-slice-bands.csv', status='replace')
     write (slices, '(a)') 'frame,t,v,lower,upper,initial_lower,initial_upper'
     do frame = 1, frames
-        call compute_frame(frame, timed=.true.)
+        call bind_run_streaming_comparison_demo_context()
+        call run_streaming_comparison_demo_compute_frame(ctx, frame, timed=.true.)
         call write_evidence(frame)
     end do
     close (evidence); close (bands); close (slices)
     call write_result()
     call figure(figsize=[13.2_dp, 8.8_dp])
     canvas => get_global_figure()
-    call compute_frame(snapshot_frame, timed=.false.)
-    call draw_frame()
+        call bind_run_streaming_comparison_demo_context()
+    call run_streaming_comparison_demo_compute_frame(ctx, snapshot_frame, timed=.false.)
+        call bind_run_streaming_comparison_demo_context()
+    call run_streaming_comparison_demo_draw_frame(ctx)
     call savefig('output/particles-vlasov.png')
     if (.not. snapshot_only) then
-        animation = animation_func(update_frame, frames=frames + hold_frames, &
+        call bind_run_streaming_comparison_demo_context()
+        animation = animation_func(update_frame_operator, frames=frames + hold_frames, &
             interval=42, fig=canvas)
         call save_animation(animation, 'output/particles-vlasov.mp4', fps=fps, &
             status=status)
         if (status /= 0) error stop 'animation rendering or encoding failed'
     end if
 contains
-    subroutine advance_particles()
-        integer :: p
-        do p = 1, np
-            call streaming_characteristic(x0(p), particle_v(p), time, unwrapped(p))
-        end do
-    end subroutine
-
-    subroutine compute_frame(number, timed)
-        integer, intent(in) :: number
-        logical, intent(in) :: timed
-        real(dp) :: start, finish, lower, upper, padding, next
-        type(interval_t) :: enlarged_lo, enlarged_hi, point_lo, point_hi, chord_padding
-        type(interval_t) :: candidate_packet
-        integer :: repeat, ix, iv, p, turns
-
-        call streaming_frame_time(real(number - 1, dp), real(frames, dp), &
-            duration, time)
-        if (timed) then
-            call cpu_time(start)
-            do repeat = 1, repeats
-                call advance_streaming(eulerian, time, ok, certify=.false.)
-            end do
-            call cpu_time(finish)
-            candidate_cpu = (finish - start)/repeats
-            if (.not. ok) error stop 'uncertified Eulerian advance failed'
-            call cpu_time(start)
-            do repeat = 1, repeats
-                call advance_streaming(eulerian, time, ok)
-            end do
-            call cpu_time(finish)
-            complete_cpu = (finish - start)/repeats
-            if (.not. ok) error stop 'certified Eulerian advance failed'
-            call cpu_time(start)
-            do repeat = 1, repeats
-                call advance_particles()
-            end do
-            call cpu_time(finish)
-            particle_push_cpu = (finish - start)/repeats
-            call cpu_time(start)
-            do repeat = 1, repeats
-                call project_particle_density(particles, time, pcos, psin, &
-                ok, particle_work)
-            end do
-            call cpu_time(finish)
-            particle_project_cpu = (finish - start)/repeats
-            if (.not. ok) error stop 'particle Fourier projection failed'
-            call cpu_time(start)
-            do repeat = 1, repeats
-                call advance_particles()
-                call project_particle_density(particles, time, pcos, psin, &
-                ok, particle_work)
-                call certify_particle_density(particle_initial, particles, time, &
-                    particle_certificate, ok, particle_work)
-            end do
-            call cpu_time(finish)
-            particle_complete_cpu = (finish - start)/repeats
-            if (.not. ok) error stop 'particle weak-density checker failed'
-        else
-            call advance_streaming(eulerian, time, ok)
-            if (.not. ok) error stop 'Eulerian animation advance failed'
-            call advance_particles()
-            call project_particle_density(particles, time, pcos, psin, &
-                ok, particle_work)
-            if (.not. ok) error stop 'particle animation projection failed'
-            call certify_particle_density(particle_initial, particles, time, &
-                particle_certificate, ok, particle_work)
-            if (.not. ok) error stop 'particle animation checker failed'
-        end if
-        ! Render scheduling never changes the unwrapped scientific coordinates.
-        do p = 1, np
-            turns = floor(unwrapped(p)/period)
-            call streaming_display_shift(unwrapped(p), real(turns, dp), particle_x(p))
-        end do
-        call streaming_radius(eulerian, radius, ok)
-        if (.not. ok) error stop 'Eulerian velocity interpolation radius unavailable'
-        call cpu_time(start)
-        do ix = 1, nx + 1
-            do iv = 1, nv + 1
-                call evaluate_streaming(eulerian, x(ix), v(iv), image(iv, ix), &
-                    lower, upper, ok)
-                if (.not. ok) error stop 'Eulerian phase-space sampling failed'
-            end do
-        end do
-        do iv = 1, nv + 1
-            call evaluate_streaming(eulerian, 0.0_dp, v(iv), slice(iv), &
-                slice_lo(iv), slice_hi(iv), ok)
-            if (.not. ok) error stop 'Eulerian slice sampling failed'
-            call evaluate_streaming_candidate_interval(eulerian, interval(0.0_dp), &
-                interval(v(iv)), candidate_packet, ok)
-            if (.not. ok) error stop 'strict slice candidate packet unavailable'
-            call streaming_enlarge_interval(candidate_packet, interval(radius), &
-                enlarged_lo, enlarged_hi)
-            slice_lo(iv) = enlarged_lo%lo; slice_hi(iv) = enlarged_hi%hi
-            call evaluate_streaming(initial, 0.0_dp, v(iv), initial_slice(iv), &
-                initial_lo(iv), initial_hi(iv), ok)
-            if (.not. ok) error stop 'initial slice sampling failed'
-        end do
-        do ix = 1, nx + 1
-            call density_streaming(eulerian, x(ix), density(ix), density_lo(ix), &
-                density_hi(ix), ok)
-            if (.not. ok) error stop 'Eulerian density sampling failed'
-            particle_density(ix) = 0.0_dp
-            do p = 0, modes
-                call streaming_mode_accumulate(x(ix), real(p, dp), pcos(p), &
-                    psin(p), particle_density(ix), next)
-                particle_density(ix) = next
-            end do
-            call sample_particle_density_band(particle_initial, particles, time, &
-                particle_certificate, interval(x(ix)), point_lo, point_hi, ok)
-            if (.not. ok) error stop 'particle density sampling failed'
-            particle_lo(ix) = point_lo%lo; particle_hi(ix) = point_hi%hi
-        end do
-        do ix = 1, nx
-            call density_streaming_chord(eulerian, x(ix), x(ix + 1), &
-                density_padding(ix), ok)
-            if (.not. ok) error stop 'Eulerian density chord bound failed'
-            call particle_density_chord(particle_initial, particles, time, &
-                particle_certificate, interval(x(ix)), interval(x(ix + 1)), &
-                chord_padding, ok)
-            if (.not. ok) error stop 'particle density chord bound failed'
-            particle_padding(ix) = chord_padding%hi
-        end do
-        do ix = 1, nx + 1
-            padding = adjacent_padding(density_padding, ix)
-            call streaming_enlarge_interval(interval(density_lo(ix), density_hi(ix)), &
-                interval(padding), enlarged_lo, enlarged_hi)
-            density_lo(ix) = enlarged_lo%lo; density_hi(ix) = enlarged_hi%hi
-            padding = adjacent_padding(particle_padding, ix)
-            call streaming_enlarge_interval( &
-                interval(particle_lo(ix), particle_hi(ix)), &
-                interval(padding), enlarged_lo, enlarged_hi)
-            particle_lo(ix) = enlarged_lo%lo; particle_hi(ix) = enlarged_hi%hi
-        end do
-        call cpu_time(finish)
-        postprocess_cpu = finish - start
-    end subroutine
-
-    real(dp) function adjacent_padding(padding, node) result(value)
-        real(dp), intent(in) :: padding(:)
-        integer, intent(in) :: node
-        value = 0.0_dp
-        if (node > 1) value = padding(node - 1)
-        if (node <= size(padding)) value = max(value, padding(node))
-    end function
+    subroutine bind_run_streaming_comparison_demo_context()
+        ctx%candidate_cpu => candidate_cpu
+        ctx%canvas => canvas
+        ctx%cohort_v => cohort_v
+        ctx%cohort_x => cohort_x
+        ctx%cohorts => cohorts
+        ctx%complete_cpu => complete_cpu
+        nullify(ctx%density)
+        if (allocated(density)) ctx%density => density
+        nullify(ctx%density_hi)
+        if (allocated(density_hi)) ctx%density_hi => density_hi
+        nullify(ctx%density_lo)
+        if (allocated(density_lo)) ctx%density_lo => density_lo
+        nullify(ctx%density_padding)
+        if (allocated(density_padding)) ctx%density_padding => density_padding
+        ctx%duration => duration
+        ctx%eulerian => eulerian
+        ctx%frames => frames
+        nullify(ctx%glyph)
+        if (allocated(glyph)) ctx%glyph => glyph
+        nullify(ctx%image)
+        if (allocated(image)) ctx%image => image
+        ctx%initial => initial
+        nullify(ctx%initial_hi)
+        if (allocated(initial_hi)) ctx%initial_hi => initial_hi
+        nullify(ctx%initial_lo)
+        if (allocated(initial_lo)) ctx%initial_lo => initial_lo
+        nullify(ctx%initial_slice)
+        if (allocated(initial_slice)) ctx%initial_slice => initial_slice
+        ctx%np => np
+        ctx%nv => nv
+        ctx%nx => nx
+        ctx%ok => ok
+        ctx%particle_certificate => particle_certificate
+        ctx%particle_complete_cpu => particle_complete_cpu
+        nullify(ctx%particle_density)
+        if (allocated(particle_density)) ctx%particle_density => particle_density
+        nullify(ctx%particle_hi)
+        if (allocated(particle_hi)) ctx%particle_hi => particle_hi
+        ctx%particle_initial => particle_initial
+        nullify(ctx%particle_lo)
+        if (allocated(particle_lo)) ctx%particle_lo => particle_lo
+        nullify(ctx%particle_padding)
+        if (allocated(particle_padding)) ctx%particle_padding => particle_padding
+        ctx%particle_project_cpu => particle_project_cpu
+        ctx%particle_push_cpu => particle_push_cpu
+        nullify(ctx%particle_v)
+        if (allocated(particle_v)) ctx%particle_v => particle_v
+        ctx%particle_work => particle_work
+        nullify(ctx%particle_x)
+        if (allocated(particle_x)) ctx%particle_x => particle_x
+        ctx%particles => particles
+        ctx%pcos => pcos
+        ctx%period => period
+        ctx%postprocess_cpu => postprocess_cpu
+        ctx%psin => psin
+        ctx%radius => radius
+        ctx%repeats => repeats
+        ctx%result => result
+        nullify(ctx%slice)
+        if (allocated(slice)) ctx%slice => slice
+        nullify(ctx%slice_hi)
+        if (allocated(slice_hi)) ctx%slice_hi => slice_hi
+        nullify(ctx%slice_lo)
+        if (allocated(slice_lo)) ctx%slice_lo => slice_lo
+        ctx%time => time
+        nullify(ctx%unwrapped)
+        if (allocated(unwrapped)) ctx%unwrapped => unwrapped
+        nullify(ctx%v)
+        if (allocated(v)) ctx%v => v
+        nullify(ctx%x)
+        if (allocated(x)) ctx%x => x
+        nullify(ctx%x0)
+        if (allocated(x0)) ctx%x0 => x0
+        update_frame_operator%data => ctx
+    end subroutine bind_run_streaming_comparison_demo_context
 
     real(dp) function timer_factor(total, baseline) result(value)
         real(dp), intent(in) :: total, baseline
@@ -426,44 +443,224 @@ contains
         close (particle_data)
     end subroutine
 
-    subroutine update_frame(number)
+    end subroutine run_streaming_comparison_demo
+
+    subroutine run_streaming_comparison_demo_advance_particles(ctx)
+        type(run_streaming_comparison_demo_context_t), intent(in) :: ctx
+        integer :: p
+        do p = 1, ctx%np
+            call streaming_characteristic(ctx%x0(p), ctx%particle_v(p), ctx%time, &
+                ctx%unwrapped(p))
+        end do
+    end subroutine run_streaming_comparison_demo_advance_particles
+
+    subroutine run_streaming_comparison_demo_compute_frame(ctx, number, timed)
+        type(run_streaming_comparison_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
-        call compute_frame(min(number, frames), timed=.false.)
-        call canvas%clear()
-        call draw_frame()
-        call canvas%set_rendered(.false.)
+        logical, intent(in) :: timed
+        real(dp) :: start, finish, lower, upper, padding, next
+        type(interval_t) :: enlarged_lo, enlarged_hi, point_lo, point_hi, chord_padding
+        type(interval_t) :: candidate_packet
+        integer :: repeat, ix, iv, p, turns
+
+        call streaming_frame_time(real(number - 1, dp), real(ctx%frames, dp), &
+            ctx%duration, ctx%time)
+        if (timed) then
+            call cpu_time(start)
+            do repeat = 1, ctx%repeats
+                call advance_streaming(ctx%eulerian, ctx%time, ctx%ok, certify=.false.)
+            end do
+            call cpu_time(finish)
+            ctx%candidate_cpu = (finish - start)/ctx%repeats
+            if (.not. ctx%ok) error stop 'uncertified Eulerian advance failed'
+            call cpu_time(start)
+            do repeat = 1, ctx%repeats
+                call advance_streaming(ctx%eulerian, ctx%time, ctx%ok)
+            end do
+            call cpu_time(finish)
+            ctx%complete_cpu = (finish - start)/ctx%repeats
+            if (.not. ctx%ok) error stop 'certified Eulerian advance failed'
+            call cpu_time(start)
+            do repeat = 1, ctx%repeats
+                call run_streaming_comparison_demo_advance_particles(ctx)
+            end do
+            call cpu_time(finish)
+            ctx%particle_push_cpu = (finish - start)/ctx%repeats
+            call cpu_time(start)
+            do repeat = 1, ctx%repeats
+                call project_particle_density(ctx%particles, ctx%time, ctx%pcos, &
+                    ctx%psin, &
+                ctx%ok, ctx%particle_work)
+            end do
+            call cpu_time(finish)
+            ctx%particle_project_cpu = (finish - start)/ctx%repeats
+            if (.not. ctx%ok) error stop 'particle Fourier projection failed'
+            call cpu_time(start)
+            do repeat = 1, ctx%repeats
+                call run_streaming_comparison_demo_advance_particles(ctx)
+                call project_particle_density(ctx%particles, ctx%time, ctx%pcos, &
+                    ctx%psin, &
+                ctx%ok, ctx%particle_work)
+                call certify_particle_density(ctx%particle_initial, ctx%particles, &
+                    ctx%time, &
+                    ctx%particle_certificate, ctx%ok, ctx%particle_work)
+            end do
+            call cpu_time(finish)
+            ctx%particle_complete_cpu = (finish - start)/ctx%repeats
+            if (.not. ctx%ok) error stop 'particle weak-density checker failed'
+        else
+            call advance_streaming(ctx%eulerian, ctx%time, ctx%ok)
+            if (.not. ctx%ok) error stop 'Eulerian animation advance failed'
+            call run_streaming_comparison_demo_advance_particles(ctx)
+            call project_particle_density(ctx%particles, ctx%time, ctx%pcos, ctx%psin, &
+                ctx%ok, ctx%particle_work)
+            if (.not. ctx%ok) error stop 'particle animation projection failed'
+            call certify_particle_density(ctx%particle_initial, ctx%particles, &
+                ctx%time, &
+                ctx%particle_certificate, ctx%ok, ctx%particle_work)
+            if (.not. ctx%ok) error stop 'particle animation checker failed'
+        end if
+        ! Render scheduling never changes the unwrapped scientific coordinates.
+        do p = 1, ctx%np
+            turns = floor(ctx%unwrapped(p)/ctx%period)
+            call streaming_display_shift(ctx%unwrapped(p), real(turns, dp), &
+                ctx%particle_x(p))
+        end do
+        call streaming_radius(ctx%eulerian, ctx%radius, ctx%ok)
+        if (.not. ctx%ok) error stop &
+            'Eulerian velocity interpolation radius unavailable'
+        call cpu_time(start)
+        do ix = 1, ctx%nx + 1
+            do iv = 1, ctx%nv + 1
+                call evaluate_streaming(ctx%eulerian, ctx%x(ix), ctx%v(iv), &
+                    ctx%image(iv, ix), &
+                    lower, upper, ctx%ok)
+                if (.not. ctx%ok) error stop 'Eulerian phase-space sampling failed'
+            end do
+        end do
+        do iv = 1, ctx%nv + 1
+            call evaluate_streaming(ctx%eulerian, 0.0_dp, ctx%v(iv), ctx%slice(iv), &
+                ctx%slice_lo(iv), ctx%slice_hi(iv), ctx%ok)
+            if (.not. ctx%ok) error stop 'Eulerian slice sampling failed'
+            call evaluate_streaming_candidate_interval(ctx%eulerian, interval(0.0_dp), &
+                interval(ctx%v(iv)), candidate_packet, ctx%ok)
+            if (.not. ctx%ok) error stop 'strict slice candidate packet unavailable'
+            call streaming_enlarge_interval(candidate_packet, interval(ctx%radius), &
+                enlarged_lo, enlarged_hi)
+            ctx%slice_lo(iv) = enlarged_lo%lo; ctx%slice_hi(iv) = enlarged_hi%hi
+            call evaluate_streaming(ctx%initial, 0.0_dp, ctx%v(iv), &
+                ctx%initial_slice(iv), &
+                ctx%initial_lo(iv), ctx%initial_hi(iv), ctx%ok)
+            if (.not. ctx%ok) error stop 'initial slice sampling failed'
+        end do
+        do ix = 1, ctx%nx + 1
+            call density_streaming(ctx%eulerian, ctx%x(ix), ctx%density(ix), &
+                ctx%density_lo(ix), &
+                ctx%density_hi(ix), ctx%ok)
+            if (.not. ctx%ok) error stop 'Eulerian density sampling failed'
+            ctx%particle_density(ix) = 0.0_dp
+            do p = 0, modes
+                call streaming_mode_accumulate(ctx%x(ix), real(p, dp), ctx%pcos(p), &
+                    ctx%psin(p), ctx%particle_density(ix), next)
+                ctx%particle_density(ix) = next
+            end do
+            call sample_particle_density_band(ctx%particle_initial, ctx%particles, &
+                ctx%time, &
+                ctx%particle_certificate, interval(ctx%x(ix)), point_lo, point_hi, &
+                    ctx%ok)
+            if (.not. ctx%ok) error stop 'particle density sampling failed'
+            ctx%particle_lo(ix) = point_lo%lo; ctx%particle_hi(ix) = point_hi%hi
+        end do
+        do ix = 1, ctx%nx
+            call density_streaming_chord(ctx%eulerian, ctx%x(ix), ctx%x(ix + 1), &
+                ctx%density_padding(ix), ctx%ok)
+            if (.not. ctx%ok) error stop 'Eulerian density chord bound failed'
+            call particle_density_chord(ctx%particle_initial, ctx%particles, ctx%time, &
+                ctx%particle_certificate, interval(ctx%x(ix)), interval(ctx%x(ix + &
+                    1)), &
+                chord_padding, ctx%ok)
+            if (.not. ctx%ok) error stop 'particle density chord bound failed'
+            ctx%particle_padding(ix) = chord_padding%hi
+        end do
+        do ix = 1, ctx%nx + 1
+            padding = run_streaming_comparison_demo_adjacent_padding(ctx, &
+                ctx%density_padding, ix)
+            call streaming_enlarge_interval(interval(ctx%density_lo(ix), &
+                ctx%density_hi(ix)), &
+                interval(padding), enlarged_lo, enlarged_hi)
+            ctx%density_lo(ix) = enlarged_lo%lo; ctx%density_hi(ix) = enlarged_hi%hi
+            padding = run_streaming_comparison_demo_adjacent_padding(ctx, &
+                ctx%particle_padding, ix)
+            call streaming_enlarge_interval( &
+                interval(ctx%particle_lo(ix), ctx%particle_hi(ix)), &
+                interval(padding), enlarged_lo, enlarged_hi)
+            ctx%particle_lo(ix) = enlarged_lo%lo; ctx%particle_hi(ix) = enlarged_hi%hi
+        end do
+        call cpu_time(finish)
+        ctx%postprocess_cpu = finish - start
+    end subroutine run_streaming_comparison_demo_compute_frame
+
+    real(dp) function run_streaming_comparison_demo_adjacent_padding(ctx, padding, &
+        node) result(value)
+        type(run_streaming_comparison_demo_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: padding(:)
+        integer, intent(in) :: node
+        value = 0.0_dp
+        if (node > 1) value = padding(node - 1)
+        if (node <= size(padding)) value = max(value, padding(node))
+    end function run_streaming_comparison_demo_adjacent_padding
+
+    subroutine run_streaming_comparison_demo_update_frame(ctx, number)
+        type(run_streaming_comparison_demo_context_t), intent(in) :: ctx
+        integer, intent(in) :: number
+        call run_streaming_comparison_demo_compute_frame(ctx, min(number, &
+            ctx%frames), timed=.false.)
+        call ctx%canvas%clear()
+        call run_streaming_comparison_demo_draw_frame(ctx)
+        call ctx%canvas%set_rendered(.false.)
+    end subroutine run_streaming_comparison_demo_update_frame
+
+    subroutine run_streaming_comparison_demo_update_frame_binding(self, frame)
+        class(run_streaming_comparison_demo_update_frame_t), intent(inout) :: self
+        integer, intent(in) :: frame
+        call run_streaming_comparison_demo_update_frame(self%data, frame)
     end subroutine
 
-    subroutine draw_frame()
+    subroutine run_streaming_comparison_demo_draw_frame(ctx)
+        type(run_streaming_comparison_demo_context_t), intent(in) :: ctx
         call suptitle('Particles and an Eulerian grid carry the same free-streaming '// &
             'f(x,v); their densities agree within both certified bounds')
         call subplot(2, 2, 1)
-        call title('Weighted characteristic particles  |  t = '//num(time, 2))
+        call title('Weighted characteristic particles  |  t = '//num(ctx%time, 2))
         call xlabel('x  (period 2π)')
         call ylabel('v (normalized)')
-        call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
+        call xlim(0.0_dp, ctx%period); call ylim(-1.0_dp, 1.0_dp)
         ! Marker area follows the particle weight; three coloured cohorts.
-        call scatter(particle_x, particle_v, s=0.6_dp*glyph, color=grey, alpha=0.5_dp)
-        call cohort(1, 'o', blue)
-        call cohort(2, '^', vermillion)
-        call cohort(3, 's', purple)
+        call scatter(ctx%particle_x, ctx%particle_v, s=0.6_dp*ctx%glyph, color=grey, &
+            alpha=0.5_dp)
+        call run_streaming_comparison_demo_cohort(ctx, 1, 'o', blue)
+        call run_streaming_comparison_demo_cohort(ctx, 2, '^', vermillion)
+        call run_streaming_comparison_demo_cohort(ctx, 3, 's', purple)
         call subplot(2, 2, 2)
         call title('Eulerian Fourier/P1 distribution f(x,v)')
         call xlabel('x  (period 2π)')
         call ylabel('v (normalized)')
-        call xlim(0.0_dp, period); call ylim(-1.0_dp, 1.0_dp)
-        call pcolormesh(x, v, image, cmap='viridis', vmin=0.5_dp, vmax=1.5_dp)
+        call xlim(0.0_dp, ctx%period); call ylim(-1.0_dp, 1.0_dp)
+        call pcolormesh(ctx%x, ctx%v, ctx%image, cmap='viridis', vmin=0.5_dp, &
+            vmax=1.5_dp)
         call colorbar(label='f (normalized)')
         call subplot(2, 2, 3)
         call title('Density: Eulerian (solid) and particle projection (dashed)')
         call xlabel('x  (period 2π)')
         call ylabel('n (normalized)')
-        call xlim(0.0_dp, period); call ylim(0.25_dp, 1.75_dp)
-        call fill_between(x, particle_lo, particle_hi, color=vermillion, alpha=0.25_dp)
-        call fill_between(x, density_lo, density_hi, color=blue, alpha=0.25_dp)
-        call plot(x, density, label='Eulerian ± continuous bound', color=blue, &
+        call xlim(0.0_dp, ctx%period); call ylim(0.25_dp, 1.75_dp)
+        call fill_between(ctx%x, ctx%particle_lo, ctx%particle_hi, color=vermillion, &
+            alpha=0.25_dp)
+        call fill_between(ctx%x, ctx%density_lo, ctx%density_hi, color=blue, &
+            alpha=0.25_dp)
+        call plot(ctx%x, ctx%density, label='Eulerian ± continuous bound', color=blue, &
             linewidth=2.0_dp)
-        call plot(x, particle_density, linestyle='--', &
+        call plot(ctx%x, ctx%particle_density, linestyle='--', &
             label='particle projection ± weak bound', color=vermillion, &
             linewidth=1.5_dp)
         call legend(loc='upper center')
@@ -471,30 +668,38 @@ contains
         call title('Bands resolved: offset from the Eulerian density')
         call xlabel('x  (period 2π)')
         call ylabel('$n - n_{Euler}$')
-        call xlim(0.0_dp, period); call ylim(-0.016_dp, 0.016_dp)
-        call fill_between(x, particle_lo - density, particle_hi - density, &
+        call xlim(0.0_dp, ctx%period); call ylim(-0.016_dp, 0.016_dp)
+        call fill_between(ctx%x, ctx%particle_lo - ctx%density, ctx%particle_hi - &
+            ctx%density, &
             color=vermillion, alpha=0.25_dp)
-        call fill_between(x, density_lo - density, density_hi - density, &
+        call fill_between(ctx%x, ctx%density_lo - ctx%density, ctx%density_hi - &
+            ctx%density, &
             color=blue, alpha=0.25_dp)
-        call plot(x, particle_density - density, linestyle='--', &
+        call plot(ctx%x, ctx%particle_density - ctx%density, linestyle='--', &
             label='particle − Eulerian ± weak bound', color=vermillion, &
             linewidth=1.5_dp)
-        call plot(x, 0.0_dp*density, label='Eulerian ± continuous bound', &
+        call plot(ctx%x, 0.0_dp*ctx%density, label='Eulerian ± continuous bound', &
             color=blue, linewidth=2.0_dp)
         call legend(loc='upper center')
         call tight_layout()
-    end subroutine
+    end subroutine run_streaming_comparison_demo_draw_frame
 
-    subroutine cohort(number, marker, color)
+    subroutine run_streaming_comparison_demo_cohort(ctx, number, marker, color)
+        type(run_streaming_comparison_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: number
         character(len=*), intent(in) :: marker
         real(dp), intent(in) :: color(3)
         integer :: j, p
         do j = 1, cohort_size
-            p = cohorts(j, number)
-            cohort_x(j) = particle_x(p); cohort_v(j) = particle_v(p)
+            p = ctx%cohorts(j, number)
+            ctx%cohort_x(j) = ctx%particle_x(p); ctx%cohort_v(j) = ctx%particle_v(p)
         end do
-        call scatter(cohort_x, cohort_v, s=36.0_dp, marker=marker, color=color)
-    end subroutine
+        call scatter(ctx%cohort_x, ctx%cohort_v, s=36.0_dp, marker=marker, color=color)
+    end subroutine run_streaming_comparison_demo_cohort
+end module streaming_comparison_demo_callbacks
 
+program streaming_comparison_demo
+    use streaming_comparison_demo_callbacks, only: run_streaming_comparison_demo
+    implicit none
+    call run_streaming_comparison_demo()
 end program streaming_comparison_demo

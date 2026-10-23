@@ -33,7 +33,7 @@ contains
     end subroutine
 end module
 
-program test_curve_chart_solver
+module test_curve_chart_solver_callbacks
     use curve_solver_cases
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_equilibrium_chart, only: curve_chart_t, cylindrical_chart_t
@@ -44,12 +44,32 @@ program test_curve_chart_solver
                                ideal_map_reduce, ideal_map_expand, ideal_map_hessian, &
                       ideal_map_eliminate_omega, ideal_map_residual, IDEAL_MAP_BAD_INPUT
     use fortfem_element_to_csr, only: csr_matrix_t
+
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
     implicit none
+    private
+    public :: run_test_curve_chart_solver
     real(dp), parameter :: pi = acos(-1.0_dp), delta = 0.01_dp
+    type :: run_test_curve_chart_solver_context_t
+        character(16), pointer :: mode => null()
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_curve_chart_solver_wall_t
+        type(run_test_curve_chart_solver_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_curve_chart_solver_wall_binding
+    end type
+
+contains
+    subroutine run_test_curve_chart_solver()
+    implicit none
     type(curve_chart_t) :: chart
     real(dp) :: c(3, 0:2), s(3, 0:2)
-    character(16) :: mode
+    character(16) , target :: mode
     integer :: st
+        type(run_test_curve_chart_solver_context_t), target :: ctx
+        type(run_test_curve_chart_solver_wall_t), target :: wall_operator
     call get_command_argument(1, mode)
     c = 0; s = 0
     select case (trim(mode))
@@ -75,16 +95,11 @@ program test_curve_chart_solver
         error stop 'chart solver test mode'
     end select
 contains
-    subroutine wall(t, point)
-        real(dp), intent(in) :: t
-        real(dp), intent(out) :: point(2)
-        real(dp) :: dr, dz
-        if (mode == 'landreman' .or. mode == 'krylov') then
-            call landreman_surface(2*pi*t, delta, point(1), point(2), dr, dz)
-        else
-            point = 0.02_dp*[cos(2*pi*t), sin(2*pi*t)]
-        end if
-    end subroutine
+    subroutine bind_run_test_curve_chart_solver_context()
+        ctx%mode => mode
+        wall_operator%data => ctx
+    end subroutine bind_run_test_curve_chart_solver_context
+
 
     subroutine mesh_build(mesh)
         type(gs_state_t), intent(out) :: mesh
@@ -95,10 +110,13 @@ contains
             return
         end if
         do i = 1, 16
-            call wall(real(i - 1, dp)/16, contour(:, i))
+        call bind_run_test_curve_chart_solver_context()
+            call run_test_curve_chart_solver_wall(ctx, real(i - 1, dp)/16, &
+                contour(:, i))
         end do
         h = 2*pi*sqrt(delta)/16
-        call initialize_gs(mesh, contour, h*h/2, status, 2, curve=wall)
+        call bind_run_test_curve_chart_solver_context()
+        call initialize_gs_object(mesh, contour, h*h/2, status, 2, curve=wall_operator)
         if (status /= 0) error stop 'chart reference mesh'
     end subroutine
 
@@ -116,9 +134,13 @@ contains
         mesh%boundary(:n) = .true.; mesh%boundary(2*n + 1:3*n) = .true.
         do i = 1, n
             j = mod(i, n) + 1
-            call wall(real(i - 1, dp)/n, mesh%points(:, i))
+        call bind_run_test_curve_chart_solver_context()
+            call run_test_curve_chart_solver_wall(ctx, real(i - 1, dp)/n, &
+                mesh%points(:, i))
             mesh%points(:, n + i) = mesh%points(:, i)/2
-            call wall((i - 0.5_dp)/n, mesh%points(:, 2*n + i))
+        call bind_run_test_curve_chart_solver_context()
+            call run_test_curve_chart_solver_wall(ctx, (i - 0.5_dp)/n, &
+                mesh%points(:, 2*n + i))
             mesh%triangles(:, i) = [i, j, 3*n + 1, 2*n + i, n + j, n + i]
         end do
     end subroutine
@@ -356,4 +378,31 @@ contains
         if (.not. ieee_is_finite(err) .or. err > 1e-5_dp) &
             error stop 'figure8 gradient Hessian'
     end subroutine
-end program
+
+    end subroutine run_test_curve_chart_solver
+
+    subroutine run_test_curve_chart_solver_wall(ctx, t, point)
+        type(run_test_curve_chart_solver_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        real(dp) :: dr, dz
+        if (ctx%mode == 'landreman' .or. ctx%mode == 'krylov') then
+            call landreman_surface(2*pi*t, delta, point(1), point(2), dr, dz)
+        else
+            point = 0.02_dp*[cos(2*pi*t), sin(2*pi*t)]
+        end if
+    end subroutine run_test_curve_chart_solver_wall
+
+    subroutine run_test_curve_chart_solver_wall_binding(self, t, point)
+        class(run_test_curve_chart_solver_wall_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_curve_chart_solver_wall(self%data, t, point)
+    end subroutine
+end module test_curve_chart_solver_callbacks
+
+program test_curve_chart_solver
+    use test_curve_chart_solver_callbacks, only: run_test_curve_chart_solver
+    implicit none
+    call run_test_curve_chart_solver()
+end program test_curve_chart_solver

@@ -1,4 +1,4 @@
-program test_s0_gs_kink
+module test_s0_gs_kink_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, solve_gs
     use kin6d_gs_equilibrium, only: gs_equilibrium
@@ -10,15 +10,36 @@ program test_s0_gs_kink
         FORTSPARSE_INERTIA_RELIABLE, csc_matvec
     use fortnum_eigen, only: eigen_options_t, EIGEN_OK, EIGEN_NEAREST
     use s0_cylinder_oracle, only: cylinder_oracle_t, cylinder_solve, cylinder_profile
+
+    use kin6d_curved_triangle, only: boundary_curve_t
+    use kin6d_grad_shafranov, only: initialize_gs_object
+    implicit none
+    private
+    public :: run_test_s0_gs_kink
+    real(dp), parameter :: radius = 2.0_dp
+    type :: run_test_s0_gs_kink_context_t
+        real(dp), pointer :: r0 => null()
+    end type
+
+    type, extends(boundary_curve_t) :: run_test_s0_gs_kink_boundary_t
+        type(run_test_s0_gs_kink_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_s0_gs_kink_boundary_binding
+    end type
+
+contains
+    subroutine run_test_s0_gs_kink()
     implicit none
     type(gs_state_t) :: gs
     type(equilibrium_state_t) :: eq
     type(cylinder_oracle_t) :: oracle, analytic
-    real(dp) :: r0, eigenvalue(4), shape_error(4), reference, rates(2), errors(3)
+    real(dp) , target :: r0, eigenvalue(4), shape_error(4), reference, rates(2), &
+        errors(3)
     real(dp) :: radial_order, radial_estimate, aspect_estimate, quadrature_value
-    real(dp), parameter :: radius = 2.0_dp
     integer :: i, stat
     character(32) :: mode
+        type(run_test_s0_gs_kink_context_t), target :: ctx
+        type(run_test_s0_gs_kink_boundary_t), target :: boundary_operator
     call get_command_argument(1,mode)
     select case (trim(mode))
     case ('oracle')
@@ -121,6 +142,11 @@ program test_s0_gs_kink
             sqrt(-oracle%omega2)
     end select
 contains
+    subroutine bind_run_test_s0_gs_kink_context()
+        ctx%r0 => r0
+        boundary_operator%data => ctx
+    end subroutine bind_run_test_s0_gs_kink_context
+
     subroutine expect(condition,label)
         logical, intent(in) :: condition
         character(*), intent(in) :: label
@@ -137,9 +163,12 @@ contains
         integer :: j
         r0 = major_radius
         do j = 1, size(contour,2)
-            call boundary(real(j-1,dp)/size(contour,2),contour(:,j))
+        call bind_run_test_s0_gs_kink_context()
+            call run_test_s0_gs_kink_boundary(ctx, &
+                real(j-1,dp)/size(contour,2),contour(:,j))
         end do
-        call initialize_gs(gs,contour,area,stat,3,curve=boundary)
+        call bind_run_test_s0_gs_kink_context()
+        call initialize_gs_object(gs,contour,area,stat,3,curve=boundary_operator)
         call expect(stat == 0,'GS curved P3 mesh')
         call solve_gs(gs,1.0_dp,-3/r0,r0,stat)
         call expect(stat == 0,'GS forward solve')
@@ -252,11 +281,28 @@ contains
         call s0_destroy(pencil)
     end subroutine spectrum
 
-    subroutine boundary(t,point)
+
+    end subroutine run_test_s0_gs_kink
+
+    subroutine run_test_s0_gs_kink_boundary(ctx, t,point)
+        type(run_test_s0_gs_kink_context_t), intent(in) :: ctx
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         real(dp) :: theta
         theta = 2*acos(-1.0_dp)*t
-        point = [r0+radius*cos(theta),radius*sin(theta)]
-    end subroutine boundary
+        point = [ctx%r0+radius*cos(theta),radius*sin(theta)]
+    end subroutine run_test_s0_gs_kink_boundary
+
+    subroutine run_test_s0_gs_kink_boundary_binding(self, t, point)
+        class(run_test_s0_gs_kink_boundary_t), intent(in) :: self
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call run_test_s0_gs_kink_boundary(self%data, t, point)
+    end subroutine
+end module test_s0_gs_kink_callbacks
+
+program test_s0_gs_kink
+    use test_s0_gs_kink_callbacks, only: run_test_s0_gs_kink
+    implicit none
+    call run_test_s0_gs_kink()
 end program test_s0_gs_kink

@@ -1,7 +1,4 @@
-program test_gs_freegs
-    !! Public end-to-end comparison with FreeGS 01-freeboundary.py v0.8.2.
-    !! The reference fixes currents and the (1-s)^2 profile shape. Native
-    !! solves impose the published pressure/current constraints as well.
+module test_gs_freegs_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
@@ -19,8 +16,10 @@ program test_gs_freegs
                                       gs_fb_trace_lcfs, GS_FB_XPOINT
     use kin6d_gs_equilibrium, only: gs_equilibrium
     use kin6d_equilibrium_state, only: equilibrium_state_t, labelled_field_t
-    implicit none
 
+    implicit none
+    private
+    public :: run_test_gs_freegs
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: levels(4) = [0.01_dp, 0.5_dp, 0.9_dp, 0.95_dp]
     character(20), parameter :: names(16) = [character(20) :: &
@@ -31,15 +30,51 @@ program test_gs_freegs
                                              'q(.01), signed', 'q(.5), signed', &
                                              'q(.9), signed', 'q(.95), signed', &
                                              'beta_p', 'li2', 'Ip', 'volume']
-    type(gs_state_t) :: state
+    type, abstract :: callback_function_t
+    contains
+        procedure(callback_evaluate), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine callback_evaluate(self, amplitudes, residual, ctx)
+            import :: callback_function_t, dp
+            class(callback_function_t), intent(in) :: self
+            real(dp), intent(in) :: amplitudes(:)
+            real(dp), intent(out) :: residual(:)
+            class(*), optional, intent(in) :: ctx
+        end subroutine
+    end interface
+
+    type :: run_test_gs_freegs_profile_constraints_context_t
+        real(dp), pointer :: currents(:) => null()
+        type(gs_fb_eval_t), pointer :: ev => null()
+        real(dp), pointer :: reference(:,:) => null()
+        type(gs_state_t), pointer :: state => null()
+        type(gs_fb_system_t), pointer :: sys => null()
+    end type
+
+    type, extends(callback_function_t) :: run_test_gs_freegs_profile_constraints_t
+        type(run_test_gs_freegs_profile_constraints_context_t), pointer :: data => &
+            null()
+    contains
+        procedure :: evaluate => run_test_gs_freegs_profile_constraints_binding
+    end type
+
+contains
+    subroutine run_test_gs_freegs()
+    !! Public end-to-end comparison with FreeGS 01-freeboundary.py v0.8.2.
+    !! The reference fixes currents and the (1-s)^2 profile shape. Native
+    !! solves impose the published pressure/current constraints as well.
+    implicit none
+
+    type(gs_state_t) , target :: state
     type(gs_circuit_set_t) :: coils
     type(gs_profile_law_t) :: law
-    type(gs_fb_system_t) :: sys
+    type(gs_fb_system_t) , target :: sys
     type(gs_fb_config_t) :: cfg
-    type(gs_fb_eval_t) :: ev
+    type(gs_fb_eval_t) , target :: ev
     type(gs_fb_history_t) :: history
     type(equilibrium_state_t) :: eq
-    real(dp) :: reference(23, 3), seed(33, 25), currents(4), values(16)
+    real(dp) , target :: reference(23, 3), seed(33, 25), currents(4), values(16)
     real(dp) :: pa, pb, axis(2), xp(2), f, pressure, coarea(5), flux_levels(5)
     real(dp), allocatable :: contour(:, :), ga(:), gb(:), chain(:, :), xpoints(:, :)
     real(dp) :: p_integral, b_integral, volume, r_geo, paxis
@@ -51,6 +86,10 @@ program test_gs_freegs
     real(dp) :: trace_distances(2), trace_gaps(2), distance, trace_gap
     integer :: unit, i, j, n, status, cell, nside, rung, failures
     character(1024) :: path, argument, line
+        type(run_test_gs_freegs_profile_constraints_context_t), target :: &
+            profile_constraints_data
+        type(run_test_gs_freegs_profile_constraints_t), target :: &
+            profile_constraints_operator
 
     call get_command_argument(1, path)
     nside = 24
@@ -86,7 +125,8 @@ program test_gs_freegs
     close (unit)
     call gs_read_coil_table(trim(path)//'/coils.dat', coils, status, line)
     if (status /= 0) print *, trim(line)
-    call check(status, 'coil table')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+    call run_test_gs_freegs_check(status, 'coil table')
     failures = 0
     q_error = 0
     open (newunit=unit, file=trim(path)//'/q-convergence.dat', status='old')
@@ -167,6 +207,15 @@ program test_gs_freegs
     print '(a)', 'candidate comparison; continuous bounds unavailable'
     if (failures /= 0) error stop 'FreeGS parity budgets failed'
 contains
+    subroutine bind_run_test_gs_freegs_profile_constraints_context()
+        profile_constraints_data%currents => currents
+        profile_constraints_data%ev => ev
+        profile_constraints_data%reference => reference
+        profile_constraints_data%state => state
+        profile_constraints_data%sys => sys
+        profile_constraints_operator%data => profile_constraints_data
+    end subroutine bind_run_test_gs_freegs_profile_constraints_context
+
     subroutine run_case(resolution)
         integer, intent(in) :: resolution
         type(fortnum_status_t) :: root_status
@@ -181,19 +230,22 @@ contains
         end do
         call initialize_gs(state, contour, 0.5_dp*(1.9_dp/resolution)**2, status, &
                            element_order=3, curved=.true., curve=outer_curve)
-        call check(status, 'mesh')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'mesh')
         cfg%mode = GS_FB_XPOINT
         cfg%axis_sign = 1
         cfg%axis_guess = reference(10:11, 3)
         cfg%xpoint_guess = reference(12:13, 3)
         cfg%search_radius = 0.2_dp
         call gs_fb_setup(state, sys, law, cfg, coils, status)
-        call check(status, 'FEM-BEM setup')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'FEM-BEM setup')
         do i = 1, size(state%psi)
             state%psi(i) = seed_value(state%points(:, i))
         end do
         call gs_fb_newton(state, sys, currents, status, history)
-        call check(status, 'native free-boundary Newton')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'native free-boundary Newton')
         print *, 'mesh ', resolution, size(state%psi), ' Newton ', history%iterations
         print *, 'residuals ', history%residual
         ! ConstrainPaxisIp fixes two amplitudes, not just a frozen derivative
@@ -201,13 +253,17 @@ contains
         ! equations as a test consumer of FortNum's two-variable root solve.
         ! Finite differences here belong to that independent setup driver;
         ! production free-boundary derivatives remain equation-level.
-        call multiroot_hybrids(profile_constraints, 2, [1.0_dp, 1.0_dp], &
-                               amplitudes, root_status, ftol=1.0e-9_dp, max_iter=6)
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call multiroot_hybrids(profile_constraints_bridge, 2, [1.0_dp, 1.0_dp], &
+                               amplitudes, root_status, ftol=1.0e-9_dp, max_iter=6, &
+                                   ctx=profile_constraints_operator)
         if (.not. status_ok(root_status)) then
             print *, root_status%msg
             error stop 'pressure/current normalization failed'
         end if
-        call profile_constraints(amplitudes, constraint_residual)
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_profile_constraints(profile_constraints_data, &
+            amplitudes, constraint_residual)
         call require(maxval(abs(constraint_residual)) < 1.0e-9_dp, &
                      'same pressure/current constraints')
         law = sys%law
@@ -217,11 +273,13 @@ contains
         print *, 'change from seed ', seed_error
         call gs_fb_evaluate(state, sys, state%psi, currents, ev, status, &
                             jacobian=.false.)
-        call check(status, 'final residual/current')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'final residual/current')
         values(1:6) = [ev%psi_axis, ev%psi_bound, ev%axis, ev%xpoint]
         call gs_fb_trace_lcfs(state, state%psi, ev%axis, ev%psi_bound, &
                              1.0_dp, 1024, chain, status, xpoints=xpoints)
-        call check(status, 'native separatrix trace')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'native separatrix trace')
         call require(size(xpoints, 2) == 1, 'one bounding lower X-point')
         if (size(xpoints, 2) == 1) then
             call require(norm2(xpoints(:, 1)-ev%xpoint) < 2e-14_dp, &
@@ -233,7 +291,8 @@ contains
         do i = 1, size(chain, 2)
             call sample_gs(state, chain(1, i), chain(2, i), 2.0_dp, &
                            psi_probe, br, bz, bt, status)
-            call check(status, 'native LCFS point sample')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+            call run_test_gs_freegs_check(status, 'native LCFS point sample')
             trace_gap = max(trace_gap, abs(psi_probe-ev%psi_bound))
         end do
         call require(trace_gap < 2e-13_dp, 'native LCFS flux roots near roundoff')
@@ -241,29 +300,35 @@ contains
         cfg%xpoint_guess = reference(14:15, 3)
         call gs_fb_lcfs_levels(state, state%psi, cfg, ev%axis, cfg%xpoint_guess, &
                                pa, pb, axis, xp, cell, ga, gb, status)
-        call check(status, 'upper X point')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'upper X point')
         values(7:8) = xp
         law%axis = ev%psi_axis - ev%psi_bound
         call gs_law_primitives(law, law%axis, paxis, f, status)
-        call check(status, 'axis pressure')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'axis pressure')
         call gs_equilibrium(state, eq, status, law%f_edge, 0.0_dp, law=law, &
                             psi_bound=ev%psi_bound, plasma_cell=ev%plasma_cell)
-        call check(status, 'core evaluator')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'core evaluator')
         flux_levels(1) = ev%psi_axis
         flux_levels(2:) = ev%psi_axis + levels*(ev%psi_bound - ev%psi_axis)
         select type (field => eq%field)
         class is (labelled_field_t)
             call field%label_axis(axis, flux_levels(1), status)
-            call check(status, 'readback axis')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+            call run_test_gs_freegs_check(status, 'readback axis')
             call field%label_coarea(flux_levels, 96, coarea, status)
         class default
             error stop 'missing flux label capability'
         end select
-        call check(status, 'coarea readback')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(status, 'coarea readback')
         do i = 1, 4
             call gs_law_primitives(law, flux_levels(i + 1) - ev%psi_bound, &
                                    pressure, f, status)
-            call check(status, 'F readback')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+            call run_test_gs_freegs_check(status, 'F readback')
             ! FreeGS q is positive for this f>0, Ip>0 example. KIN6D's COCOS 3
             ! signed q has the opposite sign (sigma=sign(psi_b-psi_a)).
             values(8 + i) = sign(1.0_dp, ev%psi_bound - ev%psi_axis) &
@@ -279,7 +344,8 @@ contains
             call data_line(unit, line)
             read (line, *) pt
             call sample_gs(state, pt(1), pt(2), 2.0_dp, psi_probe, br, bz, bt, status)
-            call check(status, 'LCFS point sample')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+            call run_test_gs_freegs_check(status, 'LCFS point sample')
             gap = abs(psi_probe - ev%psi_bound)
             max_gap = max(gap, max_gap)
             distance = polyline_distance(pt, chain)
@@ -315,28 +381,6 @@ contains
         end do
     end function polyline_distance
 
-    subroutine profile_constraints(amplitudes, residual, ctx)
-        real(dp), intent(in) :: amplitudes(:)
-        real(dp), intent(out) :: residual(:)
-        class(*), intent(in), optional :: ctx
-        type(gs_profile_law_t) :: executed
-        real(dp) :: axis_pressure, axis_f
-        integer :: stat
-        sys%law%pp(:, 1) = reference(6, 3)*amplitudes(1) &
-                           *[1.0_dp, -2.0_dp, 1.0_dp, 0.0_dp]
-        sys%law%ff(:, 1) = reference(7, 3)*amplitudes(2) &
-                           *[1.0_dp, -2.0_dp, 1.0_dp, 0.0_dp]
-        call gs_fb_newton(state, sys, currents, stat)
-        call check(stat, 'normalized profile forward solve')
-        call gs_fb_evaluate(state, sys, state%psi, currents, ev, stat, &
-                            jacobian=.false.)
-        call check(stat, 'normalized profile current')
-        executed = sys%law
-        executed%axis = ev%psi_axis - ev%psi_bound
-        call gs_law_primitives(executed, executed%axis, axis_pressure, axis_f, stat)
-        call check(stat, 'normalized profile pressure')
-        residual = [axis_pressure/1000.0_dp - 1, ev%plasma_current/2.0e5_dp - 1]
-    end subroutine
 
     subroutine require(ok, what)
         logical, intent(in) :: ok
@@ -352,13 +396,6 @@ contains
         point = [1.0_dp + 0.8_dp*cos(2*pi*t), 0.95_dp*sin(2*pi*t)]
     end subroutine
 
-    subroutine check(code, what)
-        integer, intent(in) :: code
-        character(*), intent(in) :: what
-        if (code == 0) return
-        print *, 'FAIL: ', what, code
-        error stop 'FreeGS parity setup/solve/readback failed'
-    end subroutine
 
     subroutine data_line(u, text)
         integer, intent(in) :: u
@@ -395,7 +432,8 @@ contains
         real(dp) :: ph, g(2), p, field, dv
         integer :: e, q, stat, bad
         call triangle_duffy_quadrature(16, x, y, w, stat)
-        call check(stat, 'observable quadrature')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(stat, 'observable quadrature')
         vol = 0; pint = 0; bint = 0; bad = 0
         !$omp parallel do default(shared) private(e,q,shape,grad,hess,point,det, &
         !$omp ph,g,p,field,dv,stat) reduction(+:vol,pint,bint,bad) schedule(static)
@@ -421,6 +459,78 @@ contains
             end do
         end do
         !$omp end parallel do
-        call check(bad, 'observable integrands')
+        call bind_run_test_gs_freegs_profile_constraints_context()
+        call run_test_gs_freegs_check(bad, 'observable integrands')
     end subroutine
-end program
+
+    end subroutine run_test_gs_freegs
+
+    subroutine run_test_gs_freegs_profile_constraints(profile_constraints_data, &
+        amplitudes, residual, ctx)
+        type(run_test_gs_freegs_profile_constraints_context_t), intent(in), target &
+            :: profile_constraints_data
+        real(dp), intent(in) :: amplitudes(:)
+        real(dp), intent(out) :: residual(:)
+        class(*), intent(in), optional :: ctx
+        type(gs_profile_law_t) :: executed
+        real(dp) :: axis_pressure, axis_f
+        integer :: stat
+        profile_constraints_data%sys%law%pp(:, 1) = &
+            profile_constraints_data%reference(6, 3)*amplitudes(1) &
+                           *[1.0_dp, -2.0_dp, 1.0_dp, 0.0_dp]
+        profile_constraints_data%sys%law%ff(:, 1) = &
+            profile_constraints_data%reference(7, 3)*amplitudes(2) &
+                           *[1.0_dp, -2.0_dp, 1.0_dp, 0.0_dp]
+        call gs_fb_newton(profile_constraints_data%state, &
+            profile_constraints_data%sys, profile_constraints_data%currents, stat)
+        call run_test_gs_freegs_check(stat, 'normalized profile forward solve')
+        call gs_fb_evaluate(profile_constraints_data%state, &
+            profile_constraints_data%sys, profile_constraints_data%state%psi, &
+            profile_constraints_data%currents, profile_constraints_data%ev, stat, &
+                            jacobian=.false.)
+        call run_test_gs_freegs_check(stat, 'normalized profile current')
+        executed = profile_constraints_data%sys%law
+        executed%axis = profile_constraints_data%ev%psi_axis - &
+            profile_constraints_data%ev%psi_bound
+        call gs_law_primitives(executed, executed%axis, axis_pressure, axis_f, stat)
+        call run_test_gs_freegs_check(stat, 'normalized profile pressure')
+        residual = [axis_pressure/1000.0_dp - 1, &
+            profile_constraints_data%ev%plasma_current/2.0e5_dp - 1]
+    end subroutine run_test_gs_freegs_profile_constraints
+
+    subroutine run_test_gs_freegs_profile_constraints_binding(self, amplitudes, &
+        residual, ctx)
+        class(run_test_gs_freegs_profile_constraints_t), intent(in) :: self
+        real(dp), intent(in) :: amplitudes(:)
+        real(dp), intent(out) :: residual(:)
+        class(*), intent(in), optional :: ctx
+        call run_test_gs_freegs_profile_constraints(self%data, amplitudes, residual, &
+            ctx)
+    end subroutine
+
+    subroutine run_test_gs_freegs_check(code, what)
+        integer, intent(in) :: code
+        character(*), intent(in) :: what
+        if (code == 0) return
+        print *, 'FAIL: ', what, code
+        error stop 'FreeGS parity setup/solve/readback failed'
+    end subroutine run_test_gs_freegs_check
+    subroutine profile_constraints_bridge(amplitudes, residual, ctx)
+        real(dp), intent(in) :: amplitudes(:)
+        real(dp), intent(out) :: residual(:)
+        class(*), optional, intent(in) :: ctx
+        if (.not. present(ctx)) error stop 'missing callback object'
+        select type (ctx)
+        class is (callback_function_t)
+            call ctx%evaluate(amplitudes, residual)
+        class default
+            error stop 'invalid callback object'
+        end select
+    end subroutine
+end module test_gs_freegs_callbacks
+
+program test_gs_freegs
+    use test_gs_freegs_callbacks, only: run_test_gs_freegs
+    implicit none
+    call run_test_gs_freegs()
+end program test_gs_freegs

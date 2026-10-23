@@ -1,7 +1,4 @@
-program test_response_sheet_cylinder
-    !! Independent periodic-cylinder scalar-potential oracle. A unit outward
-    !! n x grad Lambda sheet obeys [potential]=1 and continuous B_normal.
-    !! I_m from its convergent series, K_m from its integral representation.
+module test_response_sheet_cylinder_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
                                        meridian_point_basis_t, meridian_point_basis_init
@@ -12,10 +9,30 @@ program test_response_sheet_cylinder
                                     ring_flux_harmonic, ring_sheet_load, ring_area
     use kin6d_response_calibration, only: spot_weights, spot_jump, &
                                           equivalent_sheet_field
+
+    use kin6d_mhd_mesh, only: polar_map_t
     implicit none
+    private
+    public :: run_test_response_sheet_cylinder
     real(dp), parameter :: pi = acos(-1.0_dp), rs = 0.5_dp
     integer, parameter :: m = 3, n = 2, nf = 256
-    real(dp) :: r0, nodes(5, 2), w(5, 2), th(nf), radius, k, z, ip, kp
+    type :: run_test_response_sheet_cylinder_context_t
+        real(dp), pointer :: r0 => null()
+    end type
+
+    type, extends(polar_map_t) :: run_test_response_sheet_cylinder_circle_t
+        type(run_test_response_sheet_cylinder_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_response_sheet_cylinder_circle_binding
+    end type
+
+contains
+    subroutine run_test_response_sheet_cylinder()
+    !! Independent periodic-cylinder scalar-potential oracle. A unit outward
+    !! n x grad Lambda sheet obeys [potential]=1 and continuous B_normal.
+    !! I_m from its convergent series, K_m from its integral representation.
+    implicit none
+    real(dp) , target :: r0, nodes(5, 2), w(5, 2), th(nf), radius, k, z, ip, kp
     real(dp) :: self_ref, jump_ref, area, errs(2, 2), potential, at
     real(dp), allocatable :: labels(:), extra(:)
     complex(dp), allocatable :: f(:), a(:), field(:)
@@ -26,6 +43,8 @@ program test_response_sheet_cylinder
     type(ampere_n_t) :: amp
     type(ring_angles_t) :: ra
     integer :: lev, side, i, j, js, st
+        type(run_test_response_sheet_cylinder_context_t), target :: ctx
+        type(run_test_response_sheet_cylinder_circle_t), target :: circle_operator
     th = [(2*pi*(i - 1)/nf, i=1, nf)]
     call ring_angles_set(real(m, dp)/n, th, real(m, dp)/n*th, ra)
     do side = 1, 2
@@ -40,7 +59,8 @@ program test_response_sheet_cylinder
     if (st /= 0) error stop 'spot weights'
     do lev = 1, 2
         r0 = 5.0_dp*lev
-        call flux_mesh_build(labels, 8, 512, 2, circle, fm, st)
+        call bind_run_test_response_sheet_cylinder_context()
+        call flux_mesh_build(labels, 8, 512, 2, circle_operator, fm, st)
         if (st /= 0) error stop 'mesh'
         call meridian_feec_build(fm%mm, 2, fs, st)
         if (st /= 0) error stop 'FEEC'
@@ -98,11 +118,11 @@ program test_response_sheet_cylinder
     if (maxval(errs(2, :)) > 1.0e-5_dp) error stop 'spot jump absolute oracle'
     print '(a)', 'unit-sheet spot cylinder calibration: PASS'
 contains
-    subroutine circle(u, theta, point)
-        real(dp), intent(in) :: u, theta
-        real(dp), intent(out) :: point(2)
-        point = [r0 + u*cos(theta), u*sin(theta)]
-    end subroutine circle
+    subroutine bind_run_test_response_sheet_cylinder_context()
+        ctx%r0 => r0
+        circle_operator%data => ctx
+    end subroutine bind_run_test_response_sheet_cylinder_context
+
     real(dp) function bessi(order, x) result(value)
         integer, intent(in) :: order
         real(dp), intent(in) :: x
@@ -132,4 +152,26 @@ contains
         end do
         value = value*h
     end function bessk
+
+    end subroutine run_test_response_sheet_cylinder
+
+    subroutine run_test_response_sheet_cylinder_circle(ctx, u, theta, point)
+        type(run_test_response_sheet_cylinder_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: point(2)
+        point = [ctx%r0 + u*cos(theta), u*sin(theta)]
+    end subroutine run_test_response_sheet_cylinder_circle
+
+    subroutine run_test_response_sheet_cylinder_circle_binding(self, u, theta, x)
+        class(run_test_response_sheet_cylinder_circle_t), intent(in) :: self
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        call run_test_response_sheet_cylinder_circle(self%data, u, theta, x)
+    end subroutine
+end module test_response_sheet_cylinder_callbacks
+
+program test_response_sheet_cylinder
+    use test_response_sheet_cylinder_callbacks, only: run_test_response_sheet_cylinder
+    implicit none
+    call run_test_response_sheet_cylinder()
 end program test_response_sheet_cylinder

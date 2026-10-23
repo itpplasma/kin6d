@@ -1,20 +1,4 @@
-program test_gs_coupled_majorant
-    !! P10 (DESIGN section 4): coupled FEM-BEM majorant, inf-sup estimate and
-    !! goal functionals on manufactured free-boundary problems with exact
-    !! solutions psi* = sum_k I_k g_k + w (w a compact analytic bump).
-    !!
-    !! 1. Frozen (linear) coupled problem a(psi,v) + <S psi,v> = (f*,v) + <g,v>:
-    !!    the majorant D + C_F B + N must exceed the exact energy error
-    !!    |||psi* - psi_h||| (interior energy by quadrature of the analytic
-    !!    gradient, exterior energy <S e, e> on the reference BEM) with an
-    !!    efficiency index in [1, 3] that does not grow under refinement, P2 and
-    !!    P3; the shape and Ip goal enclosures must contain the exact values.
-    !! 2. Nonlinear free boundary (limiter mode, law vanishing at the edge)
-    !!    with the pointwise forcing f* - f_law(psi*) 1{plasma*}: the practical
-    !!    bound M0 / beta against the exact error, beta against a dense SVD of
-    !!    J in the energy pairing on the coarsest mesh, and the dual-weighted
-    !!    shape goal against the exact goal error.
-    !! 3. Coil-current bounds: attained by the sign vector, never exceeded.
+module test_gs_coupled_majorant_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
@@ -37,8 +21,13 @@ program test_gs_coupled_majorant
     use kin6d_gs_certificate, only: gs_fb_certifier_t
     use kin6d_equilibrium_certificate, only: equilibrium_certificate_t, certify, &
         EQ_CLAIM_PRACTICAL
-    implicit none
 
+    use kin6d_gs_nonlinear, only: gs_forcing_function_t
+    use kin6d_gs_coupling, only: gs_density_function_t
+    use kin6d_gs_majorant, only: gs_fb_majorant_object
+    implicit none
+    private
+    public :: run_test_gs_coupled_majorant
     real(dp), parameter :: pi = acos(-1.0_dp)
     real(dp), parameter :: currents(2) = [1.5e4_dp, -1.0e4_dp]
     real(dp), parameter :: centre(2) = [gp_r0 + 0.02_dp, 0.03_dp]
@@ -47,12 +36,55 @@ program test_gs_coupled_majorant
     real(dp), parameter :: goal_point(2) = [gp_r0 + 0.25_dp, 0.35_dp]
     real(dp), parameter :: goal_radius = 0.12_dp
     real(dp), parameter :: limiter(2) = [gp_r0 + 0.33_dp, 0.0_dp]
-    type(gs_circuit_set_t) :: coils
-    type(gs_profile_law_t) :: law_exact
-    real(dp) :: psi_axis_exact, psi_bound_exact
+    type :: run_test_gs_coupled_majorant_context_t
+        type(gs_circuit_set_t), pointer :: coils => null()
+        type(gs_profile_law_t), pointer :: law_exact => null()
+        real(dp), pointer :: psi_bound_exact => null()
+    end type
+
+    type, extends(gs_forcing_function_t) :: run_test_gs_coupled_majorant_forcing_t
+        type(run_test_gs_coupled_majorant_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_coupled_majorant_forcing_binding
+    end type
+
+    type, extends(gs_density_function_t) :: &
+        run_test_gs_coupled_majorant_forcing_density_t
+        type(run_test_gs_coupled_majorant_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_coupled_majorant_forcing_density_binding
+    end type
+
+contains
+    subroutine run_test_gs_coupled_majorant()
+    !! P10 (DESIGN section 4): coupled FEM-BEM majorant, inf-sup estimate and
+    !! goal functionals on manufactured free-boundary problems with exact
+    !! solutions psi* = sum_k I_k g_k + w (w a compact analytic bump).
+    !!
+    !! 1. Frozen (linear) coupled problem a(psi,v) + <S psi,v> = (f*,v) + <g,v>:
+    !!    the majorant D + C_F B + N must exceed the exact energy error
+    !!    |||psi* - psi_h||| (interior energy by quadrature of the analytic
+    !!    gradient, exterior energy <S e, e> on the reference BEM) with an
+    !!    efficiency index in [1, 3] that does not grow under refinement, P2 and
+    !!    P3; the shape and Ip goal enclosures must contain the exact values.
+    !! 2. Nonlinear free boundary (limiter mode, law vanishing at the edge)
+    !!    with the pointwise forcing f* - f_law(psi*) 1{plasma*}: the practical
+    !!    bound M0 / beta against the exact error, beta against a dense SVD of
+    !!    J in the energy pairing on the coarsest mesh, and the dual-weighted
+    !!    shape goal against the exact goal error.
+    !! 3. Coil-current bounds: attained by the sign vector, never exceeded.
+    implicit none
+
+    type(gs_circuit_set_t) , target :: coils
+    type(gs_profile_law_t) , target :: law_exact
+    real(dp) , target :: psi_axis_exact, psi_bound_exact
     integer :: failures
     character(len=16) :: mode
     real(dp) :: quick_errors(2), quick_bounds(2)
+        type(run_test_gs_coupled_majorant_context_t), target :: ctx
+        type(run_test_gs_coupled_majorant_forcing_t), target :: forcing_operator
+        type(run_test_gs_coupled_majorant_forcing_density_t), target :: &
+            forcing_density_operator
 
     failures = 0
     call build_coils(coils)
@@ -78,6 +110,14 @@ program test_gs_coupled_majorant
     print '(a)', 'gs_coupled_majorant (P10) checks passed'
 
 contains
+    subroutine bind_run_test_gs_coupled_majorant_context()
+        ctx%coils => coils
+        ctx%law_exact => law_exact
+        ctx%psi_bound_exact => psi_bound_exact
+        forcing_operator%data => ctx
+        forcing_density_operator%data => ctx
+    end subroutine bind_run_test_gs_coupled_majorant_context
+
 
     subroutine require(ok, what)
         logical, intent(in) :: ok
@@ -87,22 +127,6 @@ contains
             print '(2a)', 'FAIL: ', what
         end if
     end subroutine require
-
-    function exact_flux(r, z) result(psi)
-        real(dp), intent(in) :: r, z
-        real(dp) :: psi, g(1, 2)
-        call gs_circuit_flux_vectors(coils, [r], [z], g)
-        psi = dot_product(g(1, :), currents) + bump(r, z)
-    end function exact_flux
-
-    pure function bump(r, z) result(w)
-        !! amplitude (1 - u)^6, u the elliptic radius squared (C^5).
-        real(dp), intent(in) :: r, z
-        real(dp) :: w, u
-        u = ((r - centre(1))/semi(1))**2 + ((z - centre(2))/semi(2))**2
-        w = 0.0_dp
-        if (u < 1.0_dp) w = amplitude*(1.0_dp - u)**6
-    end function bump
 
     pure subroutine bump_gradient(r, z, gr, gz)
         real(dp), intent(in) :: r, z
@@ -116,34 +140,6 @@ contains
         gr = w1*2.0_dp*(r - centre(1))/semi(1)**2
         gz = w1*2.0_dp*(z - centre(2))/semi(2)**2
     end subroutine bump_gradient
-
-    pure function bump_laplacian(r, z) result(f)
-        !! f = -d_R(w_R/R) - d_Z(w_Z/R): the source the bump alone carries.
-        real(dp), intent(in) :: r, z
-        real(dp) :: f, u, ur, uz, w1, w2
-        f = 0.0_dp
-        u = ((r - centre(1))/semi(1))**2 + ((z - centre(2))/semi(2))**2
-        if (u >= 1.0_dp) return
-        ur = 2.0_dp*(r - centre(1))/semi(1)**2
-        uz = 2.0_dp*(z - centre(2))/semi(2)**2
-        w1 = -6.0_dp*amplitude*(1.0_dp - u)**5
-        w2 = 30.0_dp*amplitude*(1.0_dp - u)**4
-        f = -((w2*ur*ur + w1*2.0_dp/semi(1)**2)/r - w1*ur/r**2) &
-            - (w2*uz*uz + w1*2.0_dp/semi(2)**2)/r
-    end function bump_laplacian
-
-    function linear_source(cell, r, z, psi) result(f)
-        integer, intent(in) :: cell
-        real(dp), intent(in) :: r, z, psi
-        real(dp) :: f
-        f = bump_laplacian(r, z) + 0.0_dp*(cell + psi)
-    end function linear_source
-
-    function linear_density(r, z) result(j)
-        real(dp), intent(in) :: r, z
-        real(dp) :: j
-        j = bump_laplacian(r, z)/gs_mu0
-    end function linear_density
 
     function goal_weight(r, z) result(q)
         !! Mollifier 3/(pi rho^2) (1 - |x - p|^2/rho^2)^2, unit integral.
@@ -170,10 +166,12 @@ contains
             rho = goal_radius*xr(i)
             do j = 1, 64
                 theta = 2.0_dp*pi*(j - 0.5_dp)/64
+        call bind_run_test_gs_coupled_majorant_context()
                 q = q + xw(i)*goal_radius*rho*(2.0_dp*pi/64) &
                     *goal_weight(goal_point(1) + rho*cos(theta), &
                                  goal_point(2) + rho*sin(theta)) &
-                    *exact_flux(goal_point(1) + rho*cos(theta), &
+                    *run_test_gs_coupled_majorant_exact_flux(ctx, goal_point(1) + &
+                        rho*cos(theta), &
                                 goal_point(2) + rho*sin(theta))
             end do
         end do
@@ -188,7 +186,8 @@ contains
         total = 0.0_dp
         do j = 1, 400
             do i = 1, 400
-                total = total + abs(bump_laplacian( &
+        call bind_run_test_gs_coupled_majorant_context()
+                total = total + abs(run_test_gs_coupled_majorant_bump_laplacian( &
                     centre(1) - semi(1) + (i - 0.5_dp)*dr, &
                     centre(2) - semi(2) + (j - 0.5_dp)*dz))
             end do
@@ -239,7 +238,9 @@ contains
         allocate (e(est%nx))
         e = matmul(est%restriction, psi(est%coupling%trace_node))
         do i = 1, est%nx
-            e(i) = exact_flux(est%curve%nodes(1, i), est%curve%nodes(2, i)) - e(i)
+        call bind_run_test_gs_coupled_majorant_context()
+            e(i) = run_test_gs_coupled_majorant_exact_flux(ctx, est%curve%nodes(1, &
+                i), est%curve%nodes(2, i)) - e(i)
         end do
         exterior = dot_product(e, matmul(est%s_ref, e))
         err = sqrt(interior + exterior)
@@ -356,46 +357,45 @@ contains
         x = centre
         h = 1.0e-4_dp
         do it = 1, 30
-            g(1) = (exact_flux(x(1) + h, x(2)) - exact_flux(x(1) - h, x(2)))/(2*h)
-            g(2) = (exact_flux(x(1), x(2) + h) - exact_flux(x(1), x(2) - h))/(2*h)
-            hm(1, 1) = (exact_flux(x(1) + h, x(2)) - 2*exact_flux(x(1), x(2)) &
-                        + exact_flux(x(1) - h, x(2)))/h**2
-            hm(2, 2) = (exact_flux(x(1), x(2) + h) - 2*exact_flux(x(1), x(2)) &
-                        + exact_flux(x(1), x(2) - h))/h**2
-            hm(1, 2) = (exact_flux(x(1) + h, x(2) + h) &
-                        - exact_flux(x(1) + h, x(2) - h) &
-                        - exact_flux(x(1) - h, x(2) + h) &
-                        + exact_flux(x(1) - h, x(2) - h))/(4*h*h)
+        call bind_run_test_gs_coupled_majorant_context()
+            g(1) = (run_test_gs_coupled_majorant_exact_flux(ctx, x(1) + h, x(2)) - &
+                run_test_gs_coupled_majorant_exact_flux(ctx, x(1) - h, x(2)))/(2*h)
+        call bind_run_test_gs_coupled_majorant_context()
+            g(2) = (run_test_gs_coupled_majorant_exact_flux(ctx, x(1), x(2) + h) - &
+                run_test_gs_coupled_majorant_exact_flux(ctx, x(1), x(2) - h))/(2*h)
+        call bind_run_test_gs_coupled_majorant_context()
+            hm(1, 1) = (run_test_gs_coupled_majorant_exact_flux(ctx, x(1) + h, x(2)) &
+                - 2*run_test_gs_coupled_majorant_exact_flux(ctx, x(1), x(2)) &
+                        + run_test_gs_coupled_majorant_exact_flux(ctx, x(1) - h, &
+                            x(2)))/h**2
+        call bind_run_test_gs_coupled_majorant_context()
+            hm(2, 2) = (run_test_gs_coupled_majorant_exact_flux(ctx, x(1), x(2) + h) &
+                - 2*run_test_gs_coupled_majorant_exact_flux(ctx, x(1), x(2)) &
+                        + run_test_gs_coupled_majorant_exact_flux(ctx, x(1), x(2) - &
+                            h))/h**2
+        call bind_run_test_gs_coupled_majorant_context()
+            hm(1, 2) = (run_test_gs_coupled_majorant_exact_flux(ctx, x(1) + h, x(2) &
+                + h) &
+                        - run_test_gs_coupled_majorant_exact_flux(ctx, x(1) + h, &
+                            x(2) - h) &
+                        - run_test_gs_coupled_majorant_exact_flux(ctx, x(1) - h, &
+                            x(2) + h) &
+                        + run_test_gs_coupled_majorant_exact_flux(ctx, x(1) - h, &
+                            x(2) - h))/(4*h*h)
             hm(2, 1) = hm(1, 2)
             det = hm(1, 1)*hm(2, 2) - hm(1, 2)**2
             dx = -[hm(2, 2)*g(1) - hm(1, 2)*g(2), hm(1, 1)*g(2) - hm(1, 2)*g(1)]/det
             x = x + dx
             if (norm2(dx) < 1.0e-11_dp) exit
         end do
-        psi_axis_exact = exact_flux(x(1), x(2))
-        psi_bound_exact = exact_flux(limiter(1), limiter(2))
+        call bind_run_test_gs_coupled_majorant_context()
+        psi_axis_exact = run_test_gs_coupled_majorant_exact_flux(ctx, x(1), x(2))
+        call bind_run_test_gs_coupled_majorant_context()
+        psi_bound_exact = run_test_gs_coupled_majorant_exact_flux(ctx, limiter(1), &
+            limiter(2))
         call make_law(law_exact, .false., 0.7_dp)
         law_exact%axis = psi_axis_exact - psi_bound_exact
     end subroutine exact_levels
-
-    function forcing(r, z) result(f)
-        !! f* - f_law(psi*) 1{plasma*}: psi* solves the nonlinear problem.
-        real(dp), intent(in) :: r, z
-        real(dp) :: f, p, pp, ff, s
-        f = bump_laplacian(r, z)
-        if (((r - centre(1))/semi(1))**2 + ((z - centre(2))/semi(2))**2 >= 1) return
-        p = exact_flux(r, z)
-        if (p <= psi_bound_exact) return
-        call gs_law_sources(law_exact, p - psi_bound_exact, pp, ff)
-        call gs_source(r, gs_mu0, pp, ff, s)
-        f = f - s
-    end function forcing
-
-    function forcing_density(r, z) result(j)
-        real(dp), intent(in) :: r, z
-        real(dp) :: j
-        j = forcing(r, z)/gs_mu0
-    end function forcing_density
 
     subroutine nonlinear_sweep(label, order, levels)
         character(len=*), intent(in) :: label
@@ -441,11 +441,15 @@ contains
         cfg%points(:, 1) = limiter
         call gs_fb_setup(state, sys, law, cfg, coils, status)
         call require(status == GS_FB_OK, 'fb setup')
-        call gs_coupling_source_load(state, forcing_density, f_load, status, n_gauss=12)
+        call bind_run_test_gs_coupled_majorant_context()
+        call gs_coupling_source_load(state, forcing_density_operator, f_load, &
+            status, n_gauss=12)
         sys%extra_load = f_load
         allocate (exact(size(state%points, 2)))
         do i = 1, size(exact)
-            exact(i) = exact_flux(state%points(1, i), state%points(2, i))
+        call bind_run_test_gs_coupled_majorant_context()
+            exact(i) = run_test_gs_coupled_majorant_exact_flux(ctx, state%points(1, &
+                i), state%points(2, i))
         end do
         state%psi = exact
         call gs_fb_newton(state, sys, currents, status, history)
@@ -453,7 +457,9 @@ contains
         call gs_coupled_estimator_build(state, sys%coupling, est, status, set=coils)
         if (status /= GS_CM_OK) print '(a,i3)', '   estimator status ', status
         call require(status == GS_CM_OK, 'fb estimator build')
-        call gs_fb_majorant(state, sys, est, currents, res, status, forcing)
+        call bind_run_test_gs_coupled_majorant_context()
+        call gs_fb_majorant_object(state, sys, est, currents, res, status, &
+            forcing_operator)
         call require(status == GS_CM_OK, 'fb majorant')
         error = energy_error(state, est, state%psi)
         bound = res%bound
@@ -475,7 +481,8 @@ contains
             certifier%sys => sys
             certifier%est => est
             certifier%currents = currents
-            certifier%forcing => forcing
+        call bind_run_test_gs_coupled_majorant_context()
+            certifier%forcing_function => forcing_operator
             call certify(certifier, certificate, status)
             call require(status == 0 .and. certificate%lane_status == GS_CM_OK, &
                          label//': certifier status')
@@ -581,4 +588,94 @@ contains
         print '(a,3es11.3)', 'coil current bounds ', bounds
     end subroutine coil_bound_check
 
+
+    end subroutine run_test_gs_coupled_majorant
+
+    function run_test_gs_coupled_majorant_exact_flux(ctx, r, z) result(psi)
+        type(run_test_gs_coupled_majorant_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: r, z
+        real(dp) :: psi, g(1, 2)
+        call gs_circuit_flux_vectors(ctx%coils, [r], [z], g)
+        psi = dot_product(g(1, :), currents) + run_test_gs_coupled_majorant_bump(r, z)
+    end function run_test_gs_coupled_majorant_exact_flux
+
+    pure function run_test_gs_coupled_majorant_bump(r, z) result(w)
+        !! amplitude (1 - u)^6, u the elliptic radius squared (C^5).
+        real(dp), intent(in) :: r, z
+        real(dp) :: w, u
+        u = ((r - centre(1))/semi(1))**2 + ((z - centre(2))/semi(2))**2
+        w = 0.0_dp
+        if (u < 1.0_dp) w = amplitude*(1.0_dp - u)**6
+    end function run_test_gs_coupled_majorant_bump
+
+    pure function run_test_gs_coupled_majorant_bump_laplacian(r, z) result(f)
+        !! f = -d_R(w_R/R) - d_Z(w_Z/R): the source the bump alone carries.
+        real(dp), intent(in) :: r, z
+        real(dp) :: f, u, ur, uz, w1, w2
+        f = 0.0_dp
+        u = ((r - centre(1))/semi(1))**2 + ((z - centre(2))/semi(2))**2
+        if (u >= 1.0_dp) return
+        ur = 2.0_dp*(r - centre(1))/semi(1)**2
+        uz = 2.0_dp*(z - centre(2))/semi(2)**2
+        w1 = -6.0_dp*amplitude*(1.0_dp - u)**5
+        w2 = 30.0_dp*amplitude*(1.0_dp - u)**4
+        f = -((w2*ur*ur + w1*2.0_dp/semi(1)**2)/r - w1*ur/r**2) &
+            - (w2*uz*uz + w1*2.0_dp/semi(2)**2)/r
+    end function run_test_gs_coupled_majorant_bump_laplacian
+
+    function run_test_gs_coupled_majorant_forcing(ctx, r, z) result(f)
+        type(run_test_gs_coupled_majorant_context_t), intent(in) :: ctx
+        !! f* - f_law(psi*) 1{plasma*}: psi* solves the nonlinear problem.
+        real(dp), intent(in) :: r, z
+        real(dp) :: f, p, pp, ff, s
+        f = run_test_gs_coupled_majorant_bump_laplacian(r, z)
+        if (((r - centre(1))/semi(1))**2 + ((z - centre(2))/semi(2))**2 >= 1) return
+        p = run_test_gs_coupled_majorant_exact_flux(ctx, r, z)
+        if (p <= ctx%psi_bound_exact) return
+        call gs_law_sources(ctx%law_exact, p - ctx%psi_bound_exact, pp, ff)
+        call gs_source(r, gs_mu0, pp, ff, s)
+        f = f - s
+    end function run_test_gs_coupled_majorant_forcing
+
+    function run_test_gs_coupled_majorant_forcing_binding(self, r, z) &
+        result(result_value)
+        class(run_test_gs_coupled_majorant_forcing_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        real(dp) :: result_value, p, pp, ff, s
+        result_value = run_test_gs_coupled_majorant_forcing(self%data, r, z)
+    end function
+
+    function run_test_gs_coupled_majorant_forcing_density(ctx, r, z) result(j)
+        type(run_test_gs_coupled_majorant_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: r, z
+        real(dp) :: j
+        j = run_test_gs_coupled_majorant_forcing(ctx, r, z)/gs_mu0
+    end function run_test_gs_coupled_majorant_forcing_density
+
+    function run_test_gs_coupled_majorant_forcing_density_binding(self, r, z) &
+        result(result_value)
+        class(run_test_gs_coupled_majorant_forcing_density_t), intent(in) :: self
+        real(dp), intent(in) :: r, z
+        real(dp) :: result_value
+        result_value = run_test_gs_coupled_majorant_forcing_density(self%data, r, z)
+    end function
+    function linear_source(cell, r, z, psi) result(f)
+        integer, intent(in) :: cell
+        real(dp), intent(in) :: r, z, psi
+        real(dp) :: f
+        f = run_test_gs_coupled_majorant_bump_laplacian(r, z) + 0.0_dp*(cell + psi)
+    end function linear_source
+
+    function linear_density(r, z) result(j)
+        real(dp), intent(in) :: r, z
+        real(dp) :: j
+        j = run_test_gs_coupled_majorant_bump_laplacian(r, z)/gs_mu0
+    end function linear_density
+
+end module test_gs_coupled_majorant_callbacks
+
+program test_gs_coupled_majorant
+    use test_gs_coupled_majorant_callbacks, only: run_test_gs_coupled_majorant
+    implicit none
+    call run_test_gs_coupled_majorant()
 end program test_gs_coupled_majorant

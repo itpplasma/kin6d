@@ -6,7 +6,7 @@
 ! full-Hamiltonian Duhamel estimator. Writes CSV, figures and a movie to
 ! output/ and output/packet_models_demo.nc.
 ! Usage: packet_models_demo [--config FILE]   (namelist &packet_models)
-program packet_models_demo
+module packet_models_demo_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64, i64 => int64
     use kin6d_coulomb_encounter
     use kin6d_packet_models
@@ -17,18 +17,46 @@ program packet_models_demo
         set_xscale, set_yscale, suptitle, colorbar
     use fortplot_animation, only: animation_t, animation_func => FuncAnimation, &
         save_animation
+
+    use fortplot_animation, only: animation_callback_t
     implicit none
+    private
+    public :: run_packet_models_demo
     real(dp), parameter :: pi = acos(-1.0_dp)
     integer, parameter :: nb = 36, nmod = 9, nsep = 60
-    ! Wave-packet models in table order; M1 (classical) is column nmod + 1.
     integer, parameter :: models(nmod) = [MODEL_M2, MODEL_M2S, MODEL_M2T, MODEL_M3, &
                                           MODEL_M3S, MODEL_M3T, MODEL_M4, MODEL_M4, MODEL_M4]
     integer, parameter :: kvals(nmod) = [1, 1, 1, 1, 1, 1, 2, 4, 8]
+    integer, parameter :: npx = 112
+    type :: run_packet_models_demo_context_t
+        character(200), pointer :: arg => null()
+        type(figure_t), pointer :: canvas => null()
+        real(dp), pointer :: img(:,:,:,:) => null()
+        integer, pointer :: movie_frames => null()
+        real(dp), pointer :: mtime(:) => null()
+        real(dp), pointer :: mv_lambdabar => null()
+        real(dp), pointer :: mv_speed => null()
+        real(dp), pointer :: mv_z0 => null()
+        real(dp), pointer :: vhi => null()
+        real(dp), pointer :: vlo => null()
+        real(dp), pointer :: xe(:) => null()
+    end type
+
+    type, extends(animation_callback_t) :: run_packet_models_demo_update_t
+        type(run_packet_models_demo_context_t), pointer :: data => null()
+    contains
+        procedure :: update => run_packet_models_demo_update_binding
+    end type
+
+contains
+    subroutine run_packet_models_demo()
+    implicit none
+    ! Wave-packet models in table order; M1 (classical) is column nmod + 1.
     ! Configuration (&packet_models).
-    integer :: samples = 61, nclass = 20000, movie_frames = 192
-    real(dp) :: etas(4) = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
-    real(dp) :: b_values(4) = [0.0_dp, 5.0_dp, 10.0_dp, 20.0_dp]
-    logical :: movie = .true., b_scan = .true.
+integer , target :: samples, nclass, movie_frames
+real(dp) :: etas(4)
+real(dp) :: b_values(4)
+logical :: movie, b_scan
     namelist /packet_models/ samples, nclass, movie_frames, etas, b_values, movie, b_scan
     type(run_t) :: run
     type(result_file_t) :: result
@@ -38,13 +66,22 @@ program packet_models_demo
     real(dp) :: bins_ref(nb, 3, 4), bins_mod(nb, nmod + 1, 4), theta(nb)
     real(dp) :: berr(3, 4), bbnd(3, 4), btv(3, 4)
     ! Movie state shared with the animation callback (host association).
-    integer, parameter :: npx = 112
-    real(dp), allocatable :: img(:, :, :, :), mtime(:)
-    real(dp) :: xe(0:npx), mv_lambdabar, mv_speed, mv_z0, vlo, vhi
-    type(figure_t), pointer :: canvas => null()
+    real(dp), allocatable , target :: img(:, :, :, :), mtime(:)
+    real(dp) , target :: xe(0:npx), mv_lambdabar, mv_speed, mv_z0, vlo, vhi
+type(figure_t), pointer :: canvas
     integer :: unit, ios, status, i
     character(256) :: msg
-    character(200) :: arg
+    character(200) , target :: arg
+        type(run_packet_models_demo_context_t), target :: ctx
+        type(run_packet_models_demo_update_t), target :: update_operator
+        samples = 61
+        nclass = 20000
+        movie_frames = 192
+        etas = [0.3_dp, 1.0_dp, 3.0_dp, 10.0_dp]
+        b_values = [0.0_dp, 5.0_dp, 10.0_dp, 20.0_dp]
+        movie = .true.
+        b_scan = .true.
+        nullify(canvas)
     call run%start('packet_models_demo')
     ios = 0; msg = ''
     call run%open_config(unit)
@@ -90,6 +127,23 @@ program packet_models_demo
         dims='bin,model,eta')
     call result%close()
 contains
+    subroutine bind_run_packet_models_demo_context()
+        ctx%arg => arg
+        ctx%canvas => canvas
+        nullify(ctx%img)
+        if (allocated(img)) ctx%img => img
+        ctx%movie_frames => movie_frames
+        nullify(ctx%mtime)
+        if (allocated(mtime)) ctx%mtime => mtime
+        ctx%mv_lambdabar => mv_lambdabar
+        ctx%mv_speed => mv_speed
+        ctx%mv_z0 => mv_z0
+        ctx%vhi => vhi
+        ctx%vlo => vlo
+        ctx%xe => xe
+        update_operator%data => ctx
+    end subroutine bind_run_packet_models_demo_context
+
     ! Q1 case for one eta in reduced units hbar = m_e = e^2/(4 pi eps0) = 1,
     ! identical to coulomb_encounter_demo (sigma = max(10, 4 eta) lambdabar,
     ! z0 = 6 sigma, t_final = 2 z0/v).
@@ -460,41 +514,65 @@ contains
         img = log10(max(img, 10**vlo))
         call figure(figsize=[19.2_dp, 5.6_dp])
         canvas => get_global_figure()
-        call draw(movie_frames)
+        call bind_run_packet_models_demo_context()
+        call run_packet_models_demo_draw(ctx, movie_frames)
         call savefig('output/packet-density-final.png')
         call canvas%clear()
-        call draw(movie_frames/2)
+        call bind_run_packet_models_demo_context()
+        call run_packet_models_demo_draw(ctx, movie_frames/2)
         call savefig('output/packet-density-mid.png')
-        anim = animation_func(update, frames=movie_frames + 24, interval=42, fig=canvas)
+        call bind_run_packet_models_demo_context()
+        anim = animation_func(update_operator, frames=movie_frames + 24, &
+            interval=42, fig=canvas)
         call save_animation(anim, 'output/packet-density.mp4', fps=24, status=status)
         if (status /= 0) print '(a,i0)', 'movie encoding status ', status
     end subroutine density_movie
 
-    subroutine update(number)
-        integer, intent(in) :: number
-        call canvas%clear()
-        call draw(min(number, movie_frames))     ! hold the last frame for 1 s
-        call canvas%set_rendered(.false.)
-    end subroutine update
+    end subroutine run_packet_models_demo
 
-    subroutine draw(f)
+    subroutine run_packet_models_demo_update(ctx, number)
+        type(run_packet_models_demo_context_t), intent(in) :: ctx
+        integer, intent(in) :: number
+        call ctx%canvas%clear()
+        call run_packet_models_demo_draw(ctx, min(number, ctx%movie_frames))     ! hold the last frame for 1 s
+        call ctx%canvas%set_rendered(.false.)
+    end subroutine run_packet_models_demo_update
+
+    subroutine run_packet_models_demo_update_binding(self, frame)
+        class(run_packet_models_demo_update_t), intent(inout) :: self
+        integer, intent(in) :: frame
+        call run_packet_models_demo_update(self%data, frame)
+    end subroutine
+
+    subroutine run_packet_models_demo_draw(ctx, f)
+        type(run_packet_models_demo_context_t), intent(in) :: ctx
         integer, intent(in) :: f
         character(40), parameter :: names(3) = [character(40) :: 'exact (Q1 partial waves)', &
             'one Gaussian (M3)', 'coherent sum K = 8 (M4)']
         integer :: p
-        write (arg, '(a,f5.2)') 'Relative-coordinate density, $\eta = 1$, $b = 0$: '// &
-            ' $t v/z_0 = $', mtime(f)*mv_speed/mv_z0
-        call suptitle(trim(arg))
+        character(200), pointer :: local_arg
+        local_arg => ctx%arg
+        write (local_arg, '(a,f5.2)') &
+            'Relative-coordinate density, $\eta = 1$, $b = 0$: '// &
+            ' $t v/z_0 = $', ctx%mtime(f)*ctx%mv_speed/ctx%mv_z0
+        call suptitle(trim(local_arg))
         do p = 1, 3
             call subplot(1, 3, p)
             call title(trim(names(p)))
             call xlabel('$k x$'); call ylabel('$k z$')
-            call pcolormesh(xe/mv_lambdabar, xe/mv_lambdabar, img(:, :, p, f), cmap='viridis', &
-                            vmin=vlo, vmax=vhi)
-            call xlim(xe(0)/mv_lambdabar, xe(npx)/mv_lambdabar)
-            call ylim(xe(0)/mv_lambdabar, xe(npx)/mv_lambdabar)
+            call pcolormesh(ctx%xe/ctx%mv_lambdabar, ctx%xe/ctx%mv_lambdabar, &
+                ctx%img(:, :, p, f), cmap='viridis', &
+                            vmin=ctx%vlo, vmax=ctx%vhi)
+            call xlim(ctx%xe(0)/ctx%mv_lambdabar, ctx%xe(npx)/ctx%mv_lambdabar)
+            call ylim(ctx%xe(0)/ctx%mv_lambdabar, ctx%xe(npx)/ctx%mv_lambdabar)
             call colorbar(label='$\log_{10}$ y-integrated density [$k^2$]')
         end do
         call tight_layout()
-    end subroutine draw
+    end subroutine run_packet_models_demo_draw
+end module packet_models_demo_callbacks
+
+program packet_models_demo
+    use packet_models_demo_callbacks, only: run_packet_models_demo
+    implicit none
+    call run_packet_models_demo()
 end program packet_models_demo

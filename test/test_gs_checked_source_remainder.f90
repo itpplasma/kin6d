@@ -1,6 +1,4 @@
-program test_gs_checked_source_remainder
-    !! Independent manufactured quartic, rational source numerator approximated
-    !! by a Taylor polynomial of degree p+3 with an explicit geometric remainder.
+module test_gs_checked_source_remainder_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_linear_response, &
         gs_cell_data
@@ -13,18 +11,51 @@ program test_gs_checked_source_remainder
     use fortnum_interval, only: interval_t, interval, operator(+), operator(-), &
         operator(*), operator(/), operator(**)
     use omp_lib, only: omp_get_wtime, omp_set_num_threads
+
+    use fortfem_verified_bernstein_majorant, only: bernstein_remainder_t, &
+        bernstein_source_t
     implicit none
+    private
+    public :: run_test_gs_checked_source_remainder
     real(dp), parameter :: r0 = 3.0_dp, a = 1.0_dp, kap = 1.0_dp
-    type(gs_state_t) :: state
+    type :: run_test_gs_checked_source_remainder_context_t
+        logical, pointer :: bad_tail => null()
+        integer, pointer :: numerator_degree => null()
+        type(gs_state_t), pointer :: state => null()
+    end type
+
+    type, extends(bernstein_source_t) :: &
+        run_test_gs_checked_source_remainder_numerator_t
+        type(run_test_gs_checked_source_remainder_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_checked_source_remainder_numerator_binding
+    end type
+
+    type, extends(bernstein_remainder_t) :: run_test_gs_checked_source_remainder_tail_t
+        type(run_test_gs_checked_source_remainder_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_gs_checked_source_remainder_tail_binding
+    end type
+
+contains
+    subroutine run_test_gs_checked_source_remainder()
+    !! Independent manufactured quartic, rational source numerator approximated
+    !! by a Taylor polynomial of degree p+3 with an explicit geometric remainder.
+    implicit none
+    type(gs_state_t) , target :: state
     type(equilibrated_flux_estimate_t) :: est
     type(interval_t) :: bound
     real(dp), allocatable :: contour(:, :), rhs(:), psi(:)
     real(dp) :: error, previous, area, before, solve_time, audit_time, total_time
     real(dp) :: start, reference_bound, times(3)
-    integer :: order, level, status, numerator_degree, first_order, first_level
+    integer , target :: order, level, status, numerator_degree, first_order, first_level
     integer :: last_order, last_level, threads, repeat
     character(32) :: argument
-    logical :: bad_tail
+    logical , target :: bad_tail
+        type(run_test_gs_checked_source_remainder_context_t), target :: ctx
+        type(run_test_gs_checked_source_remainder_numerator_t), target :: &
+            numerator_operator
+        type(run_test_gs_checked_source_remainder_tail_t), target :: tail_operator
 
     first_order = 1; last_order = 3; first_level = 1; last_level = 3
     call get_command_argument(1, argument)
@@ -54,8 +85,9 @@ program test_gs_checked_source_remainder
             call gs_equilibrated_majorant(state, psi, source, est, status)
             if (status /= 0) error stop 'sampled reconstruction'
             before = omp_get_wtime()
-            call gs_checked_fixed_source_majorant(state, psi, est, numerator, &
-                numerator_degree, 1, bound, status, tail)
+        call bind_run_test_gs_checked_source_remainder_context()
+            call gs_checked_fixed_source_majorant(state, psi, est, numerator_operator, &
+                numerator_degree, 1, bound, status, tail_operator)
             audit_time = omp_get_wtime() - before
             if (status /= 0) error stop 'source remainder audit'
             if (bound%hi < error) error stop 'checked bound below true error'
@@ -76,8 +108,10 @@ program test_gs_checked_source_remainder
                     call omp_set_num_threads(threads)
                     do repeat = 1, 3
                         before = omp_get_wtime()
+        call bind_run_test_gs_checked_source_remainder_context()
                         call gs_checked_fixed_source_majorant(state, psi, est, &
-                            numerator, numerator_degree, 1, bound, status, tail)
+                            numerator_operator, numerator_degree, 1, bound, status, &
+                                tail_operator)
                         times(repeat) = omp_get_wtime() - before
                         if (status /= 0) error stop 'scaling audit'
                         if (abs(bound%hi - reference_bound) > &
@@ -90,20 +124,19 @@ program test_gs_checked_source_remainder
         end do
     end do
     bad_tail = .true.
-    call gs_checked_fixed_source_majorant(state, psi, est, numerator, &
-        numerator_degree, 1, bound, status, tail)
+        call bind_run_test_gs_checked_source_remainder_context()
+    call gs_checked_fixed_source_majorant(state, psi, est, numerator_operator, &
+        numerator_degree, 1, bound, status, tail_operator)
     if (status == 0) error stop 'missing source enclosure accepted'
     print '(a)', 'PASS: non-polynomial fixed-source remainder audit'
 contains
-
-    subroutine exact(r, z, value, grad)
-        real(dp), intent(in) :: r, z
-        real(dp), intent(out) :: value, grad(2)
-        real(dp) :: x
-        x = r - r0
-        value = (1 - x*x)*(1 - z*z)
-        grad = [-2*x*(1 - z*z), -2*z*(1 - x*x)]
-    end subroutine exact
+    subroutine bind_run_test_gs_checked_source_remainder_context()
+        ctx%bad_tail => bad_tail
+        ctx%numerator_degree => numerator_degree
+        ctx%state => state
+        numerator_operator%data => ctx
+        tail_operator%data => ctx
+    end subroutine bind_run_test_gs_checked_source_remainder_context
 
     real(dp) function forcing(r, z) result(f)
         real(dp), intent(in) :: r, z
@@ -115,66 +148,6 @@ contains
         real(dp), intent(in) :: r, z, p
         f = forcing(r, z) + 0.0_dp*(cell + p)
     end function source
-
-    subroutine numerator(cell, coefficients, ok)
-        !! R*f = 6(1-z^2)/R + 2(1-x^2). Expand 1/R at the exact stored
-        !! center c, through power numerator_degree-2.
-        integer, intent(in) :: cell
-        type(interval_t), intent(out) :: coefficients(:)
-        logical, intent(out) :: ok
-        type(interval_t) :: r(3), z(3), x(3), v(3), c, p(28), q(28), tmp(28)
-        real(dp) :: center
-        integer :: j, n, power
-        r = interval(state%points(1, state%triangles(1:3, cell)))
-        z = interval(state%points(2, state%triangles(1:3, cell)))
-        x = r - interval(r0)
-        center = sum(state%points(1, state%triangles(1:3, cell)))/3
-        c = interval(center)
-        v = (c - r)/c
-        coefficients = interval(0.0_dp)
-        do power = 0, numerator_degree - 2
-            p = interval(1.0_dp)
-            call verified_bernstein_affine_product(0, p, interval(1.0_dp) - z, q)
-            call verified_bernstein_affine_product(1, q, interval(1.0_dp) + z, p)
-            n = 2
-            do j = 1, power
-                call verified_bernstein_affine_product(n, p, v, tmp)
-                p = tmp; n = n + 1
-            end do
-            do while (n < numerator_degree)
-                call verified_bernstein_elevate(n, p, tmp)
-                p = tmp; n = n + 1
-            end do
-            coefficients = coefficients + interval(6.0_dp)*p(:size(coefficients))/c
-        end do
-        p = interval(1.0_dp)
-        call verified_bernstein_affine_product(0, p, interval(1.0_dp) - x, q)
-        call verified_bernstein_affine_product(1, q, interval(1.0_dp) + x, p)
-        do n = 2, numerator_degree - 1
-            call verified_bernstein_elevate(n, p, tmp)
-            p = tmp
-        end do
-        coefficients = coefficients + interval(2.0_dp)*p(:size(coefficients))
-        ok = .true.
-    end subroutine numerator
-
-    subroutine tail(cell, radius, ok)
-        !! Geometric identity, no transcendental estimate:
-        !! |1/R - sum_{j=0}^k v^j/c| = |v|^(k+1)/R, v=(c-R)/c.
-        !! On this box |1-z^2| <= 1. The affine R hull is exact.
-        integer, intent(in) :: cell
-        type(interval_t), intent(out) :: radius
-        logical, intent(out) :: ok
-        type(interval_t) :: r(3), c, d, v
-        real(dp) :: center
-        r = interval(state%points(1, state%triangles(1:3, cell)))
-        center = sum(state%points(1, state%triangles(1:3, cell)))/3
-        c = interval(center)
-        d = interval(minval(r%lo), maxval(r%hi)) - c
-        v = interval(max(abs(d%lo), abs(d%hi)))/c
-        radius = interval(6.0_dp)*v**(numerator_degree - 1)/interval(minval(r%lo))
-        ok = .not. bad_tail
-    end subroutine tail
 
     subroutine rectangle(max_area, points)
         real(dp), intent(in) :: max_area
@@ -233,7 +206,9 @@ contains
             do q = 1, size(w)
                 call gs_cell_data(state, e, [x(q), y(q)], point, det, shape(:nd), &
                     g(:, :nd), hs(:, :, :nd), st)
-                call exact(point(1), point(2), v, gr)
+        call bind_run_test_gs_checked_source_remainder_context()
+                call run_test_gs_checked_source_remainder_exact(point(1), point(2), &
+                    v, gr)
                 val = val + w(q)*det*sum((gr - matmul(g(:, :nd), &
                     u(state%triangles(:, e))))**2)/point(1)
             end do
@@ -241,4 +216,103 @@ contains
         val = sqrt(val)
     end function energy_error
 
+
+    end subroutine run_test_gs_checked_source_remainder
+
+    subroutine run_test_gs_checked_source_remainder_exact(r, z, value, grad)
+        real(dp), intent(in) :: r, z
+        real(dp), intent(out) :: value, grad(2)
+        real(dp) :: x
+        x = r - r0
+        value = (1 - x*x)*(1 - z*z)
+        grad = [-2*x*(1 - z*z), -2*z*(1 - x*x)]
+    end subroutine run_test_gs_checked_source_remainder_exact
+
+    subroutine run_test_gs_checked_source_remainder_numerator(ctx, cell, &
+        coefficients, ok)
+        type(run_test_gs_checked_source_remainder_context_t), intent(in) :: ctx
+        !! R*f = 6(1-z^2)/R + 2(1-x^2). Expand 1/R at the exact stored
+        !! center c, through power numerator_degree-2.
+        integer, intent(in) :: cell
+        type(interval_t), intent(out) :: coefficients(:)
+        logical, intent(out) :: ok
+        type(interval_t) :: r(3), z(3), x(3), v(3), c, p(28), q(28), tmp(28)
+        real(dp) :: center
+        integer :: j, n, power
+        r = interval(ctx%state%points(1, ctx%state%triangles(1:3, cell)))
+        z = interval(ctx%state%points(2, ctx%state%triangles(1:3, cell)))
+        x = r - interval(r0)
+        center = sum(ctx%state%points(1, ctx%state%triangles(1:3, cell)))/3
+        c = interval(center)
+        v = (c - r)/c
+        coefficients = interval(0.0_dp)
+        do power = 0, ctx%numerator_degree - 2
+            p = interval(1.0_dp)
+            call verified_bernstein_affine_product(0, p, interval(1.0_dp) - z, q)
+            call verified_bernstein_affine_product(1, q, interval(1.0_dp) + z, p)
+            n = 2
+            do j = 1, power
+                call verified_bernstein_affine_product(n, p, v, tmp)
+                p = tmp; n = n + 1
+            end do
+            do while (n < ctx%numerator_degree)
+                call verified_bernstein_elevate(n, p, tmp)
+                p = tmp; n = n + 1
+            end do
+            coefficients = coefficients + interval(6.0_dp)*p(:size(coefficients))/c
+        end do
+        p = interval(1.0_dp)
+        call verified_bernstein_affine_product(0, p, interval(1.0_dp) - x, q)
+        call verified_bernstein_affine_product(1, q, interval(1.0_dp) + x, p)
+        do n = 2, ctx%numerator_degree - 1
+            call verified_bernstein_elevate(n, p, tmp)
+            p = tmp
+        end do
+        coefficients = coefficients + interval(2.0_dp)*p(:size(coefficients))
+        ok = .true.
+    end subroutine run_test_gs_checked_source_remainder_numerator
+
+    subroutine run_test_gs_checked_source_remainder_numerator_binding(self, cell, &
+        coefficients, ok)
+        class(run_test_gs_checked_source_remainder_numerator_t), intent(in) :: self
+        integer, intent(in) :: cell
+        type(interval_t), intent(out) :: coefficients(:)
+        logical, intent(out) :: ok
+        call run_test_gs_checked_source_remainder_numerator(self%data, cell, &
+            coefficients, ok)
+    end subroutine
+
+    subroutine run_test_gs_checked_source_remainder_tail(ctx, cell, radius, ok)
+        type(run_test_gs_checked_source_remainder_context_t), intent(in) :: ctx
+        !! Geometric identity, no transcendental estimate:
+        !! |1/R - sum_{j=0}^k v^j/c| = |v|^(k+1)/R, v=(c-R)/c.
+        !! On this box |1-z^2| <= 1. The affine R hull is exact.
+        integer, intent(in) :: cell
+        type(interval_t), intent(out) :: radius
+        logical, intent(out) :: ok
+        type(interval_t) :: r(3), c, d, v
+        real(dp) :: center
+        r = interval(ctx%state%points(1, ctx%state%triangles(1:3, cell)))
+        center = sum(ctx%state%points(1, ctx%state%triangles(1:3, cell)))/3
+        c = interval(center)
+        d = interval(minval(r%lo), maxval(r%hi)) - c
+        v = interval(max(abs(d%lo), abs(d%hi)))/c
+        radius = interval(6.0_dp)*v**(ctx%numerator_degree - 1)/interval(minval(r%lo))
+        ok = .not. ctx%bad_tail
+    end subroutine run_test_gs_checked_source_remainder_tail
+
+    subroutine run_test_gs_checked_source_remainder_tail_binding(self, cell, radius, ok)
+        class(run_test_gs_checked_source_remainder_tail_t), intent(in) :: self
+        integer, intent(in) :: cell
+        type(interval_t), intent(out) :: radius
+        logical, intent(out) :: ok
+        call run_test_gs_checked_source_remainder_tail(self%data, cell, radius, ok)
+    end subroutine
+end module test_gs_checked_source_remainder_callbacks
+
+program test_gs_checked_source_remainder
+    use test_gs_checked_source_remainder_callbacks, only: &
+        run_test_gs_checked_source_remainder
+    implicit none
+    call run_test_gs_checked_source_remainder()
 end program test_gs_checked_source_remainder

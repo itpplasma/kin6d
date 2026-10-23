@@ -1,4 +1,4 @@
-program test_nonnested_beltrami
+module test_nonnested_beltrami_callbacks
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build, nn_solve, &
@@ -9,10 +9,49 @@ program test_nonnested_beltrami
     use fortfem_meridian_feec_n, only: meridian_load, meridian_lagrange_nodes, &
         meridian_error_norm
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
+
+    use kin6d_mhd_mesh, only: polar_map_t
+    use fortfem_meridian_feec_n, only: meridian_field_t
     implicit none
+    private
+    public :: run_test_nonnested_beltrami
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 6.0_dp, mu = 1.1_dp
+    type :: run_test_nonnested_beltrami_context_t
+        type(free_b_field_t), pointer :: field => null()
+        character(24), pointer :: kind => null()
+        integer, pointer :: mode => null()
+        logical, pointer :: square => null()
+    end type
+
+    type, extends(polar_map_t) :: run_test_nonnested_beltrami_mapping_t
+        type(run_test_nonnested_beltrami_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_nonnested_beltrami_mapping_binding
+    end type
+
+    type, extends(meridian_field_t) :: run_test_nonnested_beltrami_potential_t
+        type(run_test_nonnested_beltrami_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_nonnested_beltrami_potential_binding
+    end type
+
+    type, extends(meridian_field_t) :: run_test_nonnested_beltrami_reference_mode_t
+        type(run_test_nonnested_beltrami_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_nonnested_beltrami_reference_mode_binding
+    end type
+
+    type, extends(meridian_field_t) :: run_test_nonnested_beltrami_forcing_t
+        type(run_test_nonnested_beltrami_context_t), pointer :: data => null()
+    contains
+        procedure :: evaluate => run_test_nonnested_beltrami_forcing_binding
+    end type
+
+contains
+    subroutine run_test_nonnested_beltrami()
+    implicit none
     type(flux_mesh_t) :: mesh
-    type(free_b_field_t) :: field, vacuum, plus, minus
+    type(free_b_field_t) , target :: field, vacuum, plus, minus
     type(beltrami_system_t) :: system
     type(beltrami_report_t) :: report, ref, other
     type(nn_report_t) :: nnreport
@@ -23,9 +62,15 @@ program test_nonnested_beltrami
     real(dp) :: lo, hi, mid, qi, qnorm, l2(3), qscale, weight
     real(dp) :: flux, err(3), point(3), value(EQ_VALUES), r, scale, e
     complex(dp) :: bm(3), bn(3)
-    integer :: st, k, lev, nr, i, j, n, mode
-    logical :: detected, square, cylinder
-    character(24) :: arg, kind
+    integer , target :: st, k, lev, nr, i, j, n, mode
+    logical , target :: detected, square, cylinder
+    character(24) , target :: arg, kind
+        type(run_test_nonnested_beltrami_context_t), target :: ctx
+        type(run_test_nonnested_beltrami_mapping_t), target :: mapping_operator
+        type(run_test_nonnested_beltrami_potential_t), target :: potential_operator
+        type(run_test_nonnested_beltrami_reference_mode_t), target :: &
+            reference_mode_operator
+        type(run_test_nonnested_beltrami_forcing_t), target :: forcing_operator
     call get_command_argument(1, kind)
     call get_command_argument(2, arg); read (arg, *) k
     square = kind == 'manufactured' .or. kind == 'lundquist'
@@ -39,9 +84,11 @@ program test_nonnested_beltrami
         ! The square has exactly affine cells and a known physical boundary.
         ! This separates approximation order from curved-density mapping error.
         if (square) then
-            call flux_mesh_build(rings, 8*nr, 256, 1, mapping, mesh, st)
+        call bind_run_test_nonnested_beltrami_context()
+            call flux_mesh_build(rings, 8*nr, 256, 1, mapping_operator, mesh, st)
         else
-            call flux_mesh_build(rings, 8, 256, 2, mapping, mesh, st)
+        call bind_run_test_nonnested_beltrami_context()
+            call flux_mesh_build(rings, 8, 256, 2, mapping_operator, mesh, st)
         end if
         if (st /= 0) error stop 'Beltrami mesh'
         if (cylinder) then
@@ -60,7 +107,8 @@ program test_nonnested_beltrami
         n = (2*mode + 1)*field%fs%sp(1)%ndof
         allocate (data(n)); data = 0
         if (kind == 'vacuum' .or. kind == 'lundquist') then
-            call meridian_load(field%fs, 1, potential, load, st)
+        call bind_run_test_nonnested_beltrami_context()
+            call meridian_load(field%fs, 1, potential_operator, load, st)
             if (allocated(fixed)) deallocate (fixed, proj)
             allocate (fixed(size(load)), proj(size(load))); fixed = .false.
             call nn_linear_solve(field%fs%mass(1), fixed, load, proj, st)
@@ -122,7 +170,8 @@ program test_nonnested_beltrami
             if (allocated(source)) deallocate (source)
             allocate (source(n)); source = 0
             do mode = 0, 1
-                call meridian_load(field%fs, 1, forcing, load, st)
+        call bind_run_test_nonnested_beltrami_context()
+                call meridian_load(field%fs, 1, forcing_operator, load, st)
                 if (st /= 0) error stop 'MMS source'
                 if (mode == 0) then
                     source(:field%fs%sp(1)%ndof) = real(load, dp)
@@ -133,6 +182,7 @@ program test_nonnested_beltrami
                 end if
             end do
             mode = 1
+        call bind_run_test_nonnested_beltrami_context()
             call beltrami_solve(system, mu, field, report, source=source, &
                 potential=a, dmu=da)
         else if (kind == 'vacuum') then
@@ -149,6 +199,7 @@ program test_nonnested_beltrami
             print '(a,es12.4)', 'NN1 coefficient difference ', e
             if (e > 1.0e-9_dp) error stop 'mu=0 NN1 reduction'
         else
+        call bind_run_test_nonnested_beltrami_context()
             call beltrami_solve(system, mu, field, report, potential=a, dmu=da)
         end if
         if (report%status /= 0) then
@@ -160,9 +211,13 @@ program test_nonnested_beltrami
         if (kind == 'vacuum') stop
         if (lev == 1 .and. cylinder) then
             ref = report; plus = field; minus = field
-            call beltrami_solve(system, mu + 1.0e-5_dp, plus, other, potential=ap)
+        call bind_run_test_nonnested_beltrami_context()
+            call beltrami_solve(system, mu + 1.0e-5_dp, plus, other, &
+                potential=ap)
             if (other%status /= 0) error stop 'positive tangent probe'
-            call beltrami_solve(system, mu - 1.0e-5_dp, minus, other, potential=am)
+        call bind_run_test_nonnested_beltrami_context()
+            call beltrami_solve(system, mu - 1.0e-5_dp, minus, other, &
+                potential=am)
             if (other%status /= 0) error stop 'negative tangent probe'
             e = norm2((ap - am)/2.0e-5_dp - da)/max(1.0_dp, norm2(da))
             print '(a,es12.4)', 'mu tangent error ', e
@@ -189,9 +244,13 @@ program test_nonnested_beltrami
                     -0.95_dp + 1.9_dp*(j - 0.23_dp)/16, 0.37_dp]
                 call nn_point(field, point, value, st)
                 if (st /= 0) error stop 'sample'
-                mode = 0; call reference(point(:2), bm, full=.true.)
+        call bind_run_test_nonnested_beltrami_context()
+                mode = 0; call run_test_nonnested_beltrami_reference(ctx, point(:2), &
+                    bm, full=.true.)
                 if (kind == 'manufactured') then
-                    mode = 1; call reference(point(:2), bn)
+        call bind_run_test_nonnested_beltrami_context()
+                    mode = 1; call run_test_nonnested_beltrami_reference(ctx, &
+                        point(:2), bn)
                     bm = bm + 2*real(bn*exp(cmplx(0.0_dp, point(3), dp)), dp)
                 end if
                 err(lev) = err(lev) + sum(([value(EQ_BR), value(EQ_BPHI), &
@@ -203,11 +262,14 @@ program test_nonnested_beltrami
         err(lev) = sqrt(err(lev)/scale)
         l2(lev) = 0; qscale = 0
         do mode = 0, ubound(field%b, 2)
-            call meridian_error_norm(field%fs, 2, field%b(:, mode), reference_mode, &
+        call bind_run_test_nonnested_beltrami_context()
+            call meridian_error_norm(field%fs, 2, field%b(:, mode), &
+                reference_mode_operator, &
                 qi, st)
             if (st /= 0) error stop 'field error quadrature'
+        call bind_run_test_nonnested_beltrami_context()
             call meridian_error_norm(field%fs, 2, 0*field%b(:, mode), &
-                reference_mode, qnorm, st)
+                reference_mode_operator, qnorm, st)
             weight = merge(1.0_dp, 2.0_dp, mode == 0)
             l2(lev) = l2(lev) + weight*qi**2; qscale = qscale + weight*qnorm**2
         end do
@@ -221,14 +283,17 @@ program test_nonnested_beltrami
     if (e < k - 0.35_dp .or. log(l2(1)/l2(3))/log(4.0_dp) < k - 0.35_dp) &
         error stop 'Beltrami field order'
 contains
-    subroutine mapping(u, theta, x)
-        real(dp), intent(in) :: u, theta
-        real(dp), intent(out) :: x(2)
-        real(dp) :: s
-        s = 1
-        if (square) s = max(abs(cos(theta)), abs(sin(theta)))
-        x = [r0 + u*cos(theta)/s, u*sin(theta)/s]
-    end subroutine
+    subroutine bind_run_test_nonnested_beltrami_context()
+        ctx%field => field
+        ctx%kind => kind
+        ctx%mode => mode
+        ctx%square => square
+        mapping_operator%data => ctx
+        potential_operator%data => ctx
+        reference_mode_operator%data => ctx
+        forcing_operator%data => ctx
+    end subroutine bind_run_test_nonnested_beltrami_context
+
     subroutine square_coordinates(centre, radial_scale, x, u, theta)
         real(dp), intent(in) :: centre(2), radial_scale, x(2)
         real(dp), intent(out) :: u, theta
@@ -250,45 +315,95 @@ contains
         end do
         f = 4*f*(2.0_dp/ns)/3
     end function
-    subroutine potential(x, v)
+
+    end subroutine run_test_nonnested_beltrami
+
+    subroutine run_test_nonnested_beltrami_mapping(ctx, u, theta, x)
+        type(run_test_nonnested_beltrami_context_t), intent(in) :: ctx
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        real(dp) :: s
+        s = 1
+        if (ctx%square) s = max(abs(cos(theta)), abs(sin(theta)))
+        x = [r0 + u*cos(theta)/s, u*sin(theta)/s]
+    end subroutine run_test_nonnested_beltrami_mapping
+
+    subroutine run_test_nonnested_beltrami_mapping_binding(self, u, theta, x)
+        class(run_test_nonnested_beltrami_mapping_t), intent(in) :: self
+        real(dp), intent(in) :: u, theta
+        real(dp), intent(out) :: x(2)
+        call run_test_nonnested_beltrami_mapping(self%data, u, theta, x)
+    end subroutine
+
+    subroutine run_test_nonnested_beltrami_potential(ctx, x, v)
+        type(run_test_nonnested_beltrami_context_t), intent(in) :: ctx
         real(dp), intent(in) :: x(2)
         complex(dp), intent(out) :: v(3)
-        if (kind == 'vacuum') then
+        if (ctx%kind == 'vacuum') then
             v = [cmplx(sin(x(1))*x(2), 0.0_dp, dp), (0.0_dp, 0.0_dp), &
                 cmplx(cos(x(2)), 0.0_dp, dp)]
         else
-            call reference(x, v, full=.true.)
+            call run_test_nonnested_beltrami_reference(ctx, x, v, full=.true.)
             v = v/mu
         end if
+    end subroutine run_test_nonnested_beltrami_potential
+
+    subroutine run_test_nonnested_beltrami_potential_binding(self, x, v)
+        class(run_test_nonnested_beltrami_potential_t), intent(in) :: self
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: v(3)
+        call run_test_nonnested_beltrami_potential(self%data, x, v)
     end subroutine
-    subroutine reference_mode(x, b)
+
+    subroutine run_test_nonnested_beltrami_reference_mode(ctx, x, b)
+        type(run_test_nonnested_beltrami_context_t), intent(in) :: ctx
         real(dp), intent(in) :: x(2)
         complex(dp), intent(out) :: b(3)
-        call reference(x, b)
+        call run_test_nonnested_beltrami_reference(ctx, x, b)
+    end subroutine run_test_nonnested_beltrami_reference_mode
+
+    subroutine run_test_nonnested_beltrami_reference_mode_binding(self, x, v)
+        class(run_test_nonnested_beltrami_reference_mode_t), intent(in) :: self
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: v(3)
+        call run_test_nonnested_beltrami_reference_mode(self%data, x, v)
     end subroutine
-    subroutine reference(x, b, full)
+
+    subroutine run_test_nonnested_beltrami_reference(ctx, x, b, full)
+        type(run_test_nonnested_beltrami_context_t), intent(in) :: ctx
         real(dp), intent(in) :: x(2)
         complex(dp), intent(out) :: b(3)
         logical, optional, intent(in) :: full
         complex(dp) :: f(3)
         real(dp) :: r, theta
-        if (kind == 'lundquist') then
+        if (ctx%kind == 'lundquist') then
             r = norm2(x - [r0, 0.0_dp]); theta = atan2(x(2), x(1) - r0)
             b = [cmplx(bessel_j1(mu*r)*sin(theta), 0.0_dp, dp), &
                 cmplx(bessel_j0(mu*r), 0.0_dp, dp), &
                 cmplx(-bessel_j1(mu*r)*cos(theta), 0.0_dp, dp)]
-            if (.not. present(full)) b(2) = b(2) - field%f_vac/r0
+            if (.not. present(full)) b(2) = b(2) - ctx%field%f_vac/r0
         else
-            call exact(x, b, f)
+            call run_test_nonnested_beltrami_exact(ctx, x, b, f)
         end if
-    end subroutine
-    subroutine forcing(x, v)
+    end subroutine run_test_nonnested_beltrami_reference
+
+    subroutine run_test_nonnested_beltrami_forcing(ctx, x, v)
+        type(run_test_nonnested_beltrami_context_t), intent(in) :: ctx
         real(dp), intent(in) :: x(2)
         complex(dp), intent(out) :: v(3)
         complex(dp) :: b(3)
-        call exact(x, b, v)
+        call run_test_nonnested_beltrami_exact(ctx, x, b, v)
+    end subroutine run_test_nonnested_beltrami_forcing
+
+    subroutine run_test_nonnested_beltrami_forcing_binding(self, x, v)
+        class(run_test_nonnested_beltrami_forcing_t), intent(in) :: self
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: v(3)
+        call run_test_nonnested_beltrami_forcing(self%data, x, v)
     end subroutine
-    subroutine exact(x, b, f)
+
+    subroutine run_test_nonnested_beltrami_exact(ctx, x, b, f)
+        type(run_test_nonnested_beltrami_context_t), intent(in) :: ctx
         real(dp), intent(in) :: x(2)
         complex(dp), intent(out) :: b(3), f(3)
         real(dp) :: y, z, p, px, pz, pxx, pzz, pxz, c
@@ -298,7 +413,7 @@ contains
         px = -4*y*(1 - y*y)*(1 - z*z)**2; pz = -4*z*(1 - z*z)*(1 - y*y)**2
         pxx = (12*y*y - 4)*(1 - z*z)**2; pzz = (12*z*z - 4)*(1 - y*y)**2
         pxz = 16*y*z*(1 - y*y)*(1 - z*z); c = 0.3_dp
-        if (mode == 0) then
+        if (ctx%mode == 0) then
             b = [cmplx(-pz/x(1), 0.0_dp, dp), (0.0_dp, 0.0_dp), &
                 cmplx(px/x(1), 0.0_dp, dp)]
             curlb = [(0.0_dp, 0.0_dp), &
@@ -315,5 +430,11 @@ contains
                 dx(2) + b(2)/x(1) - cmplx(0.0_dp, 1.0_dp, dp)*b(1)/x(1)]
         end if
         f = curlb - mu*b
-    end subroutine
-end program
+    end subroutine run_test_nonnested_beltrami_exact
+end module test_nonnested_beltrami_callbacks
+
+program test_nonnested_beltrami
+    use test_nonnested_beltrami_callbacks, only: run_test_nonnested_beltrami
+    implicit none
+    call run_test_nonnested_beltrami()
+end program test_nonnested_beltrami

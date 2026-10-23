@@ -62,6 +62,32 @@ module kin6d_quantum_fock
         integer, allocatable :: hptr(:), hcol(:), vptr(:), vcol(:)
         logical :: valid = .false., bounded = .false.
     end type
+    type, abstract :: fock_sink_t
+    contains
+        procedure(fock_emit_t), deferred :: emit
+    end type
+    abstract interface
+        subroutine fock_emit_t(self, s, u, pr, pi)
+            import :: fock_sink_t, i64, dp
+            class(fock_sink_t), intent(inout) :: self
+            integer(i64), intent(in) :: s, u
+            real(dp), intent(in) :: pr, pi
+        end subroutine
+    end interface
+    type, extends(fock_sink_t) :: dense_rdm_sink_t
+        real(dp), pointer :: real_part(:, :) => null(), imaginary_part(:, :) => null()
+    contains
+        procedure :: emit => dense_rdm_emit
+    end type
+    type, extends(fock_sink_t) :: sparse_rdm_sink_t
+        integer(i64), allocatable :: keys(:)
+        real(dp), allocatable :: pr(:), pi(:)
+        integer :: raw = 0
+        integer(i64) :: m3
+    contains
+        procedure :: emit => sparse_rdm_emit
+    end type
+
 contains
     subroutine init_fock_basis(basis, m, n, max_states, &
                                max_bytes, ok, status)
@@ -1517,13 +1543,7 @@ contains
         type(fock_basis_t), intent(in) :: basis
         real(dp), intent(in) :: bra_re(:), bra_im(:), ket_re(:), ket_im(:)
         integer, intent(in) :: order
-        interface
-            subroutine emit(s, u, pr, pi)
-                import :: i64, dp
-                integer(i64), intent(in) :: s, u
-                real(dp), intent(in) :: pr, pi
-            end subroutine
-        end interface
+        class(fock_sink_t), intent(inout) :: emit
         integer(i64), allocatable :: rk(:), lk(:), rb(:), lb(:), keys(:)
         real(dp), allocatable :: akr(:), aki(:), abr(:), abi(:)
         integer, allocatable :: perm(:)
@@ -1550,7 +1570,7 @@ contains
                     if (iy < 1) cycle
                     pr = abr(iy)*akr(ix) + abi(iy)*aki(ix)
                     pi = abr(iy)*aki(ix) - abi(iy)*akr(ix)
-                    call emit(lk(ix), lb(iy), pr, pi)
+                    call emit%emit(lk(ix), lb(iy), pr, pi)
                 end do
             end do
             first = last + 1
@@ -1565,8 +1585,9 @@ contains
                                     gr, gi, g2r, g2i, ok)
         type(fock_basis_t), intent(in) :: basis
         real(dp), intent(in) :: bra_re(:), bra_im(:), ket_re(:), ket_im(:)
-        real(dp), intent(out) :: gr(:, :), gi(:, :), g2r(:, :), g2i(:, :)
+        real(dp), intent(out), target :: gr(:, :), gi(:, :), g2r(:, :), g2i(:, :)
         logical, intent(out) :: ok
+        type(dense_rdm_sink_t) :: one, two
 
         ok = .false.
         gr = 0; gi = 0; g2r = 0; g2i = 0
@@ -1578,27 +1599,14 @@ contains
             any(shape(g2i) /= [basis%p, basis%p])) return
         if (.not. all(ieee_is_finite(bra_re)) .or. .not. all(ieee_is_finite(bra_im))) return
         if (.not. all(ieee_is_finite(ket_re)) .or. .not. all(ieee_is_finite(ket_im))) return
+        one%real_part => gr; one%imaginary_part => gi
+        two%real_part => g2r; two%imaginary_part => g2i
         if (basis%n >= 1) call factorized_products(basis, bra_re, bra_im, ket_re, &
-                                                   ket_im, 1, add_one)
+                                                   ket_im, 1, one)
         if (basis%n >= 2) call factorized_products(basis, bra_re, bra_im, ket_re, &
-                                                   ket_im, 2, add_two)
+                                                   ket_im, 2, two)
         ok = all(ieee_is_finite(gr)) .and. all(ieee_is_finite(gi)) .and. &
              all(ieee_is_finite(g2r)) .and. all(ieee_is_finite(g2i))
-    contains
-        subroutine add_one(s, u, pr, pi)
-            integer(i64), intent(in) :: s, u
-            real(dp), intent(in) :: pr, pi
-            real(dp) :: next
-            call qf_add(gr(s, u), pr, next); gr(s, u) = next
-            call qf_add(gi(s, u), pi, next); gi(s, u) = next
-        end subroutine
-        subroutine add_two(s, u, pr, pi)
-            integer(i64), intent(in) :: s, u
-            real(dp), intent(in) :: pr, pi
-            real(dp) :: next
-            call qf_add(g2r(s, u), pr, next); g2r(s, u) = next
-            call qf_add(g2i(s, u), pi, next); g2i(s, u) = next
-        end subroutine
     end subroutine
 
     !> Three-body RDM Gamma3_(t),(u) = <psi|a_u1^dagger a_u2^dagger a_u3^dagger
@@ -1641,51 +1649,66 @@ contains
         real(dp), allocatable, intent(out) :: vr(:), vi(:)
         integer, intent(out) :: count
         logical, intent(out) :: ok
-        integer(i64), allocatable :: keys(:)
-        real(dp), allocatable :: pr_(:), pi_(:)
         integer, allocatable :: perm(:)
-        integer :: raw, x, y
+        integer :: x, y
+        type(sparse_rdm_sink_t) :: sink
 
         ok = .false.; count = 0
         allocate (tkey(0), ukey(0), vr(0), vi(0))
         if (.not. basis%valid .or. basis%n < order) return
         if (size(re) /= basis%d .or. size(im) /= basis%d) return
         if (.not. all(ieee_is_finite(re)) .or. .not. all(ieee_is_finite(im))) return
-        allocate (keys(1024), pr_(1024), pi_(1024))
-        raw = 0
-        call factorized_products(basis, re, im, re, im, order, store)
-        allocate (perm(raw))
-        call sort_key_order(keys(1:raw), perm)
+        allocate (sink%keys(1024), sink%pr(1024), sink%pi(1024))
+        sink%raw = 0
+        sink%m3 = m3
+        call factorized_products(basis, re, im, re, im, order, sink)
+        allocate (perm(sink%raw))
+        call sort_key_order(sink%keys(1:sink%raw), perm)
         deallocate (tkey, ukey, vr, vi)
-        allocate (tkey(raw), ukey(raw), vr(raw), vi(raw))
+        allocate (tkey(sink%raw), ukey(sink%raw), vr(sink%raw), vi(sink%raw))
         x = 1
-        do while (x <= raw)
+        do while (x <= sink%raw)
             y = x
             count = count + 1
-            tkey(count) = keys(perm(x))/m3; ukey(count) = mod(keys(perm(x)), m3)
+            tkey(count) = sink%keys(perm(x))/m3; ukey(count) = &
+                mod(sink%keys(perm(x)), m3)
             vr(count) = 0; vi(count) = 0
-            do while (y <= raw)
-                if (keys(perm(y)) /= keys(perm(x))) exit
-                vr(count) = vr(count) + pr_(perm(y))
-                vi(count) = vi(count) + pi_(perm(y))
+            do while (y <= sink%raw)
+                if (sink%keys(perm(y)) /= sink%keys(perm(x))) exit
+                vr(count) = vr(count) + sink%pr(perm(y))
+                vi(count) = vi(count) + sink%pi(perm(y))
                 y = y + 1
             end do
             x = y
         end do
         ok = all(ieee_is_finite(vr(1:count))) .and. all(ieee_is_finite(vi(1:count)))
-    contains
-        subroutine store(s, u, pr, pi)
+    end subroutine
+    subroutine dense_rdm_emit(self, s, u, pr, pi)
+        class(dense_rdm_sink_t), intent(inout) :: self
+        integer(i64), intent(in) :: s, u
+        real(dp), intent(in) :: pr, pi
+        real(dp) :: next
+        call qf_add(self%real_part(s, u), pr, next); self%real_part(s, u) = next
+        call qf_add(self%imaginary_part(s, u), pi, next)
+        self%imaginary_part(s, u) = next
+    end subroutine
+
+    subroutine sparse_rdm_emit(self, s, u, pr, pi)
+        class(sparse_rdm_sink_t), intent(inout) :: self
             integer(i64), intent(in) :: s, u
             real(dp), intent(in) :: pr, pi
             integer(i64), allocatable :: kt(:)
             real(dp), allocatable :: rt(:)
-            if (raw == size(keys)) then
-                allocate (kt(2*raw)); kt(1:raw) = keys; call move_alloc(kt, keys)
-                allocate (rt(2*raw)); rt(1:raw) = pr_; call move_alloc(rt, pr_)
-                allocate (rt(2*raw)); rt(1:raw) = pi_; call move_alloc(rt, pi_)
+            if (self%raw == size(self%keys)) then
+                allocate (kt(2*self%raw)); kt(1:self%raw) = self%keys; call &
+                    move_alloc(kt, self%keys)
+                allocate (rt(2*self%raw)); rt(1:self%raw) = self%pr; call &
+                    move_alloc(rt, self%pr)
+                allocate (rt(2*self%raw)); rt(1:self%raw) = self%pi; call &
+                    move_alloc(rt, self%pi)
             end if
-            raw = raw + 1
-            keys(raw) = s*m3 + u; pr_(raw) = pr; pi_(raw) = pi
+            self%raw = self%raw + 1
+            self%keys(self%raw) = s*self%m3 + u; self%pr(self%raw) = pr; &
+                self%pi(self%raw) = pi
         end subroutine
-    end subroutine
 end module kin6d_quantum_fock

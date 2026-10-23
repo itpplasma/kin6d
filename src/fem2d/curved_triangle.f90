@@ -29,6 +29,18 @@ module kin6d_curved_triangle
             real(dp), intent(out) :: point(2)
         end subroutine
     end interface
+    type, abstract, public :: boundary_curve_t
+    contains
+        procedure(boundary_curve_evaluate), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine boundary_curve_evaluate(self, t, point)
+            import :: dp, boundary_curve_t
+            class(boundary_curve_t), intent(in) :: self
+            real(dp), intent(in) :: t
+            real(dp), intent(out) :: point(2)
+        end subroutine
+    end interface
 contains
     subroutine initialize_periodic_curve(curve, points, status)
         type(periodic_curve_t), intent(out) :: curve
