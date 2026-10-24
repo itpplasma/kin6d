@@ -490,3 +490,16 @@ source/provider/runtime checks and owned cleanup remain mandatory, and a
 separate controller release is required before submission. Results and byte
 maps remain outside Git under the registered run record
 `sp1-production-history-20261025-01`; there is no automatic retry or promotion.
+
+The released observation, job 3364683, completed in 45 seconds. Both original
+31-step event sequences and terminal rows reproduced exactly, all source,
+runtime, module and executable checks passed, and owned cleanup found no
+remaining process. The first 216 factor-history records agree through iteration
+25, trial 4; the next records differ only after the known acceptance split.
+Both actors perform one analysis with zero factor-status failures, followed by
+86 and 85 refactor reuses (87 and 86 total factorizations). Their initial state
+bytes agree, while the initial reduced gradients already differ, and state
+bytes differ from the first accepted step. This rules out a differing logical
+refactor policy as the first observed divergence and leaves the numerical
+arithmetic and endpoint cause unresolved. The original P6 order gate still
+fails; no source repair or production qualification follows.
