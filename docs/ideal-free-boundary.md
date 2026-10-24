@@ -654,3 +654,35 @@ dense harmonic Hessian, compares its full spectrum with sparse inertia at
 three shifts, checks the Lanczos pair against its residual allowance, and
 rejects a nonaxisymmetric input. The existing generated cylinder identities,
 helical sign oracle and unconverged inverse-iteration rejection remain active.
+
+## Registered single curved-pair diagnostic (25 October 2026)
+
+The next B1 check isolates the original logical panel pair (1,2) on the
+public Landreman coupling geometry before any full boundary assembly or
+equilibrium response. It uses the original a364188e KIN6D geometry with
+FortFEM 3804f58e, the same axisymmetric chain32/nphi12 cubic nodes and normals,
+and the original degree-eight rule, four-degree increments, degree96 cap,
+200-million evaluation cap per rule, absolute tolerance 1e-9 and relative
+tolerance 1e-3. The explicit shared-edge chart is compared with the original
+rule on that same pair, without an affine replay, fitting or a larger panel
+set. A candidate status0 is a successive-rule estimator rather than a curved
+accuracy certificate, and status3 remains a failure.
+
+The existing native executable has no safe single-pair selector. The bounded
+scratch adapter therefore qualifies strict argument rejection and the exact
+geometry before evaluating the original and candidate rules. The original
+status3 must reproduce before the candidate runs. Default consumer behavior,
+numerical leaves, stopping comparisons and failure outputs remain unchanged.
+The complete archived trace audit of build3364580 exposed an unpinned shell
+provider, so that historical build is not given a restored closed-provenance
+claim. The fresh packet binds the exact shell and symlink chain, and its parser
+rejects unmatched, malformed and unresolved successful trace records.
+
+The proposed single sCluster job reserves four CPUs on node18 for20 minutes
+with a47.2 GiB guard and a maximum charge of4/3 core hours. Native selector and
+geometry qualification precede the one-pair measurement within the same
+bounded allocation. Exact source/provider checks and raw per-degree evidence
+remain mandatory. The controller reviews and releases the exact packet
+separately; results stay outside Git under run record
+`b1-curved-pair-20261025-01`. No full response, equilibrium admission, automatic
+retry or source promotion follows from this diagnostic.
