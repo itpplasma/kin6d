@@ -461,3 +461,45 @@ N = 0; reuse of the MUMPS symbolic analysis across Newton steps (needs a
 refactor entry point in fortsparse); the current-constrained profile f(chi)
 for forward cases; the seed order deficit above; 3D cases and free boundary;
 the map -> core state adapter and the map-lane D3 gate in the core.
+
+## Registered P6 production-history diagnostic (25 October 2026)
+
+The shaped P6 exact-flux ladder remains below its original order gate: the
+observed order is 6.277, while the required order is 6.6 on meshes 12/24/48
+with quadrature order 13, relative gradient tolerance 1e-7 and 600 iterations.
+The retained state24 replay in job 3363692 did not turn the measured
+fresh-versus-reused step difference into a changed trust-cap decision, so it
+does not replace the original production factor history.
+
+A bounded observation will compile the original baseline 1bc2fce3 and candidate
+d1407abd with the actor-specific source/module recipe qualified by job
+3363167. It will run their original n48 trajectories, preserve every numerical
+statement and record the first 25 predecessor states and reduced gradients,
+together with the existing factor done/reused flags and analysis/factor counts.
+Every original trace event and final native row must match the retained actor
+log exactly after filtering only the new observational records. The new
+records describe the logical factor chain and do not serialize factor memory
+or establish its correctness. No fresh-factor substitution, common-state
+action, dense solve, tolerance change or restored-order claim is included.
+
+The proposed single sCluster job reserves four CPUs on node20 for five minutes
+with a 47.2 GiB guard, a shared 250-second compile/native deadline and a maximum
+charge of one third of a core hour. The more extensive parent job 3363167 took
+161 seconds, which is a sizing basis rather than a runtime guarantee. Exact
+source/provider/runtime checks and owned cleanup remain mandatory, and a
+separate controller release is required before submission. Results and byte
+maps remain outside Git under the registered run record
+`sp1-production-history-20261025-01`; there is no automatic retry or promotion.
+
+The released observation, job 3364683, completed in 45 seconds. Both original
+31-step event sequences and terminal rows reproduced exactly, all source,
+runtime, module and executable checks passed, and owned cleanup found no
+remaining process. The first 216 factor-history records agree through iteration
+25, trial 4; the next records differ only after the known acceptance split.
+Both actors perform one analysis with zero factor-status failures, followed by
+86 and 85 refactor reuses (87 and 86 total factorizations). Their initial state
+bytes agree, while the initial reduced gradients already differ, and state
+bytes differ from the first accepted step. This rules out a differing logical
+refactor policy as the first observed divergence and leaves the numerical
+arithmetic and endpoint cause unresolved. The original P6 order gate still
+fails; no source repair or production qualification follows.
