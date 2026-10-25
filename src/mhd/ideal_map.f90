@@ -1030,7 +1030,9 @@ contains
 
     subroutine ideal_map_hessian(map, x, matrix)
         ! Assembled coefficient Hessian (all Fourier modes coupled) as CSR. The
-        ! sparsity pattern of a matrix already built for this map is reused.
+        ! sparsity pattern of a matrix already built for this map is reused, with
+        ! the element-to-CSR position map cached so that the assembly does one
+        ! binary search per entry only once.
         ! Per cell the weighted point Hessians hv(12, 12) of v = (q, Q) are
         ! contracted in stages instead of one rank update per point:
         !   K[(r,c),(r',c')](m,m',g) = sum_j T_r(m,j) T_r'(m',j) hv_j      (planes)
@@ -1139,7 +1141,8 @@ contains
         deallocate (hwa, hwb, hwc, ka, kb, kc, ks, yw, ft, full, half)
         !$omp end parallel
         if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
-            call csr_build_pattern(map%nred, map%redconn, .false., matrix)
+            call csr_build_pattern(map%nred, map%redconn, .false., matrix, &
+                with_slots=.true.)
         call csr_assemble_blocks(matrix, map%redconn, blocks)
     end subroutine
 
