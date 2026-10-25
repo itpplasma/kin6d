@@ -6,12 +6,15 @@ module kin6d_equilibrium_boundary_3d
     use fortfem_parametric_laplace_bem_3d, only: bem_surface_t, bem_operators_t, &
                                                  bem_exterior_dtn_t, build_exterior_dtn
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
-                                           bem_pair_report_t, assemble_parametric_bem_p2
+                                           bem_pair_report_t, assemble_parametric_bem_p2, &
+                                           assemble_parametric_bem_p2_circulant
+    use fortfem_bem_circulant, only: bem_circulant_t
     use fortfem_exterior_harmonic_fields, only: assemble_exterior_harmonics, &
                                                 prescribe_exterior_periods
     implicit none
     private
     public :: gamma_c_3d_t, gamma_c_3d_build, gamma_c_3d_energy, assignment(=)
+    public :: gamma_c_3d_build_periodic
     public :: gamma_c_3d_harmonics
     type :: gamma_c_3d_t
         real(dp), allocatable :: restriction(:, :), s(:, :)
@@ -60,6 +63,62 @@ contains
         boundary%restriction = restriction
         boundary%s = matmul(transpose(restriction), matmul(s, restriction))
         boundary%genus = op%genus
+    end subroutine
+    subroutine gamma_c_3d_build_periodic(surface, faces, nsector, restriction, &
+                                         options, boundary, report, status)
+        !! R2 on a surface with nsector identical consecutive rotation sectors
+        !! about z (field periods), for traces that repeat in every sector
+        !! (the restriction of nfp-periodic Fourier data). FortFEM assembles
+        !! the block-circulant operators from the target-sector-zero pairs
+        !! only. S, V, K, M are block circulant, so on sector-repeating data
+        !! only their zero harmonic X_0 = sum_s B_X(s) acts:
+        !!   R^T S R = nsector R_0^T S_0 R_0,
+        !!   S_0 = W_0 + J_0^T V_0^{-1} J_0,  J_0 = M_0/2 - K_0,
+        !! with R_0 the restriction rows of one sector (exact algebra, one
+        !! sector-sized dense DtN instead of the full-surface one).
+        !! status 3: the restriction does not repeat over the sectors.
+        class(bem_surface_t), intent(in) :: surface
+        integer, intent(in) :: faces(:, :), nsector
+        real(dp), intent(in) :: restriction(:, :)
+        type(bem_pair_options_t), intent(in) :: options
+        type(gamma_c_3d_t), intent(out) :: boundary
+        type(bem_pair_report_t), intent(out) :: report
+        integer, intent(out) :: status
+        type(bem_circulant_t) :: cop
+        type(bem_operators_t) :: op0
+        type(bem_exterior_dtn_t) :: exterior
+        real(dp), allocatable :: s0(:, :), r0(:, :)
+        integer, allocatable :: td(:, :), fd(:, :)
+        integer :: r
+        real(dp) :: scale
+        status = 1; report = bem_pair_report_t()
+        if (nsector < 1) return
+        if (size(restriction, 2) < 1) return
+        if (.not. all(ieee_is_finite(restriction))) return
+        call assemble_parametric_bem_p2_circulant(surface, faces, nsector, options, &
+                                                  cop, td, fd, report, status)
+        if (status /= 0) return
+        status = 1
+        if (size(restriction, 1) /= size(cop%w%row_dofs)) return
+        r0 = restriction(cop%w%row_dofs(:, 1), :)
+        scale = max(1.0_dp, maxval(abs(r0)))
+        status = 3
+        do r = 2, nsector
+            if (maxval(abs(restriction(cop%w%row_dofs(:, r), :) - r0)) &
+                > 1.0e-12_dp*scale) return
+        end do
+        op0%v = sum(cop%v%blocks, dim=3)
+        op0%k = sum(cop%k%blocks, dim=3)
+        op0%w = sum(cop%w%blocks, dim=3)
+        op0%mass = sum(cop%mass%blocks, dim=3)
+        op0%genus = cop%genus
+        call build_exterior_dtn(op0, exterior, status)
+        if (status /= 0) return
+        call exterior%matrix(s0, status)
+        if (status /= 0) return
+        boundary%restriction = restriction
+        boundary%s = nsector*matmul(transpose(r0), matmul(s0, r0))
+        boundary%genus = cop%genus
     end subroutine
     subroutine gamma_c_3d_harmonics(boundary, surface, faces, trace_dofs, degree, &
                  vertices, offsets, periods, prescribed, independent, tolerance, status)

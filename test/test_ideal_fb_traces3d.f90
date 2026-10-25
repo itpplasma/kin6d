@@ -1,21 +1,23 @@
 module ideal_fb_traces3d_test_support
-    ! Frozen data of test_ideal_fb_circuits and an nfp = 3 rippled
-    ! cylindrical chart, X = (rho cos phi, rho sin phi, zeta) with
-    ! rho = R + eps cos(3 phi), zeta = Z + eps sin(3 phi), so that the
-    ! coupling surface H(gamma x [0, 2 pi)) is not axisymmetric.
+    ! Frozen data of test_ideal_fb_circuits, in (R, Z) for the cylindrical
+    ! chart and pulled back to the normal plane (q1, q2) = (Z, R - 3) of an
+    ! nfp = 3 helical-axis curve chart, so that the coupling surface
+    ! H(gamma x [0, 2 pi)) is not axisymmetric. The curve chart is the real
+    ! plasma chart of the nested-map lane (kin6d_equilibrium_chart), not a
+    ! test extension of the cylindrical chart.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_ideal_map, only: ideal_frozen_t
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t
+    use kin6d_equilibrium_chart, only: curve_chart_t
     implicit none
     private
+    public :: helical_chart
     type, extends(ideal_frozen_t), public :: elliptic_field_t
     contains
         procedure :: evaluate => elliptic_evaluate
     end type
-    type, extends(cylindrical_chart_t), public :: rippled_chart_t
-        real(dp) :: eps = 0
+    type, extends(ideal_frozen_t), public :: elliptic_curve_field_t
     contains
-        procedure :: jet => rippled_jet
+        procedure :: evaluate => elliptic_curve_evaluate
     end type
 contains
     subroutine elliptic_evaluate(field, point, chi, chi_gradient, b3, pressure)
@@ -28,25 +30,32 @@ contains
         pressure = 1.0e4_dp*max(0.0_dp, 1 - chi/0.18_dp)
     end subroutine
 
-    pure subroutine rippled_jet(chart, q, x, d1, d2, d3)
-        class(rippled_chart_t), intent(in) :: chart
-        real(dp), intent(in) :: q(3)
-        real(dp), intent(out) :: x(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
-        real(dp) :: c, s, c3, s3, r(0:3), z(1:3), v(3)
-        c = cos(q(3)); s = sin(q(3)); c3 = cos(3*q(3)); s3 = sin(3*q(3))
-        r = [q(1) + chart%eps*c3, -3*chart%eps*s3, -9*chart%eps*c3, 27*chart%eps*s3]
-        z = [3*chart%eps*c3, -9*chart%eps*s3, -27*chart%eps*c3]
-        x = [r(0)*c, r(0)*s, q(2) + chart%eps*s3]
-        d1 = 0; d2 = 0; d3 = 0
-        d1(:, 1) = [c, s, 0.0_dp]; d1(:, 2) = [0.0_dp, 0.0_dp, 1.0_dp]
-        d1(:, 3) = [r(1)*c - r(0)*s, r(1)*s + r(0)*c, z(1)]
-        v = [-s, c, 0.0_dp]
-        d2(:, 1, 3) = v; d2(:, 3, 1) = v
-        d2(:, 3, 3) = [r(2)*c - 2*r(1)*s - r(0)*c, r(2)*s + 2*r(1)*c - r(0)*s, z(2)]
-        v = [-c, -s, 0.0_dp]
-        d3(:, 1, 3, 3) = v; d3(:, 3, 1, 3) = v; d3(:, 3, 3, 1) = v
-        d3(:, 3, 3, 3) = [r(3)*c - 3*r(2)*s - 3*r(1)*c + r(0)*s, &
-            r(3)*s + 3*r(2)*c - 3*r(1)*s - r(0)*c, z(3)]
+    subroutine elliptic_curve_evaluate(field, point, chi, chi_gradient, b3, pressure)
+        ! Orientation-changing pullback (R, Z) = (3 + q2, q1), as
+        ! relabelled_landreman_t of test_curve_chart_solver.
+        class(elliptic_curve_field_t), intent(in) :: field
+        real(dp), intent(in) :: point(2)
+        real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
+        type(elliptic_field_t) :: original
+        real(dp) :: gradient(2)
+        call original%evaluate([3 + point(2), point(1)], chi, gradient, b3, pressure)
+        chi = -chi; chi_gradient = -gradient([2, 1])
+    end subroutine
+
+    subroutine helical_chart(chart, eps)
+        ! Axis R = 3 + eps cos(3 phi), Z = eps sin(3 phi) as full-turn
+        ! Cartesian Fourier modes, default (z) guide.
+        type(curve_chart_t), intent(out) :: chart
+        real(dp), intent(in) :: eps
+        real(dp) :: c(3, 0:4), s(3, 0:4)
+        integer :: st
+        c = 0; s = 0
+        c(1, 1) = 3; s(2, 1) = 3
+        c(1, 2) = eps/2; s(2, 2) = -eps/2
+        c(1, 4) = eps/2; s(2, 4) = eps/2
+        s(3, 3) = eps
+        call chart%init(c, s, 3, st)
+        if (st /= 0) error stop 'helical curve chart'
     end subroutine
 end module ideal_fb_traces3d_test_support
 
@@ -57,7 +66,8 @@ program test_ideal_fb_traces3d
     !   axisymmetric  cylindrical chart: per-circuit and background full-turn
     !                 traces, F_k and closures equal those of the meridional
     !                 path (ideal_fb_drive_traces) to 1e-12.
-    !   helical       rippled nfp = 3 chart (non-axisymmetric Gamma_c): Gauss
+    !   helical       nfp = 3 helical-axis curve chart (non-axisymmetric
+    !                 Gamma_c, ideal_fb_init on the real chart): Gauss
     !                 (net flux), Ampere (F_k), superposition of circuits,
     !                 thread invariance, and JVP/adjoint identities of the
     !                 residual with a frozen R2 exterior.
@@ -66,11 +76,25 @@ program test_ideal_fb_traces3d
     !                 turns, identical traces, and kin6d Biot-Savart of each
     !                 group against libneo's neo_biotsavart.
     !   scaling       (not a CTest) trace-build strong scaling over threads.
+    !   exterior      R2 exterior of the helical Gamma_c: the field-period
+    !                 (block-circulant) build against the exact full-surface
+    !                 DtN of the same circulant operators (roundoff), against
+    !                 the dense all-pairs build (pair quadrature tolerance),
+    !                 symmetry and semidefiniteness, and thread invariance.
+    !   exterior-scaling (not a CTest) cost and strong scaling of both builds.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     !$ use omp_lib, only: omp_set_num_threads, omp_get_max_threads, omp_get_wtime
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
-    use kin6d_equilibrium_chart, only: cylindrical_chart_t, ideal_chart_t
+    use kin6d_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t, &
+        ideal_chart_t
     use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
+    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d, ideal_fb_surface, &
+        coupling_surface_t
+    use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
+        bem_pair_report_t, assemble_parametric_bem_p2_circulant
+    use fortfem_parametric_laplace_bem_3d, only: bem_operators_t, &
+        bem_exterior_dtn_t, build_exterior_dtn
+    use fortfem_bem_circulant, only: bem_circulant_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &
         IDEAL_FB_OK
@@ -83,7 +107,8 @@ program test_ideal_fb_traces3d
     use neo_makegrid_coils, only: makegrid_coils_t, read_makegrid_coils, &
         makegrid_to_biotsavart
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
-    use ideal_fb_traces3d_test_support, only: elliptic_field_t, rippled_chart_t
+    use ideal_fb_traces3d_test_support, only: elliptic_field_t, &
+        elliptic_curve_field_t, helical_chart
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = coil_mu0
     real(dp), parameter :: rc = 3.0_dp, ac = 1.5_dp, bc = 2.0_dp
@@ -103,6 +128,10 @@ program test_ideal_fb_traces3d
         call makegrid
     case ('scaling')
         call scaling
+    case ('exterior')
+        call exterior(6, 9, .true.)
+    case ('exterior-scaling')
+        call exterior(12, 18, .false.)
     case default
         error stop 'unknown mode'
     end select
@@ -111,6 +140,20 @@ contains
         real(dp), intent(in) :: t
         real(dp), intent(out) :: point(2)
         point = [rc + ac*cos(2*pi*t), bc*sin(2*pi*t)]
+    end subroutine
+
+    subroutine gamma_c_curve(t, point)
+        ! The ellipse of gamma_c in (q1, q2) = (Z, R - 3), counter-clockwise.
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        point = [bc*cos(2*pi*t), ac*sin(2*pi*t)]
+    end subroutine
+
+    subroutine gamma_c_shifted(t, point)
+        real(dp), intent(in) :: t
+        real(dp), intent(out) :: point(2)
+        call gamma_c_curve(t, point)
+        point(1) = point(1) + 3
     end subroutine
 
     subroutine filament(r, z, k, bcos, bsin)
@@ -192,31 +235,58 @@ contains
     end subroutine
 
     subroutine build_fb(fb, chart, ncontour, ntor)
+        ! Cylindrical chart: Gamma_c and Gamma_p in (R, Z). Curve chart: the
+        ! same ellipses in the normal plane (q1, q2) = (Z, R - 3), counter-
+        ! clockwise, with the pulled-back frozen field.
         type(ideal_fb_t), intent(out) :: fb
         class(ideal_chart_t), intent(in) :: chart
         integer, intent(in), optional :: ncontour, ntor
         type(gs_state_t) :: mesh
         type(elliptic_field_t) :: field
+        type(elliptic_curve_field_t) :: curve_field
         real(dp), allocatable :: contour(:, :), chain(:, :)
-        real(dp) :: h
+        real(dp) :: h, t
         integer :: j, st, nb, nt
+        logical :: curve
         nb = 16; nt = 1
         if (present(ntor)) nt = ntor
         if (present(ncontour)) nb = ncontour
+        curve = .false.
+        select type (chart)
+        type is (curve_chart_t)
+            curve = .true.
+        end select
         allocate (contour(2, nb), chain(2, 12))
         do j = 1, nb
-            call gamma_c(real(j - 1, dp)/nb, contour(:, j))
+            if (curve) then
+                call gamma_c_curve(real(j - 1, dp)/nb, contour(:, j))
+            else
+                call gamma_c(real(j - 1, dp)/nb, contour(:, j))
+            end if
         end do
         do j = 1, 12
-            chain(:, j) = [3.05_dp + 0.6_dp*cos(2*pi*(j - 1)/12), &
-                0.9_dp*sin(2*pi*(j - 1)/12)]
+            t = 2*pi*(j - 1)/12
+            chain(:, j) = [3.05_dp + 0.6_dp*cos(t), 0.9_dp*sin(t)]
+            if (curve) chain(:, j) = [0.9_dp*cos(t), 0.05_dp + 0.6_dp*sin(t)]
         end do
         h = 2*pi*ac/nb
-        call initialize_gs(mesh, contour, 0.5_dp*h*h, st, 2, curve=gamma_c, &
-            interior_chain=chain)
-        if (st /= 0) error stop 'mesh'
-        call ideal_fb_init(fb, mesh, chain, chart, field, 3, nt, 6.0_dp, circulation, &
-            st, mu0=mu0)
+        if (curve) then
+            ! initialize_gs meshes R > 0 planes: mesh the normal plane shifted
+            ! by q1 + 3, then translate the nodes back.
+            contour(1, :) = contour(1, :) + 3; chain(1, :) = chain(1, :) + 3
+            call initialize_gs(mesh, contour, 0.5_dp*h*h, st, 2, &
+                curve=gamma_c_shifted, interior_chain=chain)
+            if (st /= 0) error stop 'mesh'
+            mesh%points(1, :) = mesh%points(1, :) - 3; chain(1, :) = chain(1, :) - 3
+            call ideal_fb_init(fb, mesh, chain, chart, curve_field, 3, nt, 6.0_dp, &
+                circulation, st, mu0=mu0, nphi=8)
+        else
+            call initialize_gs(mesh, contour, 0.5_dp*h*h, st, 2, curve=gamma_c, &
+                interior_chain=chain)
+            if (st /= 0) error stop 'mesh'
+            call ideal_fb_init(fb, mesh, chain, chart, field, 3, nt, 6.0_dp, &
+                circulation, st, mu0=mu0)
+        end if
         if (st /= IDEAL_FB_OK) error stop 'fb init'
     end subroutine
 
@@ -279,14 +349,21 @@ contains
 
     subroutine helical
         type(ideal_fb_t) :: fb, fb_axi
-        type(rippled_chart_t) :: chart
+        type(curve_chart_t) :: chart
         type(cylindrical_chart_t) :: cyl
         type(coil_circuit_basis_t) :: basis, sum_basis
         type(ideal_fb_circuits_t) :: c3, c3n, csum, caxi
         real(dp) :: f_tf, err, w(nc), dsum(1), flux
         integer :: k, st, nthreads
-        chart%eps = 0.15_dp
+        call helical_chart(chart, 0.15_dp)
         call build_fb(fb, chart)
+        if (allocated(fb%s_trace)) error stop 'curve chart got the per-n exterior'
+        block
+            real(dp), allocatable :: g(:)
+            allocate (g(fb%n))
+            call ideal_fb_gradient(fb, g, st)
+            if (st == IDEAL_FB_OK) error stop 'residual without an exterior'
+        end block
         call build_fb(fb_axi, cyl)
         call synthetic_basis(basis, 64)
         !$ call omp_set_num_threads(1)
@@ -308,18 +385,27 @@ contains
         call ideal_fb_circuits_build(fb_axi, basis, caxi, st, nphi_surface=nphi)
         err = full_turn_defect(fb, c3%drive(:, :, 4), c3%load(:, :, 4), &
             caxi%drive(:, :, 4), caxi%load(:, :, 4))
-        print '(a,es10.2)', 'TF traces rippled vs axisymmetric Gamma_c ', err
-        if (err < 1e-3_dp) error stop 'rippled surface indistinguishable'
+        print '(a,es10.2)', 'TF traces helical vs axisymmetric Gamma_c ', err
+        if (err < 1e-3_dp) error stop 'helical surface indistinguishable'
         ! Gauss: the n = 0 load summed over the nodes is the net flux / 2 pi.
-        ! The window coils (0.25 m from the rippled Gamma_c, 0.14 rad wide)
+        ! The window coils (0.25 m from the helical Gamma_c, 0.14 rad wide)
         ! are under-resolved by the nphi = 96 trapezoid rule; their flux
         ! defect has to fall with nphi instead (quadrature, not geometry).
         do k = 1, nc
             flux = sum(c3%load(:, 1, k))/sum(abs(c3%load(:, 1, k)))
             print '(a,i0,a,es10.2)', 'circuit ', k, ' net flux / sum |load_0| ', flux
             if (k /= 3 .and. abs(flux) > 1e-12_dp) &
-                error stop 'Gauss (net flux) on rippled Gamma_c'
+                error stop 'Gauss (net flux) on helical Gamma_c'
         end do
+        ! Ampere: F_k = mu0 (linked current)/(2 pi), whatever the surface.
+        ! The curve-chart angle q3 is not the cylindrical angle, so the
+        ! nphi-point trapezoid rule over the TF ripple is exact only to its
+        ! quadrature error (1e-11 at nphi = 96, roundoff at 192): Ampere is
+        ! checked on the converged nphi = 384 build of the window check.
+        f_tf = mu0*ntf/(2*pi)
+        print '(a,4es11.3)', 'F_k (T m/A)        ', c3%f_vac
+        print '(a,4es11.3)', 'F spread (T m/A)   ', c3%f_spread
+        print '(a,4es11.3)', 'closure (T m, T)   ', c3%closure
         block
             type(ideal_fb_circuits_t) :: cn
             real(dp) :: f96
@@ -328,18 +414,15 @@ contains
             flux = abs(sum(cn%load(:, 1, 3)))/sum(abs(cn%load(:, 1, 3)))
             print '(a,i0,a,es10.2)', 'window net flux at nphi ', 4*nphi, ' ', flux
             if (flux > 1e-4_dp*f96) error stop 'window flux does not converge in nphi'
+            print '(a,i0,a,es11.3)', 'TF F relative to Ampere (nphi ', 4*nphi, ') ', &
+                abs(cn%f_vac(4) - f_tf)/f_tf
+            print '(a,4es11.3)', 'F spread (nphi 384) ', cn%f_spread
+            if (abs(cn%f_vac(4) - f_tf) > 1e-10_dp*f_tf) error stop 'Ampere F_vac'
+            if (maxval(abs(cn%f_vac(1:2))) > 1e-12_dp*f_tf) error stop 'unlinked F_vac'
+            if (maxval(cn%f_spread([1, 2, 4])) > 1e-10_dp*f_tf) error stop 'F_vac spread'
         end block
-        ! Ampere: F_k = mu0 (linked current)/(2 pi), whatever the surface.
-        f_tf = mu0*ntf/(2*pi)
-        print '(a,4es11.3)', 'F_k (T m/A)        ', c3%f_vac
-        print '(a,4es11.3)', 'F spread (T m/A)   ', c3%f_spread
-        print '(a,4es11.3)', 'closure (T m, T)   ', c3%closure
-        print '(a,es11.3)', 'TF F relative to Ampere ', abs(c3%f_vac(4) - f_tf)/f_tf
-        if (abs(c3%f_vac(4) - f_tf) > 1e-10_dp*f_tf) error stop 'Ampere F_vac'
-        if (maxval(abs(c3%f_vac(1:2))) > 1e-12_dp*f_tf) error stop 'unlinked F_vac'
-        if (maxval(c3%f_spread([1, 2, 4])) > 1e-10_dp*f_tf) error stop 'F_vac spread'
         ! closure = max(n = 0 Ampere closure, n = 3 curl-free indicator).
-        ! On the rippled surface every circuit has n = 3 content in B.x_t, so
+        ! On the helical surface every circuit has n = 3 content in B.x_t, so
         ! the indicator is the P2 trace discretisation error: it must fall
         ! with refinement, while the n = 0 closure alone (N = 0) vanishes.
         block
@@ -372,7 +455,7 @@ contains
             dsum = abs(csum%f_vac(1) - dot_product(w, c3%f_vac))/abs(csum%f_vac(1))
         end block
         err = max(err, dsum(1))
-        print '(a,es10.2)', 'circuit superposition defect (rippled Gamma_c) ', err
+        print '(a,es10.2)', 'circuit superposition defect (helical Gamma_c) ', err
         if (err > 1e-14_dp) error stop 'superposition of circuit traces'
         call derivative_checks(fb, c3)
         print '(a)', 'helical surface traces ok'
@@ -484,7 +567,7 @@ contains
     subroutine makegrid
         character(len=*), parameter :: path = 'ideal_fb_traces3d_coils.synthetic'
         type(ideal_fb_t) :: fb
-        type(rippled_chart_t) :: chart
+        type(curve_chart_t) :: chart
         type(coil_set_t) :: coils
         type(coil_circuit_basis_t) :: direct, read_basis
         type(ideal_fb_circuits_t) :: cd, cr
@@ -509,7 +592,7 @@ contains
         print '(a,i0,a,i0,a)', 'MAKEGRID: ', coils%ncoil, ' coils in ', ncircuit, &
             ' circuits, winding counts and names ok'
         ! Traces from the file equal those from the direct construction.
-        chart%eps = 0.15_dp
+        call helical_chart(chart, 0.15_dp)
         call build_fb(fb, chart)
         call synthetic_basis(direct, 64)
         call coil_circuit_basis_init(read_basis, coils, circuit, turns, ncircuit, &
@@ -550,17 +633,17 @@ contains
     end subroutine
 
     subroutine scaling
-        ! Strong scaling of the per-circuit trace build on the rippled
+        ! Strong scaling of the per-circuit trace build on the helical
         ! surface (finer coils, more toroidal points); results must be
         ! bitwise equal for every thread count.
         type(ideal_fb_t) :: fb
-        type(rippled_chart_t) :: chart
+        type(curve_chart_t) :: chart
         type(coil_circuit_basis_t) :: basis
         type(ideal_fb_circuits_t) :: ref, run
         integer, parameter :: counts(5) = [1, 2, 4, 8, 16]
         real(dp) :: t0, t1, t_ref
         integer :: i, st, rep
-        chart%eps = 0.15_dp
+        call helical_chart(chart, 0.15_dp)
         call build_fb(fb, chart)
         call synthetic_basis(basis, 2048)
         t_ref = 0
@@ -583,4 +666,113 @@ contains
                 .and. all(run%f_vac == ref%f_vac)
         end do
     end subroutine
+    subroutine exterior(ncontour, nphi_s, gate)
+        type(ideal_fb_t) :: fbd, fbp, fbt
+        type(curve_chart_t) :: chart
+        type(bem_pair_options_t) :: options
+        type(bem_pair_report_t) :: rd, rp
+        integer, parameter :: counts(5) = [1, 2, 4, 8, 16]
+        integer, intent(in) :: ncontour, nphi_s
+        logical, intent(in) :: gate
+        real(dp), allocatable :: s1(:, :)
+        real(dp) :: t0, t_dense, t_per, t_ref, err, scale, emin
+        integer :: st, i
+        call helical_chart(chart, 0.15_dp)
+        call build_fb(fbd, chart, ncontour, 1)
+        call build_fb(fbp, chart, ncontour, 1)
+        print '(a,i0,a,i0,a,i0,a)', 'Gamma_c: ', fbd%nedge, ' P2 edges x ', nphi_s, &
+            ' slices, ', 2*fbd%nedge*nphi_s, ' panels, nfp = 3'
+        t0 = wall()
+        call ideal_fb_use_bem3d(fbp, nphi_s, options, rp, st, periodic=.true.)
+        t_per = wall() - t0
+        if (st /= IDEAL_FB_OK) error stop 'periodic R2 build'
+        print '(a,f9.3,a,i0,a,i0,a,es9.2)', 'periodic build ', t_per, ' s, pairs ', &
+            rp%accepted_pairs, ', max degree ', rp%maximum_degree_used, &
+            ', error ratio ', rp%error_ratio
+        call exact_full_surface(fbp, nphi_s, options, s1)
+        scale = maxval(abs(fbp%exterior_3d%s))
+        err = maxval(abs(s1 - fbp%exterior_3d%s))/scale
+        print '(a,es10.2)', 'periodic vs full-surface DtN of the same operators ', err
+        if (gate .and. err > 1e-11_dp) error stop 'zero-harmonic reduction'
+        t0 = wall()
+        call ideal_fb_use_bem3d(fbd, nphi_s, options, rd, st)
+        t_dense = wall() - t0
+        if (st /= IDEAL_FB_OK) error stop 'dense R2 build'
+        print '(a,f9.3,a,i0,a,i0)', 'dense build    ', t_dense, ' s, pairs ', &
+            rd%accepted_pairs, ', max degree ', rd%maximum_degree_used
+        err = maxval(abs(fbd%exterior_3d%s - fbp%exterior_3d%s))/scale
+        print '(a,es10.2,a,f6.2)', 'periodic vs dense all-pairs build ', err, &
+            '  speedup ', t_dense/t_per
+        if (gate .and. err > 10*options%relative_tolerance) &
+            error stop 'periodic and dense R2 differ beyond the pair tolerance'
+        err = maxval(abs(fbp%exterior_3d%s - transpose(fbp%exterior_3d%s)))/scale
+        emin = smallest_eigenvalue(fbp%exterior_3d%s)/scale
+        print '(a,es10.2,a,es10.2)', 'asymmetry ', err, '  min eigenvalue / max|S| ', &
+            emin
+        if (gate .and. (err > 1e-13_dp .or. emin < -1e-10_dp)) &
+            error stop 'R2 exterior not symmetric positive semidefinite'
+        t_ref = 0
+        do i = 1, size(counts)
+            if (gate .and. counts(i) /= 2) cycle
+            !$ call omp_set_num_threads(counts(i))
+            call build_fb(fbt, chart, ncontour, 1)
+            t0 = wall()
+            call ideal_fb_use_bem3d(fbt, nphi_s, options, rp, st, periodic=.true.)
+            t_per = wall() - t0
+            if (st /= IDEAL_FB_OK) error stop 'periodic R2 build (threads)'
+            if (t_ref == 0) t_ref = t_per
+            err = maxval(abs(fbt%exterior_3d%s - fbp%exterior_3d%s))/scale
+            print '(a,i3,a,f9.3,a,f6.2,a,es9.2)', 'threads ', counts(i), '  periodic ', &
+                t_per, ' s  speedup ', t_ref/t_per, '  max rel diff ', err
+            if (gate .and. err > 1e-13_dp) error stop 'thread count changed R2'
+        end do
+        print '(a)', 'periodic R2 exterior ok'
+    end subroutine
+
+    subroutine exact_full_surface(fb, nphi_s, options, s)
+        ! R^T S R with S the full-surface DtN of the expanded circulant
+        ! operators: the exact-algebra oracle of the zero-harmonic reduction.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: nphi_s
+        type(bem_pair_options_t), intent(in) :: options
+        real(dp), allocatable, intent(out) :: s(:, :)
+        type(coupling_surface_t) :: surface
+        type(bem_circulant_t) :: cop
+        type(bem_operators_t) :: op
+        type(bem_exterior_dtn_t) :: dtn
+        type(bem_pair_report_t) :: report
+        integer, allocatable :: faces(:, :), td(:, :), fd(:, :)
+        real(dp), allocatable :: restriction(:, :), full(:, :)
+        integer :: st
+        call ideal_fb_surface(fb, nphi_s, surface, faces, restriction, st)
+        if (st /= 0) error stop 'surface'
+        call assemble_parametric_bem_p2_circulant(surface, faces, fb%nfp, options, &
+            cop, td, fd, report, st)
+        if (st /= 0) error stop 'circulant assembly'
+        call cop%expand(op, st)
+        if (st /= 0) error stop 'expand'
+        call build_exterior_dtn(op, dtn, st)
+        if (st /= 0) error stop 'full DtN'
+        call dtn%matrix(full, st)
+        s = matmul(transpose(restriction), matmul(full, restriction))
+    end subroutine
+
+    real(dp) function smallest_eigenvalue(a) result(lambda)
+        real(dp), intent(in) :: a(:, :)
+        real(dp), allocatable :: b(:, :), w(:), work(:)
+        integer :: n, info, lwork
+        external :: dsyev
+        n = size(a, 1); b = 0.5_dp*(a + transpose(a))
+        lwork = max(1, 3*n)
+        allocate (w(n), work(lwork))
+        call dsyev('N', 'U', n, b, n, w, work, lwork, info)
+        if (info /= 0) error stop 'dsyev'
+        lambda = w(1)
+    end function
+
+    real(dp) function wall() result(t)
+        integer(8) :: c, r
+        call system_clock(c, r)
+        t = real(c, dp)/real(r, dp)
+    end function
 end program test_ideal_fb_traces3d
