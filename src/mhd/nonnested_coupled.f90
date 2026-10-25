@@ -66,7 +66,7 @@ module kin6d_nonnested_coupled
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
-    public :: nc_scalar3_i, nc_continue, nc_validate, nc_jvp, nc_vjp
+    public :: nc_scalar3_i, nc_continue, nc_validate, nc_jvp, nc_vjp, nc_trig
     public :: nc_source_data
 
     abstract interface
@@ -91,6 +91,10 @@ module kin6d_nonnested_coupled
         procedure(nc_scalar3_i), pointer, nopass :: g_par_shape_3d => null()
         type(nn_fitted_source_t), allocatable :: fitted ! frozen copied seed/profile
         logical, allocatable :: floating(:) ! V0 boundary nodes of a conductor
+        ! Existing PR47 coil-driven fixed Gamma_c. Response periods are zero;
+        ! nonzero net plasma current requires a separate harmonic response.
+        type(csc_t) :: exterior
+        real(dp), allocatable :: coil_drive(:)
     end type
 
     ! Global index of local entry j of block b of a space is offset +
@@ -115,6 +119,10 @@ module kin6d_nonnested_coupled
         type(csc_t) :: c, s, mg, mgt
         integer :: nphi = 1
     end type
+
+    interface nc_trig
+        module procedure trig
+    end interface
 
     integer, parameter :: chunk = 64
 contains
@@ -191,6 +199,13 @@ contains
         mask(lay%iv) = .false.
         if (.not. present(problem)) return
         if (problem%closure%drive == 'V') mask(lay%iv) = .true.
+        if (allocated(problem%coil_drive)) then
+            mask(lay%ia + 1:lay%ia + lay%na) = .false.
+            mask(lay%il + 1:lay%il + lay%nv) = .false.
+            ! Existing PR47 gauge and covariant toroidal A-period pins.
+            mask(lay%il + 1) = .true.
+            mask(lay%ia + field%fs%nn + 1) = .true.
+        end if
         if (.not. allocated(problem%floating)) return
         where (problem%floating) mask(lay%il + 1:lay%il + lay%n0) = .false.
         where (problem%floating) mask(lay%iphi + 1:lay%iphi + lay%n0) = .false.
@@ -251,6 +266,17 @@ contains
         if (allocated(problem%floating)) then
             if (size(problem%floating) /= field%fs%n0) return
             if (any(problem%floating .and. .not. field%fs%sp(0)%bnd)) return
+        end if
+        if (allocated(problem%coil_drive)) then
+            if (problem%closure%drive /= 'I_phi') return
+            if (allocated(problem%floating)) return
+            if (abs(problem%current) > 0) return
+            if (size(problem%coil_drive) /= field%fs%sp(1)%ndof*(2*modes + 1)) return
+            if (.not. all(ieee_is_finite(problem%coil_drive))) return
+            if (problem%exterior%nrow /= size(problem%coil_drive)) return
+            if (problem%exterior%ncol /= size(problem%coil_drive)) return
+            if (.not. allocated(problem%exterior%val)) return
+            if (.not. all(ieee_is_finite(problem%exterior%val))) return
         end if
         nln = field%fs%nln
         do t = 1, field%fs%mm%topology%n_triangles
@@ -324,6 +350,11 @@ contains
         do t = 1, nt
             call scatter_residual(field, lay, t, rl(:, t), r)
         end do
+        if (allocated(problem%coil_drive)) then
+            r(lay%ia + 1:lay%ia + lay%na) = r(lay%ia + 1:lay%ia + lay%na) &
+                + (csc_matvec(problem%exterior, x(lay%ia + 1:lay%ia + lay%na)) &
+                   - problem%coil_drive)/field%mu0
+        end if
         if (present(boundary_rows)) then
             if (boundary_rows) then
                 status = 0
@@ -407,6 +438,8 @@ contains
         if (.not. status_ok(st)) return
         call append(xbc, 0, lay%ia, 1.0_dp, rows, cols, vals, count)
         call append(ops%s, lay%ia, lay%ia, 1/field%mu0, rows, cols, vals, count)
+        if (allocated(problem%coil_drive)) call append(problem%exterior, &
+            lay%ia, lay%ia, 1/field%mu0, rows, cols, vals, count)
         call append(ops%mg, lay%ia, lay%il, 1.0_dp, rows, cols, vals, count)
         call append(ops%mgt, lay%il, lay%ia, 1.0_dp, rows, cols, vals, count)
         call csc_from_triplet(lay%n, lay%n, rows(:count), cols(:count), &
@@ -458,6 +491,22 @@ contains
         if (any(abs(x - x(rep)) > 0)) return
         call source_load(field, problem, lay, ops%nphi, load, st)
         if (st /= 0) return
+        ! R_p(B,0) is exactly the negative assembled pressure drive, including
+        ! frozen weak flux. Preserve this homogeneous subspace under mixed LU
+        ! only for exactly zero drive and all-zero pressure boundary/seed data.
+        ! No electric-potential, voltage or current equation is eliminated.
+        if (maxval(load(lay%ip + 1:lay%iphi)) == 0 .and. &
+            maxval(abs(x(lay%ip + 1:lay%iphi))) == 0) &
+            mask(lay%ip + 1:lay%iphi) = .true.
+        if (allocated(problem%coil_drive)) then
+            ! A fit may carry signed current with zero scalar/pressure load.
+            ! Only unfitted exact vacuum data admit this invariant subspace.
+            if (.not. allocated(problem%fitted)) then
+                if (maxval(load(lay%ip + 1:lay%ip + lay%nv)) <= 0 .and. &
+                    maxval(abs(x(lay%ip + 1:lay%iv))) <= 0 .and. &
+                    abs(problem%current) <= 0) mask(lay%ip + 1:lay%iv) = .true.
+            end if
+        end if
         w = huge(1.0_dp)
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)
@@ -632,6 +681,8 @@ contains
             end do
         end do
         load = abs(load)
+        if (allocated(problem%coil_drive)) &
+            load(lay%ia + 1:lay%ia + lay%na) = abs(problem%coil_drive)/field%mu0
         load(lay%iv) = abs(problem%current)
         where (nc_fixed(field, problem)) load = 0
         status = 0
@@ -1231,7 +1282,7 @@ contains
         integer, intent(out) :: status
         type(nc_ops_t) :: ops
         type(nc_layout_t) :: lay
-        type(csc_t) :: ct, st
+        type(csc_t) :: ct, st, et
         type(fortsparse_status_t) :: sparse_status
         type(fortnum_fft_plan_t) :: plan
         type(fortnum_fft_workspace_t) :: work
@@ -1251,6 +1302,10 @@ contains
         if (.not. status_ok(sparse_status)) return
         call csc_transpose(ops%s, st, sparse_status)
         if (.not. status_ok(sparse_status)) return
+        if (allocated(problem%coil_drive)) then
+            call csc_transpose(problem%exterior, et, sparse_status)
+            if (.not. status_ok(sparse_status)) return
+        end if
         rep = representative(field, problem)
         w = weight(rep)
         where (nc_fixed(field, problem)) w = 0
@@ -1277,6 +1332,8 @@ contains
         output(:lay%na) = csc_matvec(st, w(:lay%na))/field%mu0 &
             + csc_matvec(ops%mg, w(lay%il + 1:lay%ip))
         output(lay%il + 1:lay%ip) = csc_matvec(ops%mgt, w(:lay%na))
+        if (allocated(problem%coil_drive)) output(:lay%na) = output(:lay%na) &
+            + csc_matvec(et, w(:lay%na))/field%mu0
         do t = 1, nt
             do bk = 0, lay%nb - 1
                 do j = 1, n2
@@ -1502,6 +1559,8 @@ contains
         output(:lay%na) = csc_matvec(ops%s, direction(:lay%na))/field%mu0 &
                           + csc_matvec(ops%mg, direction(lay%il + 1:lay%ip))
         output(lay%il + 1:lay%ip) = csc_matvec(ops%mgt, direction(:lay%na))
+        if (allocated(problem%coil_drive)) output(:lay%na) = output(:lay%na) &
+            + csc_matvec(problem%exterior, direction(:lay%na))/field%mu0
         nt = field%fs%mm%topology%n_triangles
         allocate (rl(local_rows(field, lay), nt)); failure = 0
         !$omp parallel do default(shared) private(t, st) firstprivate(work) &
