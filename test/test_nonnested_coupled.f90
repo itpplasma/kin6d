@@ -6,8 +6,11 @@ module nn_coupled_case
     ! B.grad p = 0.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, pp, laplacian
+    use kin6d_equilibrium_nonnested, only: free_b_field_t
+    use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BZ, EQ_BPHI, EQ_P
     implicit none
     real(dp) :: chi_perp = 1, g0 = 1
+    type(free_b_field_t) :: field
 contains
     function source(x) result(s)
         real(dp), intent(in) :: x(2)
@@ -19,12 +22,33 @@ contains
         real(dp) :: w
         w = (x(1)/r0)**2
     end function
+    subroutine sample_cartesian(xyz, b_cartesian, mu0_p, status)
+        real(dp), intent(in) :: xyz(3)
+        real(dp), intent(out) :: b_cartesian(3), mu0_p
+        integer, intent(out) :: status
+        real(dp) :: point(3, 1), values(EQ_VALUES, 1), phi
+        integer :: statuses(1)
+        phi = atan2(xyz(2), xyz(1))
+        point(:, 1) = [norm2(xyz(:2)), xyz(3), phi]
+        call field%sample(point, values, statuses)
+        status = statuses(1)
+        b_cartesian = 0
+        mu0_p = 0
+        if (status /= 0) return
+        b_cartesian = [values(EQ_BR, 1)*cos(phi) &
+            - values(EQ_BPHI, 1)*sin(phi), values(EQ_BR, 1)*sin(phi) &
+            + values(EQ_BPHI, 1)*cos(phi), values(EQ_BZ, 1)]
+        mu0_p = values(EQ_P, 1)
+    end subroutine
 end module
 
 program test_nonnested_coupled
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_solovev_fixture, only: r0, minor, ftor, pp, mapping, coordinates, exact
-    use nn_coupled_case, only: chi_perp, g0, source, g_shape
+    use nn_coupled_case, only: chi_perp, g0, source, g_shape, field, &
+        sample_cartesian
+    use g6_external_comparison, only: g6_comparison_t, compare_external_samples
+    use g6_solovev_oracle, only: exact_flux, exact_iota
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_qpoint
     use fortsparse, only: csc_t, csc_matvec
@@ -36,7 +60,6 @@ program test_nonnested_coupled
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_report_t, &
         nc_layout, nc_residual, nc_jacobian, nc_solve, nc_fixed
     implicit none
-    type(free_b_field_t) :: field
     type(nc_problem_t) :: problem
     type(nc_layout_t) :: lay, lay0
     real(dp), allocatable :: nodes(:, :), x(:), xe(:), x0(:)
@@ -45,7 +68,7 @@ program test_nonnested_coupled
     real(dp) :: d0(4), dn
     real(dp) :: v_exact
     character(16) :: mode, arg
-    integer :: k, lev, nlev
+    integer :: k, lev, nlev, nr_g6
     real(dp) :: ratio, ef(3), ep(3), ev(3), ed(3), eo(3), rate(4)
     call get_command_argument(1, mode)
     call get_command_argument(2, arg)
@@ -54,6 +77,19 @@ program test_nonnested_coupled
     read (arg, *) ratio
     if (k < 2 .or. k > 3 .or. ratio < 1) error stop 'arguments'
     select case (trim(mode))
+    case ('g6')
+        ! A bounded regression for the axisymmetric part of G6. Optional
+        ! external samples use benchmarks/nested/run_reference.py's format.
+        call get_command_argument(4, arg)
+        read (arg, *) nr_g6
+        call get_command_argument(5, arg)
+        read (arg, *) modes
+        if (nr_g6 < 2 .or. modes < 0) error stop 'G6 resolution'
+        call run(nr_g6, .false., .false., ef(1), ep(1), ev(1), ed(1), eo(1))
+        call nested_diagnostics()
+        if (command_argument_count() >= 6) call external_comparison()
+        if (max(ef(1), ep(1)) > 1.0e-3_dp) error stop 'G6 sampled B/p'
+        print '(a)', 'PASS: G6 Solovev oracle checks (external agreement separate)'
     case ('solovev')
         nlev = 3
         do lev = 1, nlev
@@ -104,6 +140,121 @@ program test_nonnested_coupled
         error stop 'mode'
     end select
 contains
+    subroutine nested_diagnostics()
+        ! Integrate the actual D7 point evaluator. For retained Fourier modes,
+        ! first verify axisymmetry, then use its mode-0 flux primitive to
+        ! locate numerical contours. No reference q is copied into readback.
+        type(free_b_field_t) :: axisym
+        real(dp) :: leak_b, leak_p, flux, flux_error, qh, iota_error
+        real(dp) :: radius, theta, lo, hi, mid, target, psi, bb(2), xx, yy
+        real(dp) :: point(3, 1), values(EQ_VALUES, 1), gt(2), wq
+        real(dp) :: basis(3, field%fs%sp(2)%nloc), xq(2)
+        integer :: statuses(1), j, t, iq, st, it, surf
+        leak_b = 0; leak_p = 0
+        if (modes > 0) then
+            leak_b = 2*maxval(abs(field%b(:, 1:)))/maxval(abs(field%b(:, 0)))
+            leak_p = maxval(abs(field%p(field%fs%n0 + 1:))) &
+                /maxval(abs(field%p(:field%fs%n0)))
+        end if
+        print '(a,2es16.7)', '[V] G6 unintended B/p coefficient modes ', leak_b, leak_p
+        if (max(leak_b, leak_p) > 1.0e-10_dp) error stop 'G6 unintended modes'
+        axisym = field
+        deallocate (axisym%b)
+        allocate (axisym%b(size(field%b, 1), 0:0))
+        axisym%b = field%b(:, 0:0)
+        axisym%p = field%p(:field%fs%n0)
+        flux = 0
+        do t = 1, field%fs%mm%topology%n_triangles
+            do iq = 1, field%fs%nq
+                call meridian_qpoint(field%fs, 2, t, iq, xq, wq, basis, st)
+                if (st /= 0) error stop 'G6 flux quadrature'
+                point(:, 1) = [xq, 0.43_dp]
+                call axisym%sample(point, values, statuses)
+                if (any(statuses /= 0)) error stop 'G6 flux sample'
+                flux = flux + wq*values(EQ_BPHI, 1)/xq(1)
+            end do
+        end do
+        flux_error = abs(flux/exact_flux(1.0_dp) - 1)
+        print '(a,3es16.7)', '[V] G6 toroidal flux/numerical,exact,relative ', &
+            flux, exact_flux(1.0_dp), flux_error
+        if (flux_error > 1.0e-4_dp) error stop 'G6 toroidal flux'
+        do surf = 1, 3
+            radius = 0.05_dp + 0.25_dp*surf
+            call mapping(radius, 0.0_dp, xq)
+            call exact(xq, target, bb)
+            qh = 0
+            do j = 1, 512
+                theta = 2*acos(-1.0_dp)*(j - 0.37_dp)/512
+                lo = 0.01_dp; hi = 0.99_dp
+                do it = 1, 38
+                    mid = (lo + hi)/2
+                    call mapping(mid, theta, point(:2, 1))
+                    point(3, 1) = 0.43_dp
+                    call axisym%sample(point, values, statuses)
+                    if (any(statuses /= 0)) error stop 'G6 contour sample'
+                    psi = values(EQ_PSI, 1)
+                    if (psi < target) then
+                        lo = mid
+                    else
+                        hi = mid
+                    end if
+                end do
+                if (abs(values(EQ_PSI, 1) - target) > 1.0e-9_dp*abs(target)) &
+                    error stop 'G6 unbracketed numerical contour'
+                ! theta = atan2(R Z, (R^2-R0^2)/2). On a flux contour,
+                ! dphi/dtheta = B_phi/(R B.grad theta), giving q by a turn.
+                xx = (point(1, 1)**2 - r0*r0)/2
+                yy = point(1, 1)*point(2, 1)
+                gt = [xx*point(2, 1) - yy*point(1, 1), xx*point(1, 1)] &
+                    /(xx*xx + yy*yy)
+                qh = qh + values(EQ_BPHI, 1)/(point(1, 1) &
+                    *dot_product(values([EQ_BR, EQ_BZ], 1), gt))/512
+            end do
+            iota_error = abs(1/qh - exact_iota(radius))
+            print '(a,4es16.7)', '[V] G6 radius/iota,exact,absolute ', radius, &
+                1/qh, exact_iota(radius), iota_error
+            if (iota_error > 1.0e-3_dp) error stop 'G6 surviving-surface iota'
+        end do
+    end subroutine
+
+    subroutine external_comparison()
+        type(g6_comparison_t) :: comparison
+        character(1024) :: path
+        character(128) :: tolerance_arg
+        real(dp) :: absolute_tolerance
+        integer :: st, ios
+        call get_command_argument(6, path)
+        if (command_argument_count() >= 7) then
+            call get_command_argument(7, tolerance_arg)
+            read (tolerance_arg, *, iostat=ios) absolute_tolerance
+            if (ios /= 0) error stop 'G6 invalid absolute pressure tolerance'
+            call compare_external_samples(trim(path), sample_cartesian, &
+                comparison, st, zero_pressure_atol=absolute_tolerance)
+        else
+            call compare_external_samples(trim(path), sample_cartesian, &
+                comparison, st)
+        end if
+        print '(a,i0,a,es16.7,a)', '[V] G6 external samples=', &
+            comparison%samples, ' B relative RMS ', comparison%b_error, &
+            ' tolerance=1e-3'
+        if (comparison%pressure_kind == 'absolute RMS') then
+            print '(a,2es16.7)', '[V] G6 mu0*p absolute RMS/tolerance (T^2) ', &
+                comparison%p_error, comparison%p_tolerance
+        else
+            print '(a,2es16.7)', '[V] G6 p relative RMS/tolerance ', &
+                comparison%p_error, comparison%p_tolerance
+        end if
+        if (comparison%force_status == 0) then
+            print '(a,es16.7)', &
+                '[V] G6 EXTERNAL sampled physical force vector RMS (T^2/m) ', &
+                comparison%force_rms
+        else
+            print '(a)', trim(comparison%force_message)
+        end if
+        print '(a)', trim(comparison%message)
+        if (st /= 0) error stop 'G6 external B/p comparison rejected'
+    end subroutine
+
     subroutine run(nr, check_jacobian, offset, efield, epres, evolt, ed3, aux)
         integer, intent(in) :: nr
         logical, intent(in) :: check_jacobian, offset

@@ -1834,8 +1834,25 @@ endforeach()
 add_test(NAME nonnested_actions_invalid COMMAND test_nonnested_actions invalid 2)
 set_tests_properties(nonnested_actions_invalid PROPERTIES TIMEOUT 180 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
-add_executable(test_nonnested_coupled test/test_nonnested_coupled.f90)
-target_link_libraries(test_nonnested_coupled PRIVATE kin6d_nn_solovev_test)
+add_library(kin6d_g6_comparison_test STATIC
+    test/support/g6_sampled_force.f90 test/support/g6_external_comparison.f90)
+target_compile_options(kin6d_g6_comparison_test PRIVATE
+    -fno-fast-math -ffp-contract=off)
+add_executable(test_g6_sampled_force test/test_g6_sampled_force.f90)
+target_link_libraries(test_g6_sampled_force PRIVATE kin6d_g6_comparison_test)
+add_test(NAME nonnested_g6_external_sampled_force COMMAND test_g6_sampled_force)
+set_tests_properties(nonnested_g6_external_sampled_force PROPERTIES
+    TIMEOUT 30 PROCESSORS 1 ENVIRONMENT "OMP_NUM_THREADS=1")
+add_executable(test_g6_external_comparison test/test_g6_external_comparison.f90)
+target_link_libraries(test_g6_external_comparison PRIVATE kin6d_g6_comparison_test)
+add_test(NAME nonnested_g6_external_comparison_contract
+    COMMAND test_g6_external_comparison)
+set_tests_properties(nonnested_g6_external_comparison_contract PROPERTIES
+    TIMEOUT 30 PROCESSORS 1 ENVIRONMENT "OMP_NUM_THREADS=1")
+add_executable(test_nonnested_coupled test/test_nonnested_coupled.f90
+    test/support/g6_solovev_oracle.f90)
+target_link_libraries(test_nonnested_coupled PRIVATE kin6d_nn_solovev_test
+    kin6d_g6_comparison_test)
 foreach(k 2 3)
     add_test(NAME nonnested_coupled_solovev_p${k}
         COMMAND test_nonnested_coupled solovev ${k} 1e6)
