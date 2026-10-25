@@ -411,6 +411,7 @@ set_tests_properties(ideal_map_n0_seed_nested_a3_p2 ideal_map_n0_seed_nested_a3_
 set_tests_properties(ideal_map_n0_seed_nested_shaped_p3
     PROPERTIES TIMEOUT 4800 PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 add_test(NAME ideal_map_factor_cache COMMAND test_ideal_map_axisymmetric factor 2)
+add_test(NAME ideal_map_masked_factor_step COMMAND test_ideal_map_axisymmetric factorstep 2)
 add_test(NAME ideal_map_n0_normalised_residual_a3_p2
     COMMAND test_ideal_map_axisymmetric residual 2)
 set_tests_properties(ideal_map_n0_normalised_residual_a3_p2
