@@ -125,7 +125,9 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-set(KIN6D_FORTFEM_REVISION "21f236191c39688bebe25f98b185c32b8209ec70")
+# Pinned to the FortFEM branch perf/gll-omp-setup-20261025 (cached element-to-CSR
+# slot map, lazy-fortran/fortfem#122); the pin moves to FortFEM main after the merge.
+set(KIN6D_FORTFEM_REVISION "e4f4533aba1615f611b62b8c8aee292b1992976b")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -2100,6 +2102,7 @@ target_sources(kin6d_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_harmonic_field_products.f90
     ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
     ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90
+    ${fortfem_SOURCE_DIR}/src/bem/bem_circulant.f90
     ${fortfem_SOURCE_DIR}/src/bem/exterior_harmonic_fields.f90)
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/equilibrium_boundary_3d.f90)
 target_sources(kin6d_mhd PRIVATE src/mhd/ideal_free_boundary_bem3d.f90)
