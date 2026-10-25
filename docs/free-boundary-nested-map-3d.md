@@ -262,9 +262,27 @@ hypothesis that has not been traced.
    0.190-0.191 per unit phi-hat, while VMEC++ reports iota = +0.190-0.201
    with theta counter-clockwise in (R, Z). The field therefore takes
    sign = -1, the default of `fb3d_synthetic`. Newton from the disc start is
-   not yet robust. Its steps are dominated by near-null motion of single
-   plasma nodes (the axis node, or a Gamma_p node along the boundary), along
-   which the merit grows like alpha^4, until the Levenberg ladder runs out. The
+   not yet robust. Its steps are dominated by the motion of single plasma
+   nodes (a Gamma_p node, sometimes the axis node), along which the merit
+   grows like alpha^4, until the Levenberg ladder runs out. These directions
+   are not a gauge freedom. At the converged N = 2 state the reduced Hessian
+   S_red of `ideal_fb_hypotheses` (slide gauge kept) is positive definite,
+   and its smallest eigenvalues (about 21, 22, 91 and 97 J/m^2 per field
+   period at 12 edges and chain 16) belong to smooth n = 0 motions: the
+   rigid Z and R shifts and a shift of the core about the axis. No localised
+   axis or boundary-tangential mode is soft there, so fixing those nodes
+   would constrain the physical labelling and change the discrete
+   equilibrium. The stalled states lie about 2 cm (rms over Gamma_p) from
+   the solution, and their S_red has three or four negative eigenvalues. The
+   two largest in magnitude, of order -3e5, are concentrated on a single
+   Gamma_p node in every Fourier mode, and the plasma block alone is positive
+   along them, so the negative curvature comes from the eliminated shell,
+   vacuum and exterior block. A stall is therefore a nonzero local minimum
+   of the residual merit, which is a globalisation problem and not a missing
+   gauge. Converged runs at different thread counts agree to 1e-7 mm on
+   Gamma_p, and the image of the axis node lies at R = 1.1410 m, Z = 0 at
+   phi-hat = 0 (`axis_RZ_phi0` in the JSON), 0.6 mm from the traced vacuum
+   axis (R = 1.1404 m) and 2.2 cm outboard of the VMEC++ axis (1.119 m). The
    R2 exterior is assembled with atomic accumulation of the pair blocks
    (FortFEM `assemble_parametric_bem_p2_circulant`), so its roundoff differs
    from run to run even at a fixed thread count, and whether a run converges
