@@ -43,26 +43,28 @@ module kin6d_nonnested_coupled
         ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad, &
         meridian_weight_i
-    use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl, &
-        meridian_fourier_curl_curl, meridian_fourier_gradient_coupling
+        meridian_fourier_identity_forms
     use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, csc_matmul, &
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND, FORTSPARSE_MEMORY_LOW, &
         native_ordering_available, FORTSPARSE_LU_SUPERNODAL
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
+    use fortnum_fft, only: fortnum_fft_plan_t, fortnum_fft_workspace_t, &
+        fft_c2c_plan_init, fft_workspace_init, fft_c2c
     use kin6d_island_closure, only: island_closure_t, island_closure_check, &
         ISLAND_INVALID, ISLAND_NULL_FIELD, ISLAND_BAD_DATA
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_leaves, only: coupled_current, coupled_current_jvp, &
-        anisotropic_flux, anisotropic_flux_jvp
+        anisotropic_flux, anisotropic_flux_jvp, anisotropic_flux_vjp, &
+        coupled_current_vjp
     implicit none
     private
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
-    public :: nc_scalar3_i, nc_continue, nc_validate
+    public :: nc_scalar3_i, nc_continue, nc_validate, nc_jvp, nc_vjp
 
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
@@ -108,11 +110,6 @@ module kin6d_nonnested_coupled
     type :: nc_ops_t
         type(csc_t) :: c, s, mg, mgt
         integer :: nphi = 1
-    end type
-
-    type, extends(meridian_fourier_tensor_t) :: identity_t
-    contains
-        procedure :: tensor => identity_tensor
     end type
 
     integer, parameter :: chunk = 64
@@ -219,7 +216,6 @@ contains
         type(nc_ops_t), intent(out) :: ops
         integer, intent(out) :: status
         type(fortsparse_status_t) :: st
-        type(identity_t) :: id
         integer :: t, nln, modes
         character(160) :: message
         call nc_validate(problem, status, message)
@@ -240,32 +236,14 @@ contains
             if (any(field%fs%sp(1)%dof(nln + 1:, t) &
                 /= field%fs%nn + field%fs%sp(0)%dof(:, t))) return
         end do
-        call meridian_fourier_curl(field%fs, modes, ops%c, status)
-        if (status /= 0) return
-        call meridian_fourier_curl_curl(field%fs, modes, ops%nphi, id, ops%s, status)
-        if (status /= 0) return
-        call meridian_fourier_gradient_coupling(field%fs, modes, ops%nphi, id, &
-            ops%mg, status)
+        ! Exact constant forms avoid mode-pair quadrature storage. Both the
+        ! assembled reference and the action retain the same FEEC operators.
+        call meridian_fourier_identity_forms(field%fs, modes, &
+            ops%c, ops%s, ops%mg, status)
         if (status /= 0) return
         status = 1
         call csc_transpose(ops%mg, ops%mgt, st)
         if (.not. status_ok(st)) return
-        status = 0
-    end subroutine
-
-    subroutine identity_tensor(self, t, x, k, status)
-        class(identity_t), intent(in) :: self
-        integer, intent(in) :: t
-        real(dp), intent(in) :: x(:, :)
-        real(dp), intent(out) :: k(:, :, :)
-        integer, intent(out) :: status
-        integer :: m
-        status = 1
-        if (t < 1 .or. size(k, 3) /= size(x, 2)) return
-        k = 0
-        do m = 1, size(x, 2)
-            k(1, 1, m) = 1; k(2, 2, m) = 1; k(3, 3, m) = 1
-        end do
         status = 0
     end subroutine
 
@@ -673,6 +651,29 @@ contains
         end if
     end function
 
+    subroutine point_data(problem, xq, phi, bq, src, gpar, status)
+        ! The action and reference share the residual's declared-data domain.
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(in) :: xq(2), phi, bq(3)
+        real(dp), intent(out) :: src, gpar
+        integer, intent(out) :: status
+        gpar = problem%g_par
+        if (associated(problem%g_par_shape)) then
+            gpar = gpar*problem%g_par_shape(xq)
+        else if (associated(problem%g_par_shape_3d)) then
+            gpar = gpar*problem%g_par_shape_3d(xq, phi)
+        end if
+        status = ISLAND_BAD_DATA
+        if (.not. ieee_is_finite(gpar)) return
+        if (gpar <= 0) return
+        src = source_value(problem, xq, phi)
+        if (.not. ieee_is_finite(src)) return
+        if (.not. all(ieee_is_finite(bq))) return
+        status = ISLAND_NULL_FIELD
+        if (dot_product(bq, bq) <= tiny(1.0_dp)) return
+        status = 0
+    end subroutine
+
     pure integer function local_rows(field, lay) result(nr)
         type(free_b_field_t), intent(in) :: field
         type(nc_layout_t), intent(in) :: lay
@@ -752,24 +753,11 @@ contains
             w = wq/nphi
             do j = 1, nphi
                 phi = two_pi*(j - 1)/nphi
-                gpar = problem%g_par
-                if (associated(problem%g_par_shape)) then
-                    gpar = gpar*problem%g_par_shape(xq)
-                else if (associated(problem%g_par_shape_3d)) then
-                    gpar = gpar*problem%g_par_shape_3d(xq, phi)
-                end if
-                status = ISLAND_BAD_DATA
-                if (.not. ieee_is_finite(gpar)) return
-                if (gpar <= 0) return
-                src = source_value(problem, xq, phi)
-                if (.not. ieee_is_finite(src)) return
                 call trig(lay%modes, phi, tr, dtr)
                 bq = matmul(bm, tr)
                 bq(2) = bq(2) + field%f_vac/rr
-                ! |B| = 0 at a quadrature point is a reported failure.
-                if (.not. all(ieee_is_finite(bq))) return
-                status = ISLAND_NULL_FIELD
-                if (dot_product(bq, bq) <= tiny(1.0_dp)) return
+                call point_data(problem, xq, phi, bq, src, gpar, status)
+                if (status /= 0) return
                 status = 1
                 gp = [dot_product(pg(1, :), tr), dot_product(pv, dtr)/rr, &
                     dot_product(pg(2, :), tr)]
@@ -1131,4 +1119,384 @@ contains
         if (.not. status_ok(st)) return
         status = 0
     end subroutine
+    ! I3 Fourier actions retained from islands/i34mf 953a01e. Keep them in
+    ! the host so native Release links preserve PRIVATE assembly helpers.
+    subroutine nc_jvp(field, problem, x, direction, output, status)
+        ! Exact directional derivative, with the same phi quadrature as the
+        ! dense reference. Fixed rows are zero and floating rows are summed.
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(in) :: x(:), direction(:)
+        real(dp), allocatable, intent(out) :: output(:)
+        integer, intent(out) :: status
+        type(nc_ops_t) :: ops
+        call operators(field, problem, ops, status)
+        if (status /= 0) return
+        call jvp_ops(field, problem, ops, x, direction, output, status)
+    end subroutine
+
+    subroutine nc_vjp(field, problem, x, weight, output, status)
+        ! Transpose of nc_jvp in the Euclidean coefficient pairing. Reverse
+        ! the row reduction before testing and retain boundary input columns.
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(in) :: x(:), weight(:)
+        real(dp), allocatable, intent(out) :: output(:)
+        integer, intent(out) :: status
+        type(nc_ops_t) :: ops
+        type(nc_layout_t) :: lay
+        type(csc_t) :: ct, st
+        type(fortsparse_status_t) :: sparse_status
+        type(fortnum_fft_plan_t) :: plan
+        type(fortnum_fft_workspace_t) :: work
+        real(dp), allocatable :: b(:), w(:), rb(:, :), rs(:, :), dual_b(:)
+        integer, allocatable :: rep(:)
+        integer :: t, nt, bk, j, failure, local_status, n0, n2
+        status = 1
+        if (.not. allocated(field%b)) return
+        lay = nc_layout(field)
+        if (size(x) /= lay%n .or. size(weight) /= lay%n) return
+        if (.not. all(ieee_is_finite(x))) return
+        if (.not. all(ieee_is_finite(weight))) return
+        call operators(field, problem, ops, status)
+        if (status /= 0) return
+        status = 1
+        call csc_transpose(ops%c, ct, sparse_status)
+        if (.not. status_ok(sparse_status)) return
+        call csc_transpose(ops%s, st, sparse_status)
+        if (.not. status_ok(sparse_status)) return
+        rep = representative(field, problem)
+        w = weight(rep)
+        where (nc_fixed(field, problem)) w = 0
+        b = csc_matvec(ops%c, x(:lay%na))
+        call fft_c2c_plan_init(plan, ops%nphi)
+        call fft_workspace_init(work, plan)
+        nt = field%fs%mm%topology%n_triangles
+        n0 = field%fs%nl0; n2 = field%fs%sp(2)%nloc
+        allocate (rb(n2*lay%nb, nt), rs(2*n0*lay%nb + 1, nt))
+        failure = 0
+        !$omp parallel do default(shared) private(t, local_status) &
+        !$omp& firstprivate(work) schedule(static) reduction(max:failure)
+        do t = 1, nt
+            call element_vjp(field, problem, lay, ops%nphi, b, x, w, t, &
+                rb(:, t), rs(:, t), plan, work, local_status)
+            failure = max(failure, local_status)
+        end do
+        !$omp end parallel do
+        status = failure
+        if (status /= 0) return
+        status = 1
+        allocate (output(lay%n), dual_b(lay%nb2*lay%nb))
+        output = 0; dual_b = 0
+        output(:lay%na) = csc_matvec(st, w(:lay%na))/field%mu0 &
+            + csc_matvec(ops%mg, w(lay%il + 1:lay%ip))
+        output(lay%il + 1:lay%ip) = csc_matvec(ops%mgt, w(:lay%na))
+        do t = 1, nt
+            do bk = 0, lay%nb - 1
+                do j = 1, n2
+                    local_status = bk*lay%nb2 + field%fs%sp(2)%dof(j, t)
+                    dual_b(local_status) = dual_b(local_status) &
+                        + field%fs%sp(2)%sgn(j, t)*rb(bk*n2 + j, t)
+                end do
+                do j = 1, n0
+                    local_status = bk*lay%n0 + field%fs%sp(0)%dof(j, t)
+                    output(lay%ip + local_status) = output(lay%ip + local_status) &
+                        + rs(bk*n0 + j, t)
+                    output(lay%iphi + local_status) = &
+                        output(lay%iphi + local_status) + rs((lay%nb + bk)*n0 + j, t)
+                end do
+            end do
+            output(lay%iv) = output(lay%iv) + rs(size(rs, 1), t)
+        end do
+        output(:lay%na) = output(:lay%na) + csc_matvec(ct, dual_b)
+        if (.not. all(ieee_is_finite(output))) return
+        status = 0
+    end subroutine
+
+    subroutine element_vjp(field, problem, lay, nphi, b, x, weight, t, rb, rs, &
+                           plan, work, status)
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        type(nc_layout_t), intent(in) :: lay
+        integer, intent(in) :: nphi, t
+        real(dp), intent(in) :: b(:), x(:), weight(:)
+        real(dp), intent(out) :: rb(:), rs(:)
+        type(fortnum_fft_plan_t), intent(in) :: plan
+        type(fortnum_fft_workspace_t), intent(inout) :: work
+        integer, intent(out) :: status
+        real(dp) :: v1(3, field%fs%sp(1)%nloc), v2(3, field%fs%sp(2)%nloc)
+        real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
+        real(dp) :: u(10, nphi), w(10, nphi), gu(10, nphi), gq(8)
+        real(dp) :: am(3, lay%nb), wa(3, nphi), gm(9, lay%nb)
+        real(dp) :: al(field%fs%sp(1)%nloc, lay%nb), dummy(2), phi, gpar, src
+        real(dp) :: dpmean(lay%nb), dfmean(lay%nb)
+        integer :: q, j, k, bk, n, n0, n2
+        n0 = field%fs%nl0
+        n2 = field%fs%sp(2)%nloc
+        rb = 0; rs = 0
+        do bk = 1, lay%nb
+            al(:, bk) = weight((bk - 1)*lay%na1 + field%fs%sp(1)%dof(:, t)) &
+                *field%fs%sp(1)%sgn(:, t)
+        end do
+        do q = 1, field%fs%nq
+            call point_series(field, lay, t, q, b, x, u, xq, wq, &
+                v1, v2, val, grad, plan, work, status)
+            if (status /= 0) return
+            call point_series(field, lay, t, q, b, weight, w, xq, wq, &
+                v1, v2, val, grad, plan, work, status)
+            if (status /= 0) return
+            am = matmul(v1, al)
+            do k = 1, 3
+                call synthesize(am(k, :), wa(k, :), plan, work)
+            end do
+            u(2, :) = u(2, :) + field%f_vac/xq(1)
+            w(7:9, :) = w(7:9, :) - wa
+            w(8, :) = w(8, :) + weight(lay%iv)/xq(1)
+            do j = 1, nphi
+                phi = 2*acos(-1.0_dp)*(j - 1)/nphi
+                call point_data(problem, xq, phi, u(:3, j), src, gpar, status)
+                if (status /= 0) return
+                call coupled_current_vjp(u(1, j), u(2, j), u(3, j), u(4, j), &
+                    u(5, j), u(6, j), u(7, j), u(8, j), u(9, j), u(10, j), &
+                    gpar, problem%g_perp, w(7, j), w(8, j), w(9, j), &
+                    gu(1, j), gu(2, j), gu(3, j), gu(4, j), gu(5, j), gu(6, j), &
+                    gu(7, j), gu(8, j), gu(9, j), gu(10, j), dummy(1), dummy(2))
+                call anisotropic_flux_vjp(u(1, j), u(2, j), u(3, j), u(4, j), &
+                    u(5, j), u(6, j), problem%chi_par, problem%chi_perp, &
+                    w(4, j), w(5, j), w(6, j), gq(1), gq(2), gq(3), &
+                    gq(4), gq(5), gq(6), gq(7), gq(8))
+                gu(:6, j) = gu(:6, j) + gq(:6)
+            end do
+            do k = 1, 9
+                call project(gu(k, :), gm(k, :), plan, work)
+            end do
+            dpmean = 0; dfmean = 0
+            do n = 1, lay%modes
+                dpmean(2*n) = -n*gm(5, 2*n + 1)
+                dpmean(2*n + 1) = n*gm(5, 2*n)
+                dfmean(2*n) = -n*gm(8, 2*n + 1)
+                dfmean(2*n + 1) = n*gm(8, 2*n)
+            end do
+            do bk = 1, lay%nb
+                rb((bk - 1)*n2 + 1:bk*n2) = rb((bk - 1)*n2 + 1:bk*n2) &
+                    + wq*matmul(gm(:3, bk), v2)
+                rs((bk - 1)*n0 + 1:bk*n0) = rs((bk - 1)*n0 + 1:bk*n0) &
+                    + wq*(grad(1, :)*gm(4, bk) + grad(2, :)*gm(6, bk) &
+                          + val*dpmean(bk)/xq(1))
+                rs((lay%nb + bk - 1)*n0 + 1:(lay%nb + bk)*n0) = &
+                    rs((lay%nb + bk - 1)*n0 + 1:(lay%nb + bk)*n0) &
+                    + wq*(grad(1, :)*gm(7, bk) + grad(2, :)*gm(9, bk) &
+                          + val*dfmean(bk)/xq(1))
+            end do
+            rs(size(rs)) = rs(size(rs)) &
+                + wq*sum(gu(10, :))/(nphi*2*acos(-1.0_dp)*xq(1))
+        end do
+        status = 0
+    end subroutine
+
+    subroutine synthesize(coeff, values, plan, work, derivative)
+        real(dp), intent(in) :: coeff(:)
+        real(dp), intent(out) :: values(:)
+        type(fortnum_fft_plan_t), intent(in) :: plan
+        type(fortnum_fft_workspace_t), intent(inout) :: work
+        logical, intent(in), optional :: derivative
+        complex(dp) :: z(size(values)), a
+        integer :: n
+        z = 0
+        z(1) = coeff(1)
+        if (present(derivative)) then
+            if (derivative) z(1) = 0
+        end if
+        do n = 1, (size(coeff) - 1)/2
+            a = cmplx(coeff(2*n), -coeff(2*n + 1), dp)/2
+            if (present(derivative)) then
+                if (derivative) a = cmplx(0.0_dp, real(n, dp), dp)*a
+            end if
+            z(n + 1) = a
+            z(size(z) - n + 1) = conjg(a)
+        end do
+        call fft_c2c(z, 1, plan, work)
+        values = real(z, dp)
+    end subroutine
+
+    subroutine project(values, coeff, plan, work)
+        ! Test coefficients are phi means, not Fourier amplitudes: no factor 2.
+        real(dp), intent(in) :: values(:)
+        real(dp), intent(out) :: coeff(:)
+        type(fortnum_fft_plan_t), intent(in) :: plan
+        type(fortnum_fft_workspace_t), intent(inout) :: work
+        complex(dp) :: z(size(values))
+        integer :: n
+        z = cmplx(values, 0.0_dp, dp)
+        call fft_c2c(z, -1, plan, work)
+        z = z/size(values)
+        coeff = 0
+        coeff(1) = real(z(1), dp)
+        do n = 1, (size(coeff) - 1)/2
+            coeff(2*n) = real(z(n + 1), dp)
+            coeff(2*n + 1) = -aimag(z(n + 1))
+        end do
+    end subroutine
+
+    subroutine point_series(field, lay, t, q, b, x, values, xq, wq, &
+                            v1, v2, val, grad, plan, work, status)
+        ! Geometry/basis evaluation belongs to FortFEM. Here we only gather
+        ! coefficients and schedule Fourier transforms of B, grad p, grad Phi.
+        type(free_b_field_t), intent(in) :: field
+        type(nc_layout_t), intent(in) :: lay
+        integer, intent(in) :: t, q
+        real(dp), intent(in) :: b(:), x(:)
+        real(dp), intent(out) :: values(:, :), xq(2), wq
+        real(dp), intent(out) :: v1(:, :), v2(:, :), val(:), grad(:, :)
+        type(fortnum_fft_plan_t), intent(in) :: plan
+        type(fortnum_fft_workspace_t), intent(inout) :: work
+        integer, intent(out) :: status
+        real(dp) :: bl(field%fs%sp(2)%nloc, lay%nb)
+        real(dp) :: pl(field%fs%nl0, lay%nb), fl(field%fs%nl0, lay%nb)
+        real(dp) :: bm(3, lay%nb), pg(2, lay%nb), fg(2, lay%nb)
+        integer :: bk, k
+        call meridian_qpoint(field%fs, 2, t, q, xq, wq, v2, status)
+        if (status /= 0) return
+        call meridian_qpoint(field%fs, 1, t, q, xq, wq, v1, status)
+        if (status /= 0) return
+        call meridian_qgrad(field%fs, t, q, xq, wq, val, grad, status)
+        if (status /= 0) return
+        do bk = 1, lay%nb
+            bl(:, bk) = b((bk - 1)*lay%nb2 + field%fs%sp(2)%dof(:, t)) &
+                        *field%fs%sp(2)%sgn(:, t)
+            pl(:, bk) = x(lay%ip + (bk - 1)*lay%n0 + field%fs%sp(0)%dof(:, t))
+            fl(:, bk) = x(lay%iphi + (bk - 1)*lay%n0 + field%fs%sp(0)%dof(:, t))
+        end do
+        bm = matmul(v2, bl); pg = matmul(grad, pl); fg = matmul(grad, fl)
+        do k = 1, 3
+            call synthesize(bm(k, :), values(k, :), plan, work)
+        end do
+        call synthesize(pg(1, :), values(4, :), plan, work)
+        call synthesize(matmul(val, pl), values(5, :), plan, work, .true.)
+        values(5, :) = values(5, :)/xq(1)
+        call synthesize(pg(2, :), values(6, :), plan, work)
+        call synthesize(fg(1, :), values(7, :), plan, work)
+        call synthesize(matmul(val, fl), values(8, :), plan, work, .true.)
+        values(8, :) = values(8, :)/xq(1)
+        call synthesize(fg(2, :), values(9, :), plan, work)
+        values(10, :) = x(lay%iv)/(2*acos(-1.0_dp)*xq(1))
+    end subroutine
+
+    subroutine jvp_ops(field, problem, ops, x, direction, output, status)
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        type(nc_ops_t), intent(in) :: ops
+        real(dp), intent(in) :: x(:), direction(:)
+        real(dp), allocatable, intent(out) :: output(:)
+        integer, intent(out) :: status
+        type(nc_layout_t) :: lay
+        type(fortnum_fft_plan_t) :: plan
+        type(fortnum_fft_workspace_t) :: work
+        real(dp), allocatable :: b(:), db(:), rl(:, :)
+        integer :: t, nt, st, failure
+        status = 1
+        if (.not. allocated(field%b)) return
+        lay = nc_layout(field)
+        if (size(x) /= lay%n .or. size(direction) /= lay%n) return
+        if (.not. all(ieee_is_finite(x))) return
+        if (.not. all(ieee_is_finite(direction))) return
+        call fft_c2c_plan_init(plan, ops%nphi)
+        call fft_workspace_init(work, plan)
+        b = csc_matvec(ops%c, x(:lay%na))
+        db = csc_matvec(ops%c, direction(:lay%na))
+        allocate (output(lay%n)); output = 0
+        output(:lay%na) = csc_matvec(ops%s, direction(:lay%na))/field%mu0 &
+                          + csc_matvec(ops%mg, direction(lay%il + 1:lay%ip))
+        output(lay%il + 1:lay%ip) = csc_matvec(ops%mgt, direction(:lay%na))
+        nt = field%fs%mm%topology%n_triangles
+        allocate (rl(local_rows(field, lay), nt)); failure = 0
+        !$omp parallel do default(shared) private(t, st) firstprivate(work) &
+        !$omp& schedule(static) reduction(max:failure)
+        do t = 1, nt
+            call element_jvp(field, problem, lay, ops%nphi, b, db, x, direction, &
+                             t, rl(:, t), plan, work, st)
+            failure = max(failure, st)
+        end do
+        !$omp end parallel do
+        status = failure
+        if (status /= 0) return
+        status = 1
+        do t = 1, nt
+            call scatter_residual(field, lay, t, rl(:, t), output)
+        end do
+        where (nc_fixed(field, problem)) output = 0
+        call nc_reduce(field, problem, output)
+        if (.not. all(ieee_is_finite(output))) return
+        status = 0
+    end subroutine
+
+    subroutine element_jvp(field, problem, lay, nphi, b, db, x, dx, t, rl, &
+                           plan, work, status)
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        type(nc_layout_t), intent(in) :: lay
+        integer, intent(in) :: nphi, t
+        real(dp), intent(in) :: b(:), db(:), x(:), dx(:)
+        real(dp), intent(out) :: rl(:)
+        type(fortnum_fft_plan_t), intent(in) :: plan
+        type(fortnum_fft_workspace_t), intent(inout) :: work
+        integer, intent(out) :: status
+        real(dp) :: v1(3, field%fs%sp(1)%nloc), v2(3, field%fs%sp(2)%nloc)
+        real(dp) :: val(field%fs%nl0), grad(2, field%fs%nl0), xq(2), wq
+        real(dp) :: u(10, nphi), du(10, nphi), cj(3, nphi), fq(3, nphi)
+        real(dp) :: cm(3, lay%nb), fm(3, lay%nb), dc(lay%nb), df(lay%nb)
+        real(dp) :: rr, phi, gpar, twopi, src
+        integer :: q, j, k, bk, n1, n0, rp, rf, n
+        n1 = field%fs%sp(1)%nloc; n0 = field%fs%nl0
+        rp = n1*lay%nb; rf = rp + n0*lay%nb
+        twopi = 2*acos(-1.0_dp); rl = 0
+        do q = 1, field%fs%nq
+            call point_series(field, lay, t, q, b, x, u, xq, wq, &
+                              v1, v2, val, grad, plan, work, status)
+            if (status /= 0) return
+            call point_series(field, lay, t, q, db, dx, du, xq, wq, &
+                              v1, v2, val, grad, plan, work, status)
+            if (status /= 0) return
+            rr = xq(1); u(2, :) = u(2, :) + field%f_vac/rr
+            do j = 1, nphi
+                phi = twopi*(j - 1)/nphi
+                call point_data(problem, xq, phi, u(:3, j), src, gpar, status)
+                if (status /= 0) return
+                call coupled_current_jvp(u(1, j), u(2, j), u(3, j), u(4, j), u(5, j), &
+                    u(6, j), u(7, j), u(8, j), u(9, j), u(10, j), &
+                    gpar, problem%g_perp, du(1, j), du(2, j), du(3, j), &
+                    du(4, j), du(5, j), du(6, j), du(7, j), &
+                    du(8, j), du(9, j), du(10, j), 0.0_dp, 0.0_dp, &
+                    cj(1, j), cj(2, j), cj(3, j))
+                call anisotropic_flux_jvp(u(1, j), u(2, j), u(3, j), u(4, j), u(5, j), &
+                    u(6, j), problem%chi_par, problem%chi_perp, du(1, j), du(2, j), &
+                    du(3, j), du(4, j), du(5, j), du(6, j), 0.0_dp, 0.0_dp, &
+                    fq(1, j), fq(2, j), fq(3, j))
+            end do
+            do k = 1, 3
+                call project(cj(k, :), cm(k, :), plan, work)
+                call project(fq(k, :), fm(k, :), plan, work)
+            end do
+            dc = 0; df = 0
+            do n = 1, lay%modes
+                dc(2*n) = -n*cm(2, 2*n + 1); dc(2*n + 1) = n*cm(2, 2*n)
+                df(2*n) = -n*fm(2, 2*n + 1); df(2*n + 1) = n*fm(2, 2*n)
+            end do
+            do bk = 1, lay%nb
+                rl((bk - 1)*n1 + 1:bk*n1) = rl((bk - 1)*n1 + 1:bk*n1) &
+                                            - wq*matmul(cm(:, bk), v1)
+                rl(rp + (bk - 1)*n0 + 1:rp + bk*n0) = &
+                    rl(rp + (bk - 1)*n0 + 1:rp + bk*n0) &
+                    + wq*(grad(1, :)*fm(1, bk) + grad(2, :)*fm(3, bk) &
+                          + val*df(bk)/rr)
+                rl(rf + (bk - 1)*n0 + 1:rf + bk*n0) = &
+                    rl(rf + (bk - 1)*n0 + 1:rf + bk*n0) &
+                    + wq*(grad(1, :)*cm(1, bk) + grad(2, :)*cm(3, bk) &
+                          + val*dc(bk)/rr)
+            end do
+            rl(size(rl)) = rl(size(rl)) + wq*cm(2, 1)/rr
+        end do
+        status = 0
+    end subroutine
+
 end module kin6d_nonnested_coupled
