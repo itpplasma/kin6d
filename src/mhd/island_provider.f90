@@ -129,28 +129,59 @@ contains
     end subroutine
 
     subroutine island_provider_solve(prov, theta, status, tol)
-        ! Warm start from the previous solution with the new boundary data;
-        ! on failure, anisotropy continuation from the declared seed.
+        ! Warm start from the previous solution with the new boundary data.
+        ! If Newton fails there, a homotopy from the previous parameters
+        ! (chi_par geometric, the others linear; step halved on failure, at
+        ! most 64 stages); without a previous solution, anisotropy
+        ! continuation from the declared seed. The end point is the discrete
+        ! solution at theta whichever path converged; the path is recorded.
         type(island_provider_t), intent(inout) :: prov
         real(dp), intent(in) :: theta(IP_NTHETA)
         integer, intent(out) :: status
         real(dp), intent(in), optional :: tol
-        real(dp), allocatable :: x(:), seed(:)
-        integer :: st
+        real(dp), allocatable :: x(:), seed(:), trial(:)
+        real(dp) :: from(IP_NTHETA), s, ds
+        integer :: st, stages
+        logical :: warm
         status = IP_BAD_INPUT
         if (.not. allocated(prov%base)) return
         if (.not. all(ieee_is_finite(theta))) return
+        if (theta(IP_CHI_PAR) <= 0) return
         if (present(tol)) prov%tol = tol
         call nc_tangent_free(prov%tangent)
+        warm = prov%solved
+        from = prov%theta
         prov%theta = theta
         call bind(prov)
         seed = prov%base + theta(IP_EPSILON)*prov%perturbation
         x = seed
-        if (prov%solved) x = merge(seed, prov%x, prov%fixed)
+        if (warm) x = merge(seed, prov%x, prov%fixed)
         prov%solved = .false.; prov%continued_stages = 0
         call nc_solve(prov%field, prov%problem, x, prov%solve_report, st, &
             tol=prov%tol)
-        if (st /= 0) then
+        if (st /= 0 .and. warm) then
+            x = prov%x; s = 0; ds = 0.25_dp; stages = 0
+            do while (s < 1 .and. stages < 64 .and. ds > 1.0e-3_dp)
+                stages = stages + 1
+                prov%theta = path(min(1.0_dp, s + ds))
+                call bind(prov)
+                trial = merge(prov%base + prov%theta(IP_EPSILON)*prov%perturbation, &
+                    x, prov%fixed)
+                call nc_solve(prov%field, prov%problem, trial, prov%solve_report, &
+                    st, tol=prov%tol)
+                if (st == 0) then
+                    x = trial; s = min(1.0_dp, s + ds); ds = min(2*ds, 1 - s)
+                    if (s >= 1) exit
+                    ds = max(ds, 1.0e-3_dp)
+                else
+                    ds = ds/2
+                end if
+            end do
+            prov%continued_stages = stages
+            prov%theta = theta
+            call bind(prov)
+            if (s < 1) st = 1
+        else if (st /= 0) then
             x = seed
             call nc_continue(prov%field, prov%problem, x, prov%solve_report, st, &
                 tol=prov%tol)
@@ -179,6 +210,14 @@ contains
         prov%status = IP_OK
         prov%message = 'A+D regularised candidate at finite chi_par/chi_perp'
         status = IP_OK
+    contains
+        function path(t) result(th)
+            real(dp), intent(in) :: t
+            real(dp) :: th(IP_NTHETA)
+            th = from + t*(theta - from)
+            th(IP_CHI_PAR) = from(IP_CHI_PAR)*(theta(IP_CHI_PAR) &
+                /from(IP_CHI_PAR))**t
+        end function
     end subroutine
 
     subroutine island_provider_sample(prov, xyz, values, status)

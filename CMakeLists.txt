@@ -1913,6 +1913,9 @@ set_tests_properties(nonnested_island_flattening_p3 nonnested_island_d3_ladder_p
 # Closure A+D provider: implicit JVP/VJP and nested limit (island case).
 add_executable(test_island_provider test/test_island_provider.f90)
 target_link_libraries(test_island_provider PRIVATE kin6d_nn_vacuum_test)
+# Study driver (flattening scan, Poincare data); run by scripts, not CTest.
+add_executable(study_island_closure_a test/study_island_closure_a.f90)
+target_link_libraries(study_island_closure_a PRIVATE kin6d_nn_vacuum_test)
 foreach(case tangent nested)
     add_test(NAME island_provider_${case}_p2 COMMAND test_island_provider ${case} 2 4)
     set_tests_properties(island_provider_${case}_p2 PROPERTIES TIMEOUT 900
