@@ -1,3 +1,52 @@
+module landreman_circuit_basis
+    ! Landreman drive as circuits: ring source k (unit current, the
+    ! fortfem ring Green function, as drive%external), then the toroidal
+    ! field B_phi = 1/R (unit F), then optional coils_3d circuits.
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient
+    use kin6d_ideal_free_boundary, only: ideal_fb_field_basis_t
+    use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t
+    implicit none
+    private
+    type, extends(ideal_fb_field_basis_t), public :: ring_basis_t
+        real(dp), allocatable :: source(:, :)
+        type(coil_circuit_basis_t), allocatable :: coils
+    contains
+        procedure :: nfield => ring_nfield
+        procedure :: sample => ring_sample
+    end type
+contains
+    integer function ring_nfield(self)
+        class(ring_basis_t), intent(in) :: self
+        ring_nfield = size(self%source, 2) + 1
+        if (allocated(self%coils)) ring_nfield = ring_nfield + self%coils%ncircuit
+    end function
+
+    subroutine ring_sample(self, rz, nfp, ntor, bcos, bsin, status)
+        class(ring_basis_t), intent(in) :: self
+        real(dp), intent(in) :: rz(:, :)
+        integer, intent(in) :: nfp, ntor
+        real(dp), intent(out) :: bcos(:, 0:, :, :), bsin(:, 0:, :, :)
+        integer, intent(out) :: status
+        real(dp) :: g, gg(4), r, z
+        integer :: q, k, ns
+        ns = size(self%source, 2)
+        bcos = 0; bsin = 0
+        do q = 1, size(rz, 2)
+            r = rz(1, q); z = rz(2, q)
+            do k = 1, ns
+                call gs_green_gradient(r, z, self%source(1, k), self%source(2, k), &
+                                       g, gg)
+                bcos(:, 0, k, q) = [-gg(2)/r, 0.0_dp, gg(1)/r]
+            end do
+            bcos(2, 0, ns + 1, q) = 1/r
+        end do
+        status = 0
+        if (allocated(self%coils)) call self%coils%sample(rz, nfp, ntor, &
+            bcos(:, :, ns + 2:, :), bsin(:, :, ns + 2:, :), status)
+    end subroutine
+end module landreman_circuit_basis
+
 program test_landreman_free_boundary
     use, intrinsic :: iso_fortran_env, only: dp => real64, compiler_version, &
                                                                         compiler_options
@@ -13,15 +62,31 @@ program test_landreman_free_boundary
     use kin6d_gs_free_boundary, only: gs_fb_system_t, gs_fb_config_t, &
              gs_fb_eval_t, gs_fb_history_t, gs_fb_setup, gs_fb_newton, gs_fb_evaluate, &
                                       gs_fb_locate, GS_FB_TARGET_MEAN
-    use fortfem_axisymmetric_gs_kernel, only: gs_mu0
+    use fortfem_axisymmetric_gs_kernel, only: gs_mu0, gs_green_gradient
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
              ideal_fb_set_drive, ideal_fb_solve, ideal_fb_report_t, ideal_fb_shell_field
+    use kin6d_ideal_fb_circuits, only: ideal_fb_circuits_t, ideal_fb_circuits_build, &
+             ideal_fb_set_currents, coil_circuit_basis_t, coil_circuit_basis_init
+    use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
+    use landreman_circuit_basis, only: ring_basis_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), delta = LANDREMAN_DELTA
     type(landreman_drive_t) :: drive
     real(dp) :: distance(2), field_error(2), pressure_error(2)
     integer :: st, l
+    ! Modes: (none) set_drive with the fitted sampler; circuits: the same
+    ! drive through circuit currents (kin6d_ideal_fb_circuits); helical:
+    ! nfp = 3, N = 1 with an added 3-fold window-coil circuit.
+    character(16) :: mode
+    logical :: use_circuits
+    integer :: case_nfp = 1, case_ntor = 0
+    real(dp) :: window_current = 0, helical_amplitude = 0
+    mode = 'sampler'
+    if (command_argument_count() > 0) call get_command_argument(1, mode)
+    if (all(trim(mode) /= [character(16) :: 'sampler', 'circuits', 'helical'])) &
+        error stop 'unknown mode'
+    use_circuits = trim(mode) /= 'sampler'
     print '(a)', compiler_version()
     print '(a)', compiler_options()
     print '(a)', 'mu0=1; epsilon=0; delta=0.01; sources=24; fit=96; quad=48/96'
@@ -30,6 +95,10 @@ program test_landreman_free_boundary
     call drive%fit(24, 96, 48, st)
     if (st /= 0) error stop 'external source fit'
     call drive_checks()
+    if (trim(mode) == 'helical') then
+        call helical_case()
+        stop
+    end if
     do l = 1, 2
         call solve_case(16*2**(l - 1), distance(l), field_error(l), pressure_error(l))
     end do
@@ -212,6 +281,113 @@ contains
         call drive%sample(r, z, k, bc, bs)
     end subroutine
 
+    subroutine filament(r, z, k, bc, bs)
+        ! Fixed part of the drive: the unit-circulation filament times c.
+        real(dp), intent(in) :: r, z
+        integer, intent(in) :: k
+        real(dp), intent(out) :: bc(3), bs(3)
+        real(dp) :: g, gg(4)
+        bc = 0; bs = 0
+        if (k /= 0) return
+        call gs_green_gradient(r, z, 1.0_dp, 0.0_dp, g, gg)
+        bc(1) = drive%circulation*gg(2)/r
+        bc(3) = -drive%circulation*gg(1)/r
+    end subroutine
+
+    subroutine windows(basis)
+        ! Six rectangular window coils at R = 1.3, phi = 0, 60, ..., 300 deg,
+        ! half-width 0.2 rad, Z in [-0.15, 0.15], one circuit with alternating
+        ! winding signs: the field has n = 3(2j + 1) only. (Same-sign windows
+        ! add an n = 0 radial field that drives the vertical mode.)
+        ! mu0 = 1 here: field_scale removes the SI mu0 of coils_3d.
+        type(coil_circuit_basis_t), intent(out) :: basis
+        type(coil_set_t) :: coils
+        real(dp) :: pts(3, 24), corner(2, 4), phi0
+        integer :: c, j, st
+        corner = reshape([-0.2_dp, -0.15_dp, 0.2_dp, -0.15_dp, 0.2_dp, 0.15_dp, &
+            -0.2_dp, 0.15_dp], [2, 4])
+        do c = 1, 6
+            phi0 = 2*pi*(c - 1)/6
+            do j = 1, 4
+                pts(:, 4*(c - 1) + j) = [1.3_dp*cos(phi0 + corner(1, j)), &
+                    1.3_dp*sin(phi0 + corner(1, j)), corner(2, j)]
+            end do
+        end do
+        call coil_set_from_polylines(coils, [4, 4, 4, 4, 4, 4], pts, status=st)
+        if (st /= 0) error stop 'window coils'
+        call coil_circuit_basis_init(basis, coils, [1, 1, 1, 1, 1, 1], &
+            [1.0_dp, -1.0_dp, 1.0_dp, -1.0_dp, 1.0_dp, -1.0_dp], 1, 128, st, &
+            field_scale=1/coil_mu0)
+        if (st /= 0) error stop 'window circuit'
+    end subroutine
+
+    subroutine circuit_drive(fb)
+        ! Replace the sampler traces by the circuit-current path:
+        ! currents = (fitted ring currents, F(delta)[, window current]).
+        ! The axisymmetric part must reproduce the sampler traces to roundoff.
+        type(ideal_fb_t), intent(inout) :: fb
+        type(ring_basis_t) :: basis
+        type(ideal_fb_circuits_t) :: circuits
+        real(dp), allocatable :: d(:, :), l(:, :), currents(:)
+        real(dp) :: err
+        integer :: st
+        d = fb%drive; l = fb%load
+        basis%source = drive%source
+        if (case_ntor > 0) then
+            allocate (basis%coils)
+            call windows(basis%coils)
+        end if
+        call ideal_fb_circuits_build(fb, basis, circuits, st, background=filament)
+        if (st /= 0) error stop 'circuit traces'
+        ! Same 1e-8 closure as the sampler for the axisymmetric circuits; a
+        ! window entry holds the n = 3 P2 curl-free indicator (printed).
+        if (maxval(circuits%closure(:size(drive%current) + 1)) > 1e-8_dp) &
+            error stop 'circuit trace closure'
+        currents = [drive%current, sqrt(1 - 4*delta)]
+        if (case_ntor > 0) currents = [currents, 0.0_dp]
+        call ideal_fb_set_currents(fb, circuits, currents, st)
+        if (st /= 0) error stop 'circuit currents'
+        err = max(maxval(abs(fb%drive - d))/maxval(abs(d)), &
+            maxval(abs(fb%load - l))/maxval(abs(l)), &
+            abs(fb%f_vac - sqrt(1 - 4*delta))/sqrt(1 - 4*delta))
+        print '(a,es11.3)', 'circuit traces vs sampler traces (relative) ', err
+        if (err > 1e-12_dp) error stop 'circuit traces differ from sampler traces'
+        if (case_ntor > 0) then
+            currents(size(currents)) = window_current
+            call ideal_fb_set_currents(fb, circuits, currents, st)
+            if (st /= 0) error stop 'window current'
+            print '(a,es11.3,a,es11.3)', 'window current ', window_current, &
+                '  closure ', circuits%closure(size(currents))
+        end if
+    end subroutine
+
+    subroutine helical_case()
+        ! Nonaxisymmetric synthetic case: Landreman drive plus a 3-fold
+        ! window-coil circuit, nfp = 3, N = 1, chain 16. The window current
+        ! gives |B_n=3| = 1e-4 on the outer midplane of Gamma_c. The solve
+        ! must meet the same absolute residual and budgets; the n = 3
+        ! boundary response must be linear in the current (I vs I/2).
+        type(coil_circuit_basis_t) :: basis
+        real(dp) :: bcos(3, 0:1, 1, 1), bsin(3, 0:1, 1, 1), unit, amp(2), d, f, pe
+        integer :: st
+        call windows(basis)
+        call basis%sample(reshape([1.149_dp, 0.0_dp], [2, 1]), 3, 1, bcos, bsin, st)
+        if (st /= 0) error stop 'window sample'
+        unit = norm2([bcos(:, 1, 1, 1), bsin(:, 1, 1, 1)])
+        case_nfp = 3; case_ntor = 1
+        window_current = 1e-4_dp/unit
+        call solve_case(16, d, f, pe)
+        amp(1) = helical_amplitude
+        window_current = 0.5_dp*window_current
+        call solve_case(16, d, f, pe)
+        amp(2) = helical_amplitude
+        print '(a,2es12.4,a,f9.5)', 'n=3 boundary amplitude (I, I/2) ', amp, &
+            '  ratio ', amp(1)/amp(2)
+        if (.not. amp(2) > 1e-9_dp) error stop 'no n = 3 response'
+        if (abs(amp(1)/amp(2) - 2) > 0.05_dp) error stop 'n = 3 response not linear'
+        print '(a)', 'helical circuit case converged; numerical evidence only'
+    end subroutine
+
     subroutine solve_case(nchain, distance, field_error, pressure_error)
         integer, intent(in) :: nchain
         real(dp), intent(out) :: distance, field_error, pressure_error
@@ -240,11 +416,12 @@ contains
         call initialize_gs(mesh, contour, 0.5_dp*h*h, st, 3, curve=gamma_c, &
                            interior_chain=chain)
         if (st /= 0) error stop 'Landreman mesh'
-        call ideal_fb_init(fb, mesh, chain, chart, frozen, 1, 0, sqrt(1 - 4*delta), &
-                           drive%circulation, st, mu0=1.0_dp)
+        call ideal_fb_init(fb, mesh, chain, chart, frozen, case_nfp, case_ntor, &
+                           sqrt(1 - 4*delta), drive%circulation, st, mu0=1.0_dp)
         if (st /= 0) error stop 'Landreman init'
         call ideal_fb_set_drive(fb, sampler, st, closure)
         if (st /= 0 .or. closure > 1e-8_dp) error stop 'drive trace closure'
+        if (use_circuits) call circuit_drive(fb)
         ! Family 1 has closed lines: target-start stationarity/refinement
         ! test only. No artificial residual shift or manufactured load.
         call ideal_fb_solve(fb, 1e-9_dp, 50, report, st, verbose=.false., &
@@ -253,6 +430,12 @@ contains
         print '(a,i0,a,i0,a,i0,a,es12.4)', 'solve chain=', nchain, ' status=', st, &
             ' iterations=', report%iterations, ' residual=', report%residual
         if (st /= 0) error stop 'Landreman solve did not meet absolute residual'
+        helical_amplitude = 0
+        do i = 1, fb%plasma%nodes
+            if (.not. fb%plasma%boundary(i)) cycle
+            if (fb%nmode > 1) helical_amplitude = max(helical_amplitude, &
+                norm2(fb%plasma%x(:2, 2:3, i)))
+        end do
         distance = 0; field_error = 0; pressure_error = 0
         do i = 1, fb%plasma%nodes
             if (.not. fb%plasma%boundary(i)) cycle

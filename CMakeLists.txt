@@ -2112,6 +2112,22 @@ add_test(NAME ideal_fb_exterior_frozen_derivatives
     COMMAND test_ideal_free_boundary frozen-exterior)
 set_tests_properties(ideal_fb_exterior_frozen_derivatives PROPERTIES
     TIMEOUT 300 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+# Circuit currents as parameters of the nested-map free-boundary residual.
+target_sources(kin6d_mhd PRIVATE src/mhd/ideal_fb_circuits.f90)
+add_executable(test_ideal_fb_circuits test/test_ideal_fb_circuits.f90)
+target_link_libraries(test_ideal_fb_circuits PRIVATE kin6d)
+add_test(NAME ideal_fb_circuits_derivatives COMMAND test_ideal_fb_circuits derivatives)
+add_test(NAME ideal_fb_circuits_exterior3d COMMAND test_ideal_fb_circuits exterior3d)
+add_test(NAME ideal_fb_landreman_axisymmetric_circuits
+    COMMAND test_landreman_free_boundary circuits)
+add_test(NAME ideal_fb_landreman_helical_circuits
+    COMMAND test_landreman_free_boundary helical)
+set_tests_properties(ideal_fb_circuits_derivatives ideal_fb_circuits_exterior3d
+    PROPERTIES TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(ideal_fb_landreman_axisymmetric_circuits
+    ideal_fb_landreman_helical_circuits PROPERTIES
+    TIMEOUT 600 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 
 kin6d_layers_finalize()
 
