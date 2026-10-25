@@ -53,8 +53,12 @@ program fb3d_synthetic
     ! one residual of kin6d_ideal_free_boundary. Writes <out>.lcfs (boundary
     ! points x y z |B| on full-turn phi-hat samples) and <out>.json.
     ! Usage: fb3d_synthetic coils iota.dat phiedge out [nedge nchain ntor
-    !        nphi_map nphi_bem nphi_surface sign max_iterations q1c q2c]
-    ! (q1c, q2c): centre of the reference disc in the normal plane.
+    !        nphi_map nphi_bem nphi_surface sign max_iterations q1c q2c
+    !        tangential_damping]
+    ! (q1c, q2c): centre of the reference disc in the normal plane. sign = -1
+    ! (default) is the coil field's rotation sense in the chart frame
+    ! (benchmarks/fb3d-synthetic/iota_sign.py); tangential_damping defaults to
+    ! 0 (off).
     use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
     !$ use omp_lib, only: omp_get_max_threads
     use fb3d_synthetic_field, only: iota_field_t
@@ -68,6 +72,7 @@ program fb3d_synthetic
     use kin6d_coils_3d, only: coil_set_t, coil_mu0
     use kin6d_makegrid_circuits, only: makegrid_circuits_read
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
+    !$ use omp_lib, only: omp_get_max_threads
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 1.0_dp, eps = 0.15_dp
     real(dp), parameter :: rc = 0.2_dp, shift = 0.5_dp
@@ -86,11 +91,15 @@ program fb3d_synthetic
     real(dp), allocatable :: contour(:, :), chain(:, :), turns(:)
     integer, allocatable :: circuit(:)
     real(dp) :: phiedge, aref, h, t_start, t_setup, t_traces, t_bem, t_solve, sgn
-    real(dp) :: centre(2)
+    real(dp) :: centre(2), tangential_damping
     integer :: nedge, nchain, ntor, nphi_map, nphi_bem, nphi_surface, ncircuit
     integer :: st, j, threads, solve_status, max_iterations
     nedge = 12; nchain = 16; ntor = 1; nphi_map = 8; nphi_bem = 18
     nphi_surface = 384; sgn = -1; max_iterations = 200
+    ! Optional step regularisation of the Newton matrix along the reference
+    ! tangent of the plasma nodes (ideal_fb_t%tangential_damping, faded by 100
+    ! after every full step); it never enters the residual or the gate.
+    tangential_damping = 0
     call get_command_argument(1, coils_path)
     call get_command_argument(2, iota_path)
     call get_command_argument(3, arg); read (arg, *) phiedge
@@ -110,7 +119,11 @@ program fb3d_synthetic
         call get_command_argument(13, arg); read (arg, *) centre(1)
         call get_command_argument(14, arg); read (arg, *) centre(2)
     end if
+    if (command_argument_count() >= 15) then
+        call get_command_argument(15, arg); read (arg, *) tangential_damping
+    end if
     threads = 1
+    !$ threads = omp_get_max_threads()
     !$ threads = omp_get_max_threads()
     t_start = wall()
     call helical(chart)
@@ -137,6 +150,7 @@ program fb3d_synthetic
     call ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, 0.0_dp, 0.0_dp, st, &
         mu0=coil_mu0, nphi=nphi_map)
     if (st /= IDEAL_FB_OK) error stop 'ideal_fb_init on the curve chart'
+    fb%tangential_damping = tangential_damping
     t_setup = wall() - t_start
     call makegrid_circuits_read(trim(coils_path), coils, circuit, turns, ncircuit, st)
     if (st /= 0) error stop 'MAKEGRID coils'
@@ -287,6 +301,7 @@ contains
         write (u, '(a,f12.4,a)') ' "solve_s": ', t_solve, ','
         write (u, '(a,f12.4,a)') ' "total_s": ', wall() - t_start, ','
         write (u, '(a,es14.6,a)') ' "f_vac": ', fb%f_vac, ','
+        write (u, '(a,es14.6,a)') ' "tangential_damping": ', tangential_damping, ','
         write (u, '(a,es14.6)') ' "sign": ', sgn
         write (u, '(a)') '}'
         close (u)

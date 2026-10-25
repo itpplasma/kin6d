@@ -21,9 +21,17 @@ A public synthetic case for the 3D free boundary on the curve chart
 ```sh
 python make_coils.py coils.fb3d_synth
 python run_vmecpp.py coils.fb3d_synth vmec --nzeta 96 --grid 121 121 96 --mpol 8 --ntor 6 --ns 16 32 64
-fb3d_synthetic coils.fb3d_synth vmec/iota.dat 0.0314159 k 12 16 2 12 18 384 1 200
+fb3d_synthetic coils.fb3d_synth vmec/iota.dat 0.0314159 k 12 16 2 12 18 384 -1 300
 python compare.py k vmec/wout.nc
 python vacuum_reference.py 0.0314159 --kin6d k --wout vmec/wout.nc
+python iota_sign.py --wout vmec/wout.nc
 ```
+
+`iota_sign.py` traces the coil field in the chart coordinates of
+`chart_frame.py` for many turns and prints the rotation number about the
+vacuum axis in the chart frame and in the (R, Z) plane. Its sign is the
+`sign` argument of `fb3d_synthetic` for a positive iota table, which is -1 for
+these coils. `vacuum_reference.py --outboard-R` reuses the oracle radius of an
+earlier run instead of repeating the bisection.
 
 The results and their limits are recorded in the pull request, not here.
