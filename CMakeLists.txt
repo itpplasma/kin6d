@@ -204,8 +204,16 @@ foreach(domain valid zero negative nan)
     add_test(NAME grad_shafranov_p2_profile_mu0_${domain}
         COMMAND test_gs_profile_domain ${domain} 2)
 endforeach()
-# All sparse factorizations use project-owned FortSparse CPU factors. BLAS/LAPACK
-# and optional graph-ordering libraries remain numerical dependencies.
+# Production sparse factorizations use project-owned FortSparse CPU factors.
+# The opt-in fixed-source GS prototype requests its native FP64 SPD CUDA path.
+option(KIN6D_ENABLE_CUDA_GS_SOLVE "Build experimental host-staged CUDA GS solve" OFF)
+if(KIN6D_ENABLE_CUDA_GS_SOLVE)
+    if(NOT CMAKE_CUDA_ARCHITECTURES)
+        message(FATAL_ERROR "CUDA GS prototype requires explicit CMAKE_CUDA_ARCHITECTURES")
+    endif()
+    enable_language(CUDA)
+    set(FORTSPARSE_ENABLE_NATIVE_CUDA ON CACHE BOOL "" FORCE)
+endif()
 set(KIN6D_FORTSPARSE_REVISION "ac324a3567c2f95752bc2857ed29641f8e18f595")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
@@ -1264,6 +1272,36 @@ target_link_libraries(test_gs_direct PRIVATE kin6d)
 add_test(NAME grad_shafranov_csr_direct_newton_oracles COMMAND test_gs_direct)
 set_tests_properties(grad_shafranov_csr_direct_newton_oracles PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
+add_executable(test_gs_device_selection test/test_gs_device_selection.f90)
+target_link_libraries(test_gs_device_selection PRIVATE kin6d_equilibrium)
+add_test(NAME grad_shafranov_device_selection_contract
+    COMMAND test_gs_device_selection)
+set_tests_properties(grad_shafranov_device_selection_contract PROPERTIES
+    TIMEOUT 60 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+if(KIN6D_ENABLE_CUDA_GS_SOLVE)
+    add_executable(test_gs_cuda_fixed_source test/test_gs_cuda_fixed_source.f90)
+    target_link_libraries(test_gs_cuda_fixed_source PRIVATE kin6d_nn_solovev_test)
+    add_executable(test_gs_cuda_public_solve test/test_gs_cuda_public_solve.f90)
+    target_link_libraries(test_gs_cuda_public_solve PRIVATE kin6d_nn_solovev_test)
+    if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(test_gs_cuda_fixed_source PRIVATE
+            -fno-fast-math -ffp-contract=off)
+        target_compile_options(test_gs_cuda_public_solve PRIVATE
+            -fno-fast-math -ffp-contract=off)
+    endif()
+    add_test(NAME grad_shafranov_cuda_fixed_source_a3
+        COMMAND test_gs_cuda_fixed_source a3 16 0)
+    add_test(NAME grad_shafranov_cuda_affine_strict_audit
+        COMMAND test_gs_cuda_fixed_source affine 16 0)
+    add_test(NAME grad_shafranov_cuda_public_fixed_source
+        COMMAND test_gs_cuda_public_solve)
+    set_tests_properties(grad_shafranov_cuda_fixed_source_a3
+        grad_shafranov_cuda_affine_strict_audit
+        grad_shafranov_cuda_public_fixed_source PROPERTIES
+        TIMEOUT 120 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endif()
 add_executable(test_gs_solver_work test/test_gs_solver_work.f90)
 target_link_libraries(test_gs_solver_work PRIVATE kin6d)
 add_test(NAME grad_shafranov_shaped_solver_work COMMAND test_gs_solver_work)

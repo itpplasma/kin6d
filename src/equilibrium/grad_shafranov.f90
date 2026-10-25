@@ -1,5 +1,5 @@
 module kin6d_grad_shafranov
-   use, intrinsic :: iso_fortran_env, only: dp => real64
+   use, intrinsic :: iso_fortran_env, only: dp => real64, int64
    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
    use triangle_compat, only: tc_result_t, triangulate_compat
    use basis_p1_2d_module, only: basis_p1_2d_t
@@ -37,8 +37,12 @@ module kin6d_grad_shafranov
    integer, parameter, public :: GS_MAX_SOLVER_ORDER = 3
    public :: gs_recovery_t
    integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
+   integer, parameter, public :: GS_DEVICE_FAILURE = 21
+   integer, parameter, public :: GS_UNSUPPORTED_DEVICE = 22
    integer, parameter :: geometry_arithmetic = 3
    public :: gs_cell_data, apply_gs, gs_factor_ready, gs_apply_inverse
+   public :: gs_requested_device
+   public :: assemble_gs_rhs
    public :: write_gs_mesh, read_gs_mesh
    public :: gs_profile_response, gs_profile_implicit_response, gs_profile_tangent_cache
    public :: gs_profile_response_cache_t, prepare_gs_profile_response_cache
@@ -79,6 +83,10 @@ module kin6d_grad_shafranov
       type(csr_matrix_t) :: op
       type(gs_direct_t), pointer :: direct => null()
       type(gs_recovery_t), pointer :: recovery => null()
+      ! Explicit device selection is immutable between initializations. Copies
+      ! share both this policy and the cached factor of the same operator.
+      integer, private :: linear_device = -1
+      integer(int64), private :: device_memory_limit_bytes = 0_int64
       logical :: mapped = .false., ready = .false.
       integer :: element_order = 1
       real(dp) :: residual = huge(1.0_dp)
@@ -123,7 +131,7 @@ module kin6d_grad_shafranov
 contains
     subroutine initialize_gs(state, contour, max_area, status, element_order, &
                              curved, curve, interior_points, interior_chain, &
-                             geometry_only)
+                             geometry_only, device, device_memory_limit_bytes)
         !! Meshes the closed outer curve `contour` (counter-clockwise). The optional
         !! `interior_chain` is a second closed loop strictly inside it (free-boundary
         !! plasma boundary Gamma_p): its segments are constrained edges, never
@@ -139,6 +147,8 @@ contains
         real(dp), intent(in), optional :: interior_points(:, :)
         real(dp), intent(in), optional :: interior_chain(:, :)
         logical, intent(in), optional :: geometry_only
+        integer, intent(in), optional :: device
+        integer(int64), intent(in), optional :: device_memory_limit_bytes
         type(tc_result_t) :: mesh
         type(basis_p1_2d_t) :: basis
         type(gauss_quadrature_triangle_t) :: quadrature
@@ -153,6 +163,22 @@ contains
         integer :: edge_node, local_node, nc, loop_size
         logical :: chain_edge
         status = 1
+        if (present(device)) then
+            if (device < -1) then
+                status = GS_DEVICE_FAILURE
+                return
+            end if
+            state%linear_device = device
+        end if
+        if (state%linear_device >= 0) &
+            state%device_memory_limit_bytes = 1024_int64**3
+        if (present(device_memory_limit_bytes)) then
+            if (device_memory_limit_bytes <= 0) then
+                status = GS_DEVICE_FAILURE
+                return
+            end if
+            state%device_memory_limit_bytes = device_memory_limit_bytes
+        end if
         if (present(curved)) state%mapped = curved
         if (present(curve)) state%mapped = .true.
         if (present(element_order)) state%element_order = element_order
@@ -628,10 +654,16 @@ contains
         where (state%boundary) output = input
     end subroutine apply_gs
 
+    pure integer function gs_requested_device(state) result(device)
+        type(gs_state_t), intent(in) :: state
+        device = state%linear_device
+    end function
+
     logical function gs_factor_ready(state) result(ready)
         ! True when a Cholesky factor of the stiffness matrix is cached (created
         ! on the first call) and the direct path is selected. A failed
-        ! factorisation is recorded, never retried, and leaves the iterative path.
+        ! factorisation is recorded, never retried, and leaves the CPU iterative
+        ! path. An explicit device request never falls back to that path.
         type(gs_state_t), intent(in) :: state
         integer, allocatable :: rowptr(:), colidx(:)
         real(dp), allocatable :: val(:)
@@ -642,6 +674,10 @@ contains
         if (.not. gs_direct_available()) return
         if (.not. associated(state%direct)) return
         if (.not. allocated(state%op%rowptr)) return
+        if (state%direct%factored) then
+            if (state%direct%stats%active_device /= state%linear_device) &
+                call gs_direct_free(state%direct)
+        end if
         if (allocated(state%direct%mask)) then
             if (any(state%direct%mask .neqv. state%boundary)) then
                 call gs_direct_free(state%direct)
@@ -654,7 +690,10 @@ contains
             if (allocated(state%direct%mask)) deallocate (state%direct%mask)
             allocate (state%direct%mask, source=state%boundary)
             call gs_csr_spd_matrix(state%op, state%boundary, rowptr, colidx, val)
-            call gs_direct_factor(state%direct, state%op%n, rowptr, colidx, val, ok)
+            state%direct%solver%options%device_memory_limit_bytes = &
+                state%device_memory_limit_bytes
+            call gs_direct_factor(state%direct, state%op%n, rowptr, colidx, val, &
+                ok, device=state%linear_device)
             call gs_timer_add(GS_T_FACTOR, gs_wall_s() - clock)
             if (.not. ok) return
         end if
@@ -750,6 +789,7 @@ contains
       if (norm2(source) > 0.0_dp) tolerance = tolerance*min(1.0_dp, norm2(source))
       clock = gs_wall_s()
       direct_ok = .false.
+      iterations = 0
       if (gs_factor_ready(state)) then
          call gs_direct_response(state, source, response, tolerance, iterations, &
                                  direct_ok)
@@ -760,11 +800,17 @@ contains
             response = 0.0_dp
          end if
       end if
-      if (.not. direct_ok) &
-         call real_conjugate_gradient_operator(matvec, source, response, &
-                   tolerance, max(500, 10*ceiling(sqrt(real(size(source), dp)))), &
-                   status, iterations, residual, &
-                                            preconditioner)
+      if (.not. direct_ok) then
+         if (state%linear_device >= 0) then
+            status = GS_DEVICE_FAILURE
+            response = 0.0_dp
+            residual = huge(1.0_dp)
+         else
+            call real_conjugate_gradient_operator(matvec, source, response, &
+                      tolerance, max(500, 10*ceiling(sqrt(real(size(source), dp)))), &
+                      status, iterations, residual, preconditioner)
+         end if
+      end if
       if (present(timer_kind)) then
          if (timer_kind > 0) call gs_timer_add(timer_kind, gs_wall_s() - clock, &
                                                iterations)

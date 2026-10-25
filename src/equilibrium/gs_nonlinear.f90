@@ -4,7 +4,8 @@ module kin6d_gs_nonlinear
     use kin6d_grad_shafranov, only: gs_state_t, solve_gs, apply_gs, &
                                     gs_cell_data, gs_axis_candidate, &
                                     gs_linear_response, gs_factor_ready, &
-                                    gs_apply_inverse
+                                    gs_apply_inverse, gs_requested_device, &
+                                    GS_UNSUPPORTED_DEVICE
     use kin6d_gs_csr, only: gs_csr_dirichlet_apply, gs_csr_fill_masked
     use kin6d_gs_options, only: gs_use_csr
     use kin6d_gs_profile_law, only: gs_profile_law_t, gs_law_sources, gs_law_kink, &
@@ -961,6 +962,10 @@ contains
         if (present(transpose)) adjoint = transpose
         precondition_status = 0
         solution = 0
+        if (gs_requested_device(state) >= 0) then
+            status = GS_UNSUPPORTED_DEVICE
+            return
+        end if
         if (norm2(rhs) <= tiny(1.0_dp)) then
             status = 0
             return
@@ -1139,6 +1144,10 @@ contains
         real(dp) :: stall_norm
         integer :: iteration, backtrack, stalled
         status = 1
+        if (gs_requested_device(state) >= 0) then
+            status = GS_UNSUPPORTED_DEVICE
+            return
+        end if
         if (.not. state%ready .or. mu0 <= 0) return
         if (.not. ieee_is_finite(mu0)) return
         if (.not. law%valid()) return
