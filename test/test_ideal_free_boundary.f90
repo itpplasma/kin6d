@@ -84,6 +84,7 @@ program test_ideal_free_boundary
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_map, only: ideal_frozen_t
+    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
         ideal_fb_set_drive, ideal_fb_gradient, ideal_fb_hessian, ideal_fb_step, &
         ideal_fb_solve_vacuum, ideal_fb_shell_field, IDEAL_FB_OK, &
@@ -92,7 +93,7 @@ program test_ideal_free_boundary
         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
         ideal_fb_solve, ideal_fb_report_t, ideal_fb_mode_energy, &
         ideal_fb_mode_stability, ideal_fb_stability_t, IDEAL_FB_BAD_INPUT, &
-        IDEAL_FB_NOT_CONVERGED
+        IDEAL_FB_NOT_CONVERGED, ideal_fb_attach_exterior_3d, ideal_fb_mode_weight
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
@@ -126,6 +127,8 @@ program test_ideal_free_boundary
     select case (trim(mode))
     case ('derivatives')
         call derivative_checks()
+    case ('frozen-exterior')
+        call derivative_checks(.true.)
     case ('vertical')
         call vertical_checks()
     case ('vacuum')
@@ -562,7 +565,51 @@ contains
             dim=1), dim=1)))
     end function
 
-    subroutine derivative_checks()
+    subroutine attach_frozen_oracle(fb)
+        !! Independent SPD rank-one form, including cross-mode coupling.
+        !! Energy difference checks the full-turn/nfp convention separately.
+        type(ideal_fb_t), intent(inout) :: fb
+        type(gamma_c_3d_t) :: boundary
+        real(dp), allocatable :: trace(:), drive(:), load(:), v(:), g(:), u(:)
+        real(dp) :: before, after, old_energy, new_energy, allowance
+        integer :: n, i, m, k, st
+        n = fb%nt*fb%nmode
+        allocate (boundary%s(n, n), v(n), load(n), g(fb%n))
+        boundary%genus = 1
+        v = [(sin(.37_dp*i), i=1, n)]/sqrt(real(n, dp))
+        boundary%s = spread(v, 2, n)*spread(v, 1, n)
+        do i = 1, n
+            boundary%s(i, i) = boundary%s(i, i) + 1
+        end do
+        trace = reshape(transpose(fb%phi(:, fb%trace)), [n])
+        drive = reshape(fb%drive, [n]); u = trace - drive
+        old_energy = 0
+        do m = 1, fb%nmode
+            k = m/2
+            old_energy = old_energy + ideal_fb_mode_weight(fb, m)/fb%mu0* &
+                (.5_dp*dot_product(u((m - 1)*fb%nt + 1:m*fb%nt), &
+                matmul(fb%s_trace(:, :, k), u((m - 1)*fb%nt + 1:m*fb%nt))) - &
+                dot_product(fb%load(:, m), fb%phi(m, fb%trace)))
+            load((m - 1)*fb%nt + 1:m*fb%nt) = &
+                fb%nfp*ideal_fb_mode_weight(fb, m)*fb%load(:, m)
+        end do
+        new_energy = (.5_dp*(sum(u*u) + dot_product(v, u)**2) - &
+                      dot_product(load, trace))/(fb%mu0*fb%nfp)
+        call ideal_fb_gradient(fb, g, st, before)
+        if (st /= 0) error stop 'frozen exterior baseline'
+        call ideal_fb_attach_exterior_3d(fb, boundary, drive, load, st)
+        if (st /= 0) error stop 'frozen exterior attachment'
+        call ideal_fb_gradient(fb, g, st, after)
+        if (st /= 0) error stop 'frozen exterior attached state'
+        allowance = 1e-11_dp*max(1.0_dp, abs(before), abs(after), abs(old_energy), abs(new_energy))
+        print '(a,es15.7)', 'frozen exterior once-only nfp energy defect ', &
+            abs(after - before - old_energy + new_energy)/max(1.0_dp, abs(new_energy))
+        if (abs(after - before - old_energy + new_energy) > allowance) &
+            error stop 'frozen exterior full-turn energy normalization'
+    end subroutine
+
+    subroutine derivative_checks(frozen_exterior)
+        logical, intent(in), optional :: frozen_exterior
         type(ideal_fb_t) :: fb
         integer, allocatable :: rowptr(:), colidx(:)
         real(dp), allocatable :: val(:), g(:), gp(:), gm(:), v(:), hv(:), du(:)
@@ -571,7 +618,11 @@ contains
         do ntor = 0, 1
             windows_on = ntor > 0
             if (windows_on) call make_windows(1.0e5_dp)
-            call build(24, 16, 2, .false., 3, ntor, fb)
+            if (present(frozen_exterior)) then
+                call build(8, 6, 2, .false., 3, ntor, fb)
+            else
+                call build(24, 16, 2, .false., 3, ntor, fb)
+            end if
             call ideal_fb_set_drive(fb, sampler, st)
             allocate (g(fb%n), gp(fb%n), gm(fb%n), v(fb%n), hv(fb%n), du(fb%n))
             ! Perturbed base state: map, multipliers, potential.
@@ -582,6 +633,7 @@ contains
             du(fb%np + fb%nx + 1:fb%np + 2*fb%nx) = 1.0e5_dp &
                 *du(fb%np + fb%nx + 1:fb%np + 2*fb%nx)
             call ideal_fb_step(fb, du, 1.0_dp)
+            if (present(frozen_exterior)) call attach_frozen_oracle(fb)
             do i = 1, fb%n
                 v(i) = cos(0.71_dp*i)
             end do

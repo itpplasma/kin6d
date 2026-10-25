@@ -1,4 +1,14 @@
 foreach(k 2 3)
+    foreach(geometry cylinder circle helix)
+        kin6d_test_labels(ideal_fb_chart_surface_${geometry}_p${k} fast
+            CLASSES mhd equilibrium TARGETS test_ideal_fb_surface)
+    endforeach()
+endforeach()
+kin6d_test_labels(ideal_fb_chart_surface_invalid fast CLASSES mhd equilibrium
+    TARGETS test_ideal_fb_surface)
+kin6d_test_labels(ideal_fb_exterior_frozen_derivatives fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
+foreach(k 2 3)
     foreach(case fixed floating voltage)
         kin6d_test_labels(nonnested_actions_${case}_p${k} fast CLASSES mhd
             TARGETS test_nonnested_actions)
