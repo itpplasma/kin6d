@@ -1,19 +1,21 @@
 program test_gll_block_preconditioner
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+    use omp_lib, only: omp_set_num_threads
     use kin6d_ideal_gll_spike
     use kin6d_landreman_benchmark, only: landreman_frozen_t
     implicit none
     real(dp), parameter :: shift = 0.01_dp, delta = 1.0_dp/64
+    integer, parameter :: counts(3) = [1, 3, 16]
     type(landreman_frozen_t) :: field
     type(gll_map_t) :: map, negative
-    type(gll_block_jacobi_t) :: pc, scalar, rejected, rational
+    type(gll_block_jacobi_t) :: pc, scalar, rejected, rational, threaded
     real(dp), allocatable :: x(:), gradient(:), matrix(:, :), v(:), w(:), &
         y(:), z(:), sum_y(:)
     real(dp) :: energy, r, zcoord, s, block_error, inverse_error, symmetry, value, best
     real(dp) :: lower(3, 3), local_rhs(3), local_solution(3), expected(3)
     integer :: status, nd, i, j, node, indices(3), e, a, i1, i2, q1, q2
-    integer :: chosen_e, chosen_q, n, m
+    integer :: chosen_e, chosen_q, n, m, t
 
     field%delta = delta
     call build_gll_map(2, 1, delta, field, map, x, status)
@@ -36,6 +38,14 @@ program test_gll_block_preconditioner
     call require(status == 0 .and. pc%ready, 'physical nodal block admission')
     call build_gll_block_jacobi(map, shift, scalar, status, diagonal_only=.true.)
     call require(status == 0 .and. scalar%ready, 'physical diagonal admission')
+    ! Colour-parallel accumulation visits every node's cells in colour order for
+    ! any thread count, so blocks and factors do not depend on the threads.
+    do t = 1, 3
+        call omp_set_num_threads(counts(t))
+        call build_gll_block_jacobi(map, shift, threaded, status)
+        call require(status == 0 .and. all(threaded%blocks == pc%blocks) &
+            .and. all(threaded%factor == pc%factor), 'thread-independent blocks')
+    end do
     ! An independent gather/transpose path constructs only this tiny oracle.
     do j = 1, nd
         v = 0; v(j) = 1

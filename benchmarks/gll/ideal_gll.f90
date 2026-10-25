@@ -4,6 +4,7 @@ module kin6d_ideal_gll_spike
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_tensor_mesh, only: tensor_mesh_t, ogrid_tensor_mesh, build_tensor_mesh
     use fortfem_tensor_operator, only: tensor_operator_t, build_tensor_operator
+    use fortfem_element_to_csr, only: build_node_to_element
     use fortfem_tensor_contractions, only: tensor_contract
     use kin6d_ideal_map, only: ideal_frozen_t
     use kin6d_ideal_map_leaves, only: ideal_reference_form
@@ -245,8 +246,9 @@ contains
         type(gll_block_jacobi_t), intent(out) :: pc
         integer, intent(out) :: status
         logical, intent(in), optional :: diagonal_only
-        real(dp) :: jet(7, 3), work(7, 3), value, ds, dt
-        integer :: n, m, e, a, i1, i2, q1, q2, q, node, i, j, info
+        integer, allocatable :: node_status(:), ptr(:), idx(:)
+        integer :: n, m, e, q, node, j
+        logical :: asymmetric
         logical :: fixed(3)
         status = 1
         if (.not. ieee_is_finite(shift) .or. shift <= 0) return
@@ -262,80 +264,109 @@ contains
         allocate(pc%blocks(3, 3, pc%nodes))
         if (.not. pc%diagonal_only) allocate(pc%factor(3, 3, pc%nodes))
         pc%blocks = 0
+        asymmetric = .false.
+        !$omp parallel do default(shared) private(e, q) collapse(2) &
+        !$omp reduction(.or.: asymmetric) schedule(static)
         do e = 1, map%reference%mesh%nelem
             do q = 1, m*m
                 if (maxval(abs(map%hessian(:, :, q, e) - &
                     transpose(map%hessian(:, :, q, e)))) > &
                     128*epsilon(1.0_dp)*max(1.0_dp, &
-                    maxval(abs(map%hessian(:, :, q, e))))) then
-                    status = 3
-                    return
-                end if
+                    maxval(abs(map%hessian(:, :, q, e))))) asymmetric = .true.
             end do
-            do i2 = 1, n
-                do i1 = 1, n
-                    a = i1 + n*(i2 - 1)
-                    node = map%reference%mesh%dof(a, e)
-                    do q2 = 1, m
-                        do q1 = 1, m
-                            q = q1 + m*(q2 - 1)
-                            value = map%reference%line(1)%b(q1, i1, 1) &
-                                *map%reference%line(2)%b(q2, i2, 1)
-                            ds = map%reference%line(1)%d(q1, i1, 1) &
-                                *map%reference%line(2)%b(q2, i2, 1)
-                            dt = map%reference%line(1)%b(q1, i1, 1) &
-                                *map%reference%line(2)%d(q2, i2, 1)
-                            jet = 0
-                            jet(:, 1) = [value, ds, 0.0_dp, 0.0_dp, &
-                                dt, 0.0_dp, 0.0_dp]
-                            jet(:, 2) = [0.0_dp, 0.0_dp, ds, 0.0_dp, &
-                                0.0_dp, dt, 0.0_dp]
-                            jet(:, 3) = [0.0_dp, 0.0_dp, 0.0_dp, ds, &
-                                0.0_dp, 0.0_dp, dt]
-                            work = matmul(map%hessian(:, :, q, e), jet)
-                            do j = 1, 3
-                                do i = 1, j
-                                    if (pc%diagonal_only .and. i /= j) cycle
-                                    pc%blocks(i, j, node) = pc%blocks(i, j, node) &
-                                        + dot_product(jet(:, i), work(:, j))
+        end do
+        !$omp end parallel do
+        if (asymmetric) then
+            status = 3
+            return
+        end if
+        ! Gather per node over its cells in ascending cell order, which is the
+        ! order of the serial cell sweep. Every block therefore has the same
+        ! floating-point sum for any thread count, and the CG iteration counts
+        ! do not change (a colour-ordered scatter reorders the sums).
+        call build_node_to_element(map%nodes, map%reference%mesh%dof, ptr, idx)
+        !$omp parallel do default(shared) private(node) schedule(static)
+        do node = 1, pc%nodes
+            block
+                real(dp) :: jet(7, 3), work(7, 3), value, ds, dt
+                integer :: k, e, a, i1, i2, q1, q2, qq, i, jj
+                do k = ptr(node), ptr(node + 1) - 1
+                    e = idx(k)
+                    do i2 = 1, n
+                        do i1 = 1, n
+                            a = i1 + n*(i2 - 1)
+                            if (map%reference%mesh%dof(a, e) /= node) cycle
+                            do q2 = 1, m
+                                do q1 = 1, m
+                                    qq = q1 + m*(q2 - 1)
+                                    value = map%reference%line(1)%b(q1, i1, 1) &
+                                        *map%reference%line(2)%b(q2, i2, 1)
+                                    ds = map%reference%line(1)%d(q1, i1, 1) &
+                                        *map%reference%line(2)%b(q2, i2, 1)
+                                    dt = map%reference%line(1)%b(q1, i1, 1) &
+                                        *map%reference%line(2)%d(q2, i2, 1)
+                                    jet = 0
+                                    jet(:, 1) = [value, ds, 0.0_dp, 0.0_dp, &
+                                        dt, 0.0_dp, 0.0_dp]
+                                    jet(:, 2) = [0.0_dp, 0.0_dp, ds, 0.0_dp, &
+                                        0.0_dp, dt, 0.0_dp]
+                                    jet(:, 3) = [0.0_dp, 0.0_dp, 0.0_dp, ds, &
+                                        0.0_dp, 0.0_dp, dt]
+                                    work = matmul(map%hessian(:, :, qq, e), jet)
+                                    do jj = 1, 3
+                                        do i = 1, jj
+                                            if (pc%diagonal_only .and. i /= jj) cycle
+                                            pc%blocks(i, jj, node) = &
+                                                pc%blocks(i, jj, node) &
+                                                + dot_product(jet(:, i), work(:, jj))
+                                        end do
+                                    end do
                                 end do
                             end do
                         end do
                     end do
                 end do
-            end do
+            end block
         end do
+        !$omp end parallel do
+        allocate(node_status(pc%nodes))
+        node_status = 0
+        !$omp parallel do default(shared) private(node, j, fixed) schedule(static)
         do node = 1, pc%nodes
-            do j = 1, 3
-                do i = j + 1, 3
-                    pc%blocks(i, j, node) = pc%blocks(j, i, node)
-                end do
-                pc%blocks(j, j, node) = pc%blocks(j, j, node) + shift
-                fixed(j) = map%fixed((j - 1)*pc%nodes + node)
-            end do
-            do j = 1, 3
-                if (.not. fixed(j)) cycle
-                pc%blocks(j, :, node) = 0; pc%blocks(:, j, node) = 0
-                pc%blocks(j, j, node) = 1
-            end do
-            if (.not. all(ieee_is_finite(pc%blocks(:, :, node)))) then
-                status = 2
-                return
-            end if
-            if (pc%diagonal_only) then
+            block
+                integer :: i, info
                 do j = 1, 3
-                    if (pc%blocks(j, j, node) > 0) cycle
-                    status = 4
-                    return
+                    do i = j + 1, 3
+                        pc%blocks(i, j, node) = pc%blocks(j, i, node)
+                    end do
+                    pc%blocks(j, j, node) = pc%blocks(j, j, node) + shift
+                    fixed(j) = map%fixed((j - 1)*pc%nodes + node)
                 end do
-            else
-                pc%factor(:, :, node) = pc%blocks(:, :, node)
-                call dpotrf('L', 3, pc%factor(:, :, node), 3, info)
-                if (info /= 0) then
-                    status = 4
-                    return
+                do j = 1, 3
+                    if (.not. fixed(j)) cycle
+                    pc%blocks(j, :, node) = 0; pc%blocks(:, j, node) = 0
+                    pc%blocks(j, j, node) = 1
+                end do
+                if (.not. all(ieee_is_finite(pc%blocks(:, :, node)))) then
+                    node_status(node) = 2
+                else if (pc%diagonal_only) then
+                    do j = 1, 3
+                        if (pc%blocks(j, j, node) > 0) cycle
+                        node_status(node) = 4
+                    end do
+                else
+                    pc%factor(:, :, node) = pc%blocks(:, :, node)
+                    call dpotrf('L', 3, pc%factor(:, :, node), 3, info)
+                    if (info /= 0) node_status(node) = 4
                 end if
-            end if
+            end block
+        end do
+        !$omp end parallel do
+        ! Report the status of the lowest failing node, as a serial sweep would.
+        do node = 1, pc%nodes
+            if (node_status(node) == 0) cycle
+            status = node_status(node)
+            return
         end do
         pc%ready = .true.
         status = 0
