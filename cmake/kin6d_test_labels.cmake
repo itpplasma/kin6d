@@ -653,3 +653,10 @@ kin6d_test_labels(island_closure_report fast CLASSES mhd TARGETS test_island_clo
 kin6d_test_labels(island_closure_drive fast CLASSES mhd TARGETS test_island_closure)
 kin6d_test_labels(nonnested_coupled_closed_line_p3 slow CLASSES mhd
     TARGETS test_nonnested_landreman)
+
+foreach(p 4 6 8)
+    kin6d_test_labels(ideal_gll_derivatives_p${p} fast CLASSES mhd
+        TARGETS benchmark_ideal_gll)
+endforeach()
+kin6d_test_labels(ideal_gll_coupled_block_oracle fast CLASSES mhd
+    TARGETS test_gll_block_preconditioner)
