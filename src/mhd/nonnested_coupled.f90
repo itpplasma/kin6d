@@ -49,7 +49,8 @@ module kin6d_nonnested_coupled
         csc_transpose, sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_ORDER_ND, FORTSPARSE_MEMORY_LOW, &
-        native_ordering_available, FORTSPARSE_LU_SUPERNODAL
+        native_ordering_available, FORTSPARSE_LU_SUPERNODAL, sparse_solve_op, &
+        FORTSPARSE_OP_NORMAL, FORTSPARSE_OP_TRANSPOSE
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
     use fortnum_fft, only: fortnum_fft_plan_t, fortnum_fft_workspace_t, &
         fft_c2c_plan_init, fft_workspace_init, fft_c2c
@@ -68,6 +69,7 @@ module kin6d_nonnested_coupled
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
     public :: nc_scalar3_i, nc_continue, nc_validate, nc_jvp, nc_vjp
     public :: nc_source_data
+    public :: nc_tangent_t, nc_tangent_factor, nc_tangent_solve, nc_tangent_free
 
     abstract interface
         function nc_scalar3_i(x, phi) result(w)
@@ -114,6 +116,17 @@ module kin6d_nonnested_coupled
     type :: nc_ops_t
         type(csc_t) :: c, s, mg, mgt
         integer :: nphi = 1
+    end type
+
+    ! Equation-level linearisation of a converged state: the exact Jacobian
+    ! (unreduced, for boundary-data directions) and the sparse LU of its
+    ! Dirichlet/tie reduction, shared by tangent (J) and adjoint (J^T) solves.
+    type :: nc_tangent_t
+        type(csc_t) :: jac
+        type(sparse_solver_t) :: solver
+        logical, allocatable :: fixed(:)
+        integer, allocatable :: rep(:)
+        logical :: factored = .false.
     end type
 
     integer, parameter :: chunk = 64
@@ -1205,6 +1218,82 @@ contains
         if (.not. status_ok(st)) return
         status = 0
     end subroutine
+    subroutine nc_tangent_factor(field, problem, x, tangent, status)
+        ! Factor the reduced Jacobian of the Newton step at x once. The
+        ! converged iteration itself is never differentiated.
+        type(free_b_field_t), intent(in) :: field
+        type(nc_problem_t), intent(in) :: problem
+        real(dp), intent(in) :: x(:)
+        type(nc_tangent_t), intent(inout) :: tangent
+        integer, intent(out) :: status
+        type(nc_ops_t) :: ops
+        type(csc_t) :: reduced
+        call nc_tangent_free(tangent)
+        call operators(field, problem, ops, status)
+        if (status /= 0) return
+        call jacobian_ops(field, problem, ops, x, tangent%jac, status)
+        if (status /= 0) return
+        tangent%fixed = nc_fixed(field, problem)
+        tangent%rep = representative(field, problem)
+        call reduced_system(tangent%jac, tangent%fixed, tangent%rep, reduced, &
+            status)
+        if (status /= 0) return
+        call factor_reduced(reduced, tangent%solver, status)
+        if (status /= 0) return
+        tangent%factored = .true.
+    end subroutine
+
+    subroutine nc_tangent_solve(tangent, rhs, sol, status, adjoint)
+        ! Tangent (default): rhs is a reduced residual direction g (the
+        ! nc_residual layout: tied rows summed, fixed rows ignored) and
+        ! sol = dx solves J_red y = g, dx = y(rep), so dx is zero on fixed
+        ! dofs and equal on tied ones. Adjoint: rhs is a state cotangent c
+        ! (dL/dx, full layout) and sol = mu solves J_red^T mu = E^T c, with
+        ! E^T summing tied entries into their representative and dropping
+        ! fixed ones. For every reduced direction g, c . dx(g) = mu . g.
+        type(nc_tangent_t), intent(inout) :: tangent
+        real(dp), intent(in) :: rhs(:)
+        real(dp), allocatable, intent(out) :: sol(:)
+        integer, intent(out) :: status
+        logical, intent(in), optional :: adjoint
+        type(fortsparse_status_t) :: st
+        real(dp), allocatable :: b(:), y(:)
+        logical :: transpose
+        integer :: i
+        status = 1
+        if (.not. tangent%factored) return
+        if (size(rhs) /= size(tangent%fixed)) return
+        transpose = .false.
+        if (present(adjoint)) transpose = adjoint
+        allocate (y(size(rhs)))
+        if (transpose) then
+            allocate (b(size(rhs)))
+            b = 0
+            do i = 1, size(rhs)
+                if (tangent%fixed(i)) cycle
+                b(tangent%rep(i)) = b(tangent%rep(i)) + rhs(i)
+            end do
+            call sparse_solve_op(tangent%solver, b, y, FORTSPARSE_OP_TRANSPOSE, st)
+            if (.not. status_ok(st)) return
+            sol = merge(0.0_dp, y, tangent%fixed)
+        else
+            b = merge(0.0_dp, rhs, tangent%fixed)
+            call sparse_solve_op(tangent%solver, b, y, FORTSPARSE_OP_NORMAL, st)
+            if (.not. status_ok(st)) return
+            sol = y(tangent%rep)
+        end if
+        if (.not. all(ieee_is_finite(sol))) return
+        status = 0
+    end subroutine
+
+    subroutine nc_tangent_free(tangent)
+        type(nc_tangent_t), intent(inout) :: tangent
+        if (tangent%factored) call sparse_destroy(tangent%solver)
+        tangent%factored = .false.
+        if (allocated(tangent%fixed)) deallocate (tangent%fixed)
+        if (allocated(tangent%rep)) deallocate (tangent%rep)
+    end subroutine
+
     ! I3 Fourier actions retained from islands/i34mf 953a01e. Keep them in
     ! the host so native Release links preserve PRIVATE assembly helpers.
     subroutine nc_jvp(field, problem, x, direction, output, status)
