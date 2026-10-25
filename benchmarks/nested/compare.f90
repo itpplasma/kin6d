@@ -8,15 +8,22 @@ program benchmark_nested_reference
     implicit none
     type(nested_oracle_t) :: oracle
     real(dp) :: row(14), exact(20), force(3), sums(6), label_error
-    integer :: unit, status, count
+    integer :: unit, status, count, rows_unit
+    logical :: write_rows
     character(1024) :: path, argument
-    if (command_argument_count() /= 4) &
-        error stop 'usage: benchmark_nested_reference samples eps tau delta'
+    if (command_argument_count() < 4 .or. command_argument_count() > 5) &
+        error stop 'usage: benchmark_nested_reference samples eps tau delta [rows_out]'
     call get_command_argument(1, path)
     call get_command_argument(2, argument); read (argument, *) oracle%eps
     call get_command_argument(3, argument); read (argument, *) oracle%tau
     call get_command_argument(4, argument); read (argument, *) oracle%delta
     if (.not. oracle%valid()) error stop 'invalid oracle domain'
+    ! Optional per-sample diagnostic: s, exact label, label error, B and p relative errors.
+    write_rows = command_argument_count() == 5
+    if (write_rows) then
+        call get_command_argument(5, argument)
+        open (newunit=rows_unit, file=trim(argument), status='replace', action='write')
+    end if
     open (newunit=unit, file=trim(path), status='old', action='read')
     sums = 0; count = 0; label_error = 0
     do
@@ -34,9 +41,13 @@ program benchmark_nested_reference
             (row(8) - exact(2))**2, exact(2)**2, &
             sum(force**2), sum(exact(9:11)**2)]
         label_error = max(label_error, abs(exact(1)/oracle%delta - row(1)))
+        if (write_rows) write (rows_unit, '(8es24.16)') row(1), exact(1)/oracle%delta, &
+            exact(1)/oracle%delta - row(1), norm2(row(5:7) - exact(3:5))/norm2(exact(3:5)), &
+            (row(8) - exact(2))/exact(2), row(2:4)
         count = count + 1
     end do
     close (unit)
+    if (write_rows) close (rows_unit)
     if (count == 0 .or. minval(sums([2, 4, 6])) <= 0) error stop 'empty norm scale'
     print '(a,i0)', 'samples=', count
     print '(a,es24.16)', 'B_sample_rms_relative=', sqrt(sums(1)/sums(2))
