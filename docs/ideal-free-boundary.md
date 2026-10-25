@@ -702,3 +702,25 @@ before further pairs, full assembly or response; no scientific admission or
 matched-accuracy speedup is claimed. The closed collection is
 `/mnt/storage/scratch/programme-numerics-resume-20261024/collected-nativeops/3364685`,
 with collection seal aac4055d7a8db3186a4381eec0e7a088e20a814ac0cf520483bff5c279594ccf.
+
+The registered follow-up evaluates only this same pair at degree 16 and 24
+with the original metric aspect, then at degree 24 with half and twice that
+aspect. These four calls require exactly 645,708 kernel evaluations, without
+repeating the unresolved degree-96 baseline. The existing exact-degree API
+returns status 3 because one level has no successive-rule estimate. Its genuine
+single-level trace must be resolved and finite, while the public failure outputs
+remain zero. Six native selector and geometry checks precede the measurement.
+The archived a364188e source and qualified 3364685 providers remain the native
+authority, with only a scratch selector and diagnostic branch added.
+
+The twenty predeclared V/K/W/C comparisons use the original absolute 1e-9 and
+relative 1e-3 tolerances for degree and aspect consistency. Their outcome is a
+same-pair stability screen, without an independent curved-integral accuracy
+certificate or full-response admission. The proposed node18 allocation is one
+CPU for 180 seconds with an 11.8 GiB guard and a maximum charge of 0.05 core
+hours. Packet `fixed-degree-crosscheck-20261025-01`, payload seal
+ab413aec7a74356ee1507bfe315a33dfc3c5af2f56ff32eaab8a5cdb3b52dbc5,
+remains subject to separate controller review and release. No source promotion,
+additional pair or automatic retry is included.
+
+Job 3364805 completed the four fixed-degree/aspect observations in 61 seconds, with six native selector/geometry checks and all source, provider, trace-parser and binary postguards passing. The numerical phase took 0.5515 seconds and exactly 645,708 kernel evaluations. Each single-level native call honestly returned status 3 because it has no successive-rule estimate; its resolved finite trace remained available while public failure outputs stayed zero. All twenty predeclared block comparisons passed the original absolute 1e-9 and relative 1e-3 tolerances, with maximum ratio 0.03633. The largest degree-16-to-24 ratio was 0.001590, and the largest degree-24 aspect ratio was 0.001628. This supports consistency of the same-pair chart quadrature but gives no independent curved-integral certificate, full assembly, response or matched-accuracy speedup. The original degree-96 failure remains unchanged. Raw records remain outside Git under `/home/ert/runs/fixed-degree-crosscheck-20261025-01`, with collection seal 2eadceef7417d41be7e9f5353ce1db0e26d1e0dfb53120a5b57a46b1c5f25666.
