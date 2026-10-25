@@ -321,7 +321,7 @@ contains
         real(dp), intent(out) :: xi, eta
         integer, intent(out) :: status
 
-        integer :: j, nin, per, i0, di, c, tc, it
+        integer :: j, j0, pass, nin, per, i0, di, c, tc, it
         real(dp) :: th, v(2), jac(2, 2), r(2), det, d(2), tol, best, viol, xq, eq
 
         status = 1
@@ -330,54 +330,65 @@ contains
         end do
         if (j > fm%nring) return
         th = modulo(theta, 2.0_dp*pi)
-        if (j == 1) then
-            nin = fm%nth(1)
-            per = 1
-        else
-            nin = fm%nth(j - 1)
-            per = 2 + fm%nth(j)/fm%nth(j - 1) - 1
-        end if
-        i0 = int(th/(2.0_dp*pi)*nin)
+        ! The analytic label is a strip hint, not the inverse of the
+        ! represented isoparametric geometry. Interior points near a ring
+        ! can lie in an adjacent strip, especially on affine cells. Search
+        ! those strips before accepting a projected boundary point.
+        j0 = j
         tol = 1.0e-11_dp
         best = huge(1.0_dp)
-        do di = 0, 2
-            do c = 1, per
-                if (j == 1) then
-                    if (c > 1) cycle
-                    tc = modulo(i0 + di - 1 + nin, nin) + 1
-                else
-                    tc = fm%tlast(j - 1) + per*modulo(i0 + di - 1 + nin, nin) + c
-                end if
-                xq = 1.0_dp/3.0_dp
-                eq = 1.0_dp/3.0_dp
-                do it = 1, 40
-                    call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
-                    r = v - x
-                    det = jac(1, 1)*jac(2, 2) - jac(1, 2)*jac(2, 1)
-                    if (abs(det) <= tiny(1.0_dp)) exit
-                    d(1) = (jac(2, 2)*r(1) - jac(1, 2)*r(2))/det
-                    d(2) = (-jac(2, 1)*r(1) + jac(1, 1)*r(2))/det
-                    ! Newton step projected onto the closed reference triangle
-                    xq = max(0.0_dp, xq - d(1))
-                    eq = max(0.0_dp, eq - d(2))
-                    if (xq + eq > 1.0_dp) then
-                        xq = xq/(xq + eq)
-                        eq = 1.0_dp - xq
+        do pass = 0, 2
+            j = j0
+            if (pass == 1) j = j0 - 1
+            if (pass == 2) j = j0 + 1
+            if (j < 1 .or. j > fm%nring) cycle
+            if (j == 1) then
+                nin = fm%nth(1)
+                per = 1
+            else
+                nin = fm%nth(j - 1)
+                per = 2 + fm%nth(j)/fm%nth(j - 1) - 1
+            end if
+            i0 = int(th/(2.0_dp*pi)*nin)
+            do di = 0, 2
+                do c = 1, per
+                    if (j == 1) then
+                        if (c > 1) cycle
+                        tc = modulo(i0 + di - 1 + nin, nin) + 1
+                    else
+                        tc = fm%tlast(j - 1) + per*modulo(i0 + di - 1 + nin, nin) + c
                     end if
-                    if (abs(d(1)) + abs(d(2)) < 1.0e-14_dp) exit
+                    xq = 1.0_dp/3.0_dp
+                    eq = 1.0_dp/3.0_dp
+                    do it = 1, 40
+                        call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
+                        r = v - x
+                        det = jac(1, 1)*jac(2, 2) - jac(1, 2)*jac(2, 1)
+                        if (abs(det) <= tiny(1.0_dp)) exit
+                        d(1) = (jac(2, 2)*r(1) - jac(1, 2)*r(2))/det
+                        d(2) = (-jac(2, 1)*r(1) + jac(1, 1)*r(2))/det
+                        ! Newton step projected onto the closed reference triangle
+                        xq = max(0.0_dp, xq - d(1))
+                        eq = max(0.0_dp, eq - d(2))
+                        if (xq + eq > 1.0_dp) then
+                            xq = xq/(xq + eq)
+                            eq = 1.0_dp - xq
+                        end if
+                        if (abs(d(1)) + abs(d(2)) < 1.0e-14_dp) exit
+                    end do
+                    call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
+                    viol = norm2(v - x)/diameter(fm, tc)
+                    if (viol < best) then
+                        best = viol
+                        t = tc
+                        xi = xq
+                        eta = eq
+                    end if
+                    if (viol <= tol) then
+                        status = 0
+                        return
+                    end if
                 end do
-                call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
-                viol = norm2(v - x)/diameter(fm, tc)
-                if (viol < best) then
-                    best = viol
-                    t = tc
-                    xi = xq
-                    eta = eq
-                end if
-                if (viol <= tol) then
-                    status = 0
-                    return
-                end if
             end do
         end do
         ! a point just outside a straight-sided boundary cell (geometry order
