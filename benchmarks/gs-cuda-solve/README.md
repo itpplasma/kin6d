@@ -69,3 +69,31 @@ is included in GPU setup wall time, its bytes are reported separately, and the
 1 GiB explicit backend device-payload limit remains active.
 Constructor workspace is included in whole-process RSS measurements and setup
 wall time; persistent CSC and explicit triplet-row payload are also reported.
+
+## Public fixed-source solver entry
+
+`initialize_gs` also accepts an explicit `device` and optional positive
+`device_memory_limit_bytes`. Device -1 is the unchanged CPU default; a
+nonnegative device requests the native SPD accelerator factor, with a default
+1 GiB explicit payload cap. `gs_requested_device` reports that policy, not
+proof of a successful device factor. The retained factor statistics report the
+actual active device and payload.
+
+The public `solve_gs`, `gs_linear_response` and `gs_apply_inverse` entries use
+that cached factor. Its device policy is preserved by state copies and by a
+factor reset. An explicit device failure or a failed strict linear residual
+returns `GS_DEVICE_FAILURE`; it never falls back to CPU CG. CPU default and
+the existing CPU iterative selection retain their previous behavior.
+
+`grad_shafranov_cuda_public_fixed_source` tests the public A3 solve, independent
+element residual, CPU/GPU flux and energy agreement, implicit inverse pairing,
+reuse with a different source, and reset. Its first-solve times are stopwatch
+measurements of the public calls, including factor setup and residual checks;
+mesh initialization is reported separately. The bound status remains that of
+the original fixed-source case, without a new continuous certificate.
+
+This selection does not implement GPU free-boundary or cubic-profile Newton
+solves. Those entries explicitly return `GS_FB_UNSUPPORTED_DEVICE` or
+`GS_UNSUPPORTED_DEVICE` rather than running their indefinite or updated
+operators on CPU under a GPU label. The public FreeGS parity test remains a
+CPU regression with its original profiles, current constraints and tolerances.

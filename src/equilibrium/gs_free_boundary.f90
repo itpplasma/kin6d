@@ -70,7 +70,8 @@ module kin6d_gs_free_boundary
                                GS_DIRECT_ORDER_ND
     use kin6d_sort_keys, only: sort_key_order
     use kin6d_gs_timers, only: gs_phase_tick, gs_profile_value
-    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs
+    use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data, initialize_gs, &
+                                  gs_requested_device
     use kin6d_gs_coils, only: gs_circuit_set_t
     use kin6d_gs_coupling, only: gs_coupling_t, gs_coupling_build, gs_coupled_apply, &
                                  gs_coupling_coil_load, GS_COUPLING_OK
@@ -98,6 +99,7 @@ module kin6d_gs_free_boundary
     integer, parameter, public :: GS_FB_LINE_SEARCH = 8
     integer, parameter, public :: GS_FB_REFIT_FAILED = 9
     integer, parameter, public :: GS_FB_REFIT_NOT_CONVERGED = 10
+    integer, parameter, public :: GS_FB_UNSUPPORTED_DEVICE = 11
 
     type, public :: gs_fb_config_t
         integer :: mode = GS_FB_XPOINT
@@ -227,6 +229,10 @@ contains
         t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
+        if (gs_requested_device(state) >= 0) then
+            status = GS_FB_UNSUPPORTED_DEVICE
+            return
+        end if
         if (.not. law%normalized) return
         if (abs(cfg%axis_sign) /= 1) return
         if (cfg%mode /= GS_FB_XPOINT) then
@@ -1362,6 +1368,10 @@ contains
         t0 = -1; call gs_phase_tick('', t0)
 
         status = GS_FB_BAD_INPUT
+        if (gs_requested_device(state) >= 0) then
+            status = GS_FB_UNSUPPORTED_DEVICE
+            return
+        end if
         if (.not. ev%has_jacobian) return
         call gs_fb_release(fac)
         n = sys%n
@@ -1730,6 +1740,10 @@ contains
         integer :: iteration, backtrack, stat, n
 
         status = GS_FB_BAD_INPUT
+        if (gs_requested_device(state) >= 0) then
+            status = GS_FB_UNSUPPORTED_DEVICE
+            return
+        end if
         if (.not. sys%ready) return
         n = sys%n
         allocate (psi(n), step(n), candidate(n), res(0:sys%cfg%max_iterations), &
