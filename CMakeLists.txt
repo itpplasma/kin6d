@@ -2069,6 +2069,31 @@ include(cmake/kin6d_s0.cmake)
 include(cmake/kin6d_mhd_batches.cmake)
 include(cmake/kin6d_e21.cmake)
 include(cmake/kin6d_separatrix.cmake)
+# Existing PR47 R2 consumer, recovered on current providers; no selector adoption.
+target_sources(kin6d_feec_n PRIVATE
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_bem_high_order_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_exterior_harmonic_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_harmonic_field_products.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90
+    ${fortfem_SOURCE_DIR}/src/bem/exterior_harmonic_fields.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/equilibrium_boundary_3d.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/ideal_free_boundary_bem3d.f90)
+add_executable(test_ideal_fb_surface test/test_ideal_fb_surface.f90)
+target_link_libraries(test_ideal_fb_surface PRIVATE kin6d)
+foreach(k 2 3)
+    foreach(geometry cylinder circle helix)
+        add_test(NAME ideal_fb_chart_surface_${geometry}_p${k}
+            COMMAND test_ideal_fb_surface ${geometry} ${k})
+    endforeach()
+endforeach()
+add_test(NAME ideal_fb_chart_surface_invalid COMMAND test_ideal_fb_surface invalid)
+add_test(NAME ideal_fb_exterior_frozen_derivatives
+    COMMAND test_ideal_free_boundary frozen-exterior)
+set_tests_properties(ideal_fb_exterior_frozen_derivatives PROPERTIES
+    TIMEOUT 300 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
