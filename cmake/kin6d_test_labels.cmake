@@ -12,6 +12,12 @@ kin6d_test_labels(ideal_fb_circuits_derivatives fast CLASSES mhd
     TARGETS test_ideal_fb_circuits)
 kin6d_test_labels(ideal_fb_circuits_exterior3d fast CLASSES mhd
     TARGETS test_ideal_fb_circuits)
+kin6d_test_labels(ideal_fb_traces3d_axisymmetric fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_traces3d_helical fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_traces3d_makegrid fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
 kin6d_test_labels(ideal_fb_landreman_axisymmetric_circuits fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
 kin6d_test_labels(ideal_fb_landreman_helical_circuits fast CLASSES mhd
