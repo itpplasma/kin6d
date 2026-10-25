@@ -1,12 +1,15 @@
 module kin6d_gs_direct
     ! Cached sparse Cholesky factor of the Grad--Shafranov stiffness matrix
-    ! through native FortSparse CPU factors. One factor
+    ! through native FortSparse factors (CPU by default, explicit SPD CUDA).
+    ! One factor
     ! serves every solve on the mesh: fixed-source solves, the A^-1 Newton
     ! preconditioner and the majorant recovery.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use fortsparse, only: sparse_solver_t, sparse_factor, sparse_solve, &
+    use fortsparse, only: csc_t, csc_from_triplet, sparse_solver_t, &
+        sparse_factor, sparse_solve, &
         sparse_destroy, sparse_solve_block, sparse_factor_stats, &
         sparse_factor_stats_t, fortsparse_status_t, status_ok, &
+        FORTSPARSE_BACKEND_UNAVAILABLE, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_SPD, FORTSPARSE_SYM_INDEFINITE, &
         FORTSPARSE_ORDER_AMD, FORTSPARSE_ORDER_ND
     implicit none
@@ -21,6 +24,8 @@ module kin6d_gs_direct
     integer, parameter :: GS_DIRECT_INDEFINITE = FORTSPARSE_SYM_INDEFINITE
     type :: gs_direct_t
         type(sparse_solver_t) :: solver
+        type(sparse_factor_stats_t) :: stats
+        type(fortsparse_status_t) :: factor_status
         logical :: factored = .false.
         logical :: failed = .false.
         ! Dirichlet mask the factor was built for; a change refactors.
@@ -34,7 +39,8 @@ contains
         available = .true.
     end function
 
-    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, symmetry, ordering)
+    subroutine gs_direct_factor(direct, n, rowptr, colidx, val, ok, &
+            symmetry, ordering, device)
 !$      use omp_lib
         ! Factor the full symmetric matrix given as CSR (identical to CSC by
         ! symmetry): positive definite Cholesky by default, LDL^T with
@@ -44,25 +50,61 @@ contains
         integer, intent(in) :: n, rowptr(:), colidx(:)
         real(dp), intent(in) :: val(:)
         logical, intent(out) :: ok
-        integer, intent(in), optional :: symmetry, ordering
+        integer, intent(in), optional :: symmetry, ordering, device
         type(fortsparse_status_t) :: status
         type(sparse_factor_stats_t) :: stats
+        type(csc_t) :: matrix
+        integer, allocatable :: matrix_rows(:)
+        integer :: i, nz
         call gs_direct_free(direct)
         ok = .false.
+        direct%stats = sparse_factor_stats_t()
+        direct%factor_status = fortsparse_status_t( &
+            FORTSPARSE_BACKEND_UNAVAILABLE, 'GS factor not attempted: invalid request')
+        if (present(device)) then
+            if (device < -1) then
+                direct%failed = .true.
+                return
+            end if
+            if (device >= 0 .and. present(symmetry)) then
+                if (symmetry /= GS_DIRECT_SPD) then
+                    direct%failed = .true.
+                    return
+                end if
+            end if
+        end if
         if (.not. gs_direct_mpi_ready()) then
             direct%failed = .true.
             return
         end if
         direct%solver%backend_id = FORTSPARSE_BACKEND_NATIVE
         direct%solver%refine = .false.
+        ! CPU remains the default, including reuse after an explicit GPU factor.
+        direct%solver%options%device = -1
+        if (present(device)) direct%solver%options%device = device
         direct%solver%options%symmetry = FORTSPARSE_SYM_SPD
         if (present(symmetry)) direct%solver%options%symmetry = symmetry
         if (present(ordering)) direct%solver%options%ordering = ordering
         ! Record the requested CPU thread budget for the retained factor.
         direct%solver%options%nthreads = 0
 !$      direct%solver%options%nthreads = omp_get_max_threads()
-        call sparse_factor(direct%solver, n, n, rowptr(n + 1) - 1, rowptr, &
-                           colidx, val, status)
+        if (direct%solver%options%device >= 0) then
+            ! The budgeted raw-conversion API is CPU-only. Use the canonical
+            ! constructor so the GPU object represents the original CSR.
+            nz = rowptr(n + 1) - 1
+            allocate (matrix_rows(nz))
+            do i = 1, n
+                matrix_rows(rowptr(i):rowptr(i + 1) - 1) = i
+            end do
+            call csc_from_triplet(n, n, matrix_rows, colidx(:nz), val(:nz), &
+                matrix, status)
+            deallocate (matrix_rows)
+            if (status_ok(status)) call sparse_factor(direct%solver, matrix, status)
+        else
+            call sparse_factor(direct%solver, n, n, rowptr(n + 1) - 1, rowptr, &
+                               colidx, val, status)
+        end if
+        direct%factor_status = status
         ok = status_ok(status)
         direct%failed = .not. ok
         direct%factored = ok
@@ -70,6 +112,7 @@ contains
         if (.not. ok) return
         call sparse_factor_stats(direct%solver, stats, status)
         if (status_ok(status)) then
+            direct%stats = stats
             direct%factor_s = max(0.0_dp, stats%factor_s)
             direct%analysis_s = max(0.0_dp, stats%analysis_s)
             direct%factor_nnz = int(min(int(huge(1), 8), stats%factor_nnz))

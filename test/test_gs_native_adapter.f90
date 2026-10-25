@@ -14,8 +14,18 @@ program test_gs_native_adapter
     logical :: ok
 
     if (.not. gs_direct_available()) error stop 'native backend required'
+    ! Unsupported device/symmetry requests fail before touching any GPU.
+    call gs_direct_factor(factor, 3, ptr, col, val, ok, device=-2)
+    if (ok .or. factor%factored .or. .not. factor%failed) &
+        error stop 'invalid device was accepted'
+    call gs_direct_factor(factor, 2, [1, 3, 5], [1, 2, 1, 2], &
+        [0.0_dp, 1.0_dp, 1.0_dp, 0.0_dp], ok, &
+        symmetry=GS_DIRECT_INDEFINITE, device=0)
+    if (ok .or. factor%factored .or. .not. factor%failed) &
+        error stop 'unsupported CUDA indefinite factor was accepted'
     call gs_direct_factor(factor, 3, ptr, col, val, ok)
     if (.not. ok) error stop 'SPD factor'
+    if (factor%stats%active_device /= -1) error stop 'default CPU device changed'
     if (factor%solver%backend_id /= FORTSPARSE_BACKEND_NATIVE) &
         error stop 'explicit native backend'
     call gs_direct_solve(factor, [5.0_dp, 5.0_dp, 3.0_dp], x, ok)

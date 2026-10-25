@@ -39,6 +39,7 @@ module kin6d_grad_shafranov
    integer, parameter, public :: GS_UNSUPPORTED_GEOMETRY = 20
    integer, parameter :: geometry_arithmetic = 3
    public :: gs_cell_data, apply_gs, gs_factor_ready, gs_apply_inverse
+   public :: assemble_gs_rhs
    public :: write_gs_mesh, read_gs_mesh
    public :: gs_profile_response, gs_profile_implicit_response, gs_profile_tangent_cache
    public :: gs_profile_response_cache_t, prepare_gs_profile_response_cache
