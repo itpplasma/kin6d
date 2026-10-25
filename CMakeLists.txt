@@ -1992,8 +1992,11 @@ add_test(NAME nonnested_mapped_ellipse_h_ladder
     COMMAND test_nonnested_mapped hladder 10 4 8 16)
 add_test(NAME nonnested_mapped_ellipse_mode_ladder
     COMMAND test_nonnested_mapped modes 2 1 3)
+add_test(NAME nonnested_mapped_zero_forcing_residual
+    COMMAND test_nonnested_mapped zero_forcing)
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
+    nonnested_mapped_zero_forcing_residual
     PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.

@@ -55,7 +55,7 @@ contains
 end module nn_mapped_fixture
 
 program test_nonnested_mapped
-    ! Usage: identity | hladder N nr... | modes nr N...
+    ! Usage: identity | hladder N nr... | modes nr N... | zero_forcing
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use nn_mapped_fixture
     use kin6d_mhd_mesh, only: flux_mesh_t, flux_mesh_build
@@ -106,8 +106,10 @@ program test_nonnested_mapped
         if (size(errs) > 1) then
             if (errs(size(errs)) > 0.5_dp*errs(1)) error stop 'mode ladder stalls'
         end if
+    case ('zero_forcing')
+        call zero_forcing_residual()
     case default
-        error stop 'usage: identity | hladder N nr... | modes nr N...'
+        error stop 'usage: identity | hladder N nr... | modes nr N... | zero_forcing'
     end select
 contains
     subroutine make_field(nr, modes, field)
@@ -201,5 +203,37 @@ contains
             ' div=', report%divergence, ' s=', real(c1 - c0, dp)/rate
         if (report%divergence > 1.0e-12_dp) error stop 'mapped divergence identity'
         if (report%residual > 1.0e-9_dp) error stop 'mapped residual'
+    end subroutine
+
+    subroutine zero_forcing_residual()
+        ! f_vac = 0 leaves only the trace data as forcing (rhs = 0). The
+        ! reported residual must follow the FGMRES tolerance there too; a
+        ! normalisation by rhs and S x alone is identically 1 in this case.
+        integer, parameter :: nr = 2, modes = 1, nphi = 4*modes + 4
+        real(dp), parameter :: loose = 1.0e-4_dp, tight = 1.0e-12_dp
+        type(free_b_field_t), target :: field
+        type(nn_map_t), target :: map
+        type(nn_mapped_report_t) :: report
+        real(dp), allocatable :: data(:)
+        real(dp) :: res_loose, res_tight
+        integer :: st
+        call make_field(nr, modes, field)
+        field%f_vac = 0
+        call nn_map_build(field%fs, 2, 8, ellipse_map, map, st)
+        if (st /= 0) error stop 'zero-forcing map'
+        call nn_mapped_data(field, map, nphi, potential, data, st)
+        if (st /= 0) error stop 'zero-forcing data'
+        if (maxval(abs(data)) <= 0) error stop 'zero-forcing data vanish'
+        call nn_mapped_solve(field, map, nphi, data, loose, report, st)
+        if (st /= 0) error stop 'zero-forcing loose solve'
+        res_loose = report%residual
+        call nn_mapped_solve(field, map, nphi, data, tight, report, st)
+        if (st /= 0) error stop 'zero-forcing tight solve'
+        res_tight = report%residual
+        write (*, '(a,2es12.4,a,i0)') 'zero forcing residual loose/tight=', &
+            res_loose, res_tight, ' iterations=', report%iterations
+        if (res_loose > 2*loose) error stop 'zero-forcing loose residual'
+        if (res_tight > 1.0e-9_dp) error stop 'zero-forcing residual'
+        if (res_tight >= res_loose) error stop 'zero-forcing residual not reduced'
     end subroutine
 end program test_nonnested_mapped

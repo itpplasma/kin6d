@@ -376,8 +376,11 @@ contains
         x = x + scale*y
         r = rhs - csc_matvec(s, x)
         where (fixed) r = 0
-        report%residual = norm2(r)/max(tiny(1.0_dp), norm2(merge(rhs, 0.0_dp, &
-            .not. fixed)), norm2(merge(csc_matvec(s, x), 0.0_dp, .not. fixed)))
+        ! Relative to the lifted right-hand side rhs - S x_D (norm scale), the
+        ! quantity FGMRES reduced. With zero forcing (f_vac = 0) the free part of
+        ! S x equals -r, so a denominator without scale is identically |r|.
+        report%residual = norm2(r)/max(tiny(1.0_dp), scale, norm2(merge(rhs, &
+            0.0_dp, .not. fixed)), norm2(merge(csc_matvec(s, x), 0.0_dp, .not. fixed)))
         report%energy = (dot_product(x, csc_matvec(s, x)) - 2*dot_product(x, rhs) &
             + energy_h)/(2*field%mu0)
         bh = csc_matvec(c, x)
