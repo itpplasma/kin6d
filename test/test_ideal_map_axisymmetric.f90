@@ -137,6 +137,8 @@ program test_ideal_map_axisymmetric
         call factor_check()
     case ('factorstep')
         call masked_factor_step_check()
+    case ('krylov')
+        call krylov_step_check(pullback)
     case default
         error stop 'unknown mode'
     end select
@@ -437,6 +439,44 @@ contains
                 owner = e; return
             end if
         end do
+    end subroutine
+
+    subroutine krylov_step_check(field)
+        ! The inexact Newton step (CG preconditioned with the retained SPD
+        ! factor of an earlier damped Hessian) reaches the same requested
+        ! gradient tolerance and the same exact-flux error (1e-3 relative) as
+        ! the direct step, with fewer factorisations.
+        class(ideal_frozen_t), intent(in) :: field
+        type(gs_state_t) :: gs
+        type(ideal_map_t) :: map
+        type(ideal_map_solve_report_t) :: report(2)
+        real(dp) :: errors(4, 2)
+        integer :: k
+        if (degree < 4) error stop 'krylov needs degree >= 4'
+        if (command_argument_count() < 4) quadrature_order = 2*degree + 1
+        solve_tolerance = 1.0e-7_dp
+        call make_mesh(12, degree, gs)
+        do k = 1, 2
+            call build_map(gs, 1, 0, map, field)
+            map%krylov_step = k == 2
+            call solve_map(map, report(k), .false.)
+            call defects(map, field=field, errors=errors(:, k))
+            print '(a,l2,4i6,2es12.4)', 'krylov iterations factorizations ' &
+                //'solves cg_its gradient d3D_exact', map%krylov_step, &
+                report(k)%iterations, report(k)%factorizations, &
+                report(k)%krylov_solves, report(k)%krylov_iterations, &
+                report(k)%gradient, errors(1, k)
+            if (report(k)%gradient > solve_tolerance) &
+                error stop 'krylov: gradient tolerance not attained'
+        end do
+        if (report(1)%krylov_solves /= 0) error stop 'krylov: CG without krylov_step'
+        if (report(2)%krylov_solves == 0) error stop 'krylov: no CG step exercised'
+        if (report(2)%krylov_iterations > 10*report(2)%krylov_solves) &
+            error stop 'krylov: more CG iterations than krylov_max'
+        if (report(2)%factorizations >= report(1)%factorizations) &
+            error stop 'krylov: no factorisation saved'
+        if (abs(errors(1, 2) - errors(1, 1)) > 1.0e-3_dp*errors(1, 1)) &
+            error stop 'krylov: exact-flux error differs from the direct step'
     end subroutine
 
     subroutine masked_factor_step_check()
