@@ -168,8 +168,18 @@ field-line-advance claim, certified figure-8 equilibrium, or completed
 
 ## Discretisation
 
-- Energy density, DX-gradient (9) and DX-Hessian (45) are fortsym leaves; the
-  chain rule through the chart is assembled in `local_derivatives`.
+- Energy density, DX-gradient (9) and DX-Hessian (45) are fortsym leaves. The
+  chain rule through the chart jet is a further fortsym leaf family
+  (`ideal_point_gradient`, `ideal_point_hessian`, array wrappers `*_jets`):
+  density, gradient and packed Hessian with respect to v = (q, Q), emitted
+  from the same expression DAG by `gen/gen_ideal_map.f90`.
+- The coefficient Hessian is assembled per cell in three stages instead of one
+  rank update per point (`ideal_map_hessian`): the weighted point Hessians are
+  contracted over the planes (DGEMMs per trig/dtrig pairing, map-level products
+  `pphi`), then over the quadrature points with the nodal basis (two DGEMM
+  families on the merged N, dN/ds1, dN/ds2 factors), then reduced by P and
+  reflected. Workspaces are thread-private and allocated once per parallel
+  region. The frozen point-loop assembly is the test oracle.
 - Planes: N_phi = 3N + 1 by default for cylindrical charts; explicit for curve
   charts, trapezoidal in phi-hat; Gauss order 7 in
   the plane. The integrand is rational, so neither is exact.
@@ -334,6 +344,19 @@ surfaces. Gauge-invariant error: RMS of psi_exact(X(y)) - chi(y) over the
 reference, divided by |psi_axis|; the same with KIN6D's 2D fixed-boundary GS
 solution psi_2D on the same mesh is the second oracle.
 
+- `ideal_map_hessian_sum_factorisation_oracle`: P2/P3, toroidal truncations
+  0/1/2 and the transversal, nested-axis and position-gauge bases, against the
+  retained pre-factorisation point-loop assembly
+  (`test/support/ideal_map_hessian_oracle.f90`). The P4/P5/P6 companions
+  `ideal_map_hessian_p{4,5,6}_oracle` use an eight-point synthetic circular
+  contour and truncations 0/2 with the same three bases. They retain the
+  1e-12 largest-entry-relative matrix gate and exact stored symmetry, check
+  CSR identity and mixed-block actions, and
+  compare the full-coupling Hessian action with centered gradient differences
+  at steps 1e-5, 5e-6 and 2.5e-6 (the existing 1e-6 derivative gate). The independent
+  loop and chart-chain assembly share primitive energy leaves, mesh data and
+  quadrature, so agreement does not certify those inputs, continuum error,
+  nonlinear convergence or the unresolved P6 exact-flux order.
 - `ideal_map_derivatives_and_rotation_null`: generated gradient against central
   differences of W, reduced Hessian against differences of the reduced
   gradient, at N = 0 and N = 1 (nfp = 3); rigid rotation null to roundoff.
