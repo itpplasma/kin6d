@@ -1,3 +1,11 @@
+foreach(k 2 3)
+    foreach(case fixed floating voltage)
+        kin6d_test_labels(nonnested_actions_${case}_p${k} fast CLASSES mhd
+            TARGETS test_nonnested_actions)
+    endforeach()
+endforeach()
+kin6d_test_labels(nonnested_actions_invalid fast CLASSES mhd
+    TARGETS test_nonnested_actions)
 # Class and tier labels of every registered test (ROADMAP "Build structure").
 # kin6d_test_labels(<test> <tier> CLASSES <class>... TARGETS <executable>...)
 # Class: the highest layer whose modules the test executables use (mhd implies
