@@ -82,6 +82,9 @@ program test_ideal_fb_traces3d
     !                 the dense all-pairs build (pair quadrature tolerance),
     !                 symmetry and semidefiniteness, and thread invariance.
     !   exterior-scaling (not a CTest) cost and strong scaling of both builds.
+    !   curve-hessian gradient and assembled KKT matrix of the residual on
+    !                 the helical curve chart (N = 1, 2) against central
+    !                 differences, with a frozen R2 exterior and coil traces.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     !$ use omp_lib, only: omp_set_num_threads, omp_get_max_threads, omp_get_wtime
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
@@ -96,6 +99,7 @@ program test_ideal_fb_traces3d
         bem_exterior_dtn_t, build_exterior_dtn
     use fortfem_bem_circulant, only: bem_circulant_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_gradient, &
+        ideal_fb_hessian, &
         ideal_fb_step, ideal_fb_attach_exterior_3d, ideal_fb_full_turn_traces, &
         IDEAL_FB_OK
     use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
@@ -128,6 +132,8 @@ program test_ideal_fb_traces3d
         call makegrid
     case ('scaling')
         call scaling
+    case ('curve-hessian')
+        call curve_derivatives
     case ('exterior')
         call exterior(6, 9, .true.)
     case ('exterior-scaling')
@@ -666,6 +672,73 @@ contains
                 .and. all(run%f_vac == ref%f_vac)
         end do
     end subroutine
+    subroutine curve_derivatives
+        type(ideal_fb_t) :: fb
+        type(curve_chart_t) :: chart
+        type(coil_circuit_basis_t) :: basis
+        type(ideal_fb_circuits_t) :: circuits
+        integer, allocatable :: rowptr(:), colidx(:)
+        real(dp), allocatable :: val(:), g(:), gp(:), gm(:), v(:), hv(:), du(:)
+        real(dp) :: lp, lm, l0, h, fd, an, err, scale, worst(4)
+        integer :: ntor, i, st, p, b0, b(5)
+        call helical_chart(chart, 0.15_dp)
+        call synthetic_basis(basis, 64)
+        do ntor = 1, 2
+            call build_fb(fb, chart, 8, ntor)
+            call ideal_fb_circuits_build(fb, basis, circuits, st, background=filament, &
+                nphi_surface=nphi)
+            if (st /= IDEAL_FB_OK) error stop 'curve traces'
+            call ideal_fb_set_currents(fb, circuits, p0, st)
+            if (st /= IDEAL_FB_OK) error stop 'curve currents'
+            allocate (g(fb%n), gp(fb%n), gm(fb%n), v(fb%n), hv(fb%n), du(fb%n))
+            do i = 1, fb%n
+                du(i) = 1.0e-3_dp*sin(1.3_dp*i)
+            end do
+            du(fb%np + 2*fb%nx + 1:) = 1.0e2_dp*du(fb%np + 2*fb%nx + 1:)
+            du(fb%np + fb%nx + 1:fb%np + 2*fb%nx) = 1.0e5_dp &
+                *du(fb%np + fb%nx + 1:fb%np + 2*fb%nx)
+            call ideal_fb_step(fb, du, 1.0_dp)
+            call attach_frozen_exterior(fb)
+            do i = 1, fb%n
+                v(i) = cos(0.71_dp*i)
+            end do
+            v(fb%np + 2*fb%nx + 1:) = 1.0e2_dp*v(fb%np + 2*fb%nx + 1:)
+            call ideal_fb_gradient(fb, g, st, l0)
+            if (st /= IDEAL_FB_OK) error stop 'curve base state'
+            h = 1.0e-6_dp
+            call ideal_fb_step(fb, v, h)
+            call ideal_fb_gradient(fb, gp, st, lp)
+            call ideal_fb_step(fb, v, -2*h)
+            call ideal_fb_gradient(fb, gm, st, lm)
+            call ideal_fb_step(fb, v, h)
+            fd = (lp - lm)/(2*h); an = dot_product(g, v)
+            err = abs(fd - an)/max(abs(an), 1.0e-30_dp)
+            print '(a,i2,a,2es16.8,a,es9.2)', 'curve N =', ntor, ' dL.v fd/an', fd, an, &
+                ' rel', err
+            if (err > 1.0e-6_dp) error stop 'curve-chart gradient mismatch'
+            call ideal_fb_hessian(fb, rowptr, colidx, val)
+            hv = 0
+            do i = 1, fb%n
+                do p = rowptr(i), rowptr(i + 1) - 1
+                    hv(i) = hv(i) + val(p)*v(colidx(p))
+                end do
+            end do
+            gp = (gp - gm)/(2*h)
+            scale = maxval(abs(hv))
+            b = [0, fb%np, fb%np + fb%nx, fb%np + 2*fb%nx, fb%n]
+            do b0 = 1, 4
+                worst(b0) = maxval(abs(gp(b(b0) + 1:b(b0 + 1)) - hv(b(b0) + 1:b(b0 + 1)))) &
+                    /max(maxval(abs(hv(b(b0) + 1:b(b0 + 1)))), tiny(1.0_dp))
+            end do
+            err = maxval(abs(gp - hv))/scale
+            print '(a,i2,a,es9.2,a,4es9.2)', 'curve N =', ntor, ' |Hv - fd|/|Hv|', err, &
+                '  by block (plasma, shell map, multiplier, potential)', worst
+            if (err > 1.0e-5_dp) error stop 'curve-chart Hessian mismatch'
+            deallocate (g, gp, gm, v, hv, du)
+        end do
+        print '(a)', 'curve-chart derivatives ok'
+    end subroutine
+
     subroutine exterior(ncontour, nphi_s, gate)
         type(ideal_fb_t) :: fbd, fbp, fbt
         type(curve_chart_t) :: chart

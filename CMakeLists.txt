@@ -2199,6 +2199,7 @@ target_link_libraries(test_ideal_fb_traces3d PRIVATE kin6d)
 add_test(NAME ideal_fb_traces3d_axisymmetric COMMAND test_ideal_fb_traces3d axisymmetric)
 add_test(NAME ideal_fb_traces3d_helical COMMAND test_ideal_fb_traces3d helical)
 add_test(NAME ideal_fb_traces3d_makegrid COMMAND test_ideal_fb_traces3d makegrid)
+add_test(NAME ideal_fb_traces3d_curve_hessian COMMAND test_ideal_fb_traces3d curve-hessian)
 add_test(NAME ideal_fb_exterior3d_periodic COMMAND test_ideal_fb_traces3d exterior)
 set_tests_properties(ideal_fb_exterior3d_periodic PROPERTIES
     TIMEOUT 1200 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")

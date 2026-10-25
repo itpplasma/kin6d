@@ -18,6 +18,8 @@ kin6d_test_labels(ideal_fb_traces3d_helical fast CLASSES mhd
     TARGETS test_ideal_fb_traces3d)
 kin6d_test_labels(ideal_fb_traces3d_makegrid fast CLASSES mhd
     TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_traces3d_curve_hessian fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
 kin6d_test_labels(ideal_fb_exterior3d_periodic slow CLASSES mhd
     TARGETS test_ideal_fb_traces3d)
 kin6d_test_labels(ideal_fb_landreman_axisymmetric_circuits fast CLASSES mhd
