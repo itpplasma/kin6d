@@ -56,6 +56,7 @@ module kin6d_nonnested_relax
         real(dp) :: outer_tol = 1.0e-10_dp, gmres_tol = 1.0e-12_dp
         ! Hand-off to Newton when the dimensionless force falls below this.
         real(dp) :: handoff = 1.0e-3_dp
+        logical :: verbose = .false.
     end type
 
     type :: relax_state_t
@@ -324,6 +325,8 @@ contains
                 abs(after%energy - before%energy + dissipation)/dissipation)
             report%law_defect = max(report%law_defect, &
                 abs(after%energy - before%energy + dissipation)/scale)
+            if (options%verbose) print '(a,i4,4es11.3,2i7)', 'relax step ', step, dt, &
+                after%energy, after%force, after%helicity, report%outer, report%krylov
             a = trial; before = after
             ! Sawtooth time steps: implicit midpoint is A- but not L-stable,
             ! so a mode with rate r is damped strongly only near r dt = 2.

@@ -2008,7 +2008,7 @@ foreach(case taylor ideal)
 endforeach()
 add_test(NAME nonnested_relax_vacuum_island COMMAND test_nonnested_relax island)
 set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
-    TIMEOUT 900 LABELS "mhd;slow" PROCESSORS 4
+    TIMEOUT 1800 LABELS "mhd;slow" PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)

@@ -24,6 +24,7 @@ program test_nonnested_relax
         coil_mu0, make_coil, mean_psi, gauge_potential, annulus_mesh, &
         periodic_radius, full_periodic, stability, island_edge
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
+    use fortsparse, only: csc_matvec
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 6.0_dp, mu = 1.1_dp
     type(flux_mesh_t) :: mesh
@@ -179,7 +180,7 @@ contains
         complex(dp), allocatable :: bc(:), seed(:), sol0(:), soln(:), an(:, :)
         complex(dp), allocatable :: sol(:)
         real(dp), allocatable :: nodes(:, :)
-        real(dp) :: o0(2), x0(2), o1(2), x1(2), w0, w1, beta
+        real(dp) :: o0(2), x0(2), o1(2), x1(2), os(2), xs(2), w0, w1, ws, beta
         integer :: i, n
         call make_coil()
         call annulus_mesh(16, 2, fm)
@@ -210,15 +211,21 @@ contains
         if (st /= 0 .or. e > 1.0e-12_dp) error stop 'mode packing'
         call relax_state(rs, RELAX_IDEAL, a0, s0, st)
         print '(a,es12.4)', 'vacuum force ', s0%force
-        ! Interior perturbation, 1e-4 of the vacuum potential scale.
+        ! Interior perturbation with max |curl dA| = 1e-3 max |curl A_vac|
+        ! (the coil field; the toroidal harmonic is not part of curl A).
         n1 = rs%n1; modes = nmodes
         field = vfield
         call perturbation(da)
-        a = a0 + 1.0e-4_dp*maxval(abs(a0))/maxval(abs(da))*da
+        a = a0 + 1.0e-3_dp*maxval(abs(csc_matvec(rs%curl, a0))) &
+            /maxval(abs(csc_matvec(rs%curl, da)))*da
+        ! Island of the perturbed start: the ideal flow must keep this one.
+        call relax_store(rs, a, vfield, st)
+        if (st /= 0) error stop 'store start'
+        call island_geometry(os, xs, ws)
         beta = (ftor/r0)**2
-        options%kind = RELAX_IDEAL; options%dt = 1.0e-3_dp/beta
-        options%dt_max = 1.0_dp/beta; options%handoff = 0.1_dp*s0%force
-        options%max_steps = 40
+        options%kind = RELAX_IDEAL; options%dt = 1.0e-4_dp/beta
+        options%dt_max = 1.0e-2_dp/beta; options%handoff = 0.1_dp*s0%force
+        options%max_steps = 12; options%verbose = .true.
         call relax_run(rs, a, options, report)
         call summary()
         if (report%status /= 0) error stop 'island relaxation'
@@ -231,10 +238,14 @@ contains
         call relax_store(rs, a, vfield, st)
         if (st /= 0) error stop 'store'
         call island_geometry(o1, x1, w1)
-        print '(a,3es12.4)', 'relaxed O/X shift, width change (m) ', &
-            norm2(o1 - o0), norm2(x1 - x0), w1 - w0
-        if (max(norm2(o1 - o0), norm2(x1 - x0)) > 2.0e-3_dp) error stop 'O/X moved'
-        if (abs(w1 - w0) > 4.0e-3_dp) error stop 'island width changed'
+        print '(a,3es12.4)', 'start vs vacuum O/X shift, width change (m) ', &
+            norm2(os - o0), norm2(xs - x0), ws - w0
+        print '(a,3es12.4)', 'relaxed vs start O/X shift, width change (m) ', &
+            norm2(o1 - os), norm2(x1 - xs), w1 - ws
+        ! Gates of nonnested_vacuum_helical_coil_island: 2 mm O/X location,
+        ! 3 mm between trace refinements of the width.
+        if (max(norm2(o1 - os), norm2(x1 - xs)) > 2.0e-3_dp) error stop 'O/X moved'
+        if (abs(w1 - ws) > 3.0e-3_dp) error stop 'island width changed'
         ! Newton hand-off: the NN1 vacuum solves seeded by the relaxed state.
         call nn_solve(vfield, 0, bc, cmplx(a(rs%nn + 1:rs%n1), 0.0_dp, dp), &
             nrep, st, solution=sol)

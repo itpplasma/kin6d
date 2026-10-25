@@ -164,7 +164,7 @@ All runs: Release, GNU Fortran, OpenMP 4 threads, Ryzen 9 5950X under load.
 |---|---|---|
 | `nonnested_relax_taylor` | periodic cylinder a=1, R0=6, P2, 4 rings, N=1; Lundquist mu=1.1 oracle + smooth n=0,1 perturbation, helicity restored exactly | 31 steps to force 6.8e-6; helicity drift 1.9e-15, flux and wall trace 0; energy monotone, law defect 5e-9 rel / 6e-15 abs; lambda 1.099999; B vs discrete Beltrami 1.1e-6; Newton mu = 1.1 (residual 2.9e-14); analytic Lundquist RMS 5.1e-3 (discretisation); 1.2 s |
 | `nonnested_relax_ideal` | same start, ideal metric, dt in [1e-3, 1] | 40 steps, force 0.62 -> 3.3e-3; helicity drift 4e-16, fluxes 0; energy monotone; final W = 51.140 above the Taylor minimum 51.107 at the same helicity (Woltjer bound), lambda 1.036, i.e. a non-Taylor force-free state as expected from topology locking; 8.5 s |
-| `nonnested_relax_vacuum_island` | NN1 helical-coil vacuum island, 16 rings, P2, N=3; 1e-4 interior perturbation, ideal metric | ISLAND_RESULT |
+| `nonnested_relax_vacuum_island` | NN1 helical-coil vacuum island, 16 rings, P2, N=3 (nphi=13); interior perturbation with max curl dA = 1e-3 of the coil field; ideal metric, 12 steps | packed NN1 potential reproduces the vacuum B to 7.9e-16; force 3.3e-3 -> 1.3e-4; helicity drift 5.0e-15, fluxes and wall trace 0; energy monotone. The perturbation itself moves O/X by 0.18/0.13 mm and widens the island by 4.45 mm; relaxation then moves O/X by 3 um/10 um and leaves the 32-turn width unchanged at the 0.53 mm scan resolution (gates 2 mm and 3 mm from `nonnested_vacuum_helical_coil_island`). NN1 Newton from the relaxed state returns to the vacuum to 1.4e-13 with the 1e-9 residual gate; about 8 min at 8 threads, mostly field-line tracing |
 
 ## Limits
 
@@ -183,6 +183,11 @@ All runs: Release, GNU Fortran, OpenMP 4 threads, Ryzen 9 5950X under load.
   on a residual merit because its Lagrangian is a saddle (vacuum co-energy,
   fixed-current vertical mode); a relaxation there must act on the reduced
   energy after eliminating the vacuum potential [H, design not implemented].
+* Thread scaling of `nonnested_relax_ideal` (whole test, shared host at load
+  30-37): 20.0/12.1/8.5/8.5 s at 1/2/4/8 threads. The quadrature metric loop
+  is parallel; the block mass solves, the preconditioner solve and the load
+  scatter are serial and cap the speedup at about 2.4 [V, measured; split
+  not profiled]. These serial paths are open defects under decision 22.
 * The helical Chandrasekhar-Kendall branch (m=1, mu a > 3.11) is not tested.
 
 ## Sources
