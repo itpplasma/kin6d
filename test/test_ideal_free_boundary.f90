@@ -867,6 +867,20 @@ contains
                         fb%tangential_damping = 0
                         fb%plasma%x = x1; fb%xs = xs1
                         fb%phi = phi1; fb%lam = lam1
+                        ! The trust-region globalisation reaches the same
+                        ! manufactured target under the same residual gate.
+                        fb%trust_region = .true.
+                        call ideal_fb_solve(fb, 1.0_dp, 20, report, st, &
+                                    step_tolerance=1.0_dp, residual_tolerance=1.0e-8_dp)
+                        if (st /= IDEAL_FB_OK .or. report%residual > 1.0e-8_dp) &
+                            error stop 'trust-region vertical residual target'
+                        if (maxval(abs(fb%plasma%x - x0)) > 1.0e-8_dp) &
+                            error stop 'trust-region manufactured target error'
+                        print '(a,3i4)', 'trust region: iterations, rejected ', &
+                            report%iterations, report%rejected
+                        fb%trust_region = .false.
+                        fb%plasma%x = x1; fb%xs = xs1
+                        fb%phi = phi1; fb%lam = lam1
                     end block
                     do it = 0, 3
                         error(it) = max(maxval(abs(fb%plasma%x - x0)), &
