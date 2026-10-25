@@ -97,6 +97,8 @@ program test_island_driven
     if (st /= 0 .or. abs(q - 2.0_dp/3) > 1.0e-6_dp) &
         error stop 'outer vacuum r^m oracle'
     if (trim(mode) == 'outer' .or. trim(mode) == 'stable_outer') then
+        call check_radial_reference()
+        call check_signed_projection()
         print '(a)', 'PASS: cylindrical driven outer response and vacuum reduction'
         stop
     end if
@@ -219,34 +221,103 @@ program test_island_driven
     if (prefactor_failed) error stop 'linear prefactor mismatch'
     print '(a)', 'PASS: necessary driven gates; mesh/mode ladders still required'
 contains
-    subroutine response_samples()
-        real(dp) :: xyz(3, 128), bv(EQ_VALUES, 128), theta, phi, rad, br, f
-        integer :: it, ip, idx, stat(128), ir
-        do ir = 0, 4
-            rad = rs + (0.99_dp - rs)*ir/4
-            idx = 0
-            do ip = 0, 7
-                phi = 2*pi*ip/8
-                do it = 0, 15
-                    theta = 2*pi*it/16
-                    idx = idx + 1
-                    xyz(:, idx) = [r0 + rad*cos(theta), rad*sin(theta), phi]
-                end do
+    subroutine response_grid(rad, xyz)
+        real(dp), intent(in) :: rad
+        real(dp), intent(out) :: xyz(3, 128)
+        real(dp) :: theta, phi
+        integer :: it, ip, idx
+        idx = 0
+        do ip = 0, 7
+            phi = 2*pi*ip/8
+            do it = 0, 15
+                theta = 2*pi*it/16
+                idx = idx + 1
+                xyz(:, idx) = [r0 + rad*cos(theta), rad*sin(theta), phi]
             end do
+        end do
+    end subroutine
+
+    real(dp) function flux_projection(rad, xyz, bv, eps) result(f)
+        real(dp), intent(in) :: rad, xyz(3, 128), bv(EQ_VALUES, 128), eps
+        real(dp) :: theta, phi, br
+        integer :: it, ip, idx
+        f = 0; idx = 0
+        do ip = 0, 7
+            phi = 2*pi*ip/8
+            do it = 0, 15
+                theta = 2*pi*it/16
+                idx = idx + 1
+                br = bv(EQ_BR, idx)*cos(theta) + bv(EQ_BZ, idx)*sin(theta)
+                f = f + xyz(1, idx)*rad*br*sin(2*theta - phi)
+            end do
+        end do
+        f = f/(128*eps)
+    end function
+
+    subroutine check_signed_projection()
+        ! Independent analytic curl of a_1=eps(i z,0,z), z=R-R0-i Z.
+        ! This is a signed extraction oracle, not a native vacuum-solve claim.
+        real(dp), parameter :: eps0 = 0.001_dp, rr(3) = [0.25_dp, 2.0_dp/3, 1.0_dp]
+        real(dp) :: xyz(3, 128), bv(EQ_VALUES, 128), xr, zz, phi, measured
+        integer :: ir, j, polarity
+        do ir = 1, size(rr)
+            call response_grid(rr(ir), xyz)
+            do polarity = -1, 1, 2
+                bv = 0
+                do j = 1, 128
+                    xr = xyz(1, j) - r0; zz = xyz(2, j); phi = xyz(3, j)
+                    bv(EQ_BR, j) = polarity*2*eps0 &
+                        *(zz*cos(phi) - xr*sin(phi))/xyz(1, j)
+                    bv(EQ_BZ, j) = polarity*2*eps0 &
+                        *(xr*cos(phi) + zz*sin(phi))/xyz(1, j)
+                end do
+                measured = flux_projection(rr(ir), xyz, bv, eps0)
+                if (abs(measured - polarity*rr(ir)**2) > 2.0e-13_dp) &
+                    error stop 'signed analytic radial-flux projection'
+            end do
+        end do
+        print '(a)', 'PASS: signed analytic curl projection +/-r^2; edge +/-1'
+    end subroutine
+
+    subroutine check_radial_reference()
+        real(dp) :: rt(5), radial(5), ref, dt, drv, resonant
+        integer :: stat
+        resonant = sqrt((2 - q0)/qc)
+        rt = [0.0_dp, resonant/2, resonant, (1 + resonant)/2, 1.0_dp]
+        call outer_response(q0, q0 + qc, delta, ref, dt, drv, stat, rt, radial)
+        if (stat /= 0) error stop 'radial outer reference'
+        if (abs(radial(5) - 1) > 1.0e-12_dp) error stop 'outer edge normalization'
+        if (abs(radial(3) - response(8)) > 1.0e-12_dp) &
+            error stop 'outer resonant normalization'
+        ! With J'=0, the independent regular solution is f(r)/f_b=r^2.
+        rt = [0.0_dp, 0.25_dp, sqrt(2.0_dp/3), 0.99_dp, 1.0_dp]
+        call outer_response(0.0_dp, 3.0_dp, delta, ref, dt, drv, stat, rt, radial)
+        if (stat /= 0) error stop 'radial vacuum reference'
+        if (maxval(abs(radial - rt**2)) > 1.0e-6_dp) &
+            error stop 'outer vacuum radial r^2 oracle'
+        rt(1) = resonant + delta/2
+        call outer_response(q0, q0 + qc, delta, ref, dt, drv, stat, rt, radial)
+        if (stat /= 4) error stop 'unresolved Frobenius cut must be rejected'
+        print '(a)', 'PASS: signed outer radial r^2/edge/resonance; ' // &
+            'unresolved cut rejected'
+    end subroutine
+
+    subroutine response_samples()
+        real(dp) :: xyz(3, 128), bv(EQ_VALUES, 128), radii(5), radial(5), rad, f
+        real(dp) :: ref, dt, drv
+        integer :: stat(128), ir, status
+        radii = [(rs + (0.99_dp - rs)*ir/4, ir=0, 4)]
+        call outer_response(q0, q0 + qc, delta, ref, dt, drv, status, radii, radial)
+        if (status /= 0) error stop 'response radial outer reference'
+        print '(a,2es16.7)', 'resonant radius / outer flux response ', rs, ref
+        do ir = 0, 4
+            rad = radii(ir + 1)
+            call response_grid(rad, xyz)
             call field%sample(xyz, bv, stat)
             if (any(stat /= 0)) error stop 'response sampling'
-            f = 0; idx = 0
-            do ip = 0, 7
-                phi = 2*pi*ip/8
-                do it = 0, 15
-                    theta = 2*pi*it/16
-                    idx = idx + 1
-                    br = bv(EQ_BR, idx)*cos(theta) + bv(EQ_BZ, idx)*sin(theta)
-                    f = f + xyz(1, idx)*rad*br*sin(2*theta - phi)
-                end do
-            end do
-            print '(a,3es16.7)', 'radius / measured flux response / outer ', &
-                rad, f/(128*amplitude), response(8)
+            f = flux_projection(rad, xyz, bv, amplitude)
+            print '(a,3es16.7)', 'radius / measured flux response / radial outer ', &
+                rad, f, radial(ir + 1)
         end do
     end subroutine
     function minor_radius(x) result(u)

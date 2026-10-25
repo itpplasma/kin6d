@@ -30,6 +30,20 @@ f=f_s(1+A x log|x|)+L x+O(x^2 log|x|). The cut is halved eight times, separately
 from the ODE tolerance, and a zero-current-gradient reduction recovers r_s^m.
 This is a numerical reference without a rigorous Frobenius remainder bound.
 
+The optional radial samples are the signed edge-normalized solution f(r)/f_b.
+The resonant scalar f_s/f_b is reported separately and is not a radial profile.
+Each sampled field value is compared with the outer solution at the same radius,
+whose boundary value is +1. Samples strictly inside the unresolved Frobenius cut,
+apart from r_s itself, return a failure status rather than an interpolation.
+Positive radii below the axis-regular seed cutoff rmin=1e-4 are also rejected;
+the exact axis value is zero. Neither unresolved region is extrapolated.
+The existing outer-reference tests check the edge and resonant normalization,
+the independent zero-current-gradient profile f(r)/f_b=r^2, and the signed
+Fourier projection of the imposed potential's analytic curl, including both
+polarities. The latter is an extraction oracle, not a claim about the native
+finite-aspect-ratio vacuum solution. These checks do not close the original
+resonant response or model-matching gates below.
+
 The local helical flux is
 
     H = (B_theta,s q'_s/q_s) x^2/2 - |f_s| cos(2 theta-phi-alpha).

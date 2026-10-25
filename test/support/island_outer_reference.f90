@@ -3,6 +3,7 @@ module island_outer_reference
     ! constant-psi outer problem. See the V1 section of the NN2 notes.
     ! FortNum controls ODE error. The Frobenius cut delta is refined separately.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_island_leaves, only: cylindrical_outer_rhs
     use fortnum_ode, only: ode_problem_t, ode_workspace_t, ode_solution_t, &
                            ode_integrate
@@ -11,14 +12,27 @@ module island_outer_reference
     private
     public :: outer_response
 contains
-    subroutine outer_response(qaxis, qedge, delta, response, tearing, drive, status)
+    subroutine outer_response(qaxis, qedge, delta, response, tearing, drive, status, &
+                              radii, radial)
         real(dp), intent(in) :: qaxis, qedge, delta
         real(dp), intent(out) :: response, tearing, drive
         integer, intent(out) :: status
-        real(dp) :: rs, qc, coeff, ymin(2), ymax(2), small(2), psis, b1, b2
+        ! Signed f(r)/f_b; response remains the separate resonant f_s/f_b.
+        ! Positive radii below rmin and unresolved cut points except r_s fail.
+        real(dp), intent(in), optional :: radii(:)
+        real(dp), intent(out), optional :: radial(:)
+        real(dp) :: rs, qc, coeff, ymin(2), ymax(2), small(2), psis, b1, b2, r
         real(dp), parameter :: rmin = 1.0e-4_dp
+        integer :: i
         qc = qedge - qaxis
         response = 0; tearing = 0; drive = 0; status = 1
+        if (present(radial)) radial = 0
+        if (present(radii) .neqv. present(radial)) return
+        if (present(radii)) then
+            if (size(radial) /= size(radii)) return
+            if (.not. all(ieee_is_finite(radii))) return
+            if (any(radii < 0) .or. any(radii > 1)) return
+        end if
         if (qaxis >= 2 .or. qedge <= 2 .or. delta <= 0) return
         rs = sqrt((2 - qaxis)/qc)
         ! Residue of the simple pole in J'/(r(1/q-1/2)).
@@ -42,6 +56,31 @@ contains
             return
         end if
         tearing = -b1/b2; drive = 1/b2; response = 1/b1
+        if (present(radii)) then
+            do i = 1, size(radii)
+                r = radii(i)
+                if (abs(r - rs) <= 32*epsilon(rs)) then
+                    radial(i) = response
+                else if (r == 0) then
+                    radial(i) = 0
+                else if (r == rmin) then
+                    radial(i) = 1/(psis*b1)
+                else if (r >= rmin .and. r <= rs - delta) then
+                    call integrate(rmin, r, [1.0_dp, 2/rmin], small)
+                    if (status /= 0) return
+                    radial(i) = small(1)/(psis*b1)
+                else if (r == rs + delta) then
+                    radial(i) = ymax(1)/b1
+                else if (r >= rs + delta) then
+                    call integrate(rs + delta, r, ymax, small)
+                    if (status /= 0) return
+                    radial(i) = small(1)/b1
+                else
+                    status = 4
+                    return
+                end if
+            end do
+        end if
     contains
         subroutine integrate(a, b, initial, final)
             real(dp), intent(in) :: a, b, initial(2)
