@@ -675,3 +675,14 @@ kin6d_test_labels(nonnested_g6_external_comparison_contract fast CLASSES mhd
 
 kin6d_test_labels(nonnested_g6_external_sampled_force fast CLASSES mhd
     TARGETS test_g6_sampled_force)
+
+foreach(k 2 3)
+    foreach(case manufactured nested reproduce reproduce3d sampling)
+        kin6d_test_labels(nonnested_fitted_${case}_p${k} fast CLASSES mhd
+            TARGETS test_nonnested_profile)
+    endforeach()
+endforeach()
+foreach(case readiness heat current)
+    kin6d_test_labels(island_fitted_${case} fast CLASSES mhd
+        TARGETS test_island_fitted)
+endforeach()

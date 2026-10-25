@@ -13,6 +13,7 @@ program gen_nonnested
     type(expr_t) :: bg, bf, coef, flux(3), current(3)
     type(expr_t) :: krr, krz, kzz, f0, fr, fz, data(6), lower, width, height
     type(expr_t) :: rmin, chil, par2, force2, volume, length_scale, pressure_scale
+    type(expr_t) :: drive, lambda_target, jr, jp, jz
     call arena%init()
     gpr = sym(arena, 'gpr'); gpp = sym(arena, 'gpp'); gpz = sym(arena, 'gpz')
     gfr = sym(arena, 'gfr'); gfp = sym(arena, 'gfp'); gfz = sym(arena, 'gfz')
@@ -88,6 +89,25 @@ program gen_nonnested
         ['par2          ', 'force2        ', 'volume        ', &
         'length_scale  ', 'pressure_scale'], ['epsilon_parallel', 'ohmic_force_rms '], &
         [length_scale*sqrt(par2/volume)/pressure_scale, sqrt(force2/volume)], &
+        ad=.true.)
+    ! Closure B fits a signed parallel current drive on a fixed seed.
+    ! lambda = J.B/|B|^2 = gpar (B_phi E_phi - B.grad Phi)/|B|^2 + drive.
+    drive = sym(arena, 'drive')
+    lambda_target = sym(arena, 'lambda_target')
+    call w%emit('fitted_parallel_drive', &
+        ['br           ', 'bphi         ', 'bz           ', 'gfr          ', &
+        'gfp          ', 'gfz          ', 'ephi         ', 'gpar         ', &
+        'lambda_target'], ['drive'], [lambda_target - gpar*(bphi*ephi - bf)/q], &
+        ad=.true.)
+    call w%emit('parallel_drive_current', ['br   ', 'bphi ', 'bz   ', 'drive'], &
+        ['jr', 'jp', 'jz'], [drive*br, drive*bphi, drive*bz], ad=.true.)
+    jr = sym(arena, 'jr'); jp = sym(arena, 'jp'); jz = sym(arena, 'jz')
+    call w%emit('profile_current_diagnostic', &
+        ['br           ', 'bphi         ', 'bz           ', 'jr           ', &
+        'jp           ', 'jz           ', 'gpr          ', 'gpp          ', &
+        'gpz          ', 'drive        ', 'lambda_target'], &
+        ['lambda_defect', 'parallel_p   '], &
+        [(jr*br + jp*bphi + jz*bz)/q + drive - lambda_target, bg/sqrt(q)], &
         ad=.true.)
     ! NN2 equilibrated-flux data of the axisymmetric N = 0 block with
     ! measure R dR dZ, as a planar problem in dR dZ: tensor A = R K_pol,
