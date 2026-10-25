@@ -95,6 +95,24 @@ shared tangent/adjoint action. Geometry derivatives, topology changes and
 island classification derivatives are unavailable in NN1. The smooth stress,
 pressure, gauge and tracing leaves have generated primal/JVP/VJP families.
 
+An optional iterative path solves the n > 0 curl-curl system by CG with
+the Hiptmair-Xu auxiliary-space preconditioner of
+[FortFEM](https://github.com/lazy-fortran/fortfem)
+(`fortfem_hcurl_auxiliary_space`: vertex-patch Schwarz smoothing on N_k,
+the exact Whitney embedding N_1 -> N_k, and nodal gradient and
+interpolation corrections solved by smoothed aggregation). Select it with
+`field%linear_solver = NN_SOLVER_HX` or `KIN6D_NN_LINEAR_SOLVER=hx`; the
+direct factor stays the default. Residual refinement with the same
+preconditioner precedes the unchanged 1e-9 equation-residual gate.
+On the vacuum annulus with 4 to 16 radial rings CG needs 15 to 20
+iterations per real solve from P2 to P4, independent of n, until the
+solve reaches the rounding floor. In this 2D
+meridional problem the AMD-ordered Cholesky is still faster at the
+measured sizes (`benchmarks/nn1_hx`), so the path exists for large or
+matrix-free systems, not as a speed claim. At P >= 4 both solvers end at
+the rounding floor of the N_k basis (direct relative residual 5e-9 to
+8e-8 at P4, up to 1.5e-5 at P6), above the 1e-9 gate.
+
 `gen_equilibrium_core` now defines one Maxwell-stress tensor, deriving both
 the original axisymmetric D3 coefficients and the new 3D leaf from it. The
 new D3 evaluator integrates that tensor against zero-trace scalar P_k
