@@ -56,7 +56,8 @@ module kin6d_ideal_map
         FORTSPARSE_ORDER_AMD, &
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
         sparse_factor_stats, sparse_factor_stats_t, &
-        sparse_refactor, csc_t
+        sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
+        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     implicit none
     private
@@ -123,6 +124,18 @@ module kin6d_ideal_map
         ! Position gauge instead of transversals + axis expansion + omega.
         logical :: position_gauge = .false.
         real(dp) :: initial_damping = 1.0e-6_dp
+        ! Non-nested Newton step by CG on the damped masked Hessian,
+        ! preconditioned with the retained SPD Cholesky factor of an earlier
+        ! damped Hessian (inexact Newton, forcing eta = min(1/2, (|g|/|g0|)^1/2)
+        ! with g0 the initial gradient of the solve). A step that needs more
+        ! than krylov_refactor iterations, breaks down (nonpositive curvature
+        ! or preconditioner) or does not converge within krylov_max is
+        ! replaced by a fresh factorisation of the current damped Hessian and
+        ! a direct solve. Rejected trials (higher damping) reuse the factor.
+        ! A pivoted LU fallback factor is never retained. False (default):
+        ! factor and solve at every trial.
+        logical :: krylov_step = .false.
+        integer :: krylov_refactor = 8, krylov_max = 10
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
@@ -197,8 +210,13 @@ module kin6d_ideal_map
         real(dp) :: analysis_s = 0, numeric_s = 0
         real(dp) :: assembly_roundoff = 0
         ! Factorisation attempts, and symbolic analyses (fresh factors and
-        ! refactors that report no reuse).
-        integer :: analyses = 0, factorizations = 0
+        ! refactors that report no reuse). lu_fallbacks: SPD Cholesky trials
+        ! with a nonpositive pivot that were factored by the pivoted LU
+        ! instead (each also counts as a factorisation attempt).
+        integer :: analyses = 0, factorizations = 0, lu_fallbacks = 0
+        ! Non-nested Newton trials, CG solves with the retained factor
+        ! (map%krylov_step) and their total CG iterations.
+        integer :: trials = 0, krylov_solves = 0, krylov_iterations = 0
         type(factor_cache_t), private :: cache
     end type
 contains
@@ -1321,7 +1339,7 @@ contains
         ! e.g. the first-phase gradient for a polishing solve.
         real(dp), intent(in), optional :: reference_gradient
         type(csr_matrix_t) :: matrix, omatrix
-        type(sparse_solver_t) :: solver, osolver
+        type(sparse_solver_t) :: solver, osolver, lsolver
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
         real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
@@ -1329,9 +1347,12 @@ contains
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
         real(dp) :: cap_x, cap_w, t0, trial_minjac
         integer :: it, i, k, tries, estatus
-        logical :: talk, accepted, factored, ofactored, nested
+        logical :: talk, accepted, factored, ofactored, lfactored, use_lu, nested
+        logical :: retained, direct, pc_failed
+        real(dp) :: eta, ginit
         talk = .false.
-        factored = .false.; ofactored = .false.
+        retained = .false.
+        factored = .false.; ofactored = .false.; lfactored = .false.
         if (present(verbose)) talk = verbose
         nested = map%omega_elimination .and. .not. map%position_gauge
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
@@ -1347,6 +1368,7 @@ contains
         call ideal_map_reduce(map, grad, gred)
         where (map%fixed) gred = 0
         g0 = norm2(gred); gnorm = g0
+        ginit = g0
         report%initial_gradient = g0
         if (present(reference_gradient)) g0 = reference_gradient
         if (nested) then
@@ -1389,20 +1411,40 @@ contains
                 end if
             end if
             if (.not. nested) then
+                eta = min(0.5_dp, sqrt(gnorm/max(ginit, tiny(1.0_dp))))
             do tries = 1, 30
                 t0 = wall_seconds()
                 shift = merge(mu*(abs(diag) + 1.0e-12_dp*scale), 0.0_dp, damped)
-                call factor_masked(map, matrix, .not. map%fixed, shift, solver, &
-                    factored, estatus, report)
-                if (estatus /= 0) then
-                    mu = mu*10; cycle
-                end if
+                report%trials = report%trials + 1
                 rhs = -gred
-                call sparse_solve(solver, rhs, step, sstatus)
-                report%factor_s = report%factor_s + wall_seconds() - t0
-                if (.not. status_ok(sstatus)) then
-                    status = IDEAL_MAP_SOLVE_FAILED; call cleanup(); return
+                direct = .true.
+                if (map%krylov_step .and. retained) call krylov_solve(direct)
+                if (direct) then
+                    use_lu = .false.
+                    if (map%krylov_step) then
+                        ! The preconditioner must be SPD: Cholesky first, and
+                        ! a pivoted LU fallback factor is not retained.
+                        call factor_masked(map, matrix, .not. map%fixed, shift, &
+                            solver, factored, estatus, report, lu=lsolver, &
+                            lu_done=lfactored, use_lu=use_lu)
+                    else
+                        call factor_masked(map, matrix, .not. map%fixed, shift, &
+                            solver, factored, estatus, report)
+                    end if
+                    retained = estatus == 0 .and. .not. use_lu
+                    if (estatus /= 0) then
+                        mu = mu*10; cycle
+                    end if
+                    if (use_lu) then
+                        call sparse_solve(lsolver, rhs, step, sstatus)
+                    else
+                        call sparse_solve(solver, rhs, step, sstatus)
+                    end if
+                    if (.not. status_ok(sstatus)) then
+                        status = IDEAL_MAP_SOLVE_FAILED; call cleanup(); return
+                    end if
                 end if
+                report%factor_s = report%factor_s + wall_seconds() - t0
                 where (map%fixed) step = 0
                 call ideal_map_expand(map, step, full)
                 ! Trust region: near-null (relabelling) directions can carry
@@ -1472,6 +1514,73 @@ contains
                     cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
                     - 1:3)))))
             end do
+        end subroutine
+
+        subroutine krylov_solve(fallback)
+            ! step = -(masked H + shift)^-1 gred by CG to the relative residual
+            ! eta, preconditioned with the retained SPD factor in solver. The
+            ! operator is the cached masked matrix of this Hessian (identity
+            ! on the fixed rows, as factored by factor_masked) plus the trial
+            ! shift. fallback: no accepted CG step (more than krylov_refactor
+            ! iterations, breakdown or no convergence within krylov_max); the
+            ! caller then factors this trial. The system is scaled to a unit
+            ! right-hand side because the FortNum target is eta max(|b|, 1).
+            ! An invalid cached matrix also falls back (factor_masked rejects it).
+            logical, intent(out) :: fallback
+            real(dp), allocatable :: unit_rhs(:)
+            real(dp) :: bnorm, residual
+            integer :: kinfo, kiters, info
+            fallback = .true.
+            call factor_cache_update(map, matrix, .not. map%fixed, 0, report%cache, info)
+            if (info /= 0) return
+            bnorm = norm2(rhs)
+            if (.not. bnorm > 0) return
+            unit_rhs = rhs/bnorm
+            step = 0
+            pc_failed = .false.
+            call real_conjugate_gradient_operator(damped_matvec, unit_rhs, step, eta, &
+                map%krylov_max, kinfo, kiters, residual, factor_preconditioner)
+            report%krylov_solves = report%krylov_solves + 1
+            report%krylov_iterations = report%krylov_iterations + kiters
+            if (pc_failed) return
+            if (kinfo /= KRYLOV_OK) return
+            if (kiters > map%krylov_refactor) return
+            step = bnorm*step
+            fallback = .false.
+        end subroutine
+
+        subroutine damped_matvec(input, output)
+            ! (masked H + shift) input with the cached canonical matrix; the
+            ! row sums are sequential, so the product is thread-count
+            ! independent.
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            integer :: row, kk
+            real(dp) :: acc
+            !$omp parallel do default(shared) private(row, kk, acc) schedule(static)
+            do row = 1, map%nred
+                acc = 0
+                do kk = report%cache%rowptr(row), report%cache%rowptr(row + 1) - 1
+                    acc = acc + report%cache%base(kk)*input(report%cache%colidx(kk))
+                end do
+                if (.not. map%fixed(row)) then
+                    if (report%cache%dpos(row) > 0) acc = acc + shift(row)*input(row)
+                end if
+                output(row) = acc
+            end do
+            !$omp end parallel do
+        end subroutine
+
+        subroutine factor_preconditioner(input, output)
+            ! Retained SPD factor solve; a failed solve ends the CG step.
+            real(dp), intent(in) :: input(:)
+            real(dp), intent(out) :: output(:)
+            type(fortsparse_status_t) :: pstatus
+            call sparse_solve(solver, input, output, pstatus)
+            if (.not. status_ok(pstatus)) then
+                pc_failed = .true.
+                output = 0
+            end if
         end subroutine
 
         subroutine nested_line_search()
@@ -1551,7 +1660,8 @@ contains
         subroutine cleanup()
             if (factored) call sparse_destroy(solver)
             if (ofactored) call sparse_destroy(osolver)
-            factored = .false.; ofactored = .false.
+            if (lfactored) call sparse_destroy(lsolver)
+            factored = .false.; ofactored = .false.; lfactored = .false.
         end subroutine
     end subroutine
 
@@ -1699,7 +1809,8 @@ contains
         rc = matmul(map%omega_c, x(3, 1, :))
     end function
 
-    subroutine factor_masked(map, matrix, keep, shift, slv, done, info, report, gauge)
+    subroutine factor_masked(map, matrix, keep, shift, slv, done, info, report, gauge, &
+                             lu, lu_done, use_lu)
         ! Factorise the reduced Hessian restricted to the keep rows/columns
         ! (identity elsewhere), plus shift on the diagonal. done: slv holds a
         ! factorisation of this pattern (only the numerical one is redone).
@@ -1707,6 +1818,10 @@ contains
         ! the free n = 0 omega dofs as Lagrange rows/columns (saddle point;
         ! solve with gauge_solve). The masked, symmetrised matrix is cached in
         ! report per pattern; a trial only rewrites the diagonal.
+        ! lu, lu_done, use_lu (all or none, without gauge): slv holds the SPD
+        ! Cholesky and lu the pivoted LU fallback of the same matrix; use_lu
+        ! tells which one holds the factor of this trial. Without them, slv
+        ! holds the pivoted LU.
         type(ideal_map_t), intent(in) :: map
         type(csr_matrix_t), intent(in) :: matrix
         logical, intent(in) :: keep(:)
@@ -1716,15 +1831,18 @@ contains
         integer, intent(out) :: info
         type(ideal_map_solve_report_t), intent(inout) :: report
         logical, intent(in), optional :: gauge
-        type(sparse_factor_stats_t) :: stats
+        type(sparse_solver_t), intent(inout), optional :: lu
+        logical, intent(inout), optional :: lu_done
+        logical, intent(out), optional :: use_lu
         type(fortsparse_status_t) :: sstatus
-        logical :: reused
-        integer :: row, n, nc
+        logical :: spd
+        integer :: row, nc
         nc = 0
         if (present(gauge)) then
             if (gauge) nc = gauge_rows(map)
         end if
-        n = map%nred + nc
+        spd = nc == 0 .and. present(lu)
+        if (present(use_lu)) use_lu = .false.
         call factor_cache_update(map, matrix, keep, nc, report%cache, info)
         if (info /= 0) then
             if (done) call sparse_destroy(slv)
@@ -1737,53 +1855,85 @@ contains
                 if (keep(row) .and. c%dpos(row) > 0) &
                     c%a%val(c%dpos(row)) = c%bdiag(row) + shift(row)
             end do
-            ! Relabelling directions can leave the map Hessian indefinite near
-            ! equilibrium. Keep the pivoted LU Newton trial: rejecting a
-            ! nonpositive Cholesky pivot would increase damping before the
-            ! energy line search and change the attained approximation at the
-            ! requested gradient tolerance. The cached canonical matrix and
-            ! symbolic reuse apply to this factorisation as well.
-            slv%options%symmetry = FORTSPARSE_SYM_GENERAL
-            slv%options%lu_method = FORTSPARSE_LU_SUPERNODAL
-            slv%options%ordering = FORTSPARSE_ORDER_AMD
-            slv%options%verify_factor = map%verify_factor
+        end associate
+        ! With lu (the Krylov step, whose preconditioner must be SPD), the
+        ! SPD Cholesky is tried first. Relabelling directions can leave the
+        ! damped Hessian indefinite; a nonpositive pivot does not reject the
+        ! Newton trial: the same matrix is factored by the native supernodal
+        ! pivoted LU, which is then used for this trial only. Without lu, the
+        ! pivoted LU is the factor (the direct-step policy).
+        if (spd) then
+            call factor_one(slv, done, .true., info, sstatus)
+            if (info == 0) return
+            if (sstatus%code /= FORTSPARSE_NOT_POSITIVE_DEFINITE) return
+            report%lu_fallbacks = report%lu_fallbacks + 1
+            call factor_one(lu, lu_done, .false., info, sstatus)
+            if (info == 0) use_lu = .true.
+        else
+            call factor_one(slv, done, .false., info, sstatus)
+        end if
+    contains
+        subroutine factor_one(s, sdone, cholesky, sinfo, sst)
+            ! Factor report%cache%a into s: SPD Cholesky or pivoted LU.
+            type(sparse_solver_t), intent(inout) :: s
+            logical, intent(inout) :: sdone
+            logical, intent(in) :: cholesky
+            integer, intent(out) :: sinfo
+            type(fortsparse_status_t), intent(out) :: sst
+            type(sparse_factor_stats_t) :: stats
+            type(fortsparse_status_t) :: stats_status
+            logical :: reused
+            sinfo = 1
+            if (cholesky) then
+                s%options%symmetry = FORTSPARSE_SYM_SPD
+                s%options%lu_method = FORTSPARSE_LU_SCALAR
+            else
+                s%options%symmetry = FORTSPARSE_SYM_GENERAL
+                s%options%lu_method = FORTSPARSE_LU_SUPERNODAL
+            end if
+            s%options%ordering = FORTSPARSE_ORDER_AMD
+            s%options%verify_factor = map%verify_factor
+            s%backend_id = FORTSPARSE_BACKEND_NATIVE
             if (gs_direct_available()) then
                 if (.not. gs_direct_mpi_ready()) then
-                    info = 1
-                    if (done) call sparse_destroy(slv)
-                    done = .false.
+                    if (sdone) call sparse_destroy(s)
+                    sdone = .false.
                     return
                 end if
-                slv%backend_id = FORTSPARSE_BACKEND_NATIVE
-                slv%options%nthreads = map%factor_threads
-            else
-                slv%backend_id = FORTSPARSE_BACKEND_NATIVE
+                s%options%nthreads = map%factor_threads
             end if
             ! The pattern is fixed per map: after the first factorisation only
             ! the numerical factorisation is redone when the backend can reuse
             ! it.
             reused = .false.
-            if (done) then
-                call sparse_refactor(slv, c%a, sstatus, reused)
+            if (sdone) then
+                call sparse_refactor(s, report%cache%a, sst, reused)
             else
-                call sparse_factor(slv, c%a, sstatus)
+                call sparse_factor(s, report%cache%a, sst)
             end if
-        end associate
-        info = merge(0, 1, status_ok(sstatus))
-        report%factorizations = report%factorizations + 1
-        if (info /= 0) then
-            if (done) call sparse_destroy(slv)
-            done = .false.
-            return
-        end if
-        done = .true.
-        if (.not. reused) report%analyses = report%analyses + 1
-        call sparse_factor_stats(slv, stats, sstatus)
-        if (status_ok(sstatus)) then
-            if (.not. reused) report%analysis_s = report%analysis_s &
-                + max(0.0_dp, stats%analysis_s)
-            report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
-        end if
+            sinfo = merge(0, 1, status_ok(sst))
+            report%factorizations = report%factorizations + 1
+            if (sinfo /= 0) then
+                ! A Cholesky pivot that is not positive keeps the symbolic
+                ! analysis: the next trial refactors on it.
+                if (cholesky .and. sst%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
+                    if (.not. sdone) report%analyses = report%analyses + 1
+                    sdone = .true.
+                    return
+                end if
+                if (sdone) call sparse_destroy(s)
+                sdone = .false.
+                return
+            end if
+            sdone = .true.
+            if (.not. reused) report%analyses = report%analyses + 1
+            call sparse_factor_stats(s, stats, stats_status)
+            if (status_ok(stats_status)) then
+                if (.not. reused) report%analysis_s = report%analysis_s &
+                    + max(0.0_dp, stats%analysis_s)
+                report%numeric_s = report%numeric_s + max(0.0_dp, stats%factor_s)
+            end if
+        end subroutine
     end subroutine
 
     subroutine factor_cache_update(map, matrix, keep, nc, c, info)
