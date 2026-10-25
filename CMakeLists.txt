@@ -938,7 +938,7 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi ideal_response_error
-            equilibrium_core curve_chart ideal_seed_3d nonnested vacuum_shell landreman nested_oracles
+            equilibrium_core curve_chart ideal_seed_3d nonnested metriplectic vacuum_shell landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -982,6 +982,13 @@ if(KIN6D_FORTSYM_BUILD)
         -DWORK=${CMAKE_BINARY_DIR}/nonnested-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nonnested_regeneration.cmake)
     kin6d_test_labels(nonnested_exact_regeneration fast CLASSES mhd TARGETS gen_nonnested)
+    add_test(NAME metriplectic_identities_and_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_metriplectic>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_metriplectic_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/metriplectic-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_metriplectic_regeneration.cmake)
+    kin6d_test_labels(metriplectic_identities_and_regeneration fast CLASSES mhd
+        TARGETS gen_metriplectic)
     add_test(NAME equilibrium_nested_oracle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_nested_oracles>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
@@ -1923,7 +1930,10 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
     TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
-    src/mhd/nonnested_beltrami.f90)
+    src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_relax.f90
+    src/generated/kin6d_metriplectic_leaves.f90)
+set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 add_executable(test_nonnested_beltrami_spec test/test_nonnested_beltrami_spec.f90)
 target_link_libraries(test_nonnested_beltrami_spec PRIVATE kin6d)
 set(KIN6D_BELTRAMI_SPEC_SAMPLES "" CACHE PATH "Optional native SPEC sample directory")
@@ -1987,6 +1997,19 @@ foreach(k 2 3)
             ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
     endforeach()
 endforeach()
+
+add_executable(test_nonnested_relax test/test_nonnested_relax.f90)
+target_link_libraries(test_nonnested_relax PRIVATE kin6d_nn_vacuum_test)
+foreach(case taylor ideal)
+    add_test(NAME nonnested_relax_${case} COMMAND test_nonnested_relax ${case})
+    set_tests_properties(nonnested_relax_${case} PROPERTIES
+        TIMEOUT 300 LABELS "mhd;fast" PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+add_test(NAME nonnested_relax_vacuum_island COMMAND test_nonnested_relax island)
+set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
+    TIMEOUT 900 LABELS "mhd;slow" PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
 target_link_libraries(test_nonnested_mapped PRIVATE kin6d)

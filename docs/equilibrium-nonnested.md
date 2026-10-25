@@ -246,9 +246,11 @@ builds, mesh ladders, long traces and full CTest runs used sCluster.
 
 ## Open items and NN2
 
-NN1 does not implement general finite-beta 3D relaxation, helicity-preserving
-admissible variations, current sheets, free-boundary coupling, geometry
-sensitivities or continuous certificates. The atlas's rotating ellipse,
+NN1 does not implement general finite-beta 3D relaxation, current sheets,
+free-boundary coupling, geometry sensitivities or continuous certificates.
+Energy-dissipating relaxation at exactly conserved helicity and fluxes (ideal
+magneto-frictional and Taylor metrics) on this complex is described in
+[metriplectic-relaxation.md](metriplectic-relaxation.md). The atlas's rotating ellipse,
 finite-pressure island, stochastic finite-pressure and Landreman entries
 are not promoted by this vacuum fixture.
 
