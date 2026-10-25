@@ -506,7 +506,7 @@ contains
         real(dp), intent(in), optional :: res_eps(:)
         complex(dp), allocatable :: bl(:, :)
         real(dp), allocatable :: phi(:, :), ref(:, :), sinv(:, :, :), tk(:, :)
-        real(dp), allocatable :: dres(:), epsr(:)
+        real(dp), allocatable :: dres(:), epsr(:), ring_psi(:), ring_q(:)
         real(dp) :: dbas(3)
         integer, allocatable :: i1(:), kres(:)
         real(dp) :: x(2), wq, th, gx(6), gw(6), xi, eta, nh(2), ta, tb
@@ -524,6 +524,10 @@ contains
         if (wres) call strip_shape_fit(rings(1:nri), n, jcur, i1, kres, dres, tk, sinv, &
                                        epsr, res_m, res_eps)
         if (wres) then
+            ! Contiguous copies: lagrange3 on rings(j1:j1 + 2)%psi made an array
+            ! temporary at every quadrature point.
+            ring_psi = rings(1:nri)%psi
+            ring_q = rings(1:nri)%q
             ! A strip that reaches the rational (L4 sheet on the rational ring)
             ! has no finite near-rational shape: the clamp t >= 1e-3 would set
             ! its current by the mesh, so it keeps the strip-constant current.
@@ -532,7 +536,7 @@ contains
                 j1 = min(max(ir - 1, 1), nri - 2)
                 do k = 0, 1
                     psi = g%psi_axis + fm%u(ir + k)**2*(g%psi_edge - g%psi_axis)
-                    qv = lagrange3(rings(j1:j1 + 2)%psi, rings(j1:j1 + 2)%q, psi)
+                    qv = lagrange3(ring_psi(j1:j1 + 2), ring_q(j1:j1 + 2), psi)
                     if ((kres(ir) + n*qv)/dres(ir) < t_reach) i1(ir) = 0
                 end do
             end do
@@ -560,7 +564,7 @@ contains
                         phi2 = g%psi_axis + fm%u(jr)**2*(g%psi_edge - g%psi_axis)
                         psi = min(max(psi, min(plo, phi2)), max(plo, phi2))
                         j1 = min(max(ir - 1, 1), nri - 2)
-                        qv = lagrange3(rings(j1:j1 + 2)%psi, rings(j1:j1 + 2)%q, psi)
+                        qv = lagrange3(ring_psi(j1:j1 + 2), ring_q(j1:j1 + 2), psi)
                         tt = max((kres(ir) + n*qv)/dres(ir), t_reach)
                         call frobenius_basis(epsr(ir), tt, bas, dbas)
                         do k = 1, 3
@@ -625,7 +629,7 @@ contains
         integer, intent(in), optional :: res_m(:)
         real(dp), intent(in), optional :: res_eps(:)
         integer :: nr, h, c, k, ii, start(3), l
-        real(dp) :: a(3, 3), det, df(3)
+        real(dp) :: a(3, 3), det, df(3), row(3)
         logical, allocatable :: live(:)
         logical :: ok
 
@@ -660,7 +664,9 @@ contains
                 if (.not. ok) cycle
                 do k = 1, 3
                     tk(k, h) = (kres(h) + n*rings(ii + k - 1)%q)/dres(h)
-                    call frobenius_basis(epsr(h), tk(k, h), a(k, :), df)
+                    ! row: a(k, :) is strided and would need an array temporary
+                    call frobenius_basis(epsr(h), tk(k, h), row, df)
+                    a(k, :) = row
                 end do
                 det = det3(a)
                 if (abs(det) < 1.0e-13_dp) cycle
