@@ -419,6 +419,12 @@ add_test(NAME ideal_map_masked_factor_step COMMAND test_ideal_map_axisymmetric f
 add_test(NAME ideal_map_krylov_step COMMAND test_ideal_map_axisymmetric krylov 4)
 set_tests_properties(ideal_map_krylov_step
     PROPERTIES PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
+add_test(NAME ideal_map_lagged_hessian COMMAND test_ideal_map_axisymmetric lagged 4)
+set_tests_properties(ideal_map_lagged_hessian
+    PROPERTIES PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
+add_test(NAME ideal_map_continuation COMMAND test_ideal_map_axisymmetric continuation 4)
+set_tests_properties(ideal_map_continuation
+    PROPERTIES PROCESSORS 4 ENVIRONMENT OMP_NUM_THREADS=4)
 add_test(NAME ideal_map_n0_normalised_residual_a3_p2
     COMMAND test_ideal_map_axisymmetric residual 2)
 set_tests_properties(ideal_map_n0_normalised_residual_a3_p2

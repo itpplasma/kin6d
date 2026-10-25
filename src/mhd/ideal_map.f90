@@ -66,6 +66,7 @@ module kin6d_ideal_map
     public :: ideal_map_solve, ideal_map_point, ideal_map_dof, ideal_map_mode_norms
     public :: ideal_map_reduce, ideal_map_expand, ideal_map_rdof, ideal_map_axis_dof
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
+    public :: ideal_map_prolong_correction
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
     public :: ideal_map_gauge_project
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
@@ -136,6 +137,23 @@ module kin6d_ideal_map
         ! factor and solve at every trial.
         logical :: krylov_step = .false.
         integer :: krylov_refactor = 8, krylov_max = 10
+        ! Non-nested quasi-Newton steps between Hessian assemblies: after a
+        ! factored (or Krylov) Newton step, the next steps are L-BFGS steps
+        ! (lagged_memory secant pairs) whose initial inverse is the retained
+        ! factor of the last damped Hessian, so they cost one solve and one
+        ! energy/gradient instead of an assembly. A step that is not a
+        ! descent direction or is rejected by the energy rule falls back to
+        ! the Newton step at the same point; a step that reduces the gradient
+        ! norm by less than the factor lagged_contraction is kept and the next
+        ! iteration assembles and refactors. False (default): a Hessian per
+        ! iteration.
+        logical :: lagged_hessian = .false.
+        integer :: lagged_memory = 8
+        real(dp) :: lagged_contraction = 0.5_dp
+        ! Quasi-Newton steps only follow a factor whose damping mu is at most
+        ! lagged_damping: a strongly damped (indefinite-phase) factor is a poor
+        ! initial inverse.
+        real(dp) :: lagged_damping = 1.0e-6_dp
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
         real(dp) :: gauge_weight = 1.0e-4_dp
@@ -217,6 +235,8 @@ module kin6d_ideal_map
         ! Non-nested Newton trials, CG solves with the retained factor
         ! (map%krylov_step) and their total CG iterations.
         integer :: trials = 0, krylov_solves = 0, krylov_iterations = 0
+        ! Hessian assemblies and accepted quasi-Newton steps (map%lagged_hessian).
+        integer :: hessians = 0, quasi_steps = 0
         type(factor_cache_t), private :: cache
     end type
 contains
@@ -818,6 +838,66 @@ contains
         status = IDEAL_MAP_OK
     end subroutine
 
+    subroutine ideal_map_prolong_correction(fine, coarse, coarse_seed, status)
+        ! Continuation seed (resolution ladder in degree, mesh and toroidal
+        ! modes): fine%x already holds the fine seed; add the correction
+        ! coarse%x - coarse_seed of a solved coarse map on the same reference
+        ! domain and labels, interpolated at the fine reference nodes, on the
+        ! common modes (index k <= min(nmode)). Boundary nodes keep the fine
+        ! seed position (q1, q2: the prescribed wall is not replaced by the
+        ! coarse one) and take only the omega correction; a boundary node
+        ! outside the coarse cells keeps its seed. Modes beyond the coarse
+        ! ntor keep their seed values. Verified for the position gauge; in
+        ! the transversal gauge the corrected seed can converge to another
+        ! stationary point (test_ideal_map_axisymmetric continuation).
+        type(ideal_map_t), intent(inout) :: fine
+        type(ideal_map_t), intent(in) :: coarse
+        real(dp), intent(in) :: coarse_seed(:, :, :)
+        integer, intent(out) :: status
+        real(dp) :: xi(2), shape(TRIANGLE_MAX_NODES), y(2)
+        real(dp) :: grad(2, TRIANGLE_MAX_NODES)
+        integer :: a, e, k, owner, located, j, nm, c0
+        status = IDEAL_MAP_BAD_INPUT
+        if (fine%nfp /= coarse%nfp) return
+        if (any(shape_of(coarse_seed) /= shape_of(coarse%x))) return
+        if (fine%position_gauge .neqv. coarse%position_gauge) return
+        nm = min(fine%nmode, coarse%nmode)
+        owner = 1
+        do a = 1, fine%nodes
+            c0 = merge(3, 1, fine%boundary(a))
+            y = fine%reference(:, a)
+            located = 0
+            do k = 0, coarse%cells - 1
+                e = 1 + mod(owner - 1 + merge(k/2, coarse%cells - (k + 1)/2, &
+                    mod(k, 2) == 0), coarse%cells)
+                call triangle_locate(coarse%reference(:, coarse%conn(:, e)), y, xi, j)
+                if (j /= 0) cycle
+                if (minval([xi, 1 - sum(xi)]) < -1.0e-10_dp) cycle
+                located = e; exit
+            end do
+            if (located == 0) then
+                if (fine%boundary(a)) cycle
+                return
+            end if
+            owner = located
+            call triangle_basis_jet(xi, shape(:coarse%nloc), grad(:, :coarse%nloc))
+            do k = 1, nm
+                fine%x(c0:, k, a) = fine%x(c0:, k, a) &
+                    + matmul(coarse%x(c0:, k, coarse%conn(:, located)) &
+                    - coarse_seed(c0:, k, coarse%conn(:, located)), shape(:coarse%nloc))
+            end do
+        end do
+        if (.not. fine%position_gauge) &
+            fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
+        status = IDEAL_MAP_OK
+    contains
+        pure function shape_of(v) result(n)
+            real(dp), intent(in) :: v(:, :, :)
+            integer :: n(3)
+            n = [size(v, 1), size(v, 2), size(v, 3)]
+        end function
+    end subroutine
+
     subroutine build_gauge(map)
         ! Reference-metric form of the omega gauge term; weight relative to the
         ! largest physical omega stiffness R^2 |b_pol|^2/det G of the reference.
@@ -1350,6 +1430,12 @@ contains
         logical :: talk, accepted, factored, ofactored, lfactored, use_lu, nested
         logical :: retained, direct, pc_failed
         real(dp) :: eta, ginit
+        ! Quasi-Newton state (map%lagged_hessian): qn_slot 1/2: solver/lsolver
+        ! holds the last factor (0: none); secant pairs qs, qy with 1/(s.y) in
+        ! qrho, qcount valid ones, the newest at qhead.
+        real(dp), allocatable :: qs(:, :), qy(:, :), qrho(:), gprev(:)
+        integer :: qn_slot, qcount, qhead
+        logical :: quasi
         talk = .false.
         retained = .false.
         factored = .false.; ofactored = .false.; lfactored = .false.
@@ -1359,6 +1445,12 @@ contains
             diag(map%nred), rhs(map%nred), shift(map%nred))
         call omega_mask(map, nested, omask)
         damped = .not. (map%fixed .or. omask)
+        qn_slot = 0; qcount = 0; qhead = 0; quasi = .false.
+        if (map%lagged_hessian .and. .not. nested) then
+            allocate (qs(map%nred, max(1, map%lagged_memory)), &
+                qy(map%nred, max(1, map%lagged_memory)), &
+                qrho(max(1, map%lagged_memory)), gprev(map%nred))
+        end if
         t0 = wall_seconds()
         call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
         report%energy_s = report%energy_s + wall_seconds() - t0
@@ -1394,9 +1486,13 @@ contains
                 status = IDEAL_MAP_OK; exit
             end if
             report%iterations = it
+            quasi = .false.
+            if (qn_slot > 0) call quasi_newton_step(quasi)
+            if (.not. quasi) then
             t0 = wall_seconds()
             call ideal_map_hessian(map, map%x, matrix)
             report%hessian_s = report%hessian_s + wall_seconds() - t0
+            report%hessians = report%hessians + 1
             do i = 1, map%nred
                 do k = matrix%rowptr(i), matrix%rowptr(i + 1) - 1
                     if (matrix%colidx(k) == i) diag(i) = matrix%val(k)
@@ -1443,6 +1539,16 @@ contains
                     if (.not. status_ok(sstatus)) then
                         status = IDEAL_MAP_SOLVE_FAILED; call cleanup(); return
                     end if
+                    ! A fresh factor restarts the secant memory.
+                    if (allocated(qs)) then
+                        qn_slot = merge(2, 1, use_lu); qcount = 0
+                        if (mu > map%lagged_damping) qn_slot = 0
+                    end if
+                else if (allocated(qs)) then
+                    ! Krylov step: the retained factor stays the initial
+                    ! inverse of the quasi-Newton steps.
+                    qn_slot = 1
+                    if (mu > map%lagged_damping) qn_slot = 0
                 end if
                 report%factor_s = report%factor_s + wall_seconds() - t0
                 where (map%fixed) step = 0
@@ -1476,7 +1582,9 @@ contains
                 mu = mu*10
             end do
             end if
+            end if
             if (.not. accepted) exit
+            if (allocated(qs)) gprev = gred
             report%step = maxval(abs(trial - map%x))
             map%x = trial
             if (nested) then
@@ -1488,6 +1596,7 @@ contains
                 call ideal_map_reduce(map, grad, gred)
                 where (map%fixed) gred = 0
             end if
+            if (allocated(qs)) call secant_update()
             gnorm = norm2(gred)
             report%energy = energy; report%gradient = gnorm/g0
             report%min_jacobian = minjac; report%damping = mu
@@ -1495,7 +1604,7 @@ contains
                 energy, gnorm/g0, maxval(abs(step(1::2))), maxval(abs(step(2::2))), mu, &
                 tries, alpha, norm2(gred(2:2*map%nodes:2))/gnorm, &
                 norm2(step(2:2*map%nodes:2))/norm2(step)
-            if (.not. alpha < 1) mu = max(mu/100, 1.0e-14_dp)
+            if (.not. alpha < 1 .and. .not. quasi) mu = max(mu/100, 1.0e-14_dp)
             if (report%step <= 1.0e-13_dp*maxval(abs(map%reference))) then
                 status = IDEAL_MAP_OK; exit
             end if
@@ -1514,6 +1623,80 @@ contains
                     cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
                     - 1:3)))))
             end do
+        end subroutine
+
+        subroutine quasi_newton_step(done_step)
+            ! L-BFGS direction d = -B^-1 gred, B^-1 by the two-loop recursion
+            ! over the secant pairs with the retained factor (the last damped
+            ! Hessian) as initial inverse; trust region and the energy accept
+            ! rule as for the Newton trials. Not accepted: qn_slot = 0 and the
+            ! caller takes the Newton step at the same point.
+            logical, intent(out) :: done_step
+            real(dp) :: qa(max(1, map%lagged_memory)), beta
+            integer :: l, slot, last
+            type(fortsparse_status_t) :: qstatus
+            done_step = .false.
+            last = qn_slot
+            t0 = wall_seconds()
+            rhs = -gred
+            do l = 0, qcount - 1
+                slot = 1 + modulo(qhead - 1 - l, size(qrho))
+                qa(slot) = qrho(slot)*dot_product(qs(:, slot), rhs)
+                rhs = rhs - qa(slot)*qy(:, slot)
+            end do
+            if (qn_slot == 2) then
+                call sparse_solve(lsolver, rhs, step, qstatus)
+            else
+                call sparse_solve(solver, rhs, step, qstatus)
+            end if
+            report%factor_s = report%factor_s + wall_seconds() - t0
+            qn_slot = 0
+            if (.not. status_ok(qstatus)) return
+            do l = qcount - 1, 0, -1
+                slot = 1 + modulo(qhead - 1 - l, size(qrho))
+                beta = qrho(slot)*dot_product(qy(:, slot), step)
+                step = step + (qa(slot) - beta)*qs(:, slot)
+            end do
+            where (map%fixed) step = 0
+            if (.not. dot_product(gred, step) < 0) return
+            call ideal_map_expand(map, step, full)
+            call trust_region()
+            full = alpha*full; step = alpha*step
+            trial = map%x + reshape(full, shape(map%x))
+            t0 = wall_seconds()
+            call ideal_map_energy(map, trial, trial_energy, estatus)
+            report%energy_s = report%energy_s + wall_seconds() - t0
+            if (estatus /= IDEAL_MAP_OK) return
+            if (trial_energy < energy - 64*epsilon(1.0_dp)*abs(energy)) then
+                done_step = .true.
+            else if (trial_energy <= energy + 1024*epsilon(1.0_dp)*abs(energy)) then
+                call ideal_map_energy(map, trial, trial_energy, estatus, grad)
+                call ideal_map_reduce(map, grad, rhs)
+                where (map%fixed) rhs = 0
+                done_step = dot_product(gred + rhs, step) <= 0
+            end if
+            if (.not. done_step) return
+            accepted = .true.
+            qn_slot = last
+            report%quasi_steps = report%quasi_steps + 1
+        end subroutine
+
+        subroutine secant_update()
+            ! Store (s, y) = (step, gred - gprev) when s.y > 0 (curvature
+            ! condition); with a quasi-Newton step whose gradient reduction is
+            ! weaker than lagged_contraction the next iteration refactors.
+            real(dp) :: sy
+            if (qn_slot == 0) return
+            gprev = gred - gprev
+            sy = dot_product(step, gprev)
+            if (sy > 0) then
+                qhead = 1 + modulo(qhead, size(qrho))
+                qs(:, qhead) = step; qy(:, qhead) = gprev; qrho(qhead) = 1/sy
+                qcount = min(qcount + 1, size(qrho))
+            end if
+            if (quasi .and. norm2(gred) > map%lagged_contraction*gnorm) then
+                qn_slot = 0; retained = .false.
+            end if
         end subroutine
 
         subroutine krylov_solve(fallback)
