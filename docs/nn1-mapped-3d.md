@@ -108,3 +108,59 @@ The order loss at N = 5-6 was mode truncation (docs/nn1-qa-benchmark.md).
 - A fixed-boundary rotating-ellipse case for the SPEC/SPECTRE comparison becomes
   possible: the boundary is the image of the reference disk under the map, and
   the vacuum field here is the reference for the vacuum region.
+
+## Fixed full Cartesian chart operators
+
+`nn_map_set_chart(chart,map)` owns a copy of the existing `ideal_chart_t`
+contract `H(q)`, with `q=(R,Z,phi)`. It is an alternative to the retained
+Fourier displacement, not an admission certificate. At every evaluated point,
+`nn_map_point` returns the physical Cartesian position and covariant/contravariant
+Piola matrices acting on reference orthonormal cylindrical components ordered
+`(R,phi,Z)`. This order differs from the left-handed coordinate tuple `q`.
+For `R>0`, define
+
+    D = [H_R, H_phi/R, H_Z],  J = det(D) = -det(dH/dq)/R,
+    P1 = D^(-T),  P2 = D/J,
+    K1 = J P1^T P1,  K2 = J P2^T P2.
+
+The existing generated FortFEM Piola implementation owns the inverse and
+local mapping arithmetic. `map_metric_t%space=1` selects K1 and its default
+`space=2` selects K2 through the existing phi-dependent tensor API. The
+cylindrical chart has D equal to the Cartesian cylindrical rotation, J=1,
+and both Hodge tensors equal to the identity. Nonfinite or nonpositive
+orientation is rejected, including the provider's existing singularity guard.
+No absolute determinant repairs an incorrectly oriented chart. Positivity at
+sampled points does not prove global injectivity, embedding or regularity.
+
+`nn_mapped_cartesian_data` takes physical Cartesian positions and returns
+Cartesian potential components from its callback. `nn_mapped_cartesian_error`
+uses the same explicit convention for its exact-field callback. The original
+`nn_mapped_data` and `nn_mapped_error` keep physical `(R,Z,phi)` samples and
+cylindrical vector components and reject a full-chart map. The common
+`equilibrium_state` physical sampling/export contract is unchanged; generic
+chart inversion and a whole mapped NN2 state are not provided by this slice.
+
+The new data entry reuses the existing V1 projection and discrete gauge,
+with pullback `D^T A` and the same reference harmonic compensation. The
+existing `nn_mapped_solve` then solves the metric vacuum equation with K2,
+including its harmonic/cohomology load. A Piola pushforward of `F/R e_phi`
+without that solve is only a transported cohomology representative and is not
+claimed to be a physical curl-free vacuum field.
+
+Both error entries use the toroidal mean measure
+`J R dR dZ dphi/(2*pi)`, not an extra full-turn or field-period multiplier.
+The reported error is the absolute physical L2 norm and the two energies are
+`mean_integral(|B|^2/(2*mu0))`. Coordinates are metres, field components tesla,
+potential components tesla metres and J/P1/P2 are dimensionless when H and
+reference lengths have the same unit. No rigorous remainder is attached to
+these empirical errors or quadrature comparisons.
+
+This is a fixed-geometry operator composition. Field transforms are linear:
+tangents use the same P1/P2 and cotangents their transposes. Existing exact
+incidence/curl and generated point leaves remain their authorities. Chart
+parameter optimization, an NN2 nonlinear mapped equilibrium, moving physical
+interfaces, full exterior BEM and GPU execution are separate unqualified
+consumers. The assembled NN1 modal cost is unchanged: element storage scales
+quadratically with the number of Fourier blocks. Point mapping adds constant
+3-by-3 scratch and no per-point heap allocation; this is not a performance
+claim or a new private tensor backend.

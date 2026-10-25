@@ -1,10 +1,9 @@
 module kin6d_nonnested_mapped
-    ! NN1 on a phi-dependent domain (docs/nn1-mapped-3d.md). The reference
-    ! meridional FEEC complex times real Fourier blocks is mapped by
-    ! X(x, phi) = x + sum_b d_b(x) tr_b(phi), which keeps the toroidal angle.
-    ! The 2-form transforms by the contravariant Piola map B = DF b / J, so
-    ! the complex and div b = 0 are unchanged; the map enters only through
-    ! the Hodge tensor K = DF^T DF / J of the upstream Fourier V2 mass.
+    ! Mapped NN1 operators (docs/nn1-mapped-3d.md). The same reference FEEC
+    ! complex supports the retained phi-preserving R/Z displacement and an
+    ! owned full Cartesian chart H(R,Z,phi). Incidence/curl are unchanged;
+    ! existing generated Piola maps give the physical fields and K1/K2.
+    ! Geometry is fixed in this operator slice, not an NN2 moving interface.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_qpoint, &
@@ -12,6 +11,9 @@ module kin6d_nonnested_mapped
     use fortfem_meridian_fourier_scalar, only: meridian_fourier_tensor_t
     use fortfem_meridian_fourier_curl, only: meridian_fourier_mass, &
         meridian_fourier_curl_curl, meridian_fourier_curl, meridian_fourier_gradient
+    use fortfem_tetra_piola_maps, only: map_tetra_nedelec_covariant
+    use fortnum_linalg, only: det3
+    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_from_triplet, &
         fortsparse_status_t, status_ok
     use fortnum_krylov, only: real_fgmres_operator, KRYLOV_OK
@@ -23,6 +25,8 @@ module kin6d_nonnested_mapped
     public :: nn_map_t, nn_map_build, nn_map_jet, nn_mapped_report_t
     public :: nn_mapped_data, nn_mapped_solve, nn_mapped_error
     public :: nn_map_function_i, nn_vector_field_i
+    public :: nn_map_set_chart, nn_map_point
+    public :: nn_mapped_cartesian_data, nn_mapped_cartesian_error
 
     integer, parameter :: METRIC_MAPPED = 0, METRIC_MEAN = 1, METRIC_IDENTITY = 2
     real(dp), parameter :: pi = acos(-1.0_dp)
@@ -32,13 +36,16 @@ module kin6d_nonnested_mapped
         ! b = 0, 2n - 1 (cos n phi), 2n (sin n phi), as the N1 map unknowns.
         integer :: modes = 0
         real(dp), allocatable :: d(:, :, :) ! (n0, 2, 0:2*modes)
+        ! Alternative full Cartesian H(R,Z,phi); owned, fixed geometry.
+        ! The two representations are exclusive through their constructors.
+        class(ideal_chart_t), allocatable :: chart
     end type
 
     type, extends(meridian_fourier_tensor_t) :: map_metric_t
         type(meridian_feec_t), pointer :: fs => null()
         type(nn_map_t), pointer :: map => null()
         real(dp) :: f_vac = 0
-        integer :: kind = METRIC_MAPPED, nphi_mean = 0
+        integer :: kind = METRIC_MAPPED, nphi_mean = 0, space = 2
     contains
         procedure :: tensor => metric_tensor
     end type
@@ -95,6 +102,63 @@ contains
         if (all(ieee_is_finite(map%d))) status = 0
     end subroutine
 
+    subroutine nn_map_set_chart(chart, map)
+        ! Copy the chart, not a global regularity or embedding certificate.
+        ! Actual quadrature points are admitted by nn_map_point.
+        class(ideal_chart_t), intent(in) :: chart
+        type(nn_map_t), intent(out) :: map
+        allocate (map%chart, source=chart)
+    end subroutine
+
+    pure subroutine nn_map_point(map, dofs, val, grad, x, phi, position, &
+                                 p1, p2, jac, status)
+        ! Physical Cartesian point and Piola maps from orthonormal reference
+        ! cylindrical (R,phi,Z) components. q=(R,Z,phi) is left handed:
+        ! D=[H_R,H_phi/R,H_Z], det(D)=-det(dH/dq)/R must be positive.
+        ! Existing generated upstream maps own inverse/determinant algebra.
+        type(nn_map_t), intent(in) :: map
+        integer, intent(in) :: dofs(:)
+        real(dp), intent(in) :: val(:), grad(:, :), x(2), phi
+        real(dp), intent(out) :: position(3), p1(3, 3), p2(3, 3), jac
+        integer, intent(out) :: status
+        type(cylindrical_chart_t) :: cylinder
+        real(dp) :: j(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: d(3, 3), identity(3, 3), frame(3, 3), y(2), df(3, 3)
+        integer :: i
+        position = 0; p1 = 0; p2 = 0; jac = 0; status = 1
+        if (.not. all(ieee_is_finite(x)) .or. .not. ieee_is_finite(phi)) return
+        if (x(1) <= 0) return
+        if (allocated(map%chart)) then
+            if (allocated(map%d)) return
+            call map%chart%jet([x, phi], position, j, d2, d3)
+            d(:, 1) = j(:, 1); d(:, 2) = j(:, 3)/x(1); d(:, 3) = j(:, 2)
+        else
+            if (.not. allocated(map%d)) return
+            if (size(val) /= size(dofs)) return
+            if (size(grad, 1) /= 2 .or. size(grad, 2) /= size(dofs)) return
+            if (size(dofs) < 1) return
+            if (minval(dofs) < 1 .or. maxval(dofs) > size(map%d, 1)) return
+            if (size(map%d, 2) /= 2 .or. size(map%d, 3) /= 2*map%modes + 1) return
+            call nn_map_jet(map, dofs, val, grad, x, phi, y, df, jac)
+            if (.not. all(ieee_is_finite(y)) .or. y(1) <= 0) return
+            call cylinder%jet([y, phi], position, j, d2, d3)
+            frame(:, 1) = j(:, 1); frame(:, 2) = j(:, 3)/y(1)
+            frame(:, 3) = j(:, 2)
+            d = matmul(frame, df)
+        end if
+        if (.not. all(ieee_is_finite(position))) return
+        if (.not. all(ieee_is_finite(d))) return
+        jac = det3(d)
+        if (.not. ieee_is_finite(jac)) return
+        identity = 0
+        do i = 1, 3
+            identity(i, i) = 1
+        end do
+        call map_tetra_nedelec_covariant(d, identity, identity, p1, p2, status)
+        if (status /= 0) return
+        if (.not. all(ieee_is_finite(p1)) .or. .not. all(ieee_is_finite(p2))) status = 1
+    end subroutine
+
     pure subroutine nn_map_jet(map, dofs, val, grad, x, phi, y, df, jac)
         ! Point y = X(x, phi), the Jacobian df in orthonormal cylindrical
         ! frames (rows physical (R, phi, Z), columns reference (R, phi, Z))
@@ -106,6 +170,10 @@ contains
         real(dp) :: tr(0:2*map%modes), dtr(0:2*map%modes), c(2), g(2, 2), u(2)
         real(dp) :: up(2)
         integer :: i, n
+        y = 0; df = 0; jac = 0
+        ! This legacy entry has cylindrical physical outputs. Full charts use
+        ! nn_map_point, whose Cartesian contract does not reinterpret them.
+        if (allocated(map%chart) .or. .not. allocated(map%d)) return
         call trig(map%modes, phi, tr)
         dtr = 0
         do n = 1, map%modes
@@ -198,6 +266,28 @@ contains
     end subroutine
 
     subroutine nn_mapped_data(field, map, nphi, potential, data, status)
+        ! Legacy physical (R,Z,phi) samples and cylindrical vector components.
+        type(free_b_field_t), intent(in), target :: field
+        type(nn_map_t), intent(in), target :: map
+        integer, intent(in) :: nphi
+        procedure(nn_vector_field_i) :: potential
+        real(dp), allocatable, intent(out) :: data(:)
+        integer, intent(out) :: status
+        call mapped_data(field, map, nphi, potential, data, status, .false.)
+    end subroutine
+
+    subroutine nn_mapped_cartesian_data(field, map, nphi, potential, data, status)
+        ! Explicit physical Cartesian XYZ samples and Cartesian A components.
+        type(free_b_field_t), intent(in), target :: field
+        type(nn_map_t), intent(in), target :: map
+        integer, intent(in) :: nphi
+        procedure(nn_vector_field_i) :: potential
+        real(dp), allocatable, intent(out) :: data(:)
+        integer, intent(out) :: status
+        call mapped_data(field, map, nphi, potential, data, status, .true.)
+    end subroutine
+
+    subroutine mapped_data(field, map, nphi, potential, data, status, cartesian)
         ! Real-block Fourier-V1 boundary data from the physical potential A:
         ! L2 projection of the pulled-back 1-form DF^T A + F ln R e_Z (the
         ! reference harmonic F/R e_phi is carried by field%f_vac), then the
@@ -208,12 +298,14 @@ contains
         procedure(nn_vector_field_i) :: potential
         real(dp), allocatable, intent(out) :: data(:)
         integer, intent(out) :: status
+        logical, intent(in) :: cartesian
         type(map_metric_t) :: unit
         type(csc_t) :: mass, grad
         type(nn_factor_t) :: factor
         real(dp), allocatable :: loads(:, :), load(:), lambda(:)
         integer :: modes, nb, n1, n0, nn, nl, t, b, n, failure, st
         status = 1
+        if (.not. cartesian .and. allocated(map%chart)) return
         modes = ubound(field%b, 2)
         if (nphi < 2*modes + 1) return
         nb = 2*modes + 1; n1 = field%fs%sp(1)%ndof; n0 = field%fs%n0
@@ -277,7 +369,7 @@ contains
             integer, intent(out) :: status
             real(dp) :: x(2), w, w0, phi(3, nl), val(field%fs%nl0)
             real(dp) :: dval(2, field%fs%nl0), tr(0:nb - 1), y(2), df(3, 3), jac
-            real(dp) :: a(3), ahat(3), angle
+            real(dp) :: a(3), ahat(3), angle, position(3), p1(3, 3), p2(3, 3)
             integer :: q, j, i, bb
             local = 0
             do q = 1, field%fs%nq
@@ -290,12 +382,22 @@ contains
                 end do
                 do j = 1, nphi
                     angle = 2*pi*(j - 1)/nphi
-                    call nn_map_jet(map, field%fs%sp(0)%dof(:, t), val, dval, x, &
-                        angle, y, df, jac)
+                    if (cartesian) then
+                        call nn_map_point(map, field%fs%sp(0)%dof(:, t), val, dval, &
+                                          x, angle, position, p1, p2, jac, status)
+                        if (status /= 0) return
+                        call potential(position, a)
+                        ahat = jac*matmul(transpose(p2), a)
+                    else
+                        call nn_map_jet(map, field%fs%sp(0)%dof(:, t), val, dval, x, &
+                                        angle, y, df, jac)
+                        status = 1
+                        if (.not. ieee_is_finite(jac) .or. jac <= 0) return
+                        call potential([y, angle], a)
+                        ahat = matmul(transpose(df), a)
+                    end if
                     status = 1
-                    if (jac <= 0) return
-                    call potential([y, angle], a)
-                    ahat = matmul(transpose(df), a)
+                    if (.not. all(ieee_is_finite(ahat))) return
                     ahat(3) = ahat(3) + field%f_vac*log(x(1))
                     call trig(modes, angle, tr)
                     do bb = 0, nb - 1
@@ -376,8 +478,11 @@ contains
         x = x + scale*y
         r = rhs - csc_matvec(s, x)
         where (fixed) r = 0
-        report%residual = norm2(r)/max(tiny(1.0_dp), norm2(merge(rhs, 0.0_dp, &
-            .not. fixed)), norm2(merge(csc_matvec(s, x), 0.0_dp, .not. fixed)))
+        ! Relative to the lifted right-hand side rhs - S x_D (norm scale), the
+        ! quantity FGMRES reduced. With zero forcing (f_vac = 0) the free part of
+        ! S x equals -r, so a denominator without scale is identically |r|.
+        report%residual = norm2(r)/max(tiny(1.0_dp), scale, norm2(merge(rhs, &
+            0.0_dp, .not. fixed)), norm2(merge(csc_matvec(s, x), 0.0_dp, .not. fixed)))
         report%energy = (dot_product(x, csc_matvec(s, x)) - 2*dot_product(x, rhs) &
             + energy_h)/(2*field%mu0)
         bh = csc_matvec(c, x)
@@ -454,6 +559,32 @@ contains
 
     subroutine nn_mapped_error(field, map, nphi, exact, error, deviation, &
                                energy_h, energy_exact, status)
+        type(free_b_field_t), intent(in) :: field
+        type(nn_map_t), intent(in) :: map
+        integer, intent(in) :: nphi
+        procedure(nn_vector_field_i) :: exact
+        real(dp), intent(out) :: error, deviation, energy_h, energy_exact
+        integer, intent(out) :: status
+        call mapped_error(field, map, nphi, exact, error, deviation, &
+                          energy_h, energy_exact, status, .false.)
+    end subroutine
+
+    subroutine nn_mapped_cartesian_error(field, map, nphi, exact, error, &
+                                         energy_h, energy_exact, status)
+        ! Same toroidal-MEAN L2 norm/energy as NN1 (no extra 2*pi factor).
+        type(free_b_field_t), intent(in) :: field
+        type(nn_map_t), intent(in) :: map
+        integer, intent(in) :: nphi
+        procedure(nn_vector_field_i) :: exact
+        real(dp), intent(out) :: error, energy_h, energy_exact
+        integer, intent(out) :: status
+        real(dp) :: unused_deviation
+        call mapped_error(field, map, nphi, exact, error, unused_deviation, &
+                          energy_h, energy_exact, status, .true.)
+    end subroutine
+
+    subroutine mapped_error(field, map, nphi, exact, error, deviation, &
+                            energy_h, energy_exact, status, cartesian)
         ! Physical L2 norms over the mapped domain on nphi planes (choose
         ! nphi different from the assembly rule): ||B_h - B||, ||B - F/R e_phi||
         ! and both energies int |B|^2 / (2 mu0).
@@ -463,16 +594,20 @@ contains
         procedure(nn_vector_field_i) :: exact
         real(dp), intent(out) :: error, deviation, energy_h, energy_exact
         integer, intent(out) :: status
+        logical, intent(in) :: cartesian
         real(dp) :: x(2), w, w0, phi(3, field%fs%sp(2)%nloc), val(field%fs%nl0)
         real(dp) :: dval(2, field%fs%nl0), y(2), df(3, 3), jac, angle, bhat(3)
-        real(dp) :: bh(3), be(3), wt
+        real(dp) :: bh(3), be(3), wt, position(3), p1(3, 3), p2(3, 3)
         complex(dp) :: bn(3)
         integer :: t, q, j, n, i, st, failure
         error = 0; deviation = 0; energy_h = 0; energy_exact = 0
+        status = 1
+        if (nphi < 1) return
+        if (.not. cartesian .and. allocated(map%chart)) return
         failure = 0
         !$omp parallel do default(shared) schedule(dynamic, 4) &
         !$omp& private(t, q, j, n, i, st, x, w, w0, phi, val, dval, y, df, jac) &
-        !$omp& private(angle, bhat, bh, be, wt, bn) reduction(max:failure) &
+        !$omp& private(angle, bhat, bh, be, wt, bn, position, p1, p2) reduction(max:failure) &
         !$omp& reduction(+:error, deviation, energy_h, energy_exact)
         do t = 1, field%fs%mm%topology%n_triangles
             do q = 1, field%fs%nq
@@ -487,21 +622,41 @@ contains
                 end do
                 do j = 1, nphi
                     angle = 2*pi*(j - 0.5_dp)/nphi
-                    call nn_map_jet(map, field%fs%sp(0)%dof(:, t), val, dval, x, &
-                        angle, y, df, jac)
-                    if (jac <= 0) failure = 1
+                    if (cartesian) then
+                        call nn_map_point(map, field%fs%sp(0)%dof(:, t), val, dval, &
+                                          x, angle, position, p1, p2, jac, st)
+                    else
+                        call nn_map_jet(map, field%fs%sp(0)%dof(:, t), val, dval, x, &
+                                        angle, y, df, jac)
+                        st = 0
+                        if (.not. ieee_is_finite(jac) .or. jac <= 0) st = 1
+                    end if
+                    if (st /= 0) then
+                        failure = 1
+                        exit
+                    end if
                     bhat = [0.0_dp, field%f_vac/x(1), 0.0_dp]
                     do n = 0, ubound(field%b, 2)
                         bn = matmul(phi, field%b(field%fs%sp(2)%dof(:, t), n))
                         bhat = bhat + merge(1, 2, n == 0) &
                             *real(bn*exp(cmplx(0.0_dp, n*angle, dp)), dp)
                     end do
-                    bh = matmul(df, bhat)/jac
-                    call exact([y, angle], be)
+                    if (cartesian) then
+                        bh = matmul(p2, bhat)
+                        call exact(position, be)
+                    else
+                        bh = matmul(df, bhat)/jac
+                        call exact([y, angle], be)
+                    end if
+                    if (.not. all(ieee_is_finite(be)) .or. &
+                        .not. all(ieee_is_finite(bh))) then
+                        failure = 1
+                        exit
+                    end if
                     wt = w*jac/nphi
                     error = error + wt*sum((bh - be)**2)
-                    deviation = deviation + wt*(be(1)**2 + be(3)**2 &
-                        + (be(2) - field%f_vac/y(1))**2)
+                    if (.not. cartesian) deviation = deviation + &
+                        wt*(be(1)**2 + be(3)**2 + (be(2) - field%f_vac/y(1))**2)
                     energy_h = energy_h + wt*sum(bh**2)/(2*field%mu0)
                     energy_exact = energy_exact + wt*sum(be**2)/(2*field%mu0)
                 end do
@@ -525,6 +680,8 @@ contains
         integer :: p, q, j, nm
         status = 1
         k = 0
+        if (self%space /= 1 .and. self%space /= 2) return
+        if (self%kind == METRIC_MEAN .and. self%nphi_mean < 1) return
         have_mean = .false.
         if (self%kind == METRIC_IDENTITY) then
             do p = 1, size(x, 2)
@@ -564,12 +721,19 @@ contains
             integer, intent(in) :: q
             real(dp), intent(in) :: angle
             real(dp), intent(out) :: kk(3, 3)
-            real(dp) :: y(2), df(3, 3), jac
-            call nn_map_jet(self%map, self%fs%sp(0)%dof(:, t), val(:, q), &
-                dval(:, :, q), xq(:, q), angle, y, df, jac)
-            ok = jac > 0
+            real(dp) :: position(3), p1(3, 3), p2(3, 3), jac
+            integer :: st
+            call nn_map_point(self%map, self%fs%sp(0)%dof(:, t), val(:, q), &
+                              dval(:, :, q), xq(:, q), angle, &
+                              position, p1, p2, jac, st)
+            ok = st == 0
             kk = 0
-            if (ok) kk = matmul(transpose(df), df)/jac
+            if (.not. ok) return
+            if (self%space == 1) then
+                kk = jac*matmul(transpose(p1), p1)
+            else
+                kk = jac*matmul(transpose(p2), p2)
+            end if
         end function
     end subroutine
 
