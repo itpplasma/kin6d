@@ -698,9 +698,10 @@ contains
         procedure(nn_vector_field_i) :: exact
         real(dp) :: x(2), w, basis(3, field%fs%sp(2)%nloc), point(3), d(3, 3)
         real(dp) :: jac, angle, b(3), bh(3), bhat(3), wt, volume, want_volume
+        real(dp) :: carry_v, carry_w
         complex(dp) :: bn(3)
         integer :: t, q, j, st, n, i
-        result = 0; volume = 0; want_volume = 0
+        result = 0; volume = 0; want_volume = 0; carry_v = 0; carry_w = 0
         do t = 1, field%fs%mm%topology%n_triangles
             do q = 1, field%fs%nq
                 call meridian_qpoint(field%fs, 2, t, q, x, w, basis, st)
@@ -708,7 +709,9 @@ contains
                 do i = 1, size(basis, 2)
                     basis(:, i) = basis(:, i)*field%fs%sp(2)%sgn(i, t)
                 end do
-                want_volume = want_volume + 0.99_dp*w
+                ! Compensated sums: the measure check compares two sums of
+                ! ~1e6 terms at 2e-13, below plain accumulation roundoff.
+                call kahan_add(want_volume, carry_w, 0.99_dp*w)
                 do j = 1, nphi
                     ! Distinct phase from the production midpoint rule.
                     angle = 2*pi*(j - 0.271_dp)/nphi
@@ -725,13 +728,23 @@ contains
                     result(1) = result(1) + wt*sum((bh - b)**2)
                     result(2) = result(2) + wt*sum(bh**2)/(2*field%mu0)
                     result(3) = result(3) + wt*sum(b**2)/(2*field%mu0)
-                    volume = volume + wt
+                    call kahan_add(volume, carry_v, wt)
                 end do
             end do
         end do
         result(1) = sqrt(result(1))
         call small('independent physical mean measure', &
             abs(volume - want_volume)/want_volume, 2.0e-13_dp)
+    end subroutine
+
+    subroutine kahan_add(sum, carry, term)
+        real(dp), intent(inout) :: sum, carry
+        real(dp), intent(in) :: term
+        real(dp) :: y, t
+        y = term - carry
+        t = sum + y
+        carry = (t - sum) - y
+        sum = t
     end subroutine
 
     subroutine make_field(nr, modes, field, approximation_order)
