@@ -1810,7 +1810,8 @@ set_tests_properties(nonnested_hudson_breslau_chaos_responds_p3 PROPERTIES
     TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # NN2 (second increment): axisymmetric coupled transport / Ampere / Ohm Newton.
-target_sources(kin6d_mhd PRIVATE src/mhd/island_closure.f90
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_profile.f90
+    src/mhd/island_closure.f90
     src/mhd/nonnested_coupled.f90
     src/mhd/island_case.f90 src/mhd/island_report.f90)
 add_executable(test_island_closure test/test_island_closure.f90)
@@ -1834,6 +1835,24 @@ endforeach()
 add_test(NAME nonnested_actions_invalid COMMAND test_nonnested_actions invalid 2)
 set_tests_properties(nonnested_actions_invalid PROPERTIES TIMEOUT 180 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_executable(test_nonnested_profile test/test_nonnested_profile.f90)
+target_link_libraries(test_nonnested_profile PRIVATE kin6d_nn_solovev_test)
+foreach(k 2 3)
+    foreach(case manufactured nested reproduce reproduce3d sampling)
+        add_test(NAME nonnested_fitted_${case}_p${k}
+            COMMAND test_nonnested_profile ${case} ${k})
+        set_tests_properties(nonnested_fitted_${case}_p${k} PROPERTIES
+            TIMEOUT 600 PROCESSORS 4
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    endforeach()
+endforeach()
+add_executable(test_island_fitted test/test_island_fitted.f90)
+target_link_libraries(test_island_fitted PRIVATE kin6d_nn_solovev_test)
+foreach(case readiness heat current)
+    add_test(NAME island_fitted_${case} COMMAND test_island_fitted ${case})
+    set_tests_properties(island_fitted_${case} PROPERTIES TIMEOUT 180 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_executable(test_nonnested_coupled test/test_nonnested_coupled.f90)
 target_link_libraries(test_nonnested_coupled PRIVATE kin6d_nn_solovev_test)
 foreach(k 2 3)

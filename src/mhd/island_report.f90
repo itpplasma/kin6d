@@ -1,12 +1,13 @@
 module kin6d_island_report
     ! Explicit diagnostic pass, independent of Newton convergence and acceptance.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, &
+        ieee_value, ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_qgrad
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
-        nc_residual, nc_store
-    use kin6d_nonnested_residual, only: nn_residual
+        nc_residual, nc_store, nc_source_data
+    use kin6d_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
     use kin6d_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_nonnested_leaves, only: island_defect_density, island_defect_norm
     implicit none
@@ -18,11 +19,15 @@ module kin6d_island_report
         real(dp) :: drive = 0, current = 0, voltage = 0
         ! Full-torus integrated balances. Heat flux is the Dirichlet reaction.
         real(dp) :: heating = 0, outward_heat = 0, heat_balance = 0
+        ! Fitted-source reaction is for live minus seed flux, not physical heat.
+        real(dp) :: weak_heat_reaction = 0, weak_heat_balance = 0
+        character(64) :: heat_status = 'physical scalar-source Dirichlet balance'
         real(dp) :: outward_current = 0, charge_balance = 0
         real(dp) :: epsilon_parallel = 0, perpendicular_ohmic_force_rms = 0
         real(dp) :: algebraic_divergence = 0, length_scale = 0, pressure_scale = 0
         type(equilibrium_residual_t) :: force
         integer :: test_modes = 0, nphi = 0, quadrature_points = 0
+        character(64) :: force_status = 'finite-test-space norm; no continuous bound'
         character(32) :: claim = 'candidate'
         character(32) :: interface_status = 'not applicable: single region'
         character(32) :: gamma_c_status = 'unavailable: prescribed trace'
@@ -95,13 +100,25 @@ contains
             report%derivative_status = 'unavailable: norm at zero'
         report%heating = two_pi*total(4)
         report%heat_balance = abs(report%outward_heat - report%heating)
+        if (allocated(problem%fitted)) then
+            report%weak_heat_reaction = report%outward_heat
+            report%weak_heat_balance = abs(report%weak_heat_reaction)
+            report%heat_status = 'unavailable: weak fit has no physical heat trace'
+            report%heating = ieee_value(0.0_dp, ieee_quiet_nan)
+            report%outward_heat = ieee_value(0.0_dp, ieee_quiet_nan)
+            report%heat_balance = ieee_value(0.0_dp, ieee_quiet_nan)
+        end if
         call island_defect_norm(max(0.0_dp, total(1)), max(0.0_dp, total(2)), &
             total(3), length_scale, pressure_scale, report%epsilon_parallel, &
             report%perpendicular_ohmic_force_rms)
         call nn_divergence(field, report%algebraic_divergence, status)
         if (status /= 0) return
         call nn_residual(field, report%test_modes, report%force, status)
-        ! D3's finite test-space norm is not a continuous majorant.
+        if (status == NN_RESIDUAL_ZERO_SCALE) then
+            report%force_status = 'normalization unavailable: zero D3 scale'
+            status = 0
+        end if
+        ! Other D3 failures propagate; its finite norm is not a majorant.
     contains
         subroutine cell(t, acc, status)
             integer, intent(in) :: t
@@ -112,6 +129,7 @@ contains
             real(dp) :: bm(3, lay%nb), pl(field%fs%nl0, lay%nb)
             real(dp) :: fl(field%fs%nl0, lay%nb), tr(lay%nb), dtr(lay%nb)
             real(dp) :: b(3), gp(3), gf(3), par2, force2, source
+            real(dp) :: source_flux(3), drive
             integer :: q, j, n, bk
             acc = 0
             do bk = 1, lay%nb
@@ -151,11 +169,9 @@ contains
                         dot_product(matmul(grad(2, :), fl), tr)]
                     call island_defect_density(b(1), b(2), b(3), gp(1), gp(2), &
                         gp(3), gf(1), gf(2), gf(3), problem%g_perp, par2, force2)
-                    if (associated(problem%source_3d)) then
-                        source = problem%source_3d(xq, phi)
-                    else
-                        source = problem%source(xq)
-                    end if
+                    call nc_source_data(problem, xq, phi, source, &
+                        source_flux, drive, status)
+                    if (status /= 0) return
                     acc = acc + w*[par2, force2, 1.0_dp, source]
                 end do
             end do

@@ -3,6 +3,7 @@ module kin6d_nonnested_residual
     ! norm is the sum of scalar cylindrical H1 seminorms, with zero trace.
     ! This is a finite-test-space dual norm, not a continuous majorant.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     use fortfem_meridian_feec_n, only: meridian_qpoint
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use kin6d_mhd_mesh, only: flux_mesh_geometry
@@ -12,7 +13,8 @@ module kin6d_nonnested_residual
     use kin6d_nonnested_leaves, only: axisymmetric_pressure
     implicit none
     private
-    public :: nn_residual
+    public :: nn_residual, NN_RESIDUAL_ZERO_SCALE
+    integer, parameter :: NN_RESIDUAL_ZERO_SCALE = 2
 contains
     subroutine nn_residual(field, test_modes, report, status)
         type(free_b_field_t), intent(in) :: field
@@ -26,6 +28,8 @@ contains
         integer :: t, n, j, st, failure, nt, nphi, modes
         status = 1
         if (.not. allocated(field%b)) return
+        if (.not. all(ieee_is_finite([field%f_vac, field%mu0]))) return
+        if (field%mu0 <= 0) return
         if (test_modes < 0) return
         nt = field%fs%mm%topology%n_triangles
         modes = ubound(field%b, 2)
@@ -68,11 +72,24 @@ contains
             end do
         end do
         report%volume = two_pi*sum(means(1, :))
+        if (.not. ieee_is_finite(report%volume)) return
+        if (report%volume <= 0) return
         report%b2_mean = two_pi*sum(means(2, :))/report%volume
         report%p_mean = two_pi*sum(means(3, :))/report%volume
         report%sigma = report%b2_mean/field%mu0 + report%p_mean
+        ! Check the raw norm before MAX can conceal nonfinite arithmetic.
+        if (.not. all(ieee_is_finite([report%b2_mean, report%p_mean, &
+            report%sigma, dual2]))) return
         report%dual = sqrt(max(0.0_dp, two_pi*dual2))
-        if (report%sigma <= 0) return
+        if (.not. ieee_is_finite(report%dual)) return
+        if (report%sigma == 0) then
+            ! The declared scale excludes the curl-free toroidal background.
+            ! Absolute data are available; a zero-over-zero norm is not.
+            report%normalized = ieee_value(0.0_dp, ieee_quiet_nan)
+            status = NN_RESIDUAL_ZERO_SCALE
+            return
+        end if
+        if (report%sigma < 0) return
         report%normalized = report%dual/(report%sigma*sqrt(report%volume))
         status = 0
     contains

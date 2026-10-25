@@ -653,3 +653,14 @@ kin6d_test_labels(island_closure_report fast CLASSES mhd TARGETS test_island_clo
 kin6d_test_labels(island_closure_drive fast CLASSES mhd TARGETS test_island_closure)
 kin6d_test_labels(nonnested_coupled_closed_line_p3 slow CLASSES mhd
     TARGETS test_nonnested_landreman)
+
+foreach(k 2 3)
+    foreach(case manufactured nested reproduce reproduce3d sampling)
+        kin6d_test_labels(nonnested_fitted_${case}_p${k} fast CLASSES mhd
+            TARGETS test_nonnested_profile)
+    endforeach()
+endforeach()
+foreach(case readiness heat current)
+    kin6d_test_labels(island_fitted_${case} fast CLASSES mhd
+        TARGETS test_island_fitted)
+endforeach()
