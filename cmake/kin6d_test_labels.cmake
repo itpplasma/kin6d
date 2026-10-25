@@ -80,6 +80,12 @@ kin6d_test_labels(ideal_map_derivatives_and_rotation_null fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_factor_cache fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_hessian_sum_factorisation_oracle fast CLASSES mhd
+    TARGETS test_ideal_map_hessian)
+foreach(degree RANGE 4 6)
+    kin6d_test_labels(ideal_map_hessian_p${degree}_oracle fast CLASSES mhd
+        TARGETS test_ideal_map_hessian)
+endforeach()
 kin6d_test_labels(ideal_map_curve_chart_landreman fast CLASSES mhd
     TARGETS test_curve_chart_solver)
 kin6d_test_labels(ideal_map_curve_chart_figure8 fast CLASSES mhd
