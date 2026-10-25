@@ -161,6 +161,7 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
     ${fortfem_SOURCE_DIR}/src/geometry/geometry_jet_2d.f90
+    ${fortfem_SOURCE_DIR}/src/elements/tetra_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
@@ -2067,7 +2068,14 @@ add_test(NAME nonnested_mapped_zero_forcing_residual
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
     nonnested_mapped_zero_forcing_residual
-    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+    PROPERTIES TIMEOUT 900 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartesian_vacuum)
+    add_test(NAME nonnested_mapped_${mapped_case}
+        COMMAND test_nonnested_mapped ${mapped_case})
+    set_tests_properties(nonnested_mapped_${mapped_case} PROPERTIES
+        PROCESSORS 4 TIMEOUT 120
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 
 # Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.
 add_executable(test_nonnested_qa test/test_nonnested_qa.f90)
