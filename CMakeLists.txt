@@ -2206,3 +2206,6 @@ foreach(_t IN LISTS _kin6d_all_tests)
 endforeach()
 
 include(cmake/kin6d_estimator_benchmark.cmake)
+
+# Must follow the last add_executable: wraps test commands of all targets.
+include(cmake/kin6d_test_output_cap.cmake)
