@@ -294,10 +294,13 @@ hypothesis that has not been traced.
    model of the reduced energy E_red(q) (shell map, Phi~ and lambda solved
    exactly, slide gauge) while S_red has a negative eigenvalue, and a state
    that passes the residual gate with negative curvature is left in the same
-   way. In sCluster jobs 3370099 and 3370145 every glob-2 run converged, 18
-   of 18 at R1 (1 to 16 threads, starts kicked by up to 15 mm along q1
-   included) and 4 of 4 at R2, all at R1 to the same state within 4e-7 mm,
-   in 36 to 87 Newton steps against 93 to 152 for the trust region alone.
+   way. In sCluster job 3370099 all 15 glob-2 runs at R1 converged (1 to 16
+   threads, starts kicked by 8 mm along q1 included) and 2 of 3 at R2. The
+   R2 failure parked the map at a fold, which the Jacobian guard of the
+   escape now prevents, and with it job 3370145 converged in 8 of 8 glob-2
+   runs (R1, R2 and R3, kicks up to 15 mm). All R1 runs reached the same state within
+   4e-7 mm, in 34 to 87 Newton steps against 93 to 152 for the trust region
+   alone.
    The case is stellarator symmetric: the coils (make_coils.py), the chart
    frame, which maps (q1, q2, phi-hat) to (-q1, q2, -phi-hat) under
    (x, y, z) -> (x, -y, -z), the frozen labels and, at R1 only, the reference
