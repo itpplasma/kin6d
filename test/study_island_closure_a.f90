@@ -31,7 +31,7 @@ program study_island_closure_a
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use island_a_fixture, only: island_a_setup, shell_source
-    use nn_vacuum_fixture, only: field, r0, periodic_radius, island_edge, pi
+    use nn_vacuum_fixture, only: field, r0, pi
     use island_a_study_trace, only: traced, left_mesh, rhs
     use fortnum_ode_cash_karp, only: cash_karp_step
     use kin6d_nonnested_coupled, only: nc_problem_t
@@ -86,12 +86,12 @@ contains
     end function
 
     subroutine scan()
-        real(dp) :: eps, ratio, ro, rx, uo, w, e1, e2, g, a, b, pmax, rr
+        real(dp) :: eps, ratio, ro, rx, uo, w, w1, e1, e2, g, a, b, pmax, rr
         integer :: ie, ir, st, us, uc, j
         integer, parameter :: nratio = 17
         open (newunit=us, file=trim(outdir)//'/scan.dat', status='replace')
         open (newunit=uc, file=trim(outdir)//'/chords.dat', status='replace')
-        write (us, '(a)') '# eps ratio W u_O G p_O/p_max p_X/p_max p_max eps_parallel '// &
+        write (us, '(a)') '# eps ratio W(traced at first/last ratio) u_O G p_O/p_max p_X/p_max p_max eps_parallel '// &
             'pressure_rows D3 newton stages'
         write (uc, '(a)') '# eps ratio R p/p_max (Z = 0, phi = 0, inner side)'
         do ie = 1, size(epss)
@@ -108,13 +108,18 @@ contains
                 end if
                 field = prov%field
                 traced => prov%field
-                ro = periodic_radius(5.47_dp, 5.56_dp, .false., 512)
-                rx = periodic_radius(6.66_dp, 6.75_dp, .false., 512)
+                ro = half_turn_root(5.47_dp, 5.56_dp)
+                rx = half_turn_root(6.66_dp, 6.75_dp)
                 uo = r0 - ro
-                e1 = island_edge(max(0.31_dp, uo - 0.2_dp), uo, .false., 32.0_dp, 256)
-                e2 = island_edge(uo + 0.2_dp, uo, .false., 32.0_dp, 256)
-                w = e2 - e1
-                a = w/6; b = 2*w/3
+                ! W is traced at the first and last ratio; G uses the
+                ! first-ratio W for the whole scan (frozen offsets).
+                if (ir == 1 .or. ir == nratio) then
+                    e1 = edge(max(0.31_dp, uo - 0.2_dp), uo)
+                    e2 = edge(uo + 0.2_dp, uo)
+                    w = e2 - e1
+                    if (ir == 1) w1 = w
+                end if
+                a = w1/6; b = 2*w1/3
                 g = abs(p_at(ro + a) - p_at(ro - a))/(2*a) &
                     /(abs(p_at(ro + b) - p_at(ro - b))/(2*b))
                 pmax = 0
@@ -141,6 +146,102 @@ contains
         end do
         close (us); close (uc)
     end subroutine
+
+    real(dp) function half_turn_root(left, right) result(root)
+        ! Period-1 point on Z = 0 at phi = 0 (the coil is stellarator
+        ! symmetric): sign change of Z after half a toroidal turn, bracketed
+        ! by three passes of nprobe parallel traces (nn_vacuum_fixture's
+        ! periodic_radius predicate, bisection replaced by probes).
+        real(dp), intent(in) :: left, right
+        integer, parameter :: nprobe = 24
+        real(dp) :: a, b, r(0:nprobe), z(0:nprobe)
+        integer :: pass, j
+        a = left; b = right
+        do pass = 1, 3
+            r = [(a + (b - a)*j/real(nprobe, dp), j=0, nprobe)]
+            !$omp parallel do default(shared) private(j) schedule(dynamic)
+            do j = 0, nprobe
+                z(j) = half_turn_z(r(j))
+            end do
+            !$omp end parallel do
+            do j = 1, nprobe
+                if (z(j - 1)*z(j) <= 0) exit
+            end do
+            if (j > nprobe) error stop 'periodic orbit not bracketed'
+            a = r(j - 1); b = r(j)
+        end do
+        root = (a + b)/2
+    end function
+
+    real(dp) function half_turn_z(rr) result(z)
+        real(dp), intent(in) :: rr
+        integer, parameter :: steps = 128
+        real(dp) :: y(2), k1(2), k2(2), k3(2), k4(2), k5(2), k6(2), tmp(2), nxt(2)
+        real(dp) :: err(2), h
+        integer :: i, nfev
+        y = [rr, 0.0_dp]; left_mesh = .false.; nfev = 0
+        h = pi/steps
+        do i = 1, steps
+            call cash_karp_step(rhs, h*(i - 1), y, h, .false., k1, k2, k3, k4, &
+                k5, k6, tmp, nxt, err, nfev)
+            y = nxt
+        end do
+        if (left_mesh) error stop 'periodic trace left the mesh'
+        z = y(2)
+    end function
+
+    real(dp) function edge(outside, inside) result(e)
+        ! Island separatrix crossing on the inner chord (R = r0 - u, Z = 0)
+        ! between a circulating start (outside) and the O point (inside):
+        ! two passes of nprobe parallel 16-turn traces, each narrowing the
+        ! bracket to the probe spacing. A line circulates when its poloidal
+        ! angle about the coil, relative to the toroidal angle, spans more
+        ! than 2 pi (nn_vacuum_fixture's orbit predicate).
+        real(dp), intent(in) :: outside, inside
+        integer, parameter :: nprobe = 24
+        real(dp) :: a, b, u(0:nprobe)
+        logical :: circ(0:nprobe)
+        integer :: pass, j
+        a = outside; b = inside
+        do pass = 1, 2
+            u = [(a + (b - a)*j/real(nprobe, dp), j=0, nprobe)]
+            !$omp parallel do default(shared) private(j) schedule(dynamic)
+            do j = 0, nprobe
+                circ(j) = circulates(u(j))
+            end do
+            !$omp end parallel do
+            if (.not. circ(0) .or. circ(nprobe)) error stop 'edge bracket'
+            j = findloc(circ, .false., 1) - 1
+            a = u(j - 1); b = u(j)
+        end do
+        e = (a + b)/2
+    end function
+
+    logical function circulates(u) result(c)
+        real(dp), intent(in) :: u
+        integer, parameter :: turns = 16, steps = 128
+        real(dp) :: y(2), k1(2), k2(2), k3(2), k4(2), k5(2), k6(2), tmp(2), nxt(2)
+        real(dp) :: err(2), h, theta, oldtheta, angle, lo, hi
+        integer :: i, nfev
+        y = [r0 - u, 0.0_dp]; left_mesh = .false.; nfev = 0
+        oldtheta = atan2(y(2), y(1) - r0); angle = oldtheta; lo = angle; hi = angle
+        h = 2*pi/steps
+        c = .false.
+        do i = 1, turns*steps
+            call cash_karp_step(rhs, h*(i - 1), y, h, .false., k1, k2, k3, k4, &
+                k5, k6, tmp, nxt, err, nfev)
+            y = nxt
+            if (left_mesh) error stop 'width trace left the mesh'
+            theta = atan2(y(2), y(1) - r0)
+            angle = angle + atan2(sin(theta - oldtheta), cos(theta - oldtheta))
+            oldtheta = theta
+            lo = min(lo, angle + i*h); hi = max(hi, angle + i*h)
+            if (hi - lo > 2*pi) then
+                c = .true.
+                return
+            end if
+        end do
+    end function
 
     subroutine poincare(eps, ratio)
         real(dp), intent(in) :: eps, ratio

@@ -72,7 +72,7 @@ contains
         real(dp), allocatable :: xyz(:, :), jv(:, :), fd(:, :), vp(:, :), vm(:, :)
         real(dp), allocatable :: w(:, :)
         real(dp) :: theta0(IP_NTHETA), dth(IP_NTHETA), tbar(IP_NTHETA), h
-        real(dp) :: err, scale, lhs, rhs, worst
+        real(dp) :: err, scale, lhs, rhs, worst, floor
         real(dp), parameter :: eps0(2) = [0.0_dp, 0.5_dp], ratio = 1.0e2_dp
         real(dp), parameter :: typical(IP_NTHETA) = [1.0_dp, 1.0_dp, 1.0e6_dp, 1.0_dp]
         integer :: e, kk, st, c
@@ -106,18 +106,22 @@ contains
                 call island_provider_sample(prov, xyz, vm, st)
                 fd = (vp - vm)/(2*h)
                 do c = 1, 2 ! B rows, then p
+                    ! The difference quotient carries the solve's relative
+                    ! rounding of the sampled value divided by h (floor 1e-11).
                     if (c == 1) then
                         scale = maxval(abs(fd(1:3, :)))
                         err = maxval(abs(jv(1:3, :) - fd(1:3, :)))
+                        floor = 1.0e-11_dp*maxval(abs(vp(1:3, :)))/h
                     else
                         scale = maxval(abs(fd(4, :)))
                         err = maxval(abs(jv(4, :) - fd(4, :)))
+                        floor = 1.0e-11_dp*maxval(abs(vp(4, :)))/h
                     end if
-                    if (scale == 0) cycle
-                    print '(a,es9.1,a,i0,a,a,es10.2,a,es10.2)', 'eps ', eps0(e), &
-                        ' theta_', kk, merge(' B', ' p', c == 1), ' |JVP-FD|/|FD| ', &
-                        err/scale, ' |FD| ', scale
-                    worst = max(worst, err/scale)
+                    print '(a,es9.1,a,i0,a,a,es10.2,a,es10.2,a,es10.2)', 'eps ', &
+                        eps0(e), ' theta_', kk, merge(' B', ' p', c == 1), &
+                        ' |JVP-FD|/|FD| ', err/max(scale, tiny(1.0_dp)), ' |FD| ', &
+                        scale, ' noise floor ', floor
+                    worst = max(worst, err/max(scale, floor/1.0e-5_dp))
                 end do
                 call island_provider_solve(prov, theta0, st, tol=1.0e-13_dp)
                 if (st /= IP_OK) error stop 'restore'
