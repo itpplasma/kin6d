@@ -1024,6 +1024,8 @@ contains
         type(ideal_fb_t) :: fb, fresh
         type(ideal_fb_hypotheses_t) :: hyp
         type(ideal_fb_curvature_t) :: nc
+        type(ideal_fb_report_t) :: report
+        real(dp), allocatable :: g(:)
         real(dp) :: lmin
         integer :: ntor, st, nneg
         do ntor = 0, 1
@@ -1057,6 +1059,28 @@ contains
                 nc%energy0, nc%energy
             if (nc%steps < 1 .or. .not. nc%energy < nc%energy0) &
                 error stop 'escape did not lower the reduced energy'
+            ! The fresh state made an exact equilibrium by a manufactured load
+            ! is a saddle (In_-(S_red) >= 1): the plain solve accepts it at
+            ! once, the negative-curvature solve must leave it.
+            fb = fresh
+            allocate (g(fb%n))
+            call ideal_fb_gradient(fb, g, st)
+            fb%shift = g
+            fb%trust_region = .true.
+            call ideal_fb_solve(fb, 1.0e-10_dp, 2, report, st, &
+                residual_tolerance=1.0e-12_dp)
+            if (st /= IDEAL_FB_OK .or. report%iterations /= 0) &
+                error stop 'manufactured saddle not recognised'
+            fb%negative_curvature = .true.
+            call ideal_fb_solve(fb, 1.0e-10_dp, 2, report, st, &
+                residual_tolerance=1.0e-12_dp)
+            print '(a,i0,a,i0,a,i0,a,es12.4)', 'saddle N=', ntor, ' status ', st, &
+                ' escapes ', report%escapes, ' moved ', &
+                maxval(abs(fb%plasma%x - fresh%plasma%x))
+            if (st == IDEAL_FB_OK .or. report%escapes < 1 .or. &
+                .not. maxval(abs(fb%plasma%x - fresh%plasma%x)) > 1.0e-4_dp) &
+                error stop 'negative-curvature solve kept a saddle'
+            deallocate (g)
         end do
         print '(a)', 'negative curvature escape ok'
     end subroutine

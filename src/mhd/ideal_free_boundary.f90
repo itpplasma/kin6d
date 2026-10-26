@@ -204,7 +204,10 @@ module kin6d_ideal_free_boundary
         logical :: trust_region = .false.
         ! Leave stalls of the merit (less than 10 % decrease over 5 steps, or
         ! no acceptable step) by ideal_fb_negative_curvature when S_red has a
-        ! negative eigenvalue (step control only; the gate is unchanged).
+        ! negative eigenvalue, and leave states that pass the gate as saddles
+        ! of the reduced energy. Only stable equilibria (S_red > 0) are then
+        ! returned, so it does not suit a wanted unstable equilibrium (the
+        ! vertical mode at fixed coil currents).
         logical :: negative_curvature = .false.
         ! Evaluate ideal_fb_hypotheses at every Newton state and print it
         ! (verbose solves only; a diagnostic, never a stopping criterion).
@@ -2159,7 +2162,10 @@ contains
         ! decrease over 5 accepted steps, or no acceptable step) calls
         ! ideal_fb_negative_curvature, which descends the reduced energy while
         ! S_red has a negative eigenvalue; Newton then restarts from that
-        ! state (at most 20 escapes, 10 steps apart when none was found).
+        ! state (at most 20 escapes, 10 steps apart when none was found). A
+        ! state that passes the gate is checked the same way, so that a saddle
+        ! of the reduced energy (an unstable discrete equilibrium, which the
+        ! residual gate admits) is left as well.
         ! With a positive residual_tolerance, convergence requires the residual
         ! sqrt(merit/(sigma V)) <= residual_tolerance (sigma V = energy_scale,
         ! the poloidal-field and pressure energy: toroidal field removed from
@@ -2292,9 +2298,11 @@ contains
             end if
             if (res_tol > 0) then
                 if (report%residual <= res_tol) then
+                    if (saddle()) cycle
                     status = IDEAL_FB_OK; exit
                 end if
             else if (sqrt(merit) <= tolerance*sqrt(report%merit0)) then
+                if (saddle()) cycle
                 status = IDEAL_FB_OK; exit
             end if
             if (it == max_iterations) exit
@@ -2600,6 +2608,15 @@ contains
             end do
         end subroutine
 
+        logical function saddle()
+            ! A state that passes the gate with negative curvature of S_red is
+            ! a saddle of the reduced energy (an unstable discrete
+            ! equilibrium); with fb%negative_curvature the solve leaves it and
+            ! continues, so that only stable equilibria are returned.
+            saddle = .false.
+            if (fb%negative_curvature) call escape(saddle)
+        end function
+
         subroutine escape(moved)
             ! ideal_fb_negative_curvature from the current state; on success
             ! the gradient, merit history and trust radius restart there.
@@ -2608,13 +2625,12 @@ contains
             integer :: s2
             moved = .false.
             if (report%escapes >= 20) return
-            report%escapes = report%escapes + 1
             x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
             call ideal_fb_negative_curvature(fb, cap_x, 20, nc, s2, talk)
             report%curvature_steps = report%curvature_steps + nc%steps
             report%curvature_min = nc%lambda_min
             if (talk) print '(a,i3,a,i3,a,i3,a,i3,a,es14.6,a,es14.6,a,i0)', &
-                '   escape', report%escapes, ' In_-', nc%n_negative0, ' ->', &
+                '   escape', report%escapes + 1, ' In_-', nc%n_negative0, ' ->', &
                 nc%n_negative, ' steps', nc%steps, ' E_red', nc%energy0, ' ->', &
                 nc%energy, ' status ', s2
             nc_next = it + 10
@@ -2622,6 +2638,7 @@ contains
                 fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
                 return
             end if
+            report%escapes = report%escapes + 1
             call ideal_fb_gradient(fb, grad, s2, min_jacobian=minjac)
             if (s2 /= IDEAL_FB_OK) then
                 fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
