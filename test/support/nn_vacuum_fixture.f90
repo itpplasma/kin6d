@@ -29,7 +29,9 @@ contains
         do i = 1, nr + 1
             rings(i) = 0.3_dp + 0.9_dp*(i - 1)/nr
         end do
-        call flux_mesh_build(rings, 8*nr, 8*nr, order, circle, fm, st)
+        ! flux_mesh_build supports geometry order <= 3 (subparametric
+        ! map above P3, as in test_nonnested_transport).
+        call flux_mesh_build(rings, 8*nr, 8*nr, min(order, 3), circle, fm, st)
         if (st /= 0) error stop 'vacuum mesh'
         fan = fm%tlast(1)
         nt = fm%mm%topology%n_triangles - fan
