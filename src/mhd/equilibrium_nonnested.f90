@@ -105,7 +105,7 @@ contains
         complex(dp), allocatable :: rhs(:), a(:), delta(:), full(:), r(:)
         logical, allocatable :: mask(:)
         real(dp), allocatable :: loads(:, :)
-        real(dp) :: pp, en_scale
+        real(dp) :: pp, en_scale, lifted
         integer :: st, t, ndof, failure
         status = 1
         if (.not. allocated(field%b)) return
@@ -160,6 +160,9 @@ contains
         where (mask) a = boundary
         r = rhs - csc_matvec(zk, a)
         where (mask) r = 0
+        ! Lifted right-hand side: the forcing the solve reduces. For n > 0
+        ! rhs = 0 and the boundary trace is the only forcing.
+        lifted = norm2(abs(r))
         call nn_linear_solve(k, mask, r, delta, st)
         if (st /= 0) return
         report%energy_before = quadratic(a)
@@ -170,7 +173,7 @@ contains
         r = rhs - csc_matvec(zk, a)
         where (mask) r = 0
         report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
-            norm2(abs(csc_matvec(zk, a))))
+            norm2(abs(csc_matvec(zk, a))), lifted)
         report%newton_steps = 1
         if (report%residual > 1.0e-9_dp) return
         call meridian_op_complex(field%fs%curl, n, curl, st)

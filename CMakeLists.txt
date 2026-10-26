@@ -1790,6 +1790,13 @@ endif()
 add_executable(test_nonnested_vacuum test/test_nonnested_vacuum.f90)
 target_link_libraries(test_nonnested_vacuum PRIVATE kin6d_nn_vacuum_test)
 add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
+add_executable(test_nonnested_vacuum_mode_residual
+    test/test_nonnested_vacuum_mode_residual.f90)
+target_link_libraries(test_nonnested_vacuum_mode_residual PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME nonnested_vacuum_mode_residual_p3
+    COMMAND test_nonnested_vacuum_mode_residual)
+set_tests_properties(nonnested_vacuum_mode_residual_p3 PROPERTIES
+    TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
 set_tests_properties(nonnested_vacuum_helical_coil_island PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
 
