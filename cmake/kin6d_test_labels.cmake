@@ -692,3 +692,7 @@ foreach(p 4 6 8)
 endforeach()
 kin6d_test_labels(ideal_gll_coupled_block_oracle fast CLASSES mhd
     TARGETS test_gll_block_preconditioner)
+kin6d_test_labels(island_provider_tangent_p2 slow CLASSES mhd
+    TARGETS test_island_provider)
+kin6d_test_labels(island_provider_nested_p2 fast CLASSES mhd
+    TARGETS test_island_provider)
