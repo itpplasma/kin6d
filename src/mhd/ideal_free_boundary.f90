@@ -2465,7 +2465,7 @@ contains
             ! Rejections reuse du and the Cauchy direction (no refactorisation).
             real(dp), allocatable :: dc(:), hc(:), hn(:), v(:), s(:), ones(:), dm(:)
             real(dp) :: tc, nn, nc, tau, lo, hi, ac, an, q, pred, rho, sn, fl
-            real(dp), allocatable :: col(:), r0(:)
+            real(dp), allocatable :: col(:), r0(:), xm(:)
             integer :: k, b, r, pp
             logical :: okm
             allocate (ones(fb%n), col(fb%n)); ones = 1
@@ -2488,8 +2488,9 @@ contains
             if (mready) then
                 hc = hmul(dc)
                 v = -hc(fb%np + fb%nx + 1:fb%np + 2*fb%nx)
-                call sparse_solve(msolver, v, dm, sst)
-                if (status_ok(sst)) dc(fb%np + 1:fb%np + fb%nx) = dm
+                allocate (xm(fb%nx))
+                call sparse_solve(msolver, v, xm, sst)
+                if (status_ok(sst)) dc(fb%np + 1:fb%np + fb%nx) = xm
             end if
             hc = hmul(dc)
             v = hc
