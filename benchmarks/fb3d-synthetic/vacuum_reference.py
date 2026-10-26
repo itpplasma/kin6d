@@ -8,6 +8,14 @@ phi = 0 crossings enclose phiedge (bisection on R) is the reference. The phi = 0
 sections of KIN6D (<prefix>.lcfs, periodic spline in phi-hat) and VMEC++
 (wout) are compared with it by the distance of their points to the closed
 crossing curve. Prints one JSON line.
+
+The oracle winding is the coil set of make_coils.py with each coil split into
+--subdivide coils of 1/subdivide of its current at the interleaved positions
+(default 3, 72 coils; 1 is the MAKEGRID coil set). This keeps the winding and
+removes its n = NFP*NCOIL = 24 coil ripple, which neither KIN6D (toroidal modes
+n <= nfp*ntor) nor VMEC++ (ntor 6) resolve. On the R1 state of #114, the 24
+coils move the oracle surface outward at phi = 0 (between two coils) and inward
+in the coil planes; at phi = 0 they shift the mean signed distance by 1.7 mm.
 """
 import argparse
 import json
@@ -30,9 +38,11 @@ ap.add_argument("--wout", nargs="*", default=[])
 ap.add_argument("--turns", type=int, default=60)
 ap.add_argument("--outboard-R", type=float, default=None,
                 help="reuse a previous reference_outboard_R instead of the bisection")
+ap.add_argument("--subdivide", type=int, default=3,
+                help="coils of the oracle winding per MAKEGRID coil (1: the discrete coil set)")
 a = ap.parse_args()
 
-polys, current = mc.coils()
+polys, current = mc.coils(mc.NCOIL * a.subdivide)
 A = np.concatenate(polys)
 Bq = np.concatenate([np.roll(p, -1, 0) for p in polys])
 
@@ -91,7 +101,8 @@ for _ in range(14 if a.outboard_R is None else 0):
     else:
         hi = mid
 ref = crossings(0.5 * (lo + hi))
-res = dict(reference_outboard_R=0.5 * (lo + hi), reference_flux=flux(ref),
+res = dict(subdivide=a.subdivide, coils=len(polys),
+           reference_outboard_R=0.5 * (lo + hi), reference_flux=flux(ref),
            reference_R=[float(ref[:, 0].min()), float(ref[:, 0].max())],
            reference_Z=[float(ref[:, 1].min()), float(ref[:, 1].max())])
 for prefix in a.kin6d:
