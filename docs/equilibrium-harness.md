@@ -40,6 +40,22 @@ solves directly. Rejected trials reuse the factor. In this mode the factor is
 the SPD Cholesky, with a pivoted LU for the trial only when a pivot is
 nonpositive. The report counts `trials`, `krylov_solves`,
 `krylov_iterations` and `lu_fallbacks`.
+With `lagged_hessian` (default off), the steps after a factored or Krylov
+Newton step are L-BFGS steps (`lagged_memory` (8) secant pairs) whose initial
+inverse is the retained factor, as long as that factor's damping is at most
+`lagged_damping` (1e-6). Each costs one solve and one energy/gradient
+instead of a Hessian assembly. A quasi-Newton step that is not a descent
+direction or fails the energy rule is replaced by the Newton step at the same
+point, and one that reduces the gradient norm by less than
+`lagged_contraction` (1/2) makes the next iteration assemble and refactor.
+The report counts `hessians` and `quasi_steps`.
+`ideal_map_prolong_correction` seeds a resolution ladder: it adds the
+correction of a solved coarse map (lower degree, coarser mesh or fewer
+toroidal modes on the same reference domain) to a fine seed, keeping the fine
+wall. Pass the uncorrected seed gradient as `reference_gradient` so that the
+fine solve stops at the same absolute gradient. It is verified in the position
+gauge; in the transversal gauge the corrected seed can reach another
+stationary point.
 `verify_factor` of the map checks every factorisation and the cached input.
 The factor follows the caller's OpenMP budget by default (`factor_threads = 0`);
 a positive `factor_threads` still supplies an explicit cap.

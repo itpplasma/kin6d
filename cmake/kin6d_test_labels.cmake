@@ -102,6 +102,10 @@ kin6d_test_labels(ideal_map_masked_factor_step fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_krylov_step fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_lagged_hessian fast CLASSES mhd
+    TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_continuation fast CLASSES mhd
+    TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_hessian_sum_factorisation_oracle fast CLASSES mhd
     TARGETS test_ideal_map_hessian)
 foreach(degree RANGE 4 6)

@@ -30,7 +30,8 @@ program test_ideal_map_axisymmetric
         ideal_map_freeze, ideal_map_energy, ideal_map_hessian, ideal_map_solve, &
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
         ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, &
-        ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT, ideal_map_gauge_project
+        ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT, ideal_map_gauge_project, &
+        ideal_map_prolong_correction
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet, triangle_node_powers, &
         triangle_bernstein_controls, TRIANGLE_MAX_NODES
@@ -139,6 +140,10 @@ program test_ideal_map_axisymmetric
         call masked_factor_step_check()
     case ('krylov')
         call krylov_step_check(pullback)
+    case ('lagged')
+        call lagged_hessian_check(pullback)
+    case ('continuation')
+        call continuation_check(pullback)
     case default
         error stop 'unknown mode'
     end select
@@ -477,6 +482,103 @@ contains
             error stop 'krylov: no factorisation saved'
         if (abs(errors(1, 2) - errors(1, 1)) > 1.0e-3_dp*errors(1, 1)) &
             error stop 'krylov: exact-flux error differs from the direct step'
+    end subroutine
+
+    subroutine lagged_hessian_check(field)
+        ! Quasi-Newton steps on the retained factor between Hessian
+        ! assemblies reach the same requested gradient tolerance and the same
+        ! exact-flux error (1e-3 relative) as one Hessian per iteration, with
+        ! fewer assemblies; with and without the Krylov step. Position gauge
+        ! (the 3D seed path).
+        class(ideal_frozen_t), intent(in) :: field
+        type(gs_state_t) :: gs
+        type(ideal_map_t) :: map
+        type(ideal_map_solve_report_t) :: report(3)
+        real(dp) :: errors(4, 3)
+        integer :: k
+        if (degree < 4) error stop 'lagged needs degree >= 4'
+        if (command_argument_count() < 4) quadrature_order = 2*degree + 1
+        solve_tolerance = 1.0e-7_dp
+        position_gauge = .true.
+        call make_mesh(12, degree, gs)
+        do k = 1, 3
+            call build_map(gs, 1, 0, map, field)
+            map%lagged_hessian = k >= 2
+            map%krylov_step = k == 3
+            call solve_map(map, report(k), .false.)
+            call defects(map, field=field, errors=errors(:, k))
+            print '(a,2l2,4i6,2es12.4)', 'lagged krylov iterations hessians ' &
+                //'quasi factorizations gradient d3D_exact', map%lagged_hessian, &
+                map%krylov_step, report(k)%iterations, report(k)%hessians, &
+                report(k)%quasi_steps, report(k)%factorizations, &
+                report(k)%gradient, errors(1, k)
+            if (report(k)%gradient > solve_tolerance) &
+                error stop 'lagged: gradient tolerance not attained'
+            if (report(k)%hessians + report(k)%quasi_steps /= report(k)%iterations) &
+                error stop 'lagged: iterations are not Hessian or quasi steps'
+            if (abs(errors(1, k) - errors(1, 1)) > 1.0e-3_dp*errors(1, 1)) &
+                error stop 'lagged: exact-flux error differs from the Newton step'
+        end do
+        if (report(1)%quasi_steps /= 0) error stop 'lagged: quasi step without option'
+        if (minval(report(2:3)%quasi_steps) == 0) error stop 'lagged: no quasi step'
+        if (any(report(2:3)%hessians >= report(1)%hessians)) &
+            error stop 'lagged: no Hessian assembly saved'
+    end subroutine
+
+    subroutine continuation_check(field)
+        ! (a) The correction of a solved map onto a copy of its own seed
+        ! reproduces the solved coefficients (interpolation at own nodes).
+        ! (b) Degree ladder: a degree - 1 solve on the same domain corrects the
+        ! degree seed; the fine solve then reaches the absolute gradient of
+        ! the direct solve (tolerance relative to the uncorrected seed
+        ! gradient) with fewer Hessian assemblies and the same exact-flux error
+        ! (1e-3 relative). Position gauge: in the transversal gauge the
+        ! corrected seed converges to another stationary point (2D Solovev
+        ! p4: exact-flux error 1.0621e-4 against 1.0532e-4 at 1e-10).
+        class(ideal_frozen_t), intent(in) :: field
+        type(gs_state_t) :: gs, gc
+        type(ideal_map_t) :: map, fine, coarse
+        type(ideal_map_solve_report_t) :: report(3)
+        real(dp), allocatable :: seed(:, :, :), grad(:), gred(:)
+        real(dp) :: errors(4, 2), energy, gseed
+        integer :: status
+        if (degree < 3) error stop 'continuation needs degree >= 3'
+        if (command_argument_count() < 4) quadrature_order = 2*degree + 1
+        solve_tolerance = 1.0e-7_dp
+        position_gauge = .true.
+        call make_mesh(12, degree, gs)
+        call build_map(gs, 1, 0, map, field)
+        seed = map%x
+        call solve_map(map, report(1), .false.)
+        call defects(map, field=field, errors=errors(:, 1))
+        call build_map(gs, 1, 0, fine, field)
+        call ideal_map_prolong_correction(fine, map, seed, status)
+        if (status /= 0) error stop 'continuation: identity correction failed'
+        if (maxval(abs(fine%x - map%x)) > 1.0e-12_dp*maxval(abs(map%x))) &
+            error stop 'continuation: identity correction differs from the solution'
+        call make_mesh(12, degree - 1, gc)
+        call build_map(gc, 1, 0, coarse, field)
+        seed = coarse%x
+        call solve_map(coarse, report(2), .false.)
+        call build_map(gs, 1, 0, fine, field)
+        allocate (grad(fine%ndof), gred(fine%nred))
+        call ideal_map_energy(fine, fine%x, energy, status, grad)
+        call ideal_map_reduce(fine, grad, gred)
+        where (fine%fixed) gred = 0
+        gseed = norm2(gred)
+        call ideal_map_prolong_correction(fine, coarse, seed, status)
+        if (status /= 0) error stop 'continuation: correction failed'
+        call solve_map(fine, report(3), .false., reference_gradient=gseed)
+        call defects(fine, field=field, errors=errors(:, 2))
+        print '(a,3i6,2es12.4)', 'continuation hessians direct coarse fine, ' &
+            //'d3D_exact direct fine', report(1)%hessians, report(2)%hessians, &
+            report(3)%hessians, errors(1, :)
+        if (report(3)%gradient*gseed > solve_tolerance*report(1)%initial_gradient) &
+            error stop 'continuation: absolute gradient of the direct solve not attained'
+        if (report(3)%hessians >= report(1)%hessians) &
+            error stop 'continuation: no fine Hessian assembly saved'
+        if (abs(errors(1, 2) - errors(1, 1)) > 1.0e-3_dp*errors(1, 1)) &
+            error stop 'continuation: exact-flux error differs from the direct solve'
     end subroutine
 
     subroutine masked_factor_step_check()
