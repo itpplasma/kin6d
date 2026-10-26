@@ -2160,14 +2160,15 @@ contains
         integer :: it, i, p, st, tries, back, nback
         integer, allocatable :: tpos(:, :)
         real(dp), allocatable :: trial_du(:)
-        type(sparse_solver_t) :: csolver
+        type(sparse_solver_t) :: csolver, msolver
         type(ideal_fb_hypotheses_t) :: hyp
-        logical :: cready
+        logical :: cready, mready
         logical :: talk, accepted, factored, kept, reused_factor
         real(dp) :: kz, fz, fzr, ftry
         integer, allocatable :: srows(:), scols(:)
         real(dp), allocatable :: smat(:), sol(:)
-        real(dp) :: sscale, delta
+        real(dp) :: sscale, delta, mtr
+        real(dp), allocatable :: wtr(:)
         integer :: nslide
         report = ideal_fb_report_t()
         report%step = 0
@@ -2190,7 +2191,7 @@ contains
         mu = 1.0e-8_dp
         tangent_damping = fb%tangential_damping
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
-        factored = .false.; cready = .false.
+        factored = .false.; cready = .false.; mready = .false.
         call ideal_fb_gradient(fb, grad, st, min_jacobian=minjac)
         if (st /= IDEAL_FB_OK) then
             status = IDEAL_FB_FOLDED; return
@@ -2224,6 +2225,8 @@ contains
                 ! (toroidal-field-scale forces on shell nodes, no physics)
                 ! never enter the merit.
                 call factor_constraint(fb, rowptr, colidx, val, csolver, cready)
+                if (cready .and. fb%trust_region) call factor_constraint(fb, rowptr, &
+                    colidx, val, msolver, mready, primal=.true.)
                 if (cready) then
                     call project_multipliers(fb, csolver, grad)
                     call merit_weights(fb, diag, wts)
@@ -2232,6 +2235,10 @@ contains
             if (fb%tangential_damping > 0) &
                 call tangential_positions(fb, rowptr, colidx, tpos)
             call merit_weights(fb, diag, wts)
+            ! The trust region needs one merit function for the whole solve:
+            ! its weights are frozen at the start (the gate below keeps the
+            ! current ones; both vanish only together).
+            if (it == 0) wtr = wts
             if (it == 0) fzr = rigid_force(grad)
             call project_slide(fb, wts, grad)
             merit = sum(wts*grad**2)
@@ -2387,6 +2394,7 @@ contains
         end do
         if (factored) call sparse_destroy(solver)
         if (cready) call sparse_destroy(csolver)
+        if (mready) call sparse_destroy(msolver)
         call constraint_norm(fb, report%constraint)
         if (talk) print '(a,4f10.1,a,i0,a,i0)', '   seconds: assemble factor+solve &
             &line-search', report%assemble_s, report%factor_s, report%line_s, &
@@ -2423,17 +2431,19 @@ contains
             tr_norm = max(dd, dr*cap_x/cap_w)
         end function
 
-        real(dp) function model_merit(v)
-            ! Merit of a linearised residual v = g + H s after the same
-            ! multiplier and slide projections as every trial gradient (both
-            ! linear in v, lambda untouched).
+        real(dp) function model_merit(v, project)
+            ! Trust-region merit (frozen weights wtr) of a residual v after the
+            ! slide projection and, for a linearised residual v = g + H s
+            ! (project), the multiplier projection of every trial gradient
+            ! (both linear in v, lambda untouched).
             real(dp), intent(in) :: v(:)
+            logical, intent(in) :: project
             real(dp), allocatable :: y(:), d(:)
             logical :: ok
             y = v
-            if (cready) call multiplier_increment(fb, csolver, y, d, ok)
-            call project_slide(fb, wts, y)
-            model_merit = sum(wts*y**2)
+            if (cready .and. project) call multiplier_increment(fb, csolver, y, d, ok)
+            call project_slide(fb, wtr, y)
+            model_merit = sum(wtr*y**2)
         end function
 
         subroutine trust_region_trials()
@@ -2441,35 +2451,52 @@ contains
             !   q(s) = sum w (P (g + H s))^2,  ||s|| <= delta,
             ! P the multiplier and slide projections. The Newton step du
             ! (q(du) ~ 0) is the far end of the path; the near end is the
-            ! minimiser of q along the Jacobi-scaled steepest-descent
-            ! direction -D^-1 H W g (D = |diag H|, multiplier rows zero, slide
-            ! component removed so that the step stays in the gauge). A trial
-            ! is accepted when every Jacobian stays positive and
+            ! minimiser of q along the steepest-descent direction
+            ! -D^-2 H W g on the plasma rows, scaled by the Gauss-Newton column
+            ! norms D_i^2 = sum_j w_j H_ji^2, slide component removed so that
+            ! the step stays in the gauge, and lifted to the shell map by the
+            ! linearised constraints (C d_x = -C_p d_p: shell nodes follow
+            ! Gamma_p by the harmonic extension and do not fold; Phi~ and
+            ! lambda are left to the next Newton step). W = wtr, the merit
+            ! weights frozen at the start. A trial is accepted when every
+            ! Jacobian stays positive and
             ! rho = (m - m(s))/(m - q(s)) > 1e-4; delta shrinks to ||s||/4 for
             ! rho < 1/4 and doubles (up to cap_x) for rho > 3/4 on the boundary.
             ! Rejections reuse du and the Cauchy direction (no refactorisation).
             real(dp), allocatable :: dc(:), hc(:), hn(:), v(:), s(:), ones(:), dm(:)
             real(dp) :: tc, nn, nc, tau, lo, hi, ac, an, q, pred, rho, sn, fl
-            integer :: k, b, sx, mx, cx
+            real(dp), allocatable :: col(:), r0(:)
+            integer :: k, b, r, pp
             logical :: okm
-            allocate (ones(fb%n)); ones = 1
-            fl = 1.0e-12_dp*maxval(diag)
-            hn = hmul(du)
-            dc = -hmul(wts*grad)/max(diag, fl)
-            do sx = 1, fb%ns
-                do mx = 1, fb%nmode
-                    do cx = 1, 3
-                        dc(il(fb, cx, mx, sx)) = 0
-                    end do
+            allocate (ones(fb%n), col(fb%n)); ones = 1
+            !$omp parallel do private(r, pp) schedule(static)
+            do r = 1, fb%n
+                col(r) = 0
+                do pp = rowptr(r), rowptr(r + 1) - 1
+                    col(r) = col(r) + wtr(colidx(pp))*val(pp)**2
                 end do
             end do
+            !$omp end parallel do
+            fl = 1.0e-24_dp*maxval(col)
+            r0 = grad
+            call project_slide(fb, wtr, r0)
+            mtr = sum(wtr*r0**2)
+            hn = hmul(du)
+            dc = -hmul(wtr*r0)/max(col, fl)
+            dc(fb%np + 1:) = 0
             call project_slide(fb, ones, dc)
+            if (mready) then
+                hc = hmul(dc)
+                v = -hc(fb%np + fb%nx + 1:fb%np + 2*fb%nx)
+                call sparse_solve(msolver, v, dm, sst)
+                if (status_ok(sst)) dc(fb%np + 1:fb%np + fb%nx) = dm
+            end if
             hc = hmul(dc)
             v = hc
             if (cready) call multiplier_increment(fb, csolver, v, dm, okm)
-            call project_slide(fb, wts, v)
-            ! Exact line minimiser of q along dc (v = P H dc, P g = g).
-            tc = -sum(wts*grad*v)/max(sum(wts*v**2), tiny(1.0_dp))
+            call project_slide(fb, wtr, v)
+            ! Exact line minimiser of q along dc (v = P H dc, P r0 = r0).
+            tc = -sum(wtr*r0*v)/max(sum(wtr*v**2), tiny(1.0_dp))
             dc = tc*dc; hc = tc*hc
             nn = tr_norm(du); nc = tr_norm(dc)
             alpha = 1
@@ -2493,8 +2520,8 @@ contains
                 end if
                 s = ac*dc + an*du
                 sn = tr_norm(s)
-                q = model_merit(grad + ac*hc + an*hn)
-                pred = merit - q
+                q = model_merit(r0 + ac*hc + an*hn, .true.)
+                pred = mtr - q
                 t0 = wall()
                 call ideal_fb_step(fb, s, 1.0_dp)
                 call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
@@ -2504,18 +2531,18 @@ contains
                 if (st == IDEAL_FB_OK) then
                     ftry = rigid_force(rhs)
                     call project_slide(fb, wts, rhs)
-                    tmerit = sum(wts*rhs**2)
-                    if (pred > 0) rho = (merit - tmerit)/pred
+                    tmerit = model_merit(rhs, .false.)
+                    if (pred > 0) rho = (mtr - tmerit)/pred
                 end if
                 report%line_s = report%line_s + wall() - t0
                 if (talk) print '(a,i3,5es10.2)', '   tr trial delta |s| |s_N| rho q/m', &
-                    b, delta, sn, nn, rho, q/merit
+                    b, delta, sn, nn, rho, q/mtr
                 if (rho < 0.25_dp) then
                     delta = 0.25_dp*sn
                 else if (rho > 0.75_dp .and. sn >= 0.99_dp*delta) then
                     delta = min(2*delta, cap_x)
                 end if
-                if (st == IDEAL_FB_OK .and. rho > 1.0e-4_dp .and. tmerit < merit) then
+                if (st == IDEAL_FB_OK .and. rho > 1.0e-4_dp .and. tmerit < mtr) then
                     accepted = .true.
                     ! Bookkeeping as for a scaled Newton step: alpha*disp = |s|,
                     ! alpha = 1 only for the full Newton step.
@@ -2618,19 +2645,27 @@ contains
         end block
     end subroutine
 
-    subroutine factor_constraint(fb, rowptr, colidx, val, csolver, ready)
+    subroutine factor_constraint(fb, rowptr, colidx, val, csolver, ready, primal)
         ! Factor the C^T block (rows: shell map, columns: multipliers); the
-        ! CSR rows of the transposed block are its CSC columns.
+        ! CSR rows of the transposed block are its CSC columns. With primal,
+        ! factor C itself (rows: constraints, columns: shell map), the
+        ! linear harmonic extension of a Gamma_p motion.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: rowptr(:), colidx(:)
         real(dp), intent(in) :: val(:)
         type(sparse_solver_t), intent(inout) :: csolver
         logical, intent(out) :: ready
+        logical, intent(in), optional :: primal
         integer, allocatable :: rp(:), ci(:)
         real(dp), allocatable :: v(:)
         type(fortsparse_status_t) :: sst
         integer :: i, p, nnz, row0, col0
         row0 = fb%np; col0 = fb%np + fb%nx
+        if (present(primal)) then
+            if (primal) then
+                row0 = fb%np + fb%nx; col0 = fb%np
+            end if
+        end if
         allocate (rp(fb%nx + 1), ci(size(val)), v(size(val)))
         nnz = 0; rp(1) = 1
         do i = 1, fb%nx
