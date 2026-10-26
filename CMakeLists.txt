@@ -1955,7 +1955,7 @@ if(KIN6D_BELTRAMI_SPEC_SAMPLES)
                 ${helical_amplitude} ${rings} 2 ${modes}
                 ${KIN6D_BELTRAMI_SPEC_SAMPLES}/candidate_${case}_${rings}_${modes}.dat)
             set_tests_properties(nonnested_beltrami_spec_${case}_${rings}
-                PROPERTIES TIMEOUT 900 LABELS "mhd;slow" PROCESSORS 4
+                PROPERTIES TIMEOUT 900 PROCESSORS 4
                 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
         endforeach()
     endforeach()
@@ -1965,7 +1965,7 @@ if(KIN6D_BELTRAMI_SPEC_SAMPLES)
             ${KIN6D_BELTRAMI_SPEC_SAMPLES}/helical.samples 0.1 4 2 ${modes}
             ${KIN6D_BELTRAMI_SPEC_SAMPLES}/candidate_helical_4_${modes}.dat)
         set_tests_properties(nonnested_beltrami_spec_modes_${modes} PROPERTIES
-            TIMEOUT 900 LABELS "mhd;slow" PROCESSORS 4
+            TIMEOUT 900 PROCESSORS 4
             ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
     endforeach()
 endif()
@@ -1976,26 +1976,26 @@ add_executable(test_nonnested_beltrami_pairing
 target_link_libraries(test_nonnested_beltrami_pairing PRIVATE kin6d_feec_n)
 add_test(NAME nonnested_beltrami_pairing COMMAND test_nonnested_beltrami_pairing)
 set_tests_properties(nonnested_beltrami_pairing PROPERTIES
-    TIMEOUT 60 LABELS "mhd;fast" PROCESSORS 4
+    TIMEOUT 60 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_nonnested_beltrami test/test_nonnested_beltrami.f90)
 target_link_libraries(test_nonnested_beltrami PRIVATE kin6d)
 add_test(NAME nonnested_beltrami_resonance
     COMMAND test_nonnested_beltrami resonance 2)
 set_tests_properties(nonnested_beltrami_resonance PROPERTIES
-    TIMEOUT 60 LABELS "mhd;fast" PROCESSORS 4
+    TIMEOUT 60 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME nonnested_beltrami_constraints
     COMMAND test_nonnested_beltrami constraints 2)
 set_tests_properties(nonnested_beltrami_constraints PROPERTIES
-    TIMEOUT 60 LABELS "mhd;fast" PROCESSORS 4
+    TIMEOUT 60 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 foreach(k 2 3)
     foreach(case manufactured lundquist vacuum)
         add_test(NAME nonnested_beltrami_${case}_p${k}
             COMMAND test_nonnested_beltrami ${case} ${k})
         set_tests_properties(nonnested_beltrami_${case}_p${k} PROPERTIES
-            TIMEOUT 600 LABELS "mhd;slow" PROCESSORS 4
+            TIMEOUT 600 PROCESSORS 4
             ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
     endforeach()
 endforeach()
