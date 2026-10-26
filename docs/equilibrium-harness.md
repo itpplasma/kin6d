@@ -36,10 +36,17 @@ Cholesky factor of an earlier damped Hessian, to the Eisenstat-Walker relative
 residual min(1/2, (|g|/|g0|)^1/2) within `krylov_max` (10) iterations. More
 than `krylov_refactor` (8) iterations, a CG breakdown (nonpositive curvature or
 preconditioner) or no convergence refactors the current damped Hessian and
-solves directly. Rejected trials reuse the factor. In this mode the factor is
-the SPD Cholesky, with a pivoted LU for the trial only when a pivot is
-nonpositive. The report counts `trials`, `krylov_solves`,
-`krylov_iterations` and `lu_fallbacks`.
+solves directly. Rejected trials reuse the factor. In this mode the factor
+follows `factor_policy`. The default `IDEAL_MAP_FACTOR_LDLT` computes one
+FortSparse supernodal LDL^T per direct trial and retains it as the
+preconditioner when its inertia is positive. An indefinite factor serves its
+own trial only, and the pivoted LU is used only when the LDL^T fails.
+`IDEAL_MAP_FACTOR_SPD_LU` switches this off: it tries the SPD Cholesky and
+factors the same matrix again with the pivoted LU when a pivot is nonpositive,
+which costs a second factorisation because a failed Cholesky usually fails
+late. Both policies follow the same Newton/Krylov sequence on the Landreman
+b12 case. The report counts `trials`, `krylov_solves`, `krylov_iterations`,
+`indefinite_trials` and `lu_fallbacks`.
 `verify_factor` of the map checks every factorisation and the cached input.
 The factor follows the caller's OpenMP budget by default (`factor_threads = 0`);
 a positive `factor_threads` still supplies an explicit cap.

@@ -447,9 +447,9 @@ contains
         ! factor of an earlier damped Hessian) reaches the same requested
         ! gradient tolerance and the same exact-flux error (1e-3 relative) as
         ! the direct step, with fewer factorisations. Factor policies of the
-        ! Krylov step: LDLT (one supernodal LDL^T per direct trial, retained
-        ! when its inertia is positive) and ADAPTIVE reach the tolerance with
-        ! the same error to 1e-3.
+        ! Krylov step: LDLT (the default: one supernodal LDL^T per direct
+        ! trial, retained when its inertia is positive) and ADAPTIVE reach the
+        ! tolerance with the same error to 1e-3 as SPD_LU.
         class(ideal_frozen_t), intent(in) :: field
         type(gs_state_t) :: gs
         type(ideal_map_t) :: map
@@ -465,7 +465,8 @@ contains
         do k = 1, 4
             call build_map(gs, 1, 0, map, field)
             map%krylov_step = k >= 2
-            map%factor_policy = policy(k)
+            ! k = 3 runs the default factor policy (LDLT).
+            if (k /= 3) map%factor_policy = policy(k)
             call solve_map(map, report(k), .false.)
             call defects(map, field=field, errors=errors(:, k))
             print '(a,l2,7i6,es12.4,es16.8)', 'krylov policy iterations trials ' &

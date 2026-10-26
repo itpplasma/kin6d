@@ -141,14 +141,15 @@ module kin6d_ideal_map
         ! factor and solve at every trial.
         logical :: krylov_step = .false.
         ! Factor of a Krylov-step trial; only an SPD factor is retained as
-        ! preconditioner. SPD_LU (default): Cholesky, and the pivoted LU of
-        ! the same matrix when a pivot is not positive. ADAPTIVE: as SPD_LU
-        ! until a Cholesky fails, then the pivoted LU for the rest of the solve
-        ! (indefinite trials pay one factorisation; later SPD trials are not
-        ! retained). LDLT: one FortSparse supernodal LDL^T, retained when its
-        ! inertia is positive (the Cholesky criterion up to roundoff); the
-        ! pivoted LU only if it fails.
-        integer :: factor_policy = IDEAL_MAP_FACTOR_SPD_LU
+        ! preconditioner. LDLT (default): one FortSparse supernodal LDL^T,
+        ! retained when its inertia is positive (the Cholesky criterion up to
+        ! roundoff); the pivoted LU only if it fails. SPD_LU: Cholesky, and
+        ! the pivoted LU of the same matrix when a pivot is not positive (a
+        ! failed Cholesky costs about as much as a successful one).
+        ! ADAPTIVE: as SPD_LU until a Cholesky fails, then the pivoted LU for
+        ! the rest of the solve (indefinite trials pay one factorisation;
+        ! later SPD trials are not retained).
+        integer :: factor_policy = IDEAL_MAP_FACTOR_LDLT
         integer :: krylov_refactor = 8, krylov_max = 10
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
