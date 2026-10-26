@@ -1127,7 +1127,7 @@ contains
         real(dp), allocatable :: pft(:, :), pfull(:, :), phalf(:, :)
         real(dp) :: w, jac, gv(12), hp(78), dphi, weight
         integer :: e, g, j, a, k, nl, nr, nlm, nmm, nmc, nloc, nq, nphi
-        integer :: nmode, ne, eb, item, nh, nt, nwhole, e0
+        integer :: nmode, ne, eb, item, nh, nt
         nloc = map%nloc; nq = map%nq; nphi = map%nphi; nmode = map%nmode
         nlm = nloc*nmode
         nl = 3*nlm
@@ -1149,28 +1149,26 @@ contains
                 end do
             end do
         end do
-        ! Whole rounds of nt cells: every thread assembles whole cells in
-        ! private workspaces (cell loop). The remaining cells (fewer than
-        ! threads, all of them when the map has fewer cells than threads) are
-        ! processed in one batch whose stages are shared by the team over
-        ! (cell, quadrature point), (cell, node) and (cell, column) items, so
-        ! the last round keeps all threads busy. Both paths perform the
-        ! per-cell sequence of calls with the same operands, so the blocks do
-        ! not depend on the thread count or path.
+        ! With at least as many cells as threads every thread assembles whole
+        ! cells in private workspaces (cell loop). With fewer cells the
+        ! cells are processed in one batch whose stages are shared by the
+        ! team over (cell, quadrature point), (cell, node) and (cell, column)
+        ! items, so a map with fewer cells than threads keeps all of them
+        ! busy. Both paths perform the per-cell sequence of calls with the same
+        ! operands, so the blocks do not depend on the thread count or path.
         nt = 1
         !$ nt = omp_get_max_threads()
-        nwhole = nt*(map%cells/nt)
-        if (nwhole > 0) then
+        if (map%cells >= nt) then
             ! Thread-private workspaces, allocated once per parallel region.
             !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, &
-            !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, nh, nwhole) &
+            !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, nh) &
             !$omp private(e, g, j, a, k, w, jac, gv, hp, weight, ka, kb, kc, item, pa, &
             !$omp pb, pc, pks, pyw, pft, pfull, phalf)
             allocate (ka(nmm, 45*nq), kb(nmm, 27*nq), kc(nmm, 6*nq), &
                 pa(nphi, 45*nq), pb(nphi, 27*nq), pc(nphi, 6*nq), pks(3*nmc, 3*nq), &
                 pyw(nmc, 3*nq*nloc), pft(nmc, nloc*nloc), pfull(nl, nl), phalf(nl, nr))
             !$omp do schedule(static)
-            do e = 1, nwhole
+            do e = 1, map%cells
                 do g = 1, nq
                     weight = map%weight(g)*dphi
                     do j = 1, nphi
@@ -1220,16 +1218,14 @@ contains
             !$omp end do
             deallocate (ka, kb, kc, pa, pb, pc, pks, pyw, pft, pfull, phalf)
             !$omp end parallel
-        end if
-        if (nwhole < map%cells) then
-            ! The remaining cells e0 + 1 .. cells in one batch.
-            e0 = nwhole
-            ne = map%cells - nwhole
+        else
+            ! All cells in one batch (fewer cells than threads).
+            ne = map%cells
             allocate (hwa(nphi, 45*nq, ne), hwb(nphi, 27*nq, ne), hwc(nphi, 6*nq, ne), &
                 ks(3*nmc, 3*nq, ne), yw(nmc, 3*nq*nloc, ne), ft(nmc, nloc*nloc, ne), &
                 full(nl, nl, ne), half(nl, nr, ne))
             !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, &
-            !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, ne, e0, nh, hwa, hwb, hwc, &
+            !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, ne, nh, hwa, hwb, hwc, &
             !$omp ks, yw, ft, full, half) &
             !$omp private(e, eb, item, g, j, a, k, w, jac, gv, hp, weight, ka, kb, kc)
             ! Weighted point Hessians; column (pair, g) of the plane stage input.
@@ -1237,7 +1233,7 @@ contains
             do item = 1, ne*nq
                 eb = 1 + (item - 1)/nq
                 g = item - nq*(eb - 1)
-                e = e0 + eb
+                e = eb
                 weight = map%weight(g)*dphi
                 do j = 1, nphi
                     call point_hessian(map, e, g, j, x, w, jac, gv, hp)
@@ -1293,22 +1289,22 @@ contains
                 eb = 1 + (item - 1)/nloc
                 a = item - nloc*(eb - 1)
                 call hessian_scatter(nmode, nloc, a, ft(:, :, eb), full(:, :, eb))
-                call hessian_add_gauge(map, e0 + eb, a, full(:, :, eb))
+                call hessian_add_gauge(map, eb, a, full(:, :, eb))
             end do
             !$omp end do
             ! Reduction P^T full P: columns of half, then columns of the block.
             !$omp do schedule(dynamic, 4)
             do item = 1, ne*nh
                 eb = 1 + (item - 1)/nh
-                call hessian_reduce_half(map, e0 + eb, item - nh*(eb - 1), &
+                call hessian_reduce_half(map, eb, item - nh*(eb - 1), &
                     full(:, :, eb), half(:, :, eb))
             end do
             !$omp end do
             !$omp do schedule(dynamic, 4)
             do item = 1, ne*nr
                 eb = 1 + (item - 1)/nr
-                call hessian_reduce_column(map, e0 + eb, item - nr*(eb - 1), &
-                    half(:, :, eb), blocks(:, :, e0 + eb))
+                call hessian_reduce_column(map, eb, item - nr*(eb - 1), &
+                    half(:, :, eb), blocks(:, :, eb))
             end do
             !$omp end do
             ! The scalar-energy Hessian has one authoritative triangle.
@@ -1317,7 +1313,7 @@ contains
             !$omp do schedule(static)
             do item = 1, ne*nr
                 eb = 1 + (item - 1)/nr
-                call hessian_reflect_column(item - nr*(eb - 1), blocks(:, :, e0 + eb))
+                call hessian_reflect_column(item - nr*(eb - 1), blocks(:, :, eb))
             end do
             !$omp end do
             !$omp end parallel
