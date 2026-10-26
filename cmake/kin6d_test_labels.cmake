@@ -699,8 +699,16 @@ kin6d_test_labels(ideal_seed_boundary_label fast CLASSES mhd
 
 kin6d_test_labels(ideal_seed_3d_boundary_profiles fast CLASSES mhd
     TARGETS test_ideal_seed_3d)
+kin6d_test_labels(ideal_map_field_angle fast CLASSES mhd
+    TARGETS test_ideal_map_field_angle)
 kin6d_test_labels(ideal_seed_3d_nested_input fast CLASSES mhd
     TARGETS test_nested_seed_input)
+if(TARGET gen_ideal_field_angle)
+    kin6d_test_labels(ideal_field_angle_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_field_angle)
+    kin6d_test_labels(ideal_map_leaves_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_map)
+endif()
 if(TARGET gen_ideal_seed_3d)
     kin6d_test_labels(ideal_seed_3d_regeneration fast CLASSES mhd
         TARGETS gen_ideal_seed_3d)
