@@ -93,6 +93,9 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_newton_step
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
     public :: ideal_fb_hypotheses_print
+    public :: ideal_fb_curvature_t, ideal_fb_negative_curvature
+    public :: ideal_fb_trust_subproblem, ideal_fb_reduced_spectrum
+    public :: ideal_fb_symmetry_defect
     public :: ideal_fb_attach_exterior_3d, ideal_fb_exterior_ready
     public :: ideal_fb_field_basis_t, ideal_fb_drive_traces, ideal_fb_full_turn_traces
     public :: ideal_fb_set_traces, ideal_fb_traces_jvp, ideal_fb_traces_vjp
@@ -199,6 +202,10 @@ module kin6d_ideal_free_boundary
         ! model of the residual merit instead of backtracking and Levenberg
         ! damping (step control only; the merit and the gate are unchanged).
         logical :: trust_region = .false.
+        ! Leave stalls of the merit (less than 10 % decrease over 5 steps, or
+        ! no acceptable step) by ideal_fb_negative_curvature when S_red has a
+        ! negative eigenvalue (step control only; the gate is unchanged).
+        logical :: negative_curvature = .false.
         ! Evaluate ideal_fb_hypotheses at every Newton state and print it
         ! (verbose solves only; a diagnostic, never a stopping criterion).
         logical :: monitor_hypotheses = .false.
@@ -228,6 +235,22 @@ module kin6d_ideal_free_boundary
         ! final radius (m, largest map displacement).
         integer :: rejected = 0
         real(dp) :: radius = 0
+        ! Negative-curvature escapes (ideal_fb_t%negative_curvature): calls,
+        ! accepted reduced-energy steps and the last lowest S_red eigenvalue.
+        integer :: escapes = 0, curvature_steps = 0
+        real(dp) :: curvature_min = 0
+    end type
+
+    type :: ideal_fb_curvature_t
+        ! ideal_fb_negative_curvature: accepted and rejected steps, S_red
+        ! evaluations, In_-(S_red) and its lowest eigenvalue at the first and
+        ! the last evaluation, E_red before and after (J per field period) and
+        ! the largest plasma-unknown increment (m), and the actual-to-predicted
+        ! decrease ratio of the last accepted step.
+        integer :: steps = 0, rejected = 0, evaluations = 0
+        integer :: n_negative0 = -1, n_negative = -1
+        real(dp) :: lambda_min0 = 0, lambda_min = 0, energy0 = 0, energy = 0
+        real(dp) :: max_step = 0, rho = 0
     end type
 
     type :: ideal_fb_stability_t
@@ -2132,6 +2155,11 @@ contains
         ! replaced by a dogleg trust region on the Gauss-Newton model of the
         ! same merit (trust_region_trials); the acceptance test and the gate
         ! are the same.
+        ! With fb%negative_curvature a stall of the merit (less than 10 %
+        ! decrease over 5 accepted steps, or no acceptable step) calls
+        ! ideal_fb_negative_curvature, which descends the reduced energy while
+        ! S_red has a negative eigenvalue; Newton then restarts from that
+        ! state (at most 20 escapes, 10 steps apart when none was found).
         ! With a positive residual_tolerance, convergence requires the residual
         ! sqrt(merit/(sigma V)) <= residual_tolerance (sigma V = energy_scale,
         ! the poloidal-field and pressure energy: toroidal field removed from
@@ -2169,13 +2197,15 @@ contains
         real(dp), allocatable :: smat(:), sol(:)
         real(dp) :: sscale, delta, mtr
         real(dp), allocatable :: wtr(:)
-        integer :: nslide
+        integer :: nslide, nc_next
+        logical :: moved
         report = ideal_fb_report_t()
         report%step = 0
         status = IDEAL_FB_BAD_INPUT
         if (max_iterations < 0) return
         if (.not. ideal_fb_exterior_ready(fb)) return
         kz = 0
+        nc_next = 0
         nslide = size(fb%slide, 3)
         allocate (sol(fb%n + nslide))
         talk = .false.
@@ -2275,6 +2305,13 @@ contains
                     report%floor = .true.; status = IDEAL_FB_OK; exit
                 end if
             end if
+            if (fb%negative_curvature .and. it >= nc_next .and. &
+                history(0) < huge(1.0_dp)) then
+                if (history(5) > 0.9_dp*history(0)) then
+                    call escape(moved)
+                    if (moved) cycle
+                end if
+            end if
             accepted = .false.
             x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
             do tries = 1, 16
@@ -2369,6 +2406,11 @@ contains
                 if (accepted) exit
                 mu = 10*mu
             end do
+            if (.not. accepted .and. fb%negative_curvature) then
+                fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                call escape(moved)
+                if (moved) cycle
+            end if
             if (.not. accepted) then
                 report%floor = report%residual < 1.0e-6_dp
                 if (report%floor .and. res_tol <= 0) then
@@ -2556,6 +2598,42 @@ contains
                 report%rejected = report%rejected + 1
                 if (delta < 1.0e-9_dp*cap_x) return
             end do
+        end subroutine
+
+        subroutine escape(moved)
+            ! ideal_fb_negative_curvature from the current state; on success
+            ! the gradient, merit history and trust radius restart there.
+            logical, intent(out) :: moved
+            type(ideal_fb_curvature_t) :: nc
+            integer :: s2
+            moved = .false.
+            if (report%escapes >= 20) return
+            report%escapes = report%escapes + 1
+            x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
+            call ideal_fb_negative_curvature(fb, cap_x, 20, nc, s2, talk)
+            report%curvature_steps = report%curvature_steps + nc%steps
+            report%curvature_min = nc%lambda_min
+            if (talk) print '(a,i3,a,i3,a,i3,a,es10.2,a,es10.2,a,i0)', &
+                '   escape', report%escapes, ' In_-', nc%n_negative0, ' ->', &
+                nc%n_negative, ' steps', nc%steps, ' E_red', nc%energy0, ' ->', &
+                nc%energy, ' status ', s2
+            nc_next = it + 10
+            if (nc%steps == 0) then
+                fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                return
+            end if
+            call ideal_fb_gradient(fb, grad, s2, min_jacobian=minjac)
+            if (s2 /= IDEAL_FB_OK) then
+                fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                call ideal_fb_gradient(fb, grad, s2, min_jacobian=minjac)
+                if (cready) call project_multipliers(fb, csolver, grad)
+                return
+            end if
+            if (cready) call project_multipliers(fb, csolver, grad)
+            fzr = rigid_force(grad)
+            history = huge(1.0_dp)
+            delta = cap_x
+            moved = .true.
         end subroutine
 
         real(dp) function rigid_force(g)
@@ -3640,13 +3718,6 @@ contains
         integer, intent(out) :: status
         integer, intent(in), optional :: dense_limit
         interface
-            subroutine dgeqrf(m, n, a, lda, tau, work, lwork, info)
-                import :: dp
-                integer, intent(in) :: m, n, lda, lwork
-                real(dp), intent(inout) :: a(lda, *)
-                real(dp), intent(out) :: tau(*), work(*)
-                integer, intent(out) :: info
-            end subroutine
             subroutine dormqr(side, trans, m, n, k, a, lda, tau, c, ldc, work, &
                               lwork, info)
                 import :: dp
@@ -3659,7 +3730,6 @@ contains
             end subroutine
         end interface
         integer, allocatable :: rowptr(:), colidx(:), ci(:), cj(:), arow(:), acol(:)
-        integer, allocatable :: coupled(:)
         real(dp), allocatable :: val(:), a(:, :), w(:), cv(:), aval(:), y(:), z(:)
         real(dp), allocatable :: rhs(:), sol(:), grad(:), diag(:), wts(:), gs(:)
         real(dp), allocatable :: mult(:), gt(:, :), tau(:), work(:), x(:), v(:)
@@ -3667,9 +3737,9 @@ contains
         real(dp), allocatable :: rv(:)
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
-        integer :: limit, i, j, p, k, q, it, info, nl, i0, nmap, nr, nred, nw, nc, cnt
+        integer :: limit, i, j, p, k, it, info, nl, i0, nmap, nr, nred, cnt
         integer :: c, aa, st
-        real(dp) :: est, num, den, tol, query(1)
+        real(dp) :: est, num, den, tol
         logical :: ok
         limit = 8000
         if (present(dense_limit)) limit = dense_limit
@@ -3788,7 +3858,86 @@ contains
         h%full_rank = h%constraint_sigma_min > h%rank_tolerance*h%constraint_sigma_max
         deallocate (arow, acol, aval, y, z, rhs, sol, x)
 
-        ! S_q: K_ww (all unknowns but the plasma positions), factorised once.
+        ! S_red = Z_G^T S_q Z_G (reduced_plasma_hessian).
+        call reduced_plasma_hessian(fb, rowptr, colidx, val, a, gt, tau, st)
+        if (st /= IDEAL_FB_OK) return
+        nred = fb%np - nl
+        h%reduced_dim = nred
+        allocate (work(max(1, 64*fb%np)))
+        block
+            real(dp), allocatable :: b(:, :)
+            call move_alloc(a, b)
+            call symmetric_eigen(b, w, .true., info)
+            if (info /= 0) return
+            tol = 1.0e-10_dp*maxval(abs(w))
+            h%zero_tolerance = tol
+            h%n_positive = count(w > tol); h%n_negative = count(w < -tol)
+            h%n_zero = nred - h%n_positive - h%n_negative
+            h%reduced_min = w(1); h%reduced_max = w(nred)
+            h%reduced_min_abs = minval(abs(w))
+            allocate (x(fb%np), v(fb%np))
+            x = 0; x(nl + 1:) = b(:, 1)
+            call dormqr('L', 'N', fb%np, 1, nl, gt, fb%np, tau, x, fb%np, work, &
+                        size(work), info)
+            if (info /= 0) return
+            v = 0
+            do aa = 1, fb%plasma%nodes
+                v(pidx(fb, 2, 1, aa)) = 1
+            end do
+            h%vertical_overlap = abs(dot_product(x, v))/(norm2(x)*norm2(v))
+        end block
+        h%kkt_inertia = [h%n_positive + nr, h%n_negative + nr + fb%nf, h%n_zero]
+
+        ! FB-C5: slide multiplier of the merit projection.
+        allocate (grad(fb%n), diag(fb%n), wts(fb%n), mult(nl))
+        call ideal_fb_gradient(fb, grad, st)
+        if (st /= IDEAL_FB_OK) return
+        diag = 0
+        do i = 1, fb%n
+            do p = rowptr(i), rowptr(i + 1) - 1
+                if (colidx(p) == i) diag(i) = abs(val(p))
+            end do
+        end do
+        call merit_weights(fb, diag, wts)
+        gs = grad
+        call project_slide(fb, wts, gs, mult)
+        h%slide_multiplier = maxval(abs(mult))
+        h%slide_residual = sqrt(sum(wts*(grad - gs)**2)/fb%energy_scale)
+        status = IDEAL_FB_OK
+        h%status = status
+    end subroutine
+
+    subroutine reduced_plasma_hessian(fb, rowptr, colidx, val, b, gt, tau, status)
+        ! S_red = Z_G^T S_q Z_G (nred = np - nl, symmetrised) of the assembled
+        ! KKT matrix: S_q = H_qq - K_qw K_ww^-1 K_wq (shell map, Phi~ and
+        ! lambda eliminated; only the Gamma_p tie rows couple q to them, one
+        ! solve per coupled plasma unknown) and Z_G the trailing columns of Q
+        ! in G^T = Q R (gt, tau: the LAPACK QR, applied by slide_basis_apply).
+        ! S_q is the Hessian of the reduced energy E_red(q) (all other
+        ! unknowns at their exact solution), S_red its restriction to the
+        ! slide gauge.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: rowptr(:), colidx(:)
+        real(dp), intent(in) :: val(:)
+        real(dp), allocatable, intent(out) :: b(:, :), gt(:, :), tau(:)
+        integer, intent(out) :: status
+        interface
+            subroutine dgeqrf(m, n, a, lda, tau, work, lwork, info)
+                import :: dp
+                integer, intent(in) :: m, n, lda, lwork
+                real(dp), intent(inout) :: a(lda, *)
+                real(dp), intent(out) :: tau(*), work(*)
+                integer, intent(out) :: info
+            end subroutine
+        end interface
+        integer, allocatable :: ci(:), cj(:), arow(:), acol(:), coupled(:)
+        real(dp), allocatable :: cv(:), aval(:), a(:, :), rhs(:), sol(:), work(:)
+        type(sparse_solver_t) :: solver
+        type(fortsparse_status_t) :: sst
+        integer :: nw, nl, cnt, i, j, p, q, k, nc, aa, c, info
+        real(dp) :: query(1)
+        status = IDEAL_FB_SOLVE_FAILED
+        nl = size(fb%slide, 3)
         nw = fb%n - fb%np
         cnt = 0
         do i = fb%np + 1, fb%n
@@ -3845,7 +3994,6 @@ contains
                 a(i, j) = 0.5_dp*(a(i, j) + a(j, i)); a(j, i) = a(i, j)
             end do
         end do
-        ! Z_G: the trailing columns of Q in G^T = Q R.
         allocate (gt(fb%np, nl), tau(nl), work(1))
         gt = 0
         do k = 1, nl
@@ -3860,57 +4008,301 @@ contains
         deallocate (work); allocate (work(max(1, nint(query(1)))))
         call dgeqrf(fb%np, nl, gt, fb%np, tau, work, size(work), info)
         if (info /= 0) return
-        deallocate (work); allocate (work(max(1, 64*fb%np)))
-        call dormqr('L', 'T', fb%np, fb%np, nl, gt, fb%np, tau, a, fb%np, work, &
-                    size(work), info)
+        call slide_basis_apply(gt, tau, a, 'L', 'T', info)
         if (info /= 0) return
-        call dormqr('R', 'N', fb%np, fb%np, nl, gt, fb%np, tau, a, fb%np, work, &
-                    size(work), info)
+        call slide_basis_apply(gt, tau, a, 'R', 'N', info)
         if (info /= 0) return
-        nred = fb%np - nl
-        h%reduced_dim = nred
-        block
-            real(dp), allocatable :: b(:, :)
-            b = a(nl + 1:, nl + 1:)
-            deallocate (a)
-            call symmetric_eigen(b, w, .true., info)
-            if (info /= 0) return
-            tol = 1.0e-10_dp*maxval(abs(w))
-            h%zero_tolerance = tol
-            h%n_positive = count(w > tol); h%n_negative = count(w < -tol)
-            h%n_zero = nred - h%n_positive - h%n_negative
-            h%reduced_min = w(1); h%reduced_max = w(nred)
-            h%reduced_min_abs = minval(abs(w))
-            allocate (x(fb%np), v(fb%np))
-            x = 0; x(nl + 1:) = b(:, 1)
-            call dormqr('L', 'N', fb%np, 1, nl, gt, fb%np, tau, x, fb%np, work, &
-                        size(work), info)
-            if (info /= 0) return
-            v = 0
-            do aa = 1, fb%plasma%nodes
-                v(pidx(fb, 2, 1, aa)) = 1
-            end do
-            h%vertical_overlap = abs(dot_product(x, v))/(norm2(x)*norm2(v))
-        end block
-        h%kkt_inertia = [h%n_positive + nr, h%n_negative + nr + fb%nf, h%n_zero]
+        b = a(nl + 1:, nl + 1:)
+        status = IDEAL_FB_OK
+    end subroutine
 
-        ! FB-C5: slide multiplier of the merit projection.
-        allocate (grad(fb%n), diag(fb%n), wts(fb%n), mult(nl))
-        call ideal_fb_gradient(fb, grad, st)
-        if (st /= IDEAL_FB_OK) return
-        diag = 0
-        do i = 1, fb%n
-            do p = rowptr(i), rowptr(i + 1) - 1
-                if (colidx(p) == i) diag(i) = abs(val(p))
+    subroutine slide_basis_apply(gt, tau, c, side, trans, info)
+        ! C <- op(Q) C (side 'L') or C op(Q) (side 'R'), Q from the QR of G^T.
+        real(dp), intent(in) :: gt(:, :), tau(:)
+        real(dp), intent(inout) :: c(:, :)
+        character, intent(in) :: side, trans
+        integer, intent(out) :: info
+        interface
+            subroutine dormqr(side, trans, m, n, k, a, lda, tau, c, ldc, work, &
+                              lwork, info)
+                import :: dp
+                character, intent(in) :: side, trans
+                integer, intent(in) :: m, n, k, lda, ldc, lwork
+                real(dp), intent(in) :: a(lda, *), tau(*)
+                real(dp), intent(inout) :: c(ldc, *)
+                real(dp), intent(out) :: work(*)
+                integer, intent(out) :: info
+            end subroutine
+        end interface
+        real(dp), allocatable :: work(:)
+        allocate (work(max(1, 64*max(size(c, 1), size(c, 2)))))
+        call dormqr(side, trans, size(c, 1), size(c, 2), size(tau), gt, size(gt, 1), &
+                    tau, c, size(c, 1), work, size(work), info)
+    end subroutine
+
+    pure subroutine ideal_fb_trust_subproblem(w, c, delta, s, lambda, hard)
+        ! Exact minimiser of m(s) = c.s + s.diag(w).s/2 over |s|_2 <= delta in
+        ! the eigenbasis of the model Hessian (w ascending; More and Sorensen,
+        ! SIAM J. Sci. Stat. Comput. 4 (1983) 553): s = -c/(w + lambda) with
+        ! lambda >= max(0, -w_1) and lambda (delta - |s|) = 0, found by
+        ! bisection on the monotone |s(lambda)|. In the hard case (c
+        ! orthogonal to the lowest eigenvectors, |s(-w_1)| < delta) the step
+        ! is completed along the first eigenvector to |s| = delta, with the
+        ! sign that does not increase c.s.
+        real(dp), intent(in) :: w(:), c(:), delta
+        real(dp), intent(out) :: s(size(w)), lambda
+        logical, intent(out) :: hard
+        real(dp) :: lo, hi, mid, tol, cn, rest, tau
+        integer :: k, n
+        n = size(w)
+        hard = .false.
+        cn = norm2(c)
+        tol = 1.0e-14_dp*max(maxval(abs(w)), tiny(1.0_dp))
+        lambda = 0
+        if (w(1) > tol) then
+            s = -c/w
+            if (norm2(s) <= delta) return
+        end if
+        lo = max(0.0_dp, -w(1))
+        hi = lo + cn/delta + tol
+        ! Interior of the bracket: lambda = lo would divide by zero on w_1.
+        s = 0
+        do k = 1, n
+            if (w(k) + lo > tol) s(k) = -c(k)/(w(k) + lo)
+        end do
+        rest = norm2(s)
+        if (rest < delta .and. all(abs(c(1:count(w <= w(1) + tol))) <= &
+            1.0e-12_dp*max(cn, tiny(1.0_dp)))) then
+            hard = .true.
+            lambda = lo
+            tau = sqrt(max(delta**2 - rest**2, 0.0_dp))
+            if (c(1) > 0) tau = -tau
+            s(1) = s(1) + tau
+            return
+        end if
+        do k = 1, 200
+            mid = 0.5_dp*(lo + hi)
+            if (mid <= lo .or. mid >= hi) exit
+            if (norm2(c/(w + mid)) > delta) then
+                lo = mid
+            else
+                hi = mid
+            end if
+        end do
+        lambda = hi
+        s = -c/(w + lambda)
+    end subroutine
+
+    subroutine exact_blocks(fb, status)
+        ! Shell map, Phi~ and lambda at their exact solution for the current
+        ! plasma map (each block is linear in its own unknowns).
+        type(ideal_fb_t), intent(inout) :: fb
+        integer, intent(out) :: status
+        call ideal_fb_solve_shell_map(fb, status)
+        if (status == IDEAL_FB_OK) call ideal_fb_solve_vacuum(fb, status)
+        if (status == IDEAL_FB_OK) call ideal_fb_solve_multipliers(fb, status)
+    end subroutine
+
+    subroutine state_energy(fb, grad, energy, min_jacobian, status)
+        ! L (and the manufactured load -shift.U when fb%shift is set) with
+        ! its gradient; with exact_blocks this is the reduced energy E_red(q)
+        ! and grad(1:np) its gradient.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(out) :: grad(:), energy, min_jacobian
+        integer, intent(out) :: status
+        integer :: a, m, c, s
+        call ideal_fb_gradient(fb, grad, status, lagrangian=energy, &
+                               min_jacobian=min_jacobian)
+        if (status /= IDEAL_FB_OK) return
+        if (.not. min_jacobian > 0) status = IDEAL_FB_FOLDED
+        if (.not. allocated(fb%shift)) return
+        do a = 1, fb%plasma%nodes
+            do m = 1, fb%nmode
+                do c = 1, 2
+                    energy = energy - fb%shift(pidx(fb, c, m, a))*fb%plasma%x(c, m, a)
+                end do
             end do
         end do
-        call merit_weights(fb, diag, wts)
-        gs = grad
-        call project_slide(fb, wts, gs, mult)
-        h%slide_multiplier = maxval(abs(mult))
-        h%slide_residual = sqrt(sum(wts*(grad - gs)**2)/fb%energy_scale)
+        do s = 1, fb%ns
+            do m = 1, fb%nmode
+                do c = 1, 3
+                    energy = energy - fb%shift(ix(fb, c, m, s))*fb%xs(c, m, s) &
+                        - fb%shift(il(fb, c, m, s))*fb%lam(c, m, s)
+                end do
+                energy = energy - fb%shift(iphi(fb, m, s))*fb%phi(m, s)
+            end do
+        end do
+    end subroutine
+
+    subroutine ideal_fb_reduced_spectrum(fb, n_negative, lambda_min, status)
+        ! Inertia count and lowest eigenvalue of S_red at the current state
+        ! (J/m^2 per field period). A converged state with n_negative = 0 is
+        ! a strict local minimum of the reduced energy in the slide gauge.
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(out) :: n_negative
+        real(dp), intent(out) :: lambda_min
+        integer, intent(out) :: status
+        integer, allocatable :: rowptr(:), colidx(:)
+        real(dp), allocatable :: val(:), b(:, :), gt(:, :), tau(:), w(:)
+        integer :: info
+        n_negative = -1; lambda_min = 0
+        call ideal_fb_hessian(fb, rowptr, colidx, val)
+        call reduced_plasma_hessian(fb, rowptr, colidx, val, b, gt, tau, status)
+        if (status /= IDEAL_FB_OK) return
+        status = IDEAL_FB_SOLVE_FAILED
+        call symmetric_eigen(b, w, .false., info)
+        if (info /= 0) return
+        n_negative = count(w < -1.0e-10_dp*maxval(abs(w)))
+        lambda_min = w(1)
         status = IDEAL_FB_OK
-        h%status = status
+    end subroutine
+
+    subroutine ideal_fb_negative_curvature(fb, radius, max_steps, nc, status, verbose)
+        ! Saddle escape on the reduced energy E_red(q) (shell map, Phi~ and
+        ! lambda exact, slide gauge): while S_red (reduced_plasma_hessian) has
+        ! a negative eigenvalue, take the exact trust-region step of the
+        ! second-order model of E_red (ideal_fb_trust_subproblem; a direction
+        ! of negative curvature at the boundary) with the actual-to-predicted
+        ! decrease test rho > 1e-4 and every Jacobian positive. The radius is
+        ! Euclidean in the plasma unknowns, starts at and is capped by radius.
+        ! The residual merit of ideal_fb_solve has a nonzero local minimum
+        ! exactly where H W g = 0 with g /= 0, which a merit-descent step cannot
+        ! leave; E_red has no such stationary point, and its stable equilibria
+        ! (S_red > 0) are the equilibria Newton should reach.
+        ! Returns when S_red has no negative eigenvalue (nc%n_negative = 0),
+        ! after max_steps accepted steps or when the radius collapses. The
+        ! state is left with exact shell map, Phi~ and lambda.
+        type(ideal_fb_t), intent(inout) :: fb
+        real(dp), intent(in) :: radius
+        integer, intent(in) :: max_steps
+        type(ideal_fb_curvature_t), intent(out) :: nc
+        integer, intent(out) :: status
+        logical, intent(in), optional :: verbose
+        integer, allocatable :: rowptr(:), colidx(:)
+        real(dp), allocatable :: val(:), b(:, :), gt(:, :), tau(:), w(:), g(:), g1(:)
+        real(dp), allocatable :: y(:, :), cr(:), se(:), du(:)
+        real(dp), allocatable :: x0(:, :, :), xs0(:, :, :), phi0(:, :), lam0(:, :, :)
+        real(dp) :: delta, e0, e1, mj, lambda, pred, rho, sn
+        integer :: nl, nred, st, info, tries
+        logical :: talk, hard
+        talk = .false.
+        if (present(verbose)) talk = verbose
+        nl = size(fb%slide, 3); nred = fb%np - nl
+        allocate (g(fb%n), g1(fb%n), du(fb%n), y(fb%np, 1), se(nred))
+        delta = radius
+        call exact_blocks(fb, status)
+        if (status /= IDEAL_FB_OK) return
+        call state_energy(fb, g, e0, mj, status)
+        if (status /= IDEAL_FB_OK) return
+        nc%energy0 = e0
+        do
+            call ideal_fb_hessian(fb, rowptr, colidx, val)
+            call reduced_plasma_hessian(fb, rowptr, colidx, val, b, gt, tau, status)
+            if (status /= IDEAL_FB_OK) return
+            status = IDEAL_FB_SOLVE_FAILED
+            call symmetric_eigen(b, w, .true., info)
+            if (info /= 0) return
+            nc%n_negative = count(w < -1.0e-10_dp*maxval(abs(w)))
+            nc%lambda_min = w(1)
+            if (nc%evaluations == 0) then
+                nc%n_negative0 = nc%n_negative; nc%lambda_min0 = w(1)
+            end if
+            nc%evaluations = nc%evaluations + 1
+            status = IDEAL_FB_OK
+            nc%energy = e0
+            if (talk) print '(a,i3,a,i3,a,es11.3,a,es10.2,a,es16.8)', &
+                '   curvature step', nc%steps, ' In_-(S_red)', nc%n_negative, &
+                ' min', w(1), ' delta', delta, ' E_red', e0
+            if (nc%n_negative == 0 .or. nc%steps >= max_steps) return
+            ! Reduced gradient in the eigenbasis of S_red.
+            y(:, 1) = g(1:fb%np)
+            call slide_basis_apply(gt, tau, y, 'L', 'T', info)
+            if (info /= 0) return
+            cr = matmul(transpose(b), y(nl + 1:, 1))
+            x0 = fb%plasma%x; xs0 = fb%xs; phi0 = fb%phi; lam0 = fb%lam
+            do tries = 1, 30
+                call ideal_fb_trust_subproblem(w, cr, delta, se, lambda, hard)
+                pred = -(dot_product(cr, se) + 0.5_dp*sum(w*se**2))
+                sn = norm2(se)
+                y = 0
+                y(nl + 1:, 1) = matmul(b, se)
+                call slide_basis_apply(gt, tau, y, 'L', 'N', info)
+                if (info /= 0) return
+                du = 0
+                du(1:fb%np) = y(:, 1)
+                call ideal_fb_step(fb, du, 1.0_dp)
+                rho = -1
+                call exact_blocks(fb, st)
+                if (st == IDEAL_FB_OK) call state_energy(fb, g1, e1, mj, st)
+                if (st == IDEAL_FB_OK .and. pred > 0) rho = (e0 - e1)/pred
+                if (talk) print '(a,i3,a,es10.2,a,es10.2,a,es10.2,a,l2)', &
+                    '     trial', tries, ' |s|', sn, ' pred', pred, ' rho', rho, &
+                    ' hard', hard
+                if (rho > 1.0e-4_dp) exit
+                fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                nc%rejected = nc%rejected + 1
+                delta = 0.25_dp*sn
+                if (delta < 1.0e-9_dp*radius) exit
+            end do
+            if (.not. rho > 1.0e-4_dp) then
+                status = IDEAL_FB_NOT_CONVERGED
+                return
+            end if
+            nc%steps = nc%steps + 1
+            nc%rho = rho
+            nc%max_step = max(nc%max_step, maxval(abs(du(1:fb%np))))
+            if (rho > 0.75_dp .and. sn >= 0.99_dp*delta) delta = min(2*delta, radius)
+            if (rho < 0.25_dp) delta = 0.25_dp*sn
+            e0 = e1; g = g1
+        end do
+    end subroutine
+
+    subroutine ideal_fb_symmetry_defect(fb, component, defect, boundary_defect, &
+                                        mirrored, status)
+        ! Defect of the reflection symmetry q_c -> -q_c, phi-hat -> -phi-hat
+        ! (c = component) of the plasma map: a symmetric map has, for the
+        ! mirror node a' of a (reference point reflected), q_c(a') = -p_m
+        ! q_c(a) and the other component p_m q(a), with parity p_m = +1 for
+        ! n = 0 and cos, -1 for sin modes. On the curve chart of a stellarator-
+        ! symmetric axis with the projected-guide frame the reflection is
+        ! component 1 (benchmarks/fb3d-synthetic/chart_frame.py). defect is the
+        ! largest coefficient mismatch (m) over mirrored nodes, boundary_defect
+        ! the same on Gamma_p; mirrored counts the nodes with a mirror image
+        ! in the reference mesh (all of them for a symmetric mesh).
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: component
+        real(dp), intent(out) :: defect, boundary_defect
+        integer, intent(out) :: mirrored, status
+        real(dp) :: target(2), tol, d, parity, sgn
+        integer :: a, b, m, c, mate
+        defect = 0; boundary_defect = 0; mirrored = 0
+        status = IDEAL_FB_BAD_INPUT
+        if (component < 1 .or. component > 2) return
+        tol = 1.0e-9_dp*maxval(abs(fb%plasma%reference))
+        do a = 1, fb%plasma%nodes
+            target = fb%plasma%reference(:, a)
+            target(component) = -target(component)
+            mate = 0
+            do b = 1, fb%plasma%nodes
+                if (maxval(abs(fb%plasma%reference(:, b) - target)) <= tol) then
+                    mate = b; exit
+                end if
+            end do
+            if (mate == 0) cycle
+            mirrored = mirrored + 1
+            do m = 1, fb%nmode
+                parity = 1
+                if (m > 1 .and. mod(m, 2) == 1) parity = -1
+                do c = 1, 2
+                    sgn = parity
+                    if (c == component) sgn = -parity
+                    d = abs(fb%plasma%x(c, m, mate) - sgn*fb%plasma%x(c, m, a))
+                    defect = max(defect, d)
+                    if (fb%plasma%boundary(a)) boundary_defect = max(boundary_defect, d)
+                end do
+            end do
+        end do
+        status = IDEAL_FB_OK
     end subroutine
 
     subroutine ideal_fb_hypotheses_print(h, iteration)

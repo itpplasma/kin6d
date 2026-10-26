@@ -341,8 +341,10 @@ add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
     COMMAND test_ideal_free_boundary vacuum3d 3)
 add_test(NAME ideal_fb_slide_gauge_curl_free COMMAND test_ideal_free_boundary slide)
 add_test(NAME ideal_fb_hypotheses_bordering COMMAND test_ideal_free_boundary hypotheses)
+add_test(NAME ideal_fb_negative_curvature COMMAND test_ideal_free_boundary curvature)
 set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
     ideal_fb_slide_gauge_curl_free ideal_fb_hypotheses_bordering
+    ideal_fb_negative_curvature
     ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
