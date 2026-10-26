@@ -142,9 +142,9 @@ contains
     end subroutine
 
     subroutine thread_invariance(map, x, reference, failures)
-        ! Hessian, energy and gradient with 1, 3 and 7 threads against the
-        ! default team: bitwise identical (the work items keep the per-cell
-        ! operation order).
+        ! Hessian, energy and gradient with 1, 3 and 7 threads and with more
+        ! threads than cells against the default team: bitwise identical (the
+        ! work items keep the per-cell operation order).
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: x(:, :, :)
         type(csr_matrix_t), intent(in) :: reference
@@ -152,10 +152,10 @@ contains
         type(csr_matrix_t) :: other
         real(dp), allocatable :: g0(:), g1(:)
         real(dp) :: e0, e1
-        integer :: status, k, saved
-        integer, parameter :: teams(3) = [1, 3, 7]
+        integer :: status, k, saved, teams(4)
         saved = 1
         !$ saved = omp_get_max_threads()
+        teams = [1, 3, 7, map%cells + 3]
         allocate (g0(map%ndof), g1(map%ndof))
         call ideal_map_energy(map, x, e0, status, g0)
         do k = 1, size(teams)
