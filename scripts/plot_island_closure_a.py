@@ -3,6 +3,7 @@
 
 Usage:
   plot_island_closure_a.py poincare OUT.png LABEL=DIR [LABEL=DIR ...]
+  (a LABEL starting with "zoom" restricts that panel to the island region)
   plot_island_closure_a.py flattening OUT.png DIR [DIR ...]
 
 poincare: p(R, Z, phi=0)/max p (computed, viridis) with the Poincare section
@@ -16,6 +17,7 @@ import os
 import sys
 
 import matplotlib
+import matplotlib.ticker
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -30,8 +32,14 @@ plt.rcParams.update({"font.size": 10, "axes.labelsize": 10, "legend.fontsize": 8
 
 def poincare(out, items):
     n = len(items)
-    fig, axes = plt.subplots(1, n, figsize=(3.4 * n, 3.6), constrained_layout=True)
-    axes = np.atleast_1d(axes)
+    nc = min(n, 3)
+    nrow = -(-n // nc)
+    fig, axes = plt.subplots(nrow, nc, figsize=(3.6 * nc, 3.9 * nrow),
+                             constrained_layout=True, squeeze=False)
+    axes = axes.ravel()
+    for ax in axes[n:]:
+        ax.set_visible(False)
+    axes = axes[:n]
     for ax, item in zip(axes, items):
         label, d = item.rsplit("=", 1)
         p = np.loadtxt(os.path.join(d, "pressure.dat"))
@@ -51,9 +59,15 @@ def poincare(out, items):
         pc = np.loadtxt(os.path.join(d, "poincare.dat"))
         ax.plot(pc[:, 1], pc[:, 2], ".", ms=0.7, mew=0, color="k", rasterized=True)
         ax.set_aspect("equal")
+        if label.startswith("zoom"):
+            # Inner side of the island (O point at Z = 0, R ~ 5.5 m).
+            ax.set_xlim(5.15, 5.85)
+            ax.set_ylim(-0.4, 0.4)
+            ax.lines[-1].set_markersize(1.5)
         ax.set_xlabel("R [m]")
         ax.set_title(label, fontsize=10)
-    axes[0].set_ylabel("Z [m]")
+    for ax in axes[::nc]:
+        ax.set_ylabel("Z [m]")
     fig.colorbar(cs, ax=axes, shrink=0.8, label=r"$p/p_{\max}$ at $\varphi=0$")
     fig.savefig(out, dpi=200)
 
@@ -115,6 +129,7 @@ def flattening(out, dirs):
     ax[1, 0].set_xlabel(r"$W\,(\chi_\parallel/\chi_\perp)^{1/4}$ [m]"
                         r"  $\propto W/w_c$")
     ax[1, 0].set_title("(c) Fitzpatrick scaling collapse", fontsize=9)
+    ax[1, 0].xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     Ws, Rh = np.array(Ws), np.array(Rh)
     # Fit only scans that reach full flattening (min G < 0.25): a declared
     # resolution criterion, since an under-resolved island saturates.
