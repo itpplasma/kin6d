@@ -232,7 +232,7 @@ def convergence(out, connect_dir, items):
     ax[1, 0].set_xlabel(r"$R$ [m] ($Z=0$, $\varphi=0$)")
     ax[1, 0].set_ylabel(r"$p/p_{\max}$")
     ax[1, 0].set_title(r"(c) $\epsilon=0$, $\chi_\parallel/\chi_\perp=10^6$; "
-                       "grey: lines reaching a wall", fontsize=9)
+                       "grey: lines reaching a wall, dark: coil cavity", fontsize=8)
     ax[1, 0].legend(frameon=False, fontsize=7)
     fig.savefig(out, dpi=200)
 
@@ -264,7 +264,9 @@ def fitzpatrick(out, items):
             W.append(s[0, 2])
             Rh.append(half_ratio(s[:, 1], s[:, 4]))
             if j == len(items) - 1:
-                ax[0].semilogx(s[:, 1], s[:, 4], lw=1,
+                q = len(W) - 1
+                ax[0].semilogx(s[:, 1], s[:, 4], lw=1, color=OI[q % 7], ls=LS[q % 7],
+                               marker=MARK[q % 7], ms=2.5, markevery=4,
                                label=rf"$W={s[0, 2]:.3f}$ m")
         W, Rh = np.array(W), np.array(Rh)
         ok = np.isfinite(Rh)
@@ -273,8 +275,8 @@ def fitzpatrick(out, items):
         if ok.sum() >= 2:
             slope, err, icpt = fit_exponent(W[ok], Rh[ok])
             w = np.geomspace(W[ok].min(), W[ok].max(), 20)
-            ax[1].loglog(w, np.exp(icpt) * w ** slope, color=OI[j % 7], ls=LS[j % 7],
-                         label=f"{label}: slope {slope:.2f} $\\pm$ {err:.2f}")
+            ax[1].loglog(w, np.exp(icpt) * w ** slope, color=OI[j % 7], ls=LS[j % 7])
+            ax[1].lines[-2].set_label(f"{label}: slope {slope:.2f} $\\pm$ {err:.2f}")
             print(f"{label}: slope {slope:.4f} +- {err:.4f} (n={ok.sum()}, "
                   f"W {W[ok].min():.4f}..{W[ok].max():.4f})")
         for wi, ri in zip(W, Rh):
