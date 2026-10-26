@@ -23,9 +23,10 @@ CTest ladders run through this interface without changing their Newton
 settings or analytic refinement gates. Grid sequencing still uses the seed
 gradient of the current mesh as its stopping scale. Map Newton steps retain the
 canonical symmetric Hessian and assembly-roundoff check, with the masked matrix
-cached per pattern so that a trial only rewrites the diagonal. The damped Hessian
-uses FortSparse's native supernodal pivoted LU action, as the free-boundary KKT
-systems do. A nonpositive Cholesky pivot is not a rejection of the Newton trial:
+cached per pattern so that a trial only rewrites the diagonal. Fixed
+coefficients are identity rows, and their zero couplings are excluded from the
+factor graph. The damped Hessian uses FortSparse's native supernodal pivoted LU
+action, as the free-boundary KKT systems do. A nonpositive Cholesky pivot is not a rejection of the Newton trial:
 raising the damping before the energy line search changes the nonlinear path
 and can change the attained oracle error at the requested gradient tolerance.
 No inertia is consumed by this map driver.
