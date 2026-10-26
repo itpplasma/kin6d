@@ -165,7 +165,15 @@ not convergence evidence. The Fourier boundary still has a sampled truncation
 indicator rather than a continuous bound. For either family, `flux` supplies
 Phi(psi), and `profiles` supplies psi(s), Phi(s), iota(s) and p(s), with
 s=Phi(psi)/Phi(delta). The sheared exporter still writes geometry only;
-connecting these matched profiles to its equilibrium input remains open.
+connecting these matched profiles to its external equilibrium input remains
+open. KIN6D's own map seed takes them through `kin6d_nested_seed_input`
+(`src/mhd/nested_seed_input.f90`): `nested_seed_boundary` projects the exact
+boundary onto the seed's Fourier convention and `nested_seed_profile` returns
+Phi(delta) together with iota(s) and p(s) as monomials in s. These are exact for
+the integer family, while the sheared family is fitted by least squares on
+Chebyshev nodes, and the fit is rejected when its deviation on a staggered
+check set exceeds the requested tolerance (degree 12 reaches 4e-13 for the
+example case, `ideal_seed_3d_nested_input`).
 A matched input, a successful reader and an exact-field evaluation do
 not establish that a numerical equilibrium has converged.
 
