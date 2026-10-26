@@ -128,7 +128,8 @@ target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 set(KIN6D_FORTFEM_REVISION "21f236191c39688bebe25f98b185c32b8209ec70")
 if(KIN6D_BUILD_GLL_SPIKE)
-    set(KIN6D_FORTFEM_REVISION "ac673dc63c4810f56a864f694e461c9179d05858")
+    # FortFEM main with the parallel tensor setup (lazy-fortran/fortfem#122).
+    set(KIN6D_FORTFEM_REVISION "437798cae293f03cae436e7df2c6ac387113672a")
 endif()
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
