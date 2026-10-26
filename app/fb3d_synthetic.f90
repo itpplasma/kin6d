@@ -54,18 +54,24 @@ program fb3d_synthetic
     ! points x y z |B| on full-turn phi-hat samples) and <out>.json.
     ! Usage: fb3d_synthetic coils iota.dat phiedge out [nedge nchain ntor
     !        nphi_map nphi_bem nphi_surface sign max_iterations q1c q2c
-    !        tangential_damping globalisation reference_lcfs kick_q1]
+    !        tangential_damping globalisation reference_lcfs kick_q1 mirror]
     ! (q1c, q2c): centre of the reference disc in the normal plane. sign = -1
     ! (default) is the coil field's rotation sense in the chart frame
     ! (benchmarks/fb3d-synthetic/iota_sign.py); tangential_damping defaults to
-    ! 0 (off). globalisation: 0 backtracking and Levenberg damping (default),
-    ! 1 dogleg trust region on the Gauss-Newton model of the merit
+    ! 0 (off). globalisation: -1 (default) the ideal_fb_init default (2 for
+    ! ntor >= 2 on this chart, 0 otherwise), 0 backtracking and Levenberg
+    ! damping, 1 dogleg trust region on the Gauss-Newton model of the merit
     ! (ideal_fb_t%trust_region), 2 the trust region with the negative-curvature
-    ! escape on stalls (ideal_fb_t%negative_curvature); the gate is the same.
+    ! escape on stalls and saddles (ideal_fb_t%negative_curvature); the gate
+    ! is the same. 0 or 1 is the opt-out for a wanted unstable equilibrium,
+    ! which globalisation 2 never returns.
     ! reference_lcfs ('-' none): a previous <out>.lcfs of the same resolution
     ! whose pointwise distance is reported; kick_q1 (m, default 0): a rigid
     ! q1 shift of the start (q1 is the stellarator-symmetry-odd direction of
     ! the chart at phi-hat = 0), to probe symmetry-broken equilibria.
+    ! mirror (default 0): 1 meshes the normal plane exactly symmetric under
+    ! q1 -> -q1 (initialize_gs mirror_x), so that the discrete problem is
+    ! stellarator symmetric at every resolution; 0 the direct triangulation.
     ! The JSON "state" block is the acceptance check beyond the residual:
     ! In_-(S_red) and its lowest eigenvalue (0 negative: a strict local
     ! minimum of the reduced energy, i.e. a stable discrete equilibrium), the
@@ -111,14 +117,14 @@ program fb3d_synthetic
     real(dp), allocatable :: gtmp(:)
     integer :: n_negative, mirrored, spectrum_status
     integer :: nedge, nchain, ntor, nphi_map, nphi_bem, nphi_surface, ncircuit
-    integer :: st, j, threads, solve_status, max_iterations, globalisation
+    integer :: st, j, threads, solve_status, max_iterations, globalisation, mirror
     nedge = 12; nchain = 16; ntor = 1; nphi_map = 8; nphi_bem = 18
     nphi_surface = 384; sgn = -1; max_iterations = 200
     ! Optional step regularisation of the Newton matrix along the reference
     ! tangent of the plasma nodes (ideal_fb_t%tangential_damping, faded by 100
     ! after every full step); it never enters the residual or the gate.
     tangential_damping = 0
-    globalisation = 0
+    globalisation = -1; mirror = 0
     call get_command_argument(1, coils_path)
     call get_command_argument(2, iota_path)
     call get_command_argument(3, arg); read (arg, *) phiedge
@@ -148,6 +154,7 @@ program fb3d_synthetic
     if (command_argument_count() >= 18) then
         call get_command_argument(18, arg); read (arg, *) kick
     end if
+    if (command_argument_count() >= 19) call int_arg(19, mirror)
     threads = 1
     !$ threads = omp_get_max_threads()
     !$ threads = omp_get_max_threads()
@@ -169,16 +176,25 @@ program fb3d_synthetic
         chain(1, j) = chain(1, j) + shift
     end do
     h = 2*pi*rc/nedge
-    call initialize_gs(mesh, contour, 0.5_dp*h*h, st, 2, curve=gamma_c_shifted, &
-        interior_chain=chain)
+    if (mirror == 1) then
+        call initialize_gs(mesh, contour, 0.5_dp*h*h, st, 2, curve=gamma_c_shifted, &
+            interior_chain=chain, mirror_x=shift)
+    else
+        call initialize_gs(mesh, contour, 0.5_dp*h*h, st, 2, curve=gamma_c_shifted, &
+            interior_chain=chain)
+    end if
     if (st /= 0) error stop 'mesh'
     mesh%points(1, :) = mesh%points(1, :) - shift; chain(1, :) = chain(1, :) - shift
     call ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, 0.0_dp, 0.0_dp, st, &
         mu0=coil_mu0, nphi=nphi_map)
     if (st /= IDEAL_FB_OK) error stop 'ideal_fb_init on the curve chart'
     fb%tangential_damping = tangential_damping
-    fb%trust_region = globalisation == 1 .or. globalisation == 2
-    fb%negative_curvature = globalisation == 2
+    if (globalisation < 0) then
+        globalisation = merge(2, merge(1, 0, fb%trust_region), fb%negative_curvature)
+    else
+        fb%trust_region = globalisation == 1 .or. globalisation == 2
+        fb%negative_curvature = globalisation == 2
+    end if
     t_setup = wall() - t_start
     call makegrid_circuits_read(trim(coils_path), coils, circuit, turns, ncircuit, st)
     if (st /= 0) error stop 'MAKEGRID coils'
@@ -398,6 +414,7 @@ contains
         write (u, '(a,es14.6,a)') ' "f_vac": ', fb%f_vac, ','
         write (u, '(a,es14.6,a)') ' "tangential_damping": ', tangential_damping, ','
         write (u, '(a,i0,a)') ' "globalisation": ', globalisation, ','
+        write (u, '(a,i0,a)') ' "mirror_mesh": ', mirror, ','
         write (u, '(a,i0,a)') ' "rejected": ', report%rejected, ','
         write (u, '(a,i0,a)') ' "factorisations": ', report%factorisations, ','
         write (u, '(a,i0,a)') ' "escapes": ', report%escapes, ','

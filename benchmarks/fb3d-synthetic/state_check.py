@@ -7,10 +7,11 @@ were seen), so a run is accepted only if, in addition to the residual,
 - it is stellarator symmetric, as the coils, the chart and the frozen labels
   are: the boundary <prefix>.lcfs at phi-hat and its image under
   (x, y, z) -> (x, -y, -z) at -phi-hat lie within --symmetry (Hausdorff
-  distance, largest over phi-hat). The reference mesh is mirror symmetric at
-  R1 (12 edges, chain 16) but not at R2, so the discrete problem carries an
-  O(h) asymmetry there; the plasma-map defect and the axis Z of the JSON are
-  exact checks only when "mirrored_nodes" equals "nodes";
+  distance, largest over phi-hat). The direct triangulation is mirror
+  symmetric at R1 (12 edges, chain 16) but not at R2 or R3, so the discrete
+  problem carries an O(h) asymmetry there unless the mesh is mirrored
+  (fb3d_synthetic argument 19); the plasma-map defect and the axis Z of the
+  JSON are exact checks only when "mirrored_nodes" equals "nodes";
 - its phi = 0 section agrees with the coil-field flux surface of the vacuum
   oracle (vacuum_reference.py, <prefix>.oracle.json) within --oracle-rms and
   --oracle-max;
