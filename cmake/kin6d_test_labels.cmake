@@ -8,6 +8,14 @@ kin6d_test_labels(ideal_fb_chart_surface_invalid fast CLASSES mhd equilibrium
     TARGETS test_ideal_fb_surface)
 kin6d_test_labels(ideal_fb_exterior_frozen_derivatives fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
+kin6d_test_labels(ideal_fb_circuits_derivatives fast CLASSES mhd
+    TARGETS test_ideal_fb_circuits)
+kin6d_test_labels(ideal_fb_circuits_exterior3d fast CLASSES mhd
+    TARGETS test_ideal_fb_circuits)
+kin6d_test_labels(ideal_fb_landreman_axisymmetric_circuits fast CLASSES mhd
+    TARGETS test_landreman_free_boundary)
+kin6d_test_labels(ideal_fb_landreman_helical_circuits fast CLASSES mhd
+    TARGETS test_landreman_free_boundary)
 foreach(k 2 3)
     foreach(case fixed floating voltage)
         kin6d_test_labels(nonnested_actions_${case}_p${k} fast CLASSES mhd

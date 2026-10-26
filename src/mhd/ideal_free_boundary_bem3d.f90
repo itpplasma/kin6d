@@ -11,7 +11,7 @@ module kin6d_ideal_free_boundary_bem3d
     use kin6d_triangle_basis, only: triangle_basis_jet
     use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_attach_exterior_3d, &
-                                   ideal_fb_mode_weight, IDEAL_FB_BAD_INPUT
+                                   ideal_fb_full_turn_traces, IDEAL_FB_BAD_INPUT
     implicit none
     private
     public :: ideal_fb_use_bem3d, ideal_fb_surface, coupling_surface_t
@@ -215,18 +215,14 @@ contains
         type(gamma_c_3d_t) :: boundary
         integer, allocatable :: faces(:, :)
         real(dp), allocatable :: restriction(:, :), drive(:), load(:)
-        integer :: m
         status = IDEAL_FB_BAD_INPUT; report = bem_pair_report_t()
         if (allocated(fb%exterior_3d)) return
         call ideal_fb_surface(fb, nphi, surface, faces, restriction, status, subdivisions)
         if (status /= 0) return
    call gamma_c_3d_build(surface, faces, restriction, options, boundary, report, status)
         if (status /= 0) return
-        drive = reshape(fb%drive, [fb%nt*fb%nmode])
-        allocate (load(fb%nt*fb%nmode))
-        do m = 1, fb%nmode
-      load((m - 1)*fb%nt + 1:m*fb%nt) = fb%nfp*ideal_fb_mode_weight(fb, m)*fb%load(:, m)
-        end do
+        allocate (drive(fb%nt*fb%nmode), load(fb%nt*fb%nmode))
+        call ideal_fb_full_turn_traces(fb, fb%drive, fb%load, drive, load)
         call ideal_fb_attach_exterior_3d(fb, boundary, drive, load, status)
     end subroutine
 end module

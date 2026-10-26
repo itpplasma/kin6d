@@ -89,6 +89,8 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
     public :: ideal_fb_hypotheses_print
     public :: ideal_fb_attach_exterior_3d
+    public :: ideal_fb_field_basis_t, ideal_fb_drive_traces, ideal_fb_full_turn_traces
+    public :: ideal_fb_set_traces, ideal_fb_traces_jvp, ideal_fb_traces_vjp
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -104,6 +106,38 @@ module kin6d_ideal_free_boundary
             real(dp), intent(out) :: bcos(3), bsin(3)
         end subroutine
     end interface
+
+    ! nfield independent external fields (one sampler, or the unit-current
+    ! fields b_k of circuits) at the meridional points rz(:, q), all real
+    ! harmonics k = 0..ntor at once:
+    ! B_f = bcos(:, k, f, q) cos(n phi) + bsin(:, k, f, q) sin(n phi), n = k nfp.
+    type, abstract :: ideal_fb_field_basis_t
+    contains
+        procedure(basis_nfield), deferred :: nfield
+        procedure(basis_sample), deferred :: sample
+    end type
+    abstract interface
+        integer function basis_nfield(self)
+            import :: ideal_fb_field_basis_t
+            class(ideal_fb_field_basis_t), intent(in) :: self
+        end function
+        subroutine basis_sample(self, rz, nfp, ntor, bcos, bsin, status)
+            import :: dp, ideal_fb_field_basis_t
+            class(ideal_fb_field_basis_t), intent(in) :: self
+            real(dp), intent(in) :: rz(:, :)
+            integer, intent(in) :: nfp, ntor
+            real(dp), intent(out) :: bcos(:, 0:, :, :), bsin(:, 0:, :, :)
+            integer, intent(out) :: status
+        end subroutine
+    end interface
+
+    ! One ideal_fb_sampler as a single-field basis (ideal_fb_set_drive).
+    type, extends(ideal_fb_field_basis_t) :: sampler_basis_t
+        procedure(ideal_fb_sampler), pointer, nopass :: f => null()
+    contains
+        procedure :: nfield => sampler_nfield
+        procedure :: sample => sampler_sample
+    end type
 
     type :: ideal_fb_t
         type(ideal_map_t) :: plasma
@@ -569,6 +603,146 @@ contains
         status = IDEAL_FB_OK
     end subroutine
 
+    subroutine ideal_fb_full_turn_traces(fb, drive, load, drive3, load3)
+        ! Per-period Fourier traces (nt, nmode) -> the flattened full-turn
+        ! pairing of the R2 exterior (node fast, then mode; load times
+        ! nfp c_m), the convention of ideal_fb_use_bem3d.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: drive(:, :), load(:, :)
+        real(dp), intent(out) :: drive3(:), load3(:)
+        integer :: m
+        drive3 = reshape(drive, [fb%nt*fb%nmode])
+        do m = 1, fb%nmode
+            load3((m - 1)*fb%nt + 1:m*fb%nt) = fb%nfp*ideal_fb_mode_weight(fb, m) &
+                *load(:, m)
+        end do
+    end subroutine
+
+    subroutine ideal_fb_set_traces(fb, drive, load, f_vac, status)
+        ! Install external traces and the toroidal period F_vac (for example
+        ! sum_k I_k of circuit traces). With an attached R2 exterior its
+        ! full-turn drive and load are replaced consistently.
+        type(ideal_fb_t), intent(inout) :: fb
+        real(dp), intent(in) :: drive(:, :), load(:, :), f_vac
+        integer, intent(out) :: status
+        status = IDEAL_FB_BAD_INPUT
+        if (any(shape(drive) /= [fb%nt, fb%nmode])) return
+        if (any(shape(load) /= [fb%nt, fb%nmode])) return
+        if (.not. all(ieee_is_finite(drive))) return
+        if (.not. all(ieee_is_finite(load))) return
+        if (.not. ieee_is_finite(f_vac)) return
+        fb%drive = drive; fb%load = load; fb%f_vac = f_vac
+        if (allocated(fb%exterior_3d)) then
+            if (.not. allocated(fb%drive_3d)) allocate (fb%drive_3d(fb%nt*fb%nmode))
+            if (.not. allocated(fb%load_3d)) allocate (fb%load_3d(fb%nt*fb%nmode))
+            call ideal_fb_full_turn_traces(fb, drive, load, fb%drive_3d, fb%load_3d)
+        end if
+        status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine ideal_fb_traces_jvp(fb, ddrive, dload, df, jv, status)
+        ! Directional derivative of the residual (ideal_fb_gradient) at the
+        ! current state along the external data (drive, load, F_vac). The
+        ! residual is affine in drive and load (Gamma_c rows of Phi~ only);
+        ! its F_vac part is exact through the generated shell Hessian leaf.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: ddrive(:, :), dload(:, :), df
+        real(dp), intent(out) :: jv(:)
+        integer, intent(out) :: status
+        real(dp), allocatable :: t(:, :), d3(:), l3(:), gx(:, :, :), gf(:, :)
+        real(dp), allocatable :: fgx(:, :, :), fgf(:, :)
+        real(dp) :: ev, mins
+        integer :: m, s, c
+        status = IDEAL_FB_BAD_INPUT
+        if (size(jv) /= fb%n) return
+        if (any(shape(ddrive) /= [fb%nt, fb%nmode])) return
+        if (any(shape(dload) /= [fb%nt, fb%nmode])) return
+        jv = 0
+        allocate (t(fb%nt, fb%nmode))
+        if (allocated(fb%exterior_3d)) then
+            allocate (d3(fb%nt*fb%nmode), l3(fb%nt*fb%nmode))
+            call ideal_fb_full_turn_traces(fb, ddrive, dload, d3, l3)
+            t = reshape((matmul(fb%exterior_3d%s, d3) + l3)/(fb%mu0*fb%nfp), &
+                [fb%nt, fb%nmode])
+        else
+            do m = 1, fb%nmode
+                t(:, m) = ideal_fb_mode_weight(fb, m)/fb%mu0 &
+                    *(matmul(fb%s_trace(:, :, harmonic(m)), ddrive(:, m)) + dload(:, m))
+            end do
+        end if
+        do m = 1, fb%nmode
+            do s = 1, fb%nt
+                jv(iphi(fb, m, fb%trace(s))) = t(s, m)
+            end do
+        end do
+        if (abs(df) > 0) then
+            allocate (gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns), &
+                fgx(3, fb%nmode, fb%ns), fgf(fb%nmode, fb%ns))
+            call shell_energy(fb, fb%xs, fb%phi, ev, gx, gf, mins, f_gx=fgx, f_gf=fgf)
+            do s = 1, fb%ns
+                do m = 1, fb%nmode
+                    do c = 1, 3
+                        jv(ix(fb, c, m, s)) = jv(ix(fb, c, m, s)) - df*fgx(c, m, s)
+                    end do
+                    jv(iphi(fb, m, s)) = jv(iphi(fb, m, s)) - df*fgf(m, s)
+                end do
+            end do
+        end if
+        status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine ideal_fb_traces_vjp(fb, v, drive_bar, load_bar, f_bar, status)
+        ! Transpose of ideal_fb_traces_jvp: drive_bar, load_bar and f_bar
+        ! with <v, J (dd, dl, df)> = <drive_bar, dd> + <load_bar, dl> + f_bar df.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp), intent(in) :: v(:)
+        real(dp), intent(out) :: drive_bar(:, :), load_bar(:, :), f_bar
+        integer, intent(out) :: status
+        real(dp), allocatable :: vt(:, :), v3(:), gx(:, :, :), gf(:, :)
+        real(dp), allocatable :: fgx(:, :, :), fgf(:, :)
+        real(dp) :: ev, mins, cm
+        integer :: m, s, c
+        status = IDEAL_FB_BAD_INPUT
+        if (size(v) /= fb%n) return
+        if (any(shape(drive_bar) /= [fb%nt, fb%nmode])) return
+        if (any(shape(load_bar) /= [fb%nt, fb%nmode])) return
+        allocate (vt(fb%nt, fb%nmode))
+        do m = 1, fb%nmode
+            do s = 1, fb%nt
+                vt(s, m) = v(iphi(fb, m, fb%trace(s)))
+            end do
+        end do
+        if (allocated(fb%exterior_3d)) then
+            v3 = reshape(vt, [fb%nt*fb%nmode])/(fb%mu0*fb%nfp)
+            drive_bar = reshape(matmul(transpose(fb%exterior_3d%s), v3), &
+                [fb%nt, fb%nmode])
+            do m = 1, fb%nmode
+                load_bar(:, m) = fb%nfp*ideal_fb_mode_weight(fb, m) &
+                    *v3((m - 1)*fb%nt + 1:m*fb%nt)
+            end do
+        else
+            do m = 1, fb%nmode
+                cm = ideal_fb_mode_weight(fb, m)/fb%mu0
+                drive_bar(:, m) = cm*matmul(transpose(fb%s_trace(:, :, harmonic(m))), &
+                    vt(:, m))
+                load_bar(:, m) = cm*vt(:, m)
+            end do
+        end if
+        allocate (gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns), &
+            fgx(3, fb%nmode, fb%ns), fgf(fb%nmode, fb%ns))
+        call shell_energy(fb, fb%xs, fb%phi, ev, gx, gf, mins, f_gx=fgx, f_gf=fgf)
+        f_bar = 0
+        do s = 1, fb%ns
+            do m = 1, fb%nmode
+                do c = 1, 3
+                    f_bar = f_bar - v(ix(fb, c, m, s))*fgx(c, m, s)
+                end do
+                f_bar = f_bar - v(iphi(fb, m, s))*fgf(m, s)
+            end do
+        end do
+        status = IDEAL_FB_OK
+    end subroutine
+
     subroutine ideal_fb_set_drive(fb, sample, status, closure)
         ! External traces from the field of everything outside Gamma_c plus
         ! the unit-circulation exterior part: drive a_m (single-valued
@@ -577,101 +751,201 @@ contains
         ! node 1; closure returns its mismatch after one turn (T m). n /= 0:
         ! a from B_phi = (1/R) dPhi/dphi; closure also returns the largest
         ! mismatch between d a/ds and B.t (curl-free check, T).
+        ! The traces are those of ideal_fb_drive_traces for this one field.
         type(ideal_fb_t), intent(inout) :: fb
         procedure(ideal_fb_sampler) :: sample
         integer, intent(out) :: status
         real(dp), intent(out), optional :: closure
-        integer, parameter :: ng = 10
-        real(dp) :: gx(ng), gw(ng), x(2), tangent(2), w(0:3), bc(3), bs(3)
-        real(dp) :: grad_t(2), acc, run, speed, worst, nn, at(2), dmax
-        integer :: i, q, j, k, m, col
+        type(sampler_basis_t) :: one
+        real(dp), allocatable :: drive(:, :, :), load(:, :, :)
+        real(dp) :: worst(1), f(1), spread_f(1)
         status = IDEAL_FB_BAD_INPUT
         if (present(closure)) closure = huge(1.0_dp)
         if (allocated(fb%exterior_3d)) return
+        one%f => sample
+        allocate (drive(fb%nt, fb%nmode, 1), load(fb%nt, fb%nmode, 1))
+        call ideal_fb_drive_traces(fb, one, [fb%circulation], drive, load, worst, &
+            f, spread_f, status)
+        if (status /= IDEAL_FB_OK) return
+        fb%drive = drive(:, :, 1); fb%load = load(:, :, 1)
+        if (present(closure)) closure = worst(1)
+    end subroutine
+
+    integer function sampler_nfield(self)
+        class(sampler_basis_t), intent(in) :: self
+        sampler_nfield = 1
+        if (.not. associated(self%f)) sampler_nfield = 0
+    end function
+
+    subroutine sampler_sample(self, rz, nfp, ntor, bcos, bsin, status)
+        ! Serial: an ideal_fb_sampler may cache between calls.
+        class(sampler_basis_t), intent(in) :: self
+        real(dp), intent(in) :: rz(:, :)
+        integer, intent(in) :: nfp, ntor
+        real(dp), intent(out) :: bcos(:, 0:, :, :), bsin(:, 0:, :, :)
+        integer, intent(out) :: status
+        integer :: q, k
+        status = IDEAL_FB_BAD_INPUT
+        if (.not. associated(self%f) .or. nfp < 1) return
+        do q = 1, size(rz, 2)
+            do k = 0, ntor
+                call self%f(rz(1, q), rz(2, q), k, bcos(:, k, 1, q), bsin(:, k, 1, q))
+            end do
+        end do
         status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine ideal_fb_drive_traces(fb, basis, circulation, drive, load, closure, &
+                                     f_vac, f_spread, status)
+        ! Traces of every field f of the basis on Gamma_c, linear in the
+        ! field (formulas of ideal_fb_set_drive): drive(:, m, f), load(:, m, f)
+        ! and the closure/curl-free mismatch closure(f). circulation(f) is the
+        ! poloidal circulation removed from the n = 0 trace of field f (the
+        ! unit-circulation filament part; zero for coils outside Gamma_c).
+        ! f_vac(f) is the mean of R B_phi^(n=0) over the trace nodes (the
+        ! toroidal period / 2 pi, T m), f_spread(f) its largest deviation
+        ! there (zero for a field that is curl free across the trace).
+        type(ideal_fb_t), intent(in) :: fb
+        class(ideal_fb_field_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: circulation(:)
+        real(dp), intent(out) :: drive(:, :, :), load(:, :, :), closure(:)
+        real(dp), intent(out) :: f_vac(:), f_spread(:)
+        integer, intent(out) :: status
+        integer, parameter :: ng = 10
+        real(dp), allocatable :: pl(:, :), tl(:, :), wl(:, :), pd(:, :), td(:, :)
+        real(dp), allocatable :: pt(:, :), pm(:, :), tm(:, :)
+        real(dp), allocatable :: cl(:, :, :, :), sl(:, :, :, :), cd(:, :, :, :)
+        real(dp), allocatable :: sd(:, :, :, :), ct(:, :, :, :), st_(:, :, :, :)
+        real(dp), allocatable :: cmid(:, :, :, :), smid(:, :, :, :)
+        real(dp) :: gx(ng), gw(ng), x(2), tangent(2), w(0:3), bc(3), bs(3)
+        real(dp) :: grad_t(2), acc, run, speed, worst, nn, at(2), dmax
+        real(dp) :: dw(0:3), wv(0:3)
+        integer :: nf, i, q, j, k, col, b, p, nl, nd
+        status = IDEAL_FB_BAD_INPUT
+        nf = basis%nfield()
+        if (nf < 1 .or. size(circulation) /= nf) return
+        if (any(shape(drive) /= [fb%nt, fb%nmode, nf])) return
+        if (any(shape(load) /= [fb%nt, fb%nmode, nf])) return
+        if (size(closure) /= nf .or. size(f_vac) /= nf .or. size(f_spread) /= nf) return
         call gauss_legendre(ng, gx, gw)
         gx = 0.5_dp*(gx + 1); gw = 0.5_dp*gw
-        fb%drive = 0; fb%load = 0; worst = 0
-        ! Loads.
+        ! Sample points: load quadrature, n = 0 path quadrature, trace nodes
+        ! and edge midpoints (curl-free check).
+        nl = fb%nedge*ng; nd = fb%nedge*fb%order*ng
+        allocate (pl(2, nl), tl(2, nl), wl(0:fb%order, nl), pd(2, nd), td(2, nd), &
+            pt(2, fb%nt), pm(2, fb%nedge), tm(2, fb%nedge))
         do i = 1, fb%nedge
             do q = 1, ng
-                call edge_point(fb, i, gx(q), x, tangent, w(0:fb%order))
-                do k = 0, fb%ntor
-                    call sample(x(1), x(2), k, bc, bs)
-                    do j = 0, fb%order
-                        col = (i - 1)*fb%order + j + 1
-                        if (j == fb%order) col = mod(i, fb%nedge)*fb%order + 1
-                        if (k == 0) then
-                            fb%load(col, 1) = fb%load(col, 1) + gw(q)*w(j)*x(1) &
-                                *(bc(1)*tangent(2) - bc(3)*tangent(1))
-                        else
-                            fb%load(col, 2*k) = fb%load(col, 2*k) + gw(q)*w(j)*x(1) &
-                                *(bc(1)*tangent(2) - bc(3)*tangent(1))
-                            fb%load(col, 2*k + 1) = fb%load(col, 2*k + 1) &
-                                + gw(q)*w(j)*x(1)*(bs(1)*tangent(2) - bs(3)*tangent(1))
-                        end if
+                p = (i - 1)*ng + q
+                call edge_point(fb, i, gx(q), pl(:, p), tl(:, p), wl(:, p))
+            end do
+            do j = 1, fb%order
+                do q = 1, ng
+                    p = ((i - 1)*fb%order + j - 1)*ng + q
+                    call edge_point(fb, i, gx(q)*j/fb%order, pd(:, p), td(:, p), &
+                        w(0:fb%order))
+                end do
+            end do
+            call edge_point(fb, i, 0.5_dp, pm(:, i), tm(:, i), w(0:fb%order))
+        end do
+        do col = 1, fb%nt
+            pt(:, col) = fb%reference(:, fb%trace(col))
+        end do
+        allocate (cl(3, 0:fb%ntor, nf, nl), sl(3, 0:fb%ntor, nf, nl), &
+            cd(3, 0:0, nf, nd), sd(3, 0:0, nf, nd), &
+            ct(3, 0:fb%ntor, nf, fb%nt), st_(3, 0:fb%ntor, nf, fb%nt), &
+            cmid(3, 0:fb%ntor, nf, fb%nedge), smid(3, 0:fb%ntor, nf, fb%nedge))
+        call basis%sample(pl, fb%nfp, fb%ntor, cl, sl, status)
+        if (status /= IDEAL_FB_OK) return
+        call basis%sample(pd, fb%nfp, 0, cd, sd, status)
+        if (status /= IDEAL_FB_OK) return
+        call basis%sample(pt, fb%nfp, fb%ntor, ct, st_, status)
+        if (status /= IDEAL_FB_OK) return
+        if (fb%ntor > 0) then
+            call basis%sample(pm, fb%nfp, fb%ntor, cmid, smid, status)
+            if (status /= IDEAL_FB_OK) return
+        end if
+        status = IDEAL_FB_BAD_INPUT
+        if (.not. all(ieee_is_finite(cl)) .or. .not. all(ieee_is_finite(sl))) return
+        if (.not. all(ieee_is_finite(cd)) .or. .not. all(ieee_is_finite(ct))) return
+        if (.not. all(ieee_is_finite(st_))) return
+        status = IDEAL_FB_OK
+        drive = 0; load = 0
+        do b = 1, nf
+            ! Loads.
+            do i = 1, fb%nedge
+                do q = 1, ng
+                    p = (i - 1)*ng + q
+                    x = pl(:, p); tangent = tl(:, p); w(0:fb%order) = wl(:, p)
+                    do k = 0, fb%ntor
+                        bc = cl(:, k, b, p); bs = sl(:, k, b, p)
+                        do j = 0, fb%order
+                            col = (i - 1)*fb%order + j + 1
+                            if (j == fb%order) col = mod(i, fb%nedge)*fb%order + 1
+                            if (k == 0) then
+                                load(col, 1, b) = load(col, 1, b) + gw(q)*w(j)*x(1) &
+                                    *(bc(1)*tangent(2) - bc(3)*tangent(1))
+                            else
+                                load(col, 2*k, b) = load(col, 2*k, b) + gw(q)*w(j) &
+                                    *x(1)*(bc(1)*tangent(2) - bc(3)*tangent(1))
+                                load(col, 2*k + 1, b) = load(col, 2*k + 1, b) &
+                                    + gw(q)*w(j)*x(1)*(bs(1)*tangent(2) &
+                                    - bs(3)*tangent(1))
+                            end if
+                        end do
                     end do
                 end do
             end do
-        end do
-        ! n = 0 trace by integration along Gamma_c.
-        run = 0
-        do i = 1, fb%nedge
-            fb%drive((i - 1)*fb%order + 1, 1) = run
-            do j = 1, fb%order
-                acc = 0
-                do q = 1, ng
-                    call edge_point(fb, i, gx(q)*j/fb%order, x, tangent, w(0:fb%order))
-                    call sample(x(1), x(2), 0, bc, bs)
-                    grad_t = theta_gradient(fb, x)
-                    acc = acc + gw(q)*real(j, dp)/fb%order*(dot_product(bc([1, 3]) &
-                        - fb%circulation*grad_t, tangent))
-                end do
-                if (j < fb%order) then
-                    fb%drive((i - 1)*fb%order + j + 1, 1) = run + acc
-                else
-                    run = run + acc
-                end if
-            end do
-        end do
-        worst = abs(run)
-        ! n /= 0 traces from B_phi at the trace nodes, and the curl-free check.
-        do k = 1, fb%ntor
-            nn = k*fb%nfp
+            ! n = 0 trace by integration along Gamma_c.
+            run = 0
             do i = 1, fb%nedge
-                do j = 0, fb%order - 1
-                    col = (i - 1)*fb%order + j + 1
-                    x = fb%reference(:, fb%trace(col))
-                    call sample(x(1), x(2), k, bc, bs)
-                    fb%drive(col, 2*k) = -x(1)*bs(2)/nn
-                    fb%drive(col, 2*k + 1) = x(1)*bc(2)/nn
+                drive((i - 1)*fb%order + 1, 1, b) = run
+                do j = 1, fb%order
+                    acc = 0
+                    do q = 1, ng
+                        p = ((i - 1)*fb%order + j - 1)*ng + q
+                        x = pd(:, p); tangent = td(:, p); bc = cd(:, 0, b, p)
+                        grad_t = theta_gradient(fb, x)
+                        acc = acc + gw(q)*real(j, dp)/fb%order*(dot_product(bc([1, 3]) &
+                            - circulation(b)*grad_t, tangent))
+                    end do
+                    if (j < fb%order) then
+                        drive((i - 1)*fb%order + j + 1, 1, b) = run + acc
+                    else
+                        run = run + acc
+                    end if
                 end do
             end do
-            dmax = 0
-            do i = 1, fb%nedge
-                call edge_point(fb, i, 0.5_dp, x, tangent, w(0:fb%order))
-                call sample(x(1), x(2), k, bc, bs)
-                speed = norm2(tangent)
-                block
-                    real(dp) :: dw(0:3), wv(0:3)
+            worst = abs(run)
+            ! n /= 0 traces from B_phi at the trace nodes, and the curl-free check.
+            do k = 1, fb%ntor
+                nn = k*fb%nfp
+                do col = 1, fb%nt
+                    x = pt(:, col)
+                    drive(col, 2*k, b) = -x(1)*st_(2, k, b, col)/nn
+                    drive(col, 2*k + 1, b) = x(1)*ct(2, k, b, col)/nn
+                end do
+                dmax = 0
+                do i = 1, fb%nedge
+                    tangent = tm(:, i); bc = cmid(:, k, b, i); bs = smid(:, k, b, i)
+                    speed = norm2(tangent)
                     call edge_lagrange(fb%order, 0.5_dp, wv(0:fb%order), dw(0:fb%order))
                     at = 0
                     do j = 0, fb%order
                         col = (i - 1)*fb%order + j + 1
                         if (j == fb%order) col = mod(i, fb%nedge)*fb%order + 1
-                        at = at + dw(j)*fb%drive(col, 2*k:2*k + 1)
+                        at = at + dw(j)*drive(col, 2*k:2*k + 1, b)
                     end do
-                end block
-                dmax = max(dmax, abs(at(1)/speed - dot_product(bc([1, 3]), &
-                    tangent)/speed), abs(at(2)/speed - dot_product(bs([1, 3]), &
-                    tangent)/speed))
+                    dmax = max(dmax, abs(at(1)/speed - dot_product(bc([1, 3]), &
+                        tangent)/speed), abs(at(2)/speed - dot_product(bs([1, 3]), &
+                        tangent)/speed))
+                end do
+                worst = max(worst, dmax)
             end do
-            worst = max(worst, dmax)
+            closure(b) = worst
+            f_vac(b) = sum(pt(1, :)*ct(2, 0, b, :))/fb%nt
+            f_spread(b) = maxval(abs(pt(1, :)*ct(2, 0, b, :) - f_vac(b)))
         end do
-        do m = 1, fb%nmode
-            fb%load(:, m) = fb%load(:, m)
-        end do
-        if (present(closure)) closure = worst
     end subroutine
 
     pure function theta_gradient(fb, y) result(g)
@@ -783,14 +1057,16 @@ contains
         qd(3, 3) = qd(3, 3) + 1
     end subroutine
 
-    subroutine shell_point(fb, xs, phi, e, g, j, w, jac, gv, hv, want_hessian)
+    subroutine shell_point(fb, xs, phi, e, g, j, w, jac, gv, hv, want_hessian, fdot)
         ! Vacuum energy density and its derivatives with respect to
         ! v = (q(1:3), Q(k,i) at 3 + k + 3(i-1), dPhi~/ds_i at 12 + i).
+        ! fdot: d gv / d F_vac (exact, from the generated Hessian leaf).
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(in) :: xs(:, :, :), phi(:, :)
         integer, intent(in) :: e, g, j
         real(dp), intent(out) :: w, jac, gv(15), hv(15, 15)
         logical, intent(in) :: want_hessian
+        real(dp), intent(out), optional :: fdot(15)
         real(dp) :: q(3), qd(3, 3), gt(3), gg(3), pos(3), d1(3, 3), d2(3, 3, 3)
         real(dp) :: d3(3, 3, 3, 3), dx(3, 3), gd(12), hd(12, 12), dv(12, 15)
         real(dp) :: hflat(78), gm(3, 3)
@@ -822,7 +1098,7 @@ contains
         end do
         gv = matmul(gd, dv)
         hv = 0
-        if (.not. want_hessian) return
+        if (.not. (want_hessian .or. present(fdot))) return
         call hessian_leaf(hflat)
         n = 0
         do c = 1, 12
@@ -831,6 +1107,15 @@ contains
                 hd(r, c) = hflat(n); hd(c, r) = hflat(n)
             end do
         end do
+        if (present(fdot)) then
+            ! gg depends on F_vac through F_vac*Q(3,:), and dv(9+i, 6+3(i-1))
+            ! = F_vac: d gv/dF = (hd d(dx,gg)/dF) dv + gd d(dv)/dF.
+            fdot = matmul(matmul(hd(:, 10:12), qd(3, :)), dv)
+            do i = 1, 3
+                fdot(6 + 3*(i - 1)) = fdot(6 + 3*(i - 1)) + gd(9 + i)
+            end do
+        end if
+        if (.not. want_hessian) return
         hv = matmul(transpose(dv), matmul(hd, dv))
         gm = reshape(gd(1:9), [3, 3])
         do m = 1, 3
@@ -894,36 +1179,52 @@ contains
         end do
     end subroutine
 
-    subroutine shell_energy(fb, xs, phi, energy, gx, gf, min_jacobian, blocks)
+    subroutine shell_energy(fb, xs, phi, energy, gx, gf, min_jacobian, blocks, &
+                            f_gx, f_gf)
         ! E_v interior part (with 1/mu0), gradients with respect to xs and
-        ! Phi~, and optionally the local Hessian blocks (shell-local order).
+        ! Phi~, optionally the local Hessian blocks (shell-local order) and
+        ! the exact derivatives f_gx, f_gf of gx, gf with respect to F_vac.
         type(ideal_fb_t), intent(in) :: fb
         real(dp), intent(in) :: xs(:, :, :), phi(:, :)
         real(dp), intent(out) :: energy, gx(:, :, :), gf(:, :), min_jacobian
         real(dp), intent(out), optional :: blocks(:, :, :)
-        real(dp), allocatable :: local(:, :), rows(:, :), tmp(:, :)
-        real(dp) :: w, jac, gv(15), hv(15, 15), weight, dphi, minjac
+        real(dp), intent(out), optional :: f_gx(:, :, :), f_gf(:, :)
+        real(dp), allocatable :: local(:, :), rows(:, :), tmp(:, :), flocal(:, :)
+        real(dp) :: w, jac, gv(15), hv(15, 15), weight, dphi, minjac, fd(15)
         integer :: e, g, j, nl, a, m, l
-        logical :: want
+        logical :: want, want_f
         want = present(blocks)
+        want_f = present(f_gx) .and. present(f_gf)
         nl = 4*fb%nmode*fb%nloc
         allocate (local(nl, fb%ncell))
+        if (want_f) then
+            allocate (flocal(nl, fb%ncell))
+        else
+            allocate (flocal(1, 1))
+        end if
         dphi = 2*pi/(fb%nfp*fb%plasma%nphi)
         energy = 0; minjac = huge(1.0_dp)
-        !$omp parallel default(shared) private(e, g, j, w, jac, gv, hv, weight, rows, tmp)
+        !$omp parallel default(shared) &
+        !$omp private(e, g, j, w, jac, gv, hv, weight, rows, tmp, fd)
         allocate (rows(15, nl), tmp(15, nl))
         !$omp do reduction(+: energy) reduction(min: minjac) schedule(static)
         do e = 1, fb%ncell
             local(:, e) = 0
             if (want) blocks(:, :, e) = 0
+            if (want_f) flocal(:, e) = 0
             do j = 1, fb%plasma%nphi
                 do g = 1, fb%plasma%nq
-                    call shell_point(fb, xs, phi, e, g, j, w, jac, gv, hv, want)
+                    if (want_f) then
+                        call shell_point(fb, xs, phi, e, g, j, w, jac, gv, hv, want, fd)
+                    else
+                        call shell_point(fb, xs, phi, e, g, j, w, jac, gv, hv, want)
+                    end if
                     minjac = min(minjac, jac/fb%det(g, e))
                     weight = fb%plasma%weight(g)*dphi
                     energy = energy + weight*w
                     call local_rows(fb, g, j, rows)
                     local(:, e) = local(:, e) + weight*matmul(gv, rows)
+                    if (want_f) flocal(:, e) = flocal(:, e) + weight*matmul(fd, rows)
                     if (want) then
                         tmp = matmul(hv, rows)
                         blocks(:, :, e) = blocks(:, :, e) + weight &
@@ -937,6 +1238,9 @@ contains
         !$omp end parallel
         min_jacobian = minjac
         gx = 0; gf = 0
+        if (want_f) then
+            f_gx = 0; f_gf = 0
+        end if
         do e = 1, fb%ncell
             do a = 1, fb%nloc
                 do m = 1, fb%nmode
@@ -944,6 +1248,12 @@ contains
                     gx(:, m, fb%conn(a, e)) = gx(:, m, fb%conn(a, e)) &
                         + local(l + 1:l + 3, e)
                     gf(m, fb%conn(a, e)) = gf(m, fb%conn(a, e)) + local(l + 4, e)
+                    if (want_f) then
+                        f_gx(:, m, fb%conn(a, e)) = f_gx(:, m, fb%conn(a, e)) &
+                            + flocal(l + 1:l + 3, e)
+                        f_gf(m, fb%conn(a, e)) = f_gf(m, fb%conn(a, e)) &
+                            + flocal(l + 4, e)
+                    end if
                 end do
             end do
         end do
