@@ -2613,7 +2613,7 @@ contains
             call ideal_fb_negative_curvature(fb, cap_x, 20, nc, s2, talk)
             report%curvature_steps = report%curvature_steps + nc%steps
             report%curvature_min = nc%lambda_min
-            if (talk) print '(a,i3,a,i3,a,i3,a,es10.2,a,es10.2,a,i0)', &
+            if (talk) print '(a,i3,a,i3,a,i3,a,i3,a,es14.6,a,es14.6,a,i0)', &
                 '   escape', report%escapes, ' In_-', nc%n_negative0, ' ->', &
                 nc%n_negative, ' steps', nc%steps, ' E_red', nc%energy0, ' ->', &
                 nc%energy, ' status ', s2
