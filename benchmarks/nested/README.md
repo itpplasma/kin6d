@@ -200,6 +200,31 @@ integer family checks B and the coarse discretisation, but its pressure/label me
 is not a convergence oracle beyond b=12; the instability of the continuum equilibrium is
 inferred from these discrete results, not proven.
 
+[V] The sheared-iota family (Landreman tau=0, eps=1.2, delta=0.14, iota 2.7996 at the
+axis to 2.8104 at the edge) reaches the map seed through `kin6d_nested_seed_input`.
+Two findings stop it from serving as the stable 0.25 % reference. First, the seed's
+frozen form has a uniform toroidal-flux density in the reference angle, and the
+position gauge holds the wall nodes fixed in both directions (`ideal_map.f90`,
+`ideal_map_position_gauge`; `ideal_seed_3d.f90` also pins the wall omega). The wall
+angle is then part of the constraint, so the exact state is admissible only when the
+boundary is given in the straight-field-line angle with geometric phi. The integer
+family's exported angle already is that angle (reparametrising it changes nothing, to
+1e-12), while the sheared chart angle is not. With the chart angle, the axisymmetric
+control eps=0 stalls at a 4.4-2.0 % B error from b=8 to b=24 at P3, the label defect
+being an (m,n)=(1,0) displacement. The same control with the boundary reparametrised
+to the straight-field-line angle (measurement-only probe) gives 1.4e-3, 7.1e-4 and
+2.0e-4 at b=8, 12 and 16. Second, with that reparametrised wall, eps=1.2 and N=6, the
+state near the exact one (b=12: B 0.10 %, p 0.09 %, label 0.18 %) is a saddle. The
+Jacobi-scaled Hessian has a negative doubly degenerate pair (-2.2e-4) at b=12, and
+two or three negative pairs at b=16 and b=20 after prolongation from b=12, whose
+eigenvectors are dominated by (2,3) label displacements per field period, and the energy
+decreases along both signs of each eigenvector. Cold starts at b=16 (N=6) or b=12
+(N=8, poloidal modes 12) converge to a helical state with a 14-25 % label error whose
+energy lies 1e-4 to 6e-4 below the exact energy, and delta=0.07 or eps=0.6 behave the
+same way. Like the integer family, this sheared case is therefore not a convergence
+oracle for an energy minimiser beyond b=12, and the instability of the continuum
+equilibrium is inferred from the discrete results, not proven.
+
 [V] The adapter records separate native-call and complete workflow timers, actual basis
 sizes, affinity, solver status and parent/child peak RSS. Workflow time includes
 imports, conversion, readback and output, while KIN6D's workflow also includes boundary
