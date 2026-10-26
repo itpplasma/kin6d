@@ -330,7 +330,27 @@ hypothesis that has not been traced.
    line as a constrained boundary, divided at the loop spacing, and reflects
    it, so that every node and cell has an image at every resolution
    (`gs_mirror_mesh`); both loops must be mirror symmetric and meet the line
-   in two of their nodes.
+   in two of their nodes. In sCluster job 3370234 the direct R3 mesh gave the
+   5.4 mm state again in two repeats. On the mirrored R3 mesh all five
+   unkicked runs (8, 16 and 32 threads) reached a state with a symmetry
+   defect below 1e-4 mm (E_red -45034.375022, smallest eigenvalue of S_red
+   9.2), and so did the three 16-thread runs and the -8 and +15 mm kicks at
+   R2 (E_red -45032.879584, 13.7). The 5.4 mm defect is therefore an artefact
+   of the asymmetric triangulation. The mirrored meshes also have nearby
+   stable states that break the symmetry: 3.3 mm on Gamma_p at R2 (E_red
+   1.5e-4 J higher, reached from the +8 mm kick and unkicked at 4 threads)
+   and 0.16 mm at R3 as a mirror pair from the +-8 mm kicks (1.3e-5 J
+   higher). The phi = 0 vacuum
+   oracle error of the symmetric state is 3.19/6.59, 3.24/6.60 and
+   3.26/7.59 mm (rms/max) at R1, R2 and R3, so it does not decrease under
+   this refinement and is not a plasma-mesh discretisation error. At N = 1
+   (R1, globalisation 2) the solve reaches either the symmetric stable state
+   or a stable pair with a 22 mm defect and an E_red 0.03 J lower, so
+   symmetry is not the energy minimum there. Globalisation 2 fails where an
+   escape is pinned at the fold guard: a cell Jacobian falls to a quarter of
+   its value at entry along the descent of E_red, and every later trial is
+   rejected. This happened in all three mirrored R1 runs and in 3 of 19
+   other N = 2 runs.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
