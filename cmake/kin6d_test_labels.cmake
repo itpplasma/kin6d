@@ -465,6 +465,8 @@ kin6d_test_labels(nonnested_transport_equilibrated_n0 fast CLASSES mhd
 kin6d_test_labels(nn1_spec_case_smoke fast CLASSES mhd TARGETS nn1_spec_case)
 kin6d_test_labels(nonnested_vacuum_helical_coil_island slow CLASSES mhd
     TARGETS test_nonnested_vacuum)
+kin6d_test_labels(nonnested_vacuum_mode_residual_p3 fast CLASSES mhd
+    TARGETS test_nonnested_vacuum_mode_residual)
 kin6d_test_labels(nonnested_symbolic_derivatives_and_d3_identity fast CLASSES mhd
     TARGETS test_nonnested_leaves)
 kin6d_test_labels(nonnested_transport_manufactured_3d slow CLASSES mhd
