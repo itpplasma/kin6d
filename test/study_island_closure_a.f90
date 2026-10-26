@@ -28,6 +28,7 @@ program study_island_closure_a
     !   connect k nr outdir eps ratio    wall connection (turns, both directions)
     !                              of lines seeded on the Z = 0 diameter at
     !                              phi = 0, with p/p_max at each seed
+    ! ISLAND_MODES sets the toroidal truncation n = 0..N (default 1).
     ! scan also writes plane.dat (min p/p_max and the area fractions with
     ! p < 0 and p < 0.01 p_max on the phi = 0 plane, solve wall time) and
     ! diameter.dat (p/p_max on the whole Z = 0 diameter); eps = 0 skips the
@@ -78,8 +79,13 @@ contains
         real(dp), intent(in) :: eps, ratio0
         type(nc_problem_t) :: problem
         real(dp), allocatable :: base(:), pert(:)
-        integer :: st
-        call island_a_setup(nr, k, 1, base, pert, problem)
+        integer :: st, modes, ln
+        character(16) :: env
+        ! Toroidal modes n = 0..ISLAND_MODES (default 1) of A, p and Phi.
+        modes = 1
+        call get_environment_variable('ISLAND_MODES', env, ln)
+        if (ln > 0) read (env, *) modes
+        call island_a_setup(nr, k, modes, base, pert, problem)
         call island_provider_init(prov, field, problem, base, pert, shell_source, &
             [1.0_dp, eps, 0.0_dp, ratio0], 0.9_dp, 1.0e5_dp, &
             'helical-coil-annulus', st)
