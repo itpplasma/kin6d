@@ -57,7 +57,8 @@ module kin6d_ideal_map
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
         sparse_factor_stats, sparse_factor_stats_t, &
         sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
-        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t
+        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t, FORTSPARSE_SYM_INDEFINITE, &
+        sparse_inertia
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
@@ -72,6 +73,9 @@ module kin6d_ideal_map
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
+    ! Factor policies of the Krylov-step trials (ideal_map_t%factor_policy).
+    integer, parameter, public :: IDEAL_MAP_FACTOR_SPD_LU = 0, &
+        IDEAL_MAP_FACTOR_ADAPTIVE = 1, IDEAL_MAP_FACTOR_LDLT = 2
 
     ! Frozen reference data at a reference point y = (q1, q2): poloidal flux
     ! label chi and its gradient, toroidal flux density b3 (contravariant density
@@ -136,6 +140,15 @@ module kin6d_ideal_map
         ! A pivoted LU fallback factor is never retained. False (default):
         ! factor and solve at every trial.
         logical :: krylov_step = .false.
+        ! Factor of a Krylov-step trial; only an SPD factor is retained as
+        ! preconditioner. SPD_LU (default): Cholesky, and the pivoted LU of
+        ! the same matrix when a pivot is not positive. ADAPTIVE: as SPD_LU
+        ! until a Cholesky fails, then the pivoted LU for the rest of the solve
+        ! (indefinite trials pay one factorisation; later SPD trials are not
+        ! retained). LDLT: one FortSparse supernodal LDL^T, retained when its
+        ! inertia is positive (the Cholesky criterion up to roundoff); the
+        ! pivoted LU only if it fails.
+        integer :: factor_policy = IDEAL_MAP_FACTOR_SPD_LU
         integer :: krylov_refactor = 8, krylov_max = 10
         integer :: npoly = 0
         ! Gauge quadratic form on the n = 0 omega, per cell (nloc, nloc, cell).
@@ -215,6 +228,12 @@ module kin6d_ideal_map
         ! with a nonpositive pivot that were factored by the pivoted LU
         ! instead (each also counts as a factorisation attempt).
         integer :: analyses = 0, factorizations = 0, lu_fallbacks = 0
+        ! Krylov-step trials whose damped Hessian was not positive definite
+        ! (failed Cholesky, LDL^T inertia with a negative or zero pivot, or the
+        ! ADAPTIVE policy past its first failure).
+        integer :: indefinite_trials = 0
+        ! ADAPTIVE policy state: a Cholesky failed in this solve.
+        logical, private :: spd_failed = .false.
         ! Non-nested Newton trials, CG solves with the retained factor
         ! (map%krylov_step) and their total CG iterations.
         integer :: trials = 0, krylov_solves = 0, krylov_iterations = 0
@@ -1536,7 +1555,7 @@ contains
         real(dp) :: cap_x, cap_w, t0, trial_minjac
         integer :: it, i, k, tries, estatus
         logical :: talk, accepted, factored, ofactored, lfactored, use_lu, nested
-        logical :: retained, direct, pc_failed
+        logical :: retained, direct, pc_failed, spd
         real(dp) :: eta, ginit
         talk = .false.
         retained = .false.
@@ -1611,17 +1630,18 @@ contains
                 if (map%krylov_step .and. retained) call krylov_solve(direct)
                 if (direct) then
                     use_lu = .false.
+                    spd = .false.
                     if (map%krylov_step) then
-                        ! The preconditioner must be SPD: Cholesky first, and
-                        ! a pivoted LU fallback factor is not retained.
+                        ! The preconditioner must be SPD (map%factor_policy);
+                        ! an indefinite factor is used for this trial only.
                         call factor_masked(map, matrix, .not. map%fixed, shift, &
                             solver, factored, estatus, report, lu=lsolver, &
-                            lu_done=lfactored, use_lu=use_lu)
+                            lu_done=lfactored, use_lu=use_lu, spd=spd)
                     else
                         call factor_masked(map, matrix, .not. map%fixed, shift, &
                             solver, factored, estatus, report)
                     end if
-                    retained = estatus == 0 .and. .not. use_lu
+                    retained = estatus == 0 .and. spd
                     if (estatus /= 0) then
                         mu = mu*10; cycle
                     end if
@@ -2000,7 +2020,7 @@ contains
     end function
 
     subroutine factor_masked(map, matrix, keep, shift, slv, done, info, report, gauge, &
-                             lu, lu_done, use_lu)
+                             lu, lu_done, use_lu, spd)
         ! Factorise the reduced Hessian restricted to the keep rows/columns
         ! (identity elsewhere), plus shift on the diagonal. done: slv holds a
         ! factorisation of this pattern (only the numerical one is redone).
@@ -2008,10 +2028,11 @@ contains
         ! the free n = 0 omega dofs as Lagrange rows/columns (saddle point;
         ! solve with gauge_solve). The masked, symmetrised matrix is cached in
         ! report per pattern; a trial only rewrites the diagonal.
-        ! lu, lu_done, use_lu (all or none, without gauge): slv holds the SPD
-        ! Cholesky and lu the pivoted LU fallback of the same matrix; use_lu
-        ! tells which one holds the factor of this trial. Without them, slv
-        ! holds the pivoted LU.
+        ! lu, lu_done, use_lu, spd (all or none, without gauge): the Krylov-step
+        ! policy map%factor_policy. slv holds the Cholesky or LDL^T and lu the
+        ! pivoted LU of the same matrix; use_lu tells which one holds the
+        ! factor of this trial and spd whether it is the positive definite
+        ! factor in slv. Without them, slv holds the pivoted LU.
         type(ideal_map_t), intent(in) :: map
         type(csr_matrix_t), intent(in) :: matrix
         logical, intent(in) :: keep(:)
@@ -2023,16 +2044,18 @@ contains
         logical, intent(in), optional :: gauge
         type(sparse_solver_t), intent(inout), optional :: lu
         logical, intent(inout), optional :: lu_done
-        logical, intent(out), optional :: use_lu
+        logical, intent(out), optional :: use_lu, spd
         type(fortsparse_status_t) :: sstatus
-        logical :: spd
+        logical :: krylov
         integer :: row, nc
+        integer, parameter :: CHOLESKY = 1, PIVOTED_LU = 2, LDLT = 3
         nc = 0
         if (present(gauge)) then
             if (gauge) nc = gauge_rows(map)
         end if
-        spd = nc == 0 .and. present(lu)
+        krylov = nc == 0 .and. present(lu)
         if (present(use_lu)) use_lu = .false.
+        if (present(spd)) spd = .false.
         call factor_cache_update(map, matrix, keep, nc, report%cache, info)
         if (info /= 0) then
             if (done) call sparse_destroy(slv)
@@ -2052,35 +2075,72 @@ contains
         ! Newton trial: the same matrix is factored by the native supernodal
         ! pivoted LU, which is then used for this trial only. Without lu, the
         ! pivoted LU is the factor (the direct-step policy).
-        if (spd) then
-            call factor_one(slv, done, .true., info, sstatus)
-            if (info == 0) return
-            if (sstatus%code /= FORTSPARSE_NOT_POSITIVE_DEFINITE) return
-            report%lu_fallbacks = report%lu_fallbacks + 1
-            call factor_one(lu, lu_done, .false., info, sstatus)
-            if (info == 0) use_lu = .true.
-        else
-            call factor_one(slv, done, .false., info, sstatus)
+        if (.not. krylov) then
+            call factor_one(slv, done, PIVOTED_LU, info, sstatus)
+            return
         end if
+        if (map%factor_policy == IDEAL_MAP_FACTOR_LDLT) then
+            ! One symmetric indefinite factor; positive inertia = SPD.
+            call factor_one(slv, done, LDLT, info, sstatus)
+            if (info == 0) then
+                spd = positive_inertia(slv)
+                if (.not. spd) report%indefinite_trials = report%indefinite_trials + 1
+                return
+            end if
+            report%lu_fallbacks = report%lu_fallbacks + 1
+        else if (map%factor_policy == IDEAL_MAP_FACTOR_ADAPTIVE .and. &
+                 report%spd_failed) then
+            report%indefinite_trials = report%indefinite_trials + 1
+        else
+            call factor_one(slv, done, CHOLESKY, info, sstatus)
+            if (info == 0) then
+                spd = .true.
+                return
+            end if
+            if (sstatus%code /= FORTSPARSE_NOT_POSITIVE_DEFINITE) return
+            report%spd_failed = .true.
+            report%indefinite_trials = report%indefinite_trials + 1
+            report%lu_fallbacks = report%lu_fallbacks + 1
+        end if
+        call factor_one(lu, lu_done, PIVOTED_LU, info, sstatus)
+        if (info == 0) use_lu = .true.
     contains
-        subroutine factor_one(s, sdone, cholesky, sinfo, sst)
-            ! Factor report%cache%a into s: SPD Cholesky or pivoted LU.
+        logical function positive_inertia(s) result(positive)
+            ! All pivots of the LDL^T factor in s positive (reliably).
+            type(sparse_solver_t), intent(inout) :: s
+            type(fortsparse_status_t) :: ist
+            integer(int64) :: nneg, nzero, npos
+            integer :: reliability
+            call sparse_inertia(s, nneg, nzero, npos, reliability, ist)
+            positive = status_ok(ist) .and. nneg == 0 .and. nzero == 0 .and. &
+                reliability == 0
+        end function
+
+        subroutine factor_one(s, sdone, kind, sinfo, sst)
+            ! Factor report%cache%a into s: SPD Cholesky, pivoted LU or
+            ! supernodal LDL^T.
             type(sparse_solver_t), intent(inout) :: s
             logical, intent(inout) :: sdone
-            logical, intent(in) :: cholesky
+            integer, intent(in) :: kind
             integer, intent(out) :: sinfo
             type(fortsparse_status_t), intent(out) :: sst
             type(sparse_factor_stats_t) :: stats
             type(fortsparse_status_t) :: stats_status
-            logical :: reused
+            logical :: reused, is_cholesky
             sinfo = 1
-            if (cholesky) then
+            is_cholesky = kind == CHOLESKY
+            select case (kind)
+            case (CHOLESKY)
                 s%options%symmetry = FORTSPARSE_SYM_SPD
                 s%options%lu_method = FORTSPARSE_LU_SCALAR
-            else
+            case (LDLT)
+                s%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+                s%options%lu_method = FORTSPARSE_LU_SCALAR
+                s%options%ldlt_supernodal = .true.
+            case default
                 s%options%symmetry = FORTSPARSE_SYM_GENERAL
                 s%options%lu_method = FORTSPARSE_LU_SUPERNODAL
-            end if
+            end select
             s%options%ordering = FORTSPARSE_ORDER_AMD
             s%options%verify_factor = map%verify_factor
             s%backend_id = FORTSPARSE_BACKEND_NATIVE
@@ -2106,7 +2166,7 @@ contains
             if (sinfo /= 0) then
                 ! A Cholesky pivot that is not positive keeps the symbolic
                 ! analysis: the next trial refactors on it.
-                if (cholesky .and. sst%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
+                if (is_cholesky .and. sst%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
                     if (.not. sdone) report%analyses = report%analyses + 1
                     sdone = .true.
                     return
