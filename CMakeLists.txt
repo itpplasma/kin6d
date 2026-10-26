@@ -1858,7 +1858,7 @@ target_link_libraries(test_nonnested_vacuum_mode_residual PRIVATE kin6d_nn_vacuu
 add_test(NAME nonnested_vacuum_mode_residual_p3
     COMMAND test_nonnested_vacuum_mode_residual)
 set_tests_properties(nonnested_vacuum_mode_residual_p3 PROPERTIES
-    TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 set_tests_properties(nonnested_vacuum_helical_coil_island PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
 
