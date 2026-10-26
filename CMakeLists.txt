@@ -126,7 +126,7 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-set(KIN6D_FORTFEM_REVISION "21f236191c39688bebe25f98b185c32b8209ec70")
+set(KIN6D_FORTFEM_REVISION "ddd8b123ae8571492b5e26a1075701b5e470484b")
 if(KIN6D_BUILD_GLL_SPIKE)
     set(KIN6D_FORTFEM_REVISION "ac673dc63c4810f56a864f694e461c9179d05858")
 endif()
@@ -1549,6 +1549,9 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/geometry/meridian_curved_mesh.f90
     ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_feec_tables.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_bernstein_jets.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
@@ -2110,12 +2113,9 @@ target_sources(kin6d_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_exterior_harmonic_products.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_harmonic_field_products.f90
     ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
+    ${fortfem_SOURCE_DIR}/src/bem/bem_circulant.f90
     ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90
     ${fortfem_SOURCE_DIR}/src/bem/exterior_harmonic_fields.f90)
-if(KIN6D_BUILD_GLL_SPIKE)
-    # The GLL spike pins a newer FortFEM whose high-order BEM uses the circulant module.
-    target_sources(kin6d_feec_n PRIVATE ${fortfem_SOURCE_DIR}/src/bem/bem_circulant.f90)
-endif()
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/equilibrium_boundary_3d.f90)
 target_sources(kin6d_mhd PRIVATE src/mhd/ideal_free_boundary_bem3d.f90)
 add_executable(test_ideal_fb_surface test/test_ideal_fb_surface.f90)
