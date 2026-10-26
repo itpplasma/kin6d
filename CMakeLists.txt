@@ -125,9 +125,10 @@ target_sources(kin6d_quantum PRIVATE src/generated/kin6d_pp_fusion_leaves.f90
 set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
-# Pinned to the FortFEM branch perf/gll-omp-setup-20261025 (cached element-to-CSR
-# slot map, lazy-fortran/fortfem#122); the pin moves to FortFEM main after the merge.
-set(KIN6D_FORTFEM_REVISION "e4f4533aba1615f611b62b8c8aee292b1992976b")
+# Pinned to the FortFEM branch perf/csr-symmetric-assembly-20261026 (heapsorted long
+# rows and the symmetric column assembly, stacked on the cached element-to-CSR slot
+# map of lazy-fortran/fortfem#122); the pin moves to FortFEM main after the merge.
+set(KIN6D_FORTFEM_REVISION "d358bd2c4235bd979f33a146ab467df720b62094")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
