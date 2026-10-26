@@ -520,6 +520,33 @@ kin6d_test_labels(nonnested_mapped_ellipse_mode_ladder fast CLASSES mhd
 kin6d_test_labels(nonnested_mapped_zero_forcing_residual fast CLASSES mhd
     TARGETS test_nonnested_mapped)
 kin6d_test_labels(nonnested_qa_oracle_check fast CLASSES mhd TARGETS test_nonnested_qa)
+# Non-nested Beltrami equilibria (docs/nn1-mapped-3d.md). The SPEC sample tests
+# are configured only when KIN6D_BELTRAMI_SPEC_SAMPLES is set, so that executable
+# is recorded for kin6d_check_mhd directly instead of through a test.
+set_property(GLOBAL APPEND PROPERTY KIN6D_CHECK_TARGETS_mhd
+    test_nonnested_beltrami_spec)
+foreach(case axis helical)
+    foreach(rings 2 4 8)
+        kin6d_test_labels(nonnested_beltrami_spec_${case}_${rings} slow CLASSES mhd
+            TARGETS test_nonnested_beltrami_spec)
+    endforeach()
+endforeach()
+foreach(modes 4 6)
+    kin6d_test_labels(nonnested_beltrami_spec_modes_${modes} slow CLASSES mhd
+        TARGETS test_nonnested_beltrami_spec)
+endforeach()
+kin6d_test_labels(nonnested_beltrami_pairing fast CLASSES mhd
+    TARGETS test_nonnested_beltrami_pairing)
+kin6d_test_labels(nonnested_beltrami_resonance fast CLASSES mhd
+    TARGETS test_nonnested_beltrami)
+kin6d_test_labels(nonnested_beltrami_constraints fast CLASSES mhd
+    TARGETS test_nonnested_beltrami)
+foreach(k 2 3)
+    foreach(case manufactured lundquist vacuum)
+        kin6d_test_labels(nonnested_beltrami_${case}_p${k} slow CLASSES mhd
+            TARGETS test_nonnested_beltrami)
+    endforeach()
+endforeach()
 kin6d_test_labels(lean_continuous_certificates fast CLASSES continuum
     TARGETS formal_krook_certificate)
 kin6d_test_labels(grad_shafranov_p1_exact_current_antiderivatives fast CLASSES equilibrium
