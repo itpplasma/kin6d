@@ -627,8 +627,9 @@ contains
         type(ideal_fb_t) :: fb
         integer, allocatable :: rowptr(:), colidx(:)
         real(dp), allocatable :: val(:), g(:), gp(:), gm(:), v(:), hv(:), du(:)
-        real(dp) :: lp, lm, l0, h, fd, an, err, scale
-        integer :: ntor, i, st, p
+        real(dp) :: lp, lm, l0, h, fd, an, err, scale, lb
+        real(dp), allocatable :: g0(:)
+        integer :: ntor, i, st, p, pass
         do ntor = 0, 1
             windows_on = ntor > 0
             if (windows_on) call make_windows(1.0e5_dp)
@@ -652,7 +653,22 @@ contains
                 v(i) = cos(0.71_dp*i)
             end do
             v(fb%np + 2*fb%nx + 1:) = 1.0e2_dp*v(fb%np + 2*fb%nx + 1:)
+            ! Pass 2: the fold barrier active at every shell point (threshold
+            ! 2 above all cell Jacobian ratios); its generated gradient and
+            ! Hessian enter through the vacuum density.
+            do pass = 1, 2
+            fb%fold_mu = 0; fb%fold_threshold = 0.1_dp
+            if (pass == 2) then
+                call ideal_fb_gradient(fb, g, st, l0)
+                g0 = g
+                fb%fold_mu = 1.0e10_dp; fb%fold_threshold = 2
+            end if
             call ideal_fb_gradient(fb, g, st, l0)
+            if (pass == 2) then
+                lb = maxval(abs(g - g0))/maxval(abs(g0))
+                print '(a,i2,a,es9.2)', 'N =', ntor, ' barrier |dg|/|g|', lb
+                if (.not. lb > 1.0e-3_dp) error stop 'fold barrier inactive'
+            end if
             if (st /= IDEAL_FB_OK) error stop 'base state folded'
             h = 1.0e-6_dp
             call ideal_fb_step(fb, v, h)
@@ -687,6 +703,8 @@ contains
             if (err > 1.0e-5_dp) error stop 'Hessian mismatch'
             ! Symmetry of the assembled matrix.
             call check_symmetry(rowptr, colidx, val)
+            end do
+            fb%fold_mu = 0
             deallocate (g, gp, gm, v, hv, du)
         end do
         print '(a)', 'derivatives ok'
@@ -1052,6 +1070,15 @@ contains
                 ' dE ', nc%energy - nc%energy0
             if (nc%steps /= 1 .or. abs(nc%rho - 1) > 1.0e-2_dp) &
                 error stop 'reduced energy model ratio'
+            ! The same with the fold barrier active at every shell point:
+            ! the model of E_red + B (generated barrier Hessian in S_red).
+            fb = fresh
+            fb%fold_threshold = 2
+            call ideal_fb_negative_curvature(fb, 1.0e-5_dp, 1, nc, st)
+            print '(a,i0,a,f10.6,a,es12.4)', 'small step, barrier N=', ntor, ' rho ', &
+                nc%rho, ' dE ', nc%energy - nc%energy0
+            if (nc%steps /= 1 .or. abs(nc%rho - 1) > 1.0e-2_dp .or. fb%fold_mu /= 0) &
+                error stop 'barrier model ratio'
             fb = fresh
             call ideal_fb_negative_curvature(fb, 2.0e-2_dp, 10, nc, st, verbose=.true.)
             print '(a,i0,a,i0,a,i0,a,i0,a,2es14.6)', 'escape N=', ntor, ' steps ', &
