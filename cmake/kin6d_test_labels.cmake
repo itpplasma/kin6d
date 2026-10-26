@@ -513,6 +513,8 @@ kin6d_test_labels(nonnested_mapped_ellipse_h_ladder slow CLASSES mhd
     TARGETS test_nonnested_mapped)
 kin6d_test_labels(nonnested_mapped_ellipse_mode_ladder fast CLASSES mhd
     TARGETS test_nonnested_mapped)
+kin6d_test_labels(nonnested_mapped_zero_forcing_residual fast CLASSES mhd
+    TARGETS test_nonnested_mapped)
 kin6d_test_labels(nonnested_qa_oracle_check fast CLASSES mhd TARGETS test_nonnested_qa)
 kin6d_test_labels(lean_continuous_certificates fast CLASSES continuum
     TARGETS formal_krook_certificate)
