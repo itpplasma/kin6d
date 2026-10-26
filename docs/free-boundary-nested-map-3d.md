@@ -352,6 +352,34 @@ hypothesis that has not been traced.
    rejected. This happened in three of the four mirrored R1 runs (the
    fourth, kicked by +8 mm, cycles saddle escapes next to the symmetric
    state) and in 3 of 21 other N = 2 runs.
+   The map that folds is the shell map. On the mirrored R1 mesh the trust
+   region lowers the smallest shell Jacobian ratio from 0.76 to 2.7e-4 in
+   11 steps, while the plasma ratio stays at 0.80, and escape trials that
+   fold the shell lower E_red by up to 70 J. E_red is therefore not
+   coercive against shell folds. The escape now minimises E_red + B with
+   the fold barrier B = mu sum det0 phi(J/(t0 det0)), where phi(u) =
+   -log u + (u - 1) - (u - 1)^2/2 for u < 1 and 0 otherwise, summed over
+   the shell quadrature points with t0 = `fold_threshold` = 0.1 and mu =
+   `fold_barrier` times the mean shell vacuum energy density at entry
+   (`gen/gen_fold_barrier.f90`). B is C2, vanishes above the threshold and
+   is switched off on return, so the Newton residual never contains it.
+   With it the same mirrored R1 run leaves the fold in one escape and
+   converges to the symmetric stable state (E_red -45026.234, smallest
+   S_red eigenvalue 18.2, final smallest Jacobian ratio 0.70). The rerun
+   of the 3370234 matrix is sCluster job 3370373.
+   The phi = 0 oracle error does not come from the oracle. Varying it on
+   the converged R1 state changes the rms by less than 1 µm for a field-line
+   tolerance of 1e-9 to 1e-13, by +0.13 mm for 240 instead of 60 turns
+   (crossing polygon segments of 3.8 instead of 19 mm, unchanged at 600) and by
+   +0.005 mm for 384 instead of 96 points per coil. A KIN6D run with the
+   traced vacuum iota (0.1893 to 0.1932, against VMEC++'s 0.1903 to 0.2005)
+   moves it by 0.03 mm. The error is mainly a uniform inward offset (mean
+   signed distance -2.7 mm of 3.2 mm rms). The coil field carries
+   0.954 phiedge through the KIN6D phi = 0 section at R1, R2 and R3 alike
+   (0.946 to 0.951 at N = 1), so the KIN6D boundary encloses about 4.6 %
+   less coil flux than the oracle surface. Job 3370373 varies ntor, nphi_map,
+   nphi_bem, nphi_surface, nchain and the coil points on the KIN6D side to
+   locate this deficit.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
