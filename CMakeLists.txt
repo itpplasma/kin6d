@@ -1783,7 +1783,8 @@ set_tests_properties(nonnested_transport_anisotropy_pollution
     nonnested_transport_anisotropy_correction PROPERTIES TIMEOUT 60
     PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
-add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90)
+add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90
+    test/support/island_a_fixture.f90)
 target_link_libraries(kin6d_nn_vacuum_test PUBLIC kin6d)
 
 add_executable(nn1_spec_case test/nn1_spec_case.f90)
@@ -1851,7 +1852,8 @@ set_tests_properties(nonnested_hudson_breslau_chaos_responds_p3 PROPERTIES
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_profile.f90
     src/mhd/island_closure.f90
     src/mhd/nonnested_coupled.f90
-    src/mhd/island_case.f90 src/mhd/island_report.f90)
+    src/mhd/island_case.f90 src/mhd/island_report.f90
+    src/mhd/island_provider.f90)
 add_executable(test_island_closure test/test_island_closure.f90)
 target_link_libraries(test_island_closure PRIVATE kin6d_nn_solovev_test)
 foreach(case declaration drive report)
@@ -1930,6 +1932,17 @@ add_test(NAME nonnested_island_d3_ladder_p2
     COMMAND test_nonnested_island ladder 2 4 1 1e4 3)
 set_tests_properties(nonnested_island_flattening_p3 nonnested_island_d3_ladder_p2
     PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=4")
+# Closure A+D provider: implicit JVP/VJP and nested limit (island case).
+add_executable(test_island_provider test/test_island_provider.f90)
+target_link_libraries(test_island_provider PRIVATE kin6d_nn_vacuum_test)
+# Study driver (flattening scan, Poincare data); run by scripts, not CTest.
+add_executable(study_island_closure_a test/study_island_closure_a.f90)
+target_link_libraries(study_island_closure_a PRIVATE kin6d_nn_vacuum_test)
+foreach(case tangent nested)
+    add_test(NAME island_provider_${case}_p2 COMMAND test_island_provider ${case} 2 4)
+    set_tests_properties(island_provider_${case}_p2 PROPERTIES TIMEOUT 900
+        PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 # Landreman family 1 (exact 3D, uniform iota) through the coupled solve.
 add_executable(test_nonnested_landreman test/test_nonnested_landreman.f90)
 target_link_libraries(test_nonnested_landreman PRIVATE kin6d)

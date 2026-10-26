@@ -415,6 +415,53 @@ each ratio before extrapolation. Raising chi_parallel at fixed chi_perp and
 lowering chi_perp at fixed chi_parallel give different source balances and
 must not be conflated. Quote only the path actually computed.
 
+#### Implemented A+D forward provider
+
+[V] `kin6d_island_provider` wraps the NN2 A+D solve for inference consumers
+such as [TIAGO](https://github.com/itpplasma/tiago) (its DESIGN.md
+forward-provider seam). The parameters are theta = [sigma, epsilon, drive,
+chi_par]: sigma scales the declared source S = sigma S_0(R,Z), epsilon scales a
+declared boundary-data direction (the fixed dofs are base + epsilon
+perturbation, for example a resonant coil trace), drive is I_phi or V
+according to the closure drive, and chi_par is the parallel diffusivity at fixed
+chi_perp, g_par and g_perp. `island_provider_solve` warm-starts from the last
+converged state. If Newton fails there, it follows a homotopy from the previous
+theta (chi_par geometric, the others linear, steps halved on failure), and
+without a previous state it uses `nc_continue` from the declared seed. The
+stage count is recorded. `island_provider_sample` returns Cartesian
+[B_x, B_y, B_z, p] at Cartesian points. `island_provider_jvp` and
+`island_provider_vjp` are equation-level: one sparse LU of the reduced
+Newton Jacobian (`nc_tangent_factor`) serves the tangent solve and the
+transposed adjoint solve, and the Newton iteration is never differentiated.
+The residual is affine in sigma, I_phi and chi_par, so their residual
+derivatives are exact affine increments. epsilon and V enter through fixed
+dofs, so their directions are Jacobian columns. Each solve stores
+`island_residual_report`, so the pressure-transport rows and epsilon_parallel
+are reported separately from the D3 force residual.
+`island_provider_provenance` returns a key=value record of the case, closure,
+discretisation, theta, Newton/homotopy history and status.
+
+[V] The map theta -> state is smooth wherever the reduced Jacobian is
+nonsingular, at any finite chi_par/chi_perp, including across epsilon = 0
+where the island appears, because no topology detection enters the residual.
+`island_provider_tangent_p2` checks the JVP against central differences of
+converged solves at epsilon = 0 and 0.5 on the helical-coil annulus, with
+agreement within 2.3e-6 relative, and it checks adjoint pairing within 3e-15.
+`island_provider_nested_p2` checks that the epsilon = 0 state equals the
+axisymmetric N = 0 NN2 solve within 2e-14 relative with no n >= 1 response,
+that the mode-0 deviation is O(epsilon^2) and the n >= 1 response
+O(epsilon) (measured orders 2.000 and 1.000), and that epsilon_parallel
+falls as the ratio rises on the nested field.
+
+[H] The following are not yet provided. The KIN6D revision is not compiled
+into the provenance record, so the consumer must record its binary. Source-profile
+coefficients, chi_perp, conductivities and more than one boundary direction are
+not yet parameters. The provider supports only a fixed boundary, offers no
+NetCDF state export and evaluates no field gradients. Only one provider per
+process can be bound at a time, because the source scale is module state. The
+direct LU does not scale to machine resolution (I3/I4). A singular Jacobian,
+for example at a bifurcation, returns `IP_DERIVATIVE_UNAVAILABLE`.
+
 ### B. Prescribed profiles: frozen fitted sources, then projection
 
 [H] The user supplies a reference label s_ref(x), pressure target f(x) =
