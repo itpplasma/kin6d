@@ -4180,7 +4180,8 @@ contains
         ! a negative eigenvalue, take the exact trust-region step of the
         ! second-order model of E_red (ideal_fb_trust_subproblem; a direction
         ! of negative curvature at the boundary) with the actual-to-predicted
-        ! decrease test rho > 1e-4 and every Jacobian positive. The radius is
+        ! decrease test rho > 1e-4 and every cell Jacobian at least a quarter of
+        ! its smallest value at entry. The radius is
         ! Euclidean in the plasma unknowns, starts at and is capped by radius.
         ! The residual merit of ideal_fb_solve has a nonzero local minimum
         ! exactly where H W g = 0 with g /= 0, which a merit-descent step cannot
@@ -4199,7 +4200,7 @@ contains
         real(dp), allocatable :: val(:), b(:, :), gt(:, :), tau(:), w(:), g(:), g1(:)
         real(dp), allocatable :: y(:, :), cr(:), se(:), du(:)
         real(dp), allocatable :: x0(:, :, :), xs0(:, :, :), phi0(:, :), lam0(:, :, :)
-        real(dp) :: delta, e0, e1, mj, lambda, pred, rho, sn
+        real(dp) :: delta, e0, e1, mj, mj0, lambda, pred, rho, sn
         integer :: nl, nred, st, info, tries
         logical :: talk, hard
         talk = .false.
@@ -4209,7 +4210,7 @@ contains
         delta = radius
         call exact_blocks(fb, status)
         if (status /= IDEAL_FB_OK) return
-        call state_energy(fb, g, e0, mj, status)
+        call state_energy(fb, g, e0, mj0, status)
         if (status /= IDEAL_FB_OK) return
         nc%energy0 = e0
         do
@@ -4251,6 +4252,11 @@ contains
                 rho = -1
                 call exact_blocks(fb, st)
                 if (st == IDEAL_FB_OK) call state_energy(fb, g1, e1, mj, st)
+                ! Jacobian guard: an escape may not shrink the smallest cell
+                ! Jacobian below a quarter of its value at entry, so that it
+                ! cannot park the map at a fold where every later step
+                ! (escape or Newton) is rejected.
+                if (st == IDEAL_FB_OK .and. mj < 0.25_dp*mj0) st = IDEAL_FB_FOLDED
                 if (st == IDEAL_FB_OK .and. pred > 0) rho = (e0 - e1)/pred
                 if (talk) print '(a,i3,a,es10.2,a,es10.2,a,es10.2,a,l2)', &
                     '     trial', tries, ' |s|', sn, ' pred', pred, ' rho', rho, &
