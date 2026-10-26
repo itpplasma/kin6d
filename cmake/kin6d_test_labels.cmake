@@ -658,6 +658,8 @@ kin6d_test_labels(ideal_seed_3d_boundary_profiles fast CLASSES mhd
     TARGETS test_ideal_seed_3d)
 kin6d_test_labels(ideal_seed_3d_nested_input fast CLASSES mhd
     TARGETS test_nested_seed_input)
+kin6d_test_labels(ideal_map_wall_slide_derivatives fast CLASSES mhd
+    TARGETS test_ideal_map_wall_slide)
 if(TARGET gen_ideal_seed_3d)
     kin6d_test_labels(ideal_seed_3d_regeneration fast CLASSES mhd
         TARGETS gen_ideal_seed_3d)

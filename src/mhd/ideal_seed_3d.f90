@@ -6,18 +6,18 @@ module kin6d_ideal_seed_3d
     ! normalized TOROIDAL flux, unlike ideal_seed's poloidal-flux profiles.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, ideal_map_init, &
-        ideal_map_freeze, ideal_map_energy, ideal_map_rdof, IDEAL_MAP_OK, &
-        IDEAL_MAP_BAD_INPUT, IDEAL_MAP_FOLDED
+    use kin6d_ideal_map, only: ideal_map_t, ideal_frozen_t, ideal_wall_t, &
+        ideal_map_init, ideal_map_freeze, ideal_map_energy, ideal_map_wall_slide, &
+        IDEAL_MAP_OK, IDEAL_MAP_BAD_INPUT, IDEAL_MAP_FOLDED
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_triangle_basis, only: TRIANGLE_MAX_DEGREE
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_ideal_seed_3d_leaves, only: seed_complex_product, seed_boundary_mode, &
         seed_horner, seed_toroidal_form, seed_disk_coordinates, seed_disk_boundary, &
-        seed_primitive_coefficient, seed_primitive_finish
+        seed_primitive_coefficient, seed_primitive_finish, seed_wall_mode
     implicit none
     private
-    public :: toroidal_profile_t, toroidal_seed_t, ideal_seed_3d_init
+    public :: toroidal_profile_t, toroidal_seed_t, toroidal_wall_t, ideal_seed_3d_init
     public :: ideal_seed_disk_mesh, ideal_seed_boundary_coefficients
     real(dp), parameter :: pi = acos(-1.0_dp)
     type :: toroidal_profile_t
@@ -25,6 +25,13 @@ module kin6d_ideal_seed_3d
         real(dp), allocatable :: iota(:), pressure(:)
     contains
         procedure :: evaluate => profile_evaluate
+    end type
+    type, extends(ideal_wall_t) :: toroidal_wall_t
+        ! The boundary series (module header convention) as a sliding wall.
+        real(dp), allocatable :: coefficients(:, :, :)
+        integer :: nfp = 1
+    contains
+        procedure :: evaluate => wall_evaluate
     end type
     type, extends(ideal_frozen_t) :: toroidal_seed_t
         type(toroidal_profile_t) :: profile
@@ -65,6 +72,29 @@ contains
         call field%profile%evaluate(1.0_dp, qi, pi_unused, edge)
         call seed_toroidal_form(u, v, field%flux, pi, integral, edge, iota, p, &
             chi, chi_gradient(1), chi_gradient(2), b3, pressure)
+    end subroutine
+
+    subroutine wall_evaluate(wall, theta, phi, x, xu, xuu)
+        ! Mode sums are orchestration; each term and its theta-derivatives are
+        ! the generated seed_wall_mode leaf.
+        class(toroidal_wall_t), intent(in) :: wall
+        real(dp), intent(in) :: theta, phi
+        real(dp), intent(out) :: x(2), xu(2), xuu(2)
+        real(dp) :: t(6)
+        integer :: m, n, ntor
+        ntor = (size(wall%coefficients, 2) - 1)/2
+        x = 0; xu = 0; xuu = 0
+        do m = 0, ubound(wall%coefficients, 3)
+            do n = -ntor, ntor
+                call seed_wall_mode(theta, phi, real(m, dp), real(n, dp), &
+                    real(wall%nfp, dp), wall%coefficients(1, n + ntor + 1, m), &
+                    wall%coefficients(2, n + ntor + 1, m), &
+                    wall%coefficients(3, n + ntor + 1, m), &
+                    wall%coefficients(4, n + ntor + 1, m), &
+                    t(1), t(2), t(3), t(4), t(5), t(6))
+                x = x + t([1, 4]); xu = xu + t([2, 5]); xuu = xuu + t([3, 6])
+            end do
+        end do
     end subroutine
 
     subroutine ideal_seed_disk_mesh(mesh, boundary_nodes, degree, status)
@@ -126,7 +156,7 @@ contains
     end subroutine
 
     subroutine ideal_seed_3d_init(map, seed, mesh, coefficients, nfp, flux, &
-            profile, status, nphi)
+            profile, status, nphi, sliding_wall)
         type(ideal_map_t), intent(out) :: map
         type(toroidal_seed_t), intent(out) :: seed
         type(gs_state_t), intent(in) :: mesh
@@ -135,9 +165,20 @@ contains
         type(toroidal_profile_t), intent(in) :: profile
         integer, intent(out) :: status
         integer, intent(in), optional :: nphi
+        ! Default (pinned): every wall node is held at its input angle, which
+        ! is exact only when that angle is the straight-field-line angle of
+        ! the target. sliding_wall = .true.: the wall is a shape and its nodes
+        ! slide along it (ideal_map_wall_slide). Experimental: the P_k
+        ! boundary edges between sliding nodes are not the wall, and the
+        ! minimiser enlarges the enclosed area through them (docs/ideal-seed-3d.md).
+        logical, intent(in), optional :: sliding_wall
         type(cylindrical_chart_t) :: chart
+        type(toroidal_wall_t) :: wall
         real(dp) :: iota, pressure, integral, previous, energy, minimum_radius
-        integer :: a, m, j, ntor, angles
+        real(dp) :: u, v, s
+        real(dp), allocatable :: angle(:)
+        integer :: a, j, ntor, angles
+        logical :: sliding
         status = IDEAL_MAP_BAD_INPUT
         if (nfp < 1 .or. .not. flux > 0) return
         if (.not. ieee_is_finite(flux)) return
@@ -173,7 +214,7 @@ contains
         call ideal_map_freeze(map, seed, status)
         if (status /= IDEAL_MAP_OK) return
         minimum_radius=huge(1.0_dp)
-        !$omp parallel do schedule(static) private(a,m,j) reduction(min:minimum_radius)
+        !$omp parallel do schedule(static) private(a,j) reduction(min:minimum_radius)
         do a = 1, map%nodes
             call ideal_seed_boundary_coefficients(map%reference(:, a), &
                 coefficients, map%x(:, :, a))
@@ -181,17 +222,28 @@ contains
                 minimum_radius=min(minimum_radius, &
                     dot_product(map%x(1,:,a),map%trig(:,j)))
             end do
-            if (.not. map%boundary(a)) cycle
-            ! A nonaxisymmetric fixed wall is parametrized by phi-hat. A
-            ! boundary omega would move its points off that prescribed wall.
-            do m = 1, map%nmode
-                map%fixed(ideal_map_rdof(map, 2, m, a)) = .true.
-            end do
         end do
         !$omp end parallel do
         if (.not. minimum_radius>0) then
             status=IDEAL_MAP_BAD_INPUT
             return
+        end if
+        ! The position gauge holds both (q1, q2) dofs of every wall node and
+        ! there is no omega dof. The frozen field has straight field lines in
+        ! the reference angle, so the pinned wall is exact only for a boundary
+        ! given in the straight-field-line angle.
+        sliding = .false.
+        if (present(sliding_wall)) sliding = sliding_wall
+        if (sliding) then
+            wall%coefficients = coefficients; wall%nfp = nfp
+            allocate (angle(map%nodes))
+            do a = 1, map%nodes
+                call seed_disk_coordinates(map%reference(1, a), map%reference(2, a), &
+                    u, v, s)
+                angle(a) = atan2(v, u)
+            end do
+            call ideal_map_wall_slide(map, wall, angle, status)
+            if (status /= IDEAL_MAP_OK) return
         end if
         ! Sampled positive-Jacobian admission, not a whole-cell certificate.
         call ideal_map_energy(map, map%x, energy, status)

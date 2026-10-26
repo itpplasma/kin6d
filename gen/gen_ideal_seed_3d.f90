@@ -80,7 +80,26 @@ program gen_ideal_seed_3d
     if(proof%verdict/=VERDICT_TRUE) error stop 'position-gauge poloidal form unproved'
     proof=engine%zero_test(a*iota+1+b-value)
     if(proof%verdict/=VERDICT_TRUE) error stop 'position-gauge toroidal form unproved'
+    ! Sliding wall: one (m, n) term of the prescribed boundary series and its
+    ! first two derivatives in the poloidal angle theta. A wall node at angle
+    ! theta + g(phi) moves along the surface; the theta-derivative is its
+    ! tangent (first variation) and the second one the curvature term of the
+    ! reduced Hessian.
+    a = sym(arena, 'theta'); b = sym(arena, 'phi')
+    s = sym(arena, 'm'); c = sym(arena, 'n'); value = sym(arena, 'nfp')
+    chi = s*a - c*value*b
+    gu = rc*cos(chi) + rs*sin(chi); gv = zc*cos(chi) + zs*sin(chi)
+    call w%emit('seed_wall_mode', &
+        [character(5) :: 'theta', 'phi', 'm', 'n', 'nfp', 'rc', 'rs', 'zc', 'zs'], &
+        [character(3) :: 'r', 'ru', 'ruu', 'z', 'zu', 'zuu'], &
+        [gu, diff(gu, a), diff(diff(gu, a), a), gv, diff(gv, a), &
+         diff(diff(gv, a), a)], ad=.true.)
+    proof = engine%zero_test(diff(diff(gu, a), a) + s**2*gu)
+    if (proof%verdict /= VERDICT_TRUE) error stop 'wall mode curvature unproved'
+    proof = engine%zero_test(diff(gv, a) - s*(zs*cos(chi) - zc*sin(chi)))
+    if (proof%verdict /= VERDICT_TRUE) error stop 'wall mode tangent unproved'
     call w%line('end module kin6d_ideal_seed_3d_leaves')
     call w%close()
-    print '(a)', '[V] FortSym closed disk flux, iota and conditional position-gauge identities proved'
+    print '(a)', '[V] FortSym closed disk flux, iota, conditional position-gauge' &
+        //' and wall-mode identities proved'
 end program

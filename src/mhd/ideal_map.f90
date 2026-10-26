@@ -70,6 +70,7 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
     public :: ideal_map_gauge_project
+    public :: ideal_wall_t, ideal_map_wall_slide, ideal_map_wall_set
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
@@ -90,6 +91,22 @@ module kin6d_ideal_map
             class(ideal_frozen_t), intent(in) :: field
             real(dp), intent(in) :: point(2)
             real(dp), intent(out) :: chi, chi_gradient(2), b3, pressure
+        end subroutine
+    end interface
+
+    ! Prescribed fixed-boundary surface in the chart coordinates (q1, q2) at
+    ! the physical toroidal angle phi, parametrised by a poloidal angle theta:
+    ! position x, tangent xu = dx/dtheta and xuu = d2x/dtheta2.
+    type, abstract :: ideal_wall_t
+    contains
+        procedure(wall_evaluate), deferred :: evaluate
+    end type
+    abstract interface
+        subroutine wall_evaluate(wall, theta, phi, x, xu, xuu)
+            import :: ideal_wall_t, dp
+            class(ideal_wall_t), intent(in) :: wall
+            real(dp), intent(in) :: theta, phi
+            real(dp), intent(out) :: x(2), xu(2), xuu(2)
         end subroutine
     end interface
 
@@ -189,6 +206,20 @@ module kin6d_ideal_map
         real(dp), allocatable :: b(:, :, :), p(:, :), det(:, :)
         ! Coefficients x(3, mode, node): q1, q2 and omega.
         real(dp), allocatable :: x(:, :, :)
+        ! Sliding fixed boundary (ideal_map_wall_slide, position gauge only).
+        ! Wall node k = wall_index(node) sits at the wall angle
+        ! theta_k + g_k(phi-hat), g_k = sum_m wall_g(m, k) T_m(phi-hat): only
+        ! the normal displacement is constrained, so the wall need not be given
+        ! in the straight-field-line angle of the frozen field. Its (q1, q2)
+        ! coefficients are the discrete Fourier projection wall_proj(m, j) of
+        ! the plane positions; reduced dof 1 of every mode carries g, dof 2 is
+        ! held. wall_jac(c, m, m', k) = d x(c, m) / d g(m') and
+        ! wall_xuu(c, j, k) = d2 x_c / dtheta2 on plane j at wall_g.
+        class(ideal_wall_t), allocatable :: wall
+        integer :: nwall = 0, wall_pin = 0
+        integer, allocatable :: wall_index(:), wall_node(:)
+        real(dp), allocatable :: wall_angle(:), wall_g(:, :), wall_proj(:, :)
+        real(dp), allocatable :: wall_jac(:, :, :, :), wall_xuu(:, :, :)
     end type
 
     type :: factor_cache_t
@@ -261,11 +292,14 @@ contains
         dof = 2*map%nmode*map%nodes + i + 2*(j - 1) + 2*map%npoly*(mode - 1)
     end function
 
-    subroutine ideal_map_reduce(map, g, gr)
-        ! Coefficient gradient (or any dual vector) to the reduced dofs.
+    subroutine ideal_map_reduce(map, g, gr, wall_jac)
+        ! Coefficient gradient (or any dual vector) to the reduced dofs. A
+        ! sliding wall uses map%wall_jac, or wall_jac (that of another wall
+        ! state, e.g. a trial point) when present.
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: g(:)
         real(dp), intent(out) :: gr(:)
+        real(dp), intent(in), optional :: wall_jac(:, :, :, :)
         integer :: a, m, k, j, l
         do a = 1, map%nodes
             do m = 1, map%nmode
@@ -276,6 +310,13 @@ contains
                     g(k:k + 2))
             end do
         end do
+        if (map%nwall > 0) then
+            if (present(wall_jac)) then
+                call wall_reduce(map, wall_jac, g, gr)
+            else
+                call wall_reduce(map, map%wall_jac, g, gr)
+            end if
+        end if
         do m = 1, map%nmode
             do j = 1, map%npoly
                 do k = 1, 2
@@ -301,16 +342,27 @@ contains
     end subroutine
 
     subroutine ideal_map_expand(map, vr, v)
-        ! Reduced increment to coefficient increment.
+        ! Reduced increment to coefficient increment (for a sliding wall the
+        ! linearisation dx = wall_jac dg; the solve places trial walls exactly).
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: vr(:)
         real(dp), intent(out) :: v(:)
-        integer :: a, m, k, j
+        integer :: a, m, k, j, w, mm
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
                 v(k:k + 2) = vr(ideal_map_rdof(map, 1, m, a))*map%basis(:, 1, a) &
                     + vr(ideal_map_rdof(map, 2, m, a))*map%basis(:, 2, a)
+                if (map%nwall > 0) then
+                    w = map%wall_index(a)
+                    if (w > 0) then
+                        v(k:k + 2) = vr(ideal_map_rdof(map, 2, m, a))*map%basis(:, 2, a)
+                        do mm = 1, map%nmode
+                            v(k:k + 1) = v(k:k + 1) + map%wall_jac(:, m, mm, w) &
+                                *vr(ideal_map_rdof(map, 1, mm, a))
+                        end do
+                    end if
+                end if
                 if (allocated(map%axis_vec)) then
                     do j = 1, 2*map%npoly
                         v(k:k + 1) = v(k:k + 1) + map%axis_vec(:, j, a) &
@@ -771,6 +823,180 @@ contains
         map%omega_gauge = 0
     end subroutine
 
+    subroutine ideal_map_wall_slide(map, wall, angle, status)
+        ! Fixed boundary as a shape: every wall node keeps only its normal
+        ! displacement fixed and slides along the prescribed surface,
+        !     X_a(phi) = wall(angle(a) + g_a(phi), phi),
+        ! with g_a a Fourier series in phi-hat on the map's modes. Requires the
+        ! position gauge (set by ideal_map_freeze), whose held boundary dofs
+        ! are released here: reduced dof 1 carries g, dof 2 stays held.
+        ! Gauge: the frozen field of a reference disk (b3 uniform, chi radial)
+        ! is invariant under a rigid rotation of the reference angle, so a
+        ! constant g on all wall nodes, continued into the interior, is a
+        ! continuum null (discretely near-null). Any phi-dependent or
+        ! non-uniform g changes the field-line pitch or the toroidal-flux
+        ! distribution and is physical. The null is removed by holding the
+        ! n = 0 (mean) value of g at one wall node, the one closest to angle
+        ! 0, where stellarator-symmetric equilibria have g = 0. The boundary
+        ! coefficients of map%x are replaced by the wall placement at g = 0.
+        type(ideal_map_t), intent(inout) :: map
+        class(ideal_wall_t), intent(in) :: wall
+        real(dp), intent(in) :: angle(:)
+        integer, intent(out) :: status
+        real(dp) :: best, wrapped
+        integer :: a, k, m, j
+        status = IDEAL_MAP_BAD_INPUT
+        if (.not. map%position_gauge .or. .not. allocated(map%fixed)) return
+        if (size(angle) /= map%nodes) return
+        if (.not. all(ieee_is_finite(pack(angle, map%boundary)))) return
+        map%nwall = count(map%boundary)
+        if (map%nwall == 0) return
+        if (allocated(map%wall)) then
+            deallocate (map%wall, map%wall_index, map%wall_node, map%wall_angle, &
+                map%wall_g, map%wall_proj, map%wall_jac, map%wall_xuu)
+        end if
+        allocate (map%wall, source=wall)
+        allocate (map%wall_index(map%nodes), map%wall_node(map%nwall), &
+            map%wall_angle(map%nwall), map%wall_g(map%nmode, map%nwall), &
+            map%wall_proj(map%nmode, map%nphi), &
+            map%wall_jac(2, map%nmode, map%nmode, map%nwall), &
+            map%wall_xuu(2, map%nphi, map%nwall))
+        map%wall_index = 0
+        k = 0
+        best = huge(1.0_dp)
+        do a = 1, map%nodes
+            if (.not. map%boundary(a)) cycle
+            k = k + 1
+            map%wall_index(a) = k
+            map%wall_node(k) = a
+            map%wall_angle(k) = angle(a)
+            wrapped = abs(atan2(sin(angle(a)), cos(angle(a))))
+            if (wrapped < best) then
+                best = wrapped; map%wall_pin = k
+            end if
+            do m = 1, map%nmode
+                map%fixed(ideal_map_rdof(map, 1, m, a)) = .false.
+                map%fixed(ideal_map_rdof(map, 2, m, a)) = .true.
+            end do
+        end do
+        map%fixed(ideal_map_rdof(map, 1, 1, map%wall_node(map%wall_pin))) = .true.
+        ! Discrete least-squares projection on the equispaced planes; exact
+        ! for |n| <= ntor since nphi >= 2 ntor + 1.
+        do m = 1, map%nmode
+            do j = 1, map%nphi
+                map%wall_proj(m, j) = map%trig(m, j)/sum(map%trig(m, :)**2)
+            end do
+        end do
+        map%wall_g = 0
+        call wall_place(map, map%wall_g, map%x, map%wall_jac, map%wall_xuu)
+        status = IDEAL_MAP_OK
+    end subroutine
+
+    subroutine ideal_map_wall_set(map, g)
+        ! Wall angles g(mode, wall node) as the state of a sliding wall: the
+        ! boundary coefficients of map%x and the wall derivatives follow.
+        type(ideal_map_t), intent(inout) :: map
+        real(dp), intent(in) :: g(:, :)
+        map%wall_g = g
+        call wall_place(map, map%wall_g, map%x, map%wall_jac, map%wall_xuu)
+    end subroutine
+
+    subroutine wall_place(map, g, x, jac, xuu)
+        ! Boundary coefficients of x for the wall angles g(mode, wall node),
+        ! and optionally d x / d g and the plane curvatures at g.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: g(:, :)
+        real(dp), intent(inout) :: x(:, :, :)
+        real(dp), intent(out), optional :: jac(:, :, :, :), xuu(:, :, :)
+        real(dp) :: point(2, map%nphi), tangent(2, map%nphi), curvature(2, map%nphi)
+        real(dp) :: theta
+        integer :: k, a, j, m, mm
+        !$omp parallel do default(shared) private(k, a, j, m, mm, theta, point, &
+        !$omp tangent, curvature) schedule(static)
+        do k = 1, map%nwall
+            a = map%wall_node(k)
+            do j = 1, map%nphi
+                theta = map%wall_angle(k) + dot_product(g(:, k), map%trig(:, j))
+                call map%wall%evaluate(theta, map%phi(j), point(:, j), &
+                    tangent(:, j), curvature(:, j))
+            end do
+            do m = 1, map%nmode
+                x(1:2, m, a) = matmul(point, map%wall_proj(m, :))
+                x(3, m, a) = 0
+            end do
+            if (present(jac)) then
+                do mm = 1, map%nmode
+                    do m = 1, map%nmode
+                        jac(:, m, mm, k) = matmul(tangent, &
+                            map%wall_proj(m, :)*map%trig(mm, :))
+                    end do
+                end do
+            end if
+            if (present(xuu)) xuu(:, :, k) = curvature
+        end do
+        !$omp end parallel do
+    end subroutine
+
+    subroutine wall_reduce(map, jac, g, gr)
+        ! Reduced gradient of the wall angles: gr(g(m')) = sum dW/dx . dx/dg(m').
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: jac(:, :, :, :), g(:)
+        real(dp), intent(inout) :: gr(:)
+        integer :: k, a, m, mm, l
+        real(dp) :: t
+        do k = 1, map%nwall
+            a = map%wall_node(k)
+            do mm = 1, map%nmode
+                t = 0
+                do m = 1, map%nmode
+                    l = ideal_map_dof(map, 1, m, a)
+                    t = t + jac(1, m, mm, k)*g(l) + jac(2, m, mm, k)*g(l + 1)
+                end do
+                gr(ideal_map_rdof(map, 1, mm, a)) = t
+            end do
+        end do
+    end subroutine
+
+    subroutine wall_curvature(map, gradient, matrix)
+        ! Second-order term of the wall placement in the reduced Hessian,
+        !     H(g(m'), g(m'')) += sum_j sum_c G_c(j) x_c,theta theta(j)
+        !                         T_m'(j) T_m''(j),
+        ! with G_c(j) = sum_m dW/dx(c, m) wall_proj(m, j) the coefficient
+        ! gradient pulled back to plane j. Node-diagonal, so within the pattern.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: gradient(:)
+        type(csr_matrix_t), intent(inout) :: matrix
+        real(dp) :: plane(map%nphi)
+        integer :: k, a, j, m, mm, row, col, p, l
+        !$omp parallel do default(shared) private(k, a, j, m, mm, row, col, p, l, &
+        !$omp plane) schedule(static)
+        do k = 1, map%nwall
+            a = map%wall_node(k)
+            do j = 1, map%nphi
+                plane(j) = 0
+                do m = 1, map%nmode
+                    l = ideal_map_dof(map, 1, m, a)
+                    plane(j) = plane(j) + map%wall_proj(m, j) &
+                        *(gradient(l)*map%wall_xuu(1, j, k) &
+                        + gradient(l + 1)*map%wall_xuu(2, j, k))
+                end do
+            end do
+            do mm = 1, map%nmode
+                row = ideal_map_rdof(map, 1, mm, a)
+                do m = 1, map%nmode
+                    col = ideal_map_rdof(map, 1, m, a)
+                    do p = matrix%rowptr(row), matrix%rowptr(row + 1) - 1
+                        if (matrix%colidx(p) /= col) cycle
+                        matrix%val(p) = matrix%val(p) &
+                            + sum(plane*map%trig(mm, :)*map%trig(m, :))
+                        exit
+                    end do
+                end do
+            end do
+        end do
+        !$omp end parallel do
+    end subroutine
+
     subroutine axis_expansion(map, position)
         ! axis_basis(j, a) = T_a P_j((y_a - y_axis)/radius) on node positions.
         type(ideal_map_t), intent(inout) :: map
@@ -796,7 +1022,9 @@ contains
         ! Grid sequencing (VMEC's ns ladder): initialise the coefficients of a
         ! map on a finer reference mesh of the same domain and labels from a
         ! solved coarse map, evaluated at the fine reference nodes. Boundary
-        ! nodes keep their reference position (held dofs). Re-gauging the
+        ! nodes keep their reference position (held dofs); on a sliding wall
+        ! (ideal_map_wall_slide on both maps) they take the interpolated
+        ! wall angles and are placed on the wall. Re-gauging the
         ! transversals to the coarse surfaces (cell-averaged F) was tried and
         ! did not change the observed order.
         type(ideal_map_t), intent(inout) :: fine
@@ -804,7 +1032,7 @@ contains
         integer, intent(out) :: status
         real(dp) :: xi(2), shape(TRIANGLE_MAX_NODES), y(2)
         real(dp) :: grad(2, TRIANGLE_MAX_NODES)
-        integer :: a, e, k, owner, located, j
+        integer :: a, e, k, owner, located, j, w
         status = IDEAL_MAP_BAD_INPUT
         if (fine%nmode /= coarse%nmode .or. fine%nfp /= coarse%nfp) return
         owner = 1
@@ -829,12 +1057,30 @@ contains
                 fine%x(:, k, a) = matmul(coarse%x(:, k, coarse%conn(:, located)), &
                     shape(:coarse%nloc))
             end do
+            if (fine%nwall == 0 .or. coarse%nwall == 0) cycle
+            if (fine%wall_index(a) == 0) cycle
+            ! Wall angles from the coarse ones (the trace on a boundary edge
+            ! involves only its wall nodes); the held mean angle is kept.
+            w = fine%wall_index(a)
+            do k = 1, fine%nmode
+                if (w == fine%wall_pin .and. k == 1) cycle
+                fine%wall_g(k, w) = 0
+                do j = 1, coarse%nloc
+                    if (coarse%wall_index(coarse%conn(j, located)) == 0) cycle
+                    fine%wall_g(k, w) = fine%wall_g(k, w) + shape(j) &
+                        *coarse%wall_g(k, coarse%wall_index(coarse%conn(j, located)))
+                end do
+            end do
         end do
-        do a = 1, fine%nodes
-            if (.not. fine%boundary(a)) cycle
-            fine%x(1:2, 1, a) = fine%reference(:, a)
-            fine%x(1:2, 2:, a) = 0
-        end do
+        if (fine%nwall > 0) then
+            call wall_place(fine, fine%wall_g, fine%x, fine%wall_jac, fine%wall_xuu)
+        else
+            do a = 1, fine%nodes
+                if (.not. fine%boundary(a)) cycle
+                fine%x(1:2, 1, a) = fine%reference(:, a)
+                fine%x(1:2, 2:, a) = 0
+            end do
+        end if
         fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
         status = IDEAL_MAP_OK
     end subroutine
@@ -1090,7 +1336,7 @@ contains
         end subroutine
     end subroutine
 
-    subroutine ideal_map_hessian(map, x, matrix)
+    subroutine ideal_map_hessian(map, x, matrix, gradient)
         ! Assembled coefficient Hessian (all Fourier modes coupled) as CSR. The
         ! sparsity pattern of a matrix already built for this map is reused, with
         ! the element-to-CSR position map cached so that the assembly does one
@@ -1106,9 +1352,14 @@ contains
         ! products pphi. The space stage merges r = 0 and 3 (both carry N) into
         ! s = 1, 2, 3 and runs two DGEMM families. The stage workspaces hold one
         ! batch of cells and are shared by the team (see the batch loop).
+        ! With a sliding wall the reduced Hessian also carries the curvature
+        ! of the wall placement (wall_curvature), which needs the coefficient
+        ! gradient at x (computed here when gradient is absent); x must then
+        ! be the wall state map%wall_g, i.e. map%x.
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: x(:, :, :)
         type(csr_matrix_t), intent(inout) :: matrix
+        real(dp), intent(in), optional :: gradient(:)
         interface
             subroutine dgemm(ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
                 import :: dp
@@ -1324,6 +1575,20 @@ contains
                 with_slots=.true.)
         ! The blocks are exactly symmetric (reflected above).
         call csr_assemble_blocks(matrix, map%redconn, blocks, symmetric=.true.)
+        if (map%nwall > 0) then
+            if (present(gradient)) then
+                call wall_curvature(map, gradient, matrix)
+            else
+                block
+                    real(dp), allocatable :: g(:)
+                    real(dp) :: energy
+                    integer :: estatus
+                    allocate (g(map%ndof))
+                    call ideal_map_energy(map, x, energy, estatus, g)
+                    call wall_curvature(map, g, matrix)
+                end block
+            end if
+        end if
     end subroutine
 
     subroutine hessian_merge_pairs(nmode, nq, ka, kb, kc, ks)
@@ -1428,7 +1693,7 @@ contains
         real(dp), intent(in) :: full(:, :)
         real(dp), intent(inout) :: half(:, :)
         real(dp) :: b1(3), b2(3), av(2), t
-        integer :: i, l, a, node, m, jp, c, r, nlm, nl, nmode, nloc, q
+        integer :: i, l, a, node, m, jp, c, r, nlm, nl, nmode, nloc, q, w
         logical :: nested
         nmode = map%nmode; nloc = map%nloc
         nlm = nloc*nmode
@@ -1444,6 +1709,21 @@ contains
                     + b1(3)*full(i, 3*l)
                 half(i, 2*l) = b2(1)*full(i, 3*l - 2) + b2(2)*full(i, 3*l - 1) &
                     + b2(3)*full(i, 3*l)
+            end do
+            if (map%nwall == 0) return
+            w = map%wall_index(node)
+            if (w == 0) return
+            ! Sliding wall node: the g column couples all modes of the node.
+            q = l - mod(l - 1, nmode)
+            m = 1 + mod(l - 1, nmode)
+            half(:, 2*l - 1) = 0
+            do jp = 1, nmode
+                av = map%wall_jac(:, jp, m, w)
+                r = q + jp - 1
+                do i = 1, nl
+                    half(i, 2*l - 1) = half(i, 2*l - 1) + av(1)*full(i, 3*r - 2) &
+                        + av(2)*full(i, 3*r - 1)
+                end do
             end do
             return
         end if
@@ -1481,7 +1761,7 @@ contains
         real(dp), intent(in) :: half(:, :)
         real(dp), intent(inout) :: blk(:, :)
         real(dp) :: b1(3), b2(3), av(2), s
-        integer :: i, l, a, node, m, jp, r, nlm, nmode, nloc
+        integer :: i, l, a, node, m, jp, r, nlm, nmode, nloc, w
         logical :: nested
         nmode = map%nmode; nloc = map%nloc
         nlm = nloc*nmode
@@ -1494,6 +1774,18 @@ contains
                 + b1(3)*half(3*l, c)
             blk(2*l, c) = b2(1)*half(3*l - 2, c) + b2(2)*half(3*l - 1, c) &
                 + b2(3)*half(3*l, c)
+            if (map%nwall == 0) cycle
+            w = map%wall_index(node)
+            if (w == 0) cycle
+            ! Sliding wall node: row g(m) of the node couples all its modes.
+            m = 1 + mod(l - 1, nmode)
+            s = 0
+            do jp = 1, nmode
+                av = map%wall_jac(:, jp, m, w)
+                r = l - m + jp
+                s = s + av(1)*half(3*r - 2, c) + av(2)*half(3*r - 1, c)
+            end do
+            blk(2*l - 1, c) = s
         end do
         do m = 1, nmode
             do jp = 1, map%npoly
@@ -1554,6 +1846,7 @@ contains
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
         real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
+        real(dp), allocatable :: wall_g(:, :), wall_jac(:, :, :, :)
         logical, allocatable :: omask(:), damped(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
         real(dp) :: cap_x, cap_w, t0, trial_minjac
@@ -1570,6 +1863,13 @@ contains
             diag(map%nred), rhs(map%nred), shift(map%nred))
         call omega_mask(map, nested, omask)
         damped = .not. (map%fixed .or. omask)
+        if (map%nwall > 0) then
+            if (nested) then
+                status = IDEAL_MAP_BAD_INPUT; return
+            end if
+            allocate (wall_g, mold=map%wall_g)
+            allocate (wall_jac, mold=map%wall_jac)
+        end if
         t0 = wall_seconds()
         call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
         report%energy_s = report%energy_s + wall_seconds() - t0
@@ -1606,7 +1906,11 @@ contains
             end if
             report%iterations = it
             t0 = wall_seconds()
-            call ideal_map_hessian(map, map%x, matrix)
+            if (nested) then
+                call ideal_map_hessian(map, map%x, matrix)
+            else
+                call ideal_map_hessian(map, map%x, matrix, grad)
+            end if
             report%hessian_s = report%hessian_s + wall_seconds() - t0
             !$omp parallel do default(shared) private(i, k) schedule(static)
             do i = 1, map%nred
@@ -1666,6 +1970,16 @@ contains
                 call trust_region()
                 full = alpha*full; step = alpha*step
                 trial = map%x + reshape(full, shape(map%x))
+                if (map%nwall > 0) then
+                    ! Exact placement on the wall at the stepped angles.
+                    do k = 1, map%nwall
+                        do i = 1, map%nmode
+                            wall_g(i, k) = map%wall_g(i, k) &
+                                + step(ideal_map_rdof(map, 1, i, map%wall_node(k)))
+                        end do
+                    end do
+                    call wall_place(map, wall_g, trial, wall_jac)
+                end if
                 t0 = wall_seconds()
                 call ideal_map_energy(map, trial, trial_energy, estatus)
                 report%energy_s = report%energy_s + wall_seconds() - t0
@@ -1681,7 +1995,11 @@ contains
                 if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
                     + 1024*epsilon(1.0_dp)*abs(energy)) then
                     call ideal_map_energy(map, trial, trial_energy, estatus, grad)
-                    call ideal_map_reduce(map, grad, rhs)
+                    if (map%nwall > 0) then
+                        call ideal_map_reduce(map, grad, rhs, wall_jac)
+                    else
+                        call ideal_map_reduce(map, grad, rhs)
+                    end if
                     where (map%fixed) rhs = 0
                     if (dot_product(gred + rhs, step) <= 0) then
                         accepted = .true.; exit
@@ -1693,6 +2011,10 @@ contains
             if (.not. accepted) exit
             report%step = maxval(abs(trial - map%x))
             map%x = trial
+            if (map%nwall > 0 .and. .not. nested) then
+                map%wall_g = wall_g
+                call wall_place(map, map%wall_g, map%x, map%wall_jac, map%wall_xuu)
+            end if
             if (nested) then
                 energy = trial_energy; gred = rhs; minjac = trial_minjac
             else
