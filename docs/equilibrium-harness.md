@@ -30,6 +30,16 @@ action, as the free-boundary KKT systems do. A nonpositive Cholesky pivot is not
 raising the damping before the energy line search changes the nonlinear path
 and can change the attained oracle error at the requested gradient tolerance.
 No inertia is consumed by this map driver.
+With `krylov_step` (default off), a non-nested Newton trial is first solved by
+FortNum CG on the damped masked Hessian, preconditioned with the retained SPD
+Cholesky factor of an earlier damped Hessian, to the Eisenstat-Walker relative
+residual min(1/2, (|g|/|g0|)^1/2) within `krylov_max` (10) iterations. More
+than `krylov_refactor` (8) iterations, a CG breakdown (nonpositive curvature or
+preconditioner) or no convergence refactors the current damped Hessian and
+solves directly. Rejected trials reuse the factor. In this mode the factor is
+the SPD Cholesky, with a pivoted LU for the trial only when a pivot is
+nonpositive. The report counts `trials`, `krylov_solves`,
+`krylov_iterations` and `lu_fallbacks`.
 `verify_factor` of the map checks every factorisation and the cached input.
 The factor follows the caller's OpenMP budget by default (`factor_threads = 0`);
 a positive `factor_threads` still supplies an explicit cap.
