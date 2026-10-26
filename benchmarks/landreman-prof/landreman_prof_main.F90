@@ -57,6 +57,15 @@ program landreman_prof
     print '(a,i0)', 'newton_iterations=', driver%solve%iterations
     print '(a,i0)', 'factorizations=', driver%solve%factorizations
     print '(a,i0)', 'analyses=', driver%solve%analyses
+    print '(a,i0)', 'lu_fallbacks=', driver%solve%lu_fallbacks
+    print '(a,i0)', 'indefinite_trials=', driver%solve%indefinite_trials
+    print '(a,i0)', 'hessians=', driver%solve%hessians
+    print '(a,i0)', 'quasi_steps=', driver%solve%quasi_steps
+#ifdef KIN6D_PROF_LUFB
+    print '(a,i0)', 'lu_fallbacks=', driver%solve%lu_fallbacks
+    print '(a,i0)', 'hessians=', driver%solve%hessians
+    print '(a,i0)', 'quasi_steps=', driver%solve%quasi_steps
+#endif
 #ifdef KIN6D_PROF_KRYLOV
     print '(a,3(1x,i0))', 'trials_ksolves_kits=', driver%solve%trials, &
         driver%solve%krylov_solves, driver%solve%krylov_iterations

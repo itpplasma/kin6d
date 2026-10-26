@@ -5,7 +5,7 @@ module kin6d_equilibrium_3d_driver
         equilibrium_start_t, equilibrium_run_report_t, D8_OK, D8_BAD_INPUT, D8_BAD_REPORT
     use kin6d_equilibrium_state, only: equilibrium_state_t
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_solve, ideal_map_solve_report_t, &
-        ideal_map_energy, ideal_map_reduce
+        ideal_map_energy, ideal_map_reduce, ideal_map_prolong_correction
     use kin6d_ideal_seed_3d, only: toroidal_profile_t, toroidal_seed_t, &
         ideal_seed_3d_init, ideal_seed_disk_mesh
     use kin6d_map_3d_equilibrium, only: map_3d_equilibrium, map_3d_sample
@@ -110,6 +110,8 @@ contains
         integer :: status, solve_status
         real(dp), allocatable :: gradient(:), reduced(:)
         real(dp) :: energy, pf2_clock, pf2_solve
+        logical :: verbose_solve
+        real(dp) :: gseed
         report%status = D8_BAD_INPUT
         if (spec%lane /= 'map' .or. start%name /= 'legacy') return
         select type (state)
@@ -144,9 +146,38 @@ contains
             report%status = D8_BAD_REPORT
             print *, "pf2_seed_metrics_s=", omp_get_wtime()-pf2_clock
             prof_x_seed = state%map%x
+            block
+                character(8) :: kflag
+                call get_environment_variable('KIN6D_PROF_KSTEP', kflag)
+                state%map%krylov_step = kflag == '1'
+                call get_environment_variable('KIN6D_PROF_VERBOSE', kflag)
+                verbose_solve = kflag == '1'
+                call get_environment_variable('KIN6D_PROF_LAGGED', kflag)
+                state%map%lagged_hessian = kflag == '1'
+                call get_environment_variable('KIN6D_PROF_LAGGED_THETA', kflag)
+                if (len_trim(kflag) > 0) read (kflag, *) state%map%lagged_contraction
+                call get_environment_variable('KIN6D_PROF_LAGGED_MU', kflag)
+                if (len_trim(kflag) > 0) read (kflag, *) state%map%lagged_damping
+                call get_environment_variable('KIN6D_PROF_LAGGED_MEM', kflag)
+                if (len_trim(kflag) > 0) read (kflag, *) state%map%lagged_memory
+                ! Measurement only: KIN6D_PROF_FTHREADS sets map%factor_threads.
+                call get_environment_variable('KIN6D_PROF_FTHREADS', kflag)
+                if (len_trim(kflag) > 0) read (kflag, *) state%map%factor_threads
+                ! Measurement only: KIN6D_PROF_FPOLICY sets map%factor_policy.
+                call get_environment_variable('KIN6D_PROF_FPOLICY', kflag)
+                if (len_trim(kflag) > 0) read (kflag, *) state%map%factor_policy
+            end block
             pf2_clock = omp_get_wtime()
+            allocate(gradient(state%map%ndof),reduced(state%map%nred))
+            call ideal_map_energy(state%map,state%map%x,energy,status,gradient)
+            if (status /= 0) return
+            call ideal_map_reduce(state%map,gradient,reduced)
+            where(state%map%fixed) reduced=0
+            gseed = norm2(reduced)
+            call continuation(state,resolution,status)
+            if (status /= 0) return
             call ideal_map_solve(state%map,state%tolerance,state%max_iterations, &
-                state%solve,status)
+                state%solve,status,verbose=verbose_solve,reference_gradient=gseed)
             pf2_solve = omp_get_wtime()-pf2_clock
             print *, "pf2_solver_wall_s=", pf2_solve
             pf2_clock = omp_get_wtime()
@@ -155,13 +186,12 @@ contains
             ! The native report changes gradient units after its first
             ! iteration. Check the returned state directly, with the same
             ! generated energy and the declared free increment space.
-            allocate(gradient(state%map%ndof),reduced(state%map%nred))
             call ideal_map_energy(state%map,state%map%x,energy,status,gradient)
             if(status/=0) return
             call ideal_map_reduce(state%map,gradient,reduced)
             where(state%map%fixed) reduced=0
             report%residual = norm2(reduced) &
-                /max(tiny(1.0_dp),state%solve%initial_gradient)
+                /max(tiny(1.0_dp),gseed)
             call metrics(state,status)
             if (status /= 0) return
             report%oracle_error = state%magnetic_error
@@ -174,6 +204,55 @@ contains
             print *, "pf2_postsolve_s=", omp_get_wtime()-pf2_clock
             report%status = D8_OK
         end select
+    end subroutine
+
+    subroutine continuation(state,resolution,status)
+        ! Measurement: KIN6D_PROF_CONT='ntor degree boundary_nodes tolerance' solves
+        ! a coarse map first and adds its correction to the fine seed. Default
+        ! (decision 126): the same ntor and mesh at degree - 1 to 1e-2, which is
+        ! '4 2 12 1e-2' on b12; KIN6D_PROF_CONT=off solves without a ladder.
+        type(equilibrium_3d_driver_t), intent(inout) :: state
+        type(equilibrium_resolution_t), intent(in) :: resolution
+        integer, intent(out) :: status
+        type(equilibrium_3d_driver_t) :: coarse
+        type(gs_state_t) :: cmesh
+        character(64) :: spec
+        integer :: nc, dc, bc
+        real(dp) :: tc, clock
+        real(dp), allocatable :: cseed(:,:,:)
+        status = 0
+        call get_environment_variable('KIN6D_PROF_CONT', spec)
+        if (trim(spec) == 'off') return
+        if (len_trim(spec) == 0) then
+            if (resolution%degree < 3) return
+            write (spec,'(3(i0,1x),a)') ubound(state%boundary,2), resolution%degree-1, &
+                resolution%boundary_nodes, '1e-2'
+        end if
+        print '(2a)', 'continuation_ladder=', trim(spec)
+        read (spec,*) nc, dc, bc, tc
+        clock = omp_get_wtime()
+        call nested_integer_driver(state%oracle, ubound(state%boundary,3), nc, coarse, status)
+        if (status /= 0) return
+        call ideal_seed_disk_mesh(cmesh, bc, dc, status)
+        if (status /= 0) return
+        call ideal_seed_3d_init(coarse%map, coarse%seed, cmesh, coarse%boundary, &
+            state%nfp, coarse%toroidal_flux, coarse%profile, status)
+        if (status /= 0) return
+        coarse%map%krylov_step = state%map%krylov_step
+        coarse%map%lagged_hessian = state%map%lagged_hessian
+        coarse%map%lagged_contraction = state%map%lagged_contraction
+        coarse%map%lagged_damping = state%map%lagged_damping
+        coarse%map%factor_policy = state%map%factor_policy
+        coarse%map%factor_threads = state%map%factor_threads
+        cseed = coarse%map%x
+        call ideal_map_solve(coarse%map, tc, state%max_iterations, coarse%solve, status)
+        if (status /= 0) then
+            print '(a,i0)', 'coarse_status=', status
+        end if
+        call ideal_map_prolong_correction(state%map, coarse%map, cseed, status)
+        print '(a,es12.4)', 'coarse_wall_s=', omp_get_wtime() - clock
+        print '(a,3(1x,i0))', 'coarse_newton_hessians_factors=', coarse%solve%iterations, &
+            coarse%solve%hessians, coarse%solve%factorizations
     end subroutine
 
     subroutine metrics(state,status)
