@@ -33,14 +33,19 @@ def poincare(out, items):
     fig, axes = plt.subplots(1, n, figsize=(3.4 * n, 3.6), constrained_layout=True)
     axes = np.atleast_1d(axes)
     for ax, item in zip(axes, items):
-        label, d = item.split("=", 1)
+        label, d = item.rsplit("=", 1)
         p = np.loadtxt(os.path.join(d, "pressure.dat"))
         ng = int(round(np.sqrt(len(p))))
         R = p[:, 0].reshape(ng, ng)
         Z = p[:, 1].reshape(ng, ng)
         P = p[:, 2].reshape(ng, ng)
         P = P / np.nanmax(P)
-        cs = ax.contourf(R, Z, P, levels=np.linspace(0, 1, 21), cmap="viridis")
+        pmin = np.nanmin(P)
+        cs = ax.contourf(R, Z, P, levels=np.linspace(0, 1, 21), cmap="viridis",
+                         extend="min")
+        if pmin < 0:
+            ax.contour(R, Z, P, levels=[0], colors=OI[3], linewidths=0.8)
+            label += "\n" + rf"min $p/p_{{\max}}={pmin:.3f}$, pink: $p=0$"
         ax.contour(R, Z, P, levels=np.linspace(0.05, 0.95, 10), colors="w",
                    linewidths=0.4)
         pc = np.loadtxt(os.path.join(d, "poincare.dat"))
@@ -111,7 +116,12 @@ def flattening(out, dirs):
                         r"  $\propto W/w_c$")
     ax[1, 0].set_title("(c) Fitzpatrick scaling collapse", fontsize=9)
     Ws, Rh = np.array(Ws), np.array(Rh)
-    ok = np.isfinite(Rh)
+    # Fit only scans that reach full flattening (min G < 0.25): a declared
+    # resolution criterion, since an under-resolved island saturates.
+    full = np.array([s[:, 4].min() < 0.25 for s, _ in scans])
+    ax[1, 1].loglog(Ws[np.isfinite(Rh) & ~full], Rh[np.isfinite(Rh) & ~full], "s",
+                    mfc="none", color=OI[1], label="no full flattening (excluded)")
+    ok = np.isfinite(Rh) & full
     ax[1, 1].loglog(Ws[ok], Rh[ok], "o", color=OI[0], label="computed ($G=1/2$)")
     if ok.sum() >= 2:
         slope, icpt = np.polyfit(np.log(Ws[ok]), np.log(Rh[ok]), 1)

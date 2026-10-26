@@ -23,7 +23,7 @@ end module
 program study_island_closure_a
     ! Closure A+D island study on the helical-coil annulus (not a CTest):
     !   scan k nr outdir eps...    flattening G, island width and residuals
-    !                              against chi_par/chi_perp = 10^(0..8 by 0.5)
+    !                              against chi_par/chi_perp (ISLAND_SCAN_LOG10)
     !   poincare k nr outdir eps ratio   Poincare section and p(R, Z) at phi = 0
     ! G is the O-point slope over +-W/6 divided by the chord slope over
     ! +-2W/3 on Z = 0, phi = 0 (fractions of the measured width W, frozen
@@ -87,8 +87,15 @@ contains
 
     subroutine scan()
         real(dp) :: eps, ratio, ro, rx, uo, w, w1, e1, e2, g, a, b, pmax, rr
-        integer :: ie, ir, st, us, uc, j
-        integer, parameter :: nratio = 17
+        integer :: ie, ir, st, us, uc, j, nratio, ln
+        real(dp) :: grid(3)
+        character(64) :: env
+        ! log10 ratio grid: ISLAND_SCAN_LOG10="first last step" (default 0 8 0.5);
+        ! the provider warm-starts each ratio from the previous one.
+        grid = [0.0_dp, 8.0_dp, 0.5_dp]
+        call get_environment_variable('ISLAND_SCAN_LOG10', env, ln)
+        if (ln > 0) read (env, *) grid
+        nratio = nint((grid(2) - grid(1))/grid(3)) + 1
         open (newunit=us, file=trim(outdir)//'/scan.dat', status='replace')
         open (newunit=uc, file=trim(outdir)//'/chords.dat', status='replace')
         write (us, '(a)') '# eps ratio W(traced at first/last ratio) u_O G p_O/p_max p_X/p_max p_max eps_parallel '// &
@@ -98,7 +105,7 @@ contains
             eps = epss(ie)
             call start(eps, 1.0_dp)
             do ir = 1, nratio
-                ratio = 10.0_dp**(0.5_dp*(ir - 1))
+                ratio = 10.0_dp**(grid(1) + grid(3)*(ir - 1))
                 prov%theta(IP_CHI_PAR) = ratio
                 call island_provider_solve(prov, prov%theta, st)
                 if (st /= IP_OK) then
@@ -245,7 +252,7 @@ contains
 
     subroutine poincare(eps, ratio)
         real(dp), intent(in) :: eps, ratio
-        integer, parameter :: nseed = 48, nturn = 400, steps = 256
+        integer, parameter :: nseed = 72, nturn = 400, steps = 256
         integer, parameter :: ng = 241
         real(dp), allocatable :: pts(:, :, :), xyz(:, :), v(:, :)
         integer, allocatable :: reached(:), idx(:)
@@ -265,9 +272,16 @@ contains
         !$omp parallel do default(shared) private(s, t, j, y, u, k1, k2, k3, k4, &
         !$omp& k5, k6, tmp, nxt, err, nfev) schedule(dynamic)
         do s = 1, nseed
-            u = 0.32_dp + 0.86_dp*(s - 1)/(nseed - 1)
-            y = [r0 - u, 0.0_dp]
-            if (mod(s, 2) == 0) y = [r0 + u, 0.0_dp]
+            ! 48 seeds alternating between both sides of Z = 0, then 24 on
+            ! the inner chord across the island (u in [0.30, 0.70]).
+            if (s <= 48) then
+                u = 0.32_dp + 0.86_dp*(s - 1)/47
+                y = [r0 - u, 0.0_dp]
+                if (mod(s, 2) == 0) y = [r0 + u, 0.0_dp]
+            else
+                u = 0.30_dp + 0.40_dp*(s - 49)/23
+                y = [r0 - u, 0.0_dp]
+            end if
             left_mesh = .false.; reached(s) = 0; nfev = 0
             do t = 1, nturn
                 do j = 1, steps
