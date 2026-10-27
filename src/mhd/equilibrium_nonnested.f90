@@ -7,7 +7,11 @@ module kin6d_equilibrium_nonnested
         meridian_point_basis_t, meridian_point_basis_init, meridian_point_basis, &
         meridian_op_complex, meridian_gs_stiffness, meridian_stiffness, &
         meridian_qpoint, meridian_real_to_complex, meridian_load, meridian_field_i
-    use fortsparse, only: csc_t, csc_z_t, csc_matvec, csc_from_triplet, &
+    use fortfem_meridian_hcurl_auxiliary, only: meridian_hcurl_aux_t, &
+        meridian_hcurl_aux_build
+    use fortfem_hcurl_auxiliary_space, only: hx_preconditioner_t, hx_options_t, &
+        hx_space_t, hx_setup, hx_destroy, hx_pcg, hx_masked_csr
+    use fortsparse, only: csr_t, csc_t, csc_z_t, csc_matvec, csc_from_triplet, &
         csc_normalize_symmetric_raw, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE
@@ -25,6 +29,13 @@ module kin6d_equilibrium_nonnested
     public :: nn_velocity, nn_fourier_value
     public :: nn_factor_t, nn_factor, nn_factor_solve, nn_factor_solve_real
     public :: nn_factor_free
+    public :: NN_SOLVER_DIRECT, NN_SOLVER_HX
+
+    ! Linear solver of the per-mode n > 0 curl-curl system: sparse Cholesky
+    ! (default) or CG with the Hiptmair-Xu auxiliary-space preconditioner
+    ! of FortFEM. The environment variable KIN6D_NN_LINEAR_SOLVER=hx selects
+    ! the latter at nn_build; field%linear_solver can be set directly.
+    integer, parameter :: NN_SOLVER_DIRECT = 0, NN_SOLVER_HX = 1
 
     type, extends(equilibrium_field_t) :: free_b_field_t
         type(flux_mesh_t) :: mesh
@@ -35,6 +46,10 @@ module kin6d_equilibrium_nonnested
         real(dp), allocatable :: p(:)       ! NN2 transported p, V0 Fourier blocks
         real(dp) :: f_vac = 0, pprime = 0, psi_bound = 0, mu0 = 1
         real(dp) :: centre(2) = 0, radial_scale = 1
+        integer :: linear_solver = NN_SOLVER_DIRECT
+        type(hx_options_t) :: hx_options
+        real(dp) :: hx_tolerance = 1.0e-11_dp
+        type(meridian_hcurl_aux_t), allocatable :: hx_aux
         procedure(polar_coordinates_i), pointer, nopass :: coordinates => &
             circular_coordinates
     contains
@@ -61,6 +76,8 @@ module kin6d_equilibrium_nonnested
         real(dp) :: energy_before = 0, energy_after = 0, residual = 0
         real(dp) :: divergence = 0
         integer :: newton_steps = 0
+        integer :: linear_iterations = 0 ! CG iterations (re + im), HX path
+        real(dp) :: linear_seconds = 0 ! wall time of the linear solves
         character(32) :: claim = 'candidate'
     end type
 contains
@@ -72,7 +89,13 @@ contains
         type(free_b_field_t), intent(out) :: field
         integer, intent(out) :: status
         real(dp), optional, intent(in) :: cylinder_r0
+        character(16) :: choice
+        integer :: length, env_status
         status = 1
+        call get_environment_variable('KIN6D_NN_LINEAR_SOLVER', choice, length, &
+            env_status)
+        if (env_status == 0 .and. trim(choice) == 'hx') &
+            field%linear_solver = NN_SOLVER_HX
         if (modes < 0 .or. radial_scale <= 0 .or. mu0 <= 0) return
         if (.not. all(ieee_is_finite([centre, radial_scale, f_vac, mu0]))) return
         field%mesh = mesh
@@ -102,11 +125,14 @@ contains
         complex(dp), allocatable, intent(out), optional :: solution(:)
         type(csc_t) :: k
         type(csc_z_t) :: zk, curl
+        type(hx_preconditioner_t) :: pc
+        type(csr_t) :: op
         complex(dp), allocatable :: rhs(:), a(:), delta(:), full(:), r(:)
         logical, allocatable :: mask(:)
         real(dp), allocatable :: loads(:, :)
         real(dp) :: pp, en_scale, lifted
-        integer :: st, t, ndof, failure
+        integer :: st, t, ndof, failure, refine, its
+        integer(8) :: clock0, clock1, clock_rate
         status = 1
         if (.not. allocated(field%b)) return
         if (n < 0 .or. n > ubound(field%b, 2)) return
@@ -163,10 +189,41 @@ contains
         ! Lifted right-hand side: the forcing the solve reduces. For n > 0
         ! rhs = 0 and the boundary trace is the only forcing.
         lifted = norm2(abs(r))
-        call nn_linear_solve(k, mask, r, delta, st)
+        call system_clock(clock0, clock_rate)
+        if (n > 0 .and. field%linear_solver == NN_SOLVER_HX) then
+            call nn_hx_setup(field, k, mask, pc, op, st)
+            if (st /= 0) return
+            call nn_hx_solve(pc, op, mask, field%hx_tolerance, r, delta, &
+                report%linear_iterations)
+        else
+            call nn_linear_solve(k, mask, r, delta, st)
+        end if
+        call system_clock(clock1)
+        report%linear_seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
         if (st /= 0) return
         report%energy_before = quadratic(a)
         a = a + delta
+        report%newton_steps = 1
+        if (n > 0 .and. field%linear_solver == NN_SOLVER_HX) then
+            ! The CG tolerance is relative to this increment's load; refine
+            ! with the same preconditioned solve until the equation residual
+            ! is well inside the 1e-9 gate below (linear: exact Newton steps).
+            do refine = 1, 4
+                r = rhs - csc_matvec(zk, a)
+                where (mask) r = 0
+                if (norm2(abs(r)) <= 1.0e-10_dp*max(1.0_dp, norm2(abs(rhs)), &
+                    norm2(abs(csc_matvec(zk, a))))) exit
+                call system_clock(clock0)
+                call nn_hx_solve(pc, op, mask, field%hx_tolerance, r, delta, its)
+                call system_clock(clock1)
+                report%linear_seconds = report%linear_seconds &
+                    + real(clock1 - clock0, dp)/real(clock_rate, dp)
+                report%linear_iterations = report%linear_iterations + its
+                a = a + delta
+                report%newton_steps = report%newton_steps + 1
+            end do
+            call hx_destroy(pc)
+        end if
         report%energy_after = quadratic(a)
         en_scale = max(1.0_dp, abs(report%energy_before))
         if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) return
@@ -423,6 +480,78 @@ contains
         end do
         call csc_from_triplet(n, n, row(:count), col(:count), val(:count), a, st)
         if (status_ok(st)) status = 0
+    end subroutine
+
+    subroutine nn_hx_setup(field, k, fixed, pc, op, status)
+        ! Hiptmair-Xu preconditioner of the per-mode curl-curl operator K
+        ! (n > 0, A_pol, gauge R A_phi = 0). The auxiliary maps depend only
+        ! on mesh and order and are cached in the field.
+        type(free_b_field_t), intent(inout) :: field
+        type(csc_t), intent(in) :: k
+        logical, intent(in) :: fixed(:)
+        type(hx_preconditioner_t), intent(out) :: pc
+        type(csr_t), intent(out) :: op
+        integer, intent(out) :: status
+        type(hx_space_t) :: spaces(3)
+        status = 1
+        if (.not. allocated(field%hx_aux)) then
+            allocate (field%hx_aux)
+            call meridian_hcurl_aux_build(field%fs, field%hx_aux, status)
+            if (status /= 0) then
+                deallocate (field%hx_aux)
+                return
+            end if
+        end if
+        spaces(1)%p = field%hx_aux%gradient
+        spaces(2)%p = field%hx_aux%interp(1)
+        spaces(3)%p = field%hx_aux%interp(2)
+        if (field%fs%k > 1) then
+            call hx_setup(pc, k, fixed, spaces, status, field%hx_options, &
+                field%hx_aux%transfer, field%hx_aux%edge_fixed, &
+                field%hx_aux%patch_ptr, field%hx_aux%patch_dof)
+        else
+            call hx_setup(pc, k, fixed, spaces, status, field%hx_options, &
+                patch_ptr=field%hx_aux%patch_ptr, patch_dof=field%hx_aux%patch_dof)
+        end if
+        if (status /= 0) return
+        call hx_masked_csr(k, fixed, op, status)
+    end subroutine
+
+    subroutine nn_hx_solve(pc, op, fixed, tolerance, rhs, x, iterations)
+        ! K x = rhs by HX-preconditioned CG, real and imaginary parts. A stop
+        ! at the conditioning floor is not fatal: nn_solve's equation
+        ! residual gate decides acceptance.
+        type(hx_preconditioner_t), intent(inout) :: pc
+        type(csr_t), intent(in) :: op
+        logical, intent(in) :: fixed(:)
+        real(dp), intent(in) :: tolerance
+        complex(dp), intent(in) :: rhs(:)
+        complex(dp), intent(out) :: x(:)
+        integer, intent(out) :: iterations
+        real(dp), allocatable :: b(:), y(:), yr(:)
+        real(dp) :: scale, res
+        integer :: part, its, info
+        iterations = 0
+        allocate (y(size(rhs)), yr(size(rhs)))
+        yr = 0
+        do part = 1, 2
+            if (part == 1) then
+                b = real(rhs, dp)
+            else
+                b = aimag(rhs)
+            end if
+            where (fixed) b = 0
+            scale = norm2(b)
+            y = 0
+            if (scale > 0) then
+                b = b/scale
+                call hx_pcg(op, pc, b, y, tolerance, 10000, its, res, info)
+                iterations = iterations + its
+                y = y*scale
+            end if
+            if (part == 1) yr = y
+        end do
+        x = cmplx(yr, y, dp)
     end subroutine
 
     subroutine nn_linear_solve(k, fixed, rhs, x, status)
