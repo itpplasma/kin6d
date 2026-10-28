@@ -2161,6 +2161,7 @@ include(cmake/kin6d_s0.cmake)
 include(cmake/kin6d_mhd_batches.cmake)
 include(cmake/kin6d_e21.cmake)
 include(cmake/kin6d_separatrix.cmake)
+include(cmake/kin6d_current_sheet.cmake)
 # Existing PR47 R2 consumer, recovered on current providers; no selector adoption.
 target_sources(kin6d_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
