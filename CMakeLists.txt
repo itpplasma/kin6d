@@ -1976,7 +1976,8 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
     src/mhd/nonnested_newton_mr.f90
-    src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_relax.f90
+    src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_beltrami_mr.f90
+    src/mhd/nonnested_relax.f90
     src/generated/kin6d_metriplectic_leaves.f90)
 set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -2044,6 +2045,34 @@ foreach(k 2 3)
     endforeach()
 endforeach()
 
+# Matrix-free MINRES / Newton-MR Taylor closure (opt-in), against the
+# factored path: docs/nonnested-newton-mr.md.
+foreach(case constraints vacuum)
+    add_test(NAME nonnested_beltrami_${case}_mr
+        COMMAND test_nonnested_beltrami ${case} 2 mr)
+    set_tests_properties(nonnested_beltrami_${case}_mr PROPERTIES
+        TIMEOUT 60 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+foreach(k 2 3)
+    foreach(case manufactured lundquist)
+        add_test(NAME nonnested_beltrami_${case}_p${k}_mr
+            COMMAND test_nonnested_beltrami ${case} ${k} mr)
+        set_tests_properties(nonnested_beltrami_${case}_p${k}_mr PROPERTIES
+            TIMEOUT 600 PROCESSORS 4
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    endforeach()
+endforeach()
+add_executable(test_nonnested_beltrami_mr test/test_nonnested_beltrami_mr.f90)
+target_link_libraries(test_nonnested_beltrami_mr PRIVATE kin6d)
+add_test(NAME nonnested_beltrami_mr_agreement
+    COMMAND test_nonnested_beltrami_mr agree 2 2 2)
+add_test(NAME nonnested_beltrami_mr_block_ladder
+    COMMAND test_nonnested_beltrami_mr ladder block 2 2 4.5 0.1 0 2 4 8)
+set_tests_properties(nonnested_beltrami_mr_agreement nonnested_beltrami_mr_block_ladder
+    PROPERTIES TIMEOUT 120 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
 add_executable(test_nonnested_relax test/test_nonnested_relax.f90)
 target_link_libraries(test_nonnested_relax PRIVATE kin6d_nn_vacuum_test)
 foreach(case taylor ideal)
@@ -2077,6 +2106,7 @@ add_executable(test_newton_mr test/test_newton_mr.f90)
 target_link_libraries(test_newton_mr PRIVATE kin6d_core)
 add_test(NAME newton_mr_minres COMMAND test_newton_mr minres)
 add_test(NAME newton_mr_nonconvex COMMAND test_newton_mr newton)
+add_test(NAME newton_mr_saddle COMMAND test_newton_mr saddle)
 add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
 target_link_libraries(test_nonnested_newton_mr PRIVATE kin6d)
 add_test(NAME nonnested_newton_mr_agreement

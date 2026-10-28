@@ -77,6 +77,9 @@ kernels), in order of expected payoff:
    First slice (opt-in, mapped NN1 vacuum lane): Newton-MR with the
    matrix-free FortFEM curl-curl action and the phi-lumped per-mode
    preconditioner, [nonnested-newton-mr.md](nonnested-newton-mr.md).
+   Second slice (opt-in, Taylor/Beltrami closure): MINRES on the symmetric
+   indefinite saddle system and Newton-MR on the helicity-constrained
+   Lagrangian, same document.
 2. **Parallel-only Levenberg–Marquardt term.** Damping on the v ∥ B component
    only, which is the near-null mode of the second variation, in place of a
    diagonal damping of all unknowns.

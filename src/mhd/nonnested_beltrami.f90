@@ -24,12 +24,34 @@ module kin6d_nonnested_beltrami
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_divergence
     use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, &
         METRIC_IDENTITY, nn_harmonic_forms
+    use fortfem_meridian_fourier_apply, only: meridian_fourier_op_t
+    use kin6d_newton_mr, only: mr_options_t, MR_MERIT_GRADIENT
     implicit none
     private
     public :: beltrami_system_t, beltrami_report_t, beltrami_prepare, beltrami_solve
+    public :: beltrami_mr_options_t, BELTRAMI_PC_NONE, BELTRAMI_PC_JACOBI, &
+        BELTRAMI_PC_BLOCK
     public :: beltrami_constraint, BELTRAMI_OK, BELTRAMI_INVALID, BELTRAMI_RESONANT
     integer, parameter :: BELTRAMI_OK = 0, BELTRAMI_INVALID = 1, BELTRAMI_RESONANT = 2
     real(dp), parameter :: pi = acos(-1.0_dp)
+    ! Matrix-free MINRES path (submodule kin6d_nonnested_beltrami_mr,
+    ! docs/nonnested-newton-mr.md): preconditioner of the saddle system.
+    integer, parameter :: BELTRAMI_PC_NONE = 0, BELTRAMI_PC_JACOBI = 1, &
+        BELTRAMI_PC_BLOCK = 2
+
+    type :: beltrami_mr_options_t
+        ! Opt-in by passing this to beltrami_prepare. tolerance is the
+        ! relative MINRES residual |K x - b| / max(1, |b|) of a fixed-mu
+        ! solve (the factored path accepts 1e-9). shift > 0 fixes the mass
+        ! weight tau of the preconditioner; shift <= 0 takes tau = 0.01/a^2
+        ! with a the meridional half-width.
+        integer :: preconditioner = BELTRAMI_PC_BLOCK
+        real(dp) :: tolerance = 1.0e-10_dp, shift = 0
+        integer :: max_minres = 5000
+        ! Helicity constraint: Newton-MR on the Taylor Lagrangian.
+        type(mr_options_t) :: newton = mr_options_t(tolerance=1.0e-11_dp, &
+            max_iterations=30, merit=MR_MERIT_GRADIENT, npc_exit=.false.)
+    end type
 
     type :: beltrami_system_t
         private
@@ -39,6 +61,16 @@ module kin6d_nonnested_beltrami
         integer :: nf = 0, ng = 0, modes = 0, n1 = 0, n2 = 0, nfp = 1
         real(dp) :: harmonic = 0, flux = 0, h_energy = 0
         logical :: ready = .false., closed = .false.
+        ! Matrix-free path only: energy action, transposes, per-mode lumped
+        ! curl-curl, V1 mass and gauge Laplacian of the preconditioner.
+        logical :: matrix_free = .false.
+        type(beltrami_mr_options_t) :: mr
+        type(meridian_fourier_op_t) :: op
+        type(csc_t) :: curl_t, helicity_t, gauge_t, laplace
+        type(csc_t), allocatable :: lumped(:), mass(:)
+        real(dp) :: length2 = 1
+        real(dp) :: setup_s = 0
+        integer(i8) :: operator_bytes = 0
     end type
 
     type :: beltrami_report_t
@@ -50,9 +82,43 @@ module kin6d_nonnested_beltrami
         real(dp) :: nearest_eigenvalue = huge(1.0_dp), eigen_residual = huge(1.0_dp)
         character(24) :: claim = 'candidate', bound_status = 'unavailable'
         character(160) :: message = 'invalid or unprepared Beltrami problem'
+        ! Matrix-free path: solver name, MINRES iterations (all solves of the
+        ! call), Newton steps of a helicity constraint, wall seconds of the
+        ! preconditioner factors and of MINRES.
+        character(16) :: solver = 'factored'
+        integer :: minres_iterations = 0, newton_iterations = 0
+        real(dp) :: preconditioner_s = 0, minres_s = 0
     end type
+
+    interface
+        module subroutine beltrami_mr_prepare(system, field, metric, nphi, status)
+            type(beltrami_system_t), intent(inout) :: system
+            type(free_b_field_t), intent(in) :: field
+            type(map_metric_t), intent(in), target :: metric
+            integer, intent(in) :: nphi
+            integer, intent(out) :: status
+        end subroutine
+        module subroutine beltrami_mr_solve(system, mu, field, report, source, &
+            potential, dmu)
+            type(beltrami_system_t), intent(in), target :: system
+            real(dp), intent(in) :: mu
+            type(free_b_field_t), intent(inout) :: field
+            type(beltrami_report_t), intent(inout) :: report
+            real(dp), optional, intent(in) :: source(:)
+            real(dp), allocatable, optional, intent(out) :: potential(:), dmu(:)
+        end subroutine
+        module subroutine beltrami_mr_helicity(system, target, bracket, tolerance, &
+            field, report)
+            type(beltrami_system_t), intent(in), target :: system
+            real(dp), intent(in) :: target, bracket(2), tolerance
+            type(free_b_field_t), intent(inout) :: field
+            type(beltrami_report_t), intent(out) :: report
+        end subroutine
+    end interface
 contains
-    subroutine beltrami_prepare(field, flux, data, nphi, system, status, map, nfp)
+    subroutine beltrami_prepare(field, flux, data, nphi, system, status, map, nfp, mr)
+        ! mr (optional) selects the matrix-free MINRES path for every later
+        ! beltrami_solve / beltrami_constraint on this system.
         type(free_b_field_t), intent(in), target :: field
         real(dp), intent(in) :: flux, data(:)
         integer, intent(in) :: nphi
@@ -60,6 +126,7 @@ contains
         integer, intent(out) :: status
         type(nn_map_t), optional, intent(in), target :: map
         integer, optional, intent(in) :: nfp
+        type(beltrami_mr_options_t), optional, intent(in) :: mr
         type(nn_map_t), target :: identity
         type(map_metric_t) :: metric
         type(csc_t) :: pair
@@ -111,7 +178,12 @@ contains
         end if
         call meridian_fourier_curl(field%fs, system%modes, system%curl, st)
         if (st /= 0) return
-        if (present(map)) then
+        if (present(mr)) then
+            ! No assembled energy: FortFEM's sum-factorised action instead
+            ! (beltrami_mr_prepare below, once the lift and gauge exist).
+            system%matrix_free = .true.; system%mr = mr
+            st = 0
+        else if (present(map)) then
             call meridian_fourier_curl_curl(field%fs, system%modes, nphi, metric, &
                 system%energy, st)
         else
@@ -185,6 +257,10 @@ contains
         if (st /= 0) return
         allocate (system%helicity_h(n)); system%helicity_h = 0
         system%helicity_h(:system%n1) = system%harmonic*real(load, dp)
+        if (system%matrix_free) then
+            call beltrami_mr_prepare(system, field, metric, nphi, st)
+            if (st /= 0) return
+        end if
         system%ready = .true.; status = BELTRAMI_OK
     contains
         subroutine harmonic_unit(x, v)
@@ -226,6 +302,10 @@ contains
         if (size(field%b, 1) /= system%n2) return
         if (ubound(field%b, 2) /= system%modes) return
         if (lbound(field%b, 2) /= 0 .or. field%fs%sp(1)%ndof /= system%n1) return
+        if (system%matrix_free) then
+            call beltrami_mr_solve(system, mu, field, report, source, potential, dmu)
+            return
+        end if
         n = system%nf + system%ng
         allocate (load(size(system%lift)))
         load = -system%energy_h + mu*system%helicity_h
@@ -437,6 +517,10 @@ contains
         ! the inertia of the positive-energy/helicity pencil is monotone,
         ! so equal endpoint inertia excludes an intervening resonance.
         if (bracket(1) < 0 .and. bracket(2) > 0) return
+        if (system%matrix_free) then
+            call beltrami_mr_helicity(system, target, bracket, tolerance, field, report)
+            return
+        end if
         candidate = field; lo = bracket(1); hi = bracket(2)
         call beltrami_solve(system, lo, candidate, left_report)
         if (left_report%status /= BELTRAMI_OK) then

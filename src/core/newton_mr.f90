@@ -18,6 +18,16 @@ module kin6d_newton_mr
     ! objective change is below its roundoff band, steps are ranked by the
     ! trapezoidal change (g(x) + g(x + s)) . s / 2, as in kin6d_ideal_map.
     !
+    ! With merit = MR_MERIT_GRADIENT the line search is on |g|^2 / 2 instead
+    ! (the original Newton-MR of Roosta, Liu, Xu and Mahoney, "Newton-MR:
+    ! inexact Newton method with minimum residual sub-problem solver",
+    ! EURO J. Comput. Optim. 2022, for invex objectives). This is the merit
+    ! for stationary points that are not minimisers, e.g. the saddle points
+    ! of a Lagrangian with multipliers: every MINRES iterate d satisfies
+    ! g . H d = (|H d + g|^2 - |H d|^2 - |g|^2)/2 < 0 (MINRES residuals do not
+    ! increase), so d descends |g|^2 / 2 without any curvature condition, and
+    ! the NPC exit is not used.
+    !
     ! Callbacks are type-bound procedures of caller-owned objects (no
     ! internal-procedure actuals, hence no executable-stack trampolines).
     ! The generic Krylov kernel is a candidate for FortNum (fortnum_krylov
@@ -34,6 +44,8 @@ module kin6d_newton_mr
     ! Forcing: eta = min(forcing_max, (|g|/|g0|)^(1/2)) as the kin6d_ideal_map
     ! krylov_step (Eisenstat-Walker type), or the fixed eta = forcing_max.
     integer, parameter, public :: MR_FORCING_SQRT = 0, MR_FORCING_FIXED = 1
+    ! Line-search merit: the objective f, or |g|^2 / 2 (stationary points).
+    integer, parameter, public :: MR_MERIT_OBJECTIVE = 0, MR_MERIT_GRADIENT = 1
 
     type, abstract :: mr_operator_t
         ! Symmetric operator y = A x and SPD preconditioner z = M r ~ A^-1 r.
@@ -77,6 +89,7 @@ module kin6d_newton_mr
         real(dp) :: armijo = 1.0e-4_dp
         integer :: max_line_search = 40
         logical :: npc_exit = .true.
+        integer :: merit = MR_MERIT_OBJECTIVE
     end type
 
     type :: mr_report_t
@@ -157,8 +170,8 @@ contains
             end if
             v = y/beta
             call op%apply(v, y)
-            alpha = dot_product(v, y)
             if (k > 1) y = y - (beta/oldb)*r1
+            alpha = dot_product(v, y)
             y = y - (alpha/beta)*r2
             r1 = r2; r2 = y
             call op%precondition(r2, y, st)
@@ -223,9 +236,10 @@ contains
         real(dp) :: f, ft, gnorm, g0, eta, gd, alpha, gtol, residual, t0
         real(dp) :: f_best, alpha_best
         integer :: it, info, its, st, ls, n, forward
-        logical :: npc, accepted
+        logical :: npc, accepted, gradient_merit
 
         n = size(x)
+        gradient_merit = options%merit == MR_MERIT_GRADIENT
         allocate (g(n), gt(n), d(n), xt(n), mg(n))
         report%status = MR_EVALUATION
         t0 = clock()
@@ -256,7 +270,7 @@ contains
             eta = max(eta, 0.5_dp*gtol/gnorm)
             t0 = clock()
             call minres_solve(problem, -g, d, eta, options%max_minres, info, its, &
-                residual, options%npc_exit)
+                residual, options%npc_exit .and. .not. gradient_merit)
             report%minres_s = report%minres_s + clock() - t0
             report%minres_iterations = report%minres_iterations + its
             report%minres_max = max(report%minres_max, its)
@@ -267,7 +281,16 @@ contains
             ! residual than d = 0 and is used as an inexact step.
             npc = info == MR_NPC
             if (npc) report%npc_steps = report%npc_steps + 1
-            gd = dot_product(g, d)
+            if (gradient_merit) then
+                ! Slope of |g|^2 / 2 along d: g . H d (one extra product).
+                call problem%apply(d, mg)
+                gd = dot_product(g, mg)
+                if (.not. gd < 0) then
+                    report%status = MR_BREAKDOWN; exit
+                end if
+            else
+                gd = dot_product(g, d)
+            end if
             if (.not. gd < 0) then
                 ! Not a descent direction (only possible through roundoff or
                 ! an unconverged NPC exit at k = 1): preconditioned gradient.
@@ -328,11 +351,16 @@ contains
     contains
         logical function armijo_ok(f0, f1, slope, g0v, g1v, s) result(ok)
             ! Armijo sufficient decrease; inside the roundoff band of f the
-            ! trapezoidal change ranks the step instead.
+            ! trapezoidal change ranks the step instead. Gradient merit:
+            ! |g1|^2 <= |g0|^2 + 2 armijo slope.
             real(dp), intent(in) :: f0, f1, slope, g0v(:), g1v(:), s(:)
             real(dp) :: band
             ok = .false.
             if (.not. ieee_is_finite(f1)) return
+            if (gradient_merit) then
+                ok = 0.5_dp*sum(g1v**2) <= 0.5_dp*sum(g0v**2) + options%armijo*slope
+                return
+            end if
             band = 64*epsilon(1.0_dp)*max(abs(f0), abs(f1))
             if (abs(f1 - f0) > band) then
                 ok = f1 <= f0 + options%armijo*slope
