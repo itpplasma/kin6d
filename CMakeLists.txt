@@ -349,6 +349,16 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
 add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
     test/support/ideal_map_cases.f90)
 target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+# Parallel-only Levenberg-Marquardt term (docs/ideal-map-3d.md).
+add_executable(test_ideal_map_parallel test/test_ideal_map_parallel.f90
+    test/support/ideal_map_cases.f90)
+target_link_libraries(test_ideal_map_parallel PRIVATE kin6d)
+add_test(NAME ideal_map_parallel_mass COMMAND test_ideal_map_parallel unit 32 2)
+add_test(NAME ideal_map_parallel_damping_p2
+    COMMAND test_ideal_map_parallel compare 32 2)
+set_tests_properties(ideal_map_parallel_mass ideal_map_parallel_damping_p2
+    PROPERTIES TIMEOUT 600 PROCESSORS 2
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_map_hessian test/test_ideal_map_hessian.f90
     test/support/ideal_map_hessian_oracle.f90)
 target_link_libraries(test_ideal_map_hessian PRIVATE kin6d)
