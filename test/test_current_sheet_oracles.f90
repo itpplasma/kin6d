@@ -258,12 +258,17 @@ contains
         call c%eval(r, 1, chi, dchi, xi)
         lap = (cp - 2*chi + cm)/h**2 + dchi/r - (c%m**2/r**2 + c%k**2)*chi
         call check(abs(lap) < 1e-5_dp*abs(chi)/r**2, 'Laplace residual')
-        ! Jump family c+- = c (1 +- eps/2) about the continuous resonance,
-        ! B_z+ from pressure balance; F(sigma+-) brackets zero.
+        ! Jump family c+- = c (1 -+ eps/2) about the continuous resonance,
+        ! B_z+ from pressure balance: q(sigma-) < m/n < q(sigma+), so F keeps
+        ! one sign in each region. The reversed jump puts a resonance inside
+        ! a region and is rejected.
         s = c
+        s%cm = c%cm*(1 - 0.05_dp); s%cp = c%cm*(1 + 0.05_dp)
+        call s%init()
+        call check(s%status == 1, 'resonance inside a region rejected')
         do i = 1, 3
-            s%cm = c%cm*(1 - 0.5_dp*0.1_dp**(i + 1))
-            s%cp = c%cm*(1 + 0.5_dp*0.1_dp**(i + 1))
+            s%cm = c%cm*(1 + 0.5_dp*0.1_dp**(i + 1))
+            s%cp = c%cm*(1 - 0.5_dp*0.1_dp**(i + 1))
             call s%init()
             call check(s%status == 0 .and. .not. s%continuous, 'jump init')
             call s%eval(s%r0, -1, chi, dchi, xi)

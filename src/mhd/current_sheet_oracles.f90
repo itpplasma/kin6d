@@ -159,7 +159,10 @@ contains
         if (s%continuous) then
             if (abs(fm) > 1e-12_dp*abs(s%m*s%cm/s%sigma**2)) return
         else
+            ! No resonance inside either region: F keeps the sign it has at
+            ! the interface (F is monotone in r for these profiles).
             if (fm == 0 .or. fpl == 0) return
+            if (fm*s%f(s%r0, -1) <= 0 .or. fpl*s%f(s%b, 1) <= 0) return
         end if
         ! Columns: chi = A I_m(kap r) + B K_m(kap r); v = (chi, chi') per basis.
         call basis(s%r0, v1, d1)            ! d1 = (I', K') * kap at r0
