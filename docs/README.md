@@ -61,7 +61,8 @@ overview and [scope and design principles](scope.md) for the long-term aims.
   [frozen fitted profiles](nonnested-profiles.md)
 - [Taylor (Beltrami) closure](equilibrium-beltrami.md),
   [metriplectic relaxation](metriplectic-relaxation.md)
-- [Relaxation comparators and adopted algorithms](relaxation-comparators.md) (design)
+- [Relaxation comparators and adopted algorithms](relaxation-comparators.md) (design),
+  [projected force, harmonic deflation and residual floor](nonnested-force.md)
 - [G6 sample readback](g6-readback.md),
   [external sampled force diagnostic](g6-sampled-force.md)
 

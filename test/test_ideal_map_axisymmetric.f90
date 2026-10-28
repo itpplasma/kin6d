@@ -44,7 +44,8 @@ program test_ideal_map_axisymmetric
         pprime, ffprime, shaped
     use kin6d_equilibrium_harness, only: equilibrium_case_t, &
         equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
-        run_equilibrium_case, write_equilibrium_report
+        run_equilibrium_case, write_equilibrium_report, &
+        equilibrium_floor_report_t, equilibrium_residual_floor, write_residual_floor
     use kin6d_equilibrium_state, only: equilibrium_state_t
     use kin6d_map_equilibrium, only: map_equilibrium
     implicit none
@@ -987,7 +988,8 @@ contains
         type(map_case_state_t) :: result
         type(equilibrium_state_t) :: equilibrium
         type(equilibrium_run_report_t) :: verification
-        real(dp) :: errors(4, 3), rates(4)
+        real(dp) :: errors(4, 3), rates(4), residuals(3)
+        type(equilibrium_floor_report_t) :: floor
         integer :: mesh, n, base
         base = 32
         if (degree == 3 .and. .not. shaped) base = 24
@@ -1002,6 +1004,7 @@ contains
             call write_equilibrium_report(output_unit, verification)
             if (verification%status /= 0) error stop 'D8 map case'
             errors(:, mesh) = result%errors
+            residuals(mesh) = verification%residual
             print '(a,3es24.16)', '  end point: d3D_exact, |x|_2, W ', &
                 errors(1, mesh), norm2(result%map%x), result%solve%energy
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
@@ -1016,6 +1019,10 @@ contains
             rates = log(errors(:, mesh - 1)/errors(:, mesh))/log(2.0_dp)
             print '(a,i1,4f8.3)', 'orders pair ', mesh - 1, rates
         end do
+        ! Residual floor diagnostic (reported, not gated).
+        call equilibrium_residual_floor(residuals, 2.0_dp, &
+            trim(verification%residual_norm), floor)
+        call write_residual_floor(output_unit, trim(mode), floor)
         rates = log(errors(:, 2)/errors(:, 3))/log(2.0_dp)
         if (present(sequenced)) then
             ! Nested seed: return from the offset seed axis (and the k + 1 order
