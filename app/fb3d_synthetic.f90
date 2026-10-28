@@ -54,20 +54,33 @@ program fb3d_synthetic
     ! points x y z |B| on full-turn phi-hat samples) and <out>.json.
     ! Usage: fb3d_synthetic coils iota.dat phiedge out [nedge nchain ntor
     !        nphi_map nphi_bem nphi_surface sign max_iterations q1c q2c
-    !        tangential_damping globalisation]
+    !        tangential_damping globalisation reference_lcfs kick_q1]
     ! (q1c, q2c): centre of the reference disc in the normal plane. sign = -1
     ! (default) is the coil field's rotation sense in the chart frame
     ! (benchmarks/fb3d-synthetic/iota_sign.py); tangential_damping defaults to
     ! 0 (off). globalisation: 0 backtracking and Levenberg damping (default),
     ! 1 dogleg trust region on the Gauss-Newton model of the merit
-    ! (ideal_fb_t%trust_region); the gate is the same.
+    ! (ideal_fb_t%trust_region), 2 the trust region with the negative-curvature
+    ! escape on stalls (ideal_fb_t%negative_curvature); the gate is the same.
+    ! reference_lcfs ('-' none): a previous <out>.lcfs of the same resolution
+    ! whose pointwise distance is reported; kick_q1 (m, default 0): a rigid
+    ! q1 shift of the start (q1 is the stellarator-symmetry-odd direction of
+    ! the chart at phi-hat = 0), to probe symmetry-broken equilibria.
+    ! The JSON "state" block is the acceptance check beyond the residual:
+    ! In_-(S_red) and its lowest eigenvalue (0 negative: a strict local
+    ! minimum of the reduced energy, i.e. a stable discrete equilibrium), the
+    ! reduced energy L, the stellarator-symmetry defect of the plasma map
+    ! (ideal_fb_symmetry_defect, component 1), the axis Z at phi-hat = 0 (0
+    ! for a symmetric state) and the distance to reference_lcfs. The vacuum
+    ! oracle is benchmarks/fb3d-synthetic/vacuum_reference.py.
     use, intrinsic :: iso_fortran_env, only: dp => real64, output_unit
     !$ use omp_lib, only: omp_get_max_threads
     use fb3d_synthetic_field, only: iota_field_t
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: curve_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, ideal_fb_solve, &
-        ideal_fb_report_t, ideal_fb_shell_field, IDEAL_FB_OK
+        ideal_fb_report_t, ideal_fb_shell_field, IDEAL_FB_OK, ideal_fb_gradient, &
+        ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect, ideal_fb_solve_shell_map
     use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
     use kin6d_ideal_fb_circuits, only: coil_circuit_basis_t, coil_circuit_basis_init, &
         ideal_fb_circuits_t, ideal_fb_circuits_build, ideal_fb_set_currents
@@ -79,7 +92,7 @@ program fb3d_synthetic
     real(dp), parameter :: pi = acos(-1.0_dp), r0 = 1.0_dp, eps = 0.15_dp
     real(dp), parameter :: rc = 0.2_dp, shift = 0.5_dp
     integer, parameter :: nfp = 3
-    character(256) :: coils_path, iota_path, out, arg
+    character(256) :: coils_path, iota_path, out, arg, reference_path
     type(curve_chart_t) :: chart
     type(iota_field_t) :: field
     type(gs_state_t) :: mesh
@@ -93,7 +106,10 @@ program fb3d_synthetic
     real(dp), allocatable :: contour(:, :), chain(:, :), turns(:)
     integer, allocatable :: circuit(:)
     real(dp) :: phiedge, aref, h, t_start, t_setup, t_traces, t_bem, t_solve, sgn
-    real(dp) :: centre(2), tangential_damping
+    real(dp) :: centre(2), tangential_damping, kick, energy, lambda_min
+    real(dp) :: defect, boundary_defect, ref_rms, ref_max
+    real(dp), allocatable :: gtmp(:)
+    integer :: n_negative, mirrored, spectrum_status
     integer :: nedge, nchain, ntor, nphi_map, nphi_bem, nphi_surface, ncircuit
     integer :: st, j, threads, solve_status, max_iterations, globalisation
     nedge = 12; nchain = 16; ntor = 1; nphi_map = 8; nphi_bem = 18
@@ -126,6 +142,12 @@ program fb3d_synthetic
         call get_command_argument(15, arg); read (arg, *) tangential_damping
     end if
     if (command_argument_count() >= 16) call int_arg(16, globalisation)
+    reference_path = '-'
+    if (command_argument_count() >= 17) call get_command_argument(17, reference_path)
+    kick = 0
+    if (command_argument_count() >= 18) then
+        call get_command_argument(18, arg); read (arg, *) kick
+    end if
     threads = 1
     !$ threads = omp_get_max_threads()
     !$ threads = omp_get_max_threads()
@@ -155,7 +177,8 @@ program fb3d_synthetic
         mu0=coil_mu0, nphi=nphi_map)
     if (st /= IDEAL_FB_OK) error stop 'ideal_fb_init on the curve chart'
     fb%tangential_damping = tangential_damping
-    fb%trust_region = globalisation == 1
+    fb%trust_region = globalisation == 1 .or. globalisation == 2
+    fb%negative_curvature = globalisation == 2
     t_setup = wall() - t_start
     call makegrid_circuits_read(trim(coils_path), coils, circuit, turns, ncircuit, st)
     if (st /= 0) error stop 'MAKEGRID coils'
@@ -175,6 +198,12 @@ program fb3d_synthetic
         t_bem, ' s, pairs ', bem_report%accepted_pairs
     print '(a,i0,a,i0,a,i0)', 'unknowns ', fb%n, '  plasma nodes ', fb%plasma%nodes, &
         '  shell nodes ', fb%ns
+    if (kick /= 0) then
+        fb%plasma%x(1, 1, :) = fb%plasma%x(1, 1, :) + kick
+        call ideal_fb_solve_shell_map(fb, st)
+        if (st /= IDEAL_FB_OK) error stop 'kicked shell map'
+        print '(a,es10.2)', 'start kicked by q1 ', kick
+    end if
     flush (output_unit)
     call ideal_fb_solve(fb, 1e-9_dp, max_iterations, report, solve_status, &
         verbose=.true., residual_tolerance=1e-8_dp)
@@ -182,6 +211,7 @@ program fb3d_synthetic
     print '(a,i0,a,i0,a,es12.4)', 'solve status ', solve_status, ' iterations ', &
         report%iterations, ' residual ', report%residual
     call write_lcfs()
+    call state_check()
     call write_json()
 contains
     subroutine int_arg(i, v)
@@ -286,6 +316,54 @@ contains
         close (u)
     end subroutine
 
+    subroutine state_check()
+        ! Acceptance quantities beyond the residual (see the header).
+        integer :: nr, k
+        real(dp), allocatable :: a(:, :), b(:, :)
+        allocate (gtmp(fb%n))
+        call ideal_fb_gradient(fb, gtmp, st, lagrangian=energy)
+        call ideal_fb_reduced_spectrum(fb, n_negative, lambda_min, spectrum_status)
+        call ideal_fb_symmetry_defect(fb, 1, defect, boundary_defect, mirrored, st)
+        print '(a,i0,a,es11.3,a,es10.2,a,es10.2,a,i0)', 'state: In_-(S_red) ', &
+            n_negative, ' min ', lambda_min, ' symmetry defect ', defect, &
+            ' Gamma_p ', boundary_defect, ' mirrored nodes ', mirrored
+        ref_rms = -1; ref_max = -1
+        if (trim(reference_path) == '-') return
+        call read_lcfs(trim(out)//'.lcfs', a, nr)
+        call read_lcfs(trim(reference_path), b, k)
+        if (nr /= k .or. nr == 0) return
+        ref_max = sqrt(maxval(sum((a(2:4, :) - b(2:4, :))**2, dim=1)))
+        ref_rms = sqrt(sum((a(2:4, :) - b(2:4, :))**2)/nr)
+        print '(a,2es11.3)', 'distance to reference rms max (m)', ref_rms, ref_max
+    end subroutine
+
+    subroutine read_lcfs(path, rows, n)
+        character(*), intent(in) :: path
+        real(dp), allocatable, intent(out) :: rows(:, :)
+        integer, intent(out) :: n
+        character(512) :: line
+        integer :: u, ios, k
+        n = 0
+        open (newunit=u, file=path, status='old', action='read', iostat=ios)
+        if (ios /= 0) return
+        do
+            read (u, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            if (line(1:1) /= '#') n = n + 1
+        end do
+        allocate (rows(5, n))
+        rewind (u)
+        k = 0
+        do
+            read (u, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            if (line(1:1) == '#') cycle
+            k = k + 1
+            read (line, *) rows(:, k)
+        end do
+        close (u)
+    end subroutine
+
     subroutine write_json()
         ! axis_RZ_phi0: (R, Z) of the image of the plasma axis node (the
         ! extremum of the frozen label chi, where b_pol = 0) at phi-hat = 0.
@@ -322,9 +400,25 @@ contains
         write (u, '(a,i0,a)') ' "globalisation": ', globalisation, ','
         write (u, '(a,i0,a)') ' "rejected": ', report%rejected, ','
         write (u, '(a,i0,a)') ' "factorisations": ', report%factorisations, ','
+        write (u, '(a,i0,a)') ' "escapes": ', report%escapes, ','
+        write (u, '(a,i0,a)') ' "curvature_steps": ', report%curvature_steps, ','
+        write (u, '(a,es14.6,a)') ' "kick_q1": ', kick, ','
         write (u, '(a,es14.6,a)') ' "sign": ', sgn, ','
         write (u, '(a,2(es22.14,a))') ' "axis_RZ_phi0": [', axis_rz(1), ',', &
-            axis_rz(2), ']'
+            axis_rz(2), '],'
+        write (u, '(a)') ' "state": {'
+        write (u, '(a,i0,a)') '  "spectrum_status": ', spectrum_status, ','
+        write (u, '(a,i0,a)') '  "reduced_negative": ', n_negative, ','
+        write (u, '(a,es22.14,a)') '  "reduced_min": ', lambda_min, ','
+        write (u, '(a,es22.14,a)') '  "reduced_energy": ', energy, ','
+        write (u, '(a,es14.6,a)') '  "symmetry_defect": ', defect, ','
+        write (u, '(a,es14.6,a)') '  "symmetry_defect_gamma_p": ', boundary_defect, ','
+        write (u, '(a,i0,a,i0,a)') '  "mirrored_nodes": ', mirrored, ', "nodes": ', &
+            fb%plasma%nodes, ','
+        write (u, '(a,es14.6,a)') '  "axis_Z_phi0": ', axis_rz(2), ','
+        write (u, '(a,es14.6,a,es14.6)') '  "reference_rms": ', ref_rms, &
+            ', "reference_max": ', ref_max
+        write (u, '(a)') ' }'
         write (u, '(a)') '}'
         close (u)
     end subroutine
