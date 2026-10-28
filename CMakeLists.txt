@@ -969,7 +969,7 @@ if(KIN6D_FORTSYM_BUILD)
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
             pp_fusion pp_fusion_eft
-            jellium_cell ocp)
+            jellium_cell ocp island_seed)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
@@ -1010,6 +1010,13 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_metriplectic_regeneration.cmake)
     kin6d_test_labels(metriplectic_identities_and_regeneration fast CLASSES mhd
         TARGETS gen_metriplectic)
+    add_test(NAME island_seed_exact_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_island_seed>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_seed_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/island-seed-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_island_seed_regeneration.cmake)
+    kin6d_test_labels(island_seed_exact_regeneration fast CLASSES mhd
+        TARGETS gen_island_seed)
     add_test(NAME equilibrium_nested_oracle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_nested_oracles>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
@@ -2053,6 +2060,20 @@ add_test(NAME nonnested_relax_vacuum_island COMMAND test_nonnested_relax island)
 set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
     TIMEOUT 1800 LABELS "mhd;slow" PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
+# Energy-criterion island seeding (docs/island-seed.md).
+target_sources(kin6d_mhd PRIVATE src/generated/kin6d_island_seed_leaves.f90
+    src/mhd/island_seed.f90)
+set_source_files_properties(src/generated/kin6d_island_seed_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_island_seed test/test_island_seed.f90)
+target_link_libraries(test_island_seed PRIVATE kin6d)
+foreach(case seed none ladder leaves)
+    add_test(NAME island_seed_${case} COMMAND test_island_seed ${case})
+    set_tests_properties(island_seed_${case} PROPERTIES
+        TIMEOUT 300 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
 target_link_libraries(test_nonnested_mapped PRIVATE kin6d)

@@ -81,6 +81,7 @@ kernels), in order of expected payoff:
    harmonic forms per geometry and project them out of every solve; evaluate
    the force through curl (curl curl)⁻¹ curl(J × B).
 4. **Energy-criterion island seeding** as an initializer for island cases.
+   Implemented opt-in on the NN1 complex: [island-seed.md](island-seed.md).
 5. **Residual floor as a diagnostic.** Current sheets at rational surfaces set
    a force-residual floor that does not decrease under h or p refinement;
    acceptance gates report it instead of chasing it with smooth spaces.
