@@ -44,6 +44,13 @@ to strengthen it later.
    independent of replaceable solver, file-format, hardware, scheduler and UI
    details. New scope composes with the same contracts instead of spawning a
    second numerical universe.
+9. **Every useful model, best-of-breed numerics, symbolic derivation.** kin6d
+   aims to support every plasma model that is useful for a question, each with
+   the best available structure-preserving discretization and solver for that
+   model. Model equations, weak forms and their derivatives are derived
+   symbolically in full, and pointwise kernels are generated from that
+   derivation (FortSym primal/JVP/VJP leaves). Hand-written kernels are an
+   explicit exception and are checked against the generated definition.
 
 A proposed feature that conflicts with these principles is rejected or remains
 an explicitly non-production experiment, even if it would broaden the nominal

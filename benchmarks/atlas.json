@@ -1020,7 +1020,6 @@
       "producers": [
         "KIN6D",
         "MRX",
-        "Zhang-Zhu-Hegna solver",
         "VMEC++",
         "DESC",
         "GVEC"
@@ -1156,7 +1155,6 @@
       "model_lane": "ideal non-nested / weak (finite beta) or vacuum, stated per run",
       "producers": [
         "KIN6D",
-        "MRX",
         "SPECTRE"
       ],
       "observables": [
@@ -1167,10 +1165,38 @@
         "V",
         "island observables where present"
       ],
-      "reference_definition": "pinned numerical result with stated uncertainty; MRX parameters to be confirmed (rotating ellipse not found in the MRX text read); SPECTRE section 3.4 is a free-boundary rotating ellipse",
+      "reference_definition": "pinned numerical result with stated uncertainty; MRX v3 has no rotating-ellipse case (full text read 2026-10-28); SPECTRE section 3.4 is a free-boundary rotating ellipse",
       "reference_sources": [
         "https://arxiv.org/abs/2607.27135"
       ],
+      "field_model": null,
+      "reference_implementation": null,
+      "certificate_method": null
+    },
+    {
+      "id": "ncsx_relax_seed_relax",
+      "family": "cross_code",
+      "reference_class": "X",
+      "status": "planned",
+      "geometry": "NCSX li383 fixed boundary from the public VMEC wout (landreman/regcoil equilibria/wout_li383_1.4m.nc), beta_vol about 4.25%",
+      "model_lane": "ideal non-nested / weak, incompressible relaxation with pressure as a Lagrange multiplier (MRX closure); compare only at this closure",
+      "producers": [
+        "KIN6D",
+        "MRX"
+      ],
+      "observables": [
+        "normalized squared force residual and its floor per resolution",
+        "beta_vol drift",
+        "generalized helicity drift",
+        "seeded island widths at iota = 3/5 and 1/2",
+        "iota and p along field lines"
+      ],
+      "reference_definition": "MRX v3 tables 3-5 (relax-seed-relax at 16^3 to 64x128x128, p = 2) as published numbers, reproduced with the open MRX code at a pinned commit; no producer is an oracle",
+      "reference_sources": [
+        "https://arxiv.org/abs/2510.26986",
+        "https://github.com/ToBlick/mrx"
+      ],
+      "topology_analysis_spec": "required before activation: integration length, initial points and thresholds; null until pinned",
       "field_model": null,
       "reference_implementation": null,
       "certificate_method": null
@@ -1184,9 +1210,9 @@
       "model_lane": "ideal non-nested / weak, and resistive relaxed lane separately",
       "producers": [
         "KIN6D",
-        "Zhang-Zhu-Hegna solver",
         "MRX",
-        "HINT where the equations match"
+        "Zhang-Zhu-Hegna solver (published results only)",
+        "HINT (published results only, where the equations match)"
       ],
       "observables": [
         "O- and X-point positions",
@@ -1217,9 +1243,9 @@
       "model_lane": "resistive relaxed; ideal non-nested only where the model admits it",
       "producers": [
         "KIN6D",
-        "Zhang-Zhu-Hegna solver",
-        "HINT",
-        "PIES"
+        "Zhang-Zhu-Hegna solver (published results only)",
+        "HINT (published results only)",
+        "PIES (published results only)"
       ],
       "observables": [
         "surviving tori",
