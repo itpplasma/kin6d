@@ -1402,7 +1402,8 @@ contains
         if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
             call csr_build_pattern(map%nred, map%redconn, .false., matrix, &
                 with_slots=.true.)
-        call csr_assemble_blocks(matrix, map%redconn, blocks)
+        ! The blocks are exactly symmetric (reflected above).
+        call csr_assemble_blocks(matrix, map%redconn, blocks, symmetric=.true.)
     end subroutine
 
     subroutine hessian_merge_pairs(nmode, nq, ka, kb, kc, ks)
@@ -1552,8 +1553,9 @@ contains
     end subroutine
 
     subroutine hessian_reduce_column(map, e, c, half, blk)
-        ! Column c of the cell block P^T half (lower triangle authoritative,
-        ! see hessian_reflect_column).
+        ! Rows r >= c of column c of the cell block P^T half: the lower
+        ! triangle is authoritative and the upper one is reflected from it
+        ! (hessian_reflect_column), so it is not computed.
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: e, c
         real(dp), intent(in) :: half(:, :)
@@ -1564,7 +1566,7 @@ contains
         nmode = map%nmode; nloc = map%nloc
         nlm = nloc*nmode
         nested = allocated(map%axis_vec)
-        do l = 1, nlm
+        do l = max(1, c/2), nlm
             node = map%conn(1 + (l - 1)/nmode, e)
             b1 = map%basis(:, 1, node)
             b2 = map%basis(:, 2, node)
@@ -1577,6 +1579,7 @@ contains
             do jp = 1, map%npoly
                 do i = 1, 2
                     r = 2*nlm + i + 2*(jp - 1) + 2*map%npoly*(m - 1)
+                    if (r < c) cycle
                     s = 0
                     do a = 1, nloc
                         l = m + nmode*(a - 1)

@@ -126,8 +126,9 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main with the cached element-to-CSR slot map (lazy-fortran/fortfem#122).
-set(KIN6D_FORTFEM_REVISION "437798cae293f03cae436e7df2c6ac387113672a")
+# FortFEM main with the heapsorted long CSR rows and the symmetric column assembly
+# (lazy-fortran/fortfem#127) on the cached element-to-CSR slot map (#122).
+set(KIN6D_FORTFEM_REVISION "50b2bbe9ada87ddbd0be05c68a27f0bcd3ae8dd4")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1759,7 +1760,7 @@ add_test(NAME nonnested_n0_equilibrated_solovev COMMAND test_nonnested_error)
 set_tests_properties(nonnested_n0_equilibrated_solovev PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 add_executable(test_nonnested_fourier_error
-    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration.f90)
+    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration_slow.f90)
 target_link_libraries(test_nonnested_fourier_error PRIVATE kin6d_feec_n)
 add_test(NAME nonnested_transport_fourier_equilibrated
     COMMAND test_nonnested_fourier_error)
