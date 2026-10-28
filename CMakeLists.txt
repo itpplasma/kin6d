@@ -1104,6 +1104,7 @@ add_custom_target(kin6d_build_info
         -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
         -DKIN6D_FORTFEM_REVISION=${KIN6D_FORTFEM_REVISION}
         -DKIN6D_FORTSPARSE_REVISION=${KIN6D_FORTSPARSE_REVISION}
+        -DKIN6D_LIBNEO_REVISION=${KIN6D_LIBNEO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
 add_library(kin6d_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
@@ -1133,6 +1134,7 @@ add_test(NAME result_io_contract
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
         -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
         -DFORTSPARSE_PIN=${KIN6D_FORTSPARSE_REVISION}
+        -DLIBNEO_PIN=${KIN6D_LIBNEO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)
 add_executable(test_animation_export test/test_animation_export.f90)
 target_link_libraries(test_animation_export PRIVATE kin6d_io)
@@ -2197,6 +2199,13 @@ target_link_libraries(test_ideal_fb_traces3d PRIVATE kin6d)
 add_test(NAME ideal_fb_traces3d_axisymmetric COMMAND test_ideal_fb_traces3d axisymmetric)
 add_test(NAME ideal_fb_traces3d_helical COMMAND test_ideal_fb_traces3d helical)
 add_test(NAME ideal_fb_traces3d_makegrid COMMAND test_ideal_fb_traces3d makegrid)
+add_test(NAME ideal_fb_traces3d_curve_hessian COMMAND test_ideal_fb_traces3d curve-hessian)
+add_test(NAME ideal_fb_exterior3d_periodic COMMAND test_ideal_fb_traces3d exterior)
+set_tests_properties(ideal_fb_exterior3d_periodic PROPERTIES
+    TIMEOUT 1200 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+# Synthetic nfp = 3 free-boundary case against VMEC++ (benchmarks/fb3d-synthetic).
+add_executable(fb3d_synthetic app/fb3d_synthetic.f90)
+target_link_libraries(fb3d_synthetic PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric_circuits
     COMMAND test_landreman_free_boundary circuits)
 add_test(NAME ideal_fb_landreman_helical_circuits

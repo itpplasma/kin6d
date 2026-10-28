@@ -9,7 +9,8 @@ module kin6d_ideal_free_boundary_bem3d
     use fortfem_generated_bem_frame, only: bem_frame
     use kin6d_equilibrium_chart, only: ideal_chart_t
     use kin6d_triangle_basis, only: triangle_basis_jet
-    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build
+    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build, &
+        gamma_c_3d_build_periodic
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_attach_exterior_3d, &
                                    ideal_fb_full_turn_traces, IDEAL_FB_BAD_INPUT
     implicit none
@@ -202,24 +203,41 @@ contains
         end do
         status = 0
     end subroutine
-    subroutine ideal_fb_use_bem3d(fb, nphi, options, report, status, subdivisions)
+    subroutine ideal_fb_use_bem3d(fb, nphi, options, report, status, subdivisions, &
+                                  periodic)
         !! Existing Fourier drive uses its physical full-turn pairing.
         !! Set it before attaching. Gamma_c is fixed; no moving-BEM derivative.
+        !! periodic: assemble only the target pairs of one field period
+        !! (block-circulant, gamma_c_3d_build_periodic); needs nphi in nfp*Z
+        !! and an nfp-symmetric chart. The same R^T S R up to the pair
+        !! quadrature tolerance, at 1/nfp of the pair work and 1/nfp^3 of
+        !! the dense DtN cost.
         type(ideal_fb_t), intent(inout) :: fb
         integer, intent(in) :: nphi
         type(bem_pair_options_t), intent(in) :: options
         type(bem_pair_report_t), intent(out) :: report
         integer, intent(out) :: status
         integer, intent(in), optional :: subdivisions
+        logical, intent(in), optional :: periodic
         type(coupling_surface_t) :: surface
         type(gamma_c_3d_t) :: boundary
         integer, allocatable :: faces(:, :)
         real(dp), allocatable :: restriction(:, :), drive(:), load(:)
+        logical :: sectors
         status = IDEAL_FB_BAD_INPUT; report = bem_pair_report_t()
+        sectors = .false.
+        if (present(periodic)) sectors = periodic
         if (allocated(fb%exterior_3d)) return
+        if (sectors .and. mod(nphi, max(fb%nfp, 1)) /= 0) return
         call ideal_fb_surface(fb, nphi, surface, faces, restriction, status, subdivisions)
         if (status /= 0) return
-   call gamma_c_3d_build(surface, faces, restriction, options, boundary, report, status)
+        if (sectors) then
+            call gamma_c_3d_build_periodic(surface, faces, fb%nfp, restriction, &
+                                           options, boundary, report, status)
+        else
+            call gamma_c_3d_build(surface, faces, restriction, options, boundary, &
+                                  report, status)
+        end if
         if (status /= 0) return
         allocate (drive(fb%nt*fb%nmode), load(fb%nt*fb%nmode))
         call ideal_fb_full_turn_traces(fb, fb%drive, fb%load, drive, load)
