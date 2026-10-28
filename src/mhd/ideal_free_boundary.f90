@@ -60,6 +60,8 @@ module kin6d_ideal_free_boundary
     use kin6d_ideal_map_leaves, only: ideal_energy_gradient, ideal_energy_hessian
     use kin6d_vacuum_shell_leaves, only: vacuum_energy_density, &
         vacuum_energy_gradient, vacuum_energy_hessian
+    use kin6d_fold_barrier_leaves, only: fold_barrier_density, fold_barrier_gradient, &
+        fold_barrier_hessian
     use kin6d_triangle_basis, only: triangle_basis_jet
     use kin6d_sort_keys, only: sort_key_order
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
@@ -212,6 +214,22 @@ module kin6d_ideal_free_boundary
         ! vertical mode at fixed coil currents): reset it (opt out) for such
         ! targets. Default on for FB3D ntor >= 2 (ideal_fb_init).
         logical :: negative_curvature = .false.
+        ! Fold barrier of the escape (ideal_fb_negative_curvature): while it
+        ! runs, the reduced energy carries the shell term
+        !   B = mu sum det0 phi(J/(fold_threshold det0)),
+        !   phi(u) = -log u + (u - 1) - (u - 1)^2/2 for u < 1, 0 otherwise
+        ! (gen/gen_fold_barrier.f90), over the shell quadrature points with
+        ! cell Jacobian ratio J/det0 below fold_threshold. mu is fold_barrier
+        ! times the mean vacuum energy density of the shell at entry. E_red
+        ! decreases into shell folds (the pulled-back vacuum energy is not
+        ! coercive there), and B makes the escape step bend away from them
+        ! instead of being rejected. B is C2 and vanishes identically when
+        ! every ratio exceeds fold_threshold; it is never part of the Newton
+        ! residual. fold_barrier = 0 restores the bare E_red with the old
+        ! guard (no step to a quarter of the entry Jacobian).
+        real(dp) :: fold_barrier = 1, fold_threshold = 0.1_dp
+        ! Active barrier weight mu (J/m^3; 0 outside the escape).
+        real(dp) :: fold_mu = 0
         ! Evaluate ideal_fb_hypotheses at every Newton state and print it
         ! (verbose solves only; a diagnostic, never a stopping criterion).
         logical :: monitor_hypotheses = .false.
@@ -1395,8 +1413,9 @@ contains
         real(dp), intent(out), optional :: fdot(15)
         real(dp) :: q(3), qd(3, 3), gt(3), gg(3), pos(3), d1(3, 3), d2(3, 3, 3)
         real(dp) :: d3(3, 3, 3, 3), dx(3, 3), gd(12), hd(12, 12), dv(12, 15)
-        real(dp) :: hflat(78), gm(3, 3)
+        real(dp) :: hflat(78), gm(3, 3), bb, gb(9), hb(45), det0
         integer :: a, i, k, m, n, r, c
+        logical :: barrier
         call shell_jet(fb, xs, phi, e, g, j, q, qd, gt)
         call fb%plasma%chart%jet(q, pos, d1, d2, d3)
         dx = matmul(d1, qd)
@@ -1408,6 +1427,22 @@ contains
             dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), gg(1), gg(2), gg(3), &
             fb%mu0, fb%plasma%sigma, gd(1), gd(2), gd(3), gd(4), gd(5), gd(6), &
             gd(7), gd(8), gd(9), gd(10), gd(11), gd(12))
+        ! Fold barrier (ideal_fb_t%fold_mu): L carries -E_v, so +B enters as
+        ! -B in the vacuum density.
+        det0 = fb%det(g, e)
+        barrier = fb%fold_mu > 0
+        if (barrier) barrier = jac < fb%fold_threshold*det0
+        if (barrier) then
+            call fold_barrier_density(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+                dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), fb%plasma%sigma, &
+                det0, fb%fold_threshold, fb%fold_mu, bb)
+            call fold_barrier_gradient(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+                dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), fb%plasma%sigma, &
+                det0, fb%fold_threshold, fb%fold_mu, gb(1), gb(2), gb(3), gb(4), &
+                gb(5), gb(6), gb(7), gb(8), gb(9))
+            w = w - bb
+            gd(1:9) = gd(1:9) - gb
+        end if
         dv = 0
         do i = 1, 3
             do a = 1, 3
@@ -1433,6 +1468,24 @@ contains
                 hd(r, c) = hflat(n); hd(c, r) = hflat(n)
             end do
         end do
+        if (barrier) then
+            call fold_barrier_hessian(dx(1, 1), dx(2, 1), dx(3, 1), dx(1, 2), &
+                dx(2, 2), dx(3, 2), dx(1, 3), dx(2, 3), dx(3, 3), fb%plasma%sigma, &
+                det0, fb%fold_threshold, fb%fold_mu, hb(1), hb(2), hb(3), hb(4), &
+                hb(5), hb(6), hb(7), hb(8), hb(9), hb(10), hb(11), hb(12), hb(13), &
+                hb(14), hb(15), hb(16), hb(17), hb(18), hb(19), hb(20), hb(21), &
+                hb(22), hb(23), hb(24), hb(25), hb(26), hb(27), hb(28), hb(29), &
+                hb(30), hb(31), hb(32), hb(33), hb(34), hb(35), hb(36), hb(37), &
+                hb(38), hb(39), hb(40), hb(41), hb(42), hb(43), hb(44), hb(45))
+            n = 0
+            do c = 1, 9
+                do r = 1, c
+                    n = n + 1
+                    hd(r, c) = hd(r, c) - hb(n)
+                    if (r /= c) hd(c, r) = hd(c, r) - hb(n)
+                end do
+            end do
+        end if
         if (present(fdot)) then
             ! gg depends on F_vac through F_vac*Q(3,:), and dv(9+i, 6+3(i-1))
             ! = F_vac: d gv/dF = (hd d(dx,gg)/dF) dv + gd d(dv)/dF.
@@ -4182,13 +4235,49 @@ contains
     end subroutine
 
     subroutine ideal_fb_negative_curvature(fb, radius, max_steps, nc, status, verbose)
+        ! Saddle escape on E_red + B (fold barrier, ideal_fb_t%fold_barrier;
+        ! see curvature_steps). B is switched on for the escape only: on
+        ! return fold_mu is 0 again and shell map, Phi~ and lambda are exact
+        ! for the bare energy, while nc reports In_- and E of E_red + B.
+        type(ideal_fb_t), intent(inout) :: fb
+        real(dp), intent(in) :: radius
+        integer, intent(in) :: max_steps
+        type(ideal_fb_curvature_t), intent(out) :: nc
+        integer, intent(out) :: status
+        logical, intent(in), optional :: verbose
+        real(dp), allocatable :: gx(:, :, :), gf(:, :)
+        real(dp) :: ev, mins, volume
+        integer :: st
+        fb%fold_mu = 0
+        if (fb%fold_barrier > 0) then
+            call exact_blocks(fb, status)
+            if (status /= IDEAL_FB_OK) return
+            allocate (gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns))
+            call shell_energy(fb, fb%xs, fb%phi, ev, gx, gf, mins)
+            volume = sum(spread(fb%plasma%weight(1:fb%plasma%nq), 2, fb%ncell) &
+                *fb%det(1:fb%plasma%nq, 1:fb%ncell))*2*pi/fb%nfp
+            if (ieee_is_finite(ev) .and. volume > 0) &
+                fb%fold_mu = fb%fold_barrier*abs(ev)/volume
+        end if
+        call curvature_steps(fb, radius, max_steps, nc, status, verbose)
+        if (fb%fold_mu > 0) then
+            fb%fold_mu = 0
+            call exact_blocks(fb, st)
+            if (status == IDEAL_FB_OK .and. st /= IDEAL_FB_OK) status = st
+        end if
+    end subroutine
+
+    subroutine curvature_steps(fb, radius, max_steps, nc, status, verbose)
         ! Saddle escape on the reduced energy E_red(q) (shell map, Phi~ and
         ! lambda exact, slide gauge): while S_red (reduced_plasma_hessian) has
         ! a negative eigenvalue, take the exact trust-region step of the
         ! second-order model of E_red (ideal_fb_trust_subproblem; a direction
         ! of negative curvature at the boundary) with the actual-to-predicted
-        ! decrease test rho > 1e-4 and every cell Jacobian at least a quarter of
-        ! its smallest value at entry. The radius is
+        ! decrease test rho > 1e-4. With the fold barrier (fb%fold_mu > 0)
+        ! the energy is E_red + B, which is +inf at a shell fold, so the model
+        ! step bends away from folds and the decrease test alone rejects
+        ! steps into them. Without it, every cell Jacobian must stay at least
+        ! a quarter of its smallest value at entry. The radius is
         ! Euclidean in the plasma unknowns, starts at and is capped by radius.
         ! The residual merit of ideal_fb_solve has a nonzero local minimum
         ! exactly where H W g = 0 with g /= 0, which a merit-descent step cannot
@@ -4259,11 +4348,11 @@ contains
                 rho = -1
                 call exact_blocks(fb, st)
                 if (st == IDEAL_FB_OK) call state_energy(fb, g1, e1, mj, st)
-                ! Jacobian guard: an escape may not shrink the smallest cell
-                ! Jacobian below a quarter of its value at entry, so that it
-                ! cannot park the map at a fold where every later step
-                ! (escape or Newton) is rejected.
-                if (st == IDEAL_FB_OK .and. mj < 0.25_dp*mj0) st = IDEAL_FB_FOLDED
+                ! Without the barrier, the Jacobian guard: an escape may not
+                ! shrink the smallest cell Jacobian below a quarter of its
+                ! value at entry, so that it cannot park the map at a fold.
+                if (st == IDEAL_FB_OK .and. fb%fold_mu <= 0 .and. &
+                    mj < 0.25_dp*mj0) st = IDEAL_FB_FOLDED
                 if (st == IDEAL_FB_OK .and. pred > 0) rho = (e0 - e1)/pred
                 if (talk) print '(a,i3,a,es10.2,a,es10.2,a,es10.2,a,l2)', &
                     '     trial', tries, ' |s|', sn, ' pred', pred, ' rho', rho, &

@@ -280,8 +280,9 @@ set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
-    src/mhd/ideal_free_boundary.f90)
+    src/generated/kin6d_fold_barrier_leaves.f90 src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
+    src/generated/kin6d_fold_barrier_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_sources(kin6d_equilibrium PRIVATE
     src/generated/kin6d_nested_oracle_leaves.f90 src/equilibrium/nested_oracles.f90)
@@ -964,7 +965,8 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi ideal_response_error
-            equilibrium_core curve_chart ideal_seed_3d nonnested metriplectic vacuum_shell landreman nested_oracles
+            equilibrium_core curve_chart ideal_seed_3d nonnested metriplectic vacuum_shell fold_barrier
+            landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse

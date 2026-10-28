@@ -352,6 +352,57 @@ hypothesis that has not been traced.
    rejected. This happened in three of the four mirrored R1 runs (the
    fourth, kicked by +8 mm, cycles saddle escapes next to the symmetric
    state) and in 3 of 21 other N = 2 runs.
+   The map that folds is the shell map. On the mirrored R1 mesh the trust
+   region lowers the smallest shell Jacobian ratio from 0.76 to 2.7e-4 in
+   11 steps, while the plasma ratio stays at 0.80, and escape trials that
+   fold the shell lower E_red by up to 70 J. E_red is therefore not
+   coercive against shell folds. The escape now minimises E_red + B with
+   the fold barrier B = mu sum det0 phi(J/(t0 det0)), where phi(u) =
+   -log u + (u - 1) - (u - 1)^2/2 for u < 1 and 0 otherwise, summed over
+   the shell quadrature points with t0 = `fold_threshold` = 0.1 and mu =
+   `fold_barrier` times the mean shell vacuum energy density at entry
+   (`gen/gen_fold_barrier.f90`). B is C2, vanishes above the threshold and
+   is switched off on return, so the Newton residual never contains it.
+   With it the same mirrored R1 run leaves the fold in one escape and
+   converges to the symmetric stable state (E_red -45026.234, smallest
+   S_red eigenvalue 18.2, final smallest Jacobian ratio 0.70). In the
+   rerun of the matrix (sCluster job 3370373, revision 900b96f) three of the
+   four mirrored R1 runs reach the symmetric stable state (t1, t16, -8 mm
+   kick, E_red -45026.234038); the +8 mm kick still cycles saddle escapes
+   (reduced_negative 1) and is not a fold. All 21 N = 2 runs at R2, R3 and
+   direct R3 are stable, 12 of them symmetric. At mirrored R3 the kicked
+   runs end 0.3 to 0.65 mm from the symmetric plasma map, within 4.4e-5 J of
+   it, and the -8 mm kick 3.1e-4 J below it, so that landscape is flat.
+   The phi = 0 oracle error against the discrete coil set is not a KIN6D
+   error. Field-line tolerance (1e-9 to 1e-13), 240 instead of 60 turns
+   and 384 instead of 96 points per coil change the rms by less than
+   0.15 mm, and the traced vacuum iota instead of VMEC++'s by 0.03 mm. On
+   the KIN6D side (jobs 3370373 and 3370394) nphi_map, nphi_bem,
+   nphi_surface and nchain change it by at most 0.15 mm and ntor 3 and 4 by
+   -0.25 mm. Against the 24 coils the R1 state has 3.3 mm rms, 6.8 mm max
+   and a mean signed distance of -2.9 mm, and the coil field carries only
+   0.954 phiedge through its phi = 0 section. That deficit is the coil
+   ripple. The 24 coils sit at phi = 2 pi (j + 1/2)/24, so phi = 0 lies
+   midway between two coils, where B_phi is smallest and the true flux
+   surface bulges outward. The coil flux through the KIN6D section is 0.954,
+   0.980, 1.013, 0.995 and 0.971 phiedge at phi = 0, pi/48, pi/24, 3 pi/48
+   and pi/12, and the mean signed distance to the traced surface in the same
+   planes is -2.9, -1.3, +0.7, -0.3 and -1.8 mm, so the KIN6D boundary lies
+   outside the coil surface in the coil plane. The n = 24 harmonic lies
+   above every toroidal mode of the model (n <= nfp ntor = 6 to 12) and of
+   VMEC++ (ntor 6). `vacuum_reference.py` therefore traces the same winding
+   on three coils per MAKEGRID coil with a third of the current
+   (`--subdivide 3`, 72 coils), which keeps the winding and removes the
+   ripple (`--subdivide 6` moves the oracle's outboard radius by less than
+   0.02 mm); `--subdivide 1` is the discrete coil set. Against it, the R1,
+   mirrored R2 and R3 and the ntor 3 and 4 states have 1.4 to 1.6 mm rms
+   and 3.1 to 3.8 mm max with the default 60 turns, and 1.6 to 1.8 mm rms,
+   3.4 to 4.1 mm max and a mean signed distance of -1.0 to -1.3 mm with
+   240 turns. The symmetric R3 state, at 7.59 mm max before, has 3.4 mm.
+   `state_check.py` keeps its limits of 3.5 mm rms and 7 mm max. The
+   remaining inward offset
+   of about 1.2 mm is not traced yet, and the N = 1 states (5.5 to 6.0 mm
+   rms and 13 mm max against the 24 coils) have not been rechecked.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
