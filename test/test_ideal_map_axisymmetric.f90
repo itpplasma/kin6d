@@ -31,7 +31,8 @@ program test_ideal_map_axisymmetric
         ideal_map_point, ideal_map_rdof, ideal_map_solve_report_t, &
         ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, &
         ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT, ideal_map_gauge_project, &
-        ideal_map_prolong_correction
+        ideal_map_prolong_correction, &
+        IDEAL_MAP_FACTOR_SPD_LU, IDEAL_MAP_FACTOR_LDLT, IDEAL_MAP_FACTOR_ADAPTIVE
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet, triangle_node_powers, &
         triangle_bernstein_controls, TRIANGLE_MAX_NODES
@@ -450,27 +451,35 @@ contains
         ! The inexact Newton step (CG preconditioned with the retained SPD
         ! factor of an earlier damped Hessian) reaches the same requested
         ! gradient tolerance and the same exact-flux error (1e-3 relative) as
-        ! the direct step, with fewer factorisations.
+        ! the direct step, with fewer factorisations. Factor policies of the
+        ! Krylov step: LDLT (the default: one supernodal LDL^T per direct
+        ! trial, retained when its inertia is positive) and ADAPTIVE reach the
+        ! tolerance with the same error to 1e-3 as SPD_LU.
         class(ideal_frozen_t), intent(in) :: field
         type(gs_state_t) :: gs
         type(ideal_map_t) :: map
-        type(ideal_map_solve_report_t) :: report(2)
-        real(dp) :: errors(4, 2)
+        type(ideal_map_solve_report_t) :: report(4)
+        real(dp) :: errors(4, 4)
         integer :: k
+        integer, parameter :: policy(4) = [IDEAL_MAP_FACTOR_SPD_LU, &
+            IDEAL_MAP_FACTOR_SPD_LU, IDEAL_MAP_FACTOR_LDLT, IDEAL_MAP_FACTOR_ADAPTIVE]
         if (degree < 4) error stop 'krylov needs degree >= 4'
         if (command_argument_count() < 4) quadrature_order = 2*degree + 1
         solve_tolerance = 1.0e-7_dp
         call make_mesh(12, degree, gs)
-        do k = 1, 2
+        do k = 1, 4
             call build_map(gs, 1, 0, map, field)
-            map%krylov_step = k == 2
+            map%krylov_step = k >= 2
+            ! k = 3 runs the default factor policy (LDLT).
+            if (k /= 3) map%factor_policy = policy(k)
             call solve_map(map, report(k), .false.)
             call defects(map, field=field, errors=errors(:, k))
-            print '(a,l2,4i6,2es12.4)', 'krylov iterations factorizations ' &
-                //'solves cg_its gradient d3D_exact', map%krylov_step, &
-                report(k)%iterations, report(k)%factorizations, &
-                report(k)%krylov_solves, report(k)%krylov_iterations, &
-                report(k)%gradient, errors(1, k)
+            print '(a,l2,7i6,es12.4,es16.8)', 'krylov policy iterations trials ' &
+                //'factorizations indefinite solves cg_its gradient d3D_exact', &
+                map%krylov_step, map%factor_policy, report(k)%iterations, &
+                report(k)%trials, report(k)%factorizations, &
+                report(k)%indefinite_trials, report(k)%krylov_solves, &
+                report(k)%krylov_iterations, report(k)%gradient, errors(1, k)
             if (report(k)%gradient > solve_tolerance) &
                 error stop 'krylov: gradient tolerance not attained'
         end do
@@ -482,6 +491,18 @@ contains
             error stop 'krylov: no factorisation saved'
         if (abs(errors(1, 2) - errors(1, 1)) > 1.0e-3_dp*errors(1, 1)) &
             error stop 'krylov: exact-flux error differs from the direct step'
+        ! Roundoff moves the iterates along near-null (relabelling)
+        ! directions, so the policies need not follow the same sequence here
+        ! (on the Landreman b12 case they do); the end point agrees.
+        if (report(2)%indefinite_trials == 0) &
+            error stop 'krylov: no indefinite damped Hessian exercised'
+        if (report(3)%lu_fallbacks /= 0 .or. &
+            report(3)%factorizations > report(3)%trials) &
+            error stop 'krylov: LDLT policy used more than one factor per trial'
+        if (abs(errors(1, 3) - errors(1, 2)) > 1.0e-3_dp*errors(1, 2)) &
+            error stop 'krylov: LDLT policy changed the exact-flux error'
+        if (abs(errors(1, 4) - errors(1, 2)) > 1.0e-3_dp*errors(1, 2)) &
+            error stop 'krylov: ADAPTIVE policy changed the exact-flux error'
     end subroutine
 
     subroutine lagged_hessian_check(field)
