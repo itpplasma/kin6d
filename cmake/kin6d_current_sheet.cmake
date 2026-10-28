@@ -1,6 +1,6 @@
 # Ideal current sheets at rational surfaces (docs/current-sheet-equilibrium.md).
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_current_sheet_leaves.f90
-    src/mhd/current_sheet_oracles.f90)
+    src/mhd/current_sheet_oracles.f90 src/mhd/sheet_slab_map.f90)
 if(KIN6D_FORTSYM_BUILD)
     add_executable(gen_current_sheet gen/gen_current_sheet.f90)
     target_link_libraries(gen_current_sheet PRIVATE kin6d_gen_support)
@@ -23,4 +23,14 @@ foreach(case slab_identities slab_fe screw_pinch)
     set_tests_properties(current_sheet_oracle_${case} PROPERTIES TIMEOUT 60)
     kin6d_test_labels(current_sheet_oracle_${case} fast CLASSES mhd
         TARGETS test_current_sheet_oracles)
+endforeach()
+
+add_executable(test_sheet_slab_map test/test_sheet_slab_map.f90)
+target_link_libraries(test_sheet_slab_map PRIVATE kin6d_mhd)
+foreach(case derivatives linear_p2 linear_p3 symmetric floor nonlinear)
+    add_test(NAME current_sheet_slab_map_${case} COMMAND test_sheet_slab_map ${case})
+    set_tests_properties(current_sheet_slab_map_${case} PROPERTIES TIMEOUT 120
+        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+    kin6d_test_labels(current_sheet_slab_map_${case} fast CLASSES mhd
+        TARGETS test_sheet_slab_map)
 endforeach()
