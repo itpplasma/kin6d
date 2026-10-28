@@ -1876,10 +1876,25 @@ foreach(case declaration drive report)
     set_tests_properties(island_closure_${case} PROPERTIES TIMEOUT 180
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 endforeach()
+# Existing PR47 exterior consumer, recovered without changing provider pins.
+# The focused frozen-operator checks below do not admit full BEM assembly.
+target_sources(kin6d_feec_n PRIVATE
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_bem_high_order_products.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_laplace_bem_3d.f90
+    ${fortfem_SOURCE_DIR}/src/bem/parametric_bem_high_order.f90)
+target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_exterior.f90)
+add_executable(test_nonnested_exterior_operators
+    test/test_nonnested_exterior_operators.f90)
+target_link_libraries(test_nonnested_exterior_operators PRIVATE kin6d_nn_solovev_test)
+add_test(NAME nonnested_exterior_frozen_sphere_oracle
+    COMMAND test_nonnested_exterior_operators)
+set_tests_properties(nonnested_exterior_frozen_sphere_oracle PROPERTIES
+    TIMEOUT 180 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_nonnested_actions test/test_nonnested_actions.f90)
 target_link_libraries(test_nonnested_actions PRIVATE kin6d_nn_solovev_test)
 foreach(k 2 3)
-    foreach(case fixed floating voltage)
+    foreach(case fixed floating voltage exterior)
         add_test(NAME nonnested_actions_${case}_p${k}
             COMMAND test_nonnested_actions ${case} ${k})
         set_tests_properties(nonnested_actions_${case}_p${k} PROPERTIES
@@ -1903,7 +1918,7 @@ foreach(k 2 3)
 endforeach()
 add_executable(test_island_fitted test/test_island_fitted.f90)
 target_link_libraries(test_island_fitted PRIVATE kin6d_nn_solovev_test)
-foreach(case readiness heat current)
+foreach(case readiness heat current exterior)
     add_test(NAME island_fitted_${case} COMMAND test_island_fitted ${case})
     set_tests_properties(island_fitted_${case} PROPERTIES TIMEOUT 180 PROCESSORS 4
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")

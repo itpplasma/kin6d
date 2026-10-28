@@ -1,3 +1,5 @@
+kin6d_test_labels(nonnested_exterior_frozen_sphere_oracle fast CLASSES mhd
+    TARGETS test_nonnested_exterior_operators)
 foreach(k 2 3)
     foreach(geometry cylinder circle helix)
         kin6d_test_labels(ideal_fb_chart_surface_${geometry}_p${k} fast
@@ -23,7 +25,7 @@ kin6d_test_labels(ideal_fb_landreman_axisymmetric_circuits fast CLASSES mhd
 kin6d_test_labels(ideal_fb_landreman_helical_circuits fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
 foreach(k 2 3)
-    foreach(case fixed floating voltage)
+    foreach(case fixed floating voltage exterior)
         kin6d_test_labels(nonnested_actions_${case}_p${k} fast CLASSES mhd
             TARGETS test_nonnested_actions)
     endforeach()
@@ -735,7 +737,7 @@ foreach(k 2 3)
             TARGETS test_nonnested_profile)
     endforeach()
 endforeach()
-foreach(case readiness heat current)
+foreach(case readiness heat current exterior)
     kin6d_test_labels(island_fitted_${case} fast CLASSES mhd
         TARGETS test_island_fitted)
 endforeach()
