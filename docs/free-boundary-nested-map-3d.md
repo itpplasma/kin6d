@@ -289,7 +289,9 @@ hypothesis that has not been traced.
    from run to run even at a fixed thread count, and whether a run converges
    or stalls depends on that roundoff.
    With `ideal_fb_t%negative_curvature` (`fb3d_synthetic` globalisation 2,
-   opt-in) a stalled merit hands over to `ideal_fb_negative_curvature`,
+   set by `ideal_fb_init` together with `trust_region` for ntor >= 2 on a
+   non-axisymmetric chart, decision 122) a stalled merit hands over to
+   `ideal_fb_negative_curvature`,
    which takes exact More-Sorensen trust-region steps on the second-order
    model of the reduced energy E_red(q) (shell map, Phi~ and lambda solved
    exactly, slide gauge) while S_red has a negative eigenvalue, and a state
@@ -300,7 +302,10 @@ hypothesis that has not been traced.
    escape now prevents, and with it job 3370145 converged in 8 of 8 glob-2
    runs (R1, R2 and R3, kicks up to 15 mm). All R1 runs reached the same state within
    4e-7 mm, in 34 to 87 Newton steps against 93 to 152 for the trust region
-   alone.
+   alone. Since only stable equilibria leave the solve with the flag set, a
+   wanted unstable target (the vertical mode at fixed currents) opts out by
+   resetting both flags after `ideal_fb_init` (`fb3d_synthetic`
+   globalisation 0 or 1).
    The case is stellarator symmetric: the coils (make_coils.py), the chart
    frame, which maps (q1, q2, phi-hat) to (-q1, q2, -phi-hat) under
    (x, y, z) -> (x, -y, -z), the frozen labels and, at R1 only, the reference
@@ -320,7 +325,33 @@ hypothesis that has not been traced.
    boundary symmetry defect below 1e-7 mm at R1 and 0.9 mm at R2, where the
    mesh is not mirror symmetric. The single R3 run converged to a stable
    state with a 5.4 mm defect, and whether that is the mesh asymmetry or a
-   second stable branch is open.
+   second stable branch is open. `initialize_gs` with `mirror_x`
+   (`fb3d_synthetic` argument 19) meshes the half q1 >= 0 with the mirror
+   line as a constrained boundary, divided at the loop spacing, and reflects
+   it, so that every node and cell has an image at every resolution
+   (`gs_mirror_mesh`); both loops must be mirror symmetric and meet the line
+   in two of their nodes. In sCluster job 3370234 the direct R3 mesh gave the
+   5.4 mm state again in two repeats. On the mirrored R3 mesh all six
+   unkicked runs (1, 8, 16 and 32 threads) reached a state with a symmetry
+   defect below 1e-4 mm (E_red -45034.375022, smallest eigenvalue of S_red
+   9.2), and so did the three 16-thread runs and the -8 and +15 mm kicks at
+   R2 (E_red -45032.879584, 13.7). The 5.4 mm defect is therefore an artefact
+   of the asymmetric triangulation. The mirrored meshes also have nearby
+   stable states that break the symmetry: 3.3 mm on Gamma_p at R2 (E_red
+   1.5e-4 J higher, reached from the +8 mm kick and unkicked at 1 and 4 threads)
+   and 0.16 mm at R3 as a mirror pair from the +-8 mm kicks (1.3e-5 J
+   higher). The phi = 0 vacuum
+   oracle error of the symmetric state is 3.19/6.59, 3.24/6.60 and
+   3.26/7.59 mm (rms/max) at R1, R2 and R3, so it does not decrease under
+   this refinement and is not a plasma-mesh discretisation error. At N = 1
+   (R1, globalisation 2) the solve reaches either the symmetric stable state
+   or a stable pair with a 22 mm defect and an E_red 0.03 J lower, so
+   symmetry is not the energy minimum there. Globalisation 2 fails where an
+   escape is pinned at the fold guard: a cell Jacobian falls to a quarter of
+   its value at entry along the descent of E_red, and every later trial is
+   rejected. This happened in three of the four mirrored R1 runs (the
+   fourth, kicked by +8 mm, cycles saddle escapes next to the symmetric
+   state) and in 3 of 21 other N = 2 runs.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`

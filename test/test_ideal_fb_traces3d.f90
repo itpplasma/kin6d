@@ -294,6 +294,12 @@ contains
                 circulation, st, mu0=mu0)
         end if
         if (st /= IDEAL_FB_OK) error stop 'fb init'
+        ! FB3D N >= 2 globalises with the trust region and the negative-
+        ! curvature escape by default; the cylindrical chart and N < 2 do not.
+        if (fb%negative_curvature .neqv. (curve .and. nt >= 2)) &
+            error stop 'FB3D default globalisation'
+        if (fb%trust_region .neqv. fb%negative_curvature) &
+            error stop 'FB3D default trust region'
     end subroutine
 
     real(dp) function full_turn_defect(fb, d1, l1, d2, l2) result(err)
