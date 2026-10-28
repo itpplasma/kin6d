@@ -71,6 +71,8 @@ program test_ideal_map_axisymmetric
     integer :: max_newton = 600
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
+    ! Argument 11: map%parallel_damping (parallel-only Levenberg-Marquardt).
+    real(dp) :: parallel_damping = 0, parallel_floor = 0
     mode = 'solovev'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
     if (command_argument_count() > 1) then
@@ -108,6 +110,15 @@ program test_ideal_map_axisymmetric
         call get_command_argument(10, argument)
         gauge_hessian_only = trim(argument) == 'h'
         omega_elimination = trim(argument) == 'n'
+    end if
+    if (command_argument_count() > 10) then
+        call get_command_argument(11, argument)
+        read (argument, *) parallel_damping
+    end if
+    ! Argument 12 > 0: map%parallel_metric with that parallel_floor.
+    if (command_argument_count() > 11) then
+        call get_command_argument(12, argument)
+        read (argument, *) parallel_floor
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped' &
         .or. trim(mode) == 'shapedho')
@@ -182,6 +193,10 @@ contains
         map%position_gauge = position_gauge
         map%gauge_hessian_only = gauge_hessian_only
         map%omega_elimination = omega_elimination
+        map%parallel_damping = parallel_damping
+        if (parallel_floor > 0) then
+            map%parallel_metric = .true.; map%parallel_floor = parallel_floor
+        end if
         if (present(field)) then
             call ideal_map_freeze(map, field, status)
         else

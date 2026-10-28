@@ -97,3 +97,11 @@ relaxation as a production method, and accelerator-specific frameworks.
   [atlas](benchmarks.md)), SIESTA, SPECTRE, VMEC++, DESC, GVEC.
 - Published only: NTEC and HINT figures and tables, recorded with their model
   assumptions and caveats.
+
+## Implementation status
+
+- Item 2: `parallel_damping` of the ideal map Newton (non-nested solve),
+  [ideal map](ideal-map-3d.md), tests `ideal_map_parallel_mass` and
+  `ideal_map_parallel_damping_p2`. The NN2 coupled Newton has A, not a
+  displacement, as unknown: v || B maps to dA = v x B = 0, so that system
+  has no parallel near-null mode to damp.
