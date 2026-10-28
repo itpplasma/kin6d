@@ -749,3 +749,6 @@ kin6d_test_labels(island_provider_tangent_p2 slow CLASSES mhd
     TARGETS test_island_provider)
 kin6d_test_labels(island_provider_nested_p2 fast CLASSES mhd
     TARGETS test_island_provider)
+kin6d_test_labels(s0_toroidal_continuum_gap fast CLASSES mhd TARGETS test_s0_tae)
+kin6d_test_labels(s0_external_kink_rigid_growth fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
