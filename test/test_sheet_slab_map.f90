@@ -11,6 +11,8 @@ program test_sheet_slab_map
     !   floor        comparators: C0 map with the asymmetric jump, interface
     !                inside an element, continuous iota (Hahm-Kulsrud)
     !   nonlinear    finite amplitude: self-convergence of the sheet current
+    !   shielding_limit  h ~ Delta -> 0: the sheet current converges to the
+    !                continuous-iota ideal shielding current at rate O(Delta)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_sheet_slab_map, only: sheet_slab_map_t
     use kin6d_current_sheet_oracles, only: slab_sheet_t
@@ -38,6 +40,8 @@ program test_sheet_slab_map
         call nonlinear()
     case ('margin')
         call margin()
+    case ('shielding_limit')
+        call shielding_limit()
 
     case default
         error stop 'usage: test_sheet_slab_map derivatives|linear_p2|linear_p3|symmetric|floor|nonlinear'
@@ -262,6 +266,41 @@ contains
         call check(o1 > 1.8_dp .and. o2 > 3.5_dp, 'nonlinear self-convergence orders')
         write (*, '(a)') 'PASS nonlinear'
     end subroutine
+    !> Double limit: sheet current of the map (P3, h ~ Delta, linear limit)
+    !> for jumps (Delta, Delta/2) -> 0 against the continuous-iota ideal
+    !> shielding current (Hahm-Kulsrud with general walls); the oracle
+    !> difference is O(Delta), the map must follow it.
+    subroutine shielding_limit()
+        type(sheet_slab_map_t) :: mp, mm
+        type(slab_sheet_t) :: o0, o
+        real(dp), parameter :: eps = 2e-5_dp
+        real(dp) :: dl(4), jp(3), jm(3), k1(4), e(4), eo(4)
+        integer :: i, st
+        dl = [0.4_dp, 0.2_dp, 0.1_dp, 0.05_dp]
+        o0%a = 1; o0%k = acos(-1.0_dp); o0%b0 = 1; o0%wp = -1; o0%wm = 0.5_dp
+        call o0%init()
+        do i = 1, 4
+            ! Mesh refined with the layer width: h proportional to Delta.
+            call setup(mp, 3, 32*2**i, 2, 0.0_dp, dl(i), dl(i)/2, eps, .true.)
+            call setup(mm, 3, 32*2**i, 2, 0.0_dp, dl(i), dl(i)/2, -eps, .true.)
+            call mp%solve(); call mm%solve()
+            call check(mp%status == 0 .and. mm%status == 0, 'solves')
+            call mp%sheet_jump(jp, st); call mm%sheet_jump(jm, st)
+            k1(i) = (jp(2) - jm(2))/(2*eps)
+            o = o0; o%dplus = dl(i); o%dminus = dl(i)/2
+            call o%init()
+            e(i) = abs(k1(i) - o0%sheet())/abs(o0%sheet())
+            eo(i) = abs(o%sheet() - o0%sheet())/abs(o0%sheet())
+            write (*, '(a,f6.3,a,es14.6,a,es14.6,a,2es10.3)') 'Delta', dl(i), ' map K1', &
+                k1(i), ' oracle K1', o%sheet(), ' rel. to shielding: map, oracle', e(i), eo(i)
+        end do
+        write (*, '(a,es14.6,a,3f6.2)') 'shielding K1', o0%sheet(), '  map rates', &
+            (log(e(i)/e(i + 1))/log(2.0_dp), i = 1, 3)
+        call check(all(abs(e - eo) < 0.05_dp*eo), 'map follows the oracle')
+        call check(log(e(3)/e(4))/log(2.0_dp) > 0.8_dp, 'shielding limit O(Delta)')
+        write (*, '(a)') 'PASS shielding_limit'
+    end subroutine
+
     !> Diagnostic (not registered): largest wall amplitude reached by
     !> continuation before the map folds, symmetric jumps Delta.
     subroutine margin()
