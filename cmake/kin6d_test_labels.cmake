@@ -35,6 +35,8 @@ kin6d_test_labels(grad_shafranov_device_selection_contract fast CLASSES equilibr
     TARGETS test_gs_device_selection)
 kin6d_test_labels(grad_shafranov_cuda_public_fixed_source fast CLASSES equilibrium
     TARGETS test_gs_cuda_public_solve)
+kin6d_test_labels(grad_shafranov_cuda_affine_picard fast CLASSES equilibrium
+    TARGETS test_gs_cuda_picard)
 kin6d_test_labels(grad_shafranov_cuda_fixed_source_a3 fast CLASSES equilibrium
     TARGETS test_gs_cuda_fixed_source)
 kin6d_test_labels(grad_shafranov_cuda_affine_strict_audit fast CLASSES equilibrium
