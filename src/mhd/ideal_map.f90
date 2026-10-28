@@ -746,9 +746,10 @@ contains
     subroutine ideal_map_position_gauge(map)
         ! Position gauge (as N4): full (q1, q2) per interior node and mode, no
         ! toroidal displacement (omega = 0, toroidal labels follow phi-hat). The
-        ! poloidal slide along surfaces is then physical (it redistributes the
-        ! toroidal flux) instead of a relabelling null, rigid motions are
-        ! exact, and neither the axis expansion nor an omega pin is needed.
+        ! rigid motions are exact, and neither the axis expansion nor an omega
+        ! pin is needed. Poloidal phase shifts theta -> theta + f(s), f(1)=0,
+        ! remain continuum relabellings for the disk's surface-function flux
+        ! density. Interpolation need not preserve these nulls exactly.
         type(ideal_map_t), intent(inout) :: map
         integer :: a, m, j
         if (allocated(map%axis_vec)) deallocate (map%axis_vec)
@@ -792,12 +793,10 @@ contains
     end subroutine
 
     subroutine ideal_map_prolong(fine, coarse, status)
-        ! Grid sequencing (VMEC's ns ladder): initialise the coefficients of a
-        ! map on a finer reference mesh of the same domain and labels from a
-        ! solved coarse map, evaluated at the fine reference nodes. Boundary
-        ! nodes keep their reference position (held dofs). Re-gauging the
-        ! transversals to the coarse surfaces (cell-averaged F) was tried and
-        ! did not change the observed order.
+        ! Interpolate a solved map at the new reference nodes. Phi-fixed maps
+        ! retain their supplied physical wall and any newly introduced Fourier
+        ! modes; only common interior modes are transferred. The legacy
+        ! transversal space keeps its reference-wall and omega-pin convention.
         type(ideal_map_t), intent(inout) :: fine
         type(ideal_map_t), intent(in) :: coarse
         integer, intent(out) :: status
@@ -805,9 +804,16 @@ contains
         real(dp) :: grad(2, TRIANGLE_MAX_NODES)
         integer :: a, e, k, owner, located, j
         status = IDEAL_MAP_BAD_INPUT
-        if (fine%nmode /= coarse%nmode .or. fine%nfp /= coarse%nfp) return
+        if (fine%nfp /= coarse%nfp) return
+        if (fine%position_gauge .neqv. coarse%position_gauge) return
+        if (.not. fine%position_gauge) then
+            if (fine%nmode /= coarse%nmode) return
+        end if
         owner = 1
         do a = 1, fine%nodes
+            if (fine%position_gauge) then
+                if (fine%boundary(a)) cycle
+            end if
             y = fine%reference(:, a)
             located = 0
             do k = 0, coarse%cells - 1
@@ -824,17 +830,19 @@ contains
             end if
             owner = located
             call triangle_basis_jet(xi, shape(:coarse%nloc), grad(:, :coarse%nloc))
-            do k = 1, fine%nmode
+            do k = 1, min(fine%nmode, coarse%nmode)
                 fine%x(:, k, a) = matmul(coarse%x(:, k, coarse%conn(:, located)), &
                     shape(:coarse%nloc))
             end do
         end do
-        do a = 1, fine%nodes
-            if (.not. fine%boundary(a)) cycle
-            fine%x(1:2, 1, a) = fine%reference(:, a)
-            fine%x(1:2, 2:, a) = 0
-        end do
-        fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
+        if (.not. fine%position_gauge) then
+            do a = 1, fine%nodes
+                if (.not. fine%boundary(a)) cycle
+                fine%x(1:2, 1, a) = fine%reference(:, a)
+                fine%x(1:2, 2:, a) = 0
+            end do
+            fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
+        end if
         status = IDEAL_MAP_OK
     end subroutine
 

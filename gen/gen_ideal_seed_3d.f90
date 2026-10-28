@@ -14,6 +14,10 @@ program gen_ideal_seed_3d
     type(engine_result_t) :: proof
     type(expr_t) :: u, v, a, b, rc, rs, zc, zs, s, c, value, flux, pi
     type(expr_t) :: integral, edge, iota, pressure, chi, gu, gv, b3
+    type(expr_t) :: jet(3, 3), twisted(3, 3), bt, phase_s, density(3)
+    integer :: row, column
+    character(3), parameter :: jets(3, 3) = reshape([character(3) :: &
+        'd11', 'd21', 'd31', 'd12', 'd22', 'd32', 'd13', 'd23', 'd33'], [3, 3])
     call arena%init()
     engine = make_native_engine(arena)
     call w%open(arena, 'gen_ideal_seed_3d', &
@@ -80,7 +84,44 @@ program gen_ideal_seed_3d
     if(proof%verdict/=VERDICT_TRUE) error stop 'position-gauge poloidal form unproved'
     proof=engine%zero_test(a*iota+1+b-value)
     if(proof%verdict/=VERDICT_TRUE) error stop 'position-gauge toroidal form unproved'
+    ! A residual phi-fixed gauge is theta' = theta + f(s), f(1)=0.
+    ! DG is a shear of determinant one; it preserves s, pressure and the
+    ! density (0,iota(s)*bt(s),bt(s)). For arbitrary DX at the transformed
+    ! point, both its determinant and DX*b are unchanged. This is a continuum
+    ! identity, not a claim of an exact null in the discrete interpolation.
+    phase_s = sym(arena, 'phase_s'); bt = sym(arena, 'bt')
+    do column = 1, 3
+        do row = 1, 3
+            jet(row, column) = sym(arena, jets(row, column))
+        end do
+    end do
+    twisted = jet
+    do row = 1, 3
+        twisted(row, 1) = jet(row, 1) + phase_s*jet(row, 2)
+    end do
+    density = [0*bt, iota*bt, bt]
+    do row = 1, 3
+        proof = engine%zero_test(dot(twisted(row, :), density) &
+            - dot(jet(row, :), density))
+        if (proof%verdict /= VERDICT_TRUE) error stop 'poloidal phase flux unproved'
+    end do
+    proof = engine%zero_test(determinant(twisted) - determinant(jet))
+    if (proof%verdict /= VERDICT_TRUE) error stop 'poloidal phase volume unproved'
     call w%line('end module kin6d_ideal_seed_3d_leaves')
     call w%close()
-    print '(a)', '[V] FortSym closed disk flux, iota and conditional position-gauge identities proved'
+    print '(a)', '[V] FortSym closed flux, iota and position/poloidal-phase gauge identities proved'
+contains
+    function dot(a, b) result(value)
+        type(expr_t), intent(in) :: a(3), b(3)
+        type(expr_t) :: value
+        value = a(1)*b(1) + a(2)*b(2) + a(3)*b(3)
+    end function
+
+    function determinant(a) result(value)
+        type(expr_t), intent(in) :: a(3, 3)
+        type(expr_t) :: value
+        value = a(1, 1)*(a(2, 2)*a(3, 3) - a(2, 3)*a(3, 2)) &
+            - a(1, 2)*(a(2, 1)*a(3, 3) - a(2, 3)*a(3, 1)) &
+            + a(1, 3)*(a(2, 1)*a(3, 2) - a(2, 2)*a(3, 1))
+    end function
 end program
