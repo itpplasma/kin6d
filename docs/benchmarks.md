@@ -185,11 +185,12 @@ after the physics problem:
 
 | Case | Class | Model lane | Producers |
 |---|---|---|---|
-| landreman_3d_nested | E0 | ideal nested | KIN6D, MRX, Zhang--Zhu--Hegna, VMEC++, DESC, GVEC |
+| landreman_3d_nested | E0 | ideal nested | KIN6D, MRX, VMEC++, DESC, GVEC |
 | issan_3d_nonsymmetric | E0 | ideal nested | KIN6D, MRX, VMEC++, DESC, GVEC |
-| rotating_ellipse_3d | X | ideal non-nested/weak or vacuum | KIN6D, MRX, SPECTRE |
-| finite_pressure_island | X | ideal non-nested/weak; resistive relaxed | KIN6D, Zhang--Zhu--Hegna, MRX/HINT where equations match |
-| stochastic_finite_pressure | X | resistive relaxed | KIN6D, Zhang--Zhu--Hegna, HINT/PIES |
+| rotating_ellipse_3d | X | ideal non-nested/weak or vacuum | KIN6D, SPECTRE |
+| ncsx_relax_seed_relax | X | ideal non-nested/weak (incompressible relaxation) | KIN6D, MRX |
+| finite_pressure_island | X | ideal non-nested/weak; resistive relaxed | KIN6D, MRX; NTEC and HINT published results where equations match |
+| stochastic_finite_pressure | X | resistive relaxed | KIN6D; NTEC, HINT and PIES published results |
 | mrxmhd_island_chaos | X | MRxMHD | KIN6D-MRxMHD, SPEC/SPECTRE |
 | free_boundary_3d_nonnested | X | MRxMHD; ideal non-nested/weak | SPECTRE, KIN6D |
 
@@ -208,7 +209,15 @@ field (k = 2.1e-3) is an unconverged ladder.
 
 Compare codes only within one model lane (ideal nested; ideal non-nested/weak;
 resistive relaxed; MRxMHD). A result from another lane is context, not a
-reference.
+reference. The pressure closure is part of the lane: adiabatic transport with
+the map (kin6d map lane, SIESTA), a Lagrange multiplier for divergence-free
+flow (MRX), parallel diffusion towards B·∇p = 0 (NTEC, HINT) and stepped
+pressure (SPEC, SPECTRE) give different equilibria in islands.
+
+Sources follow the [benchmark source policy](literature-policy.md#benchmark-sources):
+analytical and limiting cases, open-source codes run at a pinned revision, and
+published literature. Closed-source codes (NTEC, HINT, PIES) enter only through
+their published tables and figures.
 
 Observables by class:
 
