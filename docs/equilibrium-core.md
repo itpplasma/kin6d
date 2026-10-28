@@ -176,8 +176,8 @@ Interchange and reconstruction return candidates, with derivatives and
 continuous bounds unavailable. The legacy reader remains, with an explicit
 fixture equivalence test. The [fixture recipe](../test/fixtures/shield_torus_a10.md)
 distinguishes its stored CHEASE grid from reconstructed q/LCFS records.
-The libneo pin is a draft upstream commit and must move to the squashed main
-commit before KIN6D #55 leaves draft.
+The adapter uses the one libneo pin of the build (`KIN6D_LIBNEO_REVISION`, a
+libneo main commit that contains the G-EQDSK target split of libneo#445).
 
 Kinetic geometry view (`src/equilibrium/equilibrium_geometry.f90`, axisymmetric states):
 on a surface psi = psi_0 of the evaluator it returns B, |B|, grad|B| (five-point

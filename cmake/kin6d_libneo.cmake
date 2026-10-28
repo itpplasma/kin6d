@@ -2,14 +2,12 @@ option(KIN6D_WITH_LIBNEO "Build the optional libneo G-EQDSK adapter" OFF)
 if(NOT KIN6D_WITH_LIBNEO)
     return()
 endif()
-# Draft upstream target split; move to its squashed main commit before #55 is ready.
-set(KIN6D_LIBNEO_REVISION "58166025c8205709888b97eab7837e6182dfd07c")
-FetchContent_Declare(libneo
-    GIT_REPOSITORY https://github.com/itpplasma/libneo.git
-    GIT_TAG ${KIN6D_LIBNEO_REVISION})
+# libneo is declared and populated once in CMakeLists.txt (KIN6D_LIBNEO_REVISION,
+# also in the build-info provenance); that main commit carries the lightweight
+# G-EQDSK target of itpplasma/libneo#445.
 FetchContent_GetProperties(libneo)
 if(NOT libneo_POPULATED)
-    FetchContent_Populate(libneo)
+    message(FATAL_ERROR "kin6d_libneo.cmake needs the libneo source populated in CMakeLists.txt")
 endif()
 set(LIBNEO_BUILD_NUMERICS OFF CACHE BOOL "" FORCE)
 set(LIBNEO_BUILD_JOREK OFF CACHE BOOL "" FORCE)
