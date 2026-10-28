@@ -55,7 +55,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
 
 - [Equilibria with islands](island-equilibrium.md) (design)
 - [NN1: vacuum and Solov'ev on the FEEC complex](equilibrium-nonnested.md),
-  [mapped 3D domains](nn1-mapped-3d.md),
+  [mapped 3D domains](nn1-mapped-3d.md) and their [matrix-free Newton-MR solve](nonnested-newton-mr.md),
   [quasi-axisymmetric vacuum benchmark](nn1-qa-benchmark.md)
 - [NN2: resistive relaxed lane](equilibrium-nonnested-nn2.md),
   [frozen fitted profiles](nonnested-profiles.md)

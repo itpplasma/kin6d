@@ -1241,6 +1241,7 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(gen_correlation_hierarchy PRIVATE kin6d_gen_support)
 endif()
 target_sources(kin6d_core PRIVATE src/core/series_statistics.f90)
+target_sources(kin6d_core PRIVATE src/core/newton_mr.f90)
 target_sources(kin6d_classical PRIVATE src/generated/kin6d_correlation_hierarchy_leaves.f90
     src/classical/ocp_monte_carlo.f90 src/classical/correlation_hierarchy.f90 src/classical/ocp_hnc.f90)
 set_source_files_properties(src/generated/kin6d_correlation_hierarchy_leaves.f90
@@ -1598,6 +1599,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_fourier_equilibration_products.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_equilibration.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_curl.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_apply.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
@@ -1973,6 +1975,7 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
     TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
+    src/mhd/nonnested_newton_mr.f90
     src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_relax.f90
     src/generated/kin6d_metriplectic_leaves.f90)
 set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
@@ -2067,6 +2070,20 @@ add_test(NAME nonnested_mapped_zero_forcing_residual
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
     nonnested_mapped_zero_forcing_residual
+    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+
+# Matrix-free Newton-MR for mapped NN1: docs/nonnested-newton-mr.md.
+add_executable(test_newton_mr test/test_newton_mr.f90)
+target_link_libraries(test_newton_mr PRIVATE kin6d_core)
+add_test(NAME newton_mr_minres COMMAND test_newton_mr minres)
+add_test(NAME newton_mr_nonconvex COMMAND test_newton_mr newton)
+add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
+target_link_libraries(test_nonnested_newton_mr PRIVATE kin6d)
+add_test(NAME nonnested_newton_mr_agreement
+    COMMAND test_nonnested_newton_mr agree 4 4)
+add_test(NAME nonnested_newton_mr_lumped_ladder
+    COMMAND test_nonnested_newton_mr ladder lumped 4 2 4 8)
+set_tests_properties(nonnested_newton_mr_agreement nonnested_newton_mr_lumped_ladder
     PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.

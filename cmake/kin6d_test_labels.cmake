@@ -529,6 +529,12 @@ kin6d_test_labels(nonnested_mapped_ellipse_mode_ladder fast CLASSES mhd
     TARGETS test_nonnested_mapped)
 kin6d_test_labels(nonnested_mapped_zero_forcing_residual fast CLASSES mhd
     TARGETS test_nonnested_mapped)
+kin6d_test_labels(newton_mr_minres fast CLASSES core TARGETS test_newton_mr)
+kin6d_test_labels(newton_mr_nonconvex fast CLASSES core TARGETS test_newton_mr)
+kin6d_test_labels(nonnested_newton_mr_agreement fast CLASSES mhd
+    TARGETS test_nonnested_newton_mr)
+kin6d_test_labels(nonnested_newton_mr_lumped_ladder fast CLASSES mhd
+    TARGETS test_nonnested_newton_mr)
 kin6d_test_labels(nonnested_qa_oracle_check fast CLASSES mhd TARGETS test_nonnested_qa)
 # Non-nested Beltrami equilibria (docs/nn1-mapped-3d.md). The SPEC sample tests
 # are configured only when KIN6D_BELTRAMI_SPEC_SAMPLES is set, so that executable
