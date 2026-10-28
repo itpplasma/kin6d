@@ -25,6 +25,14 @@ program study_island_closure_a
     !   scan k nr outdir eps...    flattening G, island width and residuals
     !                              against chi_par/chi_perp (ISLAND_SCAN_LOG10)
     !   poincare k nr outdir eps ratio   Poincare section and p(R, Z) at phi = 0
+    !   connect k nr outdir eps ratio    wall connection (turns, both directions)
+    !                              of lines seeded on the Z = 0 diameter at
+    !                              phi = 0, with p/p_max at each seed
+    ! ISLAND_MODES sets the toroidal truncation n = 0..N (default 1).
+    ! scan also writes plane.dat (min p/p_max and the area fractions with
+    ! p < 0 and p < 0.01 p_max on the phi = 0 plane, solve wall time) and
+    ! diameter.dat (p/p_max on the whole Z = 0 diameter); eps = 0 skips the
+    ! island tracing (G, W, u_O are NaN).
     ! G is the O-point slope over +-W/6 divided by the chord slope over
     ! +-2W/3 on Z = 0, phi = 0 (fractions of the measured width W, frozen
     ! across the comparison; docs/island-equilibrium.md).
@@ -55,6 +63,10 @@ program study_island_closure_a
             call get_command_argument(4 + i, arg); read (arg, *) epss(i)
         end do
         call scan()
+    case ('connect')
+        call get_command_argument(5, arg); allocate (epss(1)); read (arg, *) epss(1)
+        call get_command_argument(6, arg); read (arg, *) ratio
+        call connect(epss(1), ratio)
     case ('poincare')
         call get_command_argument(5, arg); allocate (epss(1)); read (arg, *) epss(1)
         call get_command_argument(6, arg); read (arg, *) ratio
@@ -67,8 +79,13 @@ contains
         real(dp), intent(in) :: eps, ratio0
         type(nc_problem_t) :: problem
         real(dp), allocatable :: base(:), pert(:)
-        integer :: st
-        call island_a_setup(nr, k, 1, base, pert, problem)
+        integer :: st, modes, ln
+        character(16) :: env
+        ! Toroidal modes n = 0..ISLAND_MODES (default 1) of A, p and Phi.
+        modes = 1
+        call get_environment_variable('ISLAND_MODES', env, ln)
+        if (ln > 0) read (env, *) modes
+        call island_a_setup(nr, k, modes, base, pert, problem)
         call island_provider_init(prov, field, problem, base, pert, shell_source, &
             [1.0_dp, eps, 0.0_dp, ratio0], 0.9_dp, 1.0e5_dp, &
             'helical-coil-annulus', st)
@@ -86,8 +103,10 @@ contains
     end function
 
     subroutine scan()
+!$      use omp_lib, only: omp_get_wtime
         real(dp) :: eps, ratio, ro, rx, uo, w, w1, e1, e2, g, a, b, pmax, rr
-        integer :: ie, ir, st, us, uc, j, nratio, ln
+        real(dp) :: t0, wall, pmin, fneg, fzero, nan
+        integer :: ie, ir, st, us, uc, up, ud, j, nratio, ln
         real(dp) :: grid(3)
         character(64) :: env
         ! log10 ratio grid: ISLAND_SCAN_LOG10="first last step" (default 0 8 0.5);
@@ -101,13 +120,23 @@ contains
         write (us, '(a)') '# eps ratio W(traced at first/last ratio) u_O G p_O/p_max p_X/p_max p_max eps_parallel '// &
             'pressure_rows D3 newton stages'
         write (uc, '(a)') '# eps ratio R p/p_max (Z = 0, phi = 0, inner side)'
+        open (newunit=up, file=trim(outdir)//'/plane.dat', status='replace')
+        write (up, '(a)') '# eps ratio min(p)/p_max frac(p<0) frac(p<0.01 p_max) '// &
+            'solve_wall_s (phi = 0 plane, 241 x 241 grid in the annulus)'
+        open (newunit=ud, file=trim(outdir)//'/diameter.dat', status='replace')
+        write (ud, '(a)') '# eps ratio R p/p_max (Z = 0, phi = 0, whole diameter)'
+        nan = ieee_value(0.0_dp, ieee_quiet_nan)
         do ie = 1, size(epss)
             eps = epss(ie)
             call start(eps, 1.0_dp)
             do ir = 1, nratio
                 ratio = 10.0_dp**(grid(1) + grid(3)*(ir - 1))
                 prov%theta(IP_CHI_PAR) = ratio
+                t0 = 0
+!$              t0 = omp_get_wtime()
                 call island_provider_solve(prov, prov%theta, st)
+                wall = 0
+!$              wall = omp_get_wtime() - t0
                 if (st /= IP_OK) then
                     print '(a,es9.2,a,es9.2,a)', 'eps ', eps, ' ratio ', ratio, &
                         ' solve FAILED'
@@ -115,20 +144,28 @@ contains
                 end if
                 field = prov%field
                 traced => prov%field
-                ro = half_turn_root(5.47_dp, 5.56_dp)
-                rx = half_turn_root(6.66_dp, 6.75_dp)
-                uo = r0 - ro
-                ! W is traced at the first and last ratio; G uses the
-                ! first-ratio W for the whole scan (frozen offsets).
-                if (ir == 1 .or. ir == nratio) then
-                    e1 = edge(max(0.31_dp, uo - 0.2_dp), uo)
-                    e2 = edge(uo + 0.2_dp, uo)
-                    w = e2 - e1
-                    if (ir == 1) w1 = w
+                call plane_metrics(pmin, fneg, fzero)
+                write (up, '(2es14.6,3es14.6,f12.2)') eps, ratio, pmin, fneg, fzero, wall
+                flush (up)
+                if (eps > 0) then
+                    ro = half_turn_root(5.47_dp, 5.56_dp)
+                    rx = half_turn_root(6.66_dp, 6.75_dp)
+                    uo = r0 - ro
+                    ! W is traced at the first and last ratio; G uses the
+                    ! first-ratio W for the whole scan (frozen offsets).
+                    if (ir == 1 .or. ir == nratio) then
+                        e1 = edge(max(0.31_dp, uo - 0.2_dp), uo)
+                        e2 = edge(uo + 0.2_dp, uo)
+                        w = e2 - e1
+                        if (ir == 1) w1 = w
+                    end if
+                    a = w1/6; b = 2*w1/3
+                    g = abs(p_at(ro + a) - p_at(ro - a))/(2*a) &
+                        /(abs(p_at(ro + b) - p_at(ro - b))/(2*b))
+                else
+                    ro = r0 - 0.48_dp; rx = r0 + 0.70_dp
+                    uo = nan; w = nan; g = nan
                 end if
-                a = w1/6; b = 2*w1/3
-                g = abs(p_at(ro + a) - p_at(ro - a))/(2*a) &
-                    /(abs(p_at(ro + b) - p_at(ro - b))/(2*b))
                 pmax = 0
                 do j = 0, 180
                     rr = r0 - 1.18_dp + 0.86_dp*j/180
@@ -139,6 +176,13 @@ contains
                     write (uc, '(4es16.8)') eps, ratio, rr, p_at(rr)/pmax
                 end do
                 write (uc, *)
+                do j = 0, 480
+                    rr = r0 - 1.199_dp + 2.398_dp*j/480
+                    if (abs(rr - r0) < 0.301_dp) cycle
+                    write (ud, '(4es16.8)') eps, ratio, rr, p_at(rr)/pmax
+                end do
+                write (ud, *)
+                flush (ud)
                 write (us, '(4es14.6,4es14.6,3es12.4,2i5)') eps, ratio, w, uo, g, &
                     p_at(ro)/pmax, p_at(rx)/pmax, pmax, prov%report%epsilon_parallel, &
                     prov%report%pressure, prov%report%force%normalized, &
@@ -151,8 +195,102 @@ contains
             end do
             print '(a)', island_provider_provenance(prov)
         end do
-        close (us); close (uc)
+        close (us); close (uc); close (up); close (ud)
     end subroutine
+
+    subroutine plane_metrics(pmin, fneg, fzero)
+        ! p on the phi = 0 plane (the poincare mode's 241 x 241 grid restricted
+        ! to the annulus): min p/p_max and area fractions of p < 0 and
+        ! p < 0.01 p_max (equal-area cells).
+        real(dp), intent(out) :: pmin, fneg, fzero
+        integer, parameter :: ng = 241
+        real(dp), allocatable :: xyz(:, :), v(:, :)
+        real(dp) :: x(2)
+        integer :: i, j, n, st
+        allocate (xyz(3, ng*ng))
+        n = 0
+        do i = 1, ng
+            do j = 1, ng
+                x = [r0 - 1.25_dp + 2.5_dp*(j - 1)/(ng - 1), &
+                    -1.25_dp + 2.5_dp*(i - 1)/(ng - 1)]
+                if (norm2(x - [r0, 0.0_dp]) <= 0.301_dp) cycle
+                if (norm2(x - [r0, 0.0_dp]) >= 1.199_dp) cycle
+                n = n + 1
+                xyz(:, n) = [x(1), 0.0_dp, x(2)]
+            end do
+        end do
+        allocate (v(4, n))
+        call island_provider_sample(prov, xyz(:, :n), v, st)
+        if (st /= IP_OK) error stop 'plane metrics'
+        pmin = minval(v(4, :))/maxval(v(4, :))
+        fneg = count(v(4, :) < 0)/real(n, dp)
+        fzero = count(v(4, :) < 0.01_dp*maxval(v(4, :)))/real(n, dp)
+    end subroutine
+
+    subroutine connect(eps, ratio)
+        ! Wall connection of field lines seeded on the Z = 0 diameter at
+        ! phi = 0: toroidal turns until the line leaves the annulus, forward
+        ! and backward (nturn when it stays inside). A line that reaches a
+        ! wall carries the Dirichlet value p = 0 in the chi_par -> infinity
+        ! limit; a line that stays inside does not.
+        real(dp), intent(in) :: eps, ratio
+        integer, parameter :: nside = 240, nturn = 100, steps = 128
+        real(dp) :: rs(2*nside), pseed(2*nside), pmax, u
+        integer :: turns(2, 2*nside), s, uo, st
+        real(dp), allocatable :: xyz(:, :), v(:, :)
+        call start(eps, 1.0_dp)
+        prov%theta(IP_CHI_PAR) = ratio
+        call island_provider_solve(prov, prov%theta, st)
+        if (st /= IP_OK) error stop 'connect solve'
+        print '(a)', island_provider_provenance(prov)
+        traced => prov%field
+        do s = 1, nside
+            u = 0.302_dp + 0.896_dp*(s - 1)/(nside - 1)
+            rs(s) = r0 - u; rs(nside + s) = r0 + u
+        end do
+        allocate (xyz(3, 2*nside), v(4, 2*nside))
+        xyz(1, :) = rs; xyz(2:3, :) = 0
+        call island_provider_sample(prov, xyz, v, st)
+        if (st /= IP_OK) error stop 'connect sample'
+        pmax = maxval(v(4, :)); pseed = v(4, :)/pmax
+        !$omp parallel do default(shared) private(s) schedule(dynamic)
+        do s = 1, 2*nside
+            turns(1, s) = turns_to_wall(rs(s), 1.0_dp, nturn, steps)
+            turns(2, s) = turns_to_wall(rs(s), -1.0_dp, nturn, steps)
+        end do
+        !$omp end parallel do
+        open (newunit=uo, file=trim(outdir)//'/connect.dat', status='replace')
+        write (uo, '(a,i0,a)') '# R p/p_max turns_forward turns_backward (Z = 0, '// &
+            'phi = 0; ', nturn, ' = no wall contact)'
+        do s = 1, 2*nside
+            write (uo, '(2es16.8,2i6)') rs(s), pseed(s), turns(:, s)
+        end do
+        close (uo)
+    end subroutine
+
+    integer function turns_to_wall(rr, direction, nturn, steps) result(t)
+        ! Toroidal turns until the line from (rr, 0, phi = 0) leaves the
+        ! annulus; nturn when it stays inside.
+        real(dp), intent(in) :: rr, direction
+        integer, intent(in) :: nturn, steps
+        real(dp) :: y(2), k1(2), k2(2), k3(2), k4(2), k5(2), k6(2), tmp(2)
+        real(dp) :: nxt(2), err(2), h
+        integer :: i, j, nfev
+        y = [rr, 0.0_dp]; left_mesh = .false.; nfev = 0
+        h = direction*2*pi/steps
+        do t = 0, nturn - 1
+            do j = 1, steps
+                i = t*steps + j
+                call cash_karp_step(rhs, h*(i - 1), y, h, .false., k1, k2, k3, &
+                    k4, k5, k6, tmp, nxt, err, nfev)
+                y = nxt
+                if (left_mesh) return
+                if (norm2(y - [r0, 0.0_dp]) <= 0.3_dp .or. &
+                    norm2(y - [r0, 0.0_dp]) >= 1.2_dp) return
+            end do
+        end do
+        t = nturn
+    end function
 
     real(dp) function half_turn_root(left, right) result(root)
         ! Period-1 point on Z = 0 at phi = 0 (the coil is stellarator
