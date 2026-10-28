@@ -28,6 +28,8 @@ ap.add_argument("phiedge", type=float)
 ap.add_argument("--kin6d", nargs="*", default=[])
 ap.add_argument("--wout", nargs="*", default=[])
 ap.add_argument("--turns", type=int, default=60)
+ap.add_argument("--outboard-R", type=float, default=None,
+                help="reuse a previous reference_outboard_R instead of the bisection")
 a = ap.parse_args()
 
 polys, current = mc.coils()
@@ -80,7 +82,9 @@ def dist(points, curve):
 
 
 lo, hi = 1.16, 1.32
-for _ in range(14):
+if a.outboard_R is not None:
+    lo = hi = a.outboard_R
+for _ in range(14 if a.outboard_R is None else 0):
     mid = 0.5 * (lo + hi)
     if flux(crossings(mid)) < a.phiedge:
         lo = mid
