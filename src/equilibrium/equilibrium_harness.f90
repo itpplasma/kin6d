@@ -20,6 +20,10 @@ module kin6d_equilibrium_harness
         character(80) :: oracle
     end type
     type(equilibrium_case_t), parameter :: cases(*) = [ &
+        equilibrium_case_t('landreman_3d_nested', 'map', &
+            'Landreman exact nested reference; supplied boundary and toroidal profiles'), &
+        equilibrium_case_t('issan_3d_nonsymmetric', 'map', &
+            'Issan exact nested reference; supplied boundary and toroidal profiles'), &
         equilibrium_case_t('solovev', 'map', 'Solovev A3; independent 2D GS'), &
         equilibrium_case_t('cerfon-iter-0', 'psi', 'Cerfon-Freidberg symmetric ITER A=0'), &
         equilibrium_case_t('cerfon-iter-155', 'psi', 'Cerfon-Freidberg symmetric ITER A=-0.155'), &
