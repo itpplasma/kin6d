@@ -52,6 +52,9 @@ all exact consequences of this definition:
 4. **Tangential discontinuity.** If X is only C⁰ across S (broken normal
    derivative), DX b/J differs on the two sides, so B can jump tangentially.
    The surface current K = n × [[B]] is then represented without smoothing.
+   An ideal tangential discontinuity also lets the two sides **slide** along
+   S: only the normal displacement must be continuous. A C⁰ map forbids this
+   slip (§4).
 5. **Force balance on S is the natural interface condition.** Varying X by
    δX supported near S and integrating by parts on each side gives
    δW = ∫ (−∇p + J×B)·δX dV + ∮_S [[p + B²/2]] (n·δX) dA, using B·n = 0 on
@@ -106,10 +109,32 @@ surface. In the map lane this is a property of the frozen data:
   state, balanced by [[p + B₀²/2]] = 0 (a pressure jump is allowed).
 - Away from interfaces b, p are smooth; at the interface b may jump in its
   tangential components (b¹ = 0 on both sides, so div b = 0 holds).
-- X is C⁰ across σ and smooth elsewhere. With mesh faces on σ, the exact
-  solution is piecewise smooth on the element partition and Lagrange elements
-  of order k converge at their design order (k + 1 for the map in L2, k for B).
-  The prototype rows above confirm this.
+- The normal displacement is continuous across σ and the tangential
+  displacement may jump (sliding interface). With mesh faces on σ the exact
+  solution is piecewise smooth on the element partition, and Lagrange
+  elements of order k converge at their design order (k + 1 for the map in
+  L2, k for B).
+
+**Why sliding is needed.** In the slab of §5.1 the linear solution has
+ξ_y = −ξ'/k on each side (incompressible), and [[F²ξ']] = 0 gives
+[[ξ']] ≠ 0 whenever |F(σ+)| ≠ |F(σ−)|. A C⁰ map then has to absorb the
+tangential jump in a layer at the element scale, which costs compression
+energy B_z²(∇·ξ)²: the same non-closed-constraint mechanism as §3, with the
+same h^(1/2) field error. Only the symmetric jump (|F(σ+)| = |F(σ−)|, no
+tangential jump) converges at design order with a plain C⁰ map. Stage 2
+measures both (see [§9](#9-implementation-status)).
+
+**Sliding-interface map.** Each region has its own Lagrangian map in a
+chart in which the interface labels are fixed surfaces, and the interface
+geometry is an unknown surface shared by the adjacent regions (as SPEC's
+interface geometry is). In the map lane: X = H_G(q) per region, with the
+chart H_G blending the unknown interface surfaces G (Fourier) and the
+outer boundary, q continuous inside each region, the interface value of the
+normal chart coordinate pinned on both sides and the tangential values of q
+independent on the two sides. Normal continuity and B·n = 0 are exact for
+every state; the two sides share the interface as a set, so no gap or
+overlap opens at finite amplitude; [[p + B²/2]] = 0 stays the natural
+condition of W, now also with respect to the interface-shape unknowns G.
 
 The jump size Δι is a model input, like the pressure profile. Two limits make
 it physically interpretable:
@@ -118,10 +143,11 @@ it physically interpretable:
   width O(Δι) converges to the singular continuous-ι ideal solution, and the
   sheet current converges to the classical ideal shielding current (§5;
   exactly independent of Δ in the symmetric slab, O(Δ) otherwise).
-- **Existence margin.** Nonlinearly the layer has |∂ξ_n/∂s1| ≈ C/(Δ a), so an
-  invertible map needs C ≲ Δ a: the admissible perturbation amplitude scales
-  linearly with the jump (estimate from §5.1, to be measured in stage 2).
-  Beyond it the map folds and no nested equilibrium with that jump exists.
+- **Finite amplitude.** The linear layer has |∂ξ_n/∂s1| ≈ C/(Δ a), which
+  suggests that the admissible amplitude shrinks with the jump. This is a
+  linear estimate, not a nonlinear bound: with sliding interfaces the slab
+  solve continues to wall contact without folding (stage 2, §9). Nonlinear
+  existence for a given jump is therefore measured per case, not assumed.
 
 **Pressure.** With Δι > 0, p may be smooth through the interface: the
 Pfirsch–Schlüter current is finite, of order p'/(mΔι), because mι − n is
@@ -130,13 +156,16 @@ bounded currents use p' = 0 in a neighbourhood of the interface, or put the
 pressure gradient into a pressure jump at the interface balanced by [[B²]].
 Both are frozen-data choices; the solver is unchanged.
 
-**What is carried by the map lane today.** The existing P_k continuous
-Lagrange map is already C⁰ with broken derivatives across every element face.
-Required changes are small and local:
+**What the map lane needs.** The existing P_k continuous Lagrange map is
+C⁰ with broken derivatives across every element face, which is enough only
+for interfaces without tangential slip. Required changes:
 
 1. reference meshes whose faces lie on the interface labels (for the 2D
    triangle × Fourier lane: an internal chain on the curve χ = χ_σ, as the
-   free-boundary lane already does for Γ̂_p);
+   free-boundary lane already does for Γ̂_p), with the interface nodes
+   duplicated per side for the tangential unknowns;
+1a. interface-shape unknowns G (Fourier surfaces) and a per-region chart
+   blending them, so that the interface is a fixed chart surface;
 2. frozen data b, p evaluated per region (cell tag), never by thresholding a
    label value, so that the jump is sharp under curved-geometry approximation;
 3. a sheet-current diagnostic: traces of B from both sides of interface
@@ -244,12 +273,13 @@ number is transcribed here yet; the stage-1 tests use only §5.1–5.2.
 ## 7. Proven, assumed, open
 
 Proven on this page (exact or elementary): items 1–5 of §2; the C⁰
-non-closure argument of §3; the slab and screw-pinch linear solutions and
+non-closure argument of §3 and its tangential analogue in §4; the slab and screw-pinch linear solutions and
 their Δ → 0 limits (§5.1, §5.2; derivations to be checked by the stage-1
 tests).
 
-Assumed: existence of nonlinear minimizers with Δι > 0 below the existence
-margin (supported by Loizu et al., not proven here); the interface condition
+Assumed: existence of nonlinear minimizers with Δι > 0 at the amplitudes
+used (supported by Loizu et al. and by the stage-2 continuation, not proven
+here); the interface condition
 for curved interfaces in 3D (it follows from item 5, but its discrete
 consistency is to be measured).
 
@@ -273,9 +303,14 @@ Open, with the known obstruction:
 | Stage | Case | Evidence |
 |---|---|---|
 | 1 | slab §5.1, screw pinch §5.2 | oracle module, FortSym pointwise leaves, interface conditions and limits as tests |
-| 2 | slab, nonlinear frozen-in map, interface node at σ | design-order convergence of ξ, B and K1 against §5.1 (linear limit by δ-differences), self-convergence at finite δ, h^(1/2) or fold with continuous ι, h^(1/2) with the jump inside an element |
+| 2 | slab, nonlinear frozen-in map, sliding interface at σ | design-order convergence of ξ, B and K1 against §5.1 (linear limit by δ-differences), self-convergence at finite δ; floors for the C⁰ map with an asymmetric jump, the jump inside an element and continuous ι |
 | 3 | tokamak + RMP | sheet currents at q = m/n vs the per-n response as Δι → 0 |
 | 4 | stellarator with one low-order rational | small-resolution convergence; SPEC/SPECTRE ideal-limit comparison only where assumptions match |
 | 5 | Newton-MR on the symmetric map Hessian | iteration counts and identical end points |
+
+## 9. Implementation status
+
+Stage 0 (this page). Stages 1 and 2 add their modules, tests and measured
+tables here.
 
 Chris&AI
