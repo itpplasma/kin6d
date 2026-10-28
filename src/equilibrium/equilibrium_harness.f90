@@ -12,6 +12,8 @@ module kin6d_equilibrium_harness
     public :: equilibrium_case_t, equilibrium_resolution_t, equilibrium_start_t
     public :: equilibrium_run_report_t, equilibrium_case, equilibrium_start
     public :: run_equilibrium_case, write_equilibrium_report
+    public :: equilibrium_floor_report_t, equilibrium_residual_floor
+    public :: write_residual_floor
     integer, parameter, public :: D8_OK = 0, D8_BAD_INPUT = -1
     integer, parameter, public :: D8_BAD_REPORT = -2
 
@@ -56,6 +58,22 @@ module kin6d_equilibrium_harness
         ! Oracle errors and sampled residuals do not fill a bound field.
         character(32) :: state_bound_status = 'unavailable'
         character(32) :: derivative_bound_status = 'unavailable'
+    end type
+    ! Residual floor of a refinement ladder (docs/relaxation-comparators.md,
+    ! item 5): current sheets at rational surfaces set a force-residual
+    ! floor that h or p refinement does not lower. A ladder is 'decreasing'
+    ! while every refinement reduces the residual by at least the factor
+    ! ratio**(-min_order); otherwise the finest level is reported as the
+    ! floor. The orders are observed rates log(r_i-1/r_i)/log(ratio), with
+    ! ratio the nominal refinement factor per level (2 for h doubling; a p
+    ! ladder states its own nominal factor). This is a diagnostic: a gate
+    ! reports the floor instead of chasing it, and nothing is certified.
+    type :: equilibrium_floor_report_t
+        integer :: levels = 0
+        real(dp) :: ratio = 2, min_order = 0.5_dp, floor = 0, last_order = 0
+        real(dp), allocatable :: residuals(:), orders(:)
+        character(16) :: status = 'unavailable' ! decreasing | floor
+        character(64) :: residual_norm = 'unavailable'
     end type
     abstract interface
         subroutine lane_run(spec, resolution, start, state, report, equilibrium)
@@ -187,5 +205,48 @@ contains
             ' residual_norm=', trim(report%residual_norm), ' sigma=', report%sigma
         write (unit, '(4a)') '[V] state_bound=', trim(report%state_bound_status), &
             ' derivative_bound=', trim(report%derivative_bound_status)
+    end subroutine
+
+    subroutine equilibrium_residual_floor(residuals, ratio, residual_norm, report, &
+            min_order)
+        real(dp), intent(in) :: residuals(:), ratio
+        character(*), intent(in) :: residual_norm
+        type(equilibrium_floor_report_t), intent(out) :: report
+        real(dp), intent(in), optional :: min_order
+        integer :: i, m
+        m = size(residuals)
+        report%levels = m; report%ratio = ratio
+        report%residual_norm = residual_norm
+        if (present(min_order)) report%min_order = min_order
+        report%residuals = residuals
+        allocate (report%orders(max(m - 1, 0))); report%orders = 0
+        if (m < 2 .or. .not. ratio > 1) return
+        if (.not. all(ieee_is_finite(residuals)) .or. any(residuals <= 0)) return
+        do i = 2, m
+            report%orders(i - 1) = log(residuals(i - 1)/residuals(i))/log(ratio)
+        end do
+        report%last_order = report%orders(m - 1)
+        report%status = 'decreasing'
+        if (minval(report%orders) < report%min_order) then
+            report%status = 'floor'
+            report%floor = residuals(m)
+        end if
+    end subroutine
+
+    subroutine write_residual_floor(unit, label, report)
+        integer, intent(in) :: unit
+        character(*), intent(in) :: label
+        type(equilibrium_floor_report_t), intent(in) :: report
+        character(32) :: fmt
+        write (unit, '(5a,i0,a,f5.2,a,es12.4)') '[V] residual ladder ', label, &
+            ' norm=', trim(report%residual_norm), ' levels=', report%levels, &
+            ' min_order=', report%min_order, ' floor=', report%floor
+        write (fmt, '(a,i0,a)') '(a,', max(report%levels, 1), 'es12.4)'
+        write (unit, fmt) '[V]   residuals', report%residuals
+        if (report%levels > 1) then
+            write (fmt, '(a,i0,a)') '(a,', report%levels - 1, 'f8.3,2a)'
+            write (unit, fmt) '[V]   orders', report%orders, '  status=', &
+                trim(report%status)
+        end if
     end subroutine
 end module kin6d_equilibrium_harness

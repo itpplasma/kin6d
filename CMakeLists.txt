@@ -1974,6 +1974,7 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
     src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_relax.f90
+    src/mhd/nonnested_force.f90
     src/generated/kin6d_metriplectic_leaves.f90)
 set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -2048,6 +2049,17 @@ foreach(case taylor ideal)
     set_tests_properties(nonnested_relax_${case} PROPERTIES
         TIMEOUT 300 LABELS "mhd;fast" PROCESSORS 4
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+# Harmonic deflation, potential-velocity and Leray force, residual floor:
+# docs/nonnested-force.md.
+add_executable(test_nonnested_force test/test_nonnested_force.f90)
+target_link_libraries(test_nonnested_force PRIVATE kin6d_nn_solovev_test
+    kin6d_nn_vacuum_test)
+foreach(case hodge solovev beltrami shell sheet)
+    add_test(NAME nonnested_force_${case} COMMAND test_nonnested_force ${case})
+    set_tests_properties(nonnested_force_${case} PROPERTIES
+        TIMEOUT 600 PROCESSORS 2
+        ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 endforeach()
 add_test(NAME nonnested_relax_vacuum_island COMMAND test_nonnested_relax island)
 set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
