@@ -531,6 +531,7 @@ kin6d_test_labels(nonnested_mapped_zero_forcing_residual fast CLASSES mhd
     TARGETS test_nonnested_mapped)
 kin6d_test_labels(newton_mr_minres fast CLASSES core TARGETS test_newton_mr)
 kin6d_test_labels(newton_mr_nonconvex fast CLASSES core TARGETS test_newton_mr)
+kin6d_test_labels(newton_mr_saddle fast CLASSES core TARGETS test_newton_mr)
 kin6d_test_labels(nonnested_newton_mr_agreement fast CLASSES mhd
     TARGETS test_nonnested_newton_mr)
 kin6d_test_labels(nonnested_newton_mr_lumped_ladder fast CLASSES mhd
@@ -557,6 +558,20 @@ kin6d_test_labels(nonnested_beltrami_resonance fast CLASSES mhd
     TARGETS test_nonnested_beltrami)
 kin6d_test_labels(nonnested_beltrami_constraints fast CLASSES mhd
     TARGETS test_nonnested_beltrami)
+kin6d_test_labels(nonnested_beltrami_constraints_mr fast CLASSES mhd
+    TARGETS test_nonnested_beltrami)
+kin6d_test_labels(nonnested_beltrami_vacuum_mr fast CLASSES mhd
+    TARGETS test_nonnested_beltrami)
+foreach(k 2 3)
+    foreach(case manufactured lundquist)
+        kin6d_test_labels(nonnested_beltrami_${case}_p${k}_mr fast CLASSES mhd
+            TARGETS test_nonnested_beltrami)
+    endforeach()
+endforeach()
+kin6d_test_labels(nonnested_beltrami_mr_agreement fast CLASSES mhd
+    TARGETS test_nonnested_beltrami_mr)
+kin6d_test_labels(nonnested_beltrami_mr_block_ladder fast CLASSES mhd
+    TARGETS test_nonnested_beltrami_mr)
 foreach(k 2 3)
     foreach(case manufactured lundquist vacuum)
         kin6d_test_labels(nonnested_beltrami_${case}_p${k} slow CLASSES mhd

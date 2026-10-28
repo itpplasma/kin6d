@@ -6,6 +6,7 @@ module newton_mr_dense_fixture
 
     type, extends(mr_operator_t) :: dense_op_t
         real(dp), allocatable :: a(:, :), m(:) ! m: diagonal preconditioner
+        real(dp), allocatable :: p(:, :) ! dense SPD preconditioner
     contains
         procedure :: apply => dense_apply
         procedure :: precondition => dense_precondition
@@ -19,7 +20,50 @@ module newton_mr_dense_fixture
         procedure :: evaluate => quartic_evaluate
         procedure :: linearize => quartic_linearize
     end type
+
+    type, extends(mr_problem_t) :: kkt_t
+        ! Lagrangian L(x, l) = f(x) + l^T (B x - e) of the quartic f above:
+        ! its stationary point is a saddle, the bordered Hessian
+        ! [[D + 3 diag(x^2), B^T], [B, 0]] is symmetric indefinite.
+        type(quartic_t) :: f
+        real(dp), allocatable :: b(:, :), e(:)
+    contains
+        procedure :: apply => kkt_apply
+        procedure :: evaluate => kkt_evaluate
+        procedure :: linearize => kkt_linearize
+    end type
 contains
+    subroutine kkt_apply(self, x, y)
+        class(kkt_t), intent(inout) :: self
+        real(dp), intent(in) :: x(:)
+        real(dp), intent(out) :: y(:)
+        integer :: n
+        n = size(self%f%c)
+        call self%f%apply(x(:n), y(:n))
+        y(:n) = y(:n) + matmul(transpose(self%b), x(n + 1:))
+        y(n + 1:) = matmul(self%b, x(:n))
+    end subroutine
+
+    subroutine kkt_linearize(self, x, status)
+        class(kkt_t), intent(inout) :: self
+        real(dp), intent(in) :: x(:)
+        integer, intent(out) :: status
+        call self%f%linearize(x(:size(self%f%c)), status)
+    end subroutine
+
+    subroutine kkt_evaluate(self, x, f, g, status)
+        class(kkt_t), intent(inout) :: self
+        real(dp), intent(in) :: x(:)
+        real(dp), intent(out) :: f, g(:)
+        integer, intent(out) :: status
+        integer :: n
+        n = size(self%f%c)
+        call self%f%evaluate(x(:n), f, g(:n), status)
+        g(n + 1:) = matmul(self%b, x(:n)) - self%e
+        f = f + dot_product(x(n + 1:), g(n + 1:))
+        g(:n) = g(:n) + matmul(transpose(self%b), x(n + 1:))
+    end subroutine
+
     subroutine dense_apply(self, x, y)
         class(dense_op_t), intent(inout) :: self
         real(dp), intent(in) :: x(:)
@@ -34,6 +78,7 @@ contains
         integer, intent(out) :: status
         z = r
         if (allocated(self%m)) z = self%m*r
+        if (allocated(self%p)) z = matmul(self%p, r)
         status = 0
     end subroutine
 
@@ -103,11 +148,11 @@ contains
 end module newton_mr_dense_fixture
 
 program test_newton_mr
-    ! Usage: minres | newton
+    ! Usage: minres | newton | saddle
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use newton_mr_dense_fixture
     use kin6d_newton_mr, only: minres_solve, newton_mr_solve, mr_options_t, &
-        mr_report_t, MR_OK, MR_NPC
+        mr_report_t, MR_OK, MR_NPC, MR_MERIT_GRADIENT
     implicit none
     character(32) :: mode
     call get_command_argument(1, mode)
@@ -116,8 +161,10 @@ program test_newton_mr
         call minres_checks()
     case ('newton')
         call newton_checks()
+    case ('saddle')
+        call saddle_checks()
     case default
-        error stop 'usage: minres | newton'
+        error stop 'usage: minres | newton | saddle'
     end select
 contains
     subroutine minres_checks()
@@ -250,5 +297,101 @@ contains
         if (rep%npc_steps < 1) error stop 'newton nonconvex: no NPC step taken'
         if (.not. rep%energy < 0) error stop 'newton nonconvex: saddle not left'
     end subroutine
+
+    subroutine saddle_checks()
+        ! Newton-MR with the |g|^2 merit on the stationary point of an
+        ! equality-constrained convex quartic (a saddle of the Lagrangian):
+        ! KKT residual, feasibility, a Hessian with exactly m negative
+        ! eigenvalues (bordered by a full-rank B), and the objective merit
+        ! for contrast.
+        integer, parameter :: n = 20, m = 4
+        type(kkt_t) :: p
+        type(mr_options_t) :: opt
+        type(mr_report_t) :: rep
+        real(dp) :: q(n, n), lam(n), z(n + m), g(n + m), f, h(n + m, n + m)
+        integer :: k, st, negative
+        q = orthogonal(n, 7)
+        do k = 1, n
+            lam(k) = 1 + k
+        end do
+        p%f%d = matmul(q, matmul(diag(lam), transpose(q)))
+        p%f%c = [(cos(real(k, dp)), k=1, n)]
+        allocate (p%f%x0(n), p%b(m, n), p%e(m))
+        do k = 1, m
+            p%b(k, :) = [(sin(real(k*st + k*k + st*st, dp)), st=1, n)]
+        end do
+        p%e = [(real(k, dp), k=1, m)]
+        z = 0
+        opt%tolerance = 1.0e-12_dp; opt%merit = MR_MERIT_GRADIENT
+        call newton_mr_solve(p, z, opt, rep)
+        call p%evaluate(z, f, g, st)
+        write (*, '(a,i3,i5,i3,2es11.3)') 'newton saddle: steps, minres, backtracks, ' &
+            //'|g|/|g0|, |Bx-e|', rep%iterations, rep%minres_iterations, &
+            rep%backtracks, rep%gradient/rep%initial_gradient, norm2(g(n + 1:))
+        if (rep%status /= MR_OK) error stop 'newton saddle status'
+        if (norm2(g(n + 1:)) > 1.0e-10_dp*norm2(p%e)) &
+            error stop 'newton saddle feasibility'
+        if (rep%iterations > 15) error stop 'newton saddle: no fast local convergence'
+        ! Inertia of the KKT Hessian at the solution by symmetric elimination
+        ! of the leading (positive definite) block: the Schur complement
+        ! -B H^-1 B^T is negative definite, i.e. m negative eigenvalues.
+        do k = 1, n + m
+            g = 0; g(k) = 1
+            call p%linearize(z, st)
+            call p%apply(g, h(:, k))
+        end do
+        negative = count(sym_eigs_sign(h) < 0)
+        write (*, '(a,i3)') 'newton saddle: negative Hessian eigenvalues', negative
+        if (negative /= m) error stop 'newton saddle: Hessian not a saddle'
+        ! Preconditioned MINRES on this KKT matrix with the exact block-
+        ! diagonal SPD preconditioner diag(H11^-1, (B H11^-1 B^T)^-1): the
+        ! preconditioned matrix has the three eigenvalues 1, (1 +- sqrt 5)/2
+        ! (Murphy, Golub and Wathen 2000), so MINRES ends in 3 iterations.
+        block
+            type(dense_op_t) :: op
+            real(dp) :: inv(n, n), schur(m, m), rhs(n + m), sol(n + m), res
+            integer :: info, its
+            op%a = h
+            do k = 1, n
+                g = 0; g(k) = 1
+                inv(:, k) = dense_solve(h(:n, :n), g(:n))
+            end do
+            schur = matmul(h(n + 1:, :n), matmul(inv, h(:n, n + 1:)))
+            allocate (op%p(n + m, n + m)); op%p = 0
+            op%p(:n, :n) = inv
+            do k = 1, m
+                g = 0; g(n + k) = 1
+                op%p(n + 1:, n + k) = dense_solve(schur, g(n + 1:))
+            end do
+            rhs = [(cos(real(3*k, dp)), k=1, n + m)]
+            call minres_solve(op, rhs, sol, 1.0e-12_dp, 50, info, its, res)
+            write (*, '(a,i3,2es11.3)') 'minres KKT block-preconditioned: its, ' &
+                //'residual, error', its, res, norm2(sol - dense_solve(h, rhs)) &
+                /norm2(sol)
+            if (info /= MR_OK .or. its > 4 .or. res > 1.0e-11_dp) &
+                error stop 'minres block-preconditioned saddle'
+        end block
+        ! The objective merit needs descent on L, which a saddle does not
+        ! provide in general; record what it does from the same start.
+        z = 0; opt%merit = 0; opt%max_iterations = 50
+        call newton_mr_solve(p, z, opt, rep)
+        write (*, '(a,i3,a,i2)') 'objective merit from the same start: steps', &
+            rep%iterations, ' status', rep%status
+    end subroutine
+
+    function sym_eigs_sign(a) result(s)
+        ! Signs of the eigenvalues of a symmetric matrix by unpivoted LDL^T
+        ! with symmetric 1x1 pivots (Sylvester inertia; the test matrix has
+        ! a positive definite leading block, so no pivoting is needed).
+        real(dp), intent(in) :: a(:, :)
+        real(dp) :: s(size(a, 1)), w(size(a, 1), size(a, 1))
+        integer :: k, nn
+        nn = size(a, 1); w = a
+        do k = 1, nn
+            s(k) = w(k, k)
+            if (k < nn) w(k + 1:, k + 1:) = w(k + 1:, k + 1:) &
+                - spread(w(k + 1:, k), 2, nn - k)*spread(w(k, k + 1:), 1, nn - k)/w(k, k)
+        end do
+    end function
 
 end program test_newton_mr
