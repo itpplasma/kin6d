@@ -2225,6 +2225,7 @@ if(KIN6D_BUILD_GLL_SPIKE)
             ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
     endforeach()
 endif()
+include(cmake/kin6d_libneo.cmake)
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP

@@ -109,13 +109,15 @@ contains
     end subroutine
 
     subroutine psi_grid_init(g, psirz, rleft, rdim, zmid, zdim, &
-                             r_axis_guess, z_axis_guess, psi_edge, ip, fpol, status)
+                             r_axis_guess, z_axis_guess, psi_edge, ip, fpol, status, &
+                             pressure)
         !! psirz(nr, nz) on the uniform grid R = rleft + (i-1) dR, Z = zbot + (j-1) dZ
         type(psi_grid_t), intent(out) :: g
         real(dp), intent(in) :: psirz(:, :), rleft, rdim, zmid, zdim
         real(dp), intent(in) :: r_axis_guess, z_axis_guess, psi_edge, ip
         real(dp), intent(in) :: fpol(:)   ! F on uniform psin = 0..1
         integer, intent(out) :: status
+        real(dp), intent(in), optional :: pressure(:)
         real(dp), allocatable :: tmp(:, :)
         real(dp) :: r, z, psi, pr, pz, prr, prz, pzz, det, dr, dz
         integer :: i, j, it
@@ -135,6 +137,11 @@ contains
             call bspline_coefficients_1d(tmp(i, :), g%coef(i, :))
         end do
         call bspline_coefficients_1d(fpol, g%fcoef)
+        if (present(pressure)) then
+            if (size(pressure) /= g%nf) return
+            allocate (g%pcoef(0:g%nf + 1))
+            call bspline_coefficients_1d(pressure, g%pcoef)
+        end if
         ! magnetic axis: Newton on grad psi = 0
         r = r_axis_guess; z = z_axis_guess
         do it = 1, 50
@@ -265,10 +272,7 @@ contains
         close (unit)
         if (ios /= 0) return
         call psi_grid_init(g, psirz, rleft, rdim, zmid, zdim, rmaxis, zmaxis, &
-                           sibry, current, fpol, status)
-        if (status /= 0) return
-        allocate (g%pcoef(0:nw + 1))
-        call bspline_coefficients_1d(pres, g%pcoef)
+                           sibry, current, fpol, status, pressure=pres)
     end subroutine
 
     ! -------------------------------------------------------------- surfaces
