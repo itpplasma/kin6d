@@ -34,3 +34,13 @@ foreach(case derivatives linear_p2 linear_p3 symmetric floor nonlinear)
     kin6d_test_labels(current_sheet_slab_map_${case} fast CLASSES mhd
         TARGETS test_sheet_slab_map)
 endforeach()
+
+add_executable(test_sheet_pinch_map test/test_sheet_pinch_map.f90)
+target_link_libraries(test_sheet_pinch_map PRIVATE kin6d_mhd)
+foreach(case derivatives linear_p2 linear_p3 nonlinear)
+    add_test(NAME current_sheet_pinch_map_${case} COMMAND test_sheet_pinch_map ${case})
+    set_tests_properties(current_sheet_pinch_map_${case} PROPERTIES TIMEOUT 120
+        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+    kin6d_test_labels(current_sheet_pinch_map_${case} fast CLASSES mhd
+        TARGETS test_sheet_pinch_map)
+endforeach()

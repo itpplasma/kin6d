@@ -145,7 +145,7 @@ contains
         type(slab_sheet_t) :: o
         real(dp), parameter :: eps = 2e-5_dp
         real(dp), allocatable :: s1(:), s2(:), wt(:), y1p(:), bp(:, :), y1m(:), bm(:, :)
-        real(dp) :: psi, dpsi, xi, dxi, by, xie, bex(3), r1, n1, r2, n2, jyp, jym, jx
+        real(dp) :: psi, dpsi, xi, dxi, by, xie, bex(3), r1, n1, r2, n2, jp(3), jm(3)
         integer :: i, side, st
         call setup(mp, order, ne, 2, shift, dplus, dminus, eps, slide)
         call setup(mm, order, ne, 2, shift, dplus, dminus, -eps, slide)
@@ -171,10 +171,10 @@ contains
             n2 = n2 + wt(i)*sum(bex**2)
         end do
         exi = sqrt(r1/n1); eb = sqrt(r2/n2)
-        call mp%sheet_jump(jyp, jx, st)
+        call mp%sheet_jump(jp, st)
         if (st == 0) then
-            call mm%sheet_jump(jym, jx, st)
-            ek = abs((jyp - jym)/(2*eps) - o%sheet())/abs(o%sheet())
+            call mm%sheet_jump(jm, st)
+            ek = abs((jp(2) - jm(2))/(2*eps) - o%sheet())/abs(o%sheet())
         else
             ek = -1
         end if
@@ -238,7 +238,7 @@ contains
         type(slab_sheet_t) :: o
         integer, parameter :: nl = 5
         integer :: nes(nl), i, st
-        real(dp) :: jy(nl), jx, amp, w(nl), o1, o2
+        real(dp) :: jy(nl), jv(3), amp, w(nl), o1, o2
         nes = [8, 16, 32, 64, 128]
         amp = 0.1_dp
         o%a = 1; o%k = acos(-1.0_dp); o%b0 = 1; o%dplus = 0.6_dp; o%dminus = 0.4_dp
@@ -248,7 +248,8 @@ contains
             call setup(m, 2, nes(i), 6, 0.0_dp, 0.6_dp, 0.4_dp, amp, .true.)
             call m%solve()
             call check(m%status == 0, 'nonlinear solve')
-            call m%sheet_jump(jy(i), jx, st)
+            call m%sheet_jump(jv, st)
+            jy(i) = jv(2)
             w(i) = m%energy
             write (*, '(a,i4,a,es23.15,a,es23.15,a,i3)') 'ne', nes(i), ' K1', jy(i), &
                 ' W', w(i), ' newton', m%iterations
@@ -265,7 +266,7 @@ contains
     !> continuation before the map folds, symmetric jumps Delta.
     subroutine margin()
         type(sheet_slab_map_t) :: m
-        real(dp) :: dl(4), amp, last, jy, jx
+        real(dp) :: dl(4), amp, last, jy, jv(3)
         integer :: i, ne, st, j
         dl = [0.4_dp, 0.2_dp, 0.1_dp, 0.05_dp]
         do j = 1, 2
@@ -282,7 +283,8 @@ contains
                         m%status, ' it', m%iterations, ' |g|', m%gnorm, ' amp', amp
                     if (m%status /= 0 .or. amp > 2) exit
                     last = amp
-                    call m%sheet_jump(jy, jx, st)
+                    call m%sheet_jump(jv, st)
+                    jy = jv(2)
                 end do
                 write (*, '(a,i4,a,f6.3,a,f6.3,a,es11.3)') 'ne', ne, ' Delta', dl(i), &
                     ' last converged wall amplitude', last, ' K1 there', jy

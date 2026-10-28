@@ -23,7 +23,8 @@ program gen_current_sheet
     type(expr_t) :: fp, fm, fap, fam, fprime, s, c, lhs, rhs
     type(expr_t) :: z(8), b2, b3, p, l0, l1, m0, m1, dphi(2, 2), dy(2, 2)
     type(expr_t) :: d(3, 3), bb(3), energy, jac, zero, grad(8), hess(36)
-    character(8) :: zn(8), gn(8), hn(36), args(16)
+    type(expr_t) :: mh, kz, rr, phx, phu, r1, r2
+    character(8) :: zn(8), gn(8), hn(36), args(16), pargs(17)
     integer :: i, j, m
     call arena%init()
     t = sym(arena, 't'); k = sym(arena, 'k'); a = sym(arena, 'a')
@@ -91,6 +92,39 @@ program gen_current_sheet
         ['y1'], [z(1) + (l0 + l1*z(1))*z(7) + (m0 + m1*z(1))*cos(k*z(2))])
     call w%emit('sheet_map_field', args, ['bx', 'by', 'bz'], &
         [(dy(1, 2)*b2)/jac, (dy(2, 2)*b2)/jac, b3/jac])
+    ! Helical screw pinch (section 5.2): the same chart in (r, u), u =
+    ! m theta + k z, physical point (R cos Theta, R sin Theta, Z), R = Phi1,
+    ! Theta = (X2 - k s3)/m, Z = s3; d in the orthonormal (e_R, e_Theta, e_Z)
+    ! frame (|d b| and det d are frame invariant).
+    mh = sym(arena, 'mh'); kz = sym(arena, 'kz')
+    rr = z(1) + (l0 + l1*z(1))*z(7) + (m0 + m1*z(1))*cos(z(2))
+    phx = 1 + l1*z(7) + m1*cos(z(2))
+    phu = (l0 + l1*z(1))*z(8) - (m0 + m1*z(1))*sin(z(2))
+    r1 = phx*z(3) + phu*z(4)
+    r2 = phx*z(5) + phu*z(6)
+    d = zero
+    d(1, 1) = r1; d(1, 2) = r2
+    d(2, 1) = rr*z(4)/mh; d(2, 2) = rr*z(6)/mh; d(2, 3) = -(kz*rr/mh)
+    d(3, 3) = 1 + zero
+    energy = frozen_energy(d, bb, p, 1 + zero, 1 + zero, jac)
+    do i = 1, 8
+        grad(i) = diff(energy, z(i))
+    end do
+    m = 0
+    do j = 1, 8
+        do i = 1, j
+            m = m + 1
+            hess(m) = diff(grad(i), z(j))
+        end do
+    end do
+    pargs = [character(8) :: zn, 'b2', 'b3', 'p', 'mh', 'kz', 'l0', 'l1', 'm0', 'm1']
+    call w%emit('sheet_pinch_energy', pargs, ['w  ', 'jac'], [energy, jac])
+    call w%emit('sheet_pinch_gradient', pargs, gn, grad)
+    call w%emit('sheet_pinch_hessian', pargs, hn, hess)
+    call w%emit('sheet_pinch_position', ['x1', 'x2', 'gv', 'l0', 'l1', 'm0', 'm1'], &
+        ['r'], [rr])
+    call w%emit('sheet_pinch_field', pargs, ['br', 'bt', 'bz'], &
+        [(d(1, 2)*b2)/jac, (d(2, 2)*b2 + d(2, 3)*b3)/jac, b3/jac])
     call w%line('end module kin6d_current_sheet_leaves')
     call w%close()
 end program gen_current_sheet

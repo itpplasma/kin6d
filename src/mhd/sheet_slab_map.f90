@@ -28,10 +28,13 @@ module kin6d_sheet_slab_map
     ! condition of the energy.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_current_sheet_leaves, only: sheet_map_energy, sheet_map_gradient, &
-        sheet_map_hessian, sheet_map_position, sheet_map_field
+        sheet_map_hessian, sheet_map_position, sheet_map_field, sheet_pinch_energy, &
+        sheet_pinch_gradient, sheet_pinch_hessian, sheet_pinch_position, &
+        sheet_pinch_field
     implicit none
     private
-    public :: sheet_slab_map_t
+    public :: sheet_slab_map_t, SHEET_SLAB, SHEET_PINCH
+    integer, parameter :: SHEET_SLAB = 1, SHEET_PINCH = 2
 
     interface
         subroutine dgbsv(n, kl, ku, nrhs, ab, ldab, ipiv, b, ldb, info)
@@ -49,8 +52,18 @@ module kin6d_sheet_slab_map
     end interface
 
     type :: sheet_slab_map_t
+        integer :: geometry = SHEET_SLAB
+        ! slab: -a < s1 < a, interface at 0
         real(dp) :: a = 1, k = acos(-1.0_dp), b0 = 1, dplus = 0, dminus = 0
-        real(dp) :: bz = 1, p0 = 1, wp = 0, wm = 0
+        real(dp) :: bz = 1, p0 = 1
+        ! pinch: r0 < s1 < b, interface sigma, phase u = mh theta + kz z,
+        ! B_theta = c/r, B_z, p constant per side (minus: inside)
+        real(dp) :: r0 = 0.2_dp, b = 1, sigma = 0.5_dp, kz = -1.0_dp/3
+        integer :: mh = 2
+        real(dp) :: cm = 0.1_dp, cp = 0.1_dp, bzm = 1, bzp = 1, pm = 0, pp = 0
+        ! wall amplitudes: outer/upper (wp) and inner/lower (wm)
+        real(dp) :: wp = 0, wm = 0
+        real(dp) :: lo = -1, hi = 1, sig = 0
         integer :: order = 2, ne = 16, modes = 2, nq = 0, n2 = 0
         real(dp) :: shift = 0
         logical :: slide = .false.
@@ -81,14 +94,30 @@ contains
         if (m%slide .and. (mod(m%ne, 2) /= 0 .or. m%shift /= 0)) return
         if (m%nq <= 0) m%nq = m%order + 3
         if (m%n2 <= 0) m%n2 = 4*m%modes + 4
-        h = 2*m%a/m%ne
+        if (m%geometry == SHEET_SLAB) then
+            m%lo = -m%a; m%hi = m%a; m%sig = 0
+        else if (m%geometry == SHEET_PINCH) then
+            if (.not. (0 < m%r0 .and. m%r0 < m%sigma .and. m%sigma < m%b)) return
+            if (m%mh < 1 .or. m%shift /= 0 .or. mod(m%ne, 2) /= 0) return
+            m%lo = m%r0; m%hi = m%b; m%sig = m%sigma
+        else
+            return
+        end if
         if (allocated(m%vert)) deallocate (m%vert)
         allocate (m%vert(0:m%ne))
-        do i = 0, m%ne
-            m%vert(i) = -m%a + i*h
-            if (i > 0 .and. i < m%ne) m%vert(i) = m%vert(i) + m%shift*h
-        end do
-        if (mod(m%ne, 2) == 0 .and. m%shift == 0) m%vert(m%ne/2) = 0
+        if (mod(m%ne, 2) == 0 .and. m%shift == 0) then
+            ! Uniform on each side; the interface label is a vertex.
+            do i = 0, m%ne/2
+                m%vert(i) = m%lo + (m%sig - m%lo)*i/(m%ne/2)
+                m%vert(m%ne/2 + i) = m%sig + (m%hi - m%sig)*i/(m%ne/2)
+            end do
+        else
+            h = (m%hi - m%lo)/m%ne
+            do i = 0, m%ne
+                m%vert(i) = m%lo + i*h
+                if (i > 0 .and. i < m%ne) m%vert(i) = m%vert(i) + m%shift*h
+            end do
+        end if
         m%per = 2*m%modes + 1
         m%nnode = m%order*m%ne + 1 + merge(1, 0, m%slide)
         m%nb = m%nnode*m%per
@@ -107,7 +136,7 @@ contains
         integer :: i
         e = -1
         do i = 1, m%ne - 1
-            if (m%vert(i) == 0) e = i
+            if (m%vert(i) == m%sig) e = i
         end do
     end function
 
@@ -123,14 +152,21 @@ contains
         integer, intent(in) :: e
         real(dp), intent(out) :: l0, l1, m0, m1
         integer, intent(out) :: side
-        side = merge(1, -1, m%vert(e - 1) + m%vert(e) > 0)
+        side = merge(1, -1, m%vert(e - 1) + m%vert(e) > 2*m%sig)
         if (m%slide) then
-            l0 = 1; m0 = 0
-            l1 = -side/m%a
-            m1 = merge(m%wp, -m%wm, side > 0)/m%a
+            ! (l0 + l1 x) = 1 on the interface, 0 on the wall; (m0 + m1 x)
+            ! = 0 on the interface, the wall amplitude on the wall.
+            if (side > 0) then
+                l1 = -1/(m%hi - m%sig); l0 = m%hi/(m%hi - m%sig)
+                m1 = m%wp/(m%hi - m%sig); m0 = -m%wp*m%sig/(m%hi - m%sig)
+            else
+                l1 = 1/(m%sig - m%lo); l0 = -m%lo/(m%sig - m%lo)
+                m1 = -m%wm/(m%sig - m%lo); m0 = m%wm*m%sig/(m%sig - m%lo)
+            end if
         else
             l0 = 0; l1 = 0
-            m0 = (m%wp + m%wm)/2; m1 = (m%wp - m%wm)/(2*m%a)
+            m1 = (m%wp - m%wm)/(m%hi - m%lo)
+            m0 = (m%wm*m%hi - m%wp*m%lo)/(m%hi - m%lo)
         end if
     end subroutine
 
@@ -185,18 +221,74 @@ contains
         end do
     end subroutine
 
-    !> Frozen b2 and p on the given side at label s1.
-    pure subroutine frozen(m, s1, side, b2, p)
+    !> Frozen b2, b3 and p on the given side at label s1.
+    pure subroutine frozen(m, s1, side, b2, b3, p)
         class(sheet_slab_map_t), intent(in) :: m
         real(dp), intent(in) :: s1
         integer, intent(in) :: side
-        real(dp), intent(out) :: b2, p
+        real(dp), intent(out) :: b2, b3, p
+        real(dp) :: c, bz
+        if (m%geometry == SHEET_PINCH) then
+            ! B_theta = c/r, B_z = bz at the identity map (J0 = r/mh).
+            c = merge(m%cp, m%cm, side > 0); bz = merge(m%bzp, m%bzm, side > 0)
+            b3 = bz*s1/m%mh
+            b2 = c/s1 + m%kz*b3
+            p = merge(m%pp, m%pm, side > 0)
+            return
+        end if
         if (side > 0) then
             b2 = m%b0*(s1/m%a + m%dplus)
         else
             b2 = m%b0*(s1/m%a - m%dminus)
         end if
+        b3 = m%bz
         p = m%p0 - b2**2/2
+    end subroutine
+
+    !> Period of s2 and the chart wavenumber.
+    pure real(dp) function kper(m)
+        class(sheet_slab_map_t), intent(in) :: m
+        kper = merge(m%k, 1.0_dp, m%geometry == SHEET_SLAB)
+    end function
+
+    subroutine leaf_energy(m, z, b2, b3, p, c, dens, jac)
+        class(sheet_slab_map_t), intent(in) :: m
+        real(dp), intent(in) :: z(8), b2, b3, p, c(4)
+        real(dp), intent(out) :: dens, jac
+        if (m%geometry == SHEET_PINCH) then
+            call sheet_pinch_energy(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, real(m%mh, dp), m%kz, c(1), c(2), c(3), c(4), dens, jac)
+        else
+            call sheet_map_energy(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, m%k, c(1), c(2), c(3), c(4), dens, jac)
+        end if
+    end subroutine
+
+    subroutine leaf_derivatives(m, z, b2, b3, p, c, g8, h8)
+        class(sheet_slab_map_t), intent(in) :: m
+        real(dp), intent(in) :: z(8), b2, b3, p, c(4)
+        real(dp), intent(out) :: g8(8), h8(36)
+        if (m%geometry == SHEET_PINCH) then
+            call sheet_pinch_gradient(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, real(m%mh, dp), m%kz, c(1), c(2), c(3), c(4), g8(1), g8(2), &
+                g8(3), g8(4), g8(5), g8(6), g8(7), g8(8))
+            call sheet_pinch_hessian(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, real(m%mh, dp), m%kz, c(1), c(2), c(3), c(4), h8(1), h8(2), &
+                h8(3), h8(4), h8(5), h8(6), h8(7), h8(8), h8(9), h8(10), h8(11), &
+                h8(12), h8(13), h8(14), h8(15), h8(16), h8(17), h8(18), h8(19), &
+                h8(20), h8(21), h8(22), h8(23), h8(24), h8(25), h8(26), h8(27), &
+                h8(28), h8(29), h8(30), h8(31), h8(32), h8(33), h8(34), h8(35), h8(36))
+        else
+            call sheet_map_gradient(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, m%k, c(1), c(2), c(3), c(4), g8(1), g8(2), g8(3), g8(4), &
+                g8(5), g8(6), g8(7), g8(8))
+            call sheet_map_hessian(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, m%k, c(1), c(2), c(3), c(4), h8(1), h8(2), h8(3), h8(4), &
+                h8(5), h8(6), h8(7), h8(8), h8(9), h8(10), h8(11), h8(12), h8(13), &
+                h8(14), h8(15), h8(16), h8(17), h8(18), h8(19), h8(20), h8(21), &
+                h8(22), h8(23), h8(24), h8(25), h8(26), h8(27), h8(28), h8(29), &
+                h8(30), h8(31), h8(32), h8(33), h8(34), h8(35), h8(36))
+        end if
     end subroutine
 
     !> Point state z (8) at element e, local t, label s2, and the dof
@@ -218,7 +310,7 @@ contains
         do l = 0, m%order
             base = (node_of(m, e, l) - 1)*m%per
             do mm = 0, m%modes
-                cm = cos(mm*m%k*s2); sm = sin(mm*m%k*s2); mk = mm*m%k
+                mk = mm*kper(m); cm = cos(mk*s2); sm = sin(mk*s2)
                 ld = l*m%per + mm + 1
                 jz(ld, 1) = nb(l)*cm; jz(ld, 3) = db(l)*cm; jz(ld, 5) = -nb(l)*mk*sm
                 if (mm > 0) then
@@ -232,7 +324,7 @@ contains
         g2 = 0; g3 = 0
         if (m%ng > 0) then
             do mm = 0, m%modes
-                mk = mm*m%k
+                mk = mm*kper(m)
                 cm = cos(mk*z(2)); sm = sin(mk*z(2))
                 z(7) = z(7) + u(m%nb + mm + 1)*cm
                 z(8) = z(8) - u(m%nb + mm + 1)*mk*sm
@@ -253,10 +345,10 @@ contains
         real(dp), intent(out) :: w
         logical, intent(out) :: ok
         real(dp) :: xq(m%nq), wq(m%nq), z(8), jz((m%order + 1)*m%per + m%ng, 8)
-        real(dp) :: s1, s2, hl, b2, p, dens, jac, wt, l0, l1, m0, m1, g2, g3, per2
+        real(dp) :: s1, s2, hl, b2, b3, p, dens, jac, wt, l0, l1, m0, m1, g2, g3, per2
         integer :: e, q, j, side
         call gauss(m%nq, xq, wq)
-        per2 = 2*acos(-1.0_dp)/m%k
+        per2 = 2*acos(-1.0_dp)/kper(m)
         w = 0; ok = .true.
         do e = 1, m%ne
             call chart(m, e, l0, l1, m0, m1, side)
@@ -264,9 +356,8 @@ contains
                 do j = 1, m%n2
                     s2 = (j - 1)*per2/m%n2
                     call point_state(m, u, e, (xq(q) + 1)/2, s2, s1, z, jz, g2, g3, hl)
-                    call frozen(m, s1, side, b2, p)
-                    call sheet_map_energy(z(1), z(2), z(3), z(4), z(5), z(6), z(7), &
-                        z(8), b2, m%bz, p, m%k, l0, l1, m0, m1, dens, jac)
+                    call frozen(m, s1, side, b2, b3, p)
+                    call leaf_energy(m, z, b2, b3, p, [l0, l1, m0, m1], dens, jac)
                     if (jac <= 0) ok = .false.
                     wt = wq(q)*hl/2*per2/m%n2
                     w = w + wt*dens
@@ -282,7 +373,7 @@ contains
         real(dp), intent(in) :: u(:)
         real(dp), intent(out) :: grad(:), ab(:, :), c(:, :), d(:, :)
         real(dp) :: xq(m%nq), wq(m%nq), z(8), jz((m%order + 1)*m%per + m%ng, 8)
-        real(dp) :: s1, s2, hl, b2, p, g8(8), h8(36), hm(8, 8), wt, per2
+        real(dp) :: s1, s2, hl, b2, b3, p, g8(8), h8(36), hm(8, 8), wt, per2
         real(dp) :: jh((m%order + 1)*m%per + m%ng, 8), l0, l1, m0, m1, g2, g3, hv
         real(dp) :: cnode, cg, mk
         integer :: e, q, j, i, l, nl, kl, ii, jj, gi, gj, side, nloc, mm
@@ -290,7 +381,7 @@ contains
         nl = (m%order + 1)*m%per
         nloc = nl + m%ng
         kl = m%band
-        per2 = 2*acos(-1.0_dp)/m%k
+        per2 = 2*acos(-1.0_dp)/kper(m)
         call gauss(m%nq, xq, wq)
         grad = 0; ab = 0; c = 0; d = 0
         do e = 1, m%ne
@@ -307,17 +398,8 @@ contains
                 do j = 1, m%n2
                     s2 = (j - 1)*per2/m%n2
                     call point_state(m, u, e, (xq(q) + 1)/2, s2, s1, z, jz, g2, g3, hl)
-                    call frozen(m, s1, side, b2, p)
-                    call sheet_map_gradient(z(1), z(2), z(3), z(4), z(5), z(6), z(7), &
-                        z(8), b2, m%bz, p, m%k, l0, l1, m0, m1, g8(1), g8(2), g8(3), &
-                        g8(4), g8(5), g8(6), g8(7), g8(8))
-                    call sheet_map_hessian(z(1), z(2), z(3), z(4), z(5), z(6), z(7), &
-                        z(8), b2, m%bz, p, m%k, l0, l1, m0, m1, h8(1), h8(2), h8(3), &
-                        h8(4), h8(5), h8(6), h8(7), h8(8), h8(9), h8(10), h8(11), &
-                        h8(12), h8(13), h8(14), h8(15), h8(16), h8(17), h8(18), h8(19), &
-                        h8(20), h8(21), h8(22), h8(23), h8(24), h8(25), h8(26), h8(27), &
-                        h8(28), h8(29), h8(30), h8(31), h8(32), h8(33), h8(34), h8(35), &
-                        h8(36))
+                    call frozen(m, s1, side, b2, b3, p)
+                    call leaf_derivatives(m, z, b2, b3, p, [l0, l1, m0, m1], g8, h8)
                     l = 0
                     do jj = 1, 8
                         do ii = 1, jj
@@ -339,12 +421,12 @@ contains
                                 if (ii <= nl .and. jj <= nl) then
                                     hv = hv + cnode*jz(ii, 2)*jz(jj, 2)
                                 else if (ii <= nl .and. jj > nl) then
-                                    mm = jj - nl - 1; mk = mm*m%k
+                                    mm = jj - nl - 1; mk = mm*kper(m)
                                     cg = wt*(-g8(7)*mk*sin(mk*z(2)) &
                                              - g8(8)*mk**2*cos(mk*z(2)))
                                     hv = hv + cg*jz(ii, 2)
                                 else if (ii > nl .and. jj <= nl) then
-                                    mm = ii - nl - 1; mk = mm*m%k
+                                    mm = ii - nl - 1; mk = mm*kper(m)
                                     cg = wt*(-g8(7)*mk*sin(mk*z(2)) &
                                              - g8(8)*mk**2*cos(mk*z(2)))
                                     hv = hv + cg*jz(jj, 2)
@@ -413,19 +495,25 @@ contains
         dir(1:m%nb) = rhs(:, 1) - matmul(rhs(:, 2:), r2(:, 1))
     end subroutine
 
-    !> Damped Newton from the current state (identity after init).
+    !> Levenberg-Marquardt damped Newton from the current state (identity
+    !> after init): (H + mu diag H) d = -g, full steps, mu raised tenfold on
+    !> a rejected step (energy not decreased or det DY <= 0) and lowered
+    !> fourfold on an accepted one. Near-marginal interface modes (slip
+    !> where |k.B| is small) make undamped steps overshoot at finite
+    !> amplitude.
     subroutine solve(m)
         class(sheet_slab_map_t), intent(inout) :: m
         real(dp), allocatable :: grad(:), ab(:, :), c(:, :), d(:, :), dir(:), trial(:)
-        real(dp) :: w, wt, g0, t, slope, gprev
-        integer :: it, info, ls, stalls
+        real(dp), allocatable :: abd(:, :), dd(:, :)
+        real(dp) :: w, wt, g0, slope, gprev, mu
+        integer :: it, info, tries, stalls, i
         logical :: ok, roundoff
         allocate (grad(m%ndof), ab(3*m%band + 1, m%nb), c(m%nb, m%ng), &
                   d(m%ng, m%ng), dir(m%ndof), trial(m%ndof))
         m%status = 2
         call m%total_energy(m%u, w, ok)
         if (.not. ok) return
-        g0 = -1; gprev = huge(1.0_dp); stalls = 0
+        g0 = -1; gprev = huge(1.0_dp); stalls = 0; mu = 0
         do it = 1, m%maxit
             call m%assemble(m%u, grad, ab, c, d)
             m%gnorm = norm2(grad)
@@ -436,19 +524,32 @@ contains
                 m%status = 0
                 return
             end if
-            call newton_direction(m, grad, ab, c, d, dir, info)
-            if (info /= 0) then
-                m%status = 3
+            do tries = 1, 40
+                abd = ab; dd = d
+                abd(2*m%band + 1, :) = ab(2*m%band + 1, :)*(1 + mu)
+                do i = 1, m%ng
+                    dd(i, i) = d(i, i)*(1 + mu)
+                end do
+                call newton_direction(m, grad, abd, c, dd, dir, info)
+                if (info /= 0) then
+                    m%status = 3
+                    return
+                end if
+                slope = dot_product(grad, dir)
+                ! Roundoff band of W: the predicted change is below the
+                ! rounding of W; accept undamped steps until |g| stalls.
+                roundoff = abs(slope) < 1e3_dp*epsilon(1.0_dp)*max(abs(w), 1.0_dp)
+                trial = m%u + dir
+                call m%total_energy(trial, wt, ok)
+                if (ok .and. slope <= 0) then
+                    if (roundoff .or. wt <= w + 1e-4_dp*slope) exit
+                end if
+                mu = max(10*mu, 1e-8_dp)
+            end do
+            if (tries > 40) then
+                m%status = 4
                 return
             end if
-            slope = dot_product(grad, dir)
-            if (slope >= 0) then
-                dir = -grad
-                slope = dot_product(grad, dir)
-            end if
-            ! Roundoff band of W: the predicted change is below the rounding
-            ! of W itself; take full Newton steps until the gradient stalls.
-            roundoff = abs(slope) < 1e3_dp*epsilon(1.0_dp)*max(abs(w), 1.0_dp)
             if (roundoff) then
                 if (m%gnorm > 0.5_dp*gprev) then
                     stalls = stalls + 1
@@ -459,19 +560,8 @@ contains
                 end if
             end if
             gprev = m%gnorm
-            t = 1
-            do ls = 1, 40
-                trial = m%u + t*dir
-                call m%total_energy(trial, wt, ok)
-                if (ok) then
-                    if (roundoff .or. wt <= w + 1e-4_dp*t*slope) exit
-                end if
-                t = t/2
-            end do
-            if (ls > 40) then
-                m%status = 4
-                return
-            end if
+            mu = mu/4
+            if (mu < 1e-10_dp) mu = 0
             m%u = trial
             w = wt
         end do
@@ -486,7 +576,7 @@ contains
         real(dp) :: xq(m%nq), wq(m%nq), y(2), u22, bl(3), hl, per2
         integer :: e, q, j, n
         call gauss(m%nq, xq, wq)
-        per2 = 2*acos(-1.0_dp)/m%k
+        per2 = 2*acos(-1.0_dp)/kper(m)
         n = m%ne*m%nq*m%n2
         allocate (s1(n), s2(n), wt(n), dy1(n), b(3, n))
         n = 0
@@ -510,32 +600,41 @@ contains
         integer, intent(in) :: e
         real(dp), intent(in) :: t, s2
         real(dp), intent(out) :: s1, y(2), u22, b(3)
-        real(dp) :: z(8), jz((m%order + 1)*m%per + m%ng, 8), hl, b2, p, g2, g3
+        real(dp) :: z(8), jz((m%order + 1)*m%per + m%ng, 8), hl, b2, b3, p, g2, g3
         real(dp) :: l0, l1, m0, m1
         integer :: side
         call chart(m, e, l0, l1, m0, m1, side)
         call point_state(m, m%u, e, t, s2, s1, z, jz, g2, g3, hl)
-        call frozen(m, s1, side, b2, p)
-        call sheet_map_position(z(1), z(2), z(7), m%k, l0, l1, m0, m1, y(1))
+        call frozen(m, s1, side, b2, b3, p)
         y(2) = z(2); u22 = z(6)
-        call sheet_map_field(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), b2, &
-            m%bz, p, m%k, l0, l1, m0, m1, b(1), b(2), b(3))
+        if (m%geometry == SHEET_PINCH) then
+            call sheet_pinch_position(z(1), z(2), z(7), l0, l1, m0, m1, y(1))
+            call sheet_pinch_field(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, real(m%mh, dp), m%kz, l0, l1, m0, m1, b(1), b(2), b(3))
+        else
+            call sheet_map_position(z(1), z(2), z(7), m%k, l0, l1, m0, m1, y(1))
+            call sheet_map_field(z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), &
+                b2, b3, p, m%k, l0, l1, m0, m1, b(1), b(2), b(3))
+        end if
     end subroutine
 
-    !> Sheet current at the interface: cos(k y) amplitude of [[B_y]] and
-    !> sin(k y) amplitude of [[B_x]] in the physical coordinate y, from the
-    !> one-sided traces (each side projected on its own trace points).
-    !> status 1 if the mesh has no interface vertex.
-    subroutine sheet_jump(m, jy, jx, status)
+    !> Sheet current at the interface: jumps of the field components
+    !> (slab: B_x, B_y, B_z; pinch: B_r, B_theta, B_z) projected on
+    !> sin(k y) (first component) and cos(k y) (others) in the physical
+    !> periodic coordinate y (u for the pinch), from the one-sided traces,
+    !> each side projected on its own trace points. status 1 without an
+    !> interface vertex.
+    subroutine sheet_jump(m, jump, status)
         class(sheet_slab_map_t), intent(in) :: m
-        real(dp), intent(out) :: jy, jx
+        real(dp), intent(out) :: jump(3)
         integer, intent(out) :: status
-        real(dp) :: s1, s2, y(2), u22, b(3), per2, f
+        real(dp) :: s1, s2, y(2), u22, b(3), per2, f, kp
         integer :: j, e, side
-        status = 1; jy = 0; jx = 0
+        status = 1; jump = 0
         e = m%interface_element()
         if (e < 0) return
-        per2 = 2*acos(-1.0_dp)/m%k
+        kp = kper(m)
+        per2 = 2*acos(-1.0_dp)/kp
         do side = -1, 1, 2
             do j = 1, m%n2
                 s2 = (j - 1)*per2/m%n2
@@ -545,8 +644,8 @@ contains
                     call trace(m, e + 1, 0.0_dp, s2, s1, y, u22, b)
                 end if
                 f = side*2*u22/m%n2
-                jy = jy + f*b(2)*cos(m%k*y(2))
-                jx = jx + f*b(1)*sin(m%k*y(2))
+                jump(1) = jump(1) + f*b(1)*sin(kp*y(2))
+                jump(2:3) = jump(2:3) + f*b(2:3)*cos(kp*y(2))
             end do
         end do
         status = 0
