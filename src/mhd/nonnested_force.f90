@@ -26,9 +26,10 @@ module kin6d_nonnested_force
     ! 1-form G phi_in in ker K on V1_0; it is deflated by tying the n = 0
     ! gauge multipliers on the inner boundary to one unknown (the NN2
     ! floating-conductor tie), so that psi is M1-orthogonal to all of ker K.
-    ! The Lorentz load uses J = M1^-1 (C^T M2 B + f_vac C^T <V2, e_phi/R>)
-    ! in V1_0 (the FEEC curl* of B, as kin6d_nonnested_relax) and B = C A +
-    ! f_vac/R e_phi at the quadrature points, nphi-point phi mean.
+    ! The Lorentz load uses by default the strong current J = C B1 in V2,
+    ! B1 the full-V1 L2 projection of B = C A + f_vac/R e_phi; dual = .true.
+    ! selects the FEEC curl* J = M1^-1 (C^T M2 B + f_vac C^T <V2, e_phi/R>)
+    ! in V1_0 of kin6d_nonnested_relax (nphi-point phi mean).
     ! All results are candidate diagnostics (no enclosure).
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -637,21 +638,21 @@ contains
         end do
     end function
 
-    subroutine nf_lorentz_load(sys, field, load, report, status, primal)
-        ! F = <V2, J x B>, B = field + harmonic. Default (dual) current:
-        ! J = M1^-1 (C^T M2 B + ck) in V1_0, the FEEC curl* (as
-        ! kin6d_nonnested_relax); its zero tangential trace leaves an O(1)
+    subroutine nf_lorentz_load(sys, field, load, report, status, dual)
+        ! F = <V2, J x B>, B = field + harmonic. Default (strong) current:
+        ! J = C B1 in V2 with B1 the full-V1 L2 projection of B (no boundary
+        ! condition), the strong curl of the 1-form proxy. dual = .true.:
+        ! J = M1^-1 (C^T M2 B + ck) in V1_0, the FEEC curl* of
+        ! kin6d_nonnested_relax; its zero tangential trace leaves an O(1)
         ! wall layer of width h when n x B /= 0 at the wall, so P(J x B)
-        ! decreases like h^1/2 there. primal: J = C B1 in V2 with B1 the
-        ! full-V1 L2 projection of B (no boundary condition), the strong
-        ! curl of the 1-form proxy, without that layer.
+        ! decreases only like h^1/2 there and masks real current sheets.
         ! report%jb_scale = <|J|^2 |B|^2>^1/2, report%b2 = <|B|^2>.
         type(nf_system_t), intent(inout) :: sys
         type(free_b_field_t), intent(in) :: field
         real(dp), allocatable, intent(out) :: load(:)
         type(nf_report_t), intent(inout) :: report
         integer, intent(out) :: status
-        logical, intent(in), optional :: primal
+        logical, intent(in), optional :: dual
         type(csc_t) :: pair
         type(nn_factor_t) :: full
         complex(dp), allocatable :: hload(:)
@@ -663,8 +664,8 @@ contains
         logical :: strong
         status = 1
         if (.not. sys%ready) return
-        strong = .false.
-        if (present(primal)) strong = primal
+        strong = .true.
+        if (present(dual)) strong = .not. dual
         b2 = nf_field_coefficients(sys, field)
         allocate (j1(sys%nb*sys%n1)); j1 = 0
         if (strong) then

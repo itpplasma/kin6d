@@ -10,10 +10,12 @@ program test_nonnested_force
     !              free to quadrature roundoff.
     !   beltrami : Lundquist Beltrami states on the periodic cylinder (N = 1,
     !              4/8 rings, 16 with a second argument): P(J x B) decreases
-    !              with the primal current, like h^1/2 with the dual one.
+    !              with the strong (default) current, like h^1/2 with the dual one.
     !   shell    : the NN1 coil annulus (two harmonic 2-forms, one relative
-    !              harmonic 1-form): manufactured ladder and deflation of a
-    !              right-hand side with kernel content.
+    !              harmonic 1-form): manufactured P2/P3 ladders at full order
+    !              k and deflation of a right-hand side with kernel content.
+    ! Study mode: hodge k [levels [base rings [modes]]], shell k [levels];
+    ! modes 0 drops the phi dependence of the manufactured field.
     !   sheet    : straight periodic cylinder with B_z(r) (J x B = -grad
     !              B_z^2/2): a smooth profile decreases, a tangential
     !              discontinuity off the mesh rings sets a residual floor.
@@ -37,16 +39,27 @@ program test_nonnested_force
     real(dp), parameter :: pi = acos(-1.0_dp), cyl_r0 = 6.0_dp
     real(dp), parameter :: c_h = 12.0_dp
     character(16) :: kind
-    character(8), parameter :: currents(2) = [character(8) :: ' dual', ' primal']
+    character(8), parameter :: currents(2) = [character(8) :: ' dual', ' strong']
     ! Shell centre and radii (nn_vacuum_fixture annulus) for the bump.
     real(dp), parameter :: shell_r0 = 6.0_dp, rin = 0.3_dp, rout = 1.2_dp
     logical :: shell_domain = .false.
     real(dp) :: sheet_radius = 0.47_dp, sheet_width = 0
+    ! Study-mode overrides (0: defaults): ladder levels, base rings, degree.
+    integer :: forced_levels = 0, base = 8, kk = 2, study_modes = 1
+    ! Amplitude of the phi-dependent manufactured terms (0 with study_modes 0).
+    real(dp) :: amp = 1
     call get_command_argument(1, kind)
     select case (trim(kind))
     case ('hodge')
-        call hodge_case(2)
-        if (command_argument_count() < 2) call hodge_case(3)
+        if (command_argument_count() > 1) then
+            ! Study mode: hodge k [levels [base rings]].
+            call int_arg(2, kk); call int_arg(3, forced_levels); call int_arg(4, base)
+            call int_arg(5, study_modes)
+            if (study_modes == 0) amp = 0
+            call hodge_case(kk)
+        else
+            call hodge_case(2); call hodge_case(3)
+        end if
     case ('solovev')
         call solovev_case(2); call solovev_case(3); call vacuum_case()
     case ('beltrami')
@@ -60,6 +73,14 @@ program test_nonnested_force
     end select
     print '(a)', 'PASS'
 contains
+    subroutine int_arg(i, v)
+        integer, intent(in) :: i
+        integer, intent(inout) :: v
+        character(16) :: a
+        if (command_argument_count() < i) return
+        call get_command_argument(i, a); read (a, *) v
+    end subroutine
+
     ! ---- manufactured Hodge decomposition -------------------------------
     subroutine bump(x, p, pr, pz)
         ! p = 0 on the boundary (Solov'ev flux or the shell quartic).
@@ -86,9 +107,9 @@ contains
         real(dp) :: p, pr, pz, r, ph
         call bump(x(:2), p, pr, pz)
         r = x(1); ph = x(3)
-        v(1) = 0.4_dp*p*cos(ph)/r - pz*(1 + 0.3_dp*cos(ph))
-        v(2) = -0.4_dp*pr*sin(ph) + c_h/r
-        v(3) = (p + r*pr)*(1 + 0.3_dp*cos(ph))/r
+        v(1) = amp*0.4_dp*p*cos(ph)/r - pz*(1 + amp*0.3_dp*cos(ph))
+        v(2) = -amp*0.4_dp*pr*sin(ph) + c_h/r
+        v(3) = (p + r*pr)*(1 + amp*0.3_dp*cos(ph))/r
     end subroutine
 
     subroutine manufactured(x, v)
@@ -98,9 +119,9 @@ contains
         real(dp) :: r, z, ph
         call projected(x, v)
         r = x(1); z = x(2); ph = x(3)
-        v(1) = v(1) + 2*cos(2*r)*cos(3*z) + 0.5_dp*z*cos(ph)
-        v(2) = v(2) - 0.5_dp*z*sin(ph)
-        v(3) = v(3) - 3*sin(2*r)*sin(3*z) + 0.5_dp*r*cos(ph)
+        v(1) = v(1) + 2*cos(2*r)*cos(3*z) + amp*0.5_dp*z*cos(ph)
+        v(2) = v(2) - amp*0.5_dp*z*sin(ph)
+        v(3) = v(3) - 3*sin(2*r)*sin(3*z) + amp*0.5_dp*r*cos(ph)
     end subroutine
 
     subroutine gradient_only(x, v)
@@ -138,8 +159,10 @@ contains
         if (r%harmonic_orthogonality > 1.0e-10_dp) error stop 'harmonic orthogonality'
     end subroutine
 
-    subroutine hodge_ladder(k, label, build)
+    subroutine hodge_ladder(k, label, build, gate)
+        ! gate: least observed order of the finest refinement.
         integer, intent(in) :: k
+        real(dp), intent(in) :: gate
         character(*), intent(in) :: label
         interface
             subroutine build(k, level, field, inner)
@@ -156,10 +179,11 @@ contains
         real(dp), allocatable :: load(:), up(:), ul(:), gload(:)
         logical, allocatable :: inner(:)
         logical :: with_leray
-        real(dp) :: ep(3), el(3), norm, pf, dummy
+        real(dp) :: ep(6), el(6), eb(6), norm, pf, dummy
         integer :: lev, st, levels
         ! P3 with three Fourier blocks: two levels fit this suite's budget.
         levels = merge(3, 2, k == 2)
+        if (forced_levels > 0) levels = min(forced_levels, 6)
         do lev = 1, levels
             call build(k, lev, field, inner)
             ! The Leray comparison path on the cheaper levels only.
@@ -179,6 +203,8 @@ contains
             if (rep%difference > 1.0e-9_dp) error stop 'potential and Leray forms differ'
             call nf_l2_error(sys, up, projected, ep(lev), norm)
             call nf_l2_error(sys, ul, projected, el(lev), dummy)
+            call best_error(field, sys, eb(lev))
+            eb(lev) = eb(lev)/norm
             ep(lev) = ep(lev)/norm; el(lev) = el(lev)/norm
             ! A pure gradient load is annihilated up to quadrature.
             call nf_load(sys, gradient_only, gload)
@@ -189,29 +215,59 @@ contains
                 ep(lev), el(lev), rep%force_potential
             call nf_free(sys)
         end do
+        call equilibrium_residual_floor(eb(:levels), 2.0_dp, &
+            'L2 best approximation of P f in V2', floor)
+        call write_residual_floor(6, label//' best', floor)
         call equilibrium_residual_floor(ep(:levels), 2.0_dp, 'L2 |P f - u_h|/|P f|', &
             floor)
         call write_residual_floor(6, label, floor)
         if (floor%status /= 'decreasing') error stop 'manufactured ladder'
-        ! Pre-asymptotic on these flux meshes (measured P2 1.75/1.86, P3 2.18;
-        ! without the harmonic part 1.82/1.92 and 2.54): gate at k - 1/2 (P2)
-        ! and k - 1 (P3).
-        if (floor%last_order < merge(k - 0.5_dp, k - 1.0_dp, k == 2)) &
-            error stop 'manufactured order'
+        if (floor%last_order < gate) error stop 'manufactured order'
         if (pf > 1.0e-6_dp) print *, 'note: gradient residual', pf
+    end subroutine
+
+    subroutine best_error(field, sys, error)
+        ! L2 error of the M2 projection of P f onto V2 (best approximation).
+        type(free_b_field_t), intent(in) :: field
+        type(nf_system_t), intent(in) :: sys
+        real(dp), intent(out) :: error
+        type(nn_factor_t) :: m2
+        real(dp), allocatable :: lp(:), u(:)
+        logical, allocatable :: none(:)
+        real(dp) :: dummy
+        integer :: b, st
+        call nf_load(sys, projected, lp)
+        allocate (none(sys%n2), u(size(lp))); none = .false.
+        call nn_factor(field%fs%mass(2), none, m2, st)
+        if (st /= 0) error stop 'V2 mass'
+        do b = 0, sys%nb - 1
+            call nn_factor_solve_real(m2, lp(b*sys%n2 + 1:(b + 1)*sys%n2), &
+                u(b*sys%n2 + 1:(b + 1)*sys%n2), st)
+            if (st /= 0) error stop 'V2 projection'
+            u(b*sys%n2 + 1:(b + 1)*sys%n2) = u(b*sys%n2 + 1:(b + 1)*sys%n2) &
+                *merge(1.0_dp, 2.0_dp, b == 0)
+        end do
+        call nn_factor_free(m2)
+        call nf_l2_error(sys, u, projected, error, dummy)
     end subroutine
 
     subroutine hodge_case(k)
         integer, intent(in) :: k
         shell_domain = .false.
-        call hodge_ladder(k, 'hodge', solovev_build)
+        ! The Solov'ev flux mesh is pre-asymptotic near the axis, where it
+        ! blends straight and curved geometry (mhd_mesh curvature_weight):
+        ! the V2 best approximation itself converges at the same reduced
+        ! rate there (docs/nonnested-force.md), so the disk gates are k - 1/2
+        ! (P2, three levels) and k - 1 (P3, two levels); the annulus (shell)
+        ! gates the full order k.
+        call hodge_ladder(k, 'hodge', solovev_build, merge(k - 0.5_dp, k - 1.0_dp, k == 2))
     end subroutine
 
     subroutine solovev_build(k, level, field, inner)
         integer, intent(in) :: k, level
         type(free_b_field_t), intent(out) :: field
         logical, allocatable, intent(out) :: inner(:)
-        call solovev_field(k, 8*2**(level - 1), 1, field)
+        call solovev_field(k, base*2**(level - 1), study_modes, field)
         if (allocated(inner)) deallocate (inner)
     end subroutine
 
@@ -243,7 +299,18 @@ contains
         real(dp) :: kp1, kp2
         integer :: st, i
         shell_domain = .true.
-        call hodge_ladder(2, 'shell', shell_build)
+        kk = 2
+        if (command_argument_count() > 1) then
+            ! Study mode: shell k [levels].
+            call int_arg(2, kk); call int_arg(3, forced_levels)
+        end if
+        if (command_argument_count() > 1) then
+            call hodge_ladder(kk, 'shell', shell_build, kk - 0.15_dp)
+        else
+            forced_levels = 3
+            call hodge_ladder(2, 'shell', shell_build, 1.85_dp)
+            call hodge_ladder(3, 'shell', shell_build, 2.85_dp)
+        end if
         ! Deflation: a right-hand side with gradient and relative-harmonic
         ! content M1 G (phi_in + interior noise) returns the same psi.
         call shell_build(2, 2, field, inner)
@@ -300,7 +367,7 @@ contains
             if (st /= 0) error stop 'prepare'
             do cur = 1, 2
                 rep = nf_report_t()
-                call nf_lorentz_load(sys, field, load, rep, st, primal=cur == 2)
+                call nf_lorentz_load(sys, field, load, rep, st, dual=cur == 1)
                 if (st /= 0) error stop 'Lorentz load'
                 call nf_project(sys, load, up, ul, rep)
                 call check_identities(rep, 'solovev')
@@ -342,14 +409,22 @@ contains
         if (st /= 0) error stop 'vacuum solve'
         call nf_prepare(field, sys, st)
         if (st /= 0) error stop 'prepare'
-        call nf_lorentz_load(sys, field, load, rep, st)
+        ! The dual current is the discrete curl* that the NN1 vacuum equation
+        ! annihilates, so its force vanishes to roundoff; the strong current
+        ! curl Pi_1 B carries the O(h^(k-1)) projection error of B.
+        call nf_lorentz_load(sys, field, load, rep, st, dual=.true.)
         if (st /= 0) error stop 'load'
         call nf_project(sys, load, up, ul, rep)
         call check_identities(rep, 'vacuum')
         ! Force relative to B^2/L (sqrt(V) L / <|B|^2>).
         scale = rep%force_potential*sqrt(sys%volume)*sys%length/rep%b2
-        print '(a,es12.4)', 'vacuum |P(J x B)| sqrt(V) L/<|B|^2> ', scale
+        print '(a,es12.4)', 'vacuum dual |P(J x B)| sqrt(V) L/<|B|^2> ', scale
         if (scale > 1.0e-10_dp) error stop 'vacuum force'
+        call nf_lorentz_load(sys, field, load, rep, st)
+        if (st /= 0) error stop 'load'
+        call nf_project(sys, load, up, ul, rep)
+        print '(a,es12.4)', 'vacuum strong |P(J x B)| sqrt(V) L/<|B|^2> ', &
+            rep%force_potential*sqrt(sys%volume)*sys%length/rep%b2
         call nf_free(sys)
     end subroutine
 
@@ -398,7 +473,7 @@ contains
             if (st /= 0) error stop 'prepare'
             do cur = 1, 2
                 rep = nf_report_t()
-                call nf_lorentz_load(sys, field, load, rep, st, primal=cur == 2)
+                call nf_lorentz_load(sys, field, load, rep, st, dual=cur == 1)
                 if (st /= 0) error stop 'load'
                 call nf_project(sys, load, up, ul, rep)
                 call check_identities(rep, 'beltrami')
@@ -464,7 +539,7 @@ contains
             call nf_prepare(field, sys, st)
             if (st /= 0) error stop 'prepare'
             rep = nf_report_t()
-            call nf_lorentz_load(sys, field, load, rep, st, primal=.true.)
+            call nf_lorentz_load(sys, field, load, rep, st)
             if (st /= 0) error stop 'load'
             call nf_project(sys, load, up, ul, rep)
             call check_identities(rep, 'sheet')
