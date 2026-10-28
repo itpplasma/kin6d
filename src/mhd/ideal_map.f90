@@ -42,7 +42,9 @@ module kin6d_ideal_map
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_map_leaves, only: ideal_point_gradient_jets, &
-        ideal_point_hessian_jets
+        ideal_point_hessian_jets, ideal_point_field_gradient_jets, &
+        ideal_point_field_jets
+    use kin6d_ideal_field_angle_leaves, only: field_angle_mode
     use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t, curve_chart_t
     use kin6d_curve_chart_leaves, only: curve_omega_metric
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
@@ -70,7 +72,8 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_prolong_correction
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
-    public :: ideal_map_gauge_project
+    public :: ideal_map_gauge_project, ideal_map_angle_enable, ideal_map_angle_rdof
+    public :: ideal_map_angle_value
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
@@ -207,6 +210,22 @@ module kin6d_ideal_map
         real(dp), allocatable :: b(:, :, :), p(:, :), det(:, :)
         ! Coefficients x(3, mode, node): q1, q2 and omega.
         real(dp), allocatable :: x(:, :, :)
+        ! Field-line angle of the frozen field (ideal_map_angle_enable,
+        ! docs/ideal-seed-3d.md): the frozen density is relabelled along the
+        ! reference surfaces, theta -> theta + eta, which adds
+        !     angle_form(:, 1, g, e) eta_t + angle_form(:, 2, g, e) eta_p
+        ! (eta_t, eta_p the angle derivatives of eta) to b(:, g, e). eta is a
+        ! real Fourier series in harmonic extension: pair i has poloidal
+        ! number angle_m(i) and toroidal number angle_n(i) (times nfp), its
+        ! coefficients (cos, sin) are angle(2 i - 1 : 2 i), and the reference
+        ! harmonic (u + i v)^m at the quadrature points is angle_power(:, m, g, e).
+        ! The angle coefficients follow the node coefficients in the
+        ! coefficient vector (ndof = 3 nmode nodes + nangle) and the node and
+        ! axis dofs in the reduced vector. nangle = 0: no field angle.
+        integer :: nangle = 0, angle_mpol = -1, angle_ntor = 0
+        integer, allocatable :: angle_m(:), angle_n(:)
+        real(dp), allocatable :: angle(:), angle_form(:, :, :, :)
+        real(dp), allocatable :: angle_power(:, :, :, :), angle_phase(:, :, :)
     end type
 
     type :: factor_cache_t
@@ -281,12 +300,127 @@ contains
         dof = 2*map%nmode*map%nodes + i + 2*(j - 1) + 2*map%npoly*(mode - 1)
     end function
 
+    pure integer function ideal_map_angle_rdof(map, k) result(dof)
+        ! Reduced dof of field-angle coefficient k (after the axis dofs).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: k
+        dof = 2*map%nmode*map%nodes + 2*map%npoly*map%nmode + k
+    end function
+
+    subroutine ideal_map_angle_enable(map, mpol, ntor, status)
+        ! Add the field-line angle eta of the frozen field (pairs m = 0,
+        ! 1 <= n <= ntor and 1 <= m <= mpol, |n| <= ntor; the m = n = 0
+        ! constant is the exact null of a rigid reference rotation and is
+        ! omitted). Position gauge only (the toroidal labels are physical, so
+        ! the relabelling is purely poloidal), after ideal_map_freeze; the caller
+        ! fills angle_form and angle_power (ideal_seed_3d for the reference disk).
+        type(ideal_map_t), intent(inout) :: map
+        integer, intent(in) :: mpol, ntor
+        integer, intent(out) :: status
+        integer, allocatable :: conn(:, :)
+        logical, allocatable :: fixed(:)
+        integer :: m, n, i, j, nr, npair
+        status = IDEAL_MAP_BAD_INPUT
+        if (.not. map%position_gauge .or. map%nangle > 0) return
+        if (mpol < 0 .or. ntor < 0 .or. ntor > map%ntor) return
+        if (mpol == 0 .and. ntor == 0) return
+        npair = ntor + mpol*(2*ntor + 1)
+        allocate (map%angle_m(npair), map%angle_n(npair))
+        i = 0
+        do n = 1, ntor
+            i = i + 1; map%angle_m(i) = 0; map%angle_n(i) = n
+        end do
+        do m = 1, mpol
+            do n = -ntor, ntor
+                i = i + 1; map%angle_m(i) = m; map%angle_n(i) = n
+            end do
+        end do
+        map%angle_mpol = mpol; map%angle_ntor = ntor
+        map%nangle = 2*npair
+        allocate (map%angle(map%nangle), map%angle_form(3, 2, map%nq, map%cells), &
+            map%angle_power(2, 0:mpol, map%nq, map%cells), &
+            map%angle_phase(2, -ntor:ntor, map%nphi))
+        map%angle = 0; map%angle_form = 0; map%angle_power = 0
+        do j = 1, map%nphi
+            do n = -ntor, ntor
+                map%angle_phase(:, n, j) = [cos(n*map%nfp*map%phi(j)), &
+                    sin(n*map%nfp*map%phi(j))]
+            end do
+        end do
+        nr = size(map%redconn, 1)
+        allocate (conn(nr + map%nangle, map%cells))
+        conn(1:nr, :) = map%redconn
+        do i = 1, map%nangle
+            conn(nr + i, :) = map%nred + i
+        end do
+        call move_alloc(conn, map%redconn)
+        allocate (fixed(map%nred + map%nangle))
+        fixed(1:map%nred) = map%fixed
+        fixed(map%nred + 1:) = .false.
+        call move_alloc(fixed, map%fixed)
+        map%nred = map%nred + map%nangle
+        map%ndof = map%ndof + map%nangle
+        status = IDEAL_MAP_OK
+    end subroutine
+
+    subroutine angle_basis(map, e, g, j, et, ep)
+        ! eta_t and eta_p of every angle coefficient at point g of cell e, plane j.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(out) :: et(:), ep(:)
+        real(dp) :: re, im, c, s, eta
+        integer :: i, m, n
+        do i = 1, size(map%angle_m)
+            m = map%angle_m(i); n = map%angle_n(i)
+            re = map%angle_power(1, m, g, e); im = map%angle_power(2, m, g, e)
+            c = map%angle_phase(1, n, j); s = map%angle_phase(2, n, j)
+            call field_angle_mode(re, im, real(m, dp), real(n*map%nfp, dp), c, s, &
+                1.0_dp, 0.0_dp, eta, et(2*i - 1), ep(2*i - 1))
+            call field_angle_mode(re, im, real(m, dp), real(n*map%nfp, dp), c, s, &
+                0.0_dp, 1.0_dp, eta, et(2*i), ep(2*i))
+        end do
+    end subroutine
+
+    subroutine ideal_map_angle_value(map, angle, power, phi, eta, eta_t, eta_p)
+        ! eta and its angle derivatives at a reference point with harmonics
+        ! power(:, 0:angle_mpol) = (u + i v)^m and toroidal angle phi-hat.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: angle(:), power(:, 0:), phi
+        real(dp), intent(out) :: eta, eta_t, eta_p
+        real(dp) :: a, t, p, k
+        integer :: i, m
+        eta = 0; eta_t = 0; eta_p = 0
+        do i = 1, size(map%angle_m)
+            m = map%angle_m(i); k = real(map%angle_n(i)*map%nfp, dp)
+            call field_angle_mode(power(1, m), power(2, m), real(m, dp), k, cos(k*phi), &
+                sin(k*phi), angle(2*i - 1), angle(2*i), a, t, p)
+            eta = eta + a; eta_t = eta_t + t; eta_p = eta_p + p
+        end do
+    end subroutine
+
+    subroutine point_density(map, angle, e, g, j, b, et, ep)
+        ! Frozen density at point g of cell e, plane j, with the field angle;
+        ! et, ep: the per-coefficient basis (only with nangle > 0).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: angle(:)
+        integer, intent(in) :: e, g, j
+        real(dp), intent(out) :: b(3), et(:), ep(:)
+        b = map%b(:, g, e)
+        if (map%nangle == 0) return
+        call angle_basis(map, e, g, j, et, ep)
+        b = b + map%angle_form(:, 1, g, e)*dot_product(angle, et) &
+            + map%angle_form(:, 2, g, e)*dot_product(angle, ep)
+    end subroutine
+
     subroutine ideal_map_reduce(map, g, gr)
         ! Coefficient gradient (or any dual vector) to the reduced dofs.
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: g(:)
         real(dp), intent(out) :: gr(:)
         integer :: a, m, k, j, l
+        do k = 1, map%nangle
+            gr(ideal_map_angle_rdof(map, k)) = g(3*map%nmode*map%nodes + k)
+        end do
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
@@ -326,6 +460,9 @@ contains
         real(dp), intent(in) :: vr(:)
         real(dp), intent(out) :: v(:)
         integer :: a, m, k, j
+        do k = 1, map%nangle
+            v(3*map%nmode*map%nodes + k) = vr(ideal_map_angle_rdof(map, k))
+        end do
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
@@ -856,6 +993,17 @@ contains
             fine%x(1:2, 2:, a) = 0
         end do
         fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
+        ! The field angle is a mesh-independent series: copy the common pairs.
+        if (fine%nangle > 0 .and. coarse%nangle > 0) then
+            fine%angle = 0
+            do a = 1, size(fine%angle_m)
+                do k = 1, size(coarse%angle_m)
+                    if (fine%angle_m(a) /= coarse%angle_m(k)) cycle
+                    if (fine%angle_n(a) /= coarse%angle_n(k)) cycle
+                    fine%angle(2*a - 1:2*a) = coarse%angle(2*k - 1:2*k)
+                end do
+            end do
+        end if
         status = IDEAL_MAP_OK
     end subroutine
 
@@ -1012,35 +1160,44 @@ contains
         y = matmul(map%reference(:, map%conn(:, e)), shape(:map%nloc))
     end subroutine
 
-    subroutine point_gradient(map, e, g, j, x, w, jac, gv)
+    subroutine point_gradient(map, e, g, j, x, b, w, jac, gv, gb)
         ! Energy density w, Jacobian and the gradient with respect to
         ! v = (q(1:3), Q(1:3, 1:3)) (index 3 + k + 3*(i-1) for Q(k,i)): the
-        ! generated chain-rule leaf (gen/gen_ideal_map.f90) on the chart jet.
+        ! generated chain-rule leaf (gen/gen_ideal_map.f90) on the chart jet,
+        ! for the frozen density b; gb: dw/db (field angle).
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: e, g, j
-        real(dp), intent(in) :: x(:, :, :)
+        real(dp), intent(in) :: x(:, :, :), b(3)
         real(dp), intent(out) :: w, jac, gv(12)
+        real(dp), intent(out), optional :: gb(3)
         real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
         call point_jet(map, e, g, j, x, q, qd)
         call map%chart%jet(q, pos, d1, d2, d3)
-        call ideal_point_gradient_jets(d1, d2, d3, qd, map%b(:, g, e), map%p(g, e), &
+        call ideal_point_gradient_jets(d1, d2, d3, qd, b, map%p(g, e), &
             map%mu0, map%sigma, w, jac, gv)
+        if (present(gb)) call ideal_point_field_gradient_jets(d1, d2, d3, qd, b, &
+            map%p(g, e), map%mu0, map%sigma, gb)
     end subroutine
 
-    subroutine point_hessian(map, e, g, j, x, w, jac, gv, hp)
+    subroutine point_hessian(map, e, g, j, x, b, w, jac, gv, hp, hbb, hvb)
         ! As point_gradient with the Hessian with respect to v, packed in the
         ! group order of gen/gen_ideal_map.f90: hp(1:45) the upper triangle of
         ! the block of v(1:9), hp(46:72) the rows v(1:9) of the columns
         ! v(10:12), hp(73:78) the upper triangle of the block of v(10:12).
+        ! hbb, hvb (field angle): d2w/db2 (packed) and d2w/dv db.
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: e, g, j
-        real(dp), intent(in) :: x(:, :, :)
+        real(dp), intent(in) :: x(:, :, :), b(3)
         real(dp), intent(out) :: w, jac, gv(12), hp(78)
+        real(dp), intent(out), optional :: hbb(6), hvb(12, 3)
         real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: gb(3)
         call point_jet(map, e, g, j, x, q, qd)
         call map%chart%jet(q, pos, d1, d2, d3)
-        call ideal_point_hessian_jets(d1, d2, d3, qd, map%b(:, g, e), map%p(g, e), &
+        call ideal_point_hessian_jets(d1, d2, d3, qd, b, map%p(g, e), &
             map%mu0, map%sigma, w, jac, gv, hp)
+        if (present(hbb)) call ideal_point_field_jets(d1, d2, d3, qd, b, &
+            map%p(g, e), map%mu0, map%sigma, gb, hbb, hvb)
     end subroutine
 
     pure subroutine test_functions(map, g, j, a, m, f)
@@ -1054,21 +1211,32 @@ contains
         f(3) = map%shape(a, g)*map%dtrig(m, j)
     end subroutine
 
-    subroutine ideal_map_energy(map, x, energy, status, gradient, min_jacobian)
+    subroutine ideal_map_energy(map, x, energy, status, gradient, min_jacobian, angle)
         ! Energy per field period and its coefficient gradient. status
-        ! IDEAL_MAP_FOLDED when J <= 0 at any quadrature point.
+        ! IDEAL_MAP_FOLDED when J <= 0 at any quadrature point (or, with the
+        ! field angle, when the relabelled toroidal density changes sign).
+        ! angle: field-angle coefficients (default map%angle).
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: x(:, :, :)
         real(dp), intent(out) :: energy
         integer, intent(out) :: status
         real(dp), intent(out), optional :: gradient(:), min_jacobian
+        real(dp), intent(in), optional :: angle(:)
         real(dp), allocatable :: local(:, :), cell_energy(:), cell_jac(:)
         real(dp), allocatable :: pw(:, :, :), pjac(:, :, :), pgv(:, :, :, :)
-        real(dp) :: f(0:3), dphi, weight, minjac
-        integer :: e, g, j, a, m, c, l, item, nloc, nmode
+        real(dp), allocatable :: eta(:), alocal(:, :), et(:), ep(:), pab(:, :, :, :)
+        real(dp) :: f(0:3), dphi, weight, minjac, bp(3), gb(3)
+        integer :: e, g, j, a, m, c, l, item, nloc, nmode, na
         logical :: want
         want = present(gradient)
-        nloc = map%nloc; nmode = map%nmode
+        nloc = map%nloc; nmode = map%nmode; na = map%nangle
+        allocate (eta(na), et(na), ep(na), alocal(na, map%cells))
+        if (na > 0) then
+            eta = map%angle
+            if (present(angle)) eta = angle
+        end if
+        alocal = 0
+        allocate (pab(2, map%nq, map%nphi, merge(map%cells, 0, want .and. na > 0)))
         allocate (local(3*nmode*nloc, map%cells), cell_energy(map%cells), &
             cell_jac(map%cells), pw(map%nq, map%nphi, map%cells), &
             pjac(map%nq, map%nphi, map%cells))
@@ -1079,22 +1247,47 @@ contains
         ! the energy (which decides step acceptance near roundoff) does not
         ! depend on the thread count or on the order of an OpenMP reduction.
         !$omp parallel default(none) shared(map, x, want, dphi, local, cell_energy, &
-        !$omp cell_jac, pw, pjac, pgv, nloc, nmode) &
-        !$omp private(item, e, g, j, a, m, c, l, f, weight)
+        !$omp cell_jac, pw, pjac, pgv, nloc, nmode, na, eta, alocal, pab) &
+        !$omp private(item, e, g, j, a, m, c, l, f, weight, bp, gb, et, ep)
         !$omp do schedule(static)
         do item = 1, map%cells*map%nphi
             e = 1 + (item - 1)/map%nphi
             j = item - map%nphi*(e - 1)
             do g = 1, map%nq
-                if (want) then
-                    call point_gradient(map, e, g, j, x, pw(g, j, e), pjac(g, j, e), &
+                call point_density(map, eta, e, g, j, bp, et, ep)
+                if (want .and. na > 0) then
+                    call point_gradient(map, e, g, j, x, bp, pw(g, j, e), pjac(g, j, e), &
+                        pgv(:, g, j, e), gb)
+                    pab(:, g, j, e) = [dot_product(gb, map%angle_form(:, 1, g, e)), &
+                        dot_product(gb, map%angle_form(:, 2, g, e))]
+                else if (want) then
+                    call point_gradient(map, e, g, j, x, bp, pw(g, j, e), pjac(g, j, e), &
                         pgv(:, g, j, e))
                 else
-                    call point_energy(e, g, j)
+                    call point_energy(e, g, j, bp)
                 end if
+                if (na == 0) cycle
+                ! A relabelling keeps the sign of the toroidal density.
+                if (.not. bp(3)*map%b(3, g, e) > 0) pjac(g, j, e) = -abs(pjac(g, j, e))
             end do
         end do
         !$omp end do
+        if (want .and. na > 0) then
+            ! Angle gradient sum_g,j w gb . (form_t eta_t' + form_p eta_p') per
+            ! cell, in a fixed order (planes, then points).
+            !$omp do schedule(static)
+            do e = 1, map%cells
+                do j = 1, map%nphi
+                    do g = 1, map%nq
+                        call angle_basis(map, e, g, j, et, ep)
+                        weight = map%weight(g)*dphi
+                        alocal(:, e) = alocal(:, e) + weight*pab(1, g, j, e)*et &
+                            + weight*pab(2, g, j, e)*ep
+                    end do
+                end do
+            end do
+            !$omp end do
+        end if
         !$omp do schedule(static)
         do e = 1, map%cells
             cell_energy(e) = 0; cell_jac(e) = huge(1.0_dp)
@@ -1140,6 +1333,13 @@ contains
         do e = 1, map%cells
             energy = energy + cell_energy(e)
         end do
+        if (want .and. na > 0) then
+            gradient(3*nmode*map%nodes + 1:) = 0
+            do e = 1, map%cells
+                gradient(3*nmode*map%nodes + 1:) = gradient(3*nmode*map%nodes + 1:) &
+                    + alocal(:, e)
+            end do
+        end if
         minjac = minval(cell_jac)
         if (.not. map%gauge_hessian_only) then
             do e = 1, map%cells
@@ -1152,7 +1352,7 @@ contains
             status = IDEAL_MAP_FOLDED
         if (present(min_jacobian)) min_jacobian = minjac
         if (.not. want) return
-        gradient = 0
+        gradient(1:3*nmode*map%nodes) = 0
         do e = 1, map%cells
             gradient(map%dofconn(:, e)) = gradient(map%dofconn(:, e)) + local(:, e)
             if (map%gauge_hessian_only) cycle
@@ -1163,10 +1363,11 @@ contains
             end do
         end do
     contains
-        subroutine point_energy(e, g, j)
+        subroutine point_energy(e, g, j, bp)
             integer, intent(in) :: e, g, j
+            real(dp), intent(in) :: bp(3)
             real(dp) :: gv(12)
-            call point_gradient(map, e, g, j, x, pw(g, j, e), pjac(g, j, e), gv)
+            call point_gradient(map, e, g, j, x, bp, pw(g, j, e), pjac(g, j, e), gv)
         end subroutine
     end subroutine
 
@@ -1205,8 +1406,9 @@ contains
         real(dp), allocatable :: full(:, :, :), half(:, :, :)
         real(dp), allocatable :: pa(:, :), pb(:, :), pc(:, :), pks(:, :), pyw(:, :)
         real(dp), allocatable :: pft(:, :), pfull(:, :), phalf(:, :)
-        real(dp) :: w, jac, gv(12), hp(78), dphi, weight
-        integer :: e, g, j, a, k, nl, nr, nlm, nmm, nmc, nloc, nq, nphi
+        real(dp), allocatable :: et(:), ep(:)
+        real(dp) :: w, jac, gv(12), hp(78), dphi, weight, bp(3)
+        integer :: e, g, j, a, k, nl, nr, nlm, nmm, nmc, nloc, nq, nphi, nra
         integer :: nmode, ne, eb, item, nh, nt
         nloc = map%nloc; nq = map%nq; nphi = map%nphi; nmode = map%nmode
         nlm = nloc*nmode
@@ -1216,7 +1418,9 @@ contains
         nmc = 9*nmm
         ! Columns of half: two per local node-mode, one per axis column.
         nh = nlm + 2*map%npoly*nmode
-        allocate (blocks(nr, nr, map%cells), phig(3, nloc, nq), phik(3*nq, nloc))
+        ! Field-angle rows and columns follow the node and axis ones.
+        nra = nr + map%nangle
+        allocate (blocks(nra, nra, map%cells), phig(3, nloc, nq), phik(3*nq, nloc))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
         ! phi_s(a, g) for s = 1, 2, 3: N, dN/ds1, dN/ds2.
         do g = 1, nq
@@ -1243,7 +1447,8 @@ contains
             !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, &
             !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, nh) &
             !$omp private(e, g, j, a, k, w, jac, gv, hp, weight, ka, kb, kc, item, pa, &
-            !$omp pb, pc, pks, pyw, pft, pfull, phalf)
+            !$omp pb, pc, pks, pyw, pft, pfull, phalf, bp, et, ep)
+            allocate (et(map%nangle), ep(map%nangle))
             allocate (ka(nmm, 45*nq), kb(nmm, 27*nq), kc(nmm, 6*nq), &
                 pa(nphi, 45*nq), pb(nphi, 27*nq), pc(nphi, 6*nq), pks(3*nmc, 3*nq), &
                 pyw(nmc, 3*nq*nloc), pft(nmc, nloc*nloc), pfull(nl, nl), phalf(nl, nr))
@@ -1252,7 +1457,8 @@ contains
                 do g = 1, nq
                     weight = map%weight(g)*dphi
                     do j = 1, nphi
-                        call point_hessian(map, e, g, j, x, w, jac, gv, hp)
+                        call point_density(map, map%angle, e, g, j, bp, et, ep)
+                        call point_hessian(map, e, g, j, x, bp, w, jac, gv, hp)
                         do k = 1, 45
                             pa(j, k + 45*(g - 1)) = weight*hp(k)
                         end do
@@ -1289,10 +1495,10 @@ contains
                     call hessian_reduce_half(map, e, item, pfull, phalf)
                 end do
                 do item = 1, nr
-                    call hessian_reduce_column(map, e, item, phalf, blocks(:, :, e))
+                    call hessian_reduce_column(map, e, item, phalf, blocks(1:nr, 1:nr, e))
                 end do
                 do item = 1, nr
-                    call hessian_reflect_column(item, blocks(:, :, e))
+                    call hessian_reflect_column(item, blocks(1:nr, 1:nr, e))
                 end do
             end do
             !$omp end do
@@ -1307,7 +1513,9 @@ contains
             !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, &
             !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, ne, nh, hwa, hwb, hwc, &
             !$omp ks, yw, ft, full, half) &
-            !$omp private(e, eb, item, g, j, a, k, w, jac, gv, hp, weight, ka, kb, kc)
+            !$omp private(e, eb, item, g, j, a, k, w, jac, gv, hp, weight, ka, kb, kc, &
+            !$omp bp, et, ep)
+            allocate (et(map%nangle), ep(map%nangle))
             ! Weighted point Hessians; column (pair, g) of the plane stage input.
             !$omp do schedule(static)
             do item = 1, ne*nq
@@ -1316,7 +1524,8 @@ contains
                 e = eb
                 weight = map%weight(g)*dphi
                 do j = 1, nphi
-                    call point_hessian(map, e, g, j, x, w, jac, gv, hp)
+                    call point_density(map, map%angle, e, g, j, bp, et, ep)
+                    call point_hessian(map, e, g, j, x, bp, w, jac, gv, hp)
                     do k = 1, 45
                         hwa(j, k + 45*(g - 1), eb) = weight*hp(k)
                     end do
@@ -1384,7 +1593,7 @@ contains
             do item = 1, ne*nr
                 eb = 1 + (item - 1)/nr
                 call hessian_reduce_column(map, eb, item - nr*(eb - 1), &
-                    half(:, :, eb), blocks(:, :, eb))
+                    half(:, :, eb), blocks(1:nr, 1:nr, eb))
             end do
             !$omp end do
             ! The scalar-energy Hessian has one authoritative triangle.
@@ -1393,17 +1602,128 @@ contains
             !$omp do schedule(static)
             do item = 1, ne*nr
                 eb = 1 + (item - 1)/nr
-                call hessian_reflect_column(item - nr*(eb - 1), blocks(:, :, eb))
+                call hessian_reflect_column(item - nr*(eb - 1), blocks(1:nr, 1:nr, eb))
             end do
             !$omp end do
             !$omp end parallel
             deallocate (hwa, hwb, hwc, ks, yw, ft, full, half)
         end if
-        if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
+        if (map%nangle > 0) call hessian_angle(map, x, nr, blocks)
+        if (matrix%n /= map%nred .or. matrix%nloc /= nra) &
             call csr_build_pattern(map%nred, map%redconn, .false., matrix, &
                 with_slots=.true.)
         ! The blocks are exactly symmetric (reflected above).
         call csr_assemble_blocks(matrix, map%redconn, blocks, symmetric=.true.)
+    end subroutine
+
+    subroutine hessian_angle(map, x, nr, blocks)
+        ! Field-angle rows and columns of the cell blocks: the frozen density
+        ! is linear in the angle coefficients, b = b0 + B eta with
+        ! B = form_t eta_t'^T + form_p eta_p'^T, so
+        !   d2W/dv d eta = sum w (d2w/dv db) B,  d2W/d eta2 = sum w B^T (d2w/db2) B
+        ! (no second derivative of b). The node rows are reduced with the
+        ! same basis as hessian_reduce_column (position gauge: no axis_vec).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        integer, intent(in) :: nr
+        real(dp), intent(inout) :: blocks(:, :, :)
+        interface
+            subroutine dgemm(ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
+                import :: dp
+                character, intent(in) :: ta, tb
+                integer, intent(in) :: m, n, k, lda, ldb, ldc
+                real(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+                real(dp), intent(inout) :: c(ldc, *)
+            end subroutine
+        end interface
+        real(dp), allocatable :: et(:), ep(:), bs(:, :), hs(:, :), tv(:, :), hx(:, :)
+        real(dp), allocatable :: hcc(:, :)
+        real(dp) :: bp(3), hbb(6), hvb(12, 3), h3(3, 3), f(0:3), weight, dphi, s
+        integer :: e, g, j, a, m, c, l, k, i, jp, r, node, na, nlm, npt, pt
+        na = map%nangle
+        nlm = map%nloc*map%nmode
+        npt = map%nq*map%nphi
+        dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
+        !$omp parallel default(shared) private(e, g, j, a, m, c, l, k, i, jp, r, node, &
+        !$omp pt, bp, hbb, hvb, h3, f, weight, s, et, ep, bs, hs, tv, hx, hcc)
+        allocate (et(na), ep(na), bs(3*npt, na), hs(3*npt, na), tv(12, na), &
+            hx(3*nlm, na), hcc(na, na))
+        !$omp do schedule(dynamic, 1)
+        do e = 1, map%cells
+            hx = 0
+            pt = 0
+            do j = 1, map%nphi
+                do g = 1, map%nq
+                    call point_density(map, map%angle, e, g, j, bp, et, ep)
+                    call point_field(map, e, g, j, x, bp, hbb, hvb)
+                    weight = map%weight(g)*dphi
+                    do k = 1, 3
+                        bs(3*pt + k, :) = map%angle_form(k, 1, g, e)*et &
+                            + map%angle_form(k, 2, g, e)*ep
+                    end do
+                    h3 = reshape([hbb(1), hbb(2), hbb(4), hbb(2), hbb(3), hbb(5), &
+                        hbb(4), hbb(5), hbb(6)], [3, 3])
+                    hs(3*pt + 1:3*pt + 3, :) = weight*matmul(h3, bs(3*pt + 1:3*pt + 3, :))
+                    tv = weight*matmul(hvb, bs(3*pt + 1:3*pt + 3, :))
+                    do a = 1, map%nloc
+                        do m = 1, map%nmode
+                            call test_functions(map, g, j, a, m, f)
+                            l = m + map%nmode*(a - 1)
+                            do c = 1, 3
+                                hx(3*l - 3 + c, :) = hx(3*l - 3 + c, :) + f(0)*tv(c, :) &
+                                    + f(1)*tv(3 + c, :) + f(2)*tv(6 + c, :) &
+                                    + f(3)*tv(9 + c, :)
+                            end do
+                        end do
+                    end do
+                    pt = pt + 1
+                end do
+            end do
+            call dgemm('T', 'N', na, na, 3*npt, 1.0_dp, bs, 3*npt, hs, 3*npt, 0.0_dp, &
+                hcc, na)
+            blocks(nr + 1:, nr + 1:, e) = 0.5_dp*(hcc + transpose(hcc))
+            do l = 1, nlm
+                node = map%conn(1 + (l - 1)/map%nmode, e)
+                do i = 1, 2
+                    blocks(2*l - 2 + i, nr + 1:, e) = map%basis(1, i, node)*hx(3*l - 2, :) &
+                        + map%basis(2, i, node)*hx(3*l - 1, :) &
+                        + map%basis(3, i, node)*hx(3*l, :)
+                end do
+            end do
+            do m = 1, map%nmode
+                do jp = 1, map%npoly
+                    do i = 1, 2
+                        r = 2*nlm + i + 2*(jp - 1) + 2*map%npoly*(m - 1)
+                        do k = 1, na
+                            s = 0
+                            do a = 1, map%nloc
+                                l = m + map%nmode*(a - 1)
+                                s = s + map%axis_basis(jp, map%conn(a, e))*hx(3*l - 3 + i, k)
+                            end do
+                            blocks(r, nr + k, e) = s
+                        end do
+                    end do
+                end do
+            end do
+            blocks(nr + 1:, 1:nr, e) = transpose(blocks(1:nr, nr + 1:, e))
+        end do
+        !$omp end do
+        deallocate (et, ep, bs, hs, tv, hx, hcc)
+        !$omp end parallel
+    end subroutine
+
+    subroutine point_field(map, e, g, j, x, b, hbb, hvb)
+        ! d2w/db2 (packed) and d2w/dv db at point g of cell e, plane j.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(in) :: x(:, :, :), b(3)
+        real(dp), intent(out) :: hbb(6), hvb(12, 3)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: gb(3)
+        call point_jet(map, e, g, j, x, q, qd)
+        call map%chart%jet(q, pos, d1, d2, d3)
+        call ideal_point_field_jets(d1, d2, d3, qd, b, map%p(g, e), map%mu0, &
+            map%sigma, gb, hbb, hvb)
     end subroutine
 
     subroutine hessian_merge_pairs(nmode, nq, ka, kb, kc, ks)
@@ -1633,7 +1953,7 @@ contains
         type(sparse_solver_t) :: solver, osolver, lsolver
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
-        real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
+        real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:), trial_angle(:)
         logical, allocatable :: omask(:), damped(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
         real(dp) :: cap_x, cap_w, t0, trial_minjac
@@ -1662,6 +1982,8 @@ contains
                 qy(map%nred, max(1, map%lagged_memory)), &
                 qrho(max(1, map%lagged_memory)), gprev(map%nred))
         end if
+        allocate (trial_angle(map%nangle))
+        if (map%nangle > 0) trial_angle = map%angle
         t0 = wall_seconds()
         call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
         report%energy_s = report%energy_s + wall_seconds() - t0
@@ -1772,8 +2094,11 @@ contains
                 call trust_region()
                 full = alpha*full; step = alpha*step
                 trial = map%x + reshape(full, shape(map%x))
+                if (map%nangle > 0) trial_angle = map%angle &
+                    + full(3*map%nmode*map%nodes + 1:)
                 t0 = wall_seconds()
-                call ideal_map_energy(map, trial, trial_energy, estatus)
+                call ideal_map_energy(map, trial, trial_energy, estatus, &
+                    angle=trial_angle)
                 report%energy_s = report%energy_s + wall_seconds() - t0
                 if (estatus == IDEAL_MAP_OK .and. trial_energy < energy &
                     - 64*epsilon(1.0_dp)*abs(energy)) then
@@ -1786,7 +2111,8 @@ contains
                 ! do not decrease |g| monotonically.
                 if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
                     + 1024*epsilon(1.0_dp)*abs(energy)) then
-                    call ideal_map_energy(map, trial, trial_energy, estatus, grad)
+                    call ideal_map_energy(map, trial, trial_energy, estatus, grad, &
+                        angle=trial_angle)
                     call ideal_map_reduce(map, grad, rhs)
                     where (map%fixed) rhs = 0
                     if (dot_product(gred + rhs, step) <= 0) then
@@ -1801,6 +2127,11 @@ contains
             if (allocated(qs)) gprev = gred
             report%step = maxval(abs(trial - map%x))
             map%x = trial
+            if (map%nangle > 0) then
+                report%step = max(report%step, &
+                    maxval(abs(trial_angle - map%angle)))
+                map%angle = trial_angle
+            end if
             if (nested) then
                 energy = trial_energy; gred = rhs; minjac = trial_minjac
             else
@@ -1837,6 +2168,9 @@ contains
                     cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
                     - 1:3)))))
             end do
+            ! Field angle (radians): the same cap as the rotation.
+            if (map%nangle > 0) alpha = min(alpha, cap_w/max(tiny(1.0_dp), &
+                maxval(abs(full(3*map%nmode*map%nodes + 1:)))))
         end subroutine
 
         subroutine quasi_newton_step(done_step)
@@ -1877,14 +2211,18 @@ contains
             call trust_region()
             full = alpha*full; step = alpha*step
             trial = map%x + reshape(full, shape(map%x))
+            if (map%nangle > 0) trial_angle = map%angle &
+                + full(3*map%nmode*map%nodes + 1:)
             t0 = wall_seconds()
-            call ideal_map_energy(map, trial, trial_energy, estatus)
+            call ideal_map_energy(map, trial, trial_energy, estatus, &
+                angle=trial_angle)
             report%energy_s = report%energy_s + wall_seconds() - t0
             if (estatus /= IDEAL_MAP_OK) return
             if (trial_energy < energy - 64*epsilon(1.0_dp)*abs(energy)) then
                 done_step = .true.
             else if (trial_energy <= energy + 1024*epsilon(1.0_dp)*abs(energy)) then
-                call ideal_map_energy(map, trial, trial_energy, estatus, grad)
+                call ideal_map_energy(map, trial, trial_energy, estatus, grad, &
+                    angle=trial_angle)
                 call ideal_map_reduce(map, grad, rhs)
                 where (map%fixed) rhs = 0
                 done_step = dot_product(gred + rhs, step) <= 0
