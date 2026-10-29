@@ -135,7 +135,13 @@ ctest --test-dir build -j 4 --output-on-failure -R '^(equilibrium_d8_psi_offset_
     load_job_environment
     echo 'Check map ladders and offset returns'
     if [ "${SCI_MATRIX_LANE}" = map ]; then (
-ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_seed_boundary_label|ideal_map_n0_(solovev_a3_p[23]|shaped_solovev_p[23]|seed_return_(a3_p[23]|shaped_p2)|seed_nested_(a3_p[23]|shaped_p3)))$'
+map='ideal_seed_boundary_label|ideal_map_n0_(solovev_a3_p[23]|shaped_solovev_p[23])'
+# The seed return and nested cases take about 22 minutes; the merge queue
+# sets SCI_MAP_SLOW=false and leaves them to the nightly run.
+if [ "${SCI_MAP_SLOW:-true}" = true ]; then
+  map="$map|ideal_map_n0_(seed_return_(a3_p[23]|shaped_p2)|seed_nested_(a3_p[23]|shaped_p3))"
+fi
+ctest --test-dir build -j 4 --output-on-failure -R "^($map)$"
 
     ); fi
     load_job_environment
