@@ -2077,6 +2077,8 @@ add_executable(test_newton_mr test/test_newton_mr.f90)
 target_link_libraries(test_newton_mr PRIVATE kin6d_core)
 add_test(NAME newton_mr_minres COMMAND test_newton_mr minres)
 add_test(NAME newton_mr_nonconvex COMMAND test_newton_mr newton)
+set_tests_properties(newton_mr_minres newton_mr_nonconvex PROPERTIES
+    TIMEOUT 60 PROCESSORS 1 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
 target_link_libraries(test_nonnested_newton_mr PRIVATE kin6d)
 add_test(NAME nonnested_newton_mr_agreement
@@ -2084,7 +2086,8 @@ add_test(NAME nonnested_newton_mr_agreement
 add_test(NAME nonnested_newton_mr_lumped_ladder
     COMMAND test_nonnested_newton_mr ladder lumped 4 2 4 8)
 set_tests_properties(nonnested_newton_mr_agreement nonnested_newton_mr_lumped_ladder
-    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+    PROPERTIES TIMEOUT 900 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 # Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.
 add_executable(test_nonnested_qa test/test_nonnested_qa.f90)

@@ -157,8 +157,9 @@ contains
             end if
             v = y/beta
             call op%apply(v, y)
-            alpha = dot_product(v, y)
+            ! Modified Gram-Schmidt: alpha after removing the r1 component.
             if (k > 1) y = y - (beta/oldb)*r1
+            alpha = dot_product(v, y)
             y = y - (alpha/beta)*r2
             r1 = r2; r2 = y
             call op%precondition(r2, y, st)
@@ -219,14 +220,14 @@ contains
         real(dp), intent(inout) :: x(:)
         type(mr_options_t), intent(in) :: options
         type(mr_report_t), intent(out) :: report
-        real(dp), allocatable :: g(:), gt(:), d(:), xt(:), mg(:)
+        real(dp), allocatable :: g(:), gt(:), d(:), xt(:), mg(:), g_best(:)
         real(dp) :: f, ft, gnorm, g0, eta, gd, alpha, gtol, residual, t0
         real(dp) :: f_best, alpha_best
         integer :: it, info, its, st, ls, n, forward
         logical :: npc, accepted
 
         n = size(x)
-        allocate (g(n), gt(n), d(n), xt(n), mg(n))
+        allocate (g(n), gt(n), d(n), xt(n), mg(n), g_best(n))
         report%status = MR_EVALUATION
         t0 = clock()
         call problem%evaluate(x, f, g, st)
@@ -289,7 +290,7 @@ contains
                 report%evaluations = report%evaluations + 1
                 if (st == 0 .and. armijo_ok(f, ft, alpha*gd, g, gt, alpha*d)) then
                     accepted = .true.
-                    f_best = ft; alpha_best = alpha
+                    f_best = ft; alpha_best = alpha; g_best = gt
                     ! NPC: forward tracking while the Armijo rule holds.
                     if (.not. (npc .and. ls == 1)) exit
                     do forward = 1, options%max_line_search
@@ -302,7 +303,7 @@ contains
                         if (st /= 0) exit
                         if (.not. armijo_ok(f, ft, alpha*gd, g, gt, alpha*d)) exit
                         if (.not. ft < f_best) exit
-                        f_best = ft; alpha_best = alpha
+                        f_best = ft; alpha_best = alpha; g_best = gt
                     end do
                     exit
                 end if
@@ -312,14 +313,9 @@ contains
             if (.not. accepted) then
                 report%status = MR_LINE_SEARCH; exit
             end if
+            ! The accepted trial already holds f and g at the new point.
             x = x + alpha_best*d
-            t0 = clock()
-            call problem%evaluate(x, f, g, st)
-            report%evaluate_s = report%evaluate_s + clock() - t0
-            report%evaluations = report%evaluations + 1
-            if (st /= 0 .or. .not. ieee_is_finite(f)) then
-                report%status = MR_EVALUATION; exit
-            end if
+            f = f_best; g = g_best
             gnorm = norm2(g)
             report%energy = f; report%gradient = gnorm
         end do
