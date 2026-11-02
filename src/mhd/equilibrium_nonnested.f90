@@ -33,8 +33,7 @@ module kin6d_equilibrium_nonnested
 
     ! Linear solver of the per-mode n > 0 curl-curl system: sparse Cholesky
     ! (default) or CG with the Hiptmair-Xu auxiliary-space preconditioner
-    ! of FortFEM. The environment variable KIN6D_NN_LINEAR_SOLVER=hx selects
-    ! the latter at nn_build; field%linear_solver can be set directly.
+    ! of FortFEM, selected by setting field%linear_solver after nn_build.
     integer, parameter :: NN_SOLVER_DIRECT = 0, NN_SOLVER_HX = 1
 
     type, extends(equilibrium_field_t) :: free_b_field_t
@@ -89,13 +88,7 @@ contains
         type(free_b_field_t), intent(out) :: field
         integer, intent(out) :: status
         real(dp), optional, intent(in) :: cylinder_r0
-        character(16) :: choice
-        integer :: length, env_status
         status = 1
-        call get_environment_variable('KIN6D_NN_LINEAR_SOLVER', choice, length, &
-            env_status)
-        if (env_status == 0 .and. trim(choice) == 'hx') &
-            field%linear_solver = NN_SOLVER_HX
         if (modes < 0 .or. radial_scale <= 0 .or. mu0 <= 0) return
         if (.not. all(ieee_is_finite([centre, radial_scale, f_vac, mu0]))) return
         field%mesh = mesh

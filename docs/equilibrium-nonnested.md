@@ -101,7 +101,7 @@ the Hiptmair-Xu auxiliary-space preconditioner of
 (`fortfem_hcurl_auxiliary_space`: vertex-patch Schwarz smoothing on N_k,
 the exact Whitney embedding N_1 -> N_k, and nodal gradient and
 interpolation corrections solved by smoothed aggregation). Select it with
-`field%linear_solver = NN_SOLVER_HX` or `KIN6D_NN_LINEAR_SOLVER=hx`; the
+`field%linear_solver = NN_SOLVER_HX` after `nn_build`; the
 direct factor stays the default. Residual refinement with the same
 preconditioner precedes the unchanged 1e-9 equation-residual gate.
 On the vacuum annulus with 4 to 16 radial rings CG needs 15 to 20

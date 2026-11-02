@@ -1810,6 +1810,12 @@ target_link_libraries(test_nonnested_vacuum PRIVATE kin6d_nn_vacuum_test)
 # NN1 per-mode solve ladder: Cholesky versus Hiptmair-Xu CG (benchmarks/nn1_hx).
 add_executable(nn1_hx_ladder benchmarks/nn1_hx/nn1_hx_ladder.f90)
 target_link_libraries(nn1_hx_ladder PRIVATE kin6d_nn_vacuum_test)
+add_executable(test_nonnested_hx test/test_nonnested_hx.f90)
+target_link_libraries(test_nonnested_hx PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME nonnested_hx_vacuum_p2 COMMAND test_nonnested_hx 2 4 8)
+add_test(NAME nonnested_hx_vacuum_p3 COMMAND test_nonnested_hx 3 4 8)
+set_tests_properties(nonnested_hx_vacuum_p2 nonnested_hx_vacuum_p3 PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
 add_executable(test_nonnested_vacuum_mode_residual
     test/test_nonnested_vacuum_mode_residual.f90)
