@@ -1473,13 +1473,15 @@ contains
         real(dp), allocatable :: blocks(:, :, :), full(:, :), half(:, :), v(:)
         real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
         real(dp) :: dx(3, 3), bv(3), t(3), jac, weight, dphi, f
-        integer :: e, g, j, a, m, nl, nr, i, nrank
+        integer :: e, g, j, a, m, nl, nr, nh, i, nrank
         logical :: all_components
         all_components = .false.
         if (present(total)) all_components = total
         nrank = merge(3, 1, all_components)
         nl = 3*map%nloc*map%nmode
         nr = 2*map%nloc*map%nmode + 2*map%npoly*map%nmode
+        ! Columns of half: two per local node-mode, one per axis column.
+        nh = map%nloc*map%nmode + 2*map%npoly*map%nmode
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
         allocate (blocks(nr, nr, map%cells))
         !$omp parallel default(shared) private(e, g, j, a, m, i, q, qd, pos, d1, &
@@ -1521,7 +1523,15 @@ contains
                     end do
                 end do
             end do
-            call hessian_reduce(map, e, full, half, blocks(:, :, e))
+            do i = 1, nh
+                call hessian_reduce_half(map, e, i, full, half)
+            end do
+            do i = 1, nr
+                call hessian_reduce_column(map, e, i, half, blocks(:, :, e))
+            end do
+            do i = 1, nr
+                call hessian_reflect_column(i, blocks(:, :, e))
+            end do
         end do
         !$omp end do
         deallocate (full, half, v)
