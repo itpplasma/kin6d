@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "bc00d04758648d780f32da96a576066f9d76ae3e")
+set(KIN6D_FORTNUM_REVISION "f856c80e4671478c4e5a2d519a04d03eca990d2e")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -1624,6 +1624,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_fourier_equilibration_products.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_equilibration.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_curl.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_apply.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
@@ -1999,6 +2000,7 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
     TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
+    src/mhd/nonnested_newton_mr.f90
     src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_relax.f90
     src/mhd/nonnested_force.f90
     src/generated/kin6d_metriplectic_leaves.f90)
@@ -2106,6 +2108,17 @@ set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
     nonnested_mapped_zero_forcing_residual
     PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+
+# Matrix-free Newton-MR for mapped NN1: docs/nonnested-newton-mr.md.
+add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
+target_link_libraries(test_nonnested_newton_mr PRIVATE kin6d)
+add_test(NAME nonnested_newton_mr_agreement
+    COMMAND test_nonnested_newton_mr agree 4 4)
+add_test(NAME nonnested_newton_mr_lumped_ladder
+    COMMAND test_nonnested_newton_mr ladder lumped 4 2 4 8)
+set_tests_properties(nonnested_newton_mr_agreement nonnested_newton_mr_lumped_ladder
+    PROPERTIES TIMEOUT 900 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 # Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.
 add_executable(test_nonnested_qa test/test_nonnested_qa.f90)

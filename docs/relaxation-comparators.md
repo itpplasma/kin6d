@@ -74,6 +74,9 @@ kernels), in order of expected payoff:
    1-D matrices, a dense axis block) and geometric multigrid on the div-div
    stiffness. This replaces the assembled Hessian and FortSparse factorization
    in the [harness](equilibrium-harness.md) as the default path.
+   First slice (opt-in, mapped NN1 vacuum lane): Newton-MR with the
+   matrix-free FortFEM curl-curl action and the phi-lumped per-mode
+   preconditioner, [nonnested-newton-mr.md](nonnested-newton-mr.md).
 2. **Parallel-only Levenberg–Marquardt term.** Damping on the v ∥ B component
    only, which is the near-null mode of the second variation, in place of a
    diagonal damping of all unknowns.
