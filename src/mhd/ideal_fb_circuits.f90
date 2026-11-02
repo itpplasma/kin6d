@@ -18,6 +18,7 @@ module kin6d_ideal_fb_circuits
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_field_basis_t, &
         ideal_fb_sampler, ideal_fb_drive_traces, ideal_fb_set_traces, &
         ideal_fb_traces_jvp, ideal_fb_traces_vjp, ideal_fb_set_drive, &
+        ideal_fb_drive_traces_3d, ideal_fb_set_drive_3d, &
         IDEAL_FB_OK, IDEAL_FB_BAD_INPUT
     implicit none
     private
@@ -41,6 +42,7 @@ module kin6d_ideal_fb_circuits
     contains
         procedure :: nfield => coil_nfield
         procedure :: sample => coil_sample
+        procedure :: sample_points => coil_sample_points
     end type
 
     !> Precomputed per-circuit traces on Gamma_c of one ideal_fb_t:
@@ -141,16 +143,54 @@ contains
         status = IDEAL_FB_OK
     end subroutine
 
-    subroutine ideal_fb_circuits_build(fb, basis, circuits, status, background)
+    subroutine coil_sample_points(self, x, nfp, ntor, b, status)
+        !! Unit-current circuit fields at Cartesian points (Cartesian
+        !! components), no toroidal sampling. Points are independent (OpenMP
+        !! over points), so the result does not depend on the thread count.
+        class(coil_circuit_basis_t), intent(in) :: self
+        real(dp), intent(in) :: x(:, :)
+        integer, intent(in) :: nfp, ntor
+        real(dp), intent(out) :: b(:, :, :)
+        integer, intent(out) :: status
+        real(dp) :: bc(3)
+        integer :: q, c, s
+        status = IDEAL_FB_BAD_INPUT
+        if (size(x, 1) /= 3 .or. nfp < 1 .or. ntor < 0) return
+        if (any(shape(b) /= [3, self%ncircuit, size(x, 2)])) return
+        !$omp parallel do default(none) schedule(dynamic, 16) &
+        !$omp shared(self, x, b) private(q, c, s, bc)
+        do q = 1, size(x, 2)
+            b(:, :, q) = 0
+            do c = 1, self%coils%ncoil
+                if (self%circuit(c) == 0) cycle
+                bc = 0
+                do s = self%coils%first(c), self%coils%first(c + 1) - 1
+                    bc = bc + segment_b(self%coils%a(:, s), self%coils%l(:, s), x(:, q))
+                end do
+                b(:, self%circuit(c), q) = b(:, self%circuit(c), q) + self%turns(c)*bc
+            end do
+            b(:, :, q) = self%field_scale*b(:, :, q)
+        end do
+        !$omp end parallel do
+        status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine ideal_fb_circuits_build(fb, basis, circuits, status, background, &
+                                       nphi_surface)
         !! Per-circuit traces (zero circulation: circuits lie outside Gamma_c)
         !! and the fixed part from the optional background sampler, which
         !! carries the unit-circulation filament times fb%circulation as in
         !! ideal_fb_set_drive. Without a background the fixed part is zero.
+        !! With nphi_surface the traces are taken on the coupling surface of
+        !! the plasma chart through the Cartesian basis contract
+        !! (ideal_fb_drive_traces_3d, nphi_surface toroidal points), which
+        !! also holds for a non-axisymmetric Gamma_c.
         type(ideal_fb_t), intent(inout) :: fb
         class(ideal_fb_field_basis_t), intent(in) :: basis
         type(ideal_fb_circuits_t), intent(out) :: circuits
         integer, intent(out) :: status
         procedure(ideal_fb_sampler), optional :: background
+        integer, intent(in), optional :: nphi_surface
         real(dp), allocatable :: zeros(:)
         integer :: nc
         status = IDEAL_FB_BAD_INPUT
@@ -161,8 +201,15 @@ contains
             circuits%load(fb%nt, fb%nmode, nc), &
             circuits%f_vac(nc), circuits%closure(nc), circuits%f_spread(nc), zeros(nc))
         zeros = 0
-        call ideal_fb_drive_traces(fb, basis, zeros, circuits%drive, circuits%load, &
-            circuits%closure, circuits%f_vac, circuits%f_spread, status)
+        if (present(nphi_surface)) then
+            call ideal_fb_drive_traces_3d(fb, basis, zeros, nphi_surface, &
+                circuits%drive, circuits%load, circuits%closure, circuits%f_vac, &
+                circuits%f_spread, status)
+        else
+            call ideal_fb_drive_traces(fb, basis, zeros, circuits%drive, &
+                circuits%load, circuits%closure, circuits%f_vac, circuits%f_spread, &
+                status)
+        end if
         if (status /= IDEAL_FB_OK) return
         allocate (circuits%drive0(fb%nt, fb%nmode), circuits%load0(fb%nt, fb%nmode))
         circuits%drive0 = 0; circuits%load0 = 0; circuits%f_vac0 = 0
@@ -170,11 +217,16 @@ contains
             ! The fixed part uses ideal_fb_set_drive itself, then restores fb.
             block
                 real(dp), allocatable :: d(:, :), l(:, :)
+                integer :: st
                 d = fb%drive; l = fb%load
-                call ideal_fb_set_drive(fb, background, status)
+                if (present(nphi_surface)) then
+                    call ideal_fb_set_drive_3d(fb, background, nphi_surface, status)
+                else
+                    call ideal_fb_set_drive(fb, background, status)
+                end if
                 if (status /= IDEAL_FB_OK) return
                 circuits%drive0 = fb%drive; circuits%load0 = fb%load
-                fb%drive = d; fb%load = l
+                call ideal_fb_set_traces(fb, d, l, fb%f_vac, st)
             end block
         end if
         status = IDEAL_FB_OK
