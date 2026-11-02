@@ -77,6 +77,9 @@ kernels), in order of expected payoff:
    First slice (opt-in, mapped NN1 vacuum lane): Newton-MR with the
    matrix-free FortFEM curl-curl action and the phi-lumped per-mode
    preconditioner, [nonnested-newton-mr.md](nonnested-newton-mr.md).
+   Second slice (opt-in, Taylor/Beltrami closure): MINRES on the symmetric
+   indefinite saddle system and Newton-MR on the helicity-constrained
+   Lagrangian, same document.
 2. **Parallel-only Levenberg–Marquardt term.** Damping on the v ∥ B component
    only, which is the near-null mode of the second variation, in place of a
    diagonal damping of all unknowns.
@@ -87,6 +90,7 @@ kernels), in order of expected payoff:
    `kin6d_nonnested_force`, [projected force](nonnested-force.md)
    (`nonnested_force_*`).
 4. **Energy-criterion island seeding** as an initializer for island cases.
+   Implemented opt-in on the NN1 complex: [island-seed.md](island-seed.md).
 5. **Residual floor as a diagnostic.** Current sheets at rational surfaces set
    a force-residual floor that does not decrease under h or p refinement;
    acceptance gates report it instead of chasing it with smooth spaces.

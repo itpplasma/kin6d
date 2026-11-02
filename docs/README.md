@@ -63,6 +63,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
 - [Taylor (Beltrami) closure](equilibrium-beltrami.md),
   [metriplectic relaxation](metriplectic-relaxation.md)
 - [Relaxation comparators and adopted algorithms](relaxation-comparators.md) (design),
+  [energy-criterion island seeding](island-seed.md),
   [projected force, harmonic deflation and residual floor](nonnested-force.md)
 - [G6 sample readback](g6-readback.md),
   [external sampled force diagnostic](g6-sampled-force.md)

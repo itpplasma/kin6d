@@ -51,6 +51,8 @@ module kin6d_nonnested_newton_mr
     private
     public :: nn_mr_options_t, nn_mr_report_t, nn_mapped_solve_mr
     public :: lumped_metric_t, mapped_vacuum_t, nn_mr_prepare, nn_mr_free
+    ! Per-mode lumped pieces, shared with the Beltrami MINRES path.
+    public :: mode_curl, mode_mass
     integer, parameter, public :: NN_MR_PC_NONE = 0, NN_MR_PC_JACOBI = 1, &
         NN_MR_PC_LUMPED = 2
     real(dp), parameter :: pi = acos(-1.0_dp)

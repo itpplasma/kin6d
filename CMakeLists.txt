@@ -139,9 +139,9 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM,
-# per-harmonic circulant Steklov form lazy-fortran/fortfem#144).
-set(KIN6D_FORTFEM_REVISION "cd92d7e0aa0c95039c2305c29c67d47e75f1ebfd")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
+# Steklov form lazy-fortran/fortfem#144, exact FEEC tables).
+set(KIN6D_FORTFEM_REVISION "e8b947bbf37fce389310a8d70f8e3a888098ce52")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -162,6 +162,7 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
     ${fortfem_SOURCE_DIR}/src/geometry/geometry_jet_2d.f90
+    ${fortfem_SOURCE_DIR}/src/elements/tetra_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
@@ -993,7 +994,7 @@ if(KIN6D_FORTSYM_BUILD)
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
             pp_fusion pp_fusion_eft
-            jellium_cell ocp)
+            jellium_cell ocp island_seed)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
@@ -1034,6 +1035,13 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_metriplectic_regeneration.cmake)
     kin6d_test_labels(metriplectic_identities_and_regeneration fast CLASSES mhd
         TARGETS gen_metriplectic)
+    add_test(NAME island_seed_exact_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_island_seed>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_seed_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/island-seed-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_island_seed_regeneration.cmake)
+    kin6d_test_labels(island_seed_exact_regeneration fast CLASSES mhd
+        TARGETS gen_island_seed)
     add_test(NAME equilibrium_nested_oracle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_nested_oracles>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
@@ -1617,6 +1625,9 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/geometry/meridian_curved_mesh.f90
     ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_feec_tables.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_bernstein_jets.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
@@ -2014,8 +2025,8 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
     src/mhd/nonnested_newton_mr.f90
-    src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_relax.f90
-    src/mhd/nonnested_force.f90
+    src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_beltrami_mr.f90
+    src/mhd/nonnested_relax.f90 src/mhd/nonnested_force.f90
     src/generated/kin6d_metriplectic_leaves.f90)
 set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -2083,6 +2094,34 @@ foreach(k 2 3)
     endforeach()
 endforeach()
 
+# Matrix-free MINRES / Newton-MR Taylor closure (opt-in), against the
+# factored path: docs/nonnested-newton-mr.md.
+foreach(case constraints vacuum)
+    add_test(NAME nonnested_beltrami_${case}_mr
+        COMMAND test_nonnested_beltrami ${case} 2 mr)
+    set_tests_properties(nonnested_beltrami_${case}_mr PROPERTIES
+        TIMEOUT 60 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+foreach(k 2 3)
+    foreach(case manufactured lundquist)
+        add_test(NAME nonnested_beltrami_${case}_p${k}_mr
+            COMMAND test_nonnested_beltrami ${case} ${k} mr)
+        set_tests_properties(nonnested_beltrami_${case}_p${k}_mr PROPERTIES
+            TIMEOUT 600 PROCESSORS 4
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    endforeach()
+endforeach()
+add_executable(test_nonnested_beltrami_mr test/test_nonnested_beltrami_mr.f90)
+target_link_libraries(test_nonnested_beltrami_mr PRIVATE kin6d)
+add_test(NAME nonnested_beltrami_mr_agreement
+    COMMAND test_nonnested_beltrami_mr agree 2 2 2)
+add_test(NAME nonnested_beltrami_mr_block_ladder
+    COMMAND test_nonnested_beltrami_mr ladder block 2 2 4.5 0.1 0 2 4 8)
+set_tests_properties(nonnested_beltrami_mr_agreement nonnested_beltrami_mr_block_ladder
+    PROPERTIES TIMEOUT 120 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
 add_executable(test_nonnested_relax test/test_nonnested_relax.f90)
 target_link_libraries(test_nonnested_relax PRIVATE kin6d_nn_vacuum_test)
 foreach(case taylor ideal)
@@ -2107,6 +2146,23 @@ set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
     TIMEOUT 1800 LABELS "mhd;slow" PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
+# Energy-criterion island seeding (docs/island-seed.md).
+target_sources(kin6d_mhd PRIVATE src/generated/kin6d_island_seed_leaves.f90
+    src/mhd/island_seed.f90)
+set_source_files_properties(src/generated/kin6d_island_seed_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_island_seed test/test_island_seed.f90)
+target_link_libraries(test_island_seed PRIVATE kin6d)
+foreach(case seed none ladder leaves)
+    add_test(NAME island_seed_${case} COMMAND test_island_seed ${case})
+endforeach()
+set_tests_properties(island_seed_seed island_seed_ladder PROPERTIES
+    TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(island_seed_none island_seed_leaves PROPERTIES
+    TIMEOUT 300 PROCESSORS 1
+    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
 target_link_libraries(test_nonnested_mapped PRIVATE kin6d)
 add_test(NAME nonnested_mapped_identity_regression
@@ -2120,7 +2176,14 @@ add_test(NAME nonnested_mapped_zero_forcing_residual
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
     nonnested_mapped_zero_forcing_residual
-    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+    PROPERTIES TIMEOUT 900 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartesian_vacuum)
+    add_test(NAME nonnested_mapped_${mapped_case}
+        COMMAND test_nonnested_mapped ${mapped_case})
+    set_tests_properties(nonnested_mapped_${mapped_case} PROPERTIES
+        PROCESSORS 4 TIMEOUT 120
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 
 # Matrix-free Newton-MR for mapped NN1: docs/nonnested-newton-mr.md.
 add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
