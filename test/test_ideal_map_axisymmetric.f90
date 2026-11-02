@@ -507,7 +507,10 @@ contains
         integer :: k
         if (degree < 4) error stop 'lagged needs degree >= 4'
         if (command_argument_count() < 4) quadrature_order = 2*degree + 1
-        solve_tolerance = 1.0e-7_dp
+        ! At a 1e-7 gradient the near-null parallel curvatures leave an
+        ! exact-flux spread of 0.8 % between the three variants, so the
+        ! comparison is made at 1e-8, where they agree to five digits.
+        solve_tolerance = 1.0e-8_dp
         position_gauge = .true.
         call make_mesh(12, degree, gs)
         do k = 1, 3
