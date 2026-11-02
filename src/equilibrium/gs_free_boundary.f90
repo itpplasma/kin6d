@@ -118,6 +118,17 @@ module kin6d_gs_free_boundary
         integer :: max_iterations = 30
     end type gs_fb_config_t
 
+    type, public :: gs_fb_factor_t
+        type(sparse_direct_factor_t) :: lu, lu_t
+        !> Native pivoted LDL^T of symmetric J0 (replaces lu and lu_t).
+        type(gs_direct_t) :: direct
+        logical :: use_direct = .false.
+        real(dp) :: symmetry_correction = 0.0_dp
+        real(dp), allocatable :: values(:), z(:, :), zt(:, :)
+        real(dp) :: schur(2, 2) = 0.0_dp, schur_t(2, 2) = 0.0_dp
+        logical :: ready = .false., have_transpose = .false.
+    end type gs_fb_factor_t
+
     type, public :: gs_fb_system_t
         type(gs_coupling_t) :: coupling
         type(gs_profile_law_t) :: law          !< normalised law, axis set per call
@@ -131,6 +142,9 @@ module kin6d_gs_free_boundary
         real(dp) :: axis_hint(2) = 0.0_dp, xpoint_hint(2) = 0.0_dp
         integer :: n = 0
         logical :: ready = .false.
+        !> Newton factor of J0: its ordering and symbolic analysis depend only
+        !! on the fixed pattern, so successive solves keep them.
+        type(gs_fb_factor_t), allocatable :: newton_factor
     end type gs_fb_system_t
 
     type, public :: gs_fb_eval_t
@@ -146,17 +160,6 @@ module kin6d_gs_free_boundary
         integer :: face_cells = 0                !< plasma cell faces on the boundary
         logical :: has_jacobian = .false.
     end type gs_fb_eval_t
-
-    type, public :: gs_fb_factor_t
-        type(sparse_direct_factor_t) :: lu, lu_t
-        !> Native pivoted LDL^T of symmetric J0 (replaces lu and lu_t).
-        type(gs_direct_t) :: direct
-        logical :: use_direct = .false.
-        real(dp) :: symmetry_correction = 0.0_dp
-        real(dp), allocatable :: values(:), z(:, :), zt(:, :)
-        real(dp) :: schur(2, 2) = 0.0_dp, schur_t(2, 2) = 0.0_dp
-        logical :: ready = .false., have_transpose = .false.
-    end type gs_fb_factor_t
 
     type, public :: gs_fb_history_t
         integer :: iterations = 0
@@ -1373,7 +1376,7 @@ contains
             return
         end if
         if (.not. ev%has_jacobian) return
-        call gs_fb_release(fac)
+        call gs_fb_release(fac, keep_analysis=.true.)
         n = sys%n
         nt = sys%coupling%n_trace
         ndof = size(state%triangles, 1)
@@ -1702,11 +1705,17 @@ contains
         status = GS_FB_OK
     end subroutine gs_fb_solve_block
 
-    subroutine gs_fb_release(fac)
+    subroutine gs_fb_release(fac, keep_analysis)
         type(gs_fb_factor_t), intent(inout) :: fac
+        !> Keep the native factor so the next factor of the same pattern
+        !! reuses its ordering and symbolic analysis.
+        logical, intent(in), optional :: keep_analysis
+        logical :: keep
 
+        keep = .false.
+        if (present(keep_analysis)) keep = keep_analysis
         if (fac%use_direct) then
-            call gs_direct_free(fac%direct)
+            if (.not. keep) call gs_direct_free(fac%direct)
         else
             if (fac%ready) call sparse_direct_free(fac%lu)
             if (fac%have_transpose) call sparse_direct_free(fac%lu_t)
@@ -1733,7 +1742,7 @@ contains
         integer, intent(out) :: status
         type(gs_fb_history_t), intent(out), optional :: history
         type(gs_fb_eval_t) :: ev, trial
-        type(gs_fb_factor_t) :: fac
+        type(gs_fb_factor_t), allocatable :: fac
         real(dp), allocatable :: psi(:), step(:), candidate(:), scale_load(:)
         real(dp), allocatable :: res(:), stp(:), damp(:), ipv(:)
         real(dp) :: old_norm, new_norm, damping, scale, axis_save(2), x_save(2)
@@ -1759,6 +1768,8 @@ contains
             status = stat
             return
         end if
+        call move_alloc(sys%newton_factor, fac)
+        if (.not. allocated(fac)) allocate (fac)
         scale = 0.0_dp
         do iteration = 0, sys%cfg%max_iterations
             scale_load = ev%source + sys%extra_load
@@ -1811,7 +1822,8 @@ contains
             call move_ev(trial, ev)
         end do
         state%psi = psi
-        call gs_fb_release(fac)
+        call gs_fb_release(fac, keep_analysis=.true.)
+        call move_alloc(fac, sys%newton_factor)
         if (present(history)) then
             history%iterations = min(iteration, sys%cfg%max_iterations)
             allocate (history%residual(0:history%iterations), &

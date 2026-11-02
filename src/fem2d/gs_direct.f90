@@ -6,9 +6,9 @@ module kin6d_gs_direct
     ! preconditioner and the majorant recovery.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use fortsparse, only: csc_t, csc_from_triplet, sparse_solver_t, &
-        sparse_factor, sparse_solve, &
+        sparse_factor, sparse_refactor, sparse_solve, &
         sparse_destroy, sparse_solve_block, sparse_factor_stats, &
-        sparse_factor_stats_t, fortsparse_status_t, status_ok, &
+        sparse_factor_stats_t, sparse_options_t, fortsparse_status_t, status_ok, &
         FORTSPARSE_BACKEND_UNAVAILABLE, &
         FORTSPARSE_BACKEND_NATIVE, FORTSPARSE_SYM_SPD, FORTSPARSE_SYM_INDEFINITE, &
         FORTSPARSE_ORDER_AMD, FORTSPARSE_ORDER_ND
@@ -56,8 +56,23 @@ contains
         type(csc_t) :: matrix
         integer, allocatable :: matrix_rows(:)
         integer :: i, nz
-        call gs_direct_free(direct)
+        logical :: reused
+        type(sparse_options_t) :: default_options
         ok = .false.
+        if (can_refactor()) then
+            ! Newton and continuation refactor one pattern many times: the
+            ! retained ordering and symbolic analysis are reused when FortSparse
+            ! confirms the pattern and options are unchanged.
+            direct%solver%options%nthreads = 0
+            !$ direct%solver%options%nthreads = omp_get_max_threads()
+            call sparse_refactor(direct%solver, n, n, rowptr(n + 1) - 1, rowptr, &
+                colidx, val, status, reused)
+            if (status_ok(status)) then
+                call record_factor(status)
+                return
+            end if
+        end if
+        call gs_direct_free(direct)
         direct%stats = sparse_factor_stats_t()
         direct%factor_status = fortsparse_status_t( &
             FORTSPARSE_BACKEND_UNAVAILABLE, 'GS factor not attempted: invalid request')
@@ -115,19 +130,45 @@ contains
                                    rowptr, colidx, val, status)
             end if
         end if
-        direct%factor_status = status
-        ok = status_ok(status)
-        direct%failed = .not. ok
-        direct%factored = ok
-        direct%n = n
-        if (.not. ok) return
-        call sparse_factor_stats(direct%solver, stats, status)
-        if (status_ok(status)) then
-            direct%stats = stats
-            direct%factor_s = max(0.0_dp, stats%factor_s)
-            direct%analysis_s = max(0.0_dp, stats%analysis_s)
-            direct%factor_nnz = int(min(int(huge(1), 8), stats%factor_nnz))
-        end if
+        call record_factor(status)
+    contains
+        logical function can_refactor()
+            can_refactor = direct%factored .and. direct%n == n .and. &
+                direct%solver%options%device < 0
+            if (present(device)) can_refactor = can_refactor .and. device < 0
+            if (present(symmetry)) can_refactor = can_refactor .and. &
+                direct%solver%options%symmetry == symmetry
+            if (.not. present(symmetry)) can_refactor = can_refactor .and. &
+                direct%solver%options%symmetry == FORTSPARSE_SYM_SPD
+            if (present(ordering)) then
+                can_refactor = can_refactor .and. &
+                    direct%solver%options%ordering == ordering
+            else
+                can_refactor = can_refactor .and. &
+                    direct%solver%options%ordering == default_options%ordering
+            end if
+            ! A retained scalar fallback is not the schedule a fresh factor tries.
+            can_refactor = can_refactor .and. (direct%solver%options%ldlt_supernodal &
+                .eqv. direct%solver%options%symmetry == FORTSPARSE_SYM_INDEFINITE)
+        end function
+
+        subroutine record_factor(factor_status)
+            type(fortsparse_status_t), intent(in) :: factor_status
+            type(fortsparse_status_t) :: stats_status
+            direct%factor_status = factor_status
+            ok = status_ok(factor_status)
+            direct%failed = .not. ok
+            direct%factored = ok
+            direct%n = n
+            if (.not. ok) return
+            call sparse_factor_stats(direct%solver, stats, stats_status)
+            if (status_ok(stats_status)) then
+                direct%stats = stats
+                direct%factor_s = max(0.0_dp, stats%factor_s)
+                direct%analysis_s = max(0.0_dp, stats%analysis_s)
+                direct%factor_nnz = int(min(int(huge(1), 8), stats%factor_nnz))
+            end if
+        end subroutine
     end subroutine
 
     logical function gs_direct_mpi_ready() result(ready)
