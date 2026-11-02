@@ -180,8 +180,14 @@ benchmarks without stellarator symmetry. [V] The equations are retained in
 FortSym, with exact factored proofs and independent numerical checks described
 in [the oracle contract](nested-oracles.md). Both families and both symmetry
 choices have executable inputs. Integrated/rotation/boundary bounds and
-matched external solver comparisons remain unavailable. Non-nested cases are cross-code (X) and named
-after the physics problem:
+matched external solver comparisons remain unavailable. The exact references are
+stationary points, not necessarily energy minima: on the integer family
+(iota=2=nfp) and on the sheared family (eps=1.2, delta=0.14) the discrete
+Hessian near the exact state becomes indefinite under refinement, so their
+pressure/label errors are not a convergence oracle for an energy minimiser
+beyond b=12 (measurements in
+[the comparison notes](../benchmarks/nested/README.md)). Non-nested cases are
+cross-code (X) and named after the physics problem:
 
 | Case | Class | Model lane | Producers |
 |---|---|---|---|

@@ -60,7 +60,7 @@ module kin6d_ideal_map
         sparse_factor_stats, sparse_factor_stats_t, &
         sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
         FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t, FORTSPARSE_SYM_INDEFINITE, &
-        sparse_inertia
+        sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
@@ -79,7 +79,7 @@ module kin6d_ideal_map
         IDEAL_MAP_BAD_INPUT = 4
     ! Factor policies of the Krylov-step trials (ideal_map_t%factor_policy).
     integer, parameter, public :: IDEAL_MAP_FACTOR_SPD_LU = 0, &
-        IDEAL_MAP_FACTOR_ADAPTIVE = 1, IDEAL_MAP_FACTOR_LDLT = 2
+        IDEAL_MAP_FACTOR_LDLT = 1
 
     ! Frozen reference data at a reference point y = (q1, q2): poloidal flux
     ! label chi and its gradient, toroidal flux density b3 (contravariant density
@@ -150,9 +150,6 @@ module kin6d_ideal_map
         ! roundoff); the pivoted LU only if it fails. SPD_LU: Cholesky, and
         ! the pivoted LU of the same matrix when a pivot is not positive (a
         ! failed Cholesky costs about as much as a successful one).
-        ! ADAPTIVE: as SPD_LU until a Cholesky fails, then the pivoted LU for
-        ! the rest of the solve (indefinite trials pay one factorisation;
-        ! later SPD trials are not retained).
         integer :: factor_policy = IDEAL_MAP_FACTOR_LDLT
         integer :: krylov_refactor = 8, krylov_max = 10
         ! Non-nested quasi-Newton steps between Hessian assemblies: after a
@@ -267,11 +264,8 @@ module kin6d_ideal_map
         ! instead (each also counts as a factorisation attempt).
         integer :: analyses = 0, factorizations = 0, lu_fallbacks = 0
         ! Krylov-step trials whose damped Hessian was not positive definite
-        ! (failed Cholesky, LDL^T inertia with a negative or zero pivot, or the
-        ! ADAPTIVE policy past its first failure).
+        ! (failed Cholesky, or LDL^T inertia that is not reliably positive).
         integer :: indefinite_trials = 0
-        ! ADAPTIVE policy state: a Cholesky failed in this solve.
-        logical, private :: spd_failed = .false.
         ! Non-nested Newton trials, CG solves with the retained factor
         ! (map%krylov_step) and their total CG iterations.
         integer :: trials = 0, krylov_solves = 0, krylov_iterations = 0
@@ -1224,122 +1218,96 @@ contains
         real(dp), intent(in), optional :: angle(:)
         real(dp), allocatable :: local(:, :), cell_energy(:), cell_jac(:)
         real(dp), allocatable :: pw(:, :, :), pjac(:, :, :), pgv(:, :, :, :)
-        real(dp), allocatable :: eta(:), alocal(:, :), et(:), ep(:), pab(:, :, :, :)
-        real(dp) :: f(0:3), dphi, weight, minjac, bp(3), gb(3)
-        integer :: e, g, j, a, m, c, l, item, nloc, nmode, na
-        logical :: want
+        real(dp), allocatable :: eta(:), alocal(:, :), pab(:, :, :, :)
+        real(dp) :: dphi, minjac
+        integer :: e, g, j, a, c, item, nt, na
+        logical :: want, wangle
         want = present(gradient)
-        nloc = map%nloc; nmode = map%nmode; na = map%nangle
-        allocate (eta(na), et(na), ep(na), alocal(na, map%cells))
+        na = map%nangle
+        wangle = want .and. na > 0
+        allocate (eta(na), alocal(na, map%cells))
         if (na > 0) then
             eta = map%angle
             if (present(angle)) eta = angle
         end if
         alocal = 0
-        allocate (pab(2, map%nq, map%nphi, merge(map%cells, 0, want .and. na > 0)))
-        allocate (local(3*nmode*nloc, map%cells), cell_energy(map%cells), &
-            cell_jac(map%cells), pw(map%nq, map%nphi, map%cells), &
-            pjac(map%nq, map%nphi, map%cells))
-        if (want) allocate (pgv(12, map%nq, map%nphi, map%cells))
+        allocate (local(3*map%nmode*map%nloc, map%cells), cell_energy(map%cells), &
+            cell_jac(map%cells))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
-        ! Point values are evaluated over (cell, plane) items; the cell sums
-        ! below keep the plane-then-point order and are combined serially, so
-        ! the energy (which decides step acceptance near roundoff) does not
-        ! depend on the thread count or on the order of an OpenMP reduction.
-        !$omp parallel default(none) shared(map, x, want, dphi, local, cell_energy, &
-        !$omp cell_jac, pw, pjac, pgv, nloc, nmode, na, eta, alocal, pab) &
-        !$omp private(item, e, g, j, a, m, c, l, f, weight, bp, gb, et, ep)
-        !$omp do schedule(static)
-        do item = 1, map%cells*map%nphi
-            e = 1 + (item - 1)/map%nphi
-            j = item - map%nphi*(e - 1)
-            do g = 1, map%nq
-                call point_density(map, eta, e, g, j, bp, et, ep)
-                if (want .and. na > 0) then
-                    call point_gradient(map, e, g, j, x, bp, pw(g, j, e), pjac(g, j, e), &
-                        pgv(:, g, j, e), gb)
-                    pab(:, g, j, e) = [dot_product(gb, map%angle_form(:, 1, g, e)), &
-                        dot_product(gb, map%angle_form(:, 2, g, e))]
-                else if (want) then
-                    call point_gradient(map, e, g, j, x, bp, pw(g, j, e), pjac(g, j, e), &
-                        pgv(:, g, j, e))
-                else
-                    call point_energy(e, g, j, bp)
-                end if
-                if (na == 0) cycle
-                ! A relabelling keeps the sign of the toroidal density.
-                if (.not. bp(3)*map%b(3, g, e) > 0) pjac(g, j, e) = -abs(pjac(g, j, e))
-            end do
-        end do
-        !$omp end do
-        if (want .and. na > 0) then
-            ! Angle gradient sum_g,j w gb . (form_t eta_t' + form_p eta_p') per
-            ! cell, in a fixed order (planes, then points).
+        ! Cell sums run in the plane-then-point order and are combined
+        ! serially, so the energy (which decides step acceptance near roundoff)
+        ! does not depend on the thread count or on the order of an OpenMP
+        ! reduction. With at least as many cells as threads every thread
+        ! evaluates whole cells into private point arrays (cell loop). With
+        ! fewer cells the point values of all cells are evaluated over
+        ! (cell, plane) items and the sums over (cell, node) items, so every
+        ! thread stays busy. Both paths make the same calls in the same order.
+        nt = 1
+        !$ nt = omp_get_max_threads()
+        if (map%cells >= nt) then
+            !$omp parallel default(none) shared(map, x, want, wangle, local, &
+            !$omp cell_energy, cell_jac, dphi, alocal) private(e, g, j, a, pw, pjac, &
+            !$omp pgv, pab)
+            allocate (pw(map%nq, map%nphi, 1), pjac(map%nq, map%nphi, 1), &
+                pgv(12, map%nq, map%nphi, 1), pab(2, map%nq, map%nphi, 1))
             !$omp do schedule(static)
             do e = 1, map%cells
                 do j = 1, map%nphi
                     do g = 1, map%nq
-                        call angle_basis(map, e, g, j, et, ep)
-                        weight = map%weight(g)*dphi
-                        alocal(:, e) = alocal(:, e) + weight*pab(1, g, j, e)*et &
-                            + weight*pab(2, g, j, e)*ep
+                        call point_values(e, g, j, pw(g, j, 1), pjac(g, j, 1), &
+                            pgv(:, g, j, 1), pab(:, g, j, 1))
                     end do
                 end do
+                call energy_cell_sum(map, e, dphi, pw(:, :, 1), pjac(:, :, 1), &
+                    cell_energy(e), cell_jac(e))
+                if (.not. want) cycle
+                do a = 1, map%nloc
+                    call energy_node_sum(map, a, dphi, pgv(:, :, :, 1), local(:, e))
+                end do
+                if (wangle) call energy_angle_sum(map, e, dphi, pab(:, :, :, 1), &
+                    alocal(:, e))
             end do
             !$omp end do
-        end if
-        !$omp do schedule(static)
-        do e = 1, map%cells
-            cell_energy(e) = 0; cell_jac(e) = huge(1.0_dp)
-            do j = 1, map%nphi
-                do g = 1, map%nq
-                    cell_jac(e) = min(cell_jac(e), pjac(g, j, e)/map%det(g, e))
-                    weight = map%weight(g)*dphi
-                    cell_energy(e) = cell_energy(e) + weight*pw(g, j, e)
-                end do
-            end do
-        end do
-        !$omp end do nowait
-        if (want) then
-            ! Gradient rows of node a of cell e, summed in the same order.
+            !$omp end parallel
+        else
+            ! Fewer cells than threads: these arrays stay small.
+            allocate (pw(map%nq, map%nphi, map%cells), pjac(map%nq, map%nphi, map%cells), &
+                pgv(12, map%nq, map%nphi, map%cells), pab(2, map%nq, map%nphi, map%cells))
+            !$omp parallel default(none) shared(map, x, want, wangle, dphi, local, &
+            !$omp cell_energy, cell_jac, pw, pjac, pgv, pab, alocal) private(item, e, g, j, a)
             !$omp do schedule(static)
-            do item = 1, map%cells*nloc
-                e = 1 + (item - 1)/nloc
-                a = item - nloc*(e - 1)
-                l = 3*nmode*(a - 1)
-                local(l + 1:l + 3*nmode, e) = 0
-                do j = 1, map%nphi
-                    do g = 1, map%nq
-                        weight = map%weight(g)*dphi
-                        l = 3*nmode*(a - 1)
-                        do m = 1, nmode
-                            call test_functions(map, g, j, a, m, f)
-                            do c = 1, 3
-                                l = l + 1
-                                local(l, e) = local(l, e) &
-                                    + weight*(pgv(c, g, j, e)*f(0) &
-                                    + pgv(3 + c, g, j, e)*f(1) &
-                                    + pgv(6 + c, g, j, e)*f(2) &
-                                    + pgv(9 + c, g, j, e)*f(3))
-                            end do
-                        end do
-                    end do
+            do item = 1, map%cells*map%nphi
+                e = 1 + (item - 1)/map%nphi
+                j = item - map%nphi*(e - 1)
+                do g = 1, map%nq
+                    call point_values(e, g, j, pw(g, j, e), pjac(g, j, e), &
+                        pgv(:, g, j, e), pab(:, g, j, e))
                 end do
             end do
             !$omp end do
+            !$omp do schedule(static)
+            do e = 1, map%cells
+                call energy_cell_sum(map, e, dphi, pw(:, :, e), pjac(:, :, e), &
+                    cell_energy(e), cell_jac(e))
+                if (wangle) call energy_angle_sum(map, e, dphi, pab(:, :, :, e), &
+                    alocal(:, e))
+            end do
+            !$omp end do nowait
+            if (want) then
+                !$omp do schedule(static)
+                do item = 1, map%cells*map%nloc
+                    e = 1 + (item - 1)/map%nloc
+                    a = item - map%nloc*(e - 1)
+                    call energy_node_sum(map, a, dphi, pgv(:, :, :, e), local(:, e))
+                end do
+                !$omp end do
+            end if
+            !$omp end parallel
         end if
-        !$omp end parallel
         energy = 0
         do e = 1, map%cells
             energy = energy + cell_energy(e)
         end do
-        if (want .and. na > 0) then
-            gradient(3*nmode*map%nodes + 1:) = 0
-            do e = 1, map%cells
-                gradient(3*nmode*map%nodes + 1:) = gradient(3*nmode*map%nodes + 1:) &
-                    + alocal(:, e)
-            end do
-        end if
         minjac = minval(cell_jac)
         if (.not. map%gauge_hessian_only) then
             do e = 1, map%cells
@@ -1352,7 +1320,7 @@ contains
             status = IDEAL_MAP_FOLDED
         if (present(min_jacobian)) min_jacobian = minjac
         if (.not. want) return
-        gradient(1:3*nmode*map%nodes) = 0
+        gradient = 0
         do e = 1, map%cells
             gradient(map%dofconn(:, e)) = gradient(map%dofconn(:, e)) + local(:, e)
             if (map%gauge_hessian_only) cycle
@@ -1362,13 +1330,96 @@ contains
                     x(3, 1, map%conn(:, e)))
             end do
         end do
+        if (wangle) then
+            do e = 1, map%cells
+                gradient(3*map%nmode*map%nodes + 1:) = &
+                    gradient(3*map%nmode*map%nodes + 1:) + alocal(:, e)
+            end do
+        end if
     contains
-        subroutine point_energy(e, g, j, bp)
+        subroutine point_values(e, g, j, w, jac, gv, ab)
+            ! Energy density, Jacobian and v-gradient at point g of cell e,
+            ! plane j, for the relabelled density; with the field angle and a
+            ! gradient also ab = dw/db . (form_t, form_p), and a sign change
+            ! of the toroidal density is reported as a fold (jac <= 0).
             integer, intent(in) :: e, g, j
-            real(dp), intent(in) :: bp(3)
-            real(dp) :: gv(12)
-            call point_gradient(map, e, g, j, x, bp, pw(g, j, e), pjac(g, j, e), gv)
+            real(dp), intent(out) :: w, jac, gv(12), ab(2)
+            real(dp) :: bp(3), gb(3), et(na), ep(na)
+            call point_density(map, eta, e, g, j, bp, et, ep)
+            if (wangle) then
+                call point_gradient(map, e, g, j, x, bp, w, jac, gv, gb)
+                ab = [dot_product(gb, map%angle_form(:, 1, g, e)), &
+                    dot_product(gb, map%angle_form(:, 2, g, e))]
+            else
+                call point_gradient(map, e, g, j, x, bp, w, jac, gv)
+            end if
+            if (na == 0) return
+            if (.not. bp(3)*map%b(3, g, e) > 0) jac = -abs(jac)
         end subroutine
+    end subroutine
+
+    subroutine energy_angle_sum(map, e, dphi, pab, alocal)
+        ! Field-angle gradient of cell e, sum_j,g w ab . (eta_t', eta_p'),
+        ! summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e
+        real(dp), intent(in) :: dphi, pab(:, :, :)
+        real(dp), intent(inout) :: alocal(:)
+        real(dp) :: et(map%nangle), ep(map%nangle), weight
+        integer :: g, j
+        alocal = 0
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                call angle_basis(map, e, g, j, et, ep)
+                weight = map%weight(g)*dphi
+                alocal = alocal + weight*pab(1, g, j)*et + weight*pab(2, g, j)*ep
+            end do
+        end do
+    end subroutine
+
+    pure subroutine energy_cell_sum(map, e, dphi, pw, pjac, energy, jac)
+        ! Weighted energy and smallest Jacobian ratio of cell e from its point
+        ! values pw(g, j), pjac(g, j), summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e
+        real(dp), intent(in) :: dphi, pw(:, :), pjac(:, :)
+        real(dp), intent(out) :: energy, jac
+        integer :: g, j
+        energy = 0; jac = huge(1.0_dp)
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                jac = min(jac, pjac(g, j)/map%det(g, e))
+                energy = energy + map%weight(g)*dphi*pw(g, j)
+            end do
+        end do
+    end subroutine
+
+    pure subroutine energy_node_sum(map, a, dphi, pgv, local)
+        ! Gradient rows of local node a of a cell from its point gradients
+        ! pgv(:, g, j), summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: a
+        real(dp), intent(in) :: dphi, pgv(:, :, :)
+        real(dp), intent(inout) :: local(:)
+        real(dp) :: f(0:3), weight
+        integer :: g, j, m, c, l
+        l = 3*map%nmode*(a - 1)
+        local(l + 1:l + 3*map%nmode) = 0
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                weight = map%weight(g)*dphi
+                l = 3*map%nmode*(a - 1)
+                do m = 1, map%nmode
+                    call test_functions(map, g, j, a, m, f)
+                    do c = 1, 3
+                        l = l + 1
+                        local(l) = local(l) + weight*(pgv(c, g, j)*f(0) &
+                            + pgv(3 + c, g, j)*f(1) + pgv(6 + c, g, j)*f(2) &
+                            + pgv(9 + c, g, j)*f(3))
+                    end do
+                end do
+            end do
+        end do
     end subroutine
 
     subroutine ideal_map_hessian(map, x, matrix)
@@ -2595,10 +2646,10 @@ contains
             end do
         end associate
         ! With lu (the Krylov step, whose preconditioner must be SPD), the
-        ! SPD Cholesky is tried first. Relabelling directions can leave the
-        ! damped Hessian indefinite; a nonpositive pivot does not reject the
-        ! Newton trial: the same matrix is factored by the native supernodal
-        ! pivoted LU, which is then used for this trial only. Without lu, the
+        ! factor follows map%factor_policy. Relabelling directions can leave
+        ! the damped Hessian indefinite, which does not reject the Newton
+        ! trial: an indefinite LDL^T, or the pivoted LU of the same matrix
+        ! after a failed Cholesky, serves this trial only. Without lu, the
         ! pivoted LU is the factor (the direct-step policy).
         if (.not. krylov) then
             call factor_one(slv, done, PIVOTED_LU, info, sstatus)
@@ -2613,9 +2664,6 @@ contains
                 return
             end if
             report%lu_fallbacks = report%lu_fallbacks + 1
-        else if (map%factor_policy == IDEAL_MAP_FACTOR_ADAPTIVE .and. &
-                 report%spd_failed) then
-            report%indefinite_trials = report%indefinite_trials + 1
         else
             call factor_one(slv, done, CHOLESKY, info, sstatus)
             if (info == 0) then
@@ -2623,7 +2671,6 @@ contains
                 return
             end if
             if (sstatus%code /= FORTSPARSE_NOT_POSITIVE_DEFINITE) return
-            report%spd_failed = .true.
             report%indefinite_trials = report%indefinite_trials + 1
             report%lu_fallbacks = report%lu_fallbacks + 1
         end if
@@ -2638,7 +2685,7 @@ contains
             integer :: reliability
             call sparse_inertia(s, nneg, nzero, npos, reliability, ist)
             positive = status_ok(ist) .and. nneg == 0 .and. nzero == 0 .and. &
-                reliability == 0
+                reliability == FORTSPARSE_INERTIA_RELIABLE
         end function
 
         subroutine factor_one(s, sdone, kind, sinfo, sst)

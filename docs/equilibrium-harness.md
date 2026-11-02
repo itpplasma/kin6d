@@ -44,9 +44,12 @@ own trial only, and the pivoted LU is used only when the LDL^T fails.
 `IDEAL_MAP_FACTOR_SPD_LU` switches this off: it tries the SPD Cholesky and
 factors the same matrix again with the pivoted LU when a pivot is nonpositive,
 which costs a second factorisation because a failed Cholesky usually fails
-late. Both policies follow the same Newton/Krylov sequence on the Landreman
-b12 case. The report counts `trials`, `krylov_solves`, `krylov_iterations`,
-`indefinite_trials` and `lu_fallbacks`.
+late. In an external measurement on the Landreman b12 case both policies
+followed the same Newton/Krylov sequence; on the registered Solovev P4 case
+(`ideal_map_krylov_step`) roundoff along near-null relabelling directions
+changes the sequence, and only the end point is compared. The report counts
+`trials`, `krylov_solves`, `krylov_iterations`, `indefinite_trials` and
+`lu_fallbacks`.
 With `lagged_hessian` (default off), the steps after a factored or Krylov
 Newton step are L-BFGS steps (`lagged_memory` (8) secant pairs) whose initial
 inverse is the retained factor, as long as that factor's damping is at most
