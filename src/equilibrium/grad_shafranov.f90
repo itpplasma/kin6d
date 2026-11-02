@@ -23,14 +23,20 @@ module kin6d_grad_shafranov
        lagrange_combined_jvp, &
        lagrange_combined_vjp, lagrange_nodes_jvp, lagrange_nodes_vjp
    use kin6d_grad_shafranov_leaves, only: gs_source, gs_source_jvp, gs_source_vjp, &
-       gs_field, gs_segment_primitive, &
+      gs_segment_primitive, &
        gs_current_density, gs_current_sheet, gs_smooth_axis_q
    use kin6d_curved_triangle, only: periodic_curve_t, initialize_periodic_curve, &
        curve_value, boundary_curve, triangle_shapes, triangle_locate
    use kin6d_gs_inverse_leaves, only: gs_normalized_profile_response
     use kin6d_real_identity, only: same_real_value
+   use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
+      GS_SCREW, GS_UNSUPPORTED_SYMMETRY, gs_reduced_field
+   use kin6d_gs_symmetry_leaves, only: gs_screw_bilinear, &
+      gs_translation_source, gs_screw_source
    implicit none
    private
+   public :: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, GS_SCREW
+   public :: GS_UNSUPPORTED_SYMMETRY
    public :: gs_state_t, initialize_gs, solve_gs, gs_linear_response, sample_gs
    ! Orders above GS_MAX_SOLVER_ORDER need geometry_only and give a mesh without
    ! an assembled operator (ready false).
@@ -69,6 +75,7 @@ module kin6d_grad_shafranov
    end type gs_recovery_t
 
    type :: gs_state_t
+      type(gs_symmetry_t) :: symmetry
       real(dp), allocatable :: points(:, :), psi(:)
       integer, allocatable :: triangles(:, :)
       integer, allocatable :: neighbors(:, :)
@@ -132,7 +139,7 @@ contains
     subroutine initialize_gs(state, contour, max_area, status, element_order, &
                              curved, curve, interior_points, interior_chain, &
                              geometry_only, device, device_memory_limit_bytes, &
-                             mirror_x)
+         mirror_x, symmetry)
         !! Meshes the closed outer curve `contour` (counter-clockwise). The optional
         !! `interior_chain` is a second closed loop strictly inside it (free-boundary
         !! plasma boundary Gamma_p): its segments are constrained edges, never
@@ -155,6 +162,7 @@ contains
         integer, intent(in), optional :: device
         integer(int64), intent(in), optional :: device_memory_limit_bytes
         real(dp), intent(in), optional :: mirror_x
+      type(gs_symmetry_t), intent(in), optional :: symmetry
         type(tc_result_t) :: mesh
         type(basis_p1_2d_t) :: basis
         type(gauss_quadrature_triangle_t) :: quadrature
@@ -162,12 +170,21 @@ contains
         real(dp) :: jac(2, 2), matrix(2, 2), det, grads(2, 3)
         real(dp), allocatable :: mesh_points(:, :)
         logical, allocatable :: used(:)
-        real(dp) :: point(2), shape(10), grad_q(2, 10), hess(2, 2, 10), weight, t
+      real(dp) :: point(2), shape(10), grad_q(2, 10), hess(2, 2, 10), weight, t, bilinear
         integer, allocatable :: segments(:, :), original(:), original_chain(:)
         integer, allocatable :: segment_markers(:)
         integer :: j, e, k, l, q, pivot(2), stat, n, ndof, first, second, edge
         integer :: edge_node, local_node, nc, loop_size
         logical :: chain_edge
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (present(symmetry)) state%symmetry = symmetry
+      if (.not. state%symmetry%valid()) return
+      if (state%symmetry%kind /= GS_ROTATION) then
+         if (present(interior_chain)) return
+         if (present(device)) then
+            if (device >= 0) return
+         end if
+      end if
         status = 1
         if (present(device)) then
             if (device < -1) then
@@ -200,7 +217,9 @@ contains
         if (n < 3 .or. max_area <= 0) return
         if (.not. ieee_is_finite(max_area)) return
         if (any(.not. ieee_is_finite(contour))) return
-        if (minval(contour(1, :)) <= 0) return
+      if (state%symmetry%kind == GS_ROTATION) then
+         if (minval(contour(1, :)) <= 0) return
+      end if
         nc = 0
         if (present(interior_chain)) then
             if (size(interior_chain, 1) /= 2) return
@@ -221,7 +240,9 @@ contains
         if (present(interior_points)) then
             if (size(interior_points, 1) /= 2) return
             if (.not. all(ieee_is_finite(interior_points))) return
+         if (state%symmetry%kind == GS_ROTATION) then
             if (any(interior_points(1, :) <= 0)) return
+         end if
         end if
         if (nc > 0) then
             allocate (mesh_points(2, n + nc))
@@ -415,11 +436,20 @@ contains
                     point, det, shape(:ndof), grad_q(:, :ndof), &
                     hess(:, :, :ndof), stat)
                 if (stat /= 0) return
-                weight = det*quadrature%weights(q)/point(1)
+            weight = det*quadrature%weights(q)
+            if (state%symmetry%kind == GS_ROTATION) &
+               weight = det*quadrature%weights(q)/point(1)
                 do l = 1, ndof
                     do k = 1, ndof
+                  if (state%symmetry%kind == GS_SCREW) then
+                     call gs_screw_bilinear(point(1), point(2), &
+                        state%symmetry%k, grad_q(1, k), grad_q(2, k), &
+                        grad_q(1, l), grad_q(2, l), bilinear)
+                  else
+                     bilinear = dot_product(grad_q(:, k), grad_q(:, l))
+                  end if
                         state%stiffness(k, l, e) = state%stiffness(k, l, e) &
-                            + weight*dot_product(grad_q(:, k), grad_q(:, l))
+                     + weight*bilinear
                     end do
                 end do
             end do
@@ -1056,10 +1086,11 @@ contains
       end subroutine preconditioner
    end subroutine gs_linear_response
 
-   subroutine solve_gs(state, mu0, pprime, ffprime, status)
+   subroutine solve_gs(state, mu0, pprime, ffprime, status, f)
       type(gs_state_t), intent(inout) :: state
       real(dp), intent(in) :: mu0, pprime, ffprime
       integer, intent(out) :: status
+      real(dp), intent(in), optional :: f
       real(dp), allocatable :: rhs(:), solution(:), action(:)
       real(dp) :: linear_residual
       status = 1
@@ -1071,7 +1102,7 @@ contains
       if (mu0 <= 0.0_dp) return
       if (any(.not. ieee_is_finite([mu0, pprime, ffprime]))) return
       allocate (rhs(size(state%psi)), action(size(state%psi)))
-      call assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
+      call assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status, f)
       if (status /= 0) return
       if (.not. all(ieee_is_finite(rhs))) then
          status = geometry_arithmetic
@@ -1102,16 +1133,24 @@ contains
       status = KRYLOV_OK
    end subroutine solve_gs
 
-    subroutine assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status)
+   subroutine assemble_gs_rhs(state, mu0, pprime, ffprime, rhs, status, f)
         type(gs_state_t), intent(in) :: state
         real(dp), intent(in) :: mu0, pprime, ffprime
         real(dp), intent(out) :: rhs(:)
         integer, intent(out) :: status
+      real(dp), intent(in), optional :: f
         type(gauss_quadrature_triangle_t) :: quadrature
         real(dp) :: point(2), shape(10), gradients(2, 10), hessians(2, 2, 10)
         real(dp) :: source, weight, det
         integer :: e, q, k, l, i, j, ndof
         rhs = 0
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (state%symmetry%kind == GS_SCREW) then
+         if (.not. present(f)) return
+         ! A fixed F with nonzero FFprime is not a consistent profile.
+         if (abs(ffprime) > 0) return
+         if (.not. ieee_is_finite(f)) return
+      end if
         ndof = size(state%triangles, 1)
         call gs_quadrature(state%element_order, quadrature)
         do e = 1, size(state%triangles, 2)
@@ -1123,7 +1162,15 @@ contains
                     rhs = 0
                     return
                 end if
-                call gs_source(point(1), mu0, pprime, ffprime, source)
+            select case (state%symmetry%kind)
+            case (GS_ROTATION)
+               call gs_source(point(1), mu0, pprime, ffprime, source)
+            case (GS_TRANSLATION)
+               call gs_translation_source(mu0, pprime, ffprime, source)
+            case (GS_SCREW)
+               call gs_screw_source(point(1), point(2), state%symmetry%k, &
+                  mu0, pprime, ffprime, f, source)
+            end select
                 weight = det*quadrature%weights(q)
                 do k = 1, ndof
                     i = state%triangles(k, e)
@@ -1249,6 +1296,8 @@ contains
         integer :: e, k, l, node, boundary_node, ndof, work_limit, nc, nf
         integer :: ip, iff, ix, im
         character(160) :: message
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (state%symmetry%kind /= GS_ROTATION) return
         status = 1
         rhs = 0.0_dp
         if (present(error_estimate)) error_estimate = huge(1.0_dp)
@@ -1573,6 +1622,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         real(dp) :: zero_profile(size(flux)), local_axis(6)
         integer :: ndof, nc, e, k, l, index, work_limit
         character(160) :: message
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (state%symmetry%kind /= GS_ROTATION) return
         status = 1
         if (state%mapped .or. state%element_order > 2) then
             status = GS_UNSUPPORTED_GEOMETRY
@@ -1707,6 +1758,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         real(dp) :: coefficients(6), local_psi(6), vertices(2, 3), tolerance, rmin
         integer :: ndof, nf, e, k, j, node, index, work_limit
         character(160) :: message
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (state%symmetry%kind /= GS_ROTATION) return
         status = 1
         if (state%mapped .or. state%element_order > 2) then
             status = GS_UNSUPPORTED_GEOMETRY
@@ -2132,7 +2185,9 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         psi = 0; grad = 0; hessian = 0
         status = 1
         if (.not. ieee_is_finite(r) .or. .not. ieee_is_finite(z)) return
-        if (r <= 0) return
+      if (state%symmetry%kind == GS_ROTATION) then
+         if (r <= 0) return
+      end if
         if (element < 1 .or. element > size(state%triangles, 2)) return
         local = matmul(transpose(state%gradient(:, 2:3, element)), &
             [r, z] - state%points(:, state%triangles(1, element)))
@@ -2181,7 +2236,7 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
         do e = 1, size(state%triangles, 2)
             call gs_element_jet(state, e, r, z, psi, grad, hessian, status)
             if (status /= 0) cycle
-            call gs_field(r, grad(1), grad(2), f, br, bz, bt)
+         call gs_reduced_field(state%symmetry, r, z, grad(1), grad(2), f, br, bz, bt)
             return
         end do
     end subroutine sample_gs
@@ -2193,6 +2248,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       real(dp), intent(out) :: current
       integer, intent(out) :: status
       real(dp) :: psi, grad(2), hessian(2, 2)
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (state%symmetry%kind /= GS_ROTATION) return
       status = 1; current = 0.0_dp
       if (.not. ieee_is_finite(mu0)) return
       if (mu0 <= 0) return
@@ -2508,6 +2565,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       integer, intent(out) :: status
       real(dp) :: psi, gl(2), gr(2), hessian(2, 2), tangent(2), toward(2)
       integer :: j, k, first, second, edge
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (state%symmetry%kind /= GS_ROTATION) return
       status = 1; current = 0.0_dp
       if (state%mapped) then
          status = GS_UNSUPPORTED_GEOMETRY
@@ -2646,6 +2705,8 @@ call lagrange_nodes_vjp(2, psi, flux(j:j + 1), values(j:j + 1), dual, flux_bar(j
       character(*), intent(in) :: path
       integer, intent(out) :: status
       integer :: unit, j
+      status = GS_UNSUPPORTED_SYMMETRY
+      if (state%symmetry%kind /= GS_ROTATION) return
       open (newunit=unit, file=path, status='replace', action='write', &
             iostat=status)
       if (status /= 0) return

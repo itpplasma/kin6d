@@ -12,6 +12,7 @@ module kin6d_gs_inverse
     use kin6d_gs_profile_law, only: gs_profile_law_t
     use fortnum_linalg, only: dense_solve
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_inverse_result_t, solve_gs_constant_q, gs_inverse_f, gs_toroidal_flux, gs_inverse_profile_status
@@ -46,6 +47,8 @@ contains
         real(dp) :: length, weak_residual, objective, qtolerance, ptolerance, phi_coarse, check_error, delta
         integer :: n, angles, stat, element, i, iteration, backtrack
         check_error=huge(1.0_dp)
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status=1; n=9; angles=256; tolerance=1.0e-8_dp; qtolerance=1.0e-3_dp; ptolerance=1.0e-6_dp
         if (state%mapped) then
             status = 20
@@ -431,7 +434,9 @@ contains
         real(dp), allocatable :: xi(:), eta(:), weights(:)
         real(dp) :: point(2), value, grad(2), hessian(2, 2), f
         integer :: e, i, stat, degree
-        phi = 0; status = 1; degree = 8
+        phi = 0; status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
+        status = 1; degree = 8
         if (present(polynomial_degree)) degree = polynomial_degree
         if (degree < 2 .or. degree > 30) return
         call triangle_duffy_quadrature(degree, xi, eta, weights, stat)

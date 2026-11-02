@@ -31,6 +31,9 @@ module kin6d_gs_nonlinear
                                GS_T_LOAD_CELLS, GS_T_JAC_CG, GS_T_JAC_GMRES, &
                                GS_T_PRECOND_CG
     use fortnum_quadrature, only: gauss_legendre_ab
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_SCREW, &
+        GS_UNSUPPORTED_SYMMETRY, gs_reduced_source
+    use kin6d_gs_profile_law, only: gs_law_primitives
     implicit none
     private
     public :: gs_forcing_t, gs_normalize_current
@@ -166,7 +169,11 @@ contains
         real(dp) :: jtol, tol, h(2, 2, 10), clock
         integer :: e, ndof, nc, i, j, k, q, nel, capacity, first_failure
         integer :: evaluations
-        status = 1; rhs = 0
+        status = GS_UNSUPPORTED_SYMMETRY; rhs = 0
+        if (state%symmetry%kind /= GS_ROTATION) then
+            if (law%normalized .or. present(plasma_cell)) return
+        end if
+        status = 1
         if (present(source_integral)) source_integral = 0
         need_jacobian = .true.
         if (present(load_only)) need_jacobian = .not. load_only
@@ -410,7 +417,7 @@ contains
             ! whose flux range touches only intervals where both laws vanish
             ! identically: skip it exactly (boundary lifting is in the gather).
             if (.not. need_jacobian .and. .not. present(forcing) &
-                .and. .not. free_mode) then
+            .and. .not. free_mode .and. state%symmetry%kind /= GS_SCREW) then
                 if (law_vanishes(left - 1, right)) return
             end if
             closed_cut = .false.
@@ -629,8 +636,8 @@ contains
             real(dp), intent(in) :: weights(:), grads_in(:, :, :)
             real(dp), intent(in) :: shapes_t(:, :)
             real(dp), intent(out) :: integral(:)
-            real(dp) :: map_jac(2, 2)
-            integer :: np, node
+            real(dp) :: map_jac(2, 2), pressure, primitive_f
+            integer :: np, node, stat
             np = size(weights)
             call grow_batch(scr%batch, np)
             evaluations = evaluations + np
@@ -648,7 +655,10 @@ contains
                 end do
             end if
             do node = 1, np
-                if (scr%batch%det(node) <= 0 .or. scr%batch%r(node) <= 0) return
+                if (scr%batch%det(node) <= 0) return
+                if (state%symmetry%kind == GS_ROTATION) then
+                    if (scr%batch%r(node) <= 0) return
+                end if
             end do
             call gs_law_sources_batch(law, np, scr%batch%psi, scr%batch%pp, &
                                       scr%batch%ff, scr%batch%dpp, scr%batch%dff, &
@@ -665,6 +675,25 @@ contains
                     scr%batch%c(node) = 0
                 end do
             end if
+            if (state%symmetry%kind /= GS_ROTATION) then
+                if (.not. need_jacobian) then
+                    scr%batch%dpp(:np) = 0; scr%batch%dff(:np) = 0
+                end if
+                do node = 1, np
+                    primitive_f = 1
+                    if (state%symmetry%kind == GS_SCREW) then
+                        call gs_law_primitives(law, scr%batch%psi(node), &
+                            pressure, primitive_f, stat)
+                        if (stat /= 0) return
+                    end if
+                    call gs_reduced_source(state%symmetry, &
+                        scr%batch%r(node), scr%batch%z(node), mu0, &
+                        scr%batch%pp(node), scr%batch%ff(node), primitive_f, &
+                        scr%batch%dpp(node), scr%batch%dff(node), &
+                        scr%batch%f(node), scr%batch%df(node))
+                    scr%batch%af(node) = 0
+                end do
+            else
             if (need_jacobian) then
                 call gs_source_tangents_batch(np, scr%batch%r(:np), mu0, &
                     scr%batch%pp(:np), scr%batch%ff(:np), scr%batch%dpp(:np), &
@@ -673,6 +702,7 @@ contains
             else
                 call gs_source_batch(np, scr%batch%r(:np), mu0, scr%batch%pp(:np), &
                                      scr%batch%ff(:np), scr%batch%f(:np))
+            end if
             end if
             if (present(forcing)) then
                 do node = 1, np
@@ -814,7 +844,7 @@ contains
             real(dp), intent(out) :: output(:)
             integer, intent(out) :: stat
             real(dp) :: physical(2), det, psi, pp, ff, dpd, dfd, app, aff, f, df, af
-            real(dp) :: map_jac(2, 2)
+            real(dp) :: map_jac(2, 2), pressure, primitive_f
             integer :: a, b
             evaluations = evaluations + 1
             stat = 1
@@ -825,7 +855,10 @@ contains
                                  transpose(grad))
                 det = det2(map_jac)
             end if
-            if (det <= 0 .or. physical(1) <= 0) return
+            if (det <= 0) return
+            if (state%symmetry%kind == GS_ROTATION) then
+                if (physical(1) <= 0) return
+            end if
             psi = local_psi(1) + dot_product(s(:ndof), &
                                              local_psi(:ndof) - local_psi(1))
             if (free_mode) then
@@ -841,15 +874,31 @@ contains
             else
                 call gs_law_sources(law, psi, pp, ff)
             end if
-            call gs_source(physical(1), mu0, pp, ff, f)
+            df = 0; af = 0
+            if (state%symmetry%kind == GS_ROTATION) then
+                call gs_source(physical(1), mu0, pp, ff, f)
+            else
+                primitive_f = 1
+                if (state%symmetry%kind == GS_SCREW) then
+                    call gs_law_primitives(law, psi, pressure, primitive_f, stat)
+                    if (stat /= 0) return
+                end if
+                if (.not. need_jacobian) then
+                    dpd = 0; dfd = 0
+                end if
+                call gs_reduced_source(state%symmetry, physical(1), physical(2), &
+                    mu0, pp, ff, primitive_f, dpd, dfd, f, df)
+            end if
             if (present(forcing)) f = f + forcing(physical(1), physical(2))
             output(:ndof) = det*f*s(:ndof)
             if (.not. need_jacobian) then
                 if (all(ieee_is_finite(output))) stat = 0
                 return
             end if
-            call gs_source_jvp(physical(1), mu0, pp, ff, 0.0_dp, 0.0_dp, dpd, dfd, df)
-            call gs_source_jvp(physical(1), mu0, pp, ff, 0.0_dp, 0.0_dp, app, aff, af)
+            if (state%symmetry%kind == GS_ROTATION) then
+                call gs_source_jvp(physical(1), mu0, pp, ff, 0.0_dp, 0.0_dp, dpd, dfd, df)
+                call gs_source_jvp(physical(1), mu0, pp, ff, 0.0_dp, 0.0_dp, app, aff, af)
+            end if
             do b = 1, ndof
                 do a = 1, ndof
                     output(ndof + (b - 1)*ndof + a) = det*df*s(a)*s(b)
@@ -1147,6 +1196,10 @@ contains
         character(160) :: line
         real(dp) :: stall_norm
         integer :: iteration, backtrack, stalled
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) then
+            if (law%normalized) return
+        end if
         status = 1
         if (gs_requested_device(state) >= 0) then
             status = GS_UNSUPPORTED_DEVICE
@@ -1159,7 +1212,8 @@ contains
         if (present(relative_tolerance)) tol = relative_tolerance
         if (.not. ieee_is_finite(tol)) return
         if (tol <= 0 .or. tol >= 1) return
-        if (maxval(abs(state%psi)) <= tiny(1.0_dp)) then
+        if (maxval(abs(state%psi)) <= tiny(1.0_dp) &
+            .and. state%symmetry%kind /= GS_SCREW) then
             call gs_law_sources(law, 0.0_dp, pp, ff)
             if (abs(pp) + abs(ff) <= tiny(1.0_dp)) &
                 call gs_law_sources(law, 0.5_dp*law%axis, pp, ff)
@@ -1302,7 +1356,9 @@ contains
         type(gs_profile_jacobian_t) :: jac
         real(dp), allocatable :: rhs(:)
         real(dp) :: integral, scale
-        current = 0; status = 1
+        current = 0; status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
+        status = 1
         if (.not. law%normalized .or. .not. state%ready) return
         if (.not. ieee_is_finite(target) .or. abs(target) <= tiny(1.0_dp)) return
         if (any(abs(pack(state%psi, state%boundary)) > tiny(1.0_dp))) return

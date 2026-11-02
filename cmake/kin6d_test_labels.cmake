@@ -871,3 +871,14 @@ kin6d_test_labels(equilibrium_d8_issan_3d_integer fast CLASSES mhd
 
 kin6d_test_labels(equilibrium_d8_landreman_3d_p3 fast CLASSES mhd
     TARGETS test_equilibrium_3d)
+
+foreach(gate rotation translation screw manufactured limit derivatives guards)
+    kin6d_test_labels(grad_shafranov_rm0_${gate} fast CLASSES equilibrium
+        TARGETS test_gs_symmetry)
+    set_property(TEST grad_shafranov_rm0_${gate} APPEND PROPERTY LABELS rm0)
+endforeach()
+kin6d_test_labels(grad_shafranov_rm0_symbolic fast CLASSES equilibrium
+    TARGETS gen_gs_symmetry)
+if(TEST grad_shafranov_rm0_symbolic)
+    set_property(TEST grad_shafranov_rm0_symbolic APPEND PROPERTY LABELS rm0)
+endif()

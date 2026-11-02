@@ -1,6 +1,6 @@
 # Nonlinear visco-resistive MHD: general 3D and symmetry-reduced 2D
 
-Status: design, decided 2026-11-02. No code exists yet. This document owns the
+Status: design, decided 2026-11-02. RM0 fixed-boundary symmetry-reduced GS is implemented; the nonlinear MHD residual is not. This document owns the
 nonlinear visco-resistive part of [R12](../ROADMAP.md#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
 item 12; Hall/XMHD stays with R12. Scope: tokamak and stellarator core MHD on
 resistive time scales.
