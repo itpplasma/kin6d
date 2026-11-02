@@ -283,5 +283,7 @@ f=K1(ka)/(K1(ka)+ka K0(ka)), ka=0.1. The existing seven exact kink
 identities retain its equilibrium, vacuum/surface split and ka->0
 Shafranov limit. Three toroidal aspect ratios approach the cylinder;
 reported orders describe that limit at fixed mesh and ka, not spatial
-convergence. This is a prescribed rigid-subspace growth estimate, not the
+convergence. Observed relative errors in lambda are 0.237%, 0.0779% and
+0.0255% at R/a=80, 120 and 160; the test requires each below 0.5% and a
+strict decrease with aspect ratio. This is a prescribed rigid-subspace growth estimate, not the
 full external-kink eigenmode or an internal-kink result.

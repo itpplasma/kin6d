@@ -390,7 +390,8 @@ contains
                         ' gamma,S0-lambda,oracle-lambda,relative-error=', &
                         sqrt(-physical_lambda),physical_lambda,exact/density, &
                         growth_errors(alevel)
-                    if (growth_errors(alevel)>0.03_dp) error stop 'physical kink rate'
+                    ! Observed 0.24%, 0.078%, 0.026% (docs/s0-spectrum.md).
+                    if (growth_errors(alevel)>0.005_dp) error stop 'physical kink rate'
                 end if
                 if (iq == 1 .and. .not. rates) then
                     u(4::4) = 0
@@ -422,6 +423,9 @@ contains
         if (rates) then
             print '(a,2f12.6)', '[V] rigid kink aspect-error orders=', &
                 log(growth_errors(:2)/growth_errors(2:))/log(aspects(2:)/aspects(:2))
+            ! The toroidal correction must vanish in the cylinder limit.
+            if (any(growth_errors(2:) >= growth_errors(:2))) &
+                error stop 'rigid kink error does not decrease with aspect ratio'
         end if
     end subroutine
 
