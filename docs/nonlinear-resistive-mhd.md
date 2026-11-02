@@ -195,6 +195,27 @@ Preconditioning, the core of the design, splits the linearised operator into:
    per-harmonic or per-family blocks only as inner solves (U5);
 3. an outer FGMRES on the full operator.
 
+Both large parameters of the target regime are used, not only survived.
+
+- Anisotropy, epsilon = chi_perp/chi_par ~ 1e-10: as epsilon -> 0 the
+  temperature becomes constant along field lines (a flux function on nested
+  surfaces, constant across an island, averaged over a stochastic region), and
+  only the field-line-averaged perpendicular transport remains. The transport
+  block uses this structure, either as an asymptotic-preserving micro-macro
+  decomposition (field-line average plus an O(epsilon) correction; Degond,
+  Deluzet, Narski and Negulescu and later work) or as a two-level
+  preconditioner whose coarse space is the near-null space of b.grad, the
+  field-line-constant functions. Conditioning and iteration count then do not
+  depend on epsilon by construction (RM-B4).
+- Time scales, tau_A/tau_R ~ 1e-6-1e-7: besides implicit stepping, the
+  Schur-complement treatment of the stiff wave part and direct stationary
+  solves, slow resistive evolution with a quasi-stationary helical or island
+  state is computed on the slow manifold: a sequence of driven stationary 3D
+  states parametrised by the slowly evolving profiles (adiabatic elimination of
+  the fast dynamics), with a model-defect estimate against full time evolution
+  and a local switch to it where the separation fails (mode onset, crash), as
+  the model-switching contract of AGENTS.md requires (RM-B10).
+
 Closures are separate FortSym leaves with one interface each, so a closure can
 be replaced without touching the residual: eta(T), nu(T), chi_par(T) in
 collisional (Spitzer) form, a flux-limited chi_par (parallel heat flux bounded
@@ -224,6 +245,7 @@ and an external code second.
 | RM-B7 | 2D against 3D | identical equations on a straight periodic cylinder agree to discretisation error; the 3D solver preserves helical symmetry |
 | RM-B8 | JOREK | public JOREK regression cases (tearing and kink in circular geometry) and a straight-cylinder flux-pumping case, matched model and resolution; 2D part in RM2, 3D part in RM5 |
 | RM-B9 | performance | time to matched observable accuracy against JOREK on the same node, strong scaling, memory, CPU and GPU |
+| RM-B10 | slow manifold | quasi-stationary sequence of driven stationary states against full BDF2 evolution on the straight periodic cylinder: q profile and island width to the stated tolerance, defect estimate bounds the observed difference, switch to time evolution at mode onset |
 
 Admission (AGENTS.md):
 
@@ -272,7 +294,7 @@ Generated CUDA kernels sit behind the ISO_C_BINDING C ABI of
 | RM2 | 2D stationary and BDF2 solves; RM-B3, RM-B5, RM-B6, RM-B8 in 2D | RM1 |
 | RM3 | 3D residual on the meridional complex x Fourier; RM-B1, RM-B2, RM-B7 | RM1 |
 | RM4 | field-split preconditioner; RM-B4 at linear amplitude | RM3, U3, U5 |
-| RM5 | 3D nonlinear stationary and evolution; RM-B3 (FCI decision), RM-B4 saturated, RM-B5, RM-B6, RM-B8 in 3D | RM4 |
+| RM5 | 3D nonlinear stationary and evolution; RM-B3 (FCI decision), RM-B4 saturated, RM-B5, RM-B6, RM-B8 in 3D; slow-manifold path, RM-B10 | RM4 |
 | RM6 | GLL matrix-free path, CPU and generated CUDA; exponential integrators; RM-B1, RM-B2, RM-B4, RM-B7 rerun on it; RM-B9 | RM5, U1, U2, U4 |
 | RM7 | physics: straight-cylinder flux pumping, then published tokamak cases | RM2, RM6 |
 | RM8 | Figure-8 stellarator on the curve-following chart: RM-B1, RM-B6 and a resistive island case, equilibrium checked against GVEC | RM6, `g_frame_figure8_equilibrium` |
