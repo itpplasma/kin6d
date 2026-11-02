@@ -1562,6 +1562,69 @@ contains
         end do
     end subroutine
 
+    subroutine point_basis(fb, g, j, basis)
+        ! (f0, f1, f2, f3) = (value, d/dx1, d/dx2, d/dphi) of each scalar
+        ! basis function q = m + nmode (a - 1) at quadrature point (g, j).
+        type(ideal_fb_t), intent(in) :: fb
+        integer, intent(in) :: g, j
+        real(dp), intent(out) :: basis(:, :)
+        integer :: a, m, q
+        do a = 1, fb%nloc
+            do m = 1, fb%nmode
+                q = m + fb%nmode*(a - 1)
+                basis(1, q) = fb%plasma%shape(a, g)*fb%plasma%trig(m, j)
+                basis(2, q) = fb%plasma%dshape(1, a, g)*fb%plasma%trig(m, j)
+                basis(3, q) = fb%plasma%dshape(2, a, g)*fb%plasma%trig(m, j)
+                basis(4, q) = fb%plasma%shape(a, g)*fb%plasma%dtrig(m, j)
+            end do
+        end do
+    end subroutine
+
+    subroutine add_point_hessian(hv, var, basis, weight, block)
+        ! block += weight rows^T hv rows for the sparse rows of a pointwise
+        ! energy: local dof (c, q) at c + nc (q - 1) has the value basis(t, q)
+        ! in point variable var(t, c) (0: absent). Same sum as the dense
+        ! product, in O(nc^2 nq^2) instead of O(nv nc^2 nq^2) operations.
+        real(dp), intent(in) :: hv(:, :), basis(:, :), weight
+        integer, intent(in) :: var(:, :)
+        real(dp), intent(inout) :: block(:, :)
+        real(dp) :: grouped(4, size(var, 2), 4, size(var, 2)), half(4, size(var, 2))
+        integer :: nc, nq, c, cp, t, tp, q, qp, col
+        nc = size(var, 2); nq = size(basis, 2)
+        grouped = 0
+        do cp = 1, nc
+            do tp = 1, 4
+                if (var(tp, cp) == 0) cycle
+                do c = 1, nc
+                    do t = 1, 4
+                        if (var(t, c) > 0) grouped(t, c, tp, cp) = &
+                            weight*hv(var(t, c), var(tp, cp))
+                    end do
+                end do
+            end do
+        end do
+        do qp = 1, nq
+            do cp = 1, nc
+                do c = 1, nc
+                    do t = 1, 4
+                        half(t, c) = grouped(t, c, 1, cp)*basis(1, qp) &
+                            + grouped(t, c, 2, cp)*basis(2, qp) &
+                            + grouped(t, c, 3, cp)*basis(3, qp) &
+                            + grouped(t, c, 4, cp)*basis(4, qp)
+                    end do
+                end do
+                col = cp + nc*(qp - 1)
+                do q = 1, nq
+                    do c = 1, nc
+                        block(c + nc*(q - 1), col) = block(c + nc*(q - 1), col) &
+                            + basis(1, q)*half(1, c) + basis(2, q)*half(2, c) &
+                            + basis(3, q)*half(3, c) + basis(4, q)*half(4, c)
+                    end do
+                end do
+            end do
+        end do
+    end subroutine
+
     subroutine shell_energy(fb, xs, phi, energy, gx, gf, min_jacobian, blocks, &
                             f_gx, f_gf)
         ! E_v interior part (with 1/mu0), gradients with respect to xs and
@@ -1572,9 +1635,11 @@ contains
         real(dp), intent(out) :: energy, gx(:, :, :), gf(:, :), min_jacobian
         real(dp), intent(out), optional :: blocks(:, :, :)
         real(dp), intent(out), optional :: f_gx(:, :, :), f_gf(:, :)
-        real(dp), allocatable :: local(:, :), rows(:, :), tmp(:, :), flocal(:, :)
+        real(dp), allocatable :: local(:, :), rows(:, :), flocal(:, :)
+        real(dp), allocatable :: basis(:, :)
+        integer :: var(4, 4), t
         real(dp) :: w, jac, gv(15), hv(15, 15), weight, dphi, minjac, fd(15)
-        integer :: e, g, j, nl, a, m, l
+        integer :: e, g, j, nl, a, m, l, c
         logical :: want, want_f
         want = present(blocks)
         want_f = present(f_gx) .and. present(f_gf)
@@ -1586,10 +1651,16 @@ contains
             allocate (flocal(1, 1))
         end if
         dphi = 2*pi/(fb%nfp*fb%plasma%nphi)
+        ! Point variables of local_rows: component c of the shell map takes
+        ! (value, d1, d2, dphi) at c, c + 3, c + 6, c + 9; Phi~ at 13..15.
+        do c = 1, 3
+            var(:, c) = [(c + 3*t, t = 0, 3)]
+        end do
+        var(:, 4) = [0, 13, 14, 15]
         energy = 0; minjac = huge(1.0_dp)
         !$omp parallel default(shared) &
-        !$omp private(e, g, j, w, jac, gv, hv, weight, rows, tmp, fd)
-        allocate (rows(15, nl), tmp(15, nl))
+        !$omp private(e, g, j, w, jac, gv, hv, weight, rows, fd, basis)
+        allocate (rows(15, nl), basis(4, nl/4))
         !$omp do reduction(+: energy) reduction(min: minjac) schedule(static)
         do e = 1, fb%ncell
             local(:, e) = 0
@@ -1609,15 +1680,14 @@ contains
                     local(:, e) = local(:, e) + weight*matmul(gv, rows)
                     if (want_f) flocal(:, e) = flocal(:, e) + weight*matmul(fd, rows)
                     if (want) then
-                        tmp = matmul(hv, rows)
-                        blocks(:, :, e) = blocks(:, :, e) + weight &
-                            *matmul(transpose(rows), tmp)
+                        call point_basis(fb, g, j, basis)
+                        call add_point_hessian(hv, var, basis, weight, blocks(:, :, e))
                     end if
                 end do
             end do
         end do
         !$omp end do
-        deallocate (rows, tmp)
+        deallocate (rows, basis)
         !$omp end parallel
         min_jacobian = minjac
         gx = 0; gf = 0
@@ -1879,16 +1949,20 @@ contains
         ! (transversal, omega) reduction.
         type(ideal_fb_t), intent(in) :: fb
         type(csr_matrix_t), intent(out) :: matrix
-        real(dp), allocatable :: blocks(:, :, :), rows(:, :), tmp(:, :)
+        real(dp), allocatable :: blocks(:, :, :), basis(:, :)
         integer, allocatable :: conn(:, :)
-        real(dp) :: hv(12, 12), weight, dphi, f(0:3)
-        integer :: e, g, j, a, m, c, l, nl
+        real(dp) :: hv(12, 12), weight, dphi
+        integer :: e, g, j, a, m, c, nl, t, var(4, 2)
         nl = 2*fb%nmode*fb%nloc
         allocate (blocks(nl, nl, fb%plasma%cells), conn(nl, fb%plasma%cells))
         dphi = 2*pi/(fb%nfp*fb%plasma%nphi)
-        !$omp parallel default(shared) private(e, g, j, a, m, c, l, hv, weight, f, &
-        !$omp rows, tmp)
-        allocate (rows(12, nl), tmp(12, nl))
+        ! Position-gauge component c = 1, 2 takes (value, d1, d2, dphi) at the
+        ! point variables c, c + 3, c + 6, c + 9.
+        do c = 1, 2
+            var(:, c) = [(c + 3*t, t = 0, 3)]
+        end do
+        !$omp parallel default(shared) private(e, g, j, hv, weight, basis)
+        allocate (basis(4, nl/2))
         !$omp do schedule(static)
         do e = 1, fb%plasma%cells
             blocks(:, :, e) = 0
@@ -1896,29 +1970,13 @@ contains
                 do g = 1, fb%plasma%nq
                     call plasma_point_hessian(fb%plasma, e, g, j, hv)
                     weight = fb%plasma%weight(g)*dphi
-                    rows = 0
-                    do a = 1, fb%nloc
-                        do m = 1, fb%nmode
-                            f(0) = fb%plasma%shape(a, g)*fb%plasma%trig(m, j)
-                            f(1) = fb%plasma%dshape(1, a, g)*fb%plasma%trig(m, j)
-                            f(2) = fb%plasma%dshape(2, a, g)*fb%plasma%trig(m, j)
-                            f(3) = fb%plasma%shape(a, g)*fb%plasma%dtrig(m, j)
-                            do c = 1, 2
-                                l = c + 2*(m - 1) + 2*fb%nmode*(a - 1)
-                                rows(c, l) = f(0)
-                                rows(3 + c, l) = f(1)
-                                rows(6 + c, l) = f(2)
-                                rows(9 + c, l) = f(3)
-                            end do
-                        end do
-                    end do
-                    tmp = matmul(hv, rows)
-                    blocks(:, :, e) = blocks(:, :, e) + weight*matmul(transpose(rows), tmp)
+                    call point_basis(fb, g, j, basis)
+                    call add_point_hessian(hv, var, basis, weight, blocks(:, :, e))
                 end do
             end do
         end do
         !$omp end do
-        deallocate (rows, tmp)
+        deallocate (basis)
         !$omp end parallel
         do e = 1, fb%plasma%cells
             do a = 1, fb%nloc
