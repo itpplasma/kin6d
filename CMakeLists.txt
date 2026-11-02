@@ -206,6 +206,8 @@ add_test(NAME real_value_identity_edge_cases COMMAND test_real_identity)
 add_executable(test_gs_mirror_mesh test/test_gs_mirror_mesh.f90)
 target_link_libraries(test_gs_mirror_mesh PRIVATE kin6d)
 add_test(NAME gs_mirror_mesh COMMAND test_gs_mirror_mesh)
+set_tests_properties(gs_mirror_mesh PROPERTIES TIMEOUT 60 PROCESSORS 1
+    ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(test_grad_shafranov test/test_grad_shafranov.f90)
 target_link_libraries(test_grad_shafranov PRIVATE kin6d)
 add_test(NAME grad_shafranov_analytic_and_derivative_oracles
