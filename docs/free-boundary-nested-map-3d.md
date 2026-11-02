@@ -254,10 +254,10 @@ hypothesis that has not been traced.
    so any restriction is supported, including non-repeating Fourier modes.
    Only the small consumer form R^T S R is dense. A nonrotational surface
    passed with `sectors` is rejected (`ideal_fb_chart_surface_circulant`).
-   The pair quadrature (FortFEM `converge_pair`) remains the cost driver, and
-   its near-pair degree grows with the panel aspect. The Landreman gate
-   therefore uses nphi = 3*chain/2 strips and runs in 364 s at 4 threads
-   (ROADMAP E3.3).
+   The pair quadrature (FortFEM `converge_pair`) remains the cost driver.
+   Its near-pair degree grows with the panel aspect, even with split fans
+   (fortfem#145). The Landreman gate uses 24 strips (aspect 6 and 12) and
+   runs in 241 s at 4 threads (ROADMAP E3.3).
 3. Curve-chart free boundary (done). `ideal_fb_init` takes any
    `ideal_chart_t`. The per-n exterior is built only for the cylindrical chart
    itself; any other chart (curve chart, nested-map chart) gets no exterior

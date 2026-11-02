@@ -325,7 +325,7 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
-# E3.3: the same cases through the full-surface R2 BEM exterior (24/48 rotated
+# E3.3: the same cases through the full-surface R2 BEM exterior (24 rotated
 # sectors, block-circulant assembly, per-harmonic Steklov form), compared
 # with the per-n exterior. bem3d16 is the chain=16 level only; the two-level
 # gate with its refinement checks runs nightly (ci/nightly-jobs.json).
