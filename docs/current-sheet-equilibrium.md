@@ -207,8 +207,8 @@ sheet-current perturbation is K1_z = [[B_Ly]] = −[[B_y ξ']] cos ky.
   amplitude).
 - Symmetric jump Δ+ = Δ− = Δ, symmetric walls: ξ0 = 0, ψ(0) = 0 on both sides,
   K1 = 2 k B0 (1 + Δ) δ/sinh(ka) — the Hahm–Kulsrud sheet current (with the
-  wall value B_y(a) = B0(1 + Δ)): K1/B_y(a) is independent of Δ; ξ is continuous and joins the step
-  over a layer of width Δ a.
+  wall value B_y(a) = B0(1 + Δ)): K1/B_y(a) is independent of Δ; ξ is
+  continuous and joins the step over a layer of width Δ a.
 - General walls: as Δ± → 0 at fixed ratio,
   ξ0 → k a (Δ+δ+ + Δ−δ−)/((Δ+ + Δ−) sinh ka) and ψ(0±) = O(Δ), so the
   shielding condition ψ(0) = 0 is recovered at rate O(Δ). The interface
