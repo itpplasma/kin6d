@@ -1,0 +1,6 @@
+! Input for fp_relaxation (B04 thermal-force benchmark output).
+! Physical values use the app defaults, which mirror cases/B04_relaxation.nml.
+&fp_relaxation
+  case_file = 'cases/B04_relaxation.nml'
+  case_sha256 = '0519a63c62cfca141a6924aa618a61ab6be8baf0e84056a8d9b08b18bcddb5d2'
+/
