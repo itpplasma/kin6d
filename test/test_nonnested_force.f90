@@ -30,7 +30,7 @@ program test_nonnested_force
         beltrami_prepare, beltrami_solve
     use kin6d_nonnested_force, only: nf_system_t, nf_report_t, nf_prepare, &
         nf_free, nf_load, nf_lorentz_load, nf_project, nf_potential_solve, &
-        nf_l2_error
+        nf_l2_error, nf_deflate
     use kin6d_equilibrium_harness, only: equilibrium_floor_report_t, &
         equilibrium_residual_floor, write_residual_floor
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
@@ -159,6 +159,17 @@ contains
         if (r%harmonic_orthogonality > 1.0e-10_dp) error stop 'harmonic orthogonality'
     end subroutine
 
+    real(dp) function harmonic_fraction(r, load, label, tol) result(f)
+        ! |H^T F|/|F|: the harmonic part of J x B (net toroidal force) relative
+        ! to the load. tol > 0: gate it (roundoff on axisymmetric states).
+        type(nf_report_t), intent(in) :: r
+        real(dp), intent(in) :: load(:), tol
+        character(*), intent(in) :: label
+        f = r%harmonic_part/max(norm2(load), tiny(1.0_dp))
+        print '(2a,es11.3)', label, ' |H^T F|/|F| ', f
+        if (tol > 0 .and. f > tol) error stop 'harmonic part of J x B'
+    end function
+
     subroutine hodge_ladder(k, label, build, gate)
         ! gate: least observed order of the finest refinement.
         integer, intent(in) :: k
@@ -223,6 +234,11 @@ contains
         call write_residual_floor(6, label, floor)
         if (floor%status /= 'decreasing') error stop 'manufactured ladder'
         if (floor%last_order < gate) error stop 'manufactured order'
+        ! Quasi-optimality: the projected force is within a fixed factor of
+        ! the V2 best approximation on every level, so a lowered order gate
+        ! reflects the approximation space, not the projection.
+        print '(2a,f7.3)', label, ' max |P f - u_h| / best ', maxval(ep(:levels)/eb(:levels))
+        if (maxval(ep(:levels)/eb(:levels)) > 1.2_dp) error stop 'not quasi-optimal'
         if (pf > 1.0e-6_dp) print *, 'note: gradient residual', pf
     end subroutine
 
@@ -295,9 +311,11 @@ contains
         type(free_b_field_t) :: field
         type(nf_system_t) :: sys
         real(dp), allocatable :: r1(:), r2(:), psi1(:), psi2(:), lam(:), extra(:)
+        real(dp), allocatable :: v(:), w(:), cpsi(:)
         logical, allocatable :: inner(:)
-        real(dp) :: kp1, kp2
-        integer :: st, i
+        integer, allocatable :: seed(:)
+        real(dp) :: kp1, kp2, expected, worst
+        integer :: st, i, ns
         shell_domain = .true.
         kk = 2
         if (command_argument_count() > 1) then
@@ -317,7 +335,9 @@ contains
         call nf_prepare(field, sys, st, inner=inner)
         if (st /= 0) error stop 'shell prepare'
         if (sys%nh /= 2) error stop 'shell harmonic 2-forms'
-        call random_seed()
+        call random_seed(size=ns)
+        seed = [(1234567 + 7919*i, i=1, ns)]
+        call random_seed(put=seed)
         allocate (r1(sys%nb*sys%n1), lam(sys%nb*sys%n0))
         call random_number(r1)
         r1 = csc_matvec(sys%ct, csc_matvec(sys%m2, csc_matvec(sys%c, r1)))
@@ -337,6 +357,30 @@ contains
             norm2(merge(0.0_dp, extra, sys%fixed1))/norm2(merge(0.0_dp, r1, sys%fixed1))
         if (norm2(psi2 - psi1) > 1.0e-9_dp*norm2(psi1)) error stop 'deflation'
         if (kp1 > 1.0e-10_dp) error stop 'consistent rhs has kernel content'
+        ! The reported kernel part is the added gradient/relative-harmonic
+        ! content: K psi1 = r1 exactly, so M1 G lambda = r2 - r1 = extra.
+        expected = norm2(merge(0.0_dp, extra, sys%fixed1)) &
+            /norm2(merge(0.0_dp, r2, sys%fixed1))
+        if (abs(kp2 - expected) > 1.0e-6_dp*expected) error stop 'kernel part'
+        ! nf_deflate: the result is M2-orthogonal to the harmonic forms, a
+        ! harmonic form deflates to zero and C psi is unchanged.
+        allocate (v(sys%nb*sys%n2)); call random_number(v)
+        v = merge(0.0_dp, v - 0.5_dp, sys%fixed2)
+        w = nf_deflate(sys, v)
+        worst = 0
+        do i = 1, sys%nh
+            worst = max(worst, abs(dot_product(sys%harm(:, i), csc_matvec(sys%m2, w))))
+        end do
+        worst = worst/sqrt(dot_product(v, csc_matvec(sys%m2, v)))
+        cpsi = csc_matvec(sys%c, psi1)
+        print '(a,3es12.4)', 'nf_deflate orthogonality, |D h|/|h|, |D C psi - C psi|/|C psi| ', &
+            worst, norm2(nf_deflate(sys, sys%harm(:, 1)))/norm2(sys%harm(:, 1)), &
+            norm2(nf_deflate(sys, cpsi) - cpsi)/norm2(cpsi)
+        if (worst > 1.0e-12_dp) error stop 'deflated vector has harmonic content'
+        if (norm2(nf_deflate(sys, sys%harm(:, 2))) > 1.0e-12_dp*norm2(sys%harm(:, 2))) &
+            error stop 'harmonic form survives deflation'
+        if (norm2(nf_deflate(sys, cpsi) - cpsi) > 1.0e-10_dp*norm2(cpsi)) &
+            error stop 'deflation changes C psi'
         call nf_free(sys)
     end subroutine
 
@@ -350,7 +394,7 @@ contains
         type(equilibrium_floor_report_t) :: floor(2)
         real(dp), allocatable :: load(:), up(:), ul(:), nodes(:, :)
         complex(dp), allocatable :: seed(:), bc(:)
-        real(dp) :: force(3, 2), u, theta
+        real(dp) :: force(3, 2), u, theta, hp
         integer :: lev, st, i, cur, levels
         levels = merge(3, 2, k == 2)
         do lev = 1, levels
@@ -371,6 +415,9 @@ contains
                 if (st /= 0) error stop 'Lorentz load'
                 call nf_project(sys, load, up, ul, rep)
                 call check_identities(rep, 'solovev')
+                ! Axisymmetric state: no net toroidal force, roundoff only
+                ! (measured <= 1.2e-12, growing with the dof count).
+                hp = harmonic_fraction(rep, load, 'solovev', 1.0e-11_dp)
                 if (rep%difference > 1.0e-8_dp) error stop 'forms differ'
                 force(lev, cur) = rep%relative
                 print '(a,i0,a,i0,2a,es12.4,a,es12.4)', 'solovev P', k, ' rings ', &
@@ -380,9 +427,11 @@ contains
             call nf_free(sys)
             deallocate (seed, bc)
         end do
+        ! Observed strong-current orders 1.05/1.10 (P2) and 1.69 (P3): gate
+        ! k - 1.4 per refinement.
         do cur = 1, 2
             call equilibrium_residual_floor(force(:levels, cur), 2.0_dp, &
-                '|P(J x B)|_M2/<|J|^2|B|^2>^1/2', floor(cur))
+                '|P(J x B)|_M2/<|J|^2|B|^2>^1/2', floor(cur), min_order=k - 1.4_dp)
             call write_residual_floor(6, 'solovev'//trim(currents(cur)), floor(cur))
         end do
         if (floor(2)%status /= 'decreasing') error stop 'Solovev force floor'
@@ -457,7 +506,7 @@ contains
         type(nf_report_t) :: rep
         type(equilibrium_floor_report_t) :: floor(2)
         real(dp), allocatable :: data(:), load(:), up(:), ul(:)
-        real(dp) :: force(3, 2)
+        real(dp) :: force(3, 2), hp(3, 2)
         integer :: lev, st, cur, levels
         ! The 16-ring Beltrami solve takes about a minute here: two levels
         ! by default, three with a second argument.
@@ -477,6 +526,7 @@ contains
                 if (st /= 0) error stop 'load'
                 call nf_project(sys, load, up, ul, rep)
                 call check_identities(rep, 'beltrami')
+                hp(lev, cur) = harmonic_fraction(rep, load, 'beltrami', 0.0_dp)
                 if (rep%difference > 1.0e-8_dp) error stop 'forms differ'
                 force(lev, cur) = rep%relative
                 print '(a,i0,2a,es12.4)', 'beltrami rings ', 4*2**(lev - 1), &
@@ -485,12 +535,21 @@ contains
             call nf_free(sys)
             deallocate (data)
         end do
+        ! P2: the strong current decreases at order 0.94 (gate k - 1.4 = 0.6),
+        ! the dual one at 0.43 (its h^1/2 wall layer), which the same gate
+        ! flags as a floor.
         do cur = 1, 2
             call equilibrium_residual_floor(force(:levels, cur), 2.0_dp, &
-                '|P(J x B)|_M2/<|J|^2|B|^2>^1/2', floor(cur))
+                '|P(J x B)|_M2/<|J|^2|B|^2>^1/2', floor(cur), min_order=0.6_dp)
             call write_residual_floor(6, 'beltrami'//trim(currents(cur)), floor(cur))
         end do
         if (floor(2)%status /= 'decreasing') error stop 'Beltrami force floor'
+        if (floor(1)%status /= 'floor') error stop 'Beltrami dual wall layer not flagged'
+        ! The net axial force of the discrete Beltrami state is a
+        ! discretisation error (zero in the continuum): strong current
+        ! 2.3e-5, 1.7e-6, 5.5e-7 of |F| on 4/8/16 rings.
+        if (maxval(hp(:levels, 2)) > 1.0e-4_dp .or. hp(2, 2) > 0.5_dp*hp(1, 2)) &
+            error stop 'Beltrami harmonic part'
     end subroutine
 
     ! ---- current sheet: residual floor -------------------------------------
@@ -519,6 +578,7 @@ contains
         type(nf_report_t) :: rep
         type(nn_factor_t) :: m2
         real(dp), allocatable :: load(:), up(:), ul(:), coeff(:), force(:)
+        real(dp) :: hp
         complex(dp), allocatable :: zl(:)
         logical, allocatable :: none(:)
         integer :: lev, st
@@ -543,6 +603,7 @@ contains
             if (st /= 0) error stop 'load'
             call nf_project(sys, load, up, ul, rep)
             call check_identities(rep, 'sheet')
+            hp = harmonic_fraction(rep, load, 'sheet', 1.0e-11_dp)
             force(lev) = rep%relative
             call nf_free(sys)
             deallocate (none, coeff)

@@ -76,7 +76,8 @@ coil annulus (P2/P3, 2/4/8 rings, no axis) the errors are 6.79e-2, 1.75e-2,
 2.98, 3.00) for P3, and the tests gate there at k - 0.15. Neither is the
 projection: the M2 best approximation of P f in V2 on the same disk meshes
 converges at the same rates (P2 1.75/1.85, P3 2.18), and the discrete
-projection error is a fixed 1.09 times it. The deficit comes from the
+projection error is a fixed 1.09 times it (gated: at most 1.2 times on
+every level). The deficit comes from the
 Solov'ev flux mesh near the axis. With the phi-independent variant (N = 0,
 `test_nonnested_force hodge k levels 8 0`) the P2 ladder continues to
 64 rings with orders 1.75, 1.85, 1.93, and P3 to 32 rings with 2.17, 2.63.
@@ -93,10 +94,12 @@ asymptotically, but with a large constant on these meshes. The disk tests
 therefore gate the observed pre-asymptotic order (k - 1/2 for P2 on three
 levels, k - 1 for P3 on two levels), and the annulus gates k. Without the
 harmonic term the disk orders are 1.82/1.92 and 2.54.
-Shell deflation: a right-hand side with
+Shell deflation (fixed random seed): a right-hand side with
 M1 G (phi_in + interior noise) added (1.2e-3 of its norm) returns the same
-psi to 1.4e-12, and that kernel part is reported (1.25e-3) while a
-consistent right-hand side has 2.5e-16.
+psi to 1.5e-12, and that kernel part is reported (it equals the added
+fraction to 1e-6, gated) while a consistent right-hand side has 3e-16.
+`nf_deflate` leaves no harmonic part (<= 1e-12 of the M2 norm), maps a
+harmonic form to zero and leaves C psi unchanged (gated).
 
 Factorisation cost (P2, 8/16/32 rings, N = 1): potential 0.11/0.47/2.3 s,
 Leray 0.17/2.0/47 s (native supernodal LU, AMD; no METIS on this VM). The
@@ -113,10 +116,21 @@ Discrete equilibria, |P(J x B)|_M2 / <|J|^2 |B|^2>^1/2:
 | Lundquist Beltrami, cylinder P2, 4/8/16 | 1.78e-2, 1.33e-2, 9.59e-3 (0.43, 0.47) floor | 2.06e-2, 1.07e-2, 5.26e-3 (0.94, 1.03) |
 | vacuum a = R^2 with F/R, P2 8 rings | 1.1e-13 (relative to B^2/L) | 7.1e-4 (projection error of B in curl Pi_1 B) |
 
-Both force forms agree to <= 1.1e-12 on every state; the harmonic part of
-J x B is <= 1e-12 (no net toroidal force). The registered tests run the P3
+Both force forms agree to <= 1.1e-12 on every state. The harmonic part of
+J x B (net toroidal force) is roundoff on the axisymmetric Solov'ev states
+(<= 1.2e-12 of |F|, gated at 1e-11) and on the sheet cylinder; on the
+Beltrami cylinder it is a discretisation error that decreases with h
+(strong current 2.3e-5, 1.7e-6, 5.5e-7 of |F| on 4/8/16 rings). The
+gates use min_order k - 1.4 (observed strong orders 1.05/1.10 for P2, 1.69
+for P3, 0.94 for Beltrami P2): the strong current is `decreasing`, and on
+the Beltrami ladder the dual current's h^1/2 wall layer is flagged `floor`
+by the same gate. J x B and |J|^2 |B|^2 come from the generated
+`lorentz_force` leaf (`gen/gen_metriplectic.f90`, with primal/JVP/VJP and the
+orthogonality and Lagrange identities proved at generation). The registered tests run the P3
 Solov'ev ladder on 8/16 rings (the 32-ring P3 level took 8 min here) and the
-Beltrami ladder on 4/8 rings (`test_nonnested_force beltrami 3` adds 16).
+Beltrami ladder on 4/8 rings (`test_nonnested_force beltrami 3` adds 16). Wall
+times of the registered cases (2 threads, `fast` label): hodge 12 s, solovev
+4 s, beltrami 5 s, shell 4 s, sheet 13 s.
 
 ## Residual floor
 
