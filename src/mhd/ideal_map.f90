@@ -132,13 +132,8 @@ module kin6d_ideal_map
         ! damping on the v || B near-null component that vanishes with the
         ! gradient (LM with mu ~ |g|; quadratic local convergence also for
         ! a singular Hessian under a local error bound, Yamashita-Fukushima).
+        ! Rejected with IDEAL_MAP_BAD_INPUT under omega_elimination.
         real(dp) :: parallel_damping = 0
-        ! True: the LM metric itself is parallel. Each trial factors
-        ! H + mu (max diag(H)/max diag(M_par) M_par + parallel_floor diag(H))
-        ! instead of H + mu diag(H); the floor keeps the trial definite
-        ! when H is indefinite across B. Non-nested solve only.
-        logical :: parallel_metric = .false.
-        real(dp) :: parallel_floor = 1.0e-3_dp
         ! Non-nested Newton step by CG on the damped masked Hessian,
         ! preconditioned with the retained SPD Cholesky factor of an earlier
         ! damped Hessian (inexact Newton, forcing eta = min(1/2, (|g|/|g0|)^1/2)
@@ -1298,7 +1293,10 @@ contains
                                     3*m + 3*map%nmode*(a - 1)) = f*t
                             end do
                         end do
-                        full = full + weight*spread(v, 2, nl)*spread(v, 1, nl)
+                        ! Rank-1 update without nl x nl temporaries.
+                        do a = 1, nl
+                            if (v(a) /= 0) full(:, a) = full(:, a) + (weight*v(a))*v
+                        end do
                     end do
                 end do
             end do
@@ -1519,8 +1517,7 @@ contains
         integer :: it, i, k, tries, estatus
         logical :: talk, accepted, factored, ofactored, lfactored, use_lu, nested
         logical :: retained, direct, pc_failed
-        real(dp) :: eta, ginit, pratio
-        real(dp), allocatable :: hval(:)
+        real(dp) :: eta, ginit
         ! Quasi-Newton state (map%lagged_hessian): qn_slot 1/2: solver/lsolver
         ! holds the last factor (0: none); secant pairs qs, qy with 1/(s.y) in
         ! qrho, qcount valid ones, the newest at qhead.
@@ -1532,12 +1529,14 @@ contains
         factored = .false.; ofactored = .false.; lfactored = .false.
         if (present(verbose)) talk = verbose
         nested = map%omega_elimination .and. .not. map%position_gauge
+        status = IDEAL_MAP_BAD_INPUT
+        if (map%parallel_damping < 0 .or. (map%parallel_damping > 0 .and. nested)) &
+            return
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
             diag(map%nred), rhs(map%nred), shift(map%nred))
         call omega_mask(map, nested, omask)
         damped = .not. (map%fixed .or. omask)
         qn_slot = 0; qcount = 0; qhead = 0; quasi = .false.
-        pratio = 0
         if (map%lagged_hessian .and. .not. nested) then
             allocate (qs(map%nred, max(1, map%lagged_memory)), &
                 qy(map%nred, max(1, map%lagged_memory)), &
@@ -1591,8 +1590,7 @@ contains
                 end do
             end do
             scale = maxval(abs(diag), mask=.not. map%fixed)
-            if ((map%parallel_damping > 0 .or. map%parallel_metric) .and. &
-                .not. nested) call add_parallel()
+            if (map%parallel_damping > 0) call add_parallel()
             accepted = .false.
             if (nested) then
                 call nested_line_search()
@@ -1605,11 +1603,6 @@ contains
             do tries = 1, 30
                 t0 = wall_seconds()
                 shift = merge(mu*(abs(diag) + 1.0e-12_dp*scale), 0.0_dp, damped)
-                if (map%parallel_metric .and. pratio > 0) then
-                    shift = merge(mu*(map%parallel_floor*abs(diag) &
-                        + 1.0e-12_dp*scale), 0.0_dp, damped)
-                    matrix%val = hval + (mu*pratio)*pmatrix%val
-                end if
                 report%trials = report%trials + 1
                 rhs = -gred
                 direct = .true.
@@ -1714,7 +1707,7 @@ contains
         subroutine add_parallel()
             ! matrix += kappa_k M_par on the identical Hessian pattern; the
             ! diagonal LM metric (diag) stays that of H.
-            real(dp) :: pscale
+            real(dp) :: pscale, pratio
             integer :: row
             t0 = wall_seconds()
             call ideal_map_parallel_mass(map, map%x, pmatrix)
@@ -1734,7 +1727,6 @@ contains
             report%parallel_kappa = map%parallel_damping &
                 *min(1.0_dp, gnorm/max(g0, tiny(1.0_dp)))*pratio
             matrix%val = matrix%val + report%parallel_kappa*pmatrix%val
-            hval = matrix%val
         end subroutine
 
         subroutine trust_region()

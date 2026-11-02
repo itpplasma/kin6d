@@ -436,7 +436,16 @@ solution psi_2D on the same mesh is the second oracle.
   the v || B near-null. The trial-matrix condition number (M_total metric) is
   3.5e10 with diagonal damping mu = 1e-8 (the crawl value) and 2.3e5 / 8.1e5 /
   3.0e6 with parallel damping kappa = 1e-2 / 1e-3 / 1e-4.
-  P2 seed ladders (this VM, 2 threads, native LU, tol 1e-11 x g_seed):
+  `ideal_map_parallel_mass` checks M_par against a direct quadrature of
+  (u_i.b)(u_j.b) from finite-difference displacements (agreement 1e-9) and
+  `ideal_map_parallel_damping_p2` gates the 32-node case: the eight lowest
+  curvatures are at least 90 % parallel, kappa_k was applied and decayed
+  below 1e-3 of its initial scale, the damped solves take a different
+  Newton path and their exact-flux error is within 5 % of the baseline.
+  `parallel_damping > 0` with `omega_elimination` is `IDEAL_MAP_BAD_INPUT`.
+  The P2 seed ladders below are a measurement record, not a CI gate
+  (`test_ideal_map_axisymmetric` argument 11 sets `parallel_damping`; this
+  VM, 2 threads, native LU, tol 1e-11 x g_seed):
 
   | case | kappa | Newton steps 32/64/128 | finest d3D_exact | orders | wall |
   |---|---|---|---|---|---|
@@ -452,11 +461,11 @@ solution psi_2D on the same mesh is the second oracle.
   lowest curvature, `ideal_map_parallel_damping_p2`): W is higher by 3.4e-9
   relative on the 32-node mesh and the exact-flux errors differ by 2.3 %,
   0.2 % and 2.1 %, the discretisation-level end-point spread already seen
-  between gauge weights. kappa = 1 needs 343/181/496 steps. Replacing the
-  diagonal metric by the parallel one (`parallel_metric`, floor 1e-3 to
-  1e-1 of diag H) takes 25-27/59-69/184-276 steps on A3: the perpendicular
-  floor then sets the damping of the stiff modes, so the parallel metric is
-  kept only as an additive term.
+  between gauge weights. kappa = 1 needs 343/181/496 steps. A rejected
+  variant replaced the diagonal metric by the parallel one (floor 1e-3 to
+  1e-1 of diag H): 25-27/59-69/184-276 steps on A3, because the
+  perpendicular floor then sets the damping of the stiff modes. It was
+  removed; the parallel metric enters only as the additive term.
 
   Reproducibility: cell energies are summed serially and MUMPS factors on one
   thread by default (`factor_threads`), so a solve is identical for any
