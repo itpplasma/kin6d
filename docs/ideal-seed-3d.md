@@ -182,3 +182,28 @@ its B error is 0.44 (Landreman) and 0.43 (Issan), and the test requires at
 least five times the correct-sign error. No case reaches the 1% default
 radius in all three diagnostics; the accuracy ladder (separated Fourier and
 mesh refinement, volume norms, force and estimator effectivity) is open.
+
+## Continuation and the remaining phase gauge
+
+`ideal_map_prolong` transfers common interior Fourier modes between meshes
+with the same reference domain, frozen profiles and field periods. For
+phi-fixed maps it preserves the fine initializer's physical wall and its
+new Fourier harmonics. Both maps must use the same increment gauge. The
+caller remains responsible for the shared reference-domain/profile contract;
+interpolation does not establish convergence or a continuous error bound.
+
+Fixing the toroidal coordinate does not remove every continuum relabelling.
+In `(s,theta,phi)`, the transformation `theta -> theta + f(s)`, with
+`f(1)=0`, fixes the wall and pressure. Its Jacobian is a shear of determinant
+one and preserves the frozen density `(0,iota(s)*bt(s),bt(s))`. The retained
+FortSym generator proves that composing any map Jacobian with this shear
+preserves its determinant and its product with the frozen density. Thus it
+preserves the physical field and energy in the continuum. These four exact
+identities supplement the initializer's existing five identities.
+
+Finite-element interpolation need not preserve this gauge exactly. Near-null
+phase directions are a possible source of slow damped Newton convergence;
+that explanation requires numerical evidence at the state under test. The
+proof alone establishes neither a discrete nullspace nor quadratic Newton
+convergence. The manufactured continuation test checks interior interpolation,
+retention of new harmonics and preservation of the physical wall.
