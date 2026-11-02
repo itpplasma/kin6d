@@ -6,6 +6,8 @@ foreach(k 2 3)
 endforeach()
 kin6d_test_labels(ideal_fb_chart_surface_invalid fast CLASSES mhd equilibrium
     TARGETS test_ideal_fb_surface)
+kin6d_test_labels(ideal_fb_chart_surface_circulant fast CLASSES mhd equilibrium
+    TARGETS test_ideal_fb_surface)
 kin6d_test_labels(ideal_fb_exterior_frozen_derivatives fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_circuits_derivatives fast CLASSES mhd
@@ -107,6 +109,8 @@ kin6d_test_labels(ideal_fb_vacuum_gamma_c_independence_n3 fast CLASSES mhd
 kin6d_test_labels(ideal_fb_slide_gauge_curl_free fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_hypotheses_bordering fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
+kin6d_test_labels(ideal_fb_negative_curvature fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_map_derivatives_and_rotation_null fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
@@ -701,6 +705,10 @@ if(TARGET gen_curve_chart)
         TARGETS gen_curve_chart)
 endif()
 kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
+    TARGETS test_landreman_free_boundary)
+kin6d_test_labels(ideal_fb_landreman_bem3d16_axisymmetric slow CLASSES mhd equilibrium
+    TARGETS test_landreman_free_boundary)
+kin6d_test_labels(ideal_fb_landreman_bem3d_axisymmetric slow CLASSES mhd equilibrium
     TARGETS test_landreman_free_boundary)
 
 kin6d_test_labels(cpu_precision_gs_comparison performance CLASSES mhd
