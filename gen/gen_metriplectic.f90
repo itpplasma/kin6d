@@ -38,6 +38,11 @@ program gen_metriplectic
     call prove(dot(j, e) + diss, 'dissipation j.((j x b) x b) = -|j x b|^2')
     ! The metric is symmetric: v.(D j) = j.(D v).
     call prove(dot(v, e) - dot(j, ev), 'metric symmetry')
+    ! The Lorentz force J x B is orthogonal to J and B, and |J x B|^2
+    ! <= |J|^2 |B|^2 (Lagrange identity: the defect is (J.B)^2).
+    call prove(dot(f, j), 'lorentz force orthogonal to j')
+    call prove(dot(f, b), 'lorentz force orthogonal to b')
+    call prove(dot(j, j)*dot(b, b) - diss - dot(j, b)*dot(j, b), 'Lagrange identity')
     ! Collision-bracket form |g|^2 I - g g^T of Bressan et al. with g = B1.
     bb = dot(b, b); jb = dot(j, b)
     do i = 1, 3
@@ -73,6 +78,8 @@ program gen_metriplectic
     call w%line('contains')
     call w%emit('friction_drift', ['jr', 'jp', 'jz', 'br', 'bp', 'bz'], &
         ['er  ', 'ep  ', 'ez  ', 'diss'], [e, diss], ad=.true.)
+    call w%emit('lorentz_force', ['jr', 'jp', 'jz', 'br', 'bp', 'bz'], &
+        ['fr ', 'fp ', 'fz ', 'jb2'], [f, dot(j, j)*dot(b, b)], ad=.true.)
     call w%line('end module kin6d_metriplectic_leaves')
     call w%close()
     print '(a,i0,a)', 'gen_metriplectic: ', checks, ' identities proved'
