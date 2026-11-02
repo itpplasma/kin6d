@@ -165,7 +165,15 @@ not convergence evidence. The Fourier boundary still has a sampled truncation
 indicator rather than a continuous bound. For either family, `flux` supplies
 Phi(psi), and `profiles` supplies psi(s), Phi(s), iota(s) and p(s), with
 s=Phi(psi)/Phi(delta). The sheared exporter still writes geometry only;
-connecting these matched profiles to its equilibrium input remains open.
+connecting these matched profiles to its external equilibrium input remains
+open. KIN6D's own map seed takes them through `kin6d_nested_seed_input`
+(`src/mhd/nested_seed_input.f90`): `nested_seed_boundary` projects the exact
+boundary onto the seed's Fourier convention and `nested_seed_profile` returns
+Phi(delta) together with iota(s) and p(s) as monomials in s. These are exact for
+the integer family, while the sheared family is fitted by least squares on
+Chebyshev nodes, and the fit is rejected when its deviation on a staggered
+check set exceeds the requested tolerance (degree 12 reaches 4e-13 for the
+example case, `ideal_seed_3d_nested_input`).
 A matched input, a successful reader and an exact-field evaluation do
 not establish that a numerical equilibrium has converged.
 
@@ -237,8 +245,8 @@ integer family is admitted through D8 (`equilibrium_d8_landreman_3d_integer`,
 `equilibrium_d8_issan_3d_integer`, `equilibrium_d8_landreman_3d_p3`); its
 accuracy ladder is open. The recorded sampled errors and the one refinement
 step are in docs/ideal-seed-3d.md; they are candidate diagnostics, not volume
-norms or bounds. The sheared family needs matched toroidal-profile preparation
-and is not admitted. The legacy axisymmetric `map_equilibrium` still returns
+norms or bounds. Matched sheared-family profiles come from
+`nested_seed_profile`, but that family is not admitted as a D8 case. The legacy axisymmetric `map_equilibrium` still returns
 `EQ_UNAVAILABLE` for `ntor/=0`; 3D states use `map_3d_equilibrium`.
 
 [H] A solved-case gate needs an admitted reference/chart pullback, an

@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "1cfe3cba327e9a32743ed10292e75a1311a6ced4")
+set(KIN6D_FORTNUM_REVISION "f856c80e4671478c4e5a2d519a04d03eca990d2e")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -139,8 +139,9 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main with the cached element-to-CSR slot map (lazy-fortran/fortfem#122).
-set(KIN6D_FORTFEM_REVISION "437798cae293f03cae436e7df2c6ac387113672a")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
+# Steklov form #144, exact FEEC tables, split stretched BEM fans #145).
+set(KIN6D_FORTFEM_REVISION "489b76f8ce4c039851d7c151c91b654baa850f0b")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -161,6 +162,7 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
     ${fortfem_SOURCE_DIR}/src/geometry/geometry_jet_2d.f90
+    ${fortfem_SOURCE_DIR}/src/elements/tetra_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
@@ -203,6 +205,11 @@ target_link_libraries(kin6d_fem2d PUBLIC kin6d_spatial)
 add_executable(test_real_identity test/test_real_identity.f90)
 target_link_libraries(test_real_identity PRIVATE kin6d)
 add_test(NAME real_value_identity_edge_cases COMMAND test_real_identity)
+add_executable(test_gs_mirror_mesh test/test_gs_mirror_mesh.f90)
+target_link_libraries(test_gs_mirror_mesh PRIVATE kin6d)
+add_test(NAME gs_mirror_mesh COMMAND test_gs_mirror_mesh)
+set_tests_properties(gs_mirror_mesh PROPERTIES TIMEOUT 60 PROCESSORS 1
+    ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(test_grad_shafranov test/test_grad_shafranov.f90)
 target_link_libraries(test_grad_shafranov PRIVATE kin6d)
 add_test(NAME grad_shafranov_analytic_and_derivative_oracles
@@ -229,7 +236,7 @@ if(KIN6D_ENABLE_CUDA_GS_SOLVE)
     enable_language(CUDA)
     set(FORTSPARSE_ENABLE_NATIVE_CUDA ON CACHE BOOL "" FORCE)
 endif()
-set(KIN6D_FORTSPARSE_REVISION "ac324a3567c2f95752bc2857ed29641f8e18f595")
+set(KIN6D_FORTSPARSE_REVISION "c1b664c9510fd1ee8caef1c5f6f589da07c1d64e")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -274,13 +281,15 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
     src/mhd/equilibrium_3d_driver.f90
     src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
-    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90)
+    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
+    src/mhd/nested_seed_input.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
-    src/mhd/ideal_free_boundary.f90)
+    src/generated/kin6d_fold_barrier_leaves.f90 src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
+    src/generated/kin6d_fold_barrier_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_sources(kin6d_equilibrium PRIVATE
     src/generated/kin6d_nested_oracle_leaves.f90 src/equilibrium/nested_oracles.f90)
@@ -325,6 +334,18 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+# E3.3: the same cases through the full-surface R2 BEM exterior (24 rotated
+# sectors, block-circulant assembly, per-harmonic Steklov form), compared
+# with the per-n exterior. bem3d16 is the chain=16 level only; the two-level
+# gate with its refinement checks runs nightly (ci/nightly-jobs.json).
+add_test(NAME ideal_fb_landreman_bem3d16_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d16)
+add_test(NAME ideal_fb_landreman_bem3d_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d)
+set_tests_properties(ideal_fb_landreman_bem3d16_axisymmetric PROPERTIES
+    TIMEOUT 600 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(ideal_fb_landreman_bem3d_axisymmetric PROPERTIES
+    TIMEOUT 1800 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
     test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
@@ -343,14 +364,27 @@ add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
     COMMAND test_ideal_free_boundary vacuum3d 3)
 add_test(NAME ideal_fb_slide_gauge_curl_free COMMAND test_ideal_free_boundary slide)
 add_test(NAME ideal_fb_hypotheses_bordering COMMAND test_ideal_free_boundary hypotheses)
+add_test(NAME ideal_fb_negative_curvature COMMAND test_ideal_free_boundary curvature)
 set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
     ideal_fb_slide_gauge_curl_free ideal_fb_hypotheses_bordering
+    ideal_fb_negative_curvature
     ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
-add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
-    test/support/ideal_map_cases.f90)
-target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+# One compiled ideal_map_cases module shared by the ideal map test programs.
+add_library(kin6d_ideal_map_cases_test STATIC test/support/ideal_map_cases.f90)
+target_link_libraries(kin6d_ideal_map_cases_test PUBLIC kin6d)
+add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90)
+target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d_ideal_map_cases_test)
+# Parallel-only Levenberg-Marquardt term (docs/ideal-map-3d.md).
+add_executable(test_ideal_map_parallel test/test_ideal_map_parallel.f90)
+target_link_libraries(test_ideal_map_parallel PRIVATE kin6d_ideal_map_cases_test)
+add_test(NAME ideal_map_parallel_mass COMMAND test_ideal_map_parallel unit 32 2)
+add_test(NAME ideal_map_parallel_damping_p2
+    COMMAND test_ideal_map_parallel compare 32 2)
+set_tests_properties(ideal_map_parallel_mass ideal_map_parallel_damping_p2
+    PROPERTIES TIMEOUT 600 PROCESSORS 2
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_map_hessian test/test_ideal_map_hessian.f90
     test/support/ideal_map_hessian_oracle.f90)
 target_link_libraries(test_ideal_map_hessian PRIVATE kin6d)
@@ -385,6 +419,11 @@ add_executable(test_ideal_seed_3d test/test_ideal_seed_3d.f90)
 target_link_libraries(test_ideal_seed_3d PRIVATE kin6d)
 add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
 set_tests_properties(ideal_seed_3d_boundary_profiles PROPERTIES PROCESSORS 4 TIMEOUT 60)
+add_executable(test_nested_seed_input test/test_nested_seed_input.f90)
+target_link_libraries(test_nested_seed_input PRIVATE kin6d)
+add_test(NAME ideal_seed_3d_nested_input COMMAND test_nested_seed_input)
+set_tests_properties(ideal_seed_3d_nested_input PROPERTIES PROCESSORS 4 TIMEOUT 120
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_seed_boundary_label
     COMMAND test_ideal_map_axisymmetric seedboundary)
 add_test(NAME ideal_map_derivatives_and_rotation_null
@@ -474,7 +513,7 @@ add_test(NAME gs_free_boundary_freegs_public_parity
     COMMAND test_gs_freegs ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/freegs)
 set_tests_properties(gs_free_boundary_freegs_public_parity PROPERTIES
     TIMEOUT 60 PROCESSORS 4
-    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;KIN6D_FB_SOLVER=lu")
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_library(kin6d_gs_coupling_test STATIC test/support/gs_coupling_fixture.f90)
 target_link_libraries(kin6d_gs_coupling_test PUBLIC kin6d)
 foreach(coupling_test vacuum fixed_current structure)
@@ -980,7 +1019,7 @@ if(KIN6D_FORTSYM_BUILD)
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi
             ideal_response_error equilibrium_core curve_chart ideal_seed_3d map_3d_readback
-            nonnested metriplectic vacuum_shell landreman nested_oracles
+            nonnested metriplectic vacuum_shell fold_barrier landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -990,7 +1029,7 @@ if(KIN6D_FORTSYM_BUILD)
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
             pp_fusion pp_fusion_eft
-            jellium_cell ocp)
+            jellium_cell ocp island_seed)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
@@ -1031,6 +1070,13 @@ if(KIN6D_FORTSYM_BUILD)
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_metriplectic_regeneration.cmake)
     kin6d_test_labels(metriplectic_identities_and_regeneration fast CLASSES mhd
         TARGETS gen_metriplectic)
+    add_test(NAME island_seed_exact_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_island_seed>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_seed_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/island-seed-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_island_seed_regeneration.cmake)
+    kin6d_test_labels(island_seed_exact_regeneration fast CLASSES mhd
+        TARGETS gen_island_seed)
     add_test(NAME equilibrium_nested_oracle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_nested_oracles>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
@@ -1130,6 +1176,7 @@ add_custom_target(kin6d_build_info
         -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
         -DKIN6D_FORTFEM_REVISION=${KIN6D_FORTFEM_REVISION}
         -DKIN6D_FORTSPARSE_REVISION=${KIN6D_FORTSPARSE_REVISION}
+        -DKIN6D_LIBNEO_REVISION=${KIN6D_LIBNEO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
 add_library(kin6d_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
@@ -1159,6 +1206,7 @@ add_test(NAME result_io_contract
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
         -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
         -DFORTSPARSE_PIN=${KIN6D_FORTSPARSE_REVISION}
+        -DLIBNEO_PIN=${KIN6D_LIBNEO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)
 add_executable(test_animation_export test/test_animation_export.f90)
 target_link_libraries(test_animation_export PRIVATE kin6d_io)
@@ -1349,6 +1397,16 @@ add_test(NAME grad_shafranov_device_selection_contract
 set_tests_properties(grad_shafranov_device_selection_contract PROPERTIES
     TIMEOUT 60 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+# Affine-profile Picard fixed point through the public GS route: the CPU
+# route always runs; the CUDA guard below adds the CPU/GPU pair.
+add_executable(test_gs_cuda_picard test/test_gs_cuda_picard.f90)
+target_link_libraries(test_gs_cuda_picard PRIVATE kin6d_equilibrium)
+if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(test_gs_cuda_picard PRIVATE -fno-fast-math -ffp-contract=off)
+endif()
+add_test(NAME grad_shafranov_affine_picard_cpu COMMAND test_gs_cuda_picard cpu)
+set_tests_properties(grad_shafranov_affine_picard_cpu PROPERTIES TIMEOUT 60 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
 if(KIN6D_ENABLE_CUDA_GS_SOLVE)
     add_executable(test_gs_cuda_fixed_source test/test_gs_cuda_fixed_source.f90)
     target_link_libraries(test_gs_cuda_fixed_source PRIVATE kin6d_nn_solovev_test)
@@ -1366,9 +1424,12 @@ if(KIN6D_ENABLE_CUDA_GS_SOLVE)
         COMMAND test_gs_cuda_fixed_source affine 16 0)
     add_test(NAME grad_shafranov_cuda_public_fixed_source
         COMMAND test_gs_cuda_public_solve)
+    add_test(NAME grad_shafranov_cuda_affine_picard
+        COMMAND test_gs_cuda_picard pair)
     set_tests_properties(grad_shafranov_cuda_fixed_source_a3
         grad_shafranov_cuda_affine_strict_audit
-        grad_shafranov_cuda_public_fixed_source PROPERTIES
+        grad_shafranov_cuda_public_fixed_source
+        grad_shafranov_cuda_affine_picard PROPERTIES
         TIMEOUT 120 PROCESSORS 4
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endif()
@@ -1604,6 +1665,9 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/geometry/meridian_curved_mesh.f90
     ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_feec_tables.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_bernstein_jets.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
@@ -1624,6 +1688,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_fourier_equilibration_products.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_equilibration.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_curl.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_apply.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_kernel.f90
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
@@ -1800,7 +1865,7 @@ add_test(NAME nonnested_n0_equilibrated_solovev COMMAND test_nonnested_error)
 set_tests_properties(nonnested_n0_equilibrated_solovev PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 add_executable(test_nonnested_fourier_error
-    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration.f90)
+    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration_slow.f90)
 target_link_libraries(test_nonnested_fourier_error PRIVATE kin6d_feec_n)
 add_test(NAME nonnested_transport_fourier_equilibrated
     COMMAND test_nonnested_fourier_error)
@@ -1999,7 +2064,9 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
     TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1" PROCESSORS 4)
 # NN1 on a phi-dependent (mapped) domain: docs/nn1-mapped-3d.md.
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
-    src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_relax.f90
+    src/mhd/nonnested_newton_mr.f90
+    src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_beltrami_mr.f90
+    src/mhd/nonnested_relax.f90 src/mhd/nonnested_force.f90
     src/generated/kin6d_metriplectic_leaves.f90)
 set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -2067,6 +2134,34 @@ foreach(k 2 3)
     endforeach()
 endforeach()
 
+# Matrix-free MINRES / Newton-MR Taylor closure (opt-in), against the
+# factored path: docs/nonnested-newton-mr.md.
+foreach(case constraints vacuum)
+    add_test(NAME nonnested_beltrami_${case}_mr
+        COMMAND test_nonnested_beltrami ${case} 2 mr)
+    set_tests_properties(nonnested_beltrami_${case}_mr PROPERTIES
+        TIMEOUT 60 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+foreach(k 2 3)
+    foreach(case manufactured lundquist)
+        add_test(NAME nonnested_beltrami_${case}_p${k}_mr
+            COMMAND test_nonnested_beltrami ${case} ${k} mr)
+        set_tests_properties(nonnested_beltrami_${case}_p${k}_mr PROPERTIES
+            TIMEOUT 600 PROCESSORS 4
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    endforeach()
+endforeach()
+add_executable(test_nonnested_beltrami_mr test/test_nonnested_beltrami_mr.f90)
+target_link_libraries(test_nonnested_beltrami_mr PRIVATE kin6d)
+add_test(NAME nonnested_beltrami_mr_agreement
+    COMMAND test_nonnested_beltrami_mr agree 2 2 2)
+add_test(NAME nonnested_beltrami_mr_block_ladder
+    COMMAND test_nonnested_beltrami_mr ladder block 2 2 4.5 0.1 0 2 4 8)
+set_tests_properties(nonnested_beltrami_mr_agreement nonnested_beltrami_mr_block_ladder
+    PROPERTIES TIMEOUT 120 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
 add_executable(test_nonnested_relax test/test_nonnested_relax.f90)
 target_link_libraries(test_nonnested_relax PRIVATE kin6d_nn_vacuum_test)
 foreach(case taylor ideal)
@@ -2075,10 +2170,38 @@ foreach(case taylor ideal)
         TIMEOUT 300 LABELS "mhd;fast" PROCESSORS 4
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endforeach()
+# Harmonic deflation, potential-velocity and Leray force, residual floor:
+# docs/nonnested-force.md.
+add_executable(test_nonnested_force test/test_nonnested_force.f90)
+target_link_libraries(test_nonnested_force PRIVATE kin6d_nn_solovev_test
+    kin6d_nn_vacuum_test)
+foreach(case hodge solovev beltrami shell sheet)
+    add_test(NAME nonnested_force_${case} COMMAND test_nonnested_force ${case})
+    set_tests_properties(nonnested_force_${case} PROPERTIES
+        TIMEOUT 600 PROCESSORS 2
+        ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_test(NAME nonnested_relax_vacuum_island COMMAND test_nonnested_relax island)
 set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
     TIMEOUT 1800 LABELS "mhd;slow" PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+
+# Energy-criterion island seeding (docs/island-seed.md).
+target_sources(kin6d_mhd PRIVATE src/generated/kin6d_island_seed_leaves.f90
+    src/mhd/island_seed.f90)
+set_source_files_properties(src/generated/kin6d_island_seed_leaves.f90
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
+add_executable(test_island_seed test/test_island_seed.f90)
+target_link_libraries(test_island_seed PRIVATE kin6d)
+foreach(case seed none ladder leaves)
+    add_test(NAME island_seed_${case} COMMAND test_island_seed ${case})
+endforeach()
+set_tests_properties(island_seed_seed island_seed_ladder PROPERTIES
+    TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(island_seed_none island_seed_leaves PROPERTIES
+    TIMEOUT 300 PROCESSORS 1
+    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
 target_link_libraries(test_nonnested_mapped PRIVATE kin6d)
@@ -2093,7 +2216,25 @@ add_test(NAME nonnested_mapped_zero_forcing_residual
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
     nonnested_mapped_zero_forcing_residual
-    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+    PROPERTIES TIMEOUT 900 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartesian_vacuum)
+    add_test(NAME nonnested_mapped_${mapped_case}
+        COMMAND test_nonnested_mapped ${mapped_case})
+    set_tests_properties(nonnested_mapped_${mapped_case} PROPERTIES
+        PROCESSORS 4 TIMEOUT 120
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+
+# Matrix-free Newton-MR for mapped NN1: docs/nonnested-newton-mr.md.
+add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
+target_link_libraries(test_nonnested_newton_mr PRIVATE kin6d)
+add_test(NAME nonnested_newton_mr_agreement
+    COMMAND test_nonnested_newton_mr agree 4 4)
+add_test(NAME nonnested_newton_mr_lumped_ladder
+    COMMAND test_nonnested_newton_mr ladder lumped 4 2 4 8)
+set_tests_properties(nonnested_newton_mr_agreement nonnested_newton_mr_lumped_ladder
+    PROPERTIES TIMEOUT 900 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
 # Precise-QA vacuum benchmark of mapped NN1: docs/nn1-qa-benchmark.md.
 add_executable(test_nonnested_qa test/test_nonnested_qa.f90)
@@ -2187,6 +2328,7 @@ include(cmake/kin6d_s0.cmake)
 include(cmake/kin6d_mhd_batches.cmake)
 include(cmake/kin6d_e21.cmake)
 include(cmake/kin6d_separatrix.cmake)
+include(cmake/kin6d_current_sheet.cmake)
 # Existing PR47 R2 consumer, recovered on current providers; no selector adoption.
 target_sources(kin6d_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
@@ -2208,6 +2350,9 @@ foreach(k 2 3)
     endforeach()
 endforeach()
 add_test(NAME ideal_fb_chart_surface_invalid COMMAND test_ideal_fb_surface invalid)
+add_test(NAME ideal_fb_chart_surface_circulant COMMAND test_ideal_fb_surface circulant)
+set_tests_properties(ideal_fb_chart_surface_circulant PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_fb_exterior_frozen_derivatives
     COMMAND test_ideal_free_boundary frozen-exterior)
 set_tests_properties(ideal_fb_exterior_frozen_derivatives PROPERTIES
@@ -2223,6 +2368,13 @@ target_link_libraries(test_ideal_fb_traces3d PRIVATE kin6d)
 add_test(NAME ideal_fb_traces3d_axisymmetric COMMAND test_ideal_fb_traces3d axisymmetric)
 add_test(NAME ideal_fb_traces3d_helical COMMAND test_ideal_fb_traces3d helical)
 add_test(NAME ideal_fb_traces3d_makegrid COMMAND test_ideal_fb_traces3d makegrid)
+add_test(NAME ideal_fb_traces3d_curve_hessian COMMAND test_ideal_fb_traces3d curve-hessian)
+add_test(NAME ideal_fb_exterior3d_periodic COMMAND test_ideal_fb_traces3d exterior)
+set_tests_properties(ideal_fb_exterior3d_periodic PROPERTIES
+    TIMEOUT 1200 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+# Synthetic nfp = 3 free-boundary case against VMEC++ (benchmarks/fb3d-synthetic).
+add_executable(fb3d_synthetic app/fb3d_synthetic.f90)
+target_link_libraries(fb3d_synthetic PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric_circuits
     COMMAND test_landreman_free_boundary circuits)
 add_test(NAME ideal_fb_landreman_helical_circuits
@@ -2251,6 +2403,7 @@ if(KIN6D_BUILD_GLL_SPIKE)
             ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
     endforeach()
 endif()
+include(cmake/kin6d_libneo.cmake)
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP
@@ -2292,6 +2445,9 @@ foreach(_t IN LISTS _kin6d_all_tests)
 endforeach()
 
 include(cmake/kin6d_estimator_benchmark.cmake)
+
+include(cmake/kin6d_stack_targets.cmake)
+kin6d_stack_targets()
 
 # Must follow the last add_executable: wraps test commands of all targets.
 include(cmake/kin6d_test_output_cap.cmake)

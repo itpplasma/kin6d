@@ -13,8 +13,8 @@ module kin6d_equilibrium_3d_driver
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_nested_oracles, only: nested_oracle_t, NESTED_INTEGER
-    use kin6d_nested_oracle_leaves, only: nested_boundary_harmonic, nested_setup, &
-        nested_integer_averages, nested_boundary_radius
+    use kin6d_nested_seed_input, only: nested_seed_boundary, nested_seed_profile, &
+        NESTED_SEED_NFP, NESTED_SEED_OK
     implicit none
     private
     public :: equilibrium_3d_driver_t, run_boundary_profile_equilibrium
@@ -36,63 +36,26 @@ module kin6d_equilibrium_3d_driver
     end type
 contains
     subroutine nested_integer_driver(oracle, mpol, ntor, driver, status)
-        ! Only boundary and exact profiles/flux enter the initializer.
-        ! Interior oracle fields are used exclusively in error diagnostics.
+        ! Only boundary and exact profiles/flux enter the initializer
+        ! (kin6d_nested_seed_input). Interior oracle fields are used
+        ! exclusively in error diagnostics. Only the integer family is
+        ! admitted as a D8 case here.
         type(nested_oracle_t), intent(in) :: oracle
         integer, intent(in) :: mpol, ntor
         type(equilibrium_3d_driver_t), intent(out) :: driver
         integer, intent(out) :: status
-        real(dp), allocatable :: rz(:, :, :)
-        real(dp) :: theta, phi, x(3), term(4), pi, limit, extent, pa1, pa2
-        real(dp) :: volume, pmean, bmean, beta, iota
-        integer :: angles, j, k, m, n, local, failed
+        real(dp) :: fit_error
+        integer :: local
         status = D8_BAD_INPUT
         if (.not. oracle%valid()) return
         if (oracle%family /= NESTED_INTEGER) return
-        if (min(mpol, ntor) < 1) return
         driver%oracle = oracle
-        pi = acos(-1.0_dp); angles = max(64, 4*max(mpol, ntor) + 1)
-        allocate (rz(2, 0:angles - 1, 0:angles - 1))
-        allocate (driver%boundary(4, -ntor:ntor, 0:mpol))
-        failed = 0
-        !$omp parallel do collapse(2) schedule(static) &
-        !$omp private(j,k,theta,phi,x,local) reduction(+:failed)
-        do j = 0, angles - 1
-            do k = 0, angles - 1
-                theta = 2*pi*k/angles; phi = pi*j/angles
-                call oracle%boundary(theta, phi, x, local)
-                failed = failed + local
-                call nested_boundary_radius(x(1),x(2),rz(1,k,j))
-                rz(2,k,j)=x(3)
-            end do
-        end do
-        !$omp end parallel do
-        if (failed /= 0) return
-        driver%boundary = 0
-        !$omp parallel do collapse(2) schedule(static) private(m,n,k,j,theta,phi,term)
-        do m = 0, mpol
-            do n = -ntor, ntor
-                if (m == 0 .and. n < 0) cycle
-                do j = 0, angles - 1
-                    do k = 0, angles - 1
-                        theta = 2*pi*k/angles; phi = pi*j/angles
-                        call nested_boundary_harmonic(rz(1,k,j),rz(2,k,j),theta,phi, &
-                            real(m,dp),real(n,dp),term(1),term(2),term(3),term(4))
-                        driver%boundary(:,n,m) = driver%boundary(:,n,m) + term
-                    end do
-                end do
-                driver%boundary(:,n,m) = driver%boundary(:,n,m)/angles**2
-                if (m /= 0 .or. n /= 0) driver%boundary(:,n,m) = &
-                    2*driver%boundary(:,n,m)
-            end do
-        end do
-        !$omp end parallel do
-        call nested_setup(oracle%eps,oracle%tau,oracle%delta,oracle%lam, &
-            oracle%edge_pressure,limit,extent,pa1,pa2)
-        call nested_integer_averages(oracle%eps,oracle%tau,pa1,oracle%delta, &
-            volume,pmean,bmean,beta,iota,driver%toroidal_flux)
-        driver%profile%iota = [iota]
-        driver%profile%pressure = [pa1,oracle%edge_pressure-pa1]
+        driver%nfp = NESTED_SEED_NFP
+        call nested_seed_boundary(oracle, mpol, ntor, driver%boundary, local)
+        if (local /= NESTED_SEED_OK) return
+        call nested_seed_profile(oracle, 1, 1e-8_dp, driver%profile, &
+            driver%toroidal_flux, fit_error, local)
+        if (local /= NESTED_SEED_OK) return
         status = D8_OK
     end subroutine
 

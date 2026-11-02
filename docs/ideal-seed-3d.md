@@ -53,11 +53,12 @@ leaves against the retained source.
 The case registry admits `landreman_3d_nested` and `issan_3d_nonsymmetric`
 through `run_boundary_profile_equilibrium`. The caller supplies one
 `equilibrium_3d_driver_t` containing the Fourier boundary, toroidal profiles,
-flux and independent oracle parameters. `nested_integer_driver` prepares
-matched boundary/flux/profiles for the integer-transform family only. It
-uses the retained generated exact formulas; it does not import interior
-oracle fields into the initializer. Matched toroidal-profile preparation for
-the sheared family is unavailable. The Landreman-Paul QA fixture prescribes
+flux and independent oracle parameters. `nested_integer_driver` takes the
+boundary projection, toroidal flux and profiles from
+`nested_seed_boundary`/`nested_seed_profile` (`kin6d_nested_seed_input`); it
+does not import interior oracle fields into the initializer. Those routines
+also prepare matched sheared-family profiles, but only the integer family is
+admitted as a D8 case here. The Landreman-Paul QA fixture prescribes
 current and cannot yet be reproduced by this iota-driven consumer.
 
 `map_3d_equilibrium` retains the map and frozen form in the common field
