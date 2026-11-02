@@ -240,6 +240,9 @@ module kin6d_ideal_free_boundary
         ! hypersingular W (1) and single-layer V (2) operators per harmonic k,
         ! before FortFEM symmetrises them into S_k (FB-A2).
         real(dp), allocatable :: bem_asymmetry(:, :)
+        !> Gamma_c panel nodes of s_trace: equal nodes, nfp and ntor give the
+        !! same per-n exterior operators.
+        real(dp), allocatable :: bem_nodes(:, :)
         ! Slide-moment rows of the n = 0 relabelling gauge (2, plasma node,
         ! layer), unit Euclidean norm; see slide_directions.
         real(dp), allocatable :: slide(:, :, :)
@@ -372,7 +375,7 @@ contains
 
     subroutine ideal_fb_init(fb, mesh, chain, chart, field, nfp, ntor, f_vac, &
                              circulation, status, mu0, nphi, panels_per_edge, &
-                             quadrature_order)
+                             quadrature_order, exterior_from)
         ! mesh: curved P2/P3 mesh of the Gamma_c region with Gamma_p as the
         ! constrained internal chain (initialize_gs with interior_chain);
         ! chain: the Gamma_p vertices used for it; field: frozen plasma data.
@@ -385,6 +388,9 @@ contains
         integer, intent(out) :: status
         real(dp), intent(in), optional :: mu0
         integer, intent(in), optional :: nphi, panels_per_edge, quadrature_order
+        !> A state on the same Gamma_c (for example another frozen field):
+        !! its per-n exterior operators are reused when the panels agree.
+        type(ideal_fb_t), intent(in), optional :: exterior_from
         type(gs_state_t) :: sub
         logical, allocatable :: inside(:), in_plasma(:), in_shell(:)
         integer :: e, a, nodes, cells, nplasma, k, st, ppe
@@ -499,7 +505,7 @@ contains
         call shell_laplacian(fb)
         status = IDEAL_FB_BEM_FAILED
         if (axisymmetric) then
-            call gamma_c_operators(fb, ppe, st)
+            call gamma_c_operators(fb, ppe, st, exterior_from)
             if (st /= 0) return
         end if
         fb%np = 2*fb%nmode*fb%plasma%nodes; fb%nx = 3*fb%nmode*fb%ns; fb%nf = fb%nmode*fb%ns
@@ -618,12 +624,13 @@ contains
         end do
     end subroutine
 
-    subroutine gamma_c_operators(fb, ppe, status)
+    subroutine gamma_c_operators(fb, ppe, status, source)
         ! S_trace(:, :, k) = R^T S_h(n = k nfp) R with R the restriction of
         ! the P_k FEM trace to the P2 panel trace (ppe panels per edge).
         type(ideal_fb_t), intent(inout) :: fb
         integer, intent(in) :: ppe
         integer, intent(out) :: status
+        type(ideal_fb_t), intent(in), optional :: source
         type(gs_bem_curve_t) :: curve
         type(gs_bem_operators_t) :: ops
         real(dp), allocatable :: nodes(:, :), restriction(:, :), s_bem(:, :)
@@ -648,6 +655,15 @@ contains
                 end do
             end do
         end do
+        fb%bem_nodes = nodes
+        if (present(source)) then
+            if (same_exterior(source)) then
+                fb%s_trace = source%s_trace
+                fb%bem_asymmetry = source%bem_asymmetry
+                status = 0
+                return
+            end if
+        end if
         call gs_bem_curve_from_nodes(nodes, curve, st)
         if (st /= 0) return
         allocate (fb%s_trace(fb%nt, fb%nt, 0:fb%ntor), fb%bem_asymmetry(2, 0:fb%ntor))
@@ -664,6 +680,19 @@ contains
                 + transpose(fb%s_trace(:, :, k)))
         end do
         status = 0
+    contains
+        logical function same_exterior(other)
+            ! The panel nodes fix the curve and the restriction (with order and
+            ! nt); nfp and ntor fix the harmonics.
+            type(ideal_fb_t), intent(in) :: other
+            same_exterior = .false.
+            if (.not. allocated(other%s_trace) .or. .not. allocated(other%bem_nodes)) &
+                return
+            if (other%nfp /= fb%nfp .or. other%ntor /= fb%ntor .or. &
+                other%order /= fb%order .or. other%nt /= fb%nt) return
+            if (any(shape(other%bem_nodes) /= shape(nodes))) return
+            same_exterior = all(other%bem_nodes == nodes)
+        end function
     end subroutine
 
     subroutine ideal_fb_attach_exterior_3d(fb, boundary, drive, load, status)

@@ -291,7 +291,7 @@ contains
         ! f=K1/(K1+ka*K0). Its ka -> 0 limit is 2*q*(q-1).
         ! The two real phases are necessary; keeping only cosine replaces
         ! the helical drive by a standing perturbation.
-        type(ideal_fb_t) :: fb
+        type(ideal_fb_t) :: fb, first
         type(gs_state_t) :: mesh
         type(cylindrical_chart_t) :: chart
         type(screw_field_t) :: field
@@ -334,9 +334,17 @@ contains
                 call initialize_gs(mesh, contour, 0.12_dp, st, 3, &
                     curve=kink_curve, interior_chain=chain)
                 if (st /= 0) error stop 'kink mesh'
-                call ideal_fb_init(fb, mesh, chain, chart, field, &
-                    nint(kink_major/10), 1, 10*q*kink_major, 2*pi, st, mu0=1.0_dp)
+                if (iq == 1) then
+                    call ideal_fb_init(fb, mesh, chain, chart, field, &
+                        nint(kink_major/10), 1, 10*q*kink_major, 2*pi, st, mu0=1.0_dp)
+                else
+                    ! Same Gamma_c and harmonics: only the frozen field changes.
+                    call ideal_fb_init(fb, mesh, chain, chart, field, &
+                        nint(kink_major/10), 1, 10*q*kink_major, 2*pi, st, &
+                        mu0=1.0_dp, exterior_from=first)
+                end if
                 if (st /= IDEAL_FB_OK) error stop 'kink init'
+                if (iq == 1) first = fb
                 call ideal_fb_set_drive(fb, kink_sampler, st)
                 if (st /= IDEAL_FB_OK) error stop 'kink drive'
                 call ideal_fb_solve_vacuum(fb, st)
