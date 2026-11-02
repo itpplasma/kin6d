@@ -90,7 +90,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_shell_field, ideal_fb_sampler, ideal_fb_mode_weight
     public :: ideal_fb_solve_vacuum, ideal_fb_solve_multipliers
     public :: ideal_fb_solve_shell_map, ideal_fb_rigid_stiffness
-    public :: ideal_fb_mode_stability, ideal_fb_mode_energy, ideal_fb_stability_t
+    public :: ideal_fb_mode_stability, ideal_fb_mode_energies, ideal_fb_stability_t
     public :: ideal_fb_mode_inertia, ideal_fb_mode_lanczos
     public :: ideal_fb_newton_step
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
@@ -3451,34 +3451,38 @@ contains
         report%metric_norm = sum(mass*z(:np_m)**2)
     end subroutine
 
-    subroutine ideal_fb_mode_energy(fb, m, displacement, report, status)
-        ! Schur energy of a prescribed plasma displacement. For n>0 the
-        ! layout is (Rcos,Zcos,Rsin,Zsin) per node; n=0 is (R,Z) per node.
-        ! Shell map, potential and multipliers are solved at fixed plasma.
+    subroutine ideal_fb_mode_energies(fb, m, displacements, reports, status)
+        ! Schur energy of prescribed plasma displacements (one per column). For
+        ! n>0 the layout is (Rcos,Zcos,Rsin,Zsin) per node; n=0 is (R,Z) per
+        ! node. Shell map, potential and multipliers are solved at fixed
+        ! plasma; one mode matrix and one factor serve all columns.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: m
-        real(dp), intent(in) :: displacement(:)
-        type(ideal_fb_stability_t), intent(out) :: report
+        real(dp), intent(in) :: displacements(:, :)
+        type(ideal_fb_stability_t), intent(out) :: reports(:)
         integer, intent(out) :: status
         integer, allocatable :: rp(:), ci(:), map(:), ar(:), ac(:)
-        real(dp), allocatable :: v(:), mass(:), av(:), rhs(:), z(:), action(:)
+        real(dp), allocatable :: v(:), mass(:), av(:), rhs(:, :), z(:, :), action(:)
         type(sparse_solver_t) :: solver
         type(fortsparse_status_t) :: sst
-        integer :: np_m, n, i, p, count
-        report = ideal_fb_stability_t()
+        integer :: np_m, n, i, p, count, k, nrhs
+        reports = ideal_fb_stability_t()
+        status = IDEAL_FB_BAD_INPUT
+        nrhs = size(displacements, 2)
+        if (size(reports) /= nrhs .or. nrhs < 1) return
         call mode_matrix(fb, m, rp, ci, v, mass, map, np_m, status)
         if (status /= IDEAL_FB_OK) return
         status = IDEAL_FB_BAD_INPUT
-        if (size(displacement) /= np_m) return
-        if (.not. all(ieee_is_finite(displacement))) return
+        if (size(displacements, 1) /= np_m) return
+        if (.not. all(ieee_is_finite(displacements))) return
         n = size(rp) - 1
         allocate (ar(n - np_m + 1), ac(size(v)), av(size(v)), &
-            rhs(n - np_m), z(n), action(n))
-        z(:np_m) = displacement; rhs = 0; count = 0; ar(1) = 1
+            rhs(n - np_m, nrhs), z(n, nrhs), action(n))
+        z(:np_m, :) = displacements; rhs = 0; count = 0; ar(1) = 1
         do i = np_m + 1, n
             do p = rp(i), rp(i + 1) - 1
                 if (ci(p) <= np_m) then
-                    rhs(i - np_m) = rhs(i - np_m) - v(p)*z(ci(p))
+                    rhs(i - np_m, :) = rhs(i - np_m, :) - v(p)*z(ci(p), :)
                 else
                     count = count + 1
                     ac(count) = ci(p) - np_m; av(count) = v(p)
@@ -3491,10 +3495,16 @@ contains
         call factor_kkt_raw(solver, n - np_m, n - np_m, count, ar, ac(:count), &
             av(:count), sst)
         if (.not. status_ok(sst)) return
-        call sparse_solve(solver, rhs, z(np_m + 1:), sst)
+        do k = 1, nrhs
+            call sparse_solve(solver, rhs(:, k), z(np_m + 1:, k), sst)
+            if (.not. status_ok(sst)) exit
+        end do
         call sparse_destroy(solver)
         if (.not. status_ok(sst)) return
-        call mode_ledger(fb, rp, ci, v, map, np_m, z, mass, report, action)
+        do k = 1, nrhs
+            call mode_ledger(fb, rp, ci, v, map, np_m, z(:, k), mass, reports(k), &
+                action)
+        end do
         status = IDEAL_FB_OK
     end subroutine
 
