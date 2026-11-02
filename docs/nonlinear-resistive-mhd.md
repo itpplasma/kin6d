@@ -231,6 +231,17 @@ by a multiple of n T v_te) for the nearly collisionless core, and the
 non-inductive current J_s as a prescribed source. Benchmarks against JOREK use
 JOREK's prescribed coefficients; physics runs state the closure they use.
 
+Every reduction carries a model-defect estimate and a switch to the fuller
+model where the estimate exceeds its budget: symmetry-reduced 2D against 3D,
+near-helical toroidal states, reduced MHD, flux-limited closure and the slow
+manifold. Scale separation fails locally (resistive layers, crashes,
+stochastic regions), so the switch is local in space and time.
+
+Research option, not on the critical path: matched asymptotics, an outer ideal
+solution coupled through Delta' to an asymptotic resistive layer, as coarse
+model or control variate for the layer in linear and weakly nonlinear
+response.
+
 Research option, not on the critical path: algebraic decoupling of the
 frozen-coefficient linearised operator over Weyl-algebra coefficients
 (Stafford, J. London Math. Soc. 18 429, 1978; algorithms of Quadrat and
@@ -250,9 +261,9 @@ RM-B2 and RM-B5. They are independent references, not completed solver gates.
 |---|---|---|
 | RM-B1 | manufactured solution of the full residual, all fields | design order of convergence |
 | RM-B2 | linear waves and instabilities | Alfven and magnetosonic dispersion in a uniform slab; resistive internal kink gamma ~ (eta F'^2)^(1/3) ~ tau_H^(-2/3) tau_R^(-1/3) (Coppi et al., Sov. J. Plasma Phys. 2 533, 1976); Furth-Killeen-Rosenbluth tearing (Phys. Fluids 6 459, 1963); existing `response_strip_cylinder_layer` values |
-| RM-B3 | anisotropic transport | Sovinec chi-ratio ladder (Sovinec et al., J. Comput. Phys. 195 355, 2004; tests `nonnested_transport_sovinec_chi_ratio_p*`) extended to 1e13; closed-field-line benchmark of Guenter et al., J. Comput. Phys. 209 354, 2005; anisotropic diffusion with field lines ending on plates and in a single-null X-point geometry (manufactured solutions) |
+| RM-B3 | anisotropic transport | Sovinec chi-ratio ladder (Sovinec et al., J. Comput. Phys. 195 355, 2004; tests `nonnested_transport_sovinec_chi_ratio_p*`) extended to 1e13; closed-field-line benchmark of Guenter et al., J. Comput. Phys. 209 354, 2005; anisotropic diffusion with field lines ending on plates and in a single-null X-point geometry (manufactured solutions); overlapping islands with an ergodic layer, where the field-line average runs over the stochastic region (Rechester and Rosenbluth, Phys. Rev. Lett. 40 38, 1978) |
 | RM-B4 | preconditioner independence | FGMRES iterations bounded independent of chi_par/chi_perp (1e6-1e13), Lundquist number (up to 1e12), perturbation amplitude and dt, on closed and open field lines; linear amplitudes in RM4, saturated states in RM5 |
-| RM-B5 | nonlinear islands | Rutherford growth dW/dt = 1.22 (eta/mu0) Delta'(W) (Rutherford, Phys. Fluids 16 1903, 1973; coefficient from White et al., Phys. Fluids 20 800, 1977); saturated width (Escande and Ottaviani, Phys. Lett. A 323 278, 2004; Militello and Porcelli, Phys. Plasmas 11 L13, 2004) |
+| RM-B5 | nonlinear islands | Rutherford growth dW/dt = 1.22 (eta/mu0) Delta'(W) (Rutherford, Phys. Fluids 16 1903, 1973; coefficient from White et al., Phys. Fluids 20 800, 1977); saturated width (Escande and Ottaviani, Phys. Lett. A 323 278, 2004; Militello and Porcelli, Phys. Plasmas 11 L13, 2004); plasmoid onset of a Sweet-Parker sheet above S ~ 1e4 and the S-independent reconnection rate ~ 0.01 beyond it (Loureiro, Schekochihin and Cowley, Phys. Plasmas 14 100703, 2007; Bhattacharjee, Huang, Yang and Rogers, Phys. Plasmas 16 112102, 2009), which also fixes the resolution needed in crashes |
 | RM-B6 | ledgers | energy and mass; helicity in the ideal limit |
 | RM-B7 | 2D against 3D | identical equations on a straight periodic cylinder agree to discretisation error; the 3D solver preserves helical symmetry |
 | RM-B8 | JOREK | public JOREK regression cases (tearing and kink in circular geometry) and a straight-cylinder flux-pumping case, matched model and resolution; 2D part in RM2, 3D part in RM5 |
@@ -303,13 +314,29 @@ Generated CUDA kernels sit behind the ISO_C_BINDING C ABI of
 |---|---|---|
 | RM0 | symmetry-reduced chart; GS generalised (axisymmetric regression, helical GS oracle) | - |
 | RM1 | FortSym leaves of the full residual; symmetry-reduced 2D residual; RM-B1, RM-B2 in 2D | RM0 |
-| RM2 | 2D stationary and BDF2 solves; RM-B3, RM-B5, RM-B6, RM-B8 in 2D | RM1 |
+| RM2 | 2D stationary and BDF2 solves; RM-B3, RM-B5, RM-B6, RM-B8 in 2D; helically symmetric straight-cylinder flux-pumping state by Newton and RM-B10 in 2D, against the JOREK cylinder runs | RM1 |
 | RM3 | 3D residual on the meridional complex x Fourier; RM-B1, RM-B2, RM-B7 | RM1 |
 | RM4 | field-split preconditioner; RM-B4 at linear amplitude | RM3, U3, U5 |
 | RM5 | 3D nonlinear stationary and evolution; RM-B3 (FCI decision), RM-B4 saturated, RM-B5, RM-B6, RM-B8 in 3D; slow-manifold path, RM-B10 | RM4 |
 | RM6 | GLL matrix-free path, CPU and generated CUDA; exponential integrators; RM-B1, RM-B2, RM-B4, RM-B7 rerun on it; RM-B9 | RM5, U1, U2, U4 |
-| RM7 | physics: straight-cylinder flux pumping, then published tokamak cases | RM2, RM6 |
+| RM7 | physics: straight-cylinder flux pumping, sawtoothing versus flux-pumping states, then published tokamak cases | RM2, RM6 |
 | RM8 | Figure-8 stellarator on the curve-following chart: RM-B1, RM-B6 and a resistive island case, equilibrium checked against GVEC | RM6, `g_frame_figure8_equilibrium` |
+
+## Later: extended MHD and edge (not scheduled)
+
+- Diamagnetic terms (1/1-mode stabilisation, sawtooth onset), then the Hall and
+  electron-pressure terms of a two-fluid Ohm's law (crash times). The Hall
+  term does no work in the mixed-current form ((J x B).J = 0), so the energy
+  ledger stays exact. Rotating states are stationary in a co-moving frame and
+  are solved with the frequency as an extra unknown. Gates: RM-B4 rerun with
+  these terms and linear drift-tearing and whistler dispersion oracles.
+- ELM cycles need, in addition, X-point geometry with scrape-off layer and
+  sheath conditions, a free boundary with wall currents, neoclassical edge
+  flows and n up to 20-40, as in the JOREK ASDEX Upgrade ELM-cycle simulations
+  (Cathey et al., Nucl. Fusion 60 124007, 2020).
+- The L-H transition is turbulence physics and outside this model; it needs
+  global edge turbulence (gyrokinetic or drift-reduced fluid), which may later
+  reuse this path's FCI and X-point infrastructure.
 
 ## Later: kinetic coupling (not scheduled)
 
