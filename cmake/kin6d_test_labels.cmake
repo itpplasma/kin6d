@@ -20,6 +20,10 @@ kin6d_test_labels(ideal_fb_traces3d_helical fast CLASSES mhd
     TARGETS test_ideal_fb_traces3d)
 kin6d_test_labels(ideal_fb_traces3d_makegrid fast CLASSES mhd
     TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_traces3d_curve_hessian fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_exterior3d_periodic slow CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
 kin6d_test_labels(ideal_fb_landreman_axisymmetric_circuits fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
 kin6d_test_labels(ideal_fb_landreman_helical_circuits fast CLASSES mhd
@@ -43,6 +47,10 @@ kin6d_test_labels(grad_shafranov_device_selection_contract fast CLASSES equilibr
     TARGETS test_gs_device_selection)
 kin6d_test_labels(grad_shafranov_cuda_public_fixed_source fast CLASSES equilibrium
     TARGETS test_gs_cuda_public_solve)
+kin6d_test_labels(grad_shafranov_cuda_affine_picard fast CLASSES equilibrium
+    TARGETS test_gs_cuda_picard)
+kin6d_test_labels(grad_shafranov_affine_picard_cpu fast CLASSES equilibrium
+    TARGETS test_gs_cuda_picard)
 kin6d_test_labels(grad_shafranov_cuda_fixed_source_a3 fast CLASSES equilibrium
     TARGETS test_gs_cuda_fixed_source)
 kin6d_test_labels(grad_shafranov_cuda_affine_strict_audit fast CLASSES equilibrium
@@ -160,6 +168,10 @@ kin6d_test_labels(ideal_map_n0_seed_nested_a3_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_seed_nested_shaped_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_parallel_mass fast CLASSES mhd
+    TARGETS test_ideal_map_parallel)
+kin6d_test_labels(ideal_map_parallel_damping_p2 fast CLASSES mhd
+    TARGETS test_ideal_map_parallel)
 kin6d_test_labels(ideal_map_n0_normalised_residual_a3_p2 fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(gs_coils_independent_oracles fast CLASSES equilibrium
@@ -531,7 +543,15 @@ kin6d_test_labels(nonnested_mapped_ellipse_mode_ladder fast CLASSES mhd
     TARGETS test_nonnested_mapped)
 kin6d_test_labels(nonnested_mapped_zero_forcing_residual fast CLASSES mhd
     TARGETS test_nonnested_mapped)
+kin6d_test_labels(nonnested_newton_mr_agreement fast CLASSES mhd
+    TARGETS test_nonnested_newton_mr)
+kin6d_test_labels(nonnested_newton_mr_lumped_ladder fast CLASSES mhd
+    TARGETS test_nonnested_newton_mr)
 kin6d_test_labels(nonnested_qa_oracle_check fast CLASSES mhd TARGETS test_nonnested_qa)
+foreach(case hodge solovev beltrami shell sheet)
+    kin6d_test_labels(nonnested_force_${case} fast CLASSES mhd
+        TARGETS test_nonnested_force)
+endforeach()
 # Non-nested Beltrami equilibria (docs/nn1-mapped-3d.md). The SPEC sample tests
 # are configured only when KIN6D_BELTRAMI_SPEC_SAMPLES is set, so that executable
 # is recorded for kin6d_check_mhd directly instead of through a test.
@@ -553,6 +573,20 @@ kin6d_test_labels(nonnested_beltrami_resonance fast CLASSES mhd
     TARGETS test_nonnested_beltrami)
 kin6d_test_labels(nonnested_beltrami_constraints fast CLASSES mhd
     TARGETS test_nonnested_beltrami)
+kin6d_test_labels(nonnested_beltrami_constraints_mr fast CLASSES mhd
+    TARGETS test_nonnested_beltrami)
+kin6d_test_labels(nonnested_beltrami_vacuum_mr fast CLASSES mhd
+    TARGETS test_nonnested_beltrami)
+foreach(k 2 3)
+    foreach(case manufactured lundquist)
+        kin6d_test_labels(nonnested_beltrami_${case}_p${k}_mr fast CLASSES mhd
+            TARGETS test_nonnested_beltrami)
+    endforeach()
+endforeach()
+kin6d_test_labels(nonnested_beltrami_mr_agreement fast CLASSES mhd
+    TARGETS test_nonnested_beltrami_mr)
+kin6d_test_labels(nonnested_beltrami_mr_block_ladder fast CLASSES mhd
+    TARGETS test_nonnested_beltrami_mr)
 foreach(k 2 3)
     foreach(case manufactured lundquist vacuum)
         kin6d_test_labels(nonnested_beltrami_${case}_p${k} slow CLASSES mhd
@@ -751,3 +785,9 @@ kin6d_test_labels(island_provider_tangent_p2 slow CLASSES mhd
     TARGETS test_island_provider)
 kin6d_test_labels(island_provider_nested_p2 fast CLASSES mhd
     TARGETS test_island_provider)
+foreach(case seed none ladder leaves)
+    kin6d_test_labels(island_seed_${case} fast CLASSES mhd TARGETS test_island_seed)
+endforeach()
+kin6d_test_labels(s0_toroidal_continuum_gap fast CLASSES mhd TARGETS test_s0_tae)
+kin6d_test_labels(s0_external_kink_rigid_growth fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)

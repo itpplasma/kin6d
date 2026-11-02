@@ -236,12 +236,39 @@ hypothesis that has not been traced.
    `ideal_fb_circuits_build(..., nphi_surface=)` and `ideal_fb_set_drive_3d`
    use it. With the cylindrical chart the result equals the meridional path
    to roundoff (test `ideal_fb_traces3d_axisymmetric`).
-2. R2 cost. The native gate `ideal_fb_landreman_bem3d_axisymmetric` times out
-   in the all-pairs adaptive panel assembly (ROADMAP E3.3). A block-circulant
-   or far-field rule belongs in FortFEM.
-3. Curve-chart free boundary. The axisymmetric exterior rejects curve charts
-   ([ideal-map-3d.md](ideal-map-3d.md), curve-chart paragraph).
-   `ideal_fb_init` still builds the cylindrical shell.
+2. R2 cost (field-period reduction done). `ideal_fb_use_bem3d(...,
+   periodic=.true.)` assembles FortFEM's block-circulant operators from the
+   target pairs of one field period only
+   (`assemble_parametric_bem_p2_circulant`). The traces repeat in every
+   period, so only the zero sector harmonic acts:
+   R^T S R = nfp R_0^T S_0 R_0 with S_0 = W_0 + J_0^T V_0^{-1} J_0,
+   J_0 = M_0/2 - K_0 and X_0 the sum of the circulant blocks
+   (`gamma_c_3d_build_periodic`). This is exact algebra (test
+   `ideal_fb_exterior3d_periodic`: roundoff against the full-surface DtN of the
+   expanded operators and against the dense all-pairs build). The pair work
+   falls by nfp and the dense DtN by nfp^3. The pair quadrature itself
+   (FortFEM `converge_pair`) remains the cost driver.
+3. Curve-chart free boundary (done). `ideal_fb_init` takes any
+   `ideal_chart_t`. The per-n exterior is built only for the cylindrical chart
+   itself; any other chart (curve chart, nested-map chart) gets no exterior
+   until the R2 one is attached, and the residual, Newton step and traces
+   return bad input until then. The test-only cylindrical subclass with an
+   overridden jet is gone; `ideal_fb_traces3d_helical` uses the helical-axis
+   curve chart.
+   On the synthetic nfp = 3 case (`fb3d_synthetic`) the frozen iota needs the
+   sign of the coil field's rotation in the chart frame. A multi-turn trace of
+   the vacuum field in chart coordinates
+   (`benchmarks/fb3d-synthetic/iota_sign.py`) turns clockwise in (q1, q2) at
+   0.190-0.191 per unit phi-hat, while VMEC++ reports iota = +0.190-0.201
+   with theta counter-clockwise in (R, Z). The field therefore takes
+   sign = -1, the default of `fb3d_synthetic`. Newton from the disc start is
+   not yet robust. Its steps are dominated by near-null motion of single
+   plasma nodes (the axis node, or a Gamma_p node along the boundary), along
+   which the merit grows like alpha^4, until the Levenberg ladder runs out. The
+   R2 exterior is assembled with atomic accumulation of the pair blocks
+   (FortFEM `assemble_parametric_bem_p2_circulant`), so its roundoff differs
+   from run to run even at a fixed thread count, and whether a run converges
+   or stalls depends on that roundoff.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
