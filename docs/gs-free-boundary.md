@@ -224,6 +224,12 @@ The P13 stall had three causes, all fixed on `gs-free-parallel`:
   `KIN6D_FB_ORDERING=nd` selects nested dissection. Circuit sensitivities use
   one retained block solve, including on the LU path: a factor owns mutable
   solve/refinement workspaces and cannot be shared by concurrent calls.
+- `gs_fb_law_tangent` gives the implicit tangent of a converged state along
+  profile-law coefficient directions: one factor of J at the state, reusing the
+  Newton factor's analysis, and one block solve J dpsi = b(psi; dlaw), with the
+  envelope tangents of psi_a and psi_b and mu0 dIp = 1^T b(psi; dlaw) +
+  1^T (A - J) dpsi. `gs_free_boundary_law_tangent_finite_differences` checks
+  them against re-converged central differences.
 
 The majorant estimator factors its reference energy operator with native
 Cholesky, uses independent local RT recovery solves and threads the Friedrichs
@@ -337,7 +343,8 @@ Its public TestTokamak has two shaped coils and two point coils, 200 kA,
 alpha_m = 1, alpha_n = 2 and Raxis = 1 m. The retained coil table exports the
 shaped coils' actual weighted polygon-quadrature filaments. KIN6D fixes the
 finest FreeGS coil currents and solves both profile amplitudes for the same
-pressure/current constraints through FortNum's multiroot driver. The existing
+pressure/current constraints through FortNum's multiroot driver, with the
+exact two-by-two Jacobian assembled from `gs_fb_law_tangent`. The existing
 FortSym-generated cubic law represents `(1-s)^2` exactly; no new production
 physics, profile approximation or named-code mode is introduced.
 
@@ -405,8 +412,9 @@ comparisons are numerical indicators, without continuous enclosures.
 These results qualify this branch and physical case at empirical refinement
 budgets. They are candidates with continuous bounds unavailable, and do not
 qualify a cold start, the native coil-current inverse, arbitrary machines or
-a rigorous continuous free-boundary certificate. The test's two-amplitude
-normalization driver does not add a production constraint-sensitivity API.
+a rigorous continuous free-boundary certificate. The test assembles the
+pressure/current constraint Jacobian itself; production supplies only the
+state tangent.
 
 The optional oracle generator and small text fixtures are in
 `benchmarks/freegs/`; CMake/CTest need neither FreeGS nor a new Python runtime.
