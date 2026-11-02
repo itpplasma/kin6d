@@ -1,0 +1,10 @@
+! Input for screening_moments (B05-B07 thermal-force benchmark output).
+! Physical values use the app defaults, which mirror the case files below.
+&screening_moments
+  case_b05 = 'cases/B05_parallel.nml'
+  sha_b05 = 'c6abc746c6399e1035e0fd8a9554276acc6940f45ff760250047c8c095fbac8c'
+  case_b06 = 'cases/B06_perpendicular.nml'
+  sha_b06 = '8bf7acea704c4a32bda78ba585f0474f7adeccf0cf39bfbfab5adfcd9a8b9287'
+  case_b07 = 'cases/B07_screening.nml'
+  sha_b07 = 'fecdef1b362388619f2203b74dfad969c150b879e4e800099acd6d5acdde1f89'
+/
