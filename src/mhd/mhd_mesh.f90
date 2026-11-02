@@ -321,9 +321,8 @@ contains
         real(dp), intent(out) :: xi, eta
         integer, intent(out) :: status
 
-        integer :: j, j0, pass, nin, per, i0, di, dd, c, tc, it
-        real(dp) :: th, v(2), jac(2, 2), r(2), det, d(2), tol, best, viol, xq, eq
-        real(dp) :: xo, eo
+        integer :: j, j0, pass, nin, per, i0, di, c, tc
+        real(dp) :: th, tol, best, viol, xq, eq
 
         status = 1
         do j = 1, fm%nring
@@ -338,54 +337,34 @@ contains
         j0 = j
         tol = 1.0e-11_dp
         best = huge(1.0_dp)
+        ! Fast path: the analytic cell of the hinted strip. A point strictly
+        ! inside it lies in no other cell, so the scan below would return the
+        ! same cell; points near a cell boundary, where the scan order decides
+        ! between neighbours, take the full scan.
+        call strip(j0)
+        if (nin > 0) then
+            do c = 1, per
+                if (j0 == 1 .and. c > 1) cycle
+                tc = cell(j0, 1, c)
+                call invert(tc, xq, eq, viol)
+                if (viol <= tol .and. min(xq, eq, 1 - xq - eq) > 1.0e-6_dp) then
+                    t = tc; xi = xq; eta = eq
+                    status = 0
+                    return
+                end if
+            end do
+        end if
         do pass = 0, 2
             j = j0
             if (pass == 1) j = j0 - 1
             if (pass == 2) j = j0 + 1
             if (j < 1 .or. j > fm%nring) cycle
-            if (j == 1) then
-                nin = fm%nth(1)
-                per = 1
-            else
-                nin = fm%nth(j - 1)
-                per = 2 + fm%nth(j)/fm%nth(j - 1) - 1
-            end if
-            i0 = int(th/(2.0_dp*pi)*nin)
-            ! The analytic cell i0 first, then its two neighbours.
-            do dd = 0, 2
-                di = modulo(dd + 1, 3)
+            call strip(j)
+            do di = 0, 2
                 do c = 1, per
-                    if (j == 1) then
-                        if (c > 1) cycle
-                        tc = modulo(i0 + di - 1 + nin, nin) + 1
-                    else
-                        tc = fm%tlast(j - 1) + per*modulo(i0 + di - 1 + nin, nin) + c
-                    end if
-                    xq = 1.0_dp/3.0_dp
-                    eq = 1.0_dp/3.0_dp
-                    do it = 1, 40
-                        call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
-                        r = v - x
-                        det = jac(1, 1)*jac(2, 2) - jac(1, 2)*jac(2, 1)
-                        if (abs(det) <= tiny(1.0_dp)) exit
-                        d(1) = (jac(2, 2)*r(1) - jac(1, 2)*r(2))/det
-                        d(2) = (-jac(2, 1)*r(1) + jac(1, 1)*r(2))/det
-                        ! Newton step projected onto the closed reference triangle
-                        xo = xq; eo = eq
-                        xq = max(0.0_dp, xq - d(1))
-                        eq = max(0.0_dp, eq - d(2))
-                        if (xq + eq > 1.0_dp) then
-                            xq = xq/(xq + eq)
-                            eq = 1.0_dp - xq
-                        end if
-                        if (abs(d(1)) + abs(d(2)) < 1.0e-14_dp) exit
-                        ! A point outside this cell pins the projected iterate
-                        ! on the boundary while d stays large; stop once it
-                        ! no longer moves instead of running all iterations.
-                        if (abs(xq - xo) + abs(eq - eo) < 1.0e-15_dp) exit
-                    end do
-                    call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
-                    viol = norm2(v - x)/diameter(fm, tc)
+                    if (j == 1 .and. c > 1) cycle
+                    tc = cell(j, di, c)
+                    call invert(tc, xq, eq, viol)
                     if (viol < best) then
                         best = viol
                         t = tc
@@ -403,6 +382,64 @@ contains
         ! 1 on a curved boundary) is moved to the nearest boundary point
         if (best < 0.05_dp) status = 0
     contains
+        subroutine strip(j)
+            ! Cells per angular sector (per) and sectors (nin) of strip j,
+            ! and the sector i0 of the angle th.
+            integer, intent(in) :: j
+            nin = 0
+            if (j < 1 .or. j > fm%nring) return
+            if (j == 1) then
+                nin = fm%nth(1)
+                per = 1
+            else
+                nin = fm%nth(j - 1)
+                per = 2 + fm%nth(j)/fm%nth(j - 1) - 1
+            end if
+            i0 = int(th/(2.0_dp*pi)*nin)
+        end subroutine strip
+
+        integer function cell(j, di, c) result(tc)
+            integer, intent(in) :: j, di, c
+            if (j == 1) then
+                tc = modulo(i0 + di - 1 + nin, nin) + 1
+            else
+                tc = fm%tlast(j - 1) + per*modulo(i0 + di - 1 + nin, nin) + c
+            end if
+        end function cell
+
+        subroutine invert(tc, xq, eq, viol)
+            ! Newton inversion of the isoparametric map of cell tc, projected
+            ! onto the closed reference triangle; viol is the remaining
+            ! physical distance over the cell diameter.
+            integer, intent(in) :: tc
+            real(dp), intent(out) :: xq, eq, viol
+            real(dp) :: v(2), jac(2, 2), r(2), det, d(2), xo, eo
+            integer :: it
+            xq = 1.0_dp/3.0_dp
+            eq = 1.0_dp/3.0_dp
+            do it = 1, 40
+                call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
+                r = v - x
+                det = jac(1, 1)*jac(2, 2) - jac(1, 2)*jac(2, 1)
+                if (abs(det) <= tiny(1.0_dp)) exit
+                d(1) = (jac(2, 2)*r(1) - jac(1, 2)*r(2))/det
+                d(2) = (-jac(2, 1)*r(1) + jac(1, 1)*r(2))/det
+                xo = xq; eo = eq
+                xq = max(0.0_dp, xq - d(1))
+                eq = max(0.0_dp, eq - d(2))
+                if (xq + eq > 1.0_dp) then
+                    xq = xq/(xq + eq)
+                    eq = 1.0_dp - xq
+                end if
+                if (abs(d(1)) + abs(d(2)) < 1.0e-14_dp) exit
+                ! A point outside this cell pins the projected iterate on the
+                ! boundary while d stays large; stop once it no longer moves.
+                if (abs(xq - xo) + abs(eq - eo) < 1.0e-15_dp) exit
+            end do
+            call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
+            viol = norm2(v - x)/diameter(fm, tc)
+        end subroutine invert
+
         real(dp) function diameter(fm, t)
             type(flux_mesh_t), intent(in) :: fm
             integer, intent(in) :: t
