@@ -32,7 +32,7 @@ program test_ideal_map_axisymmetric
         ideal_map_reduce, ideal_map_expand, ideal_map_prolong, ideal_map_residual, &
         ideal_map_eliminate_omega, IDEAL_MAP_BAD_INPUT, ideal_map_gauge_project, &
         ideal_map_prolong_correction, &
-        IDEAL_MAP_FACTOR_SPD_LU, IDEAL_MAP_FACTOR_LDLT, IDEAL_MAP_FACTOR_ADAPTIVE
+        IDEAL_MAP_FACTOR_SPD_LU, IDEAL_MAP_FACTOR_LDLT
     use fortfem_element_to_csr, only: csr_matrix_t
     use kin6d_triangle_basis, only: triangle_basis_jet, triangle_node_powers, &
         triangle_bernstein_controls, TRIANGLE_MAX_NODES
@@ -453,25 +453,25 @@ contains
         ! gradient tolerance and the same exact-flux error (1e-3 relative) as
         ! the direct step, with fewer factorisations. Factor policies of the
         ! Krylov step: LDLT (the default: one supernodal LDL^T per direct
-        ! trial, retained when its inertia is positive) and ADAPTIVE reach the
-        ! tolerance with the same error to 1e-3 as SPD_LU.
+        ! trial, retained when its inertia is positive) reaches the tolerance
+        ! with the same error to 1e-3 as SPD_LU.
         class(ideal_frozen_t), intent(in) :: field
         type(gs_state_t) :: gs
         type(ideal_map_t) :: map
-        type(ideal_map_solve_report_t) :: report(4)
-        real(dp) :: errors(4, 4)
+        type(ideal_map_solve_report_t) :: report(3)
+        real(dp) :: errors(4, 3)
         integer :: k
-        integer, parameter :: policy(4) = [IDEAL_MAP_FACTOR_SPD_LU, &
-            IDEAL_MAP_FACTOR_SPD_LU, IDEAL_MAP_FACTOR_LDLT, IDEAL_MAP_FACTOR_ADAPTIVE]
         if (degree < 4) error stop 'krylov needs degree >= 4'
         if (command_argument_count() < 4) quadrature_order = 2*degree + 1
         solve_tolerance = 1.0e-7_dp
         call make_mesh(12, degree, gs)
-        do k = 1, 4
+        do k = 1, 3
             call build_map(gs, 1, 0, map, field)
             map%krylov_step = k >= 2
             ! k = 3 runs the default factor policy (LDLT).
-            if (k /= 3) map%factor_policy = policy(k)
+            if (k /= 3) map%factor_policy = IDEAL_MAP_FACTOR_SPD_LU
+            if (k == 3 .and. map%factor_policy /= IDEAL_MAP_FACTOR_LDLT) &
+                error stop 'krylov: LDLT is not the default factor policy'
             call solve_map(map, report(k), .false.)
             call defects(map, field=field, errors=errors(:, k))
             print '(a,l2,7i6,es12.4,es16.8)', 'krylov policy iterations trials ' &
@@ -499,10 +499,10 @@ contains
         if (report(3)%lu_fallbacks /= 0 .or. &
             report(3)%factorizations > report(3)%trials) &
             error stop 'krylov: LDLT policy used more than one factor per trial'
+        if (report(3)%indefinite_trials == 0) &
+            error stop 'krylov: no indefinite LDL^T inertia exercised'
         if (abs(errors(1, 3) - errors(1, 2)) > 1.0e-3_dp*errors(1, 2)) &
             error stop 'krylov: LDLT policy changed the exact-flux error'
-        if (abs(errors(1, 4) - errors(1, 2)) > 1.0e-3_dp*errors(1, 2)) &
-            error stop 'krylov: ADAPTIVE policy changed the exact-flux error'
     end subroutine
 
     subroutine lagged_hessian_check(field)
