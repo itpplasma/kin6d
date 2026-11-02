@@ -74,6 +74,7 @@ add_library(kin6d_libneo_coils
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
+    src/generated/kin6d_vrmhd_leaves.f90
     src/generated/kin6d_pp_fusion_leaves.f90
     src/generated/kin6d_pp_fusion_eft_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -82,6 +83,15 @@ set_source_files_properties(src/generated/kin6d_leaves.f90
 # umbrella. Each source names its layer; the kin6d_layering test checks the use
 # graph against this partition.
 include(cmake/kin6d_layers.cmake)
+target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
+    src/mhd/vrmhd_parameters.f90)
+add_executable(test_vrmhd_leaves test/test_vrmhd_leaves.f90
+    test/support/vrmhd_leaf_dispatch.f90)
+target_link_libraries(test_vrmhd_leaves PRIVATE kin6d_mhd)
+foreach(gate derivatives physics energy covariance)
+    add_test(NAME vrmhd_${gate} COMMAND test_vrmhd_leaves ${gate})
+    set_tests_properties(vrmhd_${gate} PROPERTIES LABELS rm1)
+endforeach()
 target_sources(kin6d_core PRIVATE src/generated/kin6d_leaves.f90 src/core/laboratory.f90
     src/core/sort_keys.f90 src/core/real_identity.f90
     src/generated/kin6d_species_leaves.f90 src/core/species.f90)
@@ -1063,7 +1073,7 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi
+    foreach(generator vrmhd_leaves gs_error grad_shafranov ideal_map ideal_gll ideal_xi
             ideal_response_error equilibrium_core curve_chart ideal_seed_3d map_3d_readback
             ideal_field_angle nonnested islands metriplectic vacuum_shell fold_barrier
             landreman nested_oracles
@@ -1086,6 +1096,12 @@ if(KIN6D_FORTSYM_BUILD)
         -DWORK=${CMAKE_BINARY_DIR}/rm-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/test/check_rm_oracle_regeneration.cmake)
     set_tests_properties(rm_oracle_regeneration PROPERTIES LABELS rm-oracle)
+    add_test(NAME vrmhd_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_leaves>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_vrmhd_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-leaf-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_vrmhd_regeneration.cmake)
+    set_tests_properties(vrmhd_leaf_regeneration PROPERTIES LABELS rm1)
     add_test(NAME island_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_islands>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_leaves.f90
