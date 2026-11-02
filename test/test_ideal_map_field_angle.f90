@@ -15,6 +15,7 @@ program test_ideal_map_field_angle
         ideal_point_field_gradient_jets, ideal_point_field_jets, &
         ideal_axisymmetric_field
     use kin6d_ideal_map, only: ideal_map_t, ideal_map_energy, ideal_map_hessian, &
+        ideal_map_parallel_mass, &
         ideal_map_reduce, ideal_map_expand, ideal_map_solve, &
         ideal_map_solve_report_t, ideal_map_point, ideal_map_angle_rdof, IDEAL_MAP_OK
     use kin6d_ideal_seed_3d, only: toroidal_seed_t, toroidal_profile_t, &
@@ -205,6 +206,26 @@ contains
         if (curvature > 1e-6_dp) error stop 'Hessian vs gradient difference'
         map%x = x0; map%angle = a0
         call thread_parity(map, e0, g, matrix)
+        call parallel_mass_pattern(map, matrix)
+    end subroutine
+
+    subroutine parallel_mass_pattern(map, h0)
+        ! The parallel mass (parallel-only LM term) is added onto the Hessian
+        ! pattern, which carries the angle rows; a relabelling moves no
+        ! point, so those rows are zero.
+        type(ideal_map_t), intent(in) :: map
+        type(csr_matrix_t), intent(in) :: h0
+        type(csr_matrix_t) :: mass
+        integer :: row, k
+        call ideal_map_parallel_mass(map, map%x, mass)
+        if (size(mass%val) /= size(h0%val) .or. any(mass%colidx /= h0%colidx)) &
+            error stop 'field angle: parallel mass pattern'
+        do k = 1, map%nangle
+            row = ideal_map_angle_rdof(map, k)
+            if (any(mass%val(mass%rowptr(row):mass%rowptr(row + 1) - 1) /= 0)) &
+                error stop 'field angle: parallel mass angle row'
+        end do
+        if (.not. maxval(abs(mass%val)) > 0) error stop 'field angle: zero parallel mass'
     end subroutine
 
     subroutine thread_parity(map, e0, g0, h0)
