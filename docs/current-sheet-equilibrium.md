@@ -42,8 +42,7 @@ all exact consequences of this definition:
    their reference values for every admissible map. Hence ι(s1) is fixed by b,
    and so is the label s1* of every rational surface. Placing an interface at
    a rational label is therefore preserved exactly by ideal motion; no
-   tracking or remeshing is needed. (This is the owner's key observation and
-   it is correct.)
+   tracking or remeshing is needed.
 2. **B·n = 0 on interfaces is built in** whenever b is tangent to the label
    surfaces (b¹ = 0). It holds on both sides, for every map.
 3. **B ∈ H(div) for C⁰ maps.** If X is continuous across S and b·n is
@@ -80,8 +79,10 @@ attained. Discrete C⁰ solutions form a layer of width ~h, and their error
 decreases like h^(1/2) independently of the element order and of interface
 alignment.
 
-Measured (scratch prototype of the linear slab problem of §5.1, P2 elements,
-L2 relative errors of ξ and of the field (ψ, ψ'/k) against the oracle):
+Indicative values from an unretained scratch prototype of the linear slab
+problem of §5.1 (P2 elements, L2 relative errors of ξ and of the field
+(ψ, ψ'/k) against the oracle). The retained evidence is the stage-2 floor and
+linear_* tests of the slab map (§8, §9), which supersede this table:
 
 | ι at rational | mesh | 8 | 32 | 128 | 256 | rate (field) |
 |---|---|---|---|---|---|---|
@@ -142,12 +143,12 @@ it physically interpretable:
 - **Classical shielding limit.** As Δι → 0 the solution outside a layer of
   width O(Δι) converges to the singular continuous-ι ideal solution, and the
   sheet current converges to the classical ideal shielding current (§5;
-  exactly independent of Δ in the symmetric slab, O(Δ) otherwise).
+  in the symmetric slab K1/B_y(a) is exactly independent of Δ, otherwise
+  the deviation is O(Δ)).
 - **Finite amplitude.** The linear layer has |∂ξ_n/∂s1| ≈ C/(Δ a), which
   suggests that the admissible amplitude shrinks with the jump. This is a
-  linear estimate, not a nonlinear bound: with sliding interfaces the slab
-  solve continues to wall contact without folding (stage 2, §9). Nonlinear
-  existence for a given jump is therefore measured per case, not assumed.
+  linear estimate, not a nonlinear bound. Nonlinear existence for a given
+  jump is therefore measured per case, not assumed.
 
 **Pressure.** With Δι > 0, p may be smooth through the interface: the
 Pfirsch–Schlüter current is finite, of order p'/(mΔι), because mι − n is
@@ -200,11 +201,13 @@ a scalar linear equation. The Lagrangian field perturbation is
 sheet-current perturbation is K1_z = [[B_Ly]] = −[[B_y ξ']] cos ky.
 
 - Hahm–Kulsrud (Δ± = 0): ψ(0) = 0, ψ = ψa sinh(k|x|)/sinh(ka) for symmetric
-  walls δ+ = −δ− = −δ, ξ steps by ±a ψa'(0)/(k B0) at 0, and
-  K1 = 2 k B0 δ/sinh(ka) (cos ky amplitude).
+  walls δ+ = −δ− = −δ, ξ steps by ±a ψa'(0)/(k B0) at 0;
+  the Lagrangian jump [[B_Ly]] vanishes (B_y(0) = 0) and the sheet current
+  is carried by the Eulerian jump [[B1y]] = 2 k B0 δ/sinh(ka) (cos ky
+  amplitude).
 - Symmetric jump Δ+ = Δ− = Δ, symmetric walls: ξ0 = 0, ψ(0) = 0 on both sides,
   K1 = 2 k B0 (1 + Δ) δ/sinh(ka) — the Hahm–Kulsrud sheet current (with the
-  wall value of B_y), independent of Δ; ξ is continuous and joins the step
+  wall value B_y(a) = B0(1 + Δ)): K1/B_y(a) is independent of Δ; ξ is continuous and joins the step
   over a layer of width Δ a.
 - General walls: as Δ± → 0 at fixed ratio,
   ξ0 → k a (Δ+δ+ + Δ−δ−)/((Δ+ + Δ−) sinh ka) and ψ(0±) = O(Δ), so the
@@ -311,6 +314,7 @@ Open, with the known obstruction:
 ## 9. Implementation status
 
 Stage 0 (this page). Stages 1 and 2 add their modules, tests and measured
-tables here.
+tables here; the stage-2 slab-map tests (current_sheet_slab_map_floor and
+current_sheet_slab_map_linear_*) replace the §3 prototype table.
 
 Chris&AI
