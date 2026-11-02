@@ -87,6 +87,7 @@ kernels), in order of expected payoff:
    `kin6d_nonnested_force`, [projected force](nonnested-force.md)
    (`nonnested_force_*`).
 4. **Energy-criterion island seeding** as an initializer for island cases.
+   Implemented opt-in on the NN1 complex: [island-seed.md](island-seed.md).
 5. **Residual floor as a diagnostic.** Current sheets at rational surfaces set
    a force-residual floor that does not decrease under h or p refinement;
    acceptance gates report it instead of chasing it with smooth spaces.
