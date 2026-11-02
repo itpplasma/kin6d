@@ -1,0 +1,67 @@
+name: nightly
+
+# The slow tier once a night on main: the full d8 map lane, including the
+# seed return and nested cases that the merge queue leaves out. When a job
+# fails, the triage job bisects that job's command between the last green
+# nightly and this commit and files or updates one issue labelled
+# nightly-failure; the next green nightly closes it. Job commands live in
+# ci/nightly-jobs.json.
+
+on:
+  schedule:
+    - cron: "41 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  d8_map:
+    name: d8 (map, full)
+    runs-on: [self-hosted, itp-build]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 ci/nightly_triage.py run "d8 (map, full)"
+
+  triage:
+    name: Bisect failing jobs and report
+    needs: [d8_map]
+    if: failure()
+    runs-on: [self-hosted, itp-build]
+    timeout-minutes: 600
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bisect and file or update the nightly-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 ci/nightly_triage.py failure
+
+  close:
+    name: Close the nightly-failure issue
+    needs: [d8_map]
+    runs-on: [self-hosted, itp-light]
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Close the issue once the nightly is green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 ci/nightly_triage.py success
