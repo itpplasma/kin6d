@@ -2,7 +2,7 @@ module kin6d_gs_field_readback
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, gs_element_jet, sample_gs
-    use kin6d_grad_shafranov_leaves, only: gs_field
+    use kin6d_gs_symmetry, only: gs_reduced_field
     use delaunay_types, only: mesh_t, point_t
     use geometric_predicates, only: orientation, ORIENTATION_CCW, ORIENTATION_CW
     use point_location, only: locate_point, LOCATION_INSIDE, LOCATION_NOT_FOUND
@@ -110,7 +110,8 @@ contains
                 call gs_element_jet(state, cell, points(1, i), points(2, i), &
                     values(1, i), grad, hessian, statuses(i))
                 if (statuses(i) == 0) then
-                    call gs_field(points(1, i), grad(1), grad(2), f, &
+                    call gs_reduced_field(state%symmetry, points(1, i), points(2, i), &
+                        grad(1), grad(2), f, &
                         values(2, i), values(3, i), values(4, i))
                     seed = cell
                     cycle
@@ -169,7 +170,8 @@ contains
                     call gs_element_jet(state, e, points(1, i), points(2, i), &
                         values(1, i), grad, hessian, statuses(i))
                     if (statuses(i) /= 0) cycle
-                    call gs_field(points(1, i), grad(1), grad(2), f, &
+                    call gs_reduced_field(state%symmetry, points(1, i), points(2, i), &
+                        grad(1), grad(2), f, &
                         values(2, i), values(3, i), values(4, i))
                     exit
                 end do

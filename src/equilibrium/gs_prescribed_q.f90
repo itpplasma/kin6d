@@ -15,6 +15,7 @@ module kin6d_gs_prescribed_q
     use fortnum_linalg, only: dense_solve
     use fortnum_polynomial, only: lagrange_weights
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: solve_gs_prescribed_q, gs_q_table_value
@@ -130,6 +131,8 @@ contains
         real(dp), allocatable :: smooth_rows(:, :), wsqrt(:), sample_now(:)
         real(dp), allocatable :: jac_samples(:, :)
         real(dp) :: lambda_fixed, lambda, misfit_target
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status = 1; calls = 0; failure = 0; newton = 0
         jacobian_seconds = 0; solve_seconds = 0
         t_load = 0; t_response = 0; t_readback = 0

@@ -15,6 +15,7 @@ module kin6d_gs_ampere_loop
     use kin6d_real_identity, only: same_real_value
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_quadrature, only: gauss_legendre_ab
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_boundary_current, gs_weak_boundary_current
@@ -46,6 +47,8 @@ contains
         real(dp) :: grad(2), test_grad(2), local(10), density, integral
         integer :: e, q, j, node, ndof, st
 
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status = 1; current = 0
         if (present(nodal_weights)) nodal_weights = 0
         if (present(source_current)) source_current = 0
@@ -134,6 +137,8 @@ contains
         real(dp) :: density, contribution, basis_current
         integer :: e, k, next, first, last, q, j, ndof, st, edges
 
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status = 1; current = 0
         if (present(perimeter)) perimeter = 0
         if (present(nodal_weights)) nodal_weights = 0

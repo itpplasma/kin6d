@@ -187,7 +187,9 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 target_sources(kin6d_fem2d PRIVATE src/fem2d/gs_load_batch.f90
     src/fem2d/gs_timers.f90 src/fem2d/gs_options.f90 src/fem2d/gs_csr.f90)
-target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_grad_shafranov_leaves.f90
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/gs_symmetry.f90
+    src/generated/kin6d_gs_symmetry_leaves.f90
+    src/generated/kin6d_grad_shafranov_leaves.f90
     src/generated/kin6d_grad_shafranov_batch.f90 src/equilibrium/grad_shafranov.f90)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_core PUBLIC OpenMP::OpenMP_Fortran)
@@ -991,6 +993,15 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(test_gs_p1_current_identities PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_p1_exact_current_antiderivatives
         COMMAND test_gs_p1_current_identities)
+    add_executable(gen_gs_symmetry gen/gen_gs_symmetry.f90)
+    target_link_libraries(gen_gs_symmetry PRIVATE kin6d_gen_support)
+    add_test(NAME grad_shafranov_rm0_symbolic
+        COMMAND ${CMAKE_COMMAND}
+            -DGENERATOR=$<TARGET_FILE:gen_gs_symmetry>
+            -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_gs_symmetry_leaves.f90
+            -DWORK=${CMAKE_BINARY_DIR}/rm0_regeneration
+            -DLEAF=kin6d_gs_symmetry_leaves.f90
+            -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_executable(gen_ideal_fb_kink gen/gen_ideal_fb_kink.f90)
     target_link_libraries(gen_ideal_fb_kink PRIVATE kin6d_gen_support)
     add_executable(test_gs_symbolic test/test_gs_symbolic.f90)
@@ -2463,6 +2474,12 @@ include(cmake/response_calibration.cmake)
 
 # Narrow umbrella links to the used layers, label tests, add the per-class
 # kin6d_check_<class> targets and the layering test (cmake/kin6d_layers.cmake).
+add_executable(test_gs_symmetry test/test_gs_symmetry.f90)
+target_link_libraries(test_gs_symmetry PRIVATE kin6d_equilibrium)
+foreach(gate rotation translation screw manufactured limit derivatives guards)
+    add_test(NAME grad_shafranov_rm0_${gate} COMMAND test_gs_symmetry ${gate})
+endforeach()
+
 include(cmake/kin6d_cpu_precision.cmake)
 
 add_executable(test_map_equilibrium test/test_map_equilibrium.f90)

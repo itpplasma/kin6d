@@ -34,6 +34,7 @@ module kin6d_gs_majorant
     use fortnum_quadrature, only: gauss_legendre
     use kin6d_sort_keys, only: sort_key_order
     use, intrinsic :: iso_fortran_env, only: i64 => int64
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_functional_majorant
@@ -1008,6 +1009,9 @@ contains
         if (present(stability_estimate)) stability_estimate = 0
         if (present(recovery_converged)) recovery_converged = .false.
         if (present(recovery_iterations)) recovery_iterations = 0
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
+        status = 1
         if (.not. state%ready) return
         if (state%element_order /= 2 .and. state%element_order /= 3) return
         ndof = size(state%triangles, 1)

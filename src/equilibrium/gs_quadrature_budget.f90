@@ -20,6 +20,7 @@ module kin6d_gs_quadrature_budget
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_gs_error_leaves, only: gs_error_friedrichs_interval, &
                                      gs_error_source_numerator_interval
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_checked_equilibrated_majorant, gs_checked_fixed_source_majorant
@@ -74,6 +75,8 @@ contains
         type(interval_t) :: lower(2), upper(2), widths(2), cf, flux, residual
         integer :: nd, checked
 
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status = GS_CHECKED_UNAVAILABLE
         energy_bound = interval(0.0_dp, huge(1.0_dp))
         if (.not. state%ready) return

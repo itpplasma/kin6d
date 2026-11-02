@@ -19,6 +19,7 @@ module kin6d_gs_equilibrated
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortfem_equilibrated_flux_2d, only: equilibrated_flux_estimate, &
         equilibrated_flux_estimate_t, EQUILIBRATION_OK
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_equilibrated_majorant, equilibrated_flux_estimate_t
@@ -48,6 +49,8 @@ contains
         real(dp) :: values(10), lo(2), hi(2), cf, ph, gradient(2), controls(2, 10)
         integer :: e, q, nd, nt, stat, failed, axis
 
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status = GS_EQ_BAD_INPUT
         if (.not. state%ready) return
         if (size(psi) /= size(state%points, 2)) return

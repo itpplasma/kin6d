@@ -24,6 +24,7 @@ module kin6d_gs_coarea
     use fortnum_multiroot, only: argsort
     use fortnum_roots, only: root_brent
     use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_level_coarea
@@ -76,6 +77,8 @@ contains
         end if
         coarea = 0
         axis = 0
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status = 1
         if (state%mapped .or. state%element_order == 3) then
             if (present(psi_tangent) .or. present(levels_tangent) .or. &

@@ -47,6 +47,7 @@ module kin6d_gs_coupling
     use kin6d_gs_timers, only: gs_phase_tick
     use kin6d_grad_shafranov, only: gs_state_t, gs_cell_data
     use kin6d_gs_coils, only: gs_circuit_set_t
+    use kin6d_gs_symmetry, only: GS_ROTATION, GS_UNSUPPORTED_SYMMETRY
     implicit none
     private
     public :: gs_coupling_steklov, gs_coupling_steklov_cache_clear
@@ -114,6 +115,8 @@ contains
         real(dp) :: t0
         t0 = -1; call gs_phase_tick('', t0)
 
+        status = GS_UNSUPPORTED_SYMMETRY
+        if (state%symmetry%kind /= GS_ROTATION) return
         status = GS_COUPLING_BAD_STATE
         if (.not. state % ready) return
         m = 1
