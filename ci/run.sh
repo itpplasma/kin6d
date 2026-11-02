@@ -147,7 +147,7 @@ ctest --test-dir build -j 4 --output-on-failure -R "^($map)$"
     load_job_environment
     ;;
   islands-vacuum-ladder)
-    # The P2/P3 vacuum island width/phase ladders (slow, about 13 and 39
+    # The P2/P3 vacuum island width/phase ladders (slow, about 10 and 29
     # minutes at 4 threads); the merge-queue tiers do not run slow tests.
     export OMP_NUM_THREADS="4"
     export OPENBLAS_NUM_THREADS="1"
