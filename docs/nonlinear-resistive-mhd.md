@@ -231,6 +231,34 @@ by a multiple of n T v_te) for the nearly collisionless core, and the
 non-inductive current J_s as a prescribed source. Benchmarks against JOREK use
 JOREK's prescribed coefficients; physics runs state the closure they use.
 
+Closure requirements, from the first closure on:
+
+- Asymptotic consistency: every closure reproduces the classical limits in
+  their regimes, each a registered gate with the classical formula as oracle:
+  Spitzer and Braginskii parallel and perpendicular transport for
+  lambda_mfp << L_par and Omega tau >> 1; free streaming and the
+  Hammett-Perkins Landau-damping response (Phys. Rev. Lett. 64 3019, 1990)
+  for lambda_mfp >> L_par; ideal and kinetic MHD for rho_i/L -> 0;
+  gyroviscous (FLR) MHD at first order in k_perp rho_i (Roberts and Taylor,
+  Phys. Rev. Lett. 8 197, 1962). A blended closure that is good in between
+  must still meet each limit to its stated order.
+- Validity monitors: every run computes, locally in space and time, rho_i and
+  d_i over the smallest resolved scale (layer, island, pedestal width), banana
+  and fast-ion orbit widths over that scale, the Knudsen number
+  lambda_mfp/L_par, the Landau parameter omega/(k_par v_th), omega/Omega_i,
+  beta and S, and reports them with the result. A result computed where the
+  closure in use is outside its validity range is flagged, never reported
+  silently; the model-defect estimate drives promotion to a richer closure.
+
+Physics-run rule: a transport coefficient that differs from its physical value
+(an enhanced resistivity or viscosity, for example) is stated with its reason
+and with a scan in S that shows its effect. Physical (neoclassical) resistivity
+for current diffusion is kept separate from any declared layer model
+(two-fluid terms, hyper-resistivity, electron viscosity), and physics results
+are quoted only where the scaling regime (Sweet-Parker or plasmoid, layer
+width against rho_i) is identified. The sensitivity of a result to layer
+physics is itself reported.
+
 Every reduction carries a model-defect estimate and a switch to the fuller
 model where the estimate exceeds its budget: symmetry-reduced 2D against 3D,
 near-helical toroidal states, reduced MHD, flux-limited closure and the slow
@@ -339,6 +367,19 @@ Generated CUDA kernels sit behind the ISO_C_BINDING C ABI of
   reuse this path's FCI and X-point infrastructure.
 
 ## Later: kinetic coupling (not scheduled)
+
+Target: a closure valid from the core to the wall. The reference is a
+drift-kinetic parallel closure with collisions computed by KIN6D's steady
+drift-kinetic solver, valid at any collisionality; cheaper closures
+(Braginskii in the scrape-off layer and divertor, flux-limited or Landau-fluid
+closures in the core, gyrofluid closures where k_perp rho_i ~ 1) are used where
+their defect estimate against the reference is within budget, switched locally
+in space and time with conservative interfaces, under the consistency and
+monitor requirements above. Where perpendicular MHD itself fails (structures
+of width ~ rho_i), the promotion target is gyrokinetics. The rigorous
+counterpart (fluid limits uniform in collisionality) is pursued in a separate
+private research project.
+
 
 Kinetic effects enter later through the closure interface, after RM7, and are
 not part of RM0-RM8:
