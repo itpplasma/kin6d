@@ -4,8 +4,11 @@
 Fourier boundary and polynomial profiles. It does not use an equilibrium's
 interior fields. `ideal_seed_3d_init` accepts all four R/Z sine/cosine channels
 in the convention `m*theta - n*nfp*phi`, with general positive `nfp`. The
-coefficient array has shape `(4,2*ntor+1,0:mpol-1)`; its second dimension is
-ordered from `-ntor` to `ntor`, and the first is `(Rcos,Rsin,Zcos,Zsin)`.
+coefficient array has shape `(4,2*ntor+1,0:mpol)`, where `mpol` is the
+largest poloidal mode number (the third bound is read from the array); its
+second dimension is ordered from `-ntor` to `ntor`, and the first is
+`(Rcos,Rsin,Zcos,Zsin)`. `nested_integer_driver` and `test_equilibrium_3d`
+use the same meaning of `mpol` and `ntor`.
 
 Profiles use normalized **toroidal** flux `s`, with ascending monomial iota
 and pressure coefficients. These differ from the poloidal-flux profiles of
@@ -19,7 +22,9 @@ identities exactly, including the chain rule for an arbitrary smooth iota.
 The boundary is extended through disk harmonics `(u+i*v)^m`, which are
 regular at the axis. The initializer samples the represented Jacobian for
 uniform orientation and rejects folding. Clockwise and counterclockwise
-poloidal angles are admitted; the prescribed iota refers to that input angle. It fixes all boundary omega increments so
+poloidal angles are admitted; the prescribed iota refers to that input angle. Without the
+field angle below, the pinned wall and the frozen form force the input angle to be the
+straight-field-line angle of the target on the boundary. It fixes all boundary omega increments so
 Newton cannot move the prescribed nonaxisymmetric wall. The native Newton solver is retained. This cylindrical positive-toroidal-flux
 slice uses its existing gauge that fixes the toroidal coordinate and allows
 both R/Z increments. Fixed reference-disk radial directions can become tangent
@@ -27,6 +32,85 @@ to seeded surfaces, even for a clockwise circle. FortSym verifies the
 flux-form invariance of the corresponding angle relabelling, conditional on a
 positive relabelling Jacobian. The target must admit B_phi>0 in this chart;
 toroidal-field reversal is outside this initializer's contract.
+
+## Boundary field-line angle
+
+The wall nodes are pinned at the input angle, `X(rho=1, theta, phi) =
+wall(theta, phi)`, and the frozen form `b = (F/2 pi) ds^dtheta - chi'(s) ds^dphi`
+(`F = Phi_edge`) has field lines that are straight in the reference angle
+`theta`. A pinned map therefore makes the field lines on the boundary straight in
+the input angle, which means that VMEC's `lambda` must vanish there. This is an
+extra tangential constraint, because the fixed-boundary problem constrains only
+`xi.n`. With a non-straight-field-line input angle the error does not converge
+away. For example, the axisymmetric sheared oracle in its chart angle keeps
+2-4 % B errors, and AUG with `|lambda| ~ 1.1 rad` on the LCFS shows a rigid
+interior shift.
+
+`ideal_seed_3d_init(..., angle_mpol=M, angle_ntor=N)` keeps the wall pinned and
+relabels the frozen field instead. The reference is relabelled along its
+surfaces by `psi(s, theta, phi) = (s, theta + eta, phi)`, and the frozen form
+becomes its pull-back
+
+    b' = psi^* b = (F/2 pi) ds^d(theta + eta) - chi'(s) ds^dphi
+       = b + (F/2 pi) ds^d eta,
+
+which is linear in `eta`. In the seed channels this means `chi_(u,v) += -(F/pi)
+eta_phi (u, v)` and `b3 += (F/pi) eta_theta`. The field lines of `b'` are
+straight in `theta + eta` and have the same iota.
+
+- **Unknowns.** The coefficients of `eta = sum Re/Im c_mn (u + i v)^m
+  exp(-i n nfp phi)` for `m = 0, 1 <= n <= N` and `1 <= m <= M, |n| <= N`, with
+  two real coefficients per pair. The extension `(u+iv)^m` is harmonic and
+  regular at the axis, so `b'` is smooth and fixed by the boundary trace
+  `eta(rho=1)`. The extension does not add interior freedom, because the map
+  already owns that.
+- **Same energy and same problem.** `b'` is the pull-back of `b` under a
+  diffeomorphism that preserves every reference surface (when `1 + eta_theta > 0`,
+  which is checked at every quadrature point). It is therefore exactly closed,
+  tangent to the surfaces, and carries the same toroidal flux (`oint d eta = 0`),
+  poloidal flux and iota on every surface, while the pressure `p(s)` does not
+  change. A state `(X, eta)` has the physical field `X_* b' = (X o psi^-1)_* b`,
+  which is the field of the map `Y = X o psi^-1`. Its energy is the ideal
+  energy `W[Y]` of the same frozen-in problem, and `Y` maps the reference boundary
+  onto the same wall with the poloidal reparametrisation `psi^-1` on the
+  boundary. Any orientation-preserving poloidal reparametrisation of the wall at
+  fixed physical `phi` is of this form, so the union over `eta` of the pinned
+  problems is the fixed-boundary problem with tangential sliding. The wall
+  geometry never moves, which keeps the discretisation conforming: every
+  discrete state is an admissible ideal state on the fixed (interpolated)
+  domain, so the discrete energy stays an upper bound up to quadrature. The
+  sliding-node variant (kin6d#119) lacks this property, because there the
+  minimiser bulges the edges outwards.
+- **Gauge.** The `m = n = 0` constant is omitted. A rigid shift of `theta` leaves
+  `b` unchanged, so it is an exact null. The toroidal labels stay physical
+  (position gauge, `omega = 0`), so the relabelling is purely poloidal. Interior
+  relabellings are owned by the map and not by `eta`.
+- **Reachability.** The exact equilibrium has straight field lines in
+  `theta* = theta_in + lambda(theta_in, phi)` on the boundary. Hence
+  `eta(rho=1) = lambda` (up to a constant) together with `X = X_PEST o psi`
+  reproduces it for any input angle with geometric `phi`, provided that `lambda`
+  is resolved by the `M, N` series (spectrally for an analytic boundary).
+
+The pointwise leaves (the mode `eta, eta_theta, eta_phi`, the form increment,
+and `dw/db`, `d2w/db2`, `d2w/dv db` through the chart jets) are generated by
+`gen/gen_ideal_field_angle.f90` and `gen/gen_ideal_map.f90`. The generators
+prove that the mode derivatives are the exact angle derivatives, that the
+increment is closed, that the field lines are straight in `theta + eta`, and
+that the energy is homogeneous of degree 2 in `b`. `kin6d_ideal_map` appends the
+coefficients after the node and axis dofs and adds the dense angle rows to every
+cell block (`hessian_angle`). The same Newton, LDL^T and trust-region path then
+applies, with the angle step capped like the rotation.
+
+Choose `M` at most about half the number of boundary nodes. On the axisymmetric
+sheared oracle (P3, chart angle) `M = nb/2` gives B errors of 8.7e-4, 3.2e-4
+and 1.3e-4 at nb = 8, 12, 16. The straight-field-line input gives 1.4e-3,
+7.1e-4 and 2.0e-4. A larger `M` lowers the energy but uses the high harmonics
+to compensate discretisation error (b8 M8: 1.2e-3, b16 M16: 3.0e-4). The
+option is off by default. On 3D references that are ideal saddles (the integer
+family with constant iota 2, the sheared m8n4 case) a toroidal `N > 0` opens
+the saddle, and Newton leaves for a lower-energy helical state, as the
+sliding-node variant did. CTest `ideal_map_field_angle` checks the leaves, the
+map gradient and Hessian, and the chart-angle regression.
 
 `ideal_seed_disk_mesh` builds the common P2/P3 reference mesh. Generated
 leaves include primal/JVP/VJP; the initializer parallelizes independent nodal
@@ -44,3 +128,57 @@ integration, JVP finite differences and VJP pairing, fixed-wall constraints,
 thread parity and folded-boundary rejection. With the pinned FortSym build,
 `ideal_seed_3d_regeneration` proves the identities and compares regenerated
 leaves against the retained source.
+
+## Native D8 consumers
+
+The case registry admits `landreman_3d_nested` and `issan_3d_nonsymmetric`
+through `run_boundary_profile_equilibrium`. The caller supplies one
+`equilibrium_3d_driver_t` containing the Fourier boundary, toroidal profiles,
+flux and independent oracle parameters. `nested_integer_driver` takes the
+boundary projection, toroidal flux and profiles from
+`nested_seed_boundary`/`nested_seed_profile` (`kin6d_nested_seed_input`); it
+does not import interior oracle fields into the initializer. Those routines
+also prepare matched sheared-family profiles, but only the integer family is
+admitted as a D8 case here. The Landreman-Paul QA fixture prescribes
+current and cannot yet be reproduced by this iota-driven consumer.
+
+`map_3d_equilibrium` retains the map and frozen form in the common field
+interface, evaluates cylindrical B, pressure and the poloidal-flux label,
+and solves the geometric inverse to sample physical points. It rejects a
+frozen form inconsistent with the candidate's quadrature data. Generated
+field/inverse leaves supply JVP/VJP, and FortSym proves all nine cofactor
+inverse identities. Sampling and reference-consistency checks use OpenMP.
+It is a candidate evaluator with unavailable continuous bounds.
+
+The D8 consumer checks the attained free reduced-gradient norm against the
+requested Newton tolerance even if the native solver reports success after
+stalling. This coefficient norm is named explicitly; it is not the D3 dual
+norm or an a posteriori state estimator. Reports additionally expose B/p
+RMS errors and (for the integer family) maximum label error on the retained
+3-by-24-by-24 grid in candidate coordinates. These are sampled diagnostics,
+not volume norms. Force and estimator effectivity remain unavailable in this
+consumer. The retained external benchmark recipe computes separate local
+force diagnostics with a stencil-halving check; it omits cell-face jumps.
+
+Run `test_equilibrium_3d TAU MPOL NTOR BOUNDARY_NODES DEGREE GATE_B GATE_P
+GATE_LABEL [COARSE_MPOL COARSE_NTOR COARSE_NODES COARSE_DEGREE]` to reproduce
+one case (`TAU=0` for Landreman, `0.4` for Issan; eps=0.5, delta=1/64).
+
+[V] Observed sampled errors (GNU Fortran 14, Release, 4 OpenMP threads; the
+CTest gates are about twice these values):
+
+| CTest | mpol/ntor/nodes/P | Newton its | B rms rel | p rms rel | label max | wall |
+|---|---|---:|---:|---:|---:|---:|
+| `equilibrium_d8_landreman_3d_integer` | 2/2/8/P2 | 12 | 3.74e-2 | 9.53e-2 | 1.76e-1 | 0.2 s |
+| `equilibrium_d8_issan_3d_integer` | 2/2/8/P2 | 6 | 2.70e-2 | 7.03e-2 | 1.29e-1 | 0.1 s |
+| `equilibrium_d8_landreman_3d_p3` | 4/4/16/P3 | 28 | 1.12e-3 | 1.09e-2 | 1.62e-2 | 9 s |
+
+The P3 case also solves the coarse level and requires every error to
+decrease; the observed reduction factors are 33 (B), 8.8 (p) and 10.9
+(label). This single step refines Fourier resolution, mesh and degree
+together, so it gives no separated convergence order. The coarse cases also
+solve with reversed iota: the reversed-transform equilibrium converges, but
+its B error is 0.44 (Landreman) and 0.43 (Issan), and the test requires at
+least five times the correct-sign error. No case reaches the 1% default
+radius in all three diagnostics; the accuracy ladder (separated Fourier and
+mesh refinement, volume norms, force and estimator effectivity) is open.

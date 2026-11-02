@@ -7,7 +7,11 @@ module kin6d_equilibrium_nonnested
         meridian_point_basis_t, meridian_point_basis_init, meridian_point_basis, &
         meridian_op_complex, meridian_gs_stiffness, meridian_stiffness, &
         meridian_qpoint, meridian_real_to_complex, meridian_load, meridian_field_i
-    use fortsparse, only: csc_t, csc_z_t, csc_matvec, csc_from_triplet, &
+    use fortfem_meridian_hcurl_auxiliary, only: meridian_hcurl_aux_t, &
+        meridian_hcurl_aux_build
+    use fortfem_hcurl_auxiliary_space, only: hx_preconditioner_t, hx_options_t, &
+        hx_space_t, hx_setup, hx_destroy, hx_pcg, hx_masked_csr
+    use fortsparse, only: csr_t, csc_t, csc_z_t, csc_matvec, csc_from_triplet, &
         csc_normalize_symmetric_raw, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
         fortsparse_status_t, status_ok, FORTSPARSE_BACKEND_NATIVE
@@ -25,6 +29,12 @@ module kin6d_equilibrium_nonnested
     public :: nn_velocity, nn_fourier_value
     public :: nn_factor_t, nn_factor, nn_factor_solve, nn_factor_solve_real
     public :: nn_factor_free
+    public :: NN_SOLVER_DIRECT, NN_SOLVER_HX
+
+    ! Linear solver of the per-mode n > 0 curl-curl system: sparse Cholesky
+    ! (default) or CG with the Hiptmair-Xu auxiliary-space preconditioner
+    ! of FortFEM, selected by setting field%linear_solver after nn_build.
+    integer, parameter :: NN_SOLVER_DIRECT = 0, NN_SOLVER_HX = 1
 
     type, extends(equilibrium_field_t) :: free_b_field_t
         type(flux_mesh_t) :: mesh
@@ -35,6 +45,10 @@ module kin6d_equilibrium_nonnested
         real(dp), allocatable :: p(:)       ! NN2 transported p, V0 Fourier blocks
         real(dp) :: f_vac = 0, pprime = 0, psi_bound = 0, mu0 = 1
         real(dp) :: centre(2) = 0, radial_scale = 1
+        integer :: linear_solver = NN_SOLVER_DIRECT
+        type(hx_options_t) :: hx_options
+        real(dp) :: hx_tolerance = 1.0e-11_dp
+        type(meridian_hcurl_aux_t), allocatable :: hx_aux
         procedure(polar_coordinates_i), pointer, nopass :: coordinates => &
             circular_coordinates
     contains
@@ -61,6 +75,8 @@ module kin6d_equilibrium_nonnested
         real(dp) :: energy_before = 0, energy_after = 0, residual = 0
         real(dp) :: divergence = 0
         integer :: newton_steps = 0
+        integer :: linear_iterations = 0 ! CG iterations (re + im), HX path
+        real(dp) :: linear_seconds = 0 ! wall time of the linear solves
         character(32) :: claim = 'candidate'
     end type
 contains
@@ -103,11 +119,14 @@ contains
         type(csc_t) :: k
         type(nn_factor_t) :: factor
         type(csc_z_t) :: zk, curl
+        type(hx_preconditioner_t) :: pc
+        type(csr_t) :: op
         complex(dp), allocatable :: rhs(:), a(:), delta(:), full(:), r(:)
         logical, allocatable :: mask(:)
         real(dp), allocatable :: loads(:, :)
         real(dp) :: pp, en_scale, lifted
-        integer :: st, t, ndof, failure, step
+        integer :: st, t, ndof, failure, step, refine, its
+        integer(8) :: clock0, clock1, clock_rate
         status = 1
         if (.not. allocated(field%b)) return
         if (n < 0 .or. n > ubound(field%b, 2)) return
@@ -164,31 +183,72 @@ contains
         ! Lifted right-hand side: the forcing the solve reduces. For n > 0
         ! rhs = 0 and the boundary trace is the only forcing.
         lifted = norm2(abs(r))
-        call nn_factor(k, mask, factor, st)
-        if (st /= 0) return
-        report%energy_before = quadratic(a)
-        en_scale = max(1.0_dp, abs(report%energy_before))
-        ! The quadratic problem has one exact Newton step. A floating-point
-        ! factor may need another step to meet the physical residual gate.
-        ! Reuse the same factor and retain both admission gates at every step.
-        do step = 1, 3
-            call nn_factor_solve(factor, r, delta, st)
-            if (st /= 0) exit
+        call system_clock(clock0, clock_rate)
+        if (n > 0 .and. field%linear_solver == NN_SOLVER_HX) then
+            call nn_hx_setup(field, k, mask, pc, op, st)
+            if (st /= 0) return
+            call nn_hx_solve(pc, op, mask, field%hx_tolerance, r, delta, &
+                report%linear_iterations)
+            call system_clock(clock1)
+            report%linear_seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
+            report%energy_before = quadratic(a)
             a = a + delta
+            report%newton_steps = 1
+            ! The CG tolerance is relative to this increment's load; refine
+            ! with the same preconditioned solve until the equation residual
+            ! is well inside the 1e-9 gate below (linear: exact Newton steps).
+            do refine = 1, 4
+                r = rhs - csc_matvec(zk, a)
+                where (mask) r = 0
+                if (norm2(abs(r)) <= 1.0e-10_dp*max(1.0_dp, norm2(abs(rhs)), &
+                    norm2(abs(csc_matvec(zk, a))))) exit
+                call system_clock(clock0)
+                call nn_hx_solve(pc, op, mask, field%hx_tolerance, r, delta, its)
+                call system_clock(clock1)
+                report%linear_seconds = report%linear_seconds &
+                    + real(clock1 - clock0, dp)/real(clock_rate, dp)
+                report%linear_iterations = report%linear_iterations + its
+                a = a + delta
+                report%newton_steps = report%newton_steps + 1
+            end do
+            call hx_destroy(pc)
             report%energy_after = quadratic(a)
-            if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) then
-                st = 1
-                exit
-            end if
+            en_scale = max(1.0_dp, abs(report%energy_before))
+            if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) return
             r = rhs - csc_matvec(zk, a)
             where (mask) r = 0
             report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
                 norm2(abs(csc_matvec(zk, a))), lifted)
-            report%newton_steps = step
-            if (report%residual <= 1.0e-9_dp) exit
-        end do
-        call nn_factor_free(factor)
-        if (st /= 0 .or. report%residual > 1.0e-9_dp) return
+            if (report%residual > 1.0e-9_dp) return
+        else
+            call nn_factor(k, mask, factor, st)
+            if (st /= 0) return
+            report%energy_before = quadratic(a)
+            en_scale = max(1.0_dp, abs(report%energy_before))
+            ! The quadratic problem has one exact Newton step. A floating-point
+            ! factor may need another step to meet the physical residual gate.
+            ! Reuse the same factor and retain both admission gates at every step.
+            do step = 1, 3
+                call nn_factor_solve(factor, r, delta, st)
+                if (st /= 0) exit
+                a = a + delta
+                report%energy_after = quadratic(a)
+                if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) then
+                    st = 1
+                    exit
+                end if
+                r = rhs - csc_matvec(zk, a)
+                where (mask) r = 0
+                report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
+                    norm2(abs(csc_matvec(zk, a))), lifted)
+                report%newton_steps = step
+                if (report%residual <= 1.0e-9_dp) exit
+            end do
+            call nn_factor_free(factor)
+            call system_clock(clock1)
+            report%linear_seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
+            if (st /= 0 .or. report%residual > 1.0e-9_dp) return
+        end if
         call meridian_op_complex(field%fs%curl, n, curl, st)
         if (st /= 0) return
         allocate (full(field%fs%sp(1)%ndof))
@@ -302,11 +362,28 @@ contains
         real(dp), intent(in) :: point(3) ! (R,Z,phi)
         real(dp), intent(out) :: value(EQ_VALUES)
         integer, intent(out) :: status
-        real(dp) :: u, theta, xi, eta, radius, x(2), v2(3, field%fs%sp(2)%nloc)
-        real(dp) :: v0(3, field%fs%nl0), b(3), psi
+        ! Per-sample scratch on the stack up to 64 local dofs (runtime-sized
+        ! automatic arrays and array temporaries are heap allocated without
+        ! -fstack-arrays); larger elements fall back to the heap.
+        integer, parameter :: nstack = 64
+        real(dp), target :: v2s(3, nstack), v0s(3, nstack)
+        real(dp), allocatable, target :: v2h(:, :), v0h(:, :)
+        real(dp), pointer, contiguous :: v2(:, :), v0(:, :)
+        real(dp) :: u, theta, xi, eta, radius, x(2), b(3), psi
         complex(dp) :: bn(3), phase
-        integer :: t, n
+        integer :: t, n, j, n2, nl0
         value = 0; status = 1
+        n2 = field%fs%sp(2)%nloc; nl0 = field%fs%nl0
+        if (n2 <= nstack) then
+            v2 => v2s(:, :n2)
+        else
+            allocate (v2h(3, n2)); v2 => v2h
+        end if
+        if (nl0 <= nstack) then
+            v0 => v0s(:, :nl0)
+        else
+            allocate (v0h(3, nl0)); v0 => v0h
+        end if
         if (.not. allocated(field%b)) return
         if (.not. all(ieee_is_finite(point))) return
         call field%coordinates(field%centre, field%radial_scale, point(:2), &
@@ -320,8 +397,11 @@ contains
         if (status /= 0) return
         b = 0
         do n = 0, ubound(field%b, 2)
-            bn = matmul(v2, field%b(field%fs%sp(2)%dof(:, t), n) &
-                *field%fs%sp(2)%sgn(:, t))
+            bn = 0
+            do j = 1, n2
+                bn = bn + v2(:, j)*(field%b(field%fs%sp(2)%dof(j, t), n) &
+                    *field%fs%sp(2)%sgn(j, t))
+            end do
             phase = exp(cmplx(0.0_dp, n*point(3), dp))
             b = b + merge(1, 2, n == 0)*real(bn*phase, dp)
         end do
@@ -403,8 +483,18 @@ contains
         if (size(values, 1) /= EQ_VALUES) return
         if (size(values, 2) /= size(points, 2)) return
         if (size(statuses) /= size(points, 2)) return
-        !$omp parallel do default(shared) private(i, point) schedule(static) &
-        !$omp& if(size(points, 2) > 16)
+        ! Small batches (a field-line step samples one point) skip the
+        ! OpenMP region: opening an inactive team per sample is not free.
+        if (size(points, 2) <= 16) then
+            do i = 1, size(points, 2)
+                point = 0
+                point(:2) = points(:2, i)
+                if (size(points, 1) == 3) point(3) = points(3, i)
+                call nn_point(field, point, values(:, i), statuses(i))
+            end do
+            return
+        end if
+        !$omp parallel do default(shared) private(i, point) schedule(static)
         do i = 1, size(points, 2)
             point = 0
             point(:2) = points(:2, i)
@@ -436,6 +526,78 @@ contains
         end do
         call csc_from_triplet(n, n, row(:count), col(:count), val(:count), a, st)
         if (status_ok(st)) status = 0
+    end subroutine
+
+    subroutine nn_hx_setup(field, k, fixed, pc, op, status)
+        ! Hiptmair-Xu preconditioner of the per-mode curl-curl operator K
+        ! (n > 0, A_pol, gauge R A_phi = 0). The auxiliary maps depend only
+        ! on mesh and order and are cached in the field.
+        type(free_b_field_t), intent(inout) :: field
+        type(csc_t), intent(in) :: k
+        logical, intent(in) :: fixed(:)
+        type(hx_preconditioner_t), intent(out) :: pc
+        type(csr_t), intent(out) :: op
+        integer, intent(out) :: status
+        type(hx_space_t) :: spaces(3)
+        status = 1
+        if (.not. allocated(field%hx_aux)) then
+            allocate (field%hx_aux)
+            call meridian_hcurl_aux_build(field%fs, field%hx_aux, status)
+            if (status /= 0) then
+                deallocate (field%hx_aux)
+                return
+            end if
+        end if
+        spaces(1)%p = field%hx_aux%gradient
+        spaces(2)%p = field%hx_aux%interp(1)
+        spaces(3)%p = field%hx_aux%interp(2)
+        if (field%fs%k > 1) then
+            call hx_setup(pc, k, fixed, spaces, status, field%hx_options, &
+                field%hx_aux%transfer, field%hx_aux%edge_fixed, &
+                field%hx_aux%patch_ptr, field%hx_aux%patch_dof)
+        else
+            call hx_setup(pc, k, fixed, spaces, status, field%hx_options, &
+                patch_ptr=field%hx_aux%patch_ptr, patch_dof=field%hx_aux%patch_dof)
+        end if
+        if (status /= 0) return
+        call hx_masked_csr(k, fixed, op, status)
+    end subroutine
+
+    subroutine nn_hx_solve(pc, op, fixed, tolerance, rhs, x, iterations)
+        ! K x = rhs by HX-preconditioned CG, real and imaginary parts. A stop
+        ! at the conditioning floor is not fatal: nn_solve's equation
+        ! residual gate decides acceptance.
+        type(hx_preconditioner_t), intent(inout) :: pc
+        type(csr_t), intent(in) :: op
+        logical, intent(in) :: fixed(:)
+        real(dp), intent(in) :: tolerance
+        complex(dp), intent(in) :: rhs(:)
+        complex(dp), intent(out) :: x(:)
+        integer, intent(out) :: iterations
+        real(dp), allocatable :: b(:), y(:), yr(:)
+        real(dp) :: scale, res
+        integer :: part, its, info
+        iterations = 0
+        allocate (y(size(rhs)), yr(size(rhs)))
+        yr = 0
+        do part = 1, 2
+            if (part == 1) then
+                b = real(rhs, dp)
+            else
+                b = aimag(rhs)
+            end if
+            where (fixed) b = 0
+            scale = norm2(b)
+            y = 0
+            if (scale > 0) then
+                b = b/scale
+                call hx_pcg(op, pc, b, y, tolerance, 10000, its, res, info)
+                iterations = iterations + its
+                y = y*scale
+            end if
+            if (part == 1) yr = y
+        end do
+        x = cmplx(yr, y, dp)
     end subroutine
 
     subroutine nn_linear_solve(k, fixed, rhs, x, status)

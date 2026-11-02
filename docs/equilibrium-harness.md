@@ -13,6 +13,7 @@ Missing field/chart exports or inconsistent lane provenance fail the run.
 | Lane | Registry cases | Independent oracle |
 |---|---|---|
 | map | `solovev`, `shaped` | exact flux and a separate 2D GS solve |
+| map | `landreman_3d_nested`, `issan_3d_nonsymmetric` | exact nested B/p; matched integer-family boundary, flux and profiles |
 | map | `seed`, `seedshaped` | exact flux from a displaced nested-axis seed, and 2D GS |
 | psi | `limiter-jump`, `limiter-smooth` | manufactured compact flux bump plus exact coil flux |
 | psi | `targets-jump`, `targets-smooth` | the same oracle with target-mean LCFS |
@@ -36,10 +37,20 @@ Cholesky factor of an earlier damped Hessian, to the Eisenstat-Walker relative
 residual min(1/2, (|g|/|g0|)^1/2) within `krylov_max` (10) iterations. More
 than `krylov_refactor` (8) iterations, a CG breakdown (nonpositive curvature or
 preconditioner) or no convergence refactors the current damped Hessian and
-solves directly. Rejected trials reuse the factor. In this mode the factor is
-the SPD Cholesky, with a pivoted LU for the trial only when a pivot is
-nonpositive. The report counts `trials`, `krylov_solves`,
-`krylov_iterations` and `lu_fallbacks`.
+solves directly. Rejected trials reuse the factor. In this mode the factor
+follows `factor_policy`. The default `IDEAL_MAP_FACTOR_LDLT` computes one
+FortSparse supernodal LDL^T per direct trial and retains it as the
+preconditioner when its inertia is positive. An indefinite factor serves its
+own trial only, and the pivoted LU is used only when the LDL^T fails.
+`IDEAL_MAP_FACTOR_SPD_LU` switches this off: it tries the SPD Cholesky and
+factors the same matrix again with the pivoted LU when a pivot is nonpositive,
+which costs a second factorisation because a failed Cholesky usually fails
+late. In an external measurement on the Landreman b12 case both policies
+followed the same Newton/Krylov sequence; on the registered Solovev P4 case
+(`ideal_map_krylov_step`) roundoff along near-null relabelling directions
+changes the sequence, and only the end point is compared. The report counts
+`trials`, `krylov_solves`, `krylov_iterations`, `indefinite_trials` and
+`lu_fallbacks`.
 With `lagged_hessian` (default off), the steps after a factored or Krylov
 Newton step are L-BFGS steps (`lagged_memory` (8) secant pairs) whose initial
 inverse is the retained factor, as long as that factor's damping is at most
@@ -79,12 +90,19 @@ that same quadratic phase.
 
 Each report records the case/lane/start/resolution, convergence status,
 iterations, independent oracle error, seed error and an a posteriori residual.
-The map residual is the retained sigma-normalised D3 L2 force measure;
+The legacy N=0 map residual is the retained sigma-normalised D3 L2 force measure;
 sigma excludes the curl-free toroidal background. The manufactured psi
 residual is the discrete forced-equation residual divided by the manufactured
 load norm. These are different norms and must not be compared as equal
 quantities. In particular, the manufactured body load is not unforced ideal
 MHD, so its residual is not labelled as D3 force balance.
+
+The boundary/profile 3D driver uses `map_3d_equilibrium` for the common
+physical-field interface. It checks the returned free gradient directly,
+normalized by its initial value, and names that coefficient norm explicitly.
+It is not a D3 force norm or a state-error estimator. See
+[the 3D initializer](ideal-seed-3d.md) for the matched integer-family setup,
+1728-point diagnostics and unavailable sheared-profile/QA/estimator capabilities.
 
 All these results remain **candidate** states. State and derivative error
 bounds are explicitly **unavailable**: sampled oracle errors and algebraic

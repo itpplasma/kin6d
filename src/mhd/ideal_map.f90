@@ -42,7 +42,9 @@ module kin6d_ideal_map
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_ideal_map_leaves, only: ideal_point_gradient_jets, &
-        ideal_point_hessian_jets
+        ideal_point_hessian_jets, ideal_point_field_gradient_jets, &
+        ideal_point_field_jets
+    use kin6d_ideal_field_angle_leaves, only: field_angle_mode
     use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t, curve_chart_t
     use kin6d_curve_chart_leaves, only: curve_omega_metric
     use fortfem_gauss_quadrature_2d, only: gauss_quadrature_triangle_t
@@ -57,8 +59,10 @@ module kin6d_ideal_map
         FORTSPARSE_SYM_GENERAL, FORTSPARSE_LU_SUPERNODAL, &
         sparse_factor_stats, sparse_factor_stats_t, &
         sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
-        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t
+        FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t, FORTSPARSE_SYM_INDEFINITE, &
+        sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
+    !$ use omp_lib, only: omp_get_max_threads
     implicit none
     private
     public :: ideal_map_t, ideal_frozen_t
@@ -68,10 +72,14 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_prolong_correction
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
-    public :: ideal_map_gauge_project
+    public :: ideal_map_gauge_project, ideal_map_angle_enable, ideal_map_angle_rdof
+    public :: ideal_map_angle_value, ideal_map_parallel_mass
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
+    ! Factor policies of the Krylov-step trials (ideal_map_t%factor_policy).
+    integer, parameter, public :: IDEAL_MAP_FACTOR_SPD_LU = 0, &
+        IDEAL_MAP_FACTOR_LDLT = 1
 
     ! Frozen reference data at a reference point y = (q1, q2): poloidal flux
     ! label chi and its gradient, toroidal flux density b3 (contravariant density
@@ -125,6 +133,15 @@ module kin6d_ideal_map
         ! Position gauge instead of transversals + axis expansion + omega.
         logical :: position_gauge = .false.
         real(dp) :: initial_damping = 1.0e-6_dp
+        ! Parallel-only Levenberg-Marquardt term (non-nested solve; 0: off).
+        ! The trial matrix is H + kappa_k M_par + mu diag(H) with M_par from
+        ! ideal_map_parallel_mass and kappa_k = parallel_damping
+        ! min(1, |g|/g0) max diag(H)/max diag(M_par) over the free dofs:
+        ! damping on the v || B near-null component that vanishes with the
+        ! gradient (LM with mu ~ |g|; quadratic local convergence also for
+        ! a singular Hessian under a local error bound, Yamashita-Fukushima).
+        ! Rejected with IDEAL_MAP_BAD_INPUT under omega_elimination.
+        real(dp) :: parallel_damping = 0
         ! Non-nested Newton step by CG on the damped masked Hessian,
         ! preconditioned with the retained SPD Cholesky factor of an earlier
         ! damped Hessian (inexact Newton, forcing eta = min(1/2, (|g|/|g0|)^1/2)
@@ -136,6 +153,13 @@ module kin6d_ideal_map
         ! A pivoted LU fallback factor is never retained. False (default):
         ! factor and solve at every trial.
         logical :: krylov_step = .false.
+        ! Factor of a Krylov-step trial; only an SPD factor is retained as
+        ! preconditioner. LDLT (default): one FortSparse supernodal LDL^T,
+        ! retained when its inertia is positive (the Cholesky criterion up to
+        ! roundoff); the pivoted LU only if it fails. SPD_LU: Cholesky, and
+        ! the pivoted LU of the same matrix when a pivot is not positive (a
+        ! failed Cholesky costs about as much as a successful one).
+        integer :: factor_policy = IDEAL_MAP_FACTOR_LDLT
         integer :: krylov_refactor = 8, krylov_max = 10
         ! Non-nested quasi-Newton steps between Hessian assemblies: after a
         ! factored (or Krylov) Newton step, the next steps are L-BFGS steps
@@ -192,6 +216,22 @@ module kin6d_ideal_map
         real(dp), allocatable :: b(:, :, :), p(:, :), det(:, :)
         ! Coefficients x(3, mode, node): q1, q2 and omega.
         real(dp), allocatable :: x(:, :, :)
+        ! Field-line angle of the frozen field (ideal_map_angle_enable,
+        ! docs/ideal-seed-3d.md): the frozen density is relabelled along the
+        ! reference surfaces, theta -> theta + eta, which adds
+        !     angle_form(:, 1, g, e) eta_t + angle_form(:, 2, g, e) eta_p
+        ! (eta_t, eta_p the angle derivatives of eta) to b(:, g, e). eta is a
+        ! real Fourier series in harmonic extension: pair i has poloidal
+        ! number angle_m(i) and toroidal number angle_n(i) (times nfp), its
+        ! coefficients (cos, sin) are angle(2 i - 1 : 2 i), and the reference
+        ! harmonic (u + i v)^m at the quadrature points is angle_power(:, m, g, e).
+        ! The angle coefficients follow the node coefficients in the
+        ! coefficient vector (ndof = 3 nmode nodes + nangle) and the node and
+        ! axis dofs in the reduced vector. nangle = 0: no field angle.
+        integer :: nangle = 0, angle_mpol = -1, angle_ntor = 0
+        integer, allocatable :: angle_m(:), angle_n(:)
+        real(dp), allocatable :: angle(:), angle_form(:, :, :, :)
+        real(dp), allocatable :: angle_power(:, :, :, :), angle_phase(:, :, :)
     end type
 
     type :: factor_cache_t
@@ -221,6 +261,8 @@ module kin6d_ideal_map
         integer :: iterations = 0
         real(dp) :: energy = 0, gradient = huge(1.0_dp), step = huge(1.0_dp)
         real(dp) :: min_jacobian = 0, damping = 0, initial_gradient = 0
+        ! Last kappa_k of map%parallel_damping (absolute, 0 when off).
+        real(dp) :: parallel_kappa = 0
         ! Wall seconds: energy/gradient, Hessian assembly, factor + solve.
         real(dp) :: energy_s = 0, hessian_s = 0, factor_s = 0
         ! Backend split of factor_s where reported: symbolic analysis
@@ -232,6 +274,9 @@ module kin6d_ideal_map
         ! with a nonpositive pivot that were factored by the pivoted LU
         ! instead (each also counts as a factorisation attempt).
         integer :: analyses = 0, factorizations = 0, lu_fallbacks = 0
+        ! Krylov-step trials whose damped Hessian was not positive definite
+        ! (failed Cholesky, or LDL^T inertia that is not reliably positive).
+        integer :: indefinite_trials = 0
         ! Non-nested Newton trials, CG solves with the retained factor
         ! (map%krylov_step) and their total CG iterations.
         integer :: trials = 0, krylov_solves = 0, krylov_iterations = 0
@@ -260,12 +305,127 @@ contains
         dof = 2*map%nmode*map%nodes + i + 2*(j - 1) + 2*map%npoly*(mode - 1)
     end function
 
+    pure integer function ideal_map_angle_rdof(map, k) result(dof)
+        ! Reduced dof of field-angle coefficient k (after the axis dofs).
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: k
+        dof = 2*map%nmode*map%nodes + 2*map%npoly*map%nmode + k
+    end function
+
+    subroutine ideal_map_angle_enable(map, mpol, ntor, status)
+        ! Add the field-line angle eta of the frozen field (pairs m = 0,
+        ! 1 <= n <= ntor and 1 <= m <= mpol, |n| <= ntor; the m = n = 0
+        ! constant is the exact null of a rigid reference rotation and is
+        ! omitted). Position gauge only (the toroidal labels are physical, so
+        ! the relabelling is purely poloidal), after ideal_map_freeze; the caller
+        ! fills angle_form and angle_power (ideal_seed_3d for the reference disk).
+        type(ideal_map_t), intent(inout) :: map
+        integer, intent(in) :: mpol, ntor
+        integer, intent(out) :: status
+        integer, allocatable :: conn(:, :)
+        logical, allocatable :: fixed(:)
+        integer :: m, n, i, j, nr, npair
+        status = IDEAL_MAP_BAD_INPUT
+        if (.not. map%position_gauge .or. map%nangle > 0) return
+        if (mpol < 0 .or. ntor < 0 .or. ntor > map%ntor) return
+        if (mpol == 0 .and. ntor == 0) return
+        npair = ntor + mpol*(2*ntor + 1)
+        allocate (map%angle_m(npair), map%angle_n(npair))
+        i = 0
+        do n = 1, ntor
+            i = i + 1; map%angle_m(i) = 0; map%angle_n(i) = n
+        end do
+        do m = 1, mpol
+            do n = -ntor, ntor
+                i = i + 1; map%angle_m(i) = m; map%angle_n(i) = n
+            end do
+        end do
+        map%angle_mpol = mpol; map%angle_ntor = ntor
+        map%nangle = 2*npair
+        allocate (map%angle(map%nangle), map%angle_form(3, 2, map%nq, map%cells), &
+            map%angle_power(2, 0:mpol, map%nq, map%cells), &
+            map%angle_phase(2, -ntor:ntor, map%nphi))
+        map%angle = 0; map%angle_form = 0; map%angle_power = 0
+        do j = 1, map%nphi
+            do n = -ntor, ntor
+                map%angle_phase(:, n, j) = [cos(n*map%nfp*map%phi(j)), &
+                    sin(n*map%nfp*map%phi(j))]
+            end do
+        end do
+        nr = size(map%redconn, 1)
+        allocate (conn(nr + map%nangle, map%cells))
+        conn(1:nr, :) = map%redconn
+        do i = 1, map%nangle
+            conn(nr + i, :) = map%nred + i
+        end do
+        call move_alloc(conn, map%redconn)
+        allocate (fixed(map%nred + map%nangle))
+        fixed(1:map%nred) = map%fixed
+        fixed(map%nred + 1:) = .false.
+        call move_alloc(fixed, map%fixed)
+        map%nred = map%nred + map%nangle
+        map%ndof = map%ndof + map%nangle
+        status = IDEAL_MAP_OK
+    end subroutine
+
+    subroutine angle_basis(map, e, g, j, et, ep)
+        ! eta_t and eta_p of every angle coefficient at point g of cell e, plane j.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(out) :: et(:), ep(:)
+        real(dp) :: re, im, c, s, eta
+        integer :: i, m, n
+        do i = 1, size(map%angle_m)
+            m = map%angle_m(i); n = map%angle_n(i)
+            re = map%angle_power(1, m, g, e); im = map%angle_power(2, m, g, e)
+            c = map%angle_phase(1, n, j); s = map%angle_phase(2, n, j)
+            call field_angle_mode(re, im, real(m, dp), real(n*map%nfp, dp), c, s, &
+                1.0_dp, 0.0_dp, eta, et(2*i - 1), ep(2*i - 1))
+            call field_angle_mode(re, im, real(m, dp), real(n*map%nfp, dp), c, s, &
+                0.0_dp, 1.0_dp, eta, et(2*i), ep(2*i))
+        end do
+    end subroutine
+
+    subroutine ideal_map_angle_value(map, angle, power, phi, eta, eta_t, eta_p)
+        ! eta and its angle derivatives at a reference point with harmonics
+        ! power(:, 0:angle_mpol) = (u + i v)^m and toroidal angle phi-hat.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: angle(:), power(:, 0:), phi
+        real(dp), intent(out) :: eta, eta_t, eta_p
+        real(dp) :: a, t, p, k
+        integer :: i, m
+        eta = 0; eta_t = 0; eta_p = 0
+        do i = 1, size(map%angle_m)
+            m = map%angle_m(i); k = real(map%angle_n(i)*map%nfp, dp)
+            call field_angle_mode(power(1, m), power(2, m), real(m, dp), k, cos(k*phi), &
+                sin(k*phi), angle(2*i - 1), angle(2*i), a, t, p)
+            eta = eta + a; eta_t = eta_t + t; eta_p = eta_p + p
+        end do
+    end subroutine
+
+    subroutine point_density(map, angle, e, g, j, b, et, ep)
+        ! Frozen density at point g of cell e, plane j, with the field angle;
+        ! et, ep: the per-coefficient basis (only with nangle > 0).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: angle(:)
+        integer, intent(in) :: e, g, j
+        real(dp), intent(out) :: b(3), et(:), ep(:)
+        b = map%b(:, g, e)
+        if (map%nangle == 0) return
+        call angle_basis(map, e, g, j, et, ep)
+        b = b + map%angle_form(:, 1, g, e)*dot_product(angle, et) &
+            + map%angle_form(:, 2, g, e)*dot_product(angle, ep)
+    end subroutine
+
     subroutine ideal_map_reduce(map, g, gr)
         ! Coefficient gradient (or any dual vector) to the reduced dofs.
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: g(:)
         real(dp), intent(out) :: gr(:)
         integer :: a, m, k, j, l
+        do k = 1, map%nangle
+            gr(ideal_map_angle_rdof(map, k)) = g(3*map%nmode*map%nodes + k)
+        end do
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
@@ -305,6 +465,9 @@ contains
         real(dp), intent(in) :: vr(:)
         real(dp), intent(out) :: v(:)
         integer :: a, m, k, j
+        do k = 1, map%nangle
+            v(3*map%nmode*map%nodes + k) = vr(ideal_map_angle_rdof(map, k))
+        end do
         do a = 1, map%nodes
             do m = 1, map%nmode
                 k = ideal_map_dof(map, 1, m, a)
@@ -835,6 +998,17 @@ contains
             fine%x(1:2, 2:, a) = 0
         end do
         fine%x(3, 1, :) = fine%x(3, 1, :) - fine%x(3, 1, fine%gauge)
+        ! The field angle is a mesh-independent series: copy the common pairs.
+        if (fine%nangle > 0 .and. coarse%nangle > 0) then
+            fine%angle = 0
+            do a = 1, size(fine%angle_m)
+                do k = 1, size(coarse%angle_m)
+                    if (fine%angle_m(a) /= coarse%angle_m(k)) cycle
+                    if (fine%angle_n(a) /= coarse%angle_n(k)) cycle
+                    fine%angle(2*a - 1:2*a) = coarse%angle(2*k - 1:2*k)
+                end do
+            end do
+        end if
         status = IDEAL_MAP_OK
     end subroutine
 
@@ -991,35 +1165,44 @@ contains
         y = matmul(map%reference(:, map%conn(:, e)), shape(:map%nloc))
     end subroutine
 
-    subroutine point_gradient(map, e, g, j, x, w, jac, gv)
+    subroutine point_gradient(map, e, g, j, x, b, w, jac, gv, gb)
         ! Energy density w, Jacobian and the gradient with respect to
         ! v = (q(1:3), Q(1:3, 1:3)) (index 3 + k + 3*(i-1) for Q(k,i)): the
-        ! generated chain-rule leaf (gen/gen_ideal_map.f90) on the chart jet.
+        ! generated chain-rule leaf (gen/gen_ideal_map.f90) on the chart jet,
+        ! for the frozen density b; gb: dw/db (field angle).
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: e, g, j
-        real(dp), intent(in) :: x(:, :, :)
+        real(dp), intent(in) :: x(:, :, :), b(3)
         real(dp), intent(out) :: w, jac, gv(12)
+        real(dp), intent(out), optional :: gb(3)
         real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
         call point_jet(map, e, g, j, x, q, qd)
         call map%chart%jet(q, pos, d1, d2, d3)
-        call ideal_point_gradient_jets(d1, d2, d3, qd, map%b(:, g, e), map%p(g, e), &
+        call ideal_point_gradient_jets(d1, d2, d3, qd, b, map%p(g, e), &
             map%mu0, map%sigma, w, jac, gv)
+        if (present(gb)) call ideal_point_field_gradient_jets(d1, d2, d3, qd, b, &
+            map%p(g, e), map%mu0, map%sigma, gb)
     end subroutine
 
-    subroutine point_hessian(map, e, g, j, x, w, jac, gv, hp)
+    subroutine point_hessian(map, e, g, j, x, b, w, jac, gv, hp, hbb, hvb)
         ! As point_gradient with the Hessian with respect to v, packed in the
         ! group order of gen/gen_ideal_map.f90: hp(1:45) the upper triangle of
         ! the block of v(1:9), hp(46:72) the rows v(1:9) of the columns
         ! v(10:12), hp(73:78) the upper triangle of the block of v(10:12).
+        ! hbb, hvb (field angle): d2w/db2 (packed) and d2w/dv db.
         type(ideal_map_t), intent(in) :: map
         integer, intent(in) :: e, g, j
-        real(dp), intent(in) :: x(:, :, :)
+        real(dp), intent(in) :: x(:, :, :), b(3)
         real(dp), intent(out) :: w, jac, gv(12), hp(78)
+        real(dp), intent(out), optional :: hbb(6), hvb(12, 3)
         real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: gb(3)
         call point_jet(map, e, g, j, x, q, qd)
         call map%chart%jet(q, pos, d1, d2, d3)
-        call ideal_point_hessian_jets(d1, d2, d3, qd, map%b(:, g, e), map%p(g, e), &
+        call ideal_point_hessian_jets(d1, d2, d3, qd, b, map%p(g, e), &
             map%mu0, map%sigma, w, jac, gv, hp)
+        if (present(hbb)) call ideal_point_field_jets(d1, d2, d3, qd, b, &
+            map%p(g, e), map%mu0, map%sigma, gb, hbb, hvb)
     end subroutine
 
     pure subroutine test_functions(map, g, j, a, m, f)
@@ -1033,53 +1216,105 @@ contains
         f(3) = map%shape(a, g)*map%dtrig(m, j)
     end subroutine
 
-    subroutine ideal_map_energy(map, x, energy, status, gradient, min_jacobian)
+    subroutine ideal_map_energy(map, x, energy, status, gradient, min_jacobian, angle)
         ! Energy per field period and its coefficient gradient. status
-        ! IDEAL_MAP_FOLDED when J <= 0 at any quadrature point.
+        ! IDEAL_MAP_FOLDED when J <= 0 at any quadrature point (or, with the
+        ! field angle, when the relabelled toroidal density changes sign).
+        ! angle: field-angle coefficients (default map%angle).
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: x(:, :, :)
         real(dp), intent(out) :: energy
         integer, intent(out) :: status
         real(dp), intent(out), optional :: gradient(:), min_jacobian
+        real(dp), intent(in), optional :: angle(:)
         real(dp), allocatable :: local(:, :), cell_energy(:), cell_jac(:)
-        real(dp) :: w, jac, gv(12), f(0:3), dphi, weight, minjac
-        integer :: e, g, j, a, m, c, l
-        logical :: want
+        real(dp), allocatable :: pw(:, :, :), pjac(:, :, :), pgv(:, :, :, :)
+        real(dp), allocatable :: eta(:), alocal(:, :), pab(:, :, :, :)
+        real(dp) :: dphi, minjac
+        integer :: e, g, j, a, c, item, nt, na
+        logical :: want, wangle
         want = present(gradient)
+        na = map%nangle
+        wangle = want .and. na > 0
+        allocate (eta(na), alocal(na, map%cells))
+        if (na > 0) then
+            eta = map%angle
+            if (present(angle)) eta = angle
+        end if
+        alocal = 0
         allocate (local(3*map%nmode*map%nloc, map%cells), cell_energy(map%cells), &
             cell_jac(map%cells))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
-        ! Cell sums are combined serially below, so the energy (which decides
-        ! step acceptance near roundoff) does not depend on the thread count
-        ! or on the order of an OpenMP reduction.
-        !$omp parallel do default(none) shared(map, x, local, want, dphi, &
-        !$omp cell_energy, cell_jac) &
-        !$omp private(e, g, j, a, m, c, l, w, jac, gv, f, weight) schedule(static)
-        do e = 1, map%cells
-            local(:, e) = 0
-            cell_energy(e) = 0; cell_jac(e) = huge(1.0_dp)
-            do j = 1, map%nphi
-                do g = 1, map%nq
-                    call point_gradient(map, e, g, j, x, w, jac, gv)
-                    cell_jac(e) = min(cell_jac(e), jac/map%det(g, e))
-                    weight = map%weight(g)*dphi
-                    cell_energy(e) = cell_energy(e) + weight*w
-                    if (.not. want) cycle
-                    l = 0
-                    do a = 1, map%nloc
-                        do m = 1, map%nmode
-                            call test_functions(map, g, j, a, m, f)
-                            do c = 1, 3
-                                l = l + 1
-                                local(l, e) = local(l, e) + weight*(gv(c)*f(0) &
-                                    + gv(3 + c)*f(1) + gv(6 + c)*f(2) + gv(9 + c)*f(3))
-                            end do
-                        end do
+        ! Cell sums run in the plane-then-point order and are combined
+        ! serially, so the energy (which decides step acceptance near roundoff)
+        ! does not depend on the thread count or on the order of an OpenMP
+        ! reduction. With at least as many cells as threads every thread
+        ! evaluates whole cells into private point arrays (cell loop). With
+        ! fewer cells the point values of all cells are evaluated over
+        ! (cell, plane) items and the sums over (cell, node) items, so every
+        ! thread stays busy. Both paths make the same calls in the same order.
+        nt = 1
+        !$ nt = omp_get_max_threads()
+        if (map%cells >= nt) then
+            !$omp parallel default(none) shared(map, x, want, wangle, local, &
+            !$omp cell_energy, cell_jac, dphi, alocal) private(e, g, j, a, pw, pjac, &
+            !$omp pgv, pab)
+            allocate (pw(map%nq, map%nphi, 1), pjac(map%nq, map%nphi, 1), &
+                pgv(12, map%nq, map%nphi, 1), pab(2, map%nq, map%nphi, 1))
+            !$omp do schedule(static)
+            do e = 1, map%cells
+                do j = 1, map%nphi
+                    do g = 1, map%nq
+                        call point_values(e, g, j, pw(g, j, 1), pjac(g, j, 1), &
+                            pgv(:, g, j, 1), pab(:, g, j, 1))
                     end do
                 end do
+                call energy_cell_sum(map, e, dphi, pw(:, :, 1), pjac(:, :, 1), &
+                    cell_energy(e), cell_jac(e))
+                if (.not. want) cycle
+                do a = 1, map%nloc
+                    call energy_node_sum(map, a, dphi, pgv(:, :, :, 1), local(:, e))
+                end do
+                if (wangle) call energy_angle_sum(map, e, dphi, pab(:, :, :, 1), &
+                    alocal(:, e))
             end do
-        end do
-        !$omp end parallel do
+            !$omp end do
+            !$omp end parallel
+        else
+            ! Fewer cells than threads: these arrays stay small.
+            allocate (pw(map%nq, map%nphi, map%cells), pjac(map%nq, map%nphi, map%cells), &
+                pgv(12, map%nq, map%nphi, map%cells), pab(2, map%nq, map%nphi, map%cells))
+            !$omp parallel default(none) shared(map, x, want, wangle, dphi, local, &
+            !$omp cell_energy, cell_jac, pw, pjac, pgv, pab, alocal) private(item, e, g, j, a)
+            !$omp do schedule(static)
+            do item = 1, map%cells*map%nphi
+                e = 1 + (item - 1)/map%nphi
+                j = item - map%nphi*(e - 1)
+                do g = 1, map%nq
+                    call point_values(e, g, j, pw(g, j, e), pjac(g, j, e), &
+                        pgv(:, g, j, e), pab(:, g, j, e))
+                end do
+            end do
+            !$omp end do
+            !$omp do schedule(static)
+            do e = 1, map%cells
+                call energy_cell_sum(map, e, dphi, pw(:, :, e), pjac(:, :, e), &
+                    cell_energy(e), cell_jac(e))
+                if (wangle) call energy_angle_sum(map, e, dphi, pab(:, :, :, e), &
+                    alocal(:, e))
+            end do
+            !$omp end do nowait
+            if (want) then
+                !$omp do schedule(static)
+                do item = 1, map%cells*map%nloc
+                    e = 1 + (item - 1)/map%nloc
+                    a = item - map%nloc*(e - 1)
+                    call energy_node_sum(map, a, dphi, pgv(:, :, :, e), local(:, e))
+                end do
+                !$omp end do
+            end if
+            !$omp end parallel
+        end if
         energy = 0
         do e = 1, map%cells
             energy = energy + cell_energy(e)
@@ -1106,6 +1341,96 @@ contains
                     x(3, 1, map%conn(:, e)))
             end do
         end do
+        if (wangle) then
+            do e = 1, map%cells
+                gradient(3*map%nmode*map%nodes + 1:) = &
+                    gradient(3*map%nmode*map%nodes + 1:) + alocal(:, e)
+            end do
+        end if
+    contains
+        subroutine point_values(e, g, j, w, jac, gv, ab)
+            ! Energy density, Jacobian and v-gradient at point g of cell e,
+            ! plane j, for the relabelled density; with the field angle and a
+            ! gradient also ab = dw/db . (form_t, form_p), and a sign change
+            ! of the toroidal density is reported as a fold (jac <= 0).
+            integer, intent(in) :: e, g, j
+            real(dp), intent(out) :: w, jac, gv(12), ab(2)
+            real(dp) :: bp(3), gb(3), et(na), ep(na)
+            call point_density(map, eta, e, g, j, bp, et, ep)
+            if (wangle) then
+                call point_gradient(map, e, g, j, x, bp, w, jac, gv, gb)
+                ab = [dot_product(gb, map%angle_form(:, 1, g, e)), &
+                    dot_product(gb, map%angle_form(:, 2, g, e))]
+            else
+                call point_gradient(map, e, g, j, x, bp, w, jac, gv)
+            end if
+            if (na == 0) return
+            if (.not. bp(3)*map%b(3, g, e) > 0) jac = -abs(jac)
+        end subroutine
+    end subroutine
+
+    subroutine energy_angle_sum(map, e, dphi, pab, alocal)
+        ! Field-angle gradient of cell e, sum_j,g w ab . (eta_t', eta_p'),
+        ! summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e
+        real(dp), intent(in) :: dphi, pab(:, :, :)
+        real(dp), intent(inout) :: alocal(:)
+        real(dp) :: et(map%nangle), ep(map%nangle), weight
+        integer :: g, j
+        alocal = 0
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                call angle_basis(map, e, g, j, et, ep)
+                weight = map%weight(g)*dphi
+                alocal = alocal + weight*pab(1, g, j)*et + weight*pab(2, g, j)*ep
+            end do
+        end do
+    end subroutine
+
+    pure subroutine energy_cell_sum(map, e, dphi, pw, pjac, energy, jac)
+        ! Weighted energy and smallest Jacobian ratio of cell e from its point
+        ! values pw(g, j), pjac(g, j), summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e
+        real(dp), intent(in) :: dphi, pw(:, :), pjac(:, :)
+        real(dp), intent(out) :: energy, jac
+        integer :: g, j
+        energy = 0; jac = huge(1.0_dp)
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                jac = min(jac, pjac(g, j)/map%det(g, e))
+                energy = energy + map%weight(g)*dphi*pw(g, j)
+            end do
+        end do
+    end subroutine
+
+    pure subroutine energy_node_sum(map, a, dphi, pgv, local)
+        ! Gradient rows of local node a of a cell from its point gradients
+        ! pgv(:, g, j), summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: a
+        real(dp), intent(in) :: dphi, pgv(:, :, :)
+        real(dp), intent(inout) :: local(:)
+        real(dp) :: f(0:3), weight
+        integer :: g, j, m, c, l
+        l = 3*map%nmode*(a - 1)
+        local(l + 1:l + 3*map%nmode) = 0
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                weight = map%weight(g)*dphi
+                l = 3*map%nmode*(a - 1)
+                do m = 1, map%nmode
+                    call test_functions(map, g, j, a, m, f)
+                    do c = 1, 3
+                        l = l + 1
+                        local(l) = local(l) + weight*(pgv(c, g, j)*f(0) &
+                            + pgv(3 + c, g, j)*f(1) + pgv(6 + c, g, j)*f(2) &
+                            + pgv(9 + c, g, j)*f(3))
+                    end do
+                end do
+            end do
+        end do
     end subroutine
 
     subroutine ideal_map_hessian(map, x, matrix)
@@ -1122,8 +1447,8 @@ contains
         ! with r = 0, 1, 2 for (N T, dN/ds1 T, dN/ds2 T) and r = 3 for N dT/ds3.
         ! The plane stage is one DGEMM per trig/dtrig pairing over the map-level
         ! products pphi. The space stage merges r = 0 and 3 (both carry N) into
-        ! s = 1, 2, 3 and runs two DGEMM families. Workspaces are thread-private
-        ! and allocated once per parallel region.
+        ! s = 1, 2, 3 and runs two DGEMM families. The stage workspaces hold one
+        ! batch of cells and are shared by the team (see the batch loop).
         type(ideal_map_t), intent(in) :: map
         real(dp), intent(in) :: x(:, :, :)
         type(csr_matrix_t), intent(inout) :: matrix
@@ -1137,19 +1462,27 @@ contains
             end subroutine
         end interface
         real(dp), allocatable :: blocks(:, :, :), phig(:, :, :), phik(:, :)
-        real(dp), allocatable :: hwa(:, :), hwb(:, :), hwc(:, :), ka(:, :), kb(:, :)
-        real(dp), allocatable :: kc(:, :), ks(:, :), yw(:, :), ft(:, :)
-        real(dp), allocatable :: full(:, :), half(:, :)
-        real(dp) :: w, jac, gv(12), hp(78), dphi, weight
-        integer :: e, g, j, a, c, l, k, r, nl, nr, nlm, nmm, nmc, nloc, nq, nphi
-        integer :: nmode
+        real(dp), allocatable :: hwa(:, :, :), hwb(:, :, :), hwc(:, :, :), ka(:, :)
+        real(dp), allocatable :: kb(:, :), kc(:, :), ks(:, :, :), yw(:, :, :)
+        real(dp), allocatable :: ft(:, :, :)
+        real(dp), allocatable :: full(:, :, :), half(:, :, :)
+        real(dp), allocatable :: pa(:, :), pb(:, :), pc(:, :), pks(:, :), pyw(:, :)
+        real(dp), allocatable :: pft(:, :), pfull(:, :), phalf(:, :)
+        real(dp), allocatable :: et(:), ep(:)
+        real(dp) :: w, jac, gv(12), hp(78), dphi, weight, bp(3)
+        integer :: e, g, j, a, k, nl, nr, nlm, nmm, nmc, nloc, nq, nphi, nra
+        integer :: nmode, ne, eb, item, nh, nt
         nloc = map%nloc; nq = map%nq; nphi = map%nphi; nmode = map%nmode
         nlm = nloc*nmode
         nl = 3*nlm
         nr = 2*nlm + 2*map%npoly*nmode
         nmm = nmode**2
         nmc = 9*nmm
-        allocate (blocks(nr, nr, map%cells), phig(3, nloc, nq), phik(3*nq, nloc))
+        ! Columns of half: two per local node-mode, one per axis column.
+        nh = nlm + 2*map%npoly*nmode
+        ! Field-angle rows and columns follow the node and axis ones.
+        nra = nr + map%nangle
+        allocate (blocks(nra, nra, map%cells), phig(3, nloc, nq), phik(3*nq, nloc))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
         ! phi_s(a, g) for s = 1, 2, 3: N, dN/ds1, dN/ds2.
         do g = 1, nq
@@ -1162,65 +1495,381 @@ contains
                 end do
             end do
         end do
-        !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, nr, &
-        !$omp nlm, nmm, nmc, nloc, nq, nphi, nmode) &
-        !$omp private(e, g, j, a, c, l, k, r, w, jac, gv, hp, weight, hwa, hwb, hwc, &
-        !$omp ka, kb, kc, ks, yw, ft, full, half)
-        allocate (hwa(nphi, 45*nq), hwb(nphi, 27*nq), hwc(nphi, 6*nq), &
-            ka(nmm, 45*nq), kb(nmm, 27*nq), kc(nmm, 6*nq), ks(3*nmc, 3*nq), &
-            yw(nmc, 3*nq*nloc), ft(nmc, nloc*nloc), full(nl, nl), half(nl, nr))
-        !$omp do schedule(static)
-        do e = 1, map%cells
+        ! With at least as many cells as threads every thread assembles whole
+        ! cells in private workspaces (cell loop). With fewer cells the
+        ! cells are processed in one batch whose stages are shared by the
+        ! team over (cell, quadrature point), (cell, node) and (cell, column)
+        ! items, so a map with fewer cells than threads keeps all of them
+        ! busy. Both paths perform the per-cell sequence of calls with the same
+        ! operands, so the blocks do not depend on the thread count or path.
+        nt = 1
+        !$ nt = omp_get_max_threads()
+        if (map%cells >= nt) then
+            ! Thread-private workspaces, allocated once per parallel region.
+            !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, &
+            !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, nh) &
+            !$omp private(e, g, j, a, k, w, jac, gv, hp, weight, ka, kb, kc, item, pa, &
+            !$omp pb, pc, pks, pyw, pft, pfull, phalf, bp, et, ep)
+            allocate (et(map%nangle), ep(map%nangle))
+            allocate (ka(nmm, 45*nq), kb(nmm, 27*nq), kc(nmm, 6*nq), &
+                pa(nphi, 45*nq), pb(nphi, 27*nq), pc(nphi, 6*nq), pks(3*nmc, 3*nq), &
+                pyw(nmc, 3*nq*nloc), pft(nmc, nloc*nloc), pfull(nl, nl), phalf(nl, nr))
+            !$omp do schedule(static)
+            do e = 1, map%cells
+                do g = 1, nq
+                    weight = map%weight(g)*dphi
+                    do j = 1, nphi
+                        call point_density(map, map%angle, e, g, j, bp, et, ep)
+                        call point_hessian(map, e, g, j, x, bp, w, jac, gv, hp)
+                        do k = 1, 45
+                            pa(j, k + 45*(g - 1)) = weight*hp(k)
+                        end do
+                        do k = 1, 27
+                            pb(j, k + 27*(g - 1)) = weight*hp(45 + k)
+                        end do
+                        do k = 1, 6
+                            pc(j, k + 6*(g - 1)) = weight*hp(72 + k)
+                        end do
+                    end do
+                end do
+                call dgemm('T', 'N', nmm, 45*nq, nphi, 1.0_dp, map%pphi(1, 1, 1), &
+                    nphi, pa, nphi, 0.0_dp, ka, nmm)
+                call dgemm('T', 'N', nmm, 27*nq, nphi, 1.0_dp, map%pphi(1, 1, 2), &
+                    nphi, pb, nphi, 0.0_dp, kb, nmm)
+                call dgemm('T', 'N', nmm, 6*nq, nphi, 1.0_dp, map%pphi(1, 1, 3), &
+                    nphi, pc, nphi, 0.0_dp, kc, nmm)
+                call hessian_merge_pairs(nmode, nq, ka, kb, kc, pks)
+                do g = 1, nq
+                    call dgemm('N', 'N', 3*nmc, nloc, 3, 1.0_dp, &
+                        pks(1, 3*(g - 1) + 1), 3*nmc, phig(1, 1, g), 3, 0.0_dp, &
+                        pyw(1, 3*(g - 1) + 1), 3*nmc*nq)
+                end do
+                do a = 1, nloc
+                    call dgemm('N', 'N', nmc, nloc, 3*nq, 1.0_dp, &
+                        pyw(1, 3*nq*(a - 1) + 1), nmc, phik, 3*nq, 0.0_dp, &
+                        pft(1, nloc*(a - 1) + 1), nmc)
+                end do
+                do a = 1, nloc
+                    call hessian_scatter(nmode, nloc, a, pft, pfull)
+                    call hessian_add_gauge(map, e, a, pfull)
+                end do
+                do item = 1, nh
+                    call hessian_reduce_half(map, e, item, pfull, phalf)
+                end do
+                do item = 1, nr
+                    call hessian_reduce_column(map, e, item, phalf, blocks(1:nr, 1:nr, e))
+                end do
+                do item = 1, nr
+                    call hessian_reflect_column(item, blocks(1:nr, 1:nr, e))
+                end do
+            end do
+            !$omp end do
+            deallocate (ka, kb, kc, pa, pb, pc, pks, pyw, pft, pfull, phalf)
+            !$omp end parallel
+        else
+            ! All cells in one batch (fewer cells than threads).
+            ne = map%cells
+            allocate (hwa(nphi, 45*nq, ne), hwb(nphi, 27*nq, ne), hwc(nphi, 6*nq, ne), &
+                ks(3*nmc, 3*nq, ne), yw(nmc, 3*nq*nloc, ne), ft(nmc, nloc*nloc, ne), &
+                full(nl, nl, ne), half(nl, nr, ne))
+            !$omp parallel default(none) shared(map, x, blocks, phig, phik, dphi, nl, &
+            !$omp nr, nlm, nmm, nmc, nloc, nq, nphi, nmode, ne, nh, hwa, hwb, hwc, &
+            !$omp ks, yw, ft, full, half) &
+            !$omp private(e, eb, item, g, j, a, k, w, jac, gv, hp, weight, ka, kb, kc, &
+            !$omp bp, et, ep)
+            allocate (et(map%nangle), ep(map%nangle))
             ! Weighted point Hessians; column (pair, g) of the plane stage input.
-            do g = 1, nq
+            !$omp do schedule(static)
+            do item = 1, ne*nq
+                eb = 1 + (item - 1)/nq
+                g = item - nq*(eb - 1)
+                e = eb
                 weight = map%weight(g)*dphi
                 do j = 1, nphi
-                    call point_hessian(map, e, g, j, x, w, jac, gv, hp)
+                    call point_density(map, map%angle, e, g, j, bp, et, ep)
+                    call point_hessian(map, e, g, j, x, bp, w, jac, gv, hp)
                     do k = 1, 45
-                        hwa(j, k + 45*(g - 1)) = weight*hp(k)
+                        hwa(j, k + 45*(g - 1), eb) = weight*hp(k)
                     end do
                     do k = 1, 27
-                        hwb(j, k + 27*(g - 1)) = weight*hp(45 + k)
+                        hwb(j, k + 27*(g - 1), eb) = weight*hp(45 + k)
                     end do
                     do k = 1, 6
-                        hwc(j, k + 6*(g - 1)) = weight*hp(72 + k)
+                        hwc(j, k + 6*(g - 1), eb) = weight*hp(72 + k)
                     end do
                 end do
             end do
+            !$omp end do
             ! Plane stage: K(m + nmode (m' - 1), pair, g) per pairing.
-            call dgemm('T', 'N', nmm, 45*nq, nphi, 1.0_dp, map%pphi(1, 1, 1), nphi, &
-                hwa, nphi, 0.0_dp, ka, nmm)
-            call dgemm('T', 'N', nmm, 27*nq, nphi, 1.0_dp, map%pphi(1, 1, 2), nphi, &
-                hwb, nphi, 0.0_dp, kb, nmm)
-            call dgemm('T', 'N', nmm, 6*nq, nphi, 1.0_dp, map%pphi(1, 1, 3), nphi, &
-                hwc, nphi, 0.0_dp, kc, nmm)
-            call hessian_merge_pairs(nmode, nq, ka, kb, kc, ks)
+            allocate (ka(nmm, 45*nq), kb(nmm, 27*nq), kc(nmm, 6*nq))
+            !$omp do schedule(dynamic, 1)
+            do eb = 1, ne
+                call dgemm('T', 'N', nmm, 45*nq, nphi, 1.0_dp, map%pphi(1, 1, 1), &
+                    nphi, hwa(1, 1, eb), nphi, 0.0_dp, ka, nmm)
+                call dgemm('T', 'N', nmm, 27*nq, nphi, 1.0_dp, map%pphi(1, 1, 2), &
+                    nphi, hwb(1, 1, eb), nphi, 0.0_dp, kb, nmm)
+                call dgemm('T', 'N', nmm, 6*nq, nphi, 1.0_dp, map%pphi(1, 1, 3), &
+                    nphi, hwc(1, 1, eb), nphi, 0.0_dp, kc, nmm)
+                call hessian_merge_pairs(nmode, nq, ka, kb, kc, ks(:, :, eb))
+            end do
+            !$omp end do
+            deallocate (ka, kb, kc)
             ! Space stage: contract s' with phi_s'(a', g), then (s, g) with
             ! phi_s(a, g); yw(mmcc, s + 3 (g - 1) + 3 nq (a' - 1)).
-            do g = 1, nq
-                call dgemm('N', 'N', 3*nmc, nloc, 3, 1.0_dp, ks(1, 3*(g - 1) + 1), &
-                    3*nmc, phig(1, 1, g), 3, 0.0_dp, yw(1, 3*(g - 1) + 1), &
+            !$omp do schedule(static)
+            do item = 1, ne*nq
+                eb = 1 + (item - 1)/nq
+                g = item - nq*(eb - 1)
+                call dgemm('N', 'N', 3*nmc, nloc, 3, 1.0_dp, ks(1, 3*(g - 1) + 1, eb), &
+                    3*nmc, phig(1, 1, g), 3, 0.0_dp, yw(1, 3*(g - 1) + 1, eb), &
                     3*nmc*nq)
             end do
-            do a = 1, nloc
+            !$omp end do
+            !$omp do schedule(static)
+            do item = 1, ne*nloc
+                eb = 1 + (item - 1)/nloc
+                a = item - nloc*(eb - 1)
                 call dgemm('N', 'N', nmc, nloc, 3*nq, 1.0_dp, &
-                    yw(1, 3*nq*(a - 1) + 1), nmc, phik, 3*nq, 0.0_dp, &
-                    ft(1, nloc*(a - 1) + 1), nmc)
+                    yw(1, 3*nq*(a - 1) + 1, eb), nmc, phik, 3*nq, 0.0_dp, &
+                    ft(1, nloc*(a - 1) + 1, eb), nmc)
             end do
-            call hessian_scatter(nmode, nloc, ft, full)
-            do a = 1, nloc
-                do c = 1, nloc
-                    l = 3*(1 + nmode*(a - 1))
-                    r = 3*(1 + nmode*(c - 1))
-                    full(l, r) = full(l, r) + map%omega_gauge(a, c, e)
+            !$omp end do
+            ! full: node column blocks, then the omega gauge on them.
+            !$omp do schedule(static)
+            do item = 1, ne*nloc
+                eb = 1 + (item - 1)/nloc
+                a = item - nloc*(eb - 1)
+                call hessian_scatter(nmode, nloc, a, ft(:, :, eb), full(:, :, eb))
+                call hessian_add_gauge(map, eb, a, full(:, :, eb))
+            end do
+            !$omp end do
+            ! Reduction P^T full P: columns of half, then columns of the block.
+            !$omp do schedule(dynamic, 4)
+            do item = 1, ne*nh
+                eb = 1 + (item - 1)/nh
+                call hessian_reduce_half(map, eb, item - nh*(eb - 1), &
+                    full(:, :, eb), half(:, :, eb))
+            end do
+            !$omp end do
+            !$omp do schedule(dynamic, 4)
+            do item = 1, ne*nr
+                eb = 1 + (item - 1)/nr
+                call hessian_reduce_column(map, eb, item - nr*(eb - 1), &
+                    half(:, :, eb), blocks(1:nr, 1:nr, eb))
+            end do
+            !$omp end do
+            ! The scalar-energy Hessian has one authoritative triangle.
+            ! Reflect after P^T H P: cancellation in independently evaluated
+            ! contractions must not create an antisymmetric Newton operator.
+            !$omp do schedule(static)
+            do item = 1, ne*nr
+                eb = 1 + (item - 1)/nr
+                call hessian_reflect_column(item - nr*(eb - 1), blocks(1:nr, 1:nr, eb))
+            end do
+            !$omp end do
+            !$omp end parallel
+            deallocate (hwa, hwb, hwc, ks, yw, ft, full, half)
+        end if
+        if (map%nangle > 0) call hessian_angle(map, x, nr, blocks)
+        if (matrix%n /= map%nred .or. matrix%nloc /= nra) &
+            call csr_build_pattern(map%nred, map%redconn, .false., matrix, &
+                with_slots=.true.)
+        ! The blocks are exactly symmetric (reflected above).
+        call csr_assemble_blocks(matrix, map%redconn, blocks, symmetric=.true.)
+    end subroutine
+
+    subroutine hessian_angle(map, x, nr, blocks)
+        ! Field-angle rows and columns of the cell blocks: the frozen density
+        ! is linear in the angle coefficients, b = b0 + B eta with
+        ! B = form_t eta_t'^T + form_p eta_p'^T, so
+        !   d2W/dv d eta = sum w (d2w/dv db) B,  d2W/d eta2 = sum w B^T (d2w/db2) B
+        ! (no second derivative of b). The node rows are reduced with the
+        ! same basis as hessian_reduce_column (position gauge: no axis_vec).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        integer, intent(in) :: nr
+        real(dp), intent(inout) :: blocks(:, :, :)
+        interface
+            subroutine dgemm(ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
+                import :: dp
+                character, intent(in) :: ta, tb
+                integer, intent(in) :: m, n, k, lda, ldb, ldc
+                real(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+                real(dp), intent(inout) :: c(ldc, *)
+            end subroutine
+        end interface
+        real(dp), allocatable :: et(:), ep(:), bs(:, :), hs(:, :), tv(:, :), hx(:, :)
+        real(dp), allocatable :: hcc(:, :)
+        real(dp) :: bp(3), hbb(6), hvb(12, 3), h3(3, 3), f(0:3), weight, dphi, s
+        integer :: e, g, j, a, m, c, l, k, i, jp, r, node, na, nlm, npt, pt
+        na = map%nangle
+        nlm = map%nloc*map%nmode
+        npt = map%nq*map%nphi
+        dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
+        !$omp parallel default(shared) private(e, g, j, a, m, c, l, k, i, jp, r, node, &
+        !$omp pt, bp, hbb, hvb, h3, f, weight, s, et, ep, bs, hs, tv, hx, hcc)
+        allocate (et(na), ep(na), bs(3*npt, na), hs(3*npt, na), tv(12, na), &
+            hx(3*nlm, na), hcc(na, na))
+        !$omp do schedule(dynamic, 1)
+        do e = 1, map%cells
+            hx = 0
+            pt = 0
+            do j = 1, map%nphi
+                do g = 1, map%nq
+                    call point_density(map, map%angle, e, g, j, bp, et, ep)
+                    call point_field(map, e, g, j, x, bp, hbb, hvb)
+                    weight = map%weight(g)*dphi
+                    do k = 1, 3
+                        bs(3*pt + k, :) = map%angle_form(k, 1, g, e)*et &
+                            + map%angle_form(k, 2, g, e)*ep
+                    end do
+                    h3 = reshape([hbb(1), hbb(2), hbb(4), hbb(2), hbb(3), hbb(5), &
+                        hbb(4), hbb(5), hbb(6)], [3, 3])
+                    hs(3*pt + 1:3*pt + 3, :) = weight*matmul(h3, bs(3*pt + 1:3*pt + 3, :))
+                    tv = weight*matmul(hvb, bs(3*pt + 1:3*pt + 3, :))
+                    do a = 1, map%nloc
+                        do m = 1, map%nmode
+                            call test_functions(map, g, j, a, m, f)
+                            l = m + map%nmode*(a - 1)
+                            do c = 1, 3
+                                hx(3*l - 3 + c, :) = hx(3*l - 3 + c, :) + f(0)*tv(c, :) &
+                                    + f(1)*tv(3 + c, :) + f(2)*tv(6 + c, :) &
+                                    + f(3)*tv(9 + c, :)
+                            end do
+                        end do
+                    end do
+                    pt = pt + 1
                 end do
             end do
-            call hessian_reduce(map, e, full, half, blocks(:, :, e))
+            call dgemm('T', 'N', na, na, 3*npt, 1.0_dp, bs, 3*npt, hs, 3*npt, 0.0_dp, &
+                hcc, na)
+            blocks(nr + 1:, nr + 1:, e) = 0.5_dp*(hcc + transpose(hcc))
+            do l = 1, nlm
+                node = map%conn(1 + (l - 1)/map%nmode, e)
+                do i = 1, 2
+                    blocks(2*l - 2 + i, nr + 1:, e) = map%basis(1, i, node)*hx(3*l - 2, :) &
+                        + map%basis(2, i, node)*hx(3*l - 1, :) &
+                        + map%basis(3, i, node)*hx(3*l, :)
+                end do
+            end do
+            do m = 1, map%nmode
+                do jp = 1, map%npoly
+                    do i = 1, 2
+                        r = 2*nlm + i + 2*(jp - 1) + 2*map%npoly*(m - 1)
+                        do k = 1, na
+                            s = 0
+                            do a = 1, map%nloc
+                                l = m + map%nmode*(a - 1)
+                                s = s + map%axis_basis(jp, map%conn(a, e))*hx(3*l - 3 + i, k)
+                            end do
+                            blocks(r, nr + k, e) = s
+                        end do
+                    end do
+                end do
+            end do
+            blocks(nr + 1:, 1:nr, e) = transpose(blocks(1:nr, nr + 1:, e))
         end do
         !$omp end do
-        deallocate (hwa, hwb, hwc, ka, kb, kc, ks, yw, ft, full, half)
+        deallocate (et, ep, bs, hs, tv, hx, hcc)
         !$omp end parallel
-        if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
+    end subroutine
+
+    subroutine point_field(map, e, g, j, x, b, hbb, hvb)
+        ! d2w/db2 (packed) and d2w/dv db at point g of cell e, plane j.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, g, j
+        real(dp), intent(in) :: x(:, :, :), b(3)
+        real(dp), intent(out) :: hbb(6), hvb(12, 3)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: gb(3)
+        call point_jet(map, e, g, j, x, q, qd)
+        call map%chart%jet(q, pos, d1, d2, d3)
+        call ideal_point_field_jets(d1, d2, d3, qd, b, map%p(g, e), map%mu0, &
+            map%sigma, gb, hbb, hvb)
+    end subroutine
+
+    subroutine ideal_map_parallel_mass(map, x, matrix, total)
+        ! Parallel mass M_par(u, v) = int (u.b)(v.b) dx, b = B/|B|, for the
+        ! displacements u = DH(q) dq of two coefficient increments, in the
+        ! reduced dofs and on the CSR pattern of ideal_map_hessian. It is
+        ! the metric of the parallel-only Levenberg-Marquardt term
+        ! (map%parallel_damping): u || B leaves B = DX b/J unchanged to first
+        ! order (curl(u x B) = 0), the near-null direction of the energy.
+        ! total: the displacement mass int u.v dx instead (diagnostics).
+        ! Field-angle dofs (map%nangle) relabel the frozen field without
+        ! moving a point, so their rows and columns are zero.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        type(csr_matrix_t), intent(inout) :: matrix
+        logical, intent(in), optional :: total
+        real(dp), allocatable :: blocks(:, :, :), full(:, :), half(:, :), v(:)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: dx(3, 3), bv(3), t(3), jac, weight, dphi, f
+        integer :: e, g, j, a, m, nl, nr, nh, i, nrank
+        logical :: all_components
+        all_components = .false.
+        if (present(total)) all_components = total
+        nrank = merge(3, 1, all_components)
+        nl = 3*map%nloc*map%nmode
+        nr = 2*map%nloc*map%nmode + 2*map%npoly*map%nmode
+        ! Columns of half: two per local node-mode, one per axis column.
+        nh = map%nloc*map%nmode + 2*map%npoly*map%nmode
+        dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
+        allocate (blocks(nr + map%nangle, nr + map%nangle, map%cells))
+        blocks = 0
+        !$omp parallel default(shared) private(e, g, j, a, m, i, q, qd, pos, d1, &
+        !$omp d2, d3, dx, bv, t, jac, weight, f, full, half, v)
+        allocate (full(nl, nl), half(nl, nr), v(nl))
+        !$omp do schedule(static)
+        do e = 1, map%cells
+            full = 0
+            do j = 1, map%nphi
+                do g = 1, map%nq
+                    call point_jet(map, e, g, j, x, q, qd)
+                    call map%chart%jet(q, pos, d1, d2, d3)
+                    dx = matmul(d1, qd)
+                    bv = matmul(dx, map%b(:, g, e))
+                    jac = map%sigma*(dx(1, 1)*(dx(2, 2)*dx(3, 3) - dx(2, 3)*dx(3, 2)) &
+                        - dx(1, 2)*(dx(2, 1)*dx(3, 3) - dx(2, 3)*dx(3, 1)) &
+                        + dx(1, 3)*(dx(2, 1)*dx(3, 2) - dx(2, 2)*dx(3, 1)))
+                    if (.not. norm2(bv) > 0) cycle
+                    weight = map%weight(g)*dphi*abs(jac)
+                    do i = 1, nrank
+                        ! (DH dq).b = dq.t with t = DH^T b; total: the rows
+                        ! of DH (DH^T DH = sum of their outer products).
+                        if (all_components) then
+                            t = d1(i, :)
+                        else
+                            t = matmul(transpose(d1), bv/norm2(bv))
+                        end if
+                        do a = 1, map%nloc
+                            do m = 1, map%nmode
+                                f = map%shape(a, g)*map%trig(m, j)
+                                v(1 + 3*(m - 1) + 3*map%nmode*(a - 1): &
+                                    3*m + 3*map%nmode*(a - 1)) = f*t
+                            end do
+                        end do
+                        ! Rank-1 update without nl x nl temporaries.
+                        do a = 1, nl
+                            if (v(a) /= 0) full(:, a) = full(:, a) + (weight*v(a))*v
+                        end do
+                    end do
+                end do
+            end do
+            do i = 1, nh
+                call hessian_reduce_half(map, e, i, full, half)
+            end do
+            do i = 1, nr
+                call hessian_reduce_column(map, e, i, half, blocks(1:nr, 1:nr, e))
+            end do
+            do i = 1, nr
+                call hessian_reflect_column(i, blocks(1:nr, 1:nr, e))
+            end do
+        end do
+        !$omp end do
+        deallocate (full, half, v)
+        !$omp end parallel
+        if (matrix%n /= map%nred .or. matrix%nloc /= nr + map%nangle) &
             call csr_build_pattern(map%nred, map%redconn, .false., matrix, &
                 with_slots=.true.)
         call csr_assemble_blocks(matrix, map%redconn, blocks)
@@ -1281,25 +1930,23 @@ contains
         end subroutine
     end subroutine
 
-    subroutine hessian_scatter(nmode, nloc, ft, full)
-        ! ft(mmcc, a + nloc (a' - 1)) to full(c + 3 (m - 1) + 3 nmode (a - 1),
-        ! c' + 3 (m' - 1) + 3 nmode (a' - 1)).
-        integer, intent(in) :: nmode, nloc
+    subroutine hessian_scatter(nmode, nloc, ap, ft, full)
+        ! Column block a' of ft(mmcc, a + nloc (a' - 1)) to
+        ! full(c + 3 (m - 1) + 3 nmode (a - 1), c' + 3 (m' - 1) + 3 nmode (a' - 1)).
+        integer, intent(in) :: nmode, nloc, ap
         real(dp), intent(in) :: ft(:, :)
-        real(dp), intent(out) :: full(:, :)
-        integer :: a, ap, c, cp, m, mp, nmm
+        real(dp), intent(inout) :: full(:, :)
+        integer :: a, c, cp, m, mp, nmm
         nmm = nmode**2
-        do ap = 1, nloc
-            do a = 1, nloc
-                do cp = 1, 3
-                    do c = 1, 3
-                        do mp = 1, nmode
-                            do m = 1, nmode
-                                full(c + 3*(m - 1) + 3*nmode*(a - 1), &
-                                    cp + 3*(mp - 1) + 3*nmode*(ap - 1)) = &
-                                    ft(m + nmode*(mp - 1) + nmm*(c - 1 + 3*(cp - 1)), &
-                                    a + nloc*(ap - 1))
-                            end do
+        do a = 1, nloc
+            do cp = 1, 3
+                do c = 1, 3
+                    do mp = 1, nmode
+                        do m = 1, nmode
+                            full(c + 3*(m - 1) + 3*nmode*(a - 1), &
+                                cp + 3*(mp - 1) + 3*nmode*(ap - 1)) = &
+                                ft(m + nmode*(mp - 1) + nmm*(c - 1 + 3*(cp - 1)), &
+                                a + nloc*(ap - 1))
                         end do
                     end do
                 end do
@@ -1307,24 +1954,37 @@ contains
         end do
     end subroutine
 
-    subroutine hessian_reduce(map, e, full, half, blk)
-        ! Cell block P^T full P in the reduced (nu, omega, axis) dofs, reflected
-        ! from the lower triangle. P maps (nu, omega) of local node-mode l to
-        ! (d1 nu, d2 nu, omega) through map%basis and the axis modes to the
-        ! components of the node vectors.
+    subroutine hessian_add_gauge(map, e, c, full)
+        ! Omega gauge of cell e on the column of node c (mode 1, omega).
         type(ideal_map_t), intent(in) :: map
-        integer, intent(in) :: e
+        integer, intent(in) :: e, c
+        real(dp), intent(inout) :: full(:, :)
+        integer :: a, l, r
+        r = 3*(1 + map%nmode*(c - 1))
+        do a = 1, map%nloc
+            l = 3*(1 + map%nmode*(a - 1))
+            full(l, r) = full(l, r) + map%omega_gauge(a, c, e)
+        end do
+    end subroutine
+
+    subroutine hessian_reduce_half(map, e, col, full, half)
+        ! Column item col of half = full P for cell e. P maps (nu, omega) of
+        ! local node-mode l to (d1 nu, d2 nu, omega) through map%basis and the
+        ! axis modes to the components of the node vectors. Items 1..nlm give
+        ! the columns 2 l - 1, 2 l; the following ones the axis columns.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, col
         real(dp), intent(in) :: full(:, :)
-        real(dp), intent(out) :: half(:, :), blk(:, :)
-        real(dp) :: b1(3), b2(3), av(2), t, s
-        integer :: i, l, a, node, m, jp, c, r, nlm, nl, nr, nmode, nloc
+        real(dp), intent(inout) :: half(:, :)
+        real(dp) :: b1(3), b2(3), av(2), t
+        integer :: i, l, a, node, m, jp, c, r, nlm, nl, nmode, nloc, q
         logical :: nested
         nmode = map%nmode; nloc = map%nloc
         nlm = nloc*nmode
         nl = 3*nlm
-        nr = 2*nlm + 2*map%npoly*nmode
         nested = allocated(map%axis_vec)
-        do l = 1, nlm
+        if (col <= nlm) then
+            l = col
             node = map%conn(1 + (l - 1)/nmode, e)
             b1 = map%basis(:, 1, node)
             b2 = map%basis(:, 2, node)
@@ -1334,68 +1994,85 @@ contains
                 half(i, 2*l) = b2(1)*full(i, 3*l - 2) + b2(2)*full(i, 3*l - 1) &
                     + b2(3)*full(i, 3*l)
             end do
+            return
+        end if
+        ! Axis column r = 2 nlm + c + 2 (jp - 1) + 2 npoly (m - 1).
+        q = col - nlm - 1
+        c = 1 + mod(q, 2)
+        jp = 1 + mod(q/2, map%npoly)
+        m = 1 + q/(2*map%npoly)
+        r = 2*nlm + c + 2*(jp - 1) + 2*map%npoly*(m - 1)
+        half(:, r) = 0
+        do a = 1, nloc
+            l = m + nmode*(a - 1)
+            node = map%conn(a, e)
+            if (nested) then
+                av = map%axis_vec(:, c + 2*(jp - 1), node)
+                do i = 1, nl
+                    half(i, r) = half(i, r) + av(1)*full(i, 3*l - 2) &
+                        + av(2)*full(i, 3*l - 1)
+                end do
+            else
+                t = map%axis_basis(jp, node)
+                do i = 1, nl
+                    half(i, r) = half(i, r) + t*full(i, 3*l - 3 + c)
+                end do
+            end if
+        end do
+    end subroutine
+
+    subroutine hessian_reduce_column(map, e, c, half, blk)
+        ! Rows r >= c of column c of the cell block P^T half: the lower
+        ! triangle is authoritative and the upper one is reflected from it
+        ! (hessian_reflect_column), so it is not computed.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e, c
+        real(dp), intent(in) :: half(:, :)
+        real(dp), intent(inout) :: blk(:, :)
+        real(dp) :: b1(3), b2(3), av(2), s
+        integer :: i, l, a, node, m, jp, r, nlm, nmode, nloc
+        logical :: nested
+        nmode = map%nmode; nloc = map%nloc
+        nlm = nloc*nmode
+        nested = allocated(map%axis_vec)
+        do l = max(1, c/2), nlm
+            node = map%conn(1 + (l - 1)/nmode, e)
+            b1 = map%basis(:, 1, node)
+            b2 = map%basis(:, 2, node)
+            blk(2*l - 1, c) = b1(1)*half(3*l - 2, c) + b1(2)*half(3*l - 1, c) &
+                + b1(3)*half(3*l, c)
+            blk(2*l, c) = b2(1)*half(3*l - 2, c) + b2(2)*half(3*l - 1, c) &
+                + b2(3)*half(3*l, c)
         end do
         do m = 1, nmode
             do jp = 1, map%npoly
-                do c = 1, 2
-                    r = 2*nlm + c + 2*(jp - 1) + 2*map%npoly*(m - 1)
-                    half(:, r) = 0
+                do i = 1, 2
+                    r = 2*nlm + i + 2*(jp - 1) + 2*map%npoly*(m - 1)
+                    if (r < c) cycle
+                    s = 0
                     do a = 1, nloc
                         l = m + nmode*(a - 1)
                         node = map%conn(a, e)
                         if (nested) then
-                            av = map%axis_vec(:, c + 2*(jp - 1), node)
-                            do i = 1, nl
-                                half(i, r) = half(i, r) + av(1)*full(i, 3*l - 2) &
-                                    + av(2)*full(i, 3*l - 1)
-                            end do
+                            av = map%axis_vec(:, i + 2*(jp - 1), node)
+                            s = s + av(1)*half(3*l - 2, c) + av(2)*half(3*l - 1, c)
                         else
-                            t = map%axis_basis(jp, node)
-                            do i = 1, nl
-                                half(i, r) = half(i, r) + t*full(i, 3*l - 3 + c)
-                            end do
+                            s = s + map%axis_basis(jp, node)*half(3*l - 3 + i, c)
                         end if
                     end do
+                    blk(r, c) = s
                 end do
             end do
         end do
-        do c = 1, nr
-            do l = 1, nlm
-                node = map%conn(1 + (l - 1)/nmode, e)
-                b1 = map%basis(:, 1, node)
-                b2 = map%basis(:, 2, node)
-                blk(2*l - 1, c) = b1(1)*half(3*l - 2, c) + b1(2)*half(3*l - 1, c) &
-                    + b1(3)*half(3*l, c)
-                blk(2*l, c) = b2(1)*half(3*l - 2, c) + b2(2)*half(3*l - 1, c) &
-                    + b2(3)*half(3*l, c)
-            end do
-            do m = 1, nmode
-                do jp = 1, map%npoly
-                    do i = 1, 2
-                        r = 2*nlm + i + 2*(jp - 1) + 2*map%npoly*(m - 1)
-                        s = 0
-                        do a = 1, nloc
-                            l = m + nmode*(a - 1)
-                            node = map%conn(a, e)
-                            if (nested) then
-                                av = map%axis_vec(:, i + 2*(jp - 1), node)
-                                s = s + av(1)*half(3*l - 2, c) + av(2)*half(3*l - 1, c)
-                            else
-                                s = s + map%axis_basis(jp, node)*half(3*l - 3 + i, c)
-                            end if
-                        end do
-                        blk(r, c) = s
-                    end do
-                end do
-            end do
-        end do
-        ! The scalar-energy Hessian has one authoritative triangle.
-        ! Reflect after P^T H P: cancellation in independently evaluated
-        ! contractions must not create an antisymmetric Newton operator.
-        do c = 1, nr
-            do r = 1, c - 1
-                blk(r, c) = blk(c, r)
-            end do
+    end subroutine
+
+    subroutine hessian_reflect_column(c, blk)
+        ! Upper part of column c from the lower triangle: blk(r, c) = blk(c, r).
+        integer, intent(in) :: c
+        real(dp), intent(inout) :: blk(:, :)
+        integer :: r
+        do r = 1, c - 1
+            blk(r, c) = blk(c, r)
         end do
     end subroutine
 
@@ -1421,17 +2098,17 @@ contains
         ! Absolute gradient the tolerance refers to (default: the initial one),
         ! e.g. the first-phase gradient for a polishing solve.
         real(dp), intent(in), optional :: reference_gradient
-        type(csr_matrix_t) :: matrix, omatrix
+        type(csr_matrix_t) :: matrix, omatrix, pmatrix
         type(sparse_solver_t) :: solver, osolver, lsolver
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
-        real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:)
+        real(dp), allocatable :: trial(:, :, :), rhs(:), shift(:), trial_angle(:)
         logical, allocatable :: omask(:), damped(:)
         real(dp) :: energy, trial_energy, g0, gnorm, mu, minjac, scale, alpha
         real(dp) :: cap_x, cap_w, t0, trial_minjac
         integer :: it, i, k, tries, estatus
         logical :: talk, accepted, factored, ofactored, lfactored, use_lu, nested
-        logical :: retained, direct, pc_failed
+        logical :: retained, direct, pc_failed, spd
         real(dp) :: eta, ginit
         ! Quasi-Newton state (map%lagged_hessian): qn_slot 1/2: solver/lsolver
         ! holds the last factor (0: none); secant pairs qs, qy with 1/(s.y) in
@@ -1444,6 +2121,9 @@ contains
         factored = .false.; ofactored = .false.; lfactored = .false.
         if (present(verbose)) talk = verbose
         nested = map%omega_elimination .and. .not. map%position_gauge
+        status = IDEAL_MAP_BAD_INPUT
+        if (map%parallel_damping < 0 .or. (map%parallel_damping > 0 .and. nested)) &
+            return
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
             diag(map%nred), rhs(map%nred), shift(map%nred))
         call omega_mask(map, nested, omask)
@@ -1454,6 +2134,8 @@ contains
                 qy(map%nred, max(1, map%lagged_memory)), &
                 qrho(max(1, map%lagged_memory)), gprev(map%nred))
         end if
+        allocate (trial_angle(map%nangle))
+        if (map%nangle > 0) trial_angle = map%angle
         t0 = wall_seconds()
         call ideal_map_energy(map, map%x, energy, estatus, grad, minjac)
         report%energy_s = report%energy_s + wall_seconds() - t0
@@ -1496,12 +2178,15 @@ contains
             call ideal_map_hessian(map, map%x, matrix)
             report%hessian_s = report%hessian_s + wall_seconds() - t0
             report%hessians = report%hessians + 1
+            !$omp parallel do default(shared) private(i, k) schedule(static)
             do i = 1, map%nred
                 do k = matrix%rowptr(i), matrix%rowptr(i + 1) - 1
                     if (matrix%colidx(k) == i) diag(i) = matrix%val(k)
                 end do
             end do
+            !$omp end parallel do
             scale = maxval(abs(diag), mask=.not. map%fixed)
+            if (map%parallel_damping > 0) call add_parallel()
             accepted = .false.
             if (nested) then
                 call nested_line_search()
@@ -1520,17 +2205,18 @@ contains
                 if (map%krylov_step .and. retained) call krylov_solve(direct)
                 if (direct) then
                     use_lu = .false.
+                    spd = .false.
                     if (map%krylov_step) then
-                        ! The preconditioner must be SPD: Cholesky first, and
-                        ! a pivoted LU fallback factor is not retained.
+                        ! The preconditioner must be SPD (map%factor_policy);
+                        ! an indefinite factor is used for this trial only.
                         call factor_masked(map, matrix, .not. map%fixed, shift, &
                             solver, factored, estatus, report, lu=lsolver, &
-                            lu_done=lfactored, use_lu=use_lu)
+                            lu_done=lfactored, use_lu=use_lu, spd=spd)
                     else
                         call factor_masked(map, matrix, .not. map%fixed, shift, &
                             solver, factored, estatus, report)
                     end if
-                    retained = estatus == 0 .and. .not. use_lu
+                    retained = estatus == 0 .and. spd
                     if (estatus /= 0) then
                         mu = mu*10; cycle
                     end if
@@ -1561,8 +2247,11 @@ contains
                 call trust_region()
                 full = alpha*full; step = alpha*step
                 trial = map%x + reshape(full, shape(map%x))
+                if (map%nangle > 0) trial_angle = map%angle &
+                    + full(3*map%nmode*map%nodes + 1:)
                 t0 = wall_seconds()
-                call ideal_map_energy(map, trial, trial_energy, estatus)
+                call ideal_map_energy(map, trial, trial_energy, estatus, &
+                    angle=trial_angle)
                 report%energy_s = report%energy_s + wall_seconds() - t0
                 if (estatus == IDEAL_MAP_OK .and. trial_energy < energy &
                     - 64*epsilon(1.0_dp)*abs(energy)) then
@@ -1575,7 +2264,8 @@ contains
                 ! do not decrease |g| monotonically.
                 if (estatus == IDEAL_MAP_OK .and. trial_energy <= energy &
                     + 1024*epsilon(1.0_dp)*abs(energy)) then
-                    call ideal_map_energy(map, trial, trial_energy, estatus, grad)
+                    call ideal_map_energy(map, trial, trial_energy, estatus, grad, &
+                        angle=trial_angle)
                     call ideal_map_reduce(map, grad, rhs)
                     where (map%fixed) rhs = 0
                     if (dot_product(gred + rhs, step) <= 0) then
@@ -1590,6 +2280,11 @@ contains
             if (allocated(qs)) gprev = gred
             report%step = maxval(abs(trial - map%x))
             map%x = trial
+            if (map%nangle > 0) then
+                report%step = max(report%step, &
+                    maxval(abs(trial_angle - map%angle)))
+                map%angle = trial_angle
+            end if
             if (nested) then
                 energy = trial_energy; gred = rhs; minjac = trial_minjac
             else
@@ -1615,6 +2310,31 @@ contains
         if (.not. gnorm > tolerance*g0) status = IDEAL_MAP_OK
         call cleanup()
     contains
+        subroutine add_parallel()
+            ! matrix += kappa_k M_par on the identical Hessian pattern; the
+            ! diagonal LM metric (diag) stays that of H.
+            real(dp) :: pscale, pratio
+            integer :: row
+            t0 = wall_seconds()
+            call ideal_map_parallel_mass(map, map%x, pmatrix)
+            report%hessian_s = report%hessian_s + wall_seconds() - t0
+            if (size(pmatrix%val) /= size(matrix%val)) &
+                error stop 'ideal_map_parallel_mass: pattern mismatch'
+            pscale = 0
+            do row = 1, map%nred
+                if (map%fixed(row)) cycle
+                do k = pmatrix%rowptr(row), pmatrix%rowptr(row + 1) - 1
+                    if (pmatrix%colidx(k) == row) pscale = max(pscale, pmatrix%val(k))
+                end do
+            end do
+            pratio = 0
+            if (.not. pscale > 0) return
+            pratio = scale/pscale
+            report%parallel_kappa = map%parallel_damping &
+                *min(1.0_dp, gnorm/max(g0, tiny(1.0_dp)))*pratio
+            matrix%val = matrix%val + report%parallel_kappa*pmatrix%val
+        end subroutine
+
         subroutine trust_region()
             ! alpha = largest fraction of full within the displacement caps.
             alpha = 1
@@ -1626,6 +2346,9 @@ contains
                     cap_w/max(tiny(1.0_dp), maxval(abs(full(k + 2:k + 3*map%nmode &
                     - 1:3)))))
             end do
+            ! Field angle (radians): the same cap as the rotation.
+            if (map%nangle > 0) alpha = min(alpha, cap_w/max(tiny(1.0_dp), &
+                maxval(abs(full(3*map%nmode*map%nodes + 1:)))))
         end subroutine
 
         subroutine quasi_newton_step(done_step)
@@ -1666,14 +2389,18 @@ contains
             call trust_region()
             full = alpha*full; step = alpha*step
             trial = map%x + reshape(full, shape(map%x))
+            if (map%nangle > 0) trial_angle = map%angle &
+                + full(3*map%nmode*map%nodes + 1:)
             t0 = wall_seconds()
-            call ideal_map_energy(map, trial, trial_energy, estatus)
+            call ideal_map_energy(map, trial, trial_energy, estatus, &
+                angle=trial_angle)
             report%energy_s = report%energy_s + wall_seconds() - t0
             if (estatus /= IDEAL_MAP_OK) return
             if (trial_energy < energy - 64*epsilon(1.0_dp)*abs(energy)) then
                 done_step = .true.
             else if (trial_energy <= energy + 1024*epsilon(1.0_dp)*abs(energy)) then
-                call ideal_map_energy(map, trial, trial_energy, estatus, grad)
+                call ideal_map_energy(map, trial, trial_energy, estatus, grad, &
+                    angle=trial_angle)
                 call ideal_map_reduce(map, grad, rhs)
                 where (map%fixed) rhs = 0
                 done_step = dot_product(gred + rhs, step) <= 0
@@ -1996,7 +2723,7 @@ contains
     end function
 
     subroutine factor_masked(map, matrix, keep, shift, slv, done, info, report, gauge, &
-                             lu, lu_done, use_lu)
+                             lu, lu_done, use_lu, spd)
         ! Factorise the reduced Hessian restricted to the keep rows/columns
         ! (identity elsewhere), plus shift on the diagonal. done: slv holds a
         ! factorisation of this pattern (only the numerical one is redone).
@@ -2004,10 +2731,11 @@ contains
         ! the free n = 0 omega dofs as Lagrange rows/columns (saddle point;
         ! solve with gauge_solve). The masked, symmetrised matrix is cached in
         ! report per pattern; a trial only rewrites the diagonal.
-        ! lu, lu_done, use_lu (all or none, without gauge): slv holds the SPD
-        ! Cholesky and lu the pivoted LU fallback of the same matrix; use_lu
-        ! tells which one holds the factor of this trial. Without them, slv
-        ! holds the pivoted LU.
+        ! lu, lu_done, use_lu, spd (all or none, without gauge): the Krylov-step
+        ! policy map%factor_policy. slv holds the Cholesky or LDL^T and lu the
+        ! pivoted LU of the same matrix; use_lu tells which one holds the
+        ! factor of this trial and spd whether it is the positive definite
+        ! factor in slv. Without them, slv holds the pivoted LU.
         type(ideal_map_t), intent(in) :: map
         type(csr_matrix_t), intent(in) :: matrix
         logical, intent(in) :: keep(:)
@@ -2019,16 +2747,18 @@ contains
         logical, intent(in), optional :: gauge
         type(sparse_solver_t), intent(inout), optional :: lu
         logical, intent(inout), optional :: lu_done
-        logical, intent(out), optional :: use_lu
+        logical, intent(out), optional :: use_lu, spd
         type(fortsparse_status_t) :: sstatus
-        logical :: spd
+        logical :: krylov
         integer :: row, nc
+        integer, parameter :: CHOLESKY = 1, PIVOTED_LU = 2, LDLT = 3
         nc = 0
         if (present(gauge)) then
             if (gauge) nc = gauge_rows(map)
         end if
-        spd = nc == 0 .and. present(lu)
+        krylov = nc == 0 .and. present(lu)
         if (present(use_lu)) use_lu = .false.
+        if (present(spd)) spd = .false.
         call factor_cache_update(map, matrix, keep, nc, report%cache, info)
         if (info /= 0) then
             if (done) call sparse_destroy(slv)
@@ -2043,40 +2773,73 @@ contains
             end do
         end associate
         ! With lu (the Krylov step, whose preconditioner must be SPD), the
-        ! SPD Cholesky is tried first. Relabelling directions can leave the
-        ! damped Hessian indefinite; a nonpositive pivot does not reject the
-        ! Newton trial: the same matrix is factored by the native supernodal
-        ! pivoted LU, which is then used for this trial only. Without lu, the
+        ! factor follows map%factor_policy. Relabelling directions can leave
+        ! the damped Hessian indefinite, which does not reject the Newton
+        ! trial: an indefinite LDL^T, or the pivoted LU of the same matrix
+        ! after a failed Cholesky, serves this trial only. Without lu, the
         ! pivoted LU is the factor (the direct-step policy).
-        if (spd) then
-            call factor_one(slv, done, .true., info, sstatus)
-            if (info == 0) return
-            if (sstatus%code /= FORTSPARSE_NOT_POSITIVE_DEFINITE) return
-            report%lu_fallbacks = report%lu_fallbacks + 1
-            call factor_one(lu, lu_done, .false., info, sstatus)
-            if (info == 0) use_lu = .true.
-        else
-            call factor_one(slv, done, .false., info, sstatus)
+        if (.not. krylov) then
+            call factor_one(slv, done, PIVOTED_LU, info, sstatus)
+            return
         end if
+        if (map%factor_policy == IDEAL_MAP_FACTOR_LDLT) then
+            ! One symmetric indefinite factor; positive inertia = SPD.
+            call factor_one(slv, done, LDLT, info, sstatus)
+            if (info == 0) then
+                spd = positive_inertia(slv)
+                if (.not. spd) report%indefinite_trials = report%indefinite_trials + 1
+                return
+            end if
+            report%lu_fallbacks = report%lu_fallbacks + 1
+        else
+            call factor_one(slv, done, CHOLESKY, info, sstatus)
+            if (info == 0) then
+                spd = .true.
+                return
+            end if
+            if (sstatus%code /= FORTSPARSE_NOT_POSITIVE_DEFINITE) return
+            report%indefinite_trials = report%indefinite_trials + 1
+            report%lu_fallbacks = report%lu_fallbacks + 1
+        end if
+        call factor_one(lu, lu_done, PIVOTED_LU, info, sstatus)
+        if (info == 0) use_lu = .true.
     contains
-        subroutine factor_one(s, sdone, cholesky, sinfo, sst)
-            ! Factor report%cache%a into s: SPD Cholesky or pivoted LU.
+        logical function positive_inertia(s) result(positive)
+            ! All pivots of the LDL^T factor in s positive (reliably).
+            type(sparse_solver_t), intent(inout) :: s
+            type(fortsparse_status_t) :: ist
+            integer(int64) :: nneg, nzero, npos
+            integer :: reliability
+            call sparse_inertia(s, nneg, nzero, npos, reliability, ist)
+            positive = status_ok(ist) .and. nneg == 0 .and. nzero == 0 .and. &
+                reliability == FORTSPARSE_INERTIA_RELIABLE
+        end function
+
+        subroutine factor_one(s, sdone, kind, sinfo, sst)
+            ! Factor report%cache%a into s: SPD Cholesky, pivoted LU or
+            ! supernodal LDL^T.
             type(sparse_solver_t), intent(inout) :: s
             logical, intent(inout) :: sdone
-            logical, intent(in) :: cholesky
+            integer, intent(in) :: kind
             integer, intent(out) :: sinfo
             type(fortsparse_status_t), intent(out) :: sst
             type(sparse_factor_stats_t) :: stats
             type(fortsparse_status_t) :: stats_status
-            logical :: reused
+            logical :: reused, is_cholesky
             sinfo = 1
-            if (cholesky) then
+            is_cholesky = kind == CHOLESKY
+            select case (kind)
+            case (CHOLESKY)
                 s%options%symmetry = FORTSPARSE_SYM_SPD
                 s%options%lu_method = FORTSPARSE_LU_SCALAR
-            else
+            case (LDLT)
+                s%options%symmetry = FORTSPARSE_SYM_INDEFINITE
+                s%options%lu_method = FORTSPARSE_LU_SCALAR
+                s%options%ldlt_supernodal = .true.
+            case default
                 s%options%symmetry = FORTSPARSE_SYM_GENERAL
                 s%options%lu_method = FORTSPARSE_LU_SUPERNODAL
-            end if
+            end select
             s%options%ordering = FORTSPARSE_ORDER_AMD
             s%options%verify_factor = map%verify_factor
             s%backend_id = FORTSPARSE_BACKEND_NATIVE
@@ -2102,7 +2865,7 @@ contains
             if (sinfo /= 0) then
                 ! A Cholesky pivot that is not positive keeps the symbolic
                 ! analysis: the next trial refactors on it.
-                if (cholesky .and. sst%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
+                if (is_cholesky .and. sst%code == FORTSPARSE_NOT_POSITIVE_DEFINITE) then
                     if (.not. sdone) report%analyses = report%analyses + 1
                     sdone = .true.
                     return
@@ -2134,19 +2897,38 @@ contains
         type(factor_cache_t), intent(inout) :: c
         integer, intent(out) :: info
         logical :: same
+        integer :: k
         same = c%nc == nc .and. allocated(c%in_colidx)
         if (same) same = size(c%in_colidx) == size(matrix%colidx) .and. &
             size(c%in_rowptr) == size(matrix%rowptr) .and. &
             all(c%keep .eqv. keep(:map%nred))
-        if (same) same = all(c%in_rowptr == matrix%rowptr) .and. &
-            all(c%in_colidx == matrix%colidx)
+        if (same) same = all(c%in_rowptr == matrix%rowptr)
+        if (same) then
+            ! Pattern and value comparisons are O(nnz) per trial: shared by
+            ! the team (exact logical reductions).
+            !$omp parallel do default(shared) private(k) reduction(.and.: same) &
+            !$omp schedule(static)
+            do k = 1, size(c%in_colidx)
+                same = same .and. c%in_colidx(k) == matrix%colidx(k)
+            end do
+            !$omp end parallel do
+        end if
         if (.not. same) then
             call factor_cache_build(map, matrix, keep, nc, c)
             c%base_ok = .false.
         end if
         info = 1
         if (.not. c%pattern_ok) return
-        if (c%base_ok) c%base_ok = all(abs(c%raw - matrix%val) <= 0.0_dp)
+        if (c%base_ok) then
+            same = .true.
+            !$omp parallel do default(shared) private(k) &
+            !$omp reduction(.and.: same) schedule(static)
+            do k = 1, size(c%raw)
+                same = same .and. abs(c%raw(k) - matrix%val(k)) <= 0.0_dp
+            end do
+            !$omp end parallel do
+            c%base_ok = same
+        end if
         if (.not. c%base_ok) call factor_cache_refresh(map, matrix, c, info)
         if (c%base_ok) info = 0
     end subroutine
@@ -2318,28 +3100,52 @@ contains
         type(fortsparse_status_t) :: sstatus
         integer :: k, p, row
         real(dp) :: delta
+        logical :: finite
+        real(dp) :: scale, correction
         info = 1
-        c%correction = 0
+        ! O(nnz) gathers, checks and copies, shared by the team; max and
+        ! logical reductions are exact, so nothing depends on the thread count.
+        !$omp parallel do default(shared) private(k) schedule(static)
         do k = 1, size(c%base)
             if (c%src(k) > 0) c%base(k) = matrix%val(c%src(k))
         end do
+        !$omp end parallel do
         c%base(c%gpos) = c%gval
         c%base(c%mpos) = c%mval
-        if (.not. all(ieee_is_finite(c%base))) return
-        c%scale = maxval(abs(c%base))
+        finite = .true.; scale = 0; correction = 0
+        !$omp parallel do default(shared) private(k, p, delta) schedule(static) &
+        !$omp reduction(.and.: finite) reduction(max: scale, correction)
         do k = 1, size(c%base)
+            finite = finite .and. ieee_is_finite(c%base(k))
+            scale = max(scale, abs(c%base(k)))
             p = c%refl(k)
             if (p == 0) cycle
             delta = abs(c%base(k) - c%base(p))
             if (delta <= 0.0_dp) cycle
-            c%correction = max(c%correction, nearest(delta, 1.0_dp))
+            correction = max(correction, nearest(delta, 1.0_dp))
         end do
+        !$omp end parallel do
+        c%correction = 0
+        if (.not. finite) return
+        c%correction = correction
+        c%scale = scale
         if (c%correction > rtol*c%scale) return
+        ! Reflection targets are strict lower entries, never sources.
+        !$omp parallel do default(shared) private(k) schedule(static)
         do k = 1, size(c%base)
             if (c%refl(k) > 0) c%base(c%refl(k)) = c%base(k)
         end do
-        c%a%val = c%base
-        c%raw = matrix%val
+        !$omp end parallel do
+        !$omp parallel do default(shared) private(k) schedule(static)
+        do k = 1, size(c%base)
+            c%a%val(k) = c%base(k)
+        end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) private(k) schedule(static)
+        do k = 1, size(c%raw)
+            c%raw(k) = matrix%val(k)
+        end do
+        !$omp end parallel do
         do row = 1, map%nred
             if (c%dpos(row) > 0) c%bdiag(row) = c%base(c%dpos(row))
         end do

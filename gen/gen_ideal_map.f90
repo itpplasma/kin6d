@@ -58,6 +58,10 @@ program gen_ideal_map
    identity = engine%zero_test(identity_density &
       - (r*((psi_r**2 + psi_z**2)/r**2 + f**2/r**2)/(2*mu0) - p*r))
    if (identity%verdict /= VERDICT_TRUE) error stop 'ideal energy GS reduction unproved'
+   ! The magnetic term is homogeneous of degree 2 in b: b . dw/db = |DX b|^2/(mu0 J).
+   identity = engine%zero_test(b(1)*diff(density, b(1)) + b(2)*diff(density, b(2)) &
+      + b(3)*diff(density, b(3)) - 2*(density + p*jac))
+   if (identity%verdict /= VERDICT_TRUE) error stop 'ideal energy b homogeneity unproved'
    do i = 1, 9
       gradient(i) = diff(density, d(1 + mod(i - 1, 3), 1 + (i - 1)/3))
    end do
@@ -155,6 +159,8 @@ contains
       type(expr_t) :: j1(3, 3), j2(3, 3, 3), j3(3, 3, 3, 3), qd(3, 3)
       type(expr_t) :: dx(9), dold(9), dens, jacobian, gd(9), hd(9, 9), dvx(9, 12)
       type(expr_t) :: tmp(9, 12), hv(12, 12), gv(12), acc
+      type(expr_t) :: gbo(3), gbd(3), hbbd(6), hvbd(36), hbd(9, 3)
+      character(8) :: fn(45)
       logical :: started
       logical :: nz(9, 12)
       character(8) :: jn(9), kn(18), ln(30), qn(9), pn(78), gn(12), outputs(92)
@@ -286,6 +292,44 @@ contains
          [dens, jacobian, gv])
       call w%emit('ideal_point_hessian', args, outputs, &
          [dens, jacobian, gv, (hv(packed_u(u), packed_v(u)), u=1, 78)])
+      ! Field-angle lane: derivatives in the frozen density b, which enters
+      ! linearly through a relabelling of the reference (ideal_map field angle).
+      ! gb(k) = dw/db_k, hbb = d2w/db db (upper triangle, column-major) and
+      ! hvb(u + 12 (k - 1)) = d2w/dv_u db_k through the same chart chain rule.
+      do a2 = 1, 3
+         gbo(a2) = diff(density, b(a2))
+         gbd(a2) = subs_many(gbo(a2), dold, dx)
+         do r = 1, 9
+            hbd(r, a2) = subs_many(diff(gbo(a2), dold(r)), dold, dx)
+         end do
+      end do
+      n2 = 0
+      do a2 = 1, 3
+         do k2 = 1, a2
+            n2 = n2 + 1
+            hbbd(n2) = subs_many(diff(gbo(k2), b(a2)), dold, dx)
+         end do
+      end do
+      do a2 = 1, 3
+         do u = 1, 12
+            started = .false.
+            do r = 1, 9
+               if (nz(r, u)) call accumulate(acc, hbd(r, a2)*dvx(r, u), started)
+            end do
+            hvbd(u + 12*(a2 - 1)) = acc
+         end do
+      end do
+      do u = 1, 3
+         write (fn(u), '(a,i1)') 'gb', u
+      end do
+      do u = 1, 6
+         write (fn(3 + u), '(a,i1)') 'hbb', u
+      end do
+      do u = 1, 36
+         write (fn(9 + u), '(a,i2.2)') 'hvb', u
+      end do
+      call w%emit('ideal_point_field_gradient', args, fn(1:3), gbd)
+      call w%emit('ideal_point_field', args, fn, [gbd, hbbd, hvbd])
       call w%line('! Point leaves: w, jac, gv(12) and the packed Hessian hp(78) with respect')
       call w%line('! to v = (q(3), Q(3,3)), Q(k,i) at 3 + k + 3(i-1). hp(1:45): upper triangle')
       call w%line('! of v(1:9) (column-major); hp(46:72): rows v(1:9) of columns v(10:12);')
@@ -293,6 +337,32 @@ contains
       call w%line('! chart jet arrays d1, d2, d3 (symmetric in the q-derivative indices).')
       call wrapper('ideal_point_gradient_jets', 'ideal_point_gradient', .false.)
       call wrapper('ideal_point_hessian_jets', 'ideal_point_hessian', .true.)
+      call w%line('! Field leaves: gb(3) = dw/db, hbb(6) = d2w/db2 (upper triangle) and')
+      call w%line('! hvb(12, 3) = d2w/dv db with v as above.')
+      call field_wrapper('ideal_point_field_gradient_jets', 'ideal_point_field_gradient', &
+         .false.)
+      call field_wrapper('ideal_point_field_jets', 'ideal_point_field', .true.)
+   end subroutine
+
+   subroutine field_wrapper(name, leaf, with_hessian)
+      ! Array interface of a field leaf (derivatives in the frozen density).
+      character(*), intent(in) :: name, leaf
+      logical, intent(in) :: with_hessian
+      call w%line('pure subroutine '//name//'(d1, d2, d3, qd, b, p, mu0, sigma, &')
+      if (with_hessian) then
+         call w%line('        gb, hbb, hvb)')
+      else
+         call w%line('        gb)')
+      end if
+      call w%line('    use, intrinsic :: iso_fortran_env, only: dp => real64')
+      call w%line('    implicit none')
+      call w%line('    real(dp), intent(in) :: d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)')
+      call w%line('    real(dp), intent(in) :: qd(3, 3), b(3), p, mu0, sigma')
+      call w%line('    real(dp), intent(out) :: gb(3)')
+      if (with_hessian) call w%line('    real(dp), intent(out) :: hbb(6), hvb(12, 3)')
+      call w%line(call_text(leaf, '', merge(2, 1, with_hessian)))
+      call w%line('end subroutine '//name)
+      call w%line('')
    end subroutine
 
    subroutine wrapper(name, leaf, with_hessian)
@@ -396,9 +466,11 @@ contains
       end if
    end subroutine
 
-   function call_text(leaf, hessian_out) result(text)
+   function call_text(leaf, hessian_out, field) result(text)
       ! Call of a point leaf from the jet arrays: unique symmetric components.
+      ! field = 1 (2): outputs gb (and hbb, hvb) of the field leaves instead.
       character(*), intent(in) :: leaf, hessian_out
+      integer, intent(in), optional :: field
       character(:), allocatable :: text
       integer :: a2, k2, m2, n2, i2, u
       text = '    call '//leaf//'(&'
@@ -433,6 +505,22 @@ contains
          call item(text, 'b('//num(u)//')')
       end do
       call item(text, 'p'); call item(text, 'mu0'); call item(text, 'sigma')
+      if (present(field)) then
+         do u = 1, 3
+            call item(text, 'gb('//num(u)//')')
+         end do
+         if (field > 1) then
+            do u = 1, 6
+               call item(text, 'hbb('//num(u)//')')
+            end do
+            do u = 1, 36
+               call item(text, 'hvb('//num(1 + mod(u - 1, 12))//', '// &
+                  num(1 + (u - 1)/12)//')')
+            end do
+         end if
+         text = text//')'
+         return
+      end if
       call item(text, 'w'); call item(text, 'jac')
       do u = 1, 12
          call item(text, 'gv('//num(u)//')')

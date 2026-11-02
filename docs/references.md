@@ -209,19 +209,41 @@ only.
 
 - [Blickhan, Stratton and Kaptanoglu, arXiv:2510.26986](https://arxiv.org/abs/2510.26986),
   "MRX: A differentiable 3D MHD equilibrium solver without nested flux
-  surfaces" (v1 30 Oct 2025, v3 28 Sep 2026). Abstract plus HTML v3 §1.2 and
-  table of contents read: JAX, spline FEEC, VMEC and manufactured-solution
-  checks, autodiff shape derivatives, finite-β islands, inexact Newton, high-
-  resolution islands and chaos in minutes on one GPU. VMEC, GVEC and DESC are
-  stated to assume nested flux surfaces.
+  surfaces" (v1 30 Oct 2025, v3 28 Sep 2026). Full text of v3 read
+  2026-10-28. Open source: [github.com/ToBlick/mrx](https://github.com/ToBlick/mrx)
+  (MIT, JAX). Fixed boundary only (free boundary is future work). B-spline
+  FEEC on a fixed map from VMEC/GVEC with C¹ polar splines; div B = 0 to
+  machine precision; harmonic forms deflated from every solve. Ideal
+  relaxation δB = curl(v × B) with divergence-free v; pressure is a Lagrange
+  multiplier (Leray projection or the potential-velocity form
+  curl (curl curl)⁻¹ curl(J × B)), so the final profile depends on the initial
+  condition. Inexact Newton-MR with MINRES on the second variation, a
+  Levenberg–Marquardt term on the parallel velocity only (κ = 3), matrix-free
+  sum-factorized operators, and preconditioners from metric lumping (Kronecker
+  products/sums of 1-D matrices plus a dense axis block) and geometric
+  multigrid on the div-div stiffness (in the code; the paper defers the
+  description). Island seeding at rational surfaces with amplitudes from a
+  quadratic energy criterion; resistive phase guided by a prescribed current
+  carries states of different topology to one equilibrium. NCSX li383
+  (β ≈ 4.25%): normalized squared force residual 1e-8 in 5.4 min at 1.8e5
+  degrees of freedom on one H100; floor 4e-11 to 1.5e-10 that does not
+  decrease under h or p refinement (current sheets at rational surfaces).
+  No rotating-ellipse case. VMEC, GVEC and DESC are stated to assume nested
+  flux surfaces.
 - [Zhang, Zhu and Hegna, arXiv:2412.18922](https://arxiv.org/abs/2412.18922)
   (25 Dec 2024), published as Computer Physics Communications 320, 109961
-  (March 2026), [DOI 10.1016/j.cpc.2025.109961](https://doi.org/10.1016/j.cpc.2025.109961)
-  (Crossref metadata). Abstract: hybrid spectral/finite-element resistive
-  finite-pressure solver without nested surfaces, isoparametric C¹ triangles
-  times toroidal Fourier modes; stellarator, helical-core tokamak and RFP
-  quasi-single-helicity cases. Whether it reports islands or stochastic
-  regions is not established from the abstract.
+  (March 2026), [DOI 10.1016/j.cpc.2025.109961](https://doi.org/10.1016/j.cpc.2025.109961).
+  Full text read 2026-10-28. Code NTEC (C++, Eigen, Intel MKL PARDISO); no
+  code or data availability is stated, so it enters only through published
+  results. Quintic Bell (C¹) triangles in the poloidal plane times toroidal
+  Fourier modes on a pseudo-flux map from VMEC; div B kept by a cleaning
+  term. Pressure relaxes towards B·∇p = 0 by a hyperbolic (damped) parallel
+  diffusion equation; B by resistive induction with a viscous flow; linear
+  terms implicit, nonlinear explicit, thousands of iterations. Reports
+  islands and stochastic regions: fixed-boundary classical stellarator
+  against SIESTA (boundary given analytically, eq. 3-1), free-boundary CFQS
+  against published HINT results at ⟨β⟩ ≈ 1.4–1.6%, helical-core tokamak and
+  RFP quasi-single-helicity states.
 - [Balkovic et al., arXiv:2607.27135](https://arxiv.org/abs/2607.27135),
   "SPECTRE: A robust solver for 3D equilibria with arbitrary topology"
   (29 Jul 2026). Abstract and section list read: MRxMHD, fixed and free

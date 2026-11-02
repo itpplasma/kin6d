@@ -50,17 +50,21 @@ overview and [scope and design principles](scope.md) for the long-term aims.
   [circuit currents as parameters](free-boundary-nested-map-3d.md),
   [chart-backed coupling surface](free-boundary-chart-surface.md)
 - [Exact nested 3D references (Landreman, Issan et al.)](nested-oracles.md)
+- [Current sheets at rational surfaces (weak ideal, class b)](current-sheet-equilibrium.md) (design)
 
 ## Non-nested equilibrium and islands
 
 - [Equilibria with islands](island-equilibrium.md) (design)
 - [NN1: vacuum and Solov'ev on the FEEC complex](equilibrium-nonnested.md),
-  [mapped 3D domains](nn1-mapped-3d.md),
+  [mapped 3D domains](nn1-mapped-3d.md) and their [matrix-free Newton-MR solve](nonnested-newton-mr.md),
   [quasi-axisymmetric vacuum benchmark](nn1-qa-benchmark.md)
 - [NN2: resistive relaxed lane](equilibrium-nonnested-nn2.md),
   [frozen fitted profiles](nonnested-profiles.md)
 - [Taylor (Beltrami) closure](equilibrium-beltrami.md),
   [metriplectic relaxation](metriplectic-relaxation.md)
+- [Relaxation comparators and adopted algorithms](relaxation-comparators.md) (design),
+  [energy-criterion island seeding](island-seed.md),
+  [projected force, harmonic deflation and residual floor](nonnested-force.md)
 - [G6 sample readback](g6-readback.md),
   [external sampled force diagnostic](g6-sampled-force.md)
 

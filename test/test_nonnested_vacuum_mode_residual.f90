@@ -1,6 +1,7 @@
 program test_nonnested_vacuum_mode_residual
     ! The n = 1 helical-coil vacuum solve on the refined annulus (P3,
-    ! nr = 16 and nr = 32). Its right-hand side is zero and the boundary
+    ! nr = 8 and 16 by default, or the rings named on the command line,
+    ! e.g. 32). Its right-hand side is zero and the boundary
     ! trace is the only forcing, so the reported residual must be relative
     ! to the lifted right-hand side. Before that normalisation the absolute
     ! residual of the converged direct solve (1.2e-9 at nr = 16, 3.84e-9 at
@@ -14,8 +15,18 @@ program test_nonnested_vacuum_mode_residual
     integer, parameter :: k = 3
     type(flux_mesh_t) :: fm
     type(nn_report_t) :: report
-    integer, parameter :: rings(3) = [8, 16, 32]
+    integer, allocatable :: rings(:)
+    character(16) :: arg
     integer :: st, nr, i
+    if (command_argument_count() == 0) then
+        rings = [8, 16]
+    else
+        allocate (rings(command_argument_count()))
+        do i = 1, size(rings)
+            call get_command_argument(i, arg)
+            read (arg, *) rings(i)
+        end do
+    end if
     call make_coil()
     do i = 1, size(rings)
         nr = rings(i)

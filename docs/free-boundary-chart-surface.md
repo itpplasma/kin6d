@@ -31,10 +31,14 @@ The full-turn period of the pulled-back one-form `dphi` is `2*pi`, without
 an additional field-period rescaling. These are numerical operator oracles,
 not rigorous error bounds or an equilibrium certificate.
 
-`ideal_fb_use_bem3d` uses this same constructor before the existing generic
-FortFEM assembly. Its recovered R2 attachment keeps full-turn exterior energy
-divided by `nfp` exactly once. The current provider pins and default pair
-policy remain unchanged. The constructor tests perform no BEM assembly.
+`ideal_fb_use_bem3d` uses this same constructor. With the cylindrical chart it
+then calls FortFEM's rotated-sector assembly, which has one sector per toroidal
+strip, and forms the per-harmonic Steklov form. Other charts use the
+all-pairs assembly. Its recovered R2 attachment keeps full-turn exterior energy
+divided by `nfp` exactly once. The constructor tests perform no BEM assembly.
+`ideal_fb_chart_surface_circulant` compares the sector and all-pairs Steklov
+forms (6 strips, a fat torus) and rejects a helical surface declared as
+rotated sectors.
 Geometry is in metres and the dimensionless restriction preserves magnetic
 scalar potential in tesla metres. The full-surface DtN matrix has units of
 metres, its normal-flux load has units of tesla square metres and the energy
