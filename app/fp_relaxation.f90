@@ -95,7 +95,7 @@ program fp_relaxation_main
 
     print '(a,i0,a,i0)', 'cells coarse=', ncoarse, ' fine=', nfine
     do it = 1, ntimes
-        print '(f9.3,5es14.6)', output_times(it), mom_f(:, it)
+        print '(f9.3,5es14.6e3)', output_times(it), mom_f(:, it)
     end do
 contains
 
