@@ -159,7 +159,8 @@ function(kin6d_layers_finalize)
     foreach(layer IN LISTS KIN6D_LAYER_CLASSES)
         _kin6d_layer_scan_modules(${layer} kin6d_${layer})
     endforeach()
-    _kin6d_layer_scan_modules(core kin6d_intervals kin6d_ode kin6d_fft)
+    _kin6d_layer_scan_modules(core kin6d_intervals kin6d_ode kin6d_fft
+        kin6d_libneo_coils)
     _kin6d_layer_scan_modules(fem2d kin6d_spatial kin6d_sparse_direct kin6d_feec_n
         fortsparse)
     _kin6d_layer_scan_modules(apps kin6d_io fortplot)

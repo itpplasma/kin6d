@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "1cfe3cba327e9a32743ed10292e75a1311a6ced4")
+set(KIN6D_FORTNUM_REVISION "bc00d04758648d780f32da96a576066f9d76ae3e")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -57,6 +57,19 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
 target_link_libraries(kin6d_ode PUBLIC fortnum)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
+# MAKEGRID coils reader with circuit groups from libneo main (itpplasma/libneo#469).
+# Only its two dependency-free modules are compiled; libneo itself is not configured.
+set(KIN6D_LIBNEO_REVISION "5de27d1e79528dc98788e09d3b969cecc4e4aca5")
+FetchContent_Declare(libneo
+    GIT_REPOSITORY https://github.com/itpplasma/libneo.git
+    GIT_TAG ${KIN6D_LIBNEO_REVISION})
+FetchContent_GetProperties(libneo)
+if(NOT libneo_POPULATED)
+    FetchContent_Populate(libneo)
+endif()
+add_library(kin6d_libneo_coils
+    ${libneo_SOURCE_DIR}/src/field/biotsavart.f90
+    ${libneo_SOURCE_DIR}/src/field/makegrid_coils.f90)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
@@ -126,9 +139,8 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main with the Hiptmair-Xu auxiliary-space preconditioner
-# (lazy-fortran/fortfem#124).
-set(KIN6D_FORTFEM_REVISION "8467588b31a1b4bf3e7b0a4a13a1ac53f2b28f0c")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM).
+set(KIN6D_FORTFEM_REVISION "5af2a646624160ef6255afde6d2d37801a9c8556")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -217,7 +229,7 @@ if(KIN6D_ENABLE_CUDA_GS_SOLVE)
     enable_language(CUDA)
     set(FORTSPARSE_ENABLE_NATIVE_CUDA ON CACHE BOOL "" FORCE)
 endif()
-set(KIN6D_FORTSPARSE_REVISION "ac324a3567c2f95752bc2857ed29641f8e18f595")
+set(KIN6D_FORTSPARSE_REVISION "c1b664c9510fd1ee8caef1c5f6f589da07c1d64e")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -334,9 +346,20 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
     ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
-add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
-    test/support/ideal_map_cases.f90)
-target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+# One compiled ideal_map_cases module shared by the ideal map test programs.
+add_library(kin6d_ideal_map_cases_test STATIC test/support/ideal_map_cases.f90)
+target_link_libraries(kin6d_ideal_map_cases_test PUBLIC kin6d)
+add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90)
+target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d_ideal_map_cases_test)
+# Parallel-only Levenberg-Marquardt term (docs/ideal-map-3d.md).
+add_executable(test_ideal_map_parallel test/test_ideal_map_parallel.f90)
+target_link_libraries(test_ideal_map_parallel PRIVATE kin6d_ideal_map_cases_test)
+add_test(NAME ideal_map_parallel_mass COMMAND test_ideal_map_parallel unit 32 2)
+add_test(NAME ideal_map_parallel_damping_p2
+    COMMAND test_ideal_map_parallel compare 32 2)
+set_tests_properties(ideal_map_parallel_mass ideal_map_parallel_damping_p2
+    PROPERTIES TIMEOUT 600 PROCESSORS 2
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_map_hessian test/test_ideal_map_hessian.f90
     test/support/ideal_map_hessian_oracle.f90)
 target_link_libraries(test_ideal_map_hessian PRIVATE kin6d)
@@ -442,7 +465,7 @@ add_test(NAME gs_free_boundary_freegs_public_parity
     COMMAND test_gs_freegs ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/freegs)
 set_tests_properties(gs_free_boundary_freegs_public_parity PROPERTIES
     TIMEOUT 60 PROCESSORS 4
-    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;KIN6D_FB_SOLVER=lu")
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_library(kin6d_gs_coupling_test STATIC test/support/gs_coupling_fixture.f90)
 target_link_libraries(kin6d_gs_coupling_test PUBLIC kin6d)
 foreach(coupling_test vacuum fixed_current structure)
@@ -1092,6 +1115,7 @@ add_custom_target(kin6d_build_info
         -DKIN6D_FORTIO_REVISION=${KIN6D_FORTIO_REVISION}
         -DKIN6D_FORTFEM_REVISION=${KIN6D_FORTFEM_REVISION}
         -DKIN6D_FORTSPARSE_REVISION=${KIN6D_FORTSPARSE_REVISION}
+        -DKIN6D_LIBNEO_REVISION=${KIN6D_LIBNEO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_build_info.cmake
     BYPRODUCTS ${kin6d_build_info_inc} VERBATIM)
 add_library(kin6d_io src/apps/result_io.f90 src/apps/periodic_pair_config.f90
@@ -1121,6 +1145,7 @@ add_test(NAME result_io_contract
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/result_io_check
         -DFORTIO_PIN=${KIN6D_FORTIO_REVISION}
         -DFORTSPARSE_PIN=${KIN6D_FORTSPARSE_REVISION}
+        -DLIBNEO_PIN=${KIN6D_LIBNEO_REVISION}
         -P ${CMAKE_SOURCE_DIR}/test/result_io_check.cmake)
 add_executable(test_animation_export test/test_animation_export.f90)
 target_link_libraries(test_animation_export PRIVATE kin6d_io)
@@ -1534,6 +1559,8 @@ set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
 
 # K-C1/L3: 3D polyline coils, per-n Fourier projection, vacuum b_mn (L3).
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/coils_3d.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/makegrid_circuits.f90)
+target_link_libraries(kin6d_equilibrium PUBLIC kin6d_libneo_coils)
 target_sources(kin6d_mhd PRIVATE src/mhd/vacuum_surfaces.f90)
 add_executable(test_coils_3d test/test_coils_3d.f90)
 target_link_libraries(test_coils_3d PRIVATE kin6d)
@@ -1762,7 +1789,7 @@ add_test(NAME nonnested_n0_equilibrated_solovev COMMAND test_nonnested_error)
 set_tests_properties(nonnested_n0_equilibrated_solovev PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 add_executable(test_nonnested_fourier_error
-    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration.f90)
+    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration_slow.f90)
 target_link_libraries(test_nonnested_fourier_error PRIVATE kin6d_feec_n)
 add_test(NAME nonnested_transport_fourier_equilibrated
     COMMAND test_nonnested_fourier_error)
@@ -2158,6 +2185,7 @@ include(cmake/kin6d_s0.cmake)
 include(cmake/kin6d_mhd_batches.cmake)
 include(cmake/kin6d_e21.cmake)
 include(cmake/kin6d_separatrix.cmake)
+include(cmake/kin6d_current_sheet.cmake)
 # Existing PR47 R2 consumer, recovered on current providers; no selector adoption.
 target_sources(kin6d_feec_n PRIVATE
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_parametric_bem_products.f90
@@ -2189,6 +2217,18 @@ add_executable(test_ideal_fb_circuits test/test_ideal_fb_circuits.f90)
 target_link_libraries(test_ideal_fb_circuits PRIVATE kin6d)
 add_test(NAME ideal_fb_circuits_derivatives COMMAND test_ideal_fb_circuits derivatives)
 add_test(NAME ideal_fb_circuits_exterior3d COMMAND test_ideal_fb_circuits exterior3d)
+add_executable(test_ideal_fb_traces3d test/test_ideal_fb_traces3d.f90)
+target_link_libraries(test_ideal_fb_traces3d PRIVATE kin6d)
+add_test(NAME ideal_fb_traces3d_axisymmetric COMMAND test_ideal_fb_traces3d axisymmetric)
+add_test(NAME ideal_fb_traces3d_helical COMMAND test_ideal_fb_traces3d helical)
+add_test(NAME ideal_fb_traces3d_makegrid COMMAND test_ideal_fb_traces3d makegrid)
+add_test(NAME ideal_fb_traces3d_curve_hessian COMMAND test_ideal_fb_traces3d curve-hessian)
+add_test(NAME ideal_fb_exterior3d_periodic COMMAND test_ideal_fb_traces3d exterior)
+set_tests_properties(ideal_fb_exterior3d_periodic PROPERTIES
+    TIMEOUT 1200 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+# Synthetic nfp = 3 free-boundary case against VMEC++ (benchmarks/fb3d-synthetic).
+add_executable(fb3d_synthetic app/fb3d_synthetic.f90)
+target_link_libraries(fb3d_synthetic PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric_circuits
     COMMAND test_landreman_free_boundary circuits)
 add_test(NAME ideal_fb_landreman_helical_circuits
@@ -2258,6 +2298,9 @@ foreach(_t IN LISTS _kin6d_all_tests)
 endforeach()
 
 include(cmake/kin6d_estimator_benchmark.cmake)
+
+include(cmake/kin6d_stack_targets.cmake)
+kin6d_stack_targets()
 
 # Must follow the last add_executable: wraps test commands of all targets.
 include(cmake/kin6d_test_output_cap.cmake)
