@@ -139,8 +139,9 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM, exact FEEC tables).
-set(KIN6D_FORTFEM_REVISION "e8b947bbf37fce389310a8d70f8e3a888098ce52")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
+# Steklov form #144, exact FEEC tables, split stretched BEM fans #145).
+set(KIN6D_FORTFEM_REVISION "489b76f8ce4c039851d7c151c91b654baa850f0b")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -204,6 +205,11 @@ target_link_libraries(kin6d_fem2d PUBLIC kin6d_spatial)
 add_executable(test_real_identity test/test_real_identity.f90)
 target_link_libraries(test_real_identity PRIVATE kin6d)
 add_test(NAME real_value_identity_edge_cases COMMAND test_real_identity)
+add_executable(test_gs_mirror_mesh test/test_gs_mirror_mesh.f90)
+target_link_libraries(test_gs_mirror_mesh PRIVATE kin6d)
+add_test(NAME gs_mirror_mesh COMMAND test_gs_mirror_mesh)
+set_tests_properties(gs_mirror_mesh PROPERTIES TIMEOUT 60 PROCESSORS 1
+    ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(test_grad_shafranov test/test_grad_shafranov.f90)
 target_link_libraries(test_grad_shafranov PRIVATE kin6d)
 add_test(NAME grad_shafranov_analytic_and_derivative_oracles
@@ -273,13 +279,15 @@ add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90
-    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90)
+    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
+    src/mhd/nested_seed_input.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
-    src/mhd/ideal_free_boundary.f90)
+    src/generated/kin6d_fold_barrier_leaves.f90 src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
+    src/generated/kin6d_fold_barrier_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_sources(kin6d_equilibrium PRIVATE
     src/generated/kin6d_nested_oracle_leaves.f90 src/equilibrium/nested_oracles.f90)
@@ -324,6 +332,18 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+# E3.3: the same cases through the full-surface R2 BEM exterior (24 rotated
+# sectors, block-circulant assembly, per-harmonic Steklov form), compared
+# with the per-n exterior. bem3d16 is the chain=16 level only; the two-level
+# gate with its refinement checks runs nightly (ci/nightly-jobs.json).
+add_test(NAME ideal_fb_landreman_bem3d16_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d16)
+add_test(NAME ideal_fb_landreman_bem3d_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d)
+set_tests_properties(ideal_fb_landreman_bem3d16_axisymmetric PROPERTIES
+    TIMEOUT 600 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(ideal_fb_landreman_bem3d_axisymmetric PROPERTIES
+    TIMEOUT 1800 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
     test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
@@ -342,8 +362,10 @@ add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
     COMMAND test_ideal_free_boundary vacuum3d 3)
 add_test(NAME ideal_fb_slide_gauge_curl_free COMMAND test_ideal_free_boundary slide)
 add_test(NAME ideal_fb_hypotheses_bordering COMMAND test_ideal_free_boundary hypotheses)
+add_test(NAME ideal_fb_negative_curvature COMMAND test_ideal_free_boundary curvature)
 set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
     ideal_fb_slide_gauge_curl_free ideal_fb_hypotheses_bordering
+    ideal_fb_negative_curvature
     ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
@@ -377,6 +399,11 @@ add_executable(test_ideal_seed_3d test/test_ideal_seed_3d.f90)
 target_link_libraries(test_ideal_seed_3d PRIVATE kin6d)
 add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
 set_tests_properties(ideal_seed_3d_boundary_profiles PROPERTIES PROCESSORS 4 TIMEOUT 60)
+add_executable(test_nested_seed_input test/test_nested_seed_input.f90)
+target_link_libraries(test_nested_seed_input PRIVATE kin6d)
+add_test(NAME ideal_seed_3d_nested_input COMMAND test_nested_seed_input)
+set_tests_properties(ideal_seed_3d_nested_input PROPERTIES PROCESSORS 4 TIMEOUT 120
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_seed_boundary_label
     COMMAND test_ideal_map_axisymmetric seedboundary)
 add_test(NAME ideal_map_derivatives_and_rotation_null
@@ -971,7 +998,8 @@ if(KIN6D_FORTSYM_BUILD)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi ideal_response_error
-            equilibrium_core curve_chart ideal_seed_3d nonnested islands metriplectic vacuum_shell landreman nested_oracles
+            equilibrium_core curve_chart ideal_seed_3d nonnested islands metriplectic vacuum_shell fold_barrier
+            landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -2336,6 +2364,9 @@ foreach(k 2 3)
     endforeach()
 endforeach()
 add_test(NAME ideal_fb_chart_surface_invalid COMMAND test_ideal_fb_surface invalid)
+add_test(NAME ideal_fb_chart_surface_circulant COMMAND test_ideal_fb_surface circulant)
+set_tests_properties(ideal_fb_chart_surface_circulant PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_fb_exterior_frozen_derivatives
     COMMAND test_ideal_free_boundary frozen-exterior)
 set_tests_properties(ideal_fb_exterior_frozen_derivatives PROPERTIES

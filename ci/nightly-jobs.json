@@ -1,4 +1,5 @@
 {
   "d8 (map, full)": "SCI_MATRIX_LANE=map SCI_MAP_SLOW=true ci/run.sh equilibrium-m6-d8",
+  "E3.3 R2 BEM (full)": "ci/run.sh equilibrium-bem3d",
   "islands (vacuum ladder)": "ci/run.sh islands-vacuum-ladder"
 }

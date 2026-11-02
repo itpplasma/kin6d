@@ -6,6 +6,8 @@ foreach(k 2 3)
 endforeach()
 kin6d_test_labels(ideal_fb_chart_surface_invalid fast CLASSES mhd equilibrium
     TARGETS test_ideal_fb_surface)
+kin6d_test_labels(ideal_fb_chart_surface_circulant fast CLASSES mhd equilibrium
+    TARGETS test_ideal_fb_surface)
 kin6d_test_labels(ideal_fb_exterior_frozen_derivatives fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_circuits_derivatives fast CLASSES mhd
@@ -70,6 +72,8 @@ kin6d_test_labels(s0_gs_kink_equilibrium_refinement fast CLASSES mhd
 kin6d_test_labels(s0_cylinder_oracle_limits fast CLASSES mhd TARGETS test_s0_gs_kink)
 kin6d_test_labels(real_value_identity_edge_cases fast CLASSES core
     TARGETS test_real_identity)
+kin6d_test_labels(gs_mirror_mesh fast CLASSES equilibrium
+    TARGETS test_gs_mirror_mesh)
 kin6d_test_labels(grad_shafranov_analytic_and_derivative_oracles fast CLASSES equilibrium
     TARGETS test_grad_shafranov)
 kin6d_test_labels(grad_shafranov_profile_cut_quadrature_oracles fast CLASSES equilibrium
@@ -107,6 +111,8 @@ kin6d_test_labels(ideal_fb_vacuum_gamma_c_independence_n3 fast CLASSES mhd
 kin6d_test_labels(ideal_fb_slide_gauge_curl_free fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_fb_hypotheses_bordering fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
+kin6d_test_labels(ideal_fb_negative_curvature fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
 kin6d_test_labels(ideal_map_derivatives_and_rotation_null fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
@@ -720,6 +726,10 @@ if(TARGET gen_curve_chart)
 endif()
 kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
+kin6d_test_labels(ideal_fb_landreman_bem3d16_axisymmetric slow CLASSES mhd equilibrium
+    TARGETS test_landreman_free_boundary)
+kin6d_test_labels(ideal_fb_landreman_bem3d_axisymmetric slow CLASSES mhd equilibrium
+    TARGETS test_landreman_free_boundary)
 
 kin6d_test_labels(cpu_precision_gs_comparison performance CLASSES mhd
     TARGETS benchmark_cpu_precision)
@@ -761,6 +771,8 @@ kin6d_test_labels(ideal_seed_boundary_label fast CLASSES mhd
 
 kin6d_test_labels(ideal_seed_3d_boundary_profiles fast CLASSES mhd
     TARGETS test_ideal_seed_3d)
+kin6d_test_labels(ideal_seed_3d_nested_input fast CLASSES mhd
+    TARGETS test_nested_seed_input)
 if(TARGET gen_ideal_seed_3d)
     kin6d_test_labels(ideal_seed_3d_regeneration fast CLASSES mhd
         TARGETS gen_ideal_seed_3d)

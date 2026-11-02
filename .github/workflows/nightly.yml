@@ -1,7 +1,8 @@
 name: nightly
 
 # The slow tier once a night on main: the full d8 map lane, including the
-# seed return and nested cases that the merge queue leaves out. When a job
+# seed return and nested cases that the merge queue leaves out, and the
+# two-level E3.3 R2 BEM Landreman gate. When a job
 # fails, the triage job bisects that job's command between the last green
 # nightly and this commit and files or updates one issue labelled
 # nightly-failure; the next green nightly closes it. Job commands live in
@@ -30,6 +31,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: python3 ci/nightly_triage.py run "d8 (map, full)"
+  bem3d:
+    name: E3.3 R2 BEM (full)
+    runs-on: [self-hosted, itp-build]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 ci/nightly_triage.py run "E3.3 R2 BEM (full)"
 
   islands_vacuum:
     name: islands (vacuum ladder)
@@ -44,7 +55,7 @@ jobs:
 
   triage:
     name: Bisect failing jobs and report
-    needs: [d8_map, islands_vacuum]
+    needs: [d8_map, bem3d, islands_vacuum]
     if: failure()
     runs-on: [self-hosted, itp-build]
     timeout-minutes: 600
@@ -65,7 +76,7 @@ jobs:
 
   close:
     name: Close the nightly-failure issue
-    needs: [d8_map, islands_vacuum]
+    needs: [d8_map, bem3d, islands_vacuum]
     runs-on: [self-hosted, itp-light]
     permissions:
       contents: read
