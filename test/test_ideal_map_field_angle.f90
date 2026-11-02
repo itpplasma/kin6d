@@ -197,7 +197,11 @@ contains
         call shifted(map, x0, a0, full, -h, em, gm)
         call ideal_map_reduce(map, gp, rp)
         call ideal_map_reduce(map, gm, rm)
-        slope = abs((ep - em)/(2*h) - dot_product(gred, d))/abs(dot_product(gred, d))
+        ! Scale by |g||d|, not |g.d|: an index-generated direction can be
+        ! nearly orthogonal to the gradient, and |g.d| then amplifies the
+        ! O(h^2) and rounding error of the difference quotient.
+        slope = abs((ep - em)/(2*h) - dot_product(gred, d)) &
+            /(norm2(pack(gred, .not. map%fixed))*norm2(d))
         curvature = maxval(abs((rp - rm)/(2*h) - hd), mask=.not. map%fixed) &
             /maxval(abs(hd), mask=.not. map%fixed)
         print '(a,i0,2es11.3)', 'map derivatives (pass, slope, Hessian action): ', &
