@@ -254,12 +254,18 @@ contains
         call c%eval(0.5_dp*(c%r0 + c%sigma), -1, chi, dchi, xi)
         call check(abs(chi) == 0, 'inner region shielded')
         call c%eval(c%sigma, 1, chip, dpp, xp)
-        ! The step is the one-sided limit, also when the computed F(sigma)
-        ! is a roundoff-size nonzero.
+        ! The step is the one-sided limit, also when F(sigma) is a nonzero of
+        ! roundoff size (init admits |F| <= 1e-12 |m c/sigma^2|).
         call c%eval(c%sigma*(1 + 1e-6_dp), 1, chi, dchi, xi)
-        write (*, '(a,es12.4,a,es12.4)') 'F(sigma) =', c%f(c%sigma, 1), &
-            ' xi(sigma(1 + 1e-6)) - xi step =', xi - xp
         call check(abs(xi - xp) < 1e-4_dp*abs(xp), 'continuous xi step is the limit')
+        s = c
+        s%sigma = c%sigma*(1 + 1e-14_dp)
+        call s%init()
+        call check(s%status == 0 .and. s%continuous, 'near-resonant continuous init')
+        call s%eval(s%sigma, 1, chi, dchi, xi)
+        write (*, '(a,es12.4,a,es12.4)') 'F(sigma) =', s%f(s%sigma, 1), &
+            ' xi step change', xi - xp
+        call check(abs(xi - xp) < 1e-8_dp*abs(xp), 'xi step with roundoff F(sigma)')
         call c%sheet(jt0, jz0)
         write (*, '(a,f8.5,a,es12.4,a,2es14.6)') 'continuous: sigma', c%sigma, &
             ' xi step', xp, ' [[B1]] (theta,z)', jt0, jz0
