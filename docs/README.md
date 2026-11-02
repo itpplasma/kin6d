@@ -50,6 +50,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
   [circuit currents as parameters](free-boundary-nested-map-3d.md),
   [chart-backed coupling surface](free-boundary-chart-surface.md)
 - [Exact nested 3D references (Landreman, Issan et al.)](nested-oracles.md)
+- [Current sheets at rational surfaces (weak ideal, class b)](current-sheet-equilibrium.md) (design)
 
 ## Non-nested equilibrium and islands
 
@@ -61,6 +62,7 @@ overview and [scope and design principles](scope.md) for the long-term aims.
   [frozen fitted profiles](nonnested-profiles.md)
 - [Taylor (Beltrami) closure](equilibrium-beltrami.md),
   [metriplectic relaxation](metriplectic-relaxation.md)
+- [Relaxation comparators and adopted algorithms](relaxation-comparators.md) (design)
 - [G6 sample readback](g6-readback.md),
   [external sampled force diagnostic](g6-sampled-force.md)
 
