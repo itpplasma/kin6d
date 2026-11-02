@@ -44,6 +44,7 @@ module kin6d_nonnested_force
         FORTSPARSE_LU_SUPERNODAL, FORTSPARSE_ORDER_AMD
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, &
         nn_factor, nn_factor_solve_real, nn_factor_free
+    use kin6d_metriplectic_leaves, only: lorentz_force
     use kin6d_nonnested_mapped, only: map_metric_t, METRIC_IDENTITY, nn_map_t, &
         nn_harmonic_forms, nn_vector_field_i
     implicit none
@@ -64,8 +65,11 @@ module kin6d_nonnested_force
         integer, allocatable :: rep0(:)
         type(sparse_solver_t) :: pot, ler
         logical :: pot_ready = .false., ler_ready = .false.
-        type(nn_factor_t) :: mass1
-        real(dp), allocatable :: weight(:), ell(:), harm(:, :), ck(:)
+        ! mass1: V1_0 mass (dual current); mass1_full: unconstrained V1 mass,
+        ! pair: <V1, V2> pairing and hvac: f_vac <V1, e_phi/R> (strong current).
+        type(nn_factor_t) :: mass1, mass1_full
+        type(csc_t) :: pair
+        real(dp), allocatable :: weight(:), ell(:), harm(:, :), ck(:), hvac(:)
         real(dp), allocatable :: basis1(:, :, :, :), basis2(:, :, :, :)
         real(dp), allocatable :: wq(:, :), xq(:, :, :), trig(:, :)
         integer, allocatable :: dof1(:, :), sgn1(:, :), dof2(:, :), sgn2(:, :)
@@ -105,6 +109,8 @@ contains
         type(fortsparse_status_t) :: fst
         type(csc_t) :: g, tmp
         real(dp), allocatable :: gh(:), cand(:, :), a(:), r1(:), psi(:), h(:)
+        complex(dp), allocatable :: hload(:)
+        logical, allocatable :: none(:)
         real(dp) :: henergy, hvolume, x(2), nrm
         integer :: b, t, q, st, ip, n, j, i, ncand, first
         integer(int64) :: c0, c1, rate
@@ -206,6 +212,15 @@ contains
         sys%ck = field%f_vac*csc_matvec(sys%ct, gh)
         call nn_factor(field%fs%mass(1), field%fs%sp(1)%bnd, sys%mass1, st)
         if (st /= 0) return
+        ! Strong-current operators (nf_lorentz_load default).
+        call meridian_fourier_pairing(field%fs, sys%modes, sys%pair, st)
+        if (st /= 0) return
+        call meridian_load(field%fs, 1, harmonic_unit, hload, st)
+        if (st /= 0) return
+        sys%hvac = field%f_vac*real(hload, dp)
+        allocate (none(sys%n1)); none = .false.
+        call nn_factor(field%fs%mass(1), none, sys%mass1_full, st)
+        if (st /= 0) return
         call system_clock(c0, rate)
         call factor_potential(sys, st)
         if (st /= 0) return
@@ -247,6 +262,12 @@ contains
         if (.not. all(ieee_is_finite(sys%harm))) return
         sys%ready = .true.
         status = 0
+    contains
+        subroutine harmonic_unit(x, v)
+            real(dp), intent(in) :: x(2)
+            complex(dp), intent(out) :: v(3)
+            v = 0; v(2) = 1/merge(field%fs%cyl_r0, x(1), field%fs%cyl_r0 > 0)
+        end subroutine
     end subroutine
 
     subroutine nf_free(sys)
@@ -254,6 +275,7 @@ contains
         if (sys%pot_ready) call sparse_destroy(sys%pot)
         if (sys%ler_ready) call sparse_destroy(sys%ler)
         call nn_factor_free(sys%mass1)
+        call nn_factor_free(sys%mass1_full)
         sys%pot_ready = .false.; sys%ler_ready = .false.; sys%ready = .false.
     end subroutine
 
@@ -587,26 +609,41 @@ contains
         procedure(nn_vector_field_i) :: fun
         real(dp), allocatable, intent(out) :: load(:)
         real(dp), allocatable :: local(:, :, :)
-        real(dp) :: f(3), w
+        real(dp) :: f(3), w, g(3, 0:sys%nb - 1)
         integer :: t, q, ip, b, nl
         nl = size(sys%basis2, 2)
         allocate (local(nl, 0:sys%nb - 1, sys%nt))
-        !$omp parallel do default(shared) private(t, q, ip, b, f, w) schedule(static)
+        !$omp parallel do default(shared) private(t, q, ip, b, f, w, g) schedule(static)
         do t = 1, sys%nt
             local(:, :, t) = 0
             do q = 1, sys%nq
                 w = sys%wq(q, t)/sys%nphi
+                g = 0
                 do ip = 1, sys%nphi
                     call fun([sys%xq(:, q, t), 2*pi*(ip - 1)/sys%nphi], f)
                     do b = 0, sys%nb - 1
-                        local(:, b, t) = local(:, b, t) + (w*sys%trig(b, ip)) &
-                            *matmul(f, sys%basis2(:, :, q, t))
+                        g(:, b) = g(:, b) + (w*sys%trig(b, ip))*f
                     end do
                 end do
+                call accumulate(sys%basis2(:, :, q, t), g, local(:, :, t))
             end do
         end do
         !$omp end parallel do
         call scatter2(sys, local, load)
+    end subroutine
+
+    pure subroutine accumulate(basis, g, local)
+        ! local(l, b) += g(:, b) . basis(:, l): the phi-mean Fourier moments
+        ! g of a vector field tested against the V2 basis at one point.
+        real(dp), intent(in) :: basis(:, :), g(:, 0:)
+        real(dp), intent(inout) :: local(:, 0:)
+        integer :: b, l
+        do b = 0, ubound(g, 2)
+            do l = 1, size(basis, 2)
+                local(l, b) = local(l, b) + g(1, b)*basis(1, l) + g(2, b)*basis(2, l) &
+                    + g(3, b)*basis(3, l)
+            end do
+        end do
     end subroutine
 
     subroutine scatter2(sys, local, load)
@@ -653,13 +690,9 @@ contains
         type(nf_report_t), intent(inout) :: report
         integer, intent(out) :: status
         logical, intent(in), optional :: dual
-        type(csc_t) :: pair
-        type(nn_factor_t) :: full
-        complex(dp), allocatable :: hload(:)
         real(dp), allocatable :: b2(:), jd(:), j1(:), local(:, :, :), j2(:)
-        logical, allocatable :: none(:)
         real(dp) :: jb(3, 0:sys%nb - 1), bb(3, 0:sys%nb - 1), jx(3), bx(3), f(3)
-        real(dp) :: w, radius, s_jb, s_b
+        real(dp) :: g(3, 0:sys%nb - 1), w, radius, s_jb, s_b, jb2
         integer :: t, q, ip, b, nl1, nl2
         logical :: strong
         status = 1
@@ -669,21 +702,14 @@ contains
         b2 = nf_field_coefficients(sys, field)
         allocate (j1(sys%nb*sys%n1)); j1 = 0
         if (strong) then
-            call meridian_fourier_pairing(field%fs, sys%modes, pair, status)
-            if (status /= 0) return
-            call meridian_load(field%fs, 1, harmonic_unit, hload, status)
-            if (status /= 0) return
-            jd = csc_matvec(pair, b2)
-            jd(:sys%n1) = jd(:sys%n1) + field%f_vac*real(hload, dp)
-            allocate (none(sys%n1)); none = .false.
-            call nn_factor(field%fs%mass(1), none, full, status)
-            if (status /= 0) return
+            jd = csc_matvec(sys%pair, b2)
+            jd(:sys%n1) = jd(:sys%n1) + sys%hvac
         else
             jd = csc_matvec(sys%ct, csc_matvec(sys%m2, b2)) + sys%ck
         end if
         do b = 0, sys%nb - 1
             if (strong) then
-                call nn_factor_solve_real(full, jd(b*sys%n1 + 1:(b + 1)*sys%n1), &
+                call nn_factor_solve_real(sys%mass1_full, jd(b*sys%n1 + 1:(b + 1)*sys%n1), &
                     j1(b*sys%n1 + 1:(b + 1)*sys%n1), status)
             else
                 call nn_factor_solve_real(sys%mass1, jd(b*sys%n1 + 1:(b + 1)*sys%n1), &
@@ -693,16 +719,13 @@ contains
             j1(b*sys%n1 + 1:(b + 1)*sys%n1) = j1(b*sys%n1 + 1:(b + 1)*sys%n1) &
                 /sys%weight(b)
         end do
-        if (strong) then
-            call nn_factor_free(full)
-            j2 = csc_matvec(sys%c, j1)
-        end if
+        if (strong) j2 = csc_matvec(sys%c, j1)
         status = 1
         nl1 = size(sys%basis1, 2); nl2 = size(sys%basis2, 2)
         allocate (local(nl2, 0:sys%nb - 1, sys%nt))
         s_jb = 0; s_b = 0
         !$omp parallel do default(shared) private(t, q, ip, b, jb, bb, jx, bx, f, &
-        !$omp& w, radius) reduction(+:s_jb, s_b) schedule(static)
+        !$omp& g, w, radius, jb2) reduction(+:s_jb, s_b) schedule(static)
         do t = 1, sys%nt
             local(:, :, t) = 0
             do q = 1, sys%nq
@@ -721,30 +744,25 @@ contains
                 if (field%fs%cyl_r0 > 0) radius = field%fs%cyl_r0
                 bb(2, 0) = bb(2, 0) + sys%f_vac/radius
                 w = sys%wq(q, t)/sys%nphi
+                g = 0
                 do ip = 1, sys%nphi
                     jx = matmul(jb, sys%trig(:, ip)); bx = matmul(bb, sys%trig(:, ip))
                     ! (R, phi, Z) is right-handed.
-                    f = [jx(2)*bx(3) - jx(3)*bx(2), jx(3)*bx(1) - jx(1)*bx(3), &
-                        jx(1)*bx(2) - jx(2)*bx(1)]
-                    s_jb = s_jb + w*sum(jx**2)*sum(bx**2)
+                    call lorentz_force(jx(1), jx(2), jx(3), bx(1), bx(2), bx(3), &
+                        f(1), f(2), f(3), jb2)
+                    s_jb = s_jb + w*jb2
                     s_b = s_b + w*sum(bx**2)
                     do b = 0, sys%nb - 1
-                        local(:, b, t) = local(:, b, t) + (w*sys%trig(b, ip)) &
-                            *matmul(f, sys%basis2(:, :, q, t))
+                        g(:, b) = g(:, b) + (w*sys%trig(b, ip))*f
                     end do
                 end do
+                call accumulate(sys%basis2(:, :, q, t), g, local(:, :, t))
             end do
         end do
         !$omp end parallel do
         call scatter2(sys, local, load)
         report%jb_scale = sqrt(s_jb); report%b2 = s_b
         if (all(ieee_is_finite(load))) status = 0
-    contains
-        subroutine harmonic_unit(x, v)
-            real(dp), intent(in) :: x(2)
-            complex(dp), intent(out) :: v(3)
-            v = 0; v(2) = 1/merge(field%fs%cyl_r0, x(1), field%fs%cyl_r0 > 0)
-        end subroutine
     end subroutine
 
     subroutine nf_l2_error(sys, u, fun, error, norm)
