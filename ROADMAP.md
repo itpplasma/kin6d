@@ -221,6 +221,12 @@ fail to converge at the maximum degree 96. Measured at 4 threads:
 | chain=32, 12 strips, circulant | 110,592 | 96 (59 failed) | 1177 s | failed | 687 MB |
 | full gate, 24/48 strips | 497,664 | 52/48 | 58 + 295 s | 364 s | 876 MB |
 
+Open: the strip count is a user choice tied to the panel aspect. Real
+stellarator coupling surfaces are anisotropic as well, so the pair rule should
+follow the panel metric, for example by subdividing anisotropic near-field
+source panels in FortFEM. Until it does, `ideal_fb_use_bem3d` needs nphi
+chosen so that 2*pi*R/nphi is about 6 poloidal edge lengths.
+
 The full gate runs nightly (ci/nightly-jobs.json). Its chain=16 level,
 `ideal_fb_landreman_bem3d16_axisymmetric`, runs in the equilibrium merge-queue
 tier. Both compare the solved boundary with the per-n exterior on the same
