@@ -223,20 +223,33 @@ hypothesis that has not been traced.
 
 ## 9. Gaps before the W7-X forward case (b) and the inverse (c)
 
-1. General 3D Γ_c traces. `ideal_fb_drive_traces` samples meridional points of
-   an axisymmetric Γ_c and forms harmonics in φ. A non-axisymmetric Γ_c in R2
-   needs the same three functionals evaluated at physical surface quadrature
-   points, using the restriction of `ideal_fb_surface`. The field-basis
-   contract would then take Cartesian points.
+1. General 3D Γ_c traces (done, step b start). `ideal_fb_drive_traces_3d`
+   evaluates the same three functionals on Γ_c = H(γ × [0, 2π)) of the plasma
+   chart H, the geometry of `ideal_fb_surface`, at Cartesian points
+   X = H(γ(t), φ) with x_t = dH(γ′, 0) and x_φ = dH e_3:
+   nfp c_m h_{i,m} = ∫ B·(x_φ × x_t) N_i trig_m dt dφ, the n = 0 drive from
+   ⟨B·x_t⟩ along γ, the n ≠ 0 drive from B·x_φ = ∂Φ/∂φ at the trace nodes, and
+   F_vac = ⟨B·x_φ⟩. ⟨·⟩ and the harmonics use the nphi-point trapezoid rule
+   over the full turn. The field basis has a Cartesian contract
+   (`sample_points`); coils evaluate Biot–Savart directly (OpenMP over
+   points), other bases fall back to their harmonics.
+   `ideal_fb_circuits_build(..., nphi_surface=)` and `ideal_fb_set_drive_3d`
+   use it. With the cylindrical chart the result equals the meridional path
+   to roundoff (test `ideal_fb_traces3d_axisymmetric`).
 2. R2 cost. The native gate `ideal_fb_landreman_bem3d_axisymmetric` times out
    in the all-pairs adaptive panel assembly (ROADMAP E3.3). A block-circulant
    or far-field rule belongs in FortFEM.
 3. Curve-chart free boundary. The axisymmetric exterior rejects curve charts
    ([ideal-map-3d.md](ideal-map-3d.md), curve-chart paragraph).
    `ideal_fb_init` still builds the cylindrical shell.
-4. Coil input. A MAKEGRID group reader belongs in libneo (section 5), together
-   with the W7-X sign and EXTCUR convention (A·turn versus A), which the
-   scoping note settles in T1. W7-X data stay in the private data repository.
+4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
+   [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
+   its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
+   (CMakeLists.txt) and `makegrid_circuits_read` turns a file into coils_3d
+   polygons with circuit = MAKEGRID group and turns = fourth column (per unit
+   EXTCUR). The W7-X sign and EXTCUR convention (A·turn versus A) is still
+   settled by T1 of the scoping note, and W7-X data stay in the private data
+   repository.
 5. Accuracy at W7-X distances. The aliasing error exp(−nphi d/R) and the
    Γ_c clearance need checks against VMEC++ at matched accuracy. Field-period
    symmetric coil evaluation would cut the sampling cost by nfp.

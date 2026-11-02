@@ -91,6 +91,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_attach_exterior_3d
     public :: ideal_fb_field_basis_t, ideal_fb_drive_traces, ideal_fb_full_turn_traces
     public :: ideal_fb_set_traces, ideal_fb_traces_jvp, ideal_fb_traces_vjp
+    public :: ideal_fb_drive_traces_3d, ideal_fb_set_drive_3d
     integer, parameter, public :: IDEAL_FB_OK = 0, IDEAL_FB_BAD_INPUT = 1, &
         IDEAL_FB_MAP_FAILED = 2, IDEAL_FB_BEM_FAILED = 3, IDEAL_FB_FOLDED = 4, &
         IDEAL_FB_SOLVE_FAILED = 5, IDEAL_FB_NOT_CONVERGED = 6
@@ -111,10 +112,16 @@ module kin6d_ideal_free_boundary
     ! fields b_k of circuits) at the meridional points rz(:, q), all real
     ! harmonics k = 0..ntor at once:
     ! B_f = bcos(:, k, f, q) cos(n phi) + bsin(:, k, f, q) sin(n phi), n = k nfp.
+    ! Cartesian contract (sample_points): B_f at Cartesian points x(:, q) in
+    ! Cartesian components b(:, f, q), for coupling surfaces that are not
+    ! axisymmetric. The default sums the harmonics k = 0..ntor of sample at
+    ! (R, Z, phi) of each point (exact for fields without other harmonics);
+    ! a basis with a direct evaluation (coils) overrides it.
     type, abstract :: ideal_fb_field_basis_t
     contains
         procedure(basis_nfield), deferred :: nfield
         procedure(basis_sample), deferred :: sample
+        procedure :: sample_points => basis_sample_points
     end type
     abstract interface
         integer function basis_nfield(self)
@@ -794,6 +801,263 @@ contains
         end do
         status = IDEAL_FB_OK
     end subroutine
+
+    subroutine basis_sample_points(self, x, nfp, ntor, b, status)
+        ! Default Cartesian evaluation from the harmonic contract, serial
+        ! (an ideal_fb_sampler may cache between calls).
+        class(ideal_fb_field_basis_t), intent(in) :: self
+        real(dp), intent(in) :: x(:, :)
+        integer, intent(in) :: nfp, ntor
+        real(dp), intent(out) :: b(:, :, :)
+        integer, intent(out) :: status
+        real(dp), allocatable :: bc(:, :, :, :), bs(:, :, :, :)
+        real(dp) :: rz(2, 1), phi, bcyl(3)
+        integer :: q, f, k, nf
+        status = IDEAL_FB_BAD_INPUT
+        nf = self%nfield()
+        if (size(x, 1) /= 3 .or. nfp < 1 .or. ntor < 0 .or. nf < 1) return
+        if (any(shape(b) /= [3, nf, size(x, 2)])) return
+        allocate (bc(3, 0:ntor, nf, 1), bs(3, 0:ntor, nf, 1))
+        do q = 1, size(x, 2)
+            rz(:, 1) = [hypot(x(1, q), x(2, q)), x(3, q)]
+            phi = atan2(x(2, q), x(1, q))
+            call self%sample(rz, nfp, ntor, bc, bs, status)
+            if (status /= IDEAL_FB_OK) return
+            do f = 1, nf
+                bcyl = bc(:, 0, f, 1)
+                do k = 1, ntor
+                    bcyl = bcyl + bc(:, k, f, 1)*cos(k*nfp*phi) &
+                        + bs(:, k, f, 1)*sin(k*nfp*phi)
+                end do
+                b(:, f, q) = [bcyl(1)*cos(phi) - bcyl(2)*sin(phi), &
+                    bcyl(1)*sin(phi) + bcyl(2)*cos(phi), bcyl(3)]
+            end do
+        end do
+        status = IDEAL_FB_OK
+    end subroutine
+
+    subroutine ideal_fb_set_drive_3d(fb, sample, nphi, status, closure)
+        ! ideal_fb_set_drive on the coupling surface of the plasma chart
+        ! (ideal_fb_drive_traces_3d). With an attached R2 exterior its
+        ! full-turn drive and load are replaced consistently.
+        type(ideal_fb_t), intent(inout) :: fb
+        procedure(ideal_fb_sampler) :: sample
+        integer, intent(in) :: nphi
+        integer, intent(out) :: status
+        real(dp), intent(out), optional :: closure
+        type(sampler_basis_t) :: one
+        real(dp), allocatable :: drive(:, :, :), load(:, :, :)
+        real(dp) :: worst(1), f(1), spread_f(1)
+        status = IDEAL_FB_BAD_INPUT
+        if (present(closure)) closure = huge(1.0_dp)
+        one%f => sample
+        allocate (drive(fb%nt, fb%nmode, 1), load(fb%nt, fb%nmode, 1))
+        call ideal_fb_drive_traces_3d(fb, one, [fb%circulation], nphi, drive, load, &
+            worst, f, spread_f, status)
+        if (status /= IDEAL_FB_OK) return
+        call ideal_fb_set_traces(fb, drive(:, :, 1), load(:, :, 1), fb%f_vac, status)
+        if (present(closure)) closure = worst(1)
+    end subroutine
+
+    subroutine ideal_fb_drive_traces_3d(fb, basis, circulation, nphi, drive, load, &
+                                        closure, f_vac, f_spread, status)
+        ! The functionals of ideal_fb_drive_traces on the coupling surface
+        ! Gamma_c = H(gamma x [0, 2 pi)) of the plasma chart H, gamma the
+        ! reference boundary (the geometry of ideal_fb_surface), evaluated at
+        ! Cartesian points X = H(gamma(t), phi) through the Cartesian basis
+        ! contract. With x_t = dH (gamma', 0) and x_phi = dH e_3:
+        !   load   nfp c_m h_{i,m} = int B.(x_phi x x_t) N_i(t) trig_m dt dphi
+        !   n = 0  a(t) = int_0^t (<B.x_t> - c dtheta(gamma')/2 pi) dt
+        !   n /= 0 a from B.x_phi = dPhi/dphi at the trace nodes
+        !   F_vac  mean over the trace nodes of <B.x_phi>, f_spread its spread
+        ! <.> and the harmonics use the nphi-point trapezoid rule over the
+        ! full turn; t uses the Gauss rule of ideal_fb_drive_traces. With the
+        ! cylindrical chart these are its meridional formulas at the same
+        ! points. Outputs are per-period arrays as in ideal_fb_drive_traces
+        ! (ideal_fb_full_turn_traces gives the R2 pairing).
+        type(ideal_fb_t), intent(in) :: fb
+        class(ideal_fb_field_basis_t), intent(in) :: basis
+        real(dp), intent(in) :: circulation(:)
+        integer, intent(in) :: nphi
+        real(dp), intent(out) :: drive(:, :, :), load(:, :, :), closure(:)
+        real(dp), intent(out) :: f_vac(:), f_spread(:)
+        integer, intent(out) :: status
+        integer, parameter :: ng = 10
+        real(dp), allocatable :: q2(:, :), tq(:, :), wq(:, :), xc(:, :), xt(:, :)
+        real(dp), allocatable :: xp(:, :), bf(:, :, :), ck(:, :), sk(:, :)
+        real(dp), allocatable :: fnode(:), g(:)
+        real(dp) :: gx(ng), gw(ng), w(0:3), dw(0:3), d1(3, 3), d2(3, 3, 3)
+        real(dp) :: d3(3, 3, 3, 3), x3(3), coef(2), acc, run, worst, dmax, nn, speed
+        real(dp) :: at(2), gc(0:fb%ntor), gs(0:fb%ntor)
+        integer :: nf, i, j, q, k, col, b, p, nl, nd, nm, nb, np, l, nk, j0
+        status = IDEAL_FB_BAD_INPUT
+        nf = basis%nfield()
+        np = nphi
+        if (nf < 1 .or. size(circulation) /= nf) return
+        if (any(shape(drive) /= [fb%nt, fb%nmode, nf])) return
+        if (any(shape(load) /= [fb%nt, fb%nmode, nf])) return
+        if (size(closure) /= nf .or. size(f_vac) /= nf .or. size(f_spread) /= nf) return
+        if (np < 2 .or. np <= 2*fb%ntor*fb%nfp) return
+        if (.not. allocated(fb%plasma%chart)) return
+        call gauss_legendre(ng, gx, gw)
+        gx = 0.5_dp*(gx + 1); gw = 0.5_dp*gw
+        ! Base points on gamma: load quadrature, n = 0 path quadrature,
+        ! trace nodes, edge midpoints; each is swept over nphi angles.
+        nl = fb%nedge*ng; nd = fb%nedge*fb%order*ng; nm = fb%nedge
+        nb = nl + nd + fb%nt + nm
+        allocate (q2(2, nb), tq(2, nb), wq(0:fb%order, nl))
+        do i = 1, fb%nedge
+            do q = 1, ng
+                p = (i - 1)*ng + q
+                call edge_point(fb, i, gx(q), q2(:, p), tq(:, p), wq(:, p))
+            end do
+            do j = 1, fb%order
+                do q = 1, ng
+                    p = nl + ((i - 1)*fb%order + j - 1)*ng + q
+                    call edge_point(fb, i, gx(q)*j/fb%order, q2(:, p), tq(:, p), &
+                        w(0:fb%order))
+                end do
+            end do
+            p = nl + nd + fb%nt + i
+            call edge_point(fb, i, 0.5_dp, q2(:, p), tq(:, p), w(0:fb%order))
+        end do
+        do col = 1, fb%nt
+            q2(:, nl + nd + col) = fb%reference(:, fb%trace(col))
+            tq(:, nl + nd + col) = 0
+        end do
+        ! Trapezoid weights of the mean and the real harmonics (the DFT of
+        ! coil_circuit_basis_t%sample, so both paths share their rounding).
+        allocate (ck(np, 0:fb%ntor), sk(np, 0:fb%ntor))
+        do j = 1, np
+            do k = 0, fb%ntor
+                nk = mod(k*fb%nfp*(j - 1), np)
+                ck(j, k) = merge(1.0_dp, 2.0_dp, k == 0)*cos(2*pi*nk/np)/np
+                sk(j, k) = 2*sin(2*pi*nk/np)/np
+            end do
+        end do
+        allocate (xc(3, nb*np), xt(3, nb*np), xp(3, nb*np), bf(3, nf, nb*np))
+        !$omp parallel do default(none) schedule(static) &
+        !$omp shared(fb, q2, tq, nb, np, xc, xt, xp) private(p, j, l, x3, d1, d2, d3)
+        do l = 1, nb*np
+            p = (l - 1)/np + 1; j = l - (p - 1)*np
+            call fb%plasma%chart%jet([q2(:, p), 2*pi*(j - 1)/np], x3, d1, d2, d3)
+            xc(:, l) = x3
+            xt(:, l) = matmul(d1(:, 1:2), tq(:, p))
+            xp(:, l) = d1(:, 3)
+        end do
+        !$omp end parallel do
+        if (.not. all(ieee_is_finite(xc)) .or. .not. all(ieee_is_finite(xt))) return
+        if (.not. all(ieee_is_finite(xp))) return
+        call basis%sample_points(xc, fb%nfp, fb%ntor, bf, status)
+        if (status /= IDEAL_FB_OK) return
+        status = IDEAL_FB_BAD_INPUT
+        if (.not. all(ieee_is_finite(bf))) return
+        status = IDEAL_FB_OK
+        drive = 0; load = 0
+        allocate (fnode(fb%nt), g(np))
+        do b = 1, nf
+            ! Loads: harmonics of B.(x_phi x x_t) at each Gauss point.
+            do i = 1, fb%nedge
+                do q = 1, ng
+                    p = (i - 1)*ng + q; j0 = (p - 1)*np
+                    do j = 1, np
+                        g(j) = dot_product(bf(:, b, j0 + j), &
+                            cross3(xp(:, j0 + j), xt(:, j0 + j)))
+                    end do
+                    call harmonics(g, gc, gs)
+                    w(0:fb%order) = wq(:, p)
+                    do j = 0, fb%order
+                        col = (i - 1)*fb%order + j + 1
+                        if (j == fb%order) col = mod(i, fb%nedge)*fb%order + 1
+                        load(col, 1, b) = load(col, 1, b) + gw(q)*w(j)*gc(0)
+                        do k = 1, fb%ntor
+                            load(col, 2*k, b) = load(col, 2*k, b) + gw(q)*w(j)*gc(k)
+                            load(col, 2*k + 1, b) = load(col, 2*k + 1, b) &
+                                + gw(q)*w(j)*gs(k)
+                        end do
+                    end do
+                end do
+            end do
+            ! n = 0 trace by integration of <B.x_t> along gamma.
+            run = 0
+            do i = 1, fb%nedge
+                drive((i - 1)*fb%order + 1, 1, b) = run
+                do j = 1, fb%order
+                    acc = 0
+                    do q = 1, ng
+                        p = nl + ((i - 1)*fb%order + j - 1)*ng + q; j0 = (p - 1)*np
+                        do l = 1, np
+                            g(l) = dot_product(bf(:, b, j0 + l), xt(:, j0 + l))
+                        end do
+                        acc = acc + gw(q)*real(j, dp)/fb%order*(sum(ck(:, 0)*g) &
+                            - circulation(b)*dot_product(theta_gradient(fb, q2(:, p)), &
+                            tq(:, p)))
+                    end do
+                    if (j < fb%order) then
+                        drive((i - 1)*fb%order + j + 1, 1, b) = run + acc
+                    else
+                        run = run + acc
+                    end if
+                end do
+            end do
+            worst = abs(run)
+            ! n /= 0 traces and F_vac from B.x_phi at the trace nodes.
+            do col = 1, fb%nt
+                p = nl + nd + col; j0 = (p - 1)*np
+                do l = 1, np
+                    g(l) = dot_product(bf(:, b, j0 + l), xp(:, j0 + l))
+                end do
+                call harmonics(g, gc, gs)
+                fnode(col) = gc(0)
+                do k = 1, fb%ntor
+                    nn = k*fb%nfp
+                    drive(col, 2*k, b) = -gs(k)/nn
+                    drive(col, 2*k + 1, b) = gc(k)/nn
+                end do
+            end do
+            ! Curl-free check: d a/dt against <B.x_t> harmonics at midpoints.
+            do i = 1, fb%nedge
+                p = nl + nd + fb%nt + i; j0 = (p - 1)*np
+                do l = 1, np
+                    g(l) = dot_product(bf(:, b, j0 + l), xt(:, j0 + l))
+                end do
+                call harmonics(g, gc, gs)
+                speed = norm2(tq(:, p))
+                call edge_lagrange(fb%order, 0.5_dp, w(0:fb%order), dw(0:fb%order))
+                dmax = 0
+                do k = 1, fb%ntor
+                    at = 0
+                    do j = 0, fb%order
+                        col = (i - 1)*fb%order + j + 1
+                        if (j == fb%order) col = mod(i, fb%nedge)*fb%order + 1
+                        at = at + dw(j)*drive(col, 2*k:2*k + 1, b)
+                    end do
+                    coef = [gc(k), gs(k)]
+                    dmax = max(dmax, maxval(abs(at - coef))/speed)
+                end do
+                worst = max(worst, dmax)
+            end do
+            closure(b) = worst
+            f_vac(b) = sum(fnode)/fb%nt
+            f_spread(b) = maxval(abs(fnode - f_vac(b)))
+        end do
+    contains
+        subroutine harmonics(values, c, s)
+            real(dp), intent(in) :: values(:)
+            real(dp), intent(out) :: c(0:), s(0:)
+            integer :: kk
+            do kk = 0, fb%ntor
+                c(kk) = sum(ck(:, kk)*values); s(kk) = sum(sk(:, kk)*values)
+            end do
+            s(0) = 0
+        end subroutine
+    end subroutine
+
+    pure function cross3(u, v) result(w)
+        real(dp), intent(in) :: u(3), v(3)
+        real(dp) :: w(3)
+        w = [u(2)*v(3) - u(3)*v(2), u(3)*v(1) - u(1)*v(3), u(1)*v(2) - u(2)*v(1)]
+    end function
 
     subroutine ideal_fb_drive_traces(fb, basis, circulation, drive, load, closure, &
                                      f_vac, f_spread, status)

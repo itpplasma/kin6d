@@ -57,6 +57,19 @@ add_library(kin6d_ode
     ${fortnum_SOURCE_DIR}/src/ode/fortnum_ode_geometric.f90)
 target_link_libraries(kin6d_ode PUBLIC fortnum)
 target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
+# MAKEGRID coils reader with circuit groups from libneo main (itpplasma/libneo#469).
+# Only its two dependency-free modules are compiled; libneo itself is not configured.
+set(KIN6D_LIBNEO_REVISION "5de27d1e79528dc98788e09d3b969cecc4e4aca5")
+FetchContent_Declare(libneo
+    GIT_REPOSITORY https://github.com/itpplasma/libneo.git
+    GIT_TAG ${KIN6D_LIBNEO_REVISION})
+FetchContent_GetProperties(libneo)
+if(NOT libneo_POPULATED)
+    FetchContent_Populate(libneo)
+endif()
+add_library(kin6d_libneo_coils
+    ${libneo_SOURCE_DIR}/src/field/biotsavart.f90
+    ${libneo_SOURCE_DIR}/src/field/makegrid_coils.f90)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
@@ -1533,6 +1546,8 @@ set_tests_properties(gs_k6_mini_regression PROPERTIES TIMEOUT 300
 
 # K-C1/L3: 3D polyline coils, per-n Fourier projection, vacuum b_mn (L3).
 target_sources(kin6d_equilibrium PRIVATE src/equilibrium/coils_3d.f90)
+target_sources(kin6d_equilibrium PRIVATE src/equilibrium/makegrid_circuits.f90)
+target_link_libraries(kin6d_equilibrium PUBLIC kin6d_libneo_coils)
 target_sources(kin6d_mhd PRIVATE src/mhd/vacuum_surfaces.f90)
 add_executable(test_coils_3d test/test_coils_3d.f90)
 target_link_libraries(test_coils_3d PRIVATE kin6d)
@@ -2177,6 +2192,11 @@ add_executable(test_ideal_fb_circuits test/test_ideal_fb_circuits.f90)
 target_link_libraries(test_ideal_fb_circuits PRIVATE kin6d)
 add_test(NAME ideal_fb_circuits_derivatives COMMAND test_ideal_fb_circuits derivatives)
 add_test(NAME ideal_fb_circuits_exterior3d COMMAND test_ideal_fb_circuits exterior3d)
+add_executable(test_ideal_fb_traces3d test/test_ideal_fb_traces3d.f90)
+target_link_libraries(test_ideal_fb_traces3d PRIVATE kin6d)
+add_test(NAME ideal_fb_traces3d_axisymmetric COMMAND test_ideal_fb_traces3d axisymmetric)
+add_test(NAME ideal_fb_traces3d_helical COMMAND test_ideal_fb_traces3d helical)
+add_test(NAME ideal_fb_traces3d_makegrid COMMAND test_ideal_fb_traces3d makegrid)
 add_test(NAME ideal_fb_landreman_axisymmetric_circuits
     COMMAND test_landreman_free_boundary circuits)
 add_test(NAME ideal_fb_landreman_helical_circuits
