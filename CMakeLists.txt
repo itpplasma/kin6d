@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "1cfe3cba327e9a32743ed10292e75a1311a6ced4")
+set(KIN6D_FORTNUM_REVISION "f856c80e4671478c4e5a2d519a04d03eca990d2e")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -1241,7 +1241,6 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(gen_correlation_hierarchy PRIVATE kin6d_gen_support)
 endif()
 target_sources(kin6d_core PRIVATE src/core/series_statistics.f90)
-target_sources(kin6d_core PRIVATE src/core/newton_mr.f90)
 target_sources(kin6d_classical PRIVATE src/generated/kin6d_correlation_hierarchy_leaves.f90
     src/classical/ocp_monte_carlo.f90 src/classical/correlation_hierarchy.f90 src/classical/ocp_hnc.f90)
 set_source_files_properties(src/generated/kin6d_correlation_hierarchy_leaves.f90
@@ -2073,12 +2072,6 @@ set_tests_properties(nonnested_mapped_identity_regression
     PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
 
 # Matrix-free Newton-MR for mapped NN1: docs/nonnested-newton-mr.md.
-add_executable(test_newton_mr test/test_newton_mr.f90)
-target_link_libraries(test_newton_mr PRIVATE kin6d_core)
-add_test(NAME newton_mr_minres COMMAND test_newton_mr minres)
-add_test(NAME newton_mr_nonconvex COMMAND test_newton_mr newton)
-set_tests_properties(newton_mr_minres newton_mr_nonconvex PROPERTIES
-    TIMEOUT 60 PROCESSORS 1 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
 target_link_libraries(test_nonnested_newton_mr PRIVATE kin6d)
 add_test(NAME nonnested_newton_mr_agreement

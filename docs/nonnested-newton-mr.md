@@ -2,10 +2,11 @@
 
 Status: candidate, opt-in. Item 1 of the
 [relaxation comparators](relaxation-comparators.md#algorithms-to-adopt), first
-slice. Sources `src/core/newton_mr.f90` (`kin6d_newton_mr`) and
-`src/mhd/nonnested_newton_mr.f90` (`kin6d_nonnested_newton_mr`); tests
-`test/test_newton_mr.f90` and `test/test_nonnested_newton_mr.f90`. The default
-path is unchanged.
+slice. Source `src/mhd/nonnested_newton_mr.f90` (`kin6d_nonnested_newton_mr`,
+the problem type only); test `test/test_nonnested_newton_mr.f90`. The generic
+MINRES (`real_minres`, `fortnum_krylov`) and the Newton-MR driver
+(`fortnum_newton_mr`) are FortNum's, with their own unit tests there. The
+default path is unchanged.
 
 ## Scope of this slice
 
@@ -110,13 +111,13 @@ Wall time and peak RSS of one solve (`path factored|mr nr N`, fresh process):
 Oracle field errors agree to all printed digits in every row. Timings were
 taken on a host shared with two other agents and are indicative only.
 
-Unit checks (`test_newton_mr`): MINRES against a dense solve for SPD
-(cond 1e3), diagonally preconditioned SPD (cond 1e9; recurred and explicit
-residuals differ by about cond eps there, so that gate is 1e-10), indefinite
-and singular consistent systems (minimum-norm solution to 4e-12); the NPC exit
-returns a direction with negative curvature that descends. Newton-MR from a
-saddle of a nonconvex quartic takes 5 NPC steps and ends at a minimiser with a
-positive definite Hessian.
+Unit checks of the generic solvers live in FortNum (`fortnum_minres`,
+`fortnum_newton_mr`): MINRES against dense solves for SPD, indefinite and
+singular consistent systems (minimum-norm solution), the nonpositive-curvature
+exit returning a descending direction of nonpositive curvature; Newton-MR on
+Rosenbrock, on a double well from a concave start (curvature steps and forward
+tracking) and on a constrained Lagrangian saddle with the preconditioned
+gradient merit.
 
 ## Limits and open items
 

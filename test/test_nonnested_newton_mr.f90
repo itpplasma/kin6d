@@ -79,7 +79,7 @@ program test_nonnested_newton_mr
         nn_mapped_solve, nn_mapped_error, nn_mapped_report_t, map_metric_t
     use kin6d_nonnested_newton_mr, only: nn_mr_options_t, nn_mr_report_t, &
         nn_mapped_solve_mr, NN_MR_PC_NONE, NN_MR_PC_JACOBI, NN_MR_PC_LUMPED
-    use kin6d_newton_mr, only: MR_FORCING_FIXED
+    use fortnum_newton_mr, only: NEWTON_MR_FORCING_FIXED
     use fortfem_meridian_fourier_curl, only: meridian_fourier_curl_curl
     use fortfem_meridian_fourier_apply, only: meridian_fourier_op_t, &
         meridian_fourier_op_init, meridian_fourier_curl_curl_apply
@@ -254,7 +254,7 @@ contains
         ! One MINRES solve to the relative residual 1e-8 (fixed forcing,
         ! one Newton step): its iteration count measures the preconditioner.
         opt%newton%tolerance = 1.0e-8_dp
-        opt%newton%forcing = MR_FORCING_FIXED
+        opt%newton%forcing = NEWTON_MR_FORCING_FIXED
         opt%newton%forcing_max = 1.0e-8_dp
         opt%newton%max_iterations = 1
         opt%newton%max_minres = 5000
