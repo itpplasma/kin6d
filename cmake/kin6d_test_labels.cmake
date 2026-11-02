@@ -541,6 +541,10 @@ kin6d_test_labels(nonnested_mapped_ellipse_mode_ladder fast CLASSES mhd
     TARGETS test_nonnested_mapped)
 kin6d_test_labels(nonnested_mapped_zero_forcing_residual fast CLASSES mhd
     TARGETS test_nonnested_mapped)
+foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartesian_vacuum)
+    kin6d_test_labels(nonnested_mapped_${mapped_case} fast CLASSES mhd
+        TARGETS test_nonnested_mapped)
+endforeach()
 kin6d_test_labels(nonnested_newton_mr_agreement fast CLASSES mhd
     TARGETS test_nonnested_newton_mr)
 kin6d_test_labels(nonnested_newton_mr_lumped_ladder fast CLASSES mhd

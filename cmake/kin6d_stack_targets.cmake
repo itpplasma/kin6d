@@ -3,7 +3,10 @@
 # own flags. Internal procedures passed as actual arguments still create
 # trampolines; -ftrampoline-impl=heap (GCC >= 14) keeps them off the stack.
 # Without it the stack is executable by construction, so the test exists
-# only where the flag is available.
+# only where the flag is available. The equilibrium CI tier builds through
+# ci/cluster-toolchain.cmake with GCC 12.2: there the test is not registered
+# and the binaries do have executable stacks. The guard covers GCC >= 14
+# builds only.
 function(_kin6d_stack_collect directory output)
     get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
     get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
