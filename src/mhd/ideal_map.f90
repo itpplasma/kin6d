@@ -1044,78 +1044,87 @@ contains
         real(dp), intent(out), optional :: gradient(:), min_jacobian
         real(dp), allocatable :: local(:, :), cell_energy(:), cell_jac(:)
         real(dp), allocatable :: pw(:, :, :), pjac(:, :, :), pgv(:, :, :, :)
-        real(dp) :: f(0:3), dphi, weight, minjac
-        integer :: e, g, j, a, m, c, l, item, nloc, nmode
+        real(dp) :: dphi, minjac, gv(12)
+        integer :: e, g, j, a, c, item, nt
         logical :: want
         want = present(gradient)
-        nloc = map%nloc; nmode = map%nmode
-        allocate (local(3*nmode*nloc, map%cells), cell_energy(map%cells), &
-            cell_jac(map%cells), pw(map%nq, map%nphi, map%cells), &
-            pjac(map%nq, map%nphi, map%cells))
-        if (want) allocate (pgv(12, map%nq, map%nphi, map%cells))
+        allocate (local(3*map%nmode*map%nloc, map%cells), cell_energy(map%cells), &
+            cell_jac(map%cells))
         dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
-        ! Point values are evaluated over (cell, plane) items; the cell sums
-        ! below keep the plane-then-point order and are combined serially, so
-        ! the energy (which decides step acceptance near roundoff) does not
-        ! depend on the thread count or on the order of an OpenMP reduction.
-        !$omp parallel default(none) shared(map, x, want, dphi, local, cell_energy, &
-        !$omp cell_jac, pw, pjac, pgv, nloc, nmode) &
-        !$omp private(item, e, g, j, a, m, c, l, f, weight)
-        !$omp do schedule(static)
-        do item = 1, map%cells*map%nphi
-            e = 1 + (item - 1)/map%nphi
-            j = item - map%nphi*(e - 1)
-            do g = 1, map%nq
-                if (want) then
-                    call point_gradient(map, e, g, j, x, pw(g, j, e), pjac(g, j, e), &
-                        pgv(:, g, j, e))
-                else
-                    call point_energy(e, g, j)
-                end if
-            end do
-        end do
-        !$omp end do
-        !$omp do schedule(static)
-        do e = 1, map%cells
-            cell_energy(e) = 0; cell_jac(e) = huge(1.0_dp)
-            do j = 1, map%nphi
-                do g = 1, map%nq
-                    cell_jac(e) = min(cell_jac(e), pjac(g, j, e)/map%det(g, e))
-                    weight = map%weight(g)*dphi
-                    cell_energy(e) = cell_energy(e) + weight*pw(g, j, e)
-                end do
-            end do
-        end do
-        !$omp end do nowait
-        if (want) then
-            ! Gradient rows of node a of cell e, summed in the same order.
+        ! Cell sums run in the plane-then-point order and are combined
+        ! serially, so the energy (which decides step acceptance near roundoff)
+        ! does not depend on the thread count or on the order of an OpenMP
+        ! reduction. With at least as many cells as threads every thread
+        ! evaluates whole cells into private point arrays (cell loop). With
+        ! fewer cells the point values of all cells are evaluated over
+        ! (cell, plane) items and the sums over (cell, node) items, so every
+        ! thread stays busy. Both paths make the same calls in the same order.
+        nt = 1
+        !$ nt = omp_get_max_threads()
+        if (map%cells >= nt) then
+            !$omp parallel default(none) shared(map, x, want, local, cell_energy, &
+            !$omp cell_jac, dphi) private(e, g, j, a, gv, pw, pjac, pgv)
+            allocate (pw(map%nq, map%nphi, 1), pjac(map%nq, map%nphi, 1))
+            if (want) allocate (pgv(12, map%nq, map%nphi, 1))
             !$omp do schedule(static)
-            do item = 1, map%cells*nloc
-                e = 1 + (item - 1)/nloc
-                a = item - nloc*(e - 1)
-                l = 3*nmode*(a - 1)
-                local(l + 1:l + 3*nmode, e) = 0
+            do e = 1, map%cells
                 do j = 1, map%nphi
                     do g = 1, map%nq
-                        weight = map%weight(g)*dphi
-                        l = 3*nmode*(a - 1)
-                        do m = 1, nmode
-                            call test_functions(map, g, j, a, m, f)
-                            do c = 1, 3
-                                l = l + 1
-                                local(l, e) = local(l, e) &
-                                    + weight*(pgv(c, g, j, e)*f(0) &
-                                    + pgv(3 + c, g, j, e)*f(1) &
-                                    + pgv(6 + c, g, j, e)*f(2) &
-                                    + pgv(9 + c, g, j, e)*f(3))
-                            end do
-                        end do
+                        if (want) then
+                            call point_gradient(map, e, g, j, x, pw(g, j, 1), &
+                                pjac(g, j, 1), pgv(:, g, j, 1))
+                        else
+                            call point_gradient(map, e, g, j, x, pw(g, j, 1), &
+                                pjac(g, j, 1), gv)
+                        end if
                     end do
+                end do
+                call energy_cell_sum(map, e, dphi, pw(:, :, 1), pjac(:, :, 1), &
+                    cell_energy(e), cell_jac(e))
+                if (.not. want) cycle
+                do a = 1, map%nloc
+                    call energy_node_sum(map, a, dphi, pgv(:, :, :, 1), local(:, e))
                 end do
             end do
             !$omp end do
+            !$omp end parallel
+        else
+            allocate (pw(map%nq, map%nphi, map%cells), pjac(map%nq, map%nphi, map%cells))
+            if (want) allocate (pgv(12, map%nq, map%nphi, map%cells))
+            !$omp parallel default(none) shared(map, x, want, dphi, local, cell_energy, &
+            !$omp cell_jac, pw, pjac, pgv) private(item, e, g, j, a, gv)
+            !$omp do schedule(static)
+            do item = 1, map%cells*map%nphi
+                e = 1 + (item - 1)/map%nphi
+                j = item - map%nphi*(e - 1)
+                do g = 1, map%nq
+                    if (want) then
+                        call point_gradient(map, e, g, j, x, pw(g, j, e), pjac(g, j, e), &
+                            pgv(:, g, j, e))
+                    else
+                        call point_gradient(map, e, g, j, x, pw(g, j, e), pjac(g, j, e), &
+                            gv)
+                    end if
+                end do
+            end do
+            !$omp end do
+            !$omp do schedule(static)
+            do e = 1, map%cells
+                call energy_cell_sum(map, e, dphi, pw(:, :, e), pjac(:, :, e), &
+                    cell_energy(e), cell_jac(e))
+            end do
+            !$omp end do nowait
+            if (want) then
+                !$omp do schedule(static)
+                do item = 1, map%cells*map%nloc
+                    e = 1 + (item - 1)/map%nloc
+                    a = item - map%nloc*(e - 1)
+                    call energy_node_sum(map, a, dphi, pgv(:, :, :, e), local(:, e))
+                end do
+                !$omp end do
+            end if
+            !$omp end parallel
         end if
-        !$omp end parallel
         energy = 0
         do e = 1, map%cells
             energy = energy + cell_energy(e)
@@ -1142,12 +1151,51 @@ contains
                     x(3, 1, map%conn(:, e)))
             end do
         end do
-    contains
-        subroutine point_energy(e, g, j)
-            integer, intent(in) :: e, g, j
-            real(dp) :: gv(12)
-            call point_gradient(map, e, g, j, x, pw(g, j, e), pjac(g, j, e), gv)
-        end subroutine
+    end subroutine
+
+    pure subroutine energy_cell_sum(map, e, dphi, pw, pjac, energy, jac)
+        ! Weighted energy and smallest Jacobian ratio of cell e from its point
+        ! values pw(g, j), pjac(g, j), summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: e
+        real(dp), intent(in) :: dphi, pw(:, :), pjac(:, :)
+        real(dp), intent(out) :: energy, jac
+        integer :: g, j
+        energy = 0; jac = huge(1.0_dp)
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                jac = min(jac, pjac(g, j)/map%det(g, e))
+                energy = energy + map%weight(g)*dphi*pw(g, j)
+            end do
+        end do
+    end subroutine
+
+    pure subroutine energy_node_sum(map, a, dphi, pgv, local)
+        ! Gradient rows of local node a of a cell from its point gradients
+        ! pgv(:, g, j), summed over planes, then points.
+        type(ideal_map_t), intent(in) :: map
+        integer, intent(in) :: a
+        real(dp), intent(in) :: dphi, pgv(:, :, :)
+        real(dp), intent(inout) :: local(:)
+        real(dp) :: f(0:3), weight
+        integer :: g, j, m, c, l
+        l = 3*map%nmode*(a - 1)
+        local(l + 1:l + 3*map%nmode) = 0
+        do j = 1, map%nphi
+            do g = 1, map%nq
+                weight = map%weight(g)*dphi
+                l = 3*map%nmode*(a - 1)
+                do m = 1, map%nmode
+                    call test_functions(map, g, j, a, m, f)
+                    do c = 1, 3
+                        l = l + 1
+                        local(l) = local(l) + weight*(pgv(c, g, j)*f(0) &
+                            + pgv(3 + c, g, j)*f(1) + pgv(6 + c, g, j)*f(2) &
+                            + pgv(9 + c, g, j)*f(3))
+                    end do
+                end do
+            end do
+        end do
     end subroutine
 
     subroutine ideal_map_hessian(map, x, matrix)
