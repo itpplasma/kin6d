@@ -508,14 +508,14 @@ contains
         ! frozen weak flux. Preserve this homogeneous subspace under mixed LU
         ! only for exactly zero drive and all-zero pressure boundary/seed data.
         ! No electric-potential, voltage or current equation is eliminated.
-        if (maxval(load(lay%ip + 1:lay%iphi)) == 0 .and. &
+        if (maxval(abs(load(lay%ip + 1:lay%iphi))) == 0 .and. &
             maxval(abs(x(lay%ip + 1:lay%iphi))) == 0) &
             mask(lay%ip + 1:lay%iphi) = .true.
         if (allocated(problem%coil_drive)) then
             ! A fit may carry signed current with zero scalar/pressure load.
             ! Only unfitted exact vacuum data admit this invariant subspace.
             if (.not. allocated(problem%fitted)) then
-                if (maxval(load(lay%ip + 1:lay%ip + lay%nv)) <= 0 .and. &
+                if (maxval(abs(load(lay%ip + 1:lay%ip + lay%nv))) <= 0 .and. &
                     maxval(abs(x(lay%ip + 1:lay%iv))) <= 0 .and. &
                     abs(problem%current) <= 0) mask(lay%ip + 1:lay%iv) = .true.
             end if
