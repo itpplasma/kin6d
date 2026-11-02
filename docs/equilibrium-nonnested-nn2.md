@@ -674,6 +674,84 @@ stopped with `ERROR STOP vacuum mode` (the vacuum-seed mode check) and are
 not results: P3 nr = 16 to 1e8, and the P3 D3 ladder at 1e6 after nr = 8.
 P3 nr = 16 is therefore open.
 
+## Reusable island diagnostics and vacuum verification
+
+[V] `kin6d_island_diagnostics` takes any `equilibrium_field_t`. It traces
+`d(R,Z)/dphi = R (B_R,B_Z)/B_phi` with FortNum Cash--Karp, either adaptive
+with declared absolute/relative tolerances or on an explicit fixed-step
+ladder. This chart requires nonzero B_phi and R > 0 along the whole trace.
+Sampler failures and exhausted ODE budgets propagate as unsuccessful status.
+The section angle, number of full toroidal turns, centre and helicity `(m,n)`
+are inputs. Phase means `m atan2(Z-Zc,R-Rc) - n phi`, modulo 2 pi, rather
+than an undeclared device angle. The residue is Greene's `(2-tr DP^N)/4`.
+The determinant is reported as a check of flux-area preservation at a
+periodic point, without assuming canonical (R,Z) coordinates away from it.
+
+[V] Fixed points use FortNum Newton with a centred map Jacobian at a
+declared displacement. The symmetry fallback bisects the half-period Z
+return on Z=0 only when the caller supplies a symmetry-line bracket. A symmetry seed that does not close is refined by complete-map Newton. Both
+routes are checked against the **complete** N-turn closure. A reflected
+continuous coil does not guarantee a reflected triangulation, so a small
+half-turn residual alone never establishes an FEEC periodic orbit.
+
+[V] The previous coarse-map limitation has two identifiable ingredients.
+`nn_point` selects one element at
+`src/mhd/equilibrium_nonnested.f90:299` and evaluates its H(div) basis at
+lines 301--310. Tangential components can jump across a face. The old
+fixture advanced fixed Cash--Karp stages at 512 steps/turn, while the
+pinned FortNum `fortnum_multiroot.f90:650` chose a perturbation of
+`epsilon^(1/3) max(1,abs(x_j))`. Stage/face crossings can therefore dominate
+the differenced map. The retained `coarse` experiment compares the old
+root and its Jacobian on 512/1024-step schedules before testing adaptive
+tracing with a larger declared Jacobian displacement. This bounds the
+claim to measured map closure, rather than asserting a differentiable
+continuous FEEC flow across every face. Full field/observable derivatives
+across topology changes are unavailable.
+
+[V] The controlled-trace P3 nr=8 vacuum roots close to 2.5e-7/1.2e-6 m
+(O/X). More importantly, `test_nonnested_island map 3 8 1 1e6` checks the
+actual finite-pressure coupled field: O/X closures are 9.0e-7/5.5e-7 m,
+with residues 0.552/-0.815. The original symmetry-only measurements on
+that state close only to 1.8e-4/2.7e-4 m. Thus nr=16 is not an intrinsic
+Newton threshold. On the vacuum field the legacy root itself has a tiny
+fixed-schedule residual, but doubling 512 to 1024 steps changes the map by
+6.4e-6 m and its small-displacement Jacobian by 0.047. A tiny root residual
+on that schedule is therefore insufficient evidence of tracing accuracy.
+
+[V] Position, residue and phase indicators compare two solves with tracing
+tolerances divided by eight, maximum step halved and map displacement
+halved (or a doubled fixed-step count). They are practical refinement
+indicators, not certified error bars. A radius/chord label and its units are
+mandatory for width reporting. Width currently means finite-time helical
+libration on a declared straight section chord. Its separate indicators
+are trace refinement, doubled observation time and the radial bracket
+resolution. It does **not** claim an invariant separatrix in a stochastic
+layer. The exact pendulum regression checks a true separatrix against this
+finite-time diagnostic, N=2 points, phase, residue, determinant and error
+statuses. Its square-root scaling is diagnostic evidence, not NN2 physics.
+
+[V] NN1 retains its factor for up to three physical Newton steps when the
+first floating-point update misses its residual gate. The physical residual
+gate remains 1e-9 and the energy gate is checked after every update. The P3
+nr=16 three-mode seed is a separate regression for the observed mode-1
+residual rejection at 1.189e-9. No new sparse kernel or backend is introduced.
+
+[V] Rung 0 uses the published synthetic NN1 192-segment filament and its
+annulus. `kin6d_coil_quadrature_field` integrates the exact polygon source
+with FortNum Gauss--Legendre nodes. The 8/12-node quadrature and the
+independent closed straight-segment formula are compared at 64 points.
+The P2/P3 ladders print `h=0.9/nr`, width, absolute error against the
+quadrature trace, phase error and the individual tracing indicators. Their
+fixed 32-turn definition is retained when comparing meshes. The width ladder uses 4096/8192 fixed Cash--Karp steps per turn and 16 radial
+bisections. The width oracle uses the independent closed segment field after
+the quadrature comparison, while periodic points use adaptive tracing. This
+bounds work on long FEEC trajectories, without claiming that fixed steps
+supply an enclosure. Tracing indicators still have
+to resolve a reported spatial order. The 64-turn
+change is a separate observation-window uncertainty, which can exceed a
+spatial error and preclude a separatrix convergence claim. Tests with
+substantial tracing or coupled solves are labelled `slow`.
+
 Chris&AI
 
 The [production scaling ledger](benchmarks.md#production-estimator-scaling)

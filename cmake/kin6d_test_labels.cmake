@@ -507,6 +507,28 @@ kin6d_test_labels(nonnested_vacuum_helical_coil_island slow CLASSES mhd
     TARGETS test_nonnested_vacuum)
 kin6d_test_labels(nonnested_vacuum_mode_residual_p3 fast CLASSES mhd
     TARGETS test_nonnested_vacuum_mode_residual)
+kin6d_test_labels(nonnested_vacuum_mode_residual_p3_nr32 slow CLASSES mhd
+    TARGETS test_nonnested_vacuum_mode_residual)
+kin6d_test_labels(island_diagnostics_pendulum fast CLASSES mhd
+    TARGETS test_island_diagnostics)
+kin6d_test_labels(island_coil_quadrature fast CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_vacuum_seed_p3 fast CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_coarse_feec_map slow CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_coarse_feec_map_p2 slow CLASSES mhd
+    TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_coarse_nn2_map slow CLASSES mhd
+    TARGETS test_nonnested_island)
+foreach(degree 2 3)
+    kin6d_test_labels(island_vacuum_width_phase_p${degree} slow CLASSES mhd
+        TARGETS test_island_vacuum_oracle)
+endforeach()
+foreach(k 2 3)
+    kin6d_test_labels(nonnested_hx_vacuum_p${k} fast CLASSES mhd
+        TARGETS test_nonnested_hx)
+endforeach()
 kin6d_test_labels(nonnested_symbolic_derivatives_and_d3_identity fast CLASSES mhd
     TARGETS test_nonnested_leaves)
 kin6d_test_labels(nonnested_transport_manufactured_3d slow CLASSES mhd
@@ -753,8 +775,16 @@ kin6d_test_labels(ideal_seed_boundary_label fast CLASSES mhd
 
 kin6d_test_labels(ideal_seed_3d_boundary_profiles fast CLASSES mhd
     TARGETS test_ideal_seed_3d)
+kin6d_test_labels(ideal_map_field_angle fast CLASSES mhd
+    TARGETS test_ideal_map_field_angle)
 kin6d_test_labels(ideal_seed_3d_nested_input fast CLASSES mhd
     TARGETS test_nested_seed_input)
+if(TARGET gen_ideal_field_angle)
+    kin6d_test_labels(ideal_field_angle_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_field_angle)
+    kin6d_test_labels(ideal_map_leaves_regeneration fast CLASSES mhd
+        TARGETS gen_ideal_map)
+endif()
 if(TARGET gen_ideal_seed_3d)
     kin6d_test_labels(ideal_seed_3d_regeneration fast CLASSES mhd
         TARGETS gen_ideal_seed_3d)

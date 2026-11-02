@@ -225,6 +225,15 @@ same way. Like the integer family, this sheared case is therefore not a converge
 oracle for an energy minimiser beyond b=12, and the instability of the continuum
 equilibrium is inferred from the discrete results, not proven.
 
+[V] The first finding is removed by the opt-in boundary field-line angle of the frozen
+field (`ideal_seed_3d_init(..., angle_mpol=M, angle_ntor=N)`,
+[the seed contract](../../docs/ideal-seed-3d.md)): the wall stays pinned and the frozen
+field is relabelled along its surfaces, so the chart-angle boundary is admissible. On the
+axisymmetric sheared control with N=0 and M=b/2 the B error is 8.7e-4, 3.2e-4 and
+1.3e-4 at b=8, 12 and 16, never with an energy below the exact one
+(`ideal_map_field_angle` checks the b=8 regression). With N>0 the angle also opens the
+3D saddles above, so the option stays off by default.
+
 [V] The adapter records separate native-call and complete workflow timers, actual basis
 sizes, affinity, solver status and parent/child peak RSS. Workflow time includes
 imports, conversion, readback and output, while KIN6D's workflow also includes boundary

@@ -281,6 +281,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
     src/mhd/equilibrium_3d_driver.f90
     src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
+    src/generated/kin6d_ideal_field_angle_leaves.f90
     src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
     src/mhd/nested_seed_input.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
@@ -421,6 +422,11 @@ add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
 set_tests_properties(ideal_seed_3d_boundary_profiles PROPERTIES PROCESSORS 4 TIMEOUT 60)
 add_executable(test_nested_seed_input test/test_nested_seed_input.f90)
 target_link_libraries(test_nested_seed_input PRIVATE kin6d)
+add_executable(test_ideal_map_field_angle test/test_ideal_map_field_angle.f90)
+target_link_libraries(test_ideal_map_field_angle PRIVATE kin6d)
+add_test(NAME ideal_map_field_angle COMMAND test_ideal_map_field_angle)
+set_tests_properties(ideal_map_field_angle PROPERTIES PROCESSORS 4 TIMEOUT 120
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_seed_3d_nested_input COMMAND test_nested_seed_input)
 set_tests_properties(ideal_seed_3d_nested_input PROPERTIES PROCESSORS 4 TIMEOUT 120
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
@@ -1019,7 +1025,8 @@ if(KIN6D_FORTSYM_BUILD)
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi
             ideal_response_error equilibrium_core curve_chart ideal_seed_3d map_3d_readback
-            nonnested metriplectic vacuum_shell fold_barrier landreman nested_oracles
+            ideal_field_angle nonnested islands metriplectic vacuum_shell fold_barrier
+            landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -1033,6 +1040,13 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME island_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_islands>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/island-leaf-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_island_regeneration.cmake)
+    kin6d_test_labels(island_leaf_regeneration fast CLASSES equilibrium
+        TARGETS gen_islands)
     add_executable(gen_ideal_mhd_batches ${shared_mhd_gen}/gen_ideal_mhd_batches.f90)
     target_link_libraries(gen_ideal_mhd_batches PRIVATE kin6d_gen_support)
     add_test(NAME ideal_mhd_batch_exact_regeneration COMMAND ${CMAKE_COMMAND}
@@ -1082,6 +1096,18 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
+    add_test(NAME ideal_field_angle_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_field_angle>
+        -DLEAF=kin6d_ideal_field_angle_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_field_angle_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-field-angle-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    add_test(NAME ideal_map_leaves_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_map>
+        -DLEAF=kin6d_ideal_map_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_map_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-map-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME ideal_seed_3d_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_seed_3d>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_seed_3d_leaves.f90
@@ -1684,6 +1710,8 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/estimators/verified_bernstein_majorant.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
+    ${fortfem_SOURCE_DIR}/src/solvers/hcurl_auxiliary_space.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/meridian_hcurl_auxiliary.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_fourier_equilibration_products.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_equilibration.f90
@@ -1693,7 +1721,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
 target_link_libraries(kin6d_feec_n PUBLIC
-    kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse)
+    kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse LAPACK::LAPACK)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
@@ -1889,8 +1917,33 @@ set_tests_properties(nonnested_transport_anisotropy_pollution
     nonnested_transport_anisotropy_correction PROPERTIES TIMEOUT 60
     PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 
+target_sources(kin6d_mhd PRIVATE src/mhd/island_diagnostics.f90)
+target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_island_leaves.f90
+    src/equilibrium/coil_quadrature_field.f90)
+add_executable(test_island_diagnostics test/test_island_diagnostics.f90)
+target_link_libraries(test_island_diagnostics PRIVATE kin6d_mhd)
+add_test(NAME island_diagnostics_pendulum COMMAND test_island_diagnostics)
+set_tests_properties(island_diagnostics_pendulum PROPERTIES TIMEOUT 60 PROCESSORS 2
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+
 add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90
     test/support/island_a_fixture.f90)
+add_executable(test_island_vacuum_oracle test/test_island_vacuum_oracle.f90)
+target_link_libraries(test_island_vacuum_oracle PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME island_coil_quadrature COMMAND test_island_vacuum_oracle quadrature)
+add_test(NAME island_vacuum_seed_p3 COMMAND test_island_vacuum_oracle seed 3 16)
+set_tests_properties(island_vacuum_seed_p3 PROPERTIES TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME island_coarse_feec_map COMMAND test_island_vacuum_oracle coarse 3 8)
+add_test(NAME island_coarse_feec_map_p2 COMMAND test_island_vacuum_oracle coarse 2 16)
+foreach(degree 2 3)
+    add_test(NAME island_vacuum_width_phase_p${degree}
+        COMMAND test_island_vacuum_oracle ladder ${degree} 4 3)
+    set_tests_properties(island_vacuum_width_phase_p${degree} PROPERTIES TIMEOUT 3600
+        PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+set_tests_properties(island_coarse_feec_map island_coarse_feec_map_p2 PROPERTIES TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 target_link_libraries(kin6d_nn_vacuum_test PUBLIC kin6d)
 
 add_executable(nn1_spec_case test/nn1_spec_case.f90)
@@ -1910,14 +1963,27 @@ endif()
 
 add_executable(test_nonnested_vacuum test/test_nonnested_vacuum.f90)
 target_link_libraries(test_nonnested_vacuum PRIVATE kin6d_nn_vacuum_test)
+# NN1 per-mode solve ladder: Cholesky versus Hiptmair-Xu CG (benchmarks/nn1_hx).
+add_executable(nn1_hx_ladder benchmarks/nn1_hx/nn1_hx_ladder.f90)
+target_link_libraries(nn1_hx_ladder PRIVATE kin6d_nn_vacuum_test)
+add_executable(test_nonnested_hx test/test_nonnested_hx.f90)
+target_link_libraries(test_nonnested_hx PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME nonnested_hx_vacuum_p2 COMMAND test_nonnested_hx 2 4 8)
+add_test(NAME nonnested_hx_vacuum_p3 COMMAND test_nonnested_hx 3 4 8)
+set_tests_properties(nonnested_hx_vacuum_p2 nonnested_hx_vacuum_p3 PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
 add_executable(test_nonnested_vacuum_mode_residual
     test/test_nonnested_vacuum_mode_residual.f90)
 target_link_libraries(test_nonnested_vacuum_mode_residual PRIVATE kin6d_nn_vacuum_test)
 add_test(NAME nonnested_vacuum_mode_residual_p3
     COMMAND test_nonnested_vacuum_mode_residual)
+add_test(NAME nonnested_vacuum_mode_residual_p3_nr32
+    COMMAND test_nonnested_vacuum_mode_residual 32)
 set_tests_properties(nonnested_vacuum_mode_residual_p3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
+set_tests_properties(nonnested_vacuum_mode_residual_p3_nr32 PROPERTIES
+    TIMEOUT 600 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(nonnested_vacuum_helical_coil_island PROPERTIES TIMEOUT 900
     ENVIRONMENT "OMP_NUM_THREADS=4")
 
@@ -2032,6 +2098,9 @@ foreach(k 2 3)
 endforeach()
 add_executable(test_nonnested_island test/test_nonnested_island.f90)
 target_link_libraries(test_nonnested_island PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME island_coarse_nn2_map COMMAND test_nonnested_island map 3 8 1 1e6)
+set_tests_properties(island_coarse_nn2_map PROPERTIES TIMEOUT 600 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME nonnested_island_flattening_p3
     COMMAND test_nonnested_island ratio 3 8 1)
 add_test(NAME nonnested_island_d3_ladder_p2
