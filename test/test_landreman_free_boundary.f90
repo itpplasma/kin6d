@@ -81,7 +81,7 @@ program test_landreman_free_boundary
     ! drive through circuit currents (kin6d_ideal_fb_circuits); helical:
     ! nfp = 3, N = 1 with an added 3-fold window-coil circuit; bem3d: the
     ! same chain=16,32 cases through the full-surface R2 BEM exterior
-    ! (24/48 rotated sectors, block-circulant), each compared with the per-n
+    ! (24 rotated sectors, block-circulant), each compared with the per-n
     ! exterior solution of the same mesh; bem3d16: chain=16 only.
     character(16) :: mode
     logical :: use_circuits, use_bem3d
@@ -408,14 +408,13 @@ contains
         print '(a)', 'helical circuit case converged; numerical evidence only'
     end subroutine
 
-    subroutine attach_bem3d(fb, nchain)
-        ! Pair rule of the archived all-pairs gate. The R2 strips scale with
-        ! the chain so toroidal/poloidal panel aspect stays near 6: with 12
-        ! strips (aspect 12 at chain=16, 25 at chain=32) near pairs climb to
-        ! degree 88 and fail to converge at 96. For n=0 the azimuthal P2
-        ! trace is exact, so the strip count changes cost, not the result.
+    subroutine attach_bem3d(fb)
+        ! Pair rule of the archived all-pairs gate on 24 R2 strips, so the
+        ! toroidal/poloidal panel aspect is 6 at chain=16 and 12 at chain=32.
+        ! FortFEM splits stretched near-field fans; at aspect 25 (12 strips,
+        ! chain=32) a few pairs still miss the degree-96 cap. For n=0 the
+        ! azimuthal P2 trace is exact, so the strip count changes cost only.
         type(ideal_fb_t), intent(inout) :: fb
-        integer, intent(in) :: nchain
         type(bem_pair_options_t) :: options
         type(bem_pair_report_t) :: pair_report
         integer(int64) :: t0, t1, rate
@@ -423,7 +422,7 @@ contains
         options%maximum_degree = 96
         options%maximum_evaluations = 200000000_int64
         call system_clock(t0, rate)
-        call ideal_fb_use_bem3d(fb, 3*nchain/2, options, pair_report, st)
+        call ideal_fb_use_bem3d(fb, 24, options, pair_report, st)
         call system_clock(t1)
         print '(a,i0,a,i0,a,i0,a,i0,a,es10.3,a,f9.2)', 'R2 BEM status=', st, &
             ' failed=', pair_report%failed_pairs, ' degree=', &
@@ -490,7 +489,7 @@ contains
         call ideal_fb_set_drive(fb, sampler, st, closure)
         if (st /= 0 .or. closure > 1e-8_dp) error stop 'drive trace closure'
         if (use_circuits) call circuit_drive(fb)
-        if (use_bem3d) call attach_bem3d(fb, nchain)
+        if (use_bem3d) call attach_bem3d(fb)
         ! Family 1 has closed lines: target-start stationarity/refinement
         ! test only. No artificial residual shift or manufactured load.
         call ideal_fb_solve(fb, 1e-9_dp, 50, report, st, verbose=.false., &
