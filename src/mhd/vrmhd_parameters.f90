@@ -13,5 +13,9 @@ module kin6d_vrmhd_parameters
         real(dp) :: d_parallel = 0.0_dp, d_perpendicular = 0.0_dp
         real(dp) :: nu_parallel = 0.0_dp, equilibration_rate = 0.0_dp
         real(dp) :: epsilon_b = 1.0e-12_dp
+        logical :: flux_limited(2) = .false.
+        real(dp) :: flux_limit(2) = 0.3_dp
+        real(dp) :: electron_mass = 9.1093837139e-31_dp
+        real(dp) :: gradient_floor(2) = 1.0e-30_dp
     end type
 end module kin6d_vrmhd_parameters

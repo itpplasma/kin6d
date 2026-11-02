@@ -75,6 +75,7 @@ add_library(kin6d_libneo_coils
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
     src/generated/kin6d_vrmhd_leaves.f90
+    src/generated/kin6d_vrmhd_section_leaves.f90
     src/generated/kin6d_pp_fusion_leaves.f90
     src/generated/kin6d_pp_fusion_eft_leaves.f90 PROPERTIES
     COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -84,7 +85,23 @@ set_source_files_properties(src/generated/kin6d_leaves.f90
 # graph against this partition.
 include(cmake/kin6d_layers.cmake)
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
-    src/mhd/vrmhd_parameters.f90)
+    src/mhd/vrmhd_parameters.f90
+    src/generated/kin6d_vrmhd_leaf_ids.f90
+    src/generated/kin6d_vrmhd_dispatch.f90
+    src/generated/kin6d_vrmhd_section_leaves.f90
+    src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90)
+add_executable(test_vrmhd_mms test/test_vrmhd_mms.f90 test/support/vrmhd_mms_leaves.f90)
+target_link_libraries(test_vrmhd_mms PRIVATE kin6d_mhd)
+add_test(NAME vrmhd_section_manufactured_consistency COMMAND test_vrmhd_mms)
+set_tests_properties(vrmhd_section_manufactured_consistency PROPERTIES LABELS rm2
+    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
+target_link_libraries(test_vrmhd_section PRIVATE kin6d_mhd)
+foreach(gate geometry derivatives volume closure)
+    add_test(NAME vrmhd_section_${gate} COMMAND test_vrmhd_section ${gate})
+    set_tests_properties(vrmhd_section_${gate} PROPERTIES LABELS rm2
+        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_executable(test_vrmhd_leaves test/test_vrmhd_leaves.f90
     test/support/vrmhd_leaf_dispatch.f90)
 target_link_libraries(test_vrmhd_leaves PRIVATE kin6d_mhd)
@@ -1003,6 +1020,24 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(test_gs_p1_current_identities PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_p1_exact_current_antiderivatives
         COMMAND test_gs_p1_current_identities)
+    add_executable(gen_vrmhd_mms gen/gen_vrmhd_mms.f90)
+    target_link_libraries(gen_vrmhd_mms PRIVATE kin6d_gen_support)
+    add_test(NAME vrmhd_mms_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_mms>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/test/support/vrmhd_mms_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-mms-regeneration
+        -DGENERATED_DIR=test/support -DLEAF=vrmhd_mms_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    set_tests_properties(vrmhd_mms_regeneration PROPERTIES LABELS rm2)
+    add_executable(gen_vrmhd_section gen/gen_vrmhd_section.f90)
+    target_link_libraries(gen_vrmhd_section PRIVATE kin6d_gen_support)
+    add_test(NAME vrmhd_section_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_section>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_vrmhd_section_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-section-regeneration
+        -DLEAF=kin6d_vrmhd_section_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    set_tests_properties(vrmhd_section_regeneration PROPERTIES LABELS rm2)
     add_executable(gen_gs_symmetry gen/gen_gs_symmetry.f90)
     target_link_libraries(gen_gs_symmetry PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_rm0_symbolic

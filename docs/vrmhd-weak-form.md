@@ -113,6 +113,31 @@ d_perpendicular, nu_parallel, equilibration_rate, epsilon_b`. The caller must
 set `mi` and `mu0`; dissipative coefficients and rate default to zero,
 `T0` to one joule and `epsilon_B` to 1e-12 T.
 
+## Flux-limited parallel heat transport
+
+`flux_limited(s)` selects a harmonic-mean limiter for species `s`, with
+`g = b.grad(Ts)`, positive `gradient_floor(s)` in J/m, positive
+`alpha = flux_limit(s)`, and `v_th = sqrt(2 Ts / mass_s)`. The electron mass
+is `electron_mass`; the ion mass is `mi`. With `chi_Sp` the Spitzer value,
+
+```
+chi_eff = chi_Sp / (1 + chi_Sp sqrt(g^2 + gradient_floor^2)/(alpha Ts v_th)).
+```
+
+Thus the parallel part of the conductive flux has magnitude at most
+`alpha n Ts v_th`, including the regularized `|b| <= 1`. Density cancels in
+the ratio of classical to free-streaming flux. Perpendicular heat transport
+retains its separate coefficient. The positive gradient floor makes the
+coefficient differentiable at zero parallel gradient; it is a declared model
+parameter, not a clipping operation. The harmonic-mean interpolation follows
+[Miceli et al., A&A 458, 213 (2006), Section 2.2](https://arxiv.org/abs/astro-ph/0608063),
+which attributes it to Dalton and Balbus; the cap here is specified per species
+as `alpha n Ts v_th`, rather than their hydrodynamic sound-speed cap.
+The `rm2` closure gate checks the harmonic mean, flux bound and derivatives.
+
+The invariant [section volume assembly](vrmhd-section.md) calls these same
+primal and JVP leaves and retains the conservative mass coupling.
+
 ## Mixed current and energy exchange
 
 The auxiliary current is defined by weak Ampère's law `RJ = 0`, rather than

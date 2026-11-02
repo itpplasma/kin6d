@@ -890,3 +890,13 @@ foreach(gate derivatives physics energy covariance)
     kin6d_test_labels(vrmhd_${gate} fast CLASSES mhd TARGETS test_vrmhd_leaves)
 endforeach()
 kin6d_test_labels(vrmhd_leaf_regeneration fast CLASSES mhd TARGETS gen_vrmhd_leaves)
+
+foreach(gate geometry derivatives volume closure)
+    kin6d_test_labels(vrmhd_section_${gate} fast CLASSES mhd TARGETS test_vrmhd_section)
+endforeach()
+
+kin6d_test_labels(vrmhd_section_manufactured_consistency fast CLASSES mhd TARGETS test_vrmhd_mms)
+
+kin6d_test_labels(vrmhd_section_regeneration fast CLASSES mhd TARGETS gen_vrmhd_section)
+
+kin6d_test_labels(vrmhd_mms_regeneration fast CLASSES mhd TARGETS gen_vrmhd_mms)
