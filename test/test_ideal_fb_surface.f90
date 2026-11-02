@@ -253,10 +253,15 @@ contains
         real(dp), allocatable :: restriction(:, :)
         real(dp) :: difference
         integer :: status
-        integer, parameter :: nphi = 8
+        integer :: nphi
         options%relative_tolerance = 1e-2_dp
-        options%maximum_degree = 24
+        options%maximum_degree = 32
+        ! Minor radius 1 at R = 3: near-isotropic panels (aspect 3); the thin
+        ! fixture tube (aspect 20) would need high pair degrees.
+        nphi = 6
         call fixture(fb, 0, 2)
+        fb%reference(1, :) = 3 + (fb%reference(1, :) - 3)/radius
+        fb%reference(2, :) = fb%reference(2, :)/radius
         call ideal_fb_surface(fb, nphi, surface, faces, restriction, status)
         call require(status == 0, 'cylinder coupling surface')
         call gamma_c_3d_build(surface, faces, restriction, options, dense, &
@@ -274,6 +279,7 @@ contains
         call gamma_c_3d_build(surface, faces, restriction, options, rotational, &
                               report, status, sectors=1)
         call require(status /= 0, 'single sector is rejected')
+        nphi = 8
         call fixture(fb, 2, 2)
         call ideal_fb_surface(fb, nphi, surface, faces, restriction, status)
         call require(status == 0, 'helical coupling surface')

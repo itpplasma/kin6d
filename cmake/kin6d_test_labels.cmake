@@ -666,7 +666,7 @@ if(TARGET gen_curve_chart)
 endif()
 kin6d_test_labels(ideal_fb_landreman_axisymmetric fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
-kin6d_test_labels(ideal_fb_landreman_bem3d16_axisymmetric fast CLASSES mhd equilibrium
+kin6d_test_labels(ideal_fb_landreman_bem3d16_axisymmetric slow CLASSES mhd equilibrium
     TARGETS test_landreman_free_boundary)
 kin6d_test_labels(ideal_fb_landreman_bem3d_axisymmetric slow CLASSES mhd equilibrium
     TARGETS test_landreman_free_boundary)

@@ -236,9 +236,18 @@ hypothesis that has not been traced.
    `ideal_fb_circuits_build(..., nphi_surface=)` and `ideal_fb_set_drive_3d`
    use it. With the cylindrical chart the result equals the meridional path
    to roundoff (test `ideal_fb_traces3d_axisymmetric`).
-2. R2 cost. The native gate `ideal_fb_landreman_bem3d_axisymmetric` times out
-   in the all-pairs adaptive panel assembly (ROADMAP E3.3). A block-circulant
-   or far-field rule belongs in FortFEM.
+2. R2 cost (done). For the cylindrical chart, `ideal_fb_use_bem3d` passes
+   `sectors = nphi` to `gamma_c_3d_build`. That routine then assembles only
+   sector-zero target pairs (FortFEM `assemble_parametric_bem_p2_circulant`)
+   and forms S = W + J^H V^{-1} J per toroidal harmonic
+   (`build_circulant_exterior_dtn`). Only the small consumer form R^T S R
+   is dense. Other charts keep the all-pairs path, and a nonrotational
+   surface passed with `sectors` is rejected (`ideal_fb_chart_surface_circulant`).
+   The near-pair degree depends on the panel aspect, so the Landreman gate
+   uses nphi = 3*chain/2 strips. It runs in 364 s at 4 threads (ROADMAP E3.3).
+   A non-axisymmetric Γ_c with field-period symmetry would need sectors of
+   several strips. The current surface ordering supports that, but no
+   consumer uses it yet.
 3. Curve-chart free boundary. The axisymmetric exterior rejects curve charts
    ([ideal-map-3d.md](ideal-map-3d.md), curve-chart paragraph).
    `ideal_fb_init` still builds the cylindrical shell.
