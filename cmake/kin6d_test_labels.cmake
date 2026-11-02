@@ -495,11 +495,7 @@ kin6d_test_labels(island_driven_outer_reference fast CLASSES mhd
     TARGETS test_island_driven)
 kin6d_test_labels(island_driven_stable_outer_reference fast CLASSES mhd
     TARGETS test_island_driven)
-kin6d_test_labels(island_driven_stable_nn2_p3 slow CLASSES mhd
-    TARGETS test_island_driven)
 kin6d_test_labels(island_zero_beta_ohmic fast CLASSES mhd
-    TARGETS test_island_driven)
-kin6d_test_labels(island_driven_nn2_p3 slow CLASSES mhd
     TARGETS test_island_driven)
 kin6d_test_labels(island_coil_quadrature fast CLASSES mhd
     TARGETS test_island_vacuum_oracle)

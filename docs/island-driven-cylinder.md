@@ -83,13 +83,17 @@ gate: tracing, duration and scan indicators plus W/R0. The O(a/R0) term is an
 asymptotic scale, not a proven bound. No mesh allowance is invented from one
 run. Comparing nr=8/16 and N=1/2 is required to quantify mesh/mode errors
 before a final prefactor claim. A failed prefactor is retained while all three
-widths are collected. No failed test is marked WILL_FAIL.
+widths are collected. Neither NN2 gate is registered in CTest (see the open
+result below); `test_island_driven stable 3 8 1` and `driven 3 8 1` remain
+study commands. The registered tests are the outer references
+(`island_driven_outer_reference`, `island_driven_stable_outer_reference`)
+and the zero-beta Ohmic solve (`island_zero_beta_ohmic`).
 
 ## Original sign reversal
 
 [V] The original q0=1.2,c=1.8 case has Delta'=+4.524741/m and response
--0.4940385. Its original O/X expectation remains unchanged in its separate
-registered test. The response study samples the actual radial-field harmonic
+-0.4940385. Its original O/X expectation remains unchanged in
+`test_island_driven driven`, which is not registered because it fails. The response study samples the actual radial-field harmonic
 with the stated Fourier and gauge conventions before classifying roots.
 On P3 nr=4 at g_perp=1e-4, the resonant flux response is +0.44972, close to
 the vacuum r_s^2=0.44444. The opposite O/X signs therefore reflect opposite
@@ -107,3 +111,24 @@ its converged mesh evidence is required before assigning the sign reversal
 to that mechanism. Tearing instability and unresolved mesh/modes remain
 additional possibilities. The stable profile is a new case, not a reversal
 of the failed original expectation.
+
+## Open result (2026-11-02)
+
+[V] `test_island_driven driven 3 8 1` (P3, nr=8, N=1, eps=2e-3,
+gfortran 14, 4 threads) fails at `driven O/X type` after 107 s. The
+measured resonant flux response is +0.44704 against the outer reference
+-0.49404 at r=2/3. The other radial samples, measured against reference,
+are 0.5605 vs -0.0564 (r=0.7475), 0.6870 vs 0.2757 (r=0.8283), 0.8264 vs
+0.6076 (r=0.9092) and 0.9801 vs 0.9555 (r=0.99). Both period-2 roots close
+(4.5e-7, 4.0e-7), but the residues are -0.132 at the predicted O-point and
++0.122 at the predicted X-point: the O/X roles are swapped, consistent with
+the opposite sign of the resonant flux.
+
+[V] `test_island_driven stable 3 8 1` did not finish within 1800 s on a
+loaded 4-core machine; it printed only the outer reference (response
+0.6667, Delta' -8.818, drive 5.879). Its prefactor and exponent gates are
+therefore unmeasured, not passed.
+
+Neither result is recorded as an expected value. The cause of the sign
+discrepancy (current regularisation, nonlinear response, tearing or
+unresolved mesh/modes) remains open.
