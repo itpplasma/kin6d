@@ -1336,6 +1336,16 @@ add_test(NAME grad_shafranov_device_selection_contract
 set_tests_properties(grad_shafranov_device_selection_contract PROPERTIES
     TIMEOUT 60 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+# Affine-profile Picard fixed point through the public GS route: the CPU
+# route always runs; the CUDA guard below adds the CPU/GPU pair.
+add_executable(test_gs_cuda_picard test/test_gs_cuda_picard.f90)
+target_link_libraries(test_gs_cuda_picard PRIVATE kin6d_equilibrium)
+if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(test_gs_cuda_picard PRIVATE -fno-fast-math -ffp-contract=off)
+endif()
+add_test(NAME grad_shafranov_affine_picard_cpu COMMAND test_gs_cuda_picard cpu)
+set_tests_properties(grad_shafranov_affine_picard_cpu PROPERTIES TIMEOUT 60 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;OMP_WAIT_POLICY=passive")
 if(KIN6D_ENABLE_CUDA_GS_SOLVE)
     add_executable(test_gs_cuda_fixed_source test/test_gs_cuda_fixed_source.f90)
     target_link_libraries(test_gs_cuda_fixed_source PRIVATE kin6d_nn_solovev_test)
@@ -1353,9 +1363,12 @@ if(KIN6D_ENABLE_CUDA_GS_SOLVE)
         COMMAND test_gs_cuda_fixed_source affine 16 0)
     add_test(NAME grad_shafranov_cuda_public_fixed_source
         COMMAND test_gs_cuda_public_solve)
+    add_test(NAME grad_shafranov_cuda_affine_picard
+        COMMAND test_gs_cuda_picard pair)
     set_tests_properties(grad_shafranov_cuda_fixed_source_a3
         grad_shafranov_cuda_affine_strict_audit
-        grad_shafranov_cuda_public_fixed_source PROPERTIES
+        grad_shafranov_cuda_public_fixed_source
+        grad_shafranov_cuda_affine_picard PROPERTIES
         TIMEOUT 120 PROCESSORS 4
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endif()
@@ -1989,7 +2002,7 @@ set_tests_properties(nonnested_coupled_closed_line_p3 PROPERTIES
 target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_mapped.f90
     src/mhd/nonnested_newton_mr.f90
     src/mhd/nonnested_beltrami.f90 src/mhd/nonnested_beltrami_mr.f90
-    src/mhd/nonnested_relax.f90
+    src/mhd/nonnested_relax.f90 src/mhd/nonnested_force.f90
     src/generated/kin6d_metriplectic_leaves.f90)
 set_source_files_properties(src/generated/kin6d_metriplectic_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -2092,6 +2105,17 @@ foreach(case taylor ideal)
     set_tests_properties(nonnested_relax_${case} PROPERTIES
         TIMEOUT 300 LABELS "mhd;fast" PROCESSORS 4
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+# Harmonic deflation, potential-velocity and Leray force, residual floor:
+# docs/nonnested-force.md.
+add_executable(test_nonnested_force test/test_nonnested_force.f90)
+target_link_libraries(test_nonnested_force PRIVATE kin6d_nn_solovev_test
+    kin6d_nn_vacuum_test)
+foreach(case hodge solovev beltrami shell sheet)
+    add_test(NAME nonnested_force_${case} COMMAND test_nonnested_force ${case})
+    set_tests_properties(nonnested_force_${case} PROPERTIES
+        TIMEOUT 600 PROCESSORS 2
+        ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 endforeach()
 add_test(NAME nonnested_relax_vacuum_island COMMAND test_nonnested_relax island)
 set_tests_properties(nonnested_relax_vacuum_island PROPERTIES
