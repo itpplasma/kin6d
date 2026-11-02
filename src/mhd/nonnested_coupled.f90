@@ -471,6 +471,15 @@ contains
         if (any(abs(x - x(rep)) > 0)) return
         call source_load(field, problem, lay, ops%nphi, load, st)
         if (st /= 0) return
+        ! The homogeneous transport problem with zero Dirichlet data has the
+        ! unique solution p=0 for every B (chi_perp>0). Preserve that exact
+        ! invariant when seeded at zero. Otherwise sparse-LU rounding can
+        ! introduce p~roundoff and its scale-free relative backward error
+        ! rejects every line-search step in a zero-beta equilibrium.
+        if (maxval(abs(load(lay%ip + 1:lay%ip + lay%nv))) <= 0) then
+            if (maxval(abs(x(lay%ip + 1:lay%ip + lay%nv))) <= 0) &
+                mask(lay%ip + 1:lay%ip + lay%nv) = .true.
+        end if
         w = huge(1.0_dp)
         do it = 0, steps
             call residual_ops(field, problem, ops, x, r, st)

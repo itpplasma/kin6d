@@ -1921,6 +1921,17 @@ target_sources(kin6d_mhd PRIVATE src/mhd/island_diagnostics.f90)
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_island_leaves.f90
     src/equilibrium/coil_quadrature_field.f90)
 add_executable(test_island_diagnostics test/test_island_diagnostics.f90)
+add_executable(test_island_driven test/support/island_outer_reference.f90
+    test/test_island_driven.f90)
+target_link_libraries(test_island_driven PRIVATE kin6d_mhd)
+add_test(NAME island_driven_outer_reference COMMAND test_island_driven outer)
+add_test(NAME island_driven_stable_outer_reference
+    COMMAND test_island_driven stable_outer)
+add_test(NAME island_zero_beta_ohmic COMMAND test_island_driven base 3 4 1)
+set_tests_properties(island_zero_beta_ohmic PROPERTIES TIMEOUT 60 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+# The NN2 driven and stable gates (test_island_driven driven|stable 3 8 1)
+# are open studies, not registered: docs/island-driven-cylinder.md.
 target_link_libraries(test_island_diagnostics PRIVATE kin6d_mhd)
 add_test(NAME island_diagnostics_pendulum COMMAND test_island_diagnostics)
 set_tests_properties(island_diagnostics_pendulum PROPERTIES TIMEOUT 60 PROCESSORS 2

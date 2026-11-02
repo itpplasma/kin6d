@@ -1,6 +1,6 @@
 program gen_islands
     use fortsym_arena, only: arena_t
-    use fortsym_expr, only: expr_t, sym, sqrt, atan2, operator(+), &
+    use fortsym_expr, only: expr_t, sym, sqrt, atan2, log, operator(+), &
                             operator(-), operator(*), operator(/), operator(**)
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
@@ -8,6 +8,7 @@ program gen_islands
     type(leaf_writer_t) :: w
     type(expr_t) :: a, b, c, d, x, y, z, lx, ly, lz, r3
     type(expr_t) :: m, n, phi
+    type(expr_t) :: r, q0, qc, q, y1, y2, jp
     call arena%init()
     a = sym(arena, 'a'); b = sym(arena, 'b')
     c = sym(arena, 'c'); d = sym(arena, 'd')
@@ -28,6 +29,16 @@ program gen_islands
     call w%emit('biot_savart_integrand', ['x ', 'y ', 'z ', 'lx', 'ly', 'lz'], &
                 ['bx', 'by', 'bz'], &
                 [(ly*z - lz*y)/r3, (lz*x - lx*z)/r3, (lx*y - ly*x)/r3], ad=.true.)
+    r = sym(arena, 'r'); q0 = sym(arena, 'q0'); qc = sym(arena, 'qc')
+    y1 = sym(arena, 'y1'); y2 = sym(arena, 'y2')
+    q = q0 + qc*r*r
+    jp = -8*q0*qc*r/q**3
+    call w%emit('cylindrical_outer_rhs', &
+                ['r ', 'y1', 'y2', 'q0', 'qc', 'm ', 'n '], ['dy1', 'dy2'], &
+                [y2, 0 - y2/r + (m*m/(r*r) + jp/(r*(1/q - n/m)))*y1], ad=.true.)
+    call w%emit('driven_cylinder_data', ['r ', 'q0', 'qc'], &
+                ['safety', 'shape ', 'psi   '], &
+                [q, (q0/q)**2, log(q/(q0 + qc))/(2*qc)], ad=.true.)
     call w%line('end module')
     call w%close()
 end program
