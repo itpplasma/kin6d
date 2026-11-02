@@ -158,6 +158,10 @@ kin6d_test_labels(ideal_map_n0_seed_nested_a3_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_seed_nested_shaped_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_parallel_mass fast CLASSES mhd
+    TARGETS test_ideal_map_parallel)
+kin6d_test_labels(ideal_map_parallel_damping_p2 fast CLASSES mhd
+    TARGETS test_ideal_map_parallel)
 kin6d_test_labels(ideal_map_n0_normalised_residual_a3_p2 fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(gs_coils_independent_oracles fast CLASSES equilibrium

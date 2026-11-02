@@ -346,9 +346,20 @@ set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
     ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
-add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90
-    test/support/ideal_map_cases.f90)
-target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d)
+# One compiled ideal_map_cases module shared by the ideal map test programs.
+add_library(kin6d_ideal_map_cases_test STATIC test/support/ideal_map_cases.f90)
+target_link_libraries(kin6d_ideal_map_cases_test PUBLIC kin6d)
+add_executable(test_ideal_map_axisymmetric test/test_ideal_map_axisymmetric.f90)
+target_link_libraries(test_ideal_map_axisymmetric PRIVATE kin6d_ideal_map_cases_test)
+# Parallel-only Levenberg-Marquardt term (docs/ideal-map-3d.md).
+add_executable(test_ideal_map_parallel test/test_ideal_map_parallel.f90)
+target_link_libraries(test_ideal_map_parallel PRIVATE kin6d_ideal_map_cases_test)
+add_test(NAME ideal_map_parallel_mass COMMAND test_ideal_map_parallel unit 32 2)
+add_test(NAME ideal_map_parallel_damping_p2
+    COMMAND test_ideal_map_parallel compare 32 2)
+set_tests_properties(ideal_map_parallel_mass ideal_map_parallel_damping_p2
+    PROPERTIES TIMEOUT 600 PROCESSORS 2
+    ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_map_hessian test/test_ideal_map_hessian.f90
     test/support/ideal_map_hessian_oracle.f90)
 target_link_libraries(test_ideal_map_hessian PRIVATE kin6d)
