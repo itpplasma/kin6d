@@ -369,29 +369,36 @@ contains
         character(*), intent(in) :: label_name
         type(island_width_t), intent(out) :: report
         integer, intent(in), optional :: scans
-        type(island_trace_options_t) :: tight
+        type(island_trace_options_t) :: tights(3)
         real(dp) :: edges(2, 3), widths(3)
-        integer :: lev, j, statuses(2), count
+        integer :: lev, i, j, statuses(2, 3), count
         report = island_width_t(); report%radial_label = label_name
         count = 12
         if (present(scans)) count = scans
         if (len_trim(label_name) == 0 .or. count < 1 .or. count > 24) return
-        tight = opt
+        ! The three levels (base, tightened, doubled duration) and both edges
+        ! are independent traces: run all six as one dynamic loop, longest
+        ! (lev = 3) first. The reported status is that of the first level
+        ! with a failed edge, as for a sequential scan.
+        tights(1) = opt
+        tights(2) = opt
+        tights(2)%rtol = opt%rtol/8; tights(2)%atol = opt%atol/8
+        tights(2)%max_step = opt%max_step/2
+        tights(2)%fixed_steps = 2*opt%fixed_steps
+        tights(3) = tights(2)
+        statuses = 0
+        !$omp parallel do default(shared) private(i, lev, j) schedule(dynamic, 1)
+        do i = 1, 6
+            lev = 3 - (i - 1)/2
+            j = 1 + mod(i - 1, 2)
+            call island_libration_edge(field, outside(j), inside, origin, &
+                        direction, phi0, turns*merge(2, 1, lev == 3), m, n, &
+                        tights(lev), edges(j, lev), statuses(j, lev), scans=count)
+        end do
+        !$omp end parallel do
         do lev = 1, 3
-            if (lev == 2) then
-                tight%rtol = opt%rtol/8; tight%atol = opt%atol/8
-                tight%max_step = opt%max_step/2
-                tight%fixed_steps = 2*opt%fixed_steps
-            end if
-            !$omp parallel do default(shared) private(j) schedule(static)
-            do j = 1, 2
-                call island_libration_edge(field, outside(j), inside, origin, &
-                            direction, phi0, turns*merge(2, 1, lev == 3), m, n, tight, &
-                                           edges(j, lev), statuses(j), scans=count)
-            end do
-            !$omp end parallel do
-            if (any(statuses /= 0)) then
-                report%status = maxval(statuses)
+            if (any(statuses(:, lev) /= 0)) then
+                report%status = maxval(statuses(:, lev))
                 return
             end if
             widths(lev) = abs(edges(2, lev) - edges(1, lev))
