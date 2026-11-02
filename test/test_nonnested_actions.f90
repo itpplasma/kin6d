@@ -41,6 +41,7 @@ program test_nonnested_actions
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_build
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_fixed, nc_reduce, nc_residual, nc_jacobian, nc_jvp, nc_vjp
+    use kin6d_nonnested_exterior, only: nn_exterior_t, nn_attach_exterior_operators
     use kin6d_island_closure, only: ISLAND_INVALID, ISLAND_UNSUPPORTED, &
         ISLAND_NULL_FIELD, ISLAND_BAD_DATA
     implicit none
@@ -93,6 +94,8 @@ program test_nonnested_actions
     problem%nphi = 8
     select case (trim(mode))
     case ('fixed')
+    case ('exterior')
+        call attach_exterior()
     case ('floating')
         allocate (problem%floating(lay%n0)); problem%floating = .false.
         first = 0
@@ -167,8 +170,34 @@ program test_nonnested_actions
     call require(fd_errors(3) <= 1.0e-7_dp, 'finite-difference JVP')
     call require(fd_errors(3) <= 0.12_dp*fd_errors(1) + maxval(fd_noise), &
         'central-difference truncation convergence')
-    print '(a,i0,2a)', 'PASS: I3 P', degree, ' ', trim(mode)
+    print '(a,i0,2a)', 'PASS: NN2 action P', degree, ' ', trim(mode)
 contains
+    subroutine attach_exterior()
+        ! Frozen positive energy/trace blocks: no full BEM qualification.
+        type(nn_exterior_t) :: exterior
+        real(dp), allocatable :: normal(:, :), drive(:)
+        real(dp) :: steklov(3, 3), coil(3), mass
+        integer :: j, first, last
+        mass = 4*acos(-1.0_dp)/3
+        steklov = 0
+        do j = 1, 3
+            steklov(j, j) = 2*mass
+        end do
+        allocate (normal(3, lay%na), drive(lay%na))
+        normal = 0; drive = 0
+        first = findloc(field%fs%sp(1)%bnd, .true., 1)
+        last = findloc(field%fs%sp(1)%bnd, .true., 1, back=.true.)
+        call require(first > 0 .and. last > first, 'boundary trace columns')
+        normal(:, first) = mass*[1.0_dp, 0.3_dp, -0.2_dp]
+        normal(:, last) = mass*[-0.4_dp, 0.2_dp, 0.7_dp]
+        coil = mass*[0.2_dp, -0.3_dp, 0.4_dp]
+        call nn_attach_exterior_operators(field, problem, steklov, normal, &
+            coil, drive, exterior, status)
+        call require(status == 0, 'frozen exterior attachment')
+        call require(norm2(csc_matvec(problem%exterior, direction(:lay%na))) > 0, &
+            'nonzero exterior action')
+    end subroutine
+
     subroutine require(ok, label)
         logical, intent(in) :: ok
         character(*), intent(in) :: label

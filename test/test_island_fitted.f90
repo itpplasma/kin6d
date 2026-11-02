@@ -56,7 +56,8 @@ program test_island_fitted
     use kin6d_nonnested_profile, only: nn_fit_source
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout, &
         nc_validate, nc_source_data, nc_fixed, nc_reduce, nc_residual, &
-        nc_jacobian, nc_jvp, nc_vjp
+        nc_jacobian, nc_jvp, nc_vjp, nc_solve, nc_report_t
+    use kin6d_nonnested_exterior, only: nn_exterior_t, nn_attach_exterior_operators
     use kin6d_nonnested_residual, only: nn_residual, NN_RESIDUAL_ZERO_SCALE
     use kin6d_equilibrium_residual, only: equilibrium_residual_t
     use kin6d_island_case, only: island_case_read
@@ -87,6 +88,8 @@ program test_island_fitted
         call heat()
     case ('current')
         call current()
+    case ('exterior')
+        call exterior_current()
     case default
         error stop 'mode'
     end select
@@ -283,5 +286,84 @@ contains
         call require(error < 1.0e-10_dp, 'fitted JVP/VJP pairing')
         print '(a,3es14.5)', 'signed current, pairing error, physical B2 mean ', &
             expected, error, physical_b2/volume
+    end subroutine
+
+    subroutine exterior_current()
+        ! Frozen-drive cancellation, not recovery of the target lambda.
+        ! B_phi=F/R gives J_phi=[g_par V/(2*pi)+F*d_seed]/R, so I_phi=0
+        ! requires the full-torus voltage V=-2*pi*F*d_seed/g_par.
+        type(nn_exterior_t) :: exterior
+        type(nc_report_t) :: solved
+        real(dp), allocatable :: steklov(:, :), normal(:, :), coil(:), volume(:)
+        real(dp), allocatable :: oracle(:), residual(:)
+        integer, allocatable :: ids(:)
+        real(dp) :: expected_voltage, voltage_error, initial_current, pressure_drive
+        real(dp), parameter :: drive = 0.37_dp
+        integer :: i, n
+        call fit(problem, 0.0_dp, drive); x = 0
+        expected_voltage = -2*acos(-1.0_dp)*ftor*drive/problem%g_par
+        ids = pack([(i, i=1, lay%na)], field%fs%sp(1)%bnd); n = size(ids)
+        call require(n > 0, 'exterior boundary columns')
+        allocate (steklov(n, n), normal(n, lay%na), coil(n), volume(lay%na))
+        steklov = 0; normal = 0; coil = 0; volume = 0
+        ! Synthetic positive boundary energy with exactly zero forcing.
+        ! This isolates the fitted-current/voltage seam, without BEM admission.
+        do i = 1, n
+            steklov(i, i) = 1; normal(i, ids(i)) = 1
+        end do
+        call nn_attach_exterior_operators(field, problem, steklov, normal, &
+            coil, volume, exterior, st)
+        call require(st == 0, 'fitted exterior attachment')
+        call island_residual_report(field, problem, x, minor, 1.0_dp, report, st)
+        call require(st == 0, 'driven harmonic seed report')
+        initial_current = report%current
+        call require(initial_current > 1.0e-3_dp, 'zero pressure load carries current')
+        oracle = x; oracle(lay%iv) = expected_voltage
+        call nc_residual(field, problem, oracle, residual, st)
+        call require(st == 0, 'independent signed-voltage residual')
+        call require(norm2(residual) < 1.0e-10_dp, &
+            'independent signed-voltage state satisfies weak rows')
+        call island_residual_report(field, problem, oracle, minor, 1.0_dp, report, st)
+        call require(st == 0, 'analytic cancellation report')
+        call require(abs(report%current) < 1.0e-11_dp .and. &
+            report%charge_balance < 1.0e-11_dp, 'analytic current cancellation')
+        call require(report%force%sigma == 0 .and. &
+            ieee_is_nan(report%force%normalized) .and. &
+            index(report%force_status, 'normalization unavailable') == 1, &
+            'harmonic force normalization remains explicitly unavailable')
+        call nc_solve(field, problem, x, solved, st)
+        message = solved%message
+        call require(st == 0, 'fitted current remains in exterior Newton solve')
+        voltage_error = abs(x(lay%iv) - expected_voltage)/abs(expected_voltage)
+        call require(voltage_error < 1.0e-10_dp, 'negative full-torus voltage oracle')
+        call island_residual_report(field, problem, x, minor, 1.0_dp, report, st)
+        call require(st == 0, 'solved cancellation report')
+        call require(abs(report%current) < 1.0e-10_dp .and. &
+            report%charge_balance < 1.0e-10_dp, 'solved net current and charge balance')
+        print '(a,5es16.7)', 'voltage/expected/error/current/seed current ', &
+            x(lay%iv), expected_voltage, voltage_error, report%current, initial_current
+        ! Negative control: scalar S is still zero, but the frozen weak flux
+        ! now supplies a nonzero discrete pressure drive. It must remain live.
+        ! This is a forced algebraic control, not a target equilibrium claim.
+        call fit(other, 1.0_dp, drive); x = 0
+        call nn_attach_exterior_operators(field, other, steklov, normal, &
+            coil, volume, exterior, st)
+        call require(st == 0, 'pressure-driven exterior attachment')
+        call nc_residual(field, other, x, residual, st)
+        call require(st == 0, 'pressure-drive control residual')
+        pressure_drive = norm2(residual(lay%ip + 1:lay%iphi))
+        call require(pressure_drive > 1.0e-3_dp, 'nonzero complete weak pressure drive')
+        call nc_solve(field, other, x, solved, st)
+        message = solved%message
+        call require(st == 0, 'nonzero frozen pressure drive remains in Newton solve')
+        call require(norm2(x(lay%ip + 1:lay%iphi)) > 0, &
+            'pressure-driven control produces nonzero pressure')
+        call nc_residual(field, other, x, residual, st)
+        call require(st == 0, 'solved pressure-drive control residual')
+        call require(norm2(residual(lay%ip + 1:lay%iphi)) &
+            < 1.0e-10_dp*pressure_drive, 'pressure-drive equation retained')
+        print '(a,3es16.7)', 'pressure drive/solution/relative residual ', &
+            pressure_drive, norm2(x(lay%ip + 1:lay%iphi)), &
+            norm2(residual(lay%ip + 1:lay%iphi))/pressure_drive
     end subroutine
 end program
