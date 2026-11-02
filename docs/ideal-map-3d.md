@@ -426,6 +426,48 @@ solution psi_2D on the same mesh is the second oracle.
   exactly quadratic in omega at fixed transversal dofs, since J does not
   depend on omega) so that the flat omega valley is not driven by the
   nonlinear nu--omega coupling.
+  Parallel-only Levenberg--Marquardt (`parallel_damping`, non-nested solve,
+  default 0; [comparators](relaxation-comparators.md) item 2): the trial
+  matrix is H + kappa_k M_par + mu diag(H) with M_par(u, v) = int (u.b)(v.b)
+  dx (`ideal_map_parallel_mass`, u = DH dq, b = B/|B|) and kappa_k =
+  parallel_damping min(1, |g|/g0) max diag H / max diag M_par, so the extra
+  damping vanishes with the gradient (LM with mu ~ |g|). At the converged
+  A3 P2 32-node seed map the eight lowest generalized curvatures of
+  H v = lambda M_total v are 1.0e-11 to 1.9e-8 of the largest and their
+  eigenvectors are 92-99.8 % parallel (v.M_par v); the crawl direction is
+  the v || B near-null. The trial-matrix condition number (M_total metric) is
+  3.5e10 with diagonal damping mu = 1e-8 (the crawl value) and 2.3e5 / 8.1e5 /
+  3.0e6 with parallel damping kappa = 1e-2 / 1e-3 / 1e-4.
+  `ideal_map_parallel_mass` checks M_par against a direct quadrature of
+  (u_i.b)(u_j.b) from finite-difference displacements (agreement 1e-9) and
+  `ideal_map_parallel_damping_p2` gates the 32-node case: the eight lowest
+  curvatures are at least 90 % parallel, kappa_k was applied and decayed
+  below 1e-3 of its initial scale, the damped solves take a different
+  Newton path and their exact-flux error is within 5 % of the baseline.
+  `parallel_damping > 0` with `omega_elimination` is `IDEAL_MAP_BAD_INPUT`.
+  The P2 seed ladders below are a measurement record, not a CI gate
+  (`test_ideal_map_axisymmetric` argument 11 sets `parallel_damping`; this
+  VM, 2 threads, native LU, tol 1e-11 x g_seed):
+
+  | case | kappa | Newton steps 32/64/128 | finest d3D_exact | orders | wall |
+  |---|---|---|---|---|---|
+  | A3 | 0 | 27/40/117 | 5.4465e-6 | 3.05, 2.63 | 65 s |
+  | A3 | 1e-2 | 63/29/63 | 5.3314e-6 | 2.96, 2.71 | 41 s |
+  | A3 | 1e-1 | 81/48/71 | 5.3321e-6 | 2.96, 2.71 | 43 s |
+  | shaped | 0 | 19/97/90 | 1.8702e-5 | 3.45, 3.45 | 76 s |
+  | shaped | 1e-2 | 22/54/60 | 1.8702e-5 | 3.45, 3.45 | 64 s |
+  | shaped | 1e-1 | 51/93/99 | 1.8702e-5 | 3.45, 3.45 | 75 s |
+
+  The shaped end points agree to the printed digits. On A3 the damped solves
+  end at another local minimum of the near-null valley (both have positive
+  lowest curvature, `ideal_map_parallel_damping_p2`): W is higher by 3.4e-9
+  relative on the 32-node mesh and the exact-flux errors differ by 2.3 %,
+  0.2 % and 2.1 %, the discretisation-level end-point spread already seen
+  between gauge weights. kappa = 1 needs 343/181/496 steps. A rejected
+  variant replaced the diagonal metric by the parallel one (floor 1e-3 to
+  1e-1 of diag H): 25-27/59-69/184-276 steps on A3, because the
+  perpendicular floor then sets the damping of the stiff modes. It was
+  removed; the parallel metric enters only as the additive term.
 
   Reproducibility: cell energies are summed serially and MUMPS factors on one
   thread by default (`factor_threads`), so a solve is identical for any

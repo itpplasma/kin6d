@@ -68,7 +68,7 @@ module kin6d_ideal_map
     public :: ideal_map_prolong, ideal_map_residual, ideal_map_position_gauge
     public :: ideal_map_prolong_correction
     public :: ideal_map_solve_report_t, ideal_map_eliminate_omega
-    public :: ideal_map_gauge_project
+    public :: ideal_map_gauge_project, ideal_map_parallel_mass
     integer, parameter, public :: IDEAL_MAP_OK = 0, IDEAL_MAP_FOLDED = 1, &
         IDEAL_MAP_NOT_CONVERGED = 2, IDEAL_MAP_SOLVE_FAILED = 3, &
         IDEAL_MAP_BAD_INPUT = 4
@@ -125,6 +125,15 @@ module kin6d_ideal_map
         ! Position gauge instead of transversals + axis expansion + omega.
         logical :: position_gauge = .false.
         real(dp) :: initial_damping = 1.0e-6_dp
+        ! Parallel-only Levenberg-Marquardt term (non-nested solve; 0: off).
+        ! The trial matrix is H + kappa_k M_par + mu diag(H) with M_par from
+        ! ideal_map_parallel_mass and kappa_k = parallel_damping
+        ! min(1, |g|/g0) max diag(H)/max diag(M_par) over the free dofs:
+        ! damping on the v || B near-null component that vanishes with the
+        ! gradient (LM with mu ~ |g|; quadratic local convergence also for
+        ! a singular Hessian under a local error bound, Yamashita-Fukushima).
+        ! Rejected with IDEAL_MAP_BAD_INPUT under omega_elimination.
+        real(dp) :: parallel_damping = 0
         ! Non-nested Newton step by CG on the damped masked Hessian,
         ! preconditioned with the retained SPD Cholesky factor of an earlier
         ! damped Hessian (inexact Newton, forcing eta = min(1/2, (|g|/|g0|)^1/2)
@@ -221,6 +230,8 @@ module kin6d_ideal_map
         integer :: iterations = 0
         real(dp) :: energy = 0, gradient = huge(1.0_dp), step = huge(1.0_dp)
         real(dp) :: min_jacobian = 0, damping = 0, initial_gradient = 0
+        ! Last kappa_k of map%parallel_damping (absolute, 0 when off).
+        real(dp) :: parallel_kappa = 0
         ! Wall seconds: energy/gradient, Hessian assembly, factor + solve.
         real(dp) :: energy_s = 0, hessian_s = 0, factor_s = 0
         ! Backend split of factor_s where reported: symbolic analysis
@@ -1226,6 +1237,80 @@ contains
         call csr_assemble_blocks(matrix, map%redconn, blocks)
     end subroutine
 
+    subroutine ideal_map_parallel_mass(map, x, matrix, total)
+        ! Parallel mass M_par(u, v) = int (u.b)(v.b) dx, b = B/|B|, for the
+        ! displacements u = DH(q) dq of two coefficient increments, in the
+        ! reduced dofs and on the CSR pattern of ideal_map_hessian. It is
+        ! the metric of the parallel-only Levenberg-Marquardt term
+        ! (map%parallel_damping): u || B leaves B = DX b/J unchanged to first
+        ! order (curl(u x B) = 0), the near-null direction of the energy.
+        ! total: the displacement mass int u.v dx instead (diagnostics).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        type(csr_matrix_t), intent(inout) :: matrix
+        logical, intent(in), optional :: total
+        real(dp), allocatable :: blocks(:, :, :), full(:, :), half(:, :), v(:)
+        real(dp) :: q(3), qd(3, 3), pos(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        real(dp) :: dx(3, 3), bv(3), t(3), jac, weight, dphi, f
+        integer :: e, g, j, a, m, nl, nr, i, nrank
+        logical :: all_components
+        all_components = .false.
+        if (present(total)) all_components = total
+        nrank = merge(3, 1, all_components)
+        nl = 3*map%nloc*map%nmode
+        nr = 2*map%nloc*map%nmode + 2*map%npoly*map%nmode
+        dphi = 2*acos(-1.0_dp)/(map%nfp*map%nphi)
+        allocate (blocks(nr, nr, map%cells))
+        !$omp parallel default(shared) private(e, g, j, a, m, i, q, qd, pos, d1, &
+        !$omp d2, d3, dx, bv, t, jac, weight, f, full, half, v)
+        allocate (full(nl, nl), half(nl, nr), v(nl))
+        !$omp do schedule(static)
+        do e = 1, map%cells
+            full = 0
+            do j = 1, map%nphi
+                do g = 1, map%nq
+                    call point_jet(map, e, g, j, x, q, qd)
+                    call map%chart%jet(q, pos, d1, d2, d3)
+                    dx = matmul(d1, qd)
+                    bv = matmul(dx, map%b(:, g, e))
+                    jac = map%sigma*(dx(1, 1)*(dx(2, 2)*dx(3, 3) - dx(2, 3)*dx(3, 2)) &
+                        - dx(1, 2)*(dx(2, 1)*dx(3, 3) - dx(2, 3)*dx(3, 1)) &
+                        + dx(1, 3)*(dx(2, 1)*dx(3, 2) - dx(2, 2)*dx(3, 1)))
+                    if (.not. norm2(bv) > 0) cycle
+                    weight = map%weight(g)*dphi*abs(jac)
+                    do i = 1, nrank
+                        ! (DH dq).b = dq.t with t = DH^T b; total: the rows
+                        ! of DH (DH^T DH = sum of their outer products).
+                        if (all_components) then
+                            t = d1(i, :)
+                        else
+                            t = matmul(transpose(d1), bv/norm2(bv))
+                        end if
+                        do a = 1, map%nloc
+                            do m = 1, map%nmode
+                                f = map%shape(a, g)*map%trig(m, j)
+                                v(1 + 3*(m - 1) + 3*map%nmode*(a - 1): &
+                                    3*m + 3*map%nmode*(a - 1)) = f*t
+                            end do
+                        end do
+                        ! Rank-1 update without nl x nl temporaries.
+                        do a = 1, nl
+                            if (v(a) /= 0) full(:, a) = full(:, a) + (weight*v(a))*v
+                        end do
+                    end do
+                end do
+            end do
+            call hessian_reduce(map, e, full, half, blocks(:, :, e))
+        end do
+        !$omp end do
+        deallocate (full, half, v)
+        !$omp end parallel
+        if (matrix%n /= map%nred .or. matrix%nloc /= nr) &
+            call csr_build_pattern(map%nred, map%redconn, .false., matrix, &
+                with_slots=.true.)
+        call csr_assemble_blocks(matrix, map%redconn, blocks)
+    end subroutine
+
     subroutine hessian_merge_pairs(nmode, nq, ka, kb, kc, ks)
         ! Packed pair blocks K_uu'(m, m') (u, u' = 1..12 with u = c + 3 r) to
         ! ks(mmcc + nmc (s - 1), s' + 3 (g - 1)), mmcc = m + nmode (m' - 1)
@@ -1421,7 +1506,7 @@ contains
         ! Absolute gradient the tolerance refers to (default: the initial one),
         ! e.g. the first-phase gradient for a polishing solve.
         real(dp), intent(in), optional :: reference_gradient
-        type(csr_matrix_t) :: matrix, omatrix
+        type(csr_matrix_t) :: matrix, omatrix, pmatrix
         type(sparse_solver_t) :: solver, osolver, lsolver
         type(fortsparse_status_t) :: sstatus
         real(dp), allocatable :: grad(:), gred(:), step(:), full(:), diag(:)
@@ -1444,6 +1529,9 @@ contains
         factored = .false.; ofactored = .false.; lfactored = .false.
         if (present(verbose)) talk = verbose
         nested = map%omega_elimination .and. .not. map%position_gauge
+        status = IDEAL_MAP_BAD_INPUT
+        if (map%parallel_damping < 0 .or. (map%parallel_damping > 0 .and. nested)) &
+            return
         allocate (grad(map%ndof), full(map%ndof), gred(map%nred), step(map%nred), &
             diag(map%nred), rhs(map%nred), shift(map%nred))
         call omega_mask(map, nested, omask)
@@ -1502,6 +1590,7 @@ contains
                 end do
             end do
             scale = maxval(abs(diag), mask=.not. map%fixed)
+            if (map%parallel_damping > 0) call add_parallel()
             accepted = .false.
             if (nested) then
                 call nested_line_search()
@@ -1615,6 +1704,31 @@ contains
         if (.not. gnorm > tolerance*g0) status = IDEAL_MAP_OK
         call cleanup()
     contains
+        subroutine add_parallel()
+            ! matrix += kappa_k M_par on the identical Hessian pattern; the
+            ! diagonal LM metric (diag) stays that of H.
+            real(dp) :: pscale, pratio
+            integer :: row
+            t0 = wall_seconds()
+            call ideal_map_parallel_mass(map, map%x, pmatrix)
+            report%hessian_s = report%hessian_s + wall_seconds() - t0
+            if (size(pmatrix%val) /= size(matrix%val)) &
+                error stop 'ideal_map_parallel_mass: pattern mismatch'
+            pscale = 0
+            do row = 1, map%nred
+                if (map%fixed(row)) cycle
+                do k = pmatrix%rowptr(row), pmatrix%rowptr(row + 1) - 1
+                    if (pmatrix%colidx(k) == row) pscale = max(pscale, pmatrix%val(k))
+                end do
+            end do
+            pratio = 0
+            if (.not. pscale > 0) return
+            pratio = scale/pscale
+            report%parallel_kappa = map%parallel_damping &
+                *min(1.0_dp, gnorm/max(g0, tiny(1.0_dp)))*pratio
+            matrix%val = matrix%val + report%parallel_kappa*pmatrix%val
+        end subroutine
+
         subroutine trust_region()
             ! alpha = largest fraction of full within the displacement caps.
             alpha = 1

@@ -44,7 +44,8 @@ program test_ideal_map_axisymmetric
         pprime, ffprime, shaped
     use kin6d_equilibrium_harness, only: equilibrium_case_t, &
         equilibrium_resolution_t, equilibrium_start_t, equilibrium_run_report_t, &
-        run_equilibrium_case, write_equilibrium_report
+        run_equilibrium_case, write_equilibrium_report, &
+        equilibrium_floor_report_t, equilibrium_residual_floor, write_residual_floor
     use kin6d_equilibrium_state, only: equilibrium_state_t
     use kin6d_map_equilibrium, only: map_equilibrium
     implicit none
@@ -71,6 +72,9 @@ program test_ideal_map_axisymmetric
     integer :: max_newton = 600
     logical :: position_gauge = .false.
     real(dp) :: solve_tolerance = 1.0e-6_dp
+    ! Argument 11: map%parallel_damping (parallel-only Levenberg-Marquardt;
+    ! the ladder measurement record of docs/ideal-map-3d.md).
+    real(dp) :: parallel_damping = 0
     mode = 'solovev'; degree = 2
     if (command_argument_count() > 0) call get_command_argument(1, mode)
     if (command_argument_count() > 1) then
@@ -108,6 +112,10 @@ program test_ideal_map_axisymmetric
         call get_command_argument(10, argument)
         gauge_hessian_only = trim(argument) == 'h'
         omega_elimination = trim(argument) == 'n'
+    end if
+    if (command_argument_count() > 10) then
+        call get_command_argument(11, argument)
+        read (argument, *) parallel_damping
     end if
     call setup_case(trim(mode) == 'shaped' .or. trim(mode) == 'seedshaped' &
         .or. trim(mode) == 'shapedho')
@@ -182,6 +190,7 @@ contains
         map%position_gauge = position_gauge
         map%gauge_hessian_only = gauge_hessian_only
         map%omega_elimination = omega_elimination
+        map%parallel_damping = parallel_damping
         if (present(field)) then
             call ideal_map_freeze(map, field, status)
         else
@@ -987,7 +996,8 @@ contains
         type(map_case_state_t) :: result
         type(equilibrium_state_t) :: equilibrium
         type(equilibrium_run_report_t) :: verification
-        real(dp) :: errors(4, 3), rates(4)
+        real(dp) :: errors(4, 3), rates(4), residuals(3)
+        type(equilibrium_floor_report_t) :: floor
         integer :: mesh, n, base
         base = 32
         if (degree == 3 .and. .not. shaped) base = 24
@@ -1002,6 +1012,7 @@ contains
             call write_equilibrium_report(output_unit, verification)
             if (verification%status /= 0) error stop 'D8 map case'
             errors(:, mesh) = result%errors
+            residuals(mesh) = verification%residual
             print '(a,3es24.16)', '  end point: d3D_exact, |x|_2, W ', &
                 errors(1, mesh), norm2(result%map%x), result%solve%energy
             print '(a8,i2,i5,i8,i4,f9.2,4es12.4)', trim(mode), degree, n, &
@@ -1016,6 +1027,10 @@ contains
             rates = log(errors(:, mesh - 1)/errors(:, mesh))/log(2.0_dp)
             print '(a,i1,4f8.3)', 'orders pair ', mesh - 1, rates
         end do
+        ! Residual floor diagnostic (reported, not gated).
+        call equilibrium_residual_floor(residuals, 2.0_dp, &
+            trim(verification%residual_norm), floor)
+        call write_residual_floor(output_unit, trim(mode), floor)
         rates = log(errors(:, 2)/errors(:, 3))/log(2.0_dp)
         if (present(sequenced)) then
             ! Nested seed: return from the offset seed axis (and the k + 1 order

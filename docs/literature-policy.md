@@ -52,3 +52,21 @@ On 2026-10-05, the external workspace synchronized 75 curated DOI records and
 and synchronization/hash receipts remain outside kin6d. Imported records are
 scientifically unreviewed until their assumptions and equations are checked;
 citation discovery does not automatically admit new physics or benchmark claims.
+
+## Benchmark sources
+
+kin6d does not depend on access to closed-source codes. A benchmark reference
+must be one of:
+
+- an analytical solution, manufactured solution, or limiting case whose
+  derivation we understand and can check;
+- an open-source code that we can run ourselves at a pinned revision;
+- published literature (tables, figures, stated parameters). Results of
+  closed-source codes enter only this way, and may contain bugs of those
+  codes: the atlas entry records the source, the model assumptions, and any
+  known caveat, and such a result is context for a matched-model comparison,
+  not an oracle.
+
+Requests for runs or data from closed-source code owners are not part of any
+activation plan.
+
