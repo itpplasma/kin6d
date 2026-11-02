@@ -11,6 +11,22 @@ if [ -n "${SLURM_JOB_ID:-}" ]; then
     export PATH=/home/ert/.local/bin:$PATH
 else
     tier=${1:?usage: ci/run.sh TIER}
+    # Markdown and docs/ feed no build or test; such a change needs no native
+    # run. Scheduled and manual runs always run, as does any unknown base.
+    case "${GITHUB_EVENT_NAME:-}" in
+      pull_request|merge_group|push)
+        base=$(python3 -c 'import json,os,sys
+e=json.load(open(os.environ["GITHUB_EVENT_PATH"]))
+print((e.get("merge_group") or {}).get("base_sha") or ((e.get("pull_request") or {}).get("base") or {}).get("sha") or e.get("before") or "")' 2>/dev/null || true)
+        if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$base" HEAD)
+            if [ -n "$changed" ] && ! grep -qvE '(\.md$|^docs/)' <<< "$changed"; then
+                echo "documentation-only change since $base: native checks skipped"
+                exit 0
+            fi
+        fi
+        ;;
+    esac
     root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/native-ci.XXXXXX")
     export FC=/usr/bin/gfortran CC=/usr/bin/gcc CXX=/usr/bin/g++
     export OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg
