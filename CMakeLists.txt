@@ -1062,10 +1062,16 @@ if(KIN6D_FORTSYM_BUILD)
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
             pp_fusion pp_fusion_eft
-            jellium_cell ocp island_seed thermal_screening)
+            jellium_cell ocp island_seed thermal_screening rm_oracles)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME rm_oracle_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_rm_oracles>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_rm_oracle_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/rm-oracle-regeneration
+        -P ${CMAKE_SOURCE_DIR}/test/check_rm_oracle_regeneration.cmake)
+    set_tests_properties(rm_oracle_regeneration PROPERTIES LABELS rm-oracle)
     add_test(NAME island_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_islands>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_island_leaves.f90
@@ -1912,6 +1918,16 @@ set_tests_properties(response_fluid_full_pressure_oracles PROPERTIES
 add_executable(test_response_strip test/test_response_strip.f90)
 target_link_libraries(test_response_strip PRIVATE kin6d)
 add_test(NAME response_strip_cylinder_layer COMMAND test_response_strip)
+add_library(kin6d_rm_oracles STATIC src/generated/kin6d_rm_oracle_leaves.f90
+    test/support/rm_mhd_oracles.f90)
+target_link_libraries(kin6d_rm_oracles PUBLIC fortnum)
+add_executable(test_rm_oracles test/test_rm_oracles.f90)
+target_link_libraries(test_rm_oracles PRIVATE kin6d_rm_oracles kin6d_mhd)
+foreach(case waves rates outer newcomb convergence saturation table)
+    add_test(NAME rm_oracle_${case} COMMAND test_rm_oracles ${case})
+    set_tests_properties(rm_oracle_${case} PROPERTIES TIMEOUT 60
+        LABELS rm-oracle ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+endforeach()
 set_tests_properties(response_strip_cylinder_layer PROPERTIES TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=1")
 add_executable(response_strip_ladder app/response_strip_ladder.f90)
