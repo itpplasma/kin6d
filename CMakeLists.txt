@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "1cfe3cba327e9a32743ed10292e75a1311a6ced4")
+set(KIN6D_FORTNUM_REVISION "bc00d04758648d780f32da96a576066f9d76ae3e")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -139,8 +139,8 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main with the cached element-to-CSR slot map (lazy-fortran/fortfem#122).
-set(KIN6D_FORTFEM_REVISION "437798cae293f03cae436e7df2c6ac387113672a")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM).
+set(KIN6D_FORTFEM_REVISION "5af2a646624160ef6255afde6d2d37801a9c8556")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -229,7 +229,7 @@ if(KIN6D_ENABLE_CUDA_GS_SOLVE)
     enable_language(CUDA)
     set(FORTSPARSE_ENABLE_NATIVE_CUDA ON CACHE BOOL "" FORCE)
 endif()
-set(KIN6D_FORTSPARSE_REVISION "ac324a3567c2f95752bc2857ed29641f8e18f595")
+set(KIN6D_FORTSPARSE_REVISION "c1b664c9510fd1ee8caef1c5f6f589da07c1d64e")
 set(FORTSPARSE_ENABLE_SUPERLU OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_UMFPACK_IPC OFF CACHE BOOL "" FORCE)
 set(FORTSPARSE_ENABLE_MUMPS OFF CACHE BOOL "" FORCE)
@@ -465,7 +465,7 @@ add_test(NAME gs_free_boundary_freegs_public_parity
     COMMAND test_gs_freegs ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/freegs)
 set_tests_properties(gs_free_boundary_freegs_public_parity PROPERTIES
     TIMEOUT 60 PROCESSORS 4
-    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1;KIN6D_FB_SOLVER=lu")
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_library(kin6d_gs_coupling_test STATIC test/support/gs_coupling_fixture.f90)
 target_link_libraries(kin6d_gs_coupling_test PUBLIC kin6d)
 foreach(coupling_test vacuum fixed_current structure)
@@ -1787,7 +1787,7 @@ add_test(NAME nonnested_n0_equilibrated_solovev COMMAND test_nonnested_error)
 set_tests_properties(nonnested_n0_equilibrated_solovev PROPERTIES TIMEOUT 60
     PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2")
 add_executable(test_nonnested_fourier_error
-    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration.f90)
+    ${fortfem_SOURCE_DIR}/test/test_meridian_fourier_equilibration_slow.f90)
 target_link_libraries(test_nonnested_fourier_error PRIVATE kin6d_feec_n)
 add_test(NAME nonnested_transport_fourier_equilibrated
     COMMAND test_nonnested_fourier_error)
