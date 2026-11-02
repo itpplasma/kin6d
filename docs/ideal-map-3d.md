@@ -56,10 +56,12 @@ candidate checks; continuous error bounds and implicit equilibrium parameter
 sensitivities are unavailable. The figure-8 is a schematic geometry, not a
 validated device equilibrium.
 
-The cylindrical mass/background residual diagnostic, exact quadratic omega
-elimination and axisymmetric free-boundary exterior reject curve charts with
-their bad-input status. General curve-following free-boundary coupling remains
-unavailable.
+The cylindrical mass/background residual diagnostic and exact quadratic omega
+elimination reject curve charts with their bad-input status. The free
+boundary (`ideal_fb_init`) accepts any chart: only the cylindrical chart itself
+gets the axisymmetric per-n exterior, and every other chart takes the R2
+full-surface exterior on Gamma_c = H(gamma x [0, 2 pi)) and the 3D traces
+([free-boundary-nested-map-3d.md](free-boundary-nested-map-3d.md), section 9).
 
 ### Curve chart: Fourier axis and projected-guide G-frame
 
