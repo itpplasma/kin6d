@@ -12,9 +12,10 @@ program test_island_seed
     !            against the independent relax_state energy at three
     !            amplitudes; W(shielded) > W(seeded) >= W(vacuum); pendulum
     !            width against field-line tracing of the seeded field for
-    !            eps and eps/4 (width ratio exactly 1/2); hand-off to the
-    !            NN1 Newton solve (returns the vacuum) and to the ideal
-    !            metriplectic relaxation (energy decreases).
+    !            eps and eps/4, traced width ratio 1/2 within 0.05 (sqrt(dB_r)
+    !            scaling); interface hand-off to the NN1 Newton solve (linear:
+    !            returns the vacuum) and to the ideal metriplectic relaxation
+    !            (energy does not increase).
     !   none   : iota range without n/m (m <= 4): no seed, state unchanged;
     !            a resonant but axisymmetric state: zero amplitude.
     !   ladder : predicted width on 8/16/32 rings converges.
@@ -86,6 +87,7 @@ contains
         print '(a,i0,1x,a)', 'status ', rep%status, trim(rep%message)
         if (rep%status /= 0) error stop 'seed failed'
         if (rep%count /= 1) error stop 'expected exactly one resonance'
+        if (rep%skipped /= 0) error stop 'resonance skipped'
         associate (r => rep%res(1))
             print '(a,2i3,4es14.6)', 'm n u iota shear support ', r%m, r%n, r%u, &
                 r%iota, r%shear, r%support
@@ -148,24 +150,27 @@ contains
         if (st /= 0) error stop 'scaled fixture'
         call island_seed(field, opt, rep4, an4)
         if (rep4%status /= 0 .or. rep4%count /= 1) error stop 'scaled seed'
-        print '(a,es24.15)', 'width(eps/4)/width(eps) ', &
-            rep4%res(1)%width_after/rep%res(1)%width_after
-        if (abs(rep4%res(1)%width_after/rep%res(1)%width_after - 0.5_dp) > 1.0e-9_dp) &
-            error stop 'width does not scale as sqrt(dB_r)'
+        if (rep4%skipped /= 0) error stop 'scaled seed skipped a resonance'
         wtrace4 = traced_width(field, rep4%res(1)%u, rep4%res(1)%theta_o, &
             rep4%res(1)%width_after)
         print '(a,3es14.6)', 'eps/4 width pendulum, traced, ratio ', &
             rep4%res(1)%width_after, wtrace4, wtrace4/rep4%res(1)%width_after
         if (abs(wtrace4/rep4%res(1)%width_after - 1) > 0.05_dp) &
             error stop 'pendulum width vs traced width (eps/4)'
-        ! Hand-off 1: the NN1 Newton solve from the seeded potential returns
-        ! the vacuum; its energy (no 4 pi, mode only) brackets the seed.
+        ! sqrt(dB_r) scaling of the traced (not the predicted) widths: the
+        ! pendulum ratio is 1/2 by linearity and is not evidence.
+        print '(a,es14.6)', 'traced width(eps/4)/width(eps) ', wtrace4/wtrace
+        if (abs(wtrace4/wtrace - 0.5_dp) > 0.05_dp) &
+            error stop 'traced width does not scale as sqrt(dB_r)'
+        ! Hand-off 1 (interface smoke check, not evidence for the seed): the
+        ! NN1 problem is linear, so nn_solve from the seeded potential returns
+        ! the vacuum whatever the start; this only checks that the seeded
+        ! potential is an admissible initial guess (shape, gauge, trace).
         call nn_solve(field, 1, 0.25_dp*xv, an4(:, 1), nrep, st, solution=sol)
         if (st /= 0) error stop 'Newton hand-off'
         print '(a,2es14.6,es12.4)', 'Newton energy before/after, |x - x_vac| ', &
             nrep%energy_before, nrep%energy_after, &
             maxval(abs(sol - 0.25_dp*xv))/maxval(abs(0.25_dp*xv))
-        if (nrep%energy_after >= nrep%energy_before) error stop 'Newton energy'
         if (maxval(abs(sol - 0.25_dp*xv)) > 1.0e-9_dp*maxval(abs(xv))) &
             error stop 'Newton did not return to the vacuum'
         ! Hand-off 2: ideal (topology-preserving) relaxation from the seeded

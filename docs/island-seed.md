@@ -69,8 +69,16 @@ The pointwise kernels (`circle_rotation`, `seed_potential`, `pendulum_width`)
 are FortSym leaves with JVP/VJP. They were regenerated with the pinned FortSym
 8efec5b, built here against FLINT 3.6.0 and the system MPFR 4.2.1. The same
 build reproduces `kin6d_nonnested_leaves.f90` and
-`kin6d_metriplectic_leaves.f90` byte for byte. Sensitivities of the seed with
-respect to the state (through G^{-1}) are not exposed yet.
+`kin6d_metriplectic_leaves.f90` byte for byte. `circle_rotation` also
+supplies the poloidal and radial field components of the diagnostics (at unit
+metric), so no pointwise expression is repeated by hand.
+
+Resonances in range that cannot be seeded (no radial support next to the axis
+or a boundary, or no window for d iota/dr) are counted in
+`seed_report_t%skipped` (and the optional `skipped` of `island_resonances`)
+instead of being dropped silently. The width diagnostics run before the state
+is changed: if one fails, `island_seed` returns status 1 with the field and
+the caller's potentials unchanged.
 
 ## Verification case
 
@@ -96,9 +104,15 @@ one Lagrange multiplier. Its shielding sheet lies on element edges.
 | dB^r shielded / seeded / vacuum | 2.1e-6 / 1.044e-4 / 1.491e-4 (seeded = 0.70 of vacuum) |
 | pendulum vs traced width, eps | 0.09688 vs 0.10051 (ratio 1.037) |
 | pendulum vs traced width, eps/4 | 0.04844 vs 0.04962 (ratio 1.024) |
-| width(eps/4)/width(eps) | 0.500000000000000 |
-| Newton hand-off (`nn_solve`) | returns the vacuum to 1.9e-11, energy decreases |
+| traced width(eps/4)/traced width(eps) (sqrt(dB^r) scaling, gate 0.5 +- 0.05) | 0.4937 |
+| Newton hand-off (`nn_solve`, interface smoke check only) | returns the vacuum to 1.9e-11 |
 | ideal metriplectic hand-off, 2 steps | status 0, energy non-increasing |
+
+The predicted width ratio of the two amplitudes is exactly 1/2 by linearity of
+the seed in the trace and of the pendulum formula in sqrt(dB^r); it is not
+evidence. The sqrt(dB^r) scaling is checked on the traced widths. The NN1
+problem is linear, so the Newton hand-off returns the vacuum from any start;
+it only checks that the seeded potential is an admissible initial guess.
 
 The shielded state's residual dB^r of 2.1e-6 is the offset between the
 shielding circle r = 3/4 and the represented resonance r = 0.7519. The traced
@@ -151,3 +165,11 @@ the generator when `KIN6D_FORTSYM_BUILD` is set.
 - Overlapping chains (Chirikov) are not detected. Widths are reported, but
   nothing limits the amplitudes.
 - No certificate: all numbers are candidate diagnostics.
+- Differentiability contract: only the pointwise leaves have JVP/VJP. The
+  seed a* = -G^{-1} g, the resonance radii (bisection roots of iota) and the
+  widths have no exposed sensitivities with respect to the state, the mesh or
+  the options. The equation-level tangent (G da = -dg - dG a* at fixed
+  r_mn, plus the implicit root derivative dr_mn = -d iota / iota') is the
+  planned form; until it exists the seed is a nondifferentiable initial guess
+  for the relaxations, which own the derivatives of their stationary
+  states.

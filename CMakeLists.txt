@@ -2070,10 +2070,13 @@ add_executable(test_island_seed test/test_island_seed.f90)
 target_link_libraries(test_island_seed PRIVATE kin6d)
 foreach(case seed none ladder leaves)
     add_test(NAME island_seed_${case} COMMAND test_island_seed ${case})
-    set_tests_properties(island_seed_${case} PROPERTIES
-        TIMEOUT 300 PROCESSORS 4
-        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endforeach()
+set_tests_properties(island_seed_seed island_seed_ladder PROPERTIES
+    TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(island_seed_none island_seed_leaves PROPERTIES
+    TIMEOUT 300 PROCESSORS 1
+    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 
 add_executable(test_nonnested_mapped test/test_nonnested_mapped.f90)
 target_link_libraries(test_nonnested_mapped PRIVATE kin6d)

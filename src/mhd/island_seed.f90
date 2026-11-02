@@ -72,6 +72,9 @@ module kin6d_island_seed
 
     type :: seed_report_t
         integer :: status = 1, count = 0
+        ! Resonances in range that were not seeded: no radial support
+        ! (on the axis or a boundary) or no window for d iota/dr.
+        integer :: skipped = 0
         type(seed_resonance_t), allocatable :: res(:)
         real(dp), allocatable :: gradient(:), gram(:, :), amplitude(:)
         ! Energy change predicted by the model and recomputed from the
@@ -94,7 +97,7 @@ contains
         type(nn_factor_t) :: mass
         type(csc_z_t) :: curl, grad, m2
         complex(dp), allocatable :: sa(:, :), sb(:, :), load(:), x(:), chi(:)
-        complex(dp), allocatable :: mb(:, :)
+        complex(dp), allocatable :: mb(:, :), bkeep(:)
         real(dp), allocatable :: g(:), gm(:, :), work(:, :), eig(:)
         real(dp) :: u_lo, u_hi, scale, w_before, w_after, theta_unseeded
         integer, allocatable :: mode_of(:)
@@ -116,7 +119,8 @@ contains
             end if
         end if
         call radial_range(field, options%margin, u_lo, u_hi)
-        call find_resonances(field, options, nmax, u_lo, u_hi, found, st)
+        call find_resonances(field, options, nmax, u_lo, u_hi, found, st, &
+            report%skipped)
         if (st /= 0) then
             report%message = 'resonance search failed'; return
         end if
@@ -125,6 +129,7 @@ contains
             allocate (report%res(0), report%gradient(0), report%gram(0, 0), &
                 report%amplitude(0))
             report%status = 0; report%message = 'no resonance in range'
+            if (report%skipped > 0) report%message = 'resonances skipped, none seeded'
             return
         end if
         ns = 2*report%count
@@ -198,6 +203,33 @@ contains
         report%gradient = g; report%gram = gm
         report%energy_model = dot_product(g, report%amplitude) &
             + dot_product(report%amplitude, matmul(gm, report%amplitude))/2
+        do k = 1, report%count
+            found(k)%amplitude = report%amplitude(2*k - 1:2*k)
+        end do
+        ! Widths before the state is changed: dbr_before from the unseeded
+        ! modes, dbr_after with the seed added to a copy of the mode, so a
+        ! failed diagnostic returns status 1 with field and potentials
+        ! unchanged.
+        do k = 1, report%count
+            call resonant_width(field, found(k), options%ntheta, &
+                found(k)%dbr_before, w_before, theta_unseeded, st)
+            if (st /= 0) exit
+            found(k)%width_before = w_before
+            n = found(k)%n
+            bkeep = field%b(:, n)
+            do i = 1, ns
+                if (mode_of(i) == n) field%b(:, n) = field%b(:, n) &
+                    + report%amplitude(i)*sb(:, i)
+            end do
+            call resonant_width(field, found(k), options%ntheta, &
+                found(k)%dbr_after, w_after, found(k)%theta_o, st)
+            field%b(:, n) = bkeep
+            if (st /= 0) exit
+            found(k)%width_after = w_after
+        end do
+        if (st /= 0) then
+            report%message = 'width diagnostic'; return
+        end if
         ! Apply the seed; the direct energy change uses the updated modes.
         report%energy_direct = 0
         do n = 1, nmax
@@ -211,31 +243,6 @@ contains
             end do
             report%energy_direct = report%energy_direct + mode_energy(n)
         end do
-        do k = 1, report%count
-            found(k)%amplitude = report%amplitude(2*k - 1:2*k)
-        end do
-        ! Widths: dbr_before from the unseeded modes, recovered by linearity.
-        do k = 1, report%count
-            call resonant_width(field, found(k), options%ntheta, &
-                found(k)%dbr_after, w_after, found(k)%theta_o, st)
-            if (st /= 0) exit
-            found(k)%width_after = w_after
-            do i = 1, ns
-                if (mode_of(i) == found(k)%n) field%b(:, found(k)%n) = &
-                    field%b(:, found(k)%n) - report%amplitude(i)*sb(:, i)
-            end do
-            call resonant_width(field, found(k), options%ntheta, &
-                found(k)%dbr_before, w_before, theta_unseeded, st)
-            do i = 1, ns
-                if (mode_of(i) == found(k)%n) field%b(:, found(k)%n) = &
-                    field%b(:, found(k)%n) + report%amplitude(i)*sb(:, i)
-            end do
-            if (st /= 0) exit
-            found(k)%width_before = w_before
-        end do
-        if (st /= 0) then
-            report%message = 'width diagnostic'; return
-        end if
         report%res = found
         report%status = 0; report%message = 'seeded'
     contains
@@ -308,20 +315,23 @@ contains
         status = 0
     end subroutine
 
-    subroutine island_resonances(field, options, found, status)
-        ! The resonances island_seed would seed, without seeding.
+    subroutine island_resonances(field, options, found, status, skipped)
+        ! The resonances island_seed would seed, without seeding; skipped:
+        ! the roots in range it would not seed (seed_report_t%skipped).
         type(free_b_field_t), intent(in) :: field
         type(seed_options_t), intent(in) :: options
         type(seed_resonance_t), allocatable, intent(out) :: found(:)
         integer, intent(out) :: status
+        integer, intent(out), optional :: skipped
         real(dp) :: u_lo, u_hi
-        integer :: nmax
+        integer :: nmax, nskip
         status = 1
         if (.not. allocated(field%b)) return
         nmax = ubound(field%b, 2)
         if (options%n_max >= 0) nmax = min(nmax, options%n_max)
         call radial_range(field, options%margin, u_lo, u_hi)
-        call find_resonances(field, options, nmax, u_lo, u_hi, found, status)
+        call find_resonances(field, options, nmax, u_lo, u_hi, found, status, nskip)
+        if (present(skipped)) skipped = nskip
     end subroutine
 
     subroutine radial_range(field, margin, u_lo, u_hi)
@@ -337,20 +347,23 @@ contains
         u_hi = u_hi - margin*(u_hi - u_lo)
     end subroutine
 
-    subroutine find_resonances(field, options, nmax, u_lo, u_hi, found, status)
+    subroutine find_resonances(field, options, nmax, u_lo, u_hi, found, status, &
+                               skipped)
         type(free_b_field_t), intent(in) :: field
         type(seed_options_t), intent(in) :: options
         integer, intent(in) :: nmax
         real(dp), intent(in) :: u_lo, u_hi
         type(seed_resonance_t), allocatable, intent(out) :: found(:)
         integer, intent(out) :: status
+        ! Roots in range that are not seeded (no support or shear window).
+        integer, intent(out) :: skipped
         type(seed_resonance_t) :: res
         real(dp), allocatable :: grid(:), iota(:)
         real(dp) :: a, b, fa, fm, mid, target, h, ip, im, inner, outer, circ
         integer, parameter :: nfit = 8
         integer :: i, m, n, it
         allocate (found(0))
-        status = 1
+        status = 1; skipped = 0
         allocate (grid(0:options%nscan), iota(0:options%nscan))
         do i = 0, options%nscan
             grid(i) = u_lo + (u_hi - u_lo)*i/real(options%nscan, dp)
@@ -385,12 +398,16 @@ contains
                     res%m = m; res%n = n; res%u = (a + b)/2
                     res%r = res%u*field%radial_scale
                     res%support = min(1.0_dp/abs(m), res%u - inner, outer - res%u)
-                    if (res%support <= 0) cycle
+                    if (res%support <= 0) then
+                        skipped = skipped + 1; cycle
+                    end if
                     ! The window spans at least two ring intervals: the
                     ! represented iota oscillates on the element scale.
                     h = min(max(options%shear_step, 2*ring_spacing(field, res%u)), &
                         0.5_dp*(res%u - u_lo), 0.5_dp*(u_hi - res%u))
-                    if (h <= 0) cycle
+                    if (h <= 0) then
+                        skipped = skipped + 1; cycle
+                    end if
                     ! Least-squares slope on 2 nfit + 1 points of [u - h, u + h]:
                     ! exact for quadratic iota, and it averages the element-scale
                     ! oscillation of the represented field.
@@ -492,7 +509,7 @@ contains
         real(dp), intent(out) :: iota, circularity, bphi
         integer, intent(out) :: status
         real(dp), allocatable :: theta(:), weight(:)
-        real(dp) :: x(2), b(3), rot, radial, inverse, rmajor, rminor
+        real(dp) :: x(2), b(3), rot, radial, inverse, rmajor, rminor, poloidal
         integer :: j
         iota = 0; circularity = 0; bphi = 0
         inverse = 0
@@ -507,11 +524,15 @@ contains
             if (field%fs%cyl_r0 > 0) rmajor = field%fs%cyl_r0
             call circle_rotation(rmajor, rminor, cos(theta(j)), sin(theta(j)), &
                 b(1), b(3), b(2), rot, radial)
+            ! The same leaf at unit metric (rmajor = rminor = bphi = 1) gives
+            ! the poloidal field c B_Z - s B_R as its rotation output.
+            call circle_rotation(1.0_dp, 1.0_dp, cos(theta(j)), sin(theta(j)), &
+                b(1), b(3), 1.0_dp, poloidal, radial)
             status = 1
             if (abs(rot) <= tiny(1.0_dp)) return
             inverse = inverse + weight(j)/rot
-            circularity = max(circularity, abs(radial)/max(abs(rot*rminor*b(2) &
-                /rmajor), tiny(1.0_dp)))
+            circularity = max(circularity, abs(radial)/max(abs(poloidal), &
+                tiny(1.0_dp)))
             bphi = bphi + weight(j)*b(2)
         end do
         iota = 1/inverse
@@ -528,7 +549,7 @@ contains
         integer, intent(out) :: status
         real(dp), allocatable :: theta(:), weight(:)
         complex(dp) :: c, bn(3)
-        real(dp) :: x(2), phase, chi
+        real(dp) :: x(2), phase, chi, pol(2), radial(2)
         integer :: j
         c = 0; dbr = 0; theta_o = 0
         call seed_circle_quadrature(field, res%r, ntheta, theta, weight, status)
@@ -537,7 +558,12 @@ contains
             x = field%centre + res%r*[cos(theta(j)), sin(theta(j))]
             call mode_point(field, res%n, x, bn, status)
             if (status /= 0) return
-            c = c + weight(j)*(cos(theta(j))*bn(1) + sin(theta(j))*bn(3)) &
+            ! Radial field of the real and imaginary parts (circle_rotation
+            ! leaf, its radial output does not depend on the metric).
+            call circle_rotation(1.0_dp, 1.0_dp, cos(theta(j)), sin(theta(j)), &
+                [real(bn(1), dp), aimag(bn(1))], [real(bn(3), dp), aimag(bn(3))], &
+                1.0_dp, pol, radial)
+            c = c + weight(j)*cmplx(radial(1), radial(2), dp) &
                 *exp(cmplx(0.0_dp, res%m*theta(j), dp))
         end do
         dbr = 2*abs(c)
