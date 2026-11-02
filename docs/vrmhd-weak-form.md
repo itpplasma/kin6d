@@ -198,5 +198,9 @@ and [Hu, Lee and Xu, Journal of Computational Physics 436, 110284 (2021)](https:
 treat energy and helicity preservation for incompressible MHD. Their
 compressible, barotropic variational formulation is instead in
 [Journal of Plasma Physics 87, 835870501 (2021)](https://doi.org/10.1017/S0022377821000842).
+Closest in purpose are the structure-preserving compressible visco-resistive
+MHD scheme of [Fambri and Sonnendrücker (arXiv:2407.14141)](https://arxiv.org/abs/2407.14141)
+and the FEEC fields of the hybrid code Struphy (Holderied, Possanner and Wang,
+J. Comput. Phys. 433, 110143 (2021)).
 These references motivate the discrete structure; they do not certify this
 two-temperature extension or its future spatial and temporal assembly.

@@ -54,7 +54,8 @@ The twist term, including its sign, follows from `xi·curl(xi)=2k`.
 `div(B)=0`, and checks the complete polar equation against Taylor and Newton,
 [*Special topics in plasma confinement* (2015), Eq. (2.28)](https://www.cambridge.org/core/journals/journal-of-plasma-physics/article/special-topics-in-plasma-confinement/15D13A9D35A8DC225C7DB64640A2F555).
 Their conventions map to these by `l=1`, `k_T=-k`, `Psi_T=-psi` and
-`p_T=mu0*p`. This is the modern helical Grad–Shafranov form associated with
+`p_T=mu0*p`. The reduction for any continuous symmetry in two variables is classical
+(Edenstrasser, J. Plasma Phys. 24, 299 (1980)); this is the modern helical Grad–Shafranov form associated with
 Johnson, Frieman, Kulsrud and Oberman,
 [*Some Stable Hydromagnetic Equilibria*, Phys. Fluids **1**, 281–296 (1958)](https://doi.org/10.1063/1.1705886).
 
