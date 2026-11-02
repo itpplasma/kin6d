@@ -195,6 +195,10 @@ module kin6d_ideal_free_boundary
         ! dZ = -F_Z/K_Z (K_Z from ideal_fb_rigid_stiffness), kept only when the
         ! merit decreases.
         logical :: rigid_vertical = .false.
+        ! Globalise ideal_fb_solve by a dogleg trust region on the Gauss-Newton
+        ! model of the residual merit instead of backtracking and Levenberg
+        ! damping (step control only; the merit and the gate are unchanged).
+        logical :: trust_region = .false.
         ! Evaluate ideal_fb_hypotheses at every Newton state and print it
         ! (verbose solves only; a diagnostic, never a stopping criterion).
         logical :: monitor_hypotheses = .false.
@@ -220,6 +224,10 @@ module kin6d_ideal_free_boundary
         real(dp) :: assemble_s = 0, factor_s = 0, gradient_s = 0, line_s = 0
         real(dp) :: assembly_roundoff = 0
         integer :: factorisations = 0, reused = 0
+        ! Trust region (ideal_fb_t%trust_region): rejected trial steps and the
+        ! final radius (m, largest map displacement).
+        integer :: rejected = 0
+        real(dp) :: radius = 0
     end type
 
     type :: ideal_fb_stability_t
@@ -2120,6 +2128,10 @@ contains
         !     the plasma rows (never on the vacuum or multiplier blocks),
         !     reduced by 100 after every full step;
         !   - trust radius: displacement <= 2 % of the Gamma_c extent.
+        ! With fb%trust_region the backtracking and the Levenberg damping are
+        ! replaced by a dogleg trust region on the Gauss-Newton model of the
+        ! same merit (trust_region_trials); the acceptance test and the gate
+        ! are the same.
         ! With a positive residual_tolerance, convergence requires the residual
         ! sqrt(merit/(sigma V)) <= residual_tolerance (sigma V = energy_scale,
         ! the poloidal-field and pressure energy: toroidal field removed from
@@ -2148,14 +2160,15 @@ contains
         integer :: it, i, p, st, tries, back, nback
         integer, allocatable :: tpos(:, :)
         real(dp), allocatable :: trial_du(:)
-        type(sparse_solver_t) :: csolver
+        type(sparse_solver_t) :: csolver, msolver
         type(ideal_fb_hypotheses_t) :: hyp
-        logical :: cready
+        logical :: cready, mready
         logical :: talk, accepted, factored, kept, reused_factor
         real(dp) :: kz, fz, fzr, ftry
         integer, allocatable :: srows(:), scols(:)
         real(dp), allocatable :: smat(:), sol(:)
-        real(dp) :: sscale
+        real(dp) :: sscale, delta, mtr
+        real(dp), allocatable :: wtr(:)
         integer :: nslide
         report = ideal_fb_report_t()
         report%step = 0
@@ -2174,10 +2187,11 @@ contains
         history = huge(1.0_dp)
         cap_x = 0.02_dp*maxval(maxval(fb%reference, dim=2) - minval(fb%reference, dim=2))
         cap_w = 0.5_dp
+        delta = cap_x
         mu = 1.0e-8_dp
         tangent_damping = fb%tangential_damping
         allocate (grad(fb%n), du(fb%n), diag(fb%n), wts(fb%n), rhs(fb%n), dpos(fb%np))
-        factored = .false.; cready = .false.
+        factored = .false.; cready = .false.; mready = .false.
         call ideal_fb_gradient(fb, grad, st, min_jacobian=minjac)
         if (st /= IDEAL_FB_OK) then
             status = IDEAL_FB_FOLDED; return
@@ -2211,6 +2225,8 @@ contains
                 ! (toroidal-field-scale forces on shell nodes, no physics)
                 ! never enter the merit.
                 call factor_constraint(fb, rowptr, colidx, val, csolver, cready)
+                if (cready .and. fb%trust_region) call factor_constraint(fb, rowptr, &
+                    colidx, val, msolver, mready, primal=.true.)
                 if (cready) then
                     call project_multipliers(fb, csolver, grad)
                     call merit_weights(fb, diag, wts)
@@ -2219,6 +2235,10 @@ contains
             if (fb%tangential_damping > 0) &
                 call tangential_positions(fb, rowptr, colidx, tpos)
             call merit_weights(fb, diag, wts)
+            ! The trust region needs one merit function for the whole solve:
+            ! its weights are frozen at the start (the gate below keeps the
+            ! current ones; both vanish only together).
+            if (it == 0) wtr = wts
             if (it == 0) fzr = rigid_force(grad)
             call project_slide(fb, wts, grad)
             merit = sum(wts*grad**2)
@@ -2300,6 +2320,11 @@ contains
                 du = sol(:fb%n)
                 report%factor_s = report%factor_s + wall() - t0
                 call map_steps(fb, du, disp, rot)
+                if (fb%trust_region) then
+                    if (talk .and. tries == 1) call direction_report(fb, du)
+                    call trust_region_trials()
+                    exit
+                end if
                 alpha = min(1.0_dp, cap_x/max(disp, tiny(1.0_dp)), &
                     cap_w/max(rot, tiny(1.0_dp)))
                 if (talk) print '(a,i3,4es10.2)', '   try mu disp rot alpha', tries, &
@@ -2357,6 +2382,7 @@ contains
             report%step = alpha*disp
             report%min_jacobian = minjac
             report%damping = mu
+            report%radius = delta
             if (.not. alpha < 1) then
                 mu = max(mu/100, 1.0e-14_dp)
                 ! This is step regularisation, not part of the equations.
@@ -2368,6 +2394,7 @@ contains
         end do
         if (factored) call sparse_destroy(solver)
         if (cready) call sparse_destroy(csolver)
+        if (mready) call sparse_destroy(msolver)
         call constraint_norm(fb, report%constraint)
         if (talk) print '(a,4f10.1,a,i0,a,i0)', '   seconds: assemble factor+solve &
             &line-search', report%assemble_s, report%factor_s, report%line_s, &
@@ -2379,6 +2406,157 @@ contains
             call system_clock(count, rate)
             wall = real(count, dp)/rate
         end function
+
+        function hmul(x) result(y)
+            ! y = H x with the assembled (full-storage CSR) KKT matrix.
+            real(dp), intent(in) :: x(:)
+            real(dp) :: y(size(x))
+            integer :: r, q
+            !$omp parallel do private(r, q) schedule(static)
+            do r = 1, fb%n
+                y(r) = 0
+                do q = rowptr(r), rowptr(r + 1) - 1
+                    y(r) = y(r) + val(q)*x(colidx(q))
+                end do
+            end do
+            !$omp end parallel do
+        end function
+
+        real(dp) function tr_norm(s)
+            ! Trust-region norm (m): largest map displacement, the omega
+            ! increment counted against its cap in the ratio cap_x/cap_w.
+            real(dp), intent(in) :: s(:)
+            real(dp) :: dd, dr
+            call map_steps(fb, s, dd, dr)
+            tr_norm = max(dd, dr*cap_x/cap_w)
+        end function
+
+        real(dp) function model_merit(v, project)
+            ! Trust-region merit (frozen weights wtr) of a residual v after the
+            ! slide projection and, for a linearised residual v = g + H s
+            ! (project), the multiplier projection of every trial gradient
+            ! (both linear in v, lambda untouched).
+            real(dp), intent(in) :: v(:)
+            logical, intent(in) :: project
+            real(dp), allocatable :: y(:), d(:)
+            logical :: ok
+            y = v
+            if (cready .and. project) call multiplier_increment(fb, csolver, y, d, ok)
+            call project_slide(fb, wtr, y)
+            model_merit = sum(wtr*y**2)
+        end function
+
+        subroutine trust_region_trials()
+            ! Dogleg on the Gauss-Newton model of the merit,
+            !   q(s) = sum w (P (g + H s))^2,  ||s|| <= delta,
+            ! P the multiplier and slide projections. The Newton step du
+            ! (q(du) ~ 0) is the far end of the path; the near end is the
+            ! minimiser of q along the steepest-descent direction
+            ! -D^-2 H W g on the plasma rows, scaled by the Gauss-Newton column
+            ! norms D_i^2 = sum_j w_j H_ji^2, slide component removed so that
+            ! the step stays in the gauge, and lifted to the shell map by the
+            ! linearised constraints (C d_x = -C_p d_p: shell nodes follow
+            ! Gamma_p by the harmonic extension and do not fold; Phi~ and
+            ! lambda are left to the next Newton step). W = wtr, the merit
+            ! weights frozen at the start. A trial is accepted when every
+            ! Jacobian stays positive and
+            ! rho = (m - m(s))/(m - q(s)) > 1e-4; delta shrinks to ||s||/4 for
+            ! rho < 1/4 and doubles (up to cap_x) for rho > 3/4 on the boundary.
+            ! Rejections reuse du and the Cauchy direction (no refactorisation).
+            real(dp), allocatable :: dc(:), hc(:), hn(:), v(:), s(:), ones(:), dm(:)
+            real(dp) :: tc, nn, nc, tau, lo, hi, ac, an, q, pred, rho, sn, fl
+            real(dp), allocatable :: col(:), r0(:), xm(:)
+            integer :: k, b, r, pp
+            logical :: okm
+            allocate (ones(fb%n), col(fb%n)); ones = 1
+            !$omp parallel do private(r, pp) schedule(static)
+            do r = 1, fb%n
+                col(r) = 0
+                do pp = rowptr(r), rowptr(r + 1) - 1
+                    col(r) = col(r) + wtr(colidx(pp))*val(pp)**2
+                end do
+            end do
+            !$omp end parallel do
+            fl = 1.0e-24_dp*maxval(col)
+            r0 = grad
+            call project_slide(fb, wtr, r0)
+            mtr = sum(wtr*r0**2)
+            hn = hmul(du)
+            dc = -hmul(wtr*r0)/max(col, fl)
+            dc(fb%np + 1:) = 0
+            call project_slide(fb, ones, dc)
+            if (mready) then
+                hc = hmul(dc)
+                v = -hc(fb%np + fb%nx + 1:fb%np + 2*fb%nx)
+                allocate (xm(fb%nx))
+                call sparse_solve(msolver, v, xm, sst)
+                if (status_ok(sst)) dc(fb%np + 1:fb%np + fb%nx) = xm
+            end if
+            hc = hmul(dc)
+            v = hc
+            if (cready) call multiplier_increment(fb, csolver, v, dm, okm)
+            call project_slide(fb, wtr, v)
+            ! Exact line minimiser of q along dc (v = P H dc, P r0 = r0).
+            tc = -sum(wtr*r0*v)/max(sum(wtr*v**2), tiny(1.0_dp))
+            dc = tc*dc; hc = tc*hc
+            nn = tr_norm(du); nc = tr_norm(dc)
+            alpha = 1
+            do b = 1, 40
+                if (nn <= delta) then
+                    ac = 0; an = 1
+                else if (nc >= delta) then
+                    ac = delta/nc; an = 0
+                else
+                    ! ||dc + tau (du - dc)|| is convex in tau: bisect for delta.
+                    lo = 0; hi = 1
+                    do k = 1, 50
+                        tau = (lo + hi)/2
+                        if (tr_norm(dc + tau*(du - dc)) > delta) then
+                            hi = tau
+                        else
+                            lo = tau
+                        end if
+                    end do
+                    tau = lo; ac = 1 - tau; an = tau
+                end if
+                s = ac*dc + an*du
+                sn = tr_norm(s)
+                q = model_merit(r0 + ac*hc + an*hn, .true.)
+                pred = mtr - q
+                t0 = wall()
+                call ideal_fb_step(fb, s, 1.0_dp)
+                call ideal_fb_gradient(fb, rhs, st, min_jacobian=minjac)
+                if (cready .and. st == IDEAL_FB_OK) call project_multipliers(fb, &
+                    csolver, rhs)
+                rho = -1
+                if (st == IDEAL_FB_OK) then
+                    ftry = rigid_force(rhs)
+                    call project_slide(fb, wts, rhs)
+                    tmerit = model_merit(rhs, .false.)
+                    if (pred > 0) rho = (mtr - tmerit)/pred
+                end if
+                report%line_s = report%line_s + wall() - t0
+                if (talk) print '(a,i3,5es10.2)', '   tr trial delta |s| |s_N| rho q/m', &
+                    b, delta, sn, nn, rho, q/mtr
+                if (rho < 0.25_dp) then
+                    delta = 0.25_dp*sn
+                else if (rho > 0.75_dp .and. sn >= 0.99_dp*delta) then
+                    delta = min(2*delta, cap_x)
+                end if
+                if (st == IDEAL_FB_OK .and. rho > 1.0e-4_dp .and. tmerit < mtr) then
+                    accepted = .true.
+                    ! Bookkeeping as for a scaled Newton step: alpha*disp = |s|,
+                    ! alpha = 1 only for the full Newton step.
+                    disp = max(nn, tiny(1.0_dp))
+                    alpha = 1
+                    if (an < 1) alpha = min(sn/disp, 1 - epsilon(1.0_dp))
+                    return
+                end if
+                fb%plasma%x = x0; fb%xs = xs0; fb%phi = phi0; fb%lam = lam0
+                report%rejected = report%rejected + 1
+                if (delta < 1.0e-9_dp*cap_x) return
+            end do
+        end subroutine
 
         real(dp) function rigid_force(g)
             ! Net Z force on the plasma nodes (before the gauge projection).
@@ -2468,19 +2646,27 @@ contains
         end block
     end subroutine
 
-    subroutine factor_constraint(fb, rowptr, colidx, val, csolver, ready)
+    subroutine factor_constraint(fb, rowptr, colidx, val, csolver, ready, primal)
         ! Factor the C^T block (rows: shell map, columns: multipliers); the
-        ! CSR rows of the transposed block are its CSC columns.
+        ! CSR rows of the transposed block are its CSC columns. With primal,
+        ! factor C itself (rows: constraints, columns: shell map), the
+        ! linear harmonic extension of a Gamma_p motion.
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: rowptr(:), colidx(:)
         real(dp), intent(in) :: val(:)
         type(sparse_solver_t), intent(inout) :: csolver
         logical, intent(out) :: ready
+        logical, intent(in), optional :: primal
         integer, allocatable :: rp(:), ci(:)
         real(dp), allocatable :: v(:)
         type(fortsparse_status_t) :: sst
         integer :: i, p, nnz, row0, col0
         row0 = fb%np; col0 = fb%np + fb%nx
+        if (present(primal)) then
+            if (primal) then
+                row0 = fb%np + fb%nx; col0 = fb%np
+            end if
+        end if
         allocate (rp(fb%nx + 1), ci(size(val)), v(size(val)))
         nnz = 0; rp(1) = 1
         do i = 1, fb%nx
@@ -2511,14 +2697,28 @@ contains
         type(ideal_fb_t), intent(inout) :: fb
         type(sparse_solver_t), intent(inout) :: csolver
         real(dp), intent(inout) :: grad(:)
-        real(dp), allocatable :: rhs(:), d(:)
+        real(dp), allocatable :: d(:)
+        logical :: ok
+        call multiplier_increment(fb, csolver, grad, d, ok)
+        if (ok) fb%lam = fb%lam + reshape(d, shape(fb%lam))
+    end subroutine
+
+    subroutine multiplier_increment(fb, csolver, grad, d, ok)
+        ! The vector part of project_multipliers: delta with C^T delta = -g_x
+        ! and grad updated as if lambda += delta (lambda itself untouched).
+        type(ideal_fb_t), intent(in) :: fb
+        type(sparse_solver_t), intent(inout) :: csolver
+        real(dp), intent(inout) :: grad(:)
+        real(dp), allocatable, intent(out) :: d(:)
+        logical, intent(out) :: ok
+        real(dp), allocatable :: rhs(:)
         type(fortsparse_status_t) :: sst
         integer :: s2, m, c, k
         rhs = -grad(fb%np + 1:fb%np + fb%nx)
         allocate (d(fb%nx))
         call sparse_solve(csolver, rhs, d, sst)
-        if (.not. status_ok(sst)) return
-        fb%lam = fb%lam + reshape(d, shape(fb%lam))
+        ok = status_ok(sst)
+        if (.not. ok) return
         grad(fb%np + 1:fb%np + fb%nx) = 0
         do s2 = 1, fb%ns
             if (fb%role(s2) /= 1) cycle
