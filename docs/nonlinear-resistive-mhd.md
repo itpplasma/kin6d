@@ -33,20 +33,36 @@ tested by RM-B4.
 ## Target regime
 
 The model, discretisation and solver choices are made for the parameters
-between present medium-size tokamaks and ITER (core values).
+between present medium-size tokamaks and a DEMO-class reactor (core values,
+order-of-magnitude estimates).
 
-| quantity | ASDEX Upgrade | ITER |
-|---|---|---|
-| Lundquist number S | ~3e9 | ~1e10-1e11 |
-| tau_R/tau_A | >1e6 | >1e7 (Zhang et al. 2025: 10x AUG for ITER, 40x for DEMO) |
-| chi_par/chi_perp (electrons) | ~1e10 | ~1e12 |
-| magnetic Prandtl number | ~1e3 | ~1e2-1e3 |
-| relevant toroidal harmonics | n <= 2-4 (core 1/1 mode) | n <= 10-20 |
-| beta | low | low |
+| quantity | ASDEX Upgrade | ITER | DEMO |
+|---|---|---|---|
+| Lundquist number S | ~3e9 | ~1e10-1e11 | ~1e11 |
+| tau_R/tau_A | >1e6 | >1e7 (Zhang et al. 2025: 10x AUG) | 40x AUG (Zhang et al. 2025) |
+| chi_par/chi_perp (electrons), collisional | ~1e11 | ~1e13 | ~2e13 |
+| chi_par/chi_perp (electrons), flux-limited | ~1e9-1e10 | ~1e10 | ~1e10 |
+| magnetic Prandtl number | ~1e3 | ~1e2-1e3 | ~1e2-1e3 |
+| relevant toroidal harmonics | n <= 2-4 (core 1/1 mode) | n <= 10-20 | n <= 10-20 or more |
+| beta | low | low | moderate, high bootstrap fraction |
+
+The collisional (Spitzer) parallel conductivity overstates the parallel heat
+flux in these cores, where the electron mean free path (kilometres) exceeds the
+connection length qR (10-60 m); the effective value is set by free streaming,
+chi_par ~ v_te L_par. Resistive layers thin as S^(-1/3), so resonant surfaces
+need local refinement rather than uniformly finer meshes.
 
 Common structure: k_par << k_perp, nested surfaces with islands, slow
 evolution on top of fast waves. Edge, X-point and high-n (ELM) applications are
-not targets of this path; its architecture must not exclude them.
+not targets of this path; its architecture must not exclude them. Concretely:
+the discretisation is not aligned to flux surfaces, so X-points and separatrices
+are regular points of the mesh; wall, target and sheath conditions enter as
+boundary terms of the weak form; the FCI parallel operator of the
+preconditioner (U3) handles field lines that end on a boundary (intersection
+with the boundary value, or volume penalisation as in GRILLIX, Stegmeir et al.,
+Phys. Plasmas 26 052517, 2019), so the parallel block on open field lines
+is a two-point problem along each line. RM-B3 and RM-B4 include an
+open-field-line and a single-null X-point case to test this.
 
 ## Model
 
@@ -179,6 +195,34 @@ Preconditioning, the core of the design, splits the linearised operator into:
    per-harmonic or per-family blocks only as inner solves (U5);
 3. an outer FGMRES on the full operator.
 
+Both large parameters of the target regime are used, not only survived.
+
+- Anisotropy, epsilon = chi_perp/chi_par ~ 1e-10: as epsilon -> 0 the
+  temperature becomes constant along field lines (a flux function on nested
+  surfaces, constant across an island, averaged over a stochastic region), and
+  only the field-line-averaged perpendicular transport remains. The transport
+  block uses this structure, either as an asymptotic-preserving micro-macro
+  decomposition (field-line average plus an O(epsilon) correction; Degond,
+  Deluzet, Narski and Negulescu and later work) or as a two-level
+  preconditioner whose coarse space is the near-null space of b.grad, the
+  field-line-constant functions. Conditioning and iteration count then do not
+  depend on epsilon by construction (RM-B4).
+- Time scales, tau_A/tau_R ~ 1e-6-1e-7: besides implicit stepping, the
+  Schur-complement treatment of the stiff wave part and direct stationary
+  solves, slow resistive evolution with a quasi-stationary helical or island
+  state is computed on the slow manifold: a sequence of driven stationary 3D
+  states parametrised by the slowly evolving profiles (adiabatic elimination of
+  the fast dynamics), with a model-defect estimate against full time evolution
+  and a local switch to it where the separation fails (mode onset, crash), as
+  the model-switching contract of AGENTS.md requires (RM-B10).
+
+Closures are separate FortSym leaves with one interface each, so a closure can
+be replaced without touching the residual: eta(T), nu(T), chi_par(T) in
+collisional (Spitzer) form, a flux-limited chi_par (parallel heat flux bounded
+by a multiple of n T v_te) for the nearly collisionless core, and the
+non-inductive current J_s as a prescribed source. Benchmarks against JOREK use
+JOREK's prescribed coefficients; physics runs state the closure they use.
+
 Research option, not on the critical path: algebraic decoupling of the
 frozen-coefficient linearised operator over Weyl-algebra coefficients
 (Stafford, J. London Math. Soc. 18 429, 1978; algorithms of Quadrat and
@@ -194,13 +238,14 @@ and an external code second.
 |---|---|---|
 | RM-B1 | manufactured solution of the full residual, all fields | design order of convergence |
 | RM-B2 | linear waves and instabilities | Alfven and magnetosonic dispersion in a uniform slab; resistive internal kink gamma ~ (eta F'^2)^(1/3) ~ tau_H^(-2/3) tau_R^(-1/3) (Coppi et al., Sov. J. Plasma Phys. 2 533, 1976); Furth-Killeen-Rosenbluth tearing (Phys. Fluids 6 459, 1963); existing `response_strip_cylinder_layer` values |
-| RM-B3 | anisotropic transport | Sovinec chi-ratio ladder (Sovinec et al., J. Comput. Phys. 195 355, 2004; tests `nonnested_transport_sovinec_chi_ratio_p*`) extended to 1e12; closed-field-line benchmark of Guenter et al., J. Comput. Phys. 209 354, 2005 |
-| RM-B4 | preconditioner independence | FGMRES iterations bounded independent of chi_par/chi_perp (1e6-1e12), perturbation amplitude and dt; linear amplitudes in RM4, saturated states in RM5 |
+| RM-B3 | anisotropic transport | Sovinec chi-ratio ladder (Sovinec et al., J. Comput. Phys. 195 355, 2004; tests `nonnested_transport_sovinec_chi_ratio_p*`) extended to 1e13; closed-field-line benchmark of Guenter et al., J. Comput. Phys. 209 354, 2005; anisotropic diffusion with field lines ending on plates and in a single-null X-point geometry (manufactured solutions) |
+| RM-B4 | preconditioner independence | FGMRES iterations bounded independent of chi_par/chi_perp (1e6-1e13), Lundquist number (up to 1e12), perturbation amplitude and dt, on closed and open field lines; linear amplitudes in RM4, saturated states in RM5 |
 | RM-B5 | nonlinear islands | Rutherford growth dW/dt = 1.22 (eta/mu0) Delta'(W) (Rutherford, Phys. Fluids 16 1903, 1973; coefficient from White et al., Phys. Fluids 20 800, 1977); saturated width (Escande and Ottaviani, Phys. Lett. A 323 278, 2004; Militello and Porcelli, Phys. Plasmas 11 L13, 2004) |
 | RM-B6 | ledgers | energy and mass; helicity in the ideal limit |
 | RM-B7 | 2D against 3D | identical equations on a straight periodic cylinder agree to discretisation error; the 3D solver preserves helical symmetry |
 | RM-B8 | JOREK | public JOREK regression cases (tearing and kink in circular geometry) and a straight-cylinder flux-pumping case, matched model and resolution; 2D part in RM2, 3D part in RM5 |
 | RM-B9 | performance | time to matched observable accuracy against JOREK on the same node, strong scaling, memory, CPU and GPU |
+| RM-B10 | slow manifold | quasi-stationary sequence of driven stationary states against full BDF2 evolution on the straight periodic cylinder: q profile and island width to the stated tolerance, defect estimate bounds the observed difference, switch to time evolution at mode onset |
 
 Admission (AGENTS.md):
 
@@ -249,7 +294,24 @@ Generated CUDA kernels sit behind the ISO_C_BINDING C ABI of
 | RM2 | 2D stationary and BDF2 solves; RM-B3, RM-B5, RM-B6, RM-B8 in 2D | RM1 |
 | RM3 | 3D residual on the meridional complex x Fourier; RM-B1, RM-B2, RM-B7 | RM1 |
 | RM4 | field-split preconditioner; RM-B4 at linear amplitude | RM3, U3, U5 |
-| RM5 | 3D nonlinear stationary and evolution; RM-B3 (FCI decision), RM-B4 saturated, RM-B5, RM-B6, RM-B8 in 3D | RM4 |
+| RM5 | 3D nonlinear stationary and evolution; RM-B3 (FCI decision), RM-B4 saturated, RM-B5, RM-B6, RM-B8 in 3D; slow-manifold path, RM-B10 | RM4 |
 | RM6 | GLL matrix-free path, CPU and generated CUDA; exponential integrators; RM-B1, RM-B2, RM-B4, RM-B7 rerun on it; RM-B9 | RM5, U1, U2, U4 |
 | RM7 | physics: straight-cylinder flux pumping, then published tokamak cases | RM2, RM6 |
 | RM8 | Figure-8 stellarator on the curve-following chart: RM-B1, RM-B6 and a resistive island case, equilibrium checked against GVEC | RM6, `g_frame_figure8_equilibrium` |
+
+## Later: kinetic coupling (not scheduled)
+
+Kinetic effects enter later through the closure interface, after RM7, and are
+not part of RM0-RM8:
+
+- neoclassical resistivity and bootstrap current from KIN6D's steady
+  drift-kinetic solver (see [drift-kinetics.md](drift-kinetics.md)), checked
+  against published neoclassical limits; the bootstrap current enters as J_s;
+- a kinetic or Landau-fluid parallel heat-flux closure replacing the flux
+  limiter;
+- fast ions (beam ions, alphas) through hybrid kinetic-MHD coupling. Whether
+  they are represented by KIN6D's own particle, Eulerian or semi-Lagrangian
+  carriers ([representations.md](representations.md)) or supplied by an external
+  Monte Carlo orbit code such as SIMPLE or GORILLA through a provider interface
+  is decided when the work starts. KIN6D does not add a specialised
+  guiding-centre orbit-following Monte Carlo solver of its own.
