@@ -360,7 +360,8 @@ target_link_libraries(test_nested_seed_input PRIVATE kin6d)
 add_executable(test_ideal_map_field_angle test/test_ideal_map_field_angle.f90)
 target_link_libraries(test_ideal_map_field_angle PRIVATE kin6d)
 add_test(NAME ideal_map_field_angle COMMAND test_ideal_map_field_angle)
-set_tests_properties(ideal_map_field_angle PROPERTIES PROCESSORS 4 TIMEOUT 120)
+set_tests_properties(ideal_map_field_angle PROPERTIES PROCESSORS 4 TIMEOUT 120
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_seed_3d_nested_input COMMAND test_nested_seed_input)
 set_tests_properties(ideal_seed_3d_nested_input PROPERTIES PROCESSORS 4 TIMEOUT 120
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")

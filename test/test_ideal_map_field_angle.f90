@@ -25,6 +25,7 @@ program test_ideal_map_field_angle
     use kin6d_grad_shafranov, only: gs_state_t
     use kin6d_triangle_basis, only: triangle_basis_jet, TRIANGLE_MAX_NODES
     use fortfem_element_to_csr, only: csr_matrix_t
+    !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     type(nested_oracle_t) :: oracle
@@ -203,6 +204,35 @@ contains
         if (slope > 1e-6_dp) error stop 'gradient vs energy difference'
         if (curvature > 1e-6_dp) error stop 'Hessian vs gradient difference'
         map%x = x0; map%angle = a0
+        call thread_parity(map, e0, g, matrix)
+    end subroutine
+
+    subroutine thread_parity(map, e0, g0, h0)
+        ! Energy, gradient (with the angle rows) and Hessian with one thread
+        ! (whole-cell paths) and with more threads than cells (item paths)
+        ! are bitwise those of the default team.
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: e0, g0(:)
+        type(csr_matrix_t), intent(in) :: h0
+        type(csr_matrix_t) :: h1
+        real(dp), allocatable :: g1(:)
+        real(dp) :: e1
+        integer :: st, k, saved, teams(2)
+        saved = 1
+        !$ saved = omp_get_max_threads()
+        teams = [1, map%cells + 3]
+        allocate (g1(size(g0)))
+        do k = 1, size(teams)
+            !$ call omp_set_num_threads(teams(k))
+            call ideal_map_energy(map, map%x, e1, st, g1)
+            call ideal_map_hessian(map, map%x, h1)
+            if (e1 /= e0 .or. any(g1 /= g0) .or. any(h1%val /= h0%val)) then
+                print '(a,i0,a,i0)', 'thread dependence with field angle, team ', &
+                    teams(k), ' cells ', map%cells
+                error stop 'field angle: thread dependence'
+            end if
+        end do
+        !$ call omp_set_num_threads(saved)
     end subroutine
 
     subroutine shifted(map, x0, a0, full, t, energy, grad)
