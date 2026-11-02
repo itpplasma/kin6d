@@ -215,7 +215,7 @@ fail to converge at the maximum degree 96. Measured at 4 threads:
 
 | case | pairs | max degree | assembly | case wall | peak RSS |
 |---|---|---|---|---|---|
-| chain=16, 12 strips, all pairs | 331,776 | 88 | ~2400 s (estimated from 12x the pairs) | | |
+| chain=16, 12 strips, all pairs | 331,776 | 88 | 2743 s | 2745 s | 3389 MB |
 | chain=16, 12 strips, circulant | 27,648 | 88 | 202 s | 205 s | 311 MB |
 | chain=16, 24 strips, circulant | 55,296 | 52 | 58 s | 61 s | 336 MB |
 | chain=32, 12 strips, circulant | 110,592 | 96 (59 failed) | 1177 s | failed | 687 MB |
