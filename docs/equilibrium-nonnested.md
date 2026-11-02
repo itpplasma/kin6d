@@ -104,9 +104,13 @@ interpolation corrections solved by smoothed aggregation). Select it with
 `field%linear_solver = NN_SOLVER_HX` after `nn_build`; the
 direct factor stays the default. Residual refinement with the same
 preconditioner precedes the unchanged 1e-9 equation-residual gate.
-On the vacuum annulus with 4 to 16 radial rings CG needs 15 to 20
-iterations per real solve from P2 to P4, independent of n, until the
-solve reaches the rounding floor. In this 2D
+On the helical-coil vacuum annulus (`benchmarks/nn1_hx`, 4 threads) CG
+needs 14 to 45 iterations per real solve at P2 and P3 for 4, 8 and 16
+radial rings: 34 to 45 for n = 1, 2 and 14 to 41 for n = 3, growing slowly
+with the ring count (P2 n = 1: 34, 40, 44). The HX and direct fields agree to
+at most 2.5e-9 relative. `nonnested_hx_vacuum_p{2,3}` checks this agreement,
+the unchanged residual gate and at most 100 iterations per Newton step on
+4 and 8 rings. In this 2D
 meridional problem the AMD-ordered Cholesky is still faster at the
 measured sizes (`benchmarks/nn1_hx`), so the path exists for large or
 matrix-free systems, not as a speed claim. At P >= 4 both solvers end at
