@@ -99,7 +99,7 @@ program test_ideal_free_boundary
         ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses, &
         ideal_fb_hypotheses_print, ideal_fb_mode_inertia, ideal_fb_mode_lanczos, &
         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
-        ideal_fb_solve, ideal_fb_report_t, ideal_fb_mode_energy, &
+        ideal_fb_solve, ideal_fb_report_t, ideal_fb_mode_energies, &
         ideal_fb_mode_stability, ideal_fb_stability_t, IDEAL_FB_BAD_INPUT, &
         IDEAL_FB_NOT_CONVERGED, ideal_fb_attach_exterior_3d, ideal_fb_mode_weight, &
         ideal_fb_curvature_t, ideal_fb_negative_curvature, ideal_fb_trust_subproblem, &
@@ -295,8 +295,8 @@ contains
         type(gs_state_t) :: mesh
         type(cylindrical_chart_t) :: chart
         type(screw_field_t) :: field
-        type(ideal_fb_stability_t) :: ep, em, single, probe
-        real(dp), allocatable :: chain(:, :), contour(:, :), u(:)
+        type(ideal_fb_stability_t) :: ep, em, single, probe, energies(3)
+        real(dp), allocatable :: chain(:, :), contour(:, :), u(:), helical(:, :)
         real(dp) :: q, scale, exact, err, previous(2), lambda, wp, wv, ws
         real(dp) :: jv(4), gq, gf, factor, k0, k1, t, gx(96), gw(96)
         real(dp), parameter :: aspects(3) = [80.0_dp,120.0_dp,160.0_dp]
@@ -341,21 +341,26 @@ contains
                 if (st /= IDEAL_FB_OK) error stop 'kink drive'
                 call ideal_fb_solve_vacuum(fb, st)
                 if (st /= IDEAL_FB_OK) error stop 'kink vacuum'
-                allocate (u(4*fb%plasma%nodes))
+                allocate (u(4*fb%plasma%nodes), helical(4*fb%plasma%nodes, 3))
                 u = 0
                 do a = 1, fb%plasma%nodes
                     u(4*a - 3) = 1; u(4*a) = 1
                 end do
-                call ideal_fb_mode_energy(fb, 2, u, ep, st)
+                ! Both helicities and the standing (cosine-only) control share
+                ! the n = 1 harmonic block (m = 2, 3) and its factor.
+                helical(:, 1) = u
+                u(4::4) = -1
+                helical(:, 2) = u
+                u(4::4) = 0
+                helical(:, 3) = u
+                call ideal_fb_mode_energies(fb, 3, helical, energies, st)
                 if (st /= IDEAL_FB_OK) then
                     print *, 'energy status/amplitudes', st, &
                         maxval(abs(fb%plasma%x(:, 2:, :))), &
                         maxval(abs(fb%xs(:, 2:, :))), maxval(abs(fb%phi(2:, :)))
-                    error stop 'kink energy plus'
+                    error stop 'kink helical energies'
                 end if
-                u(4::4) = -1
-                call ideal_fb_mode_energy(fb, 3, u, em, st)
-                if (st /= IDEAL_FB_OK) error stop 'kink energy minus'
+                ep = energies(1); em = energies(2); single = energies(3)
                 if (ep%total < em%total) em = ep
                 scale = 10*pi*pi
                 call cylinder_kink_energy(q, factor, wp, wv, exact, ws)
@@ -408,9 +413,6 @@ contains
                     if (growth_errors(alevel)>0.005_dp) error stop 'physical kink rate'
                 end if
                 if (iq == 1 .and. .not. rates) then
-                    u(4::4) = 0
-                    call ideal_fb_mode_energy(fb, 2, u, single, st)
-                    if (st /= IDEAL_FB_OK) error stop 'standing energy'
                     print '(a,es13.5)', 'cosine-only energy/scale ', single%total/scale
                     if (single%total <= 0) error stop 'standing-wave control'
                     ! A shift near a negative Rayleigh witness must return a
@@ -430,7 +432,7 @@ contains
                     if (st /= IDEAL_FB_BAD_INPUT) &
                         error stop 'nonaxisymmetric probe accepted'
                 end if
-                deallocate (u)
+                deallocate (u, helical)
             end do
             deallocate (chain, contour)
         end do
