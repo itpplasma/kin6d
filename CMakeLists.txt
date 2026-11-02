@@ -281,6 +281,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
     src/mhd/equilibrium_3d_driver.f90
     src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
+    src/generated/kin6d_ideal_field_angle_leaves.f90
     src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
     src/mhd/nested_seed_input.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
@@ -421,6 +422,11 @@ add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
 set_tests_properties(ideal_seed_3d_boundary_profiles PROPERTIES PROCESSORS 4 TIMEOUT 60)
 add_executable(test_nested_seed_input test/test_nested_seed_input.f90)
 target_link_libraries(test_nested_seed_input PRIVATE kin6d)
+add_executable(test_ideal_map_field_angle test/test_ideal_map_field_angle.f90)
+target_link_libraries(test_ideal_map_field_angle PRIVATE kin6d)
+add_test(NAME ideal_map_field_angle COMMAND test_ideal_map_field_angle)
+set_tests_properties(ideal_map_field_angle PROPERTIES PROCESSORS 4 TIMEOUT 120
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_seed_3d_nested_input COMMAND test_nested_seed_input)
 set_tests_properties(ideal_seed_3d_nested_input PROPERTIES PROCESSORS 4 TIMEOUT 120
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
@@ -1019,7 +1025,8 @@ if(KIN6D_FORTSYM_BUILD)
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi
             ideal_response_error equilibrium_core curve_chart ideal_seed_3d map_3d_readback
-            nonnested metriplectic vacuum_shell fold_barrier landreman nested_oracles
+            ideal_field_angle nonnested metriplectic vacuum_shell fold_barrier landreman
+            nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -1082,6 +1089,18 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_nested_oracle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/nested-oracle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_nested_oracle_regeneration.cmake)
+    add_test(NAME ideal_field_angle_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_field_angle>
+        -DLEAF=kin6d_ideal_field_angle_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_field_angle_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-field-angle-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    add_test(NAME ideal_map_leaves_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_ideal_map>
+        -DLEAF=kin6d_ideal_map_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_map_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/ideal-map-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME ideal_seed_3d_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_seed_3d>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_seed_3d_leaves.f90
