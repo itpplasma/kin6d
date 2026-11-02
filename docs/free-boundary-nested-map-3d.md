@@ -302,7 +302,9 @@ hypothesis that has not been traced.
    escape now prevents, and with it job 3370145 converged in 8 of 8 glob-2
    runs (R1, R2 and R3, kicks up to 15 mm). All R1 runs reached the same state within
    4e-7 mm, in 34 to 87 Newton steps against 93 to 152 for the trust region
-   alone. Since only stable equilibria leave the solve with the flag set, a
+   alone. With the flag set the solve leaves every saddle it can (a saddle
+   still passes when the 20 escapes per solve are spent or no escape step is
+   accepted, so the returned In_-(S_red) is the stability check), and a
    wanted unstable target (the vertical mode at fixed currents) opts out by
    resetting both flags after `ideal_fb_init` (`fb3d_synthetic`
    globalisation 0 or 1).

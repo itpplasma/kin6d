@@ -66,6 +66,8 @@ kin6d_test_labels(s0_gs_kink_equilibrium_refinement fast CLASSES mhd
 kin6d_test_labels(s0_cylinder_oracle_limits fast CLASSES mhd TARGETS test_s0_gs_kink)
 kin6d_test_labels(real_value_identity_edge_cases fast CLASSES core
     TARGETS test_real_identity)
+kin6d_test_labels(gs_mirror_mesh fast CLASSES equilibrium
+    TARGETS test_gs_mirror_mesh)
 kin6d_test_labels(grad_shafranov_analytic_and_derivative_oracles fast CLASSES equilibrium
     TARGETS test_grad_shafranov)
 kin6d_test_labels(grad_shafranov_profile_cut_quadrature_oracles fast CLASSES equilibrium
