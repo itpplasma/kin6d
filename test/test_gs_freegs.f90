@@ -49,6 +49,7 @@ program test_gs_freegs
     real(dp) :: scales(16), caps(16), pressure_budget, gap_budget
     real(dp) :: critical_row(9), volume_rows(4, 3), volume_error(3)
     real(dp) :: trace_distances(2), trace_gaps(2), distance, trace_gap
+    real(dp) :: root_start(2) = 1.0_dp
     integer :: unit, i, j, n, status, cell, nside, rung, failures
     character(1024) :: path, argument, line
 
@@ -201,12 +202,14 @@ contains
         ! equations as a test consumer of FortNum's two-variable root solve.
         ! Finite differences here belong to that independent setup driver;
         ! production free-boundary derivatives remain equation-level.
-        call multiroot_hybrids(profile_constraints, 2, [1.0_dp, 1.0_dp], &
+        ! The coarser rung's root starts the finer one; the setup law carries it.
+        call multiroot_hybrids(profile_constraints, 2, root_start, &
                                amplitudes, root_status, ftol=1.0e-9_dp, max_iter=6)
         if (.not. status_ok(root_status)) then
             print *, root_status%msg
             error stop 'pressure/current normalization failed'
         end if
+        root_start = amplitudes
         call profile_constraints(amplitudes, constraint_residual)
         call require(maxval(abs(constraint_residual)) < 1.0e-9_dp, &
                      'same pressure/current constraints')
