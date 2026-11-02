@@ -79,11 +79,17 @@ kernels), in order of expected payoff:
    diagonal damping of all unknowns.
 3. **Harmonic deflation and the potential-velocity force.** Compute the
    harmonic forms per geometry and project them out of every solve; evaluate
-   the force through curl (curl curl)⁻¹ curl(J × B).
+   the force through curl (curl curl)⁻¹ curl(J × B). Implemented on the NN1
+   complex as a diagnostic, with a mixed Leray form as the comparison path:
+   `kin6d_nonnested_force`, [projected force](nonnested-force.md)
+   (`nonnested_force_*`).
 4. **Energy-criterion island seeding** as an initializer for island cases.
 5. **Residual floor as a diagnostic.** Current sheets at rational surfaces set
    a force-residual floor that does not decrease under h or p refinement;
    acceptance gates report it instead of chasing it with smooth spaces.
+   Implemented as `equilibrium_residual_floor` / `write_residual_floor` in the
+   D8 harness, reported by the map ladders and the force tests
+   ([projected force](nonnested-force.md#residual-floor)).
 
 Not adopted: explicit damped iteration, Bell elements, hyperbolic pressure
 relaxation as a production method, and accelerator-specific frameworks.
