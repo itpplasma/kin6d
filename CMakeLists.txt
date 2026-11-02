@@ -140,8 +140,8 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
-# Steklov form lazy-fortran/fortfem#144, exact FEEC tables).
-set(KIN6D_FORTFEM_REVISION "e8b947bbf37fce389310a8d70f8e3a888098ce52")
+# Steklov form #144, exact FEEC tables, split stretched BEM fans #145).
+set(KIN6D_FORTFEM_REVISION "489b76f8ce4c039851d7c151c91b654baa850f0b")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
