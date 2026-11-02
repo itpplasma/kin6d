@@ -6,7 +6,10 @@ module kin6d_equilibrium_boundary_3d
     use fortfem_parametric_laplace_bem_3d, only: bem_surface_t, bem_operators_t, &
                                                  bem_exterior_dtn_t, build_exterior_dtn
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
-                                           bem_pair_report_t, assemble_parametric_bem_p2
+                                           bem_pair_report_t, assemble_parametric_bem_p2, &
+                                           assemble_parametric_bem_p2_circulant
+    use fortfem_bem_circulant, only: bem_circulant_t, circulant_matrix_t, &
+                                     build_circulant_exterior_dtn
     use fortfem_exterior_harmonic_fields, only: assemble_exterior_harmonics, &
                                                 prescribe_exterior_periods
     implicit none
@@ -33,7 +36,11 @@ contains
         lhs%genus = rhs%genus
     end subroutine
     subroutine gamma_c_3d_build(surface, faces, restriction, options, boundary, &
-                                report, status)
+                                report, status, sectors)
+        !! sectors = nphi declares nphi consecutive identical z-rotated panel
+        !! sectors (FortFEM checks the geometry). Then only sector-zero
+        !! targets are integrated and the Steklov form is built per toroidal
+        !! harmonic; the same pair rule gives the dense result to roundoff.
         class(bem_surface_t), intent(in) :: surface
         integer, intent(in) :: faces(:, :)
         real(dp), intent(in) :: restriction(:, :)
@@ -41,25 +48,43 @@ contains
         type(gamma_c_3d_t), intent(out) :: boundary
         type(bem_pair_report_t), intent(out) :: report
         integer, intent(out) :: status
+        integer, intent(in), optional :: sectors
         type(bem_operators_t) :: op
+        type(bem_circulant_t) :: rotational
+        type(circulant_matrix_t) :: steklov
         type(bem_exterior_dtn_t) :: exterior
         real(dp), allocatable :: s(:, :)
         integer, allocatable :: td(:, :), fd(:, :)
+        integer :: genus
         status = 1; report = bem_pair_report_t()
         if (size(restriction, 2) < 1) return
         if (.not. all(ieee_is_finite(restriction))) return
-        call assemble_parametric_bem_p2(surface, faces, options, op, td, fd, &
-                                        report, status)
-        if (status /= 0) return
+        if (present(sectors)) then
+            if (sectors < 2) return
+            call assemble_parametric_bem_p2_circulant(surface, faces, sectors, &
+                                        options, rotational, td, fd, report, status)
+            if (status /= 0) return
+            call build_circulant_exterior_dtn(rotational, steklov, status)
+            if (status /= 0) return
+            call steklov%expand(s, status)
+            if (status /= 0) return
+            genus = rotational%genus
+        else
+            call assemble_parametric_bem_p2(surface, faces, options, op, td, fd, &
+                                            report, status)
+            if (status /= 0) return
+            call build_exterior_dtn(op, exterior, status)
+            if (status /= 0) return
+            call exterior%matrix(s, status)
+            if (status /= 0) return
+            genus = op%genus
+        end if
         status = 1
-        if (size(restriction, 1) /= size(op%w, 1)) return
-        call build_exterior_dtn(op, exterior, status)
-        if (status /= 0) return
-        call exterior%matrix(s, status)
-        if (status /= 0) return
+        if (size(restriction, 1) /= size(s, 1)) return
         boundary%restriction = restriction
         boundary%s = matmul(transpose(restriction), matmul(s, restriction))
-        boundary%genus = op%genus
+        boundary%genus = genus
+        status = 0
     end subroutine
     subroutine gamma_c_3d_harmonics(boundary, surface, faces, trace_dofs, degree, &
                  vertices, offsets, periods, prescribed, independent, tolerance, status)
