@@ -1134,6 +1134,9 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
     add_test(NAME response_strip_current_exact_identities
         COMMAND check_response_strip_current)
+    add_executable(check_homma_derivations gen/check_homma_derivations.f90)
+    target_link_libraries(check_homma_derivations PRIVATE kin6d_gen_support)
+    add_test(NAME check_homma_derivations COMMAND check_homma_derivations)
     add_test(NAME equilibrium_curve_chart_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_curve_chart>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_curve_chart_leaves.f90
