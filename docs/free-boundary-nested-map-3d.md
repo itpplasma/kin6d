@@ -246,8 +246,18 @@ hypothesis that has not been traced.
    (`gamma_c_3d_build_periodic`). This is exact algebra (test
    `ideal_fb_exterior3d_periodic`: roundoff against the full-surface DtN of the
    expanded operators and against the dense all-pairs build). The pair work
-   falls by nfp and the dense DtN by nfp^3. The pair quadrature itself
-   (FortFEM `converge_pair`) remains the cost driver.
+   falls by nfp and the dense DtN by nfp^3.
+   Rotated strips of the cylindrical chart (done). Without `periodic`,
+   `ideal_fb_use_bem3d` passes `sectors = nphi` to `gamma_c_3d_build` for the
+   cylindrical chart. It assembles sector-zero target pairs only and forms
+   S = W + J^H V^{-1} J per toroidal harmonic (`build_circulant_exterior_dtn`),
+   so any restriction is supported, including non-repeating Fourier modes.
+   Only the small consumer form R^T S R is dense. A nonrotational surface
+   passed with `sectors` is rejected (`ideal_fb_chart_surface_circulant`).
+   The pair quadrature (FortFEM `converge_pair`) remains the cost driver, and
+   its near-pair degree grows with the panel aspect. The Landreman gate
+   therefore uses nphi = 3*chain/2 strips and runs in 364 s at 4 threads
+   (ROADMAP E3.3).
 3. Curve-chart free boundary (done). `ideal_fb_init` takes any
    `ideal_chart_t`. The per-n exterior is built only for the cylindrical chart
    itself; any other chart (curve chart, nested-map chart) gets no exterior
