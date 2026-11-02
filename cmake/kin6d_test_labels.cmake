@@ -793,6 +793,10 @@ if(TARGET gen_homma)
     kin6d_test_labels(homma_leaves_regeneration fast CLASSES continuum
         TARGETS gen_homma)
 endif()
+if(TARGET gen_fp_relaxation)
+    kin6d_test_labels(fp_relaxation_leaves_regeneration fast CLASSES continuum
+        TARGETS gen_fp_relaxation)
+endif()
 if(TARGET gen_ideal_field_angle)
     kin6d_test_labels(ideal_field_angle_regeneration fast CLASSES mhd
         TARGETS gen_ideal_field_angle)

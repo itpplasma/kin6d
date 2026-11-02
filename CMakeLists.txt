@@ -93,6 +93,7 @@ target_sources(kin6d_classical PRIVATE src/classical/ocp.f90 src/classical/pair_
 target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_poisson_leaves.f90 src/continuum/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/continuum/fp_laboratory.f90
+    src/generated/kin6d_fp_relaxation_leaves.f90 src/continuum/fp_relaxation.f90
     src/generated/kin6d_transport_leaves.f90 src/continuum/transport_laboratory.f90
     src/continuum/transport_certificate.f90 src/continuum/transport_sampling.f90
     src/generated/kin6d_streaming_leaves.f90 src/continuum/streaming_comparison.f90
@@ -842,6 +843,14 @@ target_link_libraries(test_rosenbluth_reference PRIVATE kin6d)
 foreach(check maxwellian l1_brute invariants slow_limit)
     add_test(NAME rosenbluth_${check}_oracle COMMAND test_rosenbluth_reference ${check})
 endforeach()
+# Homogeneous FP relaxation (B04): the same executable, one check per name.
+add_executable(test_fp_relaxation test/test_fp_relaxation.f90)
+target_link_libraries(test_fp_relaxation PRIVATE kin6d)
+foreach(check maxwellian mass slow_rate convergence_v convergence_dt)
+    add_test(NAME fp_relaxation_${check} COMMAND test_fp_relaxation ${check})
+    kin6d_test_labels(fp_relaxation_${check} fast CLASSES continuum
+        TARGETS test_fp_relaxation)
+endforeach()
 add_executable(test_transport test/test_transport.f90)
 target_link_libraries(test_transport PRIVATE kin6d)
 add_test(NAME general_transport_and_tangent_oracles COMMAND test_transport)
@@ -1036,7 +1045,7 @@ if(KIN6D_FORTSYM_BUILD)
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
-            gs_reference_error laboratory poisson fp transport
+            gs_reference_error laboratory poisson fp fp_relaxation transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
             fermi_gas quantum_fock quantum_evolution quantum_correlations
@@ -1114,6 +1123,12 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_homma_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/homma-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    add_test(NAME fp_relaxation_leaves_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_fp_relaxation>
+        -DLEAF=kin6d_fp_relaxation_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_fp_relaxation_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/fp-relaxation-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME ideal_map_leaves_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_map>
         -DLEAF=kin6d_ideal_map_leaves.f90
@@ -1148,6 +1163,8 @@ target_link_libraries(benchmark_streaming_comparison PRIVATE kin6d)
 add_executable(homma_reference app/homma_reference.f90)
 add_executable(benchmark_fp app/benchmark_fp.f90)
 target_link_libraries(benchmark_fp PRIVATE kin6d)
+add_executable(fp_relaxation app/fp_relaxation.f90)
+target_link_libraries(fp_relaxation PRIVATE kin6d kin6d_io)
 add_executable(benchmark_transport app/benchmark_transport.f90)
 target_link_libraries(benchmark_transport PRIVATE kin6d)
 add_executable(benchmark_slab_oscillation app/benchmark_slab_oscillation.f90)
@@ -1232,7 +1249,7 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         fermion_ensemble_demo relativistic_fermi_demo formal_krook_certificate
         benchmark_streaming benchmark_streaming_comparison benchmark_fp
         benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
-        benchmark_quantum_cutoff jellium_cell_demo coulomb_encounter_demo
+        benchmark_quantum_cutoff jellium_cell_demo coulomb_encounter_demo fp_relaxation
         benchmark_ocp ocp_oscillation_demo ocp_shielding_demo homma_reference)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
