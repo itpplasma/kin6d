@@ -245,8 +245,8 @@ integer family is admitted through D8 (`equilibrium_d8_landreman_3d_integer`,
 `equilibrium_d8_issan_3d_integer`, `equilibrium_d8_landreman_3d_p3`); its
 accuracy ladder is open. The recorded sampled errors and the one refinement
 step are in docs/ideal-seed-3d.md; they are candidate diagnostics, not volume
-norms or bounds. The sheared family needs matched toroidal-profile preparation
-and is not admitted. The legacy axisymmetric `map_equilibrium` still returns
+norms or bounds. Matched sheared-family profiles come from
+`nested_seed_profile`, but that family is not admitted as a D8 case. The legacy axisymmetric `map_equilibrium` still returns
 `EQ_UNAVAILABLE` for `ntor/=0`; 3D states use `map_3d_equilibrium`.
 
 [H] A solved-case gate needs an admitted reference/chart pullback, an
