@@ -1,11 +1,14 @@
 program test_ideal_fb_surface
-    !! Public synthetic chart/pullback oracles, without a BEM assembly.
+    !! Public synthetic chart/pullback oracles. Mode circulant adds one small
+    !! BEM assembly: rotated-sector versus all-pairs Steklov forms.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use kin6d_equilibrium_chart, only: cylindrical_chart_t, curve_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t
     use kin6d_ideal_free_boundary_bem3d, only: coupling_surface_t, ideal_fb_surface
-    use fortfem_parametric_bem_high_order, only: build_p2_trace_connectivity
+    use fortfem_parametric_bem_high_order, only: build_p2_trace_connectivity, &
+                                          bem_pair_options_t, bem_pair_report_t
+    use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), radius = .15_dp
     real(dp), parameter :: nodes(2, 6) = reshape( &
@@ -17,6 +20,8 @@ program test_ideal_fb_surface
     call get_command_argument(2, arg)
     if (trim(mode) == 'invalid') then
         call invalid()
+    else if (trim(mode) == 'circulant') then
+        call circulant()
     else
         read (arg, *) order
         select case (trim(mode))
@@ -233,6 +238,48 @@ contains
         call require(error_flux < 2e-13_dp, 'signed contravariant Piola normal flux')
         call require(error_tangent < 2e-9_dp, 'independent finite-difference tangents')
         call require(error_period < 2e-9_dp, 'one-form full-turn period without nfp rescaling')
+    end subroutine
+
+    subroutine circulant()
+        !! The all-pairs assembly is the oracle: both paths use the same pair
+        !! rule, so the restricted Steklov forms agree to roundoff. A helical
+        !! chart surface is not a set of rotated copies and is rejected.
+        type(ideal_fb_t) :: fb
+        type(coupling_surface_t) :: surface
+        type(gamma_c_3d_t) :: dense, rotational
+        type(bem_pair_options_t) :: options
+        type(bem_pair_report_t) :: dense_report, report
+        integer, allocatable :: faces(:, :)
+        real(dp), allocatable :: restriction(:, :)
+        real(dp) :: difference
+        integer :: status
+        integer, parameter :: nphi = 8
+        options%relative_tolerance = 1e-2_dp
+        options%maximum_degree = 24
+        call fixture(fb, 0, 2)
+        call ideal_fb_surface(fb, nphi, surface, faces, restriction, status)
+        call require(status == 0, 'cylinder coupling surface')
+        call gamma_c_3d_build(surface, faces, restriction, options, dense, &
+                              dense_report, status)
+        call require(status == 0, 'all-pairs Steklov form')
+        call gamma_c_3d_build(surface, faces, restriction, options, rotational, &
+                              report, status, sectors=nphi)
+        call require(status == 0, 'rotated-sector Steklov form')
+        call require(report%accepted_pairs*nphi == dense_report%accepted_pairs, &
+                     'one sector of target pairs')
+        call require(rotational%genus == dense%genus, 'genus')
+        difference = maxval(abs(rotational%s - dense%s))/maxval(abs(dense%s))
+        print '(a,es12.4)', 'rotated-sector versus all-pairs Steklov ', difference
+        call require(difference < 1e-10_dp, 'rotated-sector Steklov form')
+        call gamma_c_3d_build(surface, faces, restriction, options, rotational, &
+                              report, status, sectors=1)
+        call require(status /= 0, 'single sector is rejected')
+        call fixture(fb, 2, 2)
+        call ideal_fb_surface(fb, nphi, surface, faces, restriction, status)
+        call require(status == 0, 'helical coupling surface')
+        call gamma_c_3d_build(surface, faces, restriction, options, rotational, &
+                              report, status, sectors=nphi)
+        call require(status /= 0, 'nonrotational surface is rejected')
     end subroutine
 
     subroutine invalid()

@@ -7,7 +7,7 @@ module kin6d_ideal_free_boundary_bem3d
     use fortfem_parametric_bem_high_order, only: bem_pair_options_t, &
                                           bem_pair_report_t, build_p2_trace_connectivity
     use fortfem_generated_bem_frame, only: bem_frame
-    use kin6d_equilibrium_chart, only: ideal_chart_t
+    use kin6d_equilibrium_chart, only: ideal_chart_t, cylindrical_chart_t
     use kin6d_triangle_basis, only: triangle_basis_jet
     use kin6d_equilibrium_boundary_3d, only: gamma_c_3d_t, gamma_c_3d_build, &
         gamma_c_3d_build_periodic
@@ -212,6 +212,10 @@ contains
         !! and an nfp-symmetric chart. The same R^T S R up to the pair
         !! quadrature tolerance, at 1/nfp of the pair work and 1/nfp^3 of
         !! the dense DtN cost.
+        !! Otherwise a cylindrical chart sweeps the meridional Gamma_c into
+        !! nphi identical rotated strips: block-circulant assembly with the
+        !! per-harmonic Steklov form, for any restriction. Other charts keep
+        !! the all-pairs assembly.
         type(ideal_fb_t), intent(inout) :: fb
         integer, intent(in) :: nphi
         type(bem_pair_options_t), intent(in) :: options
@@ -235,8 +239,14 @@ contains
             call gamma_c_3d_build_periodic(surface, faces, fb%nfp, restriction, &
                                            options, boundary, report, status)
         else
-            call gamma_c_3d_build(surface, faces, restriction, options, boundary, &
-                                  report, status)
+            select type (chart => surface%chart)
+            type is (cylindrical_chart_t)
+                call gamma_c_3d_build(surface, faces, restriction, options, &
+                                      boundary, report, status, sectors=nphi)
+            class default
+                call gamma_c_3d_build(surface, faces, restriction, options, &
+                                      boundary, report, status)
+            end select
         end if
         if (status /= 0) return
         allocate (drive(fb%nt*fb%nmode), load(fb%nt*fb%nmode))

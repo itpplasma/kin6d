@@ -99,7 +99,7 @@ cmake --build build -j 4 --target test_ideal_mhd_coordinates test_ideal_xi test_
     load_job_environment
     echo 'Run affected native tests'
     (
-ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_mhd_coordinate_analytic_limits|ideal_xi_hessian_and_analytic_limits|equilibrium_nested_.*|ideal_map_curve_chart_.*|equilibrium_curve_chart_.*|ideal_map_derivatives_and_rotation_null|ideal_map_reduced_omega_derivatives|ideal_map_n3_leakage|ideal_fb_derivatives|ideal_fb_external_kink|ideal_fb_landreman_axisymmetric|equilibrium_core_.*|equilibrium_e21_.*|gs_free_boundary_(separatrix_solovev|freegs_public_parity)|gs_k6_mini_regression|grad_shafranov_profile_law_readback|response_qualification_external_adapter|response_toroidal_strip_two_ring_traces|response_cut_total_pressure_balance|response_toroidal_strip_edge_merged_domains|grad_shafranov_p[23]_readback_free|gs_native_adapter_contract|gs_free_boundary_t[37]_.*|grad_shafranov_csr_direct_newton_oracles|grad_shafranov_analytic_and_derivative_oracles|ideal_fb_vertical_newton|mhd_ampere_n_error_status|nonnested_beltrami_(constraints|resonance|pairing|vacuum_p[23]|manufactured_p3|lundquist_p3)|nonnested_mapped_(identity_regression|ellipse_mode_ladder)|nonnested_coupled_solovev_p2|nonnested_transport_equilibrated_n0|kin6d_layering|kin6d_no_executable_stack|ideal_seed_3d_boundary_profiles|s0_.*)$'
+ctest --test-dir build -j 4 --output-on-failure -R '^(ideal_mhd_coordinate_analytic_limits|ideal_xi_hessian_and_analytic_limits|equilibrium_nested_.*|ideal_map_curve_chart_.*|equilibrium_curve_chart_.*|ideal_map_derivatives_and_rotation_null|ideal_map_reduced_omega_derivatives|ideal_map_n3_leakage|ideal_fb_derivatives|ideal_fb_external_kink|ideal_fb_landreman_axisymmetric|ideal_fb_landreman_bem3d16_axisymmetric|equilibrium_core_.*|equilibrium_e21_.*|gs_free_boundary_(separatrix_solovev|freegs_public_parity)|gs_k6_mini_regression|grad_shafranov_profile_law_readback|response_qualification_external_adapter|response_toroidal_strip_two_ring_traces|response_cut_total_pressure_balance|response_toroidal_strip_edge_merged_domains|grad_shafranov_p[23]_readback_free|gs_native_adapter_contract|gs_free_boundary_t[37]_.*|grad_shafranov_csr_direct_newton_oracles|grad_shafranov_analytic_and_derivative_oracles|ideal_fb_vertical_newton|mhd_ampere_n_error_status|nonnested_beltrami_(constraints|resonance|pairing|vacuum_p[23]|manufactured_p3|lundquist_p3)|nonnested_mapped_(identity_regression|ellipse_mode_ladder)|nonnested_coupled_solovev_p2|nonnested_transport_equilibrated_n0|kin6d_layering|kin6d_no_executable_stack|ideal_seed_3d_boundary_profiles|s0_.*)$'
 
     )
     load_job_environment
@@ -144,6 +144,30 @@ fi
 ctest --test-dir build -j 4 --output-on-failure -R "^($map)$"
 
     ); fi
+    load_job_environment
+    ;;
+  equilibrium-bem3d)
+    # Nightly two-level E3.3 gate; the merge queue runs the chain=16 level.
+    export OMP_NUM_THREADS="4"
+    export OPENBLAS_NUM_THREADS="1"
+    export OMP_WAIT_POLICY="passive"
+    echo Configure
+    (
+kin6d_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
+
+    )
+    load_job_environment
+    echo 'Build affected consumers'
+    (
+cmake --build build -j 4 --target test_landreman_free_boundary
+
+    )
+    load_job_environment
+    echo 'Run the full R2 BEM Landreman gate'
+    (
+ctest --test-dir build -j 4 --output-on-failure -R '^ideal_fb_landreman_bem3d_axisymmetric$'
+
+    )
     load_job_environment
     ;;
   *) echo "unknown CI tier: $tier" >&2; exit 2 ;;

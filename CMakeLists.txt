@@ -139,8 +139,9 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM).
-set(KIN6D_FORTFEM_REVISION "5af2a646624160ef6255afde6d2d37801a9c8556")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM,
+# per-harmonic circulant Steklov form lazy-fortran/fortfem#144).
+set(KIN6D_FORTFEM_REVISION "c7f8cd627f96baf2cdb9db4d416dd8ac27c7902f")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -323,6 +324,18 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+# E3.3: the same cases through the full-surface R2 BEM exterior (12 rotated
+# sectors, block-circulant assembly, per-harmonic Steklov form), compared
+# with the per-n exterior. bem3d16 is the chain=16 level only; the two-level
+# gate with its refinement checks runs nightly (ci/nightly-jobs.json).
+add_test(NAME ideal_fb_landreman_bem3d16_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d16)
+add_test(NAME ideal_fb_landreman_bem3d_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d)
+set_tests_properties(ideal_fb_landreman_bem3d16_axisymmetric PROPERTIES
+    TIMEOUT 600 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(ideal_fb_landreman_bem3d_axisymmetric PROPERTIES
+    TIMEOUT 1800 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
     test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
@@ -2196,6 +2209,9 @@ foreach(k 2 3)
     endforeach()
 endforeach()
 add_test(NAME ideal_fb_chart_surface_invalid COMMAND test_ideal_fb_surface invalid)
+add_test(NAME ideal_fb_chart_surface_circulant COMMAND test_ideal_fb_surface circulant)
+set_tests_properties(ideal_fb_chart_surface_circulant PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_fb_exterior_frozen_derivatives
     COMMAND test_ideal_free_boundary frozen-exterior)
 set_tests_properties(ideal_fb_exterior_frozen_derivatives PROPERTIES
