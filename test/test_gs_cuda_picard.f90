@@ -35,8 +35,22 @@ program test_gs_cuda_picard
     real(dp) :: profile_parity(3), change, scale, validated_total
     real(dp) :: quadratic, quadratic_roundoff
     integer :: j
+    character(16) :: mode
 
+    ! 'cpu' checks the CPU route alone and needs no CUDA build; 'pair' adds
+    ! the GPU route on device 0 and the CPU/GPU parity checks.
+    mode = 'pair'
+    if (command_argument_count() >= 1) call get_command_argument(1, mode)
+    call require(mode == 'cpu' .or. mode == 'pair', 'mode is cpu or pair')
     call run_case(cpu, -1, cm, cpu_initial)
+    if (mode == 'cpu') then
+        print '(a)', 'case=affine_profile_P2_Picard; target_PDE=linear_in_psi'
+        print '(a,i0)', 'dofs=', size(cpu%psi)
+        call report('CPU', cpu, cm)
+        call gs_direct_free(cpu%direct)
+        print '(a)', 'PASS: complete affine-profile public CPU Picard fixed point'
+        stop
+    end if
     call run_case(gpu, 0, gm, gpu_initial)
     clock = gs_wall_s()
     call require(size(cpu%psi) == size(gpu%psi), 'matched dimension')
