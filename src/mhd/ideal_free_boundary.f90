@@ -201,13 +201,19 @@ module kin6d_ideal_free_boundary
         ! Globalise ideal_fb_solve by a dogleg trust region on the Gauss-Newton
         ! model of the residual merit instead of backtracking and Levenberg
         ! damping (step control only; the merit and the gate are unchanged).
+        ! ideal_fb_init switches it and negative_curvature on for ntor >= 2 on
+        ! a non-axisymmetric chart (FB3D); reset both after init to opt out.
         logical :: trust_region = .false.
         ! Leave stalls of the merit (less than 10 % decrease over 5 steps, or
         ! no acceptable step) by ideal_fb_negative_curvature when S_red has a
         ! negative eigenvalue, and leave states that pass the gate as saddles
-        ! of the reduced energy. Only stable equilibria (S_red > 0) are then
-        ! returned, so it does not suit a wanted unstable equilibrium (the
-        ! vertical mode at fixed coil currents).
+        ! of the reduced energy, so it does not suit a wanted unstable
+        ! equilibrium (the vertical mode at fixed coil currents): reset it
+        ! (opt out) for such targets. A saddle that passes the gate is still
+        ! returned as IDEAL_FB_OK when the escape budget (20 per solve) is
+        ! spent or no escape step is accepted, so stability is certified only
+        ! by In_-(S_red) of the returned state (ideal_fb_reduced_spectrum).
+        ! Default on for FB3D ntor >= 2 (ideal_fb_init).
         logical :: negative_curvature = .false.
         ! Evaluate ideal_fb_hypotheses at every Newton state and print it
         ! (verbose solves only; a diagnostic, never a stopping criterion).
@@ -381,6 +387,11 @@ contains
         if (.not. allocated(mesh%neighbors)) return
         nodes = size(mesh%points, 2); cells = size(mesh%triangles, 2)
         fb%nfp = nfp; fb%ntor = ntor; fb%nmode = 2*ntor + 1
+        ! FB3D N >= 2 default globalisation (decision 122): the trust region
+        ! with the negative-curvature escape (leaves saddles; see
+        ! negative_curvature for the cases in which one is still returned).
+        fb%trust_region = .not. axisymmetric .and. ntor >= 2
+        fb%negative_curvature = fb%trust_region
         fb%f_vac = f_vac; fb%circulation = circulation
         if (present(mu0)) fb%mu0 = mu0
         ppe = merge(1, 2, fb%order == 2)
@@ -2612,7 +2623,8 @@ contains
             ! A state that passes the gate with negative curvature of S_red is
             ! a saddle of the reduced energy (an unstable discrete
             ! equilibrium); with fb%negative_curvature the solve leaves it and
-            ! continues, so that only stable equilibria are returned.
+            ! continues. False when the escape budget is spent or no escape
+            ! step is accepted: the saddle is then returned as converged.
             saddle = .false.
             if (fb%negative_curvature) call escape(saddle)
         end function
