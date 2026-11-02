@@ -828,7 +828,9 @@ mode. The staged path is:
 11. explicit comparison with HINT/PIES-like nonnested full-pressure relaxation
     and MRX/Zhang--Zhu--Hegna-type non-nested solvers, within matched models;
 12. resistive-MHD and Hall/XMHD stationary/evolution paths where reconnection and
-    history are part of the selected physics;
+    history are part of the selected physics; nonlinear visco-resistive MHD in
+    general 3D and symmetry-reduced 2D (milestones RM0-RM7) is designed in
+    [nonlinear-resistive-mhd.md](docs/nonlinear-resistive-mhd.md);
 13. kinetic-MHD and kinetic continuation where pressure/current closure is no
     longer adequately fluid;
 14. ideal/resistive linear response, eigenmodes and nonlinear stability through
