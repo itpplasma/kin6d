@@ -1,7 +1,8 @@
 # Public synthetic regression; historical CTest name retained for consumers.
 # The fixture README records its independent analytic oracle and recipe.
 # The three estimator fields now reference the RT equilibration introduced
-# by 5dc6103, rather than its functional-recovery predecessor. The physical
+# by 5dc6103, rather than its functional-recovery predecessor, evaluated with
+# FortFEM's exact RT reference tables (e8b947bb). The physical
 # state, profiles and field references remain the M0 values. Check the method
 # and error scope as well as the numbers: this nonlinear case has only a
 # sampled frozen-source residual estimate, not a continuous certificate.
