@@ -278,7 +278,9 @@ target_link_libraries(test_equilibrium_harness PRIVATE kin6d)
 add_test(NAME equilibrium_d8_registry_contract COMMAND test_equilibrium_harness)
 # N1: nonlinear 3D frozen-in energy map (fixed boundary), DESIGN 3D lane.
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
-    src/mhd/ideal_map.f90 src/mhd/ideal_seed.f90
+    src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
+    src/mhd/equilibrium_3d_driver.f90
+    src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
     src/generated/kin6d_ideal_field_angle_leaves.f90
     src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
     src/mhd/nested_seed_input.f90)
@@ -396,6 +398,24 @@ foreach(degree RANGE 4 6)
     set_tests_properties(ideal_map_hessian_p${degree}_oracle PROPERTIES TIMEOUT 120
         PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 endforeach()
+add_executable(test_equilibrium_3d test/test_equilibrium_3d.f90)
+target_link_libraries(test_equilibrium_3d PRIVATE kin6d)
+# Arguments: TAU MPOL NTOR NODES DEGREE and B/p/label gates at about twice the
+# observed sampled errors recorded in docs/ideal-seed-3d.md; the P3 case also
+# solves the coarse P2 level and requires every error to decrease.
+add_test(NAME equilibrium_d8_landreman_3d_integer
+    COMMAND test_equilibrium_3d 0 2 2 8 2 0.075 0.19 0.35)
+add_test(NAME equilibrium_d8_landreman_3d_p3
+    COMMAND test_equilibrium_3d 0 4 4 16 3 2.3e-3 2.2e-2 3.3e-2 2 2 8 2)
+set_tests_properties(equilibrium_d8_landreman_3d_p3 PROPERTIES PROCESSORS 4 TIMEOUT 180)
+add_test(NAME equilibrium_d8_issan_3d_integer
+    COMMAND test_equilibrium_3d 0.4 2 2 8 2 0.055 0.14 0.26)
+set_tests_properties(equilibrium_d8_landreman_3d_integer equilibrium_d8_issan_3d_integer
+    PROPERTIES PROCESSORS 4 TIMEOUT 60)
+add_executable(test_map_3d_equilibrium test/test_map_3d_equilibrium.f90)
+target_link_libraries(test_map_3d_equilibrium PRIVATE kin6d)
+add_test(NAME equilibrium_map_3d_readback COMMAND test_map_3d_equilibrium)
+set_tests_properties(equilibrium_map_3d_readback PROPERTIES PROCESSORS 4 TIMEOUT 60)
 add_executable(test_ideal_seed_3d test/test_ideal_seed_3d.f90)
 target_link_libraries(test_ideal_seed_3d PRIVATE kin6d)
 add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
@@ -1003,9 +1023,10 @@ if(KIN6D_FORTSYM_BUILD)
         COMMAND test_gs_variational_identities ${gs_check_dir}/wrong_weight.f90)
     set_tests_properties(grad_shafranov_rejects_wrong_weak_source_weight PROPERTIES
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
-    foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi ideal_response_error
-            equilibrium_core curve_chart ideal_seed_3d ideal_field_angle nonnested metriplectic
-            vacuum_shell fold_barrier landreman nested_oracles
+    foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi
+            ideal_response_error equilibrium_core curve_chart ideal_seed_3d map_3d_readback
+            ideal_field_angle nonnested metriplectic vacuum_shell fold_barrier landreman
+            nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
@@ -1085,6 +1106,11 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_seed_3d_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-seed-3d-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_ideal_seed_3d_regeneration.cmake)
+    add_test(NAME equilibrium_map_3d_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_map_3d_readback>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_map_3d_readback_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/map-3d-readback-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_map_3d_readback_regeneration.cmake)
     add_executable(check_response_strip_current gen/check_response_strip_current.f90)
     target_link_libraries(check_response_strip_current PRIVATE kin6d_gen_support)
     add_test(NAME response_strip_current_exact_identities
@@ -1677,6 +1703,8 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/estimators/verified_bernstein_majorant.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_feec_operators.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_feec_n.f90
+    ${fortfem_SOURCE_DIR}/src/solvers/hcurl_auxiliary_space.f90
+    ${fortfem_SOURCE_DIR}/src/assembly/meridian_hcurl_auxiliary.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_scalar.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_meridian_fourier_equilibration_products.f90
     ${fortfem_SOURCE_DIR}/src/assembly/assembly_meridian_fourier_equilibration.f90
@@ -1686,7 +1714,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/bem/toroidal_mode_boundary_operators_2d.f90
     ${fortfem_SOURCE_DIR}/src/bem/meridian_magnetic_coupling.f90)
 target_link_libraries(kin6d_feec_n PUBLIC
-    kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse)
+    kin6d_spatial kin6d_fft kin6d_sparse_direct fortsparse LAPACK::LAPACK)
 if(KIN6D_ENABLE_OPENMP)
     target_link_libraries(kin6d_feec_n PUBLIC OpenMP::OpenMP_Fortran)
 endif()
@@ -1903,6 +1931,15 @@ endif()
 
 add_executable(test_nonnested_vacuum test/test_nonnested_vacuum.f90)
 target_link_libraries(test_nonnested_vacuum PRIVATE kin6d_nn_vacuum_test)
+# NN1 per-mode solve ladder: Cholesky versus Hiptmair-Xu CG (benchmarks/nn1_hx).
+add_executable(nn1_hx_ladder benchmarks/nn1_hx/nn1_hx_ladder.f90)
+target_link_libraries(nn1_hx_ladder PRIVATE kin6d_nn_vacuum_test)
+add_executable(test_nonnested_hx test/test_nonnested_hx.f90)
+target_link_libraries(test_nonnested_hx PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME nonnested_hx_vacuum_p2 COMMAND test_nonnested_hx 2 4 8)
+add_test(NAME nonnested_hx_vacuum_p3 COMMAND test_nonnested_hx 3 4 8)
+set_tests_properties(nonnested_hx_vacuum_p2 nonnested_hx_vacuum_p3 PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME nonnested_vacuum_helical_coil_island COMMAND test_nonnested_vacuum)
 add_executable(test_nonnested_vacuum_mode_residual
     test/test_nonnested_vacuum_mode_residual.f90)

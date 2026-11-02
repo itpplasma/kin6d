@@ -294,10 +294,14 @@ hypothesis that has not been traced.
    and the image of the axis node lies at R = 1.1410 m, Z = 0 at
    phi-hat = 0 (`axis_RZ_phi0` in the JSON), 0.6 mm from the traced vacuum
    axis (R = 1.1404 m) and 2.2 cm outboard of the VMEC++ axis (1.119 m). The
-   R2 exterior is assembled with atomic accumulation of the pair blocks
-   (FortFEM `assemble_parametric_bem_p2_circulant`), so its roundoff differs
-   from run to run even at a fixed thread count, and whether a run converges
-   or stalls depends on that roundoff.
+   R2 exterior (FortFEM `assemble_parametric_bem_p2_circulant`) was
+   assembled with atomic accumulation of the pair blocks until FortFEM
+   8e002bfe, so its roundoff differed from run to run even at a fixed thread
+   count, and in the runs above whether a run converged or stalled depended
+   on that roundoff. Since 8e002bfe the pair blocks are summed in a fixed
+   order and the operator is bitwise identical for every thread count. Other
+   OpenMP reductions in KIN6D are not covered by this, and the stall
+   statistics above have not been rerun with the deterministic operator.
    With `ideal_fb_t%negative_curvature` (`fb3d_synthetic` globalisation 2,
    set by `ideal_fb_init` together with `trust_region` for ntor >= 2 on a
    non-axisymmetric chart, decision 122) a stalled merit hands over to
