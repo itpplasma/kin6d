@@ -8,6 +8,14 @@ program test_current_sheet_oracles
     !                    order >= 2.7 in xi, agreement of xi(0).
     !   screw_pinch:     Bessel Wronskian, Laplace residual, interface and wall
     !                    conditions, continuous-iota limit at rate ~1.
+    ! Independent of the oracle construction: slab_fe (separate finite-element
+    ! discretisation of the energy), the closed-form Delta -> 0 limit of xi0,
+    ! the Hahm-Kulsrud closed form, the Bessel Wronskian and the tabulated
+    ! I_1(1), K_1(1); the ODE/Laplace residuals check the evaluation by
+    ! differences. The slab xi continuity and wall values, the slab
+    ! shielding rate and the pinch Lagrangian total-pressure balance are
+    ! conditions the oracles are solved from, so they hold by construction
+    ! and only guard the implementation against regressions.
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_current_sheet_oracles, only: slab_sheet_t, pinch_sheet_t, &
         modified_bessel_ik
@@ -81,13 +89,14 @@ contains
         call s2%eval(0.0_dp, 1, psi, dpsi, xp, d1)
         call s2%eval(0.0_dp, -1, psi, dpsi, xm, d2)
         call check(xp*xm < 0 .and. abs(xp + xm) < 1e-14_dp, 'Hahm-Kulsrud step')
-        ! Symmetric jump: K1 = 2 k b0 (1 + Delta) delta/sinh(ka) for every Delta.
+        ! Symmetric jump: K1 = 2 k b0 (1 + Delta) delta/sinh(ka), i.e. K1/B_y(a)
+        ! is independent of Delta.
         do i = 1, 3
             s2%dplus = 0.1_dp**i; s2%dminus = s2%dplus
             call s2%init()
             call check(abs(s2%xi0) < 1e-16_dp, 'symmetric xi0')
             call check(abs(s2%sheet() - k1hk*(1 + s2%dplus)) < 1e-13_dp*k1hk, &
-                       'symmetric sheet independent of Delta')
+                       'symmetric K1 = (1 + Delta) times Hahm-Kulsrud')
         end do
         ! General walls: psi(0+-) = F(0+-) xi0 = O(Delta), shielding recovered.
         do i = 1, 3
@@ -245,6 +254,18 @@ contains
         call c%eval(0.5_dp*(c%r0 + c%sigma), -1, chi, dchi, xi)
         call check(abs(chi) == 0, 'inner region shielded')
         call c%eval(c%sigma, 1, chip, dpp, xp)
+        ! The step is the one-sided limit, also when F(sigma) is a nonzero of
+        ! roundoff size (init admits |F| <= 1e-12 |m c/sigma^2|).
+        call c%eval(c%sigma*(1 + 1e-6_dp), 1, chi, dchi, xi)
+        call check(abs(xi - xp) < 1e-4_dp*abs(xp), 'continuous xi step is the limit')
+        s = c
+        s%sigma = c%sigma*(1 + 1e-14_dp)
+        call s%init()
+        call check(s%status == 0 .and. s%continuous, 'near-resonant continuous init')
+        call s%eval(s%sigma, 1, chi, dchi, xi)
+        write (*, '(a,es12.4,a,es12.4)') 'F(sigma) =', s%f(s%sigma, 1), &
+            ' xi step change', xi - xp
+        call check(abs(xi - xp) < 1e-8_dp*abs(xp), 'xi step with roundoff F(sigma)')
         call c%sheet(jt0, jz0)
         write (*, '(a,f8.5,a,es12.4,a,2es14.6)') 'continuous: sigma', c%sigma, &
             ' xi step', xp, ' [[B1]] (theta,z)', jt0, jz0
