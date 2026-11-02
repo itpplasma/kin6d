@@ -140,8 +140,8 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
-# Steklov form lazy-fortran/fortfem#144, exact FEEC tables).
-set(KIN6D_FORTFEM_REVISION "e8b947bbf37fce389310a8d70f8e3a888098ce52")
+# Steklov form #144, exact FEEC tables, split stretched BEM fans #145).
+set(KIN6D_FORTFEM_REVISION "489b76f8ce4c039851d7c151c91b654baa850f0b")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -281,13 +281,15 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_ideal_map_leaves.f90
     src/mhd/ideal_map.f90 src/mhd/map_3d_equilibrium.f90
     src/mhd/equilibrium_3d_driver.f90
     src/generated/kin6d_map_3d_readback_leaves.f90 src/mhd/ideal_seed.f90
-    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90)
+    src/generated/kin6d_ideal_seed_3d_leaves.f90 src/mhd/ideal_seed_3d.f90
+    src/mhd/nested_seed_input.f90)
 set_source_files_properties(src/generated/kin6d_ideal_map_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 # N4: 3D free boundary of the map lane (Gamma_c shell, per-n exterior).
 target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vacuum_shell_leaves.f90
-    src/mhd/ideal_free_boundary.f90)
+    src/generated/kin6d_fold_barrier_leaves.f90 src/mhd/ideal_free_boundary.f90)
 set_source_files_properties(src/generated/kin6d_vacuum_shell_leaves.f90
+    src/generated/kin6d_fold_barrier_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_sources(kin6d_equilibrium PRIVATE
     src/generated/kin6d_nested_oracle_leaves.f90 src/equilibrium/nested_oracles.f90)
@@ -332,7 +334,7 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
-# E3.3: the same cases through the full-surface R2 BEM exterior (24/48 rotated
+# E3.3: the same cases through the full-surface R2 BEM exterior (24 rotated
 # sectors, block-circulant assembly, per-harmonic Steklov form), compared
 # with the per-n exterior. bem3d16 is the chain=16 level only; the two-level
 # gate with its refinement checks runs nightly (ci/nightly-jobs.json).
@@ -417,6 +419,11 @@ add_executable(test_ideal_seed_3d test/test_ideal_seed_3d.f90)
 target_link_libraries(test_ideal_seed_3d PRIVATE kin6d)
 add_test(NAME ideal_seed_3d_boundary_profiles COMMAND test_ideal_seed_3d)
 set_tests_properties(ideal_seed_3d_boundary_profiles PROPERTIES PROCESSORS 4 TIMEOUT 60)
+add_executable(test_nested_seed_input test/test_nested_seed_input.f90)
+target_link_libraries(test_nested_seed_input PRIVATE kin6d)
+add_test(NAME ideal_seed_3d_nested_input COMMAND test_nested_seed_input)
+set_tests_properties(ideal_seed_3d_nested_input PROPERTIES PROCESSORS 4 TIMEOUT 120
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_seed_boundary_label
     COMMAND test_ideal_map_axisymmetric seedboundary)
 add_test(NAME ideal_map_derivatives_and_rotation_null
@@ -1012,7 +1019,7 @@ if(KIN6D_FORTSYM_BUILD)
         WILL_FAIL TRUE WORKING_DIRECTORY ${gs_check_dir}/wrong_weight)
     foreach(generator gs_error grad_shafranov ideal_map ideal_gll ideal_xi
             ideal_response_error equilibrium_core curve_chart ideal_seed_3d map_3d_readback
-            nonnested metriplectic vacuum_shell landreman nested_oracles
+            nonnested metriplectic vacuum_shell fold_barrier landreman nested_oracles
             response_strip_jets
             response_fluid
             gs_coarea gs_inverse
