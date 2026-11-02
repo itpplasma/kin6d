@@ -871,3 +871,8 @@ kin6d_test_labels(equilibrium_d8_issan_3d_integer fast CLASSES mhd
 
 kin6d_test_labels(equilibrium_d8_landreman_3d_p3 fast CLASSES mhd
     TARGETS test_equilibrium_3d)
+
+foreach(gate derivatives physics energy covariance)
+    kin6d_test_labels(vrmhd_${gate} fast CLASSES mhd TARGETS test_vrmhd_leaves)
+endforeach()
+kin6d_test_labels(vrmhd_leaf_regeneration fast CLASSES mhd TARGETS gen_vrmhd_leaves)
