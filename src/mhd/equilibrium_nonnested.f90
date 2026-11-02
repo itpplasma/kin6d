@@ -117,6 +117,7 @@ contains
         real(dp), intent(in), optional :: pprime, psi_bound
         complex(dp), allocatable, intent(out), optional :: solution(:)
         type(csc_t) :: k
+        type(nn_factor_t) :: factor
         type(csc_z_t) :: zk, curl
         type(hx_preconditioner_t) :: pc
         type(csr_t) :: op
@@ -124,7 +125,7 @@ contains
         logical, allocatable :: mask(:)
         real(dp), allocatable :: loads(:, :)
         real(dp) :: pp, en_scale, lifted
-        integer :: st, t, ndof, failure, refine, its
+        integer :: st, t, ndof, failure, step, refine, its
         integer(8) :: clock0, clock1, clock_rate
         status = 1
         if (.not. allocated(field%b)) return
@@ -188,16 +189,11 @@ contains
             if (st /= 0) return
             call nn_hx_solve(pc, op, mask, field%hx_tolerance, r, delta, &
                 report%linear_iterations)
-        else
-            call nn_linear_solve(k, mask, r, delta, st)
-        end if
-        call system_clock(clock1)
-        report%linear_seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
-        if (st /= 0) return
-        report%energy_before = quadratic(a)
-        a = a + delta
-        report%newton_steps = 1
-        if (n > 0 .and. field%linear_solver == NN_SOLVER_HX) then
+            call system_clock(clock1)
+            report%linear_seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
+            report%energy_before = quadratic(a)
+            a = a + delta
+            report%newton_steps = 1
             ! The CG tolerance is relative to this increment's load; refine
             ! with the same preconditioned solve until the equation residual
             ! is well inside the 1e-9 gate below (linear: exact Newton steps).
@@ -216,16 +212,43 @@ contains
                 report%newton_steps = report%newton_steps + 1
             end do
             call hx_destroy(pc)
+            report%energy_after = quadratic(a)
+            en_scale = max(1.0_dp, abs(report%energy_before))
+            if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) return
+            r = rhs - csc_matvec(zk, a)
+            where (mask) r = 0
+            report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
+                norm2(abs(csc_matvec(zk, a))), lifted)
+            if (report%residual > 1.0e-9_dp) return
+        else
+            call nn_factor(k, mask, factor, st)
+            if (st /= 0) return
+            report%energy_before = quadratic(a)
+            en_scale = max(1.0_dp, abs(report%energy_before))
+            ! The quadratic problem has one exact Newton step. A floating-point
+            ! factor may need another step to meet the physical residual gate.
+            ! Reuse the same factor and retain both admission gates at every step.
+            do step = 1, 3
+                call nn_factor_solve(factor, r, delta, st)
+                if (st /= 0) exit
+                a = a + delta
+                report%energy_after = quadratic(a)
+                if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) then
+                    st = 1
+                    exit
+                end if
+                r = rhs - csc_matvec(zk, a)
+                where (mask) r = 0
+                report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
+                    norm2(abs(csc_matvec(zk, a))), lifted)
+                report%newton_steps = step
+                if (report%residual <= 1.0e-9_dp) exit
+            end do
+            call nn_factor_free(factor)
+            call system_clock(clock1)
+            report%linear_seconds = real(clock1 - clock0, dp)/real(clock_rate, dp)
+            if (st /= 0 .or. report%residual > 1.0e-9_dp) return
         end if
-        report%energy_after = quadratic(a)
-        en_scale = max(1.0_dp, abs(report%energy_before))
-        if (report%energy_after > report%energy_before + 1.0e-11_dp*en_scale) return
-        r = rhs - csc_matvec(zk, a)
-        where (mask) r = 0
-        report%residual = norm2(abs(r))/max(1.0_dp, norm2(abs(rhs)), &
-            norm2(abs(csc_matvec(zk, a))), lifted)
-        report%newton_steps = 1
-        if (report%residual > 1.0e-9_dp) return
         call meridian_op_complex(field%fs%curl, n, curl, st)
         if (st /= 0) return
         allocate (full(field%fs%sp(1)%ndof))
@@ -339,11 +362,28 @@ contains
         real(dp), intent(in) :: point(3) ! (R,Z,phi)
         real(dp), intent(out) :: value(EQ_VALUES)
         integer, intent(out) :: status
-        real(dp) :: u, theta, xi, eta, radius, x(2), v2(3, field%fs%sp(2)%nloc)
-        real(dp) :: v0(3, field%fs%nl0), b(3), psi
+        ! Per-sample scratch on the stack up to 64 local dofs (runtime-sized
+        ! automatic arrays and array temporaries are heap allocated without
+        ! -fstack-arrays); larger elements fall back to the heap.
+        integer, parameter :: nstack = 64
+        real(dp), target :: v2s(3, nstack), v0s(3, nstack)
+        real(dp), allocatable, target :: v2h(:, :), v0h(:, :)
+        real(dp), pointer, contiguous :: v2(:, :), v0(:, :)
+        real(dp) :: u, theta, xi, eta, radius, x(2), b(3), psi
         complex(dp) :: bn(3), phase
-        integer :: t, n
+        integer :: t, n, j, n2, nl0
         value = 0; status = 1
+        n2 = field%fs%sp(2)%nloc; nl0 = field%fs%nl0
+        if (n2 <= nstack) then
+            v2 => v2s(:, :n2)
+        else
+            allocate (v2h(3, n2)); v2 => v2h
+        end if
+        if (nl0 <= nstack) then
+            v0 => v0s(:, :nl0)
+        else
+            allocate (v0h(3, nl0)); v0 => v0h
+        end if
         if (.not. allocated(field%b)) return
         if (.not. all(ieee_is_finite(point))) return
         call field%coordinates(field%centre, field%radial_scale, point(:2), &
@@ -357,8 +397,11 @@ contains
         if (status /= 0) return
         b = 0
         do n = 0, ubound(field%b, 2)
-            bn = matmul(v2, field%b(field%fs%sp(2)%dof(:, t), n) &
-                *field%fs%sp(2)%sgn(:, t))
+            bn = 0
+            do j = 1, n2
+                bn = bn + v2(:, j)*(field%b(field%fs%sp(2)%dof(j, t), n) &
+                    *field%fs%sp(2)%sgn(j, t))
+            end do
             phase = exp(cmplx(0.0_dp, n*point(3), dp))
             b = b + merge(1, 2, n == 0)*real(bn*phase, dp)
         end do
@@ -440,8 +483,18 @@ contains
         if (size(values, 1) /= EQ_VALUES) return
         if (size(values, 2) /= size(points, 2)) return
         if (size(statuses) /= size(points, 2)) return
-        !$omp parallel do default(shared) private(i, point) schedule(static) &
-        !$omp& if(size(points, 2) > 16)
+        ! Small batches (a field-line step samples one point) skip the
+        ! OpenMP region: opening an inactive team per sample is not free.
+        if (size(points, 2) <= 16) then
+            do i = 1, size(points, 2)
+                point = 0
+                point(:2) = points(:2, i)
+                if (size(points, 1) == 3) point(3) = points(3, i)
+                call nn_point(field, point, values(:, i), statuses(i))
+            end do
+            return
+        end if
+        !$omp parallel do default(shared) private(i, point) schedule(static)
         do i = 1, size(points, 2)
             point = 0
             point(:2) = points(:2, i)
