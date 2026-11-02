@@ -139,8 +139,8 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM).
-set(KIN6D_FORTFEM_REVISION "5af2a646624160ef6255afde6d2d37801a9c8556")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM, exact FEEC tables).
+set(KIN6D_FORTFEM_REVISION "e8b947bbf37fce389310a8d70f8e3a888098ce52")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1592,6 +1592,9 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/geometry/meridian_curved_mesh.f90
     ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_feec_tables.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_bernstein_jets.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90

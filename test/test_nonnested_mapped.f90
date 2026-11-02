@@ -650,13 +650,13 @@ contains
         ! Same physical chart/field on quadratic geometry, with p enrichment.
         ! R*A_phi contains R**2: after the curved P2 cell map it needs P4.
         ! The poloidal covariant pullback needs vector P3, contained in N4.
-        integer, parameter :: orders(3) = [2, 3, 4], planes = 24
+        integer, parameter :: orders(5) = [2, 3, 4, 5, 6], planes = 24
         type(free_b_field_t), target :: field
         type(nn_map_t), target :: map
         type(analytic_chart_t) :: chart
         type(nn_mapped_report_t) :: report
         real(dp), allocatable :: data(:)
-        real(dp) :: error, eh, ee, ref(3), norm, discrepancy, errors(3)
+        real(dp) :: error, eh, ee, ref(3), norm, discrepancy, errors(5)
         integer :: st, l, points
         do l = 1, size(orders)
             call make_field(2, 4, field, orders(l))
