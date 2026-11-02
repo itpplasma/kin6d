@@ -94,6 +94,7 @@ target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_poisson_leaves.f90 src/continuum/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/continuum/fp_laboratory.f90
     src/generated/kin6d_fp_relaxation_leaves.f90 src/continuum/fp_relaxation.f90
+    src/generated/kin6d_thermal_screening_leaves.f90 src/continuum/screening_moments.f90
     src/generated/kin6d_transport_leaves.f90 src/continuum/transport_laboratory.f90
     src/continuum/transport_certificate.f90 src/continuum/transport_sampling.f90
     src/generated/kin6d_streaming_leaves.f90 src/continuum/streaming_comparison.f90
@@ -851,6 +852,15 @@ foreach(check maxwellian mass slow_rate convergence_v convergence_dt)
     kin6d_test_labels(fp_relaxation_${check} fast CLASSES continuum
         TARGETS test_fp_relaxation)
 endforeach()
+# First-order thermal-force moments (B05-B07): the same executable, one check per name.
+add_executable(test_screening_moments test/test_screening_moments.f90)
+target_link_libraries(test_screening_moments PRIVATE kin6d)
+foreach(check maxwellian zero_density rate0 strong_field flr_ratio convergence_v
+        oracle_rosenbluth oracle_poisson temperature_derivative transient steady_transient)
+    add_test(NAME screening_moments_${check} COMMAND test_screening_moments ${check})
+    kin6d_test_labels(screening_moments_${check} fast CLASSES continuum
+        TARGETS test_screening_moments)
+endforeach()
 add_executable(test_transport test/test_transport.f90)
 target_link_libraries(test_transport PRIVATE kin6d)
 add_test(NAME general_transport_and_tangent_oracles COMMAND test_transport)
@@ -1051,7 +1061,7 @@ if(KIN6D_FORTSYM_BUILD)
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
             pp_fusion pp_fusion_eft
-            jellium_cell ocp island_seed)
+            jellium_cell ocp island_seed thermal_screening)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
@@ -1129,6 +1139,14 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_fp_relaxation_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/fp-relaxation-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    add_test(NAME thermal_screening_leaves_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_thermal_screening>
+        -DLEAF=kin6d_thermal_screening_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_thermal_screening_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/thermal-screening-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    kin6d_test_labels(thermal_screening_leaves_regeneration fast CLASSES continuum
+        TARGETS gen_thermal_screening)
     add_test(NAME ideal_map_leaves_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_map>
         -DLEAF=kin6d_ideal_map_leaves.f90
@@ -1168,6 +1186,8 @@ add_executable(benchmark_fp app/benchmark_fp.f90)
 target_link_libraries(benchmark_fp PRIVATE kin6d)
 add_executable(fp_relaxation app/fp_relaxation.f90)
 target_link_libraries(fp_relaxation PRIVATE kin6d kin6d_io)
+add_executable(screening_moments app/screening_moments.f90)
+target_link_libraries(screening_moments PRIVATE kin6d kin6d_io)
 add_executable(benchmark_transport app/benchmark_transport.f90)
 target_link_libraries(benchmark_transport PRIVATE kin6d)
 add_executable(benchmark_slab_oscillation app/benchmark_slab_oscillation.f90)
@@ -1253,7 +1273,8 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         benchmark_streaming benchmark_streaming_comparison benchmark_fp
         benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
         benchmark_quantum_cutoff jellium_cell_demo coulomb_encounter_demo fp_relaxation
-        benchmark_ocp ocp_oscillation_demo ocp_shielding_demo homma_reference)
+        benchmark_ocp ocp_oscillation_demo ocp_shielding_demo homma_reference
+        screening_moments)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
 add_executable(test_result_io test/test_result_io.f90)
