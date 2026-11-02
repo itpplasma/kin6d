@@ -37,6 +37,10 @@ endforeach()
 kin6d_test_labels(nonnested_actions_invalid fast CLASSES mhd
     TARGETS test_nonnested_actions)
 # Class and tier labels of every registered test (ROADMAP "Build structure").
+foreach(case waves rates outer newcomb convergence saturation table)
+    kin6d_test_labels(rm_oracle_${case} fast CLASSES mhd TARGETS test_rm_oracles)
+endforeach()
+kin6d_test_labels(rm_oracle_regeneration fast CLASSES mhd TARGETS gen_rm_oracles)
 # kin6d_test_labels(<test> <tier> CLASSES <class>... TARGETS <executable>...)
 # Class: the highest layer whose modules the test executables use (mhd implies
 # equilibrium); apps for application-only tests. Tier: slow above 60 s in a

@@ -234,6 +234,10 @@ block-triangular preconditioners. Admitted only through the same gates.
 Each gate is a registered CTest with an analytic or manufactured oracle first
 and an external code second.
 
+The test-side [linear cylinder and island references](linear-mhd-oracles.md)
+state the dimensional conventions, analytic checks and validity limits for
+RM-B2 and RM-B5. They are independent references, not completed solver gates.
+
 | ID | gate | oracle |
 |---|---|---|
 | RM-B1 | manufactured solution of the full residual, all fields | design order of convergence |
