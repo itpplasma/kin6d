@@ -507,6 +507,10 @@ kin6d_test_labels(nonnested_vacuum_helical_coil_island slow CLASSES mhd
     TARGETS test_nonnested_vacuum)
 kin6d_test_labels(nonnested_vacuum_mode_residual_p3 fast CLASSES mhd
     TARGETS test_nonnested_vacuum_mode_residual)
+foreach(k 2 3)
+    kin6d_test_labels(nonnested_hx_vacuum_p${k} fast CLASSES mhd
+        TARGETS test_nonnested_hx)
+endforeach()
 kin6d_test_labels(nonnested_symbolic_derivatives_and_d3_identity fast CLASSES mhd
     TARGETS test_nonnested_leaves)
 kin6d_test_labels(nonnested_transport_manufactured_3d slow CLASSES mhd
