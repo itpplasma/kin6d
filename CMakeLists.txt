@@ -139,8 +139,8 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM).
-set(KIN6D_FORTFEM_REVISION "5af2a646624160ef6255afde6d2d37801a9c8556")
+# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM, exact FEEC tables).
+set(KIN6D_FORTFEM_REVISION "e8b947bbf37fce389310a8d70f8e3a888098ce52")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -161,6 +161,7 @@ add_library(kin6d_spatial ${KIN6D_TRIANGLE_SOURCES}
     ${fortfem_SOURCE_DIR}/src/basis/basis_p1_2d.f90
     ${fortfem_SOURCE_DIR}/src/basis/basis_p2_2d.f90
     ${fortfem_SOURCE_DIR}/src/geometry/geometry_jet_2d.f90
+    ${fortfem_SOURCE_DIR}/src/elements/tetra_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/gauss_quadrature_2d.f90
     ${fortfem_SOURCE_DIR}/src/quadrature/triangle_duffy_quadrature.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_reference_basis_products.f90
@@ -1617,6 +1618,9 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/geometry/meridian_curved_mesh.f90
     ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_feec_tables.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_bernstein_jets.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
@@ -2165,7 +2169,14 @@ add_test(NAME nonnested_mapped_zero_forcing_residual
 set_tests_properties(nonnested_mapped_identity_regression
     nonnested_mapped_ellipse_h_ladder nonnested_mapped_ellipse_mode_ladder
     nonnested_mapped_zero_forcing_residual
-    PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=4")
+    PROPERTIES TIMEOUT 900 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartesian_vacuum)
+    add_test(NAME nonnested_mapped_${mapped_case}
+        COMMAND test_nonnested_mapped ${mapped_case})
+    set_tests_properties(nonnested_mapped_${mapped_case} PROPERTIES
+        PROCESSORS 4 TIMEOUT 120
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 
 # Matrix-free Newton-MR for mapped NN1: docs/nonnested-newton-mr.md.
 add_executable(test_nonnested_newton_mr test/test_nonnested_newton_mr.f90)
