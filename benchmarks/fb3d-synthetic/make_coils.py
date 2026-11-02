@@ -27,8 +27,10 @@ def axis(phi):
     return x, t / np.linalg.norm(t)
 
 
-def coils():
-    ntotal = NFP * NCOIL
+def coils(ncoil=NCOIL):
+    # ncoil > NCOIL places the same winding on more coils with the same total
+    # current (vacuum_reference.py --subdivide); the written file uses NCOIL.
+    ntotal = NFP * ncoil
     current = 2 * np.pi * R0 * B0 / (MU0 * ntotal)
     out = []
     for j in range(ntotal):
