@@ -494,6 +494,10 @@ if(TARGET check_response_strip_current)
     kin6d_test_labels(response_strip_current_exact_identities fast CLASSES mhd
         TARGETS check_response_strip_current)
 endif()
+if(TARGET check_homma_derivations)
+    kin6d_test_labels(check_homma_derivations fast CLASSES classical
+        TARGETS check_homma_derivations)
+endif()
 kin6d_test_labels(mhd_resistive_layer_rotation slow CLASSES mhd
     TARGETS test_mhd_closure)
 kin6d_test_labels(mhd_newcomb_screw_pinch_limit fast CLASSES mhd
