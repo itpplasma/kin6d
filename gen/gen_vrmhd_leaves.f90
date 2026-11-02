@@ -111,7 +111,7 @@ program gen_vrmhd_leaves
         end do
     end do
     call leaf('viscosity', 'nu nu_parallel epsilon_b b_1 b_2 b_3 '// &
-        matrix_names('grad_v')//' '//matrix_names('grad_w'), value)
+        matrix_names('grad_v')//' '//matrix_names('grad_w'), -value)
     call leaf('viscous_heat', 'nu nu_parallel epsilon_b b_1 b_2 b_3 '// &
         matrix_names('grad_v')//' q', heating*q)
     call leaf('temperature_advection', &

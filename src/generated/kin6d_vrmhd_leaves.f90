@@ -1211,10 +1211,10 @@ pure elemental subroutine vrmhd_viscosity(nu, nu_parallel, epsilon_b, b_1, b_2, 
     t17 = b_1*b_2*nu_parallel*t15*3/t4 + nu*t7*2/real(2, kind=kind(0.0_dp))
     t18 = b_1*b_3*nu_parallel*t15*3/t4 + nu*t9*2/real(2, kind=kind(0.0_dp))
     t19 = b_2*b_3*nu_parallel*t15*3/t4 + nu*t12*2/real(2, kind=kind(0.0_dp))
-    value = grad_w_11*(b_1*b_1*nu_parallel*t15*3/t4 + nu*t6*2 - nu_parallel*(t1 + t2 + t3)*t15/t4) + &
-        grad_w_12*t17 + grad_w_13*t18 + grad_w_21*t17 + grad_w_22*(b_2*b_2*nu_parallel*t15*3/t4 + nu*t11*2 - &
-        nu_parallel*(t1 + t2 + t3)*t15/t4) + grad_w_23*t19 + grad_w_31*t18 + grad_w_32*t19 + grad_w_33*(b_3* &
-        b_3*nu_parallel*t15*3/t4 + nu*t14*2 - nu_parallel*(t1 + t2 + t3)*t15/t4)
+    value = -(grad_w_11*(b_1*b_1*nu_parallel*t15*3/t4 + nu*t6*2 - nu_parallel*(t1 + t2 + t3)*t15/t4) &
+        + grad_w_12*t17 + grad_w_13*t18 + grad_w_21*t17 + grad_w_22*(b_2*b_2*nu_parallel*t15*3/t4 + nu*t11* &
+        2 - nu_parallel*(t1 + t2 + t3)*t15/t4) + grad_w_23*t19 + grad_w_31*t18 + grad_w_32*t19 + grad_w_33* &
+        (b_3*b_3*nu_parallel*t15*3/t4 + nu*t14*2 - nu_parallel*(t1 + t2 + t3)*t15/t4))
 
 end subroutine vrmhd_viscosity
 
@@ -1283,7 +1283,7 @@ pure elemental subroutine vrmhd_viscosity_jvp(nu, nu_parallel, epsilon_b, b_1, b
         t30*3/t6 + b_1*db_3*nu_parallel*t12*3/t6 + b_3*db_1*nu_parallel*t12*3/t6 + dnu*t8 + nu*t26
     t36 = b_2*b_3*dnu_parallel*t12*3/t6 - b_2*b_3*nu_parallel*t12*t24*3/t6**2 + b_2*b_3*nu_parallel* &
         t30*3/t6 + b_2*db_3*nu_parallel*t12*3/t6 + b_3*db_2*nu_parallel*t12*3/t6 + dnu*t9 + nu*t27
-    dvalue = dgrad_w_11*(nu*t2*2 + nu_parallel*t3*t12*3/t6 - nu_parallel*t13*t12/t6) + dgrad_w_12* &
+    dvalue = -(dgrad_w_11*(nu*t2*2 + nu_parallel*t3*t12*3/t6 - nu_parallel*t13*t12/t6) + dgrad_w_12* &
         t15 + dgrad_w_13*t16 + dgrad_w_21*t15 + dgrad_w_22*(nu*t10*2 + nu_parallel*t4*t12*3/t6 - &
         nu_parallel*t13*t12/t6) + dgrad_w_23*t17 + dgrad_w_31*t16 + dgrad_w_32*t17 + dgrad_w_33*(nu*t11*2 + &
         nu_parallel*t5*t12*3/t6 - nu_parallel*t13*t12/t6) + grad_w_11*(b_1*db_1*nu_parallel*t12*6/t6 + dnu* &
@@ -1295,7 +1295,7 @@ pure elemental subroutine vrmhd_viscosity_jvp(nu, nu_parallel, epsilon_b, b_1, b
         /t6) + grad_w_23*t36 + grad_w_31*t35 + grad_w_32*t36 + grad_w_33*(b_3*db_3*nu_parallel*t12*6/t6 + &
         dnu*t11*2 + dnu_parallel*t5*t12*3/t6 - dnu_parallel*t13*t12/t6 + nu*t29*2 - nu_parallel*t5*t12*t24* &
         3/t6**2 + nu_parallel*t5*t30*3/t6 + t31 - nu_parallel*t13*t30/t6 - nu_parallel*t12*(t21 + t22 + t23) &
-        /t6)
+        /t6))
 
 end subroutine vrmhd_viscosity_jvp
 
@@ -1327,76 +1327,79 @@ pure elemental subroutine vrmhd_viscosity_vjp(nu, nu_parallel, epsilon_b, b_1, b
     t3 = grad_v_22 - (grad_v_11 + grad_v_22 + grad_v_33)*1.0_dp/3.0_dp
     t4 = grad_v_33 - (grad_v_11 + grad_v_22 + grad_v_33)*1.0_dp/3.0_dp
     t5 = grad_v_12 + grad_v_21
-    t6 = bvalue*grad_w_12 + bvalue*grad_w_21
+    t6 = -bvalue*grad_w_12 - bvalue*grad_w_21
     t7 = grad_v_13 + grad_v_31
-    t8 = bvalue*grad_w_13 + bvalue*grad_w_31
+    t8 = -bvalue*grad_w_13 - bvalue*grad_w_31
     t9 = grad_v_23 + grad_v_32
-    t10 = bvalue*grad_w_23 + bvalue*grad_w_32
+    t10 = -bvalue*grad_w_23 - bvalue*grad_w_32
     t11 = b_1**2
     t12 = b_2**2
     t13 = b_3**2
     t14 = t11 + t12 + t13 + epsilon_b**2
     t15 = b_1*b_2*t5/t14 + b_1*b_3*t7/t14 + b_2*b_3*t9/t14 + t11*t2/t14 + t12*t3/t14 + t13*t4/t14
     t16 = t11 + t12 + t13
-    t17 = bvalue*grad_w_11 + bvalue*grad_w_22 + bvalue*grad_w_33
+    t17 = -bvalue*grad_w_11 - bvalue*grad_w_22 - bvalue*grad_w_33
     t18 = b_1*b_2*nu_parallel*t6*6/t14 + b_1*b_3*nu_parallel*t8*6/t14 + b_2*b_3*nu_parallel*t10*6/ &
-        t14 + bvalue*grad_w_11*nu_parallel*t11*6/t14 + bvalue*grad_w_22*nu_parallel*t12*6/t14 + bvalue* &
+        t14 - bvalue*grad_w_11*nu_parallel*t11*6/t14 - bvalue*grad_w_22*nu_parallel*t12*6/t14 - bvalue* &
         grad_w_33*nu_parallel*t13*6/t14 - nu_parallel*t16*t17*2/t14
     t19 = b_1*b_2*nu_parallel*t6*3/t14 + b_1*b_3*nu_parallel*t8*3/t14 + b_2*b_3*nu_parallel*t10*3/ &
-        t14 + bvalue*grad_w_11*nu_parallel*t11*3/t14 + bvalue*grad_w_22*nu_parallel*t12*3/t14 + bvalue* &
+        t14 - bvalue*grad_w_11*nu_parallel*t11*3/t14 - bvalue*grad_w_22*nu_parallel*t12*3/t14 - bvalue* &
         grad_w_33*nu_parallel*t13*3/t14 - nu_parallel*t16*t17/t14
     t20 = b_1*b_2*nu_parallel*t15*t6*3 + b_1*b_2*t5*t18*1.0_dp/2.0_dp + b_1*b_3*nu_parallel*t15*t8* &
-        3 + b_1*b_3*t7*t18*1.0_dp/2.0_dp + b_2*b_3*nu_parallel*t15*t10*3 + b_2*b_3*t9*t18*1.0_dp/2.0_dp + &
-        bvalue*grad_w_11*nu_parallel*t11*t15*3 + bvalue*grad_w_22*nu_parallel*t12*t15*3 + bvalue*grad_w_33* &
+        3 + b_1*b_3*t7*t18*1.0_dp/2.0_dp + b_2*b_3*nu_parallel*t15*t10*3 + b_2*b_3*t9*t18*1.0_dp/2.0_dp - &
+        bvalue*grad_w_11*nu_parallel*t11*t15*3 - bvalue*grad_w_22*nu_parallel*t12*t15*3 - bvalue*grad_w_33* &
         nu_parallel*t13*t15*3 - nu_parallel*t16*t15*t17 + t11*t2*t19 + t12*t3*t19 + t13*t4*t19
     t21 = -nu_parallel*t15*t17/t14 - t20/t14**2
-    t22 = bvalue*grad_w_11*nu*2
+    t22 = -bvalue*grad_w_11*nu*2
     t23 = t11*t19/t14
-    t24 = bvalue*grad_w_22*nu*2
-    t25 = bvalue*grad_w_33*nu*2
+    t24 = -bvalue*grad_w_22*nu*2
+    t25 = -bvalue*grad_w_33*nu*2
     t26 = t12*t19/t14
     t27 = t13*t19/t14
-    t28 = -(t22 + t24 + t25 + t23 + t26 + t27)*1.0_dp/3.0_dp
+    t28 = -(t22 - bvalue*grad_w_22*nu*2 - bvalue*grad_w_33*nu*2 + t23 + t26 + t27)*1.0_dp/3.0_dp
     t29 = b_1*b_2*t18*1.0_dp/2.0_dp/t14 + nu*t6
     t30 = b_1*b_3*t18*1.0_dp/2.0_dp/t14 + nu*t8
     t31 = b_2*b_3*t18*1.0_dp/2.0_dp/t14 + nu*t10
     t32 = -nu_parallel*t16*t15/t14
-    t33 = bvalue*(b_1*b_2*nu_parallel*t15*3/t14 + nu*t5)
-    t34 = bvalue*(b_1*b_3*nu_parallel*t15*3/t14 + nu*t7)
-    t35 = bvalue*(b_2*b_3*nu_parallel*t15*3/t14 + nu*t9)
-    gnu = bvalue*grad_w_11*t2*2 + bvalue*grad_w_22*t3*2 + bvalue*grad_w_33*t4*2 + t5*t6 + t7*t8 + &
+    t33 = -bvalue*(b_1*b_2*nu_parallel*t15*3/t14 + nu*t5)
+    t34 = -bvalue*(b_1*b_3*nu_parallel*t15*3/t14 + nu*t7)
+    t35 = -bvalue*(b_2*b_3*nu_parallel*t15*3/t14 + nu*t9)
+    gnu = -bvalue*grad_w_11*t2*2 - bvalue*grad_w_22*t3*2 - bvalue*grad_w_33*t4*2 + t5*t6 + t7*t8 + &
         t9*t10
-    gnu_parallel = b_1*b_2*t15*t6*3/t14 + b_1*b_3*t15*t8*3/t14 + b_2*b_3*t15*t10*3/t14 + bvalue* &
-        grad_w_11*t11*t15*3/t14 + bvalue*grad_w_22*t12*t15*3/t14 + bvalue*grad_w_33*t13*t15*3/t14 - t16*t15* &
+    gnu_parallel = b_1*b_2*t15*t6*3/t14 + b_1*b_3*t15*t8*3/t14 + b_2*b_3*t15*t10*3/t14 - bvalue* &
+        grad_w_11*t11*t15*3/t14 - bvalue*grad_w_22*t12*t15*3/t14 - bvalue*grad_w_33*t13*t15*3/t14 - t16*t15* &
         t17/t14
     gepsilon_b = -epsilon_b*t20*2/t14**2
-    gb_1 = b_1*bvalue*grad_w_11*nu_parallel*t15*6/t14 + b_1*t2*t19*2/t14 + b_1*t21*2 + b_2* &
+    gb_1 = -b_1*bvalue*grad_w_11*nu_parallel*t15*6/t14 + b_1*t2*t19*2/t14 + b_1*t21*2 + b_2* &
         nu_parallel*t15*t6*3/t14 + b_2*t5*t18*1.0_dp/2.0_dp/t14 + b_3*nu_parallel*t15*t8*3/t14 + b_3*t7*t18* &
         1.0_dp/2.0_dp/t14
-    gb_2 = b_1*nu_parallel*t15*t6*3/t14 + b_1*t5*t18*1.0_dp/2.0_dp/t14 + b_2*bvalue*grad_w_22* &
+    gb_2 = b_1*nu_parallel*t15*t6*3/t14 + b_1*t5*t18*1.0_dp/2.0_dp/t14 - b_2*bvalue*grad_w_22* &
         nu_parallel*t15*6/t14 + b_2*t3*t19*2/t14 + b_2*t21*2 + b_3*nu_parallel*t15*t10*3/t14 + b_3*t9*t18* &
         1.0_dp/2.0_dp/t14
     gb_3 = b_1*nu_parallel*t15*t8*3/t14 + b_1*t7*t18*1.0_dp/2.0_dp/t14 + b_2*nu_parallel*t15*t10*3/ &
-        t14 + b_2*t9*t18*1.0_dp/2.0_dp/t14 + b_3*bvalue*grad_w_33*nu_parallel*t15*6/t14 + b_3*t4*t19*2/t14 + &
+        t14 + b_2*t9*t18*1.0_dp/2.0_dp/t14 - b_3*bvalue*grad_w_33*nu_parallel*t15*6/t14 + b_3*t4*t19*2/t14 + &
         b_3*t21*2
-    ggrad_v_11 = t22 + t23 - (t22 + t24 + t25 + t23 + t26 + t27)*1.0_dp/3.0_dp
+    ggrad_v_11 = t22 + t23 - (t22 - bvalue*grad_w_22*nu*2 - bvalue*grad_w_33*nu*2 + t23 + t26 + t27) &
+        *1.0_dp/3.0_dp
     ggrad_v_21 = t29
     ggrad_v_31 = t30
     ggrad_v_12 = t29
-    ggrad_v_22 = t24 + t26 - (t22 + t24 + t25 + t23 + t26 + t27)*1.0_dp/3.0_dp
+    ggrad_v_22 = t24 + t26 - (t22 - bvalue*grad_w_22*nu*2 - bvalue*grad_w_33*nu*2 + t23 + t26 + t27) &
+        *1.0_dp/3.0_dp
     ggrad_v_32 = t31
     ggrad_v_13 = t30
     ggrad_v_23 = t31
-    ggrad_v_33 = t25 + t27 - (t22 + t24 + t25 + t23 + t26 + t27)*1.0_dp/3.0_dp
-    ggrad_w_11 = bvalue*(nu*t2*2 + nu_parallel*t11*t15*3/t14 - nu_parallel*t16*t15/t14)
+    ggrad_v_33 = t25 + t27 - (t22 - bvalue*grad_w_22*nu*2 - bvalue*grad_w_33*nu*2 + t23 + t26 + t27) &
+        *1.0_dp/3.0_dp
+    ggrad_w_11 = -bvalue*(nu*t2*2 + nu_parallel*t11*t15*3/t14 - nu_parallel*t16*t15/t14)
     ggrad_w_21 = t33
     ggrad_w_31 = t34
     ggrad_w_12 = t33
-    ggrad_w_22 = bvalue*(nu*t3*2 + nu_parallel*t12*t15*3/t14 - nu_parallel*t16*t15/t14)
+    ggrad_w_22 = -bvalue*(nu*t3*2 + nu_parallel*t12*t15*3/t14 - nu_parallel*t16*t15/t14)
     ggrad_w_32 = t35
     ggrad_w_13 = t34
     ggrad_w_23 = t35
-    ggrad_w_33 = bvalue*(nu*t4*2 + nu_parallel*t13*t15*3/t14 - nu_parallel*t16*t15/t14)
+    ggrad_w_33 = -bvalue*(nu*t4*2 + nu_parallel*t13*t15*3/t14 - nu_parallel*t16*t15/t14)
 
 end subroutine vrmhd_viscosity_vjp
 

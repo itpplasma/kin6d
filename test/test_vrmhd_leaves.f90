@@ -124,7 +124,7 @@ contains
             tensor = stress(x(1), x(2), x(3), x(4:6), g)
             if (leaf == 20) then
                 h = reshape(x(16:24), [3, 3])
-                y = sum(tensor*h)
+                y = -sum(tensor*h)
             else
                 y = sum(tensor*g)*x(16)
             end if
@@ -274,7 +274,14 @@ contains
 
     subroutine energy()
         real(dp) :: x(maxargs), v(3), b(3), j(3), js(3), eta, lorentz, ideal, loss, heat
+        real(dp) :: g(3, 3), strain(3, 3), identity(3, 3), projector(3, 3)
+        real(dp) :: bn(3), expected, rho, rd, vd(3), mi, kinetic, density, momentum
+        real(dp) :: grad_ke(3), advection, density_advection, thermal
         integer :: trial, driven
+        identity = 0
+        do trial = 1, 3
+            identity(trial, trial) = 1
+        end do
         do trial = 1, 256
             call sample(x)
             v = 2*x(1:3) - 2; b = 2*x(4:6) - 2; j = 2*x(7:9) - 2
@@ -294,6 +301,45 @@ contains
                 call close (loss + heat, 0.0_dp, &
                     'resistive loss equals electron heating')
             end do
+            call sample(x)
+            g = reshape(2*x(7:15) - 2, [3, 3])
+            strain = (g + transpose(g))/2 &
+                - identity*(g(1, 1) + g(2, 2) + g(3, 3))/3
+            bn = b/sqrt(sum(b*b) + x(3)**2)
+            projector = spread(bn, 2, 3)*spread(bn, 1, 3) &
+                - identity*sum(bn*bn)/3
+            expected = 2*x(1)*sum(strain*strain) &
+                + 3*x(2)*sum(projector*strain)**2
+            x(4:6) = b; x(7:15) = reshape(g, [9])
+            x(16:24) = x(7:15)
+            call evaluate(20, x, loss)
+            x(16) = 1
+            call evaluate(21, x, heat)
+            call close (heat, expected, 'positive strain-norm viscous heating')
+            call close (loss + heat, 0.0_dp, 'viscous force and heating cancel')
+
+            rho = x(1); rd = x(2); vd = x(4:6); mi = x(3)
+            kinetic = sum(v*v)/2
+            grad_ke = matmul(transpose(g), v)
+            x(:11) = [rho, rd, v, vd, v]
+            call evaluate(7, x, momentum)
+            x(:2) = [rd, kinetic]
+            call evaluate(6, x, density)
+            call close (momentum - density, &
+                rho*dot_product(v, vd) + rd*kinetic, 'kinetic mass chain rule')
+            x(:13) = [rho, v, reshape(g, [9])]
+            call evaluate(14, x, advection)
+            x(:7) = [rho, v, grad_ke]
+            call evaluate(11, x, density_advection)
+            call close (advection - density_advection, 0.0_dp, &
+                'kinetic advection cancels the continuity product')
+            x(:9) = [rho, mi, 1.2_dp, v, 0.0_dp, 0.0_dp, 0.0_dp]
+            call evaluate(22, x, thermal)
+            call close (thermal, 0.0_dp, 'constant thermal test has no advection')
+            x(:14) = [rho, mi, 1.7_dp, 0.3_dp, 0.1_dp, b, vd, &
+                0.0_dp, 0.0_dp, 0.0_dp]
+            call evaluate(13, x, thermal)
+            call close (thermal, 0.0_dp, 'constant thermal test has no conduction')
         end do
     end subroutine
 

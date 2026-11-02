@@ -4,6 +4,10 @@ The Cartesian leaves define the volume integrands of
 `M(U) U_dot + R(U; theta) = 0` for one singly charged ion species and
 quasineutral electrons. Electron mass is neglected in the mass density, so
 number density is `n = rho/mi` and pressure is `p = n(Te + Ti)`.
+The state `U` consists of density, velocity, vector potential, both
+temperatures and the auxiliary current. `M` is its mass operator, `R` its
+spatial residual, and `theta` denotes the closure parameters and prescribed
+source data.
 
 All quantities use SI units. Temperatures `Te`, `Ti` and reference temperature
 `T0` are energies per particle in joules, not kelvin or electronvolts;
@@ -16,6 +20,12 @@ diffusivities `D` are in m²/s; heat flux therefore includes number density.
 
 The fields are `rho, v, Te, Ti` in H1 (square-integrable values and first
 weak derivatives), and `A, J` in H(curl) (square-integrable values and curls).
+Finite-element exterior calculus (FEEC) uses the discrete de Rham complex
+`V0 -grad-> V1 -curl-> V2 -div-> V3`, with scalars in `V0`, velocity in
+`[V0]^3`, and `A, J` in `V1`. The strong discrete curl places `B` in `V2`;
+the complex identity `div curl = 0` then enforces discrete `div B = 0`.
+Here `V0` is in H1, `V1` in H(curl), `V2` in H(div) (square-integrable
+values and divergence), and `V3` in L2 (square-integrable values).
 Scalar tests are `r, qe, qi`, the velocity test is `w`, and the vector-potential
 and auxiliary-current tests are `W, K`. The leaves receive only values,
 gradients and curls at one quadrature point. `grad_v_ij = partial_j v_i`;
@@ -122,6 +132,25 @@ A prescribed drive's separate power deposition, if desired, belongs in the
 heat-source inputs. Weak Ampère's law has no boundary contribution for the
 periodic or compatible ideal-wall tests just specified.
 
+The viscous force contribution is `-tau:grad w`, so with `w = v` it cancels
+the ion heating `tau:grad v`. Both use the same stress, and its dissipation
+is `2 nu S:S + 3 nu_parallel (P:S)^2`, which is nonnegative for nonnegative
+coefficients. Pressure work cancels the two thermal compression terms.
+For constant thermal tests the volume advection and conduction terms vanish,
+while electron-ion equipartition cancels between species.
+
+For a closed system without density diffusion or sources, these balances give
+conservation of kinetic plus internal plus magnetic energy when the scalar
+space contains constants and the advection assembly preserves the kinetic
+continuity product. In the present conservative form that product is the
+density equation tested with `|v|^2/2`: subtracting it from momentum tested
+with `v` gives the kinetic-energy time derivative, and the advective integrands
+cancel pointwise. Constants alone do not ensure that `|v|^2/2` lies in a
+particular finite-element space; an assembled solver must preserve this
+product through compatible spaces or a conservative split. The tests check
+these local identities; full semidiscrete total-energy conservation remains
+an assembly gate.
+
 ## Leaf interface and verification scope
 
 The generator is [gen_vrmhd_leaves.f90](../gen/gen_vrmhd_leaves.f90); committed
@@ -136,12 +165,13 @@ weights, assembly and the physical Riesz maps separately.
 `mass_induction` uses generic vector argument names `v_dot_1:3` for `A_dot`;
 `ampere` uses `w_1:3` for `K` and `curl_w_1:3` for `curl K`. `pressure_work`
 returns `-p div w`. `transport` returns the tensor contraction for particle
-diffusion; `conduction` additionally includes `rho/mi`. The Lorentz, ideal
-induction, resistive induction, Ohmic heating, viscous heating, equipartition
-and source leaves return the signed right-hand-side terms above. In particular
-`RA` negates the sum of both induction leaves. `viscosity`, advection and
-compression leaves already have residual signs; the electron equation
-subtracts equipartition and the ion equation adds it. Scalar `source` is used
+diffusion; `conduction` additionally includes `rho/mi`. The Lorentz, viscosity,
+ideal induction, resistive induction, Ohmic heating, viscous heating,
+equipartition and source leaves return the signed right-hand-side terms above.
+`RA` negates the sum of both induction leaves, and `Rv` negates the viscosity
+and Lorentz leaves. Advection and compression leaves have residual signs;
+the electron equation subtracts equipartition and the ion equation adds it.
+Scalar `source` is used
 for mass and both external heat sources. Temperature leaves use `temperature`
 for either `Te` or `Ti`; closure leaves use the corresponding reference.
 
@@ -149,10 +179,24 @@ The `rm1` tests compare every primal with an independent numerical expression,
 all directional and coordinate derivatives with centered differences, and
 all adjoints with the Euclidean pairing. They verify a quadratic finite-
 difference error decrease, proper-rotation covariance, conduction transverse
-to `B`, stress dissipation, pressure work, and ideal/resistive energy exchange.
+to `B`, stress dissipation, pressure work, and ideal, resistive and viscous
+energy exchange.
 For weak Ampère's law, an analytic trigonometric `A` and independently
 differentiated current/test curls are integrated on a periodic cube: the
 uniform eight-point rule in each direction is exact for these degree-two
 trigonometric products, up to floating-point rounding. Regeneration is checked
 against the pinned FortSym revision. These are pointwise and weak-form gates;
 no assembled nonlinear solve or rigorous continuous certificate is claimed.
+
+## References
+
+The compatible magnetic spaces and weak-current energy pairing follow the
+structure-preserving FEEC approach of
+[Hu, Ma and Xu, Numerische Mathematik 135, 371–396 (2017)](https://doi.org/10.1007/s00211-016-0803-4)
+and [Hu, Lee and Xu, Journal of Computational Physics 436, 110284 (2021)](https://doi.org/10.1016/j.jcp.2021.110284).
+[Gawlik and Gay-Balmaz, Journal of Computational Physics 450, 110847 (2022)](https://doi.org/10.1016/j.jcp.2021.110847)
+treat energy and helicity preservation for incompressible MHD. Their
+compressible, barotropic variational formulation is instead in
+[Journal of Plasma Physics 87, 835870501 (2021)](https://doi.org/10.1017/S0022377821000842).
+These references motivate the discrete structure; they do not certify this
+two-temperature extension or its future spatial and temporal assembly.
