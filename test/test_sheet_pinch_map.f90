@@ -28,9 +28,9 @@ program test_sheet_pinch_map
         call profile()
     case ('spectrum')
         call spectrum()
-
     case default
-        error stop 'usage: test_sheet_pinch_map derivatives|linear_p2|linear_p3|nonlinear'
+        error stop 'usage: test_sheet_pinch_map derivatives|linear_p2|linear_p3|nonlinear'// &
+            ' (diagnostics, unregistered: profile|spectrum)'
     end select
 contains
     subroutine check(ok, what)
@@ -62,6 +62,18 @@ contains
         call check(o%status == 0, 'oracle')
     end subroutine
 
+    !> Converged, or stalled in the roundoff band of W (status 5) with the
+    !> gradient reduced by 1e-8. The linear-limit solves (wall amplitude
+    !> 2e-5, |g0| ~ 4e-5..1.3e-4) stall at the roundoff floor of the
+    !> gradient sums, |g| <= 5e-14 absolute (|g|/|g0| up to 1.3e-9 on the
+    !> finest P3 meshes), above rtol = 1e-12; the gate keeps a decade.
+    logical function converged(m)
+        type(sheet_slab_map_t), intent(in) :: m
+        converged = m%status == 0 .or. (m%status == 5 .and. m%gnorm <= 1e-8_dp*m%gnorm0)
+        if (.not. converged) write (*, '(a,i2,a,es10.3)') 'solve status', m%status, &
+            ' |g|/|g0|', m%gnorm/max(m%gnorm0, tiny(1.0_dp))
+    end function
+
     subroutine setup(m, o, order, ne, modes, amp)
         type(sheet_slab_map_t), intent(inout) :: m
         type(pinch_sheet_t), intent(in) :: o
@@ -76,12 +88,30 @@ contains
         call check(m%status == 0, 'init')
     end subroutine
 
+    !> Entry (i, j) of the bordered Hessian (banded node block, border c,
+    !> corner d); zero outside the band.
+    real(dp) function hentry(m, ab, c, d, i, j) result(h)
+        type(sheet_slab_map_t), intent(in) :: m
+        real(dp), intent(in) :: ab(:, :), c(:, :), d(:, :)
+        integer, intent(in) :: i, j
+        h = 0
+        if (i <= m%nb .and. j <= m%nb) then
+            if (abs(i - j) <= m%band) h = ab(2*m%band + 1 + i - j, j)
+        else if (i <= m%nb) then
+            h = c(i, j - m%nb)
+        else if (j <= m%nb) then
+            h = c(j, i - m%nb)
+        else
+            h = d(i - m%nb, j - m%nb)
+        end if
+    end function
+
     subroutine derivatives()
         type(sheet_slab_map_t) :: m
         type(pinch_sheet_t) :: o
         real(dp), allocatable :: g(:), ab(:, :), c(:, :), d(:, :), u0(:), gp(:), gm(:)
         real(dp), allocatable :: du(:), abx(:, :), cx(:, :), dx(:, :)
-        real(dp) :: wp, wm, h, err, scale, hv
+        real(dp) :: wp, wm, h, err, scale, hv, sym
         integer :: i, j
         logical :: ok
         call oracle(o, 1.0_dp)
@@ -117,7 +147,7 @@ contains
         end do
         write (*, '(a,es10.3,a,es10.3)') 'gradient vs differences:', err, ' of', scale
         call check(err < 1e-7_dp*scale, 'gradient')
-        err = 0; scale = 0
+        err = 0; scale = 0; sym = 0
         do j = 1, m%ndof
             if (g(j) == 0) cycle
             du = 0; du(j) = h
@@ -125,22 +155,16 @@ contains
             call m%assemble(u0 - du, gm, abx, cx, dx)
             do i = 1, m%ndof
                 if (g(i) == 0) cycle
-                if (i <= m%nb .and. j <= m%nb) then
-                    if (abs(i - j) > m%band) cycle
-                    hv = ab(2*m%band + 1 + i - j, j)
-                else if (i <= m%nb) then
-                    hv = c(i, j - m%nb)
-                else if (j <= m%nb) then
-                    hv = c(j, i - m%nb)
-                else
-                    hv = d(i - m%nb, j - m%nb)
-                end if
+                hv = hentry(m, ab, c, d, i, j)
                 scale = max(scale, abs(hv))
                 err = max(err, abs((gp(i) - gm(i))/(2*h) - hv))
+                sym = max(sym, abs(hv - hentry(m, ab, c, d, j, i)))
             end do
         end do
-        write (*, '(a,es10.3,a,es10.3)') 'Hessian vs differences:', err, ' of', scale
+        write (*, '(a,es10.3,a,es10.3,a,es10.3)') 'Hessian vs differences:', err, &
+            ' of', scale, ' asymmetry', sym
         call check(err < 1e-6_dp*scale, 'Hessian')
+        call check(sym < 1e-12_dp*scale, 'Hessian symmetry')
         write (*, '(a)') 'PASS derivatives'
     end subroutine
 
@@ -158,7 +182,7 @@ contains
         call setup(mp, o, order, ne, 2, eps)
         call setup(mm, o, order, ne, 2, -eps)
         call mp%solve(); call mm%solve()
-        call check(mp%status == 0 .and. mm%status == 0, 'linear solves converge')
+        call check(converged(mp) .and. converged(mm), 'linear solves converge')
         steps = max(mp%iterations, mm%iterations)
         call mp%sample(s1, s2, wt, y1p, bp)
         call mm%sample(s1, s2, wt, y1m, bm)
@@ -212,7 +236,7 @@ contains
         type(pinch_sheet_t) :: o, ol
         integer, parameter :: nl = 4
         integer :: nes(nl), i, st, j, steps
-        real(dp) :: jt(nl), jv(3), w(nl), amp, o1, o2, jtl, jzl
+        real(dp) :: jt(nl), jv(3), w(nl), amp, o1, o2, o2c, jtl, jzl
         nes = [16, 32, 64, 128]
         amp = 0.05_dp
         call oracle(o, 1.0_dp, 1.0_dp)
@@ -237,9 +261,14 @@ contains
         end do
         o1 = log(abs(jt(nl - 2) - jt(nl - 1))/abs(jt(nl - 1) - jt(nl)))/log(2.0_dp)
         o2 = log(abs(w(nl - 2) - w(nl - 1))/abs(w(nl - 1) - w(nl)))/log(2.0_dp)
-        write (*, '(a,2f7.3,a,es12.4,a,es12.4)') 'self-convergence orders:', o1, o2, &
-            ' linear:', jtl, ' nonlinear/linear - 1:', jt(nl)/jtl - 1
-        call check(o1 > 1.7_dp .and. o2 > 3.5_dp, 'nonlinear self-convergence')
+        o2c = log(abs(w(nl - 3) - w(nl - 2))/abs(w(nl - 2) - w(nl - 1)))/log(2.0_dp)
+        write (*, '(a,3f7.3,a,es12.4,a,es12.4)') 'self-convergence orders (K1, W coarse, W):', &
+            o1, o2c, o2, ' linear:', jtl, ' nonlinear/linear - 1:', jt(nl)/jtl - 1
+        ! The P2 energy converges at 2k = 4. The W orders are pre-asymptotic
+        ! and rise towards it (measured 3.20 on 16/32/64, 3.69 on 32/64/128):
+        ! gate the rise and 3.5 on the finest triple.
+        call check(o1 > 1.7_dp .and. o2 > 3.5_dp .and. o2 > o2c, &
+                   'nonlinear self-convergence')
         write (*, '(a)') 'PASS nonlinear'
     end subroutine
 

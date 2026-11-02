@@ -72,8 +72,12 @@ module kin6d_sheet_slab_map
         ! layout, state and results
         real(dp), allocatable :: vert(:), u(:)
         integer :: nnode = 0, per = 0, nb = 0, ng = 0, ndof = 0, band = 0
+        ! status: 0 converged (|g| <= rtol |g0|), 1 invalid input, 2 folded
+        ! start, 3 singular Newton system, 4 no acceptable step, 5 stalled
+        ! in the roundoff band of W with |g| > rtol |g0| (gnorm reports it),
+        ! 6 maxit reached.
         integer :: status = -1, iterations = 0
-        real(dp) :: energy = 0, gnorm = 0
+        real(dp) :: energy = 0, gnorm = 0, gnorm0 = 0 ! |g| last and at the start
     contains
         procedure, non_overridable :: init
         procedure, non_overridable :: solve
@@ -111,6 +115,8 @@ contains
                 m%vert(i) = m%lo + (m%sig - m%lo)*i/(m%ne/2)
                 m%vert(m%ne/2 + i) = m%sig + (m%hi - m%sig)*i/(m%ne/2)
             end do
+            ! Exact: interface_element and point_side compare with sig.
+            m%vert(m%ne/2) = m%sig
         else
             h = (m%hi - m%lo)/m%ne
             do i = 0, m%ne
@@ -169,6 +175,19 @@ contains
             m0 = (m%wm*m%hi - m%wp*m%lo)/(m%hi - m%lo)
         end if
     end subroutine
+
+    !> Side of the frozen profile at label s1 in element e (element side
+    !> eside from chart). Sliding: the element's side (the interface is a
+    !> duplicated vertex). C0 map: per point, so an interface inside an
+    !> element puts the frozen jump at s1 = sig; at s1 = sig itself (an
+    !> interface vertex, one-sided traces) the element's side.
+    pure integer function point_side(m, s1, eside) result(side)
+        class(sheet_slab_map_t), intent(in) :: m
+        real(dp), intent(in) :: s1
+        integer, intent(in) :: eside
+        side = eside
+        if (.not. m%slide .and. s1 /= m%sig) side = merge(1, -1, s1 > m%sig)
+    end function
 
     pure subroutine lagrange(order, t, nb, db)
         integer, intent(in) :: order
@@ -356,7 +375,7 @@ contains
                 do j = 1, m%n2
                     s2 = (j - 1)*per2/m%n2
                     call point_state(m, u, e, (xq(q) + 1)/2, s2, s1, z, jz, g2, g3, hl)
-                    call frozen(m, s1, side, b2, b3, p)
+                    call frozen(m, s1, point_side(m, s1, side), b2, b3, p)
                     call leaf_energy(m, z, b2, b3, p, [l0, l1, m0, m1], dens, jac)
                     if (jac <= 0) ok = .false.
                     wt = wq(q)*hl/2*per2/m%n2
@@ -398,7 +417,7 @@ contains
                 do j = 1, m%n2
                     s2 = (j - 1)*per2/m%n2
                     call point_state(m, u, e, (xq(q) + 1)/2, s2, s1, z, jz, g2, g3, hl)
-                    call frozen(m, s1, side, b2, b3, p)
+                    call frozen(m, s1, point_side(m, s1, side), b2, b3, p)
                     call leaf_derivatives(m, z, b2, b3, p, [l0, l1, m0, m1], g8, h8)
                     l = 0
                     do jj = 1, 8
@@ -518,6 +537,7 @@ contains
             call m%assemble(m%u, grad, ab, c, d)
             m%gnorm = norm2(grad)
             if (g0 < 0) g0 = max(m%gnorm, tiny(1.0_dp))
+            m%gnorm0 = g0
             m%iterations = it - 1
             m%energy = w
             if (m%gnorm <= m%rtol*g0 .or. m%gnorm < 1e-15_dp) then
@@ -554,7 +574,8 @@ contains
                 if (m%gnorm > 0.5_dp*gprev) then
                     stalls = stalls + 1
                     if (stalls > 1) then
-                        m%status = 0
+                        ! Stalled in the roundoff band of W above rtol.
+                        m%status = 5
                         return
                     end if
                 end if
@@ -566,6 +587,7 @@ contains
             w = wt
         end do
         m%iterations = m%maxit
+        m%status = 6
     end subroutine
 
     !> Lagrangian samples at all quadrature points: s1, s2, weights,
@@ -605,7 +627,7 @@ contains
         integer :: side
         call chart(m, e, l0, l1, m0, m1, side)
         call point_state(m, m%u, e, t, s2, s1, z, jz, g2, g3, hl)
-        call frozen(m, s1, side, b2, b3, p)
+        call frozen(m, s1, point_side(m, s1, side), b2, b3, p)
         y(2) = z(2); u22 = z(6)
         if (m%geometry == SHEET_PINCH) then
             call sheet_pinch_position(z(1), z(2), z(7), l0, l1, m0, m1, y(1))
