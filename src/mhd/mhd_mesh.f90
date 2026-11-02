@@ -423,13 +423,17 @@ contains
         integer, intent(in) :: t
         real(dp), intent(in) :: xi, eta
         real(dp), intent(out) :: x(2), jac(2, 2)
-        real(dp) :: gv(size(fm%mm%nodes, 2)), gg(2, size(fm%mm%nodes, 2))
-        integer :: k, st
+        ! Geometry order <= 3 has at most 10 nodes. Fixed-size scratch keeps
+        ! this per-sample kernel off the heap (runtime-sized automatic
+        ! arrays are heap allocated without -fstack-arrays).
+        real(dp) :: gv(10), gg(2, 10)
+        integer :: k, st, n
 
-        call evaluate_triangle_lagrange_basis(fm%gb, xi, eta, gv, gg, st)
+        n = size(fm%mm%nodes, 2)
+        call evaluate_triangle_lagrange_basis(fm%gb, xi, eta, gv(:n), gg(:, :n), st)
         x = 0.0_dp
         jac = 0.0_dp
-        do k = 1, size(gv)
+        do k = 1, n
             x = x + gv(k)*fm%mm%nodes(:, k, t)
             jac(:, 1) = jac(:, 1) + gg(1, k)*fm%mm%nodes(:, k, t)
             jac(:, 2) = jac(:, 2) + gg(2, k)*fm%mm%nodes(:, k, t)

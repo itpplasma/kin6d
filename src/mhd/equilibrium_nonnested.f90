@@ -302,11 +302,28 @@ contains
         real(dp), intent(in) :: point(3) ! (R,Z,phi)
         real(dp), intent(out) :: value(EQ_VALUES)
         integer, intent(out) :: status
-        real(dp) :: u, theta, xi, eta, radius, x(2), v2(3, field%fs%sp(2)%nloc)
-        real(dp) :: v0(3, field%fs%nl0), b(3), psi
+        ! Per-sample scratch on the stack up to 64 local dofs (runtime-sized
+        ! automatic arrays and array temporaries are heap allocated without
+        ! -fstack-arrays); larger elements fall back to the heap.
+        integer, parameter :: nstack = 64
+        real(dp), target :: v2s(3, nstack), v0s(3, nstack)
+        real(dp), allocatable, target :: v2h(:, :), v0h(:, :)
+        real(dp), pointer, contiguous :: v2(:, :), v0(:, :)
+        real(dp) :: u, theta, xi, eta, radius, x(2), b(3), psi
         complex(dp) :: bn(3), phase
-        integer :: t, n
+        integer :: t, n, j, n2, nl0
         value = 0; status = 1
+        n2 = field%fs%sp(2)%nloc; nl0 = field%fs%nl0
+        if (n2 <= nstack) then
+            v2 => v2s(:, :n2)
+        else
+            allocate (v2h(3, n2)); v2 => v2h
+        end if
+        if (nl0 <= nstack) then
+            v0 => v0s(:, :nl0)
+        else
+            allocate (v0h(3, nl0)); v0 => v0h
+        end if
         if (.not. allocated(field%b)) return
         if (.not. all(ieee_is_finite(point))) return
         call field%coordinates(field%centre, field%radial_scale, point(:2), &
@@ -320,8 +337,11 @@ contains
         if (status /= 0) return
         b = 0
         do n = 0, ubound(field%b, 2)
-            bn = matmul(v2, field%b(field%fs%sp(2)%dof(:, t), n) &
-                *field%fs%sp(2)%sgn(:, t))
+            bn = 0
+            do j = 1, n2
+                bn = bn + v2(:, j)*(field%b(field%fs%sp(2)%dof(j, t), n) &
+                    *field%fs%sp(2)%sgn(j, t))
+            end do
             phase = exp(cmplx(0.0_dp, n*point(3), dp))
             b = b + merge(1, 2, n == 0)*real(bn*phase, dp)
         end do
@@ -403,8 +423,18 @@ contains
         if (size(values, 1) /= EQ_VALUES) return
         if (size(values, 2) /= size(points, 2)) return
         if (size(statuses) /= size(points, 2)) return
-        !$omp parallel do default(shared) private(i, point) schedule(static) &
-        !$omp& if(size(points, 2) > 16)
+        ! Small batches (a field-line step samples one point) skip the
+        ! OpenMP region: opening an inactive team per sample is not free.
+        if (size(points, 2) <= 16) then
+            do i = 1, size(points, 2)
+                point = 0
+                point(:2) = points(:2, i)
+                if (size(points, 1) == 3) point(3) = points(3, i)
+                call nn_point(field, point, values(:, i), statuses(i))
+            end do
+            return
+        end if
+        !$omp parallel do default(shared) private(i, point) schedule(static)
         do i = 1, size(points, 2)
             point = 0
             point(:2) = points(:2, i)
