@@ -58,6 +58,7 @@ program test_geqdsk_adapter
     use kin6d_gs_equilibrium, only: gs_equilibrium
     use kin6d_gs_ampere_loop, only: gs_boundary_current
     use kin6d_equilibrium_readback, only: equilibrium_readback_t, read_equilibrium
+    use geqdsk_tools, only: geqdsk_t, geqdsk_read, geqdsk_write
     use kin6d_vacuum_surfaces, only: psi_grid_t, psi_grid_init, eqdsk_read, psi_eval, &
                                      profiles_of_psin, surface_t, surface_build
     implicit none
@@ -74,8 +75,11 @@ program test_geqdsk_adapter
     case ('chease')
         call get_command_argument(2, argument)
         call chease(trim(argument))
+    case ('conditioning')
+        call get_command_argument(2, argument)
+        call conditioning(trim(argument))
     case default
-        error stop 'roundtrip polarity | resolve | chease path'
+        error stop 'roundtrip polarity | resolve | chease path | conditioning path'
     end select
 contains
     subroutine require(ok, message)
@@ -148,6 +152,7 @@ contains
         call require(maxval(abs(imported%data%q - data%q)) < 1.0e-8_dp, 'signed q')
         call require(abs(imported%data%ip/ip - 1) < 1.0e-8_dp, 'SI Ip')
         call require(imported%data%bcentr*oracle%tor > 0, 'B0 polarity')
+        call cocos_flip_roundtrip(path, imported)
         maxpsi = 0; maxq = 0
         do j = 1, 33
             do i = 1, 33
@@ -180,6 +185,94 @@ contains
             call require(maxval(abs((rb%q - data%q)/data%q)) < 0.03_dp, 'resolve q')
         end if
         open (newunit=unit, file=path, status='old'); close (unit, status='delete')
+    end subroutine
+
+    subroutine cocos_flip_roundtrip(path, native)
+        ! Rewrite the exported COCOS 3 file as COCOS 1 through libneo: flux,
+        ! its derivative profiles and q change sign. Declared import as 1
+        ! must reproduce the native COCOS 3 data exactly up to rounding.
+        character(*), intent(in) :: path
+        type(geqdsk_import_t), intent(in) :: native
+        type(geqdsk_t) :: g
+        type(geqdsk_import_t) :: flipped, rejected
+        character(96) :: flipped_path
+        integer :: unit
+        flipped_path = trim(path)//'.cocos1'
+        call geqdsk_read(g, path)
+        g%simag = -g%simag; g%sibry = -g%sibry; g%psirz = -g%psirz
+        g%pprime = -g%pprime; g%ffprim = -g%ffprim; g%qpsi = -g%qpsi
+        call geqdsk_write(g, trim(flipped_path))
+        call import_geqdsk(trim(flipped_path), 3, rejected, status)
+        call require(status == 2, 'COCOS 1 file declared as 3 rejected')
+        call import_geqdsk(trim(flipped_path), 1, flipped, status)
+        call require(status == 0, 'COCOS 1 import')
+        call require(flipped%classified_cocos == 1, 'COCOS 1 classification')
+        call require(maxval(abs(flipped%original%psi + native%data%psi)) < 1.0e-12_dp, &
+                     'COCOS 1 source flux sign')
+        call require(maxval(abs(flipped%data%psi - native%data%psi)) < 1.0e-12_dp, &
+                     'COCOS 1 -> 3 flux')
+        call require(maxval(abs(flipped%data%pp - native%data%pp)) &
+                     <= 1.0e-12_dp*maxval(abs(native%data%pp)), 'COCOS 1 -> 3 pprime')
+        call require(maxval(abs(flipped%data%ff - native%data%ff)) &
+                     <= 1.0e-12_dp*max(1.0_dp, maxval(abs(native%data%ff))), &
+                     'COCOS 1 -> 3 FFprime')
+        call require(maxval(abs(flipped%data%q - native%data%q)) < 1.0e-12_dp, &
+                     'COCOS 1 -> 3 signed q')
+        call require(maxval(abs(flipped%data%f - native%data%f)) < 1.0e-12_dp, &
+                     'COCOS 1 -> 3 F')
+        call require(abs(flipped%data%ip - native%data%ip) &
+                     <= 1.0e-12_dp*abs(native%data%ip), 'COCOS 1 -> 3 Ip')
+        open (newunit=unit, file=trim(flipped_path), status='old')
+        close (unit, status='delete')
+    end subroutine
+
+    subroutine conditioning(path)
+        ! Conditioning of the prescribed-profile inverse for the CHEASE fixture:
+        ! scale p' and FF' by 1-1e-4 on the level-2 mesh of the chease mode.
+        ! The fixture lies close to a fold of this problem, so axis flux and q
+        ! respond much more strongly than the profiles. The source profiles are
+        ! consistent with the source grid to about 4e-5 (fourth-order grid GS
+        ! residual, docs in the fixture recipe); 1e-4 is that declared level.
+        ! The native/source axis-flux mismatch must lie within this amplified
+        ! profile budget; this is a candidate explanation, not an enclosure.
+        character(*), intent(in) :: path
+        real(dp), parameter :: profile_scale = 1.0e-4_dp, area = 0.0003_dp
+        type(geqdsk_import_t) :: imported
+        type(geqdsk_data_t) :: perturbed
+        type(gs_state_t) :: solved
+        type(equilibrium_state_t) :: eq
+        type(equilibrium_readback_t) :: rb
+        real(dp) :: base, amplification, range, mismatch
+        real(dp), allocatable :: rho(:)
+        integer :: i
+        call import_geqdsk(path, 1, imported, status)
+        call require(status == 0, 'CHEASE source COCOS 1')
+        rho = [(sqrt(real(i - 1, dp)/16), i=1, 17)]
+        call resolve_geqdsk(imported%data, area, solved, eq, status, &
+                            edge_pressure=0.0_dp, curved_lcfs=.true.)
+        call require(status == 0, 'CHEASE native cold solve')
+        call read_equilibrium(eq, 17, 96, rb, status, rho_grid=rho)
+        call require(status == 0, 'CHEASE native D7')
+        base = rb%psi_axis
+        range = abs(imported%data%psi_axis - imported%data%psi_edge)
+        mismatch = abs(base + imported%data%psi_edge - imported%data%psi_axis)/range
+        perturbed = imported%data
+        perturbed%pp = (1 - profile_scale)*perturbed%pp
+        perturbed%ff = (1 - profile_scale)*perturbed%ff
+        call resolve_geqdsk(perturbed, area, solved, eq, status, &
+                            edge_pressure=0.0_dp, curved_lcfs=.true.)
+        call require(status == 0, 'CHEASE perturbed native cold solve')
+        call read_equilibrium(eq, 17, 96, rb, status, rho_grid=rho)
+        call require(status == 0, 'CHEASE perturbed native D7')
+        amplification = abs(rb%psi_axis/base - 1)/profile_scale
+        print '(a,f9.2)', 'axis-flux amplification of a relative p''/FF'' change: ', &
+            amplification
+        print '(a,es14.5,a,es14.5)', 'relative native/source axis-flux mismatch ', &
+            mismatch, '; amplified profile budget ', amplification*profile_scale
+        ! A well-conditioned problem would amplify by order one.
+        call require(amplification > 10, 'CHEASE prescribed-profile fold sensitivity')
+        call require(mismatch <= amplification*profile_scale, &
+                     'CHEASE axis flux within the amplified profile budget')
     end subroutine
 
     subroutine chease(path)

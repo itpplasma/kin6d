@@ -47,5 +47,22 @@ reconstruction errors. Exceeding a grid estimate remains a printed finding;
 the interior q regression also requires 1% agreement. These comparisons do
 not establish an original CHEASE q oracle or a rigorous bound.
 
+Conditioning of the prescribed-profile re-solve. With p'(psi) and FF'(psi)
+prescribed, this fixture lies close to a fold of the native problem:
+scaling both profiles by 1-1e-4 changes the native axis flux by 0.90%
+(amplification 90 on the level-2 mesh, CTest `geqdsk_chease_conditioning`),
+and scaling them by 1+1e-4 gave no converged solution in a one-off run.
+The source itself is consistent: a fourth-order finite-difference GS residual
+of the stored grid with the stored profiles (normalized flux below 0.9) has
+relative rms 4.4e-5, and finite differences of F^2/2 and p reproduce FF' and
+p' to about 1e-4. A one-off scan also showed that resampling the LCFS with
+128 or 512 rays from the stored grid leaves the mismatch unchanged. The
+native/source axis-flux mismatch (0.39% at level 2, 0.49% at level 3) and
+the 0.6% interior q difference are therefore consistent with that data
+consistency times the measured amplification. The conditioning test gates
+the level-2 axis-flux mismatch against amplification times 1e-4. This is a
+sensitivity explanation, not an enclosure; a well-posed qualification needs
+a current- or q-constrained native re-solve.
+
 The final empty record represents the zero-length limiter array emitted by
 libneo. It is required by its formatted reader and intentionally retained.
