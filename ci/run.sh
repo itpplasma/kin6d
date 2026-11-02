@@ -146,5 +146,30 @@ ctest --test-dir build -j 4 --output-on-failure -R "^($map)$"
     ); fi
     load_job_environment
     ;;
+  islands-vacuum-ladder)
+    # The P2/P3 vacuum island width/phase ladders (slow, about 13 and 39
+    # minutes at 4 threads); the merge-queue tiers do not run slow tests.
+    export OMP_NUM_THREADS="4"
+    export OPENBLAS_NUM_THREADS="1"
+    export OMP_WAIT_POLICY="passive"
+    echo Configure
+    (
+kin6d_configure "$src" build "$root/deps" -DCMAKE_BUILD_TYPE=Release -DKIN6D_BUILD_EXTRAS=OFF -DKIN6D_CHECK_LEAN=OFF
+
+    )
+    load_job_environment
+    echo 'Build the island vacuum oracle'
+    (
+cmake --build build -j 4 --target test_island_vacuum_oracle
+
+    )
+    load_job_environment
+    echo 'Run the vacuum width/phase ladders'
+    (
+ctest --test-dir build -j 1 --output-on-failure --no-tests=error -R '^island_vacuum_width_phase_p[23]$'
+
+    )
+    load_job_environment
+    ;;
   *) echo "unknown CI tier: $tier" >&2; exit 2 ;;
 esac

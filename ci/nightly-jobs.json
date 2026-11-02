@@ -1,3 +1,4 @@
 {
-  "d8 (map, full)": "SCI_MATRIX_LANE=map SCI_MAP_SLOW=true ci/run.sh equilibrium-m6-d8"
+  "d8 (map, full)": "SCI_MATRIX_LANE=map SCI_MAP_SLOW=true ci/run.sh equilibrium-m6-d8",
+  "islands (vacuum ladder)": "ci/run.sh islands-vacuum-ladder"
 }
