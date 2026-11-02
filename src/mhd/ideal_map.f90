@@ -58,7 +58,7 @@ module kin6d_ideal_map
         sparse_factor_stats, sparse_factor_stats_t, &
         sparse_refactor, FORTSPARSE_SYM_SPD, FORTSPARSE_LU_SCALAR, &
         FORTSPARSE_NOT_POSITIVE_DEFINITE, csc_t, FORTSPARSE_SYM_INDEFINITE, &
-        sparse_inertia
+        sparse_inertia, FORTSPARSE_INERTIA_RELIABLE
     use kin6d_gs_direct, only: gs_direct_available, gs_direct_mpi_ready
     !$ use omp_lib, only: omp_get_max_threads
     implicit none
@@ -76,7 +76,7 @@ module kin6d_ideal_map
         IDEAL_MAP_BAD_INPUT = 4
     ! Factor policies of the Krylov-step trials (ideal_map_t%factor_policy).
     integer, parameter, public :: IDEAL_MAP_FACTOR_SPD_LU = 0, &
-        IDEAL_MAP_FACTOR_ADAPTIVE = 1, IDEAL_MAP_FACTOR_LDLT = 2
+        IDEAL_MAP_FACTOR_LDLT = 1
 
     ! Frozen reference data at a reference point y = (q1, q2): poloidal flux
     ! label chi and its gradient, toroidal flux density b3 (contravariant density
@@ -147,9 +147,6 @@ module kin6d_ideal_map
         ! roundoff); the pivoted LU only if it fails. SPD_LU: Cholesky, and
         ! the pivoted LU of the same matrix when a pivot is not positive (a
         ! failed Cholesky costs about as much as a successful one).
-        ! ADAPTIVE: as SPD_LU until a Cholesky fails, then the pivoted LU for
-        ! the rest of the solve (indefinite trials pay one factorisation;
-        ! later SPD trials are not retained).
         integer :: factor_policy = IDEAL_MAP_FACTOR_LDLT
         integer :: krylov_refactor = 8, krylov_max = 10
         ! Non-nested quasi-Newton steps between Hessian assemblies: after a
@@ -248,11 +245,8 @@ module kin6d_ideal_map
         ! instead (each also counts as a factorisation attempt).
         integer :: analyses = 0, factorizations = 0, lu_fallbacks = 0
         ! Krylov-step trials whose damped Hessian was not positive definite
-        ! (failed Cholesky, LDL^T inertia with a negative or zero pivot, or the
-        ! ADAPTIVE policy past its first failure).
+        ! (failed Cholesky, or LDL^T inertia that is not reliably positive).
         integer :: indefinite_trials = 0
-        ! ADAPTIVE policy state: a Cholesky failed in this solve.
-        logical, private :: spd_failed = .false.
         ! Non-nested Newton trials, CG solves with the retained factor
         ! (map%krylov_step) and their total CG iterations.
         integer :: trials = 0, krylov_solves = 0, krylov_iterations = 0
@@ -2302,10 +2296,10 @@ contains
             end do
         end associate
         ! With lu (the Krylov step, whose preconditioner must be SPD), the
-        ! SPD Cholesky is tried first. Relabelling directions can leave the
-        ! damped Hessian indefinite; a nonpositive pivot does not reject the
-        ! Newton trial: the same matrix is factored by the native supernodal
-        ! pivoted LU, which is then used for this trial only. Without lu, the
+        ! factor follows map%factor_policy. Relabelling directions can leave
+        ! the damped Hessian indefinite, which does not reject the Newton
+        ! trial: an indefinite LDL^T, or the pivoted LU of the same matrix
+        ! after a failed Cholesky, serves this trial only. Without lu, the
         ! pivoted LU is the factor (the direct-step policy).
         if (.not. krylov) then
             call factor_one(slv, done, PIVOTED_LU, info, sstatus)
@@ -2320,9 +2314,6 @@ contains
                 return
             end if
             report%lu_fallbacks = report%lu_fallbacks + 1
-        else if (map%factor_policy == IDEAL_MAP_FACTOR_ADAPTIVE .and. &
-                 report%spd_failed) then
-            report%indefinite_trials = report%indefinite_trials + 1
         else
             call factor_one(slv, done, CHOLESKY, info, sstatus)
             if (info == 0) then
@@ -2330,7 +2321,6 @@ contains
                 return
             end if
             if (sstatus%code /= FORTSPARSE_NOT_POSITIVE_DEFINITE) return
-            report%spd_failed = .true.
             report%indefinite_trials = report%indefinite_trials + 1
             report%lu_fallbacks = report%lu_fallbacks + 1
         end if
@@ -2345,7 +2335,7 @@ contains
             integer :: reliability
             call sparse_inertia(s, nneg, nzero, npos, reliability, ist)
             positive = status_ok(ist) .and. nneg == 0 .and. nzero == 0 .and. &
-                reliability == 0
+                reliability == FORTSPARSE_INERTIA_RELIABLE
         end function
 
         subroutine factor_one(s, sdone, kind, sinfo, sst)
