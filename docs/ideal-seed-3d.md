@@ -4,8 +4,11 @@
 Fourier boundary and polynomial profiles. It does not use an equilibrium's
 interior fields. `ideal_seed_3d_init` accepts all four R/Z sine/cosine channels
 in the convention `m*theta - n*nfp*phi`, with general positive `nfp`. The
-coefficient array has shape `(4,2*ntor+1,0:mpol-1)`; its second dimension is
-ordered from `-ntor` to `ntor`, and the first is `(Rcos,Rsin,Zcos,Zsin)`.
+coefficient array has shape `(4,2*ntor+1,0:mpol)`, where `mpol` is the
+largest poloidal mode number (the third bound is read from the array); its
+second dimension is ordered from `-ntor` to `ntor`, and the first is
+`(Rcos,Rsin,Zcos,Zsin)`. `nested_integer_driver` and `test_equilibrium_3d`
+use the same meaning of `mpol` and `ntor`.
 
 Profiles use normalized **toroidal** flux `s`, with ascending monomial iota
 and pressure coefficients. These differ from the poloidal-flux profiles of
@@ -75,10 +78,28 @@ not volume norms. Force and estimator effectivity remain unavailable in this
 consumer. The retained external benchmark recipe computes separate local
 force diagnostics with a stencil-halving check; it omits cell-face jumps.
 
-Run `test_equilibrium_3d TAU MPOL NTOR BOUNDARY_NODES [DEGREE]` to reproduce
-one case (`TAU=0` for Landreman, `0.4` for Issan). A physical-accuracy ladder
-must refine both the boundary/unknown Fourier resolution and the P2/P3 mesh;
-passing the coarse CI smoke does not establish 1% accuracy.
+Run `test_equilibrium_3d TAU MPOL NTOR BOUNDARY_NODES DEGREE GATE_B GATE_P
+GATE_LABEL [COARSE_MPOL COARSE_NTOR COARSE_NODES COARSE_DEGREE]` to reproduce
+one case (`TAU=0` for Landreman, `0.4` for Issan; eps=0.5, delta=1/64).
+
+[V] Observed sampled errors (GNU Fortran 14, Release, 4 OpenMP threads; the
+CTest gates are about twice these values):
+
+| CTest | mpol/ntor/nodes/P | Newton its | B rms rel | p rms rel | label max | wall |
+|---|---|---:|---:|---:|---:|---:|
+| `equilibrium_d8_landreman_3d_integer` | 2/2/8/P2 | 12 | 3.74e-2 | 9.53e-2 | 1.76e-1 | 0.2 s |
+| `equilibrium_d8_issan_3d_integer` | 2/2/8/P2 | 6 | 2.70e-2 | 7.03e-2 | 1.29e-1 | 0.1 s |
+| `equilibrium_d8_landreman_3d_p3` | 4/4/16/P3 | 28 | 1.12e-3 | 1.09e-2 | 1.62e-2 | 9 s |
+
+The P3 case also solves the coarse level and requires every error to
+decrease; the observed reduction factors are 33 (B), 8.8 (p) and 10.9
+(label). This single step refines Fourier resolution, mesh and degree
+together, so it gives no separated convergence order. The coarse cases also
+solve with reversed iota: the reversed-transform equilibrium converges, but
+its B error is 0.44 (Landreman) and 0.43 (Issan), and the test requires at
+least five times the correct-sign error. No case reaches the 1% default
+radius in all three diagnostics; the accuracy ladder (separated Fourier and
+mesh refinement, volume norms, force and estimator effectivity) is open.
 
 ## Continuation and the remaining phase gauge
 

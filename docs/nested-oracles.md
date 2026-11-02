@@ -210,11 +210,12 @@ with a larger sample count reports wall time for 1/2/4/8 threads, without
 allocation inside the point loop. `equilibrium_nested_oracle_regeneration`
 reruns the exact proofs and compares regenerated leaves.
 
-[V] The current map solver freezes an axisymmetric two-coordinate reference
-(`ideal_frozen_t%evaluate(point(2))`, `src/mhd/ideal_map.f90`). This oracle
-addition leaves that solver contract intact. Existing supported fixed-boundary
-map cases remain the solver checks; a claim of a solved eps>0 equilibrium
-requires a compatible reference/chart adapter and the D3/D4 error report.
+[V] The oracles themselves do not enter a solve. The boundary/toroidal-profile
+initializer `ideal_seed_3d_init` and the frozen-form pullback and physical
+readback `map_3d_equilibrium` (docs/ideal-seed-3d.md) supply the 3D map path.
+The integer family is admitted as the D8 cases `landreman_3d_nested` and
+`issan_3d_nonsymmetric`; only boundary, toroidal flux and profiles enter the
+initializer, and the oracle fields enter diagnostics only.
 
 ## Admission of solved-case regression tests
 
@@ -231,18 +232,14 @@ generated `rhs=2 G sqrt((1-Y**2)/(cosh(nu)**2-rho**2))` is (21), since
 these implemented definitions. The eight exact FortSym lemmas and the
 independent complex-formula test check different parts of this argument.
 
-[V] Exact-oracle tests are not fixed-boundary equilibrium solves. Three
-current interfaces prevent registering the requested non-axisymmetric
-Landreman/Issan solved-case gates as already supported:
-
-- `ideal_frozen_t%evaluate` accepts two coordinates, with a reference field
-  and pressure independent of the toroidal coordinate. Neither a 3D oracle
-  initializer nor its frozen-form pullback is supplied here.
-- `map_equilibrium` in `src/mhd/map_equilibrium.f90` returns
-  `EQ_UNAVAILABLE` for `ntor/=0` or a non-cylindrical chart.
-- `ideal_map_residual` in `src/mhd/ideal_map.f90` rejects a non-cylindrical
-  chart; the D7 labelled-field contract and its surface readback are
-  axisymmetric (`src/equilibrium/equilibrium_state.f90`).
+[V] Exact-oracle tests are not fixed-boundary equilibrium solves. The
+integer family is admitted through D8 (`equilibrium_d8_landreman_3d_integer`,
+`equilibrium_d8_issan_3d_integer`, `equilibrium_d8_landreman_3d_p3`); its
+accuracy ladder is open. The recorded sampled errors and the one refinement
+step are in docs/ideal-seed-3d.md; they are candidate diagnostics, not volume
+norms or bounds. The sheared family needs matched toroidal-profile preparation
+and is not admitted. The legacy axisymmetric `map_equilibrium` still returns
+`EQ_UNAVAILABLE` for `ntor/=0`; 3D states use `map_3d_equilibrium`.
 
 [H] A solved-case gate needs an admitted reference/chart pullback, an
 independent 3D field/surface/iota readback and a compatible force diagnostic,

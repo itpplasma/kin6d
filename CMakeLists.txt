@@ -365,13 +365,16 @@ foreach(degree RANGE 4 6)
 endforeach()
 add_executable(test_equilibrium_3d test/test_equilibrium_3d.f90)
 target_link_libraries(test_equilibrium_3d PRIVATE kin6d)
+# Arguments: TAU MPOL NTOR NODES DEGREE and B/p/label gates at about twice the
+# observed sampled errors recorded in docs/ideal-seed-3d.md; the P3 case also
+# solves the coarse P2 level and requires every error to decrease.
 add_test(NAME equilibrium_d8_landreman_3d_integer
-    COMMAND test_equilibrium_3d 0 2 2 8)
+    COMMAND test_equilibrium_3d 0 2 2 8 2 0.075 0.19 0.35)
 add_test(NAME equilibrium_d8_landreman_3d_p3
-    COMMAND test_equilibrium_3d 0 4 4 16 3)
+    COMMAND test_equilibrium_3d 0 4 4 16 3 2.3e-3 2.2e-2 3.3e-2 2 2 8 2)
 set_tests_properties(equilibrium_d8_landreman_3d_p3 PROPERTIES PROCESSORS 4 TIMEOUT 180)
 add_test(NAME equilibrium_d8_issan_3d_integer
-    COMMAND test_equilibrium_3d 0.4 2 2 8)
+    COMMAND test_equilibrium_3d 0.4 2 2 8 2 0.055 0.14 0.26)
 set_tests_properties(equilibrium_d8_landreman_3d_integer equilibrium_d8_issan_3d_integer
     PROPERTIES PROCESSORS 4 TIMEOUT 60)
 add_executable(test_map_3d_equilibrium test/test_map_3d_equilibrium.f90)
