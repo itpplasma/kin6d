@@ -1,0 +1,3 @@
+{
+  "d8 (map, full)": "SCI_MATRIX_LANE=map SCI_MAP_SLOW=true ci/run.sh equilibrium-m6-d8"
+}
