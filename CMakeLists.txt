@@ -2279,5 +2279,8 @@ endforeach()
 
 include(cmake/kin6d_estimator_benchmark.cmake)
 
+include(cmake/kin6d_stack_targets.cmake)
+kin6d_stack_targets()
+
 # Must follow the last add_executable: wraps test commands of all targets.
 include(cmake/kin6d_test_output_cap.cmake)
