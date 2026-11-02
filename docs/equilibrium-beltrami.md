@@ -58,6 +58,11 @@ For scalar mu, `dmu*d_mu` is the JVP and `dot(A_bar,dmu)` is the VJP.
 The reported bound status says `unavailable`. A discrete residual is not a
 field-error certificate.
 
+[V] An opt-in matrix-free path (`beltrami_prepare(..., mr=...)`) solves the
+same saddle system by block-preconditioned MINRES and the helicity constraint
+by Newton-MR; it has no inertia diagnostics. See
+[nonnested-newton-mr.md](nonnested-newton-mr.md#taylorbeltrami-closure-minres-on-the-saddle-system).
+
 ## Resonances and constraints
 
 [V] The solve explicitly requests native symmetric-indefinite LDLT, with AMD when
