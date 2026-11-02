@@ -1,5 +1,8 @@
 {
   "d8 (map, full)": "SCI_MATRIX_LANE=map SCI_MAP_SLOW=true ci/run.sh equilibrium-m6-d8",
   "E3.3 R2 BEM (full)": "ci/run.sh equilibrium-bem3d",
-  "islands (vacuum ladder)": "ci/run.sh islands-vacuum-ladder"
+  "islands (vacuum ladder)": "ci/run.sh islands-vacuum-ladder",
+  "equilibrium": "ci/run.sh equilibrium-equilibrium",
+  "d8 (psi)": "SCI_MATRIX_LANE=psi ci/run.sh equilibrium-m6-d8",
+  "CPU precision": "ci/run.sh cpu-precision-comparison"
 }
