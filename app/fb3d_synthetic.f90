@@ -282,7 +282,19 @@ contains
     end subroutine
 
     subroutine write_json()
-        integer :: u
+        ! axis_RZ_phi0: (R, Z) of the image of the plasma axis node (the
+        ! extremum of the frozen label chi, where b_pol = 0) at phi-hat = 0.
+        integer :: u, m
+        real(dp) :: axis_rz(2), q(3), x(3), d1(3, 3), d2(3, 3, 3), d3(3, 3, 3, 3)
+        q = 0
+        do m = 1, fb%nmode
+            ! Mode m = 1 is n = 0, 2k is cos and 2k + 1 sin of k nfp phi-hat,
+            ! all equal to 1 or 0 at phi-hat = 0.
+            if (mod(m, 2) == 1 .and. m > 1) cycle
+            q(1:2) = q(1:2) + fb%plasma%x(1:2, m, fb%plasma%axis_node)
+        end do
+        call fb%plasma%chart%jet(q, x, d1, d2, d3)
+        axis_rz = [hypot(x(1), x(2)), x(3)]
         open (newunit=u, file=trim(out)//'.json', status='replace', action='write')
         write (u, '(a)') '{'
         write (u, '(a,i0,a)') ' "status": ', solve_status, ','
@@ -302,7 +314,9 @@ contains
         write (u, '(a,f12.4,a)') ' "total_s": ', wall() - t_start, ','
         write (u, '(a,es14.6,a)') ' "f_vac": ', fb%f_vac, ','
         write (u, '(a,es14.6,a)') ' "tangential_damping": ', tangential_damping, ','
-        write (u, '(a,es14.6)') ' "sign": ', sgn
+        write (u, '(a,es14.6,a)') ' "sign": ', sgn, ','
+        write (u, '(a,2(es22.14,a))') ' "axis_RZ_phi0": [', axis_rz(1), ',', &
+            axis_rz(2), ']'
         write (u, '(a)') '}'
         close (u)
     end subroutine
