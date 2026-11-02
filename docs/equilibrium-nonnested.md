@@ -95,6 +95,28 @@ shared tangent/adjoint action. Geometry derivatives, topology changes and
 island classification derivatives are unavailable in NN1. The smooth stress,
 pressure, gauge and tracing leaves have generated primal/JVP/VJP families.
 
+An optional iterative path solves the n > 0 curl-curl system by CG with
+the Hiptmair-Xu auxiliary-space preconditioner of
+[FortFEM](https://github.com/lazy-fortran/fortfem)
+(`fortfem_hcurl_auxiliary_space`: vertex-patch Schwarz smoothing on N_k,
+the exact Whitney embedding N_1 -> N_k, and nodal gradient and
+interpolation corrections solved by smoothed aggregation). Select it with
+`field%linear_solver = NN_SOLVER_HX` after `nn_build`; the
+direct factor stays the default. Residual refinement with the same
+preconditioner precedes the unchanged 1e-9 equation-residual gate.
+On the helical-coil vacuum annulus (`benchmarks/nn1_hx`, 4 threads) CG
+needs 14 to 45 iterations per real solve at P2 and P3 for 4, 8 and 16
+radial rings: 34 to 45 for n = 1, 2 and 14 to 41 for n = 3, growing slowly
+with the ring count (P2 n = 1: 34, 40, 44). The HX and direct fields agree to
+at most 2.5e-9 relative. `nonnested_hx_vacuum_p{2,3}` checks this agreement,
+the unchanged residual gate and at most 100 iterations per Newton step on
+4 and 8 rings. In this 2D
+meridional problem the AMD-ordered Cholesky is still faster at the
+measured sizes (`benchmarks/nn1_hx`), so the path exists for large or
+matrix-free systems, not as a speed claim. At P >= 4 both solvers end at
+the rounding floor of the N_k basis (direct relative residual 5e-9 to
+8e-8 at P4, up to 1.5e-5 at P6), above the 1e-9 gate.
+
 `gen_equilibrium_core` now defines one Maxwell-stress tensor, deriving both
 the original axisymmetric D3 coefficients and the new 3D leaf from it. The
 new D3 evaluator integrates that tensor against zero-trace scalar P_k

@@ -4,8 +4,11 @@
 Fourier boundary and polynomial profiles. It does not use an equilibrium's
 interior fields. `ideal_seed_3d_init` accepts all four R/Z sine/cosine channels
 in the convention `m*theta - n*nfp*phi`, with general positive `nfp`. The
-coefficient array has shape `(4,2*ntor+1,0:mpol-1)`; its second dimension is
-ordered from `-ntor` to `ntor`, and the first is `(Rcos,Rsin,Zcos,Zsin)`.
+coefficient array has shape `(4,2*ntor+1,0:mpol)`, where `mpol` is the
+largest poloidal mode number (the third bound is read from the array); its
+second dimension is ordered from `-ntor` to `ntor`, and the first is
+`(Rcos,Rsin,Zcos,Zsin)`. `nested_integer_driver` and `test_equilibrium_3d`
+use the same meaning of `mpol` and `ntor`.
 
 Profiles use normalized **toroidal** flux `s`, with ascending monomial iota
 and pressure coefficients. These differ from the poloidal-flux profiles of
@@ -44,3 +47,57 @@ integration, JVP finite differences and VJP pairing, fixed-wall constraints,
 thread parity and folded-boundary rejection. With the pinned FortSym build,
 `ideal_seed_3d_regeneration` proves the identities and compares regenerated
 leaves against the retained source.
+
+## Native D8 consumers
+
+The case registry admits `landreman_3d_nested` and `issan_3d_nonsymmetric`
+through `run_boundary_profile_equilibrium`. The caller supplies one
+`equilibrium_3d_driver_t` containing the Fourier boundary, toroidal profiles,
+flux and independent oracle parameters. `nested_integer_driver` takes the
+boundary projection, toroidal flux and profiles from
+`nested_seed_boundary`/`nested_seed_profile` (`kin6d_nested_seed_input`); it
+does not import interior oracle fields into the initializer. Those routines
+also prepare matched sheared-family profiles, but only the integer family is
+admitted as a D8 case here. The Landreman-Paul QA fixture prescribes
+current and cannot yet be reproduced by this iota-driven consumer.
+
+`map_3d_equilibrium` retains the map and frozen form in the common field
+interface, evaluates cylindrical B, pressure and the poloidal-flux label,
+and solves the geometric inverse to sample physical points. It rejects a
+frozen form inconsistent with the candidate's quadrature data. Generated
+field/inverse leaves supply JVP/VJP, and FortSym proves all nine cofactor
+inverse identities. Sampling and reference-consistency checks use OpenMP.
+It is a candidate evaluator with unavailable continuous bounds.
+
+The D8 consumer checks the attained free reduced-gradient norm against the
+requested Newton tolerance even if the native solver reports success after
+stalling. This coefficient norm is named explicitly; it is not the D3 dual
+norm or an a posteriori state estimator. Reports additionally expose B/p
+RMS errors and (for the integer family) maximum label error on the retained
+3-by-24-by-24 grid in candidate coordinates. These are sampled diagnostics,
+not volume norms. Force and estimator effectivity remain unavailable in this
+consumer. The retained external benchmark recipe computes separate local
+force diagnostics with a stencil-halving check; it omits cell-face jumps.
+
+Run `test_equilibrium_3d TAU MPOL NTOR BOUNDARY_NODES DEGREE GATE_B GATE_P
+GATE_LABEL [COARSE_MPOL COARSE_NTOR COARSE_NODES COARSE_DEGREE]` to reproduce
+one case (`TAU=0` for Landreman, `0.4` for Issan; eps=0.5, delta=1/64).
+
+[V] Observed sampled errors (GNU Fortran 14, Release, 4 OpenMP threads; the
+CTest gates are about twice these values):
+
+| CTest | mpol/ntor/nodes/P | Newton its | B rms rel | p rms rel | label max | wall |
+|---|---|---:|---:|---:|---:|---:|
+| `equilibrium_d8_landreman_3d_integer` | 2/2/8/P2 | 12 | 3.74e-2 | 9.53e-2 | 1.76e-1 | 0.2 s |
+| `equilibrium_d8_issan_3d_integer` | 2/2/8/P2 | 6 | 2.70e-2 | 7.03e-2 | 1.29e-1 | 0.1 s |
+| `equilibrium_d8_landreman_3d_p3` | 4/4/16/P3 | 28 | 1.12e-3 | 1.09e-2 | 1.62e-2 | 9 s |
+
+The P3 case also solves the coarse level and requires every error to
+decrease; the observed reduction factors are 33 (B), 8.8 (p) and 10.9
+(label). This single step refines Fourier resolution, mesh and degree
+together, so it gives no separated convergence order. The coarse cases also
+solve with reversed iota: the reversed-transform equilibrium converges, but
+its B error is 0.44 (Landreman) and 0.43 (Issan), and the test requires at
+least five times the correct-sign error. No case reaches the 1% default
+radius in all three diagnostics; the accuracy ladder (separated Fourier and
+mesh refinement, volume norms, force and estimator effectivity) is open.

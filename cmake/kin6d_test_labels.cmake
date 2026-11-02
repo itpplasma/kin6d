@@ -525,6 +525,10 @@ foreach(degree 2 3)
     kin6d_test_labels(island_vacuum_width_phase_p${degree} slow CLASSES mhd
         TARGETS test_island_vacuum_oracle)
 endforeach()
+foreach(k 2 3)
+    kin6d_test_labels(nonnested_hx_vacuum_p${k} fast CLASSES mhd
+        TARGETS test_nonnested_hx)
+endforeach()
 kin6d_test_labels(nonnested_symbolic_derivatives_and_d3_identity fast CLASSES mhd
     TARGETS test_nonnested_leaves)
 kin6d_test_labels(nonnested_transport_manufactured_3d slow CLASSES mhd
@@ -823,3 +827,17 @@ endforeach()
 kin6d_test_labels(s0_toroidal_continuum_gap fast CLASSES mhd TARGETS test_s0_tae)
 kin6d_test_labels(s0_external_kink_rigid_growth fast CLASSES mhd
     TARGETS test_ideal_free_boundary)
+kin6d_test_labels(equilibrium_map_3d_readback fast CLASSES mhd
+    TARGETS test_map_3d_equilibrium)
+if(TARGET gen_map_3d_readback)
+    kin6d_test_labels(equilibrium_map_3d_regeneration fast CLASSES mhd
+        TARGETS gen_map_3d_readback)
+endif()
+
+kin6d_test_labels(equilibrium_d8_landreman_3d_integer fast CLASSES mhd
+    TARGETS test_equilibrium_3d)
+kin6d_test_labels(equilibrium_d8_issan_3d_integer fast CLASSES mhd
+    TARGETS test_equilibrium_3d)
+
+kin6d_test_labels(equilibrium_d8_landreman_3d_p3 fast CLASSES mhd
+    TARGETS test_equilibrium_3d)
