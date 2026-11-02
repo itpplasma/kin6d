@@ -141,7 +141,7 @@ target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 # FortFEM main (block_csc assembly, Hiptmair-Xu, rotational circulant BEM,
 # per-harmonic circulant Steklov form lazy-fortran/fortfem#144).
-set(KIN6D_FORTFEM_REVISION "c7f8cd627f96baf2cdb9db4d416dd8ac27c7902f")
+set(KIN6D_FORTFEM_REVISION "cd92d7e0aa0c95039c2305c29c67d47e75f1ebfd")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -324,7 +324,7 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
-# E3.3: the same cases through the full-surface R2 BEM exterior (12 rotated
+# E3.3: the same cases through the full-surface R2 BEM exterior (24/48 rotated
 # sectors, block-circulant assembly, per-harmonic Steklov form), compared
 # with the per-n exterior. bem3d16 is the chain=16 level only; the two-level
 # gate with its refinement checks runs nightly (ci/nightly-jobs.json).
