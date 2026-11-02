@@ -489,6 +489,8 @@ kin6d_test_labels(nonnested_vacuum_helical_coil_island slow CLASSES mhd
     TARGETS test_nonnested_vacuum)
 kin6d_test_labels(nonnested_vacuum_mode_residual_p3 fast CLASSES mhd
     TARGETS test_nonnested_vacuum_mode_residual)
+kin6d_test_labels(nonnested_vacuum_mode_residual_p3_nr32 slow CLASSES mhd
+    TARGETS test_nonnested_vacuum_mode_residual)
 kin6d_test_labels(island_diagnostics_pendulum fast CLASSES mhd
     TARGETS test_island_diagnostics)
 kin6d_test_labels(island_coil_quadrature fast CLASSES mhd
