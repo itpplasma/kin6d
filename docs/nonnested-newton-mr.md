@@ -181,9 +181,14 @@ point of the Taylor Lagrangian `L = W(A) + p.G^T A - mu (H(A) - H0)/(4 pi)`,
 whose Hessian in `(A, p, mu)` is the symmetric bordered saddle
 `[[K, G, -g], [G^T, 0, 0], [-g^T, 0, 0]]`, `g = H_s A + P h`. It is solved by
 Newton-MR from `mu0` = mid-bracket and the fixed-`mu0` state, with the line
-search on `|grad L|^2` (`MR_MERIT_GRADIENT`, new in `kin6d_newton_mr`; the
-original Newton-MR of Roosta et al. for non-minimising stationary points: every
-MINRES iterate descends `|g|^2` because MINRES residuals do not increase).
+search on the preconditioned merit `grad L^T P grad L / 2` (`MR_MERIT_GRADIENT`,
+new in `kin6d_newton_mr`, after the original Newton-MR of Roosta et al. for
+non-minimising stationary points), with the preconditioner `P` of the current
+linearisation fixed across the line search. Preconditioned MINRES does not
+increase `|H d + g|_P`, so every iterate descends that merit, slope
+`(H d)^T P g < 0`. The Euclidean `|g|^2` has no such guarantee under a
+preconditioner and mixes the A rows, the multiplier rows and the scaled mu
+row.
 The converged mu must lie in the bracket; the state is re-solved at that mu
 and published only if `|H - H0| <= tol max(1, |H0|)`. Closed walls only, as
 the factored constraint.

@@ -18,15 +18,19 @@ module kin6d_newton_mr
     ! objective change is below its roundoff band, steps are ranked by the
     ! trapezoidal change (g(x) + g(x + s)) . s / 2, as in kin6d_ideal_map.
     !
-    ! With merit = MR_MERIT_GRADIENT the line search is on |g|^2 / 2 instead
-    ! (the original Newton-MR of Roosta, Liu, Xu and Mahoney, "Newton-MR:
-    ! inexact Newton method with minimum residual sub-problem solver",
-    ! EURO J. Comput. Optim. 2022, for invex objectives). This is the merit
-    ! for stationary points that are not minimisers, e.g. the saddle points
-    ! of a Lagrangian with multipliers: every MINRES iterate d satisfies
-    ! g . H d = (|H d + g|^2 - |H d|^2 - |g|^2)/2 < 0 (MINRES residuals do not
-    ! increase), so d descends |g|^2 / 2 without any curvature condition, and
-    ! the NPC exit is not used.
+    ! With merit = MR_MERIT_GRADIENT the line search is on the preconditioned
+    ! gradient norm phi = g^T M g / 2 instead (after the original Newton-MR
+    ! of Roosta, Liu, Xu and Mahoney, "Newton-MR: inexact Newton method with
+    ! minimum residual sub-problem solver", EURO J. Comput. Optim. 2022, for
+    ! invex objectives), with M the preconditioner of the current
+    ! linearisation held fixed across the line search. This is the merit for
+    ! stationary points that are not minimisers, e.g. the saddle points of a
+    ! Lagrangian with multipliers. Preconditioned MINRES minimises the
+    ! M-norm of the residual, |H d + g|_M <= |g|_M, so every iterate after a
+    ! first step has the slope (H d)^T M g = (|H d + g|_M^2 - |H d|_M^2
+    ! - |g|_M^2)/2 < 0 without any curvature condition (the Euclidean |g|^2
+    ! has no such guarantee under a preconditioner, and mixes the A rows,
+    ! the multiplier rows and the scaled mu row). The NPC exit is not used.
     !
     ! Callbacks are type-bound procedures of caller-owned objects (no
     ! internal-procedure actuals, hence no executable-stack trampolines).
@@ -170,6 +174,7 @@ contains
             end if
             v = y/beta
             call op%apply(v, y)
+            ! Modified Gram-Schmidt: alpha after removing the r1 component.
             if (k > 1) y = y - (beta/oldb)*r1
             alpha = dot_product(v, y)
             y = y - (alpha/beta)*r2
@@ -232,15 +237,17 @@ contains
         real(dp), intent(inout) :: x(:)
         type(mr_options_t), intent(in) :: options
         type(mr_report_t), intent(out) :: report
-        real(dp), allocatable :: g(:), gt(:), d(:), xt(:), mg(:)
+        real(dp), allocatable :: g(:), gt(:), d(:), xt(:), mg(:), g_best(:)
+        real(dp), allocatable :: mg0(:), work(:)
         real(dp) :: f, ft, gnorm, g0, eta, gd, alpha, gtol, residual, t0
-        real(dp) :: f_best, alpha_best
+        real(dp) :: f_best, alpha_best, phi0, phit, phi_best
         integer :: it, info, its, st, ls, n, forward
         logical :: npc, accepted, gradient_merit
 
         n = size(x)
         gradient_merit = options%merit == MR_MERIT_GRADIENT
-        allocate (g(n), gt(n), d(n), xt(n), mg(n))
+        allocate (g(n), gt(n), d(n), xt(n), mg(n), g_best(n), mg0(n), work(n))
+        phi0 = 0; phit = 0; phi_best = 0
         report%status = MR_EVALUATION
         t0 = clock()
         call problem%evaluate(x, f, g, st)
@@ -282,9 +289,15 @@ contains
             npc = info == MR_NPC
             if (npc) report%npc_steps = report%npc_steps + 1
             if (gradient_merit) then
-                ! Slope of |g|^2 / 2 along d: g . H d (one extra product).
+                ! phi = g^T M g / 2 at the M of this linearisation; slope
+                ! (H d)^T M g (one extra product and preconditioner solve).
+                call problem%precondition(g, mg0, st)
+                if (st /= 0) then
+                    report%status = MR_BREAKDOWN; exit
+                end if
+                phi0 = 0.5_dp*dot_product(g, mg0)
                 call problem%apply(d, mg)
-                gd = dot_product(g, mg)
+                gd = dot_product(mg, mg0)
                 if (.not. gd < 0) then
                     report%status = MR_BREAKDOWN; exit
                 end if
@@ -310,9 +323,10 @@ contains
                 call problem%evaluate(xt, ft, gt, st)
                 report%evaluate_s = report%evaluate_s + clock() - t0
                 report%evaluations = report%evaluations + 1
+                if (st == 0 .and. gradient_merit) call trial_merit(st)
                 if (st == 0 .and. armijo_ok(f, ft, alpha*gd, g, gt, alpha*d)) then
                     accepted = .true.
-                    f_best = ft; alpha_best = alpha
+                    f_best = ft; alpha_best = alpha; g_best = gt; phi_best = phit
                     ! NPC: forward tracking while the Armijo rule holds.
                     if (.not. (npc .and. ls == 1)) exit
                     do forward = 1, options%max_line_search
@@ -323,9 +337,15 @@ contains
                         report%evaluate_s = report%evaluate_s + clock() - t0
                         report%evaluations = report%evaluations + 1
                         if (st /= 0) exit
+                        if (gradient_merit) call trial_merit(st)
+                        if (st /= 0) exit
                         if (.not. armijo_ok(f, ft, alpha*gd, g, gt, alpha*d)) exit
-                        if (.not. ft < f_best) exit
-                        f_best = ft; alpha_best = alpha
+                        if (gradient_merit) then
+                            if (.not. phit < phi_best) exit
+                        else
+                            if (.not. ft < f_best) exit
+                        end if
+                        f_best = ft; alpha_best = alpha; g_best = gt; phi_best = phit
                     end do
                     exit
                 end if
@@ -335,30 +355,33 @@ contains
             if (.not. accepted) then
                 report%status = MR_LINE_SEARCH; exit
             end if
+            ! The accepted trial already holds f and g at the new point.
             x = x + alpha_best*d
-            t0 = clock()
-            call problem%evaluate(x, f, g, st)
-            report%evaluate_s = report%evaluate_s + clock() - t0
-            report%evaluations = report%evaluations + 1
-            if (st /= 0 .or. .not. ieee_is_finite(f)) then
-                report%status = MR_EVALUATION; exit
-            end if
+            f = f_best; g = g_best
             gnorm = norm2(g)
             report%energy = f; report%gradient = gnorm
         end do
         if (gnorm <= gtol) report%status = MR_OK
         report%energy = f; report%gradient = gnorm
     contains
+        subroutine trial_merit(status)
+            ! phi(xt) = gt^T M gt / 2 with the M of this linearisation.
+            integer, intent(out) :: status
+            call problem%precondition(gt, work, status)
+            phit = 0.5_dp*dot_product(gt, work)
+            if (status == 0 .and. .not. ieee_is_finite(phit)) status = 1
+        end subroutine
+
         logical function armijo_ok(f0, f1, slope, g0v, g1v, s) result(ok)
             ! Armijo sufficient decrease; inside the roundoff band of f the
             ! trapezoidal change ranks the step instead. Gradient merit:
-            ! |g1|^2 <= |g0|^2 + 2 armijo slope.
+            ! phi(xt) <= phi(x) + armijo slope (phi0, phit of the host).
             real(dp), intent(in) :: f0, f1, slope, g0v(:), g1v(:), s(:)
             real(dp) :: band
             ok = .false.
             if (.not. ieee_is_finite(f1)) return
             if (gradient_merit) then
-                ok = 0.5_dp*sum(g1v**2) <= 0.5_dp*sum(g0v**2) + options%armijo*slope
+                ok = phit <= phi0 + options%armijo*slope
                 return
             end if
             band = 64*epsilon(1.0_dp)*max(abs(f0), abs(f1))

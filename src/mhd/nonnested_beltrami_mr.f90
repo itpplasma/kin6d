@@ -53,7 +53,8 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
     ! the stationary equations "fixed-mu system" and "H = H0", and the
     ! symmetric indefinite bordered Hessian [[K, G, -g], [G^T, 0, 0],
     ! [-g^T, 0, 0]], g = H_s A + P h. Its stationary point is solved by
-    ! Newton-MR with the |grad L|^2 merit (MR_MERIT_GRADIENT); the mu block
+    ! Newton-MR with the preconditioned merit grad L^T P grad L / 2
+    ! (MR_MERIT_GRADIENT, P held fixed across each line search); the mu block
     ! of the preconditioner is the Schur approximation 1 / (g^T P_A g).
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use fortfem_meridian_fourier_apply, only: meridian_fourier_op_init, &
@@ -78,6 +79,9 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
         real(dp), allocatable :: load0(:), load1(:), border(:), diag(:)
         type(nn_factor_t), allocatable :: block(:)
         logical, allocatable :: active(:)
+        ! Scratch of saddle_apply / saddle_precondition (one MINRES iteration
+        ! each): full-layout A and multiplier vectors and their images.
+        real(dp), allocatable :: wa(:), wp(:), wya(:), wyp(:)
         type(nn_factor_t) :: laplace
     contains
         procedure :: apply => saddle_apply
@@ -384,7 +388,8 @@ contains
         integer, intent(out) :: info
         type(beltrami_report_t), intent(inout) :: report
         real(dp), allocatable :: rhs(:), ya(:), yp(:), zero(:)
-        allocate (rhs(problem%n), zero(size(problem%sys%gauge_index)))
+        allocate (rhs(problem%n), zero(size(problem%sys%gauge_index)), &
+            ya(size(problem%sys%index)), yp(size(problem%sys%gauge_index)))
         zero = 0
         call saddle_core(problem%sys, problem%sys%lift, zero, mu, ya, yp, .true.)
         rhs(:problem%nf) = pack_free(problem, problem%load0 + mu*problem%load1 - ya)
@@ -414,16 +419,17 @@ contains
     subroutine saddle_core(sys, a, p, mu, ya, yp, lifted)
         ! Full-layout action: ya = (S - mu H_s) a + G p, yp = G^T a; with
         ! lifted, P C replaces H_s (the equation rows applied to the trace).
+        ! ya(size(a)) and yp(size(p)) are supplied by the caller.
         type(beltrami_system_t), intent(in) :: sys
         real(dp), intent(in) :: a(:), p(:), mu
-        real(dp), allocatable, intent(out) :: ya(:), yp(:)
+        real(dp), intent(out) :: ya(:), yp(:)
         logical, intent(in) :: lifted
-        allocate (ya(size(a)))
         call meridian_fourier_curl_curl_apply(sys%op, sys%curl, sys%curl_t, a, ya)
         if (lifted) then
             ya = ya - mu*csc_matvec(sys%helicity, a)
         else
-            ya = ya - mu*symmetric_helicity(sys, a)
+            ya = ya - (0.5_dp*mu)*(csc_matvec(sys%helicity, a) &
+                + csc_matvec(sys%helicity_t, a))
         end if
         ya(:sys%n1) = ya(:sys%n1) + csc_matvec(sys%gauge, p)
         yp = csc_matvec(sys%gauge_t, a(:sys%n1))
@@ -449,20 +455,36 @@ contains
         real(dp), intent(in) :: x(:)
         real(dp), allocatable, intent(out) :: a(:), p(:)
         allocate (a(size(problem%sys%index)), p(size(problem%sys%gauge_index)))
+        call unpack_into(problem%free, problem%nodes, x, a, p)
+    end subroutine
+
+    subroutine unpack_into(free, nodes, x, a, p)
+        ! unpack into caller storage (no allocation).
+        integer, intent(in) :: free(:), nodes(:)
+        real(dp), intent(in) :: x(:)
+        real(dp), intent(out) :: a(:), p(:)
         a = 0; p = 0
-        a(problem%free) = x(:problem%nf)
-        p(problem%nodes) = x(problem%nf + 1:problem%nf + problem%ng)
+        a(free) = x(:size(free))
+        p(nodes) = x(size(free) + 1:size(free) + size(nodes))
+    end subroutine
+
+    subroutine saddle_scratch(self)
+        class(saddle_t), intent(inout) :: self
+        if (allocated(self%wa)) return
+        allocate (self%wa(size(self%sys%index)), self%wya(size(self%sys%index)), &
+            self%wp(size(self%sys%gauge_index)), self%wyp(size(self%sys%gauge_index)))
     end subroutine
 
     subroutine saddle_apply(self, x, y)
         class(saddle_t), intent(inout) :: self
         real(dp), intent(in) :: x(:)
         real(dp), intent(out) :: y(:)
-        real(dp), allocatable :: a(:), p(:), ya(:), yp(:)
-        call unpack(self, x, a, p)
-        call saddle_core(self%sys, a, p, self%mu, ya, yp, .false.)
-        y(:self%nf) = ya(self%free)
-        y(self%nf + 1:self%nf + self%ng) = yp(self%nodes)
+        call saddle_scratch(self)
+        call unpack_into(self%free, self%nodes, x, self%wa, self%wp)
+        call saddle_core(self%sys, self%wa, self%wp, self%mu, self%wya, self%wyp, &
+            .false.)
+        y(:self%nf) = self%wya(self%free)
+        y(self%nf + 1:self%nf + self%ng) = self%wyp(self%nodes)
         if (self%bordered) then
             y(:self%nf) = y(:self%nf) - self%border*x(self%n)
             y(self%n) = -dot_product(self%border, x(:self%nf))
@@ -481,6 +503,7 @@ contains
         mu = self%mu
         if (self%bordered) mu = x(self%n)
         call unpack(self, x, a, p)
+        allocate (ya(size(a)), yp(size(p)), yl(size(a)), ypl(size(p)))
         call saddle_core(self%sys, a, p, mu, ya, yp, .false.)
         if (any(abs(self%sys%lift) > 0)) then
             ! Open wall only (the bordered problem requires a closed wall).
@@ -534,7 +557,6 @@ contains
         real(dp), intent(in) :: r(:)
         real(dp), intent(out) :: z(:)
         integer, intent(out) :: status
-        real(dp), allocatable :: a(:), p(:), za(:), zp(:)
         integer :: n, lo, hi
         status = 0
         select case (self%kind)
@@ -543,20 +565,23 @@ contains
         case (BELTRAMI_PC_JACOBI)
             z = r/self%diag; return
         end select
-        call unpack(self, r, a, p)
-        allocate (za(size(a)), zp(size(p))); za = 0; zp = 0
+        ! wa, wp: unpacked residual; wya, wyp: the block solves.
+        call saddle_scratch(self)
+        call unpack_into(self%free, self%nodes, r, self%wa, self%wp)
+        self%wya = 0; self%wyp = 0
         do n = 0, self%sys%modes
             if (.not. self%active(n)) cycle
             call mode_range(self%sys, n, lo, hi)
-            call nn_factor_solve_real(self%block(n), a(lo:hi), za(lo:hi), status)
+            call nn_factor_solve_real(self%block(n), self%wa(lo:hi), &
+                self%wya(lo:hi), status)
             if (status /= 0) return
         end do
         if (self%ng > 0) then
-            call nn_factor_solve_real(self%laplace, p, zp, status)
+            call nn_factor_solve_real(self%laplace, self%wp, self%wyp, status)
             if (status /= 0) return
         end if
-        z(:self%nf) = za(self%free)
-        z(self%nf + 1:self%nf + self%ng) = self%tau*zp(self%nodes)
+        z(:self%nf) = self%wya(self%free)
+        z(self%nf + 1:self%nf + self%ng) = self%tau*self%wyp(self%nodes)
         if (self%bordered) z(self%n) = r(self%n)/self%schur
     end subroutine
 

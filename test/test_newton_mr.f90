@@ -299,7 +299,7 @@ contains
     end subroutine
 
     subroutine saddle_checks()
-        ! Newton-MR with the |g|^2 merit on the stationary point of an
+        ! Newton-MR with the gradient merit g^T M g / 2 on the stationary point of an
         ! equality-constrained convex quartic (a saddle of the Lagrangian):
         ! KKT residual, feasibility, a Hessian with exactly m negative
         ! eigenvalues (bordered by a full-rank B), and the objective merit

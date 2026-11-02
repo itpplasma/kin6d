@@ -91,6 +91,8 @@ module kin6d_nonnested_newton_mr
         type(csc_t) :: c, ct, s
         logical, allocatable :: fixed(:)
         real(dp), allocatable :: rhs(:), diag(:)
+        ! Scratch of vacuum_apply: the free-dof projection of its input.
+        real(dp), allocatable :: xfree(:)
         type(nn_factor_t), allocatable :: block(:) ! modes 0..N
     contains
         procedure :: apply => vacuum_apply
@@ -134,7 +136,6 @@ contains
         call newton_mr_solve(problem, x, options%newton, mr%newton)
         report%iterations = mr%newton%minres_iterations
         report%info = mr%newton%status
-        call nn_mr_free(problem)
         if (mr%newton%status /= MR_OK) then
             call nn_mr_free(problem); return
         end if
@@ -191,7 +192,8 @@ contains
         g = field%f_vac*g
         energy_h = field%f_vac**2*energy_h
         problem%rhs = -csc_matvec(problem%ct, g)
-        allocate (problem%fixed(problem%nb*problem%n1))
+        allocate (problem%fixed(problem%nb*problem%n1), &
+            problem%xfree(problem%nb*problem%n1))
         do b = 0, problem%nb - 1
             problem%fixed(b*problem%n1 + 1:(b + 1)*problem%n1) = field%fs%sp(1)%bnd
             if (b > 0) problem%fixed(b*problem%n1 + problem%nn + 1:(b + 1)*problem%n1) &
@@ -410,7 +412,9 @@ contains
         class(mapped_vacuum_t), intent(inout) :: self
         real(dp), intent(in) :: x(:)
         real(dp), intent(out) :: y(:)
-        call full_apply(self, merge(0.0_dp, x, self%fixed), y)
+        self%xfree = x
+        where (self%fixed) self%xfree = 0
+        call full_apply(self, self%xfree, y)
         where (self%fixed) y = 0
     end subroutine
 
