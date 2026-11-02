@@ -45,6 +45,10 @@ kin6d_test_labels(grad_shafranov_device_selection_contract fast CLASSES equilibr
     TARGETS test_gs_device_selection)
 kin6d_test_labels(grad_shafranov_cuda_public_fixed_source fast CLASSES equilibrium
     TARGETS test_gs_cuda_public_solve)
+kin6d_test_labels(grad_shafranov_cuda_affine_picard fast CLASSES equilibrium
+    TARGETS test_gs_cuda_picard)
+kin6d_test_labels(grad_shafranov_affine_picard_cpu fast CLASSES equilibrium
+    TARGETS test_gs_cuda_picard)
 kin6d_test_labels(grad_shafranov_cuda_fixed_source_a3 fast CLASSES equilibrium
     TARGETS test_gs_cuda_fixed_source)
 kin6d_test_labels(grad_shafranov_cuda_affine_strict_audit fast CLASSES equilibrium
@@ -541,7 +545,15 @@ foreach(mapped_case point_oracles cartesian_identity cartesian_quadrature cartes
     kin6d_test_labels(nonnested_mapped_${mapped_case} fast CLASSES mhd
         TARGETS test_nonnested_mapped)
 endforeach()
+kin6d_test_labels(nonnested_newton_mr_agreement fast CLASSES mhd
+    TARGETS test_nonnested_newton_mr)
+kin6d_test_labels(nonnested_newton_mr_lumped_ladder fast CLASSES mhd
+    TARGETS test_nonnested_newton_mr)
 kin6d_test_labels(nonnested_qa_oracle_check fast CLASSES mhd TARGETS test_nonnested_qa)
+foreach(case hodge solovev beltrami shell sheet)
+    kin6d_test_labels(nonnested_force_${case} fast CLASSES mhd
+        TARGETS test_nonnested_force)
+endforeach()
 # Non-nested Beltrami equilibria (docs/nn1-mapped-3d.md). The SPEC sample tests
 # are configured only when KIN6D_BELTRAMI_SPEC_SAMPLES is set, so that executable
 # is recorded for kin6d_check_mhd directly instead of through a test.

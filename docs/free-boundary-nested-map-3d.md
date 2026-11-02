@@ -255,6 +255,20 @@ hypothesis that has not been traced.
    return bad input until then. The test-only cylindrical subclass with an
    overridden jet is gone; `ideal_fb_traces3d_helical` uses the helical-axis
    curve chart.
+   On the synthetic nfp = 3 case (`fb3d_synthetic`) the frozen iota needs the
+   sign of the coil field's rotation in the chart frame. A multi-turn trace of
+   the vacuum field in chart coordinates
+   (`benchmarks/fb3d-synthetic/iota_sign.py`) turns clockwise in (q1, q2) at
+   0.190-0.191 per unit phi-hat, while VMEC++ reports iota = +0.190-0.201
+   with theta counter-clockwise in (R, Z). The field therefore takes
+   sign = -1, the default of `fb3d_synthetic`. Newton from the disc start is
+   not yet robust. Its steps are dominated by near-null motion of single
+   plasma nodes (the axis node, or a Gamma_p node along the boundary), along
+   which the merit grows like alpha^4, until the Levenberg ladder runs out. The
+   R2 exterior is assembled with atomic accumulation of the pair blocks
+   (FortFEM `assemble_parametric_bem_p2_circulant`), so its roundoff differs
+   from run to run even at a fixed thread count, and whether a run converges
+   or stalls depends on that roundoff.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
