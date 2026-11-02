@@ -100,7 +100,8 @@ target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_streaming_moments_leaves.f90 src/continuum/streaming_moments.f90
     src/generated/kin6d_debye_sphere_leaves.f90 src/continuum/debye_sphere_reference.f90
     src/generated/kin6d_slab_oscillation_leaves.f90 src/continuum/slab_oscillation.f90
-    src/generated/kin6d_shielding_dynamics_leaves.f90 src/continuum/shielding_dynamics.f90)
+    src/generated/kin6d_shielding_dynamics_leaves.f90 src/continuum/shielding_dynamics.f90
+    src/generated/kin6d_homma_leaves.f90 src/continuum/rosenbluth_reference.f90)
 set_source_files_properties(
     src/generated/kin6d_species_leaves.f90 src/generated/kin6d_coulomb_leaves.f90
     src/generated/kin6d_ocp_leaves.f90
@@ -111,7 +112,7 @@ set_source_files_properties(
     src/generated/kin6d_slab_oscillation_leaves.f90
     src/generated/kin6d_shielding_dynamics_leaves.f90
     src/generated/kin6d_interaction_leaves.f90
-    src/generated/kin6d_cloud_leaves.f90
+    src/generated/kin6d_cloud_leaves.f90 src/generated/kin6d_homma_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 foreach(quantum_family fermi_gas quantum_fock quantum_evolution quantum_correlations
         quantum_reference_gallery classical_pair jellium_cell)
@@ -836,6 +837,11 @@ add_test(NAME poisson_and_coupled_steady_oracles COMMAND test_poisson)
 add_executable(test_fp test/test_fp.f90)
 target_link_libraries(test_fp PRIVATE kin6d)
 add_test(NAME bounded_fp_steady_oracles COMMAND test_fp)
+add_executable(test_rosenbluth_reference test/test_rosenbluth_reference.f90)
+target_link_libraries(test_rosenbluth_reference PRIVATE kin6d)
+foreach(check maxwellian l1_brute invariants slow_limit)
+    add_test(NAME rosenbluth_${check}_oracle COMMAND test_rosenbluth_reference ${check})
+endforeach()
 add_executable(test_transport test/test_transport.f90)
 target_link_libraries(test_transport PRIVATE kin6d)
 add_test(NAME general_transport_and_tangent_oracles COMMAND test_transport)
@@ -1032,7 +1038,7 @@ if(KIN6D_FORTSYM_BUILD)
             gs_coarea gs_inverse
             gs_reference_error laboratory poisson fp transport
             streaming streaming_moments
-            debye_sphere slab_oscillation shielding_dynamics interaction cloud
+            debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
             fermi_gas quantum_fock quantum_evolution quantum_correlations
             quantum_reference_gallery classical_pair coulomb species coulomb_encounter
             pp_fusion pp_fusion_eft
@@ -1102,6 +1108,12 @@ if(KIN6D_FORTSYM_BUILD)
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_ideal_field_angle_leaves.f90
         -DWORK=${CMAKE_BINARY_DIR}/ideal-field-angle-regeneration
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    add_test(NAME homma_leaves_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_homma>
+        -DLEAF=kin6d_homma_leaves.f90
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_homma_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/homma-regeneration
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME ideal_map_leaves_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_ideal_map>
         -DLEAF=kin6d_ideal_map_leaves.f90
@@ -1133,6 +1145,7 @@ add_executable(benchmark_streaming app/benchmark_streaming.f90)
 target_link_libraries(benchmark_streaming PRIVATE kin6d)
 add_executable(benchmark_streaming_comparison app/benchmark_streaming_comparison.f90)
 target_link_libraries(benchmark_streaming_comparison PRIVATE kin6d)
+add_executable(homma_reference app/homma_reference.f90)
 add_executable(benchmark_fp app/benchmark_fp.f90)
 target_link_libraries(benchmark_fp PRIVATE kin6d)
 add_executable(benchmark_transport app/benchmark_transport.f90)
@@ -1220,7 +1233,7 @@ foreach(application kin6d_demo steady_laboratory_demo transport_demo
         benchmark_streaming benchmark_streaming_comparison benchmark_fp
         benchmark_transport benchmark_slab_oscillation benchmark_fermi_gas
         benchmark_quantum_cutoff jellium_cell_demo coulomb_encounter_demo
-        benchmark_ocp ocp_oscillation_demo ocp_shielding_demo)
+        benchmark_ocp ocp_oscillation_demo ocp_shielding_demo homma_reference)
     target_link_libraries(${application} PRIVATE kin6d_io)
 endforeach()
 add_executable(test_result_io test/test_result_io.f90)
