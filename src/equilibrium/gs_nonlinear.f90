@@ -217,9 +217,13 @@ contains
         capacity = 12*size(levels) + 3
         if (state%element_order >= 2 .and. .not. smooth_law) capacity = 27
         nel = size(state%triangles, 2)
-        call triangle_duffy_quadrature(2*state%element_order + 2, x, y, w, status)
+        ! On a cell no knot level crosses, the cubic law of a degree-k flux times
+        ! two basis functions and R has degree 5k+1: the fixed pair integrates
+        ! its polynomial part exactly, so the adaptive fallback is reserved for
+        ! the 1/R factor and curved-geometry terms.
+        call triangle_duffy_quadrature(5*state%element_order + 1, x, y, w, status)
         if (status /= 0) return
-        call triangle_duffy_quadrature(2*state%element_order + 4, xh, yh, wh, status)
+        call triangle_duffy_quadrature(5*state%element_order + 3, xh, yh, wh, status)
         if (status /= 0) return
         allocate (tables%w(size(w)), tables%wh(size(wh)))
         tables%w = w; tables%wh = wh

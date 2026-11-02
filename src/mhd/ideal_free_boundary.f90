@@ -23,7 +23,12 @@ module kin6d_ideal_free_boundary
     !   outside Gamma_c: per toroidal mode n the decaying exterior field enters
     !     through the exact Steklov-Poincare map S_n of FortFEM's toroidal-mode
     !     BEM, and the coils (PF/CS at n = 0, RMP at n in nfp*Z) through their
-    !     traces on the fixed Gamma_c.
+    !     traces on the fixed Gamma_c. The per-n map needs an axisymmetric
+    !     Gamma_c, i.e. exactly the cylindrical chart. Any other chart (curve
+    !     chart, nested-map chart) gives the 3D Gamma_c = H(gamma x [0, 2 pi))
+    !     and takes the full-surface exterior (R2) through
+    !     ideal_fb_attach_exterior_3d / ideal_fb_use_bem3d and its traces
+    !     through ideal_fb_drive_traces_3d; the residual is unchanged.
     ! Equilibrium is a stationary point of
     !   L = W_p[X] - (1/mu0) E_v[X, Phi~] + lambda . C(X),
     !   E_v = int_shell |grad Phi|^2/2 + sum_m c_m [ <S_n u_m, u_m>/2
@@ -88,7 +93,7 @@ module kin6d_ideal_free_boundary
     public :: ideal_fb_newton_step
     public :: ideal_fb_slide_system, ideal_fb_hypotheses_t, ideal_fb_hypotheses
     public :: ideal_fb_hypotheses_print
-    public :: ideal_fb_attach_exterior_3d
+    public :: ideal_fb_attach_exterior_3d, ideal_fb_exterior_ready
     public :: ideal_fb_field_basis_t, ideal_fb_drive_traces, ideal_fb_full_turn_traces
     public :: ideal_fb_set_traces, ideal_fb_traces_jvp, ideal_fb_traces_vjp
     public :: ideal_fb_drive_traces_3d, ideal_fb_set_drive_3d
@@ -271,6 +276,12 @@ contains
         c = merge(2*pi, pi, m == 1)/fb%nfp
     end function
 
+    pure logical function ideal_fb_exterior_ready(fb) result(ready)
+        ! An exterior is attached: the per-n map (cylindrical chart) or R2.
+        type(ideal_fb_t), intent(in) :: fb
+        ready = allocated(fb%exterior_3d) .or. allocated(fb%s_trace)
+    end function
+
     pure integer function harmonic(m)
         integer, intent(in) :: m
         harmonic = m/2
@@ -320,12 +331,15 @@ contains
         logical, allocatable :: inside(:), in_plasma(:), in_shell(:)
         integer :: e, a, nodes, cells, nplasma, k, st, ppe
         real(dp) :: centre(2)
+        logical :: axisymmetric
         status = IDEAL_FB_BAD_INPUT
-        ! Gamma_c and its exterior BEM use cylindrical R,Z and toroidal modes.
+        ! Only the cylindrical chart itself (not an extension that overrides
+        ! its jet) has the axisymmetric Gamma_c of the per-n exterior. Every
+        ! other chart leaves the exterior to the R2 attachment.
+        axisymmetric = .false.
         select type (chart)
-        class is (cylindrical_chart_t)
-        class default
-            return
+        type is (cylindrical_chart_t)
+            axisymmetric = .true.
         end select
         fb%nloc = size(mesh%triangles, 1)
         if (fb%nloc /= 6 .and. fb%nloc /= 10) return
@@ -421,8 +435,10 @@ contains
         call shell_geometry(fb)
         call shell_laplacian(fb)
         status = IDEAL_FB_BEM_FAILED
-        call gamma_c_operators(fb, ppe, st)
-        if (st /= 0) return
+        if (axisymmetric) then
+            call gamma_c_operators(fb, ppe, st)
+            if (st /= 0) return
+        end if
         fb%np = 2*fb%nmode*fb%plasma%nodes; fb%nx = 3*fb%nmode*fb%ns; fb%nf = fb%nmode*fb%ns
         fb%n = fb%np + 2*fb%nx + fb%nf
         allocate (fb%xs(3, fb%nmode, fb%ns), fb%phi(fb%nmode, fb%ns), &
@@ -661,6 +677,7 @@ contains
         real(dp) :: ev, mins
         integer :: m, s, c
         status = IDEAL_FB_BAD_INPUT
+        if (.not. ideal_fb_exterior_ready(fb)) return
         if (size(jv) /= fb%n) return
         if (any(shape(ddrive) /= [fb%nt, fb%nmode])) return
         if (any(shape(dload) /= [fb%nt, fb%nmode])) return
@@ -710,6 +727,7 @@ contains
         real(dp) :: ev, mins, cm
         integer :: m, s, c
         status = IDEAL_FB_BAD_INPUT
+        if (.not. ideal_fb_exterior_ready(fb)) return
         if (size(v) /= fb%n) return
         if (any(shape(drive_bar) /= [fb%nt, fb%nmode])) return
         if (any(shape(load_bar) /= [fb%nt, fb%nmode])) return
@@ -1086,6 +1104,9 @@ contains
         real(dp) :: dw(0:3), wv(0:3)
         integer :: nf, i, q, j, k, col, b, p, nl, nd
         status = IDEAL_FB_BAD_INPUT
+        ! Meridional (R, Z) sampling: axisymmetric Gamma_c only. Other charts
+        ! use ideal_fb_drive_traces_3d.
+        if (.not. allocated(fb%s_trace)) return
         nf = basis%nfield()
         if (nf < 1 .or. size(circulation) /= nf) return
         if (any(shape(drive) /= [fb%nt, fb%nmode, nf])) return
@@ -1555,6 +1576,8 @@ contains
         real(dp), allocatable :: cx(:, :, :), exterior_load(:)
         real(dp) :: wp, ev, ec, minp, mins, cm
         integer :: st, s, m, c, p, a, k
+        status = IDEAL_FB_BAD_INPUT
+        if (.not. ideal_fb_exterior_ready(fb)) return
         allocate (gfull(fb%plasma%ndof), gx(3, fb%nmode, fb%ns), gf(fb%nmode, fb%ns), &
             res(3, fb%nmode, fb%ns), cx(3, fb%nmode, fb%ns))
         status = IDEAL_FB_OK
@@ -2138,6 +2161,7 @@ contains
         report%step = 0
         status = IDEAL_FB_BAD_INPUT
         if (max_iterations < 0) return
+        if (.not. ideal_fb_exterior_ready(fb)) return
         kz = 0
         nslide = size(fb%slide, 3)
         allocate (sol(fb%n + nslide))
@@ -2827,6 +2851,7 @@ contains
         status = IDEAL_FB_SOLVE_FAILED
         nslide = size(fb%slide, 3)
         allocate (grad(fb%n), du(fb%n), sol(fb%n + nslide))
+        if (.not. ideal_fb_exterior_ready(fb)) return
         call ideal_fb_gradient(fb, grad, st)
         call ideal_fb_hessian(fb, rowptr, colidx, val)
         call ideal_fb_slide_system(fb, rowptr, colidx, val, plasma_diagonal_mean(fb, &
@@ -2895,6 +2920,7 @@ contains
         status = IDEAL_FB_BAD_INPUT
         np_m = 0
         if (allocated(fb%exterior_3d)) return
+        if (.not. allocated(fb%s_trace)) return
         if (m < 1 .or. m > fb%nmode) return
         if (fb%nmode > 1) then
             if (maxval(abs(fb%plasma%x(:, 2:, :))) > 1.0e-10_dp) return
@@ -3450,6 +3476,7 @@ contains
         status = IDEAL_FB_BAD_INPUT
         h%status = status
         if (allocated(fb%exterior_3d)) return
+        if (.not. allocated(fb%s_trace)) return
         if (fb%nf > limit .or. fb%np > limit) return
         status = IDEAL_FB_SOLVE_FAILED
         nl = size(fb%slide, 3)
@@ -3745,6 +3772,7 @@ contains
         integer :: i, p, nnz, st
         status = IDEAL_FB_SOLVE_FAILED
         allocate (grad(fb%n), du(nb))
+        if (.not. ideal_fb_exterior_ready(fb)) return
         call ideal_fb_gradient(fb, grad, st)
         call ideal_fb_hessian(fb, rowptr, colidx, val)
         ! fortsparse takes CSC: the CSR rows of the transposed block (rows
@@ -3783,7 +3811,8 @@ contains
 
     subroutine ideal_fb_shell_field(fb, e, xi, phi_hat, x, b, status)
         ! Physical point x = (R, Z, phi) and cylindrical field (B_R, B_phi,
-        ! B_Z) of the vacuum potential at master point xi of shell cell e.
+        ! B_Z) of the vacuum potential at master point xi of shell cell e,
+        ! for any chart (cylindrical: x = q exactly, as before).
         type(ideal_fb_t), intent(in) :: fb
         integer, intent(in) :: e
         real(dp), intent(in) :: xi(2), phi_hat
@@ -3827,10 +3856,22 @@ contains
         if (.not. abs(det) > 0) return
         ! Cartesian B = DX^{-T} g, then cylindrical components at q.
         bc = matmul(transpose(inv), gg)
-        b(1) = bc(1)*cos(q(3)) + bc(2)*sin(q(3))
-        b(2) = -bc(1)*sin(q(3)) + bc(2)*cos(q(3))
-        b(3) = bc(3)
-        x = q([1, 2, 3])
+        select type (chart => fb%plasma%chart)
+        type is (cylindrical_chart_t)
+            b(1) = bc(1)*cos(q(3)) + bc(2)*sin(q(3))
+            b(2) = -bc(1)*sin(q(3)) + bc(2)*cos(q(3))
+            b(3) = bc(3)
+            x = q([1, 2, 3])
+        class default
+            ! Any other chart: cylindrical coordinates of the Cartesian point,
+            ! the angle unwrapped to the branch nearest the chart angle q3.
+            x(3) = atan2(cart(2), cart(1))
+            x(3) = x(3) + 2*pi*nint((q(3) - x(3))/(2*pi))
+            x(1) = hypot(cart(1), cart(2)); x(2) = cart(3)
+            b(1) = bc(1)*cos(x(3)) + bc(2)*sin(x(3))
+            b(2) = -bc(1)*sin(x(3)) + bc(2)*cos(x(3))
+            b(3) = bc(3)
+        end select
         status = 0
     end subroutine
 

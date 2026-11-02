@@ -793,6 +793,7 @@ mode. The staged path is:
 6. weak/current-sheet ideal MHD with the function-space contract of
    [equilibria-inference.md](docs/equilibria-inference.md#solution-space-contract)
    (broken/interface FEEC, B in H(div), interface-aware J = curl B);
+   formulation in [current-sheet-equilibrium.md](docs/current-sheet-equilibrium.md);
 7. native MRxMHD, with SPEC/SPECTRE as comparators;
 8. a native nested-surface fast path: a spectral/surface representation of the
    same physics residual, not only VMEC/DESC/GVEC imports;
