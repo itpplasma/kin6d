@@ -886,3 +886,7 @@ kin6d_test_labels(grad_shafranov_rm0_symbolic fast CLASSES equilibrium
 if(TEST grad_shafranov_rm0_symbolic)
     set_property(TEST grad_shafranov_rm0_symbolic APPEND PROPERTY LABELS rm0)
 endif()
+foreach(gate derivatives physics energy covariance)
+    kin6d_test_labels(vrmhd_${gate} fast CLASSES mhd TARGETS test_vrmhd_leaves)
+endforeach()
+kin6d_test_labels(vrmhd_leaf_regeneration fast CLASSES mhd TARGETS gen_vrmhd_leaves)

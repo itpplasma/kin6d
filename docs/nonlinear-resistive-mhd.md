@@ -1,6 +1,8 @@
 # Nonlinear visco-resistive MHD: general 3D and symmetry-reduced 2D
 
-Status: design, decided 2026-11-02. RM0 fixed-boundary symmetry-reduced GS is implemented; the nonlinear MHD residual is not. This document owns the
+Status: design, decided 2026-11-02. Implemented: the RM0 fixed-boundary
+symmetry-reduced GS and the RM1a pointwise weak-form leaves; assembled nonlinear
+residuals and solvers remain milestones. This document owns the
 nonlinear visco-resistive part of [R12](../ROADMAP.md#r12--equilibrium-mhdkinetic-mhd-vacuum-and-circuits)
 item 12; Hall/XMHD stays with R12. Scope: tokamak and stellarator core MHD on
 resistive time scales.
@@ -72,7 +74,9 @@ vectors, and no global toroidal angle in the residual or gauge:
 - mass density rho with parallel and perpendicular diffusion and a source;
 - velocity v with isotropic viscosity nu(T), optional parallel viscosity,
   Lorentz force J x B and pressure gradient;
-- vector potential A in H(curl), B = curl A, J = curl B/mu0, Ohm's law
+- vector potential A and auxiliary current J in H(curl), B = curl A,
+  with J defined by weak Ampère's law (J = curl B/mu0 for smooth fields),
+  Ohm's law
   E = -v x B + eta(T)(J - J_s); the gauge condition is chart-free (the
   [NN2](equilibrium-nonnested-nn2.md) gauge, which is written through phi,
   is generalised before reuse);
@@ -84,7 +88,7 @@ vectors, and no global toroidal angle in the residual or gauge:
 |---|---|
 | U, theta | state vector, parameters |
 | J_s | prescribed non-inductive current source |
-| b | B/abs(B) |
+| b | B/sqrt(B.B + epsilon_B²), with model parameter epsilon_B > 0 |
 | eta, nu | resistivity (Ohm m, SI) and dynamic viscosity |
 | tau_A, tau_R, tau_H | Alfven, resistive and poloidal Alfven times |
 | S | tau_R/tau_A |
@@ -102,6 +106,10 @@ Every pointwise leaf (weak-form integrands for each field, transport tensors,
 eta(T), nu(T), chi(T)) has one FortSym definition. Primal, JVP and VJP come
 from it. The Jacobian is applied, not assembled, except for the blocks a
 preconditioner factorises.
+
+The mixed-current volume integrands, units, source convention, mass terms
+and energy-exchange identities are specified in
+[the implemented weak forms](vrmhd-weak-form.md).
 
 ## Representations
 
