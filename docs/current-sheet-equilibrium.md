@@ -313,8 +313,59 @@ Open, with the known obstruction:
 
 ## 9. Implementation status
 
-Stage 0 (this page). Stages 1 and 2 add their modules, tests and measured
-tables here; the stage-2 slab-map tests (current_sheet_slab_map_floor and
-current_sheet_slab_map_linear_*) replace the §3 prototype table.
+Stage 0 (this page). Stage 1: `src/mhd/current_sheet_oracles.f90` with
+`test/test_current_sheet_oracles.f90` (§5.1, §5.2).
+
+Stage 2: `src/mhd/sheet_slab_map.f90` (`kin6d_sheet_slab_map`), the
+nonlinear frozen-in map of §4 for the slab and the helical screw pinch,
+with pointwise energy, gradient and Hessian leaves from
+`gen/gen_current_sheet.f90`; tests `test/test_sheet_slab_map.f90` and
+`test/test_sheet_pinch_map.f90`. All values below are candidate
+diagnostics (no enclosure). The linear limit is the central difference in
+the wall amplitude (±2e-5) against the stage-1 oracles; L2 errors are
+relative, K1 is the sheet-current amplitude. The solves at amplitude
+2e-5 stop at the roundoff floor of the gradient sums (|g| <= 5e-14,
+<= 1.3e-9 |g0|; status 5, accepted by the tests only below 1e-8 |g0|).
+
+Slab, jump (Δ+, Δ−) = (0.6, 0.4) with pressure jump, sliding interface
+(`current_sheet_slab_map_linear_*`):
+
+| P | ne | L2(ξ) | L2(B) | K1 | orders ξ, B, K1 (finest) |
+|---|---|---|---|---|---|
+| 2 | 8/16/32/64 | 2.46e-3 … 4.96e-6 | 1.10e-2 … 1.76e-4 | 1.20e-1 … 3.00e-3 | 3.02, 2.00, 1.91 |
+| 3 | 8 … 128 | 2.18e-4 … 8.45e-9 | 9.27e-4 … 3.58e-7 | 2.10e-2 … 1.43e-5 | 3.85, 2.94, 2.87 |
+
+Floors (`current_sheet_slab_map_floor`, P2, 8 … 64 elements, L2(B) and its
+finest order). These replace the §3 prototype table:
+
+| case | L2(B) at 64 | order |
+|---|---|---|
+| sliding interface (reference) | 1.76e-4 | 2.00 |
+| C0 map, interface node, asymmetric jump | 5.16e-3 | 0.51 |
+| C0 map, interface inside an element (shift 0.37) | 4.03e-3 | 0.58 |
+| continuous ι (Hahm–Kulsrud), sliding | 1.09e-2 | 0.51 |
+| C0 map, symmetric jump 0.5/0.5 (`_symmetric`) | 1.73e-4 | 2.00 |
+
+The symmetric jump needs no slip (ξ0 = 0), so the C0 map converges at
+design order there; an asymmetric jump without sliding, or continuous ι,
+gives the h^(1/2) floor of §3 in the field, independent of interface
+alignment.
+
+Double limit h ~ Δ → 0 (`_shielding_limit`, P3, ne = 64 … 512, jumps
+(Δ, Δ/2), Δ = 0.4 … 0.05): the map K1 follows the oracle to within 5% of
+the oracle's distance to the continuous-ι shielding current, which falls
+at rates 1.17, 1.16, 1.13 (O(Δ)).
+
+Finite amplitude (`_nonlinear`, slab P2, wall amplitude 0.1, 6 modes,
+8 … 128 elements): self-convergence orders 1.90 (K1) and 3.99 (W);
+K1 differs from the linear value by 2.3%. Screw pinch (m, n) = (2, 1),
+jump 0.5, wall amplitude 0.05 by continuation, 16 … 128 elements: K1 order
+2.05, W orders 3.20 then 3.69 (rising toward 2k = 4; gated > 3.5 and
+rising); nonlinear/linear K1 − 1 = −3.6e-3. Pinch linear limit
+(`current_sheet_pinch_map_linear_*`): P2 finest orders 3.04, 2.00, 1.89,
+P3 3.81, 2.90, 2.85 (ξ_r, B, K).
+
+Not done: the margin, profile and spectrum diagnostics are unregistered
+study modes; the wall amplitude at which a map folds is not gated.
 
 Chris&AI
