@@ -12,6 +12,16 @@ kin6d_test_labels(ideal_fb_circuits_derivatives fast CLASSES mhd
     TARGETS test_ideal_fb_circuits)
 kin6d_test_labels(ideal_fb_circuits_exterior3d fast CLASSES mhd
     TARGETS test_ideal_fb_circuits)
+kin6d_test_labels(ideal_fb_traces3d_axisymmetric fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_traces3d_helical fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_traces3d_makegrid fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_traces3d_curve_hessian fast CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
+kin6d_test_labels(ideal_fb_exterior3d_periodic slow CLASSES mhd
+    TARGETS test_ideal_fb_traces3d)
 kin6d_test_labels(ideal_fb_landreman_axisymmetric_circuits fast CLASSES mhd
     TARGETS test_landreman_free_boundary)
 kin6d_test_labels(ideal_fb_landreman_helical_circuits fast CLASSES mhd
@@ -152,6 +162,10 @@ kin6d_test_labels(ideal_map_n0_seed_nested_a3_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(ideal_map_n0_seed_nested_shaped_p3 slow CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
+kin6d_test_labels(ideal_map_parallel_mass fast CLASSES mhd
+    TARGETS test_ideal_map_parallel)
+kin6d_test_labels(ideal_map_parallel_damping_p2 fast CLASSES mhd
+    TARGETS test_ideal_map_parallel)
 kin6d_test_labels(ideal_map_n0_normalised_residual_a3_p2 fast CLASSES mhd
     TARGETS test_ideal_map_axisymmetric)
 kin6d_test_labels(gs_coils_independent_oracles fast CLASSES equilibrium
@@ -743,3 +757,6 @@ kin6d_test_labels(island_provider_tangent_p2 slow CLASSES mhd
     TARGETS test_island_provider)
 kin6d_test_labels(island_provider_nested_p2 fast CLASSES mhd
     TARGETS test_island_provider)
+kin6d_test_labels(s0_toroidal_continuum_gap fast CLASSES mhd TARGETS test_s0_tae)
+kin6d_test_labels(s0_external_kink_rigid_growth fast CLASSES mhd
+    TARGETS test_ideal_free_boundary)
