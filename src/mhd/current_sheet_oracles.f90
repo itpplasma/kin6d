@@ -102,11 +102,12 @@ contains
         dpsi = side*dpsidt
         f = s%k*s%by(x, side)
         fp = s%k*s%b0/s%a
-        if (f /= 0) then
+        if (.not. (s%continuous .and. x == 0) .and. f /= 0) then
             xi = psi/f
             dxi = (dpsi*f - psi*fp)/f**2
         else
-            ! psi(0) = 0 with F(0) = 0: l'Hopital, psi'' = k^2 psi = 0 at 0.
+            ! Continuous case at x = 0: psi(0) = 0 with F(0) = 0, l'Hopital,
+            ! psi'' = k^2 psi = 0 at 0.
             xi = dpsi/fp
             d2 = s%k**2*psi
             dxi = d2/(2*fp)
@@ -222,7 +223,9 @@ contains
         chi = a*i0 + b*k0
         dchi = kap*(a*ip + b*kp)
         f = s%f(r, side)
-        if (f /= 0) then
+        ! Continuous case at the rational: init admits |F(sigma)| up to
+        ! 1e-12 |m c/sigma^2|, so take the limit there, not -dchi/f.
+        if (.not. (s%continuous .and. r == s%sigma) .and. f /= 0) then
             xi = -dchi/f
         else
             fp = -2*s%m*merge(s%cp, s%cm, side > 0)/r**3
