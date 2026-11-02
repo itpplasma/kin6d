@@ -11,7 +11,7 @@ program gen_current_sheet
     ! and derivative gd at y = X2; the caller applies the chain rule in X2.
     ! z = (X1, X2, dX1/ds1, dX2/ds1, dX1/ds2, dX2/ds2, gv, gd).
     use fortsym_arena, only: arena_t
-    use fortsym_expr, only: expr_t, sym, num, sinh, cosh, sin, cos, operator(+), operator(-), &
+    use fortsym_expr, only: expr_t, sym, sinh, cosh, sin, cos, operator(+), operator(-), &
         operator(*), operator(/)
     use fortsym_diff, only: diff
     use kin6d_symbolic_ideal, only: frozen_energy
@@ -48,7 +48,7 @@ program gen_current_sheet
     b2 = sym(arena, 'b2'); b3 = sym(arena, 'b3'); p = sym(arena, 'p')
     l0 = sym(arena, 'l0'); l1 = sym(arena, 'l1')
     m0 = sym(arena, 'm0'); m1 = sym(arena, 'm1')
-    zero = num(arena, 0)
+    zero = 0*z(1)
     dphi(1, 1) = 1 + l1*z(7) + m1*cos(k*z(2))
     dphi(1, 2) = (l0 + l1*z(1))*z(8) - (m0 + m1*z(1))*k*sin(k*z(2))
     dphi(2, 1) = zero; dphi(2, 2) = 1 + zero
