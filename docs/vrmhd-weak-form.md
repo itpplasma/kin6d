@@ -74,7 +74,53 @@ Volume integration uses `dx`. These forms use periodic boundaries; they also
 apply to a stationary ideal conducting wall with vanishing tangential electric
 field, compatible zero-tangential tests for `A`, and no flow, diffusive or
 thermal flux through the wall. Nonzero boundary data require their surface
-terms and work ledger. Gauge fixing and symmetry reduction are separate work.
+terms and work ledger.
+
+With outward unit normal `N`, the boundary residual terms are
+
+```
+Rrho_boundary = (rho v - D grad rho).N r
+Rv_boundary   = [rho v (v.N) + p N - tau N].w
+RJ_boundary   = -(N cross B).K
+RTs_boundary  = [3/2 n Ts v - n Ks grad Ts].N qs.
+```
+
+Induction has no integration-by-parts boundary term. A no-slip ideal wall
+sets `v=0`, fixes `N cross A`, and fixes scalar Dirichlet values, so their
+tests vanish at the boundary. Auxiliary-current tests remain unrestricted:
+the Ampere surface term is required when the magnetic tangential trace is
+nonzero. Manufactured nonzero Dirichlet data use the same trace lifting.
+These prescribed ports need their work ledger before a closed-system
+energy statement applies.
+
+For a stationary solve, the mixed Coulomb gauge adds
+`integral grad(lambda).W dx` to induction and
+`integral A.grad(q_lambda) dx = 0`. Multiplier `lambda` and test
+`q_lambda` belong to H1 with zero boundary trace. A compatible continuous
+physical solution has `lambda=0`. The time-dependent problem retains Weyl
+gauge; its A mass row removes the stationary gradient kernel.
+
+Two driven-state conventions are specified. The current-source convention
+prescribes `Js` and zero loop voltage, as in JOREK comparisons. The
+loop-voltage convention prescribes voltage `V` and an invariant, closed,
+non-exact one-form `h` with loop integral one. Rotation uses
+`h=grad(phi)/(2 pi)`; translation and screw symmetry use `h=grad(z)/L_z`,
+with axial period `L_z`. In Weyl gauge set `A=Atilde-t V h`, giving
+
+```
+B = curl Atilde
+RA = [Atilde_dot - V h - v cross B + eta (J - Js)].W.
+```
+
+Thus `Js=J` gives a stationary Ohmic state at `V=0`; with `Js=0` it
+requires `eta J=V h`. Voltage drive supplies magnetic power
+`integral V h.J dx` without changing the specified Ohmic heating term.
+The screw field `xi/|xi|^2` has nonzero curl and cannot replace `h`.
+Discrete harmonic coefficients are edge integrals of the multivalued
+coordinate divided by its period, and their discrete curl must vanish to
+roundoff. A projection with a small nonzero curl is insufficient. The
+section wrapper's implementation and remaining harmonic-drive construction
+are stated in [the section contract](vrmhd-section.md).
 
 ## Transport and closures
 

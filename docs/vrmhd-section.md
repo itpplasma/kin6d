@@ -4,8 +4,8 @@ The invariant section assembler evaluates the mixed-current volume residual,
 its matrix-free state Jacobian action, and the conservative mass terms of
 [the Cartesian weak form](vrmhd-weak-form.md). It accepts the rotation,
 translation and screw cases of `gs_symmetry_t`. This is a candidate operator;
-boundary elimination, a stationary gauge, nonlinear solves and continuous
-error certificates are not supplied.
+the stationary wrapper adds fixed boundary values and a mixed Coulomb gauge.
+Continuous error certificates are not supplied.
 
 ## Representation and measure
 
@@ -62,13 +62,56 @@ periodic assembly must supply its trace constraints and any surface terms.
 In particular, unrestricted auxiliary-current tests need the Ampere boundary
 term if the magnetic tangential trace is nonzero.
 
-The induction equation uses Weyl gauge. A stationary solve must separately
-remove its gradient nullspace. A nonzero prescribed Ohmic field
-`E_loop xi/|xi|^2` is not a zero of the present stationary induction residual.
-In rotation it can represent a changing potential with stationary magnetic
-field; in screw symmetry its nonzero curl also changes the magnetic field by
-Faraday's law. A driven stationary gate therefore needs an explicit compatible
-electric-field/gauge and boundary convention before it can be asserted.
+## Boundary and stationary gauge
+
+`vrmhd_ampere_boundary` integrates the residual contribution
+`-integral_boundary (n cross B).K dS`, including every auxiliary-current test.
+It accepts a prescribed invariant magnetic trace. The volume and surface
+terms together represent `mu0 J - curl B`. Surface integration uses the
+outward conormal and measure of the actual swept boundary; in screw
+coordinates the section normal alone is insufficient.
+
+`vrmhd_stationary_build` uses an H1 scalar multiplier with zero boundary
+trace and the matrix `G_ij = integral W_i.grad(lambda_j) dx`. The stationary
+residual adds `G lambda` to induction and `G^T A` as the gauge equation.
+This is the weak Coulomb condition `div A = 0`. FortFEM provides
+lowest-order graph tree–cotree metadata; the mixed form also covers the
+higher-order scalar gradient kernel without a separate graph reduction.
+The multiplier of a compatible continuous solution is zero. Its computed
+value and Jacobian nonsingularity require separate checks.
+
+The wrapper applies `fixed` to scalar Dirichlet values, all velocity
+components, and the vector-potential tangential trace. The homogeneous
+velocity case is a no-slip ideal wall; nonzero manufactured traces describe
+a prescribed boundary-value problem. Auxiliary-current tests remain free.
+Boundary values are lifted before volume evaluation; fixed rows are identity
+rows and their columns are removed from free equations. The load is an
+assembled right-hand side: subtract the Ampere surface residual from that
+load. Prescribed loads have zero state derivative. The sparse Jacobian and
+matrix-free derivative use the same lifting and mixed gauge. Time-dependent
+assembly keeps Weyl gauge and its vector-potential mass row.
+
+## Driven-state conventions
+
+A current source uses `eta (J - Js)` at zero loop voltage; this is the
+JOREK comparison convention. A loop-voltage drive instead uses a harmonic
+one-form `h`, normalized by `integral_loop h = 1`, and voltage `V` in volts.
+Rotation uses `h = grad(phi)/(2 pi)`. Translation and screw symmetry use
+`h = grad(z)/L_z` on a domain with axial period `L_z`. The latter is
+invariant under screw motion and curl-free. The screw field `xi/|xi|^2`
+has nonzero curl and is unsuitable for this drive.
+
+In Weyl gauge write `A = Atilde - t V h`. Then `B = curl Atilde` and
+`Atilde_dot = V h + v cross B - eta (J - Js)`. The induction residual
+therefore gains `-V h.W`, and the magnetic power ledger gains `V h.J`.
+A stationary Ohmic state satisfies `eta (J - Js) = V h`. The two limiting
+conventions are `Js=J, V=0` and `Js=0, eta J=V h`.
+
+Discrete harmonic coefficients must be edge integrals of the multivalued
+coordinate, divided by its period, with `curl_h h=0` to roundoff. A
+projection with a small nonzero curl does not meet this contract. The
+stationary wrapper accepts assembled loads but does not yet construct this
+discrete harmonic drive.
 
 ## Verification limits
 
@@ -84,7 +127,13 @@ residual defects after natural-norm projection. These are representation and
 residual consistency checks, not convergence of a solved nonlinear boundary
 problem.
 The reported weak defect uses diagonal natural-norm scaling, not a certified
-dual norm. Manufactured nonlinear solves, GS stationary consistency, stationary
-gauge nonsingularity, the semidiscrete energy ledger and linear spectra remain
-unverified. Conservative momentum alone does not enforce the kinetic
-continuity product discussed in the weak-form document.
+dual norm. Separate stationary tests check the Ampere surface sign against
+the independent analytic current and magnetic field, and the lifted/gauged
+sparse Jacobian against its matrix-free action and centered differences.
+The solved manufactured test retains its design-order gate: rotation fails
+on the first refinement in the current H(curl) norm even though Newton
+converges quadratically. The other solved symmetries, GS stationary
+consistency, gauge nonsingularity under refinement, the semidiscrete energy
+ledger and linear spectra remain unverified. Conservative momentum alone
+does not enforce the kinetic continuity product discussed in the weak-form
+document.
