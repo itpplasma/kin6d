@@ -159,8 +159,9 @@ a speed ranking. Boundary errors are sampled indicators, not continuous
 bounds. The [comparison adapter](../benchmarks/nested/README.md) retains
 external states and uses a Fortran verifier for errors in B, pressure and
 surface labels and for the strong force defect. State bounds and estimator
-effectivity remain unavailable. A solved KIN6D epsilon>0 initializer and D8
-case admission are still required before a production time-to-accuracy claim.
+effectivity remain unavailable. The KIN6D epsilon>0 initializer and D8
+admission exist for the integer family (docs/ideal-seed-3d.md); its accuracy
+ladder is open, so no production time-to-accuracy claim follows yet.
 
 [V] The first reference runs exposed a coordinate defect in the original
 integer-family boundary adapter: its material poloidal angle winds twice with
