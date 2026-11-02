@@ -246,8 +246,18 @@ hypothesis that has not been traced.
    (`gamma_c_3d_build_periodic`). This is exact algebra (test
    `ideal_fb_exterior3d_periodic`: roundoff against the full-surface DtN of the
    expanded operators and against the dense all-pairs build). The pair work
-   falls by nfp and the dense DtN by nfp^3. The pair quadrature itself
-   (FortFEM `converge_pair`) remains the cost driver.
+   falls by nfp and the dense DtN by nfp^3.
+   Rotated strips of the cylindrical chart (done). Without `periodic`,
+   `ideal_fb_use_bem3d` passes `sectors = nphi` to `gamma_c_3d_build` for the
+   cylindrical chart. It assembles sector-zero target pairs only and forms
+   S = W + J^H V^{-1} J per toroidal harmonic (`build_circulant_exterior_dtn`),
+   so any restriction is supported, including non-repeating Fourier modes.
+   Only the small consumer form R^T S R is dense. A nonrotational surface
+   passed with `sectors` is rejected (`ideal_fb_chart_surface_circulant`).
+   The pair quadrature (FortFEM `converge_pair`) remains the cost driver.
+   Its near-pair degree grows with the panel aspect, even with split fans
+   (fortfem#145). The Landreman gate uses 24 strips (aspect 6 and 12) and
+   runs in 241 s at 4 threads (ROADMAP E3.3).
 3. Curve-chart free boundary (done). `ideal_fb_init` takes any
    `ideal_chart_t`. The per-n exterior is built only for the cylindrical chart
    itself; any other chart (curve chart, nested-map chart) gets no exterior
@@ -255,6 +265,105 @@ hypothesis that has not been traced.
    return bad input until then. The test-only cylindrical subclass with an
    overridden jet is gone; `ideal_fb_traces3d_helical` uses the helical-axis
    curve chart.
+   On the synthetic nfp = 3 case (`fb3d_synthetic`) the frozen iota needs the
+   sign of the coil field's rotation in the chart frame. A multi-turn trace of
+   the vacuum field in chart coordinates
+   (`benchmarks/fb3d-synthetic/iota_sign.py`) turns clockwise in (q1, q2) at
+   0.190-0.191 per unit phi-hat, while VMEC++ reports iota = +0.190-0.201
+   with theta counter-clockwise in (R, Z). The field therefore takes
+   sign = -1, the default of `fb3d_synthetic`. Newton from the disc start is
+   not yet robust. Its steps are dominated by the motion of single plasma
+   nodes (a Gamma_p node, sometimes the axis node), along which the merit
+   grows like alpha^4, until the Levenberg ladder runs out. These directions
+   are not a gauge freedom. At the converged N = 2 state the reduced Hessian
+   S_red of `ideal_fb_hypotheses` (slide gauge kept) is positive definite,
+   and its smallest eigenvalues (about 21, 22, 91 and 97 J/m^2 per field
+   period at 12 edges and chain 16) belong to smooth n = 0 motions: the
+   rigid Z and R shifts and a shift of the core about the axis. No localised
+   axis or boundary-tangential mode is soft there, so fixing those nodes
+   would constrain the physical labelling and change the discrete
+   equilibrium. The stalled states lie about 2 cm (rms over Gamma_p) from
+   the solution, and their S_red has three or four negative eigenvalues. The
+   one or two largest in magnitude, -2e5 to -4e5, are concentrated on a
+   single Gamma_p node and spread over all Fourier modes. In the stall where
+   the curvature was split, the plasma block alone is positive along them,
+   so the negative curvature comes from the eliminated shell, vacuum and
+   exterior block. A stall is therefore a nonzero local minimum of the
+   residual merit, which is a globalisation problem and not a missing gauge.
+   Converged runs at 1, 10, 15 and 16 threads agree to 1e-6 mm on Gamma_p,
+   and the image of the axis node lies at R = 1.1410 m, Z = 0 at
+   phi-hat = 0 (`axis_RZ_phi0` in the JSON), 0.6 mm from the traced vacuum
+   axis (R = 1.1404 m) and 2.2 cm outboard of the VMEC++ axis (1.119 m). The
+   R2 exterior is assembled with atomic accumulation of the pair blocks
+   (FortFEM `assemble_parametric_bem_p2_circulant`), so its roundoff differs
+   from run to run even at a fixed thread count, and whether a run converges
+   or stalls depends on that roundoff.
+   With `ideal_fb_t%negative_curvature` (`fb3d_synthetic` globalisation 2,
+   set by `ideal_fb_init` together with `trust_region` for ntor >= 2 on a
+   non-axisymmetric chart, decision 122) a stalled merit hands over to
+   `ideal_fb_negative_curvature`,
+   which takes exact More-Sorensen trust-region steps on the second-order
+   model of the reduced energy E_red(q) (shell map, Phi~ and lambda solved
+   exactly, slide gauge) while S_red has a negative eigenvalue, and a state
+   that passes the residual gate with negative curvature is left in the same
+   way. In sCluster job 3370099 all 15 glob-2 runs at R1 converged (1 to 16
+   threads, starts kicked by 8 mm along q1 included) and 2 of 3 at R2. The
+   R2 failure parked the map at a fold, which the Jacobian guard of the
+   escape now prevents, and with it job 3370145 converged in 8 of 8 glob-2
+   runs (R1, R2 and R3, kicks up to 15 mm). All R1 runs reached the same state within
+   4e-7 mm, in 34 to 87 Newton steps against 93 to 152 for the trust region
+   alone. With the flag set the solve leaves every saddle it can (a saddle
+   still passes when the 20 escapes per solve are spent or no escape step is
+   accepted, so the returned In_-(S_red) is the stability check), and a
+   wanted unstable target (the vertical mode at fixed currents) opts out by
+   resetting both flags after `ideal_fb_init` (`fb3d_synthetic`
+   globalisation 0 or 1).
+   The case is stellarator symmetric: the coils (make_coils.py), the chart
+   frame, which maps (q1, q2, phi-hat) to (-q1, q2, -phi-hat) under
+   (x, y, z) -> (x, -y, -z), the frozen labels and, at R1 only, the reference
+   mesh (49 of 49 nodes mirrored; 40 of 77 at R2 and 48 of 97 at R3). The
+   gate also admits symmetry-broken equilibria. A start kicked by 8 mm
+   without the escape converged (residual 2e-13) to a state with boundary
+   symmetry defect 11.6 mm, one negative eigenvalue of S_red and an E_red
+   0.067 J above the symmetric state, which is a saddle of the reduced
+   energy, and the extra state of job 3369792 at 8 threads has the same
+   defect and the same 12.98 mm distance from the symmetric state. Starts
+   kicked by 8 mm stall under the trust region alone at R1 and R2, at
+   states 24 to 31 mm from symmetry with 5 to 51 negative eigenvalues. The
+   acceptance check is therefore In_-(S_red) = 0, the boundary symmetry
+   defect, the vacuum oracle and, where available, the distance to a
+   reference (`fb3d_synthetic` "state" block and
+   `benchmarks/fb3d-synthetic/state_check.py`). The stable state has a
+   boundary symmetry defect below 1e-7 mm at R1 and 0.9 mm at R2, where the
+   mesh is not mirror symmetric. The single R3 run converged to a stable
+   state with a 5.4 mm defect, and whether that is the mesh asymmetry or a
+   second stable branch is open. `initialize_gs` with `mirror_x`
+   (`fb3d_synthetic` argument 19) meshes the half q1 >= 0 with the mirror
+   line as a constrained boundary, divided at the loop spacing, and reflects
+   it, so that every node and cell has an image at every resolution
+   (`gs_mirror_mesh`); both loops must be mirror symmetric and meet the line
+   in two of their nodes. In sCluster job 3370234 the direct R3 mesh gave the
+   5.4 mm state again in two repeats. On the mirrored R3 mesh all six
+   unkicked runs (1, 8, 16 and 32 threads) reached a state with a symmetry
+   defect below 1e-4 mm (E_red -45034.375022, smallest eigenvalue of S_red
+   9.2), and so did the three 16-thread runs and the -8 and +15 mm kicks at
+   R2 (E_red -45032.879584, 13.7). The 5.4 mm defect is therefore an artefact
+   of the asymmetric triangulation. The mirrored meshes also have nearby
+   stable states that break the symmetry: 3.3 mm on Gamma_p at R2 (E_red
+   1.5e-4 J higher, reached from the +8 mm kick and unkicked at 1 and 4 threads)
+   and 0.16 mm at R3 as a mirror pair from the +-8 mm kicks (1.3e-5 J
+   higher). The phi = 0 vacuum
+   oracle error of the symmetric state is 3.19/6.59, 3.24/6.60 and
+   3.26/7.59 mm (rms/max) at R1, R2 and R3, so it does not decrease under
+   this refinement and is not a plasma-mesh discretisation error. At N = 1
+   (R1, globalisation 2) the solve reaches either the symmetric stable state
+   or a stable pair with a 22 mm defect and an E_red 0.03 J lower, so
+   symmetry is not the energy minimum there. Globalisation 2 fails where an
+   escape is pinned at the fold guard: a cell Jacobian falls to a quarter of
+   its value at entry along the descent of E_red, and every later trial is
+   rejected. This happened in three of the four mirrored R1 runs (the
+   fourth, kicked by +8 mm, cycles saddle escapes next to the symmetric
+   state) and in 3 of 21 other N = 2 runs.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`

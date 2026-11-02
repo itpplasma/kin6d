@@ -184,7 +184,7 @@ Agreement with a reference is numerical evidence. It is not a certificate.
 
 Ordering: E2.1 and E2.2 run in parallel. S2.1 needs E2.1. S2.2 needs S2.1 and
 E2.2, followed by S2.3 and S2.4. E3.1 and E3.2 can run alongside S2.x because
-they reuse existing lanes. E3.3 waits until the BEM gate fits its deadline.
+they reuse existing lanes. E3.3 is no longer blocked by the BEM gate cost.
 S3.1 needs E3.1 and S2.2.
 
 ### Partner codes: absorb, interface or leave
@@ -200,17 +200,42 @@ S3.1 needs E3.1 and S2.2.
 | SPECTRE | MRxMHD/stepped-pressure comparator for E3.4 |
 | FortNum/FortSparse/FortFEM/FortSym | owning libraries for numerics, factorisations, FEM/BEM and code generation |
 
-### Known blocker for E3.3
+### E3.3 BEM gate cost (resolved)
 
-The native gate `ideal_fb_landreman_bem3d_axisymmetric` of the 3D BEM layer
-(PR #47; TIMEOUT 1800, 8 OpenMP threads) times out in its first resolution
-(chain=16). The cost lies in the all-pairs adaptive panel assembly
-`assemble_parametric_bem_p2` (FortFEM 77c6b8c
-`src/bem/parametric_bem_high_order.f90:492`, `converge_pair`) called through
-`ideal_fb_use_bem3d` with maximum degree 96. The case is axisymmetric with 12
-toroidal copies, so a block-circulant (per-n) reduction or a far-field
-low-degree rule in FortFEM is the expected fix. Removing redundant geometry
-jets did not suffice (d34d080).
+The native gate `ideal_fb_landreman_bem3d_axisymmetric` (TIMEOUT 1800) used to
+time out in its first resolution (chain=16) in the all-pairs adaptive panel
+assembly `assemble_parametric_bem_p2`. Three changes remove the blocker.
+`ideal_fb_use_bem3d` now assembles the swept Gamma_c of the cylindrical chart
+as nphi rotated sectors (FortFEM `assemble_parametric_bem_p2_circulant`,
+1/nphi of the pairs). The exterior Steklov form is built with one solve per
+toroidal harmonic (`build_circulant_exterior_dtn`). The FortFEM pair rule
+also splits stretched near-field fan triangles in the angle
+(lazy-fortran/fortfem#145). The near-pair degree grows with the
+toroidal/poloidal panel aspect. The gate uses 24 strips, which gives aspect 6
+at chain=16 and 12 at chain=32. Measured at 4 threads:
+
+| case | pairs | max degree | assembly | case wall | peak RSS |
+|---|---|---|---|---|---|
+| chain=16, 12 strips, all pairs | 331,776 | 88 | 2743 s | 2745 s | 3389 MB |
+| chain=16, 12 strips, circulant | 27,648 | 88 | 202 s | 205 s | 311 MB |
+| same, split fans (#145) | 27,648 | 48 | 57 s | 60 s | 312 MB |
+| chain=16, 24 strips, split fans | 55,296 | 28 | 42-48 s | 45-50 s | 337 MB |
+| chain=32, 12 strips, circulant | 110,592 | 96 (59 failed) | 1177 s | failed | 687 MB |
+| same, split fans | 110,592 | 96 (8 failed) | 970 s | failed | 684 MB |
+| full gate, 24 strips, split fans | 276,480 | 28/44 | 48 + 183 s | 241 s | 689 MB |
+
+Without split fans the gate needed 24/48 strips: 364 s wall, 876 MB.
+
+Open: at aspect 25 (12 strips at chain=32) a few near pairs still miss the
+degree-96 cap with split fans. Real stellarator coupling surfaces are
+anisotropic too, so the FortFEM pair rule needs radial grading or a higher
+fan-piece cap. Until it has one, `ideal_fb_use_bem3d` needs nphi such that
+2*pi*R/nphi is at most about 12 poloidal edge lengths.
+
+The full gate runs nightly (ci/nightly-jobs.json). Its chain=16 level,
+`ideal_fb_landreman_bem3d16_axisymmetric`, runs in the equilibrium merge-queue
+tier. Both compare the solved boundary with the per-n exterior on the same
+mesh (6.1e-5 and 7.5e-6, budget 1e-4).
 
 ## R0 — retain and harden the first 1X1V slice
 

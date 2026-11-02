@@ -131,13 +131,18 @@ module kin6d_grad_shafranov
 contains
     subroutine initialize_gs(state, contour, max_area, status, element_order, &
                              curved, curve, interior_points, interior_chain, &
-                             geometry_only, device, device_memory_limit_bytes)
+                             geometry_only, device, device_memory_limit_bytes, &
+                             mirror_x)
         !! Meshes the closed outer curve `contour` (counter-clockwise). The optional
         !! `interior_chain` is a second closed loop strictly inside it (free-boundary
         !! plasma boundary Gamma_p): its segments are constrained edges, never
         !! split, and with curved elements they carry curved P2/P3 edge nodes on
         !! the periodic spline through the chain. Only the outer curve is flagged
         !! `boundary`.
+        !! With `mirror_x` the mesh is exactly symmetric under the reflection
+        !! x -> 2 mirror_x - x (mirror_triangulate): both loops must be mirror
+        !! symmetric and meet the line x = mirror_x in two of their nodes each,
+        !! `interior_points` is not allowed, and loop segments are never split.
         type(gs_state_t), intent(out) :: state
         real(dp), intent(in) :: contour(:, :), max_area
         integer, intent(out) :: status
@@ -149,6 +154,7 @@ contains
         logical, intent(in), optional :: geometry_only
         integer, intent(in), optional :: device
         integer(int64), intent(in), optional :: device_memory_limit_bytes
+        real(dp), intent(in), optional :: mirror_x
         type(tc_result_t) :: mesh
         type(basis_p1_2d_t) :: basis
         type(gauss_quadrature_triangle_t) :: quadrature
@@ -234,7 +240,17 @@ contains
                 end if
             end if
         end if
-        if (nc > 0) then
+        if (present(mirror_x)) then
+            if (present(interior_points)) return
+            if (.not. ieee_is_finite(mirror_x)) return
+            if (nc > 0) then
+                call mirror_triangulate(contour, interior_chain, max_area, &
+                    merge(2, 1, state%mapped), mirror_x, mesh, stat)
+            else
+                call mirror_triangulate(contour, reshape([real(dp) ::], [2, 0]), &
+                    max_area, 1, mirror_x, mesh, stat)
+            end if
+        else if (nc > 0) then
             ! -YY: neither loop is ever split, so every chain edge is one mesh edge.
             call triangulate_compat(mesh_points, segments, &
                 reshape([real(dp) ::], [2, 0]), mesh, stat, min_angle=20.0_dp, &
@@ -425,6 +441,192 @@ contains
         state%ready = .true.
         status = 0
     end subroutine initialize_gs
+
+    subroutine mirror_triangulate(contour, chain, max_area, nobisect, xm, mesh, status)
+        !! Triangulation of the region bounded by `contour` (with the constrained
+        !! interior loop `chain`, possibly empty) that is exactly symmetric under
+        !! the reflection S(x, y) = (2 xm - x, y). The half x >= xm is meshed with
+        !! the mirror line as a constrained boundary, divided beforehand at the
+        !! loop spacing so that it is never split, and the half mesh is then
+        !! reflected: every node and cell has an image, and the line nodes are
+        !! their own images. Each loop must be mirror symmetric (images of its
+        !! nodes are nodes of the same loop) and meet the line in exactly two of
+        !! its nodes and in no segment. The numbering keeps the loop nodes first
+        !! (contour 1..n, chain n+1..n+nc), as the direct triangulation does.
+        !! nobisect >= 1 (no Steiner points on the contour or the line).
+        real(dp), intent(in) :: contour(:, :), chain(:, :), max_area, xm
+        integer, intent(in) :: nobisect
+        type(tc_result_t), intent(out) :: mesh
+        integer, intent(out) :: status
+        type(tc_result_t) :: half
+        real(dp), allocatable :: loops(:, :), points(:, :), line(:, :)
+        integer, allocatable :: side(:), mate(:), keep(:), segments(:, :), markers(:)
+        integer, allocatable :: online(:), full(:), image(:), first(:), incident(:)
+        integer, allocatable :: fill(:)
+        real(dp) :: tol, target(2), length, spacing, edge_a, edge_b
+        integer :: n, nc, nl, k, j, i, m, nkeep, nline, nin, np, nt, start, stop_
+        integer :: a, b, c, loop, e, f, edge, other, stat
+        status = 1
+        n = size(contour, 2); nc = size(chain, 2); nl = n + nc
+        allocate (loops(2, nl))
+        loops(:, :n) = contour
+        if (nc > 0) loops(:, n + 1:) = chain
+        tol = 1.0e-10_dp*max(1.0_dp, maxval(abs(loops)))
+        allocate (side(nl), mate(nl))
+        do k = 1, nl
+            side(k) = 0
+            if (loops(1, k) > xm + tol) side(k) = 1
+            if (loops(1, k) < xm - tol) side(k) = -1
+        end do
+        ! Images within the same loop, two line nodes per loop, no crossing.
+        do loop = 1, merge(2, 1, nc > 0)
+            start = merge(1, n + 1, loop == 1); stop_ = merge(n, nl, loop == 1)
+            if (count(side(start:stop_) == 0) /= 2) return
+            do k = start, stop_
+                j = merge(start, k + 1, k == stop_)
+                if (side(k)*side(j) == -1) return
+                if (side(k) == 0 .and. side(j) == 0) return
+                mate(k) = 0
+                if (side(k) == 0) then
+                    mate(k) = k
+                    cycle
+                end if
+                target = [2*xm - loops(1, k), loops(2, k)]
+                do i = start, stop_
+                    if (maxval(abs(loops(:, i) - target)) <= tol) mate(k) = i
+                end do
+                if (mate(k) == 0) return
+            end do
+        end do
+        ! Half input: kept loop nodes, then the divided mirror line.
+        keep = pack([(k, k=1, nl)], side >= 0)
+        nkeep = size(keep)
+        allocate (full(nl)); full = 0
+        full(keep) = [(k, k=1, nkeep)]
+        online = pack([(k, k=1, nl)], side == 0)
+        ! Sort the line nodes by y (at most four).
+        do k = 2, size(online)
+            j = k
+            do while (j > 1)
+                if (loops(2, online(j - 1)) <= loops(2, online(j))) exit
+                online([j - 1, j]) = online([j, j - 1])
+                j = j - 1
+            end do
+        end do
+        allocate (line(2, 0))
+        allocate (segments(2, 0), markers(0))
+        do k = 1, nl
+            loop = merge(1, 2, k <= n)
+            j = merge(merge(1, n + 1, loop == 1), k + 1, k == merge(n, nl, loop == 1))
+            if (side(k) < 0 .or. side(j) < 0) cycle
+            segments = reshape([segments, full(k), full(j)], [2, size(segments, 2) + 1])
+            markers = [markers, merge(1, 0, loop == 1)]
+        end do
+        spacing = sqrt(4*max_area/sqrt(3.0_dp))
+        do k = 1, size(online) - 1
+            a = online(k); b = online(k + 1)
+            edge_a = loop_edge(a); edge_b = loop_edge(b)
+            length = loops(2, b) - loops(2, a)
+            m = max(1, nint(length/min(spacing, edge_a, edge_b)))
+            i = full(a)
+            do j = 1, m - 1
+                line = reshape([line, xm, loops(2, a) + length*j/m], &
+                    [2, size(line, 2) + 1])
+                segments = reshape([segments, i, nkeep + size(line, 2)], &
+                    [2, size(segments, 2) + 1])
+                markers = [markers, 0]
+                i = nkeep + size(line, 2)
+            end do
+            segments = reshape([segments, i, full(b)], [2, size(segments, 2) + 1])
+            markers = [markers, 0]
+        end do
+        nline = size(line, 2); nin = nkeep + nline
+        allocate (points(2, nin))
+        points(:, :nkeep) = loops(:, keep)
+        points(:, nkeep + 1:) = line
+        call triangulate_compat(points, segments, reshape([real(dp) ::], [2, 0]), &
+            half, stat, min_angle=20.0_dp, max_area=max_area, &
+            nobisect=max(1, nobisect), segmentmarkers=markers)
+        if (stat /= 0 .or. half%ntriangles < 1 .or. half%npoints < nin) return
+        if (maxval(abs(half%points(:, :nin) - points)) > 0) return
+        ! Full numbering: loop nodes, then line nodes, then interior pairs.
+        allocate (image(half%npoints), fill(half%npoints))
+        np = nl
+        do i = 1, half%npoints
+            if (i <= nkeep) then
+                fill(i) = keep(i); image(i) = mate(keep(i))
+            else if (i <= nin .or. abs(half%points(1, i) - xm) <= tol) then
+                np = np + 1; fill(i) = np; image(i) = np
+            else
+                np = np + 2; fill(i) = np - 1; image(i) = np
+            end if
+        end do
+        allocate (mesh%points(2, np), mesh%pointmarkers(np))
+        mesh%points(:, :nl) = loops
+        mesh%pointmarkers = 0
+        mesh%pointmarkers(:n) = 1
+        do i = nkeep + 1, half%npoints
+            mesh%points(:, fill(i)) = half%points(:, i)
+            if (fill(i) == image(i)) then
+                mesh%points(1, fill(i)) = xm
+            else
+                mesh%points(:, image(i)) = [2*xm - half%points(1, i), half%points(2, i)]
+            end if
+        end do
+        nt = 2*half%ntriangles
+        allocate (mesh%triangles(3, nt), mesh%neighbors(3, nt))
+        do e = 1, half%ntriangles
+            mesh%triangles(:, e) = fill(half%triangles(:, e))
+            ! Reflection reverses the orientation.
+            mesh%triangles(:, half%ntriangles + e) = image(half%triangles([1, 3, 2], e))
+        end do
+        ! Neighbours across edge (v_k, v_k+1) from the node-cell incidence.
+        allocate (first(np + 1), incident(3*nt))
+        first = 0
+        do e = 1, nt
+            first(mesh%triangles(:, e) + 1) = first(mesh%triangles(:, e) + 1) + 1
+        end do
+        first(1) = 1
+        do i = 1, np
+            first(i + 1) = first(i + 1) + first(i)
+        end do
+        deallocate (fill); allocate (fill(np)); fill = first(:np)
+        do e = 1, nt
+            do k = 1, 3
+                a = mesh%triangles(k, e)
+                incident(fill(a)) = e; fill(a) = fill(a) + 1
+            end do
+        end do
+        mesh%neighbors = -1
+        do e = 1, nt
+            do edge = 1, 3
+                a = mesh%triangles(edge, e); b = mesh%triangles(mod(edge, 3) + 1, e)
+                do f = first(a), first(a + 1) - 1
+                    other = incident(f)
+                    if (other == e) cycle
+                    do c = 1, 3
+                        if (mesh%triangles(c, other) == b .and. &
+                            mesh%triangles(mod(c, 3) + 1, other) == a) &
+                            mesh%neighbors(edge, e) = other
+                    end do
+                end do
+            end do
+        end do
+        mesh%npoints = np; mesh%ntriangles = nt
+        mesh%min_angle_deg = half%min_angle_deg
+        status = 0
+    contains
+        real(dp) function loop_edge(node) result(h)
+            ! Mean length of the two loop segments at a loop node.
+            integer, intent(in) :: node
+            integer :: lo, hi, prev, next
+            lo = merge(1, n + 1, node <= n); hi = merge(n, nl, node <= n)
+            prev = merge(hi, node - 1, node == lo)
+            next = merge(lo, node + 1, node == hi)
+            h = 0.5_dp*(norm2(loops(:, node) - loops(:, prev)) &
+                + norm2(loops(:, next) - loops(:, node)))
+        end function
+    end subroutine mirror_triangulate
 
     pure subroutine gs_cell_data(state, e, xi, point, det, shape, gradients, &
                             hessians, status)
