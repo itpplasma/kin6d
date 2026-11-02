@@ -60,13 +60,14 @@ target_compile_options(kin6d_ode PRIVATE -fno-fast-math -ffp-contract=off)
 # MAKEGRID coils reader with circuit groups from libneo main (itpplasma/libneo#469).
 # Only its two dependency-free modules are compiled; libneo itself is not configured.
 set(KIN6D_LIBNEO_REVISION "5de27d1e79528dc98788e09d3b969cecc4e4aca5")
+# SOURCE_SUBDIR names a directory without CMakeLists.txt, so MakeAvailable only
+# populates; unlike a direct FetchContent_Populate it honours dependency
+# providers and FETCHCONTENT_SOURCE_DIR_LIBNEO in disconnected builds.
 FetchContent_Declare(libneo
     GIT_REPOSITORY https://github.com/itpplasma/libneo.git
-    GIT_TAG ${KIN6D_LIBNEO_REVISION})
-FetchContent_GetProperties(libneo)
-if(NOT libneo_POPULATED)
-    FetchContent_Populate(libneo)
-endif()
+    GIT_TAG ${KIN6D_LIBNEO_REVISION}
+    SOURCE_SUBDIR kin6d-populate-only)
+FetchContent_MakeAvailable(libneo)
 add_library(kin6d_libneo_coils
     ${libneo_SOURCE_DIR}/src/field/biotsavart.f90
     ${libneo_SOURCE_DIR}/src/field/makegrid_coils.f90)
