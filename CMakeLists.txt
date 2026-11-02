@@ -552,6 +552,9 @@ set_tests_properties(gs_free_boundary_t7_native_lu PROPERTIES
     TIMEOUT 600 PROCESSORS 2
     ENVIRONMENT "KIN6D_FB_SOLVER=lu;OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
 set_tests_properties(gs_free_boundary_t7_jacobian_finite_differences PROPERTIES TIMEOUT 900)
+add_executable(test_gs_fb_law_tangent test/test_gs_fb_law_tangent.f90)
+target_link_libraries(test_gs_fb_law_tangent PRIVATE kin6d_gs_fb_test)
+add_test(NAME gs_free_boundary_law_tangent_finite_differences COMMAND test_gs_fb_law_tangent)
 add_executable(test_gs_fb_manufactured test/test_gs_fb_manufactured.f90)
 target_link_libraries(test_gs_fb_manufactured PRIVATE kin6d_gs_fb_test)
 add_library(kin6d_gs_ci_test STATIC test/support/gs_ci_fixture.f90)

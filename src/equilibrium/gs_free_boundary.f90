@@ -209,6 +209,7 @@ module kin6d_gs_free_boundary
     public :: gs_fb_chain_movement
     public :: gs_fb_setup, gs_fb_evaluate, gs_fb_jacobian_apply
     public :: gs_fb_factor, gs_fb_solve, gs_fb_solve_block, gs_fb_release, gs_fb_newton
+    public :: gs_fb_law_tangent
     public :: gs_fb_interface_mass, gs_fb_lcfs_levels
     public :: gs_fb_locate
 
@@ -1862,6 +1863,95 @@ contains
             call move_alloc(from%plasma_cell, to%plasma_cell)
         end subroutine move_ev
     end subroutine gs_fb_newton
+
+    subroutine gs_fb_law_tangent(state, sys, psi, currents, directions, dpsi, &
+            dpsi_axis, dpsi_bound, dcurrent, status)
+        !! Implicit tangent of a converged state psi along directions of the
+        !! profile-law coefficients (pp, ff of directions(k); knots and
+        !! normalisation are those of sys%law). The source is linear in the
+        !! coefficients, so dF = -b(psi; dlaw) and
+        !!
+        !!     J dpsi_k = b(psi; dlaw_k),
+        !!
+        !! one block solve with the factor of J at psi; the Newton factor's
+        !! ordering and symbolic analysis are reused. The flux levels follow
+        !! from the envelope argument, d psi_a = g_a . dpsi, d psi_b = g_b . dpsi,
+        !! and mu0 Ip = 1^T b (partition of unity) with db/dpsi = A - J gives
+        !!
+        !!     mu0 dIp_k = 1^T b(psi; dlaw_k) + 1^T (A - J) dpsi_k.
+        type(gs_state_t), intent(inout) :: state
+        type(gs_fb_system_t), intent(inout) :: sys
+        real(dp), intent(in) :: psi(:), currents(:)
+        type(gs_profile_law_t), intent(in) :: directions(:)
+        real(dp), intent(out) :: dpsi(:, :), dpsi_axis(:), dpsi_bound(:), dcurrent(:)
+        integer, intent(out) :: status
+        type(gs_fb_eval_t) :: ev
+        type(gs_fb_factor_t), allocatable :: fac
+        type(gs_profile_law_t) :: law
+        type(gs_profile_jacobian_t) :: unused
+        real(dp), allocatable :: flux(:), saved(:), cell_phi(:, :), rhs(:, :)
+        real(dp), allocatable :: coupled(:), linear(:)
+        real(dp) :: sigma, integral(size(directions))
+        logical, allocatable :: plasma(:), face_edge(:, :)
+        integer :: k, nd, n, stat
+
+        status = GS_FB_BAD_INPUT
+        n = sys%n
+        nd = size(directions)
+        if (size(psi) /= n .or. any(shape(dpsi) /= [n, nd])) return
+        if (size(dpsi_axis) /= nd .or. size(dpsi_bound) /= nd) return
+        if (size(dcurrent) /= nd) return
+        flux = psi
+        call gs_fb_evaluate(state, sys, flux, currents, ev, stat)
+        if (stat /= GS_FB_OK) then
+            status = stat
+            return
+        end if
+        sigma = real(sys%cfg%axis_sign, dp)
+        plasma = ev%plasma_cell
+        allocate (cell_phi(size(state%triangles, 1), size(state%triangles, 2)), &
+            face_edge(3, size(state%triangles, 2)), rhs(n, nd))
+        call snap_faces(state, flux, ev%psi_bound, ev%psi_axis, sigma, &
+            sys%cfg%face_tolerance, plasma, cell_phi, face_edge)
+        saved = state%psi
+        state%psi = flux - ev%psi_bound
+        stat = 0
+        do k = 1, nd
+            law = sys%law
+            law%pp = directions(k)%pp
+            law%ff = directions(k)%ff
+            law%axis = ev%psi_axis - ev%psi_bound
+            call gs_cubic_load(state, sys%mu0, law, rhs(:, k), unused, stat, &
+                sys%cfg%quadrature_tolerance, load_only=.true., &
+                source_integral=integral(k), plasma_cell=plasma, &
+                cell_psi=cell_phi)
+            if (stat /= 0) exit
+        end do
+        state%psi = saved
+        if (stat /= 0) then
+            status = GS_FB_SOURCE_FAILED
+            return
+        end if
+        call move_alloc(sys%newton_factor, fac)
+        if (.not. allocated(fac)) allocate (fac)
+        call gs_fb_factor(state, sys, ev, fac, stat)
+        if (stat == GS_FB_OK) call gs_fb_solve_block(sys, ev, fac, rhs, dpsi, stat)
+        call gs_fb_release(fac, keep_analysis=.true.)
+        call move_alloc(fac, sys%newton_factor)
+        if (stat /= GS_FB_OK) then
+            status = stat
+            return
+        end if
+        allocate (coupled(n), linear(n))
+        do k = 1, nd
+            dpsi_axis(k) = dot_product(ev%ga, dpsi(:, k))
+            dpsi_bound(k) = dot_product(ev%gb, dpsi(:, k))
+            call gs_coupled_apply(sys%coupling, dpsi(:, k), coupled)
+            call gs_fb_jacobian_apply(state, sys, ev, dpsi(:, k), linear)
+            dcurrent(k) = (integral(k) + sum(coupled - linear))/sys%mu0
+        end do
+        status = GS_FB_OK
+    end subroutine gs_fb_law_tangent
 
     ! ------------------------------------------------------------------
     ! P8: outer refit loop (DESIGN 1.2, step 2).

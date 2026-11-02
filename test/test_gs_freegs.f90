@@ -7,7 +7,7 @@ program test_gs_freegs
     use fortfem_axisymmetric_gs_kernel, only: gs_mu0
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
     use fortnum_polynomial, only: lagrange_weights
-    use fortnum_multiroot, only: multiroot_hybrids
+    use fortnum_multiroot, only: multiroot_hybrid
     use fortnum_status, only: fortnum_status_t, status_ok
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs, gs_cell_data, sample_gs
     use kin6d_gs_coils, only: gs_circuit_set_t, gs_read_coil_table
@@ -17,6 +17,7 @@ program test_gs_freegs
                                       gs_fb_setup, gs_fb_newton, &
                                       gs_fb_evaluate, gs_fb_lcfs_levels, &
                                       gs_fb_trace_lcfs, GS_FB_XPOINT
+    use kin6d_gs_free_boundary, only: gs_fb_law_tangent
     use kin6d_gs_equilibrium, only: gs_equilibrium
     use kin6d_equilibrium_state, only: equilibrium_state_t, labelled_field_t
     implicit none
@@ -50,7 +51,8 @@ program test_gs_freegs
     real(dp) :: critical_row(9), volume_rows(4, 3), volume_error(3)
     real(dp) :: trace_distances(2), trace_gaps(2), distance, trace_gap
     real(dp) :: root_start(2) = 1.0_dp
-    integer :: unit, i, j, n, status, cell, nside, rung, failures
+    real(dp), parameter :: law_shape(4) = [1.0_dp, -2.0_dp, 1.0_dp, 0.0_dp]
+    integer :: unit, i, j, n, status, cell, nside, rung, failures, forward_solves
     character(1024) :: path, argument, line
 
     call get_command_argument(1, path)
@@ -199,16 +201,17 @@ contains
         print *, 'residuals ', history%residual
         ! ConstrainPaxisIp fixes two amplitudes, not just a frozen derivative
         ! table. Use the existing cubic law and native equilibrium/readback
-        ! equations as a test consumer of FortNum's two-variable root solve.
-        ! Finite differences here belong to that independent setup driver;
-        ! production free-boundary derivatives remain equation-level.
+        ! equations as a test consumer of FortNum's two-variable root solve,
+        ! with the exact Jacobian from the implicit law tangent.
         ! The coarser rung's root starts the finer one; the setup law carries it.
-        call multiroot_hybrids(profile_constraints, 2, root_start, &
-                               amplitudes, root_status, ftol=1.0e-9_dp, max_iter=6)
+        forward_solves = 0
+        call multiroot_hybrid(profile_constraints_jacobian, 2, root_start, &
+            amplitudes, root_status, ftol=1.0e-9_dp, max_iter=6)
         if (.not. status_ok(root_status)) then
             print *, root_status%msg
             error stop 'pressure/current normalization failed'
         end if
+        print *, 'root search forward solves ', forward_solves
         root_start = amplitudes
         call profile_constraints(amplitudes, constraint_residual)
         call require(maxval(abs(constraint_residual)) < 1.0e-9_dp, &
@@ -330,6 +333,7 @@ contains
         sys%law%ff(:, 1) = reference(7, 3)*amplitudes(2) &
                            *[1.0_dp, -2.0_dp, 1.0_dp, 0.0_dp]
         call gs_fb_newton(state, sys, currents, stat)
+        forward_solves = forward_solves + 1
         call check(stat, 'normalized profile forward solve')
         call gs_fb_evaluate(state, sys, state%psi, currents, ev, stat, &
                             jacobian=.false.)
@@ -339,6 +343,42 @@ contains
         call gs_law_primitives(executed, executed%axis, axis_pressure, axis_f, stat)
         call check(stat, 'normalized profile pressure')
         residual = [axis_pressure/1000.0_dp - 1, ev%plasma_current/2.0e5_dp - 1]
+    end subroutine
+
+    subroutine profile_constraints_jacobian(amplitudes, residual, jacobian, ctx)
+        !! Residual and exact Jacobian: amplitude tangents of the converged
+        !! state, then the axis pressure p = p_edge + a P(s=0) (a = psi_a -
+        !! psi_b, P linear in the pp amplitude) and the plasma current.
+        real(dp), intent(in) :: amplitudes(:)
+        real(dp), intent(out) :: residual(:), jacobian(:, :)
+        class(*), intent(in), optional :: ctx
+        type(gs_profile_law_t) :: directions(2), executed
+        real(dp), allocatable :: flux(:), dpsi(:, :)
+        real(dp) :: daxis(2), dbound(2), dcurrent(2), pressure, unit_pressure, f_axis
+        integer :: stat
+        call profile_constraints(amplitudes, residual)
+        directions = sys%law
+        directions(1)%pp(:, 1) = reference(6, 3)*law_shape
+        directions(1)%ff = 0.0_dp
+        directions(2)%pp = 0.0_dp
+        directions(2)%ff(:, 1) = reference(7, 3)*law_shape
+        flux = state%psi
+        allocate (dpsi(size(flux), 2))
+        call gs_fb_law_tangent(state, sys, flux, currents, directions, dpsi, &
+            daxis, dbound, dcurrent, stat)
+        call check(stat, 'profile amplitude tangent')
+        executed = sys%law
+        executed%axis = ev%psi_axis - ev%psi_bound
+        call gs_law_primitives(executed, executed%axis, pressure, f_axis, stat)
+        call check(stat, 'tangent axis pressure')
+        directions(1)%axis = executed%axis
+        call gs_law_primitives(directions(1), executed%axis, unit_pressure, f_axis, &
+            stat)
+        call check(stat, 'unit-amplitude axis pressure')
+        jacobian(1, :) = ((pressure - executed%p_edge)/executed%axis &
+            *(daxis - dbound) &
+            + [unit_pressure - executed%p_edge, 0.0_dp])/1000.0_dp
+        jacobian(2, :) = dcurrent/2.0e5_dp
     end subroutine
 
     subroutine require(ok, what)
