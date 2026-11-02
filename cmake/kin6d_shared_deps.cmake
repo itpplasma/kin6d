@@ -34,13 +34,19 @@ macro(kin6d_shared_deps_provide method name)
             file(TOUCH "${_kin6d_dep_src}/.kin6d-complete")
         endif()
         file(LOCK "${_kin6d_dep_src}.lock" RELEASE)
+        if(NOT _kin6d_dep_BINARY_DIR)
+            set(_kin6d_dep_BINARY_DIR "${CMAKE_BINARY_DIR}/_deps/${_kin6d_dep_lower}-build")
+        endif()
         FetchContent_SetPopulated(${name} SOURCE_DIR "${_kin6d_dep_src}"
             BINARY_DIR "${_kin6d_dep_BINARY_DIR}")
+        # Like FetchContent_MakeAvailable: a SOURCE_SUBDIR without CMakeLists.txt
+        # only populates (used for libneo).
+        set(_kin6d_dep_cmake_dir "${_kin6d_dep_src}")
         if(_kin6d_dep_SOURCE_SUBDIR)
-            add_subdirectory("${_kin6d_dep_src}/${_kin6d_dep_SOURCE_SUBDIR}"
-                "${_kin6d_dep_BINARY_DIR}")
-        else()
-            add_subdirectory("${_kin6d_dep_src}" "${_kin6d_dep_BINARY_DIR}")
+            set(_kin6d_dep_cmake_dir "${_kin6d_dep_src}/${_kin6d_dep_SOURCE_SUBDIR}")
+        endif()
+        if(EXISTS "${_kin6d_dep_cmake_dir}/CMakeLists.txt")
+            add_subdirectory("${_kin6d_dep_cmake_dir}" "${_kin6d_dep_BINARY_DIR}")
         endif()
     endif()
 endmacro()
