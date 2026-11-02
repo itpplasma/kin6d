@@ -48,7 +48,7 @@ contains
 end module landreman_circuit_basis
 
 program test_landreman_free_boundary
-    use, intrinsic :: iso_fortran_env, only: dp => real64, compiler_version, &
+    use, intrinsic :: iso_fortran_env, only: dp => real64, int64, compiler_version, &
                                                                         compiler_options
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_landreman_leaves, only: landreman_axisymmetric, landreman_surface, &
@@ -66,6 +66,8 @@ program test_landreman_free_boundary
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
     use kin6d_ideal_free_boundary, only: ideal_fb_t, ideal_fb_init, &
              ideal_fb_set_drive, ideal_fb_solve, ideal_fb_report_t, ideal_fb_shell_field
+    use kin6d_ideal_free_boundary_bem3d, only: ideal_fb_use_bem3d
+    use fortfem_parametric_bem_high_order, only: bem_pair_options_t, bem_pair_report_t
     use kin6d_ideal_fb_circuits, only: ideal_fb_circuits_t, ideal_fb_circuits_build, &
              ideal_fb_set_currents, coil_circuit_basis_t, coil_circuit_basis_init
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_mu0
@@ -77,16 +79,24 @@ program test_landreman_free_boundary
     integer :: st, l
     ! Modes: (none) set_drive with the fitted sampler; circuits: the same
     ! drive through circuit currents (kin6d_ideal_fb_circuits); helical:
-    ! nfp = 3, N = 1 with an added 3-fold window-coil circuit.
+    ! nfp = 3, N = 1 with an added 3-fold window-coil circuit; bem3d: the
+    ! same chain=16,32 cases through the full-surface R2 BEM exterior
+    ! (24/48 rotated sectors, block-circulant), each compared with the per-n
+    ! exterior solution of the same mesh; bem3d16: chain=16 only.
     character(16) :: mode
-    logical :: use_circuits
+    logical :: use_circuits, use_bem3d
+    integer :: levels
+    real(dp), allocatable :: reference_x(:, :)
     integer :: case_nfp = 1, case_ntor = 0
     real(dp) :: window_current = 0, helical_amplitude = 0
     mode = 'sampler'
     if (command_argument_count() > 0) call get_command_argument(1, mode)
-    if (all(trim(mode) /= [character(16) :: 'sampler', 'circuits', 'helical'])) &
-        error stop 'unknown mode'
-    use_circuits = trim(mode) /= 'sampler'
+    if (all(trim(mode) /= [character(16) :: 'sampler', 'circuits', 'helical', &
+                           'bem3d', 'bem3d16'])) error stop 'unknown mode'
+    use_circuits = all(trim(mode) /= [character(16) :: 'sampler', 'bem3d', 'bem3d16'])
+    use_bem3d = .false.
+    levels = 2
+    if (trim(mode) == 'bem3d16') levels = 1
     print '(a)', compiler_version()
     print '(a)', compiler_options()
     print '(a)', 'mu0=1; epsilon=0; delta=0.01; sources=24; fit=96; quad=48/96'
@@ -99,9 +109,19 @@ program test_landreman_free_boundary
         call helical_case()
         stop
     end if
-    do l = 1, 2
+    do l = 1, levels
+        if (trim(mode) == 'bem3d' .or. trim(mode) == 'bem3d16') then
+            use_bem3d = .false.
+            call solve_case(16*2**(l - 1), distance(l), field_error(l), &
+                            pressure_error(l))
+            use_bem3d = .true.
+        end if
         call solve_case(16*2**(l - 1), distance(l), field_error(l), pressure_error(l))
     end do
+    if (levels == 1) then
+        print '(a)', 'candidate; numerical evidence only; continuous bounds unavailable'
+        stop
+    end if
     ! Analytic interpolation scaling: P3 geometry O(h^4), B O(h^3).
     ! Tolerances are engineering budgets, not a posteriori certificates:
     ! 1% of minor radius, poloidal field scale 2sqrt(delta), pressure 2delta.
@@ -388,6 +408,54 @@ contains
         print '(a)', 'helical circuit case converged; numerical evidence only'
     end subroutine
 
+    subroutine attach_bem3d(fb, nchain)
+        ! Pair rule of the archived all-pairs gate. The R2 strips scale with
+        ! the chain so toroidal/poloidal panel aspect stays near 6: with 12
+        ! strips (aspect 12 at chain=16, 25 at chain=32) near pairs climb to
+        ! degree 88 and fail to converge at 96. For n=0 the azimuthal P2
+        ! trace is exact, so the strip count changes cost, not the result.
+        type(ideal_fb_t), intent(inout) :: fb
+        integer, intent(in) :: nchain
+        type(bem_pair_options_t) :: options
+        type(bem_pair_report_t) :: pair_report
+        integer(int64) :: t0, t1, rate
+        integer :: st
+        options%maximum_degree = 96
+        options%maximum_evaluations = 200000000_int64
+        call system_clock(t0, rate)
+        call ideal_fb_use_bem3d(fb, 3*nchain/2, options, pair_report, st)
+        call system_clock(t1)
+        print '(a,i0,a,i0,a,i0,a,i0,a,es10.3,a,f9.2)', 'R2 BEM status=', st, &
+            ' failed=', pair_report%failed_pairs, ' degree=', &
+            pair_report%maximum_degree_used, ' pairs=', pair_report%accepted_pairs, &
+            ' ratio=', pair_report%error_ratio, ' seconds=', real(t1 - t0, dp)/rate
+        print '(a,i0)', 'R2 BEM kernel evaluations ', pair_report%kernel_evaluations
+        if (st /= 0) error stop 'Landreman 3D BEM adapter'
+    end subroutine
+
+    subroutine compare_exteriors(fb)
+        ! The per-n exterior run of the same mesh is the reference. The R2
+        ! surface differs by its 12-sector azimuthal P2 trace and the pair
+        ! tolerance; budget 10% of the 1%-of-minor-radius return budget.
+        type(ideal_fb_t), intent(in) :: fb
+        real(dp) :: defect
+        integer :: i
+        if (trim(mode) /= 'bem3d' .and. trim(mode) /= 'bem3d16') return
+        if (.not. use_bem3d) then
+            reference_x = fb%plasma%x(:2, 1, :)
+            return
+        end if
+        if (any(shape(reference_x) /= [2, fb%plasma%nodes])) &
+            error stop 'per-n reference mesh'
+        defect = 0
+        do i = 1, fb%plasma%nodes
+            if (.not. fb%plasma%boundary(i)) cycle
+            defect = max(defect, norm2(fb%plasma%x(:2, 1, i) - reference_x(:, i)))
+        end do
+        print '(a,es12.4)', 'R2 BEM versus per-n boundary displacement ', defect
+        if (defect > 0.001_dp*sqrt(delta)) error stop 'R2 BEM versus per-n exterior'
+    end subroutine
+
     subroutine solve_case(nchain, distance, field_error, pressure_error)
         integer, intent(in) :: nchain
         real(dp), intent(out) :: distance, field_error, pressure_error
@@ -422,6 +490,7 @@ contains
         call ideal_fb_set_drive(fb, sampler, st, closure)
         if (st /= 0 .or. closure > 1e-8_dp) error stop 'drive trace closure'
         if (use_circuits) call circuit_drive(fb)
+        if (use_bem3d) call attach_bem3d(fb, nchain)
         ! Family 1 has closed lines: target-start stationarity/refinement
         ! test only. No artificial residual shift or manufactured load.
         call ideal_fb_solve(fb, 1e-9_dp, 50, report, st, verbose=.false., &
@@ -430,6 +499,7 @@ contains
         print '(a,i0,a,i0,a,i0,a,es12.4)', 'solve chain=', nchain, ' status=', st, &
             ' iterations=', report%iterations, ' residual=', report%residual
         if (st /= 0) error stop 'Landreman solve did not meet absolute residual'
+        call compare_exteriors(fb)
         helical_amplitude = 0
         do i = 1, fb%plasma%nodes
             if (.not. fb%plasma%boundary(i)) cycle

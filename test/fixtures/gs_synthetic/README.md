@@ -35,3 +35,10 @@ The analytic scaled field error was 5.664e-7. To regenerate references, run
 Copy field.dat/profiles.dat to reference_field.dat/reference_profiles.dat and
 retain the physical/nondimensional keys already listed in reference_summary.dat;
 exclude timings, provenance strings and solver diagnostic status strings.
+
+The three estimator references (majorant, majorant_flux, majorant_balance)
+were recaptured with FortFEM e8b947bb, whose triangle RT/Nedelec reference
+tables are exact (lazy-fortran/fortfem#125) instead of a double-precision
+moment solve. Only the equilibrated flux changed, by up to 4.4e-12 of the
+solution flux scale; state, profile and field references are unchanged and
+the 1e-12 gate stays. Captured locally with gfortran 14, OMP_NUM_THREADS=1.

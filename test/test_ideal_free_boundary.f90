@@ -79,6 +79,14 @@ program test_ideal_free_boundary
     !   hypotheses       ideal_fb_hypotheses: (V), (R) and In(S_red); the
     !                    FB-D2 bordering relation against a dense eigen-solve of
     !                    the slide-bordered KKT matrix (N = 0, 1)
+    !   curvature        ideal_fb_trust_subproblem against its optimality
+    !                    conditions and sampled feasible points (easy and hard
+    !                    case); ideal_fb_reduced_spectrum against
+    !                    ideal_fb_hypotheses; ideal_fb_negative_curvature: a
+    !                    small step has actual/predicted reduced-energy ratio
+    !                    1 (gradient and S_red are the derivatives of E_red),
+    !                    larger steps lower E_red; ideal_fb_symmetry_defect of
+    !                    a rigid antisymmetric shift (N = 0, 1)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
@@ -93,7 +101,9 @@ program test_ideal_free_boundary
         ideal_fb_newton_step, ideal_fb_solve_shell_map, ideal_fb_solve_multipliers, &
         ideal_fb_solve, ideal_fb_report_t, ideal_fb_mode_energy, &
         ideal_fb_mode_stability, ideal_fb_stability_t, IDEAL_FB_BAD_INPUT, &
-        IDEAL_FB_NOT_CONVERGED, ideal_fb_attach_exterior_3d, ideal_fb_mode_weight
+        IDEAL_FB_NOT_CONVERGED, ideal_fb_attach_exterior_3d, ideal_fb_mode_weight, &
+        ideal_fb_curvature_t, ideal_fb_negative_curvature, ideal_fb_trust_subproblem, &
+        ideal_fb_reduced_spectrum, ideal_fb_symmetry_defect
     use kin6d_curved_triangle, only: triangle_locate
     use kin6d_coils_3d, only: coil_set_t, coil_set_from_polylines, coil_set_modes
     use fortfem_axisymmetric_gs_kernel, only: gs_green_gradient, gs_green
@@ -103,6 +113,10 @@ program test_ideal_free_boundary
     use kin6d_triangle_basis, only: triangle_basis_jet
     use ideal_fb_kink_leaves, only: cylinder_kink_energy, &
         cylinder_kink_energy_jvp, cylinder_kink_energy_vjp
+    use kin6d_s0_spectrum, only: s0_pencil_t, s0_report_t, s0_prepare, &
+        s0_solve, s0_destroy
+    use fortnum_eigen, only: eigen_options_t, EIGEN_OK, EIGEN_NEAREST
+    use fortsparse, only: csc_z_t, csc_from_triplet, fortsparse_status_t, FORTSPARSE_OK
     use ideal_fb_test_field, only: simple_field_t, screw_field_t
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp), mu0 = 4.0e-7_dp*pi
@@ -141,8 +155,14 @@ program test_ideal_free_boundary
         call kink_checks()
     case ('spectrum')
         call spectrum_checks()
+    case ('kink_growth')
+        call kink_checks(.true.)
     case ('hypotheses')
         call hypothesis_checks()
+    case ('curvature')
+        call subproblem_checks()
+        call symmetry_checks()
+        call curvature_checks()
     case default
         error stop 'unknown mode'
     end select
@@ -264,7 +284,8 @@ contains
         bc([1, 3]) = 2*pi*[gg(2), -gg(1)]/r
     end subroutine
 
-    subroutine kink_checks()
+    subroutine kink_checks(growth)
+        logical, intent(in), optional :: growth
         ! Independent cylinder oracle: m=1 rigid helical displacement, ka=0.1.
         ! delta W / (pi*a^2*L/(2*mu0)) = q^2-1 + f(ka)*(q-1)^2,
         ! f=K1/(K1+ka*K0). Its ka -> 0 limit is 2*q*(q-1).
@@ -278,7 +299,16 @@ contains
         real(dp), allocatable :: chain(:, :), contour(:, :), u(:)
         real(dp) :: q, scale, exact, err, previous(2), lambda, wp, wv, ws
         real(dp) :: jv(4), gq, gf, factor, k0, k1, t, gx(96), gw(96)
+        real(dp), parameter :: aspects(3) = [80.0_dp,120.0_dp,160.0_dp]
+        real(dp) :: growth_errors(3), physical_lambda, physical_mass, density, r
+        integer :: last_level, alevel, cell, point
+        logical :: rates
         integer :: level, iq, j, a, st
+        rates = .false.
+        if (present(growth)) rates = growth
+        last_level = 2
+        if (rates) last_level = 3
+        density = 1.3_dp
         call gauss_legendre(96, gx, gw)
         k0 = 0; k1 = 0
         do j = 1, 96
@@ -288,8 +318,9 @@ contains
         end do
         factor = k1/(k1 + 0.1_dp*k0)
         previous = huge(1.0_dp)
-        do level = 1, 2
+        do level = 1, last_level
             kink_major = 40.0_dp*2**level
+            if (rates) kink_major = aspects(level)
             field%major = kink_major
             allocate (contour(2, 16), chain(2, 16))
             do j = 1, 16
@@ -348,7 +379,35 @@ contains
                     error stop 'cylinder plasma energy'
                 if (abs(em%vacuum/scale - wv) > 0.03_dp*abs(wv)) &
                     error stop 'cylinder vacuum energy'
-                if (iq == 1) then
+                if (rates .and. iq == 1) then
+                    ! Rigid circular polarization has |xi_real|^2=1 at
+                    ! every toroidal angle. Integrate physical rho*dV on
+                    ! the actual curved plasma mesh, not coefficient metric.
+                    physical_mass = 0
+                    do cell = 1, fb%plasma%cells
+                        do point = 1, fb%plasma%nq
+                            r = dot_product(fb%plasma%reference(1, &
+                                fb%plasma%conn(:,cell)),fb%plasma%shape(:,point))
+                            physical_mass = physical_mass+density*r &
+                                *fb%plasma%weight(point)*fb%plasma%det(point,cell) &
+                                *2*pi/fb%plasma%nfp
+                        end do
+                    end do
+                    ! Two real phases are an exact Fourier degeneracy.
+                    ! This is the projected rigid subspace, not the minimum
+                    ! over the full displacement space.
+                    call rigid_spectrum(em%total,physical_mass,physical_lambda)
+                    alevel = level
+                    growth_errors(alevel) = abs(physical_lambda-exact/density) &
+                        /abs(exact/density)
+                    print '(a,f7.1,a,4es18.9)', '[V] rigid kink R=',kink_major, &
+                        ' gamma,S0-lambda,oracle-lambda,relative-error=', &
+                        sqrt(-physical_lambda),physical_lambda,exact/density, &
+                        growth_errors(alevel)
+                    ! Observed 0.24%, 0.078%, 0.026% (docs/s0-spectrum.md).
+                    if (growth_errors(alevel)>0.005_dp) error stop 'physical kink rate'
+                end if
+                if (iq == 1 .and. .not. rates) then
                     u(4::4) = 0
                     call ideal_fb_mode_energy(fb, 2, u, single, st)
                     if (st /= IDEAL_FB_OK) error stop 'standing energy'
@@ -375,7 +434,45 @@ contains
             end do
             deallocate (chain, contour)
         end do
+        if (rates) then
+            print '(a,2f12.6)', '[V] rigid kink aspect-error orders=', &
+                log(growth_errors(:2)/growth_errors(2:))/log(aspects(2:)/aspects(:2))
+            ! The toroidal correction must vanish in the cylinder limit.
+            if (any(growth_errors(2:) >= growth_errors(:2))) &
+                error stop 'rigid kink error does not decrease with aspect ratio'
+        end if
     end subroutine
+
+    subroutine rigid_spectrum(energy,physical_mass,lambda)
+        real(dp), intent(in) :: energy,physical_mass
+        real(dp), intent(out) :: lambda
+        type(csc_z_t) :: stiffness,mass
+        type(fortsparse_status_t) :: status
+        type(s0_pencil_t) :: pencil
+        type(s0_report_t) :: report
+        type(eigen_options_t) :: options
+        complex(dp) :: kv(4),mv(4),values(1),vectors(2,1),start(2)
+        real(dp) :: residual(1),allowance
+        kv = 0; mv = 0
+        kv([1,4]) = 2*energy; mv([1,4]) = physical_mass
+        call csc_from_triplet(2,2,[1,2,1,2],[1,1,2,2],kv,stiffness,status)
+        if(status%code/=FORTSPARSE_OK) error stop 'rigid stiffness'
+        call csc_from_triplet(2,2,[1,2,1,2],[1,1,2,2],mv,mass,status)
+        if(status%code/=FORTSPARSE_OK) error stop 'rigid physical mass'
+        call s0_prepare(pencil,stiffness,mass, &
+            cmplx(2.2_dp*energy/physical_mass,0.0_dp,dp),report)
+        if(report%status/=EIGEN_OK) error stop 'rigid shift factor'
+        options%max_basis=2; options%which=EIGEN_NEAREST
+        start=[cmplx(1.0_dp,0.0_dp,dp),cmplx(0.0_dp,1.0_dp,dp)]
+        call s0_solve(pencil,start,1.0e-10_dp,options,values,vectors,residual,report)
+        if(report%status/=EIGEN_OK) error stop 'rigid S0 spectrum'
+        lambda=real(values(1),dp)
+        allowance=residual(1)/sqrt(physical_mass) &
+            +128*epsilon(lambda)*abs(2*energy/physical_mass)
+        if(abs(values(1)-2*energy/physical_mass)>allowance) &
+            error stop 'rigid original-equation tolerance'
+        call s0_destroy(pencil)
+    end subroutine rigid_spectrum
 
     subroutine field_ext(r, z, b, psi)
         ! Poloidal field and flux of the PF filaments plus the unit-circulation
@@ -867,6 +964,20 @@ contains
                         fb%tangential_damping = 0
                         fb%plasma%x = x1; fb%xs = xs1
                         fb%phi = phi1; fb%lam = lam1
+                        ! The trust-region globalisation reaches the same
+                        ! manufactured target under the same residual gate.
+                        fb%trust_region = .true.
+                        call ideal_fb_solve(fb, 1.0_dp, 20, report, st, &
+                                    step_tolerance=1.0_dp, residual_tolerance=1.0e-8_dp)
+                        if (st /= IDEAL_FB_OK .or. report%residual > 1.0e-8_dp) &
+                            error stop 'trust-region vertical residual target'
+                        if (maxval(abs(fb%plasma%x - x0)) > 1.0e-8_dp) &
+                            error stop 'trust-region manufactured target error'
+                        print '(a,3i4)', 'trust region: iterations, rejected ', &
+                            report%iterations, report%rejected
+                        fb%trust_region = .false.
+                        fb%plasma%x = x1; fb%xs = xs1
+                        fb%phi = phi1; fb%lam = lam1
                     end block
                     do it = 0, 3
                         error(it) = max(maxval(abs(fb%plasma%x - x0)), &
@@ -896,6 +1007,165 @@ contains
             deallocate (g, gp, gm, du, v, hv, hh, fd)
         end do
         print '(a)', 'slide-gauged Jacobian and vertical quadratic return ok'
+    end subroutine
+
+    subroutine subproblem_checks()
+        ! Trust-region subproblem in an eigenbasis: (w + lambda) s = -c,
+        ! lambda >= max(0, -w_1), |s| <= delta, lambda (delta - |s|) = 0, and
+        ! no sampled point of the ball has a lower model value.
+        real(dp) :: w(6), c(6), s(6), t(6), lambda, delta, best, m
+        integer :: case_, k, j
+        logical :: hard
+        w = [-3.0_dp, -1.0_dp, -1.0e-3_dp, 0.5_dp, 2.0_dp, 5.0_dp]
+        do case_ = 1, 4
+            c = [(sin(1.7_dp*k + case_), k=1, 6)]
+            delta = 0.3_dp
+            if (case_ == 2 .or. case_ == 3) delta = 30
+            if (case_ >= 3) c(1) = 0
+            if (case_ == 4) then
+                w = abs(w) + 0.1_dp; delta = 100
+            end if
+            call ideal_fb_trust_subproblem(w, c, delta, s, lambda, hard)
+            m = dot_product(c, s) + 0.5_dp*sum(w*s**2)
+            if (norm2(s) > delta*(1 + 1.0e-10_dp)) error stop 'subproblem radius'
+            if (lambda < max(0.0_dp, -w(1)) - 1.0e-12_dp) error stop 'subproblem lambda'
+            if (lambda > 0 .and. abs(norm2(s) - delta) > 1.0e-8_dp*delta) &
+                error stop 'subproblem complementarity'
+            do k = 1, 6
+                if (hard .and. k == 1) cycle
+                if (abs((w(k) + lambda)*s(k) + c(k)) > 1.0e-8_dp*norm2(c)) &
+                    error stop 'subproblem stationarity'
+            end do
+            best = huge(1.0_dp)
+            do j = 1, 20000
+                t = [(sin(0.37_dp*j*k + 0.11_dp*j*j), k=1, 6)]
+                t = delta*t/norm2(t)
+                if (mod(j, 2) == 0) t = t*mod(0.618_dp*j, 1.0_dp)
+                best = min(best, dot_product(c, t) + 0.5_dp*sum(w*t**2))
+            end do
+            print '(a,i2,a,l2,a,es12.4,a,es12.4,a,es12.4)', 'subproblem case', case_, &
+                ' hard', hard, ' lambda', lambda, ' m(s)', m, ' best sampled', best
+            if (m > best + 1.0e-12_dp*abs(best)) error stop 'subproblem not minimal'
+            if (case_ == 3 .and. .not. hard) error stop 'subproblem hard case missed'
+            if (case_ == 4 .and. (hard .or. lambda /= 0)) &
+                error stop 'subproblem interior Newton step'
+        end do
+    end subroutine
+
+    subroutine symmetry_checks()
+        ! ideal_fb_symmetry_defect on a hand-built five-node map, mirror
+        ! q1 -> -q1: nodes 2/3 and 4/5 are mirror pairs, node 1 its own image.
+        ! A parity-respecting state has zero defect; a rigid q1 shift d of
+        ! the n = 0 mode has defect 2 d (on node 1 too), a q2 shift of the sin
+        ! mode likewise, and a node without a mirror image is not counted.
+        type(ideal_fb_t) :: fb
+        real(dp) :: defect, bdefect
+        integer :: mirrored, st, m
+        fb%nmode = 3; fb%plasma%nodes = 5
+        fb%plasma%reference = reshape([0.0_dp, 0.0_dp, 0.1_dp, 0.2_dp, -0.1_dp, &
+            0.2_dp, 0.3_dp, -0.1_dp, -0.3_dp, -0.1_dp], [2, 5])
+        fb%plasma%boundary = [.false., .true., .true., .true., .true.]
+        allocate (fb%plasma%x(2, 3, 5))
+        fb%plasma%x(:, 1, :) = fb%plasma%reference
+        do m = 2, 3
+            ! cos (m = 2) even: q1 odd under the mirror; sin (m = 3) the reverse.
+            fb%plasma%x(:, m, 1) = [0.0_dp, 0.01_dp*m]
+            fb%plasma%x(:, m, 2) = [0.02_dp, 0.03_dp]*m
+            fb%plasma%x(:, m, 4) = [0.05_dp, -0.01_dp]*m
+        end do
+        fb%plasma%x(:, 2, 3) = [-0.04_dp, 0.06_dp]
+        fb%plasma%x(:, 2, 5) = [-0.10_dp, -0.02_dp]
+        fb%plasma%x(:, 3, 3) = [0.06_dp, -0.09_dp]
+        fb%plasma%x(:, 3, 5) = [0.15_dp, 0.03_dp]
+        fb%plasma%x(:, 3, 1) = [0.07_dp, 0.0_dp]
+        call ideal_fb_symmetry_defect(fb, 1, defect, bdefect, mirrored, st)
+        print '(a,i0,a,2es12.4)', 'symmetry mirrored ', mirrored, ' defect ', &
+            defect, bdefect
+        if (st /= IDEAL_FB_OK .or. mirrored /= 5) error stop 'symmetry mirror map'
+        if (defect > 1.0e-15_dp) error stop 'symmetric state has a defect'
+        fb%plasma%x(1, 1, :) = fb%plasma%x(1, 1, :) + 1.0e-3_dp
+        call ideal_fb_symmetry_defect(fb, 1, defect, bdefect, mirrored, st)
+        if (abs(defect - 2.0e-3_dp) > 1.0e-15_dp .or. abs(bdefect - 2.0e-3_dp) &
+            > 1.0e-15_dp) error stop 'symmetry defect of a rigid shift'
+        fb%plasma%x(1, 1, :) = fb%plasma%x(1, 1, :) - 1.0e-3_dp
+        fb%plasma%x(2, 3, 2) = fb%plasma%x(2, 3, 2) + 5.0e-4_dp
+        call ideal_fb_symmetry_defect(fb, 1, defect, bdefect, mirrored, st)
+        if (abs(defect - 5.0e-4_dp) > 1.0e-15_dp) error stop 'symmetry defect of sin'
+        fb%plasma%reference(1, 5) = 0.11_dp
+        call ideal_fb_symmetry_defect(fb, 1, defect, bdefect, mirrored, st)
+        if (mirrored /= 3) error stop 'symmetry: unmatched node counted'
+        call ideal_fb_symmetry_defect(fb, 3, defect, bdefect, mirrored, st)
+        if (st == IDEAL_FB_OK) error stop 'symmetry: bad component accepted'
+    end subroutine
+
+    subroutine curvature_checks()
+        ! At the unsolved Solov'ev start (shell map, Phi~, lambda exact) S_red
+        ! has negative eigenvalues (hypothesis_checks). The escape descends
+        ! the reduced energy; its first step at a tiny radius must reproduce
+        ! the second-order model, which tests the gradient and S_red as the
+        ! derivatives of E_red evaluated by an independent energy sum.
+        type(ideal_fb_t) :: fb, fresh
+        type(ideal_fb_hypotheses_t) :: hyp
+        type(ideal_fb_curvature_t) :: nc
+        type(ideal_fb_report_t) :: report
+        real(dp), allocatable :: g(:)
+        real(dp) :: lmin
+        integer :: ntor, st, nneg
+        do ntor = 0, 1
+            call build(16, 12, 2, .false., 3, ntor, fb, solovev=.true.)
+            call ideal_fb_set_drive(fb, sampler, st)
+            if (st /= IDEAL_FB_OK) error stop 'curvature drive'
+            call ideal_fb_solve_shell_map(fb, st)
+            call ideal_fb_solve_vacuum(fb, st)
+            call ideal_fb_solve_multipliers(fb, st)
+            if (st /= IDEAL_FB_OK) error stop 'curvature blocks'
+            fresh = fb
+            call ideal_fb_hypotheses(fb, hyp, st)
+            if (st /= IDEAL_FB_OK) error stop 'curvature hypotheses'
+            call ideal_fb_reduced_spectrum(fb, nneg, lmin, st)
+            if (st /= IDEAL_FB_OK) error stop 'reduced spectrum status'
+            print '(a,i0,a,i0,a,es12.4)', 'N=', ntor, ' In_-(S_red) ', nneg, &
+                ' min ', lmin
+            if (nneg /= hyp%n_negative .or. nneg < 1) &
+                error stop 'reduced spectrum count'
+            if (abs(lmin - hyp%reduced_min) > 1.0e-10_dp*abs(lmin)) &
+                error stop 'reduced spectrum minimum'
+            call ideal_fb_negative_curvature(fb, 1.0e-5_dp, 1, nc, st)
+            print '(a,i0,a,f10.6,a,es12.4)', 'small step N=', ntor, ' rho ', nc%rho, &
+                ' dE ', nc%energy - nc%energy0
+            if (nc%steps /= 1 .or. abs(nc%rho - 1) > 1.0e-2_dp) &
+                error stop 'reduced energy model ratio'
+            fb = fresh
+            call ideal_fb_negative_curvature(fb, 2.0e-2_dp, 10, nc, st, verbose=.true.)
+            print '(a,i0,a,i0,a,i0,a,i0,a,2es14.6)', 'escape N=', ntor, ' steps ', &
+                nc%steps, ' In_- ', nc%n_negative0, ' -> ', nc%n_negative, ' E_red ', &
+                nc%energy0, nc%energy
+            if (nc%steps < 1 .or. .not. nc%energy < nc%energy0) &
+                error stop 'escape did not lower the reduced energy'
+            ! The fresh state made an exact equilibrium by a manufactured load
+            ! is a saddle (In_-(S_red) >= 1): the plain solve accepts it at
+            ! once, the negative-curvature solve must leave it.
+            fb = fresh
+            allocate (g(fb%n))
+            call ideal_fb_gradient(fb, g, st)
+            fb%shift = g
+            fb%trust_region = .true.
+            call ideal_fb_solve(fb, 1.0e-10_dp, 2, report, st, &
+                residual_tolerance=1.0e-12_dp)
+            if (st /= IDEAL_FB_OK .or. report%iterations /= 0) &
+                error stop 'manufactured saddle not recognised'
+            fb%negative_curvature = .true.
+            call ideal_fb_solve(fb, 1.0e-10_dp, 2, report, st, &
+                residual_tolerance=1.0e-12_dp)
+            print '(a,i0,a,i0,a,i0,a,es12.4)', 'saddle N=', ntor, ' status ', st, &
+                ' escapes ', report%escapes, ' moved ', &
+                maxval(abs(fb%plasma%x - fresh%plasma%x))
+            if (st == IDEAL_FB_OK .or. report%escapes < 1 .or. &
+                .not. maxval(abs(fb%plasma%x - fresh%plasma%x)) > 1.0e-4_dp) &
+                error stop 'negative-curvature solve kept a saddle'
+            deallocate (g)
+        end do
+        print '(a)', 'negative curvature escape ok'
     end subroutine
 
     subroutine hypothesis_checks()

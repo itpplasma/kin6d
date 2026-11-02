@@ -143,6 +143,42 @@ volume from flux integrals of B over them; SFL angles (PEST, Hamada, Boozer);
 exports (G-EQDSK for axisymmetric states with ψ from D1, Boozer `.bc` through
 libneo, L7 spectra).
 
+E2.2 interchange is optional (`KIN6D_WITH_LIBNEO=OFF` by default). Its pinned
+FetchContent dependency selects only `LIBNEO::geqdsk` (11 compilation units,
+including `neo_util`), available without libneo numerics. The outer
+`kin6d_geqdsk` adapter samples a GS state's D7 evaluator and profiles into a
+rectangular SI record, converts explicitly to libneo's CGS memory convention,
+and delegates all format/convention operations to libneo. Native COCOS is 3:
+`B_R=-psi_Z/R`, `B_Z=psi_R/R`, `B_phi=F/R`
+(`gen/gen_grad_shafranov.f90:85,91`), and signed q uses
+`sign(psi_bound-psi_axis)` (`src/equilibrium/equilibrium_readback.f90:104,131`).
+The four registered Solov'ev polarity tests qualify these signs at runtime,
+including Ampere current and libneo classification. See
+[Sauter and Medvedev, Table 1](https://doi.org/10.1016/j.cpc.2012.09.010).
+
+`export_geqdsk` accepts native COCOS 3 and requires an explicit D7 continuation
+when the requested rectangle leaves the represented domain; it never supplies
+an implicit vacuum. `import_geqdsk` requires the source COCOS, rejects a
+classification mismatch and unsupported left-handed conventions, preserves the
+original SI record, records any classifier profile repair, and standardizes a
+copy to COCOS 3. These operations require well-formed files; libneo's reader
+currently terminates on malformed input. `geqdsk_grid` feeds the existing
+surface consumer. `resolve_geqdsk` performs a cold P2 Newton solve from the
+LCFS and piecewise-linear derivative profiles in absolute flux, in the boundary
+gauge. For smooth LCFS samples, `curved_lcfs=.true.` retains their periodic
+cubic spline in the native mesh; the default retains the supplied polygon,
+including corners. Interior mesh refinement alone does not control this boundary
+reconstruction choice. The original absolute flux gauge is restored by adding
+the imported boundary flux when comparing.
+Native provenance records the boundary reconstruction choice and any optional
+edge-pressure offset.
+Interchange and reconstruction return candidates, with derivatives and
+continuous bounds unavailable. The legacy reader remains, with an explicit
+fixture equivalence test. The [fixture recipe](../test/fixtures/shield_torus_a10.md)
+distinguishes its stored CHEASE grid from reconstructed q/LCFS records.
+The adapter uses the one libneo pin of the build (`KIN6D_LIBNEO_REVISION`, a
+libneo main commit that contains the G-EQDSK target split of libneo#445).
+
 Kinetic geometry view (`src/equilibrium/equilibrium_geometry.f90`, axisymmetric states):
 on a surface psi = psi_0 of the evaluator it returns B, |B|, grad|B| (five-point
 stencil of the evaluator), grad psi, b.grad theta, (b x grad psi).grad theta,
