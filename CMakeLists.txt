@@ -139,7 +139,8 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
-# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM, exact FEEC tables).
+# FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
+# Steklov form lazy-fortran/fortfem#144, exact FEEC tables).
 set(KIN6D_FORTFEM_REVISION "e8b947bbf37fce389310a8d70f8e3a888098ce52")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
@@ -325,6 +326,18 @@ target_link_libraries(test_landreman_free_boundary PRIVATE kin6d)
 add_test(NAME ideal_fb_landreman_axisymmetric COMMAND test_landreman_free_boundary)
 set_tests_properties(ideal_fb_landreman_axisymmetric PROPERTIES
     TIMEOUT 180 PROCESSORS 2 ENVIRONMENT "OMP_NUM_THREADS=2;OPENBLAS_NUM_THREADS=1")
+# E3.3: the same cases through the full-surface R2 BEM exterior (24/48 rotated
+# sectors, block-circulant assembly, per-harmonic Steklov form), compared
+# with the per-n exterior. bem3d16 is the chain=16 level only; the two-level
+# gate with its refinement checks runs nightly (ci/nightly-jobs.json).
+add_test(NAME ideal_fb_landreman_bem3d16_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d16)
+add_test(NAME ideal_fb_landreman_bem3d_axisymmetric
+    COMMAND test_landreman_free_boundary bem3d)
+set_tests_properties(ideal_fb_landreman_bem3d16_axisymmetric PROPERTIES
+    TIMEOUT 600 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+set_tests_properties(ideal_fb_landreman_bem3d_axisymmetric PROPERTIES
+    TIMEOUT 1800 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_ideal_free_boundary test/test_ideal_free_boundary.f90
     test/generated/ideal_fb_kink_leaves.f90)
 target_link_libraries(test_ideal_free_boundary PRIVATE kin6d)
@@ -343,8 +356,10 @@ add_test(NAME ideal_fb_vacuum_gamma_c_independence_n3
     COMMAND test_ideal_free_boundary vacuum3d 3)
 add_test(NAME ideal_fb_slide_gauge_curl_free COMMAND test_ideal_free_boundary slide)
 add_test(NAME ideal_fb_hypotheses_bordering COMMAND test_ideal_free_boundary hypotheses)
+add_test(NAME ideal_fb_negative_curvature COMMAND test_ideal_free_boundary curvature)
 set_tests_properties(ideal_fb_derivatives ideal_fb_vertical_newton
     ideal_fb_slide_gauge_curl_free ideal_fb_hypotheses_bordering
+    ideal_fb_negative_curvature
     ideal_fb_vacuum_exact_n0_p2
     ideal_fb_vacuum_exact_n0_p3 ideal_fb_vacuum_gamma_c_independence_n3 PROPERTIES
     TIMEOUT 600 ENVIRONMENT "OMP_NUM_THREADS=4")
@@ -2303,6 +2318,9 @@ foreach(k 2 3)
     endforeach()
 endforeach()
 add_test(NAME ideal_fb_chart_surface_invalid COMMAND test_ideal_fb_surface invalid)
+add_test(NAME ideal_fb_chart_surface_circulant COMMAND test_ideal_fb_surface circulant)
+set_tests_properties(ideal_fb_chart_surface_circulant PROPERTIES
+    TIMEOUT 120 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME ideal_fb_exterior_frozen_derivatives
     COMMAND test_ideal_free_boundary frozen-exterior)
 set_tests_properties(ideal_fb_exterior_frozen_derivatives PROPERTIES

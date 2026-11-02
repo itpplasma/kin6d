@@ -246,8 +246,18 @@ hypothesis that has not been traced.
    (`gamma_c_3d_build_periodic`). This is exact algebra (test
    `ideal_fb_exterior3d_periodic`: roundoff against the full-surface DtN of the
    expanded operators and against the dense all-pairs build). The pair work
-   falls by nfp and the dense DtN by nfp^3. The pair quadrature itself
-   (FortFEM `converge_pair`) remains the cost driver.
+   falls by nfp and the dense DtN by nfp^3.
+   Rotated strips of the cylindrical chart (done). Without `periodic`,
+   `ideal_fb_use_bem3d` passes `sectors = nphi` to `gamma_c_3d_build` for the
+   cylindrical chart. It assembles sector-zero target pairs only and forms
+   S = W + J^H V^{-1} J per toroidal harmonic (`build_circulant_exterior_dtn`),
+   so any restriction is supported, including non-repeating Fourier modes.
+   Only the small consumer form R^T S R is dense. A nonrotational surface
+   passed with `sectors` is rejected (`ideal_fb_chart_surface_circulant`).
+   The pair quadrature (FortFEM `converge_pair`) remains the cost driver, and
+   its near-pair degree grows with the panel aspect. The Landreman gate
+   therefore uses nphi = 3*chain/2 strips and runs in 364 s at 4 threads
+   (ROADMAP E3.3).
 3. Curve-chart free boundary (done). `ideal_fb_init` takes any
    `ideal_chart_t`. The per-n exterior is built only for the cylindrical chart
    itself; any other chart (curve chart, nested-map chart) gets no exterior
@@ -288,6 +298,39 @@ hypothesis that has not been traced.
    (FortFEM `assemble_parametric_bem_p2_circulant`), so its roundoff differs
    from run to run even at a fixed thread count, and whether a run converges
    or stalls depends on that roundoff.
+   With `ideal_fb_t%negative_curvature` (`fb3d_synthetic` globalisation 2,
+   opt-in) a stalled merit hands over to `ideal_fb_negative_curvature`,
+   which takes exact More-Sorensen trust-region steps on the second-order
+   model of the reduced energy E_red(q) (shell map, Phi~ and lambda solved
+   exactly, slide gauge) while S_red has a negative eigenvalue, and a state
+   that passes the residual gate with negative curvature is left in the same
+   way. In sCluster job 3370099 all 15 glob-2 runs at R1 converged (1 to 16
+   threads, starts kicked by 8 mm along q1 included) and 2 of 3 at R2. The
+   R2 failure parked the map at a fold, which the Jacobian guard of the
+   escape now prevents, and with it job 3370145 converged in 8 of 8 glob-2
+   runs (R1, R2 and R3, kicks up to 15 mm). All R1 runs reached the same state within
+   4e-7 mm, in 34 to 87 Newton steps against 93 to 152 for the trust region
+   alone.
+   The case is stellarator symmetric: the coils (make_coils.py), the chart
+   frame, which maps (q1, q2, phi-hat) to (-q1, q2, -phi-hat) under
+   (x, y, z) -> (x, -y, -z), the frozen labels and, at R1 only, the reference
+   mesh (49 of 49 nodes mirrored; 40 of 77 at R2 and 48 of 97 at R3). The
+   gate also admits symmetry-broken equilibria. A start kicked by 8 mm
+   without the escape converged (residual 2e-13) to a state with boundary
+   symmetry defect 11.6 mm, one negative eigenvalue of S_red and an E_red
+   0.067 J above the symmetric state, which is a saddle of the reduced
+   energy, and the extra state of job 3369792 at 8 threads has the same
+   defect and the same 12.98 mm distance from the symmetric state. Starts
+   kicked by 8 mm stall under the trust region alone at R1 and R2, at
+   states 24 to 31 mm from symmetry with 5 to 51 negative eigenvalues. The
+   acceptance check is therefore In_-(S_red) = 0, the boundary symmetry
+   defect, the vacuum oracle and, where available, the distance to a
+   reference (`fb3d_synthetic` "state" block and
+   `benchmarks/fb3d-synthetic/state_check.py`). The stable state has a
+   boundary symmetry defect below 1e-7 mm at R1 and 0.9 mm at R2, where the
+   mesh is not mirror symmetric. The single R3 run converged to a stable
+   state with a 5.4 mm defect, and whether that is the mesh asymmetry or a
+   second stable branch is open.
 4. Coil input. The MAKEGRID group reader is `neo_makegrid_coils` in
    [libneo](https://github.com/itpplasma/libneo) (PR #469). KIN6D compiles
    its two dependency-free modules from the pinned `KIN6D_LIBNEO_REVISION`
