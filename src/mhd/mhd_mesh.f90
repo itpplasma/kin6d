@@ -321,8 +321,9 @@ contains
         real(dp), intent(out) :: xi, eta
         integer, intent(out) :: status
 
-        integer :: j, j0, pass, nin, per, i0, di, c, tc, it
+        integer :: j, j0, pass, nin, per, i0, di, dd, c, tc, it
         real(dp) :: th, v(2), jac(2, 2), r(2), det, d(2), tol, best, viol, xq, eq
+        real(dp) :: xo, eo
 
         status = 1
         do j = 1, fm%nring
@@ -350,7 +351,9 @@ contains
                 per = 2 + fm%nth(j)/fm%nth(j - 1) - 1
             end if
             i0 = int(th/(2.0_dp*pi)*nin)
-            do di = 0, 2
+            ! The analytic cell i0 first, then its two neighbours.
+            do dd = 0, 2
+                di = modulo(dd + 1, 3)
                 do c = 1, per
                     if (j == 1) then
                         if (c > 1) cycle
@@ -368,6 +371,7 @@ contains
                         d(1) = (jac(2, 2)*r(1) - jac(1, 2)*r(2))/det
                         d(2) = (-jac(2, 1)*r(1) + jac(1, 1)*r(2))/det
                         ! Newton step projected onto the closed reference triangle
+                        xo = xq; eo = eq
                         xq = max(0.0_dp, xq - d(1))
                         eq = max(0.0_dp, eq - d(2))
                         if (xq + eq > 1.0_dp) then
@@ -375,6 +379,10 @@ contains
                             eq = 1.0_dp - xq
                         end if
                         if (abs(d(1)) + abs(d(2)) < 1.0e-14_dp) exit
+                        ! A point outside this cell pins the projected iterate
+                        ! on the boundary while d stays large; stop once it
+                        ! no longer moves instead of running all iterations.
+                        if (abs(xq - xo) + abs(eq - eo) < 1.0e-15_dp) exit
                     end do
                     call flux_mesh_geometry(fm, tc, xq, eq, v, jac)
                     viol = norm2(v - x)/diameter(fm, tc)
