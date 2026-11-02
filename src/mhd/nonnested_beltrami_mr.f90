@@ -60,14 +60,17 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
     use fortfem_meridian_fourier_apply, only: meridian_fourier_op_init, &
         meridian_fourier_curl_curl_apply, meridian_fourier_op_bytes
     use fortfem_meridian_fourier_curl, only: meridian_fourier_mass
-    use kin6d_newton_mr, only: mr_problem_t, mr_report_t, minres_solve, &
-        newton_mr_solve, MR_OK
+    use fortnum_krylov, only: real_linear_operator_t, real_minres, KRYLOV_OK, &
+        KRYLOV_STAGNATION
+    use fortnum_newton_mr, only: newton_mr_problem_t, newton_mr_report_t, &
+        newton_mr_options_t, newton_mr_solve, NEWTON_MR_OK
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use kin6d_equilibrium_nonnested, only: nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free
     use kin6d_nonnested_newton_mr, only: lumped_metric_t, mode_curl, mode_mass
     implicit none
 
-    type, extends(mr_problem_t) :: saddle_t
+    type, extends(newton_mr_problem_t) :: saddle_t
         ! x = [A on the free dofs (system%index order), p on the interior
         ! V0 nodes, mu if bordered].
         type(beltrami_system_t), pointer :: sys => null()
@@ -88,6 +91,20 @@ submodule(kin6d_nonnested_beltrami) kin6d_nonnested_beltrami_mr
         procedure :: precondition => saddle_precondition
         procedure :: evaluate => saddle_evaluate
         procedure :: linearize => saddle_linearize
+    end type
+
+    ! Operator and preconditioner of the fixed-mu MINRES solves (FortNum
+    ! real_minres): pointer adapters to one saddle_t, so its state is
+    ! reached only through them during the solve.
+    type, extends(real_linear_operator_t) :: saddle_operator_t
+        type(saddle_t), pointer :: problem => null()
+    contains
+        procedure :: apply => saddle_operator_apply
+    end type
+    type, extends(real_linear_operator_t) :: saddle_pc_t
+        type(saddle_t), pointer :: problem => null()
+    contains
+        procedure :: apply => saddle_pc_apply
     end type
 contains
     module subroutine beltrami_mr_prepare(system, field, metric, nphi, status)
@@ -158,9 +175,9 @@ contains
         type(beltrami_report_t), intent(inout) :: report
         real(dp), optional, intent(in) :: source(:)
         real(dp), allocatable, optional, intent(out) :: potential(:), dmu(:)
-        type(saddle_t) :: problem
+        type(saddle_t), target :: problem
         real(dp), allocatable :: x(:), full(:), rhs(:), dx(:), bh(:), sx(:)
-        real(dp) :: residual
+        real(dp) :: residual, tangent_residual
         integer :: j, info, st
         report%solver = 'minres'
         if (present(source)) then
@@ -177,8 +194,7 @@ contains
             call saddle_free(problem); return
         end if
         call fixed_solve(problem, mu, x, info, report)
-        if (info /= MR_OK .or. .not. report%residual <= max(1.0e-9_dp, &
-            10*system%mr%tolerance)) then
+        if (.not. accepted(info, report%residual)) then
             report%status = BELTRAMI_RESONANT
             report%message = 'MINRES did not reach the tolerance (near-resonant '// &
                 'or ill-conditioned Beltrami operator)'
@@ -193,8 +209,9 @@ contains
                 + system%helicity_h)
             residual = report%residual
             call krylov(problem, rhs, dx, info, report)
+            tangent_residual = report%residual
             report%residual = residual
-            if (info /= MR_OK) then
+            if (.not. accepted(info, tangent_residual)) then
                 report%status = BELTRAMI_RESONANT
                 report%message = 'MINRES failed on the mu tangent'
                 call saddle_free(problem); return
@@ -227,6 +244,17 @@ contains
         if (present(potential)) potential = full
         report%status = BELTRAMI_OK
         report%message = 'Beltrami candidate (MINRES); bounds unavailable'
+    contains
+        logical function accepted(status, relative_residual)
+            ! Acceptance gate of the factored path on the explicit residual
+            ! |K x - b| / max(1, |b|). FortNum reports a recurrence that met
+            ! the MINRES tolerance while the explicit residual did not as
+            ! KRYLOV_STAGNATION (attainable accuracy); the gate decides.
+            integer, intent(in) :: status
+            real(dp), intent(in) :: relative_residual
+            accepted = (status == KRYLOV_OK .or. status == KRYLOV_STAGNATION) &
+                .and. relative_residual <= max(1.0e-9_dp, 10*system%mr%tolerance)
+        end function
     end subroutine
 
     module subroutine beltrami_mr_helicity(system, target, bracket, tolerance, &
@@ -239,11 +267,11 @@ contains
         real(dp), intent(in) :: target, bracket(2), tolerance
         type(free_b_field_t), intent(inout) :: field
         type(beltrami_report_t), intent(out) :: report
-        type(saddle_t) :: problem
+        type(saddle_t), target :: problem
         type(free_b_field_t) :: candidate
         type(beltrami_report_t) :: work
-        type(mr_report_t) :: newton
-        type(mr_options_t) :: options
+        type(newton_mr_report_t) :: newton
+        type(newton_mr_options_t) :: options
         real(dp), allocatable :: x(:), y(:)
         real(dp) :: mu0, t0
         integer :: info, st
@@ -254,7 +282,8 @@ contains
             call saddle_free(problem); report = work; return
         end if
         call fixed_solve(problem, mu0, x, info, work)
-        if (info /= MR_OK) then
+        if (.not. (info == KRYLOV_OK .or. info == KRYLOV_STAGNATION) .or. .not. &
+            work%residual <= max(1.0e-9_dp, 10*system%mr%tolerance)) then
             report = work; report%status = BELTRAMI_RESONANT
             report%message = 'MINRES failed at the initial multiplier'
             call saddle_free(problem); return
@@ -274,7 +303,7 @@ contains
         report%preconditioner_s = work%preconditioner_s
         call saddle_free(problem)
         report%mu = y(problem%n)
-        if (newton%status /= MR_OK) then
+        if (newton%status /= NEWTON_MR_OK) then
             report%status = BELTRAMI_INVALID
             report%message = 'helicity Newton-MR did not converge'
             return
@@ -382,7 +411,7 @@ contains
     subroutine fixed_solve(problem, mu, x, info, report)
         ! MINRES for the lifted fixed-mu system; report%residual is
         ! |K x - b| / max(1, |b|), the normalisation of the factored path.
-        type(saddle_t), intent(inout) :: problem
+        type(saddle_t), intent(inout), target :: problem
         real(dp), intent(in) :: mu
         real(dp), allocatable, intent(out) :: x(:)
         integer, intent(out) :: info
@@ -398,22 +427,46 @@ contains
     end subroutine
 
     subroutine krylov(problem, rhs, x, info, report)
-        type(saddle_t), intent(inout) :: problem
+        ! FortNum MINRES from x = 0 to |K x - b| <= tolerance max(1, |b|).
+        ! info is KRYLOV_OK when the explicit residual meets it; the
+        ! recurrence-only stagnation is treated as a failure, as the factored
+        ! path's acceptance gate would reject it.
+        type(saddle_t), intent(inout), target :: problem
         real(dp), intent(in) :: rhs(:)
         real(dp), allocatable, intent(out) :: x(:)
         integer, intent(out) :: info
         type(beltrami_report_t), intent(inout) :: report
+        type(saddle_operator_t) :: op
+        type(saddle_pc_t) :: pc
         real(dp) :: bnorm, rtol, residual, t0
         integer :: its
-        allocate (x(size(rhs)))
+        allocate (x(size(rhs))); x = 0
+        op%problem => problem; pc%problem => problem
         bnorm = norm2(rhs)
         rtol = problem%sys%mr%tolerance*max(1.0_dp, bnorm)/max(bnorm, tiny(1.0_dp))
         t0 = wall()
-        call minres_solve(problem, rhs, x, rtol, problem%sys%mr%max_minres, info, &
-            its, residual, npc_exit=.false.)
+        call real_minres(op, rhs, x, rtol, problem%sys%mr%max_minres, info, its, &
+            residual, pc)
         report%minres_s = report%minres_s + wall() - t0
         report%minres_iterations = report%minres_iterations + its
-        report%residual = residual*bnorm/max(1.0_dp, bnorm)
+        report%residual = residual/max(1.0_dp, bnorm)
+    end subroutine
+
+    subroutine saddle_operator_apply(self, input, output)
+        class(saddle_operator_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        call self%problem%apply(input, output)
+    end subroutine
+
+    subroutine saddle_pc_apply(self, input, output)
+        ! A failed factor solve is reported to MINRES as a non-finite output.
+        class(saddle_pc_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        integer :: status
+        call self%problem%precondition(input, output, status)
+        if (status /= 0) output = ieee_value(1.0_dp, ieee_quiet_nan)
     end subroutine
 
     subroutine saddle_core(sys, a, p, mu, ya, yp, lifted)
@@ -475,19 +528,19 @@ contains
             self%wp(size(self%sys%gauge_index)), self%wyp(size(self%sys%gauge_index)))
     end subroutine
 
-    subroutine saddle_apply(self, x, y)
+    subroutine saddle_apply(self, input, output)
         class(saddle_t), intent(inout) :: self
-        real(dp), intent(in) :: x(:)
-        real(dp), intent(out) :: y(:)
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
         call saddle_scratch(self)
-        call unpack_into(self%free, self%nodes, x, self%wa, self%wp)
+        call unpack_into(self%free, self%nodes, input, self%wa, self%wp)
         call saddle_core(self%sys, self%wa, self%wp, self%mu, self%wya, self%wyp, &
             .false.)
-        y(:self%nf) = self%wya(self%free)
-        y(self%nf + 1:self%nf + self%ng) = self%wyp(self%nodes)
+        output(:self%nf) = self%wya(self%free)
+        output(self%nf + 1:self%nf + self%ng) = self%wyp(self%nodes)
         if (self%bordered) then
-            y(:self%nf) = y(:self%nf) - self%border*x(self%n)
-            y(self%n) = -dot_product(self%border, x(:self%nf))
+            output(:self%nf) = output(:self%nf) - self%border*input(self%n)
+            output(self%n) = -dot_product(self%border, input(:self%nf))
         end if
     end subroutine
 

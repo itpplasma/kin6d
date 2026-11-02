@@ -8,7 +8,7 @@ module kin6d_nonnested_newton_mr
     ! This path never assembles S: the Hessian action is FortFEM's
     ! sum-factorised meridian_fourier_curl_curl_apply (FFT in phi per
     ! meridional quadrature point), the step is Newton-MR with MINRES
-    ! (kin6d_newton_mr), and the preconditioner is chosen by options:
+    ! (fortnum_newton_mr), and the preconditioner is chosen by options:
     !   NN_MR_PC_NONE   identity on the free dofs;
     !   NN_MR_PC_JACOBI diagonal of the metric-lumped operator below;
     !   NN_MR_PC_LUMPED metric lumping: K is replaced by its phi average
@@ -41,8 +41,8 @@ module kin6d_nonnested_newton_mr
         meridian_fourier_op_bytes
     use fortsparse, only: csc_t, csc_matvec, csc_matmul, csc_transpose, &
         csc_from_triplet, fortsparse_status_t, status_ok
-    use kin6d_newton_mr, only: mr_problem_t, mr_options_t, mr_report_t, &
-        newton_mr_solve, MR_OK
+    use fortnum_newton_mr, only: newton_mr_problem_t, newton_mr_options_t, &
+        newton_mr_report_t, newton_mr_solve, NEWTON_MR_OK
     use kin6d_equilibrium_nonnested, only: free_b_field_t, nn_factor_t, nn_factor, &
         nn_factor_solve_real, nn_factor_free, nn_divergence
     use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, nn_harmonic_forms, &
@@ -63,11 +63,11 @@ module kin6d_nonnested_newton_mr
         logical :: matrix_free = .true.
         ! Angles of the phi average of K in the lumped model.
         integer :: nphi_lump = 0 ! 0: the assembly rule nphi
-        type(mr_options_t) :: newton
+        type(newton_mr_options_t) :: newton
     end type
 
     type :: nn_mr_report_t
-        type(mr_report_t) :: newton
+        type(newton_mr_report_t) :: newton
         ! Wall seconds of the operator setup (FortFEM apply data or the
         ! assembled S) and of the preconditioner setup (lumped assembly and
         ! per-mode factors); bytes of the matrix-free operator data.
@@ -83,7 +83,7 @@ module kin6d_nonnested_newton_mr
         procedure :: tensor => lumped_tensor
     end type
 
-    type, extends(mr_problem_t) :: mapped_vacuum_t
+    type, extends(newton_mr_problem_t) :: mapped_vacuum_t
         ! f(A) = A^T S A / 2 - rhs^T A on the free dofs; fixed dofs keep data.
         integer :: modes = 0, nb = 1, n1 = 0, nn = 0, kind = NN_MR_PC_LUMPED
         logical :: matrix_free = .true., failed = .false.
@@ -103,7 +103,7 @@ contains
     subroutine nn_mapped_solve_mr(field, map, nphi, data, options, report, mr, status)
         ! Same problem, data, fixed traces and report as nn_mapped_solve.
         ! report%iterations counts MINRES iterations of all Newton steps;
-        ! report%info is the Newton-MR status (MR_OK = 0).
+        ! report%info is the Newton-MR status (NEWTON_MR_OK = 0).
         type(free_b_field_t), intent(inout), target :: field
         type(nn_map_t), intent(in), target :: map
         integer, intent(in) :: nphi
@@ -112,7 +112,7 @@ contains
         type(nn_mapped_report_t), intent(out) :: report
         type(nn_mr_report_t), intent(out) :: mr
         integer, intent(out) :: status
-        type(mapped_vacuum_t) :: problem
+        type(mapped_vacuum_t), target :: problem
         type(map_metric_t), target :: metric
         real(dp), allocatable :: x(:), sx(:), r(:), bh(:)
         real(dp) :: energy_h, scale, t0
@@ -136,7 +136,7 @@ contains
         call newton_mr_solve(problem, x, options%newton, mr%newton)
         report%iterations = mr%newton%minres_iterations
         report%info = mr%newton%status
-        if (mr%newton%status /= MR_OK) then
+        if (mr%newton%status /= NEWTON_MR_OK) then
             call nn_mr_free(problem); return
         end if
         call full_apply(problem, x, sx)
@@ -407,15 +407,15 @@ contains
         end if
     end subroutine
 
-    subroutine vacuum_apply(self, x, y)
+    subroutine vacuum_apply(self, input, output)
         ! Hessian on the free dofs: P S P with P the free-dof projection.
         class(mapped_vacuum_t), intent(inout) :: self
-        real(dp), intent(in) :: x(:)
-        real(dp), intent(out) :: y(:)
-        self%xfree = x
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        self%xfree = input
         where (self%fixed) self%xfree = 0
-        call full_apply(self, self%xfree, y)
-        where (self%fixed) y = 0
+        call full_apply(self, self%xfree, output)
+        where (self%fixed) output = 0
     end subroutine
 
     subroutine vacuum_evaluate(self, x, f, g, status)

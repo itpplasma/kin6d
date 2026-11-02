@@ -2,10 +2,11 @@
 
 Status: candidate, opt-in. Item 1 of the
 [relaxation comparators](relaxation-comparators.md#algorithms-to-adopt), first
-slice. Sources `src/core/newton_mr.f90` (`kin6d_newton_mr`) and
-`src/mhd/nonnested_newton_mr.f90` (`kin6d_nonnested_newton_mr`); tests
-`test/test_newton_mr.f90` and `test/test_nonnested_newton_mr.f90`. The default
-path is unchanged.
+slice. Source `src/mhd/nonnested_newton_mr.f90` (`kin6d_nonnested_newton_mr`,
+the problem type only); test `test/test_nonnested_newton_mr.f90`. The generic
+MINRES (`real_minres`, `fortnum_krylov`) and the Newton-MR driver
+(`fortnum_newton_mr`) are FortNum's, with their own unit tests there. The
+default path is unchanged.
 
 ## Scope of this slice
 
@@ -110,13 +111,13 @@ Wall time and peak RSS of one solve (`path factored|mr nr N`, fresh process):
 Oracle field errors agree to all printed digits in every row. Timings were
 taken on a host shared with two other agents and are indicative only.
 
-Unit checks (`test_newton_mr`): MINRES against a dense solve for SPD
-(cond 1e3), diagonally preconditioned SPD (cond 1e9; recurred and explicit
-residuals differ by about cond eps there, so that gate is 1e-10), indefinite
-and singular consistent systems (minimum-norm solution to 4e-12); the NPC exit
-returns a direction with negative curvature that descends. Newton-MR from a
-saddle of a nonconvex quartic takes 5 NPC steps and ends at a minimiser with a
-positive definite Hessian.
+Unit checks of the generic solvers live in FortNum (`fortnum_minres`,
+`fortnum_newton_mr`): MINRES against dense solves for SPD, indefinite and
+singular consistent systems (minimum-norm solution), the nonpositive-curvature
+exit returning a descending direction of nonpositive curvature; Newton-MR on
+Rosenbrock, on a double well from a concave start (curvature steps and forward
+tracking) and on a constrained Lagrangian saddle with the preconditioned
+gradient merit.
 
 ## Limits and open items
 
@@ -142,7 +143,7 @@ positive definite Hessian.
 Reproduce:
 
 ```sh
-cmake --build build --target test_newton_mr test_nonnested_newton_mr
+cmake --build build --target test_nonnested_newton_mr
 ctest --test-dir build -R newton_mr
 OMP_NUM_THREADS=2 build/test_nonnested_newton_mr ladder jacobi 4 2 4 8
 OMP_NUM_THREADS=2 build/test_nonnested_newton_mr path factored 16 10
@@ -154,8 +155,9 @@ OMP_NUM_THREADS=2 build/test_nonnested_newton_mr path mr 16 10
 Status: candidate, opt-in. Second slice: the symmetric indefinite Taylor
 closure of [equilibrium-beltrami.md](equilibrium-beltrami.md). Source
 `src/mhd/nonnested_beltrami_mr.f90` (submodule of `kin6d_nonnested_beltrami`),
-tests `test/test_nonnested_beltrami_mr.f90`, the `mr` variants of
-`test_nonnested_beltrami` and `test_newton_mr saddle`. Passing
+tests `test/test_nonnested_beltrami_mr.f90` and the `mr` variants of
+`test_nonnested_beltrami`; the solvers are FortNum's `real_minres` and
+`fortnum_newton_mr` (saddle unit oracle `fortnum_newton_mr`). Passing
 `mr=beltrami_mr_options_t()` to `beltrami_prepare` routes every later
 `beltrami_solve` / `beltrami_constraint` on that system to this path; without
 it nothing changes.
@@ -181,8 +183,9 @@ point of the Taylor Lagrangian `L = W(A) + p.G^T A - mu (H(A) - H0)/(4 pi)`,
 whose Hessian in `(A, p, mu)` is the symmetric bordered saddle
 `[[K, G, -g], [G^T, 0, 0], [-g^T, 0, 0]]`, `g = H_s A + P h`. It is solved by
 Newton-MR from `mu0` = mid-bracket and the fixed-`mu0` state, with the line
-search on the preconditioned merit `grad L^T P grad L / 2` (`MR_MERIT_GRADIENT`,
-new in `kin6d_newton_mr`, after the original Newton-MR of Roosta et al. for
+search on the preconditioned merit `grad L^T P grad L / 2`
+(`NEWTON_MR_MERIT_GRADIENT` of `fortnum_newton_mr`, after the original
+Newton-MR of Roosta et al. for
 non-minimising stationary points), with the preconditioner `P` of the current
 linearisation fixed across the line search. Preconditioned MINRES does not
 increase `|H d + g|_P`, so every iterate descends that merit, slope
@@ -294,15 +297,14 @@ symmetric-indefinite LDLT with inertia and pivot checks); it was not profiled
 here and grows much faster than the SPD factor of the first slice. Timings were taken on a host shared with other
 agents and are indicative only.
 
-Unit checks (`test_newton_mr saddle`): MINRES with the exact block-diagonal
-preconditioner on a dense KKT matrix converges in 3 iterations (three
-eigenvalues, Murphy-Golub-Wathen); gradient-merit Newton-MR on an
-equality-constrained convex quartic (a Lagrangian saddle with 4 negative
-Hessian eigenvalues) converges in 9 steps to `|g|/|g0| = 1e-13`, where the
-objective merit stalls. The Lanczos step of `minres_solve` now subtracts the
-previous vector before forming `alpha` (the Paige-Saunders order); counts of
-the existing unit checks drop slightly (SPD 83 -> 79, indefinite 129 -> 119)
-and the mapped NN1 tests are unchanged.
+Unit checks of the generic solvers live in FortNum: `fortnum_newton_mr` runs
+gradient-merit Newton-MR on a constrained Lagrangian saddle against a
+bisection oracle (no curvature exit taken), `fortnum_minres` covers
+indefinite and singular systems. The kin6d-local unit test of an earlier
+revision (dense KKT MINRES with the exact block preconditioner in 3
+iterations; a constrained quartic with 4 negative Lagrangian Hessian
+eigenvalues in 9 steps, where the objective merit stalls) was removed with
+the local solver copy.
 
 ## Limits
 
@@ -319,7 +321,7 @@ and the mapped NN1 tests are unchanged.
 Reproduce:
 
 ```sh
-cmake --build build --target test_newton_mr test_nonnested_beltrami test_nonnested_beltrami_mr
+cmake --build build --target test_nonnested_beltrami test_nonnested_beltrami_mr
 ctest --test-dir build -R 'newton_mr|beltrami.*_mr'
 OMP_NUM_THREADS=2 build/test_nonnested_beltrami_mr ladder block 2 2 4.5 0.1 0 2 4 8 16
 OMP_NUM_THREADS=2 build/test_nonnested_beltrami_mr path factored 2 8 6 1.1

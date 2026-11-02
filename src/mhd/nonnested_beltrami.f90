@@ -25,7 +25,7 @@ module kin6d_nonnested_beltrami
     use kin6d_nonnested_mapped, only: nn_map_t, map_metric_t, &
         METRIC_IDENTITY, nn_harmonic_forms
     use fortfem_meridian_fourier_apply, only: meridian_fourier_op_t
-    use kin6d_newton_mr, only: mr_options_t, MR_MERIT_GRADIENT
+    use fortnum_newton_mr, only: newton_mr_options_t, NEWTON_MR_MERIT_GRADIENT
     implicit none
     private
     public :: beltrami_system_t, beltrami_report_t, beltrami_prepare, beltrami_solve
@@ -49,8 +49,9 @@ module kin6d_nonnested_beltrami
         real(dp) :: tolerance = 1.0e-10_dp, shift = 0
         integer :: max_minres = 5000
         ! Helicity constraint: Newton-MR on the Taylor Lagrangian.
-        type(mr_options_t) :: newton = mr_options_t(tolerance=1.0e-11_dp, &
-            max_iterations=30, merit=MR_MERIT_GRADIENT, npc_exit=.false.)
+        type(newton_mr_options_t) :: newton = newton_mr_options_t( &
+            tolerance=1.0e-11_dp, max_iterations=30, &
+            merit=NEWTON_MR_MERIT_GRADIENT, npc_exit=.false.)
     end type
 
     type :: beltrami_system_t
