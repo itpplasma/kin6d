@@ -217,6 +217,7 @@ contains
         call this%attribute('fortio_revision', kin6d_fortio_revision)
         call this%attribute('fortfem_revision', kin6d_fortfem_revision)
         call this%attribute('fortsparse_revision', kin6d_fortsparse_revision)
+        call this%attribute('libneo_revision', kin6d_libneo_revision)
         call this%attribute('created_utc', utc_timestamp())
     end subroutine
 
