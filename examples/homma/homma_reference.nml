@@ -1,0 +1,10 @@
+! Input for homma_reference (B01 to B03 thermal-force benchmark outputs).
+! Speeds, directions, scans and background values use the app defaults, which mirror the cases.
+&homma_reference
+  ppu = 8.0
+  xmax = 7.0
+  case_files = 'cases/B01_maxwellian.nml', 'cases/B02_rosenbluth.nml', 'cases/B03_force.nml'
+  case_sha256 = '068bc0a7b42a0853c42e1c6e82f70fe1184a529af11264c714db2d03d2c871fe',
+                '41364148ff730d320ca0989fdd2a2210eb2f1828ccdce4f53ee5559c599376db',
+                '6e8426fc326998771d774a8e2d8eeb5a6525b867e7674168e022c60844627b56'
+/

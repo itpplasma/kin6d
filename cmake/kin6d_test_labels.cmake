@@ -299,6 +299,10 @@ kin6d_test_labels(streaming_particle_density_oracles fast CLASSES continuum
 kin6d_test_labels(streaming_moments_oracles fast CLASSES continuum
     TARGETS test_streaming_moments)
 kin6d_test_labels(debye_sphere_oracles fast CLASSES continuum TARGETS test_debye_sphere)
+foreach(check maxwellian l1_brute invariants slow_limit)
+    kin6d_test_labels(rosenbluth_${check}_oracle fast CLASSES continuum
+        TARGETS test_rosenbluth_reference)
+endforeach()
 kin6d_test_labels(slab_oscillation_oracles fast CLASSES continuum
     TARGETS test_slab_oscillation)
 kin6d_test_labels(shielding_dynamics_oracles fast CLASSES continuum
@@ -785,6 +789,10 @@ kin6d_test_labels(ideal_map_field_angle fast CLASSES mhd
     TARGETS test_ideal_map_field_angle)
 kin6d_test_labels(ideal_seed_3d_nested_input fast CLASSES mhd
     TARGETS test_nested_seed_input)
+if(TARGET gen_homma)
+    kin6d_test_labels(homma_leaves_regeneration fast CLASSES continuum
+        TARGETS gen_homma)
+endif()
 if(TARGET gen_ideal_field_angle)
     kin6d_test_labels(ideal_field_angle_regeneration fast CLASSES mhd
         TARGETS gen_ideal_field_angle)
