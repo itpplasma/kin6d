@@ -37,6 +37,8 @@ program test_ideal_map_hessian
     ! axis basis (vector axis modes) and the position gauge. Both assemble into
     ! the same CSR pattern; the matrices must agree to roundoff relative to the
     ! largest entry, and the production matrix must be exactly symmetric.
+    ! The Hessian, energy and gradient must not depend on the OpenMP team
+    ! size (bitwise), including teams larger than the number of cells.
     use, intrinsic :: iso_fortran_env, only: dp => real64, int64
     use kin6d_grad_shafranov, only: gs_state_t, initialize_gs
     use kin6d_equilibrium_chart, only: cylindrical_chart_t
@@ -46,6 +48,7 @@ program test_ideal_map_hessian
     use fortfem_element_to_csr, only: csr_matrix_t
     use hessian_test_case, only: hessian_field_t, boundary_point, a
     use ideal_map_hessian_oracle, only: ideal_map_hessian_reference
+    !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads
     implicit none
     integer :: degree, ntor, variant, failures, first_degree, last_degree, ntor_step
     character(16) :: argument
@@ -128,6 +131,7 @@ contains
             degree, ntor, variant, diff/scale, asym, scale
         if (.not. diff <= 1.0e-12_dp*scale) failures = failures + 1
         if (asym /= 0) failures = failures + 1
+        call thread_invariance(map, x, fast, failures)
         if (degree > 3) then
             print '(a,5i7)', 'nodes cells nq full-local reduced-local ', &
                 map%nodes, map%cells, map%nq, 3*map%nmode*map%nloc, &
@@ -135,6 +139,36 @@ contains
             call block_actions(map, fast, oracle, failures)
             if (ntor == 2) call directional_check(map, x, fast, failures)
         end if
+    end subroutine
+
+    subroutine thread_invariance(map, x, reference, failures)
+        ! Hessian, energy and gradient with 1, 3 and 7 threads and with more
+        ! threads than cells against the default team: bitwise identical (the
+        ! work items keep the per-cell operation order).
+        type(ideal_map_t), intent(in) :: map
+        real(dp), intent(in) :: x(:, :, :)
+        type(csr_matrix_t), intent(in) :: reference
+        integer, intent(inout) :: failures
+        type(csr_matrix_t) :: other
+        real(dp), allocatable :: g0(:), g1(:)
+        real(dp) :: e0, e1
+        integer :: status, k, saved, teams(4)
+        saved = 1
+        !$ saved = omp_get_max_threads()
+        teams = [1, 3, 7, map%cells + 3]
+        allocate (g0(map%ndof), g1(map%ndof))
+        call ideal_map_energy(map, x, e0, status, g0)
+        do k = 1, size(teams)
+            !$ call omp_set_num_threads(teams(k))
+            call ideal_map_hessian(map, x, other)
+            call ideal_map_energy(map, x, e1, status, g1)
+            if (any(other%val /= reference%val) .or. e1 /= e0 .or. any(g1 /= g0)) then
+                print '(a,i0,a,i0)', 'thread dependence: team ', teams(k), ' cells ', &
+                    map%cells
+                failures = failures + 1
+            end if
+        end do
+        !$ call omp_set_num_threads(saved)
     end subroutine
 
     subroutine multiply(matrix, v, product)

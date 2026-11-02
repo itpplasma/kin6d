@@ -101,8 +101,19 @@ contains
             deallocate (matrix_rows)
             if (status_ok(status)) call sparse_factor(direct%solver, matrix, status)
         else
+            ! Real indefinite CPU factors use the supernodal LDL^T schedule;
+            ! its pivots stay inside each supernode, so a failure retries with
+            ! scalar Bunch--Kaufman, which may delay pivots.
+            direct%solver%options%ldlt_supernodal = &
+                direct%solver%options%symmetry == FORTSPARSE_SYM_INDEFINITE
             call sparse_factor(direct%solver, n, n, rowptr(n + 1) - 1, rowptr, &
                                colidx, val, status)
+            if (.not. status_ok(status) .and. &
+                    direct%solver%options%ldlt_supernodal) then
+                direct%solver%options%ldlt_supernodal = .false.
+                call sparse_factor(direct%solver, n, n, rowptr(n + 1) - 1, &
+                                   rowptr, colidx, val, status)
+            end if
         end if
         direct%factor_status = status
         ok = status_ok(status)
