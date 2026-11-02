@@ -5,7 +5,7 @@ program test_nonnested_beltrami
         nn_report_t, nn_point, nn_linear_solve
     use kin6d_nonnested_beltrami, only: beltrami_system_t, beltrami_report_t, &
         beltrami_prepare, beltrami_solve, &
-        beltrami_constraint, BELTRAMI_RESONANT
+        beltrami_constraint, BELTRAMI_RESONANT, beltrami_mr_options_t
     use fortfem_meridian_feec_n, only: meridian_load, meridian_lagrange_nodes, &
         meridian_error_norm
     use kin6d_equilibrium_state, only: EQ_VALUES, EQ_BR, EQ_BPHI, EQ_BZ
@@ -25,9 +25,13 @@ program test_nonnested_beltrami
     complex(dp) :: bm(3), bn(3)
     integer :: st, k, lev, nr, i, j, n, mode
     logical :: detected, square, cylinder
-    character(24) :: arg, kind
+    character(24) :: arg, kind, solver
+    type(beltrami_mr_options_t) :: mr
     call get_command_argument(1, kind)
     call get_command_argument(2, arg); read (arg, *) k
+    ! Optional third argument 'mr': the matrix-free MINRES path.
+    call get_command_argument(3, solver)
+    mr%tolerance = 1.0e-12_dp ! the factored gates below hold to this level
     square = kind == 'manufactured' .or. kind == 'lundquist'
     cylinder = kind == 'lundquist' .or. kind == 'resonance' .or. kind == 'constraints'
     mode = 0
@@ -84,7 +88,11 @@ program test_nonnested_beltrami
             if (st == 0) error stop 'accepted nonconstant Taylor pressure'
             field%p = 1
         end if
-        call beltrami_prepare(field, flux, data, 2*mode + 3, system, st)
+        if (solver == 'mr') then
+            call beltrami_prepare(field, flux, data, 2*mode + 3, system, st, mr=mr)
+        else
+            call beltrami_prepare(field, flux, data, 2*mode + 3, system, st)
+        end if
         if (st /= 0) error stop 'Beltrami prepare'
         if (kind == 'resonance') then
             lo = 0; hi = 8; detected = .false.
