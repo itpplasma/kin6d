@@ -74,16 +74,29 @@ kernels), in order of expected payoff:
    1-D matrices, a dense axis block) and geometric multigrid on the div-div
    stiffness. This replaces the assembled Hessian and FortSparse factorization
    in the [harness](equilibrium-harness.md) as the default path.
+   First slice (opt-in, mapped NN1 vacuum lane): Newton-MR with the
+   matrix-free FortFEM curl-curl action and the phi-lumped per-mode
+   preconditioner, [nonnested-newton-mr.md](nonnested-newton-mr.md).
+   Second slice (opt-in, Taylor/Beltrami closure): MINRES on the symmetric
+   indefinite saddle system and Newton-MR on the helicity-constrained
+   Lagrangian, same document.
 2. **Parallel-only Levenberg–Marquardt term.** Damping on the v ∥ B component
    only, which is the near-null mode of the second variation, in place of a
    diagonal damping of all unknowns.
 3. **Harmonic deflation and the potential-velocity force.** Compute the
    harmonic forms per geometry and project them out of every solve; evaluate
-   the force through curl (curl curl)⁻¹ curl(J × B).
+   the force through curl (curl curl)⁻¹ curl(J × B). Implemented on the NN1
+   complex as a diagnostic, with a mixed Leray form as the comparison path:
+   `kin6d_nonnested_force`, [projected force](nonnested-force.md)
+   (`nonnested_force_*`).
 4. **Energy-criterion island seeding** as an initializer for island cases.
+   Implemented opt-in on the NN1 complex: [island-seed.md](island-seed.md).
 5. **Residual floor as a diagnostic.** Current sheets at rational surfaces set
    a force-residual floor that does not decrease under h or p refinement;
    acceptance gates report it instead of chasing it with smooth spaces.
+   Implemented as `equilibrium_residual_floor` / `write_residual_floor` in the
+   D8 harness, reported by the map ladders and the force tests
+   ([projected force](nonnested-force.md#residual-floor)).
 
 Not adopted: explicit damped iteration, Bell elements, hyperbolic pressure
 relaxation as a production method, and accelerator-specific frameworks.
@@ -97,3 +110,11 @@ relaxation as a production method, and accelerator-specific frameworks.
   [atlas](benchmarks.md)), SIESTA, SPECTRE, VMEC++, DESC, GVEC.
 - Published only: NTEC and HINT figures and tables, recorded with their model
   assumptions and caveats.
+
+## Implementation status
+
+- Item 2: `parallel_damping` of the ideal map Newton (non-nested solve),
+  [ideal map](ideal-map-3d.md), tests `ideal_map_parallel_mass` and
+  `ideal_map_parallel_damping_p2`. The NN2 coupled Newton has A, not a
+  displacement, as unknown: v || B maps to dA = v x B = 0, so that system
+  has no parallel near-null mode to damp.
