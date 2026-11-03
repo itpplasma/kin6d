@@ -127,11 +127,11 @@ contains
         end interface
         call prepare(kind, n, op, steady, p, u, load)
         allocate (source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
-            free_index(steady%ndof), gauge_index(op%fs%n0), &
+            free_index(steady%ndof), gauge_index(op%scalar_fs%n0), &
             current_index(steady%ndof))
         source = 0; free_index = 0; gauge_index = 0; current_index = 0
         nf = 0; ng = 0; nj = 0
-        current_start = 6*op%fs%n0 + op%fs%sp(1)%ndof
+        current_start = 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof
         allocate (boundary(op%ndof), r(steady%ndof), &
             zero(steady%ndof), step(steady%ndof), unused(steady%ndof))
         boundary = u(:op%ndof); zero = 0
@@ -160,8 +160,8 @@ contains
             nf = nf + 1
             free_index(i) = nf
         end do
-        do i = 1, op%fs%n0
-            if (op%fs%sp(0)%bnd(i)) cycle
+        do i = 1, op%scalar_fs%n0
+            if (op%scalar_fs%sp(0)%bnd(i)) cycle
             ng = ng + 1
             gauge_index(i) = nf + ng
             free_index(op%ndof + ng) = nf + ng
@@ -270,11 +270,11 @@ contains
                     call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                     call require(status == 0, 'gauge physical Riesz basis')
                     block = block + weight*matmul(transpose(basis), basis)
-                        do j = 1, op%fs%nl0
-                            col = gauge_index(op%fs%sp(0)%dof(j, t))
+                        do j = 1, op%scalar_fs%nl0
+                            col = gauge_index(op%scalar_fs%sp(0)%dof(j, t))
                             if (col == 0) cycle
-                            do i = 1, op%fs%nl0
-                                row = gauge_index(op%fs%sp(0)%dof(i, t))
+                            do i = 1, op%scalar_fs%nl0
+                                row = gauge_index(op%scalar_fs%sp(0)%dof(i, t))
                                 if (row == 0) cycle
                                 value = weight*(basis(1, i)*basis(1, j) &
                                     + dot_product(basis(13:15, i), basis(13:15, j)))
@@ -310,9 +310,9 @@ contains
                 do i = 1, steady%ndof
                     row = free_index(i)
                     if (row == 0) cycle
-                    if (i <= 6*op%fs%n0) then
-                        group = (i - 1)/op%fs%n0 + 1
-                    else if (i <= 6*op%fs%n0 + op%fs%sp(1)%ndof) then
+                    if (i <= 6*op%scalar_fs%n0) then
+                        group = (i - 1)/op%scalar_fs%n0 + 1
+                    else if (i <= 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof) then
                         group = 7
                     else
                         group = 8
@@ -464,7 +464,7 @@ contains
                 allocate (wall(op%fs%sp(1)%ndof))
                 call current_wall_dofs(op, manufactured_current, &
                     [real(kind, dp), symmetry%k], wall)
-                current_start = 6*op%fs%n0 + op%fs%sp(1)%ndof
+                current_start = 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof
                 where (op%fs%sp(1)%bnd) u(current_start + 1:op%ndof) = wall
             end subroutine
 
@@ -522,10 +522,10 @@ contains
                         integer :: t, q, i, row, status
                         call prepare(kind, 2, op, steady, p, u, load)
                         allocate (wall(op%fs%sp(1)%ndof), volume(op%ndof), basis(36, op%nlocal))
-                        call require(all(op%fixed(6*op%fs%n0 + op%fs%sp(1)%ndof + 1:) &
+                        call require(all(op%fixed(6*op%scalar_fs%n0 + op%fs%sp(1)%ndof + 1:) &
                             .eqv. op%fs%sp(1)%bnd), 'fixed current trace mask')
                         call vrmhd_current_lift(op, &
-                            u(6*op%fs%n0 + op%fs%sp(1)%ndof + 1:op%ndof), wall)
+                            u(6*op%scalar_fs%n0 + op%fs%sp(1)%ndof + 1:op%ndof), wall)
                         call require(maxval(abs(wall), mask=op%fs%sp(1)%bnd) &
                             > 1.0e-3_dp, 'nonzero manufactured current trace')
                         call require(maxval(abs(wall), mask=.not. op%fs%sp(1)%bnd) &

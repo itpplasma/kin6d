@@ -22,19 +22,19 @@ contains
         type(fortsparse_status_t) :: st
         integer, allocatable :: index(:), rows(:), cols(:)
         real(dp), allocatable :: values(:)
-        real(dp) :: basis(36, op%nlocal), block(op%nlocal, op%fs%nl0)
+        real(dp) :: basis(36, op%nlocal), block(op%nlocal, op%scalar_fs%nl0)
         real(dp) :: x(2), weight, value
         integer :: i, j, t, q, pos, count, row, col, nt
         nt = op%fs%mm%topology%n_triangles
-        allocate (index(op%fs%n0))
+        allocate (index(op%scalar_fs%n0))
         index = 0
-        do i = 1, op%fs%n0
-            if (op%fs%sp(0)%bnd(i)) cycle
+        do i = 1, op%scalar_fs%n0
+            if (op%scalar_fs%sp(0)%bnd(i)) cycle
             steady%ngauge = steady%ngauge + 1
             index(i) = steady%ngauge
         end do
         steady%ndof = op%ndof + steady%ngauge
-        count = nt*op%nlocal*op%fs%nl0
+        count = nt*op%nlocal*op%scalar_fs%nl0
         allocate (rows(count), cols(count), values(count))
         pos = 0
         do t = 1, nt
@@ -42,7 +42,7 @@ contains
                 do q = 1, op%fs%nq
                     call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                     if (status /= 0) return
-                    do j = 1, op%fs%nl0
+                    do j = 1, op%scalar_fs%nl0
                         do i = 1, op%nlocal
                             if (op%row(i) /= 3) cycle
                             call vrmhd_pairing(basis(5, i), basis(6, i), basis(7, i), &
@@ -51,8 +51,8 @@ contains
                         end do
                     end do
                 end do
-                do j = 1, op%fs%nl0
-                    col = index(op%fs%sp(0)%dof(j, t))
+                do j = 1, op%scalar_fs%nl0
+                    col = index(op%scalar_fs%sp(0)%dof(j, t))
                     if (col == 0) cycle
                     do i = 1, op%nlocal
                         if (op%row(i) /= 3) cycle

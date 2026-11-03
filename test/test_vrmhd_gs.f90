@@ -204,14 +204,14 @@ contains
         p%eta0 = 0
         if (convention > 0) p%eta0 = 0.2_dp
         nt = mm%topology%n_triangles; nl = op%nlocal
-        nc = 6*op%fs%n0 + op%fs%sp(1)%ndof
+        nc = 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof
         allocate (basis(36, nl), metric(36, nl), local(nl, nl), rhs(op%ndof), &
-            rows(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), &
-            cols(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), &
-            vals(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), u(steady%ndof), &
+            rows(nt*(nl**2 + op%fs%nq*op%scalar_fs%nl0**2)), &
+            cols(nt*(nl**2 + op%fs%nq*op%scalar_fs%nl0**2)), &
+            vals(nt*(nl**2 + op%fs%nq*op%scalar_fs%nl0**2)), u(steady%ndof), &
             load(op%ndof), wall(op%fs%sp(1)%ndof), r(steady%ndof), &
             zero(steady%ndof), unused(steady%ndof), source(6, op%fs%nq, nt), &
-            js(3, op%fs%nq, nt), h(op%fs%sp(1)%ndof), index(op%fs%n0), &
+            js(3, op%fs%nq, nt), h(op%fs%sp(1)%ndof), index(op%scalar_fs%n0), &
             recovered(op%ndof), dual(steady%ndof))
         rhs = 0; pos = 0; u = 0; source = 0; js = 0; gs_error = 0
         do t = 1, nt
@@ -317,19 +317,19 @@ contains
             end do
         end do
         ng = 0; index = 0
-        do i = 1, op%fs%n0
-            if (op%fs%sp(0)%bnd(i)) cycle
+        do i = 1, op%scalar_fs%n0
+            if (op%scalar_fs%sp(0)%bnd(i)) cycle
             ng = ng + 1; index(i) = op%ndof + ng
         end do
         do t = 1, nt
             do q = 1, op%fs%nq
                 call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                 call require(status == 0, 'GS gauge Riesz basis')
-                do j = 1, op%fs%nl0
-                    col = index(op%fs%sp(0)%dof(j, t))
+                do j = 1, op%scalar_fs%nl0
+                    col = index(op%scalar_fs%sp(0)%dof(j, t))
                     if (col == 0) cycle
-                    do i = 1, op%fs%nl0
-                        row = index(op%fs%sp(0)%dof(i, t))
+                    do i = 1, op%scalar_fs%nl0
+                        row = index(op%scalar_fs%sp(0)%dof(i, t))
                         if (row == 0) cycle
                         pos = pos + 1; rows(pos) = row; cols(pos) = col
                         vals(pos) = weight*dot_product(basis(:, i), basis(:, j))
@@ -345,13 +345,13 @@ contains
         defect = sqrt(max(0.0_dp, dot_product(r, dual)))
         parts = 0
         do i = 1, steady%ndof
-            if (i <= op%fs%n0) then
+            if (i <= op%scalar_fs%n0) then
                 j = 1
-            else if (i <= 4*op%fs%n0) then
+            else if (i <= 4*op%scalar_fs%n0) then
                 j = 2
-            else if (i <= 5*op%fs%n0) then
+            else if (i <= 5*op%scalar_fs%n0) then
                 j = 5
-            else if (i <= 6*op%fs%n0) then
+            else if (i <= 6*op%scalar_fs%n0) then
                 j = 6
             else if (i <= nc) then
                 j = 3

@@ -83,7 +83,7 @@ contains
         call require(status == 0, 'energy mesh')
         call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
         call require(status == 0, 'energy section')
-        n0 = op%fs%n0
+        n0 = op%scalar_fs%n0
         p%mi = 1.2_dp; p%mu0 = 0.8_dp
         allocate (u(op%ndof), ud(op%ndof), zero(op%ndof), r(op%ndof), &
             unused(op%ndof), probe(op%ndof), active(op%ndof), &
@@ -219,8 +219,8 @@ contains
         call require(status == 0, 'magnetic energy mesh')
         call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
         call require(status == 0, 'magnetic energy section')
-        n0 = op%fs%n0; n1 = op%fs%sp(1)%ndof
-        l0 = op%fs%nl0; l1 = op%fs%sp(1)%nloc
+        n0 = op%scalar_fs%n0; n1 = op%fs%sp(1)%ndof
+        l0 = op%scalar_fs%nl0; l1 = op%fs%sp(1)%nloc
         a0 = 6*n0; j0 = a0 + n1
         p%mi = 1.2_dp; p%mu0 = 0.8_dp; p%epsilon_b = 0.02_dp
         p%eta0 = 0.015_dp; p%nu0 = 0.02_dp; p%nu_parallel = 0.01_dp
@@ -242,15 +242,15 @@ contains
         where (op%fixed(n0 + 1:4*n0)) u(n0 + 1:4*n0) = 0
         ! Compact support isolates the prescribed current trace from magnetic trace data.
         do t = 1, op%fs%mm%topology%n_triangles
-            if (.not. any(op%fs%sp(0)%bnd(op%fs%sp(0)%dof(:, t)))) cycle
+            if (.not. any(op%scalar_fs%sp(0)%bnd(op%scalar_fs%sp(0)%dof(:, t)))) cycle
             u(op%map(6*l0 + 1:6*l0 + l1, t)) = 0
         end do
         call require(maxval(abs(u(a0 + 1:j0))) > 0, 'nonzero random potential')
         call random_number(js); js = 0.02_dp*(js - 0.5_dp)
         do t = 1, op%fs%mm%topology%n_triangles
-            if (any(op%fs%sp(0)%bnd(op%fs%sp(0)%dof(:, t)))) js(:, :, t) = 0
+            if (any(op%scalar_fs%sp(0)%bnd(op%scalar_fs%sp(0)%dof(:, t)))) js(:, :, t) = 0
         end do
-        where (op%fs%sp(0)%bnd) u(4*n0 + 1:5*n0) = 1
+        where (op%scalar_fs%sp(0)%bnd) u(4*n0 + 1:5*n0) = 1
         source(4, :, :) = 0.003_dp
         source(5, :, :) = 0.001_dp; source(6, :, :) = -0.0003_dp
         voltage = 0

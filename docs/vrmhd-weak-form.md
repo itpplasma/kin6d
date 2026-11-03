@@ -21,8 +21,13 @@ diffusivities `D` are in m²/s; heat flux therefore includes number density.
 The fields are `rho, v, Te, Ti` in H1 (square-integrable values and first
 weak derivatives), and `A, J` in H(curl) (square-integrable values and curls).
 Finite-element exterior calculus (FEEC) uses the discrete de Rham complex
-`V0 -grad-> V1 -curl-> V2 -div-> V3`, with scalars in `V0`, velocity in
-`[V0]^3`, and `A, J` in `V1`. The strong discrete curl places `B` in `V2`;
+`V0 -grad-> V1 -curl-> V2 -div-> V3`, with `A, J` in `V1`.
+Density, temperatures and velocity use a separate
+continuous Lagrange space `V_s` and `[V_s]^3`, respectively; the scalar
+space `V0` of the magnetic complex remains the domain of its exact gradient.
+The degree convention, quadrature and failed spectral qualification of the
+proposed pair are stated in [the section contract](vrmhd-section.md).
+The strong discrete curl places `B` in `V2`;
 the complex identity `div curl = 0` then enforces discrete `div B = 0`.
 Here `V0` is in H1, `V1` in H(curl), `V2` in H(div) (square-integrable
 values and divergence), and `V3` in L2 (square-integrable values).
@@ -107,7 +112,7 @@ energy statement applies.
 For a stationary solve, the mixed Coulomb gauge adds
 `integral grad(lambda).W dx` to induction and
 `integral A.grad(q_lambda) dx = 0`. Multiplier `lambda` and test
-`q_lambda` belong to H1 with zero boundary trace. A compatible continuous
+`q_lambda` belong to `V_s` with zero boundary trace. A compatible continuous
 physical solution has `lambda=0`. The time-dependent problem retains Weyl
 gauge; its A mass row removes the stationary gradient kernel.
 

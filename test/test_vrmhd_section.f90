@@ -98,7 +98,7 @@ contains
         real(dp) :: h, errors(2), scale, shift, defect
         integer :: i, j, status, n, n0
         call setup(kind, op); call parameters(p, limited)
-        n = op%ndof; n0 = op%fs%n0
+        n = op%ndof; n0 = op%scalar_fs%n0
         allocate (u(n), ud(n), du(n), dud(n), r(n), jv(n), plus(n), minus(n), &
             unused(n), zero(n), dual(n), vjp(n), ref(n), source(6, op%fs%nq, &
             op%fs%mm%topology%n_triangles))
@@ -321,9 +321,9 @@ contains
         end if
         call require(norm2(reshape(grad - transpose(d(:, 2:4)), [9])) < 2.0e-9_dp, &
             'vector gradient from Cartesian flow')
-        n0 = op%fs%n0; n1 = op%fs%sp(1)%ndof
-        allocate (coefficients(op%ndof), scalar(n0)); coefficients = 0
-        do i = 1, n0
+        n0 = op%scalar_fs%n0; n1 = op%fs%sp(1)%ndof
+        allocate (coefficients(op%ndof), scalar(op%fs%n0)); coefficients = 0
+        do i = 1, op%fs%n0
             scalar(i) = sin(real(i, dp))
         end do
         coefficients(6*n0 + 1:6*n0 + n1) = csc_matvec(op%fs%grad%a, scalar)

@@ -42,6 +42,55 @@ as in [the GS reduction](grad-shafranov.md), quotient area is
 `dA_q=dx dy/|xi|`, so `|xi| dA_q=dx dy`. No additional screw norm factor is
 applied. Integration is per unit orbit parameter; no orbit period is included.
 
+## Polynomial degrees and quadrature
+
+`vrmhd_section_build` takes the magnetic edge order `degree = k_A` and
+optional `scalar_degree = k_s`, which defaults to `k_A+1`. The smallest
+admitted pair is `(1,2)`; `(2,3)` is its next refinement in degree. The
+constructor rejects `k_s < k_A+1`. This is the requested magnetic-pressure
+stability condition `k_s >= degree(curl_2D A)+2`; it does **not** establish
+stability of the full MHD system, as the spectral counterexample below shows.
+
+[FortFEM](https://github.com/lazy-fortran/fortfem)'s
+`fortfem_meridian_feec_n` uses continuous Lagrange `P_k` for its scalar
+space, first-kind Nedelec order `k` for section one-forms, and discontinuous
+`P_{k-1}` for their section curl. The edge space contains `[P_{k-1}]^2`
+and the homogeneous degree-`k` rotational enrichment; it has `k(k+2)` local
+coefficients. The face space contains the rotated edge space (Raviart–Thomas
+degree `k-1` in the standalone basis API) and discontinuous `P_{k-1}` for
+the orbit component. In particular, FortFEM's complex order `1` means the
+lowest-order Nedelec/Raviart–Thomas pair, rather than a section curl of degree
+one.
+
+One such complex cannot provide both requested orders. `op%fs` is the order
+`k_A` magnetic complex for A and J, including their orbit Lagrange `P_{k_A}`
+component; `op%scalar_fs` supplies continuous `P_{k_s}` for density, each
+velocity component, both temperatures and the Coulomb multiplier. Both
+complexes use the same mesh and quadrature rule. Basis values and gradients
+of the magnetic orbit component always come from the magnetic complex.
+FortFEM supports complex orders through eight, so this construction admits
+`1 <= k_A < k_s <= 8`.
+
+For scalar degree `k_s` and geometry degree `g`, both complexes request
+triangle quadrature degree `4 k_s + 2 g + 2`. On affine translation elements,
+the largest polynomial product is the skew momentum advection term
+`rho (grad v) v.w`, of degree `4 k_s-1`; the other polynomial mass and
+magnetic products have no higher degree for the admitted pairs. The extra
+quadrature degree oversamples geometry. Rotation/screw metric factors and
+state-dependent transport closures are nonpolynomial, so no finite polynomial
+rule makes those integrals exact. Energy exchange still uses identical
+quadrature points and weights on both sides of each pairing. The generated
+pointwise leaves take physical values, gradients and curls; their interface
+does not depend on finite-element degree or coefficient layout.
+
+For smooth solutions, the target approximation orders are `k_s` for density,
+each velocity component and both temperatures in H1, `k_A` for A in H(curl),
+and `k_A` for recovered J in L2. H1 and H(curl) include the field value and
+its first gradient or curl, respectively. The spectral frequency targets are
+`2 k_A`, hence two and four for the first two pairs. These are targets,
+not verified convergence results for the new spaces. The zero continuous
+Coulomb multiplier has no nonzero reference error from which to infer a rate.
+
 ## Operator contract
 
 `vrmhd_section_build` constructs the spaces. `vrmhd_section_residual` returns
@@ -148,6 +197,10 @@ closedness for screw symmetry.
 
 ## Verification limits
 
+The established results in the following paragraphs apply to the former
+equal-order spaces. The separated spaces have not passed the first spectral
+gate and have not been requalified against these tests.
+
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
 finite differences, sparse versus matrix-free action, transpose duality and
@@ -202,19 +255,45 @@ prescribed current lift, as explained in the weak-form document.
 The linear-spectrum test uses the assembled Jacobian and mass in an invariant
 periodic Fourier block of the translation slab, with uniform magnetic field
 having a component along the wave vector. It compares with `uniform_waves`.
-It reports every refinement pair on 4, 8, 16, 32 and 64 cells per period and
-requires an order above 1.8 on the finest pair. The Alfven frequency reaches
-second order; the fast and slow frequencies approach fourth order on this slab.
-An invertible row/column change of magnetic units balances the generalized
-eigenproblem before solving it. The squared-frequency reality threshold is
-unchanged and applies on every mesh; the SI-unit solve remains a diagnostic.
+Its ladder has 4, 8, 16, 32 and 64 cells per period, with the frequency
+order required to exceed `2 k_A-0.2` on the finest pair. The cutoff audit now
+runs on each mesh and stops immediately on failure. An invertible row/column
+change of magnetic units balances the generalized eigenproblem before solving
+it. The squared-frequency reality threshold remains `1024 epsilon` on every
+mesh; the SI-unit solve remains a diagnostic.
 
-Every eigenvalue in the computed wave-vector block `k=(1,0,0)/m` is reported,
-including the algebraic current constraints. The expected zero subspace has
-two pressure-balanced entropy modes and one curl-free gauge mode; translations
-have zero wave vector and contribute no null here. The test checks these
-analytic nulls and rejects additional finite modes below the largest oracle
-frequency. It currently finds one extra magnetic zero mode, dominated by the
-cell-scale axial magnetic field. Its small smooth Fourier content does not
-exempt it from the frequency cutoff. Thus the spectral gate still fails;
-neither a spurious-mode-free spectrum nor a full-domain spectral audit is claimed.
+Every coefficient in the periodic cell is retained: the Bloch transform has
+`6 k_s^2 + 2(3 k_A^2+k_A)` independent columns, rather than the fourteen
+columns of the former equal-order `(1,1)` pair. Bloch here means a field that
+repeats between mesh cells with the phase of the specified wave vector.
+The unchanged zero-mode allowance is two pressure-balanced entropy modes and
+one curl-free gauge mode at `k=(1,0,0)/m`; translations have zero wave vector
+and contribute no null here. Analytic representatives check this allowance.
+The test also retains the signed-wave multiplicity check and the largest
+oracle frequency as its cutoff.
+
+The former `(1,1)` pair had an additional zero mode dominated by cell-scale
+axial magnetic pressure, analogous to a checkerboard pressure mode in an
+unstable Stokes pair. That result motivates the higher-degree velocity space;
+the inadmissible old pair is documented rather than retained as a failing
+regression case.
+
+The requested `(1,2)` pair still fails the spectral gate on the first mesh.
+The numerically zero modes have negligible magnetic energy, but there are
+velocity-only axial shear nulls. The singular-value decomposition of the
+four-column axial-velocity coupling has rank two to roundoff. A resulting
+velocity perturbation satisfies the production periodic matrix-free Jacobian
+to roundoff while its continuum induction `B0.grad(v_z)` is nonzero.
+This distinguishes a spurious velocity mode from the allowed entropy and
+gauge modes, irrespective of how additional scalar cell patterns are counted.
+The source of this loss of coupling is the high-degree velocity against
+low-degree induction tests in
+[the ideal induction term](../src/mhd/vrmhd_point.f90) and
+[the section basis assembly](../src/mhd/vrmhd_section.f90).
+
+The spectral gate is therefore red. The next degree pair, asymptotic rates,
+energy ledger and earlier gates have not been requalified for the new spaces.
+The earlier verification above applies to the former equal-order spaces.
+No full-system inf-sup bound, spurious-mode-free spectrum or full-domain
+spectral audit is claimed. A further choice of compatible velocity, magnetic
+and gauge spaces belongs to the model design.

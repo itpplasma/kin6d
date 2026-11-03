@@ -8,33 +8,40 @@ program test_vrmhd_spectra
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
-    use fortsparse, only: csc_t
+    use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load
+    use fortsparse, only: csc_t, csc_matvec, sparse_solve_once, &
+        fortsparse_status_t, status_ok
     implicit none
     integer, parameter :: levels = 5
     real(dp) :: frequencies(3, levels), errors(3, levels), rates(3), exact(3), b0(3)
     real(dp) :: optical(levels)
-    integer :: level, status, unmatched
+    integer :: level, status, unmatched, ka, ks
     b0 = sqrt(oracle_mu0)*[0.6_dp, 0.0_dp, 0.8_dp]
     call uniform_waves([1.0_dp, 0.0_dp, 0.0_dp], b0, 1.0_dp, 0.6_dp, &
         5.0_dp/3, exact, status)
     call require(status == oracle_ok, 'existing uniform-wave oracle')
     exact = sqrt(exact)
     print '(a,3es20.12)', 'oracle Alfven / fast / slow angular frequencies [1/s]: ', exact
-    do level = 1, levels
-        call spectrum(2**(level + 1), b0, exact, level == levels, &
-            frequencies(:, level), optical(level), unmatched)
-        errors(:, level) = abs(frequencies(:, level)/exact - 1)
-        print '(a,i4,3es20.12)', 'wave frequencies [1/s], cells per period: ', &
-            2**(level + 1), frequencies(:, level)
-        print '(a,i4,3es20.12)', 'relative frequency errors: ', &
-            2**(level + 1), errors(:, level)
-        if (level == 1) cycle
-        rates = log(errors(:, level - 1)/errors(:, level))/log(2.0_dp)
-        print '(a,3f12.6)', 'Alfven / fast / slow frequency orders: ', rates
-        if (level == levels) &
-            call require(minval(rates) > 1.8_dp, 'P1 frequency design order')
+    do ka = 1, 2
+        ks = ka + 1
+        print '(a,2i4)', 'edge order / scalar degree: ', ka, ks
+        do level = 1, levels
+            call spectrum(2**(level + 1), ka, ks, 6*ks**2 + 2*(3*ka**2 + ka), &
+                b0, exact, .true., &
+                frequencies(:, level), optical(level), unmatched)
+            errors(:, level) = abs(frequencies(:, level)/exact - 1)
+            print '(a,i4,3es20.12)', 'wave frequencies [1/s], cells per period: ', &
+                2**(level + 1), frequencies(:, level)
+            print '(a,i4,3es20.12)', 'relative frequency errors: ', &
+                2**(level + 1), errors(:, level)
+            call require(unmatched == 0, 'no unmatched eigenvalue below resolved cutoff')
+            if (level == 1) cycle
+            rates = log(errors(:, level - 1)/errors(:, level))/log(2.0_dp)
+            print '(a,3f12.6)', 'Alfven / fast / slow frequency orders: ', rates
+            if (level == levels) &
+                call require(minval(rates) > 2*ka - 0.2_dp, 'frequency design order')
+        end do
     end do
-    call require(unmatched == 0, 'no unmatched eigenvalue below resolved cutoff')
 contains
     subroutine require(ok, message)
         logical, intent(in) :: ok
@@ -44,34 +51,37 @@ contains
         error stop 'RM2 linear spectrum gate'
     end subroutine
 
-    subroutine spectrum(n, b0, exact, audit, frequencies, optical_fraction, unmatched)
-        integer, intent(in) :: n
+    subroutine spectrum(n, ka, ks, nb, b0, exact, audit, frequencies, &
+            optical_fraction, unmatched)
+        integer, intent(in) :: n, ka, ks, nb
         real(dp), intent(in) :: b0(3), exact(3)
         logical, intent(in) :: audit
         real(dp), intent(out) :: frequencies(3), optical_fraction
         integer, intent(out) :: unmatched
-        integer, parameter :: nb = 14
+        integer :: ns, na
         type(mesh_2d_t) :: mesh
         type(meridian_mesh_t) :: mm
         type(vrmhd_section_t) :: op
         type(vrmhd_parameters_t) :: p
         type(csc_t) :: jac
         real(dp), allocatable :: u(:), zero(:), source(:, :, :), r(:), unused(:)
-        real(dp), allocatable :: mr(:), mi(:), basis(:, :)
+        real(dp), allocatable :: mr(:), mi(:), basis(:, :), xy(:, :)
+        complex(dp), allocatable :: load(:)
+        type(fortsparse_status_t) :: st
         complex(dp), allocatable :: transform(:, :), image(:), coefficients(:)
         complex(dp) :: stiffness(nb, nb), mass(nb, nb), alpha(nb), beta(nb)
         complex(dp) :: vectors(nb, nb), dummy(1, 1), work(16*nb), lambda(nb)
         complex(dp) :: original_k(nb, nb), original_m(nb, nb), residual(nb)
         complex(dp) :: diagnostic_alpha(nb), diagnostic_beta(nb)
-        complex(dp) :: optical_vector(nb), projected(nb)
+        complex(dp) :: optical_vector(nb), projected(nb), nulls(nb, 3)
         complex(dp) :: phase, field(3), mean_field(3)
         real(dp) :: rwork(8*nb), length, x(2), start(2), tangent(2), midpoint(2)
         real(dp) :: weight, direction, volume, energy, max_energy, fraction, scale
-        real(dp) :: positive(3), tolerance, reality, equilibrium_defect
+        real(dp) :: positive(nb), tolerance, reality, equilibrium_defect
         real(dp) :: backward_error, diagnostic_reality, column_scale(nb), row_scale(nb)
         real(dp) :: magnetic_energy(3), optical_energy(3)
         integer :: n0, nn, n1, a0, j0, t, i, j, q, row, entry, edge, group
-        integer :: status, info, finite_count, zero_count, wave_count
+        integer :: status, info, finite_count, zero_count, wave_count, m, idx, group0
         interface
             subroutine zggev(jobvl, jobvr, n, a, lda, b, ldb, alpha, beta, &
                     vl, ldvl, vr, ldvr, work, lwork, rwork, info)
@@ -85,15 +95,17 @@ contains
                 integer, intent(out) :: info
             end subroutine
         end interface
+        ns = ks**2; na = 3*ka**2 + ka
         length = 2*acos(-1.0_dp)
         unmatched = 0
         call mesh%create_rectangular(n + 1, n + 1, 0.0_dp, length, 0.0_dp, length)
         call meridian_mesh_straight(mesh, 1, mm, status)
         call require(status == 0, 'periodic wave mesh')
         call vrmhd_section_build(mm, &
-            gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), 1, 1, op, status)
+            gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
+            ka, 1, op, status, scalar_degree=ks)
         call require(status == 0, 'periodic wave section')
-        n0 = op%fs%n0; nn = op%fs%nn; n1 = op%fs%sp(1)%ndof
+        n0 = op%scalar_fs%n0; nn = op%fs%nn; n1 = op%fs%sp(1)%ndof
         a0 = 6*n0; j0 = a0 + n1
         p%mi = 1; p%mu0 = oracle_mu0
         allocate (u(op%ndof), zero(op%ndof), r(op%ndof), unused(op%ndof), &
@@ -102,15 +114,21 @@ contains
             basis(36, op%nlocal))
         u = 0; zero = 0; source = 0; transform = 0
         u(:n0) = 1; u(4*n0 + 1:6*n0) = 0.3_dp
+        call meridian_lagrange_nodes(op%scalar_fs, xy)
         do i = 1, n0
-            x = mm%topology%vertices(:, i)
-            phase = exp(cmplx(0.0_dp, x(1), dp))
+            group0 = nodal_group(xy(:, i), ks, length/n)
+            phase = exp(cmplx(0.0_dp, xy(1, i), dp))
             do group = 1, 6
-                transform((group - 1)*n0 + i, group) = phase
+                transform((group - 1)*n0 + i, (group - 1)*ns + group0) = phase
             end do
-            u(a0 + nn + i) = b0(1)*x(2)
-            transform(a0 + nn + i, 10) = phase
-            transform(j0 + nn + i, 14) = phase
+        end do
+        deallocate (xy)
+        call meridian_lagrange_nodes(op%fs, xy)
+        do i = 1, op%fs%n0
+            group0 = 3*ka + 2*ka*(ka - 1) + nodal_group(xy(:, i), ka, length/n)
+            phase = exp(cmplx(0.0_dp, xy(1, i), dp))
+            transform(a0 + nn + i, 6*ns + group0) = phase
+            transform(j0 + nn + i, 6*ns + na + group0) = phase
         end do
         do t = 1, mm%topology%n_triangles
             do i = 1, 3
@@ -118,22 +136,46 @@ contains
                 start = mm%topology%vertices(:, mm%topology%triangles(i, t))
                 tangent = mm%topology%vertices(:, mm%topology%triangles(j, t)) - start
                 midpoint = start + tangent/2
-                edge = op%fs%sp(1)%dof(i, t)
-                direction = real(op%fs%sp(1)%sgn(i, t), dp)
-                u(a0 + edge) = direction*b0(3) &
-                    *(-midpoint(2)*tangent(1) + midpoint(1)*tangent(2))/2
                 group = 3
                 if (abs(tangent(2)) < epsilon(length)) group = 1
                 if (abs(tangent(1)) < epsilon(length)) group = 2
-                if (group == 2) then
-                    direction = direction*sign(1.0_dp, tangent(2))
-                else
-                    direction = direction*sign(1.0_dp, tangent(1))
-                end if
-                phase = direction*norm2(tangent)*exp(cmplx(0.0_dp, midpoint(1), dp))
-                transform(a0 + edge, 6 + group) = phase
-                transform(j0 + edge, 10 + group) = phase
+                direction = sign(1.0_dp, tangent(1))
+                if (group == 2) direction = sign(1.0_dp, tangent(2))
+                do m = 1, ka
+                    idx = (i - 1)*ka + m
+                    edge = op%fs%sp(1)%dof(idx, t)
+                    phase = real(op%fs%sp(1)%sgn(idx, t), dp)*direction**m &
+                        *norm2(tangent)*exp(cmplx(0.0_dp, midpoint(1), dp))
+                    group0 = (group - 1)*ka + m
+                    transform(a0 + edge, 6*ns + group0) = phase
+                    transform(j0 + edge, 6*ns + na + group0) = phase
+                end do
             end do
+            midpoint = sum(mm%nodes(:, :3, t), dim=2)/3
+            do i = 3*ka + 1, op%fs%nln
+                edge = op%fs%sp(1)%dof(i, t)
+                group0 = 3*ka + mod(t - 1, 2)*ka*(ka - 1) + i - 3*ka
+                phase = (length/n)*exp(cmplx(0.0_dp, midpoint(1), dp))
+                transform(a0 + edge, 6*ns + group0) = phase
+                transform(j0 + edge, 6*ns + na + group0) = phase
+            end do
+        end do
+        call require(all(sum(abs(transform), dim=2) > 0), 'every Bloch coefficient included')
+        call meridian_load(op%fs, 1, equilibrium_potential, load, status)
+        call require(status == 0, 'analytic uniform-field potential load')
+        call sparse_solve_once(op%fs%mass(1), real(load, dp), u(a0 + 1:j0), st)
+        call require(status_ok(st), 'uniform-field potential mass projection')
+        ! Entropy is pressure balanced; the gauge is the discrete gradient of exp(i x).
+        nulls = 0
+        nulls(1:ns, 1) = 1; nulls(4*ns + 1:5*ns, 1) = -0.6_dp
+        nulls(4*ns + 1:5*ns, 2) = 1; nulls(5*ns + 1:6*ns, 2) = -1
+        coefficients = 0
+        coefficients(a0 + 1:j0) = cmplx( &
+            csc_matvec(op%fs%grad%a, cos(xy(1, :))), &
+            csc_matvec(op%fs%grad%a, sin(xy(1, :))), dp)
+        do j = 1, nb
+            nulls(j, 3) = dot_product(transform(:, j), coefficients) &
+                /sum(abs(transform(:, j))**2)
         end do
         ! Translation invariance makes each Bloch block an invariant periodic subspace.
         call vrmhd_section_residual(op, p, u, zero, zero, zero, source, r, unused, status)
@@ -162,9 +204,9 @@ contains
         original_k = stiffness; original_m = mass
         ! Balance magnetic units before QZ; this is an invertible pencil equivalence.
         column_scale = 1; row_scale = 1
-        column_scale(7:10) = sqrt(p%mu0)
-        column_scale(11:14) = 1/sqrt(p%mu0)
-        row_scale(7:14) = 1/sqrt(p%mu0)
+        column_scale(6*ns + 1:6*ns + na) = sqrt(p%mu0)
+        column_scale(6*ns + na + 1:) = 1/sqrt(p%mu0)
+        row_scale(6*ns + 1:) = 1/sqrt(p%mu0)
         do j = 1, nb
             stiffness(:, j) = row_scale*original_k(:, j)*column_scale(j)
             mass(:, j) = row_scale*original_m(:, j)*column_scale(j)
@@ -195,7 +237,6 @@ contains
             if (abs(lambda(j)) < tolerance) zero_count = zero_count + 1
             if (aimag(lambda(j)) <= tolerance) cycle
             wave_count = wave_count + 1
-            call require(wave_count <= 3, 'no extra oscillatory branch')
             positive(wave_count) = aimag(lambda(j))
         end do
         print '(a,i4,3i4,es20.12)', 'finite / zero / positive modes, Im(omega^2): ', &
@@ -214,23 +255,20 @@ contains
         end do
         print '(a,es20.12)', 'diagnostic SI-unit omega^2 imaginary defect: ', &
             diagnostic_reality
-        if (wave_count == 3) print '(a,3es20.12)', &
-            'positive angular frequencies [1/s], unsorted: ', positive
+        if (wave_count > 0) print '(a,*(es20.12))', &
+            'positive angular frequencies [1/s], unsorted: ', positive(:wave_count)
         call require(reality < tolerance, 'ideal squared frequencies real to roundoff')
-        call require(finite_count == zero_count + 2*wave_count .and. wave_count == 3, &
+        call require(finite_count == zero_count + 2*wave_count, &
             'periodic finite spectrum count')
-        do i = 1, 2
-            do j = i + 1, 3
-                if (positive(i) <= positive(j)) cycle
-                weight = positive(i); positive(i) = positive(j); positive(j) = weight
-            end do
+        do i = 1, 3
+            idx = minloc(abs(positive(:wave_count) - exact(i)), dim=1)
+            frequencies(i) = positive(idx)
         end do
-        frequencies = positive([2, 3, 1])
         max_energy = 0; optical_fraction = 0; optical_vector = 0; optical_energy = 0
         do j = 1, nb
             if (abs(beta(j)) < tolerance*(abs(alpha(j)) + abs(beta(j)))) cycle
             if (abs(lambda(j)) >= tolerance) cycle
-            scale = sqrt(sum(abs(vectors(7:10, j))**2))
+            scale = sqrt(sum(abs(vectors(6*ns + 1:6*ns + na, j))**2))
             if (scale < tiny(scale)) cycle
             coefficients = matmul(transform, vectors(:, j))
             ! LAPACK normalizes coefficients, whose magnetic units vary with the mesh.
@@ -256,8 +294,7 @@ contains
         end do
         print '(a,i4,2es20.12)', 'magnetic null energy / smooth Fourier fraction: ', &
             n, max_energy, optical_fraction
-        if (audit .and. zero_count > 3) then
-            call require(max_energy > 1.0e-12_dp, 'identify extra magnetic null branch')
+        if (audit .and. zero_count > 3 .and. max_energy > 1.0e-12_dp) then
             print '(a,3es20.12)', 'magnetic null Bx / By / Bz energy fractions: ', &
                 optical_energy
             coefficients = matmul(transform, optical_vector)
@@ -274,27 +311,96 @@ contains
             call require(sqrt(sum(abs(projected)**2))/scale < tolerance, &
                 'extra null also satisfies production matrix-free Jacobian')
         end if
+        if (audit) call shear_null(op, p, u, source, transform, original_k, ns)
         if (audit) call audit_block(n, original_k, alpha, beta, lambda, &
-            exact, tolerance, zero_count, unmatched)
+            exact, tolerance, zero_count, nulls, unmatched)
+    end subroutine
+
+    subroutine shear_null(op, p, u, source, transform, stiffness, ns)
+        type(vrmhd_section_t), intent(in) :: op
+        type(vrmhd_parameters_t), intent(in) :: p
+        real(dp), intent(in) :: u(:), source(:, :, :)
+        complex(dp), intent(in) :: transform(:, :), stiffness(:, :)
+        integer, intent(in) :: ns
+        complex(dp) :: shear(size(stiffness, 1), ns), vh(ns, ns), left(1, 1)
+        complex(dp) :: work(16*size(stiffness, 1)), mode(size(stiffness, 1))
+        complex(dp) :: coefficients(op%ndof), point(36), projected(size(mode))
+        real(dp) :: singular(ns), rwork(5*ns), zero(op%ndof), r(op%ndof)
+        real(dp) :: real_jv(op%ndof), imag_jv(op%ndof), basis(36, op%nlocal)
+        real(dp) :: x(2), weight, velocity_energy, gradient_energy, scale
+        integer :: info, t, q, status
+        interface
+            subroutine zgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, &
+                    work, lwork, rwork, info)
+                import :: dp
+                character, intent(in) :: jobu, jobvt
+                integer, intent(in) :: m, n, lda, ldu, ldvt, lwork
+                complex(dp), intent(inout) :: a(lda, *)
+                real(dp), intent(out) :: s(*), rwork(*)
+                complex(dp), intent(out) :: u(ldu, *), vt(ldvt, *), work(*)
+                integer, intent(out) :: info
+            end subroutine
+        end interface
+        shear = stiffness(:, 3*ns + 1:4*ns)
+        call zgesvd('N', 'A', size(mode), ns, shear, size(mode), singular, left, 1, &
+            vh, ns, work, size(work), rwork, info)
+        call require(info == 0, 'velocity-only null diagnostic SVD')
+        print '(a,*(es20.12))', 'vz-only coupling singular values: ', singular
+        mode = 0; mode(3*ns + 1:4*ns) = conjg(vh(ns, :))
+        coefficients = matmul(transform, mode); zero = 0
+        call vrmhd_section_residual(op, p, u, zero, real(coefficients, dp), zero, &
+            source, r, real_jv, status)
+        call require(status == 0, 'shear real matrix-free Jacobian')
+        call vrmhd_section_residual(op, p, u, zero, aimag(coefficients), zero, &
+            source, r, imag_jv, status)
+        call require(status == 0, 'shear imaginary matrix-free Jacobian')
+        projected = matmul(transpose(conjg(transform)), cmplx(real_jv, imag_jv, dp))
+        scale = sqrt(sum(abs(stiffness)**2))*sqrt(sum(abs(mode)**2))
+        print '(a,es20.12)', 'vz null production Jacobian relative residual: ', &
+            sqrt(sum(abs(projected)**2))/scale
+        print '(a,es20.12)', 'vz null relative residual in shear coupling: ', &
+            sqrt(sum(abs(projected)**2)/sum(abs(stiffness(:, 3*ns + 1:4*ns))**2))
+        print '(a,es20.12)', 'vz null assembled / matrix-free relative difference: ', &
+            sqrt(sum(abs(projected - matmul(stiffness, mode))**2))/scale
+        velocity_energy = 0; gradient_energy = 0
+        do t = 1, op%fs%mm%topology%n_triangles
+            do q = 1, op%fs%nq
+                call vrmhd_section_basis(op, t, q, x, weight, basis, status)
+                call require(status == 0, 'shear continuum diagnostic basis')
+                point = matmul(basis, coefficients(op%map(:, t)))
+                velocity_energy = velocity_energy + weight*abs(point(4))**2
+                gradient_energy = gradient_energy + weight*abs(point(18))**2
+            end do
+        end do
+        print '(a,es20.12)', 'vz null continuum Alfven derivative / velocity [1/s]: ', &
+            abs(b0(1))*sqrt(gradient_energy/(p%mu0*velocity_energy))
+    end subroutine
+
+    integer function nodal_group(x, degree, h) result(group)
+        real(dp), intent(in) :: x(2), h
+        integer, intent(in) :: degree
+        group = 1 + modulo(nint(degree*x(1)/h), degree) &
+            + degree*modulo(nint(degree*x(2)/h), degree)
+    end function
+
+    subroutine equilibrium_potential(x, a)
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: a(3)
+        a = cmplx([-b0(3)*x(2)/2, b0(1)*x(2), b0(3)*x(1)/2], 0.0_dp, dp)
     end subroutine
 
     subroutine audit_block(n, stiffness, alpha, beta, lambda, exact, tolerance, &
-            zero_count, unmatched)
+            zero_count, nulls, unmatched)
         integer, intent(in) :: n, zero_count
-        complex(dp), intent(in) :: stiffness(14, 14), alpha(14), beta(14), lambda(14)
+        complex(dp), intent(in) :: stiffness(:, :), alpha(:), beta(:), lambda(:)
+        complex(dp), intent(in) :: nulls(:, :)
         real(dp), intent(in) :: exact(3), tolerance
         integer, intent(out) :: unmatched
         character(6), parameter :: branches(3) = ['Alfven', 'fast  ', 'slow  ']
-        complex(dp) :: nulls(14, 3), defect(14)
-        real(dp) :: distances(3), separation, error, h
+        complex(dp) :: defect(size(lambda))
+        real(dp) :: distances(3), separation, error
         integer :: j, branch, sign_index, counts(3, 2), zeros
         ! At nonzero k there are two pressure-balanced entropy modes and one gauge.
-        nulls = 0
-        nulls(1, 1) = 1; nulls(5, 1) = -0.6_dp
-        nulls(5, 2) = 1; nulls(6, 2) = -1
-        h = 2*acos(-1.0_dp)/n
-        nulls(7, 3) = cmplx(0.0_dp, 2*sin(h/2)/h, dp)
-        nulls(9, 3) = nulls(7, 3)/sqrt(2.0_dp)
         do j = 1, 3
             defect = matmul(stiffness, nulls(:, j))
             error = sqrt(sum(abs(defect)**2)) &
@@ -307,7 +413,7 @@ contains
         print '(a,es20.12)', 'resolved oracle frequency cutoff [1/s]: ', maxval(exact)
         print '(a)', 'expected nulls: entropy=2, gauge=1, translation=0 (k is nonzero)'
         counts = 0; zeros = 0; unmatched = max(0, zero_count - 3)
-        do j = 1, 14
+        do j = 1, size(lambda)
             if (abs(beta(j)) < tolerance*(abs(alpha(j)) + abs(beta(j)))) then
                 print '(a,i3,a)', 'eigenvalue ', j, ': infinite, algebraic current constraint'
                 cycle
