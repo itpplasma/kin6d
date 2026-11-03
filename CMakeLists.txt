@@ -130,6 +130,23 @@ foreach(gate energy decay waves steady)
         PROCESSORS 8 TIMEOUT 300
         ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 endforeach()
+add_executable(test_vrmhd_island test/test_vrmhd_island.f90
+    test/support/vrmhd_island_leaves.f90)
+target_link_libraries(test_vrmhd_island PRIVATE kin6d_vrmhd_slab_test)
+foreach(family equal mixed)
+    foreach(gate boundary equilibrium width)
+        add_test(NAME vrmhd_island_${gate}_${family}
+            COMMAND test_vrmhd_island ${gate} ${family})
+        set_tests_properties(vrmhd_island_${gate}_${family} PROPERTIES LABELS rm-b5
+            PROCESSORS 4 TIMEOUT 300
+            ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+    endforeach()
+endforeach()
+add_test(NAME vrmhd_island_induction_mixed
+    COMMAND test_vrmhd_island induction mixed 8 8)
+set_tests_properties(vrmhd_island_induction_mixed PROPERTIES LABELS rm-b5
+    PROCESSORS 4 TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
 target_link_libraries(test_vrmhd_section PRIVATE kin6d_mhd)
 add_executable(test_vrmhd_energy test/test_vrmhd_energy.f90)
@@ -1122,6 +1139,15 @@ if(KIN6D_FORTSYM_BUILD)
     target_link_libraries(test_gs_p1_current_identities PRIVATE kin6d_gen_support)
     add_test(NAME grad_shafranov_p1_exact_current_antiderivatives
         COMMAND test_gs_p1_current_identities)
+    add_executable(gen_vrmhd_island gen/gen_vrmhd_island.f90)
+    target_link_libraries(gen_vrmhd_island PRIVATE kin6d_gen_support)
+    add_test(NAME vrmhd_island_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_island>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/test/support/vrmhd_island_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-island-regeneration
+        -DGENERATED_DIR=test/support -DLEAF=vrmhd_island_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    set_tests_properties(vrmhd_island_regeneration PROPERTIES LABELS rm-b5)
     add_executable(gen_vrmhd_mms gen/gen_vrmhd_mms.f90)
     target_link_libraries(gen_vrmhd_mms PRIVATE kin6d_gen_support)
     add_test(NAME vrmhd_mms_regeneration COMMAND ${CMAKE_COMMAND}

@@ -972,3 +972,14 @@ kin6d_test_labels(vrmhd_helical_nonlinear_manufactured_mixed slow
 
 kin6d_test_labels(vrmhd_fourier_nonlinear_derivatives slow CLASSES mhd
     TARGETS test_vrmhd_fourier_nonlinear)
+
+foreach(family equal mixed)
+    foreach(gate boundary equilibrium width)
+        kin6d_test_labels(vrmhd_island_${gate}_${family} fast CLASSES mhd
+            TARGETS test_vrmhd_island)
+    endforeach()
+endforeach()
+kin6d_test_labels(vrmhd_island_induction_mixed fast CLASSES mhd
+    TARGETS test_vrmhd_island)
+kin6d_test_labels(vrmhd_island_regeneration fast CLASSES mhd
+    TARGETS gen_vrmhd_island)

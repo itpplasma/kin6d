@@ -362,6 +362,10 @@ estimate includes the algebraic current; whether that controller is
 efficient for stiff transients is not measured here. Continuous error
 certificates and transient adjoints are unavailable in this wrapper.
 
+The [wall-slab island checks](vrmhd-island-benchmark.md) exercise the mixed-degree
+BDF2 problem with conducting radial walls and an exactly force-balanced current
+source. They admit the benchmark setup, not a Rutherford or plasmoid result.
+
 ## Fourier harmonics about an invariant state
 
 `vrmhd_fourier_build` accepts the section's independent scalar and velocity
