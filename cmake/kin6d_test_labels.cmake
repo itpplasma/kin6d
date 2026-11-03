@@ -934,3 +934,18 @@ foreach(gate energy decay steady)
         TARGETS test_vrmhd_evolve)
 endforeach()
 kin6d_test_labels(vrmhd_evolve_waves slow CLASSES mhd TARGETS test_vrmhd_evolve)
+
+foreach(gate exactness reduction decoupling manufactured accumulation)
+    kin6d_test_labels(vrmhd_harmonics_${gate} fast CLASSES mhd TARGETS test_vrmhd_harmonics)
+endforeach()
+kin6d_test_labels(vrmhd_harmonics_spectra slow CLASSES mhd TARGETS test_vrmhd_harmonics)
+foreach(gate exactness reduction decoupling)
+    kin6d_test_labels(vrmhd_harmonics_mixed_${gate} fast CLASSES mhd
+        TARGETS test_vrmhd_harmonics)
+endforeach()
+kin6d_test_labels(vrmhd_harmonics_mixed_manufactured slow CLASSES mhd
+    TARGETS test_vrmhd_harmonics)
+kin6d_test_labels(vrmhd_harmonics_spectra_fine slow CLASSES mhd
+    TARGETS test_vrmhd_harmonics)
+kin6d_test_labels(vrmhd_mms_fourier_regeneration fast CLASSES mhd
+    TARGETS gen_vrmhd_mms_fourier)
