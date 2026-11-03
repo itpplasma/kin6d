@@ -974,7 +974,7 @@ kin6d_test_labels(vrmhd_fourier_nonlinear_derivatives slow CLASSES mhd
     TARGETS test_vrmhd_fourier_nonlinear)
 
 foreach(family equal mixed)
-    foreach(gate boundary equilibrium width)
+    foreach(gate boundary equilibrium width ledger)
         kin6d_test_labels(vrmhd_island_${gate}_${family} fast CLASSES mhd
             TARGETS test_vrmhd_island)
     endforeach()
