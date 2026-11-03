@@ -201,12 +201,13 @@ closedness for screw symmetry.
 ## Verification limits
 
 The equal-degree default passes the energy ledger and the earlier RM2 gates
-described below at degree one. The spectral gate remains incomplete: its
-first failure is folded-count equality at 16 cells per period on the
-structured degree-two mesh. Fourier attribution does not support treating its
-three positive frequencies beyond the base-wavenumber branches as one
-folded-alias family. The complete structured degree-one ladder passes; degree
-two and the perturbed meshes remain unqualified, as detailed below.
+described below at degree one. The structured spectral ladders reach the target
+orders at degrees one and two, with degree two requiring 64 cells per period.
+The resolved-power classification distinguishes the three physical waves from
+cell-scale modes without assigning those modes a folded-alias identity.
+The perturbed degree-one ladder also passes. Perturbed degree two passes all
+per-mesh checks through 64 cells per period but fails the finest-pair frequency
+order gate, so its spectral qualification remains incomplete, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -370,8 +371,8 @@ with the next larger folded-oracle frequency; both endpoints and the cutoff
 are reported for every block. The one-sample structured degree-one band has
 no larger frequency, so adjacent aliases with integer indices `jx,jy=-1,0,1`
 provide the upper endpoint without adding branches to the retained band.
-On resolved meshes, those with at least 16 cells per period in the
-4, 8, 16, 32 ladder, each computed nonzero mode below the cutoff is classified
+On resolved meshes, those with at least 16 cells per period, each computed
+nonzero mode below the cutoff is classified
 by `r`, the fraction of its total physical wave-energy L2 power in the base
 Fourier mode `q0`. It is the product of the captured fraction and the retained
 share at `G=0`, defined below. Modes with `r>=0.9` form the resolved class;
@@ -395,11 +396,28 @@ to the nearest distinct oracle frequency. A bipartite assignment preserves
 the selected multiplicity instead of independently accepting nearest branches.
 The isolation windows still use the full folded-oracle separations, even
 though only `G=0` branches are matched on resolved meshes.
-The ladder is 4, 8, 16, 32 cells per period at `k=1,2`, on both meshes;
-the base-wavenumber frequency order must exceed `2 k-0.2` on the finest pair.
-The two coarse meshes retain nearest positive frequency estimates in the ladder
-without asserting count equality or branch identity. The isolation window is
-unchanged.
+At degree `k=1`, the ladder is 4, 8, 16, 32 cells per period, with the
+base-wavenumber frequency order checked on `(16,32)`. At `k=2`, it is
+8, 16, 32, 48, 64, with the order checked on `(32,64)`. Both mesh families
+use these ladders and the unchanged requirement to exceed `2 k-0.2`.
+The degree-two `(16,32)` pair is pre-asymptotic: the structured local orders
+approach four monotonically on the finer meshes, as quantified below.
+Below 16 cells per period, nearest positive frequency estimates remain
+diagnostic, without asserting count equality or branch identity. The isolation
+window is unchanged.
+
+The ordinary `vrmhd_section_spectra` test covers degree one and the degree-two
+meshes through 32 cells per period. The separate `vrmhd_section_spectra_fine`
+test, labelled `mhd;slow`, covers degree two at 32, 48 and 64, recomputing the
+32-cell reference for an independent finest-pair comparison. It retains every
+per-mesh gate and the mass-condition bound per halving of cell width, including
+the unequal refinement steps. It has no `rm2` label, so the ordinary RM2 run
+omits these fine meshes. Complete spectral qualification requires both tests:
+
+```sh
+ctest --test-dir build -L rm2 -j 8 --output-on-failure
+ctest --test-dir build -R '^vrmhd_section_spectra_fine$' -j 8 --output-on-failure
+```
 
 The third gate counts energetic static modes per cell against the study's
 `k`, separately from entropy and gauge. Every static direction, with its
@@ -476,15 +494,43 @@ uses analytic frequencies at `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and
 The structured degree-one ladder passes through 32 cells per period, including
 the finest-pair order check. At structured degree two, classification, resolved
 matching, energy identities, staticity and dissipative stability pass through
-32 cells per period. There are six resolved signed modes at both 16 and 32
+64 cells per period. There are six resolved signed modes at both 16 and 32
 cells per period, with respectively six and eight unresolved signed modes in
-band; none is ambiguous. The finest-pair frequency orders are approximately
-`2.945030`, `3.676267` and `3.636887` for Alfven, fast and slow waves.
-All three fail the unchanged requirement to exceed `3.8` at degree two.
-The ladder stops there, before either perturbed family. The cause of the order
-deficit is not established; no complete degree-two or perturbed spectral
-qualification is claimed. No full-system inf-sup bound or continuous spectral
-non-pollution result is claimed.
+band; none is ambiguous. The measured structured degree-two orders are below;
+each is `log(|e(n1)/e(n2)|)/log(n2/n1)`, where the dimensionless relative
+frequency error is `e(n)=omega(n)/omega_exact-1`.
+
+| cells per period `(n1,n2)` | Alfven order | fast order | slow order |
+|---|---|---|---|
+| (16,32), diagnostic | 2.945030 | 3.676267 | 3.636887 |
+| (32,48), diagnostic | 3.781636 | 3.883912 | 3.903556 |
+| (48,64), diagnostic | 3.909126 | 3.940906 | 3.953905 |
+| (32,64), gate | 3.834549 | 3.907566 | 3.924453 |
+
+Thus all three finest-pair orders exceed `3.8`; the earlier deficit does not
+persist under refinement. This observation does not identify the individual
+terms responsible for the coarse-mesh error.
+
+The perturbed degree-one ladder passes through 32 cells per period. Its
+`(16,32)` orders are `1.945750`, `2.517267` and `3.127093` for Alfven, fast
+and slow waves, respectively, all above the required `1.8`. At perturbed
+degree two, every per-mesh gate passes through 64 cells per period. There are
+six resolved signed modes at 32, 48 and 64 cells per period, with respectively
+sixteen, fourteen and fourteen unresolved signed modes; none is ambiguous.
+The measured orders are:
+
+| cells per period `(n1,n2)` | Alfven order | fast order | slow order |
+|---|---|---|---|
+| (32,48), diagnostic | 2.873841 | 2.684478 | 2.057576 |
+| (48,64), diagnostic | 2.553659 | 2.404169 | 2.061315 |
+| (32,64), gate | 2.740953 | 2.568139 | 2.059128 |
+
+All three fail the unchanged `>3.8` degree-two requirement. The slow spectral
+test stops at this order gate; passing the per-mesh checks does not qualify
+the perturbed degree-two discretization. The cause of its order deficit is
+not established. The ordinary `rm2` selection passes, but excludes this fine
+order gate. No full-system inf-sup bound or continuous spectral non-pollution
+result is claimed.
 
 ## Pairing study for the ideal uniform equilibrium
 

@@ -200,7 +200,7 @@ contains
         print '(a,es20.12)', 'diagnostic max |Im(omega^2)| / max |omega^2|: ', reality
         print '(a,*(es20.12))', 'energy-quotient signed angular frequencies [1/s]: ', omega
         call fourier_content(op,transform,modes,n,repeat,degree,shares,captured)
-        ! The 4..32 ladder is resolved for branch isolation from 16 cells onward.
+        ! Branch isolation requires at least 16 cells per period.
         call match_folded(omega, n, repeat, degree, b0, exact, frequencies, &
             resolved=n >= 16, shares=shares, captured=captured)
         static_count = 0

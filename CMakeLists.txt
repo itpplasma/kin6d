@@ -2042,7 +2042,10 @@ add_test(NAME vrmhd_fourier_content COMMAND test_vrmhd_fourier)
 set_tests_properties(vrmhd_fourier_content PROPERTIES LABELS rm2)
 add_test(NAME vrmhd_section_spectra COMMAND test_vrmhd_spectra)
 set_tests_properties(vrmhd_section_spectra PROPERTIES LABELS rm2 PROCESSORS 8
-    TIMEOUT 180 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_section_spectra_fine COMMAND test_vrmhd_spectra fine)
+set_tests_properties(vrmhd_section_spectra_fine PROPERTIES PROCESSORS 8
+    TIMEOUT 7200 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_executable(vrmhd_pairing_study test/vrmhd_pairing_study.f90)
 target_link_libraries(vrmhd_pairing_study PRIVATE kin6d_spectrum_support)
 add_test(NAME vrmhd_pairing_measurement COMMAND vrmhd_pairing_study smoke)

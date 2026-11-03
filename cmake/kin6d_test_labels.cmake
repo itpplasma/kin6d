@@ -899,6 +899,7 @@ endforeach()
 
 kin6d_test_labels(vrmhd_section_manufactured_consistency fast CLASSES mhd TARGETS test_vrmhd_mms)
 kin6d_test_labels(vrmhd_section_spectra slow CLASSES mhd TARGETS test_vrmhd_spectra)
+kin6d_test_labels(vrmhd_section_spectra_fine slow CLASSES mhd TARGETS test_vrmhd_spectra)
 kin6d_test_labels(vrmhd_spectral_folding fast CLASSES mhd TARGETS test_vrmhd_spectral_folding)
 foreach(mode spurious ambiguous)
     kin6d_test_labels(vrmhd_resolved_power_rejects_${mode} fast CLASSES mhd
