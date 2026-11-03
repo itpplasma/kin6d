@@ -949,3 +949,26 @@ kin6d_test_labels(vrmhd_harmonics_spectra_fine slow CLASSES mhd
     TARGETS test_vrmhd_harmonics)
 kin6d_test_labels(vrmhd_mms_fourier_regeneration fast CLASSES mhd
     TARGETS gen_vrmhd_mms_fourier)
+
+foreach(gate coupling energy)
+    kin6d_test_labels(vrmhd_fourier_nonlinear_${gate} fast CLASSES mhd
+        TARGETS test_vrmhd_fourier_nonlinear)
+endforeach()
+
+kin6d_test_labels(vrmhd_fourier_nonlinear_manufactured_equal fast
+    CLASSES mhd TARGETS test_vrmhd_harmonics)
+kin6d_test_labels(vrmhd_fourier_nonlinear_manufactured_mixed slow
+    CLASSES mhd TARGETS test_vrmhd_harmonics)
+kin6d_test_labels(vrmhd_mms_nonlinear_regeneration fast CLASSES mhd
+    TARGETS gen_vrmhd_mms_fourier)
+
+kin6d_test_labels(vrmhd_harmonics_helical fast CLASSES mhd
+    TARGETS test_vrmhd_harmonics)
+
+kin6d_test_labels(vrmhd_helical_nonlinear_manufactured_equal fast
+    CLASSES mhd TARGETS test_vrmhd_harmonics)
+kin6d_test_labels(vrmhd_helical_nonlinear_manufactured_mixed slow
+    CLASSES mhd TARGETS test_vrmhd_harmonics)
+
+kin6d_test_labels(vrmhd_fourier_nonlinear_derivatives slow CLASSES mhd
+    TARGETS test_vrmhd_fourier_nonlinear)

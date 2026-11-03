@@ -15,8 +15,45 @@ module kin6d_vrmhd_point
         leaf_transport, leaf_viscosity, leaf_viscous_heat
     implicit none
     private
-    public :: vrmhd_point
+    public :: vrmhd_point, vrmhd_point_matrix
+    integer, parameter :: ntest(6) = [4, 12, 6, 6, 4, 4]
+    integer, parameter :: test_slots(12, 6) = reshape([ &
+        1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, &
+        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, &
+        5, 6, 7, 17, 18, 19, 0, 0, 0, 0, 0, 0, &
+        5, 6, 7, 17, 18, 19, 0, 0, 0, 0, 0, 0, &
+        1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, &
+        1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0], [12, 6])
+
 contains
+    ! Pointwise bilinear form of the JVP: kmat(:, j, row) is the tangent
+    ! against unit tests for unit trial data j (33 values, 12 rates).
+    subroutine vrmhd_point_matrix(p, v, vd, source, shift, kmat)
+        type(vrmhd_parameters_t), intent(in) :: p
+        real(dp), intent(in) :: v(33), vd(12), source(6), shift
+        real(dp), intent(out) :: kmat(19, 45, 6)
+        real(dp) :: du(33), dud(12), test(19), value, tangent
+        integer :: row, it, j
+        kmat = 0
+        do row = 1, 6
+            do it = 1, ntest(row)
+                test = 0; test(test_slots(it, row)) = 1
+                do j = 1, 33
+                    du = 0; du(j) = 1; dud = 0
+                    call vrmhd_point(p, row, v, du, vd, dud, test, source, value, &
+                        tangent)
+                    kmat(test_slots(it, row), j, row) = tangent
+                end do
+                do j = 1, 12
+                    du = 0; dud = 0; dud(j) = shift
+                    call vrmhd_point(p, row, v, du, vd, dud, test, source, value, &
+                        tangent)
+                    kmat(test_slots(it, row), 33 + j, row) = tangent
+                end do
+            end do
+        end do
+    end subroutine
+
     subroutine vrmhd_point(p, row, u, du, ud, dud, test, source, value, tangent)
         type(vrmhd_parameters_t), intent(in) :: p
         integer, intent(in) :: row

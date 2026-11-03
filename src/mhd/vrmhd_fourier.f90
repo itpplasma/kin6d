@@ -2,7 +2,7 @@ module kin6d_vrmhd_fourier
     use, intrinsic :: iso_fortran_env, only: dp => real64, wp => real128
     use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_point, only: vrmhd_point
+    use kin6d_vrmhd_point, only: vrmhd_point, vrmhd_point_matrix
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_test
     use kin6d_vrmhd_section_leaves, only: vrmhd_orbit_grad_rotation, &
@@ -13,15 +13,6 @@ module kin6d_vrmhd_fourier
     use fortsparse, only: csc_t, csc_from_triplet, fortsparse_status_t, status_ok
     implicit none
     private
-    integer, parameter :: ntest(6) = [4, 12, 6, 6, 4, 4]
-    integer, parameter :: test_slots(12, 6) = reshape([ &
-        1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, &
-        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, &
-        5, 6, 7, 17, 18, 19, 0, 0, 0, 0, 0, 0, &
-        5, 6, 7, 17, 18, 19, 0, 0, 0, 0, 0, 0, &
-        1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, &
-        1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0], [12, 6])
-
     ! Harmonic block b holds the section layout once for n = 0 and twice,
     ! cos(kappa t) then sin(kappa t), otherwise; kappa = n/orbit_scale.
     type, public :: vrmhd_fourier_t
@@ -35,7 +26,7 @@ module kin6d_vrmhd_fourier
     public :: vrmhd_fourier_jacobian, vrmhd_fourier_wavenumber
 contains
     subroutine vrmhd_fourier_build(mm, symmetry, degree, harmonics, orbit_scale, &
-            op, status, scalar_degree, velocity_degree)
+            op, status, scalar_degree, velocity_degree, coordinate_coframe)
         type(meridian_mesh_t), intent(in) :: mm
         type(gs_symmetry_t), intent(in) :: symmetry
         integer, intent(in) :: degree, harmonics(:)
@@ -43,6 +34,8 @@ contains
         type(vrmhd_fourier_t), intent(out) :: op
         integer, intent(out) :: status
         integer, intent(in), optional :: scalar_degree, velocity_degree
+        logical, intent(in), optional :: coordinate_coframe
+        logical :: closed
         integer :: b, c, ns, nh
         status = 2
         nh = size(harmonics)
@@ -52,12 +45,14 @@ contains
         end do
         ! The rotation angle is 2 pi periodic; other scales change the measure.
         if (symmetry%kind == GS_ROTATION .and. abs(orbit_scale - 1) > 0) return
-        ! Screw sections store the horizontal one-form, which is not closed
-        ! under the orbit derivative; only k = 0 keeps grad exact.
+        closed = .false.
+        if (present(coordinate_coframe)) closed = coordinate_coframe
+        ! Nonzero twist requires closed coordinate forms for Fourier gradients.
         if (symmetry%kind == GS_SCREW .and. abs(symmetry%k) > 0 &
-            .and. any(harmonics /= 0)) return
+            .and. any(harmonics /= 0) .and. .not. closed) return
         call vrmhd_section_build(mm, symmetry, degree, 1, op%section, status, &
-            scalar_degree=scalar_degree, velocity_degree=velocity_degree)
+            scalar_degree=scalar_degree, velocity_degree=velocity_degree, &
+            coordinate_coframe=closed)
         if (status /= 0) return
         ns = op%section%ndof
         op%orbit_scale = orbit_scale
@@ -229,34 +224,6 @@ contains
         status = fail
     end subroutine
 
-    ! Pointwise bilinear form of the JVP: kmat(:, j, row) is the tangent
-    ! against unit tests for unit trial data j (33 values, 12 rates).
-    subroutine point_matrix(p, v, vd, source, shift, kmat)
-        type(vrmhd_parameters_t), intent(in) :: p
-        real(dp), intent(in) :: v(33), vd(12), source(6), shift
-        real(dp), intent(out) :: kmat(19, 45, 6)
-        real(dp) :: du(33), dud(12), test(19), value, tangent
-        integer :: row, it, j
-        kmat = 0
-        do row = 1, 6
-            do it = 1, ntest(row)
-                test = 0; test(test_slots(it, row)) = 1
-                do j = 1, 33
-                    du = 0; du(j) = 1; dud = 0
-                    call vrmhd_point(p, row, v, du, vd, dud, test, source, value, &
-                        tangent)
-                    kmat(test_slots(it, row), j, row) = tangent
-                end do
-                do j = 1, 12
-                    du = 0; dud = 0; dud(j) = shift
-                    call vrmhd_point(p, row, v, du, vd, dud, test, source, value, &
-                        tangent)
-                    kmat(test_slots(it, row), 33 + j, row) = tangent
-                end do
-            end do
-        end do
-    end subroutine
-
     ! Sparse R_U + (M U_dot)_U + shift M, block diagonal in the harmonics.
     ! Orbit averages of cos/sin products give the factor 1/2 for n > 0.
     subroutine vrmhd_fourier_jacobian(op, p, u0, ud0, source, shift, jac, status)
@@ -295,7 +262,7 @@ contains
                 end if
                 v = matmul(basis, u0(op%section%map(:, t)))
                 vd = matmul(basis(:12, :), ud0(op%section%map(:, t)))
-                call point_matrix(p, v(:33), vd, source(:, q, t), shift, kmat)
+                call vrmhd_point_matrix(p, v(:33), vd, source(:, q, t), shift, kmat)
                 dp_(:33, :) = basis(:33, :); dp_(34:, :) = basis(:12, :)
                 dq(:33, :) = orbit(:33, :); dq(34:, :) = 0
                 do r = 1, 6

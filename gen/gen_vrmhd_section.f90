@@ -17,7 +17,7 @@ program gen_vrmhd_section
     type(expr_t) :: u(2), ux(2), uy(2), a, ax, ay, c, av(3), da(3, 3), b(3)
     type(expr_t) :: roots(6), keys(4), replacements(4), gc(3), gcurl(3)
     type(expr_t) :: test(3), field(3), contraction
-    type(expr_t) :: cart(3), orbit(3), angle, ov(3, 3), oc(3)
+    type(expr_t) :: cart(3), orbit(3), angle, ov(3, 3), oc(3), frequency
     type(engine_result_t) :: simplified
     character(16) :: suffix
     character(16) :: vn(9), out(9), cn(9)
@@ -183,6 +183,48 @@ program gen_vrmhd_section
             end if
         end do
     end do
+    ! Coordinate one-forms dq1,dq2,dz are closed under a Fourier gradient.
+    ! The horizontal orbit one-form used above is not closed for screw twist.
+    av = [u(1), u(2), k*(y*u(1)-x*u(2))+a]
+    do i = 1, 3
+        da(i, 1) = diff(av(i), x) + diff(av(i), a)*ax
+        da(i, 2) = diff(av(i), y) + diff(av(i), a)*ay
+        do j = 1, 2
+            da(i, 1) = da(i, 1) + diff(av(i), u(j))*ux(j)
+            da(i, 2) = da(i, 2) + diff(av(i), u(j))*uy(j)
+        end do
+    end do
+    do i = 1, 3
+        da(i, 3) = k*(y*da(i, 1)-x*da(i, 2))
+        do j = 1, 3
+            da(i, 3) = da(i, 3) + omega(i, j)*av(j)
+        end do
+    end do
+    b = [da(3, 2)-da(2, 3), da(1, 3)-da(3, 1), da(2, 1)-da(1, 2)]
+    roots(:3) = av
+    frequency = sym(arena, 'frequency')
+    do i = 1, 3
+        roots(3+i) = subs_many(b(i), keys, replacements)
+        call prove(b(i)-subs_many(roots(3+i), [c], [ux(2)-uy(1)]))
+        simplified = engine%simplify(roots(3+i)); roots(3+i) = simplified%value
+        gc(i) = subs_many(roots(3+i), [u(1), u(2), c, a, ax, ay], &
+            [f(1), f(2), z, z, z, z])
+        call prove(gc(i))
+        gc(i) = subs_many(roots(3+i), [u(1), u(2), c, a, ax, ay], &
+            [f(1), f(2), z, z, frequency*v(1), frequency*v(2)])
+    end do
+    oc = [-v(2), v(1), z]
+    do i = 1, 3
+        call prove(gc(i)+frequency*oc(i))
+    end do
+    call w%emit('vrmhd_curl_screw_coordinates', cn, out(:6), roots, ad=.true.)
+    ! Contravariant two-form push by J=[e_x,e_y,xi], det J=1.
+    gcurl = [v(1)+xi(1)*v(3), v(2)+xi(2)*v(3), v(3)]
+    do i = 1, 3
+        call prove(subs_many(gcurl(i), v, [ay, -ax, c])-roots(3+i))
+    end do
+    call w%emit('vrmhd_face_screw_coordinates', &
+        [character(16) :: 'x', 'y', 'k', vn(:3)], out(:3), gcurl)
     do i = 1, 3
         field(i) = sym(arena, 'b'//achar(48 + i))
         test(i) = sym(arena, 'w'//achar(48 + i))
@@ -196,7 +238,7 @@ program gen_vrmhd_section
         [character(16) :: 'value'], [contraction], ad=.true.)
     call w%line('end module kin6d_vrmhd_section_leaves')
     call w%close()
-    print '(a)', 'Invariant Cartesian gradients and curls: 24 identities passed'
+    print '(a)', 'Invariant Cartesian gradients and curls: 36 identities passed'
 contains
     subroutine prove(e)
         type(expr_t), intent(in) :: e
