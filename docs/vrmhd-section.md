@@ -399,18 +399,17 @@ Alfven/slow-oracle separation. The number of signed waves below the cutoff
 is correct, but only four of six have an isolated oracle match. This is a
 coarse-mesh dispersion observation, not evidence by itself of growth or a
 spurious branch; isolation is required only on the resolved meshes.
-With the quotient symmetry/positivity checks, structured degree one passes
-the complete per-mesh structural, folded-count, staticity and dissipation
-gates at 4, 8 and 16 cells per period. At 16 cells all six signed waves below
-the cutoff have a one-to-one folded match. At 32 cells the unchanged
-time-mass Gram comparison fails at `1.308366707864e-14`, against `1e-14`.
-The density and velocity row defects are about `9.06e-15`; the temperature
-row defects are about `1.78e-14`. An independent 60-digit summation of the
-saved scalar projection terms reduces the density and temperature Gram
-defects below `2.1e-16`, locating the scalar discrepancy in the double-precision
-Bloch reductions. The original gate and tolerance remain unchanged.
-The finest-pair orders, degree-two ladder and perturbed meshes have not been
-reached; no complete spectral qualification is claimed.
+Test-side Bloch projections and structural identity reductions accumulate in
+quadruple precision (`real128`), converting the double-precision inputs exactly.
+The projected matrices and LAPACK solves remain double precision. This reduces
+summation roundoff from the comparisons without changing their `1e-14`
+tolerances or the production operators.
+The structured degree-one ladder passes through 32 cells per period, including
+the finest-pair order check. The first unresolved gate is the folded count for
+structured degree two at four cells per period: twelve computed signed waves
+lie below the cutoff, against fourteen analytic waves. The count check still
+applies on this coarse mesh. No complete spectral qualification is claimed for
+degree two or either perturbed ladder.
 No full-system inf-sup bound or continuous spectral non-pollution result is
 claimed. The independent folding test uses analytic frequencies at
 `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.

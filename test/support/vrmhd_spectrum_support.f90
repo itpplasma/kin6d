@@ -1,12 +1,12 @@
 module vrmhd_spectrum_support
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian, &
         vrmhd_section_mass
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
-    use vrmhd_structural_spectrum, only: structural_spectrum
+    use vrmhd_structural_spectrum, only: structural_spectrum, bloch_projection
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load
@@ -62,7 +62,8 @@ contains
         real(dp), allocatable :: mr(:), mi(:), basis(:, :), xy(:, :)
         complex(dp), allocatable :: load(:)
         type(fortsparse_status_t) :: st
-        complex(dp), allocatable :: transform(:, :), image(:), coefficients(:)
+        complex(dp), allocatable :: transform(:, :), coefficients(:)
+        complex(qp), allocatable :: image(:)
         complex(dp) :: stiffness(nb, nb), mass(nb, nb), alpha(nb), beta(nb)
         complex(dp) :: vectors(nb, nb), dummy(1, 1), dummy_right(1, 1), work(16*nb), lambda(nb)
         complex(dp) :: original_k(nb, nb), original_m(nb, nb), residual(nb)
@@ -223,13 +224,14 @@ contains
             csc_matvec(op%fs%grad%a, cos(xy(1, :))), &
             csc_matvec(op%fs%grad%a, sin(xy(1, :))), dp)
         do j = 1, nb
-            nulls(j, 3) = dot_product(transform(:, j), coefficients) &
-                /sum(abs(transform(:, j))**2)
+            nulls(j, 3) = cmplx(dot_product(cmplx(transform(:,j),kind=qp), &
+                cmplx(coefficients,kind=qp)) &
+                /sum(abs(cmplx(transform(:,j),kind=qp))**2),kind=dp)
         end do
         ! Translation invariance makes each Bloch block an invariant periodic subspace.
         call vrmhd_section_residual(op, p, u, zero, zero, zero, source, r, unused, status)
         call require(status == 0, 'uniform equilibrium residual')
-        equilibrium_defect = maxval(abs(matmul(transpose(conjg(transform)), r)))
+        equilibrium_defect = maxval(abs(bloch_projection(transform,cmplx(r,kind=qp))))
         print '(a,i4,es20.12)', 'periodic equilibrium residual: ', n, equilibrium_defect
         call require(equilibrium_defect < 1.0e-12_dp, 'uniform periodic equilibrium')
         call vrmhd_section_jacobian(op, p, u, zero, source, 0.0_dp, jac, status)
@@ -239,16 +241,17 @@ contains
             do i = 1, op%ndof
                 do entry = jac%col_ptr(i), jac%col_ptr(i + 1) - 1
                     row = jac%row_idx(entry)
-                    image(row) = image(row) + jac%val(entry)*transform(i, j)
+                    image(row) = image(row) &
+                        + real(jac%val(entry),qp)*cmplx(transform(i,j),kind=qp)
                 end do
             end do
-            stiffness(:, j) = matmul(transpose(conjg(transform)), image)
+            stiffness(:, j) = bloch_projection(transform,image)
             call vrmhd_section_mass(op, p, u, real(transform(:, j), dp), mr, status)
             call require(status == 0, 'production real mass action')
             call vrmhd_section_mass(op, p, u, aimag(transform(:, j)), mi, status)
             call require(status == 0, 'production imaginary mass action')
-            image = cmplx(mr, mi, dp)
-            mass(:, j) = matmul(transpose(conjg(transform)), image)
+            image = cmplx(mr,mi,qp)
+            mass(:, j) = bloch_projection(transform,image)
         end do
         original_k = stiffness; original_m = mass
         if (present(structural)) then
@@ -370,7 +373,7 @@ contains
                 call vrmhd_section_residual(op, p, u, zero, aimag(coefficients), &
                     zero, source, r, mi, status)
                 call require(status == 0, 'null-mode imaginary matrix-free Jacobian')
-                projected = matmul(transpose(conjg(transform)), cmplx(mr, mi, dp))
+                projected = bloch_projection(transform,cmplx(mr,mi,qp))
                 scale = sqrt(sum(abs(original_k)**2))*sqrt(sum(abs(optical_vector)**2))
                 print '(a,es20.12)', 'magnetic null matrix-free relative residual: ', &
                     sqrt(sum(abs(projected)**2))/scale
@@ -433,7 +436,7 @@ contains
         call vrmhd_section_residual(op, p, u, zero, aimag(coefficients), zero, &
             source, r, imag_jv, status)
         call require(status == 0, 'shear imaginary matrix-free Jacobian')
-        projected = matmul(transpose(conjg(transform)), cmplx(real_jv, imag_jv, dp))
+        projected = bloch_projection(transform,cmplx(real_jv,imag_jv,qp))
         scale = sqrt(sum(abs(stiffness)**2))*sqrt(sum(abs(mode)**2))
         print '(a,es20.12)', 'vz null production Jacobian relative residual: ', &
             sqrt(sum(abs(projected)**2))/scale

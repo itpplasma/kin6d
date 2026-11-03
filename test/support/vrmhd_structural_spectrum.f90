@@ -1,12 +1,12 @@
 module vrmhd_structural_spectrum
-    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_jacobian
     use rm_mhd_oracles, only: uniform_waves, oracle_ok
     use fortsparse, only: csc_t, csc_matvec
     implicit none
     private
-    public :: structural_spectrum, match_folded
+    public :: structural_spectrum, match_folded, bloch_projection
     interface
         subroutine zgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
             import dp
@@ -75,6 +75,20 @@ contains
         error stop 'RM2 structural spectrum gate'
     end subroutine
 
+    function bloch_projection(transform, image) result(projected)
+        complex(dp), intent(in) :: transform(:, :)
+        complex(qp), intent(in) :: image(:)
+        complex(dp) :: projected(size(transform,2))
+        integer, allocatable :: rows(:)
+        integer :: i, j
+        ! Exact zero support avoids dense quadruple-precision work on Bloch columns.
+        do j = 1, size(transform,2)
+            rows = pack([(i,i=1,size(transform,1))],abs(transform(:,j)) > 0)
+            projected(j) = cmplx(dot_product(cmplx(transform(rows,j),kind=qp), &
+                image(rows)),kind=dp)
+        end do
+    end function
+
     subroutine structural_spectrum(op, p, u, source, transform, stiffness, &
             mass, ns, na, n, repeat, degree, b0, exact, frequencies, mass_condition)
         type(vrmhd_section_t), intent(in) :: op
@@ -86,7 +100,8 @@ contains
         real(dp), intent(out), optional :: mass_condition
         complex(dp), allocatable :: f(:, :), e(:, :), ef(:, :), q(:, :), w(:, :)
         complex(dp), allocatable :: h(:, :), modes(:, :), work(:), a(:, :), values(:)
-        complex(dp), allocatable :: curls(:, :), weighted(:, :), full(:), image(:)
+        complex(dp), allocatable :: curls(:, :), weighted(:, :), full(:)
+        complex(qp), allocatable :: image(:)
         complex(dp), allocatable :: kd(:, :), fd(:, :), l(:, :), lift(:, :)
         complex(dp), allocatable :: scalar_gram(:, :), scalar_weighted(:, :)
         complex(dp) :: dummy(1, 1), dummy_right(1, 1)
@@ -111,8 +126,11 @@ contains
                 csc_matvec(op%scalar_fs%mass(0),real(full,dp)), &
                 csc_matvec(op%scalar_fs%mass(0),aimag(full)),dp)
         end do
-        scalar_gram = matmul(transpose(conjg(transform(:op%scalar_fs%n0,:ns))), &
-            scalar_weighted)
+        allocate(scalar_gram(ns,ns))
+        do j = 1, ns
+            scalar_gram(:,j) = bloch_projection( &
+                transform(:op%scalar_fs%n0,:ns),cmplx(scalar_weighted(:,j),kind=qp))
+        end do
         do i = 1, 3
             e(i*ns+1:(i+1)*ns,i*ns+1:(i+1)*ns) = scalar_gram
         end do
@@ -135,9 +153,13 @@ contains
                 csc_matvec(op%fs%mass(2),aimag(curls(:,j))),dp)
         end do
         ! A is measured in sqrt(mu0) units in evolution(), cancelling 1/mu0 here.
-        e(6*ns+1:,6*ns+1:) = matmul(transpose(conjg(curls)),weighted)
-        ef = matmul(e,f)
-        skew = sqrt(sum(abs(ef+transpose(conjg(ef)))**2)/sum(abs(ef)**2))
+        do j = 1, na
+            e(6*ns+1:,6*ns+j) = bloch_projection(curls,cmplx(weighted(:,j),kind=qp))
+        end do
+        ef = cmplx(matmul(cmplx(e,kind=qp),cmplx(f,kind=qp)),kind=dp)
+        skew = real(sqrt(sum(abs(cmplx(ef,kind=qp) &
+            + transpose(conjg(cmplx(ef,kind=qp))))**2) &
+            /sum(abs(cmplx(ef,kind=qp))**2)),dp)
         skew_bound = 100*epsilon(1.0_dp)*condition
         print '(a,es20.12)', 'physical time mass M_r 1-norm condition estimate: ', condition
         if (present(mass_condition)) mass_condition = condition
@@ -148,10 +170,11 @@ contains
             coupling_defect)
         nz = 3*ns; ne = d-nz
         call energy_quotient(op,transform,e,ns,na,repeat,degree,q,energies)
-        f_norm = sqrt(sum(abs(f)**2))
+        f_norm = real(sqrt(sum(abs(cmplx(f,kind=qp))**2)),dp)
         maximum_defect = 0
         do j = 1, nz
-            defect = sqrt(sum(abs(matmul(f,q(:,j)))**2))/f_norm
+            defect = real(sqrt(sum(abs(matmul(cmplx(f,kind=qp), &
+                cmplx(q(:,j),kind=qp)))**2))/f_norm,dp)
             call check(defect <= 1.0e-12_dp, 'energy-free entropy/gauge kernel is static')
             defect = static_defect(q(:,j))
             maximum_defect = max(maximum_defect,defect)
@@ -161,12 +184,13 @@ contains
         do j = 1, ne
             w(:,j) = q(:,nz+j)/sqrt(energies(nz+j))
         end do
-        h = cmplx(0.0_dp,1.0_dp,dp)*matmul(transpose(conjg(w)),matmul(ef,w))
+        h = cmplx(cmplx(0.0_qp,1.0_qp,qp)*matmul(transpose(conjg(cmplx(w,kind=qp))), &
+            matmul(cmplx(ef,kind=qp),cmplx(w,kind=qp))),kind=dp)
         ! The roundoff Hermitian representative is used only after the structural gate.
         h = (h+transpose(conjg(h)))/2
         call zheev('V','U',ne,h,ne,omega,work,size(work),rw,info)
         call check(info == 0, 'energy-quotient ideal frequencies')
-        modes = matmul(w,h)
+        modes = cmplx(matmul(cmplx(w,kind=qp),cmplx(h,kind=qp)),kind=dp)
         a = f
         call zgeev('N','N',d,a,d,values,dummy,1,dummy_right,1,work,size(work),rw,info)
         call check(info == 0, 'diagnostic nonsymmetric ideal eigensolve')
@@ -203,10 +227,11 @@ contains
             do i = 1, op%ndof
                 do entry = jac%col_ptr(i), jac%col_ptr(i+1)-1
                     row = jac%row_idx(entry)
-                    image(row) = image(row)+jac%val(entry)*transform(i,j)
+                    image(row) = image(row) &
+                        + real(jac%val(entry),qp)*cmplx(transform(i,j),kind=qp)
                 end do
             end do
-            kd(:,j) = matmul(transpose(conjg(transform)),image)
+            kd(:,j) = bloch_projection(transform,image)
         end do
         call evolution(kd,mass,ns,na,p%mu0,fd)
         a = fd
@@ -214,40 +239,51 @@ contains
         call check(info == 0, 'dissipative full spectrum')
         growth = maxval(real(values,dp))
         print '(a,es20.12)', 'maximum dissipative Re(lambda) [1/s]: ', growth
-        call check(growth <= 1.0e-12_dp*sqrt(sum(abs(fd)**2)), 'dissipative spectrum has no growth')
-        h = matmul(transpose(conjg(w)),matmul(e,matmul(fd,w)))
+        call check(growth <= 1.0e-12_dp*sqrt(sum(abs(cmplx(fd,kind=qp))**2)), &
+            'dissipative spectrum has no growth')
+        h = cmplx(matmul(transpose(conjg(cmplx(w,kind=qp))), &
+            matmul(cmplx(e,kind=qp), &
+            matmul(cmplx(fd,kind=qp),cmplx(w,kind=qp)))),kind=dp)
         call zgeev('N','N',ne,h,ne,values,dummy,1,dummy_right,1,work,size(work),rw,info)
         call check(info == 0, 'dissipative energetic quotient')
         slowest = -maxval(real(values(:ne),dp))
         cell_wave = real(n,dp)
         print '(a,2es20.12)', 'slowest energetic decay [1/s] / (eta/mu0) k_cell^2: ', &
             slowest, slowest/(diffusivity*cell_wave**2)
-        call check(slowest > 1.0e-12_dp*sqrt(sum(abs(fd)**2)), &
+        call check(slowest > 1.0e-12_dp*sqrt(sum(abs(cmplx(fd,kind=qp))**2)), &
             'every energetic mode, including the ideal static kernel, decays')
     contains
         real(dp) function static_defect(x) result(value)
             complex(dp), intent(in) :: x(:)
-            complex(dp) :: full(size(l,1))
-            full = matmul(lift,x)
-            value = sqrt(sum(abs(matmul(l,full))**2)) &
-                /sqrt(sum(abs(l)**2)*sum(abs(full)**2))
+            complex(qp) :: full(size(l,1))
+            full = matmul(cmplx(lift,kind=qp),cmplx(x,kind=qp))
+            value = real(sqrt(sum(abs(matmul(cmplx(l,kind=qp),full))**2)) &
+                /sqrt(sum(abs(cmplx(l,kind=qp))**2)*sum(abs(full)**2)),dp)
         end function
     end subroutine
 
-    subroutine inverse_free_structure(l, mr, e, scalar_gram, ns, na, coupling_defect)
-        complex(dp), intent(in) :: l(:, :), mr(:, :), e(:, :), scalar_gram(:, :)
+    subroutine inverse_free_structure(l_dp, mr_dp, e_dp, scalar_gram_dp, &
+            ns, na, coupling_defect)
+        complex(dp), intent(in) :: l_dp(:, :), mr_dp(:, :), e_dp(:, :)
+        complex(dp), intent(in) :: scalar_gram_dp(:, :)
         integer, intent(in) :: ns, na
         real(dp), intent(in) :: coupling_defect
-        complex(dp) :: compression(ns,3*ns), expected(size(mr,1),size(mr,2))
-        complex(dp) :: remaining(size(l,1),size(l,2))
-        real(dp), parameter :: pressure(3) = [0.6_dp,1.0_dp,1.0_dp]
+        complex(qp) :: l(size(l_dp,1),size(l_dp,2))
+        complex(qp) :: mr(size(mr_dp,1),size(mr_dp,2))
+        complex(qp) :: e(size(e_dp,1),size(e_dp,2))
+        complex(qp) :: scalar_gram(size(scalar_gram_dp,1),size(scalar_gram_dp,2))
+        complex(qp) :: compression(ns,3*ns), expected(size(mr,1),size(mr,2))
+        complex(qp) :: remaining(size(l,1),size(l,2))
+        real(qp), parameter :: pressure(3) = real([0.6_dp,1.0_dp,1.0_dp],qp)
         real(dp) :: defect
         integer :: d, i, j, offset(3)
+        l = cmplx(l_dp,kind=qp); mr = cmplx(mr_dp,kind=qp)
+        e = cmplx(e_dp,kind=qp); scalar_gram = cmplx(scalar_gram_dp,kind=qp)
         d = 6*ns+na; offset = [0,4*ns,5*ns]
         call check(coupling_defect <= 1.0e-14_dp, &
             'inverse-free Lorentz/induction negative adjoints')
         ! Total internal energy gives p_dot without inverting a spatial mass.
-        compression = (2.0_dp/3)*(l(4*ns+1:5*ns,ns+1:4*ns) &
+        compression = real(2.0_dp/3,qp)*(l(4*ns+1:5*ns,ns+1:4*ns) &
             + l(5*ns+1:6*ns,ns+1:4*ns))
         do i = 1, 3
             defect = relative_norm(l(ns+1:4*ns,offset(i)+1:offset(i)+ns) &
@@ -259,7 +295,8 @@ contains
         end do
         do i = 2, 3
             defect = relative_norm(l(offset(i)+1:offset(i)+ns,ns+1:4*ns) &
-                - 0.75_dp*l(:ns,ns+1:4*ns), l(offset(i)+1:offset(i)+ns,ns+1:4*ns))
+                - real(0.75_dp,qp)*l(:ns,ns+1:4*ns), &
+                l(offset(i)+1:offset(i)+ns,ns+1:4*ns))
             print '(a,i2,es20.12)', 'species advection/compression consistency, field ', i, defect
             call check(defect <= 1.0e-14_dp, 'species compression agrees with continuity')
         end do
@@ -290,9 +327,9 @@ contains
         end do
         ! Primitive temperature rates include the equilibrium density-rate term.
         do i = 2, 3
-            expected(offset(i)+1:offset(i)+ns,:ns) = 0.45_dp*scalar_gram
+            expected(offset(i)+1:offset(i)+ns,:ns) = real(0.45_dp,qp)*scalar_gram
             expected(offset(i)+1:offset(i)+ns,offset(i)+1:offset(i)+ns) = &
-                1.5_dp*scalar_gram
+                real(1.5_dp,qp)*scalar_gram
         end do
         expected(6*ns+1:,6*ns+1:) = -l(d+1:,d+1:)
         defect = relative_norm(mr-expected,expected)
@@ -336,16 +373,20 @@ contains
             gradient = cmplx(csc_matvec(op%fs%grad%a,real(scalar,dp)), &
                 csc_matvec(op%fs%grad%a,aimag(scalar)),dp)
             do i = 1, na
-                z(6*ns+i,2*ns+j) = dot_product(transform(a0+1:j0,6*ns+i),gradient) &
-                    /sum(abs(transform(a0+1:j0,6*ns+i))**2)
+                z(6*ns+i,2*ns+j) = cmplx(dot_product( &
+                    cmplx(transform(a0+1:j0,6*ns+i),kind=qp), &
+                    cmplx(gradient,kind=qp)) &
+                    /sum(abs(cmplx(transform(a0+1:j0,6*ns+i),kind=qp))**2),kind=dp)
             end do
         end do
         print '(a,4i6)', 'analytic energy nulls: entropy / gauge / total / cells: ', &
             2*ns,ns,nz,repeat**2
-        norm_e = sqrt(sum(abs(e)**2)); maximum_defect = 0
+        norm_e = real(sqrt(sum(abs(cmplx(e,kind=qp))**2)),dp)
+        maximum_defect = 0
         do j = 1, nz
-            defect = sqrt(sum(abs(matmul(e,z(:,j)))**2)) &
-                /(norm_e*sqrt(sum(abs(z(:,j))**2)))
+            defect = real(sqrt(sum(abs(matmul(cmplx(e,kind=qp), &
+                cmplx(z(:,j),kind=qp)))**2)) &
+                /(norm_e*sqrt(sum(abs(cmplx(z(:,j),kind=qp))**2))),dp)
             maximum_defect = max(maximum_defect,defect)
             call check(defect <= 1.0e-14_dp, 'analytic entropy/gauge basis has zero energy')
         end do
@@ -354,13 +395,15 @@ contains
         call zgeqrf(d,nz,q,d,tau,work,size(work),info)
         call check(info == 0, 'analytic null basis QR')
         do j = 1, nz
-            call check(abs(q(j,j)) > 1.0e-14_dp*sqrt(sum(abs(z(:,j))**2)), &
+            call check(abs(q(j,j)) &
+                > 1.0e-14_dp*sqrt(sum(abs(cmplx(z(:,j),kind=qp))**2)), &
                 'analytic null basis has full rank')
         end do
         call zungqr(d,d,nz,q,d,tau,work,size(work),info)
         call check(info == 0, 'orthonormal representatives of the energy quotient')
         ! E annihilates Z, so its Euclidean complement represents the E-quotient.
-        quotient = matmul(transpose(conjg(q(:,nz+1:))),matmul(e,q(:,nz+1:)))
+        quotient = cmplx(matmul(transpose(conjg(cmplx(q(:,nz+1:),kind=qp))), &
+            matmul(cmplx(e,kind=qp),cmplx(q(:,nz+1:),kind=qp))),kind=dp)
         factor = quotient
         call zpotrf('U',ne,factor,ne,info)
         call check(info == 0, 'energy is positive definite modulo analytic physical nulls')
@@ -370,12 +413,13 @@ contains
         call check(energies(nz+1) > 0, 'energy quotient has strictly positive eigenvalues')
         print '(a,es20.12)', 'quotient energy smallest / largest eigenvalue: ', &
             energies(nz+1)/energies(d)
-        q(:,nz+1:) = matmul(q(:,nz+1:),quotient)
+        q(:,nz+1:) = cmplx(matmul(cmplx(q(:,nz+1:),kind=qp), &
+            cmplx(quotient,kind=qp)),kind=dp)
     end subroutine
 
     real(dp) function relative_norm(difference, reference) result(value)
-        complex(dp), intent(in) :: difference(:, :), reference(:, :)
-        value = sqrt(sum(abs(difference)**2)/sum(abs(reference)**2))
+        complex(qp), intent(in) :: difference(:, :), reference(:, :)
+        value = real(sqrt(sum(abs(difference)**2)/sum(abs(reference)**2)),dp)
     end function
 
     subroutine evolution(stiffness, mass, ns, na, mu0, f, l, lift, condition, coupling_defect)
@@ -402,9 +446,9 @@ contains
         end do
         if (present(coupling_defect)) then
             ! Magnetic energy tests induction with J, paired with the velocity test.
-            coupling_defect = sqrt(sum(abs(k(ns+1:4*ns,d+1:) &
-                + transpose(conjg(k(6*ns+1:d,ns+1:4*ns))))**2) &
-                /sum(abs(k(ns+1:4*ns,d+1:))**2))
+            coupling_defect = real(sqrt(sum(abs(cmplx(k(ns+1:4*ns,d+1:),kind=qp) &
+                + transpose(conjg(cmplx(k(6*ns+1:d,ns+1:4*ns),kind=qp))))**2) &
+                /sum(abs(cmplx(k(ns+1:4*ns,d+1:),kind=qp))**2)),dp)
         end if
         jj = k(d+1:,d+1:); current = -k(d+1:,:d)
         call zgesv(na,d,jj,na,pivot,current,na,info)
@@ -417,9 +461,10 @@ contains
             end do
             lift(d+1:,:) = current
         end if
-        f = -k(:d,:d)-matmul(k(:d,d+1:),current)
+        f = cmplx(-cmplx(k(:d,:d),kind=qp) &
+            - matmul(cmplx(k(:d,d+1:),kind=qp),cmplx(current,kind=qp)),kind=dp)
         dynamic = m(:d,:d)
-        mass_norm = maxval(sum(abs(dynamic),dim=1))
+        mass_norm = real(maxval(sum(abs(cmplx(dynamic,kind=qp)),dim=1)),dp)
         call zgesv(d,d,dynamic,d,pivot,f,d,info)
         call check(info == 0, 'invert physical time mass')
         if (present(condition)) then
