@@ -202,8 +202,19 @@ prescribed current lift, as explained in the weak-form document.
 The linear-spectrum test uses the assembled Jacobian and mass in an invariant
 periodic Fourier block of the translation slab, with uniform magnetic field
 having a component along the wave vector. It compares with `uniform_waves`.
-The first frequency refinement (4 to 8 cells per period) gives an Alfven
-order of 1.636, below the required 1.8; the third mesh is not reached. The
-SI-unit pencil also shows sensitivity in its roundoff-level imaginary parts;
-a diagnostic change of magnetic units reduces these without changing the gate.
-No three-mesh spectral convergence or complete spurious-mode claim follows.
+It reports every refinement pair on 4, 8, 16, 32 and 64 cells per period and
+requires an order above 1.8 on the finest pair. The Alfven frequency reaches
+second order; the fast and slow frequencies approach fourth order on this slab.
+An invertible row/column change of magnetic units balances the generalized
+eigenproblem before solving it. The squared-frequency reality threshold is
+unchanged and applies on every mesh; the SI-unit solve remains a diagnostic.
+
+Every eigenvalue in the computed wave-vector block `k=(1,0,0)/m` is reported,
+including the algebraic current constraints. The expected zero subspace has
+two pressure-balanced entropy modes and one curl-free gauge mode; translations
+have zero wave vector and contribute no null here. The test checks these
+analytic nulls and rejects additional finite modes below the largest oracle
+frequency. It currently finds one extra magnetic zero mode, dominated by the
+cell-scale axial magnetic field. Its small smooth Fourier content does not
+exempt it from the frequency cutoff. Thus the spectral gate still fails;
+neither a spurious-mode-free spectrum nor a full-domain spectral audit is claimed.
