@@ -98,6 +98,12 @@ add_executable(test_vrmhd_mms test/test_vrmhd_mms.f90)
 target_link_libraries(test_vrmhd_mms PRIVATE kin6d_vrmhd_mms_test)
 add_executable(test_vrmhd_stationary test/test_vrmhd_stationary.f90)
 target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test)
+add_executable(test_vrmhd_gs test/test_vrmhd_gs.f90
+    src/generated/kin6d_vrmhd_gs_leaves.f90)
+target_link_libraries(test_vrmhd_gs PRIVATE kin6d_mhd)
+add_test(NAME vrmhd_gs_consistency COMMAND test_vrmhd_gs)
+set_tests_properties(vrmhd_gs_consistency PROPERTIES LABELS rm2 PROCESSORS 8
+    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 foreach(gate boundary derivatives harmonic gauge solve)
     add_test(NAME vrmhd_stationary_${gate} COMMAND test_vrmhd_stationary ${gate})
     set_tests_properties(vrmhd_stationary_${gate} PROPERTIES LABELS rm2
@@ -1042,6 +1048,15 @@ if(KIN6D_FORTSYM_BUILD)
         -DGENERATED_DIR=test/support -DLEAF=vrmhd_mms_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_mms_regeneration PROPERTIES LABELS rm2)
+    add_executable(gen_vrmhd_gs gen/gen_vrmhd_gs.f90)
+    target_link_libraries(gen_vrmhd_gs PRIVATE kin6d_gen_support)
+    add_test(NAME vrmhd_gs_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_gs>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_vrmhd_gs_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-gs-regeneration
+        -DLEAF=kin6d_vrmhd_gs_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    set_tests_properties(vrmhd_gs_regeneration PROPERTIES LABELS rm2)
     add_executable(gen_vrmhd_section gen/gen_vrmhd_section.f90)
     target_link_libraries(gen_vrmhd_section PRIVATE kin6d_gen_support)
     add_test(NAME vrmhd_section_regeneration COMMAND ${CMAKE_COMMAND}

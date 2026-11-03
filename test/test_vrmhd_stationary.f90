@@ -37,11 +37,11 @@ program test_vrmhd_stationary
                     kind, level, sigma(level)/sigma(level - 1)
                 call require(sigma(level) >= 0.75_dp*sigma(level - 1), &
                     'reduced stationary minimum collapses under refinement')
-                print '(a,2i3,f10.6)', 'current mass condition refinement ratio ', &
+                print '(a,2i3,f10.6)', 'scaled current mass condition refinement ratio ', &
                     kind, level, mass_condition(level)/mass_condition(level - 1)
                 call require( &
                     mass_condition(level) <= mass_condition(level - 1)/0.75_dp, &
-                    'current mass condition grows under refinement')
+                    'scaled current mass condition grows under refinement')
             end do
         case ('solve')
             do level = 1, 3
@@ -86,9 +86,10 @@ contains
         real(dp), allocatable :: block(:, :), work(:), current_mass(:, :), &
             mass_copy(:, :), mass_singular(:), current_primal(:, :), &
             primal_current(:, :), recovery(:, :), mass_vectors(:, :), &
-            probe(:), image(:)
+            probe(:), image(:), mass_diagonal(:)
         integer, allocatable :: free_index(:), gauge_index(:), current_index(:)
         real(dp) :: x(2), weight, dummy_u(1, 1), value, mode_norms(8), defect, scale
+        real(dp) :: raw_condition
         integer :: i, j, t, q, nf, ng, row, col, status, entry, info, lwork
         integer :: group, it, nj, current_start, nh
         interface
@@ -174,7 +175,7 @@ contains
             current_mass(nj, nj), mass_copy(nj, nj), mass_singular(nj), &
             current_primal(nj, nf), primal_current(nf, nj), &
             recovery(nj, nf), mass_vectors(nj, nj), &
-            probe(nf), image(nf))
+            probe(nf), image(nf), mass_diagonal(nj))
         trial = 0; matrix = 0; current_mass = 0
         current_primal = 0; primal_current = 0
         call vrmhd_stationary_jacobian(op, steady, p, u, boundary, source, &
@@ -235,9 +236,9 @@ contains
             mass_vectors, nj, work, lwork, info)
         call require(info == 0, 'current mass SVD')
         call require(mass_singular(nj) > 0, 'positive current mass spectrum')
-        mass_condition = mass_singular(1)/mass_singular(nj)
+        raw_condition = mass_singular(1)/mass_singular(nj)
         print '(a,3i6,3es16.8)', 'current mass kind, n, size, min, max, condition ', &
-            kind, n, nj, mass_singular(nj), mass_singular(1), mass_condition
+            kind, n, nj, mass_singular(nj), mass_singular(1), raw_condition
         nh = op%fs%nn
         print '(a,2i5,2es14.6)', 'current mass minimum mode section, orbit ', &
             kind, n, norm2(mass_vectors(nj, :nh)), norm2(mass_vectors(nj, nh + 1:))
@@ -248,6 +249,23 @@ contains
             maxval([(current_mass(i, i), i=nh + 1, nj)])
         print '(a,2i5,es14.6)', 'current mass section-orbit cross block ', &
             kind, n, maxval(abs(current_mass(:nh, nh + 1:)))
+        ! Diagonal scaling removes the different edge and orbit basis amplitudes.
+        mass_diagonal = [(current_mass(i, i), i=1, nj)]
+        call require(minval(mass_diagonal) > 0, 'positive current mass diagonal')
+        mass_diagonal = sqrt(mass_diagonal)
+        do j = 1, nj
+            mass_copy(:, j) = current_mass(:, j)/(mass_diagonal*mass_diagonal(j))
+        end do
+        call dgesvd('N', 'A', nj, nj, mass_copy, nj, mass_singular, dummy_u, 1, &
+            mass_vectors, nj, work, lwork, info)
+        call require(info == 0, 'scaled current mass SVD')
+        call require(mass_singular(nj) > 0, 'positive scaled current mass spectrum')
+        mass_condition = mass_singular(1)/mass_singular(nj)
+        print '(a,3i6,3es16.8)', &
+            'scaled current mass kind, n, size, min, max, condition ', &
+            kind, n, nj, mass_singular(nj), mass_singular(1), mass_condition
+        print '(a,2i5,2es14.6)', 'scaled current mass minimum mode section, orbit ', &
+            kind, n, norm2(mass_vectors(nj, :nh)), norm2(mass_vectors(nj, nh + 1:))
         deallocate (work)
         do t = 1, op%fs%mm%topology%n_triangles
             block = 0

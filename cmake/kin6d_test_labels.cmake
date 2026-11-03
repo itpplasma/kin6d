@@ -904,6 +904,8 @@ foreach(gate boundary derivatives harmonic solve)
 endforeach()
 kin6d_test_labels(vrmhd_stationary_gauge slow CLASSES mhd
     TARGETS test_vrmhd_stationary)
+kin6d_test_labels(vrmhd_gs_consistency fast CLASSES mhd TARGETS test_vrmhd_gs)
+kin6d_test_labels(vrmhd_gs_regeneration fast CLASSES mhd TARGETS gen_vrmhd_gs)
 
 kin6d_test_labels(vrmhd_section_regeneration fast CLASSES mhd TARGETS gen_vrmhd_section)
 

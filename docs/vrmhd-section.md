@@ -89,9 +89,11 @@ Jacobian defined in [the weak form](vrmhd-weak-form.md), the gate measures
 `L^(-1) S L^(-T)`. It requires a minimum singular value above `1e-4` and
 rejects a decrease greater than 25 percent per halving of cell size. It also
 reports the maximum singular value and minimum mode's field composition.
-The current mass matrix is checked separately in the stored coefficient
-basis: a condition-number increase greater than `1/0.75` per refinement
-fails. These are numerical gates, not proofs of uniform continuous bounds.
+The current mass matrix is checked separately after diagonal normalization:
+a condition-number increase greater than `1/0.75` per refinement fails.
+The raw coefficient condition number is diagnostic only because section edge
+and orbit nodal bases have different mesh scaling. These are numerical gates,
+not proofs of uniform continuous bounds.
 The Jacobian is evaluated after Newton convergence of the manufactured
 stationary problem, including its lifted boundary values and Ampere trace.
 
@@ -162,14 +164,31 @@ weak-form document. It passes over three refinements in all three symmetries,
 with quadratic Newton convergence. The diagnostic interior `curl J` rate is
 about 0.4–0.5, like the whole-mesh rate, so it is not a boundary-layer effect.
 The harmonic gate checks closedness and an independent Cartesian voltage load.
-The reduced stationary minimum singular value changes from 0.09238 to
-0.09196 on the first rotation refinement, within its stability threshold.
-The gate instead stops because the raw current mass-matrix condition number
-rises from 1913 to 8150. The stored section edge integrals and orbit nodal
-values have different mesh scaling; this coefficient conditioning is distinct
-from the reduced operator's natural-norm stability. No mass scaling or norm
-change is used to obtain a pass. Finer meshes and other symmetries, and GS
-stationary consistency, therefore remain untested. The semidiscrete energy
-ledger and linear spectra remain unverified. Conservative momentum alone
-does not enforce the kinetic continuity product discussed in the weak-form
-document.
+The reduced stability and diagonally normalized current-mass gates pass on
+meshes with 4, 8 and 16 cells per side for rotation, translation and screw.
+The smallest reduced singular value is above 0.089; its worst refinement
+ratio is 0.937, while the largest normalized mass-condition growth is 1.065.
+
+The GS consistency gate solves the RM0 flux equation with analytic pressure
+profiles, projects its flux lift into the section spaces and recovers current
+by weak Ampere's law with the prescribed magnetic boundary trace. Rotation
+uses `psi=0.1 R^2(log R-1/2)`, `Bz=0.2 log R`, `Jphi=-0.2/R` and
+`p=6-0.02(log R)^2`. Screw symmetry has pitch `k=0.7/m`,
+`psi=0.25(x^2+y^2)`, `B=(-0.2 y,0.2 x,1)` and `J=(0,0,0.4)`;
+its pressure is `p=6-0.04(x^2+y^2)`. Coordinates and field values use SI
+units and unit reference scales; both species have constant temperature
+`Te=Ti=1 J` and `mi=mu0=1` in their respective SI units, with `rho=p/2`.
+The pressure is a function of the monotone radial flux in each case.
+The full gauged residual, measured in the dual of the constrained physical
+Riesz norm, converges at least at first order over three refinements in the
+ideal limit and with `Js=J_GS` for both symmetries.
+
+The loop-voltage case stops at the first rotation refinement: its electron
+thermal residual remains nonzero although induction balances. With constant
+temperature, zero flow and no heat sink, the electron equation retains
+`-eta |J|^2 q_e`; `eta J=V h` alone does not make the full state stationary.
+No heat sink is inserted by the voltage drive. Finer rotation meshes and
+screw loop-voltage consistency remain untested after this failure. The
+semidiscrete energy ledger and linear spectra remain unverified. Conservative
+momentum alone does not enforce the kinetic continuity product discussed in
+the weak-form document.

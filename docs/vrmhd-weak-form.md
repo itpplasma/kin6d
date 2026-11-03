@@ -112,8 +112,10 @@ B = curl Atilde
 RA = [Atilde_dot - V h - v cross B + eta (J - Js)].W.
 ```
 
-Thus `Js=J` gives a stationary Ohmic state at `V=0`; with `Js=0` it
-requires `eta J=V h`. Voltage drive supplies magnetic power
+Thus `Js=J` gives stationary Ohmic induction at `V=0`; with `Js=0` it
+requires `eta J=V h`. A full stationary state must also balance electron
+heating: the latter convention retains `eta |J|^2` when no thermal sink is
+prescribed. Voltage drive supplies magnetic power
 `integral V h.J dx` without changing the specified Ohmic heating term.
 The screw field `xi/|xi|^2` has nonzero curl and cannot replace `h`.
 Discrete harmonic coefficients are edge integrals of the multivalued
@@ -213,6 +215,9 @@ loss of the minimum singular value per refinement. It also reports the
 maximum singular value, the minimum mode's field composition and the
 condition number of `M_J`. This is finite-mesh evidence, not a proof of a
 uniform continuous inverse bound.
+The mass gate checks the condition number of `D_J^(-1/2) M_J D_J^(-1/2)`,
+where `D_J=diag(M_J)`, because section edge and orbit nodal bases have different
+mesh scaling; the raw condition number is diagnostic only.
 
 The auxiliary current is defined by weak Ampère's law `RJ = 0`, rather than
 by a second pointwise derivative of `A`. With `W = J` in induction and
