@@ -80,14 +80,18 @@ higher-order scalar gradient kernel without a separate graph reduction.
 The multiplier of a compatible continuous solution is zero. Its computed
 value and Jacobian nonsingularity require separate checks.
 
-The stationary singular-value gate removes fixed trace coefficients and uses
-the physical Riesz matrices: H1 for the scalar and velocity fields and the
-multiplier, H(curl) for `A`, and L2 for `J`, with unit reference scales.
-If `H=L L^T` is this Gram matrix, it measures the smallest singular value of
-`L^(-1) R_U L^(-T)`. A positive value on one grid is insufficient: the
-refinement check rejects a decrease greater than 25 percent per halving of
-the cell size. This is a numerical stability gate, not a proof of a uniform
-continuous inverse bound.
+The stationary singular-value gate removes fixed trace coefficients and
+eliminates the algebraic current with its L2 mass matrix before measuring the
+primal Jacobian. The physical Riesz matrices are H1 for the scalar, velocity
+and multiplier fields and H(curl) for `A`, with unit reference scales on both
+trial and test sides. If `H=L L^T` is this Gram matrix and `S` the reduced
+Jacobian defined in [the weak form](vrmhd-weak-form.md), the gate measures
+`L^(-1) S L^(-T)`. It requires a minimum singular value above `1e-4` and
+rejects a decrease greater than 25 percent per halving of cell size. It also
+reports the maximum singular value and minimum mode's field composition.
+The current mass matrix is checked separately in the stored coefficient
+basis: a condition-number increase greater than `1/0.75` per refinement
+fails. These are numerical gates, not proofs of uniform continuous bounds.
 The Jacobian is evaluated after Newton convergence of the manufactured
 stationary problem, including its lifted boundary values and Ampere trace.
 
@@ -156,14 +160,16 @@ The solved manufactured test uses H1 for scalar and velocity fields,
 H(curl) for `A` and L2 for the weakly recovered `J`, as explained in the
 weak-form document. It passes over three refinements in all three symmetries,
 with quadratic Newton convergence. The diagnostic interior `curl J` rate is
-not better than the whole-mesh rate in any symmetry; its cause remains open.
+about 0.4–0.5, like the whole-mesh rate, so it is not a boundary-layer effect.
 The harmonic gate checks closedness and an independent Cartesian voltage load.
-The gauged Jacobian is nonsingular on the tested meshes, but its minimum
-singular value decreases approximately in proportion to cell size and fails
-the refinement gate. The corresponding right singular vector is dominated
-by the auxiliary current, not the multiplier; whether this reflects the
-mixed operator's norm or a discretization defect remains open. GS stationary
-consistency is therefore not yet tested. The semidiscrete energy ledger and
-linear spectra remain unverified. Conservative momentum alone
+The reduced stationary minimum singular value changes from 0.09238 to
+0.09196 on the first rotation refinement, within its stability threshold.
+The gate instead stops because the raw current mass-matrix condition number
+rises from 1913 to 8150. The stored section edge integrals and orbit nodal
+values have different mesh scaling; this coefficient conditioning is distinct
+from the reduced operator's natural-norm stability. No mass scaling or norm
+change is used to obtain a pass. Finer meshes and other symmetries, and GS
+stationary consistency, therefore remain untested. The semidiscrete energy
+ledger and linear spectra remain unverified. Conservative momentum alone
 does not enforce the kinetic continuity product discussed in the weak-form
 document.

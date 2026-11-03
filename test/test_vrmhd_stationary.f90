@@ -17,7 +17,8 @@ program test_vrmhd_stationary
     character(32) :: gate
     type(gs_symmetry_t) :: trace_symmetry
     integer :: kind, level
-    real(dp) :: errors(8, 3), rates(8), curl_errors(2, 3), curl_rates(2), sigma(3)
+    real(dp) :: errors(8, 3), rates(8), curl_errors(2, 3), curl_rates(2)
+    real(dp) :: sigma(3), mass_condition(3)
     call get_command_argument(1, gate)
     do kind = 1, 3
         select case (trim(gate))
@@ -29,12 +30,18 @@ program test_vrmhd_stationary
             call check_harmonic(kind)
         case ('gauge')
             do level = 1, 3
-                call check_gauge(kind, 2**(level + 1), sigma(level))
+                call check_gauge(kind, 2**(level + 1), sigma(level), &
+                    mass_condition(level))
                 if (level == 1) cycle
-                print '(a,2i3,f10.6)', 'gauged minimum refinement ratio ', &
+                print '(a,2i3,f10.6)', 'reduced minimum refinement ratio ', &
                     kind, level, sigma(level)/sigma(level - 1)
                 call require(sigma(level) >= 0.75_dp*sigma(level - 1), &
-                    'stationary gauge minimum collapses under refinement')
+                    'reduced stationary minimum collapses under refinement')
+                print '(a,2i3,f10.6)', 'current mass condition refinement ratio ', &
+                    kind, level, mass_condition(level)/mass_condition(level - 1)
+                call require( &
+                    mass_condition(level) <= mass_condition(level - 1)/0.75_dp, &
+                    'current mass condition grows under refinement')
             end do
         case ('solve')
             do level = 1, 3
@@ -64,27 +71,40 @@ program test_vrmhd_stationary
         end select
     end do
 contains
-    subroutine check_gauge(kind, n, sigma_min)
+    subroutine check_gauge(kind, n, sigma_min, mass_condition)
         integer, intent(in) :: kind, n
-        real(dp), intent(out) :: sigma_min
+        real(dp), intent(out) :: sigma_min, mass_condition
         type(vrmhd_section_t) :: op
         type(vrmhd_stationary_t) :: steady
         type(vrmhd_parameters_t) :: p
         type(csc_t) :: jac
         type(fortsparse_status_t) :: st
         real(dp), allocatable :: u(:), load(:), source(:, :, :), basis(:, :)
-        real(dp), allocatable :: boundary(:), surface(:), r(:), zero(:), step(:), unused(:)
+        real(dp), allocatable :: boundary(:), surface(:), r(:), zero(:), &
+            step(:), unused(:)
         real(dp), allocatable :: trial(:, :), matrix(:, :), singular(:), vt(:, :)
-        real(dp), allocatable :: block(:, :), work(:)
-        integer, allocatable :: free_index(:), gauge_index(:)
-        real(dp) :: x(2), weight, dummy_u(1, 1), value, mode_norms(9)
-        integer :: i, j, t, q, nf, ng, row, col, status, entry, info, lwork, group, it
+        real(dp), allocatable :: block(:, :), work(:), current_mass(:, :), &
+            mass_copy(:, :), mass_singular(:), current_primal(:, :), &
+            primal_current(:, :), recovery(:, :), mass_vectors(:, :), &
+            probe(:), image(:)
+        integer, allocatable :: free_index(:), gauge_index(:), current_index(:)
+        real(dp) :: x(2), weight, dummy_u(1, 1), value, mode_norms(8), defect, scale
+        integer :: i, j, t, q, nf, ng, row, col, status, entry, info, lwork
+        integer :: group, it, nj, current_start, nh
         interface
             subroutine dpotrf(uplo, n, a, lda, info)
                 import :: dp
                 character, intent(in) :: uplo
                 integer, intent(in) :: n, lda
                 real(dp), intent(inout) :: a(lda, *)
+                integer, intent(out) :: info
+            end subroutine
+            subroutine dpotrs(uplo, n, nrhs, a, lda, b, ldb, info)
+                import :: dp
+                character, intent(in) :: uplo
+                integer, intent(in) :: n, nrhs, lda, ldb
+                real(dp), intent(in) :: a(lda, *)
+                real(dp), intent(inout) :: b(ldb, *)
                 integer, intent(out) :: info
             end subroutine
             subroutine dtrsm(side, uplo, transa, diag, m, n, alpha, a, lda, b, ldb)
@@ -106,8 +126,11 @@ contains
         end interface
         call prepare(kind, n, op, steady, p, u, load)
         allocate (source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
-            free_index(steady%ndof), gauge_index(op%fs%n0))
-        source = 0; free_index = 0; gauge_index = 0; nf = 0; ng = 0
+            free_index(steady%ndof), gauge_index(op%fs%n0), &
+            current_index(steady%ndof))
+        source = 0; free_index = 0; gauge_index = 0; current_index = 0
+        nf = 0; ng = 0; nj = 0
+        current_start = 6*op%fs%n0 + op%fs%sp(1)%ndof
         allocate (boundary(op%ndof), surface(op%ndof), r(steady%ndof), &
             zero(steady%ndof), step(steady%ndof), unused(steady%ndof))
         boundary = u(:op%ndof); zero = 0
@@ -131,6 +154,11 @@ contains
         print '(a,2i5,es14.6)', 'gauge probe stationary residual ', kind, n, norm2(r)
         do i = 1, op%ndof
             if (op%fixed(i)) cycle
+            if (i > current_start) then
+                nj = nj + 1
+                current_index(i) = nj
+                cycle
+            end if
             nf = nf + 1
             free_index(i) = nf
         end do
@@ -142,26 +170,91 @@ contains
         end do
         nf = nf + ng
         allocate (trial(nf, nf), matrix(nf, nf), singular(nf), vt(nf, nf), &
-            basis(36, op%nlocal), block(op%nlocal, op%nlocal))
-        trial = 0; matrix = 0
+            basis(36, op%nlocal), block(op%nlocal, op%nlocal), &
+            current_mass(nj, nj), mass_copy(nj, nj), mass_singular(nj), &
+            current_primal(nj, nf), primal_current(nf, nj), &
+            recovery(nj, nf), mass_vectors(nj, nj), &
+            probe(nf), image(nf))
+        trial = 0; matrix = 0; current_mass = 0
+        current_primal = 0; primal_current = 0
         call vrmhd_stationary_jacobian(op, steady, p, u, boundary, source, &
             jac, status)
         call require(status == 0, 'gauge nonsingularity Jacobian')
         do j = 1, steady%ndof
-            col = free_index(j)
-            if (col == 0) cycle
             do entry = jac%col_ptr(j), jac%col_ptr(j + 1) - 1
-                row = free_index(jac%row_idx(entry))
-                if (row > 0) matrix(row, col) = jac%val(entry)
+                i = jac%row_idx(entry)
+                row = free_index(i); col = free_index(j)
+                if (row > 0 .and. col > 0) matrix(row, col) = jac%val(entry)
+                if (row > 0 .and. current_index(j) > 0) &
+                    primal_current(row, current_index(j)) = jac%val(entry)
+                if (current_index(i) > 0 .and. col > 0) &
+                    current_primal(current_index(i), col) = jac%val(entry)
+                if (current_index(i) > 0 .and. current_index(j) > 0) &
+                    current_mass(current_index(i), current_index(j)) = jac%val(entry)
             end do
         end do
+        ! Eliminate algebraic J before measuring stability of the primal fields.
+        mass_copy = current_mass
+        recovery = current_primal
+        call dpotrf('L', nj, mass_copy, nj, info)
+        call require(info == 0, 'current mass Cholesky')
+        call dpotrs('L', nj, nf, mass_copy, nj, recovery, nj, info)
+        call require(info == 0, 'current elimination solve')
+        call require(maxval(abs(matmul(current_mass, recovery) - current_primal)) &
+            < 1.0e-10_dp*max(1.0_dp, maxval(abs(current_primal))), &
+            'current elimination original-block residual')
+        matrix = matrix - matmul(primal_current, recovery)
+        do i = 1, nf
+            probe(i) = sin(real(i, dp))
+        end do
+        r(:nj) = -matmul(recovery, probe)
+        step = 0
+        do i = 1, steady%ndof
+            if (free_index(i) > 0) step(i) = probe(free_index(i))
+            if (current_index(i) > 0) step(i) = r(current_index(i))
+        end do
+        unused = csc_matvec(jac, step)
+        image = matmul(matrix, probe)
+        defect = 0
+        do i = 1, steady%ndof
+            if (free_index(i) > 0) defect = max(defect, &
+                abs(unused(i) - image(free_index(i))))
+            if (current_index(i) > 0) defect = max(defect, abs(unused(i)))
+        end do
+        scale = max(1.0_dp, maxval(abs(image)))
+        print '(a,2i5,es14.6)', 'reduced versus full Jacobian action ', &
+            kind, n, defect/scale
+        call require(defect < 1.0e-10_dp*scale, 'reduced action and full sparse oracle')
+        mass_copy = current_mass/p%mu0
+        allocate (work(1))
+        call dgesvd('N', 'A', nj, nj, mass_copy, nj, mass_singular, dummy_u, 1, &
+            mass_vectors, nj, work, -1, info)
+        call require(info == 0, 'current mass SVD workspace')
+        lwork = int(work(1)); deallocate (work); allocate (work(lwork))
+        call dgesvd('N', 'A', nj, nj, mass_copy, nj, mass_singular, dummy_u, 1, &
+            mass_vectors, nj, work, lwork, info)
+        call require(info == 0, 'current mass SVD')
+        call require(mass_singular(nj) > 0, 'positive current mass spectrum')
+        mass_condition = mass_singular(1)/mass_singular(nj)
+        print '(a,3i6,3es16.8)', 'current mass kind, n, size, min, max, condition ', &
+            kind, n, nj, mass_singular(nj), mass_singular(1), mass_condition
+        nh = op%fs%nn
+        print '(a,2i5,2es14.6)', 'current mass minimum mode section, orbit ', &
+            kind, n, norm2(mass_vectors(nj, :nh)), norm2(mass_vectors(nj, nh + 1:))
+        print '(a,2i5,4es14.6)', 'current mass section/orbit diagonal min,max ', &
+            kind, n, minval([(current_mass(i, i), i=1, nh)]), &
+            maxval([(current_mass(i, i), i=1, nh)]), &
+            minval([(current_mass(i, i), i=nh + 1, nj)]), &
+            maxval([(current_mass(i, i), i=nh + 1, nj)])
+        print '(a,2i5,es14.6)', 'current mass section-orbit cross block ', &
+            kind, n, maxval(abs(current_mass(:nh, nh + 1:)))
+        deallocate (work)
         do t = 1, op%fs%mm%topology%n_triangles
             block = 0
                 do q = 1, op%fs%nq
                     call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                     call require(status == 0, 'gauge physical Riesz basis')
-                    block = block + weight*(matmul(transpose(basis), basis) &
-                            - matmul(transpose(basis(34:36, :)), basis(34:36, :)))
+                    block = block + weight*matmul(transpose(basis), basis)
                         do j = 1, op%fs%nl0
                             col = gauge_index(op%fs%sp(0)%dof(j, t))
                             if (col == 0) cycle
@@ -196,7 +289,7 @@ contains
                 call dgesvd('N', 'A', nf, nf, matrix, nf, singular, dummy_u, 1, vt, &
                     nf, work, lwork, info)
                 call require(info == 0, 'gauge SVD')
-                print '(a,3i6,2es16.8)', 'gauged singular values kind, n, free, min, max ', &
+                print '(a,3i6,2es16.8)', 'reduced singular values kind, n, free, min, max ', &
                     kind, n, nf, singular(nf), singular(1)
                 mode_norms = 0
                 do i = 1, steady%ndof
@@ -206,17 +299,15 @@ contains
                         group = (i - 1)/op%fs%n0 + 1
                     else if (i <= 6*op%fs%n0 + op%fs%sp(1)%ndof) then
                         group = 7
-                    else if (i <= op%ndof) then
-                        group = 8
                     else
-                        group = 9
+                        group = 8
                     end if
                     mode_norms(group) = mode_norms(group) + vt(nf, row)**2
                 end do
-                print '(a,9es12.4)', 'minimum mode rho,vx,vy,vz,Te,Ti,A,J,lambda ', &
+                print '(a,8es12.4)', 'reduced minimum mode rho,vx,vy,vz,Te,Ti,A,lambda ', &
                     sqrt(mode_norms)
                 sigma_min = singular(nf)
-                call require(singular(nf) > 1.0e-4_dp, 'gauged stationary inf-sup lower bound')
+                call require(singular(nf) > 1.0e-4_dp, 'reduced stationary inf-sup lower bound')
             end subroutine
 
             subroutine check_harmonic(kind)

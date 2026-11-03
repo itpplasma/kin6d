@@ -188,13 +188,31 @@ primal and JVP leaves and retains the conservative mass coupling.
 
 Weak Ampère recovery makes `J_h` a discrete curl-curl of `A_h`. Its curl
 is an additional recovered discrete derivative, for which this formulation gives
-no convergence guarantee; inverse estimates permit boundary layers with an
-L2 error of order `h^(1/2)`. Here `h` denotes mesh spacing. No residual term
-uses `curl J`: induction, Lorentz force and Ohmic heating use only L2
-pairings of `J`. The solved-current gate therefore uses L2, with the same
-design order as `curl A` in L2 (one for the lowest-order spaces). The curl
-error remains a diagnostic, reported over the whole mesh and after excluding
-the two cell layers next to the boundary.
+no convergence guarantee. Here `h` denotes mesh spacing. The measured `curl J_h`
+L2 error converges at approximately order 0.4–0.5 both over all cells and away
+from the boundary, so this slow rate is not a boundary-layer effect; no term
+of the formulation contains `curl J`. Induction, Lorentz force and Ohmic
+heating use only L2 pairings of `J`. The solved-current gate therefore uses
+L2, with the same design order as `curl A` in L2 (one for the lowest-order
+spaces). The curl error remains a diagnostic, reported over the whole mesh
+and after excluding the two cell layers next to the boundary.
+
+Stationary stability concerns the primal fields
+`p=(rho,v,A,Te,Ti,lambda)`, with auxiliary current eliminated by the exact
+algebraic recovery `mu0 M_J J = C^T B` including prescribed boundary terms.
+Here `M_J` is the L2 current mass matrix and `C^T B` denotes the weak curl
+load. If `D=R_U` is the stationary Jacobian, the reduced Jacobian is
+`S=D_pp-D_pJ (mu0 M_J)^(-1) D_Jp`. Measuring independent oscillatory current
+perturbations through the dual H(curl) induction norm instead introduces an
+artificial factor of `h`. For constant resistivity the eliminated resistive
+block is `eta/mu0 (curl A,curl W)`, coercive in H(curl) modulo gradients,
+which the Coulomb multiplier constrains. The numerical gate uses H1 Riesz
+matrices for the scalar, velocity and multiplier fields and H(curl) for `A`
+on both sides of `S`; it retains a positive floor and rejects more than 25%
+loss of the minimum singular value per refinement. It also reports the
+maximum singular value, the minimum mode's field composition and the
+condition number of `M_J`. This is finite-mesh evidence, not a proof of a
+uniform continuous inverse bound.
 
 The auxiliary current is defined by weak Ampère's law `RJ = 0`, rather than
 by a second pointwise derivative of `A`. With `W = J` in induction and
