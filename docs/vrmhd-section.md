@@ -202,7 +202,8 @@ closedness for screw symmetry.
 
 The equal-degree default passes the energy ledger and the earlier RM2 gates
 described below at degree one. The spectral gate remains incomplete: its
-first failure is skew-adjointness on the finest structured mesh, as detailed below.
+first failure is the conditioning-scaled skew check at 16 cells per period
+on the structured degree-one mesh, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -279,7 +280,20 @@ Primes denote perturbations; density is in kg/m^3, pressure in Pa,
 temperatures in joules, and `mi=1 kg` in the reference normalization.
 The Hermitian Gram matrix `E` represents `2 Q` in the balanced coefficients.
 The first gate requires the Frobenius-norm ratio
-`||E F + (E F)^*||_F / ||E F||_F <= 1e-12`, where `*` is conjugate transpose.
+`||E F + (E F)^*||_F / ||E F||_F <= 100 epsilon kappa_1(M_r)`, where
+`*` is conjugate transpose and `epsilon` is double-precision machine epsilon.
+`kappa_1(M_r)` is the LAPACK `zgecon` 1-norm condition estimate from the same
+LU factor used to solve for `F`; the matrix norm is taken before factorization.
+The reduced time-mass solve can amplify roundoff when forming `F`, so the bound
+scales with its estimated condition number rather than a fixed threshold.
+The separate inverse-free coupling check tests the exact Lorentz/induction
+cancellation before either mass inverse is applied.
+It requires `||L_vJ + L_Av^*||_F / ||L_vJ||_F <= 1e-14` on every mesh:
+`L_vJ` is the assembled momentum/current block and `L_Av` the assembled
+induction/velocity block in the balanced `L`. Magnetic energy tests induction
+with current, so these are the negative-adjoint blocks in the energy pairing,
+before current elimination. Both checks must pass; the condition estimate,
+bound, skew defect and inverse-free defect are reported for every tested mesh.
 Equivalently one may use transpose in the real sine/cosine representation.
 The energy is nonnegative; its energy-free entropy and gauge kernel must be
 static. On the positive-energy quotient, skew-adjointness gives real angular
@@ -326,12 +340,17 @@ Alfven/slow-oracle separation. The number of signed waves below the cutoff
 is correct, but only four of six have an isolated oracle match. This is a
 coarse-mesh dispersion observation, not evidence by itself of growth or a
 spurious branch; isolation is required only on the resolved meshes.
-The structured degree-one cases at 4, 8 and 16 cells pass skew-adjointness,
-folded counts, staticity, the static count per cell and the dissipative checks;
-all six signed branches match at 16 cells. At 32 cells, the skew-adjointness
-ratio is `1.822650495791e-12`, exceeding the unchanged `1e-12` gate.
-Execution stops there, before the finest-pair order check. Degree two and the
-perturbed ladder remain unqualified.
+The structured degree-one cases at 4 and 8 cells pass both structural checks,
+folded counts, staticity, the static count per cell and the dissipative checks.
+At 16 cells the skew ratio is `2.844028547585e-13`, exceeding the scaled bound
+`1.210284898763e-13` with `kappa_1(M_r)=5.450638619082`; the inverse-free
+defect is `4.069332065633e-15` and passes. Current elimination solves its
+mass matrix against the curl-curl block, rather than inverting curl-curl.
+Independent explicit-inverse 1-norm conditions are approximately `5.45064`
+for `M_r` and `2.92459` for the current mass, so ill-conditioning of these
+inverse factors does not explain the observed refinement growth.
+Execution stops there, before the finest-pair order check. The finest mesh,
+degree two and the perturbed ladder remain unqualified under this gate.
 No full-system inf-sup bound or continuous spectral non-pollution result is
 claimed. The independent folding test uses analytic frequencies at
 `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.

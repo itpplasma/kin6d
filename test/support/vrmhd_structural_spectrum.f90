@@ -14,6 +14,16 @@ module vrmhd_structural_spectrum
             integer, intent(out) :: ipiv(*), info
             complex(dp), intent(inout) :: a(lda, *), b(ldb, *)
         end subroutine
+        subroutine zgecon(norm, n, a, lda, anorm, rcond, work, rwork, info)
+            import dp
+            character, intent(in) :: norm
+            integer, intent(in) :: n, lda
+            complex(dp), intent(in) :: a(lda, *)
+            real(dp), intent(in) :: anorm
+            real(dp), intent(out) :: rcond, rwork(*)
+            complex(dp), intent(out) :: work(*)
+            integer, intent(out) :: info
+        end subroutine
         subroutine zheev(jobz, uplo, n, a, lda, w, work, lwork, rwork, info)
             import dp
             character, intent(in) :: jobz, uplo
@@ -59,6 +69,7 @@ contains
         real(dp), allocatable :: energies(:), omega(:), rw(:)
         real(dp) :: pressure(3), skew, floor, f_norm, defect, maximum_defect
         real(dp) :: scale, reality, diffusivity, cell_wave, slowest, growth
+        real(dp) :: condition, skew_bound, coupling_defect
         integer :: d, nb, i, j, row, entry, a0, j0, info, ne, nz, static_count
         integer :: offsets(3), status
         type(vrmhd_parameters_t) :: dissipative
@@ -66,7 +77,8 @@ contains
         d = 6*ns + na; nb = size(stiffness, 1)
         allocate(f(d,d), e(d,d), ef(d,d), q(d,d), energies(d), rw(8*d), work(32*d))
         allocate(l(nb,nb),lift(nb,d))
-        call evolution(stiffness, mass, ns, na, p%mu0, f, l, lift)
+        call evolution(stiffness, mass, ns, na, p%mu0, f, l, lift, &
+            condition, coupling_defect)
         e = 0
         e(ns+1:4*ns,ns+1:4*ns) = mass(ns+1:4*ns,ns+1:4*ns)
         ! Independent quadratic wave energy: |v|^2 + |curl A|^2/mu0 + p'^2/(gamma p0).
@@ -91,8 +103,13 @@ contains
         e(6*ns+1:,6*ns+1:) = matmul(transpose(conjg(curls)),weighted)
         ef = matmul(e,f)
         skew = sqrt(sum(abs(ef+transpose(conjg(ef)))**2)/sum(abs(ef)**2))
+        skew_bound = 100*epsilon(1.0_dp)*condition
+        print '(a,es20.12)', 'physical time mass M_r 1-norm condition estimate: ', condition
+        print '(a,es20.12)', 'backward-error skew bound 100 epsilon kappa_1(M_r): ', skew_bound
         print '(a,es20.12)', '||E F + (E F)^*||_F / ||E F||_F: ', skew
-        call check(skew <= 1.0e-12_dp, 'ideal energy skew-adjointness exceeds 1e-12')
+        print '(a,es20.12)', 'inverse-free ||L_vJ + L_Av^*||_F / ||L_vJ||_F: ', coupling_defect
+        call check(skew <= skew_bound, 'ideal energy skew-adjointness exceeds backward-error bound')
+        call check(coupling_defect <= 1.0e-14_dp, 'inverse-free Lorentz/induction negative adjoints')
         q = e
         call zheev('V','U',d,q,d,energies,work,size(work),rw,info)
         call check(info == 0, 'quadratic wave energy eigendecomposition')
@@ -186,16 +203,19 @@ contains
         end function
     end subroutine
 
-    subroutine evolution(stiffness, mass, ns, na, mu0, f, l, lift)
+    subroutine evolution(stiffness, mass, ns, na, mu0, f, l, lift, condition, coupling_defect)
         complex(dp), intent(in) :: stiffness(:, :), mass(:, :)
         integer, intent(in) :: ns, na
         real(dp), intent(in) :: mu0
         complex(dp), intent(out) :: f(:, :)
         complex(dp), intent(out), optional :: l(:, :), lift(:, :)
+        real(dp), intent(out), optional :: condition, coupling_defect
         complex(dp) :: k(size(stiffness,1),size(stiffness,2))
         complex(dp) :: m(size(mass,1),size(mass,2)), jj(na,na)
         complex(dp) :: current(na,size(f,1)), dynamic(size(f,1),size(f,1))
+        complex(dp) :: condition_work(2*size(f,1))
         real(dp) :: columns(size(k,1)), rows(size(k,1))
+        real(dp) :: mass_norm, reciprocal_condition, condition_rwork(2*size(f,1))
         integer :: j, d, info, pivot(size(k,1))
         d = size(f,1)
         columns = 1; rows = 1
@@ -205,6 +225,12 @@ contains
             k(:,j) = rows*stiffness(:,j)*columns(j)
             m(:,j) = rows*mass(:,j)*columns(j)
         end do
+        if (present(coupling_defect)) then
+            ! Magnetic energy tests induction with J, paired with the velocity test.
+            coupling_defect = sqrt(sum(abs(k(ns+1:4*ns,d+1:) &
+                + transpose(conjg(k(6*ns+1:d,ns+1:4*ns))))**2) &
+                /sum(abs(k(ns+1:4*ns,d+1:))**2))
+        end if
         jj = k(d+1:,d+1:); current = -k(d+1:,:d)
         call zgesv(na,d,jj,na,pivot,current,na,info)
         call check(info == 0, 'eliminate algebraic current through its mass')
@@ -218,8 +244,16 @@ contains
         end if
         f = -k(:d,:d)-matmul(k(:d,d+1:),current)
         dynamic = m(:d,:d)
+        mass_norm = maxval(sum(abs(dynamic),dim=1))
         call zgesv(d,d,dynamic,d,pivot,f,d,info)
         call check(info == 0, 'invert physical time mass')
+        if (present(condition)) then
+            call zgecon('1',d,dynamic,d,mass_norm,reciprocal_condition, &
+                condition_work,condition_rwork,info)
+            call check(info == 0, 'estimate physical time mass condition from its LU factor')
+            call check(reciprocal_condition > 0, 'physical time mass has finite condition estimate')
+            condition = 1/reciprocal_condition
+        end if
     end subroutine
 
     subroutine match_folded(omega, n, repeat, degree, b0, exact, frequencies, resolved)
