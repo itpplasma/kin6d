@@ -136,6 +136,19 @@ target_link_libraries(test_vrmhd_energy PRIVATE kin6d_vrmhd_wall_test)
 add_test(NAME vrmhd_section_energy COMMAND test_vrmhd_energy)
 set_tests_properties(vrmhd_section_energy PROPERTIES LABELS rm2
     TIMEOUT 60 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_section_mixed_derivatives COMMAND test_vrmhd_section mixed)
+set_tests_properties(vrmhd_section_mixed_derivatives PROPERTIES LABELS rm2-mixed
+    TIMEOUT 300 ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+foreach(degree 1 2)
+    add_test(NAME vrmhd_section_mixed_energy_p${degree}
+        COMMAND test_vrmhd_energy mixed${degree})
+    add_test(NAME vrmhd_section_mixed_mms_p${degree}
+        COMMAND test_vrmhd_mms mixed${degree})
+    set_tests_properties(vrmhd_section_mixed_energy_p${degree}
+        vrmhd_section_mixed_mms_p${degree} PROPERTIES LABELS rm2-mixed
+        TIMEOUT 900 PROCESSORS 4
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 foreach(gate geometry derivatives volume closure)
     add_test(NAME vrmhd_section_${gate} COMMAND test_vrmhd_section ${gate})
     set_tests_properties(vrmhd_section_${gate} PROPERTIES LABELS rm2

@@ -907,6 +907,13 @@ foreach(mode spurious ambiguous)
 endforeach()
 kin6d_test_labels(vrmhd_fourier_content fast CLASSES mhd TARGETS test_vrmhd_fourier)
 kin6d_test_labels(vrmhd_section_energy fast CLASSES mhd TARGETS test_vrmhd_energy)
+kin6d_test_labels(vrmhd_section_mixed_derivatives fast CLASSES mhd TARGETS test_vrmhd_section)
+foreach(degree 1 2)
+    kin6d_test_labels(vrmhd_section_mixed_energy_p${degree} fast CLASSES mhd
+        TARGETS test_vrmhd_energy)
+    kin6d_test_labels(vrmhd_section_mixed_mms_p${degree} fast CLASSES mhd
+        TARGETS test_vrmhd_mms)
+endforeach()
 foreach(gate boundary derivatives harmonic solve)
     kin6d_test_labels(vrmhd_stationary_${gate} fast CLASSES mhd
         TARGETS test_vrmhd_stationary)

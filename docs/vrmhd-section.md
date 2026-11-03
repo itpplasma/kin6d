@@ -45,10 +45,13 @@ applied. Integration is per unit orbit parameter; no orbit period is included.
 ## Polynomial degrees and quadrature
 
 `vrmhd_section_build` takes the magnetic edge order `degree = k_A`, optional
-`scalar_degree = k_s`, which defaults to `k_A`, and optional `edge_kind`,
-which selects the edge family of A and J. Ordinary construction admits equal
-degrees only. Unequal pairs require `study_pairing=.true.` and `k_s >= k_A-1`;
-they remain available for comparison, not as the default. Static modes are
+`scalar_degree = k_s`, which defaults to `k_A`, optional
+`velocity_degree = k_v`, which defaults to `k_s`, and optional `edge_kind`,
+which selects the edge family of A and J. The default remains equal degrees.
+The second-kind mixed family `(k_s,k_v,k_A)=(k,k+1,k+1)` is available
+explicitly. Other unequal choices require `study_pairing=.true.` and
+`k_s >= k_A-1`. Availability does not establish spectral admission of a
+family. Static modes are
 permitted only with the structural and dissipative checks below; their
 presence alone does not establish spectral pollution or stability of the full
 system.
@@ -85,20 +88,21 @@ One complex cannot provide the scalar and magnetic orders separately.
 `op%fs` is the order-`k_A` magnetic complex for A and J, including their
 orbit component in its Lagrange space (`P_{k_A+1}` for second kind,
 `P_{k_A}` for first kind), and it supplies the Coulomb multiplier in the same
-Lagrange space. `op%scalar_fs` supplies continuous `P_{k_s}` for density,
-each velocity component and both temperatures. Both complexes use the same
+Lagrange space. `op%scalar_fs` supplies continuous `P_{k_s}` for density
+and both temperatures. When `k_v /= k_s`, `op%velocity_fs` supplies continuous
+`P_{k_v}` for each velocity component; otherwise velocity shares
+`op%scalar_fs`. All complexes use the same
 mesh and quadrature rule. Basis values and gradients of the magnetic orbit
 component always come from the magnetic complex. FortFEM's tabulated
 first-kind complexes reach order eight. Its second-kind reference element is
 assembled numerically from monomial candidates; orders one to three are
 exercised here.
 
-For `p=max(k_s,k_A)` and geometry degree `g`, both complexes request
-triangle quadrature degree `4 p + 2 g + 2`. On affine translation elements
-the polynomial products have degree at most `max(4 k_s-1, 3 k_A+1)`:
-`4 k_s-1` from the skew momentum advection `rho (grad v) v.w` and `3 k_A+1`
-from the second-kind induction and Lorentz products, whose current and orbit
-potential have degree `k_A+1`. Both are below `4 p + 2`. The extra
+For `p=max(k_s,k_v,k_A)` and geometry degree `g`, all complexes request
+triangle quadrature degree `4 p + 2 g + 2`. On affine translation elements,
+fluid advection products have degree at most `4 p-1`. Second-kind induction
+and Lorentz products have degree at most `2 k_A+k_v+1`, because the current
+and orbit potential have degree `k_A+1`. Both bounds are below `4 p + 2`. The extra
 quadrature degree oversamples geometry. Rotation/screw metric factors and
 state-dependent transport closures are nonpolynomial, so no finite polynomial
 rule makes those integrals exact. Energy exchange still uses identical
@@ -106,15 +110,26 @@ quadrature points and weights on both sides of each pairing. The generated
 pointwise leaves take physical values, gradients and curls; their interface
 does not depend on finite-element degree, edge family or coefficient layout.
 
-For smooth solutions, the target approximation orders are `k_s` for density,
-each velocity component and both temperatures in H1, `k_A` for A in H(curl),
+For smooth solutions, the target approximation orders are `k_s` for density
+and both temperatures in H1, `k_v` for each velocity component in H1,
+`k_A` for A in H(curl),
 and `k_A` for recovered J in L2. H1 and H(curl) include the field value and
 its first gradient or curl, respectively. With second-kind edges, the A value
 alone converges at `k_A+1`. The spectral frequency targets are `2 k_A`, hence
-two and four for equal degrees one and two. The zero continuous Coulomb
+two and four for equal degrees one and two. The mixed family is a candidate
+for the same frequency targets indexed by thermodynamic degree `k`; it must
+pass the unchanged spectral, energy, nullspace and damping gates before
+replacing the default. The zero continuous Coulomb
 multiplier has no nonzero reference error from which to infer a rate.
 
 ## Operator contract
+
+The coefficient order is density, three velocity components, electron and
+ion temperatures, A, and J. `op%offset(1:9)` gives their zero-based cumulative
+global ranges: field `i` occupies `offset(i)+1:offset(i+1)`.
+`op%local_offset` gives the corresponding element ranges. These ranges must
+be used instead of assuming six scalar fields of equal size. The BDF
+consumer uses the J range to identify algebraic coordinates.
 
 `vrmhd_section_build` constructs the spaces. `vrmhd_section_residual` returns
 `M(U) U_dot + R(U)` and its directional derivative with respect to both
@@ -334,6 +349,21 @@ efficient for stiff transients is not measured here. Continuous error
 certificates and transient adjoints are unavailable in this wrapper.
 
 ## Verification limits
+
+The opt-in mixed section is checked at thermodynamic degrees one and two
+against exact polynomial values and gradients, independent volume weak
+forms, directional finite differences and transpose duality. Its nonlinear
+energy ledger and manufactured natural-norm projection use the same
+thresholds as the existing section. These checks do not establish a solved
+mixed-family boundary problem or a Fourier spectrum; those admissions remain
+separate.
+The retained [projection errors](data/vrmhd-mixed-section.csv) compare the
+existing degree-one section with both mixed degrees on the same
+nondimensional manufactured fields. Run
+`python3 docs/plot_vrmhd_mixed_section.py --output /tmp/vrmhd-mixed-section.png`
+to plot the velocity comparison. The scalar degree-one mixed family has
+velocity H1 orders 1.90--1.98, while scalar degree two has 2.95--2.99,
+on the registered successive refinements in all three symmetries.
 
 The equal-degree default with second-kind edges passes the energy ledger,
 the stationary and GS gates and the structural spectral gate described below.
@@ -766,8 +796,9 @@ cell width, the vertex displacements for parity `(0,0)`, `(1,0)`, `(0,1)` and
 `(1,1)` are `(0,0)`, `(0.13,-0.11)`, `(-0.09,0.16)` and `(0.18,0.07)`.
 Periodic boundary copies receive the same displacement. Its Bloch block retains
 four cells and all their coefficients; the structured block retains one.
-Unequal degrees remain an explicit study option. Ordinary construction
-defaults to `k_s=k_A` and rejects unequal degrees.
+Unequal scalar/magnetic pairs in this study retain velocity degree `k_s`.
+Construction defaults to `k_s=k_v=k_A`; the separate mixed candidate uses
+`k_v=k_A=k_s+1` and is not covered by the pairing table above.
 
 The table preserves the historical generalized eigensolver, zero tolerance
 `1024 epsilon`, cutoff `sqrt(1.8) rad/s`, nearest-branch matching and allowance

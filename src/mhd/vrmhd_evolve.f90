@@ -95,10 +95,10 @@ contains
         type(vrmhd_section_t), intent(in) :: op
         integer, intent(in) :: i
         integer :: stride, local
-        stride = 6*op%scalar_fs%n0 + 2*op%fs%sp(1)%ndof
+        stride = op%offset(9)
         local = modulo(i - 1, stride) + 1
         current = 0
-        if (local > 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof) current = 1
+        if (local > op%offset(8)) current = 1
     end function
 
     subroutine vrmhd_evolve_expand(problem, y, u)

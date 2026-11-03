@@ -4,6 +4,8 @@ program test_vrmhd_section
         GS_SCREW, GS_CHART_RZ, GS_CHART_CARTESIAN
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section
+    use kin6d_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build
+    use fortfem_meridian_feec_n, only: meridian_lagrange_nodes
     use kin6d_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
         vrmhd_velocity_rotation, vrmhd_velocity_screw, &
         vrmhd_curl_rotation, vrmhd_curl_screw
@@ -12,17 +14,29 @@ program test_vrmhd_section
         vrmhd_chi_flux_limited_vjp
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
-    use fortsparse, only: csc_t, csc_matvec
+    use fortsparse, only: csc_t, csc_matvec, csc_from_triplet, &
+        fortsparse_status_t, status_ok
     use omp_lib, only: omp_set_num_threads
     implicit none
     character(24) :: gate
     integer :: kind, degree
     call get_command_argument(1, gate)
+    if (gate == 'mixed') then
+        do degree = 1, 2
+            call interpolation(degree, .false.)
+            call interpolation(degree, .true.)
+        end do
+    end if
     if (gate == 'closure') then
         call closure()
     else
         do kind = GS_ROTATION, GS_SCREW
             select case (gate)
+            case ('mixed')
+                do degree = 1, 2
+                    call assembled(kind, .false., mixed_degree=degree)
+                    call assembled(kind, .true., oracle=.true., mixed_degree=degree)
+                end do
             case ('geometry')
                 do degree = 1, 2
                     call geometry(kind, degree)
@@ -47,13 +61,110 @@ contains
         end if
     end subroutine
 
-    subroutine setup(kind, op, degree)
+    subroutine interpolation(degree, mixed)
+        integer, intent(in) :: degree
+        logical, intent(in) :: mixed
+        type(vrmhd_section_t), target :: op
+        type(vrmhd_parameters_t) :: p
+        type(vrmhd_evolve_t) :: problem
+        type(mesh_2d_t) :: mesh
+        type(meridian_mesh_t) :: mm
+        type(gs_symmetry_t) :: symmetry
+        type(csc_t) :: identity
+        type(fortsparse_status_t) :: sparse_status
+        real(dp), allocatable :: xy(:, :), u(:), basis(:, :), source(:, :, :)
+        real(dp), allocatable :: zero(:), probe(:), mass(:)
+        integer, allocatable :: indices(:)
+        real(dp) :: x(2), weight, value(36), expected(36), defect
+        integer :: status, t, q, j, i, n, field
+        call mesh%create_rectangular(3, 3, 0.1_dp, 1.1_dp, 0.2_dp, 1.2_dp)
+        call meridian_mesh_straight(mesh, 1, mm, status)
+        call require(status == 0, 'mixed interpolation mesh')
+        symmetry = gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp)
+        if (mixed) then
+            call vrmhd_section_build(mm, symmetry, degree + 1, 1, op, status, &
+                scalar_degree=degree, velocity_degree=degree + 1)
+        else
+            call vrmhd_section_build(mm, symmetry, degree + 1, 1, op, status, &
+                scalar_degree=degree, study_pairing=.true.)
+        end if
+        call require(status == 0, 'mixed interpolation section')
+        n = op%ndof
+        p%mi = 1; p%mu0 = 1
+        allocate (u(n), basis(36, op%nlocal), source(6, op%fs%nq, &
+            mm%topology%n_triangles), zero(n), probe(n), mass(n), indices(n))
+        u = 0; zero = 0; source = 0
+        call meridian_lagrange_nodes(op%scalar_fs, xy)
+        u(:op%offset(2)) = 2 + xy(1, :)**degree
+        u(op%offset(5) + 1:op%offset(6)) = 3 + xy(2, :)**degree
+        u(op%offset(6) + 1:op%offset(7)) = 4 + xy(1, :)**degree
+        deallocate (xy)
+        if (allocated(op%velocity_fs)) then
+            call meridian_lagrange_nodes(op%velocity_fs, xy)
+        else
+            call meridian_lagrange_nodes(op%scalar_fs, xy)
+        end if
+        u(op%offset(2) + 1:op%offset(3)) = xy(1, :)**(degree + 1)
+        u(op%offset(3) + 1:op%offset(4)) = xy(2, :)**(degree + 1)
+        u(op%offset(4) + 1:op%offset(5)) = xy(1, :)**degree*xy(2, :)
+        defect = 0
+        do t = 1, mm%topology%n_triangles
+            do q = 1, op%fs%nq
+                call vrmhd_section_basis(op, t, q, x, weight, basis, status)
+                call require(status == 0, 'mixed interpolation basis')
+                value = matmul(basis, u(op%map(:, t)))
+                expected = 0
+                expected(1) = 2 + x(1)**degree
+                expected(2:4) = [x(1)**(degree + 1), x(2)**(degree + 1), &
+                    x(1)**degree*x(2)]
+                expected(11:12) = [3 + x(2)**degree, 4 + x(1)**degree]
+                expected(13) = degree*x(1)**(degree - 1)
+                expected(16) = (degree + 1)*x(1)**degree
+                expected(18) = degree*x(1)**(degree - 1)*x(2)
+                expected(20) = (degree + 1)*x(2)**degree
+                expected(21) = x(1)**degree
+                expected(29) = degree*x(2)**(degree - 1)
+                expected(31) = degree*x(1)**(degree - 1)
+                defect = max(defect, maxval(abs(value - expected)))
+            end do
+        end do
+        print '(a,i2,l2,es16.8)', 'polynomial interpolation degree/mixed/error ', &
+            degree, mixed, defect
+        if (.not. mixed) then
+            call require(defect > 1.0e-3_dp, &
+                'old velocity space rejects degree k+1 data')
+            return
+        end if
+        call require(defect < 5.0e-12_dp, 'mixed polynomial values and gradients')
+        indices = [(j, j=1, n)]
+        call csc_from_triplet(n, n, indices, indices, spread(1.0_dp, 1, n), &
+            identity, sparse_status)
+        call require(status_ok(sparse_status), 'mixed identity reduction')
+        call vrmhd_evolve_build(problem, op, p, source, zero, identity, status)
+        call require(status == 0, 'mixed BDF consumer')
+        ! The last A coordinate has mass; the first current coordinate has none.
+        do field = 7, 8
+            i = op%offset(8) + field - 7
+            probe = 0; probe(i) = 1
+            call vrmhd_section_mass(op, p, u, probe, mass, status)
+            call require(status == 0, 'mixed independent mass action')
+            if (problem%algebraic(i)) then
+                call require(norm2(mass) < 1.0e-13_dp, &
+                    'BDF algebraic coordinate has zero mass')
+            else
+                call require(norm2(mass) > 1.0e-8_dp, &
+                    'BDF dynamic coordinate has nonzero mass')
+            end if
+        end do
+    end subroutine
+
+    subroutine setup(kind, op, degree, mixed_degree)
         integer, intent(in) :: kind
         type(vrmhd_section_t), intent(out) :: op
         type(mesh_2d_t) :: mesh
         type(meridian_mesh_t) :: mm
         type(gs_symmetry_t) :: symmetry
-        integer, intent(in), optional :: degree
+        integer, intent(in), optional :: degree, mixed_degree
         integer :: status, order
         real(dp) :: shift
         shift = 0
@@ -69,7 +180,12 @@ contains
         call require(status == 0, 'straight section mesh')
         order = 1
         if (present(degree)) order = degree
-        call vrmhd_section_build(mm, symmetry, order, 1, op, status)
+        if (present(mixed_degree)) then
+            call vrmhd_section_build(mm, symmetry, mixed_degree + 1, 1, op, status, &
+                scalar_degree=mixed_degree, velocity_degree=mixed_degree + 1)
+        else
+            call vrmhd_section_build(mm, symmetry, order, 1, op, status)
+        end if
         call require(status == 0, 'section build')
     end subroutine
 
@@ -84,10 +200,11 @@ contains
         p%gradient_floor = 0.03_dp
     end subroutine
 
-    subroutine assembled(kind, limited, oracle)
+    subroutine assembled(kind, limited, oracle, mixed_degree)
         integer, intent(in) :: kind
         logical, intent(in) :: limited
         logical, intent(in), optional :: oracle
+        integer, intent(in), optional :: mixed_degree
         type(vrmhd_section_t) :: op
         type(vrmhd_parameters_t) :: p
         type(csc_t) :: jac
@@ -97,7 +214,7 @@ contains
             :), ref(:)
         real(dp) :: h, errors(2), scale, shift, defect
         integer :: i, j, status, n, n0
-        call setup(kind, op); call parameters(p, limited)
+        call setup(kind, op, mixed_degree=mixed_degree); call parameters(p, limited)
         n = op%ndof; n0 = op%scalar_fs%n0
         allocate (u(n), ud(n), du(n), dud(n), r(n), jv(n), plus(n), minus(n), &
             unused(n), zero(n), dual(n), vjp(n), ref(n), source(6, op%fs%nq, &
@@ -107,7 +224,7 @@ contains
             ud(i) = 0.02_dp*cos(real(i, dp)); dual(i) = sin(real(3*i, dp))
         end do
         u(:n0) = u(:n0) + 2
-        u(4*n0 + 1:6*n0) = u(4*n0 + 1:6*n0) + 1.5_dp
+        u(op%offset(5) + 1:op%offset(7)) = u(op%offset(5) + 1:op%offset(7)) + 1.5_dp
         shift = 0.31_dp; dud = shift*du; zero = 0
         source(:3, :, :) = 0.13_dp; source(4:6, :, :) = 0.07_dp
         call vrmhd_section_residual(op, p, u, ud, du, dud, source, r, jv, status)

@@ -12,11 +12,16 @@ program test_vrmhd_energy
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     implicit none
-    integer :: kind, seed_size, i, convention
+    integer :: kind, seed_size, i, convention, family_degree
+    character(16) :: mode
     integer, allocatable :: seed(:)
     logical :: passed
     real(dp) :: defect
 
+    call get_command_argument(1, mode)
+    family_degree = 0
+    if (mode == 'mixed1') family_degree = 1
+    if (mode == 'mixed2') family_degree = 2
     call random_seed(size=seed_size)
     allocate (seed(seed_size))
     seed = [(104729 + 37*i, i=1, seed_size)]
@@ -81,7 +86,12 @@ contains
             -0.3_dp, 0.7_dp)
         call meridian_mesh_straight(mesh, 1, mm, status)
         call require(status == 0, 'energy mesh')
-        call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
+        if (family_degree > 0) then
+            call vrmhd_section_build(mm, symmetry, family_degree + 1, 1, op, status, &
+                scalar_degree=family_degree, velocity_degree=family_degree + 1)
+        else
+            call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
+        end if
         call require(status == 0, 'energy section')
         n0 = op%scalar_fs%n0
         p%mi = 1.2_dp; p%mu0 = 0.8_dp
@@ -90,16 +100,16 @@ contains
             source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
             basis(36, op%nlocal))
         u = 0; ud = 0; zero = 0; source = 0
-        call random_number(u(:6*n0))
+        call random_number(u(:op%offset(7)))
         u(:n0) = 1 + 0.4_dp*u(:n0)
-        u(n0 + 1:4*n0) = 0.4_dp*(u(n0 + 1:4*n0) - 0.5_dp)
-        u(4*n0 + 1:6*n0) = 1 + 0.2_dp*u(4*n0 + 1:6*n0)
-        where (op%fixed(n0 + 1:4*n0)) u(n0 + 1:4*n0) = 0
+        u(n0 + 1:op%offset(5)) = 0.4_dp*(u(n0 + 1:op%offset(5)) - 0.5_dp)
+        u(op%offset(5) + 1:op%offset(7)) = 1 + 0.2_dp*u(op%offset(5) + 1:op%offset(7))
+        where (op%fixed(n0 + 1:op%offset(5))) u(n0 + 1:op%offset(5)) = 0
 
         ! No-flux scalars retain constants; only velocity has wall constraints.
         active = .false.
-        active(:6*n0) = .true.
-        active(n0 + 1:4*n0) = .not. op%fixed(n0 + 1:4*n0)
+        active(:op%offset(7)) = .true.
+        active(n0 + 1:op%offset(5)) = .not. op%fixed(n0 + 1:op%offset(5))
         nf = count(active)
         allocate (free_index(nf), pivot(nf), mass(nf, nf), original(nf, nf), &
             rhs(nf, 1))
@@ -196,7 +206,7 @@ contains
         real(dp) :: scale, solve_defect, ledger_defect, shift, voltage, h(3), eta, nu
         real(dp) :: skew(2), reaction_power, magnetic_balance, kinetic_balance
         real(dp) :: internal_balance, energy_rate, external_power
-        integer :: status, n0, n1, nf, j, i, q, t, info, a0, j0, l0, l1, s
+        integer :: status, n0, n1, nf, j, i, q, t, info, a0, j0, l1, s
         interface
             subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
                 import :: dp
@@ -217,11 +227,16 @@ contains
             -0.3_dp, 0.7_dp)
         call meridian_mesh_straight(mesh, 1, mm, status)
         call require(status == 0, 'magnetic energy mesh')
-        call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
+        if (family_degree > 0) then
+            call vrmhd_section_build(mm, symmetry, family_degree + 1, 1, op, status, &
+                scalar_degree=family_degree, velocity_degree=family_degree + 1)
+        else
+            call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
+        end if
         call require(status == 0, 'magnetic energy section')
         n0 = op%scalar_fs%n0; n1 = op%fs%sp(1)%ndof
-        l0 = op%scalar_fs%nl0; l1 = op%fs%sp(1)%nloc
-        a0 = 6*n0; j0 = a0 + n1
+        l1 = op%fs%sp(1)%nloc
+        a0 = op%offset(7); j0 = a0 + n1
         p%mi = 1.2_dp; p%mu0 = 0.8_dp; p%epsilon_b = 0.02_dp
         p%eta0 = 0.015_dp; p%nu0 = 0.02_dp; p%nu_parallel = 0.01_dp
         p%chi_parallel0 = [0.04_dp, 0.03_dp]
@@ -236,21 +251,21 @@ contains
         u = 0; ud = 0; zero = 0; source = 0
         call random_number(u(:j0))
         u(:n0) = 1 + 0.4_dp*u(:n0)
-        u(n0 + 1:4*n0) = 0.4_dp*(u(n0 + 1:4*n0) - 0.5_dp)
-        u(4*n0 + 1:6*n0) = 1 + 0.2_dp*u(4*n0 + 1:6*n0)
+        u(n0 + 1:op%offset(5)) = 0.4_dp*(u(n0 + 1:op%offset(5)) - 0.5_dp)
+        u(op%offset(5) + 1:op%offset(7)) = 1 + 0.2_dp*u(op%offset(5) + 1:op%offset(7))
         u(a0 + 1:j0) = 0.03_dp*(u(a0 + 1:j0) - 0.5_dp)
-        where (op%fixed(n0 + 1:4*n0)) u(n0 + 1:4*n0) = 0
+        where (op%fixed(n0 + 1:op%offset(5))) u(n0 + 1:op%offset(5)) = 0
         ! Compact support isolates the prescribed current trace from magnetic trace data.
         do t = 1, op%fs%mm%topology%n_triangles
             if (.not. any(op%scalar_fs%sp(0)%bnd(op%scalar_fs%sp(0)%dof(:, t)))) cycle
-            u(op%map(6*l0 + 1:6*l0 + l1, t)) = 0
+            u(op%map(op%local_offset(7) + 1:op%local_offset(8), t)) = 0
         end do
         call require(maxval(abs(u(a0 + 1:j0))) > 0, 'nonzero random potential')
         call random_number(js); js = 0.02_dp*(js - 0.5_dp)
         do t = 1, op%fs%mm%topology%n_triangles
             if (any(op%scalar_fs%sp(0)%bnd(op%scalar_fs%sp(0)%dof(:, t)))) js(:, :, t) = 0
         end do
-        where (op%scalar_fs%sp(0)%bnd) u(4*n0 + 1:5*n0) = 1
+        where (op%scalar_fs%sp(0)%bnd) u(op%offset(5) + 1:op%offset(6)) = 1
         source(4, :, :) = 0.003_dp
         source(5, :, :) = 0.001_dp; source(6, :, :) = -0.0003_dp
         voltage = 0
@@ -267,8 +282,8 @@ contains
             do q = 1, op%fs%nq
                 call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                 call require(status == 0, 'Ampere recovery quadrature')
-                do j = 6*l0 + l1 + 1, op%nlocal
-                    do i = 6*l0 + l1 + 1, op%nlocal
+                do j = op%local_offset(8) + 1, op%nlocal
+                    do i = op%local_offset(8) + 1, op%nlocal
                         mj(op%map(i, t) - j0, op%map(j, t) - j0) = &
                             mj(op%map(i, t) - j0, op%map(j, t) - j0) &
                             + weight*p%mu0*dot_product(basis(8:10, i), basis(8:10, j))
@@ -293,8 +308,8 @@ contains
                     call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                     call require(status == 0, 'wall source basis')
                     source(:3, q, t) = source(:3, q, t) &
-                        + matmul(basis(8:10, 6*l0 + l1 + 1:), &
-                        wall(op%map(6*l0 + l1 + 1:, t) - j0))
+                        + matmul(basis(8:10, op%local_offset(8) + 1:), &
+                        wall(op%map(op%local_offset(8) + 1:, t) - j0))
                 end do
             end do
         end if
@@ -310,10 +325,21 @@ contains
         call dgesv(nf, 1, recovery, nf, pivot, rhs, nf, info)
         call require(info == 0, 'H0(curl) weak Ampere current solve')
         u(j0 + current_index) = rhs(:, 1)
+        ! Refine against the residual action, whose summation differs from the matrix.
+        do i = 1, 2
+            call vrmhd_section_residual(op, p, u, zero, zero, zero, source, &
+                r, unused, status)
+            call require(status == 0, 'Ampere refinement residual')
+            recovery = mj(current_index, current_index)
+            rhs(:, 1) = -r(j0 + current_index)
+            call dgesv(nf, 1, recovery, nf, pivot, rhs, nf, info)
+            call require(info == 0, 'Ampere refinement solve')
+            u(j0 + current_index) = u(j0 + current_index) + rhs(:, 1)
+        end do
         deallocate (rhs, pivot, recovery)
 
         active = .true.; active(j0 + 1:) = .false.
-        active(n0 + 1:4*n0) = .not. op%fixed(n0 + 1:4*n0)
+        active(n0 + 1:op%offset(5)) = .not. op%fixed(n0 + 1:op%offset(5))
         active(a0 + 1:j0) = .not. op%fixed(a0 + 1:j0)
         nf = count(active)
         allocate (free_index(nf), pivot(nf), mass(nf, nf), original(nf, nf), rhs(nf, 1))
@@ -370,8 +396,8 @@ contains
                     + (p%d_parallel - p%d_perpendicular)*b*dot_product(b, v(13:15))
                 h = [0.0_dp, 0.0_dp, 1/1.7_dp]
                 if (kind == GS_ROTATION) h = [0.0_dp, 1/(2*acos(-1.0_dp)*x(1)), 0.0_dp]
-                wall_field = matmul(basis(8:10, 6*l0 + l1 + 1:), &
-                    wall(op%map(6*l0 + l1 + 1:, t) - j0))
+                wall_field = matmul(basis(8:10, op%local_offset(8) + 1:), &
+                    wall(op%map(op%local_offset(8) + 1:, t) - j0))
                 wall_terms = wall_terms + weight*[ &
                     dot_product(wall_field, vd(5:7)), &
                     -dot_product(wall_field, cross(v(2:4), v(25:27))), &
