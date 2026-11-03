@@ -16,15 +16,26 @@ H1 coefficients of `a = xi.A` or `xi.J`. Here H1 controls values and first
 derivatives, H(curl) controls values and curls, and xi is the case's Killing
 field. The harmonic count is explicit in the layout and assembly loops;
 the section build accepts one invariant block. Nonzero Fourier harmonics are
-the separate linearised operator of
+the separate Fourier operators of
 [Fourier harmonics](#fourier-harmonics-about-an-invariant-state).
 
-The section components specify the pullback of the horizontal one-form,
-orthogonal to xi. On the screw chart, with `s=1+k^2(x^2+y^2)`,
+The default section components specify the pullback of the horizontal
+one-form, orthogonal to xi. On the screw chart, with `s=1+k^2(x^2+y^2)`,
 
 ```
 A = (u1, u2, k(y u1 - x u2)) + a (-k y, k x, 1)/s.
 ```
+
+The optional `coordinate_coframe=.true.` in `vrmhd_section_build` and
+`vrmhd_fourier_build` instead uses the closed coordinate one-forms
+`dq1,dq2,dt` on a screw chart. At the section they give
+`A=(u1,u2,k(y u1-x u2)+a)`, while `a=xi.A` is unchanged. Here
+`(q1,q2)=R(-k t)(X,Y)`, where R is planar rotation and `(X,Y,t)` are Cartesian
+coordinates. This choice is required for nonzero screw twist with Fourier
+harmonics: gradients then lie in the tensor-product complex. FortSym derives
+its physical curl and contravariant two-form map and verifies the gradient,
+curl and coordinate-map identities. The default horizontal coframe remains
+available for invariant sections.
 
 For rotation the physical section at orbit coordinate zero is `(R,0,Z)`;
 `A=(u1,a/R,u2)`. Physical vectors and all gradients supplied to the weak-form
@@ -381,10 +392,15 @@ per-harmonic operators are FortFEM's `grad_n`, `curl_n` and `div_n` of
 is `(grad f, i kappa f)` in the edge and orbit coefficients, and
 `curl grad = 0` and `div curl = 0` hold as matrix identities. On the
 straight-cylinder chart FortFEM's physical slots are `(x, z, y)`, which is
-left-handed, so its face field is `-B`. Screw symmetry with `k /= 0` is
-rejected for `n > 0`: its section stores the horizontal part of `A`, and
-the horizontal part of `grad t` is not a section gradient, so `grad_n` would
-leave the space.
+left-handed, so its face field is `-B` before the helical coordinate push.
+Screw symmetry with `k /= 0` and `n > 0` requires
+`coordinate_coframe=.true.`. The default horizontal part of `grad t` is not a
+section gradient and leaves its polynomial space, so the original rejection
+is retained for that coframe. In the closed coframe, the physical two-form
+push is `(b1-k y b3,b2+k x b3,b3)`. Integration is periodic in the orbit
+parameter with transport by the case isometry. Ordinary axial periodicity
+additionally requires `k r0` to be an integer; the helical checks use
+`k r0=1`, one full rotation per axial period.
 
 `vrmhd_fourier_residual` returns the section residual `R(u0)` and its JVP in
 the `n = 0` block and the matrix-free JVP in every `n > 0` block, about an
@@ -512,8 +528,59 @@ the same degree-two requirement on (32, 64), for both harmonics and both mesh
 families. The mixed family passes these ladders with the exact static counts,
 energy-skewness and dissipative-growth checks on every assembled block.
 
-Nonlinear harmonic coupling and helical-symmetry preservation in 3D are
-not yet implemented.
+Nonlinear harmonic coupling is supplied by the operator below, including
+screw charts with the explicit closed coframe.
+
+### Nonlinear Fourier coupling
+
+`kin6d_vrmhd_fourier_nonlinear` reconstructs the complete retained state at
+uniform orbit angles, evaluates the same generated Cartesian weak form as the
+section, and projects every residual and tangent back onto all retained
+harmonics. It accepts the `vrmhd_fourier_t` layout, including independent field
+degrees and nonconsecutive harmonic order. An invariant block is required.
+`vrmhd_fourier_nonlinear_residual` returns the full residual and its directional
+derivative; `vrmhd_fourier_nonlinear_jacobian` assembles the same shifted
+state/rate derivative. The common point tangent is shared with the linear
+operator. Sources have shape `(6,nangle,nq,nt)` and contain physical values at
+each angle and section quadrature point, with the six channels defined above.
+Integration is the normalized orbit average, not a full-orbit integral.
+
+For largest retained harmonic `N`, at least `4N+1` angular samples are required.
+This integrates the quartic polynomial weak products without Fourier aliasing.
+State-dependent transport is nonpolynomial; callers must increase the angular
+rule and check convergence. No automatic angular-error controller is supplied.
+The tests refine the flux-limited residual and tangent from 65 through at most
+1025 samples and require consecutive results to differ by less than `1e-10`.
+The sampled cases converge by 513 samples.
+Independent checks cover an analytic density/velocity product, which generates
+the zero and second harmonics from a first harmonic; centered finite differences
+of the coupled residual; sparse/matrix-free agreement and transpose duality;
+and exact reduction of its invariant-state tangent to the admitted linear
+Fourier operator. Closed-wall ideal and visco-resistive states are tested with
+both element families, in translation and with nonzero screw twist.
+Current is recovered from weak Ampere, the differential
+mass equation is solved, and the physical kinetic, internal and magnetic
+energy derivatives must sum to zero to relative `1e-12`.
+
+The nonlinear residual of an invariant helical state has no nonzero harmonic
+component, and its tangent agrees with the independent linear Fourier operator.
+This checks spatial preservation of helical symmetry, without a harmonic time
+integrator.
+
+The full nonlinear manufactured state uses amplitude `0.3` of the first
+harmonic. `gen_vrmhd_mms_fourier` differentiates the complete Cartesian fields
+and strong equations before evaluating the amplitude; its existing linear
+outputs remain unchanged. Natural-norm projections and weak residual defects
+are checked in rotation, translation and screw geometry for both families at
+thermodynamic degrees one and two. Degree one uses 4, 8 and 16 cells per section side;
+degree two uses 2, 4 and 8. Field orders must exceed the approximation degree
+minus `0.2`, and the weak-defect order must exceed the thermodynamic degree
+minus `0.2`. Both the production residual and independent strong load are
+checked for angular refinement from 17 to 33 samples.
+The [retained errors](data/vrmhd-nonlinear-fourier.csv) can be plotted with
+`python3 docs/plot_vrmhd_nonlinear_fourier.py --output /tmp/nonlinear.png`.
+These checks admit volume assembly; nonlinear boundary solves, harmonic time
+evolution and general stability remain unverified.
 
 ## Verification limits
 

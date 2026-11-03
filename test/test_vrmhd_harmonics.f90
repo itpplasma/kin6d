@@ -1,13 +1,17 @@
 program test_vrmhd_harmonics
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, &
+    use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_TRANSLATION, GS_SCREW, &
         GS_CHART_RZ, GS_CHART_CARTESIAN
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_point, only: vrmhd_point
     use kin6d_vrmhd_section
+    use kin6d_vrmhd_section_leaves, only: vrmhd_face_screw_coordinates
     use kin6d_vrmhd_fourier
+    use kin6d_vrmhd_fourier_nonlinear
+    use vrmhd_mms_nonlinear_leaves, only: mms_nonlinear_rotation, &
+        mms_nonlinear_translation, mms_nonlinear_screw
     use vrmhd_mms_fourier_leaves, only: mms_fourier_rotation, &
-        mms_fourier_translation
+        mms_fourier_translation, mms_fourier_screw
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_meridian_feec_n, only: meridian_qpoint, meridian_lagrange_nodes
@@ -19,11 +23,37 @@ program test_vrmhd_harmonics
     implicit none
     real(dp), parameter :: pi = acos(-1.0_dp)
     character(24) :: gate
-    integer :: kind, degree
+    integer :: kind, degree, family, first_kind, last_kind
     logical :: mixed_family
     call get_command_argument(1, gate)
     mixed_family = index(gate, 'mixed_') == 1
     if (mixed_family) gate = gate(7:)
+    if (gate == 'helical') then
+        do family = 0, 1
+            mixed_family = family == 1
+            do degree = 1, 2
+                call exactness(GS_SCREW, degree)
+                call reduction(GS_SCREW, degree, .false.)
+                call reduction(GS_SCREW, degree, .true.)
+                call decoupling(GS_SCREW, degree)
+            end do
+        end do
+        stop
+    end if
+    if (gate == 'nonlinear_equal' .or. gate == 'nonlinear_mixed' .or. &
+        gate == 'helical_nonlinear_equal' .or. gate == 'helical_nonlinear_mixed') then
+        mixed_family = index(gate, 'mixed') /= 0
+        first_kind = GS_ROTATION; last_kind = GS_TRANSLATION
+        if (index(gate, 'helical_') == 1) then
+            first_kind = GS_SCREW; last_kind = GS_SCREW
+        end if
+        do kind = first_kind, last_kind
+            do degree = 1, 2
+                call nonlinear_manufactured(kind, degree)
+            end do
+        end do
+        stop
+    end if
     if (gate == 'spectra' .or. gate == 'spectra_fine' .or. &
         gate == 'spectra_equal' .or. gate == 'spectra_equal_fine') then
         call spectra(index(gate, 'fine') /= 0, index(gate, 'equal') == 0)
@@ -61,9 +91,11 @@ contains
         if (mixed_family) then
             call vrmhd_fourier_build(mm, symmetry, degree + 1, harmonics, scale, &
                 op, status, &
-                scalar_degree=degree, velocity_degree=degree + 1)
+                scalar_degree=degree, velocity_degree=degree + 1, &
+                coordinate_coframe=symmetry%kind == GS_SCREW)
         else
-            call vrmhd_fourier_build(mm, symmetry, degree, harmonics, scale, op, status)
+            call vrmhd_fourier_build(mm, symmetry, degree, harmonics, scale, &
+                op, status, coordinate_coframe=symmetry%kind == GS_SCREW)
         end if
     end subroutine
 
@@ -90,6 +122,7 @@ contains
         if (kind == GS_ROTATION) then
             shift = 2; scale = 1; symmetry%chart = GS_CHART_RZ
         end if
+        if (kind == GS_SCREW) symmetry%k = 1/scale
         call mesh%create_rectangular(cells + 1, cells + 1, x0(1) + shift, &
             x0(1) + shift + 1, x0(2), x0(2) + 1)
         call meridian_mesh_straight(mesh, 1, mm, status)
@@ -183,9 +216,15 @@ contains
         real(dp), allocatable :: xa(:, :), xs(:, :)
         real(dp) :: scale, kappa, x(2), weight, dc(36), ds(36), ac(36), as(36)
         real(dp) :: worst(4), size_grad, size_b, sign, size_curl, curl_error
+        real(dp) :: pushed_real(3), pushed_imag(3)
         complex(dp) :: bff(3), field(3)
         integer :: b, i, l, t, q, st, n0, n1, nl, ns, nr
         call mesh_for(kind, 3, [-0.4_dp, -0.3_dp], mm, symmetry, scale)
+        if (kind == GS_SCREW) then
+            call vrmhd_fourier_build(mm, symmetry, degree, [0, 1, 2], scale, op, st)
+            call require(st /= 0, &
+                'horizontal screw coframe still rejects Fourier gradients')
+        end if
         call build_fourier(mm, symmetry, degree, [0, 1, 2], scale, op, st)
         call require(st == 0, 'Fourier build')
         associate (fs => op%section%fs)
@@ -207,7 +246,7 @@ contains
             f0 = f; a0 = a
             ! FortFEM's straight-cylinder slots (x, z, y) are left-handed.
             sign = 1
-            if (kind == GS_TRANSLATION) sign = -1
+            if (kind /= GS_ROTATION) sign = -1
             do b = 1, size(op%harmonic)
                 kappa = vrmhd_fourier_wavenumber(op, b)
                 f = f0; a = a0
@@ -284,8 +323,17 @@ contains
                                 *ca(fs%sp(2)%dof(l, t))
                         end do
                         field = bff
-                        if (kind == GS_TRANSLATION) field = [bff(1), bff(3), bff(2)]
+                        if (kind /= GS_ROTATION) field = [bff(1), bff(3), bff(2)]
                         field = sign*field
+                        if (kind == GS_SCREW) then
+                            call vrmhd_face_screw_coordinates(x(1), x(2), symmetry%k, &
+                                real(field(1)), real(field(2)), real(field(3)), &
+                                pushed_real(1), pushed_real(2), pushed_real(3))
+                            call vrmhd_face_screw_coordinates(x(1), x(2), symmetry%k, &
+                                aimag(field(1)), aimag(field(2)), aimag(field(3)), &
+                                pushed_imag(1), pushed_imag(2), pushed_imag(3))
+                            field = cmplx(pushed_real, pushed_imag, dp)
+                        end if
                         size_b = max(size_b, maxval(abs(field)))
                         worst(4) = max(worst(4), &
                             maxval(abs(ac(25:27) - real(field))), &
@@ -323,9 +371,11 @@ contains
         call require(st == 0, 'multi-harmonic build')
         if (mixed_family) then
             call vrmhd_section_build(mm, symmetry, degree + 1, 1, section, st, &
-                scalar_degree=degree, velocity_degree=degree + 1)
+                scalar_degree=degree, velocity_degree=degree + 1, &
+                coordinate_coframe=kind == GS_SCREW)
         else
-            call vrmhd_section_build(mm, symmetry, degree, 1, section, st)
+            call vrmhd_section_build(mm, symmetry, degree, 1, section, st, &
+                coordinate_coframe=kind == GS_SCREW)
         end if
         call require(st == 0, 'section build')
         call parameters(p, limited)
@@ -504,6 +554,8 @@ contains
         real(dp), intent(out) :: out(84)
         if (kind == GS_ROTATION) then
             call mms_fourier_rotation(x(1), x(2), scale, c0, s0, out)
+        else if (kind == GS_SCREW) then
+            call mms_fourier_screw(x(1), x(2), scale, 1/scale, c0, s0, out)
         else
             call mms_fourier_translation(x(1), x(2), scale, c0, s0, out)
         end if
@@ -546,9 +598,12 @@ contains
         call require(rate >= degree - 0.2_dp, 'n = 1 linearised weak-defect order')
     end subroutine
 
-    subroutine manufactured_level(kind, degree, cells, error, defect)
+    subroutine manufactured_level(kind, degree, cells, error, defect, &
+            base_coefficients, harmonic_coefficients)
         integer, intent(in) :: kind, degree, cells
         real(dp), intent(out) :: error(8), defect
+        real(dp), allocatable, intent(out), optional :: base_coefficients(:)
+        real(dp), allocatable, intent(out), optional :: harmonic_coefficients(:)
         type(vrmhd_fourier_t) :: op
         type(vrmhd_parameters_t) :: p
         type(meridian_mesh_t) :: mm
@@ -646,6 +701,116 @@ contains
         free(op%section%offset(8) + 1:ns) = .not. op%section%fs%sp(1)%bnd
         free(ns + op%section%offset(8) + 1:) = .not. op%section%fs%sp(1)%bnd
         defect = sqrt(sum((jv - load)**2/diagonal, mask=free))
+        if (present(base_coefficients)) base_coefficients = u0
+        if (present(harmonic_coefficients)) harmonic_coefficients = du
+    end subroutine
+
+    subroutine nonlinear_manufactured(kind, degree)
+        integer, intent(in) :: kind, degree
+        real(dp) :: error(8, 3), defect(3), rates(8), rate, target(8)
+        integer :: level, cells
+        cells = 4
+        if (degree == 2) cells = 2
+        do level = 1, 3
+            call nonlinear_level(kind, degree, cells*2**(level-1), &
+                error(:, level), defect(level))
+        end do
+        rates = log(error(:, 2)/error(:, 3))/log(2.0_dp)
+        rate = log(defect(2)/defect(3))/log(2.0_dp)
+        target = degree
+        if (mixed_family) target = [degree, degree+1, degree+1, degree+1, &
+            degree+1, degree+1, degree, degree]
+        print '(a,8f8.3,a,f8.3)', 'nonlinear natural-norm orders: ', rates, &
+            ' weak-defect order: ', rate
+        call require(all(rates > target-0.2_dp), 'nonlinear natural-norm design order')
+        call require(rate > degree-0.2_dp, 'nonlinear strong-source weak-defect order')
+    end subroutine
+
+    subroutine nonlinear_level(kind, degree, cells, error, defect)
+        integer, intent(in) :: kind, degree, cells
+        real(dp), intent(out) :: error(8), defect
+        type(vrmhd_fourier_t) :: op
+        type(vrmhd_parameters_t) :: p
+        type(meridian_mesh_t) :: mm
+        type(gs_symmetry_t) :: symmetry
+        real(dp), allocatable :: u0(:), du(:), u(:), zero(:), r(:), unused(:), &
+            source(:, :, :, :), basis(:, :), load(:), diagonal(:), &
+            coarse_r(:), coarse_load(:)
+        integer, allocatable :: map(:)
+        logical, allocatable :: free(:)
+        real(dp) :: linear_error(8), linear_defect, scale, x(2), weight, theta
+        real(dp) :: out(48), v(36), amplitude, angular_defect
+        integer :: status, ns, nl, i, t, q, a, angular_pass
+        call manufactured_level(kind, degree, cells, linear_error, linear_defect, &
+            u0, du)
+        call mesh_for(kind, cells, [0.1_dp, 0.2_dp], mm, symmetry, scale)
+        call build_fourier(mm, symmetry, degree, [0, 1], scale, op, status)
+        call require(status == 0, 'nonlinear manufactured layout')
+        ns = op%section%ndof; nl = op%section%nlocal*sum(op%copies)
+        allocate (u(op%ndof), zero(op%ndof), r(op%ndof), unused(op%ndof), &
+            load(op%ndof), diagonal(op%ndof), coarse_r(op%ndof), &
+            coarse_load(op%ndof), free(op%ndof), basis(36, nl), map(nl), &
+            source(6, 17, op%section%fs%nq, mm%topology%n_triangles))
+        amplitude = 0.3_dp
+        u(:ns) = u0; u(ns+1:) = amplitude*du
+        p%mi = 1; p%mu0 = 1; p%eta0 = 0.2_dp; p%nu0 = 0.2_dp
+        p%chi_parallel0 = 0.2_dp; p%chi_perpendicular = 0.05_dp
+        p%d_parallel = 0.1_dp; p%d_perpendicular = 0.1_dp; p%epsilon_b = 0.1_dp
+        zero = 0
+        do angular_pass = 1, 2
+            source = 0; load = 0; diagonal = 0; error = 0
+            do t = 1, mm%topology%n_triangles
+                do q = 1, op%section%fs%nq
+                    do a = 1, size(source, 2)
+                        theta = 2*pi*real(a-1, dp)/size(source, 2)
+                        call vrmhd_fourier_nonlinear_basis(op, t, q, theta, x, &
+                            weight, basis, map, status)
+                        call require(status == 0, 'nonlinear manufactured basis')
+                        if (kind == GS_ROTATION) then
+                            call mms_nonlinear_rotation(x(1), x(2), scale, cos(theta), &
+                                sin(theta), amplitude, out)
+                        else if (kind == GS_SCREW) then
+                            call mms_nonlinear_screw(x(1), x(2), scale, 1/scale, &
+                                cos(theta), sin(theta), amplitude, out)
+                        else
+                            call mms_nonlinear_translation(x(1), x(2), scale, &
+                                cos(theta), &
+                                sin(theta), amplitude, out)
+                        end if
+                        weight = weight/size(source, 2)
+                        v = matmul(basis, u(map))
+                        error = error + weight*norms(v-out(:36))
+                        do i = 1, nl
+                            load(map(i)) = load(map(i)) &
+                                + weight*dot_product(basis(:12, i), out(37:))
+                            diagonal(map(i)) = diagonal(map(i)) &
+                                + weight*sum(basis(:, i)**2)
+                        end do
+                    end do
+                end do
+            end do
+            call vrmhd_fourier_nonlinear_residual(op, p, u, zero, zero, zero, source, &
+                r, unused, status)
+            call require(status == 0, 'full nonlinear manufactured residual')
+            if (angular_pass == 1) then
+                coarse_r = r; coarse_load = load
+                deallocate (source)
+                allocate (source(6, 33, op%section%fs%nq, mm%topology%n_triangles))
+            else
+                angular_defect = max(norm2(r-coarse_r)/norm2(r), &
+                    norm2(load-coarse_load)/norm2(load))
+                print '(a,es20.12)', 'manufactured angular-refinement defect: ', &
+                    angular_defect
+                call require(angular_defect < 1.0e-10_dp, &
+                    'nonlinear manufactured angular integration converges')
+            end if
+        end do
+        free = .not. op%fixed
+        error = sqrt(error)
+        defect = sqrt(sum((r-load)**2/diagonal, mask=free))
+        print '(a,3i5,l2,8es13.5,a,es13.5)', &
+            'nonlinear symmetry / degree / cells / mixed / errors: ', &
+            kind, degree, cells, mixed_family, error, ' defect: ', defect
     end subroutine
 
     subroutine gram_update(basis, weight, gram)

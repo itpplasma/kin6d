@@ -5,7 +5,7 @@ module kin6d_vrmhd_section
     use kin6d_vrmhd_point, only: vrmhd_point
     use kin6d_vrmhd_section_leaves, only: vrmhd_grad_rotation, vrmhd_grad_screw, &
         vrmhd_velocity_rotation, vrmhd_velocity_screw, &
-        vrmhd_curl_rotation, vrmhd_curl_screw
+        vrmhd_curl_rotation, vrmhd_curl_screw, vrmhd_curl_screw_coordinates
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
         meridian_qpoint, meridian_qgrad, meridian_point_basis_t, &
@@ -18,6 +18,7 @@ module kin6d_vrmhd_section
         type(meridian_feec_t) :: fs, scalar_fs
         type(meridian_feec_t), allocatable :: velocity_fs
         type(gs_symmetry_t) :: symmetry
+        logical :: coordinate_coframe = .false.
         integer :: harmonic_count = 1, ndof = 0, nlocal = 0
         ! Independent field ranges keep the thermodynamic and velocity spaces distinct.
         integer :: offset(9) = 0, local_offset(9) = 0
@@ -31,13 +32,14 @@ module kin6d_vrmhd_section
     integer, parameter, public :: VRMHD_EDGE_FIRST = 1, VRMHD_EDGE_SECOND = 2
 contains
     subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status, &
-            scalar_degree, study_pairing, edge_kind, quad_degree, velocity_degree)
+            scalar_degree, study_pairing, edge_kind, quad_degree, velocity_degree, &
+            coordinate_coframe)
         type(meridian_mesh_t), intent(in) :: mm
         type(gs_symmetry_t), intent(in) :: symmetry
         integer, intent(in) :: degree, harmonic_count
         type(vrmhd_section_t), intent(out) :: op
         integer, intent(out) :: status
-        logical, intent(in), optional :: study_pairing
+        logical, intent(in), optional :: study_pairing, coordinate_coframe
         logical :: study
         integer, intent(in), optional :: scalar_degree, edge_kind, velocity_degree
         !> Overrides the nonlinear default; callers must bound their integrand degree.
@@ -64,6 +66,7 @@ contains
             if (.not. mixed .and. (ks /= degree .or. kv /= ks)) return
         end if
         op%symmetry = symmetry; op%harmonic_count = harmonic_count
+        if (present(coordinate_coframe)) op%coordinate_coframe = coordinate_coframe
         qdegree = 4*max(ks, kv, degree) + 2*mm%geo_order + 2
         if (present(quad_degree)) qdegree = quad_degree
         if (symmetry%kind == GS_ROTATION) then
@@ -296,6 +299,9 @@ contains
             call vrmhd_curl_rotation(x(1), x(2), op%symmetry%k, u1, u2, c, a, ax, &
                 ay, &
                 v(1), v(2), v(3), b(1), b(2), b(3))
+        else if (op%coordinate_coframe) then
+            call vrmhd_curl_screw_coordinates(x(1), x(2), op%symmetry%k, &
+                u1, u2, c, a, ax, ay, v(1), v(2), v(3), b(1), b(2), b(3))
         else
             call vrmhd_curl_screw(x(1), x(2), op%symmetry%k, u1, u2, c, a, ax, ay, &
                 v(1), v(2), v(3), b(1), b(2), b(3))

@@ -91,7 +91,8 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
     src/generated/kin6d_vrmhd_section_leaves.f90
     src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90
     src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90
-    src/mhd/vrmhd_drive.f90 src/mhd/vrmhd_evolve.f90 src/mhd/vrmhd_fourier.f90)
+    src/mhd/vrmhd_drive.f90 src/mhd/vrmhd_evolve.f90 src/mhd/vrmhd_fourier.f90
+    src/mhd/vrmhd_fourier_nonlinear.f90)
 add_library(kin6d_vrmhd_wall_test STATIC test/support/vrmhd_wall_oracle.f90)
 target_link_libraries(kin6d_vrmhd_wall_test PUBLIC kin6d_mhd)
 add_library(kin6d_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
@@ -155,8 +156,18 @@ foreach(gate geometry derivatives volume closure)
         ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 endforeach()
 add_library(kin6d_vrmhd_mms_fourier_test STATIC
-    test/support/vrmhd_mms_fourier_leaves.f90)
+    test/support/vrmhd_mms_fourier_leaves.f90
+    test/support/vrmhd_mms_nonlinear_leaves.f90)
 target_link_libraries(kin6d_vrmhd_mms_fourier_test PUBLIC kin6d_mhd)
+add_executable(test_vrmhd_fourier_nonlinear test/test_vrmhd_fourier_nonlinear.f90)
+target_link_libraries(test_vrmhd_fourier_nonlinear PRIVATE kin6d_mhd)
+foreach(gate coupling derivatives energy)
+    add_test(NAME vrmhd_fourier_nonlinear_${gate}
+        COMMAND test_vrmhd_fourier_nonlinear ${gate})
+    set_tests_properties(vrmhd_fourier_nonlinear_${gate} PROPERTIES LABELS rm3b
+        PROCESSORS 4 TIMEOUT 900
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_executable(test_vrmhd_harmonics test/test_vrmhd_harmonics.f90)
 target_link_libraries(test_vrmhd_harmonics PRIVATE kin6d_vrmhd_mms_fourier_test
     kin6d_spectrum_support)
@@ -175,6 +186,23 @@ endforeach()
 add_test(NAME vrmhd_harmonics_spectra_fine COMMAND test_vrmhd_harmonics spectra_fine)
 set_tests_properties(vrmhd_harmonics_spectra_fine PROPERTIES PROCESSORS 8
     TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_harmonics_helical COMMAND test_vrmhd_harmonics helical)
+set_tests_properties(vrmhd_harmonics_helical PROPERTIES PROCESSORS 4 TIMEOUT 900
+    LABELS rm3b ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+foreach(family equal mixed)
+    add_test(NAME vrmhd_fourier_nonlinear_manufactured_${family}
+        COMMAND test_vrmhd_harmonics nonlinear_${family})
+    set_tests_properties(vrmhd_fourier_nonlinear_manufactured_${family} PROPERTIES
+        PROCESSORS 4 TIMEOUT 900 LABELS rm3b
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+foreach(family equal mixed)
+    add_test(NAME vrmhd_helical_nonlinear_manufactured_${family}
+        COMMAND test_vrmhd_harmonics helical_nonlinear_${family})
+    set_tests_properties(vrmhd_helical_nonlinear_manufactured_${family} PROPERTIES
+        PROCESSORS 4 TIMEOUT 900 LABELS rm3b
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_executable(test_vrmhd_leaves test/test_vrmhd_leaves.f90
     test/support/vrmhd_leaf_dispatch.f90)
 target_link_libraries(test_vrmhd_leaves PRIVATE kin6d_mhd)
@@ -1112,6 +1140,13 @@ if(KIN6D_FORTSYM_BUILD)
         -DGENERATED_DIR=test/support -DLEAF=vrmhd_mms_fourier_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_mms_fourier_regeneration PROPERTIES LABELS rm3)
+    add_test(NAME vrmhd_mms_nonlinear_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_mms_fourier>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/test/support/vrmhd_mms_nonlinear_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-mms-nonlinear-regeneration
+        -DGENERATED_DIR=test/support -DLEAF=vrmhd_mms_nonlinear_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    set_tests_properties(vrmhd_mms_nonlinear_regeneration PROPERTIES LABELS rm3b)
     add_executable(gen_vrmhd_gs gen/gen_vrmhd_gs.f90)
     target_link_libraries(gen_vrmhd_gs PRIVATE kin6d_gen_support)
     add_test(NAME vrmhd_gs_regeneration COMMAND ${CMAKE_COMMAND}
