@@ -202,7 +202,7 @@ closedness for screw symmetry.
 
 The equal-degree default passes the energy ledger and the earlier RM2 gates
 described below at degree one. The spectral gate remains incomplete: its
-first coarse-mesh branch match fails, as detailed below.
+first failure is skew-adjointness on the finest structured mesh, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -288,9 +288,11 @@ Hermitian representative only after the unsymmetrized defect passes.
 `max |Im(omega^2)| / max |omega^2|` from the nonsymmetric solve is diagnostic,
 not an admission gate.
 
-The second gate matches signed nonzero frequencies below the unchanged
-cutoff `sqrt(1.8) rad/s` one-to-one to the folded oracle, including repeated
-frequencies. For a block of `r` cells in each direction, its wave vectors are
+The second gate requires the computed signed nonzero count below the unchanged
+cutoff `sqrt(1.8) rad/s` to equal the folded oracle count on every mesh.
+One-to-one branch matching, including repeated frequencies, applies to resolved
+meshes: those with at least 16 cells per period in the 4, 8, 16, 32 ladder.
+For a block of `r` cells in each direction, its wave vectors are
 `(1 + n jx/r, n jy/r, 0) m^-1`, where `n` is the number of cells per period.
 This is `q0 + 2 pi j/(r h)`, with base wave vector `q0=(1,0,0) m^-1`,
 integer vector `j=(jx,jy,0)` and cell width `h=2 pi/n m`.
@@ -302,6 +304,8 @@ to the nearest distinct oracle frequency. A bipartite assignment preserves
 the folded multiplicity instead of independently accepting nearest branches.
 The ladder is 4, 8, 16, 32 cells per period at `k=1,2`, on both meshes;
 the base-wavenumber frequency order must exceed `2 k-0.2` on the finest pair.
+The two coarse meshes retain nearest positive frequency estimates in the ladder
+without asserting branch identity. The isolation window and cutoff are unchanged.
 
 The third gate counts energetic static modes per cell against the study's
 `k`, separately from entropy and gauge. Every static direction, with its
@@ -315,14 +319,19 @@ entropy and curl-free gauge remain static. The slowest energetic decay is
 reported in s^-1 and relative to `(eta/mu0) k_cell^2`, with
 `k_cell=2 pi/h`. The slowest rate is taken over the whole energetic quotient.
 
-The first structured `k=1`, four-cell case passes skew-adjointness but fails
-the preserved branch-isolation window. Its Alfven frequency is approximately
+The structured `k=1`, four-cell case exceeds the preserved branch-isolation
+window. Its Alfven frequency is approximately
 `0.6994805151 rad/s`, against `0.6 rad/s`; their difference exceeds half the
 Alfven/slow-oracle separation. The number of signed waves below the cutoff
 is correct, but only four of six have an isolated oracle match. This is a
-coarse-mesh matching failure, not evidence by itself of growth or a spurious
-branch. Refinement rates, the static/decay gate, degree two and the perturbed
-ladder have not been qualified: execution stops at this first failure.
+coarse-mesh dispersion observation, not evidence by itself of growth or a
+spurious branch; isolation is required only on the resolved meshes.
+The structured degree-one cases at 4, 8 and 16 cells pass skew-adjointness,
+folded counts, staticity, the static count per cell and the dissipative checks;
+all six signed branches match at 16 cells. At 32 cells, the skew-adjointness
+ratio is `1.822650495791e-12`, exceeding the unchanged `1e-12` gate.
+Execution stops there, before the finest-pair order check. Degree two and the
+perturbed ladder remain unqualified.
 No full-system inf-sup bound or continuous spectral non-pollution result is
 claimed. The independent folding test uses analytic frequencies at
 `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.

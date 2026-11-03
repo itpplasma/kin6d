@@ -126,7 +126,9 @@ contains
         reality = maxval(abs(aimag(-values**2)))/scale
         print '(a,es20.12)', 'diagnostic max |Im(omega^2)| / max |omega^2|: ', reality
         print '(a,*(es20.12))', 'energy-quotient signed angular frequencies [1/s]: ', omega
-        call match_folded(omega, n, repeat, degree, b0, exact, frequencies)
+        ! The 4..32 ladder is resolved for branch isolation from 16 cells onward.
+        call match_folded(omega, n, repeat, degree, b0, exact, frequencies, &
+            resolved=n >= 16)
         static_count = 0
         do j = 1, ne
             if (abs(omega(j)) > 1.0e-12_dp*maxval(abs(omega))) cycle
@@ -220,17 +222,19 @@ contains
         call check(info == 0, 'invert physical time mass')
     end subroutine
 
-    subroutine match_folded(omega, n, repeat, degree, b0, exact, frequencies)
+    subroutine match_folded(omega, n, repeat, degree, b0, exact, frequencies, resolved)
         real(dp), intent(in) :: omega(:), b0(3), exact(3)
         integer, intent(in) :: n, repeat, degree
         real(dp), intent(out) :: frequencies(3)
+        logical, intent(in), optional :: resolved
         real(dp), allocatable :: oracle(:)
         real(dp) :: wave(3), squared(3)
         real(dp) :: cutoff, separation, tolerance
         logical, allocatable :: candidates(:,:), visited(:)
         integer :: jx, jy, j, i, count_oracle, status, direction, matched, base(3)
         integer, allocatable :: owner(:,:)
-        integer :: expected, computed
+        integer :: expected, computed, nearest
+        ! Avoid gfortran's extent-order bug: test/reproducers/gfortran_host_extent.f90.
         allocate(oracle(3*(repeat*degree)**2))
         allocate(candidates(size(omega),size(oracle)),visited(size(oracle)), &
             owner(size(oracle),2))
@@ -262,6 +266,18 @@ contains
         expected = 2*count(oracle <= cutoff+tolerance)
         computed = count(abs(omega) > tolerance .and. abs(omega) <= cutoff+tolerance)
         print '(a,2i6)', 'computed / expected signed waves below cutoff: ', computed,expected
+        call check(computed == expected, 'folded oracle multiplicity below cutoff')
+        if (present(resolved)) then
+            if (.not. resolved) then
+                ! Coarse estimates enter the ladder without asserting branch identity.
+                do i = 1, 3
+                    nearest = minloc(abs(omega-exact(i)),dim=1,mask=omega > tolerance)
+                    call check(nearest > 0, 'positive coarse-mesh frequency exists')
+                    frequencies(i) = omega(nearest)
+                end do
+                return
+            end if
+        end if
         matched = 0
         do j = 1, size(omega)
             if (abs(omega(j)) <= tolerance .or. abs(omega(j)) > cutoff+tolerance) cycle

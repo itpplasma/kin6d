@@ -23,4 +23,11 @@ program test_vrmhd_spectral_folding
     call match_folded(omega,4,2,1,b0,exact,frequencies)
     call require(maxval(abs(frequencies-exact)) < 1.0e-14_dp, &
         'four-cell folded multiplicities retain all three base branches')
+    ! At four cells the Alfven dispersion error can exceed the isolation window.
+    omega = 0
+    omega(1:3) = [0.7_dp,1.25_dp,0.42_dp]
+    omega(4:6) = -omega(1:3)
+    call match_folded(omega,4,1,1,b0,exact,frequencies,resolved=.false.)
+    call require(maxval(abs(frequencies-[0.7_dp,1.25_dp,0.42_dp])) < 1.0e-14_dp, &
+        'coarse ladder retains counts and frequency estimates without isolation')
 end program
