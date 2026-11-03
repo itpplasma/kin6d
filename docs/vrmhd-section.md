@@ -231,6 +231,108 @@ component of `Atilde-t V h` is evaluated separately from the polynomial
 horizontal state space: projecting it into that space would destroy exact
 closedness for screw symmetry.
 
+## Time evolution
+
+`kin6d_vrmhd_evolve` integrates `M(U) U_dot + R(U) - V h.W = 0` with
+[FortNum](https://github.com/lazy-fortran/fortnum)'s matrix-free
+variable-step BDF2 (`fortnum_ode_bdf`, with a backward Euler first step).
+The vector potential keeps Weyl gauge, without the stationary Coulomb
+multiplier. Its mass row makes the induction block well posed, and a
+gradient part of `A_dot` is gauge drift that changes neither `B`, `J` nor
+the fluid. The loop-voltage drive enters as the load of `vrmhd_drive_build`
+subtracted from induction, the `Atilde` form of the
+[driven-state conventions](#driven-state-conventions); a current source
+enters through the `Js` source channel.
+
+The state is `U = U_lift + P y`, and the residual is tested with `P^T`. A
+conducting wall takes `P` as the selection of free coefficients and `U_lift`
+as the boundary data, which is the elimination of the stationary wrapper.
+A periodic slab takes `P` as the identification of periodic copies of nodal
+and edge coefficients, with the edge orientation signs of the Bloch
+transform; the test support `vrmhd_periodic_slab` builds it for
+`[0, 2 pi]^2`. The non-periodic potential of a uniform field stays in
+`U_lift`, because the residual uses `A` only through its curl.
+The wave gate scales the columns for A by `sqrt(mu0)` and those for J by
+`1/sqrt(mu0)`, an invertible change of coefficient units. Otherwise roundoff
+in the weak Ampere solve can exceed the Newton correction tolerance of
+near-zero SI current coefficients. The physical reconstruction and the
+modal recurrence checks are unchanged by this scaling.
+
+The auxiliary current rows have zero mass, and their Jacobian block is the
+nonsingular current mass `mu0 M_J`. The current is therefore an index-one
+algebraic constraint when the fluid mass blocks are nonsingular. This does
+not guarantee solvability of every nonlinear BDF step.
+FortNum's contract assumes a nonsingular mass when it computes
+the initial derivative itself, so `vrmhd_evolve_consistent` supplies a
+consistent start: it solves weak Ampere for `J` at the given `A`, and then
+`M U_dot = -R` on the differential rows together with `R_J,U U_dot = 0`, the
+time derivative of the algebraic rows.
+
+Newton's operator is the matrix-free directional derivative of the section
+residual, `R_U + (M U_dot)_U + alpha M` with the BDF shift `alpha`. The right
+preconditioner is a FortSparse direct factor of the reduced assembled
+Jacobian `P^T J P`. With `lag` above one, a factor is reused while `alpha`
+changes by at most `shift_tolerance`, and FortNum's FGMRES corrects the
+stale factor; the default `lag=1` is exact Newton.
+
+### Evolution gates
+
+The `rm2-evolve` tests use second-kind edges, the production residual,
+Jacobian and mass. Energies and
+powers are evaluated at the production quadrature points from the physical
+definitions of [the weak form](vrmhd-weak-form.md), independently of the
+leaves. Orders are `log(e(dt)/e(dt/2))/log 2` for consecutive steps of a
+ladder.
+
+- **Energy** (`vrmhd_evolve_energy`). Periodic slab with four cells per
+  period and degree one, uniform `B0=(0.6,0,0.8) T`, `rho=1 kg/m^3`,
+  `Te=Ti=0.3 J`, perturbations of amplitude 0.1 in every field, `t=2 s` and
+  `dt=1/4, 1/8, 1/16, 1/32 s`. In the ideal case without drive, the
+  relative drift of `E_K+E_B+E_int` must converge at order above 1.8 on every
+  pair. In the dissipative case (`eta0=nu0=0.02`, `chi_perp=0.01 m^2/s`,
+  `T0=0.3 J`, prescribed `Js`), the total energy drift and the defect of the
+  mechanical ledger, the change of `E_K+E_B` minus the trapezoidal time
+  integral of `p div v - tau:grad v - eta J.(J-Js)`, must do the same.
+  Measured orders are 1.85, 2.01 and 2.04 (ideal drift), 1.86, 2.02 and 2.04
+  (dissipative drift) and 1.90, 2.02 and 2.04 (ledger), with ideal drift
+  `2.7e-6` and ledger defect `1.1e-4` of a power integral `2.9e-2 J` at the
+  finest step.
+- **Resistive decay** (`vrmhd_evolve_decay`). The force-free field
+  `B = 1e-3 (0, sin x, cos x) T` decays at `eta k^2/mu0 = 0.05 s^-1`
+  (`k=1 m^-1`, `mu0=1`) with `v=0`. At degree two, four and eight cells per
+  period, `dt=0.5 s` and `t=8 s`, the exact BDF2 recurrence for that rate
+  removes the time error; the remaining spatial error of each component's
+  decay rate must converge at order above 1.8 and be at most `1e-2` on the
+  finer mesh. Measured: B_y (orbit Lagrange potential) error 3.1e-6, order 6.02; B_z
+  (second-kind edges) error 3.5e-4, order 3.98.
+- **Linear waves** (`vrmhd_evolve_waves`). Background
+  `B0=sqrt(mu0) (0.6,0,0.8) T`, `rho=1 kg/m^3`, `Te=Ti=0.3 J`, four cells and
+  degree one, amplitude `1e-4` of `v_y = cos x` (Alfven) or `v_x = cos x`
+  (fast), `t=4 s`, `dt=1/4 ... 1/32 s`. A left eigenvector `w` of the
+  linearized pencil `M y_dot + K y = 0` gives `s = w^H M y`, which obeys
+  `s_dot = lambda s` exactly; the excited `lambda` must be undamped to
+  `1e-10`, agree with the structural Bloch spectrum to `1e-8`, `s` must follow
+  the scalar BDF2 recurrence for `lambda` to `1e-6`, and the measured
+  frequency must converge to `Im lambda` at order above 1.8 on every pair.
+  Measured: Bloch agreement `1.2e-12` and `2.6e-13`, recurrence defects
+  `5e-12` and `3e-9`, orders 1.90, 1.96, 1.98 (Alfven) and 1.81, 1.93, 1.97
+  (fast). A first ladder starting at `dt=1/2 s` gave 1.77 on its coarsest
+  Alfven pair, where `omega dt = 0.33` is still pre-asymptotic.
+- **Steady state** (`vrmhd_evolve_steady`). Conducting-wall unit box, two
+  cells per side, loop voltage `V=0.02 V` with unit axial period, wall
+  current `J_z = V/eta0`, all dissipation and particle diffusion `0.2`
+  (SI units). The stationary Newton solve with Coulomb multiplier is the
+  reference. Adaptive BDF2 (`rtol=1e-5`, Newton tolerance `1e-4` of it) from
+  a start perturbed in every interior field must reach it in the fluid
+  coefficients, `J` and `B` to `1e-7` by `t=16 s`. Measured: `3.4e-14`,
+  `1.5e-12` and `7.5e-14`, from `5e-2`, `2.7` and `1.4e-2`.
+
+These are convergence and consistency gates of the time integration of this
+discretization, not a stability proof of the nonlinear system. The BDF error
+estimate includes the algebraic current; whether that controller is
+efficient for stiff transients is not measured here. Continuous error
+certificates and transient adjoints are unavailable in this wrapper.
+
 ## Verification limits
 
 The equal-degree default with second-kind edges passes the energy ledger,

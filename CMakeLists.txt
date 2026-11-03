@@ -91,7 +91,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
     src/generated/kin6d_vrmhd_section_leaves.f90
     src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90
     src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90
-    src/mhd/vrmhd_drive.f90)
+    src/mhd/vrmhd_drive.f90 src/mhd/vrmhd_evolve.f90)
 add_library(kin6d_vrmhd_wall_test STATIC test/support/vrmhd_wall_oracle.f90)
 target_link_libraries(kin6d_vrmhd_wall_test PUBLIC kin6d_mhd)
 add_library(kin6d_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
@@ -118,6 +118,17 @@ set_tests_properties(vrmhd_stationary_gauge PROPERTIES
 add_test(NAME vrmhd_section_manufactured_consistency COMMAND test_vrmhd_mms)
 set_tests_properties(vrmhd_section_manufactured_consistency PROPERTIES LABELS rm2
     ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+add_library(kin6d_vrmhd_slab_test STATIC test/support/vrmhd_periodic_slab.f90)
+target_link_libraries(kin6d_vrmhd_slab_test PUBLIC kin6d_mhd)
+add_executable(test_vrmhd_evolve test/test_vrmhd_evolve.f90)
+target_link_libraries(test_vrmhd_evolve PRIVATE kin6d_vrmhd_slab_test
+    kin6d_spectrum_support)
+foreach(gate energy decay waves steady)
+    add_test(NAME vrmhd_evolve_${gate} COMMAND test_vrmhd_evolve ${gate})
+    set_tests_properties(vrmhd_evolve_${gate} PROPERTIES LABELS rm2-evolve
+        PROCESSORS 8 TIMEOUT 300
+        ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+endforeach()
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
 target_link_libraries(test_vrmhd_section PRIVATE kin6d_mhd)
 add_executable(test_vrmhd_energy test/test_vrmhd_energy.f90)
