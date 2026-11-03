@@ -17,6 +17,7 @@ program gen_vrmhd_section
     type(expr_t) :: u(2), ux(2), uy(2), a, ax, ay, c, av(3), da(3, 3), b(3)
     type(expr_t) :: roots(6), keys(4), replacements(4), gc(3), gcurl(3)
     type(expr_t) :: test(3), field(3), contraction
+    type(expr_t) :: cart(3), orbit(3), angle, ov(3, 3), oc(3)
     type(engine_result_t) :: simplified
     character(16) :: suffix
     character(16) :: vn(9), out(9), cn(9)
@@ -124,6 +125,50 @@ program gen_vrmhd_section
         call w%emit('vrmhd_harmonic_'//trim(suffix), &
             [character(16) :: 'x', 'a'], &
             [character(16) :: 'h1', 'h2', 'h3'], av, ad=.true.)
+        ! A Fourier factor g(t) of the orbit parameter t (rotation angle or
+        ! screw axial coordinate) adds g'(t) times these products.
+        cart = [sym(arena, 'cx'), sym(arena, 'cy'), sym(arena, 'cz')]
+        if (kind == 1) then
+            ! tan(t) = Y/X has the derivative of t on the section Y = 0.
+            angle = cart(2)/cart(1)
+        else
+            angle = cart(3)
+        end if
+        do i = 1, 3
+            if (kind == 1) then
+                orbit(i) = subs_many(diff(angle, cart(i)), cart, [x, z, y])
+            else
+                orbit(i) = subs_many(diff(angle, cart(i)), cart, [x, y, z])
+            end if
+            simplified = engine%simplify(orbit(i)); orbit(i) = simplified%value
+        end do
+        call prove(xi(1)*orbit(1) + xi(2)*orbit(2) + xi(3)*orbit(3) - one)
+        if (kind == 1) then
+            call prove(orbit(1)); call prove(orbit(3))
+        else
+            call prove(orbit(1)); call prove(orbit(2))
+        end if
+        do i = 1, 3
+            do j = 1, 3
+                ov(i, j) = v(i)*orbit(j)
+            end do
+        end do
+        oc = [orbit(2)*v(3) - orbit(3)*v(2), orbit(3)*v(1) - orbit(1)*v(3), &
+            orbit(1)*v(2) - orbit(2)*v(1)]
+        do i = 1, 3
+            simplified = engine%simplify(oc(i)); oc(i) = simplified%value
+            gc(i) = v(1)*orbit(i)
+            simplified = engine%simplify(gc(i)); gc(i) = simplified%value
+            do j = 1, 3
+                simplified = engine%simplify(ov(i, j)); ov(i, j) = simplified%value
+            end do
+        end do
+        call w%emit('vrmhd_orbit_grad_'//trim(suffix), &
+            [character(16) :: 'x', 'y', 'k', 'v1'], out(:3), gc)
+        call w%emit('vrmhd_orbit_velocity_'//trim(suffix), &
+            [character(16) :: 'x', 'y', 'k', vn(:3)], out, reshape(ov, [9]))
+        call w%emit('vrmhd_orbit_curl_'//trim(suffix), &
+            [character(16) :: 'x', 'y', 'k', vn(:3)], out(:3), oc)
         ! The section component of a gradient is a discrete Nedelec gradient.
         do i = 1, 3
             gc(i) = subs_many(roots(3 + i), [u(1), u(2), c, a, ax, ay], &
@@ -151,7 +196,7 @@ program gen_vrmhd_section
         [character(16) :: 'value'], [contraction], ad=.true.)
     call w%line('end module kin6d_vrmhd_section_leaves')
     call w%close()
-    print '(a)', 'Invariant Cartesian gradients and curls: 18 identities passed'
+    print '(a)', 'Invariant Cartesian gradients and curls: 24 identities passed'
 contains
     subroutine prove(e)
         type(expr_t), intent(in) :: e

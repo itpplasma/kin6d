@@ -91,7 +91,7 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
     src/generated/kin6d_vrmhd_section_leaves.f90
     src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90
     src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90
-    src/mhd/vrmhd_drive.f90 src/mhd/vrmhd_evolve.f90)
+    src/mhd/vrmhd_drive.f90 src/mhd/vrmhd_evolve.f90 src/mhd/vrmhd_fourier.f90)
 add_library(kin6d_vrmhd_wall_test STATIC test/support/vrmhd_wall_oracle.f90)
 target_link_libraries(kin6d_vrmhd_wall_test PUBLIC kin6d_mhd)
 add_library(kin6d_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
@@ -154,6 +154,27 @@ foreach(gate geometry derivatives volume closure)
     set_tests_properties(vrmhd_section_${gate} PROPERTIES LABELS rm2
         ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 endforeach()
+add_library(kin6d_vrmhd_mms_fourier_test STATIC
+    test/support/vrmhd_mms_fourier_leaves.f90)
+target_link_libraries(kin6d_vrmhd_mms_fourier_test PUBLIC kin6d_mhd)
+add_executable(test_vrmhd_harmonics test/test_vrmhd_harmonics.f90)
+target_link_libraries(test_vrmhd_harmonics PRIVATE kin6d_vrmhd_mms_fourier_test
+    kin6d_spectrum_support)
+foreach(gate exactness reduction decoupling manufactured spectra accumulation)
+    add_test(NAME vrmhd_harmonics_${gate} COMMAND test_vrmhd_harmonics ${gate})
+    set_tests_properties(vrmhd_harmonics_${gate} PROPERTIES LABELS rm3
+        PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+endforeach()
+foreach(gate exactness reduction decoupling manufactured)
+    add_test(NAME vrmhd_harmonics_mixed_${gate}
+        COMMAND test_vrmhd_harmonics mixed_${gate})
+    set_tests_properties(vrmhd_harmonics_mixed_${gate} PROPERTIES LABELS rm3-mixed
+        PROCESSORS 4 TIMEOUT 900
+        ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+endforeach()
+add_test(NAME vrmhd_harmonics_spectra_fine COMMAND test_vrmhd_harmonics spectra_fine)
+set_tests_properties(vrmhd_harmonics_spectra_fine PROPERTIES PROCESSORS 8
+    TIMEOUT 3600 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_leaves test/test_vrmhd_leaves.f90
     test/support/vrmhd_leaf_dispatch.f90)
 target_link_libraries(test_vrmhd_leaves PRIVATE kin6d_mhd)
@@ -224,8 +245,8 @@ target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
 # Steklov form #144, exact FEEC tables, split stretched BEM fans #145,
-# second-kind Nedelec edges in the meridian FEEC complex #148).
-set(KIN6D_FORTFEM_REVISION "0744399cd4be55afcace7d81c62a4c358a50fe8f")
+# second-kind Nedelec edges #148 and exact moment gradients #149).
+set(KIN6D_FORTFEM_REVISION "d6027e7addfd857c676195f26ae3d829a3868a68")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1082,6 +1103,15 @@ if(KIN6D_FORTSYM_BUILD)
         -DGENERATED_DIR=test/support -DLEAF=vrmhd_mms_leaves.f90
         -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     set_tests_properties(vrmhd_mms_regeneration PROPERTIES LABELS rm2)
+    add_executable(gen_vrmhd_mms_fourier gen/gen_vrmhd_mms_fourier.f90)
+    target_link_libraries(gen_vrmhd_mms_fourier PRIVATE kin6d_gen_support)
+    add_test(NAME vrmhd_mms_fourier_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_vrmhd_mms_fourier>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/test/support/vrmhd_mms_fourier_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/vrmhd-mms-fourier-regeneration
+        -DGENERATED_DIR=test/support -DLEAF=vrmhd_mms_fourier_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
+    set_tests_properties(vrmhd_mms_fourier_regeneration PROPERTIES LABELS rm3)
     add_executable(gen_vrmhd_gs gen/gen_vrmhd_gs.f90)
     target_link_libraries(gen_vrmhd_gs PRIVATE kin6d_gen_support)
     add_test(NAME vrmhd_gs_regeneration COMMAND ${CMAKE_COMMAND}
@@ -1880,6 +1910,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/polynomial_candidate_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_lagrange_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_feec_tables.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_second_gradient.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90

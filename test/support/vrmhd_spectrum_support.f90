@@ -5,9 +5,12 @@ module vrmhd_spectrum_support
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian, &
         vrmhd_section_mass, VRMHD_EDGE_FIRST, VRMHD_EDGE_SECOND
+    use kin6d_vrmhd_fourier, only: vrmhd_fourier_t, vrmhd_fourier_build, &
+        vrmhd_fourier_data, vrmhd_fourier_jacobian, vrmhd_fourier_wavenumber
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
     use vrmhd_structural_spectrum, only: structural_spectrum, bloch_projection, &
-        bloch_rows, bloch_sandwich, bloch_adjoint, check_bloch_action
+        bloch_rows, bloch_sandwich, bloch_adjoint, check_bloch_action, &
+        harmonic_block
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load
@@ -47,15 +50,20 @@ contains
         end if
     end function
 
-    pure integer function block_dofs(ks, ka, edge_kind, repeat) result(count)
-        !! Bloch block: six scalar fields plus A and J.
+    pure integer function block_dofs(ks, ka, edge_kind, repeat, velocity_degree) &
+            result(count)
+        !! Bloch block: three thermodynamic fields, three velocities, A and J.
         integer, intent(in) :: ks, ka, edge_kind, repeat
-        count = repeat**2*(6*ks**2 + 2*edge_cell_dofs(ka, edge_kind))
+        integer, intent(in), optional :: velocity_degree
+        integer :: kv
+        kv = ks
+        if (present(velocity_degree)) kv = velocity_degree
+        count = repeat**2*(3*ks**2 + 3*kv**2 + 2*edge_cell_dofs(ka, edge_kind))
     end function
 
     subroutine spectrum(n, ka, ks, nb, b0, exact, audit, frequencies, &
             optical_fraction, unmatched, result, perturbed, structural, mass_condition, &
-            edge_kind)
+            edge_kind, harmonic, orbit_scale, orientation, patch, velocity_degree)
         integer, intent(in) :: n, ka, ks, nb
         real(dp), intent(in) :: b0(3), exact(3)
         logical, intent(in) :: audit
@@ -65,14 +73,25 @@ contains
         type(spectrum_result_t), intent(out), optional :: result
         logical, intent(in), optional :: perturbed
         logical, intent(in), optional :: structural
-        integer, intent(in), optional :: edge_kind
+        integer, intent(in), optional :: edge_kind, velocity_degree
+        !! Harmonic n of the section x Fourier operator with kz = orientation n/orbit_scale
+        !! along the invariant direction (structural path only).
+        integer, intent(in), optional :: harmonic, orientation
+        real(dp), intent(in), optional :: orbit_scale
+        !! Assemble only 2 repeat cells per direction: the Bloch block of a
+        !! translation-invariant operator does not depend on the period count.
+        logical, intent(in), optional :: patch
         type(spectrum_result_t) :: measured
         type(vrmhd_section_t) :: reference_op, assembly
-        integer :: repeat, cell, ix, iy, tick0, tick1, tick_rate
-        real(dp) :: reference_vertices(2, (n+1)**2), h
+        type(vrmhd_fourier_t) :: fop
+        integer :: repeat, cell, ix, iy, tick0, tick1, tick_rate, cells
+        real(dp), allocatable :: reference_vertices(:, :), orbit(:, :), nodes(:, :)
+        real(dp) :: h, extent, kz, frame(3, 3), local(3)
+        real(dp), parameter :: mass_shift = 2.0_dp**30
+        logical :: harmonic_mode, small
         real(dp) :: displacement(2, 0:1, 0:1)
         logical :: study, distort
-        integer :: ns, na
+        integer :: ns, na, nv, kv, nf, te, ti, off(9), order
         type(mesh_2d_t) :: mesh
         type(meridian_mesh_t) :: mm
         type(vrmhd_section_t) :: op
@@ -87,7 +106,8 @@ contains
         real(dp), allocatable :: mr(:), mi(:), basis(:, :), xy(:, :)
         complex(dp), allocatable :: load(:)
         type(fortsparse_status_t) :: st
-        complex(dp), allocatable :: transform(:, :), coefficients(:)
+        complex(dp), allocatable :: transform(:, :), coefficients(:), periodic(:, :)
+        real(dp), allocatable :: phase_x(:)
         complex(dp) :: stiffness(nb, nb), mass(nb, nb), alpha(nb), beta(nb)
         complex(dp) :: vectors(nb, nb), dummy(1, 1), dummy_right(1, 1), work(16*nb), lambda(nb)
         complex(dp) :: original_k(nb, nb), original_m(nb, nb), residual(nb)
@@ -123,13 +143,27 @@ contains
         if (distort) repeat = 2
         kind = VRMHD_EDGE_SECOND
         if (present(edge_kind)) kind = edge_kind
-        ns = (repeat*ks)**2; na = repeat**2*edge_cell_dofs(ka, kind)
-        call require(nb == 6*ns + 2*na, 'complete study block size')
+        kv = ks
+        if (present(velocity_degree)) kv = velocity_degree
+        ns = (repeat*ks)**2; nv = (repeat*kv)**2
+        na = repeat**2*edge_cell_dofs(ka, kind)
+        nf = 3*ns + 3*nv; te = ns + 3*nv; ti = te + ns
+        off = [0, ns, ns + nv, ns + 2*nv, te, ti, nf, nf + na, nf + 2*na]
+        call require(nb == nf + 2*na, 'complete study block size')
         length = 2*acos(-1.0_dp)
         unmatched = 0
-        call mesh%create_rectangular(n + 1, n + 1, 0.0_dp, length, 0.0_dp, length)
+        harmonic_mode = present(harmonic)
+        call require(harmonic_mode .eqv. present(orbit_scale), &
+            'harmonic and orbit scale')
+        small = .false.
+        if (present(patch)) small = patch
+        h = length/n; cells = n; extent = length
+        if (small) then
+            cells = 2*repeat; extent = cells*h
+        end if
+        call mesh%create_rectangular(cells + 1, cells + 1, 0.0_dp, extent, &
+            0.0_dp, extent)
         reference_vertices = mesh%vertices
-        h = length/n
         if (distort) then
             ! The fixed pattern repeats across both periodic boundaries.
             displacement(:,0,0) = [0.0_dp, 0.0_dp]
@@ -145,13 +179,28 @@ contains
         end if
         call meridian_mesh_straight(mesh, 1, mm, status)
         call require(status == 0, 'periodic wave mesh')
-        call vrmhd_section_build(mm, &
-            gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
-            ka, 1, op, status, scalar_degree=ks, study_pairing=study, edge_kind=kind)
+        if (harmonic_mode) then
+            call require(kind == VRMHD_EDGE_SECOND .and. .not. study &
+                .and. present(structural), &
+                'harmonic block uses the admitted section interface')
+            call vrmhd_fourier_build(mm, &
+                gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
+                ka, [harmonic], orbit_scale, fop, status, &
+                scalar_degree=ks, velocity_degree=kv)
+            call require(status == 0 .and. harmonic > 0, 'periodic wave harmonic')
+            op = fop%section
+            kz = vrmhd_fourier_wavenumber(fop, 1)
+            if (present(orientation)) kz = sign(kz, real(orientation, dp))
+        else
+            call vrmhd_section_build(mm, &
+                gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
+                ka, 1, op, status, scalar_degree=ks, study_pairing=study, &
+                edge_kind=kind, velocity_degree=kv)
+        end if
         call require(status == 0, 'periodic wave section')
         reduced = .false.
         if (present(structural)) reduced = structural
-        if (reduced) then
+        if (reduced .and. .not. harmonic_mode) then
             ! At the uniform state on affine cells every Jacobian and time-mass
             ! integrand is a product of two basis polynomials with constant
             ! coefficients, so degree 2 max(ks, k0) is integrated exactly.
@@ -159,7 +208,8 @@ contains
             call vrmhd_section_build(mm, &
                 gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
                 ka, 1, assembly, status, scalar_degree=ks, study_pairing=study, &
-                edge_kind=kind, quad_degree=2*max(ks, op%fs%k0))
+                edge_kind=kind, quad_degree=2*max(ks, kv, op%fs%k0), &
+                velocity_degree=kv)
             call require(status == 0, 'periodic wave section, exact bilinear quadrature')
             call require(assembly%ndof == op%ndof .and. all(assembly%map == op%map), &
                 'reduced-quadrature section shares the coefficient numbering')
@@ -174,33 +224,42 @@ contains
             call vrmhd_section_build(mm, &
                 gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
                 ka, 1, reference_op, status, scalar_degree=ks, study_pairing=.true., &
-                edge_kind=kind)
+                edge_kind=kind, velocity_degree=kv)
             call require(status == 0, 'reference coefficient topology')
             mm = op%fs%mm
         end if
         n0 = op%scalar_fs%n0; nn = op%fs%nn; n1 = op%fs%sp(1)%ndof
-        a0 = 6*n0; j0 = a0 + n1
+        a0 = op%offset(7); j0 = op%offset(8)
         p%mi = 1; p%mu0 = oracle_mu0
         allocate (u(op%ndof), zero(op%ndof), r(op%ndof), unused(op%ndof), &
             source(6, op%fs%nq, mm%topology%n_triangles), mr(op%ndof), mi(op%ndof), &
-            transform(op%ndof, nb), coefficients(op%ndof), &
+            transform(op%ndof, nb), coefficients(op%ndof), phase_x(op%ndof), &
             basis(36, op%nlocal))
         allocate (assembly_source(6, assembly%fs%nq, mm%topology%n_triangles))
         u = 0; zero = 0; source = 0; transform = 0; assembly_source = 0
-        u(:n0) = 1; u(4*n0 + 1:6*n0) = 0.3_dp
-        if (distort) then
-            call meridian_lagrange_nodes(reference_op%scalar_fs, xy)
-        else
-            call meridian_lagrange_nodes(op%scalar_fs, xy)
-        end if
-        do i = 1, n0
-            group0 = nodal_group(xy(:, i), ks, length/n, repeat)
-            phase = exp(cmplx(0.0_dp, xy(1, i), dp))
-            do group = 1, 6
-                transform((group - 1)*n0 + i, (group - 1)*ns + group0) = phase
+        u(:n0) = 1; u(op%offset(5) + 1:op%offset(7)) = 0.3_dp
+        do group = 1, 6
+            order = ks
+            if (group >= 2 .and. group <= 4) order = kv
+            if (group >= 2 .and. group <= 4 .and. allocated(op%velocity_fs)) then
+                if (distort) then
+                    call meridian_lagrange_nodes(reference_op%velocity_fs, xy)
+                else
+                    call meridian_lagrange_nodes(op%velocity_fs, xy)
+                end if
+            else if (distort) then
+                call meridian_lagrange_nodes(reference_op%scalar_fs, xy)
+            else
+                call meridian_lagrange_nodes(op%scalar_fs, xy)
+            end if
+            do i = 1, size(xy, 2)
+                group0 = nodal_group(xy(:, i), order, length/n, repeat)
+                phase = exp(cmplx(0.0_dp, xy(1, i), dp))
+                transform(op%offset(group) + i, off(group) + group0) = phase
+                phase_x(op%offset(group) + i) = xy(1, i)
             end do
+            deallocate (xy)
         end do
-        deallocate (xy)
         if (distort) then
             call meridian_lagrange_nodes(reference_op%fs, xy)
         else
@@ -210,8 +269,9 @@ contains
             group0 = repeat**2*(3*ke + 2*ninterior) &
                 + nodal_group(xy(:, i), k0, length/n, repeat)
             phase = exp(cmplx(0.0_dp, xy(1, i), dp))
-            transform(a0 + nn + i, 6*ns + group0) = phase
-            transform(j0 + nn + i, 6*ns + na + group0) = phase
+            transform(a0 + nn + i, nf + group0) = phase
+            transform(j0 + nn + i, nf + na + group0) = phase
+            phase_x([a0 + nn + i, j0 + nn + i]) = xy(1, i)
         end do
         do t = 1, mm%topology%n_triangles
             do i = 1, 3
@@ -236,20 +296,22 @@ contains
                     if (group == 2) cell = 1 + modulo(nint(midpoint(1)/h), repeat) &
                         + repeat*modulo(nint(midpoint(2)/h - 0.5_dp), repeat)
                     group0 = (cell - 1)*3*ke + (group - 1)*ke + m
-                    transform(a0 + edge, 6*ns + group0) = phase
-                    transform(j0 + edge, 6*ns + na + group0) = phase
+                    transform(a0 + edge, nf + group0) = phase
+                    transform(j0 + edge, nf + na + group0) = phase
+                    phase_x([a0 + edge, j0 + edge]) = midpoint(1)
                 end do
             end do
             midpoint = sum(reference_vertices(:, mm%topology%triangles(:,t)), dim=2)/3
             do i = 3*ke + 1, op%fs%nln
                 edge = op%fs%sp(1)%dof(i, t)
-                ix = modulo((t-1)/2, n); iy = (t-1)/(2*n)
+                ix = modulo((t-1)/2, cells); iy = (t-1)/(2*cells)
                 cell = 1 + modulo(ix,repeat) + repeat*modulo(iy,repeat)
                 group0 = repeat**2*3*ke + ((cell-1)*2 + mod(t-1,2)) &
                     *ninterior + i - 3*ke
                 phase = (length/n)*exp(cmplx(0.0_dp, midpoint(1), dp))
-                transform(a0 + edge, 6*ns + group0) = phase
-                transform(j0 + edge, 6*ns + na + group0) = phase
+                transform(a0 + edge, nf + group0) = phase
+                transform(j0 + edge, nf + na + group0) = phase
+                phase_x([a0 + edge, j0 + edge]) = midpoint(1)
             end do
         end do
         call require(all(count(abs(transform) > 0, dim=2) == 1), 'every Bloch coefficient included once')
@@ -261,8 +323,8 @@ contains
         call require(status_ok(st), 'uniform-field potential mass projection')
         ! Entropy is pressure balanced; the gauge is the discrete gradient of exp(i x).
         nulls = 0
-        nulls(1:ns, 1) = 1; nulls(4*ns + 1:5*ns, 1) = -0.6_dp
-        nulls(4*ns + 1:5*ns, 2) = 1; nulls(5*ns + 1:6*ns, 2) = -1
+        nulls(1:ns, 1) = 1; nulls(te + 1:ti, 1) = -0.6_dp
+        nulls(te + 1:ti, 2) = 1; nulls(ti + 1:nf, 2) = -1
         if (distort) then
             deallocate(xy)
             call meridian_lagrange_nodes(op%fs, xy)
@@ -276,9 +338,45 @@ contains
         ! Translation invariance makes each Bloch block an invariant periodic subspace.
         call vrmhd_section_residual(op, p, u, zero, zero, zero, source, r, unused, status)
         call require(status == 0, 'uniform equilibrium residual')
-        equilibrium_defect = maxval(abs(bloch_projection(transform,cmplx(r,kind=qp))))
+        if (small) then
+            ! Over a patch the Bloch phases do not cancel; the equilibrium is
+            ! the periodic (k = 0) projection of the assembled residual.
+            allocate(periodic, mold=transform)
+            do i = 1, op%ndof
+                periodic(i, :) = transform(i, :)*exp(cmplx(0.0_dp, -phase_x(i), dp))
+            end do
+            equilibrium_defect = maxval(abs(bloch_projection(periodic,cmplx(r, &
+                kind=qp))))
+        else
+            equilibrium_defect = maxval(abs(bloch_projection(transform,cmplx(r, &
+                kind=qp))))
+        end if
         print '(a,i4,es20.12)', 'periodic equilibrium residual: ', n, equilibrium_defect
         call require(equilibrium_defect < 1.0e-12_dp, 'uniform periodic equilibrium')
+        if (harmonic_mode) then
+            call harmonic_frame(frame)
+            print '(a,9f8.4)', 'B0 / grad x / grad y / orbit wave direction: ', frame
+            call require(maxval(abs(frame(:, 1) - b0)) <= 1.0e-12_dp*norm2(b0), &
+                'equilibrium field is the oracle field')
+            call require(maxval(abs(frame(:, 2:3) - reshape([1, 0, 0, 0, 1, 0], &
+                [3, 2]))) <= 1.0e-12_dp, 'section axes are the oracle x and y')
+            call require(maxval(abs(local - [0, 0, 1])) <= 1.0e-12_dp, &
+                'invariant direction is the oracle z')
+            call vrmhd_fourier_jacobian(fop, p, u, zero, source, 0.0_dp, jac, status)
+            call require(status == 0, 'assembled harmonic linearization')
+            original_k = harmonic_block(jac, transform, kz)
+            ! A power-of-two shift isolates the time mass without cancellation.
+            call vrmhd_fourier_jacobian(fop, p, u, zero, source, mass_shift, jac, &
+                status)
+            call require(status == 0, 'assembled harmonic time mass')
+            original_m = (harmonic_block(jac, transform, kz) - original_k)/mass_shift
+            call structural_spectrum(op, assembly, p, u, source, transform, column, &
+                row_phase, original_k, original_m, ns, na, n, repeat, ks, b0, &
+                exact, frequencies, &
+                mass_condition, fourier=fop, kz=kz)
+            optical_fraction = 0
+            return
+        end if
         call vrmhd_section_jacobian(assembly, p, u, zero, assembly_source, 0.0_dp, jac, &
             status)
         call require(status == 0, 'assembled production linearization')
@@ -296,11 +394,12 @@ contains
             if (structural) then
                 call structural_spectrum(op, assembly, p, u, assembly_source, &
                     transform, column, row_phase, original_k, original_m, ns, na, n, &
-                    repeat, ka, b0, exact, frequencies, mass_condition)
+                    repeat, ks, b0, exact, frequencies, mass_condition)
                 optical_fraction = 0
                 return
             end if
         end if
+        call require(kv == ks, 'legacy pairing diagnostics use a shared fluid space')
         ! Balance magnetic units before QZ; this is an invertible pencil equivalence.
         column_scale = 1; row_scale = 1
         column_scale(6*ns + 1:6*ns + na) = sqrt(p%mu0)
@@ -431,6 +530,27 @@ contains
             measured%seconds = real(tick1-tick0,dp)/tick_rate
             result = measured
         end if
+    contains
+        subroutine harmonic_frame(axes)
+            !! Point-data B0, grad x and grad y of the first quadrature point;
+            !! local returns the orbit gradient of the constant 1.
+            real(dp), intent(out) :: axes(3, 3)
+            real(dp) :: weight0, x0(2), values(op%nlocal, 2), ones(op%nlocal)
+            integer :: l, st
+            allocate(orbit(36, op%nlocal))
+            call meridian_lagrange_nodes(op%scalar_fs, nodes)
+            call vrmhd_fourier_data(fop, 1, 1, x0, weight0, basis, orbit, st)
+            call require(st == 0, 'harmonic frame data')
+            values = 0; ones = 0
+            do l = 1, op%nlocal
+                if (op%map(l, 1) > n0) cycle
+                values(l, :) = nodes(:, op%map(l, 1)); ones(l) = 1
+            end do
+            axes(:, 1) = matmul(basis(25:27, :), u(op%map(:, 1)))
+            axes(:, 2) = matmul(basis(13:15, :), values(:, 1))
+            axes(:, 3) = matmul(basis(13:15, :), values(:, 2))
+            local = matmul(orbit(13:15, :), ones)
+        end subroutine
     end subroutine
 
     subroutine shear_null(op, p, u, source, transform, stiffness, ns, measured)
@@ -506,7 +626,10 @@ contains
     subroutine equilibrium_potential(x, a)
         real(dp), intent(in) :: x(2)
         complex(dp), intent(out) :: a(3)
-        a = cmplx([-background_field(3)*x(2)/2, background_field(1)*x(2), background_field(3)*x(1)/2], 0.0_dp, dp)
+        ! FortFEM straight-cylinder slots are (x, z, y).
+        a = cmplx([-background_field(3)*x(2)/2, &
+            background_field(1)*x(2) - background_field(2)*x(1), &
+            background_field(3)*x(1)/2], 0.0_dp, dp)
     end subroutine
 
     subroutine audit_block(stiffness, alpha, beta, lambda, exact, tolerance, &

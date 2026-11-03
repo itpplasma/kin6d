@@ -26,7 +26,7 @@ module kin6d_vrmhd_section
     end type
     public :: vrmhd_section_build, vrmhd_section_basis, vrmhd_section_residual
     public :: vrmhd_section_jacobian, vrmhd_section_vjp, vrmhd_section_mass
-    public :: vrmhd_section_trace, vrmhd_section_gauge_basis
+    public :: vrmhd_section_trace, vrmhd_section_gauge_basis, vrmhd_section_test
     !> First-kind (N1_k) and second-kind (N2_k, complete P_k) edge families.
     integer, parameter, public :: VRMHD_EDGE_FIRST = 1, VRMHD_EDGE_SECOND = 2
 contains
@@ -300,6 +300,14 @@ contains
             call vrmhd_curl_screw(x(1), x(2), op%symmetry%k, u1, u2, c, a, ax, ay, &
                 v(1), v(2), v(3), b(1), b(2), b(3))
         end if
+    end subroutine
+
+    ! Test-function data of one local basis column for equation row.
+    pure subroutine vrmhd_section_test(row, basis, test)
+        integer, intent(in) :: row
+        real(dp), intent(in) :: basis(36)
+        real(dp), intent(out) :: test(19)
+        call test_data(row, basis, test)
     end subroutine
 
     pure subroutine test_data(row, basis, test)
