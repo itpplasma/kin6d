@@ -11,7 +11,7 @@ program test_vrmhd_fourier
     type(mesh_2d_t) :: mesh
     type(meridian_mesh_t) :: mm
     type(vrmhd_section_t) :: op
-    real(dp), allocatable :: xy(:,:), shares(:,:), captured(:)
+    real(dp), allocatable :: xy(:,:), xa(:,:), shares(:,:), captured(:)
     complex(dp), allocatable :: transform(:,:)
     complex(dp) :: modes(2,2)
     real(dp) :: length, expected(4), capture
@@ -24,12 +24,13 @@ program test_vrmhd_fourier
         gs_symmetry_t(GS_TRANSLATION,GS_CHART_CARTESIAN,0.0_dp),2,1,op,status)
     call require(status == 0, 'Fourier oracle section')
     call meridian_lagrange_nodes(op%scalar_fs,xy)
+    call meridian_lagrange_nodes(op%fs,xa)
     n0 = op%scalar_fs%n0; a0 = 6*n0; nn = op%fs%nn
     allocate(transform(op%ndof,2))
     transform = 0; modes = 0
     modes(1,1) = 1; modes(2,2) = 1
     transform(4*n0+1:5*n0,1) = xy(1,:)
-    transform(a0+nn+1:a0+nn+n0,2) = xy(1,:)**2/2
+    transform(a0+nn+1:a0+nn+op%fs%n0,2) = xa(1,:)**2/2
     ! p=x and A_z=x^2/2 give p=x and B_y=-x exactly in these spaces.
     ! Integral x exp(-i m x) / (2 pi) = i/m for nonzero integer m.
     expected = [0.0_dp,0.0_dp,0.1_dp,0.9_dp]

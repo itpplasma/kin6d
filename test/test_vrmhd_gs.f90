@@ -6,7 +6,7 @@ program test_vrmhd_gs
         gs_element_jet, gs_linear_response
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
-        vrmhd_section_basis
+        vrmhd_section_basis, vrmhd_section_gauge_basis
     use kin6d_vrmhd_stationary, only: vrmhd_stationary_t, vrmhd_stationary_build, &
         vrmhd_stationary_residual
     use vrmhd_wall_oracle, only: current_wall_dofs
@@ -190,6 +190,7 @@ contains
         integer, allocatable :: rows(:), cols(:), index(:)
         real(dp), allocatable :: vals(:), rhs(:), u(:), load(:), wall(:), r(:)
         real(dp), allocatable :: zero(:), unused(:), basis(:, :), metric(:, :)
+        real(dp), allocatable :: gauge_value(:), gauge_gradient(:, :)
         real(dp), allocatable :: source(:, :, :), js(:, :, :), h(:), dual(:), recovered(:)
         real(dp) :: x(2), weight, psi, grad(2), hessian(2, 2), values(38), exact(38)
         real(dp) :: field(36), errors(3), parts(7), voltage, gs_error
@@ -206,13 +207,14 @@ contains
         nt = mm%topology%n_triangles; nl = op%nlocal
         nc = 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof
         allocate (basis(36, nl), metric(36, nl), local(nl, nl), rhs(op%ndof), &
-            rows(nt*(nl**2 + op%fs%nq*op%scalar_fs%nl0**2)), &
-            cols(nt*(nl**2 + op%fs%nq*op%scalar_fs%nl0**2)), &
-            vals(nt*(nl**2 + op%fs%nq*op%scalar_fs%nl0**2)), u(steady%ndof), &
+            rows(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), &
+            cols(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), &
+            vals(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), u(steady%ndof), &
             load(op%ndof), wall(op%fs%sp(1)%ndof), r(steady%ndof), &
             zero(steady%ndof), unused(steady%ndof), source(6, op%fs%nq, nt), &
-            js(3, op%fs%nq, nt), h(op%fs%sp(1)%ndof), index(op%scalar_fs%n0), &
-            recovered(op%ndof), dual(steady%ndof))
+            js(3, op%fs%nq, nt), h(op%fs%sp(1)%ndof), index(op%fs%n0), &
+            recovered(op%ndof), dual(steady%ndof), gauge_value(op%fs%nl0), &
+            gauge_gradient(3, op%fs%nl0))
         rhs = 0; pos = 0; u = 0; source = 0; js = 0; gs_error = 0
         do t = 1, nt
             local = 0
@@ -317,22 +319,26 @@ contains
             end do
         end do
         ng = 0; index = 0
-        do i = 1, op%scalar_fs%n0
-            if (op%scalar_fs%sp(0)%bnd(i)) cycle
+        do i = 1, op%fs%n0
+            if (op%fs%sp(0)%bnd(i)) cycle
             ng = ng + 1; index(i) = op%ndof + ng
         end do
         do t = 1, nt
             do q = 1, op%fs%nq
                 call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                 call require(status == 0, 'GS gauge Riesz basis')
-                do j = 1, op%scalar_fs%nl0
-                    col = index(op%scalar_fs%sp(0)%dof(j, t))
+                call vrmhd_section_gauge_basis(op, t, q, gauge_value, &
+                    gauge_gradient, status)
+                call require(status == 0, 'GS multiplier Riesz basis')
+                do j = 1, op%fs%nl0
+                    col = index(op%fs%sp(0)%dof(j, t))
                     if (col == 0) cycle
-                    do i = 1, op%scalar_fs%nl0
-                        row = index(op%scalar_fs%sp(0)%dof(i, t))
+                    do i = 1, op%fs%nl0
+                        row = index(op%fs%sp(0)%dof(i, t))
                         if (row == 0) cycle
                         pos = pos + 1; rows(pos) = row; cols(pos) = col
-                        vals(pos) = weight*dot_product(basis(:, i), basis(:, j))
+                        vals(pos) = weight*(gauge_value(i)*gauge_value(j) &
+                            + dot_product(gauge_gradient(:, i), gauge_gradient(:, j)))
                     end do
                 end do
             end do

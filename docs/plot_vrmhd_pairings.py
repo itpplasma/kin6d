@@ -19,15 +19,25 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("vrmhd-pairings.png"))
     args = parser.parse_args()
     with args.data.open() as stream:
-        rows = list(csv.DictReader(stream))
+        table = list(csv.DictReader(stream))
+    # The heat maps compare Lagrange pairings on first-kind edges; the
+    # second-kind rows are equal-degree comparisons listed in the document.
+    rows = [r for r in table if r["edge_kind"] == "first"]
+    second = [r for r in table if r["edge_kind"] == "second"]
     expected = {(mesh, n, ks, ka) for mesh in ("structured", "perturbed")
                 for n in (4, 8) for ks in range(1, 5) for ka in range(1, 5)
                 if ks >= ka - 1}
     observed = {(r["mesh"], int(r["cells_per_period"]), int(r["ks"]), int(r["ka"]))
                 for r in rows}
     if observed != expected or len(rows) != len(expected):
-        raise ValueError("The table must contain all 52 distinct study cases")
-    for r in rows:
+        raise ValueError("The table must contain all 52 distinct first-kind cases")
+    expected = {(mesh, n, k, k) for mesh in ("structured", "perturbed")
+                for n in (4, 8) for k in range(1, 4)}
+    observed = {(r["mesh"], int(r["cells_per_period"]), int(r["ks"]), int(r["ka"]))
+                for r in second}
+    if observed != expected or len(second) != len(expected):
+        raise ValueError("The table must contain all 12 second-kind cases")
+    for r in table:
         if int(r["unmatched"]) != sum(int(r[c]) for c in ("magnetic", "velocity", "mixed")):
             raise ValueError("Energy classifications do not sum to the raw audit")
     maximum = max(int(r["unmatched"]) for r in rows)
@@ -63,7 +73,8 @@ def main():
             elif column == 1:
                 fig.colorbar(artist, ax=axes[row_index, :2],
                              label="Unmatched eigenvalues per Bloch block [count]")
-    fig.suptitle("Uniform ideal MHD pairing study at wave vector (1, 0, 0) m⁻¹", fontsize=15)
+    fig.suptitle("Uniform ideal MHD pairing study, first-kind edges, "
+                 "wave vector (1, 0, 0) m⁻¹", fontsize=15)
     fig.supxlabel("Structured block: one cell. Perturbed block: four cells. "
                   "Fixed null allowance: three per block.\n"
                   "Gray cells: excluded degree pairs. "
@@ -91,7 +102,8 @@ def main():
                    ylabel=r"Scalar / velocity degree $k_s$",
                    title=f"{mesh.capitalize()}: {key.removeprefix('static_')} nulls")
     fig.colorbar(artist, ax=axes, label="Energy-bearing static nulls per Bloch block [count]")
-    fig.suptitle("Energy split of the static coupling nullspace, 8 cells per period")
+    fig.suptitle("Energy split of the static coupling nullspace, first-kind edges, "
+                 "8 cells per period")
     fig.supxlabel("SVD quotient by the three analytic nulls; energy fraction ≥ 90%.\n"
                   "Structured block: one cell. Perturbed block: four cells.\n"
                   "Gray cells: excluded degree pairs. "

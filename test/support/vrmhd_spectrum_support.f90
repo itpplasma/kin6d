@@ -4,7 +4,7 @@ module vrmhd_spectrum_support
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian, &
-        vrmhd_section_mass
+        vrmhd_section_mass, VRMHD_EDGE_FIRST, VRMHD_EDGE_SECOND
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
     use vrmhd_structural_spectrum, only: structural_spectrum, bloch_projection
     use fortfem_mesh_2d, only: mesh_2d_t
@@ -14,7 +14,7 @@ module vrmhd_spectrum_support
         fortsparse_status_t, status_ok
     implicit none
     private
-    public :: spectrum, require, spectrum_result_t
+    public :: spectrum, require, spectrum_result_t, edge_cell_dofs, block_dofs
     type :: spectrum_result_t
         integer :: finite = 0, zeros = 0, positive = 0, unmatched = 0
         integer :: magnetic = 0, velocity = 0, mixed = 0, shear_nulls = 0
@@ -35,8 +35,26 @@ contains
         error stop 'RM2 linear spectrum gate'
     end subroutine
 
+    pure integer function edge_cell_dofs(ka, edge_kind) result(count)
+        !! A coefficients per periodic cell: three edges, two triangles and
+        !! the orbit Lagrange nodes of the magnetic complex.
+        integer, intent(in) :: ka, edge_kind
+        if (edge_kind == VRMHD_EDGE_FIRST) then
+            count = 3*ka + 2*ka*(ka - 1) + ka**2
+        else
+            count = 3*(ka + 1) + 2*(ka**2 - 1) + (ka + 1)**2
+        end if
+    end function
+
+    pure integer function block_dofs(ks, ka, edge_kind, repeat) result(count)
+        !! Bloch block: six scalar fields plus A and J.
+        integer, intent(in) :: ks, ka, edge_kind, repeat
+        count = repeat**2*(6*ks**2 + 2*edge_cell_dofs(ka, edge_kind))
+    end function
+
     subroutine spectrum(n, ka, ks, nb, b0, exact, audit, frequencies, &
-            optical_fraction, unmatched, result, perturbed, structural, mass_condition)
+            optical_fraction, unmatched, result, perturbed, structural, mass_condition, &
+            edge_kind)
         integer, intent(in) :: n, ka, ks, nb
         real(dp), intent(in) :: b0(3), exact(3)
         logical, intent(in) :: audit
@@ -46,6 +64,7 @@ contains
         type(spectrum_result_t), intent(out), optional :: result
         logical, intent(in), optional :: perturbed
         logical, intent(in), optional :: structural
+        integer, intent(in), optional :: edge_kind
         type(spectrum_result_t) :: measured
         type(vrmhd_section_t) :: reference_op
         integer :: repeat, cell, ix, iy, tick0, tick1, tick_rate
@@ -77,6 +96,7 @@ contains
         real(dp) :: magnetic_energy(3), optical_energy(3)
         integer :: n0, nn, n1, a0, j0, t, i, j, q, row, entry, edge, group
         integer :: status, info, finite_count, zero_count, wave_count, m, idx, group0
+        integer :: kind, ke, ninterior, k0
         interface
             subroutine zggev(jobvl, jobvr, n, a, lda, b, ldb, alpha, beta, &
                     vl, ldvl, vr, ldvr, work, lwork, rwork, info)
@@ -96,7 +116,9 @@ contains
         if (present(perturbed)) distort = perturbed
         repeat = 1
         if (distort) repeat = 2
-        ns = (repeat*ks)**2; na = repeat**2*(3*ka**2 + ka)
+        kind = VRMHD_EDGE_SECOND
+        if (present(edge_kind)) kind = edge_kind
+        ns = (repeat*ks)**2; na = repeat**2*edge_cell_dofs(ka, kind)
         call require(nb == 6*ns + 2*na, 'complete study block size')
         length = 2*acos(-1.0_dp)
         unmatched = 0
@@ -120,15 +142,17 @@ contains
         call require(status == 0, 'periodic wave mesh')
         call vrmhd_section_build(mm, &
             gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
-            ka, 1, op, status, scalar_degree=ks, study_pairing=study)
+            ka, 1, op, status, scalar_degree=ks, study_pairing=study, edge_kind=kind)
         call require(status == 0, 'periodic wave section')
+        ke = op%fs%ke; ninterior = op%fs%nln - 3*ke; k0 = op%fs%k0
         if (distort) then
             mesh%vertices = reference_vertices
             call meridian_mesh_straight(mesh, 1, mm, status)
             call require(status == 0, 'reference mesh for periodic identification')
             call vrmhd_section_build(mm, &
                 gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
-                ka, 1, reference_op, status, scalar_degree=ks, study_pairing=.true.)
+                ka, 1, reference_op, status, scalar_degree=ks, study_pairing=.true., &
+                edge_kind=kind)
             call require(status == 0, 'reference coefficient topology')
             mm = op%fs%mm
         end if
@@ -160,8 +184,8 @@ contains
             call meridian_lagrange_nodes(op%fs, xy)
         end if
         do i = 1, op%fs%n0
-            group0 = repeat**2*(3*ka + 2*ka*(ka - 1)) &
-                + nodal_group(xy(:, i), ka, length/n, repeat)
+            group0 = repeat**2*(3*ke + 2*ninterior) &
+                + nodal_group(xy(:, i), k0, length/n, repeat)
             phase = exp(cmplx(0.0_dp, xy(1, i), dp))
             transform(a0 + nn + i, 6*ns + group0) = phase
             transform(j0 + nn + i, 6*ns + na + group0) = phase
@@ -177,8 +201,8 @@ contains
                 if (abs(tangent(1)) < epsilon(length)) group = 2
                 direction = sign(1.0_dp, tangent(1))
                 if (group == 2) direction = sign(1.0_dp, tangent(2))
-                do m = 1, ka
-                    idx = (i - 1)*ka + m
+                do m = 1, ke
+                    idx = (i - 1)*ke + m
                     edge = op%fs%sp(1)%dof(idx, t)
                     phase = real(op%fs%sp(1)%sgn(idx, t), dp)*direction**m &
                         *norm2(tangent)*exp(cmplx(0.0_dp, midpoint(1), dp))
@@ -188,18 +212,18 @@ contains
                         + repeat*modulo(nint(midpoint(2)/h), repeat)
                     if (group == 2) cell = 1 + modulo(nint(midpoint(1)/h), repeat) &
                         + repeat*modulo(nint(midpoint(2)/h - 0.5_dp), repeat)
-                    group0 = (cell - 1)*3*ka + (group - 1)*ka + m
+                    group0 = (cell - 1)*3*ke + (group - 1)*ke + m
                     transform(a0 + edge, 6*ns + group0) = phase
                     transform(j0 + edge, 6*ns + na + group0) = phase
                 end do
             end do
             midpoint = sum(reference_vertices(:, mm%topology%triangles(:,t)), dim=2)/3
-            do i = 3*ka + 1, op%fs%nln
+            do i = 3*ke + 1, op%fs%nln
                 edge = op%fs%sp(1)%dof(i, t)
                 ix = modulo((t-1)/2, n); iy = (t-1)/(2*n)
                 cell = 1 + modulo(ix,repeat) + repeat*modulo(iy,repeat)
-                group0 = repeat**2*3*ka + ((cell-1)*2 + mod(t-1,2)) &
-                    *ka*(ka-1) + i - 3*ka
+                group0 = repeat**2*3*ke + ((cell-1)*2 + mod(t-1,2)) &
+                    *ninterior + i - 3*ke
                 phase = (length/n)*exp(cmplx(0.0_dp, midpoint(1), dp))
                 transform(a0 + edge, 6*ns + group0) = phase
                 transform(j0 + edge, 6*ns + na + group0) = phase

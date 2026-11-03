@@ -169,7 +169,7 @@ contains
         print '(a,es20.12)', 'inverse-free ||L_vJ + L_Av^*||_F / ||L_vJ||_F: ', coupling_defect
         call inverse_free_structure(l,mass(:d,:d),e,scalar_gram,ns,na, &
             coupling_defect)
-        nz = 3*ns; ne = d-nz
+        nz = 2*ns + (repeat*op%fs%k0)**2; ne = d-nz
         call energy_quotient(op,transform,e,ns,na,repeat,degree,q,energies)
         f_norm = real(sqrt(sum(abs(cmplx(f,kind=qp))**2)),dp)
         maximum_defect = 0
@@ -216,7 +216,11 @@ contains
         print '(a,f12.6)', 'energetic static modes per cell: ', &
             real(static_count,dp)/repeat**2
         print '(a,es20.12)', 'maximum ||L x|| / (||L||_F ||x||): ', maximum_defect
-        call check(static_count == degree*repeat**2, 'static count agrees with pairing study')
+        ! Per cell, A modulo gradients has na/repeat**2 - k0**2 directions; the
+        ! Lorentz force tests them only with the 2 degree**2 velocity
+        ! components normal to B0, so the rest is magnetically static.
+        call check(static_count == na - (repeat*op%fs%k0)**2 - 2*ns, &
+            'static count agrees with the magnetic quotient minus Lorentz rank')
         diffusivity = 1.0e-3_dp
         dissipative = p
         dissipative%eta0 = p%mu0*diffusivity*0.3_dp**1.5_dp
@@ -405,21 +409,26 @@ contains
         integer, intent(in) :: ns, na, repeat, degree
         complex(dp), intent(out) :: q(:, :)
         real(dp), intent(out) :: energies(:)
-        complex(dp) :: z(size(e,1),3*ns), tau(3*ns), work(32*size(e,1))
-        complex(dp) :: quotient(size(e,1)-3*ns,size(e,1)-3*ns)
-        complex(dp) :: factor(size(quotient,1),size(quotient,2))
+        complex(dp), allocatable :: z(:,:), tau(:), quotient(:,:), factor(:,:)
+        complex(dp) :: work(32*size(e,1))
         complex(dp) :: gradient(op%fs%sp(1)%ndof), scalar(op%fs%n0)
         real(dp) :: rw(8*size(e,1)), defect, maximum_defect, norm_e
-        integer :: d, nz, ne, a0, j0, i, j, info
-        d = size(e,1); nz = 3*ns; ne = d-nz
+        integer :: d, nz, ne, ng, a0, j0, i, j, info, orbit
+        d = size(e,1); ng = (repeat*op%fs%k0)**2; nz = 2*ns+ng; ne = d-nz
+        allocate(z(d,nz), tau(nz), quotient(ne,ne), factor(ne,ne))
         a0 = 6*op%scalar_fs%n0; j0 = a0+op%fs%sp(1)%ndof
         call check(ns == (repeat*degree)**2, 'analytic Bloch scalar dimension')
-        call check(op%fs%n0 == op%scalar_fs%n0, 'equal-degree gauge scalar space')
+        ! The gauge scalars are the edge complex's Lagrange space; its Bloch
+        ! basis is the one of the orbit components, after the edge columns.
+        orbit = 6*ns + na - ng
         z = 0
         do j = 1, ns
             z(j,j) = 1; z(4*ns+j,j) = -0.6_dp
             z(4*ns+j,ns+j) = 1; z(5*ns+j,ns+j) = -1
-            scalar = transform(:op%fs%n0,j)
+        end do
+        do j = 1, ng
+            scalar = transform(a0+op%fs%nn+1:j0,orbit+j)
+            call check(any(abs(scalar) > 0), 'gauge Bloch scalar column')
             gradient = cmplx(csc_matvec(op%fs%grad%a,real(scalar,dp)), &
                 csc_matvec(op%fs%grad%a,aimag(scalar)),dp)
             do i = 1, na
@@ -430,7 +439,7 @@ contains
             end do
         end do
         print '(a,4i6)', 'analytic energy nulls: entropy / gauge / total / cells: ', &
-            2*ns,ns,nz,repeat**2
+            2*ns,ng,nz,repeat**2
         norm_e = real(sqrt(sum(abs(cmplx(e,kind=qp))**2)),dp)
         maximum_defect = 0
         do j = 1, nz

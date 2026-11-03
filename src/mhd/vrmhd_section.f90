@@ -23,10 +23,12 @@ module kin6d_vrmhd_section
     end type
     public :: vrmhd_section_build, vrmhd_section_basis, vrmhd_section_residual
     public :: vrmhd_section_jacobian, vrmhd_section_vjp, vrmhd_section_mass
-    public :: vrmhd_section_trace
+    public :: vrmhd_section_trace, vrmhd_section_gauge_basis
+    !> First-kind (N1_k) and second-kind (N2_k, complete P_k) edge families.
+    integer, parameter, public :: VRMHD_EDGE_FIRST = 1, VRMHD_EDGE_SECOND = 2
 contains
     subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status, &
-            scalar_degree, study_pairing)
+            scalar_degree, study_pairing, edge_kind)
         type(meridian_mesh_t), intent(in) :: mm
         type(gs_symmetry_t), intent(in) :: symmetry
         integer, intent(in) :: degree, harmonic_count
@@ -34,14 +36,17 @@ contains
         integer, intent(out) :: status
         logical, intent(in), optional :: study_pairing
         logical :: study
-        integer, intent(in), optional :: scalar_degree
-        integer :: i, t, j, b, n0, n1, l0, l1, offset, lo, ks, qdegree
+        integer, intent(in), optional :: scalar_degree, edge_kind
+        integer :: i, t, j, b, n0, n1, l0, l1, offset, lo, ks, qdegree, kind
         status = 1
         if (.not. symmetry%valid() .or. harmonic_count /= 1) return
         ks = degree
         if (present(scalar_degree)) ks = scalar_degree
         study = .false.
         if (present(study_pairing)) study = study_pairing
+        kind = VRMHD_EDGE_SECOND
+        if (present(edge_kind)) kind = edge_kind
+        if (kind /= VRMHD_EDGE_FIRST .and. kind /= VRMHD_EDGE_SECOND) return
         if (degree < 1 .or. ks < 1) return
         if (study) then
             if (ks < degree - 1) return
@@ -52,13 +57,13 @@ contains
         qdegree = 4*max(ks, degree) + 2*mm%geo_order + 2
         if (symmetry%kind == GS_ROTATION) then
             call meridian_feec_build(mm, degree, op%fs, status, &
-                quad_degree=qdegree)
+                quad_degree=qdegree, edge_kind=kind)
             if (status /= 0) return
             call meridian_feec_build(mm, ks, op%scalar_fs, status, &
                 quad_degree=qdegree)
         else
             call meridian_feec_build(mm, degree, op%fs, status, &
-                quad_degree=qdegree, cylinder_r0=1.0_dp)
+                quad_degree=qdegree, cylinder_r0=1.0_dp, edge_kind=kind)
             if (status /= 0) return
             call meridian_feec_build(mm, ks, op%scalar_fs, status, &
                 quad_degree=qdegree, cylinder_r0=1.0_dp)
@@ -162,6 +167,22 @@ contains
                     if (j == 2) basis(34:36, local) = bv
                 end do
             end do
+        end do
+    end subroutine
+
+    subroutine vrmhd_section_gauge_basis(op, t, q, val, grad, status)
+        !! Values and Cartesian gradients of the magnetic complex's Lagrange
+        !! space, whose gradients are the curl-free subspace of the A/J space.
+        type(vrmhd_section_t), intent(in) :: op
+        integer, intent(in) :: t, q
+        real(dp), intent(out) :: val(op%fs%nl0), grad(3, op%fs%nl0)
+        integer, intent(out) :: status
+        real(dp) :: x(2), weight, planar(2, op%fs%nl0)
+        integer :: i
+        call meridian_qgrad(op%fs, t, q, x, weight, val, planar, status)
+        if (status /= 0) return
+        do i = 1, op%fs%nl0
+            call scalar_gradient(op, x, planar(:, i), grad(:, i))
         end do
     end subroutine
 

@@ -198,7 +198,7 @@ target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
 # Steklov form #144, exact FEEC tables, split stretched BEM fans #145).
-set(KIN6D_FORTFEM_REVISION "489b76f8ce4c039851d7c151c91b654baa850f0b")
+set(KIN6D_FORTFEM_REVISION "22d4fd87fa09402234318935a8bbfa8aecd3ddca")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1857,6 +1857,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_second_kind.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_mapped_oscillation_products.f90

@@ -1,6 +1,7 @@
 program test_vrmhd_spectra
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use vrmhd_spectrum_support, only: spectrum, require
+    use vrmhd_spectrum_support, only: spectrum, require, block_dofs
+    use kin6d_vrmhd_section, only: VRMHD_EDGE_SECOND
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
     implicit none
     integer, parameter :: max_levels = 4
@@ -39,11 +40,12 @@ program test_vrmhd_spectra
             print '(a,2i4)', 'edge order / scalar degree: ', ka, ks
             do level = 1, levels
                 call spectrum(cells(level), ka, ks, &
-                    repeat**2*(6*ks**2 + 2*(3*ka**2 + ka)), &
+                    block_dofs(ks, ka, VRMHD_EDGE_SECOND, repeat), &
                     b0, exact, .true., &
                     frequencies(:, level), optical(level), unmatched, &
                     perturbed=mesh == 2, structural=.true., &
-                    mass_condition=mass_condition(level))
+                    mass_condition=mass_condition(level), &
+                    edge_kind=VRMHD_EDGE_SECOND)
                 errors(:, level) = abs(frequencies(:, level)/exact - 1)
                 print '(a,i4,3es20.12)', 'wave frequencies [1/s], cells per period: ', &
                     cells(level), frequencies(:, level)

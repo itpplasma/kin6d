@@ -90,6 +90,7 @@ contains
         integer, allocatable :: free_index(:), gauge_index(:), current_index(:)
         real(dp) :: x(2), weight, dummy_u(1, 1), value, mode_norms(8), defect, scale
         real(dp) :: raw_condition
+        real(dp), allocatable :: gauge_value(:), gauge_gradient(:, :)
         integer :: i, j, t, q, nf, ng, row, col, status, entry, info, lwork
         integer :: group, it, nj, current_start, nh
         interface
@@ -126,8 +127,9 @@ contains
             end subroutine
         end interface
         call prepare(kind, n, op, steady, p, u, load)
+        allocate (gauge_value(op%fs%nl0), gauge_gradient(3, op%fs%nl0))
         allocate (source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
-            free_index(steady%ndof), gauge_index(op%scalar_fs%n0), &
+            free_index(steady%ndof), gauge_index(op%fs%n0), &
             current_index(steady%ndof))
         source = 0; free_index = 0; gauge_index = 0; current_index = 0
         nf = 0; ng = 0; nj = 0
@@ -160,8 +162,8 @@ contains
             nf = nf + 1
             free_index(i) = nf
         end do
-        do i = 1, op%scalar_fs%n0
-            if (op%scalar_fs%sp(0)%bnd(i)) cycle
+        do i = 1, op%fs%n0
+            if (op%fs%sp(0)%bnd(i)) cycle
             ng = ng + 1
             gauge_index(i) = nf + ng
             free_index(op%ndof + ng) = nf + ng
@@ -269,15 +271,19 @@ contains
                 do q = 1, op%fs%nq
                     call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                     call require(status == 0, 'gauge physical Riesz basis')
+                    call vrmhd_section_gauge_basis(op, t, q, gauge_value, &
+                        gauge_gradient, status)
+                    call require(status == 0, 'multiplier physical Riesz basis')
                     block = block + weight*matmul(transpose(basis), basis)
-                        do j = 1, op%scalar_fs%nl0
-                            col = gauge_index(op%scalar_fs%sp(0)%dof(j, t))
+                        do j = 1, op%fs%nl0
+                            col = gauge_index(op%fs%sp(0)%dof(j, t))
                             if (col == 0) cycle
-                            do i = 1, op%scalar_fs%nl0
-                                row = gauge_index(op%scalar_fs%sp(0)%dof(i, t))
+                            do i = 1, op%fs%nl0
+                                row = gauge_index(op%fs%sp(0)%dof(i, t))
                                 if (row == 0) cycle
-                                value = weight*(basis(1, i)*basis(1, j) &
-                                    + dot_product(basis(13:15, i), basis(13:15, j)))
+                                value = weight*(gauge_value(i)*gauge_value(j) &
+                                    + dot_product(gauge_gradient(:, i), &
+                                    gauge_gradient(:, j)))
                                 trial(row, col) = trial(row, col) + value
                             end do
                         end do

@@ -44,55 +44,75 @@ applied. Integration is per unit orbit parameter; no orbit period is included.
 
 ## Polynomial degrees and quadrature
 
-`vrmhd_section_build` takes the magnetic edge order `degree = k_A` and
-optional `scalar_degree = k_s`, which defaults to `k_A`. Ordinary construction
-admits equal degrees only. Unequal pairs require `study_pairing=.true.` and
-`k_s >= k_A-1`; they remain available for comparison, not as the default.
-The [pairing study](#pairing-study-for-the-ideal-uniform-equilibrium) found
-`k` energy-bearing static modes per cell for equal degree `k`, fewer than for
-any tested unequal pair. Static modes are permitted only with the structural
-and dissipative checks below; their presence alone does not establish spectral
-pollution or stability of the full system.
+`vrmhd_section_build` takes the magnetic edge order `degree = k_A`, optional
+`scalar_degree = k_s`, which defaults to `k_A`, and optional `edge_kind`,
+which selects the edge family of A and J. Ordinary construction admits equal
+degrees only. Unequal pairs require `study_pairing=.true.` and `k_s >= k_A-1`;
+they remain available for comparison, not as the default. Static modes are
+permitted only with the structural and dissipative checks below; their
+presence alone does not establish spectral pollution or stability of the full
+system.
 
 [FortFEM](https://github.com/lazy-fortran/fortfem)'s
-`fortfem_meridian_feec_n` uses continuous Lagrange `P_k` for its scalar
-space, first-kind Nedelec order `k` for section one-forms, and discontinuous
-`P_{k-1}` for their section curl. The edge space contains `[P_{k-1}]^2`
-and the homogeneous degree-`k` rotational enrichment; it has `k(k+2)` local
-coefficients. The face space contains the rotated edge space (Raviart–Thomas
-degree `k-1` in the standalone basis API) and discontinuous `P_{k-1}` for
-the orbit component. In particular, FortFEM's complex order `1` means the
-lowest-order Nedelec/Raviart–Thomas pair, rather than a section curl of degree
-one.
+`fortfem_meridian_feec_n` provides two magnetic complexes of order `k`.
+The default `edge_kind=VRMHD_EDGE_SECOND` uses second-kind Nedelec `N2_k`
+for section one-forms. It contains complete `[P_k]^2`, with `k+1` moments
+per edge and `(k+1)(k+2)` local coefficients. Its Lagrange space is
+continuous `P_{k+1}`, whose gradients form the curl-free subspace of
+`N2_k`. The section curl is discontinuous `P_{k-1}`, and the face space is the
+rotated edge space (Brezzi-Douglas-Marini `BDM_k`) with discontinuous
+`P_{k-1}` for the orbit component. `edge_kind=VRMHD_EDGE_FIRST` keeps the
+first-kind complex for the study tool: Lagrange `P_k`, first-kind Nedelec
+`N1_k` containing `[P_{k-1}]^2` and the homogeneous degree-`k` rotational
+enrichment, with `k` moments per edge and `k(k+2)` local coefficients, and
+Raviart-Thomas degree `k-1` for the face space. In particular, FortFEM's
+complex order `1` with first-kind edges means the lowest-order
+Nedelec/Raviart-Thomas pair.
 
-One such complex cannot provide both requested orders. `op%fs` is the order
-`k_A` magnetic complex for A and J, including their orbit Lagrange `P_{k_A}`
-component; `op%scalar_fs` supplies continuous `P_{k_s}` for density, each
-velocity component, both temperatures and the Coulomb multiplier. Both
-complexes use the same mesh and quadrature rule. Basis values and gradients
-of the magnetic orbit component always come from the magnetic complex.
-FortFEM supports complex orders through eight, so this construction admits
-`1 <= k_A = k_s <= 8` ordinarily, with the stated study exception.
+The edge family is the one choice in which these complexes differ for this
+assembly. Let `P_h` be the L2 projection into the A space. Eliminating the
+current and the induction equation from the uniform-field linearization gives
+the magnetic form `(curl P_h(v x v_A), curl P_h(w x v_A))`, where
+`v_A=B0/sqrt(mu0 rho0)` is the Alfven velocity and `v, w` are trial and test
+velocities. Because `N1_k` contains only complete `P_{k-1}`,
+`||u - P_h u|| = O(h^k)`, and the inverse estimate then allows a curl error
+of `O(h^(k-1))` on general meshes, one order below interpolation. `N2_k`
+contains complete `P_k`, so `||u - P_h u|| = O(h^(k+1))` and the same
+argument gives curl error `O(h^k)`. The perturbed-mesh spectral results below
+test this argument; it is not a proof of the spectral order.
+
+One complex cannot provide the scalar and magnetic orders separately.
+`op%fs` is the order-`k_A` magnetic complex for A and J, including their
+orbit component in its Lagrange space (`P_{k_A+1}` for second kind,
+`P_{k_A}` for first kind), and it supplies the Coulomb multiplier in the same
+Lagrange space. `op%scalar_fs` supplies continuous `P_{k_s}` for density,
+each velocity component and both temperatures. Both complexes use the same
+mesh and quadrature rule. Basis values and gradients of the magnetic orbit
+component always come from the magnetic complex. FortFEM's tabulated
+first-kind complexes reach order eight. Its second-kind reference element is
+assembled numerically from monomial candidates; orders one to three are
+exercised here.
 
 For `p=max(k_s,k_A)` and geometry degree `g`, both complexes request
-triangle quadrature degree `4 p + 2 g + 2`. On affine translation elements,
-the largest polynomial product is the skew momentum advection term
-`rho (grad v) v.w`, of degree `4 k_s-1`; the other polynomial mass and
-magnetic products have no higher degree for the admitted pairs. The extra
+triangle quadrature degree `4 p + 2 g + 2`. On affine translation elements
+the polynomial products have degree at most `max(4 k_s-1, 3 k_A+1)`:
+`4 k_s-1` from the skew momentum advection `rho (grad v) v.w` and `3 k_A+1`
+from the second-kind induction and Lorentz products, whose current and orbit
+potential have degree `k_A+1`. Both are below `4 p + 2`. The extra
 quadrature degree oversamples geometry. Rotation/screw metric factors and
 state-dependent transport closures are nonpolynomial, so no finite polynomial
 rule makes those integrals exact. Energy exchange still uses identical
 quadrature points and weights on both sides of each pairing. The generated
 pointwise leaves take physical values, gradients and curls; their interface
-does not depend on finite-element degree or coefficient layout.
+does not depend on finite-element degree, edge family or coefficient layout.
 
 For smooth solutions, the target approximation orders are `k_s` for density,
 each velocity component and both temperatures in H1, `k_A` for A in H(curl),
 and `k_A` for recovered J in L2. H1 and H(curl) include the field value and
-its first gradient or curl, respectively. The spectral frequency targets are
-`2 k_A`, hence two and four for equal degrees one and two. These remain
-targets until the complete spectral ladder passes. The zero continuous
-Coulomb multiplier has no nonzero reference error from which to infer a rate.
+its first gradient or curl, respectively. With second-kind edges, the A value
+alone converges at `k_A+1`. The spectral frequency targets are `2 k_A`, hence
+two and four for equal degrees one and two. The zero continuous Coulomb
+multiplier has no nonzero reference error from which to infer a rate.
 
 ## Operator contract
 
@@ -126,7 +146,10 @@ power of the prescribed affine current constraint and checked literature
 locations are in [the weak-form ledger](vrmhd-weak-form.md#conducting-wall-current-and-its-power).
 
 `vrmhd_stationary_build` uses an H1 scalar multiplier with zero boundary
-trace and the matrix `G_ij = integral W_i.grad(lambda_j) dx`. The stationary
+trace in the Lagrange space of the magnetic complex, `P_{k_A+1}` for
+second-kind edges, so that its gradients span the whole curl-free part of the
+A space. `vrmhd_section_gauge_basis` returns these values and Cartesian
+gradients. The matrix is `G_ij = integral W_i.grad(lambda_j) dx`. The stationary
 residual adds `G lambda` to induction and `G^T A` as the gauge equation.
 This is the weak Coulomb condition `div A = 0`. FortFEM provides
 lowest-order graph tree–cotree metadata; the mixed form also covers the
@@ -200,14 +223,15 @@ closedness for screw symmetry.
 
 ## Verification limits
 
-The equal-degree default passes the energy ledger and the earlier RM2 gates
-described below at degree one. The structured spectral ladders reach the target
-orders at degrees one and two, with degree two requiring 64 cells per period.
-The resolved-power classification distinguishes the three physical waves from
-cell-scale modes without assigning those modes a folded-alias identity.
-The perturbed degree-one ladder also passes. Perturbed degree two passes all
-per-mesh checks through 64 cells per period but fails the finest-pair frequency
-order gate, so its spectral qualification remains incomplete, as detailed below.
+The equal-degree default with second-kind edges passes the energy ledger,
+the stationary and GS gates and the structural spectral gate described below.
+Its spectral ladders reach the target orders at degrees one and two on both
+the structured and the periodically perturbed mesh, with degree two requiring
+64 cells per period. The resolved-power classification distinguishes the
+three physical waves from cell-scale modes without assigning those modes a
+folded-alias identity. First-kind edges remain selectable; their perturbed
+degree-two ladder fails the order gate and is kept below as a documented
+regression.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -235,9 +259,9 @@ current error is a convergence gate.
 The harmonic gate checks closedness and an independent Cartesian voltage load.
 The reduced stability and diagonally normalized current-mass gates pass on
 meshes with 4, 8 and 16 cells per side for rotation, translation and screw.
-With prescribed current trace the smallest reduced singular value exceeds
-0.088; its worst refinement ratio exceeds 0.935, while the largest normalized
-mass-condition growth remains below 1.317.
+With prescribed current trace and second-kind edges the smallest reduced
+singular value exceeds 0.084; its worst refinement ratio exceeds 0.92, while
+the largest normalized mass-condition growth remains below 1.21.
 
 The GS consistency gate solves the RM0 flux equation with analytic pressure
 profiles, projects its flux lift into the section spaces and recovers current
@@ -338,12 +362,17 @@ symmetry of the primitive time mass nor positivity of the full energy Gram.
 For a block with `b` cells in each periodic direction and equal degree `k`,
 the scalar dimension is `s=(b k)^2`. At each scalar coefficient the entropy
 directions are `(rho',Te',Ti')=(1,-0.6,0)` and `(0,1,-1)`; both have zero
-pressure perturbation. The `s` gauge directions are discrete gradients of
-the scalar Bloch basis, projected into the same vector-potential block.
-The Bloch phase is nontrivial on every tested mesh, so the scalar gradient is
-injective and no constant or harmonic gauge direction is added. Thus the
-expected energy nullity is `3 s`: structured blocks (`b=1`) have 3 and 12
-nulls at degrees one and two; perturbed blocks (`b=2`) have 12 and 48.
+pressure perturbation. The gauge directions are discrete gradients of the
+Bloch basis of the magnetic complex's Lagrange space, of degree `k0=k+1` for
+second-kind and `k0=k` for first-kind edges, projected into the same
+vector-potential block. Their number is `g=(b k0)^2`. In this translation
+case a curl-free A has zero orbit component and a section component in the
+gradient space, so these are all magnetic-energy nulls. The Bloch phase is
+nontrivial on every tested mesh, so the gradient is injective and no
+constant or harmonic gauge direction is added. Thus the expected energy
+nullity is `2 s + g`. With the default second-kind edges, structured blocks
+(`b=1`) have 6 and 17 nulls at degrees one and two, and perturbed blocks
+(`b=2`) have 24 and 68; first-kind edges give `3 s`, that is 3, 12, 12 and 48.
 These counts are independent of the number of cells per period in the ladder.
 A QR factorization into unitary and upper triangular matrices checks the
 analytic basis rank and provides its Euclidean complement as quotient
@@ -419,8 +448,16 @@ ctest --test-dir build -L rm2 -j 8 --output-on-failure
 ctest --test-dir build -R '^vrmhd_section_spectra_fine$' -j 8 --output-on-failure
 ```
 
-The third gate counts energetic static modes per cell against the study's
-`k`, separately from entropy and gauge. Every static direction, with its
+The third gate counts energetic static modes, separately from entropy and
+gauge, against an analytic count. Per cell, A modulo gradients has
+`n_A - k0^2` directions, where `n_A` is the number of A coefficients per cell:
+`3 k^2+k` for first kind and `(3 k+2)(k+1)` for second kind. The ideal Lorentz
+force tests these directions only with the `2 k^2` velocity components normal
+to the uniform `B0`, so at least `n_A - k0^2 - 2 k^2` directions stay
+magnetically static; the gate requires this count exactly, which also checks
+that the Lorentz coupling has full rank. It gives `k` per cell for first-kind
+edges, as the pairing study measured, and `3 k+1` per cell, four and seven at
+degrees one and two, for second-kind edges. Every static direction, with its
 algebraic current restored, must satisfy
 `||L x|| / (||L||_F ||x||) <= 1e-12` in the same balanced units.
 For magnetic diffusivity `eta/mu0=1e-3 m^2/s` and kinematic viscosity
@@ -443,7 +480,7 @@ quadruple precision (`real128`), converting the double-precision inputs exactly.
 The projected matrices and LAPACK solves remain double precision. This reduces
 summation roundoff from the comparisons without changing their `1e-14`
 tolerances or the production operators.
-At structured degree two and 16 cells per period, twelve computed signed
+With first-kind edges at structured degree two and 16 cells per period, twelve computed signed
 waves lie below the cutoff, against ten retained analytic waves. The next
 larger folded frequency belongs to the slow branch at `(-15,-16,0) m^-1`,
 so the gap endpoints are approximately `1.341640786500` and
@@ -465,7 +502,7 @@ An independent test uses exactly representable `p'=x` and `A_z'=x^2/2` on
 component's sign, for nonzero integer x wavenumber `m`; coefficients with
 nonzero y wavenumber vanish. The test checks both shares and captured power.
 
-For the structured degree-two case at 16 cells per period, the six positive
+For the first-kind structured degree-two case at 16 cells per period, the six positive
 modes separate by total resolved power as follows; negative partners agree
 to printed roundoff. `share0` is the retained share at `G=0` and
 `r=captured*share0` is dimensionless.
@@ -491,33 +528,42 @@ fast wave approaching its oracle from above. The independent folding test
 uses analytic frequencies at `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and
 `(-1,-2,0) m^-1`.
 
-The structured degree-one ladder passes through 32 cells per period, including
-the finest-pair order check. At structured degree two, classification, resolved
-matching, energy identities, staticity and dissipative stability pass through
-64 cells per period. There are six resolved signed modes at both 16 and 32
-cells per period, with respectively six and eight unresolved signed modes in
-band; none is ambiguous. The measured structured degree-two orders are below;
-each is `log(|e(n1)/e(n2)|)/log(n2/n1)`, where the dimensionless relative
-frequency error is `e(n)=omega(n)/omega_exact-1`.
+The results below use the default second-kind edges. Each order is
+`log(|e(n1)/e(n2)|)/log(n2/n1)`, where the dimensionless relative frequency
+error is `e(n)=omega(n)/omega_exact-1`. On both mesh families and at both
+degrees, classification, resolved matching, energy identities, the analytic
+null and static counts, staticity, dissipative stability and the
+mass-condition bound pass on every mesh of the ladders. Every resolved mesh
+has six resolved signed modes and none is ambiguous.
 
-| cells per period `(n1,n2)` | Alfven order | fast order | slow order |
-|---|---|---|---|
-| (16,32), diagnostic | 2.945030 | 3.676267 | 3.636887 |
-| (32,48), diagnostic | 3.781636 | 3.883912 | 3.903556 |
-| (48,64), diagnostic | 3.909126 | 3.940906 | 3.953905 |
-| (32,64), gate | 3.834549 | 3.907566 | 3.924453 |
+| mesh, degree | cells per period `(n1,n2)` | Alfven order | fast order | slow order |
+|---|---|---|---|---|
+| structured, 1 | (16,32), gate | 2.001956 | 1.981752 | 1.972355 |
+| perturbed, 1 | (16,32), gate | 2.032842 | 1.887273 | 1.864819 |
+| structured, 2 | (16,32), diagnostic | 3.990755 | 3.953292 | 3.990200 |
+| structured, 2 | (32,48), diagnostic | 3.997072 | 3.984562 | 3.996904 |
+| structured, 2 | (48,64), diagnostic | 3.998516 | 3.992343 | 3.998571 |
+| structured, 2 | (32,64), gate | 3.997671 | 3.987792 | 3.997596 |
+| perturbed, 2 | (16,32), diagnostic | 3.987151 | 3.848174 | 3.891745 |
+| perturbed, 2 | (32,48), diagnostic | 3.995806 | 3.977305 | 3.950527 |
+| perturbed, 2 | (48,64), diagnostic | 3.997818 | 3.943340 | 3.962210 |
+| perturbed, 2 | (32,64), gate | 3.996641 | 3.963208 | 3.955376 |
 
-Thus all three finest-pair orders exceed `3.8`; the earlier deficit does not
-persist under refinement. This observation does not identify the individual
-terms responsible for the coarse-mesh error.
+All gate orders exceed the unchanged `2 k-0.2`. The perturbed degree-two
+relative errors at 32, 48 and 64 cells per period are `1.46e-6`, `2.90e-7`
+and `9.17e-8` for the Alfven wave. Its `(16,32)` and finest-pair orders agree to three or
+more digits with an independent linear reference that replaced only the
+magnetic form of the first-kind operator by the direct
+`(curl(v x v_A), curl(w x v_A))`, which gave `3.987150`, `3.848176` and
+`3.891745` on `(16,32)` and `3.996644`, `3.963181` and `3.955316` on `(32,64)`. Second-kind edges thus remove the deficit that this reference
+isolated, while the operator, its energy pairing and the test are unchanged.
 
-The perturbed degree-one ladder passes through 32 cells per period. Its
-`(16,32)` orders are `1.945750`, `2.517267` and `3.127093` for Alfven, fast
-and slow waves, respectively, all above the required `1.8`. At perturbed
-degree two, every per-mesh gate passes through 64 cells per period. There are
-six resolved signed modes at 32, 48 and 64 cells per period, with respectively
-sixteen, fourteen and fourteen unresolved signed modes; none is ambiguous.
-The measured orders are:
+### First-kind regression on the perturbed mesh
+
+With `edge_kind=VRMHD_EDGE_FIRST`, the perturbed degree-one ladder passes,
+with `(16,32)` orders `1.945750`, `2.517267` and `3.127093`. Perturbed degree
+two passes every per-mesh gate through 64 cells per period but fails the
+finest-pair order gate:
 
 | cells per period `(n1,n2)` | Alfven order | fast order | slow order |
 |---|---|---|---|
@@ -525,31 +571,62 @@ The measured orders are:
 | (48,64), diagnostic | 2.553659 | 2.404169 | 2.061315 |
 | (32,64), gate | 2.740953 | 2.568139 | 2.059128 |
 
-All three fail the unchanged `>3.8` degree-two requirement. The slow spectral
-test stops at this order gate; passing the per-mesh checks does not qualify
-the perturbed degree-two discretization. The cause of its order deficit is
-not established. The ordinary `rm2` selection passes, but excludes this fine
-order gate. No full-system inf-sup bound or continuous spectral non-pollution
-result is claimed.
+The structured first-kind degree-two orders on `(32,64)` were `3.834549`,
+`3.907566` and `3.924453`. The cause is the projected magnetic form described
+under [polynomial degrees](#polynomial-degrees-and-quadrature): the
+first-kind L2 projection of `v x v_A` has curl error one order below
+interpolation on the perturbed mesh. FortFEM's second-kind test measures this
+directly. For the L2 projection of a smooth field on a periodically perturbed
+mesh, refined from 8 to 16 cells per side, the curl error orders are `0.31`
+and `0.96` for first-kind degrees one and two and `0.97` and `1.95` for
+second kind. Structured meshes cancel the leading error, which is why the
+structured first-kind ladder passed. No full-system inf-sup bound or
+continuous spectral non-pollution result is claimed for either family.
 
 ## Pairing study for the ideal uniform equilibrium
 
-Equal degree is the default because it minimizes the measured energetic
-static kernel among the tested Lagrange pairings. This choice does not waive
-the structural spectral gate above.
+Equal degree is the default pairing because it minimizes the measured
+energetic static kernel among the tested Lagrange pairings on first-kind
+edges. This choice does not waive the structural spectral gate above.
 Here pairs are written **`(k_s,k_A)`**, with continuous Lagrange degree `k_s`
-for the fluid and multiplier, and first-kind Nedelec order `k_A` for the planar
-vector potential and current. Their orbit components remain continuous degree
-`k_A`. The [complete table](data/vrmhd-pairings.csv) covers degrees one through
-four with `k_s >= k_A-1`, on both meshes and both resolutions.
-On the structured mesh, every pairing retains energy-bearing static defects
-at both resolutions. Equal degrees one through four give respectively one,
-two, three and four magnetic nulls in the static quotient. Taking
+for the fluid, and Nedelec order `k_A` for the planar vector potential and
+current. The `edge_kind` column names the edge family. The
+[complete table](data/vrmhd-pairings.csv) covers first-kind edges for degrees
+one through four with `k_s >= k_A-1`, and second-kind edges for equal degrees
+one through three, on both meshes and both resolutions.
+On the structured first-kind mesh, every pairing retains energy-bearing static
+defects at both resolutions. Equal degrees one through four give respectively
+one, two, three and four magnetic nulls in the static quotient. Taking
 `k_A=k_s+1` increases this count to eight, thirteen and eighteen; taking
 `k_s>k_A` instead gives four to twenty-eight kinetic nulls. Refinement can
 reduce the physical-frequency errors without removing these defects. The
 magnetic and kinetic counts per cell are also unchanged by the prescribed
 mesh perturbation at either resolution.
+
+The second-kind rows answer the cost of the default edge family. Their
+magnetic static nulls per cell are four, seven and ten at equal degrees one,
+two and three, against one, two and three for first-kind edges, with no
+kinetic nulls in either family. These are exactly the `3 k+1` and `k` per
+cell of the analytic count in the structural gate, measured here by the
+separate SVD path, on both meshes and both resolutions. The extra static
+directions are the additional curl-carrying A directions of `N2_k` that the
+`2 k^2` normal velocity components cannot test. They are exactly static and
+damped by resistivity in the structural gate; their number does not grow
+with refinement per cell. Per-cell degrees of freedom are
+`6 k_s^2 + 2(3 k_A^2+k_A)` for first-kind and `6 k_s^2 + 2(3 k_A+2)(k_A+1)`
+for second-kind edges, including the algebraic current.
+
+| edge family | `k` | static magnetic nulls per cell | frequency error at 8 cells, Alfven / fast / slow (structured) |
+|---|---|---|---|
+| first | 1 | 1 | 5.33e-2 / 4.83e-3 / 5.06e-3 |
+| second | 1 | 4 | 2.59e-2 / 1.19e-2 / 1.15e-2 |
+| first | 2 | 2 | 9.08e-4 / 2.84e-4 / 8.37e-5 |
+| second | 2 | 7 | 2.56e-4 / 1.27e-4 / 1.41e-4 |
+| first | 3 | 3 | 2.13e-6 / 4.08e-6 / 7.69e-7 |
+| second | 3 | 10 | 1.07e-6 / 4.80e-7 / 3.97e-7 |
+
+The frequency errors are the dimensionless nearest-branch errors of the
+table, for one structured mesh resolution; they are not convergence orders.
 
 The equilibrium has mass density `1 kg/m^3`, pressure `0.6 Pa`, adiabatic
 exponent `5/3`, and Alfven velocity
@@ -557,8 +634,7 @@ exponent `5/3`, and Alfven velocity
 `k=(1,0,0) m^-1` on a square period of side `2 pi m`. The analytic Alfven,
 fast and slow angular frequencies are respectively `0.6`, `sqrt(1.8)` and
 `sqrt(0.2) rad/s`. Each direction has four or eight cells per period; one cell
-contains two triangles. Degrees of freedom per cell include the algebraic
-current and are `6 k_s^2 + 2(3 k_A^2+k_A)`.
+contains two triangles.
 
 The second mesh repeats a two-by-two displacement pattern. In units of the
 cell width, the vertex displacements for parity `(0,0)`, `(1,0)`, `(0,1)` and
