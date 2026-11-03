@@ -1,0 +1,451 @@
+program test_vrmhd_island
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use vrmhd_periodic_slab, only: periodic_slab_t, periodic_slab_build, &
+        periodic_scalar
+    use vrmhd_island_leaves, only: island_shear_equilibrium, island_seed
+    use kin6d_vrmhd_section, only: vrmhd_section_basis, vrmhd_section_trace
+    use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
+    use kin6d_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
+        vrmhd_evolve_consistent, vrmhd_evolve_expand
+    use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load, &
+        meridian_point_basis_t, meridian_point_basis_init
+    use fortsparse, only: csc_t, csc_from_triplet, csc_transpose, csc_matvec, &
+        sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
+        FORTSPARSE_SYM_SPD, fortsparse_status_t, status_ok
+    use fortnum_ode_bdf, only: bdf_options_t, bdf_state_t, bdf_report_t, bdf_init, &
+        bdf_integrate_to
+    use fortnum_quadrature, only: gauss_legendre_ab
+    use fortnum_status, only: fortnum_status_t, FORTNUM_OK
+    implicit none
+    type(periodic_slab_t), target :: slab
+    type(meridian_point_basis_t) :: pb
+    type(vrmhd_parameters_t) :: p
+    type(csc_t) :: reduction
+    real(dp), allocatable :: lift(:), y(:), u(:), source(:, :, :)
+    integer, allocatable :: kept(:)
+    real(dp), parameter :: pi = acos(-1.0_dp), half_width = 1.0_dp
+    character(32) :: gate, family, arg
+    integer :: ny = 4, nx = 4, steps = 20
+    real(dp) :: eta = 0.01_dp, dt = 0.1_dp, seed_amplitude = 0.01_dp
+    integer :: status
+    call get_command_argument(1, gate)
+    call get_command_argument(2, family)
+    if (family == '') family = 'mixed'
+    call require(family == 'equal' .or. family == 'mixed', 'equal or mixed family')
+    call require(any(command_argument_count() == [1, 2, 4, 7, 8]), &
+        'arguments: MODE FAMILY [NY NX [ETA DT STEPS [EPSILON]]]')
+    if (command_argument_count() >= 3) then
+        call get_command_argument(3, arg); read(arg, *) ny
+        call get_command_argument(4, arg); read(arg, *) nx
+    end if
+    if (command_argument_count() >= 5) then
+        call get_command_argument(5, arg); read(arg, *) eta
+        call get_command_argument(6, arg); read(arg, *) dt
+        call get_command_argument(7, arg); read(arg, *) steps
+    end if
+    if (command_argument_count() >= 8) then
+        call get_command_argument(8, arg); read(arg, *) seed_amplitude
+    end if
+    call require(eta > 0 .and. dt > 0 .and. steps > 0, 'positive run parameters')
+    call require(seed_amplitude > 0 .and. seed_amplitude < 0.5_dp, &
+        'positive seed with separatrix inside the walls')
+    call periodic_slab_build(ny, 2, slab, status, radial_cells=nx, &
+        radial_length=2*half_width, radial_walls=.true., mixed=family /= 'equal')
+    call require(status == 0, 'wall slab construction')
+    call wall_reduction()
+    call equilibrium()
+    call meridian_point_basis_init(slab%op%fs, pb, status)
+    call require(status == 0, 'point evaluation basis')
+    select case (trim(gate))
+    case ('boundary')
+        call boundary_gate()
+    case ('equilibrium')
+        call equilibrium_gate()
+    case ('width')
+        call width_gate()
+    case ('probe', 'induction')
+        call evolve_seed()
+    case default
+        error stop 'unknown island gate'
+    end select
+contains
+    subroutine require(ok, message)
+        logical, intent(in) :: ok
+        character(*), intent(in) :: message
+        if (ok) return
+        print '(a)', message
+        error stop 'island benchmark failed'
+    end subroutine
+
+    subroutine wall_reduction()
+        !! No-slip walls and fixed tangential A/J; the y faces are identified.
+        type(fortsparse_status_t) :: st
+        real(dp), allocatable :: xy(:, :), vals(:)
+        integer, allocatable :: rows(:), cols(:)
+        logical, allocatable :: fixed(:), magnetic(:), active(:)
+        real(dp) :: start(2), finish(2)
+        integer :: n1, i, j, t, edge, q, pos, col, first, last, field
+        n1 = slab%op%fs%sp(1)%ndof
+        allocate (fixed(slab%op%ndof), magnetic(n1), active(slab%nred))
+        fixed = .false.; magnetic = .false.
+        if (allocated(slab%op%velocity_fs)) then
+            call meridian_lagrange_nodes(slab%op%velocity_fs, xy)
+        else
+            call meridian_lagrange_nodes(slab%op%scalar_fs, xy)
+        end if
+        do i = 1, size(xy, 2)
+            if (.not. wall(xy(1, i))) cycle
+            do field = 2, 4
+                fixed(slab%op%offset(field) + i) = .true.
+            end do
+        end do
+        deallocate (xy)
+        call meridian_lagrange_nodes(slab%op%fs, xy)
+        do i = 1, slab%op%fs%n0
+            magnetic(slab%op%fs%nn + i) = wall(xy(1, i))
+        end do
+        do t = 1, slab%op%fs%mm%topology%n_triangles
+            do edge = 1, 3
+                j = modulo(edge, 3) + 1
+                start = slab%op%fs%mm%topology%vertices(:, &
+                    slab%op%fs%mm%topology%triangles(edge, t))
+                finish = slab%op%fs%mm%topology%vertices(:, &
+                    slab%op%fs%mm%topology%triangles(j, t))
+                if (.not. wall(start(1)) .or. .not. wall(finish(1))) cycle
+                if (abs(start(1) - finish(1)) > 1.0e-12_dp) cycle
+                do q = 1, slab%op%fs%ke
+                    i = (edge - 1)*slab%op%fs%ke + q
+                    magnetic(slab%op%fs%sp(1)%dof(i, t)) = .true.
+                end do
+            end do
+        end do
+        fixed(slab%op%offset(7) + 1:slab%op%offset(8)) = magnetic
+        fixed(slab%op%offset(8) + 1:) = magnetic
+        do j = 1, slab%nred
+            first = slab%reduction%col_ptr(j)
+            last = slab%reduction%col_ptr(j + 1) - 1
+            active(j) = .not. any(fixed(slab%reduction%row_idx(first:last)))
+            call require(all(fixed(slab%reduction%row_idx(first:last))) &
+                .or. active(j), 'periodic class cannot mix wall and free rows')
+        end do
+        kept = pack([(i, i=1, slab%nred)], active)
+        allocate (rows(size(slab%reduction%val)), &
+            cols(size(slab%reduction%val)), vals(size(slab%reduction%val)))
+        pos = 0
+        do col = 1, size(kept)
+            j = kept(col)
+            do q = slab%reduction%col_ptr(j), slab%reduction%col_ptr(j + 1) - 1
+                pos = pos + 1
+                rows(pos) = slab%reduction%row_idx(q); cols(pos) = col
+                vals(pos) = slab%reduction%val(q)
+            end do
+        end do
+        call csc_from_triplet(slab%op%ndof, size(kept), rows(:pos), cols(:pos), &
+            vals(:pos), reduction, st)
+        call require(status_ok(st), 'wall reduction')
+    end subroutine
+
+    logical function wall(x)
+        real(dp), intent(in) :: x
+        wall = min(abs(x), abs(x - 2*half_width)) < 1.0e-12_dp
+    end function
+
+    subroutine equilibrium()
+        type(fortsparse_status_t) :: st
+        type(sparse_solver_t) :: solver
+        complex(dp), allocatable :: load(:)
+        real(dp), allocatable :: xy(:, :), basis(:, :)
+        real(dp) :: rho, ay, az, by, jz, bz, point(2), weight
+        integer :: n0, i, t, q
+        n0 = slab%op%scalar_fs%n0
+        allocate (lift(slab%op%ndof), u(slab%op%ndof), y(size(kept)), &
+            source(6, slab%op%fs%nq, slab%op%fs%mm%topology%n_triangles), &
+            basis(36, slab%op%nlocal))
+        lift = 0; y = 0; source = 0
+        call meridian_lagrange_nodes(slab%op%scalar_fs, xy)
+        do i = 1, n0
+            call island_shear_equilibrium(xy(1, i) - half_width, &
+                rho, ay, az, by, jz, bz)
+            lift(i) = rho
+        end do
+        lift(slab%op%offset(5) + 1:slab%op%offset(7)) = 1
+        call meridian_load(slab%op%fs, 1, equilibrium_potential, load, status)
+        call require(status == 0, 'equilibrium potential load')
+        solver%options%symmetry = FORTSPARSE_SYM_SPD
+        call sparse_factor(solver, slab%op%fs%mass(1), st)
+        call require(status_ok(st), 'equilibrium mass factor')
+        call sparse_solve(solver, real(load, dp), &
+            lift(slab%op%offset(7) + 1:slab%op%offset(8)), st)
+        call sparse_destroy(solver)
+        call require(status_ok(st), 'equilibrium potential projection')
+        call require(maxval(abs(csc_matvec(slab%op%fs%mass(1), &
+            lift(slab%op%offset(7) + 1:slab%op%offset(8))) - real(load, dp))) &
+            < 1.0e-11_dp*maxval(abs(load)), 'full projection mass residual')
+        ! Constant axial current is an orbit-node coefficient, not an edge moment.
+        lift(slab%op%offset(8) + slab%op%fs%nn + 1:) = 1
+        source(3, :, :) = 1
+        p%mi = 1; p%mu0 = 1; p%eta0 = eta; p%nu0 = eta
+        u = lift
+        do t = 1, slab%op%fs%mm%topology%n_triangles
+            do q = 1, slab%op%fs%nq
+                call vrmhd_section_basis(slab%op, t, q, point, weight, basis, status)
+                call require(status == 0, 'equilibrium basis')
+                call island_shear_equilibrium(point(1) - half_width, &
+                    rho, ay, az, by, jz, bz)
+                call require(maxval(abs(matmul(basis([1, 6, 7, 26, 10, 27], :), &
+                    lift(slab%op%map(:, t))) - [rho, ay, az, by, jz, bz])) &
+                    < 1.0e-11_dp, 'physical equilibrium represented exactly')
+            end do
+        end do
+    end subroutine
+
+    subroutine equilibrium_potential(x, a)
+        real(dp), intent(in) :: x(2)
+        complex(dp), intent(out) :: a(3)
+        real(dp) :: rho, ay, az, by, jz, bz
+        call island_shear_equilibrium(x(1) - half_width, rho, ay, az, by, jz, bz)
+        a = cmplx([0.0_dp, az, ay], 0.0_dp, dp)
+    end subroutine
+
+    subroutine boundary_gate()
+        real(dp), allocatable :: full(:), reduced(:), scalar(:), xy(:, :)
+        real(dp) :: a(3), b(3), x, nodes(4), weights(4)
+        integer :: i, cell, n0
+        n0 = slab%op%scalar_fs%n0
+        allocate (reduced(slab%nred), scalar(slab%ns))
+        call periodic_scalar(slab, radial_coordinate, scalar)
+        reduced = 0; reduced(:slab%ns) = scalar
+        full = csc_matvec(slab%reduction, reduced)
+        call meridian_lagrange_nodes(slab%op%scalar_fs, xy)
+        call require(maxval(abs(full(:n0) - xy(1, :))) < 1.0e-13_dp, &
+            'opposite radial walls must retain independent density traces')
+        deallocate (reduced)
+        allocate (reduced(reduction%ncol))
+        reduced = [(sin(real(37*i, dp)), i=1, size(reduced))]
+        full = csc_matvec(reduction, reduced)
+        call gauss_legendre_ab(4, 0.0_dp, 1.0_dp, nodes, weights)
+        ! H(curl) tangential traces are defined on facet interiors; the vector
+        ! value at a shared vertex need not agree across adjacent facets.
+        do cell = 1, slab%nx
+            do i = 1, 4
+                x = 2*half_width*(cell - 1 + nodes(i))/slab%nx
+                a = potential([x, 0.0_dp], full)
+                b = potential([x, 2*pi], full)
+                call require(maxval(abs(a([1, 3]) - b([1, 3]))) < 1.0e-10_dp, &
+                    'periodic tangential potential traces and edge orientation')
+            end do
+        end do
+        do cell = 1, slab%n
+            do i = 1, 4
+                x = 2*pi*(cell - 1 + nodes(i))/slab%n
+                a = potential([0.0_dp, x], full)
+                b = potential([2*half_width, x], full)
+                call require(maxval(abs([a([2, 3]), b([2, 3])])) < 1.0e-10_dp, &
+                    'conducting-wall tangential perturbation traces')
+            end do
+        end do
+    end subroutine
+
+    pure real(dp) function radial_coordinate(x) result(value)
+        real(dp), intent(in) :: x(2)
+        value = x(1)
+    end function
+
+    subroutine equilibrium_gate()
+        type(vrmhd_evolve_t) :: problem
+        type(bdf_options_t) :: options
+        type(bdf_state_t) :: state
+        type(bdf_report_t) :: report
+        type(fortnum_status_t) :: st
+        real(dp), allocatable :: derivative(:), residual(:), zero(:)
+        integer :: step
+        allocate (derivative(size(y)), residual(size(y)), zero(size(y)))
+        zero = 0
+        call vrmhd_evolve_build(problem, slab%op, p, source, lift, reduction, status)
+        call require(status == 0, 'wall evolution build')
+        call problem%evaluate(0.0_dp, y, zero, residual, status)
+        call require(status == 0, 'equilibrium residual')
+        print '(a,es14.5)', 'equilibrium max residual [1]: ', maxval(abs(residual))
+        call require(maxval(abs(residual)) < 1.0e-11_dp, &
+            'undriven momentum and source-balanced Ohm equilibrium')
+        call vrmhd_evolve_consistent(problem, 0.0_dp, y, derivative, status)
+        call require(status == 0, 'consistent equilibrium derivative')
+        print '(a,es14.5)', 'equilibrium max derivative [1]: ', &
+            maxval(abs(derivative))
+        call require(maxval(abs(derivative)) < 1.0e-8_dp, 'stationary initial state')
+        options%adaptive = .false.; options%initial_step = 0.1_dp
+        options%max_step = 0.1_dp; options%rtol = 1.0e-9_dp
+        options%atol = 1.0e-11_dp
+        call bdf_init(state, 0.0_dp, y, options, st, derivative=derivative)
+        call require(st%code == FORTNUM_OK, 'equilibrium BDF start')
+        do step = 1, 2
+            call bdf_integrate_to(problem, state, step*0.1_dp, options, report, st)
+            call require(st%code == FORTNUM_OK, 'equilibrium BDF step')
+        end do
+        call vrmhd_evolve_expand(problem, state%y, u)
+        print '(a,es14.5)', 'equilibrium BDF max drift [1]: ', maxval(abs(u - lift))
+        call require(maxval(abs(u - lift)) < 1.0e-9_dp, 'equilibrium remains steady')
+    end subroutine
+
+    subroutine evolve_seed()
+        type(vrmhd_evolve_t) :: problem
+        type(bdf_options_t) :: options
+        type(bdf_state_t) :: state
+        type(bdf_report_t) :: report
+        type(fortnum_status_t) :: st
+        real(dp), allocatable :: xy(:, :), derivative(:), full_dot(:), rhs(:)
+        real(dp), allocatable :: normal(:)
+        type(csc_t) :: restriction
+        type(fortsparse_status_t) :: sparse_status
+        real(dp) :: az, bx, by, jz, rate, expected, width, delta, relative
+        integer :: i, j, k, step
+        u = lift
+        call meridian_lagrange_nodes(slab%op%fs, xy)
+        do i = 1, size(xy, 2)
+            call island_seed(xy(1, i) - half_width, xy(2, i), half_width, &
+                1.0_dp, seed_amplitude, az, bx, by, jz)
+            u(slab%op%offset(7) + slab%op%fs%nn + i) = az
+        end do
+        call csc_transpose(reduction, restriction, sparse_status)
+        call require(status_ok(sparse_status), 'seed restriction')
+        rhs = csc_matvec(restriction, u - lift)
+        allocate (normal(size(y)), derivative(size(y)), full_dot(slab%op%ndof))
+        do j = 1, reduction%ncol
+            normal(j) = 0
+            do k = reduction%col_ptr(j), reduction%col_ptr(j + 1) - 1
+                normal(j) = normal(j) + reduction%val(k)**2
+            end do
+        end do
+        y = rhs/normal
+        call vrmhd_evolve_build(problem, slab%op, p, source, lift, reduction, status)
+        call require(status == 0, 'island evolution build')
+        problem%lag = 8
+        problem%shift_tolerance = 0.5_dp
+        call vrmhd_evolve_consistent(problem, 0.0_dp, y, derivative, status)
+        call require(status == 0, 'consistent island current and derivative')
+        full_dot = csc_matvec(reduction, derivative)
+        rate = flux([half_width, 0.0_dp], full_dot) &
+            - flux([half_width, pi], full_dot)
+        ! At rest, induction gives A_z,t = eta Laplacian(delta A_z).
+        expected = -2*eta*seed_amplitude*(6/half_width**2 + 1)
+        relative = abs(rate/expected - 1)
+        print '(a,2i5,3es15.6)', 'initial induction: ny,nx,rate,exact,relative [1] ', &
+            ny, nx, rate, expected, relative
+        if (gate == 'induction') then
+            call require(relative < 0.02_dp, 'initial resistive flux derivative')
+            return
+        end if
+        options%adaptive = .false.; options%initial_step = dt
+        options%max_step = dt; options%rtol = 1.0e-8_dp
+        options%atol = 1.0e-10_dp
+        call bdf_init(state, 0.0_dp, y, options, st, derivative=derivative)
+        call require(st%code == FORTNUM_OK, 'island BDF start')
+        delta = -2/tanh(half_width)
+        print '(a,es14.5)', 'outer tearing index [1]: ', delta
+        print '(a,es14.5)', 'Rutherford slope, not an admitted gate [1]: ', &
+            1.22_dp*eta*delta
+        print '(a)', 'step,time,full_cut_width,flux_ox,max_velocity'
+        flush(6)
+        do step = 0, steps
+            if (step > 0) then
+                call bdf_integrate_to(problem, state, step*dt, options, report, st)
+                if (st%code /= FORTNUM_OK) print *, report
+                call require(st%code == FORTNUM_OK, 'island BDF step')
+            end if
+            call vrmhd_evolve_expand(problem, state%y, u)
+            width = symmetric_width()
+            print '(i0,4(a,es17.9))', step, ',', step*dt, ',', width, ',', &
+                flux([half_width, 0.0_dp]) - flux([half_width, pi]), ',', &
+                maxval(abs(u(slab%op%offset(2) + 1:slab%op%offset(5))))
+            flush(6)
+        end do
+    end subroutine
+
+    subroutine width_gate()
+        real(dp), allocatable :: xy(:, :)
+        real(dp) :: rho, ay, az, by, jz, bz, width, amplitude, expected
+        integer :: i
+        call meridian_lagrange_nodes(slab%op%fs, xy)
+        amplitude = 0.01_dp
+        u = lift
+        do i = 1, slab%op%fs%n0
+            ! A quadratic x profile with a nodal y perturbation has an exact
+            ! separatrix cut, independently of the interpolant between y nodes.
+            call island_shear_equilibrium(xy(1, i) - half_width, &
+                rho, ay, az, by, jz, bz)
+            u(slab%op%offset(7) + slab%op%fs%nn + i) = az + amplitude*cos(xy(2, i))
+        end do
+        width = symmetric_width()
+        expected = 4*sqrt(amplitude)
+        print '(a,2es14.5)', 'full cut width, analytic [1]: ', width, expected
+        call require(abs(width - expected) < 1.0e-11_dp, 'full-width convention')
+        u(slab%op%offset(7) + slab%op%fs%nn + 1:slab%op%offset(8)) = &
+            u(slab%op%offset(7) + slab%op%fs%nn + 1:slab%op%offset(8)) + 7.0_dp
+        call require(abs(symmetric_width() - width) < 1.0e-11_dp, &
+            'flux gauge offset cannot change width')
+    end subroutine
+
+    real(dp) function flux(point, field) result(value)
+        real(dp), intent(in) :: point(2)
+        real(dp), intent(in), optional :: field(:)
+        real(dp) :: a(3)
+        a = potential(point, field)
+        value = a(3)
+    end function
+
+    function potential(point, field) result(value)
+        real(dp), intent(in) :: point(2)
+        real(dp), intent(in), optional :: field(:)
+        real(dp) :: value(3)
+        real(dp) :: start(2), e1(2), e2(2), ref(2), det, x(2)
+        real(dp) :: trace(3, slab%op%fs%sp(1)%nloc)
+        integer :: t, i(3)
+        do t = 1, slab%op%fs%mm%topology%n_triangles
+            i = slab%op%fs%mm%topology%triangles(:, t)
+            start = slab%op%fs%mm%topology%vertices(:, i(1))
+            e1 = slab%op%fs%mm%topology%vertices(:, i(2)) - start
+            e2 = slab%op%fs%mm%topology%vertices(:, i(3)) - start
+            det = e1(1)*e2(2) - e1(2)*e2(1)
+            ref(1) = ((point(1) - start(1))*e2(2) &
+                - (point(2) - start(2))*e2(1))/det
+            ref(2) = (e1(1)*(point(2) - start(2)) &
+                - e1(2)*(point(1) - start(1)))/det
+            if (minval(ref) < -1.0e-12_dp .or. sum(ref) > 1 + 1.0e-12_dp) cycle
+            call vrmhd_section_trace(slab%op, pb, t, ref, x, trace, status)
+            call require(status == 0, 'flux point evaluation')
+            if (present(field)) then
+                value = matmul(trace, &
+                    field(slab%op%offset(7) + slab%op%fs%sp(1)%dof(:, t)))
+            else
+                value = matmul(trace, &
+                    u(slab%op%offset(7) + slab%op%fs%sp(1)%dof(:, t)))
+            end if
+            return
+        end do
+        error stop 'point outside slab'
+    end function
+
+    real(dp) function symmetric_width() result(width)
+        !! Full separatrix width on y=0, for the stated reflection-symmetric seed.
+        real(dp) :: separatrix, lo, hi, middle, crossing(2)
+        integer :: side, iteration
+        separatrix = flux([half_width, pi])
+        call require(flux([half_width, 0.0_dp]) > separatrix, 'positive island flux')
+        do side = 1, 2
+            lo = 0; hi = half_width
+            call require(flux([half_width + (2*side - 3)*hi, 0.0_dp]) &
+                < separatrix, 'separatrix crossing bracket')
+            do iteration = 1, 48
+                middle = (lo + hi)/2
+                if (flux([half_width + (2*side - 3)*middle, 0.0_dp]) &
+                    > separatrix) then
+                    lo = middle
+                else
+                    hi = middle
+                end if
+            end do
+            crossing(side) = (lo + hi)/2
+        end do
+        width = sum(crossing)
+    end function
+end program test_vrmhd_island
