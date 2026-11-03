@@ -94,10 +94,66 @@ The executable also accepts
 number of steps. The default amplitude is 0.01. The viscosity coefficient is
 set equal to `ETA`; because density varies, the kinematic viscosity and
 magnetic Prandtl number vary across the slab. Output gives the cut width,
-critical-point flux difference and maximum velocity coefficient at every step.
+critical-point flux difference and maximum velocity coefficient at every step,
+followed by the physical mass and energy balances described below.
 The existing lagged sparse factor is only a right preconditioner: Newton and
 Krylov iterations still use the full nonlinear residual and tangent.
 
 These trajectories are candidates until spatial and temporal refinement,
 critical-point checks, physical ledgers and the required regime checks admit
 a rate comparison. No Rutherford agreement is claimed by the setup checks.
+
+## Physical balances of candidate trajectories
+
+The mass diagnostic integrates density. The energy diagnostic integrates
+kinetic energy `rho |v|^2/2`, magnetic energy `|B|^2/(2 mu0)` and the two
+species' internal energy `3 rho (Te+Ti)/(2 mi)`. Their instantaneous rates
+are calculated by differentiating these physical expressions, independently
+of the residual leaves. Analytic polynomial fields check every integral and
+rate. A separate seeded test with electron thermal energy `1+0.1 cos(y)`
+checks the source-accounted balances and exercises a nonzero wall power for
+both field families. This test is distinct from the uniform-temperature
+initial-induction oracle.
+
+A fixed nonzero tangential current has an affine constraint power, `P_wall`,
+as defined in [the current-wall contract](
+vrmhd-weak-form.md#conducting-wall-current-and-its-power). Its lift has the
+prescribed boundary coefficients and zero interior coefficients. The
+benchmark evaluates this power from its separate rate, ideal and resistive
+pairings, and checks it against the constrained induction reaction. It is
+not inferred from an energy difference, and it is not identified with
+continuum Poynting flux. The instantaneous balances for this setup are
+
+```text
+dM/dt = 0,
+dE_total/dt = P_wall,
+d(E_kinetic+E_magnetic)/dt = C - Q_ohmic - D_viscous + P_wall.
+```
+
+Here `C` is the integral of pressure times velocity divergence, `Q_ohmic`
+is the signed, source-accounted heating `eta J.(J-Js)`, and `D_viscous`
+is the integral of `2 nu S:S`, with `S` the symmetric traceless velocity
+strain. The current source remains the equilibrium current. No density,
+heat, voltage or transport port is added.
+
+Each output row includes mass, total energy, instantaneous wall power,
+the total energy change minus the trapezoidal wall-power integral, the
+mechanical power, and the mechanical energy change minus its trapezoidal
+power integral. Time integration and power quadrature both contribute to
+these integrated defects, so they need a time-step refinement study. A
+nonzero wall power must be retained when assessing conservation and its
+spatial limit must be checked before a continuum benchmark claim. All
+reported quantities use the nondimensional units stated above.
+
+The [retained time-step study](data/vrmhd-island-time.csv) uses the mixed
+family with four cells in each direction, `eta=epsilon=0.01` and final
+time 0.5. Reproduce each row with `probe mixed 4 4 0.01 DT STEPS 0.01`,
+where `DT,STEPS` are its time step and step count. These are candidate
+trajectories for the time-error check, not spatially admitted island rates.
+The coarser steps are outside the asymptotic time regime. On the final two
+halvings, the total-energy defect decreases with observed orders 2.11 and
+2.19, while the mechanical-energy defect gives 2.12 and 2.20. The largest
+absolute mass drift is below 7e-14. These measurements use GNU Fortran 16.2
+and OpenBLAS in Release mode. The [instantaneous accounting data](
+data/vrmhd-island-ledgers.csv) and [plot source](plot_vrmhd_island_ledgers.py)
+retain the independent wall-power comparison.

@@ -3,7 +3,8 @@ program test_vrmhd_island
     use vrmhd_periodic_slab, only: periodic_slab_t, periodic_slab_build, &
         periodic_scalar
     use vrmhd_island_leaves, only: island_shear_equilibrium, island_seed
-    use kin6d_vrmhd_section, only: vrmhd_section_basis, vrmhd_section_trace
+    use kin6d_vrmhd_section, only: vrmhd_section_basis, vrmhd_section_trace, &
+        vrmhd_section_residual
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_evolve, only: vrmhd_evolve_t, vrmhd_evolve_build, &
         vrmhd_evolve_consistent, vrmhd_evolve_expand
@@ -21,7 +22,12 @@ program test_vrmhd_island
     type(meridian_point_basis_t) :: pb
     type(vrmhd_parameters_t) :: p
     type(csc_t) :: reduction
-    real(dp), allocatable :: lift(:), y(:), u(:), source(:, :, :)
+    real(dp), allocatable :: lift(:), y(:), u(:), source(:, :, :), current_wall(:)
+    logical, allocatable :: magnetic_wall(:)
+    integer, parameter :: MASS = 1, KINETIC = 2, MAGNETIC = 3, INTERNAL = 4, &
+        OHMIC = 5, VISCOUS = 6, COMPRESSION = 7, WALL_POWER = 8, &
+        MASS_RATE = 9, KINETIC_RATE = 10, MAGNETIC_RATE = 11, &
+        INTERNAL_RATE = 12, NLEDGER = 12
     integer, allocatable :: kept(:)
     real(dp), parameter :: pi = acos(-1.0_dp), half_width = 1.0_dp
     character(32) :: gate, family, arg
@@ -63,6 +69,9 @@ program test_vrmhd_island
         call equilibrium_gate()
     case ('width')
         call width_gate()
+    case ('ledger')
+        call ledger_oracle()
+        call evolve_seed()
     case ('probe', 'induction')
         call evolve_seed()
     case default
@@ -119,6 +128,7 @@ contains
                 end do
             end do
         end do
+        magnetic_wall = magnetic
         fixed(slab%op%offset(7) + 1:slab%op%offset(8)) = magnetic
         fixed(slab%op%offset(8) + 1:) = magnetic
         do j = 1, slab%nred
@@ -183,6 +193,8 @@ contains
             < 1.0e-11_dp*maxval(abs(load)), 'full projection mass residual')
         ! Constant axial current is an orbit-node coefficient, not an edge moment.
         lift(slab%op%offset(8) + slab%op%fs%nn + 1:) = 1
+        current_wall = lift(slab%op%offset(8) + 1:)
+        where (.not. magnetic_wall) current_wall = 0
         source(3, :, :) = 1
         p%mi = 1; p%mu0 = 1; p%eta0 = eta; p%nu0 = eta
         u = lift
@@ -298,8 +310,16 @@ contains
         type(csc_t) :: restriction
         type(fortsparse_status_t) :: sparse_status
         real(dp) :: az, bx, by, jz, rate, expected, width, delta, relative
+        real(dp) :: totals(NLEDGER), initial(NLEDGER), previous(NLEDGER)
+        real(dp) :: wall_integral, mechanical_integral, mechanical_power, old_power
         integer :: i, j, k, step
         u = lift
+        if (gate == 'ledger') then
+            call meridian_lagrange_nodes(slab%op%scalar_fs, xy)
+            u(slab%op%offset(5) + 1:slab%op%offset(6)) = &
+                1 + 0.1_dp*cos(xy(2, :))
+            deallocate (xy)
+        end if
         call meridian_lagrange_nodes(slab%op%fs, xy)
         do i = 1, size(xy, 2)
             call island_seed(xy(1, i) - half_width, xy(2, i), half_width, &
@@ -329,8 +349,16 @@ contains
         ! At rest, induction gives A_z,t = eta Laplacian(delta A_z).
         expected = -2*eta*seed_amplitude*(6/half_width**2 + 1)
         relative = abs(rate/expected - 1)
-        print '(a,2i5,3es15.6)', 'initial induction: ny,nx,rate,exact,relative [1] ', &
-            ny, nx, rate, expected, relative
+        if (gate /= 'ledger') then
+            print '(a,2i5,3es15.6)', 'initial induction: ny,nx,rate,exact,relative [1] ', &
+                ny, nx, rate, expected, relative
+        end if
+        call vrmhd_evolve_expand(problem, y, u)
+        call measure(u, full_dot, initial)
+        if (gate == 'ledger') then
+            call check_ledger(u, full_dot, initial)
+            return
+        end if
         if (gate == 'induction') then
             call require(relative < 0.02_dp, 'initial resistive flux derivative')
             return
@@ -344,7 +372,10 @@ contains
         print '(a,es14.5)', 'outer tearing index [1]: ', delta
         print '(a,es14.5)', 'Rutherford slope, not an admitted gate [1]: ', &
             1.22_dp*eta*delta
-        print '(a)', 'step,time,full_cut_width,flux_ox,max_velocity'
+        wall_integral = 0; mechanical_integral = 0
+        previous = initial
+        print '(a)', 'step,time,full_cut_width,flux_ox,max_velocity,mass,'// &
+            'total_energy,wall_power,energy_defect,mechanical_power,mechanical_defect'
         flush(6)
         do step = 0, steps
             if (step > 0) then
@@ -354,11 +385,137 @@ contains
             end if
             call vrmhd_evolve_expand(problem, state%y, u)
             width = symmetric_width()
-            print '(i0,4(a,es17.9))', step, ',', step*dt, ',', width, ',', &
+            full_dot = csc_matvec(reduction, state%derivative)
+            call measure(u, full_dot, totals)
+            mechanical_power = totals(COMPRESSION) - totals(OHMIC) &
+                - totals(VISCOUS) + totals(WALL_POWER)
+            if (step > 0) then
+                wall_integral = wall_integral + dt/2 &
+                    *(previous(WALL_POWER) + totals(WALL_POWER))
+                old_power = previous(COMPRESSION) - previous(OHMIC) &
+                    - previous(VISCOUS) + previous(WALL_POWER)
+                mechanical_integral = mechanical_integral + dt/2 &
+                    *(old_power + mechanical_power)
+            end if
+            previous = totals
+            print '(i0,10(a,es24.16))', step, ',', step*dt, ',', width, ',', &
                 flux([half_width, 0.0_dp]) - flux([half_width, pi]), ',', &
-                maxval(abs(u(slab%op%offset(2) + 1:slab%op%offset(5))))
+                maxval(abs(u(slab%op%offset(2) + 1:slab%op%offset(5)))), &
+                ',', totals(MASS), ',', sum(totals(KINETIC:INTERNAL)), ',', &
+                totals(WALL_POWER), ',', &
+                sum(totals(KINETIC:INTERNAL) - initial(KINETIC:INTERNAL)) &
+                - wall_integral, ',', mechanical_power, ',', &
+                sum(totals(KINETIC:MAGNETIC) - initial(KINETIC:MAGNETIC)) &
+                - mechanical_integral
             flush(6)
         end do
+    end subroutine
+
+    subroutine measure(field, derivative, totals)
+        !! Independent physical integrals, including the prescribed current port.
+        real(dp), intent(in) :: field(:), derivative(:)
+        real(dp), intent(out) :: totals(NLEDGER)
+        real(dp), allocatable :: basis(:, :)
+        real(dp) :: point(2), weight, v(36), vd(36), g(3, 3), strain(3, 3)
+        real(dp) :: eta, nu, pressure, divergence, wall_field(3), vxB(3)
+        integer :: t, q, i, first
+        allocate (basis(36, slab%op%nlocal))
+        totals = 0
+        first = slab%op%local_offset(8) + 1
+        do t = 1, slab%op%fs%mm%topology%n_triangles
+            do q = 1, slab%op%fs%nq
+                call vrmhd_section_basis(slab%op, t, q, point, weight, basis, status)
+                call require(status == 0, 'island ledger basis')
+                v = matmul(basis, field(slab%op%map(:, t)))
+                vd = matmul(basis, derivative(slab%op%map(:, t)))
+                g = reshape(v(16:24), [3, 3])
+                divergence = g(1, 1) + g(2, 2) + g(3, 3)
+                strain = (g + transpose(g))/2
+                do i = 1, 3
+                    strain(i, i) = strain(i, i) - divergence/3
+                end do
+                eta = p%eta0*(v(11)/p%t0)**(-1.5_dp)
+                nu = p%nu0*(v(12)/p%t0)**(-1.5_dp)
+                pressure = v(1)*(v(11) + v(12))/p%mi
+                wall_field = matmul(basis(8:10, first:), &
+                    current_wall(slab%op%map(first:, t) - slab%op%offset(8)))
+                vxB = [v(3)*v(27) - v(4)*v(26), &
+                    v(4)*v(25) - v(2)*v(27), v(2)*v(26) - v(3)*v(25)]
+                totals(MASS) = totals(MASS) + weight*v(1)
+                totals(KINETIC) = totals(KINETIC) + weight*v(1)*sum(v(2:4)**2)/2
+                totals(MAGNETIC) = totals(MAGNETIC) + weight*sum(v(25:27)**2)/(2*p%mu0)
+                totals(INTERNAL) = totals(INTERNAL) + weight*1.5_dp*pressure
+                totals(OHMIC) = totals(OHMIC) &
+                    + weight*eta*dot_product(v(8:10), v(8:10) - source(:3, q, t))
+                totals(VISCOUS) = totals(VISCOUS) + weight*2*nu*sum(strain*strain)
+                totals(COMPRESSION) = totals(COMPRESSION) + weight*pressure*divergence
+                totals(WALL_POWER) = totals(WALL_POWER) + weight*dot_product(wall_field, &
+                    vd(5:7) - vxB + eta*(v(8:10) - source(:3, q, t)))
+                totals(MASS_RATE) = totals(MASS_RATE) + weight*vd(1)
+                totals(KINETIC_RATE) = totals(KINETIC_RATE) + weight &
+                    *(vd(1)*sum(v(2:4)**2)/2 + v(1)*dot_product(v(2:4), vd(2:4)))
+                totals(MAGNETIC_RATE) = totals(MAGNETIC_RATE) &
+                    + weight*dot_product(v(25:27), vd(25:27))/p%mu0
+                totals(INTERNAL_RATE) = totals(INTERNAL_RATE) + weight*1.5_dp/p%mi &
+                    *(vd(1)*(v(11) + v(12)) + v(1)*(vd(11) + vd(12)))
+            end do
+        end do
+    end subroutine
+
+    subroutine ledger_oracle()
+        real(dp) :: values(NLEDGER), exact(4), rates(4)
+        real(dp), allocatable :: field(:), derivative(:)
+        integer :: first, last, j
+        field = lift
+        do j = 2, 4
+            first = slab%op%offset(j) + 1; last = slab%op%offset(j + 1)
+            field(first:last) = real(j, dp)/10
+        end do
+        derivative = field
+        derivative(:slab%op%offset(2)) = 0.1_dp*field(:slab%op%offset(2))
+        derivative(slab%op%offset(2) + 1:slab%op%offset(5)) = &
+            0.3_dp*field(slab%op%offset(2) + 1:slab%op%offset(5))
+        derivative(slab%op%offset(5) + 1:slab%op%offset(7)) = &
+            0.2_dp*field(slab%op%offset(5) + 1:slab%op%offset(7))
+        derivative(slab%op%offset(7) + 1:) = &
+            0.4_dp*field(slab%op%offset(7) + 1:)
+        call measure(field, derivative, values)
+        exact = [11*pi/3, 0.145_dp*11*pi/3, 26*pi/3, 11*pi]
+        rates = exact*[0.1_dp, 0.7_dp, 0.8_dp, 0.3_dp]
+        call require(maxval(abs(values(MASS:INTERNAL)/exact - 1)) < 1.0e-10_dp, &
+            'analytic mass and energy integrals')
+        call require(maxval(abs(values(MASS_RATE:INTERNAL_RATE)/rates - 1)) &
+            < 1.0e-10_dp, 'independent physical chain-rule rates')
+    end subroutine
+
+    subroutine check_ledger(field, derivative, values)
+        real(dp), intent(in) :: field(:), derivative(:), values(NLEDGER)
+        real(dp), allocatable :: residual(:), unused(:), zero(:)
+        real(dp) :: scale, defect, reaction, mechanical, thermal
+        integer :: a0, j0
+        allocate (residual(size(field)), unused(size(field)), zero(size(field)))
+        zero = 0
+        call vrmhd_section_residual(slab%op, p, field, derivative, zero, zero, &
+            source, residual, unused, status)
+        call require(status == 0, 'independent wall reaction residual')
+        a0 = slab%op%offset(7); j0 = slab%op%offset(8)
+        reaction = dot_product(current_wall, residual(a0 + 1:j0))
+        scale = max(sum(abs(values(OHMIC:WALL_POWER))), 1.0e-10_dp)
+        defect = sum(values(KINETIC_RATE:INTERNAL_RATE)) - values(WALL_POWER)
+        print '(a,4es17.9)', 'mass rate, energy rate, wall power, defect [1]: ', &
+            values(MASS_RATE), sum(values(KINETIC_RATE:INTERNAL_RATE)), &
+            values(WALL_POWER), defect
+        call require(abs(values(MASS_RATE)) < 1.0e-10_dp, 'closed mass balance')
+        call require(abs(values(WALL_POWER) - reaction) < 1.0e-10_dp*scale, &
+            'wall power from physical pairings matches constrained reaction')
+        mechanical = sum(values(KINETIC_RATE:MAGNETIC_RATE)) &
+            - values(COMPRESSION) + values(OHMIC) + values(VISCOUS) &
+            - values(WALL_POWER)
+        thermal = values(INTERNAL_RATE) + values(COMPRESSION) &
+            - values(OHMIC) - values(VISCOUS)
+        call require(max(abs(defect), abs(mechanical), abs(thermal)) &
+            < 1.0e-8_dp*scale, 'source-accounted energy exchanges')
+        call require(abs(values(WALL_POWER)) > 1.0e-10_dp, 'nontrivial wall port')
     end subroutine
 
     subroutine width_gate()

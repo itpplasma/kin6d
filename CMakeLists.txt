@@ -134,7 +134,7 @@ add_executable(test_vrmhd_island test/test_vrmhd_island.f90
     test/support/vrmhd_island_leaves.f90)
 target_link_libraries(test_vrmhd_island PRIVATE kin6d_vrmhd_slab_test)
 foreach(family equal mixed)
-    foreach(gate boundary equilibrium width)
+    foreach(gate boundary equilibrium width ledger)
         add_test(NAME vrmhd_island_${gate}_${family}
             COMMAND test_vrmhd_island ${gate} ${family})
         set_tests_properties(vrmhd_island_${gate}_${family} PROPERTIES LABELS rm-b5
