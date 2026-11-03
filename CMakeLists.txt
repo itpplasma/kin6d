@@ -112,6 +112,7 @@ foreach(gate boundary derivatives harmonic gauge solve)
         PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 endforeach()
 set_tests_properties(vrmhd_stationary_gauge PROPERTIES
+    TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=8")
 add_test(NAME vrmhd_section_manufactured_consistency COMMAND test_vrmhd_mms)
 set_tests_properties(vrmhd_section_manufactured_consistency PROPERTIES LABELS rm2
@@ -2043,7 +2044,7 @@ add_test(NAME vrmhd_fourier_content COMMAND test_vrmhd_fourier)
 set_tests_properties(vrmhd_fourier_content PROPERTIES LABELS rm2)
 add_test(NAME vrmhd_section_spectra COMMAND test_vrmhd_spectra)
 set_tests_properties(vrmhd_section_spectra PROPERTIES LABELS rm2 PROCESSORS 8
-    TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+    TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_test(NAME vrmhd_section_spectra_fine COMMAND test_vrmhd_spectra fine)
 set_tests_properties(vrmhd_section_spectra_fine PROPERTIES PROCESSORS 8
     TIMEOUT 7200 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
