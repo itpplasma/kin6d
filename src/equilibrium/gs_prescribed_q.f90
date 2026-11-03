@@ -384,10 +384,12 @@ contains
             if (failure /= 0 .and. newton == 0 .and. any(abs(law%pp(:, 2:)) > 0)) &
                 call pressure_homotopy()
         else
-            ! The secant fallback proposes coefficients from central differences
-            ! of full forward solves; nothing it computes is a sensitivity.
+            ! The secant fallback proposes coefficients from forward differences
+            ! and Broyden updates of full forward solves; nothing it computes is
+            ! a sensitivity. max_iter counts trial points, about four per unknown
+            ! here (34 for n + 1 = 8), so allow ten per unknown.
             call multiroot_hybrids(equations, n + 1, x0, solution, stat, &
-                                   xtol=tol*0.1_dp, ftol=tol, max_iter=20)
+                xtol=tol*0.1_dp, ftol=tol, max_iter=10*(n + 1))
             call equations(solution, residual)
             converged = failure == 0 .and. maxval(abs(residual)) <= tol
         end if
