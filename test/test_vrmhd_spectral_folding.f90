@@ -23,11 +23,24 @@ program test_vrmhd_spectral_folding
     call match_folded(omega,4,2,1,b0,exact,frequencies)
     call require(maxval(abs(frequencies-exact)) < 1.0e-14_dp, &
         'four-cell folded multiplicities retain all three base branches')
+    omega([2,8]) = exact(2)+1.0e-6_dp
+    omega([5,11]) = -omega([2,8])
+    call match_folded(omega,4,2,1,b0,exact,frequencies)
+    call require(maxval(abs(frequencies-[exact(1),omega(2),exact(3)])) < 1.0e-14_dp, &
+        'retained-band gap includes both displaced folded fast waves')
+    ! A resolved fast wave can approach its oracle from above.
+    omega = 0
+    omega(1:3) = exact
+    omega(2) = exact(2)+1.0e-6_dp
+    omega(4:6) = -omega(1:3)
+    call match_folded(omega,16,1,1,b0,exact,frequencies)
+    call require(maxval(abs(frequencies-omega(1:3))) < 1.0e-14_dp, &
+        'gap cutoff includes a fast wave displaced above its oracle')
     ! At four cells the Alfven dispersion error can exceed the isolation window.
     omega = 0
     omega(1:3) = [0.7_dp,1.25_dp,0.42_dp]
-    omega(4:6) = -omega(1:3)
+    omega(4:5) = -omega(1:2)
     call match_folded(omega,4,1,1,b0,exact,frequencies,resolved=.false.)
     call require(maxval(abs(frequencies-[0.7_dp,1.25_dp,0.42_dp])) < 1.0e-14_dp, &
-        'coarse ladder retains counts and frequency estimates without isolation')
+        'coarse ladder reports unequal counts without asserting count or isolation')
 end program

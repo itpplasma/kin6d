@@ -202,9 +202,9 @@ closedness for screw symmetry.
 
 The equal-degree default passes the energy ledger and the earlier RM2 gates
 described below at degree one. The spectral gate remains incomplete: its
-first failure is time-mass Gram consistency at 32 cells per period on the
-structured degree-one mesh. Energy-quotient positivity, analytic nulls and
-mass invertibility pass on the three preceding meshes, as detailed below.
+first failure is folded-count equality at 16 cells per period on the
+structured degree-two mesh. The complete structured degree-one ladder passes;
+degree two and the perturbed meshes remain unqualified, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -361,10 +361,17 @@ a Hermitian eigensolve uses the roundoff Hermitian representative on the
 positive-energy quotient. The nonsymmetric solve's
 `max |Im(omega^2)| / max |omega^2|` remains diagnostic.
 
-The second gate requires the computed signed nonzero count below the unchanged
-cutoff `sqrt(1.8) rad/s` to equal the folded oracle count on every mesh.
-One-to-one branch matching, including repeated frequencies, applies to resolved
-meshes: those with at least 16 cells per period in the 4, 8, 16, 32 ladder.
+The second gate places the cutoff in a folded-oracle spectral gap. The largest
+oracle frequency to be counted is the largest in the retained band no greater
+than the base fast-wave frequency `sqrt(1.8) rad/s`. The cutoff is its midpoint
+with the next larger folded-oracle frequency; both endpoints and the cutoff
+are reported for every block. The one-sample structured degree-one band has
+no larger frequency, so adjacent aliases with integer indices `jx,jy=-1,0,1`
+provide the upper endpoint without adding branches to the retained band.
+The computed signed nonzero count below that cutoff must equal the folded
+oracle count on resolved meshes: those with at least 16 cells per period in
+the 4, 8, 16, 32 ladder. One-to-one branch matching, including repeated
+frequencies, applies to the same resolved meshes. Coarse counts are diagnostics.
 For a block of `r` cells in each direction, its wave vectors are
 `(1 + n jx/r, n jy/r, 0) m^-1`, where `n` is the number of cells per period.
 This is `q0 + 2 pi j/(r h)`, with base wave vector `q0=(1,0,0) m^-1`,
@@ -378,7 +385,8 @@ the folded multiplicity instead of independently accepting nearest branches.
 The ladder is 4, 8, 16, 32 cells per period at `k=1,2`, on both meshes;
 the base-wavenumber frequency order must exceed `2 k-0.2` on the finest pair.
 The two coarse meshes retain nearest positive frequency estimates in the ladder
-without asserting branch identity. The isolation window and cutoff are unchanged.
+without asserting count equality or branch identity. The isolation window is
+unchanged.
 
 The third gate counts energetic static modes per cell against the study's
 `k`, separately from entropy and gauge. Every static direction, with its
@@ -405,11 +413,16 @@ The projected matrices and LAPACK solves remain double precision. This reduces
 summation roundoff from the comparisons without changing their `1e-14`
 tolerances or the production operators.
 The structured degree-one ladder passes through 32 cells per period, including
-the finest-pair order check. The first unresolved gate is the folded count for
-structured degree two at four cells per period: twelve computed signed waves
-lie below the cutoff, against fourteen analytic waves. The count check still
-applies on this coarse mesh. No complete spectral qualification is claimed for
-degree two or either perturbed ladder.
+the finest-pair order check. Structured degree two passes both coarse meshes,
+whose counts are diagnostic. At 16 cells per period its structural identities,
+analytic nulls, quotient positivity and time-mass inversion pass, but twelve
+computed signed waves lie below the gap cutoff, against ten analytic waves.
+The next larger folded frequency belongs to the slow branch at
+`(-15,-16,0) m^-1`, so the gap endpoints are approximately `1.341640786500`
+and `6.508898217884 rad/s`, with midpoint `3.925269502192 rad/s`.
+This is a resolved-mesh count failure away from an oracle boundary. The origin
+of the excess discrete count is unresolved. The ladder stops there; no complete
+spectral qualification is claimed for degree two or either perturbed ladder.
 No full-system inf-sup bound or continuous spectral non-pollution result is
 claimed. The independent folding test uses analytic frequencies at
 `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.

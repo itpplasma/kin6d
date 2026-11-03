@@ -483,7 +483,7 @@ contains
         logical, intent(in), optional :: resolved
         real(dp), allocatable :: oracle(:)
         real(dp) :: wave(3), squared(3)
-        real(dp) :: cutoff, separation, tolerance
+        real(dp) :: cutoff, separation, tolerance, last_counted, next_folded
         logical, allocatable :: candidates(:,:), visited(:)
         integer :: jx, jy, j, i, count_oracle, status, direction, matched, base(3)
         integer, allocatable :: owner(:,:)
@@ -492,7 +492,7 @@ contains
         allocate(oracle(3*(repeat*degree)**2))
         allocate(candidates(size(omega),size(oracle)),visited(size(oracle)), &
             owner(size(oracle),2))
-        cutoff = maxval(exact); tolerance = 1.0e-12_dp*maxval(abs(omega))
+        tolerance = 1.0e-12_dp*maxval(abs(omega))
         count_oracle = 0; base = 0
         ! The resolved band has repeat*degree samples in each periodic direction.
         do jy = -(repeat*degree)/2, (repeat*degree-1)/2
@@ -507,6 +507,24 @@ contains
                 end do
             end do
         end do
+        last_counted = maxval(oracle,mask=oracle <= maxval(exact)+tolerance)
+        next_folded = minval(oracle,mask=oracle > last_counted+tolerance)
+        if (next_folded >= huge(1.0_dp)) then
+            ! The one-sample band needs its adjacent aliases to bracket the cutoff.
+            do jy = -1, 1
+                do jx = -1, 1
+                    wave = [1.0_dp+real(n*jx,dp)/repeat, real(n*jy,dp)/repeat, 0.0_dp]
+                    call uniform_waves(wave,b0,1.0_dp,0.6_dp,5.0_dp/3,squared,status)
+                    call check(status == oracle_ok, 'cutoff guard-alias oracle')
+                    next_folded = min(next_folded, &
+                        minval(sqrt(squared),mask=sqrt(squared) > last_counted+tolerance))
+                end do
+            end do
+        end if
+        call check(next_folded < huge(1.0_dp), 'folded oracle gap exists above counted band')
+        cutoff = (last_counted+next_folded)/2
+        print '(a,3es20.12)', 'last counted / next folded / cutoff [1/s]: ', &
+            last_counted, next_folded, cutoff
         candidates = .false.; owner = 0
         do i = 1, count_oracle
             if (oracle(i) > cutoff+tolerance) cycle
@@ -520,7 +538,6 @@ contains
         expected = 2*count(oracle <= cutoff+tolerance)
         computed = count(abs(omega) > tolerance .and. abs(omega) <= cutoff+tolerance)
         print '(a,2i6)', 'computed / expected signed waves below cutoff: ', computed,expected
-        call check(computed == expected, 'folded oracle multiplicity below cutoff')
         if (present(resolved)) then
             if (.not. resolved) then
                 ! Coarse estimates enter the ladder without asserting branch identity.
@@ -532,6 +549,7 @@ contains
                 return
             end if
         end if
+        call check(computed == expected, 'folded oracle multiplicity below cutoff')
         matched = 0
         do j = 1, size(omega)
             if (abs(omega(j)) <= tolerance .or. abs(omega(j)) > cutoff+tolerance) cycle
