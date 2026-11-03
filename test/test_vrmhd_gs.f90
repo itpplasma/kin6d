@@ -13,7 +13,8 @@ program test_vrmhd_gs
     use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use kin6d_vrmhd_gs_leaves, only: gs_lift_rotation, gs_lift_screw, &
-        vrmhd_gs_flux_rotation, vrmhd_gs_flux_screw
+        vrmhd_gs_flux_rotation, vrmhd_gs_flux_screw, &
+        vrmhd_gs_heat_rotation, vrmhd_gs_heat_screw
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_triangle_duffy_quadrature, only: triangle_duffy_quadrature
@@ -199,6 +200,9 @@ contains
         call require(status == 0, 'GS section')
         call vrmhd_stationary_build(op, steady, status)
         call require(status == 0, 'GS Coulomb gauge')
+        p%mi = 1; p%mu0 = 1
+        p%eta0 = 0
+        if (convention > 0) p%eta0 = 0.2_dp
         nt = mm%topology%n_triangles; nl = op%nlocal
         nc = 6*op%fs%n0 + op%fs%sp(1)%ndof
         allocate (basis(36, nl), metric(36, nl), local(nl, nl), rhs(op%ndof), &
@@ -227,6 +231,17 @@ contains
                     rhs(row) = rhs(row) + weight*dot_product(metric(:, i), values(:36))
                 end do
                 js(:, q, t) = exact(8:10)
+                if (convention == 2) then
+                    ! Analytic cooling balances Ohmic heat left by the voltage drive.
+                    if (kind == GS_ROTATION) then
+                        call vrmhd_gs_heat_rotation(x(1), p%eta0, source(5, q, t))
+                    else
+                        call vrmhd_gs_heat_screw(p%eta0, source(5, q, t))
+                    end if
+                    call require(abs(source(5, q, t) &
+                        + p%eta0*dot_product(exact(8:10), exact(8:10))) < 1.0e-14_dp, &
+                        'independent analytic GS heat sink')
+                end if
             end do
             do j = 1, nl
                 do i = 1, nl
@@ -245,7 +260,6 @@ contains
         zero = 0; trace_kind = kind
         call vrmhd_ampere_boundary(op, magnetic_trace, surface, status)
         call require(status == 0, 'GS Ampere trace')
-        p%mi = 1; p%mu0 = 1
         u(nc + 1:op%ndof) = 0
         call vrmhd_stationary_residual(op, steady, p, u, zero, u(:op%ndof), &
             source, -surface, r, unused, status)
@@ -266,8 +280,6 @@ contains
         call sparse_solve_once(current_gram, -r(nc + 1:op%ndof), recovered, st)
         call require(status_ok(st), 'GS weak Ampere solve')
         u(nc + 1:op%ndof) = recovered
-        p%eta0 = 0
-        if (convention > 0) p%eta0 = 0.2_dp
         load = 0
         if (convention == 1) then
             call vrmhd_drive_build(op, VRMHD_CURRENT_SOURCE, 2.3_dp, 0.0_dp, &

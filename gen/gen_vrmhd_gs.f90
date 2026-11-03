@@ -8,7 +8,7 @@ program gen_vrmhd_gs
     implicit none
     type(arena_t), target :: arena
     type(leaf_writer_t) :: w
-    type(expr_t) :: x, y, k, psi, px, py, zero, one, c, a, alpha, radius2
+    type(expr_t) :: x, y, k, psi, px, py, eta, zero, one, c, a, alpha, radius2
     type(expr_t) :: exact, source, rho, av(3), bv(3), jv(3), grho(3), out(38)
     character(16) :: names(38), suffix, index_text
     integer :: kind, i
@@ -17,6 +17,7 @@ program gen_vrmhd_gs
     c = one/5; a = one/5
     x = sym(arena, 'x'); y = sym(arena, 'y'); k = sym(arena, 'k')
     psi = sym(arena, 'psi'); px = sym(arena, 'px'); py = sym(arena, 'py')
+    eta = sym(arena, 'eta')
     do i = 1, size(names)
         write (names(i), '(a,i0)') 'out', i
     end do
@@ -71,6 +72,15 @@ program gen_vrmhd_gs
             [character(8) :: 'x', 'y', 'k'], &
             [character(8) :: 'psi', 'px', 'py', 'source'], &
             [exact, diff(exact, x), diff(exact, y), source])
+        if (kind == 1) then
+            call w%emit('vrmhd_gs_heat_'//trim(suffix), &
+                [character(8) :: 'x', 'eta'], [character(8) :: 'qe'], &
+                [-eta*(jv(1)**2 + jv(2)**2 + jv(3)**2)])
+        else
+            call w%emit('vrmhd_gs_heat_'//trim(suffix), &
+                [character(8) :: 'eta'], [character(8) :: 'qe'], &
+                [-eta*(jv(1)**2 + jv(2)**2 + jv(3)**2)])
+        end if
     end do
     call w%line('end module kin6d_vrmhd_gs_leaves')
     call w%close()

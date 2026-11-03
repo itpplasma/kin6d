@@ -123,6 +123,9 @@ In Weyl gauge write `A = Atilde - t V h`. Then `B = curl Atilde` and
 therefore gains `-V h.W`, and the magnetic power ledger gains `V h.J`.
 A stationary Ohmic state satisfies `eta (J - Js) = V h`. The two limiting
 conventions are `Js=J, V=0` and `Js=0, eta J=V h`.
+For GS consistency, the loop-voltage convention prescribes the electron heat
+sink `Qe=-eta |J_GS|^2` from the analytic GS current at quadrature points to
+balance Ohmic heating; the ideal and prescribed-current conventions keep `Qe=0`.
 
 Discrete harmonic coefficients must be edge integrals of the multivalued
 coordinate, divided by its period, with `curl_h h=0` to roundoff. A
@@ -181,14 +184,10 @@ units and unit reference scales; both species have constant temperature
 The pressure is a function of the monotone radial flux in each case.
 The full gauged residual, measured in the dual of the constrained physical
 Riesz norm, converges at least at first order over three refinements in the
-ideal limit and with `Js=J_GS` for both symmetries.
+ideal limit, with `Js=J_GS`, and with loop voltage and the prescribed heat sink
+for both symmetries.
 
-The loop-voltage case stops at the first rotation refinement: its electron
-thermal residual remains nonzero although induction balances. With constant
-temperature, zero flow and no heat sink, the electron equation retains
-`-eta |J|^2 q_e`; `eta J=V h` alone does not make the full state stationary.
-No heat sink is inserted by the voltage drive. Finer rotation meshes and
-screw loop-voltage consistency remain untested after this failure. The
-semidiscrete energy ledger and linear spectra remain unverified. Conservative
-momentum alone does not enforce the kinetic continuity product discussed in
-the weak-form document.
+The voltage drive retains the specified Ohmic heating term and preserves the
+separately prescribed heat sink. The semidiscrete energy ledger and linear
+spectra remain unverified. Conservative momentum alone does not enforce the
+kinetic continuity product discussed in the weak-form document.
