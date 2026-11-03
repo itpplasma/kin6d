@@ -15,7 +15,7 @@ module kin6d_vrmhd_section
     implicit none
     private
     type, public :: vrmhd_section_t
-        type(meridian_feec_t) :: fs
+        type(meridian_feec_t) :: fs, scalar_fs
         type(gs_symmetry_t) :: symmetry
         integer :: harmonic_count = 1, ndof = 0, nlocal = 0
         integer, allocatable :: map(:, :), row(:)
@@ -23,29 +23,55 @@ module kin6d_vrmhd_section
     end type
     public :: vrmhd_section_build, vrmhd_section_basis, vrmhd_section_residual
     public :: vrmhd_section_jacobian, vrmhd_section_vjp, vrmhd_section_mass
-    public :: vrmhd_section_trace
+    public :: vrmhd_section_trace, vrmhd_section_gauge_basis
+    !> First-kind (N1_k) and second-kind (N2_k, complete P_k) edge families.
+    integer, parameter, public :: VRMHD_EDGE_FIRST = 1, VRMHD_EDGE_SECOND = 2
 contains
-    subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status)
+    subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status, &
+            scalar_degree, study_pairing, edge_kind)
         type(meridian_mesh_t), intent(in) :: mm
         type(gs_symmetry_t), intent(in) :: symmetry
         integer, intent(in) :: degree, harmonic_count
         type(vrmhd_section_t), intent(out) :: op
         integer, intent(out) :: status
-        integer :: i, t, j, b, n0, n1, l0, l1, offset, lo
+        logical, intent(in), optional :: study_pairing
+        logical :: study
+        integer, intent(in), optional :: scalar_degree, edge_kind
+        integer :: i, t, j, b, n0, n1, l0, l1, offset, lo, ks, qdegree, kind
         status = 1
         if (.not. symmetry%valid() .or. harmonic_count /= 1) return
+        ks = degree
+        if (present(scalar_degree)) ks = scalar_degree
+        study = .false.
+        if (present(study_pairing)) study = study_pairing
+        kind = VRMHD_EDGE_SECOND
+        if (present(edge_kind)) kind = edge_kind
+        if (kind /= VRMHD_EDGE_FIRST .and. kind /= VRMHD_EDGE_SECOND) return
+        if (degree < 1 .or. ks < 1) return
+        if (study) then
+            if (ks < degree - 1) return
+        else
+            if (ks /= degree) return
+        end if
         op%symmetry = symmetry; op%harmonic_count = harmonic_count
+        qdegree = 4*max(ks, degree) + 2*mm%geo_order + 2
         if (symmetry%kind == GS_ROTATION) then
             call meridian_feec_build(mm, degree, op%fs, status, &
-                quad_degree=2*degree + 6)
+                quad_degree=qdegree, edge_kind=kind)
+            if (status /= 0) return
+            call meridian_feec_build(mm, ks, op%scalar_fs, status, &
+                quad_degree=qdegree)
         else
             call meridian_feec_build(mm, degree, op%fs, status, &
-                quad_degree=2*degree + 6, cylinder_r0=1.0_dp)
+                quad_degree=qdegree, cylinder_r0=1.0_dp, edge_kind=kind)
+            if (status /= 0) return
+            call meridian_feec_build(mm, ks, op%scalar_fs, status, &
+                quad_degree=qdegree, cylinder_r0=1.0_dp)
         end if
         if (status /= 0) return
         call op%fs%mm%topology%build_edge_connectivity()
-        n0 = op%fs%n0; n1 = op%fs%sp(1)%ndof
-        l0 = op%fs%nl0; l1 = op%fs%sp(1)%nloc
+        n0 = op%scalar_fs%n0; n1 = op%fs%sp(1)%ndof
+        l0 = op%scalar_fs%nl0; l1 = op%fs%sp(1)%nloc
         op%ndof = harmonic_count*(6*n0 + 2*n1)
         op%nlocal = harmonic_count*(6*l0 + 2*l1)
         allocate (op%map(op%nlocal, mm%topology%n_triangles), &
@@ -56,12 +82,12 @@ contains
             do i = 1, 6
                 do t = 1, mm%topology%n_triangles
                     op%map(lo + (i - 1)*l0 + 1:lo + i*l0, t) = &
-                        offset + (i - 1)*n0 + op%fs%sp(0)%dof(:, t)
+                        offset + (i - 1)*n0 + op%scalar_fs%sp(0)%dof(:, t)
                 end do
                 op%row(lo + (i - 1)*l0 + 1:lo + i*l0) = 2
                 if (i == 1) op%row(lo + 1:lo + l0) = 1
                 if (i >= 5) op%row(lo + (i - 1)*l0 + 1:lo + i*l0) = i
-                op%fixed(offset + (i - 1)*n0 + 1:offset + i*n0) = op%fs%sp(0)%bnd
+                op%fixed(offset + (i - 1)*n0 + 1:offset + i*n0) = op%scalar_fs%sp(0)%bnd
             end do
             do j = 1, 2
                 i = lo + 6*l0 + (j - 1)*l1
@@ -70,10 +96,9 @@ contains
                         t) = offset + 6*n0 + (j - 1)*n1 + op%fs%sp(1)%dof(:, t)
                 end do
                 op%row(i + 1:i + l1) = j + 2
-                ! Only A has fixed tangential trace; weak Ampere uses all J tests.
-                if (j == 1) then
-                    op%fixed(offset + 6*n0 + 1:offset + 6*n0 + n1) = op%fs%sp(1)%bnd
-                end if
+                ! A and the free current use the same zero-tangential tests.
+                op%fixed(offset + 6*n0 + (j - 1)*n1 + 1: &
+                    offset + 6*n0 + j*n1) = op%fs%sp(1)%bnd
             end do
         end do
     end subroutine
@@ -83,11 +108,14 @@ contains
         integer, intent(in) :: t, q
         real(dp), intent(out) :: x(2), weight, basis(36, op%nlocal)
         integer, intent(out) :: status
-        real(dp) :: val(op%fs%nl0), grad(2, op%fs%nl0), g(3), v(3), vx(3), vy(3)
+        real(dp) :: val(op%scalar_fs%nl0), grad(2, op%scalar_fs%nl0)
+        real(dp) :: aval(op%fs%nl0), agrad(2, op%fs%nl0), g(3), v(3), vx(3), vy(3)
         real(dp) :: gv(3, 3), phi(3, op%fs%sp(1)%nloc), psi(3, op%fs%sp(2)%nloc)
         real(dp) :: curl(3), av(3), bv(3), a, ax, ay, c, scale
         integer :: i, j, l, col, p, r, local, s, b, offset
-        call meridian_qgrad(op%fs, t, q, x, weight, val, grad, status)
+        call meridian_qgrad(op%scalar_fs, t, q, x, weight, val, grad, status)
+        if (status /= 0) return
+        call meridian_qgrad(op%fs, t, q, x, weight, aval, agrad, status)
         if (status /= 0) return
         call meridian_qpoint(op%fs, 1, t, q, x, weight, phi, status)
         if (status /= 0) return
@@ -95,19 +123,19 @@ contains
         if (status /= 0) return
         basis = 0
         do b = 1, op%harmonic_count
-            offset = (b - 1)*(6*op%fs%nl0 + 2*op%fs%sp(1)%nloc)
-            do i = 1, op%fs%nl0
+            offset = (b - 1)*(6*op%scalar_fs%nl0 + 2*op%fs%sp(1)%nloc)
+            do i = 1, op%scalar_fs%nl0
                 call scalar_gradient(op, x, grad(:, i), g)
                 basis(1, offset + i) = val(i); basis(13:15, offset + i) = g
                 do j = 1, 3
-                    local = offset + j*op%fs%nl0 + i
+                    local = offset + j*op%scalar_fs%nl0 + i
                     v = 0; vx = 0; vy = 0
                     v(j) = val(i); vx(j) = grad(1, i); vy(j) = grad(2, i)
                     call vector_gradient(op, x, v, vx, vy, gv)
                     basis(2:4, local) = v; basis(16:24, local) = reshape(gv, [9])
                 end do
                 do j = 1, 2
-                    local = offset + (3 + j)*op%fs%nl0 + i
+                    local = offset + (3 + j)*op%scalar_fs%nl0 + i
                     basis(10 + j, local) = val(i)
                     basis(25 + 3*j:27 + 3*j, local) = g
                 end do
@@ -126,19 +154,35 @@ contains
                 a = 0; ax = 0; ay = 0
                 if (i > op%fs%nln) then
                     j = i - op%fs%nln
-                    a = val(j); ax = grad(1, j); ay = grad(2, j)
+                    a = aval(j); ax = agrad(1, j); ay = agrad(2, j)
                 end if
                 c = -curl(2)
                 call vector_curl(op, x, scale*phi(1, i), scale*phi(3, i), c, a, &
                     ax, ay, av, bv)
                 do j = 1, 2
-                    local = offset + 6*op%fs%nl0 + (j - 1)*op%fs%sp(1)%nloc + i
+                    local = offset + 6*op%scalar_fs%nl0 + (j - 1)*op%fs%sp(1)%nloc + i
                     s = 2 + 3*j
                     basis(s:s + 2, local) = av
                     if (j == 1) basis(25:27, local) = bv
                     if (j == 2) basis(34:36, local) = bv
                 end do
             end do
+        end do
+    end subroutine
+
+    subroutine vrmhd_section_gauge_basis(op, t, q, val, grad, status)
+        !! Values and Cartesian gradients of the magnetic complex's Lagrange
+        !! space, whose gradients are the curl-free subspace of the A/J space.
+        type(vrmhd_section_t), intent(in) :: op
+        integer, intent(in) :: t, q
+        real(dp), intent(out) :: val(op%fs%nl0), grad(3, op%fs%nl0)
+        integer, intent(out) :: status
+        real(dp) :: x(2), weight, planar(2, op%fs%nl0)
+        integer :: i
+        call meridian_qgrad(op%fs, t, q, x, weight, val, planar, status)
+        if (status /= 0) return
+        do i = 1, op%fs%nl0
+            call scalar_gradient(op, x, planar(:, i), grad(:, i))
         end do
     end subroutine
 

@@ -45,7 +45,7 @@ contains
             do q = 1, op%fs%nq
                 call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                 if (status /= 0) return
-                a = dot_product(basis(1, :op%fs%nl0), &
+                a = dot_product(op%fs%tl(:, q), &
                     harmonic(op%fs%nn + op%fs%sp(0)%dof(:, t)))/period
                 if (op%symmetry%kind == GS_ROTATION) then
                     call vrmhd_harmonic_rotation(x(1), a, h(1), h(2), h(3))

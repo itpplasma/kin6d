@@ -16,7 +16,7 @@ program gen_vrmhd_section
     type(expr_t) :: v(3), vx(3), vy(3), gv(3, 3), f(2), g(3)
     type(expr_t) :: u(2), ux(2), uy(2), a, ax, ay, c, av(3), da(3, 3), b(3)
     type(expr_t) :: roots(6), keys(4), replacements(4), gc(3), gcurl(3)
-    type(expr_t) :: normal(3), test(3), field(3), contraction
+    type(expr_t) :: test(3), field(3), contraction
     type(engine_result_t) :: simplified
     character(16) :: suffix
     character(16) :: vn(9), out(9), cn(9)
@@ -141,7 +141,6 @@ program gen_vrmhd_section
     do i = 1, 3
         field(i) = sym(arena, 'b'//achar(48 + i))
         test(i) = sym(arena, 'w'//achar(48 + i))
-        normal(i) = sym(arena, 'n'//achar(48 + i))
     end do
     contraction = z
     do i = 1, 3
@@ -150,12 +149,6 @@ program gen_vrmhd_section
     call w%emit('vrmhd_pairing', &
         [character(16) :: 'b1', 'b2', 'b3', 'w1', 'w2', 'w3'], &
         [character(16) :: 'value'], [contraction], ad=.true.)
-    contraction = -(normal(2)*field(3) - normal(3)*field(2))*test(1) &
-        -(normal(3)*field(1) - normal(1)*field(3))*test(2) &
-        -(normal(1)*field(2) - normal(2)*field(1))*test(3)
-    call w%emit('vrmhd_ampere_surface', &
-        [character(16) :: 'b1', 'b2', 'b3', 'w1', 'w2', 'w3', &
-        'n1', 'n2', 'n3'], [character(16) :: 'value'], [contraction], ad=.true.)
     call w%line('end module kin6d_vrmhd_section_leaves')
     call w%close()
     print '(a)', 'Invariant Cartesian gradients and curls: 18 identities passed'

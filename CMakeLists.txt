@@ -92,15 +92,17 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
     src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90
     src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90
     src/mhd/vrmhd_drive.f90)
+add_library(kin6d_vrmhd_wall_test STATIC test/support/vrmhd_wall_oracle.f90)
+target_link_libraries(kin6d_vrmhd_wall_test PUBLIC kin6d_mhd)
 add_library(kin6d_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
 target_link_libraries(kin6d_vrmhd_mms_test PUBLIC kin6d_mhd)
 add_executable(test_vrmhd_mms test/test_vrmhd_mms.f90)
 target_link_libraries(test_vrmhd_mms PRIVATE kin6d_vrmhd_mms_test)
 add_executable(test_vrmhd_stationary test/test_vrmhd_stationary.f90)
-target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test)
+target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test kin6d_vrmhd_wall_test)
 add_executable(test_vrmhd_gs test/test_vrmhd_gs.f90
     src/generated/kin6d_vrmhd_gs_leaves.f90)
-target_link_libraries(test_vrmhd_gs PRIVATE kin6d_mhd)
+target_link_libraries(test_vrmhd_gs PRIVATE kin6d_vrmhd_wall_test)
 add_test(NAME vrmhd_gs_consistency COMMAND test_vrmhd_gs)
 set_tests_properties(vrmhd_gs_consistency PROPERTIES LABELS rm2 PROCESSORS 8
     ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
@@ -110,12 +112,18 @@ foreach(gate boundary derivatives harmonic gauge solve)
         PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 endforeach()
 set_tests_properties(vrmhd_stationary_gauge PROPERTIES
+    TIMEOUT 1800
     ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=8")
 add_test(NAME vrmhd_section_manufactured_consistency COMMAND test_vrmhd_mms)
 set_tests_properties(vrmhd_section_manufactured_consistency PROPERTIES LABELS rm2
     ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
 target_link_libraries(test_vrmhd_section PRIVATE kin6d_mhd)
+add_executable(test_vrmhd_energy test/test_vrmhd_energy.f90)
+target_link_libraries(test_vrmhd_energy PRIVATE kin6d_vrmhd_wall_test)
+add_test(NAME vrmhd_section_energy COMMAND test_vrmhd_energy)
+set_tests_properties(vrmhd_section_energy PROPERTIES LABELS rm2
+    TIMEOUT 60 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 foreach(gate geometry derivatives volume closure)
     add_test(NAME vrmhd_section_${gate} COMMAND test_vrmhd_section ${gate})
     set_tests_properties(vrmhd_section_${gate} PROPERTIES LABELS rm2
@@ -190,8 +198,9 @@ set_source_files_properties(src/generated/kin6d_coulomb_encounter_leaves.f90
 target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
-# Steklov form #144, exact FEEC tables, split stretched BEM fans #145).
-set(KIN6D_FORTFEM_REVISION "489b76f8ce4c039851d7c151c91b654baa850f0b")
+# Steklov form #144, exact FEEC tables, split stretched BEM fans #145,
+# second-kind Nedelec edges in the meridian FEEC complex #148).
+set(KIN6D_FORTFEM_REVISION "0744399cd4be55afcace7d81c62a4c358a50fe8f")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -1850,6 +1859,7 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_bernstein_jets.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_second_kind.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_mapped_oscillation_products.f90
@@ -2014,6 +2024,40 @@ add_test(NAME response_strip_cylinder_layer COMMAND test_response_strip)
 add_library(kin6d_rm_oracles STATIC src/generated/kin6d_rm_oracle_leaves.f90
     test/support/rm_mhd_oracles.f90)
 target_link_libraries(kin6d_rm_oracles PUBLIC fortnum)
+add_library(kin6d_spectrum_support STATIC test/support/vrmhd_structural_spectrum.f90
+    test/support/vrmhd_spectrum_support.f90)
+target_link_libraries(kin6d_spectrum_support PUBLIC kin6d_mhd kin6d_rm_oracles)
+add_executable(test_vrmhd_spectra test/test_vrmhd_spectra.f90)
+target_link_libraries(test_vrmhd_spectra PRIVATE kin6d_spectrum_support)
+add_executable(test_vrmhd_spectral_folding test/test_vrmhd_spectral_folding.f90)
+target_link_libraries(test_vrmhd_spectral_folding PRIVATE kin6d_spectrum_support)
+add_test(NAME vrmhd_spectral_folding COMMAND test_vrmhd_spectral_folding)
+set_tests_properties(vrmhd_spectral_folding PROPERTIES LABELS rm2)
+foreach(mode spurious ambiguous)
+    add_test(NAME vrmhd_resolved_power_rejects_${mode}
+        COMMAND test_vrmhd_spectral_folding ${mode})
+    set_tests_properties(vrmhd_resolved_power_rejects_${mode}
+        PROPERTIES LABELS rm2 WILL_FAIL TRUE)
+endforeach()
+add_executable(test_vrmhd_fourier test/test_vrmhd_fourier.f90)
+target_link_libraries(test_vrmhd_fourier PRIVATE kin6d_spectrum_support)
+add_test(NAME vrmhd_fourier_content COMMAND test_vrmhd_fourier)
+set_tests_properties(vrmhd_fourier_content PROPERTIES LABELS rm2)
+add_test(NAME vrmhd_section_spectra COMMAND test_vrmhd_spectra)
+set_tests_properties(vrmhd_section_spectra PROPERTIES LABELS rm2 PROCESSORS 8
+    TIMEOUT 1800 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_section_spectra_fine COMMAND test_vrmhd_spectra fine)
+set_tests_properties(vrmhd_section_spectra_fine PROPERTIES PROCESSORS 8
+    TIMEOUT 7200 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_executable(vrmhd_pairing_study test/vrmhd_pairing_study.f90)
+target_link_libraries(vrmhd_pairing_study PRIVATE kin6d_spectrum_support)
+add_test(NAME vrmhd_pairing_measurement COMMAND vrmhd_pairing_study smoke)
+set_tests_properties(vrmhd_pairing_measurement PROPERTIES PROCESSORS 8 TIMEOUT 180
+    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_pairing_benchmark COMMAND vrmhd_pairing_study
+    ${CMAKE_CURRENT_BINARY_DIR}/vrmhd-pairings.csv)
+set_tests_properties(vrmhd_pairing_benchmark PROPERTIES PROCESSORS 8 TIMEOUT 3600
+    LABELS benchmark ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_executable(test_rm_oracles test/test_rm_oracles.f90)
 target_link_libraries(test_rm_oracles PRIVATE kin6d_rm_oracles kin6d_mhd)
 foreach(case waves rates outer newcomb convergence saturation table)

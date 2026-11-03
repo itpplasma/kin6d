@@ -141,7 +141,7 @@ contains
                 call vrmhd_section_residual(op, p, u, zero, zero, zero, source, r, jv, status)
                 call require(status == 0, 'manufactured residual')
                 free = .not. op%fixed
-                n0 = op%fs%n0; n1 = op%fs%sp(1)%ndof
+                n0 = op%scalar_fs%n0; n1 = op%fs%sp(1)%ndof
                 free(6*n0 + n1 + 1:) = .not. op%fs%sp(1)%bnd
                 defect = sqrt(sum((r - load)**2/diagonal, mask=free))
             end subroutine

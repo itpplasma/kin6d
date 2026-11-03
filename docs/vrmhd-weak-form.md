@@ -21,28 +21,34 @@ diffusivities `D` are in m²/s; heat flux therefore includes number density.
 The fields are `rho, v, Te, Ti` in H1 (square-integrable values and first
 weak derivatives), and `A, J` in H(curl) (square-integrable values and curls).
 Finite-element exterior calculus (FEEC) uses the discrete de Rham complex
-`V0 -grad-> V1 -curl-> V2 -div-> V3`, with scalars in `V0`, velocity in
-`[V0]^3`, and `A, J` in `V1`. The strong discrete curl places `B` in `V2`;
+`V0 -grad-> V1 -curl-> V2 -div-> V3`, with `A, J` in `V1`.
+Density, temperatures and velocity use a separate
+continuous Lagrange space `V_s` and `[V_s]^3`, respectively; the scalar
+space `V0` of the magnetic complex remains the domain of its exact gradient.
+The degree convention, quadrature and failed spectral qualification of the
+proposed pair are stated in [the section contract](vrmhd-section.md).
+The strong discrete curl places `B` in `V2`;
 the complex identity `div curl = 0` then enforces discrete `div B = 0`.
 Here `V0` is in H1, `V1` in H(curl), `V2` in H(div) (square-integrable
 values and divergence), and `V3` in L2 (square-integrable values).
 Scalar tests are `r, qe, qi`, the velocity test is `w`, and the vector-potential
-and auxiliary-current tests are `W, K`. The leaves receive only values,
+and auxiliary-current tests are `W, K`, both in H0(curl), with zero
+tangential trace at a conducting wall. The leaves receive only values,
 gradients and curls at one quadrature point. `grad_v_ij = partial_j v_i`;
 matrix arguments are ordered by column. No second trial derivatives occur.
 
 ## Mass and residual
 
-We use conservative momentum `rho v` and species internal energies
-`3 rho Ts/(2 mi)` while retaining primitive fields as coordinates. Their
-chain-rule mass terms retain density coupling explicitly and avoid dividing
-momentum or energy residuals by density.
+Momentum uses the skew-symmetric kinetic-energy form, while species internal
+energies remain `3 rho Ts/(2 mi)`. Primitive fields are coordinates. The density
+rate in momentum is the same discrete derivative used in continuity; its
+coupling to momentum is half the conservative chain-rule coupling.
 
 The mass integrands, where a dot denotes a time derivative, are
 
 ```
 rho_dot r
-(rho v_dot + rho_dot v) . w
+(rho v_dot + rho_dot v/2) . w
 A_dot . W
 3/(2 mi) (rho Ts_dot + rho_dot Ts) qs,  s = e, i.
 ```
@@ -52,8 +58,9 @@ sum over both matrix indices, the volume residual integrands are
 
 ```
 Rrho = -rho v . grad r + (D grad rho) . grad r - Srho r
-Rv   = -rho (v tensor v) : grad w - p div w
+Rv   = rho/2 [(grad v)v . w - (grad w)v . v] - p div w
        + tau : grad w - (J x B) . w
+       + Srho v.w/2 - (D grad rho).grad(v.w)/2
 RA   = -(v x B) . W + eta (J - Js) . W
 RJ   = mu0 J . K - B . curl K
 RTs  = -3/2 n Ts v . grad qs + n Ts div v qs
@@ -66,9 +73,16 @@ Qei  = n rate (Ti - Te).
 `Srho` is a mass source in kg/(m³ s); `Qe, Qi` are heat sources in W/m³.
 The nonnegative `rate` is an energy-equilibration rate in 1/s, with its
 normalization defined by `Qei` above. These are source inputs, not extra
-species. Density diffusion and mass injection are prescribed model ports;
-a future total-energy ledger must include their kinetic-energy exchanges.
-No closed-system total-energy claim is made for these ports here.
+species. Density diffusion and mass injection are prescribed model ports. Write
+`F = D grad rho` and `Q = Srho + div F`, so continuity is
+`rho_dot + div(rho v) = Q`. The default convention is particles born at rest:
+the conservative momentum equation has no accompanying momentum injection.
+The skew left side equals the conservative left side minus `v Q/2` whenever
+continuity holds, so its right side includes `-v Q/2`. Integration by parts
+of that explicit diffusion coupling gives the last two volume terms in `Rv`.
+The kinetic source power is `-Srho |v|^2/2 + F.grad(|v|^2)/2`, with boundary
+power `-F.N |v|^2/2`. These exchanges are explicit ledger entries; they do not
+change the channel flux, stress or electromotive-force closure semantics.
 
 Volume integration uses `dx`. These forms use periodic boundaries; they also
 apply to a stationary ideal conducting wall with vanishing tangential electric
@@ -80,23 +94,25 @@ With outward unit normal `N`, the boundary residual terms are
 
 ```
 Rrho_boundary = (rho v - D grad rho).N r
-Rv_boundary   = [rho v (v.N) + p N - tau N].w
-RJ_boundary   = -(N cross B).K
+Rv_boundary   = [rho v (v.N)/2 + p N - tau N + F.N v/2].w
 RTs_boundary  = [3/2 n Ts v - n Ks grad Ts].N qs.
 ```
 
 Induction has no integration-by-parts boundary term. A no-slip ideal wall
 sets `v=0`, fixes `N cross A`, and fixes scalar Dirichlet values, so their
-tests vanish at the boundary. Auxiliary-current tests remain unrestricted:
-the Ampere surface term is required when the magnetic tangential trace is
-nonzero. Manufactured nonzero Dirichlet data use the same trace lifting.
+tests vanish at the boundary. The current is `J = J_wall + J0`, where `J0`
+and its tests `K` belong to H0(curl). The prescribed lift `J_wall` has the
+wall trace degrees of freedom and zero interior coefficients. Thus
+`(N cross B).K` vanishes and the Ampere
+residual has no surface term, even for nonzero tangential magnetic field.
+Manufactured nonzero Dirichlet data supply the matching current trace.
 These prescribed ports need their work ledger before a closed-system
 energy statement applies.
 
 For a stationary solve, the mixed Coulomb gauge adds
 `integral grad(lambda).W dx` to induction and
 `integral A.grad(q_lambda) dx = 0`. Multiplier `lambda` and test
-`q_lambda` belong to H1 with zero boundary trace. A compatible continuous
+`q_lambda` belong to `V_s` with zero boundary trace. A compatible continuous
 physical solution has `lambda=0`. The time-dependent problem retains Weyl
 gauge; its A mass row removes the stationary gradient kernel.
 
@@ -184,16 +200,16 @@ as `alpha n Ts v_th`, rather than their hydrodynamic sound-speed cap.
 The `rm2` closure gate checks the harmonic mean, flux bound and derivatives.
 
 The invariant [section volume assembly](vrmhd-section.md) calls these same
-primal and JVP leaves and retains the conservative mass coupling.
+primal and JVP leaves and retains the state-dependent mass coupling.
 
 ## Mixed current and energy exchange
 
 Weak Ampère recovery makes `J_h` a discrete curl-curl of `A_h`. Its curl
 is an additional recovered discrete derivative, for which this formulation gives
-no convergence guarantee. Here `h` denotes mesh spacing. The measured `curl J_h`
-L2 error converges at approximately order 0.4–0.5 both over all cells and away
-from the boundary, so this slow rate is not a boundary-layer effect; no term
-of the formulation contains `curl J`. Induction, Lorentz force and Ohmic
+no convergence guarantee. Here `h` denotes mesh spacing. The diagnostic
+interior `curl J_h` L2 error converges at approximately order
+0.4–0.5 despite the prescribed current trace; no term of the formulation
+contains `curl J`. Induction, Lorentz force and Ohmic
 heating use only L2 pairings of `J`. The solved-current gate therefore uses
 L2, with the same design order as `curl A` in L2 (one for the lowest-order
 spaces). The curl error remains a diagnostic, reported over the whole mesh
@@ -201,7 +217,8 @@ and after excluding the two cell layers next to the boundary.
 
 Stationary stability concerns the primal fields
 `p=(rho,v,A,Te,Ti,lambda)`, with auxiliary current eliminated by the exact
-algebraic recovery `mu0 M_J J = C^T B` including prescribed boundary terms.
+algebraic recovery `mu0 M_J J = C^T B` on the free current coefficients after
+subtracting the fixed lift's mass load.
 Here `M_J` is the L2 current mass matrix and `C^T B` denotes the weak curl
 load. If `D=R_U` is the stationary Jacobian, the reduced Jacobian is
 `S=D_pp-D_pJ (mu0 M_J)^(-1) D_Jp`. Measuring independent oscillatory current
@@ -220,8 +237,9 @@ where `D_J=diag(M_J)`, because section edge and orbit nodal bases have different
 mesh scaling; the raw condition number is diagnostic only.
 
 The auxiliary current is defined by weak Ampère's law `RJ = 0`, rather than
-by a second pointwise derivative of `A`. With `W = J` in induction and
-`K = A_dot` in Ampère, the discrete magnetic-energy derivative is
+by a second pointwise derivative of `A`. When `J` is an admissible induction
+test, use `W = J` in induction and `K = A_dot` in Ampère. For zero voltage
+and boundary power the discrete magnetic-energy derivative is then
 
 ```
 d/dt integral |B|²/(2 mu0) dx
@@ -243,17 +261,94 @@ coefficients. Pressure work cancels the two thermal compression terms.
 For constant thermal tests the volume advection and conduction terms vanish,
 while electron-ion equipartition cancels between species.
 
-For a closed system without density diffusion or sources, these balances give
-conservation of kinetic plus internal plus magnetic energy when the scalar
-space contains constants and the advection assembly preserves the kinetic
-continuity product. In the present conservative form that product is the
-density equation tested with `|v|^2/2`: subtracting it from momentum tested
-with `v` gives the kinetic-energy time derivative, and the advective integrands
-cancel pointwise. Constants alone do not ensure that `|v|^2/2` lies in a
-particular finite-element space; an assembled solver must preserve this
-product through compatible spaces or a conservative split. The tests check
-these local identities; full semidiscrete total-energy conservation remains
-an assembly gate.
+For `w=v`, the two advection contractions cancel algebraically at each
+quadrature point, and the momentum mass is exactly
+`d/dt integral rho |v|^2/2 dx`. No continuity test with `|v|^2/2`, integration
+by parts or exact quadrature is required for this identity. It holds with
+the rotation and screw metric weights as well. Constant thermal tests remove
+thermal advection and conduction from the global internal-energy balance.
+The price of this energy-compatible split is loss of discrete global momentum
+conservation: a constant velocity test no longer gives a conservative flux
+balance when the discrete continuity residual does not vanish pointwise.
+
+The former conservative momentum form left the energy defect
+`-integral |v|^2/2 [rho_dot + div(rho v)] dx`. Degree-one scalar tests do not
+contain the piecewise quadratic `|v|^2/2`; a converged mass solve could not
+remove this defect. The closed hydrodynamic subcase of `vrmhd_section_energy`
+solves the production mass equation for random positive scalar fields and
+no-slip random velocity, then independently differentiates physical energy.
+It requires relative closure at `1e-12` before the magnetic ledger is tested.
+Scalar tests remain unrestricted, retaining constants and natural no-flux
+boundaries. The independent stationary manufactured source is derived from
+the conservative strong balance minus half the continuity defect times `v`;
+its prescribed volume loads are separate from the `Srho` port.
+
+### Conducting wall current and its power
+
+For a stationary conducting wall, let the subscript `t` denote tangential
+components. With `v.N=0` and `B.N=0`, both vectors are tangent to the wall,
+so `(v cross B)_t=0`. Ohm's law and `N cross (E - V h)=0` therefore give
+
+```
+eta (J - Js)_t = (V h)_t,
+J_t = Js_t + (V h)_t/eta,    eta > 0.
+```
+
+The trace is prescribed boundary data. For ideal studies (`eta=0`), it is
+instead supplied by the given equilibrium; division by eta is not used.
+The wall resistivity, including its temperature dependence, is part of those
+prescribed data. Perturbations at fixed data have zero current trace.
+The same total `J = J_wall + J0` enters induction, Lorentz force and heating.
+Ampere is tested only with `K` in H0(curl), just as induction uses `W` in
+H0(curl). This removes the former unconstrained-current wall mismatch.
+
+Write `F = Atilde_dot - v cross B + eta (J - Js) - V h` for the induction
+balance in V/m, and use `(a,b)=integral a.b dx`. Testing Ampere with
+`K=Atilde_dot` gives `dE_mag/dt=(J,Atilde_dot)`. Testing induction with `J0`
+gives `(J0,F)=0`; consequently
+
+```
+dE_mag/dt = (J,v cross B) - (J,eta (J - Js)) + (J,V h) + P_wall,
+P_wall = (J_wall,Atilde_dot) - (J_wall,v cross B)
+         + (J_wall,eta (J - Js)) - (J_wall,V h).
+```
+
+`E_mag` is magnetic energy in joules and `P_wall` is the explicit power of
+the prescribed affine current constraint, in watts (per unit orbit coordinate
+in the section). This is a discrete lift pairing, not an added Ampere surface
+residual or an identification with continuum Poynting flux. It vanishes for
+homogeneous current data. It is evaluated from the four displayed integrals,
+independently of the energy defect; contraction with the constrained induction
+rows checks the same identity. No power is inferred by subtracting the other
+ledger entries. The global ledger includes `P_wall` in external power, while
+all exchanges use the total current and retain their local cancellation.
+
+The random-state ledger keeps compact magnetic support, no-slip velocity and
+natural scalar no-flux tests. It prescribes a nonzero current lift: the
+current-source case supplies its trace through `Js`, while the voltage case
+represents `V h/eta` with constant wall electron temperature in the current
+space. Finite-element trace data are coefficient data; the analytic voltage
+trace supplies horizontal edge line integrals and orbit nodal values. Interior
+current coefficients alone solve Ampere. The test independently differentiates
+physical energy and evaluates every power at the production quadrature points.
+It requires nonzero wall power in all six symmetry/drive combinations.
+
+The literature supports the homogeneous wall structure. In
+[Gawlik and Gay-Balmaz's 2021 author manuscript](https://math.hawaii.edu/~egawlik/pdf/GaGB2021.pdf),
+p. 1, equation (1.5) imposes zero velocity, zero normal magnetic field and zero
+tangential curl of B for positive resistivity. Section 3, p. 7 defines the
+auxiliary Nedelec space inside H0(curl); equations (3.13), (3.18) on p. 9 and
+(3.27), (3.32) on p. 10 recover current using that space, without a surface
+load. The ideal boundary statement below (1.6) does not impose the resistive
+current condition. In the
+[Hu, Ma and Xu preprint of the 2017 paper](https://arxiv.org/pdf/1410.1095),
+p. 2, equations (1.2), (1.5)-(1.7) give `j=E+u cross B` in their normalization,
+zero velocity, zero normal B and zero tangential E. Section 2.2, p. 6 places E
+in H0(curl); for smooth traces Ohm's law then implies `j_t=0`. This does not
+assert that their discrete pointwise product `u_h cross B_h` itself lies in
+H(curl). The nonzero driven lift and its power above are the present extension,
+not a formula verified in either paper. The related incompressible 2022 paper's
+wall treatment has not been checked here.
 
 ## Leaf interface and verification scope
 
@@ -276,7 +371,9 @@ equipartition and source leaves return the signed right-hand-side terms above.
 and Lorentz leaves. Advection and compression leaves have residual signs;
 the electron equation subtracts equipartition and the ion equation adds it.
 Scalar `source` is used
-for mass and both external heat sources. Temperature leaves use `temperature`
+for mass and both external heat sources. `momentum_mass_source` and
+`momentum_density_diffusion` return the signed residual couplings for
+particles born at rest. Temperature leaves use `temperature`
 for either `Te` or `Ti`; closure leaves use the corresponding reference.
 
 The `rm1` tests compare every primal with an independent numerical expression,

@@ -5,7 +5,8 @@ program test_vrmhd_stationary
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section
     use kin6d_vrmhd_stationary
-    use kin6d_vrmhd_boundary, only: vrmhd_ampere_boundary
+    use vrmhd_wall_oracle, only: current_wall_dofs
+    use kin6d_vrmhd_boundary, only: vrmhd_current_lift
     use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use vrmhd_mms_leaves, only: mms_rotation, mms_screw
@@ -15,7 +16,6 @@ program test_vrmhd_stationary
         fortsparse_status_t, status_ok
     implicit none
     character(32) :: gate
-    type(gs_symmetry_t) :: trace_symmetry
     integer :: kind, level
     real(dp) :: errors(8, 3), rates(8), curl_errors(2, 3), curl_rates(2)
     real(dp) :: sigma(3), mass_condition(3)
@@ -80,7 +80,7 @@ contains
         type(csc_t) :: jac
         type(fortsparse_status_t) :: st
         real(dp), allocatable :: u(:), load(:), source(:, :, :), basis(:, :)
-        real(dp), allocatable :: boundary(:), surface(:), r(:), zero(:), &
+        real(dp), allocatable :: boundary(:), r(:), zero(:), &
             step(:), unused(:)
         real(dp), allocatable :: trial(:, :), matrix(:, :), singular(:), vt(:, :)
         real(dp), allocatable :: block(:, :), work(:), current_mass(:, :), &
@@ -90,6 +90,7 @@ contains
         integer, allocatable :: free_index(:), gauge_index(:), current_index(:)
         real(dp) :: x(2), weight, dummy_u(1, 1), value, mode_norms(8), defect, scale
         real(dp) :: raw_condition
+        real(dp), allocatable :: gauge_value(:), gauge_gradient(:, :)
         integer :: i, j, t, q, nf, ng, row, col, status, entry, info, lwork
         integer :: group, it, nj, current_start, nh
         interface
@@ -126,19 +127,17 @@ contains
             end subroutine
         end interface
         call prepare(kind, n, op, steady, p, u, load)
+        allocate (gauge_value(op%fs%nl0), gauge_gradient(3, op%fs%nl0))
         allocate (source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
             free_index(steady%ndof), gauge_index(op%fs%n0), &
             current_index(steady%ndof))
         source = 0; free_index = 0; gauge_index = 0; current_index = 0
         nf = 0; ng = 0; nj = 0
-        current_start = 6*op%fs%n0 + op%fs%sp(1)%ndof
-        allocate (boundary(op%ndof), surface(op%ndof), r(steady%ndof), &
+        current_start = 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof
+        allocate (boundary(op%ndof), r(steady%ndof), &
             zero(steady%ndof), step(steady%ndof), unused(steady%ndof))
         boundary = u(:op%ndof); zero = 0
-        trace_symmetry = op%symmetry
-        call vrmhd_ampere_boundary(op, magnetic_trace, surface, status)
-        call require(status == 0, 'gauge manufactured Ampere trace')
-        load = load - surface
+
         do it = 1, 10
             call vrmhd_stationary_residual(op, steady, p, u, zero, boundary, &
                 source, load, r, unused, status)
@@ -272,6 +271,9 @@ contains
                 do q = 1, op%fs%nq
                     call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                     call require(status == 0, 'gauge physical Riesz basis')
+                    call vrmhd_section_gauge_basis(op, t, q, gauge_value, &
+                        gauge_gradient, status)
+                    call require(status == 0, 'multiplier physical Riesz basis')
                     block = block + weight*matmul(transpose(basis), basis)
                         do j = 1, op%fs%nl0
                             col = gauge_index(op%fs%sp(0)%dof(j, t))
@@ -279,8 +281,9 @@ contains
                             do i = 1, op%fs%nl0
                                 row = gauge_index(op%fs%sp(0)%dof(i, t))
                                 if (row == 0) cycle
-                                value = weight*(basis(1, i)*basis(1, j) &
-                                    + dot_product(basis(13:15, i), basis(13:15, j)))
+                                value = weight*(gauge_value(i)*gauge_value(j) &
+                                    + dot_product(gauge_gradient(:, i), &
+                                    gauge_gradient(:, j)))
                                 trial(row, col) = trial(row, col) + value
                             end do
                         end do
@@ -313,9 +316,9 @@ contains
                 do i = 1, steady%ndof
                     row = free_index(i)
                     if (row == 0) cycle
-                    if (i <= 6*op%fs%n0) then
-                        group = (i - 1)/op%fs%n0 + 1
-                    else if (i <= 6*op%fs%n0 + op%fs%sp(1)%ndof) then
+                    if (i <= 6*op%scalar_fs%n0) then
+                        group = (i - 1)/op%scalar_fs%n0 + 1
+                    else if (i <= 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof) then
                         group = 7
                     else
                         group = 8
@@ -405,16 +408,16 @@ contains
                 end if
             end subroutine
 
-            subroutine magnetic_trace(x, b)
-                real(dp), intent(in) :: x(2)
-                real(dp), intent(out) :: b(3)
+            subroutine manufactured_current(x, data, current)
+                real(dp), intent(in) :: x(2), data(:)
+                real(dp), intent(out) :: current(3)
                 real(dp) :: exact(48)
-                if (trace_symmetry%kind == GS_ROTATION) then
-                    call mms_rotation(x(1), x(2), trace_symmetry%k, exact)
+                if (nint(data(1)) == GS_ROTATION) then
+                    call mms_rotation(x(1), x(2), data(2), exact)
                 else
-                    call mms_screw(x(1), x(2), trace_symmetry%k, exact)
+                    call mms_screw(x(1), x(2), data(2), exact)
                 end if
-                b = exact(25:27)
+                current = exact(8:10)
             end subroutine
 
             pure function norms(u) result(e)
@@ -442,7 +445,8 @@ contains
                 type(meridian_mesh_t) :: mm
                 type(gs_symmetry_t) :: symmetry
                 real(dp) :: shift
-                integer :: status
+                real(dp), allocatable :: wall(:)
+                integer :: status, current_start
                 symmetry = gs_symmetry_t(kind, GS_CHART_CARTESIAN, 0.0_dp)
                 shift = 0
                 if (kind == GS_ROTATION) then
@@ -463,6 +467,11 @@ contains
                 allocate (u(steady%ndof), load(op%ndof))
                 u = 0
                 call project(op, u(:op%ndof), load)
+                allocate (wall(op%fs%sp(1)%ndof))
+                call current_wall_dofs(op, manufactured_current, &
+                    [real(kind, dp), symmetry%k], wall)
+                current_start = 6*op%scalar_fs%n0 + op%fs%sp(1)%ndof
+                where (op%fs%sp(1)%bnd) u(current_start + 1:op%ndof) = wall
             end subroutine
 
             subroutine project(op, u, load)
@@ -512,16 +521,21 @@ contains
                         type(vrmhd_section_t) :: op
                         type(vrmhd_stationary_t) :: steady
                         type(vrmhd_parameters_t) :: p
-                        real(dp), allocatable :: u(:), load(:), surface(:), volume(:)
+                        real(dp), allocatable :: u(:), load(:), wall(:), volume(:)
                         real(dp), allocatable :: basis(:, :)
                         real(dp) :: exact(48), x(2), weight, value
                         real(dp) :: defect
                         integer :: t, q, i, row, status
                         call prepare(kind, 2, op, steady, p, u, load)
-                        allocate (surface(op%ndof), volume(op%ndof), basis(36, op%nlocal))
-                        trace_symmetry = op%symmetry
-                        call vrmhd_ampere_boundary(op, magnetic_trace, surface, status)
-                        call require(status == 0, 'Ampere trace assembly')
+                        allocate (wall(op%fs%sp(1)%ndof), volume(op%ndof), basis(36, op%nlocal))
+                        call require(all(op%fixed(6*op%scalar_fs%n0 + op%fs%sp(1)%ndof + 1:) &
+                            .eqv. op%fs%sp(1)%bnd), 'fixed current trace mask')
+                        call vrmhd_current_lift(op, &
+                            u(6*op%scalar_fs%n0 + op%fs%sp(1)%ndof + 1:op%ndof), wall)
+                        call require(maxval(abs(wall), mask=op%fs%sp(1)%bnd) &
+                            > 1.0e-3_dp, 'nonzero manufactured current trace')
+                        call require(maxval(abs(wall), mask=.not. op%fs%sp(1)%bnd) &
+                            == 0, 'zero interior current lift')
                         volume = 0
                         do t = 1, op%fs%mm%topology%n_triangles
                             do q = 1, op%fs%nq
@@ -536,10 +550,9 @@ contains
                                 end do
                             end do
                         end do
-                        defect = maxval(abs(volume + surface))
-                        print '(a,i2,2es14.6)', 'Ampere volume+surface, surface norm ', &
-                            kind, defect, maxval(abs(surface))
-                        call require(maxval(abs(surface)) > 1.0e-3_dp, 'nonzero magnetic trace')
+                        defect = maxval(abs(volume), mask=.not. op%fixed)
+                        print '(a,i2,2es14.6)', 'Ampere H0(curl) defect / wall current ', &
+                            kind, defect, maxval(abs(wall))
                         call require(defect < 2.0e-8_dp, 'independent Ampere integration by parts')
                     end subroutine
 
@@ -593,7 +606,7 @@ contains
                         type(csc_t) :: jac
                         type(fortsparse_status_t) :: st
                         real(dp), allocatable :: u(:), load(:), source(:, :, :), boundary(:)
-                        real(dp), allocatable :: r(:), unused(:), zero(:), step(:), surface(:)
+                        real(dp), allocatable :: r(:), unused(:), zero(:), step(:)
                         real(dp), allocatable :: basis(:, :), projected(:)
                         real(dp) :: history(10), x(2), weight, exact(48), field(36), order
                         real(dp) :: current_error(2), projection_error(2), projection(36)
@@ -602,16 +615,13 @@ contains
                         logical :: quadratic, interior
                         call prepare(kind, n, op, steady, p, u, load)
                         allocate (source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
-                            boundary(op%ndof), surface(op%ndof), basis(36, op%nlocal), &
+                            boundary(op%ndof), basis(36, op%nlocal), &
                             projected(op%ndof))
                         allocate (r(steady%ndof), unused(steady%ndof), zero(steady%ndof), &
                             step(steady%ndof))
                         source = 0; zero = 0; boundary = u(:op%ndof)
                         projected = u(:op%ndof)
-                        trace_symmetry = op%symmetry
-                        call vrmhd_ampere_boundary(op, magnetic_trace, surface, status)
-                        call require(status == 0, 'manufactured Ampere trace')
-                        load = load - surface
+
                         do i = 1, op%ndof
                             if (op%fixed(i)) cycle
                             u(i) = u(i) + 0.02_dp*sin(real(i, dp))

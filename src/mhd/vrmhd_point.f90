@@ -8,7 +8,8 @@ module kin6d_vrmhd_point
         leaf_equipartition, leaf_eta, leaf_induction_ideal, &
         leaf_induction_resistive, leaf_lorentz, leaf_mass_density, &
         leaf_mass_induction, leaf_mass_momentum, leaf_mass_temperature, &
-        leaf_momentum_advection, leaf_nu, leaf_ohmic, &
+        leaf_momentum_advection, leaf_momentum_density_diffusion, &
+        leaf_momentum_mass_source, leaf_nu, leaf_ohmic, &
         leaf_parallel_gradient, leaf_pressure, leaf_pressure_work, &
         leaf_source, leaf_temperature_advection, leaf_trace, &
         leaf_transport, leaf_viscosity, leaf_viscous_heat
@@ -47,8 +48,15 @@ contains
         case (2)
             call add(leaf_mass_momentum, [u(1), ud(1), u(2:4), ud(2:4), test(5:7)], &
                 [du(1), dud(1), du(2:4), dud(2:4), zero(:3)], 1.0_dp)
-            call add(leaf_momentum_advection, [u(1:4), test(8:16)], [du(1:4), &
-                zero(:9)], 1.0_dp)
+            call add(leaf_momentum_advection, [u(1:4), test(5:7), u(16:24), &
+                test(8:16)], [du(1:4), zero(:3), du(16:24), zero(:9)], 1.0_dp)
+            call add(leaf_momentum_mass_source, [source(4), u(2:4), test(5:7)], &
+                [0.0_dp, du(2:4), zero(:3)], 1.0_dp)
+            call add(leaf_momentum_density_diffusion, &
+                [p%d_parallel, p%d_perpendicular, p%epsilon_b, u(25:27), &
+                u(13:15), u(2:4), test(5:7), u(16:24), test(8:16)], &
+                [zero(:3), du(25:27), du(13:15), du(2:4), zero(:3), &
+                du(16:24), zero(:9)], 1.0_dp)
             call vrmhd_leaf(leaf_pressure, [u(1), u(11:12), p%mi], &
                 [du(1), du(11:12), 0.0_dp], pressure, dpressure)
             call add(leaf_pressure_work, [pressure, divw], [dpressure, 0.0_dp], &

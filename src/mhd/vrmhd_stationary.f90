@@ -2,7 +2,7 @@ module kin6d_vrmhd_stationary
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_basis, &
-        vrmhd_section_residual, vrmhd_section_jacobian
+        vrmhd_section_residual, vrmhd_section_jacobian, vrmhd_section_gauge_basis
     use kin6d_vrmhd_section_leaves, only: vrmhd_pairing
     use fortsparse, only: csc_t, csc_from_triplet, csc_matvec, csc_transpose, &
         fortsparse_status_t, status_ok
@@ -23,9 +23,11 @@ contains
         integer, allocatable :: index(:), rows(:), cols(:)
         real(dp), allocatable :: values(:)
         real(dp) :: basis(36, op%nlocal), block(op%nlocal, op%fs%nl0)
-        real(dp) :: x(2), weight, value
+        real(dp) :: val(op%fs%nl0), grad(3, op%fs%nl0), x(2), weight, value
         integer :: i, j, t, q, pos, count, row, col, nt
         nt = op%fs%mm%topology%n_triangles
+        ! The multiplier lives in the edge complex's Lagrange space, so its
+        ! gradients span the whole curl-free part of the A space.
         allocate (index(op%fs%n0))
         index = 0
         do i = 1, op%fs%n0
@@ -42,11 +44,13 @@ contains
                 do q = 1, op%fs%nq
                     call vrmhd_section_basis(op, t, q, x, weight, basis, status)
                     if (status /= 0) return
+                    call vrmhd_section_gauge_basis(op, t, q, val, grad, status)
+                    if (status /= 0) return
                     do j = 1, op%fs%nl0
                         do i = 1, op%nlocal
                             if (op%row(i) /= 3) cycle
                             call vrmhd_pairing(basis(5, i), basis(6, i), basis(7, i), &
-                                basis(13, j), basis(14, j), basis(15, j), value)
+                                grad(1, j), grad(2, j), grad(3, j), value)
                             block(i, j) = block(i, j) + weight*value
                         end do
                     end do

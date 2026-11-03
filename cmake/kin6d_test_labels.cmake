@@ -898,6 +898,15 @@ foreach(gate geometry derivatives volume closure)
 endforeach()
 
 kin6d_test_labels(vrmhd_section_manufactured_consistency fast CLASSES mhd TARGETS test_vrmhd_mms)
+kin6d_test_labels(vrmhd_section_spectra slow CLASSES mhd TARGETS test_vrmhd_spectra)
+kin6d_test_labels(vrmhd_section_spectra_fine slow CLASSES mhd TARGETS test_vrmhd_spectra)
+kin6d_test_labels(vrmhd_spectral_folding fast CLASSES mhd TARGETS test_vrmhd_spectral_folding)
+foreach(mode spurious ambiguous)
+    kin6d_test_labels(vrmhd_resolved_power_rejects_${mode} fast CLASSES mhd
+        TARGETS test_vrmhd_spectral_folding)
+endforeach()
+kin6d_test_labels(vrmhd_fourier_content fast CLASSES mhd TARGETS test_vrmhd_fourier)
+kin6d_test_labels(vrmhd_section_energy fast CLASSES mhd TARGETS test_vrmhd_energy)
 foreach(gate boundary derivatives harmonic solve)
     kin6d_test_labels(vrmhd_stationary_${gate} fast CLASSES mhd
         TARGETS test_vrmhd_stationary)
@@ -910,3 +919,6 @@ kin6d_test_labels(vrmhd_gs_regeneration fast CLASSES mhd TARGETS gen_vrmhd_gs)
 kin6d_test_labels(vrmhd_section_regeneration fast CLASSES mhd TARGETS gen_vrmhd_section)
 
 kin6d_test_labels(vrmhd_mms_regeneration fast CLASSES mhd TARGETS gen_vrmhd_mms)
+
+kin6d_test_labels(vrmhd_pairing_measurement fast CLASSES mhd TARGETS vrmhd_pairing_study)
+kin6d_test_labels(vrmhd_pairing_benchmark performance CLASSES mhd TARGETS vrmhd_pairing_study)
