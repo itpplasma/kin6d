@@ -922,3 +922,8 @@ kin6d_test_labels(vrmhd_mms_regeneration fast CLASSES mhd TARGETS gen_vrmhd_mms)
 
 kin6d_test_labels(vrmhd_pairing_measurement fast CLASSES mhd TARGETS vrmhd_pairing_study)
 kin6d_test_labels(vrmhd_pairing_benchmark performance CLASSES mhd TARGETS vrmhd_pairing_study)
+foreach(gate energy decay steady)
+    kin6d_test_labels(vrmhd_evolve_${gate} fast CLASSES mhd
+        TARGETS test_vrmhd_evolve)
+endforeach()
+kin6d_test_labels(vrmhd_evolve_waves slow CLASSES mhd TARGETS test_vrmhd_evolve)
