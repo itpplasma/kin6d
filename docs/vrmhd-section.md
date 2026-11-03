@@ -203,8 +203,10 @@ closedness for screw symmetry.
 The equal-degree default passes the energy ledger and the earlier RM2 gates
 described below at degree one. The spectral gate remains incomplete: its
 first failure is folded-count equality at 16 cells per period on the
-structured degree-two mesh. The complete structured degree-one ladder passes;
-degree two and the perturbed meshes remain unqualified, as detailed below.
+structured degree-two mesh. Fourier attribution does not support treating its
+three positive frequencies beyond the base-wavenumber branches as one
+folded-alias family. The complete structured degree-one ladder passes; degree
+two and the perturbed meshes remain unqualified, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -420,9 +422,36 @@ computed signed waves lie below the gap cutoff, against ten analytic waves.
 The next larger folded frequency belongs to the slow branch at
 `(-15,-16,0) m^-1`, so the gap endpoints are approximately `1.341640786500`
 and `6.508898217884 rad/s`, with midpoint `3.925269502192 rad/s`.
-This is a resolved-mesh count failure away from an oracle boundary. The origin
-of the excess discrete count is unresolved. The ladder stops there; no complete
-spectral qualification is claimed for degree two or either perturbed ladder.
+This is a resolved-mesh count failure away from an oracle boundary.
+
+A diagnostic projects each below-cutoff mode's physical wave-energy fields
+`(v', curl A'/sqrt(mu0), p'/sqrt(gamma p0))` onto
+`exp(i (q0+G).x)`, where `G` is a retained reciprocal-block offset,
+using the existing element quadrature. It sums the squared
+L2 Fourier coefficients over those seven components, then normalizes over the
+retained alias set to obtain each alias's share. It separately reports the
+fraction of the full physical L2 norm captured by that set. Thus a large
+retained share does not imply that the retained set captures the entire mode.
+These fields avoid arbitrary entropy and vector-potential gauge content;
+the balanced A coefficients already include the `sqrt(mu0)` scaling.
+An independent test uses exactly representable `p'=x` and `A_z'=x^2/2` on
+`[0,2 pi]^2`. Their x Fourier coefficients are `i/m` up to the magnetic
+component's sign, for nonzero integer x wavenumber `m`; coefficients with
+nonzero y wavenumber vanish. The test checks both shares and captured power.
+
+The hypothesis that the three positive modes beyond the base-wavenumber
+branches all belong to `G=(0,-16) m^-1` is refuted by this diagnostic. At 16 cells per period,
+that alias dominates the `0.614683369776 rad/s` mode, but the
+`1.131816854126 rad/s` mode splits its retained power between that alias
+and `G=(-16,0) m^-1`; the latter alias dominates the
+`2.624802298648 rad/s` mode. The diagnostic reports every retained share
+and the captured fraction for both frequency signs.
+The conditional replacement of count equality by dominant-alias matching
+is therefore not applied. In particular, no Fourier-share threshold or
+matching gate is relaxed. The origin of these optical or mixed modes remains
+unresolved; dominant Fourier power alone does not prove their branch identity.
+The ladder stops at the unchanged count gate; no complete spectral
+qualification is claimed for degree two or either perturbed ladder.
 No full-system inf-sup bound or continuous spectral non-pollution result is
 claimed. The independent folding test uses analytic frequencies at
 `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.

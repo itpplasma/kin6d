@@ -1,12 +1,13 @@
 module vrmhd_structural_spectrum
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
-    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_jacobian
+    use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_jacobian, &
+        vrmhd_section_basis
     use rm_mhd_oracles, only: uniform_waves, oracle_ok
     use fortsparse, only: csc_t, csc_matvec
     implicit none
     private
-    public :: structural_spectrum, match_folded, bloch_projection
+    public :: structural_spectrum, match_folded, bloch_projection, fourier_content
     interface
         subroutine zgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
             import dp
@@ -105,7 +106,7 @@ contains
         complex(dp), allocatable :: kd(:, :), fd(:, :), l(:, :), lift(:, :)
         complex(dp), allocatable :: scalar_gram(:, :), scalar_weighted(:, :)
         complex(dp) :: dummy(1, 1), dummy_right(1, 1)
-        real(dp), allocatable :: energies(:), omega(:), rw(:)
+        real(dp), allocatable :: energies(:), omega(:), rw(:), shares(:,:), captured(:)
         real(dp) :: pressure(3), skew, f_norm, defect, maximum_defect
         real(dp) :: scale, reality, diffusivity, cell_wave, slowest, growth
         real(dp) :: condition, skew_bound, coupling_defect
@@ -198,9 +199,10 @@ contains
         reality = maxval(abs(aimag(-values**2)))/scale
         print '(a,es20.12)', 'diagnostic max |Im(omega^2)| / max |omega^2|: ', reality
         print '(a,*(es20.12))', 'energy-quotient signed angular frequencies [1/s]: ', omega
+        call fourier_content(op,transform,modes,n,repeat,degree,shares,captured)
         ! The 4..32 ladder is resolved for branch isolation from 16 cells onward.
         call match_folded(omega, n, repeat, degree, b0, exact, frequencies, &
-            resolved=n >= 16)
+            resolved=n >= 16, shares=shares, captured=captured)
         static_count = 0
         do j = 1, ne
             if (abs(omega(j)) > 1.0e-12_dp*maxval(abs(omega))) cycle
@@ -260,6 +262,54 @@ contains
             value = real(sqrt(sum(abs(matmul(cmplx(l,kind=qp),full))**2)) &
                 /sqrt(sum(abs(cmplx(l,kind=qp))**2)*sum(abs(full)**2)),dp)
         end function
+    end subroutine
+
+    subroutine fourier_content(op, transform, modes, n, repeat, degree, &
+            shares, captured)
+        type(vrmhd_section_t), intent(in) :: op
+        complex(dp), intent(in) :: transform(:,:), modes(:,:)
+        integer, intent(in) :: n, repeat, degree
+        real(dp), allocatable, intent(out) :: shares(:,:), captured(:)
+        complex(dp), allocatable :: coefficients(:,:), amplitude(:,:,:)
+        complex(dp) :: field(7,size(modes,2)), phase
+        real(dp) :: basis(36,op%nlocal), readback(7,op%nlocal), x(2), weight
+        real(dp) :: wave(2,(repeat*degree)**2), volume, energy(size(modes,2))
+        integer :: t, iq, status, jx, jy, g, j
+        allocate(amplitude(7,(repeat*degree)**2,size(modes,2)))
+        allocate(shares((repeat*degree)**2,size(modes,2)),captured(size(modes,2)))
+        coefficients = matmul(transform(:,:size(modes,1)),modes)
+        g = 0
+        do jy = -(repeat*degree)/2, (repeat*degree-1)/2
+            do jx = -(repeat*degree)/2, (repeat*degree-1)/2
+                g = g+1
+                wave(:,g) = [1.0_dp+real(n*jx,dp)/repeat,real(n*jy,dp)/repeat]
+            end do
+        end do
+        amplitude = 0; volume = 0; energy = 0
+        ! Physical energy fields avoid arbitrary entropy and gauge content.
+        do t = 1, op%fs%mm%topology%n_triangles
+            do iq = 1, op%fs%nq
+                call vrmhd_section_basis(op,t,iq,x,weight,basis,status)
+                call check(status == 0, 'Fourier physical field readback')
+                readback(:3,:) = basis(2:4,:)
+                readback(4:6,:) = basis(25:27,:)
+                readback(7,:) = 0.6_dp*basis(1,:)+basis(11,:)+basis(12,:)
+                field = matmul(readback,coefficients(op%map(:,t),:))
+                volume = volume+weight
+                energy = energy+weight*sum(abs(field)**2,dim=1)
+                do g = 1, size(wave,2)
+                    phase = exp(cmplx(0.0_dp,-dot_product(wave(:,g),x),dp))
+                    amplitude(:,g,:) = amplitude(:,g,:)+weight*phase*field
+                end do
+            end do
+        end do
+        shares = sum(abs(amplitude)**2,dim=1)
+        do j = 1, size(modes,2)
+            captured(j) = sum(shares(:,j))/(volume*energy(j))
+            call check(sum(shares(:,j)) > tiny(1.0_dp), &
+                'nonzero retained Fourier power')
+            shares(:,j) = shares(:,j)/sum(shares(:,j))
+        end do
     end subroutine
 
     subroutine inverse_free_structure(l_dp, mr_dp, e_dp, scalar_gram_dp, &
@@ -476,11 +526,13 @@ contains
         end if
     end subroutine
 
-    subroutine match_folded(omega, n, repeat, degree, b0, exact, frequencies, resolved)
+    subroutine match_folded(omega, n, repeat, degree, b0, exact, frequencies, resolved, &
+            shares, captured)
         real(dp), intent(in) :: omega(:), b0(3), exact(3)
         integer, intent(in) :: n, repeat, degree
         real(dp), intent(out) :: frequencies(3)
         logical, intent(in), optional :: resolved
+        real(dp), intent(in), optional :: shares(:,:), captured(:)
         real(dp), allocatable :: oracle(:)
         real(dp) :: wave(3), squared(3)
         real(dp) :: cutoff, separation, tolerance, last_counted, next_folded
@@ -525,6 +577,23 @@ contains
         cutoff = (last_counted+next_folded)/2
         print '(a,3es20.12)', 'last counted / next folded / cutoff [1/s]: ', &
             last_counted, next_folded, cutoff
+        if (present(shares)) then
+            j = 0
+            do jy = -(repeat*degree)/2, (repeat*degree-1)/2
+                do jx = -(repeat*degree)/2, (repeat*degree-1)/2
+                    j = j+1
+                    print '(a,i4,2es20.12)', 'Fourier alias index / G [1/m]: ', &
+                        j,real(n*[jx,jy],dp)/repeat
+                end do
+            end do
+            do j = 1, size(omega)
+                if (abs(omega(j)) <= tolerance .or. abs(omega(j)) > cutoff+tolerance) cycle
+                print '(a,es20.12)', 'Fourier mode omega [rad/s]: ',omega(j)
+                if (present(captured)) print '(a,es20.12)', &
+                    'captured L2 fraction: ',captured(j)
+                print '(a,*(es20.12))', 'L2 shares per retained alias: ',shares(:,j)
+            end do
+        end if
         candidates = .false.; owner = 0
         do i = 1, count_oracle
             if (oracle(i) > cutoff+tolerance) cycle
