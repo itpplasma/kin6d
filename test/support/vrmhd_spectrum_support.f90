@@ -36,11 +36,12 @@ contains
     end subroutine
 
     subroutine spectrum(n, ka, ks, nb, b0, exact, audit, frequencies, &
-            optical_fraction, unmatched, result, perturbed, structural)
+            optical_fraction, unmatched, result, perturbed, structural, mass_condition)
         integer, intent(in) :: n, ka, ks, nb
         real(dp), intent(in) :: b0(3), exact(3)
         logical, intent(in) :: audit
         real(dp), intent(out) :: frequencies(3), optical_fraction
+        real(dp), intent(out), optional :: mass_condition
         integer, intent(out) :: unmatched
         type(spectrum_result_t), intent(out), optional :: result
         logical, intent(in), optional :: perturbed
@@ -253,7 +254,8 @@ contains
         if (present(structural)) then
             if (structural) then
                 call structural_spectrum(op, p, u, source, transform, original_k, &
-                    original_m, ns, na, n, repeat, ka, b0, exact, frequencies)
+                    original_m, ns, na, n, repeat, ka, b0, exact, frequencies, &
+                    mass_condition)
                 optical_fraction = 0
                 return
             end if

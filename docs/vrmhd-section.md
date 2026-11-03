@@ -202,8 +202,9 @@ closedness for screw symmetry.
 
 The equal-degree default passes the energy ledger and the earlier RM2 gates
 described below at degree one. The spectral gate remains incomplete: its
-first failure is the reduced time-mass symmetry check at four cells per period
-on the structured degree-one mesh, as detailed below.
+first failure is time-mass Gram consistency at 32 cells per period on the
+structured degree-one mesh. Energy-quotient positivity, analytic nulls and
+mass invertibility pass on the three preceding meshes, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -306,25 +307,48 @@ vanish; the test checks that no remaining block is unpaired.
    `0.45 S`. Induction time mass equals the Ampere current mass `-L_JJ`,
    and magnetic energy equals the Ampere curl-curl stiffness `L_JA`.
    These comparisons use relative tolerance `1e-14`.
-3. The requested symmetry/positivity gate tests the existing `E` and `M_r`
-   for Hermitian symmetry at relative tolerance `1e-14`, then requires their
-   full Cholesky factorizations to succeed. It currently fails: the primitive
-   `M_r` is not Hermitian, and full `E` has the entropy/gauge kernel described
-   below. Neither matrix is silently replaced by a different Riesz map.
+3. The energy Gram must be Hermitian at relative tolerance `1e-14`. Its kernel
+   must equal the analytic entropy and curl-free gauge space `Z` described below:
+   each column `Z_j` requires `||E Z_j||/(||E||_F ||Z_j||) <= 1e-14`, and
+   Cholesky must succeed on the complementary energy Gram. The smallest
+   complementary eigenvalue relative to the largest is reported.
+   The primitive time mass `M_r` must admit a lower-upper (LU) factorization;
+   its estimated 1-norm condition number must grow by at most a factor of two
+   per halving of cell width, separately for each degree and mesh family.
 
-The intended argument, on a positive-energy quotient with consistent physical
-mass pairings, is:
+The primitive mass is legitimately nonsymmetric. The generated species mass
+is `3/2 (rho Ts_dot + Ts rho_dot)/mi`, where `Ts` is either species temperature,
+so at this equilibrium `M_Ts,rho=0.45 S` while `M_rho,Ts=0`.
+Its invertibility, the paired-block identities and Gram consistency give:
 
 ```
-Inverse-free adjoint pairs and matching Grams give E_q F_q + F_q^* E_q = 0.
-Thus F_q is skew-adjoint in the positive energy product x^* E_q y.
-Hence i F_q has real angular frequencies (E_q^(1/2) i F_q E_q^(-1/2) is Hermitian).
+Inverse-free adjoint pairs and matching Grams give E F + F^* E = 0, F=M_r^-1 L_r.
+On the E-quotient, F_q is skew-adjoint in the positive inner product x^* E_q y.
+Hence F_q has imaginary spectrum and i F_q has real angular frequencies.
 ```
 
 Here `F_q` and `E_q` are the induced evolution generator and energy Gram after
-quotienting static energy-free directions. This conditional argument does not
-make the full primitive time mass symmetric or full energy positive definite.
-The gate's matrix definitions need a further decision before it can pass.
+quotienting static energy-free directions. In particular,
+`E_q^(1/2) i F_q E_q^(-1/2)` is Hermitian. This argument requires neither
+symmetry of the primitive time mass nor positivity of the full energy Gram.
+
+For a block with `r` cells in each periodic direction and equal degree `k`,
+the scalar dimension is `s=(r k)^2`. At each scalar coefficient the entropy
+directions are `(rho',Te',Ti')=(1,-0.6,0)` and `(0,1,-1)`; both have zero
+pressure perturbation. The `s` gauge directions are discrete gradients of
+the scalar Bloch basis, projected into the same vector-potential block.
+The Bloch phase is nontrivial on every tested mesh, so the scalar gradient is
+injective and no constant or harmonic gauge direction is added. Thus the
+expected energy nullity is `3 s`: structured blocks (`r=1`) have 3 and 12
+nulls at degrees one and two; perturbed blocks (`r=2`) have 12 and 48.
+These counts are independent of the number of cells per period in the ladder.
+A QR factorization into unitary and upper triangular matrices checks the
+analytic basis rank and provides its Euclidean complement as quotient
+representatives. Since `E Z=0`, every vector is E-orthogonal to `Z`;
+E-orthogonality alone does not select a complement.
+Positivity on the chosen complement proves that there are no additional
+energy nulls. All analytic nulls must also be static under the full spatial
+operator, with algebraic current restored.
 
 The formed-product defect `||E F + (E F)^*||_F / ||E F||_F` and
 `100 epsilon kappa_1(M_r)` are diagnostics only. Machine epsilon `epsilon`
@@ -332,8 +356,7 @@ refers to double precision; `kappa_1` is LAPACK's `zgecon` 1-norm condition
 estimate from the LU factor used for `F`. Forward products involving
 curl-curl entries growing as inverse cell width squared can amplify cancellation
 roundoff even when this mass condition estimate remains bounded.
-The energy is nonnegative, with two entropy fields and one gauge field in its
-energy-free kernel; each must be static. After the structural gate passes,
+After the structural gate passes,
 a Hermitian eigensolve uses the roundoff Hermitian representative on the
 positive-energy quotient. The nonsymmetric solve's
 `max |Im(omega^2)| / max |omega^2|` remains diagnostic.
@@ -376,20 +399,18 @@ Alfven/slow-oracle separation. The number of signed waves below the cutoff
 is correct, but only four of six have an isolated oracle match. This is a
 coarse-mesh dispersion observation, not evidence by itself of growth or a
 spurious branch; isolation is required only on the resolved meshes.
-The first case, structured degree one at four cells per period, passes the
-inverse-free coupling, pressure/compression and Gram-consistency checks.
-It fails the requested reduced time-mass symmetry gate, with
-`||M_r-M_r^*||_F/||M_r||_F = 0.2481401744582`.
-This is an exact structural obstruction in primitive variables: the generated
-species mass is `3/2 (rho Ts_dot + Ts rho_dot)/mi`, so at this equilibrium
-`M_Ts,rho=0.45 S` while `M_rho,Ts=0`. Full energy also has exact nulls:
-`0.6 rho'+Te'+Ti'=0` gives two entropy directions per scalar coefficient,
-and curl-free potentials give the gauge directions. Full positive definiteness
-cannot hold. Execution stops at mass symmetry before either Cholesky check;
-no spectral ladder, folded-count, static-null or order qualification is claimed
-under this gate. A gate stated for physical block masses and the positive-energy
-quotient could avoid these obstructions, but that would change the current
-matrix-level requirement and is not implemented.
+With the quotient symmetry/positivity checks, structured degree one passes
+the complete per-mesh structural, folded-count, staticity and dissipation
+gates at 4, 8 and 16 cells per period. At 16 cells all six signed waves below
+the cutoff have a one-to-one folded match. At 32 cells the unchanged
+time-mass Gram comparison fails at `1.308366707864e-14`, against `1e-14`.
+The density and velocity row defects are about `9.06e-15`; the temperature
+row defects are about `1.78e-14`. An independent 60-digit summation of the
+saved scalar projection terms reduces the density and temperature Gram
+defects below `2.1e-16`, locating the scalar discrepancy in the double-precision
+Bloch reductions. The original gate and tolerance remain unchanged.
+The finest-pair orders, degree-two ladder and perturbed meshes have not been
+reached; no complete spectral qualification is claimed.
 No full-system inf-sup bound or continuous spectral non-pollution result is
 claimed. The independent folding test uses analytic frequencies at
 `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.

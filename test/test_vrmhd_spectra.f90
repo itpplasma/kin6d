@@ -6,6 +6,7 @@ program test_vrmhd_spectra
     integer, parameter :: levels = 4
     real(dp) :: frequencies(3, levels), errors(3, levels), rates(3), exact(3), b0(3)
     real(dp) :: optical(levels)
+    real(dp) :: mass_condition(levels), condition_ratio
     integer :: level, status, unmatched, ka, ks, mesh, repeat
     b0 = sqrt(oracle_mu0)*[0.6_dp, 0.0_dp, 0.8_dp]
     call uniform_waves([1.0_dp, 0.0_dp, 0.0_dp], b0, 1.0_dp, 0.6_dp, &
@@ -24,13 +25,18 @@ program test_vrmhd_spectra
                     repeat**2*(6*ks**2 + 2*(3*ka**2 + ka)), &
                     b0, exact, .true., &
                     frequencies(:, level), optical(level), unmatched, &
-                    perturbed=mesh == 2, structural=.true.)
+                    perturbed=mesh == 2, structural=.true., &
+                    mass_condition=mass_condition(level))
                 errors(:, level) = abs(frequencies(:, level)/exact - 1)
                 print '(a,i4,3es20.12)', 'wave frequencies [1/s], cells per period: ', &
                     2**(level + 1), frequencies(:, level)
                 print '(a,i4,3es20.12)', 'relative frequency errors: ', &
                     2**(level + 1), errors(:, level)
                 if (level == 1) cycle
+                condition_ratio = mass_condition(level)/mass_condition(level-1)
+                print '(a,es20.12)', 'M_r condition growth per halving: ', condition_ratio
+                call require(condition_ratio <= 2.0_dp, &
+                    'bounded physical time-mass condition')
                 rates = log(errors(:, level - 1)/errors(:, level))/log(2.0_dp)
                 print '(a,3f12.6)', 'Alfven / fast / slow frequency orders: ', rates
                 if (level == levels) &

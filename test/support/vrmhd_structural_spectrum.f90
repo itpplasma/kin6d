@@ -40,6 +40,21 @@ module vrmhd_structural_spectrum
             complex(dp), intent(inout) :: a(lda, *)
             integer, intent(out) :: info
         end subroutine
+        subroutine zgeqrf(m, n, a, lda, tau, work, lwork, info)
+            import dp
+            integer, intent(in) :: m, n, lda, lwork
+            complex(dp), intent(inout) :: a(lda, *)
+            complex(dp), intent(out) :: tau(*), work(*)
+            integer, intent(out) :: info
+        end subroutine
+        subroutine zungqr(m, n, k, a, lda, tau, work, lwork, info)
+            import dp
+            integer, intent(in) :: m, n, k, lda, lwork
+            complex(dp), intent(inout) :: a(lda, *)
+            complex(dp), intent(in) :: tau(*)
+            complex(dp), intent(out) :: work(*)
+            integer, intent(out) :: info
+        end subroutine
         subroutine zgeev(jobvl, jobvr, n, a, lda, w, vl, ldvl, vr, ldvr, &
                 work, lwork, rwork, info)
             import dp
@@ -61,13 +76,14 @@ contains
     end subroutine
 
     subroutine structural_spectrum(op, p, u, source, transform, stiffness, &
-            mass, ns, na, n, repeat, degree, b0, exact, frequencies)
+            mass, ns, na, n, repeat, degree, b0, exact, frequencies, mass_condition)
         type(vrmhd_section_t), intent(in) :: op
         type(vrmhd_parameters_t), intent(in) :: p
         real(dp), intent(in) :: u(:), source(:, :, :), b0(3), exact(3)
         complex(dp), intent(in) :: transform(:, :), stiffness(:, :), mass(:, :)
         integer, intent(in) :: ns, na, n, repeat, degree
         real(dp), intent(out) :: frequencies(3)
+        real(dp), intent(out), optional :: mass_condition
         complex(dp), allocatable :: f(:, :), e(:, :), ef(:, :), q(:, :), w(:, :)
         complex(dp), allocatable :: h(:, :), modes(:, :), work(:), a(:, :), values(:)
         complex(dp), allocatable :: curls(:, :), weighted(:, :), full(:), image(:)
@@ -75,7 +91,7 @@ contains
         complex(dp), allocatable :: scalar_gram(:, :), scalar_weighted(:, :)
         complex(dp) :: dummy(1, 1), dummy_right(1, 1)
         real(dp), allocatable :: energies(:), omega(:), rw(:)
-        real(dp) :: pressure(3), skew, floor, f_norm, defect, maximum_defect
+        real(dp) :: pressure(3), skew, f_norm, defect, maximum_defect
         real(dp) :: scale, reality, diffusivity, cell_wave, slowest, growth
         real(dp) :: condition, skew_bound, coupling_defect
         integer :: d, nb, i, j, row, entry, a0, j0, info, ne, nz, static_count
@@ -124,18 +140,14 @@ contains
         skew = sqrt(sum(abs(ef+transpose(conjg(ef)))**2)/sum(abs(ef)**2))
         skew_bound = 100*epsilon(1.0_dp)*condition
         print '(a,es20.12)', 'physical time mass M_r 1-norm condition estimate: ', condition
+        if (present(mass_condition)) mass_condition = condition
         print '(a,es20.12)', 'diagnostic 100 epsilon kappa_1(M_r): ', skew_bound
         print '(a,es20.12)', '||E F + (E F)^*||_F / ||E F||_F: ', skew
         print '(a,es20.12)', 'inverse-free ||L_vJ + L_Av^*||_F / ||L_vJ||_F: ', coupling_defect
         call inverse_free_structure(l,mass(:d,:d),e,scalar_gram,ns,na, &
             coupling_defect)
-        q = e
-        call zheev('V','U',d,q,d,energies,work,size(work),rw,info)
-        call check(info == 0, 'quadratic wave energy eigendecomposition')
-        floor = 1024*epsilon(1.0_dp)*maxval(energies)
-        call check(minval(energies) >= -floor, 'nonnegative conserved quadratic energy')
-        ne = count(energies > floor); nz = d-ne
-        call check(nz == 3*ns, 'two entropy fields and one gauge field have zero energy')
+        nz = 3*ns; ne = d-nz
+        call energy_quotient(op,transform,e,ns,na,repeat,degree,q,energies)
         f_norm = sqrt(sum(abs(f)**2))
         maximum_defect = 0
         do j = 1, nz
@@ -228,10 +240,9 @@ contains
         real(dp), intent(in) :: coupling_defect
         complex(dp) :: compression(ns,3*ns), expected(size(mr,1),size(mr,2))
         complex(dp) :: remaining(size(l,1),size(l,2))
-        complex(dp) :: factor(size(mr,1),size(mr,2))
         real(dp), parameter :: pressure(3) = [0.6_dp,1.0_dp,1.0_dp]
         real(dp) :: defect
-        integer :: d, i, j, offset(3), info
+        integer :: d, i, j, offset(3)
         d = 6*ns+na; offset = [0,4*ns,5*ns]
         call check(coupling_defect <= 1.0e-14_dp, &
             'inverse-free Lorentz/induction negative adjoints')
@@ -299,15 +310,67 @@ contains
         defect = relative_norm(e-transpose(conjg(e)),e)
         print '(a,es20.12)', 'energy Gram Hermitian defect: ', defect
         call check(defect <= 1.0e-14_dp, 'energy Gram is Hermitian')
-        defect = relative_norm(mr-transpose(conjg(mr)),mr)
-        print '(a,es20.12)', 'physical time mass M_r Hermitian defect: ', defect
-        call check(defect <= 1.0e-14_dp, 'physical time mass M_r is Hermitian')
-        factor = mr
-        call zpotrf('U',d,factor,d,info)
-        call check(info == 0, 'physical time mass M_r is positive definite')
-        factor = e
-        call zpotrf('U',d,factor,d,info)
-        call check(info == 0, 'energy Gram E is positive definite')
+    end subroutine
+
+    subroutine energy_quotient(op, transform, e, ns, na, repeat, degree, q, energies)
+        type(vrmhd_section_t), intent(in) :: op
+        complex(dp), intent(in) :: transform(:, :), e(:, :)
+        integer, intent(in) :: ns, na, repeat, degree
+        complex(dp), intent(out) :: q(:, :)
+        real(dp), intent(out) :: energies(:)
+        complex(dp) :: z(size(e,1),3*ns), tau(3*ns), work(32*size(e,1))
+        complex(dp) :: quotient(size(e,1)-3*ns,size(e,1)-3*ns)
+        complex(dp) :: factor(size(quotient,1),size(quotient,2))
+        complex(dp) :: gradient(op%fs%sp(1)%ndof), scalar(op%fs%n0)
+        real(dp) :: rw(8*size(e,1)), defect, maximum_defect, norm_e
+        integer :: d, nz, ne, a0, j0, i, j, info
+        d = size(e,1); nz = 3*ns; ne = d-nz
+        a0 = 6*op%scalar_fs%n0; j0 = a0+op%fs%sp(1)%ndof
+        call check(ns == (repeat*degree)**2, 'analytic Bloch scalar dimension')
+        call check(op%fs%n0 == op%scalar_fs%n0, 'equal-degree gauge scalar space')
+        z = 0
+        do j = 1, ns
+            z(j,j) = 1; z(4*ns+j,j) = -0.6_dp
+            z(4*ns+j,ns+j) = 1; z(5*ns+j,ns+j) = -1
+            scalar = transform(:op%fs%n0,j)
+            gradient = cmplx(csc_matvec(op%fs%grad%a,real(scalar,dp)), &
+                csc_matvec(op%fs%grad%a,aimag(scalar)),dp)
+            do i = 1, na
+                z(6*ns+i,2*ns+j) = dot_product(transform(a0+1:j0,6*ns+i),gradient) &
+                    /sum(abs(transform(a0+1:j0,6*ns+i))**2)
+            end do
+        end do
+        print '(a,4i6)', 'analytic energy nulls: entropy / gauge / total / cells: ', &
+            2*ns,ns,nz,repeat**2
+        norm_e = sqrt(sum(abs(e)**2)); maximum_defect = 0
+        do j = 1, nz
+            defect = sqrt(sum(abs(matmul(e,z(:,j)))**2)) &
+                /(norm_e*sqrt(sum(abs(z(:,j))**2)))
+            maximum_defect = max(maximum_defect,defect)
+            call check(defect <= 1.0e-14_dp, 'analytic entropy/gauge basis has zero energy')
+        end do
+        print '(a,es20.12)', 'maximum ||E Z_j|| / (||E||_F ||Z_j||): ', maximum_defect
+        q = 0; q(:,:nz) = z
+        call zgeqrf(d,nz,q,d,tau,work,size(work),info)
+        call check(info == 0, 'analytic null basis QR')
+        do j = 1, nz
+            call check(abs(q(j,j)) > 1.0e-14_dp*sqrt(sum(abs(z(:,j))**2)), &
+                'analytic null basis has full rank')
+        end do
+        call zungqr(d,d,nz,q,d,tau,work,size(work),info)
+        call check(info == 0, 'orthonormal representatives of the energy quotient')
+        ! E annihilates Z, so its Euclidean complement represents the E-quotient.
+        quotient = matmul(transpose(conjg(q(:,nz+1:))),matmul(e,q(:,nz+1:)))
+        factor = quotient
+        call zpotrf('U',ne,factor,ne,info)
+        call check(info == 0, 'energy is positive definite modulo analytic physical nulls')
+        energies = 0
+        call zheev('V','U',ne,quotient,ne,energies(nz+1:),work,size(work),rw,info)
+        call check(info == 0, 'energy quotient eigendecomposition')
+        call check(energies(nz+1) > 0, 'energy quotient has strictly positive eigenvalues')
+        print '(a,es20.12)', 'quotient energy smallest / largest eigenvalue: ', &
+            energies(nz+1)/energies(d)
+        q(:,nz+1:) = matmul(q(:,nz+1:),quotient)
     end subroutine
 
     real(dp) function relative_norm(difference, reference) result(value)
