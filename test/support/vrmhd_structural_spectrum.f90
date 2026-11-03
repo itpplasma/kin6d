@@ -533,19 +533,20 @@ contains
         real(dp), intent(out) :: frequencies(3)
         logical, intent(in), optional :: resolved
         real(dp), intent(in), optional :: shares(:,:), captured(:)
-        real(dp), allocatable :: oracle(:)
+        real(dp), allocatable :: oracle(:), resolved_power(:)
         real(dp) :: wave(3), squared(3)
         real(dp) :: cutoff, separation, tolerance, last_counted, next_folded
-        logical, allocatable :: candidates(:,:), visited(:)
+        logical, allocatable :: candidates(:,:), visited(:), selected(:), retained(:)
         integer :: jx, jy, j, i, count_oracle, status, direction, matched, base(3)
         integer, allocatable :: owner(:,:)
-        integer :: expected, computed, nearest
+        integer :: expected, computed, nearest, base_alias
         ! Avoid gfortran's extent-order bug: test/reproducers/gfortran_host_extent.f90.
         allocate(oracle(3*(repeat*degree)**2))
         allocate(candidates(size(omega),size(oracle)),visited(size(oracle)), &
             owner(size(oracle),2))
+        allocate(selected(size(omega)),retained(size(oracle)),resolved_power(size(omega)))
         tolerance = 1.0e-12_dp*maxval(abs(omega))
-        count_oracle = 0; base = 0
+        count_oracle = 0; base = 0; base_alias = 0
         ! The resolved band has repeat*degree samples in each periodic direction.
         do jy = -(repeat*degree)/2, (repeat*degree-1)/2
             do jx = -(repeat*degree)/2, (repeat*degree-1)/2
@@ -557,6 +558,7 @@ contains
                     oracle(count_oracle) = sqrt(squared(i))
                     if (jx == 0 .and. jy == 0) base(i) = count_oracle
                 end do
+                if (jx == 0 .and. jy == 0) base_alias = count_oracle/3
             end do
         end do
         last_counted = maxval(oracle,mask=oracle <= maxval(exact)+tolerance)
@@ -577,7 +579,16 @@ contains
         cutoff = (last_counted+next_folded)/2
         print '(a,3es20.12)', 'last counted / next folded / cutoff [1/s]: ', &
             last_counted, next_folded, cutoff
+        selected = abs(omega) > tolerance .and. abs(omega) <= cutoff+tolerance
+        retained = .true.
+        if (n >= 16) then
+            call check(present(shares) .and. present(captured), &
+                'resolved-mesh matching requires physical Fourier power')
+            resolved_power = captured*shares(base_alias,:)
+            retained = .false.; retained(base) = .true.
+        end if
         if (present(shares)) then
+            print '(a,3i6)', 'Fourier case cells / repeat / degree: ', n,repeat,degree
             j = 0
             do jy = -(repeat*degree)/2, (repeat*degree-1)/2
                 do jx = -(repeat*degree)/2, (repeat*degree-1)/2
@@ -587,15 +598,23 @@ contains
                 end do
             end do
             do j = 1, size(omega)
-                if (abs(omega(j)) <= tolerance .or. abs(omega(j)) > cutoff+tolerance) cycle
+                if (.not. selected(j)) cycle
                 print '(a,es20.12)', 'Fourier mode omega [rad/s]: ',omega(j)
                 if (present(captured)) print '(a,es20.12)', &
                     'captured L2 fraction: ',captured(j)
                 print '(a,*(es20.12))', 'L2 shares per retained alias: ',shares(:,j)
+                if (n >= 16) print '(a,es20.12)', &
+                    'resolved physical L2 fraction r: ',resolved_power(j)
             end do
+        end if
+        if (n >= 16) then
+            call check(all(pack(resolved_power <= 0.1_dp .or. resolved_power >= 0.9_dp, &
+                selected)), 'low-mode resolved power lies outside the ambiguous interval')
+            selected = selected .and. resolved_power >= 0.9_dp
         end if
         candidates = .false.; owner = 0
         do i = 1, count_oracle
+            if (.not. retained(i)) cycle
             if (oracle(i) > cutoff+tolerance) cycle
             separation = huge(1.0_dp)
             do j = 1, count_oracle
@@ -604,9 +623,9 @@ contains
             end do
             candidates(:,i) = abs(abs(omega)-oracle(i)) < separation
         end do
-        expected = 2*count(oracle <= cutoff+tolerance)
-        computed = count(abs(omega) > tolerance .and. abs(omega) <= cutoff+tolerance)
-        print '(a,2i6)', 'computed / expected signed waves below cutoff: ', computed,expected
+        expected = 2*count(retained .and. oracle <= cutoff+tolerance)
+        computed = count(selected)
+        print '(a,2i6)', 'selected / expected signed waves below cutoff: ', computed,expected
         if (present(resolved)) then
             if (.not. resolved) then
                 ! Coarse estimates enter the ladder without asserting branch identity.
@@ -618,10 +637,10 @@ contains
                 return
             end if
         end if
-        call check(computed == expected, 'folded oracle multiplicity below cutoff')
+        call check(computed == expected, 'selected oracle multiplicity below cutoff')
         matched = 0
         do j = 1, size(omega)
-            if (abs(omega(j)) <= tolerance .or. abs(omega(j)) > cutoff+tolerance) cycle
+            if (.not. selected(j)) cycle
             direction = 1
             if (omega(j) > 0) direction = 2
             visited = .false.
@@ -630,8 +649,9 @@ contains
                 omega(j), count(candidates(j,:))
         end do
         print '(a,i6)', 'signed waves with a one-to-one folded branch match: ', matched
-        call check(matched == computed, 'every nonzero frequency matches a folded oracle branch')
-        call check(matched == expected, 'folded oracle multiplicity below cutoff')
+        call check(matched == computed, &
+            'every selected frequency matches a retained oracle branch')
+        call check(matched == expected, 'selected oracle multiplicity below cutoff')
         do i = 1, 3
             call check(owner(base(i),2) > 0, 'positive base-wavenumber branch found')
             frequencies(i) = omega(owner(base(i),2))

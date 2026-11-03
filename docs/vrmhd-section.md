@@ -334,15 +334,15 @@ quotienting static energy-free directions. In particular,
 `E_q^(1/2) i F_q E_q^(-1/2)` is Hermitian. This argument requires neither
 symmetry of the primitive time mass nor positivity of the full energy Gram.
 
-For a block with `r` cells in each periodic direction and equal degree `k`,
-the scalar dimension is `s=(r k)^2`. At each scalar coefficient the entropy
+For a block with `b` cells in each periodic direction and equal degree `k`,
+the scalar dimension is `s=(b k)^2`. At each scalar coefficient the entropy
 directions are `(rho',Te',Ti')=(1,-0.6,0)` and `(0,1,-1)`; both have zero
 pressure perturbation. The `s` gauge directions are discrete gradients of
 the scalar Bloch basis, projected into the same vector-potential block.
 The Bloch phase is nontrivial on every tested mesh, so the scalar gradient is
 injective and no constant or harmonic gauge direction is added. Thus the
-expected energy nullity is `3 s`: structured blocks (`r=1`) have 3 and 12
-nulls at degrees one and two; perturbed blocks (`r=2`) have 12 and 48.
+expected energy nullity is `3 s`: structured blocks (`b=1`) have 3 and 12
+nulls at degrees one and two; perturbed blocks (`b=2`) have 12 and 48.
 These counts are independent of the number of cells per period in the ladder.
 A QR factorization into unitary and upper triangular matrices checks the
 analytic basis rank and provides its Euclidean complement as quotient
@@ -370,20 +370,31 @@ with the next larger folded-oracle frequency; both endpoints and the cutoff
 are reported for every block. The one-sample structured degree-one band has
 no larger frequency, so adjacent aliases with integer indices `jx,jy=-1,0,1`
 provide the upper endpoint without adding branches to the retained band.
-The computed signed nonzero count below that cutoff must equal the folded
-oracle count on resolved meshes: those with at least 16 cells per period in
-the 4, 8, 16, 32 ladder. One-to-one branch matching, including repeated
-frequencies, applies to the same resolved meshes. Coarse counts are diagnostics.
-For a block of `r` cells in each direction, its wave vectors are
-`(1 + n jx/r, n jy/r, 0) m^-1`, where `n` is the number of cells per period.
-This is `q0 + 2 pi j/(r h)`, with base wave vector `q0=(1,0,0) m^-1`,
+On resolved meshes, those with at least 16 cells per period in the
+4, 8, 16, 32 ladder, each computed nonzero mode below the cutoff is classified
+by `r`, the fraction of its total physical wave-energy L2 power in the base
+Fourier mode `q0`. It is the product of the captured fraction and the retained
+share at `G=0`, defined below. Modes with `r>=0.9` form the resolved class;
+those with `r<=0.1` form the unresolved class. Any mode with `0.1<r<0.9` fails
+the gate. The same thresholds apply unchanged to the perturbed mesh.
+The resolved signed count must equal the analytic `G=0` count in band, and
+one-to-one matching must cover every resolved mode and every analytic `G=0`
+mode in band, including multiplicity and both signs. Unresolved modes retain
+frequency, captured-fraction and alias-share diagnostics and remain subject
+to every energy, staticity and dissipative stability gate. Their frequencies
+are not assigned an analytic alias identity. Coarse counts are diagnostics.
+For a block of `b` cells in each direction, its wave vectors are
+`(1 + n jx/b, n jy/b, 0) m^-1`, where `n` is the number of cells per period.
+This is `q0 + 2 pi j/(b h)`, with base wave vector `q0=(1,0,0) m^-1`,
 integer vector `j=(jx,jy,0)` and cell width `h=2 pi/n m`.
-The resolved test band has `r k` samples in each direction, with integer
-indices `-floor(r k/2)` through `floor((r k-1)/2)`. The structured mesh uses
-`r=1`; the periodically perturbed mesh uses `r=2`. Matching retains the prior
+The resolved test band has `b k` samples in each direction, with integer
+indices `-floor(b k/2)` through `floor((b k-1)/2)`. The structured mesh uses
+`b=1`; the periodically perturbed mesh uses `b=2`. Matching retains the prior
 isolation window: the frequency error must be smaller than half the distance
 to the nearest distinct oracle frequency. A bipartite assignment preserves
-the folded multiplicity instead of independently accepting nearest branches.
+the selected multiplicity instead of independently accepting nearest branches.
+The isolation windows still use the full folded-oracle separations, even
+though only `G=0` branches are matched on resolved meshes.
 The ladder is 4, 8, 16, 32 cells per period at `k=1,2`, on both meshes;
 the base-wavenumber frequency order must exceed `2 k-0.2` on the finest pair.
 The two coarse meshes retain nearest positive frequency estimates in the ladder
@@ -414,15 +425,12 @@ quadruple precision (`real128`), converting the double-precision inputs exactly.
 The projected matrices and LAPACK solves remain double precision. This reduces
 summation roundoff from the comparisons without changing their `1e-14`
 tolerances or the production operators.
-The structured degree-one ladder passes through 32 cells per period, including
-the finest-pair order check. Structured degree two passes both coarse meshes,
-whose counts are diagnostic. At 16 cells per period its structural identities,
-analytic nulls, quotient positivity and time-mass inversion pass, but twelve
-computed signed waves lie below the gap cutoff, against ten analytic waves.
-The next larger folded frequency belongs to the slow branch at
-`(-15,-16,0) m^-1`, so the gap endpoints are approximately `1.341640786500`
-and `6.508898217884 rad/s`, with midpoint `3.925269502192 rad/s`.
-This is a resolved-mesh count failure away from an oracle boundary.
+At structured degree two and 16 cells per period, twelve computed signed
+waves lie below the cutoff, against ten retained analytic waves. The next
+larger folded frequency belongs to the slow branch at `(-15,-16,0) m^-1`,
+so the gap endpoints are approximately `1.341640786500` and
+`6.508898217884 rad/s`, with midpoint `3.925269502192 rad/s`.
+The cutoff is unchanged by the resolved-power classification.
 
 A diagnostic projects each below-cutoff mode's physical wave-energy fields
 `(v', curl A'/sqrt(mu0), p'/sqrt(gamma p0))` onto
@@ -439,22 +447,44 @@ An independent test uses exactly representable `p'=x` and `A_z'=x^2/2` on
 component's sign, for nonzero integer x wavenumber `m`; coefficients with
 nonzero y wavenumber vanish. The test checks both shares and captured power.
 
-The hypothesis that the three positive modes beyond the base-wavenumber
-branches all belong to `G=(0,-16) m^-1` is refuted by this diagnostic. At 16 cells per period,
-that alias dominates the `0.614683369776 rad/s` mode, but the
-`1.131816854126 rad/s` mode splits its retained power between that alias
-and `G=(-16,0) m^-1`; the latter alias dominates the
-`2.624802298648 rad/s` mode. The diagnostic reports every retained share
-and the captured fraction for both frequency signs.
-The conditional replacement of count equality by dominant-alias matching
-is therefore not applied. In particular, no Fourier-share threshold or
-matching gate is relaxed. The origin of these optical or mixed modes remains
-unresolved; dominant Fourier power alone does not prove their branch identity.
-The ladder stops at the unchanged count gate; no complete spectral
-qualification is claimed for degree two or either perturbed ladder.
-No full-system inf-sup bound or continuous spectral non-pollution result is
-claimed. The independent folding test uses analytic frequencies at
-`(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.
+For the structured degree-two case at 16 cells per period, the six positive
+modes separate by total resolved power as follows; negative partners agree
+to printed roundoff. `share0` is the retained share at `G=0` and
+`r=captured*share0` is dimensionless.
+
+| omega [rad/s] | captured fraction | share0 | r | class |
+|---|---|---|---|---|
+| 0.447216850863 | 0.999973514 | 0.999980853 | 0.999954368 | resolved |
+| 0.599988344139 | 0.998575097 | 0.998481045 | 0.997058307 | resolved |
+| 0.614683369776 | 0.516982339 | 0.005613478 | 0.002902069 | unresolved |
+| 1.131816854126 | 0.032837647 | 0.006654184 | 0.000218508 | unresolved |
+| 1.341688980664 | 0.999751660 | 0.999982627 | 0.999734291 | resolved |
+| 2.624802298648 | 0.573530991 | 0.000011399 | 0.000006538 | unresolved |
+
+The three resolved positive modes match the analytic slow, Alfven and fast
+waves at `G=0`. The other modes have little power at `q0`; their retained
+shares alone cannot establish how much physical power lies outside the retained
+alias set. In particular, only about 3.28% of the `1.1318 rad/s` mode's power
+is captured. This is why classification uses total resolved power rather than
+a dominant retained alias or a frequency-band count.
+The synthetic regressions reject an extra high-`r` mode without a `G=0`
+partner and a mode at `r=0.5`; they also retain the cutoff regression for a
+fast wave approaching its oracle from above. The independent folding test
+uses analytic frequencies at `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and
+`(-1,-2,0) m^-1`.
+
+The structured degree-one ladder passes through 32 cells per period, including
+the finest-pair order check. At structured degree two, classification, resolved
+matching, energy identities, staticity and dissipative stability pass through
+32 cells per period. There are six resolved signed modes at both 16 and 32
+cells per period, with respectively six and eight unresolved signed modes in
+band; none is ambiguous. The finest-pair frequency orders are approximately
+`2.945030`, `3.676267` and `3.636887` for Alfven, fast and slow waves.
+All three fail the unchanged requirement to exceed `3.8` at degree two.
+The ladder stops there, before either perturbed family. The cause of the order
+deficit is not established; no complete degree-two or perturbed spectral
+qualification is claimed. No full-system inf-sup bound or continuous spectral
+non-pollution result is claimed.
 
 ## Pairing study for the ideal uniform equilibrium
 

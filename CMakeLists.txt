@@ -2030,6 +2030,12 @@ add_executable(test_vrmhd_spectral_folding test/test_vrmhd_spectral_folding.f90)
 target_link_libraries(test_vrmhd_spectral_folding PRIVATE kin6d_spectrum_support)
 add_test(NAME vrmhd_spectral_folding COMMAND test_vrmhd_spectral_folding)
 set_tests_properties(vrmhd_spectral_folding PROPERTIES LABELS rm2)
+foreach(mode spurious ambiguous)
+    add_test(NAME vrmhd_resolved_power_rejects_${mode}
+        COMMAND test_vrmhd_spectral_folding ${mode})
+    set_tests_properties(vrmhd_resolved_power_rejects_${mode}
+        PROPERTIES LABELS rm2 WILL_FAIL TRUE)
+endforeach()
 add_executable(test_vrmhd_fourier test/test_vrmhd_fourier.f90)
 target_link_libraries(test_vrmhd_fourier PRIVATE kin6d_spectrum_support)
 add_test(NAME vrmhd_fourier_content COMMAND test_vrmhd_fourier)
