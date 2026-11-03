@@ -186,6 +186,16 @@ primal and JVP leaves and retains the conservative mass coupling.
 
 ## Mixed current and energy exchange
 
+Weak Ampère recovery makes `J_h` a discrete curl-curl of `A_h`. Its curl
+is an additional recovered discrete derivative, for which this formulation gives
+no convergence guarantee; inverse estimates permit boundary layers with an
+L2 error of order `h^(1/2)`. Here `h` denotes mesh spacing. No residual term
+uses `curl J`: induction, Lorentz force and Ohmic heating use only L2
+pairings of `J`. The solved-current gate therefore uses L2, with the same
+design order as `curl A` in L2 (one for the lowest-order spaces). The curl
+error remains a diagnostic, reported over the whole mesh and after excluding
+the two cell layers next to the boundary.
+
 The auxiliary current is defined by weak Ampère's law `RJ = 0`, rather than
 by a second pointwise derivative of `A`. With `W = J` in induction and
 `K = A_dot` in Ampère, the discrete magnetic-energy derivative is

@@ -80,6 +80,17 @@ higher-order scalar gradient kernel without a separate graph reduction.
 The multiplier of a compatible continuous solution is zero. Its computed
 value and Jacobian nonsingularity require separate checks.
 
+The stationary singular-value gate removes fixed trace coefficients and uses
+the physical Riesz matrices: H1 for the scalar and velocity fields and the
+multiplier, H(curl) for `A`, and L2 for `J`, with unit reference scales.
+If `H=L L^T` is this Gram matrix, it measures the smallest singular value of
+`L^(-1) R_U L^(-T)`. A positive value on one grid is insufficient: the
+refinement check rejects a decrease greater than 25 percent per halving of
+the cell size. This is a numerical stability gate, not a proof of a uniform
+continuous inverse bound.
+The Jacobian is evaluated after Newton convergence of the manufactured
+stationary problem, including its lifted boundary values and Ampere trace.
+
 The wrapper applies `fixed` to scalar Dirichlet values, all velocity
 components, and the vector-potential tangential trace. The homogeneous
 velocity case is a no-slip ideal wall; nonzero manufactured traces describe
@@ -109,9 +120,20 @@ conventions are `Js=J, V=0` and `Js=0, eta J=V h`.
 
 Discrete harmonic coefficients must be edge integrals of the multivalued
 coordinate, divided by its period, with `curl_h h=0` to roundoff. A
-projection with a small nonzero curl does not meet this contract. The
-stationary wrapper accepts assembled loads but does not yet construct this
-discrete harmonic drive.
+projection with a small nonzero curl does not meet this contract.
+`vrmhd_drive_build` selects `VRMHD_CURRENT_SOURCE` or `VRMHD_LOOP_VOLTAGE`:
+the former retains the prescribed `Js` and requires zero voltage; the latter
+sets `Js=0` and returns the positive voltage load subtracted by the stationary
+wrapper. Other source channels are retained.
+
+The returned harmonic cochain stores zero increments on section edges and a
+unit integral on every periodic orbit edge. It uses the full coordinate
+one-form, not the horizontal `A/J` decomposition above. Its metric-free
+FortFEM curl is zero, and its prescribed Cartesian lift divides by the orbit
+period (`2 pi` or the supplied axial period). This exact affine harmonic
+component of `Atilde-t V h` is evaluated separately from the polynomial
+horizontal state space: projecting it into that space would destroy exact
+closedness for screw symmetry.
 
 ## Verification limits
 
@@ -130,10 +152,18 @@ The reported weak defect uses diagonal natural-norm scaling, not a certified
 dual norm. Separate stationary tests check the Ampere surface sign against
 the independent analytic current and magnetic field, and the lifted/gauged
 sparse Jacobian against its matrix-free action and centered differences.
-The solved manufactured test retains its design-order gate: rotation fails
-on the first refinement in the current H(curl) norm even though Newton
-converges quadratically. The other solved symmetries, GS stationary
-consistency, gauge nonsingularity under refinement, the semidiscrete energy
-ledger and linear spectra remain unverified. Conservative momentum alone
+The solved manufactured test uses H1 for scalar and velocity fields,
+H(curl) for `A` and L2 for the weakly recovered `J`, as explained in the
+weak-form document. It passes over three refinements in all three symmetries,
+with quadratic Newton convergence. The diagnostic interior `curl J` rate is
+not better than the whole-mesh rate in any symmetry; its cause remains open.
+The harmonic gate checks closedness and an independent Cartesian voltage load.
+The gauged Jacobian is nonsingular on the tested meshes, but its minimum
+singular value decreases approximately in proportion to cell size and fails
+the refinement gate. The corresponding right singular vector is dominated
+by the auxiliary current, not the multiplier; whether this reflects the
+mixed operator's norm or a discretization defect remains open. GS stationary
+consistency is therefore not yet tested. The semidiscrete energy ledger and
+linear spectra remain unverified. Conservative momentum alone
 does not enforce the kinetic continuity product discussed in the weak-form
 document.

@@ -115,6 +115,15 @@ program gen_vrmhd_section
         call w%emit('vrmhd_curl_'//trim(suffix), cn, &
             [character(16) :: 'a1', 'a2', 'a3', 'b1', 'b2', 'b3'], roots, &
             ad=.true.)
+        ! The prescribed closed form uses the full coordinate pullback.
+        if (kind == 1) then
+            av = [z, a/x, z]
+        else
+            av = [z, z, a]
+        end if
+        call w%emit('vrmhd_harmonic_'//trim(suffix), &
+            [character(16) :: 'x', 'a'], &
+            [character(16) :: 'h1', 'h2', 'h3'], av, ad=.true.)
         ! The section component of a gradient is a discrete Nedelec gradient.
         do i = 1, 3
             gc(i) = subs_many(roots(3 + i), [u(1), u(2), c, a, ax, ay], &

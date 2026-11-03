@@ -90,18 +90,21 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
     src/generated/kin6d_vrmhd_dispatch.f90
     src/generated/kin6d_vrmhd_section_leaves.f90
     src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90
-    src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90)
+    src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90
+    src/mhd/vrmhd_drive.f90)
 add_library(kin6d_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
 target_link_libraries(kin6d_vrmhd_mms_test PUBLIC kin6d_mhd)
 add_executable(test_vrmhd_mms test/test_vrmhd_mms.f90)
 target_link_libraries(test_vrmhd_mms PRIVATE kin6d_vrmhd_mms_test)
 add_executable(test_vrmhd_stationary test/test_vrmhd_stationary.f90)
 target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test)
-foreach(gate boundary derivatives solve)
+foreach(gate boundary derivatives harmonic gauge solve)
     add_test(NAME vrmhd_stationary_${gate} COMMAND test_vrmhd_stationary ${gate})
     set_tests_properties(vrmhd_stationary_${gate} PROPERTIES LABELS rm2
         PROCESSORS 8 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 endforeach()
+set_tests_properties(vrmhd_stationary_gauge PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=8")
 add_test(NAME vrmhd_section_manufactured_consistency COMMAND test_vrmhd_mms)
 set_tests_properties(vrmhd_section_manufactured_consistency PROPERTIES LABELS rm2
     ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
