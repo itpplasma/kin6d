@@ -1,6 +1,7 @@
 # Drift kinetics: local neoclassical transport and NTV (DK)
 
-Status: design decision, 2026-10-13, approved by Chris. No solver code yet.
+Status: design decision, 2026-10-13, approved by Chris; local 3D and global
+steady extensions approved 2026-11-03. No solver code yet.
 DK0 (theory gate for the local ansatz with shear) is done for trapped
 particles; see [the DK0 derivation](../theory/derivations/drift-kinetics-dk0.md).
 The programme is gated on a numerics claim (DK1, below): if it fails, the
@@ -46,8 +47,10 @@ species and n, offset rotation, ambipolar E_r) across 1/nu, nu-sqrt(nu),
 superbanana plateau and bounce/transit resonances, including omega_E -> 0;
 tangents and adjoints of the outputs.
 
-Out of scope in this programme: finite orbit width beyond the first-order
-shear term (POTATO remains the FOW oracle); islands and resonant layers at
+Finite orbit width beyond the first-order shear term is admitted only in
+the K2 extension below; the local ansatz keeps its ordering and refusal
+conditions. POTATO remains an external finite-orbit-width (FOW) oracle.
+Out of scope: islands and resonant layers of the perturbative NTV problem at
 q = m/n (detected and refused); non-nested or stochastic regions (refused);
 sonic rotation (Mach defect reported); kinetic-MHD feedback into the L-lane
 (kept compatible, not built); turbulence and time dependence.
@@ -89,8 +92,103 @@ violation is the superbanana/delta-B-trapping regime.
 
 (c) 3D DK on 3D equilibria (DKES/SFINCS/MONKES class, map-lane states, finite
 amplitude): the design stays compatible (same kernels on (theta, alpha,
-lambda, x), same collision interface, same D7 view), but no increment is
-planned for it.
+lambda, x), same collision interface, same D7 view). It is now the K1
+extension below; the axisymmetric harmonic operator (4) alone is insufficient
+for this two-angle problem.
+
+## Ambipolar transport on 3D equilibria (K1, K2)
+
+Decision, 2026-11-03: extend this steady operator in two stages for the
+ambipolar radial electric field E_r in W7-X. K1 is local three-dimensional
+transport; K2 retains radial orbit coupling and determines the potential
+jointly with the species distributions. Both use the collision ladder, D7
+kinetic geometry view and equation-level derivatives below. This is planned
+scope, not an implemented or validated solver. “Full orbits” here means
+complete guiding-centre orbits within the drift-kinetic ordering, not
+resolution of the gyromotion.
+
+### K1: local transport and the ambipolar root
+
+Activate option (c) as the equilibrium neoclassical response (n = 0 in the
+perturbation labelling). The distribution still depends on both surface
+angles: the local transport residual contains dot(theta) partial_theta f1
+and dot(alpha) partial_alpha f1, with streaming, E x B and tangential
+magnetic drift, plus the velocity-space terms of the selected trajectory
+model and collisions. Radial magnetic drift acts on the Maxwellian drive;
+its radial derivative on the unknown is dropped. Setting n = 0 in (4)
+removes that equation's drift term and does not implement K1.
+
+Before implementation, derive this local projection, its phase-space measure,
+velocity-coordinate transport, null spaces and force/flux pairing. Distinguish
+the incompressible monoenergetic ICNTS model from the full E x B/tangential-drift
+model used for SFINCS comparisons. Every reduction has a measured model defect.
+
+Extend the DG pitch/surface and nodal GLL energy discretisation, using FGMRES
+with sparse direct blocks per energy as the starting preconditioner. A
+three-dimensional field enlarges the surface block; its cost and robustness
+are not established. The existing DK1 simpler-discretisation comparison and
+stop rule still apply. Generic missing numerics belong in the owning library.
+
+First gate D11, D31 and D33 against the International Collaboration on
+Neoclassical Transport in Stellarators (ICNTS,
+[Beidler et al. 2011](https://doi.org/10.1088/0029-5515/51/7/076001)) and matched
+SFINCS/MONKES/DKES coefficients on published fields. Check the 1/nu and
+sqrt(nu) limits, where nu is the deflection collision frequency. Intrinsic
+ambipolarity in an axisymmetric limit requires momentum-conserving collisions;
+Lorentz-only rows do not establish that gate.
+
+Then compute the particle flux Gamma_a of each species with charge q_a and
+solve sum_a q_a Gamma_a(E_r) = 0 by Newton with implicit tangents. Bracket and
+continue roots; report folds and multiple solutions rather than infer
+uniqueness from convergence. Check the root solver on an independently solved
+reduced flux model and compare all bracketed kinetic roots with matched
+SFINCS flux curves, with declared numerical and reference errors.
+
+### K2: global steady distributions and quasineutrality
+
+Retain v_d.grad(psi) partial_psi f on the unknown over a radial domain, where
+v_d is the magnetic drift and psi labels nested flux surfaces. Use full-f or
+a Maxwellian-subtracted representation of the same steady guiding-centre
+transport/collision equation. Specify the particle and energy sources,
+absorbing outer boundary (no incoming particles), axis regularity or inner
+inflow data, and potential gauge before solving. Reservoir exchanges and
+boundary losses enter the particle, charge and energy ledgers.
+
+Determine Phi(psi) jointly with the distributions from quasineutrality by
+Newton–Krylov iteration; E_r = -dPhi/dr for the declared radius r. The first
+K2 derivation gate must supply the quasineutrality residual from the chosen
+field action, any retained polarisation term, its charge/source compatibility
+and null-space constraints. This scope decision does not assert existence or
+uniqueness of a steady branch. Time-dependent E_r is outside this programme.
+
+The local operator becomes a switch of the global one: remove radial
+advection of the unknown while retaining the Maxwellian drive. Geometry,
+collision and discretisation interfaces remain shared. Per-energy local
+solves are the starting preconditioner, not a demonstrated global solution.
+Differentiate the coupled equations for JVP/VJP, never the Newton iterations.
+Use a consistent D7 psi across nested surfaces; refuse islands and non-nested
+regions. Resolve numerical diffusion below the radial transport signal and
+report separate numerical, model and input error; no certificate is promised
+without the required stability and reconstruction bounds.
+
+K2 promotion requires independent checks:
+
+- a small-orbit-width scan recovering K1 and matched SFINCS/MONKES
+  coefficients, with radial and velocity refinement;
+- the closed momentum-conserving axisymmetric limit and analytic regime/root
+  limits in their orderings; source or boundary currents are separate terms;
+- particle and energy balance with all source, boundary and field-work terms;
+- comparison with DK1's simpler finite-volume or Legendre reference on
+  problems both representations solve;
+- ion transport at fixed potential against public GORILLA. Its public
+  monoenergetic applet can check D11 at fixed normalised E x B velocity;
+  this is partial coverage. A Maxwellian flux comparison at arbitrary fixed
+  potential remains a required open check until that reference is available.
+  This programme does not modify GORILLA or its SCEF applet.
+
+Use only published or synthetic cases in this public repository. Agreement
+between deterministic and particle methods alone does not replace the
+analytic and independent reference-code gates.
 
 ## Local ansatz with finite shear
 
@@ -288,7 +386,10 @@ are repaired there.
   vs Lagrangian and compressive vs E x B fields from stage 1 (MARS KNTVEUL);
   the (a) switch set against NEO-2-QL fed by the same `.bc`; measured
   defects of the four (a) switches; rational-layer refusal.
-- No increment for option (c), global DK, islands or kinetic feedback.
+- K1 activates option (c) after its derivation and local coefficient/root
+  gates above. K2 adds global steady radial transport only after K1 passes,
+  with its own derivation, source/boundary and independent comparison gates.
+  Islands and kinetic feedback remain outside this programme.
 
 ## Verification
 
@@ -322,9 +423,10 @@ are repaired there.
 
 - The ITER benchmark payoff needs DK-pre-2 and the L-lane (L5, L7) first;
   until then DK runs only on prescribed and frozen fields.
-- Finite orbit width beyond the first-order shear term and islands are out
-  of scope; near rationals and at large n q' Delta_psi_b the local answer is
-  refused, not approximated.
+- The local ansatz still refuses large n q' Delta_psi_b and perturbative
+  resonant layers. K2 admits finite radial orbit width through the global
+  equation, not by using a local answer outside its ordering. Islands and
+  non-nested regions remain outside this programme.
 - The numerics claim may fail: if DG layers plus the coarse level do not
   beat NEO-2 on the SBP and omega_E -> 0 gates, the stop rule applies.
 - NEO-RT's residual O(eps) SBP slope (2.05 eps in stage 1) limits it as a
