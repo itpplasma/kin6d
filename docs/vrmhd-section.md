@@ -168,6 +168,16 @@ rejects a decrease greater than 25 percent per halving of cell size. It also
 reports the maximum singular value and minimum mode's field composition.
 The current mass matrix is checked separately after diagonal normalization:
 a condition-number increase greater than `1/0.75` per refinement fails.
+Only extreme eigenpairs enter these gates, so the test does not compute full
+singular value decompositions. The singular values of `B=L^(-1) S L^(-T)` are
+the square roots of the eigenvalues of `B^T B`; the current masses are
+symmetric positive definite. For each of these matrices FortNum's Lanczos
+method, applied to the inverse through a Cholesky factor and to the matrix
+itself, gives the lowest eigenpair and the highest eigenvalue with computed
+residuals. Cholesky factorizations of the matrix shifted by `(1 - 1e-6)` times
+the lowest value, and of `(1 + 1e-6)` times the highest value minus the
+matrix, provide numerical checks of the enclosing interval. These
+floating-point checks are not rigorous spectral certificates.
 The raw coefficient condition number is diagnostic only because section edge
 and orbit nodal bases have different mesh scaling. These are numerical gates,
 not proofs of uniform continuous bounds.
@@ -291,6 +301,19 @@ Bloch block of the uniform translation slab, with the equilibrium and
 `uniform_waves` oracle specified in the pairing study below. A Bloch field
 repeats between blocks with the phase of its wave vector. The gate retains
 every coefficient; it does not discard cell-scale modes.
+
+Each Bloch coefficient row has exactly one Bloch column and phase, so the
+Bloch block `T^H A T` of an assembled matrix is accumulated in one pass over
+its entries, with the quadruple-precision sums of the column-wise projection.
+The time mass is the assembled Jacobian with the state direction removed. At
+the uniform state on affine translation cells every Jacobian and time-mass
+integrand is a product of two basis polynomials with constant coefficients,
+of degree at most `2 max(k_s, k_0)`, where `k_0` is the Lagrange degree of the
+magnetic complex. The gate therefore assembles these matrices with that
+quadrature degree. In every case one matrix-free product at the production
+quadrature, applied to the sum of all Bloch columns, must agree with the
+reduced-degree Bloch block to `1e-12` relative to its Frobenius norm, for the
+ideal Jacobian, the time mass and the dissipative Jacobian.
 
 Write the balanced spatial operator as `L=-R_U`, where `R_U` is the residual
 Jacobian. An invertible change of units scales A by `sqrt(mu0)` and J by

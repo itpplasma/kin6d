@@ -28,7 +28,7 @@ module kin6d_vrmhd_section
     integer, parameter, public :: VRMHD_EDGE_FIRST = 1, VRMHD_EDGE_SECOND = 2
 contains
     subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status, &
-            scalar_degree, study_pairing, edge_kind)
+            scalar_degree, study_pairing, edge_kind, quad_degree)
         type(meridian_mesh_t), intent(in) :: mm
         type(gs_symmetry_t), intent(in) :: symmetry
         integer, intent(in) :: degree, harmonic_count
@@ -37,6 +37,8 @@ contains
         logical, intent(in), optional :: study_pairing
         logical :: study
         integer, intent(in), optional :: scalar_degree, edge_kind
+        !> Overrides the nonlinear default; callers must bound their integrand degree.
+        integer, intent(in), optional :: quad_degree
         integer :: i, t, j, b, n0, n1, l0, l1, offset, lo, ks, qdegree, kind
         status = 1
         if (.not. symmetry%valid() .or. harmonic_count /= 1) return
@@ -55,6 +57,7 @@ contains
         end if
         op%symmetry = symmetry; op%harmonic_count = harmonic_count
         qdegree = 4*max(ks, degree) + 2*mm%geo_order + 2
+        if (present(quad_degree)) qdegree = quad_degree
         if (symmetry%kind == GS_ROTATION) then
             call meridian_feec_build(mm, degree, op%fs, status, &
                 quad_degree=qdegree, edge_kind=kind)
@@ -333,15 +336,18 @@ contains
             mass, status)
     end subroutine
 
-    subroutine vrmhd_section_jacobian(op, p, u, ud, source, shift, jac, status)
+    subroutine vrmhd_section_jacobian(op, p, u, ud, source, shift, jac, status, &
+            mass_only)
         type(vrmhd_section_t), intent(in) :: op
         type(vrmhd_parameters_t), intent(in) :: p
         real(dp), intent(in) :: u(op%ndof), ud(op%ndof), shift
         real(dp), intent(in) :: source(6, op%fs%nq, op%fs%mm%topology%n_triangles)
         type(csc_t), intent(out) :: jac
         integer, intent(out) :: status
+        !> Drops the state direction, leaving exactly shift times the time mass.
+        logical, intent(in), optional :: mass_only
         real(dp) :: basis(36, op%nlocal), x(2), weight, v(36), vd(12), test(19), &
-            value, dvalue
+            value, dvalue, state_weight
         real(dp) :: block(op%nlocal, op%nlocal)
         integer, allocatable :: rows(:), cols(:)
         real(dp), allocatable :: vals(:)
@@ -351,6 +357,10 @@ contains
             cols(op%nlocal**2*op%fs%mm%topology%n_triangles), &
             vals(op%nlocal**2*op%fs%mm%topology%n_triangles))
         fail = 0
+        state_weight = 1
+        if (present(mass_only)) then
+            if (mass_only) state_weight = 0
+        end if
         !$omp parallel do default(shared) schedule(static) &
         !$omp private(t,q,i,j,pos,st,basis,x,weight,v,vd,test,value,dvalue,block) &
         !$omp reduction(max:fail)
@@ -366,7 +376,8 @@ contains
                     do i = 1, op%nlocal
                         call test_data(op%row(i), basis(:, i), test)
                         do j = 1, op%nlocal
-                            call vrmhd_point(p, op%row(i), v(:33), basis(:33, j), vd, &
+                            call vrmhd_point(p, op%row(i), v(:33), &
+                                state_weight*basis(:33, j), vd, &
                                 shift*basis(:12, j), test, source(:, q, t), &
                                 value, dvalue)
                             block(i, j) = block(i, j) + weight*dvalue

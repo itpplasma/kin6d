@@ -6,7 +6,8 @@ module vrmhd_spectrum_support
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian, &
         vrmhd_section_mass, VRMHD_EDGE_FIRST, VRMHD_EDGE_SECOND
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
-    use vrmhd_structural_spectrum, only: structural_spectrum, bloch_projection
+    use vrmhd_structural_spectrum, only: structural_spectrum, bloch_projection, &
+        bloch_rows, bloch_sandwich, bloch_adjoint, check_bloch_action
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load
@@ -66,7 +67,7 @@ contains
         logical, intent(in), optional :: structural
         integer, intent(in), optional :: edge_kind
         type(spectrum_result_t) :: measured
-        type(vrmhd_section_t) :: reference_op
+        type(vrmhd_section_t) :: reference_op, assembly
         integer :: repeat, cell, ix, iy, tick0, tick1, tick_rate
         real(dp) :: reference_vertices(2, (n+1)**2), h
         real(dp) :: displacement(2, 0:1, 0:1)
@@ -76,13 +77,17 @@ contains
         type(meridian_mesh_t) :: mm
         type(vrmhd_section_t) :: op
         type(vrmhd_parameters_t) :: p
-        type(csc_t) :: jac
+        type(csc_t) :: jac, time_mass
+        integer, allocatable :: column(:)
+        complex(dp), allocatable :: row_phase(:)
+        complex(qp), allocatable :: column_norm(:)
+        logical :: reduced
         real(dp), allocatable :: u(:), zero(:), source(:, :, :), r(:), unused(:)
+        real(dp), allocatable :: assembly_source(:, :, :)
         real(dp), allocatable :: mr(:), mi(:), basis(:, :), xy(:, :)
         complex(dp), allocatable :: load(:)
         type(fortsparse_status_t) :: st
         complex(dp), allocatable :: transform(:, :), coefficients(:)
-        complex(qp), allocatable :: image(:)
         complex(dp) :: stiffness(nb, nb), mass(nb, nb), alpha(nb), beta(nb)
         complex(dp) :: vectors(nb, nb), dummy(1, 1), dummy_right(1, 1), work(16*nb), lambda(nb)
         complex(dp) :: original_k(nb, nb), original_m(nb, nb), residual(nb)
@@ -94,7 +99,7 @@ contains
         real(dp) :: positive(nb), tolerance, reality, equilibrium_defect
         real(dp) :: backward_error, diagnostic_reality, column_scale(nb), row_scale(nb)
         real(dp) :: magnetic_energy(3), optical_energy(3)
-        integer :: n0, nn, n1, a0, j0, t, i, j, q, row, entry, edge, group
+        integer :: n0, nn, n1, a0, j0, t, i, j, q, edge, group
         integer :: status, info, finite_count, zero_count, wave_count, m, idx, group0
         integer :: kind, ke, ninterior, k0
         interface
@@ -144,6 +149,23 @@ contains
             gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
             ka, 1, op, status, scalar_degree=ks, study_pairing=study, edge_kind=kind)
         call require(status == 0, 'periodic wave section')
+        reduced = .false.
+        if (present(structural)) reduced = structural
+        if (reduced) then
+            ! At the uniform state on affine cells every Jacobian and time-mass
+            ! integrand is a product of two basis polynomials with constant
+            ! coefficients, so degree 2 max(ks, k0) is integrated exactly.
+            call require(mm%geo_order == 1, 'affine cells for the reduced quadrature')
+            call vrmhd_section_build(mm, &
+                gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
+                ka, 1, assembly, status, scalar_degree=ks, study_pairing=study, &
+                edge_kind=kind, quad_degree=2*max(ks, op%fs%k0))
+            call require(status == 0, 'periodic wave section, exact bilinear quadrature')
+            call require(assembly%ndof == op%ndof .and. all(assembly%map == op%map), &
+                'reduced-quadrature section shares the coefficient numbering')
+        else
+            assembly = op
+        end if
         ke = op%fs%ke; ninterior = op%fs%nln - 3*ke; k0 = op%fs%k0
         if (distort) then
             mesh%vertices = reference_vertices
@@ -161,9 +183,10 @@ contains
         p%mi = 1; p%mu0 = oracle_mu0
         allocate (u(op%ndof), zero(op%ndof), r(op%ndof), unused(op%ndof), &
             source(6, op%fs%nq, mm%topology%n_triangles), mr(op%ndof), mi(op%ndof), &
-            transform(op%ndof, nb), image(op%ndof), coefficients(op%ndof), &
+            transform(op%ndof, nb), coefficients(op%ndof), &
             basis(36, op%nlocal))
-        u = 0; zero = 0; source = 0; transform = 0
+        allocate (assembly_source(6, assembly%fs%nq, mm%topology%n_triangles))
+        u = 0; zero = 0; source = 0; transform = 0; assembly_source = 0
         u(:n0) = 1; u(4*n0 + 1:6*n0) = 0.3_dp
         if (distort) then
             call meridian_lagrange_nodes(reference_op%scalar_fs, xy)
@@ -231,6 +254,7 @@ contains
         end do
         call require(all(count(abs(transform) > 0, dim=2) == 1), 'every Bloch coefficient included once')
         call require(all(sum(abs(transform), dim=1) > 0), 'every Bloch column represented')
+        call bloch_rows(transform, column, row_phase, column_norm)
         call meridian_load(op%fs, 1, equilibrium_potential, load, status)
         call require(status == 0, 'analytic uniform-field potential load')
         call sparse_solve_once(op%fs%mass(1), real(load, dp), u(a0 + 1:j0), st)
@@ -247,42 +271,32 @@ contains
         coefficients(a0 + 1:j0) = cmplx( &
             csc_matvec(op%fs%grad%a, cos(xy(1, :))), &
             csc_matvec(op%fs%grad%a, sin(xy(1, :))), dp)
-        do j = 1, nb
-            nulls(j, 3) = cmplx(dot_product(cmplx(transform(:,j),kind=qp), &
-                cmplx(coefficients,kind=qp)) &
-                /sum(abs(cmplx(transform(:,j),kind=qp))**2),kind=dp)
-        end do
+        nulls(:, 3) = cmplx(bloch_adjoint(column, row_phase, &
+            cmplx(coefficients,kind=qp), nb)/column_norm, kind=dp)
         ! Translation invariance makes each Bloch block an invariant periodic subspace.
         call vrmhd_section_residual(op, p, u, zero, zero, zero, source, r, unused, status)
         call require(status == 0, 'uniform equilibrium residual')
         equilibrium_defect = maxval(abs(bloch_projection(transform,cmplx(r,kind=qp))))
         print '(a,i4,es20.12)', 'periodic equilibrium residual: ', n, equilibrium_defect
         call require(equilibrium_defect < 1.0e-12_dp, 'uniform periodic equilibrium')
-        call vrmhd_section_jacobian(op, p, u, zero, source, 0.0_dp, jac, status)
+        call vrmhd_section_jacobian(assembly, p, u, zero, assembly_source, 0.0_dp, jac, &
+            status)
         call require(status == 0, 'assembled production linearization')
-        do j = 1, nb
-            image = 0
-            do i = 1, op%ndof
-                do entry = jac%col_ptr(i), jac%col_ptr(i + 1) - 1
-                    row = jac%row_idx(entry)
-                    image(row) = image(row) &
-                        + real(jac%val(entry),qp)*cmplx(transform(i,j),kind=qp)
-                end do
-            end do
-            stiffness(:, j) = bloch_projection(transform,image)
-            call vrmhd_section_mass(op, p, u, real(transform(:, j), dp), mr, status)
-            call require(status == 0, 'production real mass action')
-            call vrmhd_section_mass(op, p, u, aimag(transform(:, j)), mi, status)
-            call require(status == 0, 'production imaginary mass action')
-            image = cmplx(mr,mi,qp)
-            mass(:, j) = bloch_projection(transform,image)
-        end do
+        stiffness = bloch_sandwich(jac, column, row_phase, nb)
+        call vrmhd_section_jacobian(assembly, p, u, zero, assembly_source, 1.0_dp, &
+            time_mass, status, mass_only=.true.)
+        call require(status == 0, 'assembled production time mass')
+        mass = bloch_sandwich(time_mass, column, row_phase, nb)
+        ! The production quadrature confirms the exact reduced-degree assembly.
+        call check_bloch_action(op, p, u, column, row_phase, stiffness, .false., &
+            'Jacobian')
+        call check_bloch_action(op, p, u, column, row_phase, mass, .true., 'time mass')
         original_k = stiffness; original_m = mass
         if (present(structural)) then
             if (structural) then
-                call structural_spectrum(op, p, u, source, transform, original_k, &
-                    original_m, ns, na, n, repeat, ka, b0, exact, frequencies, &
-                    mass_condition)
+                call structural_spectrum(op, assembly, p, u, assembly_source, &
+                    transform, column, row_phase, original_k, original_m, ns, na, n, &
+                    repeat, ka, b0, exact, frequencies, mass_condition)
                 optical_fraction = 0
                 return
             end if

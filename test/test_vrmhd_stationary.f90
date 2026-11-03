@@ -1,3 +1,101 @@
+module vrmhd_spd_extremes
+    !! Extreme eigenpairs of dense SPD matrices without a full decomposition.
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    use fortnum_krylov, only: real_linear_operator_t, KRYLOV_OK
+    use fortnum_symmetric_eigen, only: block_lanczos_lowest
+    implicit none
+    private
+    public :: spd_extremes
+    type, extends(real_linear_operator_t) :: spd_operator_t
+        real(dp), allocatable :: a(:, :), factor(:, :)
+        logical :: inverse = .false.
+    contains
+        procedure :: apply => spd_apply
+    end type
+    interface
+        subroutine dpotrf(uplo, n, a, lda, info)
+            import :: dp
+            character, intent(in) :: uplo
+            integer, intent(in) :: n, lda
+            real(dp), intent(inout) :: a(lda, *)
+            integer, intent(out) :: info
+        end subroutine
+        subroutine dpotrs(uplo, n, nrhs, a, lda, b, ldb, info)
+            import :: dp
+            character, intent(in) :: uplo
+            integer, intent(in) :: n, nrhs, lda, ldb
+            real(dp), intent(in) :: a(lda, *)
+            real(dp), intent(inout) :: b(ldb, *)
+            integer, intent(out) :: info
+        end subroutine
+        subroutine dsymv(uplo, n, alpha, a, lda, x, incx, beta, y, incy)
+            import :: dp
+            character, intent(in) :: uplo
+            integer, intent(in) :: n, lda, incx, incy
+            real(dp), intent(in) :: alpha, beta, a(lda, *), x(*)
+            real(dp), intent(inout) :: y(*)
+        end subroutine
+    end interface
+contains
+    subroutine spd_apply(self, input, output)
+        class(spd_operator_t), intent(inout) :: self
+        real(dp), intent(in) :: input(:)
+        real(dp), intent(out) :: output(:)
+        integer :: n, info
+        n = size(input)
+        ! Lanczos returns the lowest pairs, so both maps are negated.
+        if (self%inverse) then
+            output = -input
+            call dpotrs('L', n, 1, self%factor, n, output, n, info)
+            if (info /= 0) output = huge(1.0_dp)
+        else
+            call dsymv('L', n, -1.0_dp, self%a, n, input, 1, 0.0_dp, output, 1)
+        end if
+    end subroutine
+
+    subroutine spd_extremes(a, lowest, highest, vector, ok)
+        !! Lowest eigenpair and highest eigenvalue of the SPD matrix a (lower
+        !! triangle). Shift-invert Lanczos gives residual-bounded values;
+        !! Cholesky factorizations of a - (1 - margin) lowest I and of
+        !! (1 + margin) highest I - a check that no eigenvalue lies outside.
+        real(dp), intent(in) :: a(:, :)
+        real(dp), intent(out) :: lowest, highest, vector(:)
+        logical, intent(out) :: ok
+        real(dp), parameter :: tolerance = 1.0e-10_dp, margin = 1.0e-6_dp
+        type(spd_operator_t) :: op
+        real(dp) :: start(size(a, 1), 1), values(1), vectors(size(a, 1), 1)
+        real(dp) :: residuals(1)
+        integer :: n, i, info, iterations
+        n = size(a, 1); ok = .false.
+        op%a = a; op%factor = a
+        call dpotrf('L', n, op%factor, n, info)
+        if (info /= 0) return
+        start(:, 1) = [(sin(real(i, dp)), i=1, n)]
+        op%inverse = .true.
+        call block_lanczos_lowest(op, start, 1, min(n, 400), tolerance, values, &
+            vectors, residuals, info, iterations)
+        if (info /= KRYLOV_OK) return
+        lowest = -1/values(1); vector = vectors(:, 1)
+        op%inverse = .false.
+        call block_lanczos_lowest(op, start, 1, min(n, 400), tolerance, values, &
+            vectors, residuals, info, iterations)
+        if (info /= KRYLOV_OK) return
+        highest = -values(1)
+        op%factor = a
+        do i = 1, n
+            op%factor(i, i) = op%factor(i, i) - (1 - margin)*lowest
+        end do
+        call dpotrf('L', n, op%factor, n, info)
+        if (info /= 0) return
+        op%factor = -a
+        do i = 1, n
+            op%factor(i, i) = op%factor(i, i) + (1 + margin)*highest
+        end do
+        call dpotrf('L', n, op%factor, n, info)
+        ok = info == 0
+    end subroutine
+end module vrmhd_spd_extremes
+
 program test_vrmhd_stationary
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_gs_symmetry, only: gs_symmetry_t, GS_ROTATION, GS_SCREW, &
@@ -10,6 +108,7 @@ program test_vrmhd_stationary
     use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use vrmhd_mms_leaves, only: mms_rotation, mms_screw
+    use vrmhd_spd_extremes, only: spd_extremes
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortsparse, only: csc_t, csc_from_triplet, csc_matvec, sparse_solve_once, &
@@ -82,16 +181,17 @@ contains
         real(dp), allocatable :: u(:), load(:), source(:, :, :), basis(:, :)
         real(dp), allocatable :: boundary(:), r(:), zero(:), &
             step(:), unused(:)
-        real(dp), allocatable :: trial(:, :), matrix(:, :), singular(:), vt(:, :)
-        real(dp), allocatable :: block(:, :), work(:), current_mass(:, :), &
-            mass_copy(:, :), mass_singular(:), current_primal(:, :), &
-            primal_current(:, :), recovery(:, :), mass_vectors(:, :), &
+        real(dp), allocatable :: trial(:, :), matrix(:, :), minimum_mode(:)
+        real(dp), allocatable :: block(:, :), current_mass(:, :), &
+            mass_copy(:, :), current_primal(:, :), &
+            primal_current(:, :), recovery(:, :), mass_mode(:), &
             probe(:), image(:), mass_diagonal(:)
         integer, allocatable :: free_index(:), gauge_index(:), current_index(:)
-        real(dp) :: x(2), weight, dummy_u(1, 1), value, mode_norms(8), defect, scale
-        real(dp) :: raw_condition
+        real(dp) :: x(2), weight, value, mode_norms(8), defect, scale
+        real(dp) :: raw_condition, lowest, highest
+        logical :: certified
         real(dp), allocatable :: gauge_value(:), gauge_gradient(:, :)
-        integer :: i, j, t, q, nf, ng, row, col, status, entry, info, lwork
+        integer :: i, j, t, q, nf, ng, row, col, status, entry, info
         integer :: group, it, nj, current_start, nh
         interface
             subroutine dpotrf(uplo, n, a, lda, info)
@@ -116,14 +216,20 @@ contains
                 real(dp), intent(in) :: alpha, a(lda, *)
                 real(dp), intent(inout) :: b(ldb, *)
             end subroutine
-            subroutine dgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, &
-                    lwork, info)
+            subroutine dgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, &
+                    c, ldc)
                 import :: dp
-                character, intent(in) :: jobu, jobvt
-                integer, intent(in) :: m, n, lda, ldu, ldvt, lwork
-                real(dp), intent(inout) :: a(lda, *)
-                real(dp), intent(out) :: s(*), u(ldu, *), vt(ldvt, *), work(*)
-                integer, intent(out) :: info
+                character, intent(in) :: transa, transb
+                integer, intent(in) :: m, n, k, lda, ldb, ldc
+                real(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+                real(dp), intent(inout) :: c(ldc, *)
+            end subroutine
+            subroutine dsyrk(uplo, trans, n, k, alpha, a, lda, beta, c, ldc)
+                import :: dp
+                character, intent(in) :: uplo, trans
+                integer, intent(in) :: n, k, lda, ldc
+                real(dp), intent(in) :: alpha, beta, a(lda, *)
+                real(dp), intent(inout) :: c(ldc, *)
             end subroutine
         end interface
         call prepare(kind, n, op, steady, p, u, load)
@@ -169,11 +275,11 @@ contains
             free_index(op%ndof + ng) = nf + ng
         end do
         nf = nf + ng
-        allocate (trial(nf, nf), matrix(nf, nf), singular(nf), vt(nf, nf), &
+        allocate (trial(nf, nf), matrix(nf, nf), minimum_mode(nf), &
             basis(36, op%nlocal), block(op%nlocal, op%nlocal), &
-            current_mass(nj, nj), mass_copy(nj, nj), mass_singular(nj), &
+            current_mass(nj, nj), mass_copy(nj, nj), &
             current_primal(nj, nf), primal_current(nf, nj), &
-            recovery(nj, nf), mass_vectors(nj, nj), &
+            recovery(nj, nf), mass_mode(nj), &
             probe(nf), image(nf), mass_diagonal(nj))
         trial = 0; matrix = 0; current_mass = 0
         current_primal = 0; primal_current = 0
@@ -200,10 +306,16 @@ contains
         call require(info == 0, 'current mass Cholesky')
         call dpotrs('L', nj, nf, mass_copy, nj, recovery, nj, info)
         call require(info == 0, 'current elimination solve')
-        call require(maxval(abs(matmul(current_mass, recovery) - current_primal)) &
+        ! trial is free until the Riesz assembly and holds M_J X - C here.
+        trial(:nj, :) = current_primal
+        call dgemm('N', 'N', nj, nf, nj, 1.0_dp, current_mass, nj, recovery, nj, &
+            -1.0_dp, trial, nf)
+        call require(maxval(abs(trial(:nj, :))) &
             < 1.0e-10_dp*max(1.0_dp, maxval(abs(current_primal))), &
             'current elimination original-block residual')
-        matrix = matrix - matmul(primal_current, recovery)
+        trial = 0
+        call dgemm('N', 'N', nf, nf, nj, -1.0_dp, primal_current, nf, recovery, nj, &
+            1.0_dp, matrix, nf)
         do i = 1, nf
             probe(i) = sin(real(i, dp))
         end do
@@ -225,22 +337,17 @@ contains
         print '(a,2i5,es14.6)', 'reduced versus full Jacobian action ', &
             kind, n, defect/scale
         call require(defect < 1.0e-10_dp*scale, 'reduced action and full sparse oracle')
-        mass_copy = current_mass/p%mu0
-        allocate (work(1))
-        call dgesvd('N', 'A', nj, nj, mass_copy, nj, mass_singular, dummy_u, 1, &
-            mass_vectors, nj, work, -1, info)
-        call require(info == 0, 'current mass SVD workspace')
-        lwork = int(work(1)); deallocate (work); allocate (work(lwork))
-        call dgesvd('N', 'A', nj, nj, mass_copy, nj, mass_singular, dummy_u, 1, &
-            mass_vectors, nj, work, lwork, info)
-        call require(info == 0, 'current mass SVD')
-        call require(mass_singular(nj) > 0, 'positive current mass spectrum')
-        raw_condition = mass_singular(1)/mass_singular(nj)
+        ! A symmetric positive mass has its eigenvalues as singular values.
+        call require(all(current_mass == transpose(current_mass)), &
+            'symmetric current mass')
+        call spd_extremes(current_mass/p%mu0, lowest, highest, mass_mode, certified)
+        call require(certified, 'positive current mass spectrum')
+        raw_condition = highest/lowest
         print '(a,3i6,3es16.8)', 'current mass kind, n, size, min, max, condition ', &
-            kind, n, nj, mass_singular(nj), mass_singular(1), raw_condition
+            kind, n, nj, lowest, highest, raw_condition
         nh = op%fs%nn
         print '(a,2i5,2es14.6)', 'current mass minimum mode section, orbit ', &
-            kind, n, norm2(mass_vectors(nj, :nh)), norm2(mass_vectors(nj, nh + 1:))
+            kind, n, norm2(mass_mode(:nh)), norm2(mass_mode(nh + 1:))
         print '(a,2i5,4es14.6)', 'current mass section/orbit diagonal min,max ', &
             kind, n, minval([(current_mass(i, i), i=1, nh)]), &
             maxval([(current_mass(i, i), i=1, nh)]), &
@@ -255,17 +362,14 @@ contains
         do j = 1, nj
             mass_copy(:, j) = current_mass(:, j)/(mass_diagonal*mass_diagonal(j))
         end do
-        call dgesvd('N', 'A', nj, nj, mass_copy, nj, mass_singular, dummy_u, 1, &
-            mass_vectors, nj, work, lwork, info)
-        call require(info == 0, 'scaled current mass SVD')
-        call require(mass_singular(nj) > 0, 'positive scaled current mass spectrum')
-        mass_condition = mass_singular(1)/mass_singular(nj)
+        call spd_extremes(mass_copy, lowest, highest, mass_mode, certified)
+        call require(certified, 'positive scaled current mass spectrum')
+        mass_condition = highest/lowest
         print '(a,3i6,3es16.8)', &
             'scaled current mass kind, n, size, min, max, condition ', &
-            kind, n, nj, mass_singular(nj), mass_singular(1), mass_condition
+            kind, n, nj, lowest, highest, mass_condition
         print '(a,2i5,2es14.6)', 'scaled current mass minimum mode section, orbit ', &
-            kind, n, norm2(mass_vectors(nj, :nh)), norm2(mass_vectors(nj, nh + 1:))
-        deallocate (work)
+            kind, n, norm2(mass_mode(:nh)), norm2(mass_mode(nh + 1:))
         do t = 1, op%fs%mm%topology%n_triangles
             block = 0
                 do q = 1, op%fs%nq
@@ -302,16 +406,14 @@ contains
                 call require(info == 0, 'trial Riesz Cholesky')
                 call dtrsm('L', 'L', 'N', 'N', nf, nf, 1.0_dp, trial, nf, matrix, nf)
                 call dtrsm('R', 'L', 'T', 'N', nf, nf, 1.0_dp, trial, nf, matrix, nf)
-                allocate (work(1))
-                call dgesvd('N', 'A', nf, nf, matrix, nf, singular, dummy_u, 1, vt, &
-                    nf, work, -1, info)
-                call require(info == 0, 'gauge SVD workspace')
-                lwork = int(work(1)); deallocate (work); allocate (work(lwork))
-                call dgesvd('N', 'A', nf, nf, matrix, nf, singular, dummy_u, 1, vt, &
-                    nf, work, lwork, info)
-                call require(info == 0, 'gauge SVD')
+                ! sigma(B)^2 = eig(B^T B); squaring loses log10(kappa(B)^2) digits,
+                ! about two for the measured kappa(B) near 11.
+                call dsyrk('L', 'T', nf, nf, 1.0_dp, matrix, nf, 0.0_dp, trial, nf)
+                call spd_extremes(trial, lowest, highest, minimum_mode, certified)
+                call require(certified, 'reduced stationary Gram spectrum')
+                lowest = sqrt(lowest); highest = sqrt(highest)
                 print '(a,3i6,2es16.8)', 'reduced singular values kind, n, free, min, max ', &
-                    kind, n, nf, singular(nf), singular(1)
+                    kind, n, nf, lowest, highest
                 mode_norms = 0
                 do i = 1, steady%ndof
                     row = free_index(i)
@@ -323,12 +425,12 @@ contains
                     else
                         group = 8
                     end if
-                    mode_norms(group) = mode_norms(group) + vt(nf, row)**2
+                    mode_norms(group) = mode_norms(group) + minimum_mode(row)**2
                 end do
                 print '(a,8es12.4)', 'reduced minimum mode rho,vx,vy,vz,Te,Ti,A,lambda ', &
                     sqrt(mode_norms)
-                sigma_min = singular(nf)
-                call require(singular(nf) > 1.0e-4_dp, 'reduced stationary inf-sup lower bound')
+                sigma_min = lowest
+                call require(lowest > 1.0e-4_dp, 'reduced stationary inf-sup lower bound')
             end subroutine
 
             subroutine check_harmonic(kind)
