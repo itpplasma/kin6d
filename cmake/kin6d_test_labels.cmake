@@ -196,6 +196,8 @@ kin6d_test_labels(gs_free_boundary_interface_flow_quadrature fast CLASSES equili
     TARGETS test_gs_fb_interface)
 kin6d_test_labels(gs_free_boundary_t7_jacobian_finite_differences fast CLASSES equilibrium
     TARGETS test_gs_fb_jacobian)
+kin6d_test_labels(gs_free_boundary_law_tangent_finite_differences fast CLASSES equilibrium
+    TARGETS test_gs_fb_law_tangent)
 kin6d_test_labels(gs_coil_inverse_t6_twin fast CLASSES equilibrium
     TARGETS test_gs_coil_inverse)
 kin6d_test_labels(gs_free_boundary_p8_refit_loop slow CLASSES equilibrium
@@ -896,6 +898,14 @@ foreach(gate geometry derivatives volume closure)
 endforeach()
 
 kin6d_test_labels(vrmhd_section_manufactured_consistency fast CLASSES mhd TARGETS test_vrmhd_mms)
+foreach(gate boundary derivatives harmonic solve)
+    kin6d_test_labels(vrmhd_stationary_${gate} fast CLASSES mhd
+        TARGETS test_vrmhd_stationary)
+endforeach()
+kin6d_test_labels(vrmhd_stationary_gauge slow CLASSES mhd
+    TARGETS test_vrmhd_stationary)
+kin6d_test_labels(vrmhd_gs_consistency fast CLASSES mhd TARGETS test_vrmhd_gs)
+kin6d_test_labels(vrmhd_gs_regeneration fast CLASSES mhd TARGETS gen_vrmhd_gs)
 
 kin6d_test_labels(vrmhd_section_regeneration fast CLASSES mhd TARGETS gen_vrmhd_section)
 

@@ -74,7 +74,55 @@ Volume integration uses `dx`. These forms use periodic boundaries; they also
 apply to a stationary ideal conducting wall with vanishing tangential electric
 field, compatible zero-tangential tests for `A`, and no flow, diffusive or
 thermal flux through the wall. Nonzero boundary data require their surface
-terms and work ledger. Gauge fixing and symmetry reduction are separate work.
+terms and work ledger.
+
+With outward unit normal `N`, the boundary residual terms are
+
+```
+Rrho_boundary = (rho v - D grad rho).N r
+Rv_boundary   = [rho v (v.N) + p N - tau N].w
+RJ_boundary   = -(N cross B).K
+RTs_boundary  = [3/2 n Ts v - n Ks grad Ts].N qs.
+```
+
+Induction has no integration-by-parts boundary term. A no-slip ideal wall
+sets `v=0`, fixes `N cross A`, and fixes scalar Dirichlet values, so their
+tests vanish at the boundary. Auxiliary-current tests remain unrestricted:
+the Ampere surface term is required when the magnetic tangential trace is
+nonzero. Manufactured nonzero Dirichlet data use the same trace lifting.
+These prescribed ports need their work ledger before a closed-system
+energy statement applies.
+
+For a stationary solve, the mixed Coulomb gauge adds
+`integral grad(lambda).W dx` to induction and
+`integral A.grad(q_lambda) dx = 0`. Multiplier `lambda` and test
+`q_lambda` belong to H1 with zero boundary trace. A compatible continuous
+physical solution has `lambda=0`. The time-dependent problem retains Weyl
+gauge; its A mass row removes the stationary gradient kernel.
+
+Two driven-state conventions are specified. The current-source convention
+prescribes `Js` and zero loop voltage, as in JOREK comparisons. The
+loop-voltage convention prescribes voltage `V` and an invariant, closed,
+non-exact one-form `h` with loop integral one. Rotation uses
+`h=grad(phi)/(2 pi)`; translation and screw symmetry use `h=grad(z)/L_z`,
+with axial period `L_z`. In Weyl gauge set `A=Atilde-t V h`, giving
+
+```
+B = curl Atilde
+RA = [Atilde_dot - V h - v cross B + eta (J - Js)].W.
+```
+
+Thus `Js=J` gives stationary Ohmic induction at `V=0`; with `Js=0` it
+requires `eta J=V h`. A full stationary state must also balance electron
+heating: the latter convention retains `eta |J|^2` when no thermal sink is
+prescribed. Voltage drive supplies magnetic power
+`integral V h.J dx` without changing the specified Ohmic heating term.
+The screw field `xi/|xi|^2` has nonzero curl and cannot replace `h`.
+Discrete harmonic coefficients are edge integrals of the multivalued
+coordinate divided by its period, and their discrete curl must vanish to
+roundoff. A projection with a small nonzero curl is insufficient. The
+section wrapper's implementation and remaining harmonic-drive construction
+are stated in [the section contract](vrmhd-section.md).
 
 ## Transport and closures
 
@@ -139,6 +187,37 @@ The invariant [section volume assembly](vrmhd-section.md) calls these same
 primal and JVP leaves and retains the conservative mass coupling.
 
 ## Mixed current and energy exchange
+
+Weak Ampère recovery makes `J_h` a discrete curl-curl of `A_h`. Its curl
+is an additional recovered discrete derivative, for which this formulation gives
+no convergence guarantee. Here `h` denotes mesh spacing. The measured `curl J_h`
+L2 error converges at approximately order 0.4–0.5 both over all cells and away
+from the boundary, so this slow rate is not a boundary-layer effect; no term
+of the formulation contains `curl J`. Induction, Lorentz force and Ohmic
+heating use only L2 pairings of `J`. The solved-current gate therefore uses
+L2, with the same design order as `curl A` in L2 (one for the lowest-order
+spaces). The curl error remains a diagnostic, reported over the whole mesh
+and after excluding the two cell layers next to the boundary.
+
+Stationary stability concerns the primal fields
+`p=(rho,v,A,Te,Ti,lambda)`, with auxiliary current eliminated by the exact
+algebraic recovery `mu0 M_J J = C^T B` including prescribed boundary terms.
+Here `M_J` is the L2 current mass matrix and `C^T B` denotes the weak curl
+load. If `D=R_U` is the stationary Jacobian, the reduced Jacobian is
+`S=D_pp-D_pJ (mu0 M_J)^(-1) D_Jp`. Measuring independent oscillatory current
+perturbations through the dual H(curl) induction norm instead introduces an
+artificial factor of `h`. For constant resistivity the eliminated resistive
+block is `eta/mu0 (curl A,curl W)`, coercive in H(curl) modulo gradients,
+which the Coulomb multiplier constrains. The numerical gate uses H1 Riesz
+matrices for the scalar, velocity and multiplier fields and H(curl) for `A`
+on both sides of `S`; it retains a positive floor and rejects more than 25%
+loss of the minimum singular value per refinement. It also reports the
+maximum singular value, the minimum mode's field composition and the
+condition number of `M_J`. This is finite-mesh evidence, not a proof of a
+uniform continuous inverse bound.
+The mass gate checks the condition number of `D_J^(-1/2) M_J D_J^(-1/2)`,
+where `D_J=diag(M_J)`, because section edge and orbit nodal bases have different
+mesh scaling; the raw condition number is diagnostic only.
 
 The auxiliary current is defined by weak Ampère's law `RJ = 0`, rather than
 by a second pointwise derivative of `A`. With `W = J` in induction and

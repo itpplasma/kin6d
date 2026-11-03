@@ -54,15 +54,14 @@ program gen_vrmhd_mms
         v = rotate(local_v)
         aa = one + cos(q1)*cos(q2)/10
         if (kind == 1) then
-            section_a = [sin(q1 + q2)/10, aa/q1, cos(q1 - q2)/10]
+            section_a = [cos(q1)*sin(q2)/(10*q1), aa/q1, &
+                -sin(q1)*cos(q2)/(10*q1)]
+            a = rotate(section_a)
         else
-            section_a = [sin(q1 + q2)/10, cos(q1 - q2)/10, &
-                k*(q2*sin(q1 + q2) - q1*cos(q1 - q2))/10]
-            do i = 1, 3
-                section_a(i) = section_a(i) + aa*xi(i)/(one + k*k*(q1*q1 + q2*q2))
-            end do
+            section_a = [sin(q2)/10, zero, cos(q1)*cos(q2)/10]
+            a = curl(rotate(section_a))
         end if
-        a = rotate(section_a); b = curl(a); jv = curl(b)
+        b = curl(a); jv = curl(b)
         number = rho; pressure = number*(te + ti)
         eta = te**rat(arena, -3_int64, 2_int64)/5
         nu = ti**rat(arena, -3_int64, 2_int64)/5

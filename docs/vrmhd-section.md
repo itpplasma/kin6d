@@ -4,8 +4,8 @@ The invariant section assembler evaluates the mixed-current volume residual,
 its matrix-free state Jacobian action, and the conservative mass terms of
 [the Cartesian weak form](vrmhd-weak-form.md). It accepts the rotation,
 translation and screw cases of `gs_symmetry_t`. This is a candidate operator;
-boundary elimination, a stationary gauge, nonlinear solves and continuous
-error certificates are not supplied.
+the stationary wrapper adds fixed boundary values and a mixed Coulomb gauge.
+Continuous error certificates are not supplied.
 
 ## Representation and measure
 
@@ -62,13 +62,87 @@ periodic assembly must supply its trace constraints and any surface terms.
 In particular, unrestricted auxiliary-current tests need the Ampere boundary
 term if the magnetic tangential trace is nonzero.
 
-The induction equation uses Weyl gauge. A stationary solve must separately
-remove its gradient nullspace. A nonzero prescribed Ohmic field
-`E_loop xi/|xi|^2` is not a zero of the present stationary induction residual.
-In rotation it can represent a changing potential with stationary magnetic
-field; in screw symmetry its nonzero curl also changes the magnetic field by
-Faraday's law. A driven stationary gate therefore needs an explicit compatible
-electric-field/gauge and boundary convention before it can be asserted.
+## Boundary and stationary gauge
+
+`vrmhd_ampere_boundary` integrates the residual contribution
+`-integral_boundary (n cross B).K dS`, including every auxiliary-current test.
+It accepts a prescribed invariant magnetic trace. The volume and surface
+terms together represent `mu0 J - curl B`. Surface integration uses the
+outward conormal and measure of the actual swept boundary; in screw
+coordinates the section normal alone is insufficient.
+
+`vrmhd_stationary_build` uses an H1 scalar multiplier with zero boundary
+trace and the matrix `G_ij = integral W_i.grad(lambda_j) dx`. The stationary
+residual adds `G lambda` to induction and `G^T A` as the gauge equation.
+This is the weak Coulomb condition `div A = 0`. FortFEM provides
+lowest-order graph tree–cotree metadata; the mixed form also covers the
+higher-order scalar gradient kernel without a separate graph reduction.
+The multiplier of a compatible continuous solution is zero. Its computed
+value and Jacobian nonsingularity require separate checks.
+
+The stationary singular-value gate removes fixed trace coefficients and
+eliminates the algebraic current with its L2 mass matrix before measuring the
+primal Jacobian. The physical Riesz matrices are H1 for the scalar, velocity
+and multiplier fields and H(curl) for `A`, with unit reference scales on both
+trial and test sides. If `H=L L^T` is this Gram matrix and `S` the reduced
+Jacobian defined in [the weak form](vrmhd-weak-form.md), the gate measures
+`L^(-1) S L^(-T)`. It requires a minimum singular value above `1e-4` and
+rejects a decrease greater than 25 percent per halving of cell size. It also
+reports the maximum singular value and minimum mode's field composition.
+The current mass matrix is checked separately after diagonal normalization:
+a condition-number increase greater than `1/0.75` per refinement fails.
+The raw coefficient condition number is diagnostic only because section edge
+and orbit nodal bases have different mesh scaling. These are numerical gates,
+not proofs of uniform continuous bounds.
+The Jacobian is evaluated after Newton convergence of the manufactured
+stationary problem, including its lifted boundary values and Ampere trace.
+
+The wrapper applies `fixed` to scalar Dirichlet values, all velocity
+components, and the vector-potential tangential trace. The homogeneous
+velocity case is a no-slip ideal wall; nonzero manufactured traces describe
+a prescribed boundary-value problem. Auxiliary-current tests remain free.
+Boundary values are lifted before volume evaluation; fixed rows are identity
+rows and their columns are removed from free equations. The load is an
+assembled right-hand side: subtract the Ampere surface residual from that
+load. Prescribed loads have zero state derivative. The sparse Jacobian and
+matrix-free derivative use the same lifting and mixed gauge. Time-dependent
+assembly keeps Weyl gauge and its vector-potential mass row.
+
+## Driven-state conventions
+
+A current source uses `eta (J - Js)` at zero loop voltage; this is the
+JOREK comparison convention. A loop-voltage drive instead uses a harmonic
+one-form `h`, normalized by `integral_loop h = 1`, and voltage `V` in volts.
+Rotation uses `h = grad(phi)/(2 pi)`. Translation and screw symmetry use
+`h = grad(z)/L_z` on a domain with axial period `L_z`. The latter is
+invariant under screw motion and curl-free. The screw field `xi/|xi|^2`
+has nonzero curl and is unsuitable for this drive.
+
+In Weyl gauge write `A = Atilde - t V h`. Then `B = curl Atilde` and
+`Atilde_dot = V h + v cross B - eta (J - Js)`. The induction residual
+therefore gains `-V h.W`, and the magnetic power ledger gains `V h.J`.
+A stationary Ohmic state satisfies `eta (J - Js) = V h`. The two limiting
+conventions are `Js=J, V=0` and `Js=0, eta J=V h`.
+For GS consistency, the loop-voltage convention prescribes the electron heat
+sink `Qe=-eta |J_GS|^2` from the analytic GS current at quadrature points to
+balance Ohmic heating; the ideal and prescribed-current conventions keep `Qe=0`.
+
+Discrete harmonic coefficients must be edge integrals of the multivalued
+coordinate, divided by its period, with `curl_h h=0` to roundoff. A
+projection with a small nonzero curl does not meet this contract.
+`vrmhd_drive_build` selects `VRMHD_CURRENT_SOURCE` or `VRMHD_LOOP_VOLTAGE`:
+the former retains the prescribed `Js` and requires zero voltage; the latter
+sets `Js=0` and returns the positive voltage load subtracted by the stationary
+wrapper. Other source channels are retained.
+
+The returned harmonic cochain stores zero increments on section edges and a
+unit integral on every periodic orbit edge. It uses the full coordinate
+one-form, not the horizontal `A/J` decomposition above. Its metric-free
+FortFEM curl is zero, and its prescribed Cartesian lift divides by the orbit
+period (`2 pi` or the supplied axial period). This exact affine harmonic
+component of `Atilde-t V h` is evaluated separately from the polynomial
+horizontal state space: projecting it into that space would destroy exact
+closedness for screw symmetry.
 
 ## Verification limits
 
@@ -84,7 +158,36 @@ residual defects after natural-norm projection. These are representation and
 residual consistency checks, not convergence of a solved nonlinear boundary
 problem.
 The reported weak defect uses diagonal natural-norm scaling, not a certified
-dual norm. Manufactured nonlinear solves, GS stationary consistency, stationary
-gauge nonsingularity, the semidiscrete energy ledger and linear spectra remain
-unverified. Conservative momentum alone does not enforce the kinetic
-continuity product discussed in the weak-form document.
+dual norm. Separate stationary tests check the Ampere surface sign against
+the independent analytic current and magnetic field, and the lifted/gauged
+sparse Jacobian against its matrix-free action and centered differences.
+The solved manufactured test uses H1 for scalar and velocity fields,
+H(curl) for `A` and L2 for the weakly recovered `J`, as explained in the
+weak-form document. It passes over three refinements in all three symmetries,
+with quadratic Newton convergence. The diagnostic interior `curl J` rate is
+about 0.4–0.5, like the whole-mesh rate, so it is not a boundary-layer effect.
+The harmonic gate checks closedness and an independent Cartesian voltage load.
+The reduced stability and diagonally normalized current-mass gates pass on
+meshes with 4, 8 and 16 cells per side for rotation, translation and screw.
+The smallest reduced singular value is above 0.089; its worst refinement
+ratio is 0.937, while the largest normalized mass-condition growth is 1.065.
+
+The GS consistency gate solves the RM0 flux equation with analytic pressure
+profiles, projects its flux lift into the section spaces and recovers current
+by weak Ampere's law with the prescribed magnetic boundary trace. Rotation
+uses `psi=0.1 R^2(log R-1/2)`, `Bz=0.2 log R`, `Jphi=-0.2/R` and
+`p=6-0.02(log R)^2`. Screw symmetry has pitch `k=0.7/m`,
+`psi=0.25(x^2+y^2)`, `B=(-0.2 y,0.2 x,1)` and `J=(0,0,0.4)`;
+its pressure is `p=6-0.04(x^2+y^2)`. Coordinates and field values use SI
+units and unit reference scales; both species have constant temperature
+`Te=Ti=1 J` and `mi=mu0=1` in their respective SI units, with `rho=p/2`.
+The pressure is a function of the monotone radial flux in each case.
+The full gauged residual, measured in the dual of the constrained physical
+Riesz norm, converges at least at first order over three refinements in the
+ideal limit, with `Js=J_GS`, and with loop voltage and the prescribed heat sink
+for both symmetries.
+
+The voltage drive retains the specified Ohmic heating term and preserves the
+separately prescribed heat sink. The semidiscrete energy ledger and linear
+spectra remain unverified. Conservative momentum alone does not enforce the
+kinetic continuity product discussed in the weak-form document.

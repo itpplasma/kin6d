@@ -8,7 +8,8 @@ module kin6d_vrmhd_section
         vrmhd_curl_rotation, vrmhd_curl_screw
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t
     use fortfem_meridian_feec_n, only: meridian_feec_t, meridian_feec_build, &
-        meridian_qpoint, meridian_qgrad
+        meridian_qpoint, meridian_qgrad, meridian_point_basis_t, &
+        meridian_point_basis
     use fortsparse, only: csc_t, csc_from_triplet, csc_transpose, csc_matvec, &
         fortsparse_status_t, status_ok
     implicit none
@@ -22,6 +23,7 @@ module kin6d_vrmhd_section
     end type
     public :: vrmhd_section_build, vrmhd_section_basis, vrmhd_section_residual
     public :: vrmhd_section_jacobian, vrmhd_section_vjp, vrmhd_section_mass
+    public :: vrmhd_section_trace
 contains
     subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status)
         type(meridian_mesh_t), intent(in) :: mm
@@ -41,6 +43,7 @@ contains
                 quad_degree=2*degree + 6, cylinder_r0=1.0_dp)
         end if
         if (status /= 0) return
+        call op%fs%mm%topology%build_edge_connectivity()
         n0 = op%fs%n0; n1 = op%fs%sp(1)%ndof
         l0 = op%fs%nl0; l1 = op%fs%sp(1)%nloc
         op%ndof = harmonic_count*(6*n0 + 2*n1)
@@ -150,6 +153,27 @@ contains
             call vrmhd_grad_screw(x(1), x(2), op%symmetry%k, f(1), f(2), g(1), &
                 g(2), g(3))
         end if
+    end subroutine
+
+    subroutine vrmhd_section_trace(op, pb, t, ref, x, trace, status)
+        type(vrmhd_section_t), intent(in) :: op
+        type(meridian_point_basis_t), intent(in) :: pb
+        integer, intent(in) :: t
+        real(dp), intent(in) :: ref(2)
+        real(dp), intent(out) :: x(2), trace(3, op%fs%sp(1)%nloc)
+        integer, intent(out) :: status
+        real(dp) :: phi(3, op%fs%sp(1)%nloc), a, unused(3), radius, scale
+        integer :: i
+        call meridian_point_basis(op%fs, pb, 1, t, ref(1), ref(2), x, phi, status)
+        if (status /= 0) return
+        radius = 1
+        if (op%symmetry%kind == GS_ROTATION) radius = x(1)
+        do i = 1, op%fs%sp(1)%nloc
+            scale = real(op%fs%sp(1)%sgn(i, t), dp)
+            a = radius*phi(2, i)
+            call vector_curl(op, x, scale*phi(1, i), scale*phi(3, i), 0.0_dp, &
+                scale*a, 0.0_dp, 0.0_dp, trace(:, i), unused)
+        end do
     end subroutine
 
     subroutine vector_gradient(op, x, v, vx, vy, g)
