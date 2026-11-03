@@ -33,16 +33,16 @@ matrix arguments are ordered by column. No second trial derivatives occur.
 
 ## Mass and residual
 
-We use conservative momentum `rho v` and species internal energies
-`3 rho Ts/(2 mi)` while retaining primitive fields as coordinates. Their
-chain-rule mass terms retain density coupling explicitly and avoid dividing
-momentum or energy residuals by density.
+Momentum uses the skew-symmetric kinetic-energy form, while species internal
+energies remain `3 rho Ts/(2 mi)`. Primitive fields are coordinates. The density
+rate in momentum is the same discrete derivative used in continuity; its
+coupling to momentum is half the conservative chain-rule coupling.
 
 The mass integrands, where a dot denotes a time derivative, are
 
 ```
 rho_dot r
-(rho v_dot + rho_dot v) . w
+(rho v_dot + rho_dot v/2) . w
 A_dot . W
 3/(2 mi) (rho Ts_dot + rho_dot Ts) qs,  s = e, i.
 ```
@@ -52,8 +52,9 @@ sum over both matrix indices, the volume residual integrands are
 
 ```
 Rrho = -rho v . grad r + (D grad rho) . grad r - Srho r
-Rv   = -rho (v tensor v) : grad w - p div w
+Rv   = rho/2 [(grad v)v . w - (grad w)v . v] - p div w
        + tau : grad w - (J x B) . w
+       + Srho v.w/2 - (D grad rho).grad(v.w)/2
 RA   = -(v x B) . W + eta (J - Js) . W
 RJ   = mu0 J . K - B . curl K
 RTs  = -3/2 n Ts v . grad qs + n Ts div v qs
@@ -66,9 +67,16 @@ Qei  = n rate (Ti - Te).
 `Srho` is a mass source in kg/(m³ s); `Qe, Qi` are heat sources in W/m³.
 The nonnegative `rate` is an energy-equilibration rate in 1/s, with its
 normalization defined by `Qei` above. These are source inputs, not extra
-species. Density diffusion and mass injection are prescribed model ports;
-a future total-energy ledger must include their kinetic-energy exchanges.
-No closed-system total-energy claim is made for these ports here.
+species. Density diffusion and mass injection are prescribed model ports. Write
+`F = D grad rho` and `Q = Srho + div F`, so continuity is
+`rho_dot + div(rho v) = Q`. The default convention is particles born at rest:
+the conservative momentum equation has no accompanying momentum injection.
+The skew left side equals the conservative left side minus `v Q/2` whenever
+continuity holds, so its right side includes `-v Q/2`. Integration by parts
+of that explicit diffusion coupling gives the last two volume terms in `Rv`.
+The kinetic source power is `-Srho |v|^2/2 + F.grad(|v|^2)/2`, with boundary
+power `-F.N |v|^2/2`. These exchanges are explicit ledger entries; they do not
+change the channel flux, stress or electromotive-force closure semantics.
 
 Volume integration uses `dx`. These forms use periodic boundaries; they also
 apply to a stationary ideal conducting wall with vanishing tangential electric
@@ -80,7 +88,7 @@ With outward unit normal `N`, the boundary residual terms are
 
 ```
 Rrho_boundary = (rho v - D grad rho).N r
-Rv_boundary   = [rho v (v.N) + p N - tau N].w
+Rv_boundary   = [rho v (v.N)/2 + p N - tau N + F.N v/2].w
 RJ_boundary   = -(N cross B).K
 RTs_boundary  = [3/2 n Ts v - n Ks grad Ts].N qs.
 ```
@@ -184,7 +192,7 @@ as `alpha n Ts v_th`, rather than their hydrodynamic sound-speed cap.
 The `rm2` closure gate checks the harmonic mean, flux bound and derivatives.
 
 The invariant [section volume assembly](vrmhd-section.md) calls these same
-primal and JVP leaves and retains the conservative mass coupling.
+primal and JVP leaves and retains the state-dependent mass coupling.
 
 ## Mixed current and energy exchange
 
@@ -220,8 +228,9 @@ where `D_J=diag(M_J)`, because section edge and orbit nodal bases have different
 mesh scaling; the raw condition number is diagnostic only.
 
 The auxiliary current is defined by weak Ampère's law `RJ = 0`, rather than
-by a second pointwise derivative of `A`. With `W = J` in induction and
-`K = A_dot` in Ampère, the discrete magnetic-energy derivative is
+by a second pointwise derivative of `A`. When `J` is an admissible induction
+test, use `W = J` in induction and `K = A_dot` in Ampère. For zero voltage
+and boundary power the discrete magnetic-energy derivative is then
 
 ```
 d/dt integral |B|²/(2 mu0) dx
@@ -243,46 +252,49 @@ coefficients. Pressure work cancels the two thermal compression terms.
 For constant thermal tests the volume advection and conduction terms vanish,
 while electron-ion equipartition cancels between species.
 
-For a closed system without density diffusion or sources, these balances give
-conservation of kinetic plus internal plus magnetic energy when the scalar
-space contains constants and the advection assembly preserves the kinetic
-continuity product. In the present conservative form that product is the
-density equation tested with `|v|^2/2`: subtracting it from momentum tested
-with `v` gives the kinetic-energy time derivative, and the advective integrands
-cancel pointwise. Constants alone do not ensure that `|v|^2/2` lies in a
-particular finite-element space; an assembled solver must preserve this
-product through compatible spaces or a conservative split. The tests check
-these local identities; full semidiscrete total-energy conservation remains
-an assembly gate.
+For `w=v`, the two advection contractions cancel algebraically at each
+quadrature point, and the momentum mass is exactly
+`d/dt integral rho |v|^2/2 dx`. No continuity test with `|v|^2/2`, integration
+by parts or exact quadrature is required for this identity. It holds with
+the rotation and screw metric weights as well. Constant thermal tests remove
+thermal advection and conduction from the global internal-energy balance.
+The price of this energy-compatible split is loss of discrete global momentum
+conservation: a constant velocity test no longer gives a conservative flux
+balance when the discrete continuity residual does not vanish pointwise.
 
-The closed hydrodynamic subcase of `vrmhd_section_energy` tests this necessary
-condition before magnetic exchange or spectra. It uses positive random H1
-density and temperatures, random velocity with zero wall trace, and zero
-magnetic field, transport coefficients and sources. Density and temperature
-tests remain unrestricted, giving no-flux scalar boundaries and retaining
-constant thermal tests; the volume operator's scalar Dirichlet mask is not
-applied in this subcase. The magnetic Ampere surface term and magnetic energy
-flux are both zero because `A=J=B=0`.
+The former conservative momentum form left the energy defect
+`-integral |v|^2/2 [rho_dot + div(rho v)] dx`. Degree-one scalar tests do not
+contain the piecewise quadratic `|v|^2/2`; a converged mass solve could not
+remove this defect. The closed hydrodynamic subcase of `vrmhd_section_energy`
+solves the production mass equation for random positive scalar fields and
+no-slip random velocity, then independently differentiates physical energy.
+It requires relative closure at `1e-12` before the magnetic ledger is tested.
+Scalar tests remain unrestricted, retaining constants and natural no-flux
+boundaries. The independent stationary manufactured source is derived from
+the conservative strong balance minus half the continuity defect times `v`;
+its prescribed volume loads are separate from the `Srho` port.
 
-With the current conservative momentum mass and advection, the exact
-quadrature ledger of this semidiscrete subcase is
+The full ledger exposes a separate wall-space incompatibility. The section
+mask fixes the tangential trace of `A`, while weak Ampère recovery leaves all
+current coefficients free. Thus the recovered `J` need not be an admissible
+induction test. Write `rA` for the coefficient residual of induction, including
+its mass and drive, before fixed rows are removed. On the solved free rows
+`rA=0`, but the exact remaining energy defect is `J_fixed^T rA_fixed`.
+This is a diagnostic of the incompatible test spaces, not an additional
+physical source or boundary flux.
 
-```
-d(Ekin + Eint)/dt
-  = integral rho v.(grad v)v dx - integral rho_dot |v|^2/2 dx
-  = -integral |v|^2/2 [rho_dot + div(rho v)] dx.
-```
-
-Here `Ekin=integral rho |v|^2/2 dx` and
-`Eint=integral 3 rho (Te+Ti)/(2 mi) dx`. Pressure work cancels between the
-two energies. Continuity only annihilates its residual against the scalar
-test space, which for degree one does not contain the piecewise quadratic
-`|v|^2/2`. Thus conservative momentum and a converged mass solve alone do
-not imply this energy identity is zero. The test solves the production mass
-equation, differentiates these energies independently by quadrature, checks
-the ledger identity above, and requires relative energy closure at `1e-12`.
-This required gate exposes the missing compatible kinetic-continuity split;
-it is not an expected-failure test.
+The full random-state test chooses `A` with support away from the wall, so
+both its magnetic trace and the Ampère surface term are exactly zero.
+Velocity vanishes on the wall and `A_dot` has zero tangential trace. It
+recovers `J` from the full weak Ampère equation, solves the production mass
+equation, and independently differentiates kinetic, internal and magnetic
+energy with all dissipative coefficients active. It checks each exchange,
+the explicit density-source/diffusion power, and the equality of the measured
+defect to the constrained-row diagnostic. Its required total-energy check
+still fails; no closed magnetic energy claim follows from the local leaves.
+Both drive conventions are exercised. For compact magnetic support the
+rotation and translation harmonic work is zero by weak Ampère's law; a
+nonzero loop-power ledger remains unverified there.
 
 ## Leaf interface and verification scope
 
@@ -305,7 +317,9 @@ equipartition and source leaves return the signed right-hand-side terms above.
 and Lorentz leaves. Advection and compression leaves have residual signs;
 the electron equation subtracts equipartition and the ion equation adds it.
 Scalar `source` is used
-for mass and both external heat sources. Temperature leaves use `temperature`
+for mass and both external heat sources. `momentum_mass_source` and
+`momentum_density_diffusion` return the signed residual couplings for
+particles born at rest. Temperature leaves use `temperature`
 for either `Te` or `Ti`; closure leaves use the corresponding reference.
 
 The `rm1` tests compare every primal with an independent numerical expression,

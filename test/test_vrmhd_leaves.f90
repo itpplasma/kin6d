@@ -85,7 +85,7 @@ contains
         case (6)
             y = x(1)*x(2)
         case (7)
-            y = dot_product(x(1)*x(6:8) + x(2)*x(3:5), x(9:11))
+            y = dot_product(x(1)*x(6:8) + x(2)*x(3:5)/2, x(9:11))
         case (8)
             y = 1.5_dp*(x(1)*x(4) + x(2)*x(3))*x(6)/x(5)
         case (9)
@@ -109,8 +109,9 @@ contains
                 matmul(tensor, x(shift + 7:shift + 9)))
             if (leaf == 13) y = y*x(1)/x(2)
         case (14)
-            g = reshape(x(5:13), [3, 3])
-            y = -x(1)*dot_product(x(2:4), matmul(g, x(2:4)))
+            g = reshape(x(8:16), [3, 3]); h = reshape(x(17:25), [3, 3])
+            y = x(1)*(dot_product(matmul(g, x(2:4)), x(5:7)) &
+                - dot_product(matmul(h, x(2:4)), x(2:4)))/2
         case (15)
             y = -x(1)*x(2)
         case (16, 17)
@@ -136,6 +137,15 @@ contains
             y = x(1)*x(3)*(x(5) - x(4))*x(6)/x(2)
         case (25)
             y = x(1)*x(2)
+        case (26)
+            y = x(1)*dot_product(x(2:4), x(5:7))/2
+        case (27)
+            b = x(4:6)/sqrt(sum(x(4:6)**2) + x(3)**2)
+            g = reshape(x(16:24), [3, 3]); h = reshape(x(25:33), [3, 3])
+            y = -dot_product(x(2)*x(7:9) &
+                + (x(1) - x(2))*b*dot_product(b, x(7:9)), &
+                matmul(transpose(g), x(13:15)) &
+                + matmul(transpose(h), x(10:12)))/2
         case default
             error stop 'missing independent primal oracle'
         end select
@@ -276,7 +286,7 @@ contains
         real(dp) :: x(maxargs), v(3), b(3), j(3), js(3), eta, lorentz, ideal, loss, heat
         real(dp) :: g(3, 3), strain(3, 3), identity(3, 3), projector(3, 3)
         real(dp) :: bn(3), expected, rho, rd, vd(3), mi, kinetic, density, momentum
-        real(dp) :: grad_ke(3), advection, density_advection, thermal
+        real(dp) :: advection, thermal
         integer :: trial, driven
         identity = 0
         do trial = 1, 3
@@ -320,19 +330,16 @@ contains
 
             rho = x(1); rd = x(2); vd = x(4:6); mi = x(3)
             kinetic = sum(v*v)/2
-            grad_ke = matmul(transpose(g), v)
             x(:11) = [rho, rd, v, vd, v]
             call evaluate(7, x, momentum)
             x(:2) = [rd, kinetic]
             call evaluate(6, x, density)
-            call close (momentum - density, &
+            call close (density, rd*kinetic, 'density mass pairing')
+            call close (momentum, &
                 rho*dot_product(v, vd) + rd*kinetic, 'kinetic mass chain rule')
-            x(:13) = [rho, v, reshape(g, [9])]
+            x(:25) = [rho, v, v, reshape(g, [9]), reshape(g, [9])]
             call evaluate(14, x, advection)
-            x(:7) = [rho, v, grad_ke]
-            call evaluate(11, x, density_advection)
-            call close (advection - density_advection, 0.0_dp, &
-                'kinetic advection cancels the continuity product')
+            call close (advection, 0.0_dp, 'skew advection does no work')
             x(:9) = [rho, mi, 1.2_dp, v, 0.0_dp, 0.0_dp, 0.0_dp]
             call evaluate(22, x, thermal)
             call close (thermal, 0.0_dp, 'constant thermal test has no advection')
@@ -370,10 +377,23 @@ contains
                     if (leaf == 13) shift = 2
                     first = 4 + shift; last = 10 + shift
                 case (14)
-                    first = 2; last = 2
+                    first = 2; last = 5
                     g = matmul(rotation, &
-                        matmul(reshape(x(5:13), [3, 3]), transpose(rotation)))
-                    rotated(5:13) = reshape(g, [9])
+                        matmul(reshape(x(8:16), [3, 3]), transpose(rotation)))
+                    rotated(8:16) = reshape(g, [9])
+                    g = matmul(rotation, &
+                        matmul(reshape(x(17:25), [3, 3]), transpose(rotation)))
+                    rotated(17:25) = reshape(g, [9])
+                case (26)
+                    first = 2; last = 5
+                case (27)
+                    first = 4; last = 13
+                    g = matmul(rotation, &
+                        matmul(reshape(x(16:24), [3, 3]), transpose(rotation)))
+                    rotated(16:24) = reshape(g, [9])
+                    g = matmul(rotation, &
+                        matmul(reshape(x(25:33), [3, 3]), transpose(rotation)))
+                    rotated(25:33) = reshape(g, [9])
                 case (18)
                     first = 2; last = 8
                 case (19)

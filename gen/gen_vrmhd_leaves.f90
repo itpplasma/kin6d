@@ -13,7 +13,7 @@ program gen_vrmhd_leaves
     type(expr_t) :: v(3), vd(3), b(3), current(3), js(3), w(3), ck(3)
     type(expr_t) :: g(3), h(3), gv(3, 3), gw(3, 3), strain(3, 3)
     type(expr_t) :: stress(3, 3), norm2, trace, bbstrain, value, heating, transport
-    type(expr_t) :: mass, alpha, gpar, gfloor, chi
+    type(expr_t) :: mass, alpha, gpar, gfloor, chi, product_gradient(3)
     character(16) :: vector_args(3)
     character(32) :: leaf_names(40), id_text
     integer :: i, j, leaf_id = 0
@@ -70,7 +70,7 @@ program gen_vrmhd_leaves
     call leaf('mass_density', 'rho_dot q', rd*q)
     call leaf('mass_momentum', &
         'rho rho_dot v_1 v_2 v_3 v_dot_1 v_dot_2 v_dot_3 w_1 w_2 w_3', &
-        rho*dot(vd, w) + rd*dot(v, w))
+        rho*dot(vd, w) + rd*dot(v, w)/2)
     call leaf('mass_temperature', 'rho rho_dot temperature temperature_dot mi q', &
         3*(rho*td + rd*t)*q/(2*mi))
     call leaf('mass_induction', 'v_dot_1 v_dot_2 v_dot_3 w_1 w_2 w_3', dot(vd, w))
@@ -91,10 +91,11 @@ program gen_vrmhd_leaves
     value = rat(arena, 0_int64, 1_int64)
     do j = 1, 3
         do i = 1, 3
-            value = value - rho*v(i)*v(j)*gw(i, j)
+            value = value + rho*v(j)*(gv(i, j)*w(i) - gw(i, j)*v(i))/2
         end do
     end do
-    call leaf('momentum_advection', 'rho v_1 v_2 v_3 '//matrix_names('grad_w'), value)
+    call leaf('momentum_advection', 'rho v_1 v_2 v_3 w_1 w_2 w_3 '// &
+        matrix_names('grad_v')//' '//matrix_names('grad_w'), value)
     call leaf('pressure_work', 'pressure divergence', -p*divergence)
     call leaf('lorentz', 'j_1 j_2 j_3 b_1 b_2 b_3 w_1 w_2 w_3', &
         dot(cross(current, b), w))
@@ -148,6 +149,20 @@ program gen_vrmhd_leaves
         dot(b,g)/norm2**rat(arena, 1_int64, 2_int64))
     call leaf('trace', 'grad_v_11 grad_v_22 grad_v_33', &
         gv(1,1)+gv(2,2)+gv(3,3))
+    call leaf('momentum_mass_source', 'source v_1 v_2 v_3 w_1 w_2 w_3', &
+        source*dot(v, w)/2)
+    do j = 1, 3
+        product_gradient(j) = rat(arena, 0_int64, 1_int64)
+        do i = 1, 3
+            product_gradient(j) = product_gradient(j) + gv(i, j)*w(i) + gw(i, j)*v(i)
+        end do
+    end do
+    call leaf('momentum_density_diffusion', &
+        'parallel perpendicular epsilon_b b_1 b_2 b_3 grad_f_1 grad_f_2 grad_f_3 '// &
+        'v_1 v_2 v_3 w_1 w_2 w_3 '// &
+        matrix_names('grad_v')//' '//matrix_names('grad_w'), &
+        -(perp*dot(g, product_gradient) &
+        + (par - perp)*dot(b, g)*dot(b, product_gradient)/norm2)/2)
     call writer%line('end module kin6d_vrmhd_leaves')
     call writer%close()
     call packed%line('case default')

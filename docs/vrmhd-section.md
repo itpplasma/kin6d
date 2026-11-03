@@ -1,7 +1,7 @@
 # Invariant visco-resistive MHD volume assembly
 
 The invariant section assembler evaluates the mixed-current volume residual,
-its matrix-free state Jacobian action, and the conservative mass terms of
+its matrix-free state Jacobian action, and the state-dependent mass terms of
 [the Cartesian weak form](vrmhd-weak-form.md). It accepts the rotation,
 translation and screw cases of `gs_symmetry_t`. This is a candidate operator;
 the stationary wrapper adds fixed boundary values and a mixed Coulomb gauge.
@@ -188,6 +188,8 @@ ideal limit, with `Js=J_GS`, and with loop voltage and the prescribed heat sink
 for both symmetries.
 
 The voltage drive retains the specified Ohmic heating term and preserves the
-separately prescribed heat sink. The semidiscrete energy ledger and linear
-spectra remain unverified. Conservative momentum alone does not enforce the
-kinetic continuity product discussed in the weak-form document.
+separately prescribed heat sink. The skew momentum split closes the
+hydrodynamic energy ledger, including its explicit mass-source/diffusion
+coupling. The full magnetic ledger still fails because unrestricted recovered
+current is not an admissible induction test at the fixed wall trace, as
+explained in the weak-form document. Linear spectra remain unverified.

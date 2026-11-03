@@ -133,15 +133,24 @@ call vrmhd_momentum_advection( &
 x(1), x(2), x(3), x(4), &
 x(5), x(6), x(7), x(8), &
 x(9), x(10), x(11), x(12), &
-x(13), y)
+x(13), x(14), x(15), x(16), &
+x(17), x(18), x(19), x(20), &
+x(21), x(22), x(23), x(24), &
+x(25), y)
 call vrmhd_momentum_advection_jvp( &
 x(1), x(2), x(3), x(4), &
 x(5), x(6), x(7), x(8), &
 x(9), x(10), x(11), x(12), &
-x(13), dx(1), dx(2), dx(3), &
+x(13), x(14), x(15), x(16), &
+x(17), x(18), x(19), x(20), &
+x(21), x(22), x(23), x(24), &
+x(25), dx(1), dx(2), dx(3), &
 dx(4), dx(5), dx(6), dx(7), &
 dx(8), dx(9), dx(10), dx(11), &
-dx(12), dx(13), dy)
+dx(12), dx(13), dx(14), dx(15), &
+dx(16), dx(17), dx(18), dx(19), &
+dx(20), dx(21), dx(22), dx(23), &
+dx(24), dx(25), dy)
 case(15)
 call vrmhd_pressure_work( &
 x(1), x(2), y)
@@ -291,6 +300,44 @@ x(1), x(2), x(3), y)
 call vrmhd_trace_jvp( &
 x(1), x(2), x(3), dx(1), &
 dx(2), dx(3), dy)
+case(29)
+call vrmhd_momentum_mass_source( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), y)
+call vrmhd_momentum_mass_source_jvp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), dx(1), &
+dx(2), dx(3), dx(4), dx(5), &
+dx(6), dx(7), dy)
+case(30)
+call vrmhd_momentum_density_diffusion( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), x(14), x(15), x(16), &
+x(17), x(18), x(19), x(20), &
+x(21), x(22), x(23), x(24), &
+x(25), x(26), x(27), x(28), &
+x(29), x(30), x(31), x(32), &
+x(33), y)
+call vrmhd_momentum_density_diffusion_jvp( &
+x(1), x(2), x(3), x(4), &
+x(5), x(6), x(7), x(8), &
+x(9), x(10), x(11), x(12), &
+x(13), x(14), x(15), x(16), &
+x(17), x(18), x(19), x(20), &
+x(21), x(22), x(23), x(24), &
+x(25), x(26), x(27), x(28), &
+x(29), x(30), x(31), x(32), &
+x(33), dx(1), dx(2), dx(3), &
+dx(4), dx(5), dx(6), dx(7), &
+dx(8), dx(9), dx(10), dx(11), &
+dx(12), dx(13), dx(14), dx(15), &
+dx(16), dx(17), dx(18), dx(19), &
+dx(20), dx(21), dx(22), dx(23), &
+dx(24), dx(25), dx(26), dx(27), &
+dx(28), dx(29), dx(30), dx(31), &
+dx(32), dx(33), dy)
 case default
 error stop 'invalid VRMHD leaf'
 end select

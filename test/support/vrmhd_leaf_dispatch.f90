@@ -2,11 +2,11 @@ module vrmhd_leaf_dispatch
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_vrmhd_leaves
     implicit none
-    integer, parameter :: nleaf = 25, maxargs = 24
+    integer, parameter :: nleaf = 27, maxargs = 33
     integer, parameter :: nargs(nleaf) = [ &
         3, 3, 3, 1, 4, 2, 11, 6, 6, 13, 7, 12, 14, &
-        13, 2, 9, 9, 10, 8, 24, 16, 9, 5, 6, 2]
-    character(24), parameter :: names(nleaf) = [character(24) :: &
+        25, 2, 9, 9, 10, 8, 24, 16, 9, 5, 6, 2, 7, 33]
+    character(32), parameter :: names(nleaf) = [character(32) :: &
         'eta', &
         'nu', &
         'chi_parallel', &
@@ -31,7 +31,9 @@ module vrmhd_leaf_dispatch
         'temperature_advection', &
         'compression', &
         'equipartition', &
-        'source']
+        'source', &
+        'momentum_mass_source', &
+        'momentum_density_diffusion']
 contains
     subroutine evaluate(leaf, x, y)
         integer, intent(in) :: leaf
@@ -92,7 +94,10 @@ contains
             call vrmhd_momentum_advection( &
                 x(1), x(2), x(3), x(4), x(5), &
                 x(6), x(7), x(8), x(9), x(10), &
-                x(11), x(12), x(13), y)
+                x(11), x(12), x(13), x(14), x(15), &
+                x(16), x(17), x(18), x(19), x(20), &
+                x(21), x(22), x(23), x(24), x(25), &
+                y)
         case (15)
             call vrmhd_pressure_work( &
                 x(1), x(2), y)
@@ -141,6 +146,19 @@ contains
         case (25)
             call vrmhd_source( &
                 x(1), x(2), y)
+        case (26)
+            call vrmhd_momentum_mass_source( &
+                x(1), x(2), x(3), x(4), x(5), &
+                x(6), x(7), y)
+        case (27)
+            call vrmhd_momentum_density_diffusion( &
+                x(1), x(2), x(3), x(4), x(5), &
+                x(6), x(7), x(8), x(9), x(10), &
+                x(11), x(12), x(13), x(14), x(15), &
+                x(16), x(17), x(18), x(19), x(20), &
+                x(21), x(22), x(23), x(24), x(25), &
+                x(26), x(27), x(28), x(29), x(30), &
+                x(31), x(32), x(33), y)
         case default
             error stop 'unknown VRMHD leaf'
         end select
@@ -277,17 +295,27 @@ contains
             call vrmhd_momentum_advection_jvp( &
                 x(1), x(2), x(3), x(4), x(5), &
                 x(6), x(7), x(8), x(9), x(10), &
-                x(11), x(12), x(13), d(1), d(2), &
-                d(3), d(4), d(5), d(6), d(7), &
-                d(8), d(9), d(10), d(11), d(12), &
-                d(13), tangent)
+                x(11), x(12), x(13), x(14), x(15), &
+                x(16), x(17), x(18), x(19), x(20), &
+                x(21), x(22), x(23), x(24), x(25), &
+                d(1), d(2), d(3), d(4), d(5), &
+                d(6), d(7), d(8), d(9), d(10), &
+                d(11), d(12), d(13), d(14), d(15), &
+                d(16), d(17), d(18), d(19), d(20), &
+                d(21), d(22), d(23), d(24), d(25), &
+                tangent)
             call vrmhd_momentum_advection_vjp( &
                 x(1), x(2), x(3), x(4), x(5), &
                 x(6), x(7), x(8), x(9), x(10), &
-                x(11), x(12), x(13), weight, gradient(1), &
-                gradient(2), gradient(3), gradient(4), gradient(5), gradient(6), &
-                gradient(7), gradient(8), gradient(9), gradient(10), gradient(11), &
-                gradient(12), gradient(13))
+                x(11), x(12), x(13), x(14), x(15), &
+                x(16), x(17), x(18), x(19), x(20), &
+                x(21), x(22), x(23), x(24), x(25), &
+                weight, gradient(1), gradient(2), gradient(3), gradient(4), &
+                gradient(5), gradient(6), gradient(7), gradient(8), gradient(9), &
+                gradient(10), gradient(11), gradient(12), gradient(13), gradient(14), &
+                gradient(15), gradient(16), gradient(17), gradient(18), gradient(19), &
+                gradient(20), gradient(21), gradient(22), gradient(23), gradient(24), &
+                gradient(25))
         case (15)
             call vrmhd_pressure_work_jvp( &
                 x(1), x(2), d(1), d(2), tangent)
@@ -413,6 +441,46 @@ contains
                 x(1), x(2), d(1), d(2), tangent)
             call vrmhd_source_vjp( &
                 x(1), x(2), weight, gradient(1), gradient(2))
+        case (26)
+            call vrmhd_momentum_mass_source_jvp( &
+                x(1), x(2), x(3), x(4), x(5), &
+                x(6), x(7), d(1), d(2), d(3), &
+                d(4), d(5), d(6), d(7), tangent)
+            call vrmhd_momentum_mass_source_vjp( &
+                x(1), x(2), x(3), x(4), x(5), &
+                x(6), x(7), weight, gradient(1), gradient(2), &
+                gradient(3), gradient(4), gradient(5), gradient(6), gradient(7))
+        case (27)
+            call vrmhd_momentum_density_diffusion_jvp( &
+                x(1), x(2), x(3), x(4), x(5), &
+                x(6), x(7), x(8), x(9), x(10), &
+                x(11), x(12), x(13), x(14), x(15), &
+                x(16), x(17), x(18), x(19), x(20), &
+                x(21), x(22), x(23), x(24), x(25), &
+                x(26), x(27), x(28), x(29), x(30), &
+                x(31), x(32), x(33), d(1), d(2), &
+                d(3), d(4), d(5), d(6), d(7), &
+                d(8), d(9), d(10), d(11), d(12), &
+                d(13), d(14), d(15), d(16), d(17), &
+                d(18), d(19), d(20), d(21), d(22), &
+                d(23), d(24), d(25), d(26), d(27), &
+                d(28), d(29), d(30), d(31), d(32), &
+                d(33), tangent)
+            call vrmhd_momentum_density_diffusion_vjp( &
+                x(1), x(2), x(3), x(4), x(5), &
+                x(6), x(7), x(8), x(9), x(10), &
+                x(11), x(12), x(13), x(14), x(15), &
+                x(16), x(17), x(18), x(19), x(20), &
+                x(21), x(22), x(23), x(24), x(25), &
+                x(26), x(27), x(28), x(29), x(30), &
+                x(31), x(32), x(33), weight, gradient(1), &
+                gradient(2), gradient(3), gradient(4), gradient(5), gradient(6), &
+                gradient(7), gradient(8), gradient(9), gradient(10), gradient(11), &
+                gradient(12), gradient(13), gradient(14), gradient(15), gradient(16), &
+                gradient(17), gradient(18), gradient(19), gradient(20), gradient(21), &
+                gradient(22), gradient(23), gradient(24), gradient(25), gradient(26), &
+                gradient(27), gradient(28), gradient(29), gradient(30), gradient(31), &
+                gradient(32), gradient(33))
         case default
             error stop 'unknown VRMHD derivative'
         end select

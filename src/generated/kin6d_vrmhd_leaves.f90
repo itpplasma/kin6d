@@ -326,7 +326,8 @@ pure elemental subroutine vrmhd_mass_momentum(rho, rho_dot, v_1, v_2, v_3, v_dot
     real(dp), intent(in) :: rho, rho_dot, v_1, v_2, v_3, v_dot_1, v_dot_2, v_dot_3, w_1, w_2, w_3
     real(dp), intent(out) :: value
 
-    value = rho*(v_dot_1*w_1 + v_dot_2*w_2 + v_dot_3*w_3) + rho_dot*(v_1*w_1 + v_2*w_2 + v_3*w_3)
+    value = rho*(v_dot_1*w_1 + v_dot_2*w_2 + v_dot_3*w_3) + rho_dot*(v_1*w_1 + v_2*w_2 + v_3*w_3)/ &
+        real(2, kind=kind(0.0_dp))
 
 end subroutine vrmhd_mass_momentum
 
@@ -345,8 +346,9 @@ pure elemental subroutine vrmhd_mass_momentum_jvp(rho, rho_dot, v_1, v_2, v_3, v
     real(dp), intent(out) :: dvalue
 
     dvalue = drho*(v_dot_1*w_1 + v_dot_2*w_2 + v_dot_3*w_3) + drho_dot*(v_1*w_1 + v_2*w_2 + v_3*w_3) &
-        + rho*(dv_dot_1*w_1 + dv_dot_2*w_2 + dv_dot_3*w_3 + dw_1*v_dot_1 + dw_2*v_dot_2 + dw_3*v_dot_3) + &
-        rho_dot*(dv_1*w_1 + dv_2*w_2 + dv_3*w_3 + dw_1*v_1 + dw_2*v_2 + dw_3*v_3)
+        *1.0_dp/2.0_dp + rho*(dv_dot_1*w_1 + dv_dot_2*w_2 + dv_dot_3*w_3 + dw_1*v_dot_1 + dw_2*v_dot_2 + &
+        dw_3*v_dot_3) + rho_dot*(dv_1*w_1 + dv_2*w_2 + dv_3*w_3 + dw_1*v_1 + dw_2*v_2 + dw_3*v_3)*1.0_dp/ &
+        2.0_dp
 
 end subroutine vrmhd_mass_momentum_jvp
 
@@ -366,16 +368,16 @@ pure elemental subroutine vrmhd_mass_momentum_vjp(rho, rho_dot, v_1, v_2, v_3, v
         gw_2, gw_3
 
     grho = bvalue*(v_dot_1*w_1 + v_dot_2*w_2 + v_dot_3*w_3)
-    grho_dot = bvalue*(v_1*w_1 + v_2*w_2 + v_3*w_3)
-    gv_1 = bvalue*rho_dot*w_1
-    gv_2 = bvalue*rho_dot*w_2
-    gv_3 = bvalue*rho_dot*w_3
+    grho_dot = bvalue*(v_1*w_1 + v_2*w_2 + v_3*w_3)*1.0_dp/2.0_dp
+    gv_1 = bvalue*rho_dot*w_1*1.0_dp/2.0_dp
+    gv_2 = bvalue*rho_dot*w_2*1.0_dp/2.0_dp
+    gv_3 = bvalue*rho_dot*w_3*1.0_dp/2.0_dp
     gv_dot_1 = bvalue*rho*w_1
     gv_dot_2 = bvalue*rho*w_2
     gv_dot_3 = bvalue*rho*w_3
-    gw_1 = bvalue*rho*v_dot_1 + bvalue*rho_dot*v_1
-    gw_2 = bvalue*rho*v_dot_2 + bvalue*rho_dot*v_2
-    gw_3 = bvalue*rho*v_dot_3 + bvalue*rho_dot*v_3
+    gw_1 = bvalue*rho*v_dot_1 + bvalue*rho_dot*v_1*1.0_dp/2.0_dp
+    gw_2 = bvalue*rho*v_dot_2 + bvalue*rho_dot*v_2*1.0_dp/2.0_dp
+    gw_3 = bvalue*rho*v_dot_3 + bvalue*rho_dot*v_3*1.0_dp/2.0_dp
 
 end subroutine vrmhd_mass_momentum_vjp
 
@@ -799,17 +801,23 @@ end subroutine vrmhd_conduction_vjp
 ! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_momentum_advection(rho, v_1, v_2, v_3, grad_w_11, grad_w_21, &
-        grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, value)
+pure elemental subroutine vrmhd_momentum_advection(rho, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, &
+        grad_v_21, grad_v_31, grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, &
+        grad_w_21, grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, value)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: rho, v_1, v_2, v_3, grad_w_11, grad_w_21, grad_w_31, grad_w_12, &
-        grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33
+    real(dp), intent(in) :: rho, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, grad_v_31, &
+        grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, grad_w_31, &
+        grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33
     real(dp), intent(out) :: value
 
-    value = -grad_w_11*rho*v_1*v_1 - grad_w_12*rho*v_1*v_2 - grad_w_13*rho*v_1*v_3 - grad_w_21*rho* &
-        v_1*v_2 - grad_w_22*rho*v_2*v_2 - grad_w_23*rho*v_2*v_3 - grad_w_31*rho*v_1*v_3 - grad_w_32*rho*v_2* &
-        v_3 - grad_w_33*rho*v_3*v_3
+    value = rho*v_1*(grad_v_11*w_1 - grad_w_11*v_1)/real(2, kind=kind(0.0_dp)) + rho*v_1*(grad_v_21* &
+        w_2 - grad_w_21*v_2)/real(2, kind=kind(0.0_dp)) + rho*v_1*(grad_v_31*w_3 - grad_w_31*v_3)/real(2, &
+        kind=kind(0.0_dp)) + rho*v_2*(grad_v_12*w_1 - grad_w_12*v_1)/real(2, kind=kind(0.0_dp)) + rho*v_2* &
+        (grad_v_22*w_2 - grad_w_22*v_2)/real(2, kind=kind(0.0_dp)) + rho*v_2*(grad_v_32*w_3 - grad_w_32*v_3) &
+        /real(2, kind=kind(0.0_dp)) + rho*v_3*(grad_v_13*w_1 - grad_w_13*v_1)/real(2, kind=kind(0.0_dp)) + &
+        rho*v_3*(grad_v_23*w_2 - grad_w_23*v_2)/real(2, kind=kind(0.0_dp)) + rho*v_3*(grad_v_33*w_3 - &
+        grad_w_33*v_3)/real(2, kind=kind(0.0_dp))
 
 end subroutine vrmhd_momentum_advection
 
@@ -818,30 +826,47 @@ end subroutine vrmhd_momentum_advection
 ! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_momentum_advection_jvp(rho, v_1, v_2, v_3, grad_w_11, grad_w_21, &
-        grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, drho, dv_1, dv_2, dv_3, &
-        dgrad_w_11, dgrad_w_21, dgrad_w_31, dgrad_w_12, dgrad_w_22, dgrad_w_32, dgrad_w_13, dgrad_w_23, &
-        dgrad_w_33, dvalue)
+pure elemental subroutine vrmhd_momentum_advection_jvp(rho, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, &
+        grad_v_21, grad_v_31, grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, &
+        grad_w_21, grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, drho, dv_1, &
+        dv_2, dv_3, dw_1, dw_2, dw_3, dgrad_v_11, dgrad_v_21, dgrad_v_31, dgrad_v_12, dgrad_v_22, &
+        dgrad_v_32, dgrad_v_13, dgrad_v_23, dgrad_v_33, dgrad_w_11, dgrad_w_21, dgrad_w_31, dgrad_w_12, &
+        dgrad_w_22, dgrad_w_32, dgrad_w_13, dgrad_w_23, dgrad_w_33, dvalue)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: rho, v_1, v_2, v_3, grad_w_11, grad_w_21, grad_w_31, grad_w_12, &
-        grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, drho, dv_1, dv_2, dv_3, dgrad_w_11, &
-        dgrad_w_21, dgrad_w_31, dgrad_w_12, dgrad_w_22, dgrad_w_32, dgrad_w_13, dgrad_w_23, dgrad_w_33
+    real(dp), intent(in) :: rho, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, grad_v_31, &
+        grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, grad_w_31, &
+        grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, drho, dv_1, dv_2, dv_3, dw_1, &
+        dw_2, dw_3, dgrad_v_11, dgrad_v_21, dgrad_v_31, dgrad_v_12, dgrad_v_22, dgrad_v_32, dgrad_v_13, &
+        dgrad_v_23, dgrad_v_33, dgrad_w_11, dgrad_w_21, dgrad_w_31, dgrad_w_12, dgrad_w_22, dgrad_w_32, &
+        dgrad_w_13, dgrad_w_23, dgrad_w_33
     real(dp), intent(out) :: dvalue
-    real(dp) :: t1, t2, t3
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9
 
-    t1 = v_1**2
-    t2 = v_2**2
-    t3 = v_3**2
-    dvalue = -dgrad_w_11*rho*t1 - dgrad_w_12*rho*v_1*v_2 - dgrad_w_13*rho*v_1*v_3 - dgrad_w_21*rho* &
-        v_1*v_2 - dgrad_w_22*rho*t2 - dgrad_w_23*rho*v_2*v_3 - dgrad_w_31*rho*v_1*v_3 - dgrad_w_32*rho*v_2* &
-        v_3 - dgrad_w_33*rho*t3 - drho*grad_w_11*t1 - drho*grad_w_12*v_1*v_2 - drho*grad_w_13*v_1*v_3 - &
-        drho*grad_w_21*v_1*v_2 - drho*grad_w_22*t2 - drho*grad_w_23*v_2*v_3 - drho*grad_w_31*v_1*v_3 - drho* &
-        grad_w_32*v_2*v_3 - drho*grad_w_33*t3 - dv_1*grad_w_11*rho*v_1*2 - dv_1*grad_w_12*rho*v_2 - dv_1* &
-        grad_w_13*rho*v_3 - dv_1*grad_w_21*rho*v_2 - dv_1*grad_w_31*rho*v_3 - dv_2*grad_w_12*rho*v_1 - dv_2* &
-        grad_w_21*rho*v_1 - dv_2*grad_w_22*rho*v_2*2 - dv_2*grad_w_23*rho*v_3 - dv_2*grad_w_32*rho*v_3 - &
-        dv_3*grad_w_13*rho*v_1 - dv_3*grad_w_23*rho*v_2 - dv_3*grad_w_31*rho*v_1 - dv_3*grad_w_32*rho*v_2 - &
-        dv_3*grad_w_33*rho*v_3*2
+    t1 = grad_v_11*w_1 - grad_w_11*v_1
+    t2 = grad_v_21*w_2 - grad_w_21*v_2
+    t3 = grad_v_31*w_3 - grad_w_31*v_3
+    t4 = grad_v_12*w_1 - grad_w_12*v_1
+    t5 = grad_v_22*w_2 - grad_w_22*v_2
+    t6 = grad_v_32*w_3 - grad_w_32*v_3
+    t7 = grad_v_13*w_1 - grad_w_13*v_1
+    t8 = grad_v_23*w_2 - grad_w_23*v_2
+    t9 = grad_v_33*w_3 - grad_w_33*v_3
+    dvalue = drho*v_1*t1*1.0_dp/2.0_dp + drho*v_1*t2*1.0_dp/2.0_dp + drho*v_1*t3*1.0_dp/2.0_dp + &
+        drho*v_2*t4*1.0_dp/2.0_dp + drho*v_2*t5*1.0_dp/2.0_dp + drho*v_2*t6*1.0_dp/2.0_dp + drho*v_3*t7* &
+        1.0_dp/2.0_dp + drho*v_3*t8*1.0_dp/2.0_dp + drho*v_3*t9*1.0_dp/2.0_dp + dv_1*rho*t1*1.0_dp/2.0_dp + &
+        dv_1*rho*t2*1.0_dp/2.0_dp + dv_1*rho*t3*1.0_dp/2.0_dp + dv_2*rho*t4*1.0_dp/2.0_dp + dv_2*rho*t5* &
+        1.0_dp/2.0_dp + dv_2*rho*t6*1.0_dp/2.0_dp + dv_3*rho*t7*1.0_dp/2.0_dp + dv_3*rho*t8*1.0_dp/2.0_dp + &
+        dv_3*rho*t9*1.0_dp/2.0_dp + rho*v_1*(dgrad_v_11*w_1 - dgrad_w_11*v_1 - dv_1*grad_w_11 + dw_1* &
+        grad_v_11)*1.0_dp/2.0_dp + rho*v_1*(dgrad_v_21*w_2 - dgrad_w_21*v_2 - dv_2*grad_w_21 + dw_2* &
+        grad_v_21)*1.0_dp/2.0_dp + rho*v_1*(dgrad_v_31*w_3 - dgrad_w_31*v_3 - dv_3*grad_w_31 + dw_3* &
+        grad_v_31)*1.0_dp/2.0_dp + rho*v_2*(dgrad_v_12*w_1 - dgrad_w_12*v_1 - dv_1*grad_w_12 + dw_1* &
+        grad_v_12)*1.0_dp/2.0_dp + rho*v_2*(dgrad_v_22*w_2 - dgrad_w_22*v_2 - dv_2*grad_w_22 + dw_2* &
+        grad_v_22)*1.0_dp/2.0_dp + rho*v_2*(dgrad_v_32*w_3 - dgrad_w_32*v_3 - dv_3*grad_w_32 + dw_3* &
+        grad_v_32)*1.0_dp/2.0_dp + rho*v_3*(dgrad_v_13*w_1 - dgrad_w_13*v_1 - dv_1*grad_w_13 + dw_1* &
+        grad_v_13)*1.0_dp/2.0_dp + rho*v_3*(dgrad_v_23*w_2 - dgrad_w_23*v_2 - dv_2*grad_w_23 + dw_2* &
+        grad_v_23)*1.0_dp/2.0_dp + rho*v_3*(dgrad_v_33*w_3 - dgrad_w_33*v_3 - dv_3*grad_w_33 + dw_3* &
+        grad_v_33)*1.0_dp/2.0_dp
 
 end subroutine vrmhd_momentum_advection_jvp
 
@@ -850,42 +875,70 @@ end subroutine vrmhd_momentum_advection_jvp
 ! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
 ! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
 
-pure elemental subroutine vrmhd_momentum_advection_vjp(rho, v_1, v_2, v_3, grad_w_11, grad_w_21, &
-        grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, bvalue, grho, gv_1, &
-        gv_2, gv_3, ggrad_w_11, ggrad_w_21, ggrad_w_31, ggrad_w_12, ggrad_w_22, ggrad_w_32, ggrad_w_13, &
-        ggrad_w_23, ggrad_w_33)
+pure elemental subroutine vrmhd_momentum_advection_vjp(rho, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, &
+        grad_v_21, grad_v_31, grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, &
+        grad_w_21, grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, bvalue, &
+        grho, gv_1, gv_2, gv_3, gw_1, gw_2, gw_3, ggrad_v_11, ggrad_v_21, ggrad_v_31, ggrad_v_12, &
+        ggrad_v_22, ggrad_v_32, ggrad_v_13, ggrad_v_23, ggrad_v_33, ggrad_w_11, ggrad_w_21, ggrad_w_31, &
+        ggrad_w_12, ggrad_w_22, ggrad_w_32, ggrad_w_13, ggrad_w_23, ggrad_w_33)
     use, intrinsic :: iso_fortran_env, only: dp => real64
     implicit none
-    real(dp), intent(in) :: rho, v_1, v_2, v_3, grad_w_11, grad_w_21, grad_w_31, grad_w_12, &
-        grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, bvalue
-    real(dp), intent(out) :: grho, gv_1, gv_2, gv_3, ggrad_w_11, ggrad_w_21, ggrad_w_31, ggrad_w_12, &
-        ggrad_w_22, ggrad_w_32, ggrad_w_13, ggrad_w_23, ggrad_w_33
-    real(dp) :: t1, t2, t3, t4, t5, t6
+    real(dp), intent(in) :: rho, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, grad_v_31, &
+        grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, grad_w_31, &
+        grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, bvalue
+    real(dp), intent(out) :: grho, gv_1, gv_2, gv_3, gw_1, gw_2, gw_3, ggrad_v_11, ggrad_v_21, &
+        ggrad_v_31, ggrad_v_12, ggrad_v_22, ggrad_v_32, ggrad_v_13, ggrad_v_23, ggrad_v_33, ggrad_w_11, &
+        ggrad_w_21, ggrad_w_31, ggrad_w_12, ggrad_w_22, ggrad_w_32, ggrad_w_13, ggrad_w_23, ggrad_w_33
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12
 
-    t1 = v_1**2
-    t2 = v_2**2
-    t3 = v_3**2
-    t4 = -bvalue*rho*v_1*v_2
-    t5 = -bvalue*rho*v_1*v_3
-    t6 = -bvalue*rho*v_2*v_3
-    grho = -bvalue*grad_w_11*t1 - bvalue*grad_w_12*v_1*v_2 - bvalue*grad_w_13*v_1*v_3 - bvalue* &
-        grad_w_21*v_1*v_2 - bvalue*grad_w_22*t2 - bvalue*grad_w_23*v_2*v_3 - bvalue*grad_w_31*v_1*v_3 - &
-        bvalue*grad_w_32*v_2*v_3 - bvalue*grad_w_33*t3
-    gv_1 = -bvalue*grad_w_11*rho*v_1*2 - bvalue*grad_w_12*rho*v_2 - bvalue*grad_w_13*rho*v_3 - &
-        bvalue*grad_w_21*rho*v_2 - bvalue*grad_w_31*rho*v_3
-    gv_2 = -bvalue*grad_w_12*rho*v_1 - bvalue*grad_w_21*rho*v_1 - bvalue*grad_w_22*rho*v_2*2 - &
-        bvalue*grad_w_23*rho*v_3 - bvalue*grad_w_32*rho*v_3
-    gv_3 = -bvalue*grad_w_13*rho*v_1 - bvalue*grad_w_23*rho*v_2 - bvalue*grad_w_31*rho*v_1 - bvalue* &
-        grad_w_32*rho*v_2 - bvalue*grad_w_33*rho*v_3*2
-    ggrad_w_11 = -bvalue*rho*t1
-    ggrad_w_21 = t4
-    ggrad_w_31 = t5
-    ggrad_w_12 = t4
-    ggrad_w_22 = -bvalue*rho*t2
-    ggrad_w_32 = t6
-    ggrad_w_13 = t5
-    ggrad_w_23 = t6
-    ggrad_w_33 = -bvalue*rho*t3
+    t1 = grad_v_11*w_1 - grad_w_11*v_1
+    t2 = grad_v_21*w_2 - grad_w_21*v_2
+    t3 = grad_v_31*w_3 - grad_w_31*v_3
+    t4 = grad_v_12*w_1 - grad_w_12*v_1
+    t5 = grad_v_22*w_2 - grad_w_22*v_2
+    t6 = grad_v_32*w_3 - grad_w_32*v_3
+    t7 = grad_v_13*w_1 - grad_w_13*v_1
+    t8 = grad_v_23*w_2 - grad_w_23*v_2
+    t9 = grad_v_33*w_3 - grad_w_33*v_3
+    t10 = -bvalue*rho*v_1*v_2*1.0_dp/2.0_dp
+    t11 = -bvalue*rho*v_1*v_3*1.0_dp/2.0_dp
+    t12 = -bvalue*rho*v_2*v_3*1.0_dp/2.0_dp
+    grho = bvalue*v_1*t1*1.0_dp/2.0_dp + bvalue*v_1*t2*1.0_dp/2.0_dp + bvalue*v_1*t3*1.0_dp/2.0_dp + &
+        bvalue*v_2*t4*1.0_dp/2.0_dp + bvalue*v_2*t5*1.0_dp/2.0_dp + bvalue*v_2*t6*1.0_dp/2.0_dp + bvalue* &
+        v_3*t7*1.0_dp/2.0_dp + bvalue*v_3*t8*1.0_dp/2.0_dp + bvalue*v_3*t9*1.0_dp/2.0_dp
+    gv_1 = -bvalue*grad_w_11*rho*v_1*1.0_dp/2.0_dp - bvalue*grad_w_12*rho*v_2*1.0_dp/2.0_dp - &
+        bvalue*grad_w_13*rho*v_3*1.0_dp/2.0_dp + bvalue*rho*t1*1.0_dp/2.0_dp + bvalue*rho*t2*1.0_dp/2.0_dp + &
+        bvalue*rho*t3*1.0_dp/2.0_dp
+    gv_2 = -bvalue*grad_w_21*rho*v_1*1.0_dp/2.0_dp - bvalue*grad_w_22*rho*v_2*1.0_dp/2.0_dp - &
+        bvalue*grad_w_23*rho*v_3*1.0_dp/2.0_dp + bvalue*rho*t4*1.0_dp/2.0_dp + bvalue*rho*t5*1.0_dp/2.0_dp + &
+        bvalue*rho*t6*1.0_dp/2.0_dp
+    gv_3 = -bvalue*grad_w_31*rho*v_1*1.0_dp/2.0_dp - bvalue*grad_w_32*rho*v_2*1.0_dp/2.0_dp - &
+        bvalue*grad_w_33*rho*v_3*1.0_dp/2.0_dp + bvalue*rho*t7*1.0_dp/2.0_dp + bvalue*rho*t8*1.0_dp/2.0_dp + &
+        bvalue*rho*t9*1.0_dp/2.0_dp
+    gw_1 = bvalue*grad_v_11*rho*v_1*1.0_dp/2.0_dp + bvalue*grad_v_12*rho*v_2*1.0_dp/2.0_dp + bvalue* &
+        grad_v_13*rho*v_3*1.0_dp/2.0_dp
+    gw_2 = bvalue*grad_v_21*rho*v_1*1.0_dp/2.0_dp + bvalue*grad_v_22*rho*v_2*1.0_dp/2.0_dp + bvalue* &
+        grad_v_23*rho*v_3*1.0_dp/2.0_dp
+    gw_3 = bvalue*grad_v_31*rho*v_1*1.0_dp/2.0_dp + bvalue*grad_v_32*rho*v_2*1.0_dp/2.0_dp + bvalue* &
+        grad_v_33*rho*v_3*1.0_dp/2.0_dp
+    ggrad_v_11 = bvalue*rho*v_1*w_1*1.0_dp/2.0_dp
+    ggrad_v_21 = bvalue*rho*v_1*w_2*1.0_dp/2.0_dp
+    ggrad_v_31 = bvalue*rho*v_1*w_3*1.0_dp/2.0_dp
+    ggrad_v_12 = bvalue*rho*v_2*w_1*1.0_dp/2.0_dp
+    ggrad_v_22 = bvalue*rho*v_2*w_2*1.0_dp/2.0_dp
+    ggrad_v_32 = bvalue*rho*v_2*w_3*1.0_dp/2.0_dp
+    ggrad_v_13 = bvalue*rho*v_3*w_1*1.0_dp/2.0_dp
+    ggrad_v_23 = bvalue*rho*v_3*w_2*1.0_dp/2.0_dp
+    ggrad_v_33 = bvalue*rho*v_3*w_3*1.0_dp/2.0_dp
+    ggrad_w_11 = -bvalue*rho*v_1**2*1.0_dp/2.0_dp
+    ggrad_w_21 = t10
+    ggrad_w_31 = t11
+    ggrad_w_12 = t10
+    ggrad_w_22 = -bvalue*rho*v_2**2*1.0_dp/2.0_dp
+    ggrad_w_32 = t12
+    ggrad_w_13 = t11
+    ggrad_w_23 = t12
+    ggrad_w_33 = -bvalue*rho*v_3**2*1.0_dp/2.0_dp
 
 end subroutine vrmhd_momentum_advection_vjp
 
@@ -2047,5 +2100,220 @@ pure elemental subroutine vrmhd_trace_vjp(grad_v_11, grad_v_22, grad_v_33, bvalu
     ggrad_v_33 = bvalue
 
 end subroutine vrmhd_trace_vjp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_vrmhd_leaves
+! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
+! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
+
+pure elemental subroutine vrmhd_momentum_mass_source(source, v_1, v_2, v_3, w_1, w_2, w_3, value)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: source, v_1, v_2, v_3, w_1, w_2, w_3
+    real(dp), intent(out) :: value
+
+    value = source*(v_1*w_1 + v_2*w_2 + v_3*w_3)/real(2, kind=kind(0.0_dp))
+
+end subroutine vrmhd_momentum_mass_source
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_vrmhd_leaves
+! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
+! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
+
+pure elemental subroutine vrmhd_momentum_mass_source_jvp(source, v_1, v_2, v_3, w_1, w_2, w_3, &
+        dsource, dv_1, dv_2, dv_3, dw_1, dw_2, dw_3, dvalue)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: source, v_1, v_2, v_3, w_1, w_2, w_3, dsource, dv_1, dv_2, dv_3, dw_1, &
+        dw_2, dw_3
+    real(dp), intent(out) :: dvalue
+
+    dvalue = dsource*(v_1*w_1 + v_2*w_2 + v_3*w_3)*1.0_dp/2.0_dp + source*(dv_1*w_1 + dv_2*w_2 + &
+        dv_3*w_3 + dw_1*v_1 + dw_2*v_2 + dw_3*v_3)*1.0_dp/2.0_dp
+
+end subroutine vrmhd_momentum_mass_source_jvp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_vrmhd_leaves
+! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
+! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
+
+pure elemental subroutine vrmhd_momentum_mass_source_vjp(source, v_1, v_2, v_3, w_1, w_2, w_3, &
+        bvalue, gsource, gv_1, gv_2, gv_3, gw_1, gw_2, gw_3)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: source, v_1, v_2, v_3, w_1, w_2, w_3, bvalue
+    real(dp), intent(out) :: gsource, gv_1, gv_2, gv_3, gw_1, gw_2, gw_3
+
+    gsource = bvalue*(v_1*w_1 + v_2*w_2 + v_3*w_3)*1.0_dp/2.0_dp
+    gv_1 = bvalue*source*w_1*1.0_dp/2.0_dp
+    gv_2 = bvalue*source*w_2*1.0_dp/2.0_dp
+    gv_3 = bvalue*source*w_3*1.0_dp/2.0_dp
+    gw_1 = bvalue*source*v_1*1.0_dp/2.0_dp
+    gw_2 = bvalue*source*v_2*1.0_dp/2.0_dp
+    gw_3 = bvalue*source*v_3*1.0_dp/2.0_dp
+
+end subroutine vrmhd_momentum_mass_source_vjp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_vrmhd_leaves
+! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
+! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
+
+pure elemental subroutine vrmhd_momentum_density_diffusion(parallel, perpendicular, epsilon_b, b_1, &
+        b_2, b_3, grad_f_1, grad_f_2, grad_f_3, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, &
+        grad_v_31, grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, &
+        grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, value)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: parallel, perpendicular, epsilon_b, b_1, b_2, b_3, grad_f_1, grad_f_2, &
+        grad_f_3, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, grad_v_31, grad_v_12, grad_v_22, &
+        grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, grad_w_31, grad_w_12, grad_w_22, &
+        grad_w_32, grad_w_13, grad_w_23, grad_w_33
+    real(dp), intent(out) :: value
+    real(dp) :: t1, t2, t3
+
+    t1 = grad_v_11*w_1 + grad_v_21*w_2 + grad_v_31*w_3 + grad_w_11*v_1 + grad_w_21*v_2 + grad_w_31* &
+        v_3
+    t2 = grad_v_12*w_1 + grad_v_22*w_2 + grad_v_32*w_3 + grad_w_12*v_1 + grad_w_22*v_2 + grad_w_32* &
+        v_3
+    t3 = grad_v_13*w_1 + grad_v_23*w_2 + grad_v_33*w_3 + grad_w_13*v_1 + grad_w_23*v_2 + grad_w_33* &
+        v_3
+    value = -(perpendicular*(grad_f_1*t1 + grad_f_2*t2 + grad_f_3*t3) + (parallel - perpendicular)* &
+        (b_1*grad_f_1 + b_2*grad_f_2 + b_3*grad_f_3)*(b_1*t1 + b_2*t2 + b_3*t3)/(epsilon_b**2 + b_1*b_1 + &
+        b_2*b_2 + b_3*b_3))/real(2, kind=kind(0.0_dp))
+
+end subroutine vrmhd_momentum_density_diffusion
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_vrmhd_leaves
+! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
+! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
+
+pure elemental subroutine vrmhd_momentum_density_diffusion_jvp(parallel, perpendicular, epsilon_b, &
+        b_1, b_2, b_3, grad_f_1, grad_f_2, grad_f_3, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, &
+        grad_v_31, grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, &
+        grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, dparallel, &
+        dperpendicular, depsilon_b, db_1, db_2, db_3, dgrad_f_1, dgrad_f_2, dgrad_f_3, dv_1, dv_2, dv_3, &
+        dw_1, dw_2, dw_3, dgrad_v_11, dgrad_v_21, dgrad_v_31, dgrad_v_12, dgrad_v_22, dgrad_v_32, &
+        dgrad_v_13, dgrad_v_23, dgrad_v_33, dgrad_w_11, dgrad_w_21, dgrad_w_31, dgrad_w_12, dgrad_w_22, &
+        dgrad_w_32, dgrad_w_13, dgrad_w_23, dgrad_w_33, dvalue)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: parallel, perpendicular, epsilon_b, b_1, b_2, b_3, grad_f_1, grad_f_2, &
+        grad_f_3, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, grad_v_31, grad_v_12, grad_v_22, &
+        grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, grad_w_31, grad_w_12, grad_w_22, &
+        grad_w_32, grad_w_13, grad_w_23, grad_w_33, dparallel, dperpendicular, depsilon_b, db_1, db_2, db_3, &
+        dgrad_f_1, dgrad_f_2, dgrad_f_3, dv_1, dv_2, dv_3, dw_1, dw_2, dw_3, dgrad_v_11, dgrad_v_21, &
+        dgrad_v_31, dgrad_v_12, dgrad_v_22, dgrad_v_32, dgrad_v_13, dgrad_v_23, dgrad_v_33, dgrad_w_11, &
+        dgrad_w_21, dgrad_w_31, dgrad_w_12, dgrad_w_22, dgrad_w_32, dgrad_w_13, dgrad_w_23, dgrad_w_33
+    real(dp), intent(out) :: dvalue
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10
+
+    t1 = grad_v_11*w_1 + grad_v_21*w_2 + grad_v_31*w_3 + grad_w_11*v_1 + grad_w_21*v_2 + grad_w_31* &
+        v_3
+    t2 = grad_v_12*w_1 + grad_v_22*w_2 + grad_v_32*w_3 + grad_w_12*v_1 + grad_w_22*v_2 + grad_w_32* &
+        v_3
+    t3 = grad_v_13*w_1 + grad_v_23*w_2 + grad_v_33*w_3 + grad_w_13*v_1 + grad_w_23*v_2 + grad_w_33* &
+        v_3
+    t4 = dgrad_v_11*w_1 + dgrad_v_21*w_2 + dgrad_v_31*w_3 + dgrad_w_11*v_1 + dgrad_w_21*v_2 + &
+        dgrad_w_31*v_3 + dv_1*grad_w_11 + dv_2*grad_w_21 + dv_3*grad_w_31 + dw_1*grad_v_11 + dw_2* &
+        grad_v_21 + dw_3*grad_v_31
+    t5 = dgrad_v_12*w_1 + dgrad_v_22*w_2 + dgrad_v_32*w_3 + dgrad_w_12*v_1 + dgrad_w_22*v_2 + &
+        dgrad_w_32*v_3 + dv_1*grad_w_12 + dv_2*grad_w_22 + dv_3*grad_w_32 + dw_1*grad_v_12 + dw_2* &
+        grad_v_22 + dw_3*grad_v_32
+    t6 = dgrad_v_13*w_1 + dgrad_v_23*w_2 + dgrad_v_33*w_3 + dgrad_w_13*v_1 + dgrad_w_23*v_2 + &
+        dgrad_w_33*v_3 + dv_1*grad_w_13 + dv_2*grad_w_23 + dv_3*grad_w_33 + dw_1*grad_v_13 + dw_2* &
+        grad_v_23 + dw_3*grad_v_33
+    t7 = b_1**2 + b_2**2 + b_3**2 + epsilon_b**2
+    t8 = parallel - perpendicular
+    t9 = b_1*grad_f_1 + b_2*grad_f_2 + b_3*grad_f_3
+    t10 = b_1*t1 + b_2*t2 + b_3*t3
+    dvalue = -(dperpendicular*(grad_f_1*t1 + grad_f_2*t2 + grad_f_3*t3) + perpendicular*(dgrad_f_1* &
+        t1 + dgrad_f_2*t2 + dgrad_f_3*t3 + grad_f_1*t4 + grad_f_2*t5 + grad_f_3*t6) - t8*(b_1*db_1*2 + b_2* &
+        db_2*2 + b_3*db_3*2 + depsilon_b*epsilon_b*2)*t9*t10/t7**2 + (dparallel - dperpendicular)*t9*t10/ &
+        t7 + t8*(b_1*dgrad_f_1 + b_2*dgrad_f_2 + b_3*dgrad_f_3 + db_1*grad_f_1 + db_2*grad_f_2 + db_3* &
+        grad_f_3)*t10/t7 + t8*t9*(b_1*t4 + b_2*t5 + b_3*t6 + db_1*t1 + db_2*t2 + db_3*t3)/t7)*1.0_dp/2.0_dp
+
+end subroutine vrmhd_momentum_density_diffusion_jvp
+
+! Generated by fortsym. Do not edit.
+! Generator: gen_vrmhd_leaves
+! Generator revision: 320f2ecfd21c39cf77db3e081016a6cfa9998ac3
+! Regenerate with: gen_vrmhd_leaves from pinned FortSym build
+
+pure elemental subroutine vrmhd_momentum_density_diffusion_vjp(parallel, perpendicular, epsilon_b, &
+        b_1, b_2, b_3, grad_f_1, grad_f_2, grad_f_3, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, &
+        grad_v_31, grad_v_12, grad_v_22, grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, &
+        grad_w_31, grad_w_12, grad_w_22, grad_w_32, grad_w_13, grad_w_23, grad_w_33, bvalue, gparallel, &
+        gperpendicular, gepsilon_b, gb_1, gb_2, gb_3, ggrad_f_1, ggrad_f_2, ggrad_f_3, gv_1, gv_2, gv_3, &
+        gw_1, gw_2, gw_3, ggrad_v_11, ggrad_v_21, ggrad_v_31, ggrad_v_12, ggrad_v_22, ggrad_v_32, &
+        ggrad_v_13, ggrad_v_23, ggrad_v_33, ggrad_w_11, ggrad_w_21, ggrad_w_31, ggrad_w_12, ggrad_w_22, &
+        ggrad_w_32, ggrad_w_13, ggrad_w_23, ggrad_w_33)
+    use, intrinsic :: iso_fortran_env, only: dp => real64
+    implicit none
+    real(dp), intent(in) :: parallel, perpendicular, epsilon_b, b_1, b_2, b_3, grad_f_1, grad_f_2, &
+        grad_f_3, v_1, v_2, v_3, w_1, w_2, w_3, grad_v_11, grad_v_21, grad_v_31, grad_v_12, grad_v_22, &
+        grad_v_32, grad_v_13, grad_v_23, grad_v_33, grad_w_11, grad_w_21, grad_w_31, grad_w_12, grad_w_22, &
+        grad_w_32, grad_w_13, grad_w_23, grad_w_33, bvalue
+    real(dp), intent(out) :: gparallel, gperpendicular, gepsilon_b, gb_1, gb_2, gb_3, ggrad_f_1, &
+        ggrad_f_2, ggrad_f_3, gv_1, gv_2, gv_3, gw_1, gw_2, gw_3, ggrad_v_11, ggrad_v_21, ggrad_v_31, &
+        ggrad_v_12, ggrad_v_22, ggrad_v_32, ggrad_v_13, ggrad_v_23, ggrad_v_33, ggrad_w_11, ggrad_w_21, &
+        ggrad_w_31, ggrad_w_12, ggrad_w_22, ggrad_w_32, ggrad_w_13, ggrad_w_23, ggrad_w_33
+    real(dp) :: t1, t2, t3, t4, t5, t6, t7, t8, t9, t10
+
+    t1 = b_1**2 + b_2**2 + b_3**2 + epsilon_b**2
+    t2 = b_1*grad_f_1 + b_2*grad_f_2 + b_3*grad_f_3
+    t3 = grad_v_11*w_1 + grad_v_21*w_2 + grad_v_31*w_3 + grad_w_11*v_1 + grad_w_21*v_2 + grad_w_31* &
+        v_3
+    t4 = grad_v_12*w_1 + grad_v_22*w_2 + grad_v_32*w_3 + grad_w_12*v_1 + grad_w_22*v_2 + grad_w_32* &
+        v_3
+    t5 = grad_v_13*w_1 + grad_v_23*w_2 + grad_v_33*w_3 + grad_w_13*v_1 + grad_w_23*v_2 + grad_w_33* &
+        v_3
+    t6 = b_1*t3 + b_2*t4 + b_3*t5
+    t7 = parallel - perpendicular
+    t8 = -b_1*bvalue*t7*t2*1.0_dp/2.0_dp/t1 - bvalue*grad_f_1*perpendicular*1.0_dp/2.0_dp
+    t9 = -b_2*bvalue*t7*t2*1.0_dp/2.0_dp/t1 - bvalue*grad_f_2*perpendicular*1.0_dp/2.0_dp
+    t10 = -b_3*bvalue*t7*t2*1.0_dp/2.0_dp/t1 - bvalue*grad_f_3*perpendicular*1.0_dp/2.0_dp
+    gparallel = -bvalue*t2*t6*1.0_dp/2.0_dp/t1
+    gperpendicular = bvalue*t2*t6*1.0_dp/2.0_dp/t1 - bvalue*(grad_f_1*t3 + grad_f_2*t4 + grad_f_3* &
+        t5)*1.0_dp/2.0_dp
+    gepsilon_b = bvalue*epsilon_b*t7*t2*t6/t1**2
+    gb_1 = b_1*bvalue*t7*t2*t6/t1**2 - bvalue*grad_f_1*t7*t6*1.0_dp/2.0_dp/t1 - bvalue*t7*t2*t3* &
+        1.0_dp/2.0_dp/t1
+    gb_2 = b_2*bvalue*t7*t2*t6/t1**2 - bvalue*grad_f_2*t7*t6*1.0_dp/2.0_dp/t1 - bvalue*t7*t2*t4* &
+        1.0_dp/2.0_dp/t1
+    gb_3 = b_3*bvalue*t7*t2*t6/t1**2 - bvalue*grad_f_3*t7*t6*1.0_dp/2.0_dp/t1 - bvalue*t7*t2*t5* &
+        1.0_dp/2.0_dp/t1
+    ggrad_f_1 = -b_1*bvalue*t7*t6*1.0_dp/2.0_dp/t1 - bvalue*perpendicular*t3*1.0_dp/2.0_dp
+    ggrad_f_2 = -b_2*bvalue*t7*t6*1.0_dp/2.0_dp/t1 - bvalue*perpendicular*t4*1.0_dp/2.0_dp
+    ggrad_f_3 = -b_3*bvalue*t7*t6*1.0_dp/2.0_dp/t1 - bvalue*perpendicular*t5*1.0_dp/2.0_dp
+    gv_1 = grad_w_11*t8 + grad_w_12*t9 + grad_w_13*t10
+    gv_2 = grad_w_21*t8 + grad_w_22*t9 + grad_w_23*t10
+    gv_3 = grad_w_31*t8 + grad_w_32*t9 + grad_w_33*t10
+    gw_1 = grad_v_11*t8 + grad_v_12*t9 + grad_v_13*t10
+    gw_2 = grad_v_21*t8 + grad_v_22*t9 + grad_v_23*t10
+    gw_3 = grad_v_31*t8 + grad_v_32*t9 + grad_v_33*t10
+    ggrad_v_11 = w_1*t8
+    ggrad_v_21 = w_2*t8
+    ggrad_v_31 = w_3*t8
+    ggrad_v_12 = w_1*t9
+    ggrad_v_22 = w_2*t9
+    ggrad_v_32 = w_3*t9
+    ggrad_v_13 = w_1*t10
+    ggrad_v_23 = w_2*t10
+    ggrad_v_33 = w_3*t10
+    ggrad_w_11 = v_1*t8
+    ggrad_w_21 = v_2*t8
+    ggrad_w_31 = v_3*t8
+    ggrad_w_12 = v_1*t9
+    ggrad_w_22 = v_2*t9
+    ggrad_w_32 = v_3*t9
+    ggrad_w_13 = v_1*t10
+    ggrad_w_23 = v_2*t10
+    ggrad_w_33 = v_3*t10
+
+end subroutine vrmhd_momentum_density_diffusion_vjp
 
 end module kin6d_vrmhd_leaves

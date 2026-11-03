@@ -29,4 +29,6 @@ integer, parameter :: leaf_source = 25
 integer, parameter :: leaf_chi_flux_limited = 26
 integer, parameter :: leaf_parallel_gradient = 27
 integer, parameter :: leaf_trace = 28
+integer, parameter :: leaf_momentum_mass_source = 29
+integer, parameter :: leaf_momentum_density_diffusion = 30
 end module kin6d_vrmhd_leaf_ids

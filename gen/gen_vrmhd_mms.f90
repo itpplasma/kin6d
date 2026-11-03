@@ -94,6 +94,8 @@ program gen_vrmhd_mms
         end do
         do i = 1, 3
             force(1 + i) = force(1 + i) + diff(pressure, xyz(i))
+            ! The stationary skew balance subtracts half the mass defect.
+            force(1 + i) = force(1 + i) - v(i)*force(1)/2
             force(4 + i) = force(4 + i) + eta*jv(i)
             do l = 1, 3
                 force(1 + i) = force(1 + i) + diff(mom(i, l) - stress(i, l), xyz(l))

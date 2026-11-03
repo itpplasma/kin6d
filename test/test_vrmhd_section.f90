@@ -170,7 +170,7 @@ contains
         real(dp) :: basis(36, op%nlocal), x(2), weight, v(36), vd(12), test(36)
         real(dp) :: b(3), gv(3, 3), gw(3, 3), strain(3, 3), stress(3, 3), tensor(3, 3)
         real(dp) :: eta, nu, pressure, n, divv, tr, chi, temperature, bg, mass, &
-            heat(2), value
+            heat(2), value, density_flux(3), product_gradient(3)
         integer :: t, q, i, j, s, st
         result = 0
         do t = 1, op%fs%mm%topology%n_triangles
@@ -183,6 +183,8 @@ contains
                 eta = p%eta0*(v(11)/p%t0)**(-1.5_dp)
                 nu = p%nu0*(v(12)/p%t0)**(-1.5_dp)
                 b = v(25:27)/sqrt(sum(v(25:27)**2) + p%epsilon_b**2)
+                density_flux = p%d_perpendicular*v(13:15) &
+                    + (p%d_parallel - p%d_perpendicular)*b*dot_product(b, v(13:15))
                 gv = reshape(v(16:24), [3, 3]); divv = gv(1, 1) + gv(2, 2) + gv(3, 3)
                 strain = (gv + transpose(gv))/2
                 do j = 1, 3
@@ -209,9 +211,13 @@ contains
                             + (p%d_parallel - p%d_perpendicular) &
                             *dot_product(b, v(13:15))*dot_product(b, test(13:15))
                     case (2)
-                        value = dot_product(v(1)*vd(2:4) + vd(1)*v(2:4), test(2:4)) &
-                            - v(1)*sum(spread(v(2:4), 2, 3) &
-                            *spread(v(2:4), 1, 3)*gw) &
+                        product_gradient = matmul(transpose(gv), test(2:4)) &
+                            + matmul(transpose(gw), v(2:4))
+                        value = dot_product(v(1)*vd(2:4) + vd(1)*v(2:4)/2, test(2:4)) &
+                            + v(1)*(dot_product(matmul(gv, v(2:4)), test(2:4)) &
+                            - dot_product(matmul(gw, v(2:4)), v(2:4)))/2 &
+                            + source(4, q, t)*dot_product(v(2:4), test(2:4))/2 &
+                            - dot_product(density_flux, product_gradient)/2 &
                             - pressure*(gw(1, 1) + gw(2, 2) + gw(3, 3)) &
                             + sum(stress*gw) &
                             - dot_product(cross(v(8:10), v(25:27)), test(2:4))
