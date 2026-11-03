@@ -38,7 +38,7 @@ contains
         integer :: i, t, j, b, n0, n1, l0, l1, offset, lo, ks, qdegree
         status = 1
         if (.not. symmetry%valid() .or. harmonic_count /= 1) return
-        ks = degree + 1
+        ks = degree
         if (present(scalar_degree)) ks = scalar_degree
         study = .false.
         if (present(study_pairing)) study = study_pairing
@@ -46,7 +46,7 @@ contains
         if (study) then
             if (ks < degree - 1) return
         else
-            if (ks < degree + 1) return
+            if (ks /= degree) return
         end if
         op%symmetry = symmetry; op%harmonic_count = harmonic_count
         qdegree = 4*max(ks, degree) + 2*mm%geo_order + 2

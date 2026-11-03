@@ -2021,10 +2021,15 @@ add_test(NAME response_strip_cylinder_layer COMMAND test_response_strip)
 add_library(kin6d_rm_oracles STATIC src/generated/kin6d_rm_oracle_leaves.f90
     test/support/rm_mhd_oracles.f90)
 target_link_libraries(kin6d_rm_oracles PUBLIC fortnum)
-add_library(kin6d_spectrum_support STATIC test/support/vrmhd_spectrum_support.f90)
+add_library(kin6d_spectrum_support STATIC test/support/vrmhd_structural_spectrum.f90
+    test/support/vrmhd_spectrum_support.f90)
 target_link_libraries(kin6d_spectrum_support PUBLIC kin6d_mhd kin6d_rm_oracles)
 add_executable(test_vrmhd_spectra test/test_vrmhd_spectra.f90)
 target_link_libraries(test_vrmhd_spectra PRIVATE kin6d_spectrum_support)
+add_executable(test_vrmhd_spectral_folding test/test_vrmhd_spectral_folding.f90)
+target_link_libraries(test_vrmhd_spectral_folding PRIVATE kin6d_spectrum_support)
+add_test(NAME vrmhd_spectral_folding COMMAND test_vrmhd_spectral_folding)
+set_tests_properties(vrmhd_spectral_folding PROPERTIES LABELS rm2)
 add_test(NAME vrmhd_section_spectra COMMAND test_vrmhd_spectra)
 set_tests_properties(vrmhd_section_spectra PROPERTIES LABELS rm2 PROCESSORS 8
     TIMEOUT 180 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
@@ -2033,6 +2038,10 @@ target_link_libraries(vrmhd_pairing_study PRIVATE kin6d_spectrum_support)
 add_test(NAME vrmhd_pairing_measurement COMMAND vrmhd_pairing_study smoke)
 set_tests_properties(vrmhd_pairing_measurement PROPERTIES PROCESSORS 8 TIMEOUT 180
     ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_pairing_benchmark COMMAND vrmhd_pairing_study
+    ${CMAKE_CURRENT_BINARY_DIR}/vrmhd-pairings.csv)
+set_tests_properties(vrmhd_pairing_benchmark PROPERTIES PROCESSORS 8 TIMEOUT 3600
+    LABELS benchmark ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_executable(test_rm_oracles test/test_rm_oracles.f90)
 target_link_libraries(test_rm_oracles PRIVATE kin6d_rm_oracles kin6d_mhd)
 foreach(case waves rates outer newcomb convergence saturation table)

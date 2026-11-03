@@ -6,6 +6,7 @@ module vrmhd_spectrum_support
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian, &
         vrmhd_section_mass
     use rm_mhd_oracles, only: uniform_waves, oracle_mu0, oracle_ok
+    use vrmhd_structural_spectrum, only: structural_spectrum
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load
@@ -35,7 +36,7 @@ contains
     end subroutine
 
     subroutine spectrum(n, ka, ks, nb, b0, exact, audit, frequencies, &
-            optical_fraction, unmatched, result, perturbed)
+            optical_fraction, unmatched, result, perturbed, structural)
         integer, intent(in) :: n, ka, ks, nb
         real(dp), intent(in) :: b0(3), exact(3)
         logical, intent(in) :: audit
@@ -43,6 +44,7 @@ contains
         integer, intent(out) :: unmatched
         type(spectrum_result_t), intent(out), optional :: result
         logical, intent(in), optional :: perturbed
+        logical, intent(in), optional :: structural
         type(spectrum_result_t) :: measured
         type(vrmhd_section_t) :: reference_op
         integer :: repeat, cell, ix, iy, tick0, tick1, tick_rate
@@ -248,6 +250,14 @@ contains
             mass(:, j) = matmul(transpose(conjg(transform)), image)
         end do
         original_k = stiffness; original_m = mass
+        if (present(structural)) then
+            if (structural) then
+                call structural_spectrum(op, p, u, source, transform, original_k, &
+                    original_m, ns, na, n, repeat, ka, b0, exact, frequencies)
+                optical_fraction = 0
+                return
+            end if
+        end if
         ! Balance magnetic units before QZ; this is an invertible pencil equivalence.
         column_scale = 1; row_scale = 1
         column_scale(6*ns + 1:6*ns + na) = sqrt(p%mu0)

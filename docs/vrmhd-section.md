@@ -45,11 +45,14 @@ applied. Integration is per unit orbit parameter; no orbit period is included.
 ## Polynomial degrees and quadrature
 
 `vrmhd_section_build` takes the magnetic edge order `degree = k_A` and
-optional `scalar_degree = k_s`, which defaults to `k_A+1`. The smallest
-admitted pair is `(1,2)`; `(2,3)` is its next refinement in degree. The
-constructor rejects `k_s < k_A+1`. This is the requested magnetic-pressure
-stability condition `k_s >= degree(curl_2D A)+2`; it does **not** establish
-stability of the full MHD system, as the spectral counterexample below shows.
+optional `scalar_degree = k_s`, which defaults to `k_A`. Ordinary construction
+admits equal degrees only. Unequal pairs require `study_pairing=.true.` and
+`k_s >= k_A-1`; they remain available for comparison, not as the default.
+The [pairing study](#pairing-study-for-the-ideal-uniform-equilibrium) found
+`k` energy-bearing static modes per cell for equal degree `k`, fewer than for
+any tested unequal pair. Static modes are permitted only with the structural
+and dissipative checks below; their presence alone does not establish spectral
+pollution or stability of the full system.
 
 [FortFEM](https://github.com/lazy-fortran/fortfem)'s
 `fortfem_meridian_feec_n` uses continuous Lagrange `P_k` for its scalar
@@ -69,10 +72,10 @@ velocity component, both temperatures and the Coulomb multiplier. Both
 complexes use the same mesh and quadrature rule. Basis values and gradients
 of the magnetic orbit component always come from the magnetic complex.
 FortFEM supports complex orders through eight, so this construction admits
-`1 <= k_A < k_s <= 8`.
+`1 <= k_A = k_s <= 8` ordinarily, with the stated study exception.
 
-For scalar degree `k_s` and geometry degree `g`, both complexes request
-triangle quadrature degree `4 k_s + 2 g + 2`. On affine translation elements,
+For `p=max(k_s,k_A)` and geometry degree `g`, both complexes request
+triangle quadrature degree `4 p + 2 g + 2`. On affine translation elements,
 the largest polynomial product is the skew momentum advection term
 `rho (grad v) v.w`, of degree `4 k_s-1`; the other polynomial mass and
 magnetic products have no higher degree for the admitted pairs. The extra
@@ -87,8 +90,8 @@ For smooth solutions, the target approximation orders are `k_s` for density,
 each velocity component and both temperatures in H1, `k_A` for A in H(curl),
 and `k_A` for recovered J in L2. H1 and H(curl) include the field value and
 its first gradient or curl, respectively. The spectral frequency targets are
-`2 k_A`, hence two and four for the first two pairs. These are targets,
-not verified convergence results for the new spaces. The zero continuous
+`2 k_A`, hence two and four for equal degrees one and two. These remain
+targets until the complete spectral ladder passes. The zero continuous
 Coulomb multiplier has no nonzero reference error from which to infer a rate.
 
 ## Operator contract
@@ -197,9 +200,9 @@ closedness for screw symmetry.
 
 ## Verification limits
 
-The established results in the following paragraphs apply to the former
-equal-order spaces. The separated spaces have not passed the first spectral
-gate and have not been requalified against these tests.
+The equal-degree default passes the energy ledger and the earlier RM2 gates
+described below at degree one. The spectral gate remains incomplete: its
+first coarse-mesh branch match fails, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
 with independently written numerical weak forms; check second-order centered
@@ -252,56 +255,83 @@ hydrodynamic energy ledger, including its explicit mass-source/diffusion
 coupling. The full magnetic ledger includes the explicit power of the
 prescribed current lift, as explained in the weak-form document.
 
-The linear-spectrum test uses the assembled Jacobian and mass in an invariant
-periodic Fourier block of the translation slab, with uniform magnetic field
-having a component along the wave vector. It compares with `uniform_waves`.
-Its ladder has 4, 8, 16, 32 and 64 cells per period, with the frequency
-order required to exceed `2 k_A-0.2` on the finest pair. The cutoff audit now
-runs on each mesh and stops immediately on failure. An invertible row/column
-change of magnetic units balances the generalized eigenproblem before solving
-it. The squared-frequency reality threshold remains `1024 epsilon` on every
-mesh; the SI-unit solve remains a diagnostic.
+## Structural spectral gate
 
-Every coefficient in the periodic cell is retained: the Bloch transform has
-`6 k_s^2 + 2(3 k_A^2+k_A)` independent columns, rather than the fourteen
-columns of the former equal-order `(1,1)` pair. Bloch here means a field that
-repeats between mesh cells with the phase of the specified wave vector.
-The unchanged zero-mode allowance is two pressure-balanced entropy modes and
-one curl-free gauge mode at `k=(1,0,0)/m`; translations have zero wave vector
-and contribute no null here. Analytic representatives check this allowance.
-The test also retains the signed-wave multiplicity check and the largest
-oracle frequency as its cutoff.
+The linear-spectrum test uses the production Jacobian and mass in a periodic
+Bloch block of the uniform translation slab, with the equilibrium and
+`uniform_waves` oracle specified in the pairing study below. A Bloch field
+repeats between blocks with the phase of its wave vector. The gate retains
+every coefficient; it does not discard cell-scale modes.
 
-The former `(1,1)` pair had an additional zero mode dominated by cell-scale
-axial magnetic pressure, analogous to a checkerboard pressure mode in an
-unstable Stokes pair. That result motivates the higher-degree velocity space;
-the inadmissible old pair is documented rather than retained as a failing
-regression case.
+Write the balanced spatial operator as `L=-R_U`, where `R_U` is the residual
+Jacobian. An invertible change of units scales A by `sqrt(mu0)` and J by
+`1/sqrt(mu0)`. The algebraic current is eliminated through its mass matrix,
+giving the physical time mass `M_r` and the spatial Schur complement `L_r`.
+The evolution generator is `F=M_r^-1 L_r`. For this equilibrium the conserved
+quadratic wave energy is
 
-The requested `(1,2)` pair still fails the spectral gate on the first mesh.
-The numerically zero modes have negligible magnetic energy, but there are
-velocity-only axial shear nulls. The singular-value decomposition of the
-four-column axial-velocity coupling has rank two to roundoff. A resulting
-velocity perturbation satisfies the production periodic matrix-free Jacobian
-to roundoff while its continuum induction `B0.grad(v_z)` is nonzero.
-This distinguishes a spurious velocity mode from the allowed entropy and
-gauge modes, irrespective of how additional scalar cell patterns are counted.
-The source of this loss of coupling is the high-degree velocity against
-low-degree induction tests in
-[the ideal induction term](../src/mhd/vrmhd_point.f90) and
-[the section basis assembly](../src/mhd/vrmhd_section.f90).
+```
+Q = (1/2) integral [rho0 |v'|^2 + |curl A'|^2/mu0 + |p'|^2/(gamma p0)] dx,
+p' = 0.6 rho' + Te' + Ti',  rho0=1, gamma p0=1.
+```
 
-The spectral gate is therefore red. The next degree pair, asymptotic rates,
-energy ledger and earlier gates have not been requalified for the new spaces.
-The earlier verification above applies to the former equal-order spaces.
-No full-system inf-sup bound, spurious-mode-free spectrum or full-domain
-spectral audit is claimed. A further choice of compatible velocity, magnetic
-and gauge spaces belongs to the model design.
+Primes denote perturbations; density is in kg/m^3, pressure in Pa,
+temperatures in joules, and `mi=1 kg` in the reference normalization.
+The Hermitian Gram matrix `E` represents `2 Q` in the balanced coefficients.
+The first gate requires the Frobenius-norm ratio
+`||E F + (E F)^*||_F / ||E F||_F <= 1e-12`, where `*` is conjugate transpose.
+Equivalently one may use transpose in the real sine/cosine representation.
+The energy is nonnegative; its energy-free entropy and gauge kernel must be
+static. On the positive-energy quotient, skew-adjointness gives real angular
+frequencies. A Hermitian eigensolve on that quotient uses the roundoff
+Hermitian representative only after the unsymmetrized defect passes.
+`max |Im(omega^2)| / max |omega^2|` from the nonsymmetric solve is diagnostic,
+not an admission gate.
 
+The second gate matches signed nonzero frequencies below the unchanged
+cutoff `sqrt(1.8) rad/s` one-to-one to the folded oracle, including repeated
+frequencies. For a block of `r` cells in each direction, its wave vectors are
+`(1 + n jx/r, n jy/r, 0) m^-1`, where `n` is the number of cells per period.
+This is `q0 + 2 pi j/(r h)`, with base wave vector `q0=(1,0,0) m^-1`,
+integer vector `j=(jx,jy,0)` and cell width `h=2 pi/n m`.
+The resolved test band has `r k` samples in each direction, with integer
+indices `-floor(r k/2)` through `floor((r k-1)/2)`. The structured mesh uses
+`r=1`; the periodically perturbed mesh uses `r=2`. Matching retains the prior
+isolation window: the frequency error must be smaller than half the distance
+to the nearest distinct oracle frequency. A bipartite assignment preserves
+the folded multiplicity instead of independently accepting nearest branches.
+The ladder is 4, 8, 16, 32 cells per period at `k=1,2`, on both meshes;
+the base-wavenumber frequency order must exceed `2 k-0.2` on the finest pair.
+
+The third gate counts energetic static modes per cell against the study's
+`k`, separately from entropy and gauge. Every static direction, with its
+algebraic current restored, must satisfy
+`||L x|| / (||L||_F ||x||) <= 1e-12` in the same balanced units.
+For magnetic diffusivity `eta/mu0=1e-3 m^2/s` and kinematic viscosity
+`nu/rho0=1e-3 m^2/s`, the full dissipative generator must have no positive
+real eigenvalue beyond `1e-12 ||F_d||_F`, where `F_d` denotes that generator.
+All energetic modes, including the ideal static kernel, must acquire decay;
+entropy and curl-free gauge remain static. The slowest energetic decay is
+reported in s^-1 and relative to `(eta/mu0) k_cell^2`, with
+`k_cell=2 pi/h`. The slowest rate is taken over the whole energetic quotient.
+
+The first structured `k=1`, four-cell case passes skew-adjointness but fails
+the preserved branch-isolation window. Its Alfven frequency is approximately
+`0.6994805151 rad/s`, against `0.6 rad/s`; their difference exceeds half the
+Alfven/slow-oracle separation. The number of signed waves below the cutoff
+is correct, but only four of six have an isolated oracle match. This is a
+coarse-mesh matching failure, not evidence by itself of growth or a spurious
+branch. Refinement rates, the static/decay gate, degree two and the perturbed
+ladder have not been qualified: execution stops at this first failure.
+No full-system inf-sup bound or continuous spectral non-pollution result is
+claimed. The independent folding test uses analytic frequencies at
+`(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.
 
 ## Pairing study for the ideal uniform equilibrium
 
-No tested Lagrange pairing is recommended for promotion on the evidence below.
+Equal degree is the default because it minimizes the measured energetic
+static kernel among the tested Lagrange pairings. This choice does not waive
+the structural spectral gate above.
 Here pairs are written **`(k_s,k_A)`**, with continuous Lagrange degree `k_s`
 for the fluid and multiplier, and first-kind Nedelec order `k_A` for the planar
 vector potential and current. Their orbit components remain continuous degree
@@ -330,14 +360,15 @@ cell width, the vertex displacements for parity `(0,0)`, `(1,0)`, `(0,1)` and
 `(1,1)` are `(0,0)`, `(0.13,-0.11)`, `(-0.09,0.16)` and `(0.18,0.07)`.
 Periodic boundary copies receive the same displacement. Its Bloch block retains
 four cells and all their coefficients; the structured block retains one.
-The admission exception is an explicit study option. Ordinary construction
-still defaults to `k_s=k_A+1` and rejects `k_s<k_A+1`.
+Unequal degrees remain an explicit study option. Ordinary construction
+defaults to `k_s=k_A` and rejects unequal degrees.
 
-The generalized eigensolver, zero tolerance `1024 epsilon`, cutoff
-`sqrt(1.8) rad/s`, branch matching and allowance of three null modes are shared
-with the spectral gate. The table records failures of the reality, finite-count
-and signed-wave checks instead of stopping the measurement. Those checks in
-the gate are unchanged. `unmatched` is the existing audit's count, including
+The table preserves the historical generalized eigensolver, zero tolerance
+`1024 epsilon`, cutoff `sqrt(1.8) rad/s`, nearest-branch matching and allowance
+of three null modes. It records failures of those historical reality,
+finite-count and signed-wave diagnostics instead of stopping the measurement.
+These raw flags are not the restated structural spectral gate. `unmatched`
+is the historical audit's count, including
 zero multiplicity beyond three. It does not count extra eigenvalues that the
 existing nearest-branch rule accepts. Additional cell patterns in entropy and
 gauge fields, and folded Fourier branches in a supercell, prevent interpreting
@@ -375,8 +406,10 @@ in the axial-velocity coupling. This is independent of the generalized zero
 classification. The smallest shear direction is also checked against the
 production matrix-free Jacobian.
 
-Reproduce the table with `BLA_VENDOR=OpenBLAS`, eight OpenMP threads and one
-OpenBLAS thread:
+The full study is registered as `vrmhd_pairing_benchmark`, with the `benchmark`
+and `performance` labels and without `rm2`; the small admission/measurement
+smoke test remains separate. Reproduce the table with `BLA_VENDOR=OpenBLAS`,
+eight OpenMP threads and one OpenBLAS thread:
 
 ```sh
 cmake --build build --target vrmhd_pairing_study -j 8
@@ -458,8 +491,8 @@ ledger are not supplied by those primitives. Generic facet assembly belongs
 in FortFEM; MHD composition, generated pointwise stress/heating derivatives,
 and the energy and no-slip tests belong here. No such change is implemented.
 
-**Recommendation:** retain the current failed spectral gate and make no
-production pairing change from this table. Investigate an `H(div)` velocity
-formulation with the required viscous facet and boundary terms as a separate
-design decision. Conservation or a discrete de Rham sequence alone does not
-prove that its coupled ideal-MHD spectrum is free of pollution.
+Equal-degree admission follows the measured static counts; exactly static
+kernels are acceptable only subject to the structural and dissipative gates.
+An H(div) velocity formulation remains a separate possible design study, not
+an implemented change. Conservation or a discrete de Rham sequence alone does
+not prove spectral non-pollution of the coupled MHD system.

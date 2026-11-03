@@ -28,8 +28,17 @@ program vrmhd_pairing_study
         call require(status == 0, 'admission check mesh')
         call vrmhd_section_build(mm, &
             gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
+            1, 1, op, status)
+        call require(status == 0, 'default equal-degree constructor')
+        call require(op%scalar_fs%n0 == 4, 'default P1 has one scalar dof per vertex')
+        call vrmhd_section_build(mm, &
+            gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
             1, 1, op, status, scalar_degree=1)
-        call require(status /= 0, 'ordinary constructor still rejects equal order')
+        call require(status == 0, 'ordinary constructor admits equal order')
+        call vrmhd_section_build(mm, &
+            gs_symmetry_t(GS_TRANSLATION, GS_CHART_CARTESIAN, 0.0_dp), &
+            1, 1, op, status, scalar_degree=2)
+        call require(status /= 0, 'unequal degrees require the study option')
         call spectrum(4, 1, 1, 14, b0, exact, .true., frequencies, optical, &
             unmatched, result)
         call require(result%magnetic >= 1, 'equal-order magnetic checkerboard detected')
