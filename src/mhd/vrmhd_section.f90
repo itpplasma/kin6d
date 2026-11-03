@@ -26,21 +26,30 @@ module kin6d_vrmhd_section
     public :: vrmhd_section_trace
 contains
     subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status, &
-            scalar_degree)
+            scalar_degree, study_pairing)
         type(meridian_mesh_t), intent(in) :: mm
         type(gs_symmetry_t), intent(in) :: symmetry
         integer, intent(in) :: degree, harmonic_count
         type(vrmhd_section_t), intent(out) :: op
         integer, intent(out) :: status
+        logical, intent(in), optional :: study_pairing
+        logical :: study
         integer, intent(in), optional :: scalar_degree
         integer :: i, t, j, b, n0, n1, l0, l1, offset, lo, ks, qdegree
         status = 1
         if (.not. symmetry%valid() .or. harmonic_count /= 1) return
         ks = degree + 1
         if (present(scalar_degree)) ks = scalar_degree
-        if (degree < 1 .or. ks < degree + 1) return
+        study = .false.
+        if (present(study_pairing)) study = study_pairing
+        if (degree < 1 .or. ks < 1) return
+        if (study) then
+            if (ks < degree - 1) return
+        else
+            if (ks < degree + 1) return
+        end if
         op%symmetry = symmetry; op%harmonic_count = harmonic_count
-        qdegree = 4*ks + 2*mm%geo_order + 2
+        qdegree = 4*max(ks, degree) + 2*mm%geo_order + 2
         if (symmetry%kind == GS_ROTATION) then
             call meridian_feec_build(mm, degree, op%fs, status, &
                 quad_degree=qdegree)

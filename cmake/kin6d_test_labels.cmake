@@ -912,3 +912,5 @@ kin6d_test_labels(vrmhd_gs_regeneration fast CLASSES mhd TARGETS gen_vrmhd_gs)
 kin6d_test_labels(vrmhd_section_regeneration fast CLASSES mhd TARGETS gen_vrmhd_section)
 
 kin6d_test_labels(vrmhd_mms_regeneration fast CLASSES mhd TARGETS gen_vrmhd_mms)
+
+kin6d_test_labels(vrmhd_pairing_measurement fast CLASSES mhd TARGETS vrmhd_pairing_study)

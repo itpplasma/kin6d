@@ -297,3 +297,169 @@ The earlier verification above applies to the former equal-order spaces.
 No full-system inf-sup bound, spurious-mode-free spectrum or full-domain
 spectral audit is claimed. A further choice of compatible velocity, magnetic
 and gauge spaces belongs to the model design.
+
+
+## Pairing study for the ideal uniform equilibrium
+
+No tested Lagrange pairing is recommended for promotion on the evidence below.
+Here pairs are written **`(k_s,k_A)`**, with continuous Lagrange degree `k_s`
+for the fluid and multiplier, and first-kind Nedelec order `k_A` for the planar
+vector potential and current. Their orbit components remain continuous degree
+`k_A`. The [complete table](data/vrmhd-pairings.csv) covers degrees one through
+four with `k_s >= k_A-1`, on both meshes and both resolutions.
+On the structured mesh, every pairing retains energy-bearing static defects
+at both resolutions. Equal degrees one through four give respectively one,
+two, three and four magnetic nulls in the static quotient. Taking
+`k_A=k_s+1` increases this count to eight, thirteen and eighteen; taking
+`k_s>k_A` instead gives four to twenty-eight kinetic nulls. Refinement can
+reduce the physical-frequency errors without removing these defects. The
+magnetic and kinetic counts per cell are also unchanged by the prescribed
+mesh perturbation at either resolution.
+
+The equilibrium has mass density `1 kg/m^3`, pressure `0.6 Pa`, adiabatic
+exponent `5/3`, and Alfven velocity
+`B0/sqrt(mu0*rho0)=(0.6,0,0.8) m/s`. The wave vector is
+`k=(1,0,0) m^-1` on a square period of side `2 pi m`. The analytic Alfven,
+fast and slow angular frequencies are respectively `0.6`, `sqrt(1.8)` and
+`sqrt(0.2) rad/s`. Each direction has four or eight cells per period; one cell
+contains two triangles. Degrees of freedom per cell include the algebraic
+current and are `6 k_s^2 + 2(3 k_A^2+k_A)`.
+
+The second mesh repeats a two-by-two displacement pattern. In units of the
+cell width, the vertex displacements for parity `(0,0)`, `(1,0)`, `(0,1)` and
+`(1,1)` are `(0,0)`, `(0.13,-0.11)`, `(-0.09,0.16)` and `(0.18,0.07)`.
+Periodic boundary copies receive the same displacement. Its Bloch block retains
+four cells and all their coefficients; the structured block retains one.
+The admission exception is an explicit study option. Ordinary construction
+still defaults to `k_s=k_A+1` and rejects `k_s<k_A+1`.
+
+The generalized eigensolver, zero tolerance `1024 epsilon`, cutoff
+`sqrt(1.8) rad/s`, branch matching and allowance of three null modes are shared
+with the spectral gate. The table records failures of the reality, finite-count
+and signed-wave checks instead of stopping the measurement. Those checks in
+the gate are unchanged. `unmatched` is the existing audit's count, including
+zero multiplicity beyond three. It does not count extra eigenvalues that the
+existing nearest-branch rule accepts. Additional cell patterns in entropy and
+gauge fields, and folded Fourier branches in a supercell, prevent interpreting
+every extra eigenvalue as spectral pollution.
+
+`alfven_error`, `fast_error` and `slow_error` are dimensionless relative errors
+of the nearest positive frequency to each analytic frequency. They measure
+frequency approximation, without establishing branch identity or absence of
+extra modes. The diagnostic `omega2_imag_s_2` is the largest absolute imaginary part of
+squared angular frequency in `s^-2`. Backward error and analytic-null defects
+are normalized; equilibrium defect is the largest projected residual entry in
+the solver reference units.
+`seconds` measures one complete case, including assembly and diagnostics.
+
+The energy split uses kinetic energy `E_K` and magnetic energy `E_B`, obtained
+from the production mass and discrete curl operators. A singular-value
+decomposition (SVD) of the physically scaled static coupling identifies its
+nullspace. After quotienting the two analytic entropy modes and one gauge
+mode, the positive part of `E_K+E_B` is whitened, then `E_B` is diagonalized.
+This avoids choosing an arbitrary basis of a degenerate zero eigenspace.
+`static_magnetic` and `static_velocity` count fractions
+`E_B/(E_K+E_B) >= 0.9` and `<= 0.1`, respectively; `static_mixed` includes the
+remaining quotient directions and directions with negligible physical energy.
+The energy floor is `1e-10` times the larger of the largest null energy and the
+largest velocity-mass entry, in the scaled coefficient coordinates.
+
+`magnetic`, `velocity` and `mixed` sum to `unmatched`. They apply the same split
+to unmatched finite modes and to the static quotient when the SVD and generalized
+zero counts agree (`null_split_ok`). Otherwise the zero part is unresolved and
+included in `mixed`; the separate static counts remain available. Thus `mixed`
+is a conservative catch-all, including energy-free entropy/gauge patterns, not
+solely modes with comparable kinetic and magnetic energy. `vz_blind` separately
+counts singular values below `1024 epsilon` times the largest singular value
+in the axial-velocity coupling. This is independent of the generalized zero
+classification. The smallest shear direction is also checked against the
+production matrix-free Jacobian.
+
+Reproduce the table with `BLA_VENDOR=OpenBLAS`, eight OpenMP threads and one
+OpenBLAS thread:
+
+```sh
+cmake --build build --target vrmhd_pairing_study -j 8
+OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=1 build/vrmhd_pairing_study docs/data/vrmhd-pairings.csv
+python3 docs/plot_vrmhd_pairings.py --output /tmp/vrmhd-pairings.png
+```
+
+The optional [plotting script](plot_vrmhd_pairings.py) requires NumPy and Matplotlib. It writes a raw
+count/frequency comparison and a companion `-energy` plot of the static split;
+generated images are not tracked.
+
+### Literature and scope of the compatibility conditions
+
+`H(curl)` and `H(div)` mean square-integrable fields with square-integrable curl
+and divergence, respectively; `H1` requires square-integrable first derivatives.
+Raviart--Thomas (RT) and Brezzi--Douglas--Marini (BDM) elements have continuous
+normal traces; Nedelec elements have continuous tangential traces. `CG` and
+`DG` denote continuous and discontinuous polynomial spaces. Locations below
+were checked in accessible text; the two original-source access gaps remain.
+
+- [Rappaz (1977), Numerische Mathematik 28, 15--24](https://doi.org/10.1007/BF01403854):
+  the publisher abstract states a sufficient non-pollution condition, without
+  specifying the pairing. The full theorem was unavailable.
+  [Ida, Todoroki and Sanuki, NIFS-PROC-040, p. 108 after (20)](https://www.nifs.ac.jp/report/NIFS-PROC-040.pdf#page=116)
+  attribute continuous degree `p` derivative-bearing displacement and
+  discontinuous degree `p-1` algebraic displacement, `p>=1`, to Rappaz.
+  This is a secondary attribution for a one-dimensional formulation.
+- [Gruber and Rappaz (1985), Section 4.1.1, p. 80, (4.8), publisher preview](https://page-one.springer.com/pdf/preview/10.1007/978-3-642-86708-8_5):
+  continuous linear triangles for all displacement components give a deficient
+  discrete Alfven constraint. Section 4.2's full hybrid pairing and condition
+  were inaccessible. [Gruber (1978), abstract](https://doi.org/10.1016/0021-9991(78)90076-1)
+  describes independent displacement derivatives, auxiliary constraints, and
+  cellwise-constant Lagrangian terms at lowest hybrid order; it gives no
+  velocity/edge-potential degree rule.
+- [Gawlik and Gay-Balmaz, incompressible MHD (2021), Section 3, (20)--(23), Proposition 3.1](https://arxiv.org/html/2012.04122):
+  velocity and magnetic field use `RT_s`, mean-zero pressure `DG_s`, density
+  `DG_m`, and auxiliary fields `NED_s`, with `s,m>=0`. The paper numbers the
+  lowest Nedelec space by zero. Curl inclusion and the discrete divergence
+  range yield pointwise divergence constraints and conservation, not a
+  spectral non-pollution theorem.
+- [Gawlik and Gay-Balmaz, compressible MHD (2021), Section 3](https://arxiv.org/html/2105.00785):
+  velocity uses `CG_(r+1)` in `H1_0`, magnetic field `RT_r`, density `DG_s`,
+  auxiliary fields `NED_r`, with `r,s>=0`. The discrete de Rham inclusion and
+  balance identities concern this formulation; velocity is not in `H(div)`
+  alone, and spectral correctness for vector potential is not established.
+- [Claes, De Jonghe and Keppens, *Legolas*, Appendix A.1, (A1)--(A2)](https://arxiv.org/html/2010.14148):
+  quadratic density, tangential velocity, temperature and normal potential;
+  cubic Hermite normal velocity and tangential potentials. The stated condition
+  is exact representability of incompressible eigenfunctions in a one-dimensional
+  equilibrium with two Fourier directions, not a triangle degree rule.
+- [Sovinec, Patil and Cauilan (2026 preprint), Appendix A, pp. 25--28, Figure 14](https://arxiv.org/pdf/2606.28613#page=26):
+  cubic continuous velocity/pressure, discontinuous cubic normal potential,
+  continuous quartic tangential potentials and quartic damping-gauge scalar.
+  Total pressure reproduces oscillatory frequencies, but five solenoidal
+  mesh-scale potential modes remain uncoupled. Equal continuous potential and
+  velocity degrees add oscillatory pollution. None of the tested formulations
+  is strictly stable near marginality; this is not a spectral-correctness theorem.
+
+### What an H(div) velocity study would require
+
+[FortFEM](https://github.com/lazy-fortran/fortfem) already supplies triangular RT degree `r>=0` and BDM degree `r>=1`
+in `triangle_rt_arbitrary_order` and `triangle_bdm_arbitrary_order`; their local
+sizes are `(r+1)(r+3)` and `(r+1)(r+2)`. The meridian complex's face space is
+rotated first-kind Nedelec, hence RT degree `k_A-1` in the plane, with a
+`DG_(k_A-1)` orbit component. BDM assembly and orientation transforms are
+available through `assembly_full_vector_arbitrary_order_2d`. Existing triangle tests
+exercise RT degrees zero through three and BDM degrees one through four;
+this inspection does not certify every order.
+
+Changing the velocity requires new coefficient maps, mass and divergence
+couplings, boundary traces, and consistent induction/Lorentz pairings. Normal
+continuity alone does not make the velocity conforming for symmetric viscous
+stress: tangential jumps need consistent facet terms, such as an interior
+penalty or a mixed stress formulation. Strong normal no-slip data would need
+weak tangential enforcement, for example Nitsche terms or a hybrid trace.
+FortFEM has scalar interior-penalty and Nitsche interface primitives, but the complete
+vector stress, tangential boundary treatment and matching viscous-heating
+ledger are not supplied by those primitives. Generic facet assembly belongs
+in FortFEM; MHD composition, generated pointwise stress/heating derivatives,
+and the energy and no-slip tests belong here. No such change is implemented.
+
+**Recommendation:** retain the current failed spectral gate and make no
+production pairing change from this table. Investigate an `H(div)` velocity
+formulation with the required viscous facet and boundary terms as a separate
+design decision. Conservation or a discrete de Rham sequence alone does not
+prove that its coupled ideal-MHD spectrum is free of pollution.
