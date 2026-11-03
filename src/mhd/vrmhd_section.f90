@@ -16,8 +16,11 @@ module kin6d_vrmhd_section
     private
     type, public :: vrmhd_section_t
         type(meridian_feec_t) :: fs, scalar_fs
+        type(meridian_feec_t), allocatable :: velocity_fs
         type(gs_symmetry_t) :: symmetry
         integer :: harmonic_count = 1, ndof = 0, nlocal = 0
+        ! Independent field ranges keep the thermodynamic and velocity spaces distinct.
+        integer :: offset(9) = 0, local_offset(9) = 0
         integer, allocatable :: map(:, :), row(:)
         logical, allocatable :: fixed(:)
     end type
@@ -28,7 +31,7 @@ module kin6d_vrmhd_section
     integer, parameter, public :: VRMHD_EDGE_FIRST = 1, VRMHD_EDGE_SECOND = 2
 contains
     subroutine vrmhd_section_build(mm, symmetry, degree, harmonic_count, op, status, &
-            scalar_degree, study_pairing, edge_kind, quad_degree)
+            scalar_degree, study_pairing, edge_kind, quad_degree, velocity_degree)
         type(meridian_mesh_t), intent(in) :: mm
         type(gs_symmetry_t), intent(in) :: symmetry
         integer, intent(in) :: degree, harmonic_count
@@ -36,27 +39,32 @@ contains
         integer, intent(out) :: status
         logical, intent(in), optional :: study_pairing
         logical :: study
-        integer, intent(in), optional :: scalar_degree, edge_kind
+        integer, intent(in), optional :: scalar_degree, edge_kind, velocity_degree
         !> Overrides the nonlinear default; callers must bound their integrand degree.
         integer, intent(in), optional :: quad_degree
-        integer :: i, t, j, b, n0, n1, l0, l1, offset, lo, ks, qdegree, kind
+        integer :: i, t, b, n0, n1, l0, l1, nv, lv, offset, lo, ks, kv, qdegree, kind
+        integer, parameter :: rows(8) = [1, 2, 2, 2, 5, 6, 3, 4]
+        logical :: mixed
         status = 1
         if (.not. symmetry%valid() .or. harmonic_count /= 1) return
         ks = degree
         if (present(scalar_degree)) ks = scalar_degree
+        kv = ks
+        if (present(velocity_degree)) kv = velocity_degree
         study = .false.
         if (present(study_pairing)) study = study_pairing
         kind = VRMHD_EDGE_SECOND
         if (present(edge_kind)) kind = edge_kind
         if (kind /= VRMHD_EDGE_FIRST .and. kind /= VRMHD_EDGE_SECOND) return
-        if (degree < 1 .or. ks < 1) return
+        if (degree < 1 .or. ks < 1 .or. kv < 1) return
+        mixed = kind == VRMHD_EDGE_SECOND .and. degree == ks + 1 .and. kv == degree
         if (study) then
             if (ks < degree - 1) return
         else
-            if (ks /= degree) return
+            if (.not. mixed .and. (ks /= degree .or. kv /= ks)) return
         end if
         op%symmetry = symmetry; op%harmonic_count = harmonic_count
-        qdegree = 4*max(ks, degree) + 2*mm%geo_order + 2
+        qdegree = 4*max(ks, kv, degree) + 2*mm%geo_order + 2
         if (present(quad_degree)) qdegree = quad_degree
         if (symmetry%kind == GS_ROTATION) then
             call meridian_feec_build(mm, degree, op%fs, status, &
@@ -75,33 +83,60 @@ contains
         call op%fs%mm%topology%build_edge_connectivity()
         n0 = op%scalar_fs%n0; n1 = op%fs%sp(1)%ndof
         l0 = op%scalar_fs%nl0; l1 = op%fs%sp(1)%nloc
-        op%ndof = harmonic_count*(6*n0 + 2*n1)
-        op%nlocal = harmonic_count*(6*l0 + 2*l1)
+        nv = n0; lv = l0
+        if (kv /= ks) then
+            allocate (op%velocity_fs)
+            if (symmetry%kind == GS_ROTATION) then
+                call meridian_feec_build(mm, kv, op%velocity_fs, status, &
+                    quad_degree=qdegree)
+            else
+                call meridian_feec_build(mm, kv, op%velocity_fs, status, &
+                    quad_degree=qdegree, cylinder_r0=1.0_dp)
+            end if
+            if (status /= 0) return
+            nv = op%velocity_fs%n0; lv = op%velocity_fs%nl0
+        end if
+        do i = 1, 8
+            if (i >= 7) then
+                op%offset(i + 1) = op%offset(i) + n1
+                op%local_offset(i + 1) = op%local_offset(i) + l1
+            else if (i >= 2 .and. i <= 4) then
+                op%offset(i + 1) = op%offset(i) + nv
+                op%local_offset(i + 1) = op%local_offset(i) + lv
+            else
+                op%offset(i + 1) = op%offset(i) + n0
+                op%local_offset(i + 1) = op%local_offset(i) + l0
+            end if
+        end do
+        op%ndof = harmonic_count*op%offset(9)
+        op%nlocal = harmonic_count*op%local_offset(9)
         allocate (op%map(op%nlocal, mm%topology%n_triangles), &
             op%row(op%nlocal), op%fixed(op%ndof))
         op%fixed = .false.
         do b = 1, harmonic_count
-            offset = (b - 1)*(6*n0 + 2*n1); lo = (b - 1)*(6*l0 + 2*l1)
-            do i = 1, 6
-                do t = 1, mm%topology%n_triangles
-                    op%map(lo + (i - 1)*l0 + 1:lo + i*l0, t) = &
-                        offset + (i - 1)*n0 + op%scalar_fs%sp(0)%dof(:, t)
-                end do
-                op%row(lo + (i - 1)*l0 + 1:lo + i*l0) = 2
-                if (i == 1) op%row(lo + 1:lo + l0) = 1
-                if (i >= 5) op%row(lo + (i - 1)*l0 + 1:lo + i*l0) = i
-                op%fixed(offset + (i - 1)*n0 + 1:offset + i*n0) = op%scalar_fs%sp(0)%bnd
-            end do
-            do j = 1, 2
-                i = lo + 6*l0 + (j - 1)*l1
-                do t = 1, mm%topology%n_triangles
-                    op%map(i + 1:i + l1, &
-                        t) = offset + 6*n0 + (j - 1)*n1 + op%fs%sp(1)%dof(:, t)
-                end do
-                op%row(i + 1:i + l1) = j + 2
-                ! A and the free current use the same zero-tangential tests.
-                op%fixed(offset + 6*n0 + (j - 1)*n1 + 1: &
-                    offset + 6*n0 + j*n1) = op%fs%sp(1)%bnd
+            do i = 1, 8
+                offset = (b - 1)*op%offset(9) + op%offset(i)
+                lo = (b - 1)*op%local_offset(9) + op%local_offset(i)
+                op%row(lo + 1:lo + op%local_offset(i + 1) &
+                    - op%local_offset(i)) = rows(i)
+                if (i >= 7) then
+                    do t = 1, mm%topology%n_triangles
+                        op%map(lo + 1:lo + l1, t) = offset + op%fs%sp(1)%dof(:, t)
+                    end do
+                    op%fixed(offset + 1:offset + n1) = op%fs%sp(1)%bnd
+                else if (i >= 2 .and. i <= 4 .and. allocated(op%velocity_fs)) then
+                    do t = 1, mm%topology%n_triangles
+                        op%map(lo + 1:lo + lv, t) = &
+                            offset + op%velocity_fs%sp(0)%dof(:, t)
+                    end do
+                    op%fixed(offset + 1:offset + nv) = op%velocity_fs%sp(0)%bnd
+                else
+                    do t = 1, mm%topology%n_triangles
+                        op%map(lo + 1:lo + l0, t) = &
+                            offset + op%scalar_fs%sp(0)%dof(:, t)
+                    end do
+                    op%fixed(offset + 1:offset + n0) = op%scalar_fs%sp(0)%bnd
+                end if
             end do
         end do
     end subroutine
@@ -112,12 +147,20 @@ contains
         real(dp), intent(out) :: x(2), weight, basis(36, op%nlocal)
         integer, intent(out) :: status
         real(dp) :: val(op%scalar_fs%nl0), grad(2, op%scalar_fs%nl0)
+        real(dp) :: vval(op%local_offset(3) - op%local_offset(2))
+        real(dp) :: vgrad(2, size(vval))
         real(dp) :: aval(op%fs%nl0), agrad(2, op%fs%nl0), g(3), v(3), vx(3), vy(3)
         real(dp) :: gv(3, 3), phi(3, op%fs%sp(1)%nloc), psi(3, op%fs%sp(2)%nloc)
         real(dp) :: curl(3), av(3), bv(3), a, ax, ay, c, scale
         integer :: i, j, l, col, p, r, local, s, b, offset
         call meridian_qgrad(op%scalar_fs, t, q, x, weight, val, grad, status)
         if (status /= 0) return
+        if (allocated(op%velocity_fs)) then
+            call meridian_qgrad(op%velocity_fs, t, q, x, weight, vval, vgrad, status)
+            if (status /= 0) return
+        else
+            vval = val; vgrad = grad
+        end if
         call meridian_qgrad(op%fs, t, q, x, weight, aval, agrad, status)
         if (status /= 0) return
         call meridian_qpoint(op%fs, 1, t, q, x, weight, phi, status)
@@ -126,21 +169,23 @@ contains
         if (status /= 0) return
         basis = 0
         do b = 1, op%harmonic_count
-            offset = (b - 1)*(6*op%scalar_fs%nl0 + 2*op%fs%sp(1)%nloc)
+            offset = (b - 1)*op%local_offset(9)
             do i = 1, op%scalar_fs%nl0
                 call scalar_gradient(op, x, grad(:, i), g)
                 basis(1, offset + i) = val(i); basis(13:15, offset + i) = g
-                do j = 1, 3
-                    local = offset + j*op%scalar_fs%nl0 + i
-                    v = 0; vx = 0; vy = 0
-                    v(j) = val(i); vx(j) = grad(1, i); vy(j) = grad(2, i)
-                    call vector_gradient(op, x, v, vx, vy, gv)
-                    basis(2:4, local) = v; basis(16:24, local) = reshape(gv, [9])
-                end do
                 do j = 1, 2
-                    local = offset + (3 + j)*op%scalar_fs%nl0 + i
+                    local = offset + op%local_offset(4 + j) + i
                     basis(10 + j, local) = val(i)
                     basis(25 + 3*j:27 + 3*j, local) = g
+                end do
+            end do
+            do i = 1, size(vval)
+                do j = 1, 3
+                    local = offset + op%local_offset(1 + j) + i
+                    v = 0; vx = 0; vy = 0
+                    v(j) = vval(i); vx(j) = vgrad(1, i); vy(j) = vgrad(2, i)
+                    call vector_gradient(op, x, v, vx, vy, gv)
+                    basis(2:4, local) = v; basis(16:24, local) = reshape(gv, [9])
                 end do
             end do
             do i = 1, op%fs%sp(1)%nloc
@@ -163,7 +208,7 @@ contains
                 call vector_curl(op, x, scale*phi(1, i), scale*phi(3, i), c, a, &
                     ax, ay, av, bv)
                 do j = 1, 2
-                    local = offset + 6*op%scalar_fs%nl0 + (j - 1)*op%fs%sp(1)%nloc + i
+                    local = offset + op%local_offset(6 + j) + i
                     s = 2 + 3*j
                     basis(s:s + 2, local) = av
                     if (j == 1) basis(25:27, local) = bv

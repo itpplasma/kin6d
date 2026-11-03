@@ -11,7 +11,16 @@ program test_vrmhd_mms
         fortsparse_status_t, status_ok
     implicit none
     real(dp) :: errors(8, 3), defect(3), rates(8)
-    integer :: kind, level
+    integer :: kind, level, degree
+    real(dp) :: target(8)
+    character(16) :: mode
+    call get_command_argument(1, mode)
+    degree = 0
+    if (mode == 'mixed1') degree = 1
+    if (mode == 'mixed2') degree = 2
+    target = 1
+    if (degree > 0) target = [degree, degree + 1, degree + 1, degree + 1, &
+        degree + 1, degree + 1, degree, degree]
     do kind = 1, 3
         do level = 1, 3
             call manufactured(kind, 2**(level + 1), errors(:, level), defect(level))
@@ -22,7 +31,7 @@ program test_vrmhd_mms
             rates = log(errors(:, level - 1)/errors(:, level))/log(2.0_dp)
             print '(a,i0,a,i0,8f7.3)', 'natural-norm rates symmetry ', kind, &
                 ' level ', level, rates
-            call require(minval(rates) > 0.8_dp, 'P1 natural-norm convergence')
+            call require(all(rates > target - 0.2_dp), 'natural-norm design orders')
             print '(a,es12.4)', 'scaled strong-source weak defect: ', defect(level)
             call require(defect(level) < 0.8_dp*defect(level - 1), &
                 'strong-source residual consistency')
@@ -68,7 +77,7 @@ contains
         integer, allocatable :: rows(:), cols(:)
         logical, allocatable :: free(:)
         real(dp) :: x(2), weight, exact(48), v(36), shift
-        integer :: t, q, i, j, pos, status, nlocal, nt, n0, n1
+        integer :: t, q, i, j, pos, status, nlocal, nt
         shift = 0
         symmetry = gs_symmetry_t(kind, GS_CHART_CARTESIAN, 0.0_dp)
         if (kind == GS_ROTATION) then
@@ -79,7 +88,12 @@ contains
             0.2_dp, 1.2_dp)
         call meridian_mesh_straight(mesh, 1, mm, status)
         call require(status == 0, 'manufactured mesh')
-        call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
+        if (degree > 0) then
+            call vrmhd_section_build(mm, symmetry, degree + 1, 1, op, status, &
+                scalar_degree=degree, velocity_degree=degree + 1)
+        else
+            call vrmhd_section_build(mm, symmetry, 1, 1, op, status)
+        end if
         call require(status == 0, 'manufactured section')
         p%mi = 1; p%mu0 = 1; p%eta0 = 0.2_dp; p%nu0 = 0.2_dp
         p%chi_parallel0 = 0.2_dp; p%chi_perpendicular = 0.05_dp
@@ -141,8 +155,7 @@ contains
                 call vrmhd_section_residual(op, p, u, zero, zero, zero, source, r, jv, status)
                 call require(status == 0, 'manufactured residual')
                 free = .not. op%fixed
-                n0 = op%scalar_fs%n0; n1 = op%fs%sp(1)%ndof
-                free(6*n0 + n1 + 1:) = .not. op%fs%sp(1)%bnd
+                free(op%offset(8) + 1:) = .not. op%fs%sp(1)%bnd
                 defect = sqrt(sum((r - load)**2/diagonal, mask=free))
             end subroutine
         end program test_vrmhd_mms
