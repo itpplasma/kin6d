@@ -898,6 +898,7 @@ foreach(gate geometry derivatives volume closure)
 endforeach()
 
 kin6d_test_labels(vrmhd_section_manufactured_consistency fast CLASSES mhd TARGETS test_vrmhd_mms)
+kin6d_test_labels(vrmhd_section_spectra fast CLASSES mhd TARGETS test_vrmhd_spectra)
 kin6d_test_labels(vrmhd_section_energy fast CLASSES mhd TARGETS test_vrmhd_energy)
 foreach(gate boundary derivatives harmonic solve)
     kin6d_test_labels(vrmhd_stationary_${gate} fast CLASSES mhd

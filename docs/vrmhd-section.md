@@ -56,20 +56,22 @@ pairing; physical Riesz maps belong to the consumer.
 Sources have six channels at each quadrature point: `Js(1:3), Srho, Qe, Qi`,
 with units and signs from the weak-form document. Returned rows include every
 boundary test. The `fixed` mask identifies scalar boundary values and the
-vector-potential tangential trace; it is available for consumers that impose
-Dirichlet data, and is not applied by the volume operator. Ideal-wall or
-periodic assembly must supply its trace constraints and any surface terms.
-In particular, unrestricted auxiliary-current tests need the Ampere boundary
-term if the magnetic tangential trace is nonzero.
+tangential traces of both A and J; it is available for consumers that impose
+Dirichlet data, and is not applied by the volume operator. Ideal-wall assembly
+supplies both trace constraints. Current is `J_wall + J0`, with `J0` in
+H0(curl); its wall coefficients are data and its interior coefficients satisfy
+weak Ampere. Constrained consumers use only zero-tangential tests.
 
 ## Boundary and stationary gauge
 
-`vrmhd_ampere_boundary` integrates the residual contribution
-`-integral_boundary (n cross B).K dS`, including every auxiliary-current test.
-It accepts a prescribed invariant magnetic trace. The volume and surface
-terms together represent `mu0 J - curl B`. Surface integration uses the
-outward conormal and measure of the actual swept boundary; in screw
-coordinates the section normal alone is insufficient.
+For positive resistivity, `v.n=B.n=0` implies `(v cross B)_t=0`.
+Ohm's law with `n cross (E-V h)=0` prescribes `J_t=Js_t+(V h)_t/eta`.
+For ideal studies the equilibrium supplies `J_t`. `vrmhd_current_lift` extracts
+prescribed wall coefficients and sets every interior coefficient to zero.
+The same total current enters every magnetic and thermal term. Both induction
+and Ampere use H0(curl) tests, so Ampere has no surface residual. The explicit
+power of the prescribed affine current constraint and checked literature
+locations are in [the weak-form ledger](vrmhd-weak-form.md#conducting-wall-current-and-its-power).
 
 `vrmhd_stationary_build` uses an H1 scalar multiplier with zero boundary
 trace and the matrix `G_ij = integral W_i.grad(lambda_j) dx`. The stationary
@@ -95,16 +97,16 @@ The raw coefficient condition number is diagnostic only because section edge
 and orbit nodal bases have different mesh scaling. These are numerical gates,
 not proofs of uniform continuous bounds.
 The Jacobian is evaluated after Newton convergence of the manufactured
-stationary problem, including its lifted boundary values and Ampere trace.
+stationary problem, including its lifted boundary values and prescribed current trace.
 
 The wrapper applies `fixed` to scalar Dirichlet values, all velocity
-components, and the vector-potential tangential trace. The homogeneous
-velocity case is a no-slip ideal wall; nonzero manufactured traces describe
-a prescribed boundary-value problem. Auxiliary-current tests remain free.
+components, and the tangential traces of A and J. The homogeneous velocity
+case is a no-slip ideal wall; nonzero manufactured traces describe a prescribed
+boundary-value problem. Only interior current tests remain free.
 Boundary values are lifted before volume evaluation; fixed rows are identity
 rows and their columns are removed from free equations. The load is an
-assembled right-hand side: subtract the Ampere surface residual from that
-load. Prescribed loads have zero state derivative. The sparse Jacobian and
+assembled volume right-hand side, with no Ampere surface contribution.
+Prescribed loads have zero state derivative. The sparse Jacobian and
 matrix-free derivative use the same lifting and mixed gauge. Time-dependent
 assembly keeps Weyl gauge and its vector-potential mass row.
 
@@ -158,23 +160,27 @@ residual defects after natural-norm projection. These are representation and
 residual consistency checks, not convergence of a solved nonlinear boundary
 problem.
 The reported weak defect uses diagonal natural-norm scaling, not a certified
-dual norm. Separate stationary tests check the Ampere surface sign against
-the independent analytic current and magnetic field, and the lifted/gauged
+dual norm. Separate stationary tests check weak Ampere on zero-tangential
+tests against the independent analytic current and magnetic field, and the lifted/gauged
 sparse Jacobian against its matrix-free action and centered differences.
 The solved manufactured test uses H1 for scalar and velocity fields,
 H(curl) for `A` and L2 for the weakly recovered `J`, as explained in the
 weak-form document. It passes over three refinements in all three symmetries,
-with quadratic Newton convergence. The diagnostic interior `curl J` rate is
-about 0.4–0.5, like the whole-mesh rate, so it is not a boundary-layer effect.
+with quadratic Newton convergence. The manufactured problem retains its
+analytic fields and supplies their current trace as prescribed data; it is a
+lifted boundary-value problem, not a homogeneous conducting-wall solution.
+Its diagnostic interior `curl J` rate remains about 0.4–0.5; only the L2
+current error is a convergence gate.
 The harmonic gate checks closedness and an independent Cartesian voltage load.
 The reduced stability and diagonally normalized current-mass gates pass on
 meshes with 4, 8 and 16 cells per side for rotation, translation and screw.
-The smallest reduced singular value is above 0.089; its worst refinement
-ratio is 0.937, while the largest normalized mass-condition growth is 1.065.
+With prescribed current trace the smallest reduced singular value exceeds
+0.088; its worst refinement ratio exceeds 0.935, while the largest normalized
+mass-condition growth remains below 1.317.
 
 The GS consistency gate solves the RM0 flux equation with analytic pressure
 profiles, projects its flux lift into the section spaces and recovers current
-by weak Ampere's law with the prescribed magnetic boundary trace. Rotation
+by weak Ampere's law with the prescribed equilibrium current trace. Rotation
 uses `psi=0.1 R^2(log R-1/2)`, `Bz=0.2 log R`, `Jphi=-0.2/R` and
 `p=6-0.02(log R)^2`. Screw symmetry has pitch `k=0.7/m`,
 `psi=0.25(x^2+y^2)`, `B=(-0.2 y,0.2 x,1)` and `J=(0,0,0.4)`;
@@ -190,6 +196,14 @@ for both symmetries.
 The voltage drive retains the specified Ohmic heating term and preserves the
 separately prescribed heat sink. The skew momentum split closes the
 hydrodynamic energy ledger, including its explicit mass-source/diffusion
-coupling. The full magnetic ledger still fails because unrestricted recovered
-current is not an admissible induction test at the fixed wall trace, as
-explained in the weak-form document. Linear spectra remain unverified.
+coupling. The full magnetic ledger includes the explicit power of the
+prescribed current lift, as explained in the weak-form document.
+
+The linear-spectrum test uses the assembled Jacobian and mass in an invariant
+periodic Fourier block of the translation slab, with uniform magnetic field
+having a component along the wave vector. It compares with `uniform_waves`.
+The first frequency refinement (4 to 8 cells per period) gives an Alfven
+order of 1.636, below the required 1.8; the third mesh is not reached. The
+SI-unit pencil also shows sensitivity in its roundoff-level imaginary parts;
+a diagnostic change of magnetic units reduces these without changing the gate.
+No three-mesh spectral convergence or complete spurious-mode claim follows.

@@ -92,15 +92,17 @@ target_sources(kin6d_mhd PRIVATE src/generated/kin6d_vrmhd_leaves.f90
     src/mhd/vrmhd_point.f90 src/mhd/vrmhd_section.f90
     src/mhd/vrmhd_boundary.f90 src/mhd/vrmhd_stationary.f90
     src/mhd/vrmhd_drive.f90)
+add_library(kin6d_vrmhd_wall_test STATIC test/support/vrmhd_wall_oracle.f90)
+target_link_libraries(kin6d_vrmhd_wall_test PUBLIC kin6d_mhd)
 add_library(kin6d_vrmhd_mms_test STATIC test/support/vrmhd_mms_leaves.f90)
 target_link_libraries(kin6d_vrmhd_mms_test PUBLIC kin6d_mhd)
 add_executable(test_vrmhd_mms test/test_vrmhd_mms.f90)
 target_link_libraries(test_vrmhd_mms PRIVATE kin6d_vrmhd_mms_test)
 add_executable(test_vrmhd_stationary test/test_vrmhd_stationary.f90)
-target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test)
+target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test kin6d_vrmhd_wall_test)
 add_executable(test_vrmhd_gs test/test_vrmhd_gs.f90
     src/generated/kin6d_vrmhd_gs_leaves.f90)
-target_link_libraries(test_vrmhd_gs PRIVATE kin6d_mhd)
+target_link_libraries(test_vrmhd_gs PRIVATE kin6d_vrmhd_wall_test)
 add_test(NAME vrmhd_gs_consistency COMMAND test_vrmhd_gs)
 set_tests_properties(vrmhd_gs_consistency PROPERTIES LABELS rm2 PROCESSORS 8
     ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
@@ -117,7 +119,7 @@ set_tests_properties(vrmhd_section_manufactured_consistency PROPERTIES LABELS rm
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
 target_link_libraries(test_vrmhd_section PRIVATE kin6d_mhd)
 add_executable(test_vrmhd_energy test/test_vrmhd_energy.f90)
-target_link_libraries(test_vrmhd_energy PRIVATE kin6d_mhd)
+target_link_libraries(test_vrmhd_energy PRIVATE kin6d_vrmhd_wall_test)
 add_test(NAME vrmhd_section_energy COMMAND test_vrmhd_energy)
 set_tests_properties(vrmhd_section_energy PROPERTIES LABELS rm2
     TIMEOUT 60 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
@@ -2019,6 +2021,11 @@ add_test(NAME response_strip_cylinder_layer COMMAND test_response_strip)
 add_library(kin6d_rm_oracles STATIC src/generated/kin6d_rm_oracle_leaves.f90
     test/support/rm_mhd_oracles.f90)
 target_link_libraries(kin6d_rm_oracles PUBLIC fortnum)
+add_executable(test_vrmhd_spectra test/test_vrmhd_spectra.f90)
+target_link_libraries(test_vrmhd_spectra PRIVATE kin6d_mhd kin6d_rm_oracles)
+add_test(NAME vrmhd_section_spectra COMMAND test_vrmhd_spectra)
+set_tests_properties(vrmhd_section_spectra PROPERTIES LABELS rm2 PROCESSORS 8
+    TIMEOUT 180 ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
 add_executable(test_rm_oracles test/test_rm_oracles.f90)
 target_link_libraries(test_rm_oracles PRIVATE kin6d_rm_oracles kin6d_mhd)
 foreach(case waves rates outer newcomb convergence saturation table)

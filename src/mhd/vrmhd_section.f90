@@ -70,10 +70,9 @@ contains
                         t) = offset + 6*n0 + (j - 1)*n1 + op%fs%sp(1)%dof(:, t)
                 end do
                 op%row(i + 1:i + l1) = j + 2
-                ! Only A has fixed tangential trace; weak Ampere uses all J tests.
-                if (j == 1) then
-                    op%fixed(offset + 6*n0 + 1:offset + 6*n0 + n1) = op%fs%sp(1)%bnd
-                end if
+                ! A and the free current use the same zero-tangential tests.
+                op%fixed(offset + 6*n0 + (j - 1)*n1 + 1: &
+                    offset + 6*n0 + j*n1) = op%fs%sp(1)%bnd
             end do
         end do
     end subroutine

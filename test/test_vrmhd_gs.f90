@@ -9,7 +9,7 @@ program test_vrmhd_gs
         vrmhd_section_basis
     use kin6d_vrmhd_stationary, only: vrmhd_stationary_t, vrmhd_stationary_build, &
         vrmhd_stationary_residual
-    use kin6d_vrmhd_boundary, only: vrmhd_ampere_boundary
+    use vrmhd_wall_oracle, only: current_wall_dofs
     use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use kin6d_vrmhd_gs_leaves, only: gs_lift_rotation, gs_lift_screw, &
@@ -21,7 +21,7 @@ program test_vrmhd_gs
     use fortsparse, only: csc_t, csc_from_triplet, sparse_solve_once, &
         fortsparse_status_t, status_ok
     implicit none
-    integer :: kind, convention, level, trace_kind
+    integer :: kind, convention, level
     real(dp) :: defect(3), error(3), rate
     do convention = 0, 2
         do kind = GS_ROTATION, GS_SCREW, 2
@@ -99,12 +99,12 @@ contains
         end if
     end subroutine
 
-    subroutine magnetic_trace(x, b)
-        real(dp), intent(in) :: x(2)
-        real(dp), intent(out) :: b(3)
+    subroutine equilibrium_current(x, data, current)
+        real(dp), intent(in) :: x(2), data(:)
+        real(dp), intent(out) :: current(3)
         real(dp) :: exact(38)
-        call oracle(trace_kind, x, exact)
-        b = exact(25:27)
+        call oracle(nint(data(1)), x, exact)
+        current = exact(8:10)
     end subroutine
 
     subroutine equilibrium(kind, n, gs, mm)
@@ -188,7 +188,7 @@ contains
         type(csc_t) :: gram, dual_gram, current_gram
         type(fortsparse_status_t) :: st
         integer, allocatable :: rows(:), cols(:), index(:)
-        real(dp), allocatable :: vals(:), rhs(:), u(:), load(:), surface(:), r(:)
+        real(dp), allocatable :: vals(:), rhs(:), u(:), load(:), wall(:), r(:)
         real(dp), allocatable :: zero(:), unused(:), basis(:, :), metric(:, :)
         real(dp), allocatable :: source(:, :, :), js(:, :, :), h(:), dual(:), recovered(:)
         real(dp) :: x(2), weight, psi, grad(2), hessian(2, 2), values(38), exact(38)
@@ -209,7 +209,7 @@ contains
             rows(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), &
             cols(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), &
             vals(nt*(nl**2 + op%fs%nq*op%fs%nl0**2)), u(steady%ndof), &
-            load(op%ndof), surface(op%ndof), r(steady%ndof), &
+            load(op%ndof), wall(op%fs%sp(1)%ndof), r(steady%ndof), &
             zero(steady%ndof), unused(steady%ndof), source(6, op%fs%nq, nt), &
             js(3, op%fs%nq, nt), h(op%fs%sp(1)%ndof), index(op%fs%n0), &
             recovered(op%ndof), dual(steady%ndof))
@@ -257,18 +257,24 @@ contains
         call sparse_solve_once(gram, rhs, recovered, st)
         call require(status_ok(st), 'GS physical projection')
         u(:op%ndof) = recovered
-        zero = 0; trace_kind = kind
-        call vrmhd_ampere_boundary(op, magnetic_trace, surface, status)
-        call require(status == 0, 'GS Ampere trace')
-        u(nc + 1:op%ndof) = 0
+        zero = 0
+        call current_wall_dofs(op, equilibrium_current, [real(kind, dp)], wall)
+        u(nc + 1:op%ndof) = wall
+        load = 0
         call vrmhd_stationary_residual(op, steady, p, u, zero, u(:op%ndof), &
-            source, -surface, r, unused, status)
+            source, load, r, unused, status)
         call require(status == 0, 'GS weak-current recovery residual')
         pos = 0
         do j = nc + 1, op%ndof
+            if (op%fixed(j)) then
+                pos = pos + 1; rows(pos) = j - nc; cols(pos) = j - nc
+                vals(pos) = 1
+                cycle
+            end if
             do entry = gram%col_ptr(j), gram%col_ptr(j + 1) - 1
                 row = gram%row_idx(entry)
                 if (row <= nc) cycle
+                if (op%fixed(row)) cycle
                 pos = pos + 1; rows(pos) = row - nc; cols(pos) = j - nc
                 vals(pos) = gram%val(entry)
             end do
@@ -277,7 +283,9 @@ contains
             cols(:pos), vals(:pos), current_gram, st)
         call require(status_ok(st), 'GS current L2 Riesz matrix')
         deallocate (recovered); allocate (recovered(op%ndof - nc))
-        call sparse_solve_once(current_gram, -r(nc + 1:op%ndof), recovered, st)
+        rhs(nc + 1:op%ndof) = -r(nc + 1:op%ndof)
+        where (op%fixed(nc + 1:op%ndof)) rhs(nc + 1:op%ndof) = wall
+        call sparse_solve_once(current_gram, rhs(nc + 1:op%ndof), recovered, st)
         call require(status_ok(st), 'GS weak Ampere solve')
         u(nc + 1:op%ndof) = recovered
         load = 0
@@ -292,7 +300,6 @@ contains
                 js, h, source, load, status)
             call require(status == 0, 'GS harmonic voltage drive')
         end if
-        load = load - surface
         call vrmhd_stationary_residual(op, steady, p, u, zero, u(:op%ndof), &
             source, load, r, unused, status)
         call require(status == 0, 'GS gauged stationary residual')

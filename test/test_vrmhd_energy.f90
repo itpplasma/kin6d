@@ -5,6 +5,8 @@ program test_vrmhd_energy
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
         vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_mass
+    use vrmhd_wall_oracle, only: current_wall_dofs
+    use kin6d_vrmhd_boundary, only: vrmhd_current_lift
     use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use fortfem_mesh_2d, only: mesh_2d_t
@@ -182,9 +184,10 @@ contains
         real(dp), allocatable :: u(:), ud(:), zero(:), r(:), unused(:), probe(:)
         real(dp), allocatable :: mass(:, :), original(:, :), rhs(:, :), mj(:, :)
         real(dp), allocatable :: source(:, :, :), js(:, :, :), basis(:, :)
-        real(dp), allocatable :: harmonic(:), load(:)
-        integer, allocatable :: free_index(:), pivot(:)
+        real(dp), allocatable :: harmonic(:), load(:), wall(:), recovery(:, :)
+        integer, allocatable :: free_index(:), pivot(:), current_index(:)
         logical, allocatable :: active(:)
+        real(dp) :: wall_field(3), wall_terms(4), wall_power
         real(dp) :: x(2), weight, v(36), vd(36), gv(3, 3), strain(3, 3), tau(3, 3)
         real(dp) :: b(3), projector(3, 3), flux(3), identity(3, 3), pressure, divv
         real(dp) :: kinetic, internal, magnetic, ampere, ideal, lorentz, viscous
@@ -229,7 +232,7 @@ contains
             unused(op%ndof), probe(op%ndof), active(op%ndof), &
             source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
             js(3, op%fs%nq, op%fs%mm%topology%n_triangles), &
-            basis(36, op%nlocal), harmonic(n1), load(op%ndof), mj(n1, n1))
+            basis(36, op%nlocal), harmonic(n1), load(op%ndof), mj(n1, n1), wall(n1))
         u = 0; ud = 0; zero = 0; source = 0
         call random_number(u(:j0))
         u(:n0) = 1 + 0.4_dp*u(:n0)
@@ -237,13 +240,17 @@ contains
         u(4*n0 + 1:6*n0) = 1 + 0.2_dp*u(4*n0 + 1:6*n0)
         u(a0 + 1:j0) = 0.03_dp*(u(a0 + 1:j0) - 0.5_dp)
         where (op%fixed(n0 + 1:4*n0)) u(n0 + 1:4*n0) = 0
-        ! Compact magnetic support makes the Ampere surface work exactly zero.
+        ! Compact support isolates the prescribed current trace from magnetic trace data.
         do t = 1, op%fs%mm%topology%n_triangles
             if (.not. any(op%fs%sp(0)%bnd(op%fs%sp(0)%dof(:, t)))) cycle
             u(op%map(6*l0 + 1:6*l0 + l1, t)) = 0
         end do
         call require(maxval(abs(u(a0 + 1:j0))) > 0, 'nonzero random potential')
         call random_number(js); js = 0.02_dp*(js - 0.5_dp)
+        do t = 1, op%fs%mm%topology%n_triangles
+            if (any(op%fs%sp(0)%bnd(op%fs%sp(0)%dof(:, t)))) js(:, :, t) = 0
+        end do
+        where (op%fs%sp(0)%bnd) u(4*n0 + 1:5*n0) = 1
         source(4, :, :) = 0.003_dp
         source(5, :, :) = 0.001_dp; source(6, :, :) = -0.0003_dp
         voltage = 0
@@ -269,12 +276,41 @@ contains
                 end do
             end do
         end do
-        allocate (rhs(n1, 1), pivot(n1))
-        rhs(:, 1) = -r(j0 + 1:)
-        call dgesv(n1, 1, mj, n1, pivot, rhs, n1, info)
-        call require(info == 0, 'weak Ampere current solve')
-        u(j0 + 1:) = rhs(:, 1)
-        deallocate (rhs, pivot)
+        allocate (rhs(n1, 1))
+        if (convention == VRMHD_LOOP_VOLTAGE) then
+            call current_wall_dofs(op, voltage_current, &
+                [real(kind, dp), voltage/p%eta0], rhs(:, 1))
+        else
+            call random_number(rhs)
+            rhs = 0.02_dp*(rhs - 0.5_dp)
+        end if
+        call vrmhd_current_lift(op, rhs(:, 1), wall)
+        call require(maxval(abs(wall)) > 1.0e-5_dp, 'prescribed wall current active')
+        u(j0 + 1:) = wall
+        if (convention == VRMHD_CURRENT_SOURCE) then
+            do t = 1, op%fs%mm%topology%n_triangles
+                do q = 1, op%fs%nq
+                    call vrmhd_section_basis(op, t, q, x, weight, basis, status)
+                    call require(status == 0, 'wall source basis')
+                    source(:3, q, t) = source(:3, q, t) &
+                        + matmul(basis(8:10, 6*l0 + l1 + 1:), &
+                        wall(op%map(6*l0 + l1 + 1:, t) - j0))
+                end do
+            end do
+        end if
+        deallocate (rhs)
+        nf = count(.not. op%fs%sp(1)%bnd)
+        allocate (current_index(nf), rhs(nf, 1), pivot(nf), recovery(nf, nf))
+        current_index = pack([(j, j=1, n1)], .not. op%fs%sp(1)%bnd)
+        call vrmhd_section_residual(op, p, u, zero, zero, zero, source, &
+            r, unused, status)
+        call require(status == 0, 'lifted Ampere residual')
+        recovery = mj(current_index, current_index)
+        rhs(:, 1) = -r(j0 + current_index)
+        call dgesv(nf, 1, recovery, nf, pivot, rhs, nf, info)
+        call require(info == 0, 'H0(curl) weak Ampere current solve')
+        u(j0 + current_index) = rhs(:, 1)
+        deallocate (rhs, pivot, recovery)
 
         active = .true.; active(j0 + 1:) = .false.
         active(n0 + 1:4*n0) = .not. op%fixed(n0 + 1:4*n0)
@@ -286,7 +322,7 @@ contains
             r, unused, status)
         call require(status == 0, 'full energy spatial residual')
         r = r - load
-        call require(maxval(abs(r(j0 + 1:))) < 1.0e-13_dp, 'weak Ampere residual')
+        call require(maxval(abs(r(j0 + current_index))) < 1.0e-13_dp, 'weak Ampere residual')
         rhs(:, 1) = -r(free_index)
         do j = 1, nf
             probe = 0; probe(free_index(j)) = 1
@@ -305,12 +341,12 @@ contains
             r, unused, status)
         call require(status == 0, 'full energy rate residual')
         r = r - load
-        reaction_power = dot_product(u(j0 + 1:), r(a0 + 1:j0))
+        reaction_power = dot_product(wall, r(a0 + 1:j0))
 
         kinetic = 0; internal = 0; magnetic = 0; ampere = 0
         pressure_work = 0; lorentz = 0; ideal = 0; viscous = 0
         ohmic = 0; current_drive = 0; voltage_drive = 0; heat_source = 0
-        source_port = 0; diffusion_port = 0; conduction = 0; skew = 0
+        source_port = 0; diffusion_port = 0; conduction = 0; skew = 0; wall_terms = 0
         identity = 0
         do i = 1, 3
             identity(i, i) = 1
@@ -334,6 +370,13 @@ contains
                     + (p%d_parallel - p%d_perpendicular)*b*dot_product(b, v(13:15))
                 h = [0.0_dp, 0.0_dp, 1/1.7_dp]
                 if (kind == GS_ROTATION) h = [0.0_dp, 1/(2*acos(-1.0_dp)*x(1)), 0.0_dp]
+                wall_field = matmul(basis(8:10, 6*l0 + l1 + 1:), &
+                    wall(op%map(6*l0 + l1 + 1:, t) - j0))
+                wall_terms = wall_terms + weight*[ &
+                    dot_product(wall_field, vd(5:7)), &
+                    -dot_product(wall_field, cross(v(2:4), v(25:27))), &
+                    eta*dot_product(wall_field, v(8:10) - source(:3, q, t)), &
+                    -voltage*dot_product(wall_field, h)]
                 kinetic = kinetic + weight*(vd(1)*sum(v(2:4)**2)/2 &
                     + v(1)*dot_product(v(2:4), vd(2:4)))
                 internal = internal + weight*1.5_dp/p%mi*( &
@@ -365,6 +408,7 @@ contains
                 end do
             end do
         end do
+        wall_power = sum(wall_terms)
         density_port = source_port + diffusion_port
         kinetic_balance = kinetic - pressure_work - lorentz + viscous - density_port
         internal_balance = internal + pressure_work - viscous - ohmic &
@@ -372,23 +416,27 @@ contains
         magnetic_balance = magnetic - ideal + ohmic - current_drive - voltage_drive
         scale = 2*(abs(pressure_work) + abs(lorentz) + abs(viscous) + abs(ohmic)) &
             + sum(abs(skew)) + abs(source_port) + abs(diffusion_port) &
-            + 2*abs(current_drive) + abs(voltage_drive) + abs(heat_source)
+            + 2*abs(current_drive) + abs(voltage_drive) + abs(heat_source) &
+            + sum(abs(wall_terms))
         call require(min(viscous, ohmic, conduction) > 1.0e-8_dp, &
             'all dissipative pairs active')
         call require(abs(lorentz) > 1.0e-10_dp, 'magnetic exchange active')
         ledger_defect = max(abs(kinetic_balance), abs(internal_balance), &
             abs(magnetic - ampere), abs(lorentz + ideal), abs(sum(skew)), &
-            abs(magnetic_balance - reaction_power))/scale
+            abs(magnetic_balance - wall_power), abs(wall_power - reaction_power))/scale
         call require(ledger_defect < 1.0e-12_dp, 'independent full energy accounting')
         energy_rate = kinetic + internal + magnetic
-        external_power = density_port + heat_source + voltage_drive
+        call require(abs(wall_power) > 1.0e-10_dp, 'nonzero independent wall power')
+        if (convention == VRMHD_LOOP_VOLTAGE) &
+            call require(abs(voltage_drive) > 1.0e-10_dp, 'nonzero loop power')
+        external_power = density_port + heat_source + voltage_drive + wall_power
         relative_defect = abs(energy_rate - external_power)/scale
         print '(a,2i3)', 'full ledger symmetry, drive (1 current, 2 voltage): ', &
             kind, convention
         if (kind == GS_ROTATION) then
-            print '(a)', 'power in W/rad; zero ideal-wall surface power'
+            print '(a)', 'power in W/rad; prescribed current wall power included'
         else
-            print '(a)', 'power in W/m; zero ideal-wall surface power'
+            print '(a)', 'power in W/m; prescribed current wall power included'
         end if
         print '(a,3es24.16)', 'skew forward / reverse / defect: ', skew, sum(skew)
         print '(a,3es24.16)', 'pressure kinetic / internal / defect: ', &
@@ -408,17 +456,27 @@ contains
             source_port, diffusion_port, density_port
         print '(a,2es24.16)', 'loop-voltage / external heat power: ', &
             voltage_drive, heat_source
+        print '(a,4es24.16)', 'wall rate / ideal / resistive / voltage power: ', wall_terms
+        print '(a,es24.16)', 'explicit current wall power: ', wall_power
         print '(a,3es24.16)', 'kinetic / internal / magnetic rate: ', &
             kinetic, internal, magnetic
         print '(a,3es24.16)', 'energy rate / explicit power / defect: ', &
             energy_rate, external_power, energy_rate - external_power
-        print '(a,2es24.16)', 'induction power defect / constrained-row diagnostic: ', &
+        print '(a,2es24.16)', 'magnetic wall work / independent row pairing: ', &
             magnetic_balance, reaction_power
         print '(a,es24.16)', 'maximum current coefficient on fixed A trace: ', &
             maxval(abs(u(j0 + 1:)), mask=op%fixed(a0 + 1:j0))
         print '(a,es24.16)', 'applied loop voltage in V: ', voltage
         print '(a,3es24.16)', 'relative energy / solve / accounting defects: ', &
             relative_defect, solve_defect, ledger_defect
+    end subroutine
+
+    subroutine voltage_current(x, data, current)
+        real(dp), intent(in) :: x(2), data(:)
+        real(dp), intent(out) :: current(3)
+        current = [0.0_dp, 0.0_dp, data(2)/1.7_dp]
+        if (nint(data(1)) == GS_ROTATION) &
+            current = [0.0_dp, data(2)/(2*acos(-1.0_dp)*x(1)), 0.0_dp]
     end subroutine
 
     function cross(a, b) result(c)
