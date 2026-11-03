@@ -2,12 +2,13 @@ module vrmhd_structural_spectrum
     use, intrinsic :: iso_fortran_env, only: dp => real64, qp => real128
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_jacobian, &
-        vrmhd_section_basis
+        vrmhd_section_basis, vrmhd_section_residual
     use rm_mhd_oracles, only: uniform_waves, oracle_ok
     use fortsparse, only: csc_t, csc_matvec
     implicit none
     private
     public :: structural_spectrum, match_folded, bloch_projection, fourier_content
+    public :: bloch_rows, bloch_sandwich, bloch_adjoint, check_bloch_action
     interface
         subroutine zgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
             import dp
@@ -90,9 +91,111 @@ contains
         end do
     end function
 
-    subroutine structural_spectrum(op, p, u, source, transform, stiffness, &
-            mass, ns, na, n, repeat, degree, b0, exact, frequencies, mass_condition)
+    subroutine bloch_rows(transform, column, phase, norm)
+        !! The single Bloch column and phase of each coefficient row.
+        complex(dp), intent(in) :: transform(:, :)
+        integer, allocatable, intent(out) :: column(:)
+        complex(dp), allocatable, intent(out) :: phase(:)
+        complex(qp), allocatable, intent(out) :: norm(:)
+        integer :: i, j
+        allocate(column(size(transform,1)), phase(size(transform,1)), &
+            norm(size(transform,2)))
+        column = 0; phase = 0; norm = 0
+        do j = 1, size(transform,2)
+            do i = 1, size(transform,1)
+                if (abs(transform(i,j)) > 0) then
+                    call check(column(i) == 0, 'one Bloch column per coefficient')
+                    column(i) = j; phase(i) = transform(i,j)
+                    norm(j) = norm(j) + abs(cmplx(transform(i,j),kind=qp))**2
+                end if
+            end do
+        end do
+        call check(all(column > 0), 'every coefficient in a Bloch column')
+    end subroutine
+
+    function bloch_adjoint(column, phase, image, nb) result(projected)
+        !! T^H image for a transform with one phase per row.
+        integer, intent(in) :: column(:), nb
+        complex(dp), intent(in) :: phase(:)
+        complex(qp), intent(in) :: image(:)
+        complex(qp) :: projected(nb)
+        integer :: i
+        projected = 0
+        do i = 1, size(column)
+            projected(column(i)) = projected(column(i)) &
+                + conjg(cmplx(phase(i),kind=qp))*image(i)
+        end do
+    end function
+
+    function bloch_sandwich(a, column, phase, nb) result(block)
+        !! T^H A T in one pass over A, with the quadruple-precision sums of
+        !! the column-by-column projection it replaces.
+        type(csc_t), intent(in) :: a
+        integer, intent(in) :: column(:), nb
+        complex(dp), intent(in) :: phase(:)
+        complex(dp) :: block(nb, nb)
+        complex(qp), allocatable :: total(:, :)
+        complex(qp) :: right
+        integer :: i, entry, row
+        allocate(total(nb, nb))
+        total = 0
+        do i = 1, a%ncol
+            right = cmplx(phase(i),kind=qp)
+            do entry = a%col_ptr(i), a%col_ptr(i+1)-1
+                row = a%row_idx(entry)
+                total(column(row),column(i)) = total(column(row),column(i)) &
+                    + conjg(cmplx(phase(row),kind=qp))*(real(a%val(entry),qp)*right)
+            end do
+        end do
+        block = cmplx(total, kind=dp)
+    end function
+
+    subroutine check_bloch_action(op, p, u, column, phase, block, time_rate, label)
+        !! Applies the production residual derivative at the section's own
+        !! quadrature to the sum of all Bloch columns, whose coefficients are
+        !! the row phases, and compares it with the assembled Bloch block.
         type(vrmhd_section_t), intent(in) :: op
+        type(vrmhd_parameters_t), intent(in) :: p
+        real(dp), intent(in) :: u(:)
+        integer, intent(in) :: column(:)
+        complex(dp), intent(in) :: phase(:), block(:, :)
+        logical, intent(in) :: time_rate
+        character(*), intent(in) :: label
+        real(dp), allocatable :: source(:, :, :)
+        real(dp) :: zero(op%ndof), r(op%ndof), real_jv(op%ndof), imag_jv(op%ndof)
+        complex(dp) :: difference(size(block, 1))
+        real(dp) :: defect
+        integer :: status
+        allocate(source(6, op%fs%nq, op%fs%mm%topology%n_triangles))
+        source = 0; zero = 0
+        if (time_rate) then
+            call vrmhd_section_residual(op, p, u, zero, zero, real(phase, dp), &
+                source, r, real_jv, status)
+            call check(status == 0, 'matrix-free real time-mass action')
+            call vrmhd_section_residual(op, p, u, zero, zero, aimag(phase), &
+                source, r, imag_jv, status)
+        else
+            call vrmhd_section_residual(op, p, u, zero, real(phase, dp), zero, &
+                source, r, real_jv, status)
+            call check(status == 0, 'matrix-free real Jacobian action')
+            call vrmhd_section_residual(op, p, u, zero, aimag(phase), zero, &
+                source, r, imag_jv, status)
+        end if
+        call check(status == 0, 'matrix-free imaginary action')
+        difference = cmplx(bloch_adjoint(column, phase, cmplx(real_jv, imag_jv, qp), &
+            size(block, 1)), kind=dp) - sum(block, dim=2)
+        defect = sqrt(sum(abs(difference)**2)/(size(block, 2)*sum(abs(block)**2)))
+        print '(3a,es20.12)', 'assembled / matrix-free ', label, ' defect: ', defect
+        call check(defect <= 1.0e-12_dp, &
+            'assembled Bloch block equals the production matrix-free action')
+    end subroutine
+
+    subroutine structural_spectrum(op, assembly, p, u, source, transform, column, &
+            row_phase, stiffness, mass, ns, na, n, repeat, degree, b0, exact, &
+            frequencies, mass_condition)
+        type(vrmhd_section_t), intent(in) :: op, assembly
+        integer, intent(in) :: column(:)
+        complex(dp), intent(in) :: row_phase(:)
         type(vrmhd_parameters_t), intent(in) :: p
         real(dp), intent(in) :: u(:), source(:, :, :), b0(3), exact(3)
         complex(dp), intent(in) :: transform(:, :), stiffness(:, :), mass(:, :)
@@ -102,7 +205,6 @@ contains
         complex(dp), allocatable :: f(:, :), e(:, :), ef(:, :), q(:, :), w(:, :)
         complex(dp), allocatable :: h(:, :), modes(:, :), work(:), a(:, :), values(:)
         complex(dp), allocatable :: curls(:, :), weighted(:, :), full(:)
-        complex(qp), allocatable :: image(:)
         complex(dp), allocatable :: kd(:, :), fd(:, :), l(:, :), lift(:, :)
         complex(dp), allocatable :: scalar_gram(:, :), scalar_weighted(:, :)
         complex(dp) :: dummy(1, 1), dummy_right(1, 1)
@@ -110,7 +212,7 @@ contains
         real(dp) :: pressure(3), skew, f_norm, defect, maximum_defect
         real(dp) :: scale, reality, diffusivity, cell_wave, slowest, growth
         real(dp) :: condition, skew_bound, coupling_defect
-        integer :: d, nb, i, j, row, entry, a0, j0, info, ne, nz, static_count
+        integer :: d, nb, i, j, a0, j0, info, ne, nz, static_count
         integer :: offsets(3), status
         type(vrmhd_parameters_t) :: dissipative
         type(csc_t) :: jac
@@ -170,7 +272,8 @@ contains
         call inverse_free_structure(l,mass(:d,:d),e,scalar_gram,ns,na, &
             coupling_defect)
         nz = 2*ns + (repeat*op%fs%k0)**2; ne = d-nz
-        call energy_quotient(op,transform,e,ns,na,repeat,degree,q,energies)
+        call energy_quotient(op,transform,column,row_phase,e,ns,na,repeat,degree, &
+            q,energies)
         f_norm = real(sqrt(sum(abs(cmplx(f,kind=qp))**2)),dp)
         maximum_defect = 0
         do j = 1, nz
@@ -199,7 +302,8 @@ contains
         reality = maxval(abs(aimag(-values**2)))/scale
         print '(a,es20.12)', 'diagnostic max |Im(omega^2)| / max |omega^2|: ', reality
         print '(a,*(es20.12))', 'energy-quotient signed angular frequencies [1/s]: ', omega
-        call fourier_content(op,transform,modes,n,repeat,degree,shares,captured)
+        call fourier_content(op,transform,modes,n,repeat,degree,shares,captured, &
+            column,row_phase)
         ! Branch isolation requires at least 16 cells per period.
         call match_folded(omega, n, repeat, degree, b0, exact, frequencies, &
             resolved=n >= 16, shares=shares, captured=captured)
@@ -225,20 +329,12 @@ contains
         dissipative = p
         dissipative%eta0 = p%mu0*diffusivity*0.3_dp**1.5_dp
         dissipative%nu0 = diffusivity*0.3_dp**1.5_dp
-        call vrmhd_section_jacobian(op,dissipative,u,0*u,source,0.0_dp,jac,status)
+        call vrmhd_section_jacobian(assembly,dissipative,u,0*u,source,0.0_dp,jac,status)
         call check(status == 0, 'production resistive and viscous linearization')
-        allocate(kd(nb,nb), image(op%ndof), fd(d,d))
-        do j = 1, nb
-            image = 0
-            do i = 1, op%ndof
-                do entry = jac%col_ptr(i), jac%col_ptr(i+1)-1
-                    row = jac%row_idx(entry)
-                    image(row) = image(row) &
-                        + real(jac%val(entry),qp)*cmplx(transform(i,j),kind=qp)
-                end do
-            end do
-            kd(:,j) = bloch_projection(transform,image)
-        end do
+        allocate(kd(nb,nb), fd(d,d))
+        kd = bloch_sandwich(jac,column,row_phase,nb)
+        call check_bloch_action(op,dissipative,u,column,row_phase,kd,.false., &
+            'dissipative Jacobian')
         call evolution(kd,mass,ns,na,p%mu0,fd)
         a = fd
         call zgeev('N','N',d,a,d,values,dummy,1,dummy_right,1,work,size(work),rw,info)
@@ -269,11 +365,13 @@ contains
     end subroutine
 
     subroutine fourier_content(op, transform, modes, n, repeat, degree, &
-            shares, captured)
+            shares, captured, column, row_phase)
         type(vrmhd_section_t), intent(in) :: op
         complex(dp), intent(in) :: transform(:,:), modes(:,:)
         integer, intent(in) :: n, repeat, degree
         real(dp), allocatable, intent(out) :: shares(:,:), captured(:)
+        integer, intent(in), optional :: column(:)
+        complex(dp), intent(in), optional :: row_phase(:)
         complex(dp), allocatable :: coefficients(:,:), amplitude(:,:,:)
         complex(dp) :: field(7,size(modes,2)), phase
         real(dp) :: basis(36,op%nlocal), readback(7,op%nlocal), x(2), weight
@@ -281,7 +379,17 @@ contains
         integer :: t, iq, status, jx, jy, g, j
         allocate(amplitude(7,(repeat*degree)**2,size(modes,2)))
         allocate(shares((repeat*degree)**2,size(modes,2)),captured(size(modes,2)))
-        coefficients = matmul(transform(:,:size(modes,1)),modes)
+        if (present(column)) then
+            ! Each row has one Bloch term, so this equals the dense product.
+            allocate(coefficients(size(transform,1),size(modes,2)))
+            coefficients = 0
+            do t = 1, size(column)
+                if (column(t) <= size(modes,1)) &
+                    coefficients(t,:) = row_phase(t)*modes(column(t),:)
+            end do
+        else
+            coefficients = matmul(transform(:,:size(modes,1)),modes)
+        end if
         g = 0
         do jy = -(repeat*degree)/2, (repeat*degree-1)/2
             do jx = -(repeat*degree)/2, (repeat*degree-1)/2
@@ -403,9 +511,11 @@ contains
         call check(defect <= 1.0e-14_dp, 'energy Gram is Hermitian')
     end subroutine
 
-    subroutine energy_quotient(op, transform, e, ns, na, repeat, degree, q, energies)
+    subroutine energy_quotient(op, transform, column, row_phase, e, ns, na, repeat, &
+            degree, q, energies)
         type(vrmhd_section_t), intent(in) :: op
-        complex(dp), intent(in) :: transform(:, :), e(:, :)
+        complex(dp), intent(in) :: transform(:, :), e(:, :), row_phase(:)
+        integer, intent(in) :: column(:)
         integer, intent(in) :: ns, na, repeat, degree
         complex(dp), intent(out) :: q(:, :)
         real(dp), intent(out) :: energies(:)
@@ -413,11 +523,18 @@ contains
         complex(dp) :: work(32*size(e,1))
         complex(dp) :: gradient(op%fs%sp(1)%ndof), scalar(op%fs%n0)
         real(dp) :: rw(8*size(e,1)), defect, maximum_defect, norm_e
+        complex(qp) :: projected(size(e,1)), norm(size(e,1))
         integer :: d, nz, ne, ng, a0, j0, i, j, info, orbit
         d = size(e,1); ng = (repeat*op%fs%k0)**2; nz = 2*ns+ng; ne = d-nz
         allocate(z(d,nz), tau(nz), quotient(ne,ne), factor(ne,ne))
         a0 = 6*op%scalar_fs%n0; j0 = a0+op%fs%sp(1)%ndof
         call check(ns == (repeat*degree)**2, 'analytic Bloch scalar dimension')
+        call check(all(column(a0+1:j0) > 6*ns .and. column(a0+1:j0) <= 6*ns+na), &
+            'A coefficients lie in A Bloch columns')
+        norm = 0
+        do i = a0+1, j0
+            norm(column(i)) = norm(column(i)) + abs(cmplx(row_phase(i),kind=qp))**2
+        end do
         ! The gauge scalars are the edge complex's Lagrange space; its Bloch
         ! basis is the one of the orbit components, after the edge columns.
         orbit = 6*ns + na - ng
@@ -431,12 +548,11 @@ contains
             call check(any(abs(scalar) > 0), 'gauge Bloch scalar column')
             gradient = cmplx(csc_matvec(op%fs%grad%a,real(scalar,dp)), &
                 csc_matvec(op%fs%grad%a,aimag(scalar)),dp)
-            do i = 1, na
-                z(6*ns+i,2*ns+j) = cmplx(dot_product( &
-                    cmplx(transform(a0+1:j0,6*ns+i),kind=qp), &
-                    cmplx(gradient,kind=qp)) &
-                    /sum(abs(cmplx(transform(a0+1:j0,6*ns+i),kind=qp))**2),kind=dp)
-            end do
+            ! The quotient sums run over the A rows only, as before.
+            projected = bloch_adjoint(column(a0+1:j0), row_phase(a0+1:j0), &
+                cmplx(gradient,kind=qp), size(e,1))
+            z(6*ns+1:6*ns+na,2*ns+j) = cmplx(projected(6*ns+1:6*ns+na) &
+                /norm(6*ns+1:6*ns+na),kind=dp)
         end do
         print '(a,4i6)', 'analytic energy nulls: entropy / gauge / total / cells: ', &
             2*ns,ng,nz,repeat**2

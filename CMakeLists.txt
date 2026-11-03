@@ -99,7 +99,8 @@ target_link_libraries(kin6d_vrmhd_mms_test PUBLIC kin6d_mhd)
 add_executable(test_vrmhd_mms test/test_vrmhd_mms.f90)
 target_link_libraries(test_vrmhd_mms PRIVATE kin6d_vrmhd_mms_test)
 add_executable(test_vrmhd_stationary test/test_vrmhd_stationary.f90)
-target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test kin6d_vrmhd_wall_test)
+target_link_libraries(test_vrmhd_stationary PRIVATE kin6d_vrmhd_mms_test kin6d_vrmhd_wall_test
+    fortnum)
 add_executable(test_vrmhd_gs test/test_vrmhd_gs.f90
     src/generated/kin6d_vrmhd_gs_leaves.f90)
 target_link_libraries(test_vrmhd_gs PRIVATE kin6d_vrmhd_wall_test)
