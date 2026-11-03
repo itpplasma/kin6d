@@ -255,6 +255,35 @@ product through compatible spaces or a conservative split. The tests check
 these local identities; full semidiscrete total-energy conservation remains
 an assembly gate.
 
+The closed hydrodynamic subcase of `vrmhd_section_energy` tests this necessary
+condition before magnetic exchange or spectra. It uses positive random H1
+density and temperatures, random velocity with zero wall trace, and zero
+magnetic field, transport coefficients and sources. Density and temperature
+tests remain unrestricted, giving no-flux scalar boundaries and retaining
+constant thermal tests; the volume operator's scalar Dirichlet mask is not
+applied in this subcase. The magnetic Ampere surface term and magnetic energy
+flux are both zero because `A=J=B=0`.
+
+With the current conservative momentum mass and advection, the exact
+quadrature ledger of this semidiscrete subcase is
+
+```
+d(Ekin + Eint)/dt
+  = integral rho v.(grad v)v dx - integral rho_dot |v|^2/2 dx
+  = -integral |v|^2/2 [rho_dot + div(rho v)] dx.
+```
+
+Here `Ekin=integral rho |v|^2/2 dx` and
+`Eint=integral 3 rho (Te+Ti)/(2 mi) dx`. Pressure work cancels between the
+two energies. Continuity only annihilates its residual against the scalar
+test space, which for degree one does not contain the piecewise quadratic
+`|v|^2/2`. Thus conservative momentum and a converged mass solve alone do
+not imply this energy identity is zero. The test solves the production mass
+equation, differentiates these energies independently by quadrature, checks
+the ledger identity above, and requires relative energy closure at `1e-12`.
+This required gate exposes the missing compatible kinetic-continuity split;
+it is not an expected-failure test.
+
 ## Leaf interface and verification scope
 
 The generator is [gen_vrmhd_leaves.f90](../gen/gen_vrmhd_leaves.f90); committed

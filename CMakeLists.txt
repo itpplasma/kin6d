@@ -116,6 +116,11 @@ set_tests_properties(vrmhd_section_manufactured_consistency PROPERTIES LABELS rm
     ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
 target_link_libraries(test_vrmhd_section PRIVATE kin6d_mhd)
+add_executable(test_vrmhd_energy test/test_vrmhd_energy.f90)
+target_link_libraries(test_vrmhd_energy PRIVATE kin6d_mhd)
+add_test(NAME vrmhd_section_energy COMMAND test_vrmhd_energy)
+set_tests_properties(vrmhd_section_energy PROPERTIES LABELS rm2
+    TIMEOUT 60 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 foreach(gate geometry derivatives volume closure)
     add_test(NAME vrmhd_section_${gate} COMMAND test_vrmhd_section ${gate})
     set_tests_properties(vrmhd_section_${gate} PROPERTIES LABELS rm2
