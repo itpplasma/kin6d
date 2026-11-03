@@ -33,6 +33,13 @@ module vrmhd_structural_spectrum
             complex(dp), intent(out) :: work(*)
             integer, intent(out) :: info
         end subroutine
+        subroutine zpotrf(uplo, n, a, lda, info)
+            import dp
+            character, intent(in) :: uplo
+            integer, intent(in) :: n, lda
+            complex(dp), intent(inout) :: a(lda, *)
+            integer, intent(out) :: info
+        end subroutine
         subroutine zgeev(jobvl, jobvr, n, a, lda, w, vl, ldvl, vr, ldvr, &
                 work, lwork, rwork, info)
             import dp
@@ -65,6 +72,7 @@ contains
         complex(dp), allocatable :: h(:, :), modes(:, :), work(:), a(:, :), values(:)
         complex(dp), allocatable :: curls(:, :), weighted(:, :), full(:), image(:)
         complex(dp), allocatable :: kd(:, :), fd(:, :), l(:, :), lift(:, :)
+        complex(dp), allocatable :: scalar_gram(:, :), scalar_weighted(:, :)
         complex(dp) :: dummy(1, 1), dummy_right(1, 1)
         real(dp), allocatable :: energies(:), omega(:), rw(:)
         real(dp) :: pressure(3), skew, floor, f_norm, defect, maximum_defect
@@ -80,14 +88,25 @@ contains
         call evolution(stiffness, mass, ns, na, p%mu0, f, l, lift, &
             condition, coupling_defect)
         e = 0
-        e(ns+1:4*ns,ns+1:4*ns) = mass(ns+1:4*ns,ns+1:4*ns)
+        allocate(scalar_weighted(op%scalar_fs%n0,ns))
+        do j = 1, ns
+            full = transform(:op%scalar_fs%n0,j)
+            scalar_weighted(:,j) = cmplx( &
+                csc_matvec(op%scalar_fs%mass(0),real(full,dp)), &
+                csc_matvec(op%scalar_fs%mass(0),aimag(full)),dp)
+        end do
+        scalar_gram = matmul(transpose(conjg(transform(:op%scalar_fs%n0,:ns))), &
+            scalar_weighted)
+        do i = 1, 3
+            e(i*ns+1:(i+1)*ns,i*ns+1:(i+1)*ns) = scalar_gram
+        end do
         ! Independent quadratic wave energy: |v|^2 + |curl A|^2/mu0 + p'^2/(gamma p0).
         pressure = [0.6_dp, 1.0_dp, 1.0_dp]
         offsets = [0, 4*ns, 5*ns]
         do i = 1, 3
             do j = 1, 3
                 e(offsets(i)+1:offsets(i)+ns,offsets(j)+1:offsets(j)+ns) = &
-                    pressure(i)*pressure(j)*mass(:ns,:ns)
+                    pressure(i)*pressure(j)*scalar_gram
             end do
         end do
         a0 = 6*op%scalar_fs%n0; j0 = a0 + op%fs%sp(1)%ndof
@@ -105,11 +124,11 @@ contains
         skew = sqrt(sum(abs(ef+transpose(conjg(ef)))**2)/sum(abs(ef)**2))
         skew_bound = 100*epsilon(1.0_dp)*condition
         print '(a,es20.12)', 'physical time mass M_r 1-norm condition estimate: ', condition
-        print '(a,es20.12)', 'backward-error skew bound 100 epsilon kappa_1(M_r): ', skew_bound
+        print '(a,es20.12)', 'diagnostic 100 epsilon kappa_1(M_r): ', skew_bound
         print '(a,es20.12)', '||E F + (E F)^*||_F / ||E F||_F: ', skew
         print '(a,es20.12)', 'inverse-free ||L_vJ + L_Av^*||_F / ||L_vJ||_F: ', coupling_defect
-        call check(skew <= skew_bound, 'ideal energy skew-adjointness exceeds backward-error bound')
-        call check(coupling_defect <= 1.0e-14_dp, 'inverse-free Lorentz/induction negative adjoints')
+        call inverse_free_structure(l,mass(:d,:d),e,scalar_gram,ns,na, &
+            coupling_defect)
         q = e
         call zheev('V','U',d,q,d,energies,work,size(work),rw,info)
         call check(info == 0, 'quadratic wave energy eigendecomposition')
@@ -202,6 +221,99 @@ contains
                 /sqrt(sum(abs(l)**2)*sum(abs(full)**2))
         end function
     end subroutine
+
+    subroutine inverse_free_structure(l, mr, e, scalar_gram, ns, na, coupling_defect)
+        complex(dp), intent(in) :: l(:, :), mr(:, :), e(:, :), scalar_gram(:, :)
+        integer, intent(in) :: ns, na
+        real(dp), intent(in) :: coupling_defect
+        complex(dp) :: compression(ns,3*ns), expected(size(mr,1),size(mr,2))
+        complex(dp) :: remaining(size(l,1),size(l,2))
+        complex(dp) :: factor(size(mr,1),size(mr,2))
+        real(dp), parameter :: pressure(3) = [0.6_dp,1.0_dp,1.0_dp]
+        real(dp) :: defect
+        integer :: d, i, j, offset(3), info
+        d = 6*ns+na; offset = [0,4*ns,5*ns]
+        call check(coupling_defect <= 1.0e-14_dp, &
+            'inverse-free Lorentz/induction negative adjoints')
+        ! Total internal energy gives p_dot without inverting a spatial mass.
+        compression = (2.0_dp/3)*(l(4*ns+1:5*ns,ns+1:4*ns) &
+            + l(5*ns+1:6*ns,ns+1:4*ns))
+        do i = 1, 3
+            defect = relative_norm(l(ns+1:4*ns,offset(i)+1:offset(i)+ns) &
+                + pressure(i)*transpose(conjg(compression)), &
+                l(ns+1:4*ns,offset(i)+1:offset(i)+ns))
+            print '(a,i2,es20.12)', 'pressure/compression adjoint defect, field ', i, defect
+            call check(defect <= 1.0e-14_dp, &
+                'inverse-free pressure/compression negative adjoints')
+        end do
+        do i = 2, 3
+            defect = relative_norm(l(offset(i)+1:offset(i)+ns,ns+1:4*ns) &
+                - 0.75_dp*l(:ns,ns+1:4*ns), l(offset(i)+1:offset(i)+ns,ns+1:4*ns))
+            print '(a,i2,es20.12)', 'species advection/compression consistency, field ', i, defect
+            call check(defect <= 1.0e-14_dp, 'species compression agrees with continuity')
+        end do
+        defect = relative_norm(compression-l(:ns,ns+1:4*ns),compression)
+        print '(a,es20.12)', 'density advection / pressure compression defect: ', defect
+        call check(defect <= 1.0e-14_dp, 'continuity and pressure compression agree')
+        remaining = l
+        remaining(:ns,ns+1:4*ns) = 0
+        remaining(ns+1:4*ns,:ns) = 0
+        remaining(ns+1:4*ns,4*ns+1:6*ns) = 0
+        remaining(ns+1:4*ns,d+1:) = 0
+        remaining(4*ns+1:6*ns,ns+1:4*ns) = 0
+        remaining(6*ns+1:d,ns+1:4*ns) = 0
+        remaining(d+1:,6*ns+1:) = 0
+        defect = relative_norm(remaining,l(ns+1:4*ns,d+1:))
+        print '(a,es20.12)', 'remaining uniform-state ideal blocks / Lorentz norm: ', defect
+        call check(defect <= 1.0e-14_dp, 'no unpaired uniform-state ideal blocks')
+
+        defect = relative_norm(e(6*ns+1:,6*ns+1:)-l(d+1:,6*ns+1:d), &
+            l(d+1:,6*ns+1:d))
+        print '(a,es20.12)', 'magnetic energy / Ampere curl-curl Gram defect: ', defect
+        call check(defect <= 1.0e-14_dp, 'magnetic energy equals Ampere curl-curl stiffness')
+        expected = 0
+        expected(:ns,:ns) = scalar_gram
+        do i = 1, 3
+            expected(i*ns+1:(i+1)*ns,i*ns+1:(i+1)*ns) = &
+                e(i*ns+1:(i+1)*ns,i*ns+1:(i+1)*ns)
+        end do
+        ! Primitive temperature rates include the equilibrium density-rate term.
+        do i = 2, 3
+            expected(offset(i)+1:offset(i)+ns,:ns) = 0.45_dp*scalar_gram
+            expected(offset(i)+1:offset(i)+ns,offset(i)+1:offset(i)+ns) = &
+                1.5_dp*scalar_gram
+        end do
+        expected(6*ns+1:,6*ns+1:) = -l(d+1:,d+1:)
+        defect = relative_norm(mr-expected,expected)
+        print '(a,es20.12)', 'kinetic / thermal / induction time-mass Gram defect: ', defect
+        call check(defect <= 1.0e-14_dp, 'time masses equal independent finite-element Grams')
+        do i = 1, 3
+            do j = 1, 3
+                defect = relative_norm(e(offset(i)+1:offset(i)+ns,offset(j)+1:offset(j)+ns) &
+                    - pressure(i)*pressure(j)*mr(:ns,:ns), &
+                    e(offset(i)+1:offset(i)+ns,offset(j)+1:offset(j)+ns))
+                print '(a,2i2,es20.12)', 'thermal pressure-energy / scalar mass defect: ', i,j,defect
+                call check(defect <= 1.0e-14_dp, 'pressure energy uses the scalar mass Gram')
+            end do
+        end do
+        defect = relative_norm(e-transpose(conjg(e)),e)
+        print '(a,es20.12)', 'energy Gram Hermitian defect: ', defect
+        call check(defect <= 1.0e-14_dp, 'energy Gram is Hermitian')
+        defect = relative_norm(mr-transpose(conjg(mr)),mr)
+        print '(a,es20.12)', 'physical time mass M_r Hermitian defect: ', defect
+        call check(defect <= 1.0e-14_dp, 'physical time mass M_r is Hermitian')
+        factor = mr
+        call zpotrf('U',d,factor,d,info)
+        call check(info == 0, 'physical time mass M_r is positive definite')
+        factor = e
+        call zpotrf('U',d,factor,d,info)
+        call check(info == 0, 'energy Gram E is positive definite')
+    end subroutine
+
+    real(dp) function relative_norm(difference, reference) result(value)
+        complex(dp), intent(in) :: difference(:, :), reference(:, :)
+        value = sqrt(sum(abs(difference)**2)/sum(abs(reference)**2))
+    end function
 
     subroutine evolution(stiffness, mass, ns, na, mu0, f, l, lift, condition, coupling_defect)
         complex(dp), intent(in) :: stiffness(:, :), mass(:, :)

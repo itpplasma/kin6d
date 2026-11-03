@@ -202,7 +202,7 @@ closedness for screw symmetry.
 
 The equal-degree default passes the energy ledger and the earlier RM2 gates
 described below at degree one. The spectral gate remains incomplete: its
-first failure is the conditioning-scaled skew check at 16 cells per period
+first failure is the reduced time-mass symmetry check at four cells per period
 on the structured degree-one mesh, as detailed below.
 
 The `rm2` tests compare the complete assembled volume residual, including mass,
@@ -279,28 +279,64 @@ p' = 0.6 rho' + Te' + Ti',  rho0=1, gamma p0=1.
 Primes denote perturbations; density is in kg/m^3, pressure in Pa,
 temperatures in joules, and `mi=1 kg` in the reference normalization.
 The Hermitian Gram matrix `E` represents `2 Q` in the balanced coefficients.
-The first gate requires the Frobenius-norm ratio
-`||E F + (E F)^*||_F / ||E F||_F <= 100 epsilon kappa_1(M_r)`, where
-`*` is conjugate transpose and `epsilon` is double-precision machine epsilon.
-`kappa_1(M_r)` is the LAPACK `zgecon` 1-norm condition estimate from the same
-LU factor used to solve for `F`; the matrix norm is taken before factorization.
-The reduced time-mass solve can amplify roundoff when forming `F`, so the bound
-scales with its estimated condition number rather than a fixed threshold.
-The separate inverse-free coupling check tests the exact Lorentz/induction
-cancellation before either mass inverse is applied.
-It requires `||L_vJ + L_Av^*||_F / ||L_vJ||_F <= 1e-14` on every mesh:
-`L_vJ` is the assembled momentum/current block and `L_Av` the assembled
-induction/velocity block in the balanced `L`. Magnetic energy tests induction
-with current, so these are the negative-adjoint blocks in the energy pairing,
-before current elimination. Both checks must pass; the condition estimate,
-bound, skew defect and inverse-free defect are reported for every tested mesh.
-Equivalently one may use transpose in the real sine/cosine representation.
-The energy is nonnegative; its energy-free entropy and gauge kernel must be
-static. On the positive-energy quotient, skew-adjointness gives real angular
-frequencies. A Hermitian eigensolve on that quotient uses the roundoff
-Hermitian representative only after the unsymmetrized defect passes.
-`max |Im(omega^2)| / max |omega^2|` from the nonsymmetric solve is diagnostic,
-not an admission gate.
+The first gate checks inverse-free block identities at relative Frobenius-norm
+tolerance `1e-14` on every mesh. Here `*` means conjugate transpose; transpose
+is equivalent in real sine/cosine coordinates. In the balanced `L`, the
+nonzero ideal dynamical couplings are continuity/velocity `L_rho,v`,
+momentum/density and temperatures `L_v,rho`, `L_v,Te`, `L_v,Ti`,
+each temperature/velocity `L_Te,v`, `L_Ti,v`, Lorentz `L_vJ` and induction
+`L_Av`. The algebraic Ampere row contains `L_JA` and `L_JJ`. The background
+velocity and current vanish, so momentum advection and magnetic self-couplings
+vanish; the test checks that no remaining block is unpaired.
+
+1. Lorentz and induction require
+   `||L_vJ + L_Av^*||_F / ||L_vJ||_F <= 1e-14`.
+   Magnetic energy tests induction with current, before eliminating current.
+   For pressure/compression define `C_v=(2/3)(L_Te,v+L_Ti,v)`:
+   adding the two internal-energy equations gives the pressure rate directly,
+   without a spatial mass inverse. Each scalar field `f=(rho,Te,Ti)` requires
+   `L_v,f + beta_f C_v^*=0`, with `beta=(0.6,1,1)`, at the same relative
+   tolerance. The separate species advection/compression blocks must each
+   equal `0.75 L_rho,v`, and `C_v=L_rho,v` in this normalization.
+2. The independently assembled energy Grams must agree with the production
+   masses and Ampere stiffness. The scalar Gram `S` comes from the finite-element
+   L2 mass, independently of the production time-mass leaves. The kinetic
+   blocks equal `S`; pressure energy is `beta beta^T` times `S`.
+   The primitive species mass diagonal is `1.5 S`, with density-rate block
+   `0.45 S`. Induction time mass equals the Ampere current mass `-L_JJ`,
+   and magnetic energy equals the Ampere curl-curl stiffness `L_JA`.
+   These comparisons use relative tolerance `1e-14`.
+3. The requested symmetry/positivity gate tests the existing `E` and `M_r`
+   for Hermitian symmetry at relative tolerance `1e-14`, then requires their
+   full Cholesky factorizations to succeed. It currently fails: the primitive
+   `M_r` is not Hermitian, and full `E` has the entropy/gauge kernel described
+   below. Neither matrix is silently replaced by a different Riesz map.
+
+The intended argument, on a positive-energy quotient with consistent physical
+mass pairings, is:
+
+```
+Inverse-free adjoint pairs and matching Grams give E_q F_q + F_q^* E_q = 0.
+Thus F_q is skew-adjoint in the positive energy product x^* E_q y.
+Hence i F_q has real angular frequencies (E_q^(1/2) i F_q E_q^(-1/2) is Hermitian).
+```
+
+Here `F_q` and `E_q` are the induced evolution generator and energy Gram after
+quotienting static energy-free directions. This conditional argument does not
+make the full primitive time mass symmetric or full energy positive definite.
+The gate's matrix definitions need a further decision before it can pass.
+
+The formed-product defect `||E F + (E F)^*||_F / ||E F||_F` and
+`100 epsilon kappa_1(M_r)` are diagnostics only. Machine epsilon `epsilon`
+refers to double precision; `kappa_1` is LAPACK's `zgecon` 1-norm condition
+estimate from the LU factor used for `F`. Forward products involving
+curl-curl entries growing as inverse cell width squared can amplify cancellation
+roundoff even when this mass condition estimate remains bounded.
+The energy is nonnegative, with two entropy fields and one gauge field in its
+energy-free kernel; each must be static. After the structural gate passes,
+a Hermitian eigensolve uses the roundoff Hermitian representative on the
+positive-energy quotient. The nonsymmetric solve's
+`max |Im(omega^2)| / max |omega^2|` remains diagnostic.
 
 The second gate requires the computed signed nonzero count below the unchanged
 cutoff `sqrt(1.8) rad/s` to equal the folded oracle count on every mesh.
@@ -340,17 +376,20 @@ Alfven/slow-oracle separation. The number of signed waves below the cutoff
 is correct, but only four of six have an isolated oracle match. This is a
 coarse-mesh dispersion observation, not evidence by itself of growth or a
 spurious branch; isolation is required only on the resolved meshes.
-The structured degree-one cases at 4 and 8 cells pass both structural checks,
-folded counts, staticity, the static count per cell and the dissipative checks.
-At 16 cells the skew ratio is `2.844028547585e-13`, exceeding the scaled bound
-`1.210284898763e-13` with `kappa_1(M_r)=5.450638619082`; the inverse-free
-defect is `4.069332065633e-15` and passes. Current elimination solves its
-mass matrix against the curl-curl block, rather than inverting curl-curl.
-Independent explicit-inverse 1-norm conditions are approximately `5.45064`
-for `M_r` and `2.92459` for the current mass, so ill-conditioning of these
-inverse factors does not explain the observed refinement growth.
-Execution stops there, before the finest-pair order check. The finest mesh,
-degree two and the perturbed ladder remain unqualified under this gate.
+The first case, structured degree one at four cells per period, passes the
+inverse-free coupling, pressure/compression and Gram-consistency checks.
+It fails the requested reduced time-mass symmetry gate, with
+`||M_r-M_r^*||_F/||M_r||_F = 0.2481401744582`.
+This is an exact structural obstruction in primitive variables: the generated
+species mass is `3/2 (rho Ts_dot + Ts rho_dot)/mi`, so at this equilibrium
+`M_Ts,rho=0.45 S` while `M_rho,Ts=0`. Full energy also has exact nulls:
+`0.6 rho'+Te'+Ti'=0` gives two entropy directions per scalar coefficient,
+and curl-free potentials give the gauge directions. Full positive definiteness
+cannot hold. Execution stops at mass symmetry before either Cholesky check;
+no spectral ladder, folded-count, static-null or order qualification is claimed
+under this gate. A gate stated for physical block masses and the positive-energy
+quotient could avoid these obstructions, but that would change the current
+matrix-level requirement and is not implemented.
 No full-system inf-sup bound or continuous spectral non-pollution result is
 claimed. The independent folding test uses analytic frequencies at
 `(1,0,0)`, `(-1,0,0)`, `(1,-2,0)` and `(-1,-2,0) m^-1`.
