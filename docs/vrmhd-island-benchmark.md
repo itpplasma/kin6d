@@ -101,7 +101,11 @@ The default `supernodal` and the `scalar` control select the
 is only a right preconditioner: Newton and Krylov iterations still use the
 full nonlinear residual and tangent. A nonlinear retry or an internal
 subdivision fails this constant-step probe rather than admitting a trajectory
-on a different time grid. Output also gives iteration counts and the last
+on a different time grid. The `vrmhd_island_decimal_steps` regression checks
+eight steps of length `0.1`, including decimal endpoints that previously
+caused the BDF driver to add a microscopic internal step. It checks time-grid
+continuation, without admitting the coarse spatial mesh for island rates.
+Output also gives iteration counts and the last
 factor's family, fallback status, retained owned array storage, and available
 pivot and last-solve backward-error statistics. Retained array storage excludes
 process memory and the peak workspace of sparse graph ordering.

@@ -986,3 +986,5 @@ kin6d_test_labels(vrmhd_island_regeneration fast CLASSES mhd
 
 kin6d_test_labels(vrmhd_island_preconditioner fast CLASSES mhd
     TARGETS test_vrmhd_island)
+kin6d_test_labels(vrmhd_island_decimal_steps fast CLASSES mhd
+    TARGETS test_vrmhd_island)
