@@ -23,7 +23,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
 # Dependency pins: one source used by FetchContent and by result provenance.
 set(KIN6D_FORTPLOT_REVISION "759957d2b196fc7382ea1c370958f7adaa2fc753")
-set(KIN6D_FORTNUM_REVISION "8dbbf3a2efbff015cab24786e3024ad996862043")
+set(KIN6D_FORTNUM_REVISION "57e3bb59ba792752108d7cf4270e13b35e75249d")
 set(KIN6D_FORTIO_REVISION 38add03dc691a7cd4715cd3e611ad42422e46091)
 set(FORTPLOT_BUILD_FORTARRAY_ADAPTER OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(fortplot
@@ -149,6 +149,11 @@ set_tests_properties(vrmhd_island_induction_mixed PROPERTIES LABELS rm-b5
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME vrmhd_island_preconditioner COMMAND test_vrmhd_island preconditioner mixed)
 set_tests_properties(vrmhd_island_preconditioner PROPERTIES LABELS rm-b5
+    PROCESSORS 4 TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_island_decimal_steps
+    COMMAND test_vrmhd_island probe mixed 4 4 0.01 0.1 8 0.01)
+set_tests_properties(vrmhd_island_decimal_steps PROPERTIES LABELS rm-b5
     PROCESSORS 4 TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
