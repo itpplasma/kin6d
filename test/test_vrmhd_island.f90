@@ -12,7 +12,9 @@ program test_vrmhd_island
         meridian_point_basis_t, meridian_point_basis_init
     use fortsparse, only: csc_t, csc_from_triplet, csc_transpose, csc_matvec, &
         sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
-        FORTSPARSE_SYM_SPD, fortsparse_status_t, status_ok
+        FORTSPARSE_SYM_SPD, fortsparse_status_t, status_ok, &
+        FORTSPARSE_LU_SCALAR, FORTSPARSE_LU_SUPERNODAL, sparse_factor_stats, &
+        sparse_factor_stats_t
     use fortnum_ode_bdf, only: bdf_options_t, bdf_state_t, bdf_report_t, bdf_init, &
         bdf_integrate_to
     use fortnum_quadrature, only: gauss_legendre_ab
@@ -30,7 +32,7 @@ program test_vrmhd_island
         INTERNAL_RATE = 12, NLEDGER = 12
     integer, allocatable :: kept(:)
     real(dp), parameter :: pi = acos(-1.0_dp), half_width = 1.0_dp
-    character(32) :: gate, family, arg
+    character(32) :: gate, family, arg, preconditioner = 'supernodal'
     integer :: ny = 4, nx = 4, steps = 20
     real(dp) :: eta = 0.01_dp, dt = 0.1_dp, seed_amplitude = 0.01_dp
     integer :: status
@@ -38,8 +40,8 @@ program test_vrmhd_island
     call get_command_argument(2, family)
     if (family == '') family = 'mixed'
     call require(family == 'equal' .or. family == 'mixed', 'equal or mixed family')
-    call require(any(command_argument_count() == [1, 2, 4, 7, 8]), &
-        'arguments: MODE FAMILY [NY NX [ETA DT STEPS [EPSILON]]]')
+    call require(any(command_argument_count() == [1, 2, 4, 7, 8, 9]), &
+        'arguments: MODE FAMILY [NY NX [ETA DT STEPS [EPSILON [scalar|supernodal]]]]')
     if (command_argument_count() >= 3) then
         call get_command_argument(3, arg); read(arg, *) ny
         call get_command_argument(4, arg); read(arg, *) nx
@@ -52,6 +54,10 @@ program test_vrmhd_island
     if (command_argument_count() >= 8) then
         call get_command_argument(8, arg); read(arg, *) seed_amplitude
     end if
+    if (command_argument_count() == 9) &
+        call get_command_argument(9, preconditioner)
+    call require(preconditioner == 'scalar' .or. preconditioner == 'supernodal', &
+        'known direct right preconditioner')
     call require(eta > 0 .and. dt > 0 .and. steps > 0, 'positive run parameters')
     call require(seed_amplitude > 0 .and. seed_amplitude < 0.5_dp, &
         'positive seed with separatrix inside the walls')
@@ -72,6 +78,8 @@ program test_vrmhd_island
     case ('ledger')
         call ledger_oracle()
         call evolve_seed()
+    case ('preconditioner')
+        call preconditioner_gate()
     case ('probe', 'induction')
         call evolve_seed()
     case default
@@ -309,6 +317,8 @@ contains
         real(dp), allocatable :: normal(:)
         type(csc_t) :: restriction
         type(fortsparse_status_t) :: sparse_status
+        type(sparse_factor_stats_t) :: factor_stats
+        integer :: newton, krylov, accepted, rejected
         real(dp) :: az, bx, by, jz, rate, expected, width, delta, relative
         real(dp) :: totals(NLEDGER), initial(NLEDGER), previous(NLEDGER)
         real(dp) :: wall_integral, mechanical_integral, mechanical_power, old_power
@@ -339,6 +349,8 @@ contains
         y = rhs/normal
         call vrmhd_evolve_build(problem, slab%op, p, source, lift, reduction, status)
         call require(status == 0, 'island evolution build')
+        if (preconditioner == 'scalar') &
+            problem%solver%options%lu_method = FORTSPARSE_LU_SCALAR
         problem%lag = 8
         problem%shift_tolerance = 0.5_dp
         call vrmhd_evolve_consistent(problem, 0.0_dp, y, derivative, status)
@@ -372,6 +384,7 @@ contains
         print '(a,es14.5)', 'outer tearing index [1]: ', delta
         print '(a,es14.5)', 'Rutherford slope, not an admitted gate [1]: ', &
             1.22_dp*eta*delta
+        newton = 0; krylov = 0; accepted = 0; rejected = 0
         wall_integral = 0; mechanical_integral = 0
         previous = initial
         print '(a)', 'step,time,full_cut_width,flux_ox,max_velocity,mass,'// &
@@ -382,6 +395,15 @@ contains
                 call bdf_integrate_to(problem, state, step*dt, options, report, st)
                 if (st%code /= FORTNUM_OK) print *, report
                 call require(st%code == FORTNUM_OK, 'island BDF step')
+                newton = newton + report%newton_iterations
+                krylov = krylov + report%krylov_iterations
+                accepted = accepted + report%accepted
+                rejected = rejected + report%rejected_newton
+                if (report%accepted /= 1 .or. report%rejected_newton /= 0) &
+                    print '(a,2i9)', 'accepted steps, nonlinear retries: ', &
+                    report%accepted, report%rejected_newton
+                call require(report%accepted == 1 .and. report%rejected_newton == 0, &
+                    'fixed time grid without nonlinear retries')
             end if
             call vrmhd_evolve_expand(problem, state%y, u)
             width = symmetric_width()
@@ -409,6 +431,61 @@ contains
                 - mechanical_integral
             flush(6)
         end do
+        print '(a,3i9)', 'Newton, Krylov, factor setups: ', &
+            newton, krylov, problem%factorizations
+        print '(a,2i9)', 'accepted steps, nonlinear retries: ', accepted, rejected
+        call sparse_factor_stats(problem%solver, factor_stats, sparse_status)
+        call require(status_ok(sparse_status), 'direct factor statistics')
+        print '(a,a,a,l1,1x,a)', 'last factor: ', trim(factor_stats%native_factor_family), &
+            ', fallback ', factor_stats%lu_fallback, trim(factor_stats%lu_fallback_reason)
+        print '(a,2i14)', 'last factor entries, retained owned bytes: ', &
+            factor_stats%factor_nnz, factor_stats%host_current_bytes
+        if (factor_stats%backward_error >= 0) &
+            print '(a,es17.9)', 'last solve backward error: ', &
+            factor_stats%backward_error
+        if (factor_stats%perturbed_pivots >= 0) &
+            print '(a,i9)', 'last factor perturbed pivots: ', factor_stats%perturbed_pivots
+        if (gate == 'preconditioner' .and. preconditioner == 'supernodal') &
+            call require(factor_stats%lu_method_used == FORTSPARSE_LU_SUPERNODAL, &
+            'exercise supernodal factor rather than scalar fallback')
+    end subroutine
+
+    subroutine preconditioner_gate()
+        real(dp), allocatable :: reference(:), basis(:, :)
+        real(dp) :: point(2), weight, difference(36), perturbation(36)
+        real(dp) :: error, scale, reference_width, reference_flux
+        integer :: t, q
+        dt = 0.125_dp; steps = 4
+        preconditioner = 'scalar'
+        call evolve_seed()
+        reference = u
+        reference_width = symmetric_width()
+        reference_flux = flux([half_width, 0.0_dp]) - flux([half_width, pi])
+        preconditioner = 'supernodal'
+        call evolve_seed()
+        allocate (basis(36, slab%op%nlocal))
+        error = 0; scale = 0
+        do t = 1, slab%op%fs%mm%topology%n_triangles
+            do q = 1, slab%op%fs%nq
+                call vrmhd_section_basis(slab%op, t, q, point, weight, basis, status)
+                call require(status == 0, 'preconditioner physical norm')
+                difference = matmul(basis, u(slab%op%map(:, t)) &
+                    - reference(slab%op%map(:, t)))
+                perturbation = matmul(basis, reference(slab%op%map(:, t)) &
+                    - lift(slab%op%map(:, t)))
+                error = error + weight*(sum(difference(:12)**2) &
+                    + sum(difference(25:27)**2))
+                scale = scale + weight*(sum(perturbation(:12)**2) &
+                    + sum(perturbation(25:27)**2))
+            end do
+        end do
+        call require(scale > 0, 'nontrivial reference perturbation')
+        print '(a,es17.9)', 'relative physical state difference: ', sqrt(error/scale)
+        call require(sqrt(error/scale) < 1.0e-6_dp, 'full nonlinear physical state')
+        call require(abs(symmetric_width()/reference_width - 1) < 1.0e-7_dp, &
+            'preconditioner-independent full cut width')
+        call require(abs((flux([half_width, 0.0_dp]) - flux([half_width, pi])) &
+            /reference_flux - 1) < 1.0e-6_dp, 'preconditioner-independent island flux')
     end subroutine
 
     subroutine measure(field, derivative, totals)

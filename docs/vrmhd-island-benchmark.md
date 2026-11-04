@@ -89,19 +89,42 @@ Build `test_vrmhd_island` and `gen_vrmhd_island`, then run
 The existing periodic BDF2 checks remain separate regression tests.
 
 The executable also accepts
-`probe FAMILY NY NX ETA DT STEPS [EPSILON]`, where `FAMILY` is `equal` or
-`mixed`, `NY,NX` are cell counts, `DT` the constant time step, and `STEPS` the
+`probe FAMILY NY NX ETA DT STEPS [EPSILON [scalar|supernodal]]`, where
+`FAMILY` is `equal` or `mixed`, `NY,NX` are cell counts, `DT` the constant time step, and `STEPS` the
 number of steps. The default amplitude is 0.01. The viscosity coefficient is
 set equal to `ETA`; because density varies, the kinematic viscosity and
 magnetic Prandtl number vary across the slab. Output gives the cut width,
 critical-point flux difference and maximum velocity coefficient at every step,
 followed by the physical mass and energy balances described below.
-The existing lagged sparse factor is only a right preconditioner: Newton and
-Krylov iterations still use the full nonlinear residual and tangent.
+The default `supernodal` and the `scalar` control select the
+[native direct factors](vrmhd-section.md#time-evolution). The lagged factor
+is only a right preconditioner: Newton and Krylov iterations still use the
+full nonlinear residual and tangent. A nonlinear retry or an internal
+subdivision fails this constant-step probe rather than admitting a trajectory
+on a different time grid. Output also gives iteration counts and the last
+factor's family, fallback status, retained owned array storage, and available
+pivot and last-solve backward-error statistics. Retained array storage excludes
+process memory and the peak workspace of sparse graph ordering.
 
 These trajectories are candidates until spatial and temporal refinement,
 critical-point checks, physical ledgers and the required regime checks admit
 a rate comparison. No Rutherford agreement is claimed by the setup checks.
+
+The [direct-factor comparison](data/vrmhd-island-preconditioner.csv) uses
+the mixed family with four periodic and eight radial cells, `eta=0.001`,
+`epsilon=0.005625`, `DT=0.25` and twenty steps. Both factors accept exactly
+the requested time grid. The full cut widths differ by at most `1.3e-14`
+relative and the flux differences by `5.5e-15`; a separate physical
+quadrature norm checks all state fields against the scalar trajectory.
+With GNU Fortran 16.2, Release optimization and OpenBLAS, two executions
+take 84.7–86.9 s with the scalar factor and 58.8–58.9 s with the supernodal
+factor. Both use `OMP_NUM_THREADS=4`; this OpenMP OpenBLAS build also reports
+four threads despite `OPENBLAS_NUM_THREADS=1`. These are whole-run timings
+under that configuration, not an isolated factor-kernel scaling result.
+The [timing data](data/vrmhd-island-preconditioner-time.csv) and
+[plot source](plot_vrmhd_island_preconditioner.py) retain the comparison.
+The unchanged energy, decay, wave and steady-state gates check independent
+analytical references; these timing trajectories do not admit island rates.
 
 ## Physical balances of candidate trajectories
 
