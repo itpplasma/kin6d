@@ -17,9 +17,29 @@ module island_a_fixture
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout
     implicit none
     private
-    public :: island_a_setup, shell_source
+    public :: island_a_setup, shell_source, island_a_sample_points
     real(dp), parameter :: s0 = 3.0e6_dp
 contains
+    function island_a_sample_points() result(xyz)
+        real(dp), allocatable :: xyz(:, :)
+        real(dp), parameter :: us(4) = [0.45_dp, 0.52_dp, 0.62_dp, 0.9_dp]
+        real(dp), parameter :: phis(3) = [0.0_dp, 0.7_dp, 2.1_dp]
+        real(dp), parameter :: ths(2) = [0.4_dp, 3.0_dp]
+        real(dp) :: rr, zz
+        integer :: i, j, l, m
+        allocate (xyz(3, size(us)*size(phis)*size(ths)))
+        m = 0
+        do i = 1, size(us)
+            do j = 1, size(ths)
+                do l = 1, size(phis)
+                    m = m + 1
+                    rr = r0 + us(i)*cos(ths(j)); zz = us(i)*sin(ths(j))
+                    xyz(:, m) = [rr*cos(phis(l)), rr*sin(phis(l)), zz]
+                end do
+            end do
+        end do
+    end function
+
     function shell_source(x) result(s)
         real(dp), intent(in) :: x(2)
         real(dp) :: s, u

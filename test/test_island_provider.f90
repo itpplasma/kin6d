@@ -8,7 +8,7 @@ program test_island_provider
     !     has no n >= 1 response; mode-0 deviation O(epsilon^2) and the
     !     n >= 1 response O(epsilon); parallel defect falls with the ratio.
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use island_a_fixture, only: island_a_setup, shell_source
+    use island_a_fixture, only: island_a_setup, shell_source, island_a_sample_points
     use nn_vacuum_fixture, only: field, r0
     use kin6d_nonnested_coupled, only: nc_problem_t, nc_layout_t, nc_layout
     use kin6d_island_provider, only: island_provider_t, island_provider_init, &
@@ -28,43 +28,54 @@ program test_island_provider
         call tangent_case()
     case ('nested')
         call nested_case()
+    case ('vacuum')
+        call vacuum_case()
     case default
         error stop 'mode'
     end select
 contains
-    function sample_points() result(xyz)
-        real(dp), allocatable :: xyz(:, :)
-        real(dp), parameter :: us(4) = [0.45_dp, 0.52_dp, 0.62_dp, 0.9_dp]
-        real(dp), parameter :: phis(3) = [0.0_dp, 0.7_dp, 2.1_dp]
-        real(dp), parameter :: ths(2) = [0.4_dp, 3.0_dp]
-        real(dp) :: rr, zz
-        integer :: i, j, l, m
-        allocate (xyz(3, size(us)*size(phis)*size(ths)))
-        m = 0
-        do i = 1, size(us)
-            do j = 1, size(ths)
-                do l = 1, size(phis)
-                    m = m + 1
-                    rr = r0 + us(i)*cos(ths(j)); zz = us(i)*sin(ths(j))
-                    xyz(:, m) = [rr*cos(phis(l)), rr*sin(phis(l)), zz]
-                end do
-            end do
-        end do
-    end function
-
-    subroutine make(prov, eps, ratio, modes)
+    subroutine make(prov, eps, ratio, modes, source_scale, drive)
         type(island_provider_t), intent(inout) :: prov
         real(dp), intent(in) :: eps, ratio
         integer, intent(in) :: modes
+        real(dp), intent(in), optional :: source_scale
+        character(*), intent(in), optional :: drive
         type(nc_problem_t) :: problem
         real(dp), allocatable :: base(:), pert(:)
+        real(dp) :: sigma
         integer :: st
         call island_a_setup(nr, k, modes, base, pert, problem)
+        sigma = 1
+        if (present(source_scale)) sigma = source_scale
+        if (present(drive)) problem%closure%drive = drive
         call island_provider_init(prov, field, problem, base, pert, shell_source, &
-            [1.0_dp, eps, 0.0_dp, ratio], 0.9_dp, 1.0e5_dp, 'helical-coil-annulus', st)
+            [sigma, eps, 0.0_dp, ratio], 0.9_dp, 1.0e5_dp, 'helical-coil-annulus', st)
         if (st /= IP_OK) error stop 'init'
         call island_provider_solve(prov, prov%theta, st)
         if (st /= IP_OK) error stop 'solve'
+    end subroutine
+
+    subroutine vacuum_case()
+        type(island_provider_t) :: prov
+        type(nc_layout_t) :: lay
+        real(dp), parameter :: eps(4) = [0.0_dp, 1.0e-4_dp, -1.0e-4_dp, 0.5_dp]
+        character(5), parameter :: drives(2) = ['I_phi', 'V    ']
+        integer :: i, j, st
+        do j = 1, size(drives)
+            do i = 1, size(eps)
+                call make(prov, eps(i), 100.0_dp, 1, 0.0_dp, trim(drives(j)))
+                call island_provider_solve(prov, prov%theta, st, tol=1.0e-13_dp)
+                if (st /= IP_OK) error stop 'cold vacuum solve'
+                lay = nc_layout(prov%field)
+                if (maxval(abs(prov%x(lay%ip + 1:lay%iv))) > 0) &
+                    error stop 'homogeneous pressure/potential/drive invariant'
+                if (maxval(prov%solve_report%residual) > 1.0e-13_dp) &
+                    error stop 'vacuum residual'
+                print '(a,a,a,es10.2,a,5es10.2)', 'vacuum ', trim(drives(j)), &
+                    ' epsilon ', eps(i), ' residuals ', prov%solve_report%residual
+            end do
+        end do
+        print '(a)', 'PASS: cold vacuum solves preserve homogeneous invariants'
     end subroutine
 
     subroutine tangent_case()
@@ -76,7 +87,7 @@ contains
         real(dp), parameter :: eps0(2) = [0.0_dp, 0.5_dp], ratio = 1.0e2_dp
         real(dp), parameter :: typical(IP_NTHETA) = [1.0_dp, 1.0_dp, 1.0e6_dp, 1.0_dp]
         integer :: e, kk, st, c
-        xyz = sample_points()
+        xyz = island_a_sample_points()
         allocate (jv(4, size(xyz, 2)), fd(4, size(xyz, 2)), vp(4, size(xyz, 2)), &
             vm(4, size(xyz, 2)), w(4, size(xyz, 2)))
         call random_seed(put=[(17 + c, c=1, 64)])
