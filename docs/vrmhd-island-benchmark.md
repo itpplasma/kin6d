@@ -34,8 +34,18 @@ and verify zero tangential wall perturbations through physical point evaluation.
 The thermodynamic polynomial degree is two. The equal family uses velocity
 and second-kind Nedelec magnetic degree two; the mixed family uses velocity
 and magnetic degree three. Both families represent this equilibrium exactly.
-A full mass-matrix residual checks the potential projection. The stationary
+The vector potential uses [FortFEM](https://github.com/lazy-fortran/fortfem)'s
+defining edge/interior moments and nodal
+orbit coefficients, avoiding a mass solve for this exactly represented field.
+A full mass-matrix residual independently checks the interpolant. The stationary
 residual, consistent initial derivative and BDF2 drift are checked separately.
+
+Prescribed radial breakpoints allow concentration near the resonant layer.
+Periodic nodal and edge labels use the logical cell lattice; physical spacing
+does not identify degrees of freedom. The `graded` checks use six asymmetric
+radial cells with breakpoints `0, 0.125, 0.875, 1, 1.0625, 1.5, 2` in the mesh
+coordinate `x+1`. Both degree families must pass the same wall, equilibrium,
+quadratic-width and analytic mass/energy checks as the uniform mesh.
 
 ## Seed, induction and width
 
@@ -89,7 +99,7 @@ Build `test_vrmhd_island` and `gen_vrmhd_island`, then run
 The existing periodic BDF2 checks remain separate regression tests.
 
 The executable also accepts
-`probe FAMILY NY NX ETA DT STEPS [EPSILON [scalar|supernodal]]`, where
+`probe FAMILY NY NX ETA DT STEPS [EPSILON [scalar|supernodal [MESH]]]`, where
 `FAMILY` is `equal` or `mixed`, `NY,NX` are cell counts, `DT` the constant time step, and `STEPS` the
 number of steps. The default amplitude is 0.01. The viscosity coefficient is
 set equal to `ETA`; because density varies, the kinematic viscosity and
@@ -109,6 +119,19 @@ Output also gives iteration counts and the last
 factor's family, fallback status, retained owned array storage, and available
 pivot and last-solve backward-error statistics. Retained array storage excludes
 process memory and the peak workspace of sparse graph ordering.
+
+The optional `MESH` file is a Fortran namelist with `NX+1` finite, strictly
+increasing breakpoints from zero to two, including both endpoints:
+
+```fortran
+&radial_mesh
+ radial_grid = 0, 0.125, 0.875, 1, 1.0625, 1.5, 2
+/
+```
+
+This example requires `NX=6`. The resolved breakpoints are printed with the
+probe. Without a mesh file the radial grid remains uniform. The namelist
+consumer has a separate analytic-width regression.
 
 These trajectories are candidates until spatial and temporal refinement,
 critical-point checks, physical ledgers and the required regime checks admit
