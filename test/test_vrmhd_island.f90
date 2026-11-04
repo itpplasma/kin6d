@@ -1,5 +1,6 @@
 program test_vrmhd_island
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use vrmhd_periodic_slab, only: periodic_slab_t, periodic_slab_build, &
         periodic_scalar
     use vrmhd_island_leaves, only: island_shear_equilibrium, island_seed
@@ -10,9 +11,10 @@ program test_vrmhd_island
         vrmhd_evolve_consistent, vrmhd_evolve_expand
     use fortfem_meridian_feec_n, only: meridian_lagrange_nodes, meridian_load, &
         meridian_point_basis_t, meridian_point_basis_init
+    use fortfem_triangle_vector_interpolation, only: &
+        interpolate_triangle_nedelec_second_kind
     use fortsparse, only: csc_t, csc_from_triplet, csc_transpose, csc_matvec, &
-        sparse_solver_t, sparse_factor, sparse_solve, sparse_destroy, &
-        FORTSPARSE_SYM_SPD, fortsparse_status_t, status_ok, &
+        fortsparse_status_t, status_ok, &
         FORTSPARSE_LU_SCALAR, FORTSPARSE_LU_SUPERNODAL, sparse_factor_stats, &
         sparse_factor_stats_t
     use fortnum_ode_bdf, only: bdf_options_t, bdf_state_t, bdf_report_t, bdf_init, &
@@ -25,6 +27,7 @@ program test_vrmhd_island
     type(vrmhd_parameters_t) :: p
     type(csc_t) :: reduction
     real(dp), allocatable :: lift(:), y(:), u(:), source(:, :, :), current_wall(:)
+    real(dp), allocatable :: radial_grid(:)
     logical, allocatable :: magnetic_wall(:)
     integer, parameter :: MASS = 1, KINETIC = 2, MAGNETIC = 3, INTERNAL = 4, &
         OHMIC = 5, VISCOUS = 6, COMPRESSION = 7, WALL_POWER = 8, &
@@ -33,15 +36,17 @@ program test_vrmhd_island
     integer, allocatable :: kept(:)
     real(dp), parameter :: pi = acos(-1.0_dp), half_width = 1.0_dp
     character(32) :: gate, family, arg, preconditioner = 'supernodal'
+    character(1024) :: mesh_path
     integer :: ny = 4, nx = 4, steps = 20
     real(dp) :: eta = 0.01_dp, dt = 0.1_dp, seed_amplitude = 0.01_dp
-    integer :: status
+    integer :: status, mesh_unit, io_status
+    namelist /radial_mesh/ radial_grid
     call get_command_argument(1, gate)
     call get_command_argument(2, family)
     if (family == '') family = 'mixed'
     call require(family == 'equal' .or. family == 'mixed', 'equal or mixed family')
-    call require(any(command_argument_count() == [1, 2, 4, 7, 8, 9]), &
-        'arguments: MODE FAMILY [NY NX [ETA DT STEPS [EPSILON [scalar|supernodal]]]]')
+    call require(any(command_argument_count() == [1, 2, 4, 7, 8, 9, 10]), &
+        'arguments: MODE FAMILY [NY NX [ETA DT STEPS [EPSILON [scalar|supernodal [MESH]]]]]')
     if (command_argument_count() >= 3) then
         call get_command_argument(3, arg); read(arg, *) ny
         call get_command_argument(4, arg); read(arg, *) nx
@@ -54,16 +59,35 @@ program test_vrmhd_island
     if (command_argument_count() >= 8) then
         call get_command_argument(8, arg); read(arg, *) seed_amplitude
     end if
-    if (command_argument_count() == 9) &
+    if (command_argument_count() >= 9) &
         call get_command_argument(9, preconditioner)
+    call require(ny > 0 .and. nx > 0, 'positive mesh cell counts')
+    if (command_argument_count() == 10) then
+        call get_command_argument(10, mesh_path)
+        allocate (radial_grid(nx + 1)); radial_grid = -1
+        open (newunit=mesh_unit, file=trim(mesh_path), status='old', iostat=io_status)
+        call require(io_status == 0, 'open radial mesh namelist')
+        read (mesh_unit, nml=radial_mesh, iostat=io_status)
+        close (mesh_unit)
+        call require(io_status == 0, 'read radial mesh namelist')
+    end if
+    if (gate == 'graded') then
+        call require(command_argument_count() <= 2, 'graded fixture takes only the family')
+        nx = 6
+        radial_grid = [0.0_dp, 0.125_dp, 0.875_dp, 1.0_dp, 1.0625_dp, 1.5_dp, 2.0_dp]
+        call invalid_grid_gate()
+    end if
     call require(preconditioner == 'scalar' .or. preconditioner == 'supernodal', &
         'known direct right preconditioner')
     call require(eta > 0 .and. dt > 0 .and. steps > 0, 'positive run parameters')
     call require(seed_amplitude > 0 .and. seed_amplitude < 0.5_dp, &
         'positive seed with separatrix inside the walls')
     call periodic_slab_build(ny, 2, slab, status, radial_cells=nx, &
-        radial_length=2*half_width, radial_walls=.true., mixed=family /= 'equal')
+        radial_length=2*half_width, radial_walls=.true., mixed=family /= 'equal', &
+        radial_grid=radial_grid)
     call require(status == 0, 'wall slab construction')
+    if (allocated(radial_grid)) &
+        print '(a,*(1x,es24.16))', 'radial breakpoints [1]:', slab%radial_nodes
     call wall_reduction()
     call equilibrium()
     call meridian_point_basis_init(slab%op%fs, pb, status)
@@ -80,12 +104,37 @@ program test_vrmhd_island
         call evolve_seed()
     case ('preconditioner')
         call preconditioner_gate()
+    case ('graded')
+        call boundary_gate()
+        call equilibrium_gate()
+        call width_gate()
+        call ledger_oracle()
     case ('probe', 'induction')
         call evolve_seed()
     case default
         error stop 'unknown island gate'
     end select
 contains
+    subroutine invalid_grid_gate()
+        type(periodic_slab_t) :: invalid
+        real(dp) :: nodes(3, 6)
+        integer :: failure, i
+        nodes(:, 1) = [0.0_dp, 1.0_dp, 2.0_dp]
+        call periodic_slab_build(2, 2, invalid, failure, radial_cells=3, &
+            radial_length=2.0_dp, radial_grid=nodes(:, 1))
+        call require(failure /= 0, 'reject radial grid with wrong size')
+        nodes(:, 2) = [0.25_dp, 1.0_dp, 2.0_dp]
+        nodes(:, 3) = [0.0_dp, 1.0_dp, 1.75_dp]
+        nodes(:, 4) = [0.0_dp, 0.0_dp, 2.0_dp]
+        nodes(:, 5) = [0.0_dp, 3.0_dp, 2.0_dp]
+        nodes(:, 6) = [0.0_dp, ieee_value(0.0_dp, ieee_quiet_nan), 2.0_dp]
+        do i = 2, size(nodes, 2)
+            call periodic_slab_build(2, 2, invalid, failure, radial_cells=2, &
+                radial_length=2.0_dp, radial_grid=nodes(:, i))
+            call require(failure /= 0, 'reject invalid radial breakpoints')
+        end do
+    end subroutine
+
     subroutine require(ok, message)
         logical, intent(in) :: ok
         character(*), intent(in) :: message
@@ -169,12 +218,10 @@ contains
     end function
 
     subroutine equilibrium()
-        type(fortsparse_status_t) :: st
-        type(sparse_solver_t) :: solver
         complex(dp), allocatable :: load(:)
-        real(dp), allocatable :: xy(:, :), basis(:, :)
+        real(dp), allocatable :: xy(:, :), basis(:, :), moments(:)
         real(dp) :: rho, ay, az, by, jz, bz, point(2), weight
-        integer :: n0, i, t, q
+        integer :: n0, i, t, q, a0
         n0 = slab%op%scalar_fs%n0
         allocate (lift(slab%op%ndof), u(slab%op%ndof), y(size(kept)), &
             source(6, slab%op%fs%nq, slab%op%fs%mm%topology%n_triangles), &
@@ -189,13 +236,24 @@ contains
         lift(slab%op%offset(5) + 1:slab%op%offset(7)) = 1
         call meridian_load(slab%op%fs, 1, equilibrium_potential, load, status)
         call require(status == 0, 'equilibrium potential load')
-        solver%options%symmetry = FORTSPARSE_SYM_SPD
-        call sparse_factor(solver, slab%op%fs%mass(1), st)
-        call require(status_ok(st), 'equilibrium mass factor')
-        call sparse_solve(solver, real(load, dp), &
-            lift(slab%op%offset(7) + 1:slab%op%offset(8)), st)
-        call sparse_destroy(solver)
-        call require(status_ok(st), 'equilibrium potential projection')
+        a0 = slab%op%offset(7)
+        do t = 1, slab%op%fs%mm%topology%n_triangles
+            call interpolate_triangle_nedelec_second_kind( &
+                slab%op%fs%mm%topology%vertices(:, &
+                slab%op%fs%mm%topology%triangles(:, t)), &
+                slab%op%fs%k, 2*slab%op%fs%k + 2, &
+                equilibrium_section_potential, moments, status)
+            call require(status == 0, 'equilibrium defining moments')
+            lift(a0 + slab%op%fs%sp(1)%dof(:slab%op%fs%nln, t)) = &
+                moments*slab%op%fs%sp(1)%sgn(:slab%op%fs%nln, t)
+        end do
+        deallocate (xy)
+        call meridian_lagrange_nodes(slab%op%fs, xy)
+        do i = 1, size(xy, 2)
+            call island_shear_equilibrium(xy(1, i) - half_width, &
+                rho, ay, az, by, jz, bz)
+            lift(a0 + slab%op%fs%nn + i) = az
+        end do
         call require(maxval(abs(csc_matvec(slab%op%fs%mass(1), &
             lift(slab%op%offset(7) + 1:slab%op%offset(8))) - real(load, dp))) &
             < 1.0e-11_dp*maxval(abs(load)), 'full projection mass residual')
@@ -217,6 +275,14 @@ contains
                     < 1.0e-11_dp, 'physical equilibrium represented exactly')
             end do
         end do
+    end subroutine
+
+    subroutine equilibrium_section_potential(x, y, a)
+        real(dp), intent(in) :: x, y
+        real(dp), intent(out) :: a(2)
+        real(dp) :: rho, ay, az, by, jz, bz
+        call island_shear_equilibrium(x - half_width, rho, ay, az, by, jz, bz)
+        a = [0.0_dp, ay]
     end subroutine
 
     subroutine equilibrium_potential(x, a)
@@ -248,7 +314,8 @@ contains
         ! value at a shared vertex need not agree across adjacent facets.
         do cell = 1, slab%nx
             do i = 1, 4
-                x = 2*half_width*(cell - 1 + nodes(i))/slab%nx
+                x = slab%radial_nodes(cell) + nodes(i) &
+                    *(slab%radial_nodes(cell + 1) - slab%radial_nodes(cell))
                 a = potential([x, 0.0_dp], full)
                 b = potential([x, 2*pi], full)
                 call require(maxval(abs(a([1, 3]) - b([1, 3]))) < 1.0e-10_dp, &

@@ -3,6 +3,7 @@ module vrmhd_periodic_slab
     !! identification P on the rectangular section mesh: u = lift + P y.
     !! Edge signs follow the Bloch transform of vrmhd_spectrum_support.
     use, intrinsic :: iso_fortran_env, only: dp => real64
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use kin6d_gs_symmetry, only: gs_symmetry_t, GS_TRANSLATION, GS_CHART_CARTESIAN
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build
     use fortfem_mesh_2d, only: mesh_2d_t
@@ -21,7 +22,7 @@ module vrmhd_periodic_slab
         !> Full-to-periodic identification and its vector-potential block.
         type(csc_t) :: reduction, potential
         integer, allocatable :: scalar_class(:)
-        real(dp), allocatable :: scalar_nodes(:, :)
+        real(dp), allocatable :: scalar_nodes(:, :), radial_nodes(:)
     end type
     abstract interface
         subroutine vector_field_t(x, a)
@@ -34,7 +35,7 @@ module vrmhd_periodic_slab
     public :: vector_field_t
 contains
     subroutine periodic_slab_build(n, degree, slab, status, magnetic_unit, &
-            radial_cells, radial_length, radial_walls, mixed)
+            radial_cells, radial_length, radial_walls, mixed, radial_grid)
         integer, intent(in) :: n, degree
         type(periodic_slab_t), intent(out) :: slab
         integer, intent(out) :: status
@@ -42,6 +43,7 @@ contains
         real(dp), intent(in), optional :: magnetic_unit, radial_length
         integer, intent(in), optional :: radial_cells
         logical, intent(in), optional :: radial_walls, mixed
+        real(dp), intent(in), optional :: radial_grid(:)
         type(mesh_2d_t) :: mesh
         type(meridian_mesh_t) :: mm
         type(fortsparse_status_t) :: st
@@ -69,10 +71,25 @@ contains
         if (slab%nx < 1 .or. slab%radial_length <= 0) return
         nx = slab%nx
         h = slab%length/n; hx = slab%radial_length/nx
+        allocate (slab%radial_nodes(nx + 1))
+        slab%radial_nodes = [(i*hx, i=0, nx)]
+        if (present(radial_grid)) then
+            if (size(radial_grid) /= nx + 1) return
+            if (.not. all(ieee_is_finite(radial_grid))) return
+            if (radial_grid(1) /= 0 .or. radial_grid(nx + 1) /= slab%radial_length) return
+            if (any(radial_grid(2:) <= radial_grid(:nx))) return
+            slab%radial_nodes = radial_grid
+        end if
         key_width = 2*nx
         if (slab%radial_walls) key_width = key_width + 1
         call mesh%create_rectangular(nx + 1, n + 1, 0.0_dp, slab%radial_length, &
             0.0_dp, slab%length)
+        if (present(radial_grid)) then
+            do i = 1, mesh%n_vertices
+                j = nint(mesh%vertices(1, i)/hx) + 1
+                mesh%vertices(1, i) = slab%radial_nodes(j)
+            end do
+        end if
         call meridian_mesh_straight(mesh, 1, mm, status)
         if (status /= 0) return
         if (use_mixed) then
@@ -122,7 +139,7 @@ contains
                     midpoint = start + tangent/2
                     direction = sign(1.0_dp, tangent(1))
                     if (abs(tangent(1)) < epsilon(h)) direction = sign(1.0_dp, tangent(2))
-                    key = nint(2*midpoint(1)/hx)
+                    key = nint(2*radial_coordinate(midpoint(1)))
                     if (.not. slab%radial_walls) key = modulo(key, 2*nx)
                     key = key + key_width*modulo(nint(2*midpoint(2)/h), 2*n)
                     do m = 1, ke
@@ -217,13 +234,27 @@ contains
             integer, intent(in) :: degree
             integer :: ix, width
             width = nx*degree
-            ix = nint(degree*x(1)/hx)
+            ix = nint(degree*radial_coordinate(x(1)))
             if (slab%radial_walls) then
                 width = width + 1
             else
                 ix = modulo(ix, width)
             end if
             label = 1 + ix + width*modulo(nint(degree*x(2)/h), n*degree)
+        end function
+
+        real(dp) function radial_coordinate(x) result(coordinate)
+            real(dp), intent(in) :: x
+            integer :: cell
+            coordinate = x/hx
+            if (.not. present(radial_grid)) return
+            ! Moment labels belong to the logical lattice, not physical spacing.
+            do cell = 1, nx
+                if (x > slab%radial_nodes(cell + 1) .and. cell < nx) cycle
+                coordinate = cell - 1 + (x - slab%radial_nodes(cell)) &
+                    /(slab%radial_nodes(cell + 1) - slab%radial_nodes(cell))
+                return
+            end do
         end function
     end subroutine
 

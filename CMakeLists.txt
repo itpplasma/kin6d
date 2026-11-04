@@ -134,7 +134,7 @@ add_executable(test_vrmhd_island test/test_vrmhd_island.f90
     test/support/vrmhd_island_leaves.f90)
 target_link_libraries(test_vrmhd_island PRIVATE kin6d_vrmhd_slab_test)
 foreach(family equal mixed)
-    foreach(gate boundary equilibrium width ledger)
+    foreach(gate boundary equilibrium width ledger graded)
         add_test(NAME vrmhd_island_${gate}_${family}
             COMMAND test_vrmhd_island ${gate} ${family})
         set_tests_properties(vrmhd_island_${gate}_${family} PROPERTIES LABELS rm-b5
@@ -154,6 +154,12 @@ set_tests_properties(vrmhd_island_preconditioner PROPERTIES LABELS rm-b5
 add_test(NAME vrmhd_island_decimal_steps
     COMMAND test_vrmhd_island probe mixed 4 4 0.01 0.1 8 0.01)
 set_tests_properties(vrmhd_island_decimal_steps PROPERTIES LABELS rm-b5
+    PROCESSORS 4 TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_island_graded_input COMMAND test_vrmhd_island
+    width mixed 4 6 0.01 0.125 4 0.01 supernodal
+    ${CMAKE_SOURCE_DIR}/test/fixtures/vrmhd_island/radial_mesh.nml)
+set_tests_properties(vrmhd_island_graded_input PROPERTIES LABELS rm-b5
     PROCESSORS 4 TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
@@ -1986,6 +1992,10 @@ add_library(kin6d_feec_n
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_rt_arbitrary_order.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_nedelec_second_kind.f90
+    ${fortfem_SOURCE_DIR}/src/elements/triangle_bdm_arbitrary_order.f90
+    ${fortfem_SOURCE_DIR}/src/generated/fortfem_affine_map_products.f90
+    ${fortfem_SOURCE_DIR}/src/geometry/triangle_affine_map.f90
+    ${fortfem_SOURCE_DIR}/src/interpolation/triangle_vector_interpolation.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_triangle_piola_products.f90
     ${fortfem_SOURCE_DIR}/src/elements/triangle_piola_maps.f90
     ${fortfem_SOURCE_DIR}/src/generated/fortfem_mapped_oscillation_products.f90
