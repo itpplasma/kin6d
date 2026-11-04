@@ -857,6 +857,12 @@ kin6d_test_labels(island_provider_tangent_p2 slow CLASSES mhd
     TARGETS test_island_provider)
 kin6d_test_labels(island_provider_nested_p2 fast CLASSES mhd
     TARGETS test_island_provider)
+kin6d_test_labels(island_provider_vacuum_p2 fast CLASSES mhd
+    TARGETS test_island_provider)
+foreach(case vacuum pressure)
+    kin6d_test_labels(tiago_island_${case} fast CLASSES mhd
+        TARGETS test_tiago_island)
+endforeach()
 foreach(case seed none ladder leaves)
     kin6d_test_labels(island_seed_${case} fast CLASSES mhd TARGETS test_island_seed)
 endforeach()

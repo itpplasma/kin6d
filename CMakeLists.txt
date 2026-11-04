@@ -2468,7 +2468,7 @@ target_link_libraries(test_island_provider PRIVATE kin6d_nn_vacuum_test)
 # Study driver (flattening scan, Poincare data); run by scripts, not CTest.
 add_executable(study_island_closure_a test/study_island_closure_a.f90)
 target_link_libraries(study_island_closure_a PRIVATE kin6d_nn_vacuum_test)
-foreach(case tangent nested)
+foreach(case tangent nested vacuum)
     add_test(NAME island_provider_${case}_p2 COMMAND test_island_provider ${case} 2 4)
     set_tests_properties(island_provider_${case}_p2 PROPERTIES TIMEOUT 900
         PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
@@ -2834,6 +2834,10 @@ if(KIN6D_BUILD_GLL_SPIKE)
     endforeach()
 endif()
 include(cmake/kin6d_libneo.cmake)
+set(KIN6D_TIAGO_SOURCE_DIR "" CACHE PATH "TIAGO source for the optional island inference benchmark")
+if(KIN6D_TIAGO_SOURCE_DIR)
+    include(benchmarks/tiago-provider/CMakeLists.txt)
+endif()
 kin6d_layers_finalize()
 
 # Test resource declaration. Every registered test gets an explicit OpenMP

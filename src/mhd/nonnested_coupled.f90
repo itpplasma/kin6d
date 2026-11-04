@@ -477,8 +477,16 @@ contains
         ! introduce p~roundoff and its scale-free relative backward error
         ! rejects every line-search step in a zero-beta equilibrium.
         if (maxval(abs(load(lay%ip + 1:lay%ip + lay%nv))) <= 0) then
-            if (maxval(abs(x(lay%ip + 1:lay%ip + lay%nv))) <= 0) &
+            if (maxval(abs(x(lay%ip + 1:lay%ip + lay%nv))) <= 0) then
                 mask(lay%ip + 1:lay%ip + lay%nv) = .true.
+                ! Zero pressure and zero drive also have Phi=V=0 exactly.
+                ! LU roundoff there must not dominate a scale-free line search.
+                if (maxval(abs(x(lay%iphi + 1:lay%iv))) <= 0) then
+                    if ((problem%closure%drive == 'I_phi' .and. problem%current == 0) &
+                        .or. (problem%closure%drive == 'V' .and. problem%voltage == 0)) &
+                        mask(lay%iphi + 1:lay%iv) = .true.
+                end if
+            end if
         end if
         w = huge(1.0_dp)
         do it = 0, steps

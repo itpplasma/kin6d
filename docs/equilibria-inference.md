@@ -1,7 +1,12 @@
 # Equilibria, imported candidates and TIAGO inference
 
-Status: canonical architecture policy, 2026-10-05. Most capabilities described
-here are planned; the implemented baseline remains the 1X1V laboratory.
+This architecture covers implemented providers and further development. The
+[nonnested vacuum](equilibrium-nonnested.md) and
+[finite-pressure stationary](equilibrium-nonnested-nn2.md) models already
+provide island-capable fields and derivatives. The optional
+[TIAGO benchmark](../benchmarks/tiago-provider/README.md) connects those fields
+to existing polarization and inference code. The broader kinetic and
+certification programme below includes capabilities still to be developed.
 
 ## One stationary-state concept
 
