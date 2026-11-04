@@ -9,7 +9,8 @@ module kin6d_vrmhd_evolve
     use fortnum_ode_bdf, only: bdf_problem_t
     use fortsparse, only: csc_t, csc_matvec, csc_transpose, csc_matmul, &
         csc_from_triplet, sparse_solver_t, sparse_factor, sparse_solve, &
-        sparse_free, sparse_solve_once, fortsparse_status_t, status_ok
+        sparse_free, sparse_solve_once, fortsparse_status_t, status_ok, &
+        FORTSPARSE_LU_SUPERNODAL
     implicit none
     private
 
@@ -88,6 +89,7 @@ contains
             if (any_current .eqv. any_other) return
             problem%algebraic(j) = any_current
         end do
+        problem%solver%options%lu_method = FORTSPARSE_LU_SUPERNODAL
         status = 0
     end subroutine
 

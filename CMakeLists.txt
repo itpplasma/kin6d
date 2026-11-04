@@ -147,6 +147,10 @@ add_test(NAME vrmhd_island_induction_mixed
 set_tests_properties(vrmhd_island_induction_mixed PROPERTIES LABELS rm-b5
     PROCESSORS 4 TIMEOUT 300
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
+add_test(NAME vrmhd_island_preconditioner COMMAND test_vrmhd_island preconditioner mixed)
+set_tests_properties(vrmhd_island_preconditioner PROPERTIES LABELS rm-b5
+    PROCESSORS 4 TIMEOUT 300
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_executable(test_vrmhd_section test/test_vrmhd_section.f90)
 target_link_libraries(test_vrmhd_section PRIVATE kin6d_mhd)
 add_executable(test_vrmhd_energy test/test_vrmhd_energy.f90)

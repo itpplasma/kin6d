@@ -299,8 +299,14 @@ time derivative of the algebraic rows.
 
 Newton's operator is the matrix-free directional derivative of the section
 residual, `R_U + (M U_dot)_U + alpha M` with the BDF shift `alpha`. The right
-preconditioner is a FortSparse direct factor of the reduced assembled
-Jacobian `P^T J P`. With `lag` above one, a factor is reused while `alpha`
+preconditioner is a FortSparse supernodal direct factor of the reduced assembled
+Jacobian `P^T J P`. It uses weighted matching, scaling and sparse ordering;
+FortSparse checks a refined solve against the original matrix and falls back
+to its scalar pivoted factor if its factorization or backward-error gates fail.
+Consistent initial derivatives retain the existing direct solves. Setting
+`problem%solver%options%lu_method=FORTSPARSE_LU_SCALAR` after construction
+selects the scalar factor as a control. With `lag` above one, a factor is
+reused while `alpha`
 changes by at most `shift_tolerance`, and FortNum's FGMRES corrects the
 stale factor; the default `lag=1` is exact Newton.
 
