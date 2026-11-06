@@ -49,6 +49,13 @@ module kin6d_sheet_slab_map
             real(dp), intent(inout) :: a(lda, *), b(ldb, *)
             integer, intent(out) :: ipiv(*), info
         end subroutine
+        subroutine dgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)
+            import :: dp
+            character, intent(in) :: transa, transb
+            integer, intent(in) :: m, n, k, lda, ldb, ldc
+            real(dp), intent(in) :: alpha, beta, a(lda, *), b(ldb, *)
+            real(dp), intent(inout) :: c(ldc, *)
+        end subroutine
     end interface
 
     type :: sheet_slab_map_t
@@ -393,10 +400,16 @@ contains
         real(dp), intent(out) :: grad(:), ab(:, :), c(:, :), d(:, :)
         real(dp) :: xq(m%nq), wq(m%nq), z(8), jz((m%order + 1)*m%per + m%ng, 8)
         real(dp) :: s1, s2, hl, b2, b3, p, g8(8), h8(36), hm(8, 8), wt, per2
-        real(dp) :: jh((m%order + 1)*m%per + m%ng, 8), l0, l1, m0, m1, g2, g3, hv
-        real(dp) :: cnode, cg, mk
+        real(dp) :: jh((m%order + 1)*m%per + m%ng, 8), l0, l1, m0, m1, g2, g3
+        real(dp) :: cnode, mk, cgm(0:m%modes)
         integer :: e, q, j, i, l, nl, kl, ii, jj, gi, gj, side, nloc, mm
         integer :: dof((m%order + 1)*m%per + m%ng)
+        real(dp) :: hloc((m%order + 1)*m%per + m%ng, (m%order + 1)*m%per + m%ng)
+        ! Point Hessian as left(:, k) right(:, k)^T: the eight leaf
+        ! directions, then the X2 and G-mode second-derivative terms (only the
+        ! stored upper border c of the latter).
+        real(dp) :: left((m%order + 1)*m%per + m%ng, 10)
+        real(dp) :: right((m%order + 1)*m%per + m%ng, 10)
         nl = (m%order + 1)*m%per
         nloc = nl + m%ng
         kl = m%band
@@ -413,6 +426,8 @@ contains
             do ii = 1, m%ng
                 dof(nl + ii) = m%nb + ii
             end do
+            ! Accumulate the element Hessian, then scatter it once.
+            hloc = 0
             do q = 1, m%nq
                 do j = 1, m%n2
                     s2 = (j - 1)*per2/m%n2
@@ -430,36 +445,39 @@ contains
                     jh(1:nloc, :) = wt*matmul(jz(1:nloc, :), hm)
                     ! Second derivatives of gv, gd through X2 and the G modes.
                     cnode = wt*(g8(7)*g2 + g8(8)*g3)
-                    do jj = 1, nloc
-                        gj = dof(jj)
-                        grad(gj) = grad(gj) + wt*dot_product(jz(jj, :), g8)
-                        do ii = 1, nloc
-                            gi = dof(ii)
-                            hv = dot_product(jh(ii, :), jz(jj, :))
-                            if (m%ng > 0) then
-                                if (ii <= nl .and. jj <= nl) then
-                                    hv = hv + cnode*jz(ii, 2)*jz(jj, 2)
-                                else if (ii <= nl .and. jj > nl) then
-                                    mm = jj - nl - 1; mk = mm*kper(m)
-                                    cg = wt*(-g8(7)*mk*sin(mk*z(2)) &
-                                             - g8(8)*mk**2*cos(mk*z(2)))
-                                    hv = hv + cg*jz(ii, 2)
-                                else if (ii > nl .and. jj <= nl) then
-                                    mm = ii - nl - 1; mk = mm*kper(m)
-                                    cg = wt*(-g8(7)*mk*sin(mk*z(2)) &
-                                             - g8(8)*mk**2*cos(mk*z(2)))
-                                    hv = hv + cg*jz(jj, 2)
-                                end if
-                            end if
-                            if (ii <= nl .and. jj <= nl) then
-                                ab(2*kl + 1 + gi - gj, gj) = ab(2*kl + 1 + gi - gj, gj) + hv
-                            else if (ii <= nl) then
-                                c(gi, gj - m%nb) = c(gi, gj - m%nb) + hv
-                            else if (jj > nl) then
-                                d(gi - m%nb, gj - m%nb) = d(gi - m%nb, gj - m%nb) + hv
-                            end if
-                        end do
+                    do mm = 0, m%modes
+                        mk = mm*kper(m)
+                        cgm(mm) = wt*(-g8(7)*mk*sin(mk*z(2)) - g8(8)*mk**2*cos(mk*z(2)))
                     end do
+                    do jj = 1, nloc
+                        grad(dof(jj)) = grad(dof(jj)) + wt*dot_product(jz(jj, :), g8)
+                    end do
+                    left(1:nloc, 1:8) = jh(1:nloc, :)
+                    right(1:nloc, 1:8) = jz(1:nloc, :)
+                    left(1:nloc, 9:) = 0
+                    right(1:nloc, 9:) = 0
+                    if (m%ng > 0) then
+                        left(1:nl, 9) = cnode*jz(1:nl, 2)
+                        right(1:nl, 9) = jz(1:nl, 2)
+                        left(1:nl, 10) = jz(1:nl, 2)
+                        right(nl + 1:nloc, 10) = cgm
+                    end if
+                    call dgemm('N', 'T', nloc, nloc, 10, 1.0_dp, left, nloc, right, &
+                        nloc, 1.0_dp, hloc, nloc)
+                end do
+            end do
+            do jj = 1, nloc
+                gj = dof(jj)
+                do ii = 1, nloc
+                    gi = dof(ii)
+                    if (ii <= nl .and. jj <= nl) then
+                        ab(2*kl + 1 + gi - gj, gj) = ab(2*kl + 1 + gi - gj, gj) &
+                            + hloc(ii, jj)
+                    else if (ii <= nl) then
+                        c(gi, gj - m%nb) = c(gi, gj - m%nb) + hloc(ii, jj)
+                    else if (jj > nl) then
+                        d(gi - m%nb, gj - m%nb) = d(gi - m%nb, gj - m%nb) + hloc(ii, jj)
+                    end if
                 end do
             end do
         end do
