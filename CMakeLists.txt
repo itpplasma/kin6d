@@ -1031,7 +1031,7 @@ endforeach()
 # Homogeneous FP relaxation (B04): the same executable, one check per name.
 add_executable(test_dk_mono test/test_dk_mono.f90)
 target_link_libraries(test_dk_mono PRIVATE kin6d)
-foreach(check collisionless banana pfirsch_schlueter plateau onsager)
+foreach(check collisionless banana pfirsch_schlueter plateau onsager jvp estimate)
     add_test(NAME dk_mono_${check} COMMAND test_dk_mono ${check})
     kin6d_test_labels(dk_mono_${check} fast CLASSES continuum TARGETS test_dk_mono)
 endforeach()

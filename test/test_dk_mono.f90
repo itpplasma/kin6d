@@ -11,7 +11,8 @@
 !! sqrt(nu); two collisionalities eliminate them (Richardson).
 program test_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use kin6d_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK
+    use kin6d_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK, &
+        mono_coefficients_jvp, mono_estimate_t, mono_estimate
     use fortnum_quadrature, only: gauss_legendre_ab
     use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
         boozer_surface, BOOZER_OK
@@ -28,6 +29,8 @@ program test_dk_mono
     case ('plateau'); ok = plateau()
     case ('onsager'); ok = onsager()
     case ('neo2_tok02'); ok = neo2_tok02()
+    case ('jvp'); ok = jvp()
+    case ('estimate'); ok = estimate()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -238,5 +241,59 @@ contains
                 2e-3_dp) .and. ok
         end do
     end function neo2_tok02
+
+
+    !> Tangents through the factorisation against centred differences in nu,
+    !> kappa and the field shape b -> b + h cos(2 theta).
+    logical function jvp() result(ok)
+        integer, parameter :: n = 33, n_leg = 40
+        real(dp), parameter :: eps = 0.2_dp, nu = 1e-2_dp, kappa = 0.7_dp, h = 1e-6_dp
+        real(dp) :: b(n), shape(n), dirs(3, 3)
+        type(mono_coefficients_t) :: c, dc, up, down
+        integer :: j, k, status
+        b = field(n, eps)
+        shape = [(cos(4*pi*(j - 1)/n), j=1, n)]
+        ! Rows: d(nu), d(kappa), d(shape amplitude).
+        dirs = reshape([1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 3])
+        ok = .true.
+        do k = 1, 3
+            call mono_coefficients_jvp(b, dirs(3, k)*shape, kappa, dirs(2, k), nu, &
+                dirs(1, k), n_leg, c, dc, status)
+            if (status /= MONO_OK) error stop 'jvp failed'
+            call mono_coefficients(b + h*dirs(3, k)*shape, kappa + h*dirs(2, k), &
+                nu + h*dirs(1, k), n_leg, up, status)
+            call mono_coefficients(b - h*dirs(3, k)*shape, kappa - h*dirs(2, k), &
+                nu - h*dirs(1, k), n_leg, down, status)
+            ok = close_to('dD11', dc%d11, (up%d11 - down%d11)/(2*h), 1e-6_dp) .and. ok
+            ok = close_to('dD31', dc%d31, (up%d31 - down%d31)/(2*h), 1e-6_dp) .and. ok
+            ok = close_to('dD13', dc%d13, (up%d13 - down%d13)/(2*h), 1e-6_dp) .and. ok
+            ok = close_to('dD33', dc%d33, (up%d33 - down%d33)/(2*h), 1e-6_dp) .and. ok
+        end do
+    end function jvp
+
+    !> The discretisation indicator against the error measured with a reference
+    !> at four times the resolution (effectivity index within [0.5, 2] where the
+    !> error is resolved), and the algebraic indicator at the level of rounding.
+    logical function estimate() result(ok)
+        real(dp), parameter :: eps = 0.2_dp, nu = 3e-3_dp
+        type(mono_coefficients_t) :: c, ref
+        type(mono_estimate_t) :: e
+        integer :: status
+        real(dp) :: eff
+        call mono_estimate(field(9, eps), 1.0_dp, nu, 24, c, e, status)
+        if (status /= MONO_OK) error stop 'estimate failed'
+        ref = solve(37, eps, nu, 96)
+        eff = abs(e%discretisation%d11)/abs(ref%d11 - c%d11)
+        print '(a,es10.2,a,es10.2,a,f6.2)', 'D11 indicator ', e%discretisation%d11, &
+            ' error ', ref%d11 - c%d11, ' effectivity ', eff
+        ok = eff >= 0.5_dp .and. eff <= 2
+        eff = abs(e%discretisation%d33)/abs(ref%d33 - c%d33)
+        print '(a,es10.2,a,es10.2,a,f6.2)', 'D33 indicator ', e%discretisation%d33, &
+            ' error ', ref%d33 - c%d33, ' effectivity ', eff
+        ok = ok .and. eff >= 0.5_dp .and. eff <= 2
+        print '(a,2es10.2)', 'algebraic indicators D11, D33 ', e%algebraic%d11, e%algebraic%d33
+        ok = ok .and. abs(e%algebraic%d11) <= 1e-12_dp*abs(c%d11) &
+            .and. abs(e%algebraic%d33) <= 1e-12_dp*abs(c%d33)
+    end function estimate
 
 end program test_dk_mono
