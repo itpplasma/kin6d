@@ -842,6 +842,8 @@ target_link_libraries(test_boozer_file PRIVATE kin6d)
 add_test(NAME equilibrium_boozer_file_geometry COMMAND test_boozer_file
     ${libneo_SOURCE_DIR}/python/tests/circ.bc 0.50781 0.76312999999999
     -0.5561487528261847 0.031219209564037516 3.9494899)
+kin6d_test_labels(equilibrium_boozer_file_geometry fast CLASSES equilibrium
+    TARGETS test_boozer_file)
 add_executable(test_gs_coarea test/test_gs_coarea.f90)
 target_link_libraries(test_gs_coarea PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_native_coarea_oracles COMMAND test_gs_coarea)
@@ -1028,6 +1030,7 @@ endforeach()
 add_executable(test_dk_pitch test/test_dk_pitch.f90)
 target_link_libraries(test_dk_pitch PRIVATE kin6d)
 add_test(NAME dk_pitch_lorentz_operator COMMAND test_dk_pitch)
+kin6d_test_labels(dk_pitch_lorentz_operator fast CLASSES continuum TARGETS test_dk_pitch)
 add_executable(test_fp_relaxation test/test_fp_relaxation.f90)
 target_link_libraries(test_fp_relaxation PRIVATE kin6d)
 foreach(check maxwellian mass slow_rate convergence_v convergence_dt)
