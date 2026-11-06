@@ -2,23 +2,20 @@ program gen_metriplectic
     ! Pointwise leaves and exact identities of the metriplectic relaxation
     ! (docs/metriplectic-relaxation.md). Every identity below is a polynomial
     ! or rational zero test; an unproved identity aborts generation.
-    use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), operator(*), &
         operator(/)
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     use kin6d_gen_support, only: leaf_writer_t, fortsym_revision
     implicit none
-    type(arena_t), target :: arena
     type(leaf_writer_t) :: w
     type(expr_t) :: j(3), b(3), v(3), a(3), d(3), c(3), h(3, 3)
     type(expr_t) :: e(3), ev(3), f(3), fv(3), jb, bb, diss, lambda
     type(expr_t) :: jj, kb, kbb, ha(3), hd(3), hm(3), ka, kad
     integer :: i, checks
-    call arena%init()
-    j = [sym(arena, 'jr'), sym(arena, 'jp'), sym(arena, 'jz')]
-    b = [sym(arena, 'br'), sym(arena, 'bp'), sym(arena, 'bz')]
-    v = [sym(arena, 'vr'), sym(arena, 'vp'), sym(arena, 'vz')]
-    call w%open(arena, 'gen_metriplectic', &
+    j = [sym('jr'), sym('jp'), sym('jz')]
+    b = [sym('br'), sym('bp'), sym('bz')]
+    v = [sym('vr'), sym('vp'), sym('vz')]
+    call w%open('gen_metriplectic', &
         'src/generated/kin6d_metriplectic_leaves.f90')
     checks = 0
     ! Ideal (magneto-frictional) metric: dA/dt = (J x B1) x B1 = -D(B1) J,
@@ -50,19 +47,19 @@ program gen_metriplectic
     end do
     ! Global (Taylor) metric J - lambda B1 with lambda = (J,B1)/(B1,B1);
     ! jj, kb and kbb stand for the M-weighted Gram entries.
-    jj = sym(arena, 'jj'); kb = sym(arena, 'jb'); kbb = sym(arena, 'bb')
+    jj = sym('jj'); kb = sym('jb'); kbb = sym('bb')
     lambda = kb/kbb
     call prove(kb - lambda*kbb, 'Taylor metric annihilates the helicity gradient')
     call prove((jj - lambda*kb) - (jj - 2*lambda*kb + lambda*lambda*kbb), &
         'Taylor dissipation equals |J - lambda B1|^2')
     ! Implicit midpoint conserves the quadratic helicity exactly:
     ! K(a) = a.H a + 2 a.c with symmetric H, increment d, midpoint a + d/2.
-    a = [sym(arena, 'a1'), sym(arena, 'a2'), sym(arena, 'a3')]
-    d = [sym(arena, 'd1'), sym(arena, 'd2'), sym(arena, 'd3')]
-    c = [sym(arena, 'c1'), sym(arena, 'c2'), sym(arena, 'c3')]
-    h(1, 1) = sym(arena, 'h11'); h(2, 2) = sym(arena, 'h22')
-    h(3, 3) = sym(arena, 'h33'); h(1, 2) = sym(arena, 'h12')
-    h(1, 3) = sym(arena, 'h13'); h(2, 3) = sym(arena, 'h23')
+    a = [sym('a1'), sym('a2'), sym('a3')]
+    d = [sym('d1'), sym('d2'), sym('d3')]
+    c = [sym('c1'), sym('c2'), sym('c3')]
+    h(1, 1) = sym('h11'); h(2, 2) = sym('h22')
+    h(3, 3) = sym('h33'); h(1, 2) = sym('h12')
+    h(1, 3) = sym('h13'); h(2, 3) = sym('h23')
     h(2, 1) = h(1, 2); h(3, 1) = h(1, 3); h(3, 2) = h(2, 3)
     do i = 1, 3
         ha(i) = dot(h(i, :), a); hd(i) = dot(h(i, :), d)

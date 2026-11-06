@@ -1,7 +1,6 @@
 program check_response_strip_current
     !! Independent cylinder oracle for R-B2 physical-current readback.
     !! Positive radii and mu0; integer harmonic m>=1; no numeric zero probes.
-    use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
         operator(*), operator(/), operator(**)
     use fortsym_diff, only: diff
@@ -9,18 +8,16 @@ program check_response_strip_current
     use fortsym_engine, only: engine_result_t, VERDICT_TRUE
     use fortsym_engine_native, only: native_engine_t, make_native_engine
     implicit none
-    type(arena_t), target :: arena
     type(native_engine_t) :: engine
     type(expr_t) :: r, rs, major, mu, amplitude, inner, outer, jump
     type(expr_t) :: a, b, h, determinant, li, lo, symmetric
     integer :: m, count
-    call arena%init()
-    engine = make_native_engine(arena)
-    r = sym(arena, 'r'); rs = sym(arena, 'rs')
-    major = sym(arena, 'major'); mu = sym(arena, 'mu')
-    amplitude = sym(arena, 'amplitude')
-    a = sym(arena, 'a'); b = sym(arena, 'b')
-    h = sym(arena, 'h')
+    engine = make_native_engine()
+    r = sym('r'); rs = sym('rs')
+    major = sym('major'); mu = sym('mu')
+    amplitude = sym('amplitude')
+    a = sym('a'); b = sym('b')
+    h = sym('h')
     count = 0
     do m = 1, 6
         ! Magnetic scalar potential has jump Lambda; B=mu0 grad U and

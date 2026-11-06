@@ -10,7 +10,7 @@
 !   The pair potential is phi_E = real(x) + sum_k recip(k) cos(k.x)
 !   + background; self = lim_{r->0}(phi_E - g/r) is the image/self term.
 ! - Energies use the same reduced units as g/length; hbar is reduced too.
-! Every function returns FortSym expressions in the arena of its arguments.
+! Every function returns FortSym expressions in the current FortSym context.
 module kin6d_symbolic_physics
     use, intrinsic :: iso_fortran_env, only: int64
     use fortsym_expr, only: expr_t, pi_expr, rat, sqrt, exp, erf, erfc, cos, sin, &
@@ -96,13 +96,13 @@ contains
         integer :: j
         integer(int64) :: fact
         fact = 1
-        u = rat(g%a, 1_int64, 1_int64)
+        u = rat(1_int64, 1_int64)
         do j = 1, order
             fact = fact*j
-            term = rat(g%a, (-1_int64)**j, fact*(2*j + 1))*t**j
+            term = rat((-1_int64)**j, fact*(2*j + 1))*t**j
             u = u + term
         end do
-        u = g*sqrt(2/(pi_expr(g%a)*s))*u
+        u = g*sqrt(2/(pi_expr()*s))*u
     end function
 
     !> Ewald real-space (short-range) pair potential g erfc(alpha r)/r.
@@ -119,7 +119,7 @@ contains
         integer :: j
         r = sqrt(x(1)*x(1) + x(2)*x(2) + x(3)*x(3))
         a = g*(erfc(alpha*r)/r**3 + &
-               2*alpha*exp(-alpha*alpha*r*r)/(sqrt(pi_expr(g%a))*r*r))
+            2*alpha*exp(-alpha*alpha*r*r)/(sqrt(pi_expr())*r*r))
         do j = 1, 3
             f(j) = a*x(j)
         end do
@@ -130,7 +130,7 @@ contains
     function jellium_coefficient(g, volume, k2) result(c)
         type(expr_t), intent(in) :: g, volume, k2
         type(expr_t) :: c
-        c = 4*pi_expr(g%a)*g/(volume*k2)
+        c = 4*pi_expr()*g/(volume*k2)
     end function
 
     !> Ewald reciprocal coefficient of cos(k.x), summed over all k /= 0.
@@ -144,7 +144,7 @@ contains
     function ewald_self_potential(g, alpha) result(u)
         type(expr_t), intent(in) :: g, alpha
         type(expr_t) :: u
-        u = -g*alpha/sqrt(pi_expr(g%a))
+        u = -g*alpha/sqrt(pi_expr())
     end function
 
     !> Neutralizing-background (k=0) term of the pair potential:
@@ -152,7 +152,7 @@ contains
     function ewald_background_potential(g, alpha, volume) result(u)
         type(expr_t), intent(in) :: g, alpha, volume
         type(expr_t) :: u
-        u = -pi_expr(g%a)*g/(volume*alpha*alpha)
+        u = -pi_expr()*g/(volume*alpha*alpha)
     end function
 
     !> Radial effective potential of partial wave l in the relative
@@ -218,7 +218,7 @@ contains
     function wigner_seitz_radius(n) result(a)
         type(expr_t), intent(in) :: n
         type(expr_t) :: a
-        a = (3/(4*pi_expr(n%a)*n))**rat(n%a, 1_int64, 3_int64)
+        a = (3/(4*pi_expr()*n))**rat(1_int64, 3_int64)
     end function
 
     !> Classical coupling Gamma = |g|/(a T), T in energy units.
@@ -232,7 +232,7 @@ contains
     function fermi_energy(hbar, m, n) result(e)
         type(expr_t), intent(in) :: hbar, m, n
         type(expr_t) :: e
-        e = hbar**2*(3*pi_expr(n%a)**2*n)**rat(n%a, 2_int64, 3_int64)/(2*m)
+        e = hbar**2*(3*pi_expr()**2*n)**rat(2_int64, 3_int64)/(2*m)
     end function
 
     !> Degeneracy Theta = T/E_F.
@@ -253,7 +253,7 @@ contains
     function debye_length(temperature, n, g_self) result(lambda)
         type(expr_t), intent(in) :: temperature, n, g_self
         type(expr_t) :: lambda
-        lambda = sqrt(temperature/(4*pi_expr(n%a)*n*g_self))
+        lambda = sqrt(temperature/(4*pi_expr()*n*g_self))
     end function
 
     !> Plasma frequency sqrt(4 pi n g_self/m).
@@ -268,7 +268,7 @@ contains
     function plasma_frequency(n, g_self, m) result(omega)
         type(expr_t), intent(in) :: n, g_self, m
         type(expr_t) :: omega
-        omega = sqrt(4*pi_expr(n%a)*n*g_self/m)
+        omega = sqrt(4*pi_expr()*n*g_self/m)
     end function
 
     !> Periodic 1D modal Poisson law -eps phi'' = rho, E = -phi', for one
@@ -340,7 +340,7 @@ contains
     function yukawa_zero_mode(g, kappa, volume) result(c)
         type(expr_t), intent(in) :: g, kappa, volume
         type(expr_t) :: c
-        c = 4*pi_expr(g%a)*g/(volume*kappa**2)
+        c = 4*pi_expr()*g/(volume*kappa**2)
     end function
 
     !> Debye-Hueckel (weak-coupling OCP) static structure factor

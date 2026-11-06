@@ -1,6 +1,5 @@
 program gen_ideal_xi
     ! Exact local D5 Hessian identity; no sampled/probe evidence is accepted.
-    use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), operator(*), &
         operator(/), operator(**)
     use fortsym_diff, only: diff
@@ -14,7 +13,6 @@ program gen_ideal_xi
     use kin6d_symbolic_ideal, only: frozen_energy
     use kin6d_gen_support, only: fortsym_revision
     implicit none
-    type(arena_t), target :: arena
     type(native_engine_t) :: engine
     type(expr_t) :: d(3, 3), b(3), a(3, 3), c(3, 3), ab(3), cb(3)
     type(expr_t) :: p, mu, jac, density, one, zero, ta, tc, ac, b2, ba, bc
@@ -25,10 +23,9 @@ program gen_ideal_xi
     character(8) :: names(23), dn(23), gn(23)
     character(16) :: suffix
     integer :: i, j, k, l, row, col, unit, precision, checks
-    call arena%init()
-    engine = make_native_engine(arena)
-    b(1) = sym(arena, 'b1'); b(2) = sym(arena, 'b2')
-    b(3) = sym(arena, 'b3'); p = sym(arena, 'p'); mu = sym(arena, 'mu')
+    engine = make_native_engine()
+    b(1) = sym('b1'); b(2) = sym('b2')
+    b(3) = sym('b3'); p = sym('p'); mu = sym('mu')
     one = 1 + 0*p; zero = 0*p
     identity = zero
     names(1:5) = [character(8) :: 'b1', 'b2', 'b3', 'p', 'mu']
@@ -39,13 +36,13 @@ program gen_ideal_xi
             k = i + 3*(j - 1)
             write(names(5 + k), '(a,i1,i1)') 'a', i, j
             write(names(14 + k), '(a,i1,i1)') 'c', i, j
-            a(i, j) = sym(arena, trim(names(5 + k)))
-            c(i, j) = sym(arena, trim(names(14 + k)))
+            a(i, j) = sym(trim(names(5 + k)))
+            c(i, j) = sym(trim(names(14 + k)))
             vars(5 + k) = a(i, j); vars(14 + k) = c(i, j)
             block
                 character(8) :: name
                 write(name, '(a,i1,i1)') 'f', i, j
-                d(i, j) = sym(arena, trim(name))
+                d(i, j) = sym(trim(name))
             end block
         end do
     end do
@@ -94,9 +91,9 @@ program gen_ideal_xi
     ! Generated JVP/VJP cover background and both test gradients.
     do i = 1, 23
         dn(i) = 'd'//trim(names(i)); gn(i) = 'g'//trim(names(i))
-        direction(i) = sym(arena, trim(dn(i)))
+        direction(i) = sym(trim(dn(i)))
     end do
-    seed(1) = sym(arena, 'seed')
+    seed(1) = sym('seed')
     tangent = jvp(roots, vars, direction)
     adjoint = vjp(roots, vars, seed)
     open(newunit=unit, file='src/generated/kin6d_ideal_xi_leaves.f90', &
@@ -128,7 +125,7 @@ contains
             seeds(18), grads(20)
         integer :: i, j, k, phase, other, sign, at
         args(19:20) = [character(8) :: 'r', 'n']
-        rr = sym(arena, 'r'); nn = sym(arena, 'n')
+        rr = sym('r'); nn = sym('n')
         inputs(19:20) = [rr, nn]
         do phase = 1, 2
             do i = 1, 3
@@ -136,9 +133,9 @@ contains
                 write(args(k), '(a,i1,i1)') 'x', i, phase
                 write(args(k+6), '(a,i1,i1)') 'r', i, phase
                 write(args(k+12), '(a,i1,i1)') 'z', i, phase
-                x(i, phase) = sym(arena, trim(args(k)))
-                dr(i, phase) = sym(arena, trim(args(k+6)))
-                dz(i, phase) = sym(arena, trim(args(k+12)))
+                x(i, phase) = sym(trim(args(k)))
+                dr(i, phase) = sym(trim(args(k+6)))
+                dz(i, phase) = sym(trim(args(k+12)))
                 inputs(k) = x(i, phase); inputs(k+6) = dr(i, phase)
                 inputs(k+12) = dz(i, phase)
             end do
@@ -157,13 +154,13 @@ contains
                     write(outs(at), '(a,i1,i1,i1)') 'g', i, j, phase
                     douts(at) = 'd'//trim(outs(at))
                     seeds(at) = 'b'//trim(outs(at))
-                    weight(at) = sym(arena, trim(seeds(at)))
+                    weight(at) = sym(trim(seeds(at)))
                 end do
             end do
         end do
         do i = 1, 20
             dargs(i) = 'd'//trim(args(i)); grads(i) = 'g'//trim(args(i))
-            tangents(i) = sym(arena, trim(dargs(i)))
+            tangents(i) = sym(trim(dargs(i)))
         end do
         tj = jvp(values, inputs, tangents)
         tv = vjp(values, inputs, weight)

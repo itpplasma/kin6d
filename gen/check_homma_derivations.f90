@@ -16,8 +16,9 @@ program check_homma_derivations
     use fortsym_defint, only: definite_integral
     use fortsym_print, only: print_expr
     use fortsym_string, only: chars
+    use fortsym_context, only: current_arena
     implicit none
-    type(arena_t), target :: arena
+    type(arena_t), pointer :: arena
     type(native_engine_t) :: engine
     type(expr_t) :: x(3), q(3), s, r, sq, Ph, Xs, Ee, Xe, dPh, g, gam, coef, Qc, qx, br, hs
     type(expr_t) :: rr, Phr, Xr, dPr, coefr, Qcr, Th, closed
@@ -26,16 +27,16 @@ program check_homma_derivations
     type(engine_result_t) :: rs
     integer :: i, j, k, nchk
 
-    call arena%init()
-    engine = make_native_engine(arena)
+    arena => current_arena()
+    engine = make_native_engine()
     nchk = 0
     do i = 1, 3
-        x(i) = sym(arena, 'x' // achar(48 + i))
-        q(i) = sym(arena, 'q' // achar(48 + i))
+        x(i) = sym('x' // achar(48 + i))
+        q(i) = sym('q' // achar(48 + i))
     end do
-    Ee = sym(arena, 'Eerf'); Xe = sym(arena, 'Xgau')
+    Ee = sym('Eerf'); Xe = sym('Xgau')
     s = x(1)*x(1) + x(2)*x(2) + x(3)*x(3)
-    r = sqrt(s); sq = sqrt(pi_expr(arena))
+    r = sqrt(s); sq = sqrt(pi_expr())
     Ph = func('erf', [r]); Xs = exp(-s); dPh = (2/sq)*Xs
     qx = q(1)*x(1) + q(2)*x(2) + q(3)*x(3)
 
@@ -56,8 +57,8 @@ program check_homma_derivations
             call split(diff(diff(g, x(i)), x(j)) - br/2, 'Identity 2: Eq. (5) bracket = 2 Hess(g)')
         end do
     end do
-    call zero(rat(arena, 1_int64, 16_int64)*(4*pi_expr(arena))/pi_expr(arena) &
-        - rat(arena, 1_int64, 4_int64), 'Identity 2: (1/(16 pi)) L = Gamma/4 with L = 4 pi Gamma')
+    call zero(rat(1_int64, 16_int64)*(4*pi_expr())/pi_expr() &
+        - rat(1_int64, 4_int64), 'Identity 2: (1/(16 pi)) L = Gamma/4 with L = 4 pi Gamma')
 
     ! Identity 3: Eq. (6) bracket is the Hessian of (q.x) gam(r) with
     ! gam = E/(2r^3) - Phi'/(2r^2), and gam' = r coef.
@@ -75,7 +76,7 @@ program check_homma_derivations
     ! Identities 4b, 4c: trace of the Eq. (6) Hessian is qx*Th(r) with
     ! Th = 5 coef + r^2 Qc. Th is proved as a one-variable identity in rr,
     ! which holds at rr = r(x) for all x, so the trace equals -(4/sqrt pi)(q.x)exp(-s).
-    rr = sym(arena, 'rr')
+    rr = sym('rr')
     Phr = func('erf', [rr]); Xr = exp(-(rr*rr)); dPr = (2/sq)*Xr
     coefr = (-3/(2*rr*rr*rr*rr*rr))*Phr + (1/(rr*rr) + 3/(2*rr*rr*rr*rr))*dPr
     Qcr = (15/(2*rr*rr*rr*rr*rr*rr*rr))*Phr + (-2/(rr*rr) - 5/(rr*rr*rr*rr) - 15/(2*rr*rr*rr*rr*rr*rr))*dPr
@@ -86,35 +87,35 @@ program check_homma_derivations
         call zero(diff(closed, x(k)) + (4/sq)*Xs*(q(k) - 2*qx*x(k)), &
             'Identity 4b: d_k Tr D = -(4/sqrt pi) exp(-s)(q_k - 2 (q.x) x_k)')
     end do
-    call zero(lap(closed) + (16/sq)*qx*(s - rat(arena, 5_int64, 2_int64))*Xs, &
+    call zero(lap(closed) + (16/sq)*qx*(s - rat(5_int64, 2_int64))*Xs, &
         'Identity 4c: lap Tr D = -(16/sqrt pi)(q.x)(s - 5/2) exp(-s)')
 
     ! Identity 4d: prefactor of Eq. (6) is m L/(40 pi T^2) = m Gamma/(10 T^2).
     ! The Poisson chain lap^2 G^T = -8 pi f^T with f^T in the q-linear
     ! part of Eq. (1) fixes c_G = 2/(5T) in G^T = c_G (q.x) gam, and
     ! D^T = (Gamma/2) c_G/a^2 Hess(...).
-    m = sym(arena, 'mb'); T = sym(arena, 'Tb')
-    call zero((2/(5*T))*(m/(2*T))*rat(arena, 1_int64, 2_int64) - m/(10*T*T), &
+    m = sym('mb'); T = sym('Tb')
+    call zero((2/(5*T))*(m/(2*T))*rat(1_int64, 2_int64) - m/(10*T*T), &
         'Identity 4d: (Gamma/2) c_G/a^2 = m Gamma/(10 T^2)')
-    call zero(m*4*pi_expr(arena)/(40*pi_expr(arena)*T*T) - m/(10*T*T), &
+    call zero(m*4*pi_expr()/(40*pi_expr()*T*T) - m/(10*T*T), &
         'Identity 4d: m L/(40 pi T^2) = m Gamma/(10 T^2)')
-    call zero((2/(5*T))*(m*m/(4*T*T))*(-16/sq) - (-8*pi_expr(arena))*(m*m/(5*T*T*T))/(pi_expr(arena)*sq), &
+    call zero((2/(5*T))*(m*m/(4*T*T))*(-16/sq) - (-8*pi_expr())*(m*m/(5*T*T*T))/(pi_expr()*sq), &
         'Identity 4d: biharmonic chain, c_G = 2/(5T)')
     ! The Poisson potential H^T = -(2m/(5 sqrt(pi) T^2)) (q.x) exp(-s) satisfies
     ! lap H^T = -4 pi f^T (same constants).
-    call zero(lap(qx*Xs) - 4*qx*(s - rat(arena, 5_int64, 2_int64))*Xs, &
+    call zero(lap(qx*Xs) - 4*qx*(s - rat(5_int64, 2_int64))*Xs, &
         'Identity 4d: lap[(q.x) exp(-s)] = 4 (q.x)(s - 5/2) exp(-s)')
 
     ! Identity 5: distorted-Maxwellian bracket 1 - (m/(n T^2))(1 - w^2/(5 v_th^2)) with
     ! w^2/(5 v_th^2) = 2 x^2/5 gives the conventions bracket (2 m/(5 n T^2))(x^2 - 5/2).
-    call zero((1 - rat(arena, 2_int64, 5_int64)*s) + rat(arena, 2_int64, 5_int64)*(s - rat(arena, 5_int64, 2_int64)), &
+    call zero((1 - rat(2_int64, 5_int64)*s) + rat(2_int64, 5_int64)*(s - rat(5_int64, 2_int64)), &
         'Identity 5: 1 - 2x^2/5 = -(2/5)(x^2 - 5/2)')
 
     ! Identity 6: the Eq. (6) brackets are regular at r = 0. Their Laurent
     ! series from r**(-5) up shows every pole coefficient cancels, and the
     ! regular part fixes the r = 0 values; the Hessian of (q.x) exp(-s) at 0
     ! gives A^T(0) parallel to q.
-    z = rat(arena, 0_int64, 1_int64)
+    z = rat(0_int64, 1_int64)
     call laurent_zero(coefr, -(4/(5*sq)) + (4/(7*sq))*rr*rr, &
         'Identity 6: Eq. (6) scalar bracket = -4/(5 sqrt pi) + 4 r^2/(7 sqrt pi) + O(r^3)')
     call laurent_zero(Qcr, 8/(7*sq) - (8/(9*sq))*rr*rr, &
@@ -126,32 +127,32 @@ program check_homma_derivations
     ! Identity 7a: both terms of Eq. (2) follow from Eq. (3). sm = sqrt(m_b),
     ! sT = sqrt(T_b), a = sqrt(2 T_b/m_b), Gamma = L/(4 pi), grad_v = grad_x/a,
     ! H^M = n erf(r)/(a r) and H^T = Kt (q.x) exp(-s) (Identities 1, 4d).
-    sm = sym(arena, 'sm'); sT = sym(arena, 'sT')
-    mb = sm*sm; T = sT*sT; ma = sym(arena, 'ma'); n = sym(arena, 'n')
-    qa = sym(arena, 'qa'); qb = sym(arena, 'qb'); e0 = sym(arena, 'e0')
-    lnl = sym(arena, 'lnl'); B = sym(arena, 'B'); na = sym(arena, 'na')
-    s2 = sqrt(rat(arena, 2_int64, 1_int64))
+    sm = sym('sm'); sT = sym('sT')
+    mb = sm*sm; T = sT*sT; ma = sym('ma'); n = sym('n')
+    qa = sym('qa'); qb = sym('qb'); e0 = sym('e0')
+    lnl = sym('lnl'); B = sym('B'); na = sym('na')
+    s2 = sqrt(rat(2_int64, 1_int64))
     kap = 1 + mb/ma
     cC = lnl*(qa*qb/e0)*(qa*qb/e0)*kap
-    gab = qa*qa*qb*qb*lnl/(4*pi_expr(arena)*e0*e0*ma*ma)
+    gab = qa*qa*qb*qb*lnl/(4*pi_expr()*e0*e0*ma*ma)
     ab = s2*sT/sm
     pref = ma*(1 + ma/mb)*gab/ab
     Kt = -2*mb/(5*sq*T*T)
     do k = 1, 3
         Fd = pref*diff((n/ab)*Ph/r, x(k))
-        Fp = -(cC/(4*pi_expr(arena)))*(n/(2*T))*(Ph - r*dPh)/(r*r*r)*x(k)
+        Fp = -(cC/(4*pi_expr()))*(n/(2*T))*(Ph - r*dPh)/(r*r*r)*x(k)
         call split(Fd - Fp, 'Identity 7a: printed F^0 of Eq. (2) = m_a A^M of Eq. (3)')
         Fd = pref*diff(Kt*qx*Xs, x(k))
-        Fp = -(cC/(10*pi_expr(arena)*sq))*(sm/(s2*sT))/(T*T)*Xs*(q(k) - 2*qx*x(k))
+        Fp = -(cC/(10*pi_expr()*sq))*(sm/(s2*sT))/(T*T)*Xs*(q(k) - 2*qx*x(k))
         call zero(Fd - Fp, 'Identity 7a: printed F^gradT of Eq. (2) = m_a A^T of Eq. (3)')
         ! Control: C/(10 sqrt pi) without the factor pi is not Eq. (3).
-        rs = engine%zero_test(Fd - pi_expr(arena)*Fp)
+        rs = engine%zero_test(Fd - pi_expr()*Fp)
         if (rs%verdict == VERDICT_TRUE) error stop 'control: C/(10 sqrt pi) proved'
     end do
     ! Slow-limit drift: F^T(0) = pref Kt q, q_perp = kappa_wedge b x grad T with
     ! kappa_wedge = 5 n T/(2 q_b B), v = F x b/(q_a B) = Kdrift grad_perp T.
     Kdrift = pref*Kt*5*n*T/(2*qb*B*qa*B)
-    tauT = 8*s2*pi_expr(arena)*e0*e0*sm*T*sT/(na*qa*qa*qb*qb*lnl)
+    tauT = 8*s2*pi_expr()*e0*e0*sm*T*sT/(na*qa*qa*qb*qb*lnl)
     tauB = (3*sq/4)*tauT
     call zero(Kdrift - kap*v8(tauB), &
         'Identity 7a: slow-limit gc drift = (1 + m_b/m_a) x Eq. (8) with tau_B = (3 sqrt pi/4) tau_T')
@@ -169,7 +170,7 @@ contains
         !! Eq. (8) coefficient of grad_perp T_b for a collision time tau.
         type(expr_t), intent(in) :: tau
         type(expr_t) :: v
-        v = -rat(arena, 3_int64, 2_int64)*mb*n/(qa*qb*B*B*na*tau)
+        v = -rat(3_int64, 2_int64)*mb*n/(qa*qb*B*B*na*tau)
     end function v8
 
     subroutine flr_ratio()
@@ -184,9 +185,9 @@ contains
         type(expr_t) :: kw, qv(3), qdv, w, fflr(2), fth(2), vflr(2), vth(2), slow
         integer :: l
 
-        aa = sym(arena, 'aa'); bb = sym(arena, 'bb'); vn = sym(arena, 'vn')
-        g1 = sym(arena, 'g1'); g2 = sym(arena, 'g2')
-        tau = sym(arena, 'tau'); sig = sym(arena, 'sig'); th = sym(arena, 'th')
+        aa = sym('aa'); bb = sym('bb'); vn = sym('vn')
+        g1 = sym('g1'); g2 = sym('g2')
+        tau = sym('tau'); sig = sym('sig'); th = sym('th')
         Tb = mb*bb*bb/2; Ta = ma*aa*aa/2
         yv = vn/bb; Xv = exp(-yv**2)
         ! A^M = -nu(|v|) v, nu = (1 + m_a/m_b) Gamma n [erf(y) - y Phi'(y)]/|v|^3.
@@ -206,9 +207,9 @@ contains
         call zero(expo + tau*tau + sig*sig, 'Identity 7b: cc scales both Gaussians to exp(-tau^2 - sig^2)')
         gauss = exp(-(tau*tau) - sig*sig)
         ! f_a without its Gaussian, times the Jacobian cc^3 tau of d^3v.
-        fM = cc*cc*cc*tau/(pi_expr(arena)*sq*aa*aa*aa)
+        fM = cc*cc*cc*tau/(pi_expr()*sq*aa*aa*aa)
         ! With aa in place of cc the same measure covers f_a alone.
-        call zero(average(tau*gauss/(pi_expr(arena)*sq)) - 1, &
+        call zero(average(tau*gauss/(pi_expr()*sq)) - 1, &
             'Identity 7b: the test Maxwellian is normalised')
 
         ! FLR force m_a <closed v_k (g.rho)>, rho = (-v2, v1, 0) m_a/(q_a B).
@@ -240,7 +241,7 @@ contains
                 slow = w*kw*g2/(qa*B)
             end if
             ! Multiplied by ka**(5/2) > 0 so that the half-integer powers of ka cancel.
-            call zero(vth(l)*ka**rat(arena, 5_int64, 2_int64) - slow*bb**5, &
+            call zero(vth(l)*ka**rat(5_int64, 2_int64) - slow*bb**5, &
                 'Identity 7b: <v_gc> = v_gc(0) (bb^2/(aa^2 + bb^2))^(5/2)')
         end do
     end subroutine flr_ratio
@@ -252,10 +253,10 @@ contains
         type(engine_result_t) :: ex
         logical :: ok
         character(:), allocatable :: why
-        th = sym(arena, 'th'); sig = sym(arena, 'sig'); tau = sym(arena, 'tau')
+        th = sym('th'); sig = sym('sig'); tau = sym('tau')
         ex = engine%expand(f)
         if (.not. ex%ok) error stop 'average: expand failed'
-        call definite_integral(arena, ex%value, th, z, 2*pi_expr(arena), u, ok, why)
+        call definite_integral(arena, ex%value, th, z, 2*pi_expr(), u, ok, why)
         if (.not. ok) then
             print '(a,a)', 'gyrophase integral: ', why
             error stop 1
@@ -301,9 +302,9 @@ contains
         integer, intent(in) :: i, j
         type(expr_t) :: v
         if (i == j) then
-            v = rat(arena, 1_int64, 1_int64)
+            v = rat(1_int64, 1_int64)
         else
-            v = rat(arena, 0_int64, 1_int64)
+            v = rat(0_int64, 1_int64)
         end if
     end function kron
 
@@ -313,7 +314,7 @@ contains
         integer :: l
         v = f
         do l = 1, 3
-            v = subs(v, x(l), rat(arena, 0_int64, 1_int64))
+            v = subs(v, x(l), rat(0_int64, 1_int64))
         end do
     end function at0
 

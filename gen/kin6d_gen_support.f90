@@ -3,7 +3,6 @@
 ! revision source: KIN6D_FORTSYM_REVISION in CMakeLists.txt, delivered as the
 ! configured include file kin6d_fortsym_revision.inc.
 module kin6d_gen_support
-    use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym
     use fortsym_products, only: jvp, vjp
     use fortsym_engine, only: engine_result_t
@@ -19,10 +18,9 @@ module kin6d_gen_support
     include 'kin6d_fortsym_revision.inc'
     public :: fortsym_revision, leaf_writer_t
 
-    !> Writes one generated leaf module. The generator owns the arena; the
+    !> Writes one generated leaf module in the current FortSym context; the
     !> writer owns the output unit and the leaf conventions.
     type :: leaf_writer_t
-        type(arena_t), pointer :: arena => null()
         type(native_engine_t) :: engine
         type(rigorous_runtime_t) :: runtime
         character(:), allocatable :: generator
@@ -37,13 +35,11 @@ module kin6d_gen_support
         procedure :: emit_batch => writer_emit_batch
     end type
 contains
-    subroutine writer_open(w, arena, generator, path)
+    subroutine writer_open(w, generator, path)
         class(leaf_writer_t), intent(inout) :: w
-        type(arena_t), intent(inout), target :: arena
         character(*), intent(in) :: generator, path
 
-        w%arena => arena
-        w%engine = make_native_engine(arena)
+        w%engine = make_native_engine()
         w%generator = generator
         w%runtime = interval_runtime('fortnum_interval', 'interval_t')
         w%runtime%sin = str('sin')
@@ -196,15 +192,15 @@ contains
         allocate (tangent_args(2*n), tangent_outputs(m))
         allocate (adjoint_args(n + m), adjoint_outputs(n))
         do j = 1, n
-            variables(j) = sym(w%arena, trim(args(j)))
-            directions(j) = sym(w%arena, 'd'//trim(args(j)))
+            variables(j) = sym(trim(args(j)))
+            directions(j) = sym('d'//trim(args(j)))
             tangent_args(j) = args(j)
             tangent_args(n + j) = 'd'//trim(args(j))
             adjoint_args(j) = args(j)
             adjoint_outputs(j) = 'g'//trim(args(j))
         end do
         do j = 1, m
-            weights(j) = sym(w%arena, 'b'//trim(outputs(j)))
+            weights(j) = sym('b'//trim(outputs(j)))
             tangent_outputs(j) = 'd'//trim(outputs(j))
             adjoint_args(n + j) = 'b'//trim(outputs(j))
         end do

@@ -1,24 +1,21 @@
 program gen_response_calibration
     !! Equivalent sheet: b = -Phi_unit jump/(area jump_unit).
-    use fortsym_arena, only: arena_t
     use fortsym_expr, only: expr_t, sym, operator(+), operator(-), &
                             operator(*), operator(/)
     use fortsym_products, only: jvp, vjp
     use fortsym_kernel, only: kernel_spec_t, emit_kernel
     use fortsym_string, only: str, chars
     implicit none
-    type(arena_t), target :: arena
     type(expr_t) :: x(7), y(2), d(7), s(2), a, b, den
     type(expr_t) :: location(3), direction(3), radius(1), seed(1)
     type(kernel_spec_t) :: spec
     character(4), parameter :: names(7) = &
                             [character(4) :: 'jr', 'ji', 'ur', 'ui', 'fr', 'fi', 'area']
     integer :: i, u
-    call arena%init()
     allocate (spec%args(7), spec%outputs(2))
     do i = 1, 7
-        x(i) = sym(arena, trim(names(i)))
-        d(i) = sym(arena, 'd_'//trim(names(i)))
+        x(i) = sym(trim(names(i)))
+        d(i) = sym('d_'//trim(names(i)))
         spec%args(i) = str(trim(names(i)))
     end do
     a = x(1)*x(3) + x(2)*x(4)
@@ -49,14 +46,14 @@ program gen_response_calibration
         spec%args(i) = str(trim(names(i)))
         spec%outputs(i) = str('v_'//trim(names(i)))
     end do
-    s = [sym(arena, 's_br'), sym(arena, 's_bi')]
+    s = [sym('s_br'), sym('s_bi')]
     spec%args(8:) = [str('s_br'), str('s_bi')]
     spec%name = str('sheet_field_vjp')
     call output(chars(emit_kernel(vjp(y, x, s), spec)))
     deallocate (spec%args, spec%outputs)
     allocate (spec%args(3), spec%outputs(1))
-    location = [sym(arena, 'nmag'), sym(arena, 'qmag'), sym(arena, 'spot')]
-    direction = [sym(arena, 'd_nmag'), sym(arena, 'd_qmag'), sym(arena, 'd_spot')]
+    location = [sym('nmag'), sym('qmag'), sym('spot')]
+    direction = [sym('d_nmag'), sym('d_qmag'), sym('d_spot')]
     radius = [location(3)/(location(1)*location(2))]
     spec%args = [str('nmag'), str('qmag'), str('spot')]
     spec%outputs = [str('xs')]
@@ -67,7 +64,7 @@ program gen_response_calibration
     call output(chars(emit_kernel(jvp(radius, location, direction), spec)))
     deallocate (spec%args, spec%outputs)
     allocate (spec%args(4), spec%outputs(3))
-    seed = [sym(arena, 's_xs')]
+    seed = [sym('s_xs')]
     spec%args = [str('nmag'), str('qmag'), str('spot'), str('s_xs')]
     spec%outputs = [str('v_nmag'), str('v_qmag'), str('v_spot')]
     spec%name = str('spot_distance_vjp')
