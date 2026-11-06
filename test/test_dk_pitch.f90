@@ -24,8 +24,9 @@ program test_dk_pitch
     print '(a)', 'All tests passed!'
 contains
 
-    ! P_l(xi) for even l is a polynomial of degree l/2 in lambda, so for
-    ! p >= l/2 it lies in the discrete space and K v = nu l(l+1)/2 M v.
+    ! P_l(xi), xi = sigma sqrt(B) t, is a polynomial of degree l in t on each
+    ! side, so for l <= p it lies in the discrete space and
+    ! K v = nu l(l+1)/2 M v, for both parities.
     subroutine even_legendre_modes()
         type(pitch_operator_t) :: op
         real(dp), allocatable :: v(:), xi(:), r(:)
@@ -34,7 +35,7 @@ contains
         call build_pitch_operator(b, nu, 4, p, op)
         allocate (xi(op%n))
         xi = op%sigma*sqrt(max(0.0_dp, 1 - op%lambda*b))
-        do l = 0, 2*p, 2
+        do l = 0, p
             v = legendre(l, xi)
             r = matmul(op%stiffness, v) - nu*l*(l + 1)/2.0_dp*matmul(op%mass, v)
             call check_small('P_'//digit(l)//' eigen-residual', &
@@ -58,7 +59,7 @@ contains
         end if
     end subroutine symmetry_and_null_space
 
-    ! Odd l carry sigma*sqrt(1 - lambda B); report their convergence rate.
+    ! The first mode outside the space (l = p + 1 = 3): check and report the rate.
     subroutine odd_mode_convergence()
         type(pitch_operator_t) :: op
         real(dp), allocatable :: mu(:)
@@ -68,16 +69,14 @@ contains
             n_el = 2**k
             call build_pitch_operator(b, nu, n_el, 2, op)
             mu = eigenvalues(op)
-            err(k) = abs(mu(2) - nu)/nu
+            err(k) = abs(mu(4) - 6*nu)/(6*nu)
         end do
         rate = log(err(3)/err(4))/log(2.0_dp)
-        print '(a,4es10.2,a,f5.2)', 'l=1 eigenvalue error, n_el 2..16, p=2:', err, &
+        print '(a,4es10.2,a,f5.2)', 'l=3 eigenvalue error, n_el 2..16, p=2:', err, &
             '  rate', rate
-        ! sigma*sqrt(1 - lambda B) is odd in t = sqrt(1/B - lambda), which
-        ! polynomials in lambda cannot follow in the reflection element:
-        ! first order in the element size.
-        if (.not. all(err(2:4) < err(1:3)) .or. rate < 0.9_dp) then
-            print '(a)', 'FAIL l=1 eigenvalue does not converge'
+        ! l = p + 1 is not in the space; its eigenvalue converges like h^(2p).
+        if (.not. all(err(2:4) < err(1:3)) .or. rate < 3.5_dp) then
+            print '(a)', 'FAIL l=3 eigenvalue does not converge'
             failures = failures + 1
         end if
     end subroutine odd_mode_convergence

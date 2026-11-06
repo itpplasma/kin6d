@@ -1,9 +1,10 @@
 !> Pitch-angle (Lorentz) scattering in lambda = v_perp^2/(v^2 B) at one
 !! point of a field line, from its weak form per sign sigma of v_par,
 !!   int g C_L f (B/|xi|) d lambda = -2 nu int lambda |xi| g' f' d lambda,
-!! with |xi| = sqrt(1 - lambda B). Continuous Lagrange elements of degree p
-!! in lambda for each sigma share the reflection node lambda = 1/B, so
-!! f is continuous across the turning point. Elements are uniform in
+!! with |xi| = sqrt(1 - lambda B). Elements are bounded by lambda levels
+!! and carry continuous Lagrange bases of degree p in t = sqrt(1/B - lambda)
+!! for each sigma; both sides share the reflection node lambda = 1/B, so f
+!! is continuous across the turning point. Elements are uniform in
 !! t = sqrt(1/B - lambda), which also carries the quadrature: the measure is
 !! smooth in t, so Gauss-Legendre with 2p+2 points per element integrates
 !! both forms exactly. Returns the symmetric positive semidefinite
@@ -32,10 +33,11 @@ contains
         integer :: n_side, e, q, a, c, side, nq
         integer, allocatable :: dof(:)
         real(dp) :: t_max, t0, t1, lam, w_mass, w_stiff, s
-        real(dp), allocatable :: node(:), tq(:), wq(:), phi(:), dphi(:)
+        real(dp), allocatable :: node(:), tnode(:), tq(:), wq(:), phi(:), dphi(:)
 
         n_side = n_el*p + 1
         op%n = 2*n_side - 1
+        allocate (tnode(p + 1))
         allocate (op%lambda(op%n), op%sigma(op%n), dof(p + 1), node(p + 1), &
             phi(p + 1), dphi(p + 1))
         allocate (op%stiffness(op%n, op%n), op%mass(op%n, op%n))
@@ -50,17 +52,21 @@ contains
                 t0 = t_max*(1 - real(e - 1, dp)/n_el)
                 t1 = t_max*(1 - real(e, dp)/n_el)
                 do a = 0, p
-                    node(a + 1) = 1/b - (t0 + (t1 - t0)*a/p)**2
+                    tnode(a + 1) = t0 + (t1 - t0)*a/p
+                    node(a + 1) = 1/b - tnode(a + 1)**2
                     dof(a + 1) = global_dof((e - 1)*p + a)
                 end do
-                ! Nodes uniform in t; the basis is polynomial in lambda.
+                ! Element boundaries are lambda levels; the basis is polynomial
+                ! in t, d/dlambda = -(1/(2t)) d/dt, so both parities of P_l(xi)
+                ! (xi = sigma sqrt(B) t) are represented.
                 op%lambda(dof) = node
                 op%sigma(dof) = s
                 call gauss_legendre_ab(nq, t1, t0, tq, wq)
                 do q = 1, nq
                     call dk_pitch_weights(tq(q), b, nu, lam, w_mass, w_stiff)
-                    call lagrange_weights(p + 1, lam, node, phi)
-                    call lagrange_deriv_weights(p + 1, lam, node, dphi)
+                    call lagrange_weights(p + 1, tq(q), tnode, phi)
+                    call lagrange_deriv_weights(p + 1, tq(q), tnode, dphi)
+                    dphi = -dphi/(2*tq(q))
                     do c = 1, p + 1
                         do a = 1, p + 1
                             op%mass(dof(a), dof(c)) = op%mass(dof(a), dof(c)) &
