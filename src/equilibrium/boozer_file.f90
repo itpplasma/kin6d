@@ -6,8 +6,7 @@
 !! the field period N_p,
 !!   R = sum rmnc cos(a), Z = sum zmns sin(a), B = sum bmnc cos(a),
 !!   phi = phi_B - (2 pi/N_p) sum vmns sin(a),  a = m theta - n N_p phi_B,
-!! as in NEO-2 (`neo_sub.f90`). Coefficients divided by s^(m/2) (m capped
-!! at 12 or 13) and iota
+!! as in NEO-2 (`neo_sub.f90`). Coefficients divided by s^(m/2) and iota
 !! are interpolated in s with not-a-knot cubic splines, as NEO-2 splines
 !! c_mn/s^(m/2); a surface outside the tabulated range is refused. Lengths in m, |B| in T, |grad s| in 1/m.
 module kin6d_boozer_file
@@ -65,7 +64,7 @@ contains
         do k = 1, bf%d%nsurf
             y(k, 1) = bf%d%iota(k)
             do i = 1, nm
-                call boozer_axis_factor(bf%d%s(k), half_m(bf%d%m(i)), f, f_s)
+                call boozer_axis_factor(bf%d%s(k), 0.5_dp*bf%d%m(i), f, f_s)
                 y(k, 1 + i) = bf%d%rmnc(k, i)/f
                 y(k, 1 + nm + i) = bf%d%zmns(k, i)/f
                 y(k, 1 + 2*nm + i) = bf%d%vmns(k, i)/f
@@ -105,7 +104,7 @@ contains
         allocate (surf%rmn(nm), surf%zmn(nm), surf%vmn(nm), surf%bmn(nm), &
             surf%rmn_s(nm), surf%zmn_s(nm), surf%vmn_s(nm))
         do i = 1, nm
-            call boozer_axis_factor(s, half_m(bf%d%m(i)), f, f_s)
+            call boozer_axis_factor(s, 0.5_dp*bf%d%m(i), f, f_s)
             surf%rmn(i) = f*g(1 + i)
             surf%zmn(i) = f*g(1 + nm + i)
             surf%vmn(i) = f*g(1 + 2*nm + i)
@@ -116,18 +115,6 @@ contains
         end do
         status = BOOZER_OK
     end subroutine boozer_surface
-
-    ! Axis exponent m/2, capped at 6 or 6.5 (keeping the parity of m) for
-    ! m > 12 as in NEO-2 (`neo_sub.f90`, m_max_sp), so high harmonics are not
-    ! divided by large powers of s.
-    pure real(dp) function half_m(m)
-        integer, intent(in) :: m
-        if (m <= 12) then
-            half_m = 0.5_dp*m
-        else
-            half_m = 0.5_dp*(12 + modulo(m, 2))
-        end if
-    end function half_m
 
     pure function boozer_point(surf, theta, phi_b) result(p)
         type(boozer_surface_t), intent(in) :: surf
