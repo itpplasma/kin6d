@@ -1,7 +1,8 @@
 program test_tiago_island
     use, intrinsic :: iso_fortran_env, only: dp => real64, int32
     use island_a_fixture, only: island_a_setup, shell_source, island_a_sample_points
-    use nn_vacuum_fixture, only: field
+    use nn_vacuum_fixture, only: field, coils, current, ftor
+    use kin6d_coils_3d, only: coil_set_b_cart
     use kin6d_nonnested_coupled, only: nc_problem_t
     use kin6d_island_provider, only: island_provider_t, island_provider_init, &
         island_provider_solve, island_provider_sample, island_provider_vjp, &
@@ -18,23 +19,45 @@ program test_tiago_island
     real(dp), allocatable :: plus(:), minus(:), fd(:), grad(:, :), angles(:)
     real(dp), allocatable :: weights(:, :), values(:, :), angle_weights(:)
     integer, allocatable :: train(:), held(:)
-    real(dp), parameter :: epsilon(2) = [0.0_dp, 0.5_dp], h = 1.0e-4_dp
+    real(dp), parameter :: h = 1.0e-4_dp
+    real(dp), allocatable :: epsilon(:)
     real(dp) :: source_scale, theta(1), theta_bar(IP_NTHETA), relative, lhs, rhs
-    integer :: i, e, steps, status, n
+    real(dp) :: radius, phi, bcart(3), parameter_tolerance, held_tolerance
+    integer :: i, e, steps, status, n, nr, order, modes
     integer(int32) :: ierr
     character(16) :: case_name
+    character(32) :: argument
     character(:), allocatable :: message
     logical :: ok, converged
 
     call get_command_argument(1, case_name)
+    nr = 4; order = 2; modes = 1
+    epsilon = [0.0_dp, 0.5_dp]
+    parameter_tolerance = 1.0e-3_dp; held_tolerance = 1.0e-2_dp
     select case (trim(case_name))
     case ('vacuum')
         source_scale = 0
     case ('pressure')
         source_scale = 1
+    case ('direct')
+        source_scale = 0
+        epsilon = [1.0_dp]
+        parameter_tolerance = 1.0e-2_dp; held_tolerance = 1.0_dp
     case default
-        error stop 'expected vacuum or pressure'
+        error stop 'expected vacuum, pressure or direct'
     end select
+    if (command_argument_count() >= 2) then
+        call get_command_argument(2, argument); read(argument, *) nr
+    end if
+    if (command_argument_count() >= 3) then
+        call get_command_argument(3, argument); read(argument, *) order
+    end if
+    if (command_argument_count() >= 4) then
+        call get_command_argument(4, argument); read(argument, *) modes
+    end if
+    if (nr < 1 .or. order < 1 .or. modes < 1) error stop 'invalid resolution'
+    print '(a,3i6)', 'radial subdivisions / element order / Fourier modes ', &
+        nr, order, modes
     xyz = island_a_sample_points()
     n = size(xyz, 2)
     allocate (channels(n), values(4, n), weights(4, n))
@@ -84,6 +107,17 @@ program test_tiago_island
         if (abs(lhs - rhs) > 1.0e-9_dp*max(abs(lhs), abs(rhs))) &
             error stop 'composed adjoint pairing'
 
+        if (trim(case_name) == 'direct') then
+            ! Independent observations retain all coil harmonics and no FE solve.
+            do i = 1, n
+                call coil_set_b_cart(coils, [current], xyz(:, i), bcart)
+                radius = norm2(xyz(:2, i)); phi = atan2(xyz(2, i), xyz(1, i))
+                values(1:3, i) = bcart + &
+                    [-ftor*sin(phi)/radius, ftor*cos(phi)/radius, 0.0_dp]
+            end do
+            call mse_angles(channels, values(1:3, :), truth, ierr, message)
+            if (ierr /= 0) error stop 'direct-coil truth geometry'
+        end if
         model%observed = truth(train)
         call initialize(model%provider, 0.2_dp)
         theta = 0.2_dp
@@ -92,13 +126,14 @@ program test_tiago_island
         print '(a,2f12.7,a,i0)', 'truth / reconstructed epsilon ', epsilon(e), &
             theta(1), ' accepted steps ', steps
         if (.not. converged) error stop 'TIAGO MAP did not converge'
-        if (abs(theta(1) - epsilon(e)) > 1.0e-3_dp) error stop 'parameter recovery'
         call island_mse_predict(model%provider, channels(held), &
             theta(1), prediction, ok)
         if (.not. ok) error stop 'held prediction'
         relative = maxval(abs(prediction - truth(held)))/model%sigma
         print '(a,es14.6)', 'held angle maximum error / assigned sigma ', relative
-        if (relative > 1.0e-2_dp) error stop 'held prediction recovery'
+        if (abs(theta(1) - epsilon(e)) > parameter_tolerance) &
+            error stop 'parameter recovery'
+        if (relative > held_tolerance) error stop 'held prediction recovery'
     end do
     call island_provider_free(reference)
     call island_provider_free(cold)
@@ -111,7 +146,7 @@ contains
         type(nc_problem_t) :: problem
         real(dp), allocatable :: base(:), perturbation(:)
         integer :: st
-        call island_a_setup(4, 2, 1, base, perturbation, problem)
+        call island_a_setup(nr, order, modes, base, perturbation, problem)
         call island_provider_init(provider, field, problem, base, perturbation, &
             shell_source, [source_scale, eps, 0.0_dp, 100.0_dp], 0.9_dp, &
             1.0e5_dp, 'synthetic-helical-coil-tiago', st)

@@ -2314,6 +2314,11 @@ add_library(kin6d_nn_vacuum_test STATIC test/support/nn_vacuum_fixture.f90
 add_executable(test_island_vacuum_oracle test/test_island_vacuum_oracle.f90)
 target_link_libraries(test_island_vacuum_oracle PRIVATE kin6d_nn_vacuum_test)
 add_test(NAME island_coil_quadrature COMMAND test_island_vacuum_oracle quadrature)
+add_executable(test_island_direct_coil_split test/test_island_direct_coil_split.f90)
+target_link_libraries(test_island_direct_coil_split PRIVATE kin6d_nn_vacuum_test)
+add_test(NAME island_direct_coil_split COMMAND test_island_direct_coil_split)
+set_tests_properties(island_direct_coil_split PROPERTIES TIMEOUT 300 PROCESSORS 4
+    ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 add_test(NAME island_vacuum_seed_p3 COMMAND test_island_vacuum_oracle seed 3 16)
 set_tests_properties(island_vacuum_seed_p3 PROPERTIES TIMEOUT 300 PROCESSORS 4
     ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")

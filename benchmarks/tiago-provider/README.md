@@ -16,6 +16,15 @@ cmake --build build --target test_tiago_island
 ctest --test-dir build -R '^tiago_island_(vacuum|pressure)$' --output-on-failure
 ```
 
+The slow `tiago_island_direct` case takes its observations from the segment
+Biot–Savart field of the coil with all its toroidal harmonics instead of the
+fitted model, and fits them with the P3, nr=8, three-mode provider. At the
+default P2, nr=4, one-mode resolution the same fit gives amplitude 1.020 and
+a held-out error of 69 sigma. `island_direct_coil_split` shows that the
+coarse field alone has a pitch error of 54 sigma at those points. The direct
+case uses tolerances of 1e-2 on the amplitude and 1 sigma on held-out angles,
+because its observations come from a different model than the fit.
+
 The two cases use zero pressure source or the regularized finite-pressure
 stationary model. Each checks zero and nonzero perturbations. Sixteen synthetic
 channels are fitted; eight at a different toroidal plane are held out. Checks
