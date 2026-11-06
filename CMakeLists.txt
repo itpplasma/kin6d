@@ -256,6 +256,7 @@ target_sources(kin6d_continuum PRIVATE src/continuum/vlasov_response.f90
     src/generated/kin6d_poisson_leaves.f90 src/continuum/poisson_laboratory.f90
     src/generated/kin6d_fp_leaves.f90 src/continuum/fp_laboratory.f90
     src/generated/kin6d_fp_relaxation_leaves.f90 src/continuum/fp_relaxation.f90
+    src/generated/kin6d_dk_pitch_leaves.f90 src/continuum/dk_pitch.f90
     src/generated/kin6d_thermal_screening_leaves.f90 src/continuum/screening_moments.f90
     src/generated/kin6d_transport_leaves.f90 src/continuum/transport_laboratory.f90
     src/continuum/transport_certificate.f90 src/continuum/transport_sampling.f90
@@ -369,6 +370,7 @@ target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_inverse_leaves.f
 set_source_files_properties(src/generated/kin6d_gs_inverse_leaves.f90
     src/generated/kin6d_gs_coarea_leaves.f90
     src/generated/kin6d_boozer_file_leaves.f90
+    src/generated/kin6d_dk_pitch_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -1023,6 +1025,9 @@ foreach(check maxwellian l1_brute invariants slow_limit)
     add_test(NAME rosenbluth_${check}_oracle COMMAND test_rosenbluth_reference ${check})
 endforeach()
 # Homogeneous FP relaxation (B04): the same executable, one check per name.
+add_executable(test_dk_pitch test/test_dk_pitch.f90)
+target_link_libraries(test_dk_pitch PRIVATE kin6d)
+add_test(NAME dk_pitch_lorentz_operator COMMAND test_dk_pitch)
 add_executable(test_fp_relaxation test/test_fp_relaxation.f90)
 target_link_libraries(test_fp_relaxation PRIVATE kin6d)
 foreach(check maxwellian mass slow_rate convergence_v convergence_dt)
@@ -1293,7 +1298,7 @@ if(KIN6D_FORTSYM_BUILD)
             landreman nested_oracles
             response_strip_jets
             response_fluid
-            gs_coarea gs_inverse boozer_file
+            gs_coarea gs_inverse boozer_file dk_pitch
             gs_reference_error laboratory poisson fp fp_relaxation transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
@@ -1304,6 +1309,12 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME dk_pitch_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_dk_pitch>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_dk_pitch_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/dk-pitch-regeneration
+        -DLEAF=kin6d_dk_pitch_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME boozer_file_leaf_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_boozer_file>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_boozer_file_leaves.f90

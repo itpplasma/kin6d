@@ -242,7 +242,12 @@ in lambda, with the measure B dlambda/|xi| per sigma, is
 symmetric and negative semi-definite, degenerate at lambda = 0 and at the
 reflection curve. The weak form (5) is what is discretised: null space and
 dissipation hold by construction (bracket form, [collisions.md](collisions.md)).
-Status of (4)-(5): stated, V0 checks below.
+Status of (4)-(5): stated, V0 checks below. Implemented for one point of
+the field line (`src/continuum/dk_pitch.f90`, continuous elements in lambda
+per sigma joined at the reflection node, quadrature in t = sqrt(1/B - lambda)):
+even-l Legendre modes are exact to round-off, the null space is the constants,
+and odd l converge at first order in the element size because sqrt(1 - lambda B)
+is odd in t (test `dk_pitch_lorentz_operator`). The theta direction is next.
 
 Drifts: v_d.grad psi only in the drive; v_d.grad alpha (grad-B, finite-beta
 curvature, shear term) local in the operator, not bounce-averaged (as
