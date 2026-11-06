@@ -296,6 +296,15 @@ in theta, not in xi: at nu* = 2.5e-5 the coefficients converge to 1e-5 with
 nu* falls, because the trapped-passing layer moves in theta. That
 measurement is the case DG on lambda levels has to beat.
 
+Against NEO-2-PAR in Lorentz mode on libneo's tok02 file (s = 0.50781,
+nu* = nu R/(iota v) from 4e-4 to 4e1; NEO-2's collpar per cm is 2 nu_D/v):
+NEO-2's conductivity ratio gamma_E = (pi/4) 3 nu D33/<b^2> and the
+normalisation-free ratio D13 D31/(D11 D33) agree to 2e-4 and 1.1e-3, and the
+gap shrinks as NEO-2 is refined (test `dk_mono_neo2_tok02`). The KIN6D values
+are converged to 1e-6 at 65 theta points and 200 Legendre polynomials in
+0.011 s of one core; NEO-2 approaches 1e-3 only at four times its default
+resolution, in 1.9 to 4.9 s on two MPI ranks with 1 to 3.6 GB.
+
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by
 Richardson iteration):

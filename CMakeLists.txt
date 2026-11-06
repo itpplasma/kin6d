@@ -1035,6 +1035,11 @@ foreach(check collisionless banana pfirsch_schlueter plateau onsager)
     add_test(NAME dk_mono_${check} COMMAND test_dk_mono ${check})
     kin6d_test_labels(dk_mono_${check} fast CLASSES continuum TARGETS test_dk_mono)
 endforeach()
+# Against NEO-2-PAR in Lorentz mode on libneo's public tok02 file (circ.bc).
+add_test(NAME dk_mono_neo2_tok02 COMMAND test_dk_mono neo2_tok02
+    ${libneo_SOURCE_DIR}/python/tests/circ.bc)
+kin6d_test_labels(dk_mono_neo2_tok02 fast CLASSES continuum equilibrium
+    TARGETS test_dk_mono)
 add_executable(test_dk_pitch test/test_dk_pitch.f90)
 target_link_libraries(test_dk_pitch PRIVATE kin6d)
 add_test(NAME dk_pitch_lorentz_operator COMMAND test_dk_pitch)
