@@ -816,19 +816,23 @@ contains
     subroutine gram_update(basis, weight, gram)
         real(dp), intent(in) :: basis(:,:), weight
         real(dp), intent(inout) :: gram(:,:)
-        integer :: rows, cols
+        integer :: rows, cols, j
         interface
-            subroutine dgemm(transa,transb,m,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            subroutine dsyrk(uplo,trans,n,k,alpha,a,lda,beta,c,ldc)
                 import dp
-                character, intent(in) :: transa, transb
-                integer, intent(in) :: m, n, k, lda, ldb, ldc
-                real(dp), intent(in) :: alpha, beta, a(lda,*), b(ldb,*)
+                character, intent(in) :: uplo, trans
+                integer, intent(in) :: n, k, lda, ldc
+                real(dp), intent(in) :: alpha, beta, a(lda,*)
                 real(dp), intent(inout) :: c(ldc,*)
             end subroutine
         end interface
+        ! dgemm need not return a bitwise-symmetric A^T A, and the SPD
+        ! factorization requires exact symmetry; mirror one triangle.
         rows = size(basis,1); cols = size(basis,2)
-        call dgemm('T','N',cols,cols,rows,weight,basis,rows,basis,rows, &
-            1.0_dp,gram,cols)
+        call dsyrk('U','T',cols,rows,weight,basis,rows,1.0_dp,gram,cols)
+        do j = 1, cols - 1
+            gram(j+1:,j) = gram(j,j+1:)
+        end do
     end subroutine
 
     subroutine natural_projection(mass, rhs, u, status)
