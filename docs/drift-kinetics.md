@@ -305,6 +305,28 @@ are converged to 1e-6 at 65 theta points and 200 Legendre polynomials in
 0.011 s of one core; NEO-2 approaches 1e-3 only at four times its default
 resolution, in 1.9 to 4.9 s on two MPI ranks with 1 to 3.6 GB.
 
+The solver is factorised once (`mono_factor`: LU of each Schur block S_l and
+Y_l = S_l^-1 Lo_l, and the bordered l = 0 block) and every further
+right-hand side reuses it (`mono_solve`). Derivatives of D_ij with respect
+to nu, kappa and the field shape b(theta) follow the implicit rule
+A dg = ds - dA g through the same factors, with the leaf tangents from the
+FortSym JVP of `gen_dk_mono`; they agree with centred differences to the
+differences' truncation error, 1e-10 to 4e-8 (test `dk_mono_jvp`). Each
+coefficient comes with two indicators in the sense of
+[certification.md](certification.md), not bounds: the discretisation
+indicator compares with doubled theta and Legendre resolution (b resampled
+by its trigonometric interpolant), effectivity 0.96 against a reference at
+four times the resolution, and the algebraic indicator is the functional of
+one solve with the true residual, at rounding level (test `dk_mono_estimate`).
+
+Data layout for later batched or GPU execution: the blocks are dense,
+contiguous n_theta x n_theta arrays indexed by l, and the factorisation is a
+sequence of small dense LU and triangular solves per l. The batch dimension
+is outside this routine: energy nodes, species and toroidal harmonics give
+independent block systems of the same shape, solved as one batch. A port
+waits for a profile of the full operator and must beat the CPU at matched
+accuracy.
+
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by
 Richardson iteration):
