@@ -718,7 +718,8 @@ Required structure:
 - collision invariant and adjoint tests;
 - explicit geometry/input uncertainty.
 
-This is the first major production target.
+This is the first major production target. Its full NEO-2 feature parity is
+tracked in #198.
 
 ## R7 — gyrofluid, Landau-fluid and gyromoment hierarchy
 

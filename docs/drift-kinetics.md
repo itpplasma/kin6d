@@ -1,7 +1,8 @@
 # Drift kinetics: local neoclassical transport and NTV (DK)
 
 Status: design decision, 2026-10-13, approved by Chris; local 3D and global
-steady extensions approved 2026-11-03. No solver code yet.
+steady extensions approved 2026-11-03; full NEO-2 feature parity approved
+2026-11-06 (tracker #198). No solver code yet.
 DK0 (theory gate for the local ansatz with shear) is done for trapped
 particles; see [the DK0 derivation](../theory/derivations/drift-kinetics-dk0.md).
 The programme is gated on a numerics claim (DK1, below): if it fails, the
@@ -280,11 +281,17 @@ Richardson iteration):
 | Increment | Operator | Role |
 |---|---|---|
 | DK1-DK2 | Lorentz (pitch-angle scattering) | numerics gate, regime ladder |
-| DK3 | Sugama model operator ([Sugama, Watanabe, Nunami 2009](https://doi.org/10.1063/1.3257907), metadata not yet verified) | production default, momentum and energy conservation |
-| only if NEO-2 matching needs it | full linearised Landau | reference |
+| DK3 | full linearised Landau, several species | NEO-2 parity target and production default; invariants by construction |
+| DK3 | Sugama model operator ([Sugama, Watanabe, Nunami 2009](https://doi.org/10.1063/1.3257907), metadata not yet verified) | cheaper reduction with measured defect |
+| parity | linearised relativistic operator (Braams–Karney and Beliaev–Budker levels, as NEO-2 `isw_relativistic`) | ECCD and hot electrons; nonrelativistic Landau is its limit |
 | parity runs only | Krook (incl. PENTRC's harmonic rate) | MARS-K/PENTRC matching, never a default |
 
-Conservation defects are measured with the solver's moment functionals;
+The energy space must contain $1$ and $x^2$ (GLL degree at least 2). NEO-2's
+order-2 B-spline (hat) basis does not, and its discrete operator then conserves
+energy only to $3.4\times10^{-2}$ at four basis functions (quadratic B-splines:
+$5\times10^{-7}$); constraints imposed on such a basis hide the error instead
+of removing it. Every operator is cross-checked against the richer model above
+it (#188). Conservation defects are measured with the solver's moment functionals;
 Lorentz rows are reservoirs and are not corrected.
 
 ## Solver
@@ -344,6 +351,18 @@ These serve other lanes as well and come first.
 
 FortSparse batched factorisations are used as they exist; gaps found in DK1
 are repaired there.
+
+## NEO-2 parity (tracker #198)
+
+KIN6D anticipates NEO-2's complete feature set, as one operator instead of the
+QL/PAR pair: monoenergetic and multispecies transport, bootstrap current,
+conductivity and Ware pinch (#189), the generalized Spitzer function for current
+drive with the relativistic operator (#190, #187), a fast-ion source (#191;
+NEO-2's own is an unfinished stub), quasilinear NTV as a switch set (#192), the
+radial electric field (#193), local 3D transport (#194), surface scans and the
+exports downstream codes read (#196), and a time-to-accuracy comparison (#197).
+Implementation starts after the generators move to the reworked FortSym API
+(#179). The DK1 stop rule below still applies.
 
 ## Programme and gates
 
