@@ -68,7 +68,7 @@ module kin6d_nonnested_coupled
     public :: nc_problem_t, nc_layout_t, nc_report_t, nc_layout, nc_residual
     public :: nc_jacobian, nc_solve, nc_fixed, nc_store, nc_reduce
     public :: nc_scalar3_i, nc_continue, nc_validate, nc_jvp, nc_vjp
-    public :: nc_source_data
+    public :: nc_source_data, nc_factor_reduced
     public :: nc_tangent_t, nc_tangent_factor, nc_tangent_solve, nc_tangent_free
 
     abstract interface
@@ -1143,7 +1143,7 @@ contains
         end if
         if (factored) call sparse_destroy(solver)
         factored = .false.
-        call factor_reduced(reduced, solver, status)
+        call nc_factor_reduced(reduced, solver, status)
         if (status /= 0) return
         status = 1
         factored = .true.
@@ -1202,7 +1202,7 @@ contains
         status = 0
     end subroutine
 
-    subroutine factor_reduced(reduced, solver, status)
+    subroutine nc_factor_reduced(reduced, solver, status)
 !$      use omp_lib, only: omp_get_max_threads
         ! General sparse LU (the Jacobian is not symmetric).
         type(csc_t), intent(in) :: reduced
@@ -1255,7 +1255,7 @@ contains
         call reduced_system(tangent%jac, tangent%fixed, tangent%rep, reduced, &
             status)
         if (status /= 0) return
-        call factor_reduced(reduced, tangent%solver, status)
+        call nc_factor_reduced(reduced, tangent%solver, status)
         if (status /= 0) return
         tangent%factored = .true.
     end subroutine

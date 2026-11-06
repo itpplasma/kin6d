@@ -311,8 +311,9 @@ target_link_libraries(kin6d_core PUBLIC LAPACK::LAPACK)
 option(KIN6D_BUILD_GLL_SPIKE "Build the axisymmetric matrix-free GLL map experiment" OFF)
 # FortFEM main (block_csc assembly, Hiptmair-Xu, circulant BEM with per-harmonic
 # Steklov form #144, exact FEEC tables, split stretched BEM fans #145,
-# second-kind Nedelec edges #148 and exact moment gradients #149).
-set(KIN6D_FORTFEM_REVISION "d6027e7addfd857c676195f26ae3d829a3868a68")
+# second-kind Nedelec edges #148, exact moment gradients #149 and the
+# boundary trace projection #152).
+set(KIN6D_FORTFEM_REVISION "0478584458fad621c0d186049218b653cf9ad922")
 FetchContent_Declare(fortfem
     GIT_REPOSITORY https://github.com/lazy-fortran/fortfem.git
     GIT_TAG ${KIN6D_FORTFEM_REVISION})
@@ -2493,7 +2494,20 @@ target_sources(kin6d_mhd PRIVATE src/mhd/nonnested_profile.f90
     src/mhd/island_closure.f90
     src/mhd/nonnested_coupled.f90
     src/mhd/island_case.f90 src/mhd/island_report.f90
-    src/mhd/island_provider.f90)
+    src/mhd/island_provider.f90 src/mhd/frozen_current.f90)
+add_executable(test_frozen_current test/test_frozen_current.f90)
+target_link_libraries(test_frozen_current PRIVATE kin6d_mhd)
+add_test(NAME frozen_current_ring_p3 COMMAND test_frozen_current ring 3 8)
+add_test(NAME frozen_current_helical_p2 COMMAND test_frozen_current helical 2)
+add_test(NAME frozen_current_helical_p3 COMMAND test_frozen_current helical 3)
+add_test(NAME frozen_current_exterior_p3
+    COMMAND test_frozen_current exterior 3 4 4 1.5e-3)
+add_test(NAME frozen_current_exterior_refined_p3
+    COMMAND test_frozen_current exterior 3 8 6 2e-4)
+set_tests_properties(frozen_current_ring_p3 frozen_current_helical_p2
+    frozen_current_helical_p3 frozen_current_exterior_p3
+    frozen_current_exterior_refined_p3 PROPERTIES
+    TIMEOUT 1800 PROCESSORS 4 ENVIRONMENT "OMP_NUM_THREADS=4")
 add_executable(test_island_closure test/test_island_closure.f90)
 target_link_libraries(test_island_closure PRIVATE kin6d_nn_solovev_test)
 foreach(case declaration drive report)
