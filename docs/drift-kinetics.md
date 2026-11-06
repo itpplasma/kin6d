@@ -281,6 +281,21 @@ volumes on lambda levels (NEO-2-like) or Legendre in xi = v_par/v
 simpler scheme reaches the gate at comparable cost, it is kept and DG is
 dropped.
 
+Status: the Legendre reference is implemented for the axisymmetric n = 0
+Lorentz problem (`src/continuum/dk_mono.f90`): Legendre polynomials in xi,
+Fourier collocation in theta, block elimination in l and the density null
+space bordered by a source multiplier. Against limits derived independently
+by averaging the same equation (test `dk_mono_*`): collisionless D33 and D31
+reproduce the passing and trapped fractions to 5e-6, banana D11/nu to 5e-6,
+the Pfirsch-Schlueter D11/nu to 6e-10 and the plateau value to 1e-6;
+D31 = -D13 and the border multiplier vanish to rounding. The
+finite-collisionality correction of the banana limits scales like
+sqrt(nu*) (-4.4e-2 at nu* = 1e-4). The cost of the low-collisionality end is
+in theta, not in xi: at nu* = 2.5e-5 the coefficients converge to 1e-5 with
+257 theta points and 800 Legendre polynomials, and theta resolution grows as
+nu* falls, because the trapped-passing layer moves in theta. That
+measurement is the case DG on lambda levels has to beat.
+
 Collision ladder (one `apply`/`jvp`/`diag_block` interface per spatial
 point; field parts as low-rank updates inside the Krylov matvec, never by
 Richardson iteration):
