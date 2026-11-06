@@ -13,6 +13,8 @@ program test_dk_mono
     use, intrinsic :: iso_fortran_env, only: dp => real64
     use kin6d_dk_mono, only: mono_coefficients_t, mono_coefficients, MONO_OK
     use fortnum_quadrature, only: gauss_legendre_ab
+    use kin6d_boozer_file, only: boozer_file_t, boozer_surface_t, load_boozer_file, &
+        boozer_surface, BOOZER_OK
     implicit none
     real(dp), parameter :: pi = 4*atan(1.0_dp)
     character(32) :: check
@@ -25,6 +27,7 @@ program test_dk_mono
     case ('pfirsch_schlueter'); ok = pfirsch_schlueter()
     case ('plateau'); ok = plateau()
     case ('onsager'); ok = onsager()
+    case ('neo2_tok02'); ok = neo2_tok02()
     case default
         print '(a)', 'unknown check '//trim(check)
         ok = .false.
@@ -179,5 +182,61 @@ contains
                 ' |mu|/sqrt(D11 D33) ', maxval(abs(c%border))/scale
         end do
     end function onsager
+
+    ! b(theta) and kappa = iota B0/(G + iota I) of an axisymmetric surface.
+    subroutine surface_field(path, s, n, b, kappa)
+        character(*), intent(in) :: path
+        real(dp), intent(in) :: s
+        integer, intent(in) :: n
+        real(dp), intent(out) :: b(n), kappa
+        type(boozer_file_t) :: bf
+        type(boozer_surface_t) :: surf
+        real(dp) :: b0, theta
+        integer :: status, j, k
+        call load_boozer_file(path, bf, status)
+        if (status /= BOOZER_OK) error stop 'cannot read the Boozer file'
+        call boozer_surface(bf, s, surf, status)
+        if (status /= BOOZER_OK) error stop 'surface outside the file'
+        if (any(surf%n /= 0)) error stop 'surface is not axisymmetric'
+        b0 = sum(surf%bmn, mask=surf%m == 0)
+        do j = 1, n
+            theta = 2*pi*(j - 1)/n
+            b(j) = 0
+            do k = 1, size(surf%m)
+                b(j) = b(j) + surf%bmn(k)*cos(surf%m(k)*theta)
+            end do
+        end do
+        b = b/b0
+        kappa = abs(surf%iota*b0/(surf%g_cov + surf%iota*surf%i_cov))
+    end subroutine surface_field
+
+    ! NEO-2-PAR in Lorentz mode (built from main on 2026-11-05) on tok02 at
+    ! s = 0.50781, at four times its default resolution (nstep, eta_part,
+    ! ripple_solver_accurfac x 4, bsfunc errors / 4). Its collpar per cm is
+    ! 2 nu_D/v, and its gamma_E is (pi/4) 3 nu D33/<b^2>. R13 =
+    ! D13 D31/(D11 D33) is free of the drive normalisations. The tolerance is
+    ! NEO-2's resolution error: its last refinement still moves R13 by 3.5e-4.
+    ! At collpar 3.5e-2 R13 ~ 6e-7 is below NEO-2's resolution and is not used.
+    logical function neo2_tok02() result(ok)
+        real(dp), parameter :: collpar(3) = [3.5154e-6_dp, 3.5154e-4_dp, 3.5154e-2_dp]
+        real(dp), parameter :: gamma_e(3) = [0.357024_dp, 0.577930_dp, 0.785227_dp]
+        real(dp), parameter :: r13(2) = [-1.068652_dp, -0.2858438_dp]
+        character(512) :: path
+        real(dp) :: b(65), kappa, nu
+        type(mono_coefficients_t) :: c
+        integer :: i, status
+        call get_command_argument(2, path)
+        call surface_field(trim(path), 0.50781_dp, size(b), b, kappa)
+        ok = .true.
+        do i = 1, 3
+            nu = collpar(i)*100/2
+            call mono_coefficients(b, kappa, nu, 200, c, status)
+            if (status /= MONO_OK) error stop 'mono_coefficients failed'
+            ok = close_to('gamma_E', pi/4*3*nu*c%d33/average(b**2, b), gamma_e(i), &
+                2e-3_dp) .and. ok
+            if (i <= 2) ok = close_to('R13', c%d13*c%d31/(c%d11*c%d33), r13(i), &
+                2e-3_dp) .and. ok
+        end do
+    end function neo2_tok02
 
 end program test_dk_mono
