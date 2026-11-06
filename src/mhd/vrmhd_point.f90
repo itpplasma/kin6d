@@ -17,6 +17,8 @@ module kin6d_vrmhd_point
     private
     public :: vrmhd_point, vrmhd_point_matrix
     integer, parameter :: ntest(6) = [4, 12, 6, 6, 4, 4]
+    !> vrmhd_point evaluations of one vrmhd_point_matrix call.
+    integer, parameter, public :: VRMHD_POINT_MATRIX_CALLS = 45*sum(ntest)
     integer, parameter :: test_slots(12, 6) = reshape([ &
         1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, &
         5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, &
@@ -65,13 +67,15 @@ contains
         real(dp) :: zero(24)
         integer :: species, it
         zero = 0; value = 0; tangent = 0
-        call vrmhd_leaf(leaf_eta, [p%eta0, u(11), p%t0], [0.0_dp, du(11), 0.0_dp], &
-            eta, deta)
-        call vrmhd_leaf(leaf_nu, [p%nu0, u(12), p%t0], [0.0_dp, du(12), 0.0_dp], &
-            nu, dnu)
-        call vrmhd_leaf(leaf_trace, [u(16), u(20), u(24)], [du(16), du(20), &
-            du(24)], divv, ddivv)
-        call vrmhd_leaf(leaf_trace, [test(8), test(12), test(16)], zero(:3), divw, h)
+        ! Transport coefficients and traces only for the rows that use them.
+        if (row == 3 .or. row == 5) call vrmhd_leaf(leaf_eta, [p%eta0, u(11), p%t0], &
+            [0.0_dp, du(11), 0.0_dp], eta, deta)
+        if (row == 2 .or. row == 6) call vrmhd_leaf(leaf_nu, [p%nu0, u(12), p%t0], &
+            [0.0_dp, du(12), 0.0_dp], nu, dnu)
+        if (row >= 5) call vrmhd_leaf(leaf_trace, [u(16), u(20), u(24)], [du(16), &
+            du(20), du(24)], divv, ddivv)
+        if (row == 2) call vrmhd_leaf(leaf_trace, [test(8), test(12), test(16)], &
+            zero(:3), divw, h)
         select case (row)
         case (1)
             call add(leaf_mass_density, [ud(1), test(1)], [dud(1), 0.0_dp], 1.0_dp)
