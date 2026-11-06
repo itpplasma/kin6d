@@ -709,7 +709,7 @@ contains
         lay = nc_layout(field)
         status = 1
         if (size(x) /= lay%n) return
-        call meridian_fourier_curl(field%fs, lay%modes, c, status)
+        call meridian_fourier_curl(field%fs, lay%modes, c, status, field%period)
         if (status /= 0) return
         bv = csc_matvec(c, x(lay%ia + 1:lay%ia + lay%na))
         m = lay%nb2
