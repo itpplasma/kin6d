@@ -752,6 +752,20 @@ change is a separate observation-window uncertainty, which can exceed a
 spatial error and preclude a separatrix convergence claim. Tests with
 substantial tracing or coupled solves are labelled `slow`.
 
+[V] The TIAGO direct-coil cross-model failure at P2, nr=4 and one Fourier mode
+(amplitude 1.020, held-out angle error 69 times the assigned 1e-4 rad) is
+explained by the spatial error of the coarse field. `island_direct_coil_split`
+compares the FEEC field at the 24 TIAGO sample points with the segment
+Biot–Savart field and with an independent 128-point phi-DFT of it. At that
+setting the spatial error is 0.095 T against 0.0046 T from the omitted
+harmonics n >= 2, and the field pitch error is 5.4e-3 rad. With three modes
+the P3 error against the truncated field falls from 1.4e-2 T at nr=4 to 8.2e-4
+T at nr=8 (order 4.1). The pitch error is then 5.2e-5 rad, below the assigned
+angle uncertainty. With one mode the pitch error approaches the n >= 2 content
+at these points, 2.7e-4 rad, which exceeds that uncertainty. At P3, nr=8 and
+three modes the TIAGO fit (`tiago_island_direct`) recovers amplitude 1.0010
+with a held-out error of 0.55 times the assigned uncertainty.
+
 Chris&AI
 
 The [production scaling ledger](benchmarks.md#production-estimator-scaling)

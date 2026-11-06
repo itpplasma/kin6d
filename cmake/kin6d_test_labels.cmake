@@ -533,6 +533,8 @@ kin6d_test_labels(island_zero_beta_ohmic fast CLASSES mhd
     TARGETS test_island_driven)
 kin6d_test_labels(island_coil_quadrature fast CLASSES mhd
     TARGETS test_island_vacuum_oracle)
+kin6d_test_labels(island_direct_coil_split fast CLASSES mhd
+    TARGETS test_island_direct_coil_split)
 kin6d_test_labels(island_vacuum_seed_p3 fast CLASSES mhd
     TARGETS test_island_vacuum_oracle)
 kin6d_test_labels(island_coarse_feec_map slow CLASSES mhd
@@ -863,6 +865,8 @@ foreach(case vacuum pressure)
     kin6d_test_labels(tiago_island_${case} fast CLASSES mhd
         TARGETS test_tiago_island)
 endforeach()
+kin6d_test_labels(tiago_island_direct slow CLASSES mhd
+    TARGETS test_tiago_island)
 foreach(case seed none ladder leaves)
     kin6d_test_labels(island_seed_${case} fast CLASSES mhd TARGETS test_island_seed)
 endforeach()

@@ -11,3 +11,9 @@ foreach(case IN ITEMS vacuum pressure)
         LABELS "mhd;tiago" PROCESSORS 4 TIMEOUT 900
         ENVIRONMENT "OMP_NUM_THREADS=4;OPENBLAS_NUM_THREADS=1")
 endforeach()
+# Cross-model case: Biot-Savart observations with all coil harmonics, fitted
+# with the P3, nr=8, three-mode provider (13 to 20 min and 8 GB at 8 threads).
+add_test(NAME tiago_island_direct COMMAND test_tiago_island direct 8 3 3)
+set_tests_properties(tiago_island_direct PROPERTIES
+    LABELS "mhd;tiago" PROCESSORS 8 TIMEOUT 2400
+    ENVIRONMENT "OMP_NUM_THREADS=8;OPENBLAS_NUM_THREADS=1")
