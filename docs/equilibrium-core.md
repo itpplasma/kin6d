@@ -191,6 +191,15 @@ covariant components F, I are not exported. Assumes surfaces star-shaped about
 the axis; curvature drift at finite beta (needs p') is not included.
 Tests: `equilibrium_core_d7_geometry_{solovev,circle,drift,state}`.
 
+For comparisons with NEO-2 on the same field, `src/equilibrium/boozer_file.f90`
+reads a stellarator-symmetric Boozer `.bc` file through libneo's `bc_file`,
+interpolates its Fourier coefficients and iota to a surface with four-point
+Lagrange weights, and returns R, Z, phi, |B|, the Jacobian and |grad s| at
+Boozer angles with NEO-2's sign conventions, plus Jacobian-weighted averages.
+A surface outside the tabulated range is refused. The metric and the
+interpolation weights are FortSym leaves with JVP/VJP
+(`gen/gen_boozer_file.f90`). Test: `equilibrium_boozer_file_geometry`.
+
 In the map lane q per label is an input (frozen fluxes); readback recomputes
 it from B in physical space as the cross-lane check and never copies the
 reference. `vacuum_surfaces` (ψ grid from G-EQDSK) becomes an import adapter

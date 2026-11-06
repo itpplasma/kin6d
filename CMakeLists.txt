@@ -70,7 +70,8 @@ FetchContent_Declare(libneo
 FetchContent_MakeAvailable(libneo)
 add_library(kin6d_libneo_coils
     ${libneo_SOURCE_DIR}/src/field/biotsavart.f90
-    ${libneo_SOURCE_DIR}/src/field/makegrid_coils.f90)
+    ${libneo_SOURCE_DIR}/src/field/makegrid_coils.f90
+    ${libneo_SOURCE_DIR}/src/field/bc_file.f90)
 # Generated derivative families retain the primal ABI even for constant partials.
 # Unused primal arguments are intentional; keep other diagnostics enabled.
 set_source_files_properties(src/generated/kin6d_leaves.f90
@@ -361,10 +362,13 @@ add_library(kin6d_gs_reference_test STATIC
 target_link_libraries(kin6d_gs_reference_test PUBLIC kin6d)
 target_compile_options(kin6d_gs_reference_test PRIVATE -fno-fast-math -ffp-contract=off)
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_coarea_leaves.f90 src/equilibrium/gs_coarea.f90)
+target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_boozer_file_leaves.f90
+    src/equilibrium/boozer_file.f90)
 target_sources(kin6d_equilibrium PRIVATE src/generated/kin6d_gs_inverse_leaves.f90
     src/equilibrium/gs_inverse.f90 src/equilibrium/gs_prescribed_q.f90)
 set_source_files_properties(src/generated/kin6d_gs_inverse_leaves.f90
     src/generated/kin6d_gs_coarea_leaves.f90
+    src/generated/kin6d_boozer_file_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
 set_source_files_properties(src/generated/kin6d_grad_shafranov_leaves.f90
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-dummy-argument")
@@ -829,6 +833,13 @@ target_link_libraries(test_gs_p2_refinement PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_polynomial_refinement COMMAND test_gs_p2_refinement)
 set_tests_properties(grad_shafranov_p2_polynomial_refinement PROPERTIES
     FIXTURES_SETUP gs_p2_solovev_export)
+add_executable(test_boozer_file test/test_boozer_file.f90)
+target_link_libraries(test_boozer_file PRIVATE kin6d)
+# NEO-2 (e932b64c) on libneo's public tok02 file at s = 0.50781: iota,
+# diota/ds, <|grad s|> [1/cm] and <B^2> = avbhat2*bmod0^2 [T^2].
+add_test(NAME equilibrium_boozer_file_geometry COMMAND test_boozer_file
+    ${libneo_SOURCE_DIR}/python/tests/circ.bc 0.50781 0.76312999999999
+    -0.5561487528261847 0.031219209564037516 3.9494899)
 add_executable(test_gs_coarea test/test_gs_coarea.f90)
 target_link_libraries(test_gs_coarea PRIVATE kin6d)
 add_test(NAME grad_shafranov_p2_native_coarea_oracles COMMAND test_gs_coarea)
@@ -1282,7 +1293,7 @@ if(KIN6D_FORTSYM_BUILD)
             landreman nested_oracles
             response_strip_jets
             response_fluid
-            gs_coarea gs_inverse
+            gs_coarea gs_inverse boozer_file
             gs_reference_error laboratory poisson fp fp_relaxation transport
             streaming streaming_moments
             debye_sphere slab_oscillation shielding_dynamics interaction cloud homma
@@ -1293,6 +1304,12 @@ if(KIN6D_FORTSYM_BUILD)
         add_executable(gen_${generator} gen/gen_${generator}.f90)
         target_link_libraries(gen_${generator} PRIVATE kin6d_gen_support)
     endforeach()
+    add_test(NAME boozer_file_leaf_regeneration COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR=$<TARGET_FILE:gen_boozer_file>
+        -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_boozer_file_leaves.f90
+        -DWORK=${CMAKE_BINARY_DIR}/boozer-file-regeneration
+        -DLEAF=kin6d_boozer_file_leaves.f90
+        -P ${CMAKE_SOURCE_DIR}/cmake/kin6d_check_leaf_regeneration.cmake)
     add_test(NAME rm_oracle_regeneration COMMAND ${CMAKE_COMMAND}
         -DGENERATOR=$<TARGET_FILE:gen_rm_oracles>
         -DEXPECTED=${CMAKE_SOURCE_DIR}/src/generated/kin6d_rm_oracle_leaves.f90
