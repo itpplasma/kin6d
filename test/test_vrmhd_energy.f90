@@ -4,13 +4,14 @@ program test_vrmhd_energy
         GS_CHART_RZ, GS_CHART_CARTESIAN
     use kin6d_vrmhd_parameters, only: vrmhd_parameters_t
     use kin6d_vrmhd_section, only: vrmhd_section_t, vrmhd_section_build, &
-        vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_mass
+        vrmhd_section_basis, vrmhd_section_residual, vrmhd_section_jacobian
     use vrmhd_wall_oracle, only: current_wall_dofs
     use kin6d_vrmhd_boundary, only: vrmhd_current_lift
     use kin6d_vrmhd_drive, only: vrmhd_drive_build, VRMHD_CURRENT_SOURCE, &
         VRMHD_LOOP_VOLTAGE
     use fortfem_mesh_2d, only: mesh_2d_t
     use fortfem_meridian_curved_mesh, only: meridian_mesh_t, meridian_mesh_straight
+    use fortsparse, only: csc_t
     implicit none
     integer :: kind, seed_size, i, convention, family_degree
     character(16) :: mode
@@ -57,7 +58,7 @@ contains
         type(mesh_2d_t) :: mesh
         type(meridian_mesh_t) :: mm
         type(gs_symmetry_t) :: symmetry
-        real(dp), allocatable :: u(:), ud(:), zero(:), r(:), unused(:), probe(:)
+        real(dp), allocatable :: u(:), ud(:), zero(:), r(:), unused(:)
         real(dp), allocatable :: mass(:, :), original(:, :), rhs(:, :)
         real(dp), allocatable :: source(:, :, :), basis(:, :)
         integer, allocatable :: free_index(:), pivot(:)
@@ -96,7 +97,7 @@ contains
         n0 = op%scalar_fs%n0
         p%mi = 1.2_dp; p%mu0 = 0.8_dp
         allocate (u(op%ndof), ud(op%ndof), zero(op%ndof), r(op%ndof), &
-            unused(op%ndof), probe(op%ndof), active(op%ndof), &
+            unused(op%ndof), active(op%ndof), &
             source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
             basis(36, op%nlocal))
         u = 0; ud = 0; zero = 0; source = 0
@@ -118,12 +119,8 @@ contains
             r, unused, status)
         call require(status == 0, 'energy spatial residual')
         rhs(:, 1) = -r(free_index)
-        do j = 1, nf
-            probe = 0; probe(free_index(j)) = 1
-            call vrmhd_section_mass(op, p, u, probe, unused, status)
-            call require(status == 0, 'energy mass assembly')
-            mass(:, j) = unused(free_index)
-        end do
+        call free_mass(op, p, u, free_index, mass, status)
+        call require(status == 0, 'energy mass assembly')
         original = mass
         call dgesv(nf, 1, mass, nf, pivot, rhs, nf, info)
         call require(info == 0, 'energy mass solve')
@@ -191,7 +188,7 @@ contains
         type(mesh_2d_t) :: mesh
         type(meridian_mesh_t) :: mm
         type(gs_symmetry_t) :: symmetry
-        real(dp), allocatable :: u(:), ud(:), zero(:), r(:), unused(:), probe(:)
+        real(dp), allocatable :: u(:), ud(:), zero(:), r(:), unused(:)
         real(dp), allocatable :: mass(:, :), original(:, :), rhs(:, :), mj(:, :)
         real(dp), allocatable :: source(:, :, :), js(:, :, :), basis(:, :)
         real(dp), allocatable :: harmonic(:), load(:), wall(:), recovery(:, :)
@@ -244,7 +241,7 @@ contains
         p%d_parallel = 0.01_dp; p%d_perpendicular = 0.005_dp
         p%equilibration_rate = 0.02_dp
         allocate (u(op%ndof), ud(op%ndof), zero(op%ndof), r(op%ndof), &
-            unused(op%ndof), probe(op%ndof), active(op%ndof), &
+            unused(op%ndof), active(op%ndof), &
             source(6, op%fs%nq, op%fs%mm%topology%n_triangles), &
             js(3, op%fs%nq, op%fs%mm%topology%n_triangles), &
             basis(36, op%nlocal), harmonic(n1), load(op%ndof), mj(n1, n1), wall(n1))
@@ -350,12 +347,8 @@ contains
         r = r - load
         call require(maxval(abs(r(j0 + current_index))) < 1.0e-13_dp, 'weak Ampere residual')
         rhs(:, 1) = -r(free_index)
-        do j = 1, nf
-            probe = 0; probe(free_index(j)) = 1
-            call vrmhd_section_mass(op, p, u, probe, unused, status)
-            call require(status == 0, 'full energy mass assembly')
-            mass(:, j) = unused(free_index)
-        end do
+        call free_mass(op, p, u, free_index, mass, status)
+        call require(status == 0, 'full energy mass assembly')
         original = mass
         call dgesv(nf, 1, mass, nf, pivot, rhs, nf, info)
         call require(info == 0, 'full energy mass solve')
@@ -495,6 +488,35 @@ contains
         print '(a,es24.16)', 'applied loop voltage in V: ', voltage
         print '(a,3es24.16)', 'relative energy / solve / accounting defects: ', &
             relative_defect, solve_defect, ledger_defect
+    end subroutine
+
+    subroutine free_mass(op, p, u, free_index, mass, status)
+        !! Dense time mass on the free coefficients from one sparse assembly.
+        type(vrmhd_section_t), intent(in) :: op
+        type(vrmhd_parameters_t), intent(in) :: p
+        real(dp), intent(in) :: u(:)
+        integer, intent(in) :: free_index(:)
+        real(dp), intent(out) :: mass(:, :)
+        integer, intent(out) :: status
+        type(csc_t) :: time_mass
+        real(dp), allocatable :: zero(:), source(:, :, :)
+        integer, allocatable :: position(:)
+        integer :: j, k
+        allocate (zero(op%ndof), position(op%ndof), &
+            source(6, op%fs%nq, op%fs%mm%topology%n_triangles))
+        zero = 0; source = 0; mass = 0
+        call vrmhd_section_jacobian(op, p, u, zero, source, 1.0_dp, time_mass, &
+            status, mass_only=.true.)
+        if (status /= 0) return
+        position = 0
+        position(free_index) = [(j, j=1, size(free_index))]
+        do j = 1, op%ndof
+            if (position(j) == 0) cycle
+            do k = time_mass%col_ptr(j), time_mass%col_ptr(j + 1) - 1
+                if (position(time_mass%row_idx(k)) == 0) cycle
+                mass(position(time_mass%row_idx(k)), position(j)) = time_mass%val(k)
+            end do
+        end do
     end subroutine
 
     subroutine voltage_current(x, data, current)
